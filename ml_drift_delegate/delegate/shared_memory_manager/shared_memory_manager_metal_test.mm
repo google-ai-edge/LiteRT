@@ -607,6 +607,7 @@
   graph.AddConsumer(weights, op_id);
   graph.SetProducer(output, op_id);
   graph.GetMutableTensor(weights)->desc.SetBHWCShape(ml_drift::BHWC(1, 1, 1, 10));
+  graph.GetMutableTensor(weights)->desc.SetDataType(ml_drift::DataType::FLOAT32);
   const uint32_t original_weights_id = weights;
 
   TfLiteContext context;

@@ -21,6 +21,10 @@
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/types.h"  // from @ml_drift
+#include "tflite/core/c/common.h"
+#include "tflite/kernels/kernel_util.h"
 
 namespace ml_drift {
 
@@ -38,6 +42,51 @@ void GraphFloat32Adapter::SetValueShapeAndType(uint32_t value_id,
   Value* value = graph_.GetValue(value_id);
   value->tensor.shape = shape;
   value->tensor.type = type;
+}
+
+DataType GraphFloat32Adapter::ResolveSharedTensorType(
+    uint32_t shared_tensor_id, DataType default_data_type) const {
+  DataType data_type = default_data_type;
+  if (default_data_type == DataType::FLOAT32) {
+    std::vector<uint32_t> consumers = FindConsumerOps(shared_tensor_id);
+    if (consumers.size() == 1 && OpHasInputs(consumers[0])) {
+      data_type = DataType::FLOAT16;
+      data_type = GetOpFirstInputType(consumers[0]);
+    }
+  }
+  return data_type;
+}
+
+void GraphFloat32Adapter::UploadTensorData(
+    const TfLiteTensor& tensor, const float* weights_data_ptr,
+    TensorDescriptor& tensor_desc) const {
+  // Support uploading float16 data for float16 tensors, otherwise upload float
+  // data. This is used for the models with fp16 weights from MediaPipe. (e.g.
+  // inpainting models)
+  if (tensor_desc.GetDataType() == DataType::FLOAT16) {
+    if (tensor.type == TfLiteType::kTfLiteFloat16) {
+      tensor_desc.UploadData<half>(reinterpret_cast<half*>(tensor.data.f16));
+    } else {
+      int num_elements = tflite::NumElements(&tensor);
+      std::vector<half> half_data(num_elements);
+      for (int i = 0; i < num_elements; ++i) {
+        half_data[i] = half(weights_data_ptr[i]);
+      }
+      tensor_desc.UploadData<half>(half_data.data());
+    }
+  } else {  // FLOAT32
+    if (tensor.type == TfLiteType::kTfLiteFloat16) {
+      int num_elements = tflite::NumElements(&tensor);
+      std::vector<float> float_data(num_elements);
+      const half* f16_ptr = reinterpret_cast<const half*>(tensor.data.f16);
+      for (int i = 0; i < num_elements; ++i) {
+        float_data[i] = static_cast<float>(f16_ptr[i]);
+      }
+      tensor_desc.UploadData<float>(float_data.data());
+    } else {
+      tensor_desc.UploadData<float>(weights_data_ptr);
+    }
+  }
 }
 
 std::vector<uint32_t> GraphFloat32Adapter::FindConsumerOps(

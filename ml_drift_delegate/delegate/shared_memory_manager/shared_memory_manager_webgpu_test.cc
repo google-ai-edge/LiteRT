@@ -680,6 +680,7 @@ TEST_F(SharedMemoryManagerTest, IrSharedConstantIsMutatedInPlaceWithStableId) {
   graph.AddConsumer(weights, op_id);
   graph.SetProducer(output, op_id);
   graph.GetMutableTensor(weights)->desc.SetBHWCShape(BHWC(1, 1, 1, 10));
+  graph.GetMutableTensor(weights)->desc.SetDataType(DataType::FLOAT32);
   const uint32_t original_weights_id = weights;
 
   TfLiteContext context;

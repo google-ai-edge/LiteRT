@@ -22,6 +22,7 @@
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "tflite/core/c/common.h"
 
 namespace ml_drift {
 namespace {
@@ -160,6 +161,54 @@ TEST(IrModelAdapterTest, AddConstantInputWiresNewValueToConsumerOp) {
               Contains(static_cast<ir::IrTensorId>(new_id)));
   // ...and the reverse lookup resolves back to that op.
   EXPECT_THAT(adapter.FindConsumerOps(new_id), ElementsAre(g.op_id));
+}
+
+TEST(IrModelAdapterTest, ResolveSharedTensorType) {
+  TestGraph g;
+  IrModelAdapter adapter(g.model);
+
+  // Default FLOAT32 with FLOAT32 graph tensor and FLOAT32 input -> FLOAT32.
+  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::FLOAT32),
+            DataType::FLOAT32);
+
+  // Default FLOAT16 with FLOAT32 graph tensor -> FLOAT16.
+  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::FLOAT16),
+            DataType::FLOAT16);
+
+  // Non-float graph tensor preserves its native type.
+  adapter.SetValueType(g.weights_id, DataType::INT32);
+  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::FLOAT32),
+            DataType::INT32);
+  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::FLOAT16),
+            DataType::INT32);
+}
+
+TEST(IrModelAdapterTest, UploadTensorData) {
+  TestGraph g;
+  IrModelAdapter adapter(g.model);
+
+  // Upload int32 data.
+  int32_t int_val = 42;
+  TfLiteTensor int_tensor{};
+  int_tensor.type = kTfLiteInt32;
+  int_tensor.data.i32 = &int_val;
+  TensorDescriptor int_desc(DataType::INT32, TensorStorageType::BUFFER,
+                            Layout::HWC);
+  int_desc.SetBHWCShape(BHWC(1, 1, 1, 1));
+  adapter.UploadTensorData(int_tensor, nullptr, int_desc);
+  EXPECT_EQ(reinterpret_cast<const int32_t*>(int_desc.GetData().data())[0], 42);
+
+  // Upload float32 data.
+  float float_val = 3.14f;
+  TfLiteTensor float_tensor{};
+  float_tensor.type = kTfLiteFloat32;
+  float_tensor.data.f = &float_val;
+  TensorDescriptor float_desc(DataType::FLOAT32, TensorStorageType::BUFFER,
+                              Layout::HWC);
+  float_desc.SetBHWCShape(BHWC(1, 1, 1, 1));
+  adapter.UploadTensorData(float_tensor, &float_val, float_desc);
+  EXPECT_FLOAT_EQ(
+      reinterpret_cast<const float*>(float_desc.GetData().data())[0], 3.14f);
 }
 
 }  // namespace

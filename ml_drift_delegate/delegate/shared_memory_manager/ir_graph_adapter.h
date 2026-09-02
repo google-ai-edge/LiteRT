@@ -40,6 +40,12 @@ class IrModelAdapter : public GraphAdapter {
   void SetValueShapeAndType(uint32_t value_id, const BHWC& shape,
                             DataType type) override;
 
+  DataType ResolveSharedTensorType(uint32_t shared_tensor_id,
+                                   DataType default_data_type) const override;
+  void UploadTensorData(const TfLiteTensor& tensor,
+                        const float* weights_data_ptr,
+                        TensorDescriptor& tensor_desc) const override;
+
   std::vector<uint32_t> FindConsumerOps(uint32_t value_id) const override;
   std::string GetOpTypeName(uint32_t op_id) const override;
   bool OpHasInputs(uint32_t op_id) const override;
