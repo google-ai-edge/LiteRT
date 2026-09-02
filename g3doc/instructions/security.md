@@ -207,16 +207,22 @@ kernels. The list can be extended when a new use scenario arises.
 ### Model-generation and ingress invariants
 
 Every TFLite model consumed by the runtime is produced by some tool or library.
-In the default trusted-model deployment model, that generator is part of the
-trusted computing base and is expected to produce a well-formed TFLite model.
-When it is not the case, the model generator is responsible for ensuring that
-every TFLite model passes an explicit ingress validation step immediately before
-litert::CompiledModel::Create(...). After validation, the LiteRT runtime and its
-delegates should keep the model metadata and external data immutable for the
-lifetime in which the verifier's result is relied upon, or it should keep
-validating the invariants. For example, XNNPack may do graph transformations
-during model loading, it would be XNNPack’s responsibility to ensure that these
-transformations are safe when the input graph is safe.
+Within the untrusted-model security boundary, the declared static tensor types
+and shapes must be established in one of two ways:
+
+*   The model is produced by an approved generator whose type and shape
+    inference is part of the trusted computing base.
+*   The model passes mandatory semantic type and shape validation immediately
+    before `litert::CompiledModel::Create(...)`.
+
+Merely providing a validator that callers may choose to invoke is not
+sufficient. A secure entry point must enforce one of these two paths. After
+generation or validation, the LiteRT runtime and its delegates should keep the
+model metadata and external data immutable for the lifetime in which the
+established invariants are relied upon, or they should revalidate the affected
+invariants. For example, if XNNPack performs graph transformations during model
+loading, it is XNNPack's responsibility to ensure that those transformations
+preserve the invariants of a safe input graph.
 
 The required invariants include:
 
@@ -224,9 +230,18 @@ The required invariants include:
     size_t len, ErrorReporter* error_reporter)`, implemented in
     `tflite/core/tools/verifier.cc`;
 *   Application specific operator type inference and compatibility checks;
+*   agreement between every statically derivable output shape and its declared
+    shape;
 *   Application specific rank, layout, data type, quantization, constant-buffer,
     external-weight, and helper-operator constraints. For example, the rank of
     each tensor shape is \<=6.
+
+When semantic validation, rather than approved generator provenance, establishes
+these invariants, it must run in a non-mutating validation mode. The strict
+security path must reject an unsupported operator or an inability to infer any
+output shape declared static; it must not treat the absence of an inferrer as
+successful validation. Models with genuinely dynamic shapes remain subject to
+the runtime requirements below.
 
 The tflite::Verify() function should do overflow-safe validation of every model
 field that identifies data stored outside the FlatBuffer. In particular, the
@@ -237,9 +252,13 @@ are not needed for most TFLite use cases that only load trusted models, the
 validations should be done in the TFLite model verifier instead of the core
 CompiledModel API and Interpreter API.
 
-We assume the output tensor types of each TFLite node in a model graph are
-valid. Today tflite::Verify() does not do type inference check, which is
-expected to be done during WebNN to TFLite lowering.
+We assume the output tensor types and declared static output shapes of each
+TFLite node in a model graph are valid. This guarantee comes from the approved
+generator or mandatory semantic validation described above, not from
+`tflite::Verify()`. Today `tflite::Verify()` does not perform type or shape
+inference. WebNN to TFLite lowering may establish the guarantee when that
+lowering is part of the trusted computing base. Otherwise, the secure ingress
+path must invoke LiteRT semantic type and shape validation.
 
 We assume that the ranks of all tensor shapes are known at model loading time.
 Currently tflite::Verify() does not do tensor rank check. Since LiteRT’s GPU
@@ -249,26 +268,29 @@ during the WebNN to TFLite lowering process.
 Therefore, The security responsibility is divided by where an invariant can be
 established:
 
-*   The WebNN integration must invoke the required ingress validation and
-    prevent the model allocation from being modified afterward.
+*   The WebNN integration must use the approved lowering path or invoke the
+    required semantic ingress validation, and it must prevent the model
+    allocation from being modified afterward.
 *   tflite::Verify(...) must validate FlatBuffer integrity, schema version,
-    basic graph consistency, tensor validity, and every static model-wide
-    invariant that can be established from the serialized model and the complete
-    allocation size. This includes all external-data ranges. It should also
-    cover op-specific checks that are not backend specific. For example, in a
-    grouped convolution, both the number of input channels and the number of
-    output channels must be exactly divisible by the number of groups.
-    tflite::Verify(...) should do this check if the tensor shapes are statically
-    known.
+    basic graph consistency, tensor validity, and static model-wide invariants
+    that do not require semantic operator type or shape inference. This includes
+    all external-data ranges. It does not establish that an operator's declared
+    output shape agrees with the shape implied by its inputs and options.
+*   The approved generator or mandatory LiteRT semantic validator must establish
+    backend-independent, operator-specific invariants that are statically
+    knowable. For example, it must ensure that declared output shapes agree with
+    canonical shape inference. In a grouped convolution, both the number of
+    input channels and the number of output channels must be exactly divisible
+    by the number of groups when those dimensions are statically known.
 *   Framework and kernel code must validate op-specific relationships, derived
     shapes and allocation sizes, dynamic shapes, runtime parameter values, and
-    other invariants that cannot be established by the global verifier.
+    other invariants that cannot be established at semantic ingress.
 
-Code consuming a successfully verified, immutable model may rely on the static
-model-wide invariants guaranteed by the verifier and does not need to duplicate
-those checks at each point of use. An API that constructs an interpreter from an
-unverified model is outside the untrusted-model security boundary unless it
-performs equivalent ingress validation itself.
+Code consuming a model that successfully passed the required ingress path and
+remains immutable may rely on the static invariants guaranteed by that path and
+does not need to duplicate those checks at each point of use. An API that
+constructs an interpreter from a model without approved generator provenance or
+equivalent ingress validation is outside the untrusted-model security boundary.
 
 The WebNN-specific type-inference check is part of the intended design, but it
 may not be fully implemented yet. For example, the intended ingress validation
@@ -334,7 +356,7 @@ invariants that cannot be established during ingress validation. Invariants
 provided during WebNN build and dispatch do not allow kernel code to execute
 unchecked arithmetic on these parameters. On the other hand, for immutable
 models, the runtime can depend on the static, serialized invariants already
-verified by the mandatory verifier.
+established by the required secure ingress path.
 
 ### Out of scope
 
@@ -465,19 +487,24 @@ TFLITE\_NO\_SANITIZE\_INTEGER\_OVERFLOW). A sanitizer finding in tensor-value
 arithmetic should be triaged as correctness or sanitizer-noise unless the value
 can influence memory access, allocation, loop bounds, or control flow.
 
-For statically shaped graphs, the global verifier can check tensor ranks,
-dimensions, element counts, and byte lengths once at model ingress. Per-op
-kernels should not duplicate those exact checks when they consume
-already-validated tensor metadata. Add a duplicate per-op check only when a
-fuzzing test or unit test demonstrates that the global verifier does not cover
-that path. Per-op or shared runtime checks are still required for dynamic
-shapes, shape tensors, output shapes computed by an op, and any intermediate
-arithmetic that transforms validated metadata into new allocation, indexing, or
-loop-bound values.
+For statically shaped graphs, the approved generator or mandatory semantic
+ingress validator can establish tensor ranks, dimensions, element counts, and
+byte lengths once. Per-op kernels should not duplicate those exact checks when
+they consume metadata already validated by the secure ingress path. Add a
+duplicate per-op check only when a fuzzing test or unit test demonstrates that
+the required ingress path does not cover that invariant. Per-op or shared
+runtime checks are still required for dynamic shapes, shape tensors, output
+shapes computed from runtime values, and any intermediate arithmetic that
+transforms validated metadata into new allocation, indexing, or loop-bound
+values.
 
-Fuzzers that test this boundary may generate TFLite models directly and use
-`tflite::Verify(...)` as the reference implementation for the model-level global
-checks; they do not need to go through the converter or WebNN lowering path.
+Fuzzers that test the post-ingress execution boundary may generate TFLite models
+directly, but they must produce canonical declared static shapes or invoke the
+same strict semantic validator as the secure ingress path. Calling
+`tflite::Verify(...)` alone is not sufficient to establish operator type and
+shape inference invariants. Separate model-loading and semantic-validation
+fuzzers should exercise inconsistent declared shapes and other malformed model
+metadata and require clean rejection.
 
 ## What can go wrong?
 
@@ -856,9 +883,12 @@ fuzztest::ElementOf\<KernelType\> domains sweeping all registered variants
 (Register\_REF, Register\_GENERIC\_OPT, Register\_MULTITHREADED\_OPT, and
 XNNPACK) in the same fuzz target.
 
-Fuzz inputs should include both valid and invalid models. Invalid models should
-return a clean error rather than crash, trigger sanitizer findings, or rely on
-undefined behavior.
+Fuzz campaigns should cover both valid and invalid models, but keep the tested
+contracts distinct. Kernel-execution fuzzers targeting the post-ingress boundary
+should generate models that satisfy the required static semantic invariants.
+Model-loading and semantic-validation fuzzers should exercise invalid models,
+which must return a clean error rather than crash, trigger sanitizer findings,
+or rely on undefined behavior.
 
 Treat the following fuzzer results as bugs:
 
