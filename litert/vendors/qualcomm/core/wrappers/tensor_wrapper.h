@@ -89,6 +89,11 @@ class TensorWrapper final {
 
   QuantizeParamsWrapperVariant& GetQuantParams() { return quantize_params_; };
 
+  void SetQuantParams(const QuantizeParamsWrapperVariant& quantize_params) {
+    quantize_params_ = quantize_params;
+    UpdateQnnQuantParams();
+  }
+
   std::uint32_t GetRank() const;
 
   size_t GetTensorBytes() const;

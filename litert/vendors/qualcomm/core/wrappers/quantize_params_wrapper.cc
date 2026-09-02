@@ -80,6 +80,26 @@ AxisScaleOffsetQuantizeParamsWrapper::AxisScaleOffsetQuantizeParamsWrapper(
 }
 
 AxisScaleOffsetQuantizeParamsWrapper::AxisScaleOffsetQuantizeParamsWrapper(
+    std::int32_t axis, std::uint32_t num_scale_offsets, float scale,
+    std::int32_t zero_point)
+    : scale_offsets_(num_scale_offsets) {
+  const auto offset = -zero_point;
+  for (auto& scale_offset : scale_offsets_) {
+    scale_offset.scale = scale;
+    scale_offset.offset = offset;
+  }
+
+  qnn_quantize_param_.encodingDefinition = QNN_DEFINITION_DEFINED;
+  qnn_quantize_param_.quantizationEncoding =
+      QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET;
+  qnn_quantize_param_.axisScaleOffsetEncoding.axis = axis;
+  qnn_quantize_param_.axisScaleOffsetEncoding.numScaleOffsets =
+      scale_offsets_.size();
+  qnn_quantize_param_.axisScaleOffsetEncoding.scaleOffset =
+      scale_offsets_.data();
+}
+
+AxisScaleOffsetQuantizeParamsWrapper::AxisScaleOffsetQuantizeParamsWrapper(
     const Qnn_AxisScaleOffset_t& axis_scale_offset) {
   scale_offsets_.resize(axis_scale_offset.numScaleOffsets);
   for (size_t i = 0; i < scale_offsets_.size(); ++i) {

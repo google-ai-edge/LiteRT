@@ -15,7 +15,7 @@ namespace qnn {
 
 std::vector<OpWrapper> BuildFullyConnectedOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs, const bool keep_num_dims,
+    const std::vector<TensorWrapperRef>& outputs, bool keep_num_dims,
     bool use_int64_bias_as_int32, ::qnn::SdkVersion sdk_version);
 
 }  // namespace qnn
