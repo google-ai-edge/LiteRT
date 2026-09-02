@@ -806,7 +806,6 @@ cc_library(
     ],
     deps = [
         ":kernel_api",
-        ":macros",
         "//tflite/core:cc_api_experimental",
         "//tflite/core:framework_stable",
         "//tflite/core/c:common",

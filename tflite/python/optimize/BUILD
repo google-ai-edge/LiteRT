@@ -32,9 +32,11 @@ cc_library(
     deps = [
         "//tflite:framework",
         "//tflite:shared_library",
+        "//tflite:string",
         "//tflite:string_util",
         "//tflite/converter:offset_buffer",
         "//tflite/converter/schema:schema_fbs_with_mutable",
+        "//tflite/core:cc_api_stable",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
@@ -48,7 +50,8 @@ cc_library(
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/types:optional",
+        "@flatbuffers//include/flatbuffers:flatbuffer_builder",
+        "@org_tensorflow//third_party/py/numpy:headers",
         "@xla//third_party/python_runtime:headers",  # buildcleaner: keep
     ],
 )
