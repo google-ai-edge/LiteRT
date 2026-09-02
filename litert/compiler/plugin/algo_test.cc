@@ -649,10 +649,10 @@ TEST(TestCompositeInlining, inlineSimpleComposite) {
   auto& decomp_subgraph = model.Subgraph(1);
   auto& decomp_op = main_subgraph.Op(0);
   EXPECT_EQ(main_subgraph.Ops().size(), 1);
-  EXPECT_EQ(decomp_subgraph.Ops().size(), 8);
+  EXPECT_EQ(decomp_subgraph.Ops().size(), 7);
 
   EXPECT_TRUE(InlineSubgraph(model, decomp_op, &decomp_subgraph).HasValue());
-  EXPECT_EQ(model.MainSubgraph()->Ops().size(), 8);
+  EXPECT_EQ(model.MainSubgraph()->Ops().size(), 7);
   EXPECT_EQ(model.NumSubgraphs(), 2);
 
   // Check the topology of the main subgraph and decomp subgraph. Since there is
@@ -708,11 +708,11 @@ TEST(TestCompositeInlining, InlineSimpleComposite2) {
   auto& decomp_subgraph = model.Subgraph(1);
   auto& decomp_op = main_subgraph.Op(1);
   EXPECT_EQ(main_subgraph.Ops().size(), 3);
-  EXPECT_EQ(decomp_subgraph.Ops().size(), 8);
+  EXPECT_EQ(decomp_subgraph.Ops().size(), 7);
 
   EXPECT_TRUE(InlineSubgraph(model, decomp_op, &decomp_subgraph).HasValue());
-  EXPECT_EQ(model.MainSubgraph()->Ops().size(), 10);
-  EXPECT_EQ(model.MainSubgraph()->Tensors().size(), 16);
+  EXPECT_EQ(model.MainSubgraph()->Ops().size(), 9);
+  EXPECT_EQ(model.MainSubgraph()->Tensors().size(), 14);
   EXPECT_EQ(model.NumSubgraphs(), 2);
   auto serialized = SerializeModel(std::move(model));
   EXPECT_TRUE(serialized);
@@ -727,11 +727,11 @@ TEST(TestCompositeInlining, inlineSimpleComposite3) {
   auto& decomp_subgraph = model.Subgraph(1);
   auto& decomp_op = main_subgraph.Op(1);
   EXPECT_EQ(main_subgraph.Ops().size(), 2);
-  EXPECT_EQ(decomp_subgraph.Ops().size(), 8);
-  EXPECT_EQ(decomp_subgraph.Tensors().size(), 14);
+  EXPECT_EQ(decomp_subgraph.Ops().size(), 7);
+  EXPECT_EQ(decomp_subgraph.Tensors().size(), 12);
 
   EXPECT_TRUE(InlineSubgraph(model, decomp_op, &decomp_subgraph).HasValue());
-  EXPECT_EQ(model.MainSubgraph()->Ops().size(), 9);
+  EXPECT_EQ(model.MainSubgraph()->Ops().size(), 8);
   EXPECT_EQ(model.NumSubgraphs(), 2);
   auto serialized = SerializeModel(std::move(model));
   EXPECT_TRUE(serialized);
