@@ -131,6 +131,10 @@ cc_library(
 cc_test(
     name = "ml_drift_delegate_create_test",
     srcs = ["ml_drift_delegate_create_test.cc"],
+    tags = [
+        "no_oss",
+        "requires-gpu-nvidia",
+    ],
     deps = [
         ":ml_drift_delegate_create",
         "//litert/c:litert_any",
