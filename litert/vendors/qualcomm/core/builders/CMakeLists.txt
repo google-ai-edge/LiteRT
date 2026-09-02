@@ -25,6 +25,7 @@ target_sources(qnn_builders
         dynamic_update_slice_op_builder.cc
         elementwise_op_builder.cc
         embedding_lookup_op_builder.cc
+        expand_dims_op_builder.cc
         fully_connected_op_builder.cc
         gather_op_builder.cc
         gathernd_op_builder.cc

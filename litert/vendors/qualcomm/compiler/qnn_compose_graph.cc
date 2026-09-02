@@ -65,6 +65,7 @@
 #include "litert/vendors/qualcomm/core/builders/dynamic_update_slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/embedding_lookup_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/expand_dims_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/fully_connected_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gather_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gathernd_op_builder.h"
@@ -555,6 +556,7 @@ REGISTER_SIMPLE_OP_BUILDER(BuildSignOp, BuildElementwiseSignOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildScatterNdOp, BuildScatterNdOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildBatchToSpaceNdOp, BuildBatchToSpaceNdOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildSpaceToBatchNdOp, BuildSpaceToBatchNdOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildExpandDimsOp, BuildExpandDimsOp)
 
 #undef REGISTER_SIMPLE_OP_BUILDER
 
@@ -1586,6 +1588,7 @@ GetOpBuilders() {
       Adapt<BuildDynamicUpdateSliceOp>;
   builders[kLiteRtOpCodeTflRelu0To1] = Adapt<BuildRelu0To1Op>;
   builders[kLiteRtOpCodeTflSign] = Adapt<BuildSignOp>;
+  builders[kLiteRtOpCodeTflExpandDims] = Adapt<BuildExpandDimsOp>;
   builders[kLiteRtOpCodeShloComposite] = Adapt<BuildShloCompositeOp>;
   return builders;
 }

@@ -277,6 +277,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:dynamic_update_slice_op_builder",
         "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
         "//litert/vendors/qualcomm/core/builders:embedding_lookup_op_builder",
+        "//litert/vendors/qualcomm/core/builders:expand_dims_op_builder",
         "//litert/vendors/qualcomm/core/builders:fully_connected_op_builder",
         "//litert/vendors/qualcomm/core/builders:gather_op_builder",
         "//litert/vendors/qualcomm/core/builders:gathernd_op_builder",
