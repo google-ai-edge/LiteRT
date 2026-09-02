@@ -441,6 +441,10 @@ ABSL_FLAG(uint32_t, qualcomm_vtcm_size, 0,
           "The vtcm size of the target device. If this option is set to 0, the "
           "max size of vtcm size will be used.");
 
+ABSL_FLAG(uint32_t, qualcomm_htp_device_id, 0,
+          "The HTP device id to target for compile and dispatch. Defaults to 0 "
+          "(the primary device).");
+
 ABSL_FLAG(uint32_t, qualcomm_num_hvx_thread, 0,
           "The number of hvx threads for the target device. If this option is "
           "set to 0, the max number of hvx threads will be used.");
@@ -875,6 +879,9 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto vtcm_size = absl::GetFlag(FLAGS_qualcomm_vtcm_size);
   opts.SetVtcmSize(vtcm_size);
+
+  const auto htp_device_id = absl::GetFlag(FLAGS_qualcomm_htp_device_id);
+  opts.SetHtpDeviceId(htp_device_id);
 
   const auto num_hvx_threads = absl::GetFlag(FLAGS_qualcomm_num_hvx_thread);
   opts.SetNumHvxThreads(num_hvx_threads);
