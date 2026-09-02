@@ -49,6 +49,8 @@ class TensorPool {
       const QuantizeParamsWrapperVariant& quant_params,
       const std::vector<std::uint32_t>& dimensions, std::string_view suffix);
 
+  TensorWrapper& CreateNullTensor();
+
   TensorWrapper& CreateStaticTensor(
       Qnn_DataType_t data_type,
       const QuantizeParamsWrapperVariant& quant_params,

@@ -1688,6 +1688,12 @@ LiteRtStatus AddTensorToQnn(
   if (created_tensors.count(&tensor)) {
     return kLiteRtStatusOk;
   }
+
+  if (tensor.IsTensorNull()) {
+    created_tensors.emplace(&tensor);
+    return kLiteRtStatusOk;
+  }
+
   auto error =
       qnn_api->tensorCreateGraphTensor(graph_handle, &(tensor.GetQnnTensor()));
   if (QNN_SUCCESS == error) {
