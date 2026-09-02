@@ -426,8 +426,7 @@ litert_integration_test(
 #     auto_deps = [
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test",
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_qualcomm",
-#         # TODO: b/450621174 - Reenable flaky device tests
-#         # "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor",
+#         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor",
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_mediatek",
 #     ],
 #     integration_test = guitar.IntegrationTest(
@@ -441,11 +440,10 @@ litert_integration_test(
 #             litert_qualcomm_mh_guitar_test(
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_qualcomm"],
 #             ),
-#             # TODO: b/450621174 - Reenable flaky device tests
-#             # litert_pixel_9_mh_guitar_test(
-#             #     dimension_model = "pixel 9",
-#             #     targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor"],
-#             # ),
+#             litert_pixel_9_mh_guitar_test(
+#                 dimension_model = "pixel 9",
+#                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor"],
+#             ),
 #             litert_mediatek_mh_guitar_test(
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_mediatek"],
 #             ),
