@@ -43,6 +43,10 @@ LiteRtStatus LiteRtGetMetric(LiteRtMetrics metrics, int metric_index,
 // Destroy the metrics object.
 void LiteRtDestroyMetrics(LiteRtMetrics metrics);
 
+// Append a new metric to the metrics object.
+LiteRtStatus LiteRtAppendMetric(LiteRtMetrics metrics,
+                                const LiteRtMetric* metric);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

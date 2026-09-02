@@ -52,6 +52,16 @@ LiteRtStatus LiteRtGetMetric(LiteRtMetrics metrics, int metric_index,
 
 void LiteRtDestroyMetrics(LiteRtMetrics metrics) { delete metrics; }
 
+LiteRtStatus LiteRtAppendMetric(LiteRtMetrics metrics,
+                                const LiteRtMetric* metric) {
+  if (!metrics || !metric || !metric->name) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  metrics->metrics.push_back(
+      LiteRtMetricsT::Metric{.name = metric->name, .value = metric->value});
+  return kLiteRtStatusOk;
+}
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

@@ -136,6 +136,14 @@ class GpuBackendWebGpu : public GpuBackend {
   CreateBuffer2TensorConverter(
       const ::ml_drift::BufferDescriptor& src_desc,
       const ::ml_drift::TensorDescriptor& dst_desc) override;
+  absl::StatusOr<uint64_t>
+  GetSizeOfMemoryAllocatedForIntermediateTensors() const override {
+    return memory_manager_.GetSizeOfMemoryAllocatedForIntermediateTensors();
+  }
+  absl::StatusOr<uint64_t>
+  GetSizeOfMemoryAllocatedForConstantTensors() const override {
+    return memory_manager_.GetSizeOfMemoryAllocatedForConstTensors();
+  }
 
   // Underlying WebGPU execution environment.
   ::ml_drift::webgpu::ExecutionEnvironment& wgpu_env() { return *env_; }

@@ -141,6 +141,7 @@ cc_test(
     name = "litert_metrics_test",
     srcs = ["litert_metrics_test.cc"],
     deps = [
+        ":litert_any",
         ":litert_common",
         ":litert_metrics",
         "@com_google_googletest//:gtest_main",

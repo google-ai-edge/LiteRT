@@ -25,6 +25,7 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_event_type.h"
 #include "litert/c/litert_gl_types.h"
+#include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -183,6 +184,11 @@ typedef struct LiteRtRuntimeContext {
   // Returns the hardware accelerator set configured in the given options.
   LiteRtStatus (*get_options_hardware_accelerators)(
       LiteRtOptions options, LiteRtHwAcceleratorSet* hardware_accelerators);
+
+  // Added in version 1.2.0
+  // Append a metric to the metrics object.
+  LiteRtStatus (*append_metric)(LiteRtMetrics metrics,
+                                const LiteRtMetric* metric);
 } LiteRtRuntimeContext;
 // LINT.ThenChange(./litert_runtime_context.cc:runtime_context_version)
 
@@ -192,7 +198,7 @@ typedef struct LiteRtRuntimeContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtRuntimeContext) == 408,
+static_assert(sizeof(LiteRtRuntimeContext) == 416,
               "LiteRtRuntimeContext size mismatch");
 static_assert(offsetof(LiteRtRuntimeContext, abi_header) == 0,
               "LiteRtRuntimeContext abi_header offset mismatch");
@@ -339,6 +345,8 @@ static_assert(offsetof(LiteRtRuntimeContext,
 static_assert(
     offsetof(LiteRtRuntimeContext, get_options_hardware_accelerators) == 400,
     "LiteRtRuntimeContext get_options_hardware_accelerators offset mismatch");
+static_assert(offsetof(LiteRtRuntimeContext, append_metric) == 408,
+              "LiteRtRuntimeContext append_metric offset mismatch");
 #endif  // __cplusplus
 
 LiteRtRuntimeContext* LrtGetRuntimeContext();

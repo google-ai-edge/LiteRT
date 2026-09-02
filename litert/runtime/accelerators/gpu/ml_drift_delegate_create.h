@@ -38,6 +38,16 @@ LiteRtStatus CreateDelegate(
 LrtGpuOptions* GetGpuOptionsPayload(LiteRtRuntimeContext* runtime_context,
                                     LiteRtOptions options);
 
+// Starts collection of HW-specific metrics for ML Drift GPU delegate.
+LiteRtStatus StartMetricsCollection(LiteRtRuntimeContext* runtime_context,
+                                    LiteRtDelegateWrapper delegate_wrapper,
+                                    int detail_level);
+
+// Stops collection of HW-specific metrics for ML Drift GPU delegate.
+LiteRtStatus StopMetricsCollection(LiteRtRuntimeContext* runtime_context,
+                                   LiteRtDelegateWrapper delegate_wrapper,
+                                   LiteRtMetrics metrics);
+
 }  // namespace litert::ml_drift
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_ACCELERATORS_GPU_ML_DRIFT_DELEGATE_CREATE_H_

@@ -117,6 +117,8 @@ extern "C" const LiteRtAcceleratorDef LiteRtAcceleratorImpl = {
     .is_tflite_delegate_responsible_for_jit_compilation =
         GpuVulkanAccelerator::IsTfLiteDelegateResponsibleForJitCompilation,
     .create_delegate = GpuVulkanAccelerator::CreateDelegate,
+    .start_metrics_collection = litert::ml_drift::StartMetricsCollection,
+    .stop_metrics_collection = litert::ml_drift::StopMetricsCollection,
     .buffer_handlers =
         {
             .create_func = LiteRtCreateVulkanMemory,

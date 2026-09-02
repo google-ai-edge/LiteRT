@@ -125,6 +125,14 @@ class GpuBackendOpenCl : public GpuBackend {
   CreateBuffer2TensorConverter(
       const ::ml_drift::BufferDescriptor& src_desc,
       const ::ml_drift::TensorDescriptor& dst_desc) override;
+  absl::StatusOr<uint64_t>
+  GetSizeOfMemoryAllocatedForIntermediateTensors() const override {
+    return memory_manager_.GetSizeOfMemoryAllocatedForIntermediateTensors();
+  }
+  absl::StatusOr<uint64_t>
+  GetSizeOfMemoryAllocatedForConstantTensors() const override {
+    return memory_manager_.GetConstantTensorsSize();
+  }
 
   // Underlying OpenCL environment.
   ::ml_drift::cl::Environment* cl_env() const { return env_; }

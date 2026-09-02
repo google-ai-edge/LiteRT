@@ -130,6 +130,16 @@ class GpuBackendVulkan : public GpuBackend {
   CreateBuffer2TensorConverter(
       const ::ml_drift::BufferDescriptor& src_desc,
       const ::ml_drift::TensorDescriptor& dst_desc) override;
+  absl::StatusOr<uint64_t>
+  GetSizeOfMemoryAllocatedForIntermediateTensors() const override {
+    return absl::UnimplementedError(
+        "GetSizeOfMemoryAllocatedForIntermediateTensors is not implemented.");
+  }
+  absl::StatusOr<uint64_t>
+  GetSizeOfMemoryAllocatedForConstantTensors() const override {
+    return absl::UnimplementedError(
+        "GetSizeOfMemoryAllocatedForConstantTensors is not implemented.");
+  }
 
   // Underlying shared Vulkan environment.
   SharedVulkanEnv& vk_env() { return *env_; }

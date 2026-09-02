@@ -20,6 +20,7 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_event.h"
+#include "litert/c/litert_metrics.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -33,7 +34,7 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
               .struct_size = sizeof(LiteRtRuntimeContext),
               // LINT.IfChange(runtime_context_version)
               .major_version = 1,
-              .minor_version = 1,
+              .minor_version = 2,
               // LINT.ThenChange(./litert_runtime_context.h:runtime_context_table)
               .reserved = 0,
           },
@@ -102,6 +103,7 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
       .external_litert_buffer_context_get_run_options =
           LiteRtExternalLiteRtBufferContextGetRunOptions,
       .get_options_hardware_accelerators = LiteRtGetOptionsHardwareAccelerators,
+      .append_metric = LiteRtAppendMetric,
   };
   return &context;
 }

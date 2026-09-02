@@ -25,6 +25,7 @@ EXPORTS
   LiteRtAddExternalTensorBinding
   LiteRtAddModelMetadata
   LiteRtAddOpaqueOptions
+  LiteRtAppendMetric
   LiteRtAppendOpaqueOptions
   LiteRtBuilderBuildAddOpOption
   LiteRtBuilderBuildAveragePool2dOpOption

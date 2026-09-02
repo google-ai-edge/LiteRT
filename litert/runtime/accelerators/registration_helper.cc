@@ -64,6 +64,15 @@ LiteRtStatus RegisterAcceleratorFromDef(
           accelerator,
           accelerator_def->is_tflite_delegate_responsible_for_jit_compilation));
 
+  if (accelerator_def->start_metrics_collection != nullptr) {
+    LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorStartMetricsCollection(
+        accelerator, accelerator_def->start_metrics_collection));
+  }
+  if (accelerator_def->stop_metrics_collection != nullptr) {
+    LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorStopMetricsCollection(
+        accelerator, accelerator_def->stop_metrics_collection));
+  }
+
   LITERT_RETURN_IF_ERROR(
       LiteRtRegisterAccelerator(env, accelerator, nullptr, nullptr));
 

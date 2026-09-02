@@ -397,6 +397,16 @@ GpuBackendMetal::CreateBuffer2TensorConverter(const ::ml_drift::BufferDescriptor
   return std::make_unique<Buffer2TensorConverterMetal>(this, std::move(converter));
 }
 
+absl::StatusOr<uint64_t>
+GpuBackendMetal::GetSizeOfMemoryAllocatedForIntermediateTensors() const {
+  return memory_manager_.GetIntermediateTensorsSize();
+}
+
+absl::StatusOr<uint64_t>
+GpuBackendMetal::GetSizeOfMemoryAllocatedForConstantTensors() const {
+  return memory_manager_.GetConstantTensorsSize();
+}
+
 GpuInferenceContextMetal::GpuInferenceContextMetal(GpuBackendMetal* backend,
                                                    ::ml_drift::metal::MemoryManager* memory_manager)
     : backend_(backend),

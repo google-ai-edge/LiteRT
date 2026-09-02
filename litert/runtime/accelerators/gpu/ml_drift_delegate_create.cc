@@ -14,17 +14,24 @@
 
 #include "litert/runtime/accelerators/gpu/ml_drift_delegate_create.h"
 
+#include <cstdint>
 #include <memory>
 #include <utility>
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/internal/litert_runtime_context.h"
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_metrics.h"
 #include "litert/c/options/litert_gpu_options.h"
+#include "litert/cc/litert_macros.h"
+#include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/delegate_options.h"
 #include "ml_drift_delegate/delegate/delegate_types.h"
+#include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/precision.h"
+#include "tflite/c/c_api_opaque.h"
 
 namespace litert::ml_drift {
 namespace {
@@ -282,6 +289,58 @@ LiteRtStatus CreateDelegate(
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus StartMetricsCollection(LiteRtRuntimeContext* runtime_context,
+                                    LiteRtDelegateWrapper delegate_wrapper,
+                                    int detail_level) {
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus StopMetricsCollection(LiteRtRuntimeContext* runtime_context,
+                                   LiteRtDelegateWrapper delegate_wrapper,
+                                   LiteRtMetrics metrics) {
+  if (delegate_wrapper == nullptr || metrics == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  TfLiteOpaqueDelegate* opaque_delegate = nullptr;
+  LITERT_RETURN_IF_ERROR(
+      runtime_context->unwrap_delegate(delegate_wrapper, &opaque_delegate));
+  auto* delegate_data =
+      reinterpret_cast<litert::ml_drift::MlDriftDelegateData*>(
+          TfLiteOpaqueDelegateGetData(opaque_delegate));
+  if (!delegate_data) return kLiteRtStatusOk;
+
+  auto* backend = delegate_data->shared_backend
+                      ? delegate_data->shared_backend.get()
+                      : delegate_data->backend.get();
+  if (!backend) return kLiteRtStatusOk;
+
+  auto intermediate_memory =
+      backend->GetSizeOfMemoryAllocatedForIntermediateTensors();
+  if (intermediate_memory.ok()) {
+    LiteRtMetric metric = {
+        .name = "gpu_intermediate_memory_bytes",
+        .value = LiteRtAny{
+            .type = kLiteRtAnyTypeInt,
+            .int_value = static_cast<int64_t>(*intermediate_memory),
+        },
+    };
+    LITERT_RETURN_IF_ERROR(runtime_context->append_metric(metrics, &metric));
+  }
+
+  auto constant_memory = backend->GetSizeOfMemoryAllocatedForConstantTensors();
+  if (constant_memory.ok()) {
+    LiteRtMetric metric = {
+        .name = "gpu_constant_memory_bytes",
+        .value = LiteRtAny{
+            .type = kLiteRtAnyTypeInt,
+            .int_value = static_cast<int64_t>(*constant_memory),
+        },
+    };
+    LITERT_RETURN_IF_ERROR(runtime_context->append_metric(metrics, &metric));
+  }
   return kLiteRtStatusOk;
 }
 

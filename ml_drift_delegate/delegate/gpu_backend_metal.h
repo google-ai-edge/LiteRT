@@ -139,6 +139,10 @@ class GpuBackendMetal : public GpuBackend {
   CreateBuffer2TensorConverter(
       const ::ml_drift::BufferDescriptor& src_desc,
       const ::ml_drift::TensorDescriptor& dst_desc) override;
+  absl::StatusOr<uint64_t> GetSizeOfMemoryAllocatedForIntermediateTensors()
+      const override;
+  absl::StatusOr<uint64_t> GetSizeOfMemoryAllocatedForConstantTensors()
+      const override;
 
   void SetResidencyRuntimeEnabled(bool enabled);
 
