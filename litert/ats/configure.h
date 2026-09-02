@@ -74,6 +74,9 @@ ABSL_DECLARE_FLAG(std::vector<std::string>, extra_models);
 // Number of iterations per test, each one will have different tensor data.
 ABSL_DECLARE_FLAG(size_t, iters_per_test);
 
+// Number of warmup runs before benchmark timing. If -1, auto-determined.
+ABSL_DECLARE_FLAG(int, warmup_runs);
+
 // Maximum time in milliseconds to run each test.
 ABSL_DECLARE_FLAG(int64_t, max_ms_per_test);
 
@@ -185,6 +188,17 @@ class AtsConf {
   // Number of iterations per test, each one will have different tensor data.
   size_t ItersPerTest() const { return iters_per_test_; }
 
+  // Number of warmup runs before benchmark timing.
+  int WarmupRuns() const {
+    if (warmup_runs_ >= 0) {
+      return warmup_runs_;
+    }
+    if (IsGpu() && iters_per_test_ > 1) {
+      return 3;
+    }
+    return 0;
+  }
+
   // Maximum time in milliseconds to run each test.
   std::chrono::milliseconds MaxMsPerTest() const { return max_ms_per_test_; }
 
@@ -278,7 +292,7 @@ class AtsConf {
                    std::vector<std::regex> pos_re,
                    std::vector<std::string> extra_models,
                    std::optional<int> data_seed, size_t iters_per_test,
-                   std::chrono::milliseconds max_ms_per_test,
+                   int warmup_runs, std::chrono::milliseconds max_ms_per_test,
                    bool fail_on_timeout, bool dump_report, std::string csv,
                    bool compile_mode, std::string models_out, int32_t limit,
                    std::optional<internal::CompilerPlugin> plugin,
@@ -296,6 +310,7 @@ class AtsConf {
         extra_models_(std::move(extra_models)),
         data_seed_(data_seed),
         iters_per_test_(iters_per_test),
+        warmup_runs_(warmup_runs),
         max_ms_per_test_(std::move(max_ms_per_test)),
         fail_on_timeout_(fail_on_timeout),
         dump_report_(dump_report),
@@ -326,6 +341,7 @@ class AtsConf {
   std::vector<std::string> extra_models_;
   std::optional<int> data_seed_;
   size_t iters_per_test_;
+  int warmup_runs_;
   std::chrono::milliseconds max_ms_per_test_;
   bool fail_on_timeout_;
   bool dump_report_;

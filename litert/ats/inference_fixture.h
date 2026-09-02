@@ -15,6 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
 
+#include <sys/resource.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -29,6 +31,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -53,6 +56,27 @@ namespace litert::testing {
 
 using ::testing::RegisterTest;
 using ::testing::litert::MeanSquaredErrorLt;
+
+// Helper to rate-limit failure logging and prevent log bloat on large tensors.
+class FailureLimiter {
+ public:
+  explicit FailureLimiter(size_t max_logs = 5) : max_logs_(max_logs) {}
+
+  template <typename MsgGenerator>
+  void RecordFailure(MsgGenerator&& msg_gen) {
+    if (failures_logged_ < max_logs_) {
+      ADD_FAILURE() << msg_gen();
+      ++failures_logged_;
+    } else if (failures_logged_ == max_logs_) {
+      ADD_FAILURE() << "Additional element mismatches omitted...";
+      ++failures_logged_;
+    }
+  }
+
+ private:
+  size_t max_logs_;
+  size_t failures_logged_ = 0;
+};
 
 // Fixture for tests that test execution on a given graph.
 class AtsInferenceTest : public RngTest {
@@ -90,17 +114,30 @@ class AtsInferenceTest : public RngTest {
 
   void TestBody() override {
     auto device = this->TracedDevice(conf_.DataSeed());
-    LITERT_ASSERT_OK_AND_ASSIGN(auto exec, MakeExecutor());
+    LITERT_ASSERT_OK_AND_ASSIGN(exec_, MakeExecutor());
+    const int num_warmup = conf_.WarmupRuns();
+    if (num_warmup > 0) {
+      LITERT_ASSERT_OK_AND_ASSIGN(auto warmup_inputs, MakeInputs(device));
+      for (int w = 0; w < num_warmup; ++w) {
+        LITERT_ASSERT_OK(exec_->Run(warmup_inputs));
+      }
+    }
     for (auto _ : this->FuzzBlock(conf_.ItersPerTest(), conf_.MaxMsPerTest())) {
       LITERT_ASSERT_OK_AND_ASSIGN(auto inputs, MakeInputs(device));
       LITERT_ASSERT_OK_AND_ASSIGN(auto ref, Reference(inputs));
-      LITERT_ASSERT_OK_AND_ASSIGN(auto actual, Actual(inputs, exec.get()));
+      LITERT_ASSERT_OK_AND_ASSIGN(auto actual, Actual(inputs, exec_.get()));
       CheckOutputs(actual, ref);
     }
   }
 
   void TearDown() override {
     cap_.accelerator.SetFields(conf_);
+    if (exec_) {
+      if (auto metrics = exec_->GetMetrics(); metrics.HasValue()) {
+        cap_.memory.SetFields(*metrics);
+      }
+    }
+
     if (conf_.IsNpu() && !cap_.accelerator.soc_man.empty()) {
       auto stamp = GetBuildStamp(Graph());
       if (stamp) {
@@ -241,8 +278,14 @@ class AtsInferenceTest : public RngTest {
   void CheckExactOutputImpl(const BufferView<T>& actual,
                             const BufferView<T>& ref) {
     ASSERT_EQ(actual.data.size(), ref.data.size());
+    FailureLimiter limiter;
     for (size_t i = 0; i < actual.data.size(); ++i) {
-      EXPECT_EQ(actual.data[i], ref.data[i]) << "index=" << i;
+      if (actual.data[i] != ref.data[i]) {
+        limiter.RecordFailure([&] {
+          return absl::StrCat("index=", i, ", expected=", ref.data[i],
+                              ", actual=", actual.data[i]);
+        });
+      }
     }
     cap_.numerics.NewMse(MeanSquaredError(actual.data, ref.data));
   }
@@ -252,8 +295,15 @@ class AtsInferenceTest : public RngTest {
     const auto actual_bytes = actual.Span<uint8_t>();
     const auto ref_bytes = ref.Span<uint8_t>();
     ASSERT_EQ(actual_bytes.size(), ref_bytes.size());
+    FailureLimiter limiter;
     for (size_t i = 0; i < actual_bytes.size(); ++i) {
-      EXPECT_EQ(actual_bytes[i], ref_bytes[i]) << "byte=" << i;
+      if (actual_bytes[i] != ref_bytes[i]) {
+        limiter.RecordFailure([&] {
+          return absl::StrCat("byte=", i, ", expected=",
+                              static_cast<int>(ref_bytes[i]), ", actual=",
+                              static_cast<int>(actual_bytes[i]));
+        });
+      }
     }
     cap_.numerics.NewMse(0.0);
   }
@@ -273,14 +323,19 @@ class AtsInferenceTest : public RngTest {
         spec.relative_tolerance,
         10.0 * eps * std::sqrt(static_cast<double>(spec.accumulation_depth)));
     const double atol = std::max(spec.absolute_tolerance, 10.0 * eps);
+    FailureLimiter limiter;
     for (size_t i = 0; i < actual.data.size(); ++i) {
       const double expected = static_cast<double>(ref.data[i]);
-      const double diff =
-          std::abs(static_cast<double>(actual.data[i]) - expected);
+      const double actual_val = static_cast<double>(actual.data[i]);
+      const double diff = std::abs(actual_val - expected);
       const double tol = atol + rtol * std::abs(expected);
-      EXPECT_LE(diff, tol) << "index=" << i << ", expected=" << expected
-                           << ", actual=" << static_cast<double>(actual.data[i])
-                           << ", rtol=" << rtol << ", atol=" << atol;
+      if (diff > tol) {
+        limiter.RecordFailure([&] {
+          return absl::StrCat("index=", i, ", expected=", expected,
+                              ", actual=", actual_val, ", rtol=", rtol,
+                              ", atol=", atol);
+        });
+      }
     }
     cap_.numerics.NewMse(MeanSquaredError(actual.data, ref.data));
   }
@@ -299,14 +354,18 @@ class AtsInferenceTest : public RngTest {
             : static_cast<double>(std::numeric_limits<T>::epsilon());
     const double rtol = std::max(spec.relative_tolerance, 10.0 * eps);
     const double atol = std::max(spec.absolute_tolerance, 10.0 * eps);
+    FailureLimiter limiter;
     for (size_t i = 0; i < actual.data.size(); ++i) {
       const double expected = static_cast<double>(ref.data[i]);
-      const double diff =
-          std::abs(static_cast<double>(actual.data[i]) - expected);
+      const double actual_val = static_cast<double>(actual.data[i]);
+      const double diff = std::abs(actual_val - expected);
       const double tol = atol + rtol * std::abs(expected);
-      EXPECT_LE(diff, tol) << "index=" << i << ", expected=" << expected
-                           << ", actual="
-                           << static_cast<double>(actual.data[i]);
+      if (diff > tol) {
+        limiter.RecordFailure([&] {
+          return absl::StrCat("index=", i, ", expected=", expected,
+                              ", actual=", actual_val);
+        });
+      }
     }
     cap_.numerics.NewMse(MeanSquaredError(actual.data, ref.data));
   }
@@ -316,12 +375,17 @@ class AtsInferenceTest : public RngTest {
                                       const BufferView<T>& ref,
                                       int64_t bucket_tolerance) {
     ASSERT_EQ(actual.data.size(), ref.data.size());
+    FailureLimiter limiter;
     for (size_t i = 0; i < actual.data.size(); ++i) {
       const int64_t diff = std::llabs(static_cast<int64_t>(actual.data[i]) -
                                       static_cast<int64_t>(ref.data[i]));
-      EXPECT_LE(diff, bucket_tolerance)
-          << "index=" << i << ", expected=" << static_cast<int64_t>(ref.data[i])
-          << ", actual=" << static_cast<int64_t>(actual.data[i]);
+      if (diff > bucket_tolerance) {
+        limiter.RecordFailure([&] {
+          return absl::StrCat("index=", i, ", expected=",
+                              static_cast<int64_t>(ref.data[i]), ", actual=",
+                              static_cast<int64_t>(actual.data[i]));
+        });
+      }
     }
     cap_.numerics.NewMse(MeanSquaredError(actual.data, ref.data));
   }
@@ -410,6 +474,7 @@ class AtsInferenceTest : public RngTest {
   const AtsConf& conf_;
   TestNames names_;
   Capture::Entry& cap_;
+  CompiledModelExecutor::Ptr exec_ = nullptr;
 };
 
 }  // namespace litert::testing

@@ -112,6 +112,8 @@ class PrintableRow {
     CsvRowImpl(sink, std::make_index_sequence<sizeof...(Ps)>());
   }
 
+  bool IsEmpty() const { return Name().empty(); }
+
   virtual ~PrintableRow() = default;
 
  private:
@@ -165,6 +167,9 @@ class PrintableCollection {
         "");
     sink << absl::StreamFormat("%s\n\n", header);
     for (const auto& row : rows_) {
+      if (row.IsEmpty()) {
+        continue;
+      }
       row.Print(sink);
       sink << std::endl;
     }
@@ -179,7 +184,9 @@ class PrintableCollection {
     }
     rows_.front().CsvHeader(sink);
     for (const auto& row : rows_) {
-      row.CsvRow(sink);
+      if (!row.IsEmpty()) {
+        row.CsvRow(sink);
+      }
     }
   }
 

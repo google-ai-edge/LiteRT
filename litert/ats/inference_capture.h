@@ -17,6 +17,8 @@
 
 #include <algorithm>
 #include <chrono>  // NOLINT
+#include <cmath>
+#include <cstddef>
 #include <functional>
 #include <optional>
 #include <ratio>  // NOLINT
@@ -32,8 +34,8 @@
 namespace litert::testing {
 
 // Information about the latency of the execution.
-class Latency
-    : public Printable<Microseconds, Microseconds, Microseconds, size_t> {
+class Latency : public Printable<Microseconds, Microseconds, Microseconds,
+                                 double, size_t> {
  public:
   using Ref = std::reference_wrapper<Latency>;
 
@@ -82,16 +84,30 @@ class Latency
     return *std::min_element(latencies_.begin(), latencies_.end());
   }
 
+  // Sample standard deviation.
+  double StdDev() const {
+    if (latencies_.size() <= 1) {
+      return 0.0;
+    }
+    double mean = static_cast<double>(Avg());
+    double sum_sq = 0.0;
+    for (auto l : latencies_) {
+      double diff = static_cast<double>(l) - mean;
+      sum_sq += diff * diff;
+    }
+    return std::sqrt(sum_sq / (latencies_.size() - 1));
+  }
+
   // Number of samples.
   size_t NumSamples() const { return latencies_.size(); }
 
   Latency()
       : Printable("Latency", "avg_latency(us)", "max_latency(us)",
-                  "min_latency(us)", "num_samples") {}
+                  "min_latency(us)", "stddev_latency(us)", "num_samples") {}
 
  private:
   Fields GetFields() const override {
-    return Fields{Avg(), Max(), Min(), NumSamples()};
+    return Fields{Avg(), Max(), Min(), StdDev(), NumSamples()};
   }
 
   std::vector<Microseconds> latencies_;
@@ -134,7 +150,7 @@ struct RunDetail : public Printable<size_t, RunStatus> {
 // Type to hold all of the capturable information related to a single test case.
 struct InferenceCaptureEntry
     : public PrintableRow<ModelDetail, AcceleratorDetail, Latency, Numerics,
-                          RunDetail, CompilationDetail> {
+                          RunDetail, CompilationDetail, MemoryDetail> {
   InferenceCaptureEntry() = default;
 
   ModelDetail model = {};
@@ -143,12 +159,14 @@ struct InferenceCaptureEntry
   Numerics numerics = {};
   RunDetail run = {};
   CompilationDetail compilation = {};
+  MemoryDetail memory = {};
 
  private:
   Printables GetPrintables() const override {
-    return Printables{std::cref(model),   std::cref(accelerator),
-                      std::cref(latency), std::cref(numerics),
-                      std::cref(run),     std::cref(compilation)};
+    return Printables{std::cref(model),       std::cref(accelerator),
+                      std::cref(latency),     std::cref(numerics),
+                      std::cref(run),         std::cref(compilation),
+                      std::cref(memory)};
   }
 
   std::string Name() const override { return model.name; }

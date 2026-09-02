@@ -25,6 +25,7 @@ TEST(AtsCaptureTest, LatencyRow) {
   EXPECT_EQ(l.NumSamples(), 1);
   EXPECT_EQ(l.Avg(), l.Min());
   EXPECT_EQ(l.Avg(), l.Max());
+  EXPECT_DOUBLE_EQ(l.StdDev(), 0.0);
 }
 
 TEST(AtsCaptureTest, Numerics) {

@@ -85,6 +85,11 @@ class CompiledModelExecutor {
     return Run(std::cbegin(inputs), std::cend(inputs), stats);
   }
 
+  // Stops hardware metrics collection and returns reported metrics.
+  Expected<CompiledModelNext::Metrics> GetMetrics() {
+    return api_.StopMetricsCollection();
+  }
+
   virtual ~CompiledModelExecutor() = default;
 
  protected:

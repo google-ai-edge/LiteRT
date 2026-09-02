@@ -15,12 +15,15 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_CAPTURE_COMMON_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_CAPTURE_COMMON_H_
 
+#include <cstddef>
 #include <string>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/ats/common.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/print.h"
+#include "litert/c/litert_any.h"
+#include "litert/cc/internal/litert_compiled_model_next.h"
 #include "litert/core/model/model.h"
 
 namespace litert::testing {
@@ -99,6 +102,41 @@ struct CompilationDetail : Printable<CompilationStatus> {
 
  private:
   Fields GetFields() const override { return Fields{status}; }
+};
+
+// Information about GPU/accelerator intermediate working memory and constant
+// weights.
+struct MemoryDetail : Printable<size_t, size_t> {
+  // Intermediate working memory allocated on GPU in kilobytes.
+  size_t gpu_intermediate_memory_kb = 0;
+
+  // Constant weight memory allocated on GPU in kilobytes.
+  size_t gpu_constant_memory_kb = 0;
+
+  MemoryDetail()
+      : Printable("MemoryDetail", "gpu_intermediate_memory_kb",
+                  "gpu_constant_memory_kb") {}
+
+  void SetFields(const CompiledModelNext::Metrics& metrics) {
+    for (const auto& metric : metrics.metrics) {
+      if (metric.value.type == kLiteRtAnyTypeInt) {
+        if (metric.name == "gpu_intermediate_memory_bytes") {
+          gpu_intermediate_memory_kb =
+              static_cast<size_t>(metric.value.int_value / 1024);
+        } else if (metric.name == "gpu_constant_memory_bytes") {
+          gpu_constant_memory_kb =
+              static_cast<size_t>(metric.value.int_value / 1024);
+        }
+      }
+    }
+  }
+
+  void SetFields() {}
+
+ private:
+  Fields GetFields() const override {
+    return Fields{gpu_intermediate_memory_kb, gpu_constant_memory_kb};
+  }
 };
 
 }  // namespace litert::testing
