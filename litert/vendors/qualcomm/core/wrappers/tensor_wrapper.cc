@@ -383,6 +383,23 @@ void TensorWrapper::ConvertFromQuantI16ToQuantU16() {
   QNN_LOG_INFO("Convert %s to UINT16.", GetName().data());
 }
 
+void TensorWrapper::ConvertFromQuantI8ToQuantU8() {
+  auto* p =
+      std::get_if<::qnn::ScaleOffsetQuantizeParamsWrapper>(&quantize_params_);
+  if (IsTensorStatic() || !IsQuantI8() || !p) {
+    QNN_LOG_WARNING("Cannot convert %s to UINT8.", GetName().data());
+    return;
+  }
+
+  // Signed and unsigned 8-bit differ only by where zero sits.
+  constexpr int32_t kSUFixed8OffsetDiff = 128;
+  quantize_params_ = ::qnn::ScaleOffsetQuantizeParamsWrapper(
+      p->GetScale(), p->GetZeroPoint() + kSUFixed8OffsetDiff);
+  qnn_tensor_.v2.dataType = QNN_DATATYPE_UFIXED_POINT_8;
+  UpdateQnnQuantParams();
+  QNN_LOG_INFO("Convert %s to UINT8.", GetName().data());
+}
+
 std::string TensorWrapper::ToString() const {
   std::ostringstream out;
   out << "name=\"" << GetName()
