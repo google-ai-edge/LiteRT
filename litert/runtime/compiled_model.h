@@ -436,6 +436,9 @@ class LiteRtCompiledModelT {
   // Checks the CPU Tensors and stores them in the `cpu_tensors_` set.
   void CheckCpuTensors();
 
+  // Clears the registered buffers cache and releases references.
+  void ClearRegisteredBuffersCache();
+
   litert::Expected<void> ResizeInputTensorImpl(size_t signature_index,
                                                size_t input_index,
                                                absl::Span<const int> dims,
@@ -533,6 +536,11 @@ class LiteRtCompiledModelT {
   absl::flat_hash_map<TfLiteTensorIdentifier, LiteRtTensorBufferRequirementsPtr,
                       TensorIdentifierHash, TensorIdentifierEqual>
       cpu_buffer_requirements_;
+
+  // Cache of registered buffers to bypass re-registration.
+  absl::flat_hash_map<TfLiteTensorIdentifier, LiteRtTensorBuffer,
+                      TensorIdentifierHash, TensorIdentifierEqual>
+      registered_buffers_cache_;
 
   // Map from signature key to SignatureRunner. This is used to lazy calling
   // GetSignatureRunner() which is expensive.
