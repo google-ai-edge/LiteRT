@@ -107,6 +107,7 @@
 #include "litert/vendors/qualcomm/core/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/unsigned_boundary.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/dump/dump_graph.h"
 #include "litert/vendors/qualcomm/core/transformation/graph_to_graph.h"
@@ -1667,6 +1668,18 @@ LiteRtStatus ConvertOp(const ::qnn::Options& options,
                        size_t op_index, ::qnn::SdkVersion sdk_version) {
   const auto& builders = GetOpBuilders();
   const auto op_code = litert_op.Code();
+  if (op_code == kLiteRtOpCodeTflQuantize &&
+      options.GetBackendType() == ::qnn::BackendType::kLpaiBackend &&
+      !input_tensors.empty() && !output_tensors.empty() &&
+      input_tensors[0].get().IsPerTensorQuantWithOffsetDiff(
+          output_tensors[0].get())) {
+    // TODO(chunhsue): LPAI's validator rejects mixed-dtype
+    // Cast, so emit CONVERT for same-scale int8<->uint8 Quantize.
+    // Remove when LPAI accepts mixed-dtype Cast.
+    op_wrappers.emplace_back(
+        ::qnn::CreateConvertOp(input_tensors[0], output_tensors[0]));
+    return kLiteRtStatusOk;
+  }
   if (op_code < builders.size() && builders[op_code]) {
     return builders[op_code](litert_op, tensor_pool, input_tensors,
                              output_tensors, op_wrappers,
@@ -1792,6 +1805,8 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
     LITERT_RETURN_IF_ERROR(ConvertOp(options, op, tensor_pool, input_tensors,
                                      output_tensors, op_wrappers, id,
                                      qnn.GetSdkVersion()));
+    ::qnn::InsertUnsignedActivationBoundaries(options.GetBackendType(),
+                                              tensor_pool, op_wrappers);
     for (auto& op_wrapper : op_wrappers) {
       // Add litert op id to qnn op name to preserve op mapping
       op_wrapper.AddSuffixToName(
