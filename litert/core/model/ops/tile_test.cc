@@ -52,5 +52,56 @@ TEST(TileOpTest, SimpleTest) {
   EXPECT_THAT(output_shapes[0], ElementsAre(4, 6));  // [2*2, 3*2]
 }
 
+TEST(TileOpTest, ReferenceTile1D) {
+  std::vector<float> input = {1.0f, 2.0f, 3.0f};
+  int32_t in_dims[] = {3};
+  int32_t multiples[] = {2};
+  std::vector<float> output(6);
+
+  ReferenceTile(input.data(), in_dims, multiples, 1, output.data());
+
+  EXPECT_THAT(output, ElementsAre(1.0f, 2.0f, 3.0f, 1.0f, 2.0f, 3.0f));
+}
+
+TEST(TileOpTest, ReferenceTile2D) {
+  // Input 2x3:
+  // [[1, 2, 3],
+  //  [4, 5, 6]]
+  // Multiples: [2, 1] -> 4x3:
+  // [[1, 2, 3],
+  //  [4, 5, 6],
+  //  [1, 2, 3],
+  //  [4, 5, 6]]
+  std::vector<int32_t> input = {1, 2, 3, 4, 5, 6};
+  int32_t in_dims[] = {2, 3};
+  int32_t multiples[] = {2, 1};
+  std::vector<int32_t> output(12);
+
+  ReferenceTile(input.data(), in_dims, multiples, 2, output.data());
+
+  EXPECT_THAT(output, ElementsAre(1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6));
+}
+
+TEST(TileOpTest, ReferenceTile2DBothAxes) {
+  // Input 2x2:
+  // [[1, 2],
+  //  [3, 4]]
+  // Multiples: [2, 2] -> 4x4:
+  // [[1, 2, 1, 2],
+  //  [3, 4, 3, 4],
+  //  [1, 2, 1, 2],
+  //  [3, 4, 3, 4]]
+  std::vector<float> input = {1.0f, 2.0f, 3.0f, 4.0f};
+  int32_t in_dims[] = {2, 2};
+  int32_t multiples[] = {2, 2};
+  std::vector<float> output(16);
+
+  ReferenceTile(input.data(), in_dims, multiples, 2, output.data());
+
+  EXPECT_THAT(output, ElementsAre(1.0f, 2.0f, 1.0f, 2.0f, 3.0f, 4.0f, 3.0f,
+                                  4.0f, 1.0f, 2.0f, 1.0f, 2.0f, 3.0f, 4.0f,
+                                  3.0f, 4.0f));
+}
+
 }  // namespace
 }  // namespace litert::internal

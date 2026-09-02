@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
@@ -115,6 +116,20 @@ inline void ReferenceLogSoftmax(const float* input_data, float* output_data,
           (input_data[b * depth + d] - max_val) - log_sum;
     }
   }
+}
+
+template <typename UnaryOp>
+inline void ReferenceUnaryGeneric(const float* input_data, size_t num_elements,
+                                  float* output_data, UnaryOp op) {
+  for (size_t i = 0; i < num_elements; ++i) {
+    output_data[i] = op(input_data[i]);
+  }
+}
+
+inline void ReferenceTanh(const float* input_data, size_t num_elements,
+                          float* output_data) {
+  ReferenceUnaryGeneric(input_data, num_elements, output_data,
+                        [](float val) { return std::tanh(val); });
 }
 
 }  // namespace litert::internal

@@ -40,6 +40,7 @@
 #include "litert/ats/register_pooling.h"
 #include "litert/ats/register_reduction.h"
 #include "litert/ats/register_reshape.h"
+#include "litert/ats/register_sdpa.h"
 #include "litert/ats/register_softmax.h"
 #include "litert/ats/register_transformer_layer.h"
 #include "litert/ats/register_transpose.h"
@@ -81,6 +82,9 @@ void RegisterAll(const AtsConf& options, size_t& test_id,
   RegisterConcatenation(options, test_id, /*iters=*/10, cap);
   RegisterSoftmax(options, test_id, /*iters=*/10, cap);
   RegisterPad(options, test_id, /*iters=*/10, cap);
+  // Sdpa uses a 15-entry stratified grid (kStratifiedGrid). iters >= 15
+  // ensures full coverage across all decode & prefill permutations.
+  RegisterSdpa(options, test_id, /*iters=*/20, cap);
 }
 
 int Ats() {

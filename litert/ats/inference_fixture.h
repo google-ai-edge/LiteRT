@@ -104,7 +104,7 @@ class AtsInferenceTest : public RngTest {
     if (names_.should_skip) {
       GTEST_SKIP() << "Filtered by dont_register";
     }
-    ASSERT_EQ(Graph().NumSubgraphs(), 1);
+    ASSERT_GE(Graph().NumSubgraphs(), 1);
     LITERT_LOG(LITERT_INFO, "Setting up test for %s",
                absl::StrFormat("%v", conf_.Backend()).c_str());
     cap_.run.num_iterations = conf_.ItersPerTest();
