@@ -79,6 +79,9 @@ def _py_wheel_impl(ctx):
     args.add("--output", output_file.dirname)
     args.add("--version", version)
 
+    if ctx.file.license_file:
+        args.add("--license_file", ctx.file.license_file.path)
+
     if ctx.attr.nightly_suffix and ctx.attr.nightly_suffix[BuildSettingInfo].value != "" and ctx.attr.append_nightly_to_project_name:
         args.add("--nightly_suffix", "_nightly")
 
@@ -100,10 +103,14 @@ def _py_wheel_impl(ctx):
     args.set_param_file_format("flag_per_line")
     args.use_param_file("@%s", use_always = False)
 
+    inputs = filelist + py_filelist + structured_deps_filelist + package_data_filelist + [ctx.file.setup_py]
+    if ctx.file.license_file:
+        inputs.append(ctx.file.license_file)
+
     ctx.actions.run(
         mnemonic = "WheelBuilder",
         arguments = [args],
-        inputs = filelist + py_filelist + structured_deps_filelist + package_data_filelist + [ctx.file.setup_py],
+        inputs = inputs,
         outputs = [output_file],
         executable = executable,
         env = ctx.configuration.default_shell_env,
@@ -133,6 +140,10 @@ py_wheel = rule(
         "setup_py": attr.label(
             allow_single_file = [".py"],
             mandatory = True,
+        ),
+        "license_file": attr.label(
+            allow_single_file = True,
+            doc = "The LICENSE file to be bundled inside the wheel's .dist-info folder.",
         ),
         "platform_name": attr.string(),
         "version": attr.string(mandatory = True),
