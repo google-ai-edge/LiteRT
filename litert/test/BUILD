@@ -25,32 +25,15 @@ package(
     ],
 )
 
-# copybara:uncomment_begin(internal)
-# tfl_model_gen(
-#     name = "mlir_test_data",
-#     srcs = glob(["testdata/*.mlir"]),
-# )
-#
-# tfl_model_gen(
-#     name = "mlir_test_data_stablehlo",
-#     srcs = glob(["testdata/stablehlo/*.mlir"]),
-#     subdir = "testdata/stablehlo",
-# )
-# copybara:uncomment_end
-
-# copybara:comment_begin(external)
-symlink_files(
+filegroup(
     name = "mlir_test_data",
-    srcs = ["@models"],
-    declared_outputs = [
-        f.replace(".mlir", ".tflite")
-        for f in glob(["testdata/*.mlir"])
-        if not glob([f.replace(".mlir", ".tflite")])
-    ],
-    dst = "testdata",
-    flatten = True,
+    srcs = glob(["testdata/*.tflite"]),
 )
-# copybara:comment_end
+
+filegroup(
+    name = "mlir_test_data_stablehlo",
+    srcs = glob(["testdata/stablehlo/*.tflite"]),
+)
 
 # copybara:uncomment_begin(internal)
 # filegroup(name = "ats_test_data")
@@ -68,18 +51,19 @@ symlink_files(
 
 filegroup(
     name = "tflite_test_data",
-    srcs = glob(["testdata/*.tflite"]),
+    srcs = glob([
+        "testdata/*.tflite",
+        "testdata/stablehlo/*.tflite",
+    ]),
 )
 
 filegroup(
     name = "testdata",
     srcs = glob([
         "testdata/*.tflite",
+        "testdata/stablehlo/*.tflite",
         "testdata/*.bin",
-    ]) + [
-        ":mlir_test_data",
-        ":mlir_test_data_stablehlo",
-    ],
+    ]),
 )
 
 filegroup(
@@ -407,25 +391,7 @@ exports_files(
     srcs = [
         "litert_c_api_dependency_test.sh",
         "litert_compiler_plugin_symbol_test.sh",
-        "testdata/blockwise_quantized.tflite",
-        "testdata/custom_sinh.bin",
-        "testdata/mobilenet_v2_1.0_224.tflite",
-        "testdata/model_magic_test.tflite",
-        "testdata/model_with_external_weights.tflite",
-        "testdata/qwen_fc_blockwise_quantized.tflite",
-        "testdata/shared_input_cpu_npu_google_tensor_precompiled.tflite",
-        "testdata/simple_add_op.mlir",
-        "testdata/simple_add_op_google_tensor_p25_precompiled.tflite",
-        "testdata/simple_add_op_qc_v75_precompiled.tflite",
-        "testdata/simple_add_uint16_qualcomm.bin",
-        "testdata/simple_model.mlir",
-        "testdata/simple_model_google_tensor.bin",
-        "testdata/simple_model_mtk.bin",
-        "testdata/simple_model_npu_google_tensor_precompiled.tflite",
-        "testdata/simple_model_npu_mediatek_mt6989_precompiled.tflite",
-        "testdata/simple_model_qualcomm.bin",
-        "testdata/simple_model_qualcomm_sm8650_precompiled.tflite",
-        "testdata/simple_quantized_ops.tflite",
-        "testdata/torchaudio_conformer.tflite",
-    ],
+    ] + glob([
+        "testdata/**",
+    ]),
 )
