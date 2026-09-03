@@ -1047,6 +1047,10 @@ absl::Status OpMixin<MeanOperation, XnnpackMixinTag>::ToXnnpack(
   }
   LockedBufferSpan<const int32_t> axes_data =
       axes_info.buffer->Lock().As<const int32_t>();
+  if (axes_info.shape.empty()) {
+    return absl::InvalidArgumentError(
+        absl::StrFormat("%s: axes tensor must not be a 0D scalar", op_name));
+  }
   const size_t num_axes = axes_info.shape[0];
   const std::vector<int64_t> axes(axes_data.begin(), axes_data.end());
   // Set XNN_FLAG_KEEP_DIMS if keep_dims is true
@@ -1091,6 +1095,10 @@ absl::Status OpMixin<SliceOperation, XnnpackMixinTag>::ToXnnpack(
   auto begin_locked = begin_info.buffer->Lock();
   const int32_t* begin_data =
       reinterpret_cast<const int32_t*>(begin_locked.data());
+  if (begin_info.shape.empty()) {
+    return absl::InvalidArgumentError(
+        absl::StrFormat("%s: begin tensor must not be a 0D scalar", op_name));
+  }
   size_t num_dims = begin_info.shape[0];
 
   // Get sizes from const tensor
