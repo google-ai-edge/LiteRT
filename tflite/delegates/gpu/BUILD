@@ -383,7 +383,7 @@ cc_library(
         "//conditions:default": [
             "//tflite/delegates/gpu/gl:api2",
         ],
-    }) + _DELEGATE_NO_GL_DEPS + ["//tflite/delegates/gpu/cl:api"] + tflite_extra_gles_deps(),
+    }) + _DELEGATE_NO_GL_DEPS + ["//tflite/delegates/gpu/cl:api"],
 )
 
 cc_test(
