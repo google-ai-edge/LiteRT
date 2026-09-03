@@ -66,7 +66,7 @@ void QkvNormRopeConvert(
     ir_model.SetProducer(tensor_map[tflite_node.outputs->data[i]], op->id);
   }
 
-  const auto* params = static_cast<const TfLiteStablehloCompositeParams*>(
+  const auto* params = reinterpret_cast<const TfLiteStablehloCompositeParams*>(
       tflite_node.builtin_data);
   ::litert::ml_drift::QkvNormRopeAttributes attr;
   if (params && params->attributes && params->attributes_size > 0) {

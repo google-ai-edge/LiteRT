@@ -266,21 +266,58 @@ absl::Status BuildQkvNormRopeGpuGraph(
   ABSL_ASSIGN_OR_RETURN(auto q_weight, model_builder->GetTensor(input_ids[2]));
   ABSL_ASSIGN_OR_RETURN(auto k_weight, model_builder->GetTensor(input_ids[3]));
 
+  QkvNormRopeAttributes resolved_attr = attr;
+  auto q_target = model_builder->GetTensor(output_ids[0]);
+  if (q_target.ok()) {
+    const auto q_shape = q_target->tensor_desc.GetBHWCShape();
+    if (q_shape.h > 0) {
+      if (resolved_attr.num_heads > 0 && resolved_attr.num_heads != q_shape.h) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "QkvNormRoPE num_heads in attr (", resolved_attr.num_heads,
+            ") does not match output shape (", q_shape.h, ")."));
+      }
+      resolved_attr.num_heads = q_shape.h;
+    }
+    if (q_shape.c > 0) {
+      if (resolved_attr.head_dim > 0 && resolved_attr.head_dim != q_shape.c) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "QkvNormRoPE head_dim in attr (", resolved_attr.head_dim,
+            ") does not match output shape (", q_shape.c, ")."));
+      }
+      resolved_attr.head_dim = q_shape.c;
+    }
+  }
+  auto k_target = model_builder->GetTensor(output_ids[1]);
+  if (k_target.ok()) {
+    const auto k_shape = k_target->tensor_desc.GetBHWCShape();
+    if (k_shape.h > 0) {
+      if (resolved_attr.num_kv_heads > 0 &&
+          resolved_attr.num_kv_heads != k_shape.h) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "QkvNormRoPE num_kv_heads in attr (", resolved_attr.num_kv_heads,
+            ") does not match output shape (", k_shape.h, ")."));
+      }
+      resolved_attr.num_kv_heads = k_shape.h;
+    }
+  }
+
   int T = qkv.tensor_desc.GetBHWCShape().w;
   auto q_out = model_builder->AddTensor(
-      ::ml_drift::BHWC(1, attr.num_heads, T, attr.head_dim),
+      ::ml_drift::BHWC(1, resolved_attr.num_heads, T, resolved_attr.head_dim),
       qkv.tensor_desc.GetDataType());
-  auto k_out = model_builder->AddTensor(
-      ::ml_drift::BHWC(1, attr.num_kv_heads, T, attr.head_dim),
-      qkv.tensor_desc.GetDataType());
-  auto v_out = model_builder->AddTensor(
-      ::ml_drift::BHWC(1, attr.num_kv_heads, T, attr.head_dim),
-      qkv.tensor_desc.GetDataType());
+  auto k_out =
+      model_builder->AddTensor(::ml_drift::BHWC(1, resolved_attr.num_kv_heads,
+                                                T, resolved_attr.head_dim),
+                               qkv.tensor_desc.GetDataType());
+  auto v_out =
+      model_builder->AddTensor(::ml_drift::BHWC(1, resolved_attr.num_kv_heads,
+                                                T, resolved_attr.head_dim),
+                               qkv.tensor_desc.GetDataType());
 
   auto op = CreateFusedQkvNormRoPE(
       model_builder->gpu_info(), qkv.tensor_desc, pos.tensor_desc,
       q_weight.tensor_desc, k_weight.tensor_desc, q_out.tensor_desc,
-      k_out.tensor_desc, v_out.tensor_desc, attr);
+      k_out.tensor_desc, v_out.tensor_desc, resolved_attr);
   model_builder->AddGpuOperation(
       {qkv, pos, q_weight, k_weight}, {q_out, k_out, v_out}, std::move(op),
       "qkv_norm_rope");

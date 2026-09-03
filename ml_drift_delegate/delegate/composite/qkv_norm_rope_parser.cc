@@ -24,6 +24,7 @@
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/object_reader.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
+#include "tflite/c/builtin_op_data.h"
 #include "tflite/c/common.h"
 
 namespace litert::ml_drift {
@@ -59,8 +60,37 @@ void QkvNormRopeOperationParser::Parse(
   node->operation.type = kQkvNormRopeType;
 
   QkvNormRopeAttributes attr;
-  if (tflite_node->custom_initial_data &&
-      tflite_node->custom_initial_data_size > 0) {
+  const auto* params = reinterpret_cast<const TfLiteStablehloCompositeParams*>(
+      tflite_node->builtin_data);
+  if (params && params->attributes && params->attributes_size > 0) {
+    const flexbuffers::Map map =
+        flexbuffers::GetRoot(
+            reinterpret_cast<const uint8_t*>(params->attributes),
+            params->attributes_size)
+            .AsMap();
+    if (!map["num_heads"].IsNull()) {
+      attr.num_heads = map["num_heads"].AsInt32();
+    }
+    if (!map["num_kv_heads"].IsNull()) {
+      attr.num_kv_heads = map["num_kv_heads"].AsInt32();
+    }
+    if (!map["head_dim"].IsNull()) {
+      attr.head_dim = map["head_dim"].AsInt32();
+    }
+    if (!map["min_timescale"].IsNull()) {
+      attr.min_timescale = map["min_timescale"].AsFloat();
+    }
+    if (!map["max_timescale"].IsNull()) {
+      attr.max_timescale = map["max_timescale"].AsFloat();
+    }
+    if (!map["proportion"].IsNull()) {
+      attr.proportion = map["proportion"].AsFloat();
+    }
+    if (!map["epsilon"].IsNull()) {
+      attr.epsilon = map["epsilon"].AsFloat();
+    }
+  } else if (tflite_node->custom_initial_data &&
+             tflite_node->custom_initial_data_size > 0) {
     auto root = flexbuffers::GetRoot(
         reinterpret_cast<const uint8_t*>(tflite_node->custom_initial_data),
         tflite_node->custom_initial_data_size);

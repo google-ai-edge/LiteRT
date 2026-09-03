@@ -127,5 +127,45 @@ TEST_F(ConvertQkvNormRopeTest, BasicConversion) {
   EXPECT_FLOAT_EQ(attr->epsilon, 1e-6f);
 }
 
+TEST_F(ConvertQkvNormRopeTest, CustomHeadAttributes) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32,
+                   {1, 1, 1, 48 * 128});               // qkv (32 + 8 + 8) * 128
+  builder.AddInput(kTfLiteInt32, {1, 1});              // position
+  builder.AddInput(kTfLiteFloat32, {128});             // q_weight
+  builder.AddInput(kTfLiteFloat32, {128});             // k_weight
+  builder.AddOutput(kTfLiteFloat32, {1, 32, 1, 128});  // q_out
+  builder.AddOutput(kTfLiteFloat32, {1, 8, 1, 128});   // k_out
+  builder.AddOutput(kTfLiteFloat32, {1, 8, 1, 128});   // v_out
+
+  TfLiteStablehloCompositeParams* params =
+      CreateQkvNormRopeParams(32, 8, 128, 1.0f, 10000.0f, 1.0f, 1e-6f);
+  builder.SetParameters(params);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  EXPECT_THAT(op->name, Eq("qkv_norm_rope"));
+  EXPECT_THAT(op->inputs, SizeIs(4));
+  EXPECT_THAT(op->outputs, SizeIs(3));
+
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::QkvNormRopeAttributes>(&op->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_EQ(attr->num_heads, 32);
+  EXPECT_EQ(attr->num_kv_heads, 8);
+  EXPECT_EQ(attr->head_dim, 128);
+  EXPECT_FLOAT_EQ(attr->min_timescale, 1.0f);
+  EXPECT_FLOAT_EQ(attr->max_timescale, 10000.0f);
+  EXPECT_FLOAT_EQ(attr->proportion, 1.0f);
+  EXPECT_FLOAT_EQ(attr->epsilon, 1e-6f);
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir
