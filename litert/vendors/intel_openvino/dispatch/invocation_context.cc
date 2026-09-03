@@ -32,6 +32,8 @@
 #include <vector>
 
 #include "openvino/core/any.hpp"
+#include "openvino/core/coordinate.hpp"
+#include "openvino/core/shape.hpp"
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -54,6 +56,7 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/bytecode_header.h"
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
+#include "litert/vendors/intel_openvino/dispatch/roi_view.h"
 #include "litert/vendors/intel_openvino/dispatch/weight_bank_runtime.h"
 
 namespace {
@@ -455,7 +458,14 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
                           device_context_.getOVTensor(tensor_buffer_handle));
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
-  infer_request_.set_input_tensor(graph_input_index, ov_tensor);
+  // The bound buffer may be larger than the graph port (split-context KV
+  // cache: one max-length buffer shared by a shorter signature). Bind a
+  // zero-copy sub-view sized to the port when that is the case.
+  const ov::Shape port_shape =
+      infer_request_.get_input_tensor(graph_input_index).get_shape();
+  LITERT_ASSIGN_OR_RETURN(ov::Tensor bound_tensor,
+                          litert::openvino::MakePortView(ov_tensor, port_shape));
+  infer_request_.set_input_tensor(graph_input_index, bound_tensor);
   return {};
 }
 
@@ -465,7 +475,11 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
                           device_context_.getOVTensor(tensor_buffer_handle));
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
-  infer_request_.set_output_tensor(graph_output_index, ov_tensor);
+  const ov::Shape port_shape =
+      infer_request_.get_output_tensor(graph_output_index).get_shape();
+  LITERT_ASSIGN_OR_RETURN(ov::Tensor bound_tensor,
+                          litert::openvino::MakePortView(ov_tensor, port_shape));
+  infer_request_.set_output_tensor(graph_output_index, bound_tensor);
   return {};
 }
 

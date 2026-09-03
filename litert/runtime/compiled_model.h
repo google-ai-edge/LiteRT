@@ -33,6 +33,7 @@
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -593,5 +594,18 @@ class LiteRtCompiledModelT {
   // Owns dynamically created TfLiteRegistration objects for TfLiteOperator.
   std::vector<std::unique_ptr<TfLiteRegistration>> owned_tflite_registrations_;
 };
+
+// Decides whether a registered input buffer that is larger than its graph port
+// should be bound as-is (as a backend sub-view) instead of triggering
+// auto-resize or a shape-mismatch error. This is the split-context KV cache
+// case: one canonical max-length KV buffer is shared across signatures with
+// different past-KV lengths, and the backend binds a zero-copy sub-view sized to
+// each port. Returns true only when: the buffer is a user custom buffer (which
+// provides its own binding); the port is fully static (no dynamic dims); the
+// buffer differs from the port; and the buffer fully contains the port on every
+// dimension. Exposed at namespace scope so it can be unit-tested directly.
+bool ShouldBindOversizedCustomBuffer(LiteRtTensorBufferType buffer_type,
+                                     absl::Span<const int> buffer_shape,
+                                     absl::Span<const int> port_shape);
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_

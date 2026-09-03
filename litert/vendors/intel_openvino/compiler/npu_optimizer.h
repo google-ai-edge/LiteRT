@@ -122,6 +122,21 @@ class NpuOptimizer {
     return *this;
   }
 
+  // Toggles constant-folding of Slice index inputs (start/stop/step/axes).
+  //
+  // The TFLite frontend builds those inputs as small foldable subgraphs
+  // (e.g. Select / Broadcast over constants) rather than plain Constants. OV's
+  // Slice shape inference only produces a static output shape when it can read
+  // those inputs as constant data; otherwise it falls back to `[0..max]` on
+  // every sliced dimension. That makes ov::Model::is_dynamic() true, which in
+  // turn makes the NPU plugin reject NPU_ENABLE_STRIDES_FOR with "Dynamic
+  // batching is not supported with the dynamic strides feature". Enabled by
+  // default: without it the strided-ROI KV sharing cannot be compiled.
+  NpuOptimizer& SetFoldSliceIndices(bool enable) {
+    fold_slice_indices_ = enable;
+    return *this;
+  }
+
   // Runs all currently-enabled passes on |model|.
   void Run(const std::shared_ptr<ov::Model>& model) const;
 
@@ -131,6 +146,7 @@ class NpuOptimizer {
   bool cast_integer_sign_to_float_ = true;
   bool fuse_split_attention_to_sdpa_ = false;
   bool sdpa_pad_kv_to_alignment_ = true;
+  bool fold_slice_indices_ = true;
 };
 
 }  // namespace openvino
