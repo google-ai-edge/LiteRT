@@ -63,7 +63,8 @@ public final class CompiledModel {
     self.environment = environment
     self.options = resolvedOptions
     do {
-      self.cCompiledModel = try Self.compile(model: model, environment: environment, options: resolvedOptions)
+      self.cCompiledModel = try Self.compile(
+        model: model, environment: environment, options: resolvedOptions)
     } catch {
       LiteRtDestroyModel(model)
       throw error
@@ -77,7 +78,8 @@ public final class CompiledModel {
       guard let baseAddr = rawBuffer.baseAddress else {
         return kLiteRtStatusErrorInvalidArgument
       }
-      return LiteRtCreateModelFromBuffer(environment.cEnvironment, baseAddr, rawBuffer.count, &model)
+      return LiteRtCreateModelFromBuffer(
+        environment.cEnvironment, baseAddr, rawBuffer.count, &model)
     }
     try checkStatus(status)
     guard let model else {
@@ -88,17 +90,25 @@ public final class CompiledModel {
     self.environment = environment
     self.options = resolvedOptions
     do {
-      self.cCompiledModel = try Self.compile(model: model, environment: environment, options: resolvedOptions)
+      self.cCompiledModel = try Self.compile(
+        model: model, environment: environment, options: resolvedOptions)
     } catch {
       LiteRtDestroyModel(model)
       throw error
     }
   }
 
-  public init(fd: Int32, offset: Int, size: Int, environment: Environment, options: Options? = nil) throws {
+  public init(
+    fd: Int32,
+    offset: Int,
+    size: Int,
+    environment: Environment,
+    options: Options? = nil
+  ) throws {
     let resolvedOptions = try options ?? Self.makeDefaultOptions()
     var model: LiteRtModel?
-    let status = LiteRtCreateModelFromFd(environment.cEnvironment, fd, size_t(offset), size_t(size), &model)
+    let status = LiteRtCreateModelFromFd(
+      environment.cEnvironment, fd, size_t(offset), size_t(size), &model)
     try checkStatus(status)
     guard let model else {
       throw LiteRtError.runtimeFailure
@@ -108,7 +118,8 @@ public final class CompiledModel {
     self.environment = environment
     self.options = resolvedOptions
     do {
-      self.cCompiledModel = try Self.compile(model: model, environment: environment, options: resolvedOptions)
+      self.cCompiledModel = try Self.compile(
+        model: model, environment: environment, options: resolvedOptions)
     } catch {
       LiteRtDestroyModel(model)
       throw error
@@ -205,7 +216,8 @@ public final class CompiledModel {
     try checkStatus(status)
   }
 
-  /// Runs model inference with optional per-invocation options and returns newly allocated output buffers safely.
+  /// Runs model inference with optional per-invocation options and returns newly allocated
+  /// output buffers safely.
   ///
   /// - Parameters:
   ///   - inputs: The input tensor buffers.
@@ -277,7 +289,8 @@ public final class CompiledModel {
     return isAsync
   }
 
-  /// Dispatches inference asynchronously if possible and returns newly allocated output buffers safely.
+  /// Dispatches inference asynchronously if possible and returns newly allocated output buffers
+  /// safely.
   ///
   /// This is a synchronous, non-blocking hardware dispatch on the CPU that initiates
   /// execution on hardware accelerators (e.g., GPU or NPU) and attaches synchronization events
@@ -312,9 +325,9 @@ public final class CompiledModel {
     let count = try inputCount(signatureIndex: signatureIndex)
     var inputs: [TensorBuffer] = []
     for i in 0..<count {
-      let requirements = try getInputBufferRequirements(
+      let requirements = try inputBufferRequirements(
         inputIndex: i, signatureIndex: signatureIndex)
-      let tensorType = try getInputTensorType(inputIndex: i, signatureIndex: signatureIndex)
+      let tensorType = try inputTensorType(inputIndex: i, signatureIndex: signatureIndex)
       let bufferType = requirements.supportedTypes.first ?? .hostMemory
       let buf = try TensorBuffer(
         environment: environment,
@@ -333,15 +346,15 @@ public final class CompiledModel {
   /// - Returns: An array of newly created output tensor buffers.
   /// - Throws: `LiteRtError` if buffer creation fails.
   public func createOutputBuffers(signatureIndex: Int = 0) throws -> [TensorBuffer] {
-    let layouts = try getOutputTensorLayouts(
+    let layouts = try outputTensorLayouts(
       signatureIndex: signatureIndex, updateAllocation: true)
 
     return try layouts.enumerated().map { index, layout in
       guard layout.elementCount != nil else { throw LiteRtError.invalidArgument }
-      let requirements = try getOutputBufferRequirements(
+      let requirements = try outputBufferRequirements(
         outputIndex: index, signatureIndex: signatureIndex)
       guard requirements.bufferSize > 0 else { throw LiteRtError.runtimeFailure }
-      let elementType = try getOutputTensorType(
+      let elementType = try outputTensorType(
         outputIndex: index, signatureIndex: signatureIndex).elementType
       return try TensorBuffer(
         environment: environment,
@@ -438,7 +451,7 @@ public final class CompiledModel {
   ///   - signatureIndex: The index of the signature to query. Defaults to 0.
   /// - Returns: The buffer requirements for the input.
   /// - Throws: `LiteRtError` if the query fails.
-  public func getInputBufferRequirements(
+  public func inputBufferRequirements(
     inputIndex: Int,
     signatureIndex: Int = 0
   ) throws -> TensorBufferRequirements {
@@ -461,7 +474,7 @@ public final class CompiledModel {
   ///   - signatureIndex: The index of the signature to query. Defaults to 0.
   /// - Returns: The buffer requirements for the output.
   /// - Throws: `LiteRtError` if the query fails.
-  public func getOutputBufferRequirements(
+  public func outputBufferRequirements(
     outputIndex: Int,
     signatureIndex: Int = 0
   ) throws -> TensorBufferRequirements {
@@ -477,17 +490,7 @@ public final class CompiledModel {
     return TensorBufferRequirements(cRequirements: requirements, owned: false)
   }
 
-  /// Queries the tensor type for a specified input.
-  ///
-  /// - Parameters:
-  ///   - inputIndex: The index of the input.
-  ///   - signatureIndex: The index of the signature to query. Defaults to 0.
-  /// - Returns: The tensor type of the input.
-  /// - Throws: `LiteRtError` if the query fails.
-  public func getInputTensorType(
-    inputIndex: Int,
-    signatureIndex: Int = 0
-  ) throws -> TensorType {
+  private func inputTensor(inputIndex: Int, signatureIndex: Int) throws -> LiteRtTensor {
     var signature: LiteRtSignature?
     var status = LiteRtGetModelSignature(cModel, size_t(signatureIndex), &signature)
     try checkStatus(status)
@@ -497,25 +500,10 @@ public final class CompiledModel {
     status = LiteRtGetSignatureInputTensorByIndex(signature, size_t(inputIndex), &tensor)
     try checkStatus(status)
     guard let tensor else { throw LiteRtError.runtimeFailure }
-
-    var cRankedType = LiteRtRankedTensorType()
-    status = LiteRtGetRankedTensorType(tensor, &cRankedType)
-    try checkStatus(status)
-
-    return TensorType(cRankedType: cRankedType)
+    return tensor
   }
 
-  /// Queries the tensor type for a specified output.
-  ///
-  /// - Parameters:
-  ///   - outputIndex: The index of the output.
-  ///   - signatureIndex: The index of the signature to query. Defaults to 0.
-  /// - Returns: The tensor type of the output.
-  /// - Throws: `LiteRtError` if the query fails.
-  public func getOutputTensorType(
-    outputIndex: Int,
-    signatureIndex: Int = 0
-  ) throws -> TensorType {
+  private func outputTensor(outputIndex: Int, signatureIndex: Int) throws -> LiteRtTensor {
     var signature: LiteRtSignature?
     var status = LiteRtGetModelSignature(cModel, size_t(signatureIndex), &signature)
     try checkStatus(status)
@@ -525,12 +513,201 @@ public final class CompiledModel {
     status = LiteRtGetSignatureOutputTensorByIndex(signature, size_t(outputIndex), &tensor)
     try checkStatus(status)
     guard let tensor else { throw LiteRtError.runtimeFailure }
+    return tensor
+  }
 
-    var cRankedType = LiteRtRankedTensorType()
-    status = LiteRtGetRankedTensorType(tensor, &cRankedType)
+  private func inputTensor(inputName: String, signatureIndex: Int) throws -> LiteRtTensor {
+    var signature: LiteRtSignature?
+    var status = LiteRtGetModelSignature(cModel, size_t(signatureIndex), &signature)
     try checkStatus(status)
+    guard let signature else { throw LiteRtError.runtimeFailure }
 
-    return TensorType(cRankedType: cRankedType)
+    var tensor: LiteRtTensor?
+    status = inputName.withCString { cName in
+      LiteRtGetSignatureInputTensor(signature, cName, &tensor)
+    }
+    try checkStatus(status)
+    guard let tensor else { throw LiteRtError.runtimeFailure }
+    return tensor
+  }
+
+  private func outputTensor(outputName: String, signatureIndex: Int) throws -> LiteRtTensor {
+    var signature: LiteRtSignature?
+    var status = LiteRtGetModelSignature(cModel, size_t(signatureIndex), &signature)
+    try checkStatus(status)
+    guard let signature else { throw LiteRtError.runtimeFailure }
+
+    var tensor: LiteRtTensor?
+    status = outputName.withCString { cName in
+      LiteRtGetSignatureOutputTensor(signature, cName, &tensor)
+    }
+    try checkStatus(status)
+    guard let tensor else { throw LiteRtError.runtimeFailure }
+    return tensor
+  }
+
+  /// Queries the tensor type for a specified input.
+  ///
+  /// - Parameters:
+  ///   - inputIndex: The index of the input.
+  ///   - signatureIndex: The index of the signature to query. Defaults to 0.
+  /// - Returns: The tensor type of the input.
+  /// - Throws: `LiteRtError` if the query fails.
+  public func inputTensorType(
+    inputIndex: Int,
+    signatureIndex: Int = 0
+  ) throws -> TensorType {
+    let tensor = try inputTensor(inputIndex: inputIndex, signatureIndex: signatureIndex)
+    var cRankedType = LiteRtRankedTensorType()
+    let status = LiteRtGetRankedTensorType(tensor, &cRankedType)
+    try checkStatus(status)
+    let quant = try tensorQuantization(tensor: tensor)
+    return TensorType(cRankedType: cRankedType, quantization: quant)
+  }
+
+  /// Queries the tensor type for a specified input name.
+  ///
+  /// - Parameters:
+  ///   - inputName: The name of the input.
+  ///   - signatureIndex: The index of the signature to query. Defaults to 0.
+  /// - Returns: The tensor type of the input.
+  /// - Throws: `LiteRtError` if the query fails.
+  public func inputTensorType(
+    inputName: String,
+    signatureIndex: Int = 0
+  ) throws -> TensorType {
+    let tensor = try inputTensor(inputName: inputName, signatureIndex: signatureIndex)
+    var cRankedType = LiteRtRankedTensorType()
+    let status = LiteRtGetRankedTensorType(tensor, &cRankedType)
+    try checkStatus(status)
+    let quant = try tensorQuantization(tensor: tensor)
+    return TensorType(cRankedType: cRankedType, quantization: quant)
+  }
+
+  /// Queries the tensor type for a specified output.
+  ///
+  /// - Parameters:
+  ///   - outputIndex: The index of the output.
+  ///   - signatureIndex: The index of the signature to query. Defaults to 0.
+  /// - Returns: The tensor type of the output.
+  /// - Throws: `LiteRtError` if the query fails.
+  public func outputTensorType(
+    outputIndex: Int,
+    signatureIndex: Int = 0
+  ) throws -> TensorType {
+    let tensor = try outputTensor(outputIndex: outputIndex, signatureIndex: signatureIndex)
+    var cRankedType = LiteRtRankedTensorType()
+    let status = LiteRtGetRankedTensorType(tensor, &cRankedType)
+    try checkStatus(status)
+    let quant = try tensorQuantization(tensor: tensor)
+    return TensorType(cRankedType: cRankedType, quantization: quant)
+  }
+
+  /// Queries the tensor type for a specified output name.
+  ///
+  /// - Parameters:
+  ///   - outputName: The name of the output.
+  ///   - signatureIndex: The index of the signature to query. Defaults to 0.
+  /// - Returns: The tensor type of the output.
+  /// - Throws: `LiteRtError` if the query fails.
+  public func outputTensorType(
+    outputName: String,
+    signatureIndex: Int = 0
+  ) throws -> TensorType {
+    let tensor = try outputTensor(outputName: outputName, signatureIndex: signatureIndex)
+    var cRankedType = LiteRtRankedTensorType()
+    let status = LiteRtGetRankedTensorType(tensor, &cRankedType)
+    try checkStatus(status)
+    let quant = try tensorQuantization(tensor: tensor)
+    return TensorType(cRankedType: cRankedType, quantization: quant)
+  }
+
+  private func tensorQuantization(tensor: LiteRtTensor) throws -> Quantization {
+    var cQTypeId = kLiteRtQuantizationNone
+    let status = LiteRtGetQuantizationTypeId(tensor, &cQTypeId)
+    try checkStatus(status)
+    guard let qTypeID = QuantizationTypeID(cType: cQTypeId) else {
+      throw LiteRtError.unknown
+    }
+    switch qTypeID {
+    case .none:
+      return .none
+    case .perTensor:
+      var cQuant = LiteRtQuantizationPerTensor()
+      let status = LiteRtGetPerTensorQuantization(tensor, &cQuant)
+      try checkStatus(status)
+      return .perTensor(QuantizationPerTensor(cQuantization: cQuant))
+    case .perChannel:
+      var cQuant = LiteRtQuantizationPerChannel()
+      let status = LiteRtGetPerChannelQuantization(tensor, &cQuant)
+      try checkStatus(status)
+      return .perChannel(QuantizationPerChannel(cQuantization: cQuant))
+    case .blockWise:
+      var cQuant = LiteRtQuantizationBlockWise()
+      let status = LiteRtGetBlockWiseQuantization(tensor, &cQuant)
+      try checkStatus(status)
+      return .blockWise(QuantizationBlockWise(cQuantization: cQuant))
+    }
+  }
+
+  /// Queries the complete quantization scheme for a specified input.
+  ///
+  /// - Parameters:
+  ///   - inputIndex: The index of the input.
+  ///   - signatureIndex: The index of the signature to query. Defaults to 0.
+  /// - Returns: The quantization scheme of the input tensor.
+  /// - Throws: `LiteRtError` if the query fails.
+  public func inputTensorQuantization(
+    inputIndex: Int,
+    signatureIndex: Int = 0
+  ) throws -> Quantization {
+    let tensor = try inputTensor(inputIndex: inputIndex, signatureIndex: signatureIndex)
+    return try tensorQuantization(tensor: tensor)
+  }
+
+  /// Queries the complete quantization scheme for a specified input name.
+  ///
+  /// - Parameters:
+  ///   - inputName: The name of the input.
+  ///   - signatureIndex: The index of the signature to query. Defaults to 0.
+  /// - Returns: The quantization scheme of the input tensor.
+  /// - Throws: `LiteRtError` if the query fails.
+  public func inputTensorQuantization(
+    inputName: String,
+    signatureIndex: Int = 0
+  ) throws -> Quantization {
+    let tensor = try inputTensor(inputName: inputName, signatureIndex: signatureIndex)
+    return try tensorQuantization(tensor: tensor)
+  }
+
+  /// Queries the complete quantization scheme for a specified output.
+  ///
+  /// - Parameters:
+  ///   - outputIndex: The index of the output.
+  ///   - signatureIndex: The index of the signature to query. Defaults to 0.
+  /// - Returns: The quantization scheme of the output tensor.
+  /// - Throws: `LiteRtError` if the query fails.
+  public func outputTensorQuantization(
+    outputIndex: Int,
+    signatureIndex: Int = 0
+  ) throws -> Quantization {
+    let tensor = try outputTensor(outputIndex: outputIndex, signatureIndex: signatureIndex)
+    return try tensorQuantization(tensor: tensor)
+  }
+
+  /// Queries the complete quantization scheme for a specified output name.
+  ///
+  /// - Parameters:
+  ///   - outputName: The name of the output.
+  ///   - signatureIndex: The index of the signature to query. Defaults to 0.
+  /// - Returns: The quantization scheme of the output tensor.
+  /// - Throws: `LiteRtError` if the query fails.
+  public func outputTensorQuantization(
+    outputName: String,
+    signatureIndex: Int = 0
+  ) throws -> Quantization {
+    let tensor = try outputTensor(outputName: outputName, signatureIndex: signatureIndex)
+    return try tensorQuantization(tensor: tensor)
   }
 
   /// Queries the current runtime input tensor layout (reflecting dynamic resizing).
@@ -540,7 +717,7 @@ public final class CompiledModel {
   ///   - signatureIndex: The index of the signature to query. Defaults to 0.
   /// - Returns: The layout of the input tensor.
   /// - Throws: `LiteRtError` if the query fails.
-  public func getInputTensorLayout(
+  public func inputTensorLayout(
     inputIndex: Int,
     signatureIndex: Int = 0
   ) throws -> Layout {
@@ -588,7 +765,7 @@ public final class CompiledModel {
   ///   - updateAllocation: Whether to update the underlying allocation. Defaults to `true`.
   /// - Returns: An array of layouts for the output tensors.
   /// - Throws: `LiteRtError` if the query fails.
-  public func getOutputTensorLayouts(
+  public func outputTensorLayouts(
     signatureIndex: Int = 0,
     updateAllocation: Bool = true
   ) throws -> [Layout] {
@@ -717,7 +894,7 @@ public final class CompiledModel {
   ///
   /// - Returns: A string containing all error messages.
   /// - Throws: `LiteRtError` if retrieving error messages fails.
-  public func getErrorMessages() throws -> String {
+  public func errorMessages() throws -> String {
     var cMessages: UnsafeMutablePointer<CChar>?
     let status = LiteRtCompiledModelGetErrorMessages(cCompiledModel, &cMessages)
     try checkStatus(status)

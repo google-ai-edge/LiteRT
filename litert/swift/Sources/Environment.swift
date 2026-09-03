@@ -70,7 +70,8 @@ public final class Environment {
     var environment: LiteRtEnvironment?
     var cOptions: [LiteRtEnvOption] = []
 
-    // Recursive wrapper helper to keep C-strings alive until LiteRtCreateEnvironment finishes executing.
+    // Recursive wrapper helper to keep C-strings alive until LiteRtCreateEnvironment
+    // finishes executing.
     func buildAndRun(index: Int) throws {
       if index == resolvedOptions.count {
         let status: LiteRtStatus

@@ -44,9 +44,9 @@ final class IntegrationTests: XCTestCase {
     XCTAssertFalse(outName.isEmpty)
 
     // 5. Check tensor types
-    let inputType0 = try compiledModel.getInputTensorType(inputIndex: 0)
-    let inputType1 = try compiledModel.getInputTensorType(inputIndex: 1)
-    let outputType = try compiledModel.getOutputTensorType(outputIndex: 0)
+    let inputType0 = try compiledModel.inputTensorType(inputIndex: 0)
+    let inputType1 = try compiledModel.inputTensorType(inputIndex: 1)
+    let outputType = try compiledModel.outputTensorType(outputIndex: 0)
 
     XCTAssertEqual(inputType0.elementType, .float32)
     XCTAssertEqual(inputType1.elementType, .float32)
@@ -79,6 +79,8 @@ final class IntegrationTests: XCTestCase {
     XCTAssertEqual(outputData[1], 22.0, accuracy: 0.0001)
 
     // 10. Hard-preserve ARC lifetimes of all C-bound wrapper instances until the test finishes.
-    print("Test complete. Preserved instances: \(env), \(compiledModel), \(options), \(inputBuffers), \(outputBuffers)")
+    print(
+      "Test complete. Preserved instances: \(env), \(compiledModel), "
+        + "\(options), \(inputBuffers), \(outputBuffers)")
   }
 }

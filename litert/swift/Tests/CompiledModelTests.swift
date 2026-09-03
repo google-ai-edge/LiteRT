@@ -51,13 +51,15 @@ final class CompiledModelTests: XCTestCase {
     let modelPath = "litert/test/testdata/simple_model.tflite"
     let options = try Options()
     try options.setHardwareAccelerators([.cpu])
-    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: options)
+    let compiledModel = try CompiledModel(
+      filePath: modelPath, environment: env, options: options)
     do {
       try compiledModel.clearErrors()
-      let _ = try compiledModel.getErrorMessages()
+      let _ = try compiledModel.errorMessages()
     } catch {
       print(
-        "Error reporter APIs call failed (expected if buffer error reporter mode is not active): \(error)"
+        "Error reporter APIs call failed (expected if buffer error reporter mode is not "
+          + "active): \(error)"
       )
     }
   }
@@ -67,10 +69,11 @@ final class CompiledModelTests: XCTestCase {
     let modelPath = "litert/test/testdata/simple_model.tflite"
     let options = try Options()
     try options.setHardwareAccelerators([.cpu])
-    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: options)
+    let compiledModel = try CompiledModel(
+      filePath: modelPath, environment: env, options: options)
 
-    let inLayout = try compiledModel.getInputTensorLayout(inputIndex: 0)
-    let outLayouts = try compiledModel.getOutputTensorLayouts()
+    let inLayout = try compiledModel.inputTensorLayout(inputIndex: 0)
+    let outLayouts = try compiledModel.outputTensorLayouts()
 
     XCTAssertEqual(inLayout.dimensions, [2])
     XCTAssertEqual(outLayouts.count, 1)
@@ -82,7 +85,8 @@ final class CompiledModelTests: XCTestCase {
     let modelPath = "litert/test/testdata/simple_model.tflite"
     let compOptions = try Options()
     try compOptions.setHardwareAccelerators([.cpu])
-    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: compOptions)
+    let compiledModel = try CompiledModel(
+      filePath: modelPath, environment: env, options: compOptions)
 
     let inputBuffers = try compiledModel.createInputBuffers()
     let outputBuffers = try compiledModel.createOutputBuffers()
@@ -101,7 +105,8 @@ final class CompiledModelTests: XCTestCase {
     let modelPath = "litert/test/testdata/simple_model.tflite"
     let compOptions = try Options()
     try compOptions.setHardwareAccelerators([.cpu])
-    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: compOptions)
+    let compiledModel = try CompiledModel(
+      filePath: modelPath, environment: env, options: compOptions)
 
     let inputBuffers = try compiledModel.createInputBuffers()
     let outputBuffers = try compiledModel.createOutputBuffers()
@@ -120,7 +125,8 @@ final class CompiledModelTests: XCTestCase {
     let modelPath = "litert/test/testdata/simple_model.tflite"
     let compOptions = try Options()
     try compOptions.setHardwareAccelerators([.cpu])
-    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: compOptions)
+    let compiledModel = try CompiledModel(
+      filePath: modelPath, environment: env, options: compOptions)
 
     try compiledModel.setCancellationFunction(userData: nil) { _ in
       return false

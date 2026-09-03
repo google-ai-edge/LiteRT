@@ -166,7 +166,8 @@ public final class CpuOptions: ConcreteOptions {
     return flags
   }
 
-  /// Sets whether to hint at fully delegating to a single delegate so certain allocations can be skipped.
+  /// Sets whether to hint at fully delegating to a single delegate so certain allocations can
+  /// be skipped.
   ///
   /// - Parameter hint: Whether to enable single delegate hinting.
   /// - Throws: `LiteRtError` if setting the hint fails.

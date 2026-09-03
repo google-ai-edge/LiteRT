@@ -70,12 +70,14 @@ swift_test(
     data = [
         "//litert/test:testdata/dynamic_add_model.tflite",
         "//litert/test:testdata/simple_model.tflite",
+        "//litert/test:testdata/simple_quantized_ops.tflite",
     ] + litert_gpu_accelerator_prebuilts(),
     deps = [
         ":CLiteRT_objc",
         ":LiteRT_Swift",
         # Dependency placeholder: apple_frameworks Metal,
         # Dependency placeholder: swift foundation,
+        "//third_party/swift/swift-testing",
         # Dependency placeholder: swift xctest,
     ],
 )
