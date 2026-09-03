@@ -497,52 +497,24 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   }
 
   // Backend Handle
-  std::array<const QnnBackend_Config_t*, 1> backend_configs = {nullptr};
-
-  auto local_backend_handle = CreateBackendHandle(
-      local_log_handle.get(), absl::MakeSpan(backend_configs));
+  auto local_backend_handle = CreateBackendHandle(local_log_handle.get(), {});
   if (!local_backend_handle) {
     QNN_LOG_ERROR("Failed to create backend handle.");
     return false;
   }
 
-  // Starting from QAIRT 2.39, platform information will be available even when
-  // this API is called during offline preparation. However, it will always
-  // return the default SoC info (SM8350). If user specifies a SoC, we will
-  // override the default.
   if (soc_info.has_value()) {
     QNN_LOG_INFO("Using provided SoC info. SoC name: %s.",
                  soc_info->soc_name.data());
     soc_info_ = *soc_info;
-  } else {
-#if defined(__x86_64__) || defined(_M_X64)
-    // Offline compilation on desktop hosts cannot query the target device.
-#else
-    if (auto device_platform_info = CreateDevicePlatformInfo();
-        device_platform_info) {
-      const auto device_info = device_platform_info->v1.hwDevices->v1
-                                   .deviceInfoExtension->onChipDevice;
-      soc_info_ = SocInfo("Online SoC", device_info.socModel);
-    }
-#endif
-#if defined(_WIN32) && defined(_M_ARM64)
-    if (soc_info_.soc_model == 0) {
-      QNN_LOG_WARNING(
-          "Unable to map Windows ARM64 QNN platform info; using SC8380XP "
-          "fallback for Snapdragon X Elite.");
-      static constexpr auto kSC8380XP = FindSocInfo("SC8380XP");
-      static_assert(kSC8380XP.has_value(), "SC8380XP missing from soc_table");
-      soc_info_ = *kSC8380XP;
-    }
-#endif
   }
+#if defined(__x86_64__) || defined(_M_X64)
   if (soc_info_.soc_model == 0) {
-    QNN_LOG_ERROR("SoC info was not configured successfully.")
+    QNN_LOG_ERROR("SoC info was not configured successfully.");
     return false;
   }
   QNN_LOG_INFO("Initializing QNN backend for SoC model: %d",
                soc_info_.soc_model);
-
   // Device Handle
   std::vector<QnnDevice_CustomConfig_t> device_custom_configs;
   QnnHtpDevice_CustomConfig_t* htp_device_custom_config =
@@ -563,9 +535,11 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   }
   // null terminated
   device_configs.emplace_back(nullptr);
-
   auto local_device_handle = CreateDeviceHandle(local_log_handle.get(),
                                                 absl::MakeSpan(device_configs));
+#else
+  auto local_device_handle = CreateDeviceHandle(local_log_handle.get(), {});
+#endif
   if (!local_device_handle) {
     QNN_LOG_ERROR("Failed to create device handle.");
     return false;
