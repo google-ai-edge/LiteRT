@@ -634,6 +634,54 @@ cc_library(
 )
 
 cc_library(
+    name = "reference_evaluator",
+    testonly = True,
+    hdrs = ["reference_evaluator.h"],
+    deps = [
+        ":common",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/core/model",
+        "//litert/core/model:ops_concatenation",
+        "//litert/core/model:ops_matmul",
+        "//litert/core/model:ops_simple_binary",
+        "//litert/core/model:ops_simple_unary",
+        "//litert/core/model:ops_transpose",
+        "//litert/core/model:shape_inference_types",
+        "//litert/test:simple_buffer",
+        "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
+        "@com_google_absl//absl/base:no_destructor",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "reference_evaluator_test",
+    srcs = ["reference_evaluator_test.cc"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        ":reference_evaluator",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_expected",
+        "//litert/core/model",
+        "//litert/test:matchers",
+        "//litert/test:simple_buffer",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:datatypes",
+        "//tensor/backends/tflite:arithmetic_tflite",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "generators",
     testonly = True,
     hdrs = ["generators.h"],
