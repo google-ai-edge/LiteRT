@@ -164,9 +164,18 @@ void PopulateQuantParams(const TfLiteTensor& tensor,
   } else if (tensor.type == kTfLiteInt8) {
     qmin_value = static_cast<float>(std::numeric_limits<int8_t>::min());
     qmax_value = static_cast<float>(std::numeric_limits<int8_t>::max());
+  } else if (tensor.type == kTfLiteUInt4) {
+    qmin_value = 0.0f;
+    qmax_value = 15.0f;
+  } else if (tensor.type == kTfLiteInt4) {
+    qmin_value = -8.0f;
+    qmax_value = 7.0f;
+  } else if (tensor.type == kTfLiteInt2) {
+    qmin_value = -2.0f;
+    qmax_value = 1.0f;
   } else {
     ABSL_LOG(FATAL) << absl::StrCat("Type invalid for quantized tensor: ",
-                                    std::string(tensor.name));
+                                    tensor.name ? tensor.name : "unknown");
   }
   quant_params->min = scale * (static_cast<float>(qmin_value) - zero_point);
   quant_params->max = scale * (static_cast<float>(qmax_value) - zero_point);

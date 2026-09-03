@@ -130,7 +130,10 @@ bool ObjectReader::CanReadNonConstantTensor(
     TfLiteTensor* tflite_tensor = &context->tensors[tensor_idx];
     if (!shared_tensor &&
         (tflite_tensor->type == kTfLiteInt8 ||
-         tflite_tensor->type == kTfLiteUInt8) &&
+         tflite_tensor->type == kTfLiteUInt8 ||
+         tflite_tensor->type == kTfLiteInt4 ||
+         tflite_tensor->type == kTfLiteUInt4 ||
+         tflite_tensor->type == kTfLiteInt2) &&
         quant_conversion_map &&
         tflite_tensor->quantization.type ==
             TfLiteQuantizationType::kTfLiteAffineQuantization) {

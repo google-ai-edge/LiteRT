@@ -4380,7 +4380,10 @@ class QuantizeOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    ABSL_RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 2));
+    // BuiltinOperator_QUANTIZE versions 1-2 support 8-bit quantization, while
+    // versions 3-4 add support for sub-byte (Int4, UInt4, Int2) and block-wise
+    // quantization.
+    ABSL_RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 4));
     ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
         context, tflite_node, registration));
     ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
@@ -7178,6 +7181,8 @@ TfLiteIntArray* GetOpsToReplaceWithOptions(
       allowed_in_types.push_back(kTfLiteInt4);
       allowed_in_types.push_back(kTfLiteInt8);
       allowed_in_types.push_back(kTfLiteUInt8);
+      allowed_out_types.push_back(kTfLiteInt2);
+      allowed_out_types.push_back(kTfLiteInt4);
       allowed_out_types.push_back(kTfLiteInt8);
       allowed_out_types.push_back(kTfLiteUInt8);
     }
