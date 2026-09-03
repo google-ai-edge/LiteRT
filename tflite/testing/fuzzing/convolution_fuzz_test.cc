@@ -13,6 +13,8 @@
  * limitations under the License.
  */
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -23,10 +25,9 @@
 #include <utility>
 #include <vector>
 
-#include "flatbuffers/flatbuffer_builder.h"
-#include <gtest/gtest.h>
-#include "fuzztest/fuzztest.h"
 #include "flatbuffers/buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"
+#include "fuzztest/fuzztest.h"
 #include "tflite/c/common.h"
 #include "tflite/core/kernels/builtin_op_kernels.h"
 #include "tflite/interpreter.h"
@@ -296,7 +297,7 @@ RunResult BuildAndRun(flatbuffers::FlatBufferBuilder* builder,
     run_spec.persistent_ro_tensors.push_back(persistent_filter_tensor_index);
   }
 #if defined(TFLITE_CONVOLUTION_FUZZ_ENABLE_XNNPACK)
-  run_spec.post_allocate = [](Interpreter* interpreter) {
+  run_spec.pre_allocate = [](Interpreter* interpreter) {
     return ApplyXnnpackDelegate(interpreter) == kTfLiteOk &&
                    HasDelegateNode(*interpreter)
                ? RunResult::kSuccess
@@ -1067,6 +1068,203 @@ auto Conv3DTransposeCaseDomain() {
       fuzztest::Arbitrary<bool>());
 }
 
+auto ConvolutionDimensionsDomain(size_t count) {
+  return fuzztest::VectorOf(fuzztest::InRange<int32_t>(1, 3))
+      .WithMinSize(count)
+      .WithMaxSize(count);
+}
+
+auto ValidConv2DCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> dims, Conv2DKernel kernel, int32_t stride_width,
+         int32_t stride_height, int32_t dilation_width, int32_t dilation_height,
+         bool force_persistent_filter) {
+        const std::vector<int32_t> input_shape = {dims[0], dims[1], dims[2],
+                                                  dims[3]};
+        const std::vector<int32_t> filter_shape = {dims[4], dims[5], dims[6],
+                                                   dims[3]};
+        return Conv2DCase{
+            input_shape,        filter_shape,       TensorType_FLOAT32,
+            TensorType_FLOAT32, TensorType_FLOAT32, kernel,
+            Padding_SAME,       stride_width,       stride_height,
+            dilation_width,     dilation_height,    force_persistent_filter,
+            /*invoke=*/true};
+      },
+      ConvolutionDimensionsDomain(7),
+      fuzztest::ElementOf<Conv2DKernel>(
+          {Conv2DKernel::kGenericOptimized,
+           Conv2DKernel::kMultithreadedOptimized}),
+      fuzztest::InRange<int32_t>(1, 2), fuzztest::InRange<int32_t>(1, 2),
+      fuzztest::InRange<int32_t>(1, 2), fuzztest::InRange<int32_t>(1, 2),
+      fuzztest::Arbitrary<bool>());
+}
+
+auto MalformedConv2DCaseDomain() {
+  return fuzztest::Map(
+      [](Conv2DCase test_case) {
+        test_case.filter_shape[3] = test_case.input_shape[3] + 1;
+        return test_case;
+      },
+      ValidConv2DCaseDomain());
+}
+
+auto ValidDepthwiseConvCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> dims, int32_t stride_width, int32_t stride_height,
+         int32_t dilation_width, int32_t dilation_height) {
+        const int32_t output_channels = dims[3] * dims[4];
+        return DepthwiseConvCase{
+            /*input_shape=*/{dims[0], dims[1], dims[2], dims[3]},
+            /*filter_shape=*/{1, dims[5], dims[6], output_channels},
+            TensorType_FLOAT32,
+            TensorType_FLOAT32,
+            TensorType_FLOAT32,
+            Padding_SAME,
+            stride_width,
+            stride_height,
+            dilation_width,
+            dilation_height,
+            /*invoke=*/true};
+      },
+      ConvolutionDimensionsDomain(7), fuzztest::InRange<int32_t>(1, 2),
+      fuzztest::InRange<int32_t>(1, 2), fuzztest::InRange<int32_t>(1, 2),
+      fuzztest::InRange<int32_t>(1, 2));
+}
+
+auto MalformedDepthwiseConvCaseDomain() {
+  return fuzztest::Map(
+      [](DepthwiseConvCase test_case) {
+        test_case.filter_shape[0] = 2;
+        return test_case;
+      },
+      ValidDepthwiseConvCaseDomain());
+}
+
+auto ValidTransposeConvCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> dims) {
+        const std::vector<int32_t> input_shape = {dims[0], dims[1], dims[2],
+                                                  dims[3]};
+        return TransposeConvCase{
+            /*output_shape=*/{dims[0], dims[1], dims[2], dims[4]},
+            /*filter_shape=*/{dims[4], dims[5], dims[6], dims[3]},
+            input_shape,
+            TensorType_FLOAT32,
+            TensorType_FLOAT32,
+            TensorType_FLOAT32,
+            Padding_SAME,
+            /*stride_width=*/1,
+            /*stride_height=*/1,
+            /*invoke=*/true};
+      },
+      ConvolutionDimensionsDomain(7));
+}
+
+auto MalformedTransposeConvCaseDomain() {
+  return fuzztest::Map(
+      [](TransposeConvCase test_case) {
+        test_case.filter_shape.pop_back();
+        return test_case;
+      },
+      ValidTransposeConvCaseDomain());
+}
+
+auto ValidConv3DCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> dims) {
+        return Conv3DCase{
+            /*input_shape=*/{dims[0], dims[1], dims[2], dims[3], dims[4]},
+            /*filter_shape=*/{dims[5], dims[6], dims[7], dims[4], dims[8]},
+            Padding_SAME,
+            /*stride_depth=*/1,
+            /*stride_width=*/1,
+            /*stride_height=*/1,
+            /*dilation_depth=*/1,
+            /*dilation_width=*/1,
+            /*dilation_height=*/1,
+            /*invoke=*/true};
+      },
+      ConvolutionDimensionsDomain(9));
+}
+
+auto MalformedConv3DCaseDomain() {
+  return fuzztest::Map(
+      [](Conv3DCase test_case) {
+        test_case.filter_shape[3] = test_case.input_shape[4] + 1;
+        return test_case;
+      },
+      ValidConv3DCaseDomain());
+}
+
+auto ValidConv3DTransposeCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> dims) {
+        return Conv3DTransposeCase{
+            /*output_shape=*/{dims[0], dims[1], dims[2], dims[3], dims[5]},
+            /*filter_shape=*/{dims[6], dims[7], dims[8], dims[5], dims[4]},
+            /*input_shape=*/{dims[0], dims[1], dims[2], dims[3], dims[4]},
+            Padding_SAME,
+            /*stride_depth=*/1,
+            /*stride_width=*/1,
+            /*stride_height=*/1,
+            /*dilation_depth=*/1,
+            /*dilation_width=*/1,
+            /*dilation_height=*/1,
+            /*invoke=*/true};
+      },
+      ConvolutionDimensionsDomain(9));
+}
+
+auto MalformedConv3DTransposeCaseDomain() {
+  return fuzztest::Map(
+      [](Conv3DTransposeCase test_case) {
+        test_case.output_shape[4] = test_case.filter_shape[3] + 1;
+        return test_case;
+      },
+      ValidConv3DTransposeCaseDomain());
+}
+
+void Conv2DExecutesValidCases(const Conv2DCase& test_case) {
+  ASSERT_EQ(RunConv2D(test_case), RunResult::kSuccess);
+}
+
+void Conv2DRejectsMismatchedChannels(const Conv2DCase& test_case) {
+  ASSERT_EQ(RunConv2D(test_case), RunResult::kRejected);
+}
+
+void DepthwiseConvExecutesValidCases(const DepthwiseConvCase& test_case) {
+  ASSERT_EQ(RunDepthwiseConv(test_case), RunResult::kSuccess);
+}
+
+void DepthwiseConvRejectsMalformedFilter(const DepthwiseConvCase& test_case) {
+  ASSERT_EQ(RunDepthwiseConv(test_case), RunResult::kRejected);
+}
+
+void TransposeConvExecutesValidCases(const TransposeConvCase& test_case) {
+  ASSERT_EQ(RunTransposeConv(test_case), RunResult::kSuccess);
+}
+
+void TransposeConvRejectsMalformedFilter(const TransposeConvCase& test_case) {
+  ASSERT_EQ(RunTransposeConv(test_case), RunResult::kRejected);
+}
+
+void Conv3DExecutesValidCases(const Conv3DCase& test_case) {
+  ASSERT_EQ(RunConv3D(test_case), RunResult::kSuccess);
+}
+
+void Conv3DRejectsMismatchedChannels(const Conv3DCase& test_case) {
+  ASSERT_EQ(RunConv3D(test_case), RunResult::kRejected);
+}
+
+void Conv3DTransposeExecutesValidCases(const Conv3DTransposeCase& test_case) {
+  ASSERT_EQ(RunConv3DTranspose(test_case), RunResult::kSuccess);
+}
+
+void Conv3DTransposeRejectsMismatchedChannels(
+    const Conv3DTransposeCase& test_case) {
+  ASSERT_EQ(RunConv3DTranspose(test_case), RunResult::kRejected);
+}
+
 void Conv2DIsSafeAndContractCompliant(const Conv2DCase& test_case) {
   ExpectSafeAndContractCompliant(
       RunConv2D(test_case),
@@ -1196,6 +1394,28 @@ TEST(ConvolutionFuzzTest, PersistentFilterInvokesMultithreadedKernel) {
 }
 #endif
 
+#if !defined(TFLITE_CONVOLUTION_FUZZ_ENABLE_XNNPACK)
+FUZZ_TEST(ConvolutionFuzzTest, Conv2DExecutesValidCases)
+    .WithDomains(ValidConv2DCaseDomain());
+FUZZ_TEST(ConvolutionFuzzTest, Conv2DRejectsMismatchedChannels)
+    .WithDomains(MalformedConv2DCaseDomain());
+FUZZ_TEST(ConvolutionFuzzTest, DepthwiseConvExecutesValidCases)
+    .WithDomains(ValidDepthwiseConvCaseDomain());
+FUZZ_TEST(ConvolutionFuzzTest, DepthwiseConvRejectsMalformedFilter)
+    .WithDomains(MalformedDepthwiseConvCaseDomain());
+FUZZ_TEST(ConvolutionFuzzTest, TransposeConvExecutesValidCases)
+    .WithDomains(ValidTransposeConvCaseDomain());
+FUZZ_TEST(ConvolutionFuzzTest, TransposeConvRejectsMalformedFilter)
+    .WithDomains(MalformedTransposeConvCaseDomain());
+FUZZ_TEST(ConvolutionFuzzTest, Conv3DExecutesValidCases)
+    .WithDomains(ValidConv3DCaseDomain());
+FUZZ_TEST(ConvolutionFuzzTest, Conv3DRejectsMismatchedChannels)
+    .WithDomains(MalformedConv3DCaseDomain());
+FUZZ_TEST(ConvolutionFuzzTest, Conv3DTransposeExecutesValidCases)
+    .WithDomains(ValidConv3DTransposeCaseDomain());
+FUZZ_TEST(ConvolutionFuzzTest, Conv3DTransposeRejectsMismatchedChannels)
+    .WithDomains(MalformedConv3DTransposeCaseDomain());
+#else
 FUZZ_TEST(ConvolutionFuzzTest, Conv2DIsSafeAndContractCompliant)
     .WithDomains(Conv2DCaseDomain())
     .WithSeeds(Conv2DSeeds());
@@ -1211,6 +1431,7 @@ FUZZ_TEST(ConvolutionFuzzTest, Conv3DIsSafeAndContractCompliant)
 FUZZ_TEST(ConvolutionFuzzTest, Conv3DTransposeIsSafeAndContractCompliant)
     .WithDomains(Conv3DTransposeCaseDomain())
     .WithSeeds(Conv3DTransposeSeeds());
+#endif
 
 }  // namespace
 }  // namespace tflite

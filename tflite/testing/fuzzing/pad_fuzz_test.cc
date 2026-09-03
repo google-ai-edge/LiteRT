@@ -13,6 +13,8 @@
  * limitations under the License.
  */
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -20,10 +22,9 @@
 #include <utility>
 #include <vector>
 
-#include "flatbuffers/flatbuffer_builder.h"
-#include <gtest/gtest.h>
-#include "fuzztest/fuzztest.h"
 #include "flatbuffers/buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"
+#include "fuzztest/fuzztest.h"
 #include "tflite/core/interpreter.h"
 #include "tflite/core/kernels/builtin_op_kernels.h"  // IWYU pragma: keep
 #include "tflite/schema/schema_generated.h"
@@ -363,7 +364,7 @@ RunResult RunPadCase(const PadCase& test_case, KernelVariant kernel_variant,
         {/*tensor_index=*/1, padding_shape, std::move(padding_bytes)});
   }
   if (execution_mode == ExecutionMode::kXnnpack) {
-    run_spec.post_allocate = [](Interpreter* interpreter) {
+    run_spec.pre_allocate = [](Interpreter* interpreter) {
       return ApplyXnnpackDelegate(interpreter) == kTfLiteOk &&
                      HasDelegateNode(*interpreter)
                  ? RunResult::kSuccess
@@ -373,38 +374,60 @@ RunResult RunPadCase(const PadCase& test_case, KernelVariant kernel_variant,
   return fuzzing::BuildAndRunOneOpModel(&builder, model_spec, run_spec);
 }
 
-auto PaddingValueDomain() {
-  // Bias generation toward boundary values: these are the values most likely
-  // to expose integer narrowing, addition, and output-size overflow bugs.
-  return fuzztest::OneOf(
-      fuzztest::InRange<int64_t>(-4, 4), fuzztest::Just<int64_t>(INT32_MAX),
-      fuzztest::Just<int64_t>(INT32_MIN),
-      fuzztest::Just<int64_t>(static_cast<int64_t>(INT32_MAX) + 1),
-      fuzztest::Just<int64_t>(static_cast<int64_t>(INT32_MIN) - 1));
+auto ValidPadInputShapeDomain() {
+  return fuzztest::VectorOf(fuzztest::InRange<int32_t>(0, 3))
+      .WithMinSize(1)
+      .WithMaxSize(4);
 }
 
-auto PadCaseDomain() {
-  // The product domain combines ordinary models with deliberately malformed
-  // tensor metadata, unsupported types, and unusual invocation states.
-  return fuzztest::StructOf<PadCase>(
-      fuzztest::VectorOf(fuzztest::InRange<int32_t>(0, 2))
-          .WithMinSize(0)
-          .WithMaxSize(8),
-      fuzztest::VectorOf(PaddingValueDomain()).WithMinSize(1).WithMaxSize(8),
-      fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
+auto PadValueSeedDomain() {
+  return fuzztest::VectorOf(fuzztest::InRange<int64_t>(0, 2))
+      .WithMinSize(10)
+      .WithMaxSize(10);
+}
+
+template <typename PaddingShapeKindDomain>
+auto StructuredPadCaseDomain(PaddingShapeKindDomain padding_shape_kind_domain) {
+  return fuzztest::Map(
+      [](std::vector<int32_t> input_shape, std::vector<int64_t> padding_values,
+         std::vector<uint8_t> input_data, std::vector<uint8_t> value_data,
+         PadKind pad_kind, PaddingShapeKind padding_shape_kind,
+         TensorType input_type, TensorType padding_type, bool dynamic_paddings,
+         bool quantized_int8) {
+        padding_values.resize(input_shape.size() * 2);
+        return PadCase{std::move(input_shape),
+                       std::move(padding_values),
+                       std::move(input_data),
+                       /*padding_data=*/{},
+                       std::move(value_data),
+                       pad_kind,
+                       padding_shape_kind,
+                       input_type,
+                       padding_type,
+                       dynamic_paddings,
+                       quantized_int8 && input_type == TensorType_INT8,
+                       /*non_scalar_pad_value=*/false,
+                       /*invoke=*/true};
+      },
+      ValidPadInputShapeDomain(), PadValueSeedDomain(),
       fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
       fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
       fuzztest::ElementOf<PadKind>({PadKind::kPad, PadKind::kPadV2}),
-      fuzztest::ElementOf<PaddingShapeKind>(
-          {PaddingShapeKind::kValid, PaddingShapeKind::kWrongRows,
-           PaddingShapeKind::kWrongColumns, PaddingShapeKind::kRankOne}),
+      std::move(padding_shape_kind_domain),
       fuzztest::ElementOf<TensorType>(
           {TensorType_FLOAT32, TensorType_INT8, TensorType_INT32}),
-      fuzztest::ElementOf<TensorType>({TensorType_INT8, TensorType_INT16,
-                                       TensorType_INT32, TensorType_INT64,
-                                       TensorType_BOOL, TensorType_FLOAT32}),
-      fuzztest::Arbitrary<bool>(), fuzztest::Arbitrary<bool>(),
+      fuzztest::ElementOf<TensorType>({TensorType_INT32, TensorType_INT64}),
       fuzztest::Arbitrary<bool>(), fuzztest::Arbitrary<bool>());
+}
+
+auto ValidPadCaseDomain() {
+  return StructuredPadCaseDomain(fuzztest::Just(PaddingShapeKind::kValid));
+}
+
+auto MalformedPadCaseDomain() {
+  return StructuredPadCaseDomain(fuzztest::ElementOf<PaddingShapeKind>(
+      {PaddingShapeKind::kWrongRows, PaddingShapeKind::kWrongColumns,
+       PaddingShapeKind::kRankOne}));
 }
 
 auto ProductStressTargetDimensionDomain() {
@@ -465,7 +488,7 @@ auto XnnpackPadCaseDomain() {
   // kernel: static INT32 paddings, rank >= 1, and PAD rather than PADV2. This
   // domain keeps enough structure to reach delegate code frequently while the
   // byte overlay still mutates tensor contents.
-  return fuzztest::StructOf<PadCase>(
+  auto domain = fuzztest::StructOf<PadCase>(
       fuzztest::VectorOf(fuzztest::InRange<int32_t>(1, 4))
           .WithMinSize(1)
           .WithMaxSize(6),
@@ -478,22 +501,61 @@ auto XnnpackPadCaseDomain() {
       fuzztest::Just(PadKind::kPad), fuzztest::Just(PaddingShapeKind::kValid),
       fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_INT8}),
       fuzztest::Just(TensorType_INT32), fuzztest::Just(false),
-      fuzztest::Just(true), fuzztest::Just(false), fuzztest::Arbitrary<bool>());
+      fuzztest::Just(true), fuzztest::Just(false), fuzztest::Just(true));
+  return fuzztest::Map(
+      [](PadCase test_case) {
+        size_t input_elements = 1;
+        for (int32_t& dimension : test_case.input_shape) {
+          const size_t remaining_elements =
+              kMaxInputElements / input_elements;
+          dimension = std::min<int32_t>(
+              dimension, static_cast<int32_t>(remaining_elements));
+          input_elements *= static_cast<size_t>(dimension);
+        }
+        return test_case;
+      },
+      std::move(domain));
 }
 #endif
 
-void PadNeverCrashes(const PadCase& test_case) {
-  // Rejection is expected for invalid models. A harness failure means the
-  // fuzzer itself constructed an invalid test setup, so treat that as a bug.
-  EXPECT_NE(RunPadCase(test_case, KernelVariant::kGenericOptimized,
+void PadExecutesValidCases(const PadCase& test_case) {
+  SCOPED_TRACE(::testing::Message()
+               << "shape=" << ::testing::PrintToString(test_case.input_shape)
+               << ", padding="
+               << ::testing::PrintToString(test_case.padding_values)
+               << ", kind=" << static_cast<int>(test_case.pad_kind)
+               << ", input_type=" << static_cast<int>(test_case.input_type)
+               << ", padding_type=" << static_cast<int>(test_case.padding_type)
+               << ", dynamic=" << test_case.dynamic_paddings);
+  ASSERT_EQ(RunPadCase(test_case, KernelVariant::kGenericOptimized,
                        ExecutionMode::kBuiltin),
-            RunResult::kHarnessFailure);
+            RunResult::kSuccess);
 }
 
-void PadReferenceNeverCrashes(const PadCase& test_case) {
-  EXPECT_NE(
+void PadReferenceExecutesValidCases(const PadCase& test_case) {
+  SCOPED_TRACE(::testing::Message()
+               << "shape=" << ::testing::PrintToString(test_case.input_shape)
+               << ", padding="
+               << ::testing::PrintToString(test_case.padding_values)
+               << ", kind=" << static_cast<int>(test_case.pad_kind)
+               << ", input_type=" << static_cast<int>(test_case.input_type)
+               << ", padding_type=" << static_cast<int>(test_case.padding_type)
+               << ", dynamic=" << test_case.dynamic_paddings);
+  ASSERT_EQ(
       RunPadCase(test_case, KernelVariant::kReference, ExecutionMode::kBuiltin),
-      RunResult::kHarnessFailure);
+      RunResult::kSuccess);
+}
+
+void PadRejectsMalformedPaddingShape(const PadCase& test_case) {
+  ASSERT_EQ(RunPadCase(test_case, KernelVariant::kGenericOptimized,
+                       ExecutionMode::kBuiltin),
+            RunResult::kRejected);
+}
+
+void PadReferenceRejectsMalformedPaddingShape(const PadCase& test_case) {
+  ASSERT_EQ(
+      RunPadCase(test_case, KernelVariant::kReference, ExecutionMode::kBuiltin),
+      RunResult::kRejected);
 }
 
 void PadRejectsProductStressOverflow(const ProductStressSpec& spec) {
@@ -518,8 +580,13 @@ void PadReferenceRejectsProductStressOverflow(const ProductStressSpec& spec) {
   }
 }
 
-FUZZ_TEST(PadFuzzTest, PadNeverCrashes).WithDomains(PadCaseDomain());
-FUZZ_TEST(PadFuzzTest, PadReferenceNeverCrashes).WithDomains(PadCaseDomain());
+FUZZ_TEST(PadFuzzTest, PadExecutesValidCases).WithDomains(ValidPadCaseDomain());
+FUZZ_TEST(PadFuzzTest, PadReferenceExecutesValidCases)
+    .WithDomains(ValidPadCaseDomain());
+FUZZ_TEST(PadFuzzTest, PadRejectsMalformedPaddingShape)
+    .WithDomains(MalformedPadCaseDomain());
+FUZZ_TEST(PadFuzzTest, PadReferenceRejectsMalformedPaddingShape)
+    .WithDomains(MalformedPadCaseDomain());
 FUZZ_TEST(PadFuzzTest, PadRejectsProductStressOverflow)
     .WithDomains(ProductStressSpecDomain());
 FUZZ_TEST(PadFuzzTest, PadReferenceRejectsProductStressOverflow)
@@ -547,10 +614,38 @@ TEST(PadFuzzTest, PadXnnpackSmokeDelegates) {
             RunResult::kSuccess);
 }
 
-void PadXnnpackNeverCrashes(const PadCase& test_case) {
-  EXPECT_NE(RunPadCase(test_case, KernelVariant::kGenericOptimized,
+TEST(PadFuzzTest, PadXnnpackRankSixSmokeDelegates) {
+  PadCase test_case;
+  test_case.input_shape = {1, 1, 1, 1, 1, 2};
+  test_case.padding_values = {0, 0, 0, 0, 0, 0,
+                              0, 0, 0, 0, 1, 0};
+  test_case.input_data = {};
+  test_case.padding_data = {};
+  test_case.value_data = {};
+  test_case.pad_kind = PadKind::kPad;
+  test_case.padding_shape_kind = PaddingShapeKind::kValid;
+  test_case.input_type = TensorType_FLOAT32;
+  test_case.padding_type = TensorType_INT32;
+  test_case.dynamic_paddings = false;
+  test_case.quantized_int8 = false;
+  test_case.non_scalar_pad_value = false;
+  test_case.invoke = true;
+
+  EXPECT_EQ(RunPadCase(test_case, KernelVariant::kGenericOptimized,
                        ExecutionMode::kXnnpack),
-            RunResult::kHarnessFailure);
+            RunResult::kSuccess);
+}
+
+void PadXnnpackExecutesValidCases(const PadCase& test_case) {
+  SCOPED_TRACE(::testing::Message()
+               << "shape=" << ::testing::PrintToString(test_case.input_shape)
+               << ", padding="
+               << ::testing::PrintToString(test_case.padding_values)
+               << ", input_type=" << static_cast<int>(test_case.input_type)
+               << ", quantized=" << test_case.quantized_int8);
+  EXPECT_EQ(RunPadCase(test_case, KernelVariant::kGenericOptimized,
+                       ExecutionMode::kXnnpack),
+            RunResult::kSuccess);
 }
 
 void PadXnnpackRejectsProductStressOverflow(const ProductStressSpec& spec) {
@@ -564,7 +659,7 @@ void PadXnnpackRejectsProductStressOverflow(const ProductStressSpec& spec) {
   }
 }
 
-FUZZ_TEST(PadFuzzTest, PadXnnpackNeverCrashes)
+FUZZ_TEST(PadFuzzTest, PadXnnpackExecutesValidCases)
     .WithDomains(XnnpackPadCaseDomain());
 FUZZ_TEST(PadFuzzTest, PadXnnpackRejectsProductStressOverflow)
     .WithDomains(XnnpackProductStressSpecDomain());

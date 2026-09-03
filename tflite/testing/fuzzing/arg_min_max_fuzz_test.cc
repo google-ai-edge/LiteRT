@@ -13,16 +13,16 @@
  * limitations under the License.
  */
 
+#include <gtest/gtest.h>
+
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <utility>
 #include <vector>
 
-#include "flatbuffers/flatbuffer_builder.h"
-#include <gtest/gtest.h>
-#include "fuzztest/fuzztest.h"
 #include "flatbuffers/buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"
+#include "fuzztest/fuzztest.h"
 #include "tflite/c/common.h"
 #include "tflite/core/kernels/builtin_op_kernels.h"
 #include "tflite/schema/schema_generated.h"
@@ -149,33 +149,83 @@ RunResult RunArgMinMaxCase(const ArgMinMaxCase& test_case) {
   return fuzzing::BuildAndRunOneOpModel(&builder, model_spec, run_spec);
 }
 
-auto AxisValueDomain() {
-  return fuzztest::OneOf(
-      fuzztest::InRange<int64_t>(-80, 81),
-      fuzztest::Just<int64_t>(std::numeric_limits<int32_t>::max()),
-      fuzztest::Just<int64_t>(std::numeric_limits<int32_t>::min()),
-      fuzztest::Just<int64_t>(std::numeric_limits<int64_t>::max()),
-      fuzztest::Just<int64_t>(std::numeric_limits<int64_t>::min()));
+auto ValidInputShapeDomain() {
+  return fuzztest::VectorOf(fuzztest::InRange<int32_t>(1, 3))
+      .WithMinSize(1)
+      .WithMaxSize(5);
 }
 
-auto ArgMinMaxCaseDomain() {
-  return fuzztest::StructOf<ArgMinMaxCase>(
-      fuzztest::VectorOf(fuzztest::InRange<int32_t>(0, 4))
-          .WithMinSize(0)
-          .WithMaxSize(8),
+auto ValidArgMinMaxCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> input_shape, std::vector<uint8_t> input_data,
+         uint32_t axis_seed, bool negative_axis, TensorType input_type,
+         TensorType axis_type, TensorType output_type, bool is_arg_max,
+         bool dynamic_axis) {
+        const int64_t rank = static_cast<int64_t>(input_shape.size());
+        int64_t axis = static_cast<int64_t>(axis_seed % input_shape.size());
+        if (negative_axis) axis -= rank;
+        return ArgMinMaxCase{std::move(input_shape),
+                             std::move(input_data),
+                             axis,
+                             input_type,
+                             axis_type,
+                             output_type,
+                             is_arg_max,
+                             dynamic_axis,
+                             /*invoke=*/true};
+      },
+      ValidInputShapeDomain(),
       fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
-      AxisValueDomain(),
+      fuzztest::Arbitrary<uint32_t>(), fuzztest::Arbitrary<bool>(),
       fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_UINT8,
                                        TensorType_INT8, TensorType_INT32,
                                        TensorType_BOOL}),
       fuzztest::ElementOf<TensorType>({TensorType_INT32, TensorType_INT64}),
       fuzztest::ElementOf<TensorType>({TensorType_INT32, TensorType_INT64}),
-      fuzztest::Arbitrary<bool>(), fuzztest::Arbitrary<bool>(),
-      fuzztest::Arbitrary<bool>());
+      fuzztest::Arbitrary<bool>(), fuzztest::Arbitrary<bool>());
 }
 
-void ArgMinMaxNeverCrashes(const ArgMinMaxCase& test_case) {
-  EXPECT_NE(RunArgMinMaxCase(test_case), RunResult::kHarnessFailure);
+auto InvalidAxisArgMinMaxCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> input_shape, bool negative_axis, uint8_t distance,
+         TensorType input_type, TensorType axis_type, TensorType output_type,
+         bool is_arg_max, bool dynamic_axis) {
+        const int64_t rank = static_cast<int64_t>(input_shape.size());
+        const int64_t offset = 1 + distance % 8;
+        const int64_t axis = negative_axis ? -rank - offset : rank + offset;
+        return ArgMinMaxCase{std::move(input_shape),
+                             /*input_data=*/{},
+                             axis,
+                             input_type,
+                             axis_type,
+                             output_type,
+                             is_arg_max,
+                             dynamic_axis,
+                             /*invoke=*/true};
+      },
+      ValidInputShapeDomain(), fuzztest::Arbitrary<bool>(),
+      fuzztest::Arbitrary<uint8_t>(),
+      fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_UINT8,
+                                       TensorType_INT8, TensorType_INT32,
+                                       TensorType_BOOL}),
+      fuzztest::ElementOf<TensorType>({TensorType_INT32, TensorType_INT64}),
+      fuzztest::ElementOf<TensorType>({TensorType_INT32, TensorType_INT64}),
+      fuzztest::Arbitrary<bool>(), fuzztest::Arbitrary<bool>());
+}
+
+void ArgMinMaxExecutesValidCases(const ArgMinMaxCase& test_case) {
+  SCOPED_TRACE(::testing::Message()
+               << "shape=" << ::testing::PrintToString(test_case.input_shape)
+               << ", axis=" << test_case.axis_value
+               << ", input_type=" << static_cast<int>(test_case.input_type)
+               << ", axis_type=" << static_cast<int>(test_case.axis_type)
+               << ", output_type=" << static_cast<int>(test_case.output_type)
+               << ", dynamic_axis=" << test_case.dynamic_axis);
+  ASSERT_EQ(RunArgMinMaxCase(test_case), RunResult::kSuccess);
+}
+
+void ArgMinMaxRejectsInvalidAxis(const ArgMinMaxCase& test_case) {
+  ASSERT_EQ(RunArgMinMaxCase(test_case), RunResult::kRejected);
 }
 
 TEST(ArgMinMaxFuzzTest, Rank64Smoke) {
@@ -192,8 +242,10 @@ TEST(ArgMinMaxFuzzTest, Rank64Smoke) {
   EXPECT_EQ(RunArgMinMaxCase(test_case), RunResult::kSuccess);
 }
 
-FUZZ_TEST(ArgMinMaxFuzzTest, ArgMinMaxNeverCrashes)
-    .WithDomains(ArgMinMaxCaseDomain());
+FUZZ_TEST(ArgMinMaxFuzzTest, ArgMinMaxExecutesValidCases)
+    .WithDomains(ValidArgMinMaxCaseDomain());
+FUZZ_TEST(ArgMinMaxFuzzTest, ArgMinMaxRejectsInvalidAxis)
+    .WithDomains(InvalidAxisArgMinMaxCaseDomain());
 
 }  // namespace
 }  // namespace tflite

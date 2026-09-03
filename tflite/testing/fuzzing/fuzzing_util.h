@@ -19,15 +19,14 @@
 #include <algorithm>
 #include <cstdarg>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
-#include "flatbuffers/flatbuffer_builder.h"
 #include "flatbuffers/buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/core/c/common.h"
 #include "tflite/schema/schema_generated.h"
@@ -41,10 +40,11 @@ constexpr size_t kModelBufferAlignment = 16;
 
 class SilentErrorReporter final : public ErrorReporter {
  public:
-  int Report(const char* format, va_list args) override {
-    const int result = std::vfprintf(stderr, format, args);
-    std::fprintf(stderr, "\n");
-    return result;
+  int Report(const char*, va_list) override {
+    // Expected validation failures are part of normal fuzzing and printing
+    // each one makes coverage-guided runs unnecessarily slow and noisy. For
+    // local debugging, temporarily add the vfprintf/printf calls back here.
+    return 0;
   }
 };
 

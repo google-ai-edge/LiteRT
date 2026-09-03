@@ -13,16 +13,18 @@
  * limitations under the License.
  */
 
+#include <gtest/gtest.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <utility>
 #include <vector>
 
-#include "flatbuffers/flatbuffer_builder.h"
-#include <gtest/gtest.h>
-#include "fuzztest/fuzztest.h"
 #include "flatbuffers/buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"
+#include "fuzztest/fuzztest.h"
 #include "tflite/array.h"
 #include "tflite/c/common.h"
 #include "tflite/core/kernels/builtin_op_kernels.h"
@@ -31,6 +33,10 @@
 #include "tflite/schema/schema_generated.h"
 #include "tflite/testing/fuzzing/fuzzing_util.h"
 #include "tflite/testing/fuzzing/one_op_fuzz_model.h"
+
+#if defined(TFLITE_RESHAPE_FUZZ_ENABLE_XNNPACK)
+#include "tflite/delegates/xnnpack/xnnpack_delegate.h"
+#endif
 
 namespace tflite {
 namespace ops {
@@ -50,6 +56,7 @@ enum class ShapeSpecKind {
   kConstantTensor,
   kDynamicTensor,
 };
+enum class ExecutionMode { kBuiltin, kXnnpack };
 
 struct ReshapeCase {
   std::vector<int32_t> input_shape;
@@ -112,7 +119,36 @@ bool IsSupportedInputType(TensorType type) {
   }
 }
 
-RunResult RunReshapeCase(const ReshapeCase& test_case) {
+TfLiteStatus ApplyXnnpackDelegate(Interpreter* interpreter) {
+#if defined(TFLITE_RESHAPE_FUZZ_ENABLE_XNNPACK)
+  TfLiteXNNPackDelegateOptions options = TfLiteXNNPackDelegateOptionsDefault();
+  options.num_threads = 1;
+  std::unique_ptr<TfLiteDelegate, void (*)(TfLiteDelegate*)> delegate(
+      TfLiteXNNPackDelegateCreate(&options), TfLiteXNNPackDelegateDelete);
+  if (delegate == nullptr) return kTfLiteError;
+  return interpreter->ModifyGraphWithDelegate(std::move(delegate));
+#else
+  (void)interpreter;
+  return kTfLiteError;
+#endif
+}
+
+bool HasDelegateNode(const Interpreter& interpreter) {
+  for (const int node_index : interpreter.execution_plan()) {
+    const auto* node_and_registration =
+        interpreter.node_and_registration(node_index);
+    if (node_and_registration != nullptr &&
+        node_and_registration->second.builtin_code ==
+            BuiltinOperator_DELEGATE) {
+      return true;
+    }
+  }
+  return false;
+}
+
+RunResult RunReshapeCase(
+    const ReshapeCase& test_case,
+    ExecutionMode execution_mode = ExecutionMode::kBuiltin) {
   if (!IsSupportedInputType(test_case.input_type)) {
     return RunResult::kRejected;
   }
@@ -155,10 +191,19 @@ RunResult RunReshapeCase(const ReshapeCase& test_case) {
   const auto shape_tensor_shape = builder.CreateVector(std::vector<int32_t>{
       static_cast<int32_t>(test_case.target_shape.size())});
   const auto empty_output_shape = builder.CreateVector(std::vector<int32_t>{});
+  flatbuffers::Offset<QuantizationParameters> quantization = 0;
+  if (test_case.input_type == TensorType_INT8 ||
+      test_case.input_type == TensorType_UINT8) {
+    quantization = CreateQuantizationParameters(
+        builder, 0, 0, builder.CreateVector<float>({0.25f}),
+        builder.CreateVector<int64_t>({0}));
+  }
   const auto input_tensor =
-      CreateTensor(builder, input_shape, test_case.input_type, /*buffer=*/0);
+      CreateTensor(builder, input_shape, test_case.input_type, /*buffer=*/0,
+                   /*name=*/0, quantization);
   const auto output_tensor =
-      CreateTensor(builder, empty_output_shape, test_case.input_type);
+      CreateTensor(builder, empty_output_shape, test_case.input_type,
+                   /*buffer=*/0, /*name=*/0, quantization);
 
   std::vector<flatbuffers::Offset<Tensor>> tensors = {input_tensor};
   std::vector<int32_t> op_inputs = {0};
@@ -207,6 +252,14 @@ RunResult RunReshapeCase(const ReshapeCase& test_case) {
              static_cast<int32_t>(test_case.target_shape.size())},
          std::move(target_shape_bytes)});
   }
+  if (execution_mode == ExecutionMode::kXnnpack) {
+    run_spec.pre_allocate = [](Interpreter* interpreter) {
+      return ApplyXnnpackDelegate(interpreter) == kTfLiteOk &&
+                     HasDelegateNode(*interpreter)
+                 ? RunResult::kSuccess
+                 : RunResult::kRejected;
+    };
+  }
 
   return fuzzing::BuildAndRunOneOpModel(&builder, model_spec, run_spec);
 }
@@ -223,23 +276,40 @@ TfLiteStatus ResolveReshapeShapeCase(const ReshapeShapeCase& test_case,
   return status;
 }
 
-auto ReshapeDimDomain() {
-  return fuzztest::OneOf(
-      fuzztest::InRange<int32_t>(-2, 8), fuzztest::Just<int32_t>(32767),
-      fuzztest::Just<int32_t>(32768), fuzztest::Just<int32_t>(46340),
-      fuzztest::Just<int32_t>(46341),
-      fuzztest::Just<int32_t>(std::numeric_limits<int32_t>::max()),
-      fuzztest::Just<int32_t>(std::numeric_limits<int32_t>::min()));
+auto ValidReshapeInputShapeDomain() {
+  return fuzztest::VectorOf(fuzztest::InRange<int32_t>(1, 4))
+      .WithMinSize(0)
+      .WithMaxSize(4);
 }
 
-auto ReshapeCaseDomain() {
-  return fuzztest::StructOf<ReshapeCase>(
-      fuzztest::VectorOf(fuzztest::OneOf(fuzztest::InRange<int32_t>(0, 4),
-                                         fuzztest::Just<int32_t>(32768),
-                                         fuzztest::Just<int32_t>(46341)))
-          .WithMinSize(0)
-          .WithMaxSize(8),
-      fuzztest::VectorOf(ReshapeDimDomain()).WithMinSize(0).WithMaxSize(16),
+auto ValidReshapeCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> input_shape, uint8_t target_kind,
+         std::vector<uint8_t> input_data, TensorType input_type,
+         ShapeSpecKind shape_spec_kind) {
+        size_t element_count = 0;
+        fuzzing::CheckedShapeElementCount(input_shape, &element_count);
+        std::vector<int32_t> target_shape;
+        switch (target_kind % 4) {
+          case 0:
+            target_shape = input_shape;
+            break;
+          case 1:
+            target_shape = {static_cast<int32_t>(element_count)};
+            break;
+          case 2:
+            target_shape = {1, static_cast<int32_t>(element_count)};
+            break;
+          case 3:
+            target_shape.assign(input_shape.rbegin(), input_shape.rend());
+            break;
+        }
+        return ReshapeCase{std::move(input_shape), std::move(target_shape),
+                           std::move(input_data),  input_type,
+                           shape_spec_kind,
+                           /*invoke=*/true};
+      },
+      ValidReshapeInputShapeDomain(), fuzztest::Arbitrary<uint8_t>(),
       fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
       fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_UINT8,
                                        TensorType_INT8, TensorType_INT4,
@@ -247,37 +317,133 @@ auto ReshapeCaseDomain() {
                                        TensorType_INT64, TensorType_BOOL}),
       fuzztest::ElementOf<ShapeSpecKind>({ShapeSpecKind::kOptionsOnly,
                                           ShapeSpecKind::kConstantTensor,
-                                          ShapeSpecKind::kDynamicTensor}),
-      fuzztest::Arbitrary<bool>());
+                                          ShapeSpecKind::kDynamicTensor}));
 }
 
-auto ReshapeShapeCaseDomain() {
-  return fuzztest::StructOf<ReshapeShapeCase>(
-      fuzztest::VectorOf(
-          fuzztest::OneOf(fuzztest::InRange<int>(0, 8),
-                          fuzztest::Just<int>(std::numeric_limits<int>::max()),
-                          fuzztest::Just<int>(std::numeric_limits<int>::min())))
+auto InvalidReshapeElementCountCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> input_shape, TensorType input_type,
+         ShapeSpecKind shape_spec_kind) {
+        size_t element_count = 0;
+        fuzzing::CheckedShapeElementCount(input_shape, &element_count);
+        return ReshapeCase{
+            std::move(input_shape),
+            /*target_shape=*/{static_cast<int32_t>(element_count + 1)},
+            /*input_data=*/{},
+            input_type,
+            shape_spec_kind,
+            /*invoke=*/true};
+      },
+      ValidReshapeInputShapeDomain(),
+      fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_UINT8,
+                                       TensorType_INT8, TensorType_INT4,
+                                       TensorType_INT16, TensorType_INT32,
+                                       TensorType_INT64, TensorType_BOOL}),
+      fuzztest::ElementOf<ShapeSpecKind>({ShapeSpecKind::kOptionsOnly,
+                                          ShapeSpecKind::kConstantTensor,
+                                          ShapeSpecKind::kDynamicTensor}));
+}
+
+#if defined(TFLITE_RESHAPE_FUZZ_ENABLE_XNNPACK)
+auto XnnpackReshapeCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> input_shape, uint8_t target_kind,
+         std::vector<uint8_t> input_data, TensorType input_type,
+         ShapeSpecKind shape_spec_kind) {
+        size_t element_count = 0;
+        fuzzing::CheckedShapeElementCount(input_shape, &element_count);
+        std::vector<int32_t> target_shape;
+        switch (target_kind % 4) {
+          case 0:
+            target_shape = input_shape;
+            break;
+          case 1:
+            target_shape = {static_cast<int32_t>(element_count)};
+            break;
+          case 2:
+            target_shape = {1, static_cast<int32_t>(element_count)};
+            break;
+          case 3:
+            target_shape.assign(input_shape.rbegin(), input_shape.rend());
+            break;
+        }
+        return ReshapeCase{std::move(input_shape), std::move(target_shape),
+                           std::move(input_data),  input_type,
+                           shape_spec_kind,
+                           /*invoke=*/true};
+      },
+      fuzztest::VectorOf(fuzztest::InRange<int32_t>(1, 3))
+          .WithMinSize(1)
+          .WithMaxSize(5),
+      fuzztest::Arbitrary<uint8_t>(),
+      fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
+      fuzztest::ElementOf<TensorType>(
+          {TensorType_FLOAT32, TensorType_UINT8, TensorType_INT8}),
+      fuzztest::ElementOf<ShapeSpecKind>(
+          {ShapeSpecKind::kOptionsOnly, ShapeSpecKind::kConstantTensor}));
+}
+#endif
+
+auto ValidReshapeShapeCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int> input_shape, uint8_t target_kind) {
+        size_t element_count = 1;
+        for (const int dim : input_shape) element_count *= dim;
+        std::vector<int> target_shape;
+        switch (target_kind % 3) {
+          case 0:
+            target_shape = input_shape;
+            break;
+          case 1:
+            target_shape = {static_cast<int>(element_count)};
+            break;
+          case 2:
+            target_shape = {1, static_cast<int>(element_count)};
+            break;
+        }
+        return ReshapeShapeCase{std::move(input_shape),
+                                std::move(target_shape)};
+      },
+      fuzztest::VectorOf(fuzztest::InRange<int>(1, 4))
           .WithMinSize(0)
-          .WithMaxSize(16),
-      fuzztest::VectorOf(
-          fuzztest::OneOf(fuzztest::InRange<int>(-2, 8),
-                          fuzztest::Just<int>(std::numeric_limits<int>::max()),
-                          fuzztest::Just<int>(std::numeric_limits<int>::min())))
+          .WithMaxSize(4),
+      fuzztest::Arbitrary<uint8_t>());
+}
+
+auto InvalidReshapeShapeCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int> input_shape) {
+        size_t element_count = 1;
+        for (const int dim : input_shape) element_count *= dim;
+        return ReshapeShapeCase{
+            std::move(input_shape),
+            /*target_shape=*/{static_cast<int>(element_count + 1)}};
+      },
+      fuzztest::VectorOf(fuzztest::InRange<int>(1, 4))
           .WithMinSize(0)
-          .WithMaxSize(16));
+          .WithMaxSize(4));
 }
 
-void ReshapeNeverCrashes(const ReshapeCase& test_case) {
-  EXPECT_NE(RunReshapeCase(test_case), RunResult::kHarnessFailure);
+void ReshapeExecutesValidCases(const ReshapeCase& test_case) {
+  SCOPED_TRACE(::testing::Message()
+               << "input_shape="
+               << ::testing::PrintToString(test_case.input_shape)
+               << ", target_shape="
+               << ::testing::PrintToString(test_case.target_shape)
+               << ", type=" << static_cast<int>(test_case.input_type)
+               << ", spec=" << static_cast<int>(test_case.shape_spec_kind));
+  ASSERT_EQ(RunReshapeCase(test_case), RunResult::kSuccess);
 }
 
-void ReshapeShapeResolverNeverCrashes(const ReshapeShapeCase& test_case) {
+void ReshapeRejectsMismatchedElementCount(const ReshapeCase& test_case) {
+  ASSERT_EQ(RunReshapeCase(test_case), RunResult::kRejected);
+}
+
+void ReshapeShapeResolverAcceptsValidCases(const ReshapeShapeCase& test_case) {
   std::vector<int> resolved_shape;
   const TfLiteStatus status =
       ResolveReshapeShapeCase(test_case, resolved_shape);
-  if (status != kTfLiteOk) {
-    return;
-  }
+  ASSERT_EQ(status, kTfLiteOk);
 
   for (const int dim : resolved_shape) {
     EXPECT_GE(dim, 0);
@@ -287,6 +453,12 @@ void ReshapeShapeResolverNeverCrashes(const ReshapeShapeCase& test_case) {
   EXPECT_TRUE(CheckedElementCount(test_case.input_shape, input_element_count));
   EXPECT_TRUE(CheckedElementCount(resolved_shape, output_element_count));
   EXPECT_EQ(input_element_count, output_element_count);
+}
+
+void ReshapeShapeResolverRejectsMismatchedElementCount(
+    const ReshapeShapeCase& test_case) {
+  std::vector<int> resolved_shape;
+  ASSERT_NE(ResolveReshapeShapeCase(test_case, resolved_shape), kTfLiteOk);
 }
 
 TEST(ReshapeFuzzTest, ScalarOutputSmoke) {
@@ -336,10 +508,42 @@ TEST(ReshapeShapeResolverFuzzTest, RejectsInputShapeProductOverflow) {
             kTfLiteOk);
 }
 
-FUZZ_TEST(ReshapeFuzzTest, ReshapeNeverCrashes)
-    .WithDomains(ReshapeCaseDomain());
-FUZZ_TEST(ReshapeShapeResolverFuzzTest, ReshapeShapeResolverNeverCrashes)
-    .WithDomains(ReshapeShapeCaseDomain());
+FUZZ_TEST(ReshapeFuzzTest, ReshapeExecutesValidCases)
+    .WithDomains(ValidReshapeCaseDomain());
+FUZZ_TEST(ReshapeFuzzTest, ReshapeRejectsMismatchedElementCount)
+    .WithDomains(InvalidReshapeElementCountCaseDomain());
+FUZZ_TEST(ReshapeShapeResolverFuzzTest, ReshapeShapeResolverAcceptsValidCases)
+    .WithDomains(ValidReshapeShapeCaseDomain());
+FUZZ_TEST(ReshapeShapeResolverFuzzTest,
+          ReshapeShapeResolverRejectsMismatchedElementCount)
+    .WithDomains(InvalidReshapeShapeCaseDomain());
+
+#if defined(TFLITE_RESHAPE_FUZZ_ENABLE_XNNPACK)
+TEST(ReshapeFuzzTest, ReshapeXnnpackRankSixSmokeDelegates) {
+  EXPECT_EQ(RunReshapeCase({/*input_shape=*/{1, 1, 1, 1, 2, 2},
+                            /*target_shape=*/{1, 1, 1, 2, 1, 2},
+                            /*input_data=*/{}, TensorType_FLOAT32,
+                            ShapeSpecKind::kConstantTensor,
+                            /*invoke=*/true},
+                           ExecutionMode::kXnnpack),
+            RunResult::kSuccess);
+}
+
+void ReshapeXnnpackExecutesValidCases(const ReshapeCase& test_case) {
+  SCOPED_TRACE(::testing::Message()
+               << "input_shape="
+               << ::testing::PrintToString(test_case.input_shape)
+               << ", target_shape="
+               << ::testing::PrintToString(test_case.target_shape)
+               << ", type=" << static_cast<int>(test_case.input_type)
+               << ", spec=" << static_cast<int>(test_case.shape_spec_kind));
+  ASSERT_EQ(RunReshapeCase(test_case, ExecutionMode::kXnnpack),
+            RunResult::kSuccess);
+}
+
+FUZZ_TEST(ReshapeFuzzTest, ReshapeXnnpackExecutesValidCases)
+    .WithDomains(XnnpackReshapeCaseDomain());
+#endif
 
 }  // namespace
 }  // namespace tflite

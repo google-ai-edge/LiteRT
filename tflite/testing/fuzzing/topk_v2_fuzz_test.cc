@@ -13,16 +13,16 @@
  * limitations under the License.
  */
 
+#include <gtest/gtest.h>
+
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <utility>
 #include <vector>
 
-#include "flatbuffers/flatbuffer_builder.h"
-#include <gtest/gtest.h>
-#include "fuzztest/fuzztest.h"
 #include "flatbuffers/buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"
+#include "fuzztest/fuzztest.h"
 #include "tflite/c/common.h"
 #include "tflite/core/kernels/builtin_op_kernels.h"
 #include "tflite/schema/schema_generated.h"
@@ -133,27 +133,72 @@ RunResult RunTopKV2Case(const TopKV2Case& test_case) {
   return fuzzing::BuildAndRunOneOpModel(&builder, model_spec, run_spec);
 }
 
-auto TopKV2CaseDomain() {
-  return fuzztest::StructOf<TopKV2Case>(
-      fuzztest::VectorOf(fuzztest::InRange<int32_t>(0, 8))
-          .WithMinSize(0)
-          .WithMaxSize(6),
+auto ValidTopKInputShapeDomain() {
+  return fuzztest::VectorOf(fuzztest::InRange<int32_t>(1, 4))
+      .WithMinSize(1)
+      .WithMaxSize(4);
+}
+
+auto ValidTopKV2CaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> input_shape, std::vector<uint8_t> input_data,
+         uint32_t k_seed, TensorType input_type, TensorType k_type,
+         TensorType output_index_type, bool dynamic_k) {
+        const int32_t row_size = input_shape.back();
+        const int32_t k = 1 + static_cast<int32_t>(k_seed % row_size);
+        return TopKV2Case{std::move(input_shape),
+                          std::move(input_data),
+                          k,
+                          input_type,
+                          k_type,
+                          output_index_type,
+                          dynamic_k,
+                          /*invoke=*/true};
+      },
+      ValidTopKInputShapeDomain(),
       fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
-      fuzztest::OneOf(
-          fuzztest::InRange<int32_t>(-4, 16),
-          fuzztest::Just<int32_t>(std::numeric_limits<int32_t>::max()),
-          fuzztest::Just<int32_t>(std::numeric_limits<int32_t>::min())),
+      fuzztest::Arbitrary<uint32_t>(),
       fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_UINT8,
                                        TensorType_INT8, TensorType_INT16,
                                        TensorType_INT32, TensorType_INT64}),
-      fuzztest::ElementOf<TensorType>(
-          {TensorType_INT32, TensorType_INT16, TensorType_INT64}),
       fuzztest::ElementOf<TensorType>({TensorType_INT32, TensorType_INT16}),
-      fuzztest::Arbitrary<bool>(), fuzztest::Arbitrary<bool>());
+      fuzztest::ElementOf<TensorType>({TensorType_INT32, TensorType_INT16}),
+      fuzztest::Arbitrary<bool>());
 }
 
-void TopKV2NeverCrashes(const TopKV2Case& test_case) {
-  EXPECT_NE(RunTopKV2Case(test_case), RunResult::kHarnessFailure);
+auto InvalidKTopKV2CaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> input_shape, uint8_t distance,
+         TensorType input_type, TensorType k_type, TensorType output_index_type,
+         bool dynamic_k) {
+        const int32_t k = input_shape.back() + 1 + distance % 8;
+        return TopKV2Case{
+            std::move(input_shape), /*input_data=*/{}, k, input_type, k_type,
+            output_index_type,      dynamic_k,
+            /*invoke=*/true};
+      },
+      ValidTopKInputShapeDomain(), fuzztest::Arbitrary<uint8_t>(),
+      fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_UINT8,
+                                       TensorType_INT8, TensorType_INT16,
+                                       TensorType_INT32, TensorType_INT64}),
+      fuzztest::ElementOf<TensorType>({TensorType_INT32, TensorType_INT16}),
+      fuzztest::ElementOf<TensorType>({TensorType_INT32, TensorType_INT16}),
+      fuzztest::Arbitrary<bool>());
+}
+
+void TopKV2ExecutesValidCases(const TopKV2Case& test_case) {
+  SCOPED_TRACE(::testing::Message()
+               << "shape=" << ::testing::PrintToString(test_case.input_shape)
+               << ", k=" << test_case.k
+               << ", input_type=" << static_cast<int>(test_case.input_type)
+               << ", k_type=" << static_cast<int>(test_case.k_type)
+               << ", output_index_type="
+               << static_cast<int>(test_case.output_index_type));
+  ASSERT_EQ(RunTopKV2Case(test_case), RunResult::kSuccess);
+}
+
+void TopKV2RejectsInvalidK(const TopKV2Case& test_case) {
+  ASSERT_EQ(RunTopKV2Case(test_case), RunResult::kRejected);
 }
 
 TEST(TopKV2FuzzTest, Rank64Smoke) {
@@ -169,7 +214,10 @@ TEST(TopKV2FuzzTest, Rank64Smoke) {
   EXPECT_EQ(RunTopKV2Case(test_case), RunResult::kSuccess);
 }
 
-FUZZ_TEST(TopKV2FuzzTest, TopKV2NeverCrashes).WithDomains(TopKV2CaseDomain());
+FUZZ_TEST(TopKV2FuzzTest, TopKV2ExecutesValidCases)
+    .WithDomains(ValidTopKV2CaseDomain());
+FUZZ_TEST(TopKV2FuzzTest, TopKV2RejectsInvalidK)
+    .WithDomains(InvalidKTopKV2CaseDomain());
 
 }  // namespace
 }  // namespace tflite

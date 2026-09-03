@@ -34,8 +34,8 @@ cc_test(
         "//tflite/core:framework_stable",
         "//tflite/kernels:test_util",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
         "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -54,8 +54,8 @@ cc_test(
         "//tflite/core/kernels:builtin_ops",
         "//tflite/core/tools:verifier",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
         "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/core/platform:resource_loader",
     ],
 )
@@ -94,8 +94,8 @@ cc_test(
         "//tflite/delegates/xnnpack:xnnpack_delegate_hdrs_only",
         "//tflite/schema:schema_fbs",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
         "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
         "@flatbuffers",
     ],
 )
@@ -112,8 +112,8 @@ cc_test(
         "//tflite/delegates/xnnpack:xnnpack_delegate",
         "//tflite/schema:schema_fbs",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
         "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
         "@flatbuffers",
     ],
 )
@@ -127,8 +127,8 @@ cc_test(
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
         "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
         "@flatbuffers",
     ],
 )
@@ -143,8 +143,8 @@ cc_test(
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
         "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
         "@flatbuffers",
     ],
 )
@@ -161,8 +161,8 @@ cc_test(
         "//tflite/delegates/xnnpack:xnnpack_delegate_hdrs_only",
         "//tflite/schema:schema_fbs",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
         "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
         "@flatbuffers",
     ],
 )
@@ -180,8 +180,8 @@ cc_test(
         "//tflite/delegates/xnnpack:xnnpack_delegate",
         "//tflite/schema:schema_fbs",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
         "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
         "@flatbuffers",
     ],
 )
@@ -196,8 +196,8 @@ cc_test(
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
         "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
         "@flatbuffers",
     ],
 )
@@ -212,8 +212,8 @@ cc_test(
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
         "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
         "@flatbuffers",
     ],
 )
@@ -230,8 +230,8 @@ cc_test(
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
         "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
         "@flatbuffers",
     ],
 )
@@ -249,8 +249,8 @@ cc_test(
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
         "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
         "@flatbuffers",
     ],
 )
@@ -265,8 +265,8 @@ cc_test(
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
         "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
         "@flatbuffers",
     ],
 )
@@ -281,8 +281,8 @@ cc_test(
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
         "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
         "@flatbuffers",
     ],
 )
@@ -297,8 +297,8 @@ cc_test(
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
         "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
         "@flatbuffers",
     ],
 )
@@ -316,8 +316,61 @@ cc_test(
         "//tflite/kernels/internal:runtime_shape",
         "//tflite/schema:schema_fbs",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
         "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+    ],
+)
+
+cc_test(
+    name = "reshape_xnnpack_fuzz_test",
+    srcs = ["reshape_fuzz_test.cc"],
+    defines = ["TFLITE_RESHAPE_FUZZ_ENABLE_XNNPACK"],
+    deps = [
+        ":fuzzing_support",
+        "//tflite:array",
+        "//tflite:framework",
+        "//tflite/c:common",
+        "//tflite/core/kernels:builtin_ops",
+        "//tflite/delegates/xnnpack:xnnpack_delegate",
+        "//tflite/kernels/internal:reshape_utils",
+        "//tflite/kernels/internal:runtime_shape",
+        "//tflite/schema:schema_fbs",
+        "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
+        "@com_google_googletest//:gtest",
+        "@flatbuffers",
+    ],
+)
+
+cc_test(
+    name = "slice_fuzz_test",
+    srcs = ["slice_fuzz_test.cc"],
+    deps = [
+        ":fuzzing_support",
+        "//tflite:framework",
+        "//tflite/core/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
+        "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
+        "@com_google_googletest//:gtest",
+        "@flatbuffers",
+    ],
+)
+
+cc_test(
+    name = "slice_xnnpack_fuzz_test",
+    srcs = ["slice_fuzz_test.cc"],
+    defines = ["TFLITE_SLICE_FUZZ_ENABLE_XNNPACK"],
+    deps = [
+        ":fuzzing_support",
+        "//tflite:framework",
+        "//tflite/core/kernels:builtin_ops",
+        "//tflite/delegates/xnnpack:xnnpack_delegate",
+        "//tflite/schema:schema_fbs",
+        "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
+        "@com_google_googletest//:gtest",
         "@flatbuffers",
     ],
 )

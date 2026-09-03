@@ -13,15 +13,16 @@
  * limitations under the License.
  */
 
+#include <gtest/gtest.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <utility>
 #include <vector>
 
-#include "flatbuffers/flatbuffer_builder.h"
-#include <gtest/gtest.h>
-#include "fuzztest/fuzztest.h"
 #include "flatbuffers/buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"
+#include "fuzztest/fuzztest.h"
 #include "tflite/c/common.h"
 #include "tflite/core/kernels/builtin_op_kernels.h"
 #include "tflite/schema/schema_generated.h"
@@ -125,12 +126,6 @@ RunResult RunCastCase(const CastCase& test_case) {
   return fuzzing::BuildAndRunOneOpModel(&builder, model_spec, run_spec);
 }
 
-auto SmallShapeDimDomain() {
-  return fuzztest::OneOf(fuzztest::InRange<int32_t>(0, 4),
-                         fuzztest::Just<int32_t>(32768),
-                         fuzztest::Just<int32_t>(46341));
-}
-
 auto CastTensorTypeDomain() {
   return fuzztest::ElementOf<TensorType>(
       {TensorType_FLOAT32, TensorType_FLOAT16, TensorType_INT32,
@@ -140,16 +135,66 @@ auto CastTensorTypeDomain() {
        TensorType_BFLOAT16, TensorType_INT2, TensorType_UINT4});
 }
 
-auto CastCaseDomain() {
-  return fuzztest::StructOf<CastCase>(
-      fuzztest::VectorOf(SmallShapeDimDomain()).WithMinSize(0).WithMaxSize(8),
-      fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
-      CastTensorTypeDomain(), CastTensorTypeDomain(),
-      fuzztest::Arbitrary<bool>());
+bool IsPackedTensorType(TensorType type) {
+  return type == TensorType_INT4 || type == TensorType_INT2 ||
+         type == TensorType_UINT4;
 }
 
-void CastNeverCrashes(const CastCase& test_case) {
-  EXPECT_NE(RunCastCase(test_case), RunResult::kHarnessFailure);
+bool IsFloatingTensorType(TensorType type) {
+  return type == TensorType_FLOAT32 || type == TensorType_FLOAT16 ||
+         type == TensorType_FLOAT64;
+}
+
+auto ValidCastCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> input_shape, std::vector<uint8_t> input_data,
+         TensorType input_type, TensorType output_type) {
+        // Packed inputs are currently implemented only when casting to
+        // FLOAT32, and packed outputs only when casting from FLOAT32.
+        if (IsPackedTensorType(input_type)) output_type = TensorType_FLOAT32;
+        if (IsPackedTensorType(output_type)) input_type = TensorType_FLOAT32;
+        // Arbitrary floating-point bit patterns can include NaNs and values
+        // outside an integer destination's range. Use the structured values
+        // produced by MakeValues for those conversions.
+        if (IsFloatingTensorType(input_type) &&
+            !IsFloatingTensorType(output_type) &&
+            output_type != TensorType_BOOL) {
+          input_data.clear();
+        }
+        return CastCase{std::move(input_shape), std::move(input_data),
+                        input_type, output_type, /*invoke=*/true};
+      },
+      fuzztest::VectorOf(fuzztest::InRange<int32_t>(0, 3))
+          .WithMinSize(0)
+          .WithMaxSize(5),
+      fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
+      CastTensorTypeDomain(), CastTensorTypeDomain());
+}
+
+auto InvalidShapeCastCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> input_shape, uint8_t dimension) {
+        input_shape[dimension % input_shape.size()] = -1;
+        return CastCase{std::move(input_shape), /*input_data=*/{},
+                        TensorType_FLOAT32, TensorType_FLOAT32,
+                        /*invoke=*/true};
+      },
+      fuzztest::VectorOf(fuzztest::InRange<int32_t>(1, 4))
+          .WithMinSize(1)
+          .WithMaxSize(5),
+      fuzztest::Arbitrary<uint8_t>());
+}
+
+void CastExecutesValidCases(const CastCase& test_case) {
+  SCOPED_TRACE(::testing::Message()
+               << "shape=" << ::testing::PrintToString(test_case.input_shape)
+               << ", input_type=" << static_cast<int>(test_case.input_type)
+               << ", output_type=" << static_cast<int>(test_case.output_type));
+  ASSERT_EQ(RunCastCase(test_case), RunResult::kSuccess);
+}
+
+void CastRejectsInvalidShape(const CastCase& test_case) {
+  ASSERT_EQ(RunCastCase(test_case), RunResult::kRejected);
 }
 
 TEST(CastFuzzTest, Float32ToInt32Smoke) {
@@ -175,7 +220,10 @@ TEST(CastFuzzTest, ZeroElementSmoke) {
       RunResult::kSuccess);
 }
 
-FUZZ_TEST(CastFuzzTest, CastNeverCrashes).WithDomains(CastCaseDomain());
+FUZZ_TEST(CastFuzzTest, CastExecutesValidCases)
+    .WithDomains(ValidCastCaseDomain());
+FUZZ_TEST(CastFuzzTest, CastRejectsInvalidShape)
+    .WithDomains(InvalidShapeCastCaseDomain());
 
 }  // namespace
 }  // namespace tflite

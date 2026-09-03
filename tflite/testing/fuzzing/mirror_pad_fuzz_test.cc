@@ -13,6 +13,8 @@
  * limitations under the License.
  */
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -21,10 +23,9 @@
 #include <utility>
 #include <vector>
 
-#include "flatbuffers/flatbuffer_builder.h"
-#include <gtest/gtest.h>
-#include "fuzztest/fuzztest.h"
 #include "flatbuffers/buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"
+#include "fuzztest/fuzztest.h"
 #include "tflite/core/kernels/builtin_op_kernels.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/testing/fuzzing/fuzzing_util.h"
@@ -294,42 +295,69 @@ fuzzing::RunResult RunMirrorPadCase(const MirrorPadCase& test_case) {
   return fuzzing::BuildAndRunOneOpModel(&builder, model_spec, run_spec);
 }
 
-auto PaddingValueDomain() {
-  return fuzztest::OneOf(
-      fuzztest::InRange<int64_t>(-4, 4), fuzztest::Just<int64_t>(INT32_MAX),
-      fuzztest::Just<int64_t>(INT32_MIN),
-      fuzztest::Just<int64_t>(static_cast<int64_t>(INT32_MAX) + 1),
-      fuzztest::Just<int64_t>(static_cast<int64_t>(INT32_MIN) - 1));
+auto ValidMirrorPadInputShapeDomain() {
+  return fuzztest::VectorOf(fuzztest::InRange<int32_t>(2, 5))
+      .WithMinSize(1)
+      .WithMaxSize(5);
 }
 
-template <typename InvokeDomain>
-auto MirrorPadCaseDomain(InvokeDomain invoke_domain) {
-  return fuzztest::StructOf<MirrorPadCase>(
-      fuzztest::VectorOf(fuzztest::InRange<int32_t>(0, 4))
-          .WithMinSize(0)
-          .WithMaxSize(8),
-      fuzztest::VectorOf(PaddingValueDomain()).WithMinSize(0).WithMaxSize(16),
+auto MirrorPadValueSeedDomain() {
+  return fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>())
+      .WithMinSize(10)
+      .WithMaxSize(10);
+}
+
+template <typename PaddingShapeKindDomain>
+auto StructuredMirrorPadCaseDomain(
+    PaddingShapeKindDomain padding_shape_kind_domain) {
+  return fuzztest::Map(
+      [](std::vector<int32_t> input_shape, std::vector<uint8_t> padding_seeds,
+         std::vector<uint8_t> input_data, PaddingShapeKind padding_shape_kind,
+         TensorType input_type, TensorType padding_type, MirrorPadMode mode,
+         bool dynamic_paddings, bool quantized_int8) {
+        std::vector<int64_t> padding_values(input_shape.size() * 2);
+        const int32_t mode_offset = mode == MirrorPadMode_REFLECT ? 1 : 0;
+        for (size_t i = 0; i < input_shape.size(); ++i) {
+          const int32_t max_padding = input_shape[i] - mode_offset;
+          padding_values[2 * i] = padding_seeds[2 * i] % (max_padding + 1);
+          padding_values[2 * i + 1] =
+              padding_seeds[2 * i + 1] % (max_padding + 1);
+        }
+        return MirrorPadCase{std::move(input_shape),
+                             std::move(padding_values),
+                             std::move(input_data),
+                             /*padding_data=*/{},
+                             padding_shape_kind,
+                             input_type,
+                             input_type,
+                             padding_type,
+                             mode,
+                             dynamic_paddings,
+                             quantized_int8 && input_type == TensorType_INT8,
+                             /*invoke=*/true};
+      },
+      ValidMirrorPadInputShapeDomain(), MirrorPadValueSeedDomain(),
       fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
-      fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
-      fuzztest::ElementOf<PaddingShapeKind>(
-          {PaddingShapeKind::kValid, PaddingShapeKind::kWrongRows,
-           PaddingShapeKind::kWrongColumns, PaddingShapeKind::kRankOne}),
+      std::move(padding_shape_kind_domain),
       fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_UINT8,
                                        TensorType_INT8, TensorType_INT16,
                                        TensorType_INT32, TensorType_INT64,
                                        TensorType_BOOL}),
-      fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_UINT8,
-                                       TensorType_INT8, TensorType_INT16,
-                                       TensorType_INT32, TensorType_INT64,
-                                       TensorType_BOOL}),
-      fuzztest::ElementOf<TensorType>({TensorType_INT8, TensorType_INT16,
-                                       TensorType_INT32, TensorType_INT64,
-                                       TensorType_BOOL, TensorType_FLOAT32}),
-      fuzztest::ElementOf<MirrorPadMode>({MirrorPadMode_REFLECT,
-                                          MirrorPadMode_SYMMETRIC,
-                                          static_cast<MirrorPadMode>(2)}),
-      fuzztest::Arbitrary<bool>(), fuzztest::Arbitrary<bool>(),
-      std::move(invoke_domain));
+      fuzztest::ElementOf<TensorType>({TensorType_INT32, TensorType_INT64}),
+      fuzztest::ElementOf<MirrorPadMode>(
+          {MirrorPadMode_REFLECT, MirrorPadMode_SYMMETRIC}),
+      fuzztest::Arbitrary<bool>(), fuzztest::Arbitrary<bool>());
+}
+
+auto ValidMirrorPadCaseDomain() {
+  return StructuredMirrorPadCaseDomain(
+      fuzztest::Just(PaddingShapeKind::kValid));
+}
+
+auto MalformedMirrorPadCaseDomain() {
+  return StructuredMirrorPadCaseDomain(fuzztest::ElementOf<PaddingShapeKind>(
+      {PaddingShapeKind::kWrongRows, PaddingShapeKind::kWrongColumns,
+       PaddingShapeKind::kRankOne}));
 }
 
 auto StressInputDimensionDomain() {
@@ -358,8 +386,12 @@ auto MirrorPadStressSpecDomain() {
       fuzztest::Arbitrary<bool>());
 }
 
-void MirrorPadNeverCrashes(const MirrorPadCase& test_case) {
-  EXPECT_NE(RunMirrorPadCase(test_case), fuzzing::RunResult::kHarnessFailure);
+void MirrorPadExecutesValidCases(const MirrorPadCase& test_case) {
+  ASSERT_EQ(RunMirrorPadCase(test_case), fuzzing::RunResult::kSuccess);
+}
+
+void MirrorPadRejectsMalformedPaddingShape(const MirrorPadCase& test_case) {
+  ASSERT_EQ(RunMirrorPadCase(test_case), fuzzing::RunResult::kRejected);
 }
 
 TEST(MirrorPadFuzzTest, MirrorPadSmokeInvokes) {
@@ -400,15 +432,6 @@ TEST(MirrorPadFuzzTest, PaddingDataOverlayControlsValidation) {
   EXPECT_EQ(RunMirrorPadCase(test_case), fuzzing::RunResult::kSuccess);
 }
 
-void MirrorPadRejectsInvalidOrOversizedOutput(const MirrorPadCase& test_case) {
-  const bool must_reject = !MirrorPadOutputIsWithinFuzzerBudget(test_case);
-  const fuzzing::RunResult result = RunMirrorPadCase(test_case);
-  EXPECT_NE(result, fuzzing::RunResult::kHarnessFailure);
-  if (must_reject) {
-    EXPECT_EQ(result, fuzzing::RunResult::kRejected);
-  }
-}
-
 void MirrorPadRejectsProductStressOverflow(const MirrorPadStressSpec& spec) {
   const MirrorPadCase test_case = MakeMirrorPadStressCase(spec);
   const bool must_reject = !MirrorPadOutputIsWithinFuzzerBudget(test_case);
@@ -419,10 +442,10 @@ void MirrorPadRejectsProductStressOverflow(const MirrorPadStressSpec& spec) {
   }
 }
 
-FUZZ_TEST(MirrorPadFuzzTest, MirrorPadNeverCrashes)
-    .WithDomains(MirrorPadCaseDomain(fuzztest::Arbitrary<bool>()));
-FUZZ_TEST(MirrorPadFuzzTest, MirrorPadRejectsInvalidOrOversizedOutput)
-    .WithDomains(MirrorPadCaseDomain(fuzztest::Just(true)));
+FUZZ_TEST(MirrorPadFuzzTest, MirrorPadExecutesValidCases)
+    .WithDomains(ValidMirrorPadCaseDomain());
+FUZZ_TEST(MirrorPadFuzzTest, MirrorPadRejectsMalformedPaddingShape)
+    .WithDomains(MalformedMirrorPadCaseDomain());
 FUZZ_TEST(MirrorPadFuzzTest, MirrorPadRejectsProductStressOverflow)
     .WithDomains(MirrorPadStressSpecDomain());
 

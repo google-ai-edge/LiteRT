@@ -13,6 +13,8 @@
  * limitations under the License.
  */
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -20,11 +22,10 @@
 #include <utility>
 #include <vector>
 
-#include "flatbuffers/flatbuffer_builder.h"
-#include <gtest/gtest.h>
-#include "fuzztest/fuzztest.h"
 #include "flatbuffers/buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"
 #include "flatbuffers/vector.h"  // from @flatbuffers
+#include "fuzztest/fuzztest.h"
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/kernels/builtin_op_kernels.h"
 #include "tflite/schema/schema_generated.h"
@@ -491,57 +492,71 @@ fuzzing::RunResult RunStablehloPadCase(const StablehloPadCase& test_case) {
   return fuzzing::BuildAndRunOneOpModel(&builder, model_spec, run_spec);
 }
 
-auto StablehloPaddingValueDomain() {
-  return fuzztest::OneOf(
-      fuzztest::InRange<int64_t>(-4, 4),
-      fuzztest::Just<int64_t>(std::numeric_limits<int64_t>::min()),
-      fuzztest::Just<int64_t>(std::numeric_limits<int64_t>::max()),
-      fuzztest::Just<int64_t>(INT32_MAX),
-      fuzztest::Just<int64_t>(static_cast<int64_t>(INT32_MAX) + 1));
+auto ValidStablehloPadInputShapeDomain() {
+  return fuzztest::VectorOf(fuzztest::InRange<int32_t>(1, 4))
+      .WithMinSize(1)
+      .WithMaxSize(5);
 }
 
-template <typename InvokeDomain>
-auto StablehloPadCaseDomain(InvokeDomain invoke_domain) {
-  return fuzztest::StructOf<StablehloPadCase>(
-      fuzztest::VectorOf(fuzztest::InRange<int32_t>(0, 4))
-          .WithMinSize(0)
-          .WithMaxSize(kMaxStablehloRank + 1),
-      fuzztest::VectorOf(StablehloPaddingValueDomain())
-          .WithMinSize(0)
-          .WithMaxSize(kMaxStablehloRank + 1),
-      fuzztest::VectorOf(StablehloPaddingValueDomain())
-          .WithMinSize(0)
-          .WithMaxSize(kMaxStablehloRank + 1),
-      fuzztest::VectorOf(StablehloPaddingValueDomain())
-          .WithMinSize(0)
-          .WithMaxSize(kMaxStablehloRank + 1),
+auto StablehloPadOptionSeedDomain(int64_t max_value) {
+  return fuzztest::VectorOf(fuzztest::InRange<int64_t>(0, max_value + 1))
+      .WithMinSize(5)
+      .WithMaxSize(5);
+}
+
+template <typename OptionsKindDomain, typename PaddingValueShapeKindDomain>
+auto StructuredStablehloPadCaseDomain(
+    OptionsKindDomain options_kind_domain,
+    PaddingValueShapeKindDomain padding_value_shape_kind_domain) {
+  return fuzztest::Map(
+      [](std::vector<int32_t> input_shape,
+         std::vector<int64_t> edge_padding_low,
+         std::vector<int64_t> edge_padding_high,
+         std::vector<int64_t> interior_padding, std::vector<uint8_t> input_data,
+         std::vector<uint8_t> padding_value_data,
+         StablehloOptionsKind options_kind,
+         PaddingValueShapeKind padding_value_shape_kind,
+         TensorType input_type) {
+        edge_padding_low.resize(input_shape.size());
+        edge_padding_high.resize(input_shape.size());
+        interior_padding.resize(input_shape.size());
+        return StablehloPadCase{std::move(input_shape),
+                                std::move(edge_padding_low),
+                                std::move(edge_padding_high),
+                                std::move(interior_padding),
+                                std::move(input_data),
+                                std::move(padding_value_data),
+                                options_kind,
+                                padding_value_shape_kind,
+                                input_type,
+                                input_type,
+                                input_type,
+                                /*invoke=*/true};
+      },
+      ValidStablehloPadInputShapeDomain(), StablehloPadOptionSeedDomain(2),
+      StablehloPadOptionSeedDomain(2), StablehloPadOptionSeedDomain(1),
       fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
       fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
-      fuzztest::ElementOf<StablehloOptionsKind>(
-          {StablehloOptionsKind::kRank, StablehloOptionsKind::kRankMinusOne,
-           StablehloOptionsKind::kRankPlusOne, StablehloOptionsKind::kTooLong,
-           StablehloOptionsKind::kInconsistent,
-           StablehloOptionsKind::kMissingLow,
-           StablehloOptionsKind::kMissingHigh,
-           StablehloOptionsKind::kMissingInterior,
-           StablehloOptionsKind::kMissingBuiltinOptions}),
+      std::move(options_kind_domain),
+      std::move(padding_value_shape_kind_domain),
+      fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_UINT8,
+                                       TensorType_INT8, TensorType_INT16,
+                                       TensorType_INT32, TensorType_INT64,
+                                       TensorType_BOOL}));
+}
+
+auto ValidStablehloPadCaseDomain() {
+  return StructuredStablehloPadCaseDomain(
+      fuzztest::Just(StablehloOptionsKind::kRank),
       fuzztest::ElementOf<PaddingValueShapeKind>(
           {PaddingValueShapeKind::kScalar,
-           PaddingValueShapeKind::kOneElementVector,
-           PaddingValueShapeKind::kTwoElements}),
-      fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_UINT8,
-                                       TensorType_INT8, TensorType_INT16,
-                                       TensorType_INT32, TensorType_INT64,
-                                       TensorType_BOOL}),
-      fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_UINT8,
-                                       TensorType_INT8, TensorType_INT16,
-                                       TensorType_INT32, TensorType_INT64,
-                                       TensorType_BOOL}),
-      fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_UINT8,
-                                       TensorType_INT8, TensorType_INT16,
-                                       TensorType_INT32, TensorType_INT64,
-                                       TensorType_BOOL}),
-      std::move(invoke_domain));
+           PaddingValueShapeKind::kOneElementVector}));
+}
+
+auto MalformedStablehloPadCaseDomain() {
+  return StructuredStablehloPadCaseDomain(
+      fuzztest::Just(StablehloOptionsKind::kRank),
+      fuzztest::Just(PaddingValueShapeKind::kTwoElements));
 }
 
 auto StablehloTargetOutputDimensionDomain() {
@@ -578,9 +593,16 @@ auto StablehloPadStressSpecDomain() {
                                        TensorType_INT32, TensorType_BOOL}));
 }
 
-void StablehloPadNeverCrashes(const StablehloPadCase& test_case) {
-  EXPECT_NE(RunStablehloPadCase(test_case),
-            fuzzing::RunResult::kHarnessFailure);
+void StablehloPadExecutesValidCases(const StablehloPadCase& test_case) {
+  ASSERT_EQ(RunStablehloPadCase(test_case), fuzzing::RunResult::kSuccess);
+}
+
+void StablehloPadRejectsNonScalarPaddingValue(
+    const StablehloPadCase& test_case) {
+  SCOPED_TRACE(::testing::Message()
+               << "shape=" << ::testing::PrintToString(test_case.input_shape)
+               << ", options=" << static_cast<int>(test_case.options_kind));
+  ASSERT_EQ(RunStablehloPadCase(test_case), fuzzing::RunResult::kRejected);
 }
 
 TEST(StablehloPadFuzzTest, StablehloPadSmokeInvokes) {
@@ -601,16 +623,6 @@ TEST(StablehloPadFuzzTest, StablehloPadSmokeInvokes) {
   EXPECT_EQ(RunStablehloPadCase(test_case), fuzzing::RunResult::kSuccess);
 }
 
-void StablehloPadRejectsInvalidOrOversizedOutput(
-    const StablehloPadCase& test_case) {
-  const bool must_reject = !StablehloPadOutputIsWithinFuzzerBudget(test_case);
-  const fuzzing::RunResult result = RunStablehloPadCase(test_case);
-  EXPECT_NE(result, fuzzing::RunResult::kHarnessFailure);
-  if (must_reject) {
-    EXPECT_EQ(result, fuzzing::RunResult::kRejected);
-  }
-}
-
 void StablehloPadRejectsProductStressOverflow(
     const StablehloPadStressSpec& spec) {
   const StablehloPadCase test_case = MakeStablehloPadStressCase(spec);
@@ -622,10 +634,10 @@ void StablehloPadRejectsProductStressOverflow(
   }
 }
 
-FUZZ_TEST(StablehloPadFuzzTest, StablehloPadNeverCrashes)
-    .WithDomains(StablehloPadCaseDomain(fuzztest::Arbitrary<bool>()));
-FUZZ_TEST(StablehloPadFuzzTest, StablehloPadRejectsInvalidOrOversizedOutput)
-    .WithDomains(StablehloPadCaseDomain(fuzztest::Just(true)));
+FUZZ_TEST(StablehloPadFuzzTest, StablehloPadExecutesValidCases)
+    .WithDomains(ValidStablehloPadCaseDomain());
+FUZZ_TEST(StablehloPadFuzzTest, StablehloPadRejectsNonScalarPaddingValue)
+    .WithDomains(MalformedStablehloPadCaseDomain());
 FUZZ_TEST(StablehloPadFuzzTest, StablehloPadRejectsProductStressOverflow)
     .WithDomains(StablehloPadStressSpecDomain());
 

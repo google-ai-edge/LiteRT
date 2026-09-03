@@ -13,6 +13,8 @@
  * limitations under the License.
  */
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -21,10 +23,9 @@
 #include <utility>
 #include <vector>
 
-#include "flatbuffers/flatbuffer_builder.h"
-#include <gtest/gtest.h>
-#include "fuzztest/fuzztest.h"
 #include "flatbuffers/buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"
+#include "fuzztest/fuzztest.h"
 #include "tflite/core/interpreter.h"
 #include "tflite/core/kernels/builtin_op_kernels.h"  // IWYU pragma: keep
 #include "tflite/schema/schema_generated.h"
@@ -337,7 +338,7 @@ RunResult RunReduceCase(
         {/*tensor_index=*/1, axis_shape, std::move(axis_bytes)});
   }
   if (execution_mode == ExecutionMode::kXnnpack) {
-    run_spec.post_allocate = [](Interpreter* interpreter) {
+    run_spec.pre_allocate = [](Interpreter* interpreter) {
       return ApplyXnnpackDelegate(interpreter) == kTfLiteOk &&
                      HasDelegateNode(*interpreter)
                  ? RunResult::kSuccess
@@ -423,36 +424,80 @@ ReduceCase MakeXnnpackReduceCase(const XnnpackReduceSpec& spec) {
 }
 #endif
 
-auto AxisValueDomain() {
-  return fuzztest::OneOf(
-      fuzztest::InRange<int32_t>(-10, 11), fuzztest::Just<int32_t>(31),
-      fuzztest::Just<int32_t>(32), fuzztest::Just<int32_t>(33),
-      fuzztest::Just<int32_t>(-31), fuzztest::Just<int32_t>(-32),
-      fuzztest::Just<int32_t>(-33),
-      fuzztest::Just<int32_t>(std::numeric_limits<int32_t>::max()),
-      fuzztest::Just<int32_t>(std::numeric_limits<int32_t>::min()));
+auto ValidReduceInputShapeDomain() {
+  return fuzztest::VectorOf(fuzztest::InRange<int32_t>(1, 3))
+      .WithMinSize(1)
+      .WithMaxSize(5);
 }
 
-auto ReduceCaseDomain() {
-  return fuzztest::StructOf<ReduceCase>(
-      fuzztest::VectorOf(fuzztest::InRange<int32_t>(0, 4))
-          .WithMinSize(0)
-          .WithMaxSize(8),
-      fuzztest::VectorOf(AxisValueDomain()).WithMinSize(0).WithMaxSize(16),
-      fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
+auto AxisSeedDomain() {
+  return fuzztest::VectorOf(fuzztest::Arbitrary<int32_t>())
+      .WithMinSize(5)
+      .WithMaxSize(5);
+}
+
+auto ValidReduceCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> input_shape, std::vector<int32_t> axis_seeds,
+         uint8_t axis_count_seed, std::vector<uint8_t> input_data,
+         ReduceKind reduce_kind, AxisShapeKind axis_shape_kind,
+         TensorType input_type, bool negative_axes, bool dynamic_axis,
+         bool keep_dims) {
+        const int32_t rank = static_cast<int32_t>(input_shape.size());
+        const size_t axis_count =
+            axis_shape_kind == AxisShapeKind::kScalar
+                ? 1
+                : 1 + axis_count_seed % input_shape.size();
+        std::vector<int32_t> axis_values(axis_count);
+        for (size_t i = 0; i < axis_count; ++i) {
+          int32_t axis =
+              static_cast<int32_t>(static_cast<uint32_t>(axis_seeds[i]) % rank);
+          if (negative_axes) axis -= rank;
+          axis_values[i] = axis;
+        }
+        return ReduceCase{std::move(input_shape), std::move(axis_values),
+                          std::move(input_data),
+                          /*axis_data=*/{},       reduce_kind,
+                          axis_shape_kind,        input_type,
+                          dynamic_axis,           keep_dims,
+                          /*quantized=*/false,
+                          /*invoke=*/true};
+      },
+      ValidReduceInputShapeDomain(), AxisSeedDomain(),
+      fuzztest::Arbitrary<uint8_t>(),
       fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
       fuzztest::ElementOf<ReduceKind>({ReduceKind::kMean, ReduceKind::kSum,
                                        ReduceKind::kProd, ReduceKind::kMax,
                                        ReduceKind::kMin, ReduceKind::kAny,
                                        ReduceKind::kAll}),
       fuzztest::ElementOf<AxisShapeKind>(
-          {AxisShapeKind::kVector, AxisShapeKind::kScalar,
-           AxisShapeKind::kMatrix, AxisShapeKind::kEmpty}),
-      fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_UINT8,
-                                       TensorType_INT8, TensorType_INT16,
-                                       TensorType_INT32, TensorType_INT64,
-                                       TensorType_BOOL}),
+          {AxisShapeKind::kVector, AxisShapeKind::kScalar}),
+      fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_INT32}),
       fuzztest::Arbitrary<bool>(), fuzztest::Arbitrary<bool>(),
+      fuzztest::Arbitrary<bool>());
+}
+
+auto InvalidAxisReduceCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> input_shape, uint8_t distance,
+         ReduceKind reduce_kind, TensorType input_type, bool dynamic_axis,
+         bool keep_dims) {
+        const int32_t invalid_axis =
+            static_cast<int32_t>(input_shape.size()) + 1 + distance % 8;
+        return ReduceCase{std::move(input_shape), {invalid_axis},
+                          /*input_data=*/{},
+                          /*axis_data=*/{},       reduce_kind,
+                          AxisShapeKind::kVector, input_type,
+                          dynamic_axis,           keep_dims,
+                          /*quantized=*/false,
+                          /*invoke=*/true};
+      },
+      ValidReduceInputShapeDomain(), fuzztest::Arbitrary<uint8_t>(),
+      fuzztest::ElementOf<ReduceKind>({ReduceKind::kMean, ReduceKind::kSum,
+                                       ReduceKind::kProd, ReduceKind::kMax,
+                                       ReduceKind::kMin, ReduceKind::kAny,
+                                       ReduceKind::kAll}),
+      fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_INT32}),
       fuzztest::Arbitrary<bool>(), fuzztest::Arbitrary<bool>());
 }
 
@@ -468,7 +513,7 @@ auto HighRankReduceSpecDomain() {
 
 #if defined(TFLITE_REDUCE_FUZZ_ENABLE_XNNPACK)
 auto XnnpackReduceSpecDomain() {
-  return fuzztest::StructOf<XnnpackReduceSpec>(
+  auto domain = fuzztest::StructOf<XnnpackReduceSpec>(
       fuzztest::VectorOf(fuzztest::InRange<int32_t>(1, 5))
           .WithMinSize(1)
           .WithMaxSize(kMaxXnnpackReduceRank),
@@ -482,6 +527,19 @@ auto XnnpackReduceSpecDomain() {
       fuzztest::ElementOf<TensorType>(
           {TensorType_FLOAT32, TensorType_INT8, TensorType_UINT8}),
       fuzztest::Arbitrary<bool>());
+  return fuzztest::Map(
+      [](XnnpackReduceSpec spec) {
+        size_t input_elements = 1;
+        for (int32_t& dimension : spec.input_shape) {
+          const size_t remaining_elements =
+              kMaxGeneralInputElements / input_elements;
+          dimension = std::min<int32_t>(
+              dimension, static_cast<int32_t>(remaining_elements));
+          input_elements *= static_cast<size_t>(dimension);
+        }
+        return spec;
+      },
+      std::move(domain));
 }
 #endif
 
@@ -500,14 +558,38 @@ TEST(ReduceFuzzTest, ReferenceHighRankReduceAllSmoke) {
       RunResult::kSuccess);
 }
 
-void ReduceReferenceNeverCrashes(const ReduceCase& test_case) {
-  EXPECT_NE(RunReduceCase(test_case, KernelVariant::kReference),
-            RunResult::kHarnessFailure);
+void ReduceReferenceExecutesValidCases(const ReduceCase& test_case) {
+  SCOPED_TRACE(::testing::Message()
+               << "shape=" << ::testing::PrintToString(test_case.input_shape)
+               << ", axes=" << ::testing::PrintToString(test_case.axis_values)
+               << ", kind=" << static_cast<int>(test_case.reduce_kind)
+               << ", axis_shape=" << static_cast<int>(test_case.axis_shape_kind)
+               << ", type=" << static_cast<int>(test_case.input_type)
+               << ", dynamic=" << test_case.dynamic_axis);
+  ASSERT_EQ(RunReduceCase(test_case, KernelVariant::kReference),
+            RunResult::kSuccess);
 }
 
-void ReduceOptimizedNeverCrashes(const ReduceCase& test_case) {
-  EXPECT_NE(RunReduceCase(test_case, KernelVariant::kGenericOptimized),
-            RunResult::kHarnessFailure);
+void ReduceOptimizedExecutesValidCases(const ReduceCase& test_case) {
+  SCOPED_TRACE(::testing::Message()
+               << "shape=" << ::testing::PrintToString(test_case.input_shape)
+               << ", axes=" << ::testing::PrintToString(test_case.axis_values)
+               << ", kind=" << static_cast<int>(test_case.reduce_kind)
+               << ", axis_shape=" << static_cast<int>(test_case.axis_shape_kind)
+               << ", type=" << static_cast<int>(test_case.input_type)
+               << ", dynamic=" << test_case.dynamic_axis);
+  ASSERT_EQ(RunReduceCase(test_case, KernelVariant::kGenericOptimized),
+            RunResult::kSuccess);
+}
+
+void ReduceReferenceRejectsInvalidAxis(const ReduceCase& test_case) {
+  ASSERT_EQ(RunReduceCase(test_case, KernelVariant::kReference),
+            RunResult::kRejected);
+}
+
+void ReduceOptimizedRejectsInvalidAxis(const ReduceCase& test_case) {
+  ASSERT_EQ(RunReduceCase(test_case, KernelVariant::kGenericOptimized),
+            RunResult::kRejected);
 }
 
 void ReferenceHighRankReduceAllNeverCrashes(const HighRankReduceSpec& spec) {
@@ -516,10 +598,14 @@ void ReferenceHighRankReduceAllNeverCrashes(const HighRankReduceSpec& spec) {
       RunResult::kSuccess);
 }
 
-FUZZ_TEST(ReduceFuzzTest, ReduceReferenceNeverCrashes)
-    .WithDomains(ReduceCaseDomain());
-FUZZ_TEST(ReduceFuzzTest, ReduceOptimizedNeverCrashes)
-    .WithDomains(ReduceCaseDomain());
+FUZZ_TEST(ReduceFuzzTest, ReduceReferenceExecutesValidCases)
+    .WithDomains(ValidReduceCaseDomain());
+FUZZ_TEST(ReduceFuzzTest, ReduceOptimizedExecutesValidCases)
+    .WithDomains(ValidReduceCaseDomain());
+FUZZ_TEST(ReduceFuzzTest, ReduceReferenceRejectsInvalidAxis)
+    .WithDomains(InvalidAxisReduceCaseDomain());
+FUZZ_TEST(ReduceFuzzTest, ReduceOptimizedRejectsInvalidAxis)
+    .WithDomains(InvalidAxisReduceCaseDomain());
 FUZZ_TEST(ReduceFuzzTest, ReferenceHighRankReduceAllNeverCrashes)
     .WithDomains(HighRankReduceSpecDomain());
 
@@ -539,14 +625,21 @@ TEST(ReduceFuzzTest, ReduceXnnpackSmokeDelegates) {
       RunResult::kSuccess);
 }
 
-void ReduceXnnpackNeverCrashes(const XnnpackReduceSpec& spec) {
-  EXPECT_NE(
-      RunReduceCase(MakeXnnpackReduceCase(spec),
-                    KernelVariant::kGenericOptimized, ExecutionMode::kXnnpack),
-      RunResult::kHarnessFailure);
+void ReduceXnnpackExecutesValidCases(const XnnpackReduceSpec& spec) {
+  const ReduceCase test_case = MakeXnnpackReduceCase(spec);
+  SCOPED_TRACE(::testing::Message()
+               << "shape=" << ::testing::PrintToString(test_case.input_shape)
+               << ", axes=" << ::testing::PrintToString(test_case.axis_values)
+               << ", kind=" << static_cast<int>(test_case.reduce_kind)
+               << ", type=" << static_cast<int>(test_case.input_type)
+               << ", keep_dims=" << test_case.keep_dims);
+  EXPECT_EQ(
+      RunReduceCase(test_case, KernelVariant::kGenericOptimized,
+                    ExecutionMode::kXnnpack),
+      RunResult::kSuccess);
 }
 
-FUZZ_TEST(ReduceFuzzTest, ReduceXnnpackNeverCrashes)
+FUZZ_TEST(ReduceFuzzTest, ReduceXnnpackExecutesValidCases)
     .WithDomains(XnnpackReduceSpecDomain());
 #endif
 

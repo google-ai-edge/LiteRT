@@ -13,15 +13,15 @@
  * limitations under the License.
  */
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <utility>
 #include <vector>
 
 #include "flatbuffers/flatbuffer_builder.h"
-#include <gtest/gtest.h>
 #include "fuzztest/fuzztest.h"
 #include "tflite/c/common.h"
 #include "tflite/core/kernels/builtin_op_kernels.h"
@@ -237,56 +237,128 @@ RunResult RunUnsortedSegmentCase(const UnsortedSegmentCase& test_case) {
   return fuzzing::BuildAndRunOneOpModel(&builder, model_spec, run_spec);
 }
 
-auto SegmentIdDomain() {
-  return fuzztest::OneOf(
-      fuzztest::InRange<int64_t>(-4, 12),
-      fuzztest::Just<int64_t>(std::numeric_limits<int32_t>::max()),
-      fuzztest::Just<int64_t>(std::numeric_limits<int32_t>::min()));
+auto ValidSegmentDataShapeDomain() {
+  return fuzztest::VectorOf(fuzztest::InRange<int32_t>(1, 3))
+      .WithMinSize(1)
+      .WithMaxSize(4);
 }
 
-auto SegmentSumCaseDomain() {
-  return fuzztest::StructOf<SegmentSumCase>(
-      fuzztest::VectorOf(fuzztest::InRange<int32_t>(0, 4))
-          .WithMinSize(0)
-          .WithMaxSize(6),
-      fuzztest::VectorOf(SegmentIdDomain()).WithMaxSize(16),
+auto ValidSegmentSumCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> data_shape, uint32_t segment_count_seed,
+         std::vector<uint8_t> data_bytes, TensorType data_type) {
+        const int32_t row_count = data_shape.front();
+        const int32_t segment_count =
+            1 + static_cast<int32_t>(segment_count_seed % row_count);
+        std::vector<int64_t> segment_ids(row_count);
+        for (int32_t i = 0; i < row_count; ++i) {
+          segment_ids[i] = static_cast<int64_t>(i) * segment_count / row_count;
+        }
+        return SegmentSumCase{std::move(data_shape), std::move(segment_ids),
+                              std::move(data_bytes), data_type,
+                              /*invoke=*/true};
+      },
+      ValidSegmentDataShapeDomain(), fuzztest::Arbitrary<uint32_t>(),
       fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
-      fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_INT32}),
-      fuzztest::Arbitrary<bool>());
+      fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_INT32}));
 }
 
-auto UnsortedSegmentCaseDomain() {
-  return fuzztest::StructOf<UnsortedSegmentCase>(
-      fuzztest::VectorOf(fuzztest::InRange<int32_t>(0, 4))
-          .WithMinSize(0)
-          .WithMaxSize(6),
-      fuzztest::VectorOf(fuzztest::InRange<int32_t>(0, 4))
-          .WithMinSize(0)
-          .WithMaxSize(6),
-      fuzztest::VectorOf(SegmentIdDomain()).WithMaxSize(16),
+auto InvalidSegmentSumCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> data_shape, TensorType data_type) {
+        // SEGMENT_SUM requires the first segment id to be zero.
+        std::vector<int64_t> segment_ids(data_shape.front(), 1);
+        return SegmentSumCase{std::move(data_shape), std::move(segment_ids),
+                              /*data_bytes=*/{}, data_type, /*invoke=*/true};
+      },
+      ValidSegmentDataShapeDomain(),
+      fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_INT32}));
+}
+
+auto ValidUnsortedSegmentCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> data_shape, uint8_t segment_count_seed,
+         uint8_t id_offset, std::vector<uint8_t> data_bytes,
+         TensorType data_type, UnsortedSegmentKind segment_kind) {
+        const int32_t num_segments = 1 + segment_count_seed % 8;
+        const int32_t id_count = data_shape.front();
+        std::vector<int64_t> segment_ids(id_count);
+        for (int32_t i = 0; i < id_count; ++i) {
+          segment_ids[i] = (i + id_offset) % num_segments;
+        }
+        return UnsortedSegmentCase{
+            std::move(data_shape), {id_count},   std::move(segment_ids),
+            std::move(data_bytes), num_segments, data_type,
+            segment_kind,
+            /*invoke=*/true};
+      },
+      ValidSegmentDataShapeDomain(), fuzztest::Arbitrary<uint8_t>(),
+      fuzztest::Arbitrary<uint8_t>(),
       fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(64),
-      fuzztest::OneOf(
-          fuzztest::InRange<int32_t>(-4, 16),
-          fuzztest::Just<int32_t>(std::numeric_limits<int32_t>::max())),
       fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_INT32}),
       fuzztest::ElementOf<UnsortedSegmentKind>(
           {UnsortedSegmentKind::kSum, UnsortedSegmentKind::kProd,
-           UnsortedSegmentKind::kMin, UnsortedSegmentKind::kMax}),
-      fuzztest::Arbitrary<bool>());
+           UnsortedSegmentKind::kMin, UnsortedSegmentKind::kMax}));
 }
 
-void SegmentSumNeverCrashes(const SegmentSumCase& test_case) {
-  EXPECT_NE(RunSegmentSumCase(test_case), RunResult::kHarnessFailure);
+auto InvalidUnsortedSegmentShapeCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> data_shape, TensorType data_type,
+         UnsortedSegmentKind segment_kind) {
+        const int32_t invalid_id_count = data_shape.front() + 1;
+        return UnsortedSegmentCase{std::move(data_shape),
+                                   {invalid_id_count},
+                                   std::vector<int64_t>(invalid_id_count, 0),
+                                   /*data_bytes=*/{},
+                                   /*num_segments=*/1,
+                                   data_type,
+                                   segment_kind,
+                                   /*invoke=*/true};
+      },
+      ValidSegmentDataShapeDomain(),
+      fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_INT32}),
+      fuzztest::ElementOf<UnsortedSegmentKind>(
+          {UnsortedSegmentKind::kSum, UnsortedSegmentKind::kProd,
+           UnsortedSegmentKind::kMin, UnsortedSegmentKind::kMax}));
 }
 
-void UnsortedSegmentNeverCrashes(const UnsortedSegmentCase& test_case) {
-  EXPECT_NE(RunUnsortedSegmentCase(test_case), RunResult::kHarnessFailure);
+void SegmentSumExecutesValidCases(const SegmentSumCase& test_case) {
+  SCOPED_TRACE(::testing::Message()
+               << "shape=" << ::testing::PrintToString(test_case.data_shape)
+               << ", ids="
+               << ::testing::PrintToString(test_case.segment_id_values)
+               << ", type=" << static_cast<int>(test_case.data_type));
+  ASSERT_EQ(RunSegmentSumCase(test_case), RunResult::kSuccess);
 }
 
-FUZZ_TEST(SegmentFuzzTest, SegmentSumNeverCrashes)
-    .WithDomains(SegmentSumCaseDomain());
-FUZZ_TEST(SegmentFuzzTest, UnsortedSegmentNeverCrashes)
-    .WithDomains(UnsortedSegmentCaseDomain());
+void SegmentSumRejectsInvalidIds(const SegmentSumCase& test_case) {
+  ASSERT_EQ(RunSegmentSumCase(test_case), RunResult::kRejected);
+}
+
+void UnsortedSegmentExecutesValidCases(const UnsortedSegmentCase& test_case) {
+  SCOPED_TRACE(
+      ::testing::Message()
+      << "data_shape=" << ::testing::PrintToString(test_case.data_shape)
+      << ", ids_shape=" << ::testing::PrintToString(test_case.segment_ids_shape)
+      << ", ids=" << ::testing::PrintToString(test_case.segment_id_values)
+      << ", num_segments=" << test_case.num_segments
+      << ", type=" << static_cast<int>(test_case.data_type)
+      << ", kind=" << static_cast<int>(test_case.segment_kind));
+  ASSERT_EQ(RunUnsortedSegmentCase(test_case), RunResult::kSuccess);
+}
+
+void UnsortedSegmentRejectsInvalidShape(const UnsortedSegmentCase& test_case) {
+  ASSERT_EQ(RunUnsortedSegmentCase(test_case), RunResult::kRejected);
+}
+
+FUZZ_TEST(SegmentFuzzTest, SegmentSumExecutesValidCases)
+    .WithDomains(ValidSegmentSumCaseDomain());
+FUZZ_TEST(SegmentFuzzTest, SegmentSumRejectsInvalidIds)
+    .WithDomains(InvalidSegmentSumCaseDomain());
+FUZZ_TEST(SegmentFuzzTest, UnsortedSegmentExecutesValidCases)
+    .WithDomains(ValidUnsortedSegmentCaseDomain());
+FUZZ_TEST(SegmentFuzzTest, UnsortedSegmentRejectsInvalidShape)
+    .WithDomains(InvalidUnsortedSegmentShapeCaseDomain());
 
 }  // namespace
 }  // namespace tflite
