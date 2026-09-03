@@ -1554,6 +1554,11 @@ std::vector<Tensor<Mixins...>> Split(
     axis_val += input_info.shape.size();
   }
 
+  if (axis_val < 0 || static_cast<size_t>(axis_val) >= input_info.shape.size()) {
+    return {Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+        "The Split axis is out of range.")))};
+  }
+
   if (input_info.shape[axis_val] % num_splits != 0) {
     return {Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
         "Number of splits must evenly divide the dimension.")))};
