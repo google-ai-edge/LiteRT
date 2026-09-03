@@ -235,6 +235,7 @@ cc_library(
         "//tflite/delegates/gpu/common:status",
         "//tflite/delegates/gpu/common:types",
         "//tflite/experimental/acceleration/compatibility:android_info",
+        "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
     ],
