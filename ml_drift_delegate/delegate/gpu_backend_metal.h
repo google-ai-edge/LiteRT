@@ -203,7 +203,7 @@ class GpuBackendMetal : public GpuBackend {
       ABSL_GUARDED_BY(residency_mutex_);
 
   bool residency_active_ ABSL_GUARDED_BY(residency_mutex_) = false;
-  bool residency_runtime_enabled_ ABSL_GUARDED_BY(residency_mutex_) = true;
+  bool residency_runtime_enabled_ ABSL_GUARDED_BY(residency_mutex_) = false;
 };
 
 class GpuInferenceContextMetal : public GpuInferenceContext {

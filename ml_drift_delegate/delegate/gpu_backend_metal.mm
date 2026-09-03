@@ -74,7 +74,9 @@ GpuBackendMetal::GpuBackendMetal(::ml_drift::metal::MetalDevice* device,
     {
       absl::MutexLock lock(&residency_mutex_);
       residency_runtime_enabled_ = enable_residency_set;
-      if (residency_runtime_enabled_) {
+      if (residency_runtime_enabled_ && residency_set_ != nil) {
+        [command_queue_ addResidencySet:residency_set_];
+        [residency_set_ requestResidency];
         residency_active_ = true;
         start_thread = true;
       } else {
@@ -103,8 +105,7 @@ void GpuBackendMetal::InitResidencySet() {
       NSError *error = nil;
       residency_set_ = [device_->device() newResidencySetWithDescriptor:desc error:&error];
       if (residency_set_ != nil) {
-        [command_queue_ addResidencySet:residency_set_];
-        ABSL_LOG(INFO) << "Metal Residency Set successfully enabled and added to Command Queue.";
+        ABSL_LOG(INFO) << "Metal Residency Set successfully initialized.";
       } else {
         ABSL_LOG(ERROR) << "Failed to create Metal Residency Set: "
                         << [error.localizedDescription UTF8String];
@@ -128,6 +129,9 @@ void GpuBackendMetal::SetResidencyRuntimeEnabled(bool enabled) {
     if (enabled) {
       if (!residency_active_) {
         if (@available(macOS 15.0, iOS 18.0, *)) {
+          if (command_queue_ != nil) {
+            [command_queue_ addResidencySet:residency_set_];
+          }
           [residency_set_ requestResidency];
           residency_active_ = true;
           start_thread = true;
@@ -625,10 +629,7 @@ void GpuBackendMetal::PopulateResidencySet(const ::ml_drift::CreateGpuModelInfo&
       bool req_residency = false;
       {
         absl::MutexLock lock(&residency_mutex_);
-        req_residency = residency_runtime_enabled_;
-        if (req_residency) {
-          residency_active_ = true;
-        }
+        req_residency = residency_runtime_enabled_ && residency_active_;
       }
       if (req_residency) {
         [residency_set_ requestResidency];
@@ -683,6 +684,9 @@ void GpuBackendMetal::StopHeartbeat() {
 void GpuBackendMetal::ReleaseResidencyLocked() {
   if (residency_active_) {
     if (@available(macOS 15.0, iOS 18.0, *)) {
+      if (command_queue_ != nil && residency_set_ != nil) {
+        [command_queue_ removeResidencySet:residency_set_];
+      }
       [residency_set_ endResidency];
       residency_active_ = false;
     }
