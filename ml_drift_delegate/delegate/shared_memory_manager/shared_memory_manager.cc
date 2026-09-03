@@ -1417,7 +1417,10 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
   // Initialize tensor descriptor and upload data.
   BHWC value_shape = graph_adapter_->GetValueShape(shared_tensor_id);
   DataType data_type =
-      graph_adapter_->ResolveSharedTensorType(shared_tensor_id, data_type_);
+      shared_tflite_tensor.dequant_forced
+          ? data_type_
+          : graph_adapter_->ResolveSharedTensorType(shared_tensor_id,
+                                                    data_type_);
   ml_drift::TensorDescriptor tensor_desc;
   // Linear layout is forced for shared bias tensors. For other shared tensors,
   // prefer HWC when batch is 1 to avoid external tensor descriptors that carry

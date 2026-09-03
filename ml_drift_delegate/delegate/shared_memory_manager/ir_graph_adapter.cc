@@ -49,33 +49,35 @@ DataType IrModelAdapter::ResolveSharedTensorType(
     uint32_t shared_tensor_id, DataType default_data_type) const {
   const DataType graph_value_type =
       graph_.tensor(shared_tensor_id)->desc.GetDataType();
-  // If the graph tensor is FLOAT32, apply the configured float precision (e.g.
-  // downcast to FP16). For any other type (INT32, INT8, BOOL, FLOAT16, etc.),
-  // preserve the graph's native type.
-  DataType data_type = (graph_value_type == DataType::FLOAT32)
-                           ? default_data_type
-                           : graph_value_type;
-  if (default_data_type == DataType::FLOAT32 &&
-      graph_value_type == DataType::FLOAT32) {
-    std::vector<uint32_t> consumers = FindConsumerOps(shared_tensor_id);
-    if (consumers.size() == 1 && OpHasInputs(consumers[0])) {
-      DataType input_type = GetOpFirstInputType(consumers[0]);
-      if (IsFloatType(input_type)) {
-        data_type = input_type;
+  if (IsFloatType(graph_value_type)) {
+    if (default_data_type == DataType::FLOAT32) {
+      std::vector<uint32_t> consumers = FindConsumerOps(shared_tensor_id);
+      if (consumers.size() == 1 && OpHasInputs(consumers[0])) {
+        DataType input_type = GetOpFirstInputType(consumers[0]);
+        if (IsFloatType(input_type)) {
+          return input_type;
+        }
       }
     }
+    return default_data_type;
   }
-  return data_type;
+  return graph_value_type;
 }
 
 void IrModelAdapter::UploadTensorData(const TfLiteTensor& tensor,
                                       const float* weights_data_ptr,
                                       TensorDescriptor& tensor_desc) const {
-  // Support uploading integer data for int32 tensors, float16 data for float16
+  // Support uploading raw data for integer tensors, float16 data for float16
   // tensors, otherwise upload float data. This is used for models with fp16
   // weights from MediaPipe (e.g. inpainting models) or non-float constants
-  // (e.g. shape/pack tensors).
+  // (e.g. shape/pack/lookup tensors).
   switch (tensor_desc.GetDataType()) {
+    case DataType::INT8:
+      tensor_desc.UploadData<int8_t>(tensor.data.int8);
+      break;
+    case DataType::UINT8:
+      tensor_desc.UploadData<uint8_t>(tensor.data.uint8);
+      break;
     case DataType::INT32:
       tensor_desc.UploadData<int32_t>(tensor.data.i32);
       break;

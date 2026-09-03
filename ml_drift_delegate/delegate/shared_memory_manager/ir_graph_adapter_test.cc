@@ -181,11 +181,42 @@ TEST(IrModelAdapterTest, ResolveSharedTensorType) {
             DataType::INT32);
   EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::FLOAT16),
             DataType::INT32);
+
+  adapter.SetValueType(g.weights_id, DataType::INT8);
+  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::FLOAT16),
+            DataType::INT8);
+
+  adapter.SetValueType(g.weights_id, DataType::UINT8);
+  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::FLOAT16),
+            DataType::UINT8);
 }
 
 TEST(IrModelAdapterTest, UploadTensorData) {
   TestGraph g;
   IrModelAdapter adapter(g.model);
+
+  // Upload int8 data.
+  int8_t int8_val = -7;
+  TfLiteTensor int8_tensor{};
+  int8_tensor.type = kTfLiteInt8;
+  int8_tensor.data.int8 = &int8_val;
+  TensorDescriptor int8_desc(DataType::INT8, TensorStorageType::BUFFER,
+                             Layout::HWC);
+  int8_desc.SetBHWCShape(BHWC(1, 1, 1, 1));
+  adapter.UploadTensorData(int8_tensor, nullptr, int8_desc);
+  EXPECT_EQ(reinterpret_cast<const int8_t*>(int8_desc.GetData().data())[0], -7);
+
+  // Upload uint8 data.
+  uint8_t uint8_val = 200;
+  TfLiteTensor uint8_tensor{};
+  uint8_tensor.type = kTfLiteUInt8;
+  uint8_tensor.data.uint8 = &uint8_val;
+  TensorDescriptor uint8_desc(DataType::UINT8, TensorStorageType::BUFFER,
+                              Layout::HWC);
+  uint8_desc.SetBHWCShape(BHWC(1, 1, 1, 1));
+  adapter.UploadTensorData(uint8_tensor, nullptr, uint8_desc);
+  EXPECT_EQ(reinterpret_cast<const uint8_t*>(uint8_desc.GetData().data())[0],
+            200);
 
   // Upload int32 data.
   int32_t int_val = 42;
