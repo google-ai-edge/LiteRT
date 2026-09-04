@@ -172,6 +172,7 @@ void OpenVinoCompileContext::ConfigureForNpuWeightSharing() {
   configs_map_["NPUW_WEIGHTS_BANK"] = "shared";
   configs_map_["NPUW_CWAI"] = "YES";
   configs_map_["NPUW_FUNCALL_FOR_ALL"] = "YES";
+  configs_map_["NPUW_ONLINE_PIPELINE"] = "NONE";
   LITERT_LOG(LITERT_INFO,
              "NPU weight sharing: enabled NPUW/CWAI weightless compile knobs");
 }
