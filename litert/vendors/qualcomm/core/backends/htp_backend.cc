@@ -163,12 +163,15 @@ class HtpBackend::HtpPerfControl {
 
   // Debounce the downvote only for burst/sustained modes to avoid thrashing
   // the high-perf vote between back-to-back inferences.
-  void ScheduleDownVote() {
+  void ScheduleDownVote(bool is_manual = false) {
     EnsureVotingThread();
     const bool debounce =
         current_mode_ == HtpPerformanceMode::kBurst ||
         current_mode_ == HtpPerformanceMode::kSustainedHighPerformance;
     voting_thread_->Enqueue(VotingThread::VoteType::kDownVote, debounce);
+    if (is_manual) {
+      current_mode_ = HtpPerformanceMode::kDefault;
+    }
   }
 
   bool ReinitIfNeeded(HtpPerformanceMode new_mode) {
@@ -580,11 +583,13 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
 }
 
 bool HtpBackend::SetPerformanceMode(const Options& options) {
-  HtpPerformanceMode performance_mode = options.GetHtpPerformanceMode();
+  const HtpPerformanceMode performance_mode = options.GetHtpPerformanceMode();
+  const bool is_manual =
+      options.GetHtpPerfCtrlMode() == HtpPerfCtrlMode::kManual;
 
   if (performance_mode == HtpPerformanceMode::kDefault) {
     if (htp_perf_control_) {
-      htp_perf_control_->ScheduleDownVote();
+      htp_perf_control_->ScheduleDownVote(is_manual);
     }
     return true;
   }
