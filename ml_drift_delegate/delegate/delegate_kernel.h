@@ -38,6 +38,7 @@
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 #include "tflite/core/c/common.h"
 #include "tflite/delegates/serialization.h"
@@ -203,6 +204,16 @@ class DelegateKernel {
   // Cleans up the external tensors serialization cache. If the cache was never
   // initialized, this is a no-op.
   absl::Status CleanupExternalTensorsSerialization(
+      ::ml_drift::SerializationWeightCache* shared_memory_serialization_cache);
+
+  // Updates the GPU spatial tensors from the serialization weight cache for the
+  // given collection of tensor IDs.
+  template <typename TensorIdContainer>
+  absl::Status UpdateTensorsFromSerializationCache(
+      const TensorIdContainer& tensor_ids,
+      const absl::flat_hash_map<::ml_drift::ValueId,
+                                ::ml_drift::SharedMemoryManager::GlobalId>&
+          local_to_global_id_map,
       ::ml_drift::SerializationWeightCache* shared_memory_serialization_cache);
 
  protected:
