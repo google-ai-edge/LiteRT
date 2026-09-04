@@ -4,6 +4,14 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+      - 'litert/**/*.c'
+      - 'litert/**/*.cc'
+      - 'litert/**/*.cpp'
+      - 'litert/**/*.cxx'
+      - 'litert/**/*.h'
+      - 'litert/**/*.inc'
+      - '.github/workflows/clang_tidy.yml'
   workflow_dispatch:
 
 permissions:
@@ -16,9 +24,9 @@ concurrency:
 jobs:
   clang-tidy:
     name: "clang-tidy"
-    runs-on: linux-x86-n2-16
-    container:
-      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
+    # Use GitHub-hosted runner to avoid consuming self-hosted linux-x86-n2-16
+    # runner pool capacity, since clang-tidy only inspects changed PR files.
+    runs-on: ubuntu-latest
     env:
       CLANG_TIDY_CHECKS: "clang-diagnostic-*,clang-analyzer-*"
       CMAKE_BUILD_DIR: "litert/cmake_build_clang_tidy"
@@ -36,9 +44,7 @@ jobs:
             clang-18 \
             clang-tidy-18 \
             libc++-18-dev \
-            libc++abi-18-dev \
-            python3-pip
-          pip3 install cmake==3.28.3
+            libc++abi-18-dev
           cmake --version
           clang-tidy-18 --version
 
@@ -81,6 +87,8 @@ jobs:
               pass
 
           source_suffixes = {".c", ".cc", ".cpp", ".cxx"}
+          header_suffixes = {".h", ".inc"}
+          all_suffixes = source_suffixes | header_suffixes
           changed = []
           event_name = os.environ["GITHUB_EVENT_NAME"]
           if event_name == "pull_request":
@@ -104,7 +112,7 @@ jobs:
             )
             changed = [
                 path for path in diff.splitlines()
-                if Path(path).suffix in source_suffixes
+                if Path(path).suffix in all_suffixes
             ]
           else:
             print(f"No pull request file list for {event_name}; running smoke source only.")
@@ -112,11 +120,35 @@ jobs:
           selected = []
           missing = []
           for source in changed:
-            if source.startswith("litert/"):
-              if source in compilable:
-                selected.append(source)
+            if not source.startswith("litert/"):
+              continue
+            if source in compilable:
+              selected.append(source)
+            elif Path(source).suffix in header_suffixes:
+              # For headers and .inc files, find compilable translation units that include them.
+              source_filename = Path(source).name
+              including_sources = []
+              for comp_path in compilable:
+                full_comp_path = repo / comp_path
+                if not full_comp_path.is_file():
+                  continue
+                try:
+                  content = full_comp_path.read_text(errors="ignore")
+                except Exception:
+                  continue
+                if source_filename in content:
+                  including_sources.append(comp_path)
+                  if len(including_sources) >= 3:
+                    break
+              if including_sources:
+                print(f"Found translation units including {source}: {including_sources}")
+                selected.extend(including_sources)
               else:
                 missing.append(source)
+            else:
+              missing.append(source)
+
+          selected = list(dict.fromkeys(selected))
 
           smoke_source = "litert/c/empty.cc"
           if smoke_source in compilable and smoke_source not in selected:
@@ -143,4 +175,5 @@ jobs:
             clang-tidy-18 \
             -p "${CMAKE_BUILD_DIR}" \
             --checks="${CLANG_TIDY_CHECKS}" \
+            --header-filter='.*litert/.*' \
             < /tmp/clang_tidy_files.txt

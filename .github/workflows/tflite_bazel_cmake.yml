@@ -8,7 +8,14 @@ on:
     branches:
       - main
   merge_group:
+  schedule:
+    - cron: "0 10 * * *"  # Run at 2am PST (10am UTC) every day to refresh the cache.
   workflow_dispatch:
+    inputs:
+      REFRESH_CACHE:
+        description: 'Refresh cache to remove unused files'
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -23,9 +30,15 @@ jobs:
     runs-on: linux-x86-n2-16
     container:
       image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:d6b429665f5269698f88ccd00bcb8a6eb685332c302f08f29fe0738cd6a6610c
+    permissions:
+      actions: write
+      contents: write
     env:
       CMAKE_BUILD_DIR: cmake_build_tflite
       CMAKE_BUILD_PARALLEL_LEVEL: 6
+      GH_TOKEN: ${{ github.token }}
+      REFRESH_CACHE: ${{ github.event_name == 'schedule' ||
+                         (github.event_name == 'workflow_dispatch' && inputs.REFRESH_CACHE) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
@@ -56,10 +69,48 @@ jobs:
           export CC_OPT_FLAGS='-Wno-sign-compare'
           python3 configure.py < <(yes "")
 
+      - name: Set up cache keys
+        id: cache-keys
+        run: |
+          CACHE_RESTORE_KEY_2="${{ github.workflow }}"
+          CACHE_RESTORE_KEY_1="$CACHE_RESTORE_KEY_2-${{ hashFiles('**/WORKSPACE', '**/.bazelrc') }}"
+          CACHE_RESTORE_KEY_0="$CACHE_RESTORE_KEY_1-${{ hashFiles('**/BUILD*', 'tflite/**') }}"
+          CACHE_RESTORE_KEY_HEAD="$CACHE_RESTORE_KEY_0-${{ github.event.pull_request.base.sha }}"
+          CACHE_KEY="$CACHE_RESTORE_KEY_0-${{ github.sha }}"
+          echo "CACHE_RESTORE_KEY_2=$CACHE_RESTORE_KEY_2" >> "$GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_1=$CACHE_RESTORE_KEY_1" >> "$GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_0=$CACHE_RESTORE_KEY_0" >> "$GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_HEAD=$CACHE_RESTORE_KEY_HEAD" >> "$GITHUB_OUTPUT"
+          echo "CACHE_KEY=$CACHE_KEY" >> "$GITHUB_OUTPUT"
+
+      - name: Clean build outputs if cache is being refreshed.
+        if: env.REFRESH_CACHE == 'true'
+        run: bazel clean --expunge
+
+      - name: Restore bazel cache if cache is not being refreshed.
+        id: bazel-cache
+        if: env.REFRESH_CACHE != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/bazel-tflite
+          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+          restore-keys: |
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_HEAD }}
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_0 }}-
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_1 }}-
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_2 }}-
+
+      - name: Check cache hit
+        run: |
+          echo "Cache Hit: ${{ steps.bazel-cache.outputs.cache-hit }}"
+          echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
+          echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
+
       - name: Build TFLite Linux artifacts with Bazel
         shell: bash
         run: |
           bazel build \
+            --disk_cache=~/.cache/bazel-tflite \
             --config=bulk_build_cpu \
             --nocheck_visibility \
             -- \
@@ -80,3 +131,15 @@ jobs:
       - name: Build TFLite runtime with CMake
         # TODO: Build all targets under tflite with cmake
         run: cmake --build "${CMAKE_BUILD_DIR}" --target tensorflow-lite --parallel
+
+      - name: Remove cache if cache is being refreshed.
+        if: env.REFRESH_CACHE == 'true'
+        continue-on-error: true
+        run: gh cache delete ${{ steps.cache-keys.outputs.CACHE_KEY }}
+
+      - name: Save bazel cache if it's new or being refreshed.
+        uses: actions/cache/save@v4
+        if: env.REFRESH_CACHE == 'true' || steps.bazel-cache.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/bazel-tflite
+          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
