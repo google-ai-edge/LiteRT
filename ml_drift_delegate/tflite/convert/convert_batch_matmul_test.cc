@@ -14,6 +14,7 @@
 
 #include <any>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -84,6 +85,44 @@ TEST_F(ConvertBatchMatMulTest, ConvertToFullyConnected) {
   ASSERT_TRUE(attr);
   EXPECT_EQ(attr->weights.shape.o, 2);
   EXPECT_EQ(attr->weights.shape.i, 4);
+}
+
+TEST_F(ConvertBatchMatMulTest, ConvertToFullyConnectedWithAdjY) {
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinBatchMatmul);
+  model.AddInput(kTfLiteFloat32, {1, 4});  // Input 0
+
+  // Input 1 is constant and 2D: shape {2, 4} (adj_y=true means N=2, K=4)
+  std::vector<float> weights_data = {1.0f, 2.0f, 3.0f, 4.0f,
+                                     5.0f, 6.0f, 7.0f, 8.0f};
+  std::vector<uint8_t> weights_bytes(weights_data.size() * sizeof(float));
+  std::memcpy(weights_bytes.data(), weights_data.data(), weights_bytes.size());
+  model.AddConstInput(kTfLiteFloat32, {2, 4}, weights_bytes);
+
+  model.AddOutput(kTfLiteFloat32, {1, 2});
+
+  auto* params = reinterpret_cast<TfLiteBatchMatMulParams*>(
+      calloc(1, sizeof(TfLiteBatchMatMulParams)));
+  params->adj_x = false;
+  params->adj_y = true;
+  params->asymmetric_quantize_inputs = false;
+  model.SetParameters(params);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModelFromBuilder(model);
+  ASSERT_TRUE(ir_model);
+
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const ::ml_drift::ir::IrOp* op = ir_model->op(0);
+  EXPECT_EQ(op->name, ToString(::ml_drift::OperationType::FULLY_CONNECTED));
+  EXPECT_THAT(op->inputs, SizeIs(1));
+
+  const ::ml_drift::FullyConnectedAttributes* attr =
+      std::any_cast<::ml_drift::FullyConnectedAttributes>(&op->attr);
+  ASSERT_TRUE(attr);
+  EXPECT_EQ(attr->weights.shape.o, 2);
+  EXPECT_EQ(attr->weights.shape.i, 4);
+  for (size_t i = 0; i < weights_data.size(); ++i) {
+    EXPECT_EQ(attr->weights.data[i], weights_data[i]);
+  }
 }
 
 TEST_F(ConvertBatchMatMulTest, ConvertToBatchedMatMul) {

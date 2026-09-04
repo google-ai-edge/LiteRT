@@ -14,6 +14,7 @@
 
 #include "ml_drift_delegate/tflite/convert/convert_batch_matmul.h"
 
+#include <algorithm>
 #include <utility>
 
 #include "xnnpack.h"  // from @XNNPACK
@@ -60,15 +61,21 @@ void ConvertBatchMatMul(
     const int h = weights.shape.h;
     const int w = weights.shape.w;
     attr.weights.data.resize(w * h + XNN_EXTRA_BYTES / sizeof(float));
-
-    for (int i = 0; i < w; ++i) {
-      for (int j = 0; j < h; ++j) {
-        attr.weights.data[i * h + j] = weights.data[j * w + i];
+    const bool transpose_right = params ? params->adj_y : false;
+    if (transpose_right) {
+      std::copy(weights.data.begin(), weights.data.end(),
+                attr.weights.data.begin());
+      attr.weights.shape = ::ml_drift::OHWI(h, 1, 1, w);
+    } else {
+      for (int i = 0; i < w; ++i) {
+        for (int j = 0; j < h; ++j) {
+          attr.weights.data[i * h + j] = weights.data[j * w + i];
+        }
       }
+      attr.weights.shape = ::ml_drift::OHWI(w, 1, 1, h);
     }
 
     attr.weights.id = weights.id;
-    attr.weights.shape = ::ml_drift::OHWI(w, 1, 1, h);
     fc_op->attr = std::move(attr);
     return;
   }
