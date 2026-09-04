@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -206,7 +207,7 @@ class CompiledModelWrapper {
 
   // Member variables holding the LiteRT C++ objects.
   ExtendedModel model_;
-  litert::CompiledModel compiled_model_;
+  std::optional<litert::CompiledModel> compiled_model_;
 
   // Python buffer object to keep it alive for models created from buffer
   PyObject* model_buffer_ = nullptr;

@@ -381,7 +381,7 @@ CompiledModelWrapper::CompiledModelWrapper(ExtendedModel model,
 // Destructor for CompiledModelWrapper.
 CompiledModelWrapper::~CompiledModelWrapper() {
   // Force destruction of C++ handles before releasing the environment.
-  compiled_model_ = litert::CompiledModel();
+  compiled_model_.reset();
   model_ = litert::ExtendedModel();
 
   // Release Python buffer reference if we're holding one
@@ -669,7 +669,7 @@ PyObject* CompiledModelWrapper::GetSignatureIndex(const char* signature_key) {
 // Returns requirements for an input buffer.
 PyObject* CompiledModelWrapper::GetInputBufferRequirements(int signature_index,
                                                            int input_index) {
-  auto req_or = compiled_model_.GetInputBufferRequirements(
+  auto req_or = compiled_model_->GetInputBufferRequirements(
       (size_t)signature_index, (size_t)input_index);
   if (!req_or) {
     return ConvertErrorToPyExc(req_or.Error());
@@ -725,7 +725,7 @@ PyObject* CompiledModelWrapper::GetInputBufferRequirements(int signature_index,
 // Returns requirements for an output buffer.
 PyObject* CompiledModelWrapper::GetOutputBufferRequirements(int signature_index,
                                                             int output_index) {
-  auto req_or = compiled_model_.GetOutputBufferRequirements(
+  auto req_or = compiled_model_->GetOutputBufferRequirements(
       static_cast<size_t>(signature_index), static_cast<size_t>(output_index));
   if (!req_or) {
     return ConvertErrorToPyExc(req_or.Error());
@@ -780,7 +780,8 @@ PyObject* CompiledModelWrapper::GetOutputBufferRequirements(int signature_index,
 
 PyObject* CompiledModelWrapper::CreateInputBufferByName(
     const char* signature_key, const char* input_name) {
-  auto buffer_or = compiled_model_.CreateInputBuffer(signature_key, input_name);
+  auto buffer_or =
+      compiled_model_->CreateInputBuffer(signature_key, input_name);
   if (!buffer_or) {
     return ConvertErrorToPyExc(buffer_or.Error());
   }
@@ -793,7 +794,7 @@ PyObject* CompiledModelWrapper::CreateInputBufferByName(
 PyObject* CompiledModelWrapper::CreateOutputBufferByName(
     const char* signature_key, const char* output_name) {
   auto buffer_or =
-      compiled_model_.CreateOutputBuffer(signature_key, output_name);
+      compiled_model_->CreateOutputBuffer(signature_key, output_name);
   if (!buffer_or) {
     return ConvertErrorToPyExc(buffer_or.Error());
   }
@@ -805,7 +806,7 @@ PyObject* CompiledModelWrapper::CreateOutputBufferByName(
 
 PyObject* CompiledModelWrapper::CreateInputBuffers(int signature_index) {
   auto buffers_or =
-      compiled_model_.CreateInputBuffers(static_cast<size_t>(signature_index));
+      compiled_model_->CreateInputBuffers(static_cast<size_t>(signature_index));
   if (!buffers_or) {
     return ConvertErrorToPyExc(buffers_or.Error());
   }
@@ -821,8 +822,8 @@ PyObject* CompiledModelWrapper::CreateInputBuffers(int signature_index) {
 }
 
 PyObject* CompiledModelWrapper::CreateOutputBuffers(int signature_index) {
-  auto buffers_or =
-      compiled_model_.CreateOutputBuffers(static_cast<size_t>(signature_index));
+  auto buffers_or = compiled_model_->CreateOutputBuffers(
+      static_cast<size_t>(signature_index));
   if (!buffers_or) {
     return ConvertErrorToPyExc(buffers_or.Error());
   }
@@ -838,12 +839,12 @@ PyObject* CompiledModelWrapper::CreateOutputBuffers(int signature_index) {
 
 PyObject* CompiledModelWrapper::GetInputTensorDetails(
     const char* signature_key) {
-  auto signature_index_or = compiled_model_.GetSignatureIndex(signature_key);
+  auto signature_index_or = compiled_model_->GetSignatureIndex(signature_key);
   if (!signature_index_or) {
     return ConvertErrorToPyExc(signature_index_or.Error());
   }
   const size_t signature_index = *signature_index_or;
-  auto sig_or = compiled_model_.GetSignature(signature_index);
+  auto sig_or = compiled_model_->GetSignature(signature_index);
   if (!sig_or) {
     return ConvertErrorToPyExc(sig_or.Error());
   }
@@ -863,7 +864,7 @@ PyObject* CompiledModelWrapper::GetInputTensorDetails(
     std::optional<Layout> input_layout;
     if (tensor.TypeId() == kLiteRtRankedTensorType) {
       auto input_layout_or =
-          compiled_model_.GetInputTensorLayout(signature_index, i);
+          compiled_model_->GetInputTensorLayout(signature_index, i);
       if (!input_layout_or) {
         Py_DECREF(result_dict);
         return ConvertErrorToPyExc(input_layout_or.Error());
@@ -882,19 +883,19 @@ PyObject* CompiledModelWrapper::GetInputTensorDetails(
 
 PyObject* CompiledModelWrapper::GetOutputTensorDetails(
     const char* signature_key) {
-  auto signature_index_or = compiled_model_.GetSignatureIndex(signature_key);
+  auto signature_index_or = compiled_model_->GetSignatureIndex(signature_key);
   if (!signature_index_or) {
     return ConvertErrorToPyExc(signature_index_or.Error());
   }
   const size_t signature_index = *signature_index_or;
-  auto sig_or = compiled_model_.GetSignature(signature_index);
+  auto sig_or = compiled_model_->GetSignature(signature_index);
   if (!sig_or) {
     return ConvertErrorToPyExc(sig_or.Error());
   }
   auto sig = std::move(*sig_or);
   auto output_names = sig.OutputNames();
   auto output_layouts_or =
-      compiled_model_.GetOutputTensorLayouts(signature_index, true);
+      compiled_model_->GetOutputTensorLayouts(signature_index, true);
   if (!output_layouts_or) {
     return ConvertErrorToPyExc(output_layouts_or.Error());
   }
@@ -927,7 +928,7 @@ PyObject* CompiledModelWrapper::GetOutputTensorDetails(
 }
 
 PyObject* CompiledModelWrapper::IsFullyAccelerated() {
-  auto is_fully_accelerated_or = compiled_model_.IsFullyAccelerated();
+  auto is_fully_accelerated_or = compiled_model_->IsFullyAccelerated();
   if (!is_fully_accelerated_or) {
     return ConvertErrorToPyExc(is_fully_accelerated_or.Error());
   }
@@ -984,7 +985,7 @@ PyObject* CompiledModelWrapper::RunByName(const char* signature_key,
         static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
   }
 
-  if (auto run_or = compiled_model_.Run(signature_key, in_map, out_map);
+  if (auto run_or = compiled_model_->Run(signature_key, in_map, out_map);
       !run_or) {
     return ConvertErrorToPyExc(run_or.Error());
   }
@@ -1035,8 +1036,8 @@ PyObject* CompiledModelWrapper::RunByIndex(int signature_index,
         static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo));
   }
 
-  if (auto run_or = compiled_model_.Run(static_cast<size_t>(signature_index),
-                                        inputs, outputs);
+  if (auto run_or = compiled_model_->Run(static_cast<size_t>(signature_index),
+                                         inputs, outputs);
       !run_or) {
     return ConvertErrorToPyExc(run_or.Error());
   }
@@ -1048,9 +1049,9 @@ PyObject* CompiledModelWrapper::ResizeInputTensor(int signature_index,
                                                   const std::vector<int>& dims,
                                                   bool strict) {
   auto resize_or =
-      strict ? compiled_model_.ResizeInputTensor(signature_index, input_index,
-                                                 absl::MakeConstSpan(dims))
-             : compiled_model_.ResizeInputTensorNonStrict(
+      strict ? compiled_model_->ResizeInputTensor(signature_index, input_index,
+                                                  absl::MakeConstSpan(dims))
+             : compiled_model_->ResizeInputTensorNonStrict(
                    signature_index, input_index, absl::MakeConstSpan(dims));
   if (!resize_or) {
     return ConvertErrorToPyExc(resize_or.Error());

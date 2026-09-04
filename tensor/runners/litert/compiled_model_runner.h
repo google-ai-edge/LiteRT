@@ -116,7 +116,7 @@ class CompiledModelRunner {
   }
 
   absl::StatusOr<TensorHandle> GetInput(const std::string& name) {
-    LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+    LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
     for (size_t i = 0; i < signature.InputNames().size(); ++i) {
       if (signature.InputNames()[i] == name) {
         TensorInit init;
@@ -141,7 +141,7 @@ class CompiledModelRunner {
       const absl::flat_hash_map<GraphProbe::StableTensorId, std::string,
                                 GraphProbe::StableTensorIdHash>& probe_tensors);
 
-  CompiledModel& compiled_model() { return compiled_model_; }
+  CompiledModel& compiled_model() { return *compiled_model_; }
 
  private:
   static Environment CreateEnvironmentOrDie() {
@@ -152,7 +152,7 @@ class CompiledModelRunner {
   using TensorTf = Tensor<TfLiteMixinTag>;
 
   bool IsHostMemorySupported(const std::string& name) {
-    auto req = compiled_model_.GetInputBufferRequirements(name);
+    auto req = compiled_model_->GetInputBufferRequirements(name);
     if (!req.HasValue()) return false;
     auto types = req->SupportedTypes();
     if (!types.HasValue()) return false;
@@ -174,7 +174,7 @@ class CompiledModelRunner {
       probed_tensors_;
   Environment& env_;
   Options& options_;
-  CompiledModel compiled_model_;
+  std::optional<CompiledModel> compiled_model_;
 
   std::vector<TensorBuffer> input_buffers_;
   std::vector<TensorBuffer> output_buffers_;
@@ -229,9 +229,10 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::BuildModel(
   LITERT_ASSIGN_OR_RETURN(compiled_model_,
                           CompiledModel::Create(env_, model_buffer, options_));
 
-  LITERT_ASSIGN_OR_RETURN(input_buffers_, compiled_model_.CreateInputBuffers());
+  LITERT_ASSIGN_OR_RETURN(input_buffers_,
+                          compiled_model_->CreateInputBuffers());
   LITERT_ASSIGN_OR_RETURN(output_buffers_,
-                          compiled_model_.CreateOutputBuffers());
+                          compiled_model_->CreateOutputBuffers());
   // Okay to release the output tensors now as output buffers are created.
   outputs_.reset();
 
@@ -316,7 +317,7 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::AddTensorsAsOutputs(
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
     const std::string& name, const std::vector<float>& data) {
-  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
   for (int i = 0; i < signature.InputNames().size(); ++i) {
     if (signature.InputNames()[i] == name) {
       LITERT_RETURN_IF_ERROR(
@@ -330,7 +331,7 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
     const std::string& name, const std::vector<int8_t>& data) {
-  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
   for (int i = 0; i < signature.InputNames().size(); ++i) {
     if (signature.InputNames()[i] == name) {
       LITERT_RETURN_IF_ERROR(
@@ -344,7 +345,7 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
     const std::string& name, const std::vector<int32_t>& data) {
-  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
   for (int i = 0; i < signature.InputNames().size(); ++i) {
     if (signature.InputNames()[i] == name) {
       LITERT_RETURN_IF_ERROR(
@@ -358,7 +359,7 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
     const std::string& name, const TensorHandle& tensor) {
-  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
 
   for (int i = 0; i < signature.InputNames().size(); ++i) {
     if (signature.InputNames()[i] == name) {
@@ -383,7 +384,7 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
     const std::string& name, absl::Span<const std::byte> data) {
-  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
 
   for (int i = 0; i < signature.InputNames().size(); ++i) {
     if (signature.InputNames()[i] == name) {
@@ -409,7 +410,7 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetOutput(
     const std::string& name, const TensorHandle& tensor) {
-  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
   for (int i = 0; i < signature.OutputNames().size(); ++i) {
     if (signature.OutputNames()[i] == name) {
       LITERT_ASSIGN_OR_RETURN(auto& buffer, tensor.GetBuffer());
@@ -425,7 +426,7 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetOutput(
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetOutput(
     const std::string& name, absl::Span<std::byte> data) {
-  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
   for (int i = 0; i < signature.OutputNames().size(); ++i) {
     if (signature.OutputNames()[i] == name) {
       if (IsHostMemorySupported(name) && IsAligned(data.data())) {
@@ -453,7 +454,7 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetOutput(
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
     const std::string& name, const std::vector<bool>& data) {
-  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
   for (int i = 0; i < signature.InputNames().size(); ++i) {
     if (signature.InputNames()[i] == name) {
       std::vector<uint8_t> temp_data(data.begin(), data.end());
@@ -468,7 +469,7 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
     const std::string& name, const std::vector<uint8_t>& data) {
-  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
   for (int i = 0; i < signature.InputNames().size(); ++i) {
     if (signature.InputNames()[i] == name) {
       LITERT_RETURN_IF_ERROR(
@@ -490,7 +491,7 @@ absl::Status CompiledModelRunner<ModelFunctor, Inputs, Outputs>::Run() {
   }
   first_run_ = false;
 
-  LITERT_RETURN_IF_ERROR(compiled_model_.Run(input_buffers_, output_buffers_));
+  LITERT_RETURN_IF_ERROR(compiled_model_->Run(input_buffers_, output_buffers_));
 
   // Revert the replaced buffers to their original state, or copy the data from
   // the original output buffers to the external output buffers.
@@ -516,11 +517,11 @@ template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::StatusOr<std::vector<float>>
 CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetFloatOutput(
     const std::string& name) {
-  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
   for (int i = 0; i < signature.OutputNames().size(); ++i) {
     if (signature.OutputNames()[i] == name) {
       LITERT_ASSIGN_OR_RETURN(auto ranked_tensor_type,
-                              compiled_model_.GetOutputTensorType(0, i));
+                              compiled_model_->GetOutputTensorType(0, i));
       size_t num_elements = 1;
       for (int dim : ranked_tensor_type.Layout().Dimensions()) {
         num_elements *= dim;
@@ -538,11 +539,11 @@ template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::StatusOr<std::vector<int32_t>>
 CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetInt32Output(
     const std::string& name) {
-  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
   for (int i = 0; i < signature.OutputNames().size(); ++i) {
     if (signature.OutputNames()[i] == name) {
       LITERT_ASSIGN_OR_RETURN(auto ranked_tensor_type,
-                              compiled_model_.GetOutputTensorType(0, i));
+                              compiled_model_->GetOutputTensorType(0, i));
       size_t num_elements = 1;
       for (int dim : ranked_tensor_type.Layout().Dimensions()) {
         num_elements *= dim;
@@ -560,11 +561,11 @@ template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::StatusOr<std::vector<bool>>
 CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetBoolOutput(
     const std::string& name) {
-  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
   for (int i = 0; i < signature.OutputNames().size(); ++i) {
     if (signature.OutputNames()[i] == name) {
       LITERT_ASSIGN_OR_RETURN(auto ranked_tensor_type,
-                              compiled_model_.GetOutputTensorType(0, i));
+                              compiled_model_->GetOutputTensorType(0, i));
       size_t num_elements = 1;
       for (int dim : ranked_tensor_type.Layout().Dimensions()) {
         num_elements *= dim;
@@ -583,11 +584,11 @@ template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::StatusOr<TensorHandle>
 CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetOutput(
     const std::string& name) {
-  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
   for (int i = 0; i < signature.OutputNames().size(); ++i) {
     if (signature.OutputNames()[i] == name) {
       LITERT_ASSIGN_OR_RETURN(auto ranked_tensor_type,
-                              compiled_model_.GetOutputTensorType(0, i));
+                              compiled_model_->GetOutputTensorType(0, i));
       LITERT_ASSIGN_OR_RETURN(auto dup, output_buffers_[i].Duplicate());
       auto litert_buffer = std::make_shared<LitertBuffer>(std::move(dup));
 
@@ -629,7 +630,7 @@ CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetOutput(
 template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::StatusOr<std::vector<std::string>>
 CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetInputNames() const {
-  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
   std::vector<std::string> input_names;
   for (const auto& name : signature.InputNames()) {
     input_names.emplace_back(name);
@@ -672,7 +673,7 @@ template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::StatusOr<size_t>
 CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetInputIndex(
     const std::string& name) const {
-  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
   for (size_t i = 0; i < signature.InputNames().size(); ++i) {
     if (signature.InputNames()[i] == name) {
       return i;
@@ -685,7 +686,7 @@ template <typename ModelFunctor, typename Inputs, typename Outputs>
 absl::StatusOr<size_t>
 CompiledModelRunner<ModelFunctor, Inputs, Outputs>::GetOutputIndex(
     const std::string& name) const {
-  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_.GetSignature(0));
+  LITERT_ASSIGN_OR_RETURN(auto signature, compiled_model_->GetSignature(0));
   for (size_t i = 0; i < signature.OutputNames().size(); ++i) {
     if (signature.OutputNames()[i] == name) {
       return i;

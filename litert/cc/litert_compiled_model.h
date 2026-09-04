@@ -365,6 +365,8 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   // friend class lm::SelfConditioningHandler;
   // copybara:uncomment_end
 
+  // TODO(b/478306820): Remove the default constructor.
+  [[deprecated("Do NOT use the default constructor.")]]
   CompiledModel() = default;
   CompiledModel(const CompiledModel&) = delete;
   CompiledModel& operator=(const CompiledModel&) = delete;

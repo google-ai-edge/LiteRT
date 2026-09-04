@@ -48,9 +48,9 @@ class LitertDynamicRunner {
  public:
   static absl::StatusOr<LitertDynamicRunner> Create(
       Environment& env, const std::string& model_path, Options& options) {
-    LitertDynamicRunner runner;
-    LITERT_ASSIGN_OR_RETURN(runner.compiled_model_,
+    LITERT_ASSIGN_OR_RETURN(auto compiled_model,
                             CompiledModel::Create(env, model_path, options));
+    LitertDynamicRunner runner(std::move(compiled_model));
     LITERT_RETURN_IF_ERROR(runner.InitializeBuffers());
     return runner;
   }
@@ -58,10 +58,10 @@ class LitertDynamicRunner {
   static absl::StatusOr<LitertDynamicRunner> Create(
       Environment& env, absl::Span<const uint8_t> model_buffer,
       Options& options) {
-    LitertDynamicRunner runner;
     BufferRef<uint8_t> buf_ref(model_buffer.data(), model_buffer.size());
-    LITERT_ASSIGN_OR_RETURN(runner.compiled_model_,
+    LITERT_ASSIGN_OR_RETURN(auto compiled_model,
                             CompiledModel::Create(env, buf_ref, options));
+    LitertDynamicRunner runner(std::move(compiled_model));
     LITERT_RETURN_IF_ERROR(runner.InitializeBuffers());
     return runner;
   }
@@ -80,9 +80,9 @@ class LitertDynamicRunner {
       }
     }
 
-    LitertDynamicRunner runner;
-    LITERT_ASSIGN_OR_RETURN(runner.compiled_model_,
+    LITERT_ASSIGN_OR_RETURN(auto compiled_model,
                             CompiledModel::Create(env, model_path, options));
+    LitertDynamicRunner runner(std::move(compiled_model));
     LITERT_RETURN_IF_ERROR(runner.InitializeBuffers());
 
     for (const auto& loop : feedback_loops) {
@@ -107,10 +107,10 @@ class LitertDynamicRunner {
       }
     }
 
-    LitertDynamicRunner runner;
     BufferRef<uint8_t> buf_ref(model_buffer.data(), model_buffer.size());
-    LITERT_ASSIGN_OR_RETURN(runner.compiled_model_,
+    LITERT_ASSIGN_OR_RETURN(auto compiled_model,
                             CompiledModel::Create(env, buf_ref, options));
+    LitertDynamicRunner runner(std::move(compiled_model));
     LITERT_RETURN_IF_ERROR(runner.InitializeBuffers());
 
     for (const auto& loop : feedback_loops) {
@@ -573,7 +573,8 @@ class LitertDynamicRunner {
     size_t output_index;
   };
 
-  LitertDynamicRunner() = default;
+  explicit LitertDynamicRunner(CompiledModel compiled_model)
+      : compiled_model_(std::move(compiled_model)) {}
   CompiledModel compiled_model_;
   std::string default_signature_name_;
   absl::flat_hash_map<std::string, std::vector<TensorBuffer>>
