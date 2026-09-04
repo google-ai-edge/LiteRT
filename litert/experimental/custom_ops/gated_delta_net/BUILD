@@ -19,7 +19,11 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = [
-        "//litert:litert_public",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_public",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
         "//third_party/py/litert_torch:__subpackages__",
     ],
 )
