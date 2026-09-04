@@ -11,6 +11,12 @@ on:
   pull_request:
     branches:
     - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'g3doc/**'
+      - 'site/**'
+      - 'LICENSE'
   schedule:
     - cron: "0 10 * * *"  # Run at 2am PST (10am UTC) every day to refresh the cache.
   workflow_dispatch:
@@ -18,9 +24,9 @@ on:
 jobs:
   build_android_on_linux:
     name: Build Android Artifacts on Linux
-    runs-on: linux-x86-n2-16
-    container:
-      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
+    # Task execution time doesn't exceed 10 minutes, so we don't need to use
+    # "linux-x86-n2-16". Use GitHub-hosted "ubuntu-latest" instead.
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -30,6 +36,9 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
+
+      - name: Set up Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3

@@ -7,6 +7,12 @@ on:
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'g3doc/**'
+      - 'site/**'
+      - 'LICENSE'
   merge_group:
   schedule:
     - cron: "0 10 * * *"  # Run at 2am PST (10am UTC) every day to refresh the cache.
