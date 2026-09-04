@@ -27,6 +27,12 @@ namespace tflite {
 enum class GpuCompatibilityFlags {
   kStandard = 0,
   kEnhancedBroadcast = 1 << 0,  // Set when backend supports enhanced broadcast.
+  // Set when the backend accepts GATHER indices that are stored
+  // multi-dimensionally but reduce to a 1D vector, i.e. every dimension except
+  // the last one has extent 1 (e.g. [1,N]). Such a backend has to relabel or
+  // reshape both the indices and the gathered result itself; backends without
+  // this flag only accept genuinely 1D indices.
+  kReducibleGatherIndices = 1 << 1,
 };
 
 // Check if the given op signature is compatible with GPU delegate.

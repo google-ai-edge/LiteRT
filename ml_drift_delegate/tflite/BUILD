@@ -242,6 +242,7 @@ cc_test(
         "@com_google_googletest//:gtest_main",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common:types",

@@ -36,6 +36,25 @@ namespace tflite {
 
 namespace {
 
+// Maximum tensor rank representable in the BHWC layout used by the GPU
+// delegates.
+constexpr size_t kMaxBhwcDims = 4;
+
+bool HasFlag(GpuCompatibilityFlags flags, GpuCompatibilityFlags flag) {
+  return (static_cast<int>(flags) & static_cast<int>(flag)) != 0;
+}
+
+// Returns true if `dims` describes a tensor that reduces to a 1D vector, i.e.
+// every dimension except the last one has extent 1 (a 1D tensor trivially
+// qualifies). An empty (rank-0) `dims` returns false.
+bool ReducesTo1DVector(const std::vector<int32_t>& dims) {
+  if (dims.empty()) return false;
+  for (size_t i = 0; i + 1 < dims.size(); ++i) {
+    if (dims[i] != 1) return false;
+  }
+  return true;
+}
+
 std::string GetOpName(const OpSignature& op_sig) {
   if (op_sig.op == tflite::BuiltinOperator_CUSTOM) {
     return op_sig.custom_name;
@@ -496,7 +515,7 @@ absl::Status CheckAddMulBroadcastCompatibility(
     }
 
     bool is_broadcastable = false;
-    if (flags == GpuCompatibilityFlags::kEnhancedBroadcast) {
+    if (HasFlag(flags, GpuCompatibilityFlags::kEnhancedBroadcast)) {
       is_broadcastable = CheckIsBroadcastable(longer_dims, shorter_dims);
     } else {
       if (longer_dims->size() == 4 && shorter_dims->size() == 3 &&
@@ -830,7 +849,7 @@ absl::Status CheckGpuDelegateCompatibility(const OpSignature& op_sig,
       return absl::OkStatus();
     }
 
-    case kTfLiteBuiltinGather:
+    case kTfLiteBuiltinGather: {
       if (!CheckInputsConstsOutputs(op_sig, /*required_runtime_inputs=*/2,
                                     /*required_const_inputs=*/0,
                                     /*required_outputs=*/1)
@@ -842,12 +861,35 @@ absl::Status CheckGpuDelegateCompatibility(const OpSignature& op_sig,
         return absl::InvalidArgumentError(
             "Op can only handle 1 or 2 operand(s).");
       }
-      if (op_sig.inputs[1].dims.size() != 1) {
+      // Every tensor has to be representable in BHWC: a higher-rank shape gets
+      // silently truncated to its four leading dimensions downstream, which
+      // would drop the gathered dimension without reporting an error.
+      for (const auto* spec : {&op_sig.inputs.at(0), &op_sig.inputs.at(1),
+                               &op_sig.outputs.at(0)}) {
+        if (spec->dims.size() > kMaxBhwcDims) {
+          return absl::UnimplementedError(
+              "Gather only supports up to 4D input, indices and output.");
+        }
+      }
+      // The gather kernels consume indices as a 1D vector laid out along the
+      // channel axis, and derive the output shape from the input shape with
+      // `axis` replaced by the number of indices. Indices of rank > 1 therefore
+      // only work on a backend that relabels the indices and reshapes the
+      // gathered result, which kReducibleGatherIndices advertises -- and even
+      // then only when they reduce to that same 1D vector.
+      if (HasFlag(flags, GpuCompatibilityFlags::kReducibleGatherIndices)) {
+        if (!ReducesTo1DVector(op_sig.inputs.at(1).dims)) {
+          return absl::UnimplementedError(
+              "Only support indices that reduce to a 1D vector (all leading "
+              "dimensions must be 1)");
+        }
+      } else if (op_sig.inputs.at(1).dims.size() != 1) {
         return absl::UnimplementedError("Only support 1D indices");
       }
       return op_sig.inputs.at(1).type == kTfLiteInt32
                  ? absl::OkStatus()
                  : absl::UnimplementedError("Only accept INT32 indices");
+    }
 
     case kTfLiteBuiltinHardSwish:
       return CheckInputsOutputs(op_sig, /*required_runtime_inputs=*/1,
