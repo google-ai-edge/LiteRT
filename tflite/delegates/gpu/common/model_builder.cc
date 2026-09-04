@@ -1097,19 +1097,22 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
   absl::Status Parse(const TfLiteNode* tflite_node,
                      const TfLiteRegistration* registration,
                      GraphFloat32* graph, ObjectReader* reader) final {
-    Node* node = graph->NewNode();
-    node->operation.type = ToString(operation_type_);
-    if (operation_type_ == OperationType::ADD) {
-      ElementwiseAttributes attr;
-      node->operation.attributes = std::move(attr);
-    }
+    const auto new_node = [&]() {
+      Node* node = graph->NewNode();
+      node->operation.type = ToString(operation_type_);
+      if (operation_type_ == OperationType::ADD) {
+        node->operation.attributes = ElementwiseAttributes();
+      }
+      return node;
+    };
+    Node* node;
 
     if (IsOneArgumentOperation()) {
       RETURN_IF_ERROR(reader->VerifyInputsConstsOutputs(tflite_node,
                                                         /*runtime_inputs=*/1,
                                                         /*const_inputs=*/0,
                                                         /*outputs=*/1));
-
+      node = new_node();
       RETURN_IF_ERROR(reader->AddInput(node, 0));
     } else if (IsTwoArgumentOperation() &&
                reader
@@ -1126,6 +1129,7 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
 
       // TODO(b/166831113): Support the same inputs for operations.
       if (input0 == input1) {
+        node = new_node();
         if (operation_type_ == OperationType::MUL) {
           // replace MUL(A, A) with SQUARE(A)
           node->operation.type = ToString(OperationType::SQUARE);
@@ -1141,32 +1145,39 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
           return absl::UnimplementedError(
               "No support of few identical inputs in the same operation.");
         }
-      } else {
-        int input_tensor0 = 0;
-        int input_tensor1 = 1;
-        if (operation_type_ == OperationType::MUL ||
-            operation_type_ == OperationType::ADD) {
-          // The "larger" input tensor must be bound to 1st input and the
-          // "smaller" input tensor must be bound to 2nd input.
-          BHWC shape0;
-          RETURN_IF_ERROR(ExtractTensorShape(*input0, &shape0));
-          BHWC shape1;
-          RETURN_IF_ERROR(ExtractTensorShape(*input1, &shape1));
-          if (shape0.h <= shape1.h && shape0.w <= shape1.w &&
-              shape0.c == shape1.c) {
-            input_tensor0 = 1;
-            input_tensor1 = 0;
-          }
+      } else if (operation_type_ == OperationType::MUL ||
+                 operation_type_ == OperationType::ADD) {
+        Value* inputs[2];
+        const TfLiteTensor* output = reader->GetOutputTensor(0);
+        RETURN_IF_ERROR(ReadRightAlignedInput(
+            /*input_index=*/0, *output, graph, reader, &inputs[0]));
+        RETURN_IF_ERROR(ReadRightAlignedInput(
+            /*input_index=*/1, *output, graph, reader, &inputs[1]));
+
+        int first = 0;
+        int second = 1;
+        const BHWC& shape0 = inputs[0]->tensor.shape;
+        const BHWC& shape1 = inputs[1]->tensor.shape;
+        if (shape0.h <= shape1.h && shape0.w <= shape1.w &&
+            shape0.c == shape1.c) {
+          first = 1;
+          second = 0;
         }
 
-        RETURN_IF_ERROR(reader->AddInput(node, input_tensor0));
-        RETURN_IF_ERROR(reader->AddInput(node, input_tensor1));
+        node = new_node();
+        RETURN_IF_ERROR(graph->AddConsumer(node->id, inputs[first]->id));
+        RETURN_IF_ERROR(graph->AddConsumer(node->id, inputs[second]->id));
+      } else {
+        node = new_node();
+        RETURN_IF_ERROR(reader->AddInput(node, 0));
+        RETURN_IF_ERROR(reader->AddInput(node, 1));
       }
     } else if (IsTwoArgumentOperationWithConst()) {
       RETURN_IF_ERROR(reader->VerifyInputsConstsOutputs(tflite_node,
                                                         /*runtime_inputs=*/1,
                                                         /*const_inputs=*/1,
                                                         /*outputs=*/1));
+      node = new_node();
       const TfLiteTensor* input_tensor0 = reader->GetInputTensor(0);
       const TfLiteTensor* constant_tensor = IsConstantTensor(input_tensor0)
                                                 ? input_tensor0
@@ -1183,6 +1194,60 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
   }
 
  private:
+  absl::Status ExtractRightAlignedShape(const TfLiteTensor& input,
+                                        const TfLiteTensor& output,
+                                        BHWC* shape) const {
+    const int input_rank = input.dims->size;
+    const int output_rank = output.dims->size;
+    if (input_rank >= output_rank) {
+      return ExtractTensorShape(input, shape);
+    }
+    if (input_rank < 1 || output_rank > 4) {
+      return absl::InvalidArgumentError(
+          "Elementwise broadcast supports tensor ranks from 1 to 4.");
+    }
+
+    // Broadcasting pads lower-rank inputs on the left before BHWC conversion.
+    int dimensions[4] = {1, 1, 1, 1};
+    const int offset = 4 - input_rank;
+    for (int i = 0; i < input_rank; ++i) {
+      dimensions[offset + i] = input.dims->data[i];
+    }
+    *shape = BHWC(dimensions[0], dimensions[1], dimensions[2],
+                  dimensions[3]);
+    return absl::OkStatus();
+  }
+
+  absl::Status ReadRightAlignedInput(int input_index,
+                                     const TfLiteTensor& output,
+                                     GraphFloat32* graph, ObjectReader* reader,
+                                     Value** result) const {
+    BHWC shape;
+    RETURN_IF_ERROR(ExtractRightAlignedShape(
+        *reader->GetInputTensor(input_index), output, &shape));
+    Value* value;
+    RETURN_IF_ERROR(reader->ReadValue(input_index, &value));
+    if (value->tensor.shape == shape) {
+      *result = value;
+      return absl::OkStatus();
+    }
+
+    Node* reshape = graph->NewNode();
+    reshape->operation.type = ToString(OperationType::RESHAPE);
+    ReshapeAttributes attr;
+    attr.new_shape = shape;
+    reshape->operation.attributes = attr;
+    RETURN_IF_ERROR(graph->AddConsumer(reshape->id, value->id));
+
+    Value* reshaped_value = graph->NewValue();
+    reshaped_value->tensor.type = value->tensor.type;
+    reshaped_value->tensor.shape = shape;
+    reshaped_value->quant_params = value->quant_params;
+    RETURN_IF_ERROR(graph->SetProducer(reshape->id, reshaped_value->id));
+    *result = reshaped_value;
+    return absl::OkStatus();
+  }
+
   absl::Status GetActivation(const TfLiteNode* tflite_node,
                              TfLiteFusedActivation* activation) const {
     if (operation_type_ == OperationType::DIV) {
