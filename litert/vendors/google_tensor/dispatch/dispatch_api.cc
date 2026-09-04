@@ -180,6 +180,14 @@ LiteRtStatus InvocationContextCreate(
   GT_LOG_RETURN_IF_NULL(exec_bytecode_buffer);
   GT_LOG_RETURN_IF_NULL(invocation_context);
 
+  // TODO(b/397771624): SouthBound implementations shipped to date do not
+  // support per-function dispatch and reject any non-empty function name
+  // ("Only Darwinn Tflite model is supported for TpuTachyonLoadedLibrary").
+  // Maintain the original empty-string override for older-SB compatibility.
+  // Once an SB version that supports per-function dispatch ships, gate this
+  // override behind a corresponding GoogleTensorSouthBoundFeature in
+  // sb_api_features.h.
+  function_name = "";
   return LiteRtDispatchInvocationContextT::CreateFromBytecode(
       device_context, exec_type, *exec_bytecode_buffer, function_name,
       num_inputs, num_outputs, *invocation_context);
@@ -394,6 +402,8 @@ LiteRtStatus AssignNodeFunction(LiteRtDispatchGraph graph,
                                 const char* function_name) {
   GT_LOG_RETURN_IF_NULL(graph);
 
+  // Older-SB compatibility (b/397771624); see InvocationContextCreate above.
+  function_name = "";
   return graph->AssignNodeFunction(node_id, exec_handle, function_name);
 }
 
