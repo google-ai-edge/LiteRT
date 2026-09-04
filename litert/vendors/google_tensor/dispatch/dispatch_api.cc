@@ -36,11 +36,13 @@
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
+#include "litert/vendors/google_tensor/dispatch/google_tensor_hook.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_metrics.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
+#include "litert/vendors/google_tensor/hooks/power_trace_hook.h"
 
 namespace litert::google_tensor {
 
@@ -244,7 +246,25 @@ LiteRtStatus DetachOutput(LiteRtDispatchInvocationContext invocation_context,
 LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
   GT_LOG_RETURN_IF_NULL(invocation_context);
 
-  return invocation_context->Invoke();
+  if (invocation_context->device_context() &&
+      invocation_context->device_context()->GetVendorHook()) {
+    invocation_context->device_context()->GetVendorHook()(
+        kLiteRtHookTypeRuntimeStart, &invocation_context,
+        sizeof(LiteRtDispatchInvocationContext),
+        invocation_context->device_context()->GetVendorHookUserData());
+  }
+
+  auto status = invocation_context->Invoke();
+
+  if (invocation_context->device_context() &&
+      invocation_context->device_context()->GetVendorHook()) {
+    invocation_context->device_context()->GetVendorHook()(
+        kLiteRtHookTypeRuntimeStop, &invocation_context,
+        sizeof(LiteRtDispatchInvocationContext),
+        invocation_context->device_context()->GetVendorHookUserData());
+  }
+
+  return status;
 }
 
 // /////////////////////////////////////////////////////////////////////////////
@@ -481,6 +501,7 @@ LiteRtDispatchInterface TheInterface = {
         litert::google_tensor::CheckRuntimeCompatibility,
     .invocation_context_set_options =
         litert::google_tensor::InvocationContextSetOptions,
+    .get_hooks = litert::google_tensor::GetHooks,
 };
 
 LiteRtDispatchAsyncInterface TheAsyncInterface = {

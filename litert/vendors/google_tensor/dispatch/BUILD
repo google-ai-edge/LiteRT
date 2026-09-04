@@ -74,6 +74,7 @@ cc_library(
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_metrics_header",
+        "//litert/c:litert_profiler_types",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_runtime_context_header",
@@ -133,8 +134,13 @@ litert_dispatch_api(
         "//litert:litert_public",
         "//platforms/darwinn/tests/sdk_3p/litert_tools:__subpackages__",
     ],
-    deps = [
+    deps = select({
+        ":has_hooks": [":google_tensor_hook"],
+        "//conditions:default": [":google_tensor_hook_noop"],
+    }) + [
+        "//litert/c:litert_profiler_types",
         # copybara:uncomment "//litert/c/options/google:litert_google_tensor_privileged_options_type",
+        "//litert/vendors/google_tensor/hooks",
         # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:google_tensor_privileged_options_utils",
         "@com_google_absl//absl/algorithm:container",
         "//litert/c/internal:litert_scheduling_info",
@@ -166,6 +172,47 @@ litert_dispatch_api(
         "//litert/cc:litert_macros",
         # TODO: Remove this dependency.
         "//litert/core/util:tensor_type_util",
+        "//litert/vendors/c:litert_dispatch_c_api",
+    ],
+)
+
+config_setting(
+    name = "has_hooks",
+    values = {"define": "LITERT_GOOGLE_TENSOR_HAS_HOOKS=1"},
+)
+
+cc_library(
+    name = "google_tensor_hook",
+    srcs = [
+        # copybara:uncomment "google_tensor_hook.cc",
+    ],
+    hdrs = [
+        "google_tensor_hook.h",
+        # copybara:uncomment "litert_dispatch_metrics.h",
+    ],
+    deps = [
+        ":dispatch_api_headers",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_metrics_header",
+        "//litert/c:litert_profiler_types",
+        "//litert/c/internal:litert_logging",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        # copybara:uncomment "//litert/vendors/google_tensor/hooks",
+    ],
+)
+
+cc_library(
+    name = "google_tensor_hook_noop",
+    srcs = [
+        "google_tensor_hook_noop.cc",
+    ],
+    hdrs = [
+        "google_tensor_hook.h",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_profiler_types",
         "//litert/vendors/c:litert_dispatch_c_api",
     ],
 )

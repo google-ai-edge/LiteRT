@@ -1,0 +1,8 @@
+power_config {
+  dump_power_metrics: true
+  power_dump_path: "/data/local/tmp/power_bench.txt"
+}
+tpu_tile_time_metrics_config {
+  dump_tpu_tile_time_metrics: true
+  tpu_tile_time_metrics_dump_path: "/data/local/tmp/tpu_bench.txt"
+}
