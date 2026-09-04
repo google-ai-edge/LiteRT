@@ -46,6 +46,7 @@ package_group(
         "//research/language_modeling/sentence_explorer/ondevice/...",
         "//tflite/...",
         "//third_party/ai_lab/...",
+        "//third_party/odml/model_explorer/...",
         "//waymo/accelerator/alpine/tools/...",
         "//waymo/ml/compiler/mlir/...",
     ],
