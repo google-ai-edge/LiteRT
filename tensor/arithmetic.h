@@ -1856,6 +1856,7 @@ Tensor<Mixins...> Select(Tensor<Mixins...> condition, Tensor<Mixins...> a,
   // first dimension of the inputs, or match the inputs completely.
   if (condition_info.shape != a_info.shape) {
     if (condition_info.shape.size() != 1 ||
+        a_info.shape.empty() ||
         condition_info.shape[0] != a_info.shape[0]) {
       return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
           absl::StrCat("Shape of condition must match a and b or be 1D with "
