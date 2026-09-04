@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include "DSP/QnnDspGraph.h"  // from @qairt
 #include "GPU/QnnGpuGraph.h"  // from @qairt
 #include "HTP/QnnHtpGraph.h"  // from @qairt
 #include "IR/QnnIrGraph.h"  // from @qairt
@@ -22,7 +23,8 @@ namespace qnn {
 using ConfigPayload =
     std::variant<std::string,  // IR output path.
                  QnnIrGraph_CustomConfig_t, QnnGpuGraph_CustomConfig_t,
-                 QnnHtpGraph_CustomConfig_t, QnnLpaiGraph_CustomConfig_t,
+                 QnnHtpGraph_CustomConfig_t, QnnDspGraph_CustomConfig_t,
+                 QnnLpaiGraph_CustomConfig_t,
                  QnnLpaiGraph_CustomConfigPrepare_t, QnnLpaiGraph_PerfCfg_t,
                  QnnLpaiGraph_CoreAffinity_t>;
 
