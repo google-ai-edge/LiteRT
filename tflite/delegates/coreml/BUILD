@@ -85,6 +85,7 @@ objc_library(
         ":coreml_executor",
         ":mlmodel_proto_cc",
         "//tflite:kernel_api",
+        "//tflite:minimal_logging",
         "//tflite/core/c:common",
         "//tflite/delegates/coreml/builders:op_builder",
         "//tflite/kernels:kernel_util",
