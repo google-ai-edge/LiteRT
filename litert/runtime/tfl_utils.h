@@ -18,10 +18,12 @@
 #include <cstddef>
 #include <functional>
 
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/options.h"
+#include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/interpreter.h"
@@ -47,11 +49,21 @@ Expected<void> ResizeTensor(const LiteRtLayout& layout,
                             TfLiteOpaqueContext* tfl_context,
                             TfLiteOpaqueTensor* tfl_opaque_tensor);
 
-
 // Returns the TfLiteTensorIdentifier for the given tensor, or nullopt if the
 // tensor is not found in the interpreter.
 litert::Expected<TfLiteTensorIdentifier> GetTensorIdentifier(
     const tflite::Interpreter& interpreter, const TfLiteTensor* target_tensor);
+
+// Inspects the entry subgraphs pointed to by the model's signature keys to
+// locate boundary NPU custom operators (kLiteRtDispatchOpCustomName).
+// For each boundary dispatch operator found directly in the signature's entry
+// subgraph, extracts its function entry point name from DispatchOpOptions
+// and registers the mapping from function_name -> signature_name into
+// `dispatch_options`. Note: Does not traverse child subgraphs invoked via
+// PartitionedCall or other control flow operators.
+Expected<void> BuildBoundaryFunctionSignatureMapIntoOptions(
+    const tflite::Interpreter* interpreter, const LiteRtModelT& model,
+    DispatchDelegateOptions& dispatch_options);
 
 }  // namespace litert::internal
 
