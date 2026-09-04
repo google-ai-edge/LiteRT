@@ -834,20 +834,42 @@ ThrStatus thrInvocationContextStopMetricsCollection(
 // --------------------------------------------------------------------------
 // Vendor APIs.
 //
-// These APIs are used to retrieve and set vendor specific attributes to
-// SouthBound runtime.
+// These APIs are used to retrieve and set vendor-specific attributes on the
+// SouthBound runtime context.
 //
 // WARNING: APIs are experimental and subject to change.
 
 // Sets the given string `key` attribute of the vendor SouthBound
 // implementation associated with the given `context`.
 //
+// System attributes typically fall into two categories depending on the vendor
+// implementation:
+//   - Initialization-time attributes: Attributes that configure the underlying
+//     driver, hardware device, or runtime initialization (such as driver
+//     backend selection, memory partition configurations, execution groups, or
+//     allowlist checks). These must be set immediately after `thrContextCreate`
+//     and before any scheduling quantums (SQs) are loaded or graphs are
+//     prepared. Attempting to alter an initialization-time attribute after
+//     runtime/driver initialization returns `kThrStatusFailedPrecondition`.
+//   - Mutable attributes: Attributes that configure dynamic or operational
+//     policies (such as QoS boosting or container loading mechanisms) and can
+//     be updated after initialization.
+//
+// The supported keys, valid values, and mutability semantics are defined by the
+// respective vendor SouthBound implementation. For Google Tensor / DarwiNN,
+// refer to
+// `hardware/gchips/hetero_runtime/star_ship/south_bound/sb_api_annotations.h`
+// (`SystemAttributeAnnotations` and `TachyonSystemAttributeAnnotations`).
+//
 // WARNING: This API is experimental and subject to change.
 ThrStatus thrVendorSetSystemAttributeStr(ThrContext* context, const char* key,
                                          const char* value);
 
 // Sets the given int64_t `key` attribute of the vendor SouthBound
-// implementation associated with the given `context`
+// implementation associated with the given `context`.
+//
+// Follows the same initialization vs. mutable lifecycle semantics as
+// `thrVendorSetSystemAttributeStr`.
 //
 // WARNING: This API is experimental and subject to change.
 ThrStatus thrVendorSetSystemAttributeInt64(ThrContext* context, const char* key,
