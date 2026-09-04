@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/profiling/profile_buffer.h"
 
+#include <cstdint>
 #include <utility>
 
 #include "tflite/core/api/profiler.h"
