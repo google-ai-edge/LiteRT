@@ -14,12 +14,15 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "openvino/core/except.hpp"
+#include "openvino/core/version.hpp"
 #include "openvino/runtime/core.hpp"
+#include "openvino/runtime/intel_npu/properties.hpp"
 #include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
@@ -111,11 +114,33 @@ LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
                                                        environment_options);
   }
 
+  const ov::Version openvino_version = ov::get_openvino_version();
+  LITERT_LOG(LITERT_INFO, "OpenVINO Runtime version: %s (%s)",
+             openvino_version.buildNumber, openvino_version.description);
+
   ov::Core core;
-  std::vector<std::string> availableDevices = core.get_available_devices();
-  for (auto&& device : availableDevices)
+  std::vector<std::string> available_devices = core.get_available_devices();
+  bool npu_available = false;
+  for (const auto& device : available_devices) {
     LITERT_LOG(LITERT_INFO, "[Openvino]Found device plugin for: %s",
                device.c_str());
+    npu_available = npu_available || device.rfind("NPU.", 0) == 0;
+  }
+
+  if (npu_available) {
+    try {
+      const uint32_t compiler_version =
+          core.get_property("NPU", ov::intel_npu::compiler_version);
+      const uint32_t major_version = compiler_version >> 16;
+      const uint32_t minor_version = compiler_version & 0xFFFF;
+      LITERT_LOG(LITERT_INFO, "Intel NPU compiler version: %u.%u",
+                 static_cast<unsigned int>(major_version),
+                 static_cast<unsigned int>(minor_version));
+    } catch (const ov::Exception& e) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Failed to query Intel NPU compiler version: %s", e.what());
+    }
+  }
 
   if (options) {
     litert::internal::OptionsWrapper internal_options(
