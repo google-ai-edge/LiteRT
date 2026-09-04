@@ -7,13 +7,12 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - 'litert/c/**'
-      - 'litert/cc/**'
-      - 'litert/vendors/examples/cmake_example/**'
-      - 'litert/CMakeLists.txt'
-      - 'CMakeLists.txt'
-      - '.github/workflows/cmake_source_build_cc_api.yml'
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'g3doc/**'
+      - 'site/**'
+      - 'LICENSE'
   merge_group:
   workflow_dispatch:
 
