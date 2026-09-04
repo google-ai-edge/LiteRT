@@ -5916,16 +5916,17 @@ OpFoldResult PadOp::fold(FoldAdaptor) {
   return {};
 }
 
-// When padding amounts are constants, cast them to i32. XNN can only
-// consume i32 pad amounts in some cases.
-struct CastConstPadAmounts : public OpRewritePattern<PadOp> {
-  using OpRewritePattern<PadOp>::OpRewritePattern;
+// When padding amounts are constants, cast them to i32. XNN and GPU delegates
+// can only consume i32 pad amounts in some cases.
+template <typename OpType>
+struct CastConstPadAmounts : public OpRewritePattern<OpType> {
+  using OpRewritePattern<OpType>::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(PadOp op,
+  LogicalResult matchAndRewrite(OpType op,
                                 PatternRewriter& rewriter) const override {
     auto padding_amount_op = op.getPadding().getDefiningOp();
     if (!padding_amount_op ||
-        !padding_amount_op->hasTrait<OpTrait::ConstantLike>()) {
+        !padding_amount_op->template hasTrait<OpTrait::ConstantLike>()) {
       return failure();
     }
 
@@ -5946,7 +5947,7 @@ struct CastConstPadAmounts : public OpRewritePattern<PadOp> {
 
 void PadOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<CastConstPadAmounts>(context);
+  results.add<CastConstPadAmounts<PadOp>>(context);
 }
 
 //===----------------------------------------------------------------------===//
@@ -5958,6 +5959,11 @@ OpFoldResult PadV2Op::fold(FoldAdaptor) {
     return getInput();
 
   return {};
+}
+
+void PadV2Op::getCanonicalizationPatterns(RewritePatternSet& results,
+                                          MLIRContext* context) {
+  results.add<CastConstPadAmounts<PadV2Op>>(context);
 }
 
 //===----------------------------------------------------------------------===//
