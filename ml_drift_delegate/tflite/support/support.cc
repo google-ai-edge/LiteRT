@@ -468,7 +468,49 @@ bool HasQuantTensor(const TfLiteContext* absl_nonnull context,
   return false;
 }
 
+// Checks whether a tensor is empty (having any dimension <= 0)
+bool IsEmptyTensor(const TfLiteTensor& tensor) {
+  // Case 3: dims == nullptr -> shape is undefined/uninitialized (according to
+  // the comment in lite/core/c/common.h). Keep it as it is. Do not explicitly
+  // reject it.
+  if (!tensor.dims) return false;
+
+  // Case 1: dims != nullptr && dims->size == 0 -> Scalar (rank-0 tensor).
+  // A scalar has exactly 1 element (the empty product is 1), so it is not an
+  // empty tensor.
+  if (tensor.dims->size == 0) return false;
+
+  // Case 2: dims != nullptr with some dims->data[i] <= 0 -> Empty tensor (has
+  // 0 elements, requiring 0 bytes buffer allocation). Zero-sized buffer
+  // allocations fail on GPU backends (OpenCL, WebGPU, Vulkan, Metal).
+  for (int i = 0; i < tensor.dims->size; ++i) {
+    if (tensor.dims->data[i] <= 0) return true;
+  }
+  return false;
+}
+
 }  // namespace
+
+bool HasEmptyTensor(const TfLiteContext* absl_nonnull context,
+                    const TfLiteNode* absl_nonnull node) {
+  for (int i = 0; i < node->inputs->size; ++i) {
+    const int tensor_id = node->inputs->data[i];
+    if (tensor_id < 0 || tensor_id >= context->tensors_size ||
+        tensor_id == kTfLiteOptionalTensor) {
+      continue;
+    }
+    if (IsEmptyTensor(context->tensors[tensor_id])) return true;
+  }
+  for (int i = 0; i < node->outputs->size; ++i) {
+    const int tensor_id = node->outputs->data[i];
+    if (tensor_id < 0 || tensor_id >= context->tensors_size ||
+        tensor_id == kTfLiteOptionalTensor) {
+      continue;
+    }
+    if (IsEmptyTensor(context->tensors[tensor_id])) return true;
+  }
+  return false;
+}
 
 std::vector<int> GetSupportedNodes(TfLiteContext* absl_nonnull context,
                                    const IrModelBuilderOptions& options) {
@@ -483,6 +525,10 @@ std::vector<int> GetSupportedNodes(TfLiteContext* absl_nonnull context,
                                        const TfLiteNode* node,
                                        const TfLiteRegistration* registration,
                                        std::string* error) {
+    if (HasEmptyTensor(context, node)) {
+      *error = "Op has empty tensors which are not supported.";
+      return false;
+    }
     if (!options.allow_bool_tensors && HasBoolTensor(context, node)) {
       *error = "Op has bool tensors which are not supported.";
       return false;

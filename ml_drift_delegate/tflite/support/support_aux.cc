@@ -70,6 +70,14 @@ bool CheckTensorDims(const TfLiteTensor& tensor, int min_dims, int max_dims,
                          min_dims, ", ", max_dims, "].");
     return false;
   }
+  for (int i = 0; i < tensor.dims->size; ++i) {
+    if (tensor.dims->data[i] <= 0) {
+      error = absl::StrCat("Invalid dimension for ", tensor_name, " at index ",
+                           i, ": ", tensor.dims->data[i],
+                           ", expected positive dimension.");
+      return false;
+    }
+  }
   return true;
 }
 
