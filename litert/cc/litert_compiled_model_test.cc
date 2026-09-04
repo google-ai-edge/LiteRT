@@ -1617,5 +1617,44 @@ TEST(CompiledModelTest, QuantizationAccessors) {
   EXPECT_EQ(output_q_type_by_name, QuantizationTypeId::PerTensor);
 }
 
+TEST(CompiledModelTest, ModelWithoutNpuOpsSkipsNpuAccelerator) {
+  // Test scenario: An environment with auto-registered accelerators (which
+  // includes NPU by default) compiles a standard model without NPU ops, while
+  // requesting both CPU and NPU hardware accelerators.
+  //
+  // Expected behavior: CompiledModel detects that the model has no NPU ops
+  // (no LiteRtDispatchOp) and skips applying NpuAccelerator. It should not
+  // attempt to initialize the Dispatch API (which would fail with "no dispatch
+  // library found" errors if NPU libraries are absent), and should execute
+  // successfully on CPU.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK(options.SetHardwareAccelerators(HwAccelerators::kCpu |
+                                                   HwAccelerators::kNpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            options));
+
+  // The model has no NPU ops and runs on CPU, so non-CPU fully accelerated
+  // must be false.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto non_cpu_fully_accelerated,
+                              compiled_model.IsNonCpuFullyAccelerated());
+  EXPECT_FALSE(non_cpu_fully_accelerated);
+
+  // Verify the model executes successfully on CPU.
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+}
+
 }  // namespace
 }  // namespace litert

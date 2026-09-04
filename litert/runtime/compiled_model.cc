@@ -956,7 +956,10 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
     LITERT_RETURN_IF_ERROR(compiled_model->RestoreExternalWeightsForCpu());
   }
 
-  if (hardware_accelerators & kLiteRtHwAcceleratorNpu) {
+  const bool npu_requested = hardware_accelerators & kLiteRtHwAcceleratorNpu;
+  const bool has_npu_ops = compiled_model->HasNpuOps();
+
+  if (npu_requested && has_npu_ops) {
     // Gives the user a warning if they are trying to use NPU without setting
     // the dispatch library directory.
     auto dispatch_lib_dir =
@@ -990,6 +993,15 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
     //   - and JIT has not been requested for the hardware it supports.
     if (delegate_responsible_for_jit &&
         !(hardware_accelerators & accelerator_supported_hardware)) {
+      continue;
+    }
+
+    const bool is_npu_accelerator =
+        accelerator_supported_hardware & kLiteRtHwAcceleratorNpu;
+
+    // For NPU accelerator (which handles AOT-compiled dispatch ops), don't
+    // apply if the model has no NPU ops.
+    if (is_npu_accelerator && !has_npu_ops) {
       continue;
     }
 
@@ -1051,7 +1063,7 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
 
       GraphCounts counts = compiled_model->GetGraphCounts();
       int delegated_ops = current_undelegated_nodes - counts.undelegated_nodes;
-      if (accelerator_supported_hardware & kLiteRtHwAcceleratorNpu) {
+      if (is_npu_accelerator) {
         compiled_model->delegation_metrics_.npu_delegated_node_count +=
             delegated_ops;
         compiled_model->delegation_metrics_.npu_partition_count =
@@ -1171,6 +1183,32 @@ Expected<void> LiteRtCompiledModelT::ValidateSignatureIsActive(
                       signature_key));
 }
 
+bool LiteRtCompiledModelT::HasNpuOps() const {
+#if !defined(LITERT_DISABLE_NPU)
+  if (apply_plugins_result_.has_value() &&
+      apply_plugins_result_->num_applied_plugins > 0) {
+    return true;
+  }
+#endif  // !defined(LITERT_DISABLE_NPU)
+  for (int subgraph_no : active_subgraph_indices_) {
+    const auto* const subgraph = interp_->subgraph(subgraph_no);
+    if (subgraph->IsDelegationSkippable()) {
+      continue;
+    }
+    const auto& execution_plan = subgraph->execution_plan();
+    const auto& nodes_and_registration = subgraph->nodes_and_registration();
+    for (int node_index : execution_plan) {
+      const TfLiteRegistration& reg = nodes_and_registration[node_index].second;
+      if (reg.builtin_code == kTfLiteBuiltinCustom && reg.custom_name &&
+          absl::StrContains(reg.custom_name,
+                            litert::internal::kLiteRtDispatchOpCustomName)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 int LiteRtCompiledModelT::CountTotalNodes() const {
   int total_node_count = 0;
   for (int subgraph_no : active_subgraph_indices_) {
@@ -1213,7 +1251,7 @@ LiteRtCompiledModelT::GraphCounts LiteRtCompiledModelT::GetGraphCounts() const {
   return counts;
 }
 
-Expected<bool> LiteRtCompiledModelT::HasNonDelegatedOps() {
+bool LiteRtCompiledModelT::HasNonDelegatedOps() const {
   for (int subgraph_no : active_subgraph_indices_) {
     const auto* const subgraph = interp_->subgraph(subgraph_no);
     if (subgraph->IsDelegationSkippable()) {
