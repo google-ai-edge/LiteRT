@@ -478,6 +478,18 @@ absl::StatusOr<uint32_t> XnnpackBuildContext::DefineValue(
             value.flags, &value.id))
             << "Could not define a new tensor value after dequantization.";
       } else {
+        if (pcq.quantized_dimension < 0 ||
+            static_cast<size_t>(pcq.quantized_dimension) >= dims.size() ||
+            pcq.scales.size() < dims[pcq.quantized_dimension]) {
+          return absl::InvalidArgumentError(absl::StrCat(
+              info.name, ": per-channel scale count (", pcq.scales.size(),
+              ") is smaller than the channel dimension size (",
+              pcq.quantized_dimension >= 0 &&
+                      static_cast<size_t>(pcq.quantized_dimension) < dims.size()
+                  ? dims[pcq.quantized_dimension]
+                  : static_cast<size_t>(0),
+              ")"));
+        }
         LRT_TENSOR_RETURN_IF_ERROR(
             xnn_define_channelwise_quantized_tensor_value_v3(
                 subgraph_, GetXnnpackType(value), /*zero_point=*/0,
@@ -490,6 +502,22 @@ absl::StatusOr<uint32_t> XnnpackBuildContext::DefineValue(
   } else if (auto maybe_bwq = info.quantization->As<BlockwiseQuantization>();
              maybe_bwq.ok()) {
     const auto& bwq = maybe_bwq.value();
+    if (dims.size() < 2) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          info.name,
+          ": blockwise quantized tensor requires at least 2 dimensions"));
+    }
+    if (bwq.block_size == 0) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          info.name, ": blockwise quantized tensor block_size must be > 0"));
+    }
+    const size_t expected_block_count =
+        dims[0] * dims[1] / bwq.block_size;
+    if (bwq.scales.size() < expected_block_count) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          info.name, ": blockwise scale count (", bwq.scales.size(),
+          ") is smaller than block_count (", expected_block_count, ")"));
+    }
     fp16_buffers_.emplace_back(bwq.scales.begin(), bwq.scales.end());
     const void* scale_ptr = fp16_buffers_.back().data();
     int32_t zero_point = bwq.zero_points.empty() ? 0 : bwq.zero_points[0];
