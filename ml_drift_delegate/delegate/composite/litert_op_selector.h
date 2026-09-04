@@ -52,9 +52,9 @@ class LiteRtOpSelector : public ::ml_drift::OpSelector {
  private:
   // If the tensor is not BUFFER storage type, create a new tensor with
   // BUFFER storage type and replace the original tensor.
-  void ParamTensorToBuffer(int param_index,
-                           const std::vector<::ml_drift::Value*>& inputs,
-                           ::ml_drift::GpuModelBuilder* model_builder);
+  void EnsureTensorIsBuffer(int tensor_index,
+                            const std::vector<::ml_drift::Value*>& values,
+                            ::ml_drift::GpuModelBuilder* model_builder);
 
   const ::ml_drift::CreateGpuModelInfo& create_info_;
   const ::ml_drift::GpuInfo& gpu_info_;

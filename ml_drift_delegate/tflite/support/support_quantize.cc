@@ -26,7 +26,11 @@ bool IsQuantizeSupported(const TfLiteContext* absl_nonnull context,
                          const TfLiteNode* absl_nonnull node,
                          const TfLiteRegistration* absl_nonnull registration,
                          std::string* absl_nonnull error) {
-  if (registration->version > 2) {
+  // BuiltinOperator_QUANTIZE versions 1-2 support 8-bit quantization.
+  // Versions 3-4 (defined in TFLite builtin ops schema / register.cc) add
+  // support for sub-byte quantization (Int4, UInt4, Int2) and block-wise
+  // quantization.
+  if (registration->version > 4) {
     *error = "Unsupported version.";
     return false;
   }
