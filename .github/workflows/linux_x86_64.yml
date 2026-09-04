@@ -114,6 +114,7 @@ jobs:
             "--test_output=errors"
             "--keep_going"
             "--repo_env=USE_PYWRAP_RULES=True"
+            "--config=public_cache"
           )
 
           LITERT_EXCLUDED_TARGETS=(
@@ -136,7 +137,7 @@ jobs:
 
       - name: Build Intel OpenVINO plugin for Linux
         run: |
-          bazel build --disk_cache=~/.cache/bazel-linux \
+          bazel build --disk_cache=~/.cache/bazel-linux --config=public_cache \
             //litert/vendors/intel_openvino/compiler:libLiteRtCompilerPlugin_IntelOpenvino.so \
             //litert/vendors/intel_openvino/dispatch:libLiteRtDispatch_IntelOpenvino.so
 
