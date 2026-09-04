@@ -140,6 +140,28 @@ struct HtpPerfParams {
   QnnHtpPerfInfrastructure_VoltageCorner_t voltage_corner;
 };
 
+const QnnHtpPerfInfrastructure_DcvsV3_t* LastDcvsConfig() {
+  if (captured_configs->empty()) return nullptr;
+  for (const auto& cfg : captured_configs->back()) {
+    if (cfg.option == QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_DCVS_V3) {
+      return &cfg.dcvsV3Config;
+    }
+  }
+  return nullptr;
+}
+
+bool LastVoteIsUpVoteTo(QnnHtpPerfInfrastructure_VoltageCorner_t corner) {
+  const auto* dcvs = LastDcvsConfig();
+  return dcvs != nullptr &&
+         dcvs->sleepLatency != PowerConfig::kSleepMaxLatency &&
+         dcvs->busVoltageCornerTarget == corner;
+}
+
+bool LastVoteIsDownVote() {
+  const auto* dcvs = LastDcvsConfig();
+  return dcvs != nullptr && dcvs->sleepLatency == PowerConfig::kSleepMaxLatency;
+}
+
 class HtpBackendPerfBaseTest : public testing::TestWithParam<HtpPerfParams> {
  public:
   void SetUp() override {
@@ -422,7 +444,7 @@ TEST_P(HtpBackendRPCPollingPerfParamTest, ManualSameModeSkipsRevote) {
   EXPECT_EQ(captured_configs->size(), configs_after_init);
 }
 
-TEST_P(HtpBackendRPCPollingPerfParamTest, AutoSameModeRevotes) {
+TEST_P(HtpBackendRPCPollingPerfParamTest, AutoSchedulesVotePerInference) {
   const auto& params = GetParam();
   Options options;
   options.SetHtpPerformanceMode(params.mode);
@@ -438,7 +460,12 @@ TEST_P(HtpBackendRPCPollingPerfParamTest, AutoSameModeRevotes) {
   const size_t configs_after_init = captured_configs->size();
   EXPECT_TRUE(backend.SetPerformanceMode(options));
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(captured_configs->size(), configs_after_init);
+
+  backend.ScheduleUpVote();
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
   EXPECT_EQ(captured_configs->size(), configs_after_init + 1);
+  EXPECT_TRUE(LastVoteIsUpVoteTo(params.voltage_corner));
 }
 
 TEST_F(HtpBackendPerfBaseTest, ManualModeChangeRevotes) {
@@ -458,6 +485,7 @@ TEST_F(HtpBackendPerfBaseTest, ManualModeChangeRevotes) {
   EXPECT_TRUE(backend.SetPerformanceMode(options));
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
   EXPECT_GT(captured_configs->size(), configs_after_init);
+  EXPECT_TRUE(LastVoteIsUpVoteTo(DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER));
 }
 
 TEST_F(HtpBackendPerfBaseTest, DefaultModeSchedulesDownvote) {
@@ -477,9 +505,35 @@ TEST_F(HtpBackendPerfBaseTest, DefaultModeSchedulesDownvote) {
   EXPECT_TRUE(backend.SetPerformanceMode(default_options));
   std::this_thread::sleep_for(std::chrono::milliseconds(400));
   EXPECT_GT(captured_configs->size(), configs_after_init);
+  EXPECT_TRUE(LastVoteIsDownVote());
 }
 
-TEST_F(HtpBackendPerfBaseTest, AutoModeChangesAcrossExecutes) {
+TEST_F(HtpBackendPerfBaseTest, ManualBurstDefaultBurstRevotes) {
+  Options options;
+  options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
+  options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kManual);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kSocInfos[8]));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+
+  Options default_options;
+  default_options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kManual);
+  EXPECT_TRUE(backend.SetPerformanceMode(default_options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(400));
+  const size_t configs_after_downvote = captured_configs->size();
+  EXPECT_TRUE(LastVoteIsDownVote());
+
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_GT(captured_configs->size(), configs_after_downvote);
+  EXPECT_TRUE(LastVoteIsUpVoteTo(DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER));
+}
+
+TEST_F(HtpBackendPerfBaseTest, AutoSchedulesUpAndDownVotes) {
   Options options;
   options.SetHtpPerformanceMode(HtpPerformanceMode::kPowerSaver);
   options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kAuto);
@@ -492,20 +546,16 @@ TEST_F(HtpBackendPerfBaseTest, AutoModeChangesAcrossExecutes) {
 #endif
   const size_t configs_after_init = captured_configs->size();
 
-  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  backend.ScheduleUpVote();
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  const size_t configs_after_same = captured_configs->size();
-  EXPECT_GT(configs_after_same, configs_after_init);
+  const size_t configs_after_upvote = captured_configs->size();
+  EXPECT_GT(configs_after_upvote, configs_after_init);
+  EXPECT_TRUE(LastVoteIsUpVoteTo(DCVS_VOLTAGE_VCORNER_SVS));
 
-  Options default_options;
-  EXPECT_TRUE(backend.SetPerformanceMode(default_options));
-
-  Options burst_options;
-  burst_options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
-  burst_options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kAuto);
-  EXPECT_TRUE(backend.SetPerformanceMode(burst_options));
+  backend.ScheduleDownVote();
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  EXPECT_GT(captured_configs->size(), configs_after_same);
+  EXPECT_GT(captured_configs->size(), configs_after_upvote);
+  EXPECT_TRUE(LastVoteIsDownVote());
 }
 
 // GRAPH CONFIG CHARACTERIZATION ///////////////////////////////////////////////

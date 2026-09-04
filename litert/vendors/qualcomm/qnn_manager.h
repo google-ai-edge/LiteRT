@@ -133,6 +133,40 @@ class QnnManager {
 
   const ::qnn::Options& GetOptions() const { return options_; }
 
+  void SetPerformanceOptions(const ::qnn::Options& options) {
+    if (options_.GetBackendType() == ::qnn::BackendType::kHtpBackend) {
+      if (options_.GetHtpPerformanceMode() != options.GetHtpPerformanceMode()) {
+        const auto htp_perf_mode = options.GetHtpPerformanceMode();
+        LITERT_LOG(LITERT_INFO, "Change HTP performance mode: %d -> %d",
+                   static_cast<int>(options_.GetHtpPerformanceMode()),
+                   static_cast<int>(htp_perf_mode));
+        options_.SetHtpPerformanceMode(htp_perf_mode);
+      }
+      if (options_.GetHtpPerfCtrlMode() != options.GetHtpPerfCtrlMode()) {
+        const auto htp_ctrl_mode = options.GetHtpPerfCtrlMode();
+        LITERT_LOG(LITERT_INFO, "Change HTP performance control mode: %d -> %d",
+                   static_cast<int>(options_.GetHtpPerfCtrlMode()),
+                   static_cast<int>(htp_ctrl_mode));
+        options_.SetHtpPerfCtrlMode(htp_ctrl_mode);
+      }
+    } else if (options_.GetBackendType() == ::qnn::BackendType::kDspBackend) {
+      if (options_.GetDspPerformanceMode() != options.GetDspPerformanceMode()) {
+        const auto dsp_perf_mode = options.GetDspPerformanceMode();
+        LITERT_LOG(LITERT_INFO, "Change DSP performance mode: %d -> %d",
+                   static_cast<int>(options_.GetDspPerformanceMode()),
+                   static_cast<int>(dsp_perf_mode));
+        options_.SetDspPerformanceMode(dsp_perf_mode);
+      }
+      if (options_.GetDspPerfCtrlMode() != options.GetDspPerfCtrlMode()) {
+        const auto dsp_ctrl_mode = options.GetDspPerfCtrlMode();
+        LITERT_LOG(LITERT_INFO, "Change DSP performance control mode: %d -> %d",
+                   static_cast<int>(options_.GetDspPerfCtrlMode()),
+                   static_cast<int>(dsp_ctrl_mode));
+        options_.SetDspPerfCtrlMode(dsp_ctrl_mode);
+      }
+    }
+  }
+
   ::qnn::SdkVersion GetSdkVersion() const { return sdk_version_; }
 
  private:

@@ -74,6 +74,41 @@ struct DspPerfParams {
   QnnDspPerfInfrastructure_VoltageCorner_t expected_max_voltage;
 };
 
+bool LastVoteIsUpVoteTo(QnnDspPerfInfrastructure_VoltageCorner_t corner) {
+  const auto& configs = *captured_configs;
+  bool power_mode_ok = false;
+  bool target_ok = false;
+  for (const auto& cfg : configs) {
+    const bool is_power_mode =
+        cfg.config ==
+        QNN_DSP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_DCVS_POWER_MODE;
+    const bool is_corner =
+        cfg.config ==
+        QNN_DSP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_DCVS_VOLTAGE_CORNER;
+    if (is_power_mode) {
+      power_mode_ok = cfg.dcvsPowerModeConfig ==
+                      QNN_DSP_PERF_INFRASTRUCTURE_POWERMODE_PERFORMANCE_MODE;
+    }
+    if (is_corner && cfg.dcvsVoltageCornerTargetConfig == corner) {
+      target_ok = true;
+    }
+  }
+  return power_mode_ok && target_ok;
+}
+
+bool LastVoteIsDownVote() {
+  const auto& configs = *captured_configs;
+  for (const auto& cfg : configs) {
+    if (cfg.config ==
+            QNN_DSP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_DCVS_POWER_MODE &&
+        cfg.dcvsPowerModeConfig ==
+            QNN_DSP_PERF_INFRASTRUCTURE_POWERMODE_POWER_SAVER_MODE) {
+      return true;
+    }
+  }
+  return false;
+}
+
 class DspBackendPerfParamTest : public testing::TestWithParam<DspPerfParams> {
  public:
   void SetUp() override {
@@ -227,7 +262,7 @@ TEST_P(DspBackendPerfParamTest, ManualSameModeSkipsRevote) {
   EXPECT_EQ(set_power_config_call_count.load(), calls_after_init);
 }
 
-TEST_P(DspBackendPerfParamTest, AutoSameModeRevotes) {
+TEST_P(DspBackendPerfParamTest, AutoSchedulesVotePerInference) {
   const auto& params = GetParam();
   Options options;
   options.SetDspPerformanceMode(params.mode);
@@ -235,11 +270,16 @@ TEST_P(DspBackendPerfParamTest, AutoSameModeRevotes) {
   DspBackend backend(&qnn_api_copy_);
 
   ASSERT_TRUE(backend.Init(options, std::nullopt));
-  const int calls_after_init = set_power_config_call_count.load();
 
+  const int calls_after_init = set_power_config_call_count.load();
   EXPECT_TRUE(backend.SetPerformanceMode(options));
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(set_power_config_call_count.load(), calls_after_init);
+
+  backend.ScheduleUpVote();
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
   EXPECT_EQ(set_power_config_call_count.load(), calls_after_init + 1);
+  EXPECT_TRUE(LastVoteIsUpVoteTo(params.expected_target_voltage));
 }
 
 class DspBackendPerfTest : public testing::Test {
@@ -279,6 +319,7 @@ TEST_F(DspBackendPerfTest, ManualModeChangeRevotes) {
   EXPECT_TRUE(backend.SetPerformanceMode(options));
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
   EXPECT_GT(set_power_config_call_count.load(), calls_after_init);
+  EXPECT_TRUE(LastVoteIsUpVoteTo(DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER));
 }
 
 TEST_F(DspBackendPerfTest, DefaultModeSchedulesDownvote) {
@@ -294,9 +335,31 @@ TEST_F(DspBackendPerfTest, DefaultModeSchedulesDownvote) {
   EXPECT_TRUE(backend.SetPerformanceMode(default_options));
   std::this_thread::sleep_for(std::chrono::milliseconds(400));
   EXPECT_GT(set_power_config_call_count.load(), calls_after_init);
+  EXPECT_TRUE(LastVoteIsDownVote());
 }
 
-TEST_F(DspBackendPerfTest, AutoModeChangesAcrossExecutes) {
+TEST_F(DspBackendPerfTest, ManualBurstDefaultBurstRevotes) {
+  Options options;
+  options.SetDspPerformanceMode(DspPerformanceMode::kBurst);
+  options.SetDspPerfCtrlMode(DspPerfCtrlMode::kManual);
+  DspBackend backend(&qnn_api_copy_);
+
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+
+  Options default_options;
+  default_options.SetDspPerfCtrlMode(DspPerfCtrlMode::kManual);
+  EXPECT_TRUE(backend.SetPerformanceMode(default_options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(400));
+  const int calls_after_downvote = set_power_config_call_count.load();
+  EXPECT_TRUE(LastVoteIsDownVote());
+
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_GT(set_power_config_call_count.load(), calls_after_downvote);
+  EXPECT_TRUE(LastVoteIsUpVoteTo(DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER));
+}
+
+TEST_F(DspBackendPerfTest, AutoSchedulesUpAndDownVotes) {
   Options options;
   options.SetDspPerformanceMode(DspPerformanceMode::kPowerSaver);
   options.SetDspPerfCtrlMode(DspPerfCtrlMode::kAuto);
@@ -305,20 +368,16 @@ TEST_F(DspBackendPerfTest, AutoModeChangesAcrossExecutes) {
   ASSERT_TRUE(backend.Init(options, std::nullopt));
   const int calls_after_init = set_power_config_call_count.load();
 
-  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  backend.ScheduleUpVote();
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  const int calls_after_same = set_power_config_call_count.load();
-  EXPECT_GT(calls_after_same, calls_after_init);
+  const int calls_after_upvote = set_power_config_call_count.load();
+  EXPECT_GT(calls_after_upvote, calls_after_init);
+  EXPECT_TRUE(LastVoteIsUpVoteTo(DCVS_VOLTAGE_VCORNER_SVS));
 
-  Options default_options;
-  EXPECT_TRUE(backend.SetPerformanceMode(default_options));
-
-  Options burst_options;
-  burst_options.SetDspPerformanceMode(DspPerformanceMode::kBurst);
-  burst_options.SetDspPerfCtrlMode(DspPerfCtrlMode::kAuto);
-  EXPECT_TRUE(backend.SetPerformanceMode(burst_options));
+  backend.ScheduleDownVote();
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  EXPECT_GT(set_power_config_call_count.load(), calls_after_same);
+  EXPECT_GT(set_power_config_call_count.load(), calls_after_upvote);
+  EXPECT_TRUE(LastVoteIsDownVote());
 }
 
 }  // namespace
