@@ -181,8 +181,9 @@ Expected<void> WriteOutputBuffersToFiles(
                         "but got %d output buffers.",
                         output_names.size(), output_buffers.size()));
   }
+  const std::filesystem::path output_dir_path = std::string(output_dir);
   std::error_code ec;
-  if (!std::filesystem::is_directory(output_dir, ec)) {
+  if (!std::filesystem::is_directory(output_dir_path, ec)) {
     return Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
         absl::StrFormat("Output directory %s does not exist or is not a "
@@ -197,7 +198,7 @@ Expected<void> WriteOutputBuffersToFiles(
                             output_buffer.Lock(TensorBuffer::LockMode::kRead));
     absl::Cleanup unlock = [&output_buffer] { output_buffer.Unlock(); };
     const auto output_file_path =
-        std::filesystem::path(output_dir) / absl::StrCat(output_name, ".raw");
+        output_dir_path / absl::StrCat(output_name, ".raw");
     std::ofstream file(output_file_path, std::ios::binary);
     if (!file.is_open()) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
