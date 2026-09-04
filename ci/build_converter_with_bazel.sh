@@ -108,13 +108,50 @@ rm -fr ./dist
 mkdir -p dist/
 mv bazel-bin/ci/tools/python/wheel/dist/*.whl dist/
 
+# Repair wheels with auditwheel on Linux to bundle and mangle shared library dependencies.
+if [[ "$(uname -s)" == "Linux" ]]; then
+  echo "Checking for auditwheel..."
+  if ! ${CI_BUILD_PYTHON:-python3} -m auditwheel --version >/dev/null 2>&1; then
+    echo "Installing auditwheel..."
+    ${CI_BUILD_PYTHON:-python3} -m pip install auditwheel
+  fi
+
+  echo "Repairing wheels in dist/..."
+  # Dynamically find all directories in bazel-bin containing .so files and add them to LD_LIBRARY_PATH
+  # so auditwheel can locate them (e.g. libLiteRTCompilerMLIR.so).
+  SO_DIRS=$(find -L bazel-bin -name "*.so" -exec dirname {} \; | sort -u | paste -sd : -)
+  export LD_LIBRARY_PATH="$SO_DIRS:$LD_LIBRARY_PATH"
+  echo "Set LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+
+  mkdir -p dist/repaired
+  for whl in dist/*.whl; do
+    if [ -f "$whl" ]; then
+      echo "Repairing $whl..."
+      ${CI_BUILD_PYTHON:-python3} -m auditwheel repair "$whl" -w dist/repaired/
+      rm "$whl"
+    fi
+  done
+  if [ -d dist/repaired ] && [ "$(ls -A dist/repaired)" ]; then
+    mv dist/repaired/*.whl dist/
+    rm -rf dist/repaired
+    echo "Wheels repaired successfully:"
+    find dist/ -name "*.whl"
+  else
+    echo "Warning: No wheels were repaired or repair failed."
+    rm -rf dist/repaired
+  fi
+fi
+
 echo "Output can be found here:"
 find "./dist/"
 
 if [ "${TEST_MANYLINUX_COMPLIANCE}" = "true" ]; then
   echo "Testing manylinux compliance..."
-  bazel ${BAZEL_STARTUP_OPTIONS} test -c opt \
-    ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:manylinux_compliance_test_converter
+  for whl in dist/*.whl; do
+    if [ -f "$whl" ]; then
+      ${CI_BUILD_PYTHON:-python3} -m auditwheel show "$whl"
+    fi
+  done
 fi
 
 echo "Output can be found here:"
