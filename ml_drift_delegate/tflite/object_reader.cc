@@ -59,8 +59,12 @@ void SetValueAndAttrFromTfLiteTensor(const TfLiteTensor* tfl_tensor,
                                      ::ml_drift::ConstTensorAttributes& attr) {
   TensorType t;
   TfLiteTensorToTensorCopyData(tfl_tensor, &t, ReadTensorFlags::kNoExtraBytes);
+  // The requested layout has to be applied to the constant data as well as to
+  // the Value: ReserveGraphTensors() cross-checks the two shapes and rejects
+  // the model if they disagree.
+  t.shape = GetShape(t.shape, layout, tfl_tensor->dims->size);
   value->tensor.type = t.kType;
-  value->tensor.shape = GetShape(t.shape, layout, tfl_tensor->dims->size);
+  value->tensor.shape = t.shape;
   attr.tensor = std::move(t);
 }
 

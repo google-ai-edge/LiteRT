@@ -22,6 +22,7 @@
 #include <cstring>
 #include <memory>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "testing/base/public/gmock.h"
@@ -2513,6 +2514,110 @@ TEST(ArithmeticBinaryElementwiseOperationParserTest, TestIsSupported) {
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
+}
+
+// A constant operand of an elementwise op has to be re-aligned onto BHWC's
+// trailing axes when its rank is lower than the runtime operand's, because
+// TFLite broadcasting is right-aligned while ml-drift maps TFLite dim 0 to
+// batch. Without it the GPU elementwise broadcast reads batch-0 only and splats
+// it across the channels, silently corrupting the result.
+class ElementwiseConstOperandTest : public testing::Test {
+ public:
+  // StubTfLiteContext wires tensors {1, 2} as the inputs of the node under
+  // test.
+  enum { kRuntimeTensorIdx = 1, kConstTensorIdx = 2 };
+
+ protected:
+  // Builds a MINIMUM node with an INT32 runtime operand of shape
+  // `runtime_dims` and an INT32 constant operand of shape `const_dims`. INT32
+  // keeps the constant out of the float paths, which convert it to a Linear or
+  // BHWC attribute instead of a CONSTANT node.
+  void SetUpTensors(const std::vector<int>& runtime_dims,
+                    const std::vector<int>& const_dims) {
+    context_ = std::make_unique<StubTfLiteContext>(kTfLiteBuiltinMinimum,
+                                                   /*op_version=*/1,
+                                                   /*num_inputs=*/2,
+                                                   /*shape=*/runtime_dims);
+    context_->ChangeTensorShape(kConstTensorIdx, const_dims);
+    context_->SetTensorType(kRuntimeTensorIdx, kTfLiteInt32, kTfLiteArenaRw);
+    context_->SetTensorType(kConstTensorIdx, kTfLiteInt32, kTfLiteMmapRo);
+    parser_ = NewOperationParser(context_->node(), context_->registration());
+    ASSERT_NE(parser_, nullptr);
+  }
+
+  // Parses the node and returns the shape its constant operand ended up with.
+  ::ml_drift::BHWC ParseAndGetConstShape() {
+    ObjectReader reader(&graph_, context_.get(), context_->node(),
+                        &tensor_to_value_, /*quant_conversion_map=*/nullptr,
+                        /*tensor_to_buffer_id_map=*/nullptr,
+                        /*tensor_to_external_buffer_id_map=*/nullptr,
+                        /*shared_tensor_map=*/nullptr);
+    // Parse() returns void; a rejected node simply leaves no CONSTANT node
+    // behind, which the ADD_FAILURE() at the bottom reports.
+    parser_->Parse(context_->node(), context_->registration(), &graph_,
+                   &reader);
+    for (::ml_drift::Node* node : graph_.nodes()) {
+      if (node->operation.type !=
+          ToString(::ml_drift::OperationType::CONSTANT)) {
+        continue;
+      }
+      const std::vector<::ml_drift::Value*> outputs =
+          graph_.FindOutputs(node->id);
+      if (outputs.size() != 1) {
+        ADD_FAILURE() << "The CONSTANT node produces " << outputs.size()
+                      << " values, expected 1.";
+        return ::ml_drift::BHWC();
+      }
+      // The constant data has to carry the very same shape as the Value:
+      // ml-drift's ReserveGraphTensors() rejects the model otherwise.
+      const auto* attr = std::any_cast<::ml_drift::ConstTensorAttributes>(
+          &node->operation.attributes);
+      EXPECT_NE(attr, nullptr);
+      if (attr != nullptr) {
+        EXPECT_EQ(
+            std::visit([](const auto& t) { return t.shape; }, attr->tensor),
+            outputs[0]->tensor.shape);
+      }
+      return outputs[0]->tensor.shape;
+    }
+    ADD_FAILURE() << "The parsed graph holds no CONSTANT node.";
+    return ::ml_drift::BHWC();
+  }
+
+  std::unique_ptr<StubTfLiteContext> context_;
+  std::unique_ptr<TFLiteOperationParser> parser_;
+  ::ml_drift::GraphFloat32 graph_;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value_;
+};
+
+TEST_F(ElementwiseConstOperandTest, Rank1ConstantAgainstRank4RuntimeUsesC) {
+  SetUpTensors(/*runtime_dims=*/{1, 1, 1, 3}, /*const_dims=*/{3});
+  EXPECT_EQ(ParseAndGetConstShape(), ::ml_drift::BHWC(1, 1, 1, 3));
+}
+
+TEST_F(ElementwiseConstOperandTest, Rank1ConstantAgainstRank2RuntimeUsesC) {
+  SetUpTensors(/*runtime_dims=*/{2, 3}, /*const_dims=*/{3});
+  EXPECT_EQ(ParseAndGetConstShape(), ::ml_drift::BHWC(1, 1, 1, 3));
+}
+
+TEST_F(ElementwiseConstOperandTest, Rank2ConstantAgainstRank4RuntimeUsesWC) {
+  SetUpTensors(/*runtime_dims=*/{1, 1, 2, 3}, /*const_dims=*/{2, 3});
+  EXPECT_EQ(ParseAndGetConstShape(), ::ml_drift::BHWC(1, 1, 2, 3));
+}
+
+TEST_F(ElementwiseConstOperandTest, Rank3ConstantAgainstRank4RuntimeUsesHWC) {
+  SetUpTensors(/*runtime_dims=*/{1, 2, 3, 4}, /*const_dims=*/{2, 3, 4});
+  EXPECT_EQ(ParseAndGetConstShape(), ::ml_drift::BHWC(1, 2, 3, 4));
+}
+
+TEST_F(ElementwiseConstOperandTest, Rank1ConstantAgainstRank1RuntimeKeepsB) {
+  SetUpTensors(/*runtime_dims=*/{3}, /*const_dims=*/{3});
+  EXPECT_EQ(ParseAndGetConstShape(), ::ml_drift::BHWC(3, 1, 1, 1));
+}
+
+TEST_F(ElementwiseConstOperandTest, Rank2ConstantAgainstRank2RuntimeKeepsB) {
+  SetUpTensors(/*runtime_dims=*/{2, 3}, /*const_dims=*/{2, 3});
+  EXPECT_EQ(ParseAndGetConstShape(), ::ml_drift::BHWC(2, 1, 1, 3));
 }
 
 class FullyConnectedOperationParserTest : public testing::Test {
