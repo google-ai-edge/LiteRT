@@ -83,14 +83,13 @@ objc_library(
     copts = CXX17_BAZEL_ONLY_COPTS,
     deps = [
         ":coreml_executor",
-        ":mlmodel_proto_cc",
         "//tflite:kernel_api",
+        "//tflite:minimal_logging",
         "//tflite/core/c:common",
         "//tflite/delegates/coreml/builders:op_builder",
         "//tflite/kernels:kernel_util",
         "//tflite/kernels/internal:optimized_base",
         "//tflite/kernels/internal:types",
         "//tflite/types:half",
-        "@FP16",
     ],
 )

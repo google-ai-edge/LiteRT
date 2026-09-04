@@ -19,6 +19,7 @@ limitations under the License.
 #include "tflite/kernels/internal/optimized/optimized_ops.h"
 #include "tflite/kernels/internal/types.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/minimal_logging.h"
 
 #import "tflite/delegates/coreml/coreml_executor.h"
 
@@ -262,7 +263,16 @@ TfLiteStatus CoreMlDelegateKernel::Invoke(TfLiteContext* context, TfLiteNode* no
   }
 }
 
-CoreMlDelegateKernel::~CoreMlDelegateKernel() { [executor_ cleanup]; }
+CoreMlDelegateKernel::~CoreMlDelegateKernel() {
+  @try {
+    [executor_ cleanup];
+  } @catch (NSException* exception) {
+    const char* reason = [exception.reason UTF8String];
+    TFLITE_LOG_PROD(tflite::TFLITE_LOG_ERROR,
+                    "Exception during CoreML cleanup: %s",
+                    reason ? reason : "Unknown reason");
+  }
+}
 
 }  // namespace coreml
 }  // namespace delegates
