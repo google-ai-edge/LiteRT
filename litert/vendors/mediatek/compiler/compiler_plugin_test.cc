@@ -59,7 +59,8 @@ const auto kSupportedOps = Values(
     "simple_resize_bilinear_op.tflite",
     "simple_resize_nearest_neighbor_op.tflite",
     "simple_max_pool_2d.tflite",
-    "simple_hard_swish_op.tflite"
+    "simple_hard_swish_op.tflite",
+    "rms_norm_composite.tflite"
     // "simple_average_pool_2d_op.tflite"
     // Don't include the less op test as the support is not available in the
     // latest MTK SDK.
@@ -99,6 +100,22 @@ TEST(TestMediatekPlugin, PartitionAdd) {
 
   ASSERT_EQ(selected_ops.size(), 1);
   EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeTflAdd);
+}
+
+TEST(TestMediatekPlugin, PartitionRmsNorm) {
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  auto model = testing::LoadTestFileModel("rms_norm_composite.tflite");
+
+  auto subgraph = model.Subgraph(0);
+  ASSERT_TRUE(subgraph.HasValue());
+  LiteRtOpListT selected_op_list;
+  ASSERT_EQ(LiteRtCompilerPluginPartition(plugin.get(), /*soc_model=*/"mt6989",
+                                          subgraph->Get(), &selected_op_list),
+            kLiteRtStatusOk);
+  const auto selected_ops = selected_op_list.Values();
+
+  ASSERT_EQ(selected_ops.size(), 1);
+  EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeShloComposite);
 }
 
 TEST(TestMediatekPlugin, DlaDirectory) {
