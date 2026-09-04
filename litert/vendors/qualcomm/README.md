@@ -48,7 +48,7 @@ See [DEBUG_FEATURES.md](./doc/DEBUG_FEATURES.md) for full usage and details.
 
 LiteRT supports a wide range of Qualcomm SoCs through the QNN SDK. Top tier:
 
-*   **Snapdragon 8 Gen 5** (SM8850)
+*   **Snapdragon 8 Elite Gen 5** (SM8850)
 *   **Snapdragon 8 Elite** (SM8750)
 *   **Snapdragon 8 Gen 3** (SM8650)
 
