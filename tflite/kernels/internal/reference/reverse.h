@@ -19,7 +19,7 @@ limitations under the License.
 #include <array>
 #include <cstdint>
 
-#include "ruy/profiler/instrumentation.h"  // from @ruy
+#include "tflite/kernels/internal/compatibility.h"
 #include "tflite/kernels/internal/runtime_shape.h"
 
 namespace tflite {

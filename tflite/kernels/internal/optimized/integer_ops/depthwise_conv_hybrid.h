@@ -18,7 +18,6 @@ limitations under the License.
 #include <algorithm>
 #include <memory>
 
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/kernels/cpu_backend_context.h"
 #include "tflite/kernels/cpu_backend_threadpool.h"
 #include "tflite/kernels/internal/optimized/cpu_check.h"
