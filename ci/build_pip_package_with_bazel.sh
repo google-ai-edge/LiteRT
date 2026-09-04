@@ -115,17 +115,35 @@ case "${ARCH}" in
     ;;
 esac
 
-bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
-  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:litert_wheel
+start_time=$SECONDS
 
-# Move the wheel file to the root directory since it is not accessible from the
-# bazel output directory to anyone other than the root user.
+bazel_targets=(
+  "//ci/tools/python/wheel:litert_wheel"
+  "//ci/tools/python/vendor_sdk/qualcomm:ai_edge_litert_sdk_qualcomm_sdist"
+  "//ci/tools/python/vendor_sdk/mediatek:ai_edge_litert_sdk_mediatek_sdist"
+  "//ci/tools/python/vendor_sdk/samsung:ai_edge_litert_sdk_samsung_sdist"
+  "//ci/tools/python/vendor_sdk/intel:ai_edge_litert_sdk_intel_sdist"
+)
+
+if [[ -d "ci/tools/python/vendor_sdk/google_tensor" ]]; then
+  bazel_targets+=("//ci/tools/python/vendor_sdk/google_tensor:ai_edge_litert_sdk_google_tensor_sdist")
+fi
+
+echo "Starting unified Bazel build for targets: ${bazel_targets[@]}"
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
+  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} "${bazel_targets[@]}"
+
+# Clean and populate dist/ staging directory
 rm -fr ./dist
 mkdir -p dist/
 mv bazel-bin/ci/tools/python/wheel/dist/*.whl dist/
-
-echo "Output can be found here:"
-find "./dist/"
+mv bazel-bin/ci/tools/python/vendor_sdk/qualcomm/ai_edge_litert_sdk_qualcomm*.tar.gz dist/
+mv bazel-bin/ci/tools/python/vendor_sdk/mediatek/ai_edge_litert_sdk_mediatek*.tar.gz dist/
+if [[ -d "ci/tools/python/vendor_sdk/google_tensor" ]]; then
+  mv bazel-bin/ci/tools/python/vendor_sdk/google_tensor/ai_edge_litert_sdk_google_tensor*.tar.gz dist/
+fi
+mv bazel-bin/ci/tools/python/vendor_sdk/samsung/ai_edge_litert_sdk_samsung*.tar.gz dist/
+mv bazel-bin/ci/tools/python/vendor_sdk/intel/ai_edge_litert_sdk_intel*.tar.gz dist/
 
 if [ "${TEST_MANYLINUX_COMPLIANCE}" = "true" ]; then
   echo "Testing manylinux compliance..."
@@ -133,39 +151,8 @@ if [ "${TEST_MANYLINUX_COMPLIANCE}" = "true" ]; then
     ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:manylinux_compliance_test
 fi
 
-# Vendor SDKs
-
-## Qualcomm SDK
-bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
-  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/qualcomm:ai_edge_litert_sdk_qualcomm_sdist
-
-mv bazel-bin/ci/tools/python/vendor_sdk/qualcomm/ai_edge_litert_sdk_qualcomm*.tar.gz dist/
-
-## Mediatek SDK
-bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
-  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/mediatek:ai_edge_litert_sdk_mediatek_sdist
-
-mv bazel-bin/ci/tools/python/vendor_sdk/mediatek/ai_edge_litert_sdk_mediatek*.tar.gz dist/
-
-## Google Tensor SDK
-if [[ -d "ci/tools/python/vendor_sdk/google_tensor" ]]; then
-  bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
-    ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/google_tensor:ai_edge_litert_sdk_google_tensor_sdist
-
-  mv bazel-bin/ci/tools/python/vendor_sdk/google_tensor/ai_edge_litert_sdk_google_tensor*.tar.gz dist/
-fi
-
-## Samsung SDK
-bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
-  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/samsung:ai_edge_litert_sdk_samsung_sdist
-
-mv bazel-bin/ci/tools/python/vendor_sdk/samsung/ai_edge_litert_sdk_samsung*.tar.gz dist/
-
-## Intel SDK
-bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
-  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/intel:ai_edge_litert_sdk_intel_sdist
-
-mv bazel-bin/ci/tools/python/vendor_sdk/intel/ai_edge_litert_sdk_intel*.tar.gz dist/
+duration=$((SECONDS - start_time))
+echo "INFO: Bazel build phase completed in ${duration} seconds."
 
 echo "Output can be found here:"
 find "./dist/"
