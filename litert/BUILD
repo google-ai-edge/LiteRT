@@ -308,6 +308,7 @@ package_group(
         "//litert/rust/...",
         "//litert/swift/...",
         "//litert/vendors/...",
+        "//tensor/...",
     ],
 )
 
