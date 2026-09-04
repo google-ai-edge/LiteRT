@@ -46,6 +46,8 @@
   XCTAssertEqual(buffer.elementType, LRTElementTypeFloat32);
   XCTAssertEqualObjects(buffer.dimensions, (@[ @4, @4 ]));
   XCTAssertGreaterThanOrEqual(buffer.size, size);
+  XCTAssertNil(buffer.metalBuffer);
+  XCTAssertNil(buffer.metalTexture);
 
   std::vector<float> inputValues(16, 42.0f);
   NSData *inputData = [NSData dataWithBytes:inputValues.data()
@@ -89,6 +91,44 @@
   XCTAssertEqual(buffer.elementType, LRTElementTypeFloat32);
   XCTAssertEqualObjects(buffer.dimensions, (@[ @4, @4 ]));
   XCTAssertEqual(buffer.metalBuffer, metalBuffer);
+  XCTAssertNil(buffer.metalTexture);
+}
+
+- (void)testMetalTextureCreation {
+  id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+  XCTSkipIf(device == nil, @"Metal is not supported on this device/simulator.");
+
+  NSError *error = nil;
+  LRTEnvironmentOptions *envOptions = [[LRTEnvironmentOptions alloc] init];
+  envOptions.metalDevice = device;
+  envOptions.metalCommandQueue = [device newCommandQueue];
+
+  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:envOptions error:&error];
+  XCTAssertNotNil(env);
+  XCTAssertNil(error);
+
+  MTLTextureDescriptor *textureDescriptor =
+      [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA32Float
+                                                         width:4
+                                                        height:4
+                                                     mipmapped:NO];
+  textureDescriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
+  id<MTLTexture> metalTexture = [device newTextureWithDescriptor:textureDescriptor];
+  XCTAssertNotNil(metalTexture);
+
+  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:env
+                                                            metalTexture:metalTexture
+                                                             elementType:LRTElementTypeFloat32
+                                                              dimensions:@[ @4, @4, @4 ]
+                                                                   error:&error];
+
+  XCTAssertNotNil(buffer);
+  XCTAssertNil(error);
+  XCTAssertEqual(buffer.bufferType, LRTTensorBufferTypeMetalTexture);
+  XCTAssertEqual(buffer.elementType, LRTElementTypeFloat32);
+  XCTAssertEqualObjects(buffer.dimensions, (@[ @4, @4, @4 ]));
+  XCTAssertEqual(buffer.metalTexture, metalTexture);
+  XCTAssertNil(buffer.metalBuffer);
 }
 
 - (void)testVariousElementTypes {

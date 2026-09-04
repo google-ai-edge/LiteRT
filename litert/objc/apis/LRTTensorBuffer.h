@@ -129,6 +129,22 @@ typedef NS_ENUM(NSInteger, LRTTensorBufferType) {
                                           dimensions:(NSArray<NSNumber *> *)dimensions
                                                error:(NSError **)error;
 
+/**
+ * Creates a tensor buffer wrapping an existing Metal texture.
+ *
+ * @param environment LiteRT environment instance.
+ * @param metalTexture Metal texture object.
+ * @param elementType Data element type.
+ * @param dimensions Tensor shape dimensions array.
+ * @param error Out-parameter populated on failure.
+ * @return A new LRTTensorBuffer instance, or nil on failure.
+ */
++ (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                        metalTexture:(id<MTLTexture>)metalTexture
+                                         elementType:(LRTElementType)elementType
+                                          dimensions:(NSArray<NSNumber *> *)dimensions
+                                               error:(NSError **)error;
+
 /** Buffer storage type (HostMemory, MetalBuffer, etc.). */
 @property(nonatomic, readonly) LRTTensorBufferType bufferType;
 
@@ -141,8 +157,11 @@ typedef NS_ENUM(NSInteger, LRTTensorBufferType) {
 /** Packed buffer size in bytes. */
 @property(nonatomic, readonly) NSUInteger size;
 
-/** Metal buffer reference if backing memory is Metal, or nil otherwise. */
+/** Metal buffer reference if backing memory is a Metal buffer, or nil otherwise. */
 @property(nonatomic, readonly, nullable) id<MTLBuffer> metalBuffer;
+
+/** Metal texture reference if backing memory is a Metal texture, or nil otherwise. */
+@property(nonatomic, readonly, nullable) id<MTLTexture> metalTexture;
 
 /**
  * Copies and returns the raw byte data from the tensor buffer.
