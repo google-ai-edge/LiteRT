@@ -104,6 +104,9 @@ litert_dynamic_lib(
             "@qairt//:libQnnIr.so",
             "@qairt//:libQnnSaver.so",
             "@qairt//:libQnnSystem.so",
+            # copybara:uncomment_begin(google-only)
+            # "@qairt//:linux_deps",
+            # copybara:uncomment_end
         ],
         "//conditions:default": [],
     }),
