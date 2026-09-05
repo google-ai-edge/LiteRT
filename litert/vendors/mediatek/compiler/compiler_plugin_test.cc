@@ -85,6 +85,20 @@ TEST(TestMediatekPlugin, GetConfigInfo) {
   EXPECT_STREQ(config_id, "mt6853");
 }
 
+TEST(TestMediatekPlugin, RegisterAllTransformations) {
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  LiteRtTransformation* transformations = nullptr;
+  LiteRtParamIndex num_patterns = 0;
+  ASSERT_EQ(LiteRtCompilerPluginRegisterAllTransformations(
+                plugin.get(), &transformations, &num_patterns),
+            kLiteRtStatusOk);
+  ASSERT_EQ(num_patterns, 1);
+  ASSERT_NE(transformations, nullptr);
+  EXPECT_STREQ(transformations[0].name, "RmsNormQuantTransformation");
+  EXPECT_EQ(transformations[0].benefit, 100);
+  EXPECT_NE(transformations[0].pattern, nullptr);
+}
+
 TEST(TestMediatekPlugin, PartitionAdd) {
   auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel("add_simple.tflite");
