@@ -91,7 +91,7 @@ setuptools.setup(
     description=DOCLINES[0],
     long_description='\n'.join(DOCLINES[2:]),
     long_description_content_type='text/plain',
-    url='https://www.tensorflow.org/lite/',
+    url='https://developers.google.com/edge/litert',
     author='Google AI Edge Authors',
     author_email='packages@tensorflow.org',
     license='Apache 2.0',
