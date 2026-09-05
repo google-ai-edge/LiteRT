@@ -54,6 +54,7 @@ provides the corresponding QNN operation it is legalized to.
 | `kLiteRtOpCodeTflConcatenation` | Legalized to `QNN_OP_CONCAT`. Supports fused activation. |
 | `kLiteRtOpCodeTflConv2d` | Legalized to `QNN_OP_CONV_2D`. Supports fused activation. For data types other than `QNN_DATATYPE_UFIXED_POINT_8` and `QNN_DATATYPE_SFIXED_POINT_8`, weights are transposed using `QNN_OP_TRANSPOSE`. |
 | `kLiteRtOpCodeTflConv3d` | Legalized to `QNN_OP_CONV_3D`. Supports fused activation. |
+| `kLiteRtOpCodeTflConv3dTranspose` | Legalized to `QNN_OP_TRANSPOSE_CONV_3D`. |
 | `kLiteRtOpCodeTflCos` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (COS). |
 | `kLiteRtOpCodeTflCumsum` | Legalized to `QNN_OP_CUMULATIVE_SUM`. |
 | `kLiteRtOpCodeTflDepthToSpace` | Legalized to `QNN_OP_DEPTH_TO_SPACE`. |
