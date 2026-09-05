@@ -1432,11 +1432,23 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
   if (cached_req != cpu_buffer_requirements_.end()) {
     return cached_req->second.get();
   }
+  size_t buffer_bytes = tensor->bytes;
+  if (tensor->dims != nullptr && tensor->dims->size > 0) {
+    size_t num_elements = 1;
+    for (int i = 0; i < tensor->dims->size; ++i) {
+      num_elements *= tensor->dims->data[i];
+    }
+    size_t computed_bytes = num_elements * TfLiteTypeGetSize(tensor->type);
+    if (computed_bytes > buffer_bytes) {
+      buffer_bytes = computed_bytes;
+    }
+  }
+
   LiteRtTensorBufferRequirements litert_cpu_buffer_requirements;
   LiteRtTensorBufferType cpu_buffer_type[] = {
       kLiteRtTensorBufferTypeHostMemory};
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferRequirements(
-      /*num_supported_tensor_buffer_types=*/1, cpu_buffer_type, tensor->bytes,
+      /*num_supported_tensor_buffer_types=*/1, cpu_buffer_type, buffer_bytes,
       /*num_strides=*/0, /*strides=*/nullptr, &litert_cpu_buffer_requirements));
   cpu_buffer_requirements_[tensor_id] =
       LiteRtTensorBufferRequirementsPtr(litert_cpu_buffer_requirements);
