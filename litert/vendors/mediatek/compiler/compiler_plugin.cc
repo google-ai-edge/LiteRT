@@ -46,6 +46,7 @@
 #include "litert/vendors/mediatek/compiler/create_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/common_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
+#include "litert/vendors/mediatek/compiler/transformations/rms_norm_quant_transformation.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 #include "litert/vendors/mediatek/schema/neuron_schema_generated.h"
 #include "litert/vendors/mediatek/schema/schema_resolver.h"
@@ -337,6 +338,10 @@ class LiteRtCompilerPluginT {
     sdk_version_ = std::move(sdk_version);
   }
 
+  std::vector<LiteRtTransformation>& Transformations() {
+    return transformations_;
+  }
+
  private:
   const LiteRtCompilerContext* ctx_;
   litert::Expected<litert::internal::OptionsWrapper> opts_ =
@@ -346,6 +351,7 @@ class LiteRtCompilerPluginT {
   LrtMediatekOptions* mediatek_opts_ = nullptr;
   int subgraph_index_ = 0;
   std::optional<std::string> sdk_version_;
+  std::vector<LiteRtTransformation> transformations_;
 };
 
 LiteRtStatus LiteRtCreateCompilerPlugin(
@@ -658,7 +664,14 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
     LiteRtCompilerPlugin compiler_plugin,
     LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns) {
-  *num_patterns = 0;
+  if (!compiler_plugin || !transformations || !num_patterns) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  compiler_plugin->Transformations().clear();
+  compiler_plugin->Transformations().push_back(
+      {&RmsNormQuantTransformation, "RmsNormQuantTransformation", 100});
+  *num_patterns = compiler_plugin->Transformations().size();
+  *transformations = compiler_plugin->Transformations().data();
   return kLiteRtStatusOk;
 }
 

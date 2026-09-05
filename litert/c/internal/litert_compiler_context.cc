@@ -28,7 +28,7 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
               .struct_size = sizeof(LiteRtCompilerContext),
               // LINT.IfChange(compiler_context_version)
               .major_version = 1,
-              .minor_version = 1,
+              .minor_version = 2,
               .reserved = 0,
               // LINT.ThenChange(./litert_compiler_context.h:compiler_context_table)
           },
@@ -246,6 +246,7 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
       .build_add_op_option = LiteRtBuilderBuildAddOpOption,
       .build_batch_matmul_op_option = LiteRtBuilderBuildBatchMatmulOpOption,
       .get_block_wise_quantization = LiteRtGetBlockWiseQuantization,
+      .build_shlo_composite_op_option = LiteRtBuilderBuildShloCompositeOpOption,
   };
   return &ctx;
 }
