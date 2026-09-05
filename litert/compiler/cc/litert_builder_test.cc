@@ -290,6 +290,30 @@ TEST(CcBuilderTest, TestSetOpOptions) {
   EXPECT_EQ(res.Value().fused_activation_function, kActivationFunctionTypeRelu);
 }
 
+TEST(CcBuilderTest, TestSetCompositeOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeShloComposite, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    CompositeOptions options;
+    options.name = "odml.rms_norm";
+    options.subgraph = 2;
+    options.version = 1;
+    auto res =
+        cc_builder.SetOpOptions<CompositeOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<CompositeOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().name, "odml.rms_norm");
+  EXPECT_EQ(res.Value().subgraph, 2);
+  EXPECT_EQ(res.Value().version, 1);
+}
+
 //===----------------------------------------------------------------------===//
 //                       Builder Extended API Tests                          //
 //===----------------------------------------------------------------------===//

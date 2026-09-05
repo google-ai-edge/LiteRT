@@ -399,6 +399,10 @@ typedef struct LiteRtCompilerContext {
   LiteRtStatus (*get_block_wise_quantization)(
       LiteRtTensor tensor,
       LiteRtQuantizationBlockWise* block_wise_quantization);
+  LiteRtStatus (*build_shlo_composite_op_option)(
+      LiteRtBuilder builder, LiteRtOp op, const char* name,
+      const int32_t* decomposition_subgraph_index, const int32_t* version,
+      const uint8_t* attributes, LiteRtParamIndex attributes_size);
 } LiteRtCompilerContext;
 // LINT.ThenChange(./litert_compiler_context.cc:compiler_context_version)
 
@@ -408,7 +412,7 @@ typedef struct LiteRtCompilerContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtCompilerContext) == 1104,
+static_assert(sizeof(LiteRtCompilerContext) == 1112,
               "LiteRtCompilerContext size mismatch");
 static_assert(offsetof(LiteRtCompilerContext, abi_header) == 0,
               "LiteRtCompilerContext abi_header offset mismatch");
@@ -933,6 +937,9 @@ static_assert(
 static_assert(
     offsetof(LiteRtCompilerContext, get_block_wise_quantization) == 1096,
     "LiteRtCompilerContext get_block_wise_quantization offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_shlo_composite_op_option) == 1104,
+    "LiteRtCompilerContext build_shlo_composite_op_option offset mismatch");
 #endif  // __cplusplus
 
 LiteRtCompilerContext* LrtGetCompilerContext();

@@ -351,6 +351,10 @@ LiteRtStatus LiteRtGetSHLOCompositeOpAttributes(LiteRtOp op,
                                                 const uint8_t** attributes,
                                                 int32_t* attributes_size);
 LiteRtStatus LiteRtGetSHLOCompositeOpVersion(LiteRtOp op, int32_t* version);
+LiteRtStatus LiteRtBuilderBuildShloCompositeOpOption(
+    LiteRtBuilder builder, LiteRtOp op, const char* name,
+    const int32_t* decomposition_subgraph_index, const int32_t* version,
+    const uint8_t* attributes, LiteRtParamIndex attributes_size);
 
 //==============================================================================
 //

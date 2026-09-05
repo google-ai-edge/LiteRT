@@ -440,6 +440,7 @@ cc_test(
         ":model",
         ":model_load",
         ":model_serialize",
+        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_macros",

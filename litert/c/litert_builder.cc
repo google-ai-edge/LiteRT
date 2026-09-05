@@ -176,6 +176,39 @@ LiteRtStatus LiteRtBuilderBuildOp(LiteRtBuilder builder, LiteRtOpCode op_code,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtBuilderBuildShloCompositeOpOption(
+    LiteRtBuilder builder, LiteRtOp op, const char* name,
+    const int32_t* decomposition_subgraph_index, const int32_t* version,
+    const uint8_t* attributes, LiteRtParamIndex attributes_size) {
+  if (builder == nullptr || op == nullptr || name == nullptr ||
+      HasNullOptionPtr(decomposition_subgraph_index, version)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (attributes_size > 0 && attributes == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!builder->IsOpAllocated(op)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (op->OpCode() != kLiteRtOpCodeShloComposite) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  litert::internal::TflOptions2 tfl_options;
+  tfl_options.type = tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  auto options = std::make_unique<tflite::StableHLOCompositeOptionsT>();
+  options->name = name;
+  options->decomposition_subgraph_index = *decomposition_subgraph_index;
+  options->version = *version;
+  if (attributes_size > 0 && attributes != nullptr) {
+    options->composite_attributes.assign(attributes,
+                                         attributes + attributes_size);
+  }
+  tfl_options.value = options.release();
+  litert::internal::SetTflOptions2(*op, std::move(tfl_options));
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtBuilderEraseOp(LiteRtBuilder builder, LiteRtOp op_to_erase) {
   if (builder == nullptr || op_to_erase == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;

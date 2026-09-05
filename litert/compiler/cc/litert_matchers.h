@@ -1318,6 +1318,157 @@ auto m_CustomOp(absl::string_view code, Args&&... args) {
       std::forward<Args>(args)...);
 }
 
+// Composite Op Code Matcher.
+struct CompositeOpCodeMatcher {
+  absl::string_view label;
+  absl::string_view composite_name;
+
+  explicit CompositeOpCodeMatcher(absl::string_view l, absl::string_view c)
+      : label(l), composite_name(c) {}
+
+  bool Match(const Op& op, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    if (op.Code() != kLiteRtOpCodeShloComposite) {
+      if (tracer) {
+        tracer->LogFailure(label, "Not a composite op");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    auto opts = GetOptionsAs<CompositeOptions>(op.Context(), op.Get());
+    if (!opts || opts->name != composite_name) {
+      if (tracer) {
+        tracer->LogFailure(label, "Composite name mismatch");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    if (tracer) tracer->PopScope();
+    return true;
+  }
+
+  bool Match(const Tensor& tensor, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    auto def_op = tensor.GetDefiningOp();
+    if (!def_op) {
+      if (tracer) {
+        tracer->LogFailure(label, "Tensor has no defining op");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    bool res = Match(*def_op, tracer);
+    if (tracer) tracer->PopScope();
+    return res;
+  }
+};
+
+inline auto m_CompositeOpCode(
+    absl::string_view composite_name,
+    absl::string_view label = "CompositeOpCodeMatcher") {
+  return CompositeOpCodeMatcher(label, composite_name);
+}
+
+// Composite Op Matcher (Code + Inputs).
+template <typename... InputMatchers>
+struct CompositeOpMatcher {
+  absl::string_view label;
+  absl::string_view composite_name;
+  std::tuple<InputMatchers...> input_matchers;
+
+  explicit CompositeOpMatcher(absl::string_view l, absl::string_view c,
+                              InputMatchers... m)
+      : label(l), composite_name(c), input_matchers(std::move(m)...) {}
+
+  bool Match(const Op& op, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    if (op.Code() != kLiteRtOpCodeShloComposite) {
+      if (tracer) {
+        tracer->LogFailure(label, "Not a composite op");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    auto opts = GetOptionsAs<CompositeOptions>(op.Context(), op.Get());
+    if (!opts || opts->name != composite_name) {
+      if (tracer) {
+        tracer->LogFailure(label, "Composite name mismatch");
+        tracer->PopScope();
+      }
+      return false;
+    }
+
+    if (op.Inputs().size() != sizeof...(InputMatchers)) {
+      if (tracer) {
+        tracer->LogFailure(label, "Input count mismatch");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    bool res =
+        MatchInputs(op, tracer, std::index_sequence_for<InputMatchers...>{});
+    if (tracer) tracer->PopScope();
+    return res;
+  }
+
+  bool Match(const Tensor& tensor, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    auto def_op = tensor.GetDefiningOp();
+    if (!def_op) {
+      if (tracer) {
+        tracer->LogFailure(label, "Tensor has no defining op");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    bool res = Match(*def_op, tracer);
+    if (tracer) tracer->PopScope();
+    return res;
+  }
+
+ private:
+  template <size_t... I>
+  bool MatchInputs(const Op& op, MatchTracer* tracer,
+                   std::index_sequence<I...>) const {
+    return (MatchInput(op, I, std::get<I>(input_matchers), tracer) && ...);
+  }
+};
+
+namespace internal {
+template <typename Tuple, size_t... I>
+auto MakeCompositeOpMatcherImpl(absl::string_view label, absl::string_view code,
+                                Tuple&& tuple, std::index_sequence<I...>) {
+  return CompositeOpMatcher<
+      std::decay_t<std::tuple_element_t<I, std::decay_t<Tuple>>>...>(
+      label, code, std::get<I>(std::forward<Tuple>(tuple))...);
+}
+
+template <typename... Args>
+auto MakeCompositeOpMatcherHelper(std::true_type, absl::string_view code,
+                                  Args&&... args) {
+  auto tuple = std::forward_as_tuple(std::forward<Args>(args)...);
+  constexpr size_t N = sizeof...(Args);
+  auto label = std::get<N - 1>(tuple);
+  return MakeCompositeOpMatcherImpl(absl::string_view(label), code,
+                                    std::move(tuple),
+                                    std::make_index_sequence<N - 1>{});
+}
+
+template <typename... Args>
+auto MakeCompositeOpMatcherHelper(std::false_type, absl::string_view code,
+                                  Args&&... args) {
+  return CompositeOpMatcher<std::decay_t<Args>...>("CompositeOpMatcher", code,
+                                                   std::forward<Args>(args)...);
+}
+}  // namespace internal
+
+template <typename... Args>
+auto m_CompositeOp(absl::string_view composite_name, Args&&... args) {
+  return internal::MakeCompositeOpMatcherHelper(
+      std::integral_constant<bool, last_arg_is_string_like_v<Args...>>{},
+      composite_name, std::forward<Args>(args)...);
+}
+
 // Name Matcher.
 struct NameMatcher {
   absl::string_view label;
