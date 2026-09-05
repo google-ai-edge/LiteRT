@@ -467,6 +467,15 @@ ABSL_FLAG(std::string, qualcomm_schematic_dir, "",
           "Qualcomm schematic directory. If provided, you can obtain "
           "schematic.bin for optrace.");
 
+ABSL_FLAG(std::string, qualcomm_qnn_lib_dir, "",
+          "Path to directory containing CPU host QNN shared libraries "
+          "(libQnnSystem.so, libQnnHtp.so, etc.).");
+
+ABSL_FLAG(std::string, qualcomm_dsp_skel_dir, "",
+          "Path to directory containing Hexagon DSP Skel shared libraries "
+          "(libQnnHtpV*Skel.so) used to configure ADSP_LIBRARY_PATH for "
+          "FastRPC.");
+
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
@@ -908,6 +917,16 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const std::string schematic_dir = absl::GetFlag(FLAGS_qualcomm_schematic_dir);
   opts.SetSchematicDir(schematic_dir);
+
+  const std::string qnn_lib_dir = absl::GetFlag(FLAGS_qualcomm_qnn_lib_dir);
+  if (!qnn_lib_dir.empty()) {
+    opts.SetQnnLibDir(qnn_lib_dir);
+  }
+
+  const std::string dsp_skel_dir = absl::GetFlag(FLAGS_qualcomm_dsp_skel_dir);
+  if (!dsp_skel_dir.empty()) {
+    opts.SetDspSkelDir(dsp_skel_dir);
+  }
 
   const auto custom_op_package =
       absl::GetFlag(FLAGS_qualcomm_custom_op_package);

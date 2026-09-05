@@ -151,6 +151,12 @@ class QnnManager {
   // Loads the libQnnSystem.so at given path.
   LiteRtStatus LoadSystemLib(absl::string_view path);
 
+  // Helper to load shared library searching qnn_lib_dir, shared_library_dir,
+  // and plain path.
+  LiteRtStatus LoadSharedLibHelper(absl::string_view path,
+                                   bool needs_global_symbols,
+                                   SharedLibrary& out_lib);
+
   //
   // Resolve and Access QNN SDK Functions
   //

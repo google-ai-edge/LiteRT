@@ -58,7 +58,6 @@ cc_library(
         "//litert/vendors/qualcomm/core/backends:backend_factory",
         "//litert/vendors/qualcomm/core/backends:qnn_backend",
         "//litert/vendors/qualcomm/core/schema:soc_table",
-        "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/utils:qnn_model",
         "//litert/vendors/qualcomm/core/utils:test_utils",
         "@com_google_absl//absl/base:no_destructor",

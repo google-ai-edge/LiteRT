@@ -660,6 +660,18 @@ std::uint32_t Options::GetLpaiCoreSelection() const {
   return lpai_core_selection_;
 }
 
+void Options::SetQnnLibDir(absl::string_view qnn_lib_dir) {
+  qnn_lib_dir_ = qnn_lib_dir;
+}
+
+absl::string_view Options::GetQnnLibDir() const { return qnn_lib_dir_; }
+
+void Options::SetDspSkelDir(absl::string_view dsp_skel_dir) {
+  dsp_skel_dir_ = dsp_skel_dir;
+}
+
+absl::string_view Options::GetDspSkelDir() const { return dsp_skel_dir_; }
+
 std::string Options::Dump() const {
   // Grouped by category; append a field() line to the right section to add one.
   std::string out =
@@ -683,6 +695,8 @@ std::string Options::Dump() const {
   field(2, "LogLevel", log_level_);
   field(2, "BackendType", backend_type_);
   field(2, "Profiling", profiling_);
+  field(2, "QnnLibDir", qnn_lib_dir_);
+  field(2, "DspSkelDir", dsp_skel_dir_);
   field(2, "UseInt64BiasAsInt32", use_int64_bias_as_int32_);
   field(2, "EnableWeightSharing", enable_weight_sharing_);
   field(2, "EnableJustInTime", enable_just_in_time_);

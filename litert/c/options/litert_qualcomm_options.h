@@ -453,6 +453,31 @@ LiteRtStatus LrtQualcommOptionsSetLpaiCoreSelection(
 
 LiteRtStatus LrtQualcommOptionsGetLpaiCoreSelection(
     LrtQualcommOptions options, uint32_t* lpai_core_selection);
+
+// qnn_lib_dir
+
+// Sets the directory where CPU host QNN SDK shared libraries (libQnnSystem.so,
+// libQnnHtp.so, etc.) are located.
+LiteRtStatus LrtQualcommOptionsSetQnnLibDir(LrtQualcommOptions options,
+                                            const char* qnn_lib_dir);
+
+// Retrieves the configured CPU host QNN shared library directory.
+// Returns an empty string if not set.
+LiteRtStatus LrtQualcommOptionsGetQnnLibDir(LrtQualcommOptions options,
+                                            const char** qnn_lib_dir);
+
+// dsp_skel_dir
+
+// Sets the directory where Hexagon DSP Skel shared libraries
+// (libQnnHtpV*Skel.so) are located. Used to configure ADSP_LIBRARY_PATH for
+// FastRPC.
+LiteRtStatus LrtQualcommOptionsSetDspSkelDir(LrtQualcommOptions options,
+                                             const char* dsp_skel_dir);
+
+// Retrieves the configured DSP Skel shared library directory.
+// Returns an empty string if not set.
+LiteRtStatus LrtQualcommOptionsGetDspSkelDir(LrtQualcommOptions options,
+                                             const char** dsp_skel_dir);
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

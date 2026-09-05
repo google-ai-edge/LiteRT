@@ -255,6 +255,12 @@ class Options {
   void SetLpaiCoreSelection(std::uint32_t lpai_core_selection);
   std::uint32_t GetLpaiCoreSelection() const;
 
+  void SetQnnLibDir(absl::string_view qnn_lib_dir);
+  absl::string_view GetQnnLibDir() const;
+
+  void SetDspSkelDir(absl::string_view dsp_skel_dir);
+  absl::string_view GetDspSkelDir() const;
+
  private:
   LogLevel log_level_ = LogLevel::kInfo;
   BackendType backend_type_ = BackendType::kHtpBackend;
@@ -295,6 +301,8 @@ class Options {
   LpaiCoreAffinityType lpai_core_affinity_type_ =
       LpaiCoreAffinityType::kDefault;
   std::uint32_t lpai_core_selection_ = 0;
+  std::string qnn_lib_dir_;
+  std::string dsp_skel_dir_;
 };
 
 // Gets a default logger implementation to stdout.

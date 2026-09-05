@@ -121,6 +121,8 @@ struct LrtQualcommOptionsT {
   std::optional<LrtQualcommOptionsLpaiClientPerfType> lpai_client_perf_type;
   std::optional<LrtQualcommOptionsLpaiCoreAffinityType> lpai_core_affinity_type;
   std::optional<std::uint32_t> lpai_core_selection;
+  std::optional<std::string> qnn_lib_dir;
+  std::optional<std::string> dsp_skel_dir;
 };
 
 LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
@@ -300,6 +302,12 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetLpaiCoreSelection(
               parsed_options, static_cast<uint32_t>(*v));
+        } else if (key == "qnn_lib_dir") {
+          status = LrtQualcommOptionsSetQnnLibDir(parsed_options,
+                                                  std::string(value).c_str());
+        } else if (key == "dsp_skel_dir") {
+          status = LrtQualcommOptionsSetDspSkelDir(parsed_options,
+                                                   std::string(value).c_str());
         }
 
         return status;
@@ -460,6 +468,12 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   }
   if (options->lpai_core_selection.has_value()) {
     toml << "lpai_core_selection = " << *options->lpai_core_selection << "\n";
+  }
+  if (options->qnn_lib_dir.has_value()) {
+    toml << "qnn_lib_dir = \"" << *options->qnn_lib_dir << "\"\n";
+  }
+  if (options->dsp_skel_dir.has_value()) {
+    toml << "dsp_skel_dir = \"" << *options->dsp_skel_dir << "\"\n";
   }
   *identifier = LrtQualcommOptionsGetIdentifier();
   std::string toml_str = toml.str();
@@ -1270,6 +1284,52 @@ LiteRtStatus LrtQualcommOptionsGetLpaiCoreSelection(
   }
 
   *lpai_core_selection = options->lpai_core_selection.value_or(0);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetQnnLibDir(LrtQualcommOptions options,
+                                            const char* qnn_lib_dir) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->qnn_lib_dir = qnn_lib_dir;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetQnnLibDir(LrtQualcommOptions options,
+                                            const char** qnn_lib_dir) {
+  if (options == nullptr || qnn_lib_dir == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *qnn_lib_dir =
+      options->qnn_lib_dir.has_value() ? options->qnn_lib_dir->c_str() : "";
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetDspSkelDir(LrtQualcommOptions options,
+                                             const char* dsp_skel_dir) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->dsp_skel_dir = dsp_skel_dir;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetDspSkelDir(LrtQualcommOptions options,
+                                             const char** dsp_skel_dir) {
+  if (options == nullptr || dsp_skel_dir == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *dsp_skel_dir =
+      options->dsp_skel_dir.has_value() ? options->dsp_skel_dir->c_str() : "";
 
   return kLiteRtStatusOk;
 }
