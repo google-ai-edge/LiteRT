@@ -30,6 +30,7 @@ limitations under the License.
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/arithmetic_graph.h"
+#include "tensor/backends/nnpack_common/utils.h"
 #include "tensor/backends/xnnpack/utils.h"  // IWYU pragma: keep
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
@@ -40,8 +41,6 @@ limitations under the License.
 namespace litert::tensor::graph {
 
 namespace {
-
-constexpr float kInf = std::numeric_limits<float>::infinity();
 
 absl::StatusOr<uint32_t> DynamicallyQuantizeInput(
     XnnpackBuildContext& ctx, uint32_t input_id,
@@ -57,91 +56,6 @@ absl::StatusOr<uint32_t> DynamicallyQuantizeInput(
       /*flags=*/0))
       << "Could not define convert node for dynamic quantization.";
   return qd_id;
-}
-
-template <Type... Types>
-absl::Status ValidateTensorType(const graph::Tensor& tensor,
-                                absl::string_view op_name) {
-  LRT_TENSOR_ASSIGN_OR_RETURN(const auto& info, graph::GetInfo(tensor));
-  if (!((info.type == Types) || ...)) {
-    return absl::InvalidArgumentError(
-        absl::StrFormat("%s only supports %v tensors. Got type id %v.", op_name,
-                        absl::StrJoin({Types...}, ", "), info.type));
-  }
-  return absl::OkStatus();
-}
-
-// TODO: b/493560478 - Decide if this needs to be removed.
-[[maybe_unused]]
-absl::Status ValidateFp32OrQuantizedConstantWeights(const graph::Tensor& tensor,
-                                                    absl::string_view op_name) {
-  LRT_TENSOR_ASSIGN_OR_RETURN(const auto& info, graph::GetInfo(tensor));
-  if (info.type == Type::kFP32) {
-    return absl::OkStatus();
-  }
-  if (info.type != Type::kI8) {
-    return absl::InvalidArgumentError(
-        absl::StrFormat("%s only supports FP32 weights or quantized INT8 "
-                        "constant weights. Got type id %d.",
-                        op_name, static_cast<int>(info.type)));
-  }
-  if (info.buffer == nullptr) {
-    return absl::InvalidArgumentError(
-        absl::StrFormat("%s INT8 weights must be constant tensors.", op_name));
-  }
-  if (info.quantization == nullptr) {
-    return absl::InvalidArgumentError(absl::StrFormat(
-        "%s INT8 weights require quantization metadata.", op_name));
-  }
-  LRT_TENSOR_ASSIGN_OR_RETURN(
-      const auto& quantization,
-      info.quantization->As<const PerChannelAffineQuantization>());
-  if (quantization.scales.empty() || quantization.zero_points.empty()) {
-    return absl::InvalidArgumentError(
-        absl::StrFormat("%s INT8 weights require non-empty scales and "
-                        "zero-points.",
-                        op_name));
-  }
-  return absl::OkStatus();
-}
-
-struct BinaryIOIds {
-  uint32_t lhs;
-  uint32_t rhs;
-  uint32_t output;
-};
-
-struct ActivationBounds {
-  float output_min;
-  float output_max;
-};
-
-absl::StatusOr<ActivationBounds> GetActivationBounds(
-    FusedActivation activation, absl::string_view op_name) {
-  ActivationBounds b;
-  switch (activation) {
-    case kActNone:
-      b.output_min = -kInf;
-      b.output_max = kInf;
-      break;
-    case kActRelu:
-      b.output_min = 0.0f;
-      b.output_max = kInf;
-      break;
-    case kActRelu6:
-      b.output_min = 0.0f;
-      b.output_max = 6.0f;
-      break;
-    case kActReluN1To1:
-      b.output_min = -1.0f;
-      b.output_max = 1.0f;
-      break;
-    default:
-      return absl::InvalidArgumentError(
-          absl::StrFormat("%s: fused activation %d not supported in XNNPACK",
-                          op_name, static_cast<int>(activation)));
-  }
-  return b;
 }
 
 absl::StatusOr<BinaryIOIds> PrepareBinaryIO(const Operation& op,
@@ -177,93 +91,6 @@ absl::StatusOr<xnn_binary_params> BuildBinaryParams(FusedActivation activation,
   return params;
 }
 
-struct PaddingValues {
-  uint32_t top;
-  uint32_t right;
-  uint32_t bottom;
-  uint32_t left;
-};
-
-PaddingValues ComputePadding(Padding padding, int input_h, int input_w,
-                             int filter_h, int filter_w, int stride_h,
-                             int stride_w, int dilation_h, int dilation_w) {
-  PaddingValues p{0, 0, 0, 0};
-  if (padding == kPaddingSame) {
-    const int eff_filter_h = (filter_h - 1) * dilation_h + 1;
-    const int eff_filter_w = (filter_w - 1) * dilation_w + 1;
-    const int out_h = static_cast<int>(
-        std::ceil(static_cast<float>(input_h) / static_cast<float>(stride_h)));
-    const int out_w = static_cast<int>(
-        std::ceil(static_cast<float>(input_w) / static_cast<float>(stride_w)));
-    const int pad_h =
-        std::max(0, (out_h - 1) * stride_h + eff_filter_h - input_h);
-    const int pad_w =
-        std::max(0, (out_w - 1) * stride_w + eff_filter_w - input_w);
-    p.top = pad_h / 2;
-    p.bottom = pad_h - p.top;
-    p.left = pad_w / 2;
-    p.right = pad_w - p.left;
-  }
-  return p;
-}
-
-struct TransposeConvPaddingValues {
-  uint32_t top;
-  uint32_t right;
-  uint32_t bottom;
-  uint32_t left;
-  uint32_t adj_h;
-  uint32_t adj_w;
-};
-
-absl::StatusOr<TransposeConvPaddingValues> ComputeTransposeConvPadding(
-    Padding padding, int input_h, int input_w, int filter_h, int filter_w,
-    int stride_h, int stride_w, int output_h, int output_w) {
-  if (input_h <= 0 || input_w <= 0 || filter_h <= 0 || filter_w <= 0 ||
-      stride_h <= 0 || stride_w <= 0 || output_h <= 0 || output_w <= 0) {
-    return absl::InvalidArgumentError(
-        "TransposeConv expects positive input/filter/stride/output sizes");
-  }
-
-  auto compute_dim = [&](int input, int filter, int stride, int output,
-                         uint32_t* pad_before, uint32_t* pad_after,
-                         uint32_t* adj,
-                         absl::string_view dim_name) -> absl::Status {
-    const int base = (input - 1) * stride + filter;
-    int pad_total = 0;
-    int adj_local = 0;
-    if (output >= base) {
-      adj_local = output - base;
-    } else {
-      pad_total = base - output;
-    }
-    if (adj_local >= stride) {
-      return absl::InvalidArgumentError(absl::StrFormat(
-          "TransposeConv %s adjustment (%d) must be < stride (%d)", dim_name,
-          adj_local, stride));
-    }
-    if (padding == kPaddingValid && pad_total != 0) {
-      return absl::InvalidArgumentError(absl::StrFormat(
-          "TransposeConv %s padding (%d) not allowed for VALID padding",
-          dim_name, pad_total));
-    }
-    const int pad_before_local = pad_total / 2;
-    const int pad_after_local = pad_total - pad_before_local;
-    *pad_before = static_cast<uint32_t>(pad_before_local);
-    *pad_after = static_cast<uint32_t>(pad_after_local);
-    *adj = static_cast<uint32_t>(adj_local);
-    return absl::OkStatus();
-  };
-
-  TransposeConvPaddingValues p{0, 0, 0, 0, 0, 0};
-  LRT_TENSOR_RETURN_IF_ERROR(compute_dim(input_h, filter_h, stride_h, output_h,
-                                         &p.top, &p.bottom, &p.adj_h,
-                                         "height"));
-  LRT_TENSOR_RETURN_IF_ERROR(compute_dim(input_w, filter_w, stride_w, output_w,
-                                         &p.left, &p.right, &p.adj_w, "width"));
-  return p;
-}
-
 absl::Status AddBinaryNode(xnn_binary_operator op_type, const BinaryIOIds& io,
                            const xnn_binary_params& params,
                            XnnpackBuildContext& ctx,
@@ -274,11 +101,6 @@ absl::Status AddBinaryNode(xnn_binary_operator op_type, const BinaryIOIds& io,
       << op_name;
   return absl::OkStatus();
 }
-
-struct UnaryIOIds {
-  uint32_t input;
-  uint32_t output;
-};
 
 absl::StatusOr<UnaryIOIds> PrepareUnaryIO(const Operation& op,
                                           XnnpackBuildContext& ctx,
@@ -622,9 +444,9 @@ absl::Status OpMixin<AveragePool2DOperation, XnnpackMixinTag>::ToXnnpack(
   LRT_TENSOR_ASSIGN_OR_RETURN(const auto& input_info, graph::GetInfo(input));
 
   if (input_info.shape.size() < 3) {
-    return absl::InvalidArgumentError(absl::StrFormat(
-        "%s: input tensor must be at least rank 3. Got rank %d", op_name,
-        input_info.shape.size()));
+    return absl::InvalidArgumentError(
+        absl::StrFormat("%s: input tensor must be at least rank 3. Got rank %d",
+                        op_name, input_info.shape.size()));
   }
   const int input_h = input_info.shape[1];
   const int input_w = input_info.shape[2];
@@ -672,9 +494,9 @@ absl::Status OpMixin<MaxPool2DOperation, XnnpackMixinTag>::ToXnnpack(
   LRT_TENSOR_ASSIGN_OR_RETURN(const auto& input_info, graph::GetInfo(input));
 
   if (input_info.shape.size() < 3) {
-    return absl::InvalidArgumentError(absl::StrFormat(
-        "%s: input tensor must be at least rank 3. Got rank %d", op_name,
-        input_info.shape.size()));
+    return absl::InvalidArgumentError(
+        absl::StrFormat("%s: input tensor must be at least rank 3. Got rank %d",
+                        op_name, input_info.shape.size()));
   }
   const int input_h = input_info.shape[1];
   const int input_w = input_info.shape[2];
@@ -1247,8 +1069,7 @@ absl::Status OpMixin<ExpandDimsOperation, XnnpackMixinTag>::ToXnnpack(
   if (real_axis < 0) {
     real_axis += input_info.shape.size() + 1;
   }
-  if (real_axis < 0 ||
-      real_axis > static_cast<int>(input_info.shape.size())) {
+  if (real_axis < 0 || real_axis > static_cast<int>(input_info.shape.size())) {
     return absl::InvalidArgumentError(absl::StrFormat(
         "%s: axis %d is out of range for input of rank %d", op_name,
         locked_axis.data()[0], static_cast<int>(input_info.shape.size())));
@@ -1904,18 +1725,3 @@ absl::Status OpMixin<RopeOperation, XnnpackMixinTag>::ToXnnpack(
   return absl::OkStatus();
 }
 }  // namespace litert::tensor::graph
-
-namespace litert::tensor {
-
-absl::Status XnnpackBuildContext::AliasValue(const graph::Tensor& source,
-                                             const graph::Tensor& target) {
-  LRT_TENSOR_RETURN_IF_ERROR(DefineValue(target).status());
-  tensor_index_[source] = tensor_index_[target];
-  return absl::OkStatus();
-}
-
-void XnnpackBuildContext::RemoveTensor(const graph::Tensor& tensor) {
-  tensor_index_.erase(tensor);
-}
-
-}  // namespace litert::tensor

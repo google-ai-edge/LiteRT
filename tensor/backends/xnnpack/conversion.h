@@ -20,78 +20,34 @@ limitations under the License.
 #include <memory>
 #include <vector>
 
+#include "xnnpack.h"  // from @XNNPACK
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "tensor/backends/nnpack_common/conversion.h"
 #include "tensor/backends/xnnpack/arithmetic.h"  // IWYU pragma: export
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
-#include "tensor/tensor.h"
-
-struct xnn_subgraph;
-
 namespace litert::tensor {
 
-// Represents an XNNPACK graph.
-class XnnpackGraph {
- public:
-  XnnpackGraph(xnn_subgraph* subgraph, std::vector<XnnpackValue> values,
-               absl::flat_hash_map<graph::Tensor, size_t> tensor_index,
-               absl::flat_hash_set<graph::Tensor> external_outputs,
-               std::vector<std::vector<float>> dequantized_buffers = {},
-               std::vector<std::vector<fp16_t>> fp16_buffers = {},
-               std::vector<std::vector<char>> constant_buffers = {},
-               std::vector<std::shared_ptr<Buffer>> keep_alive_buffers = {});
-  ~XnnpackGraph();
-
-  // Returns the XNNPACK subgraph.
-  xnn_subgraph* subgraph() const { return subgraph_; }
-
-  // Returns the values in the XNNPACK graph.
-  std::vector<XnnpackValue>& mutable_values() { return values_; }
-
-  // Returns the XnnpackValue vector in the XNNPACK graph.
-  const std::vector<XnnpackValue>& values() const { return values_; }
-
-  // Looks up the index of the given tensor in the XNNPACK graph.
-  absl::StatusOr<size_t> Lookup(const TensorHandle& tensor) const;
-
-  // Returns the external outputs of the XNNPACK graph.
-  const absl::flat_hash_set<graph::Tensor>& external_outputs() const {
-    return external_outputs_;
-  }
-
- private:
-  xnn_subgraph* subgraph_ = nullptr;
-  std::vector<XnnpackValue> values_;
-  absl::flat_hash_map<graph::Tensor, size_t> tensor_index_;
-  absl::flat_hash_set<graph::Tensor> external_outputs_;
-  std::vector<std::vector<float>> dequantized_buffers_;
-  std::vector<std::vector<fp16_t>> fp16_buffers_;
-  std::vector<std::vector<char>> constant_buffers_;
-  std::vector<std::shared_ptr<Buffer>> keep_alive_buffers_;
-};
+using XnnpackGraph = NnpackGraph<XnnpackTraits>;
 
 // Builds an XNNPACK graph from the given outputs.
-absl::StatusOr<std::unique_ptr<XnnpackGraph>> BuildXnnpackGraph(
-    std::vector<TensorHandle> outputs);
+inline absl::StatusOr<std::unique_ptr<XnnpackGraph>> BuildXnnpackGraph(
+    std::vector<TensorHandle> outputs) {
+  return BuildNnpackGraph<XnnpackTraits>(std::move(outputs));
+}
 
 // Lowers the implementation graph of an operation to XNNPACK.
-//
-// It maps the operation's inputs and outputs to the corresponding inlined
-// tensors. `inlined_inputs` must be positionally aligned with `op.inputs`.
-// If an input is not used or is a constant created in-place
-// (not mapped to `op.inputs`), an invalid `graph::Tensor` (default constructed)
-// should be used as a placeholder in `inlined_inputs` to maintain alignment.
-//
-// It then traverses the inlined graph between the inlined inputs and outputs
-// and lowers all operations.
-absl::Status InlineImplementationGraphFor(
+inline absl::Status InlineImplementationGraphFor(
     const graph::Operation& op, absl::Span<const graph::Tensor> inlined_inputs,
-    absl::Span<const graph::Tensor> inlined_outputs, XnnpackBuildContext& ctx);
+    absl::Span<const graph::Tensor> inlined_outputs, XnnpackBuildContext& ctx) {
+  return InlineImplementationGraphFor<XnnpackTraits>(op, inlined_inputs,
+                                                     inlined_outputs, ctx);
+}
 
 }  // namespace litert::tensor
 
