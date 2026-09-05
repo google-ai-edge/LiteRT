@@ -211,7 +211,7 @@ py_test(
         ":util",
         #internal proto upb dep
         "@org_tensorflow//third_party/py/numpy",
-        "@org_tensorflow//tensorflow:tensorflow_py",
+        "@org_tensorflow//tensorflow:tensorflow_py_no_contrib",
         "@org_tensorflow//tensorflow/python/client:session",
         "@org_tensorflow//tensorflow/python/eager:context",
         "@org_tensorflow//tensorflow/python/eager:def_function",
