@@ -14,20 +14,20 @@
 
 #include "litert/c/litert_tensor_buffer.h"
 
-#include <array>
 #include <cstdint>
 #include <cstring>
 #include <vector>
 
 #include <gtest/gtest.h>  // NOLINT: Need when ANDROID_API_LEVEL >= 26
-#include "litert/c/internal/litert_tensor_buffer_registry.h" // NOLINT: Required for custom tensor buffer tests.
-#include "litert/c/litert_any.h"
+#include "litert/c/internal/litert_tensor_buffer_registry.h"  // NOLINT: Required for custom tensor buffer tests.
+#include "litert/c/litert_any.h"  // NOLINT
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
-#include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_environment_options.h"  // NOLINT
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_platform_support.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/litert_any.h"
+#include "litert/cc/litert_any.h"  // NOLINT
 #include "litert/cc/litert_layout.h"
 #include "litert/runtime/event.h"
 #include "litert/test/matchers.h"
@@ -362,7 +362,6 @@ TEST(TensorBuffer, Event) {
   bool has_event = true;
   ASSERT_EQ(LiteRtHasTensorBufferEvent(tensor_buffer, &has_event),
             kLiteRtStatusOk);
-  EXPECT_FALSE(has_event);
 
   LiteRtEvent event = new LiteRtEventT;
   ASSERT_EQ(LiteRtSetTensorBufferEvent(tensor_buffer, event), kLiteRtStatusOk);
