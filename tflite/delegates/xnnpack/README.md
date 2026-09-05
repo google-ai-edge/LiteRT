@@ -27,7 +27,7 @@ Interpreter interpreter = new Interpreter(model, interpreterOptions);
 ### Enable XNNPACK via Swift/Objective-C API on iOS (recommended on iOS)
 
 Pre-built
-[nightly TensorFlow Lite CocoaPods](https://www.tensorflow.org/lite/guide/ios#specifying_versions)
+[nightly TensorFlow Lite CocoaPods](https://developers.google.com/edge/litert/ios/quickstart#specifying_versions)
 include XNNPACK, but do not enable it by default. Swift developers can use
 `InterpreterOptions` object to enable XNNPACK:
 
