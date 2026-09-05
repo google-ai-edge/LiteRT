@@ -27,75 +27,75 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "tensor/arithmetic_graph.h"
+#include "tensor/backends/nnpack_common/conversion.h"
+#include "tensor/backends/nnpack_common/utils.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
 #include "tensor/internal/mixin.h"
 #include "tensor/internal/type_id.h"
 
-struct xnn_subgraph;
-
 namespace litert::tensor {
 
 // Tag to identify the XNNPACK mixin.
 struct XnnpackMixinTag {};
 
-struct XnnpackValue {
-  graph::TensorInformation info;
-  uint32_t id = XNN_INVALID_VALUE_ID;
-  uint32_t flags = 0;
-  LockedBufferSpan<const std::byte> data =
-      LockedBufferSpan<const std::byte>::Empty();
+template <typename Traits>
+class NnpackRunner;
+
+class ExternalBuffer;
+class XnnpackOperation;
+
+struct XnnpackTraits {
+  using SubgraphType = ::xnn_subgraph*;
+  using ValueType = NnpackValue;
+  using OpExtensionType = XnnpackOperation;
+  using RuntimeType = ::xnn_runtime;
+  struct RuntimeDeleter {
+    void operator()(::xnn_runtime* ptr) const {
+      if (ptr) {
+        xnn_delete_runtime(ptr);
+      }
+    }
+  };
+
+  static constexpr char kBackendName[] = "XNNPACK";
+  static constexpr uint32_t kFlagExternalInput = XNN_VALUE_FLAG_EXTERNAL_INPUT;
+  static constexpr uint32_t kFlagExternalOutput =
+      XNN_VALUE_FLAG_EXTERNAL_OUTPUT;
+
+  static absl::Status EnsureInitialized();
+  static absl::Status CreateSubgraph(size_t external_value_ids, uint32_t flags,
+                                     SubgraphType* subgraph);
+  static void DeleteSubgraph(SubgraphType subgraph);
+  static absl::Status DefineTensorValue(NnpackBuildContext<XnnpackTraits>& ctx,
+                                        const graph::Tensor& tensor,
+                                        ValueType& value);
+  static absl::Status DefineConstantTensor(SubgraphType subgraph,
+                                           ::xnn_datatype datatype,
+                                           absl::Span<const size_t> shape,
+                                           const void* data, uint32_t* id);
+  static absl::Status LowerOp(const XnnpackOperation& ext,
+                              const graph::Operation& op,
+                              NnpackBuildContext<XnnpackTraits>& ctx);
+
+  static absl::Status CreateRuntime(
+      const NnpackRunner<XnnpackTraits>& runner, SubgraphType subgraph,
+      size_t num_threads,
+      std::unique_ptr<RuntimeType, RuntimeDeleter>& runtime);
+  static absl::Status SetExternalValueShape(RuntimeType* runtime, uint32_t id,
+                                            absl::Span<const size_t> dims);
+  static absl::Status ReshapeRuntime(RuntimeType* runtime);
+  static absl::Status GetExternalValueShape(RuntimeType* runtime, uint32_t id,
+                                            std::vector<size_t>& dims);
+  static absl::Status SetupExternalValues(
+      RuntimeType* runtime, absl::Span<ValueType> values,
+      absl::flat_hash_map<uint32_t, ExternalBuffer>& external_buffers);
+  static absl::Status InvokeRuntime(RuntimeType* runtime);
 };
 
-class XnnpackGraph;
-class TensorHandle;
-
-// Context for building an XNNPACK subgraph.
-class XnnpackBuildContext {
- public:
-  explicit XnnpackBuildContext(
-      std::vector<TensorHandle> outputs,
-      absl::flat_hash_map<graph::Tensor, uint32_t> external_ids = {});
-  ~XnnpackBuildContext();
-  absl::Status Init();
-  absl::StatusOr<std::unique_ptr<XnnpackGraph>> Finalize();
-  // Defines a tensor in the XNNPACK subgraph.
-  absl::StatusOr<uint32_t> DefineValue(const graph::Tensor& tensor);
-  // Aliases `source` to `target`. Any call to `DefineValue(source)` will return
-  // the XNNPACK ID of `target`.
-  absl::Status AliasValue(const graph::Tensor& source,
-                          const graph::Tensor& target);
-  // Removes a tensor from the context.
-  void RemoveTensor(const graph::Tensor& tensor);
-  // Defines a constant tensor in the XNNPACK subgraph.
-  // The data will be copied and its lifetime will be managed by the
-  // graph/runner.
-  absl::StatusOr<uint32_t> DefineConstant(const void* data, size_t bytes,
-                                          ::xnn_datatype datatype,
-                                          std::vector<size_t> shape);
-  // Returns the XNNPACK subgraph.
-  ::xnn_subgraph* subgraph();
-  // Keeps a buffer alive for the duration of the graph's lifetime.
-  void KeepAlive(std::shared_ptr<Buffer> buffer) {
-    keep_alive_buffers_.push_back(std::move(buffer));
-  }
-
- private:
-  xnn_subgraph* subgraph_ = nullptr;
-  std::vector<graph::Tensor> outputs_;
-  std::vector<XnnpackValue> values_;
-  absl::flat_hash_map<graph::Tensor, size_t> tensor_index_;
-  absl::flat_hash_set<graph::Tensor> external_outputs_;
-  absl::flat_hash_map<graph::Tensor, uint32_t> external_ids_;
-  std::vector<std::vector<float>> dequantized_buffers_;
-  std::vector<std::vector<fp16_t>> fp16_buffers_;
-  std::vector<std::vector<char>> constant_buffers_;
-  std::vector<std::shared_ptr<Buffer>> keep_alive_buffers_;
-
-  friend absl::StatusOr<std::unique_ptr<XnnpackGraph>> BuildXnnpackGraph(
-      std::vector<TensorHandle> outputs);
-};
+using XnnpackBuildContext = NnpackBuildContext<XnnpackTraits>;
+using XnnpackValue = NnpackValue;
 
 // Base class for XNNPACK operations.
 class XnnpackOperation : public graph::BackendExtension {
