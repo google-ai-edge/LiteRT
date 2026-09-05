@@ -14,7 +14,7 @@ floating-point inference.
 ### Enable XNNPACK via Java API on Android (recommended on Android)
 
 Pre-built
-[nightly TensorFlow Lite binaries for Android](https://www.tensorflow.org/lite/guide/android#use_the_tensorflow_lite_aar_from_mavencentral)
+[nightly TensorFlow Lite binaries for Android](https://developers.google.com/edge/litert/android/lite_build#use_nightly_snapshots)
 include XNNPACK, albeit it is disabled by default. Use the `setUseXNNPACK`
 method in `Interpreter.Options` class to enable it:
 
