@@ -21,6 +21,8 @@ cc_library(
         "dot.h",
         "elementwise.cc",
         "elementwise.h",
+        "moe.cc",
+        "moe.h",
         "pooling.cc",
         "pooling.h",
         "reduction.cc",
@@ -91,5 +93,21 @@ cc_test(
         ":ynnpack_delegate",
         "//tflite/c:common",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "moe_test",
+    srcs = ["moe_test.cc"],
+    copts = tflite_copts(),
+    deps = [
+        ":ynnpack_delegate",
+        "//tflite:framework",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/kernels:test_util",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers//:runtime_cc",
     ],
 )
