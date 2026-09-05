@@ -70,6 +70,14 @@ std::string GetTensorDebugString(const TfLiteTensor* tensor) {
   return passthru_node;
 }
 
+::ml_drift::BHWC ExtractTensorShapeImpl(const int32_t* data, int size) {
+  if (size == 0) return ::ml_drift::BHWC(1, 1, 1, 1);
+  if (size == 1) return ::ml_drift::BHWC(data[0], 1, 1, 1);
+  if (size == 2) return ::ml_drift::BHWC(data[0], 1, 1, data[1]);
+  if (size == 3) return ::ml_drift::BHWC(data[0], 1, data[1], data[2]);
+  return ::ml_drift::BHWC(data[0], data[1], data[2], data[3]);
+}
+
 }  // namespace
 
 absl::Status GetNodeAndRegistration(TfLiteContext* context, int node_id,
@@ -113,18 +121,15 @@ absl::Status GetNodeAndRegistration(TfLiteContext* context, int node_id,
 }
 
 ::ml_drift::BHWC ExtractTensorShape(const TfLiteIntArray* dims) {
-  const int size = dims->size;
-  if (size == 0) return ::ml_drift::BHWC(1, 1, 1, 1);
-  if (size == 1) return ::ml_drift::BHWC(dims->data[0], 1, 1, 1);
-  if (size == 2) return ::ml_drift::BHWC(dims->data[0], 1, 1, dims->data[1]);
-  if (size == 3)
-    return ::ml_drift::BHWC(dims->data[0], 1, dims->data[1], dims->data[2]);
-  return ::ml_drift::BHWC(dims->data[0], dims->data[1], dims->data[2],
-                          dims->data[3]);
+  return ExtractTensorShapeImpl(dims->data, dims->size);
 }
 
 ::ml_drift::BHWC ExtractTensorShape(const TfLiteTensor* tflite_tensor) {
   return ExtractTensorShape(tflite_tensor->dims);
+}
+
+::ml_drift::BHWC ExtractTensorShape(const std::vector<int>& dims) {
+  return ExtractTensorShapeImpl(dims.data(), static_cast<int>(dims.size()));
 }
 
 ::ml_drift::Axis ExtractAxisFromIndex(const TfLiteTensor& tflite_tensor,

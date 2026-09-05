@@ -2019,6 +2019,97 @@ TEST(BroadcastInDimOperationParserTest, TestIsSupported) {
   context->node()->inputs->data[0] = 0;
 }
 
+TEST(BroadcastToOperationParserTest, TestIsSupported) {
+  // BroadcastTo needs one runtime input (data) and one const input (shape).
+  // A single input fails the const-input requirement.
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinBroadcastTo,
+      /*op_version=*/1,
+      /*num_inputs=*/1,
+      /*shape=*/std::vector<int>({1, 1, 1, 4}));
+  auto parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Valid: runtime f32 data broadcast to an identical output shape, with a
+  // constant int32 shape input (tensor 2).
+  context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinBroadcastTo,
+      /*op_version=*/1,
+      /*num_inputs=*/2,
+      /*shape=*/std::vector<int>({1, 1, 1, 4}));
+  parser = NewOperationParser(context->node(), context->registration());
+  context->SetTensorType(2, kTfLiteInt32, kTfLiteMmapRo);
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Valid: right-aligned broadcast that requires tiling (dim 1 -> N).
+  context->ChangeTensorShape(3, {2, 1, 1, 4});
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Valid: input rank < output rank (left-padded with 1s), compatible.
+  context->ChangeTensorShape(1, {4});
+  context->ChangeTensorShape(3, {2, 4});
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Invalid: trailing-aligned dims are not broadcast-compatible (3 vs 2).
+  context->ChangeTensorShape(1, {3, 4});
+  context->ChangeTensorShape(3, {2, 4});
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Invalid: input rank exceeds output rank.
+  context->ChangeTensorShape(1, {2, 4});
+  context->ChangeTensorShape(3, {4});
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Invalid: rank > 4 is unsupported.
+  context->ChangeTensorShape(1, {2, 2, 2, 2, 2});
+  context->ChangeTensorShape(3, {2, 2, 2, 2, 2});
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Restore a valid identity broadcast before the remaining checks.
+  context->ChangeTensorShape(1, {1, 1, 1, 4});
+  context->ChangeTensorShape(3, {1, 1, 1, 4});
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Invalid: input and output data types differ.
+  context->SetTensorType(3, kTfLiteInt32, kTfLiteArenaRw);
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  context->SetTensorType(3, kTfLiteFloat32, kTfLiteArenaRw);
+
+  // Invalid: the shape input is not constant.
+  context->SetTensorType(2, kTfLiteInt32, kTfLiteArenaRw);
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+}
+
 TEST(CastOperationParserTest, TestIsSupported) {
   // Invalid num_inputs
   auto context = std::make_unique<StubTfLiteContext>(
