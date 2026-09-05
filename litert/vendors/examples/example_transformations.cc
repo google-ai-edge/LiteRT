@@ -143,6 +143,37 @@ LiteRtStatus FuseMatMulRequantTransformation(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus DecomposeAtan2toAtanDiv(const LiteRtCompilerContext* context,
+                                     LiteRtBuilder builder_ptr, LiteRtOp op) {
+  Builder builder(context, builder_ptr);
+  Op root_op(context, op);
+
+  if (!litert::compiler::Match(
+          root_op, litert::compiler::m_OpCode<kLiteRtOpCodeTflAtan2>())) {
+    return kLiteRtStatusPatternNoMatch;
+  }
+
+  // Decompose: Atan2(y, x) -> Atan2(Div(y, x), x)
+  //
+  // atan2(y, x) is equivalent to atan2(y/x, 1) = atan(y/x) (for x > 0).
+  // LiteRT has no unary Atan op; a real vendor plugin would replace the outer
+  // Atan2 with a custom Atan op consuming div_out.
+  Tensor y = root_op.Inputs()[0];
+  Tensor x = root_op.Inputs()[1];
+
+  // Clone the Atan2 output shape to produce a typed intermediate tensor.
+  auto div_out = builder.CloneTensor(root_op.Outputs()[0]);
+  if (!div_out) return div_out.Error().Status();
+
+  // Build the Div(y, x) -> div_out op.
+  auto div_op = builder.BuildOp(kLiteRtOpCodeTflDiv, {y, x}, {*div_out});
+  if (!div_op) return div_op.Error().Status();
+
+  // Replace Atan2(y, x) with Atan2(div_out, x), reusing the original output.
+  builder.ReplaceOp(root_op, kLiteRtOpCodeTflAtan2, {*div_out, x});
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus DummyTransformation(const LiteRtCompilerContext* context,
                                  LiteRtBuilder builder_ptr, LiteRtOp op) {
   return kLiteRtStatusPatternNoMatch;
