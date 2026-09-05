@@ -5,6 +5,7 @@
 
 #include <utility>
 
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_options.h"
