@@ -29,6 +29,8 @@ cc_library(
         "//tensor:arithmetic_graph",
         "//tensor:buffer",
         "//tensor:datatypes",
+        "//tensor/backends/nnpack_common:conversion",
+        "//tensor/backends/nnpack_common:utils",
         "//tensor/internal:graph",
         "//tensor/internal:mixin",
         "//tensor/internal:type_id",
@@ -72,8 +74,11 @@ cc_library(
         "//tensor",
         "//tensor:buffer",
         "//tensor:datatypes",
+        "//tensor/backends/nnpack_common:conversion",
+        "//tensor/backends/nnpack_common:utils",
         "//tensor/internal:graph",
         "//tensor/internal:graph_traversal",
+        "//tensor/runners/nnpack_common:runner",
         "//tensor/utils:macros",
         "@XNNPACK",
         "@com_google_absl//absl/base",
@@ -85,6 +90,7 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        "@pthreadpool",
     ],
 )
 

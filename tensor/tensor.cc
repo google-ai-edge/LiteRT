@@ -201,6 +201,16 @@ absl::StatusOr<Buffer&> TensorHandle::GetBuffer() const {
   return graph::GetBuffer(const_cast<graph::Tensor&>(GetRaw()));
 }
 
+std::shared_ptr<Buffer> TensorHandle::GetBufferPtr() const {
+  absl::StatusOr<const graph::TensorInformation&> info =
+      graph::GetInfo(GetRaw());
+  if (!info.ok()) {
+    ABSL_LOG(ERROR) << "Error when getting tensor info: " << info.status();
+    return nullptr;
+  }
+  return info->buffer;
+}
+
 TensorHandle& TensorHandle::SetShape(Shape shape) & {
   absl::StatusOr<graph::TensorInformation&> info = graph::GetInfo(GetRaw());
   if (!info.ok()) {
