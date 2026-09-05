@@ -1149,6 +1149,14 @@ Tensor<Mixins...> FullyConnected(
   const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
   const graph::TensorInformation& weights_info = *GetInfo(weights.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
+  if (input_info.shape.empty()) {
+    return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+        "FullyConnected input must have rank >= 1.")));
+  }
+  if (weights_info.shape.empty()) {
+    return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+        "FullyConnected weights must have rank >= 1.")));
+  }
   if (keep_num_dims) {
     output_info.shape = input_info.shape;
     output_info.shape.back() = weights_info.shape[0];
@@ -1967,6 +1975,10 @@ Tensor<Mixins...> EmbeddingLookup(
 
   output_info.type = output_type;
 
+  if (value_info.shape.empty()) {
+    return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+        "EmbeddingLookup value must have rank >= 1.")));
+  }
   output_info.shape = ids_info.shape;
   output_info.shape.push_back(value_info.shape.back());
 
@@ -2312,7 +2324,15 @@ Tensor<Mixins...> GatherNd(Tensor<Mixins...> input, Tensor<Mixins...> indices,
 
   int indices_ndims = indices_info.shape.size();
   int input_ndims = input_info.shape.size();
+  if (indices_info.shape.empty()) {
+    return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+        "GatherNd indices must have rank >= 1.")));
+  }
   int index_depth = indices_info.shape.back();
+  if (index_depth < 0 || index_depth > input_ndims) {
+    return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+        "GatherNd index depth is out of range.")));
+  }
   int outer_dims = indices_ndims - 1;
 
   for (int i = 0; i < outer_dims; ++i) {
