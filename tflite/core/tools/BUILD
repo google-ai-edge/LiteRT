@@ -34,6 +34,7 @@ cc_library(
         "//tflite:__subpackages__",
     ] + verifier_visibility_allowlist(),
     deps = [
+        ":verifier_internal",
         "//tflite:framework",
         "//tflite:schema_fbs_version",
         "//tflite:util",
@@ -43,7 +44,6 @@ cc_library(
         "//tflite/core/api:error_reporter",
         "//tflite/core/api:op_resolver",
         "//tflite/core/c:common",
-        "//tflite/core/tools:verifier_internal",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/types:optional",

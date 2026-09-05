@@ -21,26 +21,26 @@ limitations under the License.
 #include <cstring>
 #include <functional>
 #include <memory>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_format.h"
 #include "tflite/core/api/op_resolver.h"
 #include "tflite/core/c/common.h"
 #include "tflite/core/interpreter.h"
+#include "tflite/core/interpreter_builder.h"
 #include "tflite/core/kernels/register.h"
-#include "tflite/core/model.h"
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"
+#include "tflite/interpreter_options.h"
 #include "tflite/kernels/internal/compatibility.h"
 #include "tflite/kernels/register_ref.h"
 #include "tflite/mutable_op_resolver.h"
 #include "tflite/python/interpreter_wrapper/numpy.h"
 #include "tflite/python/interpreter_wrapper/python_error_reporter.h"
 #include "tflite/python/interpreter_wrapper/python_utils.h"
+#include "tflite/schema/schema_generated.h"
 #include "tflite/shared_library.h"
 #include "tflite/string_util.h"
 #include "tflite/util.h"
@@ -746,7 +746,8 @@ PyObject* InterpreterWrapper::SetTensor(int tensor_index, PyObject* value,
   if (incoming_type != tensor->type) {
     bool allow_raw_bytes =
         (tensor->type == kTfLiteFloat8E4M3FN ||
-         tensor->type == kTfLiteFloat8E5M2) &&
+         tensor->type == kTfLiteFloat8E5M2 ||
+         tensor->type == kTfLiteFloat8E8M0FNU) &&
         (incoming_type == kTfLiteInt8 || incoming_type == kTfLiteUInt8);
     if (!allow_raw_bytes) {
       PyErr_Format(

@@ -17,6 +17,8 @@ limitations under the License.
 #include <cstdint>
 #include <memory>
 
+#include "tflite/string_util.h"
+
 #define TFLITE_IMPORT_NUMPY  // See numpy.h for explanation.
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/core/c/common.h"
@@ -62,6 +64,7 @@ int TfLiteTypeToPyArrayType(TfLiteType tf_lite_type) {
       return NPY_UINT8;
     case kTfLiteFloat8E4M3FN:
     case kTfLiteFloat8E5M2:
+    case kTfLiteFloat8E8M0FNU:
       return NPY_BYTE;
     case kTfLiteInt2:
       // TODO(b/246806634): NPY_INT2 currently doesn't exist

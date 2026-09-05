@@ -40,7 +40,8 @@ cc_library(
     hdrs = ["enum_mapping.h"],
     visibility = ["//platforms/darwinn/tflite/serialization:__subpackages__"],
     deps = [
-        "//tflite:builtin_op_data",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
         "//tflite/converter/schema:schema_fbs_with_mutable",
     ],
 )

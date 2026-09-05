@@ -58,9 +58,10 @@ cc_library(
         "//tflite/delegates/xnnpack:xnnpack_delegate",
         "//tflite/kernels:reference_ops",
         "//tflite/kernels/internal:compatibility",
-        "@com_google_absl//absl/memory",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@org_tensorflow//third_party/py/numpy:headers",
         "@xla//third_party/python_runtime:headers",  # buildcleaner: keep
     ],
 )

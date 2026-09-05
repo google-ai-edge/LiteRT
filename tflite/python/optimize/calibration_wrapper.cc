@@ -25,6 +25,7 @@ limitations under the License.
 // (non-virtual) accessor methods and API functions to be declared.
 // The code here uses those methods, so we need to make sure that we get
 // the mutable variant of this header.
+#include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "tflite/converter/schema/mutable/schema_generated.h"
 
 #include "tflite/python/optimize/calibration_wrapper.h"
@@ -55,11 +56,13 @@ limitations under the License.
 #include "tflite/core/interpreter.h"
 #include "tflite/core/kernels/register.h"
 #include "tflite/core/model_builder.h"
+#include "tflite/core/signature_runner.h"
 #include "tflite/mutable_op_resolver.h"
 #include "tflite/python/interpreter_wrapper/numpy.h"
 #include "tflite/python/interpreter_wrapper/python_error_reporter.h"
 #include "tflite/python/interpreter_wrapper/python_utils.h"
 #include "tflite/shared_library.h"
+#include "tflite/string_type.h"
 #include "tflite/string_util.h"
 #include "tflite/tools/optimize/calibration/calibration_reader.h"
 #include "tflite/tools/optimize/calibration/calibrator.h"
@@ -130,6 +133,8 @@ inline TensorType TfLiteTypeToSchemaType(TfLiteType type) {
       return TensorType_FLOAT8_E4M3FN;
     case kTfLiteFloat8E5M2:
       return TensorType_FLOAT8_E5M2;
+    case kTfLiteFloat8E8M0FNU:
+      return TensorType_FLOAT8_E8M0FNU;
     case kTfLiteInt4:
       return TensorType_INT4;
     case kTfLiteUInt8:
