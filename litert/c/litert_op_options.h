@@ -668,6 +668,25 @@ LiteRtStatus LiteRtBuilderBuildSqueezeOpOption(LiteRtBuilder builder,
                                                const int32_t* squeeze_dims,
                                                int32_t num_squeeze_dims);
 
+//==============================================================================
+//
+// Get option APIs for LiteRt LocalResponseNormalization op.
+//  Options:
+// - radius : int32_t
+// - bias : float
+// - alpha : float
+// - beta : float
+//
+//==============================================================================
+LiteRtStatus LiteRtGetLocalResponseNormalizationRadiusOption(LiteRtOp op,
+                                                             int32_t* radius);
+LiteRtStatus LiteRtGetLocalResponseNormalizationBiasOption(LiteRtOp op,
+                                                           float* bias);
+LiteRtStatus LiteRtGetLocalResponseNormalizationAlphaOption(LiteRtOp op,
+                                                            float* alpha);
+LiteRtStatus LiteRtGetLocalResponseNormalizationBetaOption(LiteRtOp op,
+                                                           float* beta);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

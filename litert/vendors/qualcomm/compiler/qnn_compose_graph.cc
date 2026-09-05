@@ -73,6 +73,7 @@
 #include "litert/vendors/qualcomm/core/builders/l2_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/layer_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/leaky_relu_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/local_response_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/log_softmax_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/logistic_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
@@ -1377,6 +1378,26 @@ LiteRtStatus BuildLeakyReluOp(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus BuildLocalResponseNormOp(
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers) {
+  auto options = litert::compiler::GetOptionsAs<
+      litert::compiler::LocalResponseNormalizationOptions>(litert_op.ctx(),
+                                                           litert_op.Get());
+  if (!options) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  int32_t radius = options->radius;
+  float bias = options->bias;
+  float alpha = options->alpha;
+  float beta = options->beta;
+  op_wrappers = ::qnn::BuildLocalResponseNormOp(
+      tensor_pool, input_tensors, output_tensors, radius, bias, alpha, beta);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus BuildResizeBilinearOp(
     const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
@@ -1517,6 +1538,8 @@ GetOpBuilders() {
   builders[kLiteRtOpCodeTflFullyConnected] = Adapt<BuildFullyConnectedOp>;
   builders[kLiteRtOpCodeTflL2Normalization] = Adapt<BuildL2NormalizationOp>;
   builders[kLiteRtOpCodeTflL2Pool2d] = Adapt<BuildL2Pool2dOp>;
+  builders[kLiteRtOpCodeTflLocalResponseNormalization] =
+      Adapt<BuildLocalResponseNormOp>;
   builders[kLiteRtOpCodeTflLogistic] = Adapt<BuildLogisticOp>;
   builders[kLiteRtOpCodeTflMaxPool2d] = Adapt<BuildMaxPool2dOp>;
   builders[kLiteRtOpCodeTflMul] = Adapt<BuildMulOp>;

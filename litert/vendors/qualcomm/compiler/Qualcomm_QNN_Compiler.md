@@ -80,6 +80,7 @@ provides the corresponding QNN operation it is legalized to.
 | `kLiteRtOpCodeTflLeakyRelu` | Legalized to `QNN_OP_PRELU`. |
 | `kLiteRtOpCodeTflLess` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (LESS). |
 | `kLiteRtOpCodeTflLessEqual` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (LESS_EQUAL). |
+| `kLiteRtOpCodeTflLocalResponseNormalization` | Legalized to `QNN_OP_LRN`. |
 | `kLiteRtOpCodeTflLog` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (LOG). |
 | `kLiteRtOpCodeTflLogicalAnd` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (AND). |
 | `kLiteRtOpCodeTflLogicalNot` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (NOT). |
