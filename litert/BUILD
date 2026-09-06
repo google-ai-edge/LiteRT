@@ -283,6 +283,7 @@ package_group(
         "//ml_drift_delegate/...",
         "//third_party/odml/generative/fabric/adapters/litert/...",
         "//third_party/odml/infra/fabric/...",
+        "//third_party/odml/infra/northbound/...",
         "//third_party/odml/infra/southbound/...",
         "//third_party/odml/litert/support/...",
         "//third_party/odml/litert/weight_loader/...",
