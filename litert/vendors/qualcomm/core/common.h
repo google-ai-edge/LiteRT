@@ -227,6 +227,9 @@ class Options {
   absl::string_view GetDlcDir() const;
   void SetDlcDir(absl::string_view dlc_dir);
 
+  absl::string_view GetQualcommQuantOverrides() const;
+  void SetQualcommQuantOverrides(absl::string_view quantization_overrides);
+
   absl::string_view GetGraphTransform() const;
   void SetGraphTransform(absl::string_view graph_transform);
 
@@ -324,6 +327,7 @@ class Options {
   std::vector<std::int32_t> dump_tensor_ids_;
   std::string ir_json_dir_;
   std::string dlc_dir_;
+  std::string qualcomm_quant_overrides_;
   std::string graph_transform_;
   std::uint32_t vtcm_size_ = 0;
   std::uint32_t htp_device_id_ = 0;
