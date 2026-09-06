@@ -387,6 +387,19 @@ TEST(LiteRtQualcommOptionsTest, GraphTransform) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, QualcommQuantOverrides) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetQualcommQuantOverrides(
+      qualcomm_options, "/path/to/model.encodings"));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetQualcommQuantOverrides(), "/path/to/model.encodings");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, VtcmSize) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -665,6 +678,10 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetDlcDir(), "");
   options->SetDlcDir("tmp");
   EXPECT_EQ(options->GetDlcDir(), "tmp");
+
+  EXPECT_EQ(options->GetQualcommQuantOverrides(), "");
+  options->SetQualcommQuantOverrides("/path/to/model.encodings");
+  EXPECT_EQ(options->GetQualcommQuantOverrides(), "/path/to/model.encodings");
 
   EXPECT_EQ(options->GetGraphTransform(), "");
   options->SetGraphTransform("option1,option2");

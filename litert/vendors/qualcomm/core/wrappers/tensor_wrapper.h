@@ -94,6 +94,10 @@ class TensorWrapper final {
     UpdateQnnQuantParams();
   }
 
+  // Flush any change made via GetQuantParams() into the underlying QNN tensor
+  // struct.  Must be called after mutating the return value of GetQuantParams().
+  void SyncQuantParams() { UpdateQnnQuantParams(); }
+
   std::uint32_t GetRank() const;
 
   size_t GetTensorBytes() const;
@@ -195,21 +199,21 @@ class TensorWrapper final {
 
   void ConvertFromQuantI16ToQuantU16();
 
+  void SetDataType(Qnn_DataType_t data_type) {
+    qnn_tensor_.v2.dataType = data_type;
+  }
+
  private:
   void SetDataBy(std::uint32_t bytes, const void* data, bool copy_data);
 
-  void SetDataType(Qnn_DataType_t data_type) {
-    qnn_tensor_.v2.dataType = data_type;
+  void SetTensorType(Qnn_TensorType_t tensor_type) {
+    qnn_tensor_.v2.type = tensor_type;
   }
 
   void SetDimensions(const std::vector<std::uint32_t>& dimensions) {
     dimensions_ = dimensions;
     qnn_tensor_.v2.rank = dimensions_.size();
     qnn_tensor_.v2.dimensions = dimensions_.data();
-  }
-
-  void SetTensorType(Qnn_TensorType_t tensor_type) {
-    qnn_tensor_.v2.type = tensor_type;
   }
 
   Qnn_TensorType_t GetTensorType() const;
