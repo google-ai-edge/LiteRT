@@ -450,9 +450,9 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::QnnBackend& qnn_backend,
       op.GetInputTensor(1).IsQuantBitwidth(::qnn::kQuantBitWidth2) &&
       op.GetOutputTensor(0).IsQuantI8() &&
       SdkVersion{2, 47, 0} <= sdk_version &&
-      sdk_version < SdkVersion{2, 48, 0}) {
+      sdk_version < SdkVersion{2, 49, 0}) {
     LITERT_LOG(LITERT_WARNING,
-               "SDK version is in [2.47.0, 2.48.0); A8W2 FC OP validation is "
+               "SDK version is in [2.47.0, 2.49.0); A8W2 FC OP validation is "
                "bypassed.");
     return kLiteRtStatusOk;
   }
