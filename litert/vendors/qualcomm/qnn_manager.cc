@@ -444,7 +444,11 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::QnnBackend& qnn_backend,
         "SDK version is in [2.35.0, 2.37.0); Split OP validation is bypassed.");
     return kLiteRtStatusOk;
   }
-
+  // Bypass Slice OP validation.
+  if (op.IsOpCode(::qnn::QnnOpCode::kStridedSlice)) {
+    LITERT_LOG(LITERT_WARNING, "StridedSlice OP validation is bypassed.");
+    return kLiteRtStatusOk;
+  }
   if (op.IsOpCode(::qnn::QnnOpCode::kFullyConnected) &&
       op.GetInputTensor(0).IsQuantI8() && op.GetInputTensor(1).IsQuantI8() &&
       op.GetInputTensor(1).IsQuantBitwidth(::qnn::kQuantBitWidth2) &&
