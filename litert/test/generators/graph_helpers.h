@@ -163,6 +163,17 @@ inline Expected<LiteRtModelT::Ptr> SaveTensorGraph(
       reinterpret_cast<const uint8_t*>(fb_buffer.data()), fb_buffer.size()));
 }
 
+inline Expected<LiteRtModelT::Ptr> SaveTensorGraph(
+    std::vector<litert::tensor::TensorHandle> inputs,
+    std::vector<litert::tensor::TensorHandle> outputs) {
+  litert::tensor::ModelFactory factory;
+  LITERT_RETURN_IF_ERROR(
+      factory.AddSubgraph(std::move(inputs), std::move(outputs)));
+  LITERT_ASSIGN_OR_RETURN(auto fb_buffer, factory.CreateFlatbuffer());
+  return LoadModelFromBuffer(::litert::OwningBufferRef<uint8_t>(
+      reinterpret_cast<const uint8_t*>(fb_buffer.data()), fb_buffer.size()));
+}
+
 }  // namespace litert::testing
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GRAPH_HELPERS_H_

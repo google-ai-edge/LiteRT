@@ -1614,9 +1614,18 @@ template <class Sink>
 void AbslStringify(Sink& sink, const ::litert::internal::TflOptions2& opts) {
   // NOTE: Printers for specific options will be added on an as needed basis.
   const auto type = opts.type;
-  switch (static_cast<tflite::BuiltinOptions>(type)) {
-    case tflite::BuiltinOptions_NONE: {
+  switch (static_cast<tflite::BuiltinOptions2>(type)) {
+    case tflite::BuiltinOptions2_NONE: {
       absl::Format(&sink, "{}");
+      break;
+    }
+    case tflite::BuiltinOptions2_StableHLOCompositeOptions: {
+      const auto* comp_opts = opts.AsStableHLOCompositeOptions();
+      if (comp_opts && !comp_opts->name.empty()) {
+        absl::Format(&sink, "{name=%s}", comp_opts->name);
+      } else {
+        absl::Format(&sink, "{}");
+      }
       break;
     }
     default:
