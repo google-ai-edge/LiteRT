@@ -29,6 +29,7 @@
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/model.h"
 #include "litert/vendors/qualcomm/compiler/transformations/attention_chunk_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/dequantize_quantize_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/entry_embedding_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/legalize_int32_ops_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/mlp_quant_transformation.h"
@@ -42,6 +43,227 @@ using ::SetWeightsFromOwnedBuffer;
 using ::litert::OwningBufferRef;
 using ::litert::internal::AttachInput;
 using ::litert::internal::AttachOutput;
+
+LiteRtStatus MatchDequantizeQuantize(LiteRtElementType input_type,
+                                     LiteRtElementType intermediate_type,
+                                     LiteRtElementType output_type,
+                                     bool quantize_input,
+                                     bool quantize_output) {
+  LiteRtSubgraphT subgraph;
+
+  auto& input = subgraph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(input_type, {1, 8}));
+  if (quantize_input) {
+    input.SetQarams(MakePerTensorQuantization(1e-4f, 0));
+  }
+
+  auto& intermediate = subgraph.EmplaceTensor();
+  intermediate.SetType(MakeRankedTensorType(intermediate_type, {1, 8}));
+
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(output_type, {1, 8}));
+  if (quantize_output) {
+    output.SetQarams(MakePerTensorQuantization(1e-5f, 0));
+  }
+
+  auto& dequantize = subgraph.EmplaceOp();
+  dequantize.SetOpCode(kLiteRtOpCodeTflDequantize);
+  AttachInput(&input, dequantize);
+  AttachOutput(&intermediate, dequantize);
+
+  auto& quantize = subgraph.EmplaceOp();
+  quantize.SetOpCode(kLiteRtOpCodeTflQuantize);
+  AttachInput(&intermediate, quantize);
+  AttachOutput(&output, quantize);
+
+  LiteRtBuilderT builder_impl;
+  return DequantizeQuantizeTransformation(LrtGetCompilerContext(),
+                                          &builder_impl, &quantize);
+}
+
+//===----------------------------------------------------------------------===//
+// DequantizeQuantizeTransformation Tests
+//===----------------------------------------------------------------------===//
+
+TEST(DequantizeQuantizeTest, RewritesInt8ToFloat32ToInt16) {
+  LiteRtSubgraphT subgraph;
+
+  auto& input = subgraph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeInt8, {1, 8}));
+  input.SetQarams(MakePerTensorQuantization(1e-4f, 0));
+  subgraph.Inputs().push_back(&input);
+
+  auto& fp32 = subgraph.EmplaceTensor();
+  fp32.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 8}));
+
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 8}));
+  output.SetQarams(MakePerTensorQuantization(1e-5f, 0));
+  subgraph.Outputs().push_back(&output);
+
+  auto& dequantize = subgraph.EmplaceOp();
+  dequantize.SetOpCode(kLiteRtOpCodeTflDequantize);
+  AttachInput(&input, dequantize);
+  AttachOutput(&fp32, dequantize);
+
+  auto& quantize = subgraph.EmplaceOp();
+  quantize.SetOpCode(kLiteRtOpCodeTflQuantize);
+  AttachInput(&fp32, quantize);
+  AttachOutput(&output, quantize);
+
+  LiteRtBuilderT builder_impl;
+  ASSERT_EQ(DequantizeQuantizeTransformation(LrtGetCompilerContext(),
+                                             &builder_impl, &quantize),
+            kLiteRtStatusOk);
+  ASSERT_EQ(builder_impl.Erases().size(), 2);
+  builder_impl.ApplyChanges(&subgraph);
+
+  ASSERT_EQ(subgraph.Ops().size(), 1);
+  EXPECT_EQ(subgraph.Ops()[0]->OpCode(), kLiteRtOpCodeTflQuantize);
+  EXPECT_EQ(&subgraph.Ops()[0]->Input(0), &input);
+  EXPECT_EQ(&subgraph.Ops()[0]->Output(0), &output);
+}
+
+TEST(DequantizeQuantizeTest, RewritesInt16ToFloat32ToInt8) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtSubgraphT subgraph;
+  LiteRtBuilderT builder_impl;
+
+  auto& input = subgraph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 8}));
+  input.SetQarams(MakePerTensorQuantization(1e-5f, 0));
+  subgraph.Inputs().push_back(&input);
+
+  auto& fp32 = subgraph.EmplaceTensor();
+  fp32.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 8}));
+
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeInt8, {1, 8}));
+  output.SetQarams(MakePerTensorQuantization(1e-4f, 0));
+  subgraph.Outputs().push_back(&output);
+
+  auto& dequantize = subgraph.EmplaceOp();
+  dequantize.SetOpCode(kLiteRtOpCodeTflDequantize);
+  AttachInput(&input, dequantize);
+  AttachOutput(&fp32, dequantize);
+
+  auto& quantize = subgraph.EmplaceOp();
+  quantize.SetOpCode(kLiteRtOpCodeTflQuantize);
+  AttachInput(&fp32, quantize);
+  AttachOutput(&output, quantize);
+
+  ASSERT_EQ(DequantizeQuantizeTransformation(ctx, &builder_impl, &quantize),
+            kLiteRtStatusOk);
+  ASSERT_EQ(builder_impl.Erases().size(), 2);
+  builder_impl.ApplyChanges(&subgraph);
+
+  ASSERT_EQ(subgraph.Ops().size(), 1);
+  EXPECT_EQ(subgraph.Ops()[0]->OpCode(), kLiteRtOpCodeTflQuantize);
+  EXPECT_EQ(&subgraph.Ops()[0]->Input(0), &input);
+  EXPECT_EQ(&subgraph.Ops()[0]->Output(0), &output);
+}
+
+TEST(DequantizeQuantizeTest, PreservesDequantizeForSideConsumer) {
+  LiteRtSubgraphT subgraph;
+
+  auto& input = subgraph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeInt8, {1, 8}));
+  input.SetQarams(MakePerTensorQuantization(1e-4f, 0));
+  subgraph.Inputs().push_back(&input);
+
+  auto& fp32 = subgraph.EmplaceTensor();
+  fp32.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 8}));
+
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 8}));
+  output.SetQarams(MakePerTensorQuantization(1e-5f, 0));
+  subgraph.Outputs().push_back(&output);
+
+  auto& side_output = subgraph.EmplaceTensor();
+  side_output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 8}));
+  subgraph.Outputs().push_back(&side_output);
+
+  auto& dequantize = subgraph.EmplaceOp();
+  dequantize.SetOpCode(kLiteRtOpCodeTflDequantize);
+  AttachInput(&input, dequantize);
+  AttachOutput(&fp32, dequantize);
+
+  auto& quantize = subgraph.EmplaceOp();
+  quantize.SetOpCode(kLiteRtOpCodeTflQuantize);
+  AttachInput(&fp32, quantize);
+  AttachOutput(&output, quantize);
+
+  auto& side_consumer = subgraph.EmplaceOp();
+  side_consumer.SetOpCode(kLiteRtOpCodeTflAbs);
+  AttachInput(&fp32, side_consumer);
+  AttachOutput(&side_output, side_consumer);
+
+  LiteRtBuilderT builder_impl;
+  ASSERT_EQ(DequantizeQuantizeTransformation(LrtGetCompilerContext(),
+                                             &builder_impl, &quantize),
+            kLiteRtStatusOk);
+  ASSERT_EQ(builder_impl.Erases().size(), 1);
+  builder_impl.ApplyChanges(&subgraph);
+
+  ASSERT_EQ(subgraph.Ops().size(), 3);
+  EXPECT_EQ(subgraph.Ops()[0]->OpCode(), kLiteRtOpCodeTflDequantize);
+  EXPECT_EQ(subgraph.Ops()[1]->OpCode(), kLiteRtOpCodeTflQuantize);
+  EXPECT_EQ(&subgraph.Ops()[1]->Input(0), &input);
+  EXPECT_EQ(subgraph.Ops()[2]->OpCode(), kLiteRtOpCodeTflAbs);
+  EXPECT_EQ(&subgraph.Ops()[2]->Input(0), &fp32);
+}
+
+TEST(DequantizeQuantizeTest, RejectsNonMatchingTypesAndQuantization) {
+  EXPECT_EQ(
+      MatchDequantizeQuantize(kLiteRtElementTypeInt8, kLiteRtElementTypeFloat32,
+                              kLiteRtElementTypeInt8,
+                              /*quantize_input=*/true,
+                              /*quantize_output=*/true),
+      kLiteRtStatusPatternNoMatch);
+  EXPECT_EQ(
+      MatchDequantizeQuantize(kLiteRtElementTypeInt8, kLiteRtElementTypeFloat16,
+                              kLiteRtElementTypeInt16,
+                              /*quantize_input=*/true,
+                              /*quantize_output=*/true),
+      kLiteRtStatusPatternNoMatch);
+  EXPECT_EQ(MatchDequantizeQuantize(kLiteRtElementTypeInt16,
+                                    kLiteRtElementTypeFloat32,
+                                    kLiteRtElementTypeInt16,
+                                    /*quantize_input=*/true,
+                                    /*quantize_output=*/true),
+            kLiteRtStatusPatternNoMatch);
+  EXPECT_EQ(
+      MatchDequantizeQuantize(kLiteRtElementTypeInt8, kLiteRtElementTypeFloat32,
+                              kLiteRtElementTypeInt16, /*quantize_input=*/false,
+                              /*quantize_output=*/true),
+      kLiteRtStatusPatternNoMatch);
+  EXPECT_EQ(
+      MatchDequantizeQuantize(kLiteRtElementTypeInt8, kLiteRtElementTypeFloat32,
+                              kLiteRtElementTypeInt16, /*quantize_input=*/true,
+                              /*quantize_output=*/false),
+      kLiteRtStatusPatternNoMatch);
+}
+
+TEST(DequantizeQuantizeTest, RejectsQuantizeWithoutDequantize) {
+  LiteRtSubgraphT subgraph;
+
+  auto& input = subgraph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 8}));
+
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 8}));
+  output.SetQarams(MakePerTensorQuantization(1e-5f, 0));
+
+  auto& quantize = subgraph.EmplaceOp();
+  quantize.SetOpCode(kLiteRtOpCodeTflQuantize);
+  AttachInput(&input, quantize);
+  AttachOutput(&output, quantize);
+
+  LiteRtBuilderT builder_impl;
+  EXPECT_EQ(DequantizeQuantizeTransformation(LrtGetCompilerContext(),
+                                             &builder_impl, &quantize),
+            kLiteRtStatusPatternNoMatch);
+}
 
 //===----------------------------------------------------------------------===//
 // LegalizeInt32SignTransformation Tests

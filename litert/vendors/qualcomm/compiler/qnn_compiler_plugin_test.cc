@@ -702,6 +702,29 @@ TEST(TestQnnPlugin, TransformationsDefaultRegistration) {
   EXPECT_EQ(num_transformations, 0);
 }
 
+TEST(TestQnnPlugin, TransformationsEnableDequantQuant) {
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
+  ASSERT_TRUE(qnn_opts);
+  qnn_opts->SetGraphTransform("dequant_quant");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+
+  LiteRtTransformation* transformations = nullptr;
+  LiteRtParamIndex num_transformations = 0;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
+      plugin.get(), &transformations, &num_transformations));
+  ASSERT_EQ(num_transformations, 1);
+  ASSERT_NE(transformations, nullptr);
+  EXPECT_STREQ(transformations[0].name, "DequantizeQuantizeTransformation");
+}
+
 TEST(TestQnnPlugin, TransformationsEnableAll) {
   auto opts = Options::Create();
   ASSERT_TRUE(opts);
@@ -720,7 +743,7 @@ TEST(TestQnnPlugin, TransformationsEnableAll) {
   LiteRtParamIndex num_transformations = 0;
   LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
       plugin.get(), &transformations, &num_transformations));
-  EXPECT_EQ(num_transformations, 8);
+  EXPECT_EQ(num_transformations, 9);
 }
 
 TEST(TestQnnPlugin, TransformationsEnableLegalizeTransforms) {
@@ -787,9 +810,9 @@ TEST(TestQnnPlugin, TransformationsSelectiveEnableAndDisable) {
   LiteRtParamIndex num_transformations = 0;
   LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
       plugin.get(), &transformations, &num_transformations));
-  // Sign, ReduceMax, EntryEmbedding, EntryEmbeddingTrigFold, OrphanCleanup
-  // should be registered (5 total).
-  EXPECT_EQ(num_transformations, 5);
+  // DQ/Q, Sign, ReduceMax, EntryEmbedding, EntryEmbeddingTrigFold, and
+  // OrphanCleanup should be registered (6 total).
+  EXPECT_EQ(num_transformations, 6);
 }
 
 }  // namespace

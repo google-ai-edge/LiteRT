@@ -14,6 +14,7 @@ add_library(qnn_compiler_plugin SHARED
     qnn_compose_graph.cc
     graph_mapper.cc
     transformations/attention_chunk_transformation.cc
+    transformations/dequantize_quantize_transformation.cc
     transformations/entry_embedding_transformation.cc
     transformations/legalize_int32_ops_transformation.cc
     transformations/mlp_quant_transformation.cc

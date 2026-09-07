@@ -66,6 +66,22 @@ cc_library(
 )
 
 cc_library(
+    name = "dequantize_quantize_transformation",
+    srcs = ["dequantize_quantize_transformation.cc"],
+    hdrs = ["dequantize_quantize_transformation.h"],
+    copts = _TRANSFORMATION_COPTS,
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context_header",
+        "//litert/cc:litert_element_type",
+        "//litert/compiler/cc:litert_builder",
+        "//litert/compiler/cc:litert_model",
+    ],
+)
+
+cc_library(
     name = "entry_embedding_transformation",
     srcs = ["entry_embedding_transformation.cc"],
     hdrs = ["entry_embedding_transformation.h"],
@@ -167,6 +183,7 @@ cc_test(
     srcs = ["transformations_test.cc"],
     deps = [
         ":attention_chunk_transformation",
+        ":dequantize_quantize_transformation",
         ":entry_embedding_transformation",
         ":legalize_int32_ops_transformation",
         ":mlp_quant_transformation",
