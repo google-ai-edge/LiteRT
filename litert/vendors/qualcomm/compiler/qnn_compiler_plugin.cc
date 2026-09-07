@@ -79,6 +79,31 @@ constexpr LiteRtParamIndex kDefaultPartitionNum = 1;
 
 static constexpr absl::string_view kEntryPointNameFmt = "qnn_partition_%d";
 
+LiteRtStatus ResolveTargetSocInfo(const ::qnn::Options& options,
+                                  const char* soc_model,
+                                  std::optional<::qnn::SocInfo>& soc_info) {
+  if (options.GetBackendType() == ::qnn::BackendType::kLpaiBackend) {
+    const auto requested_soc_info = ::qnn::FindOrCreateSocInfo(soc_model);
+    if (requested_soc_info.has_value() &&
+        requested_soc_info->lpai_hw_version !=
+            ::qnn::LpaiHardwareVersion::kUnknown) {
+      soc_info = *requested_soc_info;
+      return kLiteRtStatusOk;
+    }
+
+    LITERT_LOG(LITERT_ERROR, "Invalid LPAI target: %s.",
+               soc_model != nullptr ? soc_model : "(unset)");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  soc_info = ::qnn::FindOrCreateSocInfo(soc_model);
+  if (soc_model != nullptr && !soc_info.has_value()) {
+    LITERT_LOG(LITERT_ERROR, "Unexpected SoC model: %s", soc_model);
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  return kLiteRtStatusOk;
+}
+
 bool IsWeightSharingSupported() {
 #if defined(__x86_64__) || defined(_M_X64)
   // TODO(jiunkaiy): Enable weight sharing only on SoCs v73 and later.
@@ -451,11 +476,9 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
   ::litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
-  const auto opt_soc_model = ::qnn::FindOrCreateSocInfo(soc_model);
-  if (soc_model && !opt_soc_model) {
-    LITERT_LOG(LITERT_ERROR, "Unexpected SoC model: %s", soc_model);
-    return kLiteRtStatusErrorInvalidArgument;
-  }
+  std::optional<::qnn::SocInfo> opt_soc_model;
+  LITERT_RETURN_IF_ERROR(ResolveTargetSocInfo(compiler_plugin->Options(),
+                                              soc_model, opt_soc_model));
   QnnManager* qnn_manager =
       compiler_plugin->GetOrCreateQnnManager(compiler_plugin->Options());
   if (!qnn_manager) {
@@ -525,16 +548,19 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   litert::compiler::Model model(compiler_plugin->ctx(), partitions);
   auto num_partitions = model.NumSubgraphs();
 
-  LITERT_LOG(LITERT_INFO,
-             "Starting QNN Compilation for %d subgraphs, soc_model=%s",
-             num_partitions, soc_model);
+  LITERT_LOG(LITERT_INFO, "Starting QNN compilation for %d subgraphs.",
+             num_partitions);
 
-  const auto opt_soc_model = ::qnn::FindOrCreateSocInfo(soc_model);
-  if (opt_soc_model) {
-    LITERT_LOG(LITERT_INFO, "Compiling QNN SoC model: %s", soc_model);
-  } else if (soc_model) {
-    LITERT_LOG(LITERT_ERROR, "Unexpected SoC model: %s", soc_model);
-    return kLiteRtStatusErrorInvalidArgument;
+  auto options = compiler_plugin->Options();
+  std::optional<::qnn::SocInfo> opt_soc_model;
+  LITERT_RETURN_IF_ERROR(
+      ResolveTargetSocInfo(options, soc_model, opt_soc_model));
+  if (soc_model != nullptr) {
+    LITERT_LOG(LITERT_INFO, "Compiling QNN SoC target: %s", soc_model);
+  }
+  if (options.GetBackendType() == ::qnn::BackendType::kLpaiBackend) {
+    LITERT_LOG(LITERT_INFO, "LPAI HW version: v%d.",
+               static_cast<int>(opt_soc_model->lpai_hw_version));
   }
 
   auto result = std::make_unique<LiteRtCompiledResultT>();
@@ -543,7 +569,6 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   // model.
   result->context_bin.resize(num_partitions);
   result->byte_code_index.resize(num_partitions);
-  auto options = compiler_plugin->Options();
   if (!options.GetSchematicDir().empty()) {
     LITERT_LOG(LITERT_INFO,
                "Schematic directory is set. Enabling optrace profiling. "
@@ -770,12 +795,9 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
 
   // Check if the SoC model is supported.
   // TODO(jiunkaiy): Validate SoC support through the global config API.
-  if (::qnn::FindOrCreateSocInfo(soc_model_name)) {
-    LITERT_LOG(LITERT_INFO, "Compiling QNN SoC model: %s", soc_model_name);
-  } else if (soc_model_name) {
-    LITERT_LOG(LITERT_ERROR, "Unexpected SoC model: %s", soc_model_name);
-    return kLiteRtStatusErrorInvalidArgument;
-  }
+  std::optional<::qnn::SocInfo> soc_info;
+  LITERT_RETURN_IF_ERROR(ResolveTargetSocInfo(compiler_plugin->Options(),
+                                              soc_model_name, soc_info));
 
   // Check if the QAIRT SDK version meets the minimum required version.
   QnnManager* qnn_manager =

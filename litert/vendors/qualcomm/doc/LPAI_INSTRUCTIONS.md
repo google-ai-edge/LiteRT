@@ -49,8 +49,20 @@ Variable         | Description
 `${QAIRT}`       | Root path of the unzipped QAIRT SDK
 `${WORK_DIR}`    | Working directory for your model
 `${MODEL}`       | Path to the source quantized `.tflite` model
-`${SOC_MODEL}`   | Target SoC string (e.g. `SM8850`)
+`${SOC_MODEL}`   | LPAI version, or a mapped SoC name
 `${TEST_FOLDER}` | Test folder on device (e.g. `/data/local/tmp/lpai_run`)
+
+When supplying an LPAI target to the LiteRT Qualcomm compiler plugin,
+`${SOC_MODEL}` accepts `v5` or `v6` directly. It also accepts a Snapdragon SoC
+name with an LPAI entry in the LiteRT SoC table. For example, `SM8850` resolves
+to `v6`. With `apply_plugin_main`, pass it using these flags:
+
+```bash
+--qualcomm_backend=lpai \
+--soc_model=v6
+```
+
+Only LPAI versions `v5` and `v6` are currently supported.
 
 ## Signing Libraries for Production Devices
 

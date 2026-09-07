@@ -163,6 +163,11 @@ TEST(MiscTests, IsTestGpuBackendTest) {
   EXPECT_TRUE(qnn::IsTestGpuBackend());
 }
 
+TEST(MiscTests, IsTestLpaiBackendTest) {
+  qnn::SetTestBackend(BackendType::kLpaiBackend);
+  EXPECT_TRUE(qnn::IsTestLpaiBackend());
+}
+
 TEST(MiscTests, UnpackInt2Data) {
   // Single byte: 0xE4 (binary: 11 10 01 00), LSB-first unpacking.
   // bits 0-1: 00 -> 0

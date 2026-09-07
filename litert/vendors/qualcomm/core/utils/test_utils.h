@@ -19,6 +19,8 @@ bool IsTestDspBackend();
 
 bool IsTestGpuBackend();
 
+bool IsTestLpaiBackend();
+
 // Sets the target backend for testing.
 // This should be called by the test main.
 void SetTestBackend(BackendType backend_type);
