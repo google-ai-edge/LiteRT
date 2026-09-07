@@ -65,10 +65,10 @@ Expected<NeuronCompilationPtr> CompileModel(
   if (gemma_compiler_optimizations) {
     if (subgraph_index == kDecodePartitionIndex) {
       compile_options = " --option-bundle=gemma-decode-accuracy";
-    }
-
-    if (subgraph_index == kPrefillPartitionIndex) {
+    } else if (subgraph_index == kPrefillPartitionIndex) {
       compile_options = " --option-bundle=gemma-prefill-accuracy";
+    } else {
+      compile_options = " --option-bundle=gemma-decode-accuracy";
     }
   }
 
