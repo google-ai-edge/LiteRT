@@ -204,12 +204,16 @@ class SpanCpuBuffer : public Buffer {
   explicit SpanCpuBuffer(const T (&arr)[N])
       : SpanCpuBuffer(reinterpret_cast<const std::byte*>(arr), sizeof(arr)) {}
 
-  internal::TypeId GetTypeId() const override {
+  // Returns the type id for this class.
+  static internal::TypeId TypeId() {
     return internal::TypeId::Get<SpanCpuBuffer>();
   }
-  bool IsA(internal::TypeId id) const override {
-    return id == internal::TypeId::Get<SpanCpuBuffer>();
-  }
+
+  // Returns the type id for this instance.
+  internal::TypeId GetTypeId() const override { return TypeId(); }
+
+  // Checks if this instance is of the given type id.
+  bool IsA(internal::TypeId id) const override { return id == TypeId(); }
 
   // Locks the buffer so that it's accessible from the CPU and returns an RAII
   // object that allows reading the data.
@@ -258,12 +262,17 @@ class MutableSpanCpuBuffer : public SpanCpuBuffer {
   template <class T, size_t N>
   explicit MutableSpanCpuBuffer(const T (&arr)[N]) = delete;
 
-  internal::TypeId GetTypeId() const override {
+  // Returns the type id for this class.
+  static internal::TypeId TypeId() {
     return internal::TypeId::Get<MutableSpanCpuBuffer>();
   }
+
+  // Returns the type id for this instance.
+  internal::TypeId GetTypeId() const override { return TypeId(); }
+
+  // Checks if this instance is of the given type id.
   bool IsA(internal::TypeId id) const override {
-    return id == internal::TypeId::Get<MutableSpanCpuBuffer>() ||
-           SpanCpuBuffer::IsA(id);
+    return id == TypeId() || SpanCpuBuffer::IsA(id);
   }
 
   // Locks the buffer so that it's accessible from the CPU and returns an RAII
@@ -319,12 +328,16 @@ class OwningCpuBuffer : public Buffer {
     return *this;
   }
 
-  internal::TypeId GetTypeId() const override {
+  // Returns the type id for this class.
+  static internal::TypeId TypeId() {
     return internal::TypeId::Get<OwningCpuBuffer>();
   }
-  bool IsA(internal::TypeId id) const override {
-    return id == internal::TypeId::Get<OwningCpuBuffer>();
-  }
+
+  // Returns the type id for this instance.
+  internal::TypeId GetTypeId() const override { return TypeId(); }
+
+  // Checks if this instance is of the given type id.
+  bool IsA(internal::TypeId id) const override { return id == TypeId(); }
 
   // Locks the buffer so that it's accessible from the CPU and returns an RAII
   // object that allows reading the data.
