@@ -569,6 +569,23 @@ REGISTER_SIMPLE_OP_BUILDER(BuildAddNOp, BuildAddNOp)
 
 #undef REGISTER_SIMPLE_OP_BUILDER
 
+LiteRtStatus BuildAtan2Op(const litert::compiler::Op& litert_op,
+                          ::qnn::TensorPool& tensor_pool,
+                          std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                          std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                          std::vector<::qnn::OpWrapper>& op_wrappers) {
+  if (input_tensors.size() != 2 || output_tensors.size() != 1) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!input_tensors[0].get().IsF32() || !input_tensors[1].get().IsF32() ||
+      !output_tensors[0].get().IsF32()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  op_wrappers =
+      ::qnn::BuildElementwiseAtan2Op(tensor_pool, input_tensors, output_tensors);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus BuildQuantizeOp(
     const litert::compiler::Op&, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
@@ -1528,6 +1545,7 @@ GetOpBuilders() {
   std::array<OpBuilder, kLiteRtOpCodeShloComposite + 1> builders{};
   builders[kLiteRtOpCodeTflAdd] = Adapt<BuildAddOp>;
   builders[kLiteRtOpCodeTflAddN] = Adapt<BuildAddNOp>;
+  builders[kLiteRtOpCodeTflAtan2] = Adapt<BuildAtan2Op>;
   builders[kLiteRtOpCodeTflAveragePool2d] = Adapt<BuildAveragePool2dOp>;
   builders[kLiteRtOpCodeTflConcatenation] = Adapt<BuildConcatenationOp>;
   builders[kLiteRtOpCodeTflConv2d] = Adapt<BuildConv2dOp>;
