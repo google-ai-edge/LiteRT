@@ -28,7 +28,7 @@ from setuptools.command.build_py import build_py as _build_py  # pylint: disable
 
 PACKAGE_NAME = os.environ['PROJECT_NAME']
 PACKAGE_VERSION = os.environ['PACKAGE_VERSION']
-DOCLINES = __doc__.split('\n')
+DOCLINES = (__doc__ or '').split('\n')
 
 EXECUTABLE_FILENAMES = [
     'tools/apply_plugin_main.exe'
@@ -150,8 +150,9 @@ setuptools.setup(
     long_description_content_type='text/plain',
     url='https://www.tensorflow.org/lite/',
     author='Google AI Edge Authors',
-    author_email='packages@tensorflow.org',
-    license='Apache 2.0',
+    license_files=(
+        'LICENSE',
+    ),
     include_package_data=True,
     has_ext_modules=lambda: True,
     keywords='litert tflite tensorflow tensor machine learning',
