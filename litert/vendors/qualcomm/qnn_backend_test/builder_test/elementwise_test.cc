@@ -1,6 +1,7 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cmath>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -209,6 +210,47 @@ TEST_P(QnnModelTest, FloorModNegativeValue) {
   ASSERT_TRUE(output_data);
   ASSERT_EQ(output_data->size(), 4);
   ASSERT_THAT(output_data.value(), ElementsAre(0, 1, -2, -1));
+#endif
+}
+
+TEST_P(QnnModelTest, ElementWiseAtan2) {
+  const std::vector<std::uint32_t> kDims{1, 2, 2, 1};
+
+  auto& input_0 = tensor_pool_.CreateInputTensorWithName(
+      "in_0", QNN_DATATYPE_FLOAT_32, {}, kDims);
+  auto& input_1 = tensor_pool_.CreateInputTensorWithName(
+      "in_1", QNN_DATATYPE_FLOAT_32, {}, kDims);
+  auto& output_0 = tensor_pool_.CreateOutputTensorWithName(
+      "out_0", QNN_DATATYPE_FLOAT_32, {}, kDims);
+
+  auto ops = ::qnn::BuildElementwiseAtan2Op(tensor_pool_, {input_0, input_1},
+                                            {output_0});
+
+  // BuildElementwiseAtan2Op decompose Atan2(y,x) into Atan(Div(y,x))
+  ASSERT_EQ(ops.size(), 2);
+
+  qnn_model_.MoveOpsToGraph(std::move(ops));
+  ASSERT_TRUE(qnn_model_.ValidateOpConfig());
+  ASSERT_TRUE(qnn_model_.Finalize());
+
+#if !defined(__ANDROID__)
+  GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
+                  "Qualcomm HTP";
+#else
+
+  auto input_idx_0 = qnn_model_.AddInputTensor(input_0);
+  auto input_idx_1 = qnn_model_.AddInputTensor(input_1);
+  auto output_idx = qnn_model_.AddOutputTensor(output_0);
+
+  qnn_model_.SetInputData<float>(input_idx_0, {0., static_cast<float>(std::sqrt(3)), 1., -1.});
+  qnn_model_.SetInputData<float>(input_idx_1, {1., 1., 1., 1.});
+
+  ASSERT_TRUE(qnn_model_.Execute());
+
+  auto output_data = qnn_model_.GetOutputData<float>(output_idx);
+  ASSERT_TRUE(output_data);
+  ASSERT_EQ(output_data->size(), 4);
+  ASSERT_THAT(output_data.value(), Pointwise(FloatNear(2e-3), {0., M_PI/3, M_PI/4, -M_PI/4}));
 #endif
 }
 
