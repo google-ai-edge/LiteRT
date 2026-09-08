@@ -43,6 +43,7 @@
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_samsung_options.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
+#include "litert/core/filesystem.h"
 #include "litert/tools/flags/vendors/mediatek_flags.h"
 #include "litert/tools/flags/vendors/qualcomm_flags.h"
 #include "litert/tools/flags/vendors/samsung_flags.h"
@@ -256,15 +257,30 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
 
   std::optional<Environment> environment;
   if (backend == ExecutionBackend::kGpu) {
-    const char* ld_path = std::getenv("LD_LIBRARY_PATH");
+    std::string full_path;
+    if (const char* env_p = std::getenv("LITERT_RUNTIME_LIB_DIR")) {
+      full_path = env_p;
+    } else if (const char* dyld_p = std::getenv("DYLD_LIBRARY_PATH")) {
+      full_path = dyld_p;
+    } else if (const char* ld_p = std::getenv("LD_LIBRARY_PATH")) {
+      full_path = ld_p;
+    } else {
+      // Default fallback for Bazel runfiles on macOS / Linux.
+      static constexpr absl::string_view kRunfilesGpuPath =
+          "third_party/odml/litert/litert/runtime/accelerators/gpu";
+      if (litert::internal::Exists(kRunfilesGpuPath)) {
+        full_path = std::string(kRunfilesGpuPath);
+      }
+    }
     std::vector<litert::EnvironmentOptions::Option> env_opts;
-    if (ld_path) {
-      std::string full_path = std::string(ld_path);
+    if (!full_path.empty()) {
       // LiteRT only supports a single directory for kRuntimeLibraryDir,
       // so we only take the first path if there are multiple.
       if (auto pos = full_path.find(':'); pos != std::string::npos) {
         full_path = full_path.substr(0, pos);
       }
+      LITERT_LOG(LITERT_INFO, "Setting GPU runtime library dir to: %s",
+                 full_path.c_str());
       env_opts.push_back(litert::EnvironmentOptions::Option{
           litert::EnvironmentOptions::Tag::kRuntimeLibraryDir,
           full_path,
