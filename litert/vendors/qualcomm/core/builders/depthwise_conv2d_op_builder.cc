@@ -83,14 +83,6 @@ std::vector<OpWrapper> BuildDepthwiseConv2dOp(
       sizeof(decltype(stride_data)::value_type) * stride_data.size(),
       stride_data.data());
 
-  // dilation param
-  const std::array<std::uint32_t, 2> dilation_data{dilation_h, dilation_w};
-  const std::vector<std::uint32_t> dilation_shape{2};
-  auto& dilation_tensor = tensor_pool.CreateStaticTensor(
-      QNN_DATATYPE_UINT_32, QuantizeParamsWrapperVariant{}, dilation_shape,
-      sizeof(decltype(dilation_data)::value_type) * dilation_data.size(),
-      dilation_data.data());
-
   // padding param
   const auto [padding_before_height, padding_after_height] =
       ComputePaddingBeforeAfter(input_tensor.GetDimension(kHeightIndex),
@@ -109,6 +101,14 @@ std::vector<OpWrapper> BuildDepthwiseConv2dOp(
       sizeof(decltype(padding_data)::value_type) * padding_data.size(),
       padding_data.data());
 
+  // dilation param
+  const std::array<std::uint32_t, 2> dilation_data{dilation_h, dilation_w};
+  const std::vector<std::uint32_t> dilation_shape{2};
+  auto& dilation_tensor = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_UINT_32, QuantizeParamsWrapperVariant{}, dilation_shape,
+      sizeof(decltype(dilation_data)::value_type) * dilation_data.size(),
+      dilation_data.data());
+
   if (ShouldUseGroupedConv2d(filter_tensor, stride_h, stride_w)) {
     OpWrapper& conv_op = CreateOpWrapper(res, QNN_OP_CONV_2D);
     conv_op.AddInputTensor(input_tensor);
@@ -120,8 +120,8 @@ std::vector<OpWrapper> BuildDepthwiseConv2dOp(
     conv_op.AddScalarParam<std::uint32_t>(
         QNN_OP_CONV_2D_PARAM_GROUP, input_tensor.GetDimension(kChannelIndex));
     conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_STRIDE, stride_tensor);
-    conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_DILATION, dilation_tensor);
     conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_PAD_AMOUNT, padding_tensor);
+    conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_DILATION, dilation_tensor);
   } else {
     OpWrapper& conv_op = CreateOpWrapper(res, QNN_OP_DEPTH_WISE_CONV_2D);
     conv_op.AddInputTensor(input_tensor);
@@ -132,9 +132,9 @@ std::vector<OpWrapper> BuildDepthwiseConv2dOp(
     conv_op.AddOutputTensor(outputs[kOutputIndex]);
     conv_op.AddTensorParam(QNN_OP_DEPTH_WISE_CONV_2D_PARAM_STRIDE,
                            stride_tensor);
+    conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_PAD_AMOUNT, padding_tensor);
     conv_op.AddTensorParam(QNN_OP_DEPTH_WISE_CONV_2D_PARAM_DILATION,
                            dilation_tensor);
-    conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_PAD_AMOUNT, padding_tensor);
   }
   return res;
 }
