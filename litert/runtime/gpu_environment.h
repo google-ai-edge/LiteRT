@@ -186,6 +186,14 @@ class GpuEnvironment {
   Expected<void> Initialize(
       const LiteRtEnvironmentOptionsT& environment_options);
 
+#if LITERT_HAS_OPENCL_SUPPORT
+  Expected<void> InitializeOpenCl();
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+  Expected<void> InitializeMetal();
+#endif  // LITERT_HAS_METAL_SUPPORT
+
   // EGL must be declared before OpenCL so it initializes first and is destroyed
   // last (reverse declaration order), preventing driver crashes during cleanup.
 #if LITERT_HAS_OPENGL_SUPPORT
