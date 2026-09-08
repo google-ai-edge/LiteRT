@@ -77,9 +77,10 @@ class YNNPackDelegateKernel : public SimpleDelegateKernelInterface {
 
     int num_dummy_inputs = 0;
     for (const auto& node : nodes_info_) {
-      if (IsRuntimeBmm(context, node.node_index) && node.inputs.size() >= 3) {
+      if (node.composite_op_type == CompositeOpType::kRuntimeBmm &&
+          node.inputs.size() >= 3) {
         num_dummy_inputs += 2;
-      } else if (IsSdpa(context, node.node_index)) {
+      } else if (node.composite_op_type == CompositeOpType::kSdpa) {
         num_dummy_inputs += 4;
       }
     }
@@ -222,11 +223,11 @@ class YNNPackDelegateKernel : public SimpleDelegateKernelInterface {
       } else if (node.builtin_code == kTfLiteBuiltinDepthToSpace) {
         TF_LITE_ENSURE_STATUS(DefineDepthToSpaceNode(
             context, subgraph_, tensor_to_value_id_, node));
-      } else if (IsRuntimeBmm(context, node.node_index)) {
+      } else if (node.composite_op_type == CompositeOpType::kRuntimeBmm) {
         TF_LITE_ENSURE_STATUS(DefineRuntimeBatchedMatMulNode(
             context, subgraph_, tensor_to_value_id_, next_external_id,
             dummy_inputs_, node));
-      } else if (IsSdpa(context, node.node_index)) {
+      } else if (node.composite_op_type == CompositeOpType::kSdpa) {
         TF_LITE_ENSURE_STATUS(
             DefineSdpaNode(context, subgraph_, tensor_to_value_id_,
                            next_external_id, dummy_inputs_, node));
@@ -257,7 +258,7 @@ class YNNPackDelegateKernel : public SimpleDelegateKernelInterface {
       } else if (node.builtin_code == kTfLiteBuiltinDequantize) {
         TF_LITE_ENSURE_STATUS(DefineDequantizeNode(context, subgraph_,
                                                    tensor_to_value_id_, node));
-      } else if (is_moe_node_[i]) {
+      } else if (node.composite_op_type == CompositeOpType::kMoe) {
         TF_LITE_ENSURE_STATUS(
             DefineMoeNode(context, subgraph_, tensor_to_value_id_, node));
       } else {
@@ -285,8 +286,6 @@ class YNNPackDelegateKernel : public SimpleDelegateKernelInterface {
 
     nodes_info_.clear();
     nodes_info_.reserve(params->nodes_to_replace->size);
-    is_moe_node_.clear();
-    is_moe_node_.reserve(params->nodes_to_replace->size);
     for (int i = 0; i < params->nodes_to_replace->size; ++i) {
       int node_index = params->nodes_to_replace->data[i];
       TfLiteNode* node;
@@ -302,8 +301,14 @@ class YNNPackDelegateKernel : public SimpleDelegateKernelInterface {
       node_info.outputs.assign(node->outputs->data,
                                node->outputs->data + node->outputs->size);
       node_info.activation = GetFusedActivation(reg, node);
+      if (IsRuntimeBmm(reg, node)) {
+        node_info.composite_op_type = CompositeOpType::kRuntimeBmm;
+      } else if (IsSdpa(reg, node)) {
+        node_info.composite_op_type = CompositeOpType::kSdpa;
+      } else if (IsMoe(reg, node)) {
+        node_info.composite_op_type = CompositeOpType::kMoe;
+      }
       nodes_info_.push_back(node_info);
-      is_moe_node_.push_back(IsMoe(reg, node));
     }
 
     return BuildSubgraphAndRuntime(context);
@@ -439,7 +444,6 @@ class YNNPackDelegateKernel : public SimpleDelegateKernelInterface {
   std::vector<TensorMap> outputs_;
 
   std::vector<NodeInfo> nodes_info_;
-  std::vector<bool> is_moe_node_;
   std::vector<int> input_tensor_indices_;
   std::vector<int> output_tensor_indices_;
   std::vector<std::vector<size_t>> input_shapes_;

@@ -45,16 +45,6 @@ bool IsMoe(const TfLiteRegistration* registration, const TfLiteNode* node) {
   return false;
 }
 
-bool IsMoe(TfLiteContext* context, int node_index) {
-  TfLiteNode* node = nullptr;
-  TfLiteRegistration* registration = nullptr;
-  if (context->GetNodeAndRegistration(context, node_index, &node,
-                                      &registration) != kTfLiteOk) {
-    return false;
-  }
-  return IsMoe(registration, node);
-}
-
 TfLiteStatus IsMoeSupported(const TfLiteRegistration* registration,
                             const TfLiteNode* node, TfLiteContext* context) {
   TF_LITE_ENSURE(context, IsMoe(registration, node));
@@ -104,11 +94,7 @@ TfLiteStatus IsMoeSupported(const TfLiteRegistration* registration,
                  up_weights.dims != nullptr && up_weights.dims->size == 4);
   TF_LITE_ENSURE(context,
                  down_weights.dims != nullptr && down_weights.dims->size == 4);
-  if (output.dims != nullptr && output.dims->size > 0) {
-    TF_LITE_ENSURE_EQ(context, output.dims->size, 3);
-  }
-
-  TF_LITE_ENSURE(context, tflite::NumElements(&scale) >= 1);
+  TF_LITE_ENSURE(context, output.dims != nullptr && output.dims->size == 3);
 
   return kTfLiteOk;
 }
@@ -135,6 +121,15 @@ TfLiteStatus DefineMoeNode(TfLiteContext* context, ynn_subgraph_t subgraph,
   TF_LITE_ENSURE_EQ(context, down_weights.type, kTfLiteFloat32);
   TF_LITE_ENSURE_EQ(context, scale.type, kTfLiteFloat32);
 
+  int E = gate_weights.dims->data[1];
+  int K = (expert_indices.dims && expert_indices.dims->size >= 1)
+              ? expert_indices.dims->data[expert_indices.dims->size - 1]
+              : 0;
+  TF_LITE_ENSURE(context, K > 0);
+
+  TF_LITE_ENSURE(context, tflite::NumElements(&scale) == 1 ||
+                              tflite::NumElements(&scale) == E);
+
   uint32_t gate_weights_val =
       GetOrCreateValueId(context, subgraph, tensor_to_value_id, node.inputs[3]);
   uint32_t up_weights_val =
@@ -144,38 +139,21 @@ TfLiteStatus DefineMoeNode(TfLiteContext* context, ynn_subgraph_t subgraph,
   uint32_t scale_val =
       GetOrCreateValueId(context, subgraph, tensor_to_value_id, node.inputs[6]);
 
-  int D_in = gate_weights.dims->data[3];
-  int D_out = D_in;
-  int K = expert_indices.dims->data[2];
-
-  // 1. Fuse unit axis 2 into expert dimension E:
-  // [*, E, 1, *] -> [*, E, *]
-  // and transpose statically to [E, *, *]
-  // so expert dimension E is on axis 0 and can be gathered directly.
-  uint32_t w_gate_3d = YNN_INVALID_VALUE_ID;
-  TF_LITE_ENSURE_YNN_STATUS(ynn_define_fuse_dim(
-      subgraph, /*axis=*/1, /*axes_count=*/2, gate_weights_val, &w_gate_3d, 0));
-
-  int32_t perm_static[] = {1, 2, 0};
+  // 1. Transpose constant weights from 4D [*, E, 1, *] to 3D [E, *, *]
+  // dropping the unit axis 2 so expert dimension E is on axis 0 and can be
+  // gathered directly.
+  int32_t perm_weights[] = {1, 3, 0};
   uint32_t w_gate_transposed = YNN_INVALID_VALUE_ID;
   TF_LITE_ENSURE_YNN_STATUS(ynn_define_static_transpose(
-      subgraph, 3, perm_static, w_gate_3d, &w_gate_transposed, 0));
-
-  uint32_t w_up_3d = YNN_INVALID_VALUE_ID;
-  TF_LITE_ENSURE_YNN_STATUS(ynn_define_fuse_dim(
-      subgraph, /*axis=*/1, /*axes_count=*/2, up_weights_val, &w_up_3d, 0));
+      subgraph, 3, perm_weights, gate_weights_val, &w_gate_transposed, 0));
 
   uint32_t w_up_transposed = YNN_INVALID_VALUE_ID;
   TF_LITE_ENSURE_YNN_STATUS(ynn_define_static_transpose(
-      subgraph, 3, perm_static, w_up_3d, &w_up_transposed, 0));
-
-  uint32_t w_down_3d = YNN_INVALID_VALUE_ID;
-  TF_LITE_ENSURE_YNN_STATUS(ynn_define_fuse_dim(
-      subgraph, /*axis=*/1, /*axes_count=*/2, down_weights_val, &w_down_3d, 0));
+      subgraph, 3, perm_weights, up_weights_val, &w_up_transposed, 0));
 
   uint32_t w_down_transposed = YNN_INVALID_VALUE_ID;
   TF_LITE_ENSURE_YNN_STATUS(ynn_define_static_transpose(
-      subgraph, 3, perm_static, w_down_3d, &w_down_transposed, 0));
+      subgraph, 3, perm_weights, down_weights_val, &w_down_transposed, 0));
 
   uint32_t tokens_val =
       GetOrCreateValueId(context, subgraph, tensor_to_value_id, node.inputs[0]);
@@ -189,119 +167,109 @@ TfLiteStatus DefineMoeNode(TfLiteContext* context, ynn_subgraph_t subgraph,
     output_val = out_it->second;
   }
 
-  // 2. Reshape tokens: [B, N, D_in] -> [M, 1, D_in] where M = B * N
-  uint32_t tokens_3d = YNN_INVALID_VALUE_ID;
-  size_t shape_M_1_Din[] = {0, 1, static_cast<size_t>(D_in)};
-  TF_LITE_ENSURE_YNN_STATUS(ynn_define_static_reshape(
-      subgraph, 3, shape_M_1_Din, tokens_val, &tokens_3d, 0));
+  // 2. Expand tokens: [B, N, D_in] -> [B, N, 1, 1, D_in]
+  uint32_t tokens_5d = YNN_INVALID_VALUE_ID;
+  int32_t expand_axes_2_3[] = {2, 3};
+  TF_LITE_ENSURE_YNN_STATUS(ynn_define_static_expand_dims(
+      subgraph, 2, expand_axes_2_3, tokens_val, &tokens_5d, 0));
 
-  // 3. Transpose and reshape expert indices:
-  // [B, N, K] -> [K, B, N] -> [K, M, 1, 1]
-  int32_t perm_K_B_N[] = {2, 0, 1};
-  uint32_t ei_transposed = YNN_INVALID_VALUE_ID;
-  TF_LITE_ENSURE_YNN_STATUS(ynn_define_static_transpose(
-      subgraph, 3, perm_K_B_N, expert_indices_val, &ei_transposed, 0));
-
-  uint32_t ei_4d = YNN_INVALID_VALUE_ID;
-  size_t shape_K_M_1_1[] = {static_cast<size_t>(K), 0, 1, 1};
-  TF_LITE_ENSURE_YNN_STATUS(ynn_define_static_reshape(
-      subgraph, 4, shape_K_M_1_1, ei_transposed, &ei_4d, 0));
+  // 3. Expand expert indices: [B, N, K] -> [B, N, K, 1, 1]
+  uint32_t ei_5d = YNN_INVALID_VALUE_ID;
+  int32_t expand_axes_3_4[] = {3, 4};
+  TF_LITE_ENSURE_YNN_STATUS(ynn_define_static_expand_dims(
+      subgraph, 2, expand_axes_3_4, expert_indices_val, &ei_5d, 0));
 
   // 4. Gather weights along axis 0 (expert dim E) for active choices:
-  // [E, D_in, D_mid] gathered by [K, M, 1, 1] -> [K, M, D_in, D_mid]
+  // [E, D_in, D_mid] gathered by [B, N, K, 1, 1] -> [B, N, K, D_in, D_mid]
   int32_t gather_axis_0 = 0;
   uint32_t w_gate_k = YNN_INVALID_VALUE_ID;
   TF_LITE_ENSURE_YNN_STATUS(ynn_define_gather(
-      subgraph, 1, &gather_axis_0, 4, w_gate_transposed, ei_4d, &w_gate_k, 0));
+      subgraph, 1, &gather_axis_0, 5, w_gate_transposed, ei_5d, &w_gate_k, 0));
 
   uint32_t w_up_k = YNN_INVALID_VALUE_ID;
   TF_LITE_ENSURE_YNN_STATUS(ynn_define_gather(
-      subgraph, 1, &gather_axis_0, 4, w_up_transposed, ei_4d, &w_up_k, 0));
+      subgraph, 1, &gather_axis_0, 5, w_up_transposed, ei_5d, &w_up_k, 0));
 
   uint32_t w_down_k = YNN_INVALID_VALUE_ID;
   TF_LITE_ENSURE_YNN_STATUS(ynn_define_gather(
-      subgraph, 1, &gather_axis_0, 4, w_down_transposed, ei_4d, &w_down_k, 0));
+      subgraph, 1, &gather_axis_0, 5, w_down_transposed, ei_5d, &w_down_k, 0));
 
   // 5. Batched dot products:
-  // tokens [M, 1, D_in] @ w_gate_k [K, M, D_in, D_mid] -> gate [K, M, 1, D_mid]
-  // Slinky automatically broadcasts the trailing K dimension of tokens.
+  // tokens [B, N, 1, 1, D_in] @ w_gate_k [B, N, K, D_in, D_mid] -> gate [B, N,
+  // K, 1, D_mid] Slinky automatically broadcasts axis 2 (dim 1 -> K) of tokens.
   uint32_t gate = YNN_INVALID_VALUE_ID;
-  TF_LITE_ENSURE_YNN_STATUS(ynn_define_dot(subgraph, 1, tokens_3d, w_gate_k,
+  TF_LITE_ENSURE_YNN_STATUS(ynn_define_dot(subgraph, 1, tokens_5d, w_gate_k,
                                            YNN_INVALID_VALUE_ID, &gate, 0));
 
   uint32_t gelu_gate = YNN_INVALID_VALUE_ID;
   TF_LITE_ENSURE_YNN_STATUS(ynn::define_approx_gelu(subgraph, gate, gelu_gate));
 
   uint32_t up = YNN_INVALID_VALUE_ID;
-  TF_LITE_ENSURE_YNN_STATUS(ynn_define_dot(subgraph, 1, tokens_3d, w_up_k,
+  TF_LITE_ENSURE_YNN_STATUS(ynn_define_dot(subgraph, 1, tokens_5d, w_up_k,
                                            YNN_INVALID_VALUE_ID, &up, 0));
 
   uint32_t mid = YNN_INVALID_VALUE_ID;
   TF_LITE_ENSURE_YNN_STATUS(
       ynn_define_binary(subgraph, ynn_binary_multiply, gelu_gate, up, &mid, 0));
 
-  // mid [K, M, 1, D_mid] @ w_down_k [K, M, D_mid, D_out] ->
-  //   out_4d [K, M, 1, D_out]
-  uint32_t out_4d = YNN_INVALID_VALUE_ID;
+  // mid [B, N, K, 1, D_mid] @ w_down_k [B, N, K, D_mid, D_out] -> out_5d [B, N,
+  // K, 1, D_out]
+  uint32_t out_5d = YNN_INVALID_VALUE_ID;
   TF_LITE_ENSURE_YNN_STATUS(ynn_define_dot(subgraph, 1, mid, w_down_k,
-                                           YNN_INVALID_VALUE_ID, &out_4d, 0));
+                                           YNN_INVALID_VALUE_ID, &out_5d, 0));
 
-  // 6. Routing weights & scale: [B, N, K] -> [K, B, N] -> [K, M, 1, 1]
-  uint32_t rw_transposed = YNN_INVALID_VALUE_ID;
-  TF_LITE_ENSURE_YNN_STATUS(ynn_define_static_transpose(
-      subgraph, 3, perm_K_B_N, routing_weights_val, &rw_transposed, 0));
+  // 6. Squeeze axis 3: [B, N, K, 1, D_out] -> [B, N, K, D_out]
+  // TODO: b/558433816 - This should be static_transpose, but it is faster to
+  // use a fuse_dim due to scheduling issues.
+  uint32_t out_4d = YNN_INVALID_VALUE_ID;
+  TF_LITE_ENSURE_YNN_STATUS(
+      ynn_define_fuse_dim(subgraph, 2, 2, out_5d, &out_4d, 0));
 
-  uint32_t rw_4d = YNN_INVALID_VALUE_ID;
-  TF_LITE_ENSURE_YNN_STATUS(ynn_define_static_reshape(
-      subgraph, 4, shape_K_M_1_1, rw_transposed, &rw_4d, 0));
+  // 7. Routing weights & scale: [B, N, K] -> [B, N, K, 1]
+  uint32_t scale_1d = YNN_INVALID_VALUE_ID;
+  if (scale.dims != nullptr && scale.dims->size > 1) {
+    int32_t perm_last_axis[] = {scale.dims->size - 1};
+    TF_LITE_ENSURE_YNN_STATUS(ynn_define_static_transpose(
+        subgraph, 1, perm_last_axis, scale_val, &scale_1d, 0));
+  } else {
+    scale_1d = scale_val;
+  }
 
-  uint32_t rw_scaled = rw_4d;
+  uint32_t rw_scaled = routing_weights_val;
   size_t num_scale_elements = tflite::NumElements(&scale);
   if (num_scale_elements == 1) {
     rw_scaled = YNN_INVALID_VALUE_ID;
-    TF_LITE_ENSURE_YNN_STATUS(ynn_define_binary(
-        subgraph, ynn_binary_multiply, rw_4d, scale_val, &rw_scaled, 0));
-  } else if (num_scale_elements > 1) {
-    uint32_t scale_1d = YNN_INVALID_VALUE_ID;
-    size_t shape_E[] = {num_scale_elements};
-    TF_LITE_ENSURE_YNN_STATUS(ynn_define_static_reshape(
-        subgraph, 1, shape_E, scale_val, &scale_1d, 0));
-
+    TF_LITE_ENSURE_YNN_STATUS(ynn_define_binary(subgraph, ynn_binary_multiply,
+                                                routing_weights_val, scale_1d,
+                                                &rw_scaled, 0));
+  } else if (num_scale_elements == static_cast<size_t>(E)) {
     uint32_t scale_gathered = YNN_INVALID_VALUE_ID;
     TF_LITE_ENSURE_YNN_STATUS(ynn_define_gather(subgraph, 1, &gather_axis_0, 3,
-                                                scale_1d, ei_transposed,
+                                                scale_1d, expert_indices_val,
                                                 &scale_gathered, 0));
 
-    uint32_t scale_4d = YNN_INVALID_VALUE_ID;
-    TF_LITE_ENSURE_YNN_STATUS(ynn_define_static_reshape(
-        subgraph, 4, shape_K_M_1_1, scale_gathered, &scale_4d, 0));
-
     rw_scaled = YNN_INVALID_VALUE_ID;
-    TF_LITE_ENSURE_YNN_STATUS(ynn_define_binary(
-        subgraph, ynn_binary_multiply, rw_4d, scale_4d, &rw_scaled, 0));
+    TF_LITE_ENSURE_YNN_STATUS(ynn_define_binary(subgraph, ynn_binary_multiply,
+                                                routing_weights_val,
+                                                scale_gathered, &rw_scaled, 0));
   }
 
-  // 7. Multiply weighted outputs:
-  // [K, M, 1, D_out] * [K, M, 1, 1] -> [K, M, 1, D_out]
+  uint32_t rw_4d = YNN_INVALID_VALUE_ID;
+  int32_t expand_axis_3 = 3;
+  TF_LITE_ENSURE_YNN_STATUS(ynn_define_static_expand_dims(
+      subgraph, 1, &expand_axis_3, rw_scaled, &rw_4d, 0));
+
+  // 8. Multiply weighted outputs: [B, N, K, D_out] * [B, N, K, 1] -> [B, N, K,
+  // D_out]
   uint32_t weighted_out = YNN_INVALID_VALUE_ID;
-  TF_LITE_ENSURE_YNN_STATUS(ynn_define_binary(
-      subgraph, ynn_binary_multiply, out_4d, rw_scaled, &weighted_out, 0));
+  TF_LITE_ENSURE_YNN_STATUS(ynn_define_binary(subgraph, ynn_binary_multiply,
+                                              out_4d, rw_4d, &weighted_out, 0));
 
-  // 8. Reduce sum over K (axis 0): [K, M, 1, D_out] -> [M, 1, D_out]
-  uint32_t reduced_out = YNN_INVALID_VALUE_ID;
-  int32_t reduce_axis_0 = 0;
+  // 9. Reduce sum over K (axis 2): [B, N, K, D_out] -> [B, N, D_out]
+  int32_t reduce_axis_2 = 2;
   TF_LITE_ENSURE_YNN_STATUS(
-      ynn_define_reduce(subgraph, ynn_reduce_sum, 1, &reduce_axis_0,
-                        weighted_out, YNN_INVALID_VALUE_ID, &reduced_out, 0));
-
-  // 9. Reshape to final output: [M, 1, D_out] -> [B, N, D_out]
-  size_t b_dim =
-      (tokens.dims && tokens.dims->size >= 1 && tokens.dims->data[0] > 0)
-          ? static_cast<size_t>(tokens.dims->data[0])
-          : 1;
-  size_t shape_B_N_Dout[] = {b_dim, 0, static_cast<size_t>(D_out)};
-  TF_LITE_ENSURE_YNN_STATUS(ynn_define_static_reshape(
-      subgraph, 3, shape_B_N_Dout, reduced_out, &output_val, 0));
+      ynn_define_reduce(subgraph, ynn_reduce_sum, 1, &reduce_axis_2,
+                        weighted_out, YNN_INVALID_VALUE_ID, &output_val, 0));
 
   tensor_to_value_id[node.outputs[0]] = output_val;
 

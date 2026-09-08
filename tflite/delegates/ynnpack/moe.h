@@ -29,7 +29,6 @@ namespace ynnpack {
 
 // Returns true if the given registration/node represents an MoE composite op.
 bool IsMoe(const TfLiteRegistration* registration, const TfLiteNode* node);
-bool IsMoe(TfLiteContext* context, int node_index);
 
 // Validates whether the MoE composite node is supported by the delegate.
 TfLiteStatus IsMoeSupported(const TfLiteRegistration* registration,
