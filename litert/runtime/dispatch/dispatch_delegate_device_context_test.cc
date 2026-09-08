@@ -12,11 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
 #include <string>
 #include <utility>
 
 #include <gtest/gtest.h>
+#include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
+#include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_layout.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_dispatch_delegate.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_options.h"
@@ -104,6 +113,40 @@ LiteRtDispatchInterface DeviceContextTestInterface = {
     /*.invocation_context_set_options=*/nullptr,
 };
 
+LiteRtStatus DummyCreateCustomTensorBuffer(
+    LiteRtGpuDeviceId device_id, LiteRtGpuQueueId queue_id,
+    const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, size_t bytes, size_t packed_bytes,
+    HwMemoryInfoPtr* hw_memory_info) {
+  static HwMemoryInfo info = {};
+  *hw_memory_info = &info;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus DummyDestroyCustomTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  return kLiteRtStatusOk;
+}
+
+LiteRtCustomTensorBufferHandlersDef TestTensorBufferHandlers = {
+    /*.abi_header=*/
+    {
+        /*.struct_size=*/sizeof(LiteRtCustomTensorBufferHandlersDef),
+        /*.major_version=*/1,
+        /*.minor_version=*/0,
+        /*.reserved=*/0,
+    },
+    /*.create_func=*/DummyCreateCustomTensorBuffer,
+    /*.destroy_func=*/DummyDestroyCustomTensorBuffer,
+    /*.lock_func=*/nullptr,
+    /*.unlock_func=*/nullptr,
+    /*.clear_func=*/nullptr,
+    /*.import_func=*/nullptr,
+    /*.device_tag=*/kLiteRtEnvOptionTagDispatchLibraryDir,
+    /*.queue_tag=*/kLiteRtEnvOptionTagDispatchLibraryDir,
+    /*.num_supported_buffer_types=*/1,
+    /*.supported_buffer_types=*/{kLiteRtTensorBufferTypeUserCustomBuffer},
+};
+
 LiteRtDispatchApi DeviceContextTestApi = {
     /*.abi_header=*/
     {
@@ -119,7 +162,7 @@ LiteRtDispatchApi DeviceContextTestApi = {
     /*.interface=*/&DeviceContextTestInterface,
     /*.async_interface=*/nullptr,
     /*.graph_interface=*/nullptr,
-    /*.tensor_buffer_handlers_def=*/nullptr,
+    /*.tensor_buffer_handlers_def=*/&TestTensorBufferHandlers,
 };
 
 LiteRtStatus GetDeviceContextTestApi(LiteRtDispatchApi* api) {
@@ -186,6 +229,58 @@ TEST(DispatchDelegateDeviceContextTest,
 
   EXPECT_EQ(DeviceContextCreateCount, 1);
   EXPECT_EQ(DeviceContextDestroyCount, 1);
+}
+
+TEST(DispatchDelegateDeviceContextTest,
+     MultipleEnvironmentsRegisterTensorBufferHandlers) {
+  StaticLinkedDispatchApiScope static_dispatch_api(GetDeviceContextTestApi);
+
+  LiteRtLayout layout = {};
+  layout.rank = 1;
+  layout.dimensions[0] = 16;
+
+  LiteRtRankedTensorType tensor_type = {};
+  tensor_type.element_type = kLiteRtElementTypeFloat32;
+  tensor_type.layout = layout;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env1, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options1, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto c_options1,
+      internal::LiteRtOptionsPtrBuilder::Build(options1, env1.GetHolder()));
+
+  ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(), env1.Get(),
+                                     c_options1.get()),
+            kLiteRtStatusOk);
+
+  LiteRtTensorBuffer buffer1 = nullptr;
+  ASSERT_EQ(LiteRtCreateManagedTensorBuffer(
+                env1.Get(), kLiteRtTensorBufferTypeUserCustomBuffer,
+                &tensor_type, /*buffer_size=*/64, &buffer1),
+            kLiteRtStatusOk);
+  EXPECT_NE(buffer1, nullptr);
+  LiteRtDestroyTensorBuffer(buffer1);
+
+  // Second environment initialization: verify tensor buffer handlers are also
+  // registered in the new environment despite process-global dispatch API
+  // being already loaded.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env2, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options2, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto c_options2,
+      internal::LiteRtOptionsPtrBuilder::Build(options2, env2.GetHolder()));
+
+  ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(), env2.Get(),
+                                     c_options2.get()),
+            kLiteRtStatusOk);
+
+  LiteRtTensorBuffer buffer2 = nullptr;
+  ASSERT_EQ(LiteRtCreateManagedTensorBuffer(
+                env2.Get(), kLiteRtTensorBufferTypeUserCustomBuffer,
+                &tensor_type, /*buffer_size=*/64, &buffer2),
+            kLiteRtStatusOk);
+  EXPECT_NE(buffer2, nullptr);
+  LiteRtDestroyTensorBuffer(buffer2);
 }
 
 }  // namespace
