@@ -124,7 +124,7 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashDecodeSdpa(
                     attr.runtime_check.src_end_ch_index.has_value());
   if (has_param) {
     custom_op.args_.AddInt("src_end_ch_index",
-                          *attr.runtime_check.src_end_ch_index);
+                           *attr.runtime_check.src_end_ch_index);
     custom_op.AddSrcTensor("params", *param_desc);
   }
 
@@ -146,7 +146,7 @@ MAIN_FUNCTION($0) {
   threadgroup float s_l[16];
   threadgroup float s_w[16];
   threadgroup half4 s_acc[)",
-                                      slices, R"(][16];
+                                     slices, R"(][16];
 
   if (simd_id == 0 && tid < 16) {
     s_m[tid] = -10000.0f;
@@ -253,21 +253,24 @@ MAIN_FUNCTION($0) {
     half4 v3 = ucl::Convert<half4>(args.v.Read(v_idx + 3));
     half4 v_acc0 = fma((half4)p0.x, v0, fma((half4)p0.y, v1, fma((half4)p0.z, v2, (half4)p0.w * v3)));
 
-    int v1_base = v_idx + )", v_stride_s, R"(;
+    int v1_base = v_idx + )",
+                  v_stride_s, R"(;
     half4 v4 = ucl::Convert<half4>(args.v.Read(v1_base + 0));
     half4 v5 = ucl::Convert<half4>(args.v.Read(v1_base + 1));
     half4 v6 = ucl::Convert<half4>(args.v.Read(v1_base + 2));
     half4 v7 = ucl::Convert<half4>(args.v.Read(v1_base + 3));
     half4 v_acc1 = fma((half4)p1.x, v4, fma((half4)p1.y, v5, fma((half4)p1.z, v6, (half4)p1.w * v7)));
 
-    int v2_base = v_idx + )", v_stride_2s, R"(;
+    int v2_base = v_idx + )",
+                  v_stride_2s, R"(;
     half4 v8 = ucl::Convert<half4>(args.v.Read(v2_base + 0));
     half4 v9 = ucl::Convert<half4>(args.v.Read(v2_base + 1));
     half4 v10 = ucl::Convert<half4>(args.v.Read(v2_base + 2));
     half4 v11 = ucl::Convert<half4>(args.v.Read(v2_base + 3));
     half4 v_acc2 = fma((half4)p2.x, v8, fma((half4)p2.y, v9, fma((half4)p2.z, v10, (half4)p2.w * v11)));
 
-    int v3_base = v_idx + )", v_stride_3s, R"(;
+    int v3_base = v_idx + )",
+                  v_stride_3s, R"(;
     half4 v12 = ucl::Convert<half4>(args.v.Read(v3_base + 0));
     half4 v13 = ucl::Convert<half4>(args.v.Read(v3_base + 1));
     half4 v14 = ucl::Convert<half4>(args.v.Read(v3_base + 2));
@@ -277,7 +280,8 @@ MAIN_FUNCTION($0) {
     out_acc = fma(out_acc, (half4)alpha, (v_acc0 + v_acc1) + (v_acc2 + v_acc3));
 
     k_idx += 16;
-    v_idx += )", v_stride_4s, R"(;
+    v_idx += )",
+                  v_stride_4s, R"(;
   }
 )");
 
@@ -441,9 +445,8 @@ absl::Status BuildSdpaTransposedGpuGraph(
   // For prefill, other head dimensions, or non-Apple GPUs, fall back to the
   // multi-op BMM graph.
   const int head_dim = q.tensor_desc.GetBHWCShape().c;
-  const bool is_supported_flash_decode =
-      !attr.is_prefill && head_dim == 128 &&
-      model_builder->gpu_info().IsApple();
+  const bool is_supported_flash_decode = !attr.is_prefill && head_dim == 128 &&
+                                         model_builder->gpu_info().IsApple();
 
   if (!is_supported_flash_decode) {
     ::ml_drift::WeightsDescription bmm1_desc = attr.bmm1_weights.desc;
@@ -453,7 +456,8 @@ absl::Status BuildSdpaTransposedGpuGraph(
                                           attr.bmm1_weights.weights_shape);
 
     ::ml_drift::ConvRuntimeCheckDesc bmm1_runtime_check = {
-        .dst_end_ch_index = attr.runtime_check.src_end_ch_index,
+        .dst_end_ch_index =
+            param_desc ? attr.runtime_check.src_end_ch_index : std::nullopt,
     };
 
     ABSL_ASSIGN_OR_RETURN(
@@ -480,7 +484,8 @@ absl::Status BuildSdpaTransposedGpuGraph(
     }
 
     ::ml_drift::SoftmaxRuntimeCheckDesc softmax_runtime_check = {
-        .end_ch_index = attr.runtime_check.src_end_ch_index,
+        .end_ch_index =
+            param_desc ? attr.runtime_check.src_end_ch_index : std::nullopt,
     };
     auto sfmx_partial = model_builder->SoftmaxReduce(
         logits, softmax_runtime_check, param_desc ? &param_tensor : nullptr);
@@ -492,14 +497,15 @@ absl::Status BuildSdpaTransposedGpuGraph(
                                           attr.bmm2_weights.weights_shape);
 
     ::ml_drift::ConvRuntimeCheckDesc bmm2_runtime_check = {
-        .src_end_ch_index = attr.runtime_check.src_end_ch_index,
+        .src_end_ch_index =
+            param_desc ? attr.runtime_check.src_end_ch_index : std::nullopt,
     };
 
     ABSL_ASSIGN_OR_RETURN(
-        auto output, model_builder->FullyConnectedExternalWeights(
-                         logits, bmm2_external_weights, /*biases=*/nullptr,
-                         &sfmx_partial, bmm2_runtime_check,
-                         param_desc ? &param_tensor : nullptr));
+        auto output,
+        model_builder->FullyConnectedExternalWeights(
+            logits, bmm2_external_weights, /*biases=*/nullptr, &sfmx_partial,
+            bmm2_runtime_check, param_desc ? &param_tensor : nullptr));
 
     return model_builder->UpdateOutputTensor(output, output_id);
   }
@@ -518,8 +524,8 @@ absl::Status BuildSdpaTransposedGpuGraph(
       model_builder->gpu_info(), q.tensor_desc, k.tensor_desc, v.tensor_desc,
       mask_desc, param_desc, dst.tensor_desc, attr, is_flattened_dst);
 
-  std::vector<::ml_drift::GpuModelBuilder::TensorHandle> src_tensors = {
-      q, k, v};
+  std::vector<::ml_drift::GpuModelBuilder::TensorHandle> src_tensors = {q, k,
+                                                                        v};
   if (mask_desc) src_tensors.push_back(mask);
   if (param_desc) src_tensors.push_back(param_tensor);
 
