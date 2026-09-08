@@ -210,6 +210,15 @@ TEST(FuseQkvNormRoPETest, FusesQkvNormRopeSubgraphSuccessfully) {
   graph.AddConsumer(dummy_consumer->id, k_final_out->id);
   graph.AddConsumer(dummy_consumer->id, v_final_out->id);
 
+  // Store node IDs before fusion to verify their deletion later.
+  const ::ml_drift::NodeId slice_q_id = slice_q->id;
+  const ::ml_drift::NodeId slice_k_id = slice_k->id;
+  const ::ml_drift::NodeId slice_v_id = slice_v->id;
+  const ::ml_drift::NodeId norm_q_id = norm_q->id;
+  const ::ml_drift::NodeId norm_k_id = norm_k->id;
+  const ::ml_drift::NodeId rope_q_id = rope_q->id;
+  const ::ml_drift::NodeId rope_k_id = rope_k->id;
+
   // Run the fusion pass
   EXPECT_TRUE(FuseQkvNormRoPE(&graph).ok());
 
@@ -244,13 +253,13 @@ TEST(FuseQkvNormRoPETest, FusesQkvNormRopeSubgraphSuccessfully) {
   // Verify that old slice, norm, rope nodes were deleted
   for (::ml_drift::Node* node : graph.nodes()) {
     if (!node) continue;
-    EXPECT_NE(node->id, slice_q->id);
-    EXPECT_NE(node->id, slice_k->id);
-    EXPECT_NE(node->id, slice_v->id);
-    EXPECT_NE(node->id, norm_q->id);
-    EXPECT_NE(node->id, norm_k->id);
-    EXPECT_NE(node->id, rope_q->id);
-    EXPECT_NE(node->id, rope_k->id);
+    EXPECT_NE(node->id, slice_q_id);
+    EXPECT_NE(node->id, slice_k_id);
+    EXPECT_NE(node->id, slice_v_id);
+    EXPECT_NE(node->id, norm_q_id);
+    EXPECT_NE(node->id, norm_k_id);
+    EXPECT_NE(node->id, rope_q_id);
+    EXPECT_NE(node->id, rope_k_id);
   }
 }
 
