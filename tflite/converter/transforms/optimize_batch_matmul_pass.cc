@@ -35,6 +35,7 @@ limitations under the License.
 #include "mlir/Support/LogicalResult.h"  // from @llvm-project
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"  // from @llvm-project
 #include "tflite/converter/ir/tfl_ops.h"
+#include "tflite/converter/quantization/common/quantization_lib/quantization_utils.h"
 #include "tflite/converter/transforms/tflite_passes/optimize_batch_matmul_utils.h"
 #include "tflite/converter/utils/utils.h"
 
