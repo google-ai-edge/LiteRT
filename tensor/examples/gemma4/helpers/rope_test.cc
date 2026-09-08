@@ -27,6 +27,7 @@ limitations under the License.
 #include "tensor/backends/xnnpack/arithmetic.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
+#include "tensor/examples/ops/transformer/transformer_ops.h"
 #include "tensor/runners/xnnpack/runner.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/matchers.h"

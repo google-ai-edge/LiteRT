@@ -27,6 +27,7 @@ cc_library(
     deps = [
         ":transformer_ops_graph",
         "//tensor",
+        "//tensor:arithmetic",
         "//tensor:datatypes",
         "//tensor/internal:arithmetic_helpers",
         "//tensor/internal:graph",

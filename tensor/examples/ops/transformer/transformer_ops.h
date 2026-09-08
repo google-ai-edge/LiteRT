@@ -21,6 +21,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "tensor/arithmetic.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/ops/transformer/transformer_ops_graph.h"
 #include "tensor/internal/arithmetic_helpers.h"
@@ -30,6 +31,38 @@ limitations under the License.
 #include "tensor/utils/source_location.h"
 
 namespace litert::tensor {
+
+// Applies the split-half variant of Rotary Position Embedding (RoPE).
+//
+// In this variant, the last dimension (head_dim) is split into two halves:
+// x = [x1, x2]. The rotated tensor is defined as: rotated = [-x2, x1].
+// The output is computed as: x * cos + rotated * sin.
+template <class... Mixins>
+Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x, const Tensor<Mixins...>& cos,
+                       const Tensor<Mixins...>& sin) {
+  // We assume a shape of [batch, ..., head_dim].
+  const Shape& x_shape = x.GetShape();
+  const int last_axis = static_cast<int>(x_shape.size()) - 1;
+  const int half_dim = x_shape[last_axis] / 2;
+  const Shape slice_size = [&] {
+    Shape s = x_shape;
+    s.back() = half_dim;
+    return s;
+  }();
+
+  // Split x in half along head_dim.
+  std::vector<int> slice_begin(x_shape.size(), 0);
+  Tensor x1 = Slice(x, slice_begin, slice_size);
+  slice_begin.back() = half_dim;
+  Tensor x2 = Slice(x, slice_begin, slice_size);
+
+  Tensor neg_x2 = Neg(x2);
+  Tensor rotated = Concatenation({neg_x2, x1}, last_axis);
+
+  Tensor x_cos = Mul(x, cos);
+  Tensor rotated_sin = Mul(rotated, sin);
+  return Add(x_cos, rotated_sin);
+}
 
 template <class... Mixins>
 Tensor<Mixins...> RotaryEmbedding(const Tensor<Mixins...>& input,

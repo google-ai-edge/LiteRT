@@ -47,7 +47,6 @@ cc_library(
     hdrs = ["rope.h"],
     deps = [
         "//tensor",
-        "//tensor:arithmetic",
         "//tensor:buffer",
         "//tensor:datatypes",
         "@com_google_absl//absl/log:absl_check",
@@ -64,6 +63,7 @@ cc_test(
         "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/backends/xnnpack:arithmetic",
+        "//tensor/examples/ops/transformer:transformer_ops",
         "//tensor/runners/xnnpack:runner",
         "//tensor/utils:matchers",
         "@com_google_googletest//:gtest_main",

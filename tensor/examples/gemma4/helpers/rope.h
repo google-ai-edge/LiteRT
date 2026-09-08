@@ -23,7 +23,6 @@ limitations under the License.
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "tensor/arithmetic.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/tensor.h"
@@ -76,41 +75,6 @@ std::pair<Tensor<Mixins...>, Tensor<Mixins...>> RopeCosSin(
   RopeCosSin(/*start=*/0, seq_len, head_dim, rope_base, rope_proportion,
              cos_data->Span<float>(), sin_data->Span<float>());
   return {cos, sin};
-}
-
-// Applies the split-half variant of Rotary Position Embedding (RoPE).
-//
-// In this variant, the last dimension (head_dim) is split into two halves:
-// x = [x1, x2]. The rotated tensor is defined as: rotated = [-x2, x1].
-// The output is computed as: x * cos + rotated * sin.
-template <class... Mixins>
-Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x, const Tensor<Mixins...>& cos,
-                       const Tensor<Mixins...>& sin) {
-  // We assume a shape of [batch, ..., head_dim].
-  const Shape& x_shape = x.GetShape();
-  const int half_dim = x_shape[3] / 2;
-  const Shape slice_size = [&] {
-    Shape s = x_shape;
-    s.back() = half_dim;
-    return s;
-  }();
-
-  // Split x in half along head_dim.
-  std::vector<int> slice_begin(x_shape.size(), 0);
-  Tensor x1 = Slice(x, slice_begin, slice_size);
-  slice_begin.back() = half_dim;
-  Tensor x2 = Slice(x, slice_begin, slice_size);
-
-  Tensor neg_one = Tensor<Mixins...>(
-      {.type = Type::kFP32,
-       .shape = {1},
-       .buffer = OwningCpuBuffer::Copy<Type::kFP32>({-1.0f})});
-  Tensor neg_x2 = Mul(x2, neg_one);
-  Tensor rotated = Concatenation({neg_x2, x1}, /*axis=*/3);
-
-  Tensor x_cos = Mul(x, cos);
-  Tensor rotated_sin = Mul(rotated, sin);
-  return Add(x_cos, rotated_sin);
 }
 
 }  // namespace litert::tensor::examples::gemma4
