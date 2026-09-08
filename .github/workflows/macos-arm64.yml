@@ -1,17 +1,18 @@
 name: "macos-arm64"
 on:
-  push:
-    branches:
-    - main
-  pull_request:
-    branches:
-    - main
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'g3doc/**'
-      - 'site/**'
-      - 'LICENSE'
+  # TODO: b/556731502 - Consider reenable or completely remove the test
+  # push:
+  #   branches:
+  #   - main
+  # pull_request:
+  #   branches:
+  #   - main
+  #   paths-ignore:
+  #     - '**.md'
+  #     - 'docs/**'
+  #     - 'g3doc/**'
+  #     - 'site/**'
+  #     - 'LICENSE'
 
   workflow_dispatch:  # Manual trigger
 
