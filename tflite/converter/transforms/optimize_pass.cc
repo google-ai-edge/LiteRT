@@ -2456,6 +2456,237 @@ struct FuseUnpackAndConcatToReshape
   }
 };
 
+// Helper struct for inspecting a slice op in mirror pad fusion.
+struct SliceInfo {
+  SmallVector<int64_t, 4> begin;
+  SmallVector<int64_t, 4> size;
+  Value input;
+};
+
+// Extracts slice begin and size from TFL::SliceOp if constant.
+static std::optional<SliceInfo> ExtractSliceInfo(Operation* op) {
+  if (auto slice_op = dyn_cast_or_null<TFL::SliceOp>(op)) {
+    DenseElementsAttr begin_attr;
+    DenseElementsAttr size_attr;
+    if (!matchPattern(slice_op.getBegin(), m_Constant(&begin_attr)) ||
+        !matchPattern(slice_op.getSize(), m_Constant(&size_attr))) {
+      return std::nullopt;
+    }
+    SliceInfo info;
+    info.input = slice_op.getInput();
+    for (auto val : begin_attr.getValues<APInt>()) {
+      info.begin.push_back(val.getSExtValue());
+    }
+    for (auto val : size_attr.getValues<APInt>()) {
+      info.size.push_back(val.getSExtValue());
+    }
+    return info;
+  }
+  return std::nullopt;
+}
+
+// Checks if a value is produced by ReverseV2 along the given axis of a Slice
+// of base_input, returning the pad amount (slice size along pad_dim) if it
+// matches.
+static std::optional<int32_t> GetReversedSlicePadding(
+    Value val, Value base_input, int64_t pad_dim, bool is_before,
+    TFL::MirrorPaddingType mode) {
+  auto rev_op = dyn_cast_or_null<TFL::ReverseV2Op>(val.getDefiningOp());
+  if (!rev_op) return std::nullopt;
+
+  DenseElementsAttr axis_attr;
+  if (!matchPattern(rev_op.getAxis(), m_Constant(&axis_attr))) {
+    return std::nullopt;
+  }
+  if (axis_attr.getNumElements() != 1) return std::nullopt;
+  int64_t rev_axis = (*axis_attr.value_begin<APInt>()).getSExtValue();
+
+  auto base_type = dyn_cast<ShapedType>(base_input.getType());
+  if (!base_type || !base_type.hasRank() || !base_type.hasStaticShape()) {
+    return std::nullopt;
+  }
+  int64_t rank = base_type.getRank();
+  if (rev_axis < 0) rev_axis += rank;
+  if (rev_axis != pad_dim) return std::nullopt;
+
+  auto slice_info = ExtractSliceInfo(rev_op.getInput().getDefiningOp());
+  if (!slice_info || slice_info->input != base_input) return std::nullopt;
+  if (slice_info->begin.size() != rank || slice_info->size.size() != rank) {
+    return std::nullopt;
+  }
+
+  // All non-padding dimensions must cover the full dimension size starting at
+  // 0.
+  for (int64_t d = 0; d < rank; ++d) {
+    if (d == pad_dim) continue;
+    if (slice_info->begin[d] != 0) return std::nullopt;
+    if (slice_info->size[d] != -1 &&
+        slice_info->size[d] != base_type.getDimSize(d)) {
+      return std::nullopt;
+    }
+  }
+
+  int64_t dim_size = base_type.getDimSize(pad_dim);
+  int64_t slice_size = slice_info->size[pad_dim];
+  int64_t slice_begin = slice_info->begin[pad_dim];
+  if (slice_size <= 0) return std::nullopt;
+
+  int64_t offset = (mode == TFL::MirrorPaddingType::REFLECT) ? 1 : 0;
+
+  if (is_before) {
+    // Before: begins at `offset`, length `slice_size`
+    if (slice_begin != offset) return std::nullopt;
+    if (slice_begin + slice_size > dim_size) return std::nullopt;
+  } else {
+    // After: begins at `dim_size - offset - slice_size`, length `slice_size`
+    if (slice_begin != dim_size - offset - slice_size) return std::nullopt;
+    if (slice_begin < 0) return std::nullopt;
+  }
+
+  return static_cast<int32_t>(slice_size);
+}
+
+// Fuses Concatenation of [ReversedSlice(base), base, ...] or [base,
+// ReversedSlice(base)] into TFL::MirrorPadOp.
+struct FuseSliceConcatToMirrorPad
+    : public OpRewritePattern<TFL::ConcatenationOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(TFL::ConcatenationOp concat_op,
+                                PatternRewriter& rewriter) const override {
+    if (concat_op.getFusedActivationFunction() != "NONE") {
+      return failure();
+    }
+
+    auto out_type = dyn_cast<ShapedType>(concat_op.getType());
+    if (!out_type || !out_type.hasRank() || !out_type.hasStaticShape()) {
+      return failure();
+    }
+    int64_t rank = out_type.getRank();
+    int64_t concat_axis = concat_op.getAxis();
+    if (concat_axis < 0) concat_axis += rank;
+    if (concat_axis < 0 || concat_axis >= rank) return failure();
+
+    auto values = concat_op.getValues();
+    size_t num_operands = values.size();
+    if (num_operands != 2 && num_operands != 3) return failure();
+
+    // Check for both REFLECT and SYMMETRIC modes (prefer REFLECT).
+    for (auto mode :
+         {TFL::MirrorPaddingType::REFLECT, TFL::MirrorPaddingType::SYMMETRIC}) {
+      Value base_input = nullptr;
+      int32_t pad_before = 0;
+      int32_t pad_after = 0;
+
+      if (num_operands == 3) {
+        // [before, base, after]
+        base_input = values[1];
+        auto before = GetReversedSlicePadding(values[0], base_input,
+                                              concat_axis, true, mode);
+        auto after = GetReversedSlicePadding(values[2], base_input, concat_axis,
+                                             false, mode);
+        if (before.has_value() && after.has_value()) {
+          pad_before = *before;
+          pad_after = *after;
+        } else {
+          continue;
+        }
+      } else if (num_operands == 2) {
+        // Either [before, base] or [base, after]
+        // Case 1: [before, base]
+        base_input = values[1];
+        auto before = GetReversedSlicePadding(values[0], base_input,
+                                              concat_axis, true, mode);
+        if (before.has_value()) {
+          pad_before = *before;
+        } else {
+          // Case 2: [base, after]
+          base_input = values[0];
+          auto after = GetReversedSlicePadding(values[1], base_input,
+                                               concat_axis, false, mode);
+          if (after.has_value()) {
+            pad_after = *after;
+          } else {
+            continue;
+          }
+        }
+      }
+
+      if (!base_input) continue;
+
+      // Construct [rank, 2] paddings constant tensor.
+      SmallVector<int32_t, 8> paddings_data(rank * 2, 0);
+      paddings_data[concat_axis * 2] = pad_before;
+      paddings_data[concat_axis * 2 + 1] = pad_after;
+
+      auto paddings_type =
+          RankedTensorType::get({rank, 2}, rewriter.getI32Type());
+      auto paddings_attr =
+          DenseIntElementsAttr::get(paddings_type, paddings_data);
+      auto paddings_op = rewriter.create<arith::ConstantOp>(
+          concat_op.getLoc(), paddings_type, paddings_attr);
+
+      auto mode_attr =
+          TFL::MirrorPaddingTypeAttr::get(rewriter.getContext(), mode);
+
+      rewriter.replaceOpWithNewOp<TFL::MirrorPadOp>(
+          concat_op, out_type, base_input, paddings_op, mode_attr);
+      return success();
+    }
+
+    return failure();
+  }
+};
+
+// Fuses consecutive MirrorPadOps into a single MirrorPadOp by accumulating
+// paddings.
+struct FuseConsecutiveMirrorPad : public OpRewritePattern<TFL::MirrorPadOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(TFL::MirrorPadOp op,
+                                PatternRewriter& rewriter) const override {
+    auto prev_op =
+        dyn_cast_or_null<TFL::MirrorPadOp>(op.getInput().getDefiningOp());
+    if (!prev_op) return failure();
+
+    if (op.getMode() != prev_op.getMode()) return failure();
+
+    DenseElementsAttr cur_paddings_attr;
+    DenseElementsAttr prev_paddings_attr;
+    if (!matchPattern(op.getPad(), m_Constant(&cur_paddings_attr)) ||
+        !matchPattern(prev_op.getPad(), m_Constant(&prev_paddings_attr))) {
+      return failure();
+    }
+
+    auto out_type = dyn_cast<ShapedType>(op.getType());
+    if (!out_type || !out_type.hasRank()) return failure();
+    int64_t rank = out_type.getRank();
+    if (cur_paddings_attr.getNumElements() != rank * 2 ||
+        prev_paddings_attr.getNumElements() != rank * 2) {
+      return failure();
+    }
+
+    SmallVector<int32_t, 8> new_paddings(rank * 2, 0);
+    auto cur_it = cur_paddings_attr.value_begin<APInt>();
+    auto prev_it = prev_paddings_attr.value_begin<APInt>();
+    for (int64_t i = 0; i < rank * 2; ++i, ++cur_it, ++prev_it) {
+      new_paddings[i] = (*cur_it).getSExtValue() + (*prev_it).getSExtValue();
+    }
+
+    auto paddings_type =
+        RankedTensorType::get({rank, 2}, rewriter.getI32Type());
+    auto new_paddings_attr =
+        DenseIntElementsAttr::get(paddings_type, new_paddings);
+    auto new_paddings_op = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), paddings_type, new_paddings_attr);
+
+    rewriter.replaceOpWithNewOp<TFL::MirrorPadOp>(
+        op, op.getType(), prev_op.getInput(), new_paddings_op,
+        op.getModeAttr());
+    return success();
+  }
+};
+
 // Reduce the K of a TopKV2Op for the following case.
 //
 // values, indices = tfl.topkv2(%inputs, K)
@@ -3436,7 +3667,8 @@ void OptimizePass::runOnOperation() {
       FuseTransposeReshapeIntoBatchMatmul, MoveReshapeAfterFullyConnected,
       EnableFullyConnectedKeepNumDimsBeforeReshape,
       ReorderTransposeReshapeTranspose,
-      FullyConnectedSwapOperandsWhenLHSIsConst>(ctx);
+      FullyConnectedSwapOperandsWhenLHSIsConst, FuseSliceConcatToMirrorPad,
+      FuseConsecutiveMirrorPad>(ctx);
   if (!GetOptions().disable_fuse_mul_and_fc) {
     phase_2_patterns.add<FuseMulAndFullyConnected>(ctx);
   }
