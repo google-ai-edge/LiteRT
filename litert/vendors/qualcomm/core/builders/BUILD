@@ -54,6 +54,24 @@ cc_library(
 )
 
 cc_library(
+    name = "detection_postprocess_op_builder",
+    srcs = ["detection_postprocess_op_builder.cc"],
+    hdrs = ["detection_postprocess_op_builder.h"],
+    deps = [
+        ":op_builder",
+        "//litert/c:litert_common",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@com_google_absl//absl/types:span",
+        "@flatbuffers",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
     name = "concatenation_op_builder",
     srcs = ["concatenation_op_builder.cc"],
     hdrs = ["concatenation_op_builder.h"],

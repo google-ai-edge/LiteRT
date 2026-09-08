@@ -69,6 +69,7 @@ target_sources(qnn_builders
         topk_op_builder.cc
         group_norm_op_builder.cc
         custom_op_builder.cc
+        detection_postprocess_op_builder.cc
 )
 
 target_include_directories(qnn_builders

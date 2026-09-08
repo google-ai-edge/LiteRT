@@ -274,6 +274,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:cumsum_op_builder",
         "//litert/vendors/qualcomm/core/builders:custom_op_builder",
         "//litert/vendors/qualcomm/core/builders:depthwise_conv2d_op_builder",
+        "//litert/vendors/qualcomm/core/builders:detection_postprocess_op_builder",
         "//litert/vendors/qualcomm/core/builders:dynamic_update_slice_op_builder",
         "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
         "//litert/vendors/qualcomm/core/builders:embedding_lookup_op_builder",
