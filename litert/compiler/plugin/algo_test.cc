@@ -367,7 +367,7 @@ TEST(TestSliceSubgraphTopoSortForkSplit, ForkSplitPartition) {
   LiteRtOp op_d = nullptr;
   LiteRtOp op_e = nullptr;
 
-  for (auto op_ref : ops) {
+  for (const auto& op_ref : ops) {
     if (op_ref.Code() == kLiteRtOpCodeTflAdd) {
       auto* op = op_ref.Get();
       if (op->Inputs()[0]->DefiningOp() == nullptr &&
@@ -388,7 +388,7 @@ TEST(TestSliceSubgraphTopoSortForkSplit, ForkSplitPartition) {
   auto* c_out = op_c->Outputs()[0];
   auto* b_out_1 = op_b->Outputs()[1];
 
-  for (auto op_ref : ops) {
+  for (const auto& op_ref : ops) {
     if (op_ref.Code() == kLiteRtOpCodeTflAdd) {
       auto* op = op_ref.Get();
       if (op == op_a) continue;
