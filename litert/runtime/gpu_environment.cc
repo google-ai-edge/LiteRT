@@ -15,6 +15,8 @@
 #include "litert/runtime/gpu_environment.h"
 
 #include <cstdint>
+#include <cstdlib>  // NOLINT
+#include <string>   // NOLINT
 #include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
@@ -200,6 +202,19 @@ GpuEnvironment::~GpuEnvironment() {
 
 #if LITERT_HAS_OPENCL_SUPPORT
 Expected<void> GpuEnvironment::InitializeOpenCl() {
+  const char* disable_opencl_env = std::getenv("LITERT_DISABLE_OPENCL");
+  bool disable_opencl =
+      disable_opencl_env && std::string(disable_opencl_env) == "1";
+  if (disable_opencl) {
+    LITERT_LOG(LITERT_INFO, "OpenCL is disabled via LITERT_DISABLE_OPENCL");
+    return {};
+  }
+#if LITERT_HAS_OPENGL_SUPPORT
+  const char* disable_opengl_env = std::getenv("LITERT_DISABLE_OPENGL");
+  bool disable_opengl =
+      disable_opengl_env && std::string(disable_opengl_env) == "1";
+#endif
+
   // Set up OpenCL.
   LITERT_RETURN_IF_ERROR(tflite::gpu::cl::LoadOpenCL().ok())
       << "Failed to load OpenCL for LiteRT.";
@@ -236,13 +251,15 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
 
   // Set up OpenCL properties.
 #if LITERT_HAS_OPENGL_SUPPORT
-  // Set up GL interop properties when OpenCL and OpenGL are both supported.
-  properties_.is_gl_sharing_supported =
-      tflite::gpu::cl::IsGlSharingSupported(device_);
-  properties_.is_gl_to_cl_fast_sync_supported =
-      tflite::gpu::cl::IsClEventFromEglSyncSupported(device_);
-  properties_.is_cl_to_gl_fast_sync_supported =
-      tflite::gpu::cl::IsEglSyncFromClEventSupported();
+  if (!disable_opengl) {
+    // Set up GL interop properties when OpenCL and OpenGL are both supported.
+    properties_.is_gl_sharing_supported =
+        tflite::gpu::cl::IsGlSharingSupported(device_);
+    properties_.is_gl_to_cl_fast_sync_supported =
+        tflite::gpu::cl::IsClEventFromEglSyncSupported(device_);
+    properties_.is_cl_to_gl_fast_sync_supported =
+        tflite::gpu::cl::IsEglSyncFromClEventSupported();
+  }
 #endif  // LITERT_HAS_OPENGL_SUPPORT
   properties_.is_ahwb_cl_interop_supported =
       SupportsAhwbClInteropHelper(device_);
@@ -255,18 +272,20 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
       context_ = tflite::gpu::cl::CLContext(options_.context,
                                             /*has_ownership=*/false);
 #if LITERT_HAS_OPENGL_SUPPORT
-      LITERT_RETURN_IF_ERROR(eglGetCurrentContext() == options_.egl_context)
-          << "EGL context is not the same as provided context";
-      LITERT_RETURN_IF_ERROR(eglGetCurrentDisplay() == options_.egl_display)
-          << "EGL display is not the same as provided display";
-      std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
-      // This function call implicitly reuses provided EGL context and display
-      // present on this thread.
-      LITERT_RETURN_IF_ERROR(
-          tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok())
-          << "Failed to create EGL environment";
-      egl_env_ = std::move(egl_env);
-      LITERT_LOG(LITERT_INFO, "Reusing provided EGL environment.");
+      if (!disable_opengl) {
+        LITERT_RETURN_IF_ERROR(eglGetCurrentContext() == options_.egl_context)
+            << "EGL context is not the same as provided context";
+        LITERT_RETURN_IF_ERROR(eglGetCurrentDisplay() == options_.egl_display)
+            << "EGL display is not the same as provided display";
+        std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+        // This function call implicitly reuses provided EGL context and display
+        // present on this thread.
+        LITERT_RETURN_IF_ERROR(
+            tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok())
+            << "Failed to create EGL environment";
+        egl_env_ = std::move(egl_env);
+        LITERT_LOG(LITERT_INFO, "Reusing provided EGL environment.");
+      }
 #endif  // LITERT_HAS_OPENGL_SUPPORT
     } else {
       context_ = tflite::gpu::cl::CLContext(options_.context,
@@ -278,27 +297,31 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
     // create a default EGL Environment.
     if (!options_.IsGlAware()) {
 #if LITERT_HAS_OPENGL_SUPPORT
-      std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
-      LITERT_RETURN_IF_ERROR(
-          tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok())
-          << "Failed to create EGL environment";
-      egl_env_ = std::move(egl_env);
-      // New option: egl_display
-      LITERT_ASSIGN_OR_RETURN(
-          auto egl_display, ToLiteRtAny(LiteRtVariant(reinterpret_cast<int64_t>(
-                                egl_env_->display()))));
-      generated_options_.push_back(LiteRtEnvOption{
-          .tag = kLiteRtEnvOptionTagEglDisplay, .value = egl_display});
-      options_.egl_display = egl_env_->display();
-      // New option: egl_context
-      LITERT_ASSIGN_OR_RETURN(
-          auto egl_context, ToLiteRtAny(LiteRtVariant(reinterpret_cast<int64_t>(
-                                egl_env_->context().context()))));
-      generated_options_.push_back(LiteRtEnvOption{
-          .tag = kLiteRtEnvOptionTagEglContext, .value = egl_context});
-      options_.egl_context = egl_env_->context().context();
+      if (!disable_opengl) {
+        std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+        LITERT_RETURN_IF_ERROR(
+            tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok())
+            << "Failed to create EGL environment";
+        egl_env_ = std::move(egl_env);
+        // New option: egl_display
+        LITERT_ASSIGN_OR_RETURN(
+            auto egl_display,
+            ToLiteRtAny(
+                LiteRtVariant(reinterpret_cast<int64_t>(egl_env_->display()))));
+        generated_options_.push_back(LiteRtEnvOption{
+            .tag = kLiteRtEnvOptionTagEglDisplay, .value = egl_display});
+        options_.egl_display = egl_env_->display();
+        // New option: egl_context
+        LITERT_ASSIGN_OR_RETURN(
+            auto egl_context,
+            ToLiteRtAny(LiteRtVariant(
+                reinterpret_cast<int64_t>(egl_env_->context().context()))));
+        generated_options_.push_back(LiteRtEnvOption{
+            .tag = kLiteRtEnvOptionTagEglContext, .value = egl_context});
+        options_.egl_context = egl_env_->context().context();
 
-      LITERT_LOG(LITERT_INFO, "Created default EGL environment.");
+        LITERT_LOG(LITERT_INFO, "Created default EGL environment.");
+      }
 #else
       LITERT_LOG(LITERT_INFO, "No default EGL environment created.");
 #endif  // LITERT_HAS_OPENGL_SUPPORT
@@ -409,7 +432,12 @@ Expected<void> GpuEnvironment::Initialize(
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT && LITERT_HAS_AHWB_SUPPORT
-  properties_.is_ahwb_gl_interop_supported = SupportsAhwbGlInteropHelper();
+  const char* disable_opengl_env = std::getenv("LITERT_DISABLE_OPENGL");
+  bool disable_opengl =
+      disable_opengl_env && std::string(disable_opengl_env) == "1";
+  if (!disable_opengl) {
+    properties_.is_ahwb_gl_interop_supported = SupportsAhwbGlInteropHelper();
+  }
 #endif  // LITERT_HAS_OPENGL_SUPPORT && LITERT_HAS_AHWB_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT

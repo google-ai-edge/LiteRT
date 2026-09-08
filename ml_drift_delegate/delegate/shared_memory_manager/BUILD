@@ -332,7 +332,6 @@ cc_test(
     name = "shared_memory_manager_webgpu_test",
     srcs = ["shared_memory_manager_webgpu_test.cc"],
     tags = [
-        "noasan",
         "requires-gpu-nvidia",
     ],
     deps = [
@@ -347,7 +346,7 @@ cc_test(
         "//third_party/vulkan_loader",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
-        "@com_google_googletest//:gtest_main_no_heapcheck",
+        "@com_google_googletest//:gtest_main",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:ir_model",
