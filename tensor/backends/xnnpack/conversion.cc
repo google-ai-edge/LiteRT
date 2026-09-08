@@ -27,6 +27,7 @@ limitations under the License.
 #include <vector>
 
 #include "xnnpack.h"  // from @XNNPACK
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/base/call_once.h"  // from @com_google_absl
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
@@ -34,6 +35,7 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/backends/xnnpack/arithmetic.h"
@@ -428,6 +430,11 @@ absl::StatusOr<uint32_t> XnnpackBuildContext::DefineValue(
     KeepAlive(info.buffer);
   }
 
+  if (absl::c_any_of(info.shape, [](int d){return d < 0;})) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+             "%s: tensor has negative dimension; dynamic shapes are not "
+             "supported in the XNNPACK backend", info.name));
+  }
   std::vector<size_t> dims(info.shape.begin(), info.shape.end());
   const void* data_ptr = value.data.data();
 
