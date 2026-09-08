@@ -307,9 +307,7 @@ LiteRtStatus LiteRtCompiledModelIsFullyAccelerated(
       compiled_model != nullptr && fully_accelerated != nullptr,
       kLiteRtStatusErrorInvalidArgument);
 
-  LITERT_ASSIGN_OR_RETURN(bool has_non_delegated_ops,
-                          compiled_model->HasNonDelegatedOps());
-  *fully_accelerated = !has_non_delegated_ops;
+  *fully_accelerated = !compiled_model->HasNonDelegatedOps();
   return kLiteRtStatusOk;
 }
 

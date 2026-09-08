@@ -191,10 +191,13 @@ class LiteRtCompiledModelT {
   litert::Expected<LiteRtMetricsT> StopMetricsCollection() const;
 
   // Returns true if a non delegated operation is found in the interpreter.
-  litert::Expected<bool> HasNonDelegatedOps();
+  bool HasNonDelegatedOps() const;
 
   // Returns true if the model was fully delegated on non-CPU accelerators.
   bool IsNonCpuFullyDelegated() const { return non_cpu_fully_delegated_; }
+
+  // Returns true if the model contains NPU operations (dispatch ops).
+  bool HasNpuOps() const;
 
   // Counts total number of operations across active subgraphs before
   // delegation.
