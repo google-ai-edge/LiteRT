@@ -106,6 +106,11 @@ class TensorHandle {
   TensorHandle&& SetBuffer(std::shared_ptr<Buffer> buffer) &&;
 
   absl::StatusOr<Buffer&> GetBuffer() const;
+  // Returns the underlying shared pointer to the tensor buffer.
+  //
+  // Note: this may be null if no buffer is associated with the tensor or if an
+  // error happens.
+  std::shared_ptr<Buffer> GetBufferPtr() const;
 
   // Sets the tensor type.
   TensorHandle& SetType(Type t) &;
