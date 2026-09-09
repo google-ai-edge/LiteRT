@@ -39,6 +39,7 @@
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_kernel.h"
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_kernel.h"
+#include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/swiglu_kernel.h"
@@ -99,32 +100,31 @@ LiteRtOpSelector::LiteRtOpSelector(
     const ::ml_drift::GpuInfo* gpu_info)
     : create_info_(*create_info), gpu_info_(*gpu_info) {}
 
-void LiteRtOpSelector::ParamTensorToBuffer(
-    int param_index, const std::vector<::ml_drift::Value*>& inputs,
+void LiteRtOpSelector::EnsureTensorIsBuffer(
+    int tensor_index, const std::vector<::ml_drift::Value*>& values,
     ::ml_drift::GpuModelBuilder* model_builder) {
-  auto param_id = inputs[param_index]->id;
-  if (replaced_tensors_.contains(param_id)) {
+  auto tensor_id = values[tensor_index]->id;
+  if (replaced_tensors_.contains(tensor_id)) {
     return;
   }
-  auto param_tensor_handle_or = model_builder->GetTensor(param_id);
-  if (!param_tensor_handle_or.ok()) {
+  auto tensor_handle_or = model_builder->GetTensor(tensor_id);
+  if (!tensor_handle_or.ok()) {
     return;
   }
-  auto param_tensor = param_tensor_handle_or.value();
-  if (param_tensor.tensor_desc.GetStorageType() ==
+  auto tensor = tensor_handle_or.value();
+  if (tensor.tensor_desc.GetStorageType() ==
       ::ml_drift::TensorStorageType::BUFFER) {
     return;
   }
-  ::ml_drift::TensorDescriptor new_desc = param_tensor.tensor_desc;
+  ::ml_drift::TensorDescriptor new_desc = tensor.tensor_desc;
   new_desc.SetStorageType(::ml_drift::TensorStorageType::BUFFER);
-  auto new_param_tensor = model_builder->AddTensor(new_desc);
-  if (!model_builder->UpdateOutputTensor(param_tensor, new_param_tensor.id)
-           .ok()) {
-    return;
+  auto new_tensor = model_builder->AddTensor(new_desc);
+  if (!model_builder->UpdateOutputTensor(tensor, new_tensor.id).ok()) {
+    model_builder->Copy(tensor, new_tensor);
   }
-  replaced_tensors_[param_id] = std::make_unique<::ml_drift::Value>(
-      ::ml_drift::Value{new_param_tensor.id, inputs[param_index]->tensor,
-                        inputs[param_index]->quant_params});
+  replaced_tensors_[tensor_id] = std::make_unique<::ml_drift::Value>(
+      ::ml_drift::Value{new_tensor.id, values[tensor_index]->tensor,
+                        values[tensor_index]->quant_params});
 }
 
 absl::Status LiteRtOpSelector::GPUOperationFromNode(
@@ -133,21 +133,31 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     const std::vector<::ml_drift::Value*>& outputs,
     const ::ml_drift::Node& node, ::ml_drift::GpuModelBuilder* model_builder) {
   if (node.operation.type == kAddValuesToCacheType) {
+    ::ml_drift::OperationDef custom_op_def = op_def;
+    for (int i = 0; i < custom_op_def.dst_tensors.size(); ++i) {
+      custom_op_def.dst_tensors[i].SetStorageType(
+          ::ml_drift::TensorStorageType::BUFFER);
+    }
     ABSL_ASSIGN_OR_RETURN(auto op,
-                          CreateAddValuesToCacheFromNode(op_def, node));
+                          CreateAddValuesToCacheFromNode(custom_op_def, node));
     std::vector<::ml_drift::ValueId> src_ids(inputs.size());
     for (int i = 0; i < inputs.size(); ++i) {
       src_ids[i] = inputs[i]->id;
     }
     int param_index = 2;
     // Ensure param tensor is a buffer tensor as kernel programs expect so.
-    ParamTensorToBuffer(param_index, inputs, model_builder);
+    EnsureTensorIsBuffer(param_index, inputs, model_builder);
     if (replaced_tensors_.contains(inputs[param_index]->id)) {
       src_ids[param_index] = replaced_tensors_[inputs[param_index]->id]->id;
     }
     std::vector<::ml_drift::ValueId> dst_ids(outputs.size());
     for (int i = 0; i < outputs.size(); ++i) {
-      dst_ids[i] = outputs[i]->id;
+      EnsureTensorIsBuffer(i, outputs, model_builder);
+      if (replaced_tensors_.contains(outputs[i]->id)) {
+        dst_ids[i] = replaced_tensors_[outputs[i]->id]->id;
+      } else {
+        dst_ids[i] = outputs[i]->id;
+      }
     }
     model_builder->AddGpuOperation(src_ids, dst_ids, std::move(op),
                                    node.operation.type);
@@ -158,10 +168,11 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     if (inputs.size() > 2) {
       int param_index = inputs.size() - 1;
       // Ensure param tensor is a buffer tensor as kernel programs expect so.
-      ParamTensorToBuffer(param_index, inputs, model_builder);
-      if (replaced_tensors_.contains(inputs[param_index]->id)) {
-        bmm_inputs[param_index] =
-            replaced_tensors_[inputs[param_index]->id].get();
+      EnsureTensorIsBuffer(param_index, inputs, model_builder);
+    }
+    for (int i = 0; i < inputs.size(); ++i) {
+      if (replaced_tensors_.contains(inputs[i]->id)) {
+        bmm_inputs[i] = replaced_tensors_[inputs[i]->id].get();
       }
     }
     return CreateRuntimeBatchedMatMulFromNode(bmm_inputs, outputs, node,
@@ -172,10 +183,11 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     if (inputs.size() > 4) {
       int param_index = 4;
       // Ensure param tensor is a buffer tensor as kernel programs expect so.
-      ParamTensorToBuffer(param_index, inputs, model_builder);
-      if (replaced_tensors_.contains(inputs[param_index]->id)) {
-        sdpa_inputs[param_index] =
-            replaced_tensors_[inputs[param_index]->id].get();
+      EnsureTensorIsBuffer(param_index, inputs, model_builder);
+    }
+    for (int i = 0; i < inputs.size(); ++i) {
+      if (replaced_tensors_.contains(inputs[i]->id)) {
+        sdpa_inputs[i] = replaced_tensors_[inputs[i]->id].get();
       }
     }
     return CreateSdpaTransposedFromNode(sdpa_inputs, outputs, node,
