@@ -488,6 +488,17 @@ cc_library(
 )
 
 cc_library(
+    name = "large_constant_fold_pass_options",
+    hdrs = ["transforms/large_constant_fold_pass_options.h"],
+    compatible_with = get_compatible_with_portable(),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:Pass",
+    ],
+)
+
+cc_library(
     name = "converter_pass_options_setter",
     srcs = ["transforms/converter_pass_options_setter.cc"],
     hdrs = ["transforms/converter_pass_options_setter.h"],
@@ -496,6 +507,7 @@ cc_library(
     deps = [
         ":common",
         ":converter_flags_proto_cc",
+        ":large_constant_fold_pass_options",
         ":optimize_broadcast_like_pass_options",
         ":optimize_pass_options",
         ":pass_options",
@@ -521,6 +533,7 @@ cc_library(
     ],
     hdrs = [
         "ir/tfl_ops.h",
+        "ir/tfl_ops_in_place_transpose.h",
     ],
     deps = [
         ":attribute_utils",
@@ -565,6 +578,15 @@ cc_library(
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:tensorflow_types",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core/platform:status",
+    ],
+)
+
+tf_cc_test(
+    name = "tfl_ops_in_place_transpose_test",
+    srcs = ["ir/tfl_ops_in_place_transpose_test.cc"],
+    deps = [
+        ":tensorflow_lite_ops",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -641,6 +663,7 @@ cc_library(
         ":downcast_x64",
         ":elements_attr_roundtrip_pass",
         ":large_constant_fold",
+        ":large_constant_fold_pass_options",
         ":optimize_broadcast_like_pass",
         ":optimize_broadcast_like_pass_options",
         ":optimize_pass_options",
@@ -1102,7 +1125,6 @@ cc_library(
         ":tensorflow_lite_ops",
         ":utils",
         "//tflite/converter/quantization/common/quantization_lib",
-        "@llvm-project//llvm:Support",
         "@llvm-project//mlir:ControlFlowInterfaces",
         "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:IR",
@@ -1122,13 +1144,13 @@ cc_library(
     ],
     deps = [
         ":attribute_utils",
+        ":large_constant_fold_pass_options",
         ":pass",
         ":tensorflow_lite_ops",
         ":utils",
         "//tflite/converter/quantization/common/quantization_lib",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:string_view",
         "@eigen_archive//:eigen3",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:ArithDialect",
@@ -1136,7 +1158,6 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
-        "@llvm-project//mlir:TransformUtils",
     ],
 )
 
@@ -1446,6 +1467,7 @@ cc_library(
         ":tensorflow_lite_passes_inc_gen",
         ":utils",
         ":validators",
+        "//tflite/converter/quantization/common/quantization_lib",
         "@com_google_absl//absl/container:flat_hash_set",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:ArithDialect",
@@ -1566,6 +1588,7 @@ cc_library(
         ":shape_and_size_utils",
         ":stateful_ops_utils",
         ":tensorflow_lite",
+        ":tensorflow_lite_ops",
         ":tensorflow_lite_passes_inc_gen",
         ":tensorflow_lite_post_quantize_inc_gen",
         ":tensorflow_lite_quantize_by_converter_inc_gen",
