@@ -296,6 +296,14 @@ TFLITE_JAVA_SRCS_API = [
 # TFLite Java sources belonging to the impl package.
 TFLITE_JAVA_SRCS_IMPL = [f for f in TFLITE_JAVA_SRCS_ALL if f not in TFLITE_JAVA_SRCS_API]
 
+TFLITE_JAVA_EXPERIMENTAL_SRCS = [
+    "src/copied_from_tflite/java/org/tensorflow/lite/NativeInterpreterWrapperExperimental.java",
+    "src/copied_from_tflite/java/org/tensorflow/lite/package-info.java",
+    "src/copied_from_tflite/java/org/tensorflow/lite/Interpreter.java",
+]
+
+TFLITE_JAVA_STABLE_SRCS = [f for f in TFLITE_JAVA_SRCS_IMPL if f not in TFLITE_JAVA_EXPERIMENTAL_SRCS]
+
 LITERT_KOTLIN_SRCS_ALL = [
     "src/main/kotlin/com/google/ai/edge/litert/AcceleratorProvider.kt",
     "src/main/kotlin/com/google/ai/edge/litert/Common.kt",
@@ -351,6 +359,25 @@ android_library(
         ":litert_api_jni",  # liblitert_jni.so
         ":litert_compiled_model_api_no_jni",
     ],
+)
+
+filegroup(
+    name = "litert_interpreter_stable_runtime_srcs",
+    srcs = TFLITE_JAVA_STABLE_SRCS,
+    visibility = litert_jni_friends(),
+)
+
+# Java API library (no native deps at build time, ":litert_api_jni" is needed at
+# runtime), Interpreter API only.
+android_library(
+    name = "litert_interpreter_api_no_jni",
+    srcs = TFLITE_JAVA_SRCS_API,
+    exports_manifest = 1,
+    javacopts = JAVACOPTS,
+    manifest = "src/main/AndroidManifest.xml",
+    proguard_specs = ["//tflite/java:proguard.flags"],
+    visibility = litert_jni_friends(),
+    deps = TFLITE_JAVA_DEPS,
 )
 
 # Android library for the litert package, with both the CompiledModel API and
