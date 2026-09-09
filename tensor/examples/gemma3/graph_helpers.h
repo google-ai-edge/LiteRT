@@ -117,69 +117,7 @@ Tensor<Mixins...> MakeFeedForwardLayer(
   return ffn_out;
 }
 
-// Rotary positional embedding (statically sliced for CPU/standard runners).
-template <class... Mixins>
-Tensor<Mixins...> ApplyRotaryEmbedding(const Tensor<Mixins...>& x,
-                                       const Tensor<Mixins...>& cos,
-                                       const Tensor<Mixins...>& sin) {
-  const Shape& x_shape = x.GetShape();
-  int num_dims = static_cast<int>(x_shape.size());
-
-  std::vector<int> begin1(num_dims, 0);
-  std::vector<int> size1(num_dims, -1);
-  size1[num_dims - 1] = x_shape[num_dims - 1] / 2;
-
-  std::vector<int> begin2(num_dims, 0);
-  begin2[num_dims - 1] = x_shape[num_dims - 1] / 2;
-  std::vector<int> size2(num_dims, -1);
-  size2[num_dims - 1] = x_shape[num_dims - 1] / 2;
-
-  Tensor x1 = Slice(x, begin1, size1);
-  Tensor x2 = Slice(x, begin2, size2);
-
-  // rotated = cat(-x2, x1).
-  Tensor neg_one = Tensor<Mixins...>(
-      {.type = Type::kFP32,
-       .shape = {1},
-       .buffer = OwningCpuBuffer::Copy<Type::kFP32>({-1.0f})});
-  Tensor neg_x2 = Mul(x2, neg_one);
-  Tensor rotated = Concatenation({neg_x2, x1}, /*axis=*/num_dims - 1);
-
-  // Apply rotation: x * cos + rotated * sin.
-  Tensor x_cos = Mul(x, cos);
-  Tensor rotated_sin = Mul(rotated, sin);
-
-  return Add(x_cos, rotated_sin);
-}
-
-// Rotary positional embedding.
-template <class... Mixins>
-Tensor<Mixins...> ApplyRotaryEmbedding(const Tensor<Mixins...>& x,
-                                       const Tensor<Mixins...>& cos,
-                                       const Tensor<Mixins...>& sin,
-                                       const Tensor<Mixins...>& slice_offset_1,
-                                       const Tensor<Mixins...>& slice_size_1,
-                                       const Tensor<Mixins...>& slice_offset_2,
-                                       const Tensor<Mixins...>& slice_size_2) {
-  // Split x into first and second half along head_dim using dynamic CPU-staged
-  // slices!
-  Tensor x1 = Slice(x, slice_offset_1, slice_size_1);
-  Tensor x2 = Slice(x, slice_offset_2, slice_size_2);
-
-  // rotated = cat(-x2, x1).
-  Tensor neg_one = Tensor<Mixins...>(
-      {.type = Type::kFP32,
-       .shape = {1},
-       .buffer = OwningCpuBuffer::Copy<Type::kFP32>({-1.0f})});
-  Tensor neg_x2 = Mul(x2, neg_one);
-  Tensor rotated = Concatenation({neg_x2, x1}, /*axis=*/3);
-
-  // Apply rotation: x * cos + rotated * sin.
-  Tensor x_cos = Mul(x, cos);
-  Tensor rotated_sin = Mul(rotated, sin);
-
-  return Add(x_cos, rotated_sin);
-}
+using ::litert::tensor::RoPE;
 
 // Self-attention layer output structure.
 template <class... Mixins>
@@ -250,10 +188,8 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
   k = Gemma3RmsNorm(k, k_norm, config.rms_norm_eps);
 
   // Apply rotary positional embedding.
-  q = ApplyRotaryEmbedding(q, cos, sin, slice_offset_1, slice_size_1,
-                           slice_offset_2, slice_size_2);
-  k = ApplyRotaryEmbedding(k, cos, sin, slice_offset_1, slice_size_1,
-                           slice_offset_2, slice_size_2);
+  q = RoPE(q, cos, sin);
+  k = RoPE(k, cos, sin);
 
   Tensor updated_key_cache = k;
   Tensor updated_value_cache = v;

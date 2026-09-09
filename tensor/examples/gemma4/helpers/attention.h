@@ -28,7 +28,6 @@ limitations under the License.
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
-#include "tensor/examples/gemma4/helpers/rope.h"
 #include "tensor/examples/ops/transformer/transformer_ops.h"
 #include "tensor/tensor.h"
 

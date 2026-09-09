@@ -145,43 +145,13 @@ Tensor<Mixins...> MakeFeedForwardLayer(
   return output;
 }
 
-// Rotary positional embedding.
-template <class... Mixins>
-Tensor<Mixins...> ApplyRotaryEmbedding(const Tensor<Mixins...>& x,
-                                       const Tensor<Mixins...>& cos,
-                                       const Tensor<Mixins...>& sin) {
-  // x shape: [batch, n_heads, seq_len, head_dim].
-  const auto& x_shape = x.GetShape();
-  int head_dim = x_shape[3];
-  int half_dim = head_dim / 2;
-
-  // Split x into first and second half along head_dim.
-  Tensor x1 =
-      Slice(x, {0, 0, 0, 0}, {x_shape[0], x_shape[1], x_shape[2], half_dim});
-  Tensor x2 = Slice(x, {0, 0, 0, half_dim},
-                    {x_shape[0], x_shape[1], x_shape[2], half_dim});
-
-  // rotated = cat(-x2, x1).
-  Tensor neg_one = Tensor<Mixins...>(
-      {.type = Type::kFP32,
-       .shape = {1},
-       .buffer = OwningCpuBuffer::Copy<Type::kFP32>({-1.0f})});
-  Tensor neg_x2 = Mul(x2, neg_one);
-  Tensor rotated = Concatenation({neg_x2, x1}, /*axis=*/3);
-
-  // Apply rotation: x * cos + rotated * sin.
-  Tensor x_cos = Mul(x, cos);
-  Tensor rotated_sin = Mul(rotated, sin);
-  return Add(x_cos, rotated_sin);
-}
-
 template <class... Mixins>
 Tensor<Mixins...> Gemma3RotaryEmbedding(const Tensor<Mixins...>& x,
                                         const Tensor<Mixins...>& position_ids,
                                         const Tensor<Mixins...>& cos,
                                         const Tensor<Mixins...>& sin,
                                         float rope_base) {
-  return ApplyRotaryEmbedding(x, cos, sin);
+  return RoPE(x, cos, sin);
 }
 
 #ifndef GEMMA3_XNNPACK_ONLY

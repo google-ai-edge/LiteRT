@@ -138,10 +138,8 @@ GpuAttnOutput MakeGpuSelfAttentionLayer(
     q = Gemma3RmsNorm(q, q_norm, config.rms_norm_eps);
     k = Gemma3RmsNorm(k, k_norm, config.rms_norm_eps);
 
-    q = ApplyRotaryEmbedding(q, cos, sin, slice_offset_1, slice_size_1,
-                             slice_offset_2, slice_size_2);
-    k = ApplyRotaryEmbedding(k, cos, sin, slice_offset_1, slice_size_1,
-                             slice_offset_2, slice_size_2);
+    q = RoPE(q, cos, sin);
+    k = RoPE(k, cos, sin);
 
     Tensor updated_key_cache =
         DynamicUpdateSlice(key_cache, k, *key_cache_params);
@@ -203,10 +201,8 @@ GpuAttnOutput MakeGpuSelfAttentionLayer(
   q = Gemma3RmsNorm(q, q_norm, config.rms_norm_eps);
   k = Gemma3RmsNorm(k, k_norm, config.rms_norm_eps);
 
-  q = ApplyRotaryEmbedding(q, cos, sin, slice_offset_1, slice_size_1,
-                           slice_offset_2, slice_size_2);
-  k = ApplyRotaryEmbedding(k, cos, sin, slice_offset_1, slice_size_1,
-                           slice_offset_2, slice_size_2);
+  q = RoPE(q, cos, sin);
+  k = RoPE(k, cos, sin);
 
   k.SetName(absl::StrCat(name, ".new_k"));
   v.SetName(absl::StrCat(name, ".new_v"));

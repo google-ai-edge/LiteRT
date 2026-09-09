@@ -98,7 +98,6 @@ cc_library(
     name = "attention",
     hdrs = ["attention.h"],
     deps = [
-        ":rope",
         "//tensor",
         "//tensor:arithmetic",
         "//tensor:buffer",

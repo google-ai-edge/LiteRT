@@ -314,12 +314,12 @@ GpuAttnOutput MakeGpuSelfAttentionLayer(
                                      .shape = {1, 1, seq_len, config.head_dim},
                                      .buffer = sin_buffer});
 
-    q = ApplyRotaryEmbedding(q, hard_cos, hard_sin);
-    k = ApplyRotaryEmbedding(k, hard_cos, hard_sin);
+    q = RoPE(q, hard_cos, hard_sin);
+    k = RoPE(k, hard_cos, hard_sin);
   } else {
     // Use dynamic runtime cos/sin inputs for Decode steps!
-    q = ApplyRotaryEmbedding(q, cos, sin);
-    k = ApplyRotaryEmbedding(k, cos, sin);
+    q = RoPE(q, cos, sin);
+    k = RoPE(k, cos, sin);
   }
 
   k.SetName(absl::StrCat(name, ".new_k"));
