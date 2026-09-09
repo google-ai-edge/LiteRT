@@ -2134,6 +2134,11 @@ std::vector<Tensor<Mixins...>> TopK(
   graph::TensorInformation& values_info = *GetInfo(values.GetRaw());
   values_info.type = input_info.type;
   values_info.shape = input_info.shape;
+  if (values_info.shape.empty()) {
+    auto error = absl::InvalidArgumentError("TopK input must have rank >= 1.");
+    return {Tensor<Mixins...>(graph::ErrorTensor(error)),
+            Tensor<Mixins...>(graph::ErrorTensor(error))};
+  }
   if (GetInfo(k.GetRaw())->buffer == nullptr) {
     auto error = absl::InvalidArgumentError(
         "TopK k tensor must have a buffer.");
