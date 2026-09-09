@@ -25,13 +25,14 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
-#include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
 #include "tensor/examples/ops/transformer/transformer_ops.h"
 #include "tensor/tensor.h"
 
 namespace litert::tensor::examples::gemma4 {
+
+using ::litert::tensor::Constant;
 
 template <class... Mixins>
 Tensor<Mixins...> GetWeight(
@@ -176,14 +177,8 @@ AttentionOutput<Mixins...> Attention(
 
   if (config.attn_logits_soft_cap.has_value()) {
     float cap = config.attn_logits_soft_cap.value();
-    Tensor cap_tensor = Tensor<Mixins...>(
-        {.type = Type::kFP32,
-         .shape = {1},
-         .buffer = OwningCpuBuffer::Copy<Type::kFP32>({cap})});
-    Tensor inv_cap_tensor = Tensor<Mixins...>(
-        {.type = Type::kFP32,
-         .shape = {1},
-         .buffer = OwningCpuBuffer::Copy<Type::kFP32>({1.0f / cap})});
+    Tensor cap_tensor = Constant<Mixins...>(cap);
+    Tensor inv_cap_tensor = Constant<Mixins...>(1.0f / cap);
     Tensor scaled_scores = Mul(scores, inv_cap_tensor);
     Tensor tanh_scores = Tanh(scaled_scores);
     scores = Mul(tanh_scores, cap_tensor);

@@ -16,7 +16,6 @@ limitations under the License.
 #define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA3_GRAPH_HELPERS_H_
 
 #include <cmath>
-#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -30,13 +29,14 @@ limitations under the License.
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
-#include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma3/config.h"
 #include "tensor/examples/ops/transformer/transformer_ops.h"
 #include "tensor/tensor.h"
 
 namespace litert::tensor::examples::gemma3 {
+
+using ::litert::tensor::Constant;
 
 // Gets the tensor named `name` in the `weights` map.
 //
@@ -68,17 +68,11 @@ Tensor<Mixins...> Gemma3RmsNorm(const Tensor<Mixins...>& input,
   int last_axis = static_cast<int>(input.GetShape().size()) - 1;
   Tensor sum_squared = Sum(x_squared, {last_axis}, /*keep_dims=*/true);
   const float inv_dim = 1.0f / static_cast<float>(input.GetShape().back());
-  Tensor inv_dim_tensor = Tensor<Mixins...>(
-      {.type = Type::kFP32,
-       .shape = {1},
-       .buffer = OwningCpuBuffer::Copy<Type::kFP32>({inv_dim})});
+  Tensor inv_dim_tensor = Constant<Mixins...>(inv_dim);
   Tensor mean_squared = Mul(sum_squared, inv_dim_tensor);
 
   // Add epsilon and compute rsqrt.
-  Tensor eps_tensor =
-      Tensor<Mixins...>({.type = Type::kFP32,
-                         .shape = {1},
-                         .buffer = OwningCpuBuffer::Copy<Type::kFP32>({eps})});
+  Tensor eps_tensor = Constant<Mixins...>(eps);
   Tensor variance_plus_eps = Add(mean_squared, eps_tensor);
   Tensor inv_rms = Rsqrt(variance_plus_eps);
 
@@ -231,10 +225,7 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
 
   // Scale by query_pre_attn_scalar^(-0.5).
   float scale = 1.0f / std::sqrt(config.query_pre_attn_scalar);
-  Tensor scale_tensor = Tensor<Mixins...>(
-      {.type = Type::kFP32,
-       .shape = {1},
-       .buffer = OwningCpuBuffer::Copy<Type::kFP32>({scale})});
+  Tensor scale_tensor = Constant<Mixins...>(scale);
   scores = Mul(scores, scale_tensor);
 
   // Apply attention mask (add -inf for masked positions).
