@@ -38,7 +38,7 @@ class CustomEventMetal : public LiteRtCustomEventT {
   // However, it's possible for the client may to retain the MTLSharedEvent out
   // of the custom event for further use even after the custom event is
   // released.
-  id<MTLSharedEvent> metal_shared_event() const { return metal_shared_event_; };
+  id<MTLSharedEvent> metal_shared_event() const { return metal_shared_event_; }
 
  private:
   // Callbacks of litert_custom_event_t.
