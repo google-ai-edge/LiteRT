@@ -934,6 +934,8 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
       LITERT_RETURN_IF_ERROR(
           dispatch_options.SetAllocBaseSize(compiled_model->fb_model_size_));
     }
+    LITERT_RETURN_IF_ERROR(BuildBoundaryFunctionSignatureMapIntoOptions(
+        compiled_model->interp_.get(), *model, dispatch_options));
     LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(dispatch_options)));
   }
 

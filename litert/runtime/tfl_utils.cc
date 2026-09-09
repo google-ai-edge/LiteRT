@@ -16,14 +16,23 @@
 
 #include <cstddef>
 #include <cstring>
+#include <string>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/strings/substitute.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/core/build_stamp.h"
+#include "litert/core/dispatch_op_schema.h"
+#include "litert/core/model/model.h"
 #include "litert/core/options.h"
+#include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "tflite/c/c_api_opaque.h"
 #include "tflite/c/c_api_types.h"
@@ -123,6 +132,48 @@ Expected<TfLiteTensorIdentifier> GetTensorIdentifier(
   }
   return Unexpected(kLiteRtStatusErrorNotFound,
                     "Tensor not found in interpreter");
+}
+
+Expected<void> BuildBoundaryFunctionSignatureMapIntoOptions(
+    const tflite::Interpreter* interpreter, const LiteRtModelT& model,
+    DispatchDelegateOptions& dispatch_options) {
+  if (!interpreter) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Interpreter must not be null");
+  }
+  // It is OK not to have any signatures. We are building the map only for
+  // signature-aware models.
+  if (interpreter->signature_keys().empty()) {
+    return {};
+  }
+  // Go over the list of signature keys.
+  for (const std::string* sig_key : interpreter->signature_keys()) {
+    int sg_idx = interpreter->GetSubgraphIndexFromSignature(sig_key->c_str());
+    if (sg_idx < 0 || sg_idx >= model.Subgraphs().size()) {
+      return Unexpected(
+          kLiteRtStatusErrorNotFound,
+          absl::Substitute("Invalid subgraph index $0 for signature $1", sg_idx,
+                           *sig_key));
+    }
+    const LiteRtSubgraphT* subgraph = model.Subgraphs().at(sg_idx);
+    // Go over all ops in the subgraph and pull out the function names.
+    for (LiteRtOp op : subgraph->Ops()) {
+      if (op->OpCode() != kLiteRtOpCodeTflCustom) {
+        continue;
+      }
+      LITERT_ASSIGN_OR_RETURN(absl::string_view custom_code, op->CustomCode());
+      if (custom_code == litert::internal::kLiteRtDispatchOpCustomName &&
+          op->CustomOptions().Size() > 0) {
+        litert::internal::DispatchOpOptions op_opts =
+            litert::internal::GetDispatchOpOptions(op->CustomOptions());
+        if (!op_opts.name.empty()) {
+          LITERT_RETURN_IF_ERROR(dispatch_options.RegisterFunctionSignature(
+              op_opts.name, *sig_key));
+        }
+      }
+    }
+  }
+  return {};
 }
 
 }  // namespace litert::internal
