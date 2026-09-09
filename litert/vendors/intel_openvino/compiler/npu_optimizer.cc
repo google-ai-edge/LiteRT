@@ -472,7 +472,19 @@ void NpuOptimizer::Run(const std::shared_ptr<ov::Model>& model) const {
   if (eliminate_matmul_fq_) {
     pass_manager.register_pass<EliminateMatMulFakeQuantize>();
   }
+  if (fold_slice_indices_) {
+    // ConstantFolding turns the foldable Select/Broadcast subgraphs feeding
+    // Slice's start/stop/step/axes inputs into plain Constants, which is what
+    // Slice's shape inference needs to produce a static output shape.
+    pass_manager.register_pass<ov::pass::ConstantFolding>();
+  }
   pass_manager.run_passes(model);
+  if (fold_slice_indices_) {
+    // Folding makes each Slice static, but downstream ops keep the stale
+    // dynamic shapes they inferred earlier. Re-validate the whole graph so the
+    // static shapes propagate to the results.
+    model->validate_nodes_and_infer_types();
+  }
 }
 
 }  // namespace openvino
