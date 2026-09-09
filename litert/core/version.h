@@ -15,7 +15,11 @@
 #ifndef ODML_LITERT_LITERT_CORE_VERSION_H_
 #define ODML_LITERT_LITERT_CORE_VERSION_H_
 
+#include <mutex>
+
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_version.h"
 
 namespace litert::internal {
 
@@ -30,6 +34,16 @@ inline bool IsSameVersion(const LiteRtApiVersion& v1,
 inline bool IsSameVersionAsRuntime(const LiteRtApiVersion& v) {
   return IsSameVersion(v, {LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
                            LITERT_API_VERSION_PATCH});
+}
+
+// Log LiteRT version information one time during initialization.
+inline void LogVersionInfoOnce() {
+  static std::once_flag flag;
+  std::call_once(flag, []() {
+    LITERT_LOG(LITERT_INFO, "LiteRT version: %s (API version %d.%d.%d)",
+               LITERT_VERSION_STRING, LITERT_API_VERSION_MAJOR,
+               LITERT_API_VERSION_MINOR, LITERT_API_VERSION_PATCH);
+  });
 }
 
 }  // namespace litert::internal

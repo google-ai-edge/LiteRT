@@ -239,6 +239,8 @@ LITERT_DEFINE_HANDLE(LiteRtExternalLiteRtBufferContext);
 #define LITERT_HAS_FASTRPC_SUPPORT LITERT_HAS_FASTRPC_SUPPORT_DEFAULT
 #endif
 
+#include "litert/c/litert_version.h"
+
 #define LITERT_API_VERSION_MAJOR 0
 #define LITERT_API_VERSION_MINOR 1
 #define LITERT_API_VERSION_PATCH 0
