@@ -4,10 +4,21 @@
 #
 
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:__subpackages__"],
+)
+
+cc_library(
+    name = "capabilities",
+    srcs = ["capabilities.cc"],
+    hdrs = ["capabilities.h"],
+    deps = [
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_element_type",
+    ],
 )
 
 build_test(

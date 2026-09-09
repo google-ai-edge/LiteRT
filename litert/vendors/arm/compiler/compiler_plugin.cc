@@ -23,14 +23,17 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model.h"
 #include "litert/c/options/litert_arm_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_opaque_options_wrapper.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_arm_options.h"
+#include "litert/vendors/arm/capabilities.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 
 namespace {
@@ -197,6 +200,25 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     return kLiteRtStatusErrorInvalidArgument;
   }
   LITERT_RETURN_IF_ERROR(EnsureJitMode(compiler_plugin));
+
+  litert::Subgraph graph(subgraph);
+  for (const auto& op : graph.Ops()) {
+    if (!litert::arm::IsSupportedOpCode(op.Code())) {
+      continue;
+    }
+
+    bool is_supported = true;
+    for (const auto& input : op.Inputs()) {
+      is_supported &= litert::arm::IsSupportedType(input.ElementType());
+    }
+    for (const auto& output : op.Outputs()) {
+      is_supported &= litert::arm::IsSupportedType(output.ElementType());
+    }
+
+    if (is_supported) {
+      LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
+    }
+  }
   return kLiteRtStatusOk;
 }
 
