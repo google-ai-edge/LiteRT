@@ -170,6 +170,7 @@ cc_library(
     hdrs = ["litert_op_selector.h"],
     deps = [
         "//ml_drift_delegate/delegate/composite:add_values_to_cache_kernel",
+        "//ml_drift_delegate/delegate/composite:gated_delta_update_kernel",
         "//ml_drift_delegate/delegate/composite:moe_experts_kernel",
         "//ml_drift_delegate/delegate/composite:qkv_norm_rope_kernel",
         "//ml_drift_delegate/delegate/composite:runtime_batched_matmul_kernel",

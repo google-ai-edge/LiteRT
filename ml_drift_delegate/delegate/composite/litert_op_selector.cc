@@ -34,6 +34,8 @@
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_kernel.h"
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
+#include "ml_drift_delegate/delegate/composite/gated_delta_update_kernel.h"
+#include "ml_drift_delegate/delegate/composite/gated_delta_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_kernel.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_kernel.h"
@@ -144,6 +146,21 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     ParamTensorToBuffer(param_index, inputs, model_builder);
     if (replaced_tensors_.contains(inputs[param_index]->id)) {
       src_ids[param_index] = replaced_tensors_[inputs[param_index]->id]->id;
+    }
+    std::vector<::ml_drift::ValueId> dst_ids(outputs.size());
+    for (int i = 0; i < outputs.size(); ++i) {
+      dst_ids[i] = outputs[i]->id;
+    }
+    model_builder->AddGpuOperation(src_ids, dst_ids, std::move(op),
+                                   node.operation.type);
+    return absl::OkStatus();
+  }
+  if (node.operation.type == kGatedDeltaUpdateType) {
+    ABSL_ASSIGN_OR_RETURN(
+        auto op, CreateGatedDeltaUpdateFromNode(op_def, node, &gpu_info_));
+    std::vector<::ml_drift::ValueId> src_ids(inputs.size());
+    for (int i = 0; i < inputs.size(); ++i) {
+      src_ids[i] = inputs[i]->id;
     }
     std::vector<::ml_drift::ValueId> dst_ids(outputs.size());
     for (int i = 0; i < outputs.size(); ++i) {

@@ -4,6 +4,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("//litert/build_common:special_rule.bzl", "gles_deps", "litert_metal_opts")
+load("//tools/build_defs/cc:cc_embed_data.bzl", "cc_embed_data")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
@@ -1250,3 +1251,108 @@ macos_unit_test(
 
 # For MLD Android package.
 exports_files(srcs = ["delegate_options.h"])
+
+cc_embed_data(
+    name = "gated_delta_update_model_data",
+    srcs = [
+        "gated_delta_update.tflite",
+    ],
+    outs = [
+        "gated_delta_update_model_data.cc",
+        "gated_delta_update_model_data.h",
+    ],
+)
+
+cc_test(
+    name = "gated_delta_update_gpu_test",
+    srcs = ["gated_delta_update_gpu_test.cc"],
+    tags = [
+        "requires-gpu-nvidia",
+    ],
+    deps = [
+        ":buffer_handler_opencl",
+        ":delegate_opencl",
+        ":gated_delta_update_model_data",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_environment_options",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//litert/c/internal:litert_tensor_buffer_registry",
+        "//litert/experimental/custom_ops/gated_delta_net:gated_delta_update_tflite_op",
+        "//litert/runtime:external_litert_buffer_context",
+        "//litert/runtime:tensor_identifier",
+        "//litert/runtime:tfl_utils",
+        "//tflite:framework",
+        "//tflite/c:common",
+        "//tflite/kernels:builtin_ops",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "gated_delta_update_gpu_benchmark",
+    srcs = ["gated_delta_update_gpu_benchmark.cc"],
+    tags = [
+        "requires-gpu-nvidia",
+    ],
+    deps = [
+        ":buffer_handler_opencl",
+        ":delegate_opencl",
+        ":gated_delta_update_model_data",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_environment_options",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//litert/c/internal:litert_tensor_buffer_registry",
+        "//litert/experimental/custom_ops/gated_delta_net:gated_delta_update_tflite_op",
+        "//litert/runtime:external_litert_buffer_context",
+        "//litert/runtime:tensor_identifier",
+        "//litert/runtime:tfl_utils",
+        "//tflite:framework",
+        "//tflite/c:common",
+        "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/time",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+objc_library(
+    name = "gated_delta_update_metal_gpu_benchmark_lib",
+    testonly = 1,
+    srcs = ["gated_delta_update_metal_gpu_benchmark.mm"],
+    aspect_hints = ["//tools/build_defs/swift:no_module"],
+    deps = [
+        ":buffer_handler_metal",
+        ":buffer_handler_metal_headers",
+        ":delegate_metal",
+        ":delegate_metal_headers",
+        ":gated_delta_update_model_data",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/time",
+        "//third_party/apple_frameworks:Foundation",
+        # Dependency placeholder: apple_frameworks Metal,
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_environment_options",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//litert/c/internal:litert_tensor_buffer_registry",
+        "//litert/experimental/custom_ops/gated_delta_net:gated_delta_update_tflite_op",
+        "//litert/runtime:external_litert_buffer_context",
+        "//litert/runtime:tensor_identifier",
+        "//litert/runtime:tfl_utils",
+        "//tflite:framework",
+        "//tflite/c:common",
+        "//tflite/kernels:builtin_ops",
+    ],
+)
+
+cc_test(
+    name = "gated_delta_update_metal_gpu_benchmark",
+    tags = [
+        "requires-gpu-apple",
+    ],
+    deps = [
+        ":gated_delta_update_metal_gpu_benchmark_lib",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
