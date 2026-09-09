@@ -22,6 +22,7 @@
 #include "testing/base/public/gunit.h"
 #include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
@@ -615,6 +616,184 @@ TEST(FuseShortConvStepTest, DoesNotFuseWhenChannelsNotMultipleOfFour) {
       EXPECT_NE(node->operation.type, kShortConvStepType);
     }
   }
+}
+
+TEST(FuseShortConvStepIrModelTest, FusesGatedShortConvStepSuccessfully) {
+  ::ml_drift::ir::IrModel model;
+
+  constexpr int kHiddenSize = 2048;
+  constexpr int kStateCacheSize = 2;
+  constexpr int kFilterSize = 3;
+
+  // in_proj [1, 1, 1, 3 * kHiddenSize]
+  auto* in_proj_input = model.add_tensor(
+      ::ml_drift::DataType::FLOAT32,
+      ::ml_drift::BHWC(1, 1, 1, 3 * kHiddenSize));
+  auto* conv_state_input = model.add_tensor(
+      ::ml_drift::DataType::FLOAT32,
+      ::ml_drift::BHWC(1, 1, kHiddenSize, kStateCacheSize));
+  model.add_input(in_proj_input->id);
+  model.add_input(conv_state_input->id);
+
+  auto* dummy_in = model.add_op();
+  dummy_in->name = "dummy_in";
+  model.SetProducer(in_proj_input->id, dummy_in->id);
+
+  auto* dummy_state = model.add_op();
+  dummy_state->name = "dummy_state";
+  model.SetProducer(conv_state_input->id, dummy_state->id);
+
+  // Slices: b, c, x
+  auto* slice_b = model.add_op();
+  slice_b->name = ToString(::ml_drift::OperationType::SLICE);
+  auto* b_val = model.add_tensor(::ml_drift::DataType::FLOAT32,
+                                 ::ml_drift::BHWC(1, 1, 1, kHiddenSize));
+  model.AddConsumer(in_proj_input->id, slice_b->id);
+  model.SetProducer(b_val->id, slice_b->id);
+
+  auto* slice_c = model.add_op();
+  slice_c->name = ToString(::ml_drift::OperationType::SLICE);
+  auto* c_val = model.add_tensor(::ml_drift::DataType::FLOAT32,
+                                 ::ml_drift::BHWC(1, 1, 1, kHiddenSize));
+  model.AddConsumer(in_proj_input->id, slice_c->id);
+  model.SetProducer(c_val->id, slice_c->id);
+
+  auto* slice_x = model.add_op();
+  slice_x->name = ToString(::ml_drift::OperationType::SLICE);
+  auto* x_val = model.add_tensor(::ml_drift::DataType::FLOAT32,
+                                 ::ml_drift::BHWC(1, 1, 1, kHiddenSize));
+  model.AddConsumer(in_proj_input->id, slice_x->id);
+  model.SetProducer(x_val->id, slice_x->id);
+
+  // bx_mul: b * x
+  auto* bx_mul = model.add_op();
+  bx_mul->name = ToString(::ml_drift::OperationType::MUL);
+  auto* bx_val = model.add_tensor(::ml_drift::DataType::FLOAT32,
+                                  ::ml_drift::BHWC(1, 1, 1, kHiddenSize));
+  model.AddConsumer(b_val->id, bx_mul->id);
+  model.AddConsumer(x_val->id, bx_mul->id);
+  model.SetProducer(bx_val->id, bx_mul->id);
+
+  // px_reshape: [1, 1, 1, kHiddenSize] -> [1, 1, kHiddenSize, 1]
+  auto* px_reshape = model.add_op();
+  px_reshape->name = ToString(::ml_drift::OperationType::RESHAPE);
+  auto* px_val = model.add_tensor(::ml_drift::DataType::FLOAT32,
+                                  ::ml_drift::BHWC(1, 1, kHiddenSize, 1));
+  model.AddConsumer(bx_val->id, px_reshape->id);
+  model.SetProducer(px_val->id, px_reshape->id);
+
+  // concat: conv_state + px
+  auto* concat_win = model.add_op();
+  concat_win->name = ToString(::ml_drift::OperationType::CONCAT);
+  auto* win_val = model.add_tensor(
+      ::ml_drift::DataType::FLOAT32,
+      ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize));
+  model.AddConsumer(conv_state_input->id, concat_win->id);
+  model.AddConsumer(px_val->id, concat_win->id);
+  model.SetProducer(win_val->id, concat_win->id);
+
+  // slice_state
+  auto* slice_state = model.add_op();
+  slice_state->name = ToString(::ml_drift::OperationType::SLICE);
+  ::ml_drift::SliceAttributes slice_state_attr;
+  slice_state_attr.starts = ::ml_drift::BHWC(0, 0, 0, 1);
+  slice_state_attr.ends = ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize);
+  slice_state->attr = slice_state_attr;
+  auto* next_state_val = model.add_tensor(
+      ::ml_drift::DataType::FLOAT32,
+      ::ml_drift::BHWC(1, 1, kHiddenSize, kStateCacheSize));
+  model.AddConsumer(win_val->id, slice_state->id);
+  model.SetProducer(next_state_val->id, slice_state->id);
+
+  // conv weight tensor
+  auto* weight_op = model.add_op();
+  weight_op->name = ToString(::ml_drift::OperationType::CONSTANT);
+  auto* weight_val = model.add_tensor(
+      ::ml_drift::DataType::FLOAT32,
+      ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize));
+  ::ml_drift::ConstTensorAttributes weight_attr;
+  ::ml_drift::TensorFloat32 w_tensor;
+  w_tensor.shape = ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize);
+  w_tensor.data = std::vector<float>(kHiddenSize * kFilterSize, 1.0f);
+  weight_attr.tensor = std::move(w_tensor);
+  weight_op->attr = std::move(weight_attr);
+  model.SetProducer(weight_val->id, weight_op->id);
+
+  // mul_conv
+  auto* mul_conv = model.add_op();
+  mul_conv->name = ToString(::ml_drift::OperationType::MUL);
+  auto* mul_conv_out = model.add_tensor(
+      ::ml_drift::DataType::FLOAT32,
+      ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize));
+  model.AddConsumer(win_val->id, mul_conv->id);
+  model.AddConsumer(weight_val->id, mul_conv->id);
+  model.SetProducer(mul_conv_out->id, mul_conv->id);
+
+  // reduce_sum
+  auto* reduce_sum = model.add_op();
+  reduce_sum->name = ToString(::ml_drift::OperationType::REDUCE_SUM);
+  auto* reduce_out = model.add_tensor(::ml_drift::DataType::FLOAT32,
+                                      ::ml_drift::BHWC(1, 1, kHiddenSize, 1));
+  model.AddConsumer(mul_conv_out->id, reduce_sum->id);
+  model.SetProducer(reduce_out->id, reduce_sum->id);
+
+  // red_reshape
+  auto* red_reshape = model.add_op();
+  red_reshape->name = ToString(::ml_drift::OperationType::RESHAPE);
+  auto* red_reshaped = model.add_tensor(::ml_drift::DataType::FLOAT32,
+                                        ::ml_drift::BHWC(1, 1, 1, kHiddenSize));
+  model.AddConsumer(reduce_out->id, red_reshape->id);
+  model.SetProducer(red_reshaped->id, red_reshape->id);
+
+  // gating_mul
+  auto* gating_mul = model.add_op();
+  gating_mul->name = ToString(::ml_drift::OperationType::MUL);
+  auto* final_out = model.add_tensor(::ml_drift::DataType::FLOAT32,
+                                     ::ml_drift::BHWC(1, 1, 1, kHiddenSize));
+  model.AddConsumer(red_reshaped->id, gating_mul->id);
+  model.AddConsumer(c_val->id, gating_mul->id);
+  model.SetProducer(final_out->id, gating_mul->id);
+
+  // Downstream consumer
+  auto* dummy_consumer = model.add_op();
+  dummy_consumer->name = "dummy_consumer";
+  model.AddConsumer(final_out->id, dummy_consumer->id);
+  model.AddConsumer(next_state_val->id, dummy_consumer->id);
+
+  const auto slice_x_id = slice_x->id;
+  const auto slice_c_id = slice_c->id;
+  const auto reduce_sum_id = reduce_sum->id;
+  const auto gating_mul_id = gating_mul->id;
+
+  EXPECT_TRUE(ir::FuseShortConvStep(&model).ok());
+
+  // Verify fused op
+  const ::ml_drift::ir::IrOp* fused_op = nullptr;
+  for (const auto& op : model.ops()) {
+    if (op && op->name == "short_conv_step") {
+      fused_op = op.get();
+      break;
+    }
+  }
+  ASSERT_THAT(fused_op, NotNull());
+
+  const auto* attr =
+      std::any_cast<ShortConvStepAttributes>(&fused_op->attr);
+  ASSERT_THAT(attr, NotNull());
+  EXPECT_THAT(attr->conv_L_cache, Eq(3));
+
+  EXPECT_THAT(fused_op->inputs.size(), Eq(3));
+  EXPECT_THAT(fused_op->inputs[0], Eq(in_proj_input->id));
+  EXPECT_THAT(fused_op->inputs[1], Eq(conv_state_input->id));
+  EXPECT_THAT(fused_op->outputs.size(), Eq(2));
+  EXPECT_THAT(fused_op->outputs[0], Eq(final_out->id));
+  EXPECT_THAT(fused_op->outputs[1], Eq(next_state_val->id));
+
+  // Verify old ops are deleted
+  EXPECT_EQ(model.op(slice_x_id), nullptr);
+  EXPECT_EQ(model.op(slice_c_id), nullptr);
+  EXPECT_EQ(model.op(reduce_sum_id), nullptr);
+  EXPECT_EQ(model.op(gating_mul_id), nullptr);
 }
 
 }  // namespace
