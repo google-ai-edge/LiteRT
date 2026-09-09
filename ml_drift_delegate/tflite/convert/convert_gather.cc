@@ -50,8 +50,16 @@ void ConvertGather(
 
   ::ml_drift::ir::IrTensorId final_indices_id = tensor_map[indices_id];
   if (indices_are_const) {
+    // The gather kernel reads the indices along the channels axis, but a 1-D
+    // tensor [N] is auto-expanded to {N,1,1,1}, which puts N on the batch
+    // axis. Ask for {1,1,1,N} instead -- the constant equivalent of the
+    // RESHAPE inserted for runtime indices below.
+    SizedLayout indices_layout;
+    if (indices_are_1d) {
+      indices_layout.layout_1d = ::ml_drift::Layout::SCALAR;
+    }
     ::ml_drift::ir::IrTensor* const_tensor =
-        AddConstInput(context, indices_id, ir_model, {});
+        AddConstInput(context, indices_id, ir_model, indices_layout);
     final_indices_id = const_tensor->id;
   } else if (indices_are_1d) {
     ::ml_drift::ir::IrOp* reshape_op = ir_model.add_op();
