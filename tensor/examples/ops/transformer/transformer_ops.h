@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_OPS_TRANSFORMER_TRANSFORMER_OPS_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_OPS_TRANSFORMER_TRANSFORMER_OPS_H_
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -62,6 +63,31 @@ Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x, const Tensor<Mixins...>& cos,
   Tensor x_cos = Mul(x, cos);
   Tensor rotated_sin = Mul(rotated, sin);
   return Add(x_cos, rotated_sin);
+}
+
+// Creates a 0-D scalar constant tensor.
+template <class... Mixins>
+Tensor<Mixins...> Constant(float value, Type datatype = Type::kFP32) {
+  return Tensor<Mixins...>({
+      .type = datatype,
+      .shape = {},
+      .buffer = value,
+  });
+}
+
+template <class... Mixins>
+Tensor<Mixins...> Constant(int32_t value, Type datatype = Type::kI32) {
+  return Tensor<Mixins...>({
+      .type = datatype,
+      .shape = {},
+      .buffer = value,
+  });
+}
+
+// Computes the Swish (SiLU) activation function: x * sigmoid(x).
+template <class... Mixins>
+Tensor<Mixins...> Swish(Tensor<Mixins...> x) {
+  return Mul(x, Logistic(x));
 }
 
 template <class... Mixins>
