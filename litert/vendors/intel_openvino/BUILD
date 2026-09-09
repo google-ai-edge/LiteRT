@@ -30,6 +30,16 @@ cc_library(
 )
 
 cc_library(
+    name = "openvino_version_info",
+    hdrs = ["openvino_version_info.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "@intel_openvino//:openvino",
+    ],
+)
+
+cc_library(
     name = "bytecode_header",
     hdrs = ["bytecode_header.h"],
     deps = [
