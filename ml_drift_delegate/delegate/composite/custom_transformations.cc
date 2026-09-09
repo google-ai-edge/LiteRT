@@ -19,6 +19,7 @@
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/fuse_qkv_norm_rope.h"
+#include "ml_drift_delegate/delegate/composite/fuse_short_conv_step.h"
 #include "ml_drift_delegate/delegate/delegate_options.h"
 
 namespace litert::ml_drift {
@@ -26,8 +27,13 @@ namespace litert::ml_drift {
 absl::Status ApplyCustomTransformations(
     ::ml_drift::GraphFloat32* graph,
     const MlDriftDelegateOptions& options) {
+  // Sequentially apply independent graph fusions. Both passes can run on
+  // hybrid models containing both attention and convolution blocks.
   if (options.enable_qkv_norm_rope_fusion) {
     ABSL_RETURN_IF_ERROR(FuseQkvNormRoPE(graph));
+  }
+  if (options.enable_short_conv_step_fusion) {
+    ABSL_RETURN_IF_ERROR(FuseShortConvStep(graph));
   }
   return absl::OkStatus();
 }
@@ -35,6 +41,9 @@ absl::Status ApplyCustomTransformations(
 absl::Status ApplyCustomTransformations(
     ::ml_drift::ir::IrModel* ir_model,
     const MlDriftDelegateOptions& options) {
+  if (options.enable_short_conv_step_fusion) {
+    ABSL_RETURN_IF_ERROR(ir::FuseShortConvStep(ir_model));
+  }
   return absl::OkStatus();
 }
 

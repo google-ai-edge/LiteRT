@@ -329,6 +329,11 @@ struct MlDriftDelegateOptions {
   // RMSNorm, and RoPE subgraphs into single fused odml.qkv_norm_rope nodes.
   // Disabled by default to avoid unexpected graph mutations on general models.
   bool enable_qkv_norm_rope_fusion = false;
+
+  // If true, the delegate attempts to find and fuse short convolution step
+  // subgraphs into single fused odml.short_conv_step nodes.
+  // Disabled by default to avoid unexpected graph mutations on general models.
+  bool enable_short_conv_step_fusion = false;
 };
 
 namespace litert::ml_drift {
