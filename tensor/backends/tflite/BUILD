@@ -66,7 +66,6 @@ cc_library(
         "//tflite/core:framework",
         "//tflite/kernels:builtin_ops",
         "//tflite/schema:schema_fbs_with_mutable",
-        "@XNNPACK",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
