@@ -57,6 +57,7 @@ cc_library(
         "@com_google_absl//absl/types:span",
         "@ml_drift//ml_drift/cl:buffer",
         "@ml_drift//ml_drift/cl:cl_operation",
+        "@ml_drift//ml_drift/cl:cl_weights_manager",
         "@ml_drift//ml_drift/cl:converter",
         "@ml_drift//ml_drift/cl:environment",
         "@ml_drift//ml_drift/cl:inference_context",
