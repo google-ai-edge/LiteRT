@@ -463,6 +463,7 @@ litert_device_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         # copybara:uncomment "//third_party/darwinn/driver_shared/fence:fence_test_util",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc/internal:litert_handle",
         "//litert/cc:litert_buffer_ref",
