@@ -64,18 +64,17 @@ jobs:
             "-//litert/c:litert_compiled_model_test"
             "-//litert/cc:litert_compiled_model_test"
             "-//litert/cc:litert_environment_test"
-            "-//litert/python/tools/model_utils/test/..."
+            "-//litert/python/..."
             "-//litert/runtime:compiled_model_test"
             "-//litert/runtime/accelerators/gpu/..."
-            "-//litert/tools:tool_display_test"
-            "-//litert/tools:dump_test"
-            "-//litert/tools:apply_plugin_test"
+            "-//litert/tools/..."
             "-//litert/vendors/..."
           )
 
           bazel test \
             "${BUILD_FLAGS[@]}" \
             -- \
-            //litert/... \
-            //weight_loader/... \
+            //litert/c/... \
+            //litert/cc/... \
+            //litert/runtime/... \
             "${LITERT_EXCLUDED_TARGETS[@]}"
