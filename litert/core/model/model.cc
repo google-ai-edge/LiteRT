@@ -40,6 +40,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/build_stamp.h"
+#include "litert/core/model/buffer_manager.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/converter/schema/schema_generated.h"
 
@@ -142,8 +143,7 @@ LiteRtSignatureT MakeDefaultSignature(LiteRtSubgraph subgraph) {
 }
 
 ::litert::Expected<void> PruneModelToSignatures(
-    LiteRtModelT& model,
-    absl::Span<const absl::string_view> signature_keys) {
+    LiteRtModelT& model, absl::Span<const absl::string_view> signature_keys) {
   if (signature_keys.empty()) {
     return {};
   }
@@ -196,8 +196,8 @@ LiteRtSignatureT MakeDefaultSignature(LiteRtSubgraph subgraph) {
             "references");
       }
       if (op->OpCode() == kLiteRtOpCodeShloComposite) {
-        const auto* options = litert::internal::GetTflOptions2(*op)
-                                  .AsStableHLOCompositeOptions();
+        const auto* options =
+            litert::internal::GetTflOptions2(*op).AsStableHLOCompositeOptions();
         if (options == nullptr || options->decomposition_subgraph_index < -1) {
           return ::litert::Unexpected(
               kLiteRtStatusErrorInvalidArgument,
@@ -352,7 +352,9 @@ LiteRtTensorT& LiteRtBuilderT::BuildTensor(const LiteRtWeightsT& weights,
   LiteRtTensorT& tensor = subgraph_.EmplaceTensor();
   tensor.SetType(tensor_type);
   tensor.SetQarams(quantization);
-  if (weights.GetBufferManager() != nullptr) {
+  if (weights.GetBufferManager() != nullptr &&
+      weights.GetBufferId() !=
+          litert::internal::BufferManager::kEmptyBufferId) {
     // In case of the weights have been registered in any buffer manager,
     // reassign the tensor to the same buffer manager.
     tensor.Weights().SetBufferId(weights.GetBufferId());
@@ -475,6 +477,10 @@ void LiteRtBuilderT::ApplyChanges(LiteRtSubgraphT* subgraph_to_apply) {
       auto new_buf_id = dst_buffer_manager->RegisterOwnedBuffer(
           std::move(src_buffer.Value()));
       tensor->Weights().SetBufferId(new_buf_id);
+      tensor->Weights().SetBufferManager(dst_buffer_manager);
+    } else if (tensor->Weights().GetBufferManager() == src_buffer_manager) {
+      tensor->Weights().SetBufferId(
+          litert::internal::BufferManager::kEmptyBufferId);
       tensor->Weights().SetBufferManager(dst_buffer_manager);
     }
   }
@@ -609,10 +615,9 @@ litert::Expected<LiteRtTensorT*> MakeClone(LiteRtSubgraphT& parent,
     default:
       LITERT_LOG(LITERT_ERROR, "Unsupported quantization type: %d",
                  static_cast<int>(src.Qparams().first));
-      return litert::Error(
-          kLiteRtStatusErrorInvalidArgument,
-          absl::StrCat("Unsupported quantization type: ",
-                       static_cast<int>(src.Qparams().first)));
+      return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                           absl::StrCat("Unsupported quantization type: ",
+                                        static_cast<int>(src.Qparams().first)));
   }
 
   auto& new_tensor = parent.EmplaceTensor();

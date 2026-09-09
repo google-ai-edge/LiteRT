@@ -22,6 +22,7 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -1174,6 +1175,102 @@ TEST(BuilderTest, ApplyChanges_Chain_AppendAtEnd) {
   EXPECT_EQ(subgraph.Ops()[0]->OpCode(), kLiteRtOpCodeTflAdd);
   EXPECT_EQ(subgraph.Ops()[1]->OpCode(), kLiteRtOpCodeTflMul);
   EXPECT_EQ(subgraph.Ops()[2]->OpCode(), kLiteRtOpCodeTflDiv);  // Appended
+}
+
+TEST(BuilderTest,
+     ApplyChanges_TransfersTensorsWithoutWeightsAndRebindsBufferManager) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& in_tensor = subgraph.EmplaceTensor();
+  in_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 2}));
+  in_tensor.SetName("in");
+  subgraph.Inputs().push_back(&in_tensor);
+
+  auto& out_tensor = subgraph.EmplaceTensor();
+  out_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 2}));
+  out_tensor.SetName("out");
+  subgraph.Outputs().push_back(&out_tensor);
+
+  auto& initial_op = subgraph.EmplaceOp();
+  initial_op.SetOpCode(kLiteRtOpCodeTflRelu);
+  AttachInput(&in_tensor, initial_op);
+  AttachOutput(&out_tensor, initial_op);
+
+  LiteRtTensor intermediate_tensor_ptr = nullptr;
+  LiteRtTensor const_weights_tensor_ptr = nullptr;
+  static constexpr float kWeightData[] = {1.5f, 2.5f, 3.5f, 4.5f};
+
+  {
+    LiteRtBuilderT builder;
+
+    // 1. Create an activation tensor without weights
+    auto& act_tensor = builder.BuildTensor(
+        LiteRtWeightsT(), Quantization(),
+        MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 2}), "activation");
+
+    // 2. Create a constant tensor with weights
+    LiteRtWeightsT weights;
+    weights.SetBufferManager(builder.Subgraph().GetBufferManager());
+    OwningBufferRef<uint8_t> buf(reinterpret_cast<const uint8_t*>(kWeightData),
+                                 sizeof(kWeightData));
+    SetWeightsFromOwnedBuffer(weights, std::move(buf));
+
+    auto& weights_tensor = builder.BuildTensor(
+        std::move(weights), Quantization(),
+        MakeRankedTensorType(kLiteRtElementTypeFloat32, {4}), "const_weights");
+
+    // Connect: in_tensor + const_weights -> act_tensor -> out_tensor
+    builder.BuildOp(kLiteRtOpCodeTflAdd, {&in_tensor, &weights_tensor},
+                    {&act_tensor});
+    builder.BuildOp(kLiteRtOpCodeTflRelu, {&act_tensor}, {&out_tensor});
+    builder.EraseOp(&initial_op);
+
+    builder.ApplyChanges(&subgraph);
+
+    intermediate_tensor_ptr = &act_tensor;
+    const_weights_tensor_ptr = &weights_tensor;
+
+    // Inside builder scope: verify buffer managers are already updated to
+    // dst_buffer_manager
+    EXPECT_EQ(intermediate_tensor_ptr->Weights().GetBufferManager(),
+              subgraph.GetBufferManager());
+    EXPECT_EQ(intermediate_tensor_ptr->Weights().GetBufferId(),
+              BufferManager::kEmptyBufferId);
+    EXPECT_EQ(const_weights_tensor_ptr->Weights().GetBufferManager(),
+              subgraph.GetBufferManager());
+    EXPECT_NE(const_weights_tensor_ptr->Weights().GetBufferId(),
+              BufferManager::kEmptyBufferId);
+  }
+
+  // Outside builder scope: builder is destroyed, verify tensors remain valid
+  ASSERT_NE(intermediate_tensor_ptr, nullptr);
+  ASSERT_NE(const_weights_tensor_ptr, nullptr);
+
+  EXPECT_EQ(intermediate_tensor_ptr->Weights().GetBufferManager(),
+            subgraph.GetBufferManager());
+  EXPECT_EQ(intermediate_tensor_ptr->Weights().GetBufferId(),
+            BufferManager::kEmptyBufferId);
+
+  EXPECT_EQ(const_weights_tensor_ptr->Weights().GetBufferManager(),
+            subgraph.GetBufferManager());
+  EXPECT_NE(const_weights_tensor_ptr->Weights().GetBufferId(),
+            BufferManager::kEmptyBufferId);
+  EXPECT_EQ(const_weights_tensor_ptr->Weights().Buffer().Size(),
+            sizeof(kWeightData));
+  const float* actual_weights = reinterpret_cast<const float*>(
+      const_weights_tensor_ptr->Weights().Buffer().Data());
+  EXPECT_THAT(absl::MakeConstSpan(actual_weights, 4),
+              ElementsAreArray(kWeightData));
+
+  // Crucial test: serialize the model. If intermediate_tensor_ptr held a
+  // dangling pointer to the destroyed builder's buffer manager, this would
+  // crash / fail ASAN.
+  auto serialized = SerializeModel(std::move(model));
+  ASSERT_TRUE(serialized);
+  ASSERT_TRUE(VerifyFlatbuffer(serialized->Span()));
+  auto model_wrap = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(model_wrap);
+  EXPECT_EQ(model_wrap->get()->Unpack()->subgraphs.size(), 1);
 }
 
 INSTANTIATE_TEST_SUITE_P(RandomGraphTests, BuilderRandomGraphTest,
