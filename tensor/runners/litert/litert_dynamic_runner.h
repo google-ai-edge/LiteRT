@@ -324,6 +324,55 @@ class LitertDynamicRunner {
     return absl::OkStatus();
   }
 
+  // Set output buffer by signature and index
+  absl::Status SetOutputBuffer(const std::string& signature_name, size_t index,
+                               litert::TensorBuffer buffer) {
+    auto out_it = signature_output_buffers_.find(signature_name);
+    if (out_it == signature_output_buffers_.end()) {
+      return absl::NotFoundError("Signature not found");
+    }
+    auto& output_buffers = out_it->second;
+    if (index >= output_buffers.size()) {
+      return absl::NotFoundError("Index out of bounds");
+    }
+    output_buffers[index] = std::move(buffer);
+    return absl::OkStatus();
+  }
+
+  // Set output buffer by signature and name
+  absl::Status SetOutputBuffer(const std::string& signature_name,
+                               const std::string& name,
+                               litert::TensorBuffer buffer) {
+    LITERT_ASSIGN_OR_RETURN(auto signature,
+                            compiled_model_.FindSignature(signature_name));
+    for (size_t i = 0; i < signature.OutputNames().size(); ++i) {
+      if (signature.OutputNames()[i] == name) {
+        return SetOutputBuffer(signature_name, i, std::move(buffer));
+      }
+    }
+    return absl::NotFoundError("Output tensor not found");
+  }
+
+  absl::Status SetOutputBuffer(const std::string& name,
+                               litert::TensorBuffer buffer) {
+    return SetOutputBuffer(default_signature_name_, name, std::move(buffer));
+  }
+
+  absl::Status SetOutputBuffer(size_t index, litert::TensorBuffer buffer) {
+    return SetOutputBuffer(default_signature_name_, index, std::move(buffer));
+  }
+
+  absl::Status SetOutput(const std::string& name, const TensorHandle& tensor) {
+    LITERT_ASSIGN_OR_RETURN(Buffer & buffer, tensor.GetBuffer());
+    auto litert_buffer_or = buffer.As<LitertBuffer>();
+    if (!litert_buffer_or.ok()) {
+      return absl::InvalidArgumentError("Tensor must be a LitertBuffer");
+    }
+    LITERT_ASSIGN_OR_RETURN(auto dup,
+                            litert_buffer_or->tensor_buffer().Duplicate());
+    return SetOutputBuffer(name, std::move(dup));
+  }
+
   // Run by signature
   absl::Status Run(const std::string& signature_name) {
     auto in_it = signature_input_buffers_.find(signature_name);
