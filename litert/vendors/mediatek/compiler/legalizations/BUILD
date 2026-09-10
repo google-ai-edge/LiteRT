@@ -282,6 +282,7 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -461,6 +462,28 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/compiler/cc:litert_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
+    ],
+)
+
+cc_library(
+    name = "layer_norm_op_legalization",
+    srcs = ["layer_norm_op_legalization.cc"],
+    hdrs = ["layer_norm_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":operand_map",
+        "//litert/c:litert_common",
+        "//litert/c:litert_options_header",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
+        "//litert/vendors/mediatek:neuron_adapter_api",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
