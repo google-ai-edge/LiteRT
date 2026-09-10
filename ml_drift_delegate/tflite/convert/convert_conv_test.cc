@@ -214,11 +214,11 @@ TEST_P(ConvertConvTest, Parameterized) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    ConvertConvTest, ConvertConvTest,
-    ::testing::Combine(::testing::Values(kTfLiteFloat32, kTfLiteFloat16,
-                                         kTfLiteInt8, kTfLiteInt4),  // dtype
-                       ::testing::Bool(),  // const_weights
-                       ::testing::Bool(),  // use_bias
+    ConvertConvFloatTest, ConvertConvTest,
+    ::testing::Combine(::testing::Values(kTfLiteFloat32,
+                                         kTfLiteFloat16),  // dtype
+                       ::testing::Bool(),                  // const_weights
+                       ::testing::Bool(),                  // use_bias
                        ::testing::Values(kTfLitePaddingSame,
                                          kTfLitePaddingValid),  // padding
                        ::testing::Values(kTfLiteActNone,
@@ -232,7 +232,34 @@ INSTANTIATE_TEST_SUITE_P(
         name += "float32";
       else if (dtype == kTfLiteFloat16)
         name += "float16";
-      else if (dtype == kTfLiteInt8)
+      name += std::string(std::get<1>(info.param) ? "_const" : "_runtime") +
+              std::string(std::get<2>(info.param) ? "_bias" : "_nobias") +
+              std::string(std::get<3>(info.param) == kTfLitePaddingSame
+                              ? "_same"
+                              : "_valid") +
+              std::string(std::get<4>(info.param) == kTfLiteActNone
+                              ? "_noactivation"
+                              : "_relu") +
+              "_groups" + std::to_string(std::get<5>(info.param));
+      return name;
+    });
+
+INSTANTIATE_TEST_SUITE_P(
+    ConvertConvQuantizedTest, ConvertConvTest,
+    ::testing::Combine(::testing::Values(kTfLiteInt8,
+                                         kTfLiteInt4),     // dtype
+                       ::testing::Bool(),                  // const_weights
+                       ::testing::Bool(),                  // use_bias
+                       ::testing::Values(kTfLitePaddingSame,
+                                         kTfLitePaddingValid),  // padding
+                       ::testing::Values(kTfLiteActNone,
+                                         kTfLiteActRelu),  // activation
+                       ::testing::Values(1)                // groups
+                       ),
+    [](const ::testing::TestParamInfo<ConvertConvTest::ParamType>& info) {
+      std::string name;
+      auto dtype = std::get<0>(info.param);
+      if (dtype == kTfLiteInt8)
         name += "int8";
       else if (dtype == kTfLiteInt4)
         name += "int4";

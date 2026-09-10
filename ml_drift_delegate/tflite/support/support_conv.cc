@@ -256,6 +256,22 @@ bool IsConv2dSupported(const TfLiteContext* absl_nonnull context,
                     ", dilation: ", dw, ", stride: ", sw);
     return false;
   }
+  // Check if quantized weights (DRQ) are supported (must be convertible to 1x1 FC).
+  const bool is_float_input = input.type == kTfLiteFloat32 ||
+                              input.type == kTfLiteFloat16 ||
+                              input.type == kTfLiteBFloat16;
+  const bool is_quantized_weights =
+      weights.type == kTfLiteInt4 || weights.type == kTfLiteInt8 ||
+      weights.type == kTfLiteUInt8;
+  if (is_float_input && is_quantized_weights) {
+    if (wh != 1 || ww != 1 || sh != 1 || sw != 1 || dh != 1 || dw != 1 ||
+        ic != wi) {
+      *error =
+          "Conv2D: Quantized weights (DRQ / non-FC) are not supported on GPU "
+          "delegate.";
+      return false;
+    }
+  }
   // Check const inputs.
   if (IsConstantTensor(&input) && IsConstantTensor(&weights) &&
       ((bias && IsConstantTensor(bias)) || !bias)) {
