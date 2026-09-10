@@ -184,7 +184,7 @@ TfLiteStatus DummySdpaPrepare(TfLiteContext* context, TfLiteNode* node) {
   return context->ResizeTensor(context, output, TfLiteIntArrayCopy(q->dims));
 }
 
-TfLiteStatus DummySdpaEval(TfLiteContext* context, TfLiteNode* node) {
+TfLiteStatus DummySdpaEval(TfLiteContext* /*context*/, TfLiteNode* /*node*/) {
   return kTfLiteOk;
 }
 
@@ -446,6 +446,19 @@ AttentionModel::AttentionModel(
       fprintf(stderr, "Failed to allocate tensors after delegation\n");
     }
   }
+}
+
+bool AttentionModel::IsDelegated() const {
+  if (!interpreter_) return false;
+  for (int node_index : interpreter_->execution_plan()) {
+    auto* node_and_reg = interpreter_->node_and_registration(node_index);
+    if (node_and_reg != nullptr) {
+      if (node_and_reg->first.delegate != nullptr) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 }  // namespace ynnpack
