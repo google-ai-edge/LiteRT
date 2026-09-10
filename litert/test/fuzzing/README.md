@@ -443,13 +443,13 @@ sanitizer reported it.
 Run a target in its short GoogleTest/FuzzTest seed mode while iterating:
 
 ```bash
-bazelisk test //third_party/odml/litert/litert/test/fuzzing:pad_fuzz_test
+bazelisk test //litert/test/fuzzing:pad_fuzz_test
 ```
 
 Run one property in coverage-guided mode:
 
 ```bash
-bazelisk run //third_party/odml/litert/litert/test/fuzzing:pad_fuzz_test -- \
+bazelisk run //litert/test/fuzzing:pad_fuzz_test -- \
   --fuzz=PadFuzzTest.PadExecutesValidCases \
   --fuzz_for=5m
 ```
@@ -463,7 +463,7 @@ one property per process:
 
 ```powershell
 bazelisk run -c fastbuild --config=windows_fuzztest `
-  //third_party/odml/litert/litert/test/fuzzing:pad_fuzz_test -- `
+  //litert/test/fuzzing:pad_fuzz_test -- `
   --fuzz=PadFuzzTest.PadExecutesValidCases `
   --fuzz_for=5m
 ```

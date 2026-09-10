@@ -18,6 +18,7 @@ import {getDataType} from './datatypes';
 import {Environment} from './environment';
 import {getGlobalLiteRt} from './global_litert';
 import {Tensor} from './tensor';
+import {ElementTypeName} from './wasm_binding_types';
 
 /**
  * Internal helper function for converting a CPU backed tensor to a WebGPU
@@ -150,10 +151,18 @@ export async function gpuTensorToCpuTensor(
   const tensorType = tensorHandle.tensorType();
   const layout = tensorType.layout();
   const numElements = layout.numElements();
+  const elementTypeVal = tensorType.elementType().value;
   const arrayConstructor =
-      getDataType(tensorType.elementType().value).typedArrayConstructor;
+      getDataType(elementTypeVal).typedArrayConstructor;
   layout.delete();
   tensorType.delete();
+
+  if (arrayConstructor === undefined) {
+    throw new Error(
+        `DType ${
+            ElementTypeName[elementTypeVal]
+        } is not supported in this environment (missing TypedArray constructor).`);
+  }
 
   // Copy the buffer to a new one that is mappable if it's not already.
   let mappableBuffer = gpuBuffer;
