@@ -85,6 +85,6 @@ cc_test(
         "//litert/test:matchers",
         "//litert/vendors/c:litert_compiler_plugin",
         "//litert/vendors/cc:litert_compiler_plugin",
-        "@com_google_googletest//:gtest_main_no_heapcheck",
+        "@com_google_googletest//:gtest_main",
     ],
 )
