@@ -130,15 +130,6 @@ std::vector<OpWrapper> BuildConv2dOp(
       stride_data.data());
   conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_STRIDE, stride_tensor);
 
-  // dilation param
-  const std::array<std::uint32_t, 2> dilation_data{dilation_h, dilation_w};
-  const std::vector<std::uint32_t> dilation_shape{2};
-  auto& dilation_tensor = tensor_pool.CreateStaticTensor(
-      QNN_DATATYPE_UINT_32, QuantizeParamsWrapperVariant{}, dilation_shape,
-      sizeof(decltype(dilation_data)::value_type) * dilation_data.size(),
-      dilation_data.data());
-  conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_DILATION, dilation_tensor);
-
   // padding param
   const auto [padding_before_height, padding_after_height] =
       ComputePaddingBeforeAfter(input_tensor.GetDimension(kHeightIndex),
@@ -157,6 +148,15 @@ std::vector<OpWrapper> BuildConv2dOp(
       sizeof(decltype(padding_data)::value_type) * padding_data.size(),
       padding_data.data());
   conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_PAD_AMOUNT, padding_tensor);
+
+  // dilation param
+  const std::array<std::uint32_t, 2> dilation_data{dilation_h, dilation_w};
+  const std::vector<std::uint32_t> dilation_shape{2};
+  auto& dilation_tensor = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_UINT_32, QuantizeParamsWrapperVariant{}, dilation_shape,
+      sizeof(decltype(dilation_data)::value_type) * dilation_data.size(),
+      dilation_data.data());
+  conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_DILATION, dilation_tensor);
 
   // group param
   if ((input_tensor.GetDimension(kChannelIndex) %
