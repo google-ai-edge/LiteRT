@@ -398,7 +398,7 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
 
   log_output_ = std::make_unique<BenchmarkLoggingListener>([this]() {
     if (profiler_) {
-      auto res = profiler_.GetProfileSummary(compiled_model_->Get());
+      auto res = profiler_.GetProfileSummary();
       if (res.HasValue()) {
         return res.Value();
       }

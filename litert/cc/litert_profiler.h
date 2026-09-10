@@ -38,9 +38,13 @@ class Profiler : public internal::BaseHandle<LiteRtProfiler> {
   /// @param profiler The `LiteRtProfiler` handle.
   /// @param owned Indicates if the created `Profiler` object should take
   /// ownership of the provided `profiler` handle.
-  explicit Profiler(LiteRtProfiler profiler, OwnHandle owned)
+  /// @param compiled_model The optional `LiteRtCompiledModel` handle associated
+  /// with the profiler.
+  explicit Profiler(LiteRtProfiler profiler, OwnHandle owned,
+                    LiteRtCompiledModel compiled_model = nullptr)
       : internal::BaseHandle<LiteRtProfiler>(profiler, LiteRtDestroyProfiler,
-                                             owned) {}
+                                             owned),
+        compiled_model_(compiled_model) {}
 
   /// @brief Get the number of events.
   Expected<int> GetNumEvents() const {
@@ -85,7 +89,24 @@ class Profiler : public internal::BaseHandle<LiteRtProfiler> {
   }
 
   /// @brief Get the profile summary.
-  Expected<std::string> GetProfileSummary(LiteRtCompiledModel compiled_model) {
+  Expected<std::string> GetProfileSummary() const {
+    if (compiled_model_ == nullptr) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "No compiled model associated with profiler.");
+    }
+    const char* summary = nullptr;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetProfileSummary(Get(), compiled_model_, &summary));
+    std::string result(summary);
+    free(const_cast<char*>(summary));
+    return result;
+  }
+
+  /// @brief Get the profile summary.
+  /// @deprecated Use parameterless GetProfileSummary() instead.
+  [[deprecated("Use parameterless GetProfileSummary() instead.")]]
+  Expected<std::string> GetProfileSummary(
+      LiteRtCompiledModel compiled_model) const {
     const char* summary = nullptr;
     LITERT_RETURN_IF_ERROR(
         LiteRtGetProfileSummary(Get(), compiled_model, &summary));
@@ -103,6 +124,9 @@ class Profiler : public internal::BaseHandle<LiteRtProfiler> {
         LiteRtSetProfilerCurrentEventSource(Get(), event_source));
     return {};
   }
+
+ private:
+  LiteRtCompiledModel compiled_model_ = nullptr;
 };
 }  // namespace litert
 

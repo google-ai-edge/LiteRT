@@ -44,7 +44,7 @@ TEST(LiteRtProfilerCcTest, GetProfileSummary) {
   EXPECT_TRUE(profiler->StartProfiling());
   EXPECT_TRUE(profiler->StopProfiling());
 
-  auto summary = profiler->GetProfileSummary(compiled_model->Get());
+  auto summary = profiler->GetProfileSummary();
   ASSERT_TRUE(summary.HasValue());
   EXPECT_TRUE(absl::StrContains(summary.Value(), "nodes observed"));
 }

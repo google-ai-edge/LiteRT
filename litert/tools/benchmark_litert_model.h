@@ -402,7 +402,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   TfLiteStatus ResetInputsAndOutputs() override {
     if (profiler_) {
       profiler_.StopProfiling();
-      profiler_.GetProfileSummary(compiled_model_->Get());
+      profiler_.GetProfileSummary();
       profiler_.Reset();
       profiler_.StartProfiling();
     }
