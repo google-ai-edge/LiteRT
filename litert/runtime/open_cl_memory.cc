@@ -226,7 +226,6 @@ Expected<OpenClMemory> OpenClMemory::AllocFromAhwbBuffer(
 Expected<OpenClMemory> OpenClMemory::AllocFromGlBuffer(
     GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
     GlBuffer& gl_buffer) {
-#ifndef CL_DELEGATE_NO_GL
   LITERT_RETURN_IF_ERROR(
       IsSupported(),
       Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
@@ -243,11 +242,6 @@ Expected<OpenClMemory> OpenClMemory::AllocFromGlBuffer(
   tflite::gpu::cl::Buffer cl_buffer(buffer, gl_buffer.size_bytes());
   return OpenClMemory(gpu_env, tensor_type, kLiteRtTensorBufferTypeOpenClBuffer,
                       std::move(cl_buffer));
-#else
-  return Unexpected(
-      kLiteRtStatusErrorRuntimeFailure,
-      "GL interop is not supported when compiled with CL_DELEGATE_NO_GL");
-#endif
 }
 
 }  // namespace litert::internal
