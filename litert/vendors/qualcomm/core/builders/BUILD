@@ -83,6 +83,20 @@ cc_library(
 )
 
 cc_library(
+    name = "expand_dims_op_builder",
+    srcs = ["expand_dims_op_builder.cc"],
+    hdrs = ["expand_dims_op_builder.h"],
+    deps = [
+        ":op_builder",
+        ":reshape_op_builder",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+    ],
+)
+
+cc_library(
     name = "fully_connected_op_builder",
     srcs = ["fully_connected_op_builder.cc"],
     hdrs = ["fully_connected_op_builder.h"],
