@@ -1,4 +1,4 @@
-# Copyright 2025 The Google AI Edge Authors. All Rights Reserved.
+# Copyright 2026 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,17 +11,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# ==============================================================================
 
-exports_files(
-    ["LICENSE"],
-    visibility = ["//:__subpackages__"],
-)
+# Description:
+#   NEON2SSE - a header file redefining ARM Neon intrinsics in terms of SSE intrinsics
+#              allowing neon code to compile and run on x64/x86 workstantions.
+
+package(default_visibility = ["//visibility:public"])
+
+licenses(["notice"])  # 3-Clause BSD
 
 exports_files([
-    "PATCH.flatbuffers_windows_no_bash",
-    "PATCH.perfetto",
-    "PATCH.protobuf_port_msvc_compat",
-    "PATCH.sentencepiece",
-    "litert_workspace.bzl",
-    "tensorflow_source_rules.bzl",
+    "LICENSE",
 ])
+
+cc_library(
+    name = "arm_neon_2_x86_sse",
+    hdrs = ["NEON_2_SSE.h"],
+)

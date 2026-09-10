@@ -166,6 +166,10 @@ load("@pypi//:requirements.bzl", "install_deps")
 install_deps()
 # End hermetic Python initialization
 
+load("//:litert_workspace.bzl", "litert_workspace")
+
+litert_workspace()
+
 load("@org_tensorflow//tensorflow:workspace2.bzl", "tf_workspace2")
 
 tf_workspace2()

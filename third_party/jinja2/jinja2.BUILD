@@ -8,5 +8,5 @@ py_library(
     name = "jinja2",
     srcs = glob(["jinja2/*.py"]),
     visibility = ["//visibility:public"],
-    deps = ["@markupsafe"],
+    deps = ["//third_party/py/markupsafe"],
 )
