@@ -843,7 +843,6 @@ cc_library(
         "@ruy//ruy/profiler:instrumentation",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
-        "//tflite/kernels/internal:float8",
         "//tflite/types:half",
         "//tflite:array",
         "//tflite:builtin_ops",
