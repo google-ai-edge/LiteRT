@@ -263,7 +263,11 @@ def fill_random_input(tensor_buffer, details):
   """Fill a tensor buffer with random data appropriate for its dtype."""
   dtype = get_numpy_dtype(details.get('dtype', 'float32'))
   shape = details.get('shape', [1])
-  if np.issubdtype(dtype, np.floating):
+  if dtype in (
+      ml_dtypes.bfloat16,
+      ml_dtypes.float8_e4m3fn,
+      ml_dtypes.float8_e5m2,
+  ) or np.issubdtype(dtype, np.floating):
     data = np.random.uniform(-1.0, 1.0, shape).astype(dtype)
   elif np.issubdtype(dtype, np.integer):
     info = np.iinfo(dtype)
