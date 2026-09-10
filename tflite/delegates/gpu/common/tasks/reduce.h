@@ -20,6 +20,7 @@ limitations under the License.
 #include <set>
 #include <string>
 
+#include "absl/status/status.h"
 #include "tflite/delegates/gpu/common/kernel_info.h"
 #include "tflite/delegates/gpu/common/operations.h"
 #include "tflite/delegates/gpu/common/task/gpu_operation.h"
