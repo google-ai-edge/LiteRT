@@ -1337,6 +1337,58 @@ LiteRtStatus LiteRtGetSqueezeDimsOption(LiteRtOp op,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetLocalResponseNormalizationRadiusOption(LiteRtOp op,
+                                                             int32_t* radius) {
+  if (op->OpCode() != kLiteRtOpCodeTflLocalResponseNormalization) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *radius = opts.AsLocalResponseNormalizationOptions()->radius;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetLocalResponseNormalizationBiasOption(LiteRtOp op,
+                                                           float* bias) {
+  if (op->OpCode() != kLiteRtOpCodeTflLocalResponseNormalization) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *bias = opts.AsLocalResponseNormalizationOptions()->bias;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetLocalResponseNormalizationAlphaOption(LiteRtOp op,
+                                                            float* alpha) {
+  if (op->OpCode() != kLiteRtOpCodeTflLocalResponseNormalization) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *alpha = opts.AsLocalResponseNormalizationOptions()->alpha;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetLocalResponseNormalizationBetaOption(LiteRtOp op,
+                                                           float* beta) {
+  if (op->OpCode() != kLiteRtOpCodeTflLocalResponseNormalization) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *beta = opts.AsLocalResponseNormalizationOptions()->beta;
+  return kLiteRtStatusOk;
+}
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

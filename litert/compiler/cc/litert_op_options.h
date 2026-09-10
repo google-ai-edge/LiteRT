@@ -1216,6 +1216,41 @@ struct OneHotOptions : public OpOptions {
   }
 };
 
+/// @brief Struct to hold options for the LiteRT LocalResponseNormalization op.
+struct LocalResponseNormalizationOptions : public OpOptions {
+  LiteRtOp op;
+  int32_t radius;
+  float bias;
+  float alpha;
+  float beta;
+  LiteRtStatus InitFromOp(const LiteRtCompilerContext* ctx,
+                          LiteRtOp op) override {
+    if (ctx == nullptr || ctx->get_op_code == nullptr ||
+        ctx->get_local_response_normalization_radius_option == nullptr ||
+        ctx->get_local_response_normalization_bias_option == nullptr ||
+        ctx->get_local_response_normalization_alpha_option == nullptr ||
+        ctx->get_local_response_normalization_beta_option == nullptr) {
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+    LiteRtOpCode opcode;
+    LITERT_RETURN_IF_ERROR(ctx->get_op_code(op, &opcode));
+    if (opcode != kLiteRtOpCodeTflLocalResponseNormalization) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->get_local_response_normalization_radius_option(op, &radius));
+    LITERT_RETURN_IF_ERROR(
+        ctx->get_local_response_normalization_bias_option(op, &bias));
+    LITERT_RETURN_IF_ERROR(
+        ctx->get_local_response_normalization_alpha_option(op, &alpha));
+    LITERT_RETURN_IF_ERROR(
+        ctx->get_local_response_normalization_beta_option(op, &beta));
+    this->op = op;
+
+    return kLiteRtStatusOk;
+  }
+};
+
 /// @brief Returns the composite info for the given op if it is a composite op.
 template <typename OptionsT>
 Expected<OptionsT> GetOptionsAs(const LiteRtCompilerContext* ctx, LiteRtOp op) {
