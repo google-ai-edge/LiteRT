@@ -22,7 +22,9 @@ limitations under the License.
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/c/litert_model_types.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
@@ -148,6 +150,84 @@ TEST(LitertBufferTest, As) {
                                   const_buffer_ref.As<LitertBuffer>());
   EXPECT_EQ(&const_buffer_as, &buffer);
   EXPECT_THAT(const_buffer_ref.As<SpanCpuBuffer>(), Not(IsOk()));
+}
+
+TEST(LitertBufferTest, CreateManagedHostAndProperties) {
+  auto env_or = Environment::Create({});
+  ASSERT_TRUE(env_or.HasValue());
+  auto env = std::move(*env_or);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto buffer,
+      LitertBuffer::CreateManagedHost(env, {2, 3}, ElementType::Float32,
+                                      2 * 3 * sizeof(float)));
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto buffer_type, buffer->BufferType());
+  EXPECT_EQ(buffer_type, TensorBufferType::kHostMemory);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto size, buffer->Size());
+  EXPECT_EQ(size, 2 * 3 * sizeof(float));
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto packed_size, buffer->PackedSize());
+  EXPECT_EQ(packed_size, 2 * 3 * sizeof(float));
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto tensor_type, buffer->TensorType());
+  EXPECT_EQ(tensor_type.ElementType(), ElementType::Float32);
+  EXPECT_EQ(tensor_type.Layout().Rank(), 2);
+  EXPECT_EQ(tensor_type.Layout().Dimensions()[0], 2);
+  EXPECT_EQ(tensor_type.Layout().Dimensions()[1], 3);
+
+  EXPECT_FALSE(buffer->HasEvent());
+}
+
+TEST(LitertBufferTest, CreateFromHostMemory) {
+  auto env_or = Environment::Create({});
+  ASSERT_TRUE(env_or.HasValue());
+  auto env = std::move(*env_or);
+
+  alignas(64) float raw_data[4] = {10.0f, 20.0f, 30.0f, 40.0f};
+  Layout layout(Dimensions({1, 4}));
+  RankedTensorType tensor_type(ElementType::Float32, std::move(layout));
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto buffer, LitertBuffer::CreateFromHostMemory(
+                       env, tensor_type, raw_data, 4 * sizeof(float)));
+
+  {
+    auto span = buffer->Lock();
+    const auto* ptr = reinterpret_cast<const float*>(span.data());
+    EXPECT_EQ(ptr[0], 10.0f);
+    EXPECT_EQ(ptr[1], 20.0f);
+    EXPECT_EQ(ptr[2], 30.0f);
+    EXPECT_EQ(ptr[3], 40.0f);
+  }
+}
+
+TEST(LitertBufferTest, DuplicateSharesUnderlyingBuffer) {
+  auto env_or = Environment::Create({});
+  ASSERT_TRUE(env_or.HasValue());
+  auto env = std::move(*env_or);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto buffer,
+      LitertBuffer::CreateManagedHost(env, {2}, ElementType::Float32,
+                                      2 * sizeof(float)));
+
+  {
+    auto span = buffer->LockMutable();
+    auto* ptr = reinterpret_cast<float*>(span.data());
+    ptr[0] = 42.0f;
+    ptr[1] = 84.0f;
+  }
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto dup_buffer, buffer->Duplicate());
+
+  {
+    auto span = dup_buffer->Lock();
+    const auto* ptr = reinterpret_cast<const float*>(span.data());
+    EXPECT_EQ(ptr[0], 42.0f);
+    EXPECT_EQ(ptr[1], 84.0f);
+  }
 }
 
 }  // namespace
