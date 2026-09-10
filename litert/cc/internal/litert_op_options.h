@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <type_traits>
 #include <vector>
 
@@ -45,7 +46,6 @@ struct OpOptions {
   virtual ~OpOptions() = default;
 };
 
-
 /// @brief Struct to hold options for LiteRT composite ops.
 struct CompositeOptions : public OpOptions {
   /// Name for special composites representing manual partitions.
@@ -65,6 +65,9 @@ struct CompositeOptions : public OpOptions {
   int32_t version;
   /// The attributes of the composite op.
   std::optional<flexbuffers::Map> attributes_map;
+  /// Raw attributes buffer.
+  const uint8_t* attributes_data = nullptr;
+  int32_t attributes_size = 0;
 
   LiteRtStatus InitFromOp(LiteRtOp op) override {
     LiteRtOpCode opcode;
@@ -89,6 +92,8 @@ struct CompositeOptions : public OpOptions {
     if (impl_attributes_size < 0) {
       return kLiteRtStatusErrorInvalidArgument;
     }
+    attributes_data = impl_attributes;
+    attributes_size = impl_attributes_size;
     if (impl_attributes_size > 0) {
       if (impl_attributes == nullptr ||
           !flexbuffers::VerifyBuffer(
@@ -106,7 +111,11 @@ struct CompositeOptions : public OpOptions {
     return kLiteRtStatusOk;
   }
   Expected<void> SetOpOptions(LiteRtBuilder builder) {
-    return Unexpected(Status::kErrorUnsupported);
+    std::string name_str(name);
+    LITERT_RETURN_IF_ERROR(LiteRtBuilderBuildShloCompositeOpOption(
+        builder, op, name_str.c_str(), &subgraph, &version, attributes_data,
+        attributes_size));
+    return Expected<void>();
   }
 };
 
@@ -126,9 +135,6 @@ struct RmsNormOpts : public CompositeOptions {
     }
     epsilon = raw_epsilon.AsFloat();
     return kLiteRtStatusOk;
-  }
-  Expected<void> SetOpOptions(LiteRtBuilder builder) {
-    return Unexpected(Status::kErrorUnsupported);
   }
 };
 

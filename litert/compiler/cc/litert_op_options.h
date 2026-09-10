@@ -18,10 +18,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
@@ -63,6 +65,9 @@ struct CompositeOptions : public OpOptions {
   int32_t version;
   /// The attributes of the composite op.
   std::optional<flexbuffers::Map> attributes_map;
+  /// Raw attributes buffer.
+  const uint8_t* attributes_data = nullptr;
+  int32_t attributes_size = 0;
 
   LiteRtStatus InitFromOp(const LiteRtCompilerContext* ctx,
                           LiteRtOp op) override {
@@ -96,6 +101,8 @@ struct CompositeOptions : public OpOptions {
     if (impl_attributes_size < 0) {
       return kLiteRtStatusErrorInvalidArgument;
     }
+    attributes_data = impl_attributes;
+    attributes_size = impl_attributes_size;
     if (impl_attributes_size > 0) {
       if (impl_attributes == nullptr ||
           !flexbuffers::VerifyBuffer(
@@ -112,11 +119,25 @@ struct CompositeOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            build_shlo_composite_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    std::string name_str(name);
+    LITERT_RETURN_IF_ERROR(ctx->build_shlo_composite_op_option(
+        builder, op, name_str.c_str(), &subgraph, &version, attributes_data,
+        attributes_size));
+    return Expected<void>();
+  }
 };
 
 struct RmsNormOpts : public CompositeOptions {
   /// The epsilon composite attribute of the RMS norm.
-  float epsilon;
+  float epsilon = 1e-5f;
+
   LiteRtStatus InitFromOp(const LiteRtCompilerContext* ctx,
                           LiteRtOp litert_op) override {
     LITERT_RETURN_IF_ERROR(CompositeOptions::InitFromOp(ctx, litert_op));
@@ -131,6 +152,23 @@ struct RmsNormOpts : public CompositeOptions {
     }
     epsilon = raw_epsilon.AsFloat();
     return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            build_shlo_composite_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    flexbuffers::Builder fbb;
+    fbb.Map([&]() { fbb.Float("epsilon", epsilon); });
+    fbb.Finish();
+    const auto& buffer = fbb.GetBuffer();
+    std::string name_str(name.empty() ? kRmsNorm : name);
+    LITERT_RETURN_IF_ERROR(ctx->build_shlo_composite_op_option(
+        builder, op, name_str.c_str(), &subgraph, &version, buffer.data(),
+        static_cast<int32_t>(buffer.size())));
+    return Expected<void>();
   }
 };
 
