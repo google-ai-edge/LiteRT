@@ -666,7 +666,7 @@ class ClassificationTensorMd(TensorMd):
       min_values = None
       max_values = None
 
-    associated_files: List[AssociatedFileMd] = list(label_files or [])
+    associated_files: List[AssociatedFileMd] = list(label_files or [])  # pyrefly: ignore[bad-assignment]
     if self.score_calibration_md:
       associated_files.append(
           self.score_calibration_md.create_score_calibration_file_md()
