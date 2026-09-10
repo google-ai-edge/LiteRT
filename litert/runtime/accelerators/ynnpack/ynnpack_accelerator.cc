@@ -103,6 +103,9 @@ class YnnpackAccelerator final
     ynn_options.consistent_arithmetic =
         parsed_options.ynn.consistent_arithmetic;
     ynn_options.no_excess_precision = parsed_options.ynn.no_excess_precision;
+    if (!parsed_options.ynn.allowed_ops.empty()) {
+      ynn_options.allowed_ops = parsed_options.ynn.allowed_ops.c_str();
+    }
 
     TfLiteDelegate* ynnpack_delegate =
         TfLiteYNNPackDelegateCreate(&ynn_options);
