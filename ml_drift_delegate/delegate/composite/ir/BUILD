@@ -148,6 +148,23 @@ cc_library(
 )
 
 cc_library(
+    name = "short_conv_step_parser",
+    srcs = ["short_conv_step_parser.cc"],
+    hdrs = ["short_conv_step_parser.h"],
+    deps = [
+        "//ml_drift_delegate/delegate/composite:short_conv_step_parser",
+        "//ml_drift_delegate/tflite:custom_ir_operation_parser",
+        "//ml_drift_delegate/tflite:ir_model_builder_helper",
+        "//tflite/c:common",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:ir_model",
+    ],
+)
+
+cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
     hdrs = ["custom_parsers.h"],
@@ -157,6 +174,7 @@ cc_library(
         ":qkv_norm_rope_parser",
         ":runtime_batched_matmul_parser",
         ":sdpa_transposed_parser",
+        ":short_conv_step_parser",
         ":swiglu_parser",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//tflite/c:common",
@@ -174,6 +192,7 @@ cc_library(
         "//ml_drift_delegate/delegate/composite:qkv_norm_rope_kernel",
         "//ml_drift_delegate/delegate/composite:runtime_batched_matmul_kernel",
         "//ml_drift_delegate/delegate/composite:sdpa_transposed_kernel",
+        "//ml_drift_delegate/delegate/composite:short_conv_step_kernel",
         "//ml_drift_delegate/delegate/composite:swiglu_kernel",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",

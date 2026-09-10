@@ -365,6 +365,43 @@ cc_library(
 )
 
 cc_library(
+    name = "short_conv_step_parser",
+    srcs = ["short_conv_step_parser.cc"],
+    hdrs = ["short_conv_step_parser.h"],
+    deps = [
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:model",
+    ],
+)
+
+cc_library(
+    name = "short_conv_step_kernel",
+    srcs = ["short_conv_step_kernel.cc"],
+    hdrs = ["short_conv_step_kernel.h"],
+    deps = [
+        ":short_conv_step_parser",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor_handle",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+    ],
+)
+
+cc_library(
     name = "qkv_norm_rope_parser",
     srcs = ["qkv_norm_rope_parser.cc"],
     hdrs = ["qkv_norm_rope_parser.h"],
@@ -475,6 +512,7 @@ cc_library(
         ":rope_parser",
         ":runtime_batched_matmul_parser",
         ":sdpa_transposed_parser",
+        ":short_conv_step_parser",
         ":swiglu_parser",
         "//ml_drift_delegate/tflite:model_builder",
         "//ml_drift_delegate/tflite:operation_parser",
@@ -507,6 +545,57 @@ mld_kernel_test(
     ],
 )
 
+# The Mac test targets are defined separately from mld_kernel_test to tag the
+# objc_library and cc_test with "manual", "notap", and "nobuilder". This prevents
+# non-Apple presubmits (TAP on Linux) from failing during target analysis due to
+# objc_library not being supported on non-Apple platforms, while still allowing
+# explicit test execution with:
+# bazel test -c opt --config=darwin_arm64 //third_party/odml/litert/ml_drift/delegate/composite:short_conv_step_kernel_test_mac
+objc_library(
+    name = "short_conv_step_kernel_test_objc_lib",
+    testonly = True,
+    srcs = [
+        "short_conv_step_kernel_test.cc",
+        "@ml_drift//ml_drift/common/kernels/tests:kernel_test.h",
+        "@ml_drift//ml_drift/common/kernels/tests:metal_kernel_test.mm",
+    ],
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":short_conv_step_kernel",
+        "@com_google_googletest//:gtest",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        # Dependency placeholder: apple_frameworks Metal,
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+        "@ml_drift//ml_drift/metal/testing:test_util",
+    ],
+)
+
+cc_test(
+    name = "short_conv_step_kernel_test_mac",
+    tags = [
+        "mac",
+        "manual",
+        "nobuilder",
+        "notap",
+        "nozapfhahn",
+    ],
+    deps = [
+        ":short_conv_step_kernel_test_objc_lib",
+    ],
+)
+
 cc_library(
     name = "litert_op_selector",
     srcs = ["litert_op_selector.cc"],
@@ -522,6 +611,8 @@ cc_library(
         ":runtime_batched_matmul_parser",
         ":sdpa_transposed_kernel",
         ":sdpa_transposed_parser",
+        ":short_conv_step_kernel",
+        ":short_conv_step_parser",
         ":swiglu_kernel",
         ":swiglu_parser",
         "@com_google_absl//absl/container:flat_hash_map",

@@ -23,6 +23,7 @@
 #include "ml_drift_delegate/delegate/composite/rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
+#include "ml_drift_delegate/delegate/composite/short_conv_step_parser.h"
 #include "ml_drift_delegate/delegate/composite/swiglu_parser.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
 #include "ml_drift_delegate/tflite/unimplemented_operation_parser.h"
@@ -52,6 +53,9 @@ std::unique_ptr<TFLiteOperationParser> CustomOperationParserFactory::Create(
   if (op_name == kQkvNormRopeType) {
     return std::make_unique<QkvNormRopeOperationParser>();
   }
+  if (op_name == kShortConvStepType) {
+    return std::make_unique<ShortConvStepOperationParser>();
+  }
   return std::make_unique<UnimplementedOperationParser>(op_name);
 }
 
@@ -60,7 +64,7 @@ bool CustomOperationParserFactory::SupportsIntegerTypes(
   return op_name == "odml.cache_update" || op_name == "odml.runtime_bmm" ||
          op_name == "moe" || op_name == "odml.rope" ||
          op_name == "odml.sdpa_transposed" || op_name == "odml.swiglu" ||
-         op_name == kQkvNormRopeType;
+         op_name == kQkvNormRopeType || op_name == kShortConvStepType;
 }
 
 bool CustomOperationParserFactory::SupportsBoolTypes(std::string_view op_name) {

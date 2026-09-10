@@ -34,6 +34,7 @@
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_kernel.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_kernel.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.h"
+#include "ml_drift_delegate/delegate/composite/short_conv_step_kernel.h"
 #include "ml_drift_delegate/delegate/composite/swiglu_kernel.h"
 
 namespace litert::ml_drift::ir {
@@ -75,6 +76,8 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     return CreateSwigluFromIrOp(inputs, outputs, op, model_builder);
   } else if (op.name == "qkv_norm_rope") {
     return CreateQkvNormRopeFromIrOp(inputs, outputs, op, model_builder);
+  } else if (op.name == "short_conv_step") {
+    return CreateShortConvStepFromIrOp(inputs, outputs, op, model_builder);
   }
 
   return ::ml_drift::GPUOperationFromNode(gpu_info_, op_def, create_info_,

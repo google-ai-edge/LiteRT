@@ -41,6 +41,8 @@
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_kernel.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
+#include "ml_drift_delegate/delegate/composite/short_conv_step_kernel.h"
+#include "ml_drift_delegate/delegate/composite/short_conv_step_parser.h"
 #include "ml_drift_delegate/delegate/composite/swiglu_kernel.h"
 #include "ml_drift_delegate/delegate/composite/swiglu_parser.h"
 
@@ -190,6 +192,9 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
   }
   if (node.operation.type == kQkvNormRopeType) {
     return CreateQkvNormRopeFromNode(inputs, outputs, node, model_builder);
+  }
+  if (node.operation.type == kShortConvStepType) {
+    return CreateShortConvStepFromNode(inputs, outputs, node, model_builder);
   }
   if (node.operation.type == ToString(::ml_drift::OperationType::ROPE)) {
     return CreateRoPEFromNode(inputs, outputs, node, model_builder);
