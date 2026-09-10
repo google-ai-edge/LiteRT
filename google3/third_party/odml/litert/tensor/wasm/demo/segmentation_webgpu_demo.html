@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>LiteRT WebGPU Segmentation WASM Demo</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f0f2f5; }
+    h1 { color: #333; }
+    .container { display: flex; gap: 20px; }
+    .panel { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .video-container { position: relative; width: 100%; max-width: 512px; }
+    video { width: 100%; border-radius: 4px; background: #000; display: block; }
+    canvas { width: 100%; border-radius: 4px; background: #000; }
+    #info { margin-top: 15px; font-family: monospace; color: #555; }
+    #perf { margin-top: 10px; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <h1>LiteRT WebAssembly: WebGPU Segmentation (C++ Pipeline)</h1>
+  <p>Demonstrating a segmentation pipeline defined in C++ using WebGpuRunner and custom shaders, running in the browser via WASM.</p>
+
+  <div class="container">
+    <div class="panel">
+      <h3>Input Video</h3>
+      <div class="video-container">
+        <video id="webcam" autoplay playsinline width="512" height="512"></video>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Segmentation Output</h3>
+      <canvas id="outputCanvas" width="256" height="256"></canvas>
+    </div>
+  </div>
+
+  <div id="info">Initializing WebAssembly & WebGPU...</div>
+  <div id="perf"></div>
+
+  <!-- Load the generated Emscripten JS glue code -->
+  <script src="../segmentation_webgpu_wasm_internal.js"></script>
+
+  <script type="module">
+    // Assuming Emscripten generates a function named createSegmentationWebGpuModule
+    // We might need to adjust this based on the actual EXPORT_NAME in BUILD.
+    
+    async function runDemo() {
+      const infoDiv = document.getElementById('info');
+      const perfDiv = document.getElementById('perf');
+
+      if (!navigator.gpu) {
+        infoDiv.textContent = "Error: WebGPU is not supported by this browser.";
+        return;
+      }
+
+      const adapter = await navigator.gpu.requestAdapter();
+      const device = await adapter.requestDevice();
+
+      infoDiv.textContent = "WebGPU initialized. Loading WASM module...";
+
+      // Initialize Emscripten module with preinitialized WebGPU device
+      const Module = await createSegmentationWebGpuModule({
+        preinitializedWebGPUDevice: device
+      });
+
+      infoDiv.textContent = "WASM module loaded. Loading model...";
+
+      // Load the model
+      const modelUrl = "./selfie_multiclass_256x256.tflite";
+      const response = await fetch(modelUrl);
+      const modelArrayBuffer = await response.arrayBuffer();
+      const modelBytes = new Uint8Array(modelArrayBuffer);
+
+      infoDiv.textContent = "Model loaded. Initializing C++ pipeline...";
+
+      const pipeline = new Module.SegmentationPipeline();
+      
+      const success = pipeline.init(modelBytes);
+      if (!success) {
+        infoDiv.textContent = "Error: Failed to initialize C++ pipeline.";
+        return;
+      }
+
+      infoDiv.textContent = "Pipeline initialized. Setting up webcam...";
+
+      const video = document.getElementById('webcam');
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 512, height: 512 } });
+      video.srcObject = stream;
+      await video.play();
+
+      infoDiv.textContent = "Running segmentation...";
+
+      const canvas = document.getElementById('outputCanvas');
+      const ctx = canvas.getContext('2d');
+      const imageData = ctx.createImageData(256, 256);
+
+      const tmpCanvas = document.createElement('canvas');
+      tmpCanvas.width = 512;
+      tmpCanvas.height = 512;
+      const tmpCtx = tmpCanvas.getContext('2d', { willReadFrequently: true });
+
+      const inputPtr = Module._malloc(512 * 512 * 3 * 4);
+      const origPtr = Module._malloc(256 * 256 * 3 * 4);
+      const outputPtr = Module._malloc(256 * 256 * 3 * 4);
+
+      const floatPixels = new Float32Array(512 * 512 * 3);
+      const origPixels = new Float32Array(256 * 256 * 3);
+
+      let isProcessing = false;
+      let lastTime = performance.now();
+
+      async function frame() {
+        if (isProcessing) {
+          requestAnimationFrame(frame);
+          return;
+        }
+        isProcessing = true;
+
+        const startTime = performance.now();
+
+        // 1. Capture input frame
+        tmpCtx.drawImage(video, 0, 0, 512, 512);
+        const rawPixels = tmpCtx.getImageData(0, 0, 512, 512).data;
+
+        // Convert to float and normalize/prepare as needed by the C++ pipeline
+        for (let i = 0, j = 0; i < 512 * 512 * 4; i += 4, j += 3) {
+          floatPixels[j] = rawPixels[i] / 255.0;
+          floatPixels[j + 1] = rawPixels[i + 1] / 255.0;
+          floatPixels[j + 2] = rawPixels[i + 2] / 255.0;
+        }
+
+        // Capture original image at 256x256 for post-processing blending
+        tmpCtx.drawImage(video, 0, 0, 256, 256);
+        const rawOrigPixels = tmpCtx.getImageData(0, 0, 256, 256).data;
+        for (let i = 0, j = 0; i < 256 * 256 * 4; i += 4, j += 3) {
+          origPixels[j] = rawOrigPixels[i] / 255.0;
+          origPixels[j + 1] = rawOrigPixels[i + 1] / 255.0;
+          origPixels[j + 2] = rawOrigPixels[i + 2] / 255.0;
+        }
+
+        // Copy to WASM heap
+        Module.HEAPF32.set(floatPixels, inputPtr / 4);
+        Module.HEAPF32.set(origPixels, origPtr / 4);
+
+        // 2. Process Frame in C++
+        const ok = await pipeline.processFrame(inputPtr, origPtr, outputPtr);
+        if (!ok) {
+          console.error("Failed to process frame in C++");
+          isProcessing = false;
+          return;
+        }
+
+        // 3. Render output
+        const outputData = new Float32Array(Module.HEAPF32.buffer, outputPtr, 256 * 256 * 3);
+
+        for (let i = 0, j = 0; i < 256 * 256 * 3; i += 3, j += 4) {
+          imageData.data[j] = Math.min(255, Math.max(0, outputData[i] * 255));
+          imageData.data[j + 1] = Math.min(255, Math.max(0, outputData[i + 1] * 255));
+          imageData.data[j + 2] = Math.min(255, Math.max(0, outputData[i + 2] * 255));
+          imageData.data[j + 3] = 255; // Alpha
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+
+        const endTime = performance.now();
+        const fps = 1000 / (endTime - lastTime);
+        lastTime = endTime;
+
+        perfDiv.textContent = `Frame Time: ${(endTime - startTime).toFixed(2)} ms | FPS: ${fps.toFixed(1)}`;
+
+        isProcessing = false;
+        requestAnimationFrame(frame);
+      }
+
+      frame();
+    }
+
+    // We assume the module creation function is available globally or we need to handle it based on Emscripten settings.
+    // For now, we attempt to run the demo.
+    setTimeout(runDemo, 1000); // Wait a bit for scripts to load
+  </script>
+</body>
+</html>

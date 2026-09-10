@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LiteRT WASM Game of Life Demo</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    canvas { border: 1px solid black; }
+    #info { margin-top: 10px; font-weight: bold; }
+    #perf { font-family: monospace; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>LiteRT WASM Game of Life Demo</h1>
+  <canvas id="outputCanvas" width="256" height="256"></canvas>
+  <div id="info">Initializing...</div>
+  <div id="perf"></div>
+  <button id="startBtn">Start/Stop</button>
+  <button id="stepBtn">Step</button>
+ 
+  <!-- Load Emscripten WebAssembly sandbox -->
+  <script src="../tensor_wasm_internal.js"></script>
+  <script type="module">
+    async function runDemo() {
+      const infoDiv = document.getElementById('info');
+      const perfDiv = document.getElementById('perf');
+      const canvas = document.getElementById('outputCanvas');
+      const ctx = canvas.getContext('2d');
+ 
+      // Request WebGPU adapter and device
+      if (!navigator.gpu) {
+        infoDiv.textContent = "Error: WebGPU is not supported by this browser.";
+        return;
+      }
+      const adapter = await navigator.gpu.requestAdapter();
+      const device = await adapter.requestDevice();
+
+      infoDiv.textContent = "Initializing LiteRT WASM module...";
+      // Load the LiteRT WebAssembly sandbox module
+      const litert = await createTensorModule({
+        preinitializedWebGPUDevice: device
+      });
+ 
+      const H = 256;
+      const W = 256;
+ 
+      function createShapeVector(dims) {
+        const shape = new litert.ShapeVector();
+        for (const dim of dims) {
+          shape.push_back(dim);
+        }
+        return shape;
+      }
+ 
+      // 1. Create Tensors for Graph
+      const state = new litert.Tensor();
+      state.setName("state");
+      state.setType(litert.TensorType.kFP32);
+      const stateShape = createShapeVector([1, H, W, 1]);
+      state.setShape(stateShape);
+ 
+      const kernel = new litert.Tensor();
+      kernel.setName("kernel");
+      kernel.setType(litert.TensorType.kFP32);
+      const kernelShape = createShapeVector([1, 3, 3, 1]);
+      kernel.setShape(kernelShape);
+ 
+      const one = new litert.Tensor();
+      one.setName("one");
+      one.setType(litert.TensorType.kFP32);
+      const constShape = createShapeVector([1, 1, 1, 1]);
+      one.setShape(constShape);
+ 
+      const two = new litert.Tensor();
+      two.setName("two");
+      two.setType(litert.TensorType.kFP32);
+      two.setShape(constShape);
+ 
+      const three = new litert.Tensor();
+      three.setName("three");
+      three.setType(litert.TensorType.kFP32);
+      three.setShape(constShape);
+ 
+      // Operations
+      // conv2d(filter, stride_h, stride_w, padding, dilation_h, dilation_w)
+      // Padding: 0=VALID, 1=SAME
+      const neighbors = state.conv2d(kernel, 1, 1, 0, 1, 1);
+      neighbors.setName("neighbors");
+      neighbors.setType(litert.TensorType.kFP32);
+ 
+      // equals3 = (1 - abs(neighbors - 3)).relu()
+      const sub3 = neighbors.sub(three);
+      sub3.setName("sub3");
+      sub3.setType(litert.TensorType.kFP32);
+      const abs3 = sub3.abs();
+      abs3.setName("abs3");
+      abs3.setType(litert.TensorType.kFP32);
+      const subOne3 = one.sub(abs3);
+      subOne3.setName("subOne3");
+      subOne3.setType(litert.TensorType.kFP32);
+      const equals3 = subOne3.relu();
+      equals3.setName("equals3");
+      equals3.setType(litert.TensorType.kFP32);
+      
+      // equals2 = (1 - abs(neighbors - 2)).relu()
+      const sub2 = neighbors.sub(two);
+      sub2.setName("sub2");
+      sub2.setType(litert.TensorType.kFP32);
+      const abs2 = sub2.abs();
+      abs2.setName("abs2");
+      abs2.setType(litert.TensorType.kFP32);
+      const subOne2 = one.sub(abs2);
+      subOne2.setName("subOne2");
+      subOne2.setType(litert.TensorType.kFP32);
+      const equals2 = subOne2.relu();
+      equals2.setName("equals2");
+      equals2.setType(litert.TensorType.kFP32);
+ 
+      // survival = (equals2 + equals3) * state
+      const add23 = equals2.add(equals3);
+      add23.setName("add23");
+      add23.setType(litert.TensorType.kFP32);
+      const survival = add23.mul(state);
+      survival.setName("survival");
+      survival.setType(litert.TensorType.kFP32);
+ 
+      // birth = equals3 * (1 - state)
+      const oneMinusState = one.sub(state);
+      oneMinusState.setName("oneMinusState");
+      oneMinusState.setType(litert.TensorType.kFP32);
+      const birth = equals3.mul(oneMinusState);
+      birth.setName("birth");
+      birth.setType(litert.TensorType.kFP32);
+ 
+      // newState = survival + birth
+      const newState = survival.add(birth);
+      newState.setName("newState");
+      newState.setType(litert.TensorType.kFP32);
+ 
+      infoDiv.textContent = "Building graph...";
+      const runner = litert.createStaticLambdaRunner(
+        {
+          "state": state,
+          "kernel": kernel,
+          "one": one,
+          "two": two,
+          "three": three
+        },
+        {"newState": newState},
+        2
+      );
+ 
+      infoDiv.textContent = "Graph built. Initializing data...";
+ 
+      // Initialize kernel: [[1,1,1],[1,0,1],[1,1,1]]
+      const kernelData = new Float32Array([
+        1, 1, 1,
+        1, 0, 1,
+        1, 1, 1
+      ]);
+      // We need to pass it as [1, 3, 3, 1]!
+      runner.setInputBinary("kernel", new Uint8Array(kernelData.buffer));
+ 
+      // Initialize constants
+      runner.setInputBinary("one", new Uint8Array(new Float32Array([1.0]).buffer));
+      runner.setInputBinary("two", new Uint8Array(new Float32Array([2.0]).buffer));
+      runner.setInputBinary("three", new Uint8Array(new Float32Array([3.0]).buffer));
+ 
+      // Initialize random state
+      let currentState = new Float32Array(H * W * 1);
+      for (let i = 0; i < H * W; i++) {
+        currentState[i] = Math.random() > 0.5 ? 1.0 : 0.0;
+      }
+ 
+      const imgData = ctx.createImageData(W, H);
+ 
+      async function step() {
+        const t0 = performance.now();
+        
+        const stateIn = runner.getInput("state");
+        const inBufferId = stateIn.getWebGpuBuffer();
+
+        
+        if (inBufferId) {
+          const inBuffer = litert.WebGPU.getJsObject(inBufferId);
+          device.queue.writeBuffer(inBuffer, 0, currentState.buffer);
+        } else {
+          runner.setInputBinary("state", new Uint8Array(currentState.buffer));
+        }
+        
+        await runner.run();
+        
+        const newStateOut = runner.getOutput("newState");
+        currentState = await newStateOut.getData();
+        
+        const t1 = performance.now();
+        perfDiv.textContent = `Step computed in ${(t1 - t0).toFixed(2)}ms`;
+ 
+        // Render
+        for (let i = 0; i < H * W; i++) {
+          const val = currentState[i];
+          const idx = i * 4;
+          imgData.data[idx] = val > 0.5 ? 255 : 0;
+          imgData.data[idx + 1] = val > 0.5 ? 255 : 0;
+          imgData.data[idx + 2] = val > 0.5 ? 255 : 0;
+          imgData.data[idx + 3] = 255;
+        }
+        ctx.putImageData(imgData, 0, 0);
+      }
+ 
+      let running = false;
+      async function loop() {
+        if (!running) return;
+        await step();
+        requestAnimationFrame(loop);
+      }
+ 
+      document.getElementById('startBtn').addEventListener('click', () => {
+        running = !running;
+        if (running) {
+          document.getElementById('startBtn').textContent = "Stop";
+          loop();
+        } else {
+          document.getElementById('startBtn').textContent = "Start";
+        }
+      });
+ 
+      document.getElementById('stepBtn').addEventListener('click', async () => {
+        if (!running) await step();
+      });
+ 
+      await step(); // Initial render
+      infoDiv.textContent = "Ready!";
+    }
+ 
+    runDemo().catch(err => {
+      console.error(err);
+      document.getElementById('info').textContent = `Error: ${err.message}`;
+    });
+  </script>
+</body>
+</html>
