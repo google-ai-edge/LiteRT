@@ -401,6 +401,22 @@ target_link_libraries(embedding_gemma_test
         GTest::gtest_main
 )
 
+add_executable(onehot_fc_test)
+
+target_sources(onehot_fc_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../core/transformation/onehot_fc_test.cc
+)
+
+target_link_libraries(onehot_fc_test
+    PRIVATE
+        qnn_transformation
+        qnn_builders
+        qnn_tensor_pool
+        qnn_wrappers
+        GTest::gtest_main
+)
+
 add_executable(graph_to_graph_test)
 
 target_sources(graph_to_graph_test

@@ -14,6 +14,7 @@
 #include "litert/vendors/qualcomm/core/transformation/mask.h"
 #include "litert/vendors/qualcomm/core/transformation/matmul_convert.h"
 #include "litert/vendors/qualcomm/core/transformation/mha_to_sha.h"
+#include "litert/vendors/qualcomm/core/transformation/onehot_fc.h"
 #include "litert/vendors/qualcomm/core/transformation/rotation_quant.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 
@@ -241,6 +242,36 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
   };
   Transform(validate_op_config, ops, tensor_pool, embedding_gemma,
             TransformEmbeddingGemma);
+
+  const std::vector<QnnOpCode> onehot_fc = {
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kReshape,
+      QnnOpCode::kOneHot,
+      QnnOpCode::kElementWiseBinary,  // Less
+      QnnOpCode::kElementWiseBinary,  // GreaterEqual
+      QnnOpCode::kElementWiseBinary,  // Or
+      QnnOpCode::kElementWiseBinary,  // NotEqual
+      QnnOpCode::kElementWiseBinary,  // And
+      QnnOpCode::kReshape,
+      QnnOpCode::kElementWiseSelect,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kReshape,
+      QnnOpCode::kOneHot,
+      QnnOpCode::kElementWiseBinary,  // Less
+      QnnOpCode::kElementWiseBinary,  // GreaterEqual
+      QnnOpCode::kElementWiseBinary,  // Or
+      QnnOpCode::kElementWiseBinary,  // NotEqual
+      QnnOpCode::kElementWiseBinary,  // And
+      QnnOpCode::kReshape,
+      QnnOpCode::kElementWiseSelect,
+      QnnOpCode::kFullyConnected,
+      QnnOpCode::kReshape,  // FullyConnected keep_num_dims
+      QnnOpCode::kReshape,
+      QnnOpCode::kFullyConnected,
+      QnnOpCode::kReshape,  // FullyConnected keep_num_dims
+      QnnOpCode::kReshape,
+  };
+  Transform(validate_op_config, ops, tensor_pool, onehot_fc, TransformOneHotFc);
 
   // Gemma 4 Optimization
   // Base: perm=[0,2,1,3] transpose bookends, one far-away Convert before QK,

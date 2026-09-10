@@ -65,11 +65,43 @@ cc_library(
         ":mask",
         ":matmul_convert",
         ":mha_to_sha",
+        ":onehot_fc",
         ":rotation_quant",
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
     ],
+)
+
+cc_library(
+    name = "onehot_fc",
+    srcs = ["onehot_fc.cc"],
+    hdrs = ["onehot_fc.h"],
+    deps = [
+        "//litert/vendors/qualcomm/core:op_code",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:embedding_lookup_op_builder",
+        "//litert/vendors/qualcomm/core/builders:reshape_op_builder",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_test(
+    name = "onehot_fc_test",
+    srcs = ["onehot_fc_test.cc"],
+    deps = [
+        ":onehot_fc",
+        "//litert/vendors/qualcomm/core:op_code",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:reshape_op_builder",
+        "//litert/vendors/qualcomm/core/builders:select_op_builder",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ] + gtest_main_no_heapcheck_deps(),
 )
 
 cc_library(
