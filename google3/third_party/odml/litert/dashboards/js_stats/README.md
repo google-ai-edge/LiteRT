@@ -20,7 +20,7 @@ Instead of staging through CNS, these collectors write directly to
 internal F1 SQL connector.
 
 This means you can run these collectors ad-hoc from Cloudtop or schedule them
-via Datascape PyApps.
+via the Plx Workflow (`//dashboards/litert_js_stats.workflow`).
 
 ## Running the Data Collectors
 
