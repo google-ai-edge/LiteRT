@@ -23,6 +23,7 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/compiler/cc/litert_model.h"
+#include "litert/compiler/cc/litert_op_options.h"
 #include "litert/vendors/mediatek/compiler/legalizations/neuron_utils.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
@@ -55,6 +56,19 @@ bool VerifyCommonOp(const litert::compiler::Op& op, LiteRtOpCode op_code) {
     if (std::string(op_name) == "odml.rms_norm" ||
         std::string(op_name) == "odml.l2_norm") {
       return true;
+    }
+    if (std::string(op_name) == "odml.group_norm") {
+      auto info =
+          litert::compiler::GetOptionsAs<litert::compiler::CompositeOptions>(
+              op.ctx(), op.Get());
+      if (!info || !info->attributes_map.has_value()) {
+        return false;
+      }
+      auto attributes_map = info->attributes_map.value();
+      if (attributes_map["num_groups"].IsNull()) {
+        return false;
+      }
+      return attributes_map["num_groups"].AsInt32() == 1;
     }
     return false;
   }

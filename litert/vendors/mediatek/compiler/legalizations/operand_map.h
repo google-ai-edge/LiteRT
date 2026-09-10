@@ -232,7 +232,7 @@ class OperandMap {
     }
 
     // Add oem operand
-    int32_t operand_type;
+    int32_t operand_type = 0;
     if (neuron_adapter_api_.api().model_get_extension_operand_type(
             model_, kExtensionGeneralOpration,
             ADAPTER_EXTENSION_GENERAL_OPERAND_ARGSTRING,
