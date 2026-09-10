@@ -16,97 +16,18 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_BACKENDS_XNNPACK_ARITHMETIC_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_BACKENDS_XNNPACK_ARITHMETIC_H_
 
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-#include <vector>
-
-#include "xnnpack.h"  // from @XNNPACK
-#include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
-#include "absl/status/statusor.h"  // from @com_google_absl
 #include "tensor/arithmetic_graph.h"
-#include "tensor/buffer.h"
-#include "tensor/datatypes.h"
+#include "tensor/backends/xnnpack/conversion.h"
 #include "tensor/internal/graph.h"
 #include "tensor/internal/mixin.h"
-#include "tensor/internal/type_id.h"
-
-struct xnn_subgraph;
 
 namespace litert::tensor {
 
 // Tag to identify the XNNPACK mixin.
 struct XnnpackMixinTag {};
 
-struct XnnpackValue {
-  graph::TensorInformation info;
-  uint32_t id = XNN_INVALID_VALUE_ID;
-  uint32_t flags = 0;
-  LockedBufferSpan<const std::byte> data =
-      LockedBufferSpan<const std::byte>::Empty();
-};
-
-class XnnpackGraph;
-class TensorHandle;
-
-// Context for building an XNNPACK subgraph.
-class XnnpackBuildContext {
- public:
-  explicit XnnpackBuildContext(
-      std::vector<TensorHandle> outputs,
-      absl::flat_hash_map<graph::Tensor, uint32_t> external_ids = {});
-  ~XnnpackBuildContext();
-  absl::Status Init();
-  absl::StatusOr<std::unique_ptr<XnnpackGraph>> Finalize();
-  // Defines a tensor in the XNNPACK subgraph.
-  absl::StatusOr<uint32_t> DefineValue(const graph::Tensor& tensor);
-  // Aliases `source` to `target`. Any call to `DefineValue(source)` will return
-  // the XNNPACK ID of `target`.
-  absl::Status AliasValue(const graph::Tensor& source,
-                          const graph::Tensor& target);
-  // Removes a tensor from the context.
-  void RemoveTensor(const graph::Tensor& tensor);
-  // Defines a constant tensor in the XNNPACK subgraph.
-  // The data will be copied and its lifetime will be managed by the
-  // graph/runner.
-  absl::StatusOr<uint32_t> DefineConstant(const void* data, size_t bytes,
-                                          ::xnn_datatype datatype,
-                                          std::vector<size_t> shape);
-  // Returns the XNNPACK subgraph.
-  ::xnn_subgraph* subgraph();
-  // Keeps a buffer alive for the duration of the graph's lifetime.
-  void KeepAlive(std::shared_ptr<Buffer> buffer) {
-    keep_alive_buffers_.push_back(std::move(buffer));
-  }
-
- private:
-  xnn_subgraph* subgraph_ = nullptr;
-  std::vector<graph::Tensor> outputs_;
-  std::vector<XnnpackValue> values_;
-  absl::flat_hash_map<graph::Tensor, size_t> tensor_index_;
-  absl::flat_hash_set<graph::Tensor> external_outputs_;
-  absl::flat_hash_map<graph::Tensor, uint32_t> external_ids_;
-  std::vector<std::vector<float>> dequantized_buffers_;
-  std::vector<std::vector<fp16_t>> fp16_buffers_;
-  std::vector<std::vector<char>> constant_buffers_;
-  std::vector<std::shared_ptr<Buffer>> keep_alive_buffers_;
-
-  friend absl::StatusOr<std::unique_ptr<XnnpackGraph>> BuildXnnpackGraph(
-      std::vector<TensorHandle> outputs);
-};
-
-// Base class for XNNPACK operations.
-class XnnpackOperation : public graph::BackendExtension {
- public:
-  internal::TypeId GetTypeId() const override {
-    return internal::TypeId::Get<XnnpackOperation>();
-  }
-  // Converts the operation to XNNPACK.
-  virtual absl::Status ToXnnpack(const graph::Operation& op,
-                                 XnnpackBuildContext& ctx) const = 0;
-};
+class ExternalBuffer;
 
 namespace graph {
 

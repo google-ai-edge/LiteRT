@@ -29,9 +29,10 @@ limitations under the License.
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
+#include "tensor/backends/common_nnpack/conversion.h"
 #include "tensor/backends/xnnpack/arithmetic.h"
 #include "tensor/backends/xnnpack/conversion.h"
-#include "tensor/backends/xnnpack/utils.h"  // IWYU pragma: keep
+#include "tensor/backends/xnnpack/utils.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/ops/transformer/transformer_ops_graph.h"
@@ -272,9 +273,13 @@ absl::Status OpMixin<RmsNormOperation, XnnpackMixinTag>::ToXnnpack(
     composite_output = std::move(norm_input);
   }
 
-  return InlineImplementationGraphFor(
-      op, {input.GetRaw(), scale.GetRaw(), eps.GetRaw()},
-      {composite_output.GetRaw()}, ctx);
+  std::vector<graph::Tensor> inlined_inputs = {input.GetRaw(), scale.GetRaw()};
+  if (has_epsilon) {
+    inlined_inputs.push_back(eps.GetRaw());
+  }
+
+  return InlineImplementationGraphFor(op, inlined_inputs,
+                                      {composite_output.GetRaw()}, ctx);
 }
 
 }  // namespace litert::tensor::graph

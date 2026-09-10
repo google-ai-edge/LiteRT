@@ -105,6 +105,7 @@ cc_library(
         "//tensor:arithmetic",
         "//tensor:buffer",
         "//tensor:datatypes",
+        "//tensor/backends/common_nnpack:conversion",
         "//tensor/backends/xnnpack:arithmetic",
         "//tensor/backends/xnnpack:conversion",
         "//tensor/backends/xnnpack:utils",

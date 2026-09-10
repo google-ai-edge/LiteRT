@@ -24,7 +24,9 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "xnnpack.h"  // from @XNNPACK  // from @XNNPACK
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
+#include "tensor/backends/common_nnpack/graph.h"
 #include "tensor/backends/xnnpack/arithmetic.h"
 #include "tensor/datatypes.h"
 #include "tensor/tensor.h"
@@ -32,6 +34,8 @@ limitations under the License.
 
 namespace litert::tensor {
 namespace {
+
+using ::absl_testing::StatusIs;
 
 using XnnTensor = Tensor<XnnpackMixinTag>;
 
@@ -48,18 +52,18 @@ TEST(XnnpackConversionTest, MarksExternalValuesAndCopiesConstants) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(size_t input_index,
                                   graph->Lookup(runtime_input));
-  const XnnpackValue& input_value = graph->values()[input_index];
+  const NnpackValue& input_value = graph->values()[input_index];
   EXPECT_NE(input_value.flags & XNN_VALUE_FLAG_EXTERNAL_INPUT, 0);
   EXPECT_EQ(input_value.flags & XNN_VALUE_FLAG_EXTERNAL_OUTPUT, 0);
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(size_t bias_index,
                                   graph->Lookup(constant_bias));
-  const XnnpackValue& bias_value = graph->values()[bias_index];
+  const NnpackValue& bias_value = graph->values()[bias_index];
   EXPECT_EQ(bias_value.flags, 0);
   EXPECT_EQ(bias_value.data.size(), sizeof(float) * 3);
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(size_t output_index, graph->Lookup(sum));
-  const XnnpackValue& output_value = graph->values()[output_index];
+  const NnpackValue& output_value = graph->values()[output_index];
   EXPECT_NE(output_value.flags & XNN_VALUE_FLAG_EXTERNAL_OUTPUT, 0);
 }
 
@@ -75,7 +79,7 @@ TEST(XnnpackConversionTest, SharedTensorRegisteredOnce) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto graph, BuildXnnpackGraph({second}));
 
   int external_inputs = 0;
-  for (const XnnpackValue& value : graph->values()) {
+  for (const NnpackValue& value : graph->values()) {
     if (value.flags & XNN_VALUE_FLAG_EXTERNAL_INPUT) {
       ++external_inputs;
     }
@@ -90,7 +94,7 @@ TEST(XnnpackConversionTest, Relu6SetsCorrectNode) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto graph, BuildXnnpackGraph({output}));
 
   int num_external_inputs = 0;
-  for (const XnnpackValue& value : graph->values()) {
+  for (const NnpackValue& value : graph->values()) {
     if (value.flags & XNN_VALUE_FLAG_EXTERNAL_INPUT) {
       ++num_external_inputs;
     }
@@ -105,7 +109,7 @@ TEST(XnnpackConversionTest, LeakyReluSetsCorrectNode) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto graph, BuildXnnpackGraph({output}));
 
   int num_external_inputs = 0;
-  for (const XnnpackValue& value : graph->values()) {
+  for (const NnpackValue& value : graph->values()) {
     if (value.flags & XNN_VALUE_FLAG_EXTERNAL_INPUT) {
       ++num_external_inputs;
     }
@@ -120,7 +124,7 @@ TEST(XnnpackConversionTest, EluSetsCorrectNode) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto graph, BuildXnnpackGraph({output}));
 
   int num_external_inputs = 0;
-  for (const XnnpackValue& value : graph->values()) {
+  for (const NnpackValue& value : graph->values()) {
     if (value.flags & XNN_VALUE_FLAG_EXTERNAL_INPUT) {
       ++num_external_inputs;
     }
@@ -135,7 +139,7 @@ TEST(XnnpackConversionTest, GeluSetsCorrectNode) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto graph, BuildXnnpackGraph({output}));
 
   int num_external_inputs = 0;
-  for (const XnnpackValue& value : graph->values()) {
+  for (const NnpackValue& value : graph->values()) {
     if (value.flags & XNN_VALUE_FLAG_EXTERNAL_INPUT) {
       ++num_external_inputs;
     }
@@ -150,7 +154,7 @@ TEST(XnnpackConversionTest, HardSwishSetsCorrectNode) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto graph, BuildXnnpackGraph({output}));
 
   int num_external_inputs = 0;
-  for (const XnnpackValue& value : graph->values()) {
+  for (const NnpackValue& value : graph->values()) {
     if (value.flags & XNN_VALUE_FLAG_EXTERNAL_INPUT) {
       ++num_external_inputs;
     }
@@ -166,7 +170,7 @@ TEST(XnnpackConversionTest, PReluSetsCorrectNode) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto graph, BuildXnnpackGraph({output}));
 
   int num_external_inputs = 0;
-  for (const XnnpackValue& value : graph->values()) {
+  for (const NnpackValue& value : graph->values()) {
     if (value.flags & XNN_VALUE_FLAG_EXTERNAL_INPUT) {
       ++num_external_inputs;
     }
@@ -178,8 +182,8 @@ TEST(XnnpackConversionTest, L2NormalizationReturnsUnimplemented) {
   XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {2, 2}});
   XnnTensor output = L2Normalization(input);
 
-  EXPECT_EQ(BuildXnnpackGraph({output}).status().code(),
-            absl::StatusCode::kUnimplemented);
+  EXPECT_THAT(BuildXnnpackGraph({output}),
+              StatusIs(absl::StatusCode::kUnimplemented));
 }
 
 // This test is disabled because the lowering should not do implicit data
@@ -202,8 +206,9 @@ TEST(XnnpackConversionTest, L2NormalizationReturnsUnimplemented) {
 //
 //   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto graph, BuildXnnpackGraph({output}));
 //   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(size_t weights_index,
-//   graph->Lookup(weights)); const XnnpackValue& weights_value =
-//   graph->values()[weights_index]; ASSERT_EQ(weights_value.buffer.size(),
+//   graph->Lookup(weights));
+//   const NnpackValue& weights_value = graph->values()[weights_index];
+//   ASSERT_EQ(weights_value.buffer.size(),
 //   sizeof(float) * 8); EXPECT_EQ(weights_value.info.type, Type::kFP32);
 //
 //   std::array<float, 8> expected = {1.0f, 2.0f, -1.0f, -2.0f,

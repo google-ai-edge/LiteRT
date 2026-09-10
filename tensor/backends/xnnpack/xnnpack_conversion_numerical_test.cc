@@ -27,6 +27,7 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/backends/testing/numerical_test_bridge.h"
 #include "tensor/backends/testing/numerical_test_suite.h"
+#include "tensor/backends/xnnpack/arithmetic.h"
 #include "tensor/backends/xnnpack/conversion.h"
 #include "tensor/runners/xnnpack/runner.h"
 #include "tensor/tensor.h"

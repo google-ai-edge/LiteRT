@@ -29,6 +29,7 @@ limitations under the License.
 #include "xnnpack.h"  // from @XNNPACK
 #include "absl/status/status.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
+#include "tensor/backends/common_nnpack/graph.h"
 #include "tensor/backends/xnnpack/conversion.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
@@ -65,16 +66,16 @@ TEST(ArithmeticXnnpackTest, AddBuildsExternalFlags) {
   EXPECT_EQ(graph->values().size(), 3);
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(size_t input_index, graph->Lookup(input));
-  const XnnpackValue& input_value = graph->values()[input_index];
+  const NnpackValue& input_value = graph->values()[input_index];
   EXPECT_NE(input_value.flags & XNN_VALUE_FLAG_EXTERNAL_INPUT, 0);
   EXPECT_EQ(input_value.flags & XNN_VALUE_FLAG_EXTERNAL_OUTPUT, 0);
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(size_t bias_index, graph->Lookup(bias));
-  const XnnpackValue& bias_value = graph->values()[bias_index];
+  const NnpackValue& bias_value = graph->values()[bias_index];
   EXPECT_EQ(bias_value.flags, 0);
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(size_t output_index, graph->Lookup(output));
-  const XnnpackValue& output_value = graph->values()[output_index];
+  const NnpackValue& output_value = graph->values()[output_index];
   EXPECT_NE(output_value.flags & XNN_VALUE_FLAG_EXTERNAL_OUTPUT, 0);
 }
 
