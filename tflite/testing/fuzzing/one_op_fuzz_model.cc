@@ -131,6 +131,12 @@ RunResult BuildAndRunOneOpModel(flatbuffers::FlatBufferBuilder* builder,
       return RunResult::kRejected;
     }
   }
+  if (run_spec.pre_allocate) {
+    const RunResult hook_result = run_spec.pre_allocate(interpreter.get());
+    if (hook_result != RunResult::kSuccess) {
+      return hook_result;
+    }
+  }
   if (interpreter->AllocateTensors() != kTfLiteOk) {
     return RunResult::kRejected;
   }
