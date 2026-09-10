@@ -27,6 +27,20 @@ cc_library(
 )
 
 cc_library(
+    name = "addn_op_builder",
+    srcs = ["addn_op_builder.cc"],
+    hdrs = ["addn_op_builder.h"],
+    deps = [
+        ":elementwise_op_builder",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
     name = "elementwise_op_builder",
     srcs = ["elementwise_op_builder.cc"],
     hdrs = ["elementwise_op_builder.h"],

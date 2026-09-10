@@ -14,6 +14,7 @@ add_library(qnn_builders STATIC)
 
 target_sources(qnn_builders
     PRIVATE
+        addn_op_builder.cc
         arg_min_max_op_builder.cc
         broadcast_to_op_builder.cc
         cast_op_builder.cc

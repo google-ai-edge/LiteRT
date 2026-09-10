@@ -43,6 +43,7 @@ provides the corresponding QNN operation it is legalized to.
 | :--- | :--- |
 | `kLiteRtOpCodeTflAbs` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (ABS). |
 | `kLiteRtOpCodeTflAdd` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (ADD). Supports fused activation. |
+| `kLiteRtOpCodeTflAddN` | Legalized to a chain of N-1 `QNN_OP_ELEMENT_WISE_BINARY` (ADD). FLOAT32 and INT32 only. |
 | `kLiteRtOpCodeTflArgMax` | Legalized to `QNN_OP_ARGMAX`. |
 | `kLiteRtOpCodeTflArgMin` | Legalized to `QNN_OP_ARGMIN`. |
 | `kLiteRtOpCodeTflAveragePool2d` | Legalized to `QNN_OP_POOL_AVG_2D`. Supports fused activation. |
