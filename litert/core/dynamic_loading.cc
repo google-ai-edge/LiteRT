@@ -49,9 +49,46 @@ bool EnvPathContains(absl::string_view path, absl::string_view var_value) {
          absl::StrContains(var_value, absl::StrCat(path, ":"));
 }
 
-}  // namespace
+// Returns true if `filename` ends in ".so" or in the SONAME form
+// ".so.<major>" (a single all-digit version component), e.g. "libFoo.so"
+// or "libFoo.so.2".
+//
+// This deliberately does NOT match a fully-versioned real file such as
+// "libFoo.so.2.1.0": with Debian/Yocto-style shared library packaging,
+// only the bare unversioned ".so" (development package) and the SONAME
+// symlink (runtime package) are valid dlopen() targets for directory-scan
+// style plugin discovery; the fully-versioned real file is an
+// implementation detail reached indirectly through the SONAME symlink.
+// Matching it too would cause the same plugin to be discovered twice from
+// a single directory when both the SONAME symlink and the real file are
+// installed side by side, as required by shared library packaging policy.
+bool MatchesSoOrSoname(absl::string_view filename) {
+  static constexpr absl::string_view kDotSo = ".so";
+  const auto so_pos = filename.rfind(kDotSo);
+  if (so_pos == absl::string_view::npos) {
+    return false;
+  }
+  absl::string_view suffix = filename.substr(so_pos + kDotSo.size());
+  if (suffix.empty()) {
+    // filename ends in exactly "...so".
+    return true;
+  }
+  if (suffix.front() != '.') {
+    return false;
+  }
+  suffix.remove_prefix(1);
+  if (suffix.empty()) {
+    return false;
+  }
+  for (const char c : suffix) {
+    if (c < '0' || c > '9') {
+      return false;
+    }
+  }
+  return true;
+}
 
-static constexpr absl::string_view kSo = ".so";
+}  // namespace
 
 LiteRtStatus FindLiteRtSharedLibsHelper(const std::string& search_path,
                                         const std::string& lib_pattern,
@@ -77,9 +114,8 @@ LiteRtStatus FindLiteRtSharedLibsHelper(const std::string& search_path,
           results.push_back(path);
         }
       } else {
-        const auto stem = path.stem().string();
-        const auto ext = path.extension().string();
-        if (stem.find(lib_pattern) == 0 && kSo == ext) {
+        const auto filename = path.filename().string();
+        if (filename.find(lib_pattern) == 0 && MatchesSoOrSoname(filename)) {
           LITERT_LOG(LITERT_VERBOSE, "Found shared library: %s", path.c_str());
           results.push_back(path);
         }
