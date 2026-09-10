@@ -63,6 +63,7 @@ target_sources(qnn_builders
         tanh_op_builder.cc
         tile_op_builder.cc
         transpose_conv_op_builder.cc
+        transpose_conv3d_op_builder.cc
         transpose_op_builder.cc
         unpack_op_builder.cc
         log_softmax_op_builder.cc

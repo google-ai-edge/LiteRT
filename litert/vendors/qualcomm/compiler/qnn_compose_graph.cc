@@ -105,6 +105,7 @@
 #include "litert/vendors/qualcomm/core/builders/tanh_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tile_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/topk_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/transpose_conv3d_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
@@ -1198,6 +1199,41 @@ LiteRtStatus BuildTransposeConvOp(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus BuildTransposeConv3dOp(
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers) {
+  auto options =
+      litert::compiler::GetOptionsAs<litert::compiler::Conv3dTransposeOptions>(
+          litert_op.ctx(), litert_op.Get());
+  if (!options) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  uint32_t padding = static_cast<uint32_t>(options->padding);
+  int32_t stride_d = options->stride_d;
+  int32_t stride_w = options->stride_w;
+  int32_t stride_h = options->stride_h;
+  int32_t dilation_d_factor = options->dilation_d_factor;
+  int32_t dilation_w_factor = options->dilation_w_factor;
+  int32_t dilation_h_factor = options->dilation_h_factor;
+  uint32_t fused_activation =
+      static_cast<uint32_t>(options->fused_activation_function);
+
+  ::qnn::PaddingType qnn_padding;
+  LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
+
+  auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
+      tensor_pool, fused_activation, output_tensors);
+  op_wrappers = ::qnn::BuildTransposeConv3dOp(
+      tensor_pool, input_tensors, {activation_input}, stride_d, stride_h,
+      stride_w, dilation_d_factor, dilation_h_factor, dilation_w_factor,
+      qnn_padding);
+  ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
+                                output_tensors[0]);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus BuildDepthwiseConv2dOp(
     const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
@@ -1599,6 +1635,7 @@ GetOpBuilders() {
   builders[kLiteRtOpCodeTflCumsum] = Adapt<BuildCumsumOp>;
   builders[kLiteRtOpCodeTflBroadcastTo] = Adapt<BuildBroadcastToOp>;
   builders[kLiteRtOpCodeTflConv3d] = Adapt<BuildConv3dOp>;
+  builders[kLiteRtOpCodeTflConv3dTranspose] = Adapt<BuildTransposeConv3dOp>;
   builders[kLiteRtOpCodeTflReduceAll] = Adapt<BuildReduceAllOp>;
   builders[kLiteRtOpCodeTflGelu] = Adapt<BuildGeluOp>;
   builders[kLiteRtOpCodeTflDynamicUpdateSlice] =
