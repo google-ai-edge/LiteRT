@@ -30,6 +30,8 @@ const absl::flat_hash_set<OpBackendKey>& UnsignedOnlyOps() {
   static const auto* kSet = new absl::flat_hash_set<OpBackendKey>{
       {QnnOpCode::kPad, BackendType::kHtpBackend},
       {QnnOpCode::kResizeNearestNeighbor, BackendType::kHtpBackend},
+      {QnnOpCode::kPad, BackendType::kIrBackend},
+      {QnnOpCode::kResizeNearestNeighbor, BackendType::kIrBackend},
   };
   return *kSet;
 }
@@ -38,6 +40,8 @@ const absl::flat_hash_set<NeuronBackendKey>& UnsignedOnlyNeurons() {
   static const auto* kSet = new absl::flat_hash_set<NeuronBackendKey>{
       {QNN_OP_ELEMENT_WISE_NEURON_OPERATION_RELU_MIN_MAX,
        BackendType::kHtpBackend},
+      {QNN_OP_ELEMENT_WISE_NEURON_OPERATION_RELU_MIN_MAX,
+       BackendType::kIrBackend},
   };
   return *kSet;
 }
@@ -68,6 +72,15 @@ bool NeedsUnsignedActivations(const OpWrapper& op, BackendType backend) {
 
 bool IsSignedActivation(const TensorWrapper& tensor) {
   return tensor.IsQuantI8() || tensor.IsQuantI16();
+}
+
+std::optional<std::int32_t> GetZeroPoint(const TensorWrapper& tensor) {
+  const auto* quant = std::get_if<ScaleOffsetQuantizeParamsWrapper>(
+      &tensor.GetQuantParams());
+  if (quant == nullptr) {
+    return std::nullopt;
+  }
+  return quant->GetZeroPoint();
 }
 
 Qnn_DataType_t UnsignedCounterpart(Qnn_DataType_t signed_dtype) {
@@ -131,6 +144,19 @@ void InsertUnsignedActivationBoundaries(BackendType backend,
     if (!needs_rewrite) {
       rewritten.emplace_back(std::move(op));
       continue;
+    }
+
+    // BuildPadOp stores the implicit Pad value as a scalar parameter. Replacing
+    // a signed Pad input with its unsigned twin changes its QNN zero point,
+    // so keep that scalar in sync. The model in this workaround uses
+    // QNN Pad stores the pad amount as a parameter, so this has one data input.
+    if (op.GetOpCode() == QnnOpCode::kPad && op.GetInputCount() == 1 &&
+        unsigned_inputs[0] != nullptr) {
+      const auto zero_point = GetZeroPoint(*unsigned_inputs[0]);
+      if (zero_point.has_value()) {
+        // BuildPadOp adds the scheme first and the constant value second.
+        op.SetScalarParam(1, QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE, *zero_point);
+      }
     }
 
     std::vector<const TensorWrapper*> original_inputs;
