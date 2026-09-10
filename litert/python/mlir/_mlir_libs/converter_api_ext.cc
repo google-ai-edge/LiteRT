@@ -69,6 +69,10 @@ NB_MODULE(converter_api_ext, m) {
               &litert::ConvertToTFLConfig::qdq_conversion_mode,
               "Quantization mode: 'NONE', 'STATIC', 'DYNAMIC', 'STRICT'")
 
+      .def_rw("strict_qdq_mode",
+              &litert::ConvertToTFLConfig::strict_qdq_mode,
+              "Enables strict QDQ mode")
+
       .def_rw("unsafe_fuse_dynamic_shaped_broadcast",
               &litert::ConvertToTFLConfig::unsafe_fuse_dynamic_shaped_broadcast,
               "Allows fusion of dynamic shaped broadcast ops")

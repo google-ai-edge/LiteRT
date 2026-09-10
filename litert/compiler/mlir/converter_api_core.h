@@ -62,6 +62,9 @@ struct ConvertToTFLConfig {
 
   // If true, enable unsafe single batch rank reduction.
   bool unsafe_single_batch_rank_reduction = false;
+
+  // If true, enables strict QDQ mode.
+  bool strict_qdq_mode = false;
 };
 
 struct NumpyArrayMeta {

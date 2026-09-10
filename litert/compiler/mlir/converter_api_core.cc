@@ -166,6 +166,7 @@ GetTFLConverterFlagsAndPassConfig(mlir::ModuleOp module_op,
     converter_flags.set_canonicalizing_inf_as_min_max_float(
         config.canonicalizing_inf_as_min_max_float);
     converter_flags.set_qdq_conversion_mode(config.qdq_conversion_mode);
+    converter_flags.set_strict_qdq_mode(config.strict_qdq_mode);
     converter_flags.set_unsafe_fuse_dynamic_shaped_broadcast(
         config.unsafe_fuse_dynamic_shaped_broadcast);
     converter_flags.set_enable_x64(config.enable_x64);
