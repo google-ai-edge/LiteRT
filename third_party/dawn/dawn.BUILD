@@ -1,6 +1,6 @@
 # Build targets for open-source Dawn repository.
 
-load("@xla//third_party/rules_python/python:defs.bzl", "py_binary")
+load("//third_party/bazel_rules/rules_python/python:defs.bzl", "py_binary")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -15,7 +15,7 @@ py_binary(
         "generator",
     ],
     deps = [
-        "@jinja2",
+        "//third_party/py/jinja2",
     ],
 )
 
@@ -76,7 +76,7 @@ cc_library(
         "src",
     ],
     deps = [
-        "@com_google_absl//absl/types:span",
+        "//third_party/absl/types:span",
     ],
 )
 
@@ -103,7 +103,7 @@ cc_library(
         "include",
     ],
     deps = [
-        "@com_google_absl//absl/types:span",
+        "//third_party/absl/types:span",
     ],
 )
 
