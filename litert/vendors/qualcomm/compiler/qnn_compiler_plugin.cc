@@ -53,6 +53,7 @@
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
 #include "litert/vendors/qualcomm/core/backends/backend_factory.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
+#include "litert/vendors/qualcomm/core/builders/unsigned_boundary.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
@@ -492,6 +493,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     LITERT_RETURN_IF_ERROR(litert::qnn::ConvertOp(
         compiler_plugin->Options(), op, tensor_pool, input_tensors,
         output_tensors, op_wrappers, op_index, qnn_manager->GetSdkVersion()));
+    ::qnn::InsertUnsignedActivationBoundaries(
+        compiler_plugin->Options().GetBackendType(), tensor_pool, op_wrappers);
 
     // Empty op_wrappers means the op is not supported by QNN.
     if (op_wrappers.empty()) {
