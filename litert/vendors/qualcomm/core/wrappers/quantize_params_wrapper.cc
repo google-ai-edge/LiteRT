@@ -9,8 +9,9 @@
 #include <utility>
 #include <vector>
 
+#include "QnnTypes.h"         // from @qairt
 #include "absl/types/span.h"  // from @com_google_absl
-#include "QnnTypes.h"  // from @qairt
+#include "litert/vendors/qualcomm/core/utils/log.h"
 
 namespace qnn {
 
@@ -346,6 +347,116 @@ void BwAxisScaleOffsetQuantizeParamsWrapper::CloneTo(
 
 void BwAxisScaleOffsetQuantizeParamsWrapper::SetAxis(const std::int32_t axis) {
   qnn_quantize_param_.bwAxisScaleOffsetEncoding.axis = axis;
+}
+
+BwFloatBlockQuantizeParamsWrapper::BwFloatBlockQuantizeParamsWrapper(
+    std::uint32_t bitwidth, absl::Span<const std::uint32_t> block_sizes,
+    absl::Span<const float> scales, absl::Span<const std::int32_t> zero_points)
+    : bitwidth_(bitwidth),
+      block_sizes_(block_sizes.begin(), block_sizes.end()),
+      scale_offsets_(scales.size()) {
+  assert(zero_points.empty() || zero_points.size() == scales.size());
+  for (size_t i = 0; i < scales.size(); ++i) {
+    scale_offsets_[i].scale = scales[i];
+    scale_offsets_[i].offset =
+        zero_points.empty() ? 0.0f
+                            : -static_cast<float>(zero_points[i]) * scales[i];
+  }
+}
+
+BwFloatBlockQuantizeParamsWrapper::BwFloatBlockQuantizeParamsWrapper(
+    const Qnn_BwFloatBlockEncoding_t& encoding,
+    absl::Span<const std::uint32_t> dimensions)
+    : bitwidth_(encoding.bitwidth) {
+  if (dimensions.empty() || !encoding.blockSize || !encoding.floatScaleOffset) {
+    QNN_LOG_ERROR(
+        "Cannot decode blockwise quantization without dimensions, block "
+        "sizes, and scale offsets.");
+    return;
+  }
+  block_sizes_.assign(encoding.blockSize,
+                      encoding.blockSize + dimensions.size());
+  size_t count = 1;
+  for (size_t d = 0; d < dimensions.size(); ++d) {
+    if (dimensions[d] == 0 || block_sizes_[d] == 0) {
+      QNN_LOG_ERROR(
+          "Cannot decode blockwise quantization with a zero dimension or "
+          "block size.");
+      block_sizes_.clear();
+      return;
+    }
+    const size_t blocks = 1 + (dimensions[d] - 1) / block_sizes_[d];
+    if (blocks > scale_offsets_.max_size() / count) {
+      QNN_LOG_ERROR("Blockwise quantization scale grid size overflows.");
+      block_sizes_.clear();
+      return;
+    }
+    count *= blocks;
+  }
+  scale_offsets_.assign(encoding.floatScaleOffset,
+                        encoding.floatScaleOffset + count);
+}
+
+void BwFloatBlockQuantizeParamsWrapper::CloneTo(Qnn_QuantizeParams_t& dst) {
+  dst = QNN_QUANTIZE_PARAMS_INIT;
+  dst.encodingDefinition = QNN_DEFINITION_DEFINED;
+  dst.quantizationEncoding = QNN_QUANTIZATION_ENCODING_BW_FLOAT_BLOCK;
+  dst.bwFloatBlockEncoding.bitwidth = bitwidth_;
+  dst.bwFloatBlockEncoding.blockSize = block_sizes_.data();
+  dst.bwFloatBlockEncoding.floatScaleOffset = scale_offsets_.data();
+}
+
+bool BwFloatBlockQuantizeParamsWrapper::operator==(
+    const BwFloatBlockQuantizeParamsWrapper& other) const {
+  return bitwidth_ == other.bitwidth_ && block_sizes_ == other.block_sizes_ &&
+         scale_offsets_.size() == other.scale_offsets_.size() &&
+         std::equal(scale_offsets_.begin(), scale_offsets_.end(),
+                    other.scale_offsets_.begin(),
+                    [](const auto& a, const auto& b) {
+                      return a.scale == b.scale && a.offset == b.offset;
+                    });
+}
+
+void BwFloatBlockQuantizeParamsWrapper::Permute(
+    absl::Span<const std::uint32_t> dimensions,
+    absl::Span<const std::uint32_t> permutation) {
+  if (dimensions.size() != block_sizes_.size() ||
+      permutation.size() != dimensions.size()) {
+    QNN_LOG_ERROR("Cannot permute malformed blockwise quantization metadata.");
+    return;
+  }
+
+  const size_t rank = dimensions.size();
+  std::vector<size_t> grid(rank), strides(rank);
+  size_t count = 1;
+  for (size_t d = rank; d-- > 0;) {
+    if (permutation[d] >= rank) {
+      QNN_LOG_ERROR("Blockwise quantization permutation is out of range.");
+      return;
+    }
+    grid[d] = 1 + (dimensions[d] - 1) / block_sizes_[d];
+    strides[d] = count;
+    count *= grid[d];
+  }
+  if (count != scale_offsets_.size()) {
+    QNN_LOG_ERROR("Blockwise quantization scale grid size does not match.");
+    return;
+  }
+
+  auto old_block_sizes = block_sizes_;
+  auto old_scale_offsets = scale_offsets_;
+  for (size_t d = 0; d < rank; ++d) {
+    block_sizes_[d] = old_block_sizes[permutation[d]];
+  }
+  for (size_t dst = 0; dst < count; ++dst) {
+    size_t remaining = dst, src = 0;
+    for (size_t d = rank; d-- > 0;) {
+      const auto axis = permutation[d];
+      src += (remaining % grid[axis]) * strides[axis];
+      remaining /= grid[axis];
+    }
+    scale_offsets_[dst] = old_scale_offsets[src];
+  }
 }
 
 }  // namespace qnn

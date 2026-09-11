@@ -22,6 +22,19 @@ namespace {
 // Some corner cases may not be tested. Narrowed types may lead to unexpected
 // behavior.
 
+TEST(TensorPoolBlockwiseTest, PreservesUnpackedLowBitData) {
+  TensorPool pool;
+  BwFloatBlockQuantizeParamsWrapper quant(4, {1, 2}, {1, 2});
+  const std::vector<int8_t> unpacked{-2, -1, 0, 1};
+  auto& tensor = pool.CreateStaticTensorFromUnpackedData(
+      QNN_DATATYPE_SFIXED_POINT_8, quant, {2, 2}, unpacked.size(),
+      unpacked.data());
+
+  auto data = tensor.GetTensorData<int8_t>();
+  ASSERT_TRUE(data.has_value());
+  EXPECT_EQ(std::vector<int8_t>(data->begin(), data->end()), unpacked);
+}
+
 TEST(TensorPoolConvertStaticTensorTest, ConvertNonStaticTensor) {
   TensorPool tensor_pool;
 

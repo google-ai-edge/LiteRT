@@ -15,6 +15,7 @@ cc_library(
     hdrs = ["quantize_params_wrapper.h"],
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
+        "//litert/vendors/qualcomm/core/utils:log",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],

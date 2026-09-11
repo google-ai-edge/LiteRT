@@ -55,6 +55,14 @@ class TensorPool {
       const std::vector<std::uint32_t>& dimensions, std::uint32_t bytes,
       const void* data);
 
+  // Data already contains one byte per logical element. This avoids unpacking
+  // low-bit weights again after a builder has transformed the unpacked data.
+  TensorWrapper& CreateStaticTensorFromUnpackedData(
+      Qnn_DataType_t data_type,
+      const QuantizeParamsWrapperVariant& quant_params,
+      const std::vector<std::uint32_t>& dimensions, std::uint32_t bytes,
+      const void* data);
+
   TensorWrapper* CreateStaticTensorWithValue(
       Qnn_DataType_t data_type,
       const QuantizeParamsWrapperVariant& quant_params,
