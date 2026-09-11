@@ -59,6 +59,7 @@ cc_test(
         "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_qualcomm_options",
+        "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],

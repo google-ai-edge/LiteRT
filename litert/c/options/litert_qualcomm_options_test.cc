@@ -559,6 +559,14 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetLpaiCoreSelection(), 0);
   options->SetLpaiCoreSelection(0x01);
   EXPECT_EQ(options->GetLpaiCoreSelection(), 0x01u);
+
+  EXPECT_EQ(options->GetQnnLibDir(), "");
+  options->SetQnnLibDir("/path/to/qnn/lib");
+  EXPECT_EQ(options->GetQnnLibDir(), "/path/to/qnn/lib");
+
+  EXPECT_EQ(options->GetDspSkelDir(), "");
+  options->SetDspSkelDir("/path/to/dsp/skel");
+  EXPECT_EQ(options->GetDspSkelDir(), "/path/to/dsp/skel");
 }
 
 TEST(LiteRtQualcommOptionsTest, LpaiOptions) {
@@ -585,6 +593,48 @@ TEST(LiteRtQualcommOptionsTest, LpaiOptions) {
   EXPECT_EQ(parsed.GetLpaiCoreAffinityType(),
             QualcommOptions::LpaiCoreAffinityType::kHard);
   EXPECT_EQ(parsed.GetLpaiCoreSelection(), 0x01u);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, QnnLibDir) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  const char* qnn_lib_dir = nullptr;
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsGetQnnLibDir(qualcomm_options, &qnn_lib_dir));
+  EXPECT_STREQ(qnn_lib_dir, "");
+
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsSetQnnLibDir(qualcomm_options, "/path/to/qnn/lib"));
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsGetQnnLibDir(qualcomm_options, &qnn_lib_dir));
+  EXPECT_STREQ(qnn_lib_dir, "/path/to/qnn/lib");
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetQnnLibDir(), "/path/to/qnn/lib");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, DspSkelDir) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  const char* dsp_skel_dir = nullptr;
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsGetDspSkelDir(qualcomm_options, &dsp_skel_dir));
+  EXPECT_STREQ(dsp_skel_dir, "");
+
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsSetDspSkelDir(qualcomm_options, "/path/to/dsp/skel"));
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsGetDspSkelDir(qualcomm_options, &dsp_skel_dir));
+  EXPECT_STREQ(dsp_skel_dir, "/path/to/dsp/skel");
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetDspSkelDir(), "/path/to/dsp/skel");
 
   LrtDestroyQualcommOptions(qualcomm_options);
 }

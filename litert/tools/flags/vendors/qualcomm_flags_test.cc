@@ -17,6 +17,7 @@
 #include <string>
 
 #include <gtest/gtest.h>
+#include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -718,6 +719,22 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(options.Value().GetLpaiCoreAffinityType(),
             QualcommOptions::LpaiCoreAffinityType::kDefault);
   EXPECT_EQ(options.Value().GetLpaiCoreSelection(), 0);
+  EXPECT_EQ(options.Value().GetQnnLibDir(), "");
+  EXPECT_EQ(options.Value().GetDspSkelDir(), "");
+}
+
+TEST(QualcommOptionsFromFlagsTest, CustomQnnLibAndDspSkelDirs) {
+  absl::SetFlag(&FLAGS_qualcomm_qnn_lib_dir, "/custom/qnn/lib");
+  absl::SetFlag(&FLAGS_qualcomm_dsp_skel_dir, "/custom/dsp/skel");
+
+  Expected<QualcommOptions> options = QualcommOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_EQ(options.Value().GetQnnLibDir(), "/custom/qnn/lib");
+  EXPECT_EQ(options.Value().GetDspSkelDir(), "/custom/dsp/skel");
+
+  absl::SetFlag(&FLAGS_qualcomm_qnn_lib_dir, "");
+  absl::SetFlag(&FLAGS_qualcomm_dsp_skel_dir, "");
 }
 
 }  // namespace

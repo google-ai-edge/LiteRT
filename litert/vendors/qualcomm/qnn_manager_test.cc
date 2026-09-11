@@ -19,8 +19,10 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "litert/c/litert_common.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/common.h"
-#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/test_utils.h"
 #include "litert/vendors/qualcomm/tools/dump.h"
 
@@ -185,6 +187,66 @@ TEST(InitQnnOptionsDlbcTest, HtpDlbcUnaffectedByWeightSharing) {
   qnn_options.SetHtpDlbc(true);
   EXPECT_TRUE(qnn_options.GetHtpDlbc());
   EXPECT_FALSE(qnn_options.GetHtpDlbcWeights());
+}
+
+TEST(InitQnnOptionsTest, PropagatesQnnLibDirAndDspSkelDir) {
+  auto qualcomm_options = litert::qualcomm::QualcommOptions::Create();
+  ASSERT_TRUE(qualcomm_options.HasValue());
+  qualcomm_options->SetQnnLibDir("/custom/qnn/lib/dir");
+  qualcomm_options->SetDspSkelDir("/custom/dsp/skel/dir");
+
+  ::qnn::Options qnn_options;
+  EXPECT_EQ(InitQnnOptions(qnn_options, qualcomm_options.Value()),
+            kLiteRtStatusOk);
+
+  EXPECT_EQ(qnn_options.GetQnnLibDir(), "/custom/qnn/lib/dir");
+  EXPECT_EQ(qnn_options.GetDspSkelDir(), "/custom/dsp/skel/dir");
+}
+
+TEST(QnnManagerTest, AdspLibraryPathPrecedence) {
+  static constexpr char kAdsp[] = "ADSP_LIBRARY_PATH";
+  const char* original_adsp_ptr = getenv(kAdsp);
+  std::optional<std::string> original_adsp;
+  if (original_adsp_ptr) {
+    original_adsp = original_adsp_ptr;
+  }
+
+  // 1. When only shared_library_dir is passed, it sets ADSP_LIBRARY_PATH
+  unsetenv(kAdsp);
+  ::qnn::Options options1;
+  QnnManager::Create(options1, "/plugin/lib/dir");
+  EXPECT_STREQ(getenv(kAdsp), "/plugin/lib/dir");
+
+  // 2. When qnn_lib_dir is set, it overrides shared_library_dir for
+  // ADSP_LIBRARY_PATH
+  unsetenv(kAdsp);
+  ::qnn::Options options2;
+  options2.SetQnnLibDir("/qnn/host/lib");
+  QnnManager::Create(options2, "/plugin/lib/dir");
+  EXPECT_STREQ(getenv(kAdsp), "/qnn/host/lib");
+
+  // 3. When dsp_skel_dir is set, it overrides both qnn_lib_dir and
+  // shared_library_dir
+  unsetenv(kAdsp);
+  ::qnn::Options options3;
+  options3.SetQnnLibDir("/qnn/host/lib");
+  options3.SetDspSkelDir("/qnn/dsp/skel");
+  QnnManager::Create(options3, "/plugin/lib/dir");
+  EXPECT_STREQ(getenv(kAdsp), "/qnn/dsp/skel");
+
+  // 4. Non-destructive prepend when ADSP_LIBRARY_PATH already has paths
+  setenv(kAdsp, "/system/vendor/dsp", /*overwrite=*/1);
+  ::qnn::Options options4;
+  options4.SetDspSkelDir("/qnn/dsp/skel");
+  QnnManager::Create(options4);
+  EXPECT_STREQ(getenv(kAdsp), "/qnn/dsp/skel;/system/vendor/dsp");
+
+  // Restore original value
+  if (original_adsp) {
+    setenv(kAdsp, original_adsp->c_str(), /*overwrite=*/1);
+  } else {
+    unsetenv(kAdsp);
+  }
 }
 
 }  // namespace

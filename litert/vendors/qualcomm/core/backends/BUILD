@@ -32,10 +32,7 @@ cc_library(
 cc_library(
     name = "backend_utils",
     hdrs = ["backend_utils.h"],
-    deps = [
-        "//litert/vendors/qualcomm/core/schema:soc_table",
-        "@com_google_absl//absl/types:span",
-    ],
+    deps = ["@com_google_absl//absl/types:span"],
 )
 
 cc_library(
@@ -86,7 +83,6 @@ cc_library(
     srcs = ["gpu_backend.cc"],
     hdrs = ["gpu_backend.h"],
     deps = [
-        ":backend_utils",
         ":graph_config_builder",
         ":qnn_backend",
         "//litert/vendors/qualcomm/core:common",
@@ -140,7 +136,6 @@ cc_library(
     hdrs = ["lpai_backend.h"],
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
-        ":backend_utils",
         ":graph_config_builder",
         ":qnn_backend",
         "//litert/vendors/qualcomm/core:common",

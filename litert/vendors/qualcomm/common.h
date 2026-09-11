@@ -167,6 +167,8 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetLpaiCoreAffinityType(static_cast<::qnn::LpaiCoreAffinityType>(
       qualcomm_options.GetLpaiCoreAffinityType()));
   qnn_options.SetLpaiCoreSelection(qualcomm_options.GetLpaiCoreSelection());
+  qnn_options.SetQnnLibDir(qualcomm_options.GetQnnLibDir());
+  qnn_options.SetDspSkelDir(qualcomm_options.GetDspSkelDir());
 
   LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
   return kLiteRtStatusOk;

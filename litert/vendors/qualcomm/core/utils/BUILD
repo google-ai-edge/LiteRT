@@ -38,7 +38,6 @@ cc_library(
     linkopts = ["-ldl"],
     deps = [
         ":log",
-        "//litert/vendors/qualcomm/core/schema:soc_table",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],

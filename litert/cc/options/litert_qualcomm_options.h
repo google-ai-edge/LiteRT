@@ -666,6 +666,30 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  void SetQnnLibDir(const std::string& qnn_lib_dir) {
+    LrtQualcommOptionsSetQnnLibDir(options_, qnn_lib_dir.c_str());
+  }
+  StringView GetQnnLibDir() const {
+    const char* val;
+    auto status = LrtQualcommOptionsGetQnnLibDir(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
+
+  void SetDspSkelDir(const std::string& dsp_skel_dir) {
+    LrtQualcommOptionsSetDspSkelDir(options_, dsp_skel_dir.c_str());
+  }
+  StringView GetDspSkelDir() const {
+    const char* val;
+    auto status = LrtQualcommOptionsGetDspSkelDir(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
+
  private:
   LrtQualcommOptions options_;
 };

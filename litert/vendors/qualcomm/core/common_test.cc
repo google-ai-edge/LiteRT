@@ -472,5 +472,19 @@ TEST_F(SdkVersionTest, HandlesGreaterThanOrEqual) {
   EXPECT_FALSE(v1_0_0 >= v1_0_1);
 }
 
+TEST(QnnOptionTest, QnnLibDir) {
+  Options options;
+  EXPECT_EQ(options.GetQnnLibDir(), "");
+  options.SetQnnLibDir("/path/to/qnn/lib");
+  EXPECT_EQ(options.GetQnnLibDir(), "/path/to/qnn/lib");
+}
+
+TEST(QnnOptionTest, DspSkelDir) {
+  Options options;
+  EXPECT_EQ(options.GetDspSkelDir(), "");
+  options.SetDspSkelDir("/path/to/dsp/skel");
+  EXPECT_EQ(options.GetDspSkelDir(), "/path/to/dsp/skel");
+}
+
 }  // namespace
 }  // namespace qnn
