@@ -203,6 +203,24 @@ class QualcommOptions : public ConcreteOptionsBase {
     return static_cast<DspPerfCtrlMode>(val);
   }
 
+  enum class DspEncoding : int {
+    kStatic = kLiteRtQualcommDspEncodingStatic,
+    kDynamic = kLiteRtQualcommDspEncodingDynamic,
+  };
+
+  void SetDspEncoding(DspEncoding dsp_encoding) {
+    LrtQualcommOptionsSetDspEncoding(
+        options_, static_cast<LrtQualcommOptionsDspEncoding>(dsp_encoding));
+  }
+  DspEncoding GetDspEncoding() {
+    LrtQualcommOptionsDspEncoding val;
+    auto status = LrtQualcommOptionsGetDspEncoding(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return DspEncoding::kStatic;
+    }
+    return static_cast<DspEncoding>(val);
+  }
+
   [[deprecated("This option is deprecated and will be no-op.")]]
   void SetUseHtpPreference(bool use_htp_preference) {
     LrtQualcommOptionsSetUseHtpPreference(options_, use_htp_preference);

@@ -142,6 +142,11 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::DspPerfCtrlMode,
           "concurrent inferences share one device power vote and would "
           "interfere with each other.");
 
+ABSL_FLAG(litert::qualcomm::QualcommOptions::DspEncoding, qualcomm_dsp_encoding,
+          litert::qualcomm::QualcommOptions::DspEncoding::kStatic,
+          "DSP graph encoding. 'static' (default): more performant, less "
+          "precise. 'dynamic': more precise, less performant.");
+
 ABSL_FLAG(::litert::tools::IntList, qualcomm_dump_tensor_ids, {},
           "Debug Feature. Ids to dump as outputs. Comma-separated list of "
           "string. Use -1 to dump all op outputs.");
@@ -334,6 +339,31 @@ std::string AbslUnparseFlag(QualcommOptions::DspPerfCtrlMode options) {
       return "auto";
     default:
       return "manual";
+  }
+}
+
+bool AbslParseFlag(absl::string_view text, QualcommOptions::DspEncoding* options,
+                   std::string* error) {
+  if (text == "static") {
+    *options = QualcommOptions::DspEncoding::kStatic;
+    return true;
+  }
+  if (text == "dynamic") {
+    *options = QualcommOptions::DspEncoding::kDynamic;
+    return true;
+  }
+  *error = "Unknown dsp_encoding; valid values: static, dynamic";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::DspEncoding options) {
+  switch (options) {
+    case QualcommOptions::DspEncoding::kStatic:
+      return "static";
+    case QualcommOptions::DspEncoding::kDynamic:
+      return "dynamic";
+    default:
+      return "static";
   }
 }
 
@@ -855,6 +885,9 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto dsp_perf_ctrl_mode =
       absl::GetFlag(FLAGS_qualcomm_dsp_perf_ctrl_mode);
   opts.SetDspPerfCtrlMode(dsp_perf_ctrl_mode);
+
+  const auto dsp_encoding = absl::GetFlag(FLAGS_qualcomm_dsp_encoding);
+  opts.SetDspEncoding(dsp_encoding);
 
   const auto profiling = absl::GetFlag(FLAGS_qualcomm_profiling);
   opts.SetProfiling(profiling);
