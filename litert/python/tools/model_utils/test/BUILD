@@ -80,3 +80,13 @@ pytype_strict_contrib_test(
         "@absl_py//absl/testing:absltest",
     ],
 )
+
+pytype_strict_contrib_test(
+    name = "visualization_test",
+    srcs = ["visualization_test.py"],
+    tags = ["no_oss"],
+    deps = [
+        "//litert/python/tools/model_utils:visualization",
+        "@absl_py//absl/testing:absltest",
+    ],
+)
