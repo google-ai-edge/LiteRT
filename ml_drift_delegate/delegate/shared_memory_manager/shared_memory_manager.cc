@@ -538,12 +538,6 @@ absl::Status SharedMemoryManager::CreateQuantizedInt8WeightsTensor(
   graph_adapter_->SetValueType(shared_tensor_id, DataType::UINT8);
   OHWI shape(bhwc_shape.b, bhwc_shape.h, bhwc_shape.w, bhwc_shape.c);
 
-  uint32_t external_buffer_id = MaybeGetExternalBufferId(shared_tensor_id);
-  if (!weights_manager_ && IsValidExternalBufferId(external_buffer_id)) {
-    return absl::FailedPreconditionError(
-        "Externalized weights are not supported without weights manager.");
-  }
-
   WeightsDescription weights_desc = GetFullyConnectedInt8WeightsDesc(
       gpu_info_, shape,
       create_info_.hints.Check(ModelHints::kPreferTextureWeights));
@@ -579,6 +573,11 @@ absl::Status SharedMemoryManager::CreateQuantizedInt8WeightsTensor(
             weights_i8_tensor_desc.GetDataType());
         return absl::OkStatus();
       }
+      uint32_t external_buffer_id = MaybeGetExternalBufferId(shared_tensor_id);
+      if (IsValidExternalBufferId(external_buffer_id)) {
+        return absl::FailedPreconditionError(
+            "Externalized weights are not supported without weights manager.");
+      }
       TensorDescriptor weights_i8_td = GetInt8TensorDesc(
           gpu_info_, create_info_, shape, tflite_tensor.data.int8,
           is_weight_sum_i_required, weights_sum_i);
@@ -605,12 +604,6 @@ absl::Status SharedMemoryManager::CreateQuantizedInt4WeightsTensor(
     Tensor<Linear, DataType::INT32>* weights_sum_i) {
   BHWC bhwc_shape = graph_adapter_->GetValueShape(shared_tensor_id);
   OHWI shape(bhwc_shape.b, bhwc_shape.h, bhwc_shape.w, bhwc_shape.c);
-
-  uint32_t external_buffer_id = MaybeGetExternalBufferId(shared_tensor_id);
-  if (!weights_manager_ && IsValidExternalBufferId(external_buffer_id)) {
-    return absl::FailedPreconditionError(
-        "Externalized weights are not supported without weights manager.");
-  }
 
   WeightsDescription weights_desc = GetFullyConnectedInt4WeightsDesc(
       gpu_info_, shape,
@@ -646,6 +639,11 @@ absl::Status SharedMemoryManager::CreateQuantizedInt4WeightsTensor(
         return absl::OkStatus();
       }
       // If the tensor is not prepacked, prepack it now.
+      uint32_t external_buffer_id = MaybeGetExternalBufferId(shared_tensor_id);
+      if (IsValidExternalBufferId(external_buffer_id)) {
+        return absl::FailedPreconditionError(
+            "Externalized weights are not supported without weights manager.");
+      }
       TensorDescriptor weights_i4_td = GetInt4TensorDesc(
           gpu_info_, create_info_, shape, tflite_tensor.data.int8,
           tflite_tensor.bytes, is_weight_sum_i_required, weights_sum_i,
@@ -674,12 +672,6 @@ absl::Status SharedMemoryManager::CreateQuantizedInt2WeightsTensor(
     Tensor<Linear, DataType::INT32>* weights_sum_i) {
   BHWC bhwc_shape = graph_adapter_->GetValueShape(shared_tensor_id);
   OHWI shape(bhwc_shape.b, bhwc_shape.h, bhwc_shape.w, bhwc_shape.c);
-
-  uint32_t external_buffer_id = MaybeGetExternalBufferId(shared_tensor_id);
-  if (!weights_manager_ && IsValidExternalBufferId(external_buffer_id)) {
-    return absl::FailedPreconditionError(
-        "Externalized weights are not supported without weights manager.");
-  }
 
   WeightsDescription weights_desc = GetFullyConnectedInt2WeightsDesc(
       gpu_info_, shape,
@@ -710,6 +702,11 @@ absl::Status SharedMemoryManager::CreateQuantizedInt2WeightsTensor(
             shared_tensor_id, weights_i2_tensor_desc.GetBHWCShape(),
             weights_i2_tensor_desc.GetDataType());
         return absl::OkStatus();
+      }
+      uint32_t external_buffer_id = MaybeGetExternalBufferId(shared_tensor_id);
+      if (IsValidExternalBufferId(external_buffer_id)) {
+        return absl::FailedPreconditionError(
+            "Externalized weights are not supported without weights manager.");
       }
       TensorDescriptor weights_i2_td = GetInt2TensorDesc(
           gpu_info_, create_info_, shape, tflite_tensor.data.int8,
