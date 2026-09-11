@@ -444,3 +444,19 @@ LiteRtStatus LiteRtDispatchDeviceContextT::AnnotateSystemAttribute(
       "Failed to set system attribute %s to %s", key, value);
   return kLiteRtStatusOk;
 }
+
+void LiteRtDispatchDeviceContextT::SetVendorHook(LiteRtHook hook) {
+  vendor_hook_ = hook;
+}
+
+LiteRtHook LiteRtDispatchDeviceContextT::GetVendorHook() const {
+  return vendor_hook_;
+}
+
+void LiteRtDispatchDeviceContextT::SetVendorHookUserData(void* data) {
+  vendor_hook_user_data_ = data;
+}
+
+void* LiteRtDispatchDeviceContextT::GetVendorHookUserData() const {
+  return vendor_hook_user_data_;
+}

@@ -47,6 +47,17 @@ bazel test //litert/ats:metal_macos_ats \
   --test_output=streamed
 ```
 
+### Running ATS on macOS (WebGPU)
+
+To execute ATS using Dawn-over-Metal WebGPU acceleration on a local Mac:
+
+```bash
+bazel test //litert/ats:webgpu_macos_ats \
+  --config=darwin_arm64 \
+  --//third_party/bazel_rules/rules_apple/apple/build_settings:signing_certificate_name="-" \
+  --test_output=streamed
+```
+
 ### Common Flags
 
 *   `--backend=<backend>`: Specify the execution backend (e.g., `cpu`, `gpu`,
