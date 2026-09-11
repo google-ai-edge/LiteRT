@@ -26,6 +26,7 @@
 #include "absl/types/optional_ref.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_profiler_types.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
@@ -100,6 +101,12 @@ class LiteRtDispatchDeviceContextT {
     google_tensor_options_ = std::move(google_tensor_options);
   }
 
+  void SetVendorHook(LiteRtHook hook);
+  LiteRtHook GetVendorHook() const;
+
+  void SetVendorHookUserData(void* data);
+  void* GetVendorHookUserData() const;
+
   const LiteRtRuntimeContext* runtime_context() const {
     return runtime_context_;
   }
@@ -173,6 +180,9 @@ class LiteRtDispatchDeviceContextT {
   // Associates an executable file's cache key with its handle.
   absl::flat_hash_map<ExecutableFileCacheKey, ExecutableData>
       cache_key_to_exec_data_;
+
+  LiteRtHook vendor_hook_ = nullptr;
+  void* vendor_hook_user_data_ = nullptr;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
