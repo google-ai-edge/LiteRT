@@ -1251,3 +1251,69 @@ macos_unit_test(
 
 # For MLD Android package.
 exports_files(srcs = ["delegate_options.h"])
+
+cc_library(
+    name = "gated_delta_update_test_util",
+    testonly = 1,
+    hdrs = ["gated_delta_update_test_util.h"],
+    deps = [
+        "//tflite:version",
+        "//tflite/schema:schema_fbs",
+        "@flatbuffers",
+    ],
+)
+
+cc_test(
+    name = "gated_delta_update_gpu_test",
+    srcs = ["gated_delta_update_gpu_test.cc"],
+    tags = [
+        "requires-gpu-nvidia",
+    ],
+    deps = [
+        ":delegate_opencl",
+        ":gated_delta_update_test_util",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//litert/experimental/custom_ops/gated_delta_net:gated_delta_update_tflite_op",
+        "//litert/runtime:external_litert_buffer_context",
+        "//litert/runtime:tensor_identifier",
+        "//litert/runtime:tfl_utils",
+        "//tflite:framework",
+        "//tflite/c:common",
+        "//tflite/kernels:builtin_ops",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "gated_delta_update_gpu_benchmark",
+    srcs = ["gated_delta_update_gpu_benchmark.cc"],
+    tags = [
+        "requires-gpu-nvidia",
+    ],
+    deps = [
+        ":gated_delta_update_test_util",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/options:litert_gpu_options",
+        "//litert/core:options",
+        "//litert/experimental/custom_ops/gated_delta_net:gated_delta_update_tflite_op",
+        "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ] + select({
+        "@platforms//os:macos": [
+            "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
+        ],
+        "//conditions:default": [
+            "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",
+        ],
+    }),
+)
