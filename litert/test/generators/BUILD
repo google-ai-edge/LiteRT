@@ -629,6 +629,32 @@ cc_library(
 )
 
 cc_library(
+    name = "select_v2",
+    testonly = True,
+    hdrs = ["select_v2.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_rng",
+        "//litert/core/model",
+        "//litert/core/model:ops_select",
+        "//litert/test:simple_buffer",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:datatypes",
+        "//tensor/backends/tflite:arithmetic_tflite",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
     name = "reference_evaluator",
     testonly = True,
     srcs = ["reference_evaluator.cc"],
@@ -723,6 +749,7 @@ cc_library(
         ":reduction",
         ":reshape",
         ":sdpa_transposed",
+        ":select_v2",
         ":softmax",
         ":transformer_layer",
         ":transpose",

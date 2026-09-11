@@ -51,7 +51,7 @@ void RegisterDepthwiseConv2dImpl(const AtsConf& options, size_t& test_id,
       TypeList<FaC<tflite::ActivationFunctionType_NONE>,
                FaC<tflite::ActivationFunctionType_RELU>>,
       SizeListC<1>>
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
   // clang-format on
 }
 

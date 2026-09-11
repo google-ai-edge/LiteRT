@@ -14,6 +14,7 @@
 
 #include "litert/core/model/ops/select.h"
 
+#include <cstdint>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -122,6 +123,34 @@ TEST(SelectOpTest, SelectWithIncompatible) {
 
   ASSERT_EQ(InferSelect(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(SelectOpTest, ReferenceSelectSameShape) {
+  const bool cond[] = {true, false, true, false};
+  std::vector<float> a = {1.0f, 2.0f, 3.0f, 4.0f};
+  std::vector<float> b = {10.0f, 20.0f, 30.0f, 40.0f};
+  std::vector<float> out(4);
+  int32_t dims[] = {4};
+
+  ReferenceSelect(cond, dims, 1, a.data(), dims, 1, b.data(), dims, 1,
+                  out.data(), dims, 1);
+
+  EXPECT_THAT(out, ElementsAre(1.0f, 20.0f, 3.0f, 40.0f));
+}
+
+TEST(SelectOpTest, ReferenceSelectBroadcastCondition) {
+  const bool cond[] = {true, false};
+  std::vector<float> a = {1.0f, 2.0f, 3.0f, 4.0f};
+  std::vector<float> b = {10.0f, 20.0f, 30.0f, 40.0f};
+  std::vector<float> out(4);
+  int32_t cond_dims[] = {2, 1};
+  int32_t data_dims[] = {2, 2};
+  int32_t out_dims[] = {2, 2};
+
+  ReferenceSelect(cond, cond_dims, 2, a.data(), data_dims, 2,
+                  b.data(), data_dims, 2, out.data(), out_dims, 2);
+
+  EXPECT_THAT(out, ElementsAre(1.0f, 2.0f, 30.0f, 40.0f));
 }
 
 }  // namespace

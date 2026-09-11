@@ -42,7 +42,7 @@ void RegisterBatchMatmulImpl(const AtsConf& options, size_t& test_id,
                TypeTuple<tflite::half, tflite::half>>,
       TypeList<std::true_type, std::false_type>,
       TypeList<std::true_type, std::false_type>>
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
   // clang-format on
 }
 

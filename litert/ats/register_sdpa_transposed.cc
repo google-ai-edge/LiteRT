@@ -39,7 +39,7 @@ void RegisterSdpaTransposedImpl(const AtsConf& options, size_t& test_id,
       TypeList<std::false_type, std::true_type>,
       TypeList<std::false_type, std::true_type>,
       TypeList<std::false_type, std::true_type>>
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CompositeOp");
   // clang-format on
 }
 

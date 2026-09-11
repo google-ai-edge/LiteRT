@@ -50,7 +50,7 @@ void RegisterConv2dImpl(const AtsConf& options, size_t& test_id, size_t iters,
       SizeListC<1>,
       TypeList<FaC<tflite::ActivationFunctionType_NONE>,
                FaC<tflite::ActivationFunctionType_RELU>>>
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
   // clang-format on
 }
 

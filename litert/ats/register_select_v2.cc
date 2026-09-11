@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/ats/register_transpose.h"
+#include "litert/ats/register_select_v2.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -23,51 +23,35 @@
 #include "litert/ats/register.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/test/generators/common.h"
-#include "litert/test/generators/transpose.h"
+#include "litert/test/generators/select_v2.h"
 #include "tflite/types/half.h"
 
 namespace litert::testing {
 namespace {
 
 template <typename Fixture>
-void RegisterTransposeImpl(const AtsConf& options, size_t& test_id,
-                           size_t iters, typename Fixture::Capture& cap) {
+void RegisterSelectV2Impl(const AtsConf& options, size_t& test_id, size_t iters,
+                          typename Fixture::Capture& cap) {
   // clang-format off
   RegisterCombinations<
       Fixture,
-      Transpose,
-      SizeListC<1, 2, 3, 4, 5, 6, 7, 8>,
-      TypeList<
-          bool,
-          int8_t,
-          uint8_t,
-          int16_t,
-          uint16_t,
-          int32_t,
-          uint32_t,
-          int64_t,
-          uint64_t,
-          float,
-          tflite::half>>
-    (iters, test_id, options, cap, "CoreSingleOp");
-  RegisterCombinations<
-      Fixture,
-      TransposeInt4,
-      SizeListC<1, 2, 3, 4, 5, 6, 7, 8>>
+      SelectV2,
+      SizeListC<1, 2, 3, 4>,
+      TypeList<float, tflite::half, int32_t>>
     (iters, test_id, options, cap, "CoreSingleOp");
   // clang-format on
 }
 
 }  // namespace
 
-void RegisterTranspose(const AtsConf& options, size_t& test_id, size_t iters,
-                       AtsInferenceTest::Capture& cap) {
-  RegisterTransposeImpl<AtsInferenceTest>(options, test_id, iters, cap);
+void RegisterSelectV2(const AtsConf& options, size_t& test_id, size_t iters,
+                      AtsInferenceTest::Capture& cap) {
+  RegisterSelectV2Impl<AtsInferenceTest>(options, test_id, iters, cap);
 }
 
-void RegisterTranspose(const AtsConf& options, size_t& test_id, size_t iters,
-                       AtsCompileTest::Capture& cap) {
-  RegisterTransposeImpl<AtsCompileTest>(options, test_id, iters, cap);
+void RegisterSelectV2(const AtsConf& options, size_t& test_id, size_t iters,
+                      AtsCompileTest::Capture& cap) {
+  RegisterSelectV2Impl<AtsCompileTest>(options, test_id, iters, cap);
 }
 
 }  // namespace litert::testing

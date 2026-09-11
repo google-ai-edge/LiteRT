@@ -43,7 +43,7 @@ void RegisterBinaryBroadcastImpl(const AtsConf& options, size_t& test_id,
                   kLiteRtOpCodeTflSub, kLiteRtOpCodeTflDiv>,
       TypeList<FaC<tflite::ActivationFunctionType_NONE>,
                FaC<tflite::ActivationFunctionType_RELU>>>
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
 
   RegisterCombinations<
       Fixture,
@@ -55,7 +55,7 @@ void RegisterBinaryBroadcastImpl(const AtsConf& options, size_t& test_id,
                   kLiteRtOpCodeTflSquaredDifference,
                   kLiteRtOpCodeTflFloorDiv, kLiteRtOpCodeTflPow>,
       TypeList<FaC<tflite::ActivationFunctionType_NONE>>>
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
 
   // Prelu requires Rank2 <= Rank1!
   // We generate all valid pairs (R1 >= R2) up to rank 4.
@@ -67,7 +67,7 @@ void RegisterBinaryBroadcastImpl(const AtsConf& options, size_t& test_id,
       TypeList<float>,
       OpCodeListC<kLiteRtOpCodeTflPrelu>,
       TypeList<FaC<tflite::ActivationFunctionType_NONE>>>
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
   RegisterCombinations<
       Fixture,
       BinaryBroadcast,
@@ -76,7 +76,7 @@ void RegisterBinaryBroadcastImpl(const AtsConf& options, size_t& test_id,
       TypeList<float>,
       OpCodeListC<kLiteRtOpCodeTflPrelu>,
       TypeList<FaC<tflite::ActivationFunctionType_NONE>>>
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
   RegisterCombinations<
       Fixture,
       BinaryBroadcast,
@@ -85,7 +85,7 @@ void RegisterBinaryBroadcastImpl(const AtsConf& options, size_t& test_id,
       TypeList<float>,
       OpCodeListC<kLiteRtOpCodeTflPrelu>,
       TypeList<FaC<tflite::ActivationFunctionType_NONE>>>
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
   RegisterCombinations<
       Fixture,
       BinaryBroadcast,
@@ -94,7 +94,7 @@ void RegisterBinaryBroadcastImpl(const AtsConf& options, size_t& test_id,
       TypeList<float>,
       OpCodeListC<kLiteRtOpCodeTflPrelu>,
       TypeList<FaC<tflite::ActivationFunctionType_NONE>>>
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
   // clang-format on
 }
 
