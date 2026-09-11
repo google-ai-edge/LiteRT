@@ -204,6 +204,7 @@ cc_library(
     srcs = ["sdpa_transposed_parser.cc"],
     hdrs = ["sdpa_transposed_parser.h"],
     deps = [
+        ":add_values_to_cache_parser",
         ":runtime_batched_matmul_parser",
         "//ml_drift_delegate/tflite:model_builder_helper",
         "//ml_drift_delegate/tflite:object_reader",

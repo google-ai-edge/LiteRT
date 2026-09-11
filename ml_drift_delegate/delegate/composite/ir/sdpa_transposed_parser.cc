@@ -20,6 +20,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/kernels/fully_connected.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
@@ -131,8 +132,19 @@ void SdpaTransposedConvert(
   }
 
   ::litert::ml_drift::SdpaTransposedAttributes attr;
-  attr.runtime_check.src_end_ch_index = kActiveTokensAlignedIndex;
+  const bool has_param_tensor =
+      (input3 != -1 && ir_model.tensor(input3)->desc.GetDataType() ==
+                           ::ml_drift::DataType::INT32) ||
+      (input4 != -1);
+  if (has_param_tensor) {
+    attr.runtime_check.src_end_ch_index = kActiveTokensAlignedIndex;
+  }
   attr.is_prefill = (q_shape.w > 2 || model_batch);
+
+  ::ml_drift::ir::IrOp* key_producer = ir_model.FindProducer(input1);
+  if (key_producer && key_producer->name == "add_values_to_cache") {
+    attr.from_cache_update = true;
+  }
 
   const ::ml_drift::BHWC right_shape_k =
       ir_model.tensor(k_val)->desc.GetBHWCShape();
@@ -160,6 +172,9 @@ void SdpaTransposedConvert(
     const flexbuffers::Map flexbuffer_map =
         flexbuffers::GetRoot(params->attributes, params->attributes_size)
             .AsMap();
+    if (!flexbuffer_map["from_cache_update"].IsNull()) {
+      attr.from_cache_update = flexbuffer_map["from_cache_update"].AsBool();
+    }
     if (!flexbuffer_map["softcap"].IsNull()) {
       attr.softcap = flexbuffer_map["softcap"].AsFloat();
     }

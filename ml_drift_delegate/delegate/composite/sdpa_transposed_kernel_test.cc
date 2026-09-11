@@ -235,7 +235,8 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
                                    ::ml_drift::CalculationsPrecision precision,
                                    ::ml_drift::TensorStorageType storage,
                                    int BK = 2, int T = 2, int S = 4, int H = 8,
-                                   MaskMode mask_mode = MaskMode::kBool) {
+                                   MaskMode mask_mode = MaskMode::kBool,
+                                   bool from_cache_update = true) {
   ::ml_drift::GpuModelBuilder builder(env.GetGpuInfo(), {}, precision, storage);
 
   ::ml_drift::DataType datatype;
@@ -251,7 +252,7 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
   }
 
   ::ml_drift::TensorStorageType kv_storage_type =
-      ::ml_drift::TensorStorageType::BUFFER;
+      from_cache_update ? ::ml_drift::TensorStorageType::BUFFER : storage;
 
   auto q = builder.AddTensor(::ml_drift::BHWC(1, BK, T, H), datatype);
   auto q_shape = q.tensor_desc.GetBHWCShape();
@@ -290,6 +291,7 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
 
   SdpaTransposedAttributes attr;
   attr.runtime_check.src_end_ch_index = 2;
+  attr.from_cache_update = from_cache_update;
 
   auto k_weights_shape = ::ml_drift::OHWI(
       k_activation_shape.w, k_activation_shape.h, 1, k_activation_shape.c);
@@ -304,8 +306,6 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
   attr.bmm2_weights.weights_shape = v_weights_shape;
   attr.bmm2_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
       ::ml_drift::DataType::FLOAT32, attr.bmm2_weights.weights_shape);
-  attr.bmm2_weights.desc.layout =
-      ::ml_drift::WeightsLayout::kOSpatialIOGroupI4O4;
 
   std::vector<uint32_t> graph_input_ids = {q.id, k.id, v.id};
   if (mask_handle.has_value()) {
@@ -381,10 +381,13 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
       q_data, k_data, v_data, mask_data, BK, T, S, H, mask_mode);
 
   std::vector<float> rearranged_k_data;
-  ABSL_RETURN_IF_ERROR(RearrangeK(k_data, rearranged_k_data, k_weights_shape));
-
   std::vector<float> rearranged_v_data;
-  ABSL_RETURN_IF_ERROR(RearrangeV(v_data, rearranged_v_data, v_weights_shape));
+  if (from_cache_update) {
+    ABSL_RETURN_IF_ERROR(
+        RearrangeK(k_data, rearranged_k_data, k_weights_shape));
+    ABSL_RETURN_IF_ERROR(
+        RearrangeV(v_data, rearranged_v_data, v_weights_shape));
+  }
 
   ::ml_drift::TensorFloat32 q_tensor;
   q_tensor.shape = q_shape;
@@ -392,11 +395,11 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
 
   ::ml_drift::TensorFloat32 k_tensor;
   k_tensor.shape = k_activation_shape;
-  k_tensor.data = rearranged_k_data;
+  k_tensor.data = from_cache_update ? rearranged_k_data : k_data;
 
   ::ml_drift::TensorFloat32 v_tensor;
   v_tensor.shape = v_activation_shape;
-  v_tensor.data = rearranged_v_data;
+  v_tensor.data = from_cache_update ? rearranged_v_data : v_data;
 
   std::vector<::ml_drift::TensorFloat32> src_cpu = {q_tensor, k_tensor,
                                                     v_tensor};
@@ -459,10 +462,27 @@ TEST_P(SdpaTransposedKernelExecuteTest, SingleTokenDecodeHeadDim128) {
   EXPECT_TRUE(status.ok()) << status.message();
 }
 
+TEST_P(SdpaTransposedKernelExecuteTest,
+       SingleTokenDecodeHeadDim128StandardTensors) {
+  auto status =
+      RunSdpaTransposedTest(*exec_env, precision(), storage(),
+                            /*BK=*/2, /*T=*/1, /*S=*/32, /*H=*/128,
+                            mask_mode(), /*from_cache_update=*/false);
+  EXPECT_TRUE(status.ok()) << status.message();
+}
+
 TEST_P(SdpaTransposedKernelExecuteTest, PrefillMultiToken) {
   auto status =
       RunSdpaTransposedTest(*exec_env, precision(), storage(),
                             /*BK=*/2, /*T=*/4, /*S=*/8, /*H=*/8, mask_mode());
+  EXPECT_TRUE(status.ok()) << status.message();
+}
+
+TEST_P(SdpaTransposedKernelExecuteTest, StandardTensorsFallback) {
+  auto status =
+      RunSdpaTransposedTest(*exec_env, precision(), storage(),
+                            /*BK=*/2, /*T=*/2, /*S=*/4, /*H=*/8, mask_mode(),
+                            /*from_cache_update=*/false);
   EXPECT_TRUE(status.ok()) << status.message();
 }
 

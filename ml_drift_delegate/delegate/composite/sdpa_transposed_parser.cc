@@ -25,6 +25,7 @@
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/tflite/model_builder_helper.h"
 #include "ml_drift_delegate/tflite/object_reader.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
@@ -122,8 +123,15 @@ void SdpaTransposedOperationParser::Parse(const TfLiteNode* tflite_node,
   }
 
   SdpaTransposedAttributes attr;
-  attr.runtime_check.src_end_ch_index = kActiveTokensAlignedIndex;
+  if (param_tensor) {
+    attr.runtime_check.src_end_ch_index = kActiveTokensAlignedIndex;
+  }
   attr.is_prefill = (query->tensor.shape.w > 2 || model_batch);
+
+  ::ml_drift::Node* key_producer = graph->FindProducer(key->id);
+  if (key_producer && key_producer->operation.type == kAddValuesToCacheType) {
+    attr.from_cache_update = true;
+  }
 
   const ::ml_drift::BHWC right_shape_k = k_val->tensor.shape;
   attr.bmm1_weights.weights_shape =
@@ -147,6 +155,9 @@ void SdpaTransposedOperationParser::Parse(const TfLiteNode* tflite_node,
     const flexbuffers::Map flexbuffer_map =
         flexbuffers::GetRoot(params->attributes, params->attributes_size)
             .AsMap();
+    if (!flexbuffer_map["from_cache_update"].IsNull()) {
+      attr.from_cache_update = flexbuffer_map["from_cache_update"].AsBool();
+    }
     if (!flexbuffer_map["softcap"].IsNull()) {
       attr.softcap = flexbuffer_map["softcap"].AsFloat();
     }

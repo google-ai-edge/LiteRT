@@ -31,6 +31,7 @@
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/kernel_info.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
@@ -439,49 +440,103 @@ absl::Status BuildSdpaTransposedGpuGraph(
   // Fused Flash-Decode is currently optimized for Apple Silicon with
   // head_dim = 128 (slices = 32 matching the 32-thread SIMD wave size).
   // For prefill, other head dimensions, or non-Apple GPUs, fall back to the
-  // multi-op BMM graph.
+  // multi-op graph.
   const int head_dim = q.tensor_desc.GetBHWCShape().c;
   const bool is_supported_flash_decode =
-      !attr.is_prefill && head_dim == 128 &&
+      attr.from_cache_update && !attr.is_prefill && head_dim == 128 &&
+      k.tensor_desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
+      v.tensor_desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
       model_builder->gpu_info().IsApple();
 
-  if (!is_supported_flash_decode) {
+  if (is_supported_flash_decode) {
+    // Single fused SDPA op.
+    ABSL_ASSIGN_OR_RETURN(auto output_ref, model_builder->GetTensor(output_id));
+    const auto output_shape = output_ref.tensor_desc.GetBHWCShape();
+    const auto q_shape = q.tensor_desc.GetBHWCShape();
+    const bool is_flattened_dst =
+        (output_shape.h == 1 && output_shape.c == q_shape.h * q_shape.c);
+
+    const auto dst_shape = is_flattened_dst ? output_shape : q_shape;
+    auto dst = model_builder->AddTensor(dst_shape, q.tensor_desc.GetDataType());
+
+    auto op = CreateFusedFlashDecodeSdpa(
+        model_builder->gpu_info(), q.tensor_desc, k.tensor_desc, v.tensor_desc,
+        mask_desc, param_desc, dst.tensor_desc, attr, is_flattened_dst);
+
+    std::vector<::ml_drift::GpuModelBuilder::TensorHandle> src_tensors = {q, k,
+                                                                          v};
+    if (mask_desc) src_tensors.push_back(mask);
+    if (param_desc) src_tensors.push_back(param_tensor);
+
+    model_builder->AddGpuOperation(src_tensors, {dst}, std::move(op),
+                                   "flash_decode_sdpa");
+    return model_builder->UpdateOutputTensor(dst, output_id);
+  }
+
+  ::ml_drift::GpuModelBuilder::TensorHandle logits;
+  if (attr.from_cache_update) {
     ::ml_drift::WeightsDescription bmm1_desc = attr.bmm1_weights.desc;
     bmm1_desc.type = q.tensor_desc.GetDataType();
     const ::ml_drift::GpuModelBuilder::Weights bmm1_external_weights =
         ::ml_drift::CreateExternalWeights(k, bmm1_desc,
                                           attr.bmm1_weights.weights_shape);
 
-    ::ml_drift::ConvRuntimeCheckDesc bmm1_runtime_check = {
-        .dst_end_ch_index = attr.runtime_check.src_end_ch_index,
-    };
+    ::ml_drift::ConvRuntimeCheckDesc bmm1_runtime_check;
+    if (param_desc) {
+      bmm1_runtime_check.dst_end_ch_index = attr.runtime_check.src_end_ch_index;
+    }
 
     ABSL_ASSIGN_OR_RETURN(
-        auto logits,
+        logits,
         model_builder->FullyConnectedExternalWeights(
             q, bmm1_external_weights, /*biases=*/nullptr, /*src_exp=*/nullptr,
             bmm1_runtime_check, param_desc ? &param_tensor : nullptr));
-
-    if (mask_desc != nullptr) {
-      if (mask.tensor_desc.GetDataType() == ::ml_drift::DataType::BOOL) {
-        ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::BHWC>,
-                           ::ml_drift::DataType::FLOAT32>
-            fill_tensor;
-        fill_tensor.shape = ::ml_drift::BHWC(1, 1, 1, 1);
-        // Use a large negative value to simulate -inf. std::limit<float>::min()
-        // causes regression.
-        fill_tensor.data = {-10000.0f};
-        auto neg_val = model_builder->AddConstantTensor(
-            fill_tensor, logits.tensor_desc.GetDataType());
-        logits = model_builder->SelectV2(mask, logits, neg_val);
-      } else {
-        logits = model_builder->Add(logits, mask);
-      }
+  } else {
+    ::ml_drift::BatchedMatMulAttributes bmm1_attr;
+    bmm1_attr.transpose_left = false;
+    bmm1_attr.transpose_right = true;
+    ::ml_drift::ConvRuntimeCheckDesc bmm1_runtime_check;
+    if (param_desc) {
+      bmm1_runtime_check.dst_end_ch_index = attr.runtime_check.src_end_ch_index;
     }
+    ABSL_ASSIGN_OR_RETURN(
+        logits, model_builder->BatchedMatMul(
+                    q, k, bmm1_attr, /*src_exp=*/nullptr, bmm1_runtime_check,
+                    param_desc ? &param_tensor : nullptr));
+  }
 
-    ::ml_drift::SoftmaxRuntimeCheckDesc softmax_runtime_check = {
-        .end_ch_index = attr.runtime_check.src_end_ch_index,
-    };
+  if (attr.softcap.has_value() && *attr.softcap > 0.0f) {
+    const float cap_val = *attr.softcap;
+    logits = model_builder->Multiplication(logits, 1.0f / cap_val);
+    logits =
+        model_builder->Elementwise(logits, ::ml_drift::OperationType::TANH);
+    logits = model_builder->Multiplication(logits, cap_val);
+  }
+
+  if (mask_desc != nullptr) {
+    if (mask.tensor_desc.GetDataType() == ::ml_drift::DataType::BOOL) {
+      ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::BHWC>,
+                         ::ml_drift::DataType::FLOAT32>
+          fill_tensor;
+      fill_tensor.shape = ::ml_drift::BHWC(1, 1, 1, 1);
+      // Use a large negative value to simulate -inf. std::limit<float>::min()
+      // causes regression.
+      fill_tensor.data = {-10000.0f};
+      auto neg_val = model_builder->AddConstantTensor(
+          fill_tensor, logits.tensor_desc.GetDataType());
+      logits = model_builder->SelectV2(mask, logits, neg_val);
+    } else {
+      logits = model_builder->Add(logits, mask);
+    }
+  }
+
+  ::ml_drift::SoftmaxRuntimeCheckDesc softmax_runtime_check;
+  if (param_desc) {
+    softmax_runtime_check.end_ch_index = attr.runtime_check.src_end_ch_index;
+  }
+
+  ::ml_drift::GpuModelBuilder::TensorHandle output;
+  if (attr.from_cache_update) {
     auto sfmx_partial = model_builder->SoftmaxReduce(
         logits, softmax_runtime_check, param_desc ? &param_tensor : nullptr);
 
@@ -491,41 +546,34 @@ absl::Status BuildSdpaTransposedGpuGraph(
         ::ml_drift::CreateExternalWeights(v, bmm2_desc,
                                           attr.bmm2_weights.weights_shape);
 
-    ::ml_drift::ConvRuntimeCheckDesc bmm2_runtime_check = {
-        .src_end_ch_index = attr.runtime_check.src_end_ch_index,
-    };
+    ::ml_drift::ConvRuntimeCheckDesc bmm2_runtime_check;
+    if (param_desc) {
+      bmm2_runtime_check.src_end_ch_index = attr.runtime_check.src_end_ch_index;
+    }
 
     ABSL_ASSIGN_OR_RETURN(
-        auto output, model_builder->FullyConnectedExternalWeights(
-                         logits, bmm2_external_weights, /*biases=*/nullptr,
-                         &sfmx_partial, bmm2_runtime_check,
-                         param_desc ? &param_tensor : nullptr));
+        output,
+        model_builder->FullyConnectedExternalWeights(
+            logits, bmm2_external_weights, /*biases=*/nullptr, &sfmx_partial,
+            bmm2_runtime_check, param_desc ? &param_tensor : nullptr));
+  } else {
+    auto probs = model_builder->Softmax(logits, softmax_runtime_check,
+                                        param_desc ? &param_tensor : nullptr);
 
-    return model_builder->UpdateOutputTensor(output, output_id);
+    ::ml_drift::BatchedMatMulAttributes bmm2_attr;
+    bmm2_attr.transpose_left = false;
+    bmm2_attr.transpose_right = true;
+    ::ml_drift::ConvRuntimeCheckDesc bmm2_runtime_check;
+    if (param_desc) {
+      bmm2_runtime_check.src_end_ch_index = attr.runtime_check.src_end_ch_index;
+    }
+    ABSL_ASSIGN_OR_RETURN(
+        output, model_builder->BatchedMatMul(
+                    probs, v, bmm2_attr, /*src_exp=*/nullptr,
+                    bmm2_runtime_check, param_desc ? &param_tensor : nullptr));
   }
 
-  // Single fused SDPA op.
-  ABSL_ASSIGN_OR_RETURN(auto output_ref, model_builder->GetTensor(output_id));
-  const auto output_shape = output_ref.tensor_desc.GetBHWCShape();
-  const auto q_shape = q.tensor_desc.GetBHWCShape();
-  const bool is_flattened_dst =
-      (output_shape.h == 1 && output_shape.c == q_shape.h * q_shape.c);
-
-  const auto dst_shape = is_flattened_dst ? output_shape : q_shape;
-  auto dst = model_builder->AddTensor(dst_shape, q.tensor_desc.GetDataType());
-
-  auto op = CreateFusedFlashDecodeSdpa(
-      model_builder->gpu_info(), q.tensor_desc, k.tensor_desc, v.tensor_desc,
-      mask_desc, param_desc, dst.tensor_desc, attr, is_flattened_dst);
-
-  std::vector<::ml_drift::GpuModelBuilder::TensorHandle> src_tensors = {
-      q, k, v};
-  if (mask_desc) src_tensors.push_back(mask);
-  if (param_desc) src_tensors.push_back(param_tensor);
-
-  model_builder->AddGpuOperation(src_tensors, {dst}, std::move(op),
-                                 "flash_decode_sdpa");
-  return model_builder->UpdateOutputTensor(dst, output_id);
+  return model_builder->UpdateOutputTensor(output, output_id);
 }
 
 absl::Status CreateSdpaTransposedFromNode(

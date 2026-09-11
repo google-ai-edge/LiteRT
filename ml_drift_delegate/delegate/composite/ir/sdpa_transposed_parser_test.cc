@@ -114,6 +114,7 @@ TEST_F(ConvertSdpaTransposedTest, BasicFp32) {
   ASSERT_NE(attr, nullptr);
   EXPECT_EQ(attr->bmm1_weights.desc.type, ::ml_drift::DataType::FLOAT32);
   EXPECT_EQ(attr->bmm2_weights.desc.type, ::ml_drift::DataType::FLOAT32);
+  EXPECT_FALSE(attr->from_cache_update);
 }
 
 TEST_F(ConvertSdpaTransposedTest, BasicFp16) {
