@@ -23,6 +23,7 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/version.h"
 #if !defined(LITERT_DISABLE_GPU)
 #include "litert/runtime/gpu_environment.h"
 #else
@@ -33,6 +34,7 @@ class GpuEnvironment {};
 
 litert::Expected<LiteRtEnvironmentT::Ptr> LiteRtEnvironmentT::CreateWithOptions(
     absl::Span<const LiteRtEnvOption> options) {
+  litert::internal::LogVersionInfoOnce();
   LITERT_LOG(LITERT_INFO, "Creating LiteRT environment with options");
   auto env = std::make_unique<LiteRtEnvironmentT>();
   for (const auto& opt : options) {

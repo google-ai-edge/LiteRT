@@ -134,6 +134,7 @@ cc_library(
     deps = [
         ":environment_options",
         ":error_reporter",
+        ":version",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
@@ -268,6 +269,7 @@ cc_library(
     hdrs = ["version.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_version",
         "//litert/c/internal:litert_logging",
     ],
 )

@@ -51,6 +51,7 @@
 #include "litert/compiler/cc/litert_op_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/intel_openvino/bytecode_header.h"
+#include "litert/vendors/intel_openvino/openvino_version_info.h"
 #include "litert/vendors/intel_openvino/compiler/alias_shared_constants.h"
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
@@ -296,9 +297,9 @@ LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
   if (compiler_plugin == nullptr || sdk_version == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  // No-op implementation for Intel OpenVINO plugin.
-  // TODO: Add the SDK version to the plugin.
-  *sdk_version = "";
+  static const std::string openvino_version_str =
+      litert::openvino::GetOpenVINOVersionString();
+  *sdk_version = openvino_version_str.c_str();
   return kLiteRtStatusOk;
 }
 
@@ -417,6 +418,7 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
     LiteRtOptions options) {
   LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(), LITERT_INFO);
   LiteRtPropagateMinLoggerSeverityWithCompilerContext(compiler_context, env);
+  litert::openvino::LogOpenVINOVersionInfoOnce("OpenVINO Compiler");
   auto* plugin = new LiteRtCompilerPluginT(compiler_context, env, options);
   *compiler_plugin = plugin;
   return kLiteRtStatusOk;
@@ -595,7 +597,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         context.ConfigureForNpuWeightSharing();
       }
 
-      auto graph_name = absl::StrFormat("Partition_%d", partition_idx);
+      auto graph_name = "Partition_" + std::to_string(partition_idx);
       litert::Expected<litert::compiler::Subgraph> expected_subgraph =
           model.Subgraph(partition_idx);
       if (expected_subgraph.HasValue()) {

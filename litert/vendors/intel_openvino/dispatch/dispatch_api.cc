@@ -39,6 +39,7 @@
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
 #include "litert/vendors/intel_openvino/dispatch/invocation_context.h"
 #include "litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h"
+#include "litert/vendors/intel_openvino/openvino_version_info.h"
 
 namespace litert {
 namespace openvino {
@@ -48,6 +49,8 @@ namespace {
 
 // Optional intel openvino specific options provided by the application.
 IntelOpenVinoOptions* intel_openvino_opts = nullptr;
+
+char BuildId[512] = "1.0";
 
 }  // namespace
 
@@ -111,11 +114,15 @@ LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
                                                        environment_options);
   }
 
-  ov::Core core;
-  std::vector<std::string> availableDevices = core.get_available_devices();
-  for (auto&& device : availableDevices)
-    LITERT_LOG(LITERT_INFO, "[Openvino]Found device plugin for: %s",
-               device.c_str());
+  litert::openvino::LogOpenVINOVersionInfoOnce("OpenVINO Dispatch");
+
+  const std::string openvino_ver_str =
+      litert::openvino::GetOpenVINOVersionString();
+  snprintf(BuildId, sizeof(BuildId),
+           "Intel OpenVINO Dispatch API version %d.%d.%d, %s",
+           LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
+           LITERT_API_VERSION_PATCH, openvino_ver_str.c_str());
+  BuildId[sizeof(BuildId) - 1] = '\0';
 
   if (options) {
     litert::internal::OptionsWrapper internal_options(
@@ -152,7 +159,7 @@ LiteRtStatus DispatchGetVendorId(const char** vendor_id) {
 // This function returns a pointer to a statically allocated string that is the
 // ID of the Dispatch API runtime build.
 LiteRtStatus DispatchGetBuildId(const char** build_id) {
-  *build_id = "1.0";
+  *build_id = BuildId;
   return kLiteRtStatusOk;
 }
 
