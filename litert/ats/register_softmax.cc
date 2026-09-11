@@ -41,7 +41,7 @@ void RegisterSoftmaxImpl(const AtsConf& options, size_t& test_id, size_t iters,
                TypeTuple<tflite::half, tflite::half>>,
       OpCodeListC<kLiteRtOpCodeTflSoftmax, kLiteRtOpCodeTflLogSoftmax>,
       SizeListC<1>>
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
   // clang-format on
 }
 

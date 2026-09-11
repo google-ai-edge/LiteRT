@@ -56,7 +56,7 @@ void RegisterFullyConnectedImpl(const AtsConf& options, size_t& test_id,
       TypeList<std::false_type>,                     // PerChannel
       TypeList<std::false_type>,                     // DynamicFilter
       TypeList<std::false_type>>                     // DynamicBias
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
 
   // Floating-Point Dynamic Filter & Bias
   RegisterCombinations<
@@ -75,7 +75,7 @@ void RegisterFullyConnectedImpl(const AtsConf& options, size_t& test_id,
       TypeList<std::false_type>,                     // PerChannel
       TypeList<std::true_type, std::false_type>,     // DynamicFilter
       TypeList<std::true_type, std::false_type>>     // DynamicBias
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
 
   // Hybrid Quantization (FP32 activations x INT8 weights)
   RegisterCombinations<
@@ -94,7 +94,7 @@ void RegisterFullyConnectedImpl(const AtsConf& options, size_t& test_id,
       TypeList<std::true_type, std::false_type>,     // PerChannel
       TypeList<std::false_type>,                     // DynamicFilter
       TypeList<std::false_type>>                     // DynamicBias
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
 
   // Full Integer Quantization (INT8/UINT8 activations & weights)
   RegisterCombinations<
@@ -118,7 +118,7 @@ void RegisterFullyConnectedImpl(const AtsConf& options, size_t& test_id,
       TypeList<std::true_type, std::false_type>,     // PerChannel
       TypeList<std::false_type>,                     // DynamicFilter
       TypeList<std::false_type>>                     // DynamicBias
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
   // clang-format on
 }
 

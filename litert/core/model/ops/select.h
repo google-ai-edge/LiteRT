@@ -24,6 +24,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/ops/simple_binary.h"
 #include "litert/core/model/shape_inference_types.h"
 
 namespace litert::internal {
@@ -75,6 +76,63 @@ inline LiteRtStatus InferSelect(const LiteRtOpT& op,
 
   output_shapes[0] = std::move(out_shape);
   return kLiteRtStatusOk;
+}
+
+template <typename T>
+inline void RunSelectOp(const bool* cond, const T* a, const T* b, T* output,
+                        const size_t* cond_stride, const size_t* a_stride,
+                        const size_t* b_stride, const size_t* output_stride,
+                        const size_t* output_shape, int rank) {
+  if (rank <= 0) {
+    *output = *cond ? *a : *b;
+  } else if (rank == 1) {
+    for (size_t i = 0; i < output_shape[0]; ++i) {
+      output[i * output_stride[0]] =
+          cond[i * cond_stride[0]] ? a[i * a_stride[0]] : b[i * b_stride[0]];
+    }
+  } else {
+    for (size_t i = 0; i < output_shape[0]; ++i) {
+      RunSelectOp(cond + i * cond_stride[0], a + i * a_stride[0],
+                  b + i * b_stride[0], output + i * output_stride[0],
+                  cond_stride + 1, a_stride + 1, b_stride + 1,
+                  output_stride + 1, output_shape + 1, rank - 1);
+    }
+  }
+}
+
+template <typename T>
+inline void ReferenceSelect(const bool* cond_data, const int32_t* cond_dims,
+                            int cond_rank, const T* a_data,
+                            const int32_t* a_dims, int a_rank,
+                            const T* b_data, const int32_t* b_dims, int b_rank,
+                            T* output_data, const int32_t* output_dims,
+                            int rank) {
+  if (rank <= 0) {
+    if (rank == 0) {
+      *output_data = *cond_data ? *a_data : *b_data;
+    }
+    return;
+  }
+  constexpr int kMaxRank = 8;
+  size_t cond_stride[kMaxRank];
+  size_t a_stride[kMaxRank];
+  size_t b_stride[kMaxRank];
+  size_t o_stride[kMaxRank];
+  size_t o_shape[kMaxRank];
+
+  ComputeBroadcastStrides(cond_dims, cond_rank, rank, cond_stride);
+  ComputeBroadcastStrides(a_dims, a_rank, rank, a_stride);
+  ComputeBroadcastStrides(b_dims, b_rank, rank, b_stride);
+
+  size_t current_stride = 1;
+  for (int i = rank - 1; i >= 0; --i) {
+    o_stride[i] = current_stride;
+    o_shape[i] = output_dims[i];
+    current_stride *= output_dims[i];
+  }
+
+  RunSelectOp(cond_data, a_data, b_data, output_data, cond_stride, a_stride,
+              b_stride, o_stride, o_shape, rank);
 }
 
 }  // namespace litert::internal

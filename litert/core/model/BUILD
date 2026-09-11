@@ -641,7 +641,7 @@ cc_library(
     hdrs = ["ops/select.h"],
     deps = [
         ":model",
-        ":op_shape_inference_utils",
+        ":ops_simple_binary",
         ":shape_inference_types",
         "//litert/c:litert_common",
         "@com_google_absl//absl/types:span",
