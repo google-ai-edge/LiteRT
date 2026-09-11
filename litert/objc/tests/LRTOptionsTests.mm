@@ -36,4 +36,20 @@
   XCTAssertEqual(options.hardwareAccelerators, expectedFlags);
 }
 
+- (void)testDefaultMetalOptionsAreDisabled {
+  LRTOptions *options = [[LRTOptions alloc] init];
+  XCTAssertNotNil(options);
+  XCTAssertFalse(options.usesMetalArgumentBuffers);
+  XCTAssertFalse(options.enablesMetalResidencySet);
+}
+
+- (void)testSetMetalOptions {
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorGPU];
+  XCTAssertNotNil(options);
+  options.usesMetalArgumentBuffers = YES;
+  options.enablesMetalResidencySet = YES;
+  XCTAssertTrue(options.usesMetalArgumentBuffers);
+  XCTAssertTrue(options.enablesMetalResidencySet);
+}
+
 @end

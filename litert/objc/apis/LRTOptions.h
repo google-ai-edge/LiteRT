@@ -38,6 +38,29 @@ typedef NS_OPTIONS(NSUInteger, LRTHardwareAccelerators) {
 /** Hardware accelerators bitmask enabled for compilation. */
 @property(nonatomic, assign, readonly) LRTHardwareAccelerators hardwareAccelerators;
 
+/**
+ * Whether to use Metal argument buffers for kernel argument encoding.
+ *
+ * An argument buffer groups multiple resources (buffers, textures, samplers) into a single
+ * buffer passed to Metal Shading Language (MSL) compute shaders. When compiling large models
+ * or LLMs with many tensor inputs/outputs, the number of individual buffer binding slots can
+ * exceed Metal's hardware binding table limits. Enabling argument buffers indirects resource
+ * indexing, avoiding buffer slot exhaustion and reducing CPU-side command encoding overhead
+ * on supported hardware (Tier 2 Metal GPUs, Apple Silicon M-series and A-series).
+ */
+@property(nonatomic, assign) BOOL usesMetalArgumentBuffers;
+
+/**
+ * Whether to use MTLResidencySet to manage resource residency on the Metal backend.
+ *
+ * On iOS 18.0+ / macOS 15.0+, Metal residency sets allow explicit tracking and commit of
+ * allocations (such as large model weight buffers and KV cache) into working GPU memory.
+ * By keeping model allocations resident, this prevents the OS virtual memory system from
+ * paging out or evicting large model weights during background memory pressure, eliminating
+ * page faults and hitching during subsequent inference runs.
+ */
+@property(nonatomic, assign) BOOL enablesMetalResidencySet;
+
 @end
 
 NS_ASSUME_NONNULL_END

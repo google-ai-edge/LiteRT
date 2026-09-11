@@ -138,12 +138,17 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
   auto metal_command_queue_option =
       environment_options.GetOption(kLiteRtEnvOptionTagMetalCommandQueue);
   if (metal_device_option.HasValue() &&
-      metal_device_option->type == kLiteRtAnyTypeVoidPtr &&
-      metal_command_queue_option.HasValue() &&
-      metal_command_queue_option->type == kLiteRtAnyTypeVoidPtr) {
-    LiteRtCreateWithCommandQueue(
-        const_cast<void*>(metal_command_queue_option->ptr_value),
-        const_cast<void*>(metal_device_option->ptr_value), &options.metal_info);
+      metal_device_option->type == kLiteRtAnyTypeVoidPtr) {
+    if (metal_command_queue_option.HasValue() &&
+        metal_command_queue_option->type == kLiteRtAnyTypeVoidPtr) {
+      LiteRtCreateWithCommandQueue(
+          const_cast<void*>(metal_command_queue_option->ptr_value),
+          const_cast<void*>(metal_device_option->ptr_value),
+          &options.metal_info);
+    } else {
+      LiteRtCreateWithDevice(const_cast<void*>(metal_device_option->ptr_value),
+                             &options.metal_info);
+    }
   }
 #endif  // LITERT_HAS_METAL_SUPPORT
 

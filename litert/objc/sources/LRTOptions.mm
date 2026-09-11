@@ -46,6 +46,15 @@ constexpr LRTHardwareAccelerators kValidAcceleratorsMask =
 }
 
 - (litert::Options *)cppOptions {
+#if defined(__APPLE__)
+  if (self.usesMetalArgumentBuffers || self.enablesMetalResidencySet) {
+    auto gpuOptions = _cppOptions.GetGpuOptions();
+    if (gpuOptions.HasValue()) {
+      gpuOptions->SetUseMetalArgumentBuffers(self.usesMetalArgumentBuffers);
+      gpuOptions->EnableMetalResidencySet(self.enablesMetalResidencySet);
+    }
+  }
+#endif
   return &_cppOptions;
 }
 

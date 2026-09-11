@@ -255,4 +255,109 @@ static NSString *GetTestModelPath() {
   }
 }
 
+- (void)testEnvironmentOptionsWithMetalDeviceOnly {
+  id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+  XCTSkipIf(device == nil, @"Metal is not supported on this device/simulator.");
+
+  NSError *error = nil;
+  LRTEnvironmentOptions *envOptions = [[LRTEnvironmentOptions alloc] init];
+  envOptions.metalDevice = device;
+  // Intentionally omit setting metalCommandQueue to test command queue fallback.
+
+  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:envOptions error:&error];
+  XCTAssertNotNil(env);
+  XCTAssertNil(error);
+  XCTAssertEqual(env.metalDevice, envOptions.metalDevice);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorGPU];
+  NSString *modelPath = GetTestModelPath();
+
+  LRTCompiledModel *compiledModel = [LRTCompiledModel compiledModelWithModelFilePath:modelPath
+                                                                         environment:env
+                                                                             options:options
+                                                                               error:&error];
+  XCTAssertNotNil(compiledModel);
+  XCTAssertNil(error);
+
+  NSArray<LRTTensorBuffer *> *inputs = [compiledModel createInputTensorBuffersWithError:&error];
+  XCTAssertNotNil(inputs);
+  XCTAssertNil(error);
+  XCTAssertEqual(inputs.count, 2);
+
+  NSArray<LRTTensorBuffer *> *outputs = [compiledModel createOutputTensorBuffersWithError:&error];
+  XCTAssertNotNil(outputs);
+  XCTAssertNil(error);
+  XCTAssertEqual(outputs.count, 1);
+
+  NSData *input0Data = [NSData dataWithBytes:kTestInput0Tensor length:sizeof(kTestInput0Tensor)];
+  NSData *input1Data = [NSData dataWithBytes:kTestInput1Tensor length:sizeof(kTestInput1Tensor)];
+
+  XCTAssertTrue([inputs[0] writeData:input0Data error:&error]);
+  XCTAssertTrue([inputs[1] writeData:input1Data error:&error]);
+
+  BOOL runSuccess = [compiledModel runWithInputs:inputs outputs:outputs error:&error];
+  XCTAssertTrue(runSuccess);
+  XCTAssertNil(error);
+
+  NSData *outputData = [outputs[0] readDataWithError:&error];
+  XCTAssertNotNil(outputData);
+  XCTAssertEqual(outputData.length, sizeof(kTestOutputTensor));
+
+  const float *outputFloat = static_cast<const float *>(outputData.bytes);
+  for (size_t i = 0; i < kTestOutputSize; ++i) {
+    XCTAssertEqualWithAccuracy(outputFloat[i], kTestOutputTensor[i], kTestAccuracy);
+  }
+}
+
+- (void)testCompiledModelWithMetalExecutionOptions {
+  id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+  XCTSkipIf(device == nil, @"Metal is not supported on this device/simulator.");
+
+  NSError *error = nil;
+  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(env);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorGPU];
+  options.usesMetalArgumentBuffers = YES;
+  options.enablesMetalResidencySet = YES;
+  XCTAssertTrue(options.usesMetalArgumentBuffers);
+  XCTAssertTrue(options.enablesMetalResidencySet);
+
+  NSString *modelPath = GetTestModelPath();
+  LRTCompiledModel *compiledModel = [LRTCompiledModel compiledModelWithModelFilePath:modelPath
+                                                                         environment:env
+                                                                             options:options
+                                                                               error:&error];
+  XCTAssertNotNil(compiledModel);
+  XCTAssertNil(error);
+
+  NSArray<LRTTensorBuffer *> *inputs = [compiledModel createInputTensorBuffersWithError:&error];
+  XCTAssertNotNil(inputs);
+  XCTAssertNil(error);
+
+  NSArray<LRTTensorBuffer *> *outputs = [compiledModel createOutputTensorBuffersWithError:&error];
+  XCTAssertNotNil(outputs);
+  XCTAssertNil(error);
+
+  NSData *input0Data = [NSData dataWithBytes:kTestInput0Tensor length:sizeof(kTestInput0Tensor)];
+  NSData *input1Data = [NSData dataWithBytes:kTestInput1Tensor length:sizeof(kTestInput1Tensor)];
+
+  XCTAssertTrue([inputs[0] writeData:input0Data error:&error]);
+  XCTAssertTrue([inputs[1] writeData:input1Data error:&error]);
+
+  BOOL runSuccess = [compiledModel runWithInputs:inputs outputs:outputs error:&error];
+  XCTAssertTrue(runSuccess);
+  XCTAssertNil(error);
+
+  NSData *outputData = [outputs[0] readDataWithError:&error];
+  XCTAssertNotNil(outputData);
+  XCTAssertEqual(outputData.length, sizeof(kTestOutputTensor));
+
+  const float *outputFloat = static_cast<const float *>(outputData.bytes);
+  for (size_t i = 0; i < kTestOutputSize; ++i) {
+    XCTAssertEqualWithAccuracy(outputFloat[i], kTestOutputTensor[i], kTestAccuracy);
+  }
+}
+
 @end
