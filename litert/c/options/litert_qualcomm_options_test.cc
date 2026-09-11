@@ -260,6 +260,18 @@ TEST(LiteRtQualcommOptionsTest, VtcmSize) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, HtpDeviceId) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetHtpDeviceId(qualcomm_options, 1));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetHtpDeviceId(), 1);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, NumHvxThreads) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -469,6 +481,10 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetVtcmSize(), 0);
   options->SetVtcmSize(4);
   EXPECT_EQ(options->GetVtcmSize(), 4);
+
+  EXPECT_EQ(options->GetHtpDeviceId(), 0);
+  options->SetHtpDeviceId(1);
+  EXPECT_EQ(options->GetHtpDeviceId(), 1);
 
   EXPECT_EQ(options->GetNumHvxThreads(), 0);
   options->SetNumHvxThreads(4);

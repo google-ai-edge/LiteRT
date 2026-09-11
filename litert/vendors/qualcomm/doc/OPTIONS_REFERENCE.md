@@ -46,7 +46,7 @@ consumed at two distinct moments:
 flowchart TB
     subgraph ROW1[" "]
         direction LR
-        BOTH["🌐 Both<br/><div style='text-align:left'>─────────────────<br/>log_level<br/>backend<br/>custom_op_package<br/>profiling</div>"]
+        BOTH["🌐 Both<br/><div style='text-align:left'>─────────────────<br/>log_level<br/>backend<br/>custom_op_package<br/>profiling<br/>htp_device_id (JIT only)</div>"]
         DISPATCH["🚀 Dispatch<br/><div style='text-align:left'>────────────────────────<br/>HTP: htp_performance_mode<br/>DSP: dsp_performance_mode</div>"]
         BOTH ~~~ DISPATCH
     end
@@ -63,7 +63,7 @@ flowchart TB
 | Category | Options |
 |----------|---------|
 | **General / SDK** | `log_level`, `backend`, `graph_priority`, `custom_op_package`, `enable_just_in_time`, `graph_io_tensor_mem_type`, `profiling` |
-| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_p_point`, `htp_performance_mode`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
+| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_p_point`, `htp_performance_mode`, `htp_device_id`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
 | **DSP** | `dsp_performance_mode` |
 | **IR** | `dlc_dir` |
 | **SAVER** | `saver_output_dir` |
@@ -128,6 +128,7 @@ target:HTP"
 | P-point | `htp_p_point` | `0` | compile | **Experimental** (HTP + `O3` only). Predefined configs trading latency vs. DRAM bandwidth. |
 | Optimization level | `optimization_level` | `O3` | compile | `O1` (inference) · `O2` (prepare) · `O3` (inference, aggressive). |
 | HTP perf mode | `htp_performance_mode` | `default` | dispatch | `default` · `sustained_high_performance` · `burst` · `high_performance` · `power_saver` · `low_power_saver` · `high_power_saver` · `low_balanced` · `balanced` · `extreme_power_saver`. |
+| HTP device ID | `htp_device_id` | `0` | both, JIT only | Selects the QNN HTP device by its platform `deviceId` when `enable_just_in_time=true`. Device `0` is the default. AOT ignores a nonzero value and uses device `0`. |
 | VTCM size | `vtcm_size` | `0` (=max) | compile | VTCM size (MB) of target device. `0` → device max. |
 | HVX threads | `num_hvx_thread` | `0` (=max) | compile | HVX threads for target device. `0` → device max. |
 | INT64→INT32 bias | `use_int64_bias_as_int32` | `true` | compile | Convert FullyConnected/Conv2D bias int64 → int32. |
@@ -202,7 +203,12 @@ apply_plugin_main \
 
 ```bash
 run_model \
-    --graph=model_compiled.tflite \
+    --graph=model.tflite \
+    --accelerator=npu \
+    --compiler_plugin_library_dir=/path/to/compiler/plugins \
+    --qualcomm_backend=htp \
+    --qualcomm_enable_just_in_time=true \
+    --qualcomm_htp_device_id=0 \
     --qualcomm_htp_performance_mode=burst \
     --qualcomm_profiling=detailed
 ```
@@ -224,6 +230,8 @@ qnn_backend = 2            # htp   (note the key is qnn_backend, not backend)
 optimization_level = 2     # O3 == kOptimizeForInferenceO3
 use_conv_hmx = true
 vtcm_size = 8
+enable_just_in_time = true
+htp_device_id = 0
 htp_performance_mode = 2   # burst
 profiling = 2              # detailed
 ```
@@ -239,6 +247,8 @@ opts.SetOptimizationLevel(
     litert::qualcomm::QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
 opts.SetUseConvHMX(true);
 opts.SetVtcmSize(8);
+opts.SetEnableJustInTime(true);
+opts.SetHtpDeviceId(0);
 opts.SetHtpPerformanceMode(
     litert::qualcomm::QualcommOptions::HtpPerformanceMode::kBurst);
 opts.SetProfiling(litert::qualcomm::QualcommOptions::Profiling::kDetailed);
@@ -255,6 +265,8 @@ LrtQualcommOptionsSetBackend(opts, kLiteRtQualcommBackendHtp);
 LrtQualcommOptionsSetOptimizationLevel(opts, kHtpOptimizeForInferenceO3);
 LrtQualcommOptionsSetUseConvHMX(opts, true);
 LrtQualcommOptionsSetVtcmSize(opts, 8);
+LrtQualcommOptionsSetEnableJustInTime(opts, true);
+LrtQualcommOptionsSetHtpDeviceId(opts, 0);
 LrtQualcommOptionsSetHtpPerformanceMode(
     opts, kLiteRtQualcommHtpPerformanceModeBurst);
 LrtQualcommOptionsSetProfiling(opts, kLiteRtQualcommProfilingDetailed);
