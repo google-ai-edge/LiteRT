@@ -182,6 +182,21 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepSuccessfully) {
   graph.AddConsumer(dummy_consumer->id, final_out_val->id);
   graph.AddConsumer(dummy_consumer->id, next_state_val->id);
 
+  // `FuseShortConvStep()` deletes the fused-away nodes, which destroys the
+  // `Node` objects and leaves the pointers above dangling. Snapshot the ids
+  // up front so the assertions below never dereference freed memory.
+  const ::ml_drift::NodeId slice_b_node_id = slice_b_node->id;
+  const ::ml_drift::NodeId slice_c_node_id = slice_c_node->id;
+  const ::ml_drift::NodeId slice_x_node_id = slice_x_node->id;
+  const ::ml_drift::NodeId bx_mul_node_id = bx_mul_node->id;
+  const ::ml_drift::NodeId px_reshape_node_id = px_reshape_node->id;
+  const ::ml_drift::NodeId concat_win_node_id = concat_win_node->id;
+  const ::ml_drift::NodeId slice_state_node_id = slice_state_node->id;
+  const ::ml_drift::NodeId mul_conv_node_id = mul_conv_node->id;
+  const ::ml_drift::NodeId reduce_node_id = reduce_node->id;
+  const ::ml_drift::NodeId red_reshape_node_id = red_reshape_node->id;
+  const ::ml_drift::NodeId gating_mul_node_id = gating_mul_node->id;
+
   // Run fusion
   EXPECT_TRUE(FuseShortConvStep(&graph).ok());
 
@@ -214,17 +229,17 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepSuccessfully) {
   EXPECT_THAT(fused_outputs[1]->id, Eq(next_state_val->id));
 
   // Check deleted intermediate nodes
-  EXPECT_THAT(graph.GetNode(slice_b_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(slice_c_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(slice_x_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(bx_mul_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(px_reshape_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(concat_win_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(slice_state_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(mul_conv_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(reduce_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(red_reshape_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(gating_mul_node->id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(slice_b_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(slice_c_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(slice_x_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(bx_mul_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(px_reshape_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(concat_win_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(slice_state_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(mul_conv_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(reduce_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(red_reshape_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(gating_mul_node_id), Eq(nullptr));
 }
 
 TEST(FuseShortConvStepTest, FusesGatedShortConvStepWithBiasSuccessfully) {
@@ -394,6 +409,22 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepWithBiasSuccessfully) {
   graph.AddConsumer(dummy_consumer->id, final_out_val->id);
   graph.AddConsumer(dummy_consumer->id, next_state_val->id);
 
+  // `FuseShortConvStep()` deletes the fused-away nodes, which destroys the
+  // `Node` objects and leaves the pointers above dangling. Snapshot the ids
+  // up front so the assertions below never dereference freed memory.
+  const ::ml_drift::NodeId slice_b_node_id = slice_b_node->id;
+  const ::ml_drift::NodeId slice_c_node_id = slice_c_node->id;
+  const ::ml_drift::NodeId slice_x_node_id = slice_x_node->id;
+  const ::ml_drift::NodeId bx_mul_node_id = bx_mul_node->id;
+  const ::ml_drift::NodeId px_reshape_node_id = px_reshape_node->id;
+  const ::ml_drift::NodeId concat_win_node_id = concat_win_node->id;
+  const ::ml_drift::NodeId slice_state_node_id = slice_state_node->id;
+  const ::ml_drift::NodeId mul_conv_node_id = mul_conv_node->id;
+  const ::ml_drift::NodeId reduce_node_id = reduce_node->id;
+  const ::ml_drift::NodeId red_reshape_node_id = red_reshape_node->id;
+  const ::ml_drift::NodeId bias_add_node_id = bias_add_node->id;
+  const ::ml_drift::NodeId gating_mul_node_id = gating_mul_node->id;
+
   // Run fusion
   EXPECT_TRUE(FuseShortConvStep(&graph).ok());
 
@@ -427,18 +458,18 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepWithBiasSuccessfully) {
   EXPECT_THAT(fused_outputs[1]->id, Eq(next_state_val->id));
 
   // Check deleted intermediate nodes including bias_add_node
-  EXPECT_THAT(graph.GetNode(slice_b_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(slice_c_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(slice_x_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(bx_mul_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(px_reshape_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(concat_win_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(slice_state_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(mul_conv_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(reduce_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(red_reshape_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(bias_add_node->id), Eq(nullptr));
-  EXPECT_THAT(graph.GetNode(gating_mul_node->id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(slice_b_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(slice_c_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(slice_x_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(bx_mul_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(px_reshape_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(concat_win_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(slice_state_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(mul_conv_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(reduce_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(red_reshape_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(bias_add_node_id), Eq(nullptr));
+  EXPECT_THAT(graph.GetNode(gating_mul_node_id), Eq(nullptr));
 }
 
 TEST(FuseShortConvStepTest, DoesNotFuseWhenChannelsNotMultipleOfFour) {
