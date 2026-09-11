@@ -346,5 +346,73 @@ TEST_F(CumsumDimsTest, RejectsTooLargeAxis) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
 }
 
+// A rank-5 input maps onto the full BHWDC layout, so it stays supported. Axis 3
+// maps to DEPTH, which only exists at rank 5.
+TEST_F(CumsumDimsTest, Supports5dInput) {
+  constexpr std::array<int, 1> kAxisData = {3};
+  StubContextBuilder context_builder;
+  const int input = context_builder.AddTensor(kDefaultDtype, {2, 3, 4, 5, 6});
+  const int axis =
+      context_builder.AddConst1dTensor<int>(kTfLiteInt32, kAxisData);
+  const int output = context_builder.AddTensor(kDefaultDtype, {2, 3, 4, 5, 6});
+  context_builder.SetOp(kTfLiteBuiltinCumsum, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{input, axis},
+                        /*outputs=*/{output});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+// The negative-axis boundary shifts with the rank: -6 is the first value that
+// no longer resolves into range on a rank-5 input.
+TEST_F(CumsumDimsTest, Rejects5dInputTooSmallNegAxis) {
+  constexpr std::array<int, 1> kAxisData = {-6};
+  StubContextBuilder context_builder;
+  const int input = context_builder.AddTensor(kDefaultDtype, {2, 3, 4, 5, 6});
+  const int axis =
+      context_builder.AddConst1dTensor<int>(kTfLiteInt32, kAxisData);
+  const int output = context_builder.AddTensor(kDefaultDtype, {2, 3, 4, 5, 6});
+  context_builder.SetOp(kTfLiteBuiltinCumsum, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{input, axis},
+                        /*outputs=*/{output});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+// A rank-6 input has no BHWDC representation.
+TEST_F(CumsumDimsTest, Rejects6dInput) {
+  StubContextBuilder context_builder;
+  const int input =
+      context_builder.AddTensor(kDefaultDtype, {2, 3, 4, 5, 6, 7});
+  const int axis = context_builder.AddConst1dTensor<int>(kTfLiteInt32, {5});
+  const int output =
+      context_builder.AddTensor(kDefaultDtype, {2, 3, 4, 5, 6, 7});
+  context_builder.SetOp(kTfLiteBuiltinCumsum, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{input, axis},
+                        /*outputs=*/{output});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+// Rank 0 leaves no valid axis to accumulate over.
+TEST_F(CumsumDimsTest, RejectsScalarInput) {
+  StubContextBuilder context_builder;
+  const int input = context_builder.AddTensor(kDefaultDtype, {});
+  const int axis = context_builder.AddConst1dTensor<int>(kTfLiteInt32, {0});
+  const int output = context_builder.AddTensor(kDefaultDtype, {});
+  context_builder.SetOp(kTfLiteBuiltinCumsum, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{input, axis},
+                        /*outputs=*/{output});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir
