@@ -67,6 +67,8 @@ class OpWrapper final {
 
   const TensorWrapper& GetOutputTensor(size_t i) const;
 
+  size_t GetOutputCount() const;
+
   const TensorParamWrapper& GetTensorParam(size_t i) const;
 
   std::optional<ScalarParamWrapper> GetScalarParam(size_t i) const;

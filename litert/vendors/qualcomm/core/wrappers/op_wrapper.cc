@@ -264,6 +264,8 @@ const TensorWrapper& OpWrapper::GetOutputTensor(size_t i) const {
   return output_tensors_[i].get();
 }
 
+size_t OpWrapper::GetOutputCount() const { return output_tensors_.size(); }
+
 const TensorParamWrapper& OpWrapper::GetTensorParam(size_t i) const {
   assert(i < tensor_params_.size());
   return tensor_params_[i];
