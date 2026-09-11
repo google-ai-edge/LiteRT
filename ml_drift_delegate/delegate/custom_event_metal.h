@@ -24,6 +24,16 @@ namespace litert::ml_drift {
 
 // Custom event for Metal wrapping a MTLSharedEvent for asynchronous execution.
 // It's reference counted. Don't destroy it, but call Release() instead.
+//
+// Waiting semantics:
+// - Calling EncodeSignal increments the signal value and schedules a GPU
+//   signal.
+// - Waiting on the event (via LiteRtWaitEvent or the Wait callback) accepts a
+//   timeout_in_ms parameter:
+//   - timeout_in_ms < 0: waits indefinitely until the signal value is reached.
+//   - timeout_in_ms >= 0: waits up to timeout_in_ms milliseconds.
+// - If the wait times out before the GPU signals the required value, the event
+//   remains unsignaled (IsSignaled returns 0) and the wait can be retried.
 class CustomEventMetal : public LiteRtCustomEventT {
  public:
   explicit CustomEventMetal(id<MTLDevice> device);
@@ -44,6 +54,8 @@ class CustomEventMetal : public LiteRtCustomEventT {
   // Callbacks of litert_custom_event_t.
   static void RetainStatic(LiteRtCustomEvent event);
   static void ReleaseStatic(LiteRtCustomEvent event);
+  // Waits for the underlying MTLSharedEvent to reach the signaled threshold.
+  // Pass -1 for timeout_in_ms to wait indefinitely.
   static void WaitStatic(LiteRtCustomEvent event, int64_t timeout_in_ms);
   static int IsSignaledStatic(LiteRtCustomEvent event);
   static void* GetNativeStatic(LiteRtCustomEvent event);

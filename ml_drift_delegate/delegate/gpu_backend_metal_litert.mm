@@ -228,7 +228,7 @@ absl::Status GpuInferenceContextMetalLitert::WaitForEventsCompleted(
   if (force_sync) {
     for (auto event : events) {
       auto* metal_event = reinterpret_cast<CustomEventMetal*>(event);
-      metal_event->Wait(metal_event, /*timeout_in_ms=*/0);
+      metal_event->Wait(metal_event, /*timeout_in_ms=*/-1);
     }
     return absl::OkStatus();
   }

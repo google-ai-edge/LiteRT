@@ -58,21 +58,16 @@ void CustomEventMetal::WaitStatic(LiteRtCustomEvent event, int64_t timeout_in_ms
   auto* self = static_cast<CustomEventMetal*>(event);
   // Mutex is not needed because delegate is running only on one thread and this is accessed only
   // by that single thread.
-  if (self->value_to_wait_ > 0) {
-    if (@available(iOS 15, *)) {
-      [self->metal_shared_event_ waitUntilSignaledValue:self->value_to_wait_
-                                              timeoutMS:timeout_in_ms];
+  if (self->metal_shared_event_.signaledValue < self->value_to_wait_) {
+    if (@available(iOS 15.0, macOS 12.0, *)) {
+      NSUInteger timeout = timeout_in_ms < 0 ? UINT64_MAX : static_cast<NSUInteger>(timeout_in_ms);
+      [self->metal_shared_event_ waitUntilSignaledValue:self->value_to_wait_ timeoutMS:timeout];
     }
-    self->value_to_wait_ = 0;
   }
 }
 
 int CustomEventMetal::IsSignaledStatic(LiteRtCustomEvent event) {
   auto* self = static_cast<CustomEventMetal*>(event);
-  // If value_to_wait_ is 0, it means signaled. See WaitStatic() above.
-  if (self->value_to_wait_ == 0) {
-    return 1;
-  }
   return static_cast<int>(self->metal_shared_event_.signaledValue >= self->value_to_wait_);
 }
 

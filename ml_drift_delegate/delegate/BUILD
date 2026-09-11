@@ -1226,6 +1226,7 @@ objc_library(
     deps = [
         ":buffer_handler_metal",
         ":buffer_handler_metal_headers",
+        ":custom_event_metal",
         # Dependency placeholder: apple_frameworks Metal,
         # Dependency placeholder: apple_frameworks XCTest,
         "//litert/c:litert_environment",

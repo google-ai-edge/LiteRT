@@ -17,6 +17,7 @@
 
 #include <unistd.h>
 #include <cstdlib>
+#include <memory>
 #include <string>
 
 #include "litert/c/litert_environment.h"
@@ -24,6 +25,7 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "ml_drift_delegate/delegate/buffer_handler_metal.h"
+#include "ml_drift_delegate/delegate/custom_event_metal.h"
 #include "ml_drift_delegate/delegate/kv_cache_metal.h"
 
 @interface BufferHandlerMetalTest : XCTestCase
@@ -84,6 +86,80 @@
 
   status = LiteRtDestroyMetalMemory(memoryInfo);
   XCTAssertEqual(status, kLiteRtStatusOk);
+}
+
+- (void)testCreateMetalMemoryRequiresCommandQueue {
+  XCTAssertNotNil(_device, @"Metal device should be initialized in setUp");
+
+  LiteRtRankedTensorType tensorType;
+  tensorType.element_type = kLiteRtElementTypeFloat32;
+  tensorType.layout.rank = 1;
+  tensorType.layout.dimensions[0] = 4;
+  tensorType.layout.has_strides = false;
+
+  size_t bytes = 4 * sizeof(float);
+  HwMemoryInfoPtr memoryInfo = nullptr;
+
+  // Passing nullptr for queue_id should return an invalid argument error.
+  LiteRtStatus status =
+      LiteRtCreateMetalMemory((__bridge void*)_device, nullptr, &tensorType,
+                              kLiteRtTensorBufferTypeMetalBufferPacked, bytes, bytes, &memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusErrorInvalidArgument);
+  XCTAssertTrue(memoryInfo == nullptr);
+}
+
+- (void)testImportMetalMemoryRequiresCommandQueue {
+  XCTAssertNotNil(_device, @"Metal device should be initialized in setUp");
+
+  LiteRtRankedTensorType tensorType;
+  tensorType.element_type = kLiteRtElementTypeFloat32;
+  tensorType.layout.rank = 1;
+  tensorType.layout.dimensions[0] = 4;
+  tensorType.layout.has_strides = false;
+
+  size_t bytes = 4 * sizeof(float);
+  id<MTLBuffer> buffer = [_device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
+  HwMemoryInfoPtr memoryInfo = nullptr;
+
+  // Passing nullptr for queue_id should return an invalid argument error.
+  LiteRtStatus status = LiteRtImportMetalMemory((__bridge void*)_device, nullptr, &tensorType,
+                                                kLiteRtTensorBufferTypeMetalBuffer,
+                                                (__bridge void*)buffer, bytes, bytes, &memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusErrorInvalidArgument);
+  XCTAssertTrue(memoryInfo == nullptr);
+}
+
+- (void)testCustomEventMetalSignalingAndTimeout {
+  XCTAssertNotNil(_device, @"Metal device should be initialized in setUp");
+  XCTAssertNotNil(_commandQueue, @"Metal command queue should be initialized in setUp");
+
+  auto event = std::make_unique<litert::ml_drift::CustomEventMetal>(_device);
+  XCTAssertEqual(event->IsSignaled(event.get()), 1);
+
+  id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
+  event->EncodeSignal(commandBuffer);
+  // Before commit, event must not be reported as signaled.
+  XCTAssertEqual(event->IsSignaled(event.get()), 0);
+
+  // Wait with 0ms timeout on unsignaled event should return without clearing requirement.
+  event->Wait(event.get(), /*timeout_in_ms=*/0);
+  XCTAssertEqual(event->IsSignaled(event.get()), 0);
+
+  [commandBuffer commit];
+  [commandBuffer waitUntilCompleted];
+
+  // Now wait should observe the signaled value and reset requirement.
+  event->Wait(event.get(), /*timeout_in_ms=*/1000);
+  XCTAssertEqual(event->IsSignaled(event.get()), 1);
+
+  // Verify indefinite wait (-1) after signaling.
+  id<MTLCommandBuffer> commandBuffer2 = [_commandQueue commandBuffer];
+  event->EncodeSignal(commandBuffer2);
+  XCTAssertEqual(event->IsSignaled(event.get()), 0);
+  [commandBuffer2 commit];
+  [commandBuffer2 waitUntilCompleted];
+  event->Wait(event.get(), /*timeout_in_ms=*/-1);
+  XCTAssertEqual(event->IsSignaled(event.get()), 1);
 }
 
 - (void)testLockUnlockMetalMemory {
