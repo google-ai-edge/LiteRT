@@ -26,6 +26,7 @@ limitations under the License.
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
+#include "litert/test/matchers.h"
 #include "tensor/buffer.h"
 #include "tensor/internal/type_id.h"
 #include "tensor/utils/matchers.h"
@@ -94,6 +95,26 @@ TEST(LitertBufferTest, GetTypeId) {
 
   LitertBuffer buffer(std::move(tb));
   EXPECT_EQ(buffer.GetTypeId(), internal::TypeId::Get<LitertBuffer>());
+}
+
+TEST(LitertBufferTest, ByteSizeMatchesTheLockedSpan) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+
+  LiteRtRankedTensorType c_type;
+  c_type.element_type = kLiteRtElementTypeFloat32;
+  c_type.layout.rank = 2;
+  c_type.layout.dimensions[0] = 1;
+  c_type.layout.dimensions[1] = 4;
+  RankedTensorType tensor_type(c_type);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer tb,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory,
+                                  tensor_type, 4 * sizeof(float)));
+  LitertBuffer buffer(std::move(tb));
+
+  EXPECT_THAT(buffer.ByteSize(), IsOkAndHolds(4 * sizeof(float)));
+  EXPECT_THAT(buffer.ByteSize(), IsOkAndHolds(buffer.Lock().size()));
 }
 
 TEST(LitertBufferTest, IsA) {

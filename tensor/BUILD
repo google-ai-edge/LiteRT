@@ -62,7 +62,7 @@ cc_test(
     srcs = ["buffer_test.cc"],
     deps = [
         ":buffer",
-        "//tensor:datatypes",
+        ":datatypes",
         "//tensor/internal:matchers",
         "//tensor/internal:type_id",
         "//tensor/utils:matchers",

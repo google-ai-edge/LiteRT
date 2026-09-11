@@ -508,7 +508,8 @@ absl::Status ModelFactory::UpdateBufferData(
         buffer_build_info.inline_data) {
       continue;  // Stored outside the appended buffer region.
     }
-    const size_t buffer_size = current_buffer->get()->Lock().size();
+    LRT_TENSOR_ASSIGN_OR_RETURN(const size_t buffer_size,
+                                current_buffer->get()->ByteSize());
     tflite::Buffer* fbb_buffer = buffers->GetMutableObject(i);
     allocation_size_ =
         Align(allocation_size_, kFlatbufferAppendedDataAlignment);

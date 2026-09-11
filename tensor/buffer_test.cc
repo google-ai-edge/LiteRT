@@ -345,5 +345,43 @@ TEST(LockedBufferSpanTest, GettersCannotBeCalledFromTemporaryValues) {
   SUCCEED();
 }
 
+TEST(ByteSizeTest, SpanCpuBufferReportsTheViewedSize) {
+  const std::vector<float> data = {1.f, 2.f, 3.f, 4.f};
+  SpanCpuBuffer buffer(reinterpret_cast<const std::byte*>(data.data()),
+                       data.size() * sizeof(float));
+  EXPECT_THAT(buffer.ByteSize(), IsOkAndHolds(data.size() * sizeof(float)));
+  EXPECT_THAT(buffer.ByteSize(), IsOkAndHolds(buffer.Lock().size()));
+}
+
+TEST(ByteSizeTest, MutableSpanCpuBufferReportsTheViewedSize) {
+  std::vector<float> data = {1.f, 2.f, 3.f, 4.f};
+  MutableSpanCpuBuffer buffer(reinterpret_cast<std::byte*>(data.data()),
+                              data.size() * sizeof(float));
+  EXPECT_THAT(buffer.ByteSize(), IsOkAndHolds(data.size() * sizeof(float)));
+  EXPECT_THAT(buffer.ByteSize(), IsOkAndHolds(buffer.Lock().size()));
+  EXPECT_THAT(buffer.ByteSize(), IsOkAndHolds(buffer.LockMutable().size()));
+}
+
+TEST(ByteSizeTest, OwningCpuBufferReportsTheAllocatedSize) {
+  constexpr size_t kAllocCount = 4;
+  const std::shared_ptr<OwningCpuBuffer> buffer =
+      OwningCpuBuffer::Allocate<Type::kFP32>(kAllocCount);
+  EXPECT_THAT(buffer->ByteSize(), IsOkAndHolds(kAllocCount * sizeof(float)));
+  EXPECT_THAT(buffer->ByteSize(), IsOkAndHolds(buffer->Lock().size()));
+  EXPECT_THAT(buffer->ByteSize(), IsOkAndHolds(buffer->LockMutable().size()));
+}
+
+TEST(ByteSizeTest, IsReachableThroughTheBaseInterface) {
+  constexpr size_t kAllocCount = 4;
+  const std::shared_ptr<Buffer> buffer =
+      OwningCpuBuffer::Allocate<Type::kFP32>(kAllocCount);
+  EXPECT_THAT(buffer->ByteSize(), IsOkAndHolds(kAllocCount * sizeof(float)));
+}
+
+TEST(ByteSizeTest, AnEmptyBufferReportsZero) {
+  const SpanCpuBuffer buffer;
+  EXPECT_THAT(buffer.ByteSize(), IsOkAndHolds(size_t{0}));
+}
+
 }  // namespace
 }  // namespace litert::tensor

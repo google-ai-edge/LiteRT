@@ -105,10 +105,13 @@ cc_library(
     name = "litert_buffer",
     hdrs = ["litert_buffer.h"],
     deps = [
+        "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer",
         "//tensor:buffer",
         "//tensor/internal:type_id",
         "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
     ],
 )
 
@@ -122,6 +125,7 @@ cc_test(
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc:litert_tensor_buffer_types",
+        "//litert/test:matchers",
         "//tensor:buffer",
         "//tensor/internal:type_id",
         "//tensor/utils:matchers",

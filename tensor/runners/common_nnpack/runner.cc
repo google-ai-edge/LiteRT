@@ -53,30 +53,28 @@ absl::Status Reserve(std::shared_ptr<Buffer>& buffer, size_t required_bytes,
     return absl::OkStatus();
   }
 
-  // TODO(b/493560478): Make it possible to get a buffer size without locking it
-  // as this may be an expensive operation.
-  LockedBufferSpan<const std::byte> lock = buffer->Lock();
-  const size_t actual_bytes = lock.size();
+  LRT_TENSOR_ASSIGN_OR_RETURN(const size_t actual_bytes, buffer->ByteSize());
   if (actual_bytes >= required_bytes) {
-    return absl::OkStatus();
-  }
-
-  // Check if buffer is owned and can be safely reallocated.
-  if (buffer->IsA(OwningCpuBuffer::TypeId())) {
-    auto new_buffer = OwningCpuBuffer::Allocate<Type::kI8>(required_bytes);
-    if (preserve_data) {
-      std::memcpy(new_buffer->data(), lock.data(), actual_bytes);
-    }
-    buffer = std::move(new_buffer);
     return absl::OkStatus();
   }
 
   // Non-owning views (SpanCpuBuffer, MutableSpanCpuBuffer, etc.) cannot be
   // resized.
-  return absl::InvalidArgumentError(absl::StrFormat(
-      "Buffer is a non-owning view of size %v bytes, which is smaller than the "
-      "required %v bytes and cannot be resized",
-      actual_bytes, required_bytes));
+  if (!buffer->IsA(OwningCpuBuffer::TypeId())) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "Buffer is a non-owning view of size %v bytes, which is smaller than "
+        "the required %v bytes and cannot be resized",
+        actual_bytes, required_bytes));
+  }
+
+  std::shared_ptr<OwningCpuBuffer> new_buffer =
+      OwningCpuBuffer::Allocate<Type::kI8>(required_bytes);
+  if (preserve_data) {
+    LockedBufferSpan<const std::byte> lock = buffer->Lock();
+    std::memcpy(new_buffer->data(), lock.data(), actual_bytes);
+  }
+  buffer = std::move(new_buffer);
+  return absl::OkStatus();
 }
 
 size_t ByteSize(const graph::TensorInformation& info) {

@@ -21,6 +21,9 @@ limitations under the License.
 #include <utility>
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "tensor/buffer.h"
 #include "tensor/internal/type_id.h"
@@ -45,6 +48,15 @@ class LitertBuffer : public Buffer {
   }
   bool IsA(internal::TypeId id) const override {
     return id == internal::TypeId::Get<LitertBuffer>();
+  }
+
+  // Returns the size of the buffer in bytes.
+  //
+  // This is the packed size, which is what `Lock()` exposes; it differs from
+  // `TensorBuffer::Size()` when the buffer is strided or padded.
+  absl::StatusOr<size_t> ByteSize() const override {
+    LITERT_ASSIGN_OR_RETURN(size_t size, tensor_buffer_.PackedSize());
+    return size;
   }
 
   LockedBufferSpan<const std::byte> Lock() override {
