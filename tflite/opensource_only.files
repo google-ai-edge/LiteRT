@@ -3,7 +3,6 @@ tf_staging/tflite/acceleration/configuration/c/gpu_plugin.h:
 tf_staging/tflite/acceleration/configuration/c/nnapi_plugin.h:
 tf_staging/tflite/acceleration/configuration/c/stable_delegate.h:
 tf_staging/tflite/acceleration/configuration/c/xnnpack_plugin.h:
-tf_staging/tflite/acceleration/configuration/configuration_generated.h:
 tf_staging/tflite/acceleration/configuration/delegate_registry.h:
 tf_staging/tflite/api_visibility.bzl:
 tf_staging/tflite/async/c/BUILD:
@@ -36,10 +35,6 @@ tf_staging/tflite/core/shims/cc_library_with_tflite.bzl:
 tf_staging/tflite/core/special_rules.bzl:
 tf_staging/tflite/create_op_resolver.h:
 tf_staging/tflite/delegates/coreml/builders/BUILD:
-tf_staging/tflite/delegates/gpu/cl/compiled_program_cache_generated.h:
-tf_staging/tflite/delegates/gpu/cl/serialization_generated.h:
-tf_staging/tflite/delegates/gpu/common/gpu_model_generated.h:
-tf_staging/tflite/delegates/gpu/common/task/tflite_serialization_base_generated.h:
 tf_staging/tflite/delegates/hexagon/hexagon_nn/BUILD:
 tf_staging/tflite/delegates/utils/experimental/sample_stable_delegate/BUILD:
 tf_staging/tflite/delegates/utils/experimental/sample_stable_delegate/sample_app_using_stable_delegate.cc:
