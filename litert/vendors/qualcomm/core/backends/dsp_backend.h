@@ -48,7 +48,10 @@ class DspBackend : public QnnBackend {
   DspBackend& operator=(DspBackend&&) = delete;
 
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
+
   bool SetPerformanceMode(const Options& options) override;
+  void ScheduleUpVote() override;
+  void ScheduleDownVote() override;
 
   // TODO: DSP does not build any graph configs yet; returns an empty builder.
   GraphConfigBuilder BuildGraphConfigs(
