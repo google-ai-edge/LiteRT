@@ -21,12 +21,12 @@ package(
 
 cc_library(
     name = "runner",
+    srcs = ["runner.cc"],
     hdrs = ["runner.h"],
     deps = [
         "//tensor",
         "//tensor:buffer",
         "//tensor:datatypes",
-        "//tensor/backends/common_nnpack:conversion",
         "//tensor/backends/common_nnpack:graph",
         "//tensor/backends/common_nnpack:utils",
         "//tensor/internal:graph",
@@ -35,6 +35,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -44,10 +45,12 @@ cc_test(
     srcs = ["runner_test.cc"],
     deps = [
         ":runner",
+        "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/internal:graph",
         "//tensor/utils:matchers",
-        "@com_google_absl//absl/types:span",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -62,6 +65,7 @@ cc_library(
         "//tensor:datatypes",
         "//tensor/utils:matchers",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest",
     ],

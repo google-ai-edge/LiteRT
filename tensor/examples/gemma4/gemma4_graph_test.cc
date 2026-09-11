@@ -725,15 +725,18 @@ TEST(Gemma4GraphTest, PerLayerInputsWithProjectionGraphTest) {
     weights.insert({absl::StrCat(prefix, ".per_layer_input_gate.weight"),
                     XnnTensor({.name = "per_layer_input_gate",
                                .type = Type::kFP32,
-                               .shape = {4, 4}})});
+                               .shape = {4, 4},
+                               .buffer = std::vector<float>(4 * 4, 0.0f)})});
     weights.insert({absl::StrCat(prefix, ".per_layer_projection.weight"),
                     XnnTensor({.name = "per_layer_projection",
                                .type = Type::kFP32,
-                               .shape = {4, 4}})});
+                               .shape = {4, 4},
+                               .buffer = std::vector<float>(4 * 4, 0.0f)})});
     weights.insert({absl::StrCat(prefix, ".post_per_layer_input_norm.weight"),
                     XnnTensor({.name = "post_per_layer_input_norm",
                                .type = Type::kFP32,
-                               .shape = {4}})});
+                               .shape = {4},
+                               .buffer = std::vector<float>(4, 0.0f)})});
   }
 
   std::vector<std::vector<float>> layer_emb_data(

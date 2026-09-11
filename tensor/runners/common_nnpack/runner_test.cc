@@ -17,11 +17,14 @@ limitations under the License.
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "absl/types/span.h"  // from @com_google_absl
+#include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_matchers.h"  // from @com_google_absl
+#include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
 #include "tensor/utils/matchers.h"
@@ -29,67 +32,43 @@ limitations under the License.
 namespace litert::tensor {
 namespace {
 
-TEST(ExternalBufferTest, DefaultIsOwnedAndEmpty) {
-  ExternalBuffer buf;
-  EXPECT_TRUE(buf.IsOwned());
-  EXPECT_TRUE(buf.data().empty());
+using absl_testing::StatusIs;
+using common_nnpack::internal::Reserve;
+using ::testing::ElementsAreArray;
+using ::testing::SizeIs;
+
+TEST(ReserveTest, AllocatesWhenNullptr) {
+  std::shared_ptr<Buffer> buffer = nullptr;
+  ASSERT_THAT(Reserve(buffer, 16), IsOk());
+  ASSERT_NE(buffer, nullptr);
+  EXPECT_TRUE(buffer->IsA(OwningCpuBuffer::TypeId()));
+  EXPECT_EQ(buffer->Lock().size(), 16);
 }
 
-TEST(ExternalBufferTest, SetOwnedBuffer) {
-  const std::vector<uint8_t> src = {1, 2, 3, 4};
-  ExternalBuffer buf;
-  buf.SetOwnedBuffer(absl::MakeSpan(
-      reinterpret_cast<const std::byte*>(src.data()), src.size()));
-
-  EXPECT_TRUE(buf.IsOwned());
-  EXPECT_EQ(buf.data().size(), 4);
-  EXPECT_EQ(static_cast<uint8_t>(buf.data()[0]), 1);
-  EXPECT_EQ(static_cast<uint8_t>(buf.data()[3]), 4);
+TEST(ReserveTest, NoOpWhenAlreadyLargeEnough) {
+  std::shared_ptr<Buffer> buffer = OwningCpuBuffer::Allocate<Type::kI8>(32);
+  const Buffer* original_ptr = buffer.get();
+  ASSERT_THAT(Reserve(buffer, 16), IsOk());
+  EXPECT_EQ(buffer.get(), original_ptr);
+  EXPECT_EQ(buffer->Lock().size(), 32);
 }
 
-TEST(ExternalBufferTest, SetExternalView) {
-  const std::vector<uint8_t> src = {10, 20, 30};
-  ExternalBuffer buf;
-  buf.SetExternalView(absl::MakeSpan(
-      reinterpret_cast<const std::byte*>(src.data()), src.size()));
+TEST(ReserveTest, ReallocatesOwningBufferAndPreservesData) {
+  const std::vector<uint8_t> initial = {10, 20, 30, 40};
+  std::shared_ptr<Buffer> buffer = OwningCpuBuffer::Copy<Type::kI8>(initial);
 
-  EXPECT_FALSE(buf.IsOwned());
-  EXPECT_EQ(buf.data().size(), 3);
-  EXPECT_EQ(static_cast<uint8_t>(buf.data()[0]), 10);
-  EXPECT_EQ(static_cast<uint8_t>(buf.data()[2]), 30);
+  ASSERT_THAT(Reserve(buffer, 8, /*preserve_data=*/true), IsOk());
+  auto lock = buffer->Lock().As<const uint8_t>();
+  EXPECT_THAT(lock, SizeIs(8));
+  EXPECT_THAT(lock.SubSpan(0, 4), ElementsAreArray(initial));
 }
 
-TEST(ExternalBufferTest, ResizeOwnedBuffer) {
-  ExternalBuffer buf;
-  EXPECT_THAT(buf.Resize(8), IsOk());
-  EXPECT_TRUE(buf.IsOwned());
-  EXPECT_EQ(buf.data().size(), 8);
-}
+TEST(ReserveTest, FailsForNonOwningViewSmallerThanRequired) {
+  const std::vector<uint8_t> data = {1, 2, 3, 4};
+  std::shared_ptr<Buffer> buffer = std::make_shared<SpanCpuBuffer>(
+      reinterpret_cast<const std::byte*>(data.data()), data.size());
 
-TEST(ExternalBufferTest, ResizeExternalViewSmallerOrEqualNoOp) {
-  const std::vector<uint8_t> src = {1, 2, 3, 4, 5};
-  ExternalBuffer buf;
-  buf.SetExternalView(absl::MakeSpan(
-      reinterpret_cast<const std::byte*>(src.data()), src.size()));
-
-  EXPECT_THAT(buf.Resize(3), IsOk());
-  EXPECT_FALSE(buf.IsOwned());
-  EXPECT_EQ(buf.data().size(), 5);
-}
-
-TEST(ExternalBufferTest,
-     ResizeExternalViewLargerTransitionsToOwnedAndPreservesData) {
-  const std::vector<uint8_t> src = {10, 20, 30};
-  ExternalBuffer buf;
-  buf.SetExternalView(absl::MakeSpan(
-      reinterpret_cast<const std::byte*>(src.data()), src.size()));
-
-  EXPECT_THAT(buf.Resize(6), IsOk());
-  EXPECT_TRUE(buf.IsOwned());
-  EXPECT_EQ(buf.data().size(), 6);
-  EXPECT_EQ(static_cast<uint8_t>(buf.data()[0]), 10);
-  EXPECT_EQ(static_cast<uint8_t>(buf.data()[1]), 20);
-  EXPECT_EQ(static_cast<uint8_t>(buf.data()[2]), 30);
+  EXPECT_THAT(Reserve(buffer, 8), StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(ByteSizeTest, ComputesCorrectSize) {

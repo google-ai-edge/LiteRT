@@ -25,6 +25,7 @@ limitations under the License.
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/datatypes.h"
@@ -1465,6 +1466,84 @@ TYPED_TEST_P(NnpackRunnerTest, TransposeConvRejectsInvalidOutputShape) {
   }
 }
 
+TYPED_TEST_P(NnpackRunnerTest, ComputesRuntimeInputFromTensorHandle) {
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+
+  TensorType a({.name = "a", .type = Type::kFP32, .shape = {2}});
+  TensorType b({.name = "b",
+                .type = Type::kFP32,
+                .shape = {2},
+                .buffer = std::vector<float>{3.f, 4.f}});
+  TensorType c = Add(a, b);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({c}));
+
+  TensorType external_a({.name = "external_a",
+                         .type = Type::kFP32,
+                         .shape = {2},
+                         .buffer = std::vector<float>{1.f, 2.f}});
+
+  ASSERT_THAT(runner.SetInput(a, external_a), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+
+  EXPECT_THAT(runner.template ReadOutputAs<float>(c),
+              absl_testing::IsOkAndHolds(testing::ElementsAre(4.f, 6.f)));
+}
+
+TYPED_TEST_P(NnpackRunnerTest, ReallocatesOwningCpuBufferOnReshape) {
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+
+  TensorType a({.name = "a", .type = Type::kFP32, .shape = {2}});
+  TensorType b({.name = "b", .type = Type::kFP32, .shape = {2}});
+  TensorType c = Add(a, b);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({c}));
+
+  ASSERT_THAT(runner.SetInputAsCopy(a, std::vector<float>{1.f, 2.f}), IsOk());
+  ASSERT_THAT(runner.SetInputAsCopy(b, std::vector<float>{3.f, 4.f}), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+
+  // Reshape to {4} - OwningCpuBuffer should be reallocated and large enough.
+  ASSERT_THAT(runner.ReshapeInput(a, {4}), IsOk());
+  ASSERT_THAT(runner.ReshapeInput(b, {4}), IsOk());
+  ASSERT_THAT(runner.WriteInput(a, 0, std::vector<float>{1.f, 2.f, 3.f, 4.f}),
+              IsOk());
+  ASSERT_THAT(runner.WriteInput(b, 0, std::vector<float>{5.f, 6.f, 7.f, 8.f}),
+              IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+
+  EXPECT_THAT(
+      runner.template ReadOutputAs<float>(c),
+      absl_testing::IsOkAndHolds(testing::ElementsAre(6.f, 8.f, 10.f, 12.f)));
+}
+
+TYPED_TEST_P(NnpackRunnerTest, FailsWhenNonOwningViewTooSmall) {
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+
+  TensorType a({.name = "a", .type = Type::kFP32, .shape = {2}});
+  TensorType b({.name = "b",
+                .type = Type::kFP32,
+                .shape = {2},
+                .buffer = std::vector<float>{3.f, 4.f}});
+  TensorType c = Add(a, b);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({c}));
+
+  std::vector<float> a_data = {1.f, 2.f};
+  // Non-owning view of 2 floats
+  ASSERT_THAT(runner.SetInput(a, a_data), IsOk());
+
+  // Reshaping to 4 elements requires 16 bytes, but view only has 8 bytes. Run()
+  // must fail!
+  ASSERT_THAT(runner.ReshapeInput(a, {4}), IsOk());
+  auto status = runner.Run();
+  EXPECT_THAT(status,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
 REGISTER_TYPED_TEST_SUITE_P(
     NnpackRunnerTest, SetInputRejectsNonExternalTensors, ComputesConstantAdd,
     ComputesRuntimeInputAdd, MoveConstructorTransfersRuntime,
@@ -1485,7 +1564,9 @@ REGISTER_TYPED_TEST_SUITE_P(
     ResizeNearestNeighborRejectsHalfPixel, ResizeNearestNeighborIdentityScale,
     ResizeNearestNeighborAnisotropicScale,
     ResizeNearestNeighborBatchAndChannels, ComputesTransposeConv2D,
-    ComputesTransposeConv2DSame, TransposeConvRejectsInvalidOutputShape);
+    ComputesTransposeConv2DSame, TransposeConvRejectsInvalidOutputShape,
+    ComputesRuntimeInputFromTensorHandle, ReallocatesOwningCpuBufferOnReshape,
+    FailsWhenNonOwningViewTooSmall);
 
 }  // namespace litert::tensor
 

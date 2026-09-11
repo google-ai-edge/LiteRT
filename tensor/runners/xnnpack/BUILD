@@ -26,6 +26,7 @@ cc_library(
     hdrs = ["runner.h"],
     deps = [
         "//tensor",
+        "//tensor:buffer",
         "//tensor/backends/common_nnpack:graph",
         "//tensor/backends/xnnpack:conversion",
         "//tensor/backends/xnnpack:graph",
@@ -36,6 +37,7 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
         "@pthreadpool",
     ],

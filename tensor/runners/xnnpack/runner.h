@@ -118,7 +118,9 @@ class XnnpackRunner : public NnpackRunner {
                                      std::vector<size_t>& dims) override;
   absl::Status SetupExternalValues(
       absl::Span<NnpackValue> values,
-      absl::flat_hash_map<uint32_t, ExternalBuffer>& external_buffers) override;
+      const absl::flat_hash_map<uint32_t, std::shared_ptr<Buffer>>&
+          external_buffers,
+      std::vector<LockedBufferSpan<const std::byte>>& locks) override;
   absl::Status InvokeRuntime() override;
 
  private:

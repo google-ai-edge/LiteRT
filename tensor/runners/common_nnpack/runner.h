@@ -28,6 +28,7 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/backends/common_nnpack/graph.h"
 #include "tensor/backends/common_nnpack/utils.h"
@@ -39,48 +40,21 @@ limitations under the License.
 
 namespace litert::tensor {
 
-class ExternalBuffer {
- public:
-  absl::Span<std::byte> data() {
-    return IsOwned()
-               ? absl::MakeSpan(owned_buffer_.data(), owned_buffer_.size())
-               : external_view_;
-  }
-  absl::Span<const std::byte> data() const {
-    return IsOwned()
-               ? absl::MakeSpan(owned_buffer_.data(), owned_buffer_.size())
-               : external_view_;
-  }
+namespace common_nnpack::internal {
 
-  void SetExternalView(absl::Span<const std::byte> data) {
-    external_view_ =
-        absl::MakeSpan(const_cast<std::byte*>(data.data()), data.size());
-    owned_buffer_.clear();
-  }
+// Ensures that `buffer` can hold `required_bytes`.
+//
+// If `buffer` doesn't point to a buffer, an owning buffer is created with the
+// required size.
+//
+// If the buffer is an owning buffer and is too small, a new one is allocated
+// to replace it and, if `preserve_data` is `true`, the data is copied over.
+//
+// In other cases, if the buffer is too small, this fails.
+absl::Status Reserve(std::shared_ptr<Buffer>& buffer, size_t required_bytes,
+                     bool preserve_data = false);
 
-  void SetOwnedBuffer(absl::Span<const std::byte> data) {
-    owned_buffer_.assign(data.begin(), data.end());
-    external_view_ = {};
-  }
-
-  absl::Status Resize(size_t new_size) {
-    if (IsOwned()) {
-      owned_buffer_.resize(new_size);
-    } else if (new_size > external_view_.size()) {
-      owned_buffer_.resize(new_size);
-      std::memcpy(owned_buffer_.data(), external_view_.data(),
-                  external_view_.size());
-      external_view_ = {};
-    }
-    return absl::OkStatus();
-  }
-
-  bool IsOwned() const { return external_view_.empty(); }
-
- private:
-  std::vector<std::byte> owned_buffer_;
-  absl::Span<std::byte> external_view_;
-};
+}  // namespace common_nnpack::internal
 
 inline size_t ByteSize(const graph::TensorInformation& info) {
   return BufferSize(info.type, info.GetSize());
@@ -100,6 +74,10 @@ class NnpackRunner {
 
   virtual void SetNumThreads(size_t num_threads) { num_threads_ = num_threads; }
 
+  // Sets the input `tensor` to the given `external_tensor`.
+  //
+  // The shape and buffer of `external_tensor` are propagated to `tensor`. The
+  // types of both tensors must match.
   absl::Status SetInput(const TensorHandle& tensor,
                         const TensorHandle& external_tensor) {
     LRT_TENSOR_ASSIGN_OR_RETURN(size_t index, graph_->Lookup(tensor));
@@ -117,11 +95,14 @@ class NnpackRunner {
                           static_cast<int>(external_info.type)));
     }
     value.info.shape = external_info.shape;
-    ExternalBuffer& held_buffer = external_buffers_[value.id];
-    LRT_TENSOR_RETURN_IF_ERROR(held_buffer.Resize(ByteSize(value.info)));
-    LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & buffer, external_tensor.GetBuffer());
-    LockedBufferSpan<const std::byte> lock = buffer.Lock();
-    held_buffer.SetExternalView(absl::MakeSpan(lock));
+    std::shared_ptr<Buffer> buffer_ptr = external_tensor.GetBufferPtr();
+    if (buffer_ptr == nullptr) {
+      return absl::InvalidArgumentError(
+          "Source tensor doesn't have a buffer attached.");
+    }
+    LRT_TENSOR_RETURN_IF_ERROR(common_nnpack::internal::Reserve(
+        buffer_ptr, ByteSize(value.info), /*preserve_data=*/true));
+    external_buffers_[value.id] = std::move(buffer_ptr);
     return absl::OkStatus();
   }
 
@@ -134,21 +115,23 @@ class NnpackRunner {
       return absl::InvalidArgumentError(
           "Tensor is not marked as external input");
     }
-    if (ByteSize(value.info) != data.size()) {
+    if (ByteSize(value.info) < data.size()) {
       return absl::InvalidArgumentError(
           absl::StrFormat("Mismatched input size: expected %x, got %v",
                           ByteSize(value.info), data.size()));
     }
-    if (!copy_data) {
-      external_buffers_[value.id].SetExternalView(data);
+    if (copy_data) {
+      external_buffers_[value.id] = OwningCpuBuffer::Copy(
+          reinterpret_cast<const char*>(data.data()), data.size());
     } else {
-      external_buffers_[value.id].SetOwnedBuffer(data);
+      external_buffers_[value.id] =
+          std::make_shared<SpanCpuBuffer>(data.data(), data.size());
     }
     return absl::OkStatus();
   }
 
   absl::Status SetInput(const TensorHandle& tensor, absl::Span<std::byte> data,
-                        bool copy_data = false) {
+                        const bool copy_data = false) {
     return SetInput(tensor, absl::Span<const std::byte>(data), copy_data);
   }
 
@@ -203,7 +186,8 @@ class NnpackRunner {
           absl::StrFormat("Mismatched output size: expected %v, got %v",
                           ByteSize(value.info), data.size()));
     }
-    external_buffers_[value.id].SetExternalView(data);
+    external_buffers_[value.id] =
+        std::make_shared<MutableSpanCpuBuffer>(data.data(), data.size());
     return absl::OkStatus();
   }
 
@@ -216,7 +200,14 @@ class NnpackRunner {
           "Tensor is not marked as external input");
     }
     value.info.shape.assign(shape.begin(), shape.end());
-    return external_buffers_[value.id].Resize(ByteSize(value.info));
+
+    if (auto it = external_buffers_.find(value.id);
+        it != external_buffers_.end() && it->second != nullptr &&
+        it->second->IsA(OwningCpuBuffer::TypeId())) {
+      return common_nnpack::internal::Reserve(it->second, ByteSize(value.info),
+                                              /*preserve_data=*/false);
+    }
+    return absl::OkStatus();
   }
 
   absl::Status WriteInput(const TensorHandle& tensor, size_t offset_bytes,
@@ -227,12 +218,19 @@ class NnpackRunner {
       return absl::InvalidArgumentError(
           "Tensor is not marked as external input");
     }
-    absl::Span<std::byte> buffer = external_buffers_[value.id].data();
-    if (offset_bytes + data.size() > buffer.size()) {
+    auto it = external_buffers_.find(value.id);
+    if (it == external_buffers_.end() || it->second == nullptr) {
+      return absl::FailedPreconditionError("Input buffer not found");
+    }
+    auto lock = it->second->LockMutable();
+    if (lock.data() == nullptr) {
+      return absl::InvalidArgumentError("Input buffer is not mutable");
+    }
+    if (offset_bytes + data.size() > lock.size()) {
       return absl::InvalidArgumentError(
           "Data to write exceeds the external buffer size");
     }
-    std::memcpy(buffer.data() + offset_bytes, data.data(), data.size());
+    std::memcpy(lock.data() + offset_bytes, data.data(), data.size());
     return absl::OkStatus();
   }
 
@@ -274,8 +272,15 @@ class NnpackRunner {
       LRT_TENSOR_ASSIGN_OR_RETURN(const std::vector<size_t> dims,
                                   ToNnpackDims(value.info.shape));
       LRT_TENSOR_RETURN_IF_ERROR(SetExternalValueShape(value.id, dims));
+      std::shared_ptr<Buffer> input_buffer = external_buffers_[value.id];
+      if (input_buffer == nullptr) {
+        return absl::FailedPreconditionError(absl::StrFormat(
+            "Value %v (tensor '%s') doesn't have associated buffer.", value.id,
+            value.info.name));
+      }
       LRT_TENSOR_RETURN_IF_ERROR(
-          external_buffers_[value.id].Resize(ByteSize(value.info)));
+          common_nnpack::internal::Reserve(input_buffer, ByteSize(value.info),
+                                           /*preserve_data=*/true));
     }
 
     // 2. Reshape runtime
@@ -294,13 +299,15 @@ class NnpackRunner {
       for (size_t dim : dims) {
         value.info.shape.push_back(static_cast<int32_t>(dim));
       }
-      LRT_TENSOR_RETURN_IF_ERROR(
-          external_buffers_[value.id].Resize(ByteSize(value.info)));
+      LRT_TENSOR_RETURN_IF_ERROR(common_nnpack::internal::Reserve(
+          external_buffers_[value.id], ByteSize(value.info),
+          /*preserve_data=*/false));
     }
 
-    // 4. Set external value data
+    // 4. Set external value data and keep locks active during InvokeRuntime
+    std::vector<LockedBufferSpan<const std::byte>> locks;
     LRT_TENSOR_RETURN_IF_ERROR(SetupExternalValues(
-        absl::MakeSpan(graph_->mutable_values()), external_buffers_));
+        absl::MakeSpan(graph_->mutable_values()), external_buffers_, locks));
 
     // 5. Invoke runtime
     return InvokeRuntime();
@@ -314,12 +321,10 @@ class NnpackRunner {
       return absl::InvalidArgumentError("Tensor is not marked as output");
     }
     const auto buffer_it = external_buffers_.find(value.id);
-    if (buffer_it == external_buffers_.end()) {
+    if (buffer_it == external_buffers_.end() || buffer_it->second == nullptr) {
       return absl::FailedPreconditionError("Output buffer not found");
     }
-    const auto buffer = buffer_it->second.data();
-    return LockedBufferSpan<const std::byte>(
-        buffer.data(), [](const std::byte*) {}, buffer.size());
+    return buffer_it->second->Lock();
   }
 
   template <class T>
@@ -336,11 +341,12 @@ class NnpackRunner {
 
   const NnpackGraph& graph() const { return *graph_; }
   NnpackGraph& mutable_graph() { return *graph_; }
-  const absl::flat_hash_map<uint32_t, ExternalBuffer>& external_buffers()
-      const {
+  const absl::flat_hash_map<uint32_t, std::shared_ptr<Buffer>>&
+  external_buffers() const {
     return external_buffers_;
   }
-  absl::flat_hash_map<uint32_t, ExternalBuffer>& mutable_external_buffers() {
+  absl::flat_hash_map<uint32_t, std::shared_ptr<Buffer>>&
+  mutable_external_buffers() {
     return external_buffers_;
   }
 
@@ -356,11 +362,13 @@ class NnpackRunner {
                                              std::vector<size_t>& dims) = 0;
   virtual absl::Status SetupExternalValues(
       absl::Span<NnpackValue> values,
-      absl::flat_hash_map<uint32_t, ExternalBuffer>& external_buffers) = 0;
+      const absl::flat_hash_map<uint32_t, std::shared_ptr<Buffer>>&
+          external_buffers,
+      std::vector<LockedBufferSpan<const std::byte>>& locks) = 0;
   virtual absl::Status InvokeRuntime() = 0;
 
   std::unique_ptr<NnpackGraph> graph_;
-  absl::flat_hash_map<uint32_t, ExternalBuffer> external_buffers_;
+  absl::flat_hash_map<uint32_t, std::shared_ptr<Buffer>> external_buffers_;
   size_t num_threads_ = 1;
   bool runtime_prepared_ = false;
 };
