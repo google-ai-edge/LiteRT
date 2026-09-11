@@ -328,6 +328,25 @@ ConvertToBhwdcFloat32Tensor(const TfLiteTensor* tfl_tensor) {
   return mld_tensor;
 }
 
+// Returns the layout with which a constant operand has to be read so that it
+// broadcasts against a runtime operand of `runtime_rank`.
+//
+// TFLite broadcasting is right-aligned, but ExtractTensorShape() maps TFLite
+// dim 0 to BHWC's batch, i.e. left-aligned. A lower-rank constant therefore has
+// to be relabeled onto the trailing axes, or the GPU elementwise broadcast
+// reads batch-0 only and splats it to every channel. At equal rank both
+// operands share the left-aligned labeling and already agree, so nothing is
+// relabeled.
+SizedLayout BroadcastConstLayout(int constant_rank, int runtime_rank) {
+  SizedLayout layout;
+  if (constant_rank < runtime_rank) {
+    layout.layout_1d = ::ml_drift::Layout::SCALAR;  // [C] -> 1x1x1xC
+    layout.layout_2d = ::ml_drift::Layout::HW;      // [W,C] -> 1x1xWxC
+    layout.layout_3d = ::ml_drift::Layout::HWC;     // [H,W,C] -> 1xHxWxC
+  }
+  return layout;
+}
+
 void ParseInputsWithConstTensor(
     const TfLiteNode& tflite_node, ::ml_drift::ir::IrOp* op,
     const TfLiteContext& context, ::ml_drift::ir::IrModel& ir_model,
@@ -342,14 +361,17 @@ void ParseInputsWithConstTensor(
   int runtime_tensor_index;
   int constant_tensor_index;
   const TfLiteTensor* constant_tensor;
+  const TfLiteTensor* runtime_tensor;
   if (constant_tensor0) {
     runtime_tensor_index = 1;
     constant_tensor_index = 0;
     constant_tensor = input0;
+    runtime_tensor = input1;
   } else {
     runtime_tensor_index = 0;
     constant_tensor_index = 1;
     constant_tensor = input1;
+    runtime_tensor = input0;
   }
 
   ir_model.AddConsumer(
@@ -380,9 +402,11 @@ void ParseInputsWithConstTensor(
     }
   }
   if (!convertible_to_f32) {
-    ::ml_drift::ir::IrTensor* const_ir_tensor = AddConstInput(
-        context, tflite_node.inputs->data[constant_tensor_index], ir_model,
-        /*layout=*/{});
+    const SizedLayout layout =
+        BroadcastConstLayout(constant_dims->size, runtime_tensor->dims->size);
+    ::ml_drift::ir::IrTensor* const_ir_tensor =
+        AddConstInput(context, tflite_node.inputs->data[constant_tensor_index],
+                      ir_model, layout);
     ir_model.AddConsumer(const_ir_tensor->id, op->id);
     return;
   }
