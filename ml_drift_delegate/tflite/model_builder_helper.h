@@ -201,6 +201,8 @@ void CopyData(const TfLiteTensor& src, T* dst) {
       ABSL_LOG(FATAL) << "src can't be float8e4m3fn.";
     case kTfLiteFloat8E5M2:
       ABSL_LOG(FATAL) << "src can't be float8e5m2.";
+    case kTfLiteFloat8E8M0FNU:
+      ABSL_LOG(FATAL) << "src can't be float8e8m0fnu.";
   }
 }
 
