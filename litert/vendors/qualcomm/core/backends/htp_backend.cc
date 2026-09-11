@@ -687,6 +687,17 @@ GraphConfigBuilder HtpBackend::BuildGraphConfigs(
   priority.priority = GetGraphPriorityValue(options.GetGraphPriority());
   config_builder.AddGraphConfig(priority);
 
+  // Set schematic file dir
+  if (!options.GetSchematicDir().empty()) {
+    QnnHtpGraph_CustomConfig_t schematic_file_dir =
+        QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    schematic_file_dir.option = QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG;
+    schematic_file_dir.finalizeConfig.key = "optrace_output_dir";
+    schematic_file_dir.finalizeConfig.value = {
+        QNN_DATATYPE_STRING, {.stringValue = options.GetSchematicDir().data()}};
+    config_builder.AddCustomConfig(schematic_file_dir);
+  }
+
   return config_builder;
 }
 
