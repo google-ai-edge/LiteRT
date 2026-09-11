@@ -184,6 +184,26 @@ class QualcommOptions : public ConcreteOptionsBase {
     return static_cast<HtpPerfCtrlMode>(val);
   }
 
+  enum class HtpPdSession : int {
+    kUnsigned = kLiteRtQualcommHtpUnsignedPd,
+    kSigned = kLiteRtQualcommHtpSignedPd,
+    kAdaptive = kLiteRtQualcommHtpAdaptivePd,
+  };
+
+  void SetHtpPdSession(HtpPdSession htp_pd_session) {
+    LrtQualcommOptionsSetHtpPdSession(
+        options_, static_cast<LrtQualcommOptionsHtpPdSession>(htp_pd_session));
+  }
+
+  HtpPdSession GetHtpPdSession() {
+    LrtQualcommOptionsHtpPdSession val;
+    auto status = LrtQualcommOptionsGetHtpPdSession(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return HtpPdSession::kUnsigned;
+    }
+    return static_cast<HtpPdSession>(val);
+  }
+
   enum class DspPerfCtrlMode : int {
     kManual = kLiteRtQualcommDspPerfCtrlModeManual,
     kAuto = kLiteRtQualcommDspPerfCtrlModeAuto,
@@ -201,6 +221,26 @@ class QualcommOptions : public ConcreteOptionsBase {
       return DspPerfCtrlMode::kManual;
     }
     return static_cast<DspPerfCtrlMode>(val);
+  }
+
+  enum class DspPdSession : int {
+    kUnsigned = kLiteRtQualcommDspUnsignedPd,
+    kSigned = kLiteRtQualcommDspSignedPd,
+    kAdaptive = kLiteRtQualcommDspAdaptivePd,
+  };
+
+  void SetDspPdSession(DspPdSession dsp_pd_session) {
+    LrtQualcommOptionsSetDspPdSession(
+        options_, static_cast<LrtQualcommOptionsDspPdSession>(dsp_pd_session));
+  }
+
+  DspPdSession GetDspPdSession() {
+    LrtQualcommOptionsDspPdSession val;
+    auto status = LrtQualcommOptionsGetDspPdSession(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return DspPdSession::kUnsigned;
+    }
+    return static_cast<DspPdSession>(val);
   }
 
   [[deprecated("This option is deprecated and will be no-op.")]]

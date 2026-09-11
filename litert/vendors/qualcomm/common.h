@@ -137,8 +137,12 @@ inline LiteRtStatus InitQnnOptions(
       qualcomm_options.GetDspPerformanceMode()));
   qnn_options.SetHtpPerfCtrlMode(static_cast<::qnn::HtpPerfCtrlMode>(
       qualcomm_options.GetHtpPerfCtrlMode()));
+  qnn_options.SetHtpPdSession(
+      static_cast<::qnn::HtpPdSession>(qualcomm_options.GetHtpPdSession()));
   qnn_options.SetDspPerfCtrlMode(static_cast<::qnn::DspPerfCtrlMode>(
       qualcomm_options.GetDspPerfCtrlMode()));
+  qnn_options.SetDspPdSession(
+      static_cast<::qnn::DspPdSession>(qualcomm_options.GetDspPdSession()));
   qnn_options.SetIrJsonDir(qualcomm_options.GetIrJsonDir());
   qnn_options.SetDlcDir(qualcomm_options.GetDlcDir());
   qnn_options.SetGraphTransform(qualcomm_options.GetGraphTransform());
