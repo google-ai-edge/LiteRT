@@ -107,6 +107,27 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
   INVOKE_FUNC(initialize, runtime_context, env, options);
 }
 
+LiteRtStatus RegisterCustomTensorBufferHandlers(LiteRtEnvironment env) {
+  if (TheApi.tensor_buffer_handlers_def != nullptr) {
+    for (size_t i = 0;
+         i < TheApi.tensor_buffer_handlers_def->num_supported_buffer_types &&
+         i < LITERT_CUSTOM_BUFFER_HANDLERS_DEF_MAX_SUPPORTED_BUFFER_TYPES;
+         ++i) {
+      LITERT_RETURN_IF_ERROR(LiteRtRegisterTensorBufferHandlers(
+          env, TheApi.tensor_buffer_handlers_def->supported_buffer_types[i],
+          TheApi.tensor_buffer_handlers_def->create_func,
+          TheApi.tensor_buffer_handlers_def->destroy_func,
+          TheApi.tensor_buffer_handlers_def->lock_func,
+          TheApi.tensor_buffer_handlers_def->unlock_func,
+          TheApi.tensor_buffer_handlers_def->clear_func,
+          TheApi.tensor_buffer_handlers_def->import_func,
+          TheApi.tensor_buffer_handlers_def->device_tag,
+          TheApi.tensor_buffer_handlers_def->queue_tag));
+    }
+  }
+  return kLiteRtStatusOk;
+}
+
 litert::Expected<std::string> GetSharedLibraryPath(
     LiteRtEnvironmentOptions env_options) {
   std::vector<std::string> dispatch_lib_paths;
@@ -143,11 +164,12 @@ LiteRtStatus LiteRtDispatchInitialize(
     const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
     LiteRtOptions options) {
   LITERT_PERFETTO_TRACE_EVENT("Dispatch API Initialization");
-  if (IsTheApiInitialized) {
-    return kLiteRtStatusOk;
-  }
   LiteRtEnvironmentOptions env_options;
   LITERT_RETURN_IF_ERROR(LiteRtGetEnvironmentOptions(env, &env_options));
+
+  if (IsTheApiInitialized) {
+    return RegisterCustomTensorBufferHandlers(env);
+  }
 
   LiteRtStatus api_status = kLiteRtStatusErrorNotFound;
   if (LiteRtStaticLinkedDispatchGetApi != nullptr) {
@@ -192,23 +214,7 @@ LiteRtStatus LiteRtDispatchInitialize(
     return kLiteRtStatusErrorWrongVersion;
   }
 
-  if (TheApi.tensor_buffer_handlers_def != nullptr) {
-    for (size_t i = 0;
-         i < TheApi.tensor_buffer_handlers_def->num_supported_buffer_types &&
-         i < LITERT_CUSTOM_BUFFER_HANDLERS_DEF_MAX_SUPPORTED_BUFFER_TYPES;
-         ++i) {
-      LITERT_RETURN_IF_ERROR(LiteRtRegisterTensorBufferHandlers(
-          env, TheApi.tensor_buffer_handlers_def->supported_buffer_types[i],
-          TheApi.tensor_buffer_handlers_def->create_func,
-          TheApi.tensor_buffer_handlers_def->destroy_func,
-          TheApi.tensor_buffer_handlers_def->lock_func,
-          TheApi.tensor_buffer_handlers_def->unlock_func,
-          TheApi.tensor_buffer_handlers_def->clear_func,
-          TheApi.tensor_buffer_handlers_def->import_func,
-          TheApi.tensor_buffer_handlers_def->device_tag,
-          TheApi.tensor_buffer_handlers_def->queue_tag));
-    }
-  }
+  LITERT_RETURN_IF_ERROR(RegisterCustomTensorBufferHandlers(env));
 
   auto status = Initialize(runtime_context, env, options);
   if (status == kLiteRtStatusOk) {
