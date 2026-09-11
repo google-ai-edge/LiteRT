@@ -114,6 +114,40 @@ typedef NS_ENUM(NSInteger, LRTTensorBufferType) {
                                                error:(NSError **)error;
 
 /**
+ * Creates a managed Metal buffer tensor buffer.
+ *
+ * @param environment LiteRT environment instance configured with Metal options.
+ * @param size Buffer capacity in bytes.
+ * @param elementType Data element type.
+ * @param dimensions Tensor shape dimensions array.
+ * @param error Out-parameter populated on failure.
+ * @return A new LRTTensorBuffer instance, or nil on failure.
+ */
++ (nullable instancetype)managedMetalTensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                                            size:(NSUInteger)size
+                                                     elementType:(LRTElementType)elementType
+                                                      dimensions:(NSArray<NSNumber *> *)dimensions
+                                                           error:(NSError **)error;
+
+/**
+ * Creates a managed tensor buffer with the specified buffer type.
+ *
+ * @param environment LiteRT environment instance.
+ * @param bufferType Underlying buffer storage type (e.g., HostMemory, MetalBuffer).
+ * @param size Buffer capacity in bytes.
+ * @param elementType Data element type.
+ * @param dimensions Tensor shape dimensions array.
+ * @param error Out-parameter populated on failure.
+ * @return A new LRTTensorBuffer instance, or nil on failure.
+ */
++ (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                          bufferType:(LRTTensorBufferType)bufferType
+                                                size:(NSUInteger)size
+                                         elementType:(LRTElementType)elementType
+                                          dimensions:(NSArray<NSNumber *> *)dimensions
+                                               error:(NSError **)error;
+
+/**
  * Creates a tensor buffer wrapping an existing Metal buffer.
  *
  * @param environment LiteRT environment instance.

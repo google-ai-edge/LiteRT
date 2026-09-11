@@ -53,6 +53,29 @@ bool IsMetalTextureType(LRTTensorBufferType type) {
   }
 }
 
+bool ValidateAndExtractDimensions(NSArray<NSNumber *> *dimensions,
+                                  litert::Dimensions &outDimensions, NSError **error) {
+  if (dimensions == nil) {
+    if (error) {
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Dimensions array cannot be nil");
+    }
+    return false;
+  }
+  outDimensions.clear();
+  outDimensions.reserve(dimensions.count);
+  for (NSNumber *dimension in dimensions) {
+    if (dimension == nil || dimension.intValue < 0) {
+      if (error) {
+        *error =
+            CreateLRTError(LRTErrorCodeInvalidArgument, @"Dimension values must be non-negative");
+      }
+      return false;
+    }
+    outDimensions.push_back(dimension.intValue);
+  }
+  return true;
+}
+
 }  // namespace
 
 @implementation LRTTensorBuffer {
@@ -78,6 +101,40 @@ bool IsMetalTextureType(LRTTensorBufferType type) {
                                          elementType:(LRTElementType)elementType
                                           dimensions:(NSArray<NSNumber *> *)dimensions
                                                error:(NSError **)error {
+  return [self tensorBufferWithEnvironment:environment
+                                bufferType:LRTTensorBufferTypeHostMemory
+                                      size:size
+                               elementType:elementType
+                                dimensions:dimensions
+                                     error:error];
+}
+
++ (nullable instancetype)managedMetalTensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                                            size:(NSUInteger)size
+                                                     elementType:(LRTElementType)elementType
+                                                      dimensions:(NSArray<NSNumber *> *)dimensions
+                                                           error:(NSError **)error {
+  return [self tensorBufferWithEnvironment:environment
+                                bufferType:LRTTensorBufferTypeMetalBuffer
+                                      size:size
+                               elementType:elementType
+                                dimensions:dimensions
+                                     error:error];
+}
+
++ (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                          bufferType:(LRTTensorBufferType)bufferType
+                                                size:(NSUInteger)size
+                                         elementType:(LRTElementType)elementType
+                                          dimensions:(NSArray<NSNumber *> *)dimensions
+                                               error:(NSError **)error {
+  if (environment == nil) {
+    if (error) {
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
+    }
+    return nil;
+  }
+
   litert::Environment *cppEnvironment = [environment cppEnvironment];
   if (!cppEnvironment) {
     if (error) {
@@ -86,18 +143,37 @@ bool IsMetalTextureType(LRTTensorBufferType type) {
     return nil;
   }
 
-  litert::Dimensions dims;
-  dims.reserve(dimensions.count);
-  for (NSNumber *dim in dimensions) {
-    dims.push_back(dim.intValue);
+  if (bufferType == LRTTensorBufferTypeUnknown) {
+    if (error) {
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid LRTTensorBufferType required");
+    }
+    return nil;
+  }
+
+  if (elementType == LRTElementTypeNone) {
+    if (error) {
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid LRTElementType required");
+    }
+    return nil;
+  }
+
+  if (size == 0) {
+    if (error) {
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Buffer size must be greater than 0");
+    }
+    return nil;
+  }
+
+  litert::Dimensions tensorDimensions;
+  if (!ValidateAndExtractDimensions(dimensions, tensorDimensions, error)) {
+    return nil;
   }
 
   litert::RankedTensorType tensorType(static_cast<litert::ElementType>(elementType),
-                                      litert::Layout(dims));
+                                      litert::Layout(tensorDimensions));
 
   auto bufferResult = litert::TensorBuffer::CreateManaged(
-      *cppEnvironment,
-      static_cast<litert::TensorBufferType>(LRTTensorBufferTypeHostMemory), tensorType, size);
+      *cppEnvironment, static_cast<litert::TensorBufferType>(bufferType), tensorType, size);
 
   if (!bufferResult.HasValue()) {
     if (error) {
@@ -116,6 +192,13 @@ bool IsMetalTextureType(LRTTensorBufferType type) {
                                          elementType:(LRTElementType)elementType
                                           dimensions:(NSArray<NSNumber *> *)dimensions
                                                error:(NSError **)error {
+  if (environment == nil) {
+    if (error) {
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
+    }
+    return nil;
+  }
+
   litert::Environment *cppEnvironment = [environment cppEnvironment];
   if (!cppEnvironment) {
     if (error) {
@@ -124,14 +207,27 @@ bool IsMetalTextureType(LRTTensorBufferType type) {
     return nil;
   }
 
-  litert::Dimensions dims;
-  dims.reserve(dimensions.count);
-  for (NSNumber *dim in dimensions) {
-    dims.push_back(dim.intValue);
+  if (metalBuffer == nil) {
+    if (error) {
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid MTLBuffer required");
+    }
+    return nil;
+  }
+
+  if (elementType == LRTElementTypeNone) {
+    if (error) {
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid LRTElementType required");
+    }
+    return nil;
+  }
+
+  litert::Dimensions tensorDimensions;
+  if (!ValidateAndExtractDimensions(dimensions, tensorDimensions, error)) {
+    return nil;
   }
 
   litert::RankedTensorType tensorType(static_cast<litert::ElementType>(elementType),
-                                      litert::Layout(dims));
+                                      litert::Layout(tensorDimensions));
 
   auto bufferResult = litert::TensorBuffer::CreateFromMetalBuffer(
       *cppEnvironment, tensorType,
@@ -155,6 +251,13 @@ bool IsMetalTextureType(LRTTensorBufferType type) {
                                          elementType:(LRTElementType)elementType
                                           dimensions:(NSArray<NSNumber *> *)dimensions
                                                error:(NSError **)error {
+  if (environment == nil) {
+    if (error) {
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
+    }
+    return nil;
+  }
+
   litert::Environment *cppEnvironment = [environment cppEnvironment];
   if (!cppEnvironment) {
     if (error) {
@@ -163,14 +266,27 @@ bool IsMetalTextureType(LRTTensorBufferType type) {
     return nil;
   }
 
-  litert::Dimensions dims;
-  dims.reserve(dimensions.count);
-  for (NSNumber *dim in dimensions) {
-    dims.push_back(dim.intValue);
+  if (metalTexture == nil) {
+    if (error) {
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid MTLTexture required");
+    }
+    return nil;
+  }
+
+  if (elementType == LRTElementTypeNone) {
+    if (error) {
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid LRTElementType required");
+    }
+    return nil;
+  }
+
+  litert::Dimensions tensorDimensions;
+  if (!ValidateAndExtractDimensions(dimensions, tensorDimensions, error)) {
+    return nil;
   }
 
   litert::RankedTensorType tensorType(static_cast<litert::ElementType>(elementType),
-                                      litert::Layout(dims));
+                                      litert::Layout(tensorDimensions));
 
   auto bufferResult = litert::TensorBuffer::CreateFromMetalBuffer(
       *cppEnvironment, tensorType,
@@ -209,11 +325,11 @@ bool IsMetalTextureType(LRTTensorBufferType type) {
   if (!tensorTypeResult.HasValue()) return @[];
 
   auto shape = tensorTypeResult->Layout().Dimensions();
-  NSMutableArray<NSNumber *> *dims = [NSMutableArray arrayWithCapacity:shape.size()];
-  for (auto dim : shape) {
-    [dims addObject:@(dim)];
+  NSMutableArray<NSNumber *> *dimensions = [NSMutableArray arrayWithCapacity:shape.size()];
+  for (auto dimension : shape) {
+    [dimensions addObject:@(dimension)];
   }
-  return [dims copy];
+  return [dimensions copy];
 }
 
 - (NSUInteger)size {
@@ -240,7 +356,12 @@ bool IsMetalTextureType(LRTTensorBufferType type) {
 }
 
 - (nullable NSData *)readDataWithError:(NSError **)error {
-  if (!_cppTensorBuffer) return nil;
+  if (!_cppTensorBuffer) {
+    if (error) {
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Invalid tensor buffer");
+    }
+    return nil;
+  }
 
   auto lockResult = _cppTensorBuffer->Lock(litert::TensorBuffer::LockMode::kRead);
   if (!lockResult.HasValue()) {
@@ -258,7 +379,19 @@ bool IsMetalTextureType(LRTTensorBufferType type) {
 }
 
 - (BOOL)writeData:(NSData *)data error:(NSError **)error {
-  if (!_cppTensorBuffer) return NO;
+  if (!_cppTensorBuffer) {
+    if (error) {
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Invalid tensor buffer");
+    }
+    return NO;
+  }
+
+  if (data == nil) {
+    if (error) {
+      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Data cannot be nil");
+    }
+    return NO;
+  }
 
   auto lockResult = _cppTensorBuffer->Lock(litert::TensorBuffer::LockMode::kWrite);
   if (!lockResult.HasValue()) {
