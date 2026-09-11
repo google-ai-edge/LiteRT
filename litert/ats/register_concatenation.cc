@@ -41,7 +41,7 @@ void RegisterConcatenationImpl(const AtsConf& options, size_t& test_id,
       OpCodeListC<kLiteRtOpCodeTflConcatenation>,
       SizeListC<0, 1>,
       TypeList<FaC<tflite::ActivationFunctionType_NONE>>>
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
   // clang-format on
 }
 

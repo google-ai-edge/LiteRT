@@ -63,7 +63,7 @@ void RegisterUnaryImpl(const AtsConf& options, size_t& test_id, size_t iters,
           kLiteRtOpCodeTflRelu0To1,
           kLiteRtOpCodeTflSign
       >>
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
   // clang-format on
 }
 

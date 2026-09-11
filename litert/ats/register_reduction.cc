@@ -41,7 +41,7 @@ void RegisterReductionImpl(const AtsConf& options, size_t& test_id,
       OpCodeListC<kLiteRtOpCodeTflReduceMax, kLiteRtOpCodeTflReduceMin,
                   kLiteRtOpCodeTflReduceProd, kLiteRtOpCodeTflSum>,
       TypeList<std::true_type, std::false_type>>
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
   // clang-format on
 }
 

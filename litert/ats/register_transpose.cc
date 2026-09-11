@@ -49,12 +49,12 @@ void RegisterTransposeImpl(const AtsConf& options, size_t& test_id,
           uint64_t,
           float,
           tflite::half>>
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
   RegisterCombinations<
       Fixture,
       TransposeInt4,
       SizeListC<1, 2, 3, 4, 5, 6, 7, 8>>
-    (iters, test_id, options, cap);
+    (iters, test_id, options, cap, "CoreSingleOp");
   // clang-format on
 }
 
