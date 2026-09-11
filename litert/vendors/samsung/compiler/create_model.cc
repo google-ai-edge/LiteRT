@@ -296,6 +296,7 @@ Expected<std::vector<char>> CreateModel(
     LITERT_RETURN_IF_ERROR(graph_crt.AddOutput(output));
   }
 
+  NameGenerator op_name_generator;
   auto ops = partition.Ops();
   for (int op_idx = 0; op_idx < ops.size(); ++op_idx) {
     const auto& op = ops[op_idx];
@@ -532,6 +533,10 @@ Expected<std::vector<char>> CreateModel(
     if (!op_wrapper) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "Fail to parse op's options.");
+    }
+    if (auto status = op_name_generator.Generate(*op_wrapper);
+        status != kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_ERROR, "Fail to generate name for %dth op", op_idx);
     }
     if (auto status = graph_crt.CreateOpNode(op_wrapper.Value());
         status != kLiteRtStatusOk) {

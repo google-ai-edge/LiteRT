@@ -15,9 +15,9 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_OP_WRAPPER_H_
 #define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_OP_WRAPPER_H_
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -106,9 +106,7 @@ class OpParamWrapper {
 
 class OpWrapper {
  public:
-  OpWrapper(const std::string& type) : op_type_(type) {
-    op_name_ = "litert_" + type + std::to_string(GenId());
-  }
+  OpWrapper(const std::string& type) : op_type_(type) {}
 
   OpWrapper& AddInput(const litert::compiler::Tensor& t) {
     inputs_.push_back(t);
@@ -160,17 +158,31 @@ class OpWrapper {
   const char* GetCType() const { return op_type_.c_str(); }
 
  private:
+  friend class NameGenerator;
+
   std::string op_name_;
   std::string op_type_;
   std::vector<litert::compiler::Tensor> inputs_;
   std::vector<litert::compiler::Tensor> outputs_;
 
   std::vector<OpParamWrapper> op_params_;
+};
 
-  static uint32_t GenId() {
-    static std::atomic<uint32_t> id{0};
-    return id++;
-  }
+/* Op name is empty in LiteRT, and the class generates name automatically.
+ * Conform the rule similar to torch.
+ */
+class NameGenerator {
+ public:
+  NameGenerator() = default;
+  NameGenerator(const NameGenerator&) = delete;
+  NameGenerator& operator=(const NameGenerator&) = delete;
+  ~NameGenerator() = default;
+
+  LiteRtStatus Generate(OpWrapper& op_wrapper);
+
+ private:
+  static constexpr const char kNamePrefix[] = "litert_";
+  std::map<std::string, int32_t> type_id_;
 };
 
 }  // namespace litert::samsung
