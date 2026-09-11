@@ -44,18 +44,10 @@ NCCL_LIB_PATHS = [
 ]
 
 # List of files to configure when building Bazel on Apple platforms.
-APPLE_BAZEL_FILES = [
-    'tflite/ios/BUILD',
-    'tflite/objc/BUILD',
-    'tflite/swift/BUILD',
-    'tflite/tools/benchmark/experimental/ios/BUILD',
-]
+APPLE_BAZEL_FILES = []
 
 # List of files to move when building for iOS.
-IOS_FILES = [
-    'tflite/objc/TensorFlowLiteObjC.podspec',
-    'tflite/swift/TensorFlowLiteSwift.podspec',
-]
+IOS_FILES = []
 
 
 class UserInputError(Exception):
@@ -1248,11 +1240,14 @@ def configure_ios(environ_cp):
   for filepath in APPLE_BAZEL_FILES:
     existing_filepath = os.path.join(_TF_WORKSPACE_ROOT, filepath + '.apple')
     renamed_filepath = os.path.join(_TF_WORKSPACE_ROOT, filepath)
-    symlink_force(existing_filepath, renamed_filepath)
+    if os.path.exists(existing_filepath):
+      symlink_force(existing_filepath, renamed_filepath)
   for filepath in IOS_FILES:
-    filename = os.path.basename(filepath)
-    new_filepath = os.path.join(_TF_WORKSPACE_ROOT, filename)
-    symlink_force(filepath, new_filepath)
+    existing_filepath = os.path.join(_TF_WORKSPACE_ROOT, filepath)
+    if os.path.exists(existing_filepath):
+      filename = os.path.basename(filepath)
+      new_filepath = os.path.join(_TF_WORKSPACE_ROOT, filename)
+      symlink_force(existing_filepath, new_filepath)
 
 
 def get_gcc_compiler(environ_cp):

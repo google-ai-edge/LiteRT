@@ -54,7 +54,6 @@ jobs:
           export TF_NEED_ROCM=0
           export TF_NEED_CUDA=0
           export TF_SET_ANDROID_WORKSPACE=0
-          export TF_CONFIGURE_IOS=1
           export CC_OPT_FLAGS='-Wno-sign-compare'
           python3 configure.py
 
