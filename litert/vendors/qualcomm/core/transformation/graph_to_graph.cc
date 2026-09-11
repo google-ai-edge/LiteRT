@@ -273,6 +273,27 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
   };
   Transform(validate_op_config, ops, tensor_pool, onehot_fc, TransformOneHotFc);
 
+  const std::vector<QnnOpCode> vision_mha = {
+      QnnOpCode::kTranspose,
+      QnnOpCode::kQuantize,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kReshape,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kReshape,
+      QnnOpCode::kReshape,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kReshape,
+      QnnOpCode::kSoftmax,
+      QnnOpCode::kReshape,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kReshape,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kConvert,
+      QnnOpCode::kReshape,
+  };
+  Transform(validate_op_config, ops, tensor_pool, vision_mha,
+            OptimizeVisionMHA);
+
   // Gemma 4 Optimization
   // Base: perm=[0,2,1,3] transpose bookends, one far-away Convert before QK,
   // two QK matmuls, concat, mask-add, softmax, two strided-slices, two V
