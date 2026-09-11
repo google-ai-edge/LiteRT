@@ -66,7 +66,6 @@ class FusedFlashDecodeSdpaOp : public ::ml_drift::GPUOperation {
       const ::ml_drift::KernelInfo& kernel_info) const override {
     return {::ml_drift::int3(1, slices_per_head_, kNumSimdGroups)};
   }
-
   FusedFlashDecodeSdpaOp(FusedFlashDecodeSdpaOp&&) = default;
   FusedFlashDecodeSdpaOp& operator=(FusedFlashDecodeSdpaOp&&) = default;
   FusedFlashDecodeSdpaOp(const FusedFlashDecodeSdpaOp&) = delete;
@@ -106,8 +105,9 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashDecodeSdpa(
           ? (q_heads / kv_heads)
           : 1;
 
-  custom_op.work_group_size_ = ::ml_drift::int3(1, slices, kNumSimdGroups);
+  custom_op.work_group_size_ = ::ml_drift::int3(1, 32, kNumSimdGroups);
   custom_op.args_.AddInt("cache_size", k_desc.GetBHWCShape().w);
+  custom_op.args_.AddInt("slices", slices);
 
   custom_op.AddSrcTensor("q", q_desc);
   custom_op.AddSrcTensor("k", k_desc);
@@ -178,7 +178,7 @@ MAIN_FUNCTION($0) {
   int safe_chunk_end = max(chunk_start, min(chunk_end, (active_tokens / 16) * 4));
 
   // Note: This Flash-Decode SDPA kernel is optimized for float16 / half precision.
-  half4 q_slice = ucl::Convert<half4>(args.q.Read(X, Y, tid));
+  half4 q_slice = (tid < args.slices) ? ucl::Convert<half4>(args.q.Read(X, Y, tid)) : half4(0.0h);
   half m_prev = -10000.0h;
   half l_prev = 0.0h;
   // Note: half4 output accumulator for maximum register efficiency on mobile GPUs.
@@ -383,12 +383,16 @@ MAIN_FUNCTION($0) {
     half4 final_acc = sum0 + sum1;
 )",
                   is_flattened_dst ? absl::StrFormat(R"(
-    int out_slice = Y * %d + tid;
-    args.dst.Write(ucl::Convert<args.dst::type>(final_acc), X, 0, out_slice);
+    if (tid < args.slices) {
+      int out_slice = Y * %d + tid;
+      args.dst.Write(ucl::Convert<args.dst::type>(final_acc), X, 0, out_slice);
+    }
 )",
                                                      slices)
                                    : R"(
-    args.dst.Write(ucl::Convert<args.dst::type>(final_acc), X, Y, tid);
+    if (tid < args.slices) {
+      args.dst.Write(ucl::Convert<args.dst::type>(final_acc), X, Y, tid);
+    }
 )",
                   R"(
   }
@@ -397,6 +401,421 @@ MAIN_FUNCTION($0) {
 
   custom_op.code_ = std::move(op_code);
   return std::make_unique<FusedFlashDecodeSdpaOp>(std::move(custom_op));
+}
+
+class FusedFlashAttentionPrefillOp : public ::ml_drift::GPUOperation {
+ public:
+  FusedFlashAttentionPrefillOp() = default;
+
+  ::ml_drift::int3 GetGridSize() const override {
+    return ::ml_drift::int3((dst_[0]->Width() + 3) / 4,
+                            dst_[0]->Height() * 32, 1);
+  }
+
+  std::vector<::ml_drift::int3> GetPossibleKernelWorkGroups(
+      ::ml_drift::TuningType tuning_type, const ::ml_drift::GpuInfo& gpu_info,
+      const ::ml_drift::KernelInfo& kernel_info) const override {
+    return {::ml_drift::int3(1, 32, 1)};
+  }
+
+  FusedFlashAttentionPrefillOp(FusedFlashAttentionPrefillOp&&) = default;
+  FusedFlashAttentionPrefillOp& operator=(FusedFlashAttentionPrefillOp&&) = default;
+  FusedFlashAttentionPrefillOp(const FusedFlashAttentionPrefillOp&) = delete;
+  FusedFlashAttentionPrefillOp& operator=(const FusedFlashAttentionPrefillOp&) = delete;
+};
+
+std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashAttentionPrefill(
+    const ::ml_drift::GpuInfo& gpu_info,
+    const ::ml_drift::TensorDescriptor& q_desc,
+    const ::ml_drift::TensorDescriptor& k_desc,
+    const ::ml_drift::TensorDescriptor& v_desc,
+    const ::ml_drift::TensorDescriptor* mask_desc,
+    const ::ml_drift::TensorDescriptor* param_desc,
+    const ::ml_drift::TensorDescriptor& dst_desc,
+    const SdpaTransposedAttributes& attr) {
+  FusedFlashAttentionPrefillOp custom_op;
+  int slices = dst_desc.GetBHWCShape().c / 4;
+  int v_stride_s = slices * 4;
+  int v_stride_2s = slices * 8;
+  int k_o_slices = (k_desc.GetBHWCShape().w + 3) / 4;
+  int k_stride_head = slices * k_o_slices * 4;
+  int k_stride_slice = k_o_slices * 4;
+  int v_stride_head = k_o_slices * v_stride_s;
+  const int q_heads = q_desc.GetBHWCShape().h;
+  const int kv_heads = k_desc.GetBHWCShape().h;
+  const int gqa_ratio =
+      (kv_heads > 0 && q_heads >= kv_heads && (q_heads % kv_heads == 0))
+          ? (q_heads / kv_heads)
+          : 1;
+
+  custom_op.work_group_size_ = ::ml_drift::int3(1, 32, 1);
+  custom_op.args_.AddInt("cache_size", k_desc.GetBHWCShape().w);
+  custom_op.args_.AddInt("slices", slices);
+
+  custom_op.AddSrcTensor("q", q_desc);
+  custom_op.AddSrcTensor("k", k_desc);
+  custom_op.AddSrcTensor("v", v_desc);
+
+  bool has_mask = (mask_desc != nullptr);
+  if (has_mask) {
+    bool is_bool_mask =
+        (mask_desc->GetDataType() == ::ml_drift::DataType::BOOL);
+    custom_op.args_.AddInt("is_bool_mask", is_bool_mask ? 1 : 0);
+    custom_op.AddSrcTensor("mask", *mask_desc);
+  }
+
+  bool has_param = (param_desc != nullptr &&
+                    attr.runtime_check.src_end_ch_index.has_value());
+  if (has_param) {
+    custom_op.args_.AddInt("src_end_ch_index",
+                          *attr.runtime_check.src_end_ch_index);
+    custom_op.AddSrcTensor("params", *param_desc);
+  }
+
+  bool has_softcap = (attr.softcap.has_value() && *attr.softcap > 0.0f);
+  if (has_softcap) {
+    custom_op.args_.AddFloat("softcap", *attr.softcap);
+  }
+
+  custom_op.AddDstTensor("dst", dst_desc);
+
+  std::string op_code = R"(
+MAIN_FUNCTION($0) {
+  int tile_x = ucl::GetGlobalId<0>();
+  int Y = ucl::GetGroupId<1>();
+  int tid = ucl::GetLocalId<1>();
+
+  int X0 = tile_x * 4;
+  int X1 = X0 + 1;
+  int X2 = X0 + 2;
+  int X3 = X0 + 3;
+
+  int dst_w = args.dst.Width();
+  if (X0 >= dst_w || Y >= args.dst.Height()) {
+    return;
+  }
+
+  int active_tokens = args.cache_size;
+  // Absolute position in the KV cache of the first query token of this chunk.
+  // Zero unless the prompt is prefilled in several chunks.
+  int q_start = 0;
+)";
+
+  if (has_param) {
+    op_code += R"(
+  int param_slice = args.src_end_ch_index / 4;
+  int param_comp = args.src_end_ch_index % 4;
+  float4 p_vec = ucl::Convert<float4>(args.params.Read(0, 0, param_slice, 0));
+  float p_raw = (param_comp == 0) ? p_vec.x : ((param_comp == 1) ? p_vec.y : ((param_comp == 2) ? p_vec.z : p_vec.w));
+  int param_val = (int)p_raw;
+  if (param_val > 0 && param_val <= args.cache_size) {
+    active_tokens = param_val;
+  }
+  // params[0] is the index in the KV cache at which the current chunk starts,
+  // see FillSingleBufferCacheParamTensor() in the LiteRT-LM runtime.
+  float4 p_start_vec = ucl::Convert<float4>(args.params.Read(0, 0, 0, 0));
+  int start_val = (int)p_start_vec.x;
+  if (start_val > 0 && start_val < active_tokens) {
+    q_start = start_val;
+  }
+)";
+  }
+
+  op_code += R"(
+  // Absolute positions of the four query tokens handled by this thread. A query
+  // token at absolute position P may attend to keys [0, P] inclusive.
+  int P0 = X0 + q_start;
+  int P1 = X1 + q_start;
+  int P2 = X2 + q_start;
+  int P3 = X3 + q_start;
+
+  int max_tokens = min(P3 + 1, active_tokens);
+  int total_chunks = (max_tokens + 3) / 4;
+  int safe_chunk_end = (min(P0 + 1, active_tokens) / 8) * 2;
+)";
+
+  op_code += absl::StrCat(R"(
+  half inv_ln2 = 1.4426950408889634h;
+  half4 q0 = (X0 < dst_w && tid < args.slices) ? (ucl::Convert<half4>(args.q.Read(X0, Y, tid)) * inv_ln2) : half4(0.0h);
+  half4 q1 = (X1 < dst_w && tid < args.slices) ? (ucl::Convert<half4>(args.q.Read(X1, Y, tid)) * inv_ln2) : half4(0.0h);
+  half4 q2 = (X2 < dst_w && tid < args.slices) ? (ucl::Convert<half4>(args.q.Read(X2, Y, tid)) * inv_ln2) : half4(0.0h);
+  half4 q3 = (X3 < dst_w && tid < args.slices) ? (ucl::Convert<half4>(args.q.Read(X3, Y, tid)) * inv_ln2) : half4(0.0h);
+
+  half m_prev0 = -10000.0h, m_prev1 = -10000.0h, m_prev2 = -10000.0h, m_prev3 = -10000.0h;
+  half l_prev0 = 0.0h, l_prev1 = 0.0h, l_prev2 = 0.0h, l_prev3 = 0.0h;
+  half4 out_acc0 = half4(0.0h), out_acc1 = half4(0.0h), out_acc2 = half4(0.0h), out_acc3 = half4(0.0h);
+
+  int kv_head = )",
+                          (gqa_ratio > 1 ? absl::StrCat("Y / ", gqa_ratio)
+                                         : "Y"), R"(;
+  int k_base_head = kv_head * )", k_stride_head, R"( + tid * )", k_stride_slice, R"(;
+  int v_base_head = kv_head * )", v_stride_head, R"( + tid * 4;
+
+  int chunk = 0;
+  int k_idx = k_base_head;
+  int v_idx = v_base_head;
+
+  for (; chunk + 1 < safe_chunk_end; chunk += 2) {
+    half4 k0 = (tid < args.slices) ? ucl::Convert<half4>(args.k.Read(k_idx + 0)) : half4(0.0h);
+    half4 k1 = (tid < args.slices) ? ucl::Convert<half4>(args.k.Read(k_idx + 1)) : half4(0.0h);
+    half4 k2 = (tid < args.slices) ? ucl::Convert<half4>(args.k.Read(k_idx + 2)) : half4(0.0h);
+    half4 k3 = (tid < args.slices) ? ucl::Convert<half4>(args.k.Read(k_idx + 3)) : half4(0.0h);
+
+    half4 d0_0 = simd_sum(half4(dot(q0, k0), dot(q0, k1), dot(q0, k2), dot(q0, k3)));
+    half4 d1_0 = simd_sum(half4(dot(q1, k0), dot(q1, k1), dot(q1, k2), dot(q1, k3)));
+    half4 d2_0 = simd_sum(half4(dot(q2, k0), dot(q2, k1), dot(q2, k2), dot(q2, k3)));
+    half4 d3_0 = simd_sum(half4(dot(q3, k0), dot(q3, k1), dot(q3, k2), dot(q3, k3)));
+
+    half4 k4 = (tid < args.slices) ? ucl::Convert<half4>(args.k.Read(k_idx + 4)) : half4(0.0h);
+    half4 k5 = (tid < args.slices) ? ucl::Convert<half4>(args.k.Read(k_idx + 5)) : half4(0.0h);
+    half4 k6 = (tid < args.slices) ? ucl::Convert<half4>(args.k.Read(k_idx + 6)) : half4(0.0h);
+    half4 k7 = (tid < args.slices) ? ucl::Convert<half4>(args.k.Read(k_idx + 7)) : half4(0.0h);
+
+    half4 d0_1 = simd_sum(half4(dot(q0, k4), dot(q0, k5), dot(q0, k6), dot(q0, k7)));
+    half4 d1_1 = simd_sum(half4(dot(q1, k4), dot(q1, k5), dot(q1, k6), dot(q1, k7)));
+    half4 d2_1 = simd_sum(half4(dot(q2, k4), dot(q2, k5), dot(q2, k6), dot(q2, k7)));
+    half4 d3_1 = simd_sum(half4(dot(q3, k4), dot(q3, k5), dot(q3, k6), dot(q3, k7)));
+)");
+
+  if (has_softcap) {
+    op_code += R"(
+    d0_0 = (half4)args.softcap * tanh((d0_0 / (half4)inv_ln2) / (half4)args.softcap) * (half4)inv_ln2;
+    d0_1 = (half4)args.softcap * tanh((d0_1 / (half4)inv_ln2) / (half4)args.softcap) * (half4)inv_ln2;
+
+    d1_0 = (half4)args.softcap * tanh((d1_0 / (half4)inv_ln2) / (half4)args.softcap) * (half4)inv_ln2;
+    d1_1 = (half4)args.softcap * tanh((d1_1 / (half4)inv_ln2) / (half4)args.softcap) * (half4)inv_ln2;
+
+    d2_0 = (half4)args.softcap * tanh((d2_0 / (half4)inv_ln2) / (half4)args.softcap) * (half4)inv_ln2;
+    d2_1 = (half4)args.softcap * tanh((d2_1 / (half4)inv_ln2) / (half4)args.softcap) * (half4)inv_ln2;
+
+    d3_0 = (half4)args.softcap * tanh((d3_0 / (half4)inv_ln2) / (half4)args.softcap) * (half4)inv_ln2;
+    d3_1 = (half4)args.softcap * tanh((d3_1 / (half4)inv_ln2) / (half4)args.softcap) * (half4)inv_ln2;
+)";
+  }
+
+  op_code += absl::StrCat(R"(
+    half m_local0 = max(max(d0_0.x, d0_0.y), max(max(d0_0.z, d0_0.w), max(max(d0_1.x, d0_1.y), max(d0_1.z, d0_1.w))));
+    half m_new0 = max(m_prev0, m_local0);
+    half alpha0 = exp2(m_prev0 - m_new0);
+    half4 p0_0 = exp2(d0_0 - (half4)m_new0);
+    half4 p0_1 = exp2(d0_1 - (half4)m_new0);
+    half4 p_sum0 = p0_0 + p0_1;
+    l_prev0 = fma(l_prev0, alpha0, (p_sum0.x + p_sum0.y) + (p_sum0.z + p_sum0.w));
+    m_prev0 = m_new0;
+
+    half m_local1 = max(max(d1_0.x, d1_0.y), max(max(d1_0.z, d1_0.w), max(max(d1_1.x, d1_1.y), max(d1_1.z, d1_1.w))));
+    half m_new1 = max(m_prev1, m_local1);
+    half alpha1 = exp2(m_prev1 - m_new1);
+    half4 p1_0 = exp2(d1_0 - (half4)m_new1);
+    half4 p1_1 = exp2(d1_1 - (half4)m_new1);
+    half4 p_sum1 = p1_0 + p1_1;
+    l_prev1 = fma(l_prev1, alpha1, (p_sum1.x + p_sum1.y) + (p_sum1.z + p_sum1.w));
+    m_prev1 = m_new1;
+
+    half m_local2 = max(max(d2_0.x, d2_0.y), max(max(d2_0.z, d2_0.w), max(max(d2_1.x, d2_1.y), max(d2_1.z, d2_1.w))));
+    half m_new2 = max(m_prev2, m_local2);
+    half alpha2 = exp2(m_prev2 - m_new2);
+    half4 p2_0 = exp2(d2_0 - (half4)m_new2);
+    half4 p2_1 = exp2(d2_1 - (half4)m_new2);
+    half4 p_sum2 = p2_0 + p2_1;
+    l_prev2 = fma(l_prev2, alpha2, (p_sum2.x + p_sum2.y) + (p_sum2.z + p_sum2.w));
+    m_prev2 = m_new2;
+
+    half m_local3 = max(max(d3_0.x, d3_0.y), max(max(d3_0.z, d3_0.w), max(max(d3_1.x, d3_1.y), max(d3_1.z, d3_1.w))));
+    half m_new3 = max(m_prev3, m_local3);
+    half alpha3 = exp2(m_prev3 - m_new3);
+    half4 p3_0 = exp2(d3_0 - (half4)m_new3);
+    half4 p3_1 = exp2(d3_1 - (half4)m_new3);
+    half4 p_sum3 = p3_0 + p3_1;
+    l_prev3 = fma(l_prev3, alpha3, (p_sum3.x + p_sum3.y) + (p_sum3.z + p_sum3.w));
+    m_prev3 = m_new3;
+
+    half4 v0 = (tid < args.slices) ? ucl::Convert<half4>(args.v.Read(v_idx + 0)) : half4(0.0h);
+    half4 v1 = (tid < args.slices) ? ucl::Convert<half4>(args.v.Read(v_idx + 1)) : half4(0.0h);
+    half4 v2 = (tid < args.slices) ? ucl::Convert<half4>(args.v.Read(v_idx + 2)) : half4(0.0h);
+    half4 v3 = (tid < args.slices) ? ucl::Convert<half4>(args.v.Read(v_idx + 3)) : half4(0.0h);
+
+    int v1_base = v_idx + )", v_stride_s, R"(;
+    half4 v4 = (tid < args.slices) ? ucl::Convert<half4>(args.v.Read(v1_base + 0)) : half4(0.0h);
+    half4 v5 = (tid < args.slices) ? ucl::Convert<half4>(args.v.Read(v1_base + 1)) : half4(0.0h);
+    half4 v6 = (tid < args.slices) ? ucl::Convert<half4>(args.v.Read(v1_base + 2)) : half4(0.0h);
+    half4 v7 = (tid < args.slices) ? ucl::Convert<half4>(args.v.Read(v1_base + 3)) : half4(0.0h);
+
+    half4 v_acc0 = fma((half4)p0_0.x, v0, fma((half4)p0_0.y, v1, fma((half4)p0_0.z, v2, (half4)p0_0.w * v3))) +
+                   fma((half4)p0_1.x, v4, fma((half4)p0_1.y, v5, fma((half4)p0_1.z, v6, (half4)p0_1.w * v7)));
+    out_acc0 = fma(out_acc0, (half4)alpha0, v_acc0);
+
+    half4 v_acc1 = fma((half4)p1_0.x, v0, fma((half4)p1_0.y, v1, fma((half4)p1_0.z, v2, (half4)p1_0.w * v3))) +
+                   fma((half4)p1_1.x, v4, fma((half4)p1_1.y, v5, fma((half4)p1_1.z, v6, (half4)p1_1.w * v7)));
+    out_acc1 = fma(out_acc1, (half4)alpha1, v_acc1);
+
+    half4 v_acc2 = fma((half4)p2_0.x, v0, fma((half4)p2_0.y, v1, fma((half4)p2_0.z, v2, (half4)p2_0.w * v3))) +
+                   fma((half4)p2_1.x, v4, fma((half4)p2_1.y, v5, fma((half4)p2_1.z, v6, (half4)p2_1.w * v7)));
+    out_acc2 = fma(out_acc2, (half4)alpha2, v_acc2);
+
+    half4 v_acc3 = fma((half4)p3_0.x, v0, fma((half4)p3_0.y, v1, fma((half4)p3_0.z, v2, (half4)p3_0.w * v3))) +
+                   fma((half4)p3_1.x, v4, fma((half4)p3_1.y, v5, fma((half4)p3_1.z, v6, (half4)p3_1.w * v7)));
+    out_acc3 = fma(out_acc3, (half4)alpha3, v_acc3);
+
+    k_idx += 8;
+    v_idx += )", v_stride_2s, R"(;
+  }
+)");
+
+  op_code += absl::StrCat(R"(
+  for (; chunk < total_chunks; ++chunk) {
+    half4 k0 = (tid < args.slices) ? ucl::Convert<half4>(args.k.Read(k_idx + 0)) : half4(0.0h);
+    half4 k1 = (tid < args.slices) ? ucl::Convert<half4>(args.k.Read(k_idx + 1)) : half4(0.0h);
+    half4 k2 = (tid < args.slices) ? ucl::Convert<half4>(args.k.Read(k_idx + 2)) : half4(0.0h);
+    half4 k3 = (tid < args.slices) ? ucl::Convert<half4>(args.k.Read(k_idx + 3)) : half4(0.0h);
+
+    half4 d0 = simd_sum(half4(dot(q0, k0), dot(q0, k1), dot(q0, k2), dot(q0, k3)));
+    half4 d1 = simd_sum(half4(dot(q1, k0), dot(q1, k1), dot(q1, k2), dot(q1, k3)));
+    half4 d2 = simd_sum(half4(dot(q2, k0), dot(q2, k1), dot(q2, k2), dot(q2, k3)));
+    half4 d3 = simd_sum(half4(dot(q3, k0), dot(q3, k1), dot(q3, k2), dot(q3, k3)));
+)");
+
+  if (has_softcap) {
+    op_code += R"(
+    d0 = (half4)args.softcap * tanh(d0 / (half4)args.softcap);
+    d1 = (half4)args.softcap * tanh(d1 / (half4)args.softcap);
+    d2 = (half4)args.softcap * tanh(d2 / (half4)args.softcap);
+    d3 = (half4)args.softcap * tanh(d3 / (half4)args.softcap);
+)";
+  }
+
+  if (has_mask) {
+    op_code += R"(
+    half4 m0 = (X0 < dst_w) ? ucl::Convert<half4>(args.mask.Read(X0, 0, chunk)) : half4(0.0h);
+    half4 m1 = (X1 < dst_w) ? ucl::Convert<half4>(args.mask.Read(X1, 0, chunk)) : half4(0.0h);
+    half4 m2 = (X2 < dst_w) ? ucl::Convert<half4>(args.mask.Read(X2, 0, chunk)) : half4(0.0h);
+    half4 m3 = (X3 < dst_w) ? ucl::Convert<half4>(args.mask.Read(X3, 0, chunk)) : half4(0.0h);
+    if (args.is_bool_mask) {
+      if (m0.x < 0.5h || (chunk * 4 + 0) >= active_tokens || (chunk * 4 + 0) > P0) d0.x = -10000.0h;
+      if (m0.y < 0.5h || (chunk * 4 + 1) >= active_tokens || (chunk * 4 + 1) > P0) d0.y = -10000.0h;
+      if (m0.z < 0.5h || (chunk * 4 + 2) >= active_tokens || (chunk * 4 + 2) > P0) d0.z = -10000.0h;
+      if (m0.w < 0.5h || (chunk * 4 + 3) >= active_tokens || (chunk * 4 + 3) > P0) d0.w = -10000.0h;
+
+      if (m1.x < 0.5h || (chunk * 4 + 0) >= active_tokens || (chunk * 4 + 0) > P1) d1.x = -10000.0h;
+      if (m1.y < 0.5h || (chunk * 4 + 1) >= active_tokens || (chunk * 4 + 1) > P1) d1.y = -10000.0h;
+      if (m1.z < 0.5h || (chunk * 4 + 2) >= active_tokens || (chunk * 4 + 2) > P1) d1.z = -10000.0h;
+      if (m1.w < 0.5h || (chunk * 4 + 3) >= active_tokens || (chunk * 4 + 3) > P1) d1.w = -10000.0h;
+
+      if (m2.x < 0.5h || (chunk * 4 + 0) >= active_tokens || (chunk * 4 + 0) > P2) d2.x = -10000.0h;
+      if (m2.y < 0.5h || (chunk * 4 + 1) >= active_tokens || (chunk * 4 + 1) > P2) d2.y = -10000.0h;
+      if (m2.z < 0.5h || (chunk * 4 + 2) >= active_tokens || (chunk * 4 + 2) > P2) d2.z = -10000.0h;
+      if (m2.w < 0.5h || (chunk * 4 + 3) >= active_tokens || (chunk * 4 + 3) > P2) d2.w = -10000.0h;
+
+      if (m3.x < 0.5h || (chunk * 4 + 0) >= active_tokens || (chunk * 4 + 0) > P3) d3.x = -10000.0h;
+      if (m3.y < 0.5h || (chunk * 4 + 1) >= active_tokens || (chunk * 4 + 1) > P3) d3.y = -10000.0h;
+      if (m3.z < 0.5h || (chunk * 4 + 2) >= active_tokens || (chunk * 4 + 2) > P3) d3.z = -10000.0h;
+      if (m3.w < 0.5h || (chunk * 4 + 3) >= active_tokens || (chunk * 4 + 3) > P3) d3.w = -10000.0h;
+    } else {
+      d0 += m0; d1 += m1; d2 += m2; d3 += m3;
+      if ((chunk * 4 + 0) >= active_tokens || (chunk * 4 + 0) > P0) d0.x = -10000.0h;
+      if ((chunk * 4 + 1) >= active_tokens || (chunk * 4 + 1) > P0) d0.y = -10000.0h;
+      if ((chunk * 4 + 2) >= active_tokens || (chunk * 4 + 2) > P0) d0.z = -10000.0h;
+      if ((chunk * 4 + 3) >= active_tokens || (chunk * 4 + 3) > P0) d0.w = -10000.0h;
+
+      if ((chunk * 4 + 0) >= active_tokens || (chunk * 4 + 0) > P1) d1.x = -10000.0h;
+      if ((chunk * 4 + 1) >= active_tokens || (chunk * 4 + 1) > P1) d1.y = -10000.0h;
+      if ((chunk * 4 + 2) >= active_tokens || (chunk * 4 + 2) > P1) d1.z = -10000.0h;
+      if ((chunk * 4 + 3) >= active_tokens || (chunk * 4 + 3) > P1) d1.w = -10000.0h;
+
+      if ((chunk * 4 + 0) >= active_tokens || (chunk * 4 + 0) > P2) d2.x = -10000.0h;
+      if ((chunk * 4 + 1) >= active_tokens || (chunk * 4 + 1) > P2) d2.y = -10000.0h;
+      if ((chunk * 4 + 2) >= active_tokens || (chunk * 4 + 2) > P2) d2.z = -10000.0h;
+      if ((chunk * 4 + 3) >= active_tokens || (chunk * 4 + 3) > P2) d2.w = -10000.0h;
+
+      if ((chunk * 4 + 0) >= active_tokens || (chunk * 4 + 0) > P3) d3.x = -10000.0h;
+      if ((chunk * 4 + 1) >= active_tokens || (chunk * 4 + 1) > P3) d3.y = -10000.0h;
+      if ((chunk * 4 + 2) >= active_tokens || (chunk * 4 + 2) > P3) d3.z = -10000.0h;
+      if ((chunk * 4 + 3) >= active_tokens || (chunk * 4 + 3) > P3) d3.w = -10000.0h;
+    }
+)";
+  } else {
+    op_code += R"(
+    if ((chunk * 4 + 0) >= active_tokens || (chunk * 4 + 0) > P0) d0.x = -10000.0h;
+    if ((chunk * 4 + 1) >= active_tokens || (chunk * 4 + 1) > P0) d0.y = -10000.0h;
+    if ((chunk * 4 + 2) >= active_tokens || (chunk * 4 + 2) > P0) d0.z = -10000.0h;
+    if ((chunk * 4 + 3) >= active_tokens || (chunk * 4 + 3) > P0) d0.w = -10000.0h;
+
+    if ((chunk * 4 + 0) >= active_tokens || (chunk * 4 + 0) > P1) d1.x = -10000.0h;
+    if ((chunk * 4 + 1) >= active_tokens || (chunk * 4 + 1) > P1) d1.y = -10000.0h;
+    if ((chunk * 4 + 2) >= active_tokens || (chunk * 4 + 2) > P1) d1.z = -10000.0h;
+    if ((chunk * 4 + 3) >= active_tokens || (chunk * 4 + 3) > P1) d1.w = -10000.0h;
+
+    if ((chunk * 4 + 0) >= active_tokens || (chunk * 4 + 0) > P2) d2.x = -10000.0h;
+    if ((chunk * 4 + 1) >= active_tokens || (chunk * 4 + 1) > P2) d2.y = -10000.0h;
+    if ((chunk * 4 + 2) >= active_tokens || (chunk * 4 + 2) > P2) d2.z = -10000.0h;
+    if ((chunk * 4 + 3) >= active_tokens || (chunk * 4 + 3) > P2) d2.w = -10000.0h;
+
+    if ((chunk * 4 + 0) >= active_tokens || (chunk * 4 + 0) > P3) d3.x = -10000.0h;
+    if ((chunk * 4 + 1) >= active_tokens || (chunk * 4 + 1) > P3) d3.y = -10000.0h;
+    if ((chunk * 4 + 2) >= active_tokens || (chunk * 4 + 2) > P3) d3.z = -10000.0h;
+    if ((chunk * 4 + 3) >= active_tokens || (chunk * 4 + 3) > P3) d3.w = -10000.0h;
+)";
+  }
+
+  op_code += absl::StrCat(R"(
+    half m_loc0 = max(max(d0.x, d0.y), max(d0.z, d0.w));
+    half m_n0 = max(m_prev0, m_loc0);
+    half alp0 = exp2(m_prev0 - m_n0);
+    half4 p0 = exp2(d0 - (half4)m_n0);
+    l_prev0 = fma(l_prev0, alp0, (p0.x + p0.y) + (p0.z + p0.w));
+    m_prev0 = m_n0;
+
+    half m_loc1 = max(max(d1.x, d1.y), max(d1.z, d1.w));
+    half m_n1 = max(m_prev1, m_loc1);
+    half alp1 = exp2(m_prev1 - m_n1);
+    half4 p1 = exp2(d1 - (half4)m_n1);
+    l_prev1 = fma(l_prev1, alp1, (p1.x + p1.y) + (p1.z + p1.w));
+    m_prev1 = m_n1;
+
+    half m_loc2 = max(max(d2.x, d2.y), max(d2.z, d2.w));
+    half m_n2 = max(m_prev2, m_loc2);
+    half alp2 = exp2(m_prev2 - m_n2);
+    half4 p2 = exp2(d2 - (half4)m_n2);
+    l_prev2 = fma(l_prev2, alp2, (p2.x + p2.y) + (p2.z + p2.w));
+    m_prev2 = m_n2;
+
+    half m_loc3 = max(max(d3.x, d3.y), max(d3.z, d3.w));
+    half m_n3 = max(m_prev3, m_loc3);
+    half alp3 = exp2(m_prev3 - m_n3);
+    half4 p3 = exp2(d3 - (half4)m_n3);
+    l_prev3 = fma(l_prev3, alp3, (p3.x + p3.y) + (p3.z + p3.w));
+    m_prev3 = m_n3;
+
+    half4 v0 = (tid < args.slices) ? ucl::Convert<half4>(args.v.Read(v_idx + 0)) : half4(0.0h);
+    half4 v1 = (tid < args.slices) ? ucl::Convert<half4>(args.v.Read(v_idx + 1)) : half4(0.0h);
+    half4 v2 = (tid < args.slices) ? ucl::Convert<half4>(args.v.Read(v_idx + 2)) : half4(0.0h);
+    half4 v3 = (tid < args.slices) ? ucl::Convert<half4>(args.v.Read(v_idx + 3)) : half4(0.0h);
+
+    out_acc0 = fma(out_acc0, (half4)alp0, fma((half4)p0.x, v0, fma((half4)p0.y, v1, fma((half4)p0.z, v2, (half4)p0.w * v3))));
+    out_acc1 = fma(out_acc1, (half4)alp1, fma((half4)p1.x, v0, fma((half4)p1.y, v1, fma((half4)p1.z, v2, (half4)p1.w * v3))));
+    out_acc2 = fma(out_acc2, (half4)alp2, fma((half4)p2.x, v0, fma((half4)p2.y, v1, fma((half4)p2.z, v2, (half4)p2.w * v3))));
+    out_acc3 = fma(out_acc3, (half4)alp3, fma((half4)p3.x, v0, fma((half4)p3.y, v1, fma((half4)p3.z, v2, (half4)p3.w * v3))));
+
+    k_idx += 4;
+    v_idx += )", v_stride_s, R"(;
+  }
+
+  out_acc0 = out_acc0 / (half4)(l_prev0 + 1e-10h);
+  out_acc1 = out_acc1 / (half4)(l_prev1 + 1e-10h);
+  out_acc2 = out_acc2 / (half4)(l_prev2 + 1e-10h);
+  out_acc3 = out_acc3 / (half4)(l_prev3 + 1e-10h);
+
+  if (tid < args.slices) {
+    if (X0 < dst_w) args.dst.Write(ucl::Convert<args.dst::type>(out_acc0), X0, Y, tid);
+    if (X1 < dst_w) args.dst.Write(ucl::Convert<args.dst::type>(out_acc1), X1, Y, tid);
+    if (X2 < dst_w) args.dst.Write(ucl::Convert<args.dst::type>(out_acc2), X2, Y, tid);
+    if (X3 < dst_w) args.dst.Write(ucl::Convert<args.dst::type>(out_acc3), X3, Y, tid);
+  }
+}
+)");
+
+  custom_op.code_ = std::move(op_code);
+  return std::make_unique<FusedFlashAttentionPrefillOp>(std::move(custom_op));
 }
 
 }  // namespace
@@ -437,11 +856,40 @@ absl::Status BuildSdpaTransposedGpuGraph(
     param_desc = &param_tensor.tensor_desc;
   }
 
+  const int head_dim = q.tensor_desc.GetBHWCShape().c;
+
+  // The fused Flash-Attention prefill kernel indexes K and V directly in the
+  // packed 4D layout produced by `odml.cache_update`, so it requires
+  // `from_cache_update` and BUFFER storage. It is also written against Apple
+  // SIMD intrinsics and dispatches a single 32-lane SIMD group per
+  // threadgroup, which covers at most 32 channel slices (head_dim <= 128).
+  // Everything else falls back to the multi-op graph below.
+  const bool is_supported_flash_prefill =
+      attr.is_prefill && attr.from_cache_update && head_dim % 4 == 0 &&
+      head_dim <= 128 &&
+      k.tensor_desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
+      v.tensor_desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
+      model_builder->gpu_info().IsApple();
+
+  if (is_supported_flash_prefill) {
+    auto dst = model_builder->AddTensor(q.tensor_desc.GetBHWCShape(),
+                                        q.tensor_desc.GetDataType());
+    auto op = CreateFusedFlashAttentionPrefill(
+        model_builder->gpu_info(), q.tensor_desc, k.tensor_desc, v.tensor_desc,
+        mask_desc, param_desc, dst.tensor_desc, attr);
+    std::vector<::ml_drift::GpuModelBuilder::TensorHandle> src_tensors = {q, k,
+                                                                          v};
+    if (mask_desc) src_tensors.push_back(mask);
+    if (param_desc) src_tensors.push_back(param_tensor);
+    model_builder->AddGpuOperation(src_tensors, {dst}, std::move(op),
+                                   "flash_prefill_sdpa");
+    return model_builder->UpdateOutputTensor(dst, output_id);
+  }
+
   // Fused Flash-Decode is currently optimized for Apple Silicon with
   // head_dim = 128 (slices = 32 matching the 32-thread SIMD wave size).
-  // For prefill, other head dimensions, or non-Apple GPUs, fall back to the
-  // multi-op graph.
-  const int head_dim = q.tensor_desc.GetBHWCShape().c;
+  // For other head dimensions or non-Apple GPUs, fall back to the multi-op
+  // graph.
   const bool is_supported_flash_decode =
       attr.from_cache_update && !attr.is_prefill && head_dim == 128 &&
       k.tensor_desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
@@ -449,7 +897,7 @@ absl::Status BuildSdpaTransposedGpuGraph(
       model_builder->gpu_info().IsApple();
 
   if (is_supported_flash_decode) {
-    // Single fused SDPA op.
+    // Single fused Flash-Decode SDPA op.
     ABSL_ASSIGN_OR_RETURN(auto output_ref, model_builder->GetTensor(output_id));
     const auto output_shape = output_ref.tensor_desc.GetBHWCShape();
     const auto q_shape = q.tensor_desc.GetBHWCShape();
