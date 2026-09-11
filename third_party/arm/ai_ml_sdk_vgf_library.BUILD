@@ -22,7 +22,7 @@ cc_library(
         "schema",
         "src",
     ],
-    deps = ["@flatbuffers//:runtime_cc"],
+    deps = ["//third_party/flatbuffers:runtime_cc"],
 )
 
 # Utility parser target kept separate to match the upstream source layout.
@@ -38,6 +38,6 @@ cc_library(
     ],
     deps = [
         ":vgf",
-        "@flatbuffers//:runtime_cc",
+        "//third_party/flatbuffers:runtime_cc",
     ],
 )

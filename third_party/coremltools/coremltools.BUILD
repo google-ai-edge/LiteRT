@@ -1,4 +1,4 @@
-load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("//third_party/protobuf/bazel:cc_proto_library.bzl", "cc_proto_library")
 
 package(default_visibility = ["//visibility:public"])
 
