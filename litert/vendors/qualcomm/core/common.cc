@@ -258,6 +258,23 @@ void AbslStringify(Sink& sink, HtpPerfCtrlMode v) {
 }
 
 template <typename Sink>
+void AbslStringify(Sink& sink, HtpPdSession v) {
+  absl::string_view name = "Unknown";
+  switch (v) {
+    case HtpPdSession::kUnsigned:
+      name = "Unsigned";
+      break;
+    case HtpPdSession::kSigned:
+      name = "Signed";
+      break;
+    case HtpPdSession::kAdaptive:
+      name = "Adaptive";
+      break;
+  }
+  absl::Format(&sink, "%s(%d)", name, static_cast<int>(v));
+}
+
+template <typename Sink>
 void AbslStringify(Sink& sink, DspPerfCtrlMode v) {
   absl::string_view name = "Unknown";
   switch (v) {
@@ -266,6 +283,23 @@ void AbslStringify(Sink& sink, DspPerfCtrlMode v) {
       break;
     case DspPerfCtrlMode::kAuto:
       name = "Auto";
+      break;
+  }
+  absl::Format(&sink, "%s(%d)", name, static_cast<int>(v));
+}
+
+template <typename Sink>
+void AbslStringify(Sink& sink, DspPdSession v) {
+  absl::string_view name = "Unknown";
+  switch (v) {
+    case DspPdSession::kUnsigned:
+      name = "Unsigned";
+      break;
+    case DspPdSession::kSigned:
+      name = "Signed";
+      break;
+    case DspPdSession::kAdaptive:
+      name = "Adaptive";
       break;
   }
   absl::Format(&sink, "%s(%d)", name, static_cast<int>(v));
@@ -509,6 +543,12 @@ HtpPerfCtrlMode Options::GetHtpPerfCtrlMode() const {
   return htp_perf_ctrl_mode_;
 }
 
+void Options::SetHtpPdSession(HtpPdSession htp_pd_session) {
+  htp_pd_session_ = htp_pd_session;
+}
+
+HtpPdSession Options::GetHtpPdSession() const { return htp_pd_session_; }
+
 void Options::SetDspPerfCtrlMode(DspPerfCtrlMode dsp_perf_ctrl_mode) {
   dsp_perf_ctrl_mode_ = dsp_perf_ctrl_mode;
 }
@@ -516,6 +556,12 @@ void Options::SetDspPerfCtrlMode(DspPerfCtrlMode dsp_perf_ctrl_mode) {
 DspPerfCtrlMode Options::GetDspPerfCtrlMode() const {
   return dsp_perf_ctrl_mode_;
 }
+
+void Options::SetDspPdSession(DspPdSession dsp_pd_session) {
+  dsp_pd_session_ = dsp_pd_session;
+}
+
+DspPdSession Options::GetDspPdSession() const { return dsp_pd_session_; }
 
 void Options::SetDumpTensorIds(const std::vector<std::int32_t>& ids) {
   dump_tensor_ids_ = ids;
@@ -705,6 +751,7 @@ std::string Options::Dump() const {
   field(2, "HtpPPoint", htp_p_point_);
   field(2, "HtpPerformanceMode", htp_performance_mode_);
   field(2, "HtpPerfCtrlMode", htp_perf_ctrl_mode_);
+  field(2, "HtpPdSession", htp_pd_session_);
   field(2, "VtcmSize", vtcm_size_);
   field(2, "NumHvxThreads", num_hvx_threads_);
   field(2, "OptimizationLevel", optimization_level_);
@@ -722,6 +769,7 @@ std::string Options::Dump() const {
   absl::StrAppend(&out, "[DSP]\n");
   field(2, "DspPerformanceMode", dsp_performance_mode_);
   field(2, "DspPerfCtrlMode", dsp_perf_ctrl_mode_);
+  field(2, "DspPdSession", dsp_pd_session_);
 
   // --- GPU ---
   absl::StrAppend(&out, "[GPU]\n");

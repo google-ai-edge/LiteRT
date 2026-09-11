@@ -4,9 +4,12 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BACKENDS_DSP_BACKEND_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BACKENDS_DSP_BACKEND_H_
 
+#include <list>
 #include <memory>
 #include <optional>
+#include <vector>
 
+#include "DSP/QnnDspBackend.h"  // from @qairt
 #include "DSP/QnnDspCommon.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
@@ -55,6 +58,16 @@ class DspBackend : public QnnBackend {
       const Options& options, absl::string_view qnn_graph_name) override;
 
  private:
+  QnnDspBackend_CustomConfig_t& AllocateDspBackendCustomConfig() {
+    auto& back = dsp_backend_custom_configs_.emplace_back();
+    back = QNN_DSP_BACKEND_CUSTOM_CONFIG_INIT;
+    return back;
+  }
+
+  std::vector<const QnnBackend_Config_t*> CreateBackendConfigs(
+      const Options& options);
+
+  std::list<QnnDspBackend_CustomConfig_t> dsp_backend_custom_configs_;
   class DspPerfControl;
   std::unique_ptr<DspPerfControl> dsp_perf_control_{nullptr};
 };

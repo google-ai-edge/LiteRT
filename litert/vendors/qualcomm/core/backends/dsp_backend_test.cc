@@ -12,8 +12,11 @@
 #include <thread>
 #include <vector>
 
+#include "DSP/QnnDspBackend.h"  // from @qairt
 #include "DSP/QnnDspDevice.h"  // from @qairt
 #include "DSP/QnnDspPerfInfrastructure.h"  // from @qairt
+#include "DSP/QnnDspProperty.h"  // from @qairt
+#include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
@@ -35,6 +38,13 @@ QnnDevice_GetInfrastructureFn_t real_device_get_infrastructure = nullptr;
 absl::NoDestructor<std::vector<QnnDspPerfInfrastructure_PowerConfig_t>>
     captured_configs;
 std::atomic<int> set_power_config_call_count{0};
+
+struct BackendCreateCall {
+  std::vector<QnnDspBackend_CustomConfig_t> custom_configs;
+};
+
+BackendCreateCall backend_create_call;
+bool dsp_unsigned_pd_supported = false;
 
 // Mock Functions
 Qnn_ErrorHandle_t MockSetPowerConfig(
@@ -64,6 +74,34 @@ Qnn_ErrorHandle_t MockDeviceGetInfrastructure(
   (*infra)->setPowerConfig = MockSetPowerConfig;
 
   return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockBackendCreate(Qnn_LogHandle_t,
+                                    const QnnBackend_Config_t** configs,
+                                    Qnn_BackendHandle_t* backend) {
+  backend_create_call.custom_configs.clear();
+  if (configs != nullptr) {
+    for (size_t i = 0; configs[i] != nullptr; ++i) {
+      if (configs[i]->option == QNN_BACKEND_CONFIG_OPTION_CUSTOM &&
+          configs[i]->customConfig != nullptr) {
+        backend_create_call.custom_configs.emplace_back(
+            *static_cast<const QnnDspBackend_CustomConfig_t*>(
+                configs[i]->customConfig));
+      }
+    }
+  }
+  static int fake_backend_handle;
+  *backend = &fake_backend_handle;
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockBackendFree(Qnn_BackendHandle_t) { return QNN_SUCCESS; }
+
+Qnn_ErrorHandle_t MockPropertyHasCapability(QnnProperty_Key_t key) {
+  return key == QNN_PROPERTY_CUSTOM_DSP_UNSIGNED_PD_SUPPORT &&
+                 dsp_unsigned_pd_supported
+             ? QNN_PROPERTY_SUPPORTED
+             : QNN_PROPERTY_NOT_SUPPORTED;
 }
 
 struct DspPerfParams {
@@ -209,6 +247,90 @@ TEST_F(DspBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
   ASSERT_TRUE(backend_->GetBackendHandle());
   ASSERT_TRUE(backend_->GetLogHandle());
   EXPECT_EQ(backend_->GetSocInfo().soc_model, kDefaultSocInfo->soc_model);
+}
+
+TEST(DspBackendInitTest, DefaultUnsignedPdHasNoBackendConfig) {
+  backend_create_call.custom_configs.clear();
+  QNN_INTERFACE_VER_TYPE api{};
+  api.backendCreate = MockBackendCreate;
+  api.backendFree = MockBackendFree;
+
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  DspBackend backend(&api);
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+  EXPECT_TRUE(backend_create_call.custom_configs.empty());
+}
+
+TEST(DspBackendInitTest, SignedPdAddsSignedProcessDomainConfig) {
+  backend_create_call.custom_configs.clear();
+  QNN_INTERFACE_VER_TYPE api{};
+  api.backendCreate = MockBackendCreate;
+  api.backendFree = MockBackendFree;
+
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetDspPdSession(DspPdSession::kSigned);
+  DspBackend backend(&api);
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+
+  ASSERT_EQ(backend_create_call.custom_configs.size(), 1);
+  const auto& config = backend_create_call.custom_configs.front();
+  EXPECT_EQ(config.option,
+            QNN_DSP_BACKEND_CONFIG_OPTION_USE_SIGNED_PROCESS_DOMAIN);
+  EXPECT_TRUE(config.useSignedProcessDomain);
+}
+
+TEST(DspBackendInitTest, AdaptivePdUsesUnsignedWhenSupported) {
+  backend_create_call.custom_configs.clear();
+  dsp_unsigned_pd_supported = true;
+  QNN_INTERFACE_VER_TYPE api{};
+  api.backendCreate = MockBackendCreate;
+  api.backendFree = MockBackendFree;
+  api.propertyHasCapability = MockPropertyHasCapability;
+
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetDspPdSession(DspPdSession::kAdaptive);
+  DspBackend backend(&api);
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+  EXPECT_TRUE(backend_create_call.custom_configs.empty());
+}
+
+TEST(DspBackendInitTest, AdaptivePdUsesSignedWhenUnsignedUnsupported) {
+  backend_create_call.custom_configs.clear();
+  dsp_unsigned_pd_supported = false;
+  QNN_INTERFACE_VER_TYPE api{};
+  api.backendCreate = MockBackendCreate;
+  api.backendFree = MockBackendFree;
+  api.propertyHasCapability = MockPropertyHasCapability;
+
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetDspPdSession(DspPdSession::kAdaptive);
+  DspBackend backend(&api);
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+
+  ASSERT_EQ(backend_create_call.custom_configs.size(), 1);
+  EXPECT_EQ(backend_create_call.custom_configs.front().option,
+            QNN_DSP_BACKEND_CONFIG_OPTION_USE_SIGNED_PROCESS_DOMAIN);
+}
+
+TEST(DspBackendInitTest, AdaptivePdUsesSignedWithoutCapabilityQuery) {
+  backend_create_call.custom_configs.clear();
+  QNN_INTERFACE_VER_TYPE api{};
+  api.backendCreate = MockBackendCreate;
+  api.backendFree = MockBackendFree;
+
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetDspPdSession(DspPdSession::kAdaptive);
+  DspBackend backend(&api);
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+
+  ASSERT_EQ(backend_create_call.custom_configs.size(), 1);
+  EXPECT_EQ(backend_create_call.custom_configs.front().option,
+            QNN_DSP_BACKEND_CONFIG_OPTION_USE_SIGNED_PROCESS_DOMAIN);
 }
 
 // SETPERFORMANCEMODE /////////////////////////////////////////////////////////

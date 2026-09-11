@@ -15,6 +15,7 @@
 #include "HTP/QnnHtpDeviceConfigShared.h"  // from @qairt
 #include "HTP/QnnHtpGraph.h"  // from @qairt
 #include "HTP/QnnHtpPerfInfrastructure.h"  // from @qairt
+#include "HTP/QnnHtpProperty.h"  // from @qairt
 #include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
@@ -488,6 +489,60 @@ HtpBackend::QnnDevicePlatformInfo HtpBackend::CreateDevicePlatformInfo() {
                                PlatformInfoDeleter{QnnApi()}};
 }
 
+std::vector<const QnnDevice_Config_t*> HtpBackend::CreateDeviceConfigs(
+    const Options& options) {
+  std::vector<const QnnDevice_Config_t*> device_configs;
+
+#if defined(__x86_64__) || defined(_M_X64)
+  QnnHtpDevice_CustomConfig_t* htp_device_custom_config =
+      &AllocateHtpDeviceConfig();
+  htp_device_custom_config->option = QNN_HTP_DEVICE_CONFIG_OPTION_SOC;
+  htp_device_custom_config->socModel = soc_info_.soc_model;
+  QnnDevice_Config_t* soc_device_config = &AllocateDeviceConfig();
+  soc_device_config->option = QNN_DEVICE_CONFIG_OPTION_CUSTOM;
+  soc_device_config->customConfig =
+      static_cast<QnnDevice_CustomConfig_t>(htp_device_custom_config);
+  device_configs.emplace_back(soc_device_config);
+#endif
+
+  bool use_signed_pd = false;
+  switch (options.GetHtpPdSession()) {
+    case HtpPdSession::kUnsigned:
+      break;
+    case HtpPdSession::kSigned:
+      use_signed_pd = true;
+      break;
+    case HtpPdSession::kAdaptive: {
+      const bool unsigned_pd_supported =
+          QnnApi()->propertyHasCapability != nullptr &&
+          QnnApi()->propertyHasCapability(
+              QNN_PROPERTY_CUSTOM_HTP_UNSIGNED_PD_SUPPORT) ==
+              QNN_PROPERTY_SUPPORTED;
+      use_signed_pd = !unsigned_pd_supported;
+      QNN_LOG_INFO("HTP adaptive PD selected %s PD.",
+                   use_signed_pd ? "signed" : "unsigned");
+      break;
+    }
+  }
+
+  if (use_signed_pd) {
+    QnnHtpDevice_CustomConfig_t* signed_pd_config = &AllocateHtpDeviceConfig();
+    signed_pd_config->option = QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD;
+    signed_pd_config->useSignedProcessDomain.deviceId = 0;
+    signed_pd_config->useSignedProcessDomain.useSignedProcessDomain = true;
+    QnnDevice_Config_t* signed_pd_device_config = &AllocateDeviceConfig();
+    signed_pd_device_config->option = QNN_DEVICE_CONFIG_OPTION_CUSTOM;
+    signed_pd_device_config->customConfig =
+        static_cast<QnnDevice_CustomConfig_t>(signed_pd_config);
+    device_configs.emplace_back(signed_pd_device_config);
+  }
+
+  if (!device_configs.empty()) {
+    device_configs.emplace_back(nullptr);
+  }
+  return device_configs;
+}
+
 bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   // Log Handle
   auto local_log_handle = CreateLogHandle(options.GetLogLevel());
@@ -508,6 +563,7 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
                  soc_info->soc_name.data());
     soc_info_ = *soc_info;
   }
+
 #if defined(__x86_64__) || defined(_M_X64)
   if (soc_info_.soc_model == 0) {
     QNN_LOG_ERROR("SoC info was not configured successfully.");
@@ -515,31 +571,13 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   }
   QNN_LOG_INFO("Initializing QNN backend for SoC model: %d",
                soc_info_.soc_model);
-  // Device Handle
-  std::vector<QnnDevice_CustomConfig_t> device_custom_configs;
-  QnnHtpDevice_CustomConfig_t* htp_device_custom_config =
-      &AllocateHtpDeviceConfig();
-  htp_device_custom_config->option = QNN_HTP_DEVICE_CONFIG_OPTION_SOC;
-  htp_device_custom_config->socModel = soc_info_.soc_model;
-  device_custom_configs.emplace_back(
-      static_cast<QnnDevice_CustomConfig_t>(htp_device_custom_config));
+#endif
 
-  std::vector<const QnnDevice_Config_t*> device_configs;
-  // +1 for null terminated
-  device_configs.reserve(device_custom_configs.size() + 1);
-  for (std::size_t i = 0; i < device_custom_configs.size(); ++i) {
-    QnnDevice_Config_t* device_custom_config = &AllocateDeviceConfig();
-    device_custom_config->option = QNN_DEVICE_CONFIG_OPTION_CUSTOM;
-    device_custom_config->customConfig = device_custom_configs[i];
-    device_configs.emplace_back(device_custom_config);
-  }
-  // null terminated
-  device_configs.emplace_back(nullptr);
+  // Device Handle
+  std::vector<const QnnDevice_Config_t*> device_configs =
+      CreateDeviceConfigs(options);
   auto local_device_handle = CreateDeviceHandle(local_log_handle.get(),
                                                 absl::MakeSpan(device_configs));
-#else
-  auto local_device_handle = CreateDeviceHandle(local_log_handle.get(), {});
-#endif
   if (!local_device_handle) {
     QNN_LOG_ERROR("Failed to create device handle.");
     return false;

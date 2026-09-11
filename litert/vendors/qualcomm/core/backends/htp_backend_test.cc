@@ -16,6 +16,7 @@
 #include "HTP/QnnHtpDeviceConfigShared.h"  // from @qairt
 #include "HTP/QnnHtpGraph.h"  // from @qairt
 #include "HTP/QnnHtpPerfInfrastructure.h"  // from @qairt
+#include "HTP/QnnHtpProperty.h"  // from @qairt
 #include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
@@ -46,6 +47,7 @@ absl::NoDestructor<std::vector<QnnDevice_Config_t>> captured_device_configs;
 absl::NoDestructor<
     std::vector<std::vector<QnnHtpPerfInfrastructure_PowerConfig_t>>>
     captured_configs;
+bool htp_unsigned_pd_supported = false;
 
 // Test Platform Info structs
 QnnHtpDevice_DeviceInfoExtension_t test_htp_device_info_extension = {
@@ -131,6 +133,13 @@ Qnn_ErrorHandle_t MockBackendCreateNoConfigs(
 }
 
 Qnn_ErrorHandle_t MockBackendFree(Qnn_BackendHandle_t) { return QNN_SUCCESS; }
+
+Qnn_ErrorHandle_t MockPropertyHasCapability(QnnProperty_Key_t key) {
+  return key == QNN_PROPERTY_CUSTOM_HTP_UNSIGNED_PD_SUPPORT &&
+                 htp_unsigned_pd_supported
+             ? QNN_PROPERTY_SUPPORTED
+             : QNN_PROPERTY_NOT_SUPPORTED;
+}
 
 struct HtpPerfParams {
   HtpPerformanceMode mode;
@@ -399,6 +408,135 @@ TEST(HtpBackendInitTest, CreatesBackendAndDevice) {
 #else
   EXPECT_TRUE(captured_device_configs->empty());
 #endif
+}
+
+TEST(HtpBackendInitTest, SignedPdAddsOnlyTheSignedPdDeviceConfig) {
+  backend_create_called = false;
+  captured_backend_configs = nullptr;
+  device_create_called = false;
+  captured_device_configs->clear();
+
+  QNN_INTERFACE_VER_TYPE api{};
+  api.backendCreate = MockBackendCreateNoConfigs;
+  api.backendFree = MockBackendFree;
+  api.deviceCreate = MockDeviceCreate;
+  api.deviceFree = MockDeviceFree;
+
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetHtpPdSession(HtpPdSession::kSigned);
+  HtpBackend backend(&api);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kFp16SocInfo));
+  ASSERT_EQ(captured_device_configs->size(), 2);
+  const auto* soc_config = static_cast<const QnnHtpDevice_CustomConfig_t*>(
+      captured_device_configs->at(0).customConfig);
+  ASSERT_NE(soc_config, nullptr);
+  EXPECT_EQ(soc_config->option, QNN_HTP_DEVICE_CONFIG_OPTION_SOC);
+  EXPECT_EQ(soc_config->socModel, kFp16SocInfo->soc_model);
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+  ASSERT_EQ(captured_device_configs->size(), 1);
+#endif
+  const auto* signed_pd_config =
+      static_cast<const QnnHtpDevice_CustomConfig_t*>(
+          captured_device_configs->back().customConfig);
+  ASSERT_NE(signed_pd_config, nullptr);
+  EXPECT_EQ(signed_pd_config->option, QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD);
+  EXPECT_EQ(signed_pd_config->useSignedProcessDomain.deviceId, 0u);
+  EXPECT_TRUE(signed_pd_config->useSignedProcessDomain.useSignedProcessDomain);
+}
+
+TEST(HtpBackendInitTest, AdaptivePdUsesUnsignedWhenSupported) {
+  device_create_called = false;
+  captured_device_configs->clear();
+  htp_unsigned_pd_supported = true;
+
+  QNN_INTERFACE_VER_TYPE api{};
+  api.backendCreate = MockBackendCreateNoConfigs;
+  api.backendFree = MockBackendFree;
+  api.deviceCreate = MockDeviceCreate;
+  api.deviceFree = MockDeviceFree;
+  api.propertyHasCapability = MockPropertyHasCapability;
+
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetHtpPdSession(HtpPdSession::kAdaptive);
+  HtpBackend backend(&api);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kFp16SocInfo));
+  ASSERT_EQ(captured_device_configs->size(), 1);
+  const auto* config = static_cast<const QnnHtpDevice_CustomConfig_t*>(
+      captured_device_configs->front().customConfig);
+  ASSERT_NE(config, nullptr);
+  EXPECT_EQ(config->option, QNN_HTP_DEVICE_CONFIG_OPTION_SOC);
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+  EXPECT_TRUE(captured_device_configs->empty());
+#endif
+}
+
+TEST(HtpBackendInitTest, AdaptivePdUsesSignedWhenUnsignedUnsupported) {
+  device_create_called = false;
+  captured_device_configs->clear();
+  htp_unsigned_pd_supported = false;
+
+  QNN_INTERFACE_VER_TYPE api{};
+  api.backendCreate = MockBackendCreateNoConfigs;
+  api.backendFree = MockBackendFree;
+  api.deviceCreate = MockDeviceCreate;
+  api.deviceFree = MockDeviceFree;
+  api.propertyHasCapability = MockPropertyHasCapability;
+
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetHtpPdSession(HtpPdSession::kAdaptive);
+  HtpBackend backend(&api);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kFp16SocInfo));
+  ASSERT_EQ(captured_device_configs->size(), 2);
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+  ASSERT_EQ(captured_device_configs->size(), 1);
+#endif
+  const auto* signed_pd_config =
+      static_cast<const QnnHtpDevice_CustomConfig_t*>(
+          captured_device_configs->back().customConfig);
+  ASSERT_NE(signed_pd_config, nullptr);
+  EXPECT_EQ(signed_pd_config->option, QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD);
+  EXPECT_TRUE(signed_pd_config->useSignedProcessDomain.useSignedProcessDomain);
+}
+
+TEST(HtpBackendInitTest, AdaptivePdUsesSignedWithoutCapabilityQuery) {
+  device_create_called = false;
+  captured_device_configs->clear();
+
+  QNN_INTERFACE_VER_TYPE api{};
+  api.backendCreate = MockBackendCreateNoConfigs;
+  api.backendFree = MockBackendFree;
+  api.deviceCreate = MockDeviceCreate;
+  api.deviceFree = MockDeviceFree;
+
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetHtpPdSession(HtpPdSession::kAdaptive);
+  HtpBackend backend(&api);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kFp16SocInfo));
+  ASSERT_EQ(captured_device_configs->size(), 2);
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+  ASSERT_EQ(captured_device_configs->size(), 1);
+#endif
+  const auto* signed_pd_config =
+      static_cast<const QnnHtpDevice_CustomConfig_t*>(
+          captured_device_configs->back().customConfig);
+  ASSERT_NE(signed_pd_config, nullptr);
+  EXPECT_EQ(signed_pd_config->option, QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD);
 }
 
 // SETPERFORMANCEMODE /////////////////////////////////////////////////////////

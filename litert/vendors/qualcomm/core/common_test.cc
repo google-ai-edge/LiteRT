@@ -169,6 +169,15 @@ TEST(QnnOptionTest, HtpPerfCtrlMode) {
   EXPECT_EQ(options.GetHtpPerfCtrlMode(), HtpPerfCtrlMode::kAuto);
 }
 
+TEST(QnnOptionTest, HtpPdSession) {
+  Options options;
+
+  EXPECT_EQ(options.GetHtpPdSession(), HtpPdSession::kUnsigned);
+
+  options.SetHtpPdSession(HtpPdSession::kAdaptive);
+  EXPECT_EQ(options.GetHtpPdSession(), HtpPdSession::kAdaptive);
+}
+
 TEST(QnnOptionTest, DspPerfCtrlMode) {
   Options options;
 
@@ -176,6 +185,18 @@ TEST(QnnOptionTest, DspPerfCtrlMode) {
 
   options.SetDspPerfCtrlMode(DspPerfCtrlMode::kAuto);
   EXPECT_EQ(options.GetDspPerfCtrlMode(), DspPerfCtrlMode::kAuto);
+}
+
+TEST(QnnOptionTest, DspPdSession) {
+  Options options;
+
+  EXPECT_EQ(options.GetDspPdSession(), DspPdSession::kUnsigned);
+
+  options.SetDspPdSession(DspPdSession::kSigned);
+  EXPECT_EQ(options.GetDspPdSession(), DspPdSession::kSigned);
+
+  options.SetDspPdSession(DspPdSession::kAdaptive);
+  EXPECT_EQ(options.GetDspPdSession(), DspPdSession::kAdaptive);
 }
 
 TEST(QnnOptionTest, UseInt64BiasAsInt32) {

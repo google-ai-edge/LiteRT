@@ -132,6 +132,14 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::HtpPerfCtrlMode,
           "concurrent inferences share one device power vote and would "
           "interfere with each other.");
 
+ABSL_FLAG(litert::qualcomm::QualcommOptions::HtpPdSession,
+          qualcomm_htp_pd_session,
+          litert::qualcomm::QualcommOptions::HtpPdSession::kUnsigned,
+          "HTP Process Domain session. 'unsigned' (default) preserves the "
+          "existing HTP device configuration. 'signed' is required on "
+          "platforms that load signed HTP Skel libraries. 'adaptive' uses "
+          "unsigned PD when supported, otherwise signed PD.");
+
 ABSL_FLAG(litert::qualcomm::QualcommOptions::DspPerfCtrlMode,
           qualcomm_dsp_perf_ctrl_mode,
           litert::qualcomm::QualcommOptions::DspPerfCtrlMode::kManual,
@@ -141,6 +149,14 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::DspPerfCtrlMode,
           "Only single-threaded (serialized) execution is supported: "
           "concurrent inferences share one device power vote and would "
           "interfere with each other.");
+
+ABSL_FLAG(litert::qualcomm::QualcommOptions::DspPdSession,
+          qualcomm_dsp_pd_session,
+          litert::qualcomm::QualcommOptions::DspPdSession::kUnsigned,
+          "DSP Process Domain session. 'unsigned' (default) preserves the "
+          "existing DSP backend configuration. 'signed' always uses a signed "
+          "PD. 'adaptive' uses unsigned PD only when the DSP advertises "
+          "support for it.");
 
 ABSL_FLAG(::litert::tools::IntList, qualcomm_dump_tensor_ids, {},
           "Debug Feature. Ids to dump as outputs. Comma-separated list of "
@@ -311,6 +327,36 @@ std::string AbslUnparseFlag(QualcommOptions::HtpPerfCtrlMode options) {
   }
 }
 
+bool AbslParseFlag(absl::string_view text, QualcommOptions::HtpPdSession* out,
+                   std::string* error) {
+  if (text == "unsigned") {
+    *out = QualcommOptions::HtpPdSession::kUnsigned;
+    return true;
+  }
+  if (text == "signed") {
+    *out = QualcommOptions::HtpPdSession::kSigned;
+    return true;
+  }
+  if (text == "adaptive") {
+    *out = QualcommOptions::HtpPdSession::kAdaptive;
+    return true;
+  }
+  *error = "Unknown htp_pd_session; valid values: unsigned, signed, adaptive";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::HtpPdSession value) {
+  switch (value) {
+    case QualcommOptions::HtpPdSession::kUnsigned:
+      return "unsigned";
+    case QualcommOptions::HtpPdSession::kSigned:
+      return "signed";
+    case QualcommOptions::HtpPdSession::kAdaptive:
+      return "adaptive";
+  }
+  ABSL_CHECK(false) << "Unknown HtpPdSession: " << static_cast<int>(value);
+}
+
 bool AbslParseFlag(absl::string_view text,
                    QualcommOptions::DspPerfCtrlMode* options,
                    std::string* error) {
@@ -335,6 +381,36 @@ std::string AbslUnparseFlag(QualcommOptions::DspPerfCtrlMode options) {
     default:
       return "manual";
   }
+}
+
+bool AbslParseFlag(absl::string_view text, QualcommOptions::DspPdSession* out,
+                   std::string* error) {
+  if (text == "unsigned") {
+    *out = QualcommOptions::DspPdSession::kUnsigned;
+    return true;
+  }
+  if (text == "signed") {
+    *out = QualcommOptions::DspPdSession::kSigned;
+    return true;
+  }
+  if (text == "adaptive") {
+    *out = QualcommOptions::DspPdSession::kAdaptive;
+    return true;
+  }
+  *error = "Unknown dsp_pd_session; valid values: unsigned, signed, adaptive";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::DspPdSession value) {
+  switch (value) {
+    case QualcommOptions::DspPdSession::kUnsigned:
+      return "unsigned";
+    case QualcommOptions::DspPdSession::kSigned:
+      return "signed";
+    case QualcommOptions::DspPdSession::kAdaptive:
+      return "adaptive";
+  }
+  ABSL_CHECK(false) << "Unknown DspPdSession: " << static_cast<int>(value);
 }
 
 }  // namespace litert::qualcomm
@@ -852,9 +928,15 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
       absl::GetFlag(FLAGS_qualcomm_htp_perf_ctrl_mode);
   opts.SetHtpPerfCtrlMode(htp_perf_ctrl_mode);
 
+  const auto htp_pd_session = absl::GetFlag(FLAGS_qualcomm_htp_pd_session);
+  opts.SetHtpPdSession(htp_pd_session);
+
   const auto dsp_perf_ctrl_mode =
       absl::GetFlag(FLAGS_qualcomm_dsp_perf_ctrl_mode);
   opts.SetDspPerfCtrlMode(dsp_perf_ctrl_mode);
+
+  const auto dsp_pd_session = absl::GetFlag(FLAGS_qualcomm_dsp_pd_session);
+  opts.SetDspPdSession(dsp_pd_session);
 
   const auto profiling = absl::GetFlag(FLAGS_qualcomm_profiling);
   opts.SetProfiling(profiling);

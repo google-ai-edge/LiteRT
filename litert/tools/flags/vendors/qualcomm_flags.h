@@ -169,6 +169,17 @@ std::string AbslUnparseFlag(QualcommOptions::HtpPerfCtrlMode options);
 
 }  // namespace litert::qualcomm
 
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::HtpPdSession,
+                  qualcomm_htp_pd_session);
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text, QualcommOptions::HtpPdSession* out,
+                   std::string* error);
+std::string AbslUnparseFlag(QualcommOptions::HtpPdSession value);
+
+}  // namespace litert::qualcomm
+
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::DspPerfCtrlMode,
                   qualcomm_dsp_perf_ctrl_mode);
 
@@ -179,6 +190,17 @@ bool AbslParseFlag(absl::string_view text,
                    std::string* error);
 
 std::string AbslUnparseFlag(QualcommOptions::DspPerfCtrlMode options);
+
+}  // namespace litert::qualcomm
+
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::DspPdSession,
+                  qualcomm_dsp_pd_session);
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text, QualcommOptions::DspPdSession* out,
+                   std::string* error);
+std::string AbslUnparseFlag(QualcommOptions::DspPdSession value);
 
 }  // namespace litert::qualcomm
 

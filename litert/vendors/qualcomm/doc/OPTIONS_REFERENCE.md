@@ -47,7 +47,7 @@ flowchart TB
     subgraph ROW1[" "]
         direction LR
         BOTH["🌐 Both<br/><div style='text-align:left'>─────────────────<br/>log_level<br/>backend<br/>custom_op_package<br/>profiling</div>"]
-        DISPATCH["🚀 Dispatch<br/><div style='text-align:left'>────────────────────────<br/>HTP: htp_performance_mode<br/>DSP: dsp_performance_mode</div>"]
+        DISPATCH["🚀 Dispatch<br/><div style='text-align:left'>────────────────────────<br/>HTP: htp_performance_mode, htp_pd_session<br/>DSP: dsp_performance_mode, dsp_pd_session</div>"]
         BOTH ~~~ DISPATCH
     end
     subgraph ROW2[" "]
@@ -63,8 +63,8 @@ flowchart TB
 | Category | Options |
 |----------|---------|
 | **General / SDK** | `log_level`, `backend`, `graph_priority`, `custom_op_package`, `enable_just_in_time`, `graph_io_tensor_mem_type`, `profiling` |
-| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_p_point`, `htp_performance_mode`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
-| **DSP** | `dsp_performance_mode` |
+| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_p_point`, `htp_performance_mode`, `htp_pd_session`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
+| **DSP** | `dsp_performance_mode`, `dsp_pd_session` |
 | **IR** | `dlc_dir` |
 | **SAVER** | `saver_output_dir` |
 | **Debug** | `dump_tensor_ids`, `ir_json_dir` |
@@ -128,6 +128,7 @@ target:HTP"
 | P-point | `htp_p_point` | `0` | compile | **Experimental** (HTP + `O3` only). Predefined configs trading latency vs. DRAM bandwidth. |
 | Optimization level | `optimization_level` | `O3` | compile | `O1` (inference) · `O2` (prepare) · `O3` (inference, aggressive). |
 | HTP perf mode | `htp_performance_mode` | `default` | dispatch | `default` · `sustained_high_performance` · `burst` · `high_performance` · `power_saver` · `low_power_saver` · `high_power_saver` · `low_balanced` · `balanced` · `extreme_power_saver`. |
+| HTP PD session | `htp_pd_session` | `unsigned` | dispatch | `unsigned` preserves the existing device configuration. `signed` enables QNN SignedPD. `adaptive` uses unsigned PD only when QNN reports support, otherwise it enables SignedPD. |
 | VTCM size | `vtcm_size` | `0` (=max) | compile | VTCM size (MB) of target device. `0` → device max. |
 | HVX threads | `num_hvx_thread` | `0` (=max) | compile | HVX threads for target device. `0` → device max. |
 | INT64→INT32 bias | `use_int64_bias_as_int32` | `true` | compile | Convert FullyConnected/Conv2D bias int64 → int32. |
@@ -140,6 +141,7 @@ target:HTP"
 | Option | CLI flag (`--qualcomm_…`) | Default | Phase | Notes |
 |--------|------|---------|-------|----------------|
 | DSP perf mode | `dsp_performance_mode` | `default` | dispatch | `default` · `sustained_high_performance` · `burst` · `high_performance` · `power_saver` · `low_power_saver` · `high_power_saver` · `low_balanced` · `balanced`. |
+| DSP PD session | `dsp_pd_session` | `unsigned` | dispatch | `unsigned` preserves the existing backend configuration. `signed` requests SignedPD. `adaptive` requests unsigned PD only when QNN reports unsigned-PD support, otherwise it requests SignedPD. |
 
 ---
 
@@ -195,6 +197,7 @@ apply_plugin_main \
     --qualcomm_optimization_level=O3 \
     --qualcomm_use_conv_hmx=true \
     --qualcomm_vtcm_size=8 \
+    --qualcomm_htp_pd_session=signed \
     --qualcomm_profiling=detailed
 ```
 
@@ -225,6 +228,8 @@ optimization_level = 2     # O3 == kOptimizeForInferenceO3
 use_conv_hmx = true
 vtcm_size = 8
 htp_performance_mode = 2   # burst
+htp_pd_session = 2         # adaptive; 0 = unsigned, 1 = signed
+dsp_pd_session = 2         # adaptive; 0 = unsigned, 1 = signed
 profiling = 2              # detailed
 ```
 
