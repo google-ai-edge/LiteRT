@@ -59,7 +59,8 @@ class CompiledModelExecutor {
     if (api_inputs.size() != std::distance(start, end)) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    absl::StrFormat("Expected %d inputs, got %d",
-                                   api_inputs.size(), api_inputs.size()));
+                                   api_inputs.size(),
+                                   std::distance(start, end)));
     }
     for (auto it = start; it != end; ++it) {
       api_inputs[std::distance(start, it)].Write(it->template Span<uint8_t>());

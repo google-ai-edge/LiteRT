@@ -39,6 +39,7 @@ litert_define_ats(
         "(_i32<[^>]+>(?!_cst)|->.*_i32)",  # XNNPACK does not support dynamic int32 math (allows int32 static constants)
         "OneHot",  # XNNPACK does not support OneHot
         "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
+        "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
         "tfl\\.floor_div",  # XNNPACK does not support FloorDiv
         "tfl\\.pow",  # XNNPACK does not support Pow
         "tfl\\.prelu",  # XNNPACK requires PRelu alpha to be statically allocated
@@ -303,6 +304,7 @@ litert_test(
         "--dont_register=(_i32<[^>]+>(?!_cst)|->.*_i32)",  # XNNPACK does not support dynamic int32 math (allows int32 static constants)
         "--dont_register=OneHot",  # XNNPACK does not support OneHot
         "--dont_register=Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
+        "--dont_register=SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
         "--dont_register=tfl\\.floor_div",  # XNNPACK does not support FloorDiv
         "--dont_register=tfl\\.pow",  # XNNPACK does not support Pow
         "--dont_register=tfl\\.prelu",  # XNNPACK requires PRelu alpha to be statically allocated
@@ -355,6 +357,7 @@ litert_test(
         ":register_pooling",
         ":register_reduction",
         ":register_reshape",
+        ":register_sdpa_transposed",
         ":register_softmax",
         ":register_transformer_layer",
         ":register_transpose",
@@ -432,6 +435,7 @@ litert_test(
         ":register_pooling",
         ":register_reduction",
         ":register_reshape",
+        ":register_sdpa_transposed",
         ":register_softmax",
         ":register_transformer_layer",
         ":register_transpose",
@@ -704,6 +708,24 @@ cc_library(
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators:common",
         "//litert/test/generators:reshape",
+    ],
+)
+
+cc_library(
+    name = "register_sdpa_transposed",
+    testonly = True,
+    srcs = ["register_sdpa_transposed.cc"],
+    hdrs = ["register_sdpa_transposed.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:sdpa_transposed",
+        "//tflite/types:half",
     ],
 )
 
