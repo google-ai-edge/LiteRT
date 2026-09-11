@@ -179,13 +179,12 @@ constexpr std::optional<SocInfo> FindSocInfo(const char* soc_name) {
   return std::nullopt;
 }
 
-// Resolves a SocInfo from either a SoC name (e.g. "SM8750") or a numeric
-// SoC model (e.g. "43"). Returns nullopt if the input is null or matches
-// neither format. The LPAI hardware version, when known, is carried on the
-// resolved SocInfo.
+// Resolves a SocInfo from a SoC name, numeric model, or LPAI version.
 inline std::optional<SocInfo> FindOrCreateSocInfo(
     const char* soc_name_or_model) {
   if (soc_name_or_model == nullptr) return std::nullopt;
+  static constexpr std::string_view kCustomSoc = "CUSTOM_SOC";
+  static constexpr uint32_t kCustomSocModel = 0;
 
   // Try parsing the whole string as a SoC name.
   if (auto soc_info = FindSocInfo(soc_name_or_model)) return soc_info;
@@ -195,10 +194,18 @@ inline std::optional<SocInfo> FindOrCreateSocInfo(
   uint32_t soc_model = 0;
   auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), soc_model);
   if (ec == std::errc{} && ptr == sv.data() + sv.size()) {
-    return SocInfo{"CUSTOM_SOC", soc_model};
+    return SocInfo{kCustomSoc, soc_model};
+  }
+
+  if (sv == "v5") {
+    return SocInfo{kCustomSoc, kCustomSocModel, LpaiHardwareVersion::kV5};
+  }
+  if (sv == "v6") {
+    return SocInfo{kCustomSoc, kCustomSocModel, LpaiHardwareVersion::kV6};
   }
 
   return std::nullopt;
 }
+
 }  // namespace qnn
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_SCHEMA_SOC_TABLE_H_

@@ -65,6 +65,7 @@ flowchart TB
 | **General / SDK** | `log_level`, `backend`, `graph_priority`, `custom_op_package`, `enable_just_in_time`, `graph_io_tensor_mem_type`, `profiling` |
 | **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_p_point`, `htp_performance_mode`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
 | **DSP** | `dsp_performance_mode` |
+| **LPAI** | `lpai_target`, `lpai_fps`, `lpai_ftrt_ratio`, `lpai_client_perf_type`, `lpai_core_affinity_type`, `lpai_core_selection` |
 | **IR** | `dlc_dir` |
 | **SAVER** | `saver_output_dir` |
 | **Debug** | `dump_tensor_ids`, `ir_json_dir` |
@@ -143,7 +144,29 @@ target:HTP"
 
 ---
 
-## 6. IR options
+## 6. LPAI options
+
+| Option | CLI flag (`--qualcomm_…`) | Default | Phase | Notes |
+|--------|------|---------|-------|----------------|
+| LPAI target | `lpai_target` | `adsp` | compile | Target environment: `x86`, `arm`, `adsp`, `tensilica`. |
+| LPAI FPS | `lpai_fps` | `1` | compile | Target inference rate. |
+| LPAI FTRT ratio | `lpai_ftrt_ratio` | `10` | compile | Faster-than-real-time ratio. |
+| LPAI client perf type | `lpai_client_perf_type` | `default` | compile | `default`, `real_time`, `non_real_time`. |
+| LPAI core affinity | `lpai_core_affinity_type` | `default` | compile | `default`, `soft`, `hard`. |
+| LPAI core selection | `lpai_core_selection` | `0` | compile | Core-selection bitmask, `0` leaves SDK default. |
+
+LPAI accepts `v5` or `v6` directly through `soc_model`. A Snapdragon SoC name
+with an LPAI entry in the LiteRT SoC table is also accepted. For example,
+`SM8850` resolves to `v6`.
+
+With `apply_plugin_main`, specify the target with:
+
+```bash
+--qualcomm_backend=lpai \
+--soc_model=v6
+```
+
+## 7. IR options
 
 QNN intermediate-representation dumps — diagnostic artifacts produced at compile time.
 
@@ -153,7 +176,7 @@ QNN intermediate-representation dumps — diagnostic artifacts produced at compi
 
 ---
 
-## 7. SAVER options
+## 8. SAVER options
 
 | Option | CLI flag (`--qualcomm_…`) | Default | Phase | Notes |
 |--------|------|---------|-------|----------------|
@@ -161,7 +184,7 @@ QNN intermediate-representation dumps — diagnostic artifacts produced at compi
 
 ---
 
-## 8. Debug options
+## 9. Debug options
 
 | Option | CLI flag (`--qualcomm_…`) | Default | Phase | Notes |
 |--------|------|---------|-------|----------------|
@@ -170,7 +193,7 @@ QNN intermediate-representation dumps — diagnostic artifacts produced at compi
 
 ---
 
-## 9. Deprecated / retired options
+## 10. Deprecated / retired options
 
 These remain as **no-ops** purely to preserve the C ABI contract. Setting them
 does nothing.
@@ -182,7 +205,7 @@ does nothing.
 
 ---
 
-## 10. Worked examples
+## 11. Worked examples
 
 ### CLI — compile (`apply_plugin_main`)
 

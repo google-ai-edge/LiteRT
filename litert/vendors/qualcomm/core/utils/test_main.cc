@@ -33,6 +33,8 @@ bool ParseArgs(int argc, char** argv) {
         qnn::SetTestBackend(qnn::BackendType::kDspBackend);
       } else if (backend_str == "gpu") {
         qnn::SetTestBackend(qnn::BackendType::kGpuBackend);
+      } else if (backend_str == "lpai") {
+        qnn::SetTestBackend(qnn::BackendType::kLpaiBackend);
       } else {
         std::cerr << "Unknown backend: " << backend_str << std::endl;
         return false;
@@ -44,7 +46,7 @@ bool ParseArgs(int argc, char** argv) {
       std::cout << "Test specific options:\n"
                 << "  " << kBackendFlag << "[BACKEND_NAME]\n"
                 << "      Specify the backend to run tests against. Supported "
-                   "backends: htp, dsp.\n"
+                   "backends: htp, dsp, gpu, lpai.\n"
                 << "      Default is htp.\n"
                 << "  " << kDispatchLibraryDirFlag << "[PATH]\n"
                 << "      Specify the dispatch library directory.\n"
