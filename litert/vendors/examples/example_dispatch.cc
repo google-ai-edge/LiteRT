@@ -538,6 +538,13 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
 // /////////////////////////////////////////////////////////////////////////////
 
 LiteRtDispatchInterface ExampleInterface = {
+    /*.abi_header=*/
+    {
+        /*.struct_size=*/sizeof(LiteRtDispatchInterface),
+        /*.major_version=*/1,
+        /*.minor_version=*/0,
+        /*.reserved=*/0,
+    },
     /*.initialize=*/Initialize,
     /*.get_vendor_id=*/GetVendorId,
     /*.get_build_id=*/GetBuildId,

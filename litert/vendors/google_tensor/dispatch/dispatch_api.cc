@@ -452,6 +452,13 @@ LiteRtStatus InvocationContextGetGraph(
 namespace {
 
 LiteRtDispatchInterface TheInterface = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtDispatchInterface),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .initialize = litert::google_tensor::Initialize,
     .get_vendor_id = litert::google_tensor::GetVendorId,
     .get_build_id = litert::google_tensor::GetBuildId,
@@ -484,11 +491,25 @@ LiteRtDispatchInterface TheInterface = {
 };
 
 LiteRtDispatchAsyncInterface TheAsyncInterface = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtDispatchAsyncInterface),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .attach_input_event = litert::google_tensor::AttachInputEvent,
     .invoke_async = litert::google_tensor::InvokeAsync,
 };
 
 LiteRtDispatchGraphInterface TheGraphInterface = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtDispatchGraphInterface),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .graph_create = litert::google_tensor::GraphCreate,
     .graph_destroy = litert::google_tensor::GraphDestroy,
     .add_node = litert::google_tensor::AddNode,
@@ -510,6 +531,13 @@ LiteRtDispatchGraphInterface TheGraphInterface = {
 };
 
 LiteRtDispatchApi TheApi = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtDispatchApi),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .version = {.major = LITERT_API_VERSION_MAJOR,
                 .minor = LITERT_API_VERSION_MINOR,
                 .patch = LITERT_API_VERSION_PATCH},

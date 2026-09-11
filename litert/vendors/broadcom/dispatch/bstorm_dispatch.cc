@@ -947,6 +947,13 @@ err_get:
 
 // Dispatch interface structure
 static LiteRtDispatchInterface bstorm_LiteRt_dispatch_interface = {
+    /*.abi_header=*/
+    {
+        /*.struct_size=*/sizeof(LiteRtDispatchInterface),
+        /*.major_version=*/1,
+        /*.minor_version=*/0,
+        /*.reserved=*/0,
+    },
     /*.initialize=*/bstorm_LiteRt_initialize,
     /*.get_vendor_id=*/bstorm_LiteRt_get_vendor_id,
     /*.get_build_id=*/bstorm_LiteRt_get_build_id,
@@ -977,6 +984,13 @@ static LiteRtDispatchInterface bstorm_LiteRt_dispatch_interface = {
 };
 
 static LiteRtDispatchGraphInterface bstorm_LiteRt_graph_interface = {
+    /*.abi_header=*/
+    {
+        /*.struct_size=*/sizeof(LiteRtDispatchGraphInterface),
+        /*.major_version=*/1,
+        /*.minor_version=*/0,
+        /*.reserved=*/0,
+    },
     /*.graph_create=*/nullptr,
     /*.graph_destroy=*/nullptr,
     /*.add_node=*/nullptr,

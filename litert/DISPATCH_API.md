@@ -226,6 +226,7 @@ Here is the definition of `LiteRtCustomTensorBufferHandlersDef`:
 
 ```c
 typedef struct LiteRtCustomTensorBufferHandlersDef {
+  LiteRtAbiHeader abi_header;
   CreateCustomTensorBuffer create_func;
   DestroyCustomTensorBuffer destroy_func;
   LockCustomTensorBuffer lock_func;
@@ -247,6 +248,7 @@ field in `LiteRtDispatchApi`.
 
 ```c
 typedef struct LiteRtDispatchApi {
+  LiteRtAbiHeader abi_header;
   LiteRtApiVersion version;
   LiteRtDispatchInterface* interface;
   LiteRtDispatchAsyncInterface* async_interface;
