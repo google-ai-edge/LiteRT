@@ -815,7 +815,7 @@ add_subdirectory(${TFLITE_SOURCE_DIR}/profiling/proto)
 add_subdirectory(${TFLITE_SOURCE_DIR}/tools/benchmark/proto)
 
 # Add the tf example directory.
-add_subdirectory(${TF_SOURCE_DIR}/core/example ${CMAKE_BINARY_DIR}/example_proto_generated)
+add_subdirectory(${TF_SOURCE_DIR}/core/example ${CMAKE_CURRENT_BINARY_DIR}/example_proto_generated)
 
 # The benchmark tool.
 add_subdirectory(${TFLITE_SOURCE_DIR}/tools/benchmark)
