@@ -53,20 +53,32 @@ float Bf16BitsToFloat(uint16_t value) {
 }
 
 TEST(SubbyteGemvPluginTest, SerializesAndMatchesReference) {
-  constexpr int32_t kRows = 8;
-  constexpr int32_t kColumns = 64;
-  for (const int bit_width : {2, 4}) {
+  // {bit width, output channels, input channels}. Include Gemma 4 12B's
+  // INT4 feed-forward projections and its 480 MiB vocabulary projection.
+  // The latter exercises large packed constants through engine serialization,
+  // not just a direct kernel launch. The odd row count covers a partial CTA.
+  constexpr std::array<std::array<int32_t, 3>, 6> kCases = {{
+      {2, 8, 64},
+      {4, 8, 64},
+      {4, 9, 3840},
+      {4, 15360, 3840},
+      {4, 3840, 15360},
+      {4, 262144, 3840},
+  }};
+  for (const auto& [bit_width, kRows, kColumns] : kCases) {
+    SCOPED_TRACE(::testing::Message() << "bit_width=" << bit_width << " rows="
+                                      << kRows << " columns=" << kColumns);
     const int values_per_byte = 8 / bit_width;
     const int value_count = 1 << bit_width;
     std::vector<uint16_t> activation(kColumns);
     std::vector<uint8_t> packed(kRows * kColumns / values_per_byte, 0);
-    std::array<uint16_t, kRows> scales;
+    std::vector<uint16_t> scales(kRows);
     for (int column = 0; column < kColumns; ++column) {
       activation[column] =
           FloatToBf16Bits(static_cast<float>((column * 7) % 23 - 11) / 8.0f);
     }
     for (int row = 0; row < kRows; ++row) {
-      scales[row] = FloatToBf16Bits(0.125f * static_cast<float>(row + 1));
+      scales[row] = FloatToBf16Bits(0.125f * static_cast<float>(row % 8 + 1));
       for (int column = 0; column < kColumns; ++column) {
         const int8_t value =
             static_cast<int8_t>((row + 3 * column) & (value_count - 1)) -
@@ -97,7 +109,7 @@ TEST(SubbyteGemvPluginTest, SerializesAndMatchesReference) {
         packed_weights);
     ASSERT_NE(packed_layer, nullptr);
     nvinfer1::Weights scale_weights{nvinfer1::DataType::kBF16, scales.data(),
-                                    scales.size()};
+                                    static_cast<int64_t>(scales.size())};
     auto* scale_layer =
         network->addConstant(nvinfer1::Dims{1, {kRows}}, scale_weights);
     ASSERT_NE(scale_layer, nullptr);
@@ -149,7 +161,7 @@ TEST(SubbyteGemvPluginTest, SerializesAndMatchesReference) {
     ASSERT_TRUE(context->setTensorAddress("activation", device_activation));
     ASSERT_TRUE(context->setTensorAddress("output", device_output));
     ASSERT_TRUE(context->enqueueV3(/*stream=*/nullptr));
-    std::array<uint16_t, kRows> actual;
+    std::vector<uint16_t> actual(kRows);
     ASSERT_EQ(
         cudaMemcpy(actual.data(), device_output,
                    actual.size() * sizeof(uint16_t), cudaMemcpyDeviceToHost),
