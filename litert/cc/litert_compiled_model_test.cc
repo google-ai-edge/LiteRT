@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,8 +29,17 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_scheduling_info.h"
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_model.h"
+#include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_options.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_runtime_options.h"
+#include "litert/cc/internal/litert_consts.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
@@ -44,16 +54,21 @@
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_runtime_options.h"
-// copybara:uncomment_begin(google internal)
-// #include "litert/runtime/compiled_model.h"
-// copybara:uncomment_end
+#include "litert/compiler/plugin/compiler_plugin.h"
+#include "litert/core/cache/compilation_cache.h"
+#include "litert/core/environment.h"
+#include "litert/core/filesystem.h"
+#include "litert/core/model/model.h"
+#include "litert/core/options.h"
+#include "litert/runtime/compiled_model.h"
+#include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 // copybara:uncomment_begin(google internal)
 // #include "tflite/core/subgraph.h"
-// #include "tflite/interpreter.h"
 // copybara:uncomment_end
+#include "tflite/interpreter.h"
 
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
@@ -84,6 +99,153 @@ constexpr bool kSupportsErrorReporterApi = true;
 //   return alloc_info;
 // }
 // copybara:uncomment_end
+
+TEST(CompiledModelTest, NpuSignatureSelectionPrunesMetadataOnCacheHit) {
+  const std::string cache_dir =
+      ::testing::TempDir() + "/signature_selection_cache";
+  LITERT_ASSERT_OK(internal::MkDir(cache_dir));
+  const std::string plugin_dir = testing::GetLiteRtPath("vendors/examples/");
+  const LiteRtEnvOption env_options[] = {
+      {kLiteRtEnvOptionTagCompilerPluginLibraryDir,
+       LiteRtAny{.type = kLiteRtAnyTypeString,
+                 .str_value = plugin_dir.c_str()}},
+      {kLiteRtEnvOptionTagCompilerCacheDir,
+       LiteRtAny{.type = kLiteRtAnyTypeString, .str_value = cache_dir.c_str()}},
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto env, LiteRtEnvironmentT::CreateWithOptions(env_options));
+  LiteRtModel raw_model = nullptr;
+  ASSERT_EQ(LiteRtCreateModelFromFile(
+                env.get(), testing::GetTestFilePath(kModelFileName).c_str(),
+                &raw_model),
+            kLiteRtStatusOk);
+  std::unique_ptr<LiteRtModelT> model(raw_model);
+  auto* original = model->Signatures().front();
+  std::vector<LiteRtTensor> inputs;
+  std::vector<LiteRtTensor> outputs;
+  for (size_t i = 0; i < original->InputNames().size(); ++i) {
+    inputs.push_back(original->GetInputTensor(i));
+  }
+  for (size_t i = 0; i < original->OutputNames().size(); ++i) {
+    outputs.push_back(original->GetOutputTensor(i));
+  }
+  // The cached FlatBuffer contains only the original signature; the incoming
+  // model also exposes an inactive alias of the same graph.
+  model->EmplaceSignature(&original->GetSubgraph(), original->InputNames(),
+                          inputs, original->OutputNames(), outputs, "unused");
+  ASSERT_EQ(model->Signatures().size(), 2);
+
+  LiteRtOptions raw_options = nullptr;
+  ASSERT_EQ(LiteRtCreateOptions(&raw_options), kLiteRtStatusOk);
+  std::unique_ptr<LiteRtOptionsT, decltype(&LiteRtDestroyOptions)> options(
+      raw_options, LiteRtDestroyOptions);
+  ASSERT_EQ(
+      LiteRtSetOptionsHardwareAccelerators(
+          options.get(), kLiteRtHwAcceleratorCpu | kLiteRtHwAcceleratorNpu),
+      kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto runtime_options, RuntimeOptions::Create());
+  const StringView selected[] = {kDefaultSignatureKey};
+  LITERT_ASSERT_OK(runtime_options.SetSelectedSignatures(selected));
+  const char* identifier = nullptr;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueRuntimeOptionsData(runtime_options.Get(), &identifier,
+                                           &payload, &payload_deleter),
+            kLiteRtStatusOk);
+  LiteRtOpaqueOptions opaque_options = nullptr;
+  ASSERT_EQ(LiteRtCreateOpaqueOptions(identifier, payload, payload_deleter,
+                                      &opaque_options),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtAddOpaqueOptions(options.get(), opaque_options),
+            kLiteRtStatusOk);
+  // Seed a cache hit without requiring an NPU to execute a compiled graph.
+  options->selected_signature_keys = {kDefaultSignatureKey};
+  auto plugins = internal::CompilerPlugin::LoadPlugins(
+      {plugin_dir}, &env->GetOptions(), options.get());
+  LITERT_ASSERT_OK(plugins);
+  ASSERT_FALSE(plugins->empty());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto cache_key,
+                              internal::CompilationCache::TryGetModelHash(
+                                  *model, options.get(), plugins));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto cache,
+                              internal::CompilationCache::Create(cache_dir));
+  LITERT_ASSERT_OK(
+      cache.SaveModel(*model, cache_key, internal::Stem(kModelFileName)));
+  // Create must decode the public runtime option before computing its cache
+  // key.
+  options->selected_signature_keys.clear();
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled,
+      LiteRtCompiledModelT::Create(env.get(), model.get(), options.get()));
+  ASSERT_EQ(model->Signatures().size(), 1);
+  EXPECT_EQ(model->Signatures().front()->Key(), kDefaultSignatureKey);
+  EXPECT_TRUE(compiled->GetInputBufferRequirements(kDefaultSignatureKey, 0));
+  EXPECT_FALSE(compiled->GetInputBufferRequirements("unused", 0));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto cache_files,
+                              internal::RecursiveListDir(cache_dir));
+  EXPECT_FALSE(cache_files.empty());
+}
+
+TEST(CompiledModelTest, CpuHostBufferRemainsMappedWithBackendRequirements) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto interp, GetInterpreter(compiled.Get()));
+  LiteRtTensorBufferType host_type = kLiteRtTensorBufferTypeHostMemory;
+  LiteRtTensorBufferRequirements raw_requirements = nullptr;
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirements(1, &host_type,
+                                                 sizeof(kTestInput0Tensor), 0,
+                                                 nullptr, &raw_requirements),
+            kLiteRtStatusOk);
+  ASSERT_EQ(compiled.Get()->GetBufferContext()->RegisterBufferRequirements(
+                interp->input_tensor(0),
+                LiteRtTensorBufferRequirementsPtr(raw_requirements)),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto inputs, compiled.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto outputs, compiled.CreateOutputBuffers());
+  LITERT_ASSERT_OK(
+      inputs[0].Write<float>(absl::MakeConstSpan(kTestInput0Tensor)));
+  LITERT_ASSERT_OK(
+      inputs[1].Write<float>(absl::MakeConstSpan(kTestInput1Tensor)));
+  LITERT_ASSERT_OK(compiled.Run(inputs, outputs));
+  EXPECT_NE(interp->input_tensor(0)->data.raw, nullptr);
+  EXPECT_NE(interp->input_tensor(0)->allocation_type, kTfLiteNonCpu);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto locked,
+                              TensorBufferScopedLock::Create<const float>(
+                                  outputs[0], TensorBuffer::LockMode::kRead));
+  EXPECT_THAT(absl::MakeConstSpan(locked.second, kTestOutputSize),
+              Pointwise(FloatNear(1e-5), kTestOutputTensor));
+}
+
+TEST(CompiledModelTest, CpuRuntimeSignatureSelectionStillExecutes) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model,
+      Model::CreateFromFile(env, testing::GetTestFilePath(kModelFileName)));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signature, model.GetSignature(0));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  options.SetHardwareAccelerators(HwAccelerators::kCpu);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& runtime_options,
+                              options.GetRuntimeOptions());
+  const StringView selected[] = {signature.Key()};
+  LITERT_ASSERT_OK(runtime_options.SetSelectedSignatures(selected));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled, CompiledModelTestPeer::Create(env, model.Get(), options));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto inputs, compiled.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto outputs, compiled.CreateOutputBuffers());
+  LITERT_ASSERT_OK(
+      inputs[0].Write<float>(absl::MakeConstSpan(kTestInput0Tensor)));
+  LITERT_ASSERT_OK(
+      inputs[1].Write<float>(absl::MakeConstSpan(kTestInput1Tensor)));
+  LITERT_ASSERT_OK(compiled.Run(inputs, outputs));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto locked,
+                              TensorBufferScopedLock::Create<const float>(
+                                  outputs[0], TensorBuffer::LockMode::kRead));
+  EXPECT_THAT(absl::MakeConstSpan(locked.second, kTestOutputSize),
+              Pointwise(FloatNear(1e-5), kTestOutputTensor));
+}
 
 TEST(CompiledModelTest, Basic) {
   // Environment setup.
