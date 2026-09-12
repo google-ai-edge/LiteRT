@@ -570,7 +570,12 @@ Expected<bool> IsCastSupported(const Op& op) {
   if (op.Inputs().size() != 1 || op.Outputs().size() != 1) {
     return false;
   }
-  if (op.Inputs()[0].HasWeights()) {
+  // FP16 cache-update decompositions cast an INT64 constant to FP16.
+  // GetTensor/LowerCast can materialize this directly; rejecting it creates
+  // a CPU boundary between otherwise supported cache operations.
+  if (op.Inputs()[0].HasWeights() &&
+      !(op.Inputs()[0].ElementType() == litert::ElementType::Int64 &&
+        op.Outputs()[0].ElementType() == litert::ElementType::Float16)) {
     return false;
   }
   LITERT_ASSIGN_OR_RETURN(bool input_supported,
