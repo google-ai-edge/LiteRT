@@ -320,17 +320,32 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       auto context = getCore()
                          ->get_default_context("NPU")
                          .as<ov::intel_npu::level_zero::ZeroContext>();
+
+      // Ensure the tensor buffer size is page-aligned before mapping. While
+      // mmap rounds up to the page size internally, explicitly aligning here
+      // guarantees that the size passed to munmap matches the mapped size,
+      // handling corner cases where the buffer size is not a multiple of the
+      // page size.
+      size_t aligned_tensor_buffer_size = tensor_buffer_size;
+      const size_t page_size = getpagesize();
+      if (aligned_tensor_buffer_size % page_size != 0) {
+        aligned_tensor_buffer_size =
+            ((aligned_tensor_buffer_size + page_size - 1) / page_size) *
+            page_size;
+      }
+
       // The mmap'd region is independent of the fd once mapped, so we close the
       // fd as soon as the mapping is established.
-      void* buffer = mmap(nullptr, tensor_buffer_size, PROT_READ | PROT_WRITE,
-                          MAP_SHARED, fd, tensor_buffer_offset);
+      void* buffer =
+          mmap(nullptr, aligned_tensor_buffer_size, PROT_READ | PROT_WRITE,
+               MAP_SHARED, fd, tensor_buffer_offset);
       close(fd);
       if (buffer == MAP_FAILED) {
         return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                   "MMAP failed for tensor buffer");
       }
-      CleanupAction cleanup([buffer, tensor_buffer_size]() {
-        munmap(buffer, tensor_buffer_size);
+      CleanupAction cleanup([buffer, aligned_tensor_buffer_size]() {
+        munmap(buffer, aligned_tensor_buffer_size);
       });
       ov::Tensor ov_tensor(ov_element_type,
                            ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
