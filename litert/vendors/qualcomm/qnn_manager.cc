@@ -133,8 +133,6 @@ Expected<absl::Span<const QnnSystemInterface_t*>> LoadSystemProvidersFromLib(
 
 }  // namespace
 
-QnnManager::~QnnManager() = default;
-
 LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
   auto saver_output_dir = options_.GetSaverOutputDir();
   const bool needs_global_symbols = !options_.GetCustomOpPackage().name.empty();
