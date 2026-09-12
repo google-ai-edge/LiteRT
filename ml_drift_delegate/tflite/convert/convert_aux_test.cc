@@ -362,6 +362,43 @@ TEST(ConvertAuxTest, AddConstInputInt32) {
   TfLiteIntArrayFree(tfl_tensor.dims);
 }
 
+TEST(ConvertAuxTest, AddConstInputInt32ScalarLayout) {
+  TfLiteTensor tfl_tensor;
+  tfl_tensor.type = kTfLiteInt32;
+  tfl_tensor.dims = TfLiteIntArrayCreate(1);
+  tfl_tensor.dims->data[0] = 2;
+  std::vector<int32_t> tensor_data = {10, 20};
+  tfl_tensor.data.i32 = tensor_data.data();
+  tfl_tensor.bytes = tensor_data.size() * sizeof(int32_t);
+  tfl_tensor.allocation_type = kTfLiteMmapRo;
+
+  TfLiteContext context;
+  context.tensors = &tfl_tensor;
+
+  ::ml_drift::ir::IrModel model;
+  SizedLayout layout;
+  layout.layout_1d = ::ml_drift::Layout::SCALAR;
+  ::ml_drift::ir::IrTensor* tensor = AddConstInput(context, 0, model, layout);
+
+  // SCALAR moves the 1-D extent off the batch axis and onto channels.
+  ASSERT_NE(tensor, nullptr);
+  EXPECT_EQ(tensor->desc.GetBHWCShape(), ::ml_drift::BHWC(1, 1, 1, 2));
+
+  const ::ml_drift::ir::IrOp* op = model.op(0);
+  const ::ml_drift::ConstTensorAttributes* attr =
+      std::any_cast<::ml_drift::ConstTensorAttributes>(&op->attr);
+  ASSERT_TRUE(attr);
+  const auto* t = std::get_if<::ml_drift::TensorInt32>(&attr->tensor);
+  ASSERT_TRUE(t);
+  // The payload has to carry the same shape as the IrTensor: the constant is
+  // uploaded from it, and ReserveGraphTensors() rejects the model when the two
+  // disagree.
+  EXPECT_EQ(t->shape, ::ml_drift::BHWC(1, 1, 1, 2));
+  EXPECT_THAT(t->data, testing::ElementsAre(10, 20));
+
+  TfLiteIntArrayFree(tfl_tensor.dims);
+}
+
 TEST(ConvertAuxTest, AddConstInputBool) {
   TfLiteTensor tfl_tensor;
   tfl_tensor.type = kTfLiteBool;

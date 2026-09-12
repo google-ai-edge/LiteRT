@@ -167,6 +167,15 @@ TEST_P(ConvertGatherTest, Indices1D_WithReshapeOp) {
   const auto* attr = std::any_cast<::ml_drift::GatherAttributes>(&op->attr);
   ASSERT_TRUE(attr);
   EXPECT_EQ(attr->axis, ::ml_drift::Axis::WIDTH);
+
+  // The gather kernel reads its indices along the channels axis, so a 1-D [N]
+  // index tensor has to reach it as {1,1,1,N} however it was produced -- via
+  // the RESHAPE for runtime indices, or via the requested layout for constant
+  // ones. Auto-expansion would put N on the batch axis and the kernel would
+  // fail to build.
+  const ::ml_drift::ir::IrTensor* indices = ir_model->tensor(op->inputs[1]);
+  ASSERT_TRUE(indices);
+  EXPECT_EQ(indices->desc.GetBHWCShape(), ::ml_drift::BHWC(1, 1, 1, 2));
 }
 
 INSTANTIATE_TEST_SUITE_P(ConvertGatherTest, ConvertGatherTest,

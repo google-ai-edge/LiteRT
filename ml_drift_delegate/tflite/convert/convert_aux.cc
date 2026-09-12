@@ -62,8 +62,11 @@ template <typename TensorType>
   const TfLiteTensor* tfl_tensor = context.tensors + tensor_id;
   PopulateTensor<TensorType>(tfl_tensor, tensor_id, &t,
                              PopulateTensorFlags::kNoExtraBytes);
-  const ::ml_drift::BHWC shape =
-      GetShape(t.shape, layout, tfl_tensor->dims->size);
+  // Apply the layout to the tensor itself, not just to the IrTensor: the
+  // constant is uploaded from `attr` and its shape is checked against the
+  // IrTensor's, so the two have to agree.
+  t.shape = GetShape(t.shape, layout, tfl_tensor->dims->size);
+  const ::ml_drift::BHWC& shape = t.shape;
   ::ml_drift::ir::IrTensor* tensor = ir_model.add_tensor(
       t.kType, ::ml_drift::BHWDC(shape.b, shape.h, shape.w, 1, shape.c));
   attr.tensor = std::move(t);
