@@ -442,12 +442,6 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
             error_reporter_ = std::make_unique<litert::BufferErrorReporter>();
             break;
         }
-
-        // Signature selection is carried within the runtime options payload.
-        if (!runtime_options.selected_signature_keys.empty()) {
-          jit_compilation_options->selected_signature_keys =
-              std::move(runtime_options.selected_signature_keys);
-        }
       }
     }
   }
@@ -897,6 +891,23 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
   if (hardware_accelerators == kLiteRtHwAcceleratorNone) {
     return litert::ErrorStatusBuilder::InvalidArgument()
            << "No acceleration provided.";
+  }
+
+  // Decode selection before model conversion, not only before delegation.
+  // Otherwise JIT retains inactive graphs and copies their weights again.
+  auto opaque_options = litert::OpaqueOptions::WrapCObject(
+      jit_compilation_options->options, litert::OwnHandle::kNo);
+  if (auto data = litert::FindOpaqueData<const char>(
+          opaque_options, LiteRtRuntimeOptionsT::Identifier()); data) {
+    LiteRtRuntimeOptionsT runtime_options;
+    absl::string_view serialized_options(*data);
+    if (ParseLiteRtRuntimeOptions(serialized_options.data(),
+                                  serialized_options.size(), &runtime_options) ==
+            kLiteRtStatusOk &&
+        !runtime_options.selected_signature_keys.empty()) {
+      jit_compilation_options->selected_signature_keys =
+          std::move(runtime_options.selected_signature_keys);
+    }
   }
 
   LITERT_RETURN_IF_ERROR(compiled_model->InitializeModel(
@@ -1350,6 +1361,25 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
   }
   // Cache miss, we need to continue with JIT compilation.
   if (maybe_compiled_plugins.HasValue()) {
+    if ((hw_accelerators & kLiteRtHwAcceleratorNpu) != 0 &&
+        !maybe_compiled_plugins->empty() &&
+        !options.selected_signature_keys.empty()) {
+      const auto& selected = options.selected_signature_keys;
+      std::vector<absl::string_view> retained(selected.begin(), selected.end());
+      auto pruned = PruneModelToSignatures(model, retained);
+      if (pruned) {
+        // Even if a plugin selects no operations, the pruned graph must be
+        // reserialized instead of falling back to the original FlatBuffer.
+        need_reserialization = true;
+      } else if (pruned.Error().Status() == kLiteRtStatusErrorUnsupported) {
+        // Pruning validates references before mutation. For control flow it
+        // cannot remap, keep compiling the original graph as before.
+        LITERT_LOG(LITERT_WARNING, "Skipping signature pruning: %s",
+                   pruned.Error().Message().c_str());
+      } else {
+        return pruned.Error();
+      }
+    }
     auto jit_result = litert::internal::ApplyPlugins(
         &model, hw_accelerators, maybe_compiled_plugins.Value(),
         &need_reserialization);
@@ -1713,15 +1743,27 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
                             "Failed to register tensor buffer");
         }
 
+        // Backend registration does not imply exclusive backend ownership.
+        // A host buffer shared with CPU nodes must also retain a valid CPU
+        // allocation; otherwise those nodes receive a null data pointer.
+        // Keep the device-only buffer fast path unchanged.
+        if (buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory) {
+          LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
+                                  GetTensorIdentifier(*interp_, tensor));
+          if (cpu_tensors_.contains(tensor_id)) {
+            break;
+          }
+        }
+
         // Mark the tensor as non-CPU to avoid TFLite from allocating it.
         tensor->allocation_type = kTfLiteNonCpu;
         tensor->data.data = nullptr;
         return {};
       }
     }
-    // At this point, none of the supported buffer types of the backend matches
-    // the buffer type of the tensor. Also, the backend does not support host
-    // memory buffer.
+    // A CPU-shared host buffer still needs a CPU allocation even when it was
+    // also registered with the backend above. Unmatched host buffers use the
+    // same CPU binding path.
     // TODO: b/452064364 - refactor register buffer logic.
     buffer_requires_cpu_sync =
         buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory;

@@ -23,17 +23,24 @@
 extern "C" {
 #endif
 
-// Returns the device workspace required by LiteRtNvidiaLaunchF32ArgMax.
+// Returns the device workspace required by either F32 or F16 argmax.
 // The result is zero when count is zero or exceeds the supported int32 range.
 size_t LiteRtNvidiaF32ArgMaxWorkspaceBytes(size_t count);
 
 // Finds the first index containing the maximum F32 value. workspace and
 // device_result must point to device memory. Later NaNs are ignored; a NaN at
-// index zero is selected, matching the existing CPU greedy sampler.
+// index zero is selected, preserving the original single-row sampler behavior.
 cudaError_t LiteRtNvidiaLaunchF32ArgMax(const float* input, size_t count,
                                         void* workspace, size_t workspace_bytes,
                                         int32_t* device_result,
                                         cudaStream_t stream);
+
+// Same reduction and tie rules, reading IEEE FP16 values and converting only
+// the current value to float in registers. No expanded FP32 buffer is needed.
+cudaError_t LiteRtNvidiaLaunchF16ArgMax(const uint16_t* input, size_t count,
+                                      void* workspace, size_t workspace_bytes,
+                                      int32_t* device_result,
+                                      cudaStream_t stream);
 
 #ifdef __cplusplus
 }  // extern "C"

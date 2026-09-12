@@ -25,7 +25,9 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <new>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -53,11 +55,16 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/nvidia/bytecode.h"
+#include "litert/vendors/nvidia/cache_layout.h"
+#include "litert/vendors/nvidia/compiler/cache_update_plugin.h"
+#include "litert/vendors/nvidia/compiler/decode_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 #include "litert/vendors/nvidia/dispatch/aot_artifact.h"
 #include "litert/vendors/nvidia/dispatch/dispatch_profiler.h"
 #include "litert/vendors/nvidia/dispatch/greedy_sampler_c_api.h"
 #include "litert/vendors/nvidia/dispatch/greedy_sampler_kernel.h"
+#include "litert/vendors/nvidia/dispatch/runtime_cache.h"
+#include "litert/vendors/nvidia/dispatch/tensor_buffer_layout.h"
 #include "litert/vendors/nvidia/dispatch/tensor_buffer_view.h"
 #include "litert/vendors/nvidia/memory_profile.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
@@ -74,13 +81,10 @@ using ::litert::nvidia::DispatchCpuTimer;
 using ::litert::nvidia::DispatchProfileMetrics;
 using ::litert::nvidia::DispatchProfilingEnabled;
 using ::litert::nvidia::MappedAotArtifact;
+using ::litert::nvidia::kNvidiaCudaTensorBufferType;
 
 template <typename T>
 using TrtPtr = std::unique_ptr<T>;
-
-constexpr LiteRtTensorBufferType kNvidiaCudaTensorBufferType =
-    static_cast<LiteRtTensorBufferType>(
-        kLiteRtTensorBufferTypeUserCustomBuffer + 1);
 
 Expected<void> CudaOk(cudaError_t error, const char* what) {
   if (error == cudaSuccess) {
@@ -183,6 +187,7 @@ struct NvidiaGreedySamplerContext {
   size_t workspace_bytes = 0;
   int32_t* device_result = nullptr;
   int32_t* host_result = nullptr;
+  size_t result_capacity = 0;
   uint64_t calls = 0;
 };
 
@@ -452,7 +457,7 @@ void DestroyNvidiaGreedySamplerResources(NvidiaGreedySamplerContext* context) {
 }
 
 LiteRtStatus EnsureNvidiaGreedySamplerResources(
-    NvidiaGreedySamplerContext* context, int device, size_t count) {
+    NvidiaGreedySamplerContext* context, int device, size_t count, size_t rows) {
   if (context->device >= 0 && context->device != device) {
     return kLiteRtStatusErrorUnsupported;
   }
@@ -491,14 +496,14 @@ LiteRtStatus EnsureNvidiaGreedySamplerResources(
       return CudaStatus(cuda_status,
                         "cudaStreamCreateWithFlags CUDA greedy sampler");
     }
-    cuda_status =
-        cudaMalloc(reinterpret_cast<void**>(&device_result), sizeof(int32_t));
+    cuda_status = cudaMalloc(reinterpret_cast<void**>(&device_result),
+                               rows * sizeof(int32_t));
     if (cuda_status != cudaSuccess) {
       clean_up_partial_initialization();
       return CudaStatus(cuda_status, "cudaMalloc CUDA greedy sampler result");
     }
-    cuda_status =
-        cudaMallocHost(reinterpret_cast<void**>(&host_result), sizeof(int32_t));
+    cuda_status = cudaMallocHost(reinterpret_cast<void**>(&host_result),
+                                   rows * sizeof(int32_t));
     if (cuda_status != cudaSuccess) {
       clean_up_partial_initialization();
       return CudaStatus(cuda_status,
@@ -508,8 +513,34 @@ LiteRtStatus EnsureNvidiaGreedySamplerResources(
     context->stream = stream;
     context->device_result = device_result;
     context->host_result = host_result;
+    context->result_capacity = rows;
     LITERT_LOG(LITERT_INFO,
                "NVIDIA CUDA greedy sampler initialized on device %d", device);
+  }
+  if (context->result_capacity < rows) {
+    // Previous calls synchronize before returning. Keep old allocations valid
+    // until both larger result buffers have been allocated successfully.
+    int32_t* device_result = nullptr;
+    int32_t* host_result = nullptr;
+    LITERT_RETURN_IF_ERROR(CudaStatus(
+        cudaMalloc(reinterpret_cast<void**>(&device_result), rows * sizeof(int32_t)),
+        "cudaMalloc CUDA greedy sampler batched results"));
+    const cudaError_t allocation_status = cudaMallocHost(
+        reinterpret_cast<void**>(&host_result), rows * sizeof(int32_t));
+    if (allocation_status != cudaSuccess) {
+      cudaFree(device_result);
+      return CudaStatus(allocation_status,
+                        "cudaMallocHost CUDA greedy sampler batched results");
+    }
+    std::swap(context->device_result, device_result);
+    std::swap(context->host_result, host_result);
+    context->result_capacity = rows;
+    const cudaError_t device_free_status = cudaFree(device_result);
+    const cudaError_t host_free_status = cudaFreeHost(host_result);
+    LITERT_RETURN_IF_ERROR(CudaStatus(
+        device_free_status, "cudaFree CUDA greedy sampler old results"));
+    LITERT_RETURN_IF_ERROR(CudaStatus(
+        host_free_status, "cudaFreeHost CUDA greedy sampler old results"));
   }
   const size_t required = LiteRtNvidiaF32ArgMaxWorkspaceBytes(count);
   if (required == 0) {
@@ -531,17 +562,23 @@ LiteRtStatus EnsureNvidiaGreedySamplerResources(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus SampleNvidiaGreedyF32(NvidiaGreedySamplerContext* context,
-                                   LiteRtTensorBuffer logits, size_t count,
-                                   int32_t* token_id) {
-  if (context == nullptr || logits == nullptr || token_id == nullptr ||
-      count == 0 || context->runtime_context == nullptr) {
+LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
+                                LiteRtTensorBuffer logits, size_t rows,
+                                size_t count, int32_t* token_ids,
+                                bool legacy_f32_only) {
+  if (context == nullptr || logits == nullptr || token_ids == nullptr ||
+      rows == 0 || count == 0 ||
+      rows > static_cast<size_t>(std::numeric_limits<int32_t>::max()) ||
+      count > static_cast<size_t>(std::numeric_limits<int32_t>::max()) ||
+      rows > std::numeric_limits<size_t>::max() / count / sizeof(float) ||
+      context->runtime_context == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   const LiteRtRuntimeContext* runtime_context = context->runtime_context;
   if (runtime_context->get_tensor_buffer_type == nullptr ||
       runtime_context->get_tensor_buffer_tensor_type == nullptr ||
       runtime_context->get_tensor_buffer_packed_size == nullptr ||
+      runtime_context->get_tensor_buffer_size == nullptr ||
       runtime_context->get_tensor_buffer_offset == nullptr ||
       runtime_context->has_tensor_buffer_event == nullptr ||
       runtime_context->get_tensor_buffer_event == nullptr ||
@@ -559,20 +596,30 @@ LiteRtStatus SampleNvidiaGreedyF32(NvidiaGreedySamplerContext* context,
   LiteRtRankedTensorType tensor_type;
   LITERT_RETURN_IF_ERROR(
       runtime_context->get_tensor_buffer_tensor_type(logits, &tensor_type));
-  if (tensor_type.element_type != kLiteRtElementTypeFloat32 ||
-      tensor_type.layout.has_strides || tensor_type.layout.rank != 3 ||
+  const bool fp16 = tensor_type.element_type == kLiteRtElementTypeFloat16;
+  if ((tensor_type.element_type != kLiteRtElementTypeFloat32 &&
+       (legacy_f32_only || !fp16)) ||
+      tensor_type.layout.rank != 3 ||
       tensor_type.layout.dimensions[0] != 1 ||
-      tensor_type.layout.dimensions[1] != 1 ||
-      tensor_type.layout.dimensions[2] != static_cast<int32_t>(count)) {
+      tensor_type.layout.dimensions[1] != static_cast<int32_t>(rows) ||
+      tensor_type.layout.dimensions[2] != static_cast<int32_t>(count) ||
+      (legacy_f32_only
+           ? tensor_type.layout.has_strides
+           : !litert::nvidia::TensorBufferLayoutMatches(tensor_type.layout,
+                                                        false))) {
     return kLiteRtStatusErrorUnsupported;
   }
   size_t packed_size = 0;
+  size_t allocation_size = 0;
   size_t offset = 0;
   LITERT_RETURN_IF_ERROR(
       runtime_context->get_tensor_buffer_packed_size(logits, &packed_size));
   LITERT_RETURN_IF_ERROR(
       runtime_context->get_tensor_buffer_offset(logits, &offset));
-  if (packed_size != count * sizeof(float)) {
+  LITERT_RETURN_IF_ERROR(
+      runtime_context->get_tensor_buffer_size(logits, &allocation_size));
+  const size_t element_bytes = fp16 ? sizeof(uint16_t) : sizeof(float);
+  if (packed_size != rows * count * element_bytes) {
     return kLiteRtStatusErrorUnsupported;
   }
   bool has_event = false;
@@ -594,8 +641,13 @@ LiteRtStatus SampleNvidiaGreedyF32(NvidiaGreedySamplerContext* context,
   if (handle == nullptr) {
     return kLiteRtStatusErrorUnsupported;
   }
-  auto* device_logits = reinterpret_cast<const float*>(
-      static_cast<const uint8_t*>(handle) + offset);
+  LITERT_ASSIGN_OR_RETURN(
+      auto* device_logits,
+      litert::nvidia::ResolveCudaTensorBufferView(
+          handle, allocation_size, offset, packed_size));
+  if (reinterpret_cast<uintptr_t>(device_logits) % element_bytes != 0) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   cudaPointerAttributes attributes{};
   const cudaError_t attributes_status =
       cudaPointerGetAttributes(&attributes, device_logits);
@@ -603,6 +655,9 @@ LiteRtStatus SampleNvidiaGreedyF32(NvidiaGreedySamplerContext* context,
       (attributes.type != cudaMemoryTypeDevice &&
        attributes.type != cudaMemoryTypeManaged)) {
     cudaGetLastError();
+    return kLiteRtStatusErrorUnsupported;
+  }
+  if (context->device >= 0 && context->device != attributes.device) {
     return kLiteRtStatusErrorUnsupported;
   }
 
@@ -615,27 +670,40 @@ LiteRtStatus SampleNvidiaGreedyF32(NvidiaGreedySamplerContext* context,
         CudaStatus(cudaSetDevice(attributes.device), "cudaSetDevice sampler"));
   }
   LiteRtStatus status =
-      EnsureNvidiaGreedySamplerResources(context, attributes.device, count);
-  if (status == kLiteRtStatusOk) {
-    status = CudaStatus(
-        LiteRtNvidiaLaunchF32ArgMax(device_logits, count, context->workspace,
-                                    context->workspace_bytes,
-                                    context->device_result, context->stream),
-        "LiteRtNvidiaLaunchF32ArgMax");
+      EnsureNvidiaGreedySamplerResources(context, attributes.device, count, rows);
+  for (size_t row = 0; status == kLiteRtStatusOk && row < rows; ++row) {
+    // Each row reuses the same partial-reduction workspace on one stream.
+    // Only the small ID array is copied back, once all rows have completed.
+    const cudaError_t launch_status = fp16
+        ? LiteRtNvidiaLaunchF16ArgMax(
+              static_cast<const uint16_t*>(device_logits) + row * count,
+              count, context->workspace, context->workspace_bytes,
+              context->device_result + row, context->stream)
+        : LiteRtNvidiaLaunchF32ArgMax(
+              static_cast<const float*>(device_logits) + row * count,
+              count, context->workspace, context->workspace_bytes,
+              context->device_result + row, context->stream);
+    status = CudaStatus(launch_status, "Launch CUDA greedy sampler argmax");
   }
   if (status == kLiteRtStatusOk) {
     status =
         CudaStatus(cudaMemcpyAsync(context->host_result, context->device_result,
-                                   sizeof(int32_t), cudaMemcpyDeviceToHost,
+                                   rows * sizeof(int32_t), cudaMemcpyDeviceToHost,
                                    context->stream),
                    "cudaMemcpyAsync CUDA greedy sampler result");
   }
-  if (status == kLiteRtStatusOk) {
-    status = CudaStatus(cudaStreamSynchronize(context->stream),
-                        "cudaStreamSynchronize CUDA greedy sampler");
+  if (context->stream != nullptr) {
+    // Also complete any earlier rows if a later launch/copy fails, so callers
+    // may safely release the logits or fall back to CPU after an error.
+    const LiteRtStatus sync_status = CudaStatus(
+        cudaStreamSynchronize(context->stream),
+        "cudaStreamSynchronize CUDA greedy sampler");
+    if (status == kLiteRtStatusOk) {
+      status = sync_status;
+    }
   }
   if (status == kLiteRtStatusOk) {
-    *token_id = *context->host_result;
+    std::copy_n(context->host_result, rows, token_ids);
     ++context->calls;
   }
   if (restore_device) {
@@ -750,11 +818,21 @@ bool WriteBinaryFile(const std::string& path, const void* data, size_t size) {
 
 Expected<LiteRtTensorBufferRequirements> TensorBufferRequirements(
     const LiteRtRuntimeContext* runtime_context,
-    const LiteRtRankedTensorType& tensor_type, bool prefer_cuda) {
+    const LiteRtRankedTensorType& tensor_type, bool prefer_cuda,
+    bool transposed_value_cache = false) {
   litert::RankedTensorType ranked_type(tensor_type);
-  if (ranked_type.Layout().HasStrides()) {
+  uint32_t strides[4];
+  if (transposed_value_cache &&
+      !litert::nvidia::GetTransposedValueCacheStrides(tensor_type.layout,
+                                                     strides)) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid sequence-major NVIDIA value-cache shape");
+  }
+  if (ranked_type.Layout().HasStrides() &&
+      !litert::nvidia::TensorBufferLayoutMatches(tensor_type.layout,
+                                                 transposed_value_cache)) {
     return Error(kLiteRtStatusErrorUnsupported,
-                 "NVIDIA dispatch does not support strided tensors");
+                 "Tensor strides do not match the NVIDIA engine layout");
   }
   LITERT_ASSIGN_OR_RETURN(size_t size, ranked_type.Bytes());
   if (PreferHostBoundaryIo()) {
@@ -777,7 +855,8 @@ Expected<LiteRtTensorBufferRequirements> TensorBufferRequirements(
   LiteRtTensorBufferRequirements requirements = nullptr;
   LITERT_RETURN_IF_ERROR(runtime_context->create_tensor_buffer_requirements(
       num_buffer_types, buffer_types, size,
-      /*num_strides=*/0, /*strides=*/nullptr, &requirements));
+      transposed_value_cache ? 4 : 0,
+      transposed_value_cache ? strides : nullptr, &requirements));
   return requirements;
 }
 
@@ -838,13 +917,29 @@ class ScopedHostBufferLocks {
   std::vector<LockedHostBuffer> locked_;
 };
 
+// Opt-in AOT residency is scoped to one dispatch device context. Keep this
+// small coordination object alive independently of that context so invocation
+// destruction never has to dereference an externally owned device context.
+struct AotEngineResidency {
+  std::mutex mutex;
+  LiteRtDispatchInvocationContext active = nullptr;
+};
+
+bool LazyAotEnginesEnabled() {
+  const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES");
+  return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
+}
+
 }  // namespace
 
 class LiteRtDispatchDeviceContextT {
  public:
   explicit LiteRtDispatchDeviceContextT(
       const LiteRtRuntimeContext* runtime_context)
-      : runtime_context_(runtime_context) {}
+      : runtime_context_(runtime_context),
+        aot_residency_(LazyAotEnginesEnabled()
+                           ? std::make_shared<AotEngineResidency>()
+                           : nullptr) {}
 
   ~LiteRtDispatchDeviceContextT() {
     for (auto& [handle, record] : records_) {
@@ -883,6 +978,18 @@ class LiteRtDispatchDeviceContextT {
     Record record;
     record.tensor_buffer = tensor_buffer;
     record.size = packed_size;
+    LiteRtRankedTensorType tensor_type;
+    LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_tensor_type(
+        tensor_buffer, &tensor_type));
+    // Classify once at registration, not on every token's attachment path.
+    record.dense_layout =
+        litert::nvidia::TensorBufferLayoutMatches(tensor_type.layout, false);
+    record.transposed_value_cache_layout =
+        litert::nvidia::TensorBufferLayoutMatches(tensor_type.layout, true);
+    if (!record.dense_layout && !record.transposed_value_cache_layout) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "Unsupported NVIDIA tensor-buffer strides");
+    }
     record.host_tensor_buffer =
         buffer_type == kLiteRtTensorBufferTypeHostMemory;
     record.owns_device_ptr = false;
@@ -948,6 +1055,8 @@ class LiteRtDispatchDeviceContextT {
     bool direct_cuda_buffer = false;
     bool host_tensor_buffer = false;
     bool transient_device_ptr = false;
+    bool dense_layout = true;
+    bool transposed_value_cache_layout = false;
   };
 
   Expected<void> EnsureDevicePtr(Record* record) {
@@ -968,9 +1077,17 @@ class LiteRtDispatchDeviceContextT {
     return {};
   }
 
+  // Host-backed boundary tensors up to this size keep their device staging
+  // buffer across invocations. Recreating it costs a cudaMalloc plus a
+  // device-synchronizing cudaFree per invocation, which for the few small
+  // int32 position/flag inputs of a decode step is pure overhead. Larger
+  // staging buffers (fragmented prefill boundaries) are still released.
+  static constexpr size_t kRetainedTransientDeviceBytes = 1 << 20;
+
   void ReleaseTransientDevicePtr(Record* record) {
     if (record == nullptr || !record->transient_device_ptr ||
-        record->device_ptr == nullptr) {
+        record->device_ptr == nullptr ||
+        record->size <= kRetainedTransientDeviceBytes) {
       return;
     }
     const cudaError_t status = cudaFree(record->device_ptr);
@@ -1021,8 +1138,13 @@ class LiteRtDispatchDeviceContextT {
     return runtime_context_;
   }
 
+  const std::shared_ptr<AotEngineResidency>& aot_residency() const {
+    return aot_residency_;
+  }
+
  private:
   const LiteRtRuntimeContext* runtime_context_;
+  std::shared_ptr<AotEngineResidency> aot_residency_;
   LiteRtTensorBufferHandle next_handle_ = 1;
   std::unordered_map<LiteRtTensorBufferHandle, Record> records_;
   void* arena_ptr_ = nullptr;
@@ -1084,6 +1206,11 @@ class LiteRtDispatchInvocationContextT {
     LITERT_ASSIGN_OR_RETURN(auto aot_locator,
                             litert::nvidia::TryParseTensorRtAotLocator(
                                 bytecode_data, bytecode_size));
+    if (device_context->aot_residency() && !aot_locator.has_value()) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES requires "
+                   "persistent AOT artifacts for every engine");
+    }
     if (aot_locator.has_value()) {
       memory_profiler.Log("aot_artifact_map_begin", function_name);
       LITERT_ASSIGN_OR_RETURN(aot_artifact,
@@ -1125,11 +1252,23 @@ class LiteRtDispatchInvocationContextT {
     auto context = std::unique_ptr<LiteRtDispatchInvocationContextT>(
         new LiteRtDispatchInvocationContextT(runtime_context, device_context,
                                              std::move(bytecode)));
-    LITERT_RETURN_IF_ERROR(context->Initialize());
+    if (context->aot_residency_) {
+      context->aot_locator_ = std::move(aot_locator);
+      std::lock_guard<std::mutex> lock(context->aot_residency_->mutex);
+      if (auto* active = context->aot_residency_->active) {
+        LITERT_RETURN_IF_ERROR(active->EvictAotEngine());
+        context->aot_residency_->active = nullptr;
+      }
+      // Locations and aliases are properties of the built engine, even for
+      // stripped plans before refit. Probe them without creating a context or
+      // uploading refit/external-head weights, then release the probe engine.
+      LITERT_RETURN_IF_ERROR(context->ProbeAotIoMetadata());
+    } else {
+      LITERT_RETURN_IF_ERROR(context->Initialize());
+    }
     if (aot_artifact) {
-      // deserializeCudaEngine(), refit, runtime-cache setup, and the external
-      // head's H2D copies are complete. Keep only owned TensorRT/CUDA state;
-      // no invocation-time operation reads the serialized artifact views.
+      // Eager contexts have consumed the serialized data. Lazy contexts keep
+      // an owning locator and reopen its validated artifact before execution.
       context->DetachSerializedBacking();
       aot_artifact.reset();
       memory_profiler.Log("aot_artifact_unmapped", function_name);
@@ -1145,6 +1284,18 @@ class LiteRtDispatchInvocationContextT {
   }
 
   ~LiteRtDispatchInvocationContextT() {
+    if (aot_residency_) {
+      std::lock_guard<std::mutex> lock(aot_residency_->mutex);
+      if (aot_residency_->active == this) {
+        aot_residency_->active = nullptr;
+      }
+      SynchronizeForCleanup();
+      ReleaseExecutionResources(/*save_runtime_cache=*/resident_has_run_);
+      if (layer_profiler_) {
+        layer_profiler_->Dump(bytecode_.function_name);
+      }
+      return;
+    }
     if (bytecode_.trtllm_head.has_value() && stream_ != nullptr) {
       const cudaError_t status = cudaStreamSynchronize(stream_);
       if (status != cudaSuccess) {
@@ -1158,6 +1309,9 @@ class LiteRtDispatchInvocationContextT {
     }
     SaveRuntimeCache();
     DestroyExternalHeadResources();
+    for (cudaStream_t aux_stream : aux_streams_) {
+      cudaStreamDestroy(aux_stream);
+    }
     if (stream_ != nullptr) {
       cudaStreamDestroy(stream_);
     }
@@ -1172,7 +1326,9 @@ class LiteRtDispatchInvocationContextT {
     LITERT_ASSIGN_OR_RETURN(
         const bool prefer_cuda,
         PrefersCudaTensorBuffer(bytecode_.input_names[index]));
-    return TensorBufferRequirements(runtime_context_, tensor_type, prefer_cuda);
+    return TensorBufferRequirements(
+        runtime_context_, tensor_type, prefer_cuda,
+        litert::nvidia::IsTransposedValueCacheTensor(bytecode_.input_names[index]));
   }
 
   Expected<LiteRtTensorBufferRequirements> GetOutputRequirements(
@@ -1188,7 +1344,9 @@ class LiteRtDispatchInvocationContextT {
     LITERT_ASSIGN_OR_RETURN(
         const bool prefer_cuda,
         PrefersCudaTensorBuffer(bytecode_.output_names[index]));
-    return TensorBufferRequirements(runtime_context_, tensor_type, prefer_cuda);
+    return TensorBufferRequirements(
+        runtime_context_, tensor_type, prefer_cuda,
+        litert::nvidia::IsTransposedValueCacheTensor(bytecode_.output_names[index]));
   }
 
   Expected<void> AttachInput(int index, LiteRtTensorBufferHandle handle) {
@@ -1200,7 +1358,14 @@ class LiteRtDispatchInvocationContextT {
                    "Cannot attach null input tensor buffer handle");
     }
     LITERT_ASSIGN_OR_RETURN(auto* record, device_context_->GetRecord(handle));
-    (void)record;
+    const bool transposed = litert::nvidia::IsTransposedValueCacheTensor(
+        bytecode_.input_names[index]);
+    if (!(transposed ? record->transposed_value_cache_layout
+                    : record->dense_layout)) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Input tensor-buffer layout does not match NVIDIA engine: " +
+                       bytecode_.input_names[index]);
+    }
     input_handles_[index] = handle;
     return {};
   }
@@ -1214,7 +1379,14 @@ class LiteRtDispatchInvocationContextT {
                    "Cannot attach null output tensor buffer handle");
     }
     LITERT_ASSIGN_OR_RETURN(auto* record, device_context_->GetRecord(handle));
-    (void)record;
+    const bool transposed = litert::nvidia::IsTransposedValueCacheTensor(
+        bytecode_.output_names[index]);
+    if (!(transposed ? record->transposed_value_cache_layout
+                    : record->dense_layout)) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Output tensor-buffer layout does not match NVIDIA engine: " +
+                       bytecode_.output_names[index]);
+    }
     output_handles_[index] = handle;
     return {};
   }
@@ -1242,6 +1414,13 @@ class LiteRtDispatchInvocationContextT {
   }
 
   Expected<void> Invoke() {
+    std::unique_lock<std::mutex> residency_lock;
+    if (aot_residency_) {
+      // Hold through completion, not just engine selection: another thread
+      // must not evict this engine or reuse its activation arena mid-enqueue.
+      residency_lock = std::unique_lock<std::mutex>(aot_residency_->mutex);
+      LITERT_RETURN_IF_ERROR(EnsureAotEngineResident());
+    }
     const bool memory_profile =
         memory_profiler_.enabled() && invocation_count_ == 0;
     ++invocation_count_;
@@ -1327,6 +1506,29 @@ class LiteRtDispatchInvocationContextT {
         ++profile_metrics.set_address_skips;
         continue;
       }
+      if (aliased_input_of_output_[i] >= 0) {
+        // In-place cache update: the engine writes this output into the
+        // aliased input's memory. LiteRT-LM passes the same buffer for both;
+        // otherwise seed the output with the input and run in place there.
+        const int input_index = aliased_input_of_output_[i];
+        LITERT_ASSIGN_OR_RETURN(
+            auto* input_record,
+            device_context_->GetRecord(input_handles_[input_index]));
+        if (input_record->device_ptr != record->device_ptr) {
+          LITERT_RETURN_IF_ERROR(CudaOk(
+              cudaMemcpyAsync(record->device_ptr, input_record->device_ptr,
+                              std::min(record->size, input_record->size),
+                              cudaMemcpyDeviceToDevice, stream_),
+              "cudaMemcpyAsync aliased cache input"));
+          LITERT_ASSIGN_OR_RETURN(
+              const bool rebound,
+              BindTensorAddressIfNeeded(bytecode_.input_names[input_index],
+                                        record->device_ptr,
+                                        &bound_input_ptrs_[input_index]));
+          rebound ? ++profile_metrics.set_address_calls
+                  : ++profile_metrics.set_address_skips;
+        }
+      }
       LITERT_ASSIGN_OR_RETURN(const bool did_bind,
                               BindTensorAddressIfNeeded(
                                   bytecode_.output_names[i], record->device_ptr,
@@ -1350,6 +1552,10 @@ class LiteRtDispatchInvocationContextT {
       }
     }
     DispatchCpuTimer enqueue_call_timer(profile);
+    if (!aux_streams_.empty()) {
+      execution_context_->setAuxStreams(aux_streams_.data(),
+                                        static_cast<int32_t>(aux_streams_.size()));
+    }
     if (!execution_context_->enqueueV3(stream_)) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "TensorRT enqueueV3 failed");
@@ -1394,6 +1600,9 @@ class LiteRtDispatchInvocationContextT {
             : "cudaStreamSynchronize";
     LITERT_RETURN_IF_ERROR(
         CudaOk(cudaStreamSynchronize(stream_), sync_context));
+    if (aot_residency_) {
+      resident_has_run_ = true;
+    }
     profile_metrics.cpu_sync_ms = sync_timer.ElapsedMs();
     if (memory_profile) {
       memory_profiler_.Log("invoke_synchronized",
@@ -1441,6 +1650,7 @@ class LiteRtDispatchInvocationContextT {
                                    litert::nvidia::TensorRtBytecode bytecode)
       : runtime_context_(runtime_context),
         device_context_(device_context),
+        aot_residency_(device_context->aot_residency()),
         bytecode_(std::move(bytecode)),
         memory_profiler_("dispatch"),
         input_handles_(bytecode_.input_names.size(), 0),
@@ -1460,14 +1670,131 @@ class LiteRtDispatchInvocationContextT {
     }
   }
 
-  Expected<void> Initialize() {
-    memory_profiler_.Log("context_initialize_begin",
+  Expected<void> ProbeAotIoMetadata() {
+    DispatchCpuTimer probe_timer(/*enabled=*/true);
+    memory_profiler_.Log("engine_metadata_probe_begin",
                          bytecode_.function_name.c_str());
+    LITERT_RETURN_IF_ERROR(DeserializeEngine());
+    LITERT_RETURN_IF_ERROR(RecordAliasedOutputs());
+    for (const auto& name : bytecode_.input_names) {
+      tensor_locations_.emplace(name, engine_->getTensorLocation(name.c_str()));
+    }
+    for (const auto& name : bytecode_.output_names) {
+      if (!name.empty()) {
+        tensor_locations_.emplace(name,
+                                  engine_->getTensorLocation(name.c_str()));
+      }
+    }
+    engine_.reset();
+    runtime_.reset();
+    memory_profiler_.Log("engine_metadata_probe_end",
+                         bytecode_.function_name.c_str());
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA AOT engine metadata probed: %s elapsed_ms=%.3f",
+               bytecode_.function_name.c_str(), probe_timer.ElapsedMs());
+    return {};
+  }
+
+  // Error/destructor cleanup cannot return a synchronization failure, but must
+  // still dispose of partially created state in dependency order.
+  void SynchronizeForCleanup() {
+    if (stream_ != nullptr) {
+      const cudaError_t status = cudaStreamSynchronize(stream_);
+      if (status != cudaSuccess) {
+        LITERT_LOG(LITERT_ERROR,
+                   "NVIDIA AOT engine cleanup synchronization failed for %s: %s",
+                   bytecode_.function_name.c_str(), cudaGetErrorString(status));
+      }
+    }
+  }
+
+  // The caller has synchronized the stream. Buffer handles and the shared
+  // activation arena belong to the device context, not to a resident engine;
+  // keep them while clearing every address cached by the old execution context.
+  void ReleaseExecutionResources(bool save_runtime_cache) {
+    if (save_runtime_cache) {
+      SaveRuntimeCache();
+    }
+    execution_context_.reset();
+    runtime_config_.reset();
+    runtime_cache_.reset();
+    DestroyExternalHeadResources();
+    for (cudaStream_t aux_stream : aux_streams_) {
+      cudaStreamDestroy(aux_stream);
+    }
+    aux_streams_.clear();
+    if (stream_ != nullptr) {
+      cudaStreamDestroy(stream_);
+      stream_ = nullptr;
+    }
+    engine_.reset();
+    runtime_.reset();
+    std::fill(bound_input_ptrs_.begin(), bound_input_ptrs_.end(), nullptr);
+    std::fill(bound_output_ptrs_.begin(), bound_output_ptrs_.end(), nullptr);
+    bound_arena_ptr_ = nullptr;
+    bound_arena_version_ = 0;
+    device_memory_bytes_ = -1;
+    resident_has_run_ = false;
+  }
+
+  Expected<void> EvictAotEngine() {
+    DispatchCpuTimer eviction_timer(/*enabled=*/true);
+    memory_profiler_.Log("engine_eviction_begin", bytecode_.function_name.c_str());
+    if (stream_ != nullptr) {
+      LITERT_RETURN_IF_ERROR(CudaOk(cudaStreamSynchronize(stream_),
+                                     "cudaStreamSynchronize AOT eviction"));
+    }
+    ReleaseExecutionResources(/*save_runtime_cache=*/resident_has_run_);
+    memory_profiler_.Log("engine_evicted", bytecode_.function_name.c_str());
+    LITERT_LOG(LITERT_INFO, "NVIDIA AOT engine evicted: %s elapsed_ms=%.3f",
+               bytecode_.function_name.c_str(), eviction_timer.ElapsedMs());
+    return {};
+  }
+
+  Expected<void> EnsureAotEngineResident() {
+    if (aot_residency_->active == this) {
+      return {};
+    }
+    if (auto* active = aot_residency_->active) {
+      LITERT_RETURN_IF_ERROR(active->EvictAotEngine());
+      aot_residency_->active = nullptr;
+    }
+    DispatchCpuTimer reload_timer(/*enabled=*/true);
+    memory_profiler_.Log("engine_reload_begin", bytecode_.function_name.c_str());
+    LITERT_ASSIGN_OR_RETURN(auto artifact,
+                            MappedAotArtifact::Open(*aot_locator_));
+    LITERT_ASSIGN_OR_RETURN(
+        auto bytecode,
+        litert::nvidia::ParseTensorRtBytecode(
+            artifact->data(), artifact->size(), bytecode_.function_name.c_str()));
+    if (bytecode.version != bytecode_.version ||
+        bytecode.function_name != bytecode_.function_name ||
+        bytecode.input_names != bytecode_.input_names ||
+        bytecode.output_names != bytecode_.output_names) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Reloaded NVIDIA AOT engine has different IO metadata");
+    }
+    bytecode_ = std::move(bytecode);
+    auto initialized = Initialize();
+    if (!initialized) {
+      SynchronizeForCleanup();
+      ReleaseExecutionResources(/*save_runtime_cache=*/false);
+      DetachSerializedBacking();
+      return initialized.Error();
+    }
+    DetachSerializedBacking();
+    artifact.reset();
+    aot_residency_->active = this;
+    memory_profiler_.Log("engine_reload_end", bytecode_.function_name.c_str());
+    LITERT_LOG(LITERT_INFO, "NVIDIA AOT engine reloaded: %s elapsed_ms=%.3f",
+               bytecode_.function_name.c_str(), reload_timer.ElapsedMs());
+    return {};
+  }
+
+  Expected<void> DeserializeEngine() {
     litert::nvidia::EnsureSubbyteGemvPluginRegistered();
-    LITERT_RETURN_IF_ERROR(
-        CudaOk(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking),
-               "cudaStreamCreateWithFlags"));
-    memory_profiler_.Log("stream_created", bytecode_.function_name.c_str());
+    litert::nvidia::EnsureDecodeAttentionPluginRegistered();
+    litert::nvidia::EnsureCacheUpdatePluginRegistered();
     LITERT_LOG(LITERT_INFO,
                "NVIDIA dispatch creating TensorRT runtime for function %s "
                "(inputs=%zu outputs=%zu engine_bytes=%zu)",
@@ -1487,7 +1814,20 @@ class LiteRtDispatchInvocationContextT {
     }
     memory_profiler_.Log("engine_deserialized",
                          bytecode_.function_name.c_str());
+    return {};
+  }
+
+  Expected<void> Initialize() {
+    memory_profiler_.Log("context_initialize_begin",
+                         bytecode_.function_name.c_str());
+    LITERT_RETURN_IF_ERROR(
+        CudaOk(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking),
+               "cudaStreamCreateWithFlags"));
+    memory_profiler_.Log("stream_created", bytecode_.function_name.c_str());
+    LITERT_RETURN_IF_ERROR(DeserializeEngine());
+    LITERT_RETURN_IF_ERROR(RecordAliasedOutputs());
     LITERT_RETURN_IF_ERROR(RefitEngine());
+    DumpEngineInfo();
     if (UseCudaGraph()) {
       // TensorRT-RTX owns whole-graph CUDA-graph capture/replay through the
       // runtime config; this collapses per-kernel launch overhead, which
@@ -1536,9 +1876,12 @@ class LiteRtDispatchInvocationContextT {
     }
     memory_profiler_.Log("execution_context_created",
                          bytecode_.function_name.c_str());
+    LITERT_RETURN_IF_ERROR(CreateAuxStreams());
     if (litert::nvidia::DispatchLayerProfilingEnabled()) {
-      layer_profiler_ =
-          std::make_unique<litert::nvidia::TensorRtLayerProfiler>();
+      if (!layer_profiler_) {
+        layer_profiler_ =
+            std::make_unique<litert::nvidia::TensorRtLayerProfiler>();
+      }
       execution_context_->setProfiler(layer_profiler_.get());
       LITERT_LOG(LITERT_INFO, "NVIDIA layer profiling enabled for %s",
                  bytecode_.function_name.c_str());
@@ -1546,6 +1889,39 @@ class LiteRtDispatchInvocationContextT {
     LITERT_RETURN_IF_ERROR(InitializeExternalHead());
     memory_profiler_.Log("context_initialize_end",
                          bytecode_.function_name.c_str());
+    return {};
+  }
+
+  // Outputs of in-place KV cache updates alias a network input; the engine
+  // requires both to be bound to the same device address.
+  Expected<void> RecordAliasedOutputs() {
+    aliased_input_of_output_.assign(bytecode_.output_names.size(), -1);
+    size_t aliased = 0;
+    for (size_t i = 0; i < bytecode_.output_names.size(); ++i) {
+      if (bytecode_.output_names[i].empty()) {
+        continue;
+      }
+      const char* input_name =
+          engine_->getAliasedInputTensor(bytecode_.output_names[i].c_str());
+      if (input_name == nullptr) {
+        continue;
+      }
+      const auto it = std::find(bytecode_.input_names.begin(),
+                                bytecode_.input_names.end(), input_name);
+      if (it == bytecode_.input_names.end()) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "TensorRT output aliases an unknown input tensor");
+      }
+      aliased_input_of_output_[i] =
+          static_cast<int>(it - bytecode_.input_names.begin());
+      ++aliased;
+    }
+    if (aliased > 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s binds %zu in-place cache outputs to "
+                 "their input buffers",
+                 bytecode_.function_name.c_str(), aliased);
+    }
     return {};
   }
 
@@ -1815,6 +2191,31 @@ class LiteRtDispatchInvocationContextT {
     free_device_memory(head_weights_, "cudaFree external W2 head weights");
   }
 
+  // TensorRT-RTX runs parallel graph branches on auxiliary streams. Unless
+  // the application provides them, the runtime creates and destroys its own
+  // on every enqueue (about fifteen stream create/destroy calls per Gemma 4
+  // decode step in the CUDA API trace), so hand it persistent streams once.
+  Expected<void> CreateAuxStreams() {
+    const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_AUX_STREAMS");
+    if (value != nullptr && value[0] != '\0' && std::strcmp(value, "0") == 0) {
+      return {};
+    }
+    const int32_t count = engine_->getNbAuxStreams();
+    for (int32_t i = 0; i < count; ++i) {
+      cudaStream_t aux_stream = nullptr;
+      LITERT_RETURN_IF_ERROR(
+          CudaOk(cudaStreamCreateWithFlags(&aux_stream, cudaStreamNonBlocking),
+                 "cudaStreamCreateWithFlags auxiliary"));
+      aux_streams_.push_back(aux_stream);
+    }
+    if (count > 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s provides %d auxiliary CUDA streams",
+                 bytecode_.function_name.c_str(), count);
+    }
+    return {};
+  }
+
   static bool UseSharedActivationArena() {
     const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_SHARED_ARENA");
     if (value != nullptr && value[0] != '\0') {
@@ -1850,7 +2251,11 @@ class LiteRtDispatchInvocationContextT {
     if (cache_dir.empty() || runtime_config_ == nullptr) {
       return {};
     }
-    runtime_cache_path_ = RuntimeCachePath(cache_dir);
+    // A lazy engine always reloads the same validated AOT artifact. Reuse its
+    // cache key rather than rescan a multi-GiB plan at every phase transition.
+    if (!aot_residency_ || runtime_cache_path_.empty()) {
+      runtime_cache_path_ = RuntimeCachePath(cache_dir);
+    }
     runtime_cache_.reset(runtime_config_->createRuntimeCache());
     if (!runtime_cache_) {
       LITERT_LOG(LITERT_WARNING,
@@ -1895,7 +2300,7 @@ class LiteRtDispatchInvocationContextT {
   }
 
   void SaveRuntimeCache() {
-    if (!runtime_cache_ || runtime_cache_path_.empty()) {
+    if (!runtime_cache_ || !runtime_config_ || runtime_cache_path_.empty()) {
       return;
     }
     TrtPtr<nvinfer1::IHostMemory> serialized_cache(runtime_cache_->serialize());
@@ -1906,8 +2311,10 @@ class LiteRtDispatchInvocationContextT {
                  bytecode_.function_name.c_str());
       return;
     }
-    if (WriteBinaryFile(runtime_cache_path_, serialized_cache->data(),
-                        serialized_cache->size())) {
+    auto saved = litert::nvidia::PersistValidatedRuntimeCache(
+        *runtime_config_, serialized_cache->data(), serialized_cache->size(),
+        runtime_cache_path_);
+    if (saved) {
       LITERT_LOG(LITERT_INFO,
                  "NVIDIA TensorRT-RTX saved runtime cache for %s "
                  "(bytes=%zu path=%s)",
@@ -1916,8 +2323,36 @@ class LiteRtDispatchInvocationContextT {
     } else {
       LITERT_LOG(LITERT_WARNING,
                  "NVIDIA TensorRT-RTX failed to save runtime cache for %s "
-                 "(path=%s)",
-                 bytecode_.function_name.c_str(), runtime_cache_path_.c_str());
+                 "(path=%s): %s",
+                 bytecode_.function_name.c_str(), runtime_cache_path_.c_str(),
+                 saved.Error().Message().c_str());
+    }
+  }
+
+  // Debug helper: writes the deserialized engine's detailed layer/tensor
+  // information as JSON to $LITERT_NVIDIA_DISPATCH_ENGINE_INFO_DIR/<function>.json
+  // so post-fusion kernels seen by profilers can be mapped back to shapes.
+  void DumpEngineInfo() const {
+    const char* dir = std::getenv("LITERT_NVIDIA_DISPATCH_ENGINE_INFO_DIR");
+    if (dir == nullptr || dir[0] == '\0' || engine_ == nullptr) {
+      return;
+    }
+    TrtPtr<nvinfer1::IEngineInspector> inspector(
+        engine_->createEngineInspector());
+    const char* info =
+        inspector ? inspector->getEngineInformation(
+                        nvinfer1::LayerInformationFormat::kJSON)
+                  : nullptr;
+    if (info == nullptr) {
+      LITERT_LOG(LITERT_WARNING, "NVIDIA dispatch engine info unavailable for %s",
+                 bytecode_.function_name.c_str());
+      return;
+    }
+    const std::string path = JoinPath(
+        dir, SanitizeCacheComponent(bytecode_.function_name) + ".json");
+    if (WriteBinaryFile(path, info, std::strlen(info))) {
+      LITERT_LOG(LITERT_INFO, "NVIDIA dispatch wrote engine info for %s to %s",
+                 bytecode_.function_name.c_str(), path.c_str());
     }
   }
 
@@ -1972,6 +2407,14 @@ class LiteRtDispatchInvocationContextT {
   }
 
   Expected<bool> PrefersCudaTensorBuffer(const std::string& tensor_name) const {
+    if (aot_residency_) {
+      const auto location = tensor_locations_.find(tensor_name);
+      if (location == tensor_locations_.end()) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "Missing NVIDIA AOT tensor location metadata");
+      }
+      return location->second == nvinfer1::TensorLocation::kDEVICE;
+    }
     if (engine_ == nullptr) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "TensorRT engine is not initialized");
@@ -2030,6 +2473,10 @@ class LiteRtDispatchInvocationContextT {
 
   const LiteRtRuntimeContext* runtime_context_;
   LiteRtDispatchDeviceContext device_context_;
+  std::shared_ptr<AotEngineResidency> aot_residency_;
+  std::optional<litert::nvidia::TensorRtAotLocator> aot_locator_;
+  std::unordered_map<std::string, nvinfer1::TensorLocation> tensor_locations_;
+  bool resident_has_run_ = false;
   litert::nvidia::TensorRtBytecode bytecode_;
   litert::nvidia::MemoryProfiler memory_profiler_;
   litert::nvidia::TensorRtLogger logger_;
@@ -2041,10 +2488,12 @@ class LiteRtDispatchInvocationContextT {
   std::unique_ptr<litert::nvidia::TensorRtLayerProfiler> layer_profiler_;
   litert::nvidia::DispatchInvocationProfiler invocation_profiler_;
   cudaStream_t stream_ = nullptr;
+  std::vector<cudaStream_t> aux_streams_;
   std::vector<LiteRtTensorBufferHandle> input_handles_;
   std::vector<LiteRtTensorBufferHandle> output_handles_;
   std::vector<void*> bound_input_ptrs_;
   std::vector<void*> bound_output_ptrs_;
+  std::vector<int> aliased_input_of_output_;
   void* head_weights_ = nullptr;
   void* head_scales_ = nullptr;
   void* head_input_bf16_ = nullptr;
@@ -2411,9 +2860,17 @@ extern "C" void LiteRtDispatchNvidiaGreedySamplerDestroy(
 extern "C" LiteRtStatus LiteRtDispatchNvidiaGreedySamplerSampleF32(
     LiteRtDispatchNvidiaGreedySampler sampler, LiteRtTensorBuffer logits,
     size_t count, int32_t* token_id) {
-  return SampleNvidiaGreedyF32(
-      static_cast<NvidiaGreedySamplerContext*>(sampler), logits, count,
-      token_id);
+  return SampleNvidiaGreedy(
+      static_cast<NvidiaGreedySamplerContext*>(sampler), logits, 1, count,
+      token_id, /*legacy_f32_only=*/true);
+}
+
+extern "C" LiteRtStatus LiteRtDispatchNvidiaGreedySamplerSampleBatched(
+    LiteRtDispatchNvidiaGreedySampler sampler, LiteRtTensorBuffer logits,
+    size_t rows, size_t vocab_size, int32_t* token_ids) {
+  return SampleNvidiaGreedy(
+      static_cast<NvidiaGreedySamplerContext*>(sampler), logits, rows,
+      vocab_size, token_ids, /*legacy_f32_only=*/false);
 }
 
 LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {

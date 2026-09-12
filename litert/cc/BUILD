@@ -730,6 +730,8 @@ cc_test(
         "//litert/c/internal:litert_scheduling_info",
         "//litert/cc/options:litert_runtime_options",
         "//litert/runtime:compiled_model",
+        "//litert/runtime:external_litert_buffer_context",
+        "//litert/runtime:tensor_buffer_requirements",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
