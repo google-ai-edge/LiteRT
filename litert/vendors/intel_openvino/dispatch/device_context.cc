@@ -31,6 +31,9 @@
 #include <utility>
 #include <vector>
 
+#include "openvino/core/shape.hpp"
+#include "openvino/core/type/element_type.hpp"
+#include "openvino/runtime/tensor.hpp"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_layout.h"
@@ -57,8 +60,6 @@
 
 #if LITERT_HAS_AHWB_SUPPORT || LITERT_HAS_DMABUF_SUPPORT
 #include <limits>
-
-#include "openvino/core/type/element_type.hpp"
 #endif
 
 litert::Expected<LiteRtDispatchDeviceContextT::Ptr>
@@ -356,6 +357,27 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
                                 "AHWB support is missing on this platform");
 #endif  // LITERT_HAS_AHWB_SUPPORT
       break;
+    }
+
+    case kLiteRtTensorBufferTypeHostMemory: {
+      // Plain host buffers (e.g. buffers the LiteRT-LM executors allocate
+      // on the CPU side and share between subgraphs) are bound zero-copy:
+      // wrap the caller's memory in an ov::Tensor instead of requiring an
+      // OpenVINO-allocated buffer.
+      ov::element::Type ov_element_type =
+          litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
+      void* host_addr = nullptr;
+      LITERT_RETURN_IF_ERROR(
+          runtime_context_->get_tensor_buffer_host_memory(tensor_buffer,
+                                                          &host_addr),
+          litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                             "Failed to get HostMemory buffer"));
+      std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
+      for (size_t i = 0; i < ov_shape_vec.size(); i++)
+        ov_shape_vec[i] = tensor_type.layout.dimensions[i];
+      ov::Shape ov_shape{ov_shape_vec.begin(), ov_shape_vec.end()};
+      ov::Tensor host_tensor(ov_element_type, ov_shape, host_addr);
+      return InsertTensor(RegisteredTensor{.tensor = host_tensor});
     }
 
     default:
