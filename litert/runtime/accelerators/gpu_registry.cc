@@ -37,9 +37,27 @@ namespace litert::internal {
 #if defined(LITERT_WINDOWS_OS)
 #define SO_EXT ".dll"
 #elif defined(__APPLE__)
+#include <TargetConditionals.h>
 #define SO_EXT ".dylib"
 #else
 #define SO_EXT ".so"
+#endif
+
+// On Apple targets the LiteRT accelerator dylibs are bundled as
+// ``<X>.framework/<X>`` (iOS) or ``<X>.framework/Versions/A/<X>`` (macOS),
+// not as flat ``lib<X>.dylib`` files. Apple App Store Connect rejects
+// builds that drop loose ``lib<X>.dylib`` symlinks alongside frameworks
+// (ITMS-90432: "Frameworks must be embedded as a .framework bundle"), so
+// hardcoding the basename here breaks App Store distribution. Use the
+// framework-relative path on Apple and keep the flat basename elsewhere.
+#if defined(__APPLE__) && TARGET_OS_OSX
+#define LITERT_METAL_ACCEL_LIB \
+  "LiteRtMetalAccelerator.framework/Versions/A/LiteRtMetalAccelerator"
+#elif defined(__APPLE__) && TARGET_OS_IPHONE
+#define LITERT_METAL_ACCEL_LIB \
+  "LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator"
+#else
+#define LITERT_METAL_ACCEL_LIB "libLiteRtMetalAccelerator" SO_EXT
 #endif
 
 LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
@@ -56,7 +74,7 @@ LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
 
 #elif TARGET_OS_IPHONE
 #if LITERT_HAS_METAL_SUPPORT
-      "libLiteRtMetalAccelerator" SO_EXT,
+      LITERT_METAL_ACCEL_LIB,
 #endif  // LITERT_HAS_METAL_SUPPORT
 #if LITERT_HAS_WEBGPU_SUPPORT
       "libLiteRtWebGpuAccelerator" SO_EXT,
@@ -70,7 +88,7 @@ LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
       "libLiteRtOpenClAccelerator" SO_EXT,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 #if LITERT_HAS_METAL_SUPPORT
-      "libLiteRtMetalAccelerator" SO_EXT,
+      LITERT_METAL_ACCEL_LIB,
 #endif  // LITERT_HAS_METAL_SUPPORT
 #endif  // !__ANDROID__ && !TARGET_OS_IPHONE
 
