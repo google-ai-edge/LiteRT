@@ -422,7 +422,7 @@ TEST_P(HtpBackendRPCPollingPerfParamTest, ManualSameModeSkipsRevote) {
   EXPECT_EQ(captured_configs->size(), configs_after_init);
 }
 
-TEST_P(HtpBackendRPCPollingPerfParamTest, AutoSameModeRevotes) {
+TEST_P(HtpBackendRPCPollingPerfParamTest, AutoSchedulesVotePerInference) {
   const auto& params = GetParam();
   Options options;
   options.SetHtpPerformanceMode(params.mode);
@@ -435,8 +435,14 @@ TEST_P(HtpBackendRPCPollingPerfParamTest, AutoSameModeRevotes) {
   ASSERT_TRUE(backend.Init(options, std::nullopt));
 #endif
 
+  // Auto mode defers voting: SetPerformanceMode must not vote by itself.
   const size_t configs_after_init = captured_configs->size();
   EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(captured_configs->size(), configs_after_init);
+
+  // Execute() drives the per-inference upvote/downvote via these hooks.
+  backend.ScheduleUpVote();
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
   EXPECT_EQ(captured_configs->size(), configs_after_init + 1);
 }
@@ -479,7 +485,30 @@ TEST_F(HtpBackendPerfBaseTest, DefaultModeSchedulesDownvote) {
   EXPECT_GT(captured_configs->size(), configs_after_init);
 }
 
-TEST_F(HtpBackendPerfBaseTest, AutoModeChangesAcrossExecutes) {
+TEST_F(HtpBackendPerfBaseTest, ManualBurstDefaultBurstRevotes) {
+  Options options;
+  options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
+  options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kManual);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kSocInfos[8]));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+
+  Options default_options;
+  default_options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kManual);
+  EXPECT_TRUE(backend.SetPerformanceMode(default_options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(400));
+  const size_t configs_after_downvote = captured_configs->size();
+
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_GT(captured_configs->size(), configs_after_downvote);
+}
+
+TEST_F(HtpBackendPerfBaseTest, AutoSchedulesUpAndDownVotes) {
   Options options;
   options.SetHtpPerformanceMode(HtpPerformanceMode::kPowerSaver);
   options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kAuto);
@@ -492,20 +521,16 @@ TEST_F(HtpBackendPerfBaseTest, AutoModeChangesAcrossExecutes) {
 #endif
   const size_t configs_after_init = captured_configs->size();
 
-  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  // Simulate one inference: upvote before, downvote after.
+  backend.ScheduleUpVote();
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  const size_t configs_after_same = captured_configs->size();
-  EXPECT_GT(configs_after_same, configs_after_init);
+  const size_t configs_after_upvote = captured_configs->size();
+  EXPECT_GT(configs_after_upvote, configs_after_init);
 
-  Options default_options;
-  EXPECT_TRUE(backend.SetPerformanceMode(default_options));
-
-  Options burst_options;
-  burst_options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
-  burst_options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kAuto);
-  EXPECT_TRUE(backend.SetPerformanceMode(burst_options));
+  backend.ScheduleDownVote();
+  // kPowerSaver is not debounced, so the downvote applies promptly.
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  EXPECT_GT(captured_configs->size(), configs_after_same);
+  EXPECT_GT(captured_configs->size(), configs_after_upvote);
 }
 
 // GRAPH CONFIG CHARACTERIZATION ///////////////////////////////////////////////
