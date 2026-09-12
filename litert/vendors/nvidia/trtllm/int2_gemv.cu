@@ -13,6 +13,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Adapted from TensorRT Edge-LLM's Apache-2.0 CUDA INT4
+// groupwise GEMV kernel:
+// https://github.com/NVIDIA/TensorRT-Edge-LLM/blob/main/cpp/kernels/int4GroupwiseGemmKernels/int4WoQGemvCuda.cu
+//
+// The Edge-LLM kernel is derived from MIT-HAN Lab's LLM-AWQ GEMV. This
+// adaptation retains its CUDA C++ small-M design and activation reuse across
+// output rows, while consuming LiteRT's raw signed INT2/INT4 row-major weights,
+// BF16 activations, and per-channel BF16 scales.
+//
+// Copyright (c) 2023 MIT-HAN Lab
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 #include <cuda_bf16.h>
 
 #include <cstdint>
