@@ -16,12 +16,30 @@
 #define ODML_LITERT_LITERT_RUNTIME_DISPATCH_DISPATCH_OPAQUE_OPTIONS_H_
 
 #include <cstddef>
+#include <string>
+#include <vector>
+
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 
 namespace litert::internal {
+
+// Mapping between a named model tensor on a delegated node/subgraph and its
+// port index. The tensor name is not pure name since its the output of the
+// TfLiteOpaqueTensorName call. Thus may contain the prefix of the signature
+// name and a suffix indicating the output port index.
+struct TensorPortMapping {
+  absl::string_view opaque_tensor_name;
+  int port_index = -1;
+};
+
+// Input and output tensor port mappings for a single delegated function/node.
+struct NodeTensorPortMapping {
+  std::vector<TensorPortMapping> input_tensor_ports;
+  std::vector<TensorPortMapping> output_tensor_ports;
+};
 
 // The DispatchDelegateOptions is used to share information between the
 // CompiledModel and the DispatchDelegate.
@@ -103,6 +121,30 @@ class DispatchDelegateOptions : public OpaqueOptions {
 
   // Returns whether the file region metadata (offset or size) is populated.
   Expected<bool> HasAllocBaseFileRegion();
+
+  // node_tensor_port_mappings ------------------------------------------------
+
+  // Set the input and output tensor port mappings for a function/node sepcified
+  // by `function_name`.
+  Expected<void> SetNodeTensorPortMapping(
+      absl::string_view function_name,
+      std::vector<TensorPortMapping> input_tensor_ports,
+      std::vector<TensorPortMapping> output_tensor_ports);
+
+  // Get the input and output tensor port mappings for a function/node specified
+  // by `function_name`.
+  Expected<const NodeTensorPortMapping*> GetNodeTensorPortMapping(
+      absl::string_view function_name);
+
+  // function_to_signature_map ------------------------------------------------
+
+  // Set the signature name associated with a specific function/node name.
+  Expected<void> RegisterFunctionSignature(absl::string_view function_name,
+                                           absl::string_view signature_name);
+
+  // Get the signature name associated with a specific function/node name.
+  Expected<std::string_view> GetFunctionSignature(
+      absl::string_view function_name);
 };
 
 }  // namespace litert::internal
