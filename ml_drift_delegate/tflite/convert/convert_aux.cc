@@ -454,10 +454,13 @@ void PopulateBlockwiseQuantizedFullyConnected(
                      ::ml_drift::Axis::WIDTH, ::ml_drift::Axis::DEPTH,
                      ::ml_drift::Axis::CHANNELS};
   }
-  // The table above tops out at the 5 BHWDC axes, so a tensor of rank 6 or
-  // more can produce an `index` past its end. Return UNKNOWN instead of
-  // indexing out of bounds so that the failure surfaces downstream during
-  // kernel selection rather than as a memory error.
+  // `index_to_axis` has one entry per axis of this tensor, capped at the 5
+  // BHWDC axes, so an out-of-range axis indexes past its end. Callers are
+  // expected to reject those in their Is*Supported() check, but that is
+  // enforced per-op and these checks might be missing in some places,
+  // so this is a form of defense-in-depth. Return UNKNOWN instead of
+  // reading out of bounds so that the failure surfaces during kernel
+  // selection rather than as a memory error.
   if (index < 0 || index >= static_cast<int>(index_to_axis.size())) {
     return ::ml_drift::Axis::UNKNOWN;
   }
