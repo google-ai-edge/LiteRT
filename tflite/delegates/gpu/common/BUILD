@@ -288,11 +288,13 @@ cc_test(
     deps = [
         ":data_type",
         ":model_builder",
+        ":object_reader",
         ":shape",
         ":tensor",
         "//tflite:framework",
         "//tflite:kernel_api",
         "//tflite/core/c:common",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/types:span",
