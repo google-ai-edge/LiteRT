@@ -105,6 +105,7 @@
 #include "litert/vendors/qualcomm/core/builders/strided_slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tanh_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tile_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/detection_postprocess_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/topk_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
@@ -1616,24 +1617,56 @@ constexpr std::array<OpBuilder, kLiteRtOpCodeShloComposite + 1> kOpBuilders =
     GetOpBuilders();
 static_assert(kOpBuilders.size() == kLiteRtOpCodeShloComposite + 1);
 
+LiteRtStatus BuildDetectionPostprocessCustomOp(
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers) {
+  auto custom_options = litert_op.CustomOptions();
+  if (!custom_options.HasValue() || custom_options->empty()) {
+    LITERT_LOG(LITERT_ERROR,
+               "TFLite_Detection_PostProcess: missing custom options.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  if (!flexbuffers::VerifyBuffer(custom_options->data(),
+                                 custom_options->size())) {
+    LITERT_LOG(LITERT_ERROR,
+               "TFLite_Detection_PostProcess: custom options are not valid "
+               "flexbuffer.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  return ::qnn::BuildDetectionPostprocessOp(*custom_options, tensor_pool,
+                                            input_tensors, output_tensors,
+                                            op_wrappers);
+}
+
 LiteRtStatus BuildCustomOp(const litert::compiler::Op& litert_op,
                            ::qnn::TensorPool& tensor_pool,
                            std::vector<::qnn::TensorWrapperRef>& input_tensors,
                            std::vector<::qnn::TensorWrapperRef>& output_tensors,
                            std::vector<::qnn::OpWrapper>& op_wrappers,
                            const ::qnn::CustomOpPackage& custom_op_package) {
-  if (custom_op_package.name.empty()) {
-    LITERT_LOG(LITERT_WARNING,
-               "No custom package registered for custom op, won't create QNN "
-               "custom op.");
-    return kLiteRtStatusOk;
-  }
-
   // Use tflite custom code as op type in QNN custom op package.
   auto custom_code = litert_op.CustomCode();
   if (!custom_code.HasValue() || custom_code->empty()) {
     LITERT_LOG(LITERT_ERROR, "Custom op missing custom code.");
     return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  // TFLite_Detection_PostProcess is translated to the QNN DetectionOutput op.
+  if (*custom_code == "TFLite_Detection_PostProcess") {
+    return BuildDetectionPostprocessCustomOp(litert_op, tensor_pool,
+                                             input_tensors, output_tensors,
+                                             op_wrappers);
+  }
+
+  if (custom_op_package.name.empty()) {
+    LITERT_LOG(LITERT_WARNING,
+               "No custom package registered for custom op, won't create QNN "
+               "custom op.");
+    return kLiteRtStatusOk;
   }
 
   auto custom_options = litert_op.CustomOptions();
