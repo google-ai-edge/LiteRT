@@ -46,6 +46,25 @@ cc_test(
 )
 
 cc_test(
+    name = "batch_matmul_test",
+    srcs = ["batch_matmul_test.cc"],
+    linkstatic = True,
+    tags = tf_gpu_tests_tags() + [
+        "linux",
+        "local",
+    ],
+    deps = [
+        "//tflite:framework",
+        "//tflite/delegates/gpu:delegate",
+        "//tflite/kernels:test_main",
+        "//tflite/kernels:test_util",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest",
+        "@flatbuffers",
+    ],
+)
+
+cc_test(
     name = "cast_test",
     srcs = ["cast_test.cc"],
     tags = [
