@@ -20,6 +20,7 @@ package(
     default_visibility = ["//visibility:public"],
 )
 
+# Testing ComplianceLint.
 cc_library(
     name = "arithmetic_tflite",
     srcs = ["arithmetic_tflite.cc"],
