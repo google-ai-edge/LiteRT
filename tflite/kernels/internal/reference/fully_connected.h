@@ -19,7 +19,6 @@ limitations under the License.
 #include <cmath>
 #include <cstdint>
 
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/kernels/internal/common.h"
 #include "tflite/kernels/internal/cppmath.h"
 #include "tflite/kernels/internal/quantization_util.h"
