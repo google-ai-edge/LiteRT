@@ -244,7 +244,8 @@ LiteRtDispatchInvocationContextT::Create(
     exec_bytecode_ptr =
         static_cast<const uint8_t*>(exec_bytecode_ptr) + payload_offset;
     exec_bytecode_size -= payload_offset;
-    LITERT_LOG(LITERT_INFO, "Dispatch: using device '%s' from bytecode header",
+    LITERT_LOG(LITERT_INFO,
+               "Dispatch: using device '%s' from bytecode header",
                device.c_str());
   } else if (selected_device.has_value()) {
     // GlobalGraph subgraphs carry their target device in the container.
@@ -253,7 +254,7 @@ LiteRtDispatchInvocationContextT::Create(
                device.c_str());
   } else {
     LITERT_LOG(LITERT_INFO,
-               "Dispatch: no bytecode header found, defaulting to '%s'",
+               "Dispatch: no device metadata found, defaulting to '%s'",
                device.c_str());
   }
 
@@ -290,7 +291,11 @@ LiteRtDispatchInvocationContextT::Create(
           "Requested OpenVINO device is not available on this system");
     }
   }
-  LITERT_LOG(LITERT_INFO, "Using Intel OpenVINO device: %s", device.c_str());
+  const char* partition_name =
+      function_name != nullptr && function_name[0] != '\0' ? function_name
+                                                            : "(unnamed)";
+  LITERT_LOG(LITERT_INFO, "OpenVINO partition '%s' using device: %s",
+             partition_name, device.c_str());
 
   OpenVINOSharedCore::GetInstance()->SetDevice(device);
 
