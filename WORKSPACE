@@ -65,6 +65,17 @@ http_archive(
     url = "https://github.com/bazelbuild/rules_apple/releases/download/3.22.0/rules_apple.3.22.0.tar.gz",
 )
 
+# Declared before `apple_rules_dependencies()` because that macro also declares
+# `bazel_skylib`, and the first declaration of a repository wins. The pinned
+# TensorFlow expects 1.9.0: its `@rules_cc` uses the `scope` attribute on
+# `bool_flag`, which older bazel_skylib releases do not define. Keep this in
+# sync with the version in TensorFlow's `tensorflow/workspace3.bzl`.
+http_archive(
+    name = "bazel_skylib",
+    sha256 = "3b5b49006181f5f8ff626ef8ddceaa95e9bb8ad294f7b5d7b11ea9f7ddaf8c59",
+    urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/1.9.0/bazel-skylib-1.9.0.tar.gz"],
+)
+
 load(
     "@build_bazel_rules_apple//apple:repositories.bzl",
     "apple_rules_dependencies",
@@ -114,9 +125,9 @@ tensorflow_source_repo(
     name = "org_tensorflow",
     patches = ["//:PATCH.flatbuffers_windows_no_bash"],
     protobuf_patches = ["//:PATCH.protobuf_port_msvc_compat"],
-    sha256 = "a091b411891ff3534e4361a47847a5e46877959e43d0f84fd0e1d15c3d45fa9c",
-    strip_prefix = "tensorflow-a6146d14c579be0f52e11e6cbdd6dff74bec70bc",
-    urls = ["https://github.com/tensorflow/tensorflow/archive/a6146d14c579be0f52e11e6cbdd6dff74bec70bc.tar.gz"],
+    sha256 = "7bf06cfd5ff9b462b1b25ca4dc3613fa5e3847fd8e291ff0a8de2ca5a812590a",
+    strip_prefix = "tensorflow-5c0b7a5946f0f485e3a532b2a00e03f42a6e14c1",
+    urls = ["https://github.com/tensorflow/tensorflow/archive/5c0b7a5946f0f485e3a532b2a00e03f42a6e14c1.tar.gz"],
 )
 
 # Initialize the TensorFlow repository and all dependencies.
@@ -128,6 +139,24 @@ tensorflow_source_repo(
 load("@org_tensorflow//tensorflow:workspace3.bzl", "tf_workspace3")
 
 tf_workspace3()
+
+# Mirror the repository initialization that TensorFlow's own WORKSPACE performs
+# between tf_workspace3() and tf_workspace2(). Both repositories are fetched by
+# tf_workspace3(), and both must be initialized before tf_workspace2() pulls in
+# dependencies that load from them, because the repositories have to exist while
+# Bazel computes the main repo mapping.
+#
+# bazel_features_deps() defines `@bazel_features_version`, which is loaded
+# transitively by `@rules_cc`. compatibility_proxy_repo() defines
+# `@cc_compatibility_proxy`; tf_workspace1() also declares it, but that runs too
+# late.
+load("@bazel_features//:deps.bzl", "bazel_features_deps")
+
+bazel_features_deps()
+
+load("@rules_cc//cc:extensions.bzl", "compatibility_proxy_repo")
+
+compatibility_proxy_repo()
 
 # Initialize hermetic Python
 load("@xla//third_party/py:python_init_rules.bzl", "python_init_rules")
@@ -150,6 +179,7 @@ python_init_repositories(
         "3.12": "@org_tensorflow//:requirements_lock_3_12.txt",
         "3.13": "@org_tensorflow//:requirements_lock_3_13.txt",
         "3.14": "@org_tensorflow//:requirements_lock_3_14.txt",
+        "3.14-freethreaded": "@org_tensorflow//:requirements_lock_3_14_freethreaded.txt",
     },
 )
 
