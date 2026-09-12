@@ -21,6 +21,16 @@ package(
 )
 
 cc_library(
+    name = "cache_layout",
+    hdrs = ["cache_layout.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//litert/c:litert_layout",
+        "//litert/c:litert_tensor_buffer_types",
+    ],
+)
+
+cc_library(
     name = "bytecode",
     srcs = ["bytecode.cc"],
     hdrs = ["bytecode.h"],

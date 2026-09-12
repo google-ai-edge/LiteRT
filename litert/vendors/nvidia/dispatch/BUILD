@@ -61,6 +61,48 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "runtime_cache",
+    srcs = ["runtime_cache.cc"],
+    hdrs = ["runtime_cache.h"],
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "@local_cuda//:cuda_headers",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+)
+
+cc_test(
+    name = "runtime_cache_test",
+    srcs = ["runtime_cache_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":runtime_cache",
+        "//litert/c:litert_common",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+        "@local_tensorrt_rtx//:tensorrt_rtx_stub",
+    ],
+)
+
 cc_test(
     name = "aot_artifact_test",
     srcs = ["aot_artifact_test.cc"],
@@ -106,6 +148,7 @@ litert_dispatch_api(
     name = "dispatch_api",
     srcs = ["dispatch_api.cc"],
     hdrs = [
+        "tensor_buffer_layout.h",
         "tensor_buffer_view.h",
         "//litert/vendors/c:litert_dispatch.h",
     ],
@@ -132,11 +175,13 @@ litert_dispatch_api(
         ":dispatch_profiler",
         ":greedy_sampler_c_api",
         ":greedy_sampler_kernel",
+        ":runtime_cache",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment_header",
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_event_header",
+        "//litert/c:litert_layout",
         "//litert/c:litert_metrics",
         "//litert/c:litert_model_types",
         "//litert/c:litert_options_header",
@@ -153,14 +198,30 @@ litert_dispatch_api(
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/nvidia:bytecode",
+        "//litert/vendors/nvidia:cache_layout",
         "//litert/vendors/nvidia:memory_profile",
         "//litert/vendors/nvidia:tensorrt_logger",
+        "//litert/vendors/nvidia/compiler:cache_update_plugin",
+        "//litert/vendors/nvidia/compiler:decode_attention_plugin",
         "//litert/vendors/nvidia/compiler:subbyte_gemv_plugin",
         "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
         "@local_cuda//:cuda_headers",
         "@local_cuda//:cuda_runtime",
         "@local_tensorrt_rtx//:tensorrt_rtx_headers",
         "@local_tensorrt_rtx//:tensorrt_rtx_stub",
+    ],
+)
+
+cc_test(
+    name = "tensor_buffer_layout_test",
+    srcs = [
+        "tensor_buffer_layout.h",
+        "tensor_buffer_layout_test.cc",
+    ],
+    deps = [
+        "//litert/c:litert_layout",
+        "//litert/vendors/nvidia:cache_layout",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -174,6 +235,38 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "aot_engine_residency_test",
+    srcs = ["aot_engine_residency_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":dispatch_api",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_requirements",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/vendors/nvidia:bytecode",
+        "//litert/vendors/nvidia:cache_layout",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+        "@local_tensorrt_rtx//:tensorrt_rtx_stub",
     ],
 )
 
@@ -192,6 +285,32 @@ cc_test(
     }),
     deps = [
         ":greedy_sampler_kernel",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "greedy_sampler_c_api_test",
+    srcs = ["greedy_sampler_c_api_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":dispatch_api",
+        ":greedy_sampler_c_api",
+        "//litert/c:litert_model_types",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/vendors/nvidia:cache_layout",
         "@com_google_googletest//:gtest_main",
         "@local_cuda//:cuda_headers",
         "@local_cuda//:cuda_runtime",
