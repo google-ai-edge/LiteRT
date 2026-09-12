@@ -20,6 +20,8 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/status/status.h"
+#include "absl/types/span.h"
 #include "tflite/delegates/gpu/common/task/work_group_picking.h"
 
 namespace tflite {
