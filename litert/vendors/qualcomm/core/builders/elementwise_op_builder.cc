@@ -542,4 +542,31 @@ std::vector<OpWrapper> BuildElementwiseSignOp(
   return res;
 }
 
+std::vector<OpWrapper> BuildElementwiseAtan2Op(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  // atan2(y, x) = atan(y / x): inputs[0]=y, inputs[1]=x
+  TensorWrapper& div_out =
+      tensor_pool.CloneNativeTensorFrom(outputs[0].get());
+
+  auto& div_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
+  div_op.AddInputTensor(inputs[0]);
+  div_op.AddInputTensor(inputs[1]);
+  div_op.AddOutputTensor(div_out);
+  div_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_DIVIDE);
+
+  auto& atan_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_UNARY);
+  atan_op.AddInputTensor(div_out);
+  atan_op.AddOutputTensor(outputs[0]);
+  atan_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_ATAN);
+
+  return res;
+}
+
 }  // namespace qnn
