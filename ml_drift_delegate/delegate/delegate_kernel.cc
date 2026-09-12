@@ -458,7 +458,8 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
     auto& buffer_map = GetBufferIdToSpatialTensorMap(*delegate_data_);
     auto& quant_map = GetQuantParamIdToSpatialTensorMap(*delegate_data_);
     // TODO: b/403337563 - Enable prepare_weights_in_batches with options.
-    if ((gpu_info.IsApple() || gpu_info.IsApiWebGpu()) &&
+    if ((gpu_info.IsApple() || gpu_info.IsApiWebGpu() ||
+         gpu_info.IsApiOpenCl()) &&
         prepare_weights_in_batches) {
       bool use_serialization_cache =
           shared_memory_serialization_cache != nullptr;
