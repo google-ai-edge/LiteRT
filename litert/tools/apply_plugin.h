@@ -161,6 +161,15 @@ struct ApplyPluginRun {
 
   // LiteRtOptions holder that is built from the options above.
   internal::LiteRtOptionsPtr options_ptr;
+
+  // Input shape overrides, analogous to QAIRT's --source_model_input_shape.
+  // At most one of these may be non-empty at a time.
+  //
+  // positional_inputs: shapes by position, e.g. {"1:224:224:3", "1:10"}.
+  //   The count must match the model's input count exactly.
+  // name_inputs: shapes by tensor name, e.g. {"arg0@1:224:224:3"}.
+  std::vector<std::string> positional_inputs = {};
+  std::vector<std::string> name_inputs = {};
 };
 
 LiteRtStatus ApplyPlugin(ApplyPluginRun::Ptr run);
