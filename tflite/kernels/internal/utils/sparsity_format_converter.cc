@@ -266,8 +266,30 @@ void FormatConverter<T>::InitSparseToDenseConverter(
   block_map_ = std::move(block_map);
   format_ = std::move(format);
 
+  const int total_dims = dense_shape_.size() + block_map_.size();
+  for (int v : traversal_order_) {
+    if (v < 0 || v >= total_dims) {
+      format_.clear();
+      dense_size_ = 0;
+      return;
+    }
+  }
+  const int orig_rank = dense_shape_.size();
+  for (int v : block_map_) {
+    if (v < 0 || v >= orig_rank) {
+      format_.clear();
+      dense_size_ = 0;
+      return;
+    }
+  }
+
   dense_size_ = 1;
   for (int i = 0; i < dense_shape_.size(); i++) {
+    if (dense_shape_[i] < 0) {
+      format_.clear();
+      dense_size_ = 0;
+      return;
+    }
     dense_size_ *= dense_shape_[i];
   }
 
@@ -306,42 +328,67 @@ void FormatConverter<T>::Populate(const T* src_data, std::vector<int> indices,
                                   T* dest_data) {
   if (level == indices.size()) {
     int orig_rank = dense_shape_.size();
-    std::vector<int> orig_idx;
-    orig_idx.resize(orig_rank);
+    std::vector<int> orig_idx(orig_rank, 0);
     int i = 0;
-    for (; i < orig_idx.size(); i++) {
+    for (; i < orig_idx.size() && i < traversal_order_.size() &&
+           i < indices.size();
+         i++) {
       int orig_dim = traversal_order_[i];
-      orig_idx[orig_dim] = indices[i];
+      if (orig_dim >= 0 && orig_dim < orig_rank) {
+        orig_idx[orig_dim] = indices[i];
+      }
     }
 
-    for (; i < indices.size(); i++) {
+    for (; i < indices.size() && i < traversal_order_.size(); i++) {
       const int block_idx = traversal_order_[i] - orig_rank;
-      const int orig_dim = block_map_[block_idx];
-      orig_idx[orig_dim] =
-          orig_idx[orig_dim] * block_size_[block_idx] + indices[i];
+      if (block_idx >= 0 && block_idx < static_cast<int>(block_map_.size()) &&
+          block_idx < static_cast<int>(block_size_.size())) {
+        const int orig_dim = block_map_[block_idx];
+        if (orig_dim >= 0 && orig_dim < orig_rank) {
+          orig_idx[orig_dim] =
+              orig_idx[orig_dim] * block_size_[block_idx] + indices[i];
+        }
+      }
     }
 
-    dest_data[GetFlattenedIndex(orig_idx, dense_shape_)] =
-        src_data[*src_data_ptr];
+    for (int d = 0; d < orig_rank; d++) {
+      if (orig_idx[d] < 0 || orig_idx[d] >= dense_shape_[d]) {
+        return;
+      }
+    }
 
-    *src_data_ptr = *src_data_ptr + 1;
+    const uint64_t flat_idx = GetFlattenedIndex(orig_idx, dense_shape_);
+    if (flat_idx < static_cast<uint64_t>(dense_size_)) {
+      dest_data[flat_idx] = src_data[*src_data_ptr];
+      *src_data_ptr = *src_data_ptr + 1;
+    }
     return;
   }
 
   const int metadata_idx = 2 * level;
+  if (metadata_idx < 0 ||
+      metadata_idx + 1 >= static_cast<int>(dim_metadata_.size()) ||
+      dim_metadata_[metadata_idx].empty()) {
+    return;
+  }
   const int shape_of_level = dim_metadata_[metadata_idx][0];
   if (format_[level] == kTfLiteDimDense) {
+    if (shape_of_level < 0) return;
     for (int i = 0; i < shape_of_level; i++) {
       indices[level] = i;
       Populate(src_data, indices, level + 1, prev_idx * shape_of_level + i,
                src_data_ptr, dest_data);
     }
-  } else if (prev_idx + 1 < dim_metadata_[metadata_idx].size()) {
+  } else if (prev_idx >= 0 &&
+             prev_idx + 1 <
+                 static_cast<int>(dim_metadata_[metadata_idx].size())) {
     const auto& array_segments = dim_metadata_[metadata_idx];
     const auto& array_indices = dim_metadata_[metadata_idx + 1];
-    for (int i = array_segments[prev_idx]; i < array_segments[prev_idx + 1];
-         i++) {
-      if (i < array_indices.size() && level < indices.size()) {
+    const int lo = array_segments[prev_idx];
+    const int hi = array_segments[prev_idx + 1];
+    for (int i = std::max(lo, 0);
+         i < hi && i < static_cast<int>(array_indices.size()); i++) {
+      if (level < static_cast<int>(indices.size())) {
         indices[level] = array_indices[i];
         Populate(src_data, indices, level + 1, i, src_data_ptr, dest_data);
       }
