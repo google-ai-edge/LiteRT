@@ -1,6 +1,7 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+#include <gmock/gmock.h>  // NOLINT
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -60,7 +61,7 @@ TEST_P(QnnModelTest, AddNThreeInputs) {
   auto output_data = qnn_model_.GetOutputData<float>(output_idx);
   ASSERT_TRUE(output_data);
   ASSERT_THAT(output_data.value(),
-              Pointwise(FloatNear(1e-3), {-1.4f, 0.5f, 1.1f, 1.5f}));
+              testing::Pointwise(testing::FloatNear(1e-3), {-1.4f, 0.5f, 1.1f, 1.5f}));
 #endif
 }
 
@@ -100,7 +101,7 @@ TEST_P(QnnModelTest, AddNTwoInputsEmitsSingleAdd) {
   auto output_data = qnn_model_.GetOutputData<float>(output_idx);
   ASSERT_TRUE(output_data);
   ASSERT_THAT(output_data.value(),
-              Pointwise(FloatNear(1e-3), {-1.9f, 0.4f, 1.0f, 1.3f}));
+              testing::Pointwise(testing::FloatNear(1e-3), {-1.9f, 0.4f, 1.0f, 1.3f}));
 #endif
 }
 
