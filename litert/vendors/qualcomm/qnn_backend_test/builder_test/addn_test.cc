@@ -1,6 +1,7 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -14,6 +15,9 @@
 
 namespace litert::qnn {
 namespace {
+using testing::ElementsAre;
+using testing::FloatNear;
+using testing::Pointwise;
 
 INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
                          QnnTestPrinter);
@@ -143,7 +147,7 @@ TEST_P(QnnModelTest, AddNThreeInputsInt32) {
 
   auto output_data = qnn_model_.GetOutputData<std::int32_t>(output_idx);
   ASSERT_TRUE(output_data);
-  ASSERT_THAT(output_data.value(), testing::ElementsAre(-9, -1, 11, 11));
+  ASSERT_THAT(output_data.value(), ElementsAre(-9, -1, 11, 11));
 #endif
 }
 
