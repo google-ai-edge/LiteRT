@@ -221,15 +221,9 @@ bool IsFullyConnectedSupported(
     return false;
   }
   // Check const inputs.
-  if (IsConstantTensor(&input) && IsConstantTensor(&weights) &&
-      ((bias && IsConstantTensor(bias)) || !bias)) {
-    if (bias) {
-      *error = absl::StrCat("Invalid constant inputs: ", src_id, ", ",
-                            weights_id, ", ", *bias_id);
-    } else {
-      *error =
-          absl::StrCat("Invalid constant inputs: ", src_id, ", ", weights_id);
-    }
+  if (IsConstantTensor(&input)) {
+    *error = absl::StrCat(
+        "Constant input[0] is not supported for FullyConnected: ", src_id);
     return false;
   }
   // Check fused activation.
