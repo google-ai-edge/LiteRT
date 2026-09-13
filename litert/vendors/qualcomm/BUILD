@@ -57,7 +57,6 @@ cc_library(
         "//litert/cc/internal:litert_shared_library",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/backends:qnn_backend",
-        "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
@@ -190,7 +189,6 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_shared_library",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],
 )
