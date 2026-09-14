@@ -15,7 +15,9 @@ limitations under the License.
 
 #include "tflite/converter/utils/convert_type.h"
 
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "mlir/IR/Builders.h"  // from @llvm-project
