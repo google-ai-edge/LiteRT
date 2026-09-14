@@ -140,35 +140,33 @@ AttentionOutput<Mixins...> Attention(
     updated_value_cache = v;
   }
 
-  // GQA Tiling
+  // Keep the original KV heads for cache updates and cross-layer sharing.
   Tensor<Mixins...> k_for_attn_untiled = k_for_attn;
   Tensor<Mixins...> v_for_attn_untiled = v_for_attn;
 
   int num_groups = config.num_heads / config.num_kv_heads;
-  if (num_groups > 1) {
-    if (config.num_kv_heads == 1) {
-      k_for_attn = Tile(k_for_attn, {1, num_groups, 1, 1});
-      v_for_attn = Tile(v_for_attn, {1, num_groups, 1, 1});
-    } else {
-      std::vector<Tensor<Mixins...>> k_sliced;
-      k_sliced.reserve(config.num_kv_heads);
-      std::vector<Tensor<Mixins...>> v_sliced;
-      v_sliced.reserve(config.num_kv_heads);
-      const Shape& shape = k_for_attn.GetShape();
-      for (int h = 0; h < config.num_kv_heads; ++h) {
-        Tensor<Mixins...> k_h =
-            Slice(k_for_attn, {0, h, 0, 0}, {shape[0], 1, -1, shape[3]});
-        k_sliced.push_back(Tile(k_h, {1, num_groups, 1, 1}));
+  // BatchMatMul broadcasts a single KV head to all query heads. Avoid an
+  // explicit Tile, which can leave an unsupported broadcast when XNNPACK's
+  // consistent arithmetic mode prevents its optimizer rewrite.
+  if (num_groups > 1 && config.num_kv_heads > 1) {
+    std::vector<Tensor<Mixins...>> k_sliced;
+    k_sliced.reserve(config.num_kv_heads);
+    std::vector<Tensor<Mixins...>> v_sliced;
+    v_sliced.reserve(config.num_kv_heads);
+    const Shape& shape = k_for_attn.GetShape();
+    for (int h = 0; h < config.num_kv_heads; ++h) {
+      Tensor<Mixins...> k_h =
+          Slice(k_for_attn, {0, h, 0, 0}, {shape[0], 1, -1, shape[3]});
+      k_sliced.push_back(Tile(k_h, {1, num_groups, 1, 1}));
 
-        Tensor<Mixins...> v_h =
-            Slice(v_for_attn, {0, h, 0, 0}, {shape[0], 1, -1, shape[3]});
-        v_sliced.push_back(Tile(v_h, {1, num_groups, 1, 1}));
-      }
-      k_for_attn =
-          Concatenation<Mixins...>(absl::Span<Tensor<Mixins...>>(k_sliced), 1);
-      v_for_attn =
-          Concatenation<Mixins...>(absl::Span<Tensor<Mixins...>>(v_sliced), 1);
+      Tensor<Mixins...> v_h =
+          Slice(v_for_attn, {0, h, 0, 0}, {shape[0], 1, -1, shape[3]});
+      v_sliced.push_back(Tile(v_h, {1, num_groups, 1, 1}));
     }
+    k_for_attn =
+        Concatenation<Mixins...>(absl::Span<Tensor<Mixins...>>(k_sliced), 1);
+    v_for_attn =
+        Concatenation<Mixins...>(absl::Span<Tensor<Mixins...>>(v_sliced), 1);
   }
 
   Tensor scores = BatchMatMul(q, k_for_attn, /*adj_x=*/false, /*adj_y=*/true);
