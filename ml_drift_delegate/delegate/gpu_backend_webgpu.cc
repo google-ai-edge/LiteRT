@@ -477,8 +477,8 @@ absl::Status GpuInferenceContextWebGpu::UploadWeightsOnWeb(
     tfl_id_to_wgpu_buffer[it->second] = wgpu_tensor->GetBufferHandle();
   }
 
-  ABSL_RETURN_IF_ERROR(
-      weight_loader->UploadWeightsOnWeb(tfl_id_to_wgpu_buffer));
+  ABSL_RETURN_IF_ERROR(weight_loader->UploadWeightsOnWeb(
+      backend_->wgpu_env().queue(), tfl_id_to_wgpu_buffer));
 
   return absl::OkStatus();
 #else

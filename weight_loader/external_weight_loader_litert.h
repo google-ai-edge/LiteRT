@@ -35,6 +35,7 @@
 #else
 namespace wgpu {
 class Buffer;
+class Queue;
 }  // namespace wgpu
 #endif  // __EMSCRIPTEN__
 #include "litert/c/internal/litert_runtime_context.h"
@@ -148,6 +149,7 @@ class WeightLoader {
       uint32_t external_buffer_id) const = 0;
 
   virtual absl::Status UploadWeightsOnWeb(
+      const wgpu::Queue& queue,
       const absl::flat_hash_map<int, wgpu::Buffer>& tfl_id_to_wgpu_buffer) {
     return absl::UnimplementedError(
         "UploadWeightsOnWeb is not implemented by default.");
@@ -212,6 +214,21 @@ std::unique_ptr<WeightLoader> CreateLiteRtWeightLoader(
     std::optional<std::string> model_directory = std::nullopt,
     std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source = nullptr,
     const WeightInMemoryMap* weight_in_memory_map = nullptr);
+
+#ifdef __EMSCRIPTEN__
+struct WebWeightUploadRequest {
+  int tfl_id;
+  wgpu::Buffer buffer;
+  uint64_t offset;
+  uint64_t length;
+};
+
+using WebWeightUploadCallback =
+    absl::Status (*)(const wgpu::Queue& queue,
+                     absl::Span<const WebWeightUploadRequest> requests);
+
+void RegisterWebWeightUploadCallback(WebWeightUploadCallback callback);
+#endif  // __EMSCRIPTEN__
 
 }  // namespace weight_loader
 
