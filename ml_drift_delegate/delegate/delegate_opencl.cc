@@ -385,6 +385,9 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
     upload_start = tflite::profiling::time::NowMicros();
   }
 
+  if (delegate_kernel->HasQuantizedTensors()) {
+    CALL_DELEGATE_KERNEL(DequantizeInputs, context);
+  }
   CALL_DELEGATE_KERNEL(BindExternalTensorBuffers, context);
   CALL_DELEGATE_KERNEL(UploadIntermediateCpuTensorsToGpuMemory, context);
   CALL_DELEGATE_KERNEL(HandleInputEvents, context);
@@ -440,6 +443,9 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
   }
 
   CALL_DELEGATE_KERNEL(DownloadGpuMemoryToIntermediateCpuTensors, context);
+  if (delegate_kernel->HasQuantizedTensors()) {
+    CALL_DELEGATE_KERNEL(QuantizeOutputs, context);
+  }
   CALL_DELEGATE_KERNEL(FlushBufferCacheIfNeeded, context);
 
   if (is_profiling) {

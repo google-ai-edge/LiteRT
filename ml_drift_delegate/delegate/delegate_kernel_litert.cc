@@ -16,7 +16,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <utility>
@@ -329,10 +328,7 @@ absl::Status DelegateKernelLiteRt::RegisterLiteRtBufferRequirements(
     TfLiteTensor* tflite_tensor,
     const ::ml_drift::TensorDescriptor& tensor_desc,
     ::ml_drift::TensorStorageType used_storage_type) {
-  const ::ml_drift::DataType data_type = tensor_desc.GetDataType();
-  std::vector<uint64_t> storage_dims = tensor_desc.GetStorageDims();
-  size_t required_data_size =
-      storage_dims[0] * tensor_desc.GetElementSize() * SizeOf(data_type);
+  const size_t required_data_size = tensor_desc.GetMemorySizeInBytes();
 
   LiteRtTensorBufferRequirements gpu_buffer_requirements;
   ABSL_ASSIGN_OR_RETURN(auto requirements,

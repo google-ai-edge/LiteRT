@@ -151,10 +151,12 @@ class DelegateKernelLiteRt : public DelegateKernel {
   // BUFFER storage type is returned. Otherwise, the default storage type is
   // returned.
   ::ml_drift::TensorStorageType GetStorageType(const char* tensor_name) const {
-    for (const auto& pattern :
-         delegate_data_->options->litert_buffer_storage_tensor_patterns) {
-      if (strncmp(tensor_name, pattern.c_str(), pattern.size()) == 0) {
-        return ::ml_drift::TensorStorageType::BUFFER;
+    if (tensor_name != nullptr) {
+      for (const auto& pattern :
+           delegate_data_->options->litert_buffer_storage_tensor_patterns) {
+        if (strncmp(tensor_name, pattern.c_str(), pattern.size()) == 0) {
+          return ::ml_drift::TensorStorageType::BUFFER;
+        }
       }
     }
     return DelegateKernel::GetStorageType();
