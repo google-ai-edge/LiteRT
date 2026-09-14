@@ -166,6 +166,23 @@ cc_library(
 )
 
 cc_library(
+    name = "rope_parser",
+    srcs = ["rope_parser.cc"],
+    hdrs = ["rope_parser.h"],
+    deps = [
+        "//ml_drift_delegate/tflite:custom_ir_operation_parser",
+        "//ml_drift_delegate/tflite:ir_model_builder_helper",
+        "//tflite/c:common",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:operations",
+    ],
+)
+
+cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
     hdrs = ["custom_parsers.h"],
@@ -173,6 +190,7 @@ cc_library(
         ":add_values_to_cache_parser",
         ":moe_experts_parser",
         ":qkv_norm_rope_parser",
+        ":rope_parser",
         ":runtime_batched_matmul_parser",
         ":sdpa_transposed_parser",
         ":short_conv_step_parser",
@@ -284,6 +302,25 @@ cc_test(
         "@flatbuffers",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
+    ],
+)
+
+cc_test(
+    name = "rope_parser_test",
+    srcs = ["rope_parser_test.cc"],
+    deps = [
+        ":rope_parser",
+        "//ml_drift_delegate/tflite:custom_ir_operation_parser",
+        "//ml_drift_delegate/tflite/convert:convert_testing_utils",
+        "//ml_drift_delegate/tflite/convert:stub_delegate",
+        "//tflite:builtin_ops",
+        "//tflite:framework_stable",
+        "//tflite/c:common",
+        "//tflite/core/c:private_common",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:operations",
     ],
 )
 

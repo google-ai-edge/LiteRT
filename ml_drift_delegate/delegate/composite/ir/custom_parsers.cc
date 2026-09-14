@@ -18,6 +18,7 @@
 #include "ml_drift_delegate/delegate/composite/ir/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/qkv_norm_rope_parser.h"
+#include "ml_drift_delegate/delegate/composite/ir/rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/short_conv_step_parser.h"
@@ -33,6 +34,7 @@ CustomIrOpMap GetCustomParsers() {
   parsers["moe"] = GetMoeExpertsParser();
   parsers["odml.runtime_bmm"] = GetRuntimeBatchedMatMulParser();
   parsers["odml.sdpa_transposed"] = GetSdpaTransposedParser();
+  parsers["odml.rope"] = GetRopeParser();
   parsers["odml.swiglu"] = GetSwigluParser();
   parsers["odml.qkv_norm_rope"] = GetQkvNormRopeParser();
   parsers["odml.short_conv_step"] = GetShortConvStepParser();
