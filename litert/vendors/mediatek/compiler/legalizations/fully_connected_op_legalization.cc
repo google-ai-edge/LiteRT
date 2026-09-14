@@ -83,7 +83,8 @@ Expected<void> LegalizeFullyConnectedOp(
   }
   input_indices.push_back(*fused_activation_operand_index);
 
-  auto output_operand = OperandType::Create(op.Outputs()[0]);
+  auto output_operand =
+      OperandType::Create(op.Outputs()[0], neuron_adapter_api);
   std::vector<uint32_t> output_indices;
 
   if (!neuron_adapter_api.IsFeatureEnabled(
