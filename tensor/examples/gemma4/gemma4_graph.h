@@ -187,11 +187,14 @@ Gemma4Outputs<Mixins...> BuildGemma4Graph(const Gemma4Inputs<Mixins...>& inputs,
   Tensor final_output =
       RmsNorm(hidden_states, final_norm_scale, eps_tensor);
 
-  // LM Head (Fully Connected with tied weights)
-  Tensor embedding_table =
-      GetWeight(inputs.weights, "model.embed_tokens.weight", Type::kFP32,
-                {config.vocab_size, config.embed_dim});
-  Tensor logits = FullyConnected(final_output, embedding_table);
+  // Use a separate LM head when supplied, otherwise tie it to token embeddings.
+  const auto head_it = inputs.weights.find("lm_head.weight");
+  Tensor output_weights =
+      head_it != inputs.weights.end()
+          ? head_it->second
+          : GetWeight(inputs.weights, "model.embed_tokens.weight", Type::kFP32,
+                      {config.vocab_size, config.embed_dim});
+  Tensor logits = FullyConnected(final_output, output_weights);
 
   // Logits Soft Capping
   if (config.final_logit_softcap > 0.0f) {
