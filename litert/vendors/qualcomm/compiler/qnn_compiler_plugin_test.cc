@@ -38,6 +38,7 @@
 #include "litert/test/test_models.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 
 namespace litert {
@@ -194,6 +195,66 @@ const char* kSoCModel = "SM8750";
 #else
 const char* kSoCModel = nullptr;
 #endif
+
+class ScopedTestDir {
+ public:
+  explicit ScopedTestDir(std::filesystem::path path) : path_(path) {
+    std::error_code ec;
+    std::filesystem::remove_all(path_, ec);
+  }
+
+  ~ScopedTestDir() {
+    std::error_code ec;
+    std::filesystem::remove_all(path_, ec);
+  }
+
+  const std::filesystem::path& path() const { return path_; }
+
+ private:
+  std::filesystem::path path_;
+};
+
+void CompileAndExpectSchematicDirectory(
+    const std::string& schematic_dir,
+    const std::filesystem::path& expected_dir) {
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
+  ASSERT_TRUE(qnn_opts);
+  qnn_opts->SetSchematicDir(schematic_dir);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto model = testing::LoadTestFileModel("one_mul.tflite");
+
+  const char* sdk_version = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetCompilerPluginSDKVersion(plugin.get(), &sdk_version));
+  const auto parsed_sdk_version = ::qnn::ParseSdkVersion(sdk_version);
+  ASSERT_TRUE(parsed_sdk_version.has_value()) << sdk_version;
+
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
+                                               model.Get(), &compiled));
+
+  EXPECT_TRUE(std::filesystem::is_directory(expected_dir)) << expected_dir;
+  if (*parsed_sdk_version < ::qnn::SdkVersion{2, 50, 0}) {
+    LiteRtDestroyCompiledResult(compiled);
+    GTEST_SKIP() << "QAIRT " << sdk_version
+                 << " does not support optrace_output_dir";
+  }
+  const std::filesystem::path expected_schematic =
+      expected_dir / "qnn_partition_0_schematic.bin";
+  EXPECT_TRUE(std::filesystem::exists(expected_schematic))
+      << expected_schematic;
+
+  LiteRtDestroyCompiledResult(compiled);
+}
 
 TEST(TestQnnPlugin, GetConfigInfo) {
   EXPECT_STREQ(LiteRtGetCompilerPluginSocManufacturer(), "Qualcomm");
@@ -562,89 +623,23 @@ TEST(TestQnnPlugin, CompileMultiSubgraphJustInTime) {
 
   LiteRtDestroyCompiledResult(compiled);
 }
-TEST(TestQnnPlugin, CompileWithSchematicDir) {
-  auto opts = Options::Create();
-  ASSERT_TRUE(opts);
 
-  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
-  ASSERT_TRUE(qnn_opts);
+TEST(TestQnnPlugin, CompileWithAbsoluteSchematicDir) {
+  ScopedTestDir temp_dir(std::filesystem::temp_directory_path() /
+                         "litert_qnn_test_schematic_absolute");
+  ASSERT_FALSE(std::filesystem::exists(temp_dir.path()));
 
-  // Create a temporary directory
-  std::filesystem::path temp_dir =
-      std::filesystem::temp_directory_path() / "litert_qnn_test_schematic";
-  std::filesystem::create_directories(temp_dir);
-
-  qnn_opts->SetSchematicDir(temp_dir.string());
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto litert_opts,
-      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
-  auto plugin =
-      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
-  auto model = testing::LoadTestFileModel("one_mul.tflite");
-
-  struct TestCwdGuard {
-    std::filesystem::path original_cwd;
-    explicit TestCwdGuard(const std::filesystem::path& new_dir) {
-      std::error_code ec;
-      original_cwd = std::filesystem::current_path(ec);
-      if (!ec) {
-        std::filesystem::current_path(new_dir, ec);
-      }
-    }
-    ~TestCwdGuard() {
-      std::error_code ec;
-      std::filesystem::current_path(original_cwd, ec);
-    }
-  } cwd_guard(temp_dir);
-
-  LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
-                                               model.Get(), &compiled));
-
-  // Verify schematic file exists in temp_dir
-  std::filesystem::path expected_schematic =
-      temp_dir / "qnn_partition_0_schematic.bin";
-  EXPECT_TRUE(std::filesystem::exists(expected_schematic));
-
-  // Clean up
-  std::filesystem::remove_all(temp_dir);
-  LiteRtDestroyCompiledResult(compiled);
+  CompileAndExpectSchematicDirectory(temp_dir.path().string(), temp_dir.path());
 }
 
-TEST(TestQnnPlugin, CompileWithDlcDir) {
-  auto opts = Options::Create();
-  ASSERT_TRUE(opts);
+TEST(TestQnnPlugin, CompileWithRelativeSchematicDir) {
+  ScopedTestDir temp_dir(std::filesystem::temp_directory_path() /
+                         "litert_qnn_test_schematic_relative");
+  const std::filesystem::path relative_dir =
+      std::filesystem::relative(temp_dir.path(), std::filesystem::current_path());
+  ASSERT_FALSE(std::filesystem::exists(temp_dir.path()));
 
-  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
-  ASSERT_TRUE(qnn_opts);
-
-  // Create a temporary directory for the emitted DLC.
-  std::filesystem::path temp_dir =
-      std::filesystem::temp_directory_path() / "litert_qnn_test_dlc";
-  std::filesystem::create_directories(temp_dir);
-
-  qnn_opts->SetDlcDir(temp_dir.string());
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto litert_opts,
-      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
-  auto plugin =
-      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
-  auto model = testing::LoadTestFileModel("one_mul.tflite");
-
-  LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
-                                               model.Get(), &compiled));
-
-  std::filesystem::path expected_dlc = temp_dir / "qnn_partition_0.dlc";
-  EXPECT_TRUE(std::filesystem::exists(expected_dlc));
-
-  // Clean up
-  std::filesystem::remove_all(temp_dir);
-  LiteRtDestroyCompiledResult(compiled);
+  CompileAndExpectSchematicDirectory(relative_dir.string(), temp_dir.path());
 }
 
 }  // namespace

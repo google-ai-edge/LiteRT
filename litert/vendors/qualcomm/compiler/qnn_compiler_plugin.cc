@@ -577,6 +577,17 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         return kLiteRtStatusErrorRuntimeFailure;
       }
     }
+  } else if (options.GetBackendType() == ::qnn::BackendType::kHtpBackend) {
+    std::string schematic_dir(options.GetSchematicDir());
+    if (!schematic_dir.empty()) {
+      std::error_code ec;
+      std::filesystem::create_directories(schematic_dir, ec);
+      if (ec) {
+        LITERT_LOG(LITERT_ERROR, "Failed to create schematic directory %s: %s",
+                   schematic_dir.c_str(), ec.message().c_str());
+        return kLiteRtStatusErrorRuntimeFailure;
+      }
+    }
   }
 
   QnnManager* qnn_manager = compiler_plugin->GetOrCreateQnnManager(options);
@@ -687,10 +698,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         partition.Get(), entry_point_name, options, &inputs, &outputs));
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
 
-    if (!options.GetSchematicDir().empty()) {
-      LITERT_RETURN_IF_ERROR(
-          MoveSchematic(entry_point_name, options.GetSchematicDir()));
-    }
+    // if (!options.GetSchematicDir().empty()) {
+    //   LITERT_RETURN_IF_ERROR(
+    //       MoveSchematic(entry_point_name, options.GetSchematicDir()));
+    // }
 
     if (options.GetEnableJustInTime()) {
       auto jit_graph = std::make_unique<litert::qnn::QnnJitGraph>();
