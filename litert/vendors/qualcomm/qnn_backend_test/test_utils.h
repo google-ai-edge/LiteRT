@@ -29,8 +29,7 @@ std::string QnnTestPrinter(
     const ::testing::TestParamInfo<std::tuple<::qnn::Options, const char*>>&
         param_info);
 
-class QnnModelTest
-    : public testing::TestWithParam<std::tuple<::qnn::Options, const char*>> {
+class QnnModelSetupMixin {
  protected:
   QnnManager::Ptr qnn_manager_ptr_{};
   std::unique_ptr<::qnn::QnnBackend> qnn_backend_ptr_{};
@@ -39,6 +38,13 @@ class QnnModelTest
   ::qnn::TensorPool tensor_pool_{};
   bool is_fp16_supported_{false};
 
+  void SetUpQnnModel(const ::qnn::Options& options, const char* soc_model_name);
+};
+
+class QnnModelTest
+    : public testing::TestWithParam<std::tuple<::qnn::Options, const char*>>,
+      public QnnModelSetupMixin {
+ protected:
   void SetUp() override {
     const auto& [options, soc_model_name] = GetParam();
     if (!::qnn::IsTestHtpBackend()) {
@@ -46,12 +52,9 @@ class QnnModelTest
     }
     SetUpQnnModel(options, soc_model_name);
   }
-
- private:
-  void SetUpQnnModel(const ::qnn::Options& options, const char* soc_model_name);
 };
 
-inline auto GetDefaultQnnModelParams() {
+inline auto GetDefaultQnnSocs() {
 #if defined(__x86_64__) || defined(_M_X64)
   static constexpr std::array<const char*, 3> kSocs = {"SM8650", "SM8750",
                                                        "SM8850"};
@@ -59,8 +62,12 @@ inline auto GetDefaultQnnModelParams() {
   // On device, qnn manager will use online soc for compilation.
   static constexpr std::array<const char*, 1> kSocs = {nullptr};
 #endif
+  return kSocs;
+}
+
+inline auto GetDefaultQnnModelParams() {
   return ::testing::Combine(::testing::Values(GetTestingDefaultQnnOptions()),
-                            ::testing::ValuesIn(kSocs));
+                            ::testing::ValuesIn(GetDefaultQnnSocs()));
 }
 }  // namespace litert::qnn
 
