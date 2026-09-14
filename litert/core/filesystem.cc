@@ -14,6 +14,9 @@
 
 #include "litert/core/filesystem.h"
 
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #include <chrono>  // NOLINT
 #include <cstddef>
 #include <cstdint>
@@ -31,6 +34,16 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
+
+#if defined(_WIN32)
+#include <sys/utime.h>
+#define STAT_STRUCT struct _stat64
+#define STAT_FUNC _stat64
+#else
+#include <sys/time.h>
+#define STAT_STRUCT struct stat
+#define STAT_FUNC stat
+#endif
 
 namespace litert::internal {
 
@@ -93,28 +106,26 @@ Expected<size_t> Size(absl::string_view path) {
 }
 
 Expected<absl::Time> GetLastWriteTime(absl::string_view path) {
-  auto std_path = MakeStdPath(path);
-  std::error_code ec;
-  auto ftime = std::filesystem::last_write_time(std_path, ec);
-  if (ec) {
+  STAT_STRUCT st;
+  std::string path_str(path);
+  if (STAT_FUNC(path_str.c_str(), &st) != 0) {
     return Error(kLiteRtStatusErrorFileIO,
-                 absl::StrFormat("Failed to get last write time: %s, error: %s",
-                                 path, ec.message().c_str()));
+                 absl::StrFormat("Failed to stat file: %s", path));
   }
-  return absl::Now() +
-         absl::FromChrono(ftime -
-                          std::filesystem::file_time_type::clock::now());
+  return absl::FromTimeT(st.st_mtime);
 }
 
 Expected<void> TouchFile(absl::string_view path) {
-  auto std_path = MakeStdPath(path);
-  std::error_code ec;
-  std::filesystem::last_write_time(
-      std_path, std::filesystem::file_time_type::clock::now(), ec);
-  if (ec) {
+  std::string path_str(path);
+#if defined(_WIN32)
+  // Directly call the 64-bit MSVC CRT touch API
+  if (_utime64(path_str.c_str(), nullptr) != 0) {
+#else
+  // Directly call standard POSIX touch API
+  if (utimes(path_str.c_str(), nullptr) != 0) {
+#endif
     return Error(kLiteRtStatusErrorFileIO,
-                 absl::StrFormat("Failed to touch file: %s, error: %s",
-                                 path, ec.message().c_str()));
+                 absl::StrFormat("Failed to touch file: %s", path));
   }
   return {};
 }
