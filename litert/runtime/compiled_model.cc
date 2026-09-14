@@ -694,8 +694,9 @@ Expected<ModelSourceInfo> GetModelSourceInfoFromAllocation(
 
   return ModelSourceInfo{
       .fd = fd,
-      .file_offset = mmap_allocation.mmapped_buffer_offset_in_file() +
-                     static_cast<size_t>(base - mapped_base),
+      .file_offset =
+          static_cast<size_t>(mmap_allocation.mmapped_buffer_offset_in_file() +
+                              static_cast<size_t>(base - mapped_base)),
       .size = mmap_allocation.bytes(),
   };
 }
