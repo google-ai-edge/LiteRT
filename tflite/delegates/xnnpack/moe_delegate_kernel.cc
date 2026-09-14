@@ -54,6 +54,7 @@ struct MoeExpertsAttributes {
   enum class Activation {
     kGelu,
     kGeluTanh,
+    kSilu,
   };
 
   int num_experts = 0;
@@ -511,6 +512,8 @@ class MoeExpertsDelegateKernel::Impl {
         attr->activation = MoeExpertsAttributes::Activation::kGelu;
       } else if (act == "gelu_tanh") {
         attr->activation = MoeExpertsAttributes::Activation::kGeluTanh;
+      } else if (act == "silu") {
+        attr->activation = MoeExpertsAttributes::Activation::kSilu;
       } else {
         TF_LITE_KERNEL_LOG(context, "%s node #%d unsupported activation='%s'",
                            kMoeCustomOp, node_index, act.c_str());
@@ -571,6 +574,12 @@ class MoeExpertsDelegateKernel::Impl {
     const float kBeta = 0.044715f;
     const float inner = kAlpha * x * (1.0f + kBeta * x * x);
     return 0.5f * x * (1.0f + std::tanh(inner));
+  }
+
+  static float Silu(float x) {
+    // x * sigmoid(x); written with expm1-free form — for large |x| the
+    // exp saturates the same way std::exp does in Gelu above.
+    return x / (1.0f + std::exp(-x));
   }
 
   static void* AlignWorkspace(void* ptr) {
@@ -827,10 +836,19 @@ class MoeExpertsDelegateKernel::Impl {
       const float* ff1 = gate + hidden_dim;
       float* hidden = hidden_.data() + token * hidden_dim;
       for (size_t dim = 0; dim < hidden_dim; ++dim) {
-        float act_val =
-            (attr_.activation == MoeExpertsAttributes::Activation::kGeluTanh)
-                ? GeluTanh(gate[dim])
-                : Gelu(gate[dim]);
+        float act_val;
+        switch (attr_.activation) {
+          case MoeExpertsAttributes::Activation::kGeluTanh:
+            act_val = GeluTanh(gate[dim]);
+            break;
+          case MoeExpertsAttributes::Activation::kSilu:
+            act_val = Silu(gate[dim]);
+            break;
+          case MoeExpertsAttributes::Activation::kGelu:
+          default:
+            act_val = Gelu(gate[dim]);
+            break;
+        }
         hidden[dim] = act_val * ff1[dim];
       }
     }
