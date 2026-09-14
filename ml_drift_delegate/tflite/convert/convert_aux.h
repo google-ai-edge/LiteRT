@@ -140,6 +140,7 @@ void CopyData(const TfLiteTensor& src, T* dst) {
     case kTfLiteBFloat16:
     case kTfLiteFloat8E4M3FN:
     case kTfLiteFloat8E5M2:
+    case kTfLiteFloat8E8M0FNU:
       ABSL_LOG(FATAL) << "src has unsupported type: "
                       << TfLiteTypeGetName(src.type);
   }
