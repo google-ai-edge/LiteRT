@@ -100,7 +100,6 @@ cc_library(
     deps = [
         "//tensor",
         "//tensor:arithmetic",
-        "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/examples/gemma4:gemma4_config",
         "//tensor/examples/ops/transformer:transformer_ops",

@@ -64,6 +64,12 @@ Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x, const Tensor<Mixins...>& cos,
   return Add(x_cos, rotated_sin);
 }
 
+// Computes the Swish (SiLU) activation function: x * sigmoid(x).
+template <class... Mixins>
+Tensor<Mixins...> Swish(Tensor<Mixins...> x) {
+  return Mul(x, Logistic(x));
+}
+
 template <class... Mixins>
 Tensor<Mixins...> RotaryEmbedding(const Tensor<Mixins...>& input,
                                   const Tensor<Mixins...>& segment_pos,
