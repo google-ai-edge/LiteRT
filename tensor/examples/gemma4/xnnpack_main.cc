@@ -285,7 +285,9 @@ absl::StatusOr<Gemma4Inputs<XnnpackMixinTag>> CreateGemma4Inputs(
                  .type = Type::kFP32,
                  .shape = {batch_size, input_seq_len, config.embed_dim}});
 
-  if (input_seq_len > 1) {
+  // A prefill can contain only the BOS token; cache history distinguishes it
+  // from a decode step.
+  if (kv_cache_len == 0) {
     std::tie(inputs.rope_global_cos, inputs.rope_global_sin) =
         RopeCosSin(input_seq_len, config.global_key_size,
                    config.global_base_frequency, config.global_rope_proportion);
