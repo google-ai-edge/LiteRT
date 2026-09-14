@@ -18,6 +18,7 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
+#include "ml_drift_delegate/delegate/composite/gated_delta_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/rope_parser.h"
@@ -56,15 +57,20 @@ std::unique_ptr<TFLiteOperationParser> CustomOperationParserFactory::Create(
   if (op_name == kShortConvStepType) {
     return std::make_unique<ShortConvStepOperationParser>();
   }
+  if (op_name == "gated_delta_update") {
+    return std::make_unique<GatedDeltaUpdateOperationParser>();
+  }
   return std::make_unique<UnimplementedOperationParser>(op_name);
 }
 
 bool CustomOperationParserFactory::SupportsIntegerTypes(
     std::string_view op_name) {
-  return op_name == "odml.cache_update" || op_name == "odml.runtime_bmm" ||
-         op_name == "moe" || op_name == "odml.rope" ||
-         op_name == "odml.sdpa_transposed" || op_name == "odml.swiglu" ||
-         op_name == kQkvNormRopeType || op_name == kShortConvStepType;
+  bool res = op_name == "odml.cache_update" || op_name == "odml.runtime_bmm" ||
+             op_name == "moe" || op_name == "odml.rope" ||
+             op_name == "odml.sdpa_transposed" || op_name == "odml.swiglu" ||
+             op_name == "gated_delta_update" ||
+             op_name == kQkvNormRopeType || op_name == kShortConvStepType;
+  return res;
 }
 
 bool CustomOperationParserFactory::SupportsBoolTypes(std::string_view op_name) {
