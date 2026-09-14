@@ -1,0 +1,14 @@
+repository	original_commit	migrated_commit	migration_status	subject
+LiteRT	7a89069bc1cc2aa9122ada5e4dc74b4475002d0d	0bd19febe3590af649cd527a8a6263a2b429d736	retained September 4 source commit; re-authored as litert-g-developer	Record Gemma 4 12B baseline setup and measurement plan
+LiteRT	41496dc740632a59523a6e44c708f1d62effba1c	f61c123792bb207cb5df417b2c6c25fbc98178b8	retained September 4 source commit; re-authored as litert-g-developer	Validate Gemma 4 12B subbyte GEMV shapes and CPU reference
+LiteRT	ed76f9e9698c9cefa8d25db41af8127bad81ade7	47acfb8a10ba0e225b6c427e9508d349f5985fec	retained September 4 source commit; re-authored as litert-g-developer	Record guarded Gemma 4 12B TensorRT initialization failure
+LiteRT	41217ebd476a5f6f62e62a4b626b441d6ea71ccc	aa7e659e8e0919fa7a2a27f80d5dab3107991d54	retained September 4 source commit; re-authored as litert-g-developer	Support FP16 cache constant casts and record 12B resource limits
+LiteRT	0ba152cab150bf42ae0ed87a3dfc7d1da1d1cd87	2ad1fed3d49d1bc8ffa6f505b28fbaf2a7f4c6cc	retained September 4 source commit; re-authored as litert-g-developer	Stream shared-weight AOT shards between TensorRT builds
+LiteRT	418c9cf7ee795f2525272c8bde729f187f3fcb2e	af07e3489e8aefbdab28dd8eaffe3a9698fb3e7d	retained September 4 source commit; re-authored as litert-g-developer	Keep signature outputs valid when inlining composite graphs
+LiteRT	11d5091c85a3310b394685f4157c24087f63cfba	c09ce8b7dff131c9b3f9c78417bbca3042a8d00a	retained September 4 source commit; re-authored as litert-g-developer	Keep CPU-shared host buffers mapped during backend registration
+LiteRT	36f3cad215b2903dc83bb51962efa2dddbb2c7f5	ff642097f231b856c994c8fb048db93ef7a4dced	retained September 4 source commit; re-authored as litert-g-developer	Correct dispatch staging buffer transfer lock modes
+LiteRT	062e4707c476bece4f11e823f747a641131433ac	4bd702a055d472d8e2fe0281dbd11d20344e1a7f	retained September 4 source commit; re-authored as litert-g-developer	Prune explicitly inactive NPU signatures before serialization
+LiteRT	1fd5a25e68ef17ce1025f1458ff8414c62c11561	3b3a4b78e10d647a2c004f014f3dc58800c1d8e3	retained September 4 source commit; re-authored as litert-g-developer	Add selectable signatures to NVIDIA benchmark commands
+LiteRT	0844d627d5761f24c0214bf15c088135f1bf070e	5946aac40f8da5ad4b19c063a3845a3b182a3904	retained September 4 source commit; re-authored as litert-g-developer	Record Gemma 4 12B performance and memory results
+LiteRT-LM	ff61ed894b8bbb79dba0c0e7ec4ca8c0ccd746ba	3a96b09b6c948fd94c9f456e71551178181b1b52	retained September 4 source commit; re-authored as litert-g-developer	Allow explicit prefill and decode signature selection
+LiteRT-LM	41e5532331e9d6494eba6d2083341ffbc7ce1aa9	d29875790e61424d62d4d0054e93ca0099e2b9bb	retained September 4 source commit; re-authored as litert-g-developer	Document NPU graph pruning for explicit signature selection

@@ -44,16 +44,16 @@
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_runtime_options.h"
-// copybara:uncomment_begin(google internal)
-// #include "litert/runtime/compiled_model.h"
-// copybara:uncomment_end
+#include "litert/runtime/compiled_model.h"
+#include "litert/runtime/external_litert_buffer_context.h"
+#include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 // copybara:uncomment_begin(google internal)
 // #include "tflite/core/subgraph.h"
-// #include "tflite/interpreter.h"
 // copybara:uncomment_end
+#include "tflite/interpreter.h"
 
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
@@ -84,6 +84,62 @@ constexpr bool kSupportsErrorReporterApi = true;
 //   return alloc_info;
 // }
 // copybara:uncomment_end
+
+TEST(CompiledModelTest, CpuHostBufferRemainsMappedWithBackendRequirements) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled, CompiledModel::Create(
+                         env, testing::GetTestFilePath(kModelFileName),
+                         HwAccelerators::kCpu));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto interp, GetInterpreter(compiled.Get()));
+  LiteRtTensorBufferType host_type = kLiteRtTensorBufferTypeHostMemory;
+  LiteRtTensorBufferRequirements raw_requirements = nullptr;
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirements(
+                1, &host_type, sizeof(kTestInput0Tensor), 0, nullptr,
+                &raw_requirements), kLiteRtStatusOk);
+  ASSERT_EQ(compiled.Get()->GetBufferContext()->RegisterBufferRequirements(
+                interp->input_tensor(0),
+                LiteRtTensorBufferRequirementsPtr(raw_requirements)),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto inputs, compiled.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto outputs, compiled.CreateOutputBuffers());
+  LITERT_ASSERT_OK(inputs[0].Write<float>(absl::MakeConstSpan(kTestInput0Tensor)));
+  LITERT_ASSERT_OK(inputs[1].Write<float>(absl::MakeConstSpan(kTestInput1Tensor)));
+  LITERT_ASSERT_OK(compiled.Run(inputs, outputs));
+  EXPECT_NE(interp->input_tensor(0)->data.raw, nullptr);
+  EXPECT_NE(interp->input_tensor(0)->allocation_type, kTfLiteNonCpu);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto locked, TensorBufferScopedLock::Create<const float>(
+                       outputs[0], TensorBuffer::LockMode::kRead));
+  EXPECT_THAT(absl::MakeConstSpan(locked.second, kTestOutputSize),
+              Pointwise(FloatNear(1e-5), kTestOutputTensor));
+}
+
+TEST(CompiledModelTest, CpuRuntimeSignatureSelectionStillExecutes) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model, Model::CreateFromFile(
+                      env, testing::GetTestFilePath(kModelFileName)));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signature, model.GetSignature(0));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  options.SetHardwareAccelerators(HwAccelerators::kCpu);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& runtime_options, options.GetRuntimeOptions());
+  const StringView selected[] = {signature.Key()};
+  LITERT_ASSERT_OK(runtime_options.SetSelectedSignatures(selected));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled,
+                              CompiledModelTestPeer::Create(env, model.Get(),
+                                                            options));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto inputs, compiled.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto outputs, compiled.CreateOutputBuffers());
+  LITERT_ASSERT_OK(inputs[0].Write<float>(absl::MakeConstSpan(kTestInput0Tensor)));
+  LITERT_ASSERT_OK(inputs[1].Write<float>(absl::MakeConstSpan(kTestInput1Tensor)));
+  LITERT_ASSERT_OK(compiled.Run(inputs, outputs));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto locked, TensorBufferScopedLock::Create<const float>(
+                       outputs[0], TensorBuffer::LockMode::kRead));
+  EXPECT_THAT(absl::MakeConstSpan(locked.second, kTestOutputSize),
+              Pointwise(FloatNear(1e-5), kTestOutputTensor));
+}
 
 TEST(CompiledModelTest, Basic) {
   // Environment setup.

@@ -21,6 +21,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "cuda_fp16.h"
 #include "cuda_runtime_api.h"
 #include "driver_types.h"
 
@@ -38,18 +39,24 @@ int CpuArgMax(const std::vector<float>& values) {
   return max_id;
 }
 
-int RunGpuArgMax(const std::vector<float>& values) {
-  float* device_values = nullptr;
+int RunGpuArgMax(const std::vector<float>& values, bool fp16 = false) {
+  void* device_values = nullptr;
   void* workspace = nullptr;
   int32_t* device_result = nullptr;
   const size_t workspace_bytes =
       LiteRtNvidiaF32ArgMaxWorkspaceBytes(values.size());
-  if (cudaMalloc(reinterpret_cast<void**>(&device_values),
-                 values.size() * sizeof(float)) != cudaSuccess ||
+  std::vector<__half> half_values;
+  if (fp16) {
+    for (float value : values) half_values.push_back(__float2half_rn(value));
+  }
+  const size_t input_bytes = values.size() * (fp16 ? sizeof(__half) : sizeof(float));
+  const void* input = fp16 ? static_cast<const void*>(half_values.data())
+                          : static_cast<const void*>(values.data());
+  if (cudaMalloc(&device_values, input_bytes) != cudaSuccess ||
       cudaMalloc(&workspace, workspace_bytes) != cudaSuccess ||
       cudaMalloc(reinterpret_cast<void**>(&device_result), sizeof(int32_t)) !=
           cudaSuccess ||
-      cudaMemcpy(device_values, values.data(), values.size() * sizeof(float),
+      cudaMemcpy(device_values, input, input_bytes,
                  cudaMemcpyHostToDevice) != cudaSuccess) {
     ADD_FAILURE() << "Failed to allocate or copy CUDA argmax inputs";
     cudaFree(device_values);
@@ -57,9 +64,13 @@ int RunGpuArgMax(const std::vector<float>& values) {
     cudaFree(device_result);
     return -1;
   }
-  const cudaError_t launch_status = LiteRtNvidiaLaunchF32ArgMax(
-      device_values, values.size(), workspace, workspace_bytes, device_result,
-      /*stream=*/nullptr);
+  const cudaError_t launch_status = fp16
+      ? LiteRtNvidiaLaunchF16ArgMax(static_cast<const uint16_t*>(device_values),
+                                    values.size(), workspace, workspace_bytes,
+                                    device_result, /*stream=*/nullptr)
+      : LiteRtNvidiaLaunchF32ArgMax(static_cast<const float*>(device_values),
+                                    values.size(), workspace, workspace_bytes,
+                                    device_result, /*stream=*/nullptr);
   int32_t result = -1;
   const cudaError_t copy_status =
       launch_status == cudaSuccess
@@ -124,6 +135,35 @@ TEST(GreedySamplerKernelTest, F32ArgMaxRejectsInvalidWorkspace) {
             cudaErrorInvalidValue);
   cudaFree(device_value);
   cudaFree(device_result);
+}
+
+TEST(GreedySamplerKernelTest, F16ArgMaxMatchesQuantizedCpuAcrossBoundaries) {
+  std::mt19937 generator(12345);
+  std::uniform_real_distribution<float> distribution(-100.0f, 100.0f);
+  for (const size_t size :
+       {size_t{1}, size_t{255}, size_t{256}, size_t{257}, size_t{262144}}) {
+    std::vector<float> values(size);
+    for (float& value : values) {
+      value = __half2float(__float2half_rn(distribution(generator)));
+    }
+    EXPECT_EQ(RunGpuArgMax(values, true), CpuArgMax(values)) << "size=" << size;
+  }
+}
+
+TEST(GreedySamplerKernelTest, F16PreservesTiesNanAndInfinityRules) {
+  std::vector<float> tied(1025, -4.0f);
+  tied[7] = tied[1000] = 9.0f;
+  EXPECT_EQ(RunGpuArgMax(tied, true), 7);
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  const float infinity = std::numeric_limits<float>::infinity();
+  for (const std::vector<float>& values : {
+           std::vector<float>{nan, 100.0f, infinity},
+           std::vector<float>{-5.0f, nan, 3.0f, infinity, infinity},
+           std::vector<float>{-infinity, -infinity, -infinity},
+           std::vector<float>{0.0f, 0x1p-24f, -0x1p-24f, 0.0f},
+       }) {
+    EXPECT_EQ(RunGpuArgMax(values, true), CpuArgMax(values));
+  }
 }
 
 }  // namespace
