@@ -576,16 +576,10 @@ absl::StatusOr<int32_t> ExecuteDecodeStep(
           decode_inputs.per_layer_token_embeddings[l], layer_ple_span));
     }
 
-    LRT_TENSOR_RETURN_IF_ERROR(decode_runner.WriteInput(
-        decode_inputs.sliding_attention_mask, 0,
-        absl::MakeConstSpan(
-            reinterpret_cast<const std::byte*>(sliding_mask.data()),
-            sliding_mask.size() * sizeof(float))));
-    LRT_TENSOR_RETURN_IF_ERROR(decode_runner.WriteInput(
-        decode_inputs.global_attention_mask, 0,
-        absl::MakeConstSpan(
-            reinterpret_cast<const std::byte*>(global_mask.data()),
-            global_mask.size() * sizeof(float))));
+    LRT_TENSOR_RETURN_IF_ERROR(decode_runner.SetInput(
+        decode_inputs.sliding_attention_mask, sliding_mask));
+    LRT_TENSOR_RETURN_IF_ERROR(decode_runner.SetInput(
+        decode_inputs.global_attention_mask, global_mask));
   }
 
   {
