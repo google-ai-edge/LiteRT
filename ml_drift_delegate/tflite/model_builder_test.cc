@@ -2215,6 +2215,48 @@ TEST_F(Conv2DOperationParserTest, TestIsSupported) {
           .ok());
 }
 
+TEST_F(Conv2DOperationParserTest, QuantizedWeightsSupport) {
+  // 1x1 non-grouped conv with INT8 weights is convertible to FC and supported.
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinConv2d,
+      /*op_version=*/5,
+      /*num_inputs=*/2,
+      /*shape=*/std::vector<int>({1, 1, 1, 4}));
+  TfLiteConvParams* tf_options =
+      static_cast<TfLiteConvParams*>(context->node()->builtin_data);
+  tf_options->stride_width = 1;
+  tf_options->stride_height = 1;
+  tf_options->dilation_width_factor = 1;
+  tf_options->dilation_height_factor = 1;
+  tf_options->activation = kTfLiteActRelu;
+
+  context->ChangeTensorShape(1, {1, 1, 1, 4});
+  context->ChangeTensorShape(2, {8, 1, 1, 4});
+  context->QuantizeTensor(2, kTfLiteInt8);
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // 1x1 grouped conv with INT8 weights is NOT convertible to FC and rejected.
+  context->ChangeTensorShape(1, {1, 1, 1, 4});
+  context->ChangeTensorShape(2, {8, 1, 1, 2});
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // 3x3 conv with INT8 weights is NOT convertible to FC and rejected.
+  context->ChangeTensorShape(1, {1, 3, 3, 4});
+  context->ChangeTensorShape(2, {8, 3, 3, 4});
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+}
+
 TEST_F(Conv2DOperationParserTest, ParseWithSharedTensorsWorks) {
   constexpr int kLocalId = 2;
   constexpr int kGlobalId = 0;
