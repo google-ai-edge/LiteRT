@@ -262,8 +262,3 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../tensor/CMakeLists.txt")
                    "${CMAKE_CURRENT_BINARY_DIR}/tensor")
 endif()
 
-if(LITERT_BUILD_SUPPORT)
-  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../support"
-                   "${CMAKE_CURRENT_BINARY_DIR}/support")
-endif()
-
