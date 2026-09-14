@@ -3545,7 +3545,15 @@ class GatherOperationParser : public TFLiteOperationParser {
       reader->AddInput(gather_node, 0);
     }
     if (indices_are_const) {
-      indices_value = reader->AddConstInput(1, /*layout=*/{});
+      // The gather kernel reads the indices along the channels axis, but a 1-D
+      // tensor [N] is auto-expanded to {N,1,1,1}, which puts N on the batch
+      // axis. Ask for {1,1,1,N} instead -- the constant equivalent of the
+      // RESHAPE inserted for runtime indices above.
+      SizedLayout indices_layout;
+      if (indices_are_1d) {
+        indices_layout.layout_1d = ::ml_drift::Layout::SCALAR;
+      }
+      indices_value = reader->AddConstInput(1, indices_layout);
       graph->AddConsumer(gather_node->id, indices_value->id);
     } else if (indices_are_1d) {
       graph->AddConsumer(gather_node->id, indices_value->id);
