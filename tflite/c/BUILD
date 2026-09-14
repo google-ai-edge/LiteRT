@@ -27,7 +27,7 @@ load(
     "tflite_self_contained_libs_test_suite",
 )
 load("//tflite:special_rules.bzl", "c_api_opaque_internal_visibility_allowlist", "tflite_portable_test_suite")
-load("//tflite/core/shims:cc_library_with_tflite.bzl", "cc_library_with_tflite_with_c_headers_test")
+load("//tflite/core/shims:cc_library_with_tflite.bzl", "cc_library_with_tflite", "cc_library_with_tflite_with_c_headers_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -371,9 +371,9 @@ cc_library(
         "//tflite:__subpackages__",
     ] + c_api_opaque_internal_visibility_allowlist(),
     deps = [
+        ":c_api_internal",
         ":c_api_types",
         "//tflite:framework",
-        "//tflite/c:c_api_internal",
         "//tflite/core/api:op_resolver",
         "//tflite/core/c:common",
         "//tflite/core/c:operator",
@@ -408,9 +408,9 @@ cc_library(
         "//tflite:__subpackages__",
     ],
     deps = [
+        ":c_api_internal",
         ":c_api_types",
         "//tflite:framework",
-        "//tflite/c:c_api_internal",
         "//tflite/core/api:op_resolver",
         "//tflite/core/c:common",
         "//tflite/core/c:operator_without_alwayslink",
@@ -486,11 +486,20 @@ cc_test(
 )
 
 cc_library_with_tflite_with_c_headers_test(
-    name = "test_util",
-    testonly = True,
+    name = "test_util_not_testonly",
     srcs = ["test_util.cc"],
     hdrs = ["test_util.h"],
     generate_opaque_delegate_target = True,
+    visibility = [
+        "//tflite/java/src/test/native:__pkg__",
+    ],
+)
+
+cc_library_with_tflite(
+    name = "test_util",
+    testonly = True,
+    hdrs = ["test_util.h"],
+    tflite_deps = [":test_util_not_testonly"],
 )
 
 tflite_self_contained_libs_test_suite(name = "self_contained_libs_test_suite")
