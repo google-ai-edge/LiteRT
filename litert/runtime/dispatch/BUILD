@@ -82,13 +82,11 @@ cc_library(
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment_header",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_metrics",
         "//litert/c:litert_model_types",
         "//litert/c:litert_profiler_types",
-        "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
         "//litert/c/internal:litert_logging",
@@ -300,6 +298,27 @@ cc_test(
 #     ],
 # )
 # copybara:uncomment_end(g3)
+
+cc_test(
+    name = "dispatch_delegate_custom_buffer_test",
+    srcs = ["dispatch_delegate_custom_buffer_test.cc"],
+    deps = [
+        ":dispatch",
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/core:environment",
+        "//litert/test:matchers",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
 
 cc_library(
     name = "dispatch_delegate_kernel",
