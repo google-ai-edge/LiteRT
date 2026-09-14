@@ -577,6 +577,14 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
           }
         }
 #ifdef __EMSCRIPTEN__
+        if (delegate_data_->weight_loader == nullptr) {
+          return absl::FailedPreconditionError(
+              "Cannot upload converted weights on web: the delegate has no "
+              "external weight loader. The model likely does not declare any "
+              "external weight tensors; check that it was converted with "
+              "external weights and that its external buffer table is "
+              "populated.");
+        }
         ABSL_RETURN_IF_ERROR(conversion_context_->UploadWeightsOnWeb(
             delegate_data_->weight_loader, gpu_weights_conversion_model,
             io_mapping, shared_mem_manager->GetWeightIdToExternalBufferIdMap(),
