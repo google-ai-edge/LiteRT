@@ -303,6 +303,7 @@ GemmaEmbeddingTable::Create(TensorHandle tensor, int expected_emb_dim) {
           "Unsupported quantization format for embedding table");
     }
 
+    // Tensor shapes count logical elements, including for packed INT4.
     int logical_emb_dim = emb_dim;
     if (expected_emb_dim > 0) {
       logical_emb_dim = expected_emb_dim;
@@ -314,8 +315,6 @@ GemmaEmbeddingTable::Create(TensorHandle tensor, int expected_emb_dim) {
       if (computed_dim > 0) {
         logical_emb_dim = computed_dim;
       }
-    } else if (type == Type::kI4) {
-      logical_emb_dim = emb_dim * 2;
     }
 
     return std::make_unique<QuantizedGemmaEmbeddingTable>(

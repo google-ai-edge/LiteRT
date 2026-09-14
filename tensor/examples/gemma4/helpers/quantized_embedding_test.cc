@@ -98,6 +98,36 @@ TEST(QuantizedEmbeddingTest, Int8PerChannelLookup) {
                                 }));
 }
 
+TEST(QuantizedEmbeddingTest, Int4PerChannelUsesLogicalShape) {
+  // Each logical row has four elements stored in two bytes.
+  const std::vector<uint8_t> packed_bytes = {
+      0x21, 0x43,  // row 0: [1, 2, 3, 4]
+      0x65, 0x87   // row 1: [5, 6, 7, -8]
+  };
+  TensorHandle tensor(
+      {.name = "emb_i4_per_channel",
+       .type = Type::kI4,
+       .shape = {2, 4},
+       .buffer = std::make_shared<SpanCpuBuffer>(packed_bytes),
+       .quantization = std::make_shared<PerChannelAffineQuantization>(
+           std::vector<float>{1.0f, 2.0f}, std::vector<int64_t>{0},
+           /*quantized_dimension=*/0)});
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::unique_ptr<GemmaEmbeddingTable> table,
+                                  GemmaEmbeddingTable::Create(tensor));
+
+  EXPECT_EQ(table->VocabSize(), 2);
+  ASSERT_EQ(table->EmbeddingDim(), 4);
+  EXPECT_THAT(table->Lookup(/*token_id=*/1),
+              IsOkAndHolds(ElementsAre(10.0f, 12.0f, 14.0f, -16.0f)));
+
+  const std::vector<int32_t> tokens = {1, 0};
+  std::vector<float> output(tokens.size() * 4);
+  ASSERT_THAT(table->Lookup(tokens, absl::MakeSpan(output)), IsOk());
+  EXPECT_THAT(output, ElementsAre(10.0f, 12.0f, 14.0f, -16.0f,
+                                  1.0f, 2.0f, 3.0f, 4.0f));
+}
+
 TEST(QuantizedEmbeddingTest, Int4BlockwisePackedLookup) {
   // Vocab size = 2, Embedding dim = 4 (block size = 2, so 2 blocks per row)
   // Row 0 values: [1, -2, 3, -4]
@@ -287,7 +317,8 @@ TEST(QuantizedEmbeddingTest, Int4BlockwisePhysicalHalvedShapeWithExpectedDim) {
                        .quantization = quant});
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::unique_ptr<GemmaEmbeddingTable> table,
-                                  GemmaEmbeddingTable::Create(tensor));
+                                  GemmaEmbeddingTable::Create(
+                                      tensor, /*expected_emb_dim=*/4));
 
   EXPECT_EQ(table->EmbeddingDim(), 4);
 
