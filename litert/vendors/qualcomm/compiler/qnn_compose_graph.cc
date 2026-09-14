@@ -554,6 +554,7 @@ REGISTER_SIMPLE_OP_BUILDER(BuildArgMinOp, BuildArgMinOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildNegOp, BuildElementwiseNegOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildRoundOp, BuildElementwiseRoundOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildSignOp, BuildElementwiseSignOp)
+REGISTER_SIMPLE_OP_BUILDER(BuildAtan2Op, BuildElementwiseAtan2Op)
 REGISTER_SIMPLE_OP_BUILDER(BuildScatterNdOp, BuildScatterNdOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildBatchToSpaceNdOp, BuildBatchToSpaceNdOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildSpaceToBatchNdOp, BuildSpaceToBatchNdOp)
@@ -1608,6 +1609,7 @@ GetOpBuilders() {
       Adapt<BuildDynamicUpdateSliceOp>;
   builders[kLiteRtOpCodeTflRelu0To1] = Adapt<BuildRelu0To1Op>;
   builders[kLiteRtOpCodeTflSign] = Adapt<BuildSignOp>;
+  builders[kLiteRtOpCodeTflAtan2] = Adapt<BuildAtan2Op>;
   builders[kLiteRtOpCodeShloComposite] = Adapt<BuildShloCompositeOp>;
   return builders;
 }
