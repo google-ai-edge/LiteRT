@@ -28,12 +28,14 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/compiler/cc/litert_model.h"
+#include "litert/compiler/cc/litert_op_options.h"
 #include "litert/vendors/mediatek/compiler/legalizations/add_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/batch_matmul_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/common_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/concat_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/fully_connected_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/gelu_op_legalization.h"
+#include "litert/vendors/mediatek/compiler/legalizations/layer_norm_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/legalize_helper.h"
 #include "litert/vendors/mediatek/compiler/legalizations/mean_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/mul_op_legalization.h"
@@ -313,25 +315,58 @@ Expected<void> CreateModel(const LiteRtCompilerContext* ctx,
         status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
                                   NEURON_LESS);
         break;
-      case kLiteRtOpCodeShloComposite:
-        const char* op_name;
-        if (!ctx || !ctx->get_shlo_composite_op_name ||
-            ctx->get_shlo_composite_op_name(op.Get(), &op_name) !=
-                kLiteRtStatusOk) {
-          return Error(kLiteRtStatusErrorRuntimeFailure,
-                       "get_shlo_composite_op_name returns an error");
-        }
-        if (std::string(op_name) == "odml.rms_norm") {
-          status =
-              LegalizeRmsNormOp(neuron_adapter_api, model, *operand_map, op);
-        } else if (std::string(op_name) == "odml.l2_norm") {
-          status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
-                                    NEURON_L2_NORMALIZATION);
+      case kLiteRtOpCodeShloComposite: {
+        using ::litert::compiler::CompositeOptions;
+        using ::litert::compiler::GetOptionsAs;
+
+        auto info = GetOptionsAs<CompositeOptions>(ctx, op.Get());
+        if (info.HasValue()) {
+          if (info->name == CompositeOptions::kRmsNorm) {
+            status =
+                LegalizeRmsNormOp(neuron_adapter_api, model, *operand_map, op);
+          } else if (info->name == CompositeOptions::kL2Norm) {
+            status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map,
+                                      op, NEURON_L2_NORMALIZATION);
+          } else if (info->name == CompositeOptions::kGroupNorm) {
+            if (!info->attributes_map.has_value()) {
+              return Error(kLiteRtStatusErrorInvalidArgument,
+                           "GroupNorm attributes map missing");
+            }
+            auto attributes_map = info->attributes_map.value();
+            float epsilon = attributes_map["epsilon"].AsFloat();
+            int num_groups = attributes_map["num_groups"].AsInt32();
+            if (num_groups == 1) {
+              status = LegalizeLayerNormOp(neuron_adapter_api, model,
+                                           *operand_map, op, epsilon);
+            } else {
+              return Error(kLiteRtStatusErrorRuntimeFailure,
+                           "Unsupported num_groups in GroupNorm");
+            }
+          } else {
+            return Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Unsupported ShloComposite op");
+          }
         } else {
-          return Error(kLiteRtStatusErrorRuntimeFailure,
-                       "Unsupported ShloComposite op");
+          const char* op_name;
+          if (!ctx || !ctx->get_shlo_composite_op_name ||
+              ctx->get_shlo_composite_op_name(op.Get(), &op_name) !=
+                  kLiteRtStatusOk) {
+            return Error(kLiteRtStatusErrorRuntimeFailure,
+                         "get_shlo_composite_op_name returns an error");
+          }
+          if (std::string(op_name) == "odml.rms_norm") {
+            status =
+                LegalizeRmsNormOp(neuron_adapter_api, model, *operand_map, op);
+          } else if (std::string(op_name) == "odml.l2_norm") {
+            status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map,
+                                      op, NEURON_L2_NORMALIZATION);
+          } else {
+            return Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Unsupported ShloComposite op");
+          }
         }
         break;
+      }
       default:
         LITERT_LOG(LITERT_ERROR, "Unsupported op: %d", op.Code());
         return Error(kLiteRtStatusErrorRuntimeFailure, "Unsupported op");

@@ -62,6 +62,7 @@ litert_dynamic_lib(
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@flatbuffers",
     ],
 )
 
@@ -77,6 +78,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "//litert/vendors/mediatek/compiler/legalizations:add_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:batch_matmul_op_legalization",
@@ -84,6 +86,7 @@ cc_library(
         "//litert/vendors/mediatek/compiler/legalizations:concat_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:fully_connected_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:gelu_op_legalization",
+        "//litert/vendors/mediatek/compiler/legalizations:layer_norm_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:legalize_helper",
         "//litert/vendors/mediatek/compiler/legalizations:mean_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:mul_op_legalization",
@@ -101,7 +104,6 @@ cc_library(
         "//litert/vendors/mediatek/compiler/legalizations:sub_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:transpose_conv_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:transpose_op_legalization",
-        "//litert/vendors/mediatek/schema:mediatek_litert_schema",
         "@neuro_pilot//:v8_latest_host_headers",
     ],
 )
