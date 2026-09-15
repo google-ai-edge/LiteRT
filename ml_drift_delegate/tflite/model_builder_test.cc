@@ -22,7 +22,6 @@
 #include <cstring>
 #include <memory>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "testing/base/public/gmock.h"
