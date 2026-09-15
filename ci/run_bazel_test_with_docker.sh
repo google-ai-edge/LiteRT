@@ -52,17 +52,18 @@ else
   cd /root_dir
 
   # Run configure.
-  configs=(
-    '/usr/bin/python3'
-    '/usr/lib/python3/dist-packages'
-    'N'
-    'N'
-    'Y'
-    '/usr/lib/llvm-18/bin/clang'
-    '-Wno-sign-compare -Wno-c++20-designator -Wno-gnu-inline-cpp-without-extern'
-    'N'
-  )
-  printf '%s\n' "${configs[@]}" | ./configure
+  # LINT.IfChange(configure_tflite_build_flags)
+  # Keep compiler configuration consistent with LiteRT GitHub Actions CI
+  # (tflite_bazel_cmake.yml) to ensure Bazel remote cache hits.
+  export PYTHON_BIN_PATH="$(which python3)"
+  export PYTHON_LIB_PATH="$(python3 -c 'import site; print(site.getsitepackages()[0])')"
+  export TF_NEED_ROCM=0
+  export TF_NEED_CLANG=0
+  export TF_NEED_CUDA=0
+  export TF_SET_ANDROID_WORKSPACE=0
+  export CC_OPT_FLAGS='-Wno-sign-compare'
+  python3 configure.py < <(yes "")
+  # LINT.ThenChange(../workflows/tflite_bazel_cmake.yml:configure_tflite_build_flags)
 
   export HERMETIC_PYTHON_VERSION=${DOCKER_PYTHON_VERSION}
   export TF_LOCAL_SOURCE_PATH="/root_dir/third_party/tensorflow"
