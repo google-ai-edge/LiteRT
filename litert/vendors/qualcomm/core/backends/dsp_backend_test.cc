@@ -211,6 +211,40 @@ TEST_F(DspBackendTest, DISABLED_InitializeWithLogLevelVerboseTest) {
   EXPECT_EQ(backend_->GetSocInfo().soc_model, kDefaultSocInfo->soc_model);
 }
 
+// BUILDGRAPHCONFIGS //////////////////////////////////////////////////////////
+TEST(DspBackendGraphConfigTest, DspEncodingMapsToGraphConfig) {
+  QNN_INTERFACE_VER_TYPE api{};
+  DspBackend backend(&api);
+
+  Options options;
+  auto config_builder = backend.BuildGraphConfigs(options, "graph");
+  auto configs = config_builder.GetNullTerminatedConfigs();
+
+  ASSERT_EQ(configs.size(), 2u);
+  ASSERT_NE(configs[0], nullptr);
+  EXPECT_EQ(configs[1], nullptr);
+  EXPECT_EQ(configs[0]->option, QNN_GRAPH_CONFIG_OPTION_CUSTOM);
+
+  auto* custom_config =
+      static_cast<QnnDspGraph_CustomConfig_t*>(configs[0]->customConfig);
+  ASSERT_NE(custom_config, nullptr);
+  EXPECT_EQ(custom_config->option, QNN_DSP_GRAPH_CONFIG_OPTION_ENCODING);
+  EXPECT_EQ(custom_config->encoding, QNN_DSP_GRAPH_ENCODING_STATIC);
+
+  options.SetDspEncoding(DspEncoding::kDynamic);
+  config_builder = backend.BuildGraphConfigs(options, "graph");
+  configs = config_builder.GetNullTerminatedConfigs();
+
+  ASSERT_EQ(configs.size(), 2u);
+  ASSERT_NE(configs[0], nullptr);
+  EXPECT_EQ(configs[1], nullptr);
+  custom_config =
+      static_cast<QnnDspGraph_CustomConfig_t*>(configs[0]->customConfig);
+  ASSERT_NE(custom_config, nullptr);
+  EXPECT_EQ(custom_config->option, QNN_DSP_GRAPH_CONFIG_OPTION_ENCODING);
+  EXPECT_EQ(custom_config->encoding, QNN_DSP_GRAPH_ENCODING_DYNAMIC);
+}
+
 // SETPERFORMANCEMODE /////////////////////////////////////////////////////////
 TEST_P(DspBackendPerfParamTest, ManualSameModeSkipsRevote) {
   const auto& params = GetParam();
