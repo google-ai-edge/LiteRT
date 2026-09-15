@@ -11,19 +11,48 @@ on:
   pull_request:
     branches:
     - main
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'g3doc/**'
-      - 'site/**'
-      - 'LICENSE'
   schedule:
     - cron: "0 10 * * *"  # Run at 2am PST (10am UTC) every day to refresh the cache.
   workflow_dispatch:
 
 jobs:
+  check:
+    name: Check Changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run_build: ${{ steps.check.outputs.run_build }}
+    steps:
+      - if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          predicate-quantifier: 'some-with-excludes'
+          filters: |
+            src:
+              - '**'
+              - '!*.md'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!g3doc/**'
+              - '!site/**'
+              - '!LICENSE'
+      - name: Determine if build should run
+        id: check
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" != "pull_request" || "${{ steps.filter.outputs.src }}" == "true" ]]; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build_android_on_linux:
     name: Build Android Artifacts on Linux
+    needs: check
+    if: needs.check.outputs.run_build == 'true'
     # Task execution time doesn't exceed 10 minutes, so we don't need to use
     # "linux-x86-n2-16". Use GitHub-hosted "ubuntu-latest" instead.
     runs-on: ubuntu-latest

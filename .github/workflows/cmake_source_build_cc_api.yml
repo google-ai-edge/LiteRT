@@ -7,12 +7,6 @@ on:
   pull_request:
     branches:
       - main
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'g3doc/**'
-      - 'site/**'
-      - 'LICENSE'
   merge_group:
   workflow_dispatch:
 
@@ -24,8 +18,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check:
+    name: Check Changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run_build: ${{ steps.check.outputs.run_build }}
+    steps:
+      - if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          predicate-quantifier: 'some-with-excludes'
+          filters: |
+            src:
+              - '**'
+              - '!*.md'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!g3doc/**'
+              - '!site/**'
+              - '!LICENSE'
+      - name: Determine if build should run
+        id: check
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" != "pull_request" || "${{ steps.filter.outputs.src }}" == "true" ]]; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
   source-build-cc-api:
     name: "CMake-C++-API-example"
+    needs: check
+    if: needs.check.outputs.run_build == 'true'
     # Building LiteRT from source with CMake/Ninja on "ubuntu-latest" (2 vCPUs)
     # takes ~20 minutes. Keep it on "linux-x86-n2-16" to keep runtime under 10 minutes.
     runs-on: linux-x86-n2-16
