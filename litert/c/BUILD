@@ -64,11 +64,20 @@ package(
 )
 
 cc_library(
+    name = "litert_version",
+    hdrs = ["litert_version.h"],
+    compatible_with = get_compatible_with_portable(),
+)
+
+cc_library(
     name = "litert_common",
     srcs = ["litert_common.cc"],
     hdrs = ["litert_common.h"],
     compatible_with = get_compatible_with_portable(),
-    deps = ["//litert/build_common:build_config"],
+    deps = [
+        ":litert_version",
+        "//litert/build_common:build_config",
+    ],
 )
 
 cc_test(
