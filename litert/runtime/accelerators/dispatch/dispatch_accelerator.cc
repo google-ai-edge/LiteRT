@@ -152,11 +152,11 @@ LiteRtStatus LiteRtRegisterNpuAccelerator(LiteRtEnvironment environment) {
 
   if (LiteRtStaticLinkedDispatchGetApi == nullptr) {
     LITERT_LOG(LITERT_DEBUG, "Dispatch API is not statically linked.");
-    LITERT_RETURN_IF_ERROR(
-        environment->GetOption(kLiteRtEnvOptionTagDispatchLibraryDir)
-            .has_value(),
-        litert::ErrorStatusBuilder::InvalidArgument())
-        << "Dispatch library directory is not set.";
+    if (!environment->GetOption(kLiteRtEnvOptionTagDispatchLibraryDir)
+             .has_value()) {
+      LITERT_LOG(LITERT_DEBUG, "Dispatch library directory is not set.");
+      return kLiteRtStatusErrorNotFound;
+    }
   } else {
     LITERT_LOG(LITERT_DEBUG, "Dispatch API is statically linked.");
   }
