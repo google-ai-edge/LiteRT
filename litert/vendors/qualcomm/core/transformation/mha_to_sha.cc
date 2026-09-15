@@ -454,10 +454,7 @@ size_t OptimizeMHAPrefill(std::function<bool(OpWrapper&)> validate_op_config,
         IS_CONNECTED(kMatMulV2Index + 2, 0, kAdd2Index + 2, 1) &&
         IS_CONNECTED(kAdd2Index + 2, 0, kReshape2Index + 2, 0) &&
         IS_CONNECTED(kReshape2Index + 2, 0, kTranspose2Index + 2, 0) &&
-        IS_CONNECTED(kTranspose2Index + 2, 0, kReshape3Index + 2, 0) &&
-        IsElementWiseMultiply(ops[start_index + kMulIndex]) &&
-        IsElementWiseAdd(ops[start_index + kAddIndex + 2]) &&
-        IsElementWiseAdd(ops[start_index + kAdd2Index + 2]))) {
+        IS_CONNECTED(kTranspose2Index + 2, 0, kReshape3Index + 2, 0))) {
     return 1;
   }
   // Graph transform
@@ -536,10 +533,7 @@ size_t OptimizeMHADecode(std::function<bool(OpWrapper&)> validate_op_config,
         IS_CONNECTED(kSlice2Index, 0, kMatMulV2Index, 0) &&
         IS_CONNECTED(kMatMulV1Index, 0, kAdd2Index, 0) &&
         IS_CONNECTED(kMatMulV2Index, 0, kAdd2Index, 1) &&
-        IS_CONNECTED(kAdd2Index, 0, kReshape2Index, 0) &&
-        IsElementWiseMultiply(ops[start_index + kMulIndex]) &&
-        IsElementWiseAdd(ops[start_index + kAddIndex]) &&
-        IsElementWiseAdd(ops[start_index + kAdd2Index]))) {
+        IS_CONNECTED(kAdd2Index, 0, kReshape2Index, 0))) {
     return 1;
   }
   // Graph transform
@@ -861,9 +855,7 @@ size_t OptimizeGQAGemma4BPrefill(
         is_connected(ops[start_index + convert_out_idx], 0,
                      ops[start_index + reshape1_idx], 0) &&
         is_connected(ops[start_index + reshape1_idx], 0,
-                     ops[start_index + transpose1_idx], 0) &&
-        IsElementWiseAdd(ops[start_index + mask_add_idx]) &&
-        IsElementWiseAdd(ops[start_index + qkv_add_idx]))) {
+                     ops[start_index + transpose1_idx], 0))) {
     QNN_LOG_WARNING(
         "[G2G] GQA Gemma4B Prefill skipped: "
         "Op connectivity check failed.");
@@ -1059,11 +1051,7 @@ size_t OptimizeMHAFastVlmPrefill(
         is_connected(kQKVSliceMatmulIdx, 0, kQKVAddIdx, 1) &&
         is_connected(kQKVAddIdx, 0, kQKVReshapeIdx, 0) &&
         is_connected(kQKVReshapeIdx, 0, kQKVTransposeIdx, 0) &&
-        is_connected(kQKVTransposeIdx, 0, kOProjReshapeIdx, 0) &&
-        IsElementWiseMultiply(ops[start_index + kQScaleMulIdx]) &&
-        IsElementWiseAdd(ops[start_index + kKSliceAddIdx]) &&
-        IsElementWiseAdd(ops[start_index + kMaskAddIdx]) &&
-        IsElementWiseAdd(ops[start_index + kQKVAddIdx]))) {
+        is_connected(kQKVTransposeIdx, 0, kOProjReshapeIdx, 0))) {
     return 1;
   }
 
@@ -1393,9 +1381,7 @@ bool OptimizeMHATinyGemmaPrefill(
         is_connected(matmul_v1, 0, add_1, 1) &&
         is_connected(add_1, 0, reshape_1, 0) &&
         is_connected(reshape_1, 0, transpose_1, 0) &&
-        is_connected(transpose_1, 0, reshape_2, 0) &&
-        IsElementWiseMultiply(mul) && IsElementWiseAdd(add_0) &&
-        IsElementWiseAdd(add_1))) {
+        is_connected(transpose_1, 0, reshape_2, 0))) {
     return false;
   }
 
@@ -1761,8 +1747,10 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
           IS_CONNECTED(kAttnMulK, 0, kAttnTransposeK, 0) &&
           IS_CONNECTED(kAttnTransposeQ, 0, 0, 0) &&
           IS_CONNECTED(kAttnTransposeK, 0, 0, 1) &&
-          IsElementWiseMultiply(ops[start_index + kAttnMulQ]) &&
-          IsElementWiseMultiply(ops[start_index + kAttnMulK]))) {
+          ops[start_index + kAttnMulQ].IsOpCode(
+              QnnOpCode::kElementWiseMultiply) &&
+          ops[start_index + kAttnMulK].IsOpCode(
+              QnnOpCode::kElementWiseMultiply))) {
       QNN_LOG_ERROR("[G2G] Connection check failed.");
       return 1;
     }
