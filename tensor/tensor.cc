@@ -29,11 +29,11 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/source_location.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
 #include "tensor/utils/macros.h"
-#include "tensor/utils/source_location.h"
 
 namespace litert::tensor {
 
@@ -47,12 +47,12 @@ struct IsVector<std::vector<T>> : std::true_type {};
 
 }  // namespace internal
 
-TensorHandle::TensorHandle(source_location loc)
+TensorHandle::TensorHandle(absl::SourceLocation loc)
     : impl_(graph::NewTensor(std::move(loc))) {}
 
 TensorHandle::TensorHandle(graph::Tensor impl) : impl_(impl) {}
 
-TensorHandle::TensorHandle(TensorInit init, source_location loc)
+TensorHandle::TensorHandle(TensorInit init, absl::SourceLocation loc)
     : TensorHandle(std::move(loc)) {
   Set(std::move(init));
 }
@@ -69,7 +69,7 @@ void TensorHandle::ShallowCloneTo(TensorHandle& other) const {
   LRT_TENSOR_ASSIGN_OR_ABORT(other_info, GetInfo(impl_));
 }
 
-TensorHandle& TensorHandle::Set(TensorInit init, source_location loc) & {
+TensorHandle& TensorHandle::Set(TensorInit init, absl::SourceLocation loc) & {
   if (!graph::GetStatus(impl_).ok()) {
     impl_ = graph::NewTensor(loc);
   }

@@ -32,6 +32,7 @@ limitations under the License.
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
 #include "tensor/examples/gemma4/gemma4_weights.h"
+#include "tensor/examples/gemma4/test_backends.h"
 #include "tensor/examples/ops/transformer/transformer_ops_xnnpack.h"  // IWYU pragma: keep
 #include "tensor/examples/utils/tensor_mapping.h"
 #include "tensor/runners/xnnpack/runner.h"
@@ -44,7 +45,6 @@ namespace {
 
 using ::testing::FloatNear;
 using ::testing::Pointwise;
-using XnnTensor = Tensor<XnnpackMixinTag>;
 
 absl::flat_hash_map<std::string, TensorHandle> CreateGemma4GraphTestWeights(
     int num_layers = 2) {
@@ -52,123 +52,120 @@ absl::flat_hash_map<std::string, TensorHandle> CreateGemma4GraphTestWeights(
 
   for (int l = 0; l < num_layers; ++l) {
     std::string prefix = absl::StrCat("model.layers.", l);
-    weights.insert(
-        {absl::StrCat(prefix, ".self_attn.q_proj.weight"),
-         XnnTensor({.name = "q_proj",
-                    .type = Type::kFP32,
-                    .shape = {8, 4},
-                    .buffer = std::vector<float>{
-                        1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-                        0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
-                        0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-                        0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f}})});
+    weights.emplace(
+        absl::StrCat(prefix, ".self_attn.q_proj.weight"),
+        TensorInit{.name = "q_proj",
+                   .type = Type::kFP32,
+                   .shape = {8, 4},
+                   .buffer = std::vector<float>{
+                       1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                       0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+                       0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+                       0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f}});
 
-    weights.insert(
-        {absl::StrCat(prefix, ".self_attn.k_proj.weight"),
-         XnnTensor({.name = "k_proj",
-                    .type = Type::kFP32,
-                    .shape = {4, 4},
-                    .buffer = std::vector<float>{
-                        0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f,
-                        0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f}})});
+    weights.emplace(
+        absl::StrCat(prefix, ".self_attn.k_proj.weight"),
+        TensorInit{.name = "k_proj",
+                   .type = Type::kFP32,
+                   .shape = {4, 4},
+                   .buffer = std::vector<float>{
+                       0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f,
+                       0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f}});
 
-    weights.insert(
-        {absl::StrCat(prefix, ".self_attn.v_proj.weight"),
-         XnnTensor({.name = "v_proj",
-                    .type = Type::kFP32,
-                    .shape = {4, 4},
-                    .buffer = std::vector<float>{
-                        0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 0.5f, 0.0f, 0.0f, 0.0f,
-                        0.0f, 0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 0.5f}})});
+    weights.emplace(
+        absl::StrCat(prefix, ".self_attn.v_proj.weight"),
+        TensorInit{.name = "v_proj",
+                   .type = Type::kFP32,
+                   .shape = {4, 4},
+                   .buffer = std::vector<float>{
+                       0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 0.5f, 0.0f, 0.0f, 0.0f,
+                       0.0f, 0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 0.5f}});
 
-    weights.insert(
-        {absl::StrCat(prefix, ".self_attn.o_proj.weight"),
-         XnnTensor({.name = "o_proj",
-                    .type = Type::kFP32,
-                    .shape = {4, 8},
-                    .buffer = std::vector<float>{
-                        1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-                        0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
-                        0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
-                        0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f}})});
+    weights.emplace(
+        absl::StrCat(prefix, ".self_attn.o_proj.weight"),
+        TensorInit{.name = "o_proj",
+                   .type = Type::kFP32,
+                   .shape = {4, 8},
+                   .buffer = std::vector<float>{
+                       1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                       0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+                       0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+                       0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f}});
 
-    weights.insert({absl::StrCat(prefix, ".self_attn.q_norm.weight"),
-                    XnnTensor({.name = "q_norm",
+    weights.emplace(
+        absl::StrCat(prefix, ".self_attn.q_norm.weight"),
+        TensorInit{
+            .name = "q_norm", .type = Type::kFP32, .shape = {4}, .buffer = 1});
+
+    weights.emplace(
+        absl::StrCat(prefix, ".self_attn.k_norm.weight"),
+        TensorInit{
+            .name = "k_norm", .type = Type::kFP32, .shape = {4}, .buffer = 1});
+
+    weights.emplace(absl::StrCat(prefix, ".input_layernorm.weight"),
+                    TensorInit{.name = "pre_attn_norm",
                                .type = Type::kFP32,
                                .shape = {4},
-                               .buffer = 1})});
-
-    weights.insert({absl::StrCat(prefix, ".self_attn.k_norm.weight"),
-                    XnnTensor({.name = "k_norm",
+                               .buffer = 1});
+    weights.emplace(absl::StrCat(prefix, ".post_attention_layernorm.weight"),
+                    TensorInit{.name = "post_attn_norm",
                                .type = Type::kFP32,
                                .shape = {4},
-                               .buffer = 1})});
-
-    weights.insert({absl::StrCat(prefix, ".input_layernorm.weight"),
-                    XnnTensor({.name = "pre_attn_norm",
+                               .buffer = 1});
+    weights.emplace(absl::StrCat(prefix, ".pre_feedforward_layernorm.weight"),
+                    TensorInit{.name = "pre_ffn_norm",
                                .type = Type::kFP32,
                                .shape = {4},
-                               .buffer = 1})});
-    weights.insert({absl::StrCat(prefix, ".post_attention_layernorm.weight"),
-                    XnnTensor({.name = "post_attn_norm",
+                               .buffer = 1});
+    weights.emplace(absl::StrCat(prefix, ".post_feedforward_layernorm.weight"),
+                    TensorInit{.name = "post_ffn_norm",
                                .type = Type::kFP32,
                                .shape = {4},
-                               .buffer = 1})});
-    weights.insert({absl::StrCat(prefix, ".pre_feedforward_layernorm.weight"),
-                    XnnTensor({.name = "pre_ffn_norm",
-                               .type = Type::kFP32,
-                               .shape = {4},
-                               .buffer = 1})});
-    weights.insert({absl::StrCat(prefix, ".post_feedforward_layernorm.weight"),
-                    XnnTensor({.name = "post_ffn_norm",
-                               .type = Type::kFP32,
-                               .shape = {4},
-                               .buffer = 1})});
+                               .buffer = 1});
 
-    weights.insert(
-        {absl::StrCat(prefix, ".mlp.gate_proj.weight"),
-         XnnTensor({.name = "gate_proj",
-                    .type = Type::kFP32,
-                    .shape = {6, 4},
-                    .buffer = std::vector<float>{
-                        1.0f, 0.0f,  0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-                        0.0f, 0.0f,  1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
-                        1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, -1.0f}})});
+    weights.emplace(
+        absl::StrCat(prefix, ".mlp.gate_proj.weight"),
+        TensorInit{.name = "gate_proj",
+                   .type = Type::kFP32,
+                   .shape = {6, 4},
+                   .buffer = std::vector<float>{
+                       1.0f, 0.0f,  0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                       0.0f, 0.0f,  1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+                       1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, -1.0f}});
 
-    weights.insert(
-        {absl::StrCat(prefix, ".mlp.up_proj.weight"),
-         XnnTensor({.name = "up_proj",
-                    .type = Type::kFP32,
-                    .shape = {6, 4},
-                    .buffer = std::vector<float>{
-                        0.5f, 0.5f, 0.0f,  0.0f, 0.0f, 0.5f, 0.5f, 0.0f,
-                        0.0f, 0.0f, 0.5f,  0.5f, 0.5f, 0.0f, 0.0f, 0.5f,
-                        1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f, -1.0f}})});
+    weights.emplace(
+        absl::StrCat(prefix, ".mlp.up_proj.weight"),
+        TensorInit{.name = "up_proj",
+                   .type = Type::kFP32,
+                   .shape = {6, 4},
+                   .buffer = std::vector<float>{
+                       0.5f, 0.5f, 0.0f,  0.0f, 0.0f, 0.5f, 0.5f, 0.0f,
+                       0.0f, 0.0f, 0.5f,  0.5f, 0.5f, 0.0f, 0.0f, 0.5f,
+                       1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f, -1.0f}});
 
-    weights.insert(
-        {absl::StrCat(prefix, ".mlp.down_proj.weight"),
-         XnnTensor({.name = "down_proj",
-                    .type = Type::kFP32,
-                    .shape = {4, 6},
-                    .buffer = std::vector<float>{
-                        1.0f,  0.0f, 0.0f, 0.0f, 0.5f, 0.0f, 0.0f, 1.0f,
-                        0.0f,  0.0f, 0.0f, 0.5f, 0.0f, 0.0f, 1.0f, 0.0f,
-                        -0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, -0.5f}})});
+    weights.emplace(
+        absl::StrCat(prefix, ".mlp.down_proj.weight"),
+        TensorInit{.name = "down_proj",
+                   .type = Type::kFP32,
+                   .shape = {4, 6},
+                   .buffer = std::vector<float>{
+                       1.0f,  0.0f, 0.0f, 0.0f, 0.5f, 0.0f, 0.0f, 1.0f,
+                       0.0f,  0.0f, 0.0f, 0.5f, 0.0f, 0.0f, 1.0f, 0.0f,
+                       -0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, -0.5f}});
 
-    weights.insert({absl::StrCat(prefix, ".layer_scalar"),
-                    XnnTensor({.name = "layer_scalar",
+    weights.emplace(absl::StrCat(prefix, ".layer_scalar"),
+                    TensorInit{.name = "layer_scalar",
                                .type = Type::kFP32,
                                .shape = {1},
-                               .buffer = 0.5f})});
+                               .buffer = 0.5f});
   }
 
   // Model Final Norm
-  weights.insert(
-      {"model.norm.weight",
-       XnnTensor({.name = "final_norm",
-                  .type = Type::kFP32,
-                  .shape = {4},
-                  .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}})});
+  weights.emplace("model.norm.weight", TensorInit{.name = "final_norm",
+                                                  .type = Type::kFP32,
+                                                  .shape = {4},
+                                                  .buffer = std::vector<float>{
+                                                      1.0f, 1.0f, 1.0f, 1.0f}});
 
   // Model Embeddings (Tied weights)
   std::vector<float> embed_table_data(40);
@@ -177,16 +174,23 @@ absl::flat_hash_map<std::string, TensorHandle> CreateGemma4GraphTestWeights(
       embed_table_data[i * 4 + j] = i * 0.1f + j * 0.01f;
     }
   }
-  weights.insert(
-      {"model.embed_tokens.weight", XnnTensor({.name = "embed_tokens",
-                                               .type = Type::kFP32,
-                                               .shape = {10, 4},
-                                               .buffer = embed_table_data})});
+  weights.emplace("model.embed_tokens.weight",
+                  TensorInit{.name = "embed_tokens",
+                             .type = Type::kFP32,
+                             .shape = {10, 4},
+                             .buffer = embed_table_data});
 
   return weights;
 }
 
-TEST(Gemma4GraphTest, ModelTest) {
+template <class Backend>
+class Gemma4GraphTest : public ::testing::Test {};
+TYPED_TEST_SUITE(Gemma4GraphTest, TestBackends, TestBackendNames);
+
+TYPED_TEST(Gemma4GraphTest, ModelTest) {
+  using Tag = typename TypeParam::Tag;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_layers = 2;
   config.vocab_size = 10;
@@ -199,7 +203,7 @@ TEST(Gemma4GraphTest, ModelTest) {
   config.use_post_ffw_norm = true;
   config.final_logit_softcap = 10.0f;
 
-  Gemma4Inputs<XnnpackMixinTag> inputs;
+  Gemma4Inputs<Tag> inputs;
   inputs.embedded_input.Set(
       {.name = "embedded_input", .type = Type::kFP32, .shape = {1, 2, 4}});
   inputs.sliding_attention_mask.Set({.name = "sliding_attention_mask",
@@ -212,11 +216,11 @@ TEST(Gemma4GraphTest, ModelTest) {
   LazyTensorMapping weights = LazyTensorMapping(CreateGemma4GraphTestWeights(2))
                                   .Register<Gemma4WeightHooks>();
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<XnnpackMixinTag> model_outputs,
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<Tag> model_outputs,
                                   BuildGemma4Graph(inputs, weights, config));
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner, XnnpackRunner::Create({model_outputs.logits}));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner,
+                                  Runner::Create({model_outputs.logits}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -243,11 +247,14 @@ TEST(Gemma4GraphTest, ModelTest) {
       0.066592f, 0.460456f, 0.852894f, 1.242703f, 1.628713f,
       2.009801f, 2.384902f, 2.753019f, 3.113236f, 3.464724f};
 
-  EXPECT_THAT(runner.ReadOutputAs<float>(model_outputs.logits),
+  EXPECT_THAT(runner.template ReadOutputAs<float>(model_outputs.logits),
               IsOkAndHolds(Pointwise(FloatNear(1e-4f), expected_data)));
 }
 
-TEST(Gemma4GraphTest, GlobalLayerGraphTest) {
+TYPED_TEST(Gemma4GraphTest, GlobalLayerGraphTest) {
+  using Tag = typename TypeParam::Tag;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_layers = 2;
   config.vocab_size = 10;
@@ -262,7 +269,7 @@ TEST(Gemma4GraphTest, GlobalLayerGraphTest) {
   config.final_logit_softcap = 10.0f;
   config.attention_pattern_size = 2;  // Layer 0 is local, Layer 1 is global
 
-  Gemma4Inputs<XnnpackMixinTag> inputs;
+  Gemma4Inputs<Tag> inputs;
   inputs.embedded_input.Set(
       {.name = "embedded_input", .type = Type::kFP32, .shape = {1, 2, 4}});
   inputs.sliding_attention_mask.Set({.name = "sliding_attention_mask",
@@ -282,11 +289,11 @@ TEST(Gemma4GraphTest, GlobalLayerGraphTest) {
   LazyTensorMapping weights = LazyTensorMapping(CreateGemma4GraphTestWeights(2))
                                   .Register<Gemma4WeightHooks>();
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<XnnpackMixinTag> model_outputs,
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<Tag> model_outputs,
                                   BuildGemma4Graph(inputs, weights, config));
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner, XnnpackRunner::Create({model_outputs.logits}));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner,
+                                  Runner::Create({model_outputs.logits}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -325,11 +332,15 @@ TEST(Gemma4GraphTest, GlobalLayerGraphTest) {
       0.066741f, 0.460139f, 0.852115f, 1.241471f, 1.627041f,
       2.007705f, 2.382401f, 2.750137f, 3.110000f, 3.461159f};
 
-  EXPECT_THAT(runner.ReadOutputAs<float>(model_outputs.logits),
+  EXPECT_THAT(runner.template ReadOutputAs<float>(model_outputs.logits),
               IsOkAndHolds(Pointwise(FloatNear(1e-4f), expected_data)));
 }
 
-TEST(Gemma4GraphTest, KVCacheGraphTest) {
+TYPED_TEST(Gemma4GraphTest, KVCacheGraphTest) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_layers = 1;
   config.vocab_size = 10;
@@ -342,7 +353,7 @@ TEST(Gemma4GraphTest, KVCacheGraphTest) {
   config.use_post_ffw_norm = true;
   config.final_logit_softcap = 10.0f;
 
-  Gemma4Inputs<XnnpackMixinTag> inputs;
+  Gemma4Inputs<Tag> inputs;
   inputs.embedded_input.Set(
       {.name = "embedded_input", .type = Type::kFP32, .shape = {1, 2, 4}});
   inputs.sliding_attention_mask.Set({.name = "sliding_attention_mask",
@@ -352,20 +363,20 @@ TEST(Gemma4GraphTest, KVCacheGraphTest) {
       {.name = "rope_local_cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
   inputs.rope_local_sin.Set(
       {.name = "rope_local_sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  inputs.key_caches = {XnnTensor(
+  inputs.key_caches = {Tensor(
       {.name = "key_cache", .type = Type::kFP32, .shape = {1, 1, 2, 4}})};
-  inputs.value_caches = {XnnTensor(
+  inputs.value_caches = {Tensor(
       {.name = "value_cache", .type = Type::kFP32, .shape = {1, 1, 2, 4}})};
   LazyTensorMapping weights = LazyTensorMapping(CreateGemma4GraphTestWeights(1))
                                   .Register<Gemma4WeightHooks>();
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<XnnpackMixinTag> model_outputs,
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<Tag> model_outputs,
                                   BuildGemma4Graph(inputs, weights, config));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create({model_outputs.logits, model_outputs.key_caches[0],
-                             model_outputs.value_caches[0]}));
+      Runner runner,
+      Runner::Create({model_outputs.logits, model_outputs.key_caches[0],
+                      model_outputs.value_caches[0]}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -394,7 +405,7 @@ TEST(Gemma4GraphTest, KVCacheGraphTest) {
 
   ASSERT_THAT(runner.Run(), IsOk());
 
-  EXPECT_THAT(runner.ReadOutputAs<float>(model_outputs.logits),
+  EXPECT_THAT(runner.template ReadOutputAs<float>(model_outputs.logits),
               IsOkAndHolds(Pointwise(
                   FloatNear(1e-4f),
                   {0.072394f, 0.441714f, 0.809831f, 1.175752f, 1.538507f,
@@ -403,19 +414,22 @@ TEST(Gemma4GraphTest, KVCacheGraphTest) {
                    2.010093f, 2.385229f, 2.753378f, 3.113626f, 3.465142f})));
 
   EXPECT_THAT(
-      runner.ReadOutputAs<float>(model_outputs.key_caches[0]),
+      runner.template ReadOutputAs<float>(model_outputs.key_caches[0]),
       IsOkAndHolds(Pointwise(FloatNear(1e-4f),
                              {0.766109f, 0.097841f, 0.863950f, 1.630059f,
                               0.214422f, -0.909717f, 1.286534f, 1.212956f})));
 
   EXPECT_THAT(
-      runner.ReadOutputAs<float>(model_outputs.value_caches[0]),
+      runner.template ReadOutputAs<float>(model_outputs.value_caches[0]),
       IsOkAndHolds(Pointwise(FloatNear(1e-4f),
                              {0.365148f, 0.730295f, 1.095443f, 1.460591f,
                               0.758097f, 0.909716f, 1.061335f, 1.212954f})));
 }
 
-TEST(Gemma4GraphTest, SharedKVCacheGraphTest) {
+TYPED_TEST(Gemma4GraphTest, SharedKVCacheGraphTest) {
+  using Tag = typename TypeParam::Tag;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_layers = 3;
   config.vocab_size = 10;
@@ -430,7 +444,7 @@ TEST(Gemma4GraphTest, SharedKVCacheGraphTest) {
   config.frac_shared_layers = 1.0f / 3.0f;  // Layer 2 is shared.
   config.share_local = true;
 
-  Gemma4Inputs<XnnpackMixinTag> inputs;
+  Gemma4Inputs<Tag> inputs;
   inputs.embedded_input.Set(
       {.name = "embedded_input", .type = Type::kFP32, .shape = {1, 2, 4}});
   inputs.sliding_attention_mask.Set({.name = "sliding_attention_mask",
@@ -443,13 +457,12 @@ TEST(Gemma4GraphTest, SharedKVCacheGraphTest) {
   LazyTensorMapping weights = LazyTensorMapping(CreateGemma4GraphTestWeights(3))
                                   .Register<Gemma4WeightHooks>();
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<XnnpackMixinTag> model_outputs,
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<Tag> model_outputs,
                                   BuildGemma4Graph(inputs, weights, config));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create(
-          {model_outputs.logits, model_outputs.key_caches[2]}));
+      Runner runner,
+      Runner::Create({model_outputs.logits, model_outputs.key_caches[2]}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -469,7 +482,7 @@ TEST(Gemma4GraphTest, SharedKVCacheGraphTest) {
 
   ASSERT_THAT(runner.Run(), IsOk());
 
-  EXPECT_THAT(runner.ReadOutputAs<float>(model_outputs.logits),
+  EXPECT_THAT(runner.template ReadOutputAs<float>(model_outputs.logits),
               IsOkAndHolds(Pointwise(
                   FloatNear(1e-4f),
                   {0.069635f, 0.444022f, 0.817165f, 1.188033f, 1.555614f,
@@ -478,13 +491,17 @@ TEST(Gemma4GraphTest, SharedKVCacheGraphTest) {
                    2.009017f, 2.384028f, 2.752061f, 3.112201f, 3.463619f})));
 
   EXPECT_THAT(
-      runner.ReadOutputAs<float>(model_outputs.key_caches[2]),
+      runner.template ReadOutputAs<float>(model_outputs.key_caches[2]),
       IsOkAndHolds(Pointwise(FloatNear(1e-4f),
                              {0.766109f, 0.097841f, 0.863950f, 1.630059f,
                               0.214422f, -0.909717f, 1.286534f, 1.212956f})));
 }
 
-TEST(Gemma4GraphTest, PerLayerInputsGraphTest) {
+TYPED_TEST(Gemma4GraphTest, PerLayerInputsGraphTest) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_layers = 2;
   config.vocab_size = 10;
@@ -498,7 +515,7 @@ TEST(Gemma4GraphTest, PerLayerInputsGraphTest) {
   config.use_post_ffw_norm = true;
   config.final_logit_softcap = 10.0f;
 
-  Gemma4Inputs<XnnpackMixinTag> inputs;
+  Gemma4Inputs<Tag> inputs;
   inputs.embedded_input.Set(
       {.name = "embedded_input", .type = Type::kFP32, .shape = {1, 2, 4}});
   inputs.sliding_attention_mask.Set({.name = "sliding_attention_mask",
@@ -509,66 +526,66 @@ TEST(Gemma4GraphTest, PerLayerInputsGraphTest) {
   inputs.rope_local_sin.Set(
       {.name = "rope_local_sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
   inputs.per_layer_token_embeddings = {
-      XnnTensor({.name = "per_layer_token_embedding_0",
-                 .type = Type::kFP32,
-                 .shape = {1, 2, 2}}),
-      XnnTensor({.name = "per_layer_token_embedding_1",
-                 .type = Type::kFP32,
-                 .shape = {1, 2, 2}})};
+      Tensor({.name = "per_layer_token_embedding_0",
+              .type = Type::kFP32,
+              .shape = {1, 2, 2}}),
+      Tensor({.name = "per_layer_token_embedding_1",
+              .type = Type::kFP32,
+              .shape = {1, 2, 2}})};
   absl::flat_hash_map<std::string, TensorHandle> weight_map =
       CreateGemma4GraphTestWeights(2);
 
-  weight_map.insert(
-      {"model.layers.0.per_layer_model_projection.weight",
-       XnnTensor({.name = "per_layer_model_projection_0",
-                  .type = Type::kFP32,
-                  .shape = {2, 4},
-                  .buffer = std::vector<float>{0.1f, 0.2f, 0.3f, 0.4f, 0.1f,
-                                               0.2f, 0.3f, 0.4f}})});
-  weight_map.insert(
-      {"model.layers.1.per_layer_model_projection.weight",
-       XnnTensor({.name = "per_layer_model_projection_1",
-                  .type = Type::kFP32,
-                  .shape = {2, 4},
-                  .buffer = std::vector<float>{0.1f, 0.2f, 0.3f, 0.4f, 0.1f,
-                                               0.2f, 0.3f, 0.4f}})});
-  weight_map.insert({"model.per_layer_projection_norm.weight",
-                     XnnTensor({.name = "per_layer_projection_norm",
+  weight_map.emplace(
+      "model.layers.0.per_layer_model_projection.weight",
+      TensorInit{.name = "per_layer_model_projection_0",
+                 .type = Type::kFP32,
+                 .shape = {2, 4},
+                 .buffer = std::vector<float>{0.1f, 0.2f, 0.3f, 0.4f, 0.1f,
+                                              0.2f, 0.3f, 0.4f}});
+  weight_map.emplace(
+      "model.layers.1.per_layer_model_projection.weight",
+      TensorInit{.name = "per_layer_model_projection_1",
+                 .type = Type::kFP32,
+                 .shape = {2, 4},
+                 .buffer = std::vector<float>{0.1f, 0.2f, 0.3f, 0.4f, 0.1f,
+                                              0.2f, 0.3f, 0.4f}});
+  weight_map.emplace("model.per_layer_projection_norm.weight",
+                     TensorInit{.name = "per_layer_projection_norm",
                                 .type = Type::kFP32,
                                 .shape = {2},
-                                .buffer = std::vector<float>{1.0f, 1.0f}})});
+                                .buffer = std::vector<float>{1.0f, 1.0f}});
 
   for (int l = 0; l < 2; ++l) {
     std::string prefix = absl::StrCat("model.layers.", l);
-    weight_map.insert(
-        {absl::StrCat(prefix, ".per_layer_input_gate.weight"),
-         XnnTensor({.name = "per_layer_input_gate",
-                    .type = Type::kFP32,
-                    .shape = {2, 4},
-                    .buffer = std::vector<float>{0.5f, 0.0f, 0.0f, 0.0f, 0.0f,
-                                                 0.5f, 0.0f, 0.0f}})});
-    weight_map.insert(
-        {absl::StrCat(prefix, ".per_layer_projection.weight"),
-         XnnTensor({.name = "per_layer_projection",
-                    .type = Type::kFP32,
-                    .shape = {4, 2},
-                    .buffer = std::vector<float>{1.0f, 0.0f, 0.0f, 1.0f, 0.5f,
-                                                 0.0f, 0.0f, 0.5f}})});
-    weight_map.insert(
-        {absl::StrCat(prefix, ".post_per_layer_input_norm.weight"),
-         XnnTensor({.name = "post_per_layer_norm",
-                    .type = Type::kFP32,
-                    .shape = {4},
-                    .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}})});
+    weight_map.emplace(
+        absl::StrCat(prefix, ".per_layer_input_gate.weight"),
+        TensorInit{.name = "per_layer_input_gate",
+                   .type = Type::kFP32,
+                   .shape = {2, 4},
+                   .buffer = std::vector<float>{0.5f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                                0.5f, 0.0f, 0.0f}});
+    weight_map.emplace(
+        absl::StrCat(prefix, ".per_layer_projection.weight"),
+        TensorInit{.name = "per_layer_projection",
+                   .type = Type::kFP32,
+                   .shape = {4, 2},
+                   .buffer = std::vector<float>{1.0f, 0.0f, 0.0f, 1.0f, 0.5f,
+                                                0.0f, 0.0f, 0.5f}});
+    weight_map.emplace(
+        absl::StrCat(prefix, ".post_per_layer_input_norm.weight"),
+        TensorInit{.name = "post_per_layer_norm",
+                   .type = Type::kFP32,
+                   .shape = {4},
+                   .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}});
   }
   LazyTensorMapping weights =
       LazyTensorMapping(std::move(weight_map)).Register<Gemma4WeightHooks>();
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<XnnpackMixinTag> model_outputs,
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<Tag> model_outputs,
                                   BuildGemma4Graph(inputs, weights, config));
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner, XnnpackRunner::Create({model_outputs.logits}));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner,
+                                  Runner::Create({model_outputs.logits}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -603,11 +620,14 @@ TEST(Gemma4GraphTest, PerLayerInputsGraphTest) {
       0.064542f, 0.461408f, 0.856822f, 1.249556f, 1.638412f,
       2.022243f, 2.399960f, 2.770548f, 3.133072f, 3.486690f};
 
-  EXPECT_THAT(runner.ReadOutputAs<float>(model_outputs.logits),
+  EXPECT_THAT(runner.template ReadOutputAs<float>(model_outputs.logits),
               IsOkAndHolds(Pointwise(FloatNear(1e-2f), expected_data)));
 }
 
-TEST(Gemma4GraphTest, NoLogitSoftcappingGraphTest) {
+TYPED_TEST(Gemma4GraphTest, NoLogitSoftcappingGraphTest) {
+  using Tag = typename TypeParam::Tag;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_layers = 2;
   config.vocab_size = 10;
@@ -620,7 +640,7 @@ TEST(Gemma4GraphTest, NoLogitSoftcappingGraphTest) {
   config.use_post_ffw_norm = true;
   config.final_logit_softcap = 0.0f;  // Soft capping disabled
 
-  Gemma4Inputs<XnnpackMixinTag> inputs;
+  Gemma4Inputs<Tag> inputs;
   inputs.embedded_input.Set(
       {.name = "embedded_input", .type = Type::kFP32, .shape = {1, 2, 4}});
   inputs.sliding_attention_mask.Set({.name = "sliding_attention_mask",
@@ -634,11 +654,11 @@ TEST(Gemma4GraphTest, NoLogitSoftcappingGraphTest) {
   LazyTensorMapping weights = LazyTensorMapping(CreateGemma4GraphTestWeights(2))
                                   .Register<Gemma4WeightHooks>();
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<XnnpackMixinTag> model_outputs,
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<Tag> model_outputs,
                                   BuildGemma4Graph(inputs, weights, config));
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner, XnnpackRunner::Create({model_outputs.logits}));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner,
+                                  Runner::Create({model_outputs.logits}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -665,11 +685,14 @@ TEST(Gemma4GraphTest, NoLogitSoftcappingGraphTest) {
       0.066593f, 0.460782f, 0.854971f, 1.249160f, 1.643349f,
       2.037537f, 2.431726f, 2.825915f, 3.220104f, 3.614293f};
 
-  EXPECT_THAT(runner.ReadOutputAs<float>(model_outputs.logits),
+  EXPECT_THAT(runner.template ReadOutputAs<float>(model_outputs.logits),
               IsOkAndHolds(Pointwise(FloatNear(1e-4f), expected_data)));
 }
 
-TEST(Gemma4GraphTest, PerLayerInputsWithProjectionGraphTest) {
+TYPED_TEST(Gemma4GraphTest, PerLayerInputsWithProjectionGraphTest) {
+  using Tag = typename TypeParam::Tag;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_layers = 2;
   config.vocab_size = 10;
@@ -687,16 +710,17 @@ TEST(Gemma4GraphTest, PerLayerInputsWithProjectionGraphTest) {
   std::vector<float> embedded_input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                             5.0f, 6.0f, 7.0f, 8.0f};
 
-  XnnTensor embedded_input({.name = "embedded_input",
-                            .type = Type::kFP32,
-                            .shape = {batch_size, seq_len, config.embed_dim}});
+  Gemma4Inputs<Tag> inputs;
+  inputs.embedded_input.Set({.name = "embedded_input",
+                             .type = Type::kFP32,
+                             .shape = {batch_size, seq_len, config.embed_dim}});
 
-  XnnTensor sliding_attention_mask({.name = "sliding_attention_mask",
-                                    .type = Type::kFP32,
-                                    .shape = {1, 1, 2, 2}});
-  XnnTensor rope_local_cos(
+  inputs.sliding_attention_mask.Set({.name = "sliding_attention_mask",
+                                     .type = Type::kFP32,
+                                     .shape = {1, 1, 2, 2}});
+  inputs.rope_local_cos.Set(
       {.name = "rope_local_cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor rope_local_sin(
+  inputs.rope_local_sin.Set(
       {.name = "rope_local_sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
   std::vector<float> proj_w_data = {
@@ -713,64 +737,57 @@ TEST(Gemma4GraphTest, PerLayerInputsWithProjectionGraphTest) {
 
   absl::flat_hash_map<std::string, TensorHandle> weights =
       CreateGemma4GraphTestWeights(2);
-  weights.insert({"model.layers.0.per_layer_model_projection.weight",
-                  XnnTensor({.name = "per_layer_model_projection_0",
+  weights.emplace("model.layers.0.per_layer_model_projection.weight",
+                  TensorInit{.name = "per_layer_model_projection_0",
                              .type = Type::kFP32,
                              .shape = {4, 4},
-                             .buffer = proj_w_data})});
-  weights.insert({"model.layers.1.per_layer_model_projection.weight",
-                  XnnTensor({.name = "per_layer_model_projection_1",
+                             .buffer = proj_w_data});
+  weights.emplace("model.layers.1.per_layer_model_projection.weight",
+                  TensorInit{.name = "per_layer_model_projection_1",
                              .type = Type::kFP32,
                              .shape = {4, 4},
-                             .buffer = proj_w_data})});
-  weights.insert({"model.per_layer_projection_norm.weight",
-                  XnnTensor({.name = "per_layer_projection_norm",
+                             .buffer = proj_w_data});
+  weights.emplace("model.per_layer_projection_norm.weight",
+                  TensorInit{.name = "per_layer_projection_norm",
                              .type = Type::kFP32,
                              .shape = {4},
-                             .buffer = norm_w_data})});
+                             .buffer = norm_w_data});
 
   for (int l = 0; l < 2; ++l) {
     std::string prefix = absl::StrCat("model.layers.", l);
-    weights.insert({absl::StrCat(prefix, ".per_layer_input_gate.weight"),
-                    XnnTensor({.name = "per_layer_input_gate",
+    weights.emplace(absl::StrCat(prefix, ".per_layer_input_gate.weight"),
+                    TensorInit{.name = "per_layer_input_gate",
                                .type = Type::kFP32,
                                .shape = {4, 4},
-                               .buffer = std::vector<float>(4 * 4, 0.0f)})});
-    weights.insert({absl::StrCat(prefix, ".per_layer_projection.weight"),
-                    XnnTensor({.name = "per_layer_projection",
+                               .buffer = std::vector<float>(4 * 4, 0.0f)});
+    weights.emplace(absl::StrCat(prefix, ".per_layer_projection.weight"),
+                    TensorInit{.name = "per_layer_projection",
                                .type = Type::kFP32,
                                .shape = {4, 4},
-                               .buffer = std::vector<float>(4 * 4, 0.0f)})});
-    weights.insert({absl::StrCat(prefix, ".post_per_layer_input_norm.weight"),
-                    XnnTensor({.name = "post_per_layer_input_norm",
+                               .buffer = std::vector<float>(4 * 4, 0.0f)});
+    weights.emplace(absl::StrCat(prefix, ".post_per_layer_input_norm.weight"),
+                    TensorInit{.name = "post_per_layer_input_norm",
                                .type = Type::kFP32,
                                .shape = {4},
-                               .buffer = std::vector<float>(4, 0.0f)})});
+                               .buffer = std::vector<float>(4, 0.0f)});
   }
 
-  std::vector<std::vector<float>> layer_emb_data(
-      2, std::vector<float>(2 * 4, 0.1f));
-
-  Gemma4Inputs<XnnpackMixinTag> inputs;
-  inputs.embedded_input = embedded_input;
   for (int l = 0; l < 2; ++l) {
-    inputs.per_layer_token_embeddings.push_back(
-        XnnTensor({.name = absl::StrCat("per_layer_token_embedding_", l),
+    inputs.per_layer_token_embeddings.emplace_back(
+        TensorInit{.name = absl::StrCat("per_layer_token_embedding_", l),
                    .type = Type::kFP32,
-                   .shape = {1, 2, 4}}));
+                   .shape = {1, 2, 4}});
   }
-  inputs.sliding_attention_mask = sliding_attention_mask;
-  inputs.rope_local_cos = rope_local_cos;
-  inputs.rope_local_sin = rope_local_sin;
   LazyTensorMapping weight_mapping =
       LazyTensorMapping(weights).Register<Gemma4WeightHooks>();
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      Gemma4Outputs<XnnpackMixinTag> model_outputs,
+      Gemma4Outputs<Tag> model_outputs,
       BuildGemma4Graph(inputs, weight_mapping, config));
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner, XnnpackRunner::Create({model_outputs.logits}));
-  ASSERT_THAT(runner.SetInput(embedded_input, embedded_input_data), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner,
+                                  Runner::Create({model_outputs.logits}));
+  ASSERT_THAT(runner.SetInput(inputs.embedded_input, embedded_input_data),
+              IsOk());
   const std::array<float, 4> mask_data = {0.0f, -1e9f, 0.0f, 0.0f};
   ASSERT_THAT(runner.SetInput(inputs.sliding_attention_mask, mask_data),
               IsOk());
@@ -784,8 +801,8 @@ TEST(Gemma4GraphTest, PerLayerInputsWithProjectionGraphTest) {
   ASSERT_THAT(runner.SetInput(inputs.rope_local_sin, sin_data), IsOk());
 
   for (int l = 0; l < 2; ++l) {
-    ASSERT_THAT(runner.SetInput(inputs.per_layer_token_embeddings[l],
-                                layer_emb_data[l]),
+    ASSERT_THAT(runner.SetInputAsCopy(inputs.per_layer_token_embeddings[l],
+                                      std::vector<float>(2 * 4, 0.1f)),
                 IsOk());
   }
   ASSERT_THAT(runner.Run(), IsOk());
@@ -797,7 +814,7 @@ TEST(Gemma4GraphTest, PerLayerInputsWithProjectionGraphTest) {
       0.066562f, 0.460761f, 0.854802f, 1.248548f, 1.641863f,
       2.034613f, 2.426663f, 2.817881f, 3.208134f, 3.597293f};
 
-  EXPECT_THAT(runner.ReadOutputAs<float>(model_outputs.logits),
+  EXPECT_THAT(runner.template ReadOutputAs<float>(model_outputs.logits),
               IsOkAndHolds(Pointwise(FloatNear(1e-2f), expected_data)));
 }
 
@@ -813,7 +830,9 @@ void MapWeightIdentifiers(
   }
 }
 
-TEST(Gemma4GraphTest, WeightCacheTest) {
+// The weight cache is an XNNPACK-only feature, so this test is not
+// parametrized over the backends.
+TEST(Gemma4GraphWeightCacheTest, WeightCacheTest) {
   std::string cache_path =
       absl::StrCat(testing::TempDir(), "/gemma4_weight_cache_test.cache");
   remove(cache_path.c_str());
@@ -830,14 +849,14 @@ TEST(Gemma4GraphTest, WeightCacheTest) {
   config.use_post_ffw_norm = true;
   config.final_logit_softcap = 10.0f;
 
-  XnnTensor embedded_input(
+  Tensor embedded_input(
       {.name = "embedded_input", .type = Type::kFP32, .shape = {1, 2, 4}});
-  XnnTensor sliding_attention_mask({.name = "sliding_attention_mask",
-                                    .type = Type::kFP32,
-                                    .shape = {1, 1, 2, 2}});
-  XnnTensor rope_local_cos(
+  Tensor sliding_attention_mask({.name = "sliding_attention_mask",
+                                 .type = Type::kFP32,
+                                 .shape = {1, 1, 2, 2}});
+  Tensor rope_local_cos(
       {.name = "rope_local_cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor rope_local_sin(
+  Tensor rope_local_sin(
       {.name = "rope_local_sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
   auto weights = CreateGemma4GraphTestWeights(2);

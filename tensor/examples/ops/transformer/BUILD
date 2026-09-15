@@ -32,9 +32,9 @@ cc_library(
         "//tensor/internal:arithmetic_helpers",
         "//tensor/internal:graph",
         "//tensor/utils:macros",
-        "//tensor/utils:source_location",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:source_location",
     ],
 )
 

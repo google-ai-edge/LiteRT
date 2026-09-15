@@ -13,50 +13,29 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include <algorithm>
-#include <array>
-#include <cinttypes>
-#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
-#include <iostream>
-#include <limits>
 #include <memory>
-#include <numeric>
 #include <string>
-#include <tuple>
 #include <utility>
-#include <vector>
 
 #include "xnnpack.h"  // from @XNNPACK
-#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
-#include "absl/strings/match.h"  // from @com_google_absl
-#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
-#include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/strings/strip.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "absl/time/clock.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "tensor/backends/xnnpack/arithmetic.h"
 #include "tensor/buffer.h"
-#include "tensor/datatypes.h"
-#include "tensor/examples/gemma3/tokenizer.h"
 #include "tensor/examples/gemma3/util.h"
-#include "tensor/examples/gemma4/gemma4_config.h"
-#include "tensor/examples/gemma4/gemma4_graph.h"
-#include "tensor/examples/gemma4/gemma4_weights.h"
-#include "tensor/examples/gemma4/helpers/quantized_embedding.h"
-#include "tensor/examples/gemma4/helpers/rope.h"
+#include "tensor/examples/gemma4/gemma4_runtime.h"
 #include "tensor/examples/ops/transformer/transformer_ops_xnnpack.h"
 #include "tensor/examples/utils/initialization.h"
 #include "tensor/examples/utils/perfetto_session.h"
-#include "tensor/examples/utils/safetensor_loader.h"
 #include "tensor/examples/utils/tensor_mapping.h"
 #include "tensor/runners/xnnpack/runner.h"
 #include "tensor/tensor.h"
@@ -91,69 +70,20 @@ ABSL_FLAG(bool, instruction_tuned, true,
 namespace litert::tensor::examples::gemma4 {
 namespace {
 
-constexpr int32_t kStartOfTurnToken = 105;
-constexpr int32_t kEndOfTurnToken = 106;
-
-using ::litert::tensor::PerfettoSession;
-using ::litert::tensor::examples::DecodeTiming;
-using ::litert::tensor::examples::GemmaTokenizerSP;
-using ::litert::tensor::examples::PrefillTiming;
-using ::litert::tensor::examples::SafetensorLoader;
-using ::litert::tensor::examples::Timer;
-using ::litert::tensor::examples::TokenPrinter;
-
-using XnnTensor = Tensor<XnnpackMixinTag>;
-
-// Weight mapping hooks that prepare the weights for the XNNPack graph.
-//
-// - BF16 weights are converted to FP32.
-// - The weights are registered with the XNNPack weight cache, if any.
-// - The combined per-layer model projection weight matrix
-//   ("model.per_layer_model_projection.weight") of shape
-//   [num_layers, per_layer_input_dim, embed_dim] is sliced into individual
-//   per-layer 2D weight tensors
-//   ("model.layers.<l>.per_layer_model_projection.weight") of shape
-//   [per_layer_input_dim, embed_dim] for each layer `l`.
+// Weight mapping hooks that register the weights with the XNNPack weight cache,
+// if any.
 class XnnpackWeightHooks final : public TensorMappingHooks {
  public:
   // Constructor.
   //
-  // - `config`: model configuration.
   // - `weight_cache`: if not null, the weights are registered with it. Must
   //   outlive the hooks.
-  XnnpackWeightHooks(const Config& config,
-                     tflite::xnnpack::MMapWeightCacheProvider* weight_cache)
-      : config_(config), weight_cache_(weight_cache) {}
+  explicit XnnpackWeightHooks(
+      tflite::xnnpack::MMapWeightCacheProvider* weight_cache)
+      : weight_cache_(weight_cache) {}
 
   absl::Status OnLoaded(absl::string_view model_name,
                         TensorHandle& weight) override {
-    if (weight.GetType() == Type::kBF16) {
-      LRT_TENSOR_RETURN_IF_ERROR(FallbackBF16ToFp32(weight));
-    }
-    return MapWeightIdentifier(model_name, weight);
-  }
-
-  absl::StatusOr<TensorHandle> OnNotFound(
-      TensorMapping& mapping, absl::string_view model_name) override {
-    if (auto [layer, str] = std::tuple(0, model_name);
-        absl::ConsumePrefix(&str, kPerLayerModelProjectionPrefix) &&
-        absl::ConsumeSuffix(&str, kPerLayerModelProjectionSuffix) &&
-        absl::SimpleAtoi(str, &layer)) {
-      return SlicePerLayerModelProjection(mapping, model_name, layer);
-    }
-    return TensorMappingHooks::OnNotFound(mapping, model_name);
-  }
-
- private:
-  static constexpr absl::string_view kPerLayerModelProjection =
-      "model.per_layer_model_projection.weight";
-  static constexpr absl::string_view kPerLayerModelProjectionPrefix =
-      "model.layers.";
-  static constexpr absl::string_view kPerLayerModelProjectionSuffix =
-      ".per_layer_model_projection.weight";
-
-  absl::Status MapWeightIdentifier(absl::string_view model_name,
-                                   TensorHandle& weight) {
     if (weight_cache_ == nullptr) {
       return absl::OkStatus();
     }
@@ -169,615 +99,58 @@ class XnnpackWeightHooks final : public TensorMappingHooks {
     return absl::OkStatus();
   }
 
-  static absl::Status FallbackBF16ToFp32(TensorHandle& tensor) {
-    TRACE_EVENT(kTensorApiCategory, "FallbackBF16ToFp32");
-    LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & buffer, tensor.GetBuffer());
-    std::shared_ptr<OwningCpuBuffer> fp32_buf =
-        OwningCpuBuffer::Copy<Type::kFP32>(buffer.Lock().As<const bf16_t>());
-    if (fp32_buf == nullptr) {
-      return absl::ResourceExhaustedError(absl::StrCat(
-          "Failed to allocate FP32 buffer for weight ", tensor.GetName()));
-    }
-    tensor.SetType(Type::kFP32);
-    tensor.SetBuffer(fp32_buf);
-    return absl::OkStatus();
-  }
-
-  absl::StatusOr<TensorHandle> SlicePerLayerModelProjection(
-      TensorMapping& mapping, absl::string_view model_name, int layer) {
-    if (layer < 0 || layer >= config_.num_layers) {
-      return absl::NotFoundError(absl::StrCat("No weight maps to ", model_name,
-                                              ", the model has ",
-                                              config_.num_layers, " layers."));
-    }
-    LRT_TENSOR_ASSIGN_OR_RETURN(TensorHandle proj_w,
-                                mapping.Get(kPerLayerModelProjection));
-    // Slicing a quantized weight would also require slicing its quantization
-    // parameters.
-    if (proj_w.GetQuantization() != nullptr) {
-      return absl::UnimplementedError(absl::StrCat(
-          "Slicing quantized ", kPerLayerModelProjection, " isn't supported."));
-    }
-    LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & proj_w_buf, proj_w.GetBuffer());
-    auto proj_locked = proj_w_buf.Lock();
-    const std::byte* proj_w_bytes = proj_locked.data();
-    if (proj_w_bytes == nullptr) {
-      return absl::InternalError(
-          absl::StrCat("Null buffer data for ", kPerLayerModelProjection));
-    }
-
-    const Type type = proj_w.GetType();
-    const size_t layer_w_elements =
-        static_cast<size_t>(config_.per_layer_input_dim) * config_.embed_dim;
-    if (layer_w_elements * BitSize(type) % 8 != 0) {
-      return absl::InvalidArgumentError(
-          absl::StrCat(kPerLayerModelProjection, " layers of type ", type,
-                       " don't start on a byte boundary."));
-    }
-    const size_t layer_w_bytes = BufferSize(type, layer_w_elements);
-    if (proj_locked.size() < (layer + 1) * layer_w_bytes) {
-      return absl::InvalidArgumentError(
-          absl::StrCat(kPerLayerModelProjection, " holds ", proj_locked.size(),
-                       " bytes, which is too small to slice layer ", layer));
-    }
-
-    const std::byte* layer_bytes = proj_w_bytes + layer * layer_w_bytes;
-    return TensorHandle({
-        .name = std::string(model_name),
-        .type = type,
-        .shape = {config_.per_layer_input_dim, config_.embed_dim},
-        // The combined weight is stored in the checkpoint mapping, which keeps
-        // its data alive for the slices that don't own their data.
-        .buffer = std::make_shared<SpanCpuBuffer>(layer_bytes, layer_w_bytes),
-    });
-  }
-
-  Config config_;
+ private:
   tflite::xnnpack::MMapWeightCacheProvider* weight_cache_;
 };
 
-absl::Status FillAttentionMask(const Shape& shape, const absl::Span<float> mask,
-                               const bool is_local,
-                               const int sliding_window_size) {
-  if (shape.size() < 2) {
-    return absl::InvalidArgumentError(absl::StrFormat(
-        "FillAttentionMask output shape must have at least 2 dims, got %zu",
-        shape.size()));
-  }
-
-  const int64_t seq_q = shape[shape.size() - 2];
-  const int64_t seq_k = shape[shape.size() - 1];
-  if (seq_q <= 0 || seq_k <= 0 || seq_q != seq_k) {
-    return absl::InvalidArgumentError(absl::StrFormat(
-        "FillAttentionMask expects output shape [..., S, S] with S>0; got [%s]",
-        absl::StrJoin(shape, ", ")));
-  }
-  if (std::any_of(shape.begin(), shape.end() - 2,
-                  [](auto d) { return d <= 0; })) {
-    return absl::InvalidArgumentError(
-        absl::StrFormat("FillAttentionMask does not support non-positive "
-                        "leading dims. Got shape [%s]",
-                        absl::StrJoin(shape, ", ")));
-  }
-  const int64_t leading =
-      std::accumulate(shape.begin(), shape.end() - 2, 1, std::multiplies<>());
-  const int64_t matrix_size = seq_q * seq_k;
-  const int64_t tensor_size = leading * matrix_size;
-
-  if (mask.size() != tensor_size) {
-    return absl::InvalidArgumentError(
-        absl::StrFormat("FillAttentionMask output mask should hold %" PRIi64
-                        " elements but holds %zu",
-                        tensor_size, mask.size()));
-  }
-
-  const float neg_inf = std::numeric_limits<float>::lowest();
-
-  for (int64_t b = 0; b < leading; ++b) {
-    const int64_t base = b * matrix_size;
-    for (int64_t i = 0; i < seq_q; ++i) {
-      const int64_t I = i * seq_q;
-      for (int64_t j = 0; j < seq_q; ++j) {
-        const bool is_causal_masked = (j > i);
-        const bool is_sliding_masked = is_local && (sliding_window_size > 0) &&
-                                       (i - j >= sliding_window_size);
-        mask[static_cast<size_t>(base + I + j)] =
-            (is_causal_masked || is_sliding_masked) ? neg_inf : 0.0f;
-      }
-    }
-  }
-
-  return absl::OkStatus();
-}
-
-absl::StatusOr<XnnTensor> AttentionMask(Shape shape, const bool is_local,
-                                        const int sliding_window_size) {
-  auto buffer = OwningCpuBuffer::Allocate<Type::kFP32>(shape);
-  XnnTensor mask({.name = "attention_mask",
-                  .type = Type::kFP32,
-                  .shape = std::move(shape),
-                  .buffer = buffer});
-  LRT_TENSOR_RETURN_IF_ERROR(FillAttentionMask(
-      mask.GetShape(), buffer->Span<float>(), is_local, sliding_window_size));
-  return mask;
-}
-
-void AppendTokenToKvCache(std::vector<float>& cache_buf,
-                          absl::Span<const float> new_kv, int num_kv_heads,
-                          int cache_len, int head_dim) {
-  if (num_kv_heads == 1) {
-    std::copy_n(new_kv.data(), head_dim,
-                cache_buf.data() + cache_len * head_dim);
-  } else {
-    for (int h = num_kv_heads - 1; h >= 0; --h) {
-      if (h > 0) {
-        std::copy_backward(cache_buf.data() + h * cache_len * head_dim,
-                           cache_buf.data() + (h + 1) * cache_len * head_dim,
-                           cache_buf.data() + h * (cache_len + 1) * head_dim +
-                               cache_len * head_dim);
-      }
-      std::copy_n(new_kv.data() + h * head_dim, head_dim,
-                  cache_buf.data() + h * (cache_len + 1) * head_dim +
-                      cache_len * head_dim);
-    }
-  }
-}
-
-struct LoadedTensors {
-  LazyTensorMapping weights;
-  std::unique_ptr<GemmaEmbeddingTable> token_embedding;
-  std::unique_ptr<GemmaEmbeddingTable> emb_per_layer_table;
-};
-
-absl::StatusOr<LoadedTensors> LoadWeightsAndPrepareTensors(
-    SafetensorLoader loader, const Config& config,
+// Creates the prefill and decode runners.
+//
+// - `weight_cache`: if not null, the runners use it and it is built if needed.
+absl::StatusOr<CompiledRunners<XnnpackRunner>> CompileRunners(
+    BuiltGraphs& graphs, int num_threads,
     tflite::xnnpack::MMapWeightCacheProvider* weight_cache) {
-  TRACE_EVENT(kTensorApiCategory, "LoadWeightsAndPrepareTensors");
-  LazyTensorMapping weights(GetGemma4WeightMapping(config.num_layers),
-                            std::move(loader));
-  weights.Register<Gemma4WeightHooks>().Register<XnnpackWeightHooks>(
-      config, weight_cache);
-  LRT_TENSOR_ASSIGN_OR_RETURN(TensorHandle embed_tokens,
-                              weights.Get("model.embed_tokens.weight"));
-  LRT_TENSOR_ASSIGN_OR_RETURN(
-      std::unique_ptr<GemmaEmbeddingTable> token_embedding,
-      GemmaEmbeddingTable::Create(embed_tokens, config.embed_dim));
-  LRT_TENSOR_ASSIGN_OR_RETURN(
-      TensorHandle embed_tokens_per_layer,
-      weights.Get("model.embed_tokens_per_layer.weight"));
-  LRT_TENSOR_ASSIGN_OR_RETURN(
-      std::unique_ptr<GemmaEmbeddingTable> emb_per_layer_table,
-      GemmaEmbeddingTable::Create(
-          embed_tokens_per_layer,
-          config.num_layers * config.per_layer_input_dim));
-
-  return LoadedTensors{std::move(weights), std::move(token_embedding),
-                       std::move(emb_per_layer_table)};
-}
-
-struct BuiltGraphs {
-  Gemma4Inputs<XnnpackMixinTag> prefill_inputs;
-  Gemma4Outputs<XnnpackMixinTag> prefill_outputs;
-  Gemma4Inputs<XnnpackMixinTag> decode_inputs;
-  Gemma4Outputs<XnnpackMixinTag> decode_outputs;
-};
-
-absl::StatusOr<Gemma4Inputs<XnnpackMixinTag>> CreateGemma4Inputs(
-    const Config& config, int input_seq_len, int kv_cache_len) {
-  const int batch_size = 1;
-  Gemma4Inputs<XnnpackMixinTag> inputs;
-
-  inputs.embedded_input =
-      XnnTensor({.name = "embedded_input",
-                 .type = Type::kFP32,
-                 .shape = {batch_size, input_seq_len, config.embed_dim}});
-
-  if (input_seq_len > 1) {
-    std::tie(inputs.rope_global_cos, inputs.rope_global_sin) =
-        RopeCosSin(input_seq_len, config.global_key_size,
-                   config.global_base_frequency, config.global_rope_proportion);
-    inputs.rope_global_cos.SetName("rope_global_cos");
-    inputs.rope_global_sin.SetName("rope_global_sin");
-
-    std::tie(inputs.rope_local_cos, inputs.rope_local_sin) =
-        RopeCosSin(input_seq_len, config.head_dim, config.local_base_frequency,
-                   config.local_rope_proportion);
-    inputs.rope_local_cos.SetName("rope_local_cos");
-    inputs.rope_local_sin.SetName("rope_local_sin");
-
-    LRT_TENSOR_ASSIGN_OR_RETURN(
-        inputs.global_attention_mask,
-        AttentionMask({1, 1, input_seq_len, input_seq_len},
-                      /*is_local=*/false, config.sliding_window_size));
-    inputs.global_attention_mask.SetName("global_attention_mask");
-
-    LRT_TENSOR_ASSIGN_OR_RETURN(
-        inputs.sliding_attention_mask,
-        AttentionMask({1, 1, input_seq_len, input_seq_len},
-                      /*is_local=*/true, config.sliding_window_size));
-    inputs.sliding_attention_mask.SetName("sliding_attention_mask");
-  } else {
-    inputs.rope_global_cos.Set({.name = "rope_global_cos",
-                                .type = Type::kFP32,
-                                .shape = {1, 1, 1, config.global_key_size}});
-    inputs.rope_global_sin.Set({.name = "rope_global_sin",
-                                .type = Type::kFP32,
-                                .shape = {1, 1, 1, config.global_key_size}});
-    inputs.rope_local_cos.Set({.name = "rope_local_cos",
-                               .type = Type::kFP32,
-                               .shape = {1, 1, 1, config.head_dim}});
-    inputs.rope_local_sin.Set({.name = "rope_local_sin",
-                               .type = Type::kFP32,
-                               .shape = {1, 1, 1, config.head_dim}});
-    inputs.sliding_attention_mask.Set({.name = "sliding_attention_mask",
-                                       .type = Type::kFP32,
-                                       .shape = {1, 1, 1, kv_cache_len + 1}});
-    inputs.global_attention_mask.Set({.name = "global_attention_mask",
-                                      .type = Type::kFP32,
-                                      .shape = {1, 1, 1, kv_cache_len + 1}});
-  }
-
-  inputs.key_caches.reserve(config.num_layers);
-  inputs.value_caches.reserve(config.num_layers);
-  for (int i = 0; i < config.num_layers; ++i) {
-    bool is_global = config.GetLayerType(i) == Config::LayerType::kGlobal;
-    int head_dim = is_global ? config.global_key_size : config.head_dim;
-    inputs.key_caches.push_back(XnnTensor(
-        {.name = absl::StrCat("key_cache_", i),
-         .type = Type::kFP32,
-         .shape = {batch_size, config.num_kv_heads, kv_cache_len, head_dim}}));
-    inputs.value_caches.push_back(XnnTensor(
-        {.name = absl::StrCat("value_cache_", i),
-         .type = Type::kFP32,
-         .shape = {batch_size, config.num_kv_heads, kv_cache_len, head_dim}}));
-  }
-
-  inputs.per_layer_token_embeddings.reserve(config.num_layers);
-  for (int l = 0; l < config.num_layers; ++l) {
-    inputs.per_layer_token_embeddings.push_back(XnnTensor(
-        {.name = absl::StrCat("per_layer_token_embedding_", l),
-         .type = Type::kFP32,
-         .shape = {batch_size, input_seq_len, config.per_layer_input_dim}}));
-  }
-
-  return inputs;
-}
-
-absl::StatusOr<BuiltGraphs> BuildModelGraphs(const Config& config, int seq_len,
-                                             TensorMapping& weights) {
-  TRACE_EVENT(kTensorApiCategory, "BuildModelGraphs");
-  LRT_TENSOR_ASSIGN_OR_RETURN(
-      Gemma4Inputs<XnnpackMixinTag> prefill_inputs,
-      CreateGemma4Inputs(config, /*input_seq_len=*/seq_len,
-                         /*kv_cache_len=*/0));
-  LRT_TENSOR_ASSIGN_OR_RETURN(
-      Gemma4Outputs<XnnpackMixinTag> prefill_outputs,
-      BuildGemma4Graph(prefill_inputs, weights, config));
-
-  LRT_TENSOR_ASSIGN_OR_RETURN(Gemma4Inputs<XnnpackMixinTag> decode_inputs,
-                              CreateGemma4Inputs(config, /*input_seq_len=*/1,
-                                                 /*kv_cache_len=*/seq_len));
-  LRT_TENSOR_ASSIGN_OR_RETURN(Gemma4Outputs<XnnpackMixinTag> decode_outputs,
-                              BuildGemma4Graph(decode_inputs, weights, config));
-
-  return BuiltGraphs{std::move(prefill_inputs), std::move(prefill_outputs),
-                     std::move(decode_inputs), std::move(decode_outputs)};
-}
-
-struct CompiledRunners {
-  XnnpackRunner prefill_runner;
-  XnnpackRunner decode_runner;
-};
-
-absl::StatusOr<CompiledRunners> CompileRunners(
-    BuiltGraphs& graphs, int num_threads, bool use_weight_cache,
-    tflite::xnnpack::MMapWeightCacheProvider* weight_cache_provider) {
   TRACE_EVENT(kTensorApiCategory, "CompileRunners");
   LRT_TENSOR_ASSIGN_OR_RETURN(
-      auto runner,
+      XnnpackRunner runner,
       XnnpackRunner::Create(graphs.prefill_outputs.GetAllHandles()));
   runner.SetNumThreads(num_threads);
-  if (use_weight_cache && weight_cache_provider != nullptr) {
-    runner.SetWeightsCache(&weight_cache_provider->GetCacheProvider());
-  }
 
   LRT_TENSOR_ASSIGN_OR_RETURN(
-      auto decode_runner,
+      XnnpackRunner decode_runner,
       XnnpackRunner::Create(graphs.decode_outputs.GetAllHandles()));
   decode_runner.SetNumThreads(num_threads);
-  if (use_weight_cache && weight_cache_provider != nullptr) {
-    decode_runner.SetWeightsCache(&weight_cache_provider->GetCacheProvider());
-  }
 
-  if (use_weight_cache && weight_cache_provider != nullptr &&
-      weight_cache_provider->CanStartBuildStep()) {
-    ABSL_LOG(INFO) << "Building cache.";
-    if (!weight_cache_provider->StartBuildStep()) {
-      return absl::InternalError(
-          "Failed to start build step for XNNPack weight cache.");
-    }
-    LRT_TENSOR_RETURN_IF_ERROR(runner.PrepareRuntime());
-    LRT_TENSOR_RETURN_IF_ERROR(decode_runner.PrepareRuntime());
-    if (!weight_cache_provider->StopBuildStep()) {
-      ABSL_LOG(ERROR) << "Failed to stop build step for XNNPack weight cache.";
-    }
-    weight_cache_provider->StopBuild();
-  }
+  if (weight_cache != nullptr) {
+    runner.SetWeightsCache(&weight_cache->GetCacheProvider());
+    decode_runner.SetWeightsCache(&weight_cache->GetCacheProvider());
 
-  return CompiledRunners{std::move(runner), std::move(decode_runner)};
-}
-
-absl::StatusOr<int32_t> ExecutePrefillPass(
-    XnnpackRunner& runner, Gemma4Inputs<XnnpackMixinTag>& inputs,
-    Gemma4Outputs<XnnpackMixinTag>& outputs, const Config& config,
-    const std::vector<int32_t>& input_tokens,
-    const GemmaEmbeddingTable& token_embedding,
-    const GemmaEmbeddingTable& emb_per_layer_table,
-    PrefillTiming& prefill_timing, bool verbose) {
-  TRACE_EVENT(kTensorApiCategory, "Prefill");
-  Timer::LapScope lap_scope = prefill_timing.prefill.Lap();
-
-  int seq_len = static_cast<int>(input_tokens.size());
-  std::vector<float> embedded_input(seq_len * config.embed_dim);
-  std::vector<std::vector<float>> per_layer_tok_embs(
-      config.num_layers,
-      std::vector<float>(seq_len * config.per_layer_input_dim));
-  {
-    TRACE_EVENT(kTensorApiCategory, "CpuPrep");
-    Timer::LapScope cpu_prep_scope = prefill_timing.cpu_prep.Lap();
-    LRT_TENSOR_RETURN_IF_ERROR(
-        token_embedding.Lookup(input_tokens, absl::MakeSpan(embedded_input)));
-
-    LRT_TENSOR_RETURN_IF_ERROR(emb_per_layer_table.LookupPerLayer(
-        input_tokens, config.num_layers, config.per_layer_input_dim,
-        absl::MakeSpan(per_layer_tok_embs)));
-  }
-
-  {
-    TRACE_EVENT(kTensorApiCategory, "Uploads");
-    Timer::LapScope uploads_scope = prefill_timing.uploads.Lap();
-    LRT_TENSOR_RETURN_IF_ERROR(
-        runner.SetInput(inputs.embedded_input, embedded_input));
-
-    for (int l = 0; l < config.num_layers; ++l) {
-      LRT_TENSOR_RETURN_IF_ERROR(runner.SetInput(
-          inputs.per_layer_token_embeddings[l], per_layer_tok_embs[l]));
-    }
-  }
-
-  {
-    TRACE_EVENT(kTensorApiCategory, "Run");
-    Timer::LapScope run_scope = prefill_timing.run.Lap();
-    LRT_TENSOR_RETURN_IF_ERROR(runner.Run());
-  }
-
-  LockedBufferSpan<const float> initial_output_locked =
-      LockedBufferSpan<const float>::Empty();
-  {
-    TRACE_EVENT(kTensorApiCategory, "Readback");
-    Timer::LapScope readback_scope = prefill_timing.readback.Lap();
-    LRT_TENSOR_ASSIGN_OR_RETURN(initial_output_locked,
-                                runner.ReadOutputAs<float>(outputs.logits));
-  }
-
-  absl::Span<const float> prefill_logits(
-      initial_output_locked.begin() + (seq_len - 1) * config.vocab_size,
-      config.vocab_size);
-
-  if (prefill_logits.empty()) {
-    return absl::InternalError("Prefill logits span is empty.");
-  }
-
-  int32_t current_token =
-      absl::c_max_element(prefill_logits) - prefill_logits.begin();
-  return current_token;
-}
-
-absl::StatusOr<int32_t> ExecuteDecodeStep(
-    XnnpackRunner& decode_runner, Gemma4Inputs<XnnpackMixinTag>& decode_inputs,
-    Gemma4Outputs<XnnpackMixinTag>& decode_outputs, const Config& config,
-    int32_t current_token, int cache_len,
-    const GemmaEmbeddingTable& token_embedding_table,
-    const GemmaEmbeddingTable& emb_per_layer_table,
-    std::vector<float>& global_cos, std::vector<float>& global_sin,
-    std::vector<float>& local_cos, std::vector<float>& local_sin,
-    DecodeTiming& decode_timing) {
-  TRACE_EVENT(kTensorApiCategory, "Decode");
-  Timer::LapScope lap_scope = decode_timing.decode.Lap();
-
-  const int32_t seq_k = cache_len + 1;
-  std::vector<float> sliding_mask(static_cast<size_t>(seq_k), 0.0f);
-  std::vector<float> global_mask(static_cast<size_t>(seq_k), 0.0f);
-
-  LockedBufferSpan<const float> token_embeddings =
-      LockedBufferSpan<const float>::Empty();
-  std::vector<LockedBufferSpan<const float>> token_per_layer_embs;
-
-  {
-    TRACE_EVENT(kTensorApiCategory, "CpuPrep");
-    Timer::LapScope cpu_prep_scope = decode_timing.cpu_prep.Lap();
-
-    LRT_TENSOR_ASSIGN_OR_RETURN(token_embeddings,
-                                token_embedding_table.Lookup(current_token));
-    LRT_TENSOR_ASSIGN_OR_RETURN(
-        token_per_layer_embs,
-        emb_per_layer_table.LookupPerLayer(current_token, config.num_layers,
-                                           config.per_layer_input_dim));
-
-    RopeCosSin(/*start=*/cache_len, /*seq_len=*/1, config.global_key_size,
-               config.global_base_frequency, config.global_rope_proportion,
-               absl::Span<float>(global_cos), absl::Span<float>(global_sin));
-    RopeCosSin(/*start=*/cache_len, /*seq_len=*/1, config.head_dim,
-               config.local_base_frequency, config.local_rope_proportion,
-               absl::Span<float>(local_cos), absl::Span<float>(local_sin));
-
-    if (config.sliding_window_size > 0) {
-      const int32_t min_allowed_pos =
-          std::max<int32_t>(0, seq_k - config.sliding_window_size);
-      const float neg_inf = std::numeric_limits<float>::lowest();
-      for (int32_t j = 0; j < min_allowed_pos; ++j) {
-        sliding_mask[static_cast<size_t>(j)] = neg_inf;
+    if (weight_cache->CanStartBuildStep()) {
+      ABSL_LOG(INFO) << "Building cache.";
+      if (!weight_cache->StartBuildStep()) {
+        return absl::InternalError(
+            "Failed to start build step for XNNPack weight cache.");
       }
-    }
-    std::array<int32_t, 4> mask_shape = {1, 1, 1, seq_k};
-    LRT_TENSOR_RETURN_IF_ERROR(decode_runner.ReshapeInput(
-        decode_inputs.sliding_attention_mask, mask_shape));
-
-    LRT_TENSOR_RETURN_IF_ERROR(decode_runner.ReshapeInput(
-        decode_inputs.global_attention_mask, mask_shape));
-  }
-
-  {
-    TRACE_EVENT(kTensorApiCategory, "Uploads");
-    Timer::LapScope uploads_scope = decode_timing.uploads.Lap();
-    absl::Span<const float> token_embeddings_span =
-        absl::MakeConstSpan(token_embeddings.data(), token_embeddings.size());
-    LRT_TENSOR_RETURN_IF_ERROR(decode_runner.SetInput(
-        decode_inputs.embedded_input, token_embeddings_span));
-
-    LRT_TENSOR_RETURN_IF_ERROR(
-        decode_runner.SetInput(decode_inputs.rope_global_cos, global_cos));
-    LRT_TENSOR_RETURN_IF_ERROR(
-        decode_runner.SetInput(decode_inputs.rope_global_sin, global_sin));
-    LRT_TENSOR_RETURN_IF_ERROR(
-        decode_runner.SetInput(decode_inputs.rope_local_cos, local_cos));
-    LRT_TENSOR_RETURN_IF_ERROR(
-        decode_runner.SetInput(decode_inputs.rope_local_sin, local_sin));
-
-    for (int l = 0; l < config.num_layers; ++l) {
-      absl::Span<const float> layer_ple_span = absl::MakeConstSpan(
-          token_per_layer_embs[l].data(), token_per_layer_embs[l].size());
-      LRT_TENSOR_RETURN_IF_ERROR(decode_runner.SetInput(
-          decode_inputs.per_layer_token_embeddings[l], layer_ple_span));
-    }
-
-    LRT_TENSOR_RETURN_IF_ERROR(decode_runner.SetInput(
-        decode_inputs.sliding_attention_mask, sliding_mask));
-    LRT_TENSOR_RETURN_IF_ERROR(decode_runner.SetInput(
-        decode_inputs.global_attention_mask, global_mask));
-  }
-
-  {
-    TRACE_EVENT(kTensorApiCategory, "Run");
-    Timer::LapScope lap(decode_timing.run);
-    LRT_TENSOR_RETURN_IF_ERROR(decode_runner.Run());
-  }
-
-  LockedBufferSpan<const float> logits_locked =
-      LockedBufferSpan<const float>::Empty();
-  {
-    TRACE_EVENT(kTensorApiCategory, "Readback");
-    Timer::LapScope readback_scope = decode_timing.readback.Lap();
-    LRT_TENSOR_ASSIGN_OR_RETURN(
-        logits_locked,
-        decode_runner.ReadOutputAs<float>(decode_outputs.logits));
-  }
-
-  TRACE_EVENT(kTensorApiCategory, "Argmax");
-  Timer::LapScope argmax_scope = decode_timing.argmax.Lap();
-  if (logits_locked.size() == 0) {
-    return absl::InternalError("Decode logits span is empty.");
-  }
-  return absl::c_max_element(logits_locked) - logits_locked.begin();
-}
-
-absl::Status UpdateKvCache(XnnpackRunner& decode_runner,
-                           Gemma4Inputs<XnnpackMixinTag>& decode_inputs,
-                           Gemma4Outputs<XnnpackMixinTag>& decode_outputs,
-                           const Config& config, int cache_len, int batch_size,
-                           const std::vector<int>& sharing_patterns,
-                           std::vector<std::vector<float>>& host_key_caches,
-                           std::vector<std::vector<float>>& host_value_caches,
-                           DecodeTiming& decode_timing) {
-  TRACE_EVENT(kTensorApiCategory, "UpdateKvCache");
-  for (int i = 0; i < config.num_layers; ++i) {
-    if (sharing_patterns[i] != i) {
-      continue;
-    }
-    bool is_global = config.GetLayerType(i) == Config::LayerType::kGlobal;
-    int head_dim = is_global ? config.global_key_size : config.head_dim;
-
-    LockedBufferSpan<const float> new_key_locked =
-        LockedBufferSpan<const float>::Empty();
-    LockedBufferSpan<const float> new_value_locked =
-        LockedBufferSpan<const float>::Empty();
-
-    {
-      TRACE_EVENT(kTensorApiCategory, "KvCache::Readback");
-      Timer::LapScope readback_scope = decode_timing.cache_readback.Lap();
-      LRT_TENSOR_ASSIGN_OR_RETURN(
-          new_key_locked,
-          decode_runner.ReadOutputAs<float>(decode_outputs.key_caches[i]));
-
-      LRT_TENSOR_ASSIGN_OR_RETURN(
-          new_value_locked,
-          decode_runner.ReadOutputAs<float>(decode_outputs.value_caches[i]));
-    }
-
-    {
-      TRACE_EVENT(kTensorApiCategory, "KvCache::AppendAndUpload");
-      Timer::LapScope upload_scope = decode_timing.cache_upload.Lap();
-      AppendTokenToKvCache(host_key_caches[i], new_key_locked,
-                           config.num_kv_heads, cache_len, head_dim);
-      AppendTokenToKvCache(host_value_caches[i], new_value_locked,
-                           config.num_kv_heads, cache_len, head_dim);
-
-      std::array<int32_t, 4> next_cache_shape = {
-          batch_size, config.num_kv_heads, cache_len + 1, head_dim};
-      const size_t next_cache_elements =
-          static_cast<size_t>(config.num_kv_heads) * (cache_len + 1) * head_dim;
-
-      LRT_TENSOR_RETURN_IF_ERROR(decode_runner.ReshapeInput(
-          decode_inputs.key_caches[i], next_cache_shape));
-      absl::Span<const float> next_key_span =
-          absl::MakeConstSpan(host_key_caches[i].data(), next_cache_elements);
-      absl::Span<const float> next_val_span =
-          absl::MakeConstSpan(host_value_caches[i].data(), next_cache_elements);
-      LRT_TENSOR_RETURN_IF_ERROR(
-          decode_runner.SetInput(decode_inputs.key_caches[i], next_key_span));
-
-      LRT_TENSOR_RETURN_IF_ERROR(decode_runner.ReshapeInput(
-          decode_inputs.value_caches[i], next_cache_shape));
-      LRT_TENSOR_RETURN_IF_ERROR(
-          decode_runner.SetInput(decode_inputs.value_caches[i], next_val_span));
-    }
-  }
-  return absl::OkStatus();
-}
-
-absl::StatusOr<ModelVariant> DeduceModelVariant(
-    const SafetensorLoader& loader) {
-  static constexpr absl::string_view kNormKeys[] = {
-      "model.norm.weight",
-      "model.language_model.norm.weight",
-      "model.layers.0.input_layernorm.weight",
-      "model.language_model.layers.0.input_layernorm.weight",
-  };
-  for (const absl::string_view key : kNormKeys) {
-    if (auto info_or = loader.GetTensorInfo(key); info_or.ok()) {
-      if (!info_or->shape.empty()) {
-        const int64_t dim = info_or->shape[0];
-        if (dim == 1536) {
-          return ModelVariant::kE2B;
-        } else if (dim == 2560) {
-          return ModelVariant::kE4B;
-        }
+      const absl::Time start = absl::Now();
+      LRT_TENSOR_RETURN_IF_ERROR(runner.PrepareRuntime());
+      const absl::Time prefill_done = absl::Now();
+      LRT_TENSOR_RETURN_IF_ERROR(decode_runner.PrepareRuntime());
+      const absl::Time decode_done = absl::Now();
+      ABSL_LOG(INFO) << "Prepared XNNPACK runtimes: prefill="
+                     << (prefill_done - start)
+                     << " decode=" << (decode_done - prefill_done);
+      if (!weight_cache->StopBuildStep()) {
+        ABSL_LOG(ERROR)
+            << "Failed to stop build step for XNNPack weight cache.";
       }
+      weight_cache->StopBuild();
     }
   }
-  return absl::InvalidArgumentError(
-      "Failed to deduce Gemma 4 model variant from safetensor metadata.");
+
+  return CompiledRunners<XnnpackRunner>{std::move(runner),
+                                        std::move(decode_runner)};
 }
 
-absl::Status Run(const std::string& weights_path,
-                 const std::string& tokenizer_path,
-                 const std::string& raw_prompt, int max_tokens, bool verbose) {
-  if (max_tokens <= 0) {
-    return absl::InvalidArgumentError("max_tokens must be positive");
-  }
-  if (xnn_initialize(/*allocator=*/nullptr) != xnn_status_success) {
-    return absl::InternalError("Failed to initialize XNNPACK");
-  }
+absl::Status Run() {
   const std::string& perfetto_out = absl::GetFlag(FLAGS_perfetto_output);
   std::unique_ptr<PerfettoSession> perfetto_session;
   if (!perfetto_out.empty()) {
@@ -785,222 +158,45 @@ absl::Status Run(const std::string& weights_path,
                                 PerfettoSession::Create(perfetto_out));
   }
 
-  TRACE_EVENT_BEGIN(kTensorApiCategory, "Load tokenizer");
-  LRT_TENSOR_ASSIGN_OR_RETURN(GemmaTokenizerSP tokenizer,
-                              GemmaTokenizerSP::Load(tokenizer_path));
-  TRACE_EVENT_END(kTensorApiCategory);
-
-  TRACE_EVENT_BEGIN(kTensorApiCategory, "Load weights");
-  LRT_TENSOR_ASSIGN_OR_RETURN(SafetensorLoader loader,
-                              SafetensorLoader::Load(weights_path));
-  TRACE_EVENT_END(kTensorApiCategory);
-  LRT_TENSOR_ASSIGN_OR_RETURN(ModelVariant model_variant,
-                              DeduceModelVariant(loader));
-
-  const Config config = Config::From(model_variant);
-
-  std::string prompt = raw_prompt;
-  if (const std::string start_of_turn =
-          tokenizer.DecodeToken(kStartOfTurnToken);
-      absl::GetFlag(FLAGS_instruction_tuned) &&
-      !absl::StrContains(raw_prompt, start_of_turn)) {
-    prompt = absl::StrCat(start_of_turn, "user\n", raw_prompt,
-                          tokenizer.DecodeToken(kEndOfTurnToken), "\n",
-                          start_of_turn, "model\n");
+  if (xnn_initialize(/*allocator=*/nullptr) != xnn_status_success) {
+    return absl::InternalError("Failed to initialize XNNPACK");
   }
 
-  ABSL_LOG(INFO) << "Using Gemma4 " << AbslUnparseFlag(model_variant)
-                 << " config"
-                 << " layers=" << config.num_layers
-                 << " emb_dim=" << config.embed_dim
-                 << " hidden_dim=" << config.hidden_dim
-                 << " head_dim=" << config.head_dim
-                 << " n_heads=" << config.num_heads
-                 << " n_kv_heads=" << config.num_kv_heads
-                 << " vocab_size=" << config.vocab_size;
+  const GenerateOptions options = {
+      .weights_path = absl::GetFlag(FLAGS_weights),
+      .tokenizer_path = absl::GetFlag(FLAGS_tokenizer),
+      .prompt = absl::GetFlag(FLAGS_prompt),
+      .max_tokens = absl::GetFlag(FLAGS_max_tokens),
+      .instruction_tuned = absl::GetFlag(FLAGS_instruction_tuned),
+      .verbose = absl::GetFlag(FLAGS_verbose),
+      .print = absl::GetFlag(FLAGS_print),
+  };
 
   std::string weight_cache_path = absl::GetFlag(FLAGS_weight_cache);
   if (weight_cache_path == kAutoWeightCacheFlag) {
-    weight_cache_path = absl::StrCat(weights_path, ".cache");
+    weight_cache_path = absl::StrCat(options.weights_path, ".cache");
   }
   tflite::xnnpack::MMapWeightCacheProvider weight_cache_provider;
-  const bool use_weight_cache = !weight_cache_path.empty();
-  if (use_weight_cache) {
+  tflite::xnnpack::MMapWeightCacheProvider* weight_cache = nullptr;
+  if (!weight_cache_path.empty()) {
     TRACE_EVENT(kTensorApiCategory, "MapWeightCache");
     if (!weight_cache_provider.LoadOrStartBuild(weight_cache_path.c_str())) {
       return absl::InternalError(absl::StrCat(
           "Failed to load or start build for XNNPack weight cache file: ",
           weight_cache_path));
     }
+    weight_cache = &weight_cache_provider;
   }
 
-  LRT_TENSOR_ASSIGN_OR_RETURN(
-      LoadedTensors loaded_tensors,
-      LoadWeightsAndPrepareTensors(
-          std::move(loader), config,
-          use_weight_cache ? &weight_cache_provider : nullptr));
-
-  TRACE_EVENT_BEGIN(kTensorApiCategory, "TokenizerEncode");
-  std::vector<int32_t> input_tokens =
-      tokenizer.Encode(prompt, /*add_bos=*/true);
-
-  TRACE_EVENT_END(kTensorApiCategory);
-  int seq_len = static_cast<int>(input_tokens.size());
-
-  if (verbose) {
-    ABSL_LOG(INFO) << "Input prompt: \"" << prompt << "\"";
-    ABSL_LOG(INFO) << "Tokenized to " << seq_len << " tokens";
-  }
-
-  LRT_TENSOR_ASSIGN_OR_RETURN(
-      BuiltGraphs graphs,
-      BuildModelGraphs(config, seq_len, loaded_tensors.weights));
-
-  LRT_TENSOR_RETURN_IF_ERROR(graphs.prefill_outputs.logits.GetStatus())
-      << "Output logits tensor isn't valid.";
-
-  LRT_TENSOR_ASSIGN_OR_RETURN(
-      CompiledRunners runners,
-      CompileRunners(graphs, absl::GetFlag(FLAGS_num_threads), use_weight_cache,
-                     &weight_cache_provider));
-
-  ABSL_LOG(INFO) << "Running initial forward pass (prefill)...";
-
-  int32_t current_token;
-  PrefillTiming prefill_timing;
-  LRT_TENSOR_ASSIGN_OR_RETURN(
-      current_token,
-      ExecutePrefillPass(
-          runners.prefill_runner, graphs.prefill_inputs, graphs.prefill_outputs,
-          config, input_tokens, *loaded_tensors.token_embedding,
-          *loaded_tensors.emb_per_layer_table, prefill_timing, verbose));
-
-  std::cout << prompt << std::flush;
-
-  if (seq_len > 0) {
-    prefill_timing.prefill.SetCountPerLap(seq_len);
-    ABSL_LOG(INFO) << "Prefill " << seq_len << " tokens in "
-                   << prefill_timing.prefill.Duration();
-    ABSL_LOG(INFO) << prefill_timing.Stats();
-  }
-
-  if (current_token == GemmaTokenizerSP::kEosToken ||
-      current_token == kEndOfTurnToken || current_token == kStartOfTurnToken) {
-    if (verbose) {
-      ABSL_LOG(INFO) << "Stop token predicted from prefill (token="
-                     << current_token << ")";
-    }
-    std::cout << std::endl;
-    return absl::OkStatus();
-  }
-
-  TokenPrinter printer(absl::GetFlag(FLAGS_print), max_tokens);
-  printer.Push(tokenizer.DecodeToken(current_token));
-  // Prefill already predicted the first generated token.
-  if (max_tokens == 1) {
-    printer.Flush();
-    return absl::OkStatus();
-  }
-
-  // Initialize decode runner KV caches with prefill K/V
-  int cache_len = seq_len;
-  const int max_cache_len = seq_len + max_tokens - 1;
-  const int batch_size = 1;
-  DecodeTiming decode_timing;
-  std::vector<int> sharing_patterns = GetKvCacheSharingPatterns(config);
-  std::vector<std::vector<float>> host_key_caches(config.num_layers);
-  std::vector<std::vector<float>> host_value_caches(config.num_layers);
-
-  {
-    TRACE_EVENT(kTensorApiCategory, "InitKvCacheFromPrefill");
-    for (int i = 0; i < config.num_layers; ++i) {
-      if (sharing_patterns[i] != i) {
-        continue;
-      }
-      bool is_global = config.GetLayerType(i) == Config::LayerType::kGlobal;
-      int head_dim = is_global ? config.global_key_size : config.head_dim;
-
-      const size_t max_cache_elements =
-          static_cast<size_t>(config.num_kv_heads) * max_cache_len * head_dim;
-      host_key_caches[i].resize(max_cache_elements, 0.0f);
-      host_value_caches[i].resize(max_cache_elements, 0.0f);
-
-      std::array<int32_t, 4> current_cache_shape = {
-          batch_size, config.num_kv_heads, cache_len, head_dim};
-
-      LRT_TENSOR_RETURN_IF_ERROR(runners.decode_runner.ReshapeInput(
-          graphs.decode_inputs.key_caches[i], current_cache_shape));
-      LRT_TENSOR_RETURN_IF_ERROR(runners.decode_runner.ReshapeInput(
-          graphs.decode_inputs.value_caches[i], current_cache_shape));
-
-      LRT_TENSOR_ASSIGN_OR_RETURN(auto key_locked,
-                                  runners.prefill_runner.ReadOutputAs<float>(
-                                      graphs.prefill_outputs.key_caches[i]));
-      LRT_TENSOR_ASSIGN_OR_RETURN(auto value_locked,
-                                  runners.prefill_runner.ReadOutputAs<float>(
-                                      graphs.prefill_outputs.value_caches[i]));
-
-      const size_t initial_elements =
-          static_cast<size_t>(config.num_kv_heads) * cache_len * head_dim;
-      std::copy_n(key_locked.begin(), initial_elements,
-                  host_key_caches[i].begin());
-      std::copy_n(value_locked.begin(), initial_elements,
-                  host_value_caches[i].begin());
-
-      absl::Span<const float> key_span =
-          absl::MakeConstSpan(host_key_caches[i].data(), initial_elements);
-      absl::Span<const float> val_span =
-          absl::MakeConstSpan(host_value_caches[i].data(), initial_elements);
-      LRT_TENSOR_RETURN_IF_ERROR(runners.decode_runner.SetInput(
-          graphs.decode_inputs.key_caches[i], key_span));
-      LRT_TENSOR_RETURN_IF_ERROR(runners.decode_runner.SetInput(
-          graphs.decode_inputs.value_caches[i], val_span));
-    }
-  }
-
-  std::vector<float> global_cos(config.global_key_size);
-  std::vector<float> global_sin(config.global_key_size);
-  std::vector<float> local_cos(config.head_dim);
-  std::vector<float> local_sin(config.head_dim);
-
-  int tokens_generated = 0;
-  for (int step = 1; step < max_tokens; ++step) {
-    TRACE_EVENT(kTensorApiCategory, "DecodeStep");
-    LRT_TENSOR_ASSIGN_OR_RETURN(
-        current_token,
-        ExecuteDecodeStep(runners.decode_runner, graphs.decode_inputs,
-                          graphs.decode_outputs, config, current_token,
-                          cache_len, *loaded_tensors.token_embedding,
-                          *loaded_tensors.emb_per_layer_table, global_cos,
-                          global_sin, local_cos, local_sin, decode_timing));
-
-    LRT_TENSOR_RETURN_IF_ERROR(UpdateKvCache(
-        runners.decode_runner, graphs.decode_inputs, graphs.decode_outputs,
-        config, cache_len, batch_size, sharing_patterns, host_key_caches,
-        host_value_caches, decode_timing));
-
-    cache_len += 1;
-
-    if (current_token == GemmaTokenizerSP::kEosToken ||
-        current_token == kEndOfTurnToken ||
-        current_token == kStartOfTurnToken) {
-      if (verbose) {
-        ABSL_LOG(INFO) << "Stop token generated at step " << step
-                       << " (token=" << current_token << ")";
-      }
-      break;
-    }
-
-    printer.Push(tokenizer.DecodeToken(current_token));
-    tokens_generated++;
-  }
-  printer.Flush();
-
-  ABSL_LOG(INFO) << "Decoded " << tokens_generated << " tokens in "
-                 << decode_timing.decode.Duration();
-  ABSL_LOG(INFO) << decode_timing.Stats();
-
-  return absl::OkStatus();
+  const int num_threads = absl::GetFlag(FLAGS_num_threads);
+  return Generate<XnnpackMixinTag, XnnpackRunner>(
+      options,
+      [&](LazyTensorMapping& weights) {
+        weights.Register<XnnpackWeightHooks>(weight_cache);
+      },
+      [&](BuiltGraphs& graphs) {
+        return CompileRunners(graphs, num_threads, weight_cache);
+      });
 }
 
 }  // namespace
@@ -1009,10 +205,7 @@ absl::Status Run(const std::string& weights_path,
 int main(int argc, char** argv) {
   litert::tensor::Initialize("gemma4", argc, argv, true);
 
-  absl::Status status = litert::tensor::examples::gemma4::Run(
-      absl::GetFlag(FLAGS_weights), absl::GetFlag(FLAGS_tokenizer),
-      absl::GetFlag(FLAGS_prompt), absl::GetFlag(FLAGS_max_tokens),
-      absl::GetFlag(FLAGS_verbose));
+  absl::Status status = litert::tensor::examples::gemma4::Run();
 
   if (!status.ok()) {
     ABSL_LOG(ERROR) << "Failed to run Gemma4 model: " << status;

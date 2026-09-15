@@ -26,11 +26,11 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/source_location.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
 #include "tensor/utils/macros.h"
-#include "tensor/utils/source_location.h"
 
 namespace litert::tensor {
 
@@ -43,24 +43,26 @@ struct TensorInit {
   std::string name;
   Type type = Type::kUnknown;
   Shape shape;
-  std::variant<std::shared_ptr<Buffer>, std::vector<float>,
-               std::vector<int32_t>, std::vector<int8_t>, std::vector<int4_t>,
-               std::vector<int2_t>, float, double, int8_t, int32_t, int64_t>
+  std::variant<std::shared_ptr<Buffer>, std::vector<float>, std::vector<fp16_t>,
+               std::vector<bf16_t>, std::vector<int32_t>, std::vector<int8_t>,
+               std::vector<int4_t>, std::vector<int2_t>, float, double, int8_t,
+               int32_t, int64_t>
       buffer;
   std::shared_ptr<Quantization> quantization;
 };
 
 class TensorHandle {
  public:
-  explicit TensorHandle(source_location loc = source_location::current());
-  explicit TensorHandle(TensorInit init,
-                        source_location loc = source_location::current());
+  explicit TensorHandle(
+      absl::SourceLocation loc = absl::SourceLocation::current());
+  explicit TensorHandle(TensorInit init, absl::SourceLocation loc =
+                                             absl::SourceLocation::current());
   explicit TensorHandle(graph::Tensor impl);
 
   // NOLINTBEGIN(google-explicit-constructor): we want to be able to return
   // errors directly from functions that return tensors.
   TensorHandle(absl::Status status,
-               source_location loc = source_location::current())
+               absl::SourceLocation loc = absl::SourceLocation::current())
       : TensorHandle(graph::ErrorTensor(std::move(status), loc)) {}
   // NOLINTEND(google-explicit-constructor)
 
@@ -69,8 +71,8 @@ class TensorHandle {
   // The validity of a Tensor can be checked using the `GetStatus()` function.
   static TensorHandle Invalid() { return TensorHandle(graph::Tensor()); };
 
-  TensorHandle& Set(TensorInit init,
-                    source_location loc = source_location::current()) &;
+  TensorHandle& Set(TensorInit init, absl::SourceLocation loc =
+                                         absl::SourceLocation::current()) &;
 
   // Clones the underlying information into a new tensor.
   //
@@ -161,16 +163,17 @@ class Tensor : public TensorHandle, public Mixins... {
 
   Tensor(const Tensor& t) = default;
 
-  explicit Tensor(source_location loc = source_location::current())
+  explicit Tensor(absl::SourceLocation loc = absl::SourceLocation::current())
       : TensorHandle(loc) {};
   explicit Tensor(const TensorInit& t,
-                  source_location loc = source_location::current())
+                  absl::SourceLocation loc = absl::SourceLocation::current())
       : TensorHandle(t, loc) {}
   explicit Tensor(graph::Tensor impl) : TensorHandle(impl) {};
 
   // NOLINTBEGIN(google-explicit-constructor): we want to be able to return
   // errors directly from functions that return tensors.
-  Tensor(absl::Status status, source_location loc = source_location::current())
+  Tensor(absl::Status status,
+         absl::SourceLocation loc = absl::SourceLocation::current())
       : TensorHandle(std::move(status), loc) {}
   // NOLINTEND(google-explicit-constructor)
 };
