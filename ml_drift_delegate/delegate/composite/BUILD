@@ -534,6 +534,44 @@ alias(
 )
 
 cc_library(
+    name = "gated_delta_update_parser",
+    srcs = ["gated_delta_update_parser.cc"],
+    hdrs = ["gated_delta_update_parser.h"],
+    deps = [
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:model",
+    ],
+)
+
+cc_library(
+    name = "gated_delta_update_kernel",
+    srcs = ["gated_delta_update_kernel.cc"],
+    hdrs = ["gated_delta_update_kernel.h"],
+    deps = [
+        ":gated_delta_update_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:kernel_info",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tuning_type",
+    ],
+)
+
+cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
     hdrs = [
@@ -542,6 +580,7 @@ cc_library(
     ],
     deps = [
         ":add_values_to_cache_parser",
+        ":gated_delta_update_parser",
         ":moe_experts_parser",
         ":qkv_norm_rope_parser",
         ":rope_parser",
@@ -549,9 +588,9 @@ cc_library(
         ":sdpa_transposed_parser",
         ":short_conv_step_parser",
         ":swiglu_parser",
-        "//ml_drift_delegate/tflite:model_builder",
         "//ml_drift_delegate/tflite:operation_parser",
         "//ml_drift_delegate/tflite:unimplemented_operation_parser",
+        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -638,6 +677,8 @@ cc_library(
     deps = [
         ":add_values_to_cache_kernel",
         ":add_values_to_cache_parser",
+        ":gated_delta_update_kernel",
+        ":gated_delta_update_parser",
         ":moe_experts_kernel",
         ":moe_experts_parser",
         ":qkv_norm_rope_kernel",
