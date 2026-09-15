@@ -1,4 +1,4 @@
-# Copyright 2025 The Google AI Edge Authors. All Rights Reserved.
+# Copyright 2026 The OpenXLA Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,17 +11,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# ==============================================================================
+diff --git a/absl/base/BUILD.bazel b/absl/base/BUILD.bazel
+--- a/absl/base/BUILD.bazel
++++ b/absl/base/BUILD.bazel
+@@ -578,12 +578,8 @@ cc_library(
+     copts = ABSL_DEFAULT_COPTS,
+     linkopts = ABSL_DEFAULT_LINKOPTS,
+-    visibility = [
+-        "//absl:__subpackages__",
+-        "//absl:friends",
+-    ],
+     deps = [
+         ":base",
+         ":config",
+         ":core_headers",
+         ":nullability",
+     ],
 
-exports_files(
-    ["LICENSE"],
-    visibility = ["//:__subpackages__"],
-)
 
-exports_files([
-    "PATCH.flatbuffers_windows_no_bash",
-    "PATCH.perfetto",
-    "PATCH.protobuf_port_msvc_compat",
-    "PATCH.sentencepiece",
-    "litert_workspace.bzl",
-    "tensorflow_source_rules.bzl",
-])
