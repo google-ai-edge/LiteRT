@@ -107,6 +107,7 @@ struct LrtQualcommOptionsT {
   std::optional<std::string> dlc_dir;
   std::optional<std::string> graph_transform;
   std::optional<std::uint32_t> vtcm_size;
+  std::optional<std::uint32_t> htp_device_id;
   std::optional<std::uint32_t> num_hvx_threads;
   std::optional<LrtQualcommOptionsOptimizationLevel> optimization_level;
   std::optional<LrtQualcommOptionsGraphPriority> graph_priority;
@@ -234,6 +235,11 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetVtcmSize(parsed_options,
                                                  static_cast<uint32_t>(*v));
+        } else if (key == "htp_device_id") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetHtpDeviceId(parsed_options,
+                                                    static_cast<uint32_t>(*v));
         } else if (key == "num_hvx_threads") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -409,6 +415,9 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   }
   if (options->vtcm_size.has_value()) {
     toml << "vtcm_size = " << *options->vtcm_size << "\n";
+  }
+  if (options->htp_device_id.has_value()) {
+    toml << "htp_device_id = " << *options->htp_device_id << "\n";
   }
   if (options->num_hvx_threads.has_value()) {
     toml << "num_hvx_threads = " << *options->num_hvx_threads << "\n";
@@ -1036,6 +1045,28 @@ LiteRtStatus LrtQualcommOptionsGetVtcmSize(LrtQualcommOptions options,
   }
 
   *vtcm_size = options->vtcm_size.value_or(0);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetHtpDeviceId(LrtQualcommOptions options,
+                                              std::uint32_t htp_device_id) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->htp_device_id = htp_device_id;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpDeviceId(LrtQualcommOptions options,
+                                              std::uint32_t* htp_device_id) {
+  if (options == nullptr || htp_device_id == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *htp_device_id = options->htp_device_id.value_or(0);
 
   return kLiteRtStatusOk;
 }
