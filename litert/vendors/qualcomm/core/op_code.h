@@ -138,6 +138,7 @@ enum class QnnOpCode {
   kResizeBilinear,
   kResizeNearestNeighbor,
   kRmsNorm,
+  kRotaryEmbedding,
   kRoiAlign,
   kRoiPooling,
   kScatterElements,

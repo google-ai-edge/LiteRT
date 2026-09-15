@@ -61,14 +61,57 @@ cc_library(
     hdrs = ["graph_to_graph.h"],
     deps = [
         ":embedding_gemma",
+        ":convert_fc_convert",
         ":kv_swapped_attn",
         ":mask",
         ":matmul_convert",
         ":mha_to_sha",
         ":onehot_fc",
+        ":rope",
         ":rotation_quant",
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+    ],
+)
+
+cc_library(
+    name = "rope",
+    srcs = ["rope.cc"],
+    hdrs = ["rope.h"],
+    deps = [
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:rotary_embedding_op_builder",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_test(
+    name = "rope_test",
+    srcs = ["rope_test.cc"],
+    deps = [
+        ":rope",
+        "//litert/vendors/qualcomm/core:op_code",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:concatenation_op_builder",
+        "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ] + gtest_main_no_heapcheck_deps(),
+)
+
+cc_library(
+    name = "convert_fc_convert",
+    srcs = ["convert_fc_convert.cc"],
+    hdrs = ["convert_fc_convert.h"],
+    deps = [
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:op_builder",
+        "//litert/vendors/qualcomm/core/builders:reshape_op_builder",
+        "//litert/vendors/qualcomm/core/utils:log",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
     ],
 )

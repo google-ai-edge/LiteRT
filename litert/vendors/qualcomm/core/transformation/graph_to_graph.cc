@@ -9,12 +9,14 @@
 
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
+#include "litert/vendors/qualcomm/core/transformation/convert_fc_convert.h"
 #include "litert/vendors/qualcomm/core/transformation/embedding_gemma.h"
 #include "litert/vendors/qualcomm/core/transformation/kv_swapped_attn.h"
 #include "litert/vendors/qualcomm/core/transformation/mask.h"
 #include "litert/vendors/qualcomm/core/transformation/matmul_convert.h"
 #include "litert/vendors/qualcomm/core/transformation/mha_to_sha.h"
 #include "litert/vendors/qualcomm/core/transformation/onehot_fc.h"
+#include "litert/vendors/qualcomm/core/transformation/rope.h"
 #include "litert/vendors/qualcomm/core/transformation/rotation_quant.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 
@@ -273,6 +275,19 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
   };
   Transform(validate_op_config, ops, tensor_pool, onehot_fc, TransformOneHotFc);
 
+  const std::vector<QnnOpCode> rope = {
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kElementWiseBinary,  // Mul
+      QnnOpCode::kElementWiseBinary,  // Mul
+      QnnOpCode::kElementWiseSubtract,
+      QnnOpCode::kElementWiseBinary,  // Mul
+      QnnOpCode::kElementWiseBinary,  // Mul
+      QnnOpCode::kElementWiseBinary,  // Add
+      QnnOpCode::kConcat,
+  };
+  Transform(validate_op_config, ops, tensor_pool, rope, TransformRope);
+
   const std::vector<QnnOpCode> vision_mha = {
       QnnOpCode::kTranspose,
       QnnOpCode::kQuantize,
@@ -293,6 +308,60 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
   };
   Transform(validate_op_config, ops, tensor_pool, vision_mha,
             OptimizeVisionMHA);
+
+  const std::vector<QnnOpCode> convert_fc_convert = {
+      QnnOpCode::kConvert,
+      QnnOpCode::kFullyConnected,
+      QnnOpCode::kReshape,
+      QnnOpCode::kReshape,
+      QnnOpCode::kFullyConnected,
+      QnnOpCode::kReshape,
+      QnnOpCode::kReshape,
+      QnnOpCode::kFullyConnected,
+      QnnOpCode::kReshape,
+      QnnOpCode::kReshape,
+      QnnOpCode::kConvert,
+      QnnOpCode::kRmsNorm,
+      QnnOpCode::kConvert,
+      QnnOpCode::kRmsNorm,
+      QnnOpCode::kConvert,
+      QnnOpCode::kRmsNorm,
+  };
+  Transform(validate_op_config, ops, tensor_pool, convert_fc_convert,
+            TransformConvertFcConvert);
+
+  const std::vector<QnnOpCode> convert_reshape_fc_convert = {
+      QnnOpCode::kConvert,
+      QnnOpCode::kReshape,
+      QnnOpCode::kFullyConnected,
+      QnnOpCode::kReshape,
+      QnnOpCode::kConvert,
+  };
+  Transform(validate_op_config, ops, tensor_pool, convert_reshape_fc_convert,
+            TransformConvertReshapeFcConvert);
+
+  const std::vector<QnnOpCode> convert_two_fc_convert_gelu_convert = {
+      QnnOpCode::kConvert,
+      QnnOpCode::kFullyConnected,
+      QnnOpCode::kReshape,
+      QnnOpCode::kFullyConnected,
+      QnnOpCode::kReshape,
+      QnnOpCode::kConvert,
+      QnnOpCode::kGelu,
+      QnnOpCode::kConvert,
+  };
+  Transform(validate_op_config, ops, tensor_pool,
+            convert_two_fc_convert_gelu_convert,
+            TransformConvertTwoFcConvertGeluConvert);
+
+  const std::vector<QnnOpCode> convert_fc_reshape_convert = {
+      QnnOpCode::kConvert,
+      QnnOpCode::kFullyConnected,
+      QnnOpCode::kReshape,
+      QnnOpCode::kConvert,
+  };
+  Transform(validate_op_config, ops, tensor_pool, convert_fc_reshape_convert,
+            TransformConvertFcReshapeConvert);
 
   // Gemma 4 Optimization
   // Base: perm=[0,2,1,3] transpose bookends, one far-away Convert before QK,
