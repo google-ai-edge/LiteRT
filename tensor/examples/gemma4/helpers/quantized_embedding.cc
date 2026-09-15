@@ -303,6 +303,7 @@ GemmaEmbeddingTable::Create(TensorHandle tensor, int expected_emb_dim) {
           "Unsupported quantization format for embedding table");
     }
 
+    // Tensor shapes count logical elements, including for packed INT4.
     int logical_emb_dim = emb_dim;
     if (expected_emb_dim > 0) {
       logical_emb_dim = expected_emb_dim;
@@ -314,8 +315,14 @@ GemmaEmbeddingTable::Create(TensorHandle tensor, int expected_emb_dim) {
       if (computed_dim > 0) {
         logical_emb_dim = computed_dim;
       }
-    } else if (type == Type::kI4) {
-      logical_emb_dim = emb_dim * 2;
+    }
+
+    // INT4 rows are packed two elements per byte, so an odd dimension would
+    // make consecutive rows straddle a byte boundary, which DecodeRow's
+    // `row * (emb_dim_ / 2)` stride cannot represent.
+    if (type == Type::kI4 && logical_emb_dim % 2 != 0) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "INT4 embedding dimension must be even, got ", logical_emb_dim));
     }
 
     return std::make_unique<QuantizedGemmaEmbeddingTable>(
