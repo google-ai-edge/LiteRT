@@ -70,6 +70,29 @@ Tensor<Mixins...> Swish(Tensor<Mixins...> x) {
   return Mul(x, Logistic(x));
 }
 
+enum class FFNActivation {
+  kSwish,
+  kGeluApproximate,
+};
+
+// Applies a Gated Feed-Forward Network (SwiGLU by default, or GeGLU):
+// intermediate = Activation(FC(x, gate_weight)) * FC(x, up_weight)
+// output = FC(intermediate, down_weight)
+template <class... Mixins>
+Tensor<Mixins...> FeedForward(
+    Tensor<Mixins...> x, Tensor<Mixins...> ffn_gate_weight,
+    Tensor<Mixins...> ffn_up_weight, Tensor<Mixins...> ffn_down_weight,
+    FFNActivation activation = FFNActivation::kSwish) {
+  Tensor<Mixins...> gate = FullyConnected(x, ffn_gate_weight, kActNone, true);
+  Tensor<Mixins...> up = FullyConnected(x, ffn_up_weight, kActNone, true);
+  Tensor<Mixins...> activated_gate =
+      activation == FFNActivation::kGeluApproximate
+          ? Gelu(gate, /*approximate=*/true)
+          : Swish<Mixins...>(gate);
+  Tensor<Mixins...> intermediate = Mul(activated_gate, up);
+  return FullyConnected(intermediate, ffn_down_weight, kActNone, true);
+}
+
 template <class... Mixins>
 Tensor<Mixins...> RotaryEmbedding(const Tensor<Mixins...>& input,
                                   const Tensor<Mixins...>& segment_pos,

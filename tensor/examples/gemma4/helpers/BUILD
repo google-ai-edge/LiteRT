@@ -71,30 +71,6 @@ cc_test(
 )
 
 cc_library(
-    name = "feed_forward_network",
-    hdrs = ["feed_forward_network.h"],
-    deps = [
-        "//tensor",
-        "//tensor:arithmetic",
-    ],
-)
-
-cc_test(
-    name = "feed_forward_network_test",
-    srcs = ["feed_forward_network_test.cc"],
-    deps = [
-        ":feed_forward_network",
-        "//tensor",
-        "//tensor:buffer",
-        "//tensor:datatypes",
-        "//tensor/backends/xnnpack:arithmetic",
-        "//tensor/runners/xnnpack:runner",
-        "//tensor/utils:matchers",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
     name = "attention",
     hdrs = ["attention.h"],
     deps = [
@@ -135,7 +111,6 @@ cc_library(
     hdrs = ["transformer.h"],
     deps = [
         ":attention",
-        ":feed_forward_network",
         "//tensor",
         "//tensor:arithmetic",
         "//tensor:datatypes",
