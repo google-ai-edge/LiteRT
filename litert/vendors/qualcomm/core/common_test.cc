@@ -169,6 +169,18 @@ TEST(QnnOptionTest, HtpPerfCtrlMode) {
   EXPECT_EQ(options.GetHtpPerfCtrlMode(), HtpPerfCtrlMode::kAuto);
 }
 
+TEST(QnnOptionTest, HtpPdSession) {
+  Options options;
+
+  EXPECT_EQ(options.GetHtpPdSession(), HtpPdSession::kUnsigned);
+
+  options.SetHtpPdSession(HtpPdSession::kSigned);
+  EXPECT_EQ(options.GetHtpPdSession(), HtpPdSession::kSigned);
+
+  options.SetHtpPdSession(HtpPdSession::kAdaptive);
+  EXPECT_EQ(options.GetHtpPdSession(), HtpPdSession::kAdaptive);
+}
+
 TEST(QnnOptionTest, DspPerfCtrlMode) {
   Options options;
 
@@ -176,6 +188,18 @@ TEST(QnnOptionTest, DspPerfCtrlMode) {
 
   options.SetDspPerfCtrlMode(DspPerfCtrlMode::kAuto);
   EXPECT_EQ(options.GetDspPerfCtrlMode(), DspPerfCtrlMode::kAuto);
+}
+
+TEST(QnnOptionTest, DspPdSession) {
+  Options options;
+
+  EXPECT_EQ(options.GetDspPdSession(), DspPdSession::kUnsigned);
+
+  options.SetDspPdSession(DspPdSession::kSigned);
+  EXPECT_EQ(options.GetDspPdSession(), DspPdSession::kSigned);
+
+  options.SetDspPdSession(DspPdSession::kAdaptive);
+  EXPECT_EQ(options.GetDspPdSession(), DspPdSession::kAdaptive);
 }
 
 TEST(QnnOptionTest, UseInt64BiasAsInt32) {
@@ -368,7 +392,9 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetHtpPerformanceMode(), HtpPerformanceMode::kDefault);
   EXPECT_EQ(options.GetDspPerformanceMode(), DspPerformanceMode::kDefault);
   EXPECT_EQ(options.GetHtpPerfCtrlMode(), HtpPerfCtrlMode::kManual);
+  EXPECT_EQ(options.GetHtpPdSession(), HtpPdSession::kUnsigned);
   EXPECT_EQ(options.GetDspPerfCtrlMode(), DspPerfCtrlMode::kManual);
+  EXPECT_EQ(options.GetDspPdSession(), DspPdSession::kUnsigned);
   EXPECT_TRUE(options.GetIrJsonDir().empty());
   EXPECT_TRUE(options.GetDlcDir().empty());
   EXPECT_TRUE(options.GetGraphTransform().empty());

@@ -74,12 +74,24 @@ enum class DspPerformanceMode {
 
 enum class HtpPerfCtrlMode {
   kManual = 0,  // default: upvote at init, downvote at destroy
-  kAuto = 1,    // per-inference upvote + 300ms debounced downvote
+  kAuto = 1,  // per-inference upvote + 300ms debounced downvote
+};
+
+enum class HtpPdSession {
+  kUnsigned = 0,
+  kSigned = 1,
+  kAdaptive = 2,
 };
 
 enum class DspPerfCtrlMode {
   kManual = 0,
   kAuto = 1,
+};
+
+enum class DspPdSession {
+  kUnsigned = 0,
+  kSigned = 1,
+  kAdaptive = 2,
 };
 
 enum class OptimizationLevel {
@@ -184,8 +196,14 @@ class Options {
   void SetHtpPerfCtrlMode(HtpPerfCtrlMode htp_perf_ctrl_mode);
   HtpPerfCtrlMode GetHtpPerfCtrlMode() const;
 
+  void SetHtpPdSession(HtpPdSession htp_pd_session);
+  HtpPdSession GetHtpPdSession() const;
+
   void SetDspPerfCtrlMode(DspPerfCtrlMode dsp_perf_ctrl_mode);
   DspPerfCtrlMode GetDspPerfCtrlMode() const;
+
+  void SetDspPdSession(DspPdSession dsp_pd_session);
+  DspPdSession GetDspPdSession() const;
 
   // for per-layer dump
   void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
@@ -270,7 +288,9 @@ class Options {
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;
   DspPerformanceMode dsp_performance_mode_ = DspPerformanceMode::kDefault;
   HtpPerfCtrlMode htp_perf_ctrl_mode_ = HtpPerfCtrlMode::kManual;
+  HtpPdSession htp_pd_session_ = HtpPdSession::kUnsigned;
   DspPerfCtrlMode dsp_perf_ctrl_mode_ = DspPerfCtrlMode::kManual;
+  DspPdSession dsp_pd_session_ = DspPdSession::kUnsigned;
   std::vector<std::int32_t> dump_tensor_ids_;
   std::string ir_json_dir_;
   std::string dlc_dir_;
@@ -289,7 +309,7 @@ class Options {
   // Currently we only support one custom op package.
   CustomOpPackage custom_op_package_;
   LpaiTarget lpai_target_ = LpaiTarget::kAdsp;
-  std::uint32_t lpai_fps_ = 1;          // QNN_LPAI_GRAPH_DEFAULT_FPS
+  std::uint32_t lpai_fps_ = 1;  // QNN_LPAI_GRAPH_DEFAULT_FPS
   std::uint32_t lpai_ftrt_ratio_ = 10;  // QNN_LPAI_GRAPH_DEFAULT_FTRT_RATIO
   LpaiClientPerfType lpai_client_perf_type_ = LpaiClientPerfType::kDefault;
   LpaiCoreAffinityType lpai_core_affinity_type_ =
