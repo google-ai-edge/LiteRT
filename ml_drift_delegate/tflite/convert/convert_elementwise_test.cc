@@ -669,5 +669,96 @@ TEST_F(ConvertElementwiseTest, ConstantInput3D) {
   EXPECT_EQ(t->shape, ::ml_drift::BHWC(1, 4, 4, 3));
 }
 
+// A constant operand that stays a CONSTANT op (i.e. one that the float paths
+// do not fold into the attributes) has to be re-aligned onto BHWC's trailing
+// axes when its rank is lower than the runtime operand's, because TFLite
+// broadcasting is right-aligned while ExtractTensorShape() maps TFLite dim 0 to
+// batch. Without it the GPU elementwise broadcast reads batch-0 only and splats
+// it across the channels, silently corrupting the result.
+class ElementwiseConstOperandTest : public ConvertElementwiseTest {
+ protected:
+  // Builds a MINIMUM node with an INT32 runtime operand of shape
+  // `runtime_dims` and an INT32 constant operand of shape `const_dims`. INT32
+  // keeps the constant out of the float paths, which fold it into a Linear or
+  // BHWC attribute instead of emitting a CONSTANT op.
+  ::ml_drift::BHWC ConvertAndGetConstShape(const std::vector<int>& runtime_dims,
+                                           const std::vector<int>& const_dims) {
+    int num_elements = 1;
+    for (const int dim : const_dims) num_elements *= dim;
+    const std::vector<uint8_t> const_data_bytes(num_elements * sizeof(int32_t),
+                                                0);
+
+    SingleOpInterpreterBuilder model(kTfLiteBuiltinMinimum);
+    model.AddInput(kTfLiteInt32, runtime_dims);
+    model.AddConstInput(kTfLiteInt32, const_dims, const_data_bytes);
+    model.AddOutput(kTfLiteInt32, runtime_dims);
+
+    const ::ml_drift::ir::IrModel* ir_model = GetIrModelFromBuilder(model);
+    if (ir_model == nullptr) {
+      ADD_FAILURE() << "The model was not delegated.";
+      return ::ml_drift::BHWC();
+    }
+    for (const auto& op : ir_model->ops()) {
+      if (op->name != ::ml_drift::ToString(::ml_drift::OperationType::CONSTANT))
+        continue;
+      if (op->outputs.size() != 1) {
+        ADD_FAILURE() << "The const op produces " << op->outputs.size()
+                      << " tensors, expected 1.";
+        return ::ml_drift::BHWC();
+      }
+      const ::ml_drift::BHWC shape =
+          ir_model->tensor(op->outputs[0])->desc.GetBHWCShape();
+      // The constant data has to carry the very same shape as the IrTensor.
+      const auto* attr =
+          std::any_cast<::ml_drift::ConstTensorAttributes>(&op->attr);
+      EXPECT_NE(attr, nullptr);
+      if (attr != nullptr) {
+        const auto* t = std::get_if<::ml_drift::TensorInt32>(&attr->tensor);
+        EXPECT_NE(t, nullptr);
+        if (t != nullptr) EXPECT_EQ(t->shape, shape);
+      }
+      return shape;
+    }
+    ADD_FAILURE() << "The converted model holds no const op.";
+    return ::ml_drift::BHWC();
+  }
+};
+
+TEST_F(ElementwiseConstOperandTest, Rank1ConstantAgainstRank4RuntimeUsesC) {
+  EXPECT_EQ(ConvertAndGetConstShape(/*runtime_dims=*/{1, 1, 1, 3},
+                                    /*const_dims=*/{3}),
+            ::ml_drift::BHWC(1, 1, 1, 3));
+}
+
+TEST_F(ElementwiseConstOperandTest, Rank1ConstantAgainstRank2RuntimeUsesC) {
+  EXPECT_EQ(ConvertAndGetConstShape(/*runtime_dims=*/{2, 3},
+                                    /*const_dims=*/{3}),
+            ::ml_drift::BHWC(1, 1, 1, 3));
+}
+
+TEST_F(ElementwiseConstOperandTest, Rank2ConstantAgainstRank4RuntimeUsesWC) {
+  EXPECT_EQ(ConvertAndGetConstShape(/*runtime_dims=*/{1, 1, 2, 3},
+                                    /*const_dims=*/{2, 3}),
+            ::ml_drift::BHWC(1, 1, 2, 3));
+}
+
+TEST_F(ElementwiseConstOperandTest, Rank3ConstantAgainstRank4RuntimeUsesHWC) {
+  EXPECT_EQ(ConvertAndGetConstShape(/*runtime_dims=*/{1, 2, 3, 4},
+                                    /*const_dims=*/{2, 3, 4}),
+            ::ml_drift::BHWC(1, 2, 3, 4));
+}
+
+TEST_F(ElementwiseConstOperandTest, Rank1ConstantAgainstRank1RuntimeKeepsB) {
+  EXPECT_EQ(ConvertAndGetConstShape(/*runtime_dims=*/{3},
+                                    /*const_dims=*/{3}),
+            ::ml_drift::BHWC(3, 1, 1, 1));
+}
+
+TEST_F(ElementwiseConstOperandTest, Rank2ConstantAgainstRank2RuntimeKeepsB) {
+  EXPECT_EQ(ConvertAndGetConstShape(/*runtime_dims=*/{2, 3},
+                                    /*const_dims=*/{2, 3}),
+            ::ml_drift::BHWC(2, 1, 1, 3));
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir
