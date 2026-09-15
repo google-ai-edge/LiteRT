@@ -15,6 +15,43 @@
 namespace qnn {
 namespace {
 
+TEST(BwFloatBlockQuantizeParamsWrapperTest, ExportsQnnEncoding) {
+  BwFloatBlockQuantizeParamsWrapper wrapper(4, {1, 2}, {0.5f, 1, 2, 4},
+                                            {1, 0, -1, 2});
+  Qnn_QuantizeParams_t params = QNN_QUANTIZE_PARAMS_INIT;
+  wrapper.CloneTo(params);
+
+  EXPECT_EQ(params.quantizationEncoding,
+            QNN_QUANTIZATION_ENCODING_BW_FLOAT_BLOCK);
+  EXPECT_EQ(params.bwFloatBlockEncoding.bitwidth, 4);
+  EXPECT_EQ(params.bwFloatBlockEncoding.blockSize[0], 1);
+  EXPECT_EQ(params.bwFloatBlockEncoding.blockSize[1], 2);
+  const std::vector<float> offsets = {-0.5f, 0, 2, -8};
+  for (size_t i = 0; i < offsets.size(); ++i) {
+    EXPECT_FLOAT_EQ(params.bwFloatBlockEncoding.floatScaleOffset[i].offset,
+                    offsets[i]);
+  }
+}
+
+TEST(BwFloatBlockQuantizeParamsWrapperTest, PermutesGrid) {
+  BwFloatBlockQuantizeParamsWrapper source(4, {1, 2}, {1, 2, 3, 4, 5, 6});
+  const auto original = source;
+  source.Permute({2, 5}, {1, 0});
+
+  Qnn_QuantizeParams_t params = QNN_QUANTIZE_PARAMS_INIT;
+  source.CloneTo(params);
+  EXPECT_EQ(params.bwFloatBlockEncoding.blockSize[0], 2);
+  EXPECT_EQ(params.bwFloatBlockEncoding.blockSize[1], 1);
+  const std::vector<float> scales = {1, 4, 2, 5, 3, 6};
+  for (size_t i = 0; i < scales.size(); ++i) {
+    EXPECT_EQ(params.bwFloatBlockEncoding.floatScaleOffset[i].scale, scales[i]);
+    EXPECT_EQ(params.bwFloatBlockEncoding.floatScaleOffset[i].offset, 0);
+  }
+
+  source.Permute({5, 2}, {1, 0});
+  EXPECT_TRUE(source == original);
+}
+
 TEST(UndefinedQuantizeParamsWrapperTest, DefaultConstructorTest) {
   UndefinedQuantizeParamsWrapper wrapper;
   Qnn_QuantizeParams_t dst = QNN_QUANTIZE_PARAMS_INIT;

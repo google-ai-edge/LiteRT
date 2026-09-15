@@ -72,4 +72,3 @@ elseif(UNIX)
         "-Wl,--end-group"
     )
 endif()
-

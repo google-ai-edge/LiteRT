@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -23,7 +24,9 @@
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/vendors/qualcomm/core/utils/test_utils.h"
@@ -116,6 +119,92 @@ TEST(CompiledModelTest, RunMultipleIterationsWithNewTensorBuffers) {
     LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
   }
 }
+
+struct BlockwiseE2eParam {
+  const char* test_name;
+  const char* model_name;
+};
+
+class BlockwiseE2eTest : public ::testing::TestWithParam<BlockwiseE2eParam> {};
+
+TEST_P(BlockwiseE2eTest, CompileAndRunFromTflite) {
+#if !defined(__ANDROID__)
+  GTEST_SKIP() << "This test requires an Android device with a Qualcomm HTP.";
+#else
+  if (!::qnn::IsTestHtpBackend()) {
+    GTEST_SKIP() << "Blockwise E2E is only supported by the HTP backend.";
+  }
+
+  const std::string dispatch_library_dir =
+      testing::GetLiteRtPath(kDispatchLibraryDir);
+  const std::string compiler_plugin_library_dir =
+      ::qnn::GetTestDispatchLibraryDir();
+  const std::vector<EnvironmentOptions::Option> environment_options = {
+      EnvironmentOptions::Option{
+          EnvironmentOptions::Tag::kDispatchLibraryDir,
+          absl::string_view(dispatch_library_dir),
+      },
+      EnvironmentOptions::Option{
+          EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
+          absl::string_view(compiler_plugin_library_dir),
+      },
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env,
+                              Environment::Create(EnvironmentOptions(
+                                  absl::MakeConstSpan(environment_options))));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
+  LITERT_ASSERT_OK(options.SetHardwareAccelerators(HwAccelerators::kNpu));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto& qnn_options,
+      options.GetOptions<litert::qualcomm::QualcommOptions>());
+  qnn_options.SetBackend(litert::qualcomm::QualcommOptions::Backend::kHtp);
+  qnn_options.SetEnableJustInTime(true);
+
+  const std::string model_path =
+      testing::GetTestFilePath(GetParam().model_name);
+  LITERT_ASSERT_OK_AND_ASSIGN(CompiledModel compiled_model,
+                              CompiledModel::Create(env, model_path, options));
+  ASSERT_EQ(compiled_model.GetNumSignatures(), 1u);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model.CreateOutputBuffers());
+  ASSERT_EQ(input_buffers.size(), 1u);
+  ASSERT_EQ(output_buffers.size(), 1u);
+
+  const std::vector<float> input_data(32, 1.0f);
+  LITERT_ASSERT_OK(
+      input_buffers[0].Write<float>(absl::MakeConstSpan(input_data)));
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+  std::vector<float> output_data(2);
+  LITERT_ASSERT_OK(output_buffers[0].Read<float>(absl::MakeSpan(output_data)));
+  ASSERT_THAT(output_data,
+              ::testing::Pointwise(::testing::FloatNear(1e-2f),
+                                   std::vector<float>{16.0f, 16.0f}));
+#endif
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    QualcommBlockwise, BlockwiseE2eTest,
+    ::testing::Values(
+        BlockwiseE2eParam{"Conv2dW2Fp16", "qualcomm_bq_conv2d_w2_fp16.tflite"},
+        BlockwiseE2eParam{"Conv2dW4Fp16", "qualcomm_bq_conv2d_w4_fp16.tflite"},
+        BlockwiseE2eParam{"Conv2dW8Fp16", "qualcomm_bq_conv2d_w8_fp16.tflite"},
+        BlockwiseE2eParam{"FullyConnectedW2Fp16",
+                          "qualcomm_bq_fully_connected_w2_fp16.tflite"},
+        BlockwiseE2eParam{"FullyConnectedW4Fp16",
+                          "qualcomm_bq_fully_connected_w4_fp16.tflite"},
+        BlockwiseE2eParam{"FullyConnectedW8Fp16",
+                          "qualcomm_bq_fully_connected_w8_fp16.tflite"},
+        BlockwiseE2eParam{"MatmulW2Fp16", "qualcomm_bq_matmul_w2_fp16.tflite"},
+        BlockwiseE2eParam{"MatmulW4Fp16", "qualcomm_bq_matmul_w4_fp16.tflite"},
+        BlockwiseE2eParam{"MatmulW8Fp16", "qualcomm_bq_matmul_w8_fp16.tflite"}),
+    [](const ::testing::TestParamInfo<BlockwiseE2eParam>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace
 
