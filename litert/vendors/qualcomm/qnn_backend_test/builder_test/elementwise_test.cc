@@ -15,9 +15,10 @@
 
 namespace litert::qnn {
 namespace {
-using testing::ElementsAre;  // NOLINT
-using testing::FloatNear;    // NOLINT
-using testing::Pointwise;    // NOLINT
+using testing::ElementsAre;       // NOLINT
+using testing::ElementsAreArray;  // NOLINT
+using testing::FloatNear;         // NOLINT
+using testing::Pointwise;         // NOLINT
 
 INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
                          QnnTestPrinter);
@@ -230,6 +231,77 @@ TEST_P(QnnModelTest, FloorModRejectsNonInt32) {
   qnn_model_.MoveOpsToGraph(std::move(ops));
 
   ASSERT_FALSE(qnn_model_.ValidateOpConfig());
+}
+
+TEST_P(QnnModelTest, SignInt32Rank3) {
+  const std::vector<std::uint32_t> kDims{1, 2520, 2};
+  auto& input_0 = tensor_pool_.CreateInputTensorWithName(
+      "in_0", QNN_DATATYPE_INT_32, {}, kDims);
+  auto& output_0 = tensor_pool_.CreateOutputTensorWithName(
+      "out_0", QNN_DATATYPE_INT_32, {}, kDims);
+  auto ops = ::qnn::BuildElementwiseSignOp(tensor_pool_, {input_0}, {output_0});
+  ASSERT_FALSE(ops.empty());
+
+  qnn_model_.MoveOpsToGraph(std::move(ops));
+  ASSERT_TRUE(qnn_model_.Finalize());
+
+#if !defined(__ANDROID__)
+  GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
+                  "Qualcomm HTP";
+#else
+  const std::size_t kNumElements = 1 * 2520 * 2;
+  std::vector<std::int32_t> in_data(kNumElements);
+  std::vector<std::int32_t> expected(kNumElements);
+  for (std::size_t i = 0; i < kNumElements; ++i) {
+    const std::int32_t sign = static_cast<std::int32_t>(i % 3) - 1;  // -1,0,1
+    in_data[i] = sign * static_cast<std::int32_t>(i + 1);
+    expected[i] = sign;
+  }
+
+  auto input_idx = qnn_model_.AddInputTensor(input_0);
+  auto output_idx = qnn_model_.AddOutputTensor(output_0);
+  qnn_model_.SetInputData<std::int32_t>(input_idx, in_data);
+
+  ASSERT_TRUE(qnn_model_.Execute());
+
+  auto output_data = qnn_model_.GetOutputData<std::int32_t>(output_idx);
+  ASSERT_TRUE(output_data);
+  ASSERT_EQ(output_data->size(), kNumElements);
+  ASSERT_THAT(output_data.value(), ElementsAreArray(expected));
+#endif
+}
+
+TEST_P(QnnModelTest, ElementwiseAnd5DBool) {
+  const std::vector<std::uint32_t> kDims{1, 1, 17, 12, 24};
+  auto& input_0 = tensor_pool_.CreateInputTensorWithName(
+      "in_0", QNN_DATATYPE_BOOL_8, {}, kDims);
+  auto& input_1 = tensor_pool_.CreateInputTensorWithName(
+      "in_1", QNN_DATATYPE_BOOL_8, {}, kDims);
+  auto& output_0 = tensor_pool_.CreateOutputTensorWithName(
+      "out_0", QNN_DATATYPE_BOOL_8, {}, kDims);
+  auto ops = ::qnn::BuildElementwiseAndOp(tensor_pool_, {input_0, input_1},
+                                          {output_0});
+  ASSERT_FALSE(ops.empty());
+
+  qnn_model_.MoveOpsToGraph(std::move(ops));
+  ASSERT_TRUE(qnn_model_.Finalize());
+}
+
+TEST_P(QnnModelTest, ElementwiseOr5DBoolBroadcast) {
+  const std::vector<std::uint32_t> kInDims{1, 1, 17, 1, 24};
+  const std::vector<std::uint32_t> kOutDims{1, 1, 17, 12, 24};
+  auto& input_0 = tensor_pool_.CreateInputTensorWithName(
+      "in_0", QNN_DATATYPE_BOOL_8, {}, kInDims);
+  auto& input_1 = tensor_pool_.CreateInputTensorWithName(
+      "in_1", QNN_DATATYPE_BOOL_8, {}, kOutDims);
+  auto& output_0 = tensor_pool_.CreateOutputTensorWithName(
+      "out_0", QNN_DATATYPE_BOOL_8, {}, kOutDims);
+  auto ops = ::qnn::BuildElementwiseOrOp(tensor_pool_, {input_0, input_1},
+                                         {output_0});
+  ASSERT_FALSE(ops.empty());
+
+  qnn_model_.MoveOpsToGraph(std::move(ops));
+  ASSERT_TRUE(qnn_model_.Finalize());
 }
 }  // namespace
 }  // namespace litert::qnn
