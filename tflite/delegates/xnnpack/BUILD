@@ -1382,6 +1382,27 @@ cc_test(
 )
 
 cc_test(
+    name = "delegate_thread_safety_test",
+    srcs = ["delegate_thread_safety_test.cc"],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:emscripten": EMSCRIPTEN_LINKOPTS,
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":test_main",
+        ":xnnpack_delegate_test_mode",
+        "//tflite:framework",
+        "//tflite:version",
+        "//tflite/c:c_api_types",
+        "//tflite/core:framework",
+        "//tflite/core/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_test(
     name = "binary_elementwise_test",
     srcs = [
         "binary_elementwise_test.cc",
