@@ -143,6 +143,8 @@ typedef LiteRtStatus (*LiteRtDispatchGetHooksT)(
     void** user_data);
 
 typedef struct LiteRtDispatchInterface {
+  LiteRtAbiHeader abi_header;
+
   LiteRtDispatchInitializeT initialize;
   LiteRtDispatchGetVendorIdT get_vendor_id;
   LiteRtDispatchGetBuildIdT get_build_id;
@@ -178,6 +180,27 @@ typedef struct LiteRtDispatchInterface {
 #endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 } LiteRtDispatchInterface;
 
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+#if !defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+static_assert(sizeof(LiteRtDispatchInterface) == 216,
+              "LiteRtDispatchInterface size mismatch");
+#else
+static_assert(sizeof(LiteRtDispatchInterface) == 232,
+              "LiteRtDispatchInterface size mismatch");
+#endif  // !defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+static_assert(offsetof(LiteRtDispatchInterface, abi_header) == 0,
+              "LiteRtDispatchInterface abi_header offset mismatch");
+static_assert(offsetof(LiteRtDispatchInterface, initialize) == 8,
+              "LiteRtDispatchInterface initialize offset mismatch");
+static_assert(offsetof(LiteRtDispatchInterface,
+                       invocation_context_set_options) == 200,
+              "LiteRtDispatchInterface invocation_context_set_options offset "
+              "mismatch");
+static_assert(offsetof(LiteRtDispatchInterface, get_hooks) == 208,
+              "LiteRtDispatchInterface get_hooks offset mismatch");
+#endif  // __cplusplus
+
 // /////////////////////////////////////////////////////////////////////////////
 
 typedef LiteRtStatus (*LiteRtDispatchAttachInputEventT)(
@@ -189,9 +212,24 @@ typedef LiteRtStatus (*LiteRtDispatchInvokeAsyncT)(
     LiteRtEvent* output_events);
 
 typedef struct LiteRtDispatchAsyncInterface {
+  LiteRtAbiHeader abi_header;
+
   LiteRtDispatchAttachInputEventT attach_input_event;
   LiteRtDispatchInvokeAsyncT invoke_async;
 } LiteRtDispatchAsyncInterface;
+
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+static_assert(sizeof(LiteRtDispatchAsyncInterface) == 24,
+              "LiteRtDispatchAsyncInterface size mismatch");
+static_assert(offsetof(LiteRtDispatchAsyncInterface, abi_header) == 0,
+              "LiteRtDispatchAsyncInterface abi_header offset mismatch");
+static_assert(
+    offsetof(LiteRtDispatchAsyncInterface, attach_input_event) == 8,
+    "LiteRtDispatchAsyncInterface attach_input_event offset mismatch");
+static_assert(offsetof(LiteRtDispatchAsyncInterface, invoke_async) == 16,
+              "LiteRtDispatchAsyncInterface invoke_async offset mismatch");
+#endif  // __cplusplus
 
 // /////////////////////////////////////////////////////////////////////////////
 
@@ -267,6 +305,8 @@ typedef LiteRtStatus (*LiteRtDispatchAnnotateEdgeT)(
     const char* value);
 
 typedef struct LiteRtDispatchGraphInterface {
+  LiteRtAbiHeader abi_header;
+
   LiteRtDispatchGraphCreateT graph_create;
   LiteRtDispatchGraphDestroyT graph_destroy;
   LiteRtDispatchAddNodeT add_node;
@@ -290,6 +330,25 @@ typedef struct LiteRtDispatchGraphInterface {
   LiteRtDispatchAttachScratchpadBufferT attach_scratchpad_buffer;
 #endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 } LiteRtDispatchGraphInterface;
+
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+#if !defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+static_assert(sizeof(LiteRtDispatchGraphInterface) == 136,
+              "LiteRtDispatchGraphInterface size mismatch");
+#else
+static_assert(sizeof(LiteRtDispatchGraphInterface) == 152,
+              "LiteRtDispatchGraphInterface size mismatch");
+#endif  // !defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+static_assert(offsetof(LiteRtDispatchGraphInterface, abi_header) == 0,
+              "LiteRtDispatchGraphInterface abi_header offset mismatch");
+static_assert(offsetof(LiteRtDispatchGraphInterface, graph_create) == 8,
+              "LiteRtDispatchGraphInterface graph_create offset mismatch");
+static_assert(offsetof(LiteRtDispatchGraphInterface,
+                       invocation_context_get_graph) == 128,
+              "LiteRtDispatchGraphInterface invocation_context_get_graph "
+              "offset mismatch");
+#endif  // __cplusplus
 
 // /////////////////////////////////////////////////////////////////////////////
 
