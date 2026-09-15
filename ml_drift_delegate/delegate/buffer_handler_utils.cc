@@ -37,7 +37,12 @@ absl::StatusOr<::ml_drift::TensorDescriptor> CreateTensorDescriptor(
       shape = ::ml_drift::BHWC(1, 1, 1, 1);
       break;
     case 1:
-      shape = ::ml_drift::BHWC(tensor_type.layout.dimensions[0], 1, 1, 1);
+      if (tensor_type.layout.dimensions[0] == 0) {
+        // Special temporary scalar buffer (rank 1, dim 0).
+        shape = ::ml_drift::BHWC(1, 1, 1, 1);
+      } else {
+        shape = ::ml_drift::BHWC(tensor_type.layout.dimensions[0], 1, 1, 1);
+      }
       break;
     case 2:
       shape = ::ml_drift::BHWC(tensor_type.layout.dimensions[0], 1, 1,
