@@ -72,6 +72,7 @@ option(LITERT_ENABLE_GPU "Enable GPU acceleration support" ON)
 option(LITERT_ENABLE_NPU "Enable NPU acceleration support" ON)
 option(LITERT_DISABLE_KLEIDIAI "Disable KleidiAI delegate when bundling host TFLite (default ON for Linux/macOS x86_64 hosts)" ${_litert_disable_kleidiai_default})
 option(LITERT_BUILD_SUPPORT_LIBS "Enable build for the support libraries" OFF)
+option(LITERT_ENABLE_UV_VENV "Enables uv virtual environment for the build" OFF)
 
 set(LITERT_HOST_C_COMPILER "" CACHE FILEPATH "Host C compiler used for helper host-side tools (e.g. FlatBuffers flatc)")
 set(LITERT_HOST_CXX_COMPILER "" CACHE FILEPATH "Host C++ compiler used for helper host-side tools (e.g. FlatBuffers flatc)")
@@ -248,6 +249,27 @@ endif()
 # Find required packages
 find_package(Threads REQUIRED)
 
+if(CMAKE_CROSSCOMPILING)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+else()
+  find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+endif()
+
+message(STATUS "Using Python: ${Python3_EXECUTABLE}")
+
+FetchContent_Declare(
+  pybind11
+  GIT_REPOSITORY https://github.com/pybind/pybind11.git
+  GIT_TAG        v3.1.0
+
+)
+set(PYBIND11_NOPYTHON OFF CACHE INTERNAL "")
+set(PYBIND11_FINDPYTHON ON CACHE INTERNAL "")
+set(PYBIND11_INCLUDE_DIR ${Python3_INCLUDE_DIRS} CACHE INTERNAL "" FORCE)
+set(PYBIND11_PYTHON_EXECUTABLE_LAST "${Python3_EXECUTABLE}" CACHE INTERNAL "" Force)
+FetchContent_MakeAvailable(pybind11)
+
+
 # Add subdirectories
 add_subdirectory(c)
 add_subdirectory(cc)
@@ -256,6 +278,8 @@ add_subdirectory(runtime)
 add_subdirectory(compiler)
 add_subdirectory(vendors)
 add_subdirectory(tools)
+add_subdirectory(experimental/custom_ops/gated_delta_net)
+
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../tensor/CMakeLists.txt")
   add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../tensor"
