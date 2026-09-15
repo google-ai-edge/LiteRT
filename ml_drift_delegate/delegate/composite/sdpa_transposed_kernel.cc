@@ -66,7 +66,6 @@ class FusedFlashDecodeSdpaOp : public ::ml_drift::GPUOperation {
       const ::ml_drift::KernelInfo& kernel_info) const override {
     return {::ml_drift::int3(1, slices_per_head_, kNumSimdGroups)};
   }
-
   FusedFlashDecodeSdpaOp(FusedFlashDecodeSdpaOp&&) = default;
   FusedFlashDecodeSdpaOp& operator=(FusedFlashDecodeSdpaOp&&) = default;
   FusedFlashDecodeSdpaOp(const FusedFlashDecodeSdpaOp&) = delete;
@@ -106,8 +105,9 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashDecodeSdpa(
           ? (q_heads / kv_heads)
           : 1;
 
-  custom_op.work_group_size_ = ::ml_drift::int3(1, slices, kNumSimdGroups);
+  custom_op.work_group_size_ = ::ml_drift::int3(1, 32, kNumSimdGroups);
   custom_op.args_.AddInt("cache_size", k_desc.GetBHWCShape().w);
+  custom_op.args_.AddInt("slices", slices);
 
   custom_op.AddSrcTensor("q", q_desc);
   custom_op.AddSrcTensor("k", k_desc);
@@ -136,6 +136,24 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashDecodeSdpa(
 
   custom_op.AddDstTensor("dst", dst_desc);
 
+  // Fused Flash-Decode SDPA kernel for single-token generation (seq_len == 1).
+  //
+  // Execution model:
+  // - 16 SIMD groups per threadgroup (32 threads per SIMD group = 512 threads).
+  //   Launch shape: (1, 32, 16).
+  // - Grid: X = sequence index (1), Y = query head index.
+  // - Within each SIMD group, the 32 lanes compute channel-parallel dot
+  // products
+  //   (dot(q_slice, k) over head_dim / 4 = 32 slices).
+  // - Across the 16 SIMD groups, the KV cache sequence length is partitioned
+  // into
+  //   chunks of 16 keys (4 vector loads of 4 keys). Each SIMD group maintains a
+  //   local online softmax (m_prev = running max, l_prev = running exp sum,
+  //   v_acc = accumulator).
+  // - Cross-SIMD reduction: SIMD group 0 performs a tree reduction across s_m,
+  // s_l,
+  //   and s_acc stored in threadgroup memory to produce the final normalized
+  //   output.
   std::string op_code = absl::StrCat(R"(
 MAIN_FUNCTION($0) {
   int X = ucl::GetGlobalId<0>();
@@ -178,7 +196,7 @@ MAIN_FUNCTION($0) {
   int safe_chunk_end = max(chunk_start, min(chunk_end, (active_tokens / 16) * 4));
 
   // Note: This Flash-Decode SDPA kernel is optimized for float16 / half precision.
-  half4 q_slice = ucl::Convert<half4>(args.q.Read(X, Y, tid));
+  half4 q_slice = (tid < args.slices) ? ucl::Convert<half4>(args.q.Read(X, Y, tid)) : half4(0.0h);
   half m_prev = -10000.0h;
   half l_prev = 0.0h;
   // Note: half4 output accumulator for maximum register efficiency on mobile GPUs.
@@ -233,6 +251,11 @@ MAIN_FUNCTION($0) {
   }
 
   absl::StrAppend(&op_code, R"(
+    // Online softmax tracking:
+    // m_prev: running maximum of dot-product scores (for numerical stability).
+    // l_prev: running sum of exponentiated scores (normalization denominator).
+    // alpha:  rescaling factor (exp2(m_prev - m_new)) for previous accumulators when a new max is found.
+    // p0..p3: unnormalized attention probabilities (exp2(d - m_new)) for keys in this chunk.
     half4 m_c01 = max(max(d0, d1), max(d2, d3));
     half m_chunk = max(max(m_c01.x, m_c01.y), max(m_c01.z, m_c01.w));
     half m_new = max(m_prev, m_chunk);
@@ -254,21 +277,24 @@ MAIN_FUNCTION($0) {
     half4 v3 = ucl::Convert<half4>(args.v.Read(v_idx + 3));
     half4 v_acc0 = fma((half4)p0.x, v0, fma((half4)p0.y, v1, fma((half4)p0.z, v2, (half4)p0.w * v3)));
 
-    int v1_base = v_idx + )", v_stride_s, R"(;
+    int v1_base = v_idx + )",
+                  v_stride_s, R"(;
     half4 v4 = ucl::Convert<half4>(args.v.Read(v1_base + 0));
     half4 v5 = ucl::Convert<half4>(args.v.Read(v1_base + 1));
     half4 v6 = ucl::Convert<half4>(args.v.Read(v1_base + 2));
     half4 v7 = ucl::Convert<half4>(args.v.Read(v1_base + 3));
     half4 v_acc1 = fma((half4)p1.x, v4, fma((half4)p1.y, v5, fma((half4)p1.z, v6, (half4)p1.w * v7)));
 
-    int v2_base = v_idx + )", v_stride_2s, R"(;
+    int v2_base = v_idx + )",
+                  v_stride_2s, R"(;
     half4 v8 = ucl::Convert<half4>(args.v.Read(v2_base + 0));
     half4 v9 = ucl::Convert<half4>(args.v.Read(v2_base + 1));
     half4 v10 = ucl::Convert<half4>(args.v.Read(v2_base + 2));
     half4 v11 = ucl::Convert<half4>(args.v.Read(v2_base + 3));
     half4 v_acc2 = fma((half4)p2.x, v8, fma((half4)p2.y, v9, fma((half4)p2.z, v10, (half4)p2.w * v11)));
 
-    int v3_base = v_idx + )", v_stride_3s, R"(;
+    int v3_base = v_idx + )",
+                  v_stride_3s, R"(;
     half4 v12 = ucl::Convert<half4>(args.v.Read(v3_base + 0));
     half4 v13 = ucl::Convert<half4>(args.v.Read(v3_base + 1));
     half4 v14 = ucl::Convert<half4>(args.v.Read(v3_base + 2));
@@ -278,7 +304,8 @@ MAIN_FUNCTION($0) {
     out_acc = fma(out_acc, (half4)alpha, (v_acc0 + v_acc1) + (v_acc2 + v_acc3));
 
     k_idx += 16;
-    v_idx += )", v_stride_4s, R"(;
+    v_idx += )",
+                  v_stride_4s, R"(;
   }
 )");
 
@@ -300,6 +327,8 @@ MAIN_FUNCTION($0) {
 
   if (has_mask) {
     op_code += R"(
+    // Attention mask and cache boundary check: clamp masked-out or past-active-tokens
+    // key scores to -10000.0h (-inf) so they contribute 0.0h to the softmax.
     half4 m_vec = ucl::Convert<half4>(args.mask.Read(X, 0, chunk));
     if (args.is_bool_mask) {
       if (m_vec.x < 0.5h || (chunk * 4 + 0) >= active_tokens) d.x = -10000.0h;
@@ -316,6 +345,7 @@ MAIN_FUNCTION($0) {
 )";
   } else {
     op_code += R"(
+    // Cache boundary check: clamp keys beyond active_tokens to -10000.0h (-inf).
     if ((chunk * 4 + 0) >= active_tokens) d.x = -10000.0h;
     if ((chunk * 4 + 1) >= active_tokens) d.y = -10000.0h;
     if ((chunk * 4 + 2) >= active_tokens) d.z = -10000.0h;
@@ -383,12 +413,16 @@ MAIN_FUNCTION($0) {
     half4 final_acc = sum0 + sum1;
 )",
                   is_flattened_dst ? absl::StrFormat(R"(
-    int out_slice = Y * %d + tid;
-    args.dst.Write(ucl::Convert<args.dst::type>(final_acc), X, 0, out_slice);
+    if (tid < args.slices) {
+      int out_slice = Y * %d + tid;
+      args.dst.Write(ucl::Convert<args.dst::type>(final_acc), X, 0, out_slice);
+    }
 )",
                                                      slices)
                                    : R"(
-    args.dst.Write(ucl::Convert<args.dst::type>(final_acc), X, Y, tid);
+    if (tid < args.slices) {
+      args.dst.Write(ucl::Convert<args.dst::type>(final_acc), X, Y, tid);
+    }
 )",
                   R"(
   }
@@ -397,6 +431,422 @@ MAIN_FUNCTION($0) {
 
   custom_op.code_ = std::move(op_code);
   return std::make_unique<FusedFlashDecodeSdpaOp>(std::move(custom_op));
+}
+
+// Prefill tiling. Each threadgroup runs one 32-lane SIMD group and owns
+// kPrefillQueryTile query columns; each lane owns kPrefillKeysPerLane keys, so
+// one loop iteration covers kPrefillSimdWidth * kPrefillKeysPerLane keys.
+constexpr int kPrefillSimdWidth = 32;
+constexpr int kPrefillQueryTile = 8;
+constexpr int kPrefillKeysPerLane = 4;
+constexpr int kPrefillKeyBlock = kPrefillSimdWidth * kPrefillKeysPerLane;
+
+class FusedFlashAttentionPrefillOp : public ::ml_drift::GPUOperation {
+ public:
+  FusedFlashAttentionPrefillOp() = default;
+
+  ::ml_drift::int3 GetGridSize() const override {
+    return ::ml_drift::int3(
+        (dst_[0]->Width() + kPrefillQueryTile - 1) / kPrefillQueryTile,
+        dst_[0]->Height() * kPrefillSimdWidth, 1);
+  }
+
+  std::vector<::ml_drift::int3> GetPossibleKernelWorkGroups(
+      ::ml_drift::TuningType tuning_type, const ::ml_drift::GpuInfo& gpu_info,
+      const ::ml_drift::KernelInfo& kernel_info) const override {
+    return {::ml_drift::int3(1, 32, 1)};
+  }
+
+  FusedFlashAttentionPrefillOp(FusedFlashAttentionPrefillOp&&) = default;
+  FusedFlashAttentionPrefillOp& operator=(FusedFlashAttentionPrefillOp&&) =
+      default;
+  FusedFlashAttentionPrefillOp(const FusedFlashAttentionPrefillOp&) = delete;
+  FusedFlashAttentionPrefillOp& operator=(const FusedFlashAttentionPrefillOp&) =
+      delete;
+};
+
+std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashAttentionPrefill(
+    const ::ml_drift::GpuInfo& gpu_info,
+    const ::ml_drift::TensorDescriptor& q_desc,
+    const ::ml_drift::TensorDescriptor& k_desc,
+    const ::ml_drift::TensorDescriptor& v_desc,
+    const ::ml_drift::TensorDescriptor* mask_desc,
+    const ::ml_drift::TensorDescriptor* param_desc,
+    const ::ml_drift::TensorDescriptor& dst_desc,
+    const SdpaTransposedAttributes& attr) {
+  FusedFlashAttentionPrefillOp custom_op;
+  int slices = dst_desc.GetBHWCShape().c / 4;
+  int v_stride_s = slices * 4;
+  int k_o_slices = (k_desc.GetBHWCShape().w + 3) / 4;
+  int k_stride_head = slices * k_o_slices * 4;
+  int k_stride_slice = k_o_slices * 4;
+  int v_stride_head = k_o_slices * v_stride_s;
+  const int q_heads = q_desc.GetBHWCShape().h;
+  const int kv_heads = k_desc.GetBHWCShape().h;
+  const int gqa_ratio =
+      (kv_heads > 0 && q_heads >= kv_heads && (q_heads % kv_heads == 0))
+          ? (q_heads / kv_heads)
+          : 1;
+
+  custom_op.work_group_size_ = ::ml_drift::int3(1, 32, 1);
+  custom_op.args_.AddInt("cache_size", k_desc.GetBHWCShape().w);
+  custom_op.args_.AddInt("slices", slices);
+
+  custom_op.AddSrcTensor("q", q_desc);
+  custom_op.AddSrcTensor("k", k_desc);
+  custom_op.AddSrcTensor("v", v_desc);
+
+  bool has_mask = (mask_desc != nullptr);
+  if (has_mask) {
+    bool is_bool_mask =
+        (mask_desc->GetDataType() == ::ml_drift::DataType::BOOL);
+    custom_op.args_.AddInt("is_bool_mask", is_bool_mask ? 1 : 0);
+    custom_op.AddSrcTensor("mask", *mask_desc);
+  }
+
+  bool has_param = (param_desc != nullptr &&
+                    attr.runtime_check.src_end_ch_index.has_value());
+  if (has_param) {
+    custom_op.args_.AddInt("src_end_ch_index",
+                          *attr.runtime_check.src_end_ch_index);
+    custom_op.AddSrcTensor("params", *param_desc);
+  }
+
+  bool has_softcap = (attr.softcap.has_value() && *attr.softcap > 0.0f);
+  if (has_softcap) {
+    custom_op.args_.AddFloat("softcap", *attr.softcap);
+  }
+
+  custom_op.AddDstTensor("dst", dst_desc);
+
+  // Key-parallel prefill with register blocking.
+  //
+  // Lanes own keys rather than channels during Q*K^T, so each dot product runs
+  // to completion inside the lane and needs no cross-lane communication. Q is
+  // staged in threadgroup memory so every lane can read every channel.
+  //
+  // Each lane owns kPrefillKeysPerLane keys instead of one. With a single key
+  // the inner loop issued five memory instructions per sixteen FMAs (one K
+  // load, plus one q_sh load for each query) because a q_sh value fed exactly
+  // one dot product before being discarded. Holding several keys per lane
+  // reuses each q_sh load across all of them: at four keys the loop issues
+  // eight memory instructions per sixty-four FMAs, 2.5x fewer per FMA. It also
+  // divides the number of cross-lane softmax reductions and threadgroup
+  // barriers by the same factor, since a block now spans 128 keys.
+  //
+  // P*V stays channel-parallel (lane `tid` owns channels [4*tid, 4*tid+4)),
+  // with P handed across through threadgroup memory. Both phases keep their
+  // coalesced access patterns: K is [head][channel_slice][position] so lanes
+  // read consecutive positions at a fixed channel, and V is
+  // [head][key_group][channel_slice][key_in_group] so lanes read consecutive
+  // channels at a fixed key.
+  const int qt = kPrefillQueryTile;
+  const int kt = kPrefillKeysPerLane;
+
+  std::string op_code;
+
+  // 1. Threadgroup setup and query tile coordinates.
+  absl::StrAppend(&op_code, R"(
+MAIN_FUNCTION($0) {
+  int tile_x = ucl::GetGlobalId<0>();
+  int Y = ucl::GetGroupId<1>();
+  int tid = ucl::GetLocalId<1>();
+
+  int X0 = tile_x * )",
+                  qt, ";\n");
+  for (int i = 1; i < qt; ++i) {
+    absl::StrAppend(&op_code, "  int X", i, " = X0 + ", i, ";\n");
+  }
+  absl::StrAppend(&op_code, R"(
+  int dst_w = args.dst.Width();
+  if (X0 >= dst_w || Y >= args.dst.Height()) {
+    return;
+  }
+
+  int active_tokens = args.cache_size;
+  // Absolute position in the KV cache of the first query token of this chunk.
+  // Zero unless the prompt is prefilled in several chunks.
+  int q_start = 0;
+)");
+
+  // 2. Runtime parameters (cache size & chunk start offset).
+  if (has_param) {
+    absl::StrAppend(&op_code, R"(
+  int param_slice = args.src_end_ch_index / 4;
+  int param_comp = args.src_end_ch_index % 4;
+  float4 p_vec = ucl::Convert<float4>(args.params.Read(0, 0, param_slice, 0));
+  float p_raw = (param_comp == 0) ? p_vec.x : ((param_comp == 1) ? p_vec.y : ((param_comp == 2) ? p_vec.z : p_vec.w));
+  int param_val = (int)p_raw;
+  if (param_val > 0 && param_val <= args.cache_size) {
+    active_tokens = param_val;
+  }
+  // params[0] is the index in the KV cache at which the current chunk starts,
+  // see FillSingleBufferCacheParamTensor() in the LiteRT-LM runtime.
+  float4 p_start_vec = ucl::Convert<float4>(args.params.Read(0, 0, 0, 0));
+  int start_val = (int)p_start_vec.x;
+  if (start_val > 0 && start_val < active_tokens) {
+    q_start = start_val;
+  }
+)");
+  }
+
+  // 3. Absolute token positions and query staging in threadgroup memory.
+  absl::StrAppend(&op_code, R"(
+  // Absolute positions of the query tokens handled by this threadgroup. A
+  // query token at absolute position P may attend to keys [0, P] inclusive.
+)");
+  for (int i = 0; i < qt; ++i) {
+    absl::StrAppend(&op_code, "  int P", i, " = X", i, " + q_start;\n");
+  }
+  absl::StrAppend(&op_code, "\n  int max_tokens = min(P", qt - 1,
+                  " + 1, active_tokens);\n\n");
+  absl::StrAppend(&op_code, R"(  half inv_ln2 = 1.4426950408889634h;
+
+  threadgroup half4 q_sh[)",
+                  qt, "][", slices, R"(];
+  threadgroup half p_sh[)",
+                  qt, "][", kPrefillKeyBlock, R"(];
+
+  if (tid < )",
+                  slices, R"() {
+)");
+  for (int i = 0; i < qt; ++i) {
+    absl::StrAppend(&op_code, "    q_sh[", i, "][tid] = (X", i,
+                    " < dst_w) ? (ucl::Convert<half4>(args.q.Read(X", i,
+                    ", Y, tid)) * inv_ln2) : half4(0.0h);\n");
+  }
+  absl::StrAppend(&op_code, R"(  }
+  simdgroup_barrier(mem_flags::mem_threadgroup);
+
+)");
+
+  // 4. Online softmax tracking variables:
+  // m_prev: running max of dot-product scores (initialized to -inf)
+  // l_prev: running sum of exp(score - max) (initialized to 0)
+  // out_acc: unnormalized output accumulator
+  absl::StrAppend(&op_code, "  // Online softmax tracking variables:\n");
+  for (int i = 0; i < qt; ++i) {
+    absl::StrAppend(&op_code, "  half m_prev", i, " = -10000.0h;\n");
+  }
+  for (int i = 0; i < qt; ++i) {
+    absl::StrAppend(&op_code, "  half l_prev", i, " = 0.0h;\n");
+  }
+  for (int i = 0; i < qt; ++i) {
+    absl::StrAppend(&op_code, "  half4 out_acc", i, " = half4(0.0h);\n");
+  }
+
+  // 5. KV buffer base addressing (Grouped-Query Attention).
+  absl::StrAppend(&op_code, "\n  int kv_head = ",
+                  (gqa_ratio > 1 ? absl::StrCat("Y / ", gqa_ratio) : "Y"),
+                  ";\n  int k_head_base = kv_head * ", k_stride_head,
+                  ";\n  int v_base_head = kv_head * ", v_stride_head,
+                  " + tid * 4;\n\n");
+
+  // 6. Main key loop: iterate over key blocks of size kPrefillKeyBlock (128).
+  absl::StrAppend(&op_code,
+                  "  for (int key_base = 0; key_base < max_tokens; "
+                  "key_base += ",
+                  kPrefillKeyBlock, ") {\n");
+
+  // 6a. Key indexing and bounds clamping.
+  for (int j = 0; j < kt; ++j) {
+    absl::StrAppend(&op_code, "    int key", j, " = key_base + ",
+                    j * kPrefillSimdWidth, " + tid;\n");
+  }
+  for (int j = 0; j < kt; ++j) {
+    absl::StrAppend(&op_code, "    bool act", j, " = (key", j,
+                    " < active_tokens);\n");
+  }
+  absl::StrAppend(
+      &op_code,
+      "    // Inactive keys are clamped to offset 0 so the loads below\n"
+      "    // stay in bounds; their scores are forced to -inf after the "
+      "loop.\n");
+  for (int j = 0; j < kt; ++j) {
+    absl::StrAppend(&op_code, "    int kidx", j, " = k_head_base + (act", j,
+                    " ? key", j, " : 0);\n");
+  }
+  absl::StrAppend(&op_code, "\n");
+
+  // 6b. Q * K^T dot products across channel slices.
+  for (int i = 0; i < qt; ++i) {
+    for (int j = 0; j < kt; ++j) {
+      absl::StrAppend(&op_code, "    half d", i, "_", j, " = 0.0h;\n");
+    }
+  }
+  absl::StrAppend(&op_code, "\n    for (int c = 0; c < ", slices, "; ++c) {\n");
+  for (int j = 0; j < kt; ++j) {
+    absl::StrAppend(&op_code, "      half4 kv", j,
+                    " = ucl::Convert<half4>(args.k.Read(kidx", j, "));\n");
+  }
+  for (int i = 0; i < qt; ++i) {
+    absl::StrAppend(&op_code, "      half4 qv", i, " = q_sh[", i, "][c];\n");
+  }
+  for (int i = 0; i < qt; ++i) {
+    for (int j = 0; j < kt; ++j) {
+      absl::StrAppend(&op_code, "      d", i, "_", j, " += dot(qv", i, ", kv",
+                      j, ");\n");
+    }
+  }
+  for (int j = 0; j < kt; ++j) {
+    absl::StrAppend(&op_code, "      kidx", j, " += ", k_stride_slice, ";\n");
+  }
+  absl::StrAppend(&op_code, "    }\n");
+
+  // 6c. Optional softcapping.
+  if (has_softcap) {
+    absl::StrAppend(
+        &op_code,
+        "\n    // Q was pre-scaled by inv_ln2, so undo that before the\n"
+        "    // tanh and reapply it afterwards.\n");
+    for (int i = 0; i < qt; ++i) {
+      for (int j = 0; j < kt; ++j) {
+        absl::StrAppend(&op_code, "    d", i, "_", j,
+                        " = (half)args.softcap * tanh((d", i, "_", j,
+                        " / inv_ln2) / (half)args.softcap) * inv_ln2;\n");
+      }
+    }
+  }
+
+  // 6d. Optional attention mask.
+  if (has_mask) {
+    absl::StrAppend(&op_code, "\n");
+    for (int j = 0; j < kt; ++j) {
+      absl::StrAppend(&op_code, "    int mslice", j, " = key", j, " >> 2;\n",
+                      "    int mcomp", j, " = key", j, " & 3;\n");
+    }
+    for (int i = 0; i < qt; ++i) {
+      for (int j = 0; j < kt; ++j) {
+        absl::StrAppend(
+            &op_code, "    half4 mk", i, "_", j, " = (X", i, " < dst_w && act",
+            j, ") ? ucl::Convert<half4>(args.mask.Read(X", i, ", 0, mslice", j,
+            ")) : half4(0.0h);\n", "    half mv", i, "_", j, " = (mcomp", j,
+            " == 0) ? mk", i, "_", j, ".x : ((mcomp", j, " == 1) ? mk", i, "_",
+            j, ".y : ((mcomp", j, " == 2) ? mk", i, "_", j, ".z : mk", i, "_",
+            j, ".w));\n");
+      }
+    }
+    absl::StrAppend(&op_code, "    if (args.is_bool_mask) {\n");
+    for (int i = 0; i < qt; ++i) {
+      for (int j = 0; j < kt; ++j) {
+        absl::StrAppend(&op_code, "      if (mv", i, "_", j, " < 0.5h) d", i,
+                        "_", j, " = -10000.0h;\n");
+      }
+    }
+    absl::StrAppend(&op_code, "    } else {\n");
+    for (int i = 0; i < qt; ++i) {
+      for (int j = 0; j < kt; ++j) {
+        absl::StrAppend(&op_code, "      d", i, "_", j, " += mv", i, "_", j,
+                        ";\n");
+      }
+    }
+    absl::StrAppend(&op_code, "    }\n");
+  }
+
+  // 6e. Causal masking (keys past current query token position are masked).
+  absl::StrAppend(&op_code, "\n");
+  for (int i = 0; i < qt; ++i) {
+    for (int j = 0; j < kt; ++j) {
+      absl::StrAppend(&op_code, "    if (!act", j, " || key", j, " > P", i,
+                      ") d", i, "_", j, " = -10000.0h;\n");
+    }
+  }
+
+  // 6f. Online softmax reduction across keys.
+  absl::StrAppend(&op_code, R"(
+    // Online softmax over this key block. Each lane first reduces
+    // across the keys it owns, so the whole block costs one simd_max
+    // and one simd_sum per query.
+)");
+  for (int i = 0; i < qt; ++i) {
+    std::string local_max = absl::StrCat("d", i, "_0");
+    for (int j = 1; j < kt; ++j) {
+      local_max = absl::StrCat("max(", local_max, ", d", i, "_", j, ")");
+    }
+    absl::StrAppend(&op_code, "    half m_loc", i, " = simd_max(", local_max,
+                    ");\n", "    half m_n", i, " = max(m_prev", i, ", m_loc", i,
+                    ");\n", "    half alp", i, " = exp2(m_prev", i, " - m_n", i,
+                    ");\n");
+    for (int j = 0; j < kt; ++j) {
+      absl::StrAppend(&op_code, "    half p", i, "_", j, " = exp2(d", i, "_", j,
+                      " - m_n", i, ");\n");
+    }
+    std::string local_sum = absl::StrCat("p", i, "_0");
+    for (int j = 1; j < kt; ++j) {
+      absl::StrAppend(&local_sum, " + p", i, "_", j);
+    }
+    absl::StrAppend(&op_code, "    l_prev", i, " = fma(l_prev", i, ", alp", i,
+                    ", simd_sum(", local_sum, "));\n", "    m_prev", i,
+                    " = m_n", i, ";\n");
+  }
+
+  // 6g. Stage probabilities into threadgroup memory.
+  absl::StrAppend(&op_code, "\n");
+  for (int i = 0; i < qt; ++i) {
+    for (int j = 0; j < kt; ++j) {
+      absl::StrAppend(&op_code, "    p_sh[", i, "][", j * kPrefillSimdWidth,
+                      " + tid] = p", i, "_", j, ";\n");
+    }
+  }
+  absl::StrAppend(&op_code,
+                  "    simdgroup_barrier(mem_flags::mem_threadgroup);\n\n");
+
+  // 6h. P*V accumulation (channel-parallel).
+  absl::StrAppend(
+      &op_code, R"(    // P*V, channel-parallel: lane `tid` owns channels
+    // [4*tid, 4*tid+4). Groups beyond max_tokens are skipped so V
+    // is never read out of bounds.
+)",
+      "    int g_end = (min(max_tokens, key_base + ", kPrefillKeyBlock,
+      ") - key_base + 3) / 4;\n", "    if (tid < ", slices, ") {\n");
+  for (int i = 0; i < qt; ++i) {
+    absl::StrAppend(&op_code, "      half4 acc", i, " = half4(0.0h);\n");
+  }
+  absl::StrAppend(&op_code, "      int vidx = v_base_head + (key_base / 4) * ",
+                  v_stride_s, ";\n",
+                  "      for (int g = 0; g < g_end; ++g) {\n");
+  for (int t = 0; t < 4; ++t) {
+    absl::StrAppend(&op_code, "        half4 v", t,
+                    " = ucl::Convert<half4>(args.v.Read(vidx + ", t, "));\n");
+  }
+  absl::StrAppend(&op_code, "        int j4 = g * 4;\n");
+  for (int i = 0; i < qt; ++i) {
+    absl::StrAppend(&op_code, "        acc", i, " += fma((half4)p_sh[", i,
+                    "][j4 + 0], v0, fma((half4)p_sh[", i,
+                    "][j4 + 1], v1, fma((half4)p_sh[", i,
+                    "][j4 + 2], v2, (half4)p_sh[", i, "][j4 + 3] * v3)));\n");
+  }
+  absl::StrAppend(&op_code, "        vidx += ", v_stride_s, ";\n", "      }\n");
+  for (int i = 0; i < qt; ++i) {
+    absl::StrAppend(&op_code, "      out_acc", i, " = fma(out_acc", i,
+                    ", (half4)alp", i, ", acc", i, ");\n");
+  }
+  absl::StrAppend(&op_code, R"(    }
+    simdgroup_barrier(mem_flags::mem_threadgroup);
+  }
+
+)");
+
+  // 7. Normalization by 1/L and global store.
+  absl::StrAppend(&op_code,
+                  "  // Final normalization by sum of exponentiated scores.\n");
+  for (int i = 0; i < qt; ++i) {
+    absl::StrAppend(&op_code, "  out_acc", i, " = out_acc", i,
+                    " / (half4)(l_prev", i, " + 1e-10h);\n");
+  }
+  absl::StrAppend(&op_code, R"(
+  if (tid < args.slices) {
+)");
+  for (int i = 0; i < qt; ++i) {
+    absl::StrAppend(&op_code, "    if (X", i,
+                    " < dst_w) args.dst.Write(ucl::Convert<args.dst::type>("
+                    "out_acc",
+                    i, "), X", i, ", Y, tid);\n");
+  }
+  op_code += "  }\n}\n";
+
+  custom_op.code_ = std::move(op_code);
+  return std::make_unique<FusedFlashAttentionPrefillOp>(std::move(custom_op));
 }
 
 }  // namespace
@@ -437,11 +887,40 @@ absl::Status BuildSdpaTransposedGpuGraph(
     param_desc = &param_tensor.tensor_desc;
   }
 
+  const int head_dim = q.tensor_desc.GetBHWCShape().c;
+
+  // The fused Flash-Attention prefill kernel indexes K and V directly in the
+  // packed 4D layout produced by `odml.cache_update`, so it requires
+  // `from_cache_update` and BUFFER storage. It is also written against Apple
+  // SIMD intrinsics and dispatches a single 32-lane SIMD group per
+  // threadgroup, which covers at most 32 channel slices (head_dim <= 128).
+  // Everything else falls back to the multi-op graph below.
+  const bool is_supported_flash_prefill =
+      attr.is_prefill && attr.from_cache_update && head_dim % 4 == 0 &&
+      head_dim <= 128 &&
+      k.tensor_desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
+      v.tensor_desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
+      model_builder->gpu_info().IsApple();
+
+  if (is_supported_flash_prefill) {
+    auto dst = model_builder->AddTensor(q.tensor_desc.GetBHWCShape(),
+                                        q.tensor_desc.GetDataType());
+    auto op = CreateFusedFlashAttentionPrefill(
+        model_builder->gpu_info(), q.tensor_desc, k.tensor_desc, v.tensor_desc,
+        mask_desc, param_desc, dst.tensor_desc, attr);
+    std::vector<::ml_drift::GpuModelBuilder::TensorHandle> src_tensors = {q, k,
+                                                                          v};
+    if (mask_desc) src_tensors.push_back(mask);
+    if (param_desc) src_tensors.push_back(param_tensor);
+    model_builder->AddGpuOperation(src_tensors, {dst}, std::move(op),
+                                   "flash_prefill_sdpa");
+    return model_builder->UpdateOutputTensor(dst, output_id);
+  }
+
   // Fused Flash-Decode is currently optimized for Apple Silicon with
   // head_dim = 128 (slices = 32 matching the 32-thread SIMD wave size).
-  // For prefill, other head dimensions, or non-Apple GPUs, fall back to the
-  // multi-op graph.
-  const int head_dim = q.tensor_desc.GetBHWCShape().c;
+  // For other head dimensions or non-Apple GPUs, fall back to the multi-op
+  // graph.
   const bool is_supported_flash_decode =
       attr.from_cache_update && !attr.is_prefill && head_dim == 128 &&
       k.tensor_desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
@@ -449,7 +928,7 @@ absl::Status BuildSdpaTransposedGpuGraph(
       model_builder->gpu_info().IsApple();
 
   if (is_supported_flash_decode) {
-    // Single fused SDPA op.
+    // Single fused Flash-Decode SDPA op.
     ABSL_ASSIGN_OR_RETURN(auto output_ref, model_builder->GetTensor(output_id));
     const auto output_shape = output_ref.tensor_desc.GetBHWCShape();
     const auto q_shape = q.tensor_desc.GetBHWCShape();
