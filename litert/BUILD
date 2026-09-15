@@ -336,7 +336,7 @@ package_group(
 )
 
 exports_files(
-    glob(["*.gwsq"]),
+    glob(["*.gwsq"]) + ["METADATA"],
     visibility = ["//visibility:public"],
 )
 
