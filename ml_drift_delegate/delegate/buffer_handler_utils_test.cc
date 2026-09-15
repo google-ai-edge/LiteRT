@@ -65,6 +65,26 @@ TEST(BufferHandlerUtilsTest, CreateTensorDescriptorRank4Float16) {
               Eq(::ml_drift::TensorStorageType::BUFFER));
 }
 
+TEST(BufferHandlerUtilsTest, CreateTensorDescriptorRank1Dim0Scalar) {
+  LiteRtRankedTensorType tensor_type;
+  tensor_type.layout.rank = 1;
+  tensor_type.layout.dimensions[0] = 0;
+  tensor_type.element_type = kLiteRtElementTypeFloat32;
+
+  auto desc = CreateTensorDescriptor(
+      tensor_type, kLiteRtTensorBufferTypeOpenClBuffer);
+  ASSERT_TRUE(desc.ok());
+  if (desc.ok()) {
+    EXPECT_THAT(desc->GetDataType(), Eq(::ml_drift::DataType::FLOAT32));
+    EXPECT_THAT(desc->GetStorageType(),
+                Eq(::ml_drift::TensorStorageType::BUFFER));
+    EXPECT_THAT(desc->GetBHWDCShape().b, Eq(1));
+    EXPECT_THAT(desc->GetBHWDCShape().h, Eq(1));
+    EXPECT_THAT(desc->GetBHWDCShape().w, Eq(1));
+    EXPECT_THAT(desc->GetBHWDCShape().c, Eq(1));
+  }
+}
+
 TEST(BufferHandlerUtilsTest, ConvertDataToDescriptorFloat) {
   LiteRtRankedTensorType tensor_type;
   tensor_type.layout.rank = 2;
