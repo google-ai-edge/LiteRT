@@ -50,7 +50,9 @@ public final class Environment {
   public init(options: [Option] = []) throws {
     var resolvedOptions = options
     if !options.contains(where: { if case .runtimeLibraryDir = $0 { return true }; return false }) {
-      let libName = "libLiteRtMetalAccelerator.dylib"
+      // The accelerator is distributed either as a plain dylib or, on iOS, as
+      // a framework bundle, whose executable is named after the bundle.
+      let libNames = ["libLiteRtMetalAccelerator.dylib", "LiteRtMetalAccelerator"]
       let candidateURLs = [
         Bundle(identifier: "com.google.odml.litert.CLiteRT")?.bundleURL,
         Bundle(identifier: "com.google.litert.metal_accelerator")?.bundleURL,
@@ -60,8 +62,10 @@ public final class Environment {
         Bundle.main.resourceURL,
         Bundle.main.bundleURL,
       ].compactMap { $0 }
-      if let candidate = candidateURLs.first(where: {
-        FileManager.default.fileExists(atPath: $0.appendingPathComponent(libName).path)
+      if let candidate = candidateURLs.first(where: { url in
+        libNames.contains {
+          FileManager.default.fileExists(atPath: url.appendingPathComponent($0).path)
+        }
       }) {
         resolvedOptions.append(.runtimeLibraryDir(candidate.path))
       }
