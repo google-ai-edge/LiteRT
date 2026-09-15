@@ -30,6 +30,59 @@ standard Swift project conventions:
 -   `CompiledModelTests.swift`: Model loading, graph execution and cancellation tests.
 -   `TensorTypeTests.swift`: Layout tests.
 -   `IntegrationTests.swift`: End-to-end integration test.
+- **`Sources/TensorFlowLite/`**: The legacy TensorFlow Lite Swift API, vended as
+  a separate `TensorFlowLite` module. These sources are shared with
+  `third_party/tensorflow/lite/swift`.
+-   `TensorFlowLite.swift`: Runtime version and top-level entry points.
+-   `Interpreter.swift`: Model interpreter and invocation.
+-   `InterpreterError.swift`: Interpreter error boundaries.
+-   `Model.swift`: Model loading.
+-   `Tensor.swift`: Tensor data, shapes and data types.
+-   `QuantizationParameters.swift`: Affine quantization metadata.
+-   `SignatureRunner.swift`: Named signature execution.
+-   `SignatureRunnerError.swift`: Signature runner error boundaries.
+-   `Delegate.swift`: Delegate protocol.
+-   `CoreMLDelegate.swift`: Core ML delegate (`--define=use_coreml_delegate=1`).
+-   `MetalDelegate.swift`: Metal GPU delegate (`--define=use_metal_delegate=1`).
+- **`Tests/TensorFlowLite/`**: Unit tests for the `TensorFlowLite` module. These
+  have their own `BUILD` file: the all-delegates variant they link against also
+  declares `module_name = "TensorFlowLite"`, so it needs a separate package to
+  avoid colliding with `TensorFlowLite_Swift` over `TensorFlowLite.swiftmodule`.
+- **`Sources/TensorFlowLiteC/`**: The umbrella header defining the
+  `TensorFlowLiteC` Clang module that the Swift API imports. Copied from
+  `third_party/tensorflow/lite/ios`, which is not exported to the open-source
+  repository; the C libraries themselves are still depended on directly. Not a
+  SwiftPM target -- in the Swift package `TensorFlowLiteC` is consumed as a
+  prebuilt binary target.
+
+## Distributable Artifacts
+
+The `TensorFlowLite` module ships as two complementary static `.xcframework`
+bundles, matching the `TensorFlowLite` and `TensorFlowLiteC` binary targets in
+`Package.swift`:
+
+```shell
+bazel build -c opt --config=ios \
+  //litert/swift:TensorFlowLite_xcframework \
+  //litert/swift:TensorFlowLiteC_xcframework
+```
+
+-   `TensorFlowLite_xcframework`: the Swift API. Contains
+    `TensorFlowLite.a` plus `TensorFlowLite.swiftmodule/*.swiftinterface`.
+-   `TensorFlowLiteC_xcframework`: the C runtime. Contains
+    `TensorFlowLiteC.a` plus the flattened C headers and a `TensorFlowLiteC`
+    module map.
+
+The two are kept separate rather than merged into one bundle. A Swift
+`apple_static_xcframework` can only vend the single module named by its
+`bundle_name`, so the `TensorFlowLiteC` headers and module map cannot live
+inside `TensorFlowLite.xcframework` -- yet `TensorFlowLite.swiftinterface`
+contains `import TensorFlowLiteC`, because `Delegate.swift` exposes
+`TfLiteDelegate` in its public API. Consumers therefore need the C module
+resolvable on its own regardless, and linking the runtime into both bundles
+would only add duplicate symbols for apps that also use the C or Objective-C
+API. This mirrors how the upstream `TensorFlowLiteSwift` CocoaPod depends on
+the separate `TensorFlowLiteC` pod.
 
 ## Key Classes
 
