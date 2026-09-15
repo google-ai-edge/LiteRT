@@ -90,17 +90,10 @@ std::vector<OpWrapper> BuildBroadcastToOp(
   TensorWrapper& output_tensor = outputs[kOutputIndex];
   auto data_type = input_tensor.GetDataType();
 
-  auto& broadcast_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
+  auto& broadcast_op = CreateOpWrapper(res, data_type == QNN_DATATYPE_BOOL_8
+                                                ? QNN_OP_ELEMENT_WISE_OR
+                                                : QNN_OP_ELEMENT_WISE_ADD);
   broadcast_op.AddInputTensor(input_tensor);
-  if (data_type == QNN_DATATYPE_BOOL_8) {
-    broadcast_op.AddScalarParam<std::uint32_t>(
-        QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
-        QNN_OP_ELEMENT_WISE_BINARY_OPERATION_OR);
-  } else {
-    broadcast_op.AddScalarParam<std::uint32_t>(
-        QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
-        QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD);
-  }
 
   auto static_dims = GetStaticTensorDimension(input_tensor.GetDimensions(),
                                               output_tensor.GetDimensions());
