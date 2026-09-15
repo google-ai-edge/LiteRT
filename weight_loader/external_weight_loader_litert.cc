@@ -49,15 +49,22 @@ EM_ASYNC_JS(
         return 1;
       }
       const view = new DataView(Module.HEAPU8.buffer);
+      // Pointers arrive as signed i32 and read back as negative once the heap
+      // grows past 2GB. The `>>>` operator reinterprets the signed int as an
+      // unsigned int32.
+      const tflIdsPtr = tfl_ids >>> 0;
+      const wgpuBuffersPtr = wgpu_buffers >>> 0;
+      const offsetsPtr = offsets >>> 0;
+      const lengthsPtr = lengths >>> 0;
       const tflIdsArray = new Int32Array(count);
       const wgpuBuffersArray = new Uint32Array(count);
       const offsetsArray = new Float64Array(count);
       const lengthsArray = new Float64Array(count);
       for (let i = 0; i < count; i++) {
-        tflIdsArray[i] = view.getInt32(tfl_ids + i * 4, true);
-        wgpuBuffersArray[i] = view.getUint32(wgpu_buffers + i * 4, true);
-        offsetsArray[i] = view.getFloat64(offsets + i * 8, true);
-        lengthsArray[i] = view.getFloat64(lengths + i * 8, true);
+        tflIdsArray[i] = view.getInt32(tflIdsPtr + i * 4, true);
+        wgpuBuffersArray[i] = view.getUint32(wgpuBuffersPtr + i * 4, true);
+        offsetsArray[i] = view.getFloat64(offsetsPtr + i * 8, true);
+        lengthsArray[i] = view.getFloat64(lengthsPtr + i * 8, true);
       }
       try {
         await callback(
