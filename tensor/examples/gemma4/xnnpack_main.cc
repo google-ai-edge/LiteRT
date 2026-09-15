@@ -16,31 +16,38 @@ limitations under the License.
 #include <algorithm>
 #include <array>
 #include <cinttypes>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
 
-#include "xnnpack.h"  // from @XNNPACK
-#include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/algorithm/container.h"      // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/flags/flag.h"  // from @com_google_absl
-#include "absl/log/absl_log.h"  // from @com_google_absl
-#include "absl/status/status.h"  // from @com_google_absl
-#include "absl/strings/match.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
-#include "absl/strings/str_join.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "absl/flags/flag.h"               // from @com_google_absl
+#include "absl/log/absl_log.h"             // from @com_google_absl
+#include "absl/status/status.h"            // from @com_google_absl
+#include "absl/strings/ascii.h"            // from @com_google_absl
+#include "absl/strings/match.h"            // from @com_google_absl
+#include "absl/strings/numbers.h"          // from @com_google_absl
+#include "absl/strings/str_cat.h"          // from @com_google_absl
+#include "absl/strings/str_format.h"       // from @com_google_absl
+#include "absl/strings/str_join.h"         // from @com_google_absl
+#include "absl/strings/str_split.h"        // from @com_google_absl
+#include "absl/strings/string_view.h"      // from @com_google_absl
+#include "absl/types/span.h"               // from @com_google_absl
+#include "perfetto/tracing/track_event.h"  // from @perfetto
 #include "tensor/backends/xnnpack/arithmetic.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
@@ -58,8 +65,8 @@ limitations under the License.
 #include "tensor/runners/xnnpack/runner.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
-#include "perfetto/tracing/track_event.h"  // from @perfetto
 #include "tflite/delegates/xnnpack/weight_cache.h"
+#include "xnnpack.h"  // from @XNNPACK
 
 ABSL_FLAG(std::string, weights, "",
           "Path to safetensor weights file or directory.");
@@ -77,11 +84,26 @@ ABSL_FLAG(std::string, weight_cache, "", "Path to XNNPack weight cache file.");
 ABSL_FLAG(std::string, perfetto_output, "",
           "Path to output Perfetto trace file.");
 
+ABSL_FLAG(bool, consistent_arithmetic, false,
+          "Use XNNPACK's slower consistent-arithmetic paths for single-KV-head "
+          "E2B diagnostics; does not guarantee cross-platform equality.");
+ABSL_FLAG(
+    std::string, token_ids, "",
+    "Comma-separated input token IDs; bypass tokenizer and prompt wrapping.");
+ABSL_FLAG(
+    std::string, dump_logits, "",
+    "Output path prefix for little-endian float32 logits and a JSON report.");
+ABSL_FLAG(bool, dump_intermediates, false,
+          "Also dump full layer outputs and final normalized hidden states; "
+          "requires --dump_logits.");
+
 namespace litert::tensor::examples::gemma4 {
 namespace {
 
 constexpr int32_t kStartOfTurnToken = 105;
 constexpr int32_t kEndOfTurnToken = 106;
+// Google's mobile checkpoints also stop before a tool response.
+constexpr int32_t kToolResponseToken = 50;
 constexpr absl::string_view kAutoWeightCacheFlag = ":auto";
 
 using ::litert::tensor::PerfettoSession;
@@ -111,6 +133,162 @@ absl::Status MapGemma4WeightIdentifiers(
   return absl::OkStatus();
 }
 
+absl::StatusOr<std::vector<int32_t>> ParseTokenIds(absl::string_view text) {
+  std::vector<int32_t> ids;
+  for (absl::string_view field : absl::StrSplit(text, ',')) {
+    int32_t token;
+    if (!absl::SimpleAtoi(absl::StripAsciiWhitespace(field), &token) ||
+        token < 0) {
+      return absl::InvalidArgumentError(
+          "--token_ids must contain comma-separated nonnegative int32 IDs");
+    }
+    ids.push_back(token);
+  }
+  return ids;
+}
+
+std::string PassSuffix(int generated_index) {
+  return generated_index == 0
+             ? ".prefill"
+             : absl::StrFormat(".decode_%04d", generated_index);
+}
+
+std::string LogitsSuffix(int generated_index) {
+  return absl::StrCat(PassSuffix(generated_index), ".f32");
+}
+
+absl::Status WriteRawFloats(absl::string_view path,
+                            absl::Span<const float> values) {
+  static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
+  std::ofstream output(std::string(path), std::ios::binary | std::ios::trunc);
+  const uint16_t byte_order = 1;
+  if (*reinterpret_cast<const unsigned char*>(&byte_order) == 1) {
+    output.write(reinterpret_cast<const char*>(values.data()),
+                 values.size() * sizeof(float));
+  } else {
+    for (float value : values) {
+      uint32_t bits;
+      std::memcpy(&bits, &value, sizeof(bits));
+      const char bytes[] = {
+          static_cast<char>(bits), static_cast<char>(bits >> 8),
+          static_cast<char>(bits >> 16), static_cast<char>(bits >> 24)};
+      output.write(bytes, sizeof(bytes));
+    }
+  }
+  output.close();
+  if (!output) {
+    return absl::InternalError(
+        absl::StrCat("Failed to write float32 output: ", path));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status DumpIntermediates(XnnpackRunner& runner,
+                               const Gemma4Outputs<XnnpackMixinTag>& outputs,
+                               const Config& config, int seq_len,
+                               absl::string_view prefix, int generated_index) {
+  const size_t expected_elements =
+      static_cast<size_t>(seq_len) * config.embed_dim;
+  if (outputs.layer_outputs.size() != config.num_layers) {
+    return absl::InternalError(
+        "Intermediate layer count disagrees with config");
+  }
+  auto dump = [&](const TensorHandle& tensor,
+                  absl::string_view suffix) -> absl::Status {
+    LRT_TENSOR_ASSIGN_OR_RETURN(auto values,
+                                runner.ReadOutputAs<float>(tensor));
+    if (tensor.GetType() != Type::kFP32 || values.size() != expected_elements) {
+      return absl::InternalError(
+          "Intermediate output type or size disagrees with config");
+    }
+    return WriteRawFloats(
+        absl::StrCat(prefix, PassSuffix(generated_index), suffix),
+        absl::MakeConstSpan(values.data(), values.size()));
+  };
+  for (size_t layer = 0; layer < outputs.layer_outputs.size(); ++layer) {
+    LRT_TENSOR_RETURN_IF_ERROR(dump(outputs.layer_outputs[layer],
+                                    absl::StrFormat(".layer_%03d.f32", layer)));
+  }
+  return dump(outputs.final_normalized, ".norm.f32");
+}
+
+absl::StatusOr<int32_t> SelectTokenAndDump(absl::Span<const float> logits,
+                                           absl::string_view dump_prefix,
+                                           int generated_index) {
+  if (logits.empty() ||
+      std::any_of(logits.begin(), logits.end(),
+                  [](float value) { return !std::isfinite(value); })) {
+    return absl::InternalError("Model logits must be nonempty and finite");
+  }
+  if (!dump_prefix.empty()) {
+    LRT_TENSOR_RETURN_IF_ERROR(WriteRawFloats(
+        absl::StrCat(dump_prefix, LogitsSuffix(generated_index)), logits));
+  }
+  return static_cast<int32_t>(absl::c_max_element(logits) - logits.begin());
+}
+
+absl::string_view StopReason(int32_t token) {
+  if (token == GemmaTokenizerSP::kEosToken) return "eos_token";
+  if (token == kEndOfTurnToken) return "end_of_turn";
+  if (token == kToolResponseToken) return "tool_response_token";
+  if (token == kStartOfTurnToken) return "start_of_turn";
+  return "";
+}
+
+absl::Status WriteGenerationReport(
+    absl::string_view prefix, ModelVariant variant, const Config& config,
+    absl::Span<const int32_t> inputs, absl::Span<const int32_t> generated,
+    int max_tokens, absl::string_view stop_reason, bool dump_intermediates,
+    uint32_t runtime_flags) {
+  if (prefix.empty()) return absl::OkStatus();
+  const std::string path = absl::StrCat(prefix, ".json");
+  const bool consistent_arithmetic =
+      (runtime_flags & XNN_FLAG_SLOW_CONSISTENT_ARITHMETIC) != 0;
+  std::ofstream output(path, std::ios::trunc);
+  output << "{\n  \"model_variant\": \"" << AbslUnparseFlag(variant)
+         << "\",\n  \"dtype\": \"float32\",\n  \"byte_order\": \"little\",\n"
+         << "  \"logits_shape\": [" << config.vocab_size << "],\n"
+         << "  \"prefill_logits\": \"last_prompt_position\",\n"
+         << "  \"xnnpack_runtime_flags\": " << runtime_flags << ",\n"
+         << "  \"consistent_arithmetic\": "
+         << (consistent_arithmetic ? "true" : "false") << ",\n"
+         << "  \"input_token_ids\": [" << absl::StrJoin(inputs, ", ") << "],\n"
+         << "  \"generated_token_ids\": [" << absl::StrJoin(generated, ", ")
+         << "],\n  \"max_tokens\": " << max_tokens << ",\n"
+         << "  \"stop_reason\": \"" << stop_reason << "\",\n"
+         << "  \"logits_suffixes\": [";
+  for (int i = 0; i < generated.size(); ++i) {
+    if (i != 0) output << ", ";
+    output << '\"' << LogitsSuffix(i) << '\"';
+  }
+  output << ']';
+  if (dump_intermediates) {
+    output << ",\n  \"intermediates\": [\n";
+    bool first = true;
+    for (int step = 0; step < generated.size(); ++step) {
+      const size_t seq_len = step == 0 ? inputs.size() : 1;
+      for (int layer = 0; layer <= config.num_layers; ++layer) {
+        if (!first) output << ",\n";
+        first = false;
+        const std::string suffix = absl::StrCat(
+            PassSuffix(step), layer == config.num_layers
+                                  ? ".norm.f32"
+                                  : absl::StrFormat(".layer_%03d.f32", layer));
+        output << "    {\"suffix\": \"" << suffix << "\", \"shape\": [1, "
+               << seq_len << ", " << config.embed_dim
+               << "], \"dtype\": \"float32\"}";
+      }
+    }
+    output << "\n  ]";
+  }
+  output << "\n}\n";
+  output.close();
+  if (!output) {
+    return absl::InternalError(absl::StrCat("Failed to write report: ", path));
+  }
+  return absl::OkStatus();
+}
+
 // Slices the combined per-layer model projection weight matrix
 // ("model.per_layer_model_projection.weight") of shape
 // [num_layers, per_layer_input_dim, embed_dim] into individual per-layer 2D
@@ -126,6 +304,19 @@ absl::Status SlicePerLayerModelProjectionWeights(
     return absl::OkStatus();
   }
 
+  const TensorHandle& projection = proj_w_it->second;
+  const Shape expected_shape = {config.num_layers, config.per_layer_input_dim,
+                                config.embed_dim};
+  const Shape flattened_shape = {config.num_layers * config.per_layer_input_dim,
+                                 config.embed_dim};
+  if (projection.GetType() != Type::kFP32 ||
+      (projection.GetShape() != expected_shape &&
+       projection.GetShape() != flattened_shape)) {
+    return absl::InvalidArgumentError(
+        "model.per_layer_model_projection.weight must be FP32 with shape "
+        "[num_layers, per_layer_input_dim, embed_dim] or "
+        "[num_layers * per_layer_input_dim, embed_dim]");
+  }
   LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & proj_w_buf,
                               proj_w_it->second.GetBuffer());
   auto proj_locked = proj_w_buf.Lock();
@@ -137,6 +328,12 @@ absl::Status SlicePerLayerModelProjectionWeights(
 
   const size_t layer_w_bytes = static_cast<size_t>(config.per_layer_input_dim) *
                                config.embed_dim * sizeof(float);
+
+  if (proj_locked.size() != layer_w_bytes * config.num_layers) {
+    return absl::InvalidArgumentError(
+        "model.per_layer_model_projection.weight buffer size disagrees with "
+        "shape");
+  }
 
   for (int l = 0; l < config.num_layers; ++l) {
     const std::byte* layer_bytes = proj_w_bytes + l * layer_w_bytes;
@@ -253,6 +450,11 @@ absl::StatusOr<LoadedTensors> LoadWeightsAndPrepareTensors(
                               loader.LoadWeightsWithMapping(weight_mapping));
   LRT_TENSOR_RETURN_IF_ERROR(
       SlicePerLayerModelProjectionWeights(config, weights_handle));
+  if (!weights_handle.contains("model.embed_tokens.weight") ||
+      !weights_handle.contains("model.embed_tokens_per_layer.weight")) {
+    return absl::InvalidArgumentError(
+        "Required Gemma4 embedding weights are missing");
+  }
   LRT_TENSOR_ASSIGN_OR_RETURN(
       std::unique_ptr<GemmaEmbeddingTable> token_embedding,
       GemmaEmbeddingTable::Create(weights_handle["model.embed_tokens.weight"],
@@ -285,7 +487,9 @@ absl::StatusOr<Gemma4Inputs<XnnpackMixinTag>> CreateGemma4Inputs(
                  .type = Type::kFP32,
                  .shape = {batch_size, input_seq_len, config.embed_dim}});
 
-  if (input_seq_len > 1) {
+  // A prefill can contain only the BOS token; cache history distinguishes it
+  // from a decode step.
+  if (kv_cache_len == 0) {
     std::tie(inputs.rope_global_cos, inputs.rope_global_sin) =
         RopeCosSin(input_seq_len, config.global_key_size,
                    config.global_base_frequency, config.global_rope_proportion);
@@ -396,11 +600,13 @@ struct CompiledRunners {
 
 absl::StatusOr<CompiledRunners> CompileRunners(
     BuiltGraphs& graphs, int num_threads, bool use_weight_cache,
-    tflite::xnnpack::MMapWeightCacheProvider* weight_cache_provider) {
+    tflite::xnnpack::MMapWeightCacheProvider* weight_cache_provider,
+    bool dump_intermediates, uint32_t runtime_flags) {
   TRACE_EVENT(kTensorApiCategory, "CompileRunners");
   LRT_TENSOR_ASSIGN_OR_RETURN(
-      auto runner,
-      XnnpackRunner::Create(graphs.prefill_outputs.GetAllHandles()));
+      auto runner, XnnpackRunner::Create(
+                       graphs.prefill_outputs.GetAllHandles(dump_intermediates),
+                       runtime_flags));
   runner.SetNumThreads(num_threads);
   if (use_weight_cache && weight_cache_provider != nullptr) {
     runner.SetWeightsCache(&weight_cache_provider->GetCacheProvider());
@@ -408,7 +614,9 @@ absl::StatusOr<CompiledRunners> CompileRunners(
 
   LRT_TENSOR_ASSIGN_OR_RETURN(
       auto decode_runner,
-      XnnpackRunner::Create(graphs.decode_outputs.GetAllHandles()));
+      XnnpackRunner::Create(
+          graphs.decode_outputs.GetAllHandles(dump_intermediates),
+          runtime_flags));
   decode_runner.SetNumThreads(num_threads);
   if (use_weight_cache && weight_cache_provider != nullptr) {
     decode_runner.SetWeightsCache(&weight_cache_provider->GetCacheProvider());
@@ -438,15 +646,17 @@ absl::StatusOr<int32_t> ExecutePrefillPass(
     const std::vector<int32_t>& input_tokens,
     const GemmaEmbeddingTable& token_embedding,
     const GemmaEmbeddingTable& emb_per_layer_table,
-    PrefillTiming& prefill_timing, bool verbose) {
+    PrefillTiming& prefill_timing, absl::string_view dump_prefix,
+    bool dump_intermediates) {
   TRACE_EVENT(kTensorApiCategory, "Prefill");
   Timer::LapScope lap_scope = prefill_timing.prefill.Lap();
 
   int seq_len = static_cast<int>(input_tokens.size());
-  std::vector<float> embedded_input(seq_len * config.embed_dim);
+  std::vector<float> embedded_input(static_cast<size_t>(seq_len) *
+                                    config.embed_dim);
   std::vector<std::vector<float>> per_layer_tok_embs(
-      config.num_layers,
-      std::vector<float>(seq_len * config.per_layer_input_dim));
+      config.num_layers, std::vector<float>(static_cast<size_t>(seq_len) *
+                                            config.per_layer_input_dim));
   {
     TRACE_EVENT(kTensorApiCategory, "CpuPrep");
     Timer::LapScope cpu_prep_scope = prefill_timing.cpu_prep.Lap();
@@ -476,6 +686,11 @@ absl::StatusOr<int32_t> ExecutePrefillPass(
     LRT_TENSOR_RETURN_IF_ERROR(runner.Run());
   }
 
+  if (dump_intermediates) {
+    LRT_TENSOR_RETURN_IF_ERROR(DumpIntermediates(
+        runner, outputs, config, seq_len, dump_prefix, /*generated_index=*/0));
+  }
+
   LockedBufferSpan<const float> initial_output_locked =
       LockedBufferSpan<const float>::Empty();
   {
@@ -485,17 +700,16 @@ absl::StatusOr<int32_t> ExecutePrefillPass(
                                 runner.ReadOutputAs<float>(outputs.logits));
   }
 
+  if (initial_output_locked.size() !=
+      static_cast<size_t>(seq_len) * config.vocab_size) {
+    return absl::InternalError("Prefill logits size disagrees with config");
+  }
   absl::Span<const float> prefill_logits(
-      initial_output_locked.begin() + (seq_len - 1) * config.vocab_size,
+      initial_output_locked.begin() +
+          static_cast<size_t>(seq_len - 1) * config.vocab_size,
       config.vocab_size);
 
-  if (prefill_logits.empty()) {
-    return absl::InternalError("Prefill logits span is empty.");
-  }
-
-  int32_t current_token =
-      absl::c_max_element(prefill_logits) - prefill_logits.begin();
-  return current_token;
+  return SelectTokenAndDump(prefill_logits, dump_prefix, /*generated_index=*/0);
 }
 
 absl::StatusOr<int32_t> ExecuteDecodeStep(
@@ -506,7 +720,8 @@ absl::StatusOr<int32_t> ExecuteDecodeStep(
     const GemmaEmbeddingTable& emb_per_layer_table,
     std::vector<float>& global_cos, std::vector<float>& global_sin,
     std::vector<float>& local_cos, std::vector<float>& local_sin,
-    DecodeTiming& decode_timing) {
+    DecodeTiming& decode_timing, absl::string_view dump_prefix,
+    int generated_index, bool dump_intermediates) {
   TRACE_EVENT(kTensorApiCategory, "Decode");
   Timer::LapScope lap_scope = decode_timing.decode.Lap();
 
@@ -588,6 +803,12 @@ absl::StatusOr<int32_t> ExecuteDecodeStep(
     LRT_TENSOR_RETURN_IF_ERROR(decode_runner.Run());
   }
 
+  if (dump_intermediates) {
+    LRT_TENSOR_RETURN_IF_ERROR(DumpIntermediates(decode_runner, decode_outputs,
+                                                 config, /*seq_len=*/1,
+                                                 dump_prefix, generated_index));
+  }
+
   LockedBufferSpan<const float> logits_locked =
       LockedBufferSpan<const float>::Empty();
   {
@@ -600,10 +821,12 @@ absl::StatusOr<int32_t> ExecuteDecodeStep(
 
   TRACE_EVENT(kTensorApiCategory, "Argmax");
   Timer::LapScope argmax_scope = decode_timing.argmax.Lap();
-  if (logits_locked.size() == 0) {
-    return absl::InternalError("Decode logits span is empty.");
+  if (logits_locked.size() != config.vocab_size) {
+    return absl::InternalError("Decode logits size disagrees with config");
   }
-  return absl::c_max_element(logits_locked) - logits_locked.begin();
+  return SelectTokenAndDump(
+      absl::MakeConstSpan(logits_locked.data(), logits_locked.size()),
+      dump_prefix, generated_index);
 }
 
 absl::Status UpdateKvCache(XnnpackRunner& decode_runner,
@@ -637,6 +860,16 @@ absl::Status UpdateKvCache(XnnpackRunner& decode_runner,
       LRT_TENSOR_ASSIGN_OR_RETURN(
           new_value_locked,
           decode_runner.ReadOutputAs<float>(decode_outputs.value_caches[i]));
+    }
+
+    const size_t new_elements =
+        static_cast<size_t>(config.num_kv_heads) * head_dim;
+    const size_t required_elements = new_elements * (cache_len + 1);
+    if (new_key_locked.size() != new_elements ||
+        new_value_locked.size() != new_elements ||
+        host_key_caches[i].size() < required_elements ||
+        host_value_caches[i].size() < required_elements) {
+      return absl::InternalError("Decode KV sizes disagree with model config");
     }
 
     {
@@ -697,6 +930,26 @@ absl::StatusOr<ModelVariant> DeduceModelVariant(
 absl::Status Run(const std::string& weights_path,
                  const std::string& tokenizer_path,
                  const std::string& raw_prompt, int max_tokens, bool verbose) {
+  if (max_tokens <= 0) {
+    return absl::InvalidArgumentError("max_tokens must be positive");
+  }
+  const int num_threads = absl::GetFlag(FLAGS_num_threads);
+  if (num_threads <= 0) {
+    return absl::InvalidArgumentError(
+        "--num_threads must be greater than zero");
+  }
+  if (weights_path.empty()) {
+    return absl::InvalidArgumentError("--weights is required");
+  }
+  const std::string dump_prefix = absl::GetFlag(FLAGS_dump_logits);
+  const bool dump_intermediates = absl::GetFlag(FLAGS_dump_intermediates);
+  const uint32_t runtime_flags = absl::GetFlag(FLAGS_consistent_arithmetic)
+                                     ? XNN_FLAG_SLOW_CONSISTENT_ARITHMETIC
+                                     : 0;
+  if (dump_intermediates && dump_prefix.empty()) {
+    return absl::InvalidArgumentError(
+        "--dump_intermediates requires --dump_logits");
+  }
   if (xnn_initialize(/*allocator=*/nullptr) != xnn_status_success) {
     return absl::InternalError("Failed to initialize XNNPACK");
   }
@@ -708,8 +961,21 @@ absl::Status Run(const std::string& weights_path,
   }
 
   TRACE_EVENT_BEGIN(kTensorApiCategory, "Load tokenizer");
-  LRT_TENSOR_ASSIGN_OR_RETURN(GemmaTokenizerSP tokenizer,
-                              GemmaTokenizerSP::Load(tokenizer_path));
+  const std::string token_ids = absl::GetFlag(FLAGS_token_ids);
+  std::optional<GemmaTokenizerSP> tokenizer;
+  std::vector<int32_t> input_tokens;
+  if (!token_ids.empty()) {
+    LRT_TENSOR_ASSIGN_OR_RETURN(input_tokens, ParseTokenIds(token_ids));
+  } else {
+    if (tokenizer_path.empty()) {
+      return absl::InvalidArgumentError(
+          "--tokenizer is required unless --token_ids is supplied");
+    }
+    LRT_TENSOR_ASSIGN_OR_RETURN(auto loaded_tokenizer,
+                                GemmaTokenizerSP::Load(tokenizer_path));
+    tokenizer.emplace(std::move(loaded_tokenizer));
+  }
+
   TRACE_EVENT_END(kTensorApiCategory);
 
   TRACE_EVENT_BEGIN(kTensorApiCategory, "Load weights");
@@ -722,7 +988,7 @@ absl::Status Run(const std::string& weights_path,
   const Config config = Config::From(model_variant);
 
   std::string prompt = raw_prompt;
-  if (model_variant == ModelVariant::kE4B &&
+  if (tokenizer.has_value() && model_variant == ModelVariant::kE4B &&
       !absl::StrContains(raw_prompt, "<start_of_turn>")) {
     prompt = absl::StrCat("<start_of_turn>user\n", raw_prompt,
                           "<end_of_turn>\n<start_of_turn>model\n");
@@ -740,6 +1006,18 @@ absl::Status Run(const std::string& weights_path,
 
   LRT_TENSOR_ASSIGN_OR_RETURN(LoadedTensors loaded_tensors,
                               LoadWeightsAndPrepareTensors(loader, config));
+
+  if (runtime_flags != 0 && config.num_kv_heads != 1) {
+    return absl::InvalidArgumentError(
+        "--consistent_arithmetic currently requires a single KV head (E2B); "
+        "multi-KV-head tiling still requires XNNPACK broadcast rewriting");
+  }
+  if (loaded_tensors.token_embedding->VocabSize() != config.vocab_size ||
+      loaded_tensors.emb_per_layer_table->VocabSize() != config.vocab_size) {
+    return absl::InvalidArgumentError(
+        "Embedding vocabulary size disagrees with model config");
+  }
+  ABSL_LOG(INFO) << "XNNPACK runtime flags=" << runtime_flags;
 
   std::string weight_cache_path = absl::GetFlag(FLAGS_weight_cache);
   if (weight_cache_path == kAutoWeightCacheFlag) {
@@ -759,10 +1037,28 @@ absl::Status Run(const std::string& weights_path,
   }
 
   TRACE_EVENT_BEGIN(kTensorApiCategory, "TokenizerEncode");
-  std::vector<int32_t> input_tokens =
-      tokenizer.Encode(prompt, /*add_bos=*/true);
+  if (tokenizer.has_value()) {
+    input_tokens = tokenizer->Encode(prompt, /*add_bos=*/true);
+  }
   TRACE_EVENT_END(kTensorApiCategory);
-  int seq_len = static_cast<int>(input_tokens.size());
+  if (input_tokens.empty() ||
+      input_tokens.size() >
+          static_cast<size_t>(std::numeric_limits<int>::max())) {
+    return absl::InvalidArgumentError(
+        "Input must contain between 1 and INT_MAX tokens");
+  }
+  const int seq_len = static_cast<int>(input_tokens.size());
+  if (max_tokens > std::numeric_limits<int>::max() - seq_len) {
+    return absl::InvalidArgumentError(
+        "Prompt and generation length overflow tensor dimensions");
+  }
+  for (int32_t token : input_tokens) {
+    if (token < 0 || token >= config.vocab_size) {
+      return absl::InvalidArgumentError(
+          absl::StrFormat("Input token %d is outside model vocabulary [0, %d)",
+                          token, config.vocab_size));
+    }
+  }
 
   if (verbose) {
     ABSL_LOG(INFO) << "Input prompt: \"" << prompt << "\"";
@@ -777,10 +1073,13 @@ absl::Status Run(const std::string& weights_path,
   LRT_TENSOR_RETURN_IF_ERROR(graphs.prefill_outputs.logits.GetStatus())
       << "Output logits tensor isn't valid.";
 
+  LRT_TENSOR_RETURN_IF_ERROR(graphs.decode_outputs.logits.GetStatus())
+      << "Decode logits tensor isn't valid.";
   LRT_TENSOR_ASSIGN_OR_RETURN(
       CompiledRunners runners,
-      CompileRunners(graphs, absl::GetFlag(FLAGS_num_threads), use_weight_cache,
-                     &weight_cache_provider));
+      CompileRunners(graphs, num_threads, use_weight_cache,
+                     &weight_cache_provider, dump_intermediates,
+                     runtime_flags));
 
   ABSL_LOG(INFO) << "Running initial forward pass (prefill)...";
 
@@ -788,12 +1087,14 @@ absl::Status Run(const std::string& weights_path,
   PrefillTiming prefill_timing;
   LRT_TENSOR_ASSIGN_OR_RETURN(
       current_token,
-      ExecutePrefillPass(
-          runners.prefill_runner, graphs.prefill_inputs, graphs.prefill_outputs,
-          config, input_tokens, *loaded_tensors.token_embedding,
-          *loaded_tensors.emb_per_layer_table, prefill_timing, verbose));
+      ExecutePrefillPass(runners.prefill_runner, graphs.prefill_inputs,
+                         graphs.prefill_outputs, config, input_tokens,
+                         *loaded_tensors.token_embedding,
+                         *loaded_tensors.emb_per_layer_table, prefill_timing,
+                         dump_prefix, dump_intermediates));
+  std::vector<int32_t> generated_tokens{current_token};
 
-  std::cout << prompt << std::flush;
+  if (tokenizer.has_value()) std::cout << prompt << std::flush;
 
   if (seq_len > 0) {
     prefill_timing.prefill.SetCountPerLap(seq_len);
@@ -802,22 +1103,32 @@ absl::Status Run(const std::string& weights_path,
     ABSL_LOG(INFO) << prefill_timing.Stats();
   }
 
-  if (current_token == GemmaTokenizerSP::kEosToken ||
-      current_token == kEndOfTurnToken || current_token == kStartOfTurnToken) {
-    if (verbose) {
-      ABSL_LOG(INFO) << "Stop token predicted from prefill (token="
-                     << current_token << ")";
-    }
-    std::cout << std::endl;
+  TokenPrinter printer(absl::GetFlag(FLAGS_print), max_tokens);
+  auto print_token = [&](int32_t token) {
+    printer.Push(tokenizer.has_value() ? tokenizer->DecodeToken(token)
+                                       : absl::StrCat(token, " "));
+  };
+  absl::string_view stop_reason = StopReason(current_token);
+  auto finish = [&]() -> absl::Status {
+    LRT_TENSOR_RETURN_IF_ERROR(WriteGenerationReport(
+        dump_prefix, model_variant, config, input_tokens, generated_tokens,
+        max_tokens, stop_reason.empty() ? "max_tokens" : stop_reason,
+        dump_intermediates, runtime_flags));
     if (perfetto_session) {
       LRT_TENSOR_RETURN_IF_ERROR(perfetto_session->StopAndSave());
     }
     return absl::OkStatus();
+  };
+  if (stop_reason.empty()) print_token(current_token);
+  // Prefill already predicted the first generated token.
+  if (!stop_reason.empty() || max_tokens == 1) {
+    printer.Flush();
+    return finish();
   }
 
   // Initialize decode runner KV caches with prefill K/V
   int cache_len = seq_len;
-  const int max_cache_len = seq_len + max_tokens;
+  const int max_cache_len = seq_len + max_tokens - 1;
   const int batch_size = 1;
   DecodeTiming decode_timing;
   std::vector<int> sharing_patterns = GetKvCacheSharingPatterns(config);
@@ -855,6 +1166,11 @@ absl::Status Run(const std::string& weights_path,
 
       const size_t initial_elements =
           static_cast<size_t>(config.num_kv_heads) * cache_len * head_dim;
+      if (key_locked.size() != initial_elements ||
+          value_locked.size() != initial_elements) {
+        return absl::InternalError(
+            "Prefill KV output size disagrees with config");
+      }
       std::copy_n(key_locked.begin(), initial_elements,
                   host_key_caches[i].begin());
       std::copy_n(value_locked.begin(), initial_elements,
@@ -871,16 +1187,13 @@ absl::Status Run(const std::string& weights_path,
     }
   }
 
-  TokenPrinter printer(absl::GetFlag(FLAGS_print), max_tokens);
-  printer.Push(tokenizer.DecodeToken(current_token));
-
   std::vector<float> global_cos(config.global_key_size);
   std::vector<float> global_sin(config.global_key_size);
   std::vector<float> local_cos(config.head_dim);
   std::vector<float> local_sin(config.head_dim);
 
-  int tokens_generated = 0;
-  for (int step = 0; step < max_tokens; ++step) {
+  // The token predicted by prefill counts toward --max_tokens.
+  for (int step = 1; step < max_tokens; ++step) {
     TRACE_EVENT(kTensorApiCategory, "DecodeStep");
     LRT_TENSOR_ASSIGN_OR_RETURN(
         current_token,
@@ -888,35 +1201,31 @@ absl::Status Run(const std::string& weights_path,
                           graphs.decode_outputs, config, current_token,
                           cache_len, *loaded_tensors.token_embedding,
                           *loaded_tensors.emb_per_layer_table, global_cos,
-                          global_sin, local_cos, local_sin, decode_timing));
-
-    LRT_TENSOR_RETURN_IF_ERROR(UpdateKvCache(
-        runners.decode_runner, graphs.decode_inputs, graphs.decode_outputs,
-        config, cache_len, batch_size, sharing_patterns, host_key_caches,
-        host_value_caches, decode_timing));
-
-    cache_len += 1;
-
-    if (current_token == GemmaTokenizerSP::kEosToken ||
-        current_token == kEndOfTurnToken ||
-        current_token == kStartOfTurnToken) {
+                          global_sin, local_cos, local_sin, decode_timing,
+                          dump_prefix, step, dump_intermediates));
+    generated_tokens.push_back(current_token);
+    stop_reason = StopReason(current_token);
+    if (!stop_reason.empty()) {
       if (verbose) {
         ABSL_LOG(INFO) << "Stop token generated at step " << step
                        << " (token=" << current_token << ")";
       }
       break;
     }
-
-    printer.Push(tokenizer.DecodeToken(current_token));
-    tokens_generated++;
+    print_token(current_token);
+    if (step + 1 < max_tokens) {
+      LRT_TENSOR_RETURN_IF_ERROR(UpdateKvCache(
+          runners.decode_runner, graphs.decode_inputs, graphs.decode_outputs,
+          config, cache_len, batch_size, sharing_patterns, host_key_caches,
+          host_value_caches, decode_timing));
+      ++cache_len;
+    }
   }
   printer.Flush();
-
-  ABSL_LOG(INFO) << "Decoded " << tokens_generated << " tokens in "
-                 << decode_timing.decode.Duration();
+  ABSL_LOG(INFO) << "Generated " << generated_tokens.size()
+                 << " tokens (including the prefill prediction)";
   ABSL_LOG(INFO) << decode_timing.Stats();
-
-  return absl::OkStatus();
+  return finish();
 }
 
 }  // namespace

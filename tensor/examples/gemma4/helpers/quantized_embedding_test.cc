@@ -15,13 +15,15 @@ limitations under the License.
 
 #include "tensor/examples/gemma4/helpers/quantized_embedding.h"
 
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <vector>
 
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
@@ -125,8 +127,8 @@ TEST(QuantizedEmbeddingTest, Int4PerChannelUsesLogicalShape) {
   const std::vector<int32_t> tokens = {1, 0};
   std::vector<float> output(tokens.size() * 4);
   ASSERT_THAT(table->Lookup(tokens, absl::MakeSpan(output)), IsOk());
-  EXPECT_THAT(output, ElementsAre(10.0f, 12.0f, 14.0f, -16.0f,
-                                  1.0f, 2.0f, 3.0f, 4.0f));
+  EXPECT_THAT(output,
+              ElementsAre(10.0f, 12.0f, 14.0f, -16.0f, 1.0f, 2.0f, 3.0f, 4.0f));
 }
 
 TEST(QuantizedEmbeddingTest, Int4OddEmbeddingDimIsRejected) {
@@ -338,9 +340,9 @@ TEST(QuantizedEmbeddingTest, Int4BlockwisePhysicalHalvedShapeWithExpectedDim) {
                        .buffer = buffer,
                        .quantization = quant});
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::unique_ptr<GemmaEmbeddingTable> table,
-                                  GemmaEmbeddingTable::Create(
-                                      tensor, /*expected_emb_dim=*/4));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<GemmaEmbeddingTable> table,
+      GemmaEmbeddingTable::Create(tensor, /*expected_emb_dim=*/4));
 
   EXPECT_EQ(table->EmbeddingDim(), 4);
 
@@ -361,14 +363,13 @@ TEST(QuantizedEmbeddingTest, Int8BlockwiseAsymmetricLookup) {
   std::vector<float> scales = {0.1f, 0.2f, 0.5f, 1.0f};
   std::vector<int64_t> zero_points = {2, -5, 1, -2};
 
-  TensorHandle tensor(
-      {.name = "emb_i8_bw_asym",
-       .type = Type::kI8,
-       .shape = {2, 4},
-       .buffer = std::make_shared<SpanCpuBuffer>(data),
-       .quantization = std::make_shared<BlockwiseQuantization>(
-           scales, zero_points, /*block_size=*/2,
-           /*quantized_dimension=*/0)});
+  TensorHandle tensor({.name = "emb_i8_bw_asym",
+                       .type = Type::kI8,
+                       .shape = {2, 4},
+                       .buffer = std::make_shared<SpanCpuBuffer>(data),
+                       .quantization = std::make_shared<BlockwiseQuantization>(
+                           scales, zero_points, /*block_size=*/2,
+                           /*quantized_dimension=*/0)});
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::unique_ptr<GemmaEmbeddingTable> table,
                                   GemmaEmbeddingTable::Create(tensor));
@@ -393,14 +394,13 @@ TEST(QuantizedEmbeddingTest, Int4BlockwiseAsymmetricLookup) {
   std::vector<float> scales = {0.5f, 2.0f, 1.0f, 0.25f};
   std::vector<int64_t> zero_points = {1, -1, 2, -2};
 
-  TensorHandle tensor(
-      {.name = "emb_i4_bw_asym",
-       .type = Type::kI4,
-       .shape = {2, 4},
-       .buffer = std::make_shared<SpanCpuBuffer>(packed_bytes),
-       .quantization = std::make_shared<BlockwiseQuantization>(
-           scales, zero_points, /*block_size=*/2,
-           /*quantized_dimension=*/0)});
+  TensorHandle tensor({.name = "emb_i4_bw_asym",
+                       .type = Type::kI4,
+                       .shape = {2, 4},
+                       .buffer = std::make_shared<SpanCpuBuffer>(packed_bytes),
+                       .quantization = std::make_shared<BlockwiseQuantization>(
+                           scales, zero_points, /*block_size=*/2,
+                           /*quantized_dimension=*/0)});
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::unique_ptr<GemmaEmbeddingTable> table,
                                   GemmaEmbeddingTable::Create(tensor));
@@ -415,6 +415,162 @@ TEST(QuantizedEmbeddingTest, Int4BlockwiseAsymmetricLookup) {
                                  // row 1: [(-8-2)*1.0, (7-2)*1.0,
                                  // (0-(-2))*0.25, (-1-(-2))*0.25]
                                  -10.0f, 5.0f, 0.5f, 0.25f}));
+}
+
+template <Type type>
+void TestFloat16RowLookups() {
+  using Element = typename NativeStorage<type>::type;
+  std::vector<Element> data = {1.5f, -2.25f, 3.0f,  0.5f,
+                               5.0f, 6.0f,   -7.0f, 8.0f};
+  TensorHandle tensor({.type = type,
+                       .shape = {2, 4},
+                       .buffer = std::make_shared<SpanCpuBuffer>(data)});
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto table,
+                                  GemmaEmbeddingTable::Create(tensor, 4));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto row, table->Lookup(1));
+  EXPECT_THAT(row, ElementsAre(5.0f, 6.0f, -7.0f, 8.0f));
+  const std::vector<int32_t> tokens = {1, 0};
+  std::vector<float> output(8);
+  ASSERT_THAT(table->Lookup(tokens, absl::MakeSpan(output)), IsOk());
+  EXPECT_THAT(output,
+              ElementsAre(5.0f, 6.0f, -7.0f, 8.0f, 1.5f, -2.25f, 3.0f, 0.5f));
+  EXPECT_THAT(table->LookupPerLayer(0, 2, 2),
+              IsOkAndHolds(ElementsAre(ElementsAre(1.5f, -2.25f),
+                                       ElementsAre(3.0f, 0.5f))));
+  std::vector<std::vector<float>> per_layer(2, std::vector<float>(4));
+  ASSERT_THAT(table->LookupPerLayer(tokens, 2, 2, absl::MakeSpan(per_layer)),
+              IsOk());
+  EXPECT_THAT(per_layer, ElementsAre(ElementsAre(5.0f, 6.0f, 1.5f, -2.25f),
+                                     ElementsAre(-7.0f, 8.0f, 3.0f, 0.5f)));
+
+  // Observe a changed backing row to verify conversion is deferred until
+  // lookup, rather than copying the entire table during Create.
+  data[4] = Element(42.0f);
+  EXPECT_THAT(table->Lookup(1),
+              IsOkAndHolds(ElementsAre(42.0f, 6.0f, -7.0f, 8.0f)));
+  table.reset();
+  // Converted results own their row independently of the table's lifetime.
+  EXPECT_THAT(row, ElementsAre(5.0f, 6.0f, -7.0f, 8.0f));
+}
+
+TEST(QuantizedEmbeddingTest, Bf16ConvertsOnlySelectedRows) {
+  TestFloat16RowLookups<Type::kBF16>();
+}
+
+TEST(QuantizedEmbeddingTest, Fp16ConvertsOnlySelectedRows) {
+  TestFloat16RowLookups<Type::kFP16>();
+}
+
+TEST(QuantizedEmbeddingTest, RejectsInvalidShapeOrExpectedDimension) {
+  const std::vector<float> data(8, 1.0f);
+  for (const Shape shape :
+       {Shape{8}, Shape{1, 2, 4}, Shape{0, 4}, Shape{2, -1}}) {
+    TensorHandle tensor({.type = Type::kFP32,
+                         .shape = shape,
+                         .buffer = std::make_shared<SpanCpuBuffer>(data)});
+    EXPECT_EQ(GemmaEmbeddingTable::Create(tensor).status().code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+  TensorHandle tensor({.type = Type::kFP32,
+                       .shape = {2, 4},
+                       .buffer = std::make_shared<SpanCpuBuffer>(data)});
+  EXPECT_EQ(GemmaEmbeddingTable::Create(tensor, -1).status().code(),
+            absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(GemmaEmbeddingTable::Create(tensor, 2).status().code(),
+            absl::StatusCode::kInvalidArgument);
+}
+
+TEST(QuantizedEmbeddingTest, RejectsUndersizedBackingStorage) {
+  const std::vector<uint16_t> data(3, 0);
+  for (Type type : {Type::kFP32, Type::kFP16, Type::kBF16}) {
+    TensorHandle tensor({.type = type,
+                         .shape = {2, 4},
+                         .buffer = std::make_shared<SpanCpuBuffer>(data)});
+    EXPECT_EQ(GemmaEmbeddingTable::Create(tensor).status().code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+  const std::vector<uint8_t> packed(3, 0);
+  TensorHandle tensor(
+      {.type = Type::kI4,
+       .shape = {2, 4},
+       .buffer = std::make_shared<SpanCpuBuffer>(packed),
+       .quantization = std::make_shared<BlockwiseQuantization>(
+           std::vector<float>{1, 1, 1, 1}, std::vector<int64_t>{0}, 2, 0)});
+  EXPECT_EQ(GemmaEmbeddingTable::Create(tensor).status().code(),
+            absl::StatusCode::kInvalidArgument);
+}
+
+TEST(QuantizedEmbeddingTest, RejectsInvalidBlockwiseMetadata) {
+  const std::vector<int8_t> data(8, 1);
+  const std::vector<BlockwiseQuantization> invalid = {
+      {{1, 1, 1, 1}, {0}, 0, 0},        // Zero block size.
+      {{1, 1, 1, 1}, {0}, -2, 0},       // Negative block size.
+      {{1, 1}, {0}, 3, 0},              // Non-divisible row width.
+      {{1, 1, 1}, {0}, 2, 0},           // Scale count not divisible by rows.
+      {{1, 1}, {0}, 2, 0},              // Too few scales for the logical width.
+      {{1, 1, 1, 1}, {0, 0, 0}, 2, 0},  // Wrong zero-point count.
+      {{1, 1, 1, 1}, {}, 2, 0},         // Missing zero points.
+      {{1, 1, 1, 1}, {0}, 2, 1},        // Wrong quantization axis.
+      {{1, 0, 1, 1}, {0}, 2, 0},        // Nonpositive scale.
+      {{1, std::numeric_limits<float>::quiet_NaN(), 1, 1}, {0}, 2, 0},
+      {{1, 1, 1, 1}, {256}, 2, 0},  // Unrepresentable zero point.
+  };
+  for (size_t index = 0; index < invalid.size(); ++index) {
+    SCOPED_TRACE(index);
+    TensorHandle tensor(
+        {.type = Type::kI8,
+         .shape = {2, 4},
+         .buffer = std::make_shared<SpanCpuBuffer>(data),
+         .quantization =
+             std::make_shared<BlockwiseQuantization>(invalid[index])});
+    EXPECT_EQ(GemmaEmbeddingTable::Create(tensor, 4).status().code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+}
+
+TEST(QuantizedEmbeddingTest, RejectsInvalidPerChannelMetadata) {
+  const std::vector<int8_t> data(8, 1);
+  const std::vector<PerChannelAffineQuantization> invalid = {
+      {{1}, {0}, 0}, {{1, 1}, {0, 0, 0}, 0}, {{1, 1}, {0}, 1}};
+  for (const auto& quant : invalid) {
+    TensorHandle tensor(
+        {.type = Type::kI8,
+         .shape = {2, 4},
+         .buffer = std::make_shared<SpanCpuBuffer>(data),
+         .quantization =
+             std::make_shared<PerChannelAffineQuantization>(quant)});
+    EXPECT_EQ(GemmaEmbeddingTable::Create(tensor).status().code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+}
+
+TEST(QuantizedEmbeddingTest, RejectsOddPackedInt4Rows) {
+  const std::vector<uint8_t> data(4, 0);
+  TensorHandle tensor(
+      {.type = Type::kI4,
+       .shape = {2, 3},
+       .buffer = std::make_shared<SpanCpuBuffer>(data),
+       .quantization = std::make_shared<PerChannelAffineQuantization>(
+           std::vector<float>{1, 1}, std::vector<int64_t>{0}, 0)});
+  EXPECT_EQ(GemmaEmbeddingTable::Create(tensor).status().code(),
+            absl::StatusCode::kInvalidArgument);
+}
+
+TEST(QuantizedEmbeddingTest, RejectsInvalidPerLayerDimensions) {
+  const std::vector<float> data(8, 1.0f);
+  TensorHandle tensor({.type = Type::kFP32,
+                       .shape = {2, 4},
+                       .buffer = std::make_shared<SpanCpuBuffer>(data)});
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto table,
+                                  GemmaEmbeddingTable::Create(tensor));
+  for (const auto& dimensions : {std::pair<int, int>{-1, 2},
+                                 {2, 0},
+                                 {std::numeric_limits<int>::max(), 2}}) {
+    EXPECT_EQ(table->LookupPerLayer(0, dimensions.first, dimensions.second)
+                  .status()
+                  .code(),
+              absl::StatusCode::kInvalidArgument);
+  }
 }
 
 }  // namespace

@@ -28,3 +28,10 @@ cmake_build/
 .vscode/
 *.whl
 /.litert_configure.bazelrc
+
+# Repository-local native runner builds and Bazel caches.
+/.native-tensor-build/
+/.bazel-output/
+/.bazel-output-*/
+/.bazelisk-cache/
+/.cache/

@@ -15,27 +15,35 @@ limitations under the License.
 
 #include "tensor/examples/gemma4/gemma4_graph.h"
 
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"          // from @com_google_absl
+#include "absl/types/span.h"
 #include "tensor/backends/xnnpack/arithmetic.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
+#include "tensor/examples/gemma4/gemma4_weights.h"
+#include "tensor/examples/gemma4/helpers/rope.h"
 #include "tensor/examples/ops/transformer/transformer_ops_xnnpack.h"  // IWYU pragma: keep
 #include "tensor/runners/xnnpack/runner.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/matchers.h"
+#include "xnnpack.h"
+#ifndef LITERT_TENSOR_STANDALONE
 #include "tflite/delegates/xnnpack/weight_cache.h"
+#endif
 
 namespace litert::tensor::examples::gemma4 {
 namespace {
@@ -183,6 +191,72 @@ absl::flat_hash_map<std::string, XnnTensor> CreateGemma4GraphTestWeights(
 
   return weights;
 }
+
+class Gemma4OutputHeadTest : public ::testing::TestWithParam<bool> {};
+
+TEST_P(Gemma4OutputHeadTest, ProjectsWithCheckpointWeights) {
+  Config config = Config::E4B();
+  // Isolate the final normalization and output projection from transformer
+  // layers so that the logits have a simple numerical reference.
+  config.num_layers = 0;
+  config.vocab_size = 3;
+  config.embed_dim = 2;
+  config.final_logit_softcap = 0.0f;
+
+  Gemma4Inputs<XnnpackMixinTag> inputs;
+  inputs.embedded_input.Set(
+      {.name = "embedded_input", .type = Type::kFP32, .shape = {1, 2, 2}});
+  absl::flat_hash_map<std::string, XnnTensor> checkpoint_weights;
+  checkpoint_weights.insert(
+      {"model.language_model.norm.weight",
+       XnnTensor({.type = Type::kFP32,
+                  .shape = {2},
+                  .buffer = std::vector<float>{1.0f, 1.0f}})});
+  checkpoint_weights.insert(
+      {"model.language_model.embed_tokens.weight",
+       XnnTensor({.type = Type::kFP32,
+                  .shape = {3, 2},
+                  .buffer = std::vector<float>{1.0f, 0.0f, 0.0f, 1.0f, 1.0f,
+                                               1.0f}})});
+  if (GetParam()) {
+    checkpoint_weights.insert(
+        {"lm_head.weight",
+         XnnTensor({.type = Type::kFP32,
+                    .shape = {3, 2},
+                    .buffer = std::vector<float>{2.0f, 0.0f, 0.0f, 3.0f, -1.0f,
+                                                 1.0f}})});
+  }
+
+  // Apply the same mapping used to load checkpoint tensors in the example.
+  for (const auto& [source_name, target_name] : GetGemma4WeightMapping(0)) {
+    auto it = checkpoint_weights.find(source_name);
+    if (it != checkpoint_weights.end()) {
+      inputs.weights.insert({target_name, it->second});
+    }
+  }
+
+  auto outputs = BuildGemma4Graph(inputs, config);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(XnnpackRunner runner,
+                                  XnnpackRunner::Create({outputs.logits}));
+  const std::array<float, 4> input_data = {1.0f, -1.0f, -1.0f, 1.0f};
+  ASSERT_THAT(runner.SetInput(inputs.embedded_input, input_data), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+
+  // RMSNorm gives approximately [1, -1] and [-1, 1]. Project each row
+  // against the selected weights, allowing for the normalization epsilon.
+  const std::array<float, 6> expected_logits =
+      GetParam() ? std::array<float, 6>{2.0f, -3.0f, -2.0f, -2.0f, 3.0f, 2.0f}
+                 : std::array<float, 6>{1.0f, -1.0f, 0.0f, -1.0f, 1.0f, 0.0f};
+  EXPECT_THAT(runner.ReadOutputAs<float>(outputs.logits),
+              IsOkAndHolds(Pointwise(FloatNear(1e-5f), expected_logits)));
+}
+
+INSTANTIATE_TEST_SUITE_P(Gemma4GraphTest, Gemma4OutputHeadTest,
+                         ::testing::Bool(),
+                         [](const ::testing::TestParamInfo<bool>& info) {
+                           return info.param ? "ExplicitHead"
+                                             : "TiedEmbeddings";
+                         });
 
 TEST(Gemma4GraphTest, ModelTest) {
   Config config = Config::E4B();
@@ -790,6 +864,308 @@ TEST(Gemma4GraphTest, PerLayerInputsWithProjectionGraphTest) {
               IsOkAndHolds(Pointwise(FloatNear(1e-2f), expected_data)));
 }
 
+// Compare a causal four-token prefill against a two-token prefill followed by
+// two invocations of one decode runtime. The second decode grows already-bound
+// external buffers, exercising the cache reshape/rebind contract used by main.
+TEST(Gemma4GraphTest, PrefillMatchesMultiStepCachedDecode) {
+  Config config = Config::E4B();
+  config.num_layers = 2;
+  config.vocab_size = 10;
+  config.embed_dim = 4;
+  config.hidden_dim = 6;
+  config.head_dim = 4;
+  config.num_heads = 2;
+  config.num_kv_heads = 1;
+  config.per_layer_input_dim = 0;
+  config.frac_shared_layers = 0;
+  config.final_logit_softcap = 10.0f;
+  const auto weights = CreateGemma4GraphTestWeights(config.num_layers);
+  auto make_inputs = [&](int seq_len, int cache_len) {
+    Gemma4Inputs<XnnpackMixinTag> inputs;
+    inputs.embedded_input.Set({.type = Type::kFP32, .shape = {1, seq_len, 4}});
+    inputs.sliding_attention_mask.Set(
+        {.type = Type::kFP32, .shape = {1, 1, seq_len, cache_len + seq_len}});
+    inputs.rope_local_cos.Set(
+        {.type = Type::kFP32, .shape = {1, 1, seq_len, 4}});
+    inputs.rope_local_sin.Set(
+        {.type = Type::kFP32, .shape = {1, 1, seq_len, 4}});
+    if (cache_len > 0) {
+      for (int layer = 0; layer < config.num_layers; ++layer) {
+        inputs.key_caches.emplace_back(
+            TensorInit{.type = Type::kFP32, .shape = {1, 1, cache_len, 4}});
+        inputs.value_caches.emplace_back(
+            TensorInit{.type = Type::kFP32, .shape = {1, 1, cache_len, 4}});
+      }
+    }
+    inputs.weights = weights;
+    return inputs;
+  };
+
+  const std::array<float, 16> embeddings = {1, 2,  3, 4,    5,  6, 7,    8,
+                                            2, -1, 3, 0.5f, -2, 1, 0.5f, 4};
+  std::array<float, 16> cos, sin;
+  RopeCosSin(/*start=*/0, /*seq_len=*/4, /*head_dim=*/4,
+             /*rope_base=*/10000.0f, /*rope_proportion=*/1.0f,
+             absl::MakeSpan(cos), absl::MakeSpan(sin));
+  const std::array<float, 16> full_mask = {
+      0, -1e9f, -1e9f, -1e9f, 0, 0, -1e9f, -1e9f, 0, 0, 0, -1e9f, 0, 0, 0, 0};
+  // Generated independently by
+  // helpers/reference/gemma4_graph.py's multi-step decode reference case.
+  const std::array<float, 40> expected = {
+      0.07118023f, 0.44415282f, 0.81589137f, 1.18537364f, 1.55160218f,
+      1.91361499f, 2.27049538f, 2.62138022f, 2.96546808f, 3.30202547f,
+      0.06653243f, 0.46050390f, 0.85304801f, 1.24296166f, 1.62907398f,
+      2.01026017f, 2.38545424f, 2.75365961f, 3.11395924f, 3.46552305f,
+      0.04697882f, 0.32250549f, 0.59754287f, 0.87167595f, 1.14449521f,
+      1.41559899f, 1.68459597f, 1.95110697f, 2.21476733f, 2.47522896f,
+      0.07168668f, 0.35620077f, 0.64013865f, 0.92304388f, 1.20446668f,
+      1.48396671f, 1.76111605f, 2.03550113f, 2.30672551f, 2.57441229f};
+
+  auto full_inputs = make_inputs(/*seq_len=*/4, /*cache_len=*/0);
+  auto full_outputs = BuildGemma4Graph(full_inputs, config);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto full_runner, XnnpackRunner::Create(full_outputs.GetAllHandles()));
+  ASSERT_THAT(full_runner.SetInput(full_inputs.embedded_input, embeddings),
+              IsOk());
+  ASSERT_THAT(
+      full_runner.SetInput(full_inputs.sliding_attention_mask, full_mask),
+      IsOk());
+  ASSERT_THAT(full_runner.SetInput(full_inputs.rope_local_cos, cos), IsOk());
+  ASSERT_THAT(full_runner.SetInput(full_inputs.rope_local_sin, sin), IsOk());
+  ASSERT_THAT(full_runner.Run(), IsOk());
+  EXPECT_THAT(full_runner.ReadOutputAs<float>(full_outputs.logits),
+              IsOkAndHolds(Pointwise(FloatNear(1e-4f), expected)));
+
+  auto prefill_inputs = make_inputs(/*seq_len=*/2, /*cache_len=*/0);
+  auto prefill_outputs = BuildGemma4Graph(prefill_inputs, config);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto prefill_runner,
+      XnnpackRunner::Create(prefill_outputs.GetAllHandles()));
+  const std::array<float, 4> prefill_mask = {0, -1e9f, 0, 0};
+  const auto prefill_embeddings = absl::MakeConstSpan(embeddings).first(8);
+  const auto prefill_cos = absl::MakeConstSpan(cos).first(8);
+  const auto prefill_sin = absl::MakeConstSpan(sin).first(8);
+  ASSERT_THAT(prefill_runner.SetInput(prefill_inputs.embedded_input,
+                                      prefill_embeddings),
+              IsOk());
+  ASSERT_THAT(prefill_runner.SetInput(prefill_inputs.sliding_attention_mask,
+                                      prefill_mask),
+              IsOk());
+  ASSERT_THAT(
+      prefill_runner.SetInput(prefill_inputs.rope_local_cos, prefill_cos),
+      IsOk());
+  ASSERT_THAT(
+      prefill_runner.SetInput(prefill_inputs.rope_local_sin, prefill_sin),
+      IsOk());
+  ASSERT_THAT(prefill_runner.Run(), IsOk());
+  EXPECT_THAT(prefill_runner.ReadOutputAs<float>(prefill_outputs.logits),
+              IsOkAndHolds(Pointwise(FloatNear(1e-4f),
+                                     absl::MakeConstSpan(expected).first(20))));
+
+  std::vector<std::vector<float>> keys(config.num_layers);
+  std::vector<std::vector<float>> values(config.num_layers);
+  for (int layer = 0; layer < config.num_layers; ++layer) {
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto key,
+        prefill_runner.ReadOutputAs<float>(prefill_outputs.key_caches[layer]));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto value,
+                                    prefill_runner.ReadOutputAs<float>(
+                                        prefill_outputs.value_caches[layer]));
+    keys[layer].assign(key.begin(), key.end());
+    values[layer].assign(value.begin(), value.end());
+  }
+
+  auto decode_inputs = make_inputs(/*seq_len=*/1, /*cache_len=*/2);
+  auto decode_outputs = BuildGemma4Graph(decode_inputs, config);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto decode_runner,
+      XnnpackRunner::Create(decode_outputs.GetAllHandles()));
+  const std::array<float, 4> decode_mask = {0, 0, 0, 0};
+  for (int position = 2; position < 4; ++position) {
+    SCOPED_TRACE(position);
+    const auto mask_view = absl::MakeConstSpan(decode_mask).first(position + 1);
+    const auto embedding_view =
+        absl::MakeConstSpan(embeddings).subspan(position * 4, 4);
+    const auto cos_view = absl::MakeConstSpan(cos).subspan(position * 4, 4);
+    const auto sin_view = absl::MakeConstSpan(sin).subspan(position * 4, 4);
+    ASSERT_THAT(decode_runner.ReshapeInput(decode_inputs.sliding_attention_mask,
+                                           {1, 1, 1, position + 1}),
+                IsOk());
+    ASSERT_THAT(
+        decode_runner.SetInput(decode_inputs.sliding_attention_mask, mask_view),
+        IsOk());
+    ASSERT_THAT(
+        decode_runner.SetInput(decode_inputs.embedded_input, embedding_view),
+        IsOk());
+    ASSERT_THAT(decode_runner.SetInput(decode_inputs.rope_local_cos, cos_view),
+                IsOk());
+    ASSERT_THAT(decode_runner.SetInput(decode_inputs.rope_local_sin, sin_view),
+                IsOk());
+    for (int layer = 0; layer < config.num_layers; ++layer) {
+      ASSERT_THAT(decode_runner.ReshapeInput(decode_inputs.key_caches[layer],
+                                             {1, 1, position, 4}),
+                  IsOk());
+      ASSERT_THAT(decode_runner.ReshapeInput(decode_inputs.value_caches[layer],
+                                             {1, 1, position, 4}),
+                  IsOk());
+      ASSERT_THAT(
+          decode_runner.SetInput(decode_inputs.key_caches[layer], keys[layer]),
+          IsOk());
+      ASSERT_THAT(decode_runner.SetInput(decode_inputs.value_caches[layer],
+                                         values[layer]),
+                  IsOk());
+    }
+    ASSERT_THAT(decode_runner.Run(), IsOk());
+    EXPECT_THAT(decode_runner.ReadOutputAs<float>(decode_outputs.logits),
+                IsOkAndHolds(Pointwise(
+                    FloatNear(1e-4f),
+                    absl::MakeConstSpan(expected).subspan(position * 10, 10))));
+    for (int layer = 0; layer < config.num_layers; ++layer) {
+      LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+          auto key,
+          decode_runner.ReadOutputAs<float>(decode_outputs.key_caches[layer]));
+      LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto value,
+                                      decode_runner.ReadOutputAs<float>(
+                                          decode_outputs.value_caches[layer]));
+      ASSERT_EQ(key.size(), 4);
+      ASSERT_EQ(value.size(), 4);
+      keys[layer].insert(keys[layer].end(), key.begin(), key.end());
+      values[layer].insert(values[layer].end(), value.begin(), value.end());
+    }
+  }
+  for (int layer = 0; layer < config.num_layers; ++layer) {
+    EXPECT_THAT(full_runner.ReadOutputAs<float>(full_outputs.key_caches[layer]),
+                IsOkAndHolds(Pointwise(FloatNear(1e-4f), keys[layer])));
+    EXPECT_THAT(
+        full_runner.ReadOutputAs<float>(full_outputs.value_caches[layer]),
+        IsOkAndHolds(Pointwise(FloatNear(1e-4f), values[layer])));
+  }
+}
+
+TEST(Gemma4GraphTest, NativeWeightCacheTest) {
+  ASSERT_EQ(xnn_initialize(nullptr), xnn_status_success);
+  xnn_weights_cache_t raw_cache = nullptr;
+  ASSERT_EQ(xnn_create_weights_cache(&raw_cache), xnn_status_success);
+  // Runners borrow the cache, so it must outlive both runtime instances.
+  std::unique_ptr<xnn_weights_cache_provider,
+                  decltype(&xnn_delete_weights_cache)>
+      cache(raw_cache, &xnn_delete_weights_cache);
+
+  Config config = Config::E4B();
+  config.num_layers = 2;
+  config.vocab_size = 10;
+  config.embed_dim = 4;
+  config.hidden_dim = 6;
+  config.head_dim = 4;
+  config.num_heads = 2;
+  config.num_kv_heads = 1;
+  config.use_post_attn_norm = true;
+  config.use_post_ffw_norm = true;
+  config.final_logit_softcap = 10.0f;
+
+  XnnTensor embedded_input(
+      {.name = "embedded_input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  XnnTensor sliding_attention_mask({.name = "sliding_attention_mask",
+                                    .type = Type::kFP32,
+                                    .shape = {1, 1, 2, 2}});
+  XnnTensor rope_local_cos(
+      {.name = "rope_local_cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  XnnTensor rope_local_sin(
+      {.name = "rope_local_sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+
+  auto weights = CreateGemma4GraphTestWeights(2);
+
+  const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
+                                           5.0f, 6.0f, 7.0f, 8.0f};
+  const std::array<float, 4> mask_data = {0.0f, -1e9f, 0.0f, 0.0f};
+  const std::array<float, 8> cos_data = {0.8660254f, 0.5f, 0.8660254f, 0.5f,
+                                         0.7071068f, 0.0f, 0.7071068f, 0.0f};
+  const std::array<float, 8> sin_data = {
+      0.5f, 0.8660254f, 0.5f, 0.8660254f, 0.7071068f, 1.0f, 0.7071068f, 1.0f};
+
+  std::vector<float> run1_logits;
+
+  // Run 1 packs the shared constant weights into the native in-memory cache.
+  {
+    Gemma4Inputs<XnnpackMixinTag> inputs;
+    inputs.embedded_input = embedded_input;
+    inputs.sliding_attention_mask = sliding_attention_mask;
+    inputs.rope_local_cos = rope_local_cos;
+    inputs.rope_local_sin = rope_local_sin;
+    inputs.weights = weights;
+
+    Gemma4Outputs<XnnpackMixinTag> model_outputs =
+        BuildGemma4Graph(inputs, config);
+
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        XnnpackRunner runner, XnnpackRunner::Create({model_outputs.logits}));
+    runner.SetWeightsCache(cache.get());
+    ASSERT_THAT(runner.PrepareRuntime(), IsOk());
+
+    // Soft finalization permits a later runtime to reuse these same weights.
+    ASSERT_EQ(xnn_finalize_weights_cache(
+                  cache.get(), xnn_weights_cache_finalization_kind_soft),
+              xnn_status_success);
+
+    ASSERT_THAT(runner.SetInput(embedded_input, input_data), IsOk());
+    ASSERT_THAT(runner.SetInput(sliding_attention_mask, mask_data), IsOk());
+    ASSERT_THAT(runner.SetInput(rope_local_cos, cos_data), IsOk());
+    ASSERT_THAT(runner.SetInput(rope_local_sin, sin_data), IsOk());
+
+    ASSERT_THAT(runner.Run(), IsOk());
+
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(LockedBufferSpan<const std::byte> result,
+                                    runner.ReadOutput(model_outputs.logits));
+    LockedBufferSpan<const float> floats = std::move(result).As<const float>();
+    ASSERT_EQ(floats.size(), 20);
+
+    // Expected values calculated using helpers/reference/gemma4_graph.py, these
+    // results are the same as for `ModelTest`.
+    const std::array<float, 20> expected_data = {
+        0.071322f, 0.443513f, 0.814477f, 1.183199f, 1.548685f,
+        1.909981f, 2.266176f, 2.616409f, 2.959886f, 3.295875f,
+        0.066592f, 0.460456f, 0.852894f, 1.242703f, 1.628713f,
+        2.009801f, 2.384902f, 2.753019f, 3.113236f, 3.464724f};
+
+    EXPECT_THAT(floats, Pointwise(FloatNear(1e-5f), expected_data));
+    run1_logits.assign(floats.begin(), floats.end());
+  }
+
+  // Run 2 creates a fresh graph/runtime and reuses the finalized cache.
+  {
+    EXPECT_TRUE(xnn_weights_cache_is_finalized(cache.get()));
+
+    Gemma4Inputs<XnnpackMixinTag> inputs;
+    inputs.embedded_input = embedded_input;
+    inputs.sliding_attention_mask = sliding_attention_mask;
+    inputs.rope_local_cos = rope_local_cos;
+    inputs.rope_local_sin = rope_local_sin;
+    inputs.weights = weights;
+
+    Gemma4Outputs<XnnpackMixinTag> model_outputs =
+        BuildGemma4Graph(inputs, config);
+
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        XnnpackRunner runner, XnnpackRunner::Create({model_outputs.logits}));
+    runner.SetWeightsCache(cache.get());
+
+    ASSERT_THAT(runner.SetInput(embedded_input, input_data), IsOk());
+    ASSERT_THAT(runner.SetInput(sliding_attention_mask, mask_data), IsOk());
+    ASSERT_THAT(runner.SetInput(rope_local_cos, cos_data), IsOk());
+    ASSERT_THAT(runner.SetInput(rope_local_sin, sin_data), IsOk());
+
+    ASSERT_THAT(runner.Run(), IsOk());
+
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(LockedBufferSpan<const std::byte> result,
+                                    runner.ReadOutput(model_outputs.logits));
+    LockedBufferSpan<const float> floats = std::move(result).As<const float>();
+    ASSERT_EQ(floats.size(), 20);
+
+    EXPECT_THAT(floats, Pointwise(FloatNear(1e-5f), run1_logits));
+  }
+}
+
+#ifndef LITERT_TENSOR_STANDALONE
 void MapWeightIdentifiers(
     tflite::xnnpack::MMapWeightCacheProvider& cache_provider,
     const absl::flat_hash_map<std::string, XnnTensor>& weights) {
@@ -930,6 +1306,8 @@ TEST(Gemma4GraphTest, WeightCacheTest) {
 
   remove(cache_path.c_str());
 }
+
+#endif  // LITERT_TENSOR_STANDALONE
 
 }  // namespace
 }  // namespace litert::tensor::examples::gemma4

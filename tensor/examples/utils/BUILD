@@ -101,6 +101,7 @@ cc_test(
     name = "safetensor_loader_test",
     srcs = ["safetensor_loader_test.cc"],
     deps = [
+        "//tensor:buffer",
         ":safetensor_loader",
         ":safetensors",
         "//tensor/utils:matchers",

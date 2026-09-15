@@ -1,0 +1,96 @@
+diff --git a/.bazelrc b/.bazelrc
+index 051870ba7a..e7e7309860 100644
+--- a/.bazelrc
++++ b/.bazelrc
+@@ -576,3 +576,6 @@ build:hermetic_linux --host_crosstool_top=@rules_ml_toolchain//cc:linux_x86_64_l
+ build:hermetic_linux --cxxopt=-std=c++17
+ build:hermetic_linux --host_cxxopt=-std=c++17
+ build:hermetic_linux --repo_env=SYSROOT_DIST=linux_glibc_2_31
++
++# PR #9918: match the updated XNNPACK Windows build configuration.
++build:windows --define=xnn_enable_avx512bf16=false
+diff --git a/WORKSPACE b/WORKSPACE
+index 72b0356ab9..75b87554e3 100644
+--- a/WORKSPACE
++++ b/WORKSPACE
+@@ -7,14 +7,28 @@ LITERT_REF = "761d99cb90e20c67efcb3fe1119a60c92381bd1a"
+ 
+ LITERT_SHA256 = "d3d754ee80454011b1600dc372ef8f501a3575dbe8b0a115ec74c7805c0e0658"
+ 
+-TENSORFLOW_REF = "d9a8da74b4c3de28a39ab34ad007838d6bc30c67"
++TENSORFLOW_REF = "5c0b7a5946f0f485e3a532b2a00e03f42a6e14c1"
+ 
+-TENSORFLOW_SHA256 = "cd46b37c0f722d5a48c0accc9618cc5684c553332b913091023703461f318d9b"
++TENSORFLOW_SHA256 = "7bf06cfd5ff9b462b1b25ca4dc3613fa5e3847fd8e291ff0a8de2ca5a812590a"
+ 
+ # buildifier: disable=load-on-top
+ 
+ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_jar")
+ 
++http_archive(
++    name = "bazel_skylib",
++    sha256 = "3b5b49006181f5f8ff626ef8ddceaa95e9bb8ad294f7b5d7b11ea9f7ddaf8c59",
++    urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/1.9.0/bazel-skylib-1.9.0.tar.gz"],
++)
++
++# Match PR #9918's TensorFlow before rules_shell/go can install an older rules_cc.
++http_archive(
++    name = "rules_cc",
++    sha256 = "69e05df29f0010ba248ef8dafc1f084c8fd2f5c553da634422d8167f5c4b277b",
++    strip_prefix = "rules_cc-0.2.20",
++    urls = ["https://github.com/bazelbuild/rules_cc/releases/download/0.2.20/rules_cc-0.2.20.tar.gz"],
++)
++
+ http_archive(
+     name = "rules_shell",
+     sha256 = "bc61ef94facc78e20a645726f64756e5e285a045037c7a61f65af2941f4c25e1",
+@@ -51,6 +65,9 @@ http_archive(
+     url = "https://github.com/bazelbuild/rules_apple/releases/download/3.22.0/rules_apple.3.22.0.tar.gz",
+ )
+ 
++# PR #9918: declare before Apple repositories, which also declare skylib.
++
++
+ load(
+     "@build_bazel_rules_apple//apple:repositories.bzl",
+     "apple_rules_dependencies",
+@@ -151,6 +168,15 @@ load("@org_tensorflow//tensorflow:workspace3.bzl", "tf_workspace3")
+ 
+ tf_workspace3()
+ 
++# PR #9918: initialize repositories required by the newer TensorFlow.
++load("@bazel_features//:deps.bzl", "bazel_features_deps")
++
++bazel_features_deps()
++
++load("@rules_cc//cc:extensions.bzl", "compatibility_proxy_repo")
++
++compatibility_proxy_repo()
++
+ load(
+     "@rules_ml_toolchain//cc/deps:cc_toolchain_deps.bzl",
+     "cc_toolchain_deps",
+@@ -179,6 +205,7 @@ python_init_repositories(
+         "3.12": "@org_tensorflow//:requirements_lock_3_12.txt",
+         "3.13": "@org_tensorflow//:requirements_lock_3_13.txt",
+         "3.14": "@org_tensorflow//:requirements_lock_3_14.txt",
++        "3.14-freethreaded": "@org_tensorflow//:requirements_lock_3_14_freethreaded.txt",
+     },
+ )
+ 
+@@ -481,6 +508,15 @@ http_archive(
+     url = "https://github.com/nothings/stb/archive/f58f558c120e9b32c217290b80bad1a0729fbb2c.zip",
+ )
+ 
++# Local LiteRT repository alias; copied from the existing local integration.
++http_archive(
++    name = "stblib",
++    build_file = "@//:BUILD.stb",
++    sha256 = "119b9f3cca3e50225dc946ed1acd1b7a160943bc8bf549760109cea4e4e7c836",
++    strip_prefix = "stb-f58f558c120e9b32c217290b80bad1a0729fbb2c",
++    url = "https://github.com/nothings/stb/archive/f58f558c120e9b32c217290b80bad1a0729fbb2c.zip",
++)
++
+ http_jar(
+     name = "javax_json",
+     sha256 = "0e1dec40a1ede965941251eda968aeee052cc4f50378bc316cc48e8159bdbeb4",

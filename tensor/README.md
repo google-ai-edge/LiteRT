@@ -227,3 +227,19 @@ int main() {
   return 0;
 }
 ```
+
+## Local native Gemma4 development and tests
+
+The native XNNPACK development work is consolidated in
+[`examples/gemma4/native`](examples/gemma4/native/README.md), including active
+INT8 KV storage, bounded attention, reusable prefill stages, compact INT2
+weights and shared scratch. The standard Gemma4 example and shared mobile
+checkpoint loader remain in their existing packages.
+
+See [standalone build and testing instructions](standalone/README.md) for Linux
+unit tests, Android builds using `ANDROID_HOME`, phone unit tests, and full-model
+correctness/performance comparisons against a frozen runner. The
+[LiteRT-LM comparison guide](examples/gemma4/native/REPRODUCE.md) explains the
+native build, model preparation, and matching CPU performance workloads.
+Model weights, historical captures, and build caches are separate from this
+source tree.

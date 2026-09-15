@@ -19,7 +19,7 @@ limitations under the License.
 #include <string>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"          // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
@@ -88,8 +88,8 @@ TransformerLayerOutput<Mixins...> TransformerLayer(
   Tensor down_proj =
       GetWeight(weights, absl::StrCat(layer_prefix, ".mlp.down_proj.weight"),
                 Type::kFP32, {config.embed_dim, config.hidden_dim});
-  Tensor ffn_output =
-      FeedForwardNetwork(normed_attn_output, gate_proj, up_proj, down_proj);
+  Tensor ffn_output = FeedForwardNetwork(normed_attn_output, gate_proj, up_proj,
+                                         down_proj, &weights);
 
   if (config.use_post_ffw_norm) {
     Tensor post_ffn_norm_scale = GetWeight(
@@ -118,9 +118,11 @@ TransformerLayerOutput<Mixins...> TransformerLayer(
         absl::StrCat(layer_prefix, ".post_per_layer_input_norm.weight"),
         Type::kFP32, {config.embed_dim});
 
-    Tensor gate_val = FullyConnected(ffn_residual, per_layer_input_gate);
+    Tensor gate_val =
+        MobileFullyConnected(ffn_residual, per_layer_input_gate, &weights);
     Tensor gated = Mul(Gelu(gate_val, /*approximate=*/true), per_layer_input);
-    Tensor projected = FullyConnected(gated, per_layer_projection);
+    Tensor projected =
+        MobileFullyConnected(gated, per_layer_projection, &weights);
     Tensor normed_projected =
         RmsNorm(projected, post_per_layer_input_norm, eps_tensor);
     ffn_residual = Add(ffn_residual, normed_projected);

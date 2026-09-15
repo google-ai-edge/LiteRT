@@ -16,18 +16,20 @@ limitations under the License.
 #include "tensor/examples/gemma4/helpers/quantized_embedding.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
-#include "absl/log/absl_log.h"  // from @com_google_absl
-#include "absl/status/status.h"  // from @com_google_absl
-#include "absl/status/statusor.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "absl/log/absl_log.h"         // from @com_google_absl
+#include "absl/status/status.h"        // from @com_google_absl
+#include "absl/status/statusor.h"      // from @com_google_absl
+#include "absl/strings/str_cat.h"      // from @com_google_absl
+#include "absl/types/span.h"           // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/tensor.h"
@@ -53,7 +55,7 @@ int32_t GemmaEmbeddingTable::ClampTokenId(int32_t token_id) const {
 
 absl::Status GemmaEmbeddingTable::Lookup(absl::Span<const int32_t> token_ids,
                                          absl::Span<float> output) const {
-  if (output.size() < token_ids.size() * static_cast<size_t>(emb_dim_)) {
+  if (token_ids.size() > output.size() / static_cast<size_t>(emb_dim_)) {
     return absl::InvalidArgumentError(
         "Output buffer is smaller than requested lookup size");
   }
@@ -71,13 +73,14 @@ absl::Status GemmaEmbeddingTable::LookupPerLayer(
   if (output_per_layer.size() < static_cast<size_t>(num_layers)) {
     return absl::InvalidArgumentError("output_per_layer size mismatch");
   }
-  if (emb_dim_ < num_layers * per_layer_dim) {
+  if (num_layers <= 0 || per_layer_dim <= 0 ||
+      num_layers > emb_dim_ / per_layer_dim) {
     return absl::InvalidArgumentError(
         "Embedding dimension smaller than num_layers * per_layer_dim");
   }
   const size_t seq_len = token_ids.size();
   for (size_t l = 0; l < num_layers; ++l) {
-    if (output_per_layer[l].size() < seq_len * per_layer_dim) {
+    if (seq_len > output_per_layer[l].size() / per_layer_dim) {
       return absl::InvalidArgumentError(
           absl::StrCat("Layer ", l, " output size is too small."));
     }
@@ -97,7 +100,8 @@ absl::Status GemmaEmbeddingTable::LookupPerLayer(
 absl::StatusOr<std::vector<LockedBufferSpan<const float>>>
 GemmaEmbeddingTable::LookupPerLayer(int32_t token_id, int num_layers,
                                     int per_layer_dim) const {
-  if (emb_dim_ < num_layers * per_layer_dim) {
+  if (num_layers <= 0 || per_layer_dim <= 0 ||
+      num_layers > emb_dim_ / per_layer_dim) {
     return absl::InvalidArgumentError(
         "Embedding dimension smaller than num_layers * per_layer_dim");
   }
@@ -127,7 +131,8 @@ class Fp32GemmaEmbeddingTable : public GemmaEmbeddingTable {
   absl::StatusOr<LockedBufferSpan<const float>> Lookup(
       int32_t token_id) const override {
     token_id = ClampTokenId(token_id);
-    return locked_span_.SubSpan(token_id * emb_dim_, emb_dim_);
+    return locked_span_.SubSpan(static_cast<size_t>(token_id) * emb_dim_,
+                                emb_dim_);
   }
 
  protected:
@@ -140,6 +145,40 @@ class Fp32GemmaEmbeddingTable : public GemmaEmbeddingTable {
 
  private:
   LockedBufferSpan<const float> locked_span_;
+};
+
+// Keep the original 16-bit table mapped and convert only requested rows.
+// A single-token result owns one FP32 row, including when sliced per layer.
+template <Type type>
+class Float16GemmaEmbeddingTable : public GemmaEmbeddingTable {
+ public:
+  using Element = typename NativeStorage<type>::type;
+
+  Float16GemmaEmbeddingTable(TensorHandle tensor, int vocab_size, int emb_dim,
+                             LockedBufferSpan<const Element> locked_span)
+      : GemmaEmbeddingTable(std::move(tensor), vocab_size, emb_dim, type),
+        locked_span_(std::move(locked_span)) {}
+
+  absl::StatusOr<LockedBufferSpan<const float>> Lookup(
+      int32_t token_id) const override {
+    token_id = ClampTokenId(token_id);
+    auto row = std::make_unique<float[]>(emb_dim_);
+    DecodeRow(token_id, 0, emb_dim_, row.get());
+    return LockedBufferSpan<const float>(std::move(row), emb_dim_);
+  }
+
+ protected:
+  void DecodeRow(int32_t row, int col_start, int num_cols,
+                 float* dst) const override {
+    const Element* source =
+        locked_span_.data() + static_cast<size_t>(row) * emb_dim_ + col_start;
+    for (int col = 0; col < num_cols; ++col) {
+      dst[col] = ConvertTo<Type::kFP32>(source[col]);
+    }
+  }
+
+ private:
+  LockedBufferSpan<const Element> locked_span_;
 };
 
 // On-the-fly dequantizing embedding table implementation for INT4 and INT8.
@@ -276,24 +315,28 @@ class QuantizedGemmaEmbeddingTable : public GemmaEmbeddingTable {
 
 absl::StatusOr<std::unique_ptr<GemmaEmbeddingTable>>
 GemmaEmbeddingTable::Create(TensorHandle tensor, int expected_emb_dim) {
+  LRT_TENSOR_RETURN_IF_ERROR(tensor.GetStatus());
   if (tensor.GetShape().size() != 2) {
     return absl::InvalidArgumentError(absl::StrCat(
         "Embedding table must be 2D, got rank ", tensor.GetShape().size()));
   }
   const int vocab_size = tensor.GetShape()[0];
-  int emb_dim = tensor.GetShape()[1];
-  if (vocab_size <= 0 || emb_dim <= 0) {
+  const int stored_dim = tensor.GetShape()[1];
+  if (vocab_size <= 0 || stored_dim <= 0 || expected_emb_dim < 0) {
     return absl::InvalidArgumentError(
-        "Embedding table dimensions must be positive");
+        "Embedding dimensions must be positive (expected dimension may be 0)");
   }
-
-  LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & buffer, tensor.GetBuffer());
   const Type type = tensor.GetType();
-  auto quant = tensor.GetQuantization();
+  const auto quant = tensor.GetQuantization();
+  int logical_dim = expected_emb_dim > 0 ? expected_emb_dim : stored_dim;
+  std::shared_ptr<PerChannelAffineQuantization> per_channel_quant;
+  std::shared_ptr<BlockwiseQuantization> blockwise_quant;
 
   if (quant != nullptr) {
-    std::shared_ptr<PerChannelAffineQuantization> per_channel_quant;
-    std::shared_ptr<BlockwiseQuantization> blockwise_quant;
+    if (type != Type::kI4 && type != Type::kI8) {
+      return absl::InvalidArgumentError(
+          "Quantized embedding tables must use INT4 or INT8 storage");
+    }
     if (auto pc = quant->As<const PerChannelAffineQuantization>(); pc.ok()) {
       per_channel_quant = std::make_shared<PerChannelAffineQuantization>(*pc);
     } else if (auto bw = quant->As<const BlockwiseQuantization>(); bw.ok()) {
@@ -302,45 +345,119 @@ GemmaEmbeddingTable::Create(TensorHandle tensor, int expected_emb_dim) {
       return absl::InvalidArgumentError(
           "Unsupported quantization format for embedding table");
     }
-
-    // Tensor shapes count logical elements, including for packed INT4.
-    int logical_emb_dim = emb_dim;
-    if (expected_emb_dim > 0) {
-      logical_emb_dim = expected_emb_dim;
-    } else if (blockwise_quant != nullptr && !blockwise_quant->scales.empty() &&
-               vocab_size > 0) {
-      const int num_blocks_per_row =
-          static_cast<int>(blockwise_quant->scales.size() / vocab_size);
-      const int computed_dim = num_blocks_per_row * blockwise_quant->block_size;
-      if (computed_dim > 0) {
-        logical_emb_dim = computed_dim;
+    if (blockwise_quant != nullptr) {
+      const int block_size = blockwise_quant->block_size;
+      if (block_size <= 0 || blockwise_quant->scales.empty() ||
+          blockwise_quant->scales.size() % vocab_size != 0) {
+        return absl::InvalidArgumentError(
+            "Embedding block size and per-row scale counts must be positive");
+      }
+      // Legacy packed INT4 tensors may report the byte width instead of the
+      // logical element width. Block counts disambiguate those two layouts.
+      if (type == Type::kI4 && expected_emb_dim == 0) {
+        const size_t blocks_per_row =
+            blockwise_quant->scales.size() / vocab_size;
+        if (blocks_per_row >
+            static_cast<size_t>(std::numeric_limits<int>::max() / block_size)) {
+          return absl::InvalidArgumentError(
+              "Embedding dimension overflows int");
+        }
+        logical_dim = static_cast<int>(blocks_per_row) * block_size;
+      }
+      if (logical_dim % block_size != 0) {
+        return absl::InvalidArgumentError(
+            "Embedding dimension must be divisible by quantization block size");
       }
     }
-
-    // INT4 rows are packed two elements per byte, so an odd dimension would
-    // make consecutive rows straddle a byte boundary, which DecodeRow's
-    // `row * (emb_dim_ / 2)` stride cannot represent.
-    if (type == Type::kI4 && logical_emb_dim % 2 != 0) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "INT4 embedding dimension must be even, got ", logical_emb_dim));
+    const auto& scales = per_channel_quant != nullptr
+                             ? per_channel_quant->scales
+                             : blockwise_quant->scales;
+    const auto& zero_points = per_channel_quant != nullptr
+                                  ? per_channel_quant->zero_points
+                                  : blockwise_quant->zero_points;
+    const int axis = per_channel_quant != nullptr
+                         ? per_channel_quant->quantized_dimension
+                         : blockwise_quant->quantized_dimension;
+    const size_t expected_scales =
+        static_cast<size_t>(vocab_size) *
+        (blockwise_quant != nullptr ? logical_dim / blockwise_quant->block_size
+                                    : 1);
+    if (axis != 0 || scales.size() != expected_scales ||
+        (zero_points.size() != 1 && zero_points.size() != expected_scales)) {
+      return absl::InvalidArgumentError(
+          "Embedding quantization requires axis 0, one scale per row or block, "
+          "and one zero point or a matching zero-point count");
     }
+    for (float scale : scales) {
+      if (!std::isfinite(scale) || scale <= 0) {
+        return absl::InvalidArgumentError(
+            "Embedding quantization scales must be finite and positive");
+      }
+    }
+    const int64_t min_zero = type == Type::kI4 ? -8 : -128;
+    const int64_t max_zero = type == Type::kI4 ? 7 : 127;
+    for (int64_t zero : zero_points) {
+      if (zero < min_zero || zero > max_zero) {
+        return absl::InvalidArgumentError(
+            "Embedding zero point is outside the storage type's range");
+      }
+    }
+  } else if (type != Type::kFP32 && type != Type::kFP16 &&
+             type != Type::kBF16) {
+    return absl::InvalidArgumentError(
+        "Unquantized embedding table must be FP32, FP16, or BF16");
+  }
 
+  const bool packed_width =
+      type == Type::kI4 && static_cast<int64_t>(stored_dim) * 2 == logical_dim;
+  if (logical_dim != stored_dim && !packed_width) {
+    return absl::InvalidArgumentError(
+        "Expected embedding dimension does not match the tensor shape");
+  }
+  if (type == Type::kI4 && logical_dim % 2 != 0) {
+    return absl::InvalidArgumentError(
+        "Packed INT4 embedding rows must contain an even number of elements");
+  }
+  const size_t row_bytes = BufferSize(type, logical_dim);
+  if (static_cast<size_t>(vocab_size) >
+      std::numeric_limits<size_t>::max() / row_bytes) {
+    return absl::InvalidArgumentError("Embedding byte size overflows size_t");
+  }
+  const size_t required_bytes = static_cast<size_t>(vocab_size) * row_bytes;
+  LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & buffer, tensor.GetBuffer());
+  LRT_TENSOR_ASSIGN_OR_RETURN(const size_t bytes, buffer.ByteSize());
+  if (bytes < required_bytes) {
+    return absl::InvalidArgumentError(
+        "Embedding buffer is smaller than the logical table size");
+  }
+  auto locked = buffer.Lock();
+  if (locked.data() == nullptr || locked.size() < required_bytes) {
+    return absl::InvalidArgumentError(
+        "Embedding buffer could not expose all required bytes");
+  }
+  const size_t alignment = type == Type::kFP32 ? alignof(float)
+                           : type == Type::kFP16 || type == Type::kBF16
+                               ? alignof(uint16_t)
+                               : 1;
+  if (reinterpret_cast<uintptr_t>(locked.data()) % alignment != 0) {
+    return absl::InvalidArgumentError("Embedding buffer is not aligned");
+  }
+  if (quant != nullptr) {
     return std::make_unique<QuantizedGemmaEmbeddingTable>(
-        std::move(tensor), vocab_size, logical_emb_dim, type,
-        buffer.Lock().As<const uint8_t>(), std::move(per_channel_quant),
+        std::move(tensor), vocab_size, logical_dim, type,
+        locked.As<const uint8_t>(), std::move(per_channel_quant),
         std::move(blockwise_quant));
   }
-
-  if (type != Type::kFP32) {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "Unquantized embedding table must be FP32, got ", ToString(type)));
+  if (type == Type::kBF16) {
+    return std::make_unique<Float16GemmaEmbeddingTable<Type::kBF16>>(
+        std::move(tensor), vocab_size, logical_dim, locked.As<const bf16_t>());
   }
-
-  const int logical_emb_dim =
-      (expected_emb_dim > 0) ? expected_emb_dim : emb_dim;
+  if (type == Type::kFP16) {
+    return std::make_unique<Float16GemmaEmbeddingTable<Type::kFP16>>(
+        std::move(tensor), vocab_size, logical_dim, locked.As<const fp16_t>());
+  }
   return std::make_unique<Fp32GemmaEmbeddingTable>(
-      std::move(tensor), vocab_size, logical_emb_dim,
-      buffer.Lock().As<const float>());
+      std::move(tensor), vocab_size, logical_dim, locked.As<const float>());
 }
 
 }  // namespace litert::tensor::examples::gemma4

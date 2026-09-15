@@ -60,6 +60,10 @@ cc_test(
     name = "gemma4_graph_test",
     srcs = ["gemma4_graph_test.cc"],
     deps = [
+        ":gemma4_weights",
+        "//tensor/examples/gemma4/helpers:rope",
+        "@XNNPACK",
+        "@com_google_absl//absl/types:span",
         ":gemma4_config",
         ":gemma4_graph",
         "//tensor",

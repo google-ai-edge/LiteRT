@@ -40,7 +40,7 @@ absl::Status XnnpackRunner::CreateRuntime(size_t num_threads) {
   xnn_runtime* raw_runtime = nullptr;
   LRT_TENSOR_RETURN_IF_ERROR(
       XnnStatusToAbsl(xnn_create_runtime_v3(sg, weights_cache_, threadpool_,
-                                            /*flags=*/0, &raw_runtime),
+                                            runtime_flags_, &raw_runtime),
                       "xnn_create_runtime_v3"));
   runtime_.reset(raw_runtime);
   return absl::OkStatus();

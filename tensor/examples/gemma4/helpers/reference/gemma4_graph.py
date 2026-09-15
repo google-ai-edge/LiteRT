@@ -412,6 +412,9 @@ def _generate_expected_values_for_default_gemma4_graph_test() -> None:
       rope_local_cos=cos,
       rope_local_sin=sin,
       num_layers=2,
+      frac_shared_layers=18.0 / 42.0,
+      share_local=True,
+      share_global=True,
   )
   utils.cpp_print("Logits:", logits)
   utils.cpp_print("Key Cache Layer 0:", kc[0])
@@ -454,6 +457,9 @@ def _generate_expected_values_for_global_layer_graph_test() -> None:
       rope_local_cos=cos_local,
       rope_local_sin=sin_local,
       num_layers=2,
+      frac_shared_layers=18.0 / 42.0,
+      share_local=True,
+      share_global=True,
       attention_pattern_size=2,  # Layer 0 is local, layer 1 is global.
   )
   utils.cpp_print("Logits (hybrid layers):", logits)
@@ -545,6 +551,9 @@ def _generate_expected_values_for_per_layer_inputs_graph_test() -> None:
       per_layer_token_embeddings=per_layer_token_embeddings,
       per_layer_input_dim=2,
       num_layers=2,
+      frac_shared_layers=18.0 / 42.0,
+      share_local=True,
+      share_global=True,
   )
   utils.cpp_print("Logits (per-layer inputs):", logits)
 
@@ -573,6 +582,9 @@ def _generate_expected_values_for_no_softcap_graph_test() -> None:
       rope_local_cos=cos,
       rope_local_sin=sin,
       num_layers=2,
+      frac_shared_layers=18.0 / 42.0,
+      share_local=True,
+      share_global=True,
       final_logit_softcap=0.0,
   )
   utils.cpp_print("Logits (no softcap):", logits)
@@ -638,12 +650,39 @@ def _generate_expected_values_for_per_layer_inputs_with_projection_graph_test() 
       per_layer_token_embeddings=layer_emb_data,
       per_layer_input_dim=4,
       num_layers=2,
+      frac_shared_layers=18.0 / 42.0,
+      share_local=True,
+      share_global=True,
       final_logit_softcap=30.0,
   )
   utils.cpp_print("Logits (per-layer inputs with projection):", logits)
 
 
+def _generate_expected_values_for_multi_step_decode_test() -> None:
+  """Reference logits for a two-token prefill and two cached decode steps."""
+  embedded_input = np.array(
+      [[[1, 2, 3, 4], [5, 6, 7, 8], [2, -1, 3, 0.5], [-2, 1, 0.5, 4]]],
+      dtype=np.float32,
+  )
+  angles = np.arange(4, dtype=np.float32)[:, None] * np.array(
+      [1, 0.01], dtype=np.float32
+  )[None, :]
+  cos = np.tile(np.cos(angles), (1, 2))[None, None]
+  sin = np.tile(np.sin(angles), (1, 2))[None, None]
+  mask = np.triu(np.full((4, 4), -1e9, dtype=np.float32), k=1)[None, None]
+  logits, _, _ = _gemma4_graph(
+      embedded_input=embedded_input,
+      weights=_create_test_weights(2),
+      sliding_attention_mask=mask,
+      rope_local_cos=cos,
+      rope_local_sin=sin,
+      num_layers=2,
+  )
+  utils.cpp_print("Logits (multi-step decode reference):", logits)
+
+
 def main() -> None:
+  _generate_expected_values_for_multi_step_decode_test()
   _generate_expected_values_for_default_gemma4_graph_test()
   _generate_expected_values_for_global_layer_graph_test()
   _generate_expected_values_for_kv_cache_sharing_graph_test()

@@ -1,0 +1,17 @@
+diff --git a/runtime/executor/litert/state.h b/runtime/executor/litert/state.h
+index 162a5372e3..2c18c2eb33 100644
+--- a/runtime/executor/litert/state.h
++++ b/runtime/executor/litert/state.h
+@@ -99,6 +99,12 @@ class LitertState : public StateInterface {
+   absl::StatusOr<StateBuffers> GetStateBuffers(
+       CompiledModel& compiled_model, absl::string_view signature_name);
+ 
++  // Local correctness harness only: inspect the already cloned primary bank.
++  // This does not allocate, change bank selection, or touch tensor contents.
++  const auto& PrimaryBankForLocalAudit() const {
++    return bank_1_state_buffers_;
++  }
++
+  private:
+   struct StateBuffer {
+     TensorBuffer buffer;

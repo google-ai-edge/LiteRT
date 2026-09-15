@@ -1,0 +1,96 @@
+{
+  "source": "../model/helpers/published_kv_specs.inc",
+  "source_sha256": "51ddbbf35eeb39c10e23ff0429b8f4a055c1134f35b20ef7626b541bb471c982",
+  "specs": [
+    {
+      "owner": 0,
+      "head_dim": 256,
+      "key_scale": 0.005997600965201855,
+      "value_scale": 0.047244105488061905
+    },
+    {
+      "owner": 1,
+      "head_dim": 256,
+      "key_scale": 0.005761673673987389,
+      "value_scale": 0.047244105488061905
+    },
+    {
+      "owner": 2,
+      "head_dim": 256,
+      "key_scale": 0.005684707313776016,
+      "value_scale": 0.047244105488061905
+    },
+    {
+      "owner": 3,
+      "head_dim": 256,
+      "key_scale": 0.00573749840259552,
+      "value_scale": 0.047244105488061905
+    },
+    {
+      "owner": 4,
+      "head_dim": 512,
+      "key_scale": 0.0011563472216948867,
+      "value_scale": 0.01785714365541935
+    },
+    {
+      "owner": 5,
+      "head_dim": 256,
+      "key_scale": 0.006011798977851868,
+      "value_scale": 0.047244105488061905
+    },
+    {
+      "owner": 6,
+      "head_dim": 256,
+      "key_scale": 0.0057707298547029495,
+      "value_scale": 0.047244105488061905
+    },
+    {
+      "owner": 7,
+      "head_dim": 256,
+      "key_scale": 0.005869260523468256,
+      "value_scale": 0.047244105488061905
+    },
+    {
+      "owner": 8,
+      "head_dim": 256,
+      "key_scale": 0.006215503439307213,
+      "value_scale": 0.047244105488061905
+    },
+    {
+      "owner": 9,
+      "head_dim": 512,
+      "key_scale": 0.0010733711533248425,
+      "value_scale": 0.01785714365541935
+    },
+    {
+      "owner": 10,
+      "head_dim": 256,
+      "key_scale": 0.005712664220482111,
+      "value_scale": 0.047244105488061905
+    },
+    {
+      "owner": 11,
+      "head_dim": 256,
+      "key_scale": 0.005907459184527397,
+      "value_scale": 0.047244105488061905
+    },
+    {
+      "owner": 12,
+      "head_dim": 256,
+      "key_scale": 0.005788442213088274,
+      "value_scale": 0.047244105488061905
+    },
+    {
+      "owner": 13,
+      "head_dim": 256,
+      "key_scale": 0.0059552486054599285,
+      "value_scale": 0.047244105488061905
+    },
+    {
+      "owner": 14,
+      "head_dim": 512,
+      "key_scale": 0.001091228099539876,
+      "value_scale": 0.01785714365541935
+    }
+  ]
+}

@@ -20,9 +20,9 @@ limitations under the License.
 #include <memory>
 #include <vector>
 
-#include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status.h"    // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "absl/types/span.h"       // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/tensor.h"
@@ -37,7 +37,12 @@ class GemmaEmbeddingTable {
  public:
   virtual ~GemmaEmbeddingTable() = default;
 
-  // Creates the concrete embedding table depending on the tensor type.
+  // Validates dimensions, storage capacity and quantization metadata, then
+  // creates an FP32, BF16, FP16, INT4 or INT8 table. FP16/BF16 conversion
+  // happens only for selected rows. FP32 lookups retain a view of the original
+  // buffer. Shapes normally describe logical elements; legacy packed INT4 byte
+  // widths are also accepted when block counts or expected_emb_dim specify the
+  // width.
   static absl::StatusOr<std::unique_ptr<GemmaEmbeddingTable>> Create(
       TensorHandle tensor, int expected_emb_dim = 0);
 

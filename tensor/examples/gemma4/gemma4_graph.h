@@ -22,8 +22,8 @@ limitations under the License.
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/log/absl_log.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/log/absl_log.h"             // from @com_google_absl
+#include "absl/strings/str_cat.h"          // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
@@ -55,15 +55,26 @@ struct Gemma4Outputs {
   std::vector<Tensor<Mixins...>> key_caches;
   std::vector<Tensor<Mixins...>> value_caches;
 
-  // Returns all of the outputs in a single vector.
-  std::vector<TensorHandle> GetAllHandles() {
+  // Retained graph values become external outputs only when requested below.
+  std::vector<Tensor<Mixins...>> layer_outputs;
+  Tensor<Mixins...> final_normalized = TensorHandle::Invalid();
+
+  // Returns model outputs, optionally exposing values for numerical diagnosis.
+  std::vector<TensorHandle> GetAllHandles(bool include_intermediates = false) {
     std::vector<TensorHandle> output_handles;
-    output_handles.reserve(1 + key_caches.size() + value_caches.size());
+    output_handles.reserve(
+        1 + key_caches.size() + value_caches.size() +
+        (include_intermediates ? layer_outputs.size() + 1 : 0));
     output_handles.push_back(logits);
     output_handles.insert(output_handles.end(), key_caches.begin(),
                           key_caches.end());
     output_handles.insert(output_handles.end(), value_caches.begin(),
                           value_caches.end());
+    if (include_intermediates) {
+      output_handles.insert(output_handles.end(), layer_outputs.begin(),
+                            layer_outputs.end());
+      output_handles.push_back(final_normalized);
+    }
     return output_handles;
   }
 };
@@ -97,15 +108,15 @@ Gemma4Outputs<Mixins...> BuildGemma4Graph(const Gemma4Inputs<Mixins...>& inputs,
                          .shape = {1},
                          .buffer = std::sqrt(config.embed_dim)});
   Tensor hidden_states = Mul(inputs.embedded_input, emb_scale_tensor);
-  Tensor eps_tensor =
-      Tensor<Mixins...>({.type = Type::kFP32,
-                         .shape = {1},
-                         .buffer = config.rms_norm_eps});
+  Tensor eps_tensor = Tensor<Mixins...>(
+      {.type = Type::kFP32, .shape = {1}, .buffer = config.rms_norm_eps});
 
   std::vector<Tensor<Mixins...>> updated_key_caches;
   std::vector<Tensor<Mixins...>> updated_value_caches;
+  std::vector<Tensor<Mixins...>> layer_outputs;
   updated_key_caches.reserve(config.num_layers);
   updated_value_caches.reserve(config.num_layers);
+  layer_outputs.reserve(config.num_layers);
 
   std::vector<int> sharing_patterns = GetKvCacheSharingPatterns(config);
   std::vector<Tensor<Mixins...>> computed_keys(config.num_layers);
@@ -149,7 +160,8 @@ Gemma4Outputs<Mixins...> BuildGemma4Graph(const Gemma4Inputs<Mixins...>& inputs,
           absl::StrCat("model.layers.", layer_idx,
                        ".per_layer_model_projection.weight"),
           Type::kFP32, {config.per_layer_input_dim, config.embed_dim});
-      Tensor proj_out = FullyConnected(inputs.embedded_input, proj_w);
+      Tensor proj_out =
+          MobileFullyConnected(inputs.embedded_input, proj_w, &inputs.weights);
 
       Tensor norm_w =
           GetWeight(inputs.weights, "model.per_layer_projection_norm.weight",
@@ -173,6 +185,7 @@ Gemma4Outputs<Mixins...> BuildGemma4Graph(const Gemma4Inputs<Mixins...>& inputs,
                          config, inputs.weights, layer_idx, eps_tensor);
 
     hidden_states = layer_out.output;
+    layer_outputs.push_back(hidden_states);
 
     computed_keys[layer_idx] = layer_out.key_for_attn;
     computed_values[layer_idx] = layer_out.value_for_attn;
@@ -184,14 +197,17 @@ Gemma4Outputs<Mixins...> BuildGemma4Graph(const Gemma4Inputs<Mixins...>& inputs,
   // Final RMSNorm
   Tensor final_norm_scale = GetWeight(inputs.weights, "model.norm.weight",
                                       Type::kFP32, {config.embed_dim});
-  Tensor final_output =
-      RmsNorm(hidden_states, final_norm_scale, eps_tensor);
+  Tensor final_output = RmsNorm(hidden_states, final_norm_scale, eps_tensor);
 
-  // LM Head (Fully Connected with tied weights)
-  Tensor embedding_table =
-      GetWeight(inputs.weights, "model.embed_tokens.weight", Type::kFP32,
-                {config.vocab_size, config.embed_dim});
-  Tensor logits = FullyConnected(final_output, embedding_table);
+  // Use a separate LM head when supplied, otherwise tie it to token embeddings.
+  const auto head_it = inputs.weights.find("lm_head.weight");
+  Tensor output_weights =
+      head_it != inputs.weights.end()
+          ? head_it->second
+          : GetWeight(inputs.weights, "model.embed_tokens.weight", Type::kFP32,
+                      {config.vocab_size, config.embed_dim});
+  Tensor logits =
+      MobileFullyConnected(final_output, output_weights, &inputs.weights);
 
   // Logits Soft Capping
   if (config.final_logit_softcap > 0.0f) {
@@ -205,7 +221,8 @@ Gemma4Outputs<Mixins...> BuildGemma4Graph(const Gemma4Inputs<Mixins...>& inputs,
     logits = Mul(capped_logits, soft_cap_tensor);
   }
 
-  return {logits, updated_key_caches, updated_value_caches};
+  return {logits, updated_key_caches, updated_value_caches, layer_outputs,
+          final_output};
 }
 
 }  // namespace litert::tensor::examples::gemma4

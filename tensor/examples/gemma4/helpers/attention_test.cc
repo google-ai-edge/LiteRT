@@ -15,21 +15,27 @@ limitations under the License.
 
 #include "tensor/examples/gemma4/helpers/attention.h"
 
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"          // from @com_google_absl
+#include "absl/strings/string_view.h"      // from @com_google_absl
+#include "absl/types/span.h"
 #include "tensor/backends/xnnpack/arithmetic.h"
+#include "tensor/backends/xnnpack/conversion.h"
+#include "tensor/backends/xnnpack/graph.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
@@ -37,6 +43,7 @@ limitations under the License.
 #include "tensor/runners/xnnpack/runner.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/matchers.h"
+#include "xnnpack.h"  // from @XNNPACK
 
 namespace litert::tensor::examples::gemma4 {
 namespace {
@@ -287,6 +294,57 @@ TEST(Gemma4GraphTest, SingleKVHeadAttentionTest) {
               Pointwise(FloatNear(1e-4f),
                         {0.3220783f, 0.7085721f, 1.0950661f, 1.4815600f,
                          0.3003760f, 0.6974834f, 1.0945907f, 1.4916979f}));
+}
+
+TEST(Gemma4GraphTest, SingleKvHeadSupportsConsistentArithmetic) {
+  Config config = Config::E4B();
+  config.num_heads = 2;
+  config.num_kv_heads = 1;
+  config.head_dim = 4;
+  config.embed_dim = 4;
+  const auto weights = CreateDefaultWeights();
+
+  // Cover one-token and multi-token prefill, then decode with cached history.
+  for (const auto& [seq_len, cache_len] :
+       {std::pair{1, 0}, std::pair{3, 0}, std::pair{1, 2}}) {
+    SCOPED_TRACE(::testing::Message()
+                 << "seq_len=" << seq_len << ", cache_len=" << cache_len);
+    XnnTensor input({.type = Type::kFP32, .shape = {1, seq_len, 4}});
+    XnnTensor mask(
+        {.type = Type::kFP32, .shape = {1, 1, seq_len, seq_len + cache_len}});
+    XnnTensor cos(
+        {.type = Type::kFP32, .shape = {1, 1, seq_len, 4}, .buffer = 1.0f});
+    XnnTensor sin(
+        {.type = Type::kFP32, .shape = {1, 1, seq_len, 4}, .buffer = 0.0f});
+    XnnTensor key_cache = XnnTensor::Invalid();
+    XnnTensor value_cache = XnnTensor::Invalid();
+    if (cache_len > 0) {
+      key_cache =
+          XnnTensor({.type = Type::kFP32, .shape = {1, 1, cache_len, 4}});
+      value_cache =
+          XnnTensor({.type = Type::kFP32, .shape = {1, 1, cache_len, 4}});
+    }
+    XnnTensor eps(
+        {.type = Type::kFP32, .shape = {1}, .buffer = config.rms_norm_eps});
+    const XnnTensor no_shared_kv = TensorHandle::Invalid();
+    auto attention = Attention(input, mask, cos, sin, key_cache, value_cache,
+                               no_shared_kv, no_shared_kv, config, weights,
+                               "attn", /*is_global=*/false, eps);
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto graph, BuildXnnpackGraph({attention.output, attention.key_cache,
+                                       attention.value_cache}));
+
+    // This mode preserves an explicit Tile's broadcast, which fails runtime
+    // creation. Implicit BatchMatMul broadcasting must work without that
+    // optimizer rewrite, as well as in the default runner tests above.
+    xnn_runtime_t raw_runtime = nullptr;
+    const auto status = xnn_create_runtime_v3(
+        graph->GetSubgraph(), /*weights_cache=*/nullptr, /*threadpool=*/nullptr,
+        XNN_FLAG_SLOW_CONSISTENT_ARITHMETIC, &raw_runtime);
+    XnnpackRunner::RuntimePtr runtime(raw_runtime);
+    ASSERT_EQ(status, xnn_status_success);
+    EXPECT_EQ(xnn_reshape_runtime(runtime.get()), xnn_status_success);
+  }
 }
 
 // Grouped-Query Attention: specifically testing the per-head Slice -> Tile ->
@@ -1129,6 +1187,239 @@ TEST(Gemma4GraphTest, MismatchedSharedKVAttentionTest) {
                         {0.3220783f, 0.7085721f, 1.0950661f, 1.4815600f,
                          0.3003760f, 0.6974834f, 1.0945907f, 1.4916979f}));
 }
+
+// Identity Q/O projections expose both query heads separately. K selects the
+// first input pair and V the second; identity RoPE leaves only causal attention
+// and RMS normalization in the expected calculation below.
+AttentionOutput<XnnpackMixinTag> BuildSingleKvBroadcastAttention(
+    const XnnTensor& input, const XnnTensor& mask,
+    const XnnTensor& key_cache = XnnTensor::Invalid(),
+    const XnnTensor& value_cache = XnnTensor::Invalid()) {
+  Config config = Config::E2B();
+  config.num_heads = 2;
+  config.num_kv_heads = 1;
+  config.head_dim = 2;
+  config.embed_dim = 4;
+  const std::vector<float> identity = {1, 0, 0, 0, 0, 1, 0, 0,
+                                       0, 0, 1, 0, 0, 0, 0, 1};
+  absl::flat_hash_map<std::string, XnnTensor> weights;
+  for (const char* projection : {"q_proj", "o_proj"}) {
+    weights.emplace(
+        absl::StrCat("attn.", projection, ".weight"),
+        XnnTensor({.type = Type::kFP32, .shape = {4, 4}, .buffer = identity}));
+  }
+  weights.emplace(
+      "attn.k_proj.weight",
+      XnnTensor({.type = Type::kFP32,
+                 .shape = {2, 4},
+                 .buffer = std::vector<float>{1, 0, 0, 0, 0, 1, 0, 0}}));
+  weights.emplace(
+      "attn.v_proj.weight",
+      XnnTensor({.type = Type::kFP32,
+                 .shape = {2, 4},
+                 .buffer = std::vector<float>{0, 0, 1, 0, 0, 0, 0, 1}}));
+  for (const char* norm : {"q_norm", "k_norm"}) {
+    weights.emplace(
+        absl::StrCat("attn.", norm, ".weight"),
+        XnnTensor({.type = Type::kFP32, .shape = {2}, .buffer = 1.0f}));
+  }
+  const int sequence_length = input.GetShape()[1];
+  XnnTensor cos({.type = Type::kFP32,
+                 .shape = {1, 1, sequence_length, 2},
+                 .buffer = 1.0f});
+  XnnTensor sin({.type = Type::kFP32,
+                 .shape = {1, 1, sequence_length, 2},
+                 .buffer = 0.0f});
+  XnnTensor eps(
+      {.type = Type::kFP32, .shape = {1}, .buffer = config.rms_norm_eps});
+  const XnnTensor no_shared_kv(TensorHandle::Invalid());
+  return Attention(input, mask, cos, sin, key_cache, value_cache, no_shared_kv,
+                   no_shared_kv, config, weights, "attn", /*is_global=*/false,
+                   eps);
+}
+
+using AttentionToken = std::array<float, 4>;
+const std::array<AttentionToken, 4> kBroadcastTokens = {
+    AttentionToken{1, 0, 0, 1}, AttentionToken{0, 1, 1, 0},
+    AttentionToken{1, 1, 1, -1}, AttentionToken{-1, 1, 1, 1}};
+
+std::array<double, 2> NormalizeAttentionPair(const AttentionToken& token,
+                                             int offset) {
+  const double x = token[offset];
+  const double y = token[offset + 1];
+  const double rms = std::sqrt((x * x + y * y) / 2 + 1.0e-6f);
+  return {x / rms, y / rms};
+}
+
+// Independent scalar reference: each query head attends to the same past K/V
+// sequence. Compute in double without tensor operators, tiling or broadcasting.
+std::vector<float> SingleKvCausalReference(
+    absl::Span<const AttentionToken> tokens, size_t first_query = 0) {
+  std::vector<float> expected;
+  for (size_t query = first_query; query < tokens.size(); ++query) {
+    for (int head = 0; head < 2; ++head) {
+      const auto q = NormalizeAttentionPair(tokens[query], 2 * head);
+      std::vector<double> scores(query + 1);
+      for (size_t past = 0; past <= query; ++past) {
+        const auto k = NormalizeAttentionPair(tokens[past], 0);
+        scores[past] = q[0] * k[0] + q[1] * k[1];
+      }
+      const double maximum = *std::max_element(scores.begin(), scores.end());
+      double denominator = 0;
+      std::array<double, 2> numerator = {0, 0};
+      for (size_t past = 0; past <= query; ++past) {
+        const double probability = std::exp(scores[past] - maximum);
+        const auto v = NormalizeAttentionPair(tokens[past], 2);
+        denominator += probability;
+        for (int channel = 0; channel < 2; ++channel) {
+          numerator[channel] += probability * v[channel];
+        }
+      }
+      for (double value : numerator) expected.push_back(value / denominator);
+    }
+  }
+  return expected;
+}
+
+std::vector<float> SingleKvCacheReference(
+    absl::Span<const AttentionToken> tokens, int offset) {
+  std::vector<float> expected;
+  for (const auto& token : tokens) {
+    const auto pair = NormalizeAttentionPair(token, offset);
+    expected.insert(expected.end(), pair.begin(), pair.end());
+  }
+  return expected;
+}
+
+class SingleKvBroadcastAttentionTest
+    : public ::testing::TestWithParam<uint32_t> {};
+
+TEST_P(SingleKvBroadcastAttentionTest, PrefillMatchesScalarReference) {
+  for (int sequence_length : {1, 3}) {
+    SCOPED_TRACE(sequence_length);
+    XnnTensor input({.type = Type::kFP32, .shape = {1, sequence_length, 4}});
+    XnnTensor mask({.type = Type::kFP32,
+                    .shape = {1, 1, sequence_length, sequence_length}});
+    auto attention = BuildSingleKvBroadcastAttention(input, mask);
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto runner,
+        XnnpackRunner::Create(
+            {attention.output, attention.key_cache, attention.value_cache},
+            GetParam()));
+    const absl::Span<const AttentionToken> tokens(kBroadcastTokens.data(),
+                                                  sequence_length);
+    std::vector<float> input_data;
+    for (const auto& token : tokens) {
+      input_data.insert(input_data.end(), token.begin(), token.end());
+    }
+    std::vector<float> mask_data(sequence_length * sequence_length, 0);
+    for (int query = 0; query < sequence_length; ++query) {
+      for (int future = query + 1; future < sequence_length; ++future) {
+        mask_data[query * sequence_length + future] =
+            -std::numeric_limits<float>::infinity();
+      }
+    }
+    ASSERT_THAT(runner.SetInput(input, input_data), IsOk());
+    ASSERT_THAT(runner.SetInput(mask, mask_data), IsOk());
+    ASSERT_THAT(runner.Run(), IsOk());
+
+    const auto expected = SingleKvCausalReference(tokens);
+    if (sequence_length > 1) {
+      // The second token must not receive the same context in both heads.
+      ASSERT_GT(std::abs(expected[4] - expected[6]), 0.5f);
+    }
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto output, runner.ReadOutputAs<float>(attention.output));
+    EXPECT_THAT(output, Pointwise(FloatNear(2.0e-6f), expected));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto keys, runner.ReadOutputAs<float>(attention.key_cache));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto values, runner.ReadOutputAs<float>(attention.value_cache));
+    EXPECT_THAT(
+        keys, Pointwise(FloatNear(2.0e-6f), SingleKvCacheReference(tokens, 0)));
+    EXPECT_THAT(values, Pointwise(FloatNear(2.0e-6f),
+                                  SingleKvCacheReference(tokens, 2)));
+  }
+}
+
+TEST_P(SingleKvBroadcastAttentionTest, ReusedDecodeRunnerGrowsKvHistory) {
+  XnnTensor first_input({.type = Type::kFP32, .shape = {1, 1, 4}});
+  XnnTensor first_mask({.type = Type::kFP32, .shape = {1, 1, 1, 1}});
+  auto prefill = BuildSingleKvBroadcastAttention(first_input, first_mask);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto prefill_runner,
+      XnnpackRunner::Create(
+          {prefill.output, prefill.key_cache, prefill.value_cache},
+          GetParam()));
+  const std::array<float, 1> zero_mask = {0};
+  ASSERT_THAT(prefill_runner.SetInput(first_input, kBroadcastTokens[0]),
+              IsOk());
+  ASSERT_THAT(prefill_runner.SetInput(first_mask, zero_mask), IsOk());
+  ASSERT_THAT(prefill_runner.Run(), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto initial_keys, prefill_runner.ReadOutputAs<float>(prefill.key_cache));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto initial_values,
+      prefill_runner.ReadOutputAs<float>(prefill.value_cache));
+  std::vector<float> key_data(initial_keys.begin(), initial_keys.end());
+  std::vector<float> value_data(initial_values.begin(), initial_values.end());
+
+  XnnTensor input({.type = Type::kFP32, .shape = {1, 1, 4}});
+  XnnTensor mask({.type = Type::kFP32, .shape = {1, 1, 1, 2}});
+  XnnTensor key_cache({.type = Type::kFP32, .shape = {1, 1, 1, 2}});
+  XnnTensor value_cache({.type = Type::kFP32, .shape = {1, 1, 1, 2}});
+  auto attention =
+      BuildSingleKvBroadcastAttention(input, mask, key_cache, value_cache);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto runner,
+      XnnpackRunner::Create(
+          {attention.output, attention.key_cache, attention.value_cache,
+           attention.key_for_attn, attention.value_for_attn},
+          GetParam()));
+  for (int query = 1; query < kBroadcastTokens.size(); ++query) {
+    SCOPED_TRACE(query);
+    ASSERT_THAT(runner.ReshapeInput(key_cache, {1, 1, query, 2}), IsOk());
+    ASSERT_THAT(runner.ReshapeInput(value_cache, {1, 1, query, 2}), IsOk());
+    ASSERT_THAT(runner.ReshapeInput(mask, {1, 1, 1, query + 1}), IsOk());
+    std::vector<float> mask_data(query + 1, 0);
+    ASSERT_THAT(runner.SetInput(input, kBroadcastTokens[query]), IsOk());
+    ASSERT_THAT(runner.SetInput(mask, mask_data), IsOk());
+    ASSERT_THAT(runner.SetInput(key_cache, key_data), IsOk());
+    ASSERT_THAT(runner.SetInput(value_cache, value_data), IsOk());
+    ASSERT_THAT(runner.Run(), IsOk());
+
+    const absl::Span<const AttentionToken> tokens(kBroadcastTokens.data(),
+                                                  query + 1);
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto output, runner.ReadOutputAs<float>(attention.output));
+    EXPECT_THAT(output, Pointwise(FloatNear(2.0e-6f),
+                                  SingleKvCausalReference(tokens, query)));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto keys, runner.ReadOutputAs<float>(attention.key_for_attn));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto values, runner.ReadOutputAs<float>(attention.value_for_attn));
+    EXPECT_THAT(
+        keys, Pointwise(FloatNear(2.0e-6f), SingleKvCacheReference(tokens, 0)));
+    EXPECT_THAT(values, Pointwise(FloatNear(2.0e-6f),
+                                  SingleKvCacheReference(tokens, 2)));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto new_keys, runner.ReadOutputAs<float>(attention.key_cache));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto new_values, runner.ReadOutputAs<float>(attention.value_cache));
+    ASSERT_EQ(new_keys.size(), 2);
+    ASSERT_EQ(new_values.size(), 2);
+    key_data.insert(key_data.end(), new_keys.begin(), new_keys.end());
+    value_data.insert(value_data.end(), new_values.begin(), new_values.end());
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    RuntimeFlags, SingleKvBroadcastAttentionTest,
+    ::testing::Values(uint32_t{0},
+                      uint32_t{XNN_FLAG_SLOW_CONSISTENT_ARITHMETIC}),
+    [](const ::testing::TestParamInfo<uint32_t>& info) {
+      return info.param == 0 ? "Default" : "ConsistentArithmetic";
+    });
 
 }  // namespace
 }  // namespace litert::tensor::examples::gemma4

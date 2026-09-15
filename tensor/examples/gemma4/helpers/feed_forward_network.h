@@ -17,6 +17,7 @@ limitations under the License.
 #define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_HELPERS_FEED_FORWARD_NETWORK_H_
 
 #include "tensor/arithmetic.h"
+#include "tensor/examples/gemma4/helpers/mobile_fully_connected.h"
 #include "tensor/tensor.h"
 
 namespace litert::tensor::examples::gemma4 {
@@ -30,15 +31,16 @@ namespace litert::tensor::examples::gemma4 {
 // - up_proj: [hidden_dim, embed_dim]
 // - down_proj: [embed_dim, hidden_dim]
 template <class... Mixins>
-Tensor<Mixins...> FeedForwardNetwork(const Tensor<Mixins...>& input,
-                                     const Tensor<Mixins...>& gate_proj,
-                                     const Tensor<Mixins...>& up_proj,
-                                     const Tensor<Mixins...>& down_proj) {
-  Tensor up = FullyConnected(input, up_proj);
-  Tensor gate_proj_tensor = FullyConnected(input, gate_proj);
+Tensor<Mixins...> FeedForwardNetwork(
+    const Tensor<Mixins...>& input, const Tensor<Mixins...>& gate_proj,
+    const Tensor<Mixins...>& up_proj, const Tensor<Mixins...>& down_proj,
+    const absl::flat_hash_map<std::string, Tensor<Mixins...>>* weights =
+        nullptr) {
+  Tensor up = MobileFullyConnected(input, up_proj, weights);
+  Tensor gate_proj_tensor = MobileFullyConnected(input, gate_proj, weights);
   Tensor gate = Gelu(gate_proj_tensor, /*approximate=*/true);
   Tensor mul_out = Mul(up, gate);
-  return FullyConnected(mul_out, down_proj);
+  return MobileFullyConnected(mul_out, down_proj, weights);
 }
 
 }  // namespace litert::tensor::examples::gemma4

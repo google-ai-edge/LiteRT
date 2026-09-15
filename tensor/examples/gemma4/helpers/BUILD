@@ -74,6 +74,7 @@ cc_library(
     name = "feed_forward_network",
     hdrs = ["feed_forward_network.h"],
     deps = [
+        ":mobile_fully_connected",
         "//tensor",
         "//tensor:arithmetic",
     ],
@@ -98,6 +99,8 @@ cc_library(
     name = "attention",
     hdrs = ["attention.h"],
     deps = [
+        ":mobile_fully_connected",
+        "//tensor:buffer",
         "//tensor",
         "//tensor:arithmetic",
         "//tensor:datatypes",
@@ -114,6 +117,10 @@ cc_test(
     name = "attention_test",
     srcs = ["attention_test.cc"],
     deps = [
+        "//tensor/backends/xnnpack:conversion",
+        "//tensor/backends/xnnpack:graph",
+        "@com_google_absl//absl/types:span",
+        "@XNNPACK",
         ":attention",
         "//tensor",
         "//tensor:buffer",
@@ -192,6 +199,72 @@ cc_test(
         "//tensor:datatypes",
         "//tensor/utils:matchers",
         "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+# Keep mobile checkpoint arithmetic separate from the generic FullyConnected op.
+cc_library(
+    name = "float_activation_fully_connected",
+    srcs = ["float_activation_fully_connected.cc"],
+    hdrs = ["float_activation_fully_connected.h"],
+    deps = [
+        "//tensor",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/backends/xnnpack:arithmetic",
+        "//tensor/backends/xnnpack:conversion",
+        "//tensor/backends/xnnpack:utils",
+        "//tensor/internal:arithmetic_helpers",
+        "//tensor/internal:graph",
+        "//tensor/internal:mixin",
+        "//tensor/utils:macros",
+        "//tensor/utils:source_location",
+        "@XNNPACK",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "mobile_fully_connected",
+    hdrs = ["mobile_fully_connected.h"],
+    deps = [
+        ":float_activation_fully_connected",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:buffer",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_test(
+    name = "float_activation_fully_connected_test",
+    srcs = ["float_activation_fully_connected_test.cc"],
+    deps = [
+        ":float_activation_fully_connected",
+        "//tensor",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/runners/xnnpack:runner",
+        "//tensor/utils:matchers",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "mobile_fully_connected_test",
+    srcs = ["mobile_fully_connected_test.cc"],
+    deps = [
+        ":mobile_fully_connected",
+        "//tensor/backends/xnnpack:arithmetic",
+        "//tensor/runners/xnnpack:runner",
+        "//tensor/utils:matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )

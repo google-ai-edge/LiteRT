@@ -18,7 +18,7 @@ limitations under the License.
 #include <string>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"          // from @com_google_absl
 
 namespace litert::tensor::examples::gemma4 {
 
@@ -29,6 +29,10 @@ absl::flat_hash_map<std::string, std::string> GetGemma4WeightMapping(
   // Embedding
   mapping["model.language_model.embed_tokens.weight"] =
       "model.embed_tokens.weight";
+
+  // Optional separate output projection. Missing tensors are skipped by the
+  // loader, allowing the graph to fall back to the token embeddings.
+  mapping["lm_head.weight"] = "lm_head.weight";
 
   // Final norm
   mapping["model.language_model.norm.weight"] = "model.norm.weight";
