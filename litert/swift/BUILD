@@ -26,7 +26,7 @@ package(
 
 cc_library(
     name = "CLiteRT_objc",
-    hdrs = ["Sources/LiteRtC.h"],
+    hdrs = ["Sources/LiteRT/LiteRtC.h"],
     aspect_hints = [":CLiteRT_swift_hint"],
     deps = [
         "//litert/c:litert_any",
@@ -54,7 +54,7 @@ swift_interop_hint(
 
 swift_library(
     name = "LiteRT_Swift",
-    srcs = glob(["Sources/*.swift"]),
+    srcs = glob(["Sources/LiteRT/*.swift"]),
     copts = ["-enable-testing"],
     module_name = "LiteRT",
     deps = [
@@ -66,7 +66,7 @@ swift_library(
 
 swift_test(
     name = "LiteRT_Swift_Tests",
-    srcs = glob(["Tests/*.swift"]),
+    srcs = glob(["Tests/LiteRT/*.swift"]),
     data = [
         "//litert/test:testdata/dynamic_add_model.tflite",
         "//litert/test:testdata/simple_model.tflite",
@@ -115,7 +115,7 @@ apple_xcframework(
     bundle_id = "com.google.odml.litert.CLiteRT",
     bundle_name = "CLiteRT",
     features = ["exported_symbols"],
-    infoplists = ["Sources/Info.plist"],
+    infoplists = ["Sources/LiteRT/Info.plist"],
     ios = {
         "simulator": [
             "arm64",

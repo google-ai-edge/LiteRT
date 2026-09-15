@@ -63,7 +63,7 @@ let package = Package(
         .target(name: "CLiteRT", condition: .when(platforms: [.iOS])),
         .target(name: "CLiteRT_mac", condition: .when(platforms: [.macOS])),
       ],
-      path: "litert/swift/Sources",
+      path: "litert/swift/Sources/LiteRT",
       exclude: [
         "BUILD",
         "Info.plist",
@@ -76,7 +76,7 @@ let package = Package(
     .testTarget(
       name: "LiteRTTests",
       dependencies: ["LiteRT"],
-      path: "litert/swift/Tests"
+      path: "litert/swift/Tests/LiteRT"
     ),
   ]
 )
