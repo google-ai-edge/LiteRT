@@ -42,6 +42,18 @@ backends:
 -   **Cumulative Throughput**: Optimize for cumulative throughput across
     multiple requests
 
+### Weight Sharing
+
+-   **`enable_weight_sharing`** (default `true`): Controls cross-partition
+    weight sharing. When enabled, all partitions' distinct weights are
+    deduplicated by LiteRT `BufferId` into a single `GlobalGraph` container
+    (shared buffer pool + per-subgraph payload), serialized once and reused by
+    every partition. This only takes effect when the model has more than one
+    partition and every partition targets the *same* shareable device (all GPU
+    or all NPU); mixed devices or CPU fall back to standalone bytecode
+    regardless. Set to `false` to force standalone per-partition bytecode with
+    baked-in weights.
+
 ### Configuration Map
 
 Allows setting arbitrary OpenVINO configuration properties as key-value pairs.
@@ -116,6 +128,9 @@ auto options = IntelOpenVinoOptions::Create().Value();
 // Configure backend for partition 0 and performance mode
 options.SetGraphBackend(/*graph_index=*/0, kLiteRtIntelOpenVinoGraphBackendNPU);
 options.SetPerformanceMode(kLiteRtIntelOpenVinoPerformanceModeLatency);
+
+// Opt out of cross-partition weight sharing (enabled by default).
+options.SetEnableWeightSharing(false);
 
 // Set custom OpenVINO configuration properties
 options.SetConfigsMapOption("INFERENCE_PRECISION_HINT", "f16");
@@ -247,4 +262,5 @@ void ConfigureOpenVinoFromOptions(ov::Core& core, const IntelOpenVinoOptions& op
 
 -   Graph Backend (per partition, when no override is set): NPU
 -   Performance Mode: Latency
-
+-   Weight Sharing: enabled (still requires >1 partition on a common GPU/NPU
+    device to actually take effect)

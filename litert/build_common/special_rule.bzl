@@ -138,6 +138,19 @@ def exclude_windows_target_compatible_with():
         "//conditions:default": [],
     })
 
+def exclude_wasm_target_compatible_with():
+    """Target compatibility to mark shared libraries as incompatible with Emscripten/wasm.
+
+    The Emscripten toolchain links through a wrapper that only knows how to emit
+    `.js`/`.wasm` bundles, so it cannot produce a shared library. Wasm clients
+    link the LiteRT runtime statically instead.
+
+    Return the target_compatible_with select block that excludes Emscripten."""
+    return select({
+        "//litert:emscripten": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    })
+
 def litert_jni_friends():
     """Internal visibility for direct clients of LiteRT JNI libraries.
 

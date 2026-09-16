@@ -317,6 +317,7 @@ class VendorOptionsFlatteningTest(unittest.TestCase):
         options_lib.IntelOpenVinoOptions.PERFORMANCE_MODE.THROUGHPUT
     )
     intel_options.configs_map['CACHE_DIR'] = '/tmp/openvino-cache'
+    intel_options.enable_weight_sharing = False
 
     kwargs = options._as_flat_kwargs()
 
@@ -326,6 +327,19 @@ class VendorOptionsFlatteningTest(unittest.TestCase):
         kwargs['intel_openvino_configs_map'],
         {'CACHE_DIR': '/tmp/openvino-cache'},
     )
+    self.assertEqual(kwargs['intel_openvino_enable_weight_sharing'], 0)
+
+  def test_intel_openvino_weight_sharing_defaults_to_unset(self):
+    options = options_lib.Options.create()
+    # Touch the OpenVINO options so they are flattened into the kwargs.
+    options.intel_openvino_options.performance_mode = (
+        options_lib.IntelOpenVinoOptions.PERFORMANCE_MODE.LATENCY
+    )
+
+    kwargs = options._as_flat_kwargs()
+
+    # -1 means "not set": the plugin keeps its own default (sharing enabled).
+    self.assertEqual(kwargs['intel_openvino_enable_weight_sharing'], -1)
 
 
 if __name__ == '__main__':

@@ -15,6 +15,7 @@
 #include "litert/compiler/plugin/algo.h"
 
 #include <cstdint>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -637,6 +638,32 @@ TEST_P(PartitionTest, PartitionWithIndex) {
       EXPECT_TRUE(ops_in_partition.contains(selected_ops.at(i).first));
     }
   }
+}
+
+TEST(TestCompositeInlining, RemapsSignatureOutputAliases) {
+  auto model_wrap = testing::LoadTestFileModel("rms_norm_composite.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+  auto& graph = model.Subgraph(0);
+  ASSERT_EQ(graph.Outputs().size(), 1);
+  ASSERT_FALSE(model.Signatures().empty());
+  auto* original = model.Signatures().front();
+  auto& alias = model.EmplaceSignature(
+      &graph, original->InputNames(),
+      std::vector<LiteRtTensor>(graph.Inputs().begin(), graph.Inputs().end()),
+      std::vector<std::string>{"output_alias"},
+      std::vector<LiteRtTensor>{graph.Outputs().front()}, "alias");
+  auto* input = original->GetInputTensor(0);
+
+  ASSERT_TRUE(
+      InlineSubgraph(model, graph.Op(0), &model.Subgraph(1)).HasValue());
+  EXPECT_EQ(original->GetOutputTensor(0), graph.Outputs().front());
+  EXPECT_EQ(alias.GetOutputTensor(0), graph.Outputs().front());
+  auto named_output = alias.FindOutputTensor("output_alias");
+  ASSERT_TRUE(named_output.HasValue());
+  EXPECT_EQ(*named_output, graph.Outputs().front());
+  EXPECT_EQ(original->GetInputTensor(0), input);
+  EXPECT_EQ(alias.GetInputTensor(0), input);
 }
 
 TEST(TestCompositeInlining, inlineSimpleComposite) {
