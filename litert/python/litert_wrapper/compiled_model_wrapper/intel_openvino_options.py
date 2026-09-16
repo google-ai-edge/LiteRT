@@ -55,6 +55,9 @@ class IntelOpenVinoOptions:
   graph_backend: Optional[IntelOpenVinoGraphBackend] = None
   performance_mode: Optional[IntelOpenVinoPerformanceMode] = None
   configs_map: dict[str, str] = dataclasses.field(default_factory=dict)
+  # Cross-partition weight sharing. Leave as None to use the plugin default
+  # (enabled); set to False to force standalone per-partition bytecode.
+  enable_weight_sharing: Optional[bool] = None
 
   def _as_flat_kwargs(self) -> dict[str, Any]:
     """Returns kwargs for the internal pybind wrapper."""
@@ -66,4 +69,7 @@ class IntelOpenVinoOptions:
             self.performance_mode
         ),
         "intel_openvino_configs_map": dict(self.configs_map),
+        "intel_openvino_enable_weight_sharing": (
+            option_utils.optional_bool_to_int(self.enable_weight_sharing)
+        ),
     }

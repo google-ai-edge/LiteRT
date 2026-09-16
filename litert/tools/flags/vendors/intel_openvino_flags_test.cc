@@ -144,6 +144,17 @@ TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, SetPerformanceModeToThroughput) {
                 kLiteRtIntelOpenVinoPerformanceModeLatency);
 }
 
+TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, SetEnableWeightSharing) {
+  absl::SetFlag(&FLAGS_intel_openvino_enable_weight_sharing, false);
+  LITERT_ASSERT_OK_AND_ASSIGN(IntelOpenVinoOptions options,
+                              IntelOpenVinoOptions::Create());
+
+  ASSERT_TRUE(UpdateIntelOpenVinoOptionsFromFlags(options).HasValue());
+  EXPECT_FALSE(options.GetEnableWeightSharing());
+
+  absl::SetFlag(&FLAGS_intel_openvino_enable_weight_sharing, true);
+}
+
 TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, ConfigsMapSingleOption) {
   absl::SetFlag(&FLAGS_intel_openvino_configs_map,
                 "INFERENCE_PRECISION_HINT=f16");
