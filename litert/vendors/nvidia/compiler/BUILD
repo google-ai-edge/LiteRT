@@ -87,6 +87,72 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "tensorrt_graph_builder_test",
+    srcs = ["tensorrt_graph_builder_test.cc"],
+    env = {
+        "LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS": "bf16",
+        "LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS": "0",
+    },
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":tensorrt_graph_builder",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/compiler/cc:litert_model",
+        "//litert/core/model",
+        "//litert/vendors/nvidia:tensorrt_logger",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+        "@local_tensorrt_rtx//:tensorrt_rtx_stub",
+    ],
+)
+
+cc_test(
+    name = "compiler_plugin_test",
+    srcs = ["compiler_plugin_test.cc"],
+    env = {
+        "LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS": "1",
+    },
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":compiler_plugin",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/model",
+        "//litert/vendors/c:litert_compiler_plugin",
+        "//litert/vendors/nvidia:bytecode",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 litert_dynamic_lib(
     name = "compiler_plugin",
     srcs = ["compiler_plugin.cc"],
