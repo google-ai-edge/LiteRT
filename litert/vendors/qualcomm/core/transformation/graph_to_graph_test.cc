@@ -89,12 +89,7 @@ TEST(MatMulConvertTest, Gemma3Prefill) {
       CreateMatmulOp(input0, input2, output1, false, true));
 
   // Convert: matmul_to_concat, Out0
-  std::vector<::qnn::TensorWrapperRef> convert_inputs;
-  convert_inputs.emplace_back(matmul_to_concat);
-  std::vector<::qnn::TensorWrapperRef> convert_outputs;
-  convert_outputs.emplace_back(output0);
-  auto convert = BuildQuantizeOp(tensor_pool, convert_inputs, convert_outputs);
-  std::move(convert.begin(), convert.end(), std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(CreateConvertOp(matmul_to_concat, output0));
 
   ASSERT_EQ(op_wrappers.size(), 3);
 
@@ -153,12 +148,7 @@ TEST(MatMulConvertTest, Gemma3Decode) {
       CreateMatmulOp(input0, input1, matmul_to_concat, false, true));
 
   // Convert: matmul_to_concat, Out0
-  std::vector<::qnn::TensorWrapperRef> convert_inputs;
-  convert_inputs.emplace_back(matmul_to_concat);
-  std::vector<::qnn::TensorWrapperRef> convert_outputs;
-  convert_outputs.emplace_back(output0);
-  auto convert = BuildQuantizeOp(tensor_pool, convert_inputs, convert_outputs);
-  std::move(convert.begin(), convert.end(), std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(CreateConvertOp(matmul_to_concat, output0));
 
   ASSERT_EQ(op_wrappers.size(), 2);
 
