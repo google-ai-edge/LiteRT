@@ -65,14 +65,10 @@ using ::litert::compiler::Tensor;
 // of the largest island (multi-layer prefill attention islands need >1GB); it
 // is a cap on tactic choice, not an upfront allocation.
 constexpr size_t kDefaultTensorRtWorkspaceBytes = 4096ULL << 20;
-// Sized for LLM prefill attention at a few thousand tokens of context (score
-// tensors like [1, heads, seq, seq]); larger tensors stay on the CPU.
-constexpr size_t kDefaultMaxTensorRtBatchMatmulOutputElements = 1ULL << 24;
 constexpr size_t kDefaultMaxTensorRtFillBytes = 16ULL << 20;
 // Large enough to admit LLM vocab-projection heads (Gemma4's INT2 LM head
 // packs to ~100MB); float heads beyond this stay on the CPU.
 constexpr size_t kDefaultMaxTensorRtFullyConnectedWeightBytes = 256ULL << 20;
-constexpr size_t kDefaultMaxTensorRtSoftmaxElements = 1ULL << 24;
 
 template <typename T>
 using TrtPtr = std::unique_ptr<T>;
@@ -104,16 +100,6 @@ size_t TensorRtWorkspaceBytes() {
          << 20;
 }
 
-size_t MaxTensorRtSoftmaxElements() {
-  return EnvSizeT("LITERT_NVIDIA_TENSORRT_MAX_SOFTMAX_ELEMENTS",
-                  kDefaultMaxTensorRtSoftmaxElements);
-}
-
-size_t MaxTensorRtBatchMatmulOutputElements() {
-  return EnvSizeT("LITERT_NVIDIA_TENSORRT_MAX_BATCH_MATMUL_OUTPUT_ELEMENTS",
-                  kDefaultMaxTensorRtBatchMatmulOutputElements);
-}
-
 size_t MaxTensorRtFillBytes() {
   return EnvSizeT("LITERT_NVIDIA_TENSORRT_MAX_FILL_BYTES",
                   kDefaultMaxTensorRtFillBytes);
@@ -122,6 +108,16 @@ size_t MaxTensorRtFillBytes() {
 size_t MaxTensorRtFullyConnectedWeightBytes() {
   return EnvSizeT("LITERT_NVIDIA_TENSORRT_MAX_FC_WEIGHT_BYTES",
                   kDefaultMaxTensorRtFullyConnectedWeightBytes);
+}
+
+// Block sizes tried, largest first, when re-encoding per-channel INT4 FC
+// scales as TensorRT block scales along K. Larger blocks mean smaller scale
+// constants; TensorRT requires the block to divide K and be smaller than K.
+constexpr int32_t kFcBlockScaleSizes[] = {1280, 1024, 512, 256, 128, 64, 32};
+
+bool FcBlockScalesEnabled() {
+  return EnvEnabled("LITERT_NVIDIA_TENSORRT_FC_BLOCK_SCALES",
+                    /*default_value=*/true);
 }
 
 bool LogUnsupportedOpDetails() {
@@ -536,11 +532,6 @@ Expected<bool> IsSoftmaxSupported(const Op& op) {
       beta != 1.0f) {
     return false;
   }
-  LITERT_ASSIGN_OR_RETURN(auto input_type, op.Inputs()[0].RankedTensorType());
-  LITERT_ASSIGN_OR_RETURN(size_t input_elements, NumElements(input_type));
-  if (input_elements > MaxTensorRtSoftmaxElements()) {
-    return false;
-  }
   return IsUnaryActivationSupported(op);
 }
 
@@ -570,7 +561,12 @@ Expected<bool> IsCastSupported(const Op& op) {
   if (op.Inputs().size() != 1 || op.Outputs().size() != 1) {
     return false;
   }
-  if (op.Inputs()[0].HasWeights()) {
+  // FP16 cache-update decompositions cast an INT64 constant to FP16.
+  // GetTensor/LowerCast can materialize this directly; rejecting it creates
+  // a CPU boundary between otherwise supported cache operations.
+  if (op.Inputs()[0].HasWeights() &&
+      !(op.Inputs()[0].ElementType() == litert::ElementType::Int64 &&
+        op.Outputs()[0].ElementType() == litert::ElementType::Float16)) {
     return false;
   }
   LITERT_ASSIGN_OR_RETURN(bool input_supported,
@@ -782,8 +778,7 @@ Expected<bool> IsCompositeSupported(const Op& op) {
         o_dims[rank - 1] != c_dims[rank - 2]) {
       return false;
     }
-    LITERT_ASSIGN_OR_RETURN(size_t out_elements, NumElements(o_type));
-    return out_elements <= MaxTensorRtBatchMatmulOutputElements();
+    return true;
   }
   return false;
 }
@@ -861,9 +856,7 @@ Expected<bool> IsBatchMatmulSupported(const Op& op) {
   if (!output_supported) {
     return false;
   }
-  LITERT_ASSIGN_OR_RETURN(auto output_type, op.Outputs()[0].RankedTensorType());
-  LITERT_ASSIGN_OR_RETURN(size_t output_elements, NumElements(output_type));
-  return output_elements <= MaxTensorRtBatchMatmulOutputElements();
+  return true;
 }
 
 Expected<bool> IsFullyConnectedSupported(const Op& op) {
@@ -2658,6 +2651,72 @@ class TensorRtGraphBuilder {
     return layer->getOutput(0);
   }
 
+  // Lowering per-channel INT4 FC weights as `constant -> dequantize -> matmul`
+  // makes Myelin materialize the dequantized 16-bit weights (four times the
+  // INT4 bytes, written and read back) on every invocation before a dense
+  // GEMM. The same scales expressed as block scales along K, where every
+  // block of a row carries that row's per-channel scale, are numerically
+  // identical but let TensorRT-RTX emit one fused weight-only-quantized GEMM
+  // kernel that reads the INT4 weights directly. Returns nullopt when the
+  // weights cannot use this encoding (M=1 GEMVs never reach here).
+  Expected<std::optional<nvinfer1::ITensor*>> AddBlockScaledDequantizeTensor(
+      const Tensor& tensor, nvinfer1::ITensor* weights,
+      nvinfer1::DataType output_type) {
+    const auto none = std::optional<nvinfer1::ITensor*>();
+    if (!FcBlockScalesEnabled() ||
+        weights->getType() != nvinfer1::DataType::kINT4 ||
+        tensor.QTypeId() != kLiteRtQuantizationPerChannel) {
+      return none;
+    }
+    const auto dims = weights->getDimensions();
+    if (dims.nbDims != 2 || dims.d[0] <= 0 || dims.d[1] <= 0) {
+      return none;
+    }
+    const auto q = tensor.PerChannelQuantization();
+    if (q.quantized_dimension != 0 ||
+        q.num_channels != static_cast<uint64_t>(dims.d[0]) ||
+        q.scales == nullptr || q.zero_points == nullptr) {
+      return none;
+    }
+    const int32_t k = dims.d[1];
+    int32_t block = 0;
+    for (int32_t candidate : kFcBlockScaleSizes) {
+      if (candidate < k && k % candidate == 0) {
+        block = candidate;
+        break;
+      }
+    }
+    if (block == 0) {
+      return none;
+    }
+    const int32_t blocks_per_row = k / block;
+    std::vector<float> scales(static_cast<size_t>(q.num_channels) *
+                              blocks_per_row);
+    for (uint64_t n = 0; n < q.num_channels; ++n) {
+      if (q.scales[n] <= 0.0f || q.zero_points[n] != 0) {
+        return none;
+      }
+      std::fill_n(scales.data() + n * blocks_per_row, blocks_per_row,
+                  q.scales[n]);
+    }
+    nvinfer1::Dims scale_dims{};
+    scale_dims.nbDims = 2;
+    scale_dims.d[0] = dims.d[0];
+    scale_dims.d[1] = blocks_per_row;
+    LITERT_ASSIGN_OR_RETURN(
+        auto* scale, AddFloatConstant(absl::MakeConstSpan(scales), scale_dims,
+                                      "fc_block_scale_tensor_" +
+                                          std::to_string(tensor.TensorIndex()),
+                                      QuantizationScaleType(output_type)));
+    auto* layer = network_->addDequantize(*weights, *scale, output_type);
+    if (layer == nullptr || layer->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add TensorRT block-scaled dequantize layer");
+    }
+    layer->setAxis(1);
+    return std::optional<nvinfer1::ITensor*>(layer->getOutput(0));
+  }
+
   Expected<nvinfer1::ITensor*> AddQuantizeTensor(
       nvinfer1::ITensor* input, const Tensor& quantized_tensor,
       nvinfer1::DataType output_type) {
@@ -3686,6 +3745,14 @@ class TensorRtGraphBuilder {
       LITERT_ASSIGN_OR_RETURN(weights, GetTensor(op.Inputs()[1]));
     }
     if (Fp16ActivationsEnabled()) {
+      if (weights->getType() == nvinfer1::DataType::kINT4) {
+        LITERT_ASSIGN_OR_RETURN(auto block_scaled,
+                                AddBlockScaledDequantizeTensor(
+                                    op.Inputs()[1], weights, compute_type));
+        if (block_scaled.has_value()) {
+          weights = *block_scaled;
+        }
+      }
       if (weights->getType() == nvinfer1::DataType::kINT8 ||
           weights->getType() == nvinfer1::DataType::kINT4) {
         LITERT_ASSIGN_OR_RETURN(
