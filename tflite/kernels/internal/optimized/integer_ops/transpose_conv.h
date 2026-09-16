@@ -17,6 +17,7 @@ limitations under the License.
 
 #include <algorithm>
 
+#include "tflite/kernels/cpu_backend_gemm_params.h"
 #include "tflite/kernels/internal/optimized/optimized_ops.h"
 
 namespace tflite {
@@ -89,6 +90,14 @@ inline void TransposeConvV2(
     dst_params.order = cpu_backend_gemm::Order::kColMajor;
     dst_params.rows = hwoi_ordered_filter_total_size;
     dst_params.cols = input_image_size;
+
+#if defined(__has_feature)
+#if __has_feature(memory_sanitizer)
+    // Workaround for MSan false positive on ARM where assembly kernels don't
+    // unpoison the destination buffer.
+    std::fill_n(col2im_data, dst_params.rows * dst_params.cols, 0);
+#endif
+#endif
 
     cpu_backend_gemm::GemmParams<int32_t, int32_t> gemm_params;
     cpu_backend_gemm::Gemm(lhs_params, hwoi_ordered_filter_data, rhs_params,
