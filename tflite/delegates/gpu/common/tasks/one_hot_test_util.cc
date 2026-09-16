@@ -16,7 +16,11 @@ limitations under the License.
 #include "tflite/delegates/gpu/common/tasks/one_hot_test_util.h"
 
 #include <memory>
+#include <utility>
+#include <vector>
 
+#include "absl/status/status.h"
+#include "third_party/gloop/util/status/status_macros.h"
 #include "tflite/delegates/gpu/common/tasks/one_hot.h"
 
 namespace tflite {

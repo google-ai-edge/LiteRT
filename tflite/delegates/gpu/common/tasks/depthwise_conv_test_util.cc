@@ -16,6 +16,7 @@ limitations under the License.
 #include "tflite/delegates/gpu/common/tasks/depthwise_conv_test_util.h"
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "tflite/delegates/gpu/common/operations.h"
