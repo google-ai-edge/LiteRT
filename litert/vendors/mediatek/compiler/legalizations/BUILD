@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//litert/build_common:litert_build_defs.bzl", "litert_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -498,6 +499,29 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/compiler/cc:litert_model",
+        "//litert/vendors/mediatek:neuron_adapter_api",
+    ],
+)
+
+litert_test(
+    name = "rms_norm_op_legalization_test",
+    srcs = ["rms_norm_op_legalization_test.cc"],
+    data = [
+        "//litert/test:tflite_test_data",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+        "nosan",
+        "notap",
+    ],
+    deps = [
+        ":operand_map",
+        ":rms_norm_op_legalization",
+        "//litert/c/internal:litert_compiler_context_header",
+        "//litert/c/options:litert_mediatek_options",
+        "//litert/compiler/cc:litert_model",
+        "//litert/test:load_test_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
