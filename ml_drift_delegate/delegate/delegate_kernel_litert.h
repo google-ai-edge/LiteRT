@@ -251,3 +251,4 @@ class DelegateKernelLiteRt : public DelegateKernel {
 }  // namespace litert::ml_drift
 
 #endif  // THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_KERNEL_LITERT_H_
+
