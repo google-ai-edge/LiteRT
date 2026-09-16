@@ -14,12 +14,12 @@
 
 #include "litert/vendors/nvidia/memory_profile.h"
 
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
-#include "absl/time/clock.h"  // from @com_google_absl
 #include "cuda_runtime_api.h"
 #include "driver_types.h"
 #include "litert/c/internal/litert_logging.h"
@@ -63,8 +63,10 @@ void LogMemoryProfile(const char* component, const char* phase,
     return;
   }
   const MemoryProfileSnapshot snapshot = CaptureMemoryProfileSnapshot();
-  const uint64_t monotonic_ns =
-      static_cast<uint64_t>(absl::GetCurrentTimeNanos());
+  const uint64_t monotonic_ns = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::steady_clock::now().time_since_epoch())
+          .count());
   const size_t cuda_device_used_bytes =
       snapshot.cuda_device_total_bytes >= snapshot.cuda_device_free_bytes
           ? snapshot.cuda_device_total_bytes - snapshot.cuda_device_free_bytes
