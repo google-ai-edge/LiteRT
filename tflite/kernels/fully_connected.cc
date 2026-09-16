@@ -155,6 +155,8 @@ TfLiteStatus PopulateLedgerData(const TfLiteSparsity* sparsity,
   for (int i = 0; i < array_segments->size - 1; i++) {
     int row_start = array_segments->data[i];
     int row_end = array_segments->data[i + 1];
+    TF_LITE_ENSURE(context, row_start >= 0 && row_start <= row_end &&
+                                row_end <= array_indices->size);
     if (row_end - row_start > UINT8_MAX) {
       return kTfLiteError;
     }
