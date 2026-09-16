@@ -725,10 +725,13 @@ absl::Status Run(const std::string& weights_path,
   const Config config = Config::From(model_variant);
 
   std::string prompt = raw_prompt;
-  if (model_variant == ModelVariant::kE4B &&
-      !absl::StrContains(raw_prompt, "<start_of_turn>")) {
-    prompt = absl::StrCat("<start_of_turn>user\n", raw_prompt,
-                          "<end_of_turn>\n<start_of_turn>model\n");
+  if (const std::string start_of_turn =
+          tokenizer.DecodeToken(kStartOfTurnToken);
+      model_variant == ModelVariant::kE4B &&
+      !absl::StrContains(raw_prompt, start_of_turn)) {
+    prompt = absl::StrCat(start_of_turn, "user\n", raw_prompt,
+                          tokenizer.DecodeToken(kEndOfTurnToken), "\n",
+                          start_of_turn, "model\n");
   }
 
   ABSL_LOG(INFO) << "Using Gemma4 " << AbslUnparseFlag(model_variant)
@@ -764,6 +767,7 @@ absl::Status Run(const std::string& weights_path,
   TRACE_EVENT_BEGIN(kTensorApiCategory, "TokenizerEncode");
   std::vector<int32_t> input_tokens =
       tokenizer.Encode(prompt, /*add_bos=*/true);
+
   TRACE_EVENT_END(kTensorApiCategory);
   int seq_len = static_cast<int>(input_tokens.size());
 
