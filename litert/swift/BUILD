@@ -16,6 +16,7 @@ load("@build_bazel_rules_apple//apple:apple.bzl", "apple_static_xcframework", "a
 load("@build_bazel_rules_apple//apple:macos.bzl", "macos_dylib")
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_interop_hint", "swift_library", "swift_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//litert:version.bzl", "LITERT_EXPERIMENTAL_VERSION")
 load("//litert/build_common:ios.bzl", "strip_common_include_path_prefix")
 load("//litert/build_common:special_rule.bzl", "litert_gpu_accelerator_prebuilts")
 
@@ -110,12 +111,24 @@ strip_common_include_path_prefix(
     ],
 )
 
+# Fills in the version keys of the framework Info.plist from the LiteRT release
+# version, so the framework reports the same version as the other release
+# artifacts (Maven, Python wheel) instead of a hardcoded placeholder.
+genrule(
+    name = "CLiteRT_info_plist",
+    srcs = ["Sources/LiteRT/Info.plist"],
+    outs = ["CLiteRT_Info.plist"],
+    cmd = "sed 's/@VERSION@/{version}/g' $< > $@".format(
+        version = LITERT_EXPERIMENTAL_VERSION,
+    ),
+)
+
 apple_xcframework(
     name = "CLiteRT",
     bundle_id = "com.google.odml.litert.CLiteRT",
     bundle_name = "CLiteRT",
     features = ["exported_symbols"],
-    infoplists = ["Sources/LiteRT/Info.plist"],
+    infoplists = [":CLiteRT_info_plist"],
     ios = {
         "simulator": [
             "arm64",
@@ -223,27 +236,71 @@ genrule(
         "@litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib",
     ],
     outs = ["LiteRtMetalAccelerator.xcframework.zip"],
+    # The prebuilt Metal accelerator is shipped as a plain dylib
+    # (libLiteRtMetalAccelerator.dylib), but a framework bundle must hold an
+    # executable named exactly like the bundle itself. Tools consuming the
+    # xcframework rely on that: rules_apple, for instance, only treats a file
+    # as the framework binary when its basename equals the bundle name (see
+    # `_classify_framework_imports` in rules_apple's
+    # apple/internal/framework_import_support.bzl), and fails the import
+    # otherwise. The dylib is therefore renamed on its way into the bundle,
+    # its install name is rewritten to match, and the Info.plists are filled
+    # in with the keys Xcode and App Store validation expect from an
+    # embeddable dynamic framework.
     cmd = """
        OUT_ZIP=$$(pwd)/$@
-       mkdir -p metal_tmp/LiteRtMetalAccelerator.xcframework/ios-arm64/LiteRtMetalAccelerator.framework
-       mkdir -p metal_tmp/LiteRtMetalAccelerator.xcframework/ios-arm64-simulator/LiteRtMetalAccelerator.framework
-       cp $(location @litert_prebuilts//:ios_arm64/libLiteRtMetalAccelerator.dylib) metal_tmp/LiteRtMetalAccelerator.xcframework/ios-arm64/LiteRtMetalAccelerator.framework/libLiteRtMetalAccelerator.dylib
-       cp $(location @litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib) metal_tmp/LiteRtMetalAccelerator.xcframework/ios-arm64-simulator/LiteRtMetalAccelerator.framework/libLiteRtMetalAccelerator.dylib
+       XCFRAMEWORK=metal_tmp/LiteRtMetalAccelerator.xcframework
+       mkdir -p $$XCFRAMEWORK/ios-arm64/LiteRtMetalAccelerator.framework
+       mkdir -p $$XCFRAMEWORK/ios-arm64-simulator/LiteRtMetalAccelerator.framework
+       cp $(location @litert_prebuilts//:ios_arm64/libLiteRtMetalAccelerator.dylib) $$XCFRAMEWORK/ios-arm64/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator
+       cp $(location @litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib) $$XCFRAMEWORK/ios-arm64-simulator/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator
+       # The prebuilts are linked with an install name of
+       # `@rpath/libLiteRtMetalAccelerator.dylib`. The linker copies that
+       # string verbatim into every app that links the framework, so it has to
+       # name the binary at its location inside the bundle, otherwise dyld
+       # cannot find it at launch. install_name_tool refreshes the ad-hoc
+       # linker signature of the arm64 slices on its own, so no separate
+       # codesign step is needed.
+       for SLICE in ios-arm64 ios-arm64-simulator; do
+         BINARY=$$XCFRAMEWORK/$$SLICE/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator
+         chmod +w $$BINARY
+         xcrun install_name_tool -id @rpath/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator $$BINARY
+       done
+       # The version keys carry the LiteRT release version, matching the
+       # CLiteRT framework shipped alongside this one.
        cat << 'EOF' > metal_tmp/framework_Info.plist
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>LiteRtMetalAccelerator</string>
     <key>CFBundleIdentifier</key>
     <string>com.google.odml.litert.LiteRtMetalAccelerator</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>LiteRtMetalAccelerator</string>
     <key>CFBundlePackageType</key>
     <string>FMWK</string>
+    <key>CFBundleShortVersionString</key>
+    <string>{version}</string>
+    <key>CFBundleSupportedPlatforms</key>
+    <array>
+        <string>@PLATFORM@</string>
+    </array>
+    <key>CFBundleVersion</key>
+    <string>{version}</string>
+    <key>MinimumOSVersion</key>
+    <string>15.0</string>
 </dict>
 </plist>
 EOF
-       cp metal_tmp/framework_Info.plist metal_tmp/LiteRtMetalAccelerator.xcframework/ios-arm64/LiteRtMetalAccelerator.framework/Info.plist
-       cp metal_tmp/framework_Info.plist metal_tmp/LiteRtMetalAccelerator.xcframework/ios-arm64-simulator/LiteRtMetalAccelerator.framework/Info.plist
-       cat << 'EOF' > metal_tmp/LiteRtMetalAccelerator.xcframework/Info.plist
+       sed 's/@PLATFORM@/iPhoneOS/' metal_tmp/framework_Info.plist > $$XCFRAMEWORK/ios-arm64/LiteRtMetalAccelerator.framework/Info.plist
+       sed 's/@PLATFORM@/iPhoneSimulator/' metal_tmp/framework_Info.plist > $$XCFRAMEWORK/ios-arm64-simulator/LiteRtMetalAccelerator.framework/Info.plist
+       cat << 'EOF' > $$XCFRAMEWORK/Info.plist
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -252,7 +309,7 @@ EOF
     <array>
         <dict>
             <key>BinaryPath</key>
-            <string>LiteRtMetalAccelerator.framework/libLiteRtMetalAccelerator.dylib</string>
+            <string>LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator</string>
             <key>LibraryIdentifier</key>
             <string>ios-arm64</string>
             <key>LibraryPath</key>
@@ -266,7 +323,7 @@ EOF
         </dict>
         <dict>
             <key>BinaryPath</key>
-            <string>LiteRtMetalAccelerator.framework/libLiteRtMetalAccelerator.dylib</string>
+            <string>LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator</string>
             <key>LibraryIdentifier</key>
             <string>ios-arm64-simulator</string>
             <key>LibraryPath</key>
@@ -290,7 +347,7 @@ EOF
 EOF
        cd metal_tmp && zip -q -r "$$OUT_ZIP" LiteRtMetalAccelerator.xcframework && cd ..
        rm -rf metal_tmp
-    """,
+    """.format(version = LITERT_EXPERIMENTAL_VERSION),
     visibility = ["//visibility:public"],
 )
 # copybara:comment_end

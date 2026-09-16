@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: the version placeholders below are filled in with the LiteRT
+     release version by the CLiteRT_info_plist rule in this directory's BUILD
+     file. -->
 <plist version="1.0">
     <dict>
         <key>CFBundleDevelopmentRegion</key>
@@ -15,8 +18,8 @@
         <key>CFBundlePackageType</key>
         <string>FMWK</string>
         <key>CFBundleShortVersionString</key>
-        <string>1.0</string>
+        <string>@VERSION@</string>
         <key>CFBundleVersion</key>
-        <string>1</string>
+        <string>@VERSION@</string>
     </dict>
 </plist>

@@ -57,6 +57,10 @@ LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
 #elif TARGET_OS_IPHONE
 #if LITERT_HAS_METAL_SUPPORT
       "libLiteRtMetalAccelerator" SO_EXT,
+      // Inside an Apple framework bundle the executable is named after the
+      // bundle, so the accelerator ships as
+      // LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator.
+      "LiteRtMetalAccelerator",
 #endif  // LITERT_HAS_METAL_SUPPORT
 #if LITERT_HAS_WEBGPU_SUPPORT
       "libLiteRtWebGpuAccelerator" SO_EXT,
