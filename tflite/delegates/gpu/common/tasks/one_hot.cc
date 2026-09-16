@@ -15,7 +15,6 @@ limitations under the License.
 #include "tflite/delegates/gpu/common/tasks/one_hot.h"
 
 #include <string>
-#include <utility>
 
 #include "tflite/delegates/gpu/common/operations.h"
 
