@@ -79,6 +79,9 @@ jobs:
           ninja --version
 
       - name: Configure Bazel
+        # LINT.IfChange(configure_tflite_build_flags)
+        # Keep compiler configuration consistent with internal CI
+        # (run_bazel_test_with_docker.sh) to ensure Bazel remote cache hits.
         shell: bash
         run: |
           chmod +x configure.py
@@ -90,6 +93,7 @@ jobs:
           export TF_SET_ANDROID_WORKSPACE=0
           export CC_OPT_FLAGS='-Wno-sign-compare'
           python3 configure.py < <(yes "")
+        # LINT.ThenChange(../ci/run_bazel_test_with_docker.sh:configure_tflite_build_flags)
 
       - name: Build TFLite Linux artifacts with Bazel
         shell: bash
