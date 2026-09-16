@@ -27,9 +27,18 @@ Flag                                | Type | Default   | Description
 
 ### Advanced Configuration
 
-Flag                           | Type   | Default | Description
------------------------------- | ------ | ------- | -----------
-`--intel_openvino_configs_map` | string | `""`    | Comma-separated key=value pairs for OpenVINO configuration properties (e.g., `INFERENCE_PRECISION_HINT=f16,CACHE_DIR=/tmp/cache`)
+| Flag                                     | Type   | Default | Description                                          |
+| ---------------------------------------- | ------ | ------- | ---------------------------------------------------- |
+| `--intel_openvino_configs_map`           | string | `""`    | Comma-separated key=value pairs for OpenVINO         |
+:                                          :        :         : configuration properties (e.g.,                      :
+:                                          :        :         : `INFERENCE_PRECISION_HINT=f16,CACHE_DIR=/tmp/cache`) :
+| `--intel_openvino_enable_weight_sharing` | bool   | `true`  | Enable cross-partition weight sharing. When enabled  |
+:                                          :        :         : (and every partition targets the same GPU or NPU     :
+:                                          :        :         : device), all partitions' distinct weights are        :
+:                                          :        :         : deduplicated into a single shared pool emitted once  :
+:                                          :        :         : as a `GlobalGraph` container. Set to `false` to emit :
+:                                          :        :         : standalone per-partition bytecode with baked-in      :
+:                                          :        :         : weights.                                             :
 
 ### Per-Graph (Per-Partition) Overrides
 
