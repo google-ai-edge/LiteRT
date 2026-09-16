@@ -159,6 +159,76 @@ inline bool ShouldCreateLazyDelegateProviders(int num_fp32_tensors) {
 #endif
 }
 
+// Validates operator parameters that live in constant input tensors and that a
+// malformed model could otherwise use to drive an out-of-bounds access.
+//
+// This runs once per node while the model is being deserialized, before any
+// delegate can claim the node, so builtin CPU kernels, XNNPACK and the
+// GPU/ML Drift delegates all get the same guarantee without each of them
+// re-implementing the check.
+TfLiteStatus ValidateConstantOpParams(BuiltinOperator op_type,
+                                      const Operator* op,
+                                      const Subgraph& subgraph,
+                                      ErrorReporter* error_reporter) {
+  switch (op_type) {
+    case BuiltinOperator_TRANSPOSE: {
+      if (op->inputs() == nullptr || op->inputs()->size() < 2) {
+        return kTfLiteOk;
+      }
+      const int perm_index = op->inputs()->Get(1);
+      if (perm_index < 0) {
+        return kTfLiteOk;
+      }
+      // Subgraph::tensor() bounds-checks the index and returns null when it is
+      // out of range. A null `data` means `perm` is not constant, in which case
+      // only the kernel that consumes it can check it, at run time. A sparse
+      // `perm` stores its entries compressed, so reading them here as a dense
+      // int32 array would be wrong; leave it to whoever densifies it.
+      const TfLiteTensor* perm = subgraph.tensor(perm_index);
+      if (perm == nullptr || perm->dims == nullptr ||
+          perm->type != kTfLiteInt32 || perm->data.i32 == nullptr ||
+          perm->sparsity != nullptr) {
+        return kTfLiteOk;
+      }
+      const int perm_size = perm->dims->size == 1 ? perm->dims->data[0] : -1;
+      if (perm_size < 0 ||
+          perm->bytes / sizeof(int32_t) < static_cast<size_t>(perm_size)) {
+        TF_LITE_REPORT_ERROR(error_reporter,
+                             "TRANSPOSE: 'perm' must be a 1-D int32 tensor "
+                             "whose buffer holds all of its elements.\n");
+        return kTfLiteError;
+      }
+      // Besides being in range, the entries must form an actual permutation.
+      // Consumers rely on each axis appearing exactly once.
+      std::vector<bool> axis_seen(perm_size, false);
+      for (int i = 0; i < perm_size; ++i) {
+        int32_t axis = perm->data.i32[i];
+        if (axis < -perm_size || axis >= perm_size) {
+          TF_LITE_REPORT_ERROR(error_reporter,
+                               "TRANSPOSE: perm[%d] = %d is out of bounds for "
+                               "a permutation of %d axes.\n",
+                               i, axis, perm_size);
+          return kTfLiteError;
+        }
+        if (axis < 0) {
+          axis += perm_size;
+        }
+        if (axis_seen[axis]) {
+          TF_LITE_REPORT_ERROR(error_reporter,
+                               "TRANSPOSE: perm[%d] repeats axis %d; 'perm' "
+                               "must be a permutation.\n",
+                               i, axis);
+          return kTfLiteError;
+        }
+        axis_seen[axis] = true;
+      }
+      return kTfLiteOk;
+    }
+    default:
+      return kTfLiteOk;
+  }
+}
+
 }  // namespace
 
 constexpr const char* kEmptyTensorName = "";
@@ -365,6 +435,14 @@ TfLiteStatus InterpreterBuilder::ParseNodes(
       TF_LITE_REPORT_ERROR(error_reporter_,
                            "Found builtin operator %s with custom options.\n",
                            EnumNameBuiltinOperator(op_type));
+    }
+
+    // Reject malformed operator parameters here, while the model is still being
+    // deserialized, so that no backend has to repeat the check. Done before
+    // `builtin_data` is allocated below so an early return cannot leak it.
+    if (ValidateConstantOpParams(op_type, op, *subgraph, error_reporter_) !=
+        kTfLiteOk) {
+      return kTfLiteError;
     }
 
     void* builtin_data = nullptr;

@@ -40,7 +40,18 @@ void ConvertTranspose(
 
   const TfLiteTensor& perm_tensor = context.tensors[perm_id];
   const int num_elements = tflite::NumElements(&perm_tensor);
-  const int* perm_data = tflite::GetTensorData<int32_t>(&perm_tensor);
+  const int* raw_perm_data = tflite::GetTensorData<int32_t>(&perm_tensor);
+  // Entries are validated against the permutation's own length centrally, by
+  // InterpreterBuilder::ParseNodes. That check follows the TFLite contract,
+  // under which an axis may be given as a negative offset from the end, so
+  // normalize to the non-negative form that the `index_to_axis` lookups below
+  // require.
+  std::vector<int> perm_data(raw_perm_data, raw_perm_data + num_elements);
+  for (int& axis_index : perm_data) {
+    if (axis_index < 0) {
+      axis_index += num_elements;
+    }
+  }
 
   ::ml_drift::ir::IrOp* transpose_op = ir_model.add_op();
   transpose_op->name = ToString(::ml_drift::OperationType::TRANSPOSE);
