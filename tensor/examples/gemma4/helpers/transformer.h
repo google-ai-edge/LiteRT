@@ -24,7 +24,6 @@ limitations under the License.
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
 #include "tensor/examples/gemma4/helpers/attention.h"
-#include "tensor/examples/gemma4/helpers/feed_forward_network.h"
 #include "tensor/examples/ops/transformer/transformer_ops.h"
 #include "tensor/tensor.h"
 
@@ -89,7 +88,8 @@ TransformerLayerOutput<Mixins...> TransformerLayer(
       GetWeight(weights, absl::StrCat(layer_prefix, ".mlp.down_proj.weight"),
                 Type::kFP32, {config.embed_dim, config.hidden_dim});
   Tensor ffn_output =
-      FeedForwardNetwork(normed_attn_output, gate_proj, up_proj, down_proj);
+      FeedForward(normed_attn_output, gate_proj, up_proj, down_proj,
+                  FFNActivation::kGeluApproximate);
 
   if (config.use_post_ffw_norm) {
     Tensor post_ffn_norm_scale = GetWeight(

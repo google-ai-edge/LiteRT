@@ -168,4 +168,18 @@ cc_library(
 #     ],
 # )
 #
+# cc_test(
+#     name = "transformer_ops_test",
+#     srcs = ["transformer_ops_test.cc"],
+#     deps = [
+#         ":transformer_ops",
+#         "@com_google_googletest//:gtest_main",
+#         "//tensor",
+#         "//tensor:datatypes",
+#         "//tensor/backends/xnnpack:arithmetic",
+#         "//tensor/runners/xnnpack:runner",
+#         "//tensor/utils:matchers",
+#     ],
+# )
+#
 # copybara:uncomment_end
