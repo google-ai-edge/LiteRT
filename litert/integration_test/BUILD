@@ -23,7 +23,7 @@ load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test", "litert_integration_test")
 load("//litert/integration_test:litert_device_common.bzl", "cc_import_files", "device_rlocation", "get_libs")
 load("//litert/integration_test:litert_device_script.bzl", "litert_device_script", "make_download_model_provider")
-# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_intel_openvino_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
+# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_intel_openvino_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_pixel_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -440,8 +440,8 @@ litert_integration_test(
 #             litert_qualcomm_mh_guitar_test(
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_qualcomm"],
 #             ),
-#             litert_pixel_9_mh_guitar_test(
-#                 dimension_model = "pixel 9",
+#             litert_pixel_mh_guitar_test(
+#                 dimension_model = "pixel 11",
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor"],
 #             ),
 #             litert_mediatek_mh_guitar_test(
