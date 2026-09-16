@@ -160,8 +160,8 @@ export function litertToTfjs(tensor: Tensor): tf.Tensor {
 }
 
 function litertToTfjsCpu(tensor: Tensor): tf.Tensor {
-  const typedArray = tensor.toTypedArray();
   const tfjsDataType = liteRtDtypeToTfjs(tensor.type.dtype);
+  const typedArray = tensor.toTypedArray() as tf.TypedArray;
 
   return tf.tensor(
       typedArray, [...tensor.type.layout.dimensions], tfjsDataType);
