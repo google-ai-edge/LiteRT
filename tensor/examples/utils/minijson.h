@@ -712,8 +712,11 @@ inline error parse_number(Iter& i, value& v) {
       }
       while (MINIJSON_IS_NUM(*i)) i++;
     }
-    if (*i == 'e') {
+    if (*i == 'e' || *i == 'E') {
       i++;
+      if (*i == '+' || *i == '-') {
+        i++;
+      }
       if (!MINIJSON_IS_NUM(*i)) {
         i = p;
         return invalid_token_error;
