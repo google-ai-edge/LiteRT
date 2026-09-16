@@ -15,6 +15,7 @@
 #include "litert/vendors/nvidia/dispatch/dispatch_profiler.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -22,8 +23,6 @@
 #include <vector>
 
 #include "absl/strings/numbers.h"  // from @com_google_absl
-#include "absl/time/clock.h"  // from @com_google_absl
-#include "absl/time/time.h"  // from @com_google_absl
 #include "cuda_runtime_api.h"
 #include "driver_types.h"
 #include "litert/c/internal/litert_logging.h"
@@ -60,7 +59,7 @@ bool DispatchLayerProfilingEnabled() {
 DispatchInvocationProfiler::~DispatchInvocationProfiler() { DestroyEvents(); }
 
 litert::Expected<void> DispatchInvocationProfiler::Begin(cudaStream_t stream) {
-  cpu_start_ = absl::Now();
+  cpu_start_ = std::chrono::steady_clock::now();
   LITERT_RETURN_IF_ERROR(EnsureEvents());
   LITERT_RETURN_IF_ERROR(
       CudaOk(cudaEventRecord(event_start_, stream), "cudaEventRecord"));
@@ -97,8 +96,9 @@ litert::Expected<void> DispatchInvocationProfiler::Finish(
   LITERT_RETURN_IF_ERROR(CudaOk(
       cudaEventElapsedTime(&d2h_ms, event_after_enqueue_, event_after_d2h_),
       "cudaEventElapsedTime D2H"));
-  const double cpu_total_ms =
-      absl::ToDoubleMilliseconds(absl::Now() - cpu_start_);
+  const double cpu_total_ms = std::chrono::duration<double, std::milli>(
+                                  std::chrono::steady_clock::now() - cpu_start_)
+                                  .count();
   LITERT_LOG(LITERT_INFO,
              "NVIDIA dispatch profile function=%s host_inputs=%d "
              "direct_inputs=%d host_outputs=%d direct_outputs=%d "

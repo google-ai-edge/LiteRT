@@ -34,27 +34,34 @@ public final class TensorFlowLite {
   // apply the parameters.
   private static final Logger logger = Logger.getLogger(TensorFlowLite.class.getName());
 
-  private static final String LIB_NAME = "LiteRt";
+  private static final String[] runtimeLibraries =
+      // We load the first library that we find in each group.
+      new String[] {
+        // Regular LiteRT
+        "LiteRt",
+        // LiteRT in Google Play Services
+        "tensorflowlite_jni_gms_client",
+      };
   private static final Throwable LOAD_LIBRARY_EXCEPTION;
   private static volatile boolean isInit = false;
 
   static {
-    // Attempt to load the TF Lite runtime's JNI library, trying each alternative name in turn.
+    // Attempt to load the LiteRT runtime's JNI library, trying each alternative name in turn.
     // If unavailable, catch and save the exception(s); the client may choose to link the native
     // deps into their own custom native library, so it's not an error if the default library names
     // can't be loaded.
     Throwable loadLibraryException = null;
-
-    try {
-      System.loadLibrary(LIB_NAME);
-      logger.info("Loaded native library: " + LIB_NAME);
-      isInit = true;
-    } catch (UnsatisfiedLinkError e) {
-      logger.info("Didn't load native library: " + LIB_NAME);
-      if (loadLibraryException == null) {
-        loadLibraryException = e;
-      } else {
-        loadLibraryException.addSuppressed(e);
+    for (String libName : runtimeLibraries) {
+      try {
+        System.loadLibrary(libName);
+        logger.info("Loaded native library: " + libName);
+      } catch (UnsatisfiedLinkError e) {
+        logger.info("Didn't load native library: " + libName);
+        if (loadLibraryException == null) {
+          loadLibraryException = e;
+        } else {
+          loadLibraryException.addSuppressed(e);
+        }
       }
     }
     LOAD_LIBRARY_EXCEPTION = loadLibraryException;
