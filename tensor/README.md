@@ -34,9 +34,9 @@ Here is a simplified example of defining a **Multi-Head Attention (MHA)**
 layer:
 
 ```cpp
-#include "third_party/odml/litert/tensor/arithmetic.h"
-#include "third_party/odml/litert/tensor/backends/tflite/tflite_flatbuffer_conversion.h"
-#include "third_party/odml/litert/tensor/tensor.h"
+#include "tensor/arithmetic.h"
+#include "tensor/backends/tflite/tflite_flatbuffer_conversion.h"
+#include "tensor/tensor.h"
 
 using namespace litert::tensor;
 
@@ -104,9 +104,9 @@ By using `LambdaRunner` and sharing buffers, you can achieve **zero-copy**
 execution between GPU/CPU pipeline stages.
 
 ```cpp
-#include "third_party/odml/litert/tensor/arithmetic.h"
-#include "third_party/odml/litert/tensor/runners/litert/lambda_model_runner.h"
-#include "third_party/odml/litert/tensor/runners/litert/litert_dynamic_runner.h"
+#include "tensor/arithmetic.h"
+#include "tensor/runners/litert/lambda_model_runner.h"
+#include "tensor/runners/litert/litert_dynamic_runner.h"
 
 using namespace litert::tensor;
 
@@ -146,8 +146,8 @@ verify backend correctness by comparing intermediate outputs against a
 reference CPU implementation.
 
 ```cpp
-#include "third_party/odml/litert/tensor/internal/graph_probe.h"
-#include "third_party/odml/litert/tensor/runners/litert/compiled_model_runner.h"
+#include "tensor/internal/graph_probe.h"
+#include "tensor/runners/litert/compiled_model_runner.h"
 
 // Define probes to intercept intermediate tensors
 absl::flat_hash_map<GraphProbe::StableTensorId, std::string, GraphProbe::StableTensorIdHash> probes;
@@ -181,11 +181,11 @@ addition on CPU using the LiteRT Tensor API:
 ```cpp
 #include <iostream>
 #include <vector>
-#include "third_party/odml/litert/litert/cc/litert_environment.h"
-#include "third_party/odml/litert/litert/cc/litert_options.h"
-#include "third_party/odml/litert/tensor/arithmetic.h"
-#include "third_party/odml/litert/tensor/runners/litert/lambda_model_runner.h"
-#include "third_party/odml/litert/tensor/tensor.h"
+#include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_options.h"
+#include "tensor/arithmetic.h"
+#include "tensor/runners/litert/lambda_model_runner.h"
+#include "tensor/tensor.h"
 
 using namespace litert::tensor;
 
