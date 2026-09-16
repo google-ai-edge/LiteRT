@@ -161,6 +161,7 @@ class Options:
         "intel_openvino_graph_backend": -1,
         "intel_openvino_performance_mode": -1,
         "intel_openvino_configs_map": {},
+        "intel_openvino_enable_weight_sharing": -1,
     }
     if self._cpu_options is not None:
       kwargs.update(self._cpu_options._as_flat_kwargs())

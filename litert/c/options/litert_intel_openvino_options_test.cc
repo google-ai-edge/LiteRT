@@ -111,6 +111,33 @@ TEST(IntelOpenVinoOptions, SetAndGetPerformanceMode) {
   LrtDestroyIntelOpenVinoOptions(payload);
 }
 
+TEST(IntelOpenVinoOptions, SetAndGetEnableWeightSharing) {
+  LrtIntelOpenVinoOptions payload = nullptr;
+  LITERT_ASSERT_OK(LrtIntelOpenVinoOptionsCreate(&payload));
+
+  bool enabled = false;
+  LITERT_EXPECT_OK(
+      LrtIntelOpenVinoOptionsGetEnableWeightSharing(payload, &enabled));
+  EXPECT_THAT(enabled, Eq(true));
+
+  LITERT_EXPECT_OK(
+      LrtIntelOpenVinoOptionsSetEnableWeightSharing(payload, false));
+  LITERT_EXPECT_OK(
+      LrtIntelOpenVinoOptionsGetEnableWeightSharing(payload, &enabled));
+  EXPECT_THAT(enabled, Eq(false));
+
+  LrtIntelOpenVinoOptions payload_from_toml = nullptr;
+  SerializeAndParse(payload, &payload_from_toml);
+
+  bool enabled_from_toml = true;
+  LITERT_EXPECT_OK(LrtIntelOpenVinoOptionsGetEnableWeightSharing(
+      payload_from_toml, &enabled_from_toml));
+  EXPECT_THAT(enabled_from_toml, Eq(false));
+
+  LrtDestroyIntelOpenVinoOptions(payload_from_toml);
+  LrtDestroyIntelOpenVinoOptions(payload);
+}
+
 TEST(IntelOpenVinoOptions, TomlSerializationWithConfigsMap) {
   LrtIntelOpenVinoOptions payload = nullptr;
   LITERT_ASSERT_OK(LrtIntelOpenVinoOptionsCreate(&payload));

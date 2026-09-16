@@ -164,7 +164,9 @@ bool HasQualcommOptions(const CompilationOptions& compilation_options) {
 bool HasIntelOpenVinoOptions(const CompilationOptions& compilation_options) {
   return compilation_options.intel_openvino_graph_backend >= 0 ||
          compilation_options.intel_openvino_performance_mode >= 0 ||
-         !compilation_options.intel_openvino_configs_map.empty();
+         !compilation_options.intel_openvino_configs_map.empty() ||
+         TriStateBoolIsSet(
+             compilation_options.intel_openvino_enable_weight_sharing);
 }
 
 bool PopulateCompilationOptions(litert::Options& options,
@@ -346,6 +348,11 @@ bool PopulateCompilationOptions(litert::Options& options,
       intel_openvino_options.SetPerformanceMode(
           static_cast<LiteRtIntelOpenVinoPerformanceMode>(
               compilation_options.intel_openvino_performance_mode));
+    }
+    if (TriStateBoolIsSet(
+            compilation_options.intel_openvino_enable_weight_sharing)) {
+      intel_openvino_options.SetEnableWeightSharing(TriStateBoolValue(
+          compilation_options.intel_openvino_enable_weight_sharing));
     }
     for (const auto& [key, value] :
          compilation_options.intel_openvino_configs_map) {

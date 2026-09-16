@@ -31,29 +31,31 @@ function makeMoveTo(copyTo: TensorCopyFn): TensorCopyFn {
  * Registers functions to copy tensors between the CPU and WebGPU accelerators.
  */
 export function registerCopyFunctions() {
-  Tensor.copyFunctions.set(TensorBufferType.HOST_MEMORY, new Map([
-                             [
-                               TensorBufferType.HOST_MEMORY, {
-                                 copyTo: copyHostMemoryToHostMemory,
-                                 // There might be a more efficient way to move
-                                 // from CPU to CPU.
-                                 moveTo: makeMoveTo(copyHostMemoryToHostMemory),
-                               }
-                             ],
-                             [
-                               TensorBufferType.WEB_GPU_BUFFER_PACKED, {
-                                 copyTo: cpuTensorToGpuTensor,
-                                 moveTo: makeMoveTo(cpuTensorToGpuTensor),
-                               }
-                             ],
-                           ]));
+  const hostMemoryDests = new Map([
+    [
+      TensorBufferType.HOST_MEMORY, {
+        copyTo: copyHostMemoryToHostMemory,
+        moveTo: makeMoveTo(copyHostMemoryToHostMemory),
+      }
+    ],
+    [
+      TensorBufferType.WEB_GPU_BUFFER_PACKED, {
+        copyTo: cpuTensorToGpuTensor,
+        moveTo: makeMoveTo(cpuTensorToGpuTensor),
+      }
+    ],
+  ]);
 
-  Tensor.copyFunctions.set(TensorBufferType.WEB_GPU_BUFFER_PACKED, new Map([
-                             [
-                               TensorBufferType.HOST_MEMORY, {
-                                 copyTo: gpuTensorToCpuTensor,
-                                 moveTo: makeMoveTo(gpuTensorToCpuTensor),
-                               }
-                             ],
-                           ]));
+  Tensor.copyFunctions.set(TensorBufferType.HOST_MEMORY, hostMemoryDests);
+
+  const webGpuDests = new Map([
+    [
+      TensorBufferType.HOST_MEMORY, {
+        copyTo: gpuTensorToCpuTensor,
+        moveTo: makeMoveTo(gpuTensorToCpuTensor),
+      }
+    ],
+  ]);
+
+  Tensor.copyFunctions.set(TensorBufferType.WEB_GPU_BUFFER_PACKED, webGpuDests);
 }

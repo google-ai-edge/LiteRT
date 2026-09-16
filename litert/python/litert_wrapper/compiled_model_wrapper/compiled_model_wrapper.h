@@ -67,6 +67,7 @@ struct CompilationOptions {
   int intel_openvino_graph_backend = -1;
   int intel_openvino_performance_mode = -1;
   std::map<std::string, std::string> intel_openvino_configs_map;
+  int intel_openvino_enable_weight_sharing = -1;
 };
 
 /**

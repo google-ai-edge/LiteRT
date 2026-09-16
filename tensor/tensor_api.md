@@ -45,7 +45,7 @@ with the LiteRT framework.
 
 ## Tensor API
 
-Defined in `third_party/odml/litert/tensor/tensor.h`.
+Defined in `tensor/tensor.h`.
 
 ### TensorHandle
 
@@ -105,7 +105,7 @@ Helper functions to create `TensorHandle` instances.
 
 ## Buffer API
 
-Defined in `third_party/odml/litert/tensor/buffer.h`.
+Defined in `tensor/buffer.h`.
 
 The Buffer API provides a common interface for accessing tensor data, whether
 it is stored in CPU memory or accessible via hardware acceleration.
@@ -136,7 +136,7 @@ it is stored in CPU memory or accessible via hardware acceleration.
 
 ## LiteRT Buffer
 
-Defined in `third_party/odml/litert/tensor/runners/litert/litert_buffer.h`.
+Defined in `tensor/runners/litert/litert_buffer.h`.
 
 ### LitertBuffer
 
@@ -154,7 +154,7 @@ runners using the high-level Tensor abstraction.
 
 ## Core Op APIs
 
-Defined in `third_party/odml/litert/tensor/arithmetic.h`.
+Defined in `tensor/arithmetic.h`.
 
 These APIs allow building computation graphs using a familiar operator syntax or
 function calls. They return new `Tensor` instances representing the operation
@@ -285,7 +285,7 @@ LiteRT infrastructure.
 
 ### CompiledModelRunner
 
-Defined in `third_party/odml/litert/tensor/runners/litert/compiled_model_runner.h`.
+Defined in `tensor/runners/litert/compiled_model_runner.h`.
 
 A template class that takes a model functor and runs it using LiteRT's
 `CompiledModel`.
@@ -302,7 +302,7 @@ A template class that takes a model functor and runs it using LiteRT's
 
 ### LitertDynamicRunner
 
-Defined in `third_party/odml/litert/tensor/runners/litert/litert_dynamic_runner.h`.
+Defined in `tensor/runners/litert/litert_dynamic_runner.h`.
 
 A runner that supports models with multiple signatures and dynamic execution.
 
@@ -322,7 +322,7 @@ A runner that supports models with multiple signatures and dynamic execution.
 
 ## Usage Example
 
-Based on `third_party/odml/litert/tensor/examples/segmentation/segmentation_example_webgpu.cc`.
+Based on `tensor/examples/segmentation/segmentation_example_webgpu.cc`.
 
 This example demonstrates how to use the `LitertDynamicRunner` to load a model,
 set inputs, run inference, and access the output data.
@@ -330,10 +330,10 @@ set inputs, run inference, and access the output data.
 ```cpp
 #include <iostream>
 #include <vector>
-#include "third_party/odml/litert/litert/cc/litert_environment.h"
-#include "third_party/odml/litert/litert/cc/litert_options.h"
-#include "third_party/odml/litert/tensor/tensor.h"
-#include "third_party/odml/litert/tensor/runners/litert/litert_dynamic_runner.h"
+#include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_options.h"
+#include "tensor/tensor.h"
+#include "tensor/runners/litert/litert_dynamic_runner.h"
 
 using namespace litert::tensor;
 
