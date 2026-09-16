@@ -390,7 +390,7 @@ NPU bytecode binary payload (e.g., Qualcomm context binary, MediaTek binary).
 ### Basic Usage
 
 ```bash
-blaze run //third_party/odml/litert/litert/tools/build_custom_npu_model:build_custom_npu_model_main -- \
+blaze run //litert/tools/build_custom_npu_model:build_custom_npu_model_main -- \
   --model=/path/to/qnn_partition_0_0.bin \
   -o /path/to/output_model.tflite \
   --input_shapes="1x256x256x3" \
