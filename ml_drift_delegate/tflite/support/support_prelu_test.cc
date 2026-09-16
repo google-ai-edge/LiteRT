@@ -80,6 +80,46 @@ TEST_F(PReLUOpTest, SupportsHwcAlpha) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
 }
 
+// An alpha of shape [1, 1, C] is per-channel, not HWC: every dimension but the
+// last is 1, so it broadcasts across H and W. Dispatching on rank alone used to
+// send it down the HWC path, where its H=W=1 was compared against the input's
+// real H,W and the op was wrongly rejected. This is the shape the MediaPipe
+// face/hand/pose models emit, so getting it wrong collapses GPU delegation for
+// all of them.
+TEST_F(PReLUOpTest, SupportsPerChannelAlphaRank3) {
+  StubContextBuilder context_builder;
+  const int in = context_builder.AddTensor(kDefaultDtype, kDefaultInputDims);
+  const int alpha = context_builder.AddConstTensor(kDefaultDtype, {1, 1, 16});
+  const int out = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  context_builder.SetOp(kTfLiteBuiltinPrelu, 1, nullptr, {in, alpha}, {out});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+TEST_F(PReLUOpTest, SupportsPerChannelAlphaRank2) {
+  StubContextBuilder context_builder;
+  const int in = context_builder.AddTensor(kDefaultDtype, kDefaultInputDims);
+  const int alpha = context_builder.AddConstTensor(kDefaultDtype, {1, 16});
+  const int out = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  context_builder.SetOp(kTfLiteBuiltinPrelu, 1, nullptr, {in, alpha}, {out});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+TEST_F(PReLUOpTest, SupportsPerChannelAlphaRank4) {
+  StubContextBuilder context_builder;
+  const int in = context_builder.AddTensor(kDefaultDtype, kDefaultInputDims);
+  const int alpha =
+      context_builder.AddConstTensor(kDefaultDtype, {1, 1, 1, 16});
+  const int out = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  context_builder.SetOp(kTfLiteBuiltinPrelu, 1, nullptr, {in, alpha}, {out});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
 TEST_F(PReLUOpTest, RejectsWrongNumberOfInputs) {
   StubContextBuilder context_builder;
   const int in = context_builder.AddTensor(kDefaultDtype, kDefaultInputDims);
@@ -166,6 +206,17 @@ TEST_F(PReLUOpTest, RejectsLinearAlphaMismatchedChannels) {
   StubContextBuilder context_builder;
   const int in = context_builder.AddTensor(kDefaultDtype, kDefaultInputDims);
   const int alpha = context_builder.AddConstTensor(kDefaultDtype, {32});
+  const int out = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  context_builder.SetOp(kTfLiteBuiltinPrelu, 1, nullptr, {in, alpha}, {out});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST_F(PReLUOpTest, RejectsPerChannelAlphaMismatchedChannels) {
+  StubContextBuilder context_builder;
+  const int in = context_builder.AddTensor(kDefaultDtype, kDefaultInputDims);
+  const int alpha = context_builder.AddConstTensor(kDefaultDtype, {1, 1, 32});
   const int out = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
   context_builder.SetOp(kTfLiteBuiltinPrelu, 1, nullptr, {in, alpha}, {out});
   TfLiteContext* context = context_builder.Build();

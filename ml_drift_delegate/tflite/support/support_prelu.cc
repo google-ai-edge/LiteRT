@@ -21,6 +21,8 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_join.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/support/support_aux.h"
@@ -28,6 +30,25 @@
 #include "tflite/kernels/kernel_util.h"
 
 namespace litert::ml_drift::ir {
+namespace {
+
+// True if every dimension except the last is 1, i.e. the tensor holds one value
+// per channel and broadcasts across all spatial dimensions: [C], [1,C], [1,1,C]
+// or [1,1,1,C].
+bool IsPerChannelShape(const TfLiteIntArray& dims) {
+  if (dims.size == 0) return false;
+  for (int i = 0; i + 1 < dims.size; ++i) {
+    if (dims.data[i] != 1) return false;
+  }
+  return true;
+}
+
+std::string ShapeToString(const TfLiteIntArray& dims) {
+  return absl::StrCat(
+      "[", absl::StrJoin(absl::MakeConstSpan(dims.data, dims.size), ","), "]");
+}
+
+}  // namespace
 
 bool IsPReLUSupported(const TfLiteContext* absl_nonnull context,
                       const TfLiteNode* absl_nonnull node,
@@ -102,11 +123,12 @@ bool IsPReLUSupported(const TfLiteContext* absl_nonnull context,
   const int input_dims_size = input.dims->size;
   const int input_channels = input.dims->data[input_dims_size - 1];
 
-  if (alpha.dims->size == 1) {
-    if (alpha.dims->data[0] != input_channels) {
+  if (IsPerChannelShape(*alpha.dims)) {
+    const int alpha_channels = alpha.dims->data[alpha.dims->size - 1];
+    if (alpha_channels != input_channels) {
       *error = absl::StrCat(
           "Linear alpha shape does not match the number of input channels: ",
-          alpha.dims->data[0], " vs ", input_channels);
+          alpha_channels, " vs ", input_channels);
       return false;
     }
     const absl::Status status =
@@ -130,11 +152,16 @@ bool IsPReLUSupported(const TfLiteContext* absl_nonnull context,
       const int size = dims->size;
       if (size == 3) return {dims->data[0], dims->data[1], dims->data[2]};
       if (size == 4) return {dims->data[1], dims->data[2], dims->data[3]};
+      // Rank < 3 cannot describe an HWC alpha. Every per-channel shape was
+      // already handled above, so anything reaching here is unsupported;
+      // {0,0,0} never compares equal to a real input shape.
       return {0, 0, 0};
     };
 
     if (get_input_hwc(input.dims) != get_alpha_hwc(alpha.dims)) {
-      *error = "Alpha shape does not match input shape.";
+      *error = absl::StrCat("Alpha shape ", ShapeToString(*alpha.dims),
+                            " does not match input shape ",
+                            ShapeToString(*input.dims), ".");
       return false;
     }
     const absl::Status status =
