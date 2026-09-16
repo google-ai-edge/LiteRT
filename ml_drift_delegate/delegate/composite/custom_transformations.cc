@@ -41,6 +41,9 @@ absl::Status ApplyCustomTransformations(
 absl::Status ApplyCustomTransformations(
     ::ml_drift::ir::IrModel* ir_model,
     const MlDriftDelegateOptions& options) {
+  if (options.enable_short_conv_step_fusion) {
+    ABSL_RETURN_IF_ERROR(ir::FuseShortConvStep(ir_model));
+  }
   return absl::OkStatus();
 }
 
