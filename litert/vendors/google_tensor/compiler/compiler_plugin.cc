@@ -898,10 +898,11 @@ litert::Expected<GoogleTensorOptions> GetGoogleTensorOptions(
   return google_tensor_options;
 }
 
-// Gets unsupported op indices dynamically using the adapter.
-litert::Expected<absl::flat_hash_set<int32_t>> GetUnsupportedOpsDynamic(
-    litert::google_tensor::Adapter* adapter, LiteRtSubgraph subgraph,
-    const GoogleTensorOptions& google_tensor_options) {
+// Gets unsupported op indices and reasons dynamically using the adapter.
+litert::Expected<absl::flat_hash_map<int32_t, std::string>>
+GetUnsupportedOpsDynamic(litert::google_tensor::Adapter* adapter,
+                         LiteRtSubgraph subgraph,
+                         const GoogleTensorOptions& google_tensor_options) {
   std::string options_str;
   if (!google_tensor_options.SerializeToString(&options_str)) {
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -923,8 +924,11 @@ litert::Expected<absl::flat_hash_set<int32_t>> GetUnsupportedOpsDynamic(
     return unsupported_ops.Error();
   }
 
-  return absl::flat_hash_set<int32_t>(unsupported_ops->begin(),
-                                      unsupported_ops->end());
+  absl::flat_hash_map<int32_t, std::string> result;
+  for (const auto& op : *unsupported_ops) {
+    result[op.op_index] = op.reason;
+  }
+  return result;
 }
 
 }  // namespace
@@ -971,7 +975,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   }
 
   bool use_static_fallback = true;
-  absl::flat_hash_set<int32_t> unsupported_op_indices;
+  absl::flat_hash_map<int32_t, std::string> unsupported_ops_map;
 
   bool enable_input_validation = false;
   // copybara:uncomment_begin(google-only)
@@ -987,10 +991,11 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                  "Graph contains unsupported composite ops. Skipping dynamic "
                  "validation for this pass. Falling back to static mapping.");
     } else {
-      litert::Expected<absl::flat_hash_set<int32_t>> unsupported_ops_expected =
-          GetUnsupportedOpsDynamic(adapter, subgraph, google_tensor_options);
+      litert::Expected<absl::flat_hash_map<int32_t, std::string>>
+          unsupported_ops_expected = GetUnsupportedOpsDynamic(
+              adapter, subgraph, google_tensor_options);
       if (unsupported_ops_expected.HasValue()) {
-        unsupported_op_indices = std::move(*unsupported_ops_expected);
+        unsupported_ops_map = std::move(*unsupported_ops_expected);
         use_static_fallback = false;
       } else {
         LITERT_LOG(
@@ -1001,18 +1006,51 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
       }
     }
   }
+
+  size_t npu_op_count = 0;
+  size_t cpu_op_count = 0;
+  constexpr size_t kMaxLoggedOffloadReasons = 5;
+
   for (int i = 0; i < ops.size(); ++i) {
     const litert::compiler::Op& op = ops[i];
-    bool is_supported = use_static_fallback
-                            ? google_tensor::IsOpSupported(op, op_filters)
-                            : !unsupported_op_indices.contains(i);
+    bool is_supported = false;
+    std::string offload_reason;
+    if (use_static_fallback) {
+      is_supported = google_tensor::IsOpSupported(op, op_filters);
+      if (!is_supported) {
+        offload_reason = "Operation is not supported by static op filters.";
+      }
+    } else {
+      auto it = unsupported_ops_map.find(i);
+      is_supported = (it == unsupported_ops_map.end());
+      if (!is_supported) {
+        offload_reason =
+            it->second.empty() ? "Unsupported operation" : it->second;
+      }
+    }
+
     if (!is_supported) {
+      ++cpu_op_count;
+      if (cpu_op_count <= kMaxLoggedOffloadReasons) {
+        LITERT_LOG(LITERT_INFO, "Op %d (Code: %d) offloaded to CPU: %s", i,
+                   static_cast<int>(op.Code()), offload_reason.c_str());
+      } else if (cpu_op_count == kMaxLoggedOffloadReasons + 1) {
+        LITERT_LOG(LITERT_INFO,
+                   "... additional unsupported op diagnostics omitted.");
+      }
       continue;
     }
 
+    ++npu_op_count;
     LITERT_RETURN_IF_ERROR(
         compiler_plugin->ctx()->push_op(selected_ops, op.Get(), 0));
   }
+
+  LITERT_LOG(
+      LITERT_INFO,
+      "Partitioning summary: %zu ops on NPU, %zu ops offloaded to CPU (Total: "
+      "%zu).",
+      npu_op_count, cpu_op_count, ops.size());
 
   return kLiteRtStatusOk;
 }

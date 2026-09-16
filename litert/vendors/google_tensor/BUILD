@@ -151,9 +151,8 @@ cc_test(
     }),
     deps = [
         ":adapter",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_buffer_ref",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/vendors/google_tensor/compiler:google_tensor_options_cc_proto",

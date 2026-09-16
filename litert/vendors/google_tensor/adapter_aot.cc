@@ -162,29 +162,32 @@ void AdapterAot::FreeCompiledCode(char** compiled_code_data,
                            num_bytecodes);
 }
 
-Expected<std::vector<int32_t>> AdapterAot::GetUnsupportedOps(
+Expected<std::vector<UnsupportedOp>> AdapterAot::GetUnsupportedOps(
     const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
     size_t options_size) {
-  if (!api_->get_unsupported_ops) {
+  if (!api_->get_unsupported_ops || !api_->free_unsupported_ops) {
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                              "get_unsupported_ops symbol not loaded");
+                              "Unsupported ops API symbols not loaded");
   }
 
   int32_t* unsupported_op_indices = nullptr;
+  char** unsupported_op_reasons = nullptr;
   size_t num_unsupported_ops = 0;
   char* error_message = nullptr;
   absl::Cleanup cleanup = [&] {
     if (error_message) {
       api_->free_error_message(error_message);
     }
-    if (unsupported_op_indices) {
-      api_->free_unsupported_ops(unsupported_op_indices);
+    if (unsupported_op_indices || unsupported_op_reasons) {
+      api_->free_unsupported_ops(unsupported_op_indices, unsupported_op_reasons,
+                                 num_unsupported_ops);
     }
   };
 
   bool success = api_->get_unsupported_ops(
       tfl_buffer_data, tfl_buffer_size, options, options_size,
-      &unsupported_op_indices, &num_unsupported_ops, &error_message);
+      &unsupported_op_indices, &unsupported_op_reasons, &num_unsupported_ops,
+      &error_message);
 
   if (!success) {
     std::string error_str = "Failed to get unsupported ops";
@@ -194,8 +197,16 @@ Expected<std::vector<int32_t>> AdapterAot::GetUnsupportedOps(
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure, error_str);
   }
 
-  std::vector<int32_t> result(unsupported_op_indices,
-                              unsupported_op_indices + num_unsupported_ops);
+  std::vector<UnsupportedOp> result;
+  result.reserve(num_unsupported_ops);
+  for (size_t i = 0; i < num_unsupported_ops; ++i) {
+    result.push_back({
+        .op_index = unsupported_op_indices[i],
+        .reason = (unsupported_op_reasons && unsupported_op_reasons[i])
+                      ? std::string(unsupported_op_reasons[i])
+                      : "Unsupported operation",
+    });
+  }
   return result;
 }
 
