@@ -86,7 +86,11 @@ void AddValuesToCacheOperationParser::Parse(const TfLiteNode* tflite_node,
   // TODO(b/482104479): allow native int8 tensors in MLDrift. Currently, MLDrift
   // will automatically dequantize int8 tensors to float32 if the tflite tensor
   // is quantized (AffineQuantization present).
-  if (reader->GetOutputTensor(0)->type == kTfLiteInt8) {
+  if (reader->GetOutputTensor(0)->type == kTfLiteInt8 ||
+      reader->GetOutputTensor(0)->type == kTfLiteUInt8 ||
+      reader->GetOutputTensor(0)->type == kTfLiteInt4 ||
+      reader->GetOutputTensor(0)->type == kTfLiteUInt4 ||
+      reader->GetOutputTensor(0)->type == kTfLiteInt2) {
     auto output_1 = graph->FindOutputs(node->id)[0];
     auto output_2 = graph->FindOutputs(node->id)[1];
     // reader->AddOutputs() created new FP32 tflite tensors, and uses those as
@@ -102,7 +106,13 @@ void AddValuesToCacheOperationParser::Parse(const TfLiteNode* tflite_node,
     if (output_2->quant_params.has_value()) {
       output_2->quant_params.reset();
     }
-    // we expect uint8 instead of int8.
+    // For quantized KV cache tensors (Int8, UInt8, Int4, UInt4, Int2), we set
+    // the DataType to UINT8 so MLDrift treats the backing storage as raw packed
+    // byte buffers on the GPU without injecting implicit dequantization ops.
+    // The composite / SDPA kernel unpacks and dequantizes the sub-byte / int
+    // values directly on device.
+    // TODO(b/482104479): Support native sub-byte/intX data types directly in
+    // MLDrift.
     output_1->tensor.type = ::ml_drift::DataType::UINT8;
     output_2->tensor.type = ::ml_drift::DataType::UINT8;
   }
