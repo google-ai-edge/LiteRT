@@ -75,6 +75,7 @@ class CompiledModelWrapper;
 }  // namespace compiled_model_wrapper
 
 namespace lm {
+class EmbeddingLiteRtCompiledModelExecutor;
 class EmbeddingLookupText;
 class EndOfMultiModalEmbedding;
 class FrontendModelWrapper;
@@ -351,6 +352,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   friend class benchmark::BenchmarkLiteRtModel;
   friend class compiled_model_wrapper::CompiledModelWrapper;
   friend class lm::AudioLiteRtCompiledModelExecutor;
+  friend class lm::EmbeddingLiteRtCompiledModelExecutor;
   friend class lm::EmbeddingLookupText;
   friend class lm::EndOfMultiModalEmbedding;
   friend class lm::FrontendModelWrapper;
