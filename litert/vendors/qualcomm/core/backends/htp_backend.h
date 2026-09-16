@@ -64,6 +64,8 @@ class HtpBackend : public QnnBackend {
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
 
   bool SetPerformanceMode(const Options& options) override;
+  void ScheduleUpVote() override;
+  void ScheduleDownVote() override;
 
   GraphConfigBuilder BuildGraphConfigs(
       const Options& options, absl::string_view qnn_graph_name) override;

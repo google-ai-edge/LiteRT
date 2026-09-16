@@ -103,6 +103,35 @@ TEST(QnnManagerTest, GetOptions) {
   EXPECT_EQ(options->GetDlcDir(), options_ref.GetDlcDir());
 }
 
+TEST(QnnManagerTest, SetPerformanceOptions) {
+  auto options = GetOptionsForTarget();
+  if (!options) {
+    GTEST_SKIP() << "Skipping test because targeted backend is not supported";
+  }
+
+  auto qnn = CreateQnnManager(*options);
+  ASSERT_TRUE(qnn);
+
+  ::qnn::Options updated;
+  updated.SetHtpPerformanceMode(::qnn::HtpPerformanceMode::kBurst);
+  updated.SetHtpPerfCtrlMode(::qnn::HtpPerfCtrlMode::kManual);
+  updated.SetDspPerformanceMode(::qnn::DspPerformanceMode::kBurst);
+  updated.SetDspPerfCtrlMode(::qnn::DspPerfCtrlMode::kManual);
+
+  (*qnn)->SetPerformanceOptions(updated);
+  const auto& result = (*qnn)->GetOptions();
+
+  if (options->GetBackendType() == ::qnn::BackendType::kHtpBackend) {
+    EXPECT_EQ(result.GetHtpPerformanceMode(),
+              ::qnn::HtpPerformanceMode::kBurst);
+    EXPECT_EQ(result.GetHtpPerfCtrlMode(), ::qnn::HtpPerfCtrlMode::kManual);
+  } else if (options->GetBackendType() == ::qnn::BackendType::kDspBackend) {
+    EXPECT_EQ(result.GetDspPerformanceMode(),
+              ::qnn::DspPerformanceMode::kBurst);
+    EXPECT_EQ(result.GetDspPerfCtrlMode(), ::qnn::DspPerfCtrlMode::kManual);
+  }
+}
+
 TEST(QnnManagerTest, GetSdkVersion) {
   auto options = GetOptionsForTarget();
   if (!options) {
