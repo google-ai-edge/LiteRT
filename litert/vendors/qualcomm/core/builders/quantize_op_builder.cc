@@ -32,7 +32,21 @@ OpWrapper CreateQuantizeOp(const TensorWrapper& input,
   return op;
 }
 
-std::vector<OpWrapper> BuildQuantizeOp(
+namespace {
+
+std::vector<OpWrapper> BuildQuantizeOpLPAI(
+    TensorPool&, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  if ((inputs[0].get().IsQuantI8() || inputs[0].get().IsQuantU8() ||
+       inputs[0].get().IsQuantI16() || inputs[0].get().IsQuantU16()) &&
+      (outputs[0].get().IsQuantI8() || outputs[0].get().IsQuantU8() ||
+       outputs[0].get().IsQuantI16() || outputs[0].get().IsQuantU16())) {
+    return MakeVector(CreateConvertOp(inputs[0], outputs[0]));
+  }
+  return MakeVector(CreateQuantizeOp(inputs[0], outputs[0]));
+}
+
+std::vector<OpWrapper> BuildQuantizeOpDefault(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
@@ -52,6 +66,17 @@ std::vector<OpWrapper> BuildQuantizeOp(
   }
 
   return res;
+}
+
+}  // namespace
+
+std::vector<OpWrapper> BuildQuantizeOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs, BackendType backend_type) {
+  if (backend_type == BackendType::kLpaiBackend) {
+    return BuildQuantizeOpLPAI(tensor_pool, inputs, outputs);
+  }
+  return BuildQuantizeOpDefault(tensor_pool, inputs, outputs);
 }
 
 std::vector<OpWrapper> BuildDequantizeOp(
