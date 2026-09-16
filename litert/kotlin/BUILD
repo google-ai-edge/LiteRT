@@ -440,7 +440,6 @@ android_library(
         ":litert_api",
         ":litert_impl_jni",  # libLiteRt.so
         "@org_checkerframework_qual",
-        # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_shared_lib",
     ],
 )
 
@@ -457,7 +456,6 @@ android_library(
         ":litert_api_no_jni",
         ":litert_impl_jni",  # native implementation needed for the target
         "@org_checkerframework_qual",
-        # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_shared_lib",
     ],
 )
 
@@ -481,6 +479,27 @@ aar_with_jni(
 )
 
 # copybara:uncomment_begin(google-only)
+# # This library is for building the GPU Maven artifact only.
+# android_library(
+#     name = "litert_gpu_for_maven",
+#     exports_manifest = 1,
+#     manifest = "src/main/AndroidManifestGpu.xml",
+#     visibility = ["//visibility:private"],
+#     exports = [
+#         "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_shared_lib",
+#     ],
+# )
+#
+# # bazel build --config=android_arm64 --android_ndk_min_sdk_version=24 \
+# #   --define=public_maven_build=true \
+# #   //litert/kotlin:litert-gpu-aar
+# aar_with_jni(
+#     name = "litert-gpu-aar",
+#     android_library = ":litert_gpu_for_maven",
+#     # TODO (b/558736793): Update the third party notice.
+#     third_party_notice = "//litert/kotlin/google/third_party_licenses:res/raw/third_party_licenses",
+# )
+#
 # dackka(
 #     name = "litert_kotlin_docs",
 #     doc_root_path = "edge/api/litert/kotlin",
