@@ -1,4 +1,4 @@
-# Copyright 2025 The Google AI Edge Authors. All Rights Reserved.
+# Copyright 2026 The Google AI Edge Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,16 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-exports_files(
-    ["LICENSE"],
-    visibility = ["//:__subpackages__"],
-)
+package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "PATCH.flatbuffers_windows_no_bash",
-    "PATCH.perfetto",
-    "PATCH.protobuf_port_msvc_compat",
-    "PATCH.sentencepiece",
-    "litert_workspace.bzl",
-    "tensorflow_source_rules.bzl",
+    "build_defs.bzl",
+    "flatbuffers.BUILD",
+    "system.BUILD",
 ])

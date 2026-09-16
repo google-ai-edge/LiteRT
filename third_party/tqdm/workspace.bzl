@@ -1,6 +1,6 @@
 """This file is used to load the tqdm library."""
 
-load("@org_tensorflow//third_party:repo.bzl", "tf_http_archive", "tf_mirror_urls")
+load("//third_party:repo.bzl", "tf_http_archive", "tf_mirror_urls")
 
 def repo():
     tf_http_archive(
