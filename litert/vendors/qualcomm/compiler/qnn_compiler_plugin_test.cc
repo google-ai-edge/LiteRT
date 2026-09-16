@@ -395,6 +395,9 @@ TEST(TestQnnPlugin, Compatibility) {
   // Check SoC model.
   LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
       kApiVersion, plugin.get(), nullptr, nullptr, "SM8750"));
+  // Numeric targets remain valid for non-LPAI backends.
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      kApiVersion, plugin.get(), nullptr, nullptr, "87"));
   LITERT_EXPECT_ERROR(LiteRtCompilerPluginCheckCompilerCompatibility(
       kApiVersion, plugin.get(), nullptr, nullptr, "unsupported_soc"));
 
@@ -419,6 +422,49 @@ TEST(TestQnnPlugin, Compatibility) {
   LITERT_EXPECT_ERROR(LiteRtCompilerPluginCheckCompilerCompatibility(
       {kApiVersion.major + 1, kApiVersion.minor, kApiVersion.patch},
       plugin.get(), nullptr, nullptr, nullptr));
+}
+
+TEST(TestQnnPlugin, LpaiCompatibilityResolvesHardwareVersionTarget) {
+  static constexpr LiteRtApiVersion kApiVersion{LITERT_API_VERSION_MAJOR,
+                                                LITERT_API_VERSION_MINOR,
+                                                LITERT_API_VERSION_PATCH};
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
+  ASSERT_TRUE(qnn_opts);
+  qnn_opts->SetBackend(qualcomm::QualcommOptions::Backend::kLpai);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      kApiVersion, plugin.get(), nullptr, nullptr, "v5"));
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      kApiVersion, plugin.get(), nullptr, nullptr, "v6"));
+
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      kApiVersion, plugin.get(), nullptr, nullptr, "SM8850"));
+
+  EXPECT_EQ(kLiteRtStatusErrorInvalidArgument,
+            LiteRtCompilerPluginCheckCompilerCompatibility(
+                kApiVersion, plugin.get(), nullptr, nullptr, nullptr));
+  EXPECT_EQ(kLiteRtStatusErrorInvalidArgument,
+            LiteRtCompilerPluginCheckCompilerCompatibility(
+                kApiVersion, plugin.get(), nullptr, nullptr, "SM8250"));
+  EXPECT_EQ(kLiteRtStatusErrorInvalidArgument,
+            LiteRtCompilerPluginCheckCompilerCompatibility(
+                kApiVersion, plugin.get(), nullptr, nullptr, "21"));
+  EXPECT_EQ(kLiteRtStatusErrorInvalidArgument,
+            LiteRtCompilerPluginCheckCompilerCompatibility(
+                kApiVersion, plugin.get(), nullptr, nullptr, "87"));
+  EXPECT_EQ(kLiteRtStatusErrorInvalidArgument,
+            LiteRtCompilerPluginCheckCompilerCompatibility(
+                kApiVersion, plugin.get(), nullptr, nullptr, "v7"));
 }
 
 class QnnPlyginSupportedSocCompilationTest

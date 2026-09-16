@@ -24,6 +24,10 @@ bool IsTestDspBackend() { return GetTestBackend() == BackendType::kDspBackend; }
 
 bool IsTestGpuBackend() { return GetTestBackend() == BackendType::kGpuBackend; }
 
+bool IsTestLpaiBackend() {
+  return GetTestBackend() == BackendType::kLpaiBackend;
+}
+
 void SetTestBackend(BackendType backend_type) {
   GetTestBackend() = backend_type;
 }
