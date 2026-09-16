@@ -42,7 +42,7 @@ jobs:
 
       - name: Install System Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends libc++-18-dev libc++abi-18-dev llvm-18 clang-18
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends libc++-18-dev libc++abi-18-dev llvm-18 clang-18 patchelf
 
       - name: Set up cache keys and bazel output base.
         id: cache-keys
