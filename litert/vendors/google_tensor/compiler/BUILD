@@ -150,12 +150,18 @@ cc_test(
 proto_library(
     name = "google_tensor_options_proto",
     srcs = ["google_tensor_options.proto"],
-    visibility = ["//platforms/darwinn/compiler:__subpackages__"],
+    visibility = [
+        "//litert/vendors/google_tensor:__subpackages__",
+        "//platforms/darwinn/compiler:__subpackages__",
+    ],
 )
 
 cc_proto_library(
     name = "google_tensor_options_cc_proto",
-    visibility = ["//platforms/darwinn/compiler:__subpackages__"],
+    visibility = [
+        "//litert/vendors/google_tensor:__subpackages__",
+        "//platforms/darwinn/compiler:__subpackages__",
+    ],
     deps = [":google_tensor_options_proto"],
 )
 

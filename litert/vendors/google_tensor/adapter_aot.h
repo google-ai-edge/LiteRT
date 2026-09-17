@@ -81,9 +81,12 @@ typedef void (*CompilerFreeErrorMessage)(char* error_message);
 typedef bool (*CompilerGetUnsupportedOps)(
     const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
     size_t options_size, int32_t** unsupported_op_indices,
-    size_t* num_unsupported_ops, char** out_error_message);
+    char*** unsupported_op_reasons, size_t* num_unsupported_ops,
+    char** out_error_message);
 
-typedef void (*CompilerFreeUnsupportedOps)(int32_t* unsupported_op_indices);
+typedef void (*CompilerFreeUnsupportedOps)(int32_t* unsupported_op_indices,
+                                           char** unsupported_op_reasons,
+                                           size_t num_unsupported_ops);
 
 // This class adapts the google tensor compiler API for dynamic loading.
 class AdapterAot : public Adapter {
@@ -104,7 +107,7 @@ class AdapterAot : public Adapter {
                          size_t** compiled_code_sizes,
                          size_t* num_bytecodes) override;
 
-  Expected<std::vector<int32_t>> GetUnsupportedOps(
+  Expected<std::vector<UnsupportedOp>> GetUnsupportedOps(
       const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
       size_t options_size) override;
 

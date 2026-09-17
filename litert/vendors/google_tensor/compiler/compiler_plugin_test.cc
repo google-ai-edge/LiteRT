@@ -326,8 +326,8 @@ TEST(TestCallGoogleTensorPlugin, CompileWithExtraOptions) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
                               options.GetOptions<GoogleTensorOptions>());
 
-  google_tensor_options.SetExtraOptions("test_extra_options");
-  EXPECT_EQ(google_tensor_options.GetExtraOptions(), "test_extra_options");
+  google_tensor_options.SetExtraOptions("\x08\x03");
+  EXPECT_EQ(google_tensor_options.GetExtraOptions(), "\x08\x03");
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto litert_opts,
