@@ -456,7 +456,7 @@ Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
         size_t buffer_size = tensor_buffer_info.tensor_buffer_used_size;
         LITERT_ASSIGN_OR_RETURN(void* host_buffer,
                                 tensor_buffer_info.tensor_buffer->Lock(
-                                    kLiteRtTensorBufferLockModeRead));
+                                    kLiteRtTensorBufferLockModeWrite));
         std::memcpy(host_buffer, tensor_data, buffer_size);
         LITERT_RETURN_IF_ERROR(tensor_buffer_info.tensor_buffer->Unlock());
       }
@@ -504,7 +504,7 @@ Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
         size_t buffer_size = tensor_buffer_info.tensor_buffer_used_size;
         LITERT_ASSIGN_OR_RETURN(void* host_buffer,
                                 tensor_buffer_info.tensor_buffer->Lock(
-                                    kLiteRtTensorBufferLockModeWrite));
+                                    kLiteRtTensorBufferLockModeRead));
         std::memcpy(tensor_data, host_buffer, buffer_size);
         LITERT_RETURN_IF_ERROR(tensor_buffer_info.tensor_buffer->Unlock());
       }

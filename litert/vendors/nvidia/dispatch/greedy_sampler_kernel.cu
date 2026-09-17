@@ -18,6 +18,8 @@
 #include <climits>
 #include <cmath>
 
+#include "cuda_fp16.h"
+
 namespace {
 
 constexpr int kThreads = 256;
@@ -29,7 +31,7 @@ struct ArgMaxPair {
 };
 
 __device__ ArgMaxPair BetterArgMax(ArgMaxPair lhs, ArgMaxPair rhs) {
-  // Preserve the CPU sampler's deterministic NaN behavior.
+  // Preserve the original single-row reduction's deterministic NaN behavior.
   if (lhs.index == 0 && isnan(lhs.value)) {
     return lhs;
   }
@@ -49,13 +51,18 @@ __device__ ArgMaxPair BetterArgMax(ArgMaxPair lhs, ArgMaxPair rhs) {
   return lhs;
 }
 
-__global__ void F32ArgMaxPartialsKernel(const float* input, size_t count,
-                                        ArgMaxPair* partials) {
+__device__ float ReadLogit(float value) { return value; }
+__device__ float ReadLogit(__half value) { return __half2float(value); }
+
+template <typename T>
+__global__ void ArgMaxPartialsKernel(const T* input, size_t count,
+                                     ArgMaxPair* partials) {
   __shared__ ArgMaxPair shared[kThreads];
   ArgMaxPair best{-INFINITY, INT_MAX};
   for (size_t index = blockIdx.x * blockDim.x + threadIdx.x; index < count;
        index += blockDim.x * gridDim.x) {
-    best = BetterArgMax(best, {input[index], static_cast<int32_t>(index)});
+    best = BetterArgMax(best,
+                         {ReadLogit(input[index]), static_cast<int32_t>(index)});
   }
   shared[threadIdx.x] = best;
   __syncthreads();
@@ -107,8 +114,11 @@ extern "C" size_t LiteRtNvidiaF32ArgMaxWorkspaceBytes(size_t count) {
   return static_cast<size_t>(ArgMaxBlockCount(count)) * sizeof(ArgMaxPair);
 }
 
-extern "C" cudaError_t LiteRtNvidiaLaunchF32ArgMax(
-    const float* input, size_t count, void* workspace, size_t workspace_bytes,
+namespace {
+
+template <typename T>
+cudaError_t LaunchArgMax(
+    const T* input, size_t count, void* workspace, size_t workspace_bytes,
     int32_t* device_result, cudaStream_t stream) {
   const size_t required = LiteRtNvidiaF32ArgMaxWorkspaceBytes(count);
   if (input == nullptr || workspace == nullptr || device_result == nullptr ||
@@ -117,8 +127,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchF32ArgMax(
   }
   const int blocks = ArgMaxBlockCount(count);
   auto* partials = static_cast<ArgMaxPair*>(workspace);
-  F32ArgMaxPartialsKernel<<<blocks, kThreads, 0, stream>>>(input, count,
-                                                           partials);
+  ArgMaxPartialsKernel<<<blocks, kThreads, 0, stream>>>(input, count, partials);
   cudaError_t status = cudaPeekAtLastError();
   if (status != cudaSuccess) {
     return status;
@@ -126,4 +135,20 @@ extern "C" cudaError_t LiteRtNvidiaLaunchF32ArgMax(
   F32ArgMaxFinalKernel<<<1, kThreads, 0, stream>>>(partials, blocks,
                                                    device_result);
   return cudaPeekAtLastError();
+}
+
+}  // namespace
+
+extern "C" cudaError_t LiteRtNvidiaLaunchF32ArgMax(
+    const float* input, size_t count, void* workspace, size_t workspace_bytes,
+    int32_t* device_result, cudaStream_t stream) {
+  return LaunchArgMax(input, count, workspace, workspace_bytes, device_result,
+                       stream);
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchF16ArgMax(
+    const uint16_t* input, size_t count, void* workspace, size_t workspace_bytes,
+    int32_t* device_result, cudaStream_t stream) {
+  return LaunchArgMax(reinterpret_cast<const __half*>(input), count, workspace,
+                       workspace_bytes, device_result, stream);
 }
