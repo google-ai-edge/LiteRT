@@ -21,6 +21,16 @@ package(
 )
 
 cc_library(
+    name = "cache_layout",
+    hdrs = ["cache_layout.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//litert/c:litert_layout",
+        "//litert/c:litert_tensor_buffer_types",
+    ],
+)
+
+cc_library(
     name = "bytecode",
     srcs = ["bytecode.cc"],
     hdrs = ["bytecode.h"],
@@ -40,7 +50,6 @@ cc_library(
     hdrs = ["memory_profile.h"],
     deps = [
         "//litert/c/internal:litert_logging",
-        "@com_google_absl//absl/time",
         "@local_cuda//:cuda_headers",
         "@local_cuda//:cuda_runtime",
     ],

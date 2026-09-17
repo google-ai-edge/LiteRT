@@ -24,7 +24,8 @@
 extern "C" {
 #endif
 
-// Opaque state for the optional NVIDIA dispatch k=1 F32 sampler extension.
+// Opaque state for the optional NVIDIA dispatch k=1 sampler extension.
+// A sampler is bound to its first CUDA device and is not thread-safe.
 typedef void* LiteRtDispatchNvidiaGreedySampler;
 
 LiteRtStatus LiteRtDispatchNvidiaGreedySamplerCreate(
@@ -36,6 +37,18 @@ void LiteRtDispatchNvidiaGreedySamplerDestroy(
 LiteRtStatus LiteRtDispatchNvidiaGreedySamplerSampleF32(
     LiteRtDispatchNvidiaGreedySampler sampler, LiteRtTensorBuffer logits,
     size_t count, int32_t* token_id);
+
+// Samples each row of a dense FP16/FP32 NVIDIA CUDA buffer [1, rows,
+// vocab_size]. Canonical contiguous strides are accepted; padded layouts are
+// unsupported. token_ids points to rows writable CPU int32 slots. The call
+// waits for the logits event and completes one batched device-to-host transfer
+// before return. Each row selects the first maximum; a NaN at index zero wins,
+// other NaNs are ignored. Unsupported buffer types, element types, or layouts
+// return kLiteRtStatusErrorUnsupported. No logits or caller-owned buffers are
+// modified.
+LiteRtStatus LiteRtDispatchNvidiaGreedySamplerSampleBatched(
+    LiteRtDispatchNvidiaGreedySampler sampler, LiteRtTensorBuffer logits,
+    size_t rows, size_t vocab_size, int32_t* token_ids);
 
 #ifdef __cplusplus
 }  // extern "C"
