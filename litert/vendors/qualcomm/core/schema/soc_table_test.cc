@@ -37,6 +37,20 @@ TEST(SocTableTest, FindSocInfoTest) {
   EXPECT_FALSE(FindSocInfo(nullptr).has_value());
 }
 
+TEST(SocTableTest, FindOrCreateSocInfoParsesLpaiHardwareVersion) {
+  const auto v5 = FindOrCreateSocInfo("v5");
+  ASSERT_TRUE(v5.has_value());
+  EXPECT_EQ(v5->lpai_hw_version, LpaiHardwareVersion::kV5);
+
+  const auto v6 = FindOrCreateSocInfo("v6");
+  ASSERT_TRUE(v6.has_value());
+  EXPECT_EQ(v6->lpai_hw_version, LpaiHardwareVersion::kV6);
+
+  EXPECT_FALSE(FindOrCreateSocInfo("").has_value());
+  EXPECT_FALSE(FindOrCreateSocInfo("V6").has_value());
+  EXPECT_FALSE(FindOrCreateSocInfo("v7").has_value());
+}
+
 TEST(SocTableTest, CreateSocInfoTest) {
   static constexpr auto kSm8550 = FindSocInfo("SM8550");
   // Test creating an SoC with SoC name.

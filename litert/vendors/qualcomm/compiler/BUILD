@@ -96,12 +96,14 @@ litert_dynamic_lib(
         "//litert:android_arm64": [
             "@qairt//:libQnnHtp.so",
             "@qairt//:libQnnIr.so",
+            "@qairt//:libQnnLpai.so",
             "@qairt//:libQnnSaver.so",
             "@qairt//:libQnnSystem.so",
         ],
         "//litert:linux_x86_64": [
             "@qairt//:libQnnHtp.so",
             "@qairt//:libQnnIr.so",
+            "@qairt//:libQnnLpai.so",
             "@qairt//:libQnnSaver.so",
             "@qairt//:libQnnSystem.so",
             # copybara:uncomment_begin(google-only)

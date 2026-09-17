@@ -8,8 +8,9 @@
 #include <optional>
 #include <vector>
 
-#include "LPAI/QnnLpaiCommon.h"        // from @qairt
-#include "LPAI/QnnLpaiGraph.h"         // from @qairt
+#include "LPAI/QnnLpaiCommon.h"  // from @qairt
+#include "LPAI/QnnLpaiBackend.h"  // from @qairt
+#include "LPAI/QnnLpaiGraph.h"  // from @qairt
 #include "LPAI/QnnLpaiGraphPrepare.h"  // from @qairt
 #include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
@@ -43,6 +44,11 @@ struct CapturedGraphFinalize {
   Qnn_GraphHandle_t graph = nullptr;
 };
 
+struct CapturedBackendConfig {
+  bool called = false;
+  std::optional<QnnLpaiBackend_CustomConfigHwInfo_t> hw_info;
+};
+
 class LpaiBackendTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -51,9 +57,30 @@ class LpaiBackendTest : public ::testing::Test {
     // before api_ is wired.
     self_ = this;
 
-    api_.backendCreate = [](Qnn_LogHandle_t, const QnnBackend_Config_t**,
+    api_.backendCreate = [](Qnn_LogHandle_t,
+                            const QnnBackend_Config_t** configs,
                             Qnn_BackendHandle_t* backend) -> Qnn_ErrorHandle_t {
-      *backend = self_->fake_handle_;
+      auto& t = *self_;
+      t.captured_backend_config_.called = true;
+      t.captured_backend_config_.hw_info.reset();
+      if (configs != nullptr) {
+        for (size_t i = 0; configs[i] != nullptr; ++i) {
+          const auto* config = configs[i];
+          if (config->option != QNN_BACKEND_CONFIG_OPTION_CUSTOM ||
+              config->customConfig == nullptr) {
+            continue;
+          }
+          const auto* custom =
+              static_cast<QnnLpaiBackend_CustomConfig_t*>(config->customConfig);
+          if (custom->option == QNN_LPAI_BACKEND_CUSTOM_CFG_HW_INFO &&
+              custom->config != nullptr) {
+            t.captured_backend_config_.hw_info =
+                *static_cast<QnnLpaiBackend_CustomConfigHwInfo_t*>(
+                    custom->config);
+          }
+        }
+      }
+      *backend = t.fake_handle_;
       return QNN_SUCCESS;
     };
     api_.backendFree = [](Qnn_BackendHandle_t) -> Qnn_ErrorHandle_t {
@@ -110,6 +137,7 @@ class LpaiBackendTest : public ::testing::Test {
   std::optional<LpaiBackend> backend_;
   CapturedGraphConfig captured_;
   CapturedGraphFinalize captured_finalize_;
+  CapturedBackendConfig captured_backend_config_;
   bool set_config_fail_ = false;
 };
 
@@ -129,6 +157,17 @@ TEST_F(LpaiBackendTest, InitSucceedsForSocWithLpai) {
 }
 
 #if !defined(__ANDROID__)
+TEST_F(LpaiBackendTest, InitConfiguresV6HardwareVersion) {
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  EXPECT_TRUE(
+      backend_->Init(options, SocInfo{"v6", 0, LpaiHardwareVersion::kV6}));
+  ASSERT_TRUE(captured_backend_config_.called);
+  ASSERT_TRUE(captured_backend_config_.hw_info.has_value());
+  EXPECT_EQ(captured_backend_config_.hw_info->hwVersion,
+            QNN_LPAI_BACKEND_HW_VERSION_V6);
+}
+
 TEST_F(LpaiBackendTest, InitFailsForSocWithoutLpaiEntry) {
   Options options;
   options.SetLogLevel(LogLevel::kOff);
@@ -136,11 +175,26 @@ TEST_F(LpaiBackendTest, InitFailsForSocWithoutLpaiEntry) {
   EXPECT_FALSE(backend_->Init(options, FindOrCreateSocInfo("SM8550")));
 }
 
+TEST_F(LpaiBackendTest, InitFailsForNumericSocWithoutLpaiHardwareVersion) {
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  EXPECT_FALSE(backend_->Init(options, FindOrCreateSocInfo("87")));
+}
+
 // Init ignores soc_info on device (see implementation), skipping this test.
 TEST_F(LpaiBackendTest, InitFailsWithoutKnownLpaiHardwareVersion) {
   Options options;
   options.SetLogLevel(LogLevel::kOff);
   EXPECT_FALSE(backend_->Init(options, std::nullopt));
+}
+#else
+TEST_F(LpaiBackendTest, InitIgnoresHardwareVersionOnDevice) {
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  EXPECT_TRUE(
+      backend_->Init(options, SocInfo{"v6", 0, LpaiHardwareVersion::kV6}));
+  ASSERT_TRUE(captured_backend_config_.called);
+  EXPECT_FALSE(captured_backend_config_.hw_info.has_value());
 }
 #endif  // !defined(__ANDROID__)
 
@@ -209,7 +263,7 @@ TEST_F(LpaiBackendTest, ConfigureGraphAfterRetrieveUsesSdkDefaults) {
   ASSERT_EQ(captured_.configs.size(), 2u);
   const auto& perf = captured_.configs[0];
   ASSERT_TRUE(perf.perf.has_value());
-  EXPECT_EQ(perf.perf->fps, 1u);         // QNN_LPAI_GRAPH_PERF_CFG_INIT default
+  EXPECT_EQ(perf.perf->fps, 1u);  // QNN_LPAI_GRAPH_PERF_CFG_INIT default
   EXPECT_EQ(perf.perf->ftrtRatio, 10u);  // QNN_LPAI_GRAPH_PERF_CFG_INIT default
   EXPECT_EQ(perf.perf->clientType, QNN_LPAI_GRAPH_CLIENT_PERF_TYPE_REAL_TIME);
 

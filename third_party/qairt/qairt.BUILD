@@ -54,6 +54,14 @@ cc_import(
 )
 
 cc_import(
+    name = "libQnnLpai.so",
+    shared_library = select({
+        "@platforms//os:android": "lib/aarch64-android/libQnnLpai.so",
+        "//conditions:default": "lib/x86_64-linux-clang/libQnnLpai.so",
+    }),
+)
+
+cc_import(
     name = "libQnnSaver.so",
     shared_library = select({
         "@platforms//os:android": "lib/aarch64-android/libQnnSaver.so",
