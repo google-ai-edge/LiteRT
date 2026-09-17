@@ -195,17 +195,6 @@ CONVERT_INFO(UINT64, int64_t, uint64_t, static_cast<int64_t>);
 CHECK_INFO(UINT64, int64_t, val <= std::numeric_limits<int64_t>::max());
 CONVERT_INFO(BOOL, int64_t, bool, static_cast<int64_t>);
 
-template <Type type>
-struct TypedOwningBuffer {
-  using value_type = typename NativeStorage<type>::type;
-  void resize(size_t count) { buffer = OwningCpuBuffer::Allocate<type>(count); }
-  value_type* data() const noexcept {
-    return reinterpret_cast<value_type*>(buffer->data());
-  }
-
-  std::shared_ptr<OwningCpuBuffer> buffer;
-};
-
 template <class Container>
 absl::StatusOr<Container> ConvertTensorTo(const SafetensorTensorInfo& info,
                                           const std::byte* data_base) {
@@ -266,12 +255,6 @@ absl::StatusOr<Container> ConvertTensorTo(const SafetensorTensorInfo& info,
 
   return values;
 }
-
-enum class QuantParamMode {
-  kScalar,
-  kPerChannelDim0,
-  kPerElement,
-};
 
 template <typename T>
 struct MinijsonTypeTraits;
