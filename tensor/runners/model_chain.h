@@ -20,6 +20,7 @@ limitations under the License.
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,9 +29,13 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_common.h"
+#include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_layout.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
 #include "tensor/runners/litert/litert_buffer.h"
@@ -91,6 +96,14 @@ class ModelStage {
 
   virtual void SetEnvironment(std::shared_ptr<litert::Environment> env) {}
 
+  virtual absl::Status PrepareStageBoundary(
+      const absl::flat_hash_map<std::string, HardwareBufferDescriptor>&
+          negotiated_inputs,
+      const absl::flat_hash_map<std::string, HardwareBufferDescriptor>&
+          negotiated_outputs) {
+    return absl::OkStatus();
+  }
+
   virtual absl::Status Run() = 0;
 };
 
@@ -149,6 +162,103 @@ class FunctionalModelStage : public ModelStage {
       output_buffers_;
   ExecuteFn execute_fn_;
 };
+
+// First-class model stage executing a compiled LiteRT model (.tflite).
+// Automatically discovers input and output tensor descriptors from model
+// signatures and directly registers shared LitertBuffers for zero-copy
+// execution without memcpy.
+class CompiledModelStage : public ModelStage {
+ public:
+  static absl::StatusOr<std::shared_ptr<CompiledModelStage>> Create(
+      std::shared_ptr<litert::Environment> env, std::string name,
+      const std::string& model_path, litert::Options options,
+      size_t signature_index = 0);
+
+  static absl::StatusOr<std::shared_ptr<CompiledModelStage>> Create(
+      std::shared_ptr<litert::Environment> env, std::string name,
+      const std::string& model_path,
+      litert::HwAccelerators accelerators = litert::HwAccelerators::kCpu,
+      size_t signature_index = 0);
+
+  static absl::StatusOr<std::shared_ptr<CompiledModelStage>> Create(
+      std::shared_ptr<litert::Environment> env, std::string name,
+      absl::Span<const uint8_t> model_buffer, litert::Options options,
+      size_t signature_index = 0);
+
+  static absl::StatusOr<std::shared_ptr<CompiledModelStage>> Create(
+      std::shared_ptr<litert::Environment> env, std::string name,
+      CompiledModel compiled_model, size_t signature_index = 0);
+
+  absl::string_view Name() const override { return name_; }
+
+  std::vector<std::string> InputNames() const override;
+  std::vector<std::string> OutputNames() const override;
+
+  absl::StatusOr<HardwareBufferDescriptor> GetInputDescriptor(
+      absl::string_view name) const override;
+  absl::StatusOr<HardwareBufferDescriptor> GetOutputDescriptor(
+      absl::string_view name) const override;
+
+  absl::Status SetInputBuffer(
+      absl::string_view name, std::shared_ptr<LitertBuffer> buffer) override;
+  absl::Status SetOutputBuffer(
+      absl::string_view name, std::shared_ptr<LitertBuffer> buffer) override;
+
+  std::shared_ptr<LitertBuffer> GetInputBuffer(
+      absl::string_view name) const override;
+  std::shared_ptr<LitertBuffer> GetOutputBuffer(
+      absl::string_view name) const override;
+
+  void SetEnvironment(std::shared_ptr<litert::Environment> env) override {
+    env_ = std::move(env);
+  }
+
+  absl::Status PrepareStageBoundary(
+      const absl::flat_hash_map<std::string, HardwareBufferDescriptor>&
+          negotiated_inputs,
+      const absl::flat_hash_map<std::string, HardwareBufferDescriptor>&
+          negotiated_outputs) override;
+
+  CompiledModel& compiled_model() { return compiled_model_; }
+  const CompiledModel& compiled_model() const { return compiled_model_; }
+  size_t signature_index() const { return signature_index_; }
+
+  absl::Status Run() override;
+
+ private:
+  CompiledModelStage(std::shared_ptr<litert::Environment> env, std::string name,
+                     CompiledModel compiled_model, size_t signature_index,
+                     std::vector<std::string> input_names,
+                     std::vector<std::string> output_names,
+                     absl::flat_hash_map<std::string, HardwareBufferDescriptor>
+                         input_descriptors,
+                     absl::flat_hash_map<std::string, HardwareBufferDescriptor>
+                         output_descriptors,
+                     std::string model_path = "",
+                     std::vector<uint8_t> model_buffer = {},
+                     std::optional<litert::Options> options = std::nullopt);
+
+  absl::Status RefreshDescriptorsFromCompiledModel();
+
+  std::shared_ptr<litert::Environment> env_;
+  std::string name_;
+  CompiledModel compiled_model_;
+  size_t signature_index_ = 0;
+  std::vector<std::string> input_names_;
+  std::vector<std::string> output_names_;
+  absl::flat_hash_map<std::string, HardwareBufferDescriptor>
+      input_descriptors_;
+  absl::flat_hash_map<std::string, HardwareBufferDescriptor>
+      output_descriptors_;
+  absl::flat_hash_map<std::string, std::shared_ptr<LitertBuffer>>
+      input_buffers_;
+  absl::flat_hash_map<std::string, std::shared_ptr<LitertBuffer>>
+      output_buffers_;
+  std::string model_path_;
+  std::vector<uint8_t> model_buffer_;
+  std::optional<litert::Options> options_;
+};
+
 
 // Negotiates and harmonizes data layouts, alignments, and flags across stages.
 class BoundaryLayoutNegotiator {

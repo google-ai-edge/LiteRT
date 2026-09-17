@@ -26,9 +26,14 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
+#include "litert/test/common.h"
+#include "litert/test/testdata/simple_model_test_vectors.h"
 #include "tensor/runners/litert/litert_buffer.h"
 #include "tensor/utils/matchers.h"
 
@@ -705,6 +710,114 @@ TEST(ModelChainValidationTest, DetectsAmbiguousOutputAcrossMultipleStages) {
   EXPECT_THAT(out_or.status().code(), Eq(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(out_or.status().message(), HasSubstr("StageA"));
   EXPECT_THAT(out_or.status().message(), HasSubstr("StageB"));
+}
+
+TEST(CompiledModelStageTest, IntrospectsAndExecutesModelInModelChain) {
+  auto env_or = litert::Environment::Create({});
+  ASSERT_TRUE(env_or.HasValue());
+  auto env = std::make_shared<litert::Environment>(std::move(*env_or));
+
+  auto options_or = litert::Options::Create();
+  ASSERT_TRUE(options_or.HasValue());
+  options_or->SetHardwareAccelerators(litert::HwAccelerators::kCpu);
+
+  std::string model_path = testing::GetTestFilePath(kModelFileName);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto stage,
+      CompiledModelStage::Create(env, "CompiledSimpleModel", model_path,
+                                 std::move(*options_or)));
+
+  // Verify introspected signature names
+  auto input_names = stage->InputNames();
+  auto output_names = stage->OutputNames();
+  ASSERT_THAT(input_names.size(), Eq(2));
+  ASSERT_THAT(output_names.size(), Eq(1));
+
+  // Verify introspected descriptors
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto in0_desc,
+                                  stage->GetInputDescriptor(input_names[0]));
+  EXPECT_THAT(in0_desc.element_type, Eq(litert::ElementType::Float32));
+  EXPECT_THAT(in0_desc.shape, Eq(std::vector<int32_t>({2})));
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto in1_desc,
+                                  stage->GetInputDescriptor(input_names[1]));
+  EXPECT_THAT(in1_desc.element_type, Eq(litert::ElementType::Float32));
+  EXPECT_THAT(in1_desc.shape, Eq(std::vector<int32_t>({2})));
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto out_desc,
+                                  stage->GetOutputDescriptor(output_names[0]));
+  EXPECT_THAT(out_desc.element_type, Eq(litert::ElementType::Float32));
+  EXPECT_THAT(out_desc.shape, Eq(std::vector<int32_t>({2})));
+
+  // Build a ModelChain with a downstream consumer stage that multiplies
+  // output by 3.
+  HardwareBufferDescriptor post_out_desc = out_desc;
+  auto post_stage = std::make_shared<FunctionalModelStage>(
+      "PostMultiply",
+      absl::flat_hash_map<std::string, HardwareBufferDescriptor>{
+          {"in", out_desc}},
+      absl::flat_hash_map<std::string, HardwareBufferDescriptor>{
+          {"out", post_out_desc}},
+      [](const BufferMap& inputs, const BufferMap& outputs) {
+        auto in_span = inputs.at("in")->Lock();
+        const auto* in_data = reinterpret_cast<const float*>(in_span.data());
+        auto out_span = outputs.at("out")->LockMutable();
+        auto* out_data = reinterpret_cast<float*>(out_span.data());
+        for (int i = 0; i < 2; ++i) {
+          out_data[i] = in_data[i] * 3.0f;
+        }
+        return absl::OkStatus();
+      });
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto chain, ModelChain::Builder()
+                      .AddStage(stage)
+                      .AddStage(post_stage)
+                      .Connect("CompiledSimpleModel", output_names[0],
+                               "PostMultiply", "in")
+                      .Build());
+
+  // Allocate entry input buffers: [1.0, 2.0] and [10.0, 20.0]
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto in_buf0,
+      LitertBuffer::CreateManagedHost(env, {2}, litert::ElementType::Float32,
+                                      2 * sizeof(float)));
+  {
+    auto span = in_buf0->LockMutable();
+    auto* d = reinterpret_cast<float*>(span.data());
+    d[0] = 1.0f;
+    d[1] = 2.0f;
+  }
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto in_buf1,
+      LitertBuffer::CreateManagedHost(env, {2}, litert::ElementType::Float32,
+                                      2 * sizeof(float)));
+  {
+    auto span = in_buf1->LockMutable();
+    auto* d = reinterpret_cast<float*>(span.data());
+    d[0] = 10.0f;
+    d[1] = 20.0f;
+  }
+
+  ASSERT_TRUE(
+      chain.SetInputBuffer("CompiledSimpleModel", input_names[0], in_buf0)
+          .ok());
+  ASSERT_TRUE(
+      chain.SetInputBuffer("CompiledSimpleModel", input_names[1], in_buf1)
+          .ok());
+
+  // Execute the chain
+  ASSERT_TRUE(chain.Execute().ok());
+
+  // Verify terminal output:
+  // SimpleModel adds input0 [1, 2] and input1 [10, 20] -> [11, 22]
+  // PostMultiply multiplies by 3 -> [33, 66]
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto out_buf, chain.GetOutputBuffer("out"));
+  auto out_span = out_buf->Lock();
+  const auto* out_data = reinterpret_cast<const float*>(out_span.data());
+  EXPECT_FLOAT_EQ(out_data[0], 33.0f);
+  EXPECT_FLOAT_EQ(out_data[1], 66.0f);
 }
 
 }  // namespace

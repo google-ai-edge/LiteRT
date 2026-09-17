@@ -19,6 +19,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <queue>
 #include <string>
 #include <utility>
@@ -26,18 +27,72 @@ limitations under the License.
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_api_types.h"
+#include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_common.h"
+#include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_options.h"
+#include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
 #include "tensor/runners/litert/litert_buffer.h"
 
 namespace litert::tensor {
+
+namespace {
+
+litert::TensorBufferType GetPreferredBufferType(
+    absl::Span<const litert::TensorBufferType> supported_types) {
+  bool has_ahwb = false;
+  bool has_opencl = false;
+  bool has_host = false;
+  for (auto t : supported_types) {
+    if (t == litert::TensorBufferType::kAhwb) has_ahwb = true;
+    if (t == litert::TensorBufferType::kOpenClBuffer) has_opencl = true;
+    if (t == litert::TensorBufferType::kHostMemory) has_host = true;
+  }
+  if (has_ahwb) return litert::TensorBufferType::kAhwb;
+  if (has_opencl) return litert::TensorBufferType::kOpenClBuffer;
+  if (has_host) return litert::TensorBufferType::kHostMemory;
+  return supported_types.empty() ? litert::TensorBufferType::kHostMemory
+                                 : supported_types.front();
+}
+
+struct ConsumerTarget {
+  std::shared_ptr<ModelStage> to_stage;
+  std::string input_name;
+};
+
+absl::StatusOr<HardwareBufferDescriptor> NegotiatePortDescriptor(
+    const std::shared_ptr<ModelStage>& from_stage,
+    absl::string_view output_name, absl::Span<const ConsumerTarget> consumers) {
+  auto prod_desc_or = from_stage->GetOutputDescriptor(output_name);
+  if (!prod_desc_or.ok()) return prod_desc_or.status();
+
+  HardwareBufferDescriptor harmonized = *prod_desc_or;
+  for (const auto& consumer : consumers) {
+    auto cons_desc_or =
+        consumer.to_stage->GetInputDescriptor(consumer.input_name);
+    if (!cons_desc_or.ok()) return cons_desc_or.status();
+
+    auto new_harmonized_or = BoundaryLayoutNegotiator::HarmonizeStageBoundary(
+        harmonized, *cons_desc_or);
+    if (!new_harmonized_or.ok()) return new_harmonized_or.status();
+    harmonized = *new_harmonized_or;
+  }
+  return harmonized;
+}
+
+}  // namespace
 
 // ============================================================================
 // FunctionalModelStage Implementation
@@ -150,9 +205,9 @@ absl::Status FunctionalModelStage::Run() {
         }
         env_ = std::make_shared<litert::Environment>(std::move(*env_or));
       }
-      auto buf_or = LitertBuffer::CreateManaged(
-          env_, desc.buffer_type, desc.ToRankedTensorType(),
-          desc.PackedBytes());
+      auto buf_or = LitertBuffer::CreateManaged(env_, desc.buffer_type,
+                                                desc.ToRankedTensorType(),
+                                                desc.PackedBytes());
       if (!buf_or.ok()) {
         return buf_or.status();
       }
@@ -164,6 +219,424 @@ absl::Status FunctionalModelStage::Run() {
     }
   }
   return execute_fn_(input_buffers_, output_buffers_);
+}
+
+// ============================================================================
+// CompiledModelStage Implementation
+// ============================================================================
+
+CompiledModelStage::CompiledModelStage(
+    std::shared_ptr<litert::Environment> env, std::string name,
+    CompiledModel compiled_model, size_t signature_index,
+    std::vector<std::string> input_names, std::vector<std::string> output_names,
+    absl::flat_hash_map<std::string, HardwareBufferDescriptor>
+        input_descriptors,
+    absl::flat_hash_map<std::string, HardwareBufferDescriptor>
+        output_descriptors,
+    std::string model_path, std::vector<uint8_t> model_buffer,
+    std::optional<litert::Options> options)
+    : env_(std::move(env)),
+      name_(std::move(name)),
+      compiled_model_(std::move(compiled_model)),
+      signature_index_(signature_index),
+      input_names_(std::move(input_names)),
+      output_names_(std::move(output_names)),
+      input_descriptors_(std::move(input_descriptors)),
+      output_descriptors_(std::move(output_descriptors)),
+      model_path_(std::move(model_path)),
+      model_buffer_(std::move(model_buffer)),
+      options_(std::move(options)) {}
+
+absl::Status CompiledModelStage::RefreshDescriptorsFromCompiledModel() {
+  auto in_names_res = compiled_model_.GetSignatureInputNames(signature_index_);
+  if (!in_names_res.HasValue()) {
+    return absl::InternalError(
+        absl::StrCat("Failed to get signature input names for stage '", name_,
+                     "': ", in_names_res.Error().Message()));
+  }
+
+  auto out_names_res =
+      compiled_model_.GetSignatureOutputNames(signature_index_);
+  if (!out_names_res.HasValue()) {
+    return absl::InternalError(
+        absl::StrCat("Failed to get signature output names for stage '", name_,
+                     "': ", out_names_res.Error().Message()));
+  }
+
+  input_names_.clear();
+  input_descriptors_.clear();
+  for (size_t i = 0; i < in_names_res->size(); ++i) {
+    std::string in_name = std::string((*in_names_res)[i]);
+    input_names_.push_back(in_name);
+
+    auto tensor_type_res =
+        compiled_model_.GetInputTensorType(signature_index_, i);
+    if (!tensor_type_res.HasValue()) {
+      return absl::InternalError(absl::StrCat(
+          "Failed to get input tensor type for '", in_name, "' in stage '",
+          name_, "': ", tensor_type_res.Error().Message()));
+    }
+
+    HardwareBufferDescriptor desc;
+    desc.element_type = tensor_type_res->ElementType();
+    auto dims = tensor_type_res->Layout().Dimensions();
+    desc.shape.assign(dims.begin(), dims.end());
+    auto bytes_res = tensor_type_res->Bytes();
+    if (bytes_res.HasValue()) {
+      desc.size_bytes = *bytes_res;
+    }
+
+    auto req_res =
+        compiled_model_.GetInputBufferRequirements(signature_index_, i);
+    if (req_res.HasValue()) {
+      if (auto sz = req_res->BufferSize();
+          sz.HasValue() && *sz > desc.size_bytes) {
+        desc.size_bytes = *sz;
+      }
+      if (auto align = req_res->Alignment(); align.HasValue() && *align > 0) {
+        desc.alignment = *align;
+      }
+      if (auto types = req_res->SupportedTypes();
+          types.HasValue() && !types->empty()) {
+        desc.buffer_type = GetPreferredBufferType(*types);
+      }
+    }
+
+    input_descriptors_[in_name] = std::move(desc);
+  }
+
+  output_names_.clear();
+  output_descriptors_.clear();
+  for (size_t i = 0; i < out_names_res->size(); ++i) {
+    std::string out_name = std::string((*out_names_res)[i]);
+    output_names_.push_back(out_name);
+
+    auto tensor_type_res =
+        compiled_model_.GetOutputTensorType(signature_index_, i);
+    if (!tensor_type_res.HasValue()) {
+      return absl::InternalError(absl::StrCat(
+          "Failed to get output tensor type for '", out_name, "' in stage '",
+          name_, "': ", tensor_type_res.Error().Message()));
+    }
+
+    HardwareBufferDescriptor desc;
+    desc.element_type = tensor_type_res->ElementType();
+    auto dims = tensor_type_res->Layout().Dimensions();
+    desc.shape.assign(dims.begin(), dims.end());
+    auto bytes_res = tensor_type_res->Bytes();
+    if (bytes_res.HasValue()) {
+      desc.size_bytes = *bytes_res;
+    }
+
+    auto req_res =
+        compiled_model_.GetOutputBufferRequirements(signature_index_, i);
+    if (req_res.HasValue()) {
+      if (auto sz = req_res->BufferSize();
+          sz.HasValue() && *sz > desc.size_bytes) {
+        desc.size_bytes = *sz;
+      }
+      if (auto align = req_res->Alignment(); align.HasValue() && *align > 0) {
+        desc.alignment = *align;
+      }
+      if (auto types = req_res->SupportedTypes();
+          types.HasValue() && !types->empty()) {
+        desc.buffer_type = GetPreferredBufferType(*types);
+      }
+    }
+
+    output_descriptors_[out_name] = std::move(desc);
+  }
+
+  return absl::OkStatus();
+}
+
+absl::Status CompiledModelStage::PrepareStageBoundary(
+    const absl::flat_hash_map<std::string, HardwareBufferDescriptor>&
+        negotiated_inputs,
+    const absl::flat_hash_map<std::string, HardwareBufferDescriptor>&
+        negotiated_outputs) {
+  // NOTE: Re-compiling a model in PrepareStageBoundary can be expensive (e.g.,
+  // AOT compilation for NPUs or GPUs). Users who already know upfront that
+  // they will use GPU or external buffers are encouraged to configure
+  // GpuOptions::EnableExternalTensorsMode in their Options before creating
+  // the stage.
+  auto IsExternalGpuBuffer = [](litert::TensorBufferType t) {
+    return t == litert::TensorBufferType::kAhwb ||
+           t == litert::TensorBufferType::kOpenClBuffer ||
+           litert::IsWebGpuMemory(t);
+  };
+
+  std::vector<std::string> external_tensors;
+  for (const auto& [name, desc] : negotiated_inputs) {
+    if (IsExternalGpuBuffer(desc.buffer_type)) {
+      external_tensors.push_back(name);
+    }
+  }
+  for (const auto& [name, desc] : negotiated_outputs) {
+    if (IsExternalGpuBuffer(desc.buffer_type)) {
+      external_tensors.push_back(name);
+    }
+  }
+
+  if (external_tensors.empty()) {
+    return absl::OkStatus();
+  }
+
+  if (model_path_.empty() && model_buffer_.empty()) {
+    ABSL_LOG(WARNING)
+        << "Stage '" << name_ << "' was connected to external GPU buffers ("
+        << absl::StrJoin(external_tensors, ", ")
+        << "), but lacks model source (path/buffer) to recompile with external "
+           "tensors mode because it was constructed from an existing "
+           "CompiledModel. Execution may fail or fall back to CPU copies.";
+    return absl::OkStatus();
+  }
+
+  if (!options_.has_value()) {
+    ABSL_LOG(WARNING)
+        << "Stage '" << name_ << "' was connected to external GPU buffers ("
+        << absl::StrJoin(external_tensors, ", ")
+        << "), but lacks Options to recompile with external tensors mode.";
+    return absl::OkStatus();
+  }
+
+  auto gpu_options_or = options_->GetGpuOptions();
+  if (!gpu_options_or.HasValue()) {
+    return absl::OkStatus();
+  }
+
+  gpu_options_or->EnableExternalTensorsMode(true);
+  for (const auto& tensor_name : external_tensors) {
+    gpu_options_or->AddExternalTensorPattern(tensor_name.c_str());
+  }
+
+  if (!model_path_.empty()) {
+    auto model_res = CompiledModel::Create(*env_, model_path_, *options_);
+    if (!model_res.HasValue()) {
+      return absl::InternalError(absl::StrCat(
+          "Failed to recompile stage '", name_,
+          "' with external GPU tensors mode: ", model_res.Error().Message()));
+    }
+    compiled_model_ = std::move(*model_res);
+  } else {
+    BufferRef<uint8_t> buf_ref(model_buffer_.data(), model_buffer_.size());
+    auto model_res = CompiledModel::Create(*env_, buf_ref, *options_);
+    if (!model_res.HasValue()) {
+      return absl::InternalError(absl::StrCat(
+          "Failed to recompile stage '", name_,
+          "' with external GPU tensors mode: ", model_res.Error().Message()));
+    }
+    compiled_model_ = std::move(*model_res);
+  }
+
+  return RefreshDescriptorsFromCompiledModel();
+}
+
+absl::StatusOr<std::shared_ptr<CompiledModelStage>> CompiledModelStage::Create(
+    std::shared_ptr<litert::Environment> env, std::string name,
+    CompiledModel compiled_model, size_t signature_index) {
+  auto stage = std::shared_ptr<CompiledModelStage>(new CompiledModelStage(
+      std::move(env), std::move(name), std::move(compiled_model),
+      signature_index, {}, {}, {}, {}));
+  auto status = stage->RefreshDescriptorsFromCompiledModel();
+  if (!status.ok()) return status;
+  return stage;
+}
+
+absl::StatusOr<std::shared_ptr<CompiledModelStage>> CompiledModelStage::Create(
+    std::shared_ptr<litert::Environment> env, std::string name,
+    const std::string& model_path, litert::Options options,
+    size_t signature_index) {
+  if (!env) {
+    auto env_or = litert::Environment::Create({});
+    if (!env_or.HasValue()) {
+      return absl::InternalError("Failed to create LiteRT environment");
+    }
+    env = std::make_shared<litert::Environment>(std::move(*env_or));
+  }
+  auto model_res = CompiledModel::Create(*env, model_path, options);
+  if (!model_res.HasValue()) {
+    return absl::InternalError(
+        absl::StrCat("Failed to load and compile model from '", model_path,
+                     "': ", model_res.Error().Message()));
+  }
+  auto stage_or = Create(std::move(env), std::move(name), std::move(*model_res),
+                         signature_index);
+  if (!stage_or.ok()) return stage_or;
+  (*stage_or)->model_path_ = model_path;
+  (*stage_or)->options_ = std::move(options);
+  return stage_or;
+}
+
+absl::StatusOr<std::shared_ptr<CompiledModelStage>> CompiledModelStage::Create(
+    std::shared_ptr<litert::Environment> env, std::string name,
+    const std::string& model_path, litert::HwAccelerators accelerators,
+    size_t signature_index) {
+  auto options_or = litert::Options::Create();
+  if (!options_or.HasValue()) {
+    return absl::InternalError("Failed to create LiteRT options");
+  }
+  options_or->SetHardwareAccelerators(accelerators);
+  return Create(std::move(env), std::move(name), model_path,
+                std::move(*options_or), signature_index);
+}
+
+absl::StatusOr<std::shared_ptr<CompiledModelStage>> CompiledModelStage::Create(
+    std::shared_ptr<litert::Environment> env, std::string name,
+    absl::Span<const uint8_t> model_buffer, litert::Options options,
+    size_t signature_index) {
+  if (!env) {
+    auto env_or = litert::Environment::Create({});
+    if (!env_or.HasValue()) {
+      return absl::InternalError("Failed to create LiteRT environment");
+    }
+    env = std::make_shared<litert::Environment>(std::move(*env_or));
+  }
+  BufferRef<uint8_t> buf_ref(model_buffer.data(), model_buffer.size());
+  auto model_res = CompiledModel::Create(*env, buf_ref, options);
+  if (!model_res.HasValue()) {
+    return absl::InternalError(
+        absl::StrCat("Failed to load and compile model from buffer: ",
+                     model_res.Error().Message()));
+  }
+  auto stage_or = Create(std::move(env), std::move(name), std::move(*model_res),
+                         signature_index);
+  if (!stage_or.ok()) return stage_or;
+  (*stage_or)->model_buffer_.assign(model_buffer.begin(), model_buffer.end());
+  (*stage_or)->options_ = std::move(options);
+  return stage_or;
+}
+
+std::vector<std::string> CompiledModelStage::InputNames() const {
+  return input_names_;
+}
+
+std::vector<std::string> CompiledModelStage::OutputNames() const {
+  return output_names_;
+}
+
+absl::StatusOr<HardwareBufferDescriptor> CompiledModelStage::GetInputDescriptor(
+    absl::string_view name) const {
+  auto it = input_descriptors_.find(name);
+  if (it == input_descriptors_.end()) {
+    return absl::NotFoundError(
+        absl::StrCat("Stage '", name_, "' has no input named '", name, "'."));
+  }
+  return it->second;
+}
+
+absl::StatusOr<HardwareBufferDescriptor>
+CompiledModelStage::GetOutputDescriptor(absl::string_view name) const {
+  auto it = output_descriptors_.find(name);
+  if (it == output_descriptors_.end()) {
+    return absl::NotFoundError(
+        absl::StrCat("Stage '", name_, "' has no output named '", name, "'."));
+  }
+  return it->second;
+}
+
+absl::Status CompiledModelStage::SetInputBuffer(
+    absl::string_view name, std::shared_ptr<LitertBuffer> buffer) {
+  if (!input_descriptors_.contains(name)) {
+    return absl::NotFoundError(
+        absl::StrCat("Stage '", name_, "' has no input named '", name, "'."));
+  }
+  input_buffers_.insert_or_assign(name, std::move(buffer));
+  return absl::OkStatus();
+}
+
+absl::Status CompiledModelStage::SetOutputBuffer(
+    absl::string_view name, std::shared_ptr<LitertBuffer> buffer) {
+  if (!output_descriptors_.contains(name)) {
+    return absl::NotFoundError(
+        absl::StrCat("Stage '", name_, "' has no output named '", name, "'."));
+  }
+  output_buffers_.insert_or_assign(name, std::move(buffer));
+  return absl::OkStatus();
+}
+
+std::shared_ptr<LitertBuffer> CompiledModelStage::GetInputBuffer(
+    absl::string_view name) const {
+  auto it = input_buffers_.find(name);
+  return (it != input_buffers_.end()) ? it->second : nullptr;
+}
+
+std::shared_ptr<LitertBuffer> CompiledModelStage::GetOutputBuffer(
+    absl::string_view name) const {
+  auto it = output_buffers_.find(name);
+  return (it != output_buffers_.end()) ? it->second : nullptr;
+}
+
+absl::Status CompiledModelStage::Run() {
+  std::vector<litert::TensorBuffer> in_bufs;
+  in_bufs.reserve(input_names_.size());
+  for (const auto& in_name : input_names_) {
+    auto it = input_buffers_.find(in_name);
+    if (it == input_buffers_.end() || it->second == nullptr) {
+      return absl::FailedPreconditionError(
+          absl::StrCat("Stage '", name_, "': required input buffer '", in_name,
+                       "' is not bound."));
+    }
+    // Note: LiteRT TensorBuffer inherits from BaseHandle (move-only wrapper
+    // around unique_ptr). Duplicate() creates an additional reference handle.
+    auto dup = it->second->tensor_buffer().Duplicate();
+    if (!dup.HasValue()) {
+      return absl::InternalError(
+          absl::StrCat("Failed to duplicate input buffer '", in_name,
+                       "': ", dup.Error().Message()));
+    }
+    in_bufs.push_back(std::move(*dup));
+  }
+
+  std::vector<litert::TensorBuffer> out_bufs;
+  out_bufs.reserve(output_names_.size());
+  for (const auto& out_name : output_names_) {
+    std::shared_ptr<LitertBuffer> buf;
+    auto it = output_buffers_.find(out_name);
+    if (it == output_buffers_.end() || it->second == nullptr) {
+      const auto& desc = output_descriptors_.at(out_name);
+      if (!env_) {
+        auto env_or = litert::Environment::Create({});
+        if (!env_or.HasValue()) {
+          return absl::InternalError("Failed to create LiteRT environment");
+        }
+        env_ = std::make_shared<litert::Environment>(std::move(*env_or));
+      }
+      auto buf_or = LitertBuffer::CreateManaged(env_, desc.buffer_type,
+                                                desc.ToRankedTensorType(),
+                                                desc.PackedBytes());
+      if (!buf_or.ok()) {
+        return buf_or.status();
+      }
+      buf = *buf_or;
+      if (it != output_buffers_.end()) {
+        it->second = buf;
+      } else {
+        output_buffers_.insert_or_assign(out_name, buf);
+      }
+    } else {
+      buf = it->second;
+    }
+    auto dup = buf->tensor_buffer().Duplicate();
+    if (!dup.HasValue()) {
+      return absl::InternalError(
+          absl::StrCat("Failed to duplicate output buffer '", out_name,
+                       "': ", dup.Error().Message()));
+    }
+    out_bufs.push_back(std::move(*dup));
+  }
+
+  auto run_res = compiled_model_.Run(
+      signature_index_,
+      litert::Span<const litert::TensorBuffer>(in_bufs.data(), in_bufs.size()),
+      litert::Span<const litert::TensorBuffer>(out_bufs.data(),
+                                               out_bufs.size()));
+  if (!run_res.HasValue()) {
+    return absl::InternalError(absl::StrCat("Failed to execute model stage '",
+                                            name_,
+                                            "': ", run_res.Error().Message()));
+  }
+  return absl::OkStatus();
 }
 
 // ============================================================================
@@ -246,19 +719,19 @@ BoundaryLayoutNegotiator::HarmonizeStageBoundary(
     if (auto min_bytes = prod_ranked.Bytes();
         min_bytes.HasValue() && producer_desc.size_bytes > 0 &&
         producer_desc.size_bytes < *min_bytes) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Producer size_bytes (", producer_desc.size_bytes,
-          ") is smaller than required packed bytes for shape (", *min_bytes,
-          ")."));
+      return absl::InvalidArgumentError(
+          absl::StrCat("Producer size_bytes (", producer_desc.size_bytes,
+                       ") is smaller than required packed bytes for shape (",
+                       *min_bytes, ")."));
     }
     auto cons_ranked = consumer_desc.ToRankedTensorType();
     if (auto min_bytes = cons_ranked.Bytes();
         min_bytes.HasValue() && consumer_desc.size_bytes > 0 &&
         consumer_desc.size_bytes < *min_bytes) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Consumer size_bytes (", consumer_desc.size_bytes,
-          ") is smaller than required packed bytes for shape (", *min_bytes,
-          ")."));
+      return absl::InvalidArgumentError(
+          absl::StrCat("Consumer size_bytes (", consumer_desc.size_bytes,
+                       ") is smaller than required packed bytes for shape (",
+                       *min_bytes, ")."));
     }
   }
 
@@ -266,8 +739,8 @@ BoundaryLayoutNegotiator::HarmonizeStageBoundary(
   // When ranks differ due to singleton dimensions (e.g. {1, 128} vs {128}),
   // total byte volume and element ordering are identical, making zero-copy
   // reinterpretation safe.
-  harmonized.shape = !producer_desc.shape.empty() ? producer_desc.shape
-                                                  : consumer_desc.shape;
+  harmonized.shape =
+      !producer_desc.shape.empty() ? producer_desc.shape : consumer_desc.shape;
 
   // 3. Size negotiation: allocate the maximum bytes requested to ensure the
   // buffer is large enough for both producer and consumer. If consumer expects
@@ -292,10 +765,9 @@ BoundaryLayoutNegotiator::HarmonizeStageBoundary(
     harmonized.buffer_type = litert::TensorBufferType::kOpenClBuffer;
   } else if (litert::IsWebGpuMemory(producer_desc.buffer_type) ||
              litert::IsWebGpuMemory(consumer_desc.buffer_type)) {
-    harmonized.buffer_type =
-        litert::IsWebGpuMemory(producer_desc.buffer_type)
-            ? producer_desc.buffer_type
-            : consumer_desc.buffer_type;
+    harmonized.buffer_type = litert::IsWebGpuMemory(producer_desc.buffer_type)
+                                 ? producer_desc.buffer_type
+                                 : consumer_desc.buffer_type;
   } else {
     harmonized.buffer_type = producer_desc.buffer_type;
   }
@@ -356,9 +828,9 @@ ModelChain::Builder& ModelChain::Builder::AddStage(
 ModelChain::Builder& ModelChain::Builder::Connect(
     absl::string_view from_stage, absl::string_view output_name,
     absl::string_view to_stage, absl::string_view input_name) {
-  impl_->connections.push_back(
-      {std::string(from_stage), std::string(output_name),
-       std::string(to_stage), std::string(input_name)});
+  impl_->connections.push_back({std::string(from_stage),
+                                std::string(output_name), std::string(to_stage),
+                                std::string(input_name)});
   return *this;
 }
 
@@ -419,9 +891,9 @@ absl::StatusOr<ModelChain> ModelChain::Builder::Build() {
 
   for (const auto& conn : impl_->connections) {
     if (!chain_impl->stages_by_name.contains(conn.from_stage)) {
-      return absl::NotFoundError(absl::StrCat(
-          "Connection references unknown from_stage: '", conn.from_stage,
-          "'."));
+      return absl::NotFoundError(
+          absl::StrCat("Connection references unknown from_stage: '",
+                       conn.from_stage, "'."));
     }
     if (!chain_impl->stages_by_name.contains(conn.to_stage)) {
       return absl::NotFoundError(absl::StrCat(
@@ -463,10 +935,6 @@ absl::StatusOr<ModelChain> ModelChain::Builder::Build() {
 
   // 5. Harmonize boundaries and pre-allocate LitertBuffers
   // (supporting 1-to-N fan-out)
-  struct ConsumerTarget {
-    std::shared_ptr<ModelStage> to_stage;
-    std::string input_name;
-  };
   absl::flat_hash_map<std::pair<std::string, std::string>,
                       std::vector<ConsumerTarget>>
       fanout_map;
@@ -483,26 +951,49 @@ absl::StatusOr<ModelChain> ModelChain::Builder::Build() {
     it->second.push_back({to_stage, conn.input_name});
   }
 
+  using DescriptorMap =
+      absl::flat_hash_map<std::string, HardwareBufferDescriptor>;
+  absl::flat_hash_map<std::string, DescriptorMap> stage_negotiated_inputs;
+  absl::flat_hash_map<std::string, DescriptorMap> stage_negotiated_outputs;
+
   for (const auto& out_port : unique_outputs) {
     const auto& [from_stage_name, output_name] = out_port;
     auto from_stage = chain_impl->stages_by_name.at(from_stage_name);
     const auto& consumers = fanout_map.at(out_port);
 
-    auto prod_desc_or = from_stage->GetOutputDescriptor(output_name);
-    if (!prod_desc_or.ok()) return prod_desc_or.status();
+    auto harmonized_or =
+        NegotiatePortDescriptor(from_stage, output_name, consumers);
+    if (!harmonized_or.ok()) return harmonized_or.status();
+    const auto& harmonized = *harmonized_or;
 
-    HardwareBufferDescriptor harmonized = *prod_desc_or;
+    stage_negotiated_outputs[from_stage_name][output_name] = harmonized;
     for (const auto& consumer : consumers) {
-      auto cons_desc_or =
-          consumer.to_stage->GetInputDescriptor(consumer.input_name);
-      if (!cons_desc_or.ok()) return cons_desc_or.status();
-
-      auto new_harmonized_or =
-          BoundaryLayoutNegotiator::HarmonizeStageBoundary(harmonized,
-                                                           *cons_desc_or);
-      if (!new_harmonized_or.ok()) return new_harmonized_or.status();
-      harmonized = *new_harmonized_or;
+      stage_negotiated_inputs[consumer.to_stage->Name()][consumer.input_name] =
+          harmonized;
     }
+  }
+
+  // Stages like CompiledModelStage may re-compile and update their descriptors
+  // based on initial boundary negotiation (e.g. enabling external GPU tensor
+  // mode). We notify all stages, then re-negotiate in a second pass to pick up
+  // any changes.
+  for (auto& stage : chain_impl->ordered_stages) {
+    std::string stage_name(stage->Name());
+    auto prep_status =
+        stage->PrepareStageBoundary(stage_negotiated_inputs[stage_name],
+                                    stage_negotiated_outputs[stage_name]);
+    if (!prep_status.ok()) return prep_status;
+  }
+
+  for (const auto& out_port : unique_outputs) {
+    const auto& [from_stage_name, output_name] = out_port;
+    auto from_stage = chain_impl->stages_by_name.at(from_stage_name);
+    const auto& consumers = fanout_map.at(out_port);
+
+    auto harmonized_or =
+        NegotiatePortDescriptor(from_stage, output_name, consumers);
+    if (!harmonized_or.ok()) return harmonized_or.status();
+    const auto& harmonized = *harmonized_or;
 
     std::shared_ptr<LitertBuffer> shared_buf;
     if (harmonized.alignment > 0) {
@@ -592,18 +1083,17 @@ absl::Status ModelChain::Execute() {
   for (auto& stage : impl_->ordered_stages) {
     auto status = stage->Run();
     if (!status.ok()) {
-      return absl::Status(
-          status.code(),
-          absl::StrCat("Stage '", stage->Name(), "' execution failed: ",
-                       status.message()));
+      return absl::Status(status.code(), absl::StrCat("Stage '", stage->Name(),
+                                                      "' execution failed: ",
+                                                      status.message()));
     }
   }
   return absl::OkStatus();
 }
 
-absl::Status ModelChain::SetInputBuffer(
-    absl::string_view stage_name, absl::string_view input_name,
-    std::shared_ptr<LitertBuffer> buffer) {
+absl::Status ModelChain::SetInputBuffer(absl::string_view stage_name,
+                                        absl::string_view input_name,
+                                        std::shared_ptr<LitertBuffer> buffer) {
   auto it = impl_->stages_by_name.find(stage_name);
   if (it == impl_->stages_by_name.end()) {
     return absl::NotFoundError(
@@ -612,9 +1102,8 @@ absl::Status ModelChain::SetInputBuffer(
   return it->second->SetInputBuffer(input_name, std::move(buffer));
 }
 
-absl::Status ModelChain::SetInputBuffer(
-    absl::string_view input_name,
-    std::shared_ptr<LitertBuffer> buffer) {
+absl::Status ModelChain::SetInputBuffer(absl::string_view input_name,
+                                        std::shared_ptr<LitertBuffer> buffer) {
   std::vector<std::string> matching_stages;
   for (const auto& stage : impl_->ordered_stages) {
     std::string port_key = absl::StrCat(stage->Name(), ":", input_name);
@@ -641,9 +1130,8 @@ absl::Status ModelChain::SetInputBuffer(
       ->SetInputBuffer(input_name, std::move(buffer));
 }
 
-absl::StatusOr<std::shared_ptr<LitertBuffer>>
-ModelChain::GetOutputBuffer(absl::string_view stage_name,
-                            absl::string_view output_name) const {
+absl::StatusOr<std::shared_ptr<LitertBuffer>> ModelChain::GetOutputBuffer(
+    absl::string_view stage_name, absl::string_view output_name) const {
   auto it = impl_->stages_by_name.find(stage_name);
   if (it == impl_->stages_by_name.end()) {
     return absl::NotFoundError(
@@ -651,15 +1139,15 @@ ModelChain::GetOutputBuffer(absl::string_view stage_name,
   }
   auto buffer = it->second->GetOutputBuffer(output_name);
   if (!buffer) {
-    return absl::NotFoundError(absl::StrCat(
-        "Output buffer '", output_name, "' on stage '", stage_name,
-        "' is not set or not yet allocated."));
+    return absl::NotFoundError(
+        absl::StrCat("Output buffer '", output_name, "' on stage '", stage_name,
+                     "' is not set or not yet allocated."));
   }
   return buffer;
 }
 
-absl::StatusOr<std::shared_ptr<LitertBuffer>>
-ModelChain::GetOutputBuffer(absl::string_view output_name) const {
+absl::StatusOr<std::shared_ptr<LitertBuffer>> ModelChain::GetOutputBuffer(
+    absl::string_view output_name) const {
   std::vector<std::string> matching_stages;
   for (const auto& stage : impl_->ordered_stages) {
     std::string port_key = absl::StrCat(stage->Name(), ":", output_name);
@@ -685,9 +1173,9 @@ ModelChain::GetOutputBuffer(absl::string_view output_name) const {
   auto stage = impl_->stages_by_name.at(matching_stages.front());
   auto buffer = stage->GetOutputBuffer(output_name);
   if (!buffer) {
-    return absl::NotFoundError(absl::StrCat(
-        "Output buffer '", output_name, "' on stage '", stage->Name(),
-        "' is not set or not yet allocated."));
+    return absl::NotFoundError(
+        absl::StrCat("Output buffer '", output_name, "' on stage '",
+                     stage->Name(), "' is not set or not yet allocated."));
   }
   return buffer;
 }
