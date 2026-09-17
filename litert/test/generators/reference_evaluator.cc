@@ -35,8 +35,10 @@
 #include "litert/core/model/model.h"
 #include "litert/core/model/ops/concatenation.h"
 #include "litert/core/model/ops/matmul.h"
+#include "litert/core/model/ops/reductions.h"
 #include "litert/core/model/ops/simple_binary.h"
 #include "litert/core/model/ops/simple_unary.h"
+#include "litert/core/model/ops/slice.h"
 #include "litert/core/model/ops/transpose.h"
 #include "litert/core/model/shape_inference_types.h"
 #include "litert/test/generators/common.h"
@@ -274,54 +276,81 @@ void ReferenceEvaluator::RegisterStandardOps() {
                return {};
              });
 
-  // Elementwise binary operations (Add, Mul, Div, Sub).
-  auto MakeBinaryHandler = [](auto binary_op, auto get_faf) -> OpKernelHandler {
-    return [binary_op, get_faf](const LiteRtOpT& op, const TensorEnv& env,
-                                TensorData& out) -> Expected<void> {
-      const auto& in1 = env.at(op.Inputs()[0]);
-      const auto& in2 = env.at(op.Inputs()[1]);
-      litert::internal::ReferenceBinaryGeneric(
-          in1.f32_data.data(), in1.dimensions.data(), in1.dimensions.size(),
-          in2.f32_data.data(), in2.dimensions.data(), in2.dimensions.size(),
-          out.f32_data.data(), out.dimensions.data(), out.dimensions.size(),
-          binary_op);
-      litert::internal::ApplyActivation(out.f32_data.data(),
-                                        out.f32_data.size(), get_faf(op));
-      return {};
-    };
-  };
-
   RegisterOp(kLiteRtOpCodeTflAdd,
-             MakeBinaryHandler(std::plus<float>(), [](const LiteRtOpT& op) {
+             [](const LiteRtOpT& op, const TensorEnv& env,
+                TensorData& out) -> Expected<void> {
+               const auto& in1 = env.at(op.Inputs()[0]);
+               const auto& in2 = env.at(op.Inputs()[1]);
                const auto* opts =
                    litert::internal::GetTflOptions(op).AsAddOptions();
-               return opts ? opts->fused_activation_function
-                           : tflite::ActivationFunctionType_NONE;
-             }));
+               tflite::ActivationFunctionType faf =
+                   opts ? opts->fused_activation_function
+                        : tflite::ActivationFunctionType_NONE;
+               litert::internal::ReferenceAdd(
+                   in1.f32_data.data(), in1.dimensions.data(),
+                   in1.dimensions.size(), in2.f32_data.data(),
+                   in2.dimensions.data(), in2.dimensions.size(),
+                   out.f32_data.data(), out.dimensions.data(),
+                   out.dimensions.size(), faf);
+               return {};
+             });
 
-  RegisterOp(
-      kLiteRtOpCodeTflMul,
-      MakeBinaryHandler(std::multiplies<float>(), [](const LiteRtOpT& op) {
-        const auto* opts = litert::internal::GetTflOptions(op).AsMulOptions();
-        return opts ? opts->fused_activation_function
-                    : tflite::ActivationFunctionType_NONE;
-      }));
+  RegisterOp(kLiteRtOpCodeTflMul,
+             [](const LiteRtOpT& op, const TensorEnv& env,
+                TensorData& out) -> Expected<void> {
+               const auto& in1 = env.at(op.Inputs()[0]);
+               const auto& in2 = env.at(op.Inputs()[1]);
+               const auto* opts =
+                   litert::internal::GetTflOptions(op).AsMulOptions();
+               tflite::ActivationFunctionType faf =
+                   opts ? opts->fused_activation_function
+                        : tflite::ActivationFunctionType_NONE;
+               litert::internal::ReferenceMul(
+                   in1.f32_data.data(), in1.dimensions.data(),
+                   in1.dimensions.size(), in2.f32_data.data(),
+                   in2.dimensions.data(), in2.dimensions.size(),
+                   out.f32_data.data(), out.dimensions.data(),
+                   out.dimensions.size(), faf);
+               return {};
+             });
 
   RegisterOp(kLiteRtOpCodeTflDiv,
-             MakeBinaryHandler(std::divides<float>(), [](const LiteRtOpT& op) {
+             [](const LiteRtOpT& op, const TensorEnv& env,
+                TensorData& out) -> Expected<void> {
+               const auto& in1 = env.at(op.Inputs()[0]);
+               const auto& in2 = env.at(op.Inputs()[1]);
                const auto* opts =
                    litert::internal::GetTflOptions(op).AsDivOptions();
-               return opts ? opts->fused_activation_function
-                           : tflite::ActivationFunctionType_NONE;
-             }));
+               tflite::ActivationFunctionType faf =
+                   opts ? opts->fused_activation_function
+                        : tflite::ActivationFunctionType_NONE;
+               litert::internal::ReferenceDiv(
+                   in1.f32_data.data(), in1.dimensions.data(),
+                   in1.dimensions.size(), in2.f32_data.data(),
+                   in2.dimensions.data(), in2.dimensions.size(),
+                   out.f32_data.data(), out.dimensions.data(),
+                   out.dimensions.size(), faf);
+               return {};
+             });
 
   RegisterOp(kLiteRtOpCodeTflSub,
-             MakeBinaryHandler(std::minus<float>(), [](const LiteRtOpT& op) {
+             [](const LiteRtOpT& op, const TensorEnv& env,
+                TensorData& out) -> Expected<void> {
+               const auto& in1 = env.at(op.Inputs()[0]);
+               const auto& in2 = env.at(op.Inputs()[1]);
                const auto* opts =
                    litert::internal::GetTflOptions(op).AsSubOptions();
-               return opts ? opts->fused_activation_function
-                           : tflite::ActivationFunctionType_NONE;
-             }));
+               tflite::ActivationFunctionType faf =
+                   opts ? opts->fused_activation_function
+                        : tflite::ActivationFunctionType_NONE;
+               litert::internal::ReferenceSub(
+                   in1.f32_data.data(), in1.dimensions.data(),
+                   in1.dimensions.size(), in2.f32_data.data(),
+                   in2.dimensions.data(), in2.dimensions.size(),
+                   out.f32_data.data(), out.dimensions.data(),
+                   out.dimensions.size(), faf);
+               return {};
+             });
 
   RegisterOp(kLiteRtOpCodeTflSoftmax,
              [](const LiteRtOpT& op, const TensorEnv& env,
@@ -400,6 +429,124 @@ void ReferenceEvaluator::RegisterStandardOps() {
                    axis, faf);
                return {};
              });
+
+  RegisterOp(kLiteRtOpCodeTflLogistic,
+             [](const LiteRtOpT& op, const TensorEnv& env,
+                TensorData& out) -> Expected<void> {
+               const auto& in = env.at(op.Inputs()[0]);
+               litert::internal::ReferenceLogistic(
+                   in.f32_data.data(), in.f32_data.size(),
+                   out.f32_data.data());
+               return {};
+             });
+
+  RegisterOp(
+      kLiteRtOpCodeTflSlice,
+      [](const LiteRtOpT& op, const TensorEnv& env,
+         TensorData& out) -> Expected<void> {
+        const auto& in = env.at(op.Inputs()[0]);
+        const auto& begin = env.at(op.Inputs()[1]);
+        int rank = static_cast<int>(out.dimensions.size());
+        if (!in.f32_data.empty()) {
+          litert::internal::ReferenceSlice(
+              in.f32_data.data(), in.dimensions.data(), begin.i32_data.data(),
+              out.dimensions.data(), rank, out.f32_data.data());
+        } else if (!in.i32_data.empty()) {
+          litert::internal::ReferenceSlice(
+              in.i32_data.data(), in.dimensions.data(), begin.i32_data.data(),
+              out.dimensions.data(), rank, out.i32_data.data());
+        }
+        return {};
+      });
+
+  RegisterOp(kLiteRtOpCodeTflRsqrt,
+             [](const LiteRtOpT& op, const TensorEnv& env,
+                TensorData& out) -> Expected<void> {
+               const auto& in = env.at(op.Inputs()[0]);
+               litert::internal::ReferenceRsqrt(
+                   in.f32_data.data(), in.f32_data.size(), out.f32_data.data());
+               return {};
+             });
+
+  RegisterOp(kLiteRtOpCodeTflSin,
+             [](const LiteRtOpT& op, const TensorEnv& env,
+                TensorData& out) -> Expected<void> {
+               const auto& in = env.at(op.Inputs()[0]);
+               litert::internal::ReferenceSin(
+                   in.f32_data.data(), in.f32_data.size(), out.f32_data.data());
+               return {};
+             });
+
+  RegisterOp(kLiteRtOpCodeTflCos,
+             [](const LiteRtOpT& op, const TensorEnv& env,
+                TensorData& out) -> Expected<void> {
+               const auto& in = env.at(op.Inputs()[0]);
+               litert::internal::ReferenceCos(
+                   in.f32_data.data(), in.f32_data.size(), out.f32_data.data());
+               return {};
+             });
+
+  RegisterOp(kLiteRtOpCodeTflPow,
+             [](const LiteRtOpT& op, const TensorEnv& env,
+                TensorData& out) -> Expected<void> {
+               const auto& in1 = env.at(op.Inputs()[0]);
+               const auto& in2 = env.at(op.Inputs()[1]);
+               litert::internal::ReferencePow(
+                   in1.f32_data.data(), in1.dimensions.data(),
+                   in1.dimensions.size(), in2.f32_data.data(),
+                   in2.dimensions.data(), in2.dimensions.size(),
+                   out.f32_data.data(), out.dimensions.data(),
+                   out.dimensions.size());
+               return {};
+             });
+
+  RegisterOp(
+      kLiteRtOpCodeTflMean,
+      [](const LiteRtOpT& op, const TensorEnv& env,
+         TensorData& out) -> Expected<void> {
+        const auto& in = env.at(op.Inputs()[0]);
+        const auto& axes = env.at(op.Inputs()[1]);
+        const auto& opts = litert::internal::GetTflOptions(op);
+        const auto* reducer_opts = opts.AsReducerOptions();
+        bool keep_dims = reducer_opts ? reducer_opts->keep_dims : false;
+
+        if (!litert::internal::ReferenceMean(
+                in.f32_data.data(), in.dimensions.data(),
+                in.dimensions.size(), out.f32_data.data(),
+                out.dimensions.data(), out.dimensions.size(),
+                axes.i32_data.data(), axes.i32_data.size(), keep_dims)) {
+          return Error(kLiteRtStatusErrorRuntimeFailure,
+                       "ReferenceMean evaluation failed");
+        }
+        return {};
+      });
+
+  RegisterOp(
+      kLiteRtOpCodeTflCast,
+      [](const LiteRtOpT& op, const TensorEnv& env,
+         TensorData& out) -> Expected<void> {
+        const auto& in = env.at(op.Inputs()[0]);
+        if (out.element_type == kLiteRtElementTypeFloat32 ||
+            out.element_type == kLiteRtElementTypeFloat16) {
+          if (!in.i32_data.empty()) {
+            litert::internal::ReferenceCast(
+                in.i32_data.data(), in.i32_data.size(), out.f32_data.data());
+          } else if (!in.f32_data.empty()) {
+            out.f32_data = in.f32_data;
+          }
+        } else if (out.element_type == kLiteRtElementTypeInt32) {
+          if (!in.f32_data.empty()) {
+            litert::internal::ReferenceCast(
+                in.f32_data.data(), in.f32_data.size(), out.i32_data.data());
+          } else if (!in.i32_data.empty()) {
+            out.i32_data = in.i32_data;
+          }
+        } else {
+          return Error(kLiteRtStatusErrorUnsupported,
+                       "Unsupported Cast element type in ReferenceEvaluator");
+        }
+        return {};
+      });
 }
 
 Expected<void> ReferenceEvaluator::ExecuteOp(const LiteRtOpT& op,
@@ -420,7 +567,11 @@ Expected<void> ReferenceEvaluator::ExecuteOp(const LiteRtOpT& op,
     out.element_type =
         op.Outputs()[0]->Type().second.ranked_tensor_type.element_type;
     LITERT_ASSIGN_OR_RETURN(size_t out_elements, out.NumElements());
-    out.f32_data.resize(out_elements);
+    if (out.element_type == kLiteRtElementTypeInt32) {
+      out.i32_data.resize(out_elements);
+    } else {
+      out.f32_data.resize(out_elements);
+    }
   }
 
   LITERT_RETURN_IF_ERROR(it->second(op, env, out));

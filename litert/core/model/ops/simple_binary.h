@@ -16,8 +16,10 @@
 #define ODML_LITERT_LITERT_CORE_MODEL_OPS_SIMPLE_BINARY_H_
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <utility>
 #include <vector>
 
@@ -176,6 +178,68 @@ inline void ApplyActivation(T* output_data, size_t num_elements,
   }
 }
 
+template <typename T>
+inline void ApplyActivation(T* output_data, const int32_t* output_dims,
+                            int rank, tflite::ActivationFunctionType faf) {
+  if (faf == tflite::ActivationFunctionType_NONE) {
+    return;
+  }
+  size_t num_elements = 1;
+  for (int i = 0; i < rank; ++i) {
+    num_elements *= output_dims[i];
+  }
+  ApplyActivation(output_data, num_elements, faf);
+}
+
+inline void ReferenceAdd(
+    const float* a_data, const int32_t* a_dims, int a_rank, const float* b_data,
+    const int32_t* b_dims, int b_rank, float* output_data,
+    const int32_t* output_dims, int rank,
+    tflite::ActivationFunctionType faf = tflite::ActivationFunctionType_NONE) {
+  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                         output_data, output_dims, rank, std::plus<float>());
+  ApplyActivation(output_data, output_dims, rank, faf);
+}
+
+inline void ReferenceSub(
+    const float* a_data, const int32_t* a_dims, int a_rank, const float* b_data,
+    const int32_t* b_dims, int b_rank, float* output_data,
+    const int32_t* output_dims, int rank,
+    tflite::ActivationFunctionType faf = tflite::ActivationFunctionType_NONE) {
+  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                         output_data, output_dims, rank, std::minus<float>());
+  ApplyActivation(output_data, output_dims, rank, faf);
+}
+
+inline void ReferenceMul(
+    const float* a_data, const int32_t* a_dims, int a_rank, const float* b_data,
+    const int32_t* b_dims, int b_rank, float* output_data,
+    const int32_t* output_dims, int rank,
+    tflite::ActivationFunctionType faf = tflite::ActivationFunctionType_NONE) {
+  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                         output_data, output_dims, rank,
+                         std::multiplies<float>());
+  ApplyActivation(output_data, output_dims, rank, faf);
+}
+
+inline void ReferenceDiv(
+    const float* a_data, const int32_t* a_dims, int a_rank, const float* b_data,
+    const int32_t* b_dims, int b_rank, float* output_data,
+    const int32_t* output_dims, int rank,
+    tflite::ActivationFunctionType faf = tflite::ActivationFunctionType_NONE) {
+  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                         output_data, output_dims, rank, std::divides<float>());
+  ApplyActivation(output_data, output_dims, rank, faf);
+}
+
+inline void ReferencePow(const float* a_data, const int32_t* a_dims, int a_rank,
+                         const float* b_data, const int32_t* b_dims, int b_rank,
+                         float* output_data, const int32_t* output_dims,
+                         int rank) {
+  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                         output_data, output_dims, rank,
+                         [](float a, float b) { return std::pow(a, b); });
+}
 
 }  // namespace litert::internal
 

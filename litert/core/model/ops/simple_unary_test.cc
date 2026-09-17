@@ -15,6 +15,7 @@
 #include "litert/core/model/ops/simple_unary.h"
 
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -106,6 +107,51 @@ TEST(SimpleUnaryOpTest, ReferenceTanh) {
   EXPECT_NEAR(output[0], 0.0f, 1e-5);
   EXPECT_NEAR(output[1], std::tanh(1.0f), 1e-5);
   EXPECT_NEAR(output[2], std::tanh(-1.0f), 1e-5);
+}
+
+TEST(SimpleUnaryOpTest, ReferenceRsqrt) {
+  std::vector<float> input = {1.0f, 4.0f, 16.0f};
+  std::vector<float> output(3);
+
+  ReferenceRsqrt(input.data(), input.size(), output.data());
+
+  EXPECT_NEAR(output[0], 1.0f, 1e-5);
+  EXPECT_NEAR(output[1], 0.5f, 1e-5);
+  EXPECT_NEAR(output[2], 0.25f, 1e-5);
+}
+
+TEST(SimpleUnaryOpTest, ReferenceSin) {
+  std::vector<float> input = {0.0f, 1.0f, 2.0f};
+  std::vector<float> output(3);
+
+  ReferenceSin(input.data(), input.size(), output.data());
+
+  EXPECT_NEAR(output[0], 0.0f, 1e-5);
+  EXPECT_NEAR(output[1], std::sin(1.0f), 1e-5);
+  EXPECT_NEAR(output[2], std::sin(2.0f), 1e-5);
+}
+
+TEST(SimpleUnaryOpTest, ReferenceCos) {
+  std::vector<float> input = {0.0f, 1.0f, 2.0f};
+  std::vector<float> output(3);
+
+  ReferenceCos(input.data(), input.size(), output.data());
+
+  EXPECT_NEAR(output[0], 1.0f, 1e-5);
+  EXPECT_NEAR(output[1], std::cos(1.0f), 1e-5);
+  EXPECT_NEAR(output[2], std::cos(2.0f), 1e-5);
+}
+
+TEST(SimpleUnaryOpTest, ReferenceCast) {
+  std::vector<int32_t> in_i32 = {1, 2, -3};
+  std::vector<float> out_f32(3);
+  ReferenceCast(in_i32.data(), in_i32.size(), out_f32.data());
+  EXPECT_THAT(out_f32, ElementsAre(1.0f, 2.0f, -3.0f));
+
+  std::vector<float> in_f32 = {1.5f, 2.7f, -3.2f};
+  std::vector<int32_t> out_i32(3);
+  ReferenceCast(in_f32.data(), in_f32.size(), out_i32.data());
+  EXPECT_THAT(out_i32, ElementsAre(1, 2, -3));
 }
 
 }  // namespace

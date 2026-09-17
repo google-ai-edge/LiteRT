@@ -1166,6 +1166,7 @@ cc_test(
         ":ops_simple_binary",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//tflite/converter/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],

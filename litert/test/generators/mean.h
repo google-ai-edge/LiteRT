@@ -179,7 +179,7 @@ class Mean : public TestGraph {
     std::vector<float> in_f32 = UnpackToFloat(in.data);
     std::vector<float> out_f32(output.data.size());
 
-    if (!litert::internal::ReferenceMean<float, float>(
+    if (!litert::internal::ReferenceMean(
             in_f32.data(), input_dims_int.data(), kRank, out_f32.data(),
             output_dims_int.data(), output_dims_int.size(), axes_int.data(),
             axes_int.size(), kKeepDims)) {

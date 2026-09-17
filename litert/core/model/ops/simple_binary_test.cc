@@ -14,6 +14,7 @@
 
 #include "litert/core/model/ops/simple_binary.h"
 
+#include <cstdint>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -22,6 +23,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "tflite/converter/schema/schema_generated.h"
 
 namespace litert::internal {
 namespace {
@@ -86,6 +88,65 @@ TEST(SimpleBinaryOpTest, SubBroadcast) {
   ASSERT_EQ(InferSub(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusOk);
   EXPECT_THAT(output_shapes[0], ElementsAre(1, 2, 3));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceAddWithActivation) {
+  std::vector<float> a = {1.0f, -5.0f, 10.0f};
+  std::vector<float> b = {2.0f, 2.0f, 2.0f};
+  std::vector<float> out(3);
+  int32_t dims[] = {3};
+
+  ReferenceAdd(a.data(), dims, 1, b.data(), dims, 1, out.data(), dims, 1,
+               tflite::ActivationFunctionType_RELU6);
+
+  EXPECT_THAT(out, ElementsAre(3.0f, 0.0f, 6.0f));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceSubBroadcast) {
+  std::vector<float> a = {10.0f, 20.0f};
+  std::vector<float> b = {1.0f};
+  std::vector<float> out(2);
+  int32_t a_dims[] = {2};
+  int32_t b_dims[] = {1};
+  int32_t out_dims[] = {2};
+
+  ReferenceSub(a.data(), a_dims, 1, b.data(), b_dims, 1, out.data(), out_dims,
+               1);
+
+  EXPECT_THAT(out, ElementsAre(9.0f, 19.0f));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceMul) {
+  std::vector<float> a = {2.0f, 3.0f};
+  std::vector<float> b = {4.0f, 5.0f};
+  std::vector<float> out(2);
+  int32_t dims[] = {2};
+
+  ReferenceMul(a.data(), dims, 1, b.data(), dims, 1, out.data(), dims, 1);
+
+  EXPECT_THAT(out, ElementsAre(8.0f, 15.0f));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceDiv) {
+  std::vector<float> a = {10.0f, 20.0f};
+  std::vector<float> b = {2.0f, 4.0f};
+  std::vector<float> out(2);
+  int32_t dims[] = {2};
+
+  ReferenceDiv(a.data(), dims, 1, b.data(), dims, 1, out.data(), dims, 1);
+
+  EXPECT_THAT(out, ElementsAre(5.0f, 5.0f));
+}
+
+TEST(SimpleBinaryOpTest, ReferencePow) {
+  std::vector<float> a = {2.0f, 3.0f};
+  std::vector<float> b = {3.0f, 2.0f};
+  std::vector<float> out(2);
+  int32_t dims[] = {2};
+
+  ReferencePow(a.data(), dims, 1, b.data(), dims, 1, out.data(), dims, 1);
+
+  EXPECT_THAT(out, ElementsAre(8.0f, 9.0f));
 }
 
 }  // namespace

@@ -381,5 +381,27 @@ TEST(SliceOpTest, Int64DataPropagationBaseFailure) {
   EXPECT_THAT(output_shapes[0], ElementsAre(2));
 }
 
+TEST(SliceOpTest, ReferenceSliceMultiDimensional) {
+  // 3D tensor of shape [2, 3, 4]
+  std::vector<int32_t> input(2 * 3 * 4);
+  for (int i = 0; i < 24; ++i) {
+    input[i] = i;
+  }
+  const int32_t input_dims[] = {2, 3, 4};
+  const int32_t begins[] = {0, 1, 2};
+  const int32_t output_dims[] = {2, 2, 2};
+  std::vector<int32_t> output(2 * 2 * 2, -1);
+
+  ReferenceSlice(input.data(), input_dims, begins, output_dims, 3,
+                 output.data());
+
+  // Expected coordinates:
+  // (0,1,2)->6,  (0,1,3)->7
+  // (0,2,2)->10, (0,2,3)->11
+  // (1,1,2)->18, (1,1,3)->19
+  // (1,2,2)->22, (1,2,3)->23
+  EXPECT_THAT(output, ElementsAre(6, 7, 10, 11, 18, 19, 22, 23));
+}
+
 }  // namespace
 }  // namespace litert::internal

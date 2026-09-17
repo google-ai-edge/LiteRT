@@ -207,5 +207,50 @@ TEST(ReferenceEvaluatorTest, CustomOpRegistration) {
   EXPECT_EQ(outputs[0].Span<float>()[1], 48.0f);
 }
 
+TEST(ReferenceEvaluatorTest, RunCompositeSwiglu) {
+  using TensorTf = litert::tensor::Tensor<litert::tensor::TfLiteMixinTag>;
+
+  TensorTf in = litert::tensor::Create(
+      "gate_up", litert::tensor::ApiType<float>::value, {1, 1, 4});
+
+  TensorTf out = litert::tensor::StableHLOComposite(
+      litert::tensor::StableHLOCompositeOptions{.name = "test_swiglu"},
+      [](auto x) {
+        auto gate = litert::tensor::Slice(x, {0, 0, 0}, {1, 1, 2});
+        auto up = litert::tensor::Slice(x, {0, 0, 2}, {1, 1, 2});
+        auto silu_gate =
+            litert::tensor::Mul(gate, litert::tensor::Logistic(gate));
+        return litert::tensor::Mul(silu_gate, up);
+      },
+      in);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto model,
+                              litert::testing::SaveTensorGraph({out}));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_in,
+                              SimpleBuffer::Create<float>({1, 1, 4}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_out,
+                              SimpleBuffer::Create<float>({1, 1, 2}));
+
+  auto in_span = b_in.Span<float>();
+  in_span[0] = 0.0f;
+  in_span[1] = 2.0f;
+  in_span[2] = 3.0f;
+  in_span[3] = 0.5f;
+
+  VarBuffers inputs;
+  inputs.push_back(std::move(b_in));
+  VarBuffers outputs;
+  outputs.push_back(std::move(b_out));
+
+  LITERT_ASSERT_OK(
+      ReferenceEvaluator::EvaluateCompositeReference(*model, inputs, outputs));
+
+  auto out_span = outputs[0].Span<float>();
+  float expected_1 = (2.0f / (1.0f + std::exp(-2.0f))) * 0.5f;
+  std::vector<float> expected = {0.0f, expected_1};
+  EXPECT_THAT(out_span, Pointwise(FloatNear(1e-5f), expected));
+}
+
 }  // namespace
 }  // namespace litert::testing

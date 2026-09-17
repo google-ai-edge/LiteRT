@@ -132,6 +132,39 @@ inline void ReferenceTanh(const float* input_data, size_t num_elements,
                         [](float val) { return std::tanh(val); });
 }
 
+inline void ReferenceLogistic(const float* input_data, size_t num_elements,
+                              float* output_data) {
+  ReferenceUnaryGeneric(input_data, num_elements, output_data, [](float val) {
+    return 1.0f / (1.0f + std::exp(-val));
+  });
+}
+
+inline void ReferenceRsqrt(const float* input_data, size_t num_elements,
+                           float* output_data) {
+  ReferenceUnaryGeneric(input_data, num_elements, output_data,
+                        [](float val) { return 1.0f / std::sqrt(val); });
+}
+
+inline void ReferenceSin(const float* input_data, size_t num_elements,
+                         float* output_data) {
+  ReferenceUnaryGeneric(input_data, num_elements, output_data,
+                        [](float val) { return std::sin(val); });
+}
+
+inline void ReferenceCos(const float* input_data, size_t num_elements,
+                         float* output_data) {
+  ReferenceUnaryGeneric(input_data, num_elements, output_data,
+                        [](float val) { return std::cos(val); });
+}
+
+template <typename OutT, typename InT>
+inline void ReferenceCast(const InT* input_data, size_t num_elements,
+                          OutT* output_data) {
+  for (size_t i = 0; i < num_elements; ++i) {
+    output_data[i] = static_cast<OutT>(input_data[i]);
+  }
+}
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_OPS_SIMPLE_UNARY_H_

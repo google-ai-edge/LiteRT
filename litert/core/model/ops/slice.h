@@ -345,6 +345,52 @@ inline LiteRtStatus InferDynamicUpdateSlice(const LiteRtOpT& op,
   return kLiteRtStatusOk;
 }
 
+inline void SliceRecursive(int dim, int rank, const char* input_data,
+                           const int64_t* input_strides_bytes,
+                           const int32_t* begins, const int32_t* output_dims,
+                           size_t element_size, char*& output_data) {
+  input_data += begins[dim] * input_strides_bytes[dim];
+  if (dim == rank - 1) {
+    const size_t copy_bytes = output_dims[dim] * element_size;
+    std::memcpy(output_data, input_data, copy_bytes);
+    output_data += copy_bytes;
+    return;
+  }
+  for (int32_t i = 0; i < output_dims[dim]; ++i) {
+    SliceRecursive(dim + 1, rank, input_data, input_strides_bytes, begins,
+                   output_dims, element_size, output_data);
+    input_data += input_strides_bytes[dim];
+  }
+}
+
+template <typename T>
+inline void ReferenceSlice(const T* input_data, const int32_t* input_dims,
+                           const int32_t* begins, const int32_t* output_dims,
+                           int rank, T* output_data) {
+  if (rank <= 0) {
+    if (rank == 0) {
+      output_data[0] = input_data[0];
+    }
+    return;
+  }
+  for (int i = 0; i < rank; ++i) {
+    if (output_dims[i] <= 0) {
+      return;
+    }
+  }
+
+  std::vector<int64_t> input_strides_bytes(rank);
+  input_strides_bytes[rank - 1] = sizeof(T);
+  for (int i = rank - 2; i >= 0; --i) {
+    input_strides_bytes[i] = input_strides_bytes[i + 1] * input_dims[i + 1];
+  }
+
+  char* out_ptr = reinterpret_cast<char*>(output_data);
+  SliceRecursive(0, rank, reinterpret_cast<const char*>(input_data),
+                 input_strides_bytes.data(), begins, output_dims, sizeof(T),
+                 out_ptr);
+}
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_OPS_SLICE_H_
