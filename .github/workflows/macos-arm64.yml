@@ -13,6 +13,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   check:
     name: Check Changes
@@ -24,7 +27,7 @@ jobs:
       run_build: ${{ steps.check.outputs.run_build }}
     steps:
       - if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.0
         id: filter
         with:
           predicate-quantifier: 'some-with-excludes'
@@ -40,8 +43,11 @@ jobs:
       - name: Determine if build should run
         id: check
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SRC_CHANGED: ${{ steps.filter.outputs.src }}
         run: |
-          if [[ "${{ github.event_name }}" != "pull_request" || "${{ steps.filter.outputs.src }}" == "true" ]]; then
+          if [[ "${EVENT_NAME}" != "pull_request" || "${SRC_CHANGED}" == "true" ]]; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
@@ -56,10 +62,10 @@ jobs:
     steps:
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.4.0
         with:
           python-version: "3.11"
 
