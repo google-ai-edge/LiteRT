@@ -78,6 +78,7 @@ inline LiteRtStatus InferElementwiseBinary(absl::Span<Dims> input_shapes,
   }
 
 DEFINE_SIMPLE_BINARY_INFER(Add)
+DEFINE_SIMPLE_BINARY_INFER(Atan2)
 DEFINE_SIMPLE_BINARY_INFER(Div)
 DEFINE_SIMPLE_BINARY_INFER(Equal)
 DEFINE_SIMPLE_BINARY_INFER(FloorDiv)
