@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <optional>
 #include <string>
@@ -77,7 +79,73 @@ TEST(ProfilingTest, EnvironmentFlagsUseTheExistingNonzeroSemantics) {
 
 TEST(ProfilingTest, DisabledCpuTimerDoesNotReportTime) {
   DispatchCpuTimer timer(/*enabled=*/false);
-  EXPECT_EQ(timer.ElapsedMs(), 0.0);
+  for (int i = 0; i < 16; ++i) EXPECT_EQ(timer.ElapsedMs(), 0.0);
+}
+
+TEST(ProfilingTest, CpuTimerElapsedMillisecondsAreNondecreasing) {
+  const auto before = std::chrono::steady_clock::now();
+  DispatchCpuTimer timer(/*enabled=*/true);
+  const auto after_start = std::chrono::steady_clock::now();
+  double previous_ms = 0.0;
+  for (int i = 0; i < 16; ++i) {
+    const auto before_sample = std::chrono::steady_clock::now();
+    const double elapsed_ms = timer.ElapsedMs();
+    const auto after_sample = std::chrono::steady_clock::now();
+    const double lower_bound_ms =
+        std::chrono::duration<double, std::milli>(before_sample - after_start)
+            .count();
+    const double upper_bound_ms =
+        std::chrono::duration<double, std::milli>(after_sample - before)
+            .count();
+    EXPECT_GE(elapsed_ms, previous_ms);
+    EXPECT_GE(elapsed_ms, lower_bound_ms);
+    EXPECT_LE(elapsed_ms, upper_bound_ms);
+    previous_ms = elapsed_ms;
+  }
+}
+
+TEST(ProfilingTest, DisabledMemoryProfileDoesNotLog) {
+  ScopedEnvironmentVariable memory("LITERT_NVIDIA_MEMORY_PROFILE");
+  memory.Set("0");
+  testing::internal::CaptureStderr();
+  LogMemoryProfile("test", "disabled");
+  const std::string output = testing::internal::GetCapturedStderr();
+  EXPECT_TRUE(output.empty()) << output;
+}
+
+TEST(ProfilingTest, MemoryLogTimestampsUseTheMonotonicClock) {
+  ScopedEnvironmentVariable memory("LITERT_NVIDIA_MEMORY_PROFILE");
+  memory.Set("1");
+  const auto now_ns = [] {
+    return static_cast<unsigned long long>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+  };
+  testing::internal::CaptureStderr();
+  const auto before = now_ns();
+  LogMemoryProfile("test", "first");
+  const auto between = now_ns();
+  LogMemoryProfile("test", "second");
+  const auto after = now_ns();
+  const std::string output = testing::internal::GetCapturedStderr();
+
+  const auto first_pos = output.find("monotonic_ns=");
+  ASSERT_NE(first_pos, std::string::npos) << output;
+  const auto second_pos = output.find("monotonic_ns=", first_pos + 1);
+  ASSERT_NE(second_pos, std::string::npos) << output;
+  unsigned long long first_ns = 0;
+  unsigned long long second_ns = 0;
+  ASSERT_EQ(
+      std::sscanf(output.c_str() + first_pos, "monotonic_ns=%llu", &first_ns),
+      1);
+  ASSERT_EQ(
+      std::sscanf(output.c_str() + second_pos, "monotonic_ns=%llu", &second_ns),
+      1);
+  EXPECT_GE(first_ns, before);
+  EXPECT_LE(first_ns, between);
+  EXPECT_GE(second_ns, between);
+  EXPECT_LE(second_ns, after);
 }
 
 }  // namespace
