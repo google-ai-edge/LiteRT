@@ -49,6 +49,15 @@
 #include "litert/tools/flags/vendors/samsung_flags.h"  // IWYU pragma: keep
 #endif  // !defined(LITERT_WINDOWS_OS)
 
+ABSL_FLAG(std::vector<std::string>, input, {},
+          "Input shapes by position, e.g. --input=1:224:224:3 --input=1:10. "
+          "Count must match the number of model inputs exactly. "
+          "Analogous to QAIRT's --source_model_input_shape.");
+
+ABSL_FLAG(std::vector<std::string>, input_name, {},
+          "Input shapes by tensor name, e.g. --input_name=arg0@1:224:224:3. "
+          "Analogous to QAIRT's --source_model_input_shape.");
+
 namespace {
 
 using ::litert::tools::ApplyPlugin;
@@ -91,6 +100,9 @@ ApplyPluginRun::Ptr ParseFlags() {
   for (auto subgraph_idx : subgraphs.elements) {
     res->subgraphs.insert(subgraph_idx);
   }
+
+  res->positional_inputs = absl::GetFlag(FLAGS_input);
+  res->name_inputs = absl::GetFlag(FLAGS_input_name);
 
   return res;
 }
