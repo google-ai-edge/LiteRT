@@ -65,7 +65,8 @@ bool TensorRtSharedWeightsEnabled();
 bool IsTensorRtOpSupported(const litert::compiler::Op& op);
 
 Expected<TensorRtBuildResult> BuildTensorRtEngine(
-    const litert::compiler::Subgraph& subgraph);
+    const litert::compiler::Subgraph& subgraph,
+    absl::Span<const std::string> read_only_value_cache_inputs = {});
 
 }  // namespace litert::nvidia
 

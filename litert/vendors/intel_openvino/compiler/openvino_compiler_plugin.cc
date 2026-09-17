@@ -519,6 +519,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     auto tflite_fe =
         std::make_shared<ov::frontend::tensorflow_lite::FrontEnd>();
 
+    bool enable_weight_sharing = true;
+    if (const auto& options = compiler_plugin->GetIntelOpenVinoOptions();
+        options.HasValue()) {
+      enable_weight_sharing = options.Value().GetEnableWeightSharing();
+    }
+
     // Cross-partition weight sharing: all partitions' distinct weights are
     // deduplicated by LiteRt BufferId into one OpenVinoGlobalGraph container
     // (shared buffer pool + per-subgraph {payload, const_map, device}). The
@@ -531,7 +537,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     // to standalone baked-weights bytecode. Decided up front so the container
     // is all-or-nothing. |share_device| records the common target. Requires > 1
     // partition, since this deduplicates weights ACROSS partitions.
-    bool share_weights = num_partitions > 1;
+    bool share_weights = num_partitions > 1 && enable_weight_sharing;
     std::string share_device;
     for (int p = 0; p < num_partitions && share_weights; ++p) {
       LITERT_ASSIGN_OR_RETURN(

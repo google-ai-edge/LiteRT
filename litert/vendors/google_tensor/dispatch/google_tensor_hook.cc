@@ -9,6 +9,7 @@
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 
 #if LITERT_GOOGLE_TENSOR_HAS_HOOKS
+#include "litert/vendors/google_tensor/hooks/hooks_utils.h"
 #include "litert/vendors/google_tensor/hooks/power_trace_hook.h"
 #include "litert/vendors/google_tensor/hooks/tpu_tile_hook.h"
 #endif
@@ -68,6 +69,12 @@ void LiteRtVendorHook(LiteRtHookType type, const void* data, size_t size,
 
 LiteRtStatus GetHooks(LiteRtDispatchDeviceContext device_context,
                       LiteRtHook* hook, void** user_data) {
+  // Only advertise a hook when the user has actually configured one.
+  if (GetVendorHookArgsConfig().empty()) {
+    *hook = nullptr;
+    return kLiteRtStatusOk;
+  }
+
   *hook = LiteRtVendorHook;
   auto context = std::make_unique<GoogleTensorHookContext>();
   *user_data = context.get();
