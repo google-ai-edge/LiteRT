@@ -1539,6 +1539,155 @@ TEST(ModelBuilderTest, GetOpsToReplace_SimpleAdd) {
   TfLiteIntArrayFree(ops_to_replace);
 }
 
+class InterpreterEmptyTensorAdd : public DelegatedInterpreter {
+ public:
+  InterpreterEmptyTensorAdd() : DelegatedInterpreter(1) {
+    void* builtin_data = alloc_builtin_data(kTfLiteBuiltinAdd);
+    EXPECT_EQ(interpreter_.AddTensors(3), kTfLiteOk);
+    EXPECT_EQ(interpreter_.SetInputs({0, 1}), kTfLiteOk);
+    EXPECT_EQ(interpreter_.SetOutputs({2}), kTfLiteOk);
+
+    const TfLiteRegistration reg_add = {nullptr, nullptr, nullptr,
+                                        nullptr, nullptr, kTfLiteBuiltinAdd};
+    EXPECT_EQ(interpreter_.AddNodeWithParameters(
+                  /*inputs=*/{0, 1}, /*outputs=*/{2}, /*init_data=*/nullptr,
+                  /*init_data_size=*/0, builtin_data,
+                  /*registration=*/&reg_add),
+              kTfLiteOk);
+
+    const std::vector<int> dims = {0, 1, 1, 1};
+    TfLiteQuantization quantization;
+    quantization.type = kTfLiteNoQuantization;
+    for (int i = 0; i < 3; ++i) {
+      EXPECT_EQ(interpreter_.SetTensorParametersReadWrite(
+                    i, TfLiteType::kTfLiteFloat32, "t", dims, quantization),
+                kTfLiteOk);
+    }
+    exec_plan()->data[0] = 0;
+  }
+};
+
+TEST(ModelBuilderTest, GetOpsToReplaceRejectsEmptyTensor) {
+  InterpreterEmptyTensorAdd interpreter_empty_add;
+  TfLiteContext* context = interpreter_empty_add.context();
+  static InterpreterEmptyTensorAdd* s_interpreter = nullptr;
+  s_interpreter = &interpreter_empty_add;
+
+  context->GetExecutionPlan = [](struct TfLiteContext* context,
+                                 TfLiteIntArray** execution_plan) {
+    *execution_plan = s_interpreter->exec_plan();
+    return kTfLiteOk;
+  };
+  context->GetNodeAndRegistration = [](struct TfLiteContext*, int node_index,
+                                       TfLiteNode** node,
+                                       TfLiteRegistration** registration) {
+    *node = s_interpreter->node(node_index);
+    *registration = s_interpreter->registration(node_index);
+    return kTfLiteOk;
+  };
+  context->PreviewDelegatePartitioning =
+      [](struct TfLiteContext* context, const TfLiteIntArray* nodes_to_replace,
+         TfLiteDelegateParams** partition_params_array, int* num_partitions) {
+        if (nodes_to_replace->size == 0) {
+          *num_partitions = 0;
+          return kTfLiteOk;
+        }
+        auto params = s_interpreter->add_delegate_params();
+        params->nodes_to_replace = TfLiteIntArrayCreate(1);
+        params->nodes_to_replace->data[0] = 0;
+        params->input_tensors = TfLiteIntArrayCreate(2);
+        params->input_tensors->data[0] = 0;
+        params->input_tensors->data[1] = 1;
+        params->output_tensors = TfLiteIntArrayCreate(1);
+        params->output_tensors->data[0] = 2;
+
+        *partition_params_array = s_interpreter->delegate_params();
+        *num_partitions = s_interpreter->num_delegate_params();
+        return kTfLiteOk;
+      };
+
+  TfLiteIntArray* ops_to_replace = GetOpsToReplace(context);
+  ASSERT_NE(ops_to_replace, nullptr);
+  EXPECT_EQ(ops_to_replace->size, 0);
+
+  TfLiteIntArrayFree(ops_to_replace);
+}
+
+class InterpreterScalarAdd : public DelegatedInterpreter {
+ public:
+  InterpreterScalarAdd() : DelegatedInterpreter(1) {
+    void* builtin_data = alloc_builtin_data(kTfLiteBuiltinAdd);
+    EXPECT_EQ(interpreter_.AddTensors(3), kTfLiteOk);
+    EXPECT_EQ(interpreter_.SetInputs({0, 1}), kTfLiteOk);
+    EXPECT_EQ(interpreter_.SetOutputs({2}), kTfLiteOk);
+
+    const TfLiteRegistration reg_add = {nullptr, nullptr, nullptr,
+                                        nullptr, nullptr, kTfLiteBuiltinAdd};
+    EXPECT_EQ(interpreter_.AddNodeWithParameters(
+                  /*inputs=*/{0, 1}, /*outputs=*/{2}, /*init_data=*/nullptr,
+                  /*init_data_size=*/0, builtin_data,
+                  /*registration=*/&reg_add),
+              kTfLiteOk);
+
+    const std::vector<int> dims = {};
+    TfLiteQuantization quantization;
+    quantization.type = kTfLiteNoQuantization;
+    for (int i = 0; i < 3; ++i) {
+      EXPECT_EQ(interpreter_.SetTensorParametersReadWrite(
+                    i, TfLiteType::kTfLiteFloat32, "t", dims, quantization),
+                kTfLiteOk);
+    }
+    exec_plan()->data[0] = 0;
+  }
+};
+
+TEST(ModelBuilderTest, GetOpsToReplaceAcceptsScalarTensor) {
+  InterpreterScalarAdd interpreter_scalar_add;
+  TfLiteContext* context = interpreter_scalar_add.context();
+  static InterpreterScalarAdd* s_interpreter = nullptr;
+  s_interpreter = &interpreter_scalar_add;
+
+  context->GetExecutionPlan = [](struct TfLiteContext* context,
+                                 TfLiteIntArray** execution_plan) {
+    *execution_plan = s_interpreter->exec_plan();
+    return kTfLiteOk;
+  };
+  context->GetNodeAndRegistration = [](struct TfLiteContext*, int node_index,
+                                       TfLiteNode** node,
+                                       TfLiteRegistration** registration) {
+    *node = s_interpreter->node(node_index);
+    *registration = s_interpreter->registration(node_index);
+    return kTfLiteOk;
+  };
+  context->PreviewDelegatePartitioning =
+      [](struct TfLiteContext* context, const TfLiteIntArray* nodes_to_replace,
+         TfLiteDelegateParams** partition_params_array, int* num_partitions) {
+        if (nodes_to_replace->size == 0) {
+          *num_partitions = 0;
+          return kTfLiteOk;
+        }
+        auto params = s_interpreter->add_delegate_params();
+        params->nodes_to_replace = TfLiteIntArrayCreate(1);
+        params->nodes_to_replace->data[0] = 0;
+        params->input_tensors = TfLiteIntArrayCreate(2);
+        params->input_tensors->data[0] = 0;
+        params->input_tensors->data[1] = 1;
+        params->output_tensors = TfLiteIntArrayCreate(1);
+        params->output_tensors->data[0] = 2;
+
+        *partition_params_array = s_interpreter->delegate_params();
+        *num_partitions = s_interpreter->num_delegate_params();
+        return kTfLiteOk;
+      };
+
+  TfLiteIntArray* ops_to_replace = GetOpsToReplace(context);
+  ASSERT_NE(ops_to_replace, nullptr);
+  EXPECT_EQ(ops_to_replace->size, 1);
+  EXPECT_EQ(ops_to_replace->data[0], 0);
+
+  TfLiteIntArrayFree(ops_to_replace);
+}
+
 InterpreterQuantized* interpreter_quant = new InterpreterQuantized();
 TEST(ModelBuilderTest, GetOpsToReplace_AllowQuantOps) {
   TfLiteContext* context = interpreter_quant->context();
