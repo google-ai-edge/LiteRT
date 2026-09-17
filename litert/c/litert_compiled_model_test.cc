@@ -67,6 +67,20 @@ TEST(CompiledModelTest, Basic) {
 
   LiteRtDestroyOptions(jit_compilation_options);
 
+  LiteRtDelegationMetrics delegation_metrics = {};
+  EXPECT_EQ(
+      LiteRtCompiledModelGetDelegationMetrics(nullptr, &delegation_metrics),
+      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtCompiledModelGetDelegationMetrics(compiled_model, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  LITERT_ASSERT_OK(LiteRtCompiledModelGetDelegationMetrics(
+      compiled_model, &delegation_metrics));
+  EXPECT_GT(delegation_metrics.total_node_count, 0);
+  EXPECT_GT(delegation_metrics.cpu_delegated_node_count, 0);
+  EXPECT_GT(delegation_metrics.cpu_partition_count, 0);
+  EXPECT_EQ(delegation_metrics.npu_delegated_node_count, 0);
+  EXPECT_EQ(delegation_metrics.gpu_delegated_node_count, 0);
+
   LiteRtSubgraph subgraph;
   LITERT_ASSERT_OK(LiteRtGetModelSubgraph(model, 0, &subgraph));
 

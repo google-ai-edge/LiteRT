@@ -321,6 +321,17 @@ LiteRtStatus LiteRtCompiledModelIsNonCpuFullyAccelerated(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtCompiledModelGetDelegationMetrics(
+    LiteRtCompiledModel compiled_model,
+    LiteRtDelegationMetrics* delegation_metrics) {
+  LITERT_RETURN_IF_ERROR(
+      compiled_model != nullptr && delegation_metrics != nullptr,
+      kLiteRtStatusErrorInvalidArgument);
+
+  *delegation_metrics = compiled_model->GetDelegationMetrics();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
                                             LiteRtProfiler* profiler) {
   LITERT_RETURN_IF_ERROR(compiled_model != nullptr && profiler != nullptr,

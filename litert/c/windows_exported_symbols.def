@@ -70,6 +70,7 @@ EXPORTS
   LiteRtClearTensorBuffer
   LiteRtClearTensorBufferEvent
   LiteRtCompiledModelClearErrors
+  LiteRtCompiledModelGetDelegationMetrics
   LiteRtCompiledModelGetDispatchAnnotation
   LiteRtCompiledModelGetErrorMessages
   LiteRtCompiledModelGetProfiler

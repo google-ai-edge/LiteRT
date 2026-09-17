@@ -104,6 +104,16 @@ TEST(CompiledModelTest, Basic) {
                               compiled_model.IsNonCpuFullyAccelerated());
   ASSERT_FALSE(nonCpuFullyAccelerated);
 
+  LITERT_ASSERT_OK_AND_ASSIGN(auto delegation_metrics,
+                              compiled_model.GetDelegationMetrics());
+  EXPECT_GT(delegation_metrics.total_node_count, 0);
+  EXPECT_GT(delegation_metrics.cpu_delegated_node_count, 0);
+  EXPECT_GT(delegation_metrics.cpu_partition_count, 0);
+  EXPECT_EQ(delegation_metrics.npu_delegated_node_count, 0);
+  EXPECT_EQ(delegation_metrics.npu_partition_count, 0);
+  EXPECT_EQ(delegation_metrics.gpu_delegated_node_count, 0);
+  EXPECT_EQ(delegation_metrics.gpu_partition_count, 0);
+
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(

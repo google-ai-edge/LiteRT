@@ -260,6 +260,12 @@ LiteRtStatus LiteRtCompiledModelIsFullyAccelerated(
 LiteRtStatus LiteRtCompiledModelIsNonCpuFullyAccelerated(
     LiteRtCompiledModel compiled_model, bool* non_cpu_fully_accelerated);
 
+// Returns delegation metrics (total node count, delegated node counts, and
+// partition counts across NPU, GPU, and CPU) for the compiled model.
+LiteRtStatus LiteRtCompiledModelGetDelegationMetrics(
+    LiteRtCompiledModel compiled_model,
+    LiteRtDelegationMetrics* delegation_metrics);
+
 // Gets the profiler for the model. CompiledModel owns the profiler.
 LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
                                             LiteRtProfiler* profiler);
