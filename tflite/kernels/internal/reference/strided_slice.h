@@ -18,7 +18,6 @@ limitations under the License.
 #include <functional>
 #include <vector>
 
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/kernels/internal/common.h"
 #include "tflite/kernels/internal/compatibility.h"
 #include "tflite/kernels/internal/portable_tensor.h"
