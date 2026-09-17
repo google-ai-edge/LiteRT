@@ -207,6 +207,7 @@ def CreateCompiledModelFromFile(
         intel_openvino_graph_backend: int = ...,
         intel_openvino_performance_mode: int = ...,
         intel_openvino_configs_map: Dict[str, str] = ...,
+        intel_openvino_enable_weight_sharing: int = ...,
 ) -> CompiledModelWrapper:
     """Creates a compiled model from a model file.
 
@@ -259,6 +260,7 @@ def CreateCompiledModelFromBuffer(
         intel_openvino_graph_backend: int = ...,
         intel_openvino_performance_mode: int = ...,
         intel_openvino_configs_map: Dict[str, str] = ...,
+        intel_openvino_enable_weight_sharing: int = ...,
 ) -> CompiledModelWrapper:
     """Creates a compiled model from a model buffer.
 

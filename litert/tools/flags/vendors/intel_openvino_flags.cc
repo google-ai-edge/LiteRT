@@ -45,6 +45,11 @@ ABSL_FLAG(std::string, intel_openvino_configs_map, "",
           "key=value pairs "
           "(e.g., 'INFERENCE_PRECISION_HINT=f16,CACHE_DIR=/tmp/cache').");
 
+ABSL_FLAG(bool, intel_openvino_enable_weight_sharing, true,
+          "Whether to enable cross-partition weight sharing for Intel "
+          "OpenVINO. Disable this to emit standalone per-partition bytecode "
+          "instead of a shared GlobalGraph container.");
+
 ABSL_FLAG(std::string, intel_openvino_graph_backends, "",
           "Per-graph (per-partition) OpenVINO target device.  Accepts either "
           "a bare backend name to apply to all graphs (e.g. 'npu' or 'gpu'), "
@@ -135,6 +140,8 @@ Expected<void> UpdateIntelOpenVinoOptionsFromFlags(
     IntelOpenVinoOptions& options) {
   options.SetPerformanceMode(
       absl::GetFlag(FLAGS_intel_openvino_performance_mode));
+  options.SetEnableWeightSharing(
+      absl::GetFlag(FLAGS_intel_openvino_enable_weight_sharing));
 
   // Parse configs map options from the flag (comma-separated key=value pairs)
   const std::string configs_map_str =
