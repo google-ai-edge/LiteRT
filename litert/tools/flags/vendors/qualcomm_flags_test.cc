@@ -311,6 +311,29 @@ TEST(HtpPerfCtrlModeTest, Parse) {
   }
 }
 
+TEST(HtpPdSessionTest, Malformed) {
+  std::string error;
+  QualcommOptions::HtpPdSession value;
+  EXPECT_FALSE(AbslParseFlag("boogabooga", &value, &error));
+}
+
+TEST(HtpPdSessionTest, Parse) {
+  std::string error;
+  QualcommOptions::HtpPdSession value;
+
+  EXPECT_TRUE(AbslParseFlag("unsigned", &value, &error));
+  EXPECT_EQ(value, QualcommOptions::HtpPdSession::kUnsigned);
+  EXPECT_EQ("unsigned", AbslUnparseFlag(value));
+
+  EXPECT_TRUE(AbslParseFlag("signed", &value, &error));
+  EXPECT_EQ(value, QualcommOptions::HtpPdSession::kSigned);
+  EXPECT_EQ("signed", AbslUnparseFlag(value));
+
+  EXPECT_TRUE(AbslParseFlag("adaptive", &value, &error));
+  EXPECT_EQ(value, QualcommOptions::HtpPdSession::kAdaptive);
+  EXPECT_EQ("adaptive", AbslUnparseFlag(value));
+}
+
 TEST(DspPerfCtrlModeTest, Malformed) {
   std::string error;
   QualcommOptions::DspPerfCtrlMode value;
@@ -335,6 +358,29 @@ TEST(DspPerfCtrlModeTest, Parse) {
     EXPECT_EQ(value, QualcommOptions::DspPerfCtrlMode::kAuto);
     EXPECT_EQ(kMode, AbslUnparseFlag(value));
   }
+}
+
+TEST(DspPdSessionTest, Malformed) {
+  std::string error;
+  QualcommOptions::DspPdSession value;
+  EXPECT_FALSE(AbslParseFlag("boogabooga", &value, &error));
+}
+
+TEST(DspPdSessionTest, Parse) {
+  std::string error;
+  QualcommOptions::DspPdSession value;
+
+  EXPECT_TRUE(AbslParseFlag("unsigned", &value, &error));
+  EXPECT_EQ(value, QualcommOptions::DspPdSession::kUnsigned);
+  EXPECT_EQ("unsigned", AbslUnparseFlag(value));
+
+  EXPECT_TRUE(AbslParseFlag("signed", &value, &error));
+  EXPECT_EQ(value, QualcommOptions::DspPdSession::kSigned);
+  EXPECT_EQ("signed", AbslUnparseFlag(value));
+
+  EXPECT_TRUE(AbslParseFlag("adaptive", &value, &error));
+  EXPECT_EQ(value, QualcommOptions::DspPdSession::kAdaptive);
+  EXPECT_EQ("adaptive", AbslUnparseFlag(value));
 }
 
 TEST(ProfilingTest, Malformed) {
@@ -697,8 +743,12 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
             QualcommOptions::DspPerformanceMode::kDefault);
   EXPECT_EQ(options.Value().GetHtpPerfCtrlMode(),
             QualcommOptions::HtpPerfCtrlMode::kManual);
+  EXPECT_EQ(options.Value().GetHtpPdSession(),
+            QualcommOptions::HtpPdSession::kUnsigned);
   EXPECT_EQ(options.Value().GetDspPerfCtrlMode(),
             QualcommOptions::DspPerfCtrlMode::kManual);
+  EXPECT_EQ(options.Value().GetDspPdSession(),
+            QualcommOptions::DspPdSession::kUnsigned);
   EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());
   EXPECT_EQ(options.Value().GetVtcmSize(), 0);
   EXPECT_EQ(options.Value().GetNumHvxThreads(), 0);

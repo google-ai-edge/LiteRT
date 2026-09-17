@@ -285,6 +285,20 @@ LiteRtStatus LrtQualcommOptionsGetHtpPerfCtrlMode(
     LrtQualcommOptions options,
     LrtQualcommOptionsHtpPerfCtrlMode* htp_perf_ctrl_mode);
 
+// Selects the HTP Process Domain session. The default is unsigned, preserving
+// the existing HTP device configuration and performance behavior.
+typedef enum LrtQualcommOptionsHtpPdSession {
+  kLiteRtQualcommHtpUnsignedPd = 0,
+  kLiteRtQualcommHtpSignedPd = 1,
+  kLiteRtQualcommHtpAdaptivePd = 2,
+} LrtQualcommOptionsHtpPdSession;
+
+LiteRtStatus LrtQualcommOptionsSetHtpPdSession(
+    LrtQualcommOptions options, LrtQualcommOptionsHtpPdSession htp_pd_session);
+
+LiteRtStatus LrtQualcommOptionsGetHtpPdSession(
+    LrtQualcommOptions options, LrtQualcommOptionsHtpPdSession* htp_pd_session);
+
 typedef enum LrtQualcommOptionsDspPerfCtrlMode {
   kLiteRtQualcommDspPerfCtrlModeManual = 0,
   kLiteRtQualcommDspPerfCtrlModeAuto = 1,
@@ -297,6 +311,20 @@ LiteRtStatus LrtQualcommOptionsSetDspPerfCtrlMode(
 LiteRtStatus LrtQualcommOptionsGetDspPerfCtrlMode(
     LrtQualcommOptions options,
     LrtQualcommOptionsDspPerfCtrlMode* dsp_perf_ctrl_mode);
+
+// Selects the DSP Process Domain session. The default is unsigned. Adaptive
+// selects unsigned only when the DSP advertises unsigned PD support.
+typedef enum LrtQualcommOptionsDspPdSession {
+  kLiteRtQualcommDspUnsignedPd = 0,
+  kLiteRtQualcommDspSignedPd = 1,
+  kLiteRtQualcommDspAdaptivePd = 2,
+} LrtQualcommOptionsDspPdSession;
+
+LiteRtStatus LrtQualcommOptionsSetDspPdSession(
+    LrtQualcommOptions options, LrtQualcommOptionsDspPdSession dsp_pd_session);
+
+LiteRtStatus LrtQualcommOptionsGetDspPdSession(
+    LrtQualcommOptions options, LrtQualcommOptionsDspPdSession* dsp_pd_session);
 
 LiteRtStatus LrtQualcommOptionsSetIrJsonDir(LrtQualcommOptions options,
                                             const char* ir_json_dir);

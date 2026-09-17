@@ -9,13 +9,17 @@
 #include <memory>
 #include <optional>
 #include <utility>
+#include <vector>
 
+#include "DSP/QnnDspBackend.h"  // from @qairt
 #include "DSP/QnnDspDevice.h"  // from @qairt
 #include "DSP/QnnDspPerfInfrastructure.h"  // from @qairt
+#include "DSP/QnnDspProperty.h"  // from @qairt
 #include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
+#include "QnnProperty.h"  // from @qairt
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/backend_utils.h"
@@ -273,6 +277,41 @@ GraphConfigBuilder DspBackend::BuildGraphConfigs(
   return {};
 }
 
+std::vector<const QnnBackend_Config_t*> DspBackend::CreateBackendConfigs(
+    const Options& options) {
+  bool use_signed_pd = false;
+  switch (options.GetDspPdSession()) {
+    case DspPdSession::kUnsigned:
+      break;
+    case DspPdSession::kSigned:
+      use_signed_pd = true;
+      break;
+    case DspPdSession::kAdaptive: {
+      const bool unsigned_pd_supported =
+          QnnApi()->propertyHasCapability != nullptr &&
+          QnnApi()->propertyHasCapability(
+              QNN_PROPERTY_CUSTOM_DSP_UNSIGNED_PD_SUPPORT) ==
+              QNN_PROPERTY_SUPPORTED;
+      use_signed_pd = !unsigned_pd_supported;
+      QNN_LOG_INFO("DSP adaptive PD selected %s PD.",
+                   use_signed_pd ? "signed" : "unsigned");
+      break;
+    }
+  }
+
+  if (use_signed_pd) {
+    auto& signed_pd_custom_config = AllocateDspBackendCustomConfig();
+    signed_pd_custom_config.option =
+        QNN_DSP_BACKEND_CONFIG_OPTION_USE_SIGNED_PROCESS_DOMAIN;
+    signed_pd_custom_config.useSignedProcessDomain = true;
+    auto& signed_pd_backend_config = AllocateBackendConfig();
+    signed_pd_backend_config.option = QNN_BACKEND_CONFIG_OPTION_CUSTOM;
+    signed_pd_backend_config.customConfig = &signed_pd_custom_config;
+    return {&signed_pd_backend_config, nullptr};
+  }
+  return {};
+}
+
 bool DspBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   // Log Handle
   auto local_log_handle = CreateLogHandle(options.GetLogLevel());
@@ -282,8 +321,8 @@ bool DspBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   }
 
   // Backend Handle
-  std::array<const QnnBackend_Config_t*, 1> backend_configs = {nullptr};
-
+  std::vector<const QnnBackend_Config_t*> backend_configs =
+      CreateBackendConfigs(options);
   auto local_backend_handle = CreateBackendHandle(
       local_log_handle.get(), absl::MakeSpan(backend_configs));
   if (!local_backend_handle) {
