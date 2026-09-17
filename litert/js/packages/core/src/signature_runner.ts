@@ -49,6 +49,14 @@ export interface SignatureRunner {
       Record<string, Tensor>): Promise<Tensor[]|Record<string, Tensor>>;
 }
 
+function shapesEqual(a: Int32Array|number[], b: Int32Array|number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 /**
  * A signature of a compiled LiteRT model.
  */
@@ -223,6 +231,15 @@ export class CompiledModelSignatureRunner implements SignatureRunner {
         throw new Error(`Tensor ${inputDetails[i].name} with index ${
             inputDetails[i].index} has no supported buffer types.`);
       }
+      if (input.type.dtype !== inputDetails[i].dtype ||
+          !shapesEqual(input.type.layout.dimensions, inputDetails[i].shape)) {
+        const expectedTypeStr = `${inputDetails[i].dtype}[${
+            Array.from(inputDetails[i].shape).join(', ')}]`;
+        throw new Error(
+            `TensorBuffer ranked tensor type ${input.toString()} ` +
+            `does not match expected ranked tensor type ${expectedTypeStr}`);
+      }
+
       if (supportedBufferTypes.has(bufferType)) {
         inputsOnAccelerator.push(input);
       } else {
