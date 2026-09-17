@@ -437,6 +437,22 @@ void PopulateBlockwiseQuantizedFullyConnected(
   return tensor;
 }
 
+::ml_drift::ir::IrTensor* AddFloat16ConstAsFloat32Input(
+    const TfLiteContext& context, int tensor_id,
+    ::ml_drift::ir::IrModel& ir_model, const SizedLayout& layout) {
+  const TfLiteTensor* tfl_tensor = context.tensors + tensor_id;
+  ABSL_CHECK(tfl_tensor && tfl_tensor->type == kTfLiteFloat16);
+  ::ml_drift::ir::IrOp* node = ir_model.add_op();
+  node->name = ToString(::ml_drift::OperationType::CONSTANT);
+  ::ml_drift::ConstTensorAttributes attr;
+  ::ml_drift::ir::IrTensor* tensor =
+      SetValueAndAttrFromTfLiteTensor<::ml_drift::TensorFloat32>(
+          context, tensor_id, layout, ir_model, attr);
+  ir_model.SetProducer(tensor->id, node->id);
+  node->attr = std::move(attr);
+  return tensor;
+}
+
 ::ml_drift::Axis ExtractAxisFromIndex(const TfLiteTensor& tflite_tensor,
                                       int index) {
   const TfLiteIntArray* dims = tflite_tensor.dims;
