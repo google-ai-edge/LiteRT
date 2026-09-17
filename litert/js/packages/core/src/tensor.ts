@@ -208,6 +208,13 @@ export class Tensor implements Deletable, WithEnvironment {
   constructor(
     data: TypedArray,
     shape?: Dimensions,
+    dataType?: DType,
+    environment?: Environment,
+    onDelete?: () => void,
+  );
+  constructor(
+    data: TypedArray,
+    shape?: Dimensions,
     environment?: Environment,
     onDelete?: () => void,
   );
@@ -286,6 +293,7 @@ export class Tensor implements Deletable, WithEnvironment {
       this.liteRtTensorHandle = typedArrayToLiteRtTensorHandle(
         typedArray,
         shape,
+        dataType,
         environment,
       );
     } else {
@@ -327,6 +335,13 @@ export class Tensor implements Deletable, WithEnvironment {
 
   relu(): Tensor {
     return relu(this);
+  }
+
+  toString(): string {
+    this.ensureNotDeleted();
+    return `${this.type.dtype}[${Array.from(this.type.layout.dimensions).join(
+      ', ',
+    )}]`;
   }
 
   async data(): Promise<TypedArray> {
@@ -374,6 +389,13 @@ export class Tensor implements Deletable, WithEnvironment {
     const typedArrayConstructor = getDataType(
       elementType.value,
     ).typedArrayConstructor;
+    if (typedArrayConstructor === undefined) {
+      throw new Error(
+        `DType ${
+          ElementTypeName[elementType.value]
+        } is not supported in this environment (missing TypedArray constructor).`,
+      );
+    }
     if (typedArrayConstructor.BYTES_PER_ELEMENT !== byteWidth) {
       throw new Error(
         `Byte width ${byteWidth} of the tensor's element type ${
@@ -434,8 +456,6 @@ export class Tensor implements Deletable, WithEnvironment {
     if (
       bufferTypeValue !==
         liteRtWasm.LiteRtTensorBufferType.WEB_GPU_BUFFER.value &&
-      bufferTypeValue !==
-        liteRtWasm.LiteRtTensorBufferType.WEB_GPU_BUFFER_FP16.value &&
       bufferTypeValue !==
         liteRtWasm.LiteRtTensorBufferType.WEB_GPU_BUFFER_PACKED.value
     ) {
@@ -643,14 +663,16 @@ function webGpuBufferToLiteRtTensorHandle(
 function typedArrayToLiteRtTensorHandle(
   data: TypedArray,
   shape?: Dimensions,
+  dataType?: DType,
   environment?: Environment,
 ): LiteRtTensorHandle {
   const globalLiteRt = getGlobalLiteRt();
   const liteRtWasm = globalLiteRt.liteRtWasm;
   environment = environment ?? globalLiteRt.getDefaultEnvironment();
 
-  const elementType = getDataType(data).elementType;
-
+  const elementType = dataType
+    ? getDataType(dataType).elementType
+    : getDataType(data).elementType;
   // Create a LiteRtLayout from the shape.
   const dimensionsVector = new liteRtWasm.VectorInt32();
   fillEmscriptenVector(shape ?? [data.length], dimensionsVector);
