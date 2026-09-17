@@ -195,7 +195,7 @@ describe('TFJS Interop', () => {
                expect(tfjsTensor.dtype).toEqual('float32');
                expect(tfjsTensor.shape).toEqual(shape);
                expect(await tfjsTensor.data())
-                   .toEqual(await litertTensor.data());
+                   .toEqual((await litertTensor.data()) as tf.TypedArray);
                tfjsTensor.dispose();
                litertTensor.delete();
              } finally {
@@ -210,7 +210,8 @@ describe('TFJS Interop', () => {
              const tfjsTensor = litertToTfjs(litertTensor);
              expect(tfjsTensor.dtype).toEqual('float32');
              expect(tfjsTensor.shape).toEqual(shape);
-             expect(await tfjsTensor.data()).toEqual(await litertTensor.data());
+             expect(await tfjsTensor.data())
+                 .toEqual((await litertTensor.data()) as tf.TypedArray);
              tfjsTensor.dispose();
              litertTensor.delete();
            });
@@ -224,7 +225,7 @@ describe('TFJS Interop', () => {
                expect(tfjsTensor.dtype).toEqual('int32');
                expect(tfjsTensor.shape).toEqual(shape);
                expect(await tfjsTensor.data())
-                   .toEqual(await litertTensor.data());
+                   .toEqual((await litertTensor.data()) as tf.TypedArray);
                tfjsTensor.dispose();
                litertTensor.delete();
              } finally {
@@ -239,7 +240,8 @@ describe('TFJS Interop', () => {
              const tfjsTensor = litertToTfjs(litertTensor);
              expect(tfjsTensor.dtype).toEqual('int32');
              expect(tfjsTensor.shape).toEqual(shape);
-             expect(await tfjsTensor.data()).toEqual(await litertTensor.data());
+             expect(await tfjsTensor.data())
+                 .toEqual((await litertTensor.data()) as tf.TypedArray);
              tfjsTensor.dispose();
              litertTensor.delete();
            });

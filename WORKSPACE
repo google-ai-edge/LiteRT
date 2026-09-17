@@ -130,26 +130,16 @@ tensorflow_source_repo(
     urls = ["https://github.com/tensorflow/tensorflow/archive/5c0b7a5946f0f485e3a532b2a00e03f42a6e14c1.tar.gz"],
 )
 
-# Initialize the TensorFlow repository and all dependencies.
-#
-# The cascade of load() statements and tf_workspace?() calls works around the
-# restriction that load() statements need to be at the top of .bzl files.
-# E.g. we can not retrieve a new repository with http_archive and then load()
-# a macro from that repository in the same file.
+# Declare LiteRT-owned repositories first so they take precedence over any
+# fallback declarations in TensorFlow's workspace macros.
+load("//:litert_workspace.bzl", "litert_workspace")
+
+litert_workspace()
+
 load("@org_tensorflow//tensorflow:workspace3.bzl", "tf_workspace3")
 
 tf_workspace3()
 
-# Mirror the repository initialization that TensorFlow's own WORKSPACE performs
-# between tf_workspace3() and tf_workspace2(). Both repositories are fetched by
-# tf_workspace3(), and both must be initialized before tf_workspace2() pulls in
-# dependencies that load from them, because the repositories have to exist while
-# Bazel computes the main repo mapping.
-#
-# bazel_features_deps() defines `@bazel_features_version`, which is loaded
-# transitively by `@rules_cc`. compatibility_proxy_repo() defines
-# `@cc_compatibility_proxy`; tf_workspace1() also declares it, but that runs too
-# late.
 load("@bazel_features//:deps.bzl", "bazel_features_deps")
 
 bazel_features_deps()
@@ -159,7 +149,7 @@ load("@rules_cc//cc:extensions.bzl", "compatibility_proxy_repo")
 compatibility_proxy_repo()
 
 # Initialize hermetic Python
-load("@xla//third_party/py:python_init_rules.bzl", "python_init_rules")
+load("//third_party/py:python_init_rules.bzl", "python_init_rules")
 
 python_init_rules()
 
@@ -172,14 +162,14 @@ python_init_repositories(
         "tensorflow*",
         "tf_nightly*",
     ],
-    local_wheel_workspaces = ["@org_tensorflow//:WORKSPACE"],
+    local_wheel_workspaces = ["@//:WORKSPACE"],
     requirements = {
-        "3.10": "@org_tensorflow//:requirements_lock_3_10.txt",
-        "3.11": "@org_tensorflow//:requirements_lock_3_11.txt",
-        "3.12": "@org_tensorflow//:requirements_lock_3_12.txt",
-        "3.13": "@org_tensorflow//:requirements_lock_3_13.txt",
-        "3.14": "@org_tensorflow//:requirements_lock_3_14.txt",
-        "3.14-freethreaded": "@org_tensorflow//:requirements_lock_3_14_freethreaded.txt",
+        "3.10": "@//:requirements_lock_3_10.txt",
+        "3.11": "@//:requirements_lock_3_11.txt",
+        "3.12": "@//:requirements_lock_3_12.txt",
+        "3.13": "@//:requirements_lock_3_13.txt",
+        "3.14": "@//:requirements_lock_3_14.txt",
+        "3.14-freethreaded": "@//:requirements_lock_3_14_freethreaded.txt",
     },
 )
 
@@ -196,10 +186,6 @@ load("@pypi//:requirements.bzl", "install_deps")
 install_deps()
 # End hermetic Python initialization
 
-load("//:litert_workspace.bzl", "litert_workspace")
-
-litert_workspace()
-
 load("@org_tensorflow//tensorflow:workspace2.bzl", "tf_workspace2")
 
 tf_workspace2()
@@ -213,7 +199,7 @@ load("@org_tensorflow//tensorflow:workspace0.bzl", "tf_workspace0")
 tf_workspace0()
 
 load(
-    "@xla//third_party/py:python_wheel.bzl",
+    "//third_party/py:python_wheel.bzl",
     "python_wheel_version_suffix_repository",
 )
 

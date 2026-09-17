@@ -70,9 +70,9 @@ def litert_workspace():
             "//third_party/protobuf:protobuf.patch",
             "//third_party/protobuf:protobuf_arena.patch",
         ],
-        sha256 = "61e5e5b7f29c4a719d9691b97c2b8937b8bd5ab1b6b7586f3f55934011806280",
-        strip_prefix = "protobuf-34.1",
-        urls = tf_mirror_urls("https://github.com/protocolbuffers/protobuf/releases/download/v34.1/protobuf-34.1.zip"),
+        sha256 = "6e09bbc950ba60c3a7b30280210cd285af8d7d8ed5e0a6ed101c72aff22e8d88",
+        strip_prefix = "protobuf-6.31.1",
+        urls = tf_mirror_urls("https://github.com/protocolbuffers/protobuf/archive/refs/tags/v6.31.1.zip"),
         repo_mapping = {
             "@abseil-cpp": "@com_google_absl",
             "@protobuf_pip_deps": "@pypi",
@@ -187,4 +187,127 @@ def litert_workspace():
         sha256 = "ca8090359654e94f2c41e946b7e9d826253d795ae809ce7c83a7d3c859624693",
         urls = tf_mirror_urls("https://github.com/KhronosGroup/OpenCL-Headers/archive/dcd5bede6859d26833cd85f0d6bbcee7382dc9b3.tar.gz"),
         build_file = "//third_party/opencl_headers:opencl_headers.BUILD",
+    )
+
+    # Skylib
+    tf_http_archive(
+        name = "bazel_skylib",
+        sha256 = "3b5b49006181f5f8ff626ef8ddceaa95e9bb8ad294f7b5d7b11ea9f7ddaf8c59",
+        urls = tf_mirror_urls(
+            "https://github.com/bazelbuild/bazel-skylib/releases/download/1.9.0/bazel-skylib-1.9.0.tar.gz",
+        ),
+    )
+
+    # Rules CC
+    tf_http_archive(
+        name = "rules_cc",
+        sha256 = "69e05df29f0010ba248ef8dafc1f084c8fd2f5c553da634422d8167f5c4b277b",
+        strip_prefix = "rules_cc-0.2.20",
+        urls = tf_mirror_urls(
+            "https://github.com/bazelbuild/rules_cc/releases/download/0.2.20/rules_cc-0.2.20.tar.gz",
+        ),
+    )
+
+    # Rules License
+    tf_http_archive(
+        name = "rules_license",
+        urls = tf_mirror_urls(
+            "https://github.com/bazelbuild/rules_license/releases/download/0.0.7/rules_license-0.0.7.tar.gz",
+        ),
+        sha256 = "4531deccb913639c30e5c7512a054d5d875698daeb75d8cf90f284375fe7c360",
+    )
+
+    # Rules Pkg
+    tf_http_archive(
+        name = "rules_pkg",
+        urls = tf_mirror_urls(
+            "https://github.com/bazelbuild/rules_pkg/releases/download/0.7.1/rules_pkg-0.7.1.tar.gz",
+        ),
+        sha256 = "451e08a4d78988c06fa3f9306ec813b836b1d076d0f055595444ba4ff22b867f",
+    )
+
+    # Rules ML Toolchain
+    tf_http_archive(
+        name = "rules_ml_toolchain",
+        sha256 = "3b05687842427041c65d1bc2f4aeda3a3079557120f5be8c34690087a88c5de5",
+        strip_prefix = "rules_ml_toolchain-2eddbc595cc0bbe650c2640204f66b14f015f1a8",
+        urls = tf_mirror_urls(
+            "https://github.com/google-ml-infra/rules_ml_toolchain/archive/2eddbc595cc0bbe650c2640204f66b14f015f1a8.tar.gz",
+        ),
+    )
+
+    # Rules JVM External
+    tf_http_archive(
+        name = "rules_jvm_external",
+        strip_prefix = "rules_jvm_external-4.3",
+        sha256 = "6274687f6fc5783b589f56a2f1ed60de3ce1f99bc4e8f9edef3de43bdf7c6e74",
+        urls = tf_mirror_urls("https://github.com/bazelbuild/rules_jvm_external/archive/4.3.zip"),
+    )
+
+    # Rules Proto
+    tf_http_archive(
+        name = "rules_proto",
+        sha256 = "14a225870ab4e91869652cfd69ef2028277fc1dc4910d65d353b62d6e0ae21f4",
+        strip_prefix = "rules_proto-7.1.0",
+        urls = tf_mirror_urls(
+            "https://github.com/bazelbuild/rules_proto/archive/refs/tags/7.1.0.tar.gz",
+        ),
+    )
+
+    # Rules Android
+    tf_http_archive(
+        name = "build_bazel_rules_android",
+        sha256 = "cd06d15dd8bb59926e4d65f9003bfc20f9da4b2519985c27e190cddc8b7a7806",
+        strip_prefix = "rules_android-0.1.1",
+        urls = tf_mirror_urls("https://github.com/bazelbuild/rules_android/archive/v0.1.1.zip"),
+    )
+
+    # Rules Android NDK
+    tf_http_archive(
+        name = "rules_android_ndk",
+        sha256 = "0ab5ddae72dff0dfae92a31a0704d4543e818e360786e44d2093a6b8ff5e8fda",
+        strip_prefix = "rules_android_ndk-461e8c99b7f06bc86a15317505d48fc0decd7dcc",
+        urls = tf_mirror_urls("https://github.com/bazelbuild/rules_android_ndk/archive/461e8c99b7f06bc86a15317505d48fc0decd7dcc.zip"),
+    )
+
+    # pybind11
+    tf_http_archive(
+        name = "pybind11",
+        build_file = "//third_party/pybind11:pybind11.BUILD",
+        sha256 = "e08cb87f4773da97fa7b5f035de8763abc656d87d5773e62f6da0587d1f0ec20",
+        strip_prefix = "pybind11-2.13.6",
+        urls = tf_mirror_urls("https://github.com/pybind/pybind11/archive/v2.13.6.tar.gz"),
+    )
+
+    # pybind11_bazel
+    tf_http_archive(
+        name = "pybind11_bazel",
+        sha256 = "cae680670bfa6e82703c03f2a3c995408cdcbf43616d7bdd198ef45d3c327731",
+        strip_prefix = "pybind11_bazel-2.13.6",
+        urls = tf_mirror_urls("https://github.com/pybind/pybind11_bazel/archive/v2.13.6.tar.gz"),
+    )
+
+    # pybind11_abseil
+    tf_http_archive(
+        name = "pybind11_abseil",
+        patch_file = ["//third_party/pybind11_abseil:remove_license.patch"],
+        sha256 = "c6d0c6784e4d5681919731f1fa86e0b7cd010e770115bdb3a0285b3939ef2394",
+        strip_prefix = "pybind11_abseil-13d4f99d5309df3d5afa80fe2ae332d7a2a64c6b",
+        urls = tf_mirror_urls("https://github.com/pybind/pybind11_abseil/archive/13d4f99d5309df3d5afa80fe2ae332d7a2a64c6b.tar.gz"),
+    )
+
+    # pybind11_protobuf
+    tf_http_archive(
+        name = "pybind11_protobuf",
+        sha256 = "3cf7bf0f23954c5ce6c37f0a215f506efa3035ca06e3b390d67f4cbe684dce23",
+        strip_prefix = "pybind11_protobuf-f02a2b7653bc50eb5119d125842a3870db95d251",
+        urls = tf_mirror_urls("https://github.com/pybind/pybind11_protobuf/archive/f02a2b7653bc50eb5119d125842a3870db95d251.zip"),
+    )
+
+    # nlohmann_json
+    tf_http_archive(
+        name = "com_github_nlohmann_json",
+        sha256 = "34660b5e9a407195d55e8da705ed26cc6d175ce5a6b1fb957e701fb4d5b04022",
+        strip_prefix = "json-3.12.0",
+        urls = tf_mirror_urls("https://github.com/nlohmann/json/archive/v3.12.0.zip"),
     )
