@@ -25,6 +25,9 @@
 # Optional overrides:
 #   NUM_PROMPT='...' BENCH_PROMPT='...' ./run_head.sh all
 #   PREDEQUANT_MODE=cuda_gemv ./run_head.sh all
+#   SELECTED_SIGNATURES=prefill_1024,decode SKIP_SUBGRAPHS=prefill_128,verify \
+#     ./run_head.sh benchmark
+# Gemma 4 12B settings and measured trade-offs: see gemma4_12b.md.
 #   LITERT_NVIDIA_TENSORRT_JIT_HANDLE=0 ./run_head.sh memory-profile
 #   AOT_MEMORY_SHARED_WEIGHTS=0 ./run_head.sh memory-profile-aot
 #   AOT_VERIFY_SHARED_WEIGHTS=0 ./run_head.sh verify-aot
@@ -80,6 +83,10 @@ record_source_state() {
     echo "LiteRT-LM worktree:"
     git -C "$LITERT_LM_G3_HEAD" status --short
     echo "Predequant mode: $PREDEQUANT_MODE"
+    echo "Selected signatures: ${SELECTED_SIGNATURES:-all}"
+    echo "Compiler skipped subgraphs: ${SKIP_SUBGRAPHS:-none}"
+    echo "FC weight cap bytes: ${LITERT_NVIDIA_TENSORRT_MAX_FC_WEIGHT_BYTES:-default}"
+    echo "AOT artifact cache: ${LITERT_NVIDIA_TENSORRT_AOT_CACHE_DIR:-disabled}"
     /usr/lib/wsl/lib/nvidia-smi \
       --query-gpu=name,driver_version,memory.total \
       --format=csv,noheader
@@ -139,8 +146,8 @@ prepare_runtime() {
 run_numeric() {
   echo "Running NPU numeric prompt: $NUM_PROMPT"
   env \
-    -u LITERT_NVIDIA_TENSORRT_SKIP_SUBGRAPHS \
     -u LITERT_LM_EXCLUDE_PREFILL_SIGNATURES \
+    "${SKIP_SUBGRAPH_ENV[@]}" \
     LD_LIBRARY_PATH="$RUNTIME_LD_PATH" \
     LITERT_NVIDIA_TENSORRT_PARTITION_POLICY=gemma4 \
     LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS=bf16 \
@@ -149,6 +156,7 @@ run_numeric() {
     "$ENGINE" \
       --model_path="$G4MODEL" \
       --backend=npu \
+      "${SELECTED_SIGNATURE_FLAGS[@]}" \
       --prefill_batch_sizes=1024 \
       --max_num_tokens=2048 \
       --max_output_tokens="$NUM_OUTPUT_TOKENS" \
@@ -184,8 +192,8 @@ run_aot_verification_pass() {
     -u LITERT_NVIDIA_MEMORY_PROFILE \
     -u LITERT_NVIDIA_TENSORRT_AOT_FORCE_CONTENT_VALIDATION \
     -u LITERT_NVIDIA_TENSORRT_JIT_HANDLE \
-    -u LITERT_NVIDIA_TENSORRT_SKIP_SUBGRAPHS \
     -u LITERT_LM_EXCLUDE_PREFILL_SIGNATURES \
+    "${SKIP_SUBGRAPH_ENV[@]}" \
     LD_LIBRARY_PATH="$RUNTIME_LD_PATH" \
     LITERT_NVIDIA_TENSORRT_AOT_CACHE_DIR="$AOT_ARTIFACT_CACHE" \
     LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH="$G4MODEL" \
@@ -197,6 +205,7 @@ run_aot_verification_pass() {
     "$ENGINE" \
       --model_path="$G4MODEL" \
       --backend=npu \
+      "${SELECTED_SIGNATURE_FLAGS[@]}" \
       --prefill_batch_sizes=1024 \
       --max_num_tokens=2048 \
       --max_output_tokens="$AOT_VERIFY_OUTPUT_TOKENS" \
@@ -358,10 +367,10 @@ PY
 }
 
 run_benchmark() {
-  echo "Running eight-iteration HEAD benchmark with a fresh cache."
+  echo "Running eight-iteration HEAD benchmark (cache: $BENCH_CACHE)."
   env \
-    -u LITERT_NVIDIA_TENSORRT_SKIP_SUBGRAPHS \
     -u LITERT_LM_EXCLUDE_PREFILL_SIGNATURES \
+    "${SKIP_SUBGRAPH_ENV[@]}" \
     LD_LIBRARY_PATH="$RUNTIME_LD_PATH" \
     LITERT_NVIDIA_TENSORRT_PARTITION_POLICY=gemma4 \
     LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS=bf16 \
@@ -370,6 +379,7 @@ run_benchmark() {
     "$ENGINE" \
       --model_path="$G4MODEL" \
       --backend=npu \
+      "${SELECTED_SIGNATURE_FLAGS[@]}" \
       --benchmark=true \
       --benchmark_prefill_tokens=1024 \
       --benchmark_decode_tokens=256 \
@@ -410,8 +420,8 @@ run_memory_profile_pass() {
   shift 3
 
   env \
-    -u LITERT_NVIDIA_TENSORRT_SKIP_SUBGRAPHS \
     -u LITERT_LM_EXCLUDE_PREFILL_SIGNATURES \
+    "${SKIP_SUBGRAPH_ENV[@]}" \
     LD_LIBRARY_PATH="$RUNTIME_LD_PATH" \
     LITERT_NVIDIA_MEMORY_PROFILE=1 \
     LITERT_NVIDIA_TENSORRT_PARTITION_POLICY=gemma4 \
@@ -422,6 +432,7 @@ run_memory_profile_pass() {
     "$ENGINE" \
       --model_path="$G4MODEL" \
       --backend=npu \
+      "${SELECTED_SIGNATURE_FLAGS[@]}" \
       --benchmark=true \
       --benchmark_prefill_tokens=1024 \
       --benchmark_decode_tokens="$MEMORY_PROFILE_DECODE_TOKENS" \
@@ -890,6 +901,17 @@ AOT_WARM_LOG="$LOG_DIR/aot_warm.log"
 AOT_IDENTITY_BEFORE="$LOG_DIR/aot_identity_before.tsv"
 AOT_IDENTITY_AFTER="$LOG_DIR/aot_identity_after.tsv"
 PREDEQUANT_MODE=${PREDEQUANT_MODE:-fp8}
+SELECTED_SIGNATURES=${SELECTED_SIGNATURES:-}
+SKIP_SUBGRAPHS=${SKIP_SUBGRAPHS:-}
+# Preserve the old unset value: empty and unset have different cache identities.
+SKIP_SUBGRAPH_ENV=(-u LITERT_NVIDIA_TENSORRT_SKIP_SUBGRAPHS)
+if [[ -n "$SKIP_SUBGRAPHS" ]]; then
+  SKIP_SUBGRAPH_ENV=("LITERT_NVIDIA_TENSORRT_SKIP_SUBGRAPHS=$SKIP_SUBGRAPHS")
+fi
+SELECTED_SIGNATURE_FLAGS=()
+if [[ -n "$SELECTED_SIGNATURES" ]]; then
+  SELECTED_SIGNATURE_FLAGS+=("--selected_signatures=$SELECTED_SIGNATURES")
+fi
 NUM_PROMPT=${NUM_PROMPT:-"Answer with only the capital city: What is the capital of France?"}
 NUM_OUTPUT_TOKENS=${NUM_OUTPUT_TOKENS:-16}
 BENCH_PROMPT=${BENCH_PROMPT:-"Write one sentence explaining why CUDA is useful for neural network inference:"}

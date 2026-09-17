@@ -657,6 +657,34 @@ TEST_F(ConstantTestSuite, RejectsAllConstantInputs) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
 }
 
+TEST_F(ConstantTestSuite, RejectsConstantInputWithDynamicWeights) {
+  StubContextBuilder context_builder;
+  const int a =
+      context_builder.AddConstTensor(kDefaultDtype, kDefaultInputDims);
+  const int b = context_builder.AddTensor(kDefaultDtype, kDefaultWeightsDims);
+  const int c = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  context_builder.SetOp(kTfLiteBuiltinFullyConnected, /*version=*/1,
+                        /*params=*/&kDefaultFullyConnectedParams,
+                        /*inputs=*/{a, b}, /*outputs=*/{c});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST_F(ConstantTestSuite, SupportsDynamicInputWithConstantWeights) {
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kDefaultDtype, kDefaultInputDims);
+  const int b =
+      context_builder.AddConstTensor(kDefaultDtype, kDefaultWeightsDims);
+  const int c = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  context_builder.SetOp(kTfLiteBuiltinFullyConnected, /*version=*/1,
+                        /*params=*/&kDefaultFullyConnectedParams,
+                        /*inputs=*/{a, b}, /*outputs=*/{c});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
 class ActivationTest : public testing::Test {};
 TEST_F(ActivationTest, SupportsRelu) {
   StubContextBuilder context_builder;
