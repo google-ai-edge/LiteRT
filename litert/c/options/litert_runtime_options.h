@@ -102,6 +102,9 @@ LiteRtStatus LrtGetRuntimeOptionsDisableDelegateClustering(
 #ifdef __cplusplus
 // Sets the TFLite model signatures that compiled models created with these
 // options prepare for execution. The selected keys identify root subgraphs.
+// When applying NPU compiler plugins, selection also prunes unused signatures
+// and unreachable graphs before serialization where graph references can be
+// safely remapped. Already compiled models keep their stored graph structure.
 //
 // Validates that options is non-null, keys is non-empty, each key is non-empty,
 // and all keys are unique. The strings are copied.
