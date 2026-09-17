@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 
@@ -59,6 +60,22 @@ class Adapter {
   virtual Expected<std::vector<int32_t>> GetUnsupportedOps(
       const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
       size_t options_size) = 0;
+
+  // Checks if multiple named composite ops are supported.
+  // Returns a vector of booleans corresponding to each composite in
+  // composite_names.
+  virtual Expected<std::vector<bool>> AreCompositesSupported(
+      absl::Span<const std::string> composite_names, const char* options,
+      size_t options_size) {
+    return litert::Unexpected(kLiteRtStatusErrorUnsupported,
+                              "AreCompositesSupported is not supported");
+  }
+
+  // Checks if multiple named composite ops are supported without options.
+  Expected<std::vector<bool>> AreCompositesSupported(
+      absl::Span<const std::string> composite_names) {
+    return AreCompositesSupported(composite_names, nullptr, 0);
+  }
 };
 
 }  // namespace litert::google_tensor

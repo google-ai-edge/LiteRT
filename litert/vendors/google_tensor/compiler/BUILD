@@ -125,19 +125,15 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
+        "//litert/c:litert_op_options",
         "//litert/c/internal:litert_compiler_context_testonly",
-        "//litert/c/options:litert_google_tensor_options",
         "//litert/c/options:litert_google_tensor_options_type",
         "//litert/cc:litert_environment",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_model",
         "//litert/cc:litert_options",
         "//litert/cc/internal:litert_extended_model",
-        "//litert/cc/internal:litert_options_wrapper",
         "//litert/cc/options:litert_google_tensor_options",
         "//litert/compiler/cc:litert_model",
         "//litert/core/model",
-        "//litert/test:common",
         "//litert/test:load_test_model",
         "//litert/test:matchers",
         "//litert/vendors/cc:litert_compiler_plugin",
@@ -150,12 +146,18 @@ cc_test(
 proto_library(
     name = "google_tensor_options_proto",
     srcs = ["google_tensor_options.proto"],
-    visibility = ["//platforms/darwinn/compiler:__subpackages__"],
+    visibility = [
+        "//litert/vendors/google_tensor:__subpackages__",
+        "//platforms/darwinn/compiler:__subpackages__",
+    ],
 )
 
 cc_proto_library(
     name = "google_tensor_options_cc_proto",
-    visibility = ["//platforms/darwinn/compiler:__subpackages__"],
+    visibility = [
+        "//litert/vendors/google_tensor:__subpackages__",
+        "//platforms/darwinn/compiler:__subpackages__",
+    ],
     deps = [":google_tensor_options_proto"],
 )
 

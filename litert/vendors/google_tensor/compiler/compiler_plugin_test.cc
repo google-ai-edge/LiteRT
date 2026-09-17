@@ -24,6 +24,7 @@
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_op_options.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_environment.h"
@@ -320,14 +321,127 @@ TEST(TestCallGoogleTensorPlugin, PartitionUnsupportedCompositeOp) {
   ASSERT_THAT(selected_ops.size(), 0);
 }
 
+void AddCompositeOpToSubgraph(LiteRtSubgraphT& subgraph,
+                              absl::string_view composite_name) {
+  LiteRtOpT& composite = subgraph.EmplaceOp();
+  composite.SetOpCode(kLiteRtOpCodeShloComposite);
+  ::tflite::StableHLOCompositeOptionsT opts;
+  opts.name = std::string(composite_name);
+  opts.decomposition_subgraph_index = 0;
+  litert::internal::TflOptions2 options;
+  options.type = tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  options.Set(std::move(opts));
+  litert::internal::SetTflOptions2(composite, std::move(options));
+}
+
+TEST(TestCallGoogleTensorPlugin, PartitionMultipleSupportedCompositeOps) {
+  PluginPtr plugin = CreatePlugin(LrtGetCompilerContext());
+  LiteRtModelT model;
+  LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
+  AddCompositeOpToSubgraph(subgraph, "odml.rms_norm");
+  AddCompositeOpToSubgraph(subgraph, "odml.group_norm");
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
+      plugin.get(), /*soc_model=*/nullptr, &subgraph, &selected_op_list));
+  const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
+      selected_op_list.Values();
+
+  ASSERT_EQ(selected_ops.size(), 2);
+  EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeShloComposite);
+  EXPECT_EQ(selected_ops[1].first->OpCode(), kLiteRtOpCodeShloComposite);
+
+  const char* first_op_name = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetSHLOCompositeOpName(selected_ops[0].first, &first_op_name));
+  EXPECT_STREQ(first_op_name, "odml.rms_norm");
+
+  const char* second_op_name = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetSHLOCompositeOpName(selected_ops[1].first, &second_op_name));
+  EXPECT_STREQ(second_op_name, "odml.group_norm");
+}
+
+TEST(TestCallGoogleTensorPlugin, PartitionMixedMultipleCompositeOps) {
+  PluginPtr plugin = CreatePlugin(LrtGetCompilerContext());
+  LiteRtModelT model;
+  LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
+  AddCompositeOpToSubgraph(subgraph, "odml.rms_norm");
+  AddCompositeOpToSubgraph(subgraph, "odml.softmax");
+  AddCompositeOpToSubgraph(subgraph, "odml.group_norm");
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
+      plugin.get(), /*soc_model=*/nullptr, &subgraph, &selected_op_list));
+  const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
+      selected_op_list.Values();
+
+  // Only the two supported composite ops should be selected.
+  ASSERT_EQ(selected_ops.size(), 2);
+  EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeShloComposite);
+  EXPECT_EQ(selected_ops[1].first->OpCode(), kLiteRtOpCodeShloComposite);
+
+  const char* first_op_name = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetSHLOCompositeOpName(selected_ops[0].first, &first_op_name));
+  EXPECT_STREQ(first_op_name, "odml.rms_norm");
+
+  const char* second_op_name = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetSHLOCompositeOpName(selected_ops[1].first, &second_op_name));
+  EXPECT_STREQ(second_op_name, "odml.group_norm");
+}
+
+TEST(TestCallGoogleTensorPlugin, PartitionCompositeOpsWithInputValidation) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
+                              options.GetOptions<GoogleTensorOptions>());
+  google_tensor_options.SetExperimentalEnableInputValidator(true);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+
+  LiteRtModelT model;
+  LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
+  AddCompositeOpToSubgraph(subgraph, "odml.rms_norm");
+  AddCompositeOpToSubgraph(subgraph, "odml.softmax");
+  AddCompositeOpToSubgraph(subgraph, "odml.group_norm");
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
+      plugin.get(), /*soc_model=*/nullptr, &subgraph, &selected_op_list));
+  const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
+      selected_op_list.Values();
+
+  // Only the two supported composite ops should be selected.
+  ASSERT_EQ(selected_ops.size(), 2);
+  EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeShloComposite);
+  EXPECT_EQ(selected_ops[1].first->OpCode(), kLiteRtOpCodeShloComposite);
+
+  const char* first_op_name = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetSHLOCompositeOpName(selected_ops[0].first, &first_op_name));
+  EXPECT_STREQ(first_op_name, "odml.rms_norm");
+
+  const char* second_op_name = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetSHLOCompositeOpName(selected_ops[1].first, &second_op_name));
+  EXPECT_STREQ(second_op_name, "odml.group_norm");
+}
+
 TEST(TestCallGoogleTensorPlugin, CompileWithExtraOptions) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
                               options.GetOptions<GoogleTensorOptions>());
 
-  google_tensor_options.SetExtraOptions("test_extra_options");
-  EXPECT_EQ(google_tensor_options.GetExtraOptions(), "test_extra_options");
+  google_tensor_options.SetExtraOptions("prefix: \"/tmp/\"");
+  EXPECT_EQ(google_tensor_options.GetExtraOptions(), "prefix: \"/tmp/\"");
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto litert_opts,

@@ -54,6 +54,7 @@
 #include "litert/core/model/model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/nvidia/bytecode.h"
+#include "litert/vendors/nvidia/cache_layout.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_graph_builder.h"
 #include "litert/vendors/nvidia/memory_profile.h"
 #include "NvInferRuntime.h"
@@ -66,7 +67,7 @@ using litert::Expected;
 
 constexpr char kPluginManufacturer[] = "NVIDIA";
 constexpr char kPluginSocModel[] = "tensorrt-rtx";
-constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 3;
+constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 14;
 
 enum class PartitionPolicy {
   kSafe,
@@ -138,6 +139,27 @@ struct PendingBundleEntry {
   std::vector<uint8_t> engine;
   std::optional<litert::nvidia::TensorRtLlmHeadBuildData> trtllm_head;
   std::vector<litert::nvidia::TensorRtSharedWeightRef> refit_weights;
+
+  // The view borrows this entry and the caller-provided head storage.
+  litert::nvidia::TensorRtBundleEntry View(
+      litert::nvidia::TensorRtLlmHead& head) const {
+    const litert::nvidia::TensorRtLlmHead* head_ptr = nullptr;
+    if (trtllm_head.has_value()) {
+      head.hidden_output_port = trtllm_head->hidden_output_port;
+      head.logits_output_port = trtllm_head->logits_output_port;
+      head.k = trtllm_head->k;
+      head.n = trtllm_head->n;
+      head.soft_cap = trtllm_head->soft_cap;
+      head.weight_format = trtllm_head->weight_format;
+      head.packed_weights = trtllm_head->packed_weights.data();
+      head.packed_weights_size = trtllm_head->packed_weights.size();
+      head.bf16_scales = trtllm_head->bf16_scales.data();
+      head.bf16_scales_size = trtllm_head->bf16_scales.size();
+      head_ptr = &head;
+    }
+    return {function_name, input_names, output_names, engine.data(),
+            engine.size(), head_ptr,    refit_weights};
+  }
 };
 
 std::string TensorSummary(const litert::compiler::Tensor& tensor) {
@@ -256,7 +278,11 @@ bool IsValidatedGemma4TensorRtOp(const litert::compiler::Op& op) {
   // The full Gemma4 transformer stack. Delegating whole layers as few large
   // islands is required for output quality: every extra island boundary is a
   // CPU/TensorRT requantization seam, and past ~two dozen seams per token the
-  // accumulated drift corrupts greedy decoding.
+  // accumulated drift corrupts greedy decoding. The int32 cache-position
+  // arithmetic (div, floor_mod, minimum) between the position preamble and
+  // the transformer stack is included so each signature forms one island;
+  // leaving those few ops on the CPU costs a second engine invocation plus
+  // around twenty synchronous boundary copies on every decode step.
   switch (op.Code()) {
     case kLiteRtOpCodeTflAdd:
     case kLiteRtOpCodeTflBatchMatmul:
@@ -264,14 +290,17 @@ bool IsValidatedGemma4TensorRtOp(const litert::compiler::Op& op) {
     case kLiteRtOpCodeTflConcatenation:
     case kLiteRtOpCodeTflCos:
     case kLiteRtOpCodeTflDequantize:
+    case kLiteRtOpCodeTflDiv:
     case kLiteRtOpCodeTflDynamicUpdateSlice:
     case kLiteRtOpCodeTflFill:
+    case kLiteRtOpCodeTflFloorMod:
     case kLiteRtOpCodeTflFullyConnected:
     case kLiteRtOpCodeTflGelu:
     case kLiteRtOpCodeTflGreaterEqual:
     case kLiteRtOpCodeTflLess:
     case kLiteRtOpCodeTflLogicalAnd:
     case kLiteRtOpCodeTflMaximum:
+    case kLiteRtOpCodeTflMinimum:
     case kLiteRtOpCodeTflMul:
     case kLiteRtOpCodeTflNotEqual:
     case kLiteRtOpCodeTflPack:
@@ -404,10 +433,11 @@ std::string Hex64(uint64_t value) {
 }
 
 std::string BuildCompilerSdkVersion() {
-  const std::string base_version = "TensorRT-RTX via NvInfer headers " +
-                                   std::to_string(NV_TENSORRT_MAJOR) + "." +
-                                   std::to_string(NV_TENSORRT_MINOR) + "." +
-                                   std::to_string(NV_TENSORRT_PATCH);
+  const std::string base_version =
+      "TensorRT-RTX via NvInfer headers " + std::to_string(NV_TENSORRT_MAJOR) +
+      "." + std::to_string(NV_TENSORRT_MINOR) + "." +
+      std::to_string(NV_TENSORRT_PATCH) +
+      " cache-schema=" + std::to_string(kNvidiaCompilerCacheSchemaVersion);
   const char* aot_cache_dir =
       std::getenv("LITERT_NVIDIA_TENSORRT_AOT_CACHE_DIR");
   if (aot_cache_dir == nullptr || aot_cache_dir[0] == '\0') {
@@ -423,35 +453,39 @@ std::string BuildCompilerSdkVersion() {
       "LITERT_NVIDIA_TENSORRT_ALLOW_TF32",
       "LITERT_NVIDIA_TENSORRT_AOT_CACHE_DIR",
       "LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH",
+      "LITERT_NVIDIA_TENSORRT_DECODE_ATTENTION_PLUGIN",
       "LITERT_NVIDIA_TENSORRT_BUILDER_OPT_LEVEL",
       "LITERT_NVIDIA_TENSORRT_DISABLE_FC_SHAPES",
       "LITERT_NVIDIA_TENSORRT_DISABLE_INT8_ELEMENTWISE",
       "LITERT_NVIDIA_TENSORRT_DISABLE_OPS",
       "LITERT_NVIDIA_TENSORRT_DISABLE_SUBBYTE_WEIGHTS",
       "LITERT_NVIDIA_TENSORRT_ENABLE_OPS",
+      "LITERT_NVIDIA_TENSORRT_FC_BLOCK_SCALES",
       "LITERT_NVIDIA_TENSORRT_FILTER_SMALL_PARTITIONS",
       "LITERT_NVIDIA_TENSORRT_FOLD_INPUT_SCALE",
       "LITERT_NVIDIA_TENSORRT_FP16",
       "LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS",
+      "LITERT_NVIDIA_TENSORRT_FUSE_GEMV_GROUPS",
       "LITERT_NVIDIA_TENSORRT_JIT_HANDLE",
-      "LITERT_NVIDIA_TENSORRT_MAX_BATCH_MATMUL_OUTPUT_ELEMENTS",
       "LITERT_NVIDIA_TENSORRT_MAX_FC_WEIGHT_BYTES",
       "LITERT_NVIDIA_TENSORRT_MAX_FILL_BYTES",
       "LITERT_NVIDIA_TENSORRT_MAX_PARTITIONS",
       "LITERT_NVIDIA_TENSORRT_MAX_SELECTED_OPS",
-      "LITERT_NVIDIA_TENSORRT_MAX_SOFTMAX_ELEMENTS",
       "LITERT_NVIDIA_TENSORRT_MAX_SUBGRAPH_OPS",
       "LITERT_NVIDIA_TENSORRT_MIN_PARTITION_OPS",
       "LITERT_NVIDIA_TENSORRT_MIN_PARTITION_OUTPUT_BYTES",
       "LITERT_NVIDIA_TENSORRT_MIN_SUBGRAPH_OPS",
       "LITERT_NVIDIA_TENSORRT_NATIVE_COMPOSITES",
+      "LITERT_NVIDIA_TENSORRT_NATIVE_KV_CACHE_UPDATE",
       "LITERT_NVIDIA_TENSORRT_PARTITION_POLICY",
       "LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS",
+      "LITERT_NVIDIA_TENSORRT_RUNTIME_BMM_PRECISION",
       "LITERT_NVIDIA_TENSORRT_RUNTIME_BMM_CONTEXT_LIMIT",
       "LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS",
       "LITERT_NVIDIA_TENSORRT_SKIP_SUBGRAPHS",
       "LITERT_NVIDIA_TENSORRT_SYNC_ALLOCATOR",
       "LITERT_NVIDIA_TENSORRT_TACTIC_DRAM_MB",
+      "LITERT_NVIDIA_TENSORRT_VALUE_CACHE_LAYOUT",
       "LITERT_NVIDIA_TENSORRT_WORKSPACE_MB",
   };
 
@@ -489,9 +523,49 @@ std::string BuildCompilerSdkVersion() {
 
   const auto fingerprint = litert::nvidia::FingerprintTensorRtArtifact(
       configuration.data(), configuration.size());
-  return base_version +
-         " cache-schema=" + std::to_string(kNvidiaCompilerCacheSchemaVersion) +
-         " config=" + Hex64(fingerprint.low) + Hex64(fingerprint.high);
+  return base_version + " config=" + Hex64(fingerprint.low) +
+         Hex64(fingerprint.high);
+}
+
+Expected<std::vector<std::string>> ReadOnlyValueCacheInputs(
+    const LiteRtCompilerContext* context, LiteRtOptions options) {
+  std::vector<std::string> names;
+  if (options == nullptr) {
+    return names;
+  }
+  LiteRtOpaqueOptions opaque = nullptr;
+  LITERT_RETURN_IF_ERROR(context->get_opaque_options(options, &opaque));
+  if (opaque == nullptr) {
+    return names;
+  }
+  void* data = nullptr;
+  const LiteRtStatus find_status = context->find_opaque_options_data(
+      opaque, LITERT_NVIDIA_READ_ONLY_VALUE_CACHE_OPTIONS_ID, &data);
+  if (find_status == kLiteRtStatusErrorNotFound) {
+    return names;
+  }
+  LITERT_RETURN_IF_ERROR(find_status);
+  const auto* layout =
+      static_cast<const LiteRtNvidiaReadOnlyValueCacheOptions*>(data);
+  if (layout == nullptr ||
+      (layout->num_inputs != 0 && layout->input_names == nullptr)) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid NVIDIA read-only value cache options");
+  }
+  for (uint32_t i = 0; i < layout->num_inputs; ++i) {
+    if (layout->input_names[i] == nullptr ||
+        layout->input_names[i][0] == '\0') {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Read-only value cache input names must not be empty");
+    }
+    names.emplace_back(layout->input_names[i]);
+  }
+  std::sort(names.begin(), names.end());
+  if (std::adjacent_find(names.begin(), names.end()) != names.end()) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Read-only value cache input names must be unique");
+  }
+  return names;
 }
 
 std::string TensorRtAotCacheDir() {
@@ -1318,10 +1392,28 @@ struct LiteRtCompiledResultT {
 };
 
 struct LiteRtCompilerPluginT {
-  explicit LiteRtCompilerPluginT(const LiteRtCompilerContext* ctx)
-      : ctx(ctx), sdk_version(BuildCompilerSdkVersion()) {}
+  LiteRtCompilerPluginT(const LiteRtCompilerContext* ctx,
+                        std::vector<std::string> read_only_value_cache_inputs)
+      : ctx(ctx),
+        sdk_version(BuildCompilerSdkVersion()),
+        read_only_value_cache_inputs(std::move(read_only_value_cache_inputs)) {
+    if (!this->read_only_value_cache_inputs.empty()) {
+      std::string key;
+      for (const auto& name : this->read_only_value_cache_inputs) {
+        AppendCacheKeyString(key, name);
+      }
+      const auto fingerprint =
+          litert::nvidia::FingerprintTensorRtArtifact(key.data(), key.size());
+      // Both LiteRT's outer cache and the NVIDIA direct AOT lookup include
+      // this per-instance SDK string. Environment settings alone cannot
+      // distinguish differently laid-out drafter inputs.
+      sdk_version += " read-only-value-cache=" + Hex64(fingerprint.low) +
+                     Hex64(fingerprint.high);
+    }
+  }
   const LiteRtCompilerContext* ctx = nullptr;
   std::string sdk_version;
+  std::vector<std::string> read_only_value_cache_inputs;
 };
 
 LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
@@ -1457,7 +1549,10 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
     return kLiteRtStatusErrorInvalidArgument;
   }
   LiteRtPropagateMinLoggerSeverityWithCompilerContext(compiler_context, env);
-  *compiler_plugin = new LiteRtCompilerPluginT(compiler_context);
+  LITERT_ASSIGN_OR_RETURN(auto read_only_inputs,
+                          ReadOnlyValueCacheInputs(compiler_context, options));
+  *compiler_plugin =
+      new LiteRtCompilerPluginT(compiler_context, std::move(read_only_inputs));
   return kLiteRtStatusOk;
 }
 
@@ -1582,6 +1677,30 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   litert::compiler::Model model(compiler_plugin->ctx, partitions);
   auto result = std::make_unique<LiteRtCompiledResultT>();
   const auto num_partitions = model.NumSubgraphs();
+  std::vector<std::vector<std::string>> read_only_inputs(num_partitions);
+  if (!compiler_plugin->read_only_value_cache_inputs.empty()) {
+    std::unordered_set<std::string> unmatched(
+        compiler_plugin->read_only_value_cache_inputs.begin(),
+        compiler_plugin->read_only_value_cache_inputs.end());
+    for (LiteRtParamIndex i = 0; i < num_partitions; ++i) {
+      LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
+      for (const auto& input : subgraph.Inputs()) {
+        const std::string name(input.Name());
+        if (std::binary_search(
+                compiler_plugin->read_only_value_cache_inputs.begin(),
+                compiler_plugin->read_only_value_cache_inputs.end(), name)) {
+          read_only_inputs[i].push_back(name);
+          unmatched.erase(name);
+        }
+      }
+    }
+    if (!unmatched.empty()) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Read-only value cache is not a delegated input: %s",
+                 unmatched.begin()->c_str());
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+  }
   const bool shared_weights = litert::nvidia::TensorRtSharedWeightsEnabled();
   const std::string aot_cache_dir = TensorRtAotCacheDir();
   std::string canonical_aot_cache_dir;
@@ -1648,6 +1767,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   std::vector<PendingBundleEntry> pending_bundle_entries;
   pending_bundle_entries.reserve(shared_weights ? num_partitions : 0);
   size_t total_bytecode_bytes = 0;
+  size_t total_locator_bytes = 0;
+  size_t total_shard_weight_bytes = 0;
   bool aot_artifacts_persisted = false;
   memory_profiler.Log("compile_begin", soc_model);
 
@@ -1667,7 +1788,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       }
     }
     memory_profiler.Log("partition_build_begin", function_name.c_str());
-    auto engine_or = litert::nvidia::BuildTensorRtEngine(subgraph);
+    auto engine_or =
+        litert::nvidia::BuildTensorRtEngine(subgraph, read_only_inputs[i]);
     if (!engine_or) {
       std::string op_codes;
       for (const auto& op : subgraph.Ops()) {
@@ -1692,6 +1814,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     auto engine = std::move(*engine_or);
     memory_profiler.Log("partition_build_end", function_name.c_str());
     if (shared_weights) {
+      // AOT shards are independent: retaining a cross-engine store cannot
+      // reduce their disk size and needlessly overlaps earlier weights/plans
+      // with the next TensorRT build. JIT still deduplicates across engines.
+      SharedWeightDeduper shard_weight_store;
+      auto& weight_store =
+          aot_cache_dir.empty() ? shared_weight_store : shard_weight_store;
       PendingBundleEntry pending;
       pending.function_name = function_name;
       pending.input_names = std::move(engine.input_names);
@@ -1703,20 +1831,46 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       for (auto& weight : engine.refit_weights) {
         partition_logical_weight_bytes += weight.data.size();
         const std::string name = weight.name;
-        const uint32_t shared_index =
-            shared_weight_store.Add(std::move(weight));
+        const uint32_t shared_index = weight_store.Add(std::move(weight));
         pending.refit_weights.push_back({name, shared_index});
       }
       LITERT_LOG(LITERT_INFO,
                  "NVIDIA TensorRT-RTX compiled %s partition %d/%d: "
                  "plan_bytes=%zu refit_weights=%zu logical_weight_bytes=%zu "
-                 "cumulative_unique_weight_bytes=%zu",
+                 "retained_unique_weight_bytes=%zu",
                  engine.is_stripped_plan ? "stripped" : "self-contained",
                  static_cast<int>(i + 1), static_cast<int>(num_partitions),
                  pending.engine.size(), pending.refit_weights.size(),
-                 partition_logical_weight_bytes,
-                 shared_weight_store.unique_bytes());
+                 partition_logical_weight_bytes, weight_store.unique_bytes());
       result->call_infos.push_back(function_name);
+      if (!aot_cache_dir.empty()) {
+        memory_profiler.Log("aot_shard_pack_begin", function_name.c_str());
+        litert::nvidia::TensorRtLlmHead head;
+        LITERT_ASSIGN_OR_RETURN(
+            auto packed_shard, litert::nvidia::PackTensorRtSharedWeightShard(
+                                   weight_store.weights(), pending.View(head)));
+        memory_profiler.Log("aot_shard_pack_end", function_name.c_str());
+        LITERT_ASSIGN_OR_RETURN(
+            auto persisted,
+            PersistAotArtifact(canonical_aot_cache_dir, packed_shard, i,
+                               num_partitions));
+        total_bytecode_bytes += persisted.first;
+        total_locator_bytes += persisted.second;
+        total_shard_weight_bytes += weight_store.unique_bytes();
+        result->bytecode_indices.push_back(result->bytecodes.size());
+        result->bytecodes.push_back(std::move(packed_shard));
+        aot_artifacts_persisted = true;
+        LITERT_LOG(LITERT_INFO,
+                   "NVIDIA TensorRT-RTX packed AOT shard %zu/%zu: function=%s "
+                   "artifact_bytes=%zu referenced_weight_bytes=%zu",
+                   static_cast<size_t>(i + 1), num_partitions,
+                   function_name.c_str(), persisted.first,
+                   weight_store.unique_bytes());
+        // Only the locator survives this scope. Both pending and the local
+        // weight store are destroyed before the next partition builds.
+        memory_profiler.Log("aot_shard_persisted", function_name.c_str());
+        continue;
+      }
       pending_bundle_entries.push_back(std::move(pending));
       memory_profiler.Log("partition_retained", function_name.c_str());
       continue;
@@ -1755,104 +1909,43 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     memory_profiler.Log("partition_retained", function_name.c_str());
   }
 
-  if (shared_weights) {
+  if (shared_weights && aot_cache_dir.empty()) {
     memory_profiler.Log("bundle_pack_begin", soc_model);
     std::vector<litert::nvidia::TensorRtLlmHead> trtllm_heads(
         pending_bundle_entries.size());
     std::vector<litert::nvidia::TensorRtBundleEntry> bundle_entries;
     bundle_entries.reserve(pending_bundle_entries.size());
     for (size_t i = 0; i < pending_bundle_entries.size(); ++i) {
-      auto& pending = pending_bundle_entries[i];
-      const litert::nvidia::TensorRtLlmHead* head_ptr = nullptr;
-      if (pending.trtllm_head.has_value()) {
-        auto& head = trtllm_heads[i];
-        head.hidden_output_port = pending.trtllm_head->hidden_output_port;
-        head.logits_output_port = pending.trtllm_head->logits_output_port;
-        head.k = pending.trtllm_head->k;
-        head.n = pending.trtllm_head->n;
-        head.soft_cap = pending.trtllm_head->soft_cap;
-        head.weight_format = pending.trtllm_head->weight_format;
-        head.packed_weights = pending.trtllm_head->packed_weights.data();
-        head.packed_weights_size = pending.trtllm_head->packed_weights.size();
-        head.bf16_scales = pending.trtllm_head->bf16_scales.data();
-        head.bf16_scales_size = pending.trtllm_head->bf16_scales.size();
-        head_ptr = &head;
-      }
-      bundle_entries.push_back({pending.function_name, pending.input_names,
-                                pending.output_names, pending.engine.data(),
-                                pending.engine.size(), head_ptr,
-                                pending.refit_weights});
+      bundle_entries.push_back(pending_bundle_entries[i].View(trtllm_heads[i]));
     }
-    if (aot_cache_dir.empty()) {
-      LITERT_ASSIGN_OR_RETURN(
-          auto packed_bundle,
-          litert::nvidia::PackTensorRtSharedWeightBundle(
-              shared_weight_store.weights(), bundle_entries));
-      total_bytecode_bytes = packed_bundle.size();
-      result->bytecodes.push_back(std::move(packed_bundle));
-      result->bytecode_indices.assign(bundle_entries.size(), 0);
-      LITERT_LOG(LITERT_INFO,
-                 "NVIDIA TensorRT-RTX packed shared-weight bundle: engines=%zu "
-                 "shared_weights=%zu logical_weight_bytes=%zu "
-                 "unique_weight_bytes=%zu saved_serialized_weight_bytes=%zu "
-                 "bytecode_bytes=%zu",
-                 bundle_entries.size(), shared_weight_store.weights().size(),
-                 shared_weight_store.logical_bytes(),
-                 shared_weight_store.unique_bytes(),
-                 shared_weight_store.logical_bytes() -
-                     shared_weight_store.unique_bytes(),
-                 total_bytecode_bytes);
-      memory_profiler.Log("bundle_pack_end", soc_model);
-    } else {
-      memory_profiler.Log("aot_persist_begin", soc_model);
-      size_t total_locator_bytes = 0;
-      size_t total_shard_weight_bytes = 0;
-      for (size_t i = 0; i < bundle_entries.size(); ++i) {
-        const auto& entry = bundle_entries[i];
-        memory_profiler.Log("aot_shard_pack_begin",
-                            entry.function_name.c_str());
-        LITERT_ASSIGN_OR_RETURN(auto packed_shard,
-                                litert::nvidia::PackTensorRtSharedWeightShard(
-                                    shared_weight_store.weights(), entry));
-        memory_profiler.Log("aot_shard_pack_end", entry.function_name.c_str());
-        size_t shard_weight_bytes = 0;
-        absl::flat_hash_set<uint32_t> shard_weight_indices;
-        for (const auto& ref : entry.refit_weights) {
-          if (shard_weight_indices.insert(ref.shared_weight_index).second) {
-            shard_weight_bytes +=
-                shared_weight_store.weights()[ref.shared_weight_index]
-                    .data.size();
-          }
-        }
-        const size_t shard_bytes = packed_shard.size();
-        LITERT_ASSIGN_OR_RETURN(
-            auto persisted,
-            PersistAotArtifact(canonical_aot_cache_dir, packed_shard, i,
-                               bundle_entries.size()));
-        total_bytecode_bytes += persisted.first;
-        total_locator_bytes += persisted.second;
-        total_shard_weight_bytes += shard_weight_bytes;
-        result->bytecode_indices.push_back(result->bytecodes.size());
-        result->bytecodes.push_back(std::move(packed_shard));
-        LITERT_LOG(LITERT_INFO,
-                   "NVIDIA TensorRT-RTX packed AOT shard %zu/%zu: function=%s "
-                   "artifact_bytes=%zu referenced_weight_bytes=%zu",
-                   i + 1, bundle_entries.size(), entry.function_name.c_str(),
-                   shard_bytes, shard_weight_bytes);
-        memory_profiler.Log("aot_shard_persisted", entry.function_name.c_str());
-      }
-      LITERT_LOG(
-          LITERT_INFO,
-          "NVIDIA TensorRT-RTX AOT shards ready: modules=%zu "
-          "artifact_bytes=%zu locator_bytes=%zu referenced_weight_bytes=%zu "
-          "cross_shard_duplicate_weight_bytes=%zu",
-          result->bytecodes.size(), total_bytecode_bytes, total_locator_bytes,
-          total_shard_weight_bytes,
-          total_shard_weight_bytes - shared_weight_store.unique_bytes());
-      memory_profiler.Log("bundle_pack_end", soc_model);
-      memory_profiler.Log("aot_persist_end", soc_model);
-      aot_artifacts_persisted = true;
-    }
+    LITERT_ASSIGN_OR_RETURN(auto packed_bundle,
+                            litert::nvidia::PackTensorRtSharedWeightBundle(
+                                shared_weight_store.weights(), bundle_entries));
+    total_bytecode_bytes = packed_bundle.size();
+    result->bytecodes.push_back(std::move(packed_bundle));
+    result->bytecode_indices.assign(bundle_entries.size(), 0);
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX packed shared-weight bundle: engines=%zu "
+               "shared_weights=%zu logical_weight_bytes=%zu "
+               "unique_weight_bytes=%zu saved_serialized_weight_bytes=%zu "
+               "bytecode_bytes=%zu",
+               bundle_entries.size(), shared_weight_store.weights().size(),
+               shared_weight_store.logical_bytes(),
+               shared_weight_store.unique_bytes(),
+               shared_weight_store.logical_bytes() -
+                   shared_weight_store.unique_bytes(),
+               total_bytecode_bytes);
+    memory_profiler.Log("bundle_pack_end", soc_model);
+  }
+  if (aot_artifacts_persisted) {
+    LITERT_LOG(
+        LITERT_INFO,
+        "NVIDIA TensorRT-RTX AOT shards ready: modules=%zu "
+        "artifact_bytes=%zu locator_bytes=%zu referenced_weight_bytes=%zu "
+        "streamed=1",
+        result->bytecodes.size(), total_bytecode_bytes, total_locator_bytes,
+        total_shard_weight_bytes);
+    memory_profiler.Log("aot_persist_end", soc_model);
   }
 
   if (!aot_cache_dir.empty() && !aot_artifacts_persisted) {

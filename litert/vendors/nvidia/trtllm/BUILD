@@ -25,13 +25,17 @@ package(
 cuda_library(
     name = "gemma4_head_kernels_cuda",
     srcs = [
+        "decode_attention.cu",
         "head_kernels.cu",
         "int2_gemv.cu",
     ],
     hdrs = [
+        "decode_attention.h",
         "head_kernels.h",
         "int2_gemv.h",
     ],
+    # Clang may retain loops despite the kernel's best-effort unroll hints.
+    # copybara:uncomment copts = ["-Wno-error=pass-failed"],
     linkstatic = 1,
     tags = ["manual"],
     deps = [
@@ -49,6 +53,7 @@ cc_import(
 cc_library(
     name = "gemma4_head_kernels",
     hdrs = [
+        "decode_attention.h",
         "head_kernels.h",
         "int2_gemv.h",
     ],
