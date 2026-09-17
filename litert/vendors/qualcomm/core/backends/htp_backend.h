@@ -10,7 +10,11 @@
 
 #include "HTP/QnnHtpCommon.h"  // from @qairt
 #include "HTP/QnnHtpDevice.h"  // from @qairt
+// QAIRT >= 2.47 moves some HTP device definitions from QnnHtpDevice.h to
+// QnnHtpDeviceConfigShared.h.
+#if __has_include("HTP/QnnHtpDeviceConfigShared.h")
 #include "HTP/QnnHtpDeviceConfigShared.h"  // from @qairt
+#endif
 #include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
