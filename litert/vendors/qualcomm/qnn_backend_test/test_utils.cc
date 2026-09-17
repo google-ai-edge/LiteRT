@@ -52,7 +52,7 @@ std::string QnnTestPrinter(
   return ss.str();
 }
 
-void QnnModelTest::SetUpQnnModel(const ::qnn::Options& options,
+void QnnModelSetupMixin::SetUpQnnModel(const ::qnn::Options& options,
                                  const char* soc_model_name) {
   // TODO (chunhsue-qti) get rid of QnnManager and move to core/
   auto soc_info = ::qnn::FindOrCreateSocInfo(soc_model_name);
