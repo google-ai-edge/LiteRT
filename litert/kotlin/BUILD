@@ -304,7 +304,7 @@ TFLITE_JAVA_EXPERIMENTAL_SRCS = [
 
 TFLITE_JAVA_STABLE_SRCS = [f for f in TFLITE_JAVA_SRCS_IMPL if f not in TFLITE_JAVA_EXPERIMENTAL_SRCS]
 
-LITERT_KOTLIN_SRCS_ALL = [
+LITERT_KOTLIN_SRCS_NO_AIPACK = [
     "src/main/kotlin/com/google/ai/edge/litert/AcceleratorProvider.kt",
     "src/main/kotlin/com/google/ai/edge/litert/Common.kt",
     "src/main/kotlin/com/google/ai/edge/litert/Environment.kt",
@@ -312,8 +312,15 @@ LITERT_KOTLIN_SRCS_ALL = [
     "src/main/kotlin/com/google/ai/edge/litert/Model.kt",
     "src/main/kotlin/com/google/ai/edge/litert/ModelProvider.kt",
     "src/main/kotlin/com/google/ai/edge/litert/TensorBuffer.kt",
+]
+
+# Sources that depend on the Google Play AI Delivery client. Keep these out of
+# LITERT_API_SRCS_NO_AIPACK.
+LITERT_AI_PACK_SRCS = [
     "src/main/kotlin/com/google/ai/edge/litert/deployment/AiPackModelProvider.kt",
 ]
+
+LITERT_KOTLIN_SRCS_ALL = LITERT_AI_PACK_SRCS + LITERT_KOTLIN_SRCS_NO_AIPACK
 
 TFLITE_JAVA_DEPS = [
     "@litert_maven//:com_google_guava_guava",
@@ -321,14 +328,19 @@ TFLITE_JAVA_DEPS = [
     "@org_checkerframework_qual",
 ]
 
-LITERT_KOTLIN_DEPS = TFLITE_JAVA_DEPS + [
-    "@litert_maven//:com_google_android_play_ai_delivery",
+LITERT_KOTLIN_DEPS_NO_AIPACK = TFLITE_JAVA_DEPS + [
     "@litert_maven//:org_jetbrains_kotlinx_kotlinx_coroutines_android",
     "@litert_maven//:org_jetbrains_kotlinx_kotlinx_coroutines_guava",
+]
+
+LITERT_KOTLIN_DEPS_ALL = LITERT_KOTLIN_DEPS_NO_AIPACK + [
+    "@litert_maven//:com_google_android_play_ai_delivery",
     "@litert_maven//:org_jetbrains_kotlinx_kotlinx_coroutines_play_services",
 ]
 
-LITERT_API_SRCS_ALL = LITERT_KOTLIN_SRCS_ALL + TFLITE_JAVA_SRCS_API
+LITERT_API_SRCS_NO_AIPACK = LITERT_KOTLIN_SRCS_NO_AIPACK + TFLITE_JAVA_SRCS_API
+
+LITERT_API_SRCS_ALL = LITERT_API_SRCS_NO_AIPACK + LITERT_AI_PACK_SRCS
 
 JAVACOPTS = select({
     ":public_maven_build": ["--release 17"],
@@ -345,7 +357,7 @@ kt_android_library(
     manifest = "src/main/AndroidManifest.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = litert_jni_friends(),
-    deps = LITERT_KOTLIN_DEPS,
+    deps = LITERT_KOTLIN_DEPS_ALL,
 )
 
 # Android library for the litert package, CompiledModel API only.
@@ -404,7 +416,21 @@ kt_android_library(
     manifest = "src/main/AndroidManifest.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = litert_jni_friends(),
-    deps = LITERT_KOTLIN_DEPS,
+    deps = LITERT_KOTLIN_DEPS_ALL,
+)
+
+# Pure Java/Kotlin API library (no native deps at build time, ":litert_api_jni" is needed at
+# runtime), with both the Compiled Model API and also the older TFLite Interpreter API, but
+# without support for Google Play AI Pack.
+android_library(
+    name = "litert_api_no_jni_no_aipack",
+    srcs = LITERT_API_SRCS_NO_AIPACK,
+    exports_manifest = 1,
+    javacopts = JAVACOPTS,
+    manifest = "src/main/AndroidManifest.xml",
+    proguard_specs = ["//tflite/java:proguard.flags"],
+    visibility = litert_jni_friends(),
+    deps = LITERT_KOTLIN_DEPS_NO_AIPACK,
 )
 
 # This library is for building the Maven artifact only.
@@ -416,7 +442,7 @@ kt_android_library(
     manifest = "src/main/AndroidManifest.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = ["//visibility:private"],
-    deps = LITERT_KOTLIN_DEPS + [
+    deps = LITERT_KOTLIN_DEPS_ALL + [
         ":litert_api_jni",  # unuseddeps: keep
     ],
 )
