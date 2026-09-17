@@ -658,6 +658,13 @@ Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
         graph_output = cloned_tensor;
       }
     }
+    // Signatures own separate tensor references. Updating only GraphOutputs
+    // leaves their positional and named aliases dangling after DCE below.
+    for (auto* signature : model.Signatures()) {
+      if (&signature->GetSubgraph() == main_subgraph) {
+        signature->RemapOutputTensor(&composite_output_tensor, cloned_tensor);
+      }
+    }
   }
 
   // Clear the output of original composite op, they are not used anymore.

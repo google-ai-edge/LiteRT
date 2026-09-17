@@ -83,6 +83,15 @@ LiteRtStatus LrtIntelOpenVinoOptionsGetPerformanceMode(
     LrtIntelOpenVinoOptions options,
     LiteRtIntelOpenVinoPerformanceMode* performance_mode);
 
+// enable_weight_sharing ------------------------------------------------------
+// Controls whether multiple subgraphs may share the same weight pool when the
+// backend supports it. Defaults to true for Intel OpenVINO.
+LiteRtStatus LrtIntelOpenVinoOptionsSetEnableWeightSharing(
+    LrtIntelOpenVinoOptions options, bool enable_weight_sharing);
+
+LiteRtStatus LrtIntelOpenVinoOptionsGetEnableWeightSharing(
+    LrtIntelOpenVinoOptions options, bool* enable_weight_sharing);
+
 // configs_map ----------------------------------------------------------------
 
 // Set a custom configuration option with a string key-value pair.

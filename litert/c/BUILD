@@ -38,6 +38,7 @@ load(
 )
 load(
     "//litert/build_common:special_rule.bzl",
+    "exclude_wasm_target_compatible_with",
     "exclude_windows_target_compatible_with",
     "get_compatible_with_portable",
     "gles_deps",
@@ -885,7 +886,8 @@ cc_shared_library(
     name = "litert_runtime_c_api_so",
     additional_linker_inputs = export_lrt_runtime_only_script(),
     shared_lib_name = "libLiteRt.so",
-    target_compatible_with = exclude_windows_target_compatible_with(),
+    target_compatible_with = exclude_windows_target_compatible_with() +
+                             exclude_wasm_target_compatible_with(),
     user_link_flags = export_lrt_runtime_only_linkopt() + select({
         "//litert:macos": ["-Wl,-install_name,@rpath/libLiteRt.so"],
         "//litert:ios": ["-Wl,-install_name,@rpath/libLiteRt.so"],
@@ -1008,7 +1010,8 @@ cc_shared_library(
     additional_linker_inputs = export_lrt_tflite_runtime_script(),
     shared_lib_name = "libLiteRt.so",
     tags = ["manual"],  # To prevent build together with `litert_runtime_c_api_so`.
-    target_compatible_with = exclude_windows_target_compatible_with(),
+    target_compatible_with = exclude_windows_target_compatible_with() +
+                             exclude_wasm_target_compatible_with(),
     user_link_flags = export_lrt_tflite_runtime_linkopt() + litert_android_linkopts(),
     deps = [":litert_tflite_runtime_c_api_so_shim"],
 )
@@ -1017,6 +1020,9 @@ SELECT_LITERT_RUNTIME_C_API_SHARED_LIB = select({
     "//litert:ios": [":litert_runtime_c_api_dylib"],
     "//litert:macos": [":litert_runtime_c_api_dylib"],
     "//litert:windows": [],
+    # The Emscripten toolchain can't emit a shared library; wasm clients link
+    # the LiteRT runtime statically.
+    "//litert:emscripten": [],
     "//conditions:default": [":litert_runtime_c_api_so"],
 })
 

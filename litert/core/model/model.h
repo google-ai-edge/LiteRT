@@ -808,6 +808,17 @@ class LiteRtSignatureT {
     return output_tensors_.at(index);
   }
 
+  // Keep positional and named aliases valid when a graph rewrite replaces an
+  // output tensor. The caller must remap references before deleting the tensor.
+  void RemapOutputTensor(LiteRtTensor from, LiteRtTensor to) {
+    for (size_t i = 0; i < output_tensors_.size(); ++i) {
+      if (output_tensors_[i] == from) {
+        output_tensors_[i] = to;
+        output_name_to_tensor_.at(output_names_[i]) = to;
+      }
+    }
+  }
+
   // Find the input tensor with the given name.
   ::litert::Expected<LiteRtTensor> FindInputTensor(
       absl::string_view name) const {
