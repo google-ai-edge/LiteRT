@@ -264,5 +264,7 @@ extern "C" LITERT_CAPI_EXPORT const LiteRtRuntimeCApiStruct
             LiteRtGetAcceleratorHardwareSupport,
         .litert_compiled_model_is_non_cpu_fully_accelerated =
             LiteRtCompiledModelIsNonCpuFullyAccelerated,
+        .litert_compiled_model_get_delegation_metrics =
+            LiteRtCompiledModelGetDelegationMetrics,
         // Google-internal LINT.ThenChange()
     };
