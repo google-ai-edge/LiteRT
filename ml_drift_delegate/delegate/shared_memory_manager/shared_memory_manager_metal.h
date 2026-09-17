@@ -256,8 +256,8 @@ inline std::unique_ptr<ml_drift::SharedMemoryManager> MakeSharedMemoryManagerMet
             delete release_cb_ptr;
             return absl::InternalError("Failed to create Metal buffer with no copy.");
           }
-          absl::Status status =
-              metal::CreateTensorSharedBuffer(buffer, tensor_desc, metal_tensor.get());
+          absl::Status status = metal::CreateTensorSharedBuffer(
+              buffer, tensor_desc, metal_tensor.get(), page_adjusted_offset);
           if (!status.ok()) {
             return status;
           }

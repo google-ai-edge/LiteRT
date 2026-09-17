@@ -50,12 +50,12 @@ You can run any of the demos directly using Blaze, which will build the
 target and start a local development server:
 
 ```bash
-blaze run //third_party/odml/litert/tensor/wasm:playground
-blaze run //third_party/odml/litert/tensor/wasm:segmentation_demo
-blaze run //third_party/odml/litert/tensor/wasm:mandelbrot_demo
-blaze run //third_party/odml/litert/tensor/wasm:game_of_life_demo
-blaze run //third_party/odml/litert/tensor/wasm:segmentation_webgpu_demo
-blaze run //third_party/odml/litert/tensor/wasm:gemma3_demo
+blaze run //tensor/wasm:playground
+blaze run //tensor/wasm:segmentation_demo
+blaze run //tensor/wasm:mandelbrot_demo
+blaze run //tensor/wasm:game_of_life_demo
+blaze run //tensor/wasm:segmentation_webgpu_demo
+blaze run //tensor/wasm:gemma3_demo
 ```
 
 Follow the instructions in the terminal to open the URL in your browser.

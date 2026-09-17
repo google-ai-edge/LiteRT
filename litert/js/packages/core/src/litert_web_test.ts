@@ -14,8 +14,16 @@
  * limitations under the License.
  */
 
-import {add, CompiledModel, div, Environment, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, mul, relu, sub, supportsFeature, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
+import {add, CompiledModel, div, Environment, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, mul, relu, sub, supportsFeature, Tensor, TensorBufferType, type TypedArray, unloadLiteRt, type NumberTypedArray, type BigIntTypedArray} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
+
+declare global {
+  interface ArrayConstructor {
+    from(iterable: NumberTypedArray): number[];
+    from(iterable: BigIntTypedArray): bigint[];
+    from(iterable: TypedArray): Array<number | bigint>;
+  }
+}
 
 describe('LiteRt', () => {
   let liteRt: LiteRt;
@@ -929,13 +937,83 @@ describe('LiteRt', () => {
       expect(await tensor.data()).toEqual(data);
     });
 
+    it('creates a tensor from a Int8Array', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Int8Array([-1, 2, -3, 4, -5]);
+      const tensor = new Tensor(data);
+      expect(tensor.type.dtype).toEqual('int8');
+      expect(tensor.type.layout.dimensions).toEqual([5]);
+      expect(await tensor.data()).toEqual(data);
+    });
+
+    it('creates a bool tensor from a Uint8Array with bool dtype', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Uint8Array([1, 0, 1, 0, 1]);
+      const tensor = new Tensor(data, [5], 'bool');
+      expect(tensor.type.dtype).toEqual('bool');
+      expect(tensor.type.layout.dimensions).toEqual([5]);
+      expect(await tensor.data()).toEqual(data);
+    });
+
+    it('creates a tensor from a Int16Array', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Int16Array([1, 2, 3, 4, 5]);
+      const tensor = new Tensor(data);
+      expect(tensor.type.dtype).toEqual('int16');
+      expect(tensor.type.layout.dimensions).toEqual([5]);
+      expect(await tensor.data()).toEqual(data);
+    });
+
+    it('creates a tensor from a Uint16Array', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Uint16Array([1, 2, 3, 4, 5]);
+      const tensor = new Tensor(data);
+      expect(tensor.type.dtype).toEqual('uint16');
+      expect(tensor.type.layout.dimensions).toEqual([5]);
+      expect(await tensor.data()).toEqual(data);
+    });
+
+    it('creates a tensor from a Float16Array', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Float16Array([1.0, 2.0, 3.0]);
+      const tensor = new Tensor(data);
+      expect(tensor.type.dtype).toEqual('float16');
+      expect(tensor.type.layout.dimensions).toEqual([3]);
+      expect(await tensor.data()).toEqual(data);
+    });
+
+    it('creates a tensor from a BigInt64Array', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new BigInt64Array([1n, 2n, 3n, 4n, 5n]);
+      const tensor = new Tensor(data);
+      expect(tensor.type.dtype).toEqual('int64');
+      expect(tensor.type.layout.dimensions).toEqual([5]);
+      expect(await tensor.data()).toEqual(data);
+    });
+
+    it('creates a tensor from a BigUint64Array', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new BigUint64Array([1n, 2n, 3n, 4n, 5n]);
+      const tensor = new Tensor(data);
+      expect(tensor.type.dtype).toEqual('uint64');
+      expect(tensor.type.layout.dimensions).toEqual([5]);
+      expect(await tensor.data()).toEqual(data);
+    });
+
+    it('creates a tensor from a Float64Array', async () => {
+      await resetLiteRt(true, {threads: false});
+      const data = new Float64Array([1.234, 2.345, 3.456]);
+      const tensor = new Tensor(data);
+      expect(tensor.type.dtype).toEqual('float64');
+      expect(tensor.type.layout.dimensions).toEqual([3]);
+      expect(await tensor.data()).toEqual(data);
+    });
+
     it('creates a tensor from a GPUBuffer', async () => {
       await resetLiteRt(true, {threads: false});
       const data = new Float32Array([1.234, 2.345, 3.456]);
 
-      const adapter = await navigator.gpu.requestAdapter();
-      const device = await adapter!.requestDevice();
-      liteRt.setWebGpuDevice(device);
+      const device = liteRt.getWebGpuDevice()!;
 
       const gpuBuffer = device.createBuffer({
         size: data.byteLength,
@@ -964,6 +1042,40 @@ describe('LiteRt', () => {
       const tensor = new Tensor(data, undefined, undefined, onDelete);
       tensor.delete();
       expect(onDelete).toHaveBeenCalled();
+    });
+
+    it('fails when passing a float16 tensor to a float32 model', async () => {
+      await resetLiteRt(true, {threads: false});
+      const model = await loadAndCompile(
+          '/testdata/add_10x10.tflite', {accelerator: 'webgpu'});
+
+      const data = new Float16Array(100).fill(1.0);
+      const device = liteRt.getWebGpuDevice()!;
+
+      const gpuBuffer = device.createBuffer({
+        size: data.byteLength,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC |
+            GPUBufferUsage.COPY_DST,
+        mappedAtCreation: true,
+      });
+      new Uint16Array(gpuBuffer.getMappedRange()).set(data);
+      gpuBuffer.unmap();
+
+      const tensor = new Tensor(
+          gpuBuffer, [10, 10], 'float16', liteRt.getDefaultEnvironment());
+
+      const bData = new Float32Array(100);
+      const bTensor = new Tensor(bData, [10, 10]);
+
+      // Expect failure because the model expects float32
+      await expectAsync(model.run({'a': tensor, 'b': bTensor}))
+          .toBeRejectedWithError(
+              /TensorBuffer ranked tensor type float16.*does not match expected ranked tensor type float32/);
+
+      bTensor.delete();
+      tensor.delete();
+      model.delete();
+      gpuBuffer.destroy();
     });
 
     it('environment is the default when not provided', async () => {
@@ -1667,7 +1779,7 @@ describe('LiteRt', () => {
               new Tensor(new Int32Array(1 * 3 * 224 * 224), [1, 3, 224, 224]);
           await expectAsync(mobilenetModel.run({'args_0': fakeInput}))
               .toBeRejectedWithError(
-                  'TensorBuffer ranked tensor type Int32[1, 3, 224, 224] does not match expected ranked tensor type Float32[1, 3, 224, 224]');
+                  'TensorBuffer ranked tensor type int32[1, 3, 224, 224] does not match expected ranked tensor type float32[1, 3, 224, 224]');
           fakeInput.delete();
         });
 
@@ -1676,7 +1788,7 @@ describe('LiteRt', () => {
               new Tensor(new Float32Array(1 * 3 * 224 * 225), [1, 3, 224, 225]);
           await expectAsync(mobilenetModel.run({'args_0': fakeInput}))
               .toBeRejectedWithError(
-                  'TensorBuffer ranked tensor type Float32[1, 3, 224, 225] does not match expected ranked tensor type Float32[1, 3, 224, 224]');
+                  'TensorBuffer ranked tensor type float32[1, 3, 224, 225] does not match expected ranked tensor type float32[1, 3, 224, 224]');
           fakeInput.delete();
         });
 
@@ -1863,9 +1975,9 @@ describe('LiteRt', () => {
   });
 });
 
-async function addTensors(a: Tensor, b: Tensor): Promise<TypedArray> {
-  const aArray = await a.data();
-  const bArray = await b.data();
+async function addTensors(a: Tensor, b: Tensor): Promise<Float32Array> {
+  const aArray = (await a.data()) as Float32Array;
+  const bArray = (await b.data()) as Float32Array;
   const result = new Float32Array(aArray.length);
   for (let i = 0; i < aArray.length; i++) {
     result[i] = aArray[i] + bArray[i];
@@ -1873,9 +1985,9 @@ async function addTensors(a: Tensor, b: Tensor): Promise<TypedArray> {
   return result;
 }
 
-async function subTensors(a: Tensor, b: Tensor): Promise<TypedArray> {
-  const aArray = await a.data();
-  const bArray = await b.data();
+async function subTensors(a: Tensor, b: Tensor): Promise<Float32Array> {
+  const aArray = (await a.data()) as Float32Array;
+  const bArray = (await b.data()) as Float32Array;
   const result = new Float32Array(aArray.length);
   for (let i = 0; i < aArray.length; i++) {
     result[i] = aArray[i] - bArray[i];
@@ -1883,9 +1995,9 @@ async function subTensors(a: Tensor, b: Tensor): Promise<TypedArray> {
   return result;
 }
 
-async function mulTensors(a: Tensor, b: Tensor): Promise<TypedArray> {
-  const aArray = await a.data();
-  const bArray = await b.data();
+async function mulTensors(a: Tensor, b: Tensor): Promise<Float32Array> {
+  const aArray = (await a.data()) as Float32Array;
+  const bArray = (await b.data()) as Float32Array;
   const result = new Float32Array(aArray.length);
   for (let i = 0; i < aArray.length; i++) {
     result[i] = aArray[i] * bArray[i];
