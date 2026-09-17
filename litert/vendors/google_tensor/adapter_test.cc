@@ -19,7 +19,9 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -27,7 +29,9 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/core/model/model_serialize.h"
 #include "litert/test/common.h"
+#include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
 #include "litert/vendors/google_tensor/compiler/google_tensor_options.pb.h"
 
@@ -85,7 +89,6 @@ TEST(AdapterTest, CompileSuccess) {
   google_tensor_options.set_dump_op_timings(true);
   google_tensor_options.mutable_compiler_config()->set_device(
       DeviceType::DEVICE_TYPE_TENSOR_G5);
-  google_tensor_options.set_output_dir("/tmp/");
 
   std::string options_str = google_tensor_options.SerializeAsString();
 
@@ -114,6 +117,32 @@ TEST(AdapterTest, CompileSuccess) {
   for (int i = 0; i < num_bytecodes; ++i) {
     ASSERT_GT(compiled_code_sizes[i], 0);
   }
+}
+
+TEST(AdapterTest, AreCompositesSupported) {
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Adapter::Ptr adapter,
+      Adapter::Create(/*shared_library_dir=*/std::nullopt));
+
+  // Multiple supported composites
+  const std::vector<std::string> supported_ops = {
+      "odml.rms_norm", "odml.group_norm", "odml.scaled_dot_product_attention"};
+  LITERT_ASSERT_OK_AND_ASSIGN(const std::vector<bool> all_supported_results,
+                              adapter->AreCompositesSupported(supported_ops));
+  EXPECT_THAT(all_supported_results, ::testing::ElementsAre(true, true, true));
+
+  // Mixed supported and unsupported composites
+  const std::vector<std::string> mixed_ops = {
+      "odml.rms_norm", "odml.unsupported_composite", "odml.group_norm",
+      "odml.softmax"};
+  LITERT_ASSERT_OK_AND_ASSIGN(const std::vector<bool> mixed_results,
+                              adapter->AreCompositesSupported(mixed_ops));
+  EXPECT_THAT(mixed_results, ::testing::ElementsAre(true, false, true, false));
+
+  // Empty list
+  LITERT_ASSERT_OK_AND_ASSIGN(const std::vector<bool> empty_results,
+                              adapter->AreCompositesSupported({}));
+  EXPECT_TRUE(empty_results.empty());
 }
 
 }  // namespace google_tensor
