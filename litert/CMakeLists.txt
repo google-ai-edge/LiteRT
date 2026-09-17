@@ -72,6 +72,7 @@ option(LITERT_ENABLE_GPU "Enable GPU acceleration support" ON)
 option(LITERT_ENABLE_NPU "Enable NPU acceleration support" ON)
 option(LITERT_DISABLE_KLEIDIAI "Disable KleidiAI delegate when bundling host TFLite (default ON for Linux/macOS x86_64 hosts)" ${_litert_disable_kleidiai_default})
 option(LITERT_BUILD_SUPPORT_LIBS "Enable build for the support libraries" OFF)
+option(LITERT_ENABLE_UV_VENV "Enables uv virtual environment for the build" OFF)
 
 set(LITERT_HOST_C_COMPILER "" CACHE FILEPATH "Host C compiler used for helper host-side tools (e.g. FlatBuffers flatc)")
 set(LITERT_HOST_CXX_COMPILER "" CACHE FILEPATH "Host C++ compiler used for helper host-side tools (e.g. FlatBuffers flatc)")
@@ -247,6 +248,7 @@ endif()
 
 # Find required packages
 find_package(Threads REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 # Add subdirectories
 add_subdirectory(c)
@@ -256,6 +258,8 @@ add_subdirectory(runtime)
 add_subdirectory(compiler)
 add_subdirectory(vendors)
 add_subdirectory(tools)
+add_subdirectory(experimental/custom_ops/gated_delta_net)
+
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../tensor/CMakeLists.txt")
   add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../tensor"
