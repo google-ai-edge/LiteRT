@@ -487,6 +487,7 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
                             backend_->GetBatchesForWeightsPreparation(
                                 shared_mem_manager->GetWeightsManager(),
                                 total_shared_tensor_size));
+      absl::flat_hash_set<::ml_drift::ValueId> uncached_tensor_ids;
       for (auto& batch : batches) {
         ABSL_ASSIGN_OR_RETURN(
             auto tensor_map_for_batch,
@@ -500,13 +501,22 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
             ::ml_drift::TensorDescriptor descriptor = tensor->GetDescriptor();
             ABSL_RETURN_IF_ERROR(
                 backend_->ReadSpatialTensorToDescriptor(*tensor, descriptor));
-            // Insert the descriptor to the cache.
-            ABSL_RETURN_IF_ERROR(shared_memory_serialization_cache->Insert(
-                global_id.value, !global_id.IsSourceId(), descriptor));
-            // Release the tensor memory.
-            if (require_serialization_cache_on_first_load) {
-              ABSL_RETURN_IF_ERROR(
-                  backend_->ReleaseSpatialTensorMemory(tensor.get()));
+            // New entries can only be added while the cache is being built. A
+            // cache that was loaded from disk stays read-only for the rest of
+            // this run, so tensors that it doesn't already contain are left
+            // uncached instead of failing the model load. Every other
+            // insertion failure is a genuine error and is propagated.
+            if (shared_memory_serialization_cache->IsReadyForInsert()) {
+              // Insert the descriptor to the cache.
+              ABSL_RETURN_IF_ERROR(shared_memory_serialization_cache->Insert(
+                  global_id.value, !global_id.IsSourceId(), descriptor));
+              // Release the tensor memory now that the cache holds a copy.
+              if (require_serialization_cache_on_first_load) {
+                ABSL_RETURN_IF_ERROR(
+                    backend_->ReleaseSpatialTensorMemory(tensor.get()));
+              }
+            } else {
+              uncached_tensor_ids.insert(main_model_id);
             }
           }
           if (global_id.IsSourceId()) {
@@ -524,6 +534,15 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
         }
       }
 
+      if (!uncached_tensor_ids.empty()) {
+        ABSL_LOG(WARNING)
+            << uncached_tensor_ids.size() << " out of "
+            << prepared_tensor_ids.size()
+            << " prepared tensors could not be added to the weight cache "
+               "because it was loaded in read-only mode. They are re-prepared "
+               "on every load, which increases load time and memory usage.";
+      }
+
       if (require_serialization_cache_on_first_load) {
         // Flush the cache to disk.
         ABSL_RETURN_IF_ERROR(CleanupExternalTensorsSerialization(
@@ -538,6 +557,9 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
         for (const auto& main_model_id : prepared_tensor_ids) {
           ::ml_drift::SharedMemoryManager::GlobalId global_id =
               local_to_global_id_map[main_model_id];
+          if (uncached_tensor_ids.contains(main_model_id)) {
+            continue;
+          }
 
           // Read the descriptor from the cache.
           ::ml_drift::TensorDescriptor descriptor;
