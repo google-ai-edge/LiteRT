@@ -502,6 +502,7 @@ cc_library(
         ":register_mean",
         ":register_reduction",
         ":register_select_v2",
+        ":register_slice",
         ":register_softmax",
         ":register_transpose",
         ":register_unary",
@@ -815,6 +816,24 @@ cc_library(
         ":register",
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators:sdpa_transposed",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_slice",
+    testonly = True,
+    srcs = ["register_slice.cc"],
+    hdrs = ["register_slice.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:slice",
         "//tflite/types:half",
     ],
 )

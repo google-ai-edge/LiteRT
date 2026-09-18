@@ -28,6 +28,7 @@
 #include "litert/ats/register_fully_connected.h"
 #include "litert/ats/register_mean.h"
 #include "litert/ats/register_reduction.h"
+#include "litert/ats/register_slice.h"
 #include "litert/ats/register_select_v2.h"
 #include "litert/ats/register_softmax.h"
 #include "litert/ats/register_transpose.h"
@@ -52,6 +53,7 @@ void RegisterCoreOpsImpl(const AtsConf& options, size_t& test_id,
   RegisterConcatenation(options, test_id, /*iters=*/10, cap);
   RegisterSoftmax(options, test_id, /*iters=*/10, cap);
   RegisterSelectV2(options, test_id, /*iters=*/10, cap);
+  RegisterSlice(options, test_id, /*iters=*/10, cap);
 }
 
 }  // namespace
