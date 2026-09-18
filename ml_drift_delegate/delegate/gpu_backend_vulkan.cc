@@ -27,6 +27,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -388,7 +389,14 @@ GpuInferenceContextVulkan::~GpuInferenceContextVulkan() {
 
 absl::StatusOr<::ml_drift::GpuSpatialTensor*>
 GpuInferenceContextVulkan::GetSpatialTensor(::ml_drift::ValueId id) {
-  return ctx_.GetTensor(id);
+  auto* tensor = ctx_.GetTensor(id);
+  if (tensor == nullptr) {
+    // Returning OK(nullptr) here makes callers dereference null instead of
+    // failing, which turns a recoverable setup error into a SIGSEGV.
+    return absl::NotFoundError(
+        absl::StrCat("No GPU tensor allocated for tensor id ", id, "."));
+  }
+  return tensor;
 }
 
 absl::Status GpuInferenceContextVulkan::BindSpatialTensor(

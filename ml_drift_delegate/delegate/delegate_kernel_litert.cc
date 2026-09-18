@@ -641,6 +641,42 @@ absl::Status DelegateKernelLiteRt::FlushBufferCacheIfNeeded(
   return absl::OkStatus();
 }
 
+// Resolves every tensor id that InitTensorConverters() will dereference.
+//
+// The skip conditions below are deliberately identical to the ones in
+// InitTensorConverters(); the two must be kept in sync. Anything this function
+// resolves successfully, InitTensorConverters() can dereference safely.
+absl::Status DelegateKernelLiteRt::ValidateRestoredInferenceContext() {
+  const auto resolve = [this](::ml_drift::ValueId id) -> absl::Status {
+    auto gpu_tensor = ctx_->GetSpatialTensor(id);
+    if (!gpu_tensor.ok()) return gpu_tensor.status();
+    // Older backends report an unknown id as a null tensor rather than an
+    // error, which would fault on first use instead of here.
+    if (*gpu_tensor == nullptr) {
+      return absl::NotFoundError(
+          absl::StrCat("No GPU tensor allocated for tensor id ", id, "."));
+    }
+    return absl::OkStatus();
+  };
+
+  for (int i = 0; i < input_indices_.size(); ++i) {
+    if (IsExternalSharedConstantTensor(input_ids_[i]) ||
+        external_tensor_ids_.contains(input_ids_[i])) {
+      continue;
+    }
+    ABSL_RETURN_IF_ERROR(resolve(input_ids_[i]));
+  }
+
+  for (int i = 0; i < output_indices_.size(); ++i) {
+    if (external_tensor_ids_.contains(output_ids_[i])) {
+      continue;
+    }
+    ABSL_RETURN_IF_ERROR(resolve(output_ids_[i]));
+  }
+
+  return absl::OkStatus();
+}
+
 // Initializes tensor converters used for synchronizing input and output
 // tensors.
 absl::Status DelegateKernelLiteRt::InitTensorConverters(

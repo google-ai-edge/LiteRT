@@ -742,11 +742,7 @@ bool DelegateKernel::ReadFromSerializedData() {
   return true;
 }
 
-// Restores inference context from the serialized data.
-absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
-    TfLiteContext* context, const TfLiteDelegateParams* delegate_params,
-    const ::ml_drift::CreateGpuModelInfo& create_info,
-    ::ml_drift::GraphFloat32* graph, LiteRtOpSelector& op_selector) {
+std::string DelegateKernel::ComputeOptionsFingerprint() const {
   // Generate fingerprints for the relevant delegate data options.
   struct {
     MlDriftDelegatePrecision precision;
@@ -757,6 +753,19 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
     bool use_buffer_storage_type;
     bool enable_infinite_float_capping;
     bool enable_fast_tuning;
+    // Selects the IrModel pipeline over the legacy GraphFloat32 pipeline. The
+    // two run different fusers and therefore leave different intermediate
+    // tensors alive in the GpuModel.
+    bool use_ir_model;
+    // Rewires constant / external-immutable tensors, changing which ids the
+    // MemoryManager allocates.
+    bool enable_constant_tensors_sharing;
+    // Decides whether InitTensorConverters runs at all, and how ProcessTensor
+    // splits tensors between external_tensor_ids_ (bound directly) and plain
+    // GPU tensors (allocated by the MemoryManager). A blob serialized under one
+    // mode describes a different set of allocated tensors than the other mode
+    // expects, so the two must never share a cache entry.
+    bool litert_external_tensors_mode;
 #ifdef __APPLE__
     bool use_metal_argument_buffers;
 #endif  // __APPLE__
@@ -776,6 +785,11 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
       delegate_data_->options->enable_infinite_float_capping;
   options_to_fingerprint.enable_fast_tuning =
       delegate_data_->options->enable_fast_tuning;
+  options_to_fingerprint.use_ir_model = delegate_data_->options->use_ir_model;
+  options_to_fingerprint.enable_constant_tensors_sharing =
+      delegate_data_->options->enable_constant_tensors_sharing;
+  options_to_fingerprint.litert_external_tensors_mode =
+      delegate_data_->options->litert_external_tensors_mode;
 #ifdef __APPLE__
   options_to_fingerprint.use_metal_argument_buffers =
       delegate_data_->options->use_metal_argument_buffers;
@@ -783,7 +797,27 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
   std::string options_fingerprint = tflite::delegates::StrFingerprint(
       reinterpret_cast<const char*>(&options_to_fingerprint),
       sizeof(options_to_fingerprint));
+  // These patterns opt individual tensors into external-tensor binding
+  // regardless of litert_external_tensors_mode, so they change the allocated
+  // tensor set just as the mode flag does. They are a std::set<std::string> and
+  // so cannot live in the POD struct above; the set is ordered, which keeps the
+  // appended text stable across runs.
+  for (const auto& pattern :
+       delegate_data_->options->litert_external_tensor_patterns) {
+    absl::StrAppend(&options_fingerprint, "|", pattern);
+  }
+  // Keeps entries built for one backend from being restored by another; the
+  // program cache file itself is keyed only by the model token.
   absl::StrAppend(&options_fingerprint, backend_->GetBackendName());
+  return options_fingerprint;
+}
+
+// Restores inference context from the serialized data.
+absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
+    TfLiteContext* context, const TfLiteDelegateParams* delegate_params,
+    const ::ml_drift::CreateGpuModelInfo& create_info,
+    ::ml_drift::GraphFloat32* graph, LiteRtOpSelector& op_selector) {
+  const std::string options_fingerprint = ComputeOptionsFingerprint();
 
   std::unique_ptr<tflite::delegates::SerializationEntry> data_key;
   std::unique_ptr<::ml_drift::SerializationProgramCache> program_cache;
@@ -837,10 +871,19 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
     auto res = backend_->RestoreInferenceContext(create_info_main, model_span);
     if (res.ok()) {
       ctx_ = std::move(res.value());
-      ABSL_LOG(INFO) << "Initialized InferenceContext from serialized data.";
-      return absl::OkStatus();
+      absl::Status validity = ValidateRestoredInferenceContext();
+      if (validity.ok()) {
+        ABSL_LOG(INFO) << "Initialized InferenceContext from serialized data.";
+        return absl::OkStatus();
+      }
+      // The entry deserialized but describes a different model than the one
+      // parsed in this process. Drop it and rebuild from the graph below; the
+      // rebuilt context overwrites the stale entry under the same key.
+      ctx_.reset();
+      ABSL_LOG(WARNING) << "Discarding stale program cache entry: " << validity;
+    } else {
+      ABSL_LOG(WARNING) << "Deserialization failed: " << res.status();
     }
-    ABSL_LOG(WARNING) << "Deserialization failed: " << res.status();
     // If the restore fails, fallback to the default graph initialization.
   }
 
@@ -1289,20 +1332,7 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
     const ::ml_drift::CreateGpuModelInfo& create_info,
     ::ml_drift::ir::IrModel* model,
     ::litert::ml_drift::ir::LiteRtOpSelector* op_selector) {
-  // Generate fingerprints for the relevant delegate data options.
-  struct {
-    MlDriftDelegatePrecision precision;
-    bool convert_weights_on_gpu;
-    bool use_f32_accum_for_fp16;
-  } options_to_fingerprint = {};
-  options_to_fingerprint.precision = delegate_data_->options->precision;
-  options_to_fingerprint.convert_weights_on_gpu =
-      delegate_data_->options->convert_weights_on_gpu;
-  options_to_fingerprint.use_f32_accum_for_fp16 =
-      delegate_data_->options->use_f32_accum_for_fp16;
-  std::string options_fingerprint = tflite::delegates::StrFingerprint(
-      reinterpret_cast<const char*>(&options_to_fingerprint),
-      sizeof(options_to_fingerprint));
+  const std::string options_fingerprint = ComputeOptionsFingerprint();
 
   std::unique_ptr<tflite::delegates::SerializationEntry> data_key;
   std::unique_ptr<::ml_drift::SerializationProgramCache> program_cache;
@@ -1356,10 +1386,19 @@ absl::Status DelegateKernel::InitInferenceContextFromSerializedData(
     auto res = backend_->RestoreInferenceContext(create_info_main, model_span);
     if (res.ok()) {
       ctx_ = std::move(res.value());
-      ABSL_LOG(INFO) << "Initialized InferenceContext from serialized data.";
-      return absl::OkStatus();
+      absl::Status validity = ValidateRestoredInferenceContext();
+      if (validity.ok()) {
+        ABSL_LOG(INFO) << "Initialized InferenceContext from serialized data.";
+        return absl::OkStatus();
+      }
+      // The entry deserialized but describes a different model than the one
+      // parsed in this process. Drop it and rebuild from the graph below; the
+      // rebuilt context overwrites the stale entry under the same key.
+      ctx_.reset();
+      ABSL_LOG(WARNING) << "Discarding stale program cache entry: " << validity;
+    } else {
+      ABSL_LOG(WARNING) << "Deserialization failed: " << res.status();
     }
-    ABSL_LOG(WARNING) << "Deserialization failed: " << res.status();
     // If the restore fails, fallback to the default graph initialization.
   }
 

@@ -119,6 +119,21 @@ class DelegateKernel {
     return type.ok() ? *type : ::ml_drift::TensorStorageType::BUFFER;
   }
 
+  // Checks that an inference context just restored from a program-cache entry
+  // actually describes the model that was parsed in this process.
+  //
+  // The cache key cannot cover everything that determines how tensor ids are
+  // assigned, so a lookup can hit an entry that was written by a run whose
+  // model differed. Such an entry deserializes cleanly but allocates its GPU
+  // tensors under the *writing* run's ids, and every later lookup of an id the
+  // reading run expects silently misses. Subclasses override this to fail the
+  // restore in that case so the caller can fall back to compiling the graph.
+  //
+  // Returns OkStatus by default; the base class dereferences no tensors.
+  virtual absl::Status ValidateRestoredInferenceContext() {
+    return absl::OkStatus();
+  }
+
  private:
   // Initializes the delegate kernel using the legacy GraphFloat32 pipeline
   // (the default, non-IrModel path). Called by Initialize().
@@ -143,6 +158,18 @@ class DelegateKernel {
       const ::ml_drift::GraphFloat32& graph,
       ::ml_drift::CreateGpuModelInfo& create_info,
       ::ml_drift::GpuModel* gpu_model, LiteRtOpSelector& op_selector);
+
+  // Computes the program-cache fingerprint contribution of the delegate
+  // options. Every option that can change the structure of the resulting
+  // GpuModel -- its node set, its tensor set, or its tensor storage classes --
+  // must be included here, otherwise a cache entry built with one
+  // configuration can be restored for another. The restored context would then
+  // be missing tensor ids that the freshly parsed model still lists in
+  // `output_ids_`, and `GetSpatialTensor()` would fail to find them.
+  //
+  // Shared by both the GraphFloat32 and the IrModel initialization paths so
+  // that the two cannot disagree on what identifies a cache entry.
+  std::string ComputeOptionsFingerprint() const;
 
   // Restores inference context from the serialized data.
   absl::Status InitInferenceContextFromSerializedData(

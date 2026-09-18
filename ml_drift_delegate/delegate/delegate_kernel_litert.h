@@ -100,6 +100,11 @@ class DelegateKernelLiteRt : public DelegateKernel {
   // tensors.
   absl::Status InitTensorConverters(TfLiteContext* context);
 
+  // Resolves every tensor id that InitTensorConverters() will dereference, so
+  // that a program-cache entry belonging to a different model is rejected at
+  // restore time instead of faulting once it is used.
+  absl::Status ValidateRestoredInferenceContext() override;
+
   // Returns true if the delegate is running in no external tensors mode.
   bool NoExternalTensorsMode() const {
     return !delegate_data_->options->litert_external_tensors_mode;
