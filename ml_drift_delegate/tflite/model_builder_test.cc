@@ -280,9 +280,7 @@ class InterpreterFp16 : public DelegatedInterpreter {
 InterpreterFp16* interpreter_fp16_add_op =
     new InterpreterFp16(kTfLiteBuiltinAdd);
 
-// TODO: crbug.com/435537262 - This test depends on the incorrect premise that
-// the delegate supports passing two constant tensors as inputs to Add.
-TEST(ModelBuilderTest, DISABLED_GetOpsToReplaceAcceptsFp16DequantizeNodes) {
+TEST(ModelBuilderTest, GetOpsToReplaceAcceptsFp16DequantizeNodes) {
   // Before pruning, the graph has three nodes:
   //
   //   t0 (FP16) -> DequantNode -> t1 (FP32) -> Add -> t4
@@ -403,31 +401,31 @@ TEST(ModelBuilderTest, GetOpsToReplaceRejectsNonConstantFp16DequantizeNodes) {
   TfLiteIntArrayFree(ops_to_replace);
 }
 
-InterpreterFp16* interpreter_fp16_gt_op =
-    new InterpreterFp16(kTfLiteBuiltinGreater);
+InterpreterFp16* interpreter_fp16_unsupported_op =
+    new InterpreterFp16(kTfLiteBuiltinSegmentSum);
 
 TEST(ModelBuilderTest, GetOpsToReplaceRejectsFp16DequantizeNodes) {
   // Before pruning, the graph has three nodes:
   //
-  //   t0 (FP16) -> DequantNode -> t1 (FP32) -> Greater Op -> t4
+  //   t0 (FP16) -> DequantNode -> t1 (FP32) -> SegmentSum Op -> t4
   //   t2 (FP16) -> DequantNode -> t3 (FP32) --/
   //
-  // Because there is no GPU equivalent for the Greater op, we don't choose any
-  // nodes.
+  // Because there is no GPU equivalent for the SegmentSum op, we don't choose
+  // any nodes.
 
-  TfLiteContext* context = interpreter_fp16_gt_op->context();
+  TfLiteContext* context = interpreter_fp16_unsupported_op->context();
   // These functions are meant to be called inside delegates. Swap out
   // for similar functions to permit direct calling of GetOpsToReplace.
   context->GetExecutionPlan = [](struct TfLiteContext* context,
                                  TfLiteIntArray** execution_plan) {
-    *execution_plan = interpreter_fp16_gt_op->exec_plan();
+    *execution_plan = interpreter_fp16_unsupported_op->exec_plan();
     return kTfLiteOk;
   };
   context->GetNodeAndRegistration = [](struct TfLiteContext*, int node_index,
                                        TfLiteNode** node,
                                        TfLiteRegistration** registration) {
-    *node = interpreter_fp16_gt_op->node(node_index);
-    *registration = interpreter_fp16_gt_op->registration(node_index);
+    *node = interpreter_fp16_unsupported_op->node(node_index);
+    *registration = interpreter_fp16_unsupported_op->registration(node_index);
     return kTfLiteOk;
   };
   context->PreviewDelegatePartitioning =
@@ -444,11 +442,11 @@ TEST(ModelBuilderTest, GetOpsToReplaceRejectsFp16DequantizeNodes) {
 
   // No nodes were found to replace.
   EXPECT_EQ(ops_to_replace->size, 0);
-  // Inputs to Greater op are still fp32.
+  // Inputs to the SegmentSum op are still fp32.
   TfLiteNode* node = nullptr;
   TfLiteRegistration* registration = nullptr;
-  const int kGreaterOpIndex = 2;
-  context->GetNodeAndRegistration(context, kGreaterOpIndex, &node,
+  const int kUnsupportedOpIndex = 2;
+  context->GetNodeAndRegistration(context, kUnsupportedOpIndex, &node,
                                   &registration);
   EXPECT_EQ(context->tensors[node->inputs->data[0]].type,
             TfLiteType::kTfLiteFloat32);
@@ -821,8 +819,8 @@ class InterpreterMultiNode : public DelegatedInterpreter {
                     /*registration=*/&reg_add1),
                 kTfLiteOk);
     } else {
-      // Add the GREATER op node that GPU delegate doesn't support.
-      const TfLiteRegistration reg_greater = {
+      // Add the SEGMENT_SUM op node that GPU delegate doesn't support.
+      const TfLiteRegistration reg_unsupported = {
           [](TfLiteContext* context, const char* buffer, size_t length) {
             return reinterpret_cast<void*>(new int(1));
           },
@@ -832,12 +830,12 @@ class InterpreterMultiNode : public DelegatedInterpreter {
           nullptr,
           nullptr,
           nullptr,
-          kTfLiteBuiltinGreater};
+          kTfLiteBuiltinSegmentSum};
       EXPECT_EQ(interpreter_.AddNodeWithParameters(
                     /*inputs=*/{3, 4}, /*outputs=*/{6}, /*init_data=*/nullptr,
                     /*init_data_size=*/0,
                     /*builtin_data=*/builtin_data,
-                    /*registration=*/&reg_greater),
+                    /*registration=*/&reg_unsupported),
                 kTfLiteOk);
 
       // Add the ADD op node that GPU delegate supports.
@@ -913,13 +911,11 @@ class InterpreterMultiNode : public DelegatedInterpreter {
 InterpreterMultiNode* interpreter_mn =
     new InterpreterMultiNode(/*both_ops_supported*/ false);
 
-// TODO: crbug.com/435537262 - This test depends on the incorrect premise that
-// the delegate supports passing two constant tensors as inputs to Add.
 TEST(ModelBuilderTest,
-     DISABLED_GetOpsToReplaceSelectsCorrectFp16Nodes_SingleDelegatedPartition) {
-  // A graph with three Dequant nodes feeding two ops, 'Add' and 'Greater'.
-  // 'Add' can be replaced by the GPU delegate, but 'Greater' can not.
-  //   t0 (FP16) --> Dequant(0) --> t3 (FP32) --> Greater(3) -> t6
+     GetOpsToReplaceSelectsCorrectFp16Nodes_SingleDelegatedPartition) {
+  // A graph with three Dequant nodes feeding two ops, 'Add' and 'SegmentSum'.
+  // 'Add' can be replaced by the GPU delegate, but 'SegmentSum' can not.
+  //   t0 (FP16) --> Dequant(0) --> t3 (FP32) --> SegmentSum(3) -> t6
   //   t1 (FP16) --> Dequant(1) --> t4 (FP32) --/
   //                                          --\
   //   t3 (FP16) --> Dequant(2) --> t5 (FP32) --> Add(4) -> t7
@@ -982,10 +978,8 @@ TEST(ModelBuilderTest,
 InterpreterMultiNode* interpreter_mn2 =
     new InterpreterMultiNode(/*both_ops_supported*/ true);
 
-// TODO: crbug.com/435537262 - This test depends on the incorrect premise that
-// the delegate supports passing two constant tensors as inputs to Add.
 TEST(ModelBuilderTest,
-     DISABLED_GetOpsToReplaceSelectsCorrectFp16Nodes_MultiDelegatePartitions) {
+     GetOpsToReplaceSelectsCorrectFp16Nodes_MultiDelegatePartitions) {
   // A graph with three Dequant nodes feeding two Add ops.
   //   t0 (FP16) --> Dequant(0) --> t3 (FP32) --> Add(3) -> t6
   //   t1 (FP16) --> Dequant(1) --> t4 (FP32) --/
@@ -2510,6 +2504,42 @@ TEST(ArithmeticBinaryElementwiseOperationParserTest, TestIsSupported) {
       /*num_inputs=*/2,
       /*shape=*/std::vector<int>({1, 1, 1, 1}));
   EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+}
+
+TEST(ArithmeticBinaryElementwiseOperationParserTest,
+     TestIsSupportedWithTwoConstInputs) {
+  // SUB([4,1] const, [1,4] const) -> [4,4], i.e. the root of the constant
+  // attention mask subgraph of a transformer encoder.
+  auto context =
+      std::make_unique<StubTfLiteContext>(kTfLiteBuiltinSub,
+                                          /*op_version=*/2,
+                                          /*num_inputs=*/2,
+                                          /*shape=*/std::vector<int>({1, 1}));
+  context->ChangeTensorShape(1, {4, 1});
+  context->ChangeTensorShape(2, {1, 4});
+  context->ChangeTensorShape(3, {4, 4});
+  context->SetTensorType(1, kTfLiteFloat32, kTfLiteMmapRo);
+  context->SetTensorType(2, kTfLiteFloat32, kTfLiteMmapRo);
+  auto parser = NewOperationParser(context->node(), context->registration());
+  auto status = parser->IsSupported(context.get(), context->node(),
+                                    context->registration());
+  EXPECT_TRUE(status.ok()) << status;
+
+  // Constant inputs of different ranks are rejected: the BHWC mapping of
+  // constants is left-aligned, whereas TFLite broadcasting is right-aligned.
+  context->ChangeTensorShape(2, {4});
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Unsupported constant tensor types are rejected.
+  context->ChangeTensorShape(2, {1, 4});
+  context->SetTensorType(2, kTfLiteInt64, kTfLiteMmapRo);
+  EXPECT_FALSE(
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());

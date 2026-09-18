@@ -2249,9 +2249,20 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
         : operation_type_ == ::ml_drift::OperationType::ADD       ? 6
         : operation_type_ == ::ml_drift::OperationType::GELU      ? 3
                                                                   : 2;
+    // `CheckGpuDelegateCompatibility()` is shared with the TFLite GPU delegate
+    // and requires two-argument elementwise ops to have at least one runtime
+    // input. Nodes whose inputs are all constant are validated by
+    // PreCheckTwoConstInputs() below instead.
+    const bool has_two_const_inputs =
+        IsTwoArgumentOperation() &&
+        CheckInputsConstsOutputs(context, tflite_node,
+                                 /*runtime_inputs=*/0, /*const_inputs=*/2,
+                                 /*outputs=*/1)
+            .ok();
     ABSL_RETURN_IF_ERROR(ValidateSupport(
         context, tflite_node, registration,
         {.max_version = kSupportedOpVersion,
+         .check_gpu_compatibility = !has_two_const_inputs,
          .gpu_flags = tflite::GpuCompatibilityFlags::kEnhancedBroadcast}));
 
     bool need_broadcast = false;
@@ -2309,6 +2320,17 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
           ABSL_RETURN_IF_ERROR(PreCheckTfLiteShape(*input1));
         }
       }
+    } else if (has_two_const_inputs) {
+      // Both inputs are constant, e.g. the attention mask computation of a
+      // transformer encoder, which is a purely constant subgraph rooted at an
+      // op like SUB(iota[N,1], iota[1,N]). Both constants are added to the
+      // graph as CONSTANT nodes. Keeping such a node in the delegated
+      // partition matters: it is the root of the constant chain, so leaving it
+      // on the CPU splits the graph into several partitions, of which only the
+      // largest one is delegated, and forces per-inference CPU compute plus
+      // host<->device copies of its (potentially very large) output.
+      ABSL_RETURN_IF_ERROR(PreCheckTwoConstInputs(context, tflite_node,
+                                                  ToString(operation_type_)));
     } else if (IsTwoArgumentOperation()) {
       ABSL_RETURN_IF_ERROR(
           CheckInputsConstsOutputs(context, tflite_node,
@@ -2391,6 +2413,17 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
         reader->AddInput(node, input_tensor0);
         reader->AddInput(node, input_tensor1);
       }
+    } else if (IsTwoArgumentOperation() && reader->IsConstantTensor(0) &&
+               reader->IsConstantTensor(1)) {
+      // Both inputs are constant: add them to the graph as CONSTANT values.
+      // The node keeps two graph inputs (instead of folding one of them into
+      // ElementwiseAttributes), so no attributes are set here: in particular
+      // `runtime_tensor_is_second` must stay false, otherwise the operands of
+      // non-commutative operations such as SUB and DIV would be swapped.
+      const ::ml_drift::Value* input0 = reader->AddConstInput(0, /*layout=*/{});
+      const ::ml_drift::Value* input1 = reader->AddConstInput(1, /*layout=*/{});
+      graph->AddConsumer(node->id, input0->id);
+      graph->AddConsumer(node->id, input1->id);
     } else if (IsTwoArgumentOperation()) {
       ::ml_drift::ElementwiseAttributes attr;
       ParseInputsWithConstTensor(node, reader, graph, &attr.param);
@@ -2897,6 +2930,84 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
     }
     return ::ml_drift::BHWC(dims->data[0], dims->data[1], dims->data[2],
                             dims->data[3]);
+  }
+
+  // Checks that a constant tensor can be added to the graph as a CONSTANT
+  // node by ObjectReader::AddConstInput (which hard-checks the tensor type).
+  static absl::Status PreCheckConstInputForGraph(const TfLiteTensor* tensor,
+                                                 const std::string& opname) {
+    if (tensor->sparsity != nullptr) {
+      return absl::UnimplementedError(absl::StrCat(
+          opname, ": sparse constant tensor ", GetTensorDebugString(tensor)));
+    }
+    if (tensor->dims->size > 4) {
+      return absl::UnimplementedError(absl::StrCat(
+          opname,
+          ": constant tensor with rank > 4: ", GetTensorDebugString(tensor)));
+    }
+    const bool quantized =
+        tensor->quantization.type == kTfLiteAffineQuantization;
+    const bool supported_type =
+        tensor->type == kTfLiteFloat32 || tensor->type == kTfLiteFloat16 ||
+        tensor->type == kTfLiteInt32 || tensor->type == kTfLiteBool ||
+        (quantized &&
+         (tensor->type == kTfLiteInt8 || tensor->type == kTfLiteUInt8 ||
+          tensor->type == kTfLiteInt4));
+    if (!supported_type) {
+      return absl::UnimplementedError(absl::StrCat(
+          opname, ": unsupported constant tensor type: ",
+          TfLiteTypeGetName(tensor->type), " ", GetTensorDebugString(tensor)));
+    }
+    return absl::OkStatus();
+  }
+
+  // Checks that a two-argument operation whose both inputs are constant can be
+  // represented in the graph as an operation with two CONSTANT inputs.
+  //
+  // Constant inputs are mapped to BHWC with ExtractTensorShape(), which is
+  // left-aligned (e.g. [N, C] -> BHWC(N, 1, 1, C)), while TFLite broadcasting
+  // is right-aligned. The two only agree when both inputs and the output have
+  // the same rank, so anything else is rejected and stays on the CPU.
+  absl::Status PreCheckTwoConstInputs(const TfLiteContext* context,
+                                      const TfLiteNode* tflite_node,
+                                      const std::string& opname) {
+    if (tflite_node->inputs->size != 2) {
+      return absl::InvalidArgumentError(
+          absl::StrCat(opname, ": applies only two input tensors"));
+    }
+    const TfLiteTensor* input0 = nullptr;
+    const TfLiteTensor* input1 = nullptr;
+    TfLiteTensor* output = nullptr;
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input0));
+    ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &input1));
+    ABSL_RETURN_IF_ERROR(PreGetOutputTensor(context, tflite_node, 0, &output));
+    ABSL_RETURN_IF_ERROR(PreCheckConstInputForGraph(input0, opname));
+    ABSL_RETURN_IF_ERROR(PreCheckConstInputForGraph(input1, opname));
+    if (input0->type != input1->type) {
+      return absl::UnimplementedError(
+          absl::StrCat(opname, ": constant inputs have different types: ",
+                       TfLiteTypeGetName(input0->type), " vs ",
+                       TfLiteTypeGetName(input1->type)));
+    }
+    if (input0->dims->size != input1->dims->size ||
+        input0->dims->size != output->dims->size) {
+      return absl::UnimplementedError(absl::StrCat(
+          opname,
+          ": constant inputs and output must have the same rank, but got ",
+          input0->dims->size, ", ", input1->dims->size, " and ",
+          output->dims->size));
+    }
+    for (int i = 0; i < output->dims->size; ++i) {
+      for (const TfLiteTensor* input : {input0, input1}) {
+        if (input->dims->data[i] != output->dims->data[i] &&
+            input->dims->data[i] != 1) {
+          return absl::InvalidArgumentError(absl::StrCat(
+              opname, ": constant input ", GetTensorDebugString(input),
+              " is not broadcastable to the output shape."));
+        }
+      }
+    }
+    return absl::OkStatus();
   }
 
   absl::Status PreCheckInputsWithConstTensor(const TfLiteContext* context,
