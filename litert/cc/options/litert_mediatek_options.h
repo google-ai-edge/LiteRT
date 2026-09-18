@@ -110,6 +110,48 @@ class MediatekOptions : public ConcreteOptionsBase {
     return enable_gemma_compiler_optimizations;
   }
 
+  // Overrides the Neuron compiler `--option-bundle=` value for every subgraph.
+  // Only has an effect when Gemma compiler optimizations are enabled. Empty
+  // (the default) means the per-partition bundles below are used instead.
+  void SetOptionBundle(const std::string& option_bundle) {
+    internal::AssertOk(LrtSetMediatekOptionsOptionBundle, Get(),
+                       option_bundle.c_str());
+  }
+
+  StringView GetOptionBundle() {
+    const char* option_bundle;
+    internal::AssertOk(LrtGetMediatekOptionsOptionBundle, Get(),
+                       &option_bundle);
+    return StringView(option_bundle);
+  }
+
+  // Bundle used for the decode partition, and for any partition that is
+  // neither decode nor prefill.
+  void SetOptionBundleDecode(const std::string& option_bundle_decode) {
+    internal::AssertOk(LrtSetMediatekOptionsOptionBundleDecode, Get(),
+                       option_bundle_decode.c_str());
+  }
+
+  StringView GetOptionBundleDecode() {
+    const char* option_bundle_decode;
+    internal::AssertOk(LrtGetMediatekOptionsOptionBundleDecode, Get(),
+                       &option_bundle_decode);
+    return StringView(option_bundle_decode);
+  }
+
+  // Bundle used for the prefill partition.
+  void SetOptionBundlePrefill(const std::string& option_bundle_prefill) {
+    internal::AssertOk(LrtSetMediatekOptionsOptionBundlePrefill, Get(),
+                       option_bundle_prefill.c_str());
+  }
+
+  StringView GetOptionBundlePrefill() {
+    const char* option_bundle_prefill;
+    internal::AssertOk(LrtGetMediatekOptionsOptionBundlePrefill, Get(),
+                       &option_bundle_prefill);
+    return StringView(option_bundle_prefill);
+  }
+
   void SetPerformanceMode(PerformanceMode performance_mode) {
     internal::AssertOk(LrtSetMediatekOptionsPerformanceMode, Get(),
                        static_cast<LiteRtMediatekNeuronAdapterPerformanceMode>(

@@ -293,6 +293,65 @@ TEST(LrtMediatekOptionsTest, AotCompilationOptions) {
   LrtDestroyMediatekOptions(options);
 }
 
+TEST(LrtMediatekOptionsTest, OptionBundleDefaults) {
+  LrtMediatekOptions* options;
+  LITERT_ASSERT_OK(LrtCreateMediatekOptions(&options));
+
+  const char* option_bundle;
+  LITERT_ASSERT_OK(LrtGetMediatekOptionsOptionBundle(options, &option_bundle));
+  EXPECT_STREQ(option_bundle, "");
+
+  const char* option_bundle_decode;
+  LITERT_ASSERT_OK(
+      LrtGetMediatekOptionsOptionBundleDecode(options, &option_bundle_decode));
+  EXPECT_STREQ(option_bundle_decode, "gemma-decode-accuracy");
+
+  const char* option_bundle_prefill;
+  LITERT_ASSERT_OK(LrtGetMediatekOptionsOptionBundlePrefill(
+      options, &option_bundle_prefill));
+  EXPECT_STREQ(option_bundle_prefill, "gemma-prefill-accuracy");
+
+  // The defaults must survive a trip through the opaque payload.
+  LrtMediatekOptions* parsed;
+  SerializeAndParse(options, &parsed);
+  const char* parsed_decode;
+  LrtGetMediatekOptionsOptionBundleDecode(parsed, &parsed_decode);
+  EXPECT_STREQ(parsed_decode, "gemma-decode-accuracy");
+  const char* parsed_prefill;
+  LrtGetMediatekOptionsOptionBundlePrefill(parsed, &parsed_prefill);
+  EXPECT_STREQ(parsed_prefill, "gemma-prefill-accuracy");
+
+  LrtDestroyMediatekOptions(parsed);
+  LrtDestroyMediatekOptions(options);
+}
+
+TEST(LrtMediatekOptionsTest, OptionBundleOverrides) {
+  LrtMediatekOptions* options;
+  LITERT_ASSERT_OK(LrtCreateMediatekOptions(&options));
+
+  LITERT_ASSERT_OK(LrtSetMediatekOptionsOptionBundle(options, "all-bundle"));
+  LITERT_ASSERT_OK(
+      LrtSetMediatekOptionsOptionBundleDecode(options, "decode-bundle"));
+  LITERT_ASSERT_OK(
+      LrtSetMediatekOptionsOptionBundlePrefill(options, "prefill-bundle"));
+
+  LrtMediatekOptions* parsed;
+  SerializeAndParse(options, &parsed);
+
+  const char* parsed_bundle;
+  LrtGetMediatekOptionsOptionBundle(parsed, &parsed_bundle);
+  EXPECT_STREQ(parsed_bundle, "all-bundle");
+  const char* parsed_decode;
+  LrtGetMediatekOptionsOptionBundleDecode(parsed, &parsed_decode);
+  EXPECT_STREQ(parsed_decode, "decode-bundle");
+  const char* parsed_prefill;
+  LrtGetMediatekOptionsOptionBundlePrefill(parsed, &parsed_prefill);
+  EXPECT_STREQ(parsed_prefill, "prefill-bundle");
+
+  LrtDestroyMediatekOptions(parsed);
+  LrtDestroyMediatekOptions(options);
+}
+
 TEST(LrtMediatekOptionsTest, GetOpaqueDataPopulated) {
   LrtMediatekOptions* options;
   LITERT_ASSERT_OK(LrtCreateMediatekOptions(&options));
@@ -344,6 +403,17 @@ TEST(MediatekOptionsTest, CppWrapper) {
   options.SetOptimizationHint(MediatekOptions::OptimizationHint::kLowLatency);
   EXPECT_EQ(options.GetOptimizationHint(),
             MediatekOptions::OptimizationHint::kLowLatency);
+
+  EXPECT_EQ(options.GetOptionBundle(), "");
+  EXPECT_EQ(options.GetOptionBundleDecode(), "gemma-decode-accuracy");
+  EXPECT_EQ(options.GetOptionBundlePrefill(), "gemma-prefill-accuracy");
+
+  options.SetOptionBundle("all-bundle");
+  EXPECT_EQ(options.GetOptionBundle(), "all-bundle");
+  options.SetOptionBundleDecode("decode-bundle");
+  EXPECT_EQ(options.GetOptionBundleDecode(), "decode-bundle");
+  options.SetOptionBundlePrefill("prefill-bundle");
+  EXPECT_EQ(options.GetOptionBundlePrefill(), "prefill-bundle");
 }
 
 }  // namespace
