@@ -23,6 +23,90 @@ from litert.python import schema_py_generated as schema  # pylint:disable=g-dire
 
 class ExternalizeTfliteFlatbufferTest(googletest.TestCase):
 
+  def test_depthwise_weights_require_unit_depth_multiplier(self):
+    weight_data = b"\x00\x00\x80\x3f" * (3 * 3 * 128)
+    bias_data = b"\x00" * (128 * 4)
+
+    def make_tensor(shape, buffer_index):
+      tensor = schema.TensorT()
+      tensor.shape = shape
+      tensor.type = schema.TensorType.FLOAT32
+      tensor.buffer = buffer_index
+      return tensor
+
+    for multipliers in ((1,), (2,), (128,), (1, 128), (128, 1)):
+      with self.subTest(multipliers=multipliers):
+        root = pathlib.Path(self.create_tempdir().full_path)
+        model = schema.ModelT()
+        model.version = 3
+        code = schema.OperatorCodeT()
+        code.builtinCode = schema.BuiltinOperator.DEPTHWISE_CONV_2D
+        code.deprecatedBuiltinCode = code.builtinCode
+        model.operatorCodes = [code]
+        model.buffers = [schema.BufferT() for _ in range(3)]
+        model.buffers[1].data = weight_data
+        model.buffers[2].data = bias_data
+
+        subgraph = schema.SubGraphT()
+        subgraph.tensors = [
+            make_tensor([1, 3, 3, 128], 1),
+            make_tensor([128], 2),
+        ]
+        subgraph.inputs = []
+        subgraph.outputs = []
+        subgraph.operators = []
+        for multiplier in multipliers:
+          input_index = len(subgraph.tensors)
+          subgraph.tensors.extend([
+              make_tensor([1, 3, 3, 128 // multiplier], 0),
+              make_tensor([1, 1, 1, 128], 0),
+          ])
+          subgraph.inputs.append(input_index)
+          subgraph.outputs.append(input_index + 1)
+          op = schema.OperatorT()
+          op.opcodeIndex = 0
+          op.inputs = [input_index, 0, 1]
+          op.outputs = [input_index + 1]
+          op.builtinOptionsType = schema.BuiltinOptions.DepthwiseConv2DOptions
+          options = schema.DepthwiseConv2DOptionsT()
+          options.depthMultiplier = multiplier
+          options.padding = schema.Padding.VALID
+          options.strideH = options.strideW = 1
+          options.dilationHFactor = options.dilationWFactor = 1
+          op.builtinOptions = options
+          subgraph.operators.append(op)
+        model.subgraphs = [subgraph]
+        builder = flatbuffers.Builder(1024)
+        builder.Finish(model.Pack(builder), file_identifier=b"TFL3")
+        input_model = root / "input.tflite"
+        input_model.write_bytes(bytes(builder.Output()))
+
+        output_dir = root / "output"
+        externalize_tflite_flatbuffer.externalize(
+            input_model=input_model,
+            output_dir=output_dir,
+            group_name="tflite_weights",
+            num_elements_threshold=256,
+        )
+        processed = schema.ModelT.InitFromPackedBuf(
+            (output_dir / "model.tflite").read_bytes(), 0
+        )
+        weight = processed.subgraphs[0].tensors[0]
+        if all(multiplier == 1 for multiplier in multipliers):
+          self.assertNotEqual(weight.externalBuffer, 0)
+          self.assertEqual(weight.buffer, 0)
+          self.assertEqual(
+              (output_dir / "tflite_weights").read_bytes(), weight_data
+          )
+        else:
+          self.assertEqual(weight.externalBuffer, 0)
+          self.assertEqual(
+              bytes(processed.buffers[weight.buffer].data), weight_data
+          )
+          self.assertFalse(processed.externalBuffers)
+          self.assertEqual((output_dir / "tflite_weights").read_bytes(), b"")
+        self.assertEqual(bytes(processed.buffers[2].data), bias_data)
+
   def test_preserves_existing_weight_blob(self):
     root = pathlib.Path(self.create_tempdir().full_path)
     input_model = root / "input.tflite"

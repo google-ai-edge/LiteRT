@@ -15,8 +15,8 @@
 
 This FlatBuffer-level tool moves only large constants that LiteRT-LM's scoped
 external-weight path can consume: weights at input 1 of FullyConnected, Conv2D,
-DepthwiseConv2D, and EmbeddingLookup. Other constants remain embedded so they do
-not become delegate partition inputs.
+DepthwiseConv2D with depth multiplier 1, and EmbeddingLookup. Other constants
+remain embedded so they do not become delegate partition inputs.
 """
 
 from __future__ import annotations
@@ -119,23 +119,32 @@ def _bias_tensor_indices(model) -> set[tuple[int, int]]:
 
 
 def _shareable_weight_tensor_indices(model) -> set[tuple[int, int]]:
+  depthwise_conv = _enum_value(schema.BuiltinOperator, "DEPTHWISE_CONV_2D")
   weight_ops = {
       _enum_value(schema.BuiltinOperator, "EMBEDDING_LOOKUP"),
       _enum_value(schema.BuiltinOperator, "FULLY_CONNECTED"),
       _enum_value(schema.BuiltinOperator, "CONV_2D"),
-      _enum_value(schema.BuiltinOperator, "DEPTHWISE_CONV_2D"),
+      depthwise_conv,
   }
   weight_tensors: set[tuple[int, int]] = set()
+  inline_weight_tensors: set[tuple[int, int]] = set()
   for sg_idx, subgraph in enumerate(model.subgraphs or []):
     for op in subgraph.operators or []:
       if op.inputs is None or len(op.inputs) <= 1:
         continue
       opcode = model.operatorCodes[int(op.opcodeIndex)]
-      if _builtin_code(opcode) in weight_ops:
+      builtin_code = _builtin_code(opcode)
+      if builtin_code in weight_ops:
         weight_idx = int(op.inputs[1])
         if weight_idx >= 0:
           weight_tensors.add((sg_idx, weight_idx))
-  return weight_tensors
+          if builtin_code == depthwise_conv and getattr(
+              op.builtinOptions, "depthMultiplier", None
+          ) != 1:
+            # The GPU parser transposes these weights on the CPU. Keep them
+            # inline even if another supported operator shares the tensor.
+            inline_weight_tensors.add((sg_idx, weight_idx))
+  return weight_tensors - inline_weight_tensors
 
 
 def _subgraph_input_indices(model) -> set[tuple[int, int]]:
