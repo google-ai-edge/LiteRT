@@ -254,6 +254,82 @@ TEST_P(AttentionTest, LargeShapeBounds) {
   }
 }
 
+TEST_P(AttentionTest, AllowedOps) {
+  AttentionImpl impl = GetParam();
+  if (impl == AttentionImpl::kFullSequence) {
+    return;
+  }
+
+  const int b = 1;
+  const int t = 4;
+  const int s = 8;
+  const int h = 16;
+  const int n = 2;
+  const int s_active = 5;
+  const float scale = 1.0f / std::sqrt(static_cast<float>(h));
+
+  std::vector<float> q_data(b * n * t * h);
+  std::vector<float> k_data(b * n * s * h);
+  std::vector<float> v_data(b * n * h * s);
+  std::vector<float> mask_data(b * 1 * t * s);
+
+  for (size_t i = 0; i < q_data.size(); ++i) q_data[i] = 0.1f * (i % 10);
+  for (size_t i = 0; i < k_data.size(); ++i) k_data[i] = 0.2f * (i % 10);
+  for (size_t i = 0; i < v_data.size(); ++i) v_data[i] = 0.3f * (i % 10);
+  for (int i = 0; i < b * t; ++i) {
+    for (int j = 0; j < s; ++j) {
+      mask_data[i * s + j] = (j < s_active) ? 0.0f : -1e9f;
+    }
+  }
+
+  // Case 1: Allowed ops includes the op we are testing.
+  {
+    TfLiteYNNPackDelegateOptions options =
+        TfLiteYNNPackDelegateOptionsDefault();
+    options.num_threads = 1;
+    options.static_shape = true;
+    if (impl == AttentionImpl::kOdmlSdpa) {
+      options.allowed_ops =
+          "odml.scaled_dot_product_attention,odml.sdpa_transposed";
+    } else if (impl == AttentionImpl::kOdmlRuntimeBmm) {
+      options.allowed_ops = "odml.runtime_bmm";
+    }
+
+    AttentionModel model(b, t, s, h, n, scale, /*transpose_io=*/false,
+                         /*use_delegate=*/true, options, impl);
+    model.PopulateTensor(model.query(), q_data);
+    model.PopulateTensor(model.key(), k_data);
+    model.PopulateTensor(model.value(), v_data);
+    if (model.runtime_bmm_params() != -1) {
+      model.PopulateTensor(model.runtime_bmm_params(), {s_active});
+    }
+    model.PopulateTensor(model.mask(), mask_data);
+    ASSERT_EQ(model.Invoke(), kTfLiteOk);
+    EXPECT_TRUE(model.IsDelegated());
+  }
+
+  // Case 2: Allowed ops does NOT include the op we are testing.
+  {
+    TfLiteYNNPackDelegateOptions options =
+        TfLiteYNNPackDelegateOptionsDefault();
+    options.num_threads = 1;
+    options.static_shape = true;
+    options.allowed_ops = "SOME_OTHER_OP";
+
+    AttentionModel model(b, t, s, h, n, scale, /*transpose_io=*/false,
+                         /*use_delegate=*/true, options, impl);
+    model.PopulateTensor(model.query(), q_data);
+    model.PopulateTensor(model.key(), k_data);
+    model.PopulateTensor(model.value(), v_data);
+    if (model.runtime_bmm_params() != -1) {
+      model.PopulateTensor(model.runtime_bmm_params(), {s_active});
+    }
+    model.PopulateTensor(model.mask(), mask_data);
+    ASSERT_EQ(model.Invoke(), kTfLiteOk);
+    EXPECT_FALSE(model.IsDelegated());
+  }
+}
+
 std::string PrintAttentionImplName(
     const ::testing::TestParamInfo<AttentionImpl>& info) {
   switch (info.param) {
