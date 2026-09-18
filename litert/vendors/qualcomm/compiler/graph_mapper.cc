@@ -35,8 +35,13 @@ Qnn_GraphHandle_t& GraphMapper::QnnGraph() { return qnn_graph_; }
 LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name,
                                        ::qnn::QnnBackend& qnn_backend,
                                        const ::qnn::Options& options) {
+  auto graph_options = options;
+  if (!graph_options.GetSchematicDir().empty() &&
+      qnn_.GetSdkVersion() < ::qnn::SdkVersion{2, 50, 0}) {
+    graph_options.SetSchematicDir("");
+  }
   graph_config_builder_ =
-      qnn_backend.BuildGraphConfigs(options, qnn_graph_name);
+      qnn_backend.BuildGraphConfigs(graph_options, qnn_graph_name);
 
   LITERT_RETURN_STATUS_IF_QNN_NOT_OK(qnn_.Api()->graphCreate(
       context_handle_, qnn_graph_name.data(),
