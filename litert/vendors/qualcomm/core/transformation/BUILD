@@ -65,6 +65,7 @@ cc_library(
         ":mask",
         ":matmul_convert",
         ":mha_to_sha",
+        ":relu_min_max",
         ":rotation_quant",
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
@@ -232,6 +233,20 @@ cc_test(
         ],
         "//conditions:default": [],
     }) + gtest_main_no_heapcheck_deps(),
+)
+
+cc_library(
+    name = "relu_min_max",
+    srcs = ["relu_min_max.cc"],
+    hdrs = ["relu_min_max.h"],
+    deps = [
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:op_builder",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@com_google_absl//absl/strings",
+    ],
 )
 
 cc_library(
