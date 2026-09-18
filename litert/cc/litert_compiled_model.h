@@ -399,7 +399,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// @note Even if the model is fully AOT-compiled for an NPU, you must
   /// specify the NPU accelerator in `hardware_accelerators` to use it
   /// properly.
-  static Expected<CompiledModel> Create(litert::Environment& env,
+  static Expected<CompiledModel> Create(const litert::Environment& env,
                                         const std::string& model_filename,
                                         Options& compilation_options) {
     auto env_holder = env.GetHolder();
@@ -426,7 +426,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
 
   /// @brief An overload of `Create` that takes a buffer reference to the model
   /// instead of a filename.
-  static Expected<CompiledModel> Create(litert::Environment& env,
+  static Expected<CompiledModel> Create(const litert::Environment& env,
                                         BufferRef<uint8_t> model_buffer,
                                         Options& compilation_options) {
     auto env_holder = env.GetHolder();
@@ -460,7 +460,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// accelerator.
   /// @note This should be specified for both JIT and AOT compiled models.
   static Expected<CompiledModel> Create(
-      litert::Environment& env, const std::string& model_filename,
+      const litert::Environment& env, const std::string& model_filename,
       litert::HwAccelerators hardware_accelerators) {
     LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
     compilation_options.SetHardwareAccelerators(hardware_accelerators);
@@ -470,7 +470,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// @brief An overload of `Create` that takes a buffer reference to the model
   /// instead of a filename.
   static Expected<CompiledModel> Create(
-      litert::Environment& env, BufferRef<uint8_t> model_buffer,
+      const litert::Environment& env, BufferRef<uint8_t> model_buffer,
       litert::HwAccelerators hardware_accelerators) {
     LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
     compilation_options.SetHardwareAccelerators(
@@ -1910,11 +1910,10 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// model is consumed on success and remains locally owned until every error
   /// path has completed.
   template <typename ModelT,
-            std::enable_if_t<
-                std::is_same_v<std::decay_t<ModelT>, Model> &&
-                    std::is_rvalue_reference_v<ModelT&&>,
-                int> = 0>
-  static Expected<CompiledModel> Create(litert::Environment& env,
+            std::enable_if_t<std::is_same_v<std::decay_t<ModelT>, Model> &&
+                                 std::is_rvalue_reference_v<ModelT&&>,
+                             int> = 0>
+  static Expected<CompiledModel> Create(const litert::Environment& env,
                                         ModelT&& model,
                                         Options& compilation_options) {
     if (!model || !model.IsOwned()) {
@@ -1950,7 +1949,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// @note Signature selection structurally prunes the provided model in place.
   /// Treat the model handle as consumed once compilation starts, including
   /// when compilation returns an error.
-  static Expected<CompiledModel> Create(litert::Environment& env,
+  static Expected<CompiledModel> Create(const litert::Environment& env,
                                         const LiteRtModel litert_model,
                                         Options& compilation_options) {
     auto env_holder = env.GetHolder();
@@ -1973,7 +1972,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// accelerator.
   /// @note This should be specified for both JIT and AOT compiled models.
   static Expected<CompiledModel> Create(
-      litert::Environment& env, const LiteRtModel litert_model,
+      const litert::Environment& env, const LiteRtModel litert_model,
       litert::HwAccelerators hardware_accelerators) {
     Options compilation_options;
     compilation_options.SetHardwareAccelerators(hardware_accelerators);
@@ -1996,7 +1995,7 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
   /// owned by the `CompiledModel`.
   /// @param owned If `true`, the created object takes ownership of the
   /// `compiled_model` handle.
-  explicit CompiledModel(internal::EnvironmentHolder& env,
+  explicit CompiledModel(const internal::EnvironmentHolder& env,
                          LiteRtModel litert_model, OwnHandle model_owned,
                          LiteRtCompiledModel compiled_model, OwnHandle owned,
                          internal::LiteRtOptionsPtr options = {})

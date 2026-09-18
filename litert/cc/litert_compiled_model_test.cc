@@ -1818,5 +1818,25 @@ TEST(CompiledModelTest, ModelWithoutNpuOpsSkipsNpuAccelerator) {
   LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
 }
 
+TEST(CompiledModelTest, CreateWithConstEnvironment) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+  const Environment& const_env = env;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(const_env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+}
+
 }  // namespace
 }  // namespace litert
