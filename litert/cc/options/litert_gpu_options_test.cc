@@ -30,22 +30,22 @@ TEST(GpuOptions, EnableConstantTensorSharingWorks) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
 
-  // Check the default value.
+  // An unset option resolves to the caller-supplied default.
   bool constant_tensor_sharing = true;
   LITERT_ASSERT_OK(LrtGetGpuOptionsConstantTensorsSharing(
-      &constant_tensor_sharing, payload));
+      &constant_tensor_sharing, /*default_value=*/false, payload));
   EXPECT_THAT(constant_tensor_sharing, Eq(false));
 
   options.EnableConstantTensorSharing(true);
 
   LITERT_ASSERT_OK(LrtGetGpuOptionsConstantTensorsSharing(
-      &constant_tensor_sharing, payload));
+      &constant_tensor_sharing, /*default_value=*/false, payload));
   EXPECT_THAT(constant_tensor_sharing, Eq(true));
 
   options.EnableConstantTensorSharing(false);
 
   LITERT_ASSERT_OK(LrtGetGpuOptionsConstantTensorsSharing(
-      &constant_tensor_sharing, payload));
+      &constant_tensor_sharing, /*default_value=*/false, payload));
   EXPECT_THAT(constant_tensor_sharing, Eq(false));
 }
 
@@ -53,22 +53,22 @@ TEST(GpuOptions, EnableInfiniteFloatCappingWorks) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
 
-  // Check the default value.
+  // An unset option resolves to the caller-supplied default.
   bool infinite_float_capping = true;
-  LITERT_ASSERT_OK(
-      LrtGetGpuOptionsInfiniteFloatCapping(&infinite_float_capping, payload));
+  LITERT_ASSERT_OK(LrtGetGpuOptionsInfiniteFloatCapping(
+      &infinite_float_capping, /*default_value=*/false, payload));
   EXPECT_THAT(infinite_float_capping, Eq(false));
 
   options.EnableInfiniteFloatCapping(true);
 
-  LITERT_ASSERT_OK(
-      LrtGetGpuOptionsInfiniteFloatCapping(&infinite_float_capping, payload));
+  LITERT_ASSERT_OK(LrtGetGpuOptionsInfiniteFloatCapping(
+      &infinite_float_capping, /*default_value=*/false, payload));
   EXPECT_THAT(infinite_float_capping, Eq(true));
 
   options.EnableInfiniteFloatCapping(false);
 
-  LITERT_ASSERT_OK(
-      LrtGetGpuOptionsInfiniteFloatCapping(&infinite_float_capping, payload));
+  LITERT_ASSERT_OK(LrtGetGpuOptionsInfiniteFloatCapping(
+      &infinite_float_capping, /*default_value=*/false, payload));
   EXPECT_THAT(infinite_float_capping, Eq(false));
 }
 
@@ -76,19 +76,22 @@ TEST(GpuOptions, EnableBenchmarkModeWorks) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
 
-  // Check the default value.
+  // An unset option resolves to the caller-supplied default.
   bool benchmark_mode = true;
-  LITERT_ASSERT_OK(LrtGetGpuOptionsBenchmarkMode(&benchmark_mode, payload));
+  LITERT_ASSERT_OK(LrtGetGpuOptionsBenchmarkMode(
+      &benchmark_mode, /*default_value=*/false, payload));
   EXPECT_THAT(benchmark_mode, Eq(false));
 
   options.EnableBenchmarkMode(true);
 
-  LITERT_ASSERT_OK(LrtGetGpuOptionsBenchmarkMode(&benchmark_mode, payload));
+  LITERT_ASSERT_OK(LrtGetGpuOptionsBenchmarkMode(
+      &benchmark_mode, /*default_value=*/false, payload));
   EXPECT_THAT(benchmark_mode, Eq(true));
 
   options.EnableBenchmarkMode(false);
 
-  LITERT_ASSERT_OK(LrtGetGpuOptionsBenchmarkMode(&benchmark_mode, payload));
+  LITERT_ASSERT_OK(LrtGetGpuOptionsBenchmarkMode(
+      &benchmark_mode, /*default_value=*/false, payload));
   EXPECT_THAT(benchmark_mode, Eq(false));
 }
 
@@ -102,7 +105,7 @@ TEST(GpuAcceleratorCompilationOptions,
 
   LITERT_ASSERT_OK(
       LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
-          &allow_src_quantized_fc_conv_ops, payload));
+          &allow_src_quantized_fc_conv_ops, /*default_value=*/false, payload));
   EXPECT_THAT(allow_src_quantized_fc_conv_ops, Eq(true));
 }
 
@@ -116,7 +119,7 @@ TEST(GpuAcceleratorCompilationOptions,
 
   LITERT_ASSERT_OK(
       LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
-          &allow_src_quantized_fc_conv_ops, payload));
+          &allow_src_quantized_fc_conv_ops, /*default_value=*/false, payload));
   EXPECT_THAT(allow_src_quantized_fc_conv_ops, Eq(false));
 }
 
@@ -132,7 +135,7 @@ TEST(GpuAcceleratorCompilationOptions,
 
   LITERT_ASSERT_OK(
       LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
-          &allow_src_quantized_fc_conv_ops, payload));
+          &allow_src_quantized_fc_conv_ops, /*default_value=*/false, payload));
   EXPECT_THAT(allow_src_quantized_fc_conv_ops, Eq(false));
 }
 
@@ -140,10 +143,10 @@ TEST(GpuAcceleratorCompilationOptions, CheckDelegatePrecisionDefaultPrecision) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
 
-  // Check the default value.
+  // An unset option resolves to the caller-supplied default.
   LiteRtDelegatePrecision precision = kLiteRtDelegatePrecisionFp16;
-  LITERT_ASSERT_OK(
-      LrtGetGpuAcceleratorCompilationOptionsPrecision(&precision, payload));
+  LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsPrecision(
+      &precision, kLiteRtDelegatePrecisionDefault, payload));
   EXPECT_THAT(precision, Eq(kLiteRtDelegatePrecisionDefault));
 }
 
@@ -154,8 +157,8 @@ TEST(GpuAcceleratorCompilationOptions, SetDelegatePrecisionFp16Precision) {
   LiteRtDelegatePrecision precision = kLiteRtDelegatePrecisionDefault;
   options.SetPrecision(GpuOptions::Precision::kFp16);
 
-  LITERT_ASSERT_OK(
-      LrtGetGpuAcceleratorCompilationOptionsPrecision(&precision, payload));
+  LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsPrecision(
+      &precision, kLiteRtDelegatePrecisionDefault, payload));
   EXPECT_THAT(precision, Eq(kLiteRtDelegatePrecisionFp16));
 }
 
@@ -163,73 +166,72 @@ TEST(GpuAcceleratorCompilationOptions, SetDelegatePrecisionFp32Precision) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
 
-  // Check the default value.
   LiteRtDelegatePrecision precision = kLiteRtDelegatePrecisionDefault;
 
   options.SetPrecision(GpuOptions::Precision::kFp32);
 
-  LITERT_ASSERT_OK(
-      LrtGetGpuAcceleratorCompilationOptionsPrecision(&precision, payload));
+  LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsPrecision(
+      &precision, kLiteRtDelegatePrecisionDefault, payload));
   EXPECT_THAT(precision, Eq(kLiteRtDelegatePrecisionFp32));
 }
 
 TEST(GpuAcceleratorCompilationOptions, SetSerializationDir) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
-  // Check the default value.
+  // An unset option resolves to the caller-supplied default.
   const char* serialization_dir = nullptr;
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsSerializationDir(
-      &serialization_dir, payload));
+      &serialization_dir, /*default_value=*/nullptr, payload));
   EXPECT_EQ(serialization_dir, nullptr);
 
   options.SetSerializationDir("/data/local/tmp");
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsSerializationDir(
-      &serialization_dir, payload));
+      &serialization_dir, /*default_value=*/nullptr, payload));
   EXPECT_THAT(serialization_dir, StrEq("/data/local/tmp"));
 }
 
 TEST(GpuAcceleratorCompilationOptions, SetModelCacheKey) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
-  // Check the default value.
+  // An unset option resolves to the caller-supplied default.
   const char* model_cache_key = nullptr;
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsModelCacheKey(
-      &model_cache_key, payload));
+      &model_cache_key, /*default_value=*/nullptr, payload));
   EXPECT_EQ(model_cache_key, nullptr);
 
   options.SetModelCacheKey("model_cache");
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsModelCacheKey(
-      &model_cache_key, payload));
+      &model_cache_key, /*default_value=*/nullptr, payload));
   EXPECT_THAT(model_cache_key, StrEq("model_cache"));
 }
 
 TEST(GpuAcceleratorCompilationOptions, SetProgramCacheFd) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
-  // Check the default value.
+  // An unset option resolves to the caller-supplied default.
   int program_cache_fd = -1;
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
-      &program_cache_fd, payload));
+      &program_cache_fd, /*default_value=*/-1, payload));
   EXPECT_EQ(program_cache_fd, -1);
 
   options.SetProgramCacheFd(123);
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
-      &program_cache_fd, payload));
+      &program_cache_fd, /*default_value=*/-1, payload));
   EXPECT_EQ(program_cache_fd, 123);
 }
 
 TEST(GpuAcceleratorCompilationOptions, SetSerializeProgramCache) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
-  // Check the default value.
+  // An unset option resolves to the caller-supplied default.
   bool serialize_program_cache = false;
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
-      &serialize_program_cache, payload));
+      &serialize_program_cache, /*default_value=*/true, payload));
   EXPECT_EQ(serialize_program_cache, true);
 
   options.SetSerializeProgramCache(false);
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
-      &serialize_program_cache, payload));
+      &serialize_program_cache, /*default_value=*/true, payload));
   EXPECT_EQ(serialize_program_cache, false);
 }
 
@@ -240,13 +242,13 @@ TEST(GpuAcceleratorCompilationOptions, SetSerializeExternalTensors) {
   bool serialize_external_tensors = false;
   LITERT_ASSERT_OK(
       LrtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
-          &serialize_external_tensors, payload));
+          &serialize_external_tensors, /*default_value=*/false, payload));
   EXPECT_EQ(serialize_external_tensors, false);
 
   options.SetSerializeExternalTensors(true);
   LITERT_ASSERT_OK(
       LrtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
-          &serialize_external_tensors, payload));
+          &serialize_external_tensors, /*default_value=*/false, payload));
   EXPECT_EQ(serialize_external_tensors, true);
 }
 
@@ -256,12 +258,12 @@ TEST(GpuAcceleratorCompilationOptions, SetPreferTextureWeights) {
   // Check the default value.
   bool prefer_texture_weights = false;
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
-      &prefer_texture_weights, payload));
+      &prefer_texture_weights, /*default_value=*/false, payload));
   EXPECT_EQ(prefer_texture_weights, false);
 
   options.SetPreferTextureWeights(true);
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
-      &prefer_texture_weights, payload));
+      &prefer_texture_weights, /*default_value=*/false, payload));
   EXPECT_EQ(prefer_texture_weights, true);
 }
 
@@ -273,19 +275,19 @@ TEST(GpuOptions, SetUseMetalArgumentBuffersWorks) {
   // Check the default value.
   bool use_metal_argument_buffers = true;
   LITERT_ASSERT_OK(LrtGetGpuOptionsUseMetalArgumentBuffers(
-      payload, &use_metal_argument_buffers));
+      &use_metal_argument_buffers, /*default_value=*/false, payload));
   EXPECT_THAT(use_metal_argument_buffers, Eq(false));
 
   options.SetUseMetalArgumentBuffers(true);
 
   LITERT_ASSERT_OK(LrtGetGpuOptionsUseMetalArgumentBuffers(
-      payload, &use_metal_argument_buffers));
+      &use_metal_argument_buffers, /*default_value=*/false, payload));
   EXPECT_THAT(use_metal_argument_buffers, Eq(true));
 
   options.SetUseMetalArgumentBuffers(false);
 
   LITERT_ASSERT_OK(LrtGetGpuOptionsUseMetalArgumentBuffers(
-      payload, &use_metal_argument_buffers));
+      &use_metal_argument_buffers, /*default_value=*/false, payload));
   EXPECT_THAT(use_metal_argument_buffers, Eq(false));
 }
 #endif  // __APPLE__
@@ -296,12 +298,14 @@ TEST(GpuAcceleratorCompilationOptions, SetHintFullyDelegatedToSingleDelegate) {
   // Check the default value.
   bool hint_fully_delegated_to_single_delegate = false;
   LITERT_ASSERT_OK(LrtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
-      &hint_fully_delegated_to_single_delegate, payload));
+      &hint_fully_delegated_to_single_delegate, /*default_value=*/false,
+      payload));
   EXPECT_EQ(hint_fully_delegated_to_single_delegate, false);
 
   options.SetHintFullyDelegatedToSingleDelegate(true);
   LITERT_ASSERT_OK(LrtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
-      &hint_fully_delegated_to_single_delegate, payload));
+      &hint_fully_delegated_to_single_delegate, /*default_value=*/false,
+      payload));
   EXPECT_EQ(hint_fully_delegated_to_single_delegate, true);
 }
 
@@ -309,16 +313,16 @@ TEST(GpuOptions, SetKernelBatchSizeWorks) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
 
-  // Check the default value.
+  // An unset option resolves to the caller-supplied default.
   int kernel_batch_size = 0;
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
-      &kernel_batch_size, payload));
+      &kernel_batch_size, /*default_value=*/-1, payload));
   EXPECT_THAT(kernel_batch_size, Eq(-1));
 
   options.SetKernelBatchSize(10);
 
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
-      &kernel_batch_size, payload));
+      &kernel_batch_size, /*default_value=*/-1, payload));
   EXPECT_THAT(kernel_batch_size, Eq(10));
 }
 
