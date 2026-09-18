@@ -600,7 +600,7 @@ MAIN_FUNCTION($0) {
   }
   absl::StrAppend(&op_code, "\n  int max_tokens = min(P", qt - 1,
                   " + 1, active_tokens);\n\n");
-  absl::StrAppend(&op_code, R"(  half inv_ln2 = 1.4426950408889634h;
+  absl::StrAppend(&op_code, R"(  float inv_ln2 = 1.4426950408889634f;
 
   threadgroup half4 q_sh[)",
                   qt, "][", slices, R"(];
@@ -611,9 +611,10 @@ MAIN_FUNCTION($0) {
                   slices, R"() {
 )");
   for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(&op_code, "    q_sh[", i, "][tid] = (X", i,
-                    " < dst_w) ? (ucl::Convert<half4>(args.q.Read(X", i,
-                    ", Y, tid)) * inv_ln2) : half4(0.0h);\n");
+    absl::StrAppend(
+        &op_code, "    q_sh[", i, "][tid] = (X", i,
+        " < dst_w) ? ucl::Convert<half4>(ucl::Convert<float4>(args.q.Read(X", i,
+        ", Y, tid)) * inv_ln2) : half4(0.0h);\n");
   }
   absl::StrAppend(&op_code, R"(  }
   simdgroup_barrier(mem_flags::mem_threadgroup);
@@ -626,13 +627,13 @@ MAIN_FUNCTION($0) {
   // out_acc: unnormalized output accumulator
   absl::StrAppend(&op_code, "  // Online softmax tracking variables:\n");
   for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(&op_code, "  half m_prev", i, " = -10000.0h;\n");
+    absl::StrAppend(&op_code, "  float m_prev", i, " = -10000.0f;\n");
   }
   for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(&op_code, "  half l_prev", i, " = 0.0h;\n");
+    absl::StrAppend(&op_code, "  float l_prev", i, " = 0.0f;\n");
   }
   for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(&op_code, "  half4 out_acc", i, " = half4(0.0h);\n");
+    absl::StrAppend(&op_code, "  float4 out_acc", i, " = float4(0.0f);\n");
   }
 
   // 5. KV buffer base addressing (Grouped-Query Attention).
@@ -671,7 +672,7 @@ MAIN_FUNCTION($0) {
   // 6b. Q * K^T dot products across channel slices.
   for (int i = 0; i < qt; ++i) {
     for (int j = 0; j < kt; ++j) {
-      absl::StrAppend(&op_code, "    half d", i, "_", j, " = 0.0h;\n");
+      absl::StrAppend(&op_code, "    float d", i, "_", j, " = 0.0f;\n");
     }
   }
   absl::StrAppend(&op_code, "\n    for (int c = 0; c < ", slices, "; ++c) {\n");
@@ -684,8 +685,8 @@ MAIN_FUNCTION($0) {
   }
   for (int i = 0; i < qt; ++i) {
     for (int j = 0; j < kt; ++j) {
-      absl::StrAppend(&op_code, "      d", i, "_", j, " += dot(qv", i, ", kv",
-                      j, ");\n");
+      absl::StrAppend(&op_code, "      d", i, "_", j, " += (float)dot(qv", i,
+                      ", kv", j, ");\n");
     }
   }
   for (int j = 0; j < kt; ++j) {
@@ -702,8 +703,8 @@ MAIN_FUNCTION($0) {
     for (int i = 0; i < qt; ++i) {
       for (int j = 0; j < kt; ++j) {
         absl::StrAppend(&op_code, "    d", i, "_", j,
-                        " = (half)args.softcap * tanh((d", i, "_", j,
-                        " / inv_ln2) / (half)args.softcap) * inv_ln2;\n");
+                        " = (float)args.softcap * tanh((d", i, "_", j,
+                        " / inv_ln2) / (float)args.softcap) * inv_ln2;\n");
       }
     }
   }
@@ -720,17 +721,17 @@ MAIN_FUNCTION($0) {
         absl::StrAppend(
             &op_code, "    half4 mk", i, "_", j, " = (X", i, " < dst_w && act",
             j, ") ? ucl::Convert<half4>(args.mask.Read(X", i, ", 0, mslice", j,
-            ")) : half4(0.0h);\n", "    half mv", i, "_", j, " = (mcomp", j,
-            " == 0) ? mk", i, "_", j, ".x : ((mcomp", j, " == 1) ? mk", i, "_",
-            j, ".y : ((mcomp", j, " == 2) ? mk", i, "_", j, ".z : mk", i, "_",
-            j, ".w));\n");
+            ")) : half4(0.0h);\n", "    float mv", i, "_", j,
+            " = (float)((mcomp", j, " == 0) ? mk", i, "_", j, ".x : ((mcomp", j,
+            " == 1) ? mk", i, "_", j, ".y : ((mcomp", j, " == 2) ? mk", i, "_",
+            j, ".z : mk", i, "_", j, ".w)));\n");
       }
     }
     absl::StrAppend(&op_code, "    if (args.is_bool_mask) {\n");
     for (int i = 0; i < qt; ++i) {
       for (int j = 0; j < kt; ++j) {
-        absl::StrAppend(&op_code, "      if (mv", i, "_", j, " < 0.5h) d", i,
-                        "_", j, " = -10000.0h;\n");
+        absl::StrAppend(&op_code, "      if (mv", i, "_", j, " < 0.5f) d", i,
+                        "_", j, " = -10000.0f;\n");
       }
     }
     absl::StrAppend(&op_code, "    } else {\n");
@@ -748,7 +749,7 @@ MAIN_FUNCTION($0) {
   for (int i = 0; i < qt; ++i) {
     for (int j = 0; j < kt; ++j) {
       absl::StrAppend(&op_code, "    if (!act", j, " || key", j, " > P", i,
-                      ") d", i, "_", j, " = -10000.0h;\n");
+                      ") d", i, "_", j, " = -10000.0f;\n");
     }
   }
 
@@ -763,17 +764,17 @@ MAIN_FUNCTION($0) {
     for (int j = 1; j < kt; ++j) {
       local_max = absl::StrCat("max(", local_max, ", d", i, "_", j, ")");
     }
-    absl::StrAppend(&op_code, "    half m_loc", i, " = simd_max(", local_max,
-                    ");\n", "    half m_n", i, " = max(m_prev", i, ", m_loc", i,
-                    ");\n", "    half alp", i, " = exp2(m_prev", i, " - m_n", i,
-                    ");\n");
+    absl::StrAppend(
+        &op_code, "    float m_loc", i, " = simd_max(", local_max, ");\n",
+        "    float m_n", i, " = max(m_prev", i, ", m_loc", i, ");\n",
+        "    float alp", i, " = exp2(m_prev", i, " - m_n", i, ");\n");
     for (int j = 0; j < kt; ++j) {
-      absl::StrAppend(&op_code, "    half p", i, "_", j, " = exp2(d", i, "_", j,
-                      " - m_n", i, ");\n");
+      absl::StrAppend(&op_code, "    half p", i, "_", j, " = (half)exp2(d", i,
+                      "_", j, " - m_n", i, ");\n");
     }
-    std::string local_sum = absl::StrCat("p", i, "_0");
+    std::string local_sum = absl::StrCat("(float)p", i, "_0");
     for (int j = 1; j < kt; ++j) {
-      absl::StrAppend(&local_sum, " + p", i, "_", j);
+      absl::StrAppend(&local_sum, " + (float)p", i, "_", j);
     }
     absl::StrAppend(&op_code, "    l_prev", i, " = fma(l_prev", i, ", alp", i,
                     ", simd_sum(", local_sum, "));\n", "    m_prev", i,
@@ -800,7 +801,7 @@ MAIN_FUNCTION($0) {
       "    int g_end = (min(max_tokens, key_base + ", kPrefillKeyBlock,
       ") - key_base + 3) / 4;\n", "    if (tid < ", slices, ") {\n");
   for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(&op_code, "      half4 acc", i, " = half4(0.0h);\n");
+    absl::StrAppend(&op_code, "      out_acc", i, " *= (float4)alp", i, ";\n");
   }
   absl::StrAppend(&op_code, "      int vidx = v_base_head + (key_base / 4) * ",
                   v_stride_s, ";\n",
@@ -811,16 +812,13 @@ MAIN_FUNCTION($0) {
   }
   absl::StrAppend(&op_code, "        int j4 = g * 4;\n");
   for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(&op_code, "        acc", i, " += fma((half4)p_sh[", i,
-                    "][j4 + 0], v0, fma((half4)p_sh[", i,
-                    "][j4 + 1], v1, fma((half4)p_sh[", i,
-                    "][j4 + 2], v2, (half4)p_sh[", i, "][j4 + 3] * v3)));\n");
+    absl::StrAppend(&op_code, "        out_acc", i, " += fma((float4)p_sh[", i,
+                    "][j4 + 0], (float4)v0, fma((float4)p_sh[", i,
+                    "][j4 + 1], (float4)v1, fma((float4)p_sh[", i,
+                    "][j4 + 2], (float4)v2, (float4)p_sh[", i,
+                    "][j4 + 3] * (float4)v3)));\n");
   }
   absl::StrAppend(&op_code, "        vidx += ", v_stride_s, ";\n", "      }\n");
-  for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(&op_code, "      out_acc", i, " = fma(out_acc", i,
-                    ", (half4)alp", i, ", acc", i, ");\n");
-  }
   absl::StrAppend(&op_code, R"(    }
     simdgroup_barrier(mem_flags::mem_threadgroup);
   }
@@ -832,7 +830,7 @@ MAIN_FUNCTION($0) {
                   "  // Final normalization by sum of exponentiated scores.\n");
   for (int i = 0; i < qt; ++i) {
     absl::StrAppend(&op_code, "  out_acc", i, " = out_acc", i,
-                    " / (half4)(l_prev", i, " + 1e-10h);\n");
+                    " / (float4)(l_prev", i, " + 1e-10f);\n");
   }
   absl::StrAppend(&op_code, R"(
   if (tid < args.slices) {
