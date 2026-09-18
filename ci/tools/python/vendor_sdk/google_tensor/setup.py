@@ -115,10 +115,12 @@ def _download_and_extract(
         archive_type = 'tar.gz'
       else:
         print(
-            f'ERROR: Unsupported archive type for URL: {tarball_url}',
+            f'ERROR: Unsupported archive type for URL/file: {tarball_url} .'
+            ' Expected a .tar.gz file. Please modify the'
+            ' GOOGLE_TENSOR_SDK_BETA environment variable.',
             file=sys.stderr,
         )
-        return
+        raise SystemExit('Install SDK failed. Aborting installation.')
 
       # TODO: b/475410468 - Revisit whether zip files support is required.
       if archive_type == 'zip':
@@ -242,6 +244,15 @@ class CustomBuildPy(_build_py):
       if GOOGLE_TENSOR_SDK_BETA is not None:
         if os.path.isfile(GOOGLE_TENSOR_SDK_BETA):
           tarball_is_local_file = True
+        elif os.path.isdir(GOOGLE_TENSOR_SDK_BETA):
+          print(
+              'ERROR: Google Tensor SDK beta path is a directory, expected a'
+              ' file. Please provide the path to the tarball file itself, not'
+              ' its parent directory. Current value of environment variable'
+              f' GOOGLE_TENSOR_SDK_BETA: "{GOOGLE_TENSOR_SDK_BETA}".',
+              file=sys.stderr,
+          )
+          raise SystemExit('Install SDK failed. Aborting installation.')
         else:
           print(
               'ERROR: Google Tensor SDK beta file not found:'
