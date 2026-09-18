@@ -19,6 +19,7 @@
 #include "litert/ats/compile_fixture.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/inference_fixture.h"
+#include "litert/ats/register_sdpa.h"
 #include "litert/ats/register_sdpa_transposed.h"
 
 namespace litert::testing {
@@ -27,6 +28,7 @@ namespace {
 template <typename Fixture>
 void RegisterCompositeOpsImpl(const AtsConf& options, size_t& test_id,
                               typename Fixture::Capture& cap) {
+  RegisterSdpa(options, test_id, /*iters=*/20, cap);
   RegisterSdpaTransposed(options, test_id, /*iters=*/16, cap);
 }
 

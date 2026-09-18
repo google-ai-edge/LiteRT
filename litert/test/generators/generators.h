@@ -38,5 +38,6 @@
 #include "litert/test/generators/mean.h"  // IWYU pragma: export
 #include "litert/test/generators/slice.h"  // IWYU pragma: export
 #include "litert/test/generators/select_v2.h"  // IWYU pragma: export
+#include "litert/test/generators/sdpa.h"  // IWYU pragma: export
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_
