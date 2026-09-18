@@ -120,6 +120,39 @@ TEST(TensorBuffer, HostMemory) {
   LiteRtDestroyEnvironment(env);
 }
 
+TEST(TensorBuffer, EmptyScalarBuffer) {
+  constexpr const int32_t kEmptyDimensions[] = {0};
+  constexpr const LiteRtRankedTensorType kEmptyTensorType = {
+      kLiteRtElementTypeFloat32,
+      ::litert::BuildLayout(kEmptyDimensions)};
+
+  LiteRtEnvironment env;
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
+
+  LiteRtTensorBuffer tensor_buffer;
+  ASSERT_EQ(
+      LiteRtCreateManagedTensorBuffer(env, kLiteRtTensorBufferTypeHostMemory,
+                                      &kEmptyTensorType,
+                                      /*buffer_size=*/0, &tensor_buffer),
+      kLiteRtStatusOk);
+
+  LiteRtTensorBufferType buffer_type;
+  ASSERT_EQ(LiteRtGetTensorBufferType(tensor_buffer, &buffer_type),
+            kLiteRtStatusOk);
+  ASSERT_EQ(buffer_type, kLiteRtTensorBufferTypeHostMemory);
+
+  LiteRtRankedTensorType tensor_type;
+  ASSERT_EQ(LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type),
+            kLiteRtStatusOk);
+  ASSERT_EQ(tensor_type.element_type, kLiteRtElementTypeFloat32);
+  ASSERT_EQ(tensor_type.layout.rank, 1);
+  ASSERT_EQ(tensor_type.layout.dimensions[0], 0);
+
+  LiteRtDestroyTensorBuffer(tensor_buffer);
+  LiteRtDestroyEnvironment(env);
+}
+
 TEST(TensorBuffer, DestroyNullIsNoOp) { LiteRtDestroyTensorBuffer(nullptr); }
 
 TEST(TensorBuffer, Ahwb) {
