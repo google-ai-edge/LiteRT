@@ -239,13 +239,15 @@ inline std::unique_ptr<ml_drift::SharedMemoryManager> MakeSharedMemoryManagerMet
         // Create a shared buffer to avoid extra copy. The release callback is called when the
         // buffer is deallocated.
         if (release_data_callback && tensor_desc.GetStorageType() == TensorStorageType::BUFFER) {
+          const uint8_t* data_ptr = tensor_desc.GetData().data();
           const size_t bytes_count = tensor_desc.GetData().size();
-          void* data_ptr = const_cast<uint8_t*>(tensor_desc.GetData().data());
+          const uint8_t* raw_data_ptr = data_ptr - page_adjusted_offset;
+          const size_t raw_bytes_count = bytes_count + page_adjusted_offset;
           auto* release_cb_ptr =
               new ::litert::ml_drift::ReleaseDataCallback(std::move(release_data_callback));
           id<MTLBuffer> buffer =
-              [mtl_device newBufferWithBytesNoCopy:data_ptr
-                                            length:bytes_count
+              [mtl_device newBufferWithBytesNoCopy:const_cast<uint8_t*>(raw_data_ptr)
+                                            length:raw_bytes_count
                                            options:MTLResourceStorageModeShared
                                        deallocator:^(void* pointer, NSUInteger length) {
                                          (**release_cb_ptr)();
