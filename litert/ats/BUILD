@@ -40,6 +40,7 @@ litert_define_ats(
         "OneHot",  # XNNPACK does not support OneHot
         "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
+        "SelectV2",  # XNNPACK does not support SelectV2
         "tfl\\.floor_div",  # XNNPACK does not support FloorDiv
         "tfl\\.pow",  # XNNPACK does not support Pow
         "tfl\\.prelu",  # XNNPACK requires PRelu alpha to be statically allocated
@@ -305,6 +306,7 @@ litert_test(
         "--dont_register=OneHot",  # XNNPACK does not support OneHot
         "--dont_register=Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "--dont_register=SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
+        "--dont_register=SelectV2",  # XNNPACK does not support SelectV2
         "--dont_register=tfl\\.floor_div",  # XNNPACK does not support FloorDiv
         "--dont_register=tfl\\.pow",  # XNNPACK does not support Pow
         "--dont_register=tfl\\.prelu",  # XNNPACK requires PRelu alpha to be statically allocated
@@ -499,6 +501,7 @@ cc_library(
         ":register_fully_connected",
         ":register_mean",
         ":register_reduction",
+        ":register_select_v2",
         ":register_softmax",
         ":register_transpose",
         ":register_unary",
@@ -812,6 +815,25 @@ cc_library(
         ":register",
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators:sdpa_transposed",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_select_v2",
+    testonly = True,
+    srcs = ["register_select_v2.cc"],
+    hdrs = ["register_select_v2.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:select_v2",
         "//tflite/types:half",
     ],
 )
