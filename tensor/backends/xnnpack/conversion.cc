@@ -47,9 +47,12 @@ absl::NoDestructor<absl::Status> g_xnn_init_status(absl::OkStatus());
 
 xnn_datatype GetXnnpackType(const NnpackValue& value) {
   switch (value.info.type) {
-    case Type::kUnknown:
-    case Type::kBOOL:
     case Type::kI2:
+      if (value.info.quantization &&
+          value.info.quantization->As<PerChannelAffineQuantization>().ok()) {
+        return xnn_datatype_qcint2;
+      }
+      break;
     case Type::kI4:
       if (value.info.quantization) {
         if (value.info.quantization->As<PerChannelAffineQuantization>().ok()) {
@@ -69,6 +72,16 @@ xnn_datatype GetXnnpackType(const NnpackValue& value) {
         }
       }
       break;
+    case Type::kFP16:
+      return xnn_datatype_fp16;
+    case Type::kBF16:
+      return xnn_datatype_bf16;
+    case Type::kI32:
+      return xnn_datatype_int32;
+    case Type::kFP32:
+      return xnn_datatype_fp32;
+    case Type::kUnknown:
+    case Type::kBOOL:
     case Type::kI16:
     case Type::kI64:
     case Type::kU4:
@@ -76,16 +89,8 @@ xnn_datatype GetXnnpackType(const NnpackValue& value) {
     case Type::kU16:
     case Type::kU32:
     case Type::kU64:
-    case Type::kFP16:
-      return xnn_datatype_fp16;
-    case Type::kI32:
-      return xnn_datatype_int32;
-    case Type::kFP32:
-      return xnn_datatype_fp32;
     case Type::kFP64:
       break;
-    case Type::kBF16:
-      return xnn_datatype_bf16;
   }
   return xnn_datatype_invalid;
 }
