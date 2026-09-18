@@ -466,7 +466,7 @@ using OpBuilder = LiteRtStatus (*)(
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
     std::vector<::qnn::OpWrapper>& op_wrappers, bool use_int64_bias_as_int32,
-    ::qnn::SdkVersion sdk_version);
+    ::qnn::SdkVersion sdk_version, ::qnn::BackendType backend_type);
 
 // Wrapper to call the op builder with or without the bias parameter.
 template <auto F>
@@ -474,7 +474,8 @@ LiteRtStatus Adapt(const litert::compiler::Op& op, ::qnn::TensorPool& tp,
                    std::vector<::qnn::TensorWrapperRef>& in,
                    std::vector<::qnn::TensorWrapperRef>& out,
                    std::vector<::qnn::OpWrapper>& ow, bool bias,
-                   ::qnn::SdkVersion sdk_version) {
+                   ::qnn::SdkVersion sdk_version,
+                   ::qnn::BackendType backend_type) {
   if constexpr (std::is_invocable_v<decltype(F), const litert::compiler::Op&,
                                     ::qnn::TensorPool&,
                                     std::vector<::qnn::TensorWrapperRef>&,
@@ -489,6 +490,14 @@ LiteRtStatus Adapt(const litert::compiler::Op& op, ::qnn::TensorPool& tp,
                            std::vector<::qnn::OpWrapper>&, bool,
                            ::qnn::SdkVersion>) {
     return F(op, tp, in, out, ow, bias, sdk_version);
+  } else if constexpr (std::is_invocable_v<
+                           decltype(F), const litert::compiler::Op&,
+                           ::qnn::TensorPool&,
+                           std::vector<::qnn::TensorWrapperRef>&,
+                           std::vector<::qnn::TensorWrapperRef>&,
+                           std::vector<::qnn::OpWrapper>&,
+                           ::qnn::BackendType>) {
+    return F(op, tp, in, out, ow, backend_type);
   } else {
     return F(op, tp, in, out, ow);
   }
@@ -532,7 +541,6 @@ REGISTER_SIMPLE_OP_BUILDER(BuildRelu0To1Op, BuildRelu0To1Op)
 REGISTER_SIMPLE_OP_BUILDER(BuildRelu6Op, BuildRelu6Op)
 REGISTER_SIMPLE_OP_BUILDER(BuildPreluOp, BuildPreluOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildLogisticOp, BuildLogisticOp)
-REGISTER_SIMPLE_OP_BUILDER(BuildQuantizeOp, BuildQuantizeOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildDequantizeOp, BuildDequantizeOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildSliceOp, BuildSliceOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildTanhOp, BuildTanhOp)
@@ -560,6 +568,17 @@ REGISTER_SIMPLE_OP_BUILDER(BuildSpaceToBatchNdOp, BuildSpaceToBatchNdOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildAddNOp, BuildAddNOp)
 
 #undef REGISTER_SIMPLE_OP_BUILDER
+
+LiteRtStatus BuildQuantizeOp(
+    const litert::compiler::Op&, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers,
+    ::qnn::BackendType backend_type) {
+  op_wrappers = ::qnn::BuildQuantizeOp(tensor_pool, input_tensors,
+                                       output_tensors, backend_type);
+  return kLiteRtStatusOk;
+}
 
 LiteRtStatus BuildCastOp(const compiler::Op& litert_op,
                          ::qnn::TensorPool& tensor_pool,
@@ -1692,7 +1711,8 @@ LiteRtStatus ConvertOp(const ::qnn::Options& options,
   if (op_code < builders.size() && builders[op_code]) {
     return builders[op_code](litert_op, tensor_pool, input_tensors,
                              output_tensors, op_wrappers,
-                             options.GetUseInt64BiasAsInt32(), sdk_version);
+                             options.GetUseInt64BiasAsInt32(), sdk_version,
+                             options.GetBackendType());
   }
   if (op_code == kLiteRtOpCodeTflCustom) {
     return BuildCustomOp(litert_op, tensor_pool, input_tensors, output_tensors,
