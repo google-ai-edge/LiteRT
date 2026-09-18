@@ -40,6 +40,7 @@ litert_define_ats(
         "OneHot",  # XNNPACK does not support OneHot
         "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
+        "Swiglu",  # XNNPACK does not support SwiGLU op
         "SelectV2",  # XNNPACK does not support SelectV2
         "tfl\\.floor_div",  # XNNPACK does not support FloorDiv
         "tfl\\.pow",  # XNNPACK does not support Pow
@@ -238,6 +239,7 @@ litert_define_ats(
         "BatchMatmul.*2d.*,[34]d",  # OpenCL does not support rank-asymmetric batch broadcasting
         "BatchMatmul.*3d",  # ATS generator forces 1xB broadcast on 3D BatchMatmul
         "BatchMatmul.*4d",  # ATS generator forces 1xB broadcast on 4D BatchMatmul
+        "Swiglu.*3d_f(16|32)<(?!1x)",  # GPU accelerator does not support SwiGLU with batch > 1
     ],
     extra_flags = [
         "--data_seed=42",
@@ -308,6 +310,7 @@ litert_test(
         "--dont_register=OneHot",  # XNNPACK does not support OneHot
         "--dont_register=Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "--dont_register=SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
+        "--dont_register=Swiglu",  # XNNPACK does not support SwiGLU op
         "--dont_register=SelectV2",  # XNNPACK does not support SelectV2
         "--dont_register=tfl\\.floor_div",  # XNNPACK does not support FloorDiv
         "--dont_register=tfl\\.pow",  # XNNPACK does not support Pow
@@ -386,6 +389,7 @@ litert_test(
         "--dont_register=7d",
         "--dont_register=8d",
         "--dont_register=Pad.*[(][123]d",
+        "--dont_register=Swiglu.*3d_f(16|32)<(?!1x)",  # Metal accelerator does not support SwiGLU with batch > 1
     ],
     copts = commandline_flag_copts(),
     data = [
@@ -448,6 +452,7 @@ litert_test(
         "--dont_register=7d",
         "--dont_register=8d",
         "--dont_register=Pad.*[(][123]d",
+        "--dont_register=Swiglu.*3d_f(16|32)<(?!1x)",  # WebGPU accelerator does not support SwiGLU with batch > 1
     ],
     copts = commandline_flag_copts(),
     data = [
@@ -544,6 +549,7 @@ cc_library(
         ":inference_fixture",
         ":register_sdpa",
         ":register_sdpa_transposed",
+        ":register_swiglu",
     ],
 )
 
@@ -838,6 +844,23 @@ cc_library(
         ":register",
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators:sdpa_transposed",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_swiglu",
+    testonly = True,
+    srcs = ["register_swiglu.cc"],
+    hdrs = ["register_swiglu.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:swiglu",
         "//tflite/types:half",
     ],
 )
