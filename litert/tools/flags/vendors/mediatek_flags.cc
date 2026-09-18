@@ -36,6 +36,22 @@ ABSL_FLAG(litert::mediatek::MediatekOptions::NeronSDKVersion,
 ABSL_FLAG(bool, mediatek_enable_gemma_compiler_optimizations, false,
           "Whether to enable Gemma Mediatek compiler optimizations.");
 
+ABSL_FLAG(std::string, mediatek_option_bundle, "",
+          "Neuron compiler `--option-bundle` value applied to every subgraph. "
+          "Overrides --mediatek_option_bundle_decode and "
+          "--mediatek_option_bundle_prefill when non-empty. Only has an effect "
+          "with --mediatek_enable_gemma_compiler_optimizations.");
+
+ABSL_FLAG(std::string, mediatek_option_bundle_decode, "gemma-decode-accuracy",
+          "Neuron compiler `--option-bundle` value for the decode partition, "
+          "and for any partition that is neither decode nor prefill. Only has "
+          "an effect with --mediatek_enable_gemma_compiler_optimizations.");
+
+ABSL_FLAG(std::string, mediatek_option_bundle_prefill, "gemma-prefill-accuracy",
+          "Neuron compiler `--option-bundle` value for the prefill partition. "
+          "Only has an effect with "
+          "--mediatek_enable_gemma_compiler_optimizations.");
+
 ABSL_FLAG(bool, mediatek_enable_l1_cache_optimizations, false,
           "Whether to enable L1 cache optimizations.");
 
@@ -187,6 +203,11 @@ Expected<void> UpdateMediatekOptionsFromFlags(MediatekOptions& options) {
       absl::GetFlag(FLAGS_mediatek_sdk_version_type));
   options.SetEnableGemmaCompilerOptimizations(
       absl::GetFlag(FLAGS_mediatek_enable_gemma_compiler_optimizations));
+  options.SetOptionBundle(absl::GetFlag(FLAGS_mediatek_option_bundle));
+  options.SetOptionBundleDecode(
+      absl::GetFlag(FLAGS_mediatek_option_bundle_decode));
+  options.SetOptionBundlePrefill(
+      absl::GetFlag(FLAGS_mediatek_option_bundle_prefill));
   options.SetPerformanceMode(
       absl::GetFlag(FLAGS_mediatek_performance_mode_type));
   options.SetEnableL1CacheOptimizations(

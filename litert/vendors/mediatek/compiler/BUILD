@@ -121,6 +121,7 @@ cc_library(
         "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",
         "//litert/vendors/mediatek:neuron_adapter_api",
+        "@com_google_absl//absl/strings",
         "@neuro_pilot//:v8_latest_host_headers",
     ],
 )

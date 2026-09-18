@@ -25,9 +25,20 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/litert_toml_parser.h"
 
+// Bundles used when `gemma_compiler_optimizations` is enabled and the caller
+// has not overridden them.
+constexpr char kDefaultOptionBundleDecode[] = "gemma-decode-accuracy";
+constexpr char kDefaultOptionBundlePrefill[] = "gemma-prefill-accuracy";
+
 struct LrtMediatekOptions {
   std::optional<LiteRtMediatekOptionsNeronSDKVersionType> neron_sdk_version;
   std::optional<bool> gemma_compiler_optimizations;
+  // Unset means "use the default", which is applied in the getters. Keeping
+  // these unset rather than pre-filled means an untouched options object still
+  // serializes to an empty payload.
+  std::optional<std::string> option_bundle;
+  std::optional<std::string> option_bundle_decode;
+  std::optional<std::string> option_bundle_prefill;
   std::optional<LiteRtMediatekNeuronAdapterPerformanceMode> performance_mode;
   std::optional<bool> l1_cache_optimizations;
   std::optional<LiteRtMediatekNeuronAdapterOptimizationHint> optimization_hint;
@@ -74,6 +85,18 @@ LiteRtStatus LrtCreateMediatekOptionsFromToml(const char* toml_payload,
                                   ::litert::internal::ParseTomlBool(value));
           return LrtSetMediatekOptionsGemmaCompilerOptimizations(*options,
                                                                  gemma_opts);
+        }
+        if (key == "option_bundle") {
+          return LrtSetMediatekOptionsOptionBundle(*options,
+                                                   std::string(value).c_str());
+        }
+        if (key == "option_bundle_decode") {
+          return LrtSetMediatekOptionsOptionBundleDecode(
+              *options, std::string(value).c_str());
+        }
+        if (key == "option_bundle_prefill") {
+          return LrtSetMediatekOptionsOptionBundlePrefill(
+              *options, std::string(value).c_str());
         }
         if (key == "performance_mode") {
           LITERT_ASSIGN_OR_RETURN(auto mode,
@@ -144,6 +167,18 @@ LiteRtStatus LrtGetOpaqueMediatekOptionsData(const LrtMediatekOptions* options,
     absl::StrAppendFormat(
         &toml_str, "gemma_compiler_optimizations = %s\n",
         *options->gemma_compiler_optimizations ? "true" : "false");
+  }
+  if (options->option_bundle.has_value()) {
+    absl::StrAppendFormat(&toml_str, "option_bundle = \"%s\"\n",
+                          *options->option_bundle);
+  }
+  if (options->option_bundle_decode.has_value()) {
+    absl::StrAppendFormat(&toml_str, "option_bundle_decode = \"%s\"\n",
+                          *options->option_bundle_decode);
+  }
+  if (options->option_bundle_prefill.has_value()) {
+    absl::StrAppendFormat(&toml_str, "option_bundle_prefill = \"%s\"\n",
+                          *options->option_bundle_prefill);
   }
   if (options->performance_mode.has_value()) {
     absl::StrAppendFormat(&toml_str, "performance_mode = %d\n",
@@ -222,6 +257,68 @@ LiteRtStatus LrtGetMediatekOptionsGemmaCompilerOptimizations(
   }
   *gemma_compiler_optimizations =
       options->gemma_compiler_optimizations.value_or(false);
+  return kLiteRtStatusOk;
+}
+
+// option_bundle -------------------------------------------------------------
+LiteRtStatus LrtSetMediatekOptionsOptionBundle(LrtMediatekOptions* options,
+                                               const char* option_bundle) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->option_bundle = option_bundle == nullptr ? "" : option_bundle;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetMediatekOptionsOptionBundle(
+    const LrtMediatekOptions* options, const char** option_bundle) {
+  if (options == nullptr || option_bundle == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *option_bundle =
+      options->option_bundle.has_value() ? options->option_bundle->c_str() : "";
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetMediatekOptionsOptionBundleDecode(
+    LrtMediatekOptions* options, const char* option_bundle_decode) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->option_bundle_decode =
+      option_bundle_decode == nullptr ? "" : option_bundle_decode;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetMediatekOptionsOptionBundleDecode(
+    const LrtMediatekOptions* options, const char** option_bundle_decode) {
+  if (options == nullptr || option_bundle_decode == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *option_bundle_decode = options->option_bundle_decode.has_value()
+                              ? options->option_bundle_decode->c_str()
+                              : kDefaultOptionBundleDecode;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetMediatekOptionsOptionBundlePrefill(
+    LrtMediatekOptions* options, const char* option_bundle_prefill) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->option_bundle_prefill =
+      option_bundle_prefill == nullptr ? "" : option_bundle_prefill;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetMediatekOptionsOptionBundlePrefill(
+    const LrtMediatekOptions* options, const char** option_bundle_prefill) {
+  if (options == nullptr || option_bundle_prefill == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *option_bundle_prefill = options->option_bundle_prefill.has_value()
+                               ? options->option_bundle_prefill->c_str()
+                               : kDefaultOptionBundlePrefill;
   return kLiteRtStatusOk;
 }
 

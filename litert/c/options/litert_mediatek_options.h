@@ -67,6 +67,46 @@ LiteRtStatus LrtSetMediatekOptionsGemmaCompilerOptimizations(
 LiteRtStatus LrtGetMediatekOptionsGemmaCompilerOptimizations(
     const LrtMediatekOptions* options, bool* gemma_compiler_optimizations);
 
+// option_bundle -------------------------------------------------------------
+
+// The Neuron compiler `--option-bundle=` value used when
+// `gemma_compiler_optimizations` is enabled. These have no effect unless that
+// flag is set.
+//
+// The bundle is selected per subgraph: the decode partition uses
+// `option_bundle_decode` and the prefill partition uses
+// `option_bundle_prefill`. Any other subgraph falls back to
+// `option_bundle_decode`.
+//
+// `option_bundle` is an override that applies to every subgraph. It is unset
+// by default (empty string); when non-empty it takes precedence over both the
+// decode and prefill bundles. Use it for models that have more than the two
+// decode/prefill signatures.
+//
+// Leaving all three unset preserves the historical behavior of hardcoding
+// "gemma-decode-accuracy" and "gemma-prefill-accuracy".
+
+// Overrides the bundle for every subgraph. Empty means unset.
+LiteRtStatus LrtSetMediatekOptionsOptionBundle(LrtMediatekOptions* options,
+                                               const char* option_bundle);
+
+LiteRtStatus LrtGetMediatekOptionsOptionBundle(
+    const LrtMediatekOptions* options, const char** option_bundle);
+
+// Bundle for the decode partition. Defaults to "gemma-decode-accuracy".
+LiteRtStatus LrtSetMediatekOptionsOptionBundleDecode(
+    LrtMediatekOptions* options, const char* option_bundle_decode);
+
+LiteRtStatus LrtGetMediatekOptionsOptionBundleDecode(
+    const LrtMediatekOptions* options, const char** option_bundle_decode);
+
+// Bundle for the prefill partition. Defaults to "gemma-prefill-accuracy".
+LiteRtStatus LrtSetMediatekOptionsOptionBundlePrefill(
+    LrtMediatekOptions* options, const char* option_bundle_prefill);
+
+LiteRtStatus LrtGetMediatekOptionsOptionBundlePrefill(
+    const LrtMediatekOptions* options, const char** option_bundle_prefill);
+
 // neuron_adapter_peformance_mode --------------------------------------------
 
 // Configures MTK devices to optimize for performance or power efficiency.

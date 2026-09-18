@@ -29,6 +29,12 @@ ABSL_DECLARE_FLAG(litert::mediatek::MediatekOptions::NeronSDKVersion,
 
 ABSL_DECLARE_FLAG(bool, mediatek_enable_gemma_compiler_optimizations);
 
+ABSL_DECLARE_FLAG(std::string, mediatek_option_bundle);
+
+ABSL_DECLARE_FLAG(std::string, mediatek_option_bundle_decode);
+
+ABSL_DECLARE_FLAG(std::string, mediatek_option_bundle_prefill);
+
 ABSL_DECLARE_FLAG(litert::mediatek::MediatekOptions::PerformanceMode,
                   mediatek_performance_mode_type);
 
