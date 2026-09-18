@@ -50,7 +50,12 @@ exports_files(
         "operator.h",
     ],
     visibility = [
-        "//tflite:__subpackages__",
+        # copybara:uncomment_begin(google-only)
+        # "@org_tensorflow//third_party/odml/litert/litert/swift:__subpackages__",
+        # "//tflite:__subpackages__",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
 )
 
