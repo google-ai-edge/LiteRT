@@ -125,6 +125,10 @@ ml_drift::cl::CLContextOptions GetClContextOptions(GpuPriority gpu_priority) {
     LITERT_LOG(LITERT_DEBUG, "Using low priority for GPU accelerator.");
     options.performance = ml_drift::cl::PerformanceHint::kLow;
     options.priority = ml_drift::cl::PriorityHint::kLow;
+  } else if (gpu_priority == kGpuHighPriority) {
+    LITERT_LOG(LITERT_INFO, "Using high priority for GPU accelerator.");
+    options.performance = ml_drift::cl::PerformanceHint::kHigh;
+    options.priority = ml_drift::cl::PriorityHint::kHigh;
   }
   return options;
 }
