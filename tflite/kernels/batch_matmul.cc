@@ -136,6 +136,9 @@ TfLiteStatus InitializeTemporaries(TfLiteContext* context, TfLiteNode* node,
 
   const int lhs_rank = NumDimensions(lhs);
   const int rhs_rank = NumDimensions(rhs);
+  // A rank < 2 operand would index dims->data[rank-2] out of bounds below.
+  TF_LITE_ENSURE(context, lhs_rank >= 2);
+  TF_LITE_ENSURE(context, rhs_rank >= 2);
   const int batch_size = op_context->params->adj_x
                              ? lhs->dims->data[lhs_rank - 1]
                              : lhs->dims->data[lhs_rank - 2];
