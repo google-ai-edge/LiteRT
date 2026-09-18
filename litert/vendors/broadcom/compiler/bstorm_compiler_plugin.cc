@@ -56,6 +56,7 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_environment_options.h"
+#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_opaque_options.h"
@@ -232,9 +233,68 @@ class LiteRtCompilerPluginT : public bstorm_compiler_plugin {};
 
 constexpr char kPluginManufacturer[] = BSTORM_VENDOR_ID;
 constexpr char kPluginSdkVersion[] = "1.0";
-constexpr const char* kPluginSocModels[] = {"7712_C0"};
+constexpr const char* kPluginSocModels[] = {
+    "31621_A0",
+    "3171_B0",
+    "3392_A0",
+    "33941_A0",
+    "4918_A0",
+    "6775_A0",
+    "68375_A0",
+    "68375_B0",
+    "68660_A0",
+    "68850_A0",
+    "68880_B0",
+    "74110_B0",
+    "77122_A0",
+    "77122_B0",
+    "7712_C0"
+};
 constexpr unsigned kNumPluginSocModels =
     sizeof(kPluginSocModels) / sizeof(kPluginSocModels[0]);
+
+static bool IsSupportedSocModel(const char* soc_model) {
+  if (!soc_model) {
+    return false;
+  }
+  for (unsigned i = 0; i < kNumPluginSocModels; ++i) {
+    if (std::string(soc_model) == kPluginSocModels[i]) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool IsStaticRankedTensor(const litert::Tensor& tensor) {
+  auto type = tensor.RankedTensorType();
+  if (!type) {
+    return false;
+  }
+  const litert::Layout& layout = type->Layout();
+  if (layout.HasStrides()) {
+    return false;
+  }
+  for (auto dim : layout.Dimensions()) {
+    if (dim < 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static bool OnlyStaticShapes(const litert::Op& op) {
+  for (const auto& input : op.Inputs()) {
+    if (!IsStaticRankedTensor(input)) {
+      return false;
+    }
+  }
+  for (const auto& output : op.Outputs()) {
+    if (!IsStaticRankedTensor(output)) {
+      return false;
+    }
+  }
+  return true;
+}
 
 //
 // LiteRT Compiler Plugin API
@@ -323,7 +383,7 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex call_idx,
     const void** call_info, size_t* call_info_size,
     LiteRtParamIndex* byte_code_idx) {
-  if (call_idx >= compiled_result->per_op_data.size()) {
+  if (!compiled_result || call_idx >= compiled_result->per_op_data.size()) {
     return kLiteRtStatusErrorIndexOOB;
   }
   *call_info = compiled_result->per_op_data.at(call_idx).data();
@@ -334,8 +394,12 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
 
 LiteRtStatus LiteRtGetNumCompiledResultCalls(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_calls) {
-  if (!compiled_result) {
+  if (!num_calls) {
     return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!compiled_result) {
+    *num_calls = 0;
+    return kLiteRtStatusOk;
   }
   *num_calls = compiled_result->per_op_data.size();
   return kLiteRtStatusOk;
@@ -343,12 +407,21 @@ LiteRtStatus LiteRtGetNumCompiledResultCalls(
 
 LiteRtStatus LiteRtCompiledResultNumByteCodeModules(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_byte_code) {
+  if (!num_byte_code) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!compiled_result) {
+    *num_byte_code = 0;
+    return kLiteRtStatusOk;
+  }
   *num_byte_code = compiled_result->byte_code.size();
   return kLiteRtStatusOk;
 }
 
 void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
-  delete compiled_result;
+  if (compiled_result != nullptr) {
+    delete compiled_result;
+  }
 }
 
 //
@@ -389,16 +462,17 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                        (compiler_plugin->get_bstorm_context(), supported_nodes),
                        err_supported);
 
-  // Iterate through operations and push supported ones to selected_ops
-  for (const auto& op : sg.Ops()) {
-    // Check if this node should be skipped
-    if (config.skip_nodes.find(op_index) != config.skip_nodes.end()) {
+  // Apply skip_nodes directly to supported_nodes
+  for (const unsigned skip_idx : config.skip_nodes) {
+    if (skip_idx < supported_nodes.size()) {
+      supported_nodes[skip_idx] = false;
       B_STORM_DEBUG("Skipping node %u", op_index);
-      op_index++;
-      continue;
     }
+  }
 
-    if (op_index < supported_nodes.size() && supported_nodes[op_index]) {
+  for (const auto& op : sg.Ops()) {
+    if (op_index < supported_nodes.size() && supported_nodes[op_index] &&
+        OnlyStaticShapes(op)) {
       LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
     }
     op_index++;
@@ -483,8 +557,16 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
   LiteRtParamIndex num_partitions;
+  if (!compiled_result) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
   LITERT_RETURN_IF_ERROR(
       LiteRtGetNumModelSubgraphs(partitions, &num_partitions));
+  if (num_partitions == 0) {
+    *compiled_result = nullptr;
+    return kLiteRtStatusOk;
+  }
   auto result = std::make_unique<LiteRtCompiledResultT>();
   result->byte_code.resize(num_partitions);
   for (auto i = 0; i < num_partitions; ++i) {
@@ -514,5 +596,8 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
     LiteRtApiVersion api_version, LiteRtCompilerPlugin compiler_plugin,
     LiteRtEnvironmentOptions env, LiteRtOptions options,
     const char* soc_model_name) {
+  if (!IsSupportedSocModel(soc_model_name)) {
+    return kLiteRtStatusErrorUnsupported;
+  }
   return kLiteRtStatusOk;
 }

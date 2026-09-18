@@ -360,3 +360,14 @@ if(LITERT_ENABLE_SAMSUNG)
 else()
   message(STATUS "Skipping Samsung dispatch: LITECORE_HEADERS_DIR not set")
 endif()
+
+# Broadcom
+option(LITERT_ENABLE_BROADCOM "Enable Broadcom BNE build" ON)
+
+if(LITERT_ENABLE_BROADCOM)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/broadcom/CMakeLists.txt")
+    add_subdirectory(broadcom)
+  else()
+    message(STATUS "Skipping Broadcom dispatch: broadcom/CMakeLists.txt not found")
+  endif()
+endif()
