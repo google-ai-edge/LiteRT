@@ -212,10 +212,8 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
   }
 
   int num_groups = config.n_heads / config.n_kv_groups;
-  if (num_groups > 1) {
-    k_for_attn = Tile(k_for_attn, {1, num_groups, 1, 1});
-    v_for_attn = Tile(v_for_attn, {1, num_groups, 1, 1});
-  }
+  k_for_attn = RepeatKVHeads(k_for_attn, num_groups);
+  v_for_attn = RepeatKVHeads(v_for_attn, num_groups);
 
   // Scaled dot-product attention.
   // scores = Q @ K^T / sqrt(query_pre_attn_scalar)

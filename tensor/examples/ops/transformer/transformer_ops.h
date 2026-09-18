@@ -98,6 +98,27 @@ Tensor<Mixins...> FeedForward(
   return FullyConnected(intermediate, down_weight, kActNone, true);
 }
 
+// Repeats KV heads for Grouped-Query Attention (GQA).
+// Expected input shape: [batch, num_kv_heads, seq_len, head_dim]
+// Output shape: [batch, num_kv_heads * num_groups, seq_len, head_dim]
+template <class... Mixins>
+Tensor<Mixins...> RepeatKVHeads(const Tensor<Mixins...>& x, int num_groups) {
+  if (num_groups <= 1) {
+    return x;
+  }
+  const Shape& shape = x.GetShape();
+  const int batch_size = shape[0];
+  const int num_kv_heads = shape[1];
+  const int seq_len = shape[2];
+  const int head_dim = shape[3];
+
+  Tensor reshaped =
+      Reshape(x, {batch_size * num_kv_heads, 1, seq_len, head_dim});
+  Tensor tiled = Tile(reshaped, {1, num_groups, 1, 1});
+  return Reshape(tiled,
+                 {batch_size, num_kv_heads * num_groups, seq_len, head_dim});
+}
+
 template <class... Mixins>
 Tensor<Mixins...> RotaryEmbedding(const Tensor<Mixins...>& input,
                                   const Tensor<Mixins...>& segment_pos,
