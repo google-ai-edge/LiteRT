@@ -28,7 +28,7 @@ jobs:
       run_build: ${{ steps.check.outputs.run_build }}
     steps:
       - if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.0
         id: filter
         with:
           predicate-quantifier: 'some-with-excludes'
@@ -59,13 +59,13 @@ jobs:
     # takes ~20 minutes. Keep it on "linux-x86-n2-16" to keep runtime under 10 minutes.
     runs-on: linux-x86-n2-16
     container:
-      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:d6b429665f5269698f88ccd00bcb8a6eb685332c302f08f29fe0738cd6a6610c
     env:
       CMAKE_BUILD_DIR: cmake_build_source_cc_api
       CMAKE_BUILD_PARALLEL_LEVEL: 6
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install CMake and Ninja
         run: |

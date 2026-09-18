@@ -28,7 +28,7 @@ jobs:
       run_build: ${{ steps.check.outputs.run_build }}
     steps:
       - if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.0
         id: filter
         with:
           predicate-quantifier: 'some-with-excludes'

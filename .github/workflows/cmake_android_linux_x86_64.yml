@@ -33,7 +33,7 @@ jobs:
       run_build: ${{ steps.check.outputs.run_build }}
     steps:
       - if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.0
         id: filter
         with:
           predicate-quantifier: 'some-with-excludes'
@@ -62,7 +62,7 @@ jobs:
     if: needs.check.outputs.run_build == 'true'
     runs-on: linux-x86-n2-16
     container:
-      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:d6b429665f5269698f88ccd00bcb8a6eb685332c302f08f29fe0738cd6a6610c
     permissions:
       actions: write
       contents: write
@@ -79,7 +79,7 @@ jobs:
           git lfs install
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           submodules: recursive
@@ -104,7 +104,7 @@ jobs:
       - name: Restore cmake cache if cache is not being refreshed.
         id: cmake-cache
         if: env.REFRESH_CACHE != 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0
         with:
           path: |
             litert/cmake_build_android_arm64
@@ -135,7 +135,7 @@ jobs:
           clang --version
       - name: Install Android NDK r27
         id: setup-ndk
-        uses: nttld/setup-ndk@v1
+        uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1.1.2
         with:
           ndk-version: r27
 
@@ -167,7 +167,7 @@ jobs:
         run: gh cache delete ${{ steps.cache-keys.outputs.CACHE_KEY }}
 
       - name: Save cmake cache if it's new or being refreshed.
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0
         if: env.REFRESH_CACHE == 'true' || steps.cmake-cache.outputs.cache-hit != 'true'
         with:
           path: |

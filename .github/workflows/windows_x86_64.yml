@@ -30,7 +30,7 @@ jobs:
       run_build: ${{ steps.check.outputs.run_build }}
     steps:
       - if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.0
         id: filter
         with:
           predicate-quantifier: 'some-with-excludes'
@@ -71,14 +71,14 @@ jobs:
                          (github.event_name == 'workflow_dispatch' && inputs.REFRESH_CACHE) }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Add GNU tar to PATH
         shell: bash
         run: echo "C:/Program Files/Git/usr/bin" >> $GITHUB_PATH
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.4.0
         with:
           python-version: "3.11"
 
@@ -119,7 +119,7 @@ jobs:
       - name: Restore bazel cache if cache is not being refreshed.
         id: bazel-cache
         if: env.REFRESH_CACHE != 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0
         env:
           windir: ""
           PATH: "C:/Program Files/Git/usr/bin;C:/Windows/System32;C:/Windows"
@@ -184,7 +184,7 @@ jobs:
 
       - name: Upload failing bazel test logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.0
         with:
           name: windows-bazel-testlogs-${{ github.run_id }}
           if-no-files-found: ignore
@@ -223,7 +223,7 @@ jobs:
         run: bazel --output_base="$env:BAZEL_OUTPUT_BASE" shutdown
 
       - name: Save bazel cache if it's new or being refreshed.
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0
         if: env.REFRESH_CACHE == 'true' || steps.bazel-cache.outputs.cache-hit != 'true'
         env:
           windir: ""
