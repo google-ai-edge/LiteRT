@@ -159,7 +159,15 @@ export async function loadModelAndWeights(
 
     try {
       // Load Model
-      const ptr = wasm._malloc(modelData.byteLength);
+      // `_malloc` returns a signed i32, which reads back negative once the
+      // heap grows past 2GB. Reinterpret it as unsigned before using it to
+      // index the heap, or the `HEAPU8.set` below throws a `RangeError`.
+      const ptr = wasm._malloc(modelData.byteLength) >>> 0;
+      if (ptr === 0) {
+        throw new Error(
+            `Failed to allocate ${modelData.byteLength} bytes of Wasm memory ` +
+            `for the model.`);
+      }
       wasm.HEAPU8.set(modelData, ptr);
       const wasmModel =
           wasm.loadModel(env.liteRtEnvironment, ptr, modelData.byteLength);

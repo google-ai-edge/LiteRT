@@ -174,7 +174,7 @@ describe('LiteRt', () => {
                               .then(buffer => new Uint8Array(buffer));
 
         const wasmModule = liteRt.liteRtWasm;
-        const ptr = wasmModule._malloc(modelData.byteLength);
+        const ptr = wasmModule._malloc(modelData.byteLength) >>> 0;
         wasmModule.HEAPU8.set(modelData, ptr);
 
         const environment = liteRt.getDefaultEnvironment();
@@ -208,7 +208,7 @@ describe('LiteRt', () => {
                             .then(buffer => new Uint8Array(buffer));
 
       const wasmModule = liteRt.liteRtWasm;
-      const ptr = wasmModule._malloc(modelData.byteLength);
+      const ptr = wasmModule._malloc(modelData.byteLength) >>> 0;
       wasmModule.HEAPU8.set(modelData, ptr);
 
       const environment = liteRt.getDefaultEnvironment();

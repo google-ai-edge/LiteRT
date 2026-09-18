@@ -24,5 +24,12 @@ export declare interface WasmModule {
   HEAPF32: Float32Array;
   HEAPF64: Float64Array;
   _free: (ptr: number) => void;
+  /**
+   * Allocates `size` bytes and returns a pointer to them, or 0 on failure.
+   *
+   * The returned pointer is a signed i32, so it reads back negative for
+   * addresses at or above 2GB. Apply `>>> 0` before using it to index into one
+   * of the `HEAP*` views, which reject negative offsets.
+   */
   _malloc: (size: number) => number;
 }
