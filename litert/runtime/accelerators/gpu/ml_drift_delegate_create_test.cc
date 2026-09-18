@@ -42,6 +42,7 @@
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
+#include "litert/c/options/litert_gpu_options.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/delegate_options.h"
 #include "ml_drift_delegate/delegate/delegate_types.h"
@@ -63,6 +64,34 @@ extern "C" void LiteRtDeleteMockGpuDelegate(TfLiteDelegate* delegate) {
 litert::TfLiteDelegatePtr CreateMockGpuDelegate(
     litert::ml_drift::MlDriftDelegateOptionsPtr options,
     LiteRtEnvironment litert_env) {
+  litert::TfLiteDelegatePtr delegate(new TfLiteDelegate(TfLiteDelegateCreate()),
+                                     LiteRtDeleteMockGpuDelegate);
+  return delegate;
+}
+
+namespace {
+
+// Records the options passed to the delegate creator. The creator is a plain
+// function pointer, so the capture has to go through a global.
+struct CapturedDelegateOptions {
+  bool captured = false;
+  bool serialize_program_cache = false;
+  bool madvise_original_shared_tensors = false;
+};
+
+CapturedDelegateOptions g_captured_delegate_options;
+
+}  // namespace
+
+litert::TfLiteDelegatePtr CreateCapturingGpuDelegate(
+    litert::ml_drift::MlDriftDelegateOptionsPtr options,
+    LiteRtEnvironment litert_env) {
+  g_captured_delegate_options = {
+      .captured = true,
+      .serialize_program_cache = options->serialize_program_cache,
+      .madvise_original_shared_tensors =
+          options->madvise_original_shared_tensors,
+  };
   litert::TfLiteDelegatePtr delegate(new TfLiteDelegate(TfLiteDelegateCreate()),
                                      LiteRtDeleteMockGpuDelegate);
   return delegate;
@@ -155,6 +184,72 @@ TEST(MlDriftDelegateCreateTest, CreateDelegateNoPayload) {
                                        nullptr, std::move(gpu_delegate_options),
                                        CreateMockGpuDelegate, delegate_ptr),
       kLiteRtStatusOk);
+
+  LiteRtDestroyAccelerator(accelerator);
+}
+
+// A GPU options payload always exists once GPU acceleration is requested,
+// because the options object is created lazily on first access. Options the
+// user never set must therefore not overwrite the backend's own defaults,
+// which the `MlDrift*DelegateDefaultOptionsPtr()` factories put in place.
+TEST(MlDriftDelegateCreateTest, UnsetOptionsKeepBackendDefaults) {
+  LiteRtAccelerator accelerator;
+  ASSERT_EQ(LiteRtCreateAccelerator(&accelerator), kLiteRtStatusOk);
+
+  LrtGpuOptions* gpu_options_payload = nullptr;
+  ASSERT_EQ(LrtCreateGpuOptions(&gpu_options_payload), kLiteRtStatusOk);
+
+  // Stands in for a backend that enables both options by default (OpenCL,
+  // WebGPU, Metal and Vulkan all do).
+  auto gpu_delegate_options = std::make_unique<MlDriftDelegateOptions>();
+  gpu_delegate_options->serialize_program_cache = true;
+  gpu_delegate_options->madvise_original_shared_tensors = true;
+
+  g_captured_delegate_options = {};
+  litert::TfLiteDelegatePtr delegate_ptr{nullptr, nullptr};
+  LiteRtRuntimeContext* runtime_context = LrtGetRuntimeContext();
+  ASSERT_EQ(litert::ml_drift::CreateDelegate(
+                runtime_context, nullptr, accelerator, gpu_options_payload,
+                std::move(gpu_delegate_options), CreateCapturingGpuDelegate,
+                delegate_ptr),
+            kLiteRtStatusOk);
+
+  ASSERT_TRUE(g_captured_delegate_options.captured);
+  EXPECT_TRUE(g_captured_delegate_options.serialize_program_cache);
+  EXPECT_TRUE(g_captured_delegate_options.madvise_original_shared_tensors);
+
+  LiteRtDestroyAccelerator(accelerator);
+}
+
+TEST(MlDriftDelegateCreateTest, ExplicitlyDisabledOptionsOverrideDefaults) {
+  LiteRtAccelerator accelerator;
+  ASSERT_EQ(LiteRtCreateAccelerator(&accelerator), kLiteRtStatusOk);
+
+  LrtGpuOptions* gpu_options_payload = nullptr;
+  ASSERT_EQ(LrtCreateGpuOptions(&gpu_options_payload), kLiteRtStatusOk);
+  ASSERT_EQ(LrtSetGpuAcceleratorCompilationOptionsSerializeProgramCache(
+                gpu_options_payload, false),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LrtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
+                gpu_options_payload, false),
+            kLiteRtStatusOk);
+
+  auto gpu_delegate_options = std::make_unique<MlDriftDelegateOptions>();
+  gpu_delegate_options->serialize_program_cache = true;
+  gpu_delegate_options->madvise_original_shared_tensors = true;
+
+  g_captured_delegate_options = {};
+  litert::TfLiteDelegatePtr delegate_ptr{nullptr, nullptr};
+  LiteRtRuntimeContext* runtime_context = LrtGetRuntimeContext();
+  ASSERT_EQ(litert::ml_drift::CreateDelegate(
+                runtime_context, nullptr, accelerator, gpu_options_payload,
+                std::move(gpu_delegate_options), CreateCapturingGpuDelegate,
+                delegate_ptr),
+            kLiteRtStatusOk);
+
+  ASSERT_TRUE(g_captured_delegate_options.captured);
+  EXPECT_FALSE(g_captured_delegate_options.serialize_program_cache);
+  EXPECT_FALSE(g_captured_delegate_options.madvise_original_shared_tensors);
 
   LiteRtDestroyAccelerator(accelerator);
 }
@@ -278,12 +373,12 @@ class DummyGpuBackend : public GpuBackend {
     return absl::UnimplementedError("");
   }
 
-  absl::StatusOr<uint64_t>
-  GetSizeOfMemoryAllocatedForIntermediateTensors() const override {
+  absl::StatusOr<uint64_t> GetSizeOfMemoryAllocatedForIntermediateTensors()
+      const override {
     return 1024 * 512;
   }
-  absl::StatusOr<uint64_t>
-  GetSizeOfMemoryAllocatedForConstantTensors() const override {
+  absl::StatusOr<uint64_t> GetSizeOfMemoryAllocatedForConstantTensors()
+      const override {
     return 1024 * 256;
   }
 };

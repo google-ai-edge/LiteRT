@@ -20,6 +20,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_gpu_options.h"  // IWYU pragma: keep, used on APPLE only, but simpler this way than using preprocessor logic in the header and the BUILD file.
 #include "litert/cc/litert_macros.h"
 #include "litert/core/options.h"
 #include "litert/runtime/accelerators/gpu/ml_drift_delegate_create.h"
@@ -103,9 +104,9 @@ class GpuMetalAccelerator {
       }
 #if defined(__APPLE__)
       if (gpu_options) {
-        bool enable_residency_set = false;
-        LrtGetGpuOptionsMetalResidencySet(gpu_options, &enable_residency_set);
-        delegate_options->enable_metal_residency_set = enable_residency_set;
+        LrtGetGpuOptionsMetalResidencySet(
+            &delegate_options->enable_metal_residency_set,
+            delegate_options->enable_metal_residency_set, gpu_options);
       }
 #endif
     }
