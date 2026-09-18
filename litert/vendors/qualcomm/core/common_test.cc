@@ -202,6 +202,15 @@ TEST(QnnOptionTest, DspPdSession) {
   EXPECT_EQ(options.GetDspPdSession(), DspPdSession::kAdaptive);
 }
 
+TEST(QnnOptionTest, DspEncoding) {
+  Options options;
+
+  EXPECT_EQ(options.GetDspEncoding(), DspEncoding::kStatic);
+
+  options.SetDspEncoding(DspEncoding::kDynamic);
+  EXPECT_EQ(options.GetDspEncoding(), DspEncoding::kDynamic);
+}
+
 TEST(QnnOptionTest, UseInt64BiasAsInt32) {
   Options options;
   options.SetUseInt64BiasAsInt32(true);
@@ -395,6 +404,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetHtpPdSession(), HtpPdSession::kUnsigned);
   EXPECT_EQ(options.GetDspPerfCtrlMode(), DspPerfCtrlMode::kManual);
   EXPECT_EQ(options.GetDspPdSession(), DspPdSession::kUnsigned);
+  EXPECT_EQ(options.GetDspEncoding(), DspEncoding::kStatic);
   EXPECT_TRUE(options.GetIrJsonDir().empty());
   EXPECT_TRUE(options.GetDlcDir().empty());
   EXPECT_TRUE(options.GetGraphTransform().empty());

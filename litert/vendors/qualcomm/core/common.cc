@@ -306,6 +306,20 @@ void AbslStringify(Sink& sink, DspPdSession v) {
 }
 
 template <typename Sink>
+void AbslStringify(Sink& sink, DspEncoding v) {
+  absl::string_view name = "Unknown";
+  switch (v) {
+    case DspEncoding::kStatic:
+      name = "Static";
+      break;
+    case DspEncoding::kDynamic:
+      name = "Dynamic";
+      break;
+  }
+  absl::Format(&sink, "%s(%d)", name, static_cast<int>(v));
+}
+
+template <typename Sink>
 void AbslStringify(Sink& sink, OptimizationLevel v) {
   absl::string_view name = "Unknown";
   switch (v) {
@@ -563,6 +577,12 @@ void Options::SetDspPdSession(DspPdSession dsp_pd_session) {
 
 DspPdSession Options::GetDspPdSession() const { return dsp_pd_session_; }
 
+void Options::SetDspEncoding(DspEncoding dsp_encoding) {
+  dsp_encoding_ = dsp_encoding;
+}
+
+DspEncoding Options::GetDspEncoding() const { return dsp_encoding_; }
+
 void Options::SetDumpTensorIds(const std::vector<std::int32_t>& ids) {
   dump_tensor_ids_ = ids;
 }
@@ -770,6 +790,7 @@ std::string Options::Dump() const {
   field(2, "DspPerformanceMode", dsp_performance_mode_);
   field(2, "DspPerfCtrlMode", dsp_perf_ctrl_mode_);
   field(2, "DspPdSession", dsp_pd_session_);
+  field(2, "DspEncoding", dsp_encoding_);
 
   // --- GPU ---
   absl::StrAppend(&out, "[GPU]\n");

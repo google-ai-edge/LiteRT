@@ -157,6 +157,11 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::DspPdSession,
           "PD. 'signed' uses signed PD. 'adaptive' uses unsigned PD when "
           "supported, otherwise signed PD.");
 
+ABSL_FLAG(litert::qualcomm::QualcommOptions::DspEncoding, qualcomm_dsp_encoding,
+          litert::qualcomm::QualcommOptions::DspEncoding::kStatic,
+          "DSP graph encoding. 'static' (default): more performant, less "
+          "precise. 'dynamic': more precise, less performant.");
+
 ABSL_FLAG(::litert::tools::IntList, qualcomm_dump_tensor_ids, {},
           "Debug Feature. Ids to dump as outputs. Comma-separated list of "
           "string. Use -1 to dump all op outputs.");
@@ -410,6 +415,32 @@ std::string AbslUnparseFlag(QualcommOptions::DspPdSession value) {
       return "adaptive";
   }
   ABSL_CHECK(false) << "Unknown DspPdSession: " << static_cast<int>(value);
+}
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::DspEncoding* dsp_encoding,
+                   std::string* error) {
+  if (text == "static") {
+    *dsp_encoding = QualcommOptions::DspEncoding::kStatic;
+    return true;
+  }
+  if (text == "dynamic") {
+    *dsp_encoding = QualcommOptions::DspEncoding::kDynamic;
+    return true;
+  }
+  *error = "Unknown dsp_encoding; valid values: static, dynamic";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::DspEncoding dsp_encoding) {
+  switch (dsp_encoding) {
+    case QualcommOptions::DspEncoding::kStatic:
+      return "static";
+    case QualcommOptions::DspEncoding::kDynamic:
+      return "dynamic";
+    default:
+      return "static";
+  }
 }
 
 }  // namespace litert::qualcomm
@@ -936,6 +967,9 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto dsp_pd_session = absl::GetFlag(FLAGS_qualcomm_dsp_pd_session);
   opts.SetDspPdSession(dsp_pd_session);
+
+  const auto dsp_encoding = absl::GetFlag(FLAGS_qualcomm_dsp_encoding);
+  opts.SetDspEncoding(dsp_encoding);
 
   const auto profiling = absl::GetFlag(FLAGS_qualcomm_profiling);
   opts.SetProfiling(profiling);

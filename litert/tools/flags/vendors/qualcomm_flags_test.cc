@@ -383,6 +383,32 @@ TEST(DspPdSessionTest, Parse) {
   EXPECT_EQ("adaptive", AbslUnparseFlag(value));
 }
 
+TEST(DspEncodingTest, Malformed) {
+  std::string error;
+  QualcommOptions::DspEncoding value;
+
+  EXPECT_FALSE(AbslParseFlag("boogabooga", &value, &error));
+}
+
+TEST(DspEncodingTest, Parse) {
+  std::string error;
+  QualcommOptions::DspEncoding value;
+
+  {
+    static constexpr absl::string_view kEncoding = "static";
+    EXPECT_TRUE(AbslParseFlag(kEncoding, &value, &error));
+    EXPECT_EQ(value, QualcommOptions::DspEncoding::kStatic);
+    EXPECT_EQ(kEncoding, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kEncoding = "dynamic";
+    EXPECT_TRUE(AbslParseFlag(kEncoding, &value, &error));
+    EXPECT_EQ(value, QualcommOptions::DspEncoding::kDynamic);
+    EXPECT_EQ(kEncoding, AbslUnparseFlag(value));
+  }
+}
+
 TEST(ProfilingTest, Malformed) {
   std::string error;
   QualcommOptions::Profiling value;
@@ -749,6 +775,8 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
             QualcommOptions::DspPerfCtrlMode::kManual);
   EXPECT_EQ(options.Value().GetDspPdSession(),
             QualcommOptions::DspPdSession::kUnsigned);
+  EXPECT_EQ(options.Value().GetDspEncoding(),
+            QualcommOptions::DspEncoding::kStatic);
   EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());
   EXPECT_EQ(options.Value().GetVtcmSize(), 0);
   EXPECT_EQ(options.Value().GetNumHvxThreads(), 0);

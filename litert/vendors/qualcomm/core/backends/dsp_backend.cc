@@ -13,6 +13,7 @@
 
 #include "DSP/QnnDspBackend.h"  // from @qairt
 #include "DSP/QnnDspDevice.h"  // from @qairt
+#include "DSP/QnnDspGraph.h"  // from @qairt
 #include "DSP/QnnDspPerfInfrastructure.h"  // from @qairt
 #include "DSP/QnnDspProperty.h"  // from @qairt
 #include "QnnBackend.h"  // from @qairt
@@ -271,10 +272,19 @@ DspBackend::DspBackend(const QNN_INTERFACE_VER_TYPE* qnn_api)
 
 DspBackend::~DspBackend() = default;
 
-// TODO: DSP does not build any graph configs yet; returns an empty builder.
 GraphConfigBuilder DspBackend::BuildGraphConfigs(
-    const Options& /*options*/, absl::string_view /*qnn_graph_name*/) {
-  return {};
+    const Options& options, absl::string_view /*qnn_graph_name*/) {
+  GraphConfigBuilder config_builder;
+
+  QnnDspGraph_CustomConfig_t encoding_config = QNN_DSP_GRAPH_CUSTOM_CONFIG_INIT;
+  encoding_config.option = QNN_DSP_GRAPH_CONFIG_OPTION_ENCODING;
+  encoding_config.encoding =
+      options.GetDspEncoding() == DspEncoding::kDynamic
+          ? QNN_DSP_GRAPH_ENCODING_DYNAMIC
+          : QNN_DSP_GRAPH_ENCODING_STATIC;
+  config_builder.AddCustomConfig(encoding_config);
+
+  return config_builder;
 }
 
 std::vector<const QnnBackend_Config_t*> DspBackend::CreateBackendConfigs(

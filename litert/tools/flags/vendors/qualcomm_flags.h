@@ -204,6 +204,19 @@ std::string AbslUnparseFlag(QualcommOptions::DspPdSession value);
 
 }  // namespace litert::qualcomm
 
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::DspEncoding,
+                  qualcomm_dsp_encoding);
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::DspEncoding* dsp_encoding,
+                   std::string* error);
+
+std::string AbslUnparseFlag(QualcommOptions::DspEncoding dsp_encoding);
+
+}  // namespace litert::qualcomm
+
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::Profiling,
                   qualcomm_profiling);
 

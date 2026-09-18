@@ -104,6 +104,7 @@ struct LrtQualcommOptionsT {
   std::optional<LrtQualcommOptionsHtpPdSession> htp_pd_session;
   std::optional<LrtQualcommOptionsDspPerfCtrlMode> dsp_perf_ctrl_mode;
   std::optional<LrtQualcommOptionsDspPdSession> dsp_pd_session;
+  std::optional<LrtQualcommOptionsDspEncoding> dsp_encoding;
   std::optional<std::vector<std::int32_t>> dump_tensor_ids;
   std::optional<std::string> ir_json_dir;
   std::optional<std::string> dlc_dir;
@@ -221,6 +222,15 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetDspPdSession(
               parsed_options, static_cast<LrtQualcommOptionsDspPdSession>(*v));
+        } else if (key == "dsp_encoding") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          if (*v < kLiteRtQualcommDspEncodingStatic ||
+              *v > kLiteRtQualcommDspEncodingDynamic) {
+            return kLiteRtStatusErrorInvalidArgument;
+          }
+          status = LrtQualcommOptionsSetDspEncoding(
+              parsed_options, static_cast<LrtQualcommOptionsDspEncoding>(*v));
         } else if (key == "dump_tensor_ids") {
           auto parts = litert::internal::ParseTomlStringArray(value);
           if (!parts) return litert::ToLiteRtStatus(parts.Error().StatusCC());
@@ -408,6 +418,10 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   }
   if (options->dsp_pd_session.has_value()) {
     toml << "dsp_pd_session = " << static_cast<int>(*options->dsp_pd_session)
+         << "\n";
+  }
+  if (options->dsp_encoding.has_value()) {
+    toml << "dsp_encoding = " << static_cast<int>(*options->dsp_encoding)
          << "\n";
   }
   if (options->dump_tensor_ids.has_value()) {
@@ -1010,6 +1024,31 @@ LiteRtStatus LrtQualcommOptionsGetDspPdSession(
 
   *dsp_pd_session =
       options->dsp_pd_session.value_or(kLiteRtQualcommDspUnsignedPd);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetDspEncoding(
+    LrtQualcommOptions options, LrtQualcommOptionsDspEncoding dsp_encoding) {
+  if (options == nullptr ||
+      dsp_encoding < kLiteRtQualcommDspEncodingStatic ||
+      dsp_encoding > kLiteRtQualcommDspEncodingDynamic) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->dsp_encoding = dsp_encoding;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetDspEncoding(
+    LrtQualcommOptions options, LrtQualcommOptionsDspEncoding* dsp_encoding) {
+  if (options == nullptr || dsp_encoding == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *dsp_encoding =
+      options->dsp_encoding.value_or(kLiteRtQualcommDspEncodingStatic);
+
   return kLiteRtStatusOk;
 }
 

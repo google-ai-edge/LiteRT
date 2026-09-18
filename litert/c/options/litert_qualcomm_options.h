@@ -326,6 +326,17 @@ LiteRtStatus LrtQualcommOptionsSetDspPdSession(
 LiteRtStatus LrtQualcommOptionsGetDspPdSession(
     LrtQualcommOptions options, LrtQualcommOptionsDspPdSession* dsp_pd_session);
 
+typedef enum LrtQualcommOptionsDspEncoding {
+  kLiteRtQualcommDspEncodingStatic = 0,
+  kLiteRtQualcommDspEncodingDynamic = 1,
+} LrtQualcommOptionsDspEncoding;
+
+LiteRtStatus LrtQualcommOptionsSetDspEncoding(
+    LrtQualcommOptions options, LrtQualcommOptionsDspEncoding dsp_encoding);
+
+LiteRtStatus LrtQualcommOptionsGetDspEncoding(
+    LrtQualcommOptions options, LrtQualcommOptionsDspEncoding* dsp_encoding);
+
 LiteRtStatus LrtQualcommOptionsSetIrJsonDir(LrtQualcommOptions options,
                                             const char* ir_json_dir);
 

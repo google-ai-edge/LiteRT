@@ -259,6 +259,28 @@ TEST(LiteRtQualcommOptionsTest, DspPdSession) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, DspEncoding) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  EXPECT_EQ(LrtQualcommOptionsSetDspEncoding(
+                nullptr, kLiteRtQualcommDspEncodingDynamic),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LrtQualcommOptions invalid_options = nullptr;
+  EXPECT_EQ(
+      LrtCreateQualcommOptionsFromToml("dsp_encoding = 2", &invalid_options),
+      kLiteRtStatusErrorInvalidArgument);
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetDspEncoding(
+      qualcomm_options, kLiteRtQualcommDspEncodingDynamic));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetDspEncoding(), QualcommOptions::DspEncoding::kDynamic);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, IrJsonDir) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -502,6 +524,11 @@ TEST(QualcommOptionsTest, CppWrapper) {
   options->SetDspPdSession(QualcommOptions::DspPdSession::kAdaptive);
   EXPECT_EQ(options->GetDspPdSession(),
             QualcommOptions::DspPdSession::kAdaptive);
+
+  EXPECT_EQ(options->GetDspEncoding(), QualcommOptions::DspEncoding::kStatic);
+  options->SetDspEncoding(QualcommOptions::DspEncoding::kDynamic);
+  EXPECT_EQ(options->GetDspEncoding(),
+            QualcommOptions::DspEncoding::kDynamic);
 
   EXPECT_EQ(options->GetProfiling(), QualcommOptions::Profiling::kOff);
   options->SetProfiling(QualcommOptions::Profiling::kDetailed);

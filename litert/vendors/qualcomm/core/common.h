@@ -94,6 +94,11 @@ enum class DspPdSession {
   kAdaptive = 2,
 };
 
+enum class DspEncoding {
+  kStatic = 0,
+  kDynamic = 1,
+};
+
 enum class OptimizationLevel {
   kHtpOptimizeForInference = 0,
   kHtpOptimizeForPrepare = 1,
@@ -205,6 +210,9 @@ class Options {
   void SetDspPdSession(DspPdSession dsp_pd_session);
   DspPdSession GetDspPdSession() const;
 
+  void SetDspEncoding(DspEncoding dsp_encoding);
+  DspEncoding GetDspEncoding() const;
+
   // for per-layer dump
   void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
   std::vector<std::int32_t> GetDumpTensorIds() const;
@@ -291,6 +299,7 @@ class Options {
   HtpPdSession htp_pd_session_ = HtpPdSession::kUnsigned;
   DspPerfCtrlMode dsp_perf_ctrl_mode_ = DspPerfCtrlMode::kManual;
   DspPdSession dsp_pd_session_ = DspPdSession::kUnsigned;
+  DspEncoding dsp_encoding_ = DspEncoding::kStatic;
   std::vector<std::int32_t> dump_tensor_ids_;
   std::string ir_json_dir_;
   std::string dlc_dir_;
