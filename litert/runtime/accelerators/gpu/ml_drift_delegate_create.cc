@@ -97,102 +97,175 @@ LiteRtStatus CreateDelegate(
 
     LrtGetGpuOptionsConstantTensorsSharing(
         &gpu_delegate_options->enable_constant_tensors_sharing,
+        gpu_delegate_options->enable_constant_tensors_sharing,
         gpu_options_payload);
 
     LrtGetGpuOptionsInfiniteFloatCapping(
         &gpu_delegate_options->enable_infinite_float_capping,
+        gpu_delegate_options->enable_infinite_float_capping,
         gpu_options_payload);
 
     LrtGetGpuOptionsBenchmarkMode(&gpu_delegate_options->litert_benchmark_mode,
+                                  gpu_delegate_options->litert_benchmark_mode,
                                   gpu_options_payload);
 
     LrtGetGpuOptionsExternalTensorsMode(
         &gpu_delegate_options->litert_external_tensors_mode,
+        gpu_delegate_options->litert_external_tensors_mode,
         gpu_options_payload);
 
     LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
         &gpu_delegate_options->allow_src_quantized_fc_conv_ops,
+        gpu_delegate_options->allow_src_quantized_fc_conv_ops,
         gpu_options_payload);
 
     LrtGetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
         &gpu_delegate_options->hint_waiting_for_completion,
+        gpu_delegate_options->hint_waiting_for_completion,
         gpu_options_payload);
 
     LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
-        &gpu_delegate_options->kernel_batch_size, gpu_options_payload);
+        &gpu_delegate_options->kernel_batch_size,
+        gpu_delegate_options->kernel_batch_size, gpu_options_payload);
 
     LiteRtDelegatePrecision litert_delegate_precision =
         kLiteRtDelegatePrecisionDefault;
 
     LrtGetGpuAcceleratorCompilationOptionsPrecision(&litert_delegate_precision,
+                                                    litert_delegate_precision,
                                                     gpu_options_payload);
 
     gpu_delegate_options->precision =
         ::litert::ml_drift::GetMlDriftPrecision(litert_delegate_precision);
     gpu_delegate_options->use_f32_accum_for_fp16 =
-        litert_delegate_precision ==
-        kLiteRtDelegatePrecisionFp16WithFp32Accum;
+        litert_delegate_precision == kLiteRtDelegatePrecisionFp16WithFp32Accum;
 
     LiteRtDelegateBufferStorageType litert_delegate_buffer_storage_type =
         kLiteRtDelegateBufferStorageTypeDefault;
 
     LrtGetGpuAcceleratorCompilationOptionsBufferStorageType(
-        &litert_delegate_buffer_storage_type, gpu_options_payload);
+        &litert_delegate_buffer_storage_type,
+        litert_delegate_buffer_storage_type, gpu_options_payload);
 
     gpu_delegate_options->use_buffer_storage_type =
         litert_delegate_buffer_storage_type ==
         kLiteRtDelegateBufferStorageTypeBuffer;
 
     LrtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
-        &gpu_delegate_options->prefer_texture_weights, gpu_options_payload);
+        &gpu_delegate_options->prefer_texture_weights,
+        gpu_delegate_options->prefer_texture_weights, gpu_options_payload);
 
     LrtGetGpuAcceleratorCompilationOptionsSerializationDir(
-        &gpu_delegate_options->serialization_dir, gpu_options_payload);
+        &gpu_delegate_options->serialization_dir,
+        gpu_delegate_options->serialization_dir, gpu_options_payload);
 
     LrtGetGpuAcceleratorCompilationOptionsModelCacheKey(
-        &gpu_delegate_options->model_token, gpu_options_payload);
+        &gpu_delegate_options->model_token, gpu_delegate_options->model_token,
+        gpu_options_payload);
 
     LrtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
-        &gpu_delegate_options->program_cache_fd, gpu_options_payload);
+        &gpu_delegate_options->program_cache_fd,
+        gpu_delegate_options->program_cache_fd, gpu_options_payload);
 
     LrtGetGpuAcceleratorCompilationOptionsWeightCacheFd(
-        &gpu_delegate_options->weight_cache_fd, gpu_options_payload);
+        &gpu_delegate_options->weight_cache_fd,
+        gpu_delegate_options->weight_cache_fd, gpu_options_payload);
 
     LrtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
-        &gpu_delegate_options->serialize_program_cache, gpu_options_payload);
+        &gpu_delegate_options->serialize_program_cache,
+        gpu_delegate_options->serialize_program_cache, gpu_options_payload);
 
     LrtGetGpuAcceleratorCompilationOptionsCacheCompiledProgramsOnly(
         &gpu_delegate_options->cache_compiled_programs_only,
+        gpu_delegate_options->cache_compiled_programs_only,
         gpu_options_payload);
 
     LrtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
-        &gpu_delegate_options->serialize_external_tensors, gpu_options_payload);
+        &gpu_delegate_options->serialize_external_tensors,
+        gpu_delegate_options->serialize_external_tensors, gpu_options_payload);
 
     LrtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
         &gpu_delegate_options->disable_shader_optimization,
+        gpu_delegate_options->disable_shader_optimization,
         gpu_options_payload);
 
     LrtGetGpuAcceleratorRuntimeOptionsNumThreadsToUpload(
-        &gpu_delegate_options->num_threads_to_upload, gpu_options_payload);
+        &gpu_delegate_options->num_threads_to_upload,
+        gpu_delegate_options->num_threads_to_upload, gpu_options_payload);
 
     LrtGetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
-        &gpu_delegate_options->num_threads_to_compile, gpu_options_payload);
+        &gpu_delegate_options->num_threads_to_compile,
+        gpu_delegate_options->num_threads_to_compile, gpu_options_payload);
 
     LrtGetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
         &gpu_delegate_options->convert_weights_on_gpu,
-        gpu_options_payload);
+        gpu_delegate_options->convert_weights_on_gpu, gpu_options_payload);
 
     LrtGetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
         &gpu_delegate_options->wait_for_weights_conversion_complete,
+        gpu_delegate_options->wait_for_weights_conversion_complete,
         gpu_options_payload);
 
     LrtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
         &gpu_delegate_options->hint_fully_delegated_to_single_delegate,
+        gpu_delegate_options->hint_fully_delegated_to_single_delegate,
+        gpu_options_payload);
+
+    LrtGetGpuOptionsUseIrModel(&gpu_delegate_options->use_ir_model,
+                               gpu_delegate_options->use_ir_model,
+                               gpu_options_payload);
+
+    LrtGetGpuOptionsEnableFastTuning(&gpu_delegate_options->enable_fast_tuning,
+                                     gpu_delegate_options->enable_fast_tuning,
+                                     gpu_options_payload);
+
+    LrtGetGpuOptionsEnableOpProfiling(
+        &gpu_delegate_options->enable_op_profiling,
+        gpu_delegate_options->enable_op_profiling, gpu_options_payload);
+
+    LrtGetGpuOptionsEnableOpProfilingDetailedReport(
+        &gpu_delegate_options->enable_op_profiling_detailed_report,
+        gpu_delegate_options->enable_op_profiling_detailed_report,
+        gpu_options_payload);
+
+    LrtGetGpuOptionsEnableQkvNormRopeFusion(
+        &gpu_delegate_options->enable_qkv_norm_rope_fusion,
+        gpu_delegate_options->enable_qkv_norm_rope_fusion,
+        gpu_options_payload);
+
+    LrtGetGpuOptionsEnableShortConvStepFusion(
+        &gpu_delegate_options->enable_short_conv_step_fusion,
+        gpu_delegate_options->enable_short_conv_step_fusion,
+        gpu_options_payload);
+
+    LrtGetGpuOptionsHasPrepackedExternalTfliteTensors(
+        &gpu_delegate_options->has_prepacked_external_tflite_tensors,
+        gpu_delegate_options->has_prepacked_external_tflite_tensors,
+        gpu_options_payload);
+
+    LrtGetGpuOptionsAllocateGpuMemoryForIoTensors(
+        &gpu_delegate_options->allocate_gpu_memory_for_io_tensors,
+        gpu_delegate_options->allocate_gpu_memory_for_io_tensors,
+        gpu_options_payload);
+
+    LrtGetGpuOptionsDebugDelegatePartition(
+        &gpu_delegate_options->debug_delegate_partition,
+        gpu_delegate_options->debug_delegate_partition, gpu_options_payload);
+
+    LrtGetGpuOptionsDebugFirstDelegateNodeIndex(
+        &gpu_delegate_options->debug_first_delegate_node_index,
+        gpu_delegate_options->debug_first_delegate_node_index,
+        gpu_options_payload);
+
+    LrtGetGpuOptionsDebugLastDelegateNodeIndex(
+        &gpu_delegate_options->debug_last_delegate_node_index,
+        gpu_delegate_options->debug_last_delegate_node_index,
         gpu_options_payload);
 
 #ifdef __APPLE__
     LrtGetGpuOptionsUseMetalArgumentBuffers(
-        gpu_options_payload, &gpu_delegate_options->use_metal_argument_buffers);
+        &gpu_delegate_options->use_metal_argument_buffers,
+        gpu_delegate_options->use_metal_argument_buffers, gpu_options_payload);
 #endif  // __APPLE__
 
     int num_patterns;
@@ -229,8 +302,9 @@ LiteRtStatus CreateDelegate(
       }
     }
 
-    LiteRtGpuPriority gpu_priority;
-    LrtGetGpuOptionsGpuPriority(&gpu_priority, gpu_options_payload);
+    LiteRtGpuPriority gpu_priority = kLiteRtGpuPriorityDefault;
+    LrtGetGpuOptionsGpuPriority(&gpu_priority, gpu_priority,
+                                gpu_options_payload);
     if (gpu_priority == kLiteRtGpuPriorityLow) {
       gpu_delegate_options->gpu_priority = kGpuLowPriority;
     } else {
@@ -239,18 +313,22 @@ LiteRtStatus CreateDelegate(
 
     LrtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
         &gpu_delegate_options->madvise_original_shared_tensors,
+        gpu_delegate_options->madvise_original_shared_tensors,
         gpu_options_payload);
 
     LrtGetGpuAcceleratorCompilationOptionsSharedTensorMaps(
         &gpu_delegate_options->shared_tensor_maps_from_client,
+        gpu_delegate_options->shared_tensor_maps_from_client,
         gpu_options_payload);
 
     LrtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
         &gpu_delegate_options->num_steps_of_command_buffer_preparations,
+        gpu_delegate_options->num_steps_of_command_buffer_preparations,
         gpu_options_payload);
 
-    LiteRtGpuWaitType wait_type;
-    LrtGetGpuAcceleratorRuntimeOptionsWaitType(&wait_type, gpu_options_payload);
+    LiteRtGpuWaitType wait_type = kLiteRtGpuWaitTypeDefault;
+    LrtGetGpuAcceleratorRuntimeOptionsWaitType(&wait_type, wait_type,
+                                               gpu_options_payload);
     switch (wait_type) {
       case kLiteRtGpuWaitTypeDefault:
         // Don't update delegate options.
@@ -269,9 +347,10 @@ LiteRtStatus CreateDelegate(
         break;
     }
 
-    const char* preferred_device_substr;
+    const char* preferred_device_substr = "";
     LrtGetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
-        &preferred_device_substr, gpu_options_payload);
+        &preferred_device_substr, preferred_device_substr,
+        gpu_options_payload);
     gpu_delegate_options->preferred_device_substr = preferred_device_substr;
   }
 
@@ -322,10 +401,11 @@ LiteRtStatus StopMetricsCollection(LiteRtRuntimeContext* runtime_context,
   if (intermediate_memory.ok()) {
     LiteRtMetric metric = {
         .name = "gpu_intermediate_memory_bytes",
-        .value = LiteRtAny{
-            .type = kLiteRtAnyTypeInt,
-            .int_value = static_cast<int64_t>(*intermediate_memory),
-        },
+        .value =
+            LiteRtAny{
+                .type = kLiteRtAnyTypeInt,
+                .int_value = static_cast<int64_t>(*intermediate_memory),
+            },
     };
     LITERT_RETURN_IF_ERROR(runtime_context->append_metric(metrics, &metric));
   }
@@ -334,10 +414,11 @@ LiteRtStatus StopMetricsCollection(LiteRtRuntimeContext* runtime_context,
   if (constant_memory.ok()) {
     LiteRtMetric metric = {
         .name = "gpu_constant_memory_bytes",
-        .value = LiteRtAny{
-            .type = kLiteRtAnyTypeInt,
-            .int_value = static_cast<int64_t>(*constant_memory),
-        },
+        .value =
+            LiteRtAny{
+                .type = kLiteRtAnyTypeInt,
+                .int_value = static_cast<int64_t>(*constant_memory),
+            },
     };
     LITERT_RETURN_IF_ERROR(runtime_context->append_metric(metrics, &metric));
   }
