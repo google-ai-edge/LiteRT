@@ -252,69 +252,160 @@ LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
 LiteRtStatus LrtSetGpuOptionsHintFullyDelegatedToSingleDelegate(
     LrtGpuOptions* gpu_options, bool hint_fully_delegated_to_single_delegate);
 
+// If true, the accelerator initializes via the IrModel pipeline instead of the
+// legacy GraphFloat32 pipeline. Both pipelines are always compiled and linked,
+// the selection happens at runtime.
+LiteRtStatus LrtSetGpuOptionsUseIrModel(LrtGpuOptions* gpu_options,
+                                        bool use_ir_model);
+
+// If true, tuning is faster but the resulting inference can be slower. This
+// trades steady-state performance for initialization time.
+LiteRtStatus LrtSetGpuOptionsEnableFastTuning(LrtGpuOptions* gpu_options,
+                                              bool enable_fast_tuning);
+
+// Enables per-op profiling.
+LiteRtStatus LrtSetGpuOptionsEnableOpProfiling(LrtGpuOptions* gpu_options,
+                                               bool enable_op_profiling);
+
+// Enables the detailed report of the per-op profiling.
+LiteRtStatus LrtSetGpuOptionsEnableOpProfilingDetailedReport(
+    LrtGpuOptions* gpu_options, bool enable_op_profiling_detailed_report);
+
+// If true, the accelerator attempts to find and fuse QKV projection split,
+// RMSNorm and RoPE subgraphs into single fused odml.qkv_norm_rope nodes.
+// Disabled by default to avoid unexpected graph mutations on general models.
+LiteRtStatus LrtSetGpuOptionsEnableQkvNormRopeFusion(
+    LrtGpuOptions* gpu_options, bool enable_qkv_norm_rope_fusion);
+
+// If true, the accelerator attempts to find and fuse short convolution step
+// subgraphs into single fused odml.short_conv_step nodes.
+// Disabled by default to avoid unexpected graph mutations on general models.
+LiteRtStatus LrtSetGpuOptionsEnableShortConvStepFusion(
+    LrtGpuOptions* gpu_options, bool enable_short_conv_step_fusion);
+
+// Set to true to upload tensor weights directly without processing. This
+// requires the model file to have pre-processed weights.
+//
+// WARNING: The pre-processed immutable external tensors are stored in the model
+// file itself and not in a separate serialization directory. This reduces the
+// disk space required and the memory usage on the first run. However, if the
+// prepacked weights become incompatible with the current ML Drift kernels,
+// there is no fallback path. This option is intended for ADVANCED USERS only.
+LiteRtStatus LrtSetGpuOptionsHasPrepackedExternalTfliteTensors(
+    LrtGpuOptions* gpu_options, bool has_prepacked_external_tflite_tensors);
+
+// WebGPU only.
+//
+// If true, for each delegated subgraph GPU memory is allocated for the input
+// and output tensors and associated with the TFLite tensor's BufferHandle.
+//
+// WARNING: This is an ADVANCED option for clients which access the GPU tensors
+// directly. It should not be used when the I/O buffers are managed by LiteRT.
+LiteRtStatus LrtSetGpuOptionsAllocateGpuMemoryForIoTensors(
+    LrtGpuOptions* gpu_options, bool allocate_gpu_memory_for_io_tensors);
+
+// If true, only the node range of `debug_first_delegate_node_index` and
+// `debug_last_delegate_node_index` is delegated.
+//
+// NOTE: This is for debugging purposes, e.g. to bisect which node breaks
+// delegation.
+LiteRtStatus LrtSetGpuOptionsDebugDelegatePartition(
+    LrtGpuOptions* gpu_options, bool debug_delegate_partition);
+
+// Sets the index of the first node that could be delegated. Only used when
+// `debug_delegate_partition` is true.
+LiteRtStatus LrtSetGpuOptionsDebugFirstDelegateNodeIndex(
+    LrtGpuOptions* gpu_options, int debug_first_delegate_node_index);
+
+// Sets the index of the last node that could be delegated. Only used when
+// `debug_delegate_partition` is true.
+LiteRtStatus LrtSetGpuOptionsDebugLastDelegateNodeIndex(
+    LrtGpuOptions* gpu_options, int debug_last_delegate_node_index);
+
 // Declarations below this point are meant to be used by accelerator code.
 
 const char* LrtGetGpuOptionsIdentifier();
 
+// The getters below take a `default_value`, which is returned when the option
+// was never set. Accelerators pass the value their backend already defaults to,
+// so an unset option leaves that default untouched. The C API deliberately does
+// not pick a fallback of its own: backends disagree on some defaults, so any
+// single constant here would silently override one of them.
+//
+// The pattern accessors are exempt: they expose a list rather than a single
+// option, so there is no default to fall back to.
+
 LiteRtStatus LrtGetGpuOptionsConstantTensorsSharing(
-    bool* enabled, const LrtGpuOptions* options);
+    bool* enabled, bool default_value, const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuOptionsInfiniteFloatCapping(bool* enabled,
+                                                  bool default_value,
                                                   const LrtGpuOptions* options);
 
-LiteRtStatus LrtGetGpuOptionsBenchmarkMode(bool* enabled,
+LiteRtStatus LrtGetGpuOptionsBenchmarkMode(bool* enabled, bool default_value,
                                            const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuOptionsGpuBackend(LiteRtGpuBackend* backend,
+                                        LiteRtGpuBackend default_value,
                                         const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuOptionsExternalTensorsMode(bool* enabled,
+                                                 bool default_value,
                                                  const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
-    bool* enabled, const LrtGpuOptions* options);
+    bool* enabled, bool default_value, const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
-    bool* enabled, const LrtGpuOptions* options);
+    bool* enabled, bool default_value, const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
-    int* kernel_batch_size, const LrtGpuOptions* options);
+    int* kernel_batch_size, int default_value, const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsPrecision(
-    LiteRtDelegatePrecision* precision, const LrtGpuOptions* options);
+    LiteRtDelegatePrecision* precision, LiteRtDelegatePrecision default_value,
+    const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsBufferStorageType(
-    LiteRtDelegateBufferStorageType* type, const LrtGpuOptions* options);
+    LiteRtDelegateBufferStorageType* type,
+    LiteRtDelegateBufferStorageType default_value,
+    const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
-    bool* prefer_texture_weights, const LrtGpuOptions* options);
+    bool* prefer_texture_weights, bool default_value,
+    const LrtGpuOptions* options);
 
 // Returns serialization directory.
 // The returned string pointer is owned by the user of
 // LrtSetGpuAcceleratorCompilationOptionsSerializationDir() API.
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSerializationDir(
-    const char** serialization_dir, const LrtGpuOptions* options);
+    const char** serialization_dir, const char* default_value,
+    const LrtGpuOptions* options);
 
 // Returns model cache key.
 // The returned string pointer is owned by the user of
 // LrtSetGpuAcceleratorCompilationOptionsModelCacheKey() API.
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsModelCacheKey(
-    const char** model_cache_key, const LrtGpuOptions* options);
+    const char** model_cache_key, const char* default_value,
+    const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
-    int* program_cache_fd, const LrtGpuOptions* options);
+    int* program_cache_fd, int default_value, const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsWeightCacheFd(
-    int* weight_cache_fd, const LrtGpuOptions* options);
+    int* weight_cache_fd, int default_value, const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
-    bool* serialize_program_cache, const LrtGpuOptions* options);
+    bool* serialize_program_cache, bool default_value,
+    const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsCacheCompiledProgramsOnly(
-    bool* cache_only_compiled_programs, const LrtGpuOptions* options);
+    bool* cache_only_compiled_programs, bool default_value,
+    const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
-    bool* serialize_external_tensors, const LrtGpuOptions* options);
+    bool* serialize_external_tensors, bool default_value,
+    const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns(
     int* num_patterns, const LrtGpuOptions* options);
@@ -332,48 +423,102 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsBufferStorageTensorPattern(
     const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuOptionsGpuPriority(LiteRtGpuPriority* priority,
+                                         LiteRtGpuPriority default_value,
                                          const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
-    bool* madvise_original_shared_tensors, const LrtGpuOptions* options);
+    bool* madvise_original_shared_tensors, bool default_value,
+    const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
-    bool* disable_shader_optimization, const LrtGpuOptions* options);
+    bool* disable_shader_optimization, bool default_value,
+    const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSharedTensorMaps(
-    void** shared_tensor_maps, const LrtGpuOptions* gpu_options);
+    void** shared_tensor_maps, void* default_value,
+    const LrtGpuOptions* gpu_options);
 
 LiteRtStatus
 LrtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
-    int* num_steps_of_command_buffer_preparations,
+    int* num_steps_of_command_buffer_preparations, int default_value,
     const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuOptionsUseMetalArgumentBuffers(
-    const LrtGpuOptions* options, bool* use_metal_argument_buffers);
+    bool* use_metal_argument_buffers, bool default_value,
+    const LrtGpuOptions* options);
 
-LiteRtStatus LrtGetGpuOptionsMetalResidencySet(const LrtGpuOptions* options,
-                                               bool* enabled);
+LiteRtStatus LrtGetGpuOptionsMetalResidencySet(bool* enabled,
+                                               bool default_value,
+                                               const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsWaitType(
-    LiteRtGpuWaitType* wait_type, const LrtGpuOptions* options);
+    LiteRtGpuWaitType* wait_type, LiteRtGpuWaitType default_value,
+    const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
-    const char** preferred_device_substr, const LrtGpuOptions* options);
+    const char** preferred_device_substr, const char* default_value,
+    const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsNumThreadsToUpload(
-    int* num_threads_to_upload, const LrtGpuOptions* options);
+    int* num_threads_to_upload, int default_value,
+    const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
-    int* num_threads_to_compile, const LrtGpuOptions* options);
+    int* num_threads_to_compile, int default_value,
+    const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
-    bool* convert_weights_on_gpu, const LrtGpuOptions* options);
+    bool* convert_weights_on_gpu, bool default_value,
+    const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
-    bool* wait, const LrtGpuOptions* options);
+    bool* wait, bool default_value, const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
-    bool* hint_fully_delegated_to_single_delegate,
+    bool* hint_fully_delegated_to_single_delegate, bool default_value,
+    const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuOptionsUseIrModel(bool* use_ir_model, bool default_value,
+                                        const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuOptionsEnableFastTuning(bool* enable_fast_tuning,
+                                              bool default_value,
+                                              const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuOptionsEnableOpProfiling(bool* enable_op_profiling,
+                                               bool default_value,
+                                               const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuOptionsEnableOpProfilingDetailedReport(
+    bool* enable_op_profiling_detailed_report, bool default_value,
+    const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuOptionsEnableQkvNormRopeFusion(
+    bool* enable_qkv_norm_rope_fusion, bool default_value,
+    const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuOptionsEnableShortConvStepFusion(
+    bool* enable_short_conv_step_fusion, bool default_value,
+    const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuOptionsHasPrepackedExternalTfliteTensors(
+    bool* has_prepacked_external_tflite_tensors, bool default_value,
+    const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuOptionsAllocateGpuMemoryForIoTensors(
+    bool* allocate_gpu_memory_for_io_tensors, bool default_value,
+    const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuOptionsDebugDelegatePartition(
+    bool* debug_delegate_partition, bool default_value,
+    const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuOptionsDebugFirstDelegateNodeIndex(
+    int* debug_first_delegate_node_index, int default_value,
+    const LrtGpuOptions* options);
+
+LiteRtStatus LrtGetGpuOptionsDebugLastDelegateNodeIndex(
+    int* debug_last_delegate_node_index, int default_value,
     const LrtGpuOptions* options);
 
 #ifdef __cplusplus

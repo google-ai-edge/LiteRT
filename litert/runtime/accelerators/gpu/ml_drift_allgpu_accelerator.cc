@@ -153,7 +153,7 @@ class GpuAccelerator {
         litert::ml_drift::GetGpuOptionsPayload(runtime_context, options);
 #if LITERT_HAS_WEBGPU_SUPPORT
     LiteRtGpuBackend backend = kLiteRtGpuBackendAutomatic;
-    LrtGetGpuOptionsGpuBackend(&backend, gpu_options_payload);
+    LrtGetGpuOptionsGpuBackend(&backend, backend, gpu_options_payload);
     if (backend == kLiteRtGpuBackendAutomatic) {
       auto has_opencl = ::ml_drift::cl::LoadOpenCL();
       if (!has_opencl.ok()) {
