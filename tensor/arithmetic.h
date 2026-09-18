@@ -1217,6 +1217,10 @@ Tensor<Mixins...> AveragePool2D(
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.type = input_info.type;
 
+  if (stride_h <= 0 || stride_w <= 0) {
+    return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+        "AveragePool2D strides must be greater than zero.")));
+  }
   const int input_h = input_info.shape[1];
   const int input_w = input_info.shape[2];
 
@@ -1257,6 +1261,10 @@ Tensor<Mixins...> MaxPool2D(Tensor<Mixins...> input, int filter_height,
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.type = input_info.type;
 
+  if (stride_h <= 0 || stride_w <= 0) {
+    return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+        "MaxPool2D strides must be greater than zero.")));
+  }
   const int input_h = input_info.shape[1];
   const int input_w = input_info.shape[2];
 
@@ -1302,6 +1310,10 @@ TensorHandle Conv2DImpl(Tensor<Mixins...> input, Tensor<Mixins...> filter,
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.type = input_info.type;
 
+  if (stride_h <= 0 || stride_w <= 0) {
+    return TensorHandle(graph::ErrorTensor(absl::InvalidArgumentError(
+        "Conv2D strides must be greater than zero.")));
+  }
   const int input_h = input_info.shape[1];
   const int input_w = input_info.shape[2];
   const int filter_h = filter_info.shape[1];
@@ -1376,6 +1388,10 @@ Tensor<Mixins...> DepthwiseConv2DImpl(
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.type = input_info.type;
 
+  if (stride_h <= 0 || stride_w <= 0) {
+    return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+        "DepthwiseConv2D strides must be greater than zero.")));
+  }
   const int input_h = input_info.shape[1];
   const int input_w = input_info.shape[2];
   const int filter_h = filter_info.shape[1];
