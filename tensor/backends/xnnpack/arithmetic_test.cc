@@ -599,5 +599,33 @@ TEST(ArithmeticXnnpackTest, DequantizeQuantizedTensorWorks) {
               IsOkAndHolds(Pointwise(FloatEq(), {-1, 0, 1, 2})));
 }
 
+TEST(ArithmeticXnnpackTest, FullyConnectedWithPerChannelInt2WeightsWorks) {
+  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 4}});
+  // Quantized matrix is:
+  //   1,  0,  0, 0
+  //   0, -1,  0, 0
+  //   0,  0, -2, 0
+  //   1,  0,  0, 1
+  XnnTensor weights(
+      {.name = "weights",
+       .type = Type::kI2,
+       .shape = {4, 4},
+       .buffer = OwningCpuBuffer::Copy<Type::kI8>({0x01, 0x0C, 0x20, 0x41}),
+       .quantization = std::make_shared<PerChannelAffineQuantization>(
+           std::vector<float>{1.0f, 0.5f, 2.0f, 0.25f},
+           std::vector<int64_t>{0, 0, 0, 0}, /*quantized_dimension=*/0)});
+  XnnTensor output = FullyConnected(input, weights);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto runner, XnnpackRunner::Create({output}));
+  const std::vector<float> input_data = {1.0f, 2.0f, 3.0f, 4.0f};
+  ASSERT_THAT(runner.SetInputAsCopy(input, input_data), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+
+  // The input is dynamically quantized to int8, hence the loose tolerance.
+  EXPECT_THAT(
+      runner.ReadOutputAs<float>(output),
+      IsOkAndHolds(Pointwise(FloatNear(2e-2), {1.0f, -1.0f, -12.0f, 1.25f})));
+}
+
 }  // namespace
 }  // namespace litert::tensor
