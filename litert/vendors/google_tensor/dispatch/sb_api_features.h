@@ -67,6 +67,8 @@ enum class GoogleTensorSouthBoundFeature {
   kSqContainerFdWithOffset = 10,
   // thrGraphAnnotateGraph with `key == kEdgetpuPerformanceMode`
   kPerformanceModeAnnotation = 11,
+  // thrRegisterBufferWithOffsetAndCoherency
+  kCoherentBufferRegistration = 12,
 };
 
 // Returns `true` if `feature` is supported by the available Google Tensor
@@ -107,6 +109,9 @@ inline bool GoogleTensorSouthBoundFeatureSupported(
     case GoogleTensorSouthBoundFeature::kPerformanceModeAnnotation:
       return GoogleTensorSouthBoundMajorVersion() > 0 ||
              GoogleTensorSouthBoundMinorVersion() >= 18;
+    case GoogleTensorSouthBoundFeature::kCoherentBufferRegistration:
+      return GoogleTensorSouthBoundMajorVersion() > 0 ||
+             GoogleTensorSouthBoundMinorVersion() >= 22;
   }
 }
 
