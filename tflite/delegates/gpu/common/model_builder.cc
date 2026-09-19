@@ -2785,6 +2785,17 @@ class TransposeOperationParser : public TFLiteOperationParser {
     TransposeAttributes attr;
     Tensor<Linear, DataType::INT32> perm;
     RETURN_IF_ERROR(reader->ReadTensor(1, &perm));
+    // Entries are validated against the input rank centrally, by
+    // InterpreterBuilder::ParseNodes. That check follows the TFLite contract,
+    // under which an axis may be given as a negative offset from the end, so
+    // normalize to the non-negative form that the `index_to_axis` lookups
+    // below require.
+    const int32_t perm_size = static_cast<int32_t>(perm.data.size());
+    for (int32_t& axis_index : perm.data) {
+      if (axis_index < 0) {
+        axis_index += perm_size;
+      }
+    }
     std::map<Axis, int> axis_to_index = {{Axis::BATCH, 0},
                                          {Axis::HEIGHT, 1},
                                          {Axis::WIDTH, 2},
@@ -2942,7 +2953,9 @@ class BatchToSpaceOperationParser : public TFLiteOperationParser {
     Tensor<HW, DataType::INT32> crop;
     RETURN_IF_ERROR(reader->ReadTensor(2, &crop));
     auto crop_shape = crop.shape;
-    if (crop_shape.h != 2 && crop_shape.w != 2) {
+    // Both dimensions must be 2: `crop.data[3]` is read below,
+    // so a 2x1 tensor would run off the end of the buffer.
+    if (crop_shape.h != 2 || crop_shape.w != 2) {
       return absl::InternalError("Space has to be HxW.");
     }
 
@@ -2985,7 +2998,9 @@ class SpaceToBatchOperationParser : public TFLiteOperationParser {
     RETURN_IF_ERROR(reader->ReadTensor(2, &padding));
     auto padding_shape = padding.shape;
 
-    if (padding_shape.h != 2 && padding_shape.w != 2) {
+    // Both dimensions must be 2: `padding.data[3]` is read below,
+    // so a 2x1 tensor would run off the end of the buffer.
+    if (padding_shape.h != 2 || padding_shape.w != 2) {
       return absl::InternalError("Space has to be HxW.");
     }
 

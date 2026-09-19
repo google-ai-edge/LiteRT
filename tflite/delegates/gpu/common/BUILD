@@ -369,6 +369,18 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "object_reader_test",
+    srcs = ["object_reader_test.cc"],
+    deps = [
+        ":model",
+        ":object_reader",
+        "//tensorflow/lite/core/c:private_common",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "operations",
     srcs = ["operations.cc"],
