@@ -203,7 +203,7 @@ setuptools.setup(
     description='MediaTek NeuroPilot SDK for AI Edge LiteRT',
     long_description='MediaTek NeuroPilot SDK for AI Edge LiteRT.',
     long_description_content_type='text/markdown',
-    url='https://www.tensorflow.org/lite/',
+    url='https://developers.google.com/edge/litert',
     author='Google AI Edge Authors',
     author_email='packages@tensorflow.org',
     license='Apache 2.0',
