@@ -253,7 +253,7 @@ class Writer:
       The Writer instance, can be used for chained operation.
 
     [1]:
-    https://www.tensorflow.org/lite/convert/metadata#normalization_and_quantization_parameters
+    https://developers.google.com/edge/litert/conversion/tensorflow/metadata#normalization_and_quantization_parameters
     [2]:
     https://github.com/tensorflow/tflite-support/blob/b80289c4cd1224d0e1836c7654e82f070f9eefaa/tensorflow_lite_support/metadata/metadata_schema.fbs#L172
     """
