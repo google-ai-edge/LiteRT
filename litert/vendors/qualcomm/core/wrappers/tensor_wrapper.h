@@ -317,7 +317,14 @@ bool TensorWrapper::SetTensorData(absl::Span<const T> data) {
                     tensor_bytes, data_bytes, tensor_bytes);
   }
 
-  if constexpr (std::is_same_v<T, float>) {
+  if constexpr (std::is_same_v<T, bool>) {
+    if (qnn_tensor_.v2.dataType != QNN_DATATYPE_BOOL_8) {
+      QNN_LOG_ERROR(
+          "Cannot set tensor data, setting bool data on QNN data type %d.",
+          qnn_tensor_.v2.dataType);
+      return false;
+    }
+  } else if constexpr (std::is_same_v<T, float>) {
     if (qnn_tensor_.v2.dataType != QNN_DATATYPE_FLOAT_32) {
       QNN_LOG_ERROR(
           "Cannot set tensor data, setting float data on QNN data type %d.",

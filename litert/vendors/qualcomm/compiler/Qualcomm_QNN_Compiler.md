@@ -41,96 +41,96 @@ provides the corresponding QNN operation it is legalized to.
 
 | LiteRT Op Code | Note |
 | :--- | :--- |
-| `kLiteRtOpCodeTflAbs` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (ABS). |
-| `kLiteRtOpCodeTflAdd` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (ADD). Supports fused activation. |
-| `kLiteRtOpCodeTflAddN` | Legalized to a chain of N-1 `QNN_OP_ELEMENT_WISE_BINARY` (ADD). FLOAT32 and INT32 only. |
+| `kLiteRtOpCodeTflAbs` | Legalized to `QNN_OP_ELEMENT_WISE_ABS`. |
+| `kLiteRtOpCodeTflAdd` | Legalized to `QNN_OP_ELEMENT_WISE_ADD`. Supports fused activation. |
+| `kLiteRtOpCodeTflAddN` | Legalized to a chain of N-1 `QNN_OP_ELEMENT_WISE_ADD`. FLOAT32 and INT32 only. |
 | `kLiteRtOpCodeTflArgMax` | Legalized to `QNN_OP_ARGMAX`. |
 | `kLiteRtOpCodeTflArgMin` | Legalized to `QNN_OP_ARGMIN`. |
 | `kLiteRtOpCodeTflAveragePool2d` | Legalized to `QNN_OP_POOL_AVG_2D`. Supports fused activation. |
 | `kLiteRtOpCodeTflBatchMatmul` | Legalized to `QNN_OP_MAT_MUL`. |
 | `kLiteRtOpCodeTflBatchToSpaceNd` | Legalized to `QNN_OP_BATCH_TO_SPACE` with `block_size` and `crops` tensor params derived from the static `block_shape` and `crops` inputs. |
-| `kLiteRtOpCodeTflBroadcastTo` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (ADD) or `QNN_OP_ELEMENT_WISE_BINARY` (OR) with a static tensor. |
+| `kLiteRtOpCodeTflBroadcastTo` | Legalized to `QNN_OP_ELEMENT_WISE_ADD` or `QNN_OP_ELEMENT_WISE_OR` with a static tensor. |
 | `kLiteRtOpCodeTflCast` | Legalized to `QNN_OP_CAST`. |
-| `kLiteRtOpCodeTflCeil` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (CEIL). |
+| `kLiteRtOpCodeTflCeil` | Legalized to `QNN_OP_ELEMENT_WISE_CEIL`. |
 | `kLiteRtOpCodeTflConcatenation` | Legalized to `QNN_OP_CONCAT`. Supports fused activation. |
 | `kLiteRtOpCodeTflConv2d` | Legalized to `QNN_OP_CONV_2D`. Supports fused activation. For data types other than `QNN_DATATYPE_UFIXED_POINT_8` and `QNN_DATATYPE_SFIXED_POINT_8`, weights are transposed using `QNN_OP_TRANSPOSE`. |
 | `kLiteRtOpCodeTflConv3d` | Legalized to `QNN_OP_CONV_3D`. Supports fused activation. |
-| `kLiteRtOpCodeTflCos` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (COS). |
+| `kLiteRtOpCodeTflCos` | Legalized to `QNN_OP_ELEMENT_WISE_COS`. |
 | `kLiteRtOpCodeTflCumsum` | Legalized to `QNN_OP_CUMULATIVE_SUM`. |
 | `kLiteRtOpCodeTflDepthToSpace` | Legalized to `QNN_OP_DEPTH_TO_SPACE`. |
 | `kLiteRtOpCodeTflDepthwiseConv2d` | Legalized to `QNN_OP_DEPTH_WISE_CONV_2D`. Supports fused activation. Weights are reshaped. |
 | `kLiteRtOpCodeTflDequantize` | Legalized to `QNN_OP_DEQUANTIZE` or `QNN_OP_CAST`. |
 | `kLiteRtOpCodeTflDiv` | Legalized to `QNN_OP_ELEMENT_WISE_DIVIDE`. Supports fused activation. |
-| `kLiteRtOpCodeTflDynamicUpdateSlice` | Legalized to a sequence of ops including `QNN_OP_ELEMENT_WISE_BINARY` (NOT_EQUAL), `QNN_OP_RESHAPE`, `QNN_OP_REDUCE_SUM` and `QNN_OP_ELEMENT_WISE_SELECT`. |
-| `kLiteRtOpCodeTflElu` | Legalized to `QNN_OP_ELEMENT_WISE_NEURON` (ELU). |
+| `kLiteRtOpCodeTflDynamicUpdateSlice` | Legalized to a sequence of ops including `QNN_OP_ELEMENT_WISE_NOT_EQUAL`, `QNN_OP_RESHAPE`, `QNN_OP_REDUCE_SUM` and `QNN_OP_ELEMENT_WISE_SELECT`. |
+| `kLiteRtOpCodeTflElu` | Legalized to `QNN_OP_ELU`. |
 | `kLiteRtOpCodeTflEmbeddingLookup` | Legalized to `QNN_OP_GATHER`. |
-| `kLiteRtOpCodeTflEqual` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (EQUAL). |
-| `kLiteRtOpCodeTflExp` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (EXP). |
-| `kLiteRtOpCodeTflFloor` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (FLOOR). |
-| `kLiteRtOpCodeTflFloorDiv` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (FLOOR_DIV). |
+| `kLiteRtOpCodeTflEqual` | Legalized to `QNN_OP_ELEMENT_WISE_EQUAL`. |
+| `kLiteRtOpCodeTflExp` | Legalized to `QNN_OP_ELEMENT_WISE_EXP`. |
+| `kLiteRtOpCodeTflFloor` | Legalized to `QNN_OP_ELEMENT_WISE_FLOOR`. |
+| `kLiteRtOpCodeTflFloorDiv` | Legalized to `QNN_OP_ELEMENT_WISE_FLOOR_DIV`. |
 | `kLiteRtOpCodeTflFloorMod` | Legalized to `QNN_OP_ELEMENT_WISE_MOD`. Supports INT32 only. |
 | `kLiteRtOpCodeTflFullyConnected` | Legalized to `QNN_OP_FULLY_CONNECTED` and `QNN_OP_RESHAPE` if keep_num_dims = true. Supports fused activation. |
 | `kLiteRtOpCodeTflGather` | Legalized to `QNN_OP_GATHER`. |
 | `kLiteRtOpCodeTflGatherNd` | Legalized to `QNN_OP_GATHER_ND`. |
-| `kLiteRtOpCodeTflGelu` | Legalized to `QNN_OP_ELEMENT_WISE_NEURON` (GELU). |
-| `kLiteRtOpCodeTflGreater` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (GREATER). |
-| `kLiteRtOpCodeTflGreaterEqual` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (GREATER_EQUAL). |
-| `kLiteRtOpCodeTflHardSwish` | Legalized to `QNN_OP_ELEMENT_WISE_NEURON` (HARD_SWISH). |
+| `kLiteRtOpCodeTflGelu` | Legalized to `QNN_OP_GELU`. |
+| `kLiteRtOpCodeTflGreater` | Legalized to `QNN_OP_ELEMENT_WISE_GREATER`. |
+| `kLiteRtOpCodeTflGreaterEqual` | Legalized to `QNN_OP_ELEMENT_WISE_GREATER_EQUAL`. |
+| `kLiteRtOpCodeTflHardSwish` | Legalized to `QNN_OP_HARD_SWISH`. |
 | `kLiteRtOpCodeTflL2Normalization` | Legalized to `QNN_OP_L2_NORM`. |
 | `kLiteRtOpCodeTflL2Pool2d` | Legalized to `QNN_OP_L2_POOL_2D`. Supports fused activation. |
 | `kLiteRtOpCodeTflLeakyRelu` | Legalized to `QNN_OP_PRELU`. |
-| `kLiteRtOpCodeTflLess` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (LESS). |
-| `kLiteRtOpCodeTflLessEqual` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (LESS_EQUAL). |
-| `kLiteRtOpCodeTflLog` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (LOG). |
-| `kLiteRtOpCodeTflLogicalAnd` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (AND). |
-| `kLiteRtOpCodeTflLogicalNot` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (NOT). |
-| `kLiteRtOpCodeTflLogicalOr` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (OR). |
-| `kLiteRtOpCodeTflLogistic` | Legalized to `QNN_OP_ELEMENT_WISE_NEURON` (SIGMOID). |
-| `kLiteRtOpCodeTflMaximum` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (MAXIMUM). |
+| `kLiteRtOpCodeTflLess` | Legalized to `QNN_OP_ELEMENT_WISE_LESS`. |
+| `kLiteRtOpCodeTflLessEqual` | Legalized to `QNN_OP_ELEMENT_WISE_LESS_EQUAL`. |
+| `kLiteRtOpCodeTflLog` | Legalized to `QNN_OP_ELEMENT_WISE_LOG`. |
+| `kLiteRtOpCodeTflLogicalAnd` | Legalized to `QNN_OP_ELEMENT_WISE_AND`. |
+| `kLiteRtOpCodeTflLogicalNot` | Legalized to `QNN_OP_ELEMENT_WISE_NOT`. |
+| `kLiteRtOpCodeTflLogicalOr` | Legalized to `QNN_OP_ELEMENT_WISE_OR`. |
+| `kLiteRtOpCodeTflLogistic` | Legalized to `QNN_OP_SIGMOID`. |
+| `kLiteRtOpCodeTflMaximum` | Legalized to `QNN_OP_ELEMENT_WISE_MAXIMUM`. |
 | `kLiteRtOpCodeTflMaxPool2d` | Legalized to `QNN_OP_POOL_MAX_2D`. Supports fused activation. |
 | `kLiteRtOpCodeTflMean` | Legalized to `QNN_OP_REDUCE_MEAN`. |
-| `kLiteRtOpCodeTflMinimum` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (MINIMUM). |
+| `kLiteRtOpCodeTflMinimum` | Legalized to `QNN_OP_ELEMENT_WISE_MINIMUM`. |
 | `kLiteRtOpCodeTflMirrorPad` | Legalized to `QNN_OP_PAD` with `REFLECT` or `SYMMETRIC` scheme. |
 | `kLiteRtOpCodeTflMul` | Legalized to `QNN_OP_ELEMENT_WISE_MULTIPLY`. Supports fused activation. |
-| `kLiteRtOpCodeTflNeg` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (NEG). |
-| `kLiteRtOpCodeTflNotEqual` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (NOT_EQUAL). |
+| `kLiteRtOpCodeTflNeg` | Legalized to `QNN_OP_ELEMENT_WISE_NEG`. |
+| `kLiteRtOpCodeTflNotEqual` | Legalized to `QNN_OP_ELEMENT_WISE_NOT_EQUAL`. |
 | `kLiteRtOpCodeTflOneHot` | Legalized to `QNN_OP_ONE_HOT`. Depth must be a static scalar `QNN_DATATYPE_INT_32` or `QNN_DATATYPE_UINT_32`. On/off values must be static scalars with the same data type as the output. Supported output/on/off types: `QNN_DATATYPE_SFIXED_POINT_8`, `QNN_DATATYPE_UFIXED_POINT_8`, `QNN_DATATYPE_SFIXED_POINT_16`, `QNN_DATATYPE_UFIXED_POINT_16`, `QNN_DATATYPE_FLOAT_32` (quantized types require per-tensor quantization). Axis is normalized to `[0, rank]`. |
 | `kLiteRtOpCodeTflPack` | Legalized to `QNN_OP_PACK`, `QNN_OP_RESHAPE`, or `QNN_OP_CONCAT` depending on input count. |
 | `kLiteRtOpCodeTflPad`, `kLiteRtOpCodeTflPadv2` | Legalized to `QNN_OP_PAD` with `CONSTANT` scheme. |
-| `kLiteRtOpCodeTflPow` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (POWER). |
+| `kLiteRtOpCodeTflPow` | Legalized to `QNN_OP_ELEMENT_WISE_POWER`. |
 | `kLiteRtOpCodeTflPrelu` | Legalized to `QNN_OP_PRELU`. |
 | `kLiteRtOpCodeTflQuantize` | Legalized to `QNN_OP_QUANTIZE`, `QNN_OP_CONVERT`, or `QNN_OP_CAST`. |
 | `kLiteRtOpCodeTflReduceAll` | Legalized to a sequence of `QNN_OP_CAST` and `QNN_OP_REDUCE_MIN`. |
 | `kLiteRtOpCodeTflReduceAny` | Legalized to a sequence of `QNN_OP_CAST` and `QNN_OP_REDUCE_MAX`. |
 | `kLiteRtOpCodeTflReduceMax` | Legalized to `QNN_OP_REDUCE_MAX`. |
 | `kLiteRtOpCodeTflReduceMin` | Legalized to `QNN_OP_REDUCE_MIN`. |
-| `kLiteRtOpCodeTflRelu` | Legalized to `QNN_OP_ELEMENT_WISE_NEURON` (RELU). |
-| `kLiteRtOpCodeTflRelu0To1` | Legalized to `QNN_OP_ELEMENT_WISE_NEURON` (RELU_MIN_MAX). |
-| `kLiteRtOpCodeTflRelu6` | Legalized to `QNN_OP_ELEMENT_WISE_NEURON` (RELU_MIN_MAX). |
-| `kLiteRtOpCodeTflReluN1To1` | Legalized to `QNN_OP_ELEMENT_WISE_NEURON` (RELU_MIN_MAX). |
+| `kLiteRtOpCodeTflRelu` | Legalized to `QNN_OP_RELU`. |
+| `kLiteRtOpCodeTflRelu0To1` | Legalized to `QNN_OP_RELU_MIN_MAX`. |
+| `kLiteRtOpCodeTflRelu6` | Legalized to `QNN_OP_RELU_MIN_MAX`. |
+| `kLiteRtOpCodeTflReluN1To1` | Legalized to `QNN_OP_RELU_MIN_MAX`. |
 | `kLiteRtOpCodeTflReshape` | Legalized to `QNN_OP_RESHAPE`. |
 | `kLiteRtOpCodeTflResizeBilinear` | Legalized to `QNN_OP_RESIZE_BILINEAR`. |
 | `kLiteRtOpCodeTflResizeNearestNeighbor` | Legalized to `QNN_OP_RESIZE_NEAREST_NEIGHBOR`. |
 | `kLiteRtOpCodeTflReverseV2` | Legalized to `QNN_OP_STRIDED_SLICE`. |
-| `kLiteRtOpCodeTflRound` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (ROUND). |
+| `kLiteRtOpCodeTflRound` | Legalized to `QNN_OP_ELEMENT_WISE_ROUND`. |
 | `kLiteRtOpCodeTflRsqrt` | Legalized to `QNN_OP_ELEMENT_WISE_RSQRT`. |
 | `kLiteRtOpCodeTflSelect`, `kLiteRtOpCodeTflSelectV2` | Legalized to `QNN_OP_ELEMENT_WISE_SELECT`. |
-| `kLiteRtOpCodeTflSign` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (SIGN). |
-| `kLiteRtOpCodeTflSin` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (SIN). |
+| `kLiteRtOpCodeTflSign` | Legalized to `QNN_OP_ELEMENT_WISE_SIGN`. |
+| `kLiteRtOpCodeTflSin` | Legalized to `QNN_OP_ELEMENT_WISE_SIN`. |
 | `kLiteRtOpCodeTflSlice` | Legalized to `QNN_OP_STRIDED_SLICE`. |
 | `kLiteRtOpCodeTflSoftmax` | Legalized to `QNN_OP_SOFTMAX`. |
 | `kLiteRtOpCodeTflSpaceToBatchNd` | Legalized to `QNN_OP_SPACE_TO_BATCH` with `block_size` and `pad_amount` tensor params derived from the static `block_shape` and `paddings` inputs. |
 | `kLiteRtOpCodeTflSpaceToDepth` | Legalized to `QNN_OP_SPACE_TO_DEPTH`. |
 | `kLiteRtOpCodeTflSplit` | Legalized to `QNN_OP_SPLIT`. |
 | `kLiteRtOpCodeTflSplitV` | Legalized to `QNN_OP_SPLIT` with a cumulative `split_index` derived from the static `size_splits` input. |
-| `kLiteRtOpCodeTflSquare` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (MULTIPLY). |
-| `kLiteRtOpCodeTflSquaredDifference` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (SQUARED_DIFFERENCE). |
+| `kLiteRtOpCodeTflSquare` | Legalized to `QNN_OP_ELEMENT_WISE_MULTIPLY`. |
+| `kLiteRtOpCodeTflSquaredDifference` | Legalized to `QNN_OP_ELEMENT_WISE_SQUARED_DIFFERENCE`. |
 | `kLiteRtOpCodeTflSqueeze` | Legalized to `QNN_OP_SQUEEZE`. |
-| `kLiteRtOpCodeTflSqrt` | Legalized to `QNN_OP_ELEMENT_WISE_UNARY` (SQRT). |
+| `kLiteRtOpCodeTflSqrt` | Legalized to `QNN_OP_ELEMENT_WISE_SQUARE_ROOT`. |
 | `kLiteRtOpCodeTflStridedSlice` | Legalized to `QNN_OP_STRIDED_SLICE`. |
-| `kLiteRtOpCodeTflSub` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (SUBTRACT). Supports fused activation. |
+| `kLiteRtOpCodeTflSub` | Legalized to `QNN_OP_ELEMENT_WISE_SUBTRACT`. Supports fused activation. |
 | `kLiteRtOpCodeTflSum` | Legalized to `QNN_OP_REDUCE_SUM`. |
-| `kLiteRtOpCodeTflTanh` | Legalized to `QNN_OP_ELEMENT_WISE_NEURON` (TANH). |
+| `kLiteRtOpCodeTflTanh` | Legalized to `QNN_OP_TANH`. |
 | `kLiteRtOpCodeTflTile` | Legalized to `QNN_OP_TILE`. |
 | `kLiteRtOpCodeTflTopkV2` | Legalized to `QNN_OP_TOP_K`. |
 | `kLiteRtOpCodeTflTranspose` | Legalized to `QNN_OP_TRANSPOSE`. |
