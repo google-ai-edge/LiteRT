@@ -52,6 +52,10 @@ std::vector<OpWrapper> BuildConv2dOp(
         std::get<AxisScaleOffsetQuantizeParamsWrapper>(filter_quant_params);
     const std::array<std::int32_t, 4> new_axis{3, 0, 1, 2};
     axis_quant_params.SetAxis(new_axis[axis_quant_params.GetAxis()]);
+  } else if (auto* block_quant_params =
+                 std::get_if<BwFloatBlockQuantizeParamsWrapper>(
+                     &filter_quant_params)) {
+    block_quant_params->Permute(filters_dims, {1, 2, 3, 0});
   }
 
   size_t filter_bytes = filter_tensor.GetTensorBytes();
@@ -63,9 +67,16 @@ std::vector<OpWrapper> BuildConv2dOp(
     std::vector<int8_t> transpose_weight_int8;
     TransposeFromOHWIToHWIO(filter_data.value(), filters_dims,
                             transpose_weight_int8);
-    transposed_filter_tensor = &(tensor_pool.CreateStaticTensor(
-        filter_tensor.GetDataType(), filter_quant_params, permute_dims,
-        filter_bytes, transpose_weight_int8.data()));
+    if (filter_tensor.IsBlockwiseQuant()) {
+      transposed_filter_tensor =
+          &(tensor_pool.CreateStaticTensorFromUnpackedData(
+              filter_tensor.GetDataType(), filter_quant_params, permute_dims,
+              filter_bytes, transpose_weight_int8.data()));
+    } else {
+      transposed_filter_tensor = &(tensor_pool.CreateStaticTensor(
+          filter_tensor.GetDataType(), filter_quant_params, permute_dims,
+          filter_bytes, transpose_weight_int8.data()));
+    }
   } else if (filter_tensor.IsTensorStatic() &&
              filter_tensor.GetDataType() ==
                  Qnn_DataType_t::QNN_DATATYPE_UFIXED_POINT_8) {
@@ -73,9 +84,16 @@ std::vector<OpWrapper> BuildConv2dOp(
     std::vector<uint8_t> transpose_weight_uint8;
     TransposeFromOHWIToHWIO(filter_data.value(), filters_dims,
                             transpose_weight_uint8);
-    transposed_filter_tensor = &(tensor_pool.CreateStaticTensor(
-        filter_tensor.GetDataType(), filter_quant_params, permute_dims,
-        filter_bytes, transpose_weight_uint8.data()));
+    if (filter_tensor.IsBlockwiseQuant()) {
+      transposed_filter_tensor =
+          &(tensor_pool.CreateStaticTensorFromUnpackedData(
+              filter_tensor.GetDataType(), filter_quant_params, permute_dims,
+              filter_bytes, transpose_weight_uint8.data()));
+    } else {
+      transposed_filter_tensor = &(tensor_pool.CreateStaticTensor(
+          filter_tensor.GetDataType(), filter_quant_params, permute_dims,
+          filter_bytes, transpose_weight_uint8.data()));
+    }
   } else {
     transposed_filter_tensor =
         &(tensor_pool.CloneNativeTensorFrom(filter_tensor, permute_dims));

@@ -1,6 +1,7 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -110,6 +111,13 @@ TEST(MiscTest, TestAlwaysFalse) {
   ASSERT_FALSE(::qnn::always_false<float>);
   ASSERT_FALSE(::qnn::always_false<double>);
   ASSERT_FALSE(::qnn::always_false<long double>);
+}
+
+TEST(MiscTests, Fp16BitsToFloat) {
+  EXPECT_FLOAT_EQ(Fp16BitsToFloat(0x0000), 0.0f);
+  EXPECT_FLOAT_EQ(Fp16BitsToFloat(0x3c00), 1.0f);
+  EXPECT_FLOAT_EQ(Fp16BitsToFloat(0xc000), -2.0f);
+  EXPECT_FLOAT_EQ(Fp16BitsToFloat(0x0001), std::ldexp(1.0f, -24));
 }
 
 TEST(MiscTests, Quantize) {
@@ -225,6 +233,18 @@ TEST(MiscTests, UnpackInt2Data) {
     EXPECT_EQ(dst[6], 1);
     EXPECT_EQ(dst[7], 0);
   }
+}
+
+TEST(MiscTests, ConvertDataFromInt8ToInt4) {
+  const std::vector<std::int8_t> src{4, -2, 7, -8, 1};
+  std::vector<std::int8_t> dst;
+
+  ConvertDataFromInt8ToInt4(src, dst);
+
+  const std::vector<std::int8_t> expected{
+      static_cast<std::int8_t>(0xe4), static_cast<std::int8_t>(0x87),
+      static_cast<std::int8_t>(0x01)};
+  EXPECT_EQ(dst, expected);
 }
 
 TEST(MiscTests, UnpackInt4Data) {

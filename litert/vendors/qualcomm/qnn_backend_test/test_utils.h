@@ -5,9 +5,11 @@
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_QNN_BACKEND_TEST_TEST_UTILS_H_
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <tuple>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include "absl/base/no_destructor.h"  // from @com_google_absl
@@ -28,6 +30,9 @@ inline const ::qnn::Options& GetTestingDefaultQnnOptions() {
 std::string QnnTestPrinter(
     const ::testing::TestParamInfo<std::tuple<::qnn::Options, const char*>>&
         param_info);
+
+std::vector<std::int8_t> PackLowBitWeights(
+    std::uint32_t bitwidth, const std::vector<std::int8_t>& weights);
 
 class QnnModelTest
     : public testing::TestWithParam<std::tuple<::qnn::Options, const char*>> {
