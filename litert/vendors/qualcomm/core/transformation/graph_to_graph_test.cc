@@ -36,6 +36,42 @@
 
 namespace qnn {
 namespace {
+
+TEST(DequantizeQuantizeTest, Int8ToFloat32ToInt16UsesConvert) {
+  TensorPool tensor_pool;
+
+  QuantizeParamsWrapperVariant int8_quant_param;
+  int8_quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1e-4f, 0);
+  auto& input = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                               int8_quant_param, {1, 8});
+
+  auto& fp32 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_32, {}, {1, 8});
+
+  QuantizeParamsWrapperVariant int16_quant_param;
+  int16_quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1e-5f, 0);
+  auto& output = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_16,
+                                                int16_quant_param, {1, 8});
+
+  std::vector<OpWrapper> op_wrappers;
+  std::vector<TensorWrapperRef> dequantize_inputs;
+  dequantize_inputs.emplace_back(input);
+  std::vector<TensorWrapperRef> dequantize_outputs;
+  dequantize_outputs.emplace_back(fp32);
+  auto dequantize =
+      BuildDequantizeOp(tensor_pool, dequantize_inputs, dequantize_outputs);
+  std::move(dequantize.begin(), dequantize.end(),
+            std::back_inserter(op_wrappers));
+  op_wrappers.emplace_back(CreateQuantizeOp(fp32, output));
+
+  GraphToGraphTransform(::qnn::G2GConfig::kMHAOpt, op_wrappers, tensor_pool,
+                        [](OpWrapper& op) { return true; });
+
+  ASSERT_EQ(op_wrappers.size(), 1);
+  EXPECT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kConvert));
+  EXPECT_EQ(op_wrappers[0].GetInputTensor(0), input);
+  EXPECT_EQ(op_wrappers[0].GetOutputTensor(0), output);
+}
+
 TEST(MatMulConvertTest, Gemma3Prefill) {
   // G2G Test case: 2 MatMuls with 1 Convert
   //
