@@ -126,11 +126,11 @@ Find more models at the [Hugging Face LiteRT Community Page](https://huggingface
 
 ## 🔗 Sample Apps & Colabs
 
-Find official sample applications and code examples for LiteRT (compiled_model_api) here:
+Find official sample applications and code examples for LiteRT here:
 
-* **[LiteRT Samples](https://github.com/google-ai-edge/litert-samples/tree/main/compiled_model_api):** A collection of sample applications.
-* **[ASR Sample App](https://github.com/google-ai-edge/litert-samples/tree/main/compiled_model_api/speech_recognition):** Automatic Speech Recognition LiteRT Sample App
-* **[Image Segmentation](https://github.com/google-ai-edge/litert-samples/tree/main/compiled_model_api/speech_recognition):** C++ and Kotlin Image Segmentation app demonstrating AOT and on-device compilation examples
+* **[LiteRT Samples](https://github.com/google-ai-edge/litert-samples/tree/main/samples/litert):** A collection of sample applications.
+* **[ASR Sample App](https://github.com/google-ai-edge/litert-samples/tree/main/samples/litert/speech_recognition):** Automatic Speech Recognition LiteRT Sample App
+* **[Image Segmentation](https://github.com/google-ai-edge/litert-samples/tree/main/samples/litert/image_segmentation):** C++ and Kotlin Image Segmentation app demonstrating AOT and on-device compilation examples
 ---
 
 ## 🏁 Installation
