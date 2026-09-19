@@ -44,6 +44,7 @@ limitations under the License.
 #include "tflite/profiling/telemetry/telemetry.h"
 #include "tflite/stderr_reporter.h"
 #include "tflite/util.h"
+#include "tflite/version.h"
 
 // TODO(b/139446230): Move to portable platform header.
 #if defined(__ANDROID__)
@@ -106,9 +107,13 @@ Interpreter::Interpreter(ErrorReporter* error_reporter)
   // Prod logging is useful for mobile platforms where scraping console logs is
   // critical for debugging.
 #if defined(TFLITE_IS_MOBILE_PLATFORM)
-  TFLITE_LOG_PROD_ONCE(TFLITE_LOG_INFO, "Initialized TensorFlow Lite runtime.");
+  TFLITE_LOG_PROD_ONCE(TFLITE_LOG_INFO,
+                       "Initialized TensorFlow Lite runtime (version %s).",
+                       TFLITE_VERSION_STRING);
 #else
-  TFLITE_LOG_ONCE(TFLITE_LOG_INFO, "Initialized TensorFlow Lite runtime.");
+  TFLITE_LOG_ONCE(TFLITE_LOG_INFO,
+                  "Initialized TensorFlow Lite runtime (version %s).",
+                  TFLITE_VERSION_STRING);
 #endif
 
   // There's always at least 1 subgraph which is the primary subgraph.
