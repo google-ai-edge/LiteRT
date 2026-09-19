@@ -1152,6 +1152,9 @@ class ClampOperationsParser : public TFLiteOperationParser {
 
 class ConcatenationOperationParser : public TFLiteOperationParser {
  public:
+  explicit ConcatenationOperationParser(const ModelBuilderOptions& options)
+      : options_(options) {}
+
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
@@ -1187,13 +1190,31 @@ class ConcatenationOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::ConcatAttributes attr;
+    // CONCATENATION requires all inputs to share the output's data type. The
+    // partitioner (FP16GraphPartitionHelper::RemapFp16InputTensors) rewires a
+    // float16 constant straight into this node, removing the DEQUANTIZE the
+    // graph declared in front of it; for a float32 concat that leaves a
+    // float16 operand beside float32 ones. Read such a constant as float32 to
+    // restore what the graph declared. Only at float32 precision. Otherwise
+    // every float32 tensor is lowered to float16.
+    const bool requires_float32_constants =
+        !options_.enable_reduced_precision &&
+        reader->GetOutputTensor(0)->type == kTfLiteFloat32;
     // Read inputs first to make sure const node is added to a graph before
     // concat node to ensure topological order.
     std::vector<const ::ml_drift::Value*> inputs;
     for (uint32_t idx = 0; idx < tflite_node->inputs->size; ++idx) {
-      ::ml_drift::Value* input = reader->IsConstantTensor(idx)
-                                     ? reader->AddConstInput(idx, /*layout=*/{})
-                                     : reader->ReadValue(idx);
+      ::ml_drift::Value* input;
+      if (reader->IsConstantTensor(idx)) {
+        const bool read_float16_constants_as_float32 =
+            requires_float32_constants &&
+            reader->GetInputTensor(idx)->type == kTfLiteFloat16;
+        input = read_float16_constants_as_float32
+                    ? reader->AddFloat16ConstAsFloat32Input(idx, /*layout=*/{})
+                    : reader->AddConstInput(idx, /*layout=*/{});
+      } else {
+        input = reader->ReadValue(idx);
+      }
       inputs.push_back(input);
     }
 
@@ -1289,6 +1310,9 @@ class ConcatenationOperationParser : public TFLiteOperationParser {
     }
     return axis;
   }
+
+ private:
+  const ModelBuilderOptions& options_;
 };
 
 class Conv2DOperationParser : public TFLiteOperationParser {
@@ -6925,7 +6949,7 @@ std::unique_ptr<TFLiteOperationParser> NewOperationParser(
       return std::make_unique<ElementwiseOperationParser>(
           ::ml_drift::OperationType::CEIL);
     case kTfLiteBuiltinConcatenation:
-      return std::make_unique<ConcatenationOperationParser>();
+      return std::make_unique<ConcatenationOperationParser>(options);
     case kTfLiteBuiltinConv2d:
       return std::make_unique<Conv2DOperationParser>(options);
     case kTfLiteBuiltinCos:

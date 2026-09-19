@@ -355,8 +355,9 @@ class IrModelBuilder {
     auto composite = absl::bind_front(
         ConvertComposite, context_, node, registration, std::ref(tensor_map),
         std::ref(options_), custom_parsers_, std::ref(ir_model));
-    auto concat = absl::bind_front(ConvertConcat, context_, node, registration,
-                                   std::ref(tensor_map), std::ref(ir_model));
+    auto concat =
+        absl::bind_front(ConvertConcat, context_, node, registration,
+                         std::ref(tensor_map), options_, std::ref(ir_model));
     auto conv =
         absl::bind_front(ConvertConv, context_, node, registration,
                          std::ref(tensor_map), options_, std::ref(ir_model));
