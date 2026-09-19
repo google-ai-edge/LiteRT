@@ -31,6 +31,7 @@ limitations under the License.
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
+#include "tensor/examples/gemma4/gemma4_weights.h"
 #include "tensor/examples/ops/transformer/transformer_ops_xnnpack.h"  // IWYU pragma: keep
 #include "tensor/runners/xnnpack/runner.h"
 #include "tensor/tensor.h"
@@ -183,6 +184,71 @@ absl::flat_hash_map<std::string, XnnTensor> CreateGemma4GraphTestWeights(
 
   return weights;
 }
+
+class Gemma4OutputHeadTest : public ::testing::TestWithParam<bool> {};
+
+TEST_P(Gemma4OutputHeadTest, ProjectsWithCheckpointWeights) {
+  Config config = Config::E4B();
+  // Isolate the final normalization and output projection from transformer
+  // layers so that the logits have a simple numerical reference.
+  config.num_layers = 0;
+  config.vocab_size = 3;
+  config.embed_dim = 2;
+  config.final_logit_softcap = 0.0f;
+
+  Gemma4Inputs<XnnpackMixinTag> inputs;
+  inputs.embedded_input.Set(
+      {.name = "embedded_input", .type = Type::kFP32, .shape = {1, 2, 2}});
+  absl::flat_hash_map<std::string, XnnTensor> checkpoint_weights;
+  checkpoint_weights.insert(
+      {"model.language_model.norm.weight",
+       XnnTensor({.type = Type::kFP32,
+                  .shape = {2},
+                  .buffer = std::vector<float>{1.0f, 1.0f}})});
+  checkpoint_weights.insert(
+      {"model.language_model.embed_tokens.weight",
+       XnnTensor({.type = Type::kFP32,
+                  .shape = {3, 2},
+                  .buffer = std::vector<float>{1.0f, 0.0f, 0.0f, 1.0f,
+                                               1.0f, 1.0f}})});
+  if (GetParam()) {
+    checkpoint_weights.insert(
+        {"lm_head.weight",
+         XnnTensor({.type = Type::kFP32,
+                    .shape = {3, 2},
+                    .buffer = std::vector<float>{2.0f, 0.0f, 0.0f, 3.0f,
+                                                 -1.0f, 1.0f}})});
+  }
+
+  // Apply the same mapping used to load checkpoint tensors in the example.
+  for (const auto& [source_name, target_name] : GetGemma4WeightMapping(0)) {
+    auto it = checkpoint_weights.find(source_name);
+    if (it != checkpoint_weights.end()) {
+      inputs.weights.insert({target_name, it->second});
+    }
+  }
+
+  auto outputs = BuildGemma4Graph(inputs, config);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      XnnpackRunner runner, XnnpackRunner::Create({outputs.logits}));
+  const std::array<float, 4> input_data = {1.0f, -1.0f, -1.0f, 1.0f};
+  ASSERT_THAT(runner.SetInput(inputs.embedded_input, input_data), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+
+  // RMSNorm gives approximately [1, -1] and [-1, 1]. Project each row
+  // against the selected weights, allowing for the normalization epsilon.
+  const std::array<float, 6> expected_logits =
+      GetParam() ? std::array<float, 6>{2.0f, -3.0f, -2.0f, -2.0f, 3.0f, 2.0f}
+                 : std::array<float, 6>{1.0f, -1.0f, 0.0f, -1.0f, 1.0f, 0.0f};
+  EXPECT_THAT(runner.ReadOutputAs<float>(outputs.logits),
+              IsOkAndHolds(Pointwise(FloatNear(1e-5f), expected_logits)));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Gemma4GraphTest, Gemma4OutputHeadTest, ::testing::Bool(),
+    [](const ::testing::TestParamInfo<bool>& info) {
+      return info.param ? "ExplicitHead" : "TiedEmbeddings";
+    });
 
 TEST(Gemma4GraphTest, ModelTest) {
   Config config = Config::E4B();
