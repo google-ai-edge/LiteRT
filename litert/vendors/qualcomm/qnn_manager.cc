@@ -47,7 +47,6 @@
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/core/dynamic_loading.h"
 #include "litert/core/filesystem.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/backends/dsp_backend.h"
@@ -135,32 +134,67 @@ Expected<absl::Span<const QnnSystemInterface_t*>> LoadSystemProvidersFromLib(
 
 QnnManager::~QnnManager() = default;
 
+LiteRtStatus QnnManager::LoadSharedLibHelper(absl::string_view path,
+                                             bool needs_global_symbols,
+                                             SharedLibrary& out_lib) {
+  const auto rtld_flags = GetRtldFlags(needs_global_symbols);
+
+  // 1. Try explicit qnn_lib_dir from Options
+  if (!options_.GetQnnLibDir().empty()) {
+    std::string resolved_path =
+        litert::internal::Join({options_.GetQnnLibDir(), path});
+    LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
+               resolved_path.c_str());
+    auto lib_or = SharedLibrary::Load(resolved_path, rtld_flags);
+    if (lib_or) {
+      out_lib = std::move(lib_or.Value());
+      return kLiteRtStatusOk;
+    }
+    LITERT_LOG(LITERT_INFO, "Falling back from qnn_lib_dir to loading \"%s\"",
+               path.data());
+  }
+
+  // 2. Try shared_library_dir_ (plugin directory)
+  if (shared_library_dir_ && !shared_library_dir_->empty() &&
+      *shared_library_dir_ != options_.GetQnnLibDir()) {
+    std::string resolved_path =
+        litert::internal::Join({*shared_library_dir_, path});
+    LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
+               resolved_path.c_str());
+    auto lib_or = SharedLibrary::Load(resolved_path, rtld_flags);
+    if (lib_or) {
+      out_lib = std::move(lib_or.Value());
+      return kLiteRtStatusOk;
+    }
+    LITERT_LOG(LITERT_INFO,
+               "Falling back from shared_library_dir to loading \"%s\"",
+               path.data());
+  }
+
+  // 3. Fallback to path directly (system loader paths)
+  LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
+             path.data());
+  auto lib_or = SharedLibrary::Load(path, rtld_flags);
+  if (!lib_or) {
+    LITERT_LOG(LITERT_ERROR,
+               "Failed to load qnn shared library from \"%s\": %s", path.data(),
+               lib_or.Error().Message().data());
+    return lib_or.Error().Status();
+  }
+  out_lib = std::move(lib_or.Value());
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
   auto saver_output_dir = options_.GetSaverOutputDir();
   const bool needs_global_symbols = !options_.GetCustomOpPackage().name.empty();
   if (saver_output_dir.empty()) {
-    LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
-               path.data());
-    auto lib_or = SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
-    if (!lib_or) {
-      LITERT_LOG(LITERT_ERROR,
-                 "Failed to load qnn shared library from \"%s\": %s",
-                 path.data(), lib_or.Error().Message().data());
-      return lib_or.Error().Status();
-    }
-    lib_ = std::move(lib_or.Value());
+    LITERT_RETURN_IF_ERROR(
+        LoadSharedLibHelper(path, needs_global_symbols, lib_));
   } else {
     path = kSaverLibraryName;
-    LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
-               path.data());
-    auto lib_or = SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
-    if (!lib_or) {
-      LITERT_LOG(LITERT_ERROR,
-                 "Failed to load qnn shared library from \"%s\": %s",
-                 path.data(), lib_or.Error().Message().data());
-      return lib_or.Error().Status();
-    }
-    lib_ = std::move(lib_or.Value());
+    LITERT_RETURN_IF_ERROR(
+        LoadSharedLibHelper(path, needs_global_symbols, lib_));
     LITERT_RETURN_IF_ERROR(InitSaver(lib_, saver_output_dir));
   }
   LITERT_LOG(LITERT_INFO, "Loaded qnn shared library", "");
@@ -169,32 +203,7 @@ LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
 
 LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
   const bool needs_global_symbols = !options_.GetCustomOpPackage().name.empty();
-  if (shared_library_dir_) {
-    std::string resolved_path =
-        litert::internal::Join({*shared_library_dir_, path});
-    LITERT_LOG(LITERT_INFO, "Loading qnn system shared library from \"%s\"",
-               resolved_path.c_str());
-    auto lib_system_or =
-        SharedLibrary::Load(resolved_path, GetRtldFlags(needs_global_symbols));
-    if (lib_system_or) {
-      lib_system_ = std::move(lib_system_or.Value());
-      return kLiteRtStatusOk;
-    }
-    LITERT_LOG(LITERT_INFO,
-               "Falling back to loading qnn system shared library from \"%s\"",
-               path.data());
-  }
-  LITERT_LOG(LITERT_INFO, "Loading qnn system shared library from \"%s\"",
-             path.data());
-
-  auto lib_system_or =
-      SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
-  if (!lib_system_or) {
-    LITERT_LOG(LITERT_ERROR, "%s", lib_system_or.Error().Message().data());
-    return lib_system_or.Error().Status();
-  }
-  lib_system_ = std::move(lib_system_or.Value());
-  return kLiteRtStatusOk;
+  return LoadSharedLibHelper(path, needs_global_symbols, lib_system_);
 }
 
 const QnnApi* QnnManager::Api() const {
@@ -481,57 +490,41 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
   options_ = options;
   auto backend_type = options_.GetBackendType();
 
-  // If shared_library_dir is provided, add it to the path as it may contain
-  // libs to be loaded.
-  // TOOD: This should probably be done upstream in litert_dispatch.
-  if (shared_library_dir) {
-    LITERT_LOG(LITERT_INFO, "Adding shared library dir to path: %s",
-               shared_library_dir->c_str());
+  // Determine ADSP library directory:
+  // 1. Explicit dsp_skel_dir from options
+  // 2. Explicit qnn_lib_dir from options
+  // 3. Fallback shared_library_dir (plugin dir)
+  std::string adsp_dir;
+  if (!options_.GetDspSkelDir().empty()) {
+    adsp_dir = std::string(options_.GetDspSkelDir());
+  } else if (!options_.GetQnnLibDir().empty()) {
+    adsp_dir = std::string(options_.GetQnnLibDir());
+  } else if (shared_library_dir.has_value() && !shared_library_dir->empty()) {
+    adsp_dir = *shared_library_dir;
+  }
 
-    // Always overwrite the environment variable as we want to use the
-    // provided library paths only.
+  if (!adsp_dir.empty()) {
+    LITERT_LOG(LITERT_INFO, "Configuring ADSP_LIBRARY_PATH with dir: %s",
+               adsp_dir.c_str());
     static constexpr char kAdsp[] = "ADSP_LIBRARY_PATH";
     const char* adsp_library_path = getenv(kAdsp);
-    if (adsp_library_path == nullptr) {
-      LITERT_RETURN_IF_ERROR(SetEnvVar(kAdsp, shared_library_dir->c_str()));
+    if (adsp_library_path == nullptr || adsp_library_path[0] == '\0') {
+      LITERT_RETURN_IF_ERROR(SetEnvVar(kAdsp, adsp_dir.c_str()));
     } else {
       bool found = false;
       for (absl::string_view part : absl::StrSplit(adsp_library_path, ';')) {
-        if (part == shared_library_dir.value()) {
+        if (part == adsp_dir) {
           found = true;
           break;
         }
       }
       if (!found) {
         auto new_adsp_library_path =
-            absl::StrCat(shared_library_dir.value(), ";", adsp_library_path);
+            absl::StrCat(adsp_dir, ";", adsp_library_path);
         LITERT_RETURN_IF_ERROR(SetEnvVar(kAdsp, new_adsp_library_path.c_str()));
       }
     }
     LITERT_LOG(LITERT_DEBUG, "ADSP_LIBRARY_PATH: %s", getenv(kAdsp));
-
-    const char* lib_name = nullptr;
-    switch (backend_type) {
-      case ::qnn::BackendType::kHtpBackend:
-        lib_name = ::qnn::HtpBackend::GetLibraryName();
-        break;
-      case ::qnn::BackendType::kIrBackend:
-        lib_name = ::qnn::IrBackend::GetLibraryName();
-        break;
-      case ::qnn::BackendType::kDspBackend:
-        lib_name = ::qnn::DspBackend::GetLibraryName();
-        break;
-      case ::qnn::BackendType::kLpaiBackend:
-        lib_name = ::qnn::LpaiBackend::GetLibraryName();
-        break;
-      default:
-        break;
-    }
-
-    if (lib_name) {
-      // TODO: Put dynamic loading module in cc or vendor/cc.
-      litert::internal::PutLibOnLdPath(*shared_library_dir, lib_name);
-    }
   }
 
   LITERT_RETURN_IF_ERROR(LoadSystemLib(kLibQnnSystemSo));
