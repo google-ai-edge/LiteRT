@@ -428,6 +428,13 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
        ++sg_ind) {
     auto* sg = tfl_model->mutable_subgraphs()->GetMutableObject(sg_ind);
 
+    // A subgraph with zero operators serializes its `operators` field as a
+    // null offset rather than an offset to an empty vector, so
+    // mutable_operators() can return null here.
+    if (sg->mutable_operators() == nullptr) {
+      continue;
+    }
+
     for (auto op_ind = 0; op_ind < sg->mutable_operators()->size(); ++op_ind) {
       SerializationContext::TflOpInd ind = {sg_ind, op_ind};
 
