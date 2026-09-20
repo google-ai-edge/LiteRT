@@ -52,13 +52,38 @@ Expected<void> LegalizeRmsNormOp(const NeuronAdapterApi& neuron_adapter_api,
   LITERT_LOG(LITERT_INFO, "Legalize RMS Norm");
   std::vector<uint32_t> input_indices;
 
-  // The first input is the input data
-  LITERT_ASSIGN_OR_RETURN(auto input_tensor_id,
-                          operand_map.GetOperandIndex(op.Inputs()[0]));
-  input_indices.push_back(input_tensor_id);
+  auto input_tensor = op.Inputs()[0];
+  auto gamma_tensor = op.Inputs()[1];
+  auto output_tensor = op.Outputs()[0];
+
+  LITERT_ASSIGN_OR_RETURN(auto input_neuron_type,
+                          GetNeuronTensorType(input_tensor));
+  LITERT_ASSIGN_OR_RETURN(bool is_input_quantized,
+                          IsQuantizedType(input_neuron_type));
+
+  uint32_t input_norm_id;
+  if (is_input_quantized) {
+    LITERT_ASSIGN_OR_RETURN(auto input_quant_id,
+                            operand_map.GetOperandIndex(input_tensor));
+    std::vector<uint32_t> shape(GetDimensions(input_tensor).begin(),
+                                GetDimensions(input_tensor).end());
+    LITERT_ASSIGN_OR_RETURN(
+        input_norm_id,
+        operand_map.AddTensorByType(NEURON_TENSOR_FLOAT32, shape, nullptr, 0));
+    if (ModelAddOperation(neuron_adapter_api, model, NEURON_DEQUANTIZE,
+                          {input_quant_id}, {input_norm_id}) !=
+        NEURON_NO_ERROR) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to add NEURON_DEQUANTIZE for input in RMS Norm");
+    }
+  } else {
+    LITERT_ASSIGN_OR_RETURN(input_norm_id,
+                            operand_map.GetOperandIndex(input_tensor));
+  }
+  input_indices.push_back(input_norm_id);
 
   // Axis: The default axis of rms norm is the last dimension
-  int32_t axis_value = GetRank(op.Inputs()[0]) - 1;
+  int32_t axis_value = GetRank(input_tensor) - 1;
   std::vector<uint32_t> axis_shape = {1};
   LITERT_ASSIGN_OR_RETURN(auto axis_extra_data_idx,
                           operand_map.RegisterExtraData(sizeof(axis_value)));
@@ -72,13 +97,35 @@ Expected<void> LegalizeRmsNormOp(const NeuronAdapterApi& neuron_adapter_api,
   input_indices.push_back(axis_tensor_id);
 
   // Gamma: The second input
-  LITERT_ASSIGN_OR_RETURN(auto gamma_tensor_id,
-                          operand_map.GetOperandIndex(op.Inputs()[1]));
-  input_indices.push_back(gamma_tensor_id);
+  LITERT_ASSIGN_OR_RETURN(auto gamma_neuron_type,
+                          GetNeuronTensorType(gamma_tensor));
+  LITERT_ASSIGN_OR_RETURN(bool is_gamma_quantized,
+                          IsQuantizedType(gamma_neuron_type));
 
-  // Beta: Set 0 as default beta
+  uint32_t gamma_norm_id;
+  if (is_gamma_quantized) {
+    LITERT_ASSIGN_OR_RETURN(auto gamma_quant_id,
+                            operand_map.GetOperandIndex(gamma_tensor));
+    std::vector<uint32_t> gamma_shape(GetDimensions(gamma_tensor).begin(),
+                                      GetDimensions(gamma_tensor).end());
+    LITERT_ASSIGN_OR_RETURN(
+        gamma_norm_id, operand_map.AddTensorByType(
+                           NEURON_TENSOR_FLOAT32, gamma_shape, nullptr, 0));
+    if (ModelAddOperation(neuron_adapter_api, model, NEURON_DEQUANTIZE,
+                          {gamma_quant_id}, {gamma_norm_id}) !=
+        NEURON_NO_ERROR) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to add NEURON_DEQUANTIZE for gamma in RMS Norm");
+    }
+  } else {
+    LITERT_ASSIGN_OR_RETURN(gamma_norm_id,
+                            operand_map.GetOperandIndex(gamma_tensor));
+  }
+  input_indices.push_back(gamma_norm_id);
+
+  // Beta: Set 0 as default beta (Float32)
   std::vector<uint32_t> beta_shape = {
-      static_cast<uint32_t>(GetDimensions(op.Inputs()[1])[0])};
+      static_cast<uint32_t>(GetDimensions(gamma_tensor)[0])};
   int32_t beta_bytes = sizeof(float) * beta_shape[0];
   LITERT_ASSIGN_OR_RETURN(auto beta_extra_data_idx,
                           operand_map.RegisterExtraData(beta_bytes));
@@ -90,7 +137,7 @@ Expected<void> LegalizeRmsNormOp(const NeuronAdapterApi& neuron_adapter_api,
                                   beta_bytes));
   input_indices.push_back(beta_tensor_id);
 
-  // Eplison
+  // Epsilon
   float epsilon_value = std::numeric_limits<float>::epsilon();
   LITERT_ASSIGN_OR_RETURN(auto epsilon_tensor_id,
                           operand_map.AddScalarFloat32(epsilon_value));
@@ -105,19 +152,40 @@ Expected<void> LegalizeRmsNormOp(const NeuronAdapterApi& neuron_adapter_api,
   }
   input_indices.push_back(*custom_name_operand_index);
 
-  std::vector<uint32_t> output_indices;
-  for (auto& output : op.Outputs()) {
-    auto id = operand_map.GetOperandIndex(output);
-    if (!id) {
-      return id.Error();
-    }
-    output_indices.push_back(*id);
+  LITERT_ASSIGN_OR_RETURN(auto output_neuron_type,
+                          GetNeuronTensorType(output_tensor));
+  LITERT_ASSIGN_OR_RETURN(bool is_output_quantized,
+                          IsQuantizedType(output_neuron_type));
+
+  uint32_t output_norm_id;
+  if (is_output_quantized) {
+    std::vector<uint32_t> out_shape(GetDimensions(output_tensor).begin(),
+                                    GetDimensions(output_tensor).end());
+    LITERT_ASSIGN_OR_RETURN(
+        output_norm_id, operand_map.AddTensorByType(
+                            NEURON_TENSOR_FLOAT32, out_shape, nullptr, 0));
+  } else {
+    LITERT_ASSIGN_OR_RETURN(output_norm_id,
+                            operand_map.GetOperandIndex(output_tensor));
   }
+
+  std::vector<uint32_t> output_indices = {output_norm_id};
 
   if (ModelAddOperation(neuron_adapter_api, model, /*type=*/nn_op_type,
                         input_indices, output_indices) != NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to add MTKEXT_RMS_NORMALIZATION op");
+  }
+
+  if (is_output_quantized) {
+    LITERT_ASSIGN_OR_RETURN(auto output_quant_id,
+                            operand_map.GetOperandIndex(output_tensor));
+    if (ModelAddOperation(neuron_adapter_api, model, NEURON_QUANTIZE,
+                          {output_norm_id}, {output_quant_id}) !=
+        NEURON_NO_ERROR) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to add NEURON_QUANTIZE for output in RMS Norm");
+    }
   }
 
   return {};
