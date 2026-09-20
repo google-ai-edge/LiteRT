@@ -2526,10 +2526,17 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite:string_util",
+        "//tflite/core/c:common",
+        "//tflite/kernels/internal:reference_base",
+        "//tflite/kernels/internal:tensor",
+        "//tflite/kernels/internal:types",
         "//tflite/schema:schema_fbs",
         "//tflite/types:half",
+        "@com_google_benchmark//:benchmark",
         "@com_google_googletest//:gtest",
         "@eigen_archive//:eigen3",
+        "@ruy//ruy/profiler:instrumentation",
     ],
 )
 
