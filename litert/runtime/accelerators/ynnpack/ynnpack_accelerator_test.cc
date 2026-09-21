@@ -17,8 +17,9 @@
 #include <string>
 #include <vector>
 
-#include <gmock/gmock.h>
+
 #include <gtest/gtest.h>
+#include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
@@ -26,6 +27,7 @@
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/options/litert_cpu_options.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/runtime/compiled_model.h"
@@ -39,7 +41,9 @@
 namespace litert {
 namespace {
 
+#if defined(LITERT_TEST_EXPECT_YNNPACK)
 using ::testing::ElementsAre;
+#endif
 
 std::vector<uint8_t> CreateAddThenResizeBilinearModel() {
   flatbuffers::FlatBufferBuilder builder;
@@ -122,51 +126,58 @@ std::vector<uint8_t> CreateAddThenResizeBilinearModel() {
                               builder.GetBufferPointer() + builder.GetSize());
 }
 
-void CompileWithYnnpackEnabled(LiteRtEnvironment environment, LiteRtModel model,
-                               std::vector<std::string>* delegate_names) {
-  ASSERT_NE(environment, nullptr);
-  ASSERT_NE(model, nullptr);
-  ASSERT_NE(delegate_names, nullptr);
+Expected<void> CompileWithYnnpackEnabled(
+    LiteRtEnvironment environment, LiteRtModel model,
+    std::vector<std::string>* delegate_names) {
+  LITERT_RETURN_IF_ERROR(environment != nullptr,
+                         ErrorStatusBuilder::InvalidArgument());
+  LITERT_RETURN_IF_ERROR(model != nullptr,
+                         ErrorStatusBuilder::InvalidArgument());
+  LITERT_RETURN_IF_ERROR(delegate_names != nullptr,
+                         ErrorStatusBuilder::InvalidArgument());
 
   LiteRtOptions options = nullptr;
-  LITERT_ASSERT_OK(LiteRtCreateOptions(&options));
-  LITERT_ASSERT_OK(
+  LITERT_RETURN_IF_ERROR(LiteRtCreateOptions(&options));
+  LITERT_RETURN_IF_ERROR(
       LiteRtSetOptionsHardwareAccelerators(options, kLiteRtHwAcceleratorCpu));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto cpu_options, CpuOptions::Create());
-  LITERT_ASSERT_OK(cpu_options.SetEnableYNNPack(true));
+  LITERT_ASSIGN_OR_RETURN(auto cpu_options, CpuOptions::Create());
+  LITERT_RETURN_IF_ERROR(cpu_options.SetEnableYNNPack(true));
   const char* identifier = nullptr;
   void* payload = nullptr;
   void (*payload_deleter)(void*) = nullptr;
-  LITERT_ASSERT_OK(LrtGetOpaqueCpuOptionsData(cpu_options.Get(), &identifier,
-                                              &payload, &payload_deleter));
+  LITERT_RETURN_IF_ERROR(LrtGetOpaqueCpuOptionsData(
+      cpu_options.Get(), &identifier, &payload, &payload_deleter));
 
   LiteRtOpaqueOptions opaque_cpu_options = nullptr;
-  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(
+  LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
       identifier, payload, payload_deleter, &opaque_cpu_options));
-  LITERT_ASSERT_OK(LiteRtAddOpaqueOptions(options, opaque_cpu_options));
+  LITERT_RETURN_IF_ERROR(LiteRtAddOpaqueOptions(options, opaque_cpu_options));
 
-  {
-    LITERT_ASSERT_OK_AND_ASSIGN(
-        LiteRtCompiledModelT::Ptr compiled_model,
-        LiteRtCompiledModelT::Create(environment, model, options));
-    LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter * interpreter,
-                                GetInterpreter(compiled_model.get()));
+  auto compiled_model =
+      LiteRtCompiledModelT::Create(environment, model, options);
+  LiteRtDestroyOptions(options);
+  if (!compiled_model.HasValue()) {
+    return compiled_model.Error();
+  }
 
-    const auto* subgraph = interpreter->subgraph(0);
-    ASSERT_NE(subgraph, nullptr);
-    const auto& execution_plan = subgraph->execution_plan();
-    const auto& nodes_and_registration = subgraph->nodes_and_registration();
-    for (int node_index : execution_plan) {
-      const TfLiteRegistration& registration =
-          nodes_and_registration[node_index].second;
-      if (registration.custom_name != nullptr) {
-        delegate_names->emplace_back(registration.custom_name);
-      }
+  LITERT_ASSIGN_OR_RETURN(tflite::Interpreter * interpreter,
+                          GetInterpreter(compiled_model->get()));
+
+  const auto* subgraph = interpreter->subgraph(0);
+  LITERT_RETURN_IF_ERROR(subgraph != nullptr,
+                         ErrorStatusBuilder::InvalidArgument());
+  const auto& execution_plan = subgraph->execution_plan();
+  const auto& nodes_and_registration = subgraph->nodes_and_registration();
+  for (int node_index : execution_plan) {
+    const TfLiteRegistration& registration =
+        nodes_and_registration[node_index].second;
+    if (registration.custom_name != nullptr) {
+      delegate_names->emplace_back(registration.custom_name);
     }
   }
 
-  LiteRtDestroyOptions(options);
+  return {};
 }
 
 TEST(YnnpackAcceleratorTest, EnableOptionUsesAvailableCpuDelegates) {
@@ -179,12 +190,14 @@ TEST(YnnpackAcceleratorTest, EnableOptionUsesAvailableCpuDelegates) {
       LiteRtCreateModelFromFile(environment, path.c_str(), &model));
 
   std::vector<std::string> delegate_names;
-  CompileWithYnnpackEnabled(environment, model, &delegate_names);
+  auto result = CompileWithYnnpackEnabled(environment, model, &delegate_names);
 
 #if defined(LITERT_TEST_EXPECT_YNNPACK)
+  LITERT_ASSERT_OK(result);
   EXPECT_THAT(delegate_names, ElementsAre("YNNPackDelegate"));
 #else
-  EXPECT_THAT(delegate_names, ElementsAre("TfLiteXNNPackDelegate"));
+  EXPECT_FALSE(result.HasValue());
+  EXPECT_EQ(result.Error().Status(), kLiteRtStatusErrorUnsupported);
 #endif
 
   LiteRtDestroyModel(model);
@@ -201,13 +214,15 @@ TEST(YnnpackAcceleratorTest, DelegatesSupportedNodesBeforeXnnpack) {
                                                model_buffer.size(), &model));
 
   std::vector<std::string> delegate_names;
-  CompileWithYnnpackEnabled(environment, model, &delegate_names);
+  auto result = CompileWithYnnpackEnabled(environment, model, &delegate_names);
 
 #if defined(LITERT_TEST_EXPECT_YNNPACK)
+  LITERT_ASSERT_OK(result);
   EXPECT_THAT(delegate_names,
               ElementsAre("YNNPackDelegate", "TfLiteXNNPackDelegate"));
 #else
-  EXPECT_THAT(delegate_names, ElementsAre("TfLiteXNNPackDelegate"));
+  EXPECT_FALSE(result.HasValue());
+  EXPECT_EQ(result.Error().Status(), kLiteRtStatusErrorUnsupported);
 #endif
 
   LiteRtDestroyModel(model);
