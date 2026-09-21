@@ -35,6 +35,7 @@
 #include "litert/runtime/dispatch/shared_kernel_resources.h"
 #include "litert/runtime/metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/c/litert_dispatch_api.h"
 #include "tflite/c/c_api_opaque.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
@@ -220,11 +221,15 @@ litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
   LITERT_LOG(LITERT_DEBUG, "Dispatch API version: %d.%d.%d", api_version.major,
              api_version.minor, api_version.patch);
 
-  // Check if the versions mach.
-  if (api_version.major != LITERT_API_VERSION_MAJOR ||
-      api_version.minor < LITERT_API_VERSION_MINOR) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Found Dispatch API with an unsupported version");
+  // Check if the negotiated Dispatch ABI major version matches the expected
+  // major version.
+  if (api_version.major != LITERT_DISPATCH_ABI_VERSION_MAJOR) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat("Found Dispatch API with an unsupported ABI version: "
+                        "expected major version %d, got %d.%d.%d",
+                        LITERT_DISPATCH_ABI_VERSION_MAJOR, api_version.major,
+                        api_version.minor, api_version.patch));
   }
 
   int capabilities = 0;
