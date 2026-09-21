@@ -222,6 +222,18 @@ TEST(MiscTests, UnpackInt2Data) {
   }
 }
 
+TEST(MiscTests, PackInt4Data) {
+  const std::vector<std::int8_t> src{4, -2, 7, -8, 1};
+  std::vector<std::int8_t> dst;
+
+  PackInt4Data(src, dst);
+
+  const std::vector<std::int8_t> expected{static_cast<std::int8_t>(0xe4),
+                                          static_cast<std::int8_t>(0x87),
+                                          static_cast<std::int8_t>(0x01)};
+  EXPECT_EQ(dst, expected);
+}
+
 TEST(MiscTests, UnpackInt4Data) {
   // Single byte: 0xE4 (binary: 1110 0100), LSB-first unpacking.
   // lower nibble: 0100 = 4

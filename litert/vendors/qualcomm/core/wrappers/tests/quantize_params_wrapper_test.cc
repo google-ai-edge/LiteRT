@@ -15,6 +15,27 @@
 namespace qnn {
 namespace {
 
+TEST(BwFloatBlockQuantizeParamsWrapperTest, ExportsQnnEncoding) {
+  const std::vector<float> scales = {0.5f, 1.0f, 2.0f, 4.0f};
+  BwFloatBlockQuantizeParamsWrapper wrapper(4, {1, 2}, scales,
+                                            {1, 0, -1, 2});
+  Qnn_QuantizeParams_t params = QNN_QUANTIZE_PARAMS_INIT;
+  wrapper.CloneTo(params);
+
+  EXPECT_EQ(params.quantizationEncoding,
+            QNN_QUANTIZATION_ENCODING_BW_FLOAT_BLOCK);
+  EXPECT_EQ(params.bwFloatBlockEncoding.bitwidth, 4);
+  EXPECT_EQ(params.bwFloatBlockEncoding.blockSize[0], 1);
+  EXPECT_EQ(params.bwFloatBlockEncoding.blockSize[1], 2);
+  const std::vector<float> offsets = {-0.5f, 0, 2, -8};
+  for (size_t i = 0; i < offsets.size(); ++i) {
+    EXPECT_FLOAT_EQ(params.bwFloatBlockEncoding.floatScaleOffset[i].scale,
+                    scales[i]);
+    EXPECT_FLOAT_EQ(params.bwFloatBlockEncoding.floatScaleOffset[i].offset,
+                    offsets[i]);
+  }
+}
+
 TEST(UndefinedQuantizeParamsWrapperTest, DefaultConstructorTest) {
   UndefinedQuantizeParamsWrapper wrapper;
   Qnn_QuantizeParams_t dst = QNN_QUANTIZE_PARAMS_INIT;

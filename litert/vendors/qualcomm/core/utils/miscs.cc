@@ -50,6 +50,20 @@ void ConvertDataFromInt8ToInt2(const std::vector<std::int8_t>& src,
   }
 }
 
+void PackInt4Data(const std::vector<std::int8_t>& src,
+                  std::vector<std::int8_t>& dst) {
+  dst.clear();
+  dst.reserve((src.size() + 1) / 2);
+  for (size_t i = 0; i < src.size(); i += 2) {
+    const std::uint8_t low = static_cast<std::uint8_t>(src[i]) & 0x0f;
+    const std::uint8_t high =
+        i + 1 < src.size()
+            ? (static_cast<std::uint8_t>(src[i + 1]) & 0x0f) << 4
+            : 0;
+    dst.push_back(static_cast<std::int8_t>(low | high));
+  }
+}
+
 bool CreateDirectoryRecursive(const std::filesystem::path& dir_name) {
   std::error_code err;
   err.clear();

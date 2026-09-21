@@ -117,6 +117,11 @@ class TensorWrapper final {
         quantize_params_);
   }
 
+  bool IsBlockwiseQuant() const {
+    return std::holds_alternative<BwFloatBlockQuantizeParamsWrapper>(
+        quantize_params_);
+  }
+
   bool IsPerTensorQuantWithOffsetDiff(const TensorWrapper& rhs) const;
 
   bool IsQuantU8() const {

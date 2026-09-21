@@ -65,6 +65,9 @@ void DequantizeInto(const absl::Span<const T>& in, const float scale,
 void ConvertDataFromInt8ToInt2(const std::vector<std::int8_t>& src,
                                std::vector<std::int8_t>& dst);
 
+void PackInt4Data(const std::vector<std::int8_t>& src,
+                  std::vector<std::int8_t>& dst);
+
 std::vector<std::int8_t> UnpackInt2Data(const void* src, size_t src_bytes);
 
 std::vector<std::int8_t> UnpackInt4Data(const void* src, size_t src_bytes);

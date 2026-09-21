@@ -20,12 +20,15 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <numeric>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "QnnCommon.h"  // from @qairt
@@ -40,6 +43,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "fp16/fp16.h"  // from @FP16
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -122,6 +126,153 @@
 namespace litert::qnn {
 namespace {
 static const char* kLiteRtStr = "litert";
+
+struct BlockwiseQuantizationParams {
+  std::uint32_t bitwidth = 0;
+  std::vector<std::uint32_t> block_sizes;
+  std::vector<float> scales;
+  std::vector<std::int32_t> zero_points;
+};
+
+// Unlike a typed view, copying also supports unaligned model buffers.
+template <typename T>
+Expected<std::vector<T>> CopyConstantData(const compiler::Tensor& tensor,
+                                          ElementType element_type) {
+  LITERT_ASSIGN_OR_RETURN(auto type, tensor.RankedTensorType());
+  LITERT_ASSIGN_OR_RETURN(auto count, type.Layout().NumElements());
+  const auto bytes = tensor.Weights().Bytes();
+  if (!tensor.IsConstant() || type.ElementType() != element_type ||
+      type.Layout().HasStrides() || count == 0 ||
+      bytes.size() % sizeof(T) != 0 || bytes.size() / sizeof(T) != count) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Invalid block metadata dtype, layout or buffer length.");
+  }
+  std::vector<T> values(count);
+  std::memcpy(values.data(), bytes.data(), bytes.size());
+  return values;
+}
+
+Expected<std::vector<std::uint32_t>> BuildBlockSizes(
+    std::size_t rank, std::size_t block_axis, std::uint32_t block_size) {
+  std::vector<std::uint32_t> block_sizes(rank, 1);
+  block_sizes[block_axis] = block_size;
+  return block_sizes;
+}
+
+Expected<std::size_t> GetBlockwiseBlockAxis(
+    const compiler::Tensor& tensor, std::size_t rank) {
+  if (tensor.Uses().empty()) {
+    return Unexpected(kLiteRtStatusErrorUnsupported,
+                      "Blockwise weight must have a consumer.");
+  }
+  const auto& use = tensor.Uses().front();
+  if (use.user_arg_ind != 1) {
+    return Unexpected(kLiteRtStatusErrorUnsupported,
+                      "Blockwise quantization is only supported for weight "
+                      "inputs.");
+  }
+  switch (use.user.Code()) {
+    case kLiteRtOpCodeTflConv2d:
+    case kLiteRtOpCodeTflFullyConnected:
+      return rank - 1;
+    case kLiteRtOpCodeTflBatchMatmul: {
+      LITERT_ASSIGN_OR_RETURN(
+          auto options,
+          litert::compiler::GetOptionsAs<
+              litert::compiler::BatchMatmulOptions>(use.user.ctx(),
+                                                     use.user.Get()));
+      return options.adj_y ? rank - 1 : rank - 2;
+    }
+    default:
+      return Unexpected(kLiteRtStatusErrorUnsupported,
+                        "Unsupported blockwise weight consumer.");
+  }
+}
+
+Expected<BlockwiseQuantizationParams> GetBlockwiseQuantizationParams(
+    const compiler::Tensor& tensor) {
+  if (tensor.QTypeId() != kLiteRtQuantizationBlockWise) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Expected blockwise quantization.");
+  }
+  BlockwiseQuantizationParams params;
+  switch (tensor.ElementType()) {
+    case ElementType::Int2:
+      params.bitwidth = 2;
+      break;
+    case ElementType::Int4:
+      params.bitwidth = 4;
+      break;
+    case ElementType::Int8:
+      params.bitwidth = 8;
+      break;
+    default:
+      return Unexpected(kLiteRtStatusErrorUnsupported,
+                        "Expected signed Int2, Int4 or Int8 block storage.");
+  }
+  const auto quant = tensor.BlockWiseQuantization();
+  LITERT_ASSIGN_OR_RETURN(auto type, tensor.RankedTensorType());
+  if (quant.scales == nullptr || quant.block_size <= 0 ||
+      type.Layout().HasStrides() || type.Layout().Dimensions().empty()) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Expected scales, positive block size and dense layout.");
+  }
+  const compiler::Tensor scales(tensor.Context(), quant.scales);
+  LITERT_ASSIGN_OR_RETURN(
+      auto fp16_scale_bits,
+      CopyConstantData<std::uint16_t>(scales, ElementType::Float16));
+  LITERT_ASSIGN_OR_RETURN(auto block_axis,
+                          GetBlockwiseBlockAxis(
+                              tensor, type.Layout().Dimensions().size()));
+  LITERT_ASSIGN_OR_RETURN(
+      params.block_sizes,
+      BuildBlockSizes(type.Layout().Dimensions().size(), block_axis,
+                      quant.block_size));
+  params.scales.reserve(fp16_scale_bits.size());
+  for (auto bits : fp16_scale_bits) {
+    params.scales.push_back(fp16_ieee_to_fp32_value(bits));
+  }
+  params.zero_points.resize(params.scales.size(), 0);
+  if (quant.zero_points != nullptr) {
+    const compiler::Tensor zeros(tensor.Context(), quant.zero_points);
+    if (zeros.ElementType() == ElementType::Int32) {
+      LITERT_ASSIGN_OR_RETURN(
+          params.zero_points,
+          CopyConstantData<std::int32_t>(zeros, ElementType::Int32));
+    } else {
+      LITERT_ASSIGN_OR_RETURN(auto values, CopyConstantData<std::int64_t>(
+                                               zeros, ElementType::Int64));
+      params.zero_points.clear();
+      for (auto value : values) {
+        if (value < std::numeric_limits<std::int32_t>::min() ||
+            value > std::numeric_limits<std::int32_t>::max()) {
+          return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                            "Block zero point exceeds Int32 range.");
+        }
+        params.zero_points.push_back(static_cast<std::int32_t>(value));
+      }
+    }
+    if (params.zero_points.size() != params.scales.size()) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Block scales and zero points must have equal counts.");
+    }
+  }
+  if (tensor.IsConstant()) {
+    LITERT_ASSIGN_OR_RETURN(auto count, type.Layout().NumElements());
+    // Int2 and Int4 are packed; Int8 already uses one byte per element.
+    const std::uint32_t per_byte = 8 / params.bitwidth;
+    if (count > std::numeric_limits<std::uint32_t>::max() ||
+        tensor.Weights().Bytes().size() !=
+            count / per_byte + (count % per_byte != 0)) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Packed block tensor length does not match its shape.");
+    }
+  } else if (params.bitwidth < 8) {
+    return Unexpected(kLiteRtStatusErrorUnsupported,
+                      "Runtime packed block tensors are unsupported.");
+  }
+  return params;
+}
 
 std::string SanitizeName(std::string_view name) {
   std::string out;
@@ -316,8 +467,15 @@ LiteRtStatus ConvertTensor(const litert::compiler::Tensor& litert_tensor,
       break;
     }
     case kLiteRtQuantizationBlockWise: {
-      LITERT_LOG(LITERT_ERROR, "Unsupported quantization type.");
-      return kLiteRtStatusErrorInvalidArgument;
+      auto params = GetBlockwiseQuantizationParams(litert_tensor);
+      if (!params) {
+        LITERT_LOG(LITERT_ERROR, "%s", params.Error().Message().data());
+        return params.Error().Status();
+      }
+      quantize_params.emplace<::qnn::BwFloatBlockQuantizeParamsWrapper>(
+          params->bitwidth, params->block_sizes, params->scales,
+          params->zero_points);
+      break;
     }
     case kLiteRtQuantizationNone:
     default:

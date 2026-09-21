@@ -360,6 +360,9 @@ litert_device_test(
     srcs = ["litert_compiled_model_qualcomm_test.cc"],
     backend_id = "qualcomm",
     data = [
+        "//litert/test:testdata/qualcomm_bq_fully_connected_w2_fp16.tflite",
+        "//litert/test:testdata/qualcomm_bq_fully_connected_w4_fp16.tflite",
+        "//litert/test:testdata/qualcomm_bq_fully_connected_w8_fp16.tflite",
         "//litert/test:testdata/simple_model_qualcomm_sm8650_precompiled.tflite",
     ],
     deps = [
@@ -367,7 +370,9 @@ litert_device_test(
         ":litert_compiled_model",
         ":litert_environment",
         ":litert_environment_options",
+        ":litert_options",
         ":litert_tensor_buffer",
+        "//litert/cc/options:litert_qualcomm_options",
         "//litert/c/internal:litert_logging",
         "//litert/test:common",
         "//litert/test:matchers_oss",
