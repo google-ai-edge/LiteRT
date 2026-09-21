@@ -170,8 +170,8 @@ sh_test(
     name = "qualcomm_dispatch_so_symbol_test",
     srcs = ["//litert/test:litert_c_api_dependency_test.sh"],
     args = [
-        "LiteRtDispatchGetApi",
-        "$(location :dispatch_api_so)",
+        "LiteRtDispatchQueryInterface",
+        "$(rootpath :dispatch_api_so)",
     ],
     data = [
         ":dispatch_api_so",
