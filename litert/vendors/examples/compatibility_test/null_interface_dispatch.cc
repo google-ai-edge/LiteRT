@@ -1,4 +1,4 @@
-// Copyright 2026 Google LLC.
+// Copyright 2024 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,20 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#if defined(LITERT_USE_STATIC_LINKED_DISPATCH_API)
-
+#include "litert/c/litert_common.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 
-namespace {
-class StaticDispatchInitializer {
- public:
-  StaticDispatchInitializer() {
-    LiteRtStaticLinkedDispatchQueryInterface = LiteRtDispatchQueryInterface;
+// Mock dispatch library returning kLiteRtStatusOk but setting out_interface to
+// nullptr.
+extern "C" LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchQueryInterface(
+    LiteRtDispatchInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version, LiteRtInterface* out_interface) {
+  if (out_interface == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
   }
-};
-
-// Register the statically linked API pointer.
-StaticDispatchInitializer g_dispatch_initializer;
-}  // namespace
-
-#endif  // defined(LITERT_USE_STATIC_LINKED_DISPATCH_API)
+  *out_interface = nullptr;
+  return kLiteRtStatusOk;
+}
