@@ -44,8 +44,11 @@ jobs:
       - name: Determine if build should run
         id: check
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SRC_CHANGED: ${{ steps.filter.outputs.src }}
         run: |
-          if [[ "${{ github.event_name }}" != "pull_request" || "${{ steps.filter.outputs.src }}" == "true" ]]; then
+          if [[ "${EVENT_NAME}" != "pull_request" || "${SRC_CHANGED}" == "true" ]]; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"

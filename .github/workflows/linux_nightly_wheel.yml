@@ -16,6 +16,9 @@ concurrency:
   group: ${{ github.workflow }}-nightly
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   build_wheels:
     name: "Build Wheels - Python ${{ matrix.python-version }}"
@@ -47,10 +50,13 @@ jobs:
       - name: Set up cache keys and bazel output base.
         id: cache-keys
         shell: bash
+        env:
+          WORKFLOW_NAME: ${{ github.workflow }}
+          PYTHON_VERSION: ${{ matrix.python-version }}
         run: |
           # The month is used as a cache-buster.
           CACHE_MONTH=$(TZ='America/Los_Angeles' date +%Y-%m)
-          CACHE_RESTORE_KEY_2="${{ github.workflow }}-${{ matrix.python-version }}-$CACHE_MONTH"
+          CACHE_RESTORE_KEY_2="${WORKFLOW_NAME}-${PYTHON_VERSION}-$CACHE_MONTH"
           echo "CACHE_RESTORE_KEY_2=$CACHE_RESTORE_KEY_2" >> "$GITHUB_OUTPUT"
 
           if [ -f "WORKSPACE" ]; then
@@ -95,10 +101,14 @@ jobs:
             ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_2 }}-
 
       - name: Check cache hit
+        env:
+          CACHE_HIT: ${{ steps.bazel-cache.outputs.cache-hit }}
+          CACHE_PRIMARY_KEY: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+          CACHE_MATCHED_KEY: ${{ steps.bazel-cache.outputs.cache-matched-key }}
         run: |
-          echo "Cache Hit: ${{ steps.bazel-cache.outputs.cache-hit }}"
-          echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
-          echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
+          echo "Cache Hit: ${CACHE_HIT}"
+          echo "Cache Primary Key: ${CACHE_PRIMARY_KEY}"
+          echo "Cache Matched Key: ${CACHE_MATCHED_KEY}"
 
       - name: Set BAZEL_CONFIG_FLAGS for Cache
         shell: bash

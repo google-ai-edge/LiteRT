@@ -19,6 +19,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   check:
     name: Check Changes
@@ -46,8 +49,11 @@ jobs:
       - name: Determine if build should run
         id: check
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SRC_CHANGED: ${{ steps.filter.outputs.src }}
         run: |
-          if [[ "${{ github.event_name }}" != "pull_request" || "${{ steps.filter.outputs.src }}" == "true" ]]; then
+          if [[ "${EVENT_NAME}" != "pull_request" || "${SRC_CHANGED}" == "true" ]]; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
@@ -88,8 +94,10 @@ jobs:
 
       - name : Set up cache keys
         id: cache-keys
+        env:
+          WORKFLOW_NAME: ${{ github.workflow }}
         run: |
-          CACHE_RESTORE_KEY_2="${{ github.workflow }}"
+          CACHE_RESTORE_KEY_2="${WORKFLOW_NAME}"
           CACHE_RESTORE_KEY_1="$CACHE_RESTORE_KEY_2-${{ hashFiles('**/WORKSPACE', '**/.bazelrc') }}"
           CACHE_RESTORE_KEY_0="$CACHE_RESTORE_KEY_1-${{ hashFiles('**/BUILD*') }}"
           CACHE_RESTORE_KEY_HEAD="$CACHE_RESTORE_KEY_0-${{ github.event.pull_request.base.sha }}"
@@ -119,10 +127,14 @@ jobs:
             ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_2 }}-
 
       - name: Check cache hit
+        env:
+          CACHE_HIT: ${{ steps.bazel-cache.outputs.cache-hit }}
+          CACHE_PRIMARY_KEY: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+          CACHE_MATCHED_KEY: ${{ steps.bazel-cache.outputs.cache-matched-key }}
         run: |
-          echo "Cache Hit: ${{ steps.bazel-cache.outputs.cache-hit }}"
-          echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
-          echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
+          echo "Cache Hit: ${CACHE_HIT}"
+          echo "Cache Primary Key: ${CACHE_PRIMARY_KEY}"
+          echo "Cache Matched Key: ${CACHE_MATCHED_KEY}"
 
       - name: Build LiteRT iOS targets
         run: |
@@ -151,7 +163,9 @@ jobs:
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
         continue-on-error: true
-        run: gh cache delete ${{ steps.cache-keys.outputs.CACHE_KEY }}
+        env:
+          CACHE_KEY: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+        run: gh cache delete "${CACHE_KEY}"
 
       - name: Save bazel cache if it's new or being refreshed.
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0
