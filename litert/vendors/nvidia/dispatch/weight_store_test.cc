@@ -45,6 +45,8 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/c/litert_compiler_plugin_api.h"
+#include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/nvidia/bytecode.h"
 #include "litert/vendors/nvidia/compiler/weight_holder_calibration.h"
@@ -444,7 +446,16 @@ class WeightStoreDispatchTest : public ::testing::Test {
         0);
     ASSERT_EQ(
         setenv("LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH", source_.c_str(), 1), 0);
-    ASSERT_EQ(LiteRtDispatchGetApi(&api_), kLiteRtStatusOk);
+    LiteRtInterface raw_interface = nullptr;
+    ASSERT_EQ(LiteRtDispatchQueryInterface(
+                  kLiteRtInterfaceBasic,
+                  {LITERT_DISPATCH_ABI_VERSION_MAJOR,
+                   LITERT_DISPATCH_ABI_VERSION_MINOR,
+                   LITERT_DISPATCH_ABI_VERSION_PATCH},
+                  &raw_interface),
+              kLiteRtStatusOk);
+    interface_ = static_cast<const LiteRtDispatchInterface_V1*>(raw_interface);
+    ASSERT_NE(interface_, nullptr);
 
     prefill_input_ = std::make_unique<TestBuffer>(
         std::vector<int32_t>{kPrefillRows, kColumns});
@@ -460,12 +471,11 @@ class WeightStoreDispatchTest : public ::testing::Test {
 
   void TearDown() override {
     for (auto context : contexts_) {
-      EXPECT_EQ(api_.interface->invocation_context_destroy(context),
+      EXPECT_EQ(interface_->invocation_context_destroy(context),
                 kLiteRtStatusOk);
     }
     if (device_ != nullptr) {
-      EXPECT_EQ(api_.interface->device_context_destroy(device_),
-                kLiteRtStatusOk);
+      EXPECT_EQ(interface_->device_context_destroy(device_), kLiteRtStatusOk);
     }
     if (mapping_ != nullptr) {
       munmap(const_cast<uint8_t*>(mapping_), kFileBytes);
@@ -530,9 +540,21 @@ class WeightStoreDispatchTest : public ::testing::Test {
   }
 
   void Compile() {
+    LiteRtInterface raw_plugin_interface = nullptr;
+    ASSERT_EQ(LiteRtCompilerPluginQueryInterface(
+                  kLiteRtCompilerPluginInterfaceBasic,
+                  {LITERT_COMPILER_PLUGIN_ABI_VERSION_MAJOR,
+                   LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR,
+                   LITERT_COMPILER_PLUGIN_ABI_VERSION_PATCH},
+                  &raw_plugin_interface),
+              kLiteRtStatusOk);
+    const auto* plugin_api =
+        static_cast<const LiteRtCompilerPluginInterface_V1*>(
+            raw_plugin_interface);
+    ASSERT_NE(plugin_api, nullptr);
     LiteRtCompilerPlugin plugin = nullptr;
-    ASSERT_EQ(LiteRtCreateCompilerPlugin(LrtGetCompilerContext(), &plugin,
-                                         nullptr, nullptr),
+    ASSERT_EQ(plugin_api->create_compiler_plugin(LrtGetCompilerContext(),
+                                                 &plugin, nullptr, nullptr),
               kLiteRtStatusOk);
     LiteRtModelT model;
     {
@@ -559,23 +581,24 @@ class WeightStoreDispatchTest : public ::testing::Test {
     }
     LiteRtCompiledResult result = nullptr;
     const LiteRtStatus status =
-        LiteRtCompilerPluginCompile(plugin, nullptr, &model, &result);
+        plugin_api->compiler_plugin_compile(plugin, nullptr, &model, &result);
     locators_.clear();
     if (status == kLiteRtStatusOk) {
       LiteRtParamIndex modules = 0;
-      EXPECT_EQ(LiteRtCompiledResultNumByteCodeModules(result, &modules),
+      EXPECT_EQ(plugin_api->get_compiled_result_num_byte_code(result, &modules),
                 kLiteRtStatusOk);
       for (LiteRtParamIndex i = 0; i < modules; ++i) {
         const void* data = nullptr;
         size_t size = 0;
-        EXPECT_EQ(LiteRtGetCompiledResultByteCode(result, i, &data, &size),
-                  kLiteRtStatusOk);
+        EXPECT_EQ(
+            plugin_api->get_compiled_result_byte_code(result, i, &data, &size),
+            kLiteRtStatusOk);
         const auto* bytes = static_cast<const uint8_t*>(data);
         locators_.emplace_back(bytes, bytes + size);
       }
-      LiteRtDestroyCompiledResult(result);
+      plugin_api->destroy_compiled_result(result);
     }
-    LiteRtDestroyCompilerPlugin(plugin);
+    plugin_api->destroy_compiler_plugin(plugin);
     ASSERT_EQ(status, kLiteRtStatusOk);
     ASSERT_EQ(locators_.size(), 2);
   }
@@ -611,14 +634,13 @@ class WeightStoreDispatchTest : public ::testing::Test {
   }
 
   void CreateDevice() {
-    ASSERT_EQ(
-        api_.interface->device_context_create(&runtime_, nullptr, &device_),
-        kLiteRtStatusOk);
+    ASSERT_EQ(interface_->device_context_create(&runtime_, nullptr, &device_),
+              kLiteRtStatusOk);
     for (TestBuffer* buffer :
          {prefill_input_.get(), prefill_output_.get(), decode_input_.get(),
           decode_first_output_.get(), decode_second_output_.get()}) {
-      ASSERT_EQ(api_.interface->register_tensor_buffer(
-                    device_, buffer->handle(), &buffer->registered),
+      ASSERT_EQ(interface_->register_tensor_buffer(device_, buffer->handle(),
+                                                   &buffer->registered),
                 kLiteRtStatusOk);
     }
   }
@@ -633,7 +655,7 @@ class WeightStoreDispatchTest : public ::testing::Test {
         partition == 0 ? std::vector<TestBuffer*>{prefill_output_.get()}
                        : std::vector<TestBuffer*>{decode_first_output_.get(),
                                                   decode_second_output_.get()};
-    const LiteRtStatus status = api_.interface->invocation_context_create(
+    const LiteRtStatus status = interface_->invocation_context_create(
         &runtime_, device_, kLiteRtDispatchExecutableTypeMlModel, &buffer,
         Function(partition).c_str(), 1, static_cast<int>(outputs.size()),
         context);
@@ -642,13 +664,13 @@ class WeightStoreDispatchTest : public ::testing::Test {
     }
     contexts_.push_back(*context);
     EXPECT_EQ(
-        api_.interface->attach_input(
+        interface_->attach_input(
             *context, 0,
             (partition == 0 ? prefill_input_ : decode_input_)->registered),
         kLiteRtStatusOk);
     for (size_t i = 0; i < outputs.size(); ++i) {
-      EXPECT_EQ(api_.interface->attach_output(*context, static_cast<int>(i),
-                                              outputs[i]->registered),
+      EXPECT_EQ(interface_->attach_output(*context, static_cast<int>(i),
+                                          outputs[i]->registered),
                 kLiteRtStatusOk);
     }
     return status;
@@ -656,7 +678,7 @@ class WeightStoreDispatchTest : public ::testing::Test {
 
   void Destroy(LiteRtDispatchInvocationContext context) {
     contexts_.erase(std::find(contexts_.begin(), contexts_.end(), context));
-    EXPECT_EQ(api_.interface->invocation_context_destroy(context),
+    EXPECT_EQ(interface_->invocation_context_destroy(context),
               kLiteRtStatusOk);
   }
 
@@ -714,7 +736,7 @@ class WeightStoreDispatchTest : public ::testing::Test {
     // cudaMemset returns before the device is done, and the stream of the
     // engine does not wait for it.
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
-    ASSERT_EQ(api_.interface->invoke(context), kLiteRtStatusOk);
+    ASSERT_EQ(interface_->invoke(context), kLiteRtStatusOk);
     if (partition == 0) {
       ExpectProjection(*prefill_output_, activations,
                        {0, 1, 127, 128, 640, kPrefillRows - 1}, first_, 0, 0);
@@ -742,7 +764,7 @@ class WeightStoreDispatchTest : public ::testing::Test {
   std::vector<int8_t> second_;
   std::vector<std::vector<uint8_t>> locators_;
   LiteRtRuntimeContext runtime_ = RuntimeContext();
-  LiteRtDispatchApi api_{};
+  const LiteRtDispatchInterface_V1* interface_ = nullptr;
   LiteRtDispatchDeviceContext device_ = nullptr;
   std::unique_ptr<TestBuffer> prefill_input_;
   std::unique_ptr<TestBuffer> prefill_output_;
