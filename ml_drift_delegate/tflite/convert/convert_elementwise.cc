@@ -14,6 +14,7 @@
 
 #include "ml_drift_delegate/tflite/convert/convert_elementwise.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -93,12 +94,38 @@ bool IsBinaryOp(const ::ml_drift::OperationType op_type) {
       return false;
   }
 }
-// Extracts shape from TfLiteTensor. And expand the shape to 5D right-aligned.
-static ::ml_drift::BHWDC ExtractTensorShapeRightAligned(
-    const TfLiteTensor* tflite_tensor) {
+static ::ml_drift::BHWDC ExtractTensorShapeFromVector(
+    const std::vector<int32_t>& dims) {
+  const int size = dims.size();
+  if (size == 0) {
+    return ::ml_drift::BHWDC(1, 1, 1, 1, 1);
+  } else if (size == 1) {
+    return ::ml_drift::BHWDC(dims[0], 1, 1, 1, 1);
+  } else if (size == 2) {
+    return ::ml_drift::BHWDC(dims[0], 1, 1, 1, dims[1]);
+  } else if (size == 3) {
+    return ::ml_drift::BHWDC(dims[0], 1, dims[1], 1, dims[2]);
+  } else if (size == 4) {
+    return ::ml_drift::BHWDC(dims[0], dims[1], dims[2], 1, dims[3]);
+  } else {
+    return ::ml_drift::BHWDC(dims[0], dims[1], dims[2], dims[3], dims[4]);
+  }
+}
+
+// Extracts shape from TfLiteTensor and expands it with 1s on the left to match
+// target_rank.
+static ::ml_drift::BHWDC ExtractTensorShapeWithTfLiteBroadcast(
+    const TfLiteTensor* tflite_tensor, int target_rank) {
   const TfLiteIntArray* dims = tflite_tensor->dims;
-  std::vector<int32_t> shape(dims->data, dims->data + dims->size);
-  return GetRightAlignedBHWDC(shape, 1);
+  if (dims->size >= target_rank) {
+    return ExtractTensorShape(dims);
+  }
+  std::vector<int32_t> shape(target_rank, 1);
+  const int offset = target_rank - dims->size;
+  for (int i = 0; i < dims->size; ++i) {
+    shape[offset + i] = dims->data[i];
+  }
+  return ExtractTensorShapeFromVector(shape);
 }
 
 // Swap the inputs for MUL and ADD operations.
@@ -112,8 +139,11 @@ void SwapInputs(::ml_drift::OperationType operation_type,
 
   // The "larger" input tensor must be bound to 1st input and the
   // "smaller" input tensor must be bound to 2nd input.
-  const ::ml_drift::BHWDC shape0 = ExtractTensorShapeRightAligned(input0);
-  const ::ml_drift::BHWDC shape1 = ExtractTensorShapeRightAligned(input1);
+  const int target_rank = std::max(input0->dims->size, input1->dims->size);
+  const ::ml_drift::BHWDC shape0 =
+      ExtractTensorShapeWithTfLiteBroadcast(input0, target_rank);
+  const ::ml_drift::BHWDC shape1 =
+      ExtractTensorShapeWithTfLiteBroadcast(input1, target_rank);
   if (shape0.b <= shape1.b && shape0.d <= shape1.d && shape0.h <= shape1.h &&
       shape0.w <= shape1.w && shape0.c == shape1.c) {
     *input_tensor0 = 1;
@@ -195,12 +225,22 @@ void AddOpWithBroadcastReshape(
   int input_tensor0 = 0;
   int input_tensor1 = 1;
   SwapInputs(operation_type, input0, input1, &input_tensor0, &input_tensor1);
+
+  const TfLiteTensor* in0 =
+      context.tensors + tflite_node.inputs->data[input_tensor0];
+  const TfLiteTensor* in1 =
+      context.tensors + tflite_node.inputs->data[input_tensor1];
   ::ml_drift::ir::IrTensorId input_id0 =
-      tensor_map[tflite_node.inputs->data[0]];
+      tensor_map[tflite_node.inputs->data[input_tensor0]];
   ::ml_drift::ir::IrTensorId input_id1 =
-      tensor_map[tflite_node.inputs->data[1]];
-  ::ml_drift::BHWDC input0_shape = ExtractTensorShapeRightAligned(input0);
-  ::ml_drift::BHWDC input1_shape = ExtractTensorShapeRightAligned(input1);
+      tensor_map[tflite_node.inputs->data[input_tensor1]];
+
+  const int target_rank = std::max(in0->dims->size, in1->dims->size);
+  ::ml_drift::BHWDC input0_shape =
+      ExtractTensorShapeWithTfLiteBroadcast(in0, target_rank);
+  ::ml_drift::BHWDC input1_shape =
+      ExtractTensorShapeWithTfLiteBroadcast(in1, target_rank);
+
   // Add reshape node for input0
   ::ml_drift::ir::IrOp* reshape_node0 = ir_model.add_op();
   reshape_node0->name = ToString(::ml_drift::OperationType::RESHAPE);
@@ -239,7 +279,7 @@ void AddOpWithBroadcastReshape(
       tensor_map[tflite_node.outputs->data[0]];
   ::ml_drift::TensorDescriptor output_desc = ir_model.tensor(output_id)->desc;
   ::ml_drift::BHWDC tflite_style_output_shape =
-      ExtractTensorShapeRightAligned(output_tensor);
+      ExtractTensorShapeWithTfLiteBroadcast(output_tensor, target_rank);
   ::ml_drift::ir::IrTensor* output =
       ir_model.add_tensor(output_desc.GetDataType(), tflite_style_output_shape);
 
