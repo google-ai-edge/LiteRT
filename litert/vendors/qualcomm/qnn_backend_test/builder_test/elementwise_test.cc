@@ -227,7 +227,7 @@ TEST_P(QnnModelTest, ElementWiseAtan2) {
                                             {output_0});
 
   // BuildElementwiseAtan2Op decompose Atan2(y,x) into Atan(Div(y,x))
-  ASSERT_EQ(ops.size(), 12);
+  ASSERT_EQ(ops.size(), 19);
 
   qnn_model_.MoveOpsToGraph(std::move(ops));
   ASSERT_TRUE(qnn_model_.ValidateOpConfig());
@@ -247,8 +247,9 @@ TEST_P(QnnModelTest, ElementWiseAtan2) {
     {0., static_cast<float>(std::sqrt(3)), 1., -1.,
      1., -1., 1., -1.});
   qnn_model_.SetInputData<float>(
-    input_idx_1, {1., 1., 1., 1.,
-                 -1., -1., 0., 0.});
+    input_idx_1,
+    {1., 1., 1., 1.,
+    -1., -1., 0., 0.});
 
   ASSERT_TRUE(qnn_model_.Execute());
 
