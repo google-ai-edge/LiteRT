@@ -687,7 +687,13 @@ Expected<QnnManager::Ptr> QnnManager::Create(
 }
 
 absl::Span<const QnnContext_Config_t*> QnnManager::DefaultContextConfigs() {
-  static const QnnContext_Config_t* configs[] = {nullptr};
+  static const QnnContext_Config_t priority_config = [] {
+    QnnContext_Config_t config = QNN_CONTEXT_CONFIG_INIT;
+    config.option = QNN_CONTEXT_CONFIG_OPTION_PRIORITY;
+    config.priority = QNN_PRIORITY_NORMAL;
+    return config;
+  }();
+  static const QnnContext_Config_t* configs[] = {&priority_config, nullptr};
   return absl::MakeSpan(configs);
 }
 
@@ -700,7 +706,14 @@ QnnManager::WeightSharingContextConfigs() {
   static QnnContext_Config_t contextConfig = QNN_CONTEXT_CONFIG_INIT;
   contextConfig.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
   contextConfig.customConfig = &customConfig;
-  static const QnnContext_Config_t* configs[2] = {&contextConfig, nullptr};
+  static const QnnContext_Config_t priorityConfig = [] {
+    QnnContext_Config_t config = QNN_CONTEXT_CONFIG_INIT;
+    config.option = QNN_CONTEXT_CONFIG_OPTION_PRIORITY;
+    config.priority = QNN_PRIORITY_NORMAL;
+    return config;
+  }();
+  static const QnnContext_Config_t* configs[3] = {&contextConfig,
+                                                  &priorityConfig, nullptr};
   return absl::MakeSpan(configs);
 }
 
