@@ -363,6 +363,9 @@ litert_device_test(
         "//litert/test:testdata/qualcomm_bq_fully_connected_w2_fp16.tflite",
         "//litert/test:testdata/qualcomm_bq_fully_connected_w4_fp16.tflite",
         "//litert/test:testdata/qualcomm_bq_fully_connected_w8_fp16.tflite",
+        "//litert/test:testdata/qualcomm_bq_matmul_w2_fp16.tflite",
+        "//litert/test:testdata/qualcomm_bq_matmul_w4_fp16.tflite",
+        "//litert/test:testdata/qualcomm_bq_matmul_w8_fp16.tflite",
         "//litert/test:testdata/simple_model_qualcomm_sm8650_precompiled.tflite",
     ],
     deps = [
