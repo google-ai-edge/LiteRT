@@ -74,6 +74,12 @@ std::vector<std::int8_t> UnpackInt2Data(const void* src, size_t src_bytes);
 
 std::vector<std::int8_t> UnpackInt4Data(const void* src, size_t src_bytes);
 
+bool PermuteBlockwiseQuantizationMetadata(
+    absl::Span<const std::uint32_t> dimensions,
+    absl::Span<const std::uint32_t> permutation,
+    absl::Span<std::uint32_t> block_sizes,
+    absl::Span<Qnn_FloatScaleOffset_t> scale_offsets);
+
 bool CreateDirectoryRecursive(const std::filesystem::path& dir_name);
 
 #if !defined(_WIN32)
