@@ -50,6 +50,7 @@ limitations under the License.
 #include "tflite/core/c/common.h"
 #include "tflite/core/interpreter.h"
 #include "tflite/kernels/internal/portable_tensor_utils.h"
+#include "tflite/kernels/internal/reference/e8m0_utils.h"
 #include "tflite/kernels/internal/runtime_shape.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/internal/utils/sparsity_format_converter.h"
@@ -278,7 +279,8 @@ struct TensorData {
              std::vector<TfLiteDimensionType> format = {},
              std::vector<int> block_size = {}, std::vector<int> block_map = {},
              std::vector<int> shape_signature = {},
-             int per_block_quantization = 0)
+             int per_block_quantization = 0,
+             TensorType per_block_scale_type = TensorType_FLOAT16)
       : type(type),
         shape(shape),
         min(min),
@@ -296,7 +298,8 @@ struct TensorData {
         block_size(block_size),
         block_map(block_map),
         shape_signature(shape_signature),
-        per_block_quantization(per_block_quantization) {}
+        per_block_quantization(per_block_quantization),
+        per_block_scale_type(per_block_scale_type) {}
   TensorType type;
   std::vector<int> shape;
   float min;
@@ -313,6 +316,7 @@ struct TensorData {
   std::vector<int> block_map;
   std::vector<int> shape_signature;
   int per_block_quantization;
+  TensorType per_block_scale_type;
 };
 
 class SingleOpResolver : public OpResolver {
@@ -402,7 +406,9 @@ class SingleOpModel {
   template <typename T>
   int AddConstInput(const TensorData& t, const T* data, size_t size) {
     int id = 0;
-    if (t.per_channel_quantization) {
+    if (t.per_block_quantization != 0) {
+      id = AddTensorPerBlockQuant(t, data, size);
+    } else if (t.per_channel_quantization) {
       id = AddTensorPerChannelQuant(t, data, size);
     } else {
       id = AddTensor(t, data, size);
@@ -711,7 +717,6 @@ class SingleOpModel {
     int32_t blocksize = params->blocksize;
     int num_blocks = input_data.size() / blocksize;
     TfLiteTensor* scale_tensor = interpreter_->tensor(params->scale);
-    uint16_t* scale_data = GetTensorData<uint16_t>(scale_tensor);
     if (blocksize * num_blocks == input_data.size()) {
       std::vector<int32_t> shape(t->dims->size);
       for (size_t i = 0; i < shape.size(); ++i) {
@@ -723,16 +728,20 @@ class SingleOpModel {
       }
       scales_shape[scales_shape.size() - 1] =
           scales_shape[scales_shape.size() - 1] / blocksize;
-      // int scale_size = 1;
-      // for (size_t i = 0; i < scales_shape.size() - 1; ++i) {
-      //   scale_size *= scales_shape[i];
-      // }
       std::vector<float> inverse_scales(num_blocks);
-      std::vector<uint16_t> scales(num_blocks);
       std::vector<int8_t> quantized_output(input_data.size());
-      for (int i = 0; i < scales.size(); ++i) {
-        float scale = fp16_ieee_to_fp32_value(scale_data[i]);
-        inverse_scales[i] = 1.0f / scale;
+      if (scale_tensor->type == kTfLiteFloat32) {
+        float* scale_data = GetTensorData<float>(scale_tensor);
+        for (int i = 0; i < num_blocks; ++i) {
+          float scale = reference_ops::DecodePackedFloat32Scale(scale_data[i]);
+          inverse_scales[i] = 1.0f / scale;
+        }
+      } else {
+        uint16_t* scale_data = GetTensorData<uint16_t>(scale_tensor);
+        for (int i = 0; i < num_blocks; ++i) {
+          float scale = fp16_ieee_to_fp32_value(scale_data[i]);
+          inverse_scales[i] = 1.0f / scale;
+        }
       }
 
       optimize::utils::SymmetricPerBlockQuantizeValues(
@@ -1313,10 +1322,19 @@ class SingleOpModel {
   template <typename T>
   int AddTensorPerBlockQuant(const TensorData& t, const T* data, size_t size) {
     const int id = tensors_.size();
-    std::vector<uint16_t> fp16_scales(t.per_channel_quantization_scales.size());
-    for (int i = 0; i < t.per_channel_quantization_scales.size(); ++i) {
-      fp16_scales[i] =
-          fp16_ieee_from_fp32_value(t.per_channel_quantization_scales[i]);
+    std::vector<float> fp32_scales;
+    std::vector<uint16_t> fp16_scales;
+    if (t.per_block_scale_type == TensorType_FLOAT32) {
+      fp32_scales.resize(t.per_channel_quantization_scales.size());
+      for (size_t i = 0; i < t.per_channel_quantization_scales.size(); ++i) {
+        fp32_scales[i] = t.per_channel_quantization_scales[i];
+      }
+    } else {
+      fp16_scales.resize(t.per_channel_quantization_scales.size());
+      for (size_t i = 0; i < t.per_channel_quantization_scales.size(); ++i) {
+        fp16_scales[i] =
+            fp16_ieee_from_fp32_value(t.per_channel_quantization_scales[i]);
+      }
     }
     std::vector<int> scale_shape(t.shape.size());
     for (int i = 0; i < t.shape.size(); ++i) {
@@ -1324,7 +1342,7 @@ class SingleOpModel {
     }
     scale_shape[t.shape.size() - 1] =
         t.shape[t.shape.size() - 1] / t.per_block_quantization;
-    TensorData scale_tensor_data(TensorType_FLOAT16, scale_shape);
+    TensorData scale_tensor_data(t.per_block_scale_type, scale_shape);
     int scale_tensor_id = id + 1;
     // TODO(zichuanwei): support blockwise zero point.
     flatbuffers::Offset<BlockwiseQuantization> blockwise_quant_params = 0;
@@ -1357,8 +1375,13 @@ class SingleOpModel {
         CreateTensor(builder_, builder_.CreateVector<int>(t.shape), t.type,
                      /*buffer=*/buffer_id,
                      /*name=*/0, q_params, /*is_variable=*/false));
-    scale_tensor_id = AddTensor<uint16_t>(scale_tensor_data, fp16_scales.data(),
-                                          fp16_scales.size());
+    if (t.per_block_scale_type == TensorType_FLOAT32) {
+      scale_tensor_id = AddTensor<float>(scale_tensor_data, fp32_scales.data(),
+                                         fp32_scales.size());
+    } else {
+      scale_tensor_id = AddTensor<uint16_t>(
+          scale_tensor_data, fp16_scales.data(), fp16_scales.size());
+    }
     tensor_data_[id] = t;
     return id;
   }

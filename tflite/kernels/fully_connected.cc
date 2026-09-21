@@ -16,6 +16,7 @@ limitations under the License.
 #include "tflite/kernels/internal/optimized/integer_ops/fully_connected.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -23,6 +24,7 @@ limitations under the License.
 #include <memory>
 #include <vector>
 
+#include "Eigen/Core"  // from @eigen_archive
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/core/c/common.h"
@@ -32,6 +34,7 @@ limitations under the License.
 #include "tflite/kernels/internal/optimized/sparse_ops/fully_connected.h"
 #include "tflite/kernels/internal/portable_tensor_utils.h"
 #include "tflite/kernels/internal/quantization_util.h"
+#include "tflite/kernels/internal/reference/e8m0_utils.h"
 #include "tflite/kernels/internal/reference/fully_connected.h"
 #include "tflite/kernels/internal/reference/integer_ops/fully_connected.h"
 #include "tflite/kernels/internal/reference/reference_ops.h"
@@ -280,6 +283,9 @@ inline TfLiteStatus CheckTypes(TfLiteContext* context,
       TF_LITE_ENSURE_TYPES_EQ(context, output->type, kTfLiteInt16);
       TF_LITE_ENSURE_EQ(context, is_optional_bias_int, true);
     } else if (is_hybrid) {
+      // Hybrid execution: Float32 activations with quantized filter weights
+      // (Int8, Int4, or Int2). Strictly enforces Float32 inputs, outputs, and
+      // bias.
       TF_LITE_ENSURE_TYPES_EQ(context, input->type, kTfLiteFloat32);
       TF_LITE_ENSURE_TYPES_EQ(context, output->type, kTfLiteFloat32);
       TF_LITE_ENSURE_EQ(context, is_optional_bias_float, true);
@@ -508,8 +514,9 @@ TfLiteStatus PrepareImpl(TfLiteContext* context, TfLiteNode* node,
 
   // Note that quantized inference requires that all tensors have their
   // parameters set. This is usually done during quantized training.
-  if (input->type == kTfLiteUInt8 || input->type == kTfLiteInt8 ||
-      input->type == kTfLiteInt16) {
+  if (filter->quantization.type != kTfLiteBlockwiseQuantization &&
+      (input->type == kTfLiteUInt8 || input->type == kTfLiteInt8 ||
+       input->type == kTfLiteInt16)) {
     // Populate per-channel quantization parameters, if per-channel
     // quantization.
     TF_LITE_ENSURE_EQ(context, input->quantization.type,
@@ -1029,59 +1036,217 @@ TfLiteStatus EvalBlockwise4Bit(
   const size_t num_blocks = input_channels / blocksize;
   const TfLiteTensor& scale = context->tensors[quantization_params->scale];
   int num_scales = NumElements(&scale);
-  std::vector<float> dequantized_scale(num_scales, 0);
-  const Eigen::half* half_data = reinterpret_cast<const Eigen::half*>(
-      GetTensorData<TfLiteFloat16>(&scale));
-  reference_ops::Dequantize(GetTensorShape(&scale), half_data,
-                            GetTensorShape(&scale), dequantized_scale.data());
+  std::vector<float> dequantized_scale;
+  const bool is_float32_scale = (scale.type == kTfLiteFloat32);
+  const float* float32_scale_data = nullptr;
+  if (is_float32_scale) {
+    float32_scale_data = GetTensorData<float>(&scale);
+  } else if (scale.type == kTfLiteFloat16) {
+    dequantized_scale.resize(num_scales);
+    const Eigen::half* half_data = reinterpret_cast<const Eigen::half*>(
+        GetTensorData<TfLiteFloat16>(&scale));
+    reference_ops::Dequantize(GetTensorShape(&scale), half_data,
+                              GetTensorShape(&scale), dequantized_scale.data());
+  } else {
+    TF_LITE_KERNEL_LOG(context,
+                       "Unsupported scale type for blockwise quantization");
+    return kTfLiteError;
+  }
   float* output_ptr = GetTensorData<float>(output);
   memset(output_ptr, 0, NumElements(output) * sizeof(float));
-  std::vector<int8_t> quant_data(NumElements(input));
-  std::vector<float> input_scales(batch_size);
-  std::vector<int32_t> input_zero_points(batch_size);
-
-  const float* input_ptr = GetTensorData<float>(input);
-  tensor_utils::BatchQuantizeFloats(input_ptr, batch_size, input_channels,
-                                    quant_data.data(), input_scales.data(),
-                                    input_zero_points.data(),
-                                    /*do_asymmetric=*/true);
 
   const float* bias_data = nullptr;
-  if (bias) {
+  if (bias && bias->type == kTfLiteFloat32) {
     bias_data = GetTensorData<float>(bias);
   }
   const size_t k2 = (input_channels + 1) & 0xFFFFFFFFFFFFFFFE;
   const uint8_t* kernel = GetTensorData<uint8_t>(filter);
-  for (size_t mi = 0; mi < batch_size; mi++) {
-    for (size_t ni = 0; ni < output_channels; ni++) {
-      float kfsum = 0.0;
-      for (size_t bi = 0; bi < num_blocks; bi++) {
-        int32_t ksum = 0;
-        int32_t c_ref_acc = 0;
-        for (size_t ki = 0; ki < blocksize; ki++) {
-          const size_t k_index = bi * blocksize + ki;
-          const size_t nb_index = (ni * k2 + k_index) / 2;
-          const int8_t k_value = int8_t(
-              (k_index % 2 == 0) ? (kernel[nb_index] & static_cast<int8_t>(0xF))
-                                 : (kernel[nb_index] >> 4));
-          const int32_t kernel_value = SignExtendInt4(k_value);
-          ksum += kernel_value;
-          c_ref_acc +=
-              static_cast<int32_t>(quant_data[mi * input_channels + k_index]) *
-              static_cast<float>(kernel_value);
-        }
-        size_t scale_index = ni * num_blocks + bi;
-        float scale = dequantized_scale[scale_index];
-        output_ptr[mi * output_channels + ni] += c_ref_acc * scale;
-        kfsum += scale * ksum;
+
+  // ===========================================================================
+  // HYBRID FULLY CONNECTED EXECUTION ENGINE
+  // ===========================================================================
+  // Supports blockwise quantized weights, in-graph dequantization, and dynamic
+  // hybrid activation quantization (Float32 in / Float32 out):
+  //
+  // (a) Application of input activation quantization (Dynamic A4 E8M0)
+  // (b) Application of input activation dequantization in-graph and
+  // multiplication
+  //     by the E8M0 scale
+  // (c) Dequantization of centered INT2 weights (cint2_fp32)
+  // (d) Matrix multiplication (inner contraction loop)
+  // (e) Output return, since we have no output activation algorithm
+  // ===========================================================================
+  const float* input_ptr = GetTensorData<float>(input);
+  const bool use_dynamic_a4 =
+      is_float32_scale && !params->asymmetric_quantize_inputs;
+
+  if (use_dynamic_a4) {
+    // -------------------------------------------------------------------------
+    // (a) Application of input activation quantization:
+    // Dynamically quantize Float32 input activations on-the-fly row-by-row into
+    // signed 4-bit integer nibbles [-7, 7] with a power-of-two E8M0 scale:
+    // 1. Compute row-wise absmax: absmax = max_k |X[k]|.
+    // 2. Derive unbiased E8M0 exponent: E_X = ceil(log2(absmax / 7.0)) + 127.
+    // 3. Compute scale S_X = 2^(E_X - 127) and reciprocal inv_scale = 1.0 /
+    // S_X.
+    // 4. Quantize using IEEE-754 round-to-nearest-even (matching JAX
+    // jnp.round):
+    //    q_X[c] = clamp(nearbyint(X[c] * inv_scale), -7, 7).
+    // -------------------------------------------------------------------------
+    for (size_t mi = 0; mi < batch_size; mi++) {
+      float absmax = 0.0f;
+      const float* row_ptr = input_ptr + mi * input_channels;
+      for (size_t c = 0; c < input_channels; ++c) {
+        absmax = std::max(absmax, std::abs(row_ptr[c]));
       }
-      output_ptr[mi * output_channels + ni] -= (input_zero_points[mi] * kfsum);
-      output_ptr[mi * output_channels + ni] *= input_scales[mi];
-      if (bias_data != nullptr) {
-        output_ptr[mi * output_channels + ni] += bias_data[ni];
+
+      uint8_t act_e8m0 = 127;
+      float act_scale = 1.0f;
+      float inv_scale = 1.0f;
+      if (absmax > 0.0f) {
+        const float target_scale = absmax / 7.0f;
+        const float exp_unbiased = std::ceil(std::log2(target_scale));
+        const int exp_biased =
+            std::clamp(static_cast<int>(exp_unbiased) + 127, 0, 254);
+        act_e8m0 = static_cast<uint8_t>(exp_biased);
+        act_scale = reference_ops::DecodeE8M0Scale(act_e8m0);
+        inv_scale = (act_scale > 0.0f) ? (1.0f / act_scale) : 1.0f;
+      }
+
+      std::vector<int8_t> dynamic_act_int4(input_channels);
+      for (size_t c = 0; c < input_channels; ++c) {
+        float q = std::nearbyint(row_ptr[c] * inv_scale);
+        dynamic_act_int4[c] = static_cast<int8_t>(std::clamp(q, -7.0f, 7.0f));
+      }
+
+      // -----------------------------------------------------------------------
+      // (c) Dequantization of centered INT2 weights:
+      // Note: For centered INT2 weights (cint2_fp32: {-1.5, -0.5, 0.5, 1.5}),
+      // dequantization is evaluated upstream in-graph via elementary TFLite
+      // ops:
+      //   W_dequant = (cast(W_raw, f32) - (-0.5)) * scale = (W_raw + 0.5) *
+      //   scale.
+      // For blockwise 4-bit weights below, 4-bit nibbles are unpacked directly
+      // from the weight buffer and scaled by the blockwise E8M0 scale.
+      // -----------------------------------------------------------------------
+
+      for (size_t ni = 0; ni < output_channels; ni++) {
+        for (size_t bi = 0; bi < num_blocks; bi++) {
+          // -------------------------------------------------------------------
+          // (d) Matrix multiplication:
+          // Integer multiply-accumulate (MAC) between dynamically quantized
+          // 4-bit activations (q_X) and 4-bit weights (W_k):
+          // 1. Extract 4-bit nibble from packed byte (lower for even, upper for
+          // odd).
+          // 2. Sign-extend 4-bit nibble into int32_t [-8, 7].
+          // 3. Accumulate: c_ref_acc += q_X[k] * W_k.
+          // -------------------------------------------------------------------
+          int32_t c_ref_acc = 0;
+          for (size_t ki = 0; ki < blocksize; ki++) {
+            const size_t k_index = bi * blocksize + ki;
+            const size_t nb_index = (ni * k2 + k_index) / 2;
+            const int8_t k_value = static_cast<int8_t>(
+                (k_index % 2 == 0)
+                    ? (kernel[nb_index] & static_cast<int8_t>(0xF))
+                    : (kernel[nb_index] >> 4));
+            const int32_t kernel_value = SignExtendInt4(k_value);
+            c_ref_acc +=
+                static_cast<int32_t>(dynamic_act_int4[k_index]) * kernel_value;
+          }
+          const size_t scale_index = ni * num_blocks + bi;
+
+          // -------------------------------------------------------------------
+          // (b) Application of input activation dequantization in-graph and
+          //     multiplication by the E8M0 scale:
+          // Rescale the integer accumulator by the combined E8M0 power-of-two
+          // factor S_eff = S_X * S_W:
+          //   combined_exp = (E_X - 127) + (E_W - 127) = E_X + E_W - 254.
+          // Scaled via exact binary shift: ldexp(c_ref_acc, combined_exp).
+          // -------------------------------------------------------------------
+          const uint8_t w_scale_byte = reference_ops::UnpackFloat32ToE8M0(
+              float32_scale_data[scale_index]);
+          if (w_scale_byte == 0xFF || act_e8m0 == 0xFF) {
+            output_ptr[mi * output_channels + ni] =
+                std::numeric_limits<float>::quiet_NaN();
+          } else {
+            const int combined_exp =
+                reference_ops::DecodeE8M0Exponent(act_e8m0) +
+                reference_ops::DecodeE8M0Exponent(w_scale_byte);
+            output_ptr[mi * output_channels + ni] +=
+                std::ldexp(static_cast<float>(c_ref_acc), combined_exp);
+          }
+        }
+        // ---------------------------------------------------------------------
+        // (e) Output return, since we have no output activation algorithm:
+        // Add optional Float32 bias to the unquantized accumulator.
+        // ---------------------------------------------------------------------
+        if (bias_data != nullptr) {
+          output_ptr[mi * output_channels + ni] += bias_data[ni];
+        }
+      }
+    }
+  } else {
+    // Dynamic A8 Quantization (BatchQuantizeFloats)
+    std::vector<int8_t> quant_data(NumElements(input));
+    std::vector<float> input_scales(batch_size);
+    std::vector<int32_t> input_zero_points(batch_size);
+
+    tensor_utils::BatchQuantizeFloats(input_ptr, batch_size, input_channels,
+                                      quant_data.data(), input_scales.data(),
+                                      input_zero_points.data(),
+                                      /*do_asymmetric=*/true);
+
+    for (size_t mi = 0; mi < batch_size; mi++) {
+      for (size_t ni = 0; ni < output_channels; ni++) {
+        float kfsum = 0.0;
+        for (size_t bi = 0; bi < num_blocks; bi++) {
+          int32_t ksum = 0;
+          int32_t c_ref_acc = 0;
+          for (size_t ki = 0; ki < blocksize; ki++) {
+            const size_t k_index = bi * blocksize + ki;
+            const size_t nb_index = (ni * k2 + k_index) / 2;
+            const int8_t k_value = static_cast<int8_t>(
+                (k_index % 2 == 0)
+                    ? (kernel[nb_index] & static_cast<int8_t>(0xF))
+                    : (kernel[nb_index] >> 4));
+            const int32_t kernel_value = SignExtendInt4(k_value);
+            ksum += kernel_value;
+            c_ref_acc += static_cast<int32_t>(
+                             quant_data[mi * input_channels + k_index]) *
+                         kernel_value;
+          }
+          size_t scale_index = ni * num_blocks + bi;
+          if (is_float32_scale) {
+            const uint8_t scale_byte = reference_ops::UnpackFloat32ToE8M0(
+                float32_scale_data[scale_index]);
+            output_ptr[mi * output_channels + ni] += reference_ops::ScaleByE8M0(
+                static_cast<float>(c_ref_acc), scale_byte);
+            kfsum += reference_ops::ScaleByE8M0(static_cast<float>(ksum),
+                                                scale_byte);
+          } else {
+            float scale_val = dequantized_scale[scale_index];
+            output_ptr[mi * output_channels + ni] += c_ref_acc * scale_val;
+            kfsum += scale_val * ksum;
+          }
+        }
+        output_ptr[mi * output_channels + ni] -=
+            (input_zero_points[mi] * kfsum);
+        output_ptr[mi * output_channels + ni] *= input_scales[mi];
+        if (bias_data != nullptr) {
+          output_ptr[mi * output_channels + ni] += bias_data[ni];
+        }
       }
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // (e) Output return, since we have no output activation algorithm:
+  // Apply fused activation function (None / Identity for Gemma 5 projections,
+  // since output_activation_algorithm is None). Returns kTfLiteOk.
+  // ---------------------------------------------------------------------------
+  tensor_utils::ApplyActivationToVector(
+      output_ptr, batch_size * output_channels, params->activation, output_ptr);
+
   return kTfLiteOk;
 }
 
@@ -1558,6 +1723,23 @@ TfLiteStatus EvalQuantized(TfLiteContext* context, TfLiteNode* node,
   int32_t input_offset = -input->params.zero_point;
   int32_t filter_offset = -filter->params.zero_point;
   int32_t output_offset = output->params.zero_point;
+  if (filter->quantization.type == kTfLiteBlockwiseQuantization) {
+    TfLiteTensor* input_quantized = nullptr;
+    TfLiteTensor* scaling_factors = nullptr;
+    TfLiteTensor* accum_scratch = nullptr;
+    TfLiteTensor* input_offsets = nullptr;
+    TF_LITE_ENSURE_OK(context, GetTemporarySafe(context, node, /*index=*/0,
+                                                &input_quantized));
+    TF_LITE_ENSURE_OK(context, GetTemporarySafe(context, node, /*index=*/1,
+                                                &scaling_factors));
+    TF_LITE_ENSURE_OK(
+        context, GetTemporarySafe(context, node, /*index=*/2, &accum_scratch));
+    TF_LITE_ENSURE_OK(
+        context, GetTemporarySafe(context, node, /*index=*/3, &input_offsets));
+    return EvalBlockwise4Bit(context, node, params, data, input, filter, bias,
+                             input_quantized, scaling_factors, accum_scratch,
+                             input_offsets, output);
+  }
   // Only the Pie path supports quantized models and float inputs/outputs.
   if (input->type == kTfLiteFloat32) {
     TfLiteTensor* input_quantized;
@@ -1578,10 +1760,6 @@ TfLiteStatus EvalQuantized(TfLiteContext* context, TfLiteNode* node,
           return EvalHybridDense4Bit(context, node, params, data, input, filter,
                                      bias, input_quantized, scaling_factors,
                                      accum_scratch, input_offsets, output);
-        case kTfLiteBlockwiseQuantization:
-          return EvalBlockwise4Bit(context, node, params, data, input, filter,
-                                   bias, input_quantized, scaling_factors,
-                                   accum_scratch, input_offsets, output);
         default:
           return kTfLiteError;
       }
