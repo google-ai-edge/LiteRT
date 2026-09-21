@@ -3,6 +3,7 @@
 
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
 
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -559,12 +560,122 @@ std::vector<OpWrapper> BuildElementwiseAtan2Op(
       QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
       QNN_OP_ELEMENT_WISE_BINARY_OPERATION_DIVIDE);
 
+  TensorWrapper& atan_out =
+      tensor_pool.CloneNativeTensorFrom(outputs[0].get());
   auto& atan_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_UNARY);
   atan_op.AddInputTensor(div_out);
-  atan_op.AddOutputTensor(outputs[0]);
+  atan_op.AddOutputTensor(atan_out);
   atan_op.AddScalarParam<std::uint32_t>(
       QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
       QNN_OP_ELEMENT_WISE_UNARY_OPERATION_ATAN);
+
+  TensorWrapper& const_pi =
+      *tensor_pool.CreateStaticTensorWithValue(QNN_DATATYPE_FLOAT_32, {}, {1}, M_PI);
+  TensorWrapper& const_zero =
+      *tensor_pool.CreateStaticTensorWithValue(QNN_DATATYPE_FLOAT_32, {}, {1}, 0.0f);
+  TensorWrapper& add_out =
+      tensor_pool.CloneNativeTensorFrom(outputs[0].get());
+  auto& add_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
+  add_op.AddInputTensor(atan_out);
+  add_op.AddInputTensor(const_pi);
+  add_op.AddOutputTensor(add_out);
+  add_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD);
+
+  TensorWrapper& sub_out =
+      tensor_pool.CloneNativeTensorFrom(outputs[0].get());
+  auto& sub_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
+  sub_op.AddInputTensor(atan_out);
+  sub_op.AddInputTensor(const_pi);
+  sub_op.AddOutputTensor(sub_out);
+  sub_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_SUBTRACT);
+
+  /* x < 0: select between atan(y/x)-pi (y<0) and atan(y/x)+pi (y>=0) */
+  TensorWrapper& less_op_out = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_BOOL_8, {}, inputs[0].get().GetDimensions());
+  auto& less_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
+  less_op.AddInputTensor(inputs[0]);
+  less_op.AddInputTensor(const_zero);
+  less_op.AddOutputTensor(less_op_out);
+  less_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_LESS);
+
+  auto& select_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SELECT);
+  TensorWrapper& select_op_out =
+      tensor_pool.CloneNativeTensorFrom(outputs[0].get());
+  select_op.AddInputTensor(less_op_out);
+  // x < 0 and y < 0
+  select_op.AddInputTensor(sub_out);
+  // x < 0 and y >= 0
+  select_op.AddInputTensor(add_out);
+  select_op.AddOutputTensor(select_op_out);
+
+  /* x == 0: select between -pi/2 (y<0) and pi/2 (y>=0) */
+  TensorWrapper& less_op_y_when_x_zero_out = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_BOOL_8, {}, inputs[0].get().GetDimensions());
+  auto& less_op_y_when_x_zero = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
+  less_op_y_when_x_zero.AddInputTensor(inputs[0]);
+  less_op_y_when_x_zero.AddInputTensor(const_zero);
+  less_op_y_when_x_zero.AddOutputTensor(less_op_y_when_x_zero_out);
+  less_op_y_when_x_zero.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_LESS);
+
+  TensorWrapper& const_pos_pi_half =
+      *tensor_pool.CreateStaticTensorWithValue(QNN_DATATYPE_FLOAT_32, {}, {1}, M_PI / 2);
+  TensorWrapper& const_neg_pi_half =
+      *tensor_pool.CreateStaticTensorWithValue(QNN_DATATYPE_FLOAT_32, {}, {1}, -M_PI / 2);
+  auto& select_op_y_when_x_zero = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SELECT);
+  TensorWrapper& select_op_y_when_x_zero_out =
+      tensor_pool.CloneNativeTensorFrom(outputs[0].get());
+  select_op_y_when_x_zero.AddInputTensor(less_op_y_when_x_zero_out);
+  // x == 0 and y < 0
+  select_op_y_when_x_zero.AddInputTensor(const_neg_pi_half);
+  // x == 0 and y >= 0
+  select_op_y_when_x_zero.AddInputTensor(const_pos_pi_half);
+  select_op_y_when_x_zero.AddOutputTensor(select_op_y_when_x_zero_out);
+
+  // Final select on x
+  TensorWrapper& less_op_x_out = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_BOOL_8, {}, inputs[1].get().GetDimensions());
+  auto& less_op_x = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
+  less_op_x.AddInputTensor(inputs[1]);
+  less_op_x.AddInputTensor(const_zero);
+  less_op_x.AddOutputTensor(less_op_x_out);
+  less_op_x.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_LESS);
+
+  // x >= 0: select between x==0 result and atan(y/x)
+  TensorWrapper& equal_op_x_out = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_BOOL_8, {}, inputs[1].get().GetDimensions());
+  auto& equal_op_x = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
+  equal_op_x.AddInputTensor(inputs[1]);
+  equal_op_x.AddInputTensor(const_zero);
+  equal_op_x.AddOutputTensor(equal_op_x_out);
+  equal_op_x.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_EQUAL);
+
+  auto& select_op_x_equal_zero = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SELECT);
+  TensorWrapper& select_op_x_equal_zero_out =
+      tensor_pool.CloneNativeTensorFrom(outputs[0].get());
+  select_op_x_equal_zero.AddInputTensor(equal_op_x_out);
+  select_op_x_equal_zero.AddInputTensor(select_op_y_when_x_zero_out);
+  select_op_x_equal_zero.AddInputTensor(atan_out);
+  select_op_x_equal_zero.AddOutputTensor(select_op_x_equal_zero_out);
+
+  auto& select_op_x_less_than_zero = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SELECT);
+  select_op_x_less_than_zero.AddInputTensor(less_op_x_out);
+  // x < 0
+  select_op_x_less_than_zero.AddInputTensor(select_op_out);
+  // x >= 0
+  select_op_x_less_than_zero.AddInputTensor(select_op_x_equal_zero_out);
+  select_op_x_less_than_zero.AddOutputTensor(outputs[0]);
 
   return res;
 }
