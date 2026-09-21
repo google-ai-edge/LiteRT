@@ -216,6 +216,12 @@ absl::StatusOr<Container> ConvertTensorTo(const SafetensorTensorInfo& info,
         return absl::InvalidArgumentError(#ST_TYPE                             \
                                           " tensor byte size mismatch");       \
       }                                                                        \
+      if (reinterpret_cast<uintptr_t>(data_ptr) %                              \
+          alignof(typename Info::Storage)) {                                   \
+        return absl::InvalidArgumentError(                                     \
+            absl::StrCat("Mapped data at offset ", info.data_start,            \
+                         " is not correctly aligned for " #ST_TYPE));          \
+      }                                                                        \
       const typename Info::Storage* src =                                      \
           reinterpret_cast<const typename Info::Storage*>(data_ptr);           \
       for (size_t i = 0; i < num_elements; ++i) {                              \
