@@ -18,20 +18,14 @@ The Dispatch API is intended to replace the existing TFLite Delegate. It enables
 
 They’re all C APIs for ABI compatibility.
 
-Here is a snippet of Dispatch API. Full APIs are defined in [vendors/c/litert_dispatch.h](./vendors/c/litert_dispatch.h).
+Here is a snippet of the Dispatch API entry point. Full APIs are defined in [vendors/c/litert_dispatch_api.h](./vendors/c/litert_dispatch_api.h) and [vendors/c/litert_dispatch.h](./vendors/c/litert_dispatch.h).
 
 ```c
-// Initialize the Dispatch API runtime.
-LITERT_CAPI_EXPORT LiteRtStatus
-LiteRtDispatchInitialize(const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment environment, LiteRtOptions options);
-
-// Return the version of the Dispatch API runtime.
-LITERT_CAPI_EXPORT LiteRtStatus
-LiteRtDispatchGetApiVersion(LiteRtApiVersion* api_version);
-
-// Return the vendor id of the Dispatch API runtime.
-LITERT_CAPI_EXPORT LiteRtStatus
-LiteRtDispatchGetVendorId(const char** vendor_id);
+// Query the Dispatch API interface for a given interface ID and caller runtime version.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchQueryInterface(
+    LiteRtDispatchInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version,
+    LiteRtInterface* out_interface);
 ```
 
 ## How is it used?
@@ -218,14 +212,17 @@ API should provide custom hardware buffer handlers for creating, destroying,
 locking, and unlocking custom tensor buffers.
 
 This information is passed to LiteRT Runtime with the
-`LiteRtCustomTensorBufferHandlersDef` struct in the `LiteRtDispatchApi`
-returned by `LiteRtDispatchGetApi`. Then, the LiteRT runtime will automatically
-register these handlers when the Dispatch API is initialized.
+`LiteRtCustomTensorBufferHandlersDef_V1` struct returned by
+`LiteRtDispatchQueryInterface` when queried with
+`kLiteRtInterfaceCustomTensorBufferHandlers`. Then, the LiteRT runtime will
+automatically register these handlers when the Dispatch API is initialized.
 
-Here is the definition of `LiteRtCustomTensorBufferHandlersDef`:
+Here is the definition of `LiteRtCustomTensorBufferHandlersDef_V1`:
 
 ```c
-typedef struct LiteRtCustomTensorBufferHandlersDef {
+typedef struct LiteRtCustomTensorBufferHandlersDef_V1 {
+  LiteRtAbiHeader abi_header;
+
   CreateCustomTensorBuffer create_func;
   DestroyCustomTensorBuffer destroy_func;
   LockCustomTensorBuffer lock_func;
@@ -239,21 +236,12 @@ typedef struct LiteRtCustomTensorBufferHandlersDef {
   size_t num_supported_buffer_types;
   LiteRtTensorBufferType
       supported_buffer_types[LITERT_CUSTOM_BUFFER_HANDLERS_DEF_MAX_SUPPORTED_BUFFER_TYPES];
-} LiteRtCustomTensorBufferHandlersDef;
+} LiteRtCustomTensorBufferHandlersDef_V1;
 ```
 
-Vendors should initialize this struct and set the `tensor_buffer_handlers_def`
-field in `LiteRtDispatchApi`.
-
-```c
-typedef struct LiteRtDispatchApi {
-  LiteRtApiVersion version;
-  LiteRtDispatchInterface* interface;
-  LiteRtDispatchAsyncInterface* async_interface;
-  LiteRtDispatchGraphInterface* graph_interface;
-  LiteRtCustomTensorBufferHandlersDef* tensor_buffer_handlers_def; // Set this field
-} LiteRtDispatchApi;
-```
+Vendors supporting custom tensor buffers should implement
+`LiteRtDispatchQueryInterface` to return this struct when
+`interface_id == kLiteRtInterfaceCustomTensorBufferHandlers`.
 
 #### Buffer Requirement Handshaking
 
@@ -570,4 +558,68 @@ illustrate how it operates.
             kLiteRtStatusOk);
   EXPECT_EQ(LiteRtDispatchDeviceContextDestroy(device_context),
             kLiteRtStatusOk);
+```
+
+## API Versioning and Extension
+
+LiteRT Dispatch API uses a versioned interface query mechanism with
+`LiteRtAbiHeader` at offset 0 for ABI stability and bidirectional version
+negotiation across shared library boundaries.
+
+### How it works
+
+1.  **Single Entry Point:** The dispatch shared library exports a single C
+    symbol: `LiteRtDispatchQueryInterface`.
+2.  **Bidirectional Negotiation:** The runtime calls this function, passing a
+    specific interface ID (e.g., `kLiteRtInterfaceBasic`,
+    `kLiteRtInterfaceAsync`, `kLiteRtInterfaceGraph`, or
+    `kLiteRtInterfaceCustomTensorBufferHandlers`) and its own
+    `LiteRtApiVersion litert_runtime_version`.
+3.  **Major Tables + Header at Offset 0:** Every interface table
+    (`LiteRtDispatchInterface_V1`, `LiteRtDispatchAsyncInterface_V1`,
+    `LiteRtDispatchGraphInterface_V1`, `LiteRtCustomTensorBufferHandlersDef_V1`)
+    starts with `LiteRtAbiHeader abi_header` (`struct_size`, `major_version`,
+    `minor_version`) at offset 0. New functions within a major version are
+    appended to the end of the struct, and `struct_size` grows automatically
+    via `sizeof(...)`.
+4.  **Bounds-Checked Invocation:** The runtime inspects
+    `abi_header.major_version` and uses `LITERT_ABI_HAS_API(api, 1, member)`
+    to verify struct bounds (`offset + sizeof <= struct_size`) and pointer
+    non-nullness before invoking any function pointer.
+
+### Example: Implementing `LiteRtDispatchQueryInterface`
+
+```cpp
+static const LiteRtDispatchInterface_V1 MyDispatchInterface = {
+    .abi_header = {
+        .struct_size = sizeof(LiteRtDispatchInterface_V1),
+        .major_version = 1,
+        .minor_version = 0,
+        .reserved = 0,
+    },
+    .initialize = MyDispatchInitialize,
+    // ... other V1 function pointers ...
+};
+
+extern "C" LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchQueryInterface(
+    LiteRtDispatchInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version,
+    LiteRtInterface* out_interface) {
+  if (out_interface == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  if (litert_runtime_version.major >= 1) {
+    if (interface_id == kLiteRtInterfaceBasic) {
+      *out_interface = &MyDispatchInterface;
+      return kLiteRtStatusOk;
+    } else if (interface_id == kLiteRtInterfaceCustomTensorBufferHandlers) {
+      *out_interface = &MyTensorBufferHandlers;
+      return kLiteRtStatusOk;
+    }
+  }
+
+  return kLiteRtStatusErrorUnsupported;
+}
 ```

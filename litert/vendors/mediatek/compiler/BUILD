@@ -54,6 +54,7 @@ litert_dynamic_lib(
         "//litert/cc/internal:litert_opaque_options_wrapper",
         "//litert/cc/internal:litert_options_wrapper",
         "//litert/compiler/cc:litert_model",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "//litert/vendors/mediatek/compiler/legalizations:common_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:operand_map",
@@ -177,6 +178,7 @@ litert_test(
         "//litert/test:load_test_model",
         "//litert/test:matchers_oss",
         "//litert/test:test_models",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/cc:litert_compiler_plugin",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "@com_google_absl//absl/log:absl_check",
@@ -188,7 +190,7 @@ sh_test(
     name = "mediatek_compiler_plugin_so_symbol_test",
     srcs = ["//litert/test:litert_compiler_plugin_symbol_test.sh"],
     args = [
-        "$(location :compiler_plugin_so)",
+        "$(rootpath :compiler_plugin_so)",
     ],
     data = [
         ":compiler_plugin_so",

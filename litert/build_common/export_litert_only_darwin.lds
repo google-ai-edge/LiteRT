@@ -1,8 +1,7 @@
 # Compiler Plugin
-*LiteRt*CompilerPlugin*
-
-# Compiled Result
-*LiteRt*CompiledResult*
+*LiteRtCompilerPluginQueryInterface
 
 # Dispatch
-*LiteRtDispatch*
+*LiteRtDispatchQueryInterface
+*LiteRtDispatch_Mock*
+*LiteRtDispatchExample*

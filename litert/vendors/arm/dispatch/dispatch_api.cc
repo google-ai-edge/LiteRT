@@ -209,15 +209,26 @@ LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
 LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
                                        LiteRtEnvironmentOptions env,
                                        LiteRtOptions options) {
-  (void)api_version;
   (void)env;
   (void)options;
+  if (api_version.major != 1 && api_version.major != 0) {
+    return kLiteRtStatusErrorUnsupported;
+  }
   return kLiteRtStatusOk;
 }
 
 }  // namespace litert::arm
 
-LiteRtDispatchInterface TheInterface = {
+namespace {
+
+static const LiteRtDispatchInterface_V1 TheBasicInterface = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtDispatchInterface_V1),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .initialize = litert::arm::Initialize,
     .get_vendor_id = litert::arm::GetVendorId,
     .get_build_id = litert::arm::GetBuildId,
@@ -246,29 +257,22 @@ LiteRtDispatchInterface TheInterface = {
     .invocation_context_set_options = litert::arm::InvocationContextSetOptions,
 };
 
-LiteRtDispatchApi TheApi = {
-    .abi_header =
-        {
-            .struct_size = sizeof(LiteRtDispatchApi),
-            .major_version = 1,
-            .minor_version = 0,
-            .reserved = 0,
-        },
-    .version =
-        {
-            .major = LITERT_API_VERSION_MAJOR,
-            .minor = LITERT_API_VERSION_MINOR,
-            .patch = LITERT_API_VERSION_PATCH,
-        },
-    .interface = &TheInterface,
-    .async_interface = nullptr,
-    .graph_interface = nullptr,
-};
+}  // namespace
 
-LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
-  if (api == nullptr) {
+extern "C" LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchQueryInterface(
+    LiteRtDispatchInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version, LiteRtInterface* out_interface) {
+  if (out_interface == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *api = TheApi;
-  return kLiteRtStatusOk;
+  if (litert_runtime_version.major >= 1) {
+    switch (interface_id) {
+      case kLiteRtInterfaceBasic:
+        *out_interface = &TheBasicInterface;
+        return kLiteRtStatusOk;
+      default:
+        return kLiteRtStatusErrorUnsupported;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
 }

@@ -21,7 +21,7 @@ namespace {
 
 struct JitPlugin {
   Environment environment;
-  PluginPtr plugin;
+  StaticallyLinkedPlugin plugin;
   internal::LiteRtOptionsPtr options;
 };
 
@@ -37,9 +37,10 @@ JitPlugin CreateJitPlugin() {
   auto c_options =
       internal::LiteRtOptionsPtrBuilder::Build(*options, env->GetHolder());
   EXPECT_TRUE(c_options);
-  return {std::move(*env),
-          CreatePlugin(LrtGetCompilerContext(), nullptr, c_options->get()),
-          std::move(*c_options)};
+  auto plugin = StaticallyLinkedPlugin::Create(LrtGetCompilerContext(), nullptr,
+                                               c_options->get());
+  EXPECT_TRUE(plugin);
+  return {std::move(*env), std::move(*plugin), std::move(*c_options)};
 }
 
 TEST(ArmCompilerPluginPartitionTest, SelectsSupportedOperations) {
@@ -49,8 +50,8 @@ TEST(ArmCompilerPluginPartitionTest, SelectsSupportedOperations) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
   LiteRtOpListT selected_ops;
 
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      jit_plugin.plugin.get(), nullptr, subgraph.Get(), &selected_ops));
+  LITERT_ASSERT_OK(jit_plugin.plugin.Api()->compiler_plugin_partition(
+      jit_plugin.plugin.Get(), nullptr, subgraph.Get(), &selected_ops));
 
   EXPECT_FALSE(selected_ops.Values().empty());
   for (const auto& [op, partition_index] : selected_ops.Values()) {
@@ -65,23 +66,24 @@ TEST(ArmCompilerPluginPartitionTest, RejectsUnsupportedOperation) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
   LiteRtOpListT selected_ops;
 
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      jit_plugin.plugin.get(), nullptr, subgraph.Get(), &selected_ops));
+  LITERT_ASSERT_OK(jit_plugin.plugin.Api()->compiler_plugin_partition(
+      jit_plugin.plugin.Get(), nullptr, subgraph.Get(), &selected_ops));
 
   EXPECT_TRUE(selected_ops.Values().empty());
 }
 
 TEST(ArmCompilerPluginPartitionTest, ValidatesArgumentsAndJitMode) {
+  auto jit_plugin = CreateJitPlugin();
   LiteRtOpListT selected_ops;
-  EXPECT_EQ(
-      LiteRtCompilerPluginPartition(nullptr, nullptr, nullptr, &selected_ops),
-      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(jit_plugin.plugin.Api()->compiler_plugin_partition(
+                nullptr, nullptr, nullptr, &selected_ops),
+            kLiteRtStatusErrorInvalidArgument);
 
   auto model = testing::LoadTestFileModel(
       "single_add_default_a8w8_recipe_quantized.tflite");
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
-  EXPECT_EQ(LiteRtCompilerPluginPartition(nullptr, nullptr, subgraph.Get(),
-                                          &selected_ops),
+  EXPECT_EQ(jit_plugin.plugin.Api()->compiler_plugin_partition(
+                nullptr, nullptr, subgraph.Get(), &selected_ops),
             kLiteRtStatusErrorInvalidArgument);
 }
 

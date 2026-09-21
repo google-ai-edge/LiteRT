@@ -51,6 +51,22 @@ extern "C" {
 #define LITERT_NO_CFI_CHECK
 #endif  // __linux__
 
+// Portable compile-time assertion macro for C and C++ ABI layout checks.
+#ifndef LITERT_ABI_STATIC_ASSERT
+#if defined(__cplusplus)
+#define LITERT_ABI_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LITERT_ABI_STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
+#else
+#define LITERT_ABI_STATIC_ASSERT_CONCAT_(a, b) a##b
+#define LITERT_ABI_STATIC_ASSERT_CONCAT(a, b) \
+  LITERT_ABI_STATIC_ASSERT_CONCAT_(a, b)
+#define LITERT_ABI_STATIC_ASSERT(cond, msg)                                    \
+  typedef char LITERT_ABI_STATIC_ASSERT_CONCAT(litert_abi_static_assert_line_, \
+                                               __LINE__)[(cond) ? 1 : -1]
+#endif
+#endif  // LITERT_ABI_STATIC_ASSERT
+
 // Declares canonical opaque type.
 
 #ifdef __cplusplus
@@ -66,6 +82,9 @@ extern "C" {
 #define LITERT_DEFINE_HANDLE_STRUCT(name) \
   typedef struct name##T* name;           \
   typedef const struct name##T* name##Const
+
+// Generic pointer to a versioned interface function table (read-only .rodata).
+typedef const void* LiteRtInterface;
 
 // LiteRT Accelerator object. (litert_accelerator.h)
 LITERT_DEFINE_HANDLE(LiteRtAccelerator);

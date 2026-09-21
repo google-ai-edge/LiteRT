@@ -14,14 +14,12 @@
 
 #include "litert/vendors/c/litert_dispatch.h"
 
+#include <atomic>
 #include <cstddef>
 #include <string>
 #include <vector>
 
-#if !defined(LITERT_WINDOWS_OS)
-#include <dlfcn.h>
-#endif  // !defined(LITERT_WINDOWS_OS)
-
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
@@ -29,6 +27,7 @@
 #include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_metrics.h"
@@ -42,87 +41,102 @@
 #include "litert/core/version.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 
-#define INVOKE_FUNC(function, ...)                                \
-  if (!TheApi.interface) {                                        \
-    LITERT_LOG(LITERT_ERROR, "Dispatch API interface not found"); \
-    return kLiteRtStatusErrorRuntimeFailure;                      \
-  }                                                               \
-  if (!TheApi.interface->function) {                              \
-    LITERT_LOG(LITERT_ERROR, #function " not found");             \
-    return kLiteRtStatusErrorRuntimeFailure;                      \
-  }                                                               \
-  LITERT_PERFETTO_TRACE_EVENT("Dispatch API " #function);         \
-  return TheApi.interface->function(__VA_ARGS__);
+#define INVOKE_FUNC(function, ...)                                      \
+  const auto* basic_iface =                                             \
+      TheBasicInterface_V1.load(std::memory_order_acquire);             \
+  if (!basic_iface) {                                                   \
+    LITERT_LOG(LITERT_ERROR, "Dispatch API basic interface not found"); \
+    return kLiteRtStatusErrorRuntimeFailure;                            \
+  }                                                                     \
+  if (!LITERT_ABI_HAS_API(basic_iface, 1, function)) {                  \
+    LITERT_LOG(LITERT_ERROR, #function " not found");                   \
+    return kLiteRtStatusErrorUnsupported;                               \
+  }                                                                     \
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API " #function);               \
+  return basic_iface->function(__VA_ARGS__);
 
 #define INVOKE_ASYNC_FUNC(function, ...)                                \
-  if (!TheApi.async_interface) {                                        \
+  const auto* async_iface =                                             \
+      TheAsyncInterface_V1.load(std::memory_order_acquire);             \
+  if (!async_iface) {                                                   \
     LITERT_LOG(LITERT_ERROR, "Dispatch API async interface not found"); \
-    return kLiteRtStatusErrorRuntimeFailure;                            \
+    return kLiteRtStatusErrorUnsupported;                               \
   }                                                                     \
-  if (!TheApi.async_interface->function) {                              \
+  if (!LITERT_ABI_HAS_API(async_iface, 1, function)) {                  \
     LITERT_LOG(LITERT_ERROR, #function " not found");                   \
-    return kLiteRtStatusErrorRuntimeFailure;                            \
+    return kLiteRtStatusErrorUnsupported;                               \
   }                                                                     \
   LITERT_PERFETTO_TRACE_EVENT("Dispatch API " #function);               \
-  return TheApi.async_interface->function(__VA_ARGS__);
+  return async_iface->function(__VA_ARGS__);
 
 #define INVOKE_GRAPH_FUNC(function, ...)                                \
-  if (!TheApi.graph_interface) {                                        \
-    LITERT_LOG(LITERT_ERROR, "Dispatch API graoh interface not found"); \
-    return kLiteRtStatusErrorRuntimeFailure;                            \
+  const auto* graph_iface =                                             \
+      TheGraphInterface_V1.load(std::memory_order_acquire);             \
+  if (!graph_iface) {                                                   \
+    LITERT_LOG(LITERT_ERROR, "Dispatch API graph interface not found"); \
+    return kLiteRtStatusErrorUnsupported;                               \
   }                                                                     \
-  if (!TheApi.graph_interface->function) {                              \
+  if (!LITERT_ABI_HAS_API(graph_iface, 1, function)) {                  \
     LITERT_LOG(LITERT_ERROR, #function " not found");                   \
-    return kLiteRtStatusErrorRuntimeFailure;                            \
+    return kLiteRtStatusErrorUnsupported;                               \
   }                                                                     \
   LITERT_PERFETTO_TRACE_EVENT("Dispatch API " #function);               \
-  return TheApi.graph_interface->function(__VA_ARGS__);
+  return graph_iface->function(__VA_ARGS__);
 
 extern "C" {
 // Set during static initialization by the vendor's Dispatch API implementation.
-LiteRtStatus (*LiteRtStaticLinkedDispatchGetApi)(LiteRtDispatchApi*) = nullptr;
+LiteRtStatus (*LiteRtStaticLinkedDispatchQueryInterface)(
+    LiteRtDispatchInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version,
+    LiteRtInterface* out_interface) = nullptr;
 }
 
 namespace {
 
 litert::SharedLibrary* DispatchSharedLibrary = nullptr;
-bool IsTheApiInitialized = false;
-LiteRtDispatchApi TheApi = {
-    /*.abi_header=*/
-    {
-        /*.struct_size=*/sizeof(LiteRtDispatchApi),
-        /*.major_version=*/1,
-        /*.minor_version=*/0,
-        /*.reserved=*/0,
-    },
-    /*.version=*/{/*.major=*/0, /*.minor=*/0, /*.patch=*/0},
-    /*.interface=*/nullptr,
-    /*.async_interface=*/nullptr,
-    /*.graph_interface=*/nullptr,
-    /*.tensor_buffer_handlers=*/nullptr,
-};
+std::string* TheLoadedLibraryPath = nullptr;
+std::atomic<bool> IsTheApiInitialized{false};
+LiteRtDispatchQueryInterfaceT TheQueryInterface = nullptr;
 
-LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
-                        LiteRtEnvironment env, LiteRtOptions options) {
-  INVOKE_FUNC(initialize, runtime_context, env, options);
-}
+std::atomic<const LiteRtDispatchInterface_V1*> TheBasicInterface_V1{nullptr};
+std::atomic<const LiteRtDispatchAsyncInterface_V1*> TheAsyncInterface_V1{
+    nullptr};
+std::atomic<const LiteRtDispatchGraphInterface_V1*> TheGraphInterface_V1{
+    nullptr};
+std::atomic<const LiteRtCustomTensorBufferHandlersDef_V1*>
+    TheCustomTensorBufferHandlers_V1{nullptr};
 
-LiteRtStatus RegisterCustomTensorBufferHandlers(LiteRtEnvironment env) {
-  if (TheApi.tensor_buffer_handlers_def != nullptr) {
+LiteRtStatus RegisterCustomTensorBufferHandlers(
+    const LiteRtCustomTensorBufferHandlersDef_V1* handlers_def,
+    LiteRtEnvironment env) {
+  if (handlers_def != nullptr) {
+    if (!LITERT_ABI_HAS_MEMBER(handlers_def, 1, device_tag) ||
+        !LITERT_ABI_HAS_MEMBER(handlers_def, 1, queue_tag) ||
+        !LITERT_ABI_HAS_MEMBER(handlers_def, 1, num_supported_buffer_types) ||
+        !LITERT_ABI_HAS_MEMBER(handlers_def, 1, supported_buffer_types) ||
+        !LITERT_ABI_HAS_API(handlers_def, 1, create_func) ||
+        !LITERT_ABI_HAS_API(handlers_def, 1, destroy_func) ||
+        !LITERT_ABI_HAS_API(handlers_def, 1, lock_func) ||
+        !LITERT_ABI_HAS_API(handlers_def, 1, unlock_func)) {
+      return kLiteRtStatusErrorWrongVersion;
+    }
+    ClearCustomTensorBuffer clear_func =
+        LITERT_ABI_HAS_API(handlers_def, 1, clear_func)
+            ? handlers_def->clear_func
+            : nullptr;
+    ImportCustomTensorBuffer import_func =
+        LITERT_ABI_HAS_API(handlers_def, 1, import_func)
+            ? handlers_def->import_func
+            : nullptr;
     for (size_t i = 0;
-         i < TheApi.tensor_buffer_handlers_def->num_supported_buffer_types &&
+         i < handlers_def->num_supported_buffer_types &&
          i < LITERT_CUSTOM_BUFFER_HANDLERS_DEF_MAX_SUPPORTED_BUFFER_TYPES;
          ++i) {
       LITERT_RETURN_IF_ERROR(LiteRtRegisterTensorBufferHandlers(
-          env, TheApi.tensor_buffer_handlers_def->supported_buffer_types[i],
-          TheApi.tensor_buffer_handlers_def->create_func,
-          TheApi.tensor_buffer_handlers_def->destroy_func,
-          TheApi.tensor_buffer_handlers_def->lock_func,
-          TheApi.tensor_buffer_handlers_def->unlock_func,
-          TheApi.tensor_buffer_handlers_def->clear_func,
-          TheApi.tensor_buffer_handlers_def->import_func,
-          TheApi.tensor_buffer_handlers_def->device_tag,
-          TheApi.tensor_buffer_handlers_def->queue_tag));
+          env, handlers_def->supported_buffer_types[i],
+          handlers_def->create_func, handlers_def->destroy_func,
+          handlers_def->lock_func, handlers_def->unlock_func, clear_func,
+          import_func, handlers_def->device_tag, handlers_def->queue_tag));
     }
   }
   return kLiteRtStatusOk;
@@ -140,50 +154,60 @@ litert::Expected<std::string> GetSharedLibraryPath(
   litert::internal::FindLiteRtDispatchSharedLibs(dispatch_lib_dir.str_value,
                                                  dispatch_lib_paths);
   if (dispatch_lib_paths.empty()) {
-    LITERT_LOG(LITERT_ERROR, "No dispatch library found in %s",
-               dispatch_lib_dir.str_value);
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure);
+    return litert::Error(kLiteRtStatusErrorNotFound,
+                         "Dispatch library not found.");
   }
   if (dispatch_lib_paths.size() > 1) {
-    LITERT_LOG(LITERT_WARNING, "Multiple dispatch libraries found in %s:",
-               dispatch_lib_dir.str_value);
-    for (const auto& path : dispatch_lib_paths) {
-      LITERT_LOG(LITERT_WARNING, "  Candidate: %s", path.c_str());
-    }
+    LITERT_LOG(LITERT_WARNING,
+               "Multiple dispatch libraries found, loading the first one: %s",
+               dispatch_lib_paths.front().c_str());
   }
   return dispatch_lib_paths.front();
 }
 
 }  // namespace
 
-// /////////////////////////////////////////////////////////////////////////////
-// Basic Execution API
-// /////////////////////////////////////////////////////////////////////////////
-
 LiteRtStatus LiteRtDispatchInitialize(
     const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
     LiteRtOptions options) {
   LITERT_PERFETTO_TRACE_EVENT("Dispatch API Initialization");
-  if (IsTheApiInitialized) {
-    return RegisterCustomTensorBufferHandlers(env);
-  }
 
   LiteRtEnvironmentOptions env_options;
   LITERT_RETURN_IF_ERROR(LiteRtGetEnvironmentOptions(env, &env_options));
 
-  LiteRtStatus api_status = kLiteRtStatusErrorNotFound;
-  if (LiteRtStaticLinkedDispatchGetApi != nullptr) {
-    api_status = LiteRtStaticLinkedDispatchGetApi(&TheApi);
+  // If already initialized and static override has not changed, initialize the
+  // new environment against the already-negotiated dispatch interface.
+  if (IsTheApiInitialized.load(std::memory_order_relaxed) &&
+      (LiteRtStaticLinkedDispatchQueryInterface == nullptr ||
+       TheQueryInterface == LiteRtStaticLinkedDispatchQueryInterface)) {
+    if (LiteRtStaticLinkedDispatchQueryInterface == nullptr &&
+        TheLoadedLibraryPath != nullptr) {
+      auto requested_path = GetSharedLibraryPath(env_options);
+      if (requested_path && *requested_path != *TheLoadedLibraryPath) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Dispatch API already initialized from '%s'; ignoring "
+                   "different requested library '%s'",
+                   TheLoadedLibraryPath->c_str(), requested_path->c_str());
+      }
+    }
+    LITERT_RETURN_IF_ERROR(RegisterCustomTensorBufferHandlers(
+        TheCustomTensorBufferHandlers_V1.load(std::memory_order_relaxed), env));
+    const auto* basic = TheBasicInterface_V1.load(std::memory_order_relaxed);
+    if (!LITERT_ABI_HAS_API(basic, 1, initialize)) {
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+    return basic->initialize(runtime_context, env, options);
   }
 
-  if (api_status == kLiteRtStatusErrorNotFound) {
-    // TODO(piyu): support Android systems where libraries are not unpacked in
-    // the system directory.
-    LITERT_ASSIGN_OR_RETURN(auto shared_lib_path,
-                            GetSharedLibraryPath(env_options));
+  // 1. Resolve QueryInterface function (static or dynamic)
+  LiteRtDispatchQueryInterfaceT query_interface = nullptr;
+  std::string loaded_path;
+  if (LiteRtStaticLinkedDispatchQueryInterface != nullptr) {
+    query_interface = LiteRtStaticLinkedDispatchQueryInterface;
+  } else {
+    LITERT_ASSIGN_OR_RETURN(loaded_path, GetSharedLibraryPath(env_options));
 
-    LITERT_LOG(LITERT_INFO, "Loading shared library: %s",
-               shared_lib_path.c_str());
+    LITERT_LOG(LITERT_INFO, "Loading shared library: %s", loaded_path.c_str());
 
     if (!DispatchSharedLibrary) {
       DispatchSharedLibrary = new litert::SharedLibrary();
@@ -191,44 +215,139 @@ LiteRtStatus LiteRtDispatchInitialize(
 
     LITERT_ASSIGN_OR_RETURN(
         *DispatchSharedLibrary,
-        litert::SharedLibrary::Load(shared_lib_path,
-                                    litert::RtldFlags::Now().Local()));
+        litert::SharedLibrary::Load(
+            loaded_path, litert::RtldFlags::Now().Local().NoDelete()));
 
-    using LiteRtDispatchGetApi_t = LiteRtStatus (*)(LiteRtDispatchApi*);
-    LITERT_ASSIGN_OR_RETURN(
-        auto dynamic_get_api,
-        DispatchSharedLibrary->LookupSymbol<LiteRtDispatchGetApi_t>(
-            "LiteRtDispatchGetApi"));
-
-    if (auto status = dynamic_get_api(&TheApi); status != kLiteRtStatusOk) {
-      return status;
+    auto query_res =
+        DispatchSharedLibrary->LookupSymbol<LiteRtDispatchQueryInterfaceT>(
+            kLiteRtDispatchQueryInterface.data());
+    if (!query_res) {
+      if (DispatchSharedLibrary->LookupSymbol<void*>(
+              "LiteRtDispatchInitialize")) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Vendor library '%s' exports legacy pre-Option-B symbol "
+                   "'LiteRtDispatchInitialize'. Please recompile vendor "
+                   "library with LiteRT Option B ABI support.",
+                   loaded_path.c_str());
+      }
+      return query_res.Error().Status();
     }
-  } else if (api_status != kLiteRtStatusOk) {
-    return api_status;
-  } else {
-    LITERT_LOG(LITERT_INFO, "Using statically linked dispatch_api");
+    query_interface = *query_res;
   }
 
-  if (!litert::internal::IsSameVersionAsRuntime(TheApi.version)) {
-    LITERT_LOG(LITERT_ERROR, "Unsupported dispatch runtime version");
+  // 2. Negotiate Basic Interface into local temporaries first (prevent partial
+  // initialization poisoning if subsequent steps fail).
+  LiteRtApiVersion runtime_ver = {LITERT_DISPATCH_ABI_VERSION_MAJOR,
+                                  LITERT_DISPATCH_ABI_VERSION_MINOR,
+                                  LITERT_DISPATCH_ABI_VERSION_PATCH};
+  LiteRtInterface basic_iface = nullptr;
+  LiteRtStatus status = litert::internal::NegotiateInterface(
+      query_interface, kLiteRtInterfaceBasic, runtime_ver,
+      /*expected_abi_major=*/LITERT_DISPATCH_ABI_VERSION_MAJOR, &basic_iface);
+  if (status != kLiteRtStatusOk || basic_iface == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "Failed to negotiate basic interface version");
+    return kLiteRtStatusErrorWrongVersion;
+  }
+  const auto* local_basic =
+      reinterpret_cast<const LiteRtDispatchInterface_V1*>(basic_iface);
+  if (!LITERT_ABI_HAS_API(local_basic, 1, initialize)) {
+    LITERT_LOG(LITERT_ERROR, "Dispatch initialize entry point not found");
     return kLiteRtStatusErrorWrongVersion;
   }
 
-  LITERT_RETURN_IF_ERROR(RegisterCustomTensorBufferHandlers(env));
-
-  auto status = Initialize(runtime_context, env, options);
-  if (status == kLiteRtStatusOk) {
-    IsTheApiInitialized = true;
+  // 3. Query optional sub-interfaces into local temporaries
+  const LiteRtDispatchAsyncInterface_V1* local_async = nullptr;
+  LiteRtInterface async_iface = nullptr;
+  if (litert::internal::NegotiateInterface(
+          query_interface, kLiteRtInterfaceAsync, runtime_ver,
+          /*expected_abi_major=*/LITERT_DISPATCH_ABI_VERSION_MAJOR,
+          &async_iface) == kLiteRtStatusOk) {
+    local_async =
+        reinterpret_cast<const LiteRtDispatchAsyncInterface_V1*>(async_iface);
   }
-  return status;
+
+  const LiteRtDispatchGraphInterface_V1* local_graph = nullptr;
+  LiteRtInterface graph_iface = nullptr;
+  if (litert::internal::NegotiateInterface(
+          query_interface, kLiteRtInterfaceGraph, runtime_ver,
+          /*expected_abi_major=*/LITERT_DISPATCH_ABI_VERSION_MAJOR,
+          &graph_iface) == kLiteRtStatusOk) {
+    local_graph =
+        reinterpret_cast<const LiteRtDispatchGraphInterface_V1*>(graph_iface);
+  }
+
+  const LiteRtCustomTensorBufferHandlersDef_V1* local_handlers = nullptr;
+  LiteRtInterface handlers_iface = nullptr;
+  if (litert::internal::NegotiateInterface(
+          query_interface, kLiteRtInterfaceCustomTensorBufferHandlers,
+          runtime_ver, /*expected_abi_major=*/LITERT_DISPATCH_ABI_VERSION_MAJOR,
+          &handlers_iface) == kLiteRtStatusOk) {
+    local_handlers =
+        reinterpret_cast<const LiteRtCustomTensorBufferHandlersDef_V1*>(
+            handlers_iface);
+  }
+
+  // 4. Register custom tensor buffer handlers and initialize the environment.
+  LITERT_RETURN_IF_ERROR(
+      RegisterCustomTensorBufferHandlers(local_handlers, env));
+
+  status = local_basic->initialize(runtime_context, env, options);
+  if (status != kLiteRtStatusOk) {
+    return status;
+  }
+
+  // 5. Commit negotiated interfaces atomically after full initialization
+  // succeeds.
+  if (!loaded_path.empty()) {
+    if (!TheLoadedLibraryPath) {
+      TheLoadedLibraryPath = new std::string(loaded_path);
+    } else {
+      *TheLoadedLibraryPath = loaded_path;
+    }
+  }
+  TheQueryInterface = query_interface;
+  TheAsyncInterface_V1.store(local_async, std::memory_order_release);
+  TheGraphInterface_V1.store(local_graph, std::memory_order_release);
+  TheCustomTensorBufferHandlers_V1.store(local_handlers,
+                                         std::memory_order_release);
+  TheBasicInterface_V1.store(local_basic, std::memory_order_release);
+  IsTheApiInitialized.store(true, std::memory_order_release);
+  return kLiteRtStatusOk;
 }
+
+namespace litert::internal {
+
+void ResetDispatchForTest() {
+  IsTheApiInitialized.store(false, std::memory_order_release);
+  TheBasicInterface_V1.store(nullptr, std::memory_order_release);
+  TheAsyncInterface_V1.store(nullptr, std::memory_order_release);
+  TheGraphInterface_V1.store(nullptr, std::memory_order_release);
+  TheCustomTensorBufferHandlers_V1.store(nullptr, std::memory_order_release);
+  TheQueryInterface = nullptr;
+  LiteRtStaticLinkedDispatchQueryInterface = nullptr;
+  if (DispatchSharedLibrary) {
+    delete DispatchSharedLibrary;
+    DispatchSharedLibrary = nullptr;
+  }
+  if (TheLoadedLibraryPath) {
+    delete TheLoadedLibraryPath;
+    TheLoadedLibraryPath = nullptr;
+  }
+}
+
+}  // namespace litert::internal
 
 LiteRtStatus LiteRtDispatchGetApiVersion(LiteRtApiVersion* api_version) {
   if (!api_version) {
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *api_version = TheApi.version;
+  const auto* basic = TheBasicInterface_V1.load(std::memory_order_acquire);
+  if (!basic) {
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  *api_version = {basic->abi_header.major_version,
+                  basic->abi_header.minor_version, 0};
   return kLiteRtStatusOk;
 }
 
@@ -356,16 +475,16 @@ LiteRtStatus LiteRtDispatchInvocationContextSetOptions(
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  if (!TheApi.interface) {
-    LITERT_LOG(LITERT_ERROR, "Dispatch API interface not found");
+  const auto* basic = TheBasicInterface_V1.load(std::memory_order_acquire);
+  if (!basic) {
+    LITERT_LOG(LITERT_ERROR, "Dispatch API basic interface not found");
     return kLiteRtStatusErrorRuntimeFailure;
   }
-  if (!TheApi.interface->invocation_context_set_options) {
+  if (!LITERT_ABI_HAS_API(basic, 1, invocation_context_set_options)) {
     return kLiteRtStatusErrorUnsupported;
   }
   LITERT_PERFETTO_TRACE_EVENT("Dispatch API invocation_context_set_options");
-  return TheApi.interface->invocation_context_set_options(invocation_context,
-                                                          options);
+  return basic->invocation_context_set_options(invocation_context, options);
 }
 
 LiteRtStatus LiteRtDispatchInvocationContextSetSchedulingInfo(
@@ -375,14 +494,17 @@ LiteRtStatus LiteRtDispatchInvocationContextSetSchedulingInfo(
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  if (!TheApi.interface ||
-      !TheApi.interface->invocation_context_set_scheduling_info) {
+  const auto* basic = TheBasicInterface_V1.load(std::memory_order_acquire);
+  if (!basic) {
+    return kLiteRtStatusErrorUnsupported;
+  }
+  if (!LITERT_ABI_HAS_API(basic, 1, invocation_context_set_scheduling_info)) {
     return kLiteRtStatusErrorUnsupported;
   }
   LITERT_PERFETTO_TRACE_EVENT(
       "Dispatch API invocation_context_set_scheduling_info");
-  return TheApi.interface->invocation_context_set_scheduling_info(
-      invocation_context, scheduling_info);
+  return basic->invocation_context_set_scheduling_info(invocation_context,
+                                                       scheduling_info);
 }
 
 LiteRtStatus LiteRtDispatchAttachInput(
@@ -402,14 +524,6 @@ LiteRtStatus LiteRtDispatchAttachOutput(
   if (!invocation_context) {
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
-  }
-  if (!TheApi.interface) {
-    LITERT_LOG(LITERT_ERROR, "Dispatch API interface not found");
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
-  if (!TheApi.interface->attach_output) {
-    LITERT_LOG(LITERT_ERROR, "attach_output_tensor_buffer not found");
-    return kLiteRtStatusErrorRuntimeFailure;
   }
   INVOKE_FUNC(attach_output, invocation_context, graph_output_index,
               tensor_buffer_handle);
@@ -446,13 +560,15 @@ LiteRtStatus LiteRtDispatchAttachEdgeBuffer(
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  if (!TheApi.interface || !TheApi.interface->attach_edge_buffer) {
+  const auto* basic_iface =
+      TheBasicInterface_V1.load(std::memory_order_acquire);
+  if (!LITERT_ABI_HAS_API(basic_iface, 1, attach_edge_buffer)) {
     LITERT_LOG(LITERT_ERROR, "attach_edge_buffer not found");
     return kLiteRtStatusErrorUnsupported;
   }
   LITERT_PERFETTO_TRACE_EVENT("Dispatch API attach_edge_buffer");
-  return TheApi.interface->attach_edge_buffer(invocation_context, edge_id,
-                                              tensor_buffer_handle);
+  return basic_iface->attach_edge_buffer(invocation_context, edge_id,
+                                         tensor_buffer_handle);
 }
 
 LiteRtStatus LiteRtDispatchDetachEdgeBuffer(
@@ -463,13 +579,15 @@ LiteRtStatus LiteRtDispatchDetachEdgeBuffer(
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  if (!TheApi.interface || !TheApi.interface->detach_edge_buffer) {
+  const auto* basic_iface =
+      TheBasicInterface_V1.load(std::memory_order_acquire);
+  if (!LITERT_ABI_HAS_API(basic_iface, 1, detach_edge_buffer)) {
     LITERT_LOG(LITERT_ERROR, "detach_edge_buffer not found");
     return kLiteRtStatusErrorUnsupported;
   }
   LITERT_PERFETTO_TRACE_EVENT("Dispatch API detach_edge_buffer");
-  return TheApi.interface->detach_edge_buffer(invocation_context, edge_id,
-                                              tensor_buffer_handle);
+  return basic_iface->detach_edge_buffer(invocation_context, edge_id,
+                                         tensor_buffer_handle);
 }
 #endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 
@@ -498,11 +616,12 @@ LiteRtStatus LiteRtDispatchGetHooks(LiteRtDispatchDeviceContext device_context,
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  if (!TheApi.interface) {
+  const auto* basic = TheBasicInterface_V1.load(std::memory_order_acquire);
+  if (!basic) {
     LITERT_LOG(LITERT_ERROR, "Dispatch API interface not found");
     return kLiteRtStatusErrorRuntimeFailure;
   }
-  if (!TheApi.interface->get_hooks) {
+  if (!LITERT_ABI_HAS_API(basic, 1, get_hooks)) {
     *hook = nullptr;
     if (user_data) {
       *user_data = nullptr;
@@ -510,7 +629,7 @@ LiteRtStatus LiteRtDispatchGetHooks(LiteRtDispatchDeviceContext device_context,
     return kLiteRtStatusOk;
   }
   LITERT_PERFETTO_TRACE_EVENT("Dispatch API get_hooks");
-  return TheApi.interface->get_hooks(device_context, hook, user_data);
+  return basic->get_hooks(device_context, hook, user_data);
 }
 
 LiteRtStatus LiteRtDispatchStartMetricsCollection(
@@ -677,14 +796,6 @@ LiteRtStatus LiteRtDispatchLoadExecutable(
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  if (!TheApi.graph_interface) {
-    LITERT_LOG(LITERT_ERROR, "Dispatch API graph interface not found");
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
-  if (!TheApi.graph_interface->load_executable) {
-    LITERT_LOG(LITERT_ERROR, "load_executable not found");
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
   INVOKE_GRAPH_FUNC(load_executable, device_context, type, bytecode_buffer,
                     exec_handle);
 }
@@ -708,13 +819,15 @@ LiteRtStatus LiteRtDispatchGetScratchpadRequirements(
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  if (!TheApi.graph_interface ||
-      !TheApi.graph_interface->get_scratchpad_requirements) {
+  const auto* graph_iface =
+      TheGraphInterface_V1.load(std::memory_order_acquire);
+  if (!LITERT_ABI_HAS_API(graph_iface, 1, get_scratchpad_requirements)) {
     LITERT_LOG(LITERT_ERROR, "get_scratchpad_requirements not found");
     return kLiteRtStatusErrorUnsupported;
   }
-  INVOKE_GRAPH_FUNC(get_scratchpad_requirements, device_context, exec_handle,
-                    function_name, scratchpad_requirements);
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API get_scratchpad_requirements");
+  return graph_iface->get_scratchpad_requirements(
+      device_context, exec_handle, function_name, scratchpad_requirements);
 }
 
 LiteRtStatus LiteRtDispatchAttachScratchpadBuffer(
@@ -725,13 +838,15 @@ LiteRtStatus LiteRtDispatchAttachScratchpadBuffer(
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  if (!TheApi.graph_interface ||
-      !TheApi.graph_interface->attach_scratchpad_buffer) {
+  const auto* graph_iface =
+      TheGraphInterface_V1.load(std::memory_order_acquire);
+  if (!LITERT_ABI_HAS_API(graph_iface, 1, attach_scratchpad_buffer)) {
     LITERT_LOG(LITERT_ERROR, "attach_scratchpad_buffer not found");
     return kLiteRtStatusErrorUnsupported;
   }
-  INVOKE_GRAPH_FUNC(attach_scratchpad_buffer, device_context, exec_handle,
-                    function_name, scratchpad_buffer_handle);
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API attach_scratchpad_buffer");
+  return graph_iface->attach_scratchpad_buffer(
+      device_context, exec_handle, function_name, scratchpad_buffer_handle);
 }
 #endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
 
@@ -793,10 +908,16 @@ LiteRtStatus LiteRtDispatchInvocationContextGetGraph(
     LITERT_LOG(LITERT_ERROR, "Null input");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  if (!TheApi.graph_interface ||
-      !TheApi.graph_interface->invocation_context_get_graph) {
+  const auto* graph_iface =
+      TheGraphInterface_V1.load(std::memory_order_acquire);
+  if (!graph_iface) {
     LITERT_LOG(LITERT_ERROR, "invocation_context_get_graph not found");
     return kLiteRtStatusErrorUnsupported;
   }
-  INVOKE_GRAPH_FUNC(invocation_context_get_graph, invocation_context, graph);
+  if (!LITERT_ABI_HAS_API(graph_iface, 1, invocation_context_get_graph)) {
+    LITERT_LOG(LITERT_ERROR, "invocation_context_get_graph not found");
+    return kLiteRtStatusErrorUnsupported;
+  }
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API invocation_context_get_graph");
+  return graph_iface->invocation_context_get_graph(invocation_context, graph);
 }

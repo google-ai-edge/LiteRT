@@ -30,7 +30,6 @@
 #include "openvino/core/except.hpp"
 #include "openvino/frontend/tensorflow_lite/frontend.hpp"
 #include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
-#include "openvino/openvino.hpp"
 #include "openvino/runtime/core.hpp"
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -38,7 +37,6 @@
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/litert_op_options.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -50,6 +48,7 @@
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/compiler/cc/litert_op_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/intel_openvino/bytecode_header.h"
 #include "litert/vendors/intel_openvino/compiler/alias_shared_constants.h"
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
@@ -457,7 +456,8 @@ bool IsCompositeOpSupported(const litert::compiler::Op& op) {
     return false;
   }
   if (op.ctx()->get_shlo_composite_op_name(op.Get(), &composite_op_name) !=
-      kLiteRtStatusOk) {
+          kLiteRtStatusOk ||
+      composite_op_name == nullptr) {
     return false;
   }
 
@@ -466,9 +466,6 @@ bool IsCompositeOpSupported(const litert::compiler::Op& op) {
                           litert::compiler::CompositeOptions::kRmsNorm.size());
 }
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            const char* soc_model,
                                            LiteRtSubgraph subgraph,
@@ -502,9 +499,6 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
   return kLiteRtStatusOk;
 }
-#ifdef __cplusplus
-} /* end extern "C" */
-#endif
 
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
@@ -728,4 +722,60 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
     LiteRtEnvironmentOptions env, LiteRtOptions options,
     const char* soc_model_name) {
   return kLiteRtStatusOk;
+}
+
+namespace {
+
+static const LiteRtCompilerPluginInterface_V1 OpenvinoCompilerPluginInterface =
+    {
+        .abi_header =
+            {
+                .struct_size = sizeof(LiteRtCompilerPluginInterface_V1),
+                .major_version = 1,
+                .minor_version = 0,
+                .reserved = 0,
+            },
+        .get_compiler_plugin_version = LiteRtGetCompilerPluginVersion,
+        .get_compiler_plugin_soc_manufacturer =
+            LiteRtGetCompilerPluginSocManufacturer,
+        .create_compiler_plugin = LiteRtCreateCompilerPlugin,
+        .destroy_compiler_plugin = LiteRtDestroyCompilerPlugin,
+        .get_compiler_plugin_supported_hardware =
+            LiteRtGetCompilerPluginSupportedHardware,
+        .get_num_compiler_plugin_supported_models =
+            LiteRtGetNumCompilerPluginSupportedSocModels,
+        .get_compiler_plugin_supported_soc_model =
+            LiteRtGetCompilerPluginSupportedSocModel,
+        .compiler_plugin_partition = LiteRtCompilerPluginPartition,
+        .compiler_plugin_compile = LiteRtCompilerPluginCompile,
+        .destroy_compiled_result = LiteRtDestroyCompiledResult,
+        .get_compiled_result_byte_code = LiteRtGetCompiledResultByteCode,
+        .get_compiled_result_num_byte_code =
+            LiteRtCompiledResultNumByteCodeModules,
+        .get_compiled_result_call_info = LiteRtGetCompiledResultCallInfo,
+        .get_num_compiled_result_calls = LiteRtGetNumCompiledResultCalls,
+        .register_all_transformations =
+            LiteRtCompilerPluginRegisterAllTransformations,
+        .get_compiler_plugin_sdk_version = LiteRtGetCompilerPluginSDKVersion,
+        .get_compiled_result_handle = nullptr,
+        .check_compiler_compatibility =
+            LiteRtCompilerPluginCheckCompilerCompatibility,
+    };
+
+}  // namespace
+
+extern "C" LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtCompilerPluginQueryInterface(LiteRtCompilerPluginInterfaceId interface_id,
+                                   LiteRtApiVersion litert_runtime_version,
+                                   LiteRtInterface* out_interface) {
+  if (out_interface == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (litert_runtime_version.major >= 1) {
+    if (interface_id == kLiteRtCompilerPluginInterfaceBasic) {
+      *out_interface = &OpenvinoCompilerPluginInterface;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
 }

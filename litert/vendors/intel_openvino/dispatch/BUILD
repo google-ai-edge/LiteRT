@@ -76,7 +76,6 @@ litert_dynamic_lib(
         ":litert_dispatch_api",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_environment_header",
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_layout",
         "//litert/c:litert_model_header",
@@ -92,7 +91,6 @@ litert_dynamic_lib(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_context_wrapper",
-        "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_options_wrapper",
         "//litert/cc/options:litert_intel_openvino_options",
         "//litert/core/util:tensor_type_util",
@@ -256,8 +254,8 @@ sh_test(
     name = "intel_openvino_dispatch_so_symbol_test",
     srcs = ["//litert/test:litert_c_api_dependency_test.sh"],
     args = [
-        "LiteRtDispatchGetApi",
-        "$(location :dispatch_api_so)",
+        "LiteRtDispatchQueryInterface",
+        "$(rootpath :dispatch_api_so)",
     ],
     data = [
         ":dispatch_api_so",

@@ -22,22 +22,7 @@ SUCCESS=1
 
 # TODO: b/502742681 - Use lds file and remove this check.
 EXPECTED_SYMBOLS=(
-  "LiteRtGetCompilerPluginVersion"
-  "LiteRtGetCompilerPluginSocManufacturer"
-  "LiteRtCreateCompilerPlugin"
-  "LiteRtDestroyCompilerPlugin"
-  "LiteRtGetCompilerPluginSupportedHardware"
-  "LiteRtGetNumCompilerPluginSupportedSocModels"
-  "LiteRtGetCompilerPluginSupportedSocModel"
-  "LiteRtCompilerPluginPartition"
-  "LiteRtCompilerPluginCompile"
-  "LiteRtDestroyCompiledResult"
-  "LiteRtGetCompiledResultByteCode"
-  "LiteRtCompiledResultNumByteCodeModules"
-  "LiteRtGetCompiledResultCallInfo"
-  "LiteRtGetNumCompiledResultCalls"
-  "LiteRtCompilerPluginRegisterAllTransformations"
-  "LiteRtCompilerPluginCheckCompilerCompatibility"
+  "LiteRtCompilerPluginQueryInterface"
 )
 
 for SO_FILE in "$@"; do
@@ -62,6 +47,13 @@ for SO_FILE in "$@"; do
       SUCCESS=0
     fi
   done
+
+  unexpected_symbols=$(nm -D "${SO_FILE}" | grep -E " T LiteRt" | grep -v "LiteRtCompilerPluginQueryInterface")
+  if [ -n "${unexpected_symbols}" ]; then
+    echo "ERROR: Found unexpected exported symbols in $(basename "${SO_FILE}"):"
+    echo "${unexpected_symbols}"
+    SUCCESS=0
+  fi
 done
 
 if [ $SUCCESS -eq 1 ]; then

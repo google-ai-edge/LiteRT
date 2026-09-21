@@ -77,6 +77,7 @@ litert_dynamic_lib(
         "//litert/core/model",
         "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/google_tensor:adapter",
         "//tflite/converter/schema:schema_fbs",
         "@com_google_absl//absl/cleanup",
@@ -140,6 +141,7 @@ cc_test(
         "//litert/test:common",
         "//litert/test:load_test_model",
         "//litert/test:matchers",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
@@ -163,7 +165,7 @@ sh_test(
     name = "google_tensor_compiler_plugin_so_symbol_test",
     srcs = ["//litert/test:litert_compiler_plugin_symbol_test.sh"],
     args = [
-        "$(location :google_tensor_compiler_plugin_so)",
+        "$(rootpath :google_tensor_compiler_plugin_so)",
     ],
     data = [
         ":google_tensor_compiler_plugin_so",
