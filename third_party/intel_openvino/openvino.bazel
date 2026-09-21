@@ -3,7 +3,7 @@
 cc_library(
     name = "openvino",
     hdrs = select({
-        "@org_tensorflow//tensorflow:android": glob([
+        "@litert//litert:android": glob([
             "openvino_android/runtime/include/**/*.h",
             "openvino_android/runtime/include/**/*.hpp",
         ]),
@@ -13,11 +13,11 @@ cc_library(
         ]),
     }),
     srcs = select({
-        "@org_tensorflow//tensorflow:windows": [
+        "@litert//litert:windows": [
             "openvino/runtime/lib/intel64/Release/openvino.lib",
             "openvino/runtime/lib/intel64/Release/openvino_tensorflow_lite_frontend.lib",
         ],
-        "@org_tensorflow//tensorflow:android": [
+        "@litert//litert:android": [
             "openvino_android/runtime/lib/intel64/libopenvino.so",
             "openvino_android/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so",
         ],
@@ -27,11 +27,11 @@ cc_library(
         ],
     }),
     strip_include_prefix = select({
-        "@org_tensorflow//tensorflow:android": "openvino_android/runtime/include",
+        "@litert//litert:android": "openvino_android/runtime/include",
         "//conditions:default": "openvino/runtime/include",
     }),
     includes = select({
-        "@org_tensorflow//tensorflow:android": [
+        "@litert//litert:android": [
             "openvino_android/runtime/include/ie/cpp",
             "openvino_android/runtime/include/ie",
             "openvino_android/runtime/include",
@@ -43,7 +43,7 @@ cc_library(
         ],
     }),
     linkopts = select({
-        "@org_tensorflow//tensorflow:windows": [
+        "@litert//litert:windows": [
             "/FORCE:MULTIPLE",
         ],
         "//conditions:default": [
