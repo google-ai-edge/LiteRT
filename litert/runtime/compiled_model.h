@@ -398,6 +398,10 @@ class LiteRtCompiledModelT {
   // this root set and does not add transitively referenced callees.
   litert::Expected<void> InitializeActiveSubgraphs(LiteRtOptions options);
 
+  // Marks signature subgraph input and output tensors as kTfLiteNonCpu to
+  // prevent TFLite's ArenaPlanner from allocating host heap buffers for them.
+  void MarkSignatureIoTensorsNonCpu();
+
   // Returns NotFound when an explicitly unselected signature is used.
   litert::Expected<void> ValidateSignatureIsActive(
       absl::string_view signature_key) const;

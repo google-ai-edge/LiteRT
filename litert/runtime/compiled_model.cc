@@ -486,6 +486,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     signature_keys_.push_back(default_signature_key);
   }
   LITERT_RETURN_IF_ERROR(InitializeActiveSubgraphs(jit_compilation_options));
+  MarkSignatureIoTensorsNonCpu();
 
   signature_needs_allocation_.clear();
 
@@ -1193,6 +1194,46 @@ Expected<void> LiteRtCompiledModelT::ValidateSignatureIsActive(
       absl::StrFormat("Signature '%s' was not selected when the compiled model "
                       "was created.",
                       signature_key));
+}
+
+void LiteRtCompiledModelT::MarkSignatureIoTensorsNonCpu() {
+  auto mark_tensor_non_cpu = [](TfLiteTensor* tensor) {
+    if (tensor == nullptr) return;
+    if ((tensor->allocation_type == kTfLiteArenaRw ||
+         tensor->allocation_type == kTfLiteArenaRwPersistent) &&
+        tensor->type != kTfLiteString) {
+      tensor->allocation_type = kTfLiteNonCpu;
+      tensor->data.data = nullptr;
+    }
+  };
+
+  for (const std::string* signature_key : signature_keys_) {
+    tflite::Subgraph* subgraph = nullptr;
+    if (*signature_key == litert::kDefaultSignatureKey) {
+      subgraph = interp_->subgraph(0);
+    } else {
+      int subgraph_index =
+          interp_->GetSubgraphIndexFromSignature(signature_key->c_str());
+      if (subgraph_index >= 0 && subgraph_index < interp_->subgraphs_size()) {
+        subgraph = interp_->subgraph(subgraph_index);
+      }
+    }
+    if (subgraph == nullptr) continue;
+    for (int tensor_idx : subgraph->inputs()) {
+      if (tensor_idx == kTfLiteOptionalTensor || tensor_idx < 0 ||
+          tensor_idx >= subgraph->tensors_size()) {
+        continue;
+      }
+      mark_tensor_non_cpu(subgraph->tensor(tensor_idx));
+    }
+    for (int tensor_idx : subgraph->outputs()) {
+      if (tensor_idx == kTfLiteOptionalTensor || tensor_idx < 0 ||
+          tensor_idx >= subgraph->tensors_size()) {
+        continue;
+      }
+      mark_tensor_non_cpu(subgraph->tensor(tensor_idx));
+    }
+  }
 }
 
 bool LiteRtCompiledModelT::HasNpuOps() const {
@@ -1922,9 +1963,8 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
               LiteRtLockTensorBuffer(buffer, &host_mem_addr, lock_mode);
           status != kLiteRtStatusOk) {
         return Unexpected(
-            status,
-            absl::StrFormat("Failed to lock the tensor buffer: %s",
-                            tensor->name ? tensor->name : "<unnamed>"));
+            status, absl::StrFormat("Failed to lock the tensor buffer: %s",
+                                    tensor->name ? tensor->name : "<unnamed>"));
       }
       locked_buffers[buffer] = host_mem_addr;
     }

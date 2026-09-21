@@ -354,6 +354,7 @@ cc_library(
         ":object_reader",
         ":operation_parser",
         ":shared_const_tensor_map",
+        "//litert/runtime:tfl_utils",
         "//tflite:framework",
         "//tflite:kernel_api",
         "//tflite:util",
