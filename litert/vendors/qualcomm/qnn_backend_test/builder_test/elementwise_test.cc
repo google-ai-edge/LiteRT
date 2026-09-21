@@ -214,7 +214,7 @@ TEST_P(QnnModelTest, FloorModNegativeValue) {
 }
 
 TEST_P(QnnModelTest, ElementWiseAtan2) {
-  const std::vector<std::uint32_t> kDims{1, 2, 2, 1};
+  const std::vector<std::uint32_t> kDims{1, 2, 2, 2};
 
   auto& input_0 = tensor_pool_.CreateInputTensorWithName(
       "in_0", QNN_DATATYPE_FLOAT_32, {}, kDims);
@@ -242,15 +242,24 @@ TEST_P(QnnModelTest, ElementWiseAtan2) {
   auto input_idx_1 = qnn_model_.AddInputTensor(input_1);
   auto output_idx = qnn_model_.AddOutputTensor(output_0);
 
-  qnn_model_.SetInputData<float>(input_idx_0, {0., static_cast<float>(std::sqrt(3)), 1., -1.});
-  qnn_model_.SetInputData<float>(input_idx_1, {1., 1., 1., 1.});
+  qnn_model_.SetInputData<float>(
+    input_idx_0,
+    {0., static_cast<float>(std::sqrt(3)), 1., -1.,
+     1., -1., 1., -1.});
+  qnn_model_.SetInputData<float>(
+    input_idx_1, {1., 1., 1., 1.,
+                 -1., -1., 0., 0.});
 
   ASSERT_TRUE(qnn_model_.Execute());
 
   auto output_data = qnn_model_.GetOutputData<float>(output_idx);
   ASSERT_TRUE(output_data);
-  ASSERT_EQ(output_data->size(), 4);
-  ASSERT_THAT(output_data.value(), Pointwise(FloatNear(2e-3), {0., M_PI/3, M_PI/4, -M_PI/4}));
+  ASSERT_EQ(output_data->size(), 8);
+  ASSERT_THAT(
+    output_data.value(),
+    Pointwise(FloatNear(3e-3), {0., M_PI/3, M_PI/4, -M_PI/4,
+                                M_PI*3/4, -M_PI*3/4, M_PI/2, -M_PI/2})
+  );
 #endif
 }
 
