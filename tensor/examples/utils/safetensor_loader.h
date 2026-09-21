@@ -118,8 +118,6 @@ class SafetensorLoader {
   }
 
   // Loads a tensor.
-  //
-  // BF16 tensors are automatically converted to FP32.
   absl::StatusOr<TensorHandle> LoadTensor(absl::string_view name) const;
 
   // Loads all tensors into a map.

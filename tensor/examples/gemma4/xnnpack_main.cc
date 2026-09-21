@@ -111,6 +111,26 @@ absl::Status MapGemma4WeightIdentifiers(
   return absl::OkStatus();
 }
 
+absl::Status FallbackBF16WeightsToFp32(
+    absl::flat_hash_map<std::string, TensorHandle>& weights_handle) {
+  TRACE_EVENT(kTensorApiCategory, "UpcastHalfPrecisionWeightsToFp32");
+  for (auto& [name, tensor] : weights_handle) {
+    if (tensor.GetType() != Type::kBF16) {
+      continue;
+    }
+    LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & buffer, tensor.GetBuffer());
+    std::shared_ptr<OwningCpuBuffer> fp32_buf =
+        OwningCpuBuffer::Copy<Type::kFP32>(buffer.Lock().As<const bf16_t>());
+    if (fp32_buf == nullptr) {
+      return absl::ResourceExhaustedError(
+          absl::StrCat("Failed to allocate FP32 buffer for weight ", name));
+    }
+    tensor.SetType(Type::kFP32);
+    tensor.SetBuffer(fp32_buf);
+  }
+  return absl::OkStatus();
+}
+
 // Slices the combined per-layer model projection weight matrix
 // ("model.per_layer_model_projection.weight") of shape
 // [num_layers, per_layer_input_dim, embed_dim] into individual per-layer 2D
@@ -251,6 +271,7 @@ absl::StatusOr<LoadedTensors> LoadWeightsAndPrepareTensors(
   auto weight_mapping = GetGemma4WeightMapping(config.num_layers);
   LRT_TENSOR_ASSIGN_OR_RETURN(auto weights_handle,
                               loader.LoadWeightsWithMapping(weight_mapping));
+  LRT_TENSOR_RETURN_IF_ERROR(FallbackBF16WeightsToFp32(weights_handle));
   LRT_TENSOR_RETURN_IF_ERROR(
       SlicePerLayerModelProjectionWeights(config, weights_handle));
   LRT_TENSOR_ASSIGN_OR_RETURN(
