@@ -243,6 +243,25 @@ void DestroyDelegateEnvironment(void* user_data) {
   LITERT_LOG(LITERT_DEBUG, "Destroyed WebGPU delegate environment.");
 }
 
+// Mirrors the device's optional features into `env`'s requested extension list.
+//
+// Only needed when initializing from a client-supplied device: that
+// Initialize() overload derives fp16/subgroup support from the requested
+// extensions rather than from the device, so leaving the list empty silently
+// forces fp32, non-subgroup kernels. Do not call this before the InitParams
+// overload, which rejects "subgroups".
+void RequestSupportedExtensions(ml_drift::webgpu::ExecutionEnvironment& env,
+                                const wgpu::Device& device) {
+  // LINT.IfChange(requested_extensions)
+  if (device.HasFeature(wgpu::FeatureName::ShaderF16)) {
+    env.RequestExtension("shader_f16");
+  }
+  if (device.HasFeature(wgpu::FeatureName::Subgroups)) {
+    env.RequestExtension("subgroups");
+  }
+  // LINT.ThenChange()
+}
+
 // Creates a WebGPU environment. If a WebGPU device id is provided via
 // LiteRtEnvironment, the WebGPU environment will be initialized with the
 // provided device id and set `is_webgpu_device_provided` to true.
@@ -298,6 +317,7 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
     wgpu::Device device = wgpu_device;
     wgpu::AdapterInfo adapter_info;
     device.GetAdapterInfo(&adapter_info);
+    RequestSupportedExtensions(*webgpu_env, device);
     webgpu_init_status = webgpu_env->Initialize(device, adapter_info);
     if (webgpu_init_status.ok() && flush_callback) {
       ::ml_drift::webgpu::Instance::SetFlushCallback(wgpu_device,
