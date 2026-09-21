@@ -295,6 +295,10 @@ TensorWrapper::TensorWrapper(const Qnn_Tensor_t& qnn_tensor)
                  QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET) {
         quantize_params_.emplace<AxisScaleOffsetQuantizeParamsWrapper>(
             quant_params.axisScaleOffsetEncoding);
+      } else if (quant_params.quantizationEncoding ==
+                 QNN_QUANTIZATION_ENCODING_BW_FLOAT_BLOCK) {
+        quantize_params_.emplace<BwFloatBlockQuantizeParamsWrapper>(
+            quant_params.bwFloatBlockEncoding, dimensions_);
       } else {
         QNN_LOG_ERROR("Unsupported quantization encoding: %d",
                       quant_params.quantizationEncoding);
@@ -321,6 +325,10 @@ TensorWrapper::TensorWrapper(const Qnn_Tensor_t& qnn_tensor)
                  QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET) {
         quantize_params_.emplace<AxisScaleOffsetQuantizeParamsWrapper>(
             quant_params.axisScaleOffsetEncoding);
+      } else if (quant_params.quantizationEncoding ==
+                 QNN_QUANTIZATION_ENCODING_BW_FLOAT_BLOCK) {
+        quantize_params_.emplace<BwFloatBlockQuantizeParamsWrapper>(
+            quant_params.bwFloatBlockEncoding, dimensions_);
       } else {
         QNN_LOG_ERROR("Unsupported quantization encoding: %d",
                       quant_params.quantizationEncoding);
@@ -345,6 +353,10 @@ bool TensorWrapper::IsQuantBitwidth(std::uint32_t bitwidth) const {
                  std::get_if<BwAxisScaleOffsetQuantizeParamsWrapper>(
                      &quantize_params_)) {
     return wrapper->GetBitwidth() == bitwidth;
+  } else if (const auto* wrapper =
+                 std::get_if<BwFloatBlockQuantizeParamsWrapper>(
+                     &quantize_params_)) {
+    return wrapper->GetBitwidth() == bitwidth;
   }
   return false;
 }
@@ -357,6 +369,9 @@ void TensorWrapper::SetQuantBitwidth(std::uint32_t bitwidth) {
   } else if (auto* wrapper =
                  std::get_if<BwAxisScaleOffsetQuantizeParamsWrapper>(
                      &quantize_params_)) {
+    wrapper->SetBitwidth(bitwidth);
+  } else if (auto* wrapper = std::get_if<BwFloatBlockQuantizeParamsWrapper>(
+                 &quantize_params_)) {
     wrapper->SetBitwidth(bitwidth);
   } else {
     QNN_LOG_WARNING(

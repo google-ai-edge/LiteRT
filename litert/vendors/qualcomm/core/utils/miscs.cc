@@ -9,9 +9,11 @@
 #endif
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <system_error>
 #include <vector>
 
@@ -25,6 +27,23 @@ static constexpr int kRequiredNumProviders{1};
 }
 typedef Qnn_ErrorHandle_t (*QnnInterfaceGetProvidersFn_t)(
     const QnnInterface_t*** provider_list, uint32_t* num_providers);
+
+float Fp16BitsToFloat(std::uint16_t bits) {
+  const float sign = (bits & 0x8000) == 0 ? 1.0f : -1.0f;
+  const std::uint32_t exponent = (bits >> 10) & 0x1f;
+  const std::uint32_t mantissa = bits & 0x03ff;
+  if (exponent == 0) {
+    return sign * std::ldexp(static_cast<float>(mantissa), -24);
+  }
+  if (exponent == 0x1f) {
+    return mantissa == 0
+               ? sign * std::numeric_limits<float>::infinity()
+               : std::numeric_limits<float>::quiet_NaN();
+  }
+  return sign *
+         std::ldexp(static_cast<float>(mantissa + 0x0400),
+                    static_cast<int>(exponent) - 25);
+}
 
 void ConvertDataFromInt8ToInt2(const std::vector<std::int8_t>& src,
                                std::vector<std::int8_t>& dst) {
@@ -47,6 +66,20 @@ void ConvertDataFromInt8ToInt2(const std::vector<std::int8_t>& src,
     // num4 is placed in the most significant bits, num1 in the least.
     std::int8_t byte = num1 | (num2 << 2) | (num3 << 4) | (num4 << 6);
     dst.emplace_back(byte);
+  }
+}
+
+void ConvertDataFromInt8ToInt4(const std::vector<std::int8_t>& src,
+                               std::vector<std::int8_t>& dst) {
+  dst.clear();
+  dst.reserve((src.size() + 1) / 2);
+  for (size_t i = 0; i < src.size(); i += 2) {
+    const std::uint8_t low = static_cast<std::uint8_t>(src[i]) & 0x0f;
+    const std::uint8_t high =
+        i + 1 < src.size()
+            ? (static_cast<std::uint8_t>(src[i + 1]) & 0x0f) << 4
+            : 0;
+    dst.push_back(static_cast<std::int8_t>(low | high));
   }
 }
 
