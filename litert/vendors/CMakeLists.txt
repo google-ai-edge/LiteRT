@@ -348,6 +348,12 @@ if(LITERT_ENABLE_QUALCOMM)
   add_subdirectory(qualcomm)
 endif()
 
+# aml
+option(LITERT_ENABLE_AML "Enable AML dispatch/compiler build" OFF)
+if(LITERT_ENABLE_AML)
+  add_subdirectory(aml)
+endif()
+
 # Samsung
 option(LITERT_ENABLE_SAMSUNG "Enable Samsung NPU build" ON)
 if(LITECORE_HEADERS_DIR AND NOT LITERT_ENABLE_SAMSUNG)

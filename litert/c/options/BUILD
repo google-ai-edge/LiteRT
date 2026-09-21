@@ -284,6 +284,23 @@ cc_library(
     alwayslink = 1,
 )
 
+cc_library(
+    name = "litert_aml_options",
+    srcs = ["litert_aml_options.cc"],
+    hdrs = ["litert_aml_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc:litert_expected",
+        "//litert/cc/internal:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
 # copybara:uncomment_begin(google-only)
 # cc_library(
 #     name = "litert_fabric_options",
