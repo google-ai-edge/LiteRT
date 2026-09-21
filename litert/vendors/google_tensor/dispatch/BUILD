@@ -232,6 +232,7 @@ cc_library(
 # cc_test(
 #     name = "dispatch_api_simple_model_test_x86",
 #     srcs = ["dispatch_api_simple_model_test.cc"],
+#     args = ["--heap_check="],
 #     data = [
 #         "simple_model_reference_google_tensor.bin",
 #         ":dispatch_api_so",
@@ -291,6 +292,7 @@ cc_library(
 # cc_test(
 #     name = "dispatch_api_static_test",
 #     srcs = ["dispatch_api_static_test.cc"],
+#     args = ["--heap_check="],
 #     data = [
 #         "simple_model_reference_google_tensor.bin",
 #         "//third_party/darwinn/litert/dispatch:libedgetpu_litert.so",
@@ -323,8 +325,8 @@ sh_test(
     name = "google_tensor_dispatch_so_symbol_test",
     srcs = ["//litert/test:litert_c_api_dependency_test.sh"],
     args = [
-        "LiteRtDispatchGetApi",
-        "$(location :dispatch_api_so)",
+        "LiteRtDispatchQueryInterface",
+        "$(rootpath :dispatch_api_so)",
     ],
     data = [
         ":dispatch_api_so",

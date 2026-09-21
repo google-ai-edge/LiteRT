@@ -307,6 +307,7 @@ litert_dynamic_lib(
         "//litert/core:filesystem",
         "//litert/core/model",
         "//litert/vendors/c:litert_compiler_plugin",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/nvidia:bytecode",
         "//litert/vendors/nvidia:cache_layout",
         "//litert/vendors/nvidia:memory_profile",

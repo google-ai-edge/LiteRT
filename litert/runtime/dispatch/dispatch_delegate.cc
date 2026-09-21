@@ -220,11 +220,10 @@ litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
   LITERT_LOG(LITERT_DEBUG, "Dispatch API version: %d.%d.%d", api_version.major,
              api_version.minor, api_version.patch);
 
-  // Check if the versions mach.
-  if (api_version.major != LITERT_API_VERSION_MAJOR ||
-      api_version.minor < LITERT_API_VERSION_MINOR) {
+  // Check if the negotiated Dispatch ABI major version matches V1.
+  if (api_version.major != 1) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Found Dispatch API with an unsupported version");
+                      "Found Dispatch API with an unsupported ABI version");
   }
 
   int capabilities = 0;
