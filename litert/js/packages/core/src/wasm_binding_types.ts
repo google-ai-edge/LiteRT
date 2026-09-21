@@ -347,6 +347,11 @@ export declare interface LiteRtTensorHandleConstructor {
    */
   new(...args: never[]): LiteRtTensorHandle;
 
+  createPlaceholder(
+      tensorType: LiteRtRankedTensorType,
+      name: string,
+      ): LiteRtTensorHandle;
+
   createManaged(
       environment: LiteRtEnvironment,
       bufferType: LiteRtTensorBufferType,
@@ -384,6 +389,17 @@ export type LiteRtTensorBuffer = LiteRtTensorHandle;
 export type LiteRtTensorBufferConstructor = LiteRtTensorHandleConstructor;
 
 /**
+ * Specification for a signature graph in a multi-signature model.
+ */
+export interface LiteRtSignatureGraphSpec {
+  name: string;
+  inputHandles?: LiteRtTensorHandle[];
+  inputs?: LiteRtTensorHandle[];
+  outputHandles?: LiteRtTensorHandle[];
+  outputs?: LiteRtTensorHandle[];
+}
+
+/**
  * Interface for the C++ LiteRt bindings.
  */
 export declare interface LiteRtWasm extends WasmModule {
@@ -394,6 +410,13 @@ export declare interface LiteRtWasm extends WasmModule {
       modelDataPtr: number,
       modelSize: number,
       ): LiteRtModel;
+  createModelDataFromTensorGraph(
+      signatures: LiteRtSignatureGraphSpec[],
+      ): {modelDataPtr: number; modelSize: number};
+  createModelDataFromTensorGraph(
+      inputHandles: LiteRtTensorHandle[],
+      outputHandles: LiteRtTensorHandle[],
+      ): {modelDataPtr: number; modelSize: number};
   compileModel(
       environment: LiteRtEnvironment,
       model: LiteRtModel,

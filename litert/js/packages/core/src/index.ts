@@ -19,6 +19,7 @@ export {getGlobalLiteRt, getGlobalLiteRtPromise, LiteRtNotLoadedError} from './g
 export * from './tensor';
 export {type CompileOptions} from './model_types';
 export {CompiledModel} from './compiled_model';
+export {AuthoredModel, type PlaceholderSpec, type TensorFunction} from './authored_model';
 export {type SignatureRunner, type TensorDetails} from './signature_runner';
 export {Environment, type EnvironmentOptions} from './environment';
 export {type DType, type TypedArray, type NumberTypedArray, type BigIntTypedArray} from './datatypes';
