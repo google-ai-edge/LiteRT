@@ -198,7 +198,10 @@ INSTANTIATE_TEST_SUITE_P(
                           "qualcomm_bq_fully_connected_w8_fp16.tflite"},
         BlockwiseE2eParam{"MatmulW2Fp16", "qualcomm_bq_matmul_w2_fp16.tflite"},
         BlockwiseE2eParam{"MatmulW4Fp16", "qualcomm_bq_matmul_w4_fp16.tflite"},
-        BlockwiseE2eParam{"MatmulW8Fp16", "qualcomm_bq_matmul_w8_fp16.tflite"}),
+        BlockwiseE2eParam{"MatmulW8Fp16", "qualcomm_bq_matmul_w8_fp16.tflite"},
+        BlockwiseE2eParam{"Conv2dW2Fp16", "qualcomm_bq_conv2d_w2_fp16.tflite"},
+        BlockwiseE2eParam{"Conv2dW4Fp16", "qualcomm_bq_conv2d_w4_fp16.tflite"},
+        BlockwiseE2eParam{"Conv2dW8Fp16", "qualcomm_bq_conv2d_w8_fp16.tflite"}),
     [](const ::testing::TestParamInfo<BlockwiseE2eParam>& info) {
       return info.param.test_name;
     });

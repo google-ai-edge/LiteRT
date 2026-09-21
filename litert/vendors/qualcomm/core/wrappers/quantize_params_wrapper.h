@@ -185,6 +185,12 @@ class BwFloatBlockQuantizeParamsWrapper final {
   void CloneTo(Qnn_QuantizeParams_t& dst);
   std::uint32_t GetBitwidth() const { return bitwidth_; }
   void SetBitwidth(std::uint32_t bitwidth) { bitwidth_ = bitwidth; }
+  absl::Span<std::uint32_t> GetBlockSizes() {
+    return {block_sizes_.data(), block_sizes_.size()};
+  }
+  absl::Span<Qnn_FloatScaleOffset_t> GetScaleOffsets() {
+    return {scale_offsets_.data(), scale_offsets_.size()};
+  }
 
  private:
   std::uint32_t bitwidth_;

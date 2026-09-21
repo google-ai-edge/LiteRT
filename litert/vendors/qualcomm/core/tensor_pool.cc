@@ -72,6 +72,22 @@ TensorWrapper& TensorPool::CreateStaticTensor(
       dimensions, bytes, data, true);
 }
 
+TensorWrapper& TensorPool::CreateStaticTensorFromUnpackedData(
+    Qnn_DataType_t data_type, const QuantizeParamsWrapperVariant& quant_params,
+    const std::vector<std::uint32_t>& dimensions, std::uint32_t bytes,
+    const void* data) {
+  const auto id = tensor_wrappers_.size();
+  auto& tensor = tensor_wrappers_.emplace_back(
+      std::to_string(id) + kQnnSuffix, QNN_TENSOR_TYPE_STATIC, data_type,
+      quant_params, dimensions);
+  if (bytes < tensor.GetTensorBytes() || (bytes != 0 && data == nullptr)) {
+    QNN_LOG_ERROR("QNN data buffer is missing or shorter than its shape.");
+    return tensor;
+  }
+  tensor.SetDataBy(bytes, data, true);
+  return tensor;
+}
+
 TensorWrapper* TensorPool::CreateStaticTensorWithValue(
     Qnn_DataType_t data_type, const QuantizeParamsWrapperVariant& quant_params,
     const std::vector<std::uint32_t>& dimensions, float fill_value) {

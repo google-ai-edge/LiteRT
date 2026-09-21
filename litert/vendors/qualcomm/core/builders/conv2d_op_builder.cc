@@ -12,6 +12,7 @@
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
+#include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
@@ -43,15 +44,25 @@ std::vector<OpWrapper> BuildConv2dOp(
   // transpose filter
   TensorWrapper& filter_tensor = inputs[kFilterIndex];
   const std::vector<uint32_t>& filters_dims = filter_tensor.GetDimensions();
-  auto& filter_quant_params = filter_tensor.GetQuantParams();
+  const auto& filter_quant_params = filter_tensor.GetQuantParams();
+  auto transposed_filter_quant_params = filter_quant_params;
   std::vector<std::uint32_t> permute_dims{filters_dims[1], filters_dims[2],
                                           filters_dims[3], filters_dims[0]};
   if (std::holds_alternative<AxisScaleOffsetQuantizeParamsWrapper>(
-          filter_quant_params)) {
+          transposed_filter_quant_params)) {
     auto& axis_quant_params =
-        std::get<AxisScaleOffsetQuantizeParamsWrapper>(filter_quant_params);
+        std::get<AxisScaleOffsetQuantizeParamsWrapper>(
+            transposed_filter_quant_params);
     const std::array<std::int32_t, 4> new_axis{3, 0, 1, 2};
     axis_quant_params.SetAxis(new_axis[axis_quant_params.GetAxis()]);
+  } else if (auto* block_quant_params =
+                 std::get_if<BwFloatBlockQuantizeParamsWrapper>(
+                     &transposed_filter_quant_params)) {
+    if (!PermuteBlockwiseQuantizationMetadata(
+            filters_dims, {1, 2, 3, 0}, block_quant_params->GetBlockSizes(),
+            block_quant_params->GetScaleOffsets())) {
+      return {};
+    }
   }
 
   size_t filter_bytes = filter_tensor.GetTensorBytes();
@@ -63,9 +74,16 @@ std::vector<OpWrapper> BuildConv2dOp(
     std::vector<int8_t> transpose_weight_int8;
     TransposeFromOHWIToHWIO(filter_data.value(), filters_dims,
                             transpose_weight_int8);
-    transposed_filter_tensor = &(tensor_pool.CreateStaticTensor(
-        filter_tensor.GetDataType(), filter_quant_params, permute_dims,
-        filter_bytes, transpose_weight_int8.data()));
+    if (filter_tensor.IsBlockwiseQuant()) {
+      transposed_filter_tensor =
+          &(tensor_pool.CreateStaticTensorFromUnpackedData(
+              filter_tensor.GetDataType(), transposed_filter_quant_params,
+              permute_dims, filter_bytes, transpose_weight_int8.data()));
+    } else {
+      transposed_filter_tensor = &(tensor_pool.CreateStaticTensor(
+          filter_tensor.GetDataType(), transposed_filter_quant_params,
+          permute_dims, filter_bytes, transpose_weight_int8.data()));
+    }
   } else if (filter_tensor.IsTensorStatic() &&
              filter_tensor.GetDataType() ==
                  Qnn_DataType_t::QNN_DATATYPE_UFIXED_POINT_8) {
@@ -73,12 +91,21 @@ std::vector<OpWrapper> BuildConv2dOp(
     std::vector<uint8_t> transpose_weight_uint8;
     TransposeFromOHWIToHWIO(filter_data.value(), filters_dims,
                             transpose_weight_uint8);
-    transposed_filter_tensor = &(tensor_pool.CreateStaticTensor(
-        filter_tensor.GetDataType(), filter_quant_params, permute_dims,
-        filter_bytes, transpose_weight_uint8.data()));
+    if (filter_tensor.IsBlockwiseQuant()) {
+      transposed_filter_tensor =
+          &(tensor_pool.CreateStaticTensorFromUnpackedData(
+              filter_tensor.GetDataType(), transposed_filter_quant_params,
+              permute_dims, filter_bytes, transpose_weight_uint8.data()));
+    } else {
+      transposed_filter_tensor = &(tensor_pool.CreateStaticTensor(
+          filter_tensor.GetDataType(), transposed_filter_quant_params,
+          permute_dims, filter_bytes, transpose_weight_uint8.data()));
+    }
   } else {
     transposed_filter_tensor =
-        &(tensor_pool.CloneNativeTensorFrom(filter_tensor, permute_dims));
+        &(tensor_pool.CreateNativeTensor(filter_tensor.GetDataType(),
+                                         transposed_filter_quant_params,
+                                         permute_dims));
 
     const std::vector<std::uint32_t> permute_shape{4};
     const std::array<std::uint32_t, 4> permute_data{kHeightIndex, kWidthIndex,
