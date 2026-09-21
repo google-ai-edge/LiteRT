@@ -442,6 +442,12 @@ else()
   message(STATUS "Skipping Qualcomm dispatch: LITERT_ENABLE_QUALCOMM is OFF or QAIRT_HEADERS_DIR not set")
 endif()
 
+# aml
+option(LITERT_ENABLE_AML "Enable AML dispatch/compiler build" OFF)
+if(LITERT_ENABLE_AML)
+  add_subdirectory(aml)
+endif()
+
 # Samsung
 if(LITERT_ENABLE_SAMSUNG AND LITECORE_HEADERS_DIR)
   # Use modular CMake structure for Samsung
