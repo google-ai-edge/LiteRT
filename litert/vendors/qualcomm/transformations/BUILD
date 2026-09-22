@@ -35,12 +35,13 @@ litert_lib(
     visibility = ["//litert/vendors/qualcomm:__subpackages__"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_macros",
         "//litert/compiler/cc:litert_builder",
         "//litert/compiler/cc:litert_matchers",
         "//litert/compiler/cc:litert_model",
-        "//litert/compiler/cc:litert_op_options",
+        "@FP16",
     ],
 )
