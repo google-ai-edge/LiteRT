@@ -434,16 +434,31 @@ ThrStatus thrLoadSqContainerFile(ThrContext* context, ThrSqContainerType type,
 ThrStatus thrUnloadSqContainer(ThrContext* context,
                                ThrSqContainerHandle handle);
 
-// Pins the resources of the SqContainer associated with the given
-// `ThrSqContainerHandle`. This can be used to preload the resources of the
-// SqContainer and prevent them from being released when they are not in use.
-// Note: Pinning a pinned SqContainer is a no-op.
+// Triggers asynchronous acquisition of resources consumed by all "active"
+// functions in the SQ container referred to by `handle`.
+//
+// In this context, "active" functions are functions that are currently being
+// consumed by at least one live invocation context.
+//
+// NOTE: pinning an active SQ function is not cumulative.
 ThrStatus thrPinSqContainer(ThrContext* context, ThrSqContainerHandle handle);
 
-// Unpins the resources of the SqContainer associated with the given
-// `ThrSqContainerHandle`.
-// Note: Unpinning an unpinned SqContainer is a no-op.
+// Triggers asynchronous release of resources consumed by all pinned functions
+// in the SQ container referred to by `handle`.
 ThrStatus thrUnpinSqContainer(ThrContext* context, ThrSqContainerHandle handle);
+
+// Triggers asynchronous acquisition of resources consumed by `func_name`.
+//
+// Conceptually, this API increments a reference count associated with
+// `func_name`s resources. A 0 -> 1 transition will trigger resource
+// acquisition, and conversely, a 1 -> 0 transition will trigger resource
+// release. This implies that repeated calls to this API are cumulative.
+ThrStatus thrPinSqFunction(ThrContext* context, ThrSqContainerHandle handle,
+                           const char* func_name);
+
+// Triggers asynchronous release of resources consumed by `func_name`.
+ThrStatus thrUnpinSqFunction(ThrContext* context, ThrSqContainerHandle handle,
+                             const char* func_name);
 
 // Assigns a SchedulingQuantum for the node of `ThrNodeId`.
 // `func_name` needs to be provided for a DSP function.

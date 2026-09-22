@@ -77,6 +77,8 @@ struct ThrFunctions {
   decltype(&thrUnloadSqContainer) thr_unload_sq_container = nullptr;
   decltype(&thrPinSqContainer) thr_pin_sq_container = nullptr;
   decltype(&thrUnpinSqContainer) thr_unpin_sq_container = nullptr;
+  decltype(&thrPinSqFunction) thr_pin_sq_function = nullptr;
+  decltype(&thrUnpinSqFunction) thr_unpin_sq_function = nullptr;
 
   decltype(&thrGraphAssignSq) thr_graph_assign_sq = nullptr;
   decltype(&thrSqQueryScratchPad) thr_sq_query_scratch_pad = nullptr;
@@ -275,6 +277,8 @@ ThrStatus LoadSouthBoundSyms() {
                   thrUnloadSqContainer);
   THR_RESOLVE_SYM(gSouthBoundFns->thr_pin_sq_container, thrPinSqContainer);
   THR_RESOLVE_SYM(gSouthBoundFns->thr_unpin_sq_container, thrUnpinSqContainer);
+  THR_RESOLVE_SYM(gSouthBoundFns->thr_pin_sq_function, thrPinSqFunction);
+  THR_RESOLVE_SYM(gSouthBoundFns->thr_unpin_sq_function, thrUnpinSqFunction);
 
   THR_RESOLVE_SYM(gSouthBoundFns->thr_graph_assign_sq, thrGraphAssignSq);
   THR_RESOLVE_SYM(gSouthBoundFns->thr_sq_query_scratch_pad,
@@ -496,6 +500,16 @@ ThrStatus thrPinSqContainer(ThrContext* context, ThrSqContainerHandle handle) {
 ThrStatus thrUnpinSqContainer(ThrContext* context,
                               ThrSqContainerHandle handle) {
   return THR_CALL_DYN_FN(thr_unpin_sq_container, context, handle);
+}
+
+ThrStatus thrPinSqFunction(ThrContext* context, ThrSqContainerHandle handle,
+                           const char* func_name) {
+  return THR_CALL_DYN_FN(thr_pin_sq_function, context, handle, func_name);
+}
+
+ThrStatus thrUnpinSqFunction(ThrContext* context, ThrSqContainerHandle handle,
+                             const char* func_name) {
+  return THR_CALL_DYN_FN(thr_unpin_sq_function, context, handle, func_name);
 }
 
 ThrStatus thrGraphAssignSq(ThrGraph* graph, ThrNodeId node_id,
