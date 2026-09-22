@@ -483,19 +483,29 @@ class OwningCpuBuffer : public Buffer {
     return OwningCpuBuffer::Copy<type>(seq);
   }
 
+  // Runtime type dispatch shared by every `CopyAs` overload.
+  template <class T>
+  static std::shared_ptr<OwningCpuBuffer> CopyAsSpan(Type type,
+                                                     absl::Span<const T> seq) {
+    LITERT_TENSOR_BUFFER_OP_AS_SWITCH(Copy, seq);
+  }
+
   // Builds an `OwningCpuBuffer` by copying the elements in the given sequence
   // with run time type dispatching.
+  //
+  // `seq` must be contiguous, since it is narrowed to a span; use
+  // `Copy<type>()` for a sequence that is not.
   template <class Sequence>
   static std::shared_ptr<OwningCpuBuffer> CopyAs(Type type, Sequence&& seq) {
-    LITERT_TENSOR_BUFFER_OP_AS_SWITCH(Copy, std::forward<Sequence>(seq));
+    return CopyAsSpan(type, absl::MakeConstSpan(seq));
   }
 
   // Builds an `OwningCpuBuffer` by copying the elements of the given
   // initializer list with run time dispatching.
   template <class T>
-  static std::shared_ptr<OwningCpuBuffer> CopyAs(
-      Type type, std::initializer_list<T>&& seq) {
-    LITERT_TENSOR_BUFFER_OP_AS_SWITCH(Copy, std::move(seq));
+  static std::shared_ptr<OwningCpuBuffer> CopyAs(Type type,
+                                                 std::initializer_list<T> seq) {
+    return CopyAsSpan(type, absl::Span<const T>(seq.begin(), seq.size()));
   }
 
   // Builds an `OwningCpuBuffer` by applying the given `transform` to elements
