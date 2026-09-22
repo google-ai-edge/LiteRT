@@ -22,7 +22,6 @@
 #include "QnnDevice.h"  // from @qairt
 #include "QnnGraph.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
-#include "QnnProperty.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 #include <gtest/gtest.h>
 #include "absl/base/no_destructor.h"  // from @com_google_absl
@@ -48,7 +47,17 @@ absl::NoDestructor<std::vector<QnnDevice_Config_t>> captured_device_configs;
 absl::NoDestructor<
     std::vector<std::vector<QnnHtpPerfInfrastructure_PowerConfig_t>>>
     captured_configs;
+std::optional<uint32_t> captured_power_config_device_id;
+std::optional<uint32_t> captured_signed_pd_device_id;
 bool htp_unsigned_pd_supported = false;
+
+struct CapturedDeviceCreateConfig {
+  bool called = false;
+  std::optional<uint32_t> platform_device_id;
+};
+
+CapturedDeviceCreateConfig captured_device_create_config;
+bool platform_info_available = true;
 
 // Test Platform Info structs
 QnnHtpDevice_DeviceInfoExtension_t test_htp_device_info_extension = {
@@ -59,14 +68,18 @@ QnnHtpDevice_DeviceInfoExtension_t test_htp_device_info_extension = {
 QnnDevice_CoreInfo_t test_device_core_info = {
     QNN_DEVICE_CORE_INFO_VERSION_1, {{0 /*coreId*/, 0 /*coreType*/, nullptr}}};
 
-QnnDevice_HardwareDeviceInfo_t test_device_hardware_device_info = {
-    QNN_DEVICE_HARDWARE_DEVICE_INFO_VERSION_1,
-    {{0 /*deviceId*/, 0 /*deviceType*/, 1 /*numCores*/, &test_device_core_info,
-      (QnnDevice_DeviceInfoExtension_t)&test_htp_device_info_extension}}};
+QnnDevice_HardwareDeviceInfo_t test_device_hardware_devices[] = {
+    {QNN_DEVICE_HARDWARE_DEVICE_INFO_VERSION_1,
+     {{0 /*deviceId*/, 0 /*deviceType*/, 1 /*numCores*/, &test_device_core_info,
+       (QnnDevice_DeviceInfoExtension_t)&test_htp_device_info_extension}}},
+    {QNN_DEVICE_HARDWARE_DEVICE_INFO_VERSION_1,
+     {{2 /*deviceId*/, 0 /*deviceType*/, 1 /*numCores*/, &test_device_core_info,
+       (QnnDevice_DeviceInfoExtension_t)&test_htp_device_info_extension}}},
+};
 
-constexpr QnnDevice_PlatformInfo_t kTestDevicePlatformInfo = {
+QnnDevice_PlatformInfo_t test_device_platform_info = {
     QNN_DEVICE_PLATFORM_INFO_VERSION_1,
-    {{1 /*numHwDevices*/, &test_device_hardware_device_info}}};
+    {{2 /*numHwDevices*/, test_device_hardware_devices}}};
 
 // Mock Functions
 Qnn_ErrorHandle_t MockSetPowerConfig(
@@ -82,6 +95,15 @@ Qnn_ErrorHandle_t MockSetPowerConfig(
   return QNN_SUCCESS;
 }
 
+Qnn_ErrorHandle_t MockCreatePowerConfigId(uint32_t device_id, uint32_t,
+                                          uint32_t* power_config_id) {
+  captured_power_config_device_id = device_id;
+  *power_config_id = 1;
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockDestroyPowerConfigId(uint32_t) { return QNN_SUCCESS; }
+
 Qnn_ErrorHandle_t MockDeviceGetInfrastructure(
     const QnnDevice_Infrastructure_t* infra) {
   if (!real_device_get_infrastructure) {
@@ -94,6 +116,8 @@ Qnn_ErrorHandle_t MockDeviceGetInfrastructure(
   }
 
   if ((*infra)->infraType == QNN_HTP_DEVICE_INFRASTRUCTURE_TYPE_PERF) {
+    (*infra)->perfInfra.createPowerConfigId = MockCreatePowerConfigId;
+    (*infra)->perfInfra.destroyPowerConfigId = MockDestroyPowerConfigId;
     (*infra)->perfInfra.setPowerConfig = MockSetPowerConfig;
   }
 
@@ -102,7 +126,11 @@ Qnn_ErrorHandle_t MockDeviceGetInfrastructure(
 
 Qnn_ErrorHandle_t MockDeviceGetPlatformInfo(
     Qnn_LogHandle_t logger, const QnnDevice_PlatformInfo_t** platformInfo) {
-  *platformInfo = &kTestDevicePlatformInfo;
+  if (!platform_info_available) {
+    *platformInfo = nullptr;
+    return QNN_DEVICE_ERROR_UNSUPPORTED_FEATURE;
+  }
+  *platformInfo = &test_device_platform_info;
   return QNN_SUCCESS;
 }
 
@@ -110,10 +138,30 @@ Qnn_ErrorHandle_t MockDeviceCreate(Qnn_LogHandle_t,
                                    const QnnDevice_Config_t** configs,
                                    Qnn_DeviceHandle_t* device) {
   device_create_called = true;
+  captured_device_create_config = {};
+  captured_signed_pd_device_id.reset();
+  captured_device_create_config.called = true;
   captured_device_configs->clear();
   if (configs) {
     for (size_t i = 0; configs[i] != nullptr; ++i) {
       captured_device_configs->emplace_back(*configs[i]);
+      const auto* config = configs[i];
+      if (config->option == QNN_DEVICE_CONFIG_OPTION_PLATFORM_INFO &&
+          config->hardwareInfo != nullptr &&
+          config->hardwareInfo->v1.numHwDevices == 1 &&
+          config->hardwareInfo->v1.hwDevices != nullptr) {
+        captured_device_create_config.platform_device_id =
+            config->hardwareInfo->v1.hwDevices[0].v1.deviceId;
+      }
+      if (config->option == QNN_DEVICE_CONFIG_OPTION_CUSTOM &&
+          config->customConfig != nullptr) {
+        const auto* htp_config =
+            static_cast<const QnnHtpDevice_CustomConfig_t*>(config->customConfig);
+        if (htp_config->option == QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD) {
+          captured_signed_pd_device_id =
+              htp_config->useSignedProcessDomain.deviceId;
+        }
+      }
     }
   }
   static int fake_device_handle;
@@ -122,6 +170,11 @@ Qnn_ErrorHandle_t MockDeviceCreate(Qnn_LogHandle_t,
 }
 
 Qnn_ErrorHandle_t MockDeviceFree(Qnn_DeviceHandle_t) { return QNN_SUCCESS; }
+
+Qnn_ErrorHandle_t MockDeviceFreePlatformInfo(
+    Qnn_LogHandle_t, const QnnDevice_PlatformInfo_t*) {
+  return QNN_SUCCESS;
+}
 
 Qnn_ErrorHandle_t MockBackendCreateNoConfigs(
     Qnn_LogHandle_t, const QnnBackend_Config_t** configs,
@@ -155,6 +208,11 @@ class HtpBackendPerfBaseTest : public testing::TestWithParam<HtpPerfParams> {
   void SetUp() override {
     // Clean the previous captured configs.
     captured_configs->clear();
+    captured_device_create_config = {};
+    captured_power_config_device_id.reset();
+    captured_signed_pd_device_id.reset();
+    platform_info_available = true;
+    test_device_platform_info.v1.hwDevices = test_device_hardware_devices;
 
     handle_ = CreateDLHandle(HtpBackend::GetLibraryName());
     if (!handle_) GTEST_SKIP();
@@ -170,9 +228,11 @@ class HtpBackendPerfBaseTest : public testing::TestWithParam<HtpPerfParams> {
 
     real_device_get_platform_info = qnn_api_copy_.deviceGetPlatformInfo;
     qnn_api_copy_.deviceGetPlatformInfo = MockDeviceGetPlatformInfo;
+    qnn_api_copy_.deviceCreate = MockDeviceCreate;
 
     real_device_free = qnn_api_copy_.deviceFree;
     qnn_api_copy_.deviceFree = MockDeviceFree;
+    qnn_api_copy_.deviceFreePlatformInfo = MockDeviceFreePlatformInfo;
   }
 
   void TearDown() override {
@@ -411,42 +471,43 @@ TEST(HtpBackendInitTest, CreatesBackendAndDevice) {
 #endif
 }
 
-TEST(HtpBackendInitTest, SignedPdAddsOnlyTheSignedPdDeviceConfig) {
-  backend_create_called = false;
-  captured_backend_configs = nullptr;
-  device_create_called = false;
-  captured_device_configs->clear();
-
-  QNN_INTERFACE_VER_TYPE api{};
-  api.backendCreate = MockBackendCreateNoConfigs;
-  api.backendFree = MockBackendFree;
-  api.deviceCreate = MockDeviceCreate;
-  api.deviceFree = MockDeviceFree;
-
+TEST_F(HtpBackendPerfBaseTest,
+       HtpDeviceIdConfiguresDeviceAndPerformanceControl) {
   Options options;
-  options.SetLogLevel(LogLevel::kOff);
-  options.SetHtpPdSession(HtpPdSession::kSigned);
-  HtpBackend backend(&api);
+  options.SetEnableJustInTime(true);
+  options.SetHtpDeviceId(2);  // Mock platform info exposes IDs 0 and 2.
+  options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
+  HtpBackend backend(&qnn_api_copy_);
 
 #if defined(__x86_64__) || defined(_M_X64)
   ASSERT_TRUE(backend.Init(options, kFp16SocInfo));
-  ASSERT_EQ(captured_device_configs->size(), 2);
-  const auto* soc_config = static_cast<const QnnHtpDevice_CustomConfig_t*>(
-      captured_device_configs->at(0).customConfig);
-  ASSERT_NE(soc_config, nullptr);
-  EXPECT_EQ(soc_config->option, QNN_HTP_DEVICE_CONFIG_OPTION_SOC);
-  EXPECT_EQ(soc_config->socModel, kFp16SocInfo->soc_model);
 #else
   ASSERT_TRUE(backend.Init(options, std::nullopt));
-  ASSERT_EQ(captured_device_configs->size(), 1);
 #endif
-  const auto* signed_pd_config =
-      static_cast<const QnnHtpDevice_CustomConfig_t*>(
-          captured_device_configs->back().customConfig);
-  ASSERT_NE(signed_pd_config, nullptr);
-  EXPECT_EQ(signed_pd_config->option, QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD);
-  EXPECT_EQ(signed_pd_config->useSignedProcessDomain.deviceId, 0u);
-  EXPECT_TRUE(signed_pd_config->useSignedProcessDomain.useSignedProcessDomain);
+  ASSERT_TRUE(captured_device_create_config.called);
+  ASSERT_TRUE(captured_device_create_config.platform_device_id.has_value());
+  EXPECT_EQ(*captured_device_create_config.platform_device_id, 2);
+  ASSERT_TRUE(captured_power_config_device_id.has_value());
+  EXPECT_EQ(*captured_power_config_device_id, 2);
+}
+
+TEST_F(HtpBackendPerfBaseTest, SignedPdUsesSelectedHtpDeviceId) {
+  Options options;
+  options.SetEnableJustInTime(true);
+  options.SetHtpDeviceId(2);  // Mock platform info exposes IDs 0 and 2.
+  options.SetHtpPdSession(HtpPdSession::kSigned);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kFp16SocInfo));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+
+  ASSERT_TRUE(captured_device_create_config.platform_device_id.has_value());
+  EXPECT_EQ(*captured_device_create_config.platform_device_id, 2);
+  ASSERT_TRUE(captured_signed_pd_device_id.has_value());
+  EXPECT_EQ(*captured_signed_pd_device_id, 2);
 }
 
 TEST(HtpBackendInitTest, AdaptivePdUsesUnsignedWhenSupported) {
@@ -503,9 +564,8 @@ TEST(HtpBackendInitTest, AdaptivePdUsesSignedWhenUnsignedUnsupported) {
   ASSERT_TRUE(backend.Init(options, std::nullopt));
   ASSERT_EQ(captured_device_configs->size(), 1);
 #endif
-  const auto* signed_pd_config =
-      static_cast<const QnnHtpDevice_CustomConfig_t*>(
-          captured_device_configs->back().customConfig);
+  const auto* signed_pd_config = static_cast<const QnnHtpDevice_CustomConfig_t*>(
+      captured_device_configs->back().customConfig);
   ASSERT_NE(signed_pd_config, nullptr);
   EXPECT_EQ(signed_pd_config->option, QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD);
   EXPECT_TRUE(signed_pd_config->useSignedProcessDomain.useSignedProcessDomain);
@@ -533,11 +593,73 @@ TEST(HtpBackendInitTest, AdaptivePdUsesSignedWithoutCapabilityQuery) {
   ASSERT_TRUE(backend.Init(options, std::nullopt));
   ASSERT_EQ(captured_device_configs->size(), 1);
 #endif
-  const auto* signed_pd_config =
-      static_cast<const QnnHtpDevice_CustomConfig_t*>(
-          captured_device_configs->back().customConfig);
+  const auto* signed_pd_config = static_cast<const QnnHtpDevice_CustomConfig_t*>(
+      captured_device_configs->back().customConfig);
   ASSERT_NE(signed_pd_config, nullptr);
   EXPECT_EQ(signed_pd_config->option, QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD);
+}
+
+TEST_F(HtpBackendPerfBaseTest, UnknownHtpDeviceIdFailsInit) {
+  Options options;
+  options.SetEnableJustInTime(true);
+  options.SetHtpDeviceId(1);  // Mock platform info exposes IDs 0 and 2.
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  EXPECT_FALSE(backend.Init(options, kFp16SocInfo));
+#else
+  EXPECT_FALSE(backend.Init(options, std::nullopt));
+#endif
+  EXPECT_FALSE(captured_device_create_config.called);
+}
+
+TEST_F(HtpBackendPerfBaseTest, NonzeroHtpDeviceIdRequiresPlatformInfo) {
+  platform_info_available = false;
+  Options options;
+  options.SetEnableJustInTime(true);
+  options.SetHtpDeviceId(2);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  EXPECT_FALSE(backend.Init(options, kFp16SocInfo));
+#else
+  EXPECT_FALSE(backend.Init(options, std::nullopt));
+#endif
+  EXPECT_FALSE(captured_device_create_config.called);
+}
+
+TEST_F(HtpBackendPerfBaseTest, NullHardwareDeviceArrayFailsSelection) {
+  test_device_platform_info.v1.hwDevices = nullptr;
+  Options options;
+  options.SetEnableJustInTime(true);
+  options.SetHtpDeviceId(2);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  EXPECT_FALSE(backend.Init(options, kFp16SocInfo));
+#else
+  EXPECT_FALSE(backend.Init(options, std::nullopt));
+#endif
+  EXPECT_FALSE(captured_device_create_config.called);
+}
+
+TEST_F(HtpBackendPerfBaseTest,
+       AotHtpDeviceIdConfiguresDeviceAndPerformanceControl) {
+  Options options;
+  options.SetHtpDeviceId(2);
+  options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kFp16SocInfo));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+  ASSERT_TRUE(captured_device_create_config.called);
+  ASSERT_TRUE(captured_device_create_config.platform_device_id.has_value());
+  EXPECT_EQ(*captured_device_create_config.platform_device_id, 2);
+  ASSERT_TRUE(captured_power_config_device_id.has_value());
+  EXPECT_EQ(*captured_power_config_device_id, 2);
 }
 
 // SETPERFORMANCEMODE /////////////////////////////////////////////////////////
