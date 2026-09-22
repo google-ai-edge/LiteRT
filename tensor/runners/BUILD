@@ -25,6 +25,8 @@ cc_library(
     srcs = ["model_chain.cc"],
     hdrs = ["model_chain.h"],
     deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_webgpu_types",
         "//litert/cc:litert_api_types",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
