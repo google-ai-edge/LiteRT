@@ -67,6 +67,79 @@ TfLiteCustomAllocation CreateMoeExpertsParams(
   return allocation;
 }
 
+// Dimensions shared by the int8 fixtures below. The gate/ff1 projections read
+// `kModelDim` inputs and produce `kHiddenDim` outputs; the linear projection is
+// the transpose of that.
+constexpr int kNumExperts = 4;
+constexpr int kNumActiveExperts = 2;
+constexpr int kModelDim = 64;
+constexpr int kHiddenDim = 128;
+constexpr int kNumTokens = 4;
+
+std::vector<uint8_t> ZeroBytes(int num_elements, size_t element_size) {
+  return std::vector<uint8_t>(num_elements * element_size, 0);
+}
+
+// Adds the ten inputs of an int8 moe op. The `*_blocks` arguments set the
+// innermost extent of each scale tensor: 1 is per-output-channel quantization,
+// and larger values split the input axis into that many equally sized blocks.
+// Gate and ff1 block along `kModelDim`; linear blocks along `kHiddenDim`.
+void AddInt8MoeInputs(SingleOpInterpreterBuilder& builder, int gate_blocks,
+                      int ff1_blocks, int linear_blocks) {
+  builder.AddInput(kTfLiteFloat32, {1, 1, kNumTokens, kModelDim});  // src
+  builder.AddInput(kTfLiteFloat32,
+                   {1, 1, kNumTokens, kNumActiveExperts});  // top_weights
+  builder.AddInput(kTfLiteInt32,
+                   {1, 1, kNumTokens, kNumActiveExperts});  // top_indices
+
+  builder.AddConstInput(
+      kTfLiteInt8, {kHiddenDim, kNumExperts, 1, kModelDim},
+      ZeroBytes(kHiddenDim * kNumExperts * kModelDim, sizeof(int8_t)));
+  builder.AddConstInput(
+      kTfLiteFloat32, {kHiddenDim, kNumExperts, 1, gate_blocks},
+      ZeroBytes(kHiddenDim * kNumExperts * gate_blocks, sizeof(float)));
+
+  builder.AddConstInput(
+      kTfLiteInt8, {kHiddenDim, kNumExperts, 1, kModelDim},
+      ZeroBytes(kHiddenDim * kNumExperts * kModelDim, sizeof(int8_t)));
+  builder.AddConstInput(
+      kTfLiteFloat32, {kHiddenDim, kNumExperts, 1, ff1_blocks},
+      ZeroBytes(kHiddenDim * kNumExperts * ff1_blocks, sizeof(float)));
+
+  builder.AddConstInput(
+      kTfLiteInt8, {kModelDim, kNumExperts, 1, kHiddenDim},
+      ZeroBytes(kModelDim * kNumExperts * kHiddenDim, sizeof(int8_t)));
+  builder.AddConstInput(
+      kTfLiteFloat32, {kModelDim, kNumExperts, 1, linear_blocks},
+      ZeroBytes(kModelDim * kNumExperts * linear_blocks, sizeof(float)));
+
+  builder.AddConstInput(kTfLiteFloat32, {1, 1, 1, kNumExperts},
+                        ZeroBytes(kNumExperts, sizeof(float)));
+
+  builder.AddOutput(kTfLiteFloat32, {1, 1, kNumTokens, kModelDim});
+}
+
+// Replaces a tensor's affine quantization with V2 blockwise quantization
+// pointing at `zero_point_tensor` (use a negative index for the tflite
+// optional-tensor convention, which means the weights are symmetric).
+void SetBlockwiseQuantization(TfLiteTensor* tensor, int zero_point_tensor,
+                              int blocksize) {
+  TfLiteQuantizationFree(&tensor->quantization);
+  auto* params = reinterpret_cast<TfLiteBlockwiseQuantizationV2*>(
+      calloc(1, sizeof(TfLiteBlockwiseQuantizationV2)));
+  params->scale = -1;
+  params->zero_point = zero_point_tensor;
+  params->blocksize = blocksize;
+  params->quantized_dimension = 0;
+  params->block_shape = TfLiteIntArrayCreate(4);
+  params->block_shape->data[0] = 1;
+  params->block_shape->data[1] = 1;
+  params->block_shape->data[2] = 1;
+  params->block_shape->data[3] = blocksize;
+  tensor->quantization.type = kTfLiteBlockwiseQuantizationV2;
+  tensor->quantization.params = params;
+}
+
 class ConvertMoeExpertsTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -412,6 +485,262 @@ TEST_F(ConvertMoeExpertsTest, RejectsAsymmetricQuantization) {
                                     &pair->first, &pair->second);
   EXPECT_FALSE(status.ok());
   EXPECT_THAT(status.message(), ::testing::HasSubstr("symmetric int8"));
+}
+
+// Blockwise scales are the reason the parser reads the scale shape instead of
+// assuming one scale per output channel: here each row of gate/ff1 carries 4
+// scales over 64 input channels (block size 16), and linear carries 4 scales
+// over 128 input channels (block size 32).
+TEST_F(ConvertMoeExpertsTest, Int8BlockwiseScales) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("moe");
+  AddInt8MoeInputs(builder, /*gate_blocks=*/4, /*ff1_blocks=*/4,
+                   /*linear_blocks=*/4);
+
+  TfLiteCustomAllocation custom_alloc = CreateMoeExpertsParams(
+      kNumExperts, kNumActiveExperts, kModelDim, kHiddenDim, "int8");
+  builder.SetCustomData(custom_alloc.data, custom_alloc.bytes);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+
+  const auto* pair = interpreter->node_and_registration(0);
+  auto parser = GetMoeExpertsParser();
+  auto status = parser.is_supported(interpreter->primary_subgraph().context(),
+                                    &pair->first, &pair->second);
+  EXPECT_TRUE(status.ok()) << status.message();
+
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto* attr =
+      std::any_cast<MoeExpertsAttributes>(&ir_model->ops()[0]->attr);
+  ASSERT_NE(attr, nullptr);
+
+  // The block count has to survive into the attributes, because that shape is
+  // what the kernel hands to the matmul as `scale_zp_shape`.
+  ASSERT_TRUE(attr->ff_gate_scale.has_value());
+  EXPECT_EQ(attr->ff_gate_scale->shape.o, kHiddenDim);
+  EXPECT_EQ(attr->ff_gate_scale->shape.h, kNumExperts);
+  EXPECT_EQ(attr->ff_gate_scale->shape.w, 1);
+  EXPECT_EQ(attr->ff_gate_scale->shape.i, 4);
+
+  ASSERT_TRUE(attr->ff1_scale.has_value());
+  EXPECT_EQ(attr->ff1_scale->shape.i, 4);
+
+  ASSERT_TRUE(attr->linear_scale.has_value());
+  EXPECT_EQ(attr->linear_scale->shape.o, kModelDim);
+  EXPECT_EQ(attr->linear_scale->shape.i, 4);
+}
+
+// Per-output-channel scales are the degenerate one-block case and must keep
+// parsing exactly as before.
+TEST_F(ConvertMoeExpertsTest, Int8PerChannelScalesAreSingleBlock) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("moe");
+  AddInt8MoeInputs(builder, /*gate_blocks=*/1, /*ff1_blocks=*/1,
+                   /*linear_blocks=*/1);
+
+  TfLiteCustomAllocation custom_alloc = CreateMoeExpertsParams(
+      kNumExperts, kNumActiveExperts, kModelDim, kHiddenDim, "int8");
+  builder.SetCustomData(custom_alloc.data, custom_alloc.bytes);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  const auto* attr =
+      std::any_cast<MoeExpertsAttributes>(&ir_model->ops()[0]->attr);
+  ASSERT_NE(attr, nullptr);
+  ASSERT_TRUE(attr->ff_gate_scale.has_value());
+  EXPECT_EQ(attr->ff_gate_scale->shape.i, 1);
+}
+
+// A block count that does not divide the input axis would leave the kernel
+// with a ragged final block, so it is rejected rather than truncated.
+TEST_F(ConvertMoeExpertsTest, RejectsBlockCountNotDividingInputChannels) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("moe");
+  AddInt8MoeInputs(builder, /*gate_blocks=*/5, /*ff1_blocks=*/1,
+                   /*linear_blocks=*/1);
+
+  TfLiteCustomAllocation custom_alloc = CreateMoeExpertsParams(
+      kNumExperts, kNumActiveExperts, kModelDim, kHiddenDim, "int8");
+  builder.SetCustomData(custom_alloc.data, custom_alloc.bytes);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+
+  const auto* pair = interpreter->node_and_registration(0);
+  auto parser = GetMoeExpertsParser();
+  auto status = parser.is_supported(interpreter->primary_subgraph().context(),
+                                    &pair->first, &pair->second);
+  EXPECT_FALSE(status.ok());
+  EXPECT_THAT(status.message(),
+              ::testing::HasSubstr("divide the input channel"));
+}
+
+// More blocks than input channels is the same failure mode; the block count is
+// compared against the projection's own input axis, not the model dim.
+TEST_F(ConvertMoeExpertsTest, RejectsMoreBlocksThanInputChannels) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("moe");
+  AddInt8MoeInputs(builder, /*gate_blocks=*/1, /*ff1_blocks=*/1,
+                   /*linear_blocks=*/kHiddenDim * 2);
+
+  TfLiteCustomAllocation custom_alloc = CreateMoeExpertsParams(
+      kNumExperts, kNumActiveExperts, kModelDim, kHiddenDim, "int8");
+  builder.SetCustomData(custom_alloc.data, custom_alloc.bytes);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+
+  const auto* pair = interpreter->node_and_registration(0);
+  auto parser = GetMoeExpertsParser();
+  auto status = parser.is_supported(interpreter->primary_subgraph().context(),
+                                    &pair->first, &pair->second);
+  EXPECT_FALSE(status.ok());
+  EXPECT_THAT(status.message(),
+              ::testing::HasSubstr("divide the input channel"));
+}
+
+// The outer dimensions of a scale tensor still have to match the projection,
+// even though the innermost one is now free.
+TEST_F(ConvertMoeExpertsTest, RejectsScaleWithWrongExpertCount) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("moe");
+  builder.AddInput(kTfLiteFloat32, {1, 1, kNumTokens, kModelDim});
+  builder.AddInput(kTfLiteFloat32, {1, 1, kNumTokens, kNumActiveExperts});
+  builder.AddInput(kTfLiteInt32, {1, 1, kNumTokens, kNumActiveExperts});
+
+  builder.AddConstInput(
+      kTfLiteInt8, {kHiddenDim, kNumExperts, 1, kModelDim},
+      ZeroBytes(kHiddenDim * kNumExperts * kModelDim, sizeof(int8_t)));
+  // One expert too few.
+  builder.AddConstInput(
+      kTfLiteFloat32, {kHiddenDim, kNumExperts - 1, 1, 1},
+      ZeroBytes(kHiddenDim * (kNumExperts - 1), sizeof(float)));
+  builder.AddConstInput(
+      kTfLiteInt8, {kHiddenDim, kNumExperts, 1, kModelDim},
+      ZeroBytes(kHiddenDim * kNumExperts * kModelDim, sizeof(int8_t)));
+  builder.AddConstInput(kTfLiteFloat32, {kHiddenDim, kNumExperts, 1, 1},
+                        ZeroBytes(kHiddenDim * kNumExperts, sizeof(float)));
+  builder.AddConstInput(
+      kTfLiteInt8, {kModelDim, kNumExperts, 1, kHiddenDim},
+      ZeroBytes(kModelDim * kNumExperts * kHiddenDim, sizeof(int8_t)));
+  builder.AddConstInput(kTfLiteFloat32, {kModelDim, kNumExperts, 1, 1},
+                        ZeroBytes(kModelDim * kNumExperts, sizeof(float)));
+  builder.AddConstInput(kTfLiteFloat32, {1, 1, 1, kNumExperts},
+                        ZeroBytes(kNumExperts, sizeof(float)));
+  builder.AddOutput(kTfLiteFloat32, {1, 1, kNumTokens, kModelDim});
+
+  TfLiteCustomAllocation custom_alloc = CreateMoeExpertsParams(
+      kNumExperts, kNumActiveExperts, kModelDim, kHiddenDim, "int8");
+  builder.SetCustomData(custom_alloc.data, custom_alloc.bytes);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+
+  const auto* pair = interpreter->node_and_registration(0);
+  auto parser = GetMoeExpertsParser();
+  auto status = parser.is_supported(interpreter->primary_subgraph().context(),
+                                    &pair->first, &pair->second);
+  EXPECT_FALSE(status.ok());
+  EXPECT_THAT(status.message(), ::testing::HasSubstr("ff_gate_scale"));
+}
+
+// Blockwise-quantized weights carry their zero point in a separate tensor. A
+// negative index is the tflite optional-tensor convention for "no zero point",
+// i.e. symmetric, which is what the kernel requires.
+TEST_F(ConvertMoeExpertsTest, AcceptsBlockwiseQuantizationWithoutZeroPoint) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("moe");
+  AddInt8MoeInputs(builder, /*gate_blocks=*/4, /*ff1_blocks=*/4,
+                   /*linear_blocks=*/4);
+
+  TfLiteCustomAllocation custom_alloc = CreateMoeExpertsParams(
+      kNumExperts, kNumActiveExperts, kModelDim, kHiddenDim, "int8");
+  builder.SetCustomData(custom_alloc.data, custom_alloc.bytes);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+
+  for (int i : {3, 5, 7}) {
+    SetBlockwiseQuantization(interpreter->tensor(interpreter->inputs()[i]),
+                             /*zero_point_tensor=*/-1, /*blocksize=*/16);
+  }
+
+  const auto* pair = interpreter->node_and_registration(0);
+  auto parser = GetMoeExpertsParser();
+  auto status = parser.is_supported(interpreter->primary_subgraph().context(),
+                                    &pair->first, &pair->second);
+  EXPECT_TRUE(status.ok()) << status.message();
+}
+
+// A zero point tensor that is present but not all zeros means asymmetric
+// weights, which the kernel cannot represent.
+TEST_F(ConvertMoeExpertsTest, RejectsBlockwiseAsymmetricZeroPoint) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("moe");
+  AddInt8MoeInputs(builder, /*gate_blocks=*/4, /*ff1_blocks=*/4,
+                   /*linear_blocks=*/4);
+
+  TfLiteCustomAllocation custom_alloc = CreateMoeExpertsParams(
+      kNumExperts, kNumActiveExperts, kModelDim, kHiddenDim, "int8");
+  builder.SetCustomData(custom_alloc.data, custom_alloc.bytes);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+
+  // A constant int8 tensor outside the op's inputs, used only as the zero
+  // point of the gate weights.
+  int zero_point_index = 0;
+  ASSERT_EQ(interpreter->AddTensors(1, &zero_point_index), kTfLiteOk);
+  const std::vector<int8_t> zero_point_data(kHiddenDim * kNumExperts * 4, 3);
+  ASSERT_EQ(
+      interpreter->SetTensorParametersReadOnly(
+          zero_point_index, kTfLiteInt8, "zero_point",
+          {kHiddenDim, kNumExperts, 1, 4}, {kTfLiteNoQuantization, nullptr},
+          reinterpret_cast<const char*>(zero_point_data.data()),
+          zero_point_data.size() * sizeof(int8_t)),
+      kTfLiteOk);
+
+  SetBlockwiseQuantization(interpreter->tensor(interpreter->inputs()[3]),
+                           zero_point_index, /*blocksize=*/16);
+
+  const auto* pair = interpreter->node_and_registration(0);
+  auto parser = GetMoeExpertsParser();
+  auto status = parser.is_supported(interpreter->primary_subgraph().context(),
+                                    &pair->first, &pair->second);
+  EXPECT_FALSE(status.ok());
+  EXPECT_THAT(status.message(), ::testing::HasSubstr("symmetric"));
+}
+
+// The kernel emits the tanh approximation of gelu, so "gelu_tanh" is the
+// accurate label. "gelu" stays accepted for models from older exporters.
+TEST_F(ConvertMoeExpertsTest, AcceptsGeluTanhActivation) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("moe");
+  AddInt8MoeInputs(builder, /*gate_blocks=*/1, /*ff1_blocks=*/1,
+                   /*linear_blocks=*/1);
+
+  TfLiteCustomAllocation custom_alloc =
+      CreateMoeExpertsParams(kNumExperts, kNumActiveExperts, kModelDim,
+                             kHiddenDim, "int8", "gelu_tanh");
+  builder.SetCustomData(custom_alloc.data, custom_alloc.bytes);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+
+  const auto* pair = interpreter->node_and_registration(0);
+  auto parser = GetMoeExpertsParser();
+  auto status = parser.is_supported(interpreter->primary_subgraph().context(),
+                                    &pair->first, &pair->second);
+  EXPECT_TRUE(status.ok()) << status.message();
 }
 
 }  // namespace
