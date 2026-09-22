@@ -33,17 +33,21 @@ NS_ASSUME_NONNULL_BEGIN
 
 @implementation LRTCompiledModel {
   std::unique_ptr<litert::CompiledModel> _cppCompiledModel;
+  /** Model bytes the compiled model was built from, or nil when it was compiled from a file. */
+  NSData *_Nullable _modelData;
 }
 
 - (instancetype)initInternalWithCppCompiledModel:
                     (std::unique_ptr<litert::CompiledModel>)cppCompiledModel
                                      environment:(LRTEnvironment *)environment
-                                         options:(nullable LRTOptions *)options {
+                                         options:(nullable LRTOptions *)options
+                                       modelData:(nullable NSData *)modelData {
   self = [super init];
   if (self) {
     _cppCompiledModel = std::move(cppCompiledModel);
     _environment = environment;
     _options = options;
+    _modelData = modelData;
   }
   return self;
 }
@@ -76,7 +80,8 @@ NS_ASSUME_NONNULL_BEGIN
   auto cppPtr = std::make_unique<litert::CompiledModel>(std::move(createResult.Value()));
   return [[LRTCompiledModel alloc] initInternalWithCppCompiledModel:std::move(cppPtr)
                                                         environment:environment
-                                                            options:options];
+                                                            options:options
+                                                          modelData:nil];
 }
 
 + (nullable instancetype)compiledModelWithModelData:(NSData *)modelData
@@ -96,8 +101,12 @@ NS_ASSUME_NONNULL_BEGIN
   litert::Options dummyOptions;
   litert::Options *cppOpts = options ? [options cppOptions] : &dummyOptions;
 
-  litert::BufferRef<uint8_t> bufferRef(static_cast<const uint8_t *>(modelData.bytes),
-                                       modelData.length);
+  // LiteRT does not copy the model bytes, it reads them for as long as the compiled model is
+  // alive. Hold on to an immutable copy so that callers may release their buffer, or pass an
+  // NSMutableData and keep mutating it, without corrupting inference.
+  NSData *ownedModelData = [modelData copy];
+  litert::BufferRef<uint8_t> bufferRef(static_cast<const uint8_t *>(ownedModelData.bytes),
+                                       ownedModelData.length);
   auto createResult =
       litert::CompiledModel::Create(*[environment cppEnvironment], bufferRef, *cppOpts);
 
@@ -109,7 +118,8 @@ NS_ASSUME_NONNULL_BEGIN
   auto cppPtr = std::make_unique<litert::CompiledModel>(std::move(createResult.Value()));
   return [[LRTCompiledModel alloc] initInternalWithCppCompiledModel:std::move(cppPtr)
                                                         environment:environment
-                                                            options:options];
+                                                            options:options
+                                                          modelData:ownedModelData];
 }
 
 + (NSString *)defaultSignatureKey {
