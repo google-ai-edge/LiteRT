@@ -1050,6 +1050,11 @@ absl::Status BuildSdpaTransposedGpuGraph(
                     bmm2_runtime_check, param_desc ? &param_tensor : nullptr));
   }
 
+  ABSL_ASSIGN_OR_RETURN(auto output_ref, model_builder->GetTensor(output_id));
+  const auto output_shape = output_ref.tensor_desc.GetBHWCShape();
+  if (output.tensor_desc.GetBHWCShape() != output_shape) {
+    output = model_builder->Reshape(output, output_shape);
+  }
   return model_builder->UpdateOutputTensor(output, output_id);
 }
 

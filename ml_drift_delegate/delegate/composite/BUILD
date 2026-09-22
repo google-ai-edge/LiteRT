@@ -493,11 +493,42 @@ cc_test(
 )
 
 cc_library(
+    name = "fuse_sdpa_transposed_reshape",
+    srcs = ["fuse_sdpa_transposed_reshape.cc"],
+    hdrs = ["fuse_sdpa_transposed_reshape.h"],
+    deps = [
+        ":sdpa_transposed_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+    ],
+)
+
+cc_test(
+    name = "fuse_sdpa_transposed_reshape_test",
+    srcs = ["fuse_sdpa_transposed_reshape_test.cc"],
+    deps = [
+        ":fuse_sdpa_transposed_reshape",
+        ":sdpa_transposed_parser",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+    ],
+)
+
+cc_library(
     name = "custom_transformations",
     srcs = ["custom_transformations.cc"],
     hdrs = ["custom_transformations.h"],
     deps = [
         ":fuse_qkv_norm_rope",
+        ":fuse_sdpa_transposed_reshape",
         ":fuse_short_conv_step",
         "//ml_drift_delegate/delegate:delegate_options",
         "@com_google_absl//absl/status",

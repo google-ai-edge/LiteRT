@@ -19,6 +19,7 @@
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/fuse_qkv_norm_rope.h"
+#include "ml_drift_delegate/delegate/composite/fuse_sdpa_transposed_reshape.h"
 #include "ml_drift_delegate/delegate/composite/fuse_short_conv_step.h"
 #include "ml_drift_delegate/delegate/delegate_options.h"
 
@@ -35,6 +36,7 @@ absl::Status ApplyCustomTransformations(
   if (options.enable_short_conv_step_fusion) {
     ABSL_RETURN_IF_ERROR(FuseShortConvStep(graph));
   }
+  ABSL_RETURN_IF_ERROR(FuseSdpaTransposedReshape(graph));
   return absl::OkStatus();
 }
 
@@ -44,6 +46,7 @@ absl::Status ApplyCustomTransformations(
   if (options.enable_short_conv_step_fusion) {
     ABSL_RETURN_IF_ERROR(ir::FuseShortConvStep(ir_model));
   }
+  ABSL_RETURN_IF_ERROR(ir::FuseSdpaTransposedReshape(ir_model));
   return absl::OkStatus();
 }
 
