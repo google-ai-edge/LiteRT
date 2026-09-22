@@ -19,6 +19,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>  // NOLINT
+#include <fstream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -220,16 +221,15 @@ SafetensorFileGuard CreateTempSafetensor(const std::string& quant_config_json) {
                               quant_config_json);
 }
 
-TEST(SafetensorLoaderTest, AbslStringifyMethodAndFormat) {
+TEST(SafetensorLoaderTest, AbslStringifyMethodAndStrategy) {
   EXPECT_EQ(absl::StrCat(QuantizationConfig::Method::kCompressedTensors),
             "compressed-tensors");
   EXPECT_EQ(absl::StrCat(QuantizationConfig::Method::kUnknown), "unknown");
 
-  EXPECT_EQ(absl::StrCat(QuantizationConfig::Format::kPackQuantized),
-            "pack-quantized");
-  EXPECT_EQ(absl::StrCat(QuantizationConfig::Format::kIntQuantized),
-            "int-quantized");
-  EXPECT_EQ(absl::StrCat(QuantizationConfig::Format::kUnknown), "unknown");
+  EXPECT_EQ(absl::StrCat(QuantizationConfig::Strategy::kTensor), "tensor");
+  EXPECT_EQ(absl::StrCat(QuantizationConfig::Strategy::kChannel), "channel");
+  EXPECT_EQ(absl::StrCat(QuantizationConfig::Strategy::kGroup), "group");
+  EXPECT_EQ(absl::StrCat(QuantizationConfig::Strategy::kUnknown), "unknown");
 }
 
 TEST(SafetensorLoaderTest, ParseTopLevelConfig) {
@@ -253,7 +253,6 @@ TEST(SafetensorLoaderTest, ParseTopLevelConfig) {
   ASSERT_TRUE(quant_config.has_value());
   EXPECT_EQ(quant_config->quant_method,
             QuantizationConfig::Method::kCompressedTensors);
-  EXPECT_EQ(quant_config->format, QuantizationConfig::Format::kPackQuantized);
   EXPECT_EQ(quant_config->num_bits, 4);
   EXPECT_EQ(quant_config->group_size, 128);
   EXPECT_TRUE(quant_config->symmetric);
@@ -286,13 +285,12 @@ TEST(SafetensorLoaderTest, ParseNestedConfigGroups) {
   ASSERT_TRUE(quant_config.has_value());
   EXPECT_EQ(quant_config->quant_method,
             QuantizationConfig::Method::kCompressedTensors);
-  EXPECT_EQ(quant_config->format, QuantizationConfig::Format::kPackQuantized);
   EXPECT_EQ(quant_config->num_bits, 4);
   EXPECT_EQ(quant_config->group_size, 128);
   EXPECT_TRUE(quant_config->symmetric);
 }
 
-TEST(SafetensorLoaderTest, ParseIntQuantizedFormat) {
+TEST(SafetensorLoaderTest, ParseInt8Config) {
   std::string json = R"({
     "quant_method": "compressed-tensors",
     "format": "int-quantized",
@@ -311,21 +309,22 @@ TEST(SafetensorLoaderTest, ParseIntQuantizedFormat) {
 
   const auto& quant_config = loader.GetQuantizationConfig();
   ASSERT_TRUE(quant_config.has_value());
-  EXPECT_EQ(quant_config->format, QuantizationConfig::Format::kIntQuantized);
   EXPECT_EQ(quant_config->num_bits, 8);
 }
 
-TEST(SafetensorLoaderTest, GroupFormatOverridesTopLevelFormat) {
+TEST(SafetensorLoaderTest, ParsesMultipleConfigGroups) {
   std::string json = R"({
     "quant_method": "compressed-tensors",
-    "format": "int-quantized",
+    "format": "pack-quantized",
+    "ignore": ["model.vision_tower", "relative_k_proj"],
     "config_groups": {
       "group_0": {
-        "format": "pack-quantized",
-        "weights": {
-          "num_bits": 4,
-          "group_size": 128
-        }
+        "weights": { "num_bits": 2, "strategy": "channel", "group_size": null },
+        "targets": ["model.embed_tokens", "re:.*lm_head$"]
+      },
+      "group_1": {
+        "weights": { "num_bits": 4, "strategy": "group", "group_size": 128 },
+        "targets": ["model.layers.0.mlp.down_proj"]
       }
     }
   })";
@@ -334,24 +333,114 @@ TEST(SafetensorLoaderTest, GroupFormatOverridesTopLevelFormat) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(SafetensorLoader loader,
                                   SafetensorLoader::Load(file.GetPath()));
 
-  const std::optional<QuantizationConfig>& quant_config =
-      loader.GetQuantizationConfig();
+  const auto& quant_config = loader.GetQuantizationConfig();
   ASSERT_TRUE(quant_config.has_value());
-  EXPECT_EQ(quant_config->format, QuantizationConfig::Format::kPackQuantized);
-  EXPECT_EQ(quant_config->num_bits, 4);
-  EXPECT_EQ(quant_config->group_size, 128);
+  ASSERT_EQ(quant_config->schemes.size(), 2);
+
+  // A group without a group size quantizes per channel.
+  const QuantizationConfig::Scheme* embed =
+      quant_config->FindScheme("model.embed_tokens");
+  ASSERT_NE(embed, nullptr);
+  EXPECT_EQ(embed->num_bits, 2);
+  EXPECT_EQ(embed->strategy, QuantizationConfig::Strategy::kChannel);
+
+  // Targets also match as regular expressions.
+  EXPECT_EQ(quant_config->FindScheme("model.lm_head"), embed);
+
+  const QuantizationConfig::Scheme* down_proj =
+      quant_config->FindScheme("model.layers.0.mlp.down_proj");
+  ASSERT_NE(down_proj, nullptr);
+  EXPECT_EQ(down_proj->num_bits, 4);
+  EXPECT_EQ(down_proj->strategy, QuantizationConfig::Strategy::kGroup);
+  EXPECT_EQ(down_proj->group_size, 128);
+
+  // Unclaimed modules have no scheme, since every group names its targets.
+  EXPECT_EQ(quant_config->FindScheme("model.layers.0.mlp.up_proj"), nullptr);
+
+  // Ignored modules are never quantized, whether named as a parent or a leaf.
+  EXPECT_TRUE(quant_config->IsIgnored("model.vision_tower.layers.0.self_attn"));
+  EXPECT_TRUE(
+      quant_config->IsIgnored("model.layers.0.self_attn.relative_k_proj"));
+  EXPECT_FALSE(quant_config->IsIgnored("model.embed_tokens"));
 }
 
-TEST(SafetensorLoaderTest, RejectMultipleConfigGroups) {
+TEST(SafetensorLoaderTest, TargetsNamingAModuleClassApplyToEveryModule) {
   std::string json = R"({
     "quant_method": "compressed-tensors",
     "format": "pack-quantized",
     "config_groups": {
       "group_0": {
-        "weights": { "num_bits": 4, "group_size": 128 }
+        "weights": { "num_bits": 4, "group_size": 128 },
+        "targets": ["Linear"]
+      }
+    }
+  })";
+
+  SafetensorFileGuard file = CreateTempSafetensor(json);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(SafetensorLoader loader,
+                                  SafetensorLoader::Load(file.GetPath()));
+
+  const auto& quant_config = loader.GetQuantizationConfig();
+  ASSERT_TRUE(quant_config.has_value());
+  ASSERT_EQ(quant_config->schemes.size(), 1);
+  EXPECT_TRUE(quant_config->schemes.front().matches_any_module);
+  EXPECT_NE(quant_config->FindScheme("model.layers.3.mlp.up_proj"), nullptr);
+}
+
+TEST(SafetensorLoaderTest, ReadsQuantizationConfigFromConfigJson) {
+  // QAT checkpoints exported by HuggingFace carry no header metadata and
+  // describe their quantization in config.json instead.
+  auto values = OwningCpuBuffer::Copy<Type::kI4>({1, -2, 3, -4, 5, -6, 7, -8});
+  auto scales = OwningCpuBuffer::Copy<Type::kFP32>({0.5});
+
+  SafetensorFileGuard file = CreateTempSafetensor(
+      {
+          {.name = "model.layers.0.mlp.up_proj.weight_packed",
+           .type = Type::kI4,
+           .shape = {1, 8},
+           .buffer = values},
+          {.name = "model.layers.0.mlp.up_proj.weight_scale",
+           .type = Type::kFP32,
+           .shape = {1, 1},
+           .buffer = scales},
       },
-      "group_1": {
-        "weights": { "num_bits": 8, "group_size": 64 }
+      /*quant_config_json=*/"");
+
+  {
+    std::ofstream config(file.GetConfigPath());
+    config << R"({
+      "model_type": "test",
+      "quantization_config": {
+        "quant_method": "compressed-tensors",
+        "format": "pack-quantized",
+        "config_groups": {
+          "group_0": {
+            "weights": { "num_bits": 4, "strategy": "channel" },
+            "targets": ["Linear"]
+          }
+        }
+      }
+    })";
+  }
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(SafetensorLoader loader,
+                                  SafetensorLoader::Load(file.GetPath()));
+
+  const std::optional<QuantizationConfig>& quant_config =
+      loader.GetQuantizationConfig();
+  ASSERT_TRUE(quant_config.has_value());
+  EXPECT_NE(quant_config->FindScheme("model.layers.0.mlp.up_proj"), nullptr);
+}
+
+TEST(SafetensorLoaderTest, RejectNonPositiveNumBits) {
+  std::string json = R"({
+    "quant_method": "compressed-tensors",
+    "config_groups": {
+      "group_0": {
+        "weights": {
+          "num_bits": 0,
+          "group_size": 128
+        }
       }
     }
   })";

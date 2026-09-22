@@ -18,9 +18,12 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>  // NOLINT
+#include <fstream>
 #include <initializer_list>
+#include <iterator>
 #include <limits>
 #include <memory>
+#include <regex>  // NOLINT
 #include <string>
 #include <system_error>  // NOLINT
 #include <type_traits>
@@ -34,6 +37,7 @@ limitations under the License.
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/strings/strip.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/utils/minijson.h"
@@ -262,6 +266,18 @@ absl::StatusOr<Container> ConvertTensorTo(const SafetensorTensorInfo& info,
   return values;
 }
 
+// Suffix given to weight tensors in checkpoints.
+constexpr absl::string_view kWeightSuffix = ".weight";
+
+// Prefix marking a `targets` or `ignore` entry as a regular expression.
+constexpr absl::string_view kRegexPrefix = "re:";
+
+// Returns whether `target` names a module class, such as "Linear", rather than
+// a specific module. Module names are dotted paths, class names are not.
+bool IsModuleClassName(absl::string_view target) {
+  return !absl::StrContains(target, '.');
+}
+
 template <typename T>
 struct MinijsonTypeTraits;
 
@@ -286,7 +302,7 @@ struct MinijsonTypeTraits<QuantizationConfig::Method> {
 };
 
 template <>
-struct MinijsonTypeTraits<QuantizationConfig::Format> {
+struct MinijsonTypeTraits<QuantizationConfig::Strategy> {
   using type = minijson::string;
 };
 
@@ -309,15 +325,19 @@ struct ValueParser<QuantizationConfig::Method> {
 };
 
 template <>
-struct ValueParser<QuantizationConfig::Format> {
-  static absl::StatusOr<QuantizationConfig::Format> Parse(absl::string_view s) {
-    if (s == "pack-quantized") {
-      return QuantizationConfig::Format::kPackQuantized;
+struct ValueParser<QuantizationConfig::Strategy> {
+  static absl::StatusOr<QuantizationConfig::Strategy> Parse(
+      absl::string_view s) {
+    if (s == "tensor") {
+      return QuantizationConfig::Strategy::kTensor;
     }
-    if (s == "int-quantized") {
-      return QuantizationConfig::Format::kIntQuantized;
+    if (s == "channel") {
+      return QuantizationConfig::Strategy::kChannel;
     }
-    return QuantizationConfig::Format::kUnknown;
+    if (s == "group") {
+      return QuantizationConfig::Strategy::kGroup;
+    }
+    return QuantizationConfig::Strategy::kUnknown;
   }
 };
 
@@ -342,6 +362,159 @@ absl::StatusOr<TargetType> GetJsonField(const minijson::object& obj,
   if (auto status_or_##__LINE__ = (__VA_ARGS__); status_or_##__LINE__.ok()) \
   DECL = std::move(*status_or_##__LINE__)
 
+// Returns the array stored at `key`, or nullptr when `key` is absent or does
+// not hold an array. The array is owned by `holder`, which the caller must
+// keep alive for as long as it uses the result.
+const minijson::array* GetJsonArray(const minijson::object& obj,
+                                    absl::string_view key,
+                                    minijson::value& holder) {
+  if (!obj.at(std::string(key), &holder)) {
+    return nullptr;
+  }
+  return holder.as<minijson::array>();
+}
+
+template <class F>
+absl::Status ParseFromStringArray(const minijson::array& arr, F&& parser) {
+  for (const minijson::value& item : arr) {
+    const minijson::string* str = item.as<minijson::string>();
+    if (!str) {
+      return absl::InvalidArgumentError("Expected an array of strings.");
+    }
+    LRT_TENSOR_RETURN_IF_ERROR(parser(*str));
+  }
+  return absl::OkStatus();
+}
+
+// Parses a single `config_groups` entry.
+absl::StatusOr<QuantizationConfig::Scheme> ParseScheme(
+    const minijson::object& group_obj) {
+  QuantizationConfig::Scheme scheme;
+
+  // Some checkpoints store the weight parameters directly in the group, others
+  // nest them under "weights". Read both, letting the nested form win.
+  ASSIGN_IF_OK(scheme.num_bits, GetJsonField<int>(group_obj, "num_bits"));
+  ASSIGN_IF_OK(scheme.group_size, GetJsonField<int>(group_obj, "group_size"));
+  ASSIGN_IF_OK(scheme.symmetric, GetJsonField<bool>(group_obj, "symmetric"));
+  ASSIGN_IF_OK(scheme.strategy, GetJsonField<QuantizationConfig::Strategy>(
+                                    group_obj, "strategy"));
+
+  minijson::value weights_val;
+  if (group_obj.at("weights", &weights_val)) {
+    if (const minijson::object* weights_obj =
+            weights_val.as<minijson::object>();
+        weights_obj != nullptr) {
+      ASSIGN_IF_OK(scheme.num_bits,
+                   GetJsonField<int>(*weights_obj, "num_bits"));
+      ASSIGN_IF_OK(scheme.group_size,
+                   GetJsonField<int>(*weights_obj, "group_size"));
+      ASSIGN_IF_OK(scheme.symmetric,
+                   GetJsonField<bool>(*weights_obj, "symmetric"));
+      ASSIGN_IF_OK(scheme.strategy, GetJsonField<QuantizationConfig::Strategy>(
+                                        *weights_obj, "strategy"));
+    }
+  }
+
+  minijson::value targets_val;
+  if (const minijson::array* targets =
+          GetJsonArray(group_obj, "targets", targets_val);
+      targets != nullptr) {
+    LRT_TENSOR_RETURN_IF_ERROR(
+        ParseFromStringArray(*targets, [&scheme](absl::string_view target) {
+          if (absl::ConsumePrefix(&target, kRegexPrefix)) {
+            scheme.patterns.emplace_back(std::string(target),
+                                         std::regex_constants::ECMAScript);
+          } else if (IsModuleClassName(target)) {
+            scheme.matches_any_module = true;
+          } else {
+            scheme.modules.emplace(target);
+          }
+          return absl::OkStatus();
+        }));
+  }
+  // A group that names no module at all applies to the whole model.
+  if (scheme.modules.empty() && scheme.patterns.empty()) {
+    scheme.matches_any_module = true;
+  }
+
+  // `strategy` is optional in older checkpoints: a group size implies
+  // group-wise quantization, and its absence implies per-channel scales.
+  if (scheme.strategy == QuantizationConfig::Strategy::kUnknown) {
+    scheme.strategy = scheme.group_size > 0
+                          ? QuantizationConfig::Strategy::kGroup
+                          : QuantizationConfig::Strategy::kChannel;
+  }
+  if (scheme.strategy == QuantizationConfig::Strategy::kGroup &&
+      scheme.group_size <= 0) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Group-wise quantization requires a positive group_size, "
+                     "got ",
+                     scheme.group_size));
+  }
+  if (scheme.num_bits <= 0) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Invalid quantization_config: scheme requires a positive num_bits, "
+        "got ",
+        scheme.num_bits));
+  }
+  return scheme;
+}
+
+absl::StatusOr<QuantizationConfig> ParseQuantizationConfigObject(
+    const minijson::object& root_obj) {
+  QuantizationConfig cfg;
+
+  ASSIGN_IF_OK(cfg.quant_method, GetJsonField<QuantizationConfig::Method>(
+                                     root_obj, "quant_method"));
+
+  minijson::value ignore_val;
+  if (const minijson::array* ignore =
+          GetJsonArray(root_obj, "ignore", ignore_val);
+      ignore != nullptr) {
+    LRT_TENSOR_RETURN_IF_ERROR(
+        ParseFromStringArray(*ignore, [&cfg](absl::string_view pattern) {
+          if (absl::ConsumePrefix(&pattern, kRegexPrefix)) {
+            cfg.ignore_regexes.emplace_back(pattern.data(), pattern.size());
+          } else {
+            cfg.ignore.emplace_back(pattern);
+          }
+          return absl::OkStatus();
+        }));
+  }
+
+  minijson::value config_groups_val;
+  if (root_obj.at("config_groups", &config_groups_val)) {
+    if (const minijson::object* groups_obj =
+            config_groups_val.as<minijson::object>();
+        groups_obj != nullptr) {
+      for (const std::string& group_name : groups_obj->keys()) {
+        minijson::value group_val;
+        if (!groups_obj->at(group_name, &group_val)) {
+          continue;
+        }
+        const minijson::object* group_obj = group_val.as<minijson::object>();
+        if (group_obj == nullptr) {
+          continue;
+        }
+        LRT_TENSOR_ASSIGN_OR_RETURN(QuantizationConfig::Scheme scheme,
+                                    ParseScheme(*group_obj));
+        cfg.schemes.push_back(std::move(scheme));
+      }
+    }
+  }
+
+  // Mirror the first group into the flat fields, for callers that assume a
+  // single model-wide scheme.
+  if (!cfg.schemes.empty()) {
+    const QuantizationConfig::Scheme& first = cfg.schemes.front();
+    cfg.num_bits = first.num_bits;
+    cfg.group_size = first.group_size;
+    cfg.symmetric = first.symmetric;
+  }
+
+  return cfg;
+}
+
 absl::StatusOr<QuantizationConfig> ParseQuantizationConfig(
     std::string& quant_cfg_json) {
   minijson::value val;
@@ -357,72 +530,61 @@ absl::StatusOr<QuantizationConfig> ParseQuantizationConfig(
         "quantization_config in safetensors header is not a JSON object");
   }
 
-  QuantizationConfig cfg;
-
-  ASSIGN_IF_OK(cfg.quant_method, GetJsonField<QuantizationConfig::Method>(
-                                     *root_obj, "quant_method"));
-  ASSIGN_IF_OK(cfg.format,
-               GetJsonField<QuantizationConfig::Format>(*root_obj, "format"));
-
-  // Look inside config_groups for quantization parameters
-  minijson::value config_groups_val;
-  if (root_obj->at("config_groups", &config_groups_val)) {
-    if (const minijson::object* groups_obj =
-            config_groups_val.as<minijson::object>();
-        groups_obj != nullptr) {
-      if (groups_obj->keys().size() > 1) {
-        return absl::InvalidArgumentError(absl::StrCat(
-            "Multiple config_groups found (", groups_obj->keys().size(),
-            "); currently only a single config_group is supported"));
-      }
-
-      for (const std::string& group_name : groups_obj->keys()) {
-        minijson::value group_val;
-        if (groups_obj->at(group_name, &group_val)) {
-          if (const minijson::object* group_obj =
-                  group_val.as<minijson::object>();
-              group_obj != nullptr) {
-            ASSIGN_IF_OK(cfg.format, GetJsonField<QuantizationConfig::Format>(
-                                         *group_obj, "format"));
-            ASSIGN_IF_OK(cfg.num_bits,
-                         GetJsonField<int>(*group_obj, "num_bits"));
-            ASSIGN_IF_OK(cfg.group_size,
-                         GetJsonField<int>(*group_obj, "group_size"));
-            ASSIGN_IF_OK(cfg.symmetric,
-                         GetJsonField<bool>(*group_obj, "symmetric"));
-
-            minijson::value weights_val;
-            if (group_obj->at("weights", &weights_val)) {
-              if (const minijson::object* weights_obj =
-                      weights_val.as<minijson::object>();
-                  weights_obj != nullptr) {
-                ASSIGN_IF_OK(cfg.num_bits,
-                             GetJsonField<int>(*weights_obj, "num_bits"));
-                ASSIGN_IF_OK(cfg.group_size,
-                             GetJsonField<int>(*weights_obj, "group_size"));
-                ASSIGN_IF_OK(cfg.symmetric,
-                             GetJsonField<bool>(*weights_obj, "symmetric"));
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  if (cfg.format == QuantizationConfig::Format::kPackQuantized &&
-      (cfg.num_bits <= 0 || cfg.group_size <= 0)) {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "Invalid quantization_config in safetensors header: num_bits=",
-        cfg.num_bits, " group_size=", cfg.group_size));
-  }
-
-  return cfg;
+  return ParseQuantizationConfigObject(*root_obj);
 }
 
 #undef ASSIGN_IF_OK
 
 }  // namespace
+
+bool QuantizationConfig::Scheme::Matches(absl::string_view module) const {
+  if (modules.contains(module)) {
+    return true;
+  }
+  for (const std::regex& pattern : patterns) {
+    if (std::regex_search(module.data(), module.data() + module.size(),
+                          pattern)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool QuantizationConfig::IsIgnored(absl::string_view module) const {
+  for (const std::string& pattern : ignore) {
+    if (module == pattern ||
+        (absl::StartsWith(module, pattern) && module[pattern.size()] == '.') ||
+        (absl::EndsWith(module, pattern) &&
+         module[module.size() - pattern.size() - 1] == '.')) {
+      return true;
+    }
+  }
+  for (const std::regex& pattern : ignore_regexes) {
+    if (std::regex_search(module.data(), module.data() + module.size(),
+                          pattern)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const QuantizationConfig::Scheme* QuantizationConfig::FindScheme(
+    absl::string_view module) const {
+  if (IsIgnored(module)) {
+    return nullptr;
+  }
+  // A scheme naming the module wins over one that applies to the whole model.
+  const Scheme* catch_all = nullptr;
+  for (const Scheme& scheme : schemes) {
+    if (scheme.Matches(module)) {
+      return &scheme;
+    }
+    if (scheme.matches_any_module && catch_all == nullptr) {
+      catch_all = &scheme;
+    }
+  }
+  return catch_all;
+}
 
 // static
 absl::StatusOr<Type> SafetensorLoader::DtypeToType(safetensors::dtype dtype) {
@@ -520,14 +682,54 @@ absl::Status SafetensorLoader::AddSafetensorFile(const std::string& path) {
   if (st->metadata.at("quantization_config", &quant_cfg_json)) {
     LRT_TENSOR_ASSIGN_OR_RETURN(quant_config_,
                                 ParseQuantizationConfig(quant_cfg_json));
-    ABSL_LOG(INFO) << "Parsed header quantization_config: format="
-                   << quant_config_->format
+    ABSL_LOG(INFO) << "Parsed header quantization_config: method="
+                   << quant_config_->quant_method
                    << " num_bits=" << quant_config_->num_bits
                    << " group_size=" << quant_config_->group_size;
   }
 
   ABSL_LOG(INFO) << "Loaded safetensor file: " << path
                  << " tensors: " << tensor_keys.size();
+  return absl::OkStatus();
+}
+
+absl::Status SafetensorLoader::AddQuantizationConfigFromJsonFile(
+    const std::string& path) {
+  TRACE_EVENT(kTensorApiCategory, "AddQuantizationConfigFromJsonFile");
+  std::ifstream file(path);
+  if (!file.is_open()) {
+    return absl::NotFoundError(absl::StrCat("File not found: ", path));
+  }
+  std::string contents((std::istreambuf_iterator<char>(file)),
+                       std::istreambuf_iterator<char>());
+
+  minijson::value val;
+  const char* json_str = contents.data();
+  if (minijson::parse(json_str, val) != minijson::no_error) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Failed to parse ", path, " as JSON"));
+  }
+  const minijson::object* root_obj = val.as<minijson::object>();
+  if (root_obj == nullptr) {
+    return absl::InvalidArgumentError(
+        absl::StrCat(path, " does not hold a JSON object"));
+  }
+
+  minijson::value quant_cfg_val;
+  if (!root_obj->at("quantization_config", &quant_cfg_val)) {
+    return absl::OkStatus();
+  }
+  const minijson::object* quant_cfg_obj = quant_cfg_val.as<minijson::object>();
+  if (quant_cfg_obj == nullptr) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("quantization_config in ", path, " is not a JSON object"));
+  }
+
+  LRT_TENSOR_ASSIGN_OR_RETURN(quant_config_,
+                              ParseQuantizationConfigObject(*quant_cfg_obj));
+  ABSL_LOG(INFO) << "Parsed quantization_config from " << path
+                 << ": method=" << quant_config_->quant_method
+                 << " config groups=" << quant_config_->schemes.size();
   return absl::OkStatus();
 }
 
@@ -544,6 +746,11 @@ absl::StatusOr<SafetensorLoader> SafetensorLoader::Load(
     return absl::InvalidArgumentError(
         absl::StrCat("Failed to inspect path ", path, ": ", ec.message()));
   }
+
+  // A checkpoint that does not declare its quantization config in the
+  // safetensors header keeps it in a config.json next to the weights.
+  const fs::path config_path =
+      (is_directory ? input_path : input_path.parent_path()) / "config.json";
 
   if (is_directory) {
     std::vector<std::string> safetensor_files;
@@ -572,6 +779,15 @@ absl::StatusOr<SafetensorLoader> SafetensorLoader::Load(
         return status;
       }
     }
+    if (!loader.quant_config_.has_value()) {
+      absl::Status status =
+          loader.AddQuantizationConfigFromJsonFile(config_path.string());
+      // Not every checkpoint ships a config.json; those that do not are either
+      // unquantized or carry the config in their header instead.
+      if (!status.ok() && !absl::IsNotFound(status)) {
+        return status;
+      }
+    }
     ABSL_LOG(INFO) << "Loaded " << safetensor_files.size()
                    << " safetensor files from directory " << path << " with "
                    << loader.tensor_infos_.size() << " tensors";
@@ -581,6 +797,13 @@ absl::StatusOr<SafetensorLoader> SafetensorLoader::Load(
   absl::Status status = loader.AddSafetensorFile(path);
   if (!status.ok()) {
     return status;
+  }
+  if (!loader.quant_config_.has_value()) {
+    absl::Status config_status =
+        loader.AddQuantizationConfigFromJsonFile(config_path.string());
+    if (!config_status.ok() && !absl::IsNotFound(config_status)) {
+      return config_status;
+    }
   }
   ABSL_LOG(INFO) << "Loaded safetensor file with "
                  << loader.tensor_infos_.size()
@@ -610,6 +833,7 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
     absl::string_view name) const {
   TRACE_EVENT(kTensorApiCategory, "LoadTensor");
   ABSL_VLOG(3) << "Loading tensor " << name;
+
   LRT_TENSOR_ASSIGN_OR_RETURN(SafetensorTensorInfo info, GetTensorInfo(name));
   LRT_TENSOR_ASSIGN_OR_RETURN(Type type, DtypeToType(info.dtype));
 
@@ -647,12 +871,25 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
         break;
       }
 
+      // `compressed-tensors` names quantization parameters after the module
+      // (`<module>.weight_scale`), while checkpoints written by our own
+      // converter name them after the weight
+      // (`<module>.weight.weight_scale`). Accept both.
+      absl::string_view module = name;
+      absl::ConsumeSuffix(&module, kWeightSuffix);
+
       auto FindDataFor =
           [&](std::initializer_list<absl::string_view> suffixes) {
-            for (absl::string_view suffix : suffixes) {
-              if (auto it = tensor_infos_.find(absl::StrCat(name, suffix));
-                  it != tensor_infos_.end()) {
-                return it;
+            std::string path;
+            for (absl::string_view prefix : {name, module}) {
+              path.assign(prefix);
+              for (absl::string_view suffix : suffixes) {
+                path.resize(prefix.size());
+                absl::StrAppend(&path, suffix);
+                if (auto it = tensor_infos_.find(path);
+                    it != tensor_infos_.end()) {
+                  return it;
+                }
               }
             }
             return tensor_infos_.end();
@@ -681,17 +918,38 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
         }
       }
 
-      if (quant_config_->format == QuantizationConfig::Format::kPackQuantized &&
-          quant_config_->num_bits == 4 && info.shape.size() == 2) {
+      // Checkpoints declaring config groups describe each module separately;
+      // older ones only carry model-wide parameters.
+      const QuantizationConfig::Scheme* scheme =
+          quant_config_->FindScheme(module);
+      const int num_bits =
+          scheme != nullptr ? scheme->num_bits : quant_config_->num_bits;
+      const int group_size =
+          scheme != nullptr ? scheme->group_size : quant_config_->group_size;
+      const QuantizationConfig::Strategy strategy =
+          (scheme != nullptr &&
+           scheme->strategy != QuantizationConfig::Strategy::kUnknown)
+              ? scheme->strategy
+              : (group_size > 0 ? QuantizationConfig::Strategy::kGroup
+                                : QuantizationConfig::Strategy::kChannel);
+
+      if (strategy == QuantizationConfig::Strategy::kGroup) {
+        quantization = std::make_shared<BlockwiseQuantization>(
+            std::move(scales), std::move(zero_points), group_size,
+            /*quantized_dimension=*/0);
+      } else {
+        quantization = std::make_shared<PerChannelAffineQuantization>(
+            std::move(scales), std::move(zero_points),
+            /*quantized_dimension=*/0);
+      }
+
+      // Nibble-packed weights hold two elements per byte, so the shape on disk
+      // is half as wide as the weight it represents.
+      if (num_bits == 4 && info.shape.size() == 2) {
         const size_t d_out = info.shape[0];
         const size_t d_in_packed = info.shape[1];
         const size_t packed_element_count = BufferSize(type, 1) * 2;
         const size_t d_in = d_in_packed * packed_element_count;
-
-        quantization = std::make_shared<BlockwiseQuantization>(
-            std::move(scales), std::move(zero_points),
-            static_cast<int>(quant_config_->group_size),
-            /*quantized_dimension=*/0);
 
         return TensorHandle(TensorInit{
             .name = std::string(name),
@@ -699,10 +957,6 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
             .shape = {static_cast<int>(d_out), static_cast<int>(d_in)},
             .buffer = buffer,
             .quantization = quantization});
-      } else {
-        quantization = std::make_shared<PerChannelAffineQuantization>(
-            std::move(scales), std::move(zero_points),
-            /*quantized_dimension=*/0);
       }
       break;
     }
