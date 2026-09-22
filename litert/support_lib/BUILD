@@ -61,14 +61,28 @@ android_library(
     # LINT.ThenChange(//ci/build_android_package.sh)
 )
 
-# Maven AAR containing the LiteRT Support Java API.
+# This alias matches the associated .aar library name output style.
+alias(
+    name = "litert-support",
+    actual = ":litert_support",
+)
+
+# Maven AAR containing the LiteRT Support Java API. It doesn't bundle the LiteRT
+# runtime; the "litert-api" Maven artifact provides it.
+#
+# bazel build --config=android_arm64 --android_ndk_min_sdk_version=24 \
+#   //litert/support_lib:litert-support-api-aar
 aar_without_jni(
-    name = "litert-support-api",
+    name = "litert-support-api-aar",
     android_library = ":litert_support_java",
 )
 
-# Maven runtime aggregator. Its POM supplies litert-support-api and litert.
+# Maven AAR for the LiteRT Support Library. The AAR itself is an aggregator: its
+# POM supplies the "litert-support-api" and "litert" Maven artifacts.
+#
+# bazel build --config=android_arm64 --android_ndk_min_sdk_version=24 \
+#   //litert/support_lib:litert-support-aar
 aar_without_jni(
-    name = "litert-support",
+    name = "litert-support-aar",
     android_library = ":litert_support",
 )
