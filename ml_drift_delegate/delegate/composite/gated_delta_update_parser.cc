@@ -50,6 +50,12 @@ absl::Status GatedDeltaUpdateOperationParser::IsSupported(
   ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 2, &v));
   if (q && q->dims && q->dims->size >= 4 && v && v->dims &&
       v->dims->size >= 4) {
+    int H_k = q->dims->data[1];
+    int H = v->dims->data[1];
+    if (H_k <= 0 || H < H_k || (H % H_k != 0)) {
+      return absl::InvalidArgumentError(
+          "gated_delta_update requires H_v to be a positive multiple of H_k.");
+    }
     int D_k = q->dims->data[q->dims->size - 1];
     int D_v = v->dims->data[v->dims->size - 1];
     bool d_k_valid =
