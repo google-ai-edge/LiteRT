@@ -1312,7 +1312,7 @@ class ConcatenationOperationParser : public TFLiteOperationParser {
   }
 
  private:
-  const ModelBuilderOptions& options_;
+  ModelBuilderOptions options_;
 };
 
 class Conv2DOperationParser : public TFLiteOperationParser {
