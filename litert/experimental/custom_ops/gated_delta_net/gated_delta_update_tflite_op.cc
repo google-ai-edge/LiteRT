@@ -103,16 +103,18 @@ TfLiteStatus EvalGatedDeltaUpdate(TfLiteContext* context, TfLiteNode* node) {
   TfLiteTensor* new_rec = tflite::GetOutput(context, node, 1);
 
   TF_LITE_ENSURE(context, q_t->dims->size >= 4);
-  const int B = q_t->dims->data[0];
-  const int H = q_t->dims->data[1];
-  const int N = q_t->dims->data[2];
+  const int B = v_t->dims->data[0];
+  const int H = v_t->dims->data[1];
+  const int H_k = q_t->dims->data[1];
+  const int N = v_t->dims->data[2];
   const int D_k = q_t->dims->data[3];
   const int D_v = v_t->dims->data[3];
 
   // Dispatch to only recurrent implementation for now
   ::litert::gated_delta_net::ComputeGatedDeltaUpdateRecurrent(
       q_t->data.f, k_t->data.f, v_t->data.f, beta_t->data.f, g_t->data.f,
-      rec_state->data.f, core_out->data.f, new_rec->data.f, B, H, N, D_k, D_v);
+      rec_state->data.f, core_out->data.f, new_rec->data.f, B, H, N, D_k, D_v,
+      H_k);
   return kTfLiteOk;
 }
 
