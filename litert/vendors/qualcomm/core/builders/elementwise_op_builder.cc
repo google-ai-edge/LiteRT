@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/select_op_builder.h"
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
@@ -50,6 +51,26 @@ OpWrapper CreateElementWiseAddOp(const TensorWrapper& input_0,
                                  const TensorWrapper& output_0) {
   return CreateElementWiseBinaryOp(input_0, input_1, output_0,
                                    QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD);
+}
+
+OpWrapper CreateElementWiseSubtractOp(const TensorWrapper& input_0,
+                                      const TensorWrapper& input_1,
+                                      const TensorWrapper& output_0) {
+  return CreateElementWiseBinaryOp(input_0, input_1, output_0,
+                                   QNN_OP_ELEMENT_WISE_BINARY_OPERATION_SUBTRACT);
+}
+
+OpWrapper CreateElementWiseDivideOp(const TensorWrapper& input_0,
+                                    const TensorWrapper& input_1,
+                                    const TensorWrapper& output_0) {
+  return CreateElementWiseBinaryOp(input_0, input_1, output_0,
+                                   QNN_OP_ELEMENT_WISE_BINARY_OPERATION_DIVIDE);
+}
+
+OpWrapper CreateElementWiseAtanOp(const TensorWrapper& input_0,
+                                  const TensorWrapper& output_0) {
+  return CreateElementWiseUnaryOp(input_0, output_0,
+                                  QNN_OP_ELEMENT_WISE_UNARY_OPERATION_ATAN);
 }
 
 std::vector<OpWrapper> BuildElementwiseSubOp(
@@ -374,6 +395,38 @@ OpWrapper CreateElementWiseNotEqualOp(const TensorWrapper& input_0,
       QNN_OP_ELEMENT_WISE_BINARY_OPERATION_NOT_EQUAL);
 }
 
+OpWrapper CreateElementWiseGreaterOp(const TensorWrapper& input_0,
+                                     const TensorWrapper& input_1,
+                                     const TensorWrapper& output_0) {
+  return CreateElementWiseBinaryOp(
+      input_0, input_1, output_0,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_GREATER);
+}
+
+OpWrapper CreateElementWiseLessOp(const TensorWrapper& input_0,
+                                  const TensorWrapper& input_1,
+                                  const TensorWrapper& output_0) {
+  return CreateElementWiseBinaryOp(
+      input_0, input_1, output_0,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_LESS);
+}
+
+OpWrapper CreateElementWiseGreaterEqualOp(const TensorWrapper& input_0,
+                                          const TensorWrapper& input_1,
+                                          const TensorWrapper& output_0) {
+  return CreateElementWiseBinaryOp(
+      input_0, input_1, output_0,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_GREATER_EQUAL);
+}
+
+OpWrapper CreateElementWiseAndOp(const TensorWrapper& input_0,
+                                 const TensorWrapper& input_1,
+                                 const TensorWrapper& output_0) {
+  return CreateElementWiseBinaryOp(
+      input_0, input_1, output_0,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_AND);
+}
+
 std::vector<OpWrapper> BuildElementwiseOrOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs) {
@@ -572,24 +625,9 @@ std::vector<OpWrapper> BuildElementwiseAtan2Op(
   TensorWrapper& x_equal_zero_out = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_BOOL_8, {}, inputs[1].get().GetDimensions());
 
-  auto& x_greater_than_zero = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_GREATER);
-  x_greater_than_zero.AddSuffixToName("_atan2_x_gt_zero");
-  auto& x_less_than_zero = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_LESS);
-  x_less_than_zero.AddSuffixToName("_atan2_x_lt_zero");
-  auto& x_equal_zero = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_EQUAL);
-  x_equal_zero.AddSuffixToName("_atan2_x_eq_zero");
-
-  x_greater_than_zero.AddInputTensor(inputs[1]);
-  x_greater_than_zero.AddInputTensor(const_zero);
-  x_greater_than_zero.AddOutputTensor(x_greater_than_zero_out);
-
-  x_less_than_zero.AddInputTensor(inputs[1]);
-  x_less_than_zero.AddInputTensor(const_zero);
-  x_less_than_zero.AddOutputTensor(x_less_than_zero_out);
-
-  x_equal_zero.AddInputTensor(inputs[1]);
-  x_equal_zero.AddInputTensor(const_zero);
-  x_equal_zero.AddOutputTensor(x_equal_zero_out);
+  res.push_back(CreateElementWiseGreaterOp(inputs[1], const_zero, x_greater_than_zero_out));
+  res.push_back(CreateElementWiseLessOp(inputs[1], const_zero, x_less_than_zero_out));
+  res.push_back(CreateElementWiseEqualOp(inputs[1], const_zero, x_equal_zero_out));
 
   TensorWrapper& y_greater_than_zero_out = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_BOOL_8, {}, inputs[0].get().GetDimensions());
@@ -598,145 +636,61 @@ std::vector<OpWrapper> BuildElementwiseAtan2Op(
   TensorWrapper& y_less_than_zero_out = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_BOOL_8, {}, inputs[0].get().GetDimensions());
 
-  auto& y_greater_than_zero = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_GREATER);
-  y_greater_than_zero.AddSuffixToName("_atan2_y_gt_zero");
-  auto& y_greater_equal_than_zero = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_GREATER_EQUAL);
-  y_greater_equal_than_zero.AddSuffixToName("_atan2_y_ge_zero");
-  auto& y_less_than_zero = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_LESS);
-  y_less_than_zero.AddSuffixToName("_atan2_y_lt_zero");
-
-  y_greater_than_zero.AddInputTensor(inputs[0]);
-  y_greater_than_zero.AddInputTensor(const_zero);
-  y_greater_than_zero.AddOutputTensor(y_greater_than_zero_out);
-
-  y_greater_equal_than_zero.AddInputTensor(inputs[0]);
-  y_greater_equal_than_zero.AddInputTensor(const_zero);
-  y_greater_equal_than_zero.AddOutputTensor(y_greater_equal_than_zero_out);
-
-  y_less_than_zero.AddInputTensor(inputs[0]);
-  y_less_than_zero.AddInputTensor(const_zero);
-  y_less_than_zero.AddOutputTensor(y_less_than_zero_out);
+  res.push_back(CreateElementWiseGreaterOp(inputs[0], const_zero, y_greater_than_zero_out));
+  res.push_back(CreateElementWiseGreaterEqualOp(inputs[0], const_zero, y_greater_equal_than_zero_out));
+  res.push_back(CreateElementWiseLessOp(inputs[0], const_zero, y_less_than_zero_out));
 
   // atan2(y, x) = atan(y / x): inputs[0]=y, inputs[1]=x
   TensorWrapper& div_out =
       tensor_pool.CloneNativeTensorFrom(outputs[0].get());
-
-  auto& div_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
-  div_op.AddSuffixToName("_atan2_div_y_x");
-  div_op.AddInputTensor(inputs[0]);
-  div_op.AddInputTensor(inputs[1]);
-  div_op.AddOutputTensor(div_out);
-  div_op.AddScalarParam<std::uint32_t>(
-      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
-      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_DIVIDE);
+  res.push_back(CreateElementWiseDivideOp(inputs[0], inputs[1], div_out));
 
   TensorWrapper& atan_out =
       tensor_pool.CloneNativeTensorFrom(outputs[0].get());
-  auto& atan_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_UNARY);
-  atan_op.AddSuffixToName("_atan2_atan");
-  atan_op.AddInputTensor(div_out);
-  atan_op.AddOutputTensor(atan_out);
-  atan_op.AddScalarParam<std::uint32_t>(
-      QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
-      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_ATAN);
+  res.push_back(CreateElementWiseAtanOp(div_out, atan_out));
 
   TensorWrapper& add_out =
       tensor_pool.CloneNativeTensorFrom(outputs[0].get());
-  auto& add_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
-  add_op.AddSuffixToName("_atan2_atan_add_pi");
-  add_op.AddInputTensor(atan_out);
-  add_op.AddInputTensor(const_pi);
-  add_op.AddOutputTensor(add_out);
-  add_op.AddScalarParam<std::uint32_t>(
-      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
-      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD);
+  res.push_back(CreateElementWiseAddOp(atan_out, const_pi, add_out));
 
   TensorWrapper& sub_out =
       tensor_pool.CloneNativeTensorFrom(outputs[0].get());
-  auto& sub_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
-  sub_op.AddSuffixToName("_atan2_atan_sub_pi");
-  sub_op.AddInputTensor(atan_out);
-  sub_op.AddInputTensor(const_pi);
-  sub_op.AddOutputTensor(sub_out);
-  sub_op.AddScalarParam<std::uint32_t>(
-      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
-      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_SUBTRACT);
+  res.push_back(CreateElementWiseSubtractOp(atan_out, const_pi, sub_out));
 
   // case: x=0, y<0  =>  -pi/2
-  auto& case_xeq0_ylt0 = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_AND);
-  case_xeq0_ylt0.AddSuffixToName("_atan2_x_eq_zero_and_y_lt_zero");
   TensorWrapper& case_xeq0_ylt0_out = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_BOOL_8, {}, inputs[0].get().GetDimensions());
-  case_xeq0_ylt0.AddInputTensor(x_equal_zero_out);
-  case_xeq0_ylt0.AddInputTensor(y_less_than_zero_out);
-  case_xeq0_ylt0.AddOutputTensor(case_xeq0_ylt0_out);
+  res.push_back(CreateElementWiseAndOp(x_equal_zero_out, y_less_than_zero_out, case_xeq0_ylt0_out));
   TensorWrapper& select_xeq0_ylt0_out =
       tensor_pool.CloneNativeTensorFrom(outputs[0].get());
-  auto& select_xeq0_ylt0 = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SELECT);
-  select_xeq0_ylt0.AddSuffixToName("_atan2_select_xeq0_ylt0");
-  select_xeq0_ylt0.AddInputTensor(case_xeq0_ylt0_out);
-  select_xeq0_ylt0.AddInputTensor(const_neg_pi_half);
-  select_xeq0_ylt0.AddInputTensor(const_zero);
-  select_xeq0_ylt0.AddOutputTensor(select_xeq0_ylt0_out);
+  res.push_back(CreateSelectOp(case_xeq0_ylt0_out, const_neg_pi_half, const_zero, select_xeq0_ylt0_out));
 
   // case: x=0, y>0 => pi/2  (fallback from x=0,y<0)
-  auto& case_xeq0_ygt0 = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_AND);
-  case_xeq0_ygt0.AddSuffixToName("_atan2_x_eq_zero_and_y_gt_zero");
   TensorWrapper& case_xeq0_ygt0_out = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_BOOL_8, {}, inputs[0].get().GetDimensions());
-  case_xeq0_ygt0.AddInputTensor(x_equal_zero_out);
-  case_xeq0_ygt0.AddInputTensor(y_greater_than_zero_out);
-  case_xeq0_ygt0.AddOutputTensor(case_xeq0_ygt0_out);
+  res.push_back(CreateElementWiseAndOp(x_equal_zero_out, y_greater_than_zero_out, case_xeq0_ygt0_out));
   TensorWrapper& select_xeq0_out =
       tensor_pool.CloneNativeTensorFrom(outputs[0].get());
-  auto& select_xeq0 = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SELECT);
-  select_xeq0.AddSuffixToName("_atan2_select_xeq0");
-  select_xeq0.AddInputTensor(case_xeq0_ygt0_out);
-  select_xeq0.AddInputTensor(const_pos_pi_half);
-  select_xeq0.AddInputTensor(select_xeq0_ylt0_out);
-  select_xeq0.AddOutputTensor(select_xeq0_out);
+  res.push_back(CreateSelectOp(case_xeq0_ygt0_out, const_pos_pi_half, select_xeq0_ylt0_out, select_xeq0_out));
 
   // case: x<0, y<0  =>  atan(y/x) - pi  (fallback from x=0 cases)
-  auto& case_xlt0_ylt0 = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_AND);
-  case_xlt0_ylt0.AddSuffixToName("_atan2_x_lt_zero_and_y_lt_zero");
   TensorWrapper& case_xlt0_ylt0_out = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_BOOL_8, {}, inputs[0].get().GetDimensions());
-  case_xlt0_ylt0.AddInputTensor(x_less_than_zero_out);
-  case_xlt0_ylt0.AddInputTensor(y_less_than_zero_out);
-  case_xlt0_ylt0.AddOutputTensor(case_xlt0_ylt0_out);
+  res.push_back(CreateElementWiseAndOp(x_less_than_zero_out, y_less_than_zero_out, case_xlt0_ylt0_out));
   TensorWrapper& select_xlt0_ylt0_out =
       tensor_pool.CloneNativeTensorFrom(outputs[0].get());
-  auto& select_xlt0_ylt0 = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SELECT);
-  select_xlt0_ylt0.AddSuffixToName("_atan2_select_xlt0_ylt0");
-  select_xlt0_ylt0.AddInputTensor(case_xlt0_ylt0_out);
-  select_xlt0_ylt0.AddInputTensor(sub_out);
-  select_xlt0_ylt0.AddInputTensor(select_xeq0_out);
-  select_xlt0_ylt0.AddOutputTensor(select_xlt0_ylt0_out);
+  res.push_back(CreateSelectOp(case_xlt0_ylt0_out, sub_out, select_xeq0_out, select_xlt0_ylt0_out));
 
   // case: x<0, y>=0  =>  atan(y/x) + pi  (fallback from x<0,y<0)
-  auto& case_xlt0_yge0 = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_AND);
-  case_xlt0_yge0.AddSuffixToName("_atan2_x_lt_zero_and_y_ge_zero");
   TensorWrapper& case_xlt0_yge0_out = tensor_pool.CreateNativeTensor(
       QNN_DATATYPE_BOOL_8, {}, inputs[0].get().GetDimensions());
-  case_xlt0_yge0.AddInputTensor(x_less_than_zero_out);
-  case_xlt0_yge0.AddInputTensor(y_greater_equal_than_zero_out);
-  case_xlt0_yge0.AddOutputTensor(case_xlt0_yge0_out);
+  res.push_back(CreateElementWiseAndOp(x_less_than_zero_out, y_greater_equal_than_zero_out, case_xlt0_yge0_out));
   TensorWrapper& select_xlt0_yge0_out =
       tensor_pool.CloneNativeTensorFrom(outputs[0].get());
-  auto& select_xlt0_yge0 = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SELECT);
-  select_xlt0_yge0.AddSuffixToName("_atan2_select_xlt0_yge0");
-  select_xlt0_yge0.AddInputTensor(case_xlt0_yge0_out);
-  select_xlt0_yge0.AddInputTensor(add_out);
-  select_xlt0_yge0.AddInputTensor(select_xlt0_ylt0_out);
-  select_xlt0_yge0.AddOutputTensor(select_xlt0_yge0_out);
+  res.push_back(CreateSelectOp(case_xlt0_yge0_out, add_out, select_xlt0_ylt0_out, select_xlt0_yge0_out));
 
   // case: x>0  =>  atan(y/x)  (final select)
-  auto& select_xgt0 = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_SELECT);
-  select_xgt0.AddSuffixToName("_atan2_select_xgt0");
-  select_xgt0.AddInputTensor(x_greater_than_zero_out);
-  select_xgt0.AddInputTensor(atan_out);
-  select_xgt0.AddInputTensor(select_xlt0_yge0_out);
-  select_xgt0.AddOutputTensor(outputs[0]);
+  res.push_back(CreateSelectOp(x_greater_than_zero_out, atan_out, select_xlt0_yge0_out, outputs[0]));
 
   return res;
 }

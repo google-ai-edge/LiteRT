@@ -16,6 +16,17 @@ OpWrapper CreateElementWiseAddOp(const TensorWrapper& input_0,
                                  const TensorWrapper& input_1,
                                  const TensorWrapper& output_0);
 
+OpWrapper CreateElementWiseSubtractOp(const TensorWrapper& input_0,
+                                      const TensorWrapper& input_1,
+                                      const TensorWrapper& output_0);
+
+OpWrapper CreateElementWiseDivideOp(const TensorWrapper& input_0,
+                                    const TensorWrapper& input_1,
+                                    const TensorWrapper& output_0);
+
+OpWrapper CreateElementWiseAtanOp(const TensorWrapper& input_0,
+                                  const TensorWrapper& output_0);
+
 OpWrapper CreateElementWiseMulOp(const TensorWrapper& input_0,
                                  const TensorWrapper& input_1,
                                  const TensorWrapper& output_0);
@@ -30,6 +41,22 @@ OpWrapper CreateElementWiseEqualOp(const TensorWrapper& input_0,
 OpWrapper CreateElementWiseNotEqualOp(const TensorWrapper& input_0,
                                       const TensorWrapper& input_1,
                                       const TensorWrapper& output_0);
+
+OpWrapper CreateElementWiseGreaterOp(const TensorWrapper& input_0,
+                                     const TensorWrapper& input_1,
+                                     const TensorWrapper& output_0);
+
+OpWrapper CreateElementWiseLessOp(const TensorWrapper& input_0,
+                                  const TensorWrapper& input_1,
+                                  const TensorWrapper& output_0);
+
+OpWrapper CreateElementWiseGreaterEqualOp(const TensorWrapper& input_0,
+                                          const TensorWrapper& input_1,
+                                          const TensorWrapper& output_0);
+
+OpWrapper CreateElementWiseAndOp(const TensorWrapper& input_0,
+                                 const TensorWrapper& input_1,
+                                 const TensorWrapper& output_0);
 
 std::vector<OpWrapper> BuildElementwiseSubOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
