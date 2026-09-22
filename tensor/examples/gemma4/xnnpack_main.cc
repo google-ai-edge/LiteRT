@@ -113,7 +113,7 @@ absl::Status MapGemma4WeightIdentifiers(
 
 absl::Status FallbackBF16WeightsToFp32(
     absl::flat_hash_map<std::string, TensorHandle>& weights_handle) {
-  TRACE_EVENT(kTensorApiCategory, "UpcastHalfPrecisionWeightsToFp32");
+  TRACE_EVENT(kTensorApiCategory, "FallbackBF16WeightsToFp32");
   for (auto& [name, tensor] : weights_handle) {
     if (tensor.GetType() != Type::kBF16) {
       continue;
