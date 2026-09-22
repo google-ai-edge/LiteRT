@@ -248,7 +248,7 @@ TEST_P(QnnModelTest, ElementWiseAtan2) {
      1., -1., 1., -1.});
   qnn_model_.SetInputData<float>(
     input_idx_1,
-    {1., 1., 1., 1.,
+    {0., 1., 1., 1.,
     -1., -1., 0., 0.});
 
   ASSERT_TRUE(qnn_model_.Execute());

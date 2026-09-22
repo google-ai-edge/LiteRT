@@ -546,6 +546,13 @@ std::vector<OpWrapper> BuildElementwiseSignOp(
 std::vector<OpWrapper> BuildElementwiseAtan2Op(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs) {
+  // Implements atan2(y, x) via atan(y/x) with quadrant correction:
+  //   x > 0           => atan(y/x)
+  //   x < 0, y >= 0   => atan(y/x) + pi
+  //   x < 0, y < 0    => atan(y/x) - pi
+  //   x = 0, y > 0    => +pi/2
+  //   x = 0, y < 0    => -pi/2
+  //   x = 0, y = 0    => 0  (matches std::atan2)
   std::vector<OpWrapper> res;
   res.reserve(19);
 
@@ -669,8 +676,7 @@ std::vector<OpWrapper> BuildElementwiseAtan2Op(
   select_xeq0_ylt0.AddSuffixToName("_atan2_select_xeq0_ylt0");
   select_xeq0_ylt0.AddInputTensor(case_xeq0_ylt0_out);
   select_xeq0_ylt0.AddInputTensor(const_neg_pi_half);
-  // TODO: The case x=0, y=0 should be Undefined
-  select_xeq0_ylt0.AddInputTensor(const_neg_pi_half);
+  select_xeq0_ylt0.AddInputTensor(const_zero);
   select_xeq0_ylt0.AddOutputTensor(select_xeq0_ylt0_out);
 
   // case: x=0, y>0 => pi/2  (fallback from x=0,y<0)

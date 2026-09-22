@@ -45,7 +45,7 @@ provides the corresponding QNN operation it is legalized to.
 | `kLiteRtOpCodeTflAdd` | Legalized to `QNN_OP_ELEMENT_WISE_BINARY` (ADD). Supports fused activation. |
 | `kLiteRtOpCodeTflArgMax` | Legalized to `QNN_OP_ARGMAX`. |
 | `kLiteRtOpCodeTflArgMin` | Legalized to `QNN_OP_ARGMIN`. |
-| `kLiteRtOpCodeTflAtan2` | Legalized to a sequence of `QNN_OP_ELEMENT_WISE_BINARY` (DIVIDE) and `QNN_OP_ELEMENT_WISE_UNARY` (ATAN), computing `atan2(y, x) = atan(y / x)`. |
+| `kLiteRtOpCodeTflAtan2` | Legalized to a sequence of ops implementing `atan2(y, x)` with full quadrant correction: `QNN_OP_ELEMENT_WISE_BINARY` (DIVIDE) → `QNN_OP_ELEMENT_WISE_UNARY` (ATAN), then `QNN_OP_ELEMENT_WISE_GREATER/LESS/EQUAL/GREATER_EQUAL` comparisons combined via `QNN_OP_ELEMENT_WISE_AND`, with `QNN_OP_ELEMENT_WISE_SELECT` to choose among `atan(y/x)`, `atan(y/x)+π`, `atan(y/x)−π`, `±π/2`, and `0` (for `x=0, y=0`) based on the signs of `x` and `y`. |
 | `kLiteRtOpCodeTflAveragePool2d` | Legalized to `QNN_OP_POOL_AVG_2D`. Supports fused activation. |
 | `kLiteRtOpCodeTflBatchMatmul` | Legalized to `QNN_OP_MAT_MUL`. |
 | `kLiteRtOpCodeTflBatchToSpaceNd` | Legalized to `QNN_OP_BATCH_TO_SPACE` with `block_size` and `crops` tensor params derived from the static `block_shape` and `crops` inputs. |
