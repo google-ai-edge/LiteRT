@@ -23,6 +23,13 @@
 #include <type_traits>
 #include <utility>
 
+#if defined(_WIN32)
+#include <malloc.h>
+#ifndef alloca
+#define alloca _alloca
+#endif
+#endif
+
 #ifndef LITERT_NO_ABSL
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl

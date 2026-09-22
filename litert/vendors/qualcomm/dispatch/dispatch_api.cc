@@ -132,6 +132,13 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
                "Failed to parse qnn options, using default settings. %s",
                qnn_opts.Error().Message().c_str());
   }
+#if defined(_WIN32)
+  // Graph I/O defaults to kMemHandle, which advertises FastRPC/DMA-BUF tensor
+  // buffers. Neither exists on Windows, so buffer allocation fails with
+  // "FastRPC buffer is not supported"; plain host memory is the only option.
+  qnn_options.SetGraphIOTensorMemType(::qnn::GraphIOTensorMemType::kRaw);
+#endif  // defined(_WIN32)
+
   if (auto qnn_manager = QnnManager::Create(
           /*options=*/qnn_options,
           /*shared_library_dir=*/shared_library_dir_opt);
