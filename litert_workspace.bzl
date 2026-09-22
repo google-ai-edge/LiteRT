@@ -245,6 +245,15 @@ def litert_workspace():
         urls = tf_mirror_urls("https://github.com/bazelbuild/rules_jvm_external/archive/4.3.zip"),
     )
 
+    # Rules Java
+    tf_http_archive(
+        name = "rules_java",
+        urls = tf_mirror_urls(
+            "https://github.com/bazelbuild/rules_java/releases/download/8.6.1/rules_java-8.6.1.tar.gz",
+        ),
+        sha256 = "c5bc17e17bb62290b1fd8fdd847a2396d3459f337a7e07da7769b869b488ec26",
+    )
+
     # Rules Proto
     tf_http_archive(
         name = "rules_proto",

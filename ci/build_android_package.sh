@@ -194,10 +194,6 @@ BUILD_FLAGS=("-c" "opt" \
 # Merge extra config flags from the environment
 BUILD_FLAGS+=(${BAZEL_CONFIG_FLAGS})
 
-# Conditionally use local submodules vs http_archve tf
-if [[ "${USE_LOCAL_TF}" == "true" ]]; then
-  BUILD_FLAGS+=("--config=use_local_tf")
-fi
 
 if [[ "$BUILD_LITERT_KOTLIN_API" == "true" ]]; then
   echo "Building Litert Kotlin API."

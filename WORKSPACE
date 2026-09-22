@@ -66,10 +66,7 @@ http_archive(
 )
 
 # Declared before `apple_rules_dependencies()` because that macro also declares
-# `bazel_skylib`, and the first declaration of a repository wins. The pinned
-# TensorFlow expects 1.9.0: its `@rules_cc` uses the `scope` attribute on
-# `bool_flag`, which older bazel_skylib releases do not define. Keep this in
-# sync with the version in TensorFlow's `tensorflow/workspace3.bzl`.
+# `bazel_skylib`, and the first declaration of a repository wins.
 http_archive(
     name = "bazel_skylib",
     sha256 = "3b5b49006181f5f8ff626ef8ddceaa95e9bb8ad294f7b5d7b11ea9f7ddaf8c59",
@@ -118,25 +115,10 @@ http_archive(
     url = "https://github.com/apple/coremltools/archive/8.0.tar.gz",
 )
 
-# Load the custom repository rule to select either a local TensorFlow source or a remote http_archive.
-load("//:tensorflow_source_rules.bzl", "tensorflow_source_repo")
-
-tensorflow_source_repo(
-    name = "org_tensorflow",
-    sha256 = "7bf06cfd5ff9b462b1b25ca4dc3613fa5e3847fd8e291ff0a8de2ca5a812590a",
-    strip_prefix = "tensorflow-5c0b7a5946f0f485e3a532b2a00e03f42a6e14c1",
-    urls = ["https://github.com/tensorflow/tensorflow/archive/5c0b7a5946f0f485e3a532b2a00e03f42a6e14c1.tar.gz"],
-)
-
-# Declare LiteRT-owned repositories first so they take precedence over any
-# fallback declarations in TensorFlow's workspace macros.
+# Declare LiteRT-owned external repositories.
 load("//:litert_workspace.bzl", "litert_workspace")
 
 litert_workspace()
-
-load("@org_tensorflow//tensorflow:workspace3.bzl", "tf_workspace3")
-
-tf_workspace3()
 
 load("@bazel_features//:deps.bzl", "bazel_features_deps")
 
@@ -145,6 +127,15 @@ bazel_features_deps()
 load("@rules_cc//cc:extensions.bzl", "compatibility_proxy_repo")
 
 compatibility_proxy_repo()
+
+load("@rules_java//java:rules_java_deps.bzl", java_compatibility_proxy_repo = "compatibility_proxy_repo")
+
+java_compatibility_proxy_repo()
+
+# buildifier: disable=bzl-visibility
+load("@com_google_protobuf//bazel/private:proto_bazel_features.bzl", "proto_bazel_features")
+
+proto_bazel_features(name = "proto_bazel_features")
 
 # Initialize hermetic Python
 load("//third_party/py:python_init_rules.bzl", "python_init_rules")
@@ -183,18 +174,6 @@ load("@pypi//:requirements.bzl", "install_deps")
 
 install_deps()
 # End hermetic Python initialization
-
-load("@org_tensorflow//tensorflow:workspace2.bzl", "tf_workspace2")
-
-tf_workspace2()
-
-load("@org_tensorflow//tensorflow:workspace1.bzl", "tf_workspace1")
-
-tf_workspace1()
-
-load("@org_tensorflow//tensorflow:workspace0.bzl", "tf_workspace0")
-
-tf_workspace0()
 
 load(
     "//third_party/py:python_wheel.bzl",
