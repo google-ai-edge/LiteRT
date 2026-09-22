@@ -97,6 +97,39 @@ TEST(RegisterOpsContractTest, AllCompositeOpsHaveCompositeOpPrefix) {
                                   "suite to be registered and verified";
 }
 
+TEST(RegisterOpsContractTest, TestMethodNamesAreNormalizedForTestGrid) {
+  const auto* unit_test = ::testing::UnitTest::GetInstance();
+  size_t verified_count = 0;
+
+  for (const auto& span : GetSpans()) {
+    for (int i = 0; i < unit_test->total_test_suite_count(); ++i) {
+      const auto* suite = unit_test->GetTestSuite(i);
+      absl::string_view suite_name = suite->name();
+      if (!absl::StartsWith(suite_name, "ats_")) {
+        continue;
+      }
+      if (!absl::StrContains(suite_name,
+                             absl::StrFormat("_%s_%s_", span.expected_prefix,
+                                             span.fixture_kind))) {
+        continue;
+      }
+      ASSERT_EQ(suite->total_test_count(), 1);
+      absl::string_view test_name = suite->GetTestInfo(0)->name();
+      EXPECT_TRUE(absl::StartsWith(
+          test_name,
+          absl::StrFormat("%s_%s_", span.expected_prefix, span.fixture_kind)))
+          << "Test method name " << test_name
+          << " must start with family_fixture prefix for TestGrid filtering";
+      EXPECT_THAT(test_name, ::testing::Not(::testing::HasSubstr("<")))
+          << "Test method name " << test_name
+          << " must not contain concrete random dimensions '<...>'";
+      ++verified_count;
+    }
+  }
+
+  EXPECT_GT(verified_count, 0);
+}
+
 }  // namespace
 }  // namespace litert::testing
 

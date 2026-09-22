@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# copybara:uncomment load(INTERNAL_PHYSICAL_MOBILE_TESTING_INFRA, "guitar", "guitar_workflow_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/ats:ats.bzl", "litert_define_ats")
 load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "if_oss", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 load("//litert/integration_test:litert_device_script.bzl", "make_download_model_provider")
+# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_mediatek_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -238,6 +240,8 @@ litert_define_ats(
         "BatchMatmul.*2d.*,[34]d",  # OpenCL does not support rank-asymmetric batch broadcasting
         "BatchMatmul.*3d",  # ATS generator forces 1xB broadcast on 3D BatchMatmul
         "BatchMatmul.*4d",  # ATS generator forces 1xB broadcast on 4D BatchMatmul
+        "SelectV2",  # OpenCL SelectV2 rejects multidimensional if/else broadcasting and uses kExact on FP16-rounded f32
+        "Slice",  # OpenCL Slice uses kExact byte comparison on FP16-rounded f32 buffers
     ],
     extra_flags = [
         "--data_seed=42",
@@ -1293,3 +1297,78 @@ make_download_model_provider(
     name = "ats_models_provider",
     url = "https://storage.googleapis.com/litert/ats_models.tar.gz",
 )
+
+# copybara:uncomment_begin(google-only)
+# # GUITAR WORKFLOWS #################################################################################
+#
+# PIXEL_9_ATS_GUITAR_TARGETS = [
+#     ":gpu_ats_remote",
+#     ":cpu_ats_remote",
+# ]
+#
+# guitar_workflow_test(
+#     name = "litert_ats_guitar_pixel_9",
+#     auto_deps = PIXEL_9_ATS_GUITAR_TARGETS,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_pixel_9_mh_guitar_test(
+#                 targets = PIXEL_9_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# QUALCOMM_S24_ATS_GUITAR_TARGETS = [
+#     ":gpu_ats_remote",
+#     ":cpu_ats_remote",
+# ]
+#
+# guitar_workflow_test(
+#     name = "litert_ats_guitar_qualcomm_s24",
+#     auto_deps = QUALCOMM_S24_ATS_GUITAR_TARGETS,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_qualcomm_mh_guitar_test(
+#                 dimension_model = "\"regex:sm-s928b|sm-s928u1\"",
+#                 targets = QUALCOMM_S24_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# MEDIATEK_MT6989_ATS_GUITAR_TARGETS = [
+#     ":gpu_ats_remote",
+#     ":cpu_ats_remote",
+# ]
+#
+# guitar_workflow_test(
+#     name = "litert_ats_guitar_mediatek_mt6989",
+#     auto_deps = MEDIATEK_MT6989_ATS_GUITAR_TARGETS,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_mediatek_mh_guitar_test(
+#                 dimension_hardware = "mt6989",
+#                 targets = MEDIATEK_MT6989_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+# copybara:uncomment_end

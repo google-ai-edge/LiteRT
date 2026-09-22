@@ -38,8 +38,8 @@ std::optional<TestNames> NamesForNextTest(size_t& test_id,
                                           const AtsConf& options,
                                           Args&&... args) {
   auto names = TestNames::Create(test_id, std::forward<Args>(args)...);
-  names.should_skip =
-      !options.ShouldRegister(absl::StrCat(names.suite, names.test));
+  names.should_skip = !options.ShouldRegister(
+      absl::StrCat(names.suite, " ", names.test, " ", names.desc));
   test_id++;
   return names;
 }

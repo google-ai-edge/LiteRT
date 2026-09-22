@@ -83,7 +83,7 @@ def hidden_test_tags():
 #
 #     params = {
 #         "run_dir": device_rlocation(),
-#         "options": " ".join(exec_args),
+#         "options": " ".join(exec_args).replace("\\'", "'"),
 #         "prepare_des_dir_when_src_is_file": "true",  # Allows dest to be a dir (parent) when src is a file.
 #         "run_env": " ".join(exec_env_vars),
 #         "remove_files_before_push": "true",
@@ -94,17 +94,20 @@ def hidden_test_tags():
 #
 #     args = [
 #         "--run_as={}".format(run_as),
+#         "--test_timeout_sec=3600",
+#         "--job_timeout_sec=3600",
 #     ]
 #
 #     mobile_test(
 #         tags = hidden_test_tags(),
 #         name = name,
+#         size = "enormous",
 #         dimensions = dimensions,
 #         files = files,
 #         params = params,
 #         args = args,
 #         device = "AndroidRealDevice",
-#         driver = "AndroidNativeBin",
+#         driver = "AndroidGUnit",
 #         decorators = [
 #             "AndroidFilePusherDecorator",
 #         ],
