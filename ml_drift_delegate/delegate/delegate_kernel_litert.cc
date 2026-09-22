@@ -63,8 +63,9 @@ absl::StatusOr<::ml_drift::TensorDescriptor> CreateTensorDescriptor(
     const ::ml_drift::GpuInfo& gpu_info, ::ml_drift::BHWC shape,
     ::ml_drift::DataType data_type,
     ::ml_drift::CalculationsPrecision calculation_precision,
-    ::ml_drift::TensorStorageType storage_type) {
-  if (data_type == ::ml_drift::DataType::FLOAT32) {
+    ::ml_drift::TensorStorageType storage_type,
+    bool preserve_data_type = false) {
+  if (data_type == ::ml_drift::DataType::FLOAT32 && !preserve_data_type) {
     data_type = DeduceDataTypeFromPrecision(calculation_precision);
   }
 
@@ -201,8 +202,7 @@ absl::Status DelegateKernelLiteRt::BindExternalTensorBuffers(
     auto tensor_buffer =
         GetTensorBuffer(runtime_context_, buffer_context_, tflite_tensor);
     if (!tensor_buffer) {
-      LITERT_LOG(LITERT_VERBOSE,
-                 "GPU TensorBuffer not found for %s Tensor",
+      LITERT_LOG(LITERT_VERBOSE, "GPU TensorBuffer not found for %s Tensor",
                  tflite_tensor->name);
       tensor_buffer = AllocateTensorBuffer(runtime_context_, buffer_context_,
                                            tflite_tensor);
@@ -376,7 +376,8 @@ absl::Status DelegateKernelLiteRt::UpdateCreateInfoWithExternalTensors(
     const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
         input_tensor_refs,
     const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
-        output_tensor_refs) {
+        output_tensor_refs,
+    const absl::flat_hash_set<::ml_drift::ValueId>& preserved_fp32_values) {
   auto* buffer_context = reinterpret_cast<LiteRtExternalLiteRtBufferContext>(
       context->GetExternalContext(context, kTfLiteLiteRtBufferContext));
 
@@ -386,9 +387,11 @@ absl::Status DelegateKernelLiteRt::UpdateCreateInfoWithExternalTensors(
 
   // Create processing context to pass common data to helper methods
   ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
-  TensorProcessingContext proc_context{.buffer_context = buffer_context,
-                                       .gpu_info = gpu_info,
-                                       .create_info = create_info};
+  TensorProcessingContext proc_context{
+      .buffer_context = buffer_context,
+      .gpu_info = gpu_info,
+      .create_info = create_info,
+      .preserved_fp32_values = preserved_fp32_values};
 
   // Process input tensors using the graph's canonical shape/dtype.
   for (int i = 0; i < input_indices_.size(); ++i) {
@@ -445,11 +448,20 @@ absl::Status DelegateKernelLiteRt::ProcessTensor(
       shape = ::litert::ml_drift::ExtractTensorShape(tflite_tensor);
       data_type = ::litert::ml_drift::ToDataType(tflite_tensor->type);
     }
+    bool preserve_f32 = proc_context.preserved_fp32_values.contains(value_id);
+    if (!preserve_f32 && tflite_tensor && tflite_tensor->name) {
+      absl::string_view name = tflite_tensor->name;
+      if (absl::StartsWith(name, "kv_cache_r_") || name == "initial_state" ||
+          name == "final_state") {
+        preserve_f32 = true;
+      }
+    }
     ABSL_ASSIGN_OR_RETURN(
         ::ml_drift::TensorDescriptor tensor_desc,
         CreateTensorDescriptor(proc_context.gpu_info, shape, data_type,
                                delegate_data_->calculation_precision,
-                               GetStorageType(tflite_tensor->name)));
+                               GetStorageType(tflite_tensor->name),
+                               preserve_f32));
     auto tensor_storage_type = tensor_desc.GetStorageType();
 
     // Store tensor descriptor
