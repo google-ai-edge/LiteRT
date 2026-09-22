@@ -22,6 +22,10 @@
 extern "C" {
 #endif
 
+LiteRtStatus FoldConstDequantizeTransformation(
+    const LiteRtCompilerContext* context, LiteRtBuilder builder_ptr,
+    LiteRtOp op);
+
 LiteRtStatus DummyTransformation(const LiteRtCompilerContext* context,
                                  LiteRtBuilder builder_ptr, LiteRtOp op);
 

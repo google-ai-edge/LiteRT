@@ -769,9 +769,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
     LiteRtCompilerPlugin compiler_plugin,
     LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns) {
-  // Add DummyTransformation.
   compiler_plugin->transformations.push_back(
-      {&DummyTransformation, "MyDummyTransformation", 100});
+      {&FoldConstDequantizeTransformation, "FoldConstDequantize", 100});
   *num_patterns = compiler_plugin->transformations.size();
   *transformations = compiler_plugin->transformations.data();
 
