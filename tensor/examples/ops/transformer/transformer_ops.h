@@ -21,6 +21,8 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/status/status.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/ops/transformer/transformer_ops_graph.h"
@@ -98,19 +100,39 @@ Tensor<Mixins...> FeedForward(
   return FullyConnected(intermediate, down_weight, kActNone, true);
 }
 
-// Repeats KV heads for Grouped-Query Attention (GQA).
-// Expected input shape: [batch, num_kv_heads, seq_len, head_dim]
-// Output shape: [batch, num_kv_heads * num_groups, seq_len, head_dim]
+// Repeats each KV head for Grouped-Query Attention (GQA), keeping the copies
+// of a head adjacent.
+//
+// x: KV tensor of shape [batch, num_kv_heads, seq_len, head_dim].
+// num_groups: number of query heads sharing a KV head.
+//
+// For 2 batches, 2 KV heads and 3 groups:
+//
+//    A B -> A A A B B B
+//    C D -> C C C D D D
+//
+// Returns a tensor of shape [batch, num_kv_heads * num_groups, seq_len,
+// head_dim], or an error tensor if `x` is not rank 4.
 template <class... Mixins>
 Tensor<Mixins...> RepeatKVHeads(const Tensor<Mixins...>& x, int num_groups) {
+  const Shape& shape = x.GetShape();
+  if (shape.size() != 4) {
+    return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
+        absl::StrCat("RepeatKVHeads expects a rank 4 input of shape [batch, "
+                     "num_kv_heads, seq_len, head_dim], got rank ",
+                     shape.size(), "."))));
+  }
   if (num_groups <= 1) {
     return x;
   }
-  const Shape& shape = x.GetShape();
   const int batch_size = shape[0];
   const int num_kv_heads = shape[1];
   const int seq_len = shape[2];
   const int head_dim = shape[3];
+
+  if (num_kv_heads == 1) {
+    return Tile(x, {1, num_groups, 1, 1});
+  }
 
   Tensor reshaped =
       Reshape(x, {batch_size * num_kv_heads, 1, seq_len, head_dim});

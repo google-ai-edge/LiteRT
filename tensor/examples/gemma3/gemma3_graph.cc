@@ -344,10 +344,8 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
     Tensor<Mixins...> tiled_v_local = local_caches.second;
     if (kv_heads_for_attn > 0 && config.n_heads % kv_heads_for_attn == 0) {
       int num_groups = config.n_heads / kv_heads_for_attn;
-      if (num_groups > 1) {
-        tiled_k_local = Tile(tiled_k_local, {1, num_groups, 1, 1});
-        tiled_v_local = Tile(tiled_v_local, {1, num_groups, 1, 1});
-      }
+      tiled_k_local = RepeatKVHeads(tiled_k_local, num_groups);
+      tiled_v_local = RepeatKVHeads(tiled_v_local, num_groups);
     }
 
     scores = BatchMatMul(q, tiled_k_local, /*adj_x=*/false,
@@ -361,10 +359,8 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
   } else {
     if (kv_heads_for_attn > 0 && config.n_heads % kv_heads_for_attn == 0) {
       int num_groups = config.n_heads / kv_heads_for_attn;
-      if (num_groups > 1) {
-        k_for_attn = Tile(k_for_attn, {1, num_groups, 1, 1});
-        v_for_attn = Tile(v_for_attn, {1, num_groups, 1, 1});
-      }
+      k_for_attn = RepeatKVHeads(k_for_attn, num_groups);
+      v_for_attn = RepeatKVHeads(v_for_attn, num_groups);
     }
 
     k_local_out = k_for_attn;
