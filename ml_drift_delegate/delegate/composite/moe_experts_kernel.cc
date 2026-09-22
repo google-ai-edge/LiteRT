@@ -229,8 +229,11 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> ScaleWithBatchIds(
   result.desc = weights_desc;
   if (scale_handle_ptr != nullptr) {
     result.scale = *scale_handle_ptr;
-    result.scale_zp_shape =
-        ::ml_drift::OHWI(output_channels, num_experts, 1, 1);
+    // The scale tensor carries its own layout: [out_channels, experts, 1,
+    // blocks_per_row]. Taking it verbatim means a per-output-channel scale
+    // (blocks_per_row == 1) and a blockwise scale are handled by the same
+    // code path; the kernel indexes it by expert and block already.
+    result.scale_zp_shape = weight_scale->shape;
   }
   std::vector<::ml_drift::GpuModelBuilder::TensorHandle> converted_weights =
       model_builder->WeightsConversion(weights, ::ml_drift::Layout::OHWI,
