@@ -62,10 +62,12 @@ class QuantizationResult:
   Attributes:
     recipe: Quantization recipe.
     quantized_model: Quantized model.
+    serialized_path: Path where the model was serialized directly, if any.
   """
 
   recipe: _QuantRecipe
   quantized_model: bytes | bytearray | None
+  serialized_path: str | None = None
 
   def save(
       self, save_folder: Path, model_name: str, overwrite: bool = False
@@ -110,6 +112,15 @@ class QuantizationResult:
       raise RuntimeError(
           'No quantized model to save. Make sure .quantize() is called.'
       )
+    if (
+        self.serialized_path
+        and pathlib.Path(filepath).resolve()
+        == pathlib.Path(self.serialized_path).resolve()
+    ):
+      logging.info(
+          'The model is already serialized to %s, skipping export.', filepath
+      )
+      return
     if os.path.exists(filepath):
       if overwrite:
         logging.warning(
@@ -149,6 +160,7 @@ class Quantizer:
       previous_quantized_model: Optional[
           Union[Path, qtyping.BufferType]
       ] = None,
+      stream_weights: bool = False,
   ):
     """Initializes the quantizer.
 
@@ -159,8 +171,11 @@ class Quantizer:
       previous_quantized_model: Optional previously quantized tflite model, as a
         path (`str` or `pathlib.Path`) or model content in bytearray. This is
         useful for validating a quantized model without quantizing it again.
+      stream_weights: Whether to stream/defer weight quantization to minimize
+        memory.
     """
     self._model_name = float_model if isinstance(float_model, Path) else None
+    self._stream_weights = stream_weights
 
     # Load the `float_model` as a buffer.
     self._float_model_buffer = memoryview(
@@ -189,6 +204,7 @@ class Quantizer:
     self._float_model: qtyping.ModelT = tfl_flatbuffer_utils.read_model(
         self._float_model_buffer
     )
+    self._ensure_tensor_names_are_unique(self._float_model)
 
     self._recipe_manager: recipe_manager.RecipeManager = (
         recipe_manager.RecipeManager()
@@ -450,6 +466,7 @@ class Quantizer:
       serialize_to_path: qtyping.Path | None = None,
       enable_progress_bar: bool | None = None,
       enable_progress_report: bool = True,
+      stream_weights: bool | None = None,
   ) -> QuantizationResult:
     """Quantizes the float model.
 
@@ -469,6 +486,8 @@ class Quantizer:
       enable_progress_bar: Whether to enable the progress bar. By default, it is
         disabled for smaller models and enabled for larger models.
       enable_progress_report: Whether to generate a progress report.
+      stream_weights: Whether to stream/defer weight quantization to minimize
+        memory.
 
     Returns:
       Quantization result.
@@ -483,6 +502,9 @@ class Quantizer:
     if not self.get_quantization_recipe():
       raise RuntimeError('Can not quantize without a quantization recipe.')
 
+    if stream_weights is None:
+      stream_weights = self._stream_weights or (serialize_to_path is not None)
+
     if enable_progress_report:
       progress_report = progress_utils.ProgressReport(
           self._model_name or serialize_to_path  # pyrefly: ignore[bad-argument-type]
@@ -492,7 +514,7 @@ class Quantizer:
       progress_report = None
 
     quant_params = self._get_quantization_params(
-        calibration_result, enable_progress_bar
+        calibration_result, enable_progress_bar, stream_weights=stream_weights
     )
 
     quantized_model = self._get_quantized_model(
@@ -500,7 +522,9 @@ class Quantizer:
     )
 
     self._result = QuantizationResult(
-        self.get_quantization_recipe(), quantized_model  # pyrefly: ignore[bad-argument-type]
+        self.get_quantization_recipe(),
+        quantized_model,  # pyrefly: ignore[bad-argument-type]
+        serialized_path=str(serialize_to_path) if serialize_to_path else None,
     )
 
     if progress_report is not None:
@@ -588,6 +612,7 @@ class Quantizer:
       self,
       calibration_result: Optional[_CalibrationResult] = None,
       enable_progress_bar: bool | None = None,
+      stream_weights: bool = False,
   ) -> _TensorTransformationParams:
     """Gets the quantization parameters.
 
@@ -596,15 +621,20 @@ class Quantizer:
         needed, check with self.need_calibration).
       enable_progress_bar: Whether to enable the progress bar. By default, it is
         disabled for smaller models and enabled for larger models.
+      stream_weights: Whether to stream/defer weight quantization to minimize
+        memory.
 
     Returns:
       A dictionary containing the quantization parameters.
     """
     params_generator_instance = params_generator.ParamsGenerator(
-        self._float_model
+        self._float_model, stream_weights=stream_weights
     )
     return params_generator_instance.generate_quantization_parameters(
-        self._recipe_manager, calibration_result, enable_progress_bar
+        self._recipe_manager,
+        calibration_result,
+        enable_progress_bar,
+        stream_weights=stream_weights,
     )
 
   def _get_quantized_model(
@@ -627,3 +657,16 @@ class Quantizer:
     return model_modifier_instance.modify_model(
         quant_params, serialize_to_path=serialize_to_path
     )
+
+  def _ensure_tensor_names_are_unique(self, model: qtyping.ModelT) -> None:
+    """Ensures all tensor names in the model are unique across subgraphs."""
+    global_tensor_names = set()
+    for sg_ind, subgraph in enumerate(model.subgraphs):
+      for t_ind, tensor in enumerate(subgraph.tensors):
+        tensor_name = tfl_flatbuffer_utils.get_tensor_name(tensor)
+        if not tensor_name or tensor_name in global_tensor_names:
+          base_name = tensor_name or f'tensor_sg{sg_ind}_{t_ind}'
+          unique_name = f'{base_name}__sg{sg_ind}_t{t_ind}'
+          tensor.name = unique_name.encode('utf-8')
+          tensor_name = unique_name
+        global_tensor_names.add(tensor_name)
