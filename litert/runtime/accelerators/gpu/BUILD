@@ -294,7 +294,10 @@ cc_library(
     name = "ml_drift_opengl_accelerator",
     srcs = ["ml_drift_opengl_accelerator.cc"],
     defines = ["LITERT_USE_STATIC_LINKED_GPU_ACCELERATOR"],
-    visibility = ["//research/drishti:__subpackages__"],
+    visibility = [
+        "//litert:litert_friends",
+        "//research/drishti:__subpackages__",
+    ],
     deps = [
         ":ml_drift_delegate_create",
         "//litert/c:litert_common",
