@@ -53,10 +53,13 @@ else
 
   # Run configure.
   # LINT.IfChange(configure_tflite_build_flags)
-  # Keep compiler configuration consistent with LiteRT GitHub Actions CI
+  # Keep compiler and Python configuration consistent with LiteRT GitHub Actions CI
   # (tflite_bazel_cmake.yml) to ensure Bazel remote cache hits.
-  export PYTHON_BIN_PATH="$(which python3)"
-  export PYTHON_LIB_PATH="$(python3 -c 'import site; print(site.getsitepackages()[0])')"
+  ln -sf "$(which python3)" /usr/local/bin/python3
+  mkdir -p /usr/local/lib/python3.11
+  ln -sfn "$(python3 -c 'import site; print(site.getsitepackages()[0])')" /usr/local/lib/python3.11/site-packages
+  export PYTHON_BIN_PATH="/usr/local/bin/python3"
+  export PYTHON_LIB_PATH="/usr/local/lib/python3.11/site-packages"
   export TF_NEED_ROCM=0
   export TF_NEED_CLANG=0
   export TF_NEED_CUDA=0
