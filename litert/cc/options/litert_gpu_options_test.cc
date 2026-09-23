@@ -23,6 +23,17 @@
 using ::testing::Eq;
 using ::testing::StrEq;
 
+namespace litert::test {
+
+class GpuOptionsTestPeer {
+ public:
+  static LiteRtStatus SetUseIrModel(GpuOptions& options, bool use_ir_model) {
+    return options.SetUseIrModel(use_ir_model);
+  }
+};
+
+}  // namespace litert::test
+
 namespace litert::ml_drift {
 namespace {
 
@@ -320,6 +331,31 @@ TEST(GpuOptions, SetKernelBatchSizeWorks) {
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
       &kernel_batch_size, payload));
   EXPECT_THAT(kernel_batch_size, Eq(10));
+}
+
+TEST(GpuOptions, SetUseIrModelWorks) {
+  LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
+  LrtGpuOptions* payload = options.Get();
+
+  bool use_ir_model = true;
+#if defined(LITERT_GPU_USE_IR_MODEL)
+  LITERT_ASSERT_OK(LrtGetGpuOptionsUseIrModel(&use_ir_model, payload));
+  EXPECT_THAT(use_ir_model, Eq(static_cast<bool>(LITERT_GPU_USE_IR_MODEL)));
+#else
+  // Check that it returns kLiteRtStatusErrorNotFound when not set.
+  EXPECT_THAT(LrtGetGpuOptionsUseIrModel(&use_ir_model, payload),
+              ::testing::litert::IsError(kLiteRtStatusErrorNotFound));
+#endif
+
+  LITERT_EXPECT_OK(test::GpuOptionsTestPeer::SetUseIrModel(options, true));
+
+  LITERT_ASSERT_OK(LrtGetGpuOptionsUseIrModel(&use_ir_model, payload));
+  EXPECT_THAT(use_ir_model, Eq(true));
+
+  LITERT_EXPECT_OK(test::GpuOptionsTestPeer::SetUseIrModel(options, false));
+
+  LITERT_ASSERT_OK(LrtGetGpuOptionsUseIrModel(&use_ir_model, payload));
+  EXPECT_THAT(use_ir_model, Eq(false));
 }
 
 }  // namespace

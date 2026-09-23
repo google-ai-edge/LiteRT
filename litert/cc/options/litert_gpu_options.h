@@ -23,9 +23,25 @@
 
 namespace litert {
 
+namespace benchmark {
+class BenchmarkLiteRtModel;
+}  // namespace benchmark
+
+namespace test {
+class GpuOptionsTestPeer;
+}  // namespace test
+
+namespace tools {
+class GpuNumericsCheck;
+}  // namespace tools
+
 /// @brief Defines the C++ wrapper for LiteRT GPU options.
 class GpuOptions : public ConcreteOptionsBase {
  public:
+  friend class benchmark::BenchmarkLiteRtModel;
+  friend class test::GpuOptionsTestPeer;
+  friend class tools::GpuNumericsCheck;
+
   GpuOptions() : options_(nullptr) {}
   explicit GpuOptions(LrtGpuOptions* options) : options_(options) {}
   ~GpuOptions() override {
@@ -362,6 +378,11 @@ class GpuOptions : public ConcreteOptionsBase {
   }
 
  private:
+  /// @brief Sets whether to use IrModel instead of legacy GraphFloat32.
+  LiteRtStatus SetUseIrModel(bool use_ir_model) {
+    return LrtSetGpuOptionsUseIrModel(options_, use_ir_model);
+  }
+
   LrtGpuOptions* options_;
 };
 
