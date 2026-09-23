@@ -1231,6 +1231,19 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeGetOutputTensorType(
   return ToJavaTensorType(env, *tensor_type);
 }
 
+JNIEXPORT jlong JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeGetLastInferenceDurationNanoseconds(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle) {
+  auto& compiled_model = GetCompiledModel(compiled_model_handle);
+  auto duration = compiled_model.LastInferenceDurationNanoseconds();
+  if (!duration) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get last inference duration: %s",
+               duration.Error().Message().c_str());
+    return -1;
+  }
+  return *duration;
+}
+
 JNIEXPORT void JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeDestroy(JNIEnv* env,
                                                            jclass clazz,

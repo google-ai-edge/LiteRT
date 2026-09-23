@@ -107,6 +107,10 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeGetOutputTensorType(
     JNIEnv* env, jclass clazz, jlong handle, jstring output_name,
     jstring signature);
 
+JNIEXPORT jlong JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeGetLastInferenceDurationNanoseconds(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

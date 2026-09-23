@@ -306,7 +306,15 @@ TEST(CompiledModelTest, Basic) {
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute model with input and output buffers.
+  auto duration_before = compiled_model.LastInferenceDurationNanoseconds();
+  ASSERT_TRUE(duration_before);
+  EXPECT_EQ(*duration_before, -1);
+
   compiled_model.Run(input_buffers, output_buffers);
+
+  auto duration_after = compiled_model.LastInferenceDurationNanoseconds();
+  ASSERT_TRUE(duration_after);
+  EXPECT_GT(*duration_after, 0);
 
   // Check model output.
   {
