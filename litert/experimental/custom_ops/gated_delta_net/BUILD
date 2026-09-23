@@ -58,6 +58,7 @@ cc_test(
     name = "gated_delta_update_litert_custom_op_test",
     srcs = ["gated_delta_update_litert_custom_op_test.cc"],
     deps = [
+        ":gated_delta_update_impl",
         ":gated_delta_update_litert_custom_op",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_layout",
