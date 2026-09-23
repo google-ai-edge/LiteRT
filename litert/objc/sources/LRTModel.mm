@@ -30,16 +30,20 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/**
+ * Converts C++ string views, which need not be NUL-terminated, into an array of NSStrings.
+ *
+ * Callers index the result by tensor or signature index, so a name that is not valid UTF-8
+ * becomes an empty string rather than being dropped, which would shift every later index.
+ */
 static NSArray<NSString *> *ConvertStringViewsToObjCArray(
     const std::vector<litert::StringView> &stringViews) {
   NSMutableArray<NSString *> *array = [NSMutableArray arrayWithCapacity:stringViews.size()];
-  for (const auto &sv : stringViews) {
-    NSString *str = [[NSString alloc] initWithBytes:sv.data()
-                                             length:sv.size()
-                                           encoding:NSUTF8StringEncoding];
-    if (str != nil) {
-      [array addObject:str];
-    }
+  for (const auto &stringView : stringViews) {
+    NSString *string = [[NSString alloc] initWithBytes:stringView.data()
+                                                length:stringView.size()
+                                              encoding:NSUTF8StringEncoding];
+    [array addObject:string ?: @""];
   }
   return [array copy];
 }
