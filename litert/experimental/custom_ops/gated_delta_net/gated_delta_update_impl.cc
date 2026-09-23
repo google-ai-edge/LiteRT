@@ -54,26 +54,33 @@ void ComputeGatedDeltaUpdateRecurrent(const float* q_t, const float* k_t,
                                       const float* v_t, const float* beta_t,
                                       const float* g_t, const float* rec_state,
                                       float* core_out, float* new_rec, int B,
-                                      int H, int N, int D_k, int D_v) {
+                                      int H, int N, int D_k, int D_v, int H_k) {
   using Matrix =
       Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
   using Vector = Eigen::Matrix<float, Eigen::Dynamic, 1>;
 
+  const int actual_H_k = (H_k > 0) ? H_k : H;
+  const int gqa_ratio = H / actual_H_k;
+
   for (int bh = 0; bh < B * H; ++bh) {
+    const int b = bh / H;
+    const int h = bh % H;
+    const int bh_k = b * actual_H_k + (h / gqa_ratio);
+
     Eigen::Map<const Matrix> S_in(rec_state + bh * D_k * D_v, D_k, D_v);
     Eigen::Map<Matrix> S_out(new_rec + bh * D_k * D_v, D_k, D_v);
     S_out = S_in;
 
-    const float* q_bh = q_t + bh * N * D_k;
-    const float* k_bh = k_t + bh * N * D_k;
+    const float* q_bh = q_t + bh_k * N * D_k;
+    const float* k_bh = k_t + bh_k * N * D_k;
     const float* v_bh = v_t + bh * N * D_v;
     const float* beta_bh = beta_t + bh * N;
     const float* g_bh = g_t + bh * N;
     float* out_bh = core_out + bh * N * D_v;
 
     for (int t = 0; t < N; ++t) {
-      const float g_val = std::exp(g_bh[t]);
-      const float beta_val = beta_bh[t];
+      const float g_val = (g_bh[t] <= 0.0f) ? std::exp(g_bh[t]) : 1.0f;
+      const float beta_val = (beta_bh[t] > 0.0f) ? beta_bh[t] : 0.0f;
       Eigen::Map<const Vector> k_val(k_bh + t * D_k, D_k);
       Eigen::Map<const Vector> v_val(v_bh + t * D_v, D_v);
       Eigen::Map<const Vector> q_val(q_bh + t * D_k, D_k);
@@ -92,20 +99,26 @@ void ComputeGatedDeltaUpdateChunked(const float* q_t, const float* k_t,
                                     const float* v_t, const float* beta_t,
                                     const float* g_t, const float* rec_state,
                                     float* core_out, float* new_rec, int B,
-                                    int H, int N, int D_k, int D_v) {
+                                    int H, int N, int D_k, int D_v, int H_k) {
   using Matrix =
       Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
   using Vector = Eigen::Matrix<float, Eigen::Dynamic, 1>;
 
   const int chunk_size = 64;
+  const int actual_H_k = (H_k > 0) ? H_k : H;
+  const int gqa_ratio = H / actual_H_k;
 
   for (int bh = 0; bh < B * H; ++bh) {
+    const int b = bh / H;
+    const int h = bh % H;
+    const int bh_k = b * actual_H_k + (h / gqa_ratio);
+
     Eigen::Map<const Matrix> S_in(rec_state + bh * D_k * D_v, D_k, D_v);
     Eigen::Map<Matrix> S_out(new_rec + bh * D_k * D_v, D_k, D_v);
     S_out = S_in;
 
-    const float* q_bh = q_t + bh * N * D_k;
-    const float* k_bh = k_t + bh * N * D_k;
+    const float* q_bh = q_t + bh_k * N * D_k;
+    const float* k_bh = k_t + bh_k * N * D_k;
     const float* v_bh = v_t + bh * N * D_v;
     const float* beta_bh = beta_t + bh * N;
     const float* g_bh = g_t + bh * N;
@@ -123,12 +136,13 @@ void ComputeGatedDeltaUpdateChunked(const float* q_t, const float* k_t,
       Vector g_cumsum(chunk_size);
       float sum = 0.0f;
       for (int i = 0; i < chunk_size; ++i) {
-        sum += g_c[i];
+        sum += (g_c[i] <= 0.0f) ? g_c[i] : 0.0f;
         g_cumsum[i] = sum;
       }
 
-      Matrix K_beta = K_c.array().colwise() * beta_c.array();
-      Matrix V_beta = V_c.array().colwise() * beta_c.array();
+      Vector beta_clean = beta_c.cwiseMax(0.0f);
+      Matrix K_beta = K_c.array().colwise() * beta_clean.array();
+      Matrix V_beta = V_c.array().colwise() * beta_clean.array();
 
       Matrix A_in = Matrix::Zero(chunk_size, chunk_size);
       Matrix K_KT = K_beta * K_c.transpose();
@@ -174,8 +188,8 @@ void ComputeGatedDeltaUpdateChunked(const float* q_t, const float* k_t,
     }
 
     for (; t < N; ++t) {
-      const float g_val = std::exp(g_bh[t]);
-      const float beta_val = beta_bh[t];
+      const float g_val = (g_bh[t] <= 0.0f) ? std::exp(g_bh[t]) : 1.0f;
+      const float beta_val = (beta_bh[t] > 0.0f) ? beta_bh[t] : 0.0f;
       Eigen::Map<const Vector> k_val(k_bh + t * D_k, D_k);
       Eigen::Map<const Vector> v_val(v_bh + t * D_v, D_v);
       Eigen::Map<const Vector> q_val(q_bh + t * D_k, D_k);

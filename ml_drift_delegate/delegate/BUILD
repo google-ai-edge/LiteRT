@@ -517,6 +517,7 @@ cc_library(
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "//ml_drift_delegate/delegate/composite:custom_parsers",
         "//ml_drift_delegate/delegate/composite:custom_transformations",
+        "//ml_drift_delegate/delegate/composite:gated_delta_update_parser",
         "//ml_drift_delegate/delegate/composite:litert_op_selector",
         "//ml_drift_delegate/delegate/composite/ir:custom_parsers",
         "//ml_drift_delegate/delegate/composite/ir:litert_op_selector",
