@@ -107,9 +107,13 @@ litert_bin(
         "registry.h",
     ],
     copts = select({
-        "//litert:windows": [
+        "//litert/runtime/dispatch:windows_msvc": [
             "/DLITERT_COMPILE_LIBRARY",
             "/wd4018",  # -Wno-sign-compare
+        ],
+        "//litert/runtime/dispatch:windows_lexan": [
+            "-DLITERT_COMPILE_LIBRARY",
+            "-Wno-sign-compare",
         ],
         "//conditions:default": [],
     }),
@@ -124,7 +128,7 @@ litert_bin(
         "//litert:windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    visibility = ["//litert:litert_public"],
+    visibility = ["//visibility:public"],  # Allows LiteRT-LM packaging.
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
