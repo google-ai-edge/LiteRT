@@ -1088,6 +1088,16 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return non_cpu_fully_accelerated;
   }
 
+  /// @brief Returns the duration of the last native inference in nanoseconds.
+  /// Returns -1 if no inference has been executed yet or if the last inference
+  /// failed.
+  Expected<int64_t> LastInferenceDurationNanoseconds() const {
+    int64_t duration = -1;
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->GetCompiledModelLastInferenceDuration(Get(), &duration));
+    return duration;
+  }
+
   /// @brief Sets a callback function that will be called after every node/op
   /// during model execution to check if the execution should be cancelled.
   ///

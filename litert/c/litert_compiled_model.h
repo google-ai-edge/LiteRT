@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_C_LITERT_COMPILED_MODEL_H_
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
@@ -221,6 +222,16 @@ LiteRtStatus LiteRtRunCompiledModelAsyncWithSchedulingInfo(
     size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
     size_t num_output_buffers, LiteRtTensorBuffer* output_buffers, bool* async,
     const LiteRtSchedulingInfo* scheduling_info);
+
+// Returns the duration of the last native inference in nanoseconds.
+// If no inference has been executed yet, or if the last inference failed,
+// *duration_nanoseconds will be set to -1.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - duration_nanoseconds: pointer to int64_t to receive the duration in ns.
+LiteRtStatus LiteRtGetCompiledModelLastInferenceDuration(
+    LiteRtCompiledModel compiled_model, int64_t* duration_nanoseconds);
 
 // Sets a callback function that will be called periodically during model
 // execution to check if the execution should be cancelled.

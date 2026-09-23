@@ -347,6 +347,23 @@ private constructor(
     }
   }
 
+  /**
+   * The duration of the most recent native inference execution, in nanoseconds, or `null` if this
+   * model has not been run yet or if the most recent run failed.
+   *
+   * The measured interval covers the native execution of the compiled model graph by the underlying
+   * runtime (and hardware accelerator synchronization), matching the semantics of TFLite's
+   * `Interpreter.getLastNativeInferenceDurationNanoseconds()` API. It excludes buffer registration,
+   * host memory locking/mapping, tensor allocation, and data marshalling between Kotlin and native
+   * memory.
+   */
+  val lastNativeInferenceDurationNanoseconds: Long?
+    get() {
+      assertNotDestroyed()
+      val duration = nativeGetLastInferenceDurationNanoseconds(handle)
+      return if (duration < 0) null else duration
+    }
+
   @Throws(LiteRtException::class)
   fun createInputBuffer(inputName: String, signature: String = ""): TensorBuffer {
     assertNotDestroyed()
@@ -441,24 +458,18 @@ private constructor(
   fun run(inputs: List<TensorBuffer>, outputs: List<TensorBuffer>, signatureIndex: Int = 0) {
     assertNotDestroyed()
 
-    nativeRun(
-      handle,
-      signatureIndex,
-      inputs.map { it.handle }.toLongArray(),
-      outputs.map { it.handle }.toLongArray(),
-    )
+    val inputHandles = inputs.map { it.handle }.toLongArray()
+    val outputHandles = outputs.map { it.handle }.toLongArray()
+    nativeRun(handle, signatureIndex, inputHandles, outputHandles)
   }
 
   @Throws(LiteRtException::class)
   fun run(inputs: List<TensorBuffer>, outputs: List<TensorBuffer>, signature: String) {
     assertNotDestroyed()
 
-    nativeRunBySignature(
-      handle,
-      signature,
-      inputs.map { it.handle }.toLongArray(),
-      outputs.map { it.handle }.toLongArray(),
-    )
+    val inputHandles = inputs.map { it.handle }.toLongArray()
+    val outputHandles = outputs.map { it.handle }.toLongArray()
+    nativeRunBySignature(handle, signature, inputHandles, outputHandles)
   }
 
   @Throws(LiteRtException::class)
@@ -469,13 +480,17 @@ private constructor(
   ) {
     assertNotDestroyed()
 
+    val inputKeys = inputs.keys.toTypedArray()
+    val inputHandles = inputs.values.map { it.handle }.toLongArray()
+    val outputKeys = outputs.keys.toTypedArray()
+    val outputHandles = outputs.values.map { it.handle }.toLongArray()
     nativeRunBySignatureWithMap(
       handle,
       signature,
-      inputs.keys.toTypedArray(),
-      inputs.values.map { it.handle }.toLongArray(),
-      outputs.keys.toTypedArray(),
-      outputs.values.map { it.handle }.toLongArray(),
+      inputKeys,
+      inputHandles,
+      outputKeys,
+      outputHandles,
     )
   }
 
@@ -718,6 +733,9 @@ private constructor(
       outputName: String,
       signature: String,
     ): TensorType
+
+    @JvmStatic
+    private external fun nativeGetLastInferenceDurationNanoseconds(compiledModelHandle: Long): Long
 
     @JvmStatic private external fun nativeDestroy(handle: Long)
   }

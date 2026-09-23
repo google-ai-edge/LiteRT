@@ -531,6 +531,13 @@ class RuntimeProxy {
         output_buffers, async, scheduling_info);
   }
 
+  LiteRtStatus GetCompiledModelLastInferenceDuration(
+      LiteRtCompiledModel compiled_model, int64_t* duration_nanoseconds) {
+    LITERT_PROXY_METHOD_STATUS(
+        litert_get_compiled_model_last_inference_duration, compiled_model,
+        duration_nanoseconds);
+  }
+
   LiteRtStatus SetCompiledModelCancellationFunction(
       LiteRtCompiledModel compiled_model, void* data,
       bool (*check_cancelled_func)(void*)) {

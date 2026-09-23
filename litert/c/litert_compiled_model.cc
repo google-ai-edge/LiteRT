@@ -17,6 +17,7 @@
 #include <stddef.h>
 
 #include <cstdarg>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -264,6 +265,15 @@ LiteRtStatus LiteRtRunCompiledModelAsyncWithSchedulingInfo(
     LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
     return litert::ToLiteRtStatus(res.Error().StatusCC());
   }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompiledModelLastInferenceDuration(
+    LiteRtCompiledModel compiled_model, int64_t* duration_nanoseconds) {
+  if (!compiled_model || !duration_nanoseconds) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *duration_nanoseconds = compiled_model->GetLastInferenceDurationNanoseconds();
   return kLiteRtStatusOk;
 }
 
