@@ -1,4 +1,4 @@
-FROM us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
+FROM us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:d6b429665f5269698f88ccd00bcb8a6eb685332c302f08f29fe0738cd6a6610c
 RUN apt-get update && apt-get install -y --no-install-recommends libc++-18-dev libc++abi-18-dev llvm-18 clang-18
 
 # Install pyenv and pre-compile Python 3.11
