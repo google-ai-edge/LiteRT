@@ -311,7 +311,7 @@ class IrModelBuilder {
           continue;
         }
         SharedTfliteTensor shared_info;
-        shared_info.tflite_tensor_id = tensor->buffer_source.tflite_tensor_id;
+        shared_info.tflite_tensor_id = tensor->buffer_source.tensor_id;
         shared_info.global_id = tensor->buffer_source.global_id;
         shared_info.dequant_forced = tensor->buffer_source.dequant_forced;
         if (tensor->buffer_source.force_linear_layout) {
