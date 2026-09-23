@@ -78,10 +78,23 @@ struct CacheEntry {
   TensorDescriptor tensor_desc;
 };
 
+// Options for generating a unique model identifier for the weight cache.
+struct ModelIdentifierOptions {
+  MlDriftDelegatePrecision precision = kDefault;
+  bool prefer_texture_weights = false;
+  bool allow_src_quantized_fc_conv_ops = false;
+  bool prepare_weights_in_batches = false;
+  bool serialize_external_tensors = false;
+  bool ordered_by_size = true;
+  bool use_ir_model = false;
+};
+
 // Allows MLDrift to directly load packed weights from disk instead of having to
 // repack them every time.
 class SerializationWeightCache {
  public:
+  using ModelIdentifierOptions = ::ml_drift::ModelIdentifierOptions;
+
   SerializationWeightCache() = default;
 
   // Non-copyable.
@@ -162,9 +175,16 @@ class SerializationWeightCache {
       absl::string_view model_token, TfLiteContext* context,
       const TfLiteDelegateParams* delegate_params,
       absl::string_view serialization_prefix,
+      const ModelIdentifierOptions& options);
+
+  // Overload for backward compatibility.
+  static uint64_t GenerateUniqueModelIdentifier(
+      absl::string_view model_token, TfLiteContext* context,
+      const TfLiteDelegateParams* delegate_params,
+      absl::string_view serialization_prefix,
       const MlDriftDelegatePrecision& precision, bool prefer_texture_weights,
       bool allow_src_quantized_fc_conv_ops, bool prepare_weights_in_batches,
-      bool serialize_external_tensors, bool ordered_by_size);
+      bool serialize_external_tensors, bool ordered_by_size, bool use_ir_model);
 
  private:
   friend class SerializationWeightCacheTestPeer;

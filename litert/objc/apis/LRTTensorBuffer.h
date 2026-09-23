@@ -208,6 +208,9 @@ typedef NS_ENUM(NSInteger, LRTTensorBufferType) {
 /**
  * Overwrites the contents of the tensor buffer with the provided data.
  *
+ * @note At most @c size bytes are written: any extra bytes in @c data are ignored, and any bytes
+ * of the tensor buffer beyond @c data.length keep their previous contents.
+ *
  * @param data Bytes to write into the tensor buffer.
  * @param error Out-parameter populated on failure.
  * @return YES on success, NO on failure.
