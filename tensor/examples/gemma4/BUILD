@@ -62,6 +62,7 @@ cc_test(
     deps = [
         ":gemma4_config",
         ":gemma4_graph",
+        ":gemma4_weights",
         "//tensor",
         "//tensor:buffer",
         "//tensor:datatypes",
