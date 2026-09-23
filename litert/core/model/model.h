@@ -34,7 +34,9 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/container/inlined_vector.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -1611,6 +1613,116 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
       absl::Format(&sink, "%v", softmax_opts);
       break;
     }
+    case tflite::BuiltinOptions_ConcatenationOptions: {
+      const auto* concat_opts = opts.AsConcatenationOptions();
+      absl::Format(&sink, "%v", concat_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_PadOptions: {
+      const auto* pad_opts = opts.AsPadOptions();
+      absl::Format(&sink, "%v", pad_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_PadV2Options: {
+      const auto* pad_v2_opts = opts.AsPadV2Options();
+      absl::Format(&sink, "%v", pad_v2_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_MirrorPadOptions: {
+      const auto* mirror_pad_opts = opts.AsMirrorPadOptions();
+      absl::Format(&sink, "%v", mirror_pad_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_TransposeOptions: {
+      const auto* transpose_opts = opts.AsTransposeOptions();
+      absl::Format(&sink, "%v", transpose_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_SliceOptions: {
+      const auto* slice_opts = opts.AsSliceOptions();
+      absl::Format(&sink, "%v", slice_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_SelectV2Options: {
+      const auto* select_v2_opts = opts.AsSelectV2Options();
+      absl::Format(&sink, "%v", select_v2_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_SqueezeOptions: {
+      const auto* squeeze_opts = opts.AsSqueezeOptions();
+      absl::Format(&sink, "%v", squeeze_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_PackOptions: {
+      const auto* pack_opts = opts.AsPackOptions();
+      absl::Format(&sink, "%v", pack_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_UnpackOptions: {
+      const auto* unpack_opts = opts.AsUnpackOptions();
+      absl::Format(&sink, "%v", unpack_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_SplitOptions: {
+      const auto* split_opts = opts.AsSplitOptions();
+      absl::Format(&sink, "%v", split_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_StridedSliceOptions: {
+      const auto* strided_slice_opts = opts.AsStridedSliceOptions();
+      absl::Format(&sink, "%v", strided_slice_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_SpaceToDepthOptions: {
+      const auto* std_opts = opts.AsSpaceToDepthOptions();
+      absl::Format(&sink, "%v", std_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_DepthToSpaceOptions: {
+      const auto* dts_opts = opts.AsDepthToSpaceOptions();
+      absl::Format(&sink, "%v", dts_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_GatherOptions: {
+      const auto* gather_opts = opts.AsGatherOptions();
+      absl::Format(&sink, "%v", gather_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_GatherNdOptions: {
+      const auto* gather_nd_opts = opts.AsGatherNdOptions();
+      absl::Format(&sink, "%v", gather_nd_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_CumsumOptions: {
+      const auto* cumsum_opts = opts.AsCumsumOptions();
+      absl::Format(&sink, "%v", cumsum_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_ResizeBilinearOptions: {
+      const auto* rb_opts = opts.AsResizeBilinearOptions();
+      absl::Format(&sink, "%v", rb_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_ResizeNearestNeighborOptions: {
+      const auto* rnn_opts = opts.AsResizeNearestNeighborOptions();
+      absl::Format(&sink, "%v", rnn_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_TransposeConvOptions: {
+      const auto* tc_opts = opts.AsTransposeConvOptions();
+      absl::Format(&sink, "%v", tc_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_LeakyReluOptions: {
+      const auto* lr_opts = opts.AsLeakyReluOptions();
+      absl::Format(&sink, "%v", lr_opts);
+      break;
+    }
+    case tflite::BuiltinOptions_L2NormOptions: {
+      const auto* l2_opts = opts.AsL2NormOptions();
+      absl::Format(&sink, "%v", l2_opts);
+      break;
+    }
     case tflite::BuiltinOptions_NONE: {
       absl::Format(&sink, "{}");
       break;
@@ -1805,15 +1917,7 @@ void AbslStringify(Sink& sink, const DivOptionsT* opts) {
 template <class Sink>
 void AbslStringify(Sink& sink, const ReshapeOptionsT& opts) {
   ::litert::internal::OptionStrBuilder b(sink);
-  std::string shape_str = "[";
-  for (auto it = opts.new_shape.begin(); it != opts.new_shape.end(); ++it) {
-    if (it != opts.new_shape.begin()) {
-      shape_str += ",";
-    }
-    shape_str += std::to_string(*it);
-  }
-  shape_str += "]";
-  b("new_shape", shape_str);
+  b("new_shape", absl::StrCat("[", absl::StrJoin(opts.new_shape, ","), "]"));
 }
 
 template <class Sink>
@@ -1879,6 +1983,273 @@ void AbslStringify(Sink& sink, const SoftmaxOptionsT& opts) {
 
 template <class Sink>
 void AbslStringify(Sink& sink, const SoftmaxOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ConcatenationOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("fa", opts.fused_activation_function);
+  b("axis", opts.axis);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ConcatenationOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const PadOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const PadOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const PadV2OptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const PadV2OptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <typename Sink>
+void AbslStringify(Sink& sink, const MirrorPadMode& mode) {
+  switch (mode) {
+    case MirrorPadMode_REFLECT:
+      sink.Append("REFLECT");
+      break;
+    case MirrorPadMode_SYMMETRIC:
+      sink.Append("SYMMETRIC");
+      break;
+    default:
+      sink.Append(::litert::kNoPrinterTag);
+      break;
+  }
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const MirrorPadOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("mode", opts.mode);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const MirrorPadOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const TransposeOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const TransposeOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SliceOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SliceOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SelectV2OptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SelectV2OptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SqueezeOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("squeeze_dims",
+    absl::StrCat("[", absl::StrJoin(opts.squeeze_dims, ","), "]"));
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SqueezeOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const PackOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("values_count", opts.values_count);
+  b("axis", opts.axis);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const PackOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const UnpackOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("num", opts.num);
+  b("axis", opts.axis);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const UnpackOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SplitOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("num_splits", opts.num_splits);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SplitOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const StridedSliceOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("begin_mask", opts.begin_mask);
+  b("end_mask", opts.end_mask);
+  b("ellipsis_mask", opts.ellipsis_mask);
+  b("new_axis_mask", opts.new_axis_mask);
+  b("shrink_axis_mask", opts.shrink_axis_mask);
+  b("offset", opts.offset);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const StridedSliceOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SpaceToDepthOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("block_size", opts.block_size);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SpaceToDepthOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const DepthToSpaceOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("block_size", opts.block_size);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const DepthToSpaceOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const GatherOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("axis", opts.axis);
+  b("batch_dims", opts.batch_dims);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const GatherOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const GatherNdOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const GatherNdOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const CumsumOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("exclusive", opts.exclusive);
+  b("reverse", opts.reverse);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const CumsumOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ResizeBilinearOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("align_corners", opts.align_corners);
+  b("half_pixel_centers", opts.half_pixel_centers);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ResizeBilinearOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ResizeNearestNeighborOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("align_corners", opts.align_corners);
+  b("half_pixel_centers", opts.half_pixel_centers);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ResizeNearestNeighborOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const TransposeConvOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("fa", opts.fused_activation_function);
+  b("padding", opts.padding);
+  b("stride_w", opts.stride_w);
+  b("stride_h", opts.stride_h);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const TransposeConvOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const LeakyReluOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("alpha", opts.alpha);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const LeakyReluOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const L2NormOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  b("fa", opts.fused_activation_function);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const L2NormOptionsT* opts) {
   ::litert::internal::PrintNullableOpts(sink, opts);
 }
 
