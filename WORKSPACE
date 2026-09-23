@@ -307,6 +307,17 @@ maven_install(
     name = "litert_maven",
     artifacts = [
         "androidx.lifecycle:lifecycle-common:2.8.7",
+        # Not used directly, but pinned so that `version_conflict_policy =
+        # "pinned"` passes `--force-version` for it to Coursier. Without the
+        # pin, Coursier has to resolve the `[2.5.1]` version range that
+        # androidx.lifecycle:lifecycle-service declares on it (reached through
+        # com.google.android.play:ai-delivery -> asset-delivery ->
+        # androidx.work:work-runtime). Resolving a range requires fetching
+        # maven-metadata.xml, and the SHA-1 published for that file on
+        # maven.google.com is stale, which fails the whole resolution. 2.5.1 is
+        # the version that was being resolved before, so the resulting
+        # dependency graph is unchanged.
+        "androidx.lifecycle:lifecycle-runtime:2.5.1",
         "com.google.android.odml:image:aar:1.0.0-beta1",
         "com.google.android.play:ai-delivery:0.1.1-alpha01",
         "com.google.errorprone:error_prone_annotations:2.50.0",
@@ -317,7 +328,6 @@ maven_install(
         "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.0",
     ],
     repositories = [
-        "https://jcenter.bintray.com",
         "https://maven.google.com",
         "https://dl.google.com/dl/android/maven2",
         "https://repo1.maven.org/maven2",
