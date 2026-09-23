@@ -89,7 +89,12 @@ absl::StatusOr<HardwareBufferDescriptor> NegotiatePortDescriptor(
 
     auto new_harmonized_or = BoundaryLayoutNegotiator::HarmonizeStageBoundary(
         harmonized, *cons_desc_or);
-    if (!new_harmonized_or.ok()) return new_harmonized_or.status();
+    if (!new_harmonized_or.ok()) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Connecting '", from_stage->Name(), "'.'", output_name, "' to '",
+          consumer.to_stage->Name(), "'.'", consumer.input_name,
+          "': ", new_harmonized_or.status().message()));
+    }
     harmonized = *new_harmonized_or;
   }
   return harmonized;
@@ -607,7 +612,7 @@ absl::StatusOr<litert::TensorBuffer> ReinterpretBufferIfNeeded(
     return std::move(*view_or);
   }
 #if LITERT_HAS_OPENCL_SUPPORT
-  if (btype == litert::TensorBufferType::kOpenClBuffer) {
+  if (litert::IsOpenClMemory(btype)) {
     auto cl_mem_or = litert_buf->tensor_buffer().GetOpenClMemory();
     if (!cl_mem_or.HasValue()) {
       return absl::InternalError(absl::StrCat(
@@ -743,9 +748,28 @@ BoundaryLayoutNegotiator::HarmonizeStageBoundary(
   HardwareBufferDescriptor harmonized;
 
   // 1. Data Type Validation
+  bool is_fp_compat =
+      ((producer_desc.element_type == litert::ElementType::Float16 &&
+        consumer_desc.element_type == litert::ElementType::Float32) ||
+       (producer_desc.element_type == litert::ElementType::Float32 &&
+        consumer_desc.element_type == litert::ElementType::Float16)) &&
+      (producer_desc.buffer_type ==
+           litert::TensorBufferType::kOpenClTextureFp16 ||
+       consumer_desc.buffer_type ==
+           litert::TensorBufferType::kOpenClTextureFp16 ||
+       producer_desc.buffer_type ==
+           litert::TensorBufferType::kOpenClBufferFp16 ||
+       consumer_desc.buffer_type ==
+           litert::TensorBufferType::kOpenClBufferFp16 ||
+       producer_desc.buffer_type ==
+           litert::TensorBufferType::kOpenClImageBufferFp16 ||
+       consumer_desc.buffer_type ==
+           litert::TensorBufferType::kOpenClImageBufferFp16);
+
   if (producer_desc.element_type != litert::ElementType::None &&
       consumer_desc.element_type != litert::ElementType::None &&
-      producer_desc.element_type != consumer_desc.element_type) {
+      producer_desc.element_type != consumer_desc.element_type &&
+      !is_fp_compat) {
     return absl::InvalidArgumentError(absl::StrCat(
         "Type mismatch across stage boundary: producer outputs type ",
         static_cast<int>(producer_desc.element_type),
@@ -753,9 +777,11 @@ BoundaryLayoutNegotiator::HarmonizeStageBoundary(
         static_cast<int>(consumer_desc.element_type)));
   }
   harmonized.element_type =
-      (producer_desc.element_type != litert::ElementType::None)
-          ? producer_desc.element_type
-          : consumer_desc.element_type;
+      is_fp_compat
+          ? litert::ElementType::Float16
+          : ((producer_desc.element_type != litert::ElementType::None)
+                 ? producer_desc.element_type
+                 : consumer_desc.element_type);
 
   // 2. Shape Validation (allow differences only in singleton dimensions)
   auto NumElements = [](const std::vector<int32_t>& s) -> int64_t {
@@ -853,6 +879,16 @@ BoundaryLayoutNegotiator::HarmonizeStageBoundary(
   if (producer_desc.buffer_type == litert::TensorBufferType::kAhwb ||
       consumer_desc.buffer_type == litert::TensorBufferType::kAhwb) {
     harmonized.buffer_type = litert::TensorBufferType::kAhwb;
+  } else if (producer_desc.buffer_type ==
+                 litert::TensorBufferType::kOpenClTexture ||
+             producer_desc.buffer_type ==
+                 litert::TensorBufferType::kOpenClTextureFp16) {
+    harmonized.buffer_type = producer_desc.buffer_type;
+  } else if (consumer_desc.buffer_type ==
+                 litert::TensorBufferType::kOpenClTexture ||
+             consumer_desc.buffer_type ==
+                 litert::TensorBufferType::kOpenClTextureFp16) {
+    harmonized.buffer_type = consumer_desc.buffer_type;
   } else if (producer_desc.buffer_type ==
                  litert::TensorBufferType::kOpenClBuffer ||
              consumer_desc.buffer_type ==
