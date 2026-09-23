@@ -39,6 +39,7 @@
 #include "litert/ats/configure.h"
 #include "litert/ats/executor.h"
 #include "litert/ats/inference_capture.h"
+#include "litert/ats/register.h"
 #include "litert/c/internal/litert_logging.h"  // IWYU pragma: keep
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
@@ -90,19 +91,16 @@ class AtsInferenceTest : public RngTest {
 
   static void Register(TestGraph::Ptr graph, const AtsConf& conf,
                        const TestNames& names, typename Capture::Entry& cap) {
-    RegisterTest(names.suite.c_str(), names.test.c_str(), nullptr, nullptr,
-                 __FILE__, __LINE__,
-                 [graph = std::move(graph), &conf = std::as_const(conf), &cap,
-                  names]() mutable {
-                   return new AtsInferenceTest(std::move(graph), conf, names,
-                                               cap);
-                 });
+    TestGroup<AtsInferenceTest>::Register(
+        std::unique_ptr<AtsInferenceTest>(
+            new AtsInferenceTest(std::move(graph), conf, names, cap)),
+        conf, names);
   }
 
   void SetUp() override {
     cap_.model.SetFields(names_, Graph());
     if (names_.should_skip) {
-      GTEST_SKIP() << "Filtered by dont_register";
+      return;
     }
     ASSERT_GE(Graph().NumSubgraphs(), 1);
     LITERT_LOG(LITERT_INFO, "Setting up test for %s",
@@ -146,7 +144,7 @@ class AtsInferenceTest : public RngTest {
       }
     }
 
-    if (::testing::Test::IsSkipped()) {
+    if (names_.should_skip) {
       cap_.run.status = RunStatus::kSkipped;
       return;
     } else if (HasFailure()) {
@@ -464,6 +462,11 @@ class AtsInferenceTest : public RngTest {
     }
   }
 
+  template <typename>
+  friend class TestGroup;
+
+  bool HasFailure() const { return has_failure_; }
+
   LiteRtModelT& Graph() const { return graph_->Graph(); }
 
   AtsInferenceTest(TestGraph::Ptr graph, const AtsConf& conf,
@@ -475,6 +478,7 @@ class AtsInferenceTest : public RngTest {
   TestNames names_;
   Capture::Entry& cap_;
   CompiledModelExecutor::Ptr exec_ = nullptr;
+  bool has_failure_ = false;
 };
 
 }  // namespace litert::testing

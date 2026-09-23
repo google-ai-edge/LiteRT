@@ -16,9 +16,15 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_REGISTER_H_
 
 #include <cstddef>
+#include <memory>
 #include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
+#include <gtest/gtest.h>
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/common.h"
 #include "litert/ats/configure.h"
@@ -30,6 +36,71 @@
 #include "litert/test/generators/generators.h"
 
 namespace litert::testing {
+
+// Groups multiple Fixture instances that share the same normalized name
+// (suite, test) under a single GTest test case while running each Fixture's
+// full SetUp/TestBody/TearDown lifecycle and individual Capture::Entry
+// reporting.
+template <typename Fixture>
+class TestGroup : public ::testing::Test {
+ public:
+  static void Register(std::unique_ptr<Fixture> test, const AtsConf& conf,
+                       const TestNames& names) {
+    const std::string key =
+        absl::StrFormat("%p/%s/%s", &conf, names.suite, names.test);
+    auto& group = GetRegistry()[key];
+    if (group == nullptr) {
+      group = new TestGroup();
+      ::testing::RegisterTest(names.suite.c_str(), names.test.c_str(), nullptr,
+                              nullptr, __FILE__, __LINE__,
+                              [group]() -> ::testing::Test* { return group; });
+    }
+    group->tests_.push_back(std::move(test));
+  }
+
+  void TestBody() override {
+    const size_t total = tests_.size();
+    size_t active = 0;
+    size_t passed = 0;
+    const auto* result =
+        ::testing::UnitTest::GetInstance()->current_test_info()->result();
+    for (auto& test : tests_) {
+      ::testing::ScopedTrace trace(__FILE__, __LINE__, test->names_.desc);
+      const int parts_before = result->total_part_count();
+      test->SetUp();
+      test->has_failure_ = result->total_part_count() > parts_before;
+      if (!test->names_.should_skip) {
+        ++active;
+        if (!test->has_failure_) {
+          test->TestBody();
+          test->has_failure_ = result->total_part_count() > parts_before;
+        }
+        if (!test->has_failure_) {
+          ++passed;
+        }
+      }
+      test->TearDown();
+      test.reset();
+    }
+    const size_t skipped = total - active;
+    RecordProperty("subtests_passed",
+                   skipped == 0 ? absl::StrFormat("%zu/%zu", passed, active)
+                                : absl::StrFormat("%zu/%zu (%zu skipped)",
+                                                  passed, active, skipped));
+    if (active == 0) {
+      GTEST_SKIP() << absl::StrFormat(
+          "Filtered by dont_register (%zu subtests skipped)", total);
+    }
+  }
+
+ private:
+  static absl::flat_hash_map<std::string, TestGroup*>& GetRegistry() {
+    static auto* registry = new absl::flat_hash_map<std::string, TestGroup*>();
+    return *registry;
+  }
+
+  std::vector<std::unique_ptr<Fixture>> tests_;
+};
 
 // Gets the names of a potential future test case after consulting the options.
 // Only increments test_id if a name is returned.

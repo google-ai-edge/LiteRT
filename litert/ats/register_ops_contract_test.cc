@@ -47,22 +47,14 @@ TEST(RegisterOpsContractTest, AllCoreOpsHaveCoreSingleOpPrefix) {
   const auto* unit_test = ::testing::UnitTest::GetInstance();
   size_t verified_count = 0;
 
-  for (const auto& span : GetSpans()) {
-    if (span.expected_prefix != "CoreSingleOp") {
-      continue;
-    }
-    for (int i = 0; i < unit_test->total_test_suite_count(); ++i) {
-      const auto* suite = unit_test->GetTestSuite(i);
-      absl::string_view name = suite->name();
-      for (size_t id = span.start_id; id < span.end_id; ++id) {
-        std::string id_prefix = absl::StrFormat("ats_%lu_", id);
-        if (absl::StartsWith(name, id_prefix)) {
-          EXPECT_THAT(name, ::testing::HasSubstr("_CoreSingleOp_"))
-              << "Core op suite " << name << " (" << span.fixture_kind
-              << ") must have '_CoreSingleOp_' in its suite name!";
-          ++verified_count;
-        }
-      }
+  for (int i = 0; i < unit_test->total_test_suite_count(); ++i) {
+    const auto* suite = unit_test->GetTestSuite(i);
+    absl::string_view name = suite->name();
+    if (absl::StartsWith(name, "CoreSingleOp_")) {
+      EXPECT_THAT(name, ::testing::Not(::testing::StartsWith("ats_")))
+          << "GTest suite " << name
+          << " must be grouped by family_logic without ats_<id>_ prefix";
+      ++verified_count;
     }
   }
 
@@ -74,22 +66,14 @@ TEST(RegisterOpsContractTest, AllCompositeOpsHaveCompositeOpPrefix) {
   const auto* unit_test = ::testing::UnitTest::GetInstance();
   size_t verified_count = 0;
 
-  for (const auto& span : GetSpans()) {
-    if (span.expected_prefix != "CompositeOp") {
-      continue;
-    }
-    for (int i = 0; i < unit_test->total_test_suite_count(); ++i) {
-      const auto* suite = unit_test->GetTestSuite(i);
-      absl::string_view name = suite->name();
-      for (size_t id = span.start_id; id < span.end_id; ++id) {
-        std::string id_prefix = absl::StrFormat("ats_%lu_", id);
-        if (absl::StartsWith(name, id_prefix)) {
-          EXPECT_THAT(name, ::testing::HasSubstr("_CompositeOp_"))
-              << "Composite op suite " << name << " (" << span.fixture_kind
-              << ") must have '_CompositeOp_' in its suite name!";
-          ++verified_count;
-        }
-      }
+  for (int i = 0; i < unit_test->total_test_suite_count(); ++i) {
+    const auto* suite = unit_test->GetTestSuite(i);
+    absl::string_view name = suite->name();
+    if (absl::StartsWith(name, "CompositeOp_")) {
+      EXPECT_THAT(name, ::testing::Not(::testing::StartsWith("ats_")))
+          << "GTest suite " << name
+          << " must be grouped by family_logic without ats_<id>_ prefix";
+      ++verified_count;
     }
   }
 
@@ -97,33 +81,38 @@ TEST(RegisterOpsContractTest, AllCompositeOpsHaveCompositeOpPrefix) {
                                   "suite to be registered and verified";
 }
 
-TEST(RegisterOpsContractTest, TestMethodNamesAreNormalizedForTestGrid) {
+TEST(RegisterOpsContractTest,
+     TestMethodNamesAreNormalizedAndDeduplicatedForTestGrid) {
   const auto* unit_test = ::testing::UnitTest::GetInstance();
   size_t verified_count = 0;
 
   for (const auto& span : GetSpans()) {
+    const std::string suite_prefix =
+        absl::StrFormat("%s_%s_", span.expected_prefix, span.fixture_kind);
     for (int i = 0; i < unit_test->total_test_suite_count(); ++i) {
       const auto* suite = unit_test->GetTestSuite(i);
       absl::string_view suite_name = suite->name();
-      if (!absl::StartsWith(suite_name, "ats_")) {
+      if (!absl::StartsWith(suite_name, suite_prefix)) {
         continue;
       }
-      if (!absl::StrContains(suite_name,
-                             absl::StrFormat("_%s_%s_", span.expected_prefix,
-                                             span.fixture_kind))) {
-        continue;
+      EXPECT_GT(suite->total_test_count(), 0);
+      std::vector<std::string> seen_names;
+      for (int j = 0; j < suite->total_test_count(); ++j) {
+        absl::string_view test_name = suite->GetTestInfo(j)->name();
+        EXPECT_THAT(test_name,
+                    ::testing::Not(::testing::StartsWith(suite_prefix)))
+            << "Test method name " << test_name
+            << " must not redundantly repeat the suite prefix " << suite_prefix;
+        EXPECT_THAT(test_name, ::testing::Not(::testing::HasSubstr("<")))
+            << "Test method name " << test_name
+            << " must not contain concrete random dimensions '<...>'";
+        EXPECT_THAT(seen_names, ::testing::Not(::testing::Contains(test_name)))
+            << "Duplicate GTest test method name " << test_name
+            << " in suite " << suite_name
+            << "; random shape iterations must be grouped into 1 GTest test";
+        seen_names.emplace_back(test_name);
+        ++verified_count;
       }
-      ASSERT_EQ(suite->total_test_count(), 1);
-      absl::string_view test_name = suite->GetTestInfo(0)->name();
-      EXPECT_TRUE(absl::StartsWith(
-          test_name,
-          absl::StrFormat("%s_%s_", span.expected_prefix, span.fixture_kind)))
-          << "Test method name " << test_name
-          << " must start with family_fixture prefix for TestGrid filtering";
-      EXPECT_THAT(test_name, ::testing::Not(::testing::HasSubstr("<")))
-          << "Test method name " << test_name
-          << " must not contain concrete random dimensions '<...>'";
-      ++verified_count;
     }
   }
 

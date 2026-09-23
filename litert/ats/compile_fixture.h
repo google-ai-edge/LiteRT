@@ -26,6 +26,7 @@
 #include "litert/ats/common.h"
 #include "litert/ats/compile_capture.h"
 #include "litert/ats/configure.h"
+#include "litert/ats/register.h"
 #include "litert/c/internal/litert_logging.h"  // IWYU pragma: keep
 #include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/compiler/plugin/compiler_plugin.h"
@@ -51,13 +52,10 @@ class AtsCompileTest : public ::testing::Test {
 
   static void Register(TestGraph::Ptr graph, const AtsConf& conf,
                        const TestNames& names, Capture::Entry& cap) {
-    RegisterTest(names.suite.c_str(), names.test.c_str(), nullptr, nullptr,
-                 __FILE__, __LINE__,
-                 [graph = std::move(graph), &conf = std::as_const(conf), names,
-                  &cap]() mutable {
-                   return new AtsCompileTest(std::move(graph), conf, names,
-                                             cap);
-                 });
+    TestGroup<AtsCompileTest>::Register(
+        std::unique_ptr<AtsCompileTest>(
+            new AtsCompileTest(std::move(graph), conf, names, cap)),
+        conf, names);
   }
 
   void SetUp() override {
@@ -77,7 +75,7 @@ class AtsCompileTest : public ::testing::Test {
   }
 
   void TearDown() override {
-    if (HasFailure() || ::testing::Test::IsSkipped()) {
+    if (HasFailure() || names_.should_skip) {
       return;
     }
     LITERT_ASSERT_OK(
@@ -85,6 +83,11 @@ class AtsCompileTest : public ::testing::Test {
   }
 
  private:
+  template <typename>
+  friend class TestGroup;
+
+  bool HasFailure() const { return has_failure_; }
+
   AtsCompileTest(TestGraph::Ptr graph, const AtsConf& conf,
                  const TestNames& names, Capture::Entry& cap)
       : graph_(std::move(graph)),
@@ -97,6 +100,7 @@ class AtsCompileTest : public ::testing::Test {
 
   TestNames names_;
   Capture::Entry& cap_;
+  bool has_failure_ = false;
 };
 
 }  // namespace litert::testing

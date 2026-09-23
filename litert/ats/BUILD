@@ -1029,7 +1029,10 @@ cc_library(
         "//litert/cc/internal:litert_rng",
         "//litert/core:filesystem",
         "//litert/test/generators",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest",
     ],
 )
 
@@ -1065,6 +1068,7 @@ cc_library(
         ":configure",
         ":executor",
         ":inference_capture",
+        ":register",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
@@ -1094,6 +1098,7 @@ cc_library(
         ":common",
         ":compile_capture",
         ":configure",
+        ":register",
         "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_c_types_printing",
         "//litert/compiler/plugin:compiler_plugin",
