@@ -9,6 +9,7 @@
 
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
+#include "litert/vendors/qualcomm/core/transformation/deq_q.h"
 #include "litert/vendors/qualcomm/core/transformation/embedding_gemma.h"
 #include "litert/vendors/qualcomm/core/transformation/kv_swapped_attn.h"
 #include "litert/vendors/qualcomm/core/transformation/mask.h"
@@ -95,6 +96,13 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
   if (g2g_option == G2GConfig::kOff) {
     return;
   }
+
+  // Dequantize-quantize to Convert
+  const std::vector<QnnOpCode> dequantize_quantize = {
+      QnnOpCode::kQuantize,
+  };
+  Transform(validate_op_config, ops, tensor_pool, dequantize_quantize,
+            ConvertDequantizeQuantize);
 
   // MatMul-convert Fusion
   if (g2g_option == G2GConfig::kMatMulConvert ||
