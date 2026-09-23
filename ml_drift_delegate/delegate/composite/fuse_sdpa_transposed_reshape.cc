@@ -61,7 +61,15 @@ absl::Status FuseSdpaTransposedReshape(::ml_drift::GraphFloat32* graph) {
   const std::string transpose_op_name =
       ToString(::ml_drift::OperationType::TRANSPOSE);
 
+  std::vector<::ml_drift::NodeId> sdpa_node_ids;
   for (::ml_drift::Node* node : graph->nodes()) {
+    if (node && node->operation.type == kSdpaTransposedType) {
+      sdpa_node_ids.push_back(node->id);
+    }
+  }
+
+  for (::ml_drift::NodeId sdpa_id : sdpa_node_ids) {
+    ::ml_drift::Node* node = graph->GetNode(sdpa_id);
     if (!node || node->operation.type != kSdpaTransposedType) {
       continue;
     }

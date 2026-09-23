@@ -117,15 +117,17 @@ absl::StatusOr<size_t> NumElements(const std::vector<int64_t>& shape) {
   return num_elements;
 }
 
-absl::Status ValidateTensorRange(const SafetensorTensorInfo& info,
-                                 size_t data_size, absl::string_view name) {
+absl::Status ValidateTensorRange(const SafetensorTensorInfo& info) {
+  if (!info.storage) {
+    return absl::FailedPreconditionError("No storage is set for tensor.");
+  }
   if (info.data_end < info.data_start) {
     return absl::DataLossError(
-        absl::StrCat("Invalid tensor data range for: ", name));
+        absl::StrCat("Invalid tensor data range for: ", info.name));
   }
-  if (info.data_end > data_size) {
+  if (info.data_end > info.storage->data_size) {
     return absl::DataLossError(
-        absl::StrCat("Tensor data out of range for: ", name));
+        absl::StrCat("Tensor data out of range for: ", info.name));
   }
   return absl::OkStatus();
 }
@@ -200,13 +202,15 @@ CHECK_INFO(UINT64, int64_t, val <= std::numeric_limits<int64_t>::max());
 CONVERT_INFO(BOOL, int64_t, bool, static_cast<int64_t>);
 
 template <class Container>
-absl::StatusOr<Container> ConvertTensorTo(const SafetensorTensorInfo& info,
-                                          const std::byte* data_base) {
+absl::StatusOr<Container> ConvertTensorTo(const SafetensorTensorInfo& info) {
   using T = typename Container::value_type;
   LRT_TENSOR_ASSIGN_OR_RETURN(const size_t num_elements,
                               NumElements(info.shape));
   const size_t bytes = info.data_end - info.data_start;
-  const std::byte* data_ptr = data_base + info.data_start;
+  LRT_TENSOR_RETURN_IF_ERROR(info.storage != nullptr &&
+                             info.storage->data_base != nullptr)
+      << "Invalid storage for tensor data.";
+  const std::byte* data_ptr = info.storage->data_base + info.data_start;
 
   Container values;
   values.resize(num_elements);
@@ -877,7 +881,7 @@ std::vector<std::string> SafetensorLoader::GetTensorNames() const {
   return names;
 }
 
-absl::StatusOr<SafetensorTensorInfo> SafetensorLoader::GetTensorInfo(
+absl::StatusOr<const SafetensorTensorInfo&> SafetensorLoader::GetTensorInfo(
     absl::string_view name) const {
   auto it = tensor_infos_.find(name);
   if (it == tensor_infos_.end()) {
@@ -899,7 +903,8 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
     }
   }
 
-  LRT_TENSOR_ASSIGN_OR_RETURN(SafetensorTensorInfo info, GetTensorInfo(name));
+  LRT_TENSOR_ASSIGN_OR_RETURN(const SafetensorTensorInfo info,
+                              GetTensorInfo(name));
   LRT_TENSOR_ASSIGN_OR_RETURN(Type type, DtypeToType(info.dtype));
 
   const TensorStorageInfo& storage = *info.storage;
@@ -907,20 +912,7 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
     return absl::FailedPreconditionError("Safetensor storage is invalid");
   }
 
-  LRT_TENSOR_RETURN_IF_ERROR(
-      ValidateTensorRange(info, storage.data_size, name));
-
-  auto ReadTensor =
-      [&](absl::flat_hash_map<std::string, SafetensorTensorInfo>::const_iterator
-              tensor_info_it,
-          auto as) -> absl::StatusOr<std::vector<decltype(as)>> {
-    absl::string_view tensor_name = tensor_info_it->first;
-    LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(
-        tensor_info_it->second, tensor_info_it->second.storage->data_size,
-        tensor_name));
-    return ConvertTensorTo<std::vector<decltype(as)>>(
-        tensor_info_it->second, tensor_info_it->second.storage->data_base);
-  };
+  LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(info));
 
   const std::byte* data_ptr = storage.data_base + info.data_start;
   size_t data_size = info.data_end - info.data_start;
@@ -938,8 +930,8 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
 
       // `compressed-tensors` names quantization parameters after the module
       // (`<module>.weight_scale`), while checkpoints written by our own
-      // converter name them after the weight
-      // (`<module>.weight.weight_scale`). Accept both.
+      // converter name them after the weight (`<module>.weight.weight_scale`).
+      // Accept both.
       absl::string_view module = name;
       absl::ConsumeSuffix(&module, kWeightSuffix);
 
@@ -960,28 +952,27 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
             return tensor_infos_.end();
           };
 
-      auto tensor_info_it =
-          FindDataFor({".weight_scale", ".scale", ".scales", ".weight_scales"});
-      if (tensor_info_it == tensor_infos_.end()) {
-        break;
-      }
-      LRT_TENSOR_ASSIGN_OR_RETURN(std::vector<float> scales,
-                                  ReadTensor(tensor_info_it, /*as=*/float{}));
-      if (scales.empty()) {
-        return absl::InvalidArgumentError(
-            absl::StrCat("Scale tensor is empty for: ", name));
-      }
-
-      std::vector<int64_t> zero_points(1, 0);
-      if (auto zp_it = FindDataFor({".weight_zero_point", ".zero_point"});
-          zp_it != tensor_infos_.end()) {
-        LRT_TENSOR_ASSIGN_OR_RETURN(zero_points,
-                                    ReadTensor(zp_it, /*as=*/int64_t{}));
-        if (zero_points.empty()) {
-          return absl::InvalidArgumentError(
-              absl::StrCat("Zero-point tensor is empty for: ", name));
+      auto ReadData = [&](auto& vec,
+                          std::initializer_list<absl::string_view> suffixes)
+          -> absl::Status {
+        auto it = FindDataFor(suffixes);
+        if (it != tensor_infos_.end()) {
+          LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(it->second));
+          LRT_TENSOR_ASSIGN_OR_RETURN(
+              vec, ConvertTensorTo<std::decay_t<decltype(vec)>>(it->second));
         }
-      }
+        return !vec.empty()
+                   ? absl::OkStatus()
+                   : absl::InvalidArgumentError(absl::StrCat(
+                         "Data is empty for ", module, *suffixes.begin()));
+      };
+
+      std::vector<float> scales;
+      std::vector<int64_t> zero_points(1, 0);
+      LRT_TENSOR_RETURN_IF_ERROR(ReadData(
+          scales, {".weight_scale", ".scale", ".scales", ".weight_scales"}));
+      LRT_TENSOR_RETURN_IF_ERROR(
+          ReadData(zero_points, {".weight_zero_point", ".zero_point"}));
 
       // Checkpoints declaring config groups describe each module separately;
       // older ones only carry model-wide parameters.
@@ -1059,12 +1050,10 @@ SafetensorLoader::LoadQuantizationParams(
     return absl::NotFoundError(
         absl::StrCat("Missing quantization scales: ", scale_name));
   }
-  LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(
-      scale_it->second, scale_it->second.storage->data_size, scale_name));
+  LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(scale_it->second));
   LRT_TENSOR_ASSIGN_OR_RETURN(
       std::vector<float> scales,
-      ConvertTensorTo<std::vector<float>>(scale_it->second,
-                                          scale_it->second.storage->data_base));
+      ConvertTensorTo<std::vector<float>>(scale_it->second));
   if (scales.empty()) {
     return absl::InvalidArgumentError(
         absl::StrCat("Scale tensor is empty for: ", module));
@@ -1075,11 +1064,9 @@ SafetensorLoader::LoadQuantizationParams(
   const std::string zero_point_name = absl::StrCat(module, kZeroPointSuffix);
   if (auto zp_it = tensor_infos_.find(zero_point_name);
       zp_it != tensor_infos_.end()) {
-    LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(
-        zp_it->second, zp_it->second.storage->data_size, zero_point_name));
+    LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(zp_it->second));
     LRT_TENSOR_ASSIGN_OR_RETURN(
-        zero_points, ConvertTensorTo<std::vector<int64_t>>(
-                         zp_it->second, zp_it->second.storage->data_base));
+        zero_points, ConvertTensorTo<std::vector<int64_t>>(zp_it->second));
     if (zero_points.empty()) {
       return absl::InvalidArgumentError(
           absl::StrCat("Zero-point tensor is empty for: ", module));
@@ -1127,8 +1114,7 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadPackedTensor(
   if (storage.data_base == nullptr || storage.file_data == nullptr) {
     return absl::FailedPreconditionError("Safetensor storage is invalid");
   }
-  LRT_TENSOR_RETURN_IF_ERROR(
-      ValidateTensorRange(info, storage.data_size, packed_name));
+  LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(info));
   if (info.shape.size() != 2) {
     return absl::InvalidArgumentError(
         absl::StrCat(packed_name, ": packed weights must be 2D, got rank ",
@@ -1148,12 +1134,10 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadPackedTensor(
   const std::string shape_name = absl::StrCat(module, kShapeSuffix);
   if (auto shape_it = tensor_infos_.find(shape_name);
       shape_it != tensor_infos_.end()) {
-    LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(
-        shape_it->second, shape_it->second.storage->data_size, shape_name));
+    LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(shape_it->second));
     LRT_TENSOR_ASSIGN_OR_RETURN(
         std::vector<int64_t> logical_shape,
-        ConvertTensorTo<std::vector<int64_t>>(
-            shape_it->second, shape_it->second.storage->data_base));
+        ConvertTensorTo<std::vector<int64_t>>(shape_it->second));
     if (logical_shape.size() != 2) {
       return absl::InvalidArgumentError(absl::StrCat(
           shape_name, ": expected 2 dimensions, got ", logical_shape.size()));
