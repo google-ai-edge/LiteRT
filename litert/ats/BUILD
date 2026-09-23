@@ -1335,7 +1335,6 @@ make_download_model_provider(
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
 #             litert_qualcomm_mh_guitar_test(
-#                 dimension_model = "\"regex:sm-s928b|sm-s928u1\"",
 #                 targets = QUALCOMM_S24_ATS_GUITAR_TARGETS,
 #             ),
 #         ],
