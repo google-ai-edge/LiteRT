@@ -361,6 +361,85 @@ class GpuOptions : public ConcreteOptionsBase {
                                                              kernel_batch_size);
   }
 
+  /// @brief Selects the IrModel initialization pipeline instead of the legacy
+  /// GraphFloat32 pipeline. Both pipelines are always compiled and linked, the
+  /// selection happens at runtime.
+  LiteRtStatus SetUseIrModel(bool use_ir_model) {
+    return LrtSetGpuOptionsUseIrModel(options_, use_ir_model);
+  }
+
+  /// @brief Speeds up tuning at the cost of potentially slower inference.
+  /// This trades steady-state performance for initialization time.
+  LiteRtStatus EnableFastTuning(bool enabled) {
+    return LrtSetGpuOptionsEnableFastTuning(options_, enabled);
+  }
+
+  /// @brief Enables per-op profiling.
+  LiteRtStatus EnableOpProfiling(bool enabled) {
+    return LrtSetGpuOptionsEnableOpProfiling(options_, enabled);
+  }
+
+  /// @brief Enables the detailed report of the per-op profiling.
+  LiteRtStatus EnableOpProfilingDetailedReport(bool enabled) {
+    return LrtSetGpuOptionsEnableOpProfilingDetailedReport(options_, enabled);
+  }
+
+  /// @brief Fuses QKV projection split, RMSNorm and RoPE subgraphs into single
+  /// fused odml.qkv_norm_rope nodes.
+  /// @note Disabled by default to avoid unexpected graph mutations on general
+  /// models.
+  LiteRtStatus EnableQkvNormRopeFusion(bool enabled) {
+    return LrtSetGpuOptionsEnableQkvNormRopeFusion(options_, enabled);
+  }
+
+  /// @brief Fuses short convolution step subgraphs into single fused
+  /// odml.short_conv_step nodes.
+  /// @note Disabled by default to avoid unexpected graph mutations on general
+  /// models.
+  LiteRtStatus EnableShortConvStepFusion(bool enabled) {
+    return LrtSetGpuOptionsEnableShortConvStepFusion(options_, enabled);
+  }
+
+  /// @brief Uploads the tensor weights directly without processing. This
+  /// requires the model file to have pre-processed weights.
+  /// @warning The pre-processed immutable external tensors are stored in the
+  /// model file itself and not in a separate serialization directory. This
+  /// reduces the required disk space and the memory usage on the first run, but
+  /// there is no fallback path if the prepacked weights become incompatible
+  /// with the current ML Drift kernels. For ADVANCED USERS only.
+  LiteRtStatus SetHasPrepackedExternalTfliteTensors(bool has_prepacked) {
+    return LrtSetGpuOptionsHasPrepackedExternalTfliteTensors(options_,
+                                                             has_prepacked);
+  }
+
+  /// @brief Allocates GPU memory for the I/O tensors of each delegated
+  /// subgraph and associates it with the TFLite tensor's BufferHandle.
+  /// @warning WebGPU only, and only for clients which access the GPU tensors
+  /// directly. Do not use when the I/O buffers are managed by LiteRT.
+  LiteRtStatus SetAllocateGpuMemoryForIoTensors(bool allocate) {
+    return LrtSetGpuOptionsAllocateGpuMemoryForIoTensors(options_, allocate);
+  }
+
+  /// @brief Restricts delegation to the node range set with
+  /// `SetDebugFirstDelegateNodeIndex` and `SetDebugLastDelegateNodeIndex`.
+  /// @note For debugging purposes only, e.g. to bisect which node breaks
+  /// delegation.
+  LiteRtStatus SetDebugDelegatePartition(bool enabled) {
+    return LrtSetGpuOptionsDebugDelegatePartition(options_, enabled);
+  }
+
+  /// @brief Sets the index of the first node that could be delegated.
+  /// @note Only used when `SetDebugDelegatePartition` is enabled.
+  LiteRtStatus SetDebugFirstDelegateNodeIndex(int node_index) {
+    return LrtSetGpuOptionsDebugFirstDelegateNodeIndex(options_, node_index);
+  }
+
+  /// @brief Sets the index of the last node that could be delegated.
+  /// @note Only used when `SetDebugDelegatePartition` is enabled.
+  LiteRtStatus SetDebugLastDelegateNodeIndex(int node_index) {
+    return LrtSetGpuOptionsDebugLastDelegateNodeIndex(options_, node_index);
+  }
+
  private:
   LrtGpuOptions* options_;
 };
