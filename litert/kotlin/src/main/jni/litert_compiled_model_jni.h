@@ -59,6 +59,16 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeGetOutputBufferRequirements(
     JNIEnv* env, jclass clazz, jlong compiled_model_handle, jstring signature,
     jstring output_name);
 
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeResizeInputTensor(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle, jstring signature,
+    jstring input_name, jintArray dimensions);
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeResizeInputTensorNonStrict(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle, jstring signature,
+    jstring input_name, jintArray dimensions);
+
 JNIEXPORT jlongArray JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffers(
     JNIEnv* env, jclass clazz, jlong compiled_model_handle,

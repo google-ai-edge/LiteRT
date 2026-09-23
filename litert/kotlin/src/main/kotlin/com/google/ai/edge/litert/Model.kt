@@ -385,6 +385,30 @@ private constructor(
 
   @Throws(LiteRtException::class)
   @JvmOverloads
+  fun resizeInputTensor(
+    inputName: String,
+    dimensions: IntArray,
+    signature: String = "",
+  ) {
+    assertNotDestroyed()
+
+    nativeResizeInputTensor(handle, signature, inputName, dimensions)
+  }
+
+  @Throws(LiteRtException::class)
+  @JvmOverloads
+  fun resizeInputTensorNonStrict(
+    inputName: String,
+    dimensions: IntArray,
+    signature: String = "",
+  ) {
+    assertNotDestroyed()
+
+    nativeResizeInputTensorNonStrict(handle, signature, inputName, dimensions)
+  }
+
+  @Throws(LiteRtException::class)
+  @JvmOverloads
   fun createInputBuffers(signatureIndex: Int = 0): List<TensorBuffer> {
     assertNotDestroyed()
 
@@ -654,6 +678,22 @@ private constructor(
       signature: String,
       outputName: String,
     ): TensorBufferRequirements
+
+    @JvmStatic
+    private external fun nativeResizeInputTensor(
+      compiledModelHandle: Long,
+      signature: String,
+      inputName: String,
+      dimensions: IntArray,
+    )
+
+    @JvmStatic
+    private external fun nativeResizeInputTensorNonStrict(
+      compiledModelHandle: Long,
+      signature: String,
+      inputName: String,
+      dimensions: IntArray,
+    )
 
     @JvmStatic
     private external fun nativeCreateInputBuffers(
