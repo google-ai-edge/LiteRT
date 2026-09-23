@@ -82,6 +82,7 @@ cc_library(
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment_header",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_metrics",
@@ -99,8 +100,16 @@ cc_library(
         "//litert/core:dynamic_loading",
         "//litert/core:version",
         "//litert/core/util:perfetto_profiling",
+        "@com_google_absl//absl/strings:string_view",
     ],
     alwayslink = 1,
+)
+
+cc_library(
+    name = "dispatch_test_helper",
+    testonly = True,
+    hdrs = ["litert_dispatch_test_helper.h"],
+    deps = [":dispatch"],
 )
 
 cc_library(

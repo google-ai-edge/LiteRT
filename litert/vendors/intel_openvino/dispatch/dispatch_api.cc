@@ -420,7 +420,14 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
 
 namespace {
 
-LiteRtDispatchInterface TheInterface = {
+static const LiteRtDispatchInterface_V1 TheInterface = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtDispatchInterface_V1),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .initialize = litert::openvino::DispatchInitialize,
     .get_vendor_id = litert::openvino::DispatchGetVendorId,
     .get_build_id = litert::openvino::DispatchGetBuildId,
@@ -451,7 +458,14 @@ LiteRtDispatchInterface TheInterface = {
     .check_runtime_compatibility = litert::openvino::CheckRuntimeCompatibility,
 };
 
-LiteRtCustomTensorBufferHandlersDef TheTensorBufferHandlers = {
+static const LiteRtCustomTensorBufferHandlersDef_V1 TheTensorBufferHandlers = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtCustomTensorBufferHandlersDef_V1),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .create_func = litert::openvino::CreateOpenVinoTensorBuffer,
     .destroy_func = litert::openvino::DestroyOpenVinoTensorBuffer,
     .lock_func = litert::openvino::LockOpenVinoTensorBuffer,
@@ -464,19 +478,22 @@ LiteRtCustomTensorBufferHandlersDef TheTensorBufferHandlers = {
     .supported_buffer_types = {kLiteRtTensorBufferTypeOpenVINOTensorBuffer},
 };
 
-LiteRtDispatchApi TheApi = {
-    .version = {.major = LITERT_API_VERSION_MAJOR,
-                .minor = LITERT_API_VERSION_MINOR,
-                .patch = LITERT_API_VERSION_PATCH},
-    .interface = &TheInterface,
-    .async_interface = nullptr,
-    .graph_interface = nullptr,
-    .tensor_buffer_handlers_def = &TheTensorBufferHandlers,
-};
-
 }  // namespace
 
-LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
-  *api = TheApi;
-  return kLiteRtStatusOk;
+extern "C" LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchQueryInterface(
+    LiteRtDispatchInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version, LiteRtInterface* out_interface) {
+  if (out_interface == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (litert_runtime_version.major >= 1) {
+    if (interface_id == kLiteRtInterfaceBasic) {
+      *out_interface = &TheInterface;
+      return kLiteRtStatusOk;
+    } else if (interface_id == kLiteRtInterfaceCustomTensorBufferHandlers) {
+      *out_interface = &TheTensorBufferHandlers;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
 }

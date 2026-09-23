@@ -154,6 +154,7 @@ litert_dispatch_api(
     export_litert_only = True,
     linkopts = [
         "-Wl,-soname=libLiteRtDispatch_Nvidia.so",
+        "-Wl,--no-warn-backrefs",
         "-Wl,-rpath,$$ORIGIN",
         "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
     ],
@@ -188,6 +189,7 @@ litert_dispatch_api(
         "//litert/c:litert_tensor_buffer_header",
         "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_runtime_context",
         "//litert/c/internal:litert_runtime_context_header",
