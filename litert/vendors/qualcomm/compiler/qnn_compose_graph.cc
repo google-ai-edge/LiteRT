@@ -542,7 +542,6 @@ REGISTER_SIMPLE_OP_BUILDER(BuildRelu6Op, BuildRelu6Op)
 REGISTER_SIMPLE_OP_BUILDER(BuildPreluOp, BuildPreluOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildLogisticOp, BuildLogisticOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildDequantizeOp, BuildDequantizeOp)
-REGISTER_SIMPLE_OP_BUILDER(BuildSliceOp, BuildSliceOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildTanhOp, BuildTanhOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildTransposeOp, BuildTransposeOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildTileOp, BuildTileOp)
@@ -666,9 +665,48 @@ LiteRtStatus BuildConcatenationOp(
 
   std::uint32_t adjusted_axis =
       (axis >= 0) ? axis : axis + input_tensors[0].get().GetRank();
+  op_wrappers.clear();
+  // QNN HTP evaluates static BOOL_8 operands in QNN_OP_CONCAT to 0 instead of
+  // 1, corrupting static boolean mask tokens (e.g. streaming attention
+  // updates). Legalize through FLOAT_32 by folding static boolean constants
+  // to 1.0f/0.0f at compile time and casting dynamic inputs to FLOAT_32 before
+  // concatenation.
+  if (output_tensors[0].get().GetDataType() == QNN_DATATYPE_BOOL_8) {
+    std::vector<::qnn::ConstTensorWrapperRef> f32_inputs;
+    for (const auto& input_ref : input_tensors) {
+      const auto& in_tensor = input_ref.get();
+      if (in_tensor.IsTensorStatic()) {
+        const auto* raw_bool_data = static_cast<const std::uint8_t*>(
+            in_tensor.GetQnnTensor().v2.clientBuf.data);
+        const size_t num_elems = in_tensor.GetTensorNumElements();
+        if (raw_bool_data == nullptr || num_elems == 0) {
+          return kLiteRtStatusErrorInvalidLegalization;
+        }
+        std::vector<float> f32_data(num_elems);
+        for (size_t i = 0; i < num_elems; ++i) {
+          f32_data[i] = raw_bool_data[i] != 0 ? 1.0f : 0.0f;
+        }
+        auto& f32_static = tensor_pool.CreateStaticTensor(
+            QNN_DATATYPE_FLOAT_32, {}, in_tensor.GetDimensions(),
+            sizeof(float) * f32_data.size(), f32_data.data());
+        f32_inputs.emplace_back(f32_static);
+      } else {
+        auto& f32_native = tensor_pool.CreateNativeTensor(
+            QNN_DATATYPE_FLOAT_32, {}, in_tensor.GetDimensions());
+        op_wrappers.emplace_back(::qnn::CreateCastOp(in_tensor, f32_native));
+        f32_inputs.emplace_back(f32_native);
+      }
+    }
+    auto& f32_concat_out = tensor_pool.CreateNativeTensor(
+        QNN_DATATYPE_FLOAT_32, {}, output_tensors[0].get().GetDimensions());
+    op_wrappers.emplace_back(::qnn::CreateConcatenationOp(
+        f32_inputs, f32_concat_out, adjusted_axis));
+    op_wrappers.emplace_back(
+        ::qnn::CreateCastOp(f32_concat_out, output_tensors[0]));
+    return kLiteRtStatusOk;
+  }
   const auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
       tensor_pool, fused_activation, output_tensors);
-  op_wrappers.clear();
   op_wrappers.emplace_back(::qnn::CreateConcatenationOp(
       std::vector<::qnn::ConstTensorWrapperRef>(input_tensors.begin(),
                                                 input_tensors.end()),
@@ -1471,6 +1509,37 @@ LiteRtStatus BuildCumsumOp(const litert::compiler::Op& litert_op,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus BuildSliceOp(const litert::compiler::Op& litert_op,
+                          ::qnn::TensorPool& tensor_pool,
+                          std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                          std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                          std::vector<::qnn::OpWrapper>& op_wrappers) {
+  // QNN HTP's QNN_OP_STRIDED_SLICE does not support QNN_DATATYPE_BOOL_8.
+  // Legalize by casting inputs to FLOAT_32, slicing, and casting back to
+  // BOOL_8.
+  if (input_tensors[0].get().GetDataType() == QNN_DATATYPE_BOOL_8 &&
+      output_tensors[0].get().GetDataType() == QNN_DATATYPE_BOOL_8) {
+    op_wrappers.clear();
+    auto& f32_in = tensor_pool.CreateNativeTensor(
+        QNN_DATATYPE_FLOAT_32, {}, input_tensors[0].get().GetDimensions());
+    auto& f32_out = tensor_pool.CreateNativeTensor(
+        QNN_DATATYPE_FLOAT_32, {}, output_tensors[0].get().GetDimensions());
+    op_wrappers.emplace_back(::qnn::CreateCastOp(input_tensors[0], f32_in));
+    std::vector<::qnn::TensorWrapperRef> slice_inputs = input_tensors;
+    slice_inputs[0] = f32_in;
+    std::vector<::qnn::TensorWrapperRef> slice_outputs = {f32_out};
+    auto slice_ops =
+        ::qnn::BuildSliceOp(tensor_pool, slice_inputs, slice_outputs);
+    op_wrappers.insert(op_wrappers.end(),
+                       std::make_move_iterator(slice_ops.begin()),
+                       std::make_move_iterator(slice_ops.end()));
+    op_wrappers.emplace_back(::qnn::CreateCastOp(f32_out, output_tensors[0]));
+    return kLiteRtStatusOk;
+  }
+  op_wrappers = ::qnn::BuildSliceOp(tensor_pool, input_tensors, output_tensors);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus BuildStridedSliceOp(
     const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
@@ -1488,6 +1557,29 @@ LiteRtStatus BuildStridedSliceOp(
   std::int32_t shrink_axis_mask = options->shrink_axis_mask;
   std::int32_t new_axis_mask = options->new_axis_mask;
   bool offset = options->offset;
+  // QNN_OP_STRIDED_SLICE does not support QNN_DATATYPE_BOOL_8 on HTP.
+  // Legalize by casting inputs to FLOAT_32, slicing, and casting back to
+  // BOOL_8.
+  if (input_tensors[0].get().GetDataType() == QNN_DATATYPE_BOOL_8 &&
+      output_tensors[0].get().GetDataType() == QNN_DATATYPE_BOOL_8) {
+    op_wrappers.clear();
+    auto& f32_in = tensor_pool.CreateNativeTensor(
+        QNN_DATATYPE_FLOAT_32, {}, input_tensors[0].get().GetDimensions());
+    auto& f32_out = tensor_pool.CreateNativeTensor(
+        QNN_DATATYPE_FLOAT_32, {}, output_tensors[0].get().GetDimensions());
+    op_wrappers.emplace_back(::qnn::CreateCastOp(input_tensors[0], f32_in));
+    std::vector<::qnn::TensorWrapperRef> slice_inputs = input_tensors;
+    slice_inputs[0] = f32_in;
+    std::vector<::qnn::TensorWrapperRef> slice_outputs = {f32_out};
+    auto slice_ops = ::qnn::BuildStridedSliceOp(
+        tensor_pool, slice_inputs, slice_outputs, begin_mask, end_mask,
+        ellipsis_mask, shrink_axis_mask, new_axis_mask, offset);
+    op_wrappers.insert(op_wrappers.end(),
+                       std::make_move_iterator(slice_ops.begin()),
+                       std::make_move_iterator(slice_ops.end()));
+    op_wrappers.emplace_back(::qnn::CreateCastOp(f32_out, output_tensors[0]));
+    return kLiteRtStatusOk;
+  }
   op_wrappers = ::qnn::BuildStridedSliceOp(
       tensor_pool, input_tensors, output_tensors, begin_mask, end_mask,
       ellipsis_mask, shrink_axis_mask, new_axis_mask, offset);
