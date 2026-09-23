@@ -224,6 +224,7 @@ litert_test(
         "//litert/test:test_models",
         "//litert/vendors/cc:litert_compiler_plugin",
         "//litert/vendors/qualcomm/core/schema:soc_table",
+        "@com_github_nlohmann_json//:json",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
