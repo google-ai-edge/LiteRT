@@ -39,8 +39,7 @@ struct YnnpackAcceleratorVersion {
   static constexpr int kMajor = 1;
   static constexpr int kMinor = 0;
   static constexpr int kPatch = 0;
-  static constexpr LiteRtApiVersion version = {kMajor, kMinor,
-                                               kPatch};  // NOLINT
+  static constexpr LiteRtApiVersion kVersion = {kMajor, kMinor, kPatch};
 };
 
 class YnnpackAccelerator final

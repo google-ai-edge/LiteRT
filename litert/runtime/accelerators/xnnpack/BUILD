@@ -34,7 +34,6 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
         "//litert/c/internal:litert_accelerator_def",
-        "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_runtime_context_header",
         "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_expected",
