@@ -30,6 +30,9 @@ absl::flat_hash_map<std::string, std::string> GetGemma4WeightMapping(
   mapping["model.language_model.embed_tokens.weight"] =
       "model.embed_tokens.weight";
 
+  // LM head.
+  mapping["lm_head.weight"] = "lm_head.weight";
+
   // Final norm
   mapping["model.language_model.norm.weight"] = "model.norm.weight";
 

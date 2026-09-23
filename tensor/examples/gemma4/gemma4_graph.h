@@ -97,10 +97,8 @@ Gemma4Outputs<Mixins...> BuildGemma4Graph(const Gemma4Inputs<Mixins...>& inputs,
                          .shape = {1},
                          .buffer = std::sqrt(config.embed_dim)});
   Tensor hidden_states = Mul(inputs.embedded_input, emb_scale_tensor);
-  Tensor eps_tensor =
-      Tensor<Mixins...>({.type = Type::kFP32,
-                         .shape = {1},
-                         .buffer = config.rms_norm_eps});
+  Tensor<Mixins...> eps_tensor(
+      {.type = Type::kFP32, .shape = {1}, .buffer = config.rms_norm_eps});
 
   std::vector<Tensor<Mixins...>> updated_key_caches;
   std::vector<Tensor<Mixins...>> updated_value_caches;
@@ -184,14 +182,16 @@ Gemma4Outputs<Mixins...> BuildGemma4Graph(const Gemma4Inputs<Mixins...>& inputs,
   // Final RMSNorm
   Tensor final_norm_scale = GetWeight(inputs.weights, "model.norm.weight",
                                       Type::kFP32, {config.embed_dim});
-  Tensor final_output =
-      RmsNorm(hidden_states, final_norm_scale, eps_tensor);
+  Tensor final_output = RmsNorm(hidden_states, final_norm_scale, eps_tensor);
 
-  // LM Head (Fully Connected with tied weights)
-  Tensor embedding_table =
-      GetWeight(inputs.weights, "model.embed_tokens.weight", Type::kFP32,
-                {config.vocab_size, config.embed_dim});
-  Tensor logits = FullyConnected(final_output, embedding_table);
+  // LM Head.
+  Tensor lm_head =
+      inputs.weights.contains("lm_head.weight")
+          ? GetWeight(inputs.weights, "lm_head.weight", Type::kFP32,
+                      {config.vocab_size, config.embed_dim})
+          : GetWeight(inputs.weights, "model.embed_tokens.weight", Type::kFP32,
+                      {config.vocab_size, config.embed_dim});
+  Tensor logits = FullyConnected(final_output, lm_head);
 
   // Logits Soft Capping
   if (config.final_logit_softcap > 0.0f) {
