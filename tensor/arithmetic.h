@@ -722,11 +722,49 @@ Tensor<Mixins...> Squeeze(Tensor<Mixins...> input,
   return output;
 }
 
+// Placeholder extent for dimensions that should be inferred.
+inline constexpr int kInferredDim = -1;
+
+// Reshapes `input` to `new_shape`.
+//
+// - `new_shape` may have exactly one of its dimensions set as `kInferredDim`.
 template <class... Mixins>
 Tensor<Mixins...> Reshape(Tensor<Mixins...> input, std::vector<int> new_shape,
                           source_location loc = source_location::current()) {
   auto op = std::make_shared<graph::ReshapeOperation>();
   RegisterMixins<Mixins...>(op);
+  const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
+
+  size_t known_size = 1;
+  for (size_t i = 0; i < new_shape.size(); ++i) {
+    if (new_shape[i] == kInferredDim) {
+      if (op->inferred_axis >= 0) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("At most one dimension may be inferred. Found ",
+                         op->inferred_axis, " and ", i, "."));
+      }
+      op->inferred_axis = static_cast<int>(i);
+      continue;
+    }
+    if (new_shape[i] < 0) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Negative dimensions in the new shape are unsupported. Got ",
+          new_shape[i], " for dimension ", i, "."));
+    }
+    known_size *= new_shape[i];
+  }
+  if (op->inferred_axis >= 0) {
+    if (known_size == 0 || input_info.GetSize() % known_size != 0) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "The inferred dimension must divide the input size. "
+          "input_size: ",
+          input_info.GetSize(), " size of the other dimensions: ", known_size,
+          " input_name: ", input.GetName()));
+    }
+    new_shape[op->inferred_axis] =
+        static_cast<int>(input_info.GetSize() / known_size);
+  }
+
   op->new_shape = new_shape;
   Tensor<Mixins...> shape_tensor(
       {.type = Type::kI32,
@@ -734,7 +772,6 @@ Tensor<Mixins...> Reshape(Tensor<Mixins...> input, std::vector<int> new_shape,
        .buffer = OwningCpuBuffer::Copy<Type::kI32>(new_shape)});
   AddInputs(op, input, shape_tensor);
   Tensor<Mixins...> output = AddOutput(op, loc);
-  const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = op->new_shape;
   output_info.type = input_info.type;

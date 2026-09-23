@@ -534,6 +534,12 @@ struct SinOperation : Operation {
 
 struct ReshapeOperationData {
   std::vector<int> new_shape;
+  // Axis that should be infered from the input shape and the other dimensions
+  // in `new_shape`.
+  //
+  // Note: `new_shape[inferred_axis]` holds the extent computed when the graph
+  // was built.
+  int inferred_axis = -1;
 };
 
 struct ReshapeOperation : ReshapeOperationData, Operation {

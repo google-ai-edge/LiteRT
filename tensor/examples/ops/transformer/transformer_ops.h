@@ -87,10 +87,11 @@ enum class FFNActivation {
 //
 // Returns a tensor of shape [..., embed_dim].
 template <class... Mixins>
-Tensor<Mixins...> FeedForward(
-    Tensor<Mixins...> x, Tensor<Mixins...> gate_weight,
-    Tensor<Mixins...> up_weight, Tensor<Mixins...> down_weight,
-    FFNActivation activation) {
+Tensor<Mixins...> FeedForward(Tensor<Mixins...> x,
+                              Tensor<Mixins...> gate_weight,
+                              Tensor<Mixins...> up_weight,
+                              Tensor<Mixins...> down_weight,
+                              FFNActivation activation) {
   Tensor gate = FullyConnected(x, gate_weight);
   Tensor up = FullyConnected(x, up_weight);
   Tensor activated_gate = activation == FFNActivation::kGeluApproximate
@@ -127,7 +128,6 @@ Tensor<Mixins...> RepeatKVHeads(const Tensor<Mixins...>& x, int num_groups) {
   }
   const int batch_size = shape[0];
   const int num_kv_heads = shape[1];
-  const int seq_len = shape[2];
   const int head_dim = shape[3];
 
   if (num_kv_heads == 1) {
@@ -135,10 +135,10 @@ Tensor<Mixins...> RepeatKVHeads(const Tensor<Mixins...>& x, int num_groups) {
   }
 
   Tensor reshaped =
-      Reshape(x, {batch_size * num_kv_heads, 1, seq_len, head_dim});
+      Reshape(x, {batch_size * num_kv_heads, 1, kInferredDim, head_dim});
   Tensor tiled = Tile(reshaped, {1, num_groups, 1, 1});
-  return Reshape(tiled,
-                 {batch_size, num_kv_heads * num_groups, seq_len, head_dim});
+  return Reshape(
+      tiled, {batch_size, num_kv_heads * num_groups, kInferredDim, head_dim});
 }
 
 // Computes scaled dot-product attention:

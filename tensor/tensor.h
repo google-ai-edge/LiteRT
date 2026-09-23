@@ -167,6 +167,12 @@ class Tensor : public TensorHandle, public Mixins... {
                   source_location loc = source_location::current())
       : TensorHandle(t, loc) {}
   explicit Tensor(graph::Tensor impl) : TensorHandle(impl) {};
+
+  // NOLINTBEGIN(google-explicit-constructor): we want to be able to return
+  // errors directly from functions that return tensors.
+  Tensor(absl::Status status, source_location loc = source_location::current())
+      : TensorHandle(std::move(status), loc) {}
+  // NOLINTEND(google-explicit-constructor)
 };
 
 template <class... Mixins>
