@@ -47,6 +47,7 @@ EXPORTS
   LiteRtBuilderBuildMirrorPadOpOption
   LiteRtBuilderBuildMulOpOption
   LiteRtBuilderBuildOp
+  LiteRtBuilderBuildOneHotOpOption
   LiteRtBuilderBuildPackOpOption
   LiteRtBuilderBuildReduceAllOpOption
   LiteRtBuilderBuildReduceAnyOpOption
@@ -58,6 +59,7 @@ EXPORTS
   LiteRtBuilderBuildSoftmaxOpOption
   LiteRtBuilderBuildSpaceToDepthOpOption
   LiteRtBuilderBuildSplitOpOption
+  LiteRtBuilderBuildSplitVOpOption
   LiteRtBuilderBuildSqueezeOpOption
   LiteRtBuilderBuildStridedSliceOpOption
   LiteRtBuilderBuildSubOpOption

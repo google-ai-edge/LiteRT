@@ -600,6 +600,27 @@ LiteRtStatus LiteRtBuilderBuildPackOpOption(LiteRtBuilder builder, LiteRtOp op,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtBuilderBuildOneHotOpOption(LiteRtBuilder builder,
+                                              LiteRtOp op, int32_t* axis) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(axis)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!builder->IsOpAllocated(op)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (op->OpCode() != kLiteRtOpCodeTflOneHot) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  litert::internal::TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_OneHotOptions;
+  auto options = std::make_unique<tflite::OneHotOptionsT>();
+  options->axis = *axis;
+  tfl_options.value = options.release();
+  litert::internal::SetTflOptions(*op, std::move(tfl_options));
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtBuilderBuildUnpackOpOption(LiteRtBuilder builder,
                                               LiteRtOp op, int32_t* axis,
                                               int32_t* num) {
@@ -683,6 +704,28 @@ LiteRtStatus LiteRtBuilderBuildSplitOpOption(LiteRtBuilder builder, LiteRtOp op,
   litert::internal::TflOptions tfl_options;
   tfl_options.type = tflite::BuiltinOptions_SplitOptions;
   auto options = std::make_unique<tflite::SplitOptionsT>();
+  options->num_splits = *num_splits;
+  tfl_options.value = options.release();
+  litert::internal::SetTflOptions(*op, std::move(tfl_options));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtBuilderBuildSplitVOpOption(LiteRtBuilder builder,
+                                              LiteRtOp op,
+                                              int32_t* num_splits) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(num_splits)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!builder->IsOpAllocated(op)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (op->OpCode() != kLiteRtOpCodeTflSplitV) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  litert::internal::TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_SplitVOptions;
+  auto options = std::make_unique<tflite::SplitVOptionsT>();
   options->num_splits = *num_splits;
   tfl_options.value = options.release();
   litert::internal::SetTflOptions(*op, std::move(tfl_options));

@@ -929,4 +929,43 @@ TEST(LiteRtBuilderTest, BuildSqueezeOpOptionRejectsInvalidDimsArray) {
   EXPECT_TRUE(opts->squeeze_dims.empty());
 }
 
+TEST(LiteRtBuilderTest, BuildOneHotOpOption) {
+  LiteRtBuilderT builder;
+
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflOneHot, {}, {});
+  int32_t axis = 2;
+  LITERT_ASSERT_OK(LiteRtBuilderBuildOneHotOpOption(&builder, &op, &axis));
+  auto* opts = litert::internal::GetTflOptions(op).AsOneHotOptions();
+  EXPECT_EQ(opts->axis, 2);
+}
+
+TEST(LiteRtBuilderTest, BuildSplitVOpOption) {
+  LiteRtBuilderT builder;
+
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflSplitV, {}, {});
+  int32_t num_splits = 3;
+  LITERT_ASSERT_OK(
+      LiteRtBuilderBuildSplitVOpOption(&builder, &op, &num_splits));
+  auto* opts = litert::internal::GetTflOptions(op).AsSplitVOptions();
+  EXPECT_EQ(opts->num_splits, 3);
+}
+
+TEST(LiteRtBuilderTest, BuildShloCompositeOpOption) {
+  LiteRtBuilderT builder;
+
+  auto& op = builder.BuildOp(kLiteRtOpCodeShloComposite, {}, {});
+  const char* name = "custom_composite";
+  int32_t subgraph_index = 1;
+  int32_t version = 2;
+  std::vector<uint8_t> attr = {0x01, 0x02};
+  LITERT_ASSERT_OK(LiteRtBuilderBuildShloCompositeOpOption(
+      &builder, &op, name, &subgraph_index, &version, attr.data(),
+      attr.size()));
+  auto* opts =
+      litert::internal::GetTflOptions2(op).AsStableHLOCompositeOptions();
+  EXPECT_EQ(opts->name, name);
+  EXPECT_EQ(opts->decomposition_subgraph_index, 1);
+  EXPECT_EQ(opts->version, 2);
+}
+
 }  // namespace

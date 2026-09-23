@@ -338,6 +338,830 @@ TEST(CcBuilderTest, TestSetRmsNormOptions) {
   EXPECT_NEAR(res.Value().epsilon, 1e-4f, 1e-6f);
 }
 
+TEST(CcBuilderTest, TestSetGatherOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflGather, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    GatherOptions options;
+    options.axis = 1;
+    options.batch_dims = 0;
+    auto res = cc_builder.SetOpOptions<GatherOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<GatherOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().axis, 1);
+  EXPECT_EQ(res.Value().batch_dims, 0);
+}
+
+TEST(CcBuilderTest, TestSetReduceMaxOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflReduceMax, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    ReduceMaxOptions options;
+    options.keep_dims = true;
+    auto res =
+        cc_builder.SetOpOptions<ReduceMaxOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<ReduceMaxOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().keep_dims, true);
+}
+
+TEST(CcBuilderTest, TestSetMulOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflMul, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    MulOptions options;
+    options.fused_activation_function = kActivationFunctionTypeRelu;
+    auto res = cc_builder.SetOpOptions<MulOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<MulOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().fused_activation_function, kActivationFunctionTypeRelu);
+}
+
+TEST(CcBuilderTest, TestSetConcatenationOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflConcatenation, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    ConcatenationOptions options;
+    options.axis = 2;
+    options.fused_activation_function = kActivationFunctionTypeNone;
+    auto res =
+        cc_builder.SetOpOptions<ConcatenationOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<ConcatenationOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().axis, 2);
+  EXPECT_EQ(res.Value().fused_activation_function, kActivationFunctionTypeNone);
+}
+
+TEST(CcBuilderTest, TestSetReshapeOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflReshape, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    ReshapeOptions options;
+    options.new_shape = {1, 2, 3};
+    auto res = cc_builder.SetOpOptions<ReshapeOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<ReshapeOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().new_shape, (std::vector<int32_t>{1, 2, 3}));
+}
+
+TEST(CcBuilderTest, TestSetOneHotOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflOneHot, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    OneHotOptions options;
+    options.axis = 3;
+    auto res = cc_builder.SetOpOptions<OneHotOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<OneHotOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().axis, 3);
+}
+
+TEST(CcBuilderTest, TestSetSplitVOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflSplitV, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    SplitVOptions options;
+    options.num_splits = 4;
+    auto res = cc_builder.SetOpOptions<SplitVOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<SplitVOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().num_splits, 4);
+}
+
+TEST(CcBuilderTest, TestSetFullyConnectedOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflFullyConnected, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    FullyConnectedOptions options;
+    options.fused_activation_function = kActivationFunctionTypeRelu6;
+    options.weights_format = kFullyConnectedOptionsWeightsFormatDefault;
+    options.keep_num_dims = true;
+    options.quantized_bias_type = kLiteRtElementTypeInt32;
+    options.asymmetric_quantize_input = false;
+    auto res =
+        cc_builder.SetOpOptions<FullyConnectedOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<FullyConnectedOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().fused_activation_function,
+            kActivationFunctionTypeRelu6);
+  EXPECT_EQ(res.Value().weights_format,
+            kFullyConnectedOptionsWeightsFormatDefault);
+  EXPECT_EQ(res.Value().keep_num_dims, true);
+  EXPECT_EQ(res.Value().quantized_bias_type, kLiteRtElementTypeInt32);
+  EXPECT_EQ(res.Value().asymmetric_quantize_input, false);
+}
+
+TEST(CcBuilderTest, TestSetStridedSliceOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflStridedSlice, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    StridedSliceOptions options;
+    options.begin_mask = 1;
+    options.end_mask = 2;
+    options.ellipsis_mask = 0;
+    options.new_axis_mask = 0;
+    options.shrink_axis_mask = 4;
+    options.offset = false;
+    auto res =
+        cc_builder.SetOpOptions<StridedSliceOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<StridedSliceOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().begin_mask, 1);
+  EXPECT_EQ(res.Value().end_mask, 2);
+  EXPECT_EQ(res.Value().shrink_axis_mask, 4);
+  EXPECT_EQ(res.Value().offset, false);
+}
+
+TEST(CcBuilderTest, TestSetBatchMatmulOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflBatchMatmul, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    BatchMatmulOptions options;
+    options.adj_x = true;
+    options.adj_y = false;
+    options.asymmetric_quantize_input = true;
+    auto res =
+        cc_builder.SetOpOptions<BatchMatmulOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<BatchMatmulOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().adj_x, true);
+  EXPECT_EQ(res.Value().adj_y, false);
+  EXPECT_EQ(res.Value().asymmetric_quantize_input, true);
+}
+
+TEST(CcBuilderTest, TestSetDivOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflDiv, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    DivOptions options;
+    options.fused_activation_function = kActivationFunctionTypeRelu;
+    auto res = cc_builder.SetOpOptions<DivOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<DivOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().fused_activation_function, kActivationFunctionTypeRelu);
+}
+
+TEST(CcBuilderTest, TestSetSoftmaxOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflSoftmax, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    SoftmaxOptions options;
+    options.beta = 2.0f;
+    auto res = cc_builder.SetOpOptions<SoftmaxOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<SoftmaxOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_FLOAT_EQ(res.Value().beta, 2.0f);
+}
+
+TEST(CcBuilderTest, TestSetSubOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflSub, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    SubOptions options;
+    options.fused_activation_function = kActivationFunctionTypeRelu6;
+    auto res = cc_builder.SetOpOptions<SubOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<SubOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().fused_activation_function,
+            kActivationFunctionTypeRelu6);
+}
+
+TEST(CcBuilderTest, TestSetSumOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflSum, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    SumOptions options;
+    options.keep_dims = true;
+    auto res = cc_builder.SetOpOptions<SumOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<SumOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().keep_dims, true);
+}
+
+TEST(CcBuilderTest, TestSetReduceMinOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflReduceMin, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    ReduceMinOptions options;
+    options.keep_dims = true;
+    auto res =
+        cc_builder.SetOpOptions<ReduceMinOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<ReduceMinOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().keep_dims, true);
+}
+
+TEST(CcBuilderTest, TestSetReduceAnyOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflReduceAny, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    ReduceAnyOptions options;
+    options.keep_dims = false;
+    auto res =
+        cc_builder.SetOpOptions<ReduceAnyOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<ReduceAnyOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().keep_dims, false);
+}
+
+TEST(CcBuilderTest, TestSetReduceAllOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflReduceAll, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    ReduceAllOptions options;
+    options.keep_dims = true;
+    auto res =
+        cc_builder.SetOpOptions<ReduceAllOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<ReduceAllOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().keep_dims, true);
+}
+
+TEST(CcBuilderTest, TestSetPackOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  auto in1 = cc_builder.BuildScalar(kLiteRtElementTypeFloat32);
+  auto in2 = cc_builder.BuildScalar(kLiteRtElementTypeFloat32);
+  ASSERT_TRUE(in1.HasValue() && in2.HasValue());
+  std::vector<Tensor> inputs = {*in1, *in2};
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflPack, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    PackOptions options;
+    options.axis = 1;
+    auto res = cc_builder.SetOpOptions<PackOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<PackOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().axis, 1);
+}
+
+TEST(CcBuilderTest, TestSetUnpackOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflUnpack, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    UnpackOptions options;
+    options.axis = 0;
+    options.num = 2;
+    auto res = cc_builder.SetOpOptions<UnpackOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<UnpackOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().axis, 0);
+  EXPECT_EQ(res.Value().num, 2);
+}
+
+TEST(CcBuilderTest, TestSetMeanOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflMean, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    MeanOptions options;
+    options.keep_dims = true;
+    auto res = cc_builder.SetOpOptions<MeanOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<MeanOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().keep_dims, true);
+}
+
+TEST(CcBuilderTest, TestSetSplitOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflSplit, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    SplitOptions options;
+    options.num_splits = 3;
+    auto res = cc_builder.SetOpOptions<SplitOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<SplitOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().num_splits, 3);
+}
+
+TEST(CcBuilderTest, TestSetConv2dOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflConv2d, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    Conv2dOptions options;
+    options.padding = kPaddingSame;
+    options.stride_w = 2;
+    options.stride_h = 2;
+    options.dilation_w_factor = 1;
+    options.dilation_h_factor = 1;
+    options.fused_activation_function = kActivationFunctionTypeRelu;
+    auto res = cc_builder.SetOpOptions<Conv2dOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<Conv2dOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().padding, kPaddingSame);
+  EXPECT_EQ(res.Value().stride_w, 2);
+  EXPECT_EQ(res.Value().stride_h, 2);
+  EXPECT_EQ(res.Value().dilation_w_factor, 1);
+  EXPECT_EQ(res.Value().dilation_h_factor, 1);
+  EXPECT_EQ(res.Value().fused_activation_function, kActivationFunctionTypeRelu);
+}
+
+TEST(CcBuilderTest, TestSetConv3dOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflConv3d, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    Conv3dOptions options;
+    options.padding = kPaddingValid;
+    options.stride_w = 1;
+    options.stride_h = 1;
+    options.stride_d = 1;
+    options.dilation_w_factor = 1;
+    options.dilation_h_factor = 1;
+    options.dilation_d_factor = 1;
+    options.fused_activation_function = kActivationFunctionTypeNone;
+    auto res = cc_builder.SetOpOptions<Conv3dOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<Conv3dOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().padding, kPaddingValid);
+  EXPECT_EQ(res.Value().stride_w, 1);
+  EXPECT_EQ(res.Value().stride_h, 1);
+  EXPECT_EQ(res.Value().stride_d, 1);
+  EXPECT_EQ(res.Value().dilation_w_factor, 1);
+  EXPECT_EQ(res.Value().dilation_h_factor, 1);
+  EXPECT_EQ(res.Value().dilation_d_factor, 1);
+  EXPECT_EQ(res.Value().fused_activation_function, kActivationFunctionTypeNone);
+}
+
+TEST(CcBuilderTest, TestSetDepthwiseConv2dOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op =
+      cc_builder.BuildOp(kLiteRtOpCodeTflDepthwiseConv2d, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    DepthwiseConv2dOptions options;
+    options.padding = kPaddingSame;
+    options.stride_w = 1;
+    options.stride_h = 1;
+    options.depth_multiplier = 1;
+    options.fused_activation_function = kActivationFunctionTypeRelu;
+    options.dilation_w_factor = 1;
+    options.dilation_h_factor = 1;
+    auto res = cc_builder.SetOpOptions<DepthwiseConv2dOptions>(
+        *op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<DepthwiseConv2dOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().padding, kPaddingSame);
+  EXPECT_EQ(res.Value().depth_multiplier, 1);
+  EXPECT_EQ(res.Value().fused_activation_function, kActivationFunctionTypeRelu);
+}
+
+TEST(CcBuilderTest, TestSetTransposeConvOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflTransposeConv, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    TransposeConvOptions options;
+    options.padding = kPaddingValid;
+    options.stride_w = 2;
+    options.stride_h = 2;
+    options.fused_activation_function = kActivationFunctionTypeNone;
+    auto res =
+        cc_builder.SetOpOptions<TransposeConvOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<TransposeConvOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().padding, kPaddingValid);
+  EXPECT_EQ(res.Value().stride_w, 2);
+  EXPECT_EQ(res.Value().stride_h, 2);
+  EXPECT_EQ(res.Value().fused_activation_function, kActivationFunctionTypeNone);
+}
+
+TEST(CcBuilderTest, TestSetAveragePool2dOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflAveragePool2d, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    AveragePool2dOptions options;
+    options.padding = kPaddingSame;
+    options.stride_w = 1;
+    options.stride_h = 1;
+    options.filter_width = 3;
+    options.filter_height = 3;
+    options.fused_activation_function = kActivationFunctionTypeRelu;
+    auto res =
+        cc_builder.SetOpOptions<AveragePool2dOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<AveragePool2dOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().padding, kPaddingSame);
+  EXPECT_EQ(res.Value().filter_width, 3);
+  EXPECT_EQ(res.Value().filter_height, 3);
+  EXPECT_EQ(res.Value().fused_activation_function, kActivationFunctionTypeRelu);
+}
+
+TEST(CcBuilderTest, TestSetMaxPool2dOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflMaxPool2d, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    MaxPool2dOptions options;
+    options.padding = kPaddingValid;
+    options.stride_w = 2;
+    options.stride_h = 2;
+    options.filter_width = 2;
+    options.filter_height = 2;
+    options.fused_activation_function = kActivationFunctionTypeNone;
+    auto res =
+        cc_builder.SetOpOptions<MaxPool2dOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<MaxPool2dOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().padding, kPaddingValid);
+  EXPECT_EQ(res.Value().filter_width, 2);
+  EXPECT_EQ(res.Value().filter_height, 2);
+  EXPECT_EQ(res.Value().fused_activation_function, kActivationFunctionTypeNone);
+}
+
+TEST(CcBuilderTest, TestSetL2Pool2dOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflL2Pool2d, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    L2Pool2dOptions options;
+    options.padding = kPaddingSame;
+    options.stride_w = 1;
+    options.stride_h = 1;
+    options.filter_width = 2;
+    options.filter_height = 2;
+    options.fused_activation_function = kActivationFunctionTypeNone;
+    auto res =
+        cc_builder.SetOpOptions<L2Pool2dOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<L2Pool2dOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().padding, kPaddingSame);
+  EXPECT_EQ(res.Value().filter_width, 2);
+  EXPECT_EQ(res.Value().filter_height, 2);
+}
+
+TEST(CcBuilderTest, TestSetResizeBilinearOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflResizeBilinear, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    ResizeBilinearOptions options;
+    options.align_corners = true;
+    options.half_pixel_centers = false;
+    auto res =
+        cc_builder.SetOpOptions<ResizeBilinearOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<ResizeBilinearOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().align_corners, true);
+  EXPECT_EQ(res.Value().half_pixel_centers, false);
+}
+
+TEST(CcBuilderTest, TestSetLeakyReluOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflLeakyRelu, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    LeakyReluOptions options;
+    options.alpha = 0.2f;
+    auto res =
+        cc_builder.SetOpOptions<LeakyReluOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<LeakyReluOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_FLOAT_EQ(res.Value().alpha, 0.2f);
+}
+
+TEST(CcBuilderTest, TestSetSpaceToDepthOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflSpaceToDepth, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    SpaceToDepthOptions options;
+    options.block_size = 2;
+    auto res =
+        cc_builder.SetOpOptions<SpaceToDepthOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<SpaceToDepthOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().block_size, 2);
+}
+
+TEST(CcBuilderTest, TestSetDepthToSpaceOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflDepthToSpace, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    DepthToSpaceOptions options;
+    options.block_size = 2;
+    auto res =
+        cc_builder.SetOpOptions<DepthToSpaceOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<DepthToSpaceOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().block_size, 2);
+}
+
+TEST(CcBuilderTest, TestSetResizeNearestNeighborOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflResizeNearestNeighbor, inputs,
+                               outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    ResizeNearestNeighborOptions options;
+    options.align_corners = false;
+    options.half_pixel_centers = true;
+    auto res = cc_builder.SetOpOptions<ResizeNearestNeighborOptions>(
+        *op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res =
+      GetOptionsAs<ResizeNearestNeighborOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().align_corners, false);
+  EXPECT_EQ(res.Value().half_pixel_centers, true);
+}
+
+TEST(CcBuilderTest, TestSetCumSumOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflCumsum, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    CumSumOptions options;
+    options.exclusive = true;
+    options.reverse = false;
+    auto res = cc_builder.SetOpOptions<CumSumOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<CumSumOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().exclusive, true);
+  EXPECT_EQ(res.Value().reverse, false);
+}
+
+TEST(CcBuilderTest, TestSetGeluOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflGelu, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    GeluOptions options;
+    options.approximate = true;
+    auto res = cc_builder.SetOpOptions<GeluOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<GeluOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().approximate, true);
+}
+
+TEST(CcBuilderTest, TestSetMirrorPadOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflMirrorPad, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    MirrorPadOptions options;
+    options.mode = kMirrorPadModeReflect;
+    auto res =
+        cc_builder.SetOpOptions<MirrorPadOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<MirrorPadOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().mode, kMirrorPadModeReflect);
+}
+
+TEST(CcBuilderTest, TestSetSqueezeOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op = cc_builder.BuildOp(kLiteRtOpCodeTflSqueeze, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    SqueezeOptions options;
+    options.squeeze_dims = {1, 2};
+    auto res = cc_builder.SetOpOptions<SqueezeOptions>(*op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<SqueezeOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_THAT(res.Value().squeeze_dims, ::testing::ElementsAreArray({1, 2}));
+}
+
 //===----------------------------------------------------------------------===//
 //                       Builder Extended API Tests                          //
 //===----------------------------------------------------------------------===//

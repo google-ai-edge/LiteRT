@@ -404,6 +404,113 @@ typedef struct LiteRtCompilerContext {
       LiteRtBuilder builder, LiteRtOp op, const char* name,
       const int32_t* decomposition_subgraph_index, const int32_t* version,
       const uint8_t* attributes, LiteRtParamIndex attributes_size);
+  // Added in version 1.3.0
+  LiteRtStatus (*build_average_pool_2d_op_option)(
+      LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
+      int32_t* stride_h, int32_t* filter_width, int32_t* filter_height,
+      uint32_t* fused_activation_function);
+  LiteRtStatus (*build_concatenation_op_option)(LiteRtBuilder builder,
+                                                LiteRtOp op,
+                                                uint32_t* fused_activation,
+                                                int32_t* axis);
+  LiteRtStatus (*build_conv_2d_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                          uint32_t* padding, int32_t* stride_w,
+                                          int32_t* stride_h,
+                                          int32_t* dilation_w_factor,
+                                          int32_t* dilation_h_factor,
+                                          uint32_t* fused_activation_function);
+  LiteRtStatus (*build_conv_3d_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                          uint32_t* padding, int32_t* stride_w,
+                                          int32_t* stride_h, int32_t* stride_d,
+                                          int32_t* dilation_w_factor,
+                                          int32_t* dilation_h_factor,
+                                          int32_t* dilation_d_factor,
+                                          uint32_t* fused_activation_function);
+  LiteRtStatus (*build_cumsum_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                         bool* exclusive, bool* reverse);
+  LiteRtStatus (*build_depth_to_space_op_option)(LiteRtBuilder builder,
+                                                 LiteRtOp op,
+                                                 int32_t* block_size);
+  LiteRtStatus (*build_depthwise_conv_2d_op_option)(
+      LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
+      int32_t* stride_h, int32_t* depth_multiplier,
+      uint32_t* fused_activation_function, int32_t* dilation_w_factor,
+      int32_t* dilation_h_factor);
+  LiteRtStatus (*build_div_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                      uint32_t* fused_activation);
+  LiteRtStatus (*build_fully_connected_op_option)(
+      LiteRtBuilder builder, LiteRtOp op, uint32_t* fused_activation,
+      uint32_t* weights_format, bool* keep_num_dims,
+      uint32_t* quantized_bias_type, bool* asymmetric_quantize_input);
+  LiteRtStatus (*build_gather_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                         int32_t* axis, int32_t* batch_dims);
+  LiteRtStatus (*build_gelu_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                       bool* approximate);
+  LiteRtStatus (*build_l2_pool_2d_op_option)(
+      LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
+      int32_t* stride_h, int32_t* filter_width, int32_t* filter_height,
+      uint32_t* fused_activation_function);
+  LiteRtStatus (*build_leaky_relu_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                             float* alpha);
+  LiteRtStatus (*build_max_pool_2d_op_option)(
+      LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
+      int32_t* stride_h, int32_t* filter_width, int32_t* filter_height,
+      uint32_t* fused_activation_function);
+  LiteRtStatus (*build_mean_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                       bool* keepdims);
+  LiteRtStatus (*build_mirror_pad_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                             uint32_t* mode);
+  LiteRtStatus (*build_mul_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                      uint32_t* fused_activation);
+  LiteRtStatus (*build_one_hot_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                          int32_t* axis);
+  LiteRtStatus (*build_pack_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                       int32_t* axis, int32_t* values_count);
+  LiteRtStatus (*build_reduce_all_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                             bool* keepdims);
+  LiteRtStatus (*build_reduce_any_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                             bool* keepdims);
+  LiteRtStatus (*build_reduce_max_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                             bool* keepdims);
+  LiteRtStatus (*build_reduce_min_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                             bool* keepdims);
+  LiteRtStatus (*build_reshape_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                          int32_t* new_shape,
+                                          int32_t new_shape_size);
+  LiteRtStatus (*build_resize_bilinear_op_option)(LiteRtBuilder builder,
+                                                  LiteRtOp op,
+                                                  bool* align_corners,
+                                                  bool* half_pixel_centers);
+  LiteRtStatus (*build_resize_nearest_neighbor_op_option)(
+      LiteRtBuilder builder, LiteRtOp op, bool* align_corners,
+      bool* half_pixel_centers);
+  LiteRtStatus (*build_softmax_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                          float* beta);
+  LiteRtStatus (*build_space_to_depth_op_option)(LiteRtBuilder builder,
+                                                 LiteRtOp op,
+                                                 int32_t* block_size);
+  LiteRtStatus (*build_split_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                        int32_t* num_splits);
+  LiteRtStatus (*build_split_v_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                          int32_t* num_splits);
+  LiteRtStatus (*build_squeeze_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                          const int32_t* squeeze_dims,
+                                          int32_t num_squeeze_dims);
+  LiteRtStatus (*build_strided_slice_op_option)(
+      LiteRtBuilder builder, LiteRtOp op, int32_t* begin_mask,
+      int32_t* end_mask, int32_t* ellipsis_mask, int32_t* new_axis_mask,
+      int32_t* shrink_axis_mask, bool* offset);
+  LiteRtStatus (*build_sub_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                      uint32_t* fused_activation);
+  LiteRtStatus (*build_sum_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                      bool* keepdims);
+  LiteRtStatus (*build_transpose_conv_op_option)(
+      LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
+      int32_t* stride_h, uint32_t* fused_activation_function);
+  LiteRtStatus (*build_unpack_op_option)(LiteRtBuilder builder, LiteRtOp op,
+                                         int32_t* axis, int32_t* num);
+  LiteRtStatus (*get_split_v_num_splits_option)(LiteRtOp op,
+                                                int32_t* num_splits);
 } LiteRtCompilerContext;
 // LINT.ThenChange(./litert_compiler_context.cc:compiler_context_version)
 
@@ -413,7 +520,7 @@ typedef struct LiteRtCompilerContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtCompilerContext) == 1112,
+static_assert(sizeof(LiteRtCompilerContext) == 1408,
               "LiteRtCompilerContext size mismatch");
 static_assert(offsetof(LiteRtCompilerContext, abi_header) == 0,
               "LiteRtCompilerContext abi_header offset mismatch");
@@ -941,6 +1048,100 @@ static_assert(
 static_assert(
     offsetof(LiteRtCompilerContext, build_shlo_composite_op_option) == 1104,
     "LiteRtCompilerContext build_shlo_composite_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_average_pool_2d_op_option) == 1112,
+    "LiteRtCompilerContext build_average_pool_2d_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_concatenation_op_option) == 1120,
+    "LiteRtCompilerContext build_concatenation_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_conv_2d_op_option) == 1128,
+              "LiteRtCompilerContext build_conv_2d_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_conv_3d_op_option) == 1136,
+              "LiteRtCompilerContext build_conv_3d_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_cumsum_op_option) == 1144,
+              "LiteRtCompilerContext build_cumsum_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_depth_to_space_op_option) == 1152,
+    "LiteRtCompilerContext build_depth_to_space_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_depthwise_conv_2d_op_option) == 1160,
+    "LiteRtCompilerContext build_depthwise_conv_2d_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_div_op_option) == 1168,
+              "LiteRtCompilerContext build_div_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_fully_connected_op_option) == 1176,
+    "LiteRtCompilerContext build_fully_connected_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_gather_op_option) == 1184,
+              "LiteRtCompilerContext build_gather_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_gelu_op_option) == 1192,
+              "LiteRtCompilerContext build_gelu_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_l2_pool_2d_op_option) == 1200,
+    "LiteRtCompilerContext build_l2_pool_2d_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_leaky_relu_op_option) == 1208,
+    "LiteRtCompilerContext build_leaky_relu_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_max_pool_2d_op_option) == 1216,
+    "LiteRtCompilerContext build_max_pool_2d_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_mean_op_option) == 1224,
+              "LiteRtCompilerContext build_mean_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_mirror_pad_op_option) == 1232,
+    "LiteRtCompilerContext build_mirror_pad_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_mul_op_option) == 1240,
+              "LiteRtCompilerContext build_mul_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_one_hot_op_option) == 1248,
+              "LiteRtCompilerContext build_one_hot_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_pack_op_option) == 1256,
+              "LiteRtCompilerContext build_pack_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_reduce_all_op_option) == 1264,
+    "LiteRtCompilerContext build_reduce_all_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_reduce_any_op_option) == 1272,
+    "LiteRtCompilerContext build_reduce_any_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_reduce_max_op_option) == 1280,
+    "LiteRtCompilerContext build_reduce_max_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_reduce_min_op_option) == 1288,
+    "LiteRtCompilerContext build_reduce_min_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_reshape_op_option) == 1296,
+              "LiteRtCompilerContext build_reshape_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_resize_bilinear_op_option) == 1304,
+    "LiteRtCompilerContext build_resize_bilinear_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext,
+                       build_resize_nearest_neighbor_op_option) == 1312,
+              "LiteRtCompilerContext build_resize_nearest_neighbor_op_option "
+              "offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_softmax_op_option) == 1320,
+              "LiteRtCompilerContext build_softmax_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_space_to_depth_op_option) == 1328,
+    "LiteRtCompilerContext build_space_to_depth_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_split_op_option) == 1336,
+              "LiteRtCompilerContext build_split_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_split_v_op_option) == 1344,
+              "LiteRtCompilerContext build_split_v_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_squeeze_op_option) == 1352,
+              "LiteRtCompilerContext build_squeeze_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_strided_slice_op_option) == 1360,
+    "LiteRtCompilerContext build_strided_slice_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_sub_op_option) == 1368,
+              "LiteRtCompilerContext build_sub_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_sum_op_option) == 1376,
+              "LiteRtCompilerContext build_sum_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_transpose_conv_op_option) == 1384,
+    "LiteRtCompilerContext build_transpose_conv_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, build_unpack_op_option) == 1392,
+              "LiteRtCompilerContext build_unpack_op_option offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_split_v_num_splits_option) == 1400,
+    "LiteRtCompilerContext get_split_v_num_splits_option offset mismatch");
 #endif  // __cplusplus
 
 LiteRtCompilerContext* LrtGetCompilerContext();

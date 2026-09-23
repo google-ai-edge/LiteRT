@@ -270,6 +270,8 @@ LiteRtStatus LiteRtBuilderBuildPackOpOption(LiteRtBuilder builder, LiteRtOp op,
 //
 //==============================================================================
 LiteRtStatus LiteRtGetOneHotAxisOption(LiteRtOp op, int32_t* axis);
+LiteRtStatus LiteRtBuilderBuildOneHotOpOption(LiteRtBuilder builder,
+                                              LiteRtOp op, int32_t* axis);
 
 //==============================================================================
 //
@@ -329,6 +331,16 @@ LiteRtStatus LiteRtBuilderBuildSplitOpOption(LiteRtBuilder builder, LiteRtOp op,
 //
 //==============================================================================
 LiteRtStatus LiteRtGetSplitVNumSplitsOption(LiteRtOp op, int32_t* num_splits);
+
+//==============================================================================
+//
+// Build option APIs for LiteRt SplitV op.
+//  Options:
+// - num_splits : int32_t
+//
+//==============================================================================
+LiteRtStatus LiteRtBuilderBuildSplitVOpOption(LiteRtBuilder builder,
+                                              LiteRtOp op, int32_t* num_splits);
 
 //==============================================================================
 //

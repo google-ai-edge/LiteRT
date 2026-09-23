@@ -314,6 +314,14 @@ LiteRtStatus LiteRtGetReshapeNewShapeOption(LiteRtOp op,
                op->OpCode());
     return kLiteRtStatusErrorInvalidArgument;
   }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value != nullptr &&
+      opts.type == tflite::BuiltinOptions_ReshapeOptions) {
+    const auto& shape = opts.AsReshapeOptions()->new_shape;
+    *new_shape = shape.data();
+    *new_shape_size = static_cast<int32_t>(shape.size());
+    return kLiteRtStatusOk;
+  }
   // The new shape is stored as the second input to the OP as a i32 tensor, as
   // per 'lite/ir/tfl_ops.td' 'TFL_ReshapeOp' definition.
   if (op->NumInputs() < 2) {

@@ -650,6 +650,28 @@ struct SplitOptions : public OpOptions {
   }
 };
 
+/// @brief Struct to hold options for the LiteRT SplitV op.
+struct SplitVOptions : public OpOptions {
+  LiteRtOp op;
+  int32_t num_splits;
+  LiteRtStatus InitFromOp(LiteRtOp op) override {
+    LiteRtOpCode opcode;
+    LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+    if (opcode != kLiteRtOpCodeTflSplitV) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    LITERT_RETURN_IF_ERROR(LiteRtGetSplitVNumSplitsOption(op, &num_splits));
+    this->op = op;
+
+    return kLiteRtStatusOk;
+  }
+  Expected<void> SetOpOptions(LiteRtBuilder builder) {
+    LITERT_RETURN_IF_ERROR(
+        LiteRtBuilderBuildSplitVOpOption(builder, op, &num_splits));
+    return Expected<void>();
+  }
+};
+
 /// @brief Struct to hold options for the LiteRT Conv2d op.
 struct Conv2dOptions : public OpOptions {
   LiteRtOp op;
@@ -1123,6 +1145,28 @@ struct SqueezeOptions : public OpOptions {
   }
 };
 
+/// @brief Struct to hold options for the LiteRT OneHot op.
+struct OneHotOptions : public OpOptions {
+  LiteRtOp op;
+  int32_t axis;
+  LiteRtStatus InitFromOp(LiteRtOp op) override {
+    LiteRtOpCode opcode;
+    LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+    if (opcode != kLiteRtOpCodeTflOneHot) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    LITERT_RETURN_IF_ERROR(LiteRtGetOneHotAxisOption(op, &axis));
+    this->op = op;
+
+    return kLiteRtStatusOk;
+  }
+  Expected<void> SetOpOptions(LiteRtBuilder builder) {
+    LITERT_RETURN_IF_ERROR(
+        LiteRtBuilderBuildOneHotOpOption(builder, op, &axis));
+    return Expected<void>();
+  }
+};
+
 /// @brief Returns the composite info for the given op if it is a composite op.
 template <typename OptionsT>
 Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
@@ -1276,6 +1320,14 @@ Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
     return options;
   } else if constexpr (std::is_same_v<OptionsT, SqueezeOptions>) {
     SqueezeOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, OneHotOptions>) {
+    OneHotOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, SplitVOptions>) {
+    SplitVOptions options;
     LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
     return options;
   } else {

@@ -196,8 +196,8 @@ struct AddOptions : public OpOptions {
   }
   Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
                               LiteRtBuilder builder) override {
-    if (ctx == nullptr || ctx->build_add_op_option == nullptr) {
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure);
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_add_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
     }
     uint32_t raw_fused_activation =
         static_cast<uint32_t>(fused_activation_function);
@@ -239,8 +239,9 @@ struct BatchMatmulOptions : public OpOptions {
 
   Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
                               LiteRtBuilder builder) override {
-    if (!ctx || !ctx->build_batch_matmul_op_option) {
-      return Unexpected(kLiteRtStatusErrorUnsupported);
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            build_batch_matmul_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
     }
     LITERT_RETURN_IF_ERROR(ctx->build_batch_matmul_op_option(
         builder, op, &adj_x, &adj_y, &asymmetric_quantize_input));
@@ -273,6 +274,17 @@ struct ConcatenationOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            build_concatenation_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_concatenation_op_option(
+        builder, op, &fused_activation_function, &axis));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT Div op.
@@ -296,6 +308,16 @@ struct DivOptions : public OpOptions {
     this->op = op;
 
     return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_div_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_div_op_option(builder, op, &fused_activation_function));
+    return Expected<void>();
   }
 };
 
@@ -340,6 +362,21 @@ struct FullyConnectedOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            build_fully_connected_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    uint32_t quantized_bias_type_uint32 =
+        GetTfliteTensorType(quantized_bias_type);
+    LITERT_RETURN_IF_ERROR(ctx->build_fully_connected_op_option(
+        builder, op, &fused_activation_function, &weights_format,
+        &keep_num_dims, &quantized_bias_type_uint32,
+        &asymmetric_quantize_input));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT Mul op.
@@ -364,6 +401,16 @@ struct MulOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_mul_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_mul_op_option(builder, op, &fused_activation_function));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT Softmax op.
@@ -386,6 +433,15 @@ struct SoftmaxOptions : public OpOptions {
     this->op = op;
 
     return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_softmax_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_softmax_op_option(builder, op, &beta));
+    return Expected<void>();
   }
 };
 
@@ -430,6 +486,18 @@ struct StridedSliceOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            build_strided_slice_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_strided_slice_op_option(
+        builder, op, &begin_mask, &end_mask, &ellipsis_mask, &new_axis_mask,
+        &shrink_axis_mask, &offset));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT Sub op.
@@ -453,6 +521,16 @@ struct SubOptions : public OpOptions {
     this->op = op;
 
     return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_sub_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_sub_op_option(builder, op, &fused_activation_function));
+    return Expected<void>();
   }
 };
 
@@ -481,6 +559,16 @@ struct ReshapeOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_reshape_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_reshape_op_option(
+        builder, op, new_shape.data(), new_shape.size()));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT Sum op.
@@ -503,6 +591,15 @@ struct SumOptions : public OpOptions {
     this->op = op;
 
     return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_sum_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_sum_op_option(builder, op, &keep_dims));
+    return Expected<void>();
   }
 };
 
@@ -528,6 +625,16 @@ struct ReduceMaxOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_reduce_max_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_reduce_max_op_option(builder, op, &keep_dims));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT ReduceMin op.
@@ -551,6 +658,16 @@ struct ReduceMinOptions : public OpOptions {
     this->op = op;
 
     return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_reduce_min_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_reduce_min_op_option(builder, op, &keep_dims));
+    return Expected<void>();
   }
 };
 
@@ -576,6 +693,16 @@ struct ReduceAnyOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_reduce_any_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_reduce_any_op_option(builder, op, &keep_dims));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT ReduceAll op.
@@ -600,6 +727,16 @@ struct ReduceAllOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_reduce_all_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_reduce_all_op_option(builder, op, &keep_dims));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT Pack op.
@@ -621,6 +758,20 @@ struct PackOptions : public OpOptions {
     this->op = op;
 
     return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_pack_op_option) ||
+        ctx->get_num_op_inputs == nullptr) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LiteRtParamIndex num_inputs;
+    LITERT_RETURN_IF_ERROR(ctx->get_num_op_inputs(op, &num_inputs));
+    int32_t values_count_int = static_cast<int32_t>(num_inputs);
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_pack_op_option(builder, op, &axis, &values_count_int));
+    return Expected<void>();
   }
 };
 
@@ -647,6 +798,16 @@ struct UnpackOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_unpack_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_unpack_op_option(builder, op, &axis, &num));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT Gather op.
@@ -672,6 +833,16 @@ struct GatherOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_gather_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_gather_op_option(builder, op, &axis, &batch_dims));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT Mean op.
@@ -694,6 +865,15 @@ struct MeanOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_mean_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_mean_op_option(builder, op, &keep_dims));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT Split op.
@@ -715,6 +895,48 @@ struct SplitOptions : public OpOptions {
     this->op = op;
 
     return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_split_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_split_op_option(builder, op, &num_splits));
+    return Expected<void>();
+  }
+};
+
+/// @brief Struct to hold options for the LiteRT SplitV op.
+struct SplitVOptions : public OpOptions {
+  LiteRtOp op;
+  int32_t num_splits;
+  LiteRtStatus InitFromOp(const LiteRtCompilerContext* ctx,
+                          LiteRtOp op) override {
+    if (ctx == nullptr || ctx->get_op_code == nullptr ||
+        ctx->get_split_v_num_splits_option == nullptr) {
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+    LiteRtOpCode opcode;
+    LITERT_RETURN_IF_ERROR(ctx->get_op_code(op, &opcode));
+    if (opcode != kLiteRtOpCodeTflSplitV) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    LITERT_RETURN_IF_ERROR(ctx->get_split_v_num_splits_option(op, &num_splits));
+    this->op = op;
+
+    return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_split_v_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_split_v_op_option(builder, op, &num_splits));
+    return Expected<void>();
   }
 };
 
@@ -755,6 +977,17 @@ struct Conv2dOptions : public OpOptions {
     this->op = op;
 
     return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_conv_2d_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_conv_2d_op_option(
+        builder, op, &padding, &stride_w, &stride_h, &dilation_w_factor,
+        &dilation_h_factor, &fused_activation_function));
+    return Expected<void>();
   }
 };
 
@@ -803,6 +1036,18 @@ struct Conv3dOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_conv_3d_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_conv_3d_op_option(
+        builder, op, &padding, &stride_w, &stride_h, &stride_d,
+        &dilation_w_factor, &dilation_h_factor, &dilation_d_factor,
+        &fused_activation_function));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT DepthwiseConv2d op.
@@ -850,6 +1095,18 @@ struct DepthwiseConv2dOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            build_depthwise_conv_2d_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_depthwise_conv_2d_op_option(
+        builder, op, &padding, &stride_w, &stride_h, &depth_multiplier,
+        &fused_activation_function, &dilation_w_factor, &dilation_h_factor));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT TransposeConv op.
@@ -884,6 +1141,18 @@ struct TransposeConvOptions : public OpOptions {
     this->op = op;
 
     return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            build_transpose_conv_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_transpose_conv_op_option(
+        builder, op, &padding, &stride_w, &stride_h,
+        &fused_activation_function));
+    return Expected<void>();
   }
 };
 
@@ -928,6 +1197,18 @@ struct AveragePool2dOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            build_average_pool_2d_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_average_pool_2d_op_option(
+        builder, op, &padding, &stride_w, &stride_h, &filter_width,
+        &filter_height, &fused_activation_function));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT MaxPool2d op.
@@ -967,6 +1248,18 @@ struct MaxPool2dOptions : public OpOptions {
     this->op = op;
 
     return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            build_max_pool_2d_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_max_pool_2d_op_option(
+        builder, op, &padding, &stride_w, &stride_h, &filter_width,
+        &filter_height, &fused_activation_function));
+    return Expected<void>();
   }
 };
 
@@ -1008,6 +1301,17 @@ struct L2Pool2dOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_l2_pool_2d_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_l2_pool_2d_op_option(
+        builder, op, &padding, &stride_w, &stride_h, &filter_width,
+        &filter_height, &fused_activation_function));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT ResizeBilinear op.
@@ -1035,6 +1339,17 @@ struct ResizeBilinearOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            build_resize_bilinear_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_resize_bilinear_op_option(
+        builder, op, &align_corners, &half_pixel_centers));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT LeakyRelu op.
@@ -1056,6 +1371,16 @@ struct LeakyReluOptions : public OpOptions {
     this->op = op;
 
     return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_leaky_relu_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_leaky_relu_op_option(builder, op, &alpha));
+    return Expected<void>();
   }
 };
 
@@ -1080,6 +1405,17 @@ struct SpaceToDepthOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            build_space_to_depth_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_space_to_depth_op_option(builder, op, &block_size));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT DepthToSpace op.
@@ -1102,6 +1438,17 @@ struct DepthToSpaceOptions : public OpOptions {
     this->op = op;
 
     return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            build_depth_to_space_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_depth_to_space_op_option(builder, op, &block_size));
+    return Expected<void>();
   }
 };
 
@@ -1132,6 +1479,17 @@ struct ResizeNearestNeighborOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            build_resize_nearest_neighbor_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_resize_nearest_neighbor_op_option(
+        builder, op, &align_corners, &half_pixel_centers));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT CumSum op.
@@ -1157,6 +1515,16 @@ struct CumSumOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_cumsum_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_cumsum_op_option(builder, op, &exclusive, &reverse));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT Gelu op.
@@ -1179,6 +1547,16 @@ struct GeluOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_gelu_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->build_gelu_op_option(builder, op, &approximate));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT MirrorPad op.
@@ -1200,6 +1578,15 @@ struct MirrorPadOptions : public OpOptions {
     this->op = op;
 
     return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_mirror_pad_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_mirror_pad_op_option(builder, op, &mode));
+    return Expected<void>();
   }
 };
 
@@ -1230,6 +1617,16 @@ struct SqueezeOptions : public OpOptions {
 
     return kLiteRtStatusOk;
   }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_squeeze_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_squeeze_op_option(
+        builder, op, squeeze_dims.data(), squeeze_dims.size()));
+    return Expected<void>();
+  }
 };
 
 /// @brief Struct to hold options for the LiteRT OneHot op.
@@ -1251,6 +1648,15 @@ struct OneHotOptions : public OpOptions {
     this->op = op;
 
     return kLiteRtStatusOk;
+  }
+
+  Expected<void> SetOpOptions(const LiteRtCompilerContext* ctx,
+                              LiteRtBuilder builder) override {
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, build_one_hot_op_option)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    LITERT_RETURN_IF_ERROR(ctx->build_one_hot_op_option(builder, op, &axis));
+    return Expected<void>();
   }
 };
 
