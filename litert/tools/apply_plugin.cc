@@ -385,6 +385,14 @@ LiteRtStatus Compile(Context& ctx) {
   ctx.Dump().Start("Compiling");
   DumpCompilationRequest(ctx.Dump(), ctx.SocModelTarget(),
                          model.NumSubgraphs());
+
+  if (auto status =
+          litert::internal::TransformModel(*plugin, model, ctx.SocModelTarget());
+      !status) {
+    ctx.Dump().Fail();
+    return status.Error().Status();
+  }
+
   auto compilation_result = plugin->Compile(&model, ctx.SocModelTarget());
   if (!compilation_result) {
     ctx.Dump().Fail();
