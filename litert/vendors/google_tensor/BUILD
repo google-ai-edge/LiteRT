@@ -53,7 +53,6 @@ litert_lib(
         "//litert/cc:litert_expected",
         "//litert/core:dynamic_loading",
         "@com_google_absl//absl/cleanup",
-        "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
