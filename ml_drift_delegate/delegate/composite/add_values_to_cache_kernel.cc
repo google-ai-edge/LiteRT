@@ -62,12 +62,11 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateAddValuesToCache(
   const auto& cache_k = op_def.dst_tensors[0];
   const auto& cache_v = op_def.dst_tensors[1];
   const auto src_shape = src_k.GetBHWDCShape();
-  const auto cache_shape = cache_k.GetBHWDCShape();
 
   AddValuesToCacheOp custom_op;
   custom_op.AllowFuseInputReorder(true);
 
-  int num_heads = attr.head_size > 0 ? (cache_shape.c / attr.head_size) : 1;
+  int num_heads = attr.head_size > 0 ? (src_shape.c / attr.head_size) : 1;
   custom_op.update_width_ = src_shape.w;
   custom_op.batch_size_ = attr.kv_cache_batch_size * std::max(1, num_heads);
   custom_op.slices_ = (attr.head_size + 3) / 4;

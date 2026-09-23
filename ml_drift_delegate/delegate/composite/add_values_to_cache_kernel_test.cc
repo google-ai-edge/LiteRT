@@ -20,10 +20,8 @@
 
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
-#include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
-#include "absl/strings/str_join.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/kernels/tests/kernel_test.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
@@ -38,6 +36,8 @@ namespace litert::ml_drift {
 namespace {
 
 using ::testing::Combine;
+using ::testing::FloatEq;
+using ::testing::Pointwise;
 using ::testing::TestParamInfo;
 using ::testing::ValuesIn;
 
@@ -143,8 +143,48 @@ absl::Status RunAddValuesToCacheTest(
   std::vector<float> cache_v_result(kKVCacheFullSize);
   cache_v_desc.DownloadData(cache_v_result.data());
 
-  ABSL_LOG(ERROR) << "cache_k_result: " << absl::StrJoin(cache_k_result, ",");
-  ABSL_LOG(ERROR) << "cache_v_result: " << absl::StrJoin(cache_v_result, ",");
+  // CPU reference of the packed layouts the kernel writes:
+  //   cache_k - kOSpatialIOGroupO4I4, O = cache_size, I = head_size
+  //   cache_v - kOSpatialIOGroupI4O4, O = head_size,  I = cache_size
+  // Slots that the update does not cover must stay zero, so comparing the full
+  // cache also catches a grid that is dispatched too large or too small.
+  constexpr int kHeadSizeSlices = (kHeadSize + 3) / 4;
+  constexpr int kCacheSizeSlices = (kCacheSize + 3) / 4;
+  const int active_tokens = params_data[1];
+  std::vector<float> expected_cache_k(kKVCacheFullSize, 0.0f);
+  std::vector<float> expected_cache_v(kKVCacheFullSize, 0.0f);
+  for (int batch = 0; batch < kBatchSize; ++batch) {
+    for (int x = 0; x < kInputWidth; ++x) {
+      const int token_index = kStartIndex + x;
+      if (token_index >= kCacheSize || token_index >= active_tokens) continue;
+      const int token_slice = token_index / 4;
+      const int token_in_slice = token_index % 4;
+      for (int c = 0; c < kHeadSize; ++c) {
+        const int src_index = (batch * kInputWidth + x) * kHeadSize + c;
+        const int channel_slice = c / 4;
+        const int channel_in_slice = c % 4;
+        const int k_index =
+            (((batch * kHeadSizeSlices + channel_slice) * kCacheSizeSlices +
+              token_slice) *
+                 4 +
+             token_in_slice) *
+                4 +
+            channel_in_slice;
+        expected_cache_k[k_index] = k_data[src_index];
+        const int v_index =
+            (((batch * kCacheSizeSlices + token_slice) * kHeadSizeSlices +
+              channel_slice) *
+                 4 +
+             token_in_slice) *
+                4 +
+            channel_in_slice;
+        expected_cache_v[v_index] = v_data[src_index];
+      }
+    }
+  }
+
+  EXPECT_THAT(cache_k_result, Pointwise(FloatEq(), expected_cache_k));
+  EXPECT_THAT(cache_v_result, Pointwise(FloatEq(), expected_cache_v));
   return absl::OkStatus();
 }
 

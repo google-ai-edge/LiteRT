@@ -639,10 +639,8 @@ mld_kernel_test(
     deps = [
         ":add_values_to_cache_kernel",
         ":add_values_to_cache_parser",
-        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
-        "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:precision",
