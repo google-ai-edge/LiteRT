@@ -108,6 +108,7 @@ cc_test(
         "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/utils:matchers",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],

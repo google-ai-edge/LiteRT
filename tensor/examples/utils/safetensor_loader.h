@@ -170,6 +170,11 @@ class SafetensorLoader {
   }
 
   // Loads a tensor.
+  //
+  // Note: This supports the `compressed-tensors` extension to safetensors.
+  // With it quantized weights are stored as a
+  // `<module>.weight_{packed,scale,zero_point,shape}` buffer tuple. Asking for
+  // `<module>.weight` will detect and load that triplet.
   absl::StatusOr<TensorHandle> LoadTensor(absl::string_view name) const;
 
   // Loads all tensors into a map.
@@ -191,6 +196,16 @@ class SafetensorLoader {
   // Reads `quantization_config` from a HuggingFace `config.json`. Returns
   // `absl::NotFoundError` if the file does not exist.
   absl::Status AddQuantizationConfigFromJsonFile(const std::string& path);
+
+  // Loads weights stored as a `compressed-tensors` packed tuple:
+  // `<module>.weight_{packed,scale,zero_point,shape}`.
+  absl::StatusOr<TensorHandle> LoadPackedTensor(absl::string_view module,
+                                                absl::string_view name) const;
+
+  // Reads the `<module>.weight_{scale,zero_point}` and builds the matching
+  // quantization parameters for `scheme`.
+  absl::StatusOr<std::shared_ptr<Quantization>> LoadQuantizationParams(
+      const QuantizationConfig::Scheme& scheme, absl::string_view module) const;
 
   // Convert safetensor dtype enum to Type enum.
   static absl::StatusOr<Type> DtypeToType(safetensors::dtype dtype);
