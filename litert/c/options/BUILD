@@ -118,7 +118,6 @@ cc_test(
         ":litert_qualcomm_options",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
-        "//litert/cc:litert_opaque_options",
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",

@@ -724,6 +724,57 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  // Sets the directory where CPU host QNN SDK shared libraries
+  // (libQnnSystem.so, libQnnHtp.so, etc.) are located. When set, this directory
+  // takes top priority when loading QNN host libraries. If not set (or if
+  // loading from this path fails), library loading falls back to the plugin
+  // directory (shared_library_dir), and finally to standard system dynamic
+  // loader search paths (preserving backward compatibility). Also acts as a
+  // fallback directory for configuring ADSP_LIBRARY_PATH if dsp_skel_dir is not
+  // explicitly set.
+  void SetQnnLibDir(const std::string& qnn_lib_dir) {
+    LrtQualcommOptionsSetQnnLibDir(options_, qnn_lib_dir.c_str());
+  }
+
+  // Retrieves the configured CPU host QNN shared library directory.
+  // Returns an empty string if not set.
+  // The returned view points into storage owned by the underlying options
+  // object. It is invalidated by a subsequent call to SetQnnLibDir() or by the
+  // destruction of the options object.
+  StringView GetQnnLibDir() const {
+    const char* val;
+    auto status = LrtQualcommOptionsGetQnnLibDir(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
+
+  // Sets the directory where Hexagon DSP Skel shared libraries
+  // (libQnnHtpV*Skel.so) are located. Used to configure ADSP_LIBRARY_PATH for
+  // FastRPC.
+  // When set, this directory takes top priority for ADSP_LIBRARY_PATH.
+  // If not set, ADSP_LIBRARY_PATH falls back to qnn_lib_dir (if provided), and
+  // finally to the plugin directory (shared_library_dir), preserving backward
+  // compatibility.
+  void SetDspSkelDir(const std::string& dsp_skel_dir) {
+    LrtQualcommOptionsSetDspSkelDir(options_, dsp_skel_dir.c_str());
+  }
+
+  // Retrieves the configured DSP Skel shared library directory.
+  // Returns an empty string if not set.
+  // The returned view points into storage owned by the underlying options
+  // object. It is invalidated by a subsequent call to SetDspSkelDir() or by the
+  // destruction of the options object.
+  StringView GetDspSkelDir() const {
+    const char* val;
+    auto status = LrtQualcommOptionsGetDspSkelDir(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
+
  private:
   LrtQualcommOptions options_;
 };

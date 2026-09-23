@@ -492,6 +492,54 @@ LiteRtStatus LrtQualcommOptionsSetLpaiCoreSelection(
 
 LiteRtStatus LrtQualcommOptionsGetLpaiCoreSelection(
     LrtQualcommOptions options, uint32_t* lpai_core_selection);
+
+// qnn_lib_dir
+
+// Sets the directory where CPU host QNN SDK shared libraries (libQnnSystem.so,
+// libQnnHtp.so, etc.) are located.
+// When set, this directory takes top priority when loading QNN host libraries.
+// If not set (or if loading from this path fails), library loading falls back
+// to the plugin directory (shared_library_dir), and finally to standard system
+// dynamic loader search paths (preserving backward compatibility).
+// Also acts as a fallback directory for configuring ADSP_LIBRARY_PATH if
+// dsp_skel_dir is not explicitly set.
+// The `qnn_lib_dir` string is copied into the `options` object, so the caller
+// retains ownership of it and does not need to keep it alive.
+LiteRtStatus LrtQualcommOptionsSetQnnLibDir(LrtQualcommOptions options,
+                                            const char* qnn_lib_dir);
+
+// Retrieves the configured CPU host QNN shared library directory.
+// Returns an empty string if not set.
+// The returned string pointer is owned by the `options` object. It remains
+// valid until the value is overwritten by LrtQualcommOptionsSetQnnLibDir() or
+// until `options` is destroyed, whichever comes first. Callers that need the
+// value beyond that point must make their own copy.
+LiteRtStatus LrtQualcommOptionsGetQnnLibDir(LrtQualcommOptions options,
+                                            const char** qnn_lib_dir);
+
+// dsp_skel_dir
+
+// Sets the directory where Hexagon DSP Skel shared libraries
+// (libQnnHtpV*Skel.so) are located. Used to configure ADSP_LIBRARY_PATH for
+// FastRPC.
+// When set, this directory takes top priority for ADSP_LIBRARY_PATH.
+// If not set, ADSP_LIBRARY_PATH falls back to qnn_lib_dir (if provided), and
+// finally to the plugin directory (shared_library_dir), preserving backward
+// compatibility.
+// The `dsp_skel_dir` string is copied into the `options` object, so the caller
+// retains ownership of it and does not need to keep it alive.
+LiteRtStatus LrtQualcommOptionsSetDspSkelDir(LrtQualcommOptions options,
+                                             const char* dsp_skel_dir);
+
+// Retrieves the configured DSP Skel shared library directory.
+// Returns an empty string if not set.
+// The returned string pointer is owned by the `options` object. It remains
+// valid until the value is overwritten by LrtQualcommOptionsSetDspSkelDir() or
+// until `options` is destroyed, whichever comes first. Callers that need the
+// value beyond that point must make their own copy.
+LiteRtStatus LrtQualcommOptionsGetDspSkelDir(LrtQualcommOptions options,
+                                             const char** dsp_skel_dir);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
