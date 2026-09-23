@@ -29,6 +29,13 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
   }
 
   @Throws(LiteRtException::class)
+  fun writeInt16(data: ShortArray) {
+    assertNotDestroyed()
+
+    nativeWriteInt16(handle, data)
+  }
+
+  @Throws(LiteRtException::class)
   fun writeFloat(data: FloatArray) {
     assertNotDestroyed()
 
@@ -61,6 +68,13 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
     assertNotDestroyed()
 
     return nativeReadInt(handle)
+  }
+
+  @Throws(LiteRtException::class)
+  fun readInt16(): ShortArray {
+    assertNotDestroyed()
+
+    return nativeReadInt16(handle)
   }
 
   @Throws(LiteRtException::class)
@@ -102,6 +116,8 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
 
     @JvmStatic private external fun nativeWriteInt(handle: Long, data: IntArray)
 
+    @JvmStatic private external fun nativeWriteInt16(handle: Long, data: ShortArray)
+
     @JvmStatic private external fun nativeWriteFloat(handle: Long, data: FloatArray)
 
     @JvmStatic private external fun nativeWriteInt8(handle: Long, data: ByteArray)
@@ -111,6 +127,8 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
     @JvmStatic private external fun nativeWriteLong(handle: Long, data: LongArray)
 
     @JvmStatic private external fun nativeReadInt(handle: Long): IntArray
+
+    @JvmStatic private external fun nativeReadInt16(handle: Long): ShortArray
 
     @JvmStatic private external fun nativeReadFloat(handle: Long): FloatArray
 

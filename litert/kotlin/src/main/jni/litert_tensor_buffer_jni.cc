@@ -94,6 +94,15 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteInt(JNIEnv* env,
 }
 
 JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteInt16(
+    JNIEnv* env, jclass clazz, jlong handle, jshortArray input) {
+  AUTO_CLEANUP_JNI_SHORT_ARRAY(env, input);
+  auto num_elements = env->GetArrayLength(input);
+  auto input_span = absl::MakeConstSpan(input_array, num_elements);
+  WriteImp<jshort>(env, handle, input_span);
+}
+
+JNIEXPORT void JNICALL
 Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteFloat(
     JNIEnv* env, jclass clazz, jlong handle, jfloatArray input) {
   AUTO_CLEANUP_JNI_FLOAT_ARRAY(env, input);
@@ -139,6 +148,14 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt(JNIEnv* env,
                                                           jlong handle) {
   return ReadImp<jint, jintArray>(env, handle, &JNIEnv::NewIntArray,
                                   &JNIEnv::SetIntArrayRegion);
+}
+
+JNIEXPORT jshortArray JNICALL
+Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt16(JNIEnv* env,
+                                                            jclass clazz,
+                                                            jlong handle) {
+  return ReadImp<jshort, jshortArray>(env, handle, &JNIEnv::NewShortArray,
+                                      &JNIEnv::SetShortArrayRegion);
 }
 
 JNIEXPORT jfloatArray JNICALL
