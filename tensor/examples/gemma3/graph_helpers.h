@@ -215,24 +215,9 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
   k_for_attn = RepeatKVHeads(k_for_attn, num_groups);
   v_for_attn = RepeatKVHeads(v_for_attn, num_groups);
 
-  // Scaled dot-product attention.
-  // scores = Q @ K^T / sqrt(query_pre_attn_scalar)
-  Tensor scores = BatchMatMul(q, k_for_attn, /*adj_x=*/false, /*adj_y=*/true);
-
-  // Scale by query_pre_attn_scalar^(-0.5).
-  float scale = 1.0f / std::sqrt(config.query_pre_attn_scalar);
-  Tensor<Mixins...> scale_tensor(
-      {.type = Type::kFP32, .shape = {1}, .buffer = scale});
-  scores = Mul(scores, scale_tensor);
-
-  // Apply attention mask (add -inf for masked positions).
-  scores = Add(scores, attention_mask);
-
-  // Softmax.
-  Tensor attn_weights = Softmax(scores);
-
-  // Attention output = weights @ V.
-  Tensor attn_output = BatchMatMul(attn_weights, v_for_attn);
+  Tensor attn_output = ScaledDotProductAttention(
+      q, k_for_attn, v_for_attn, attention_mask,
+      /*scale=*/1.0f / std::sqrt(config.query_pre_attn_scalar));
 
   // Reshape back: [batch, n_heads, seq, head_dim] -> [batch, seq, n_heads *
   // head_dim].

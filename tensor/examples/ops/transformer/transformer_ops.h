@@ -141,6 +141,79 @@ Tensor<Mixins...> RepeatKVHeads(const Tensor<Mixins...>& x, int num_groups) {
                  {batch_size, num_kv_heads * num_groups, seq_len, head_dim});
 }
 
+// Computes scaled dot-product attention:
+// Attention(Q, K, V) = softmax(soft_cap(Q * K^T * scale) + mask) * V
+//
+// attention_mask: added to the logits after soft-capping; broadcastable to
+//   [batch, num_heads, seq_len_q, seq_len_kv]. An invalid tensor (the default)
+//   means no mask is applied.
+// scale: if set, the logits are multiplied by it; the logits are left as-is
+//   otherwise.
+// soft_cap: if set, logits are squashed through tanh(x / cap) * cap.
+// datatype: type of the scale and cap constants; deduced from `q` when unset.
+//   It is only used when `scale` or `soft_cap` requires a constant to be
+//   materialized; in that case an untyped `q` and an unset `datatype` are an
+//   error, as there is nothing left to deduce the constant type from.
+//
+// Expected tensor shapes:
+//   q: [batch, num_heads, seq_len_q, head_dim]
+//   k: [batch, num_heads, seq_len_kv, head_dim]
+//   v: [batch, num_heads, seq_len_kv, head_dim]
+//   output: [batch, num_heads, seq_len_q, head_dim]
+//
+// Returns an error tensor if the constant type cannot be resolved or if
+// `soft_cap` is zero.
+template <class... Mixins>
+Tensor<Mixins...> ScaledDotProductAttention(
+    const Tensor<Mixins...>& q, const Tensor<Mixins...>& k,
+    const Tensor<Mixins...>& v,
+    const Tensor<Mixins...>& attention_mask = TensorHandle::Invalid(),
+    std::optional<float> scale = std::nullopt,
+    std::optional<float> soft_cap = std::nullopt,
+    Type datatype = Type::kUnknown) {
+  Tensor scores = BatchMatMul(q, k, /*adj_x=*/false, /*adj_y=*/true);
+
+  const bool scale_constant_needed = scale.has_value() && *scale != 1.0f;
+  if (datatype == Type::kUnknown) {
+    datatype = q.GetType();
+  }
+  if (datatype == Type::kUnknown &&
+      (scale_constant_needed || soft_cap.has_value())) {
+    return TensorHandle(absl::InvalidArgumentError(
+        "ScaledDotProductAttention cannot deduce the type of the scale and "
+        "soft cap constants from an untyped `q`; pass `datatype` "
+        "explicitly."));
+  }
+
+  if (scale_constant_needed) {
+    Tensor<Mixins...> scale_tensor(
+        {.type = datatype, .shape = {1}, .buffer = *scale});
+    scores = Mul(scores, scale_tensor);
+  }
+
+  if (soft_cap.has_value()) {
+    const float cap = *soft_cap;
+    if (cap == 0.0f) {
+      return TensorHandle(absl::InvalidArgumentError(
+          "ScaledDotProductAttention `soft_cap` must not be zero."));
+    }
+    Tensor<Mixins...> cap_tensor(
+        {.type = datatype, .shape = {1}, .buffer = cap});
+    Tensor<Mixins...> inv_cap_tensor(
+        {.type = datatype, .shape = {1}, .buffer = 1.0f / cap});
+    Tensor scaled_scores = Mul(scores, inv_cap_tensor);
+    Tensor tanh_scores = Tanh(scaled_scores);
+    scores = Mul(tanh_scores, cap_tensor);
+  }
+
+  if (attention_mask.GetStatus().ok()) {
+    scores = Add(scores, attention_mask);
+  }
+
+  Tensor attention_weights = Softmax(scores);
+  return BatchMatMul(attention_weights, v);
+}
+
 template <class... Mixins>
 Tensor<Mixins...> RotaryEmbedding(const Tensor<Mixins...>& input,
                                   const Tensor<Mixins...>& segment_pos,

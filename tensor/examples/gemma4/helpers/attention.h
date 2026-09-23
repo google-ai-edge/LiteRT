@@ -148,24 +148,9 @@ AttentionOutput<Mixins...> Attention(
   k_for_attn = RepeatKVHeads(k_for_attn, num_groups);
   v_for_attn = RepeatKVHeads(v_for_attn, num_groups);
 
-  Tensor scores = BatchMatMul(q, k_for_attn, /*adj_x=*/false, /*adj_y=*/true);
-
-  if (config.attn_logits_soft_cap.has_value()) {
-    float cap = config.attn_logits_soft_cap.value();
-    Tensor<Mixins...> cap_tensor(
-        {.type = Type::kFP32, .shape = {1}, .buffer = cap});
-    Tensor<Mixins...> inv_cap_tensor(
-        {.type = Type::kFP32, .shape = {1}, .buffer = 1.0f / cap});
-    Tensor scaled_scores = Mul(scores, inv_cap_tensor);
-    Tensor tanh_scores = Tanh(scaled_scores);
-    scores = Mul(tanh_scores, cap_tensor);
-  }
-
-  scores = Add(scores, attention_mask);
-  Tensor probs = Softmax(scores);
-
-  Tensor context =
-      BatchMatMul(probs, v_for_attn, /*adj_x=*/false, /*adj_y=*/false);
+  Tensor context = ScaledDotProductAttention(
+      q, k_for_attn, v_for_attn, attention_mask, /*scale=*/1.0f,
+      config.attn_logits_soft_cap);
 
   // Reshape context back to [B, L, N * H]
   context = Transpose(context, {0, 2, 1, 3});
