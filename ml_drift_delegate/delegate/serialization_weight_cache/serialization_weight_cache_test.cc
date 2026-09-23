@@ -543,87 +543,89 @@ TEST(SerializationWeightCacheUniqueModelIdentifierTest,
   const MlDriftDelegatePrecision precision = kDefault;
 
   // Base fingerprint with default options.
+  ml_drift::ModelIdentifierOptions default_options;
+  default_options.precision = precision;
+  default_options.prefer_texture_weights = false;
+  default_options.allow_src_quantized_fc_conv_ops = false;
+  default_options.prepare_weights_in_batches = false;
+  default_options.serialize_external_tensors = false;
+  default_options.ordered_by_size = true;
+  default_options.use_ir_model = false;
+
   uint64_t base_fp =
       ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
           model_token, /*context=*/nullptr, /*delegate_params=*/nullptr, prefix,
-          precision,
-          /*prefer_texture_weights=*/false,
-          /*allow_src_quantized_fc_conv_ops=*/false,
-          /*prepare_weights_in_batches=*/false,
-          /*serialize_external_tensors=*/false,
-          /*ordered_by_size=*/true);
+          default_options);
 
   // Test precision changes fingerprint.
-  uint64_t fp_precision =
-      ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
-          model_token, /*context=*/nullptr, /*delegate_params=*/nullptr, prefix,
-          kFp16,
-          /*prefer_texture_weights=*/false,
-          /*allow_src_quantized_fc_conv_ops=*/false,
-          /*prepare_weights_in_batches=*/false,
-          /*serialize_external_tensors=*/false,
-          /*ordered_by_size=*/true);
-  EXPECT_NE(base_fp, fp_precision);
+  ml_drift::ModelIdentifierOptions fp_precision_options = default_options;
+  fp_precision_options.precision = kFp16;
+  EXPECT_NE(base_fp,
+            ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
+                model_token, /*context=*/nullptr, /*delegate_params=*/nullptr,
+                prefix, fp_precision_options));
 
   // Test prefer_texture_weights changes fingerprint.
-  uint64_t fp_prefer_texture =
-      ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
-          model_token, /*context=*/nullptr, /*delegate_params=*/nullptr, prefix,
-          precision,
-          /*prefer_texture_weights=*/true,
-          /*allow_src_quantized_fc_conv_ops=*/false,
-          /*prepare_weights_in_batches=*/false,
-          /*serialize_external_tensors=*/false,
-          /*ordered_by_size=*/true);
-  EXPECT_NE(base_fp, fp_prefer_texture);
+  ml_drift::ModelIdentifierOptions fp_prefer_texture_options = default_options;
+  fp_prefer_texture_options.prefer_texture_weights = true;
+  EXPECT_NE(base_fp,
+            ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
+                model_token, /*context=*/nullptr, /*delegate_params=*/nullptr,
+                prefix, fp_prefer_texture_options));
 
   // Test allow_src_quantized_fc_conv_ops changes fingerprint.
-  uint64_t fp_allow_src_quantized =
-      ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
-          model_token, /*context=*/nullptr, /*delegate_params=*/nullptr, prefix,
-          precision,
-          /*prefer_texture_weights=*/false,
-          /*allow_src_quantized_fc_conv_ops=*/true,
-          /*prepare_weights_in_batches=*/false,
-          /*serialize_external_tensors=*/false,
-          /*ordered_by_size=*/true);
-  EXPECT_NE(base_fp, fp_allow_src_quantized);
+  ml_drift::ModelIdentifierOptions fp_allow_src_quantized_options =
+      default_options;
+  fp_allow_src_quantized_options.allow_src_quantized_fc_conv_ops = true;
+  EXPECT_NE(base_fp,
+            ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
+                model_token, /*context=*/nullptr, /*delegate_params=*/nullptr,
+                prefix, fp_allow_src_quantized_options));
 
   // Test prepare_weights_in_batches changes fingerprint.
-  uint64_t fp_prepare_batches =
-      ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
-          model_token, /*context=*/nullptr, /*delegate_params=*/nullptr, prefix,
-          precision,
-          /*prefer_texture_weights=*/false,
-          /*allow_src_quantized_fc_conv_ops=*/false,
-          /*prepare_weights_in_batches=*/true,
-          /*serialize_external_tensors=*/false,
-          /*ordered_by_size=*/true);
-  EXPECT_NE(base_fp, fp_prepare_batches);
+  ml_drift::ModelIdentifierOptions fp_prepare_batches_options = default_options;
+  fp_prepare_batches_options.prepare_weights_in_batches = true;
+  EXPECT_NE(base_fp,
+            ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
+                model_token, /*context=*/nullptr, /*delegate_params=*/nullptr,
+                prefix, fp_prepare_batches_options));
 
   // Test serialize_external_tensors changes fingerprint.
-  uint64_t fp_serialize_tensors =
-      ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
-          model_token, /*context=*/nullptr, /*delegate_params=*/nullptr, prefix,
-          precision,
-          /*prefer_texture_weights=*/false,
-          /*allow_src_quantized_fc_conv_ops=*/false,
-          /*prepare_weights_in_batches=*/false,
-          /*serialize_external_tensors=*/true,
-          /*ordered_by_size=*/true);
-  EXPECT_NE(base_fp, fp_serialize_tensors);
+  ml_drift::ModelIdentifierOptions fp_serialize_tensors_options =
+      default_options;
+  fp_serialize_tensors_options.serialize_external_tensors = true;
+  EXPECT_NE(base_fp,
+            ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
+                model_token, /*context=*/nullptr, /*delegate_params=*/nullptr,
+                prefix, fp_serialize_tensors_options));
 
   // Test ordered_by_size changes fingerprint.
-  uint64_t fp_ordered_by_size =
-      ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
-          model_token, /*context=*/nullptr, /*delegate_params=*/nullptr, prefix,
-          precision,
-          /*prefer_texture_weights=*/false,
-          /*allow_src_quantized_fc_conv_ops=*/false,
-          /*prepare_weights_in_batches=*/false,
-          /*serialize_external_tensors=*/false,
-          /*ordered_by_size=*/false);
-  EXPECT_NE(base_fp, fp_ordered_by_size);
+  ml_drift::ModelIdentifierOptions fp_ordered_by_size_options = default_options;
+  fp_ordered_by_size_options.ordered_by_size = false;
+  EXPECT_NE(base_fp,
+            ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
+                model_token, /*context=*/nullptr, /*delegate_params=*/nullptr,
+                prefix, fp_ordered_by_size_options));
+
+  // Test use_ir_model changes fingerprint.
+  ml_drift::ModelIdentifierOptions fp_use_ir_model_options = default_options;
+  fp_use_ir_model_options.use_ir_model = true;
+  EXPECT_NE(base_fp,
+            ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
+                model_token, /*context=*/nullptr, /*delegate_params=*/nullptr,
+                prefix, fp_use_ir_model_options));
+
+  // Verify backward-compatible overload produces the same base fingerprint.
+  EXPECT_EQ(base_fp,
+            ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
+                model_token, /*context=*/nullptr, /*delegate_params=*/nullptr,
+                prefix, precision,
+                /*prefer_texture_weights=*/false,
+                /*allow_src_quantized_fc_conv_ops=*/false,
+                /*prepare_weights_in_batches=*/false,
+                /*serialize_external_tensors=*/false,
+                /*ordered_by_size=*/true,
+                /*use_ir_model=*/false));
 }
 
 TEST(SerializationWeightCacheTest, StartBuildClosesFdWhenAlreadyBuilding) {

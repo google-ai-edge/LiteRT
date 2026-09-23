@@ -482,28 +482,32 @@ uint64_t SerializationWeightCache::GenerateUniqueModelIdentifier(
     absl::string_view model_token, TfLiteContext* context,
     const TfLiteDelegateParams* delegate_params,
     absl::string_view serialization_prefix,
-    const MlDriftDelegatePrecision& precision, bool prefer_texture_weights,
-    bool allow_src_quantized_fc_conv_ops, bool prepare_weights_in_batches,
-    bool serialize_external_tensors, bool ordered_by_size) {
+    const ModelIdentifierOptions& options) {
   // Generate fingerprints for the relevant delegate data options.
-  uint64_t precision_fingerprint = Fingerprint64(
-      reinterpret_cast<const char*>(&precision), sizeof(precision));
-  uint64_t prefer_texture_weights_fingerprint =
-      Fingerprint64(reinterpret_cast<const char*>(&prefer_texture_weights),
-                    sizeof(prefer_texture_weights));
+  uint64_t precision_fingerprint =
+      Fingerprint64(reinterpret_cast<const char*>(&options.precision),
+                    sizeof(options.precision));
+  uint64_t prefer_texture_weights_fingerprint = Fingerprint64(
+      reinterpret_cast<const char*>(&options.prefer_texture_weights),
+      sizeof(options.prefer_texture_weights));
   uint64_t allow_src_quantized_fc_conv_ops_fingerprint = Fingerprint64(
-      reinterpret_cast<const char*>(&allow_src_quantized_fc_conv_ops),
-      sizeof(allow_src_quantized_fc_conv_ops));
-  uint64_t ordered_by_size_fingerprint = Fingerprint64(
-      reinterpret_cast<const char*>(&ordered_by_size), sizeof(ordered_by_size));
+      reinterpret_cast<const char*>(&options.allow_src_quantized_fc_conv_ops),
+      sizeof(options.allow_src_quantized_fc_conv_ops));
+  uint64_t ordered_by_size_fingerprint =
+      Fingerprint64(reinterpret_cast<const char*>(&options.ordered_by_size),
+                    sizeof(options.ordered_by_size));
   uint64_t alignment_fingerprint = Fingerprint64(
       reinterpret_cast<const char*>(&kMinAlignment), sizeof(kMinAlignment));
-  uint64_t prepare_weights_in_batches_fingerprint =
-      Fingerprint64(reinterpret_cast<const char*>(&prepare_weights_in_batches),
-                    sizeof(prepare_weights_in_batches));
-  uint64_t serialize_external_tensors_fingerprint =
-      Fingerprint64(reinterpret_cast<const char*>(&serialize_external_tensors),
-                    sizeof(serialize_external_tensors));
+  uint64_t prepare_weights_in_batches_fingerprint = Fingerprint64(
+      reinterpret_cast<const char*>(&options.prepare_weights_in_batches),
+      sizeof(options.prepare_weights_in_batches));
+  uint64_t serialize_external_tensors_fingerprint = Fingerprint64(
+      reinterpret_cast<const char*>(&options.serialize_external_tensors),
+      sizeof(options.serialize_external_tensors));
+  uint64_t use_ir_model_fingerprint =
+      Fingerprint64(reinterpret_cast<const char*>(&options.use_ir_model),
+                    sizeof(options.use_ir_model));
+
   // Combine the fingerprints of the relevant delegate data options into a
   // single fingerprint.
   uint64_t options_fingerprint = CombineFingerprints(
@@ -518,6 +522,8 @@ uint64_t SerializationWeightCache::GenerateUniqueModelIdentifier(
       options_fingerprint, prepare_weights_in_batches_fingerprint);
   options_fingerprint = CombineFingerprints(
       options_fingerprint, serialize_external_tensors_fingerprint);
+  options_fingerprint =
+      CombineFingerprints(options_fingerprint, use_ir_model_fingerprint);
 
   // Add "_external_tensors" to prevent collision with the non-external
   // tensors serialization.
@@ -526,6 +532,25 @@ uint64_t SerializationWeightCache::GenerateUniqueModelIdentifier(
   // Generate a unique fingerprint for the model and runtime options.
   return tflite::delegates::Serialization::GetFingerprint(
       model_token.data(), custom_key, context, delegate_params);
+}
+
+uint64_t SerializationWeightCache::GenerateUniqueModelIdentifier(
+    absl::string_view model_token, TfLiteContext* context,
+    const TfLiteDelegateParams* delegate_params,
+    absl::string_view serialization_prefix,
+    const MlDriftDelegatePrecision& precision, bool prefer_texture_weights,
+    bool allow_src_quantized_fc_conv_ops, bool prepare_weights_in_batches,
+    bool serialize_external_tensors, bool ordered_by_size, bool use_ir_model) {
+  ModelIdentifierOptions options;
+  options.precision = precision;
+  options.prefer_texture_weights = prefer_texture_weights;
+  options.allow_src_quantized_fc_conv_ops = allow_src_quantized_fc_conv_ops;
+  options.prepare_weights_in_batches = prepare_weights_in_batches;
+  options.serialize_external_tensors = serialize_external_tensors;
+  options.ordered_by_size = ordered_by_size;
+  options.use_ir_model = use_ir_model;
+  return GenerateUniqueModelIdentifier(model_token, context, delegate_params,
+                                       serialization_prefix, options);
 }
 
 }  // namespace ml_drift

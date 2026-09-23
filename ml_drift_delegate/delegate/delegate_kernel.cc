@@ -1014,16 +1014,22 @@ DelegateKernel::TryInitializingExternalTensorsSerialization(
   }
 
   // Create a unique identifier for this subgraph.
+  ::ml_drift::ModelIdentifierOptions identifier_options;
+  identifier_options.precision = delegate_data_->options->precision;
+  identifier_options.prefer_texture_weights =
+      delegate_data_->options->prefer_texture_weights;
+  identifier_options.allow_src_quantized_fc_conv_ops =
+      delegate_data_->options->allow_src_quantized_fc_conv_ops;
+  identifier_options.prepare_weights_in_batches = prepare_weights_in_batches;
+  identifier_options.serialize_external_tensors =
+      delegate_data_->options->serialize_external_tensors;
+  identifier_options.ordered_by_size = true;
+  identifier_options.use_ir_model = delegate_data_->options->use_ir_model;
+
   uint64_t unique_model_identifier =
       ::ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
           delegate_data_->model_token, context, delegate_params,
-          backend_->GetSerializedDataPrefix(),
-          delegate_data_->options->precision,
-          delegate_data_->options->prefer_texture_weights,
-          delegate_data_->options->allow_src_quantized_fc_conv_ops,
-          prepare_weights_in_batches,
-          delegate_data_->options->serialize_external_tensors,
-          /*ordered_by_size=*/true);
+          backend_->GetSerializedDataPrefix(), identifier_options);
 
   // Try loading from the cache.
   absl::Status load_status;
