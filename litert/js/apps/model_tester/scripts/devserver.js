@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+/** @suppress {lintChecks} */
+
 import * as esbuild from 'esbuild';
 import http from 'node:http';
 
