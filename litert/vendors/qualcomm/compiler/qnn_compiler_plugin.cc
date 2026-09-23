@@ -22,18 +22,20 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <filesystem>
+#include <filesystem>  // NOLINT
 #include <memory>
 #include <optional>
 #include <string>
-#include <system_error>
+#include <system_error>  // NOLINT
 #include <utility>
 #include <vector>
 
 #include "QnnCommon.h"  // from @qairt
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/strings/ascii.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
@@ -51,6 +53,10 @@
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
+#include "litert/vendors/qualcomm/compiler/transformations/entry_embedding_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/legalize_int32_ops_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/mlp_quant_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/rope_transformation.h"
 #include "litert/vendors/qualcomm/core/backends/backend_factory.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
@@ -402,6 +408,10 @@ class LiteRtCompilerPluginT {
 
   const LiteRtCompilerContext* ctx() const { return ctx_; }
 
+  std::vector<LiteRtTransformation>& Transformations() {
+    return transformations_;
+  }
+
  private:
   const LiteRtCompilerContext* ctx_;
   litert::Expected<litert::internal::OptionsWrapper> opts_ =
@@ -412,6 +422,7 @@ class LiteRtCompilerPluginT {
   std::optional<std::string> shared_library_dir_;
   QnnManager::Ptr qnn_manager_ = nullptr;
   std::unique_ptr<::qnn::QnnBackend> qnn_backend_ = nullptr;
+  std::vector<LiteRtTransformation> transformations_;
 };
 
 LiteRtStatus LiteRtCreateCompilerPlugin(
@@ -762,10 +773,113 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   return kLiteRtStatusOk;
 }
 
+namespace {
+
+struct GraphTransformFilter {
+  bool legalize_int32_sign = true;
+  bool legalize_int32_reduce_max = true;
+  bool entry_embedding = true;
+  bool mlp_quant = true;
+  bool rope = true;
+
+  static GraphTransformFilter FromOptions(absl::string_view graph_transform) {
+    GraphTransformFilter filter;
+    if (graph_transform.empty()) {
+      return filter;
+    }
+    const auto tokens = absl::StrSplit(graph_transform, ',', absl::SkipEmpty());
+    for (absl::string_view raw_token : tokens) {
+      absl::string_view token = absl::StripAsciiWhitespace(raw_token);
+      if (token == "disable_all_transforms" || token == "no_transforms") {
+        filter.legalize_int32_sign = false;
+        filter.legalize_int32_reduce_max = false;
+        filter.entry_embedding = false;
+        filter.mlp_quant = false;
+        filter.rope = false;
+      } else if (token == "disable_legalize_transforms" ||
+                 token == "no_legalize_transforms") {
+        filter.legalize_int32_sign = false;
+        filter.legalize_int32_reduce_max = false;
+      } else if (token == "disable_model_transforms" ||
+                 token == "no_model_transforms") {
+        filter.entry_embedding = false;
+        filter.mlp_quant = false;
+        filter.rope = false;
+      } else if (token == "no_int32_sign" || token == "disable_int32_sign") {
+        filter.legalize_int32_sign = false;
+      } else if (token == "no_int32_reduce_max" ||
+                 token == "disable_int32_reduce_max") {
+        filter.legalize_int32_reduce_max = false;
+      } else if (token == "no_entry_embedding" ||
+                 token == "disable_entry_embedding") {
+        filter.entry_embedding = false;
+      } else if (token == "no_mlp_quant" || token == "disable_mlp_quant") {
+        filter.mlp_quant = false;
+      } else if (token == "no_rope" || token == "disable_rope") {
+        filter.rope = false;
+      }
+    }
+    return filter;
+  }
+};
+
+}  // namespace
+
 LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
     LiteRtCompilerPlugin compiler_plugin,
     LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns) {
-  *num_patterns = 0;
+  if (!compiler_plugin || !transformations || !num_patterns) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  ResetRopeTransformationState();
+  compiler_plugin->Transformations().clear();
+
+  const auto filter = GraphTransformFilter::FromOptions(
+      compiler_plugin->Options().GetGraphTransform());
+
+  if (filter.legalize_int32_sign) {
+    compiler_plugin->Transformations().push_back({
+        &LegalizeInt32SignTransformation,
+        "LegalizeInt32SignTransformation",
+        100,
+    });
+  }
+  if (filter.legalize_int32_reduce_max) {
+    compiler_plugin->Transformations().push_back({
+        &LegalizeInt32ReduceMaxTransformation,
+        "LegalizeInt32ReduceMaxTransformation",
+        100,
+    });
+  }
+  if (filter.entry_embedding) {
+    compiler_plugin->Transformations().push_back({
+        &EntryEmbeddingTransformation,
+        "EntryEmbeddingTransformation",
+        100,
+    });
+  }
+  if (filter.mlp_quant) {
+    compiler_plugin->Transformations().push_back({
+        &MLPInt8QuantTransformation,
+        "MLPInt8QuantTransformation",
+        100,
+    });
+  }
+  if (filter.rope) {
+    compiler_plugin->Transformations().push_back({
+        &RopeAttentionLayerTransformation,
+        "RopeAttentionLayerTransformation",
+        90,
+    });
+    compiler_plugin->Transformations().push_back({
+        &RopeCleanupTransformation,
+        "RopeCleanupTransformation",
+        80,
+    });
+  }
+
+  *num_patterns = compiler_plugin->Transformations().size();
+  *transformations = compiler_plugin->Transformations().data();
   return kLiteRtStatusOk;
 }
 
