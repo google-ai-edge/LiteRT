@@ -185,6 +185,7 @@ cc_library(
     deps = [
         ":model",
         "//litert/c:litert_common",
+        "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_common",
@@ -345,6 +346,7 @@ cc_library(
         ":ops_unpack",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
@@ -459,6 +461,7 @@ cc_library(
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//tflite/schema:schema_fbs",
+        "@SafeInt",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -485,7 +488,6 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//tflite/converter/schema:schema_fbs",
-        "//tflite/kernels/internal:reference_base",
         "//tflite/kernels/internal:types",
         "@com_google_absl//absl/types:span",
     ],
@@ -538,6 +540,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//tflite/schema:schema_fbs",
+        "@SafeInt",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -859,6 +862,7 @@ cc_test(
         ":ops_topk",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/cc:litert_buffer_ref",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -1182,5 +1186,43 @@ cc_test(
         "//litert/c:litert_common",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "verifier",
+    srcs = ["verifier.cc"],
+    hdrs = ["verifier.h"],
+    deps = [
+        ":model",
+        ":model_load",
+        ":shape_inference",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite:stderr_reporter",
+        "//tflite/core/api:error_reporter",
+        "//tflite/core/api:verifier",
+        "//tflite/schema:schema_fbs",
+        "//tflite/tools:verifier",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "verifier_test",
+    srcs = ["verifier_test.cc"],
+    deps = [
+        ":verifier",
+        "//tflite:stderr_reporter",
+        "//tflite:version",
+        "//tflite/schema:schema_fbs",
+        "//tflite/tools:verifier",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers//:runtime_cc",
     ],
 )

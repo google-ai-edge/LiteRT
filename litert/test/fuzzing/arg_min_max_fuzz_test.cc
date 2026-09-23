@@ -238,7 +238,7 @@ TEST(ArgMinMaxFuzzTest, Rank64Smoke) {
   test_case.is_arg_max = true;
   test_case.dynamic_axis = true;
   test_case.invoke = true;
-  EXPECT_EQ(RunArgMinMaxCase(test_case), RunResult::kSuccess);
+  EXPECT_EQ(RunArgMinMaxCase(test_case), RunResult::kRejected);
 }
 
 FUZZ_TEST(ArgMinMaxFuzzTest, ArgMinMaxExecutesValidCases)

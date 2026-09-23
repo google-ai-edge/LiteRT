@@ -553,7 +553,7 @@ TEST(ReduceFuzzTest, ReferenceHighRankReduceAllSmoke) {
   };
   EXPECT_EQ(
       RunReduceCase(MakeHighRankReduceCase(spec), KernelVariant::kReference),
-      RunResult::kSuccess);
+      RunResult::kRejected);
 }
 
 void ReduceReferenceExecutesValidCases(const ReduceCase& test_case) {
@@ -593,7 +593,7 @@ void ReduceOptimizedRejectsInvalidAxis(const ReduceCase& test_case) {
 void ReferenceHighRankReduceAllNeverCrashes(const HighRankReduceSpec& spec) {
   EXPECT_EQ(
       RunReduceCase(MakeHighRankReduceCase(spec), KernelVariant::kReference),
-      RunResult::kSuccess);
+      RunResult::kRejected);
 }
 
 FUZZ_TEST(ReduceFuzzTest, ReduceReferenceExecutesValidCases)

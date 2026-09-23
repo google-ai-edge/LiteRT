@@ -723,5 +723,49 @@ TEST(DepthwiseConvolutionOpTest, MultiplierMismatchFailure) {
       kLiteRtStatusErrorShapeInferenceFailed);
 }
 
+TEST(ConvolutionOpTest, EmptyBiasSucceeds) {
+  LiteRtOpT op;
+  // Input [2, 2, 4, 1], Filter [3, 2, 2, 1] (OHWI), Bias empty {}
+  std::vector<Dims> input_shapes = {{2, 2, 4, 1}, {3, 2, 2, 1}, {}};
+  std::vector<Dims> output_shapes(1);
+
+  auto options = std::make_unique<tflite::Conv2DOptionsT>();
+  options->padding = tflite::Padding_VALID;
+  options->stride_h = 2;
+  options->stride_w = 2;
+
+  litert::internal::TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_Conv2DOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  ASSERT_EQ(InferConv2D(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+
+  EXPECT_THAT(output_shapes[0], ElementsAre(2, 1, 2, 3));
+}
+
+TEST(ConvolutionOpTest, NoBiasSucceeds) {
+  LiteRtOpT op;
+  // Input [2, 2, 4, 1], Filter [3, 2, 2, 1] (OHWI)
+  std::vector<Dims> input_shapes = {{2, 2, 4, 1}, {3, 2, 2, 1}};
+  std::vector<Dims> output_shapes(1);
+
+  auto options = std::make_unique<tflite::Conv2DOptionsT>();
+  options->padding = tflite::Padding_VALID;
+  options->stride_h = 2;
+  options->stride_w = 2;
+
+  litert::internal::TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_Conv2DOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  ASSERT_EQ(InferConv2D(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+
+  EXPECT_THAT(output_shapes[0], ElementsAre(2, 1, 2, 3));
+}
+
 }  // namespace
 }  // namespace litert::internal

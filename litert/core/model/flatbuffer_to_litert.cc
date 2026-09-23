@@ -19,6 +19,7 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
@@ -148,6 +149,12 @@ Expected<TensorType> MapTensorType(const TflTensorType& tfl_tensor_type) {
   if (litert_element_type == kLiteRtElementTypeNone) {
     LITERT_LOG(LITERT_ERROR, "Element type (%d) not currently supported",
                element_type);
+    return Error(Status::kErrorUnsupported);
+  }
+
+  if (ranked_shape->size() > LITERT_TENSOR_MAX_RANK) {
+    LITERT_LOG(LITERT_ERROR, "Tensor rank (%zu) exceeds max rank (%d)",
+               ranked_shape->size(), LITERT_TENSOR_MAX_RANK);
     return Error(Status::kErrorUnsupported);
   }
 

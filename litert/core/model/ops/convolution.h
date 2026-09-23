@@ -17,8 +17,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -62,7 +64,11 @@ inline LiteRtStatus InferConv2D(const LiteRtOpT& op,
   // Filter: [Out, H, W, In]
   int32_t filter_h = filter_shape[1];
   int32_t filter_w = filter_shape[2];
-  if (input_shape[3] % filter_shape[3] != 0) {
+  int32_t remainder = 0;
+  int32_t groups = 0;
+  if (filter_shape[3] <= 0 ||
+      !SafeModulus(input_shape[3], filter_shape[3], remainder) ||
+      remainder != 0 || !SafeDivide(input_shape[3], filter_shape[3], groups)) {
     LITERT_LOG(LITERT_ERROR,
                "Conv2D input channels (%d) must be a multiple of filter input "
                "channels (%d)",
@@ -70,9 +76,25 @@ inline LiteRtStatus InferConv2D(const LiteRtOpT& op,
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
+  if (groups <= 0 || !SafeModulus(filter_shape[0], groups, remainder) ||
+      remainder != 0) {
+    LITERT_LOG(LITERT_ERROR,
+               "Conv2D output channels (%d) must be a multiple of groups (%d)",
+               filter_shape[0], groups);
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+
   if (stride_h <= 0 || stride_w <= 0) {
     LITERT_LOG(LITERT_ERROR, "Conv2D invalid stride: %dx%d", stride_h,
                stride_w);
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+
+  constexpr int32_t kMaxStrideOrDilation = std::numeric_limits<int16_t>::max();
+
+  if (stride_h > kMaxStrideOrDilation || stride_w > kMaxStrideOrDilation ||
+      dilation_h > kMaxStrideOrDilation || dilation_w > kMaxStrideOrDilation) {
+    LITERT_LOG(LITERT_ERROR, "Conv2D stride or dilation exceeds limit");
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
@@ -91,7 +113,7 @@ inline LiteRtStatus InferConv2D(const LiteRtOpT& op,
 
   int32_t out_channels = filter_shape[0];
 
-  if (input_shapes.size() >= 3) {
+  if (input_shapes.size() >= 3 && !input_shapes[2].empty()) {
     const auto& bias_shape = input_shapes[2];
     if (bias_shape.size() != 1 || bias_shape[0] != out_channels) {
       LITERT_LOG(LITERT_ERROR, "Conv2D bias size mismatch: %d vs %d",
@@ -100,8 +122,13 @@ inline LiteRtStatus InferConv2D(const LiteRtOpT& op,
     }
   }
 
-  int32_t effective_filter_h = (filter_h - 1) * dilation_h + 1;
-  int32_t effective_filter_w = (filter_w - 1) * dilation_w + 1;
+  int32_t effective_filter_h = 0;
+  int32_t effective_filter_w = 0;
+  if (!ComputeEffectiveFilterSize(filter_h, dilation_h, effective_filter_h) ||
+      !ComputeEffectiveFilterSize(filter_w, dilation_w, effective_filter_w)) {
+    LITERT_LOG(LITERT_ERROR, "Conv2D effective filter size overflow");
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
   int32_t out_h = ComputeOutputSize(padding, input_shape[1], filter_h, stride_h,
                                     dilation_h);
   int32_t out_w = ComputeOutputSize(padding, input_shape[2], filter_w, stride_w,
@@ -170,7 +197,10 @@ inline LiteRtStatus InferDepthwiseConv2D(const LiteRtOpT& op,
 
   int32_t out_channels = filter_shape[3];
 
-  if (out_channels != input_shape[3] * dw_opts->depth_multiplier) {
+  int32_t expected_out_channels = 0;
+  if (!SafeMultiply(input_shape[3], dw_opts->depth_multiplier,
+                    expected_out_channels) ||
+      out_channels != expected_out_channels) {
     LITERT_LOG(LITERT_ERROR,
                "DepthwiseConv2D out_channels mismatch: %d vs %d*%d",
                out_channels, input_shape[3], dw_opts->depth_multiplier);
@@ -180,6 +210,15 @@ inline LiteRtStatus InferDepthwiseConv2D(const LiteRtOpT& op,
   if (stride_h <= 0 || stride_w <= 0) {
     LITERT_LOG(LITERT_ERROR, "DepthwiseConv2D invalid stride: %dx%d", stride_h,
                stride_w);
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+
+  constexpr int32_t kMaxStrideOrDilation = std::numeric_limits<int16_t>::max();
+
+  if (stride_h > kMaxStrideOrDilation || stride_w > kMaxStrideOrDilation ||
+      dilation_h > kMaxStrideOrDilation || dilation_w > kMaxStrideOrDilation) {
+    LITERT_LOG(LITERT_ERROR,
+               "DepthwiseConv2D stride or dilation exceeds limit");
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
@@ -198,7 +237,7 @@ inline LiteRtStatus InferDepthwiseConv2D(const LiteRtOpT& op,
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
-  if (input_shapes.size() >= 3) {
+  if (input_shapes.size() >= 3 && !input_shapes[2].empty()) {
     const auto& bias_shape = input_shapes[2];
     if (bias_shape.size() != 1 || bias_shape[0] != out_channels) {
       LITERT_LOG(LITERT_ERROR, "DepthwiseConv2D bias size mismatch: %d vs %d",
@@ -207,8 +246,13 @@ inline LiteRtStatus InferDepthwiseConv2D(const LiteRtOpT& op,
     }
   }
 
-  int32_t effective_filter_h = (filter_h - 1) * dilation_h + 1;
-  int32_t effective_filter_w = (filter_w - 1) * dilation_w + 1;
+  int32_t effective_filter_h = 0;
+  int32_t effective_filter_w = 0;
+  if (!ComputeEffectiveFilterSize(filter_h, dilation_h, effective_filter_h) ||
+      !ComputeEffectiveFilterSize(filter_w, dilation_w, effective_filter_w)) {
+    LITERT_LOG(LITERT_ERROR, "DepthwiseConv2D effective filter size overflow");
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
 
   int32_t out_h = ComputeOutputSize(padding, input_shape[1], filter_h, stride_h,
                                     dilation_h);
@@ -350,9 +394,15 @@ inline LiteRtStatus InferConv3D(const LiteRtOpT& op,
     }
   }
 
-  int32_t effective_filter_d = (filter_d - 1) * dilation_d + 1;
-  int32_t effective_filter_h = (filter_h - 1) * dilation_h + 1;
-  int32_t effective_filter_w = (filter_w - 1) * dilation_w + 1;
+  int32_t effective_filter_d = 0;
+  int32_t effective_filter_h = 0;
+  int32_t effective_filter_w = 0;
+  if (!ComputeEffectiveFilterSize(filter_d, dilation_d, effective_filter_d) ||
+      !ComputeEffectiveFilterSize(filter_h, dilation_h, effective_filter_h) ||
+      !ComputeEffectiveFilterSize(filter_w, dilation_w, effective_filter_w)) {
+    LITERT_LOG(LITERT_ERROR, "Conv3D effective filter size overflow");
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
 
   int32_t out_d = ComputeOutputSize(padding, input_shape[1], filter_d, stride_d,
                                     dilation_d);

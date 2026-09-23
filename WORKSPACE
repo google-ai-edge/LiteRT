@@ -363,6 +363,15 @@ http_archive(
     url = "https://github.com/marzer/tomlplusplus/archive/refs/tags/v3.4.0.tar.gz",
 )
 
+# SafeInt
+http_archive(
+    name = "SafeInt",
+    build_file = "@//:BUILD.SafeInt",
+    sha256 = "4bd737e5885112e796742b7b6ba7181ff346855dc22d29ed2b258de567a1de8d",
+    strip_prefix = "SafeInt-72f0745e26091af6d1186fd91426377f16688ba7",
+    url = "https://github.com/dcleblanc/SafeInt/archive/72f0745e26091af6d1186fd91426377f16688ba7.tar.gz",
+)
+
 # RE2
 http_archive(
     name = "com_googlesource_code_re2",

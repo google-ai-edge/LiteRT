@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "flatbuffers/flatbuffer_builder.h"
+#include "litert/core/model/verifier.h"
 #include "litert/test/fuzzing/fuzzing_util.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
@@ -61,6 +62,7 @@ struct OneOpRunSpec {
   std::vector<RuntimeTensor> runtime_tensors;
   std::vector<int> persistent_ro_tensors;
   bool invoke = false;
+  litert::VerifyOptions verify_options = {};
   // Runs after input resizing and persistent tensor setup, but before
   // AllocateTensors(). Delegates should normally be applied in this phase.
   std::function<RunResult(Interpreter*)> pre_allocate;

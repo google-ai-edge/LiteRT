@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <utility>
 #include <vector>
 
@@ -540,6 +541,56 @@ FUZZ_TEST(SliceFuzzTest, SliceXnnpackRejectsUnsupportedRank)
 FUZZ_TEST(SliceFuzzTest, SliceXnnpackRejectsUnsupportedSizes)
     .WithDomains(XnnpackUnsupportedSizeSliceCaseDomain());
 #endif
+
+TEST(SliceFuzzTest, RejectsMismatchedBeginAndSizeIndexTypes) {
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<Buffer>> buffers;
+  buffers.push_back(
+      fuzzing::CreateAlignedBuffer(&builder, std::vector<uint8_t>{}));
+
+  std::vector<int32_t> begin_vals = {0, 0};
+  std::vector<uint8_t> begin_bytes(begin_vals.size() * sizeof(int32_t));
+  std::memcpy(begin_bytes.data(), begin_vals.data(), begin_bytes.size());
+  buffers.push_back(fuzzing::CreateAlignedBuffer(&builder, begin_bytes));
+
+  std::vector<int64_t> size_vals = {1, 2};
+  std::vector<uint8_t> size_bytes(size_vals.size() * sizeof(int64_t));
+  std::memcpy(size_bytes.data(), size_vals.data(), size_bytes.size());
+  buffers.push_back(fuzzing::CreateAlignedBuffer(&builder, size_bytes));
+
+  const auto input_shape = builder.CreateVector(std::vector<int32_t>{2, 3});
+  const auto index_shape = builder.CreateVector(std::vector<int32_t>{2});
+  const auto empty_output_shape = builder.CreateVector(std::vector<int32_t>{});
+
+  fuzzing::OneOpModelSpec model_spec;
+  model_spec.description = "slice_mismatched_index_types";
+  model_spec.builtin_operator = BuiltinOperator_SLICE;
+  model_spec.version = 1;
+  model_spec.builtin_options_type = BuiltinOptions_SliceOptions;
+  model_spec.builtin_options = CreateSliceOptions(builder).Union();
+  model_spec.tensors = {
+      CreateTensor(builder, input_shape, TensorType_FLOAT32, /*buffer=*/0),
+      CreateTensor(builder, index_shape, TensorType_INT32, /*buffer=*/1),
+      CreateTensor(builder, index_shape, TensorType_INT64, /*buffer=*/2),
+      CreateTensor(builder, empty_output_shape, TensorType_FLOAT32,
+                   /*buffer=*/0),
+  };
+  model_spec.buffers = std::move(buffers);
+  model_spec.model_inputs = {0};
+  model_spec.model_outputs = {3};
+  model_spec.op_inputs = {0, 1, 2};
+  model_spec.op_outputs = {3};
+
+  fuzzing::OneOpRunSpec run_spec;
+  run_spec.registration = SliceRegistration(KernelVariant::kGenericOptimized);
+  run_spec.min_version = 1;
+  run_spec.max_version = 1;
+  run_spec.max_live_allocation_bytes = kMaxLiveAllocationBytes;
+  run_spec.invoke = true;
+
+  EXPECT_EQ(fuzzing::BuildAndRunOneOpModel(&builder, model_spec, run_spec),
+            RunResult::kRejected);
+}
 
 }  // namespace
 }  // namespace tflite

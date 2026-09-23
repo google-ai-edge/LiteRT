@@ -33,49 +33,153 @@ namespace litert::internal {
 inline LiteRtStatus InferSlice(const LiteRtOpT& op,
                                absl::Span<const Dims> input_shapes,
                                std::vector<Dims>& output_shapes) {
-  constexpr int kSliceMinArgs = 3;
+  constexpr int kSliceNumArgs = 3;
   constexpr int kInputArgIndex = 0;
+  constexpr int kBeginArgIndex = 1;
   constexpr int kSizeArgIndex = 2;
 
   // Inputs: Input, Begin, Size.
-  if (input_shapes.size() < kSliceMinArgs) {
+  if (input_shapes.size() < kSliceNumArgs || output_shapes.empty() ||
+      op.Inputs().size() < kSliceNumArgs ||
+      op.Inputs()[kSizeArgIndex] == nullptr) {
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
-  const auto& input_shape = input_shapes[kInputArgIndex];
-  const auto& size_tensor = op.Input(kSizeArgIndex);
 
-  // If size tensor is constant, use it.
-  if (size_tensor.Weights().Buffer().Size() >= sizeof(int32_t)) {
-    auto buf = size_tensor.Weights().Buffer();
-    Dims out_shape;
-    bool is_int64 =
-        (size_tensor.Type().first == kLiteRtRankedTensorType &&
-         size_tensor.Type().second.ranked_tensor_type.element_type ==
-             kLiteRtElementTypeInt64) ||
-        (size_tensor.Type().first == kLiteRtUnrankedTensorType &&
-         size_tensor.Type().second.unranked_tensor_type.element_type ==
-             kLiteRtElementTypeInt64);
-    if (!is_int64 && buf.Size() % sizeof(int32_t) == 0) {
-      const int32_t* data = reinterpret_cast<const int32_t*>(buf.Data());
-      int rank = buf.Size() / sizeof(int32_t);
-      for (int i = 0; i < rank; ++i) {
-        out_shape.push_back(data[i]);
-      }
-    } else if (is_int64 && buf.Size() % sizeof(int64_t) == 0) {
+  auto get_element_type = [](const LiteRtTensorT* t) -> LiteRtElementType {
+    if (!t) return kLiteRtElementTypeNone;
+    if (t->Type().first == kLiteRtRankedTensorType) {
+      return t->Type().second.ranked_tensor_type.element_type;
+    }
+    if (t->Type().first == kLiteRtUnrankedTensorType) {
+      return t->Type().second.unranked_tensor_type.element_type;
+    }
+    return kLiteRtElementTypeNone;
+  };
+
+  const LiteRtTensorT* input_tensor = op.Inputs()[kInputArgIndex];
+  const LiteRtTensorT* begin_tensor = op.Inputs()[kBeginArgIndex];
+  const LiteRtTensorT* size_tensor = op.Inputs()[kSizeArgIndex];
+  const LiteRtTensorT* output_tensor =
+      op.Outputs().empty() ? nullptr : op.Outputs()[0];
+
+  const LiteRtElementType input_type = get_element_type(input_tensor);
+  const LiteRtElementType begin_type = get_element_type(begin_tensor);
+  LiteRtElementType size_type = get_element_type(size_tensor);
+  const LiteRtElementType output_type = get_element_type(output_tensor);
+
+  if (begin_type != kLiteRtElementTypeNone &&
+      begin_type != kLiteRtElementTypeInt32 &&
+      begin_type != kLiteRtElementTypeInt64) {
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+  if (size_type != kLiteRtElementTypeNone &&
+      size_type != kLiteRtElementTypeInt32 &&
+      size_type != kLiteRtElementTypeInt64) {
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+  // Begin and Size must have the same data type.
+  if (begin_type != kLiteRtElementTypeNone &&
+      size_type != kLiteRtElementTypeNone && begin_type != size_type) {
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+
+  // Output element type must match input element type.
+  if (input_type != kLiteRtElementTypeNone &&
+      output_type != kLiteRtElementTypeNone && input_type != output_type) {
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+
+  const auto& input_shape = input_shapes[kInputArgIndex];
+  const auto& begin_shape = input_shapes[kBeginArgIndex];
+  const auto& size_shape = input_shapes[kSizeArgIndex];
+
+  // Begin and Size must be 1D tensors with length equal to input rank.
+  if (begin_shape.size() != 1 || size_shape.size() != 1) {
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+  if ((begin_shape[0] != -1 &&
+       begin_shape[0] != static_cast<int32_t>(input_shape.size())) ||
+      (size_shape[0] != -1 &&
+       size_shape[0] != static_cast<int32_t>(input_shape.size()))) {
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+
+  auto read_index_vec = [](const LiteRtTensorT* tensor,
+                           LiteRtElementType elem_type,
+                           std::vector<int64_t>& out) -> bool {
+    if (!tensor) return false;
+    auto buf = tensor->Weights().Buffer();
+    if (buf.Size() == 0) return false;
+    if (elem_type == kLiteRtElementTypeInt64) {
+      if (buf.Size() % sizeof(int64_t) != 0) return false;
       const int64_t* data = reinterpret_cast<const int64_t*>(buf.Data());
-      int rank = buf.Size() / sizeof(int64_t);
-      for (int i = 0; i < rank; ++i) {
-        out_shape.push_back(static_cast<int32_t>(data[i]));
+      size_t count = buf.Size() / sizeof(int64_t);
+      out.assign(data, data + count);
+      return true;
+    }
+    if (elem_type == kLiteRtElementTypeInt32 ||
+        elem_type == kLiteRtElementTypeNone) {
+      if (buf.Size() % sizeof(int32_t) != 0) return false;
+      const int32_t* data = reinterpret_cast<const int32_t*>(buf.Data());
+      size_t count = buf.Size() / sizeof(int32_t);
+      out.resize(count);
+      for (size_t i = 0; i < count; ++i) {
+        out[i] = data[i];
       }
-    } else {
+      return true;
+    }
+    return false;
+  };
+
+  std::vector<int64_t> begin_vals;
+  std::vector<int64_t> size_vals;
+  const bool has_begin = read_index_vec(begin_tensor, begin_type, begin_vals);
+  const bool has_size = read_index_vec(size_tensor, size_type, size_vals);
+
+  if (has_begin) {
+    if (begin_vals.size() != input_shape.size()) {
       return kLiteRtStatusErrorShapeInferenceFailed;
+    }
+    for (size_t i = 0; i < input_shape.size(); ++i) {
+      if (begin_vals[i] < 0 ||
+          (input_shape[i] != -1 && begin_vals[i] > input_shape[i])) {
+        return kLiteRtStatusErrorShapeInferenceFailed;
+      }
+    }
+  }
+
+  // If size tensor is constant, validate and compute output shape.
+  if (has_size) {
+    if (size_vals.size() != input_shape.size()) {
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
+    Dims out_shape;
+    out_shape.reserve(input_shape.size());
+    for (size_t i = 0; i < input_shape.size(); ++i) {
+      int64_t s = size_vals[i];
+      if (s < -1) {
+        return kLiteRtStatusErrorShapeInferenceFailed;
+      }
+      if (s == -1) {
+        if (input_shape[i] != -1 && has_begin) {
+          s = input_shape[i] - begin_vals[i];
+        } else {
+          s = -1;
+        }
+      } else if (input_shape[i] != -1 && has_begin) {
+        if (begin_vals[i] + s > input_shape[i]) {
+          return kLiteRtStatusErrorShapeInferenceFailed;
+        }
+      } else if (input_shape[i] != -1 && s > input_shape[i]) {
+        return kLiteRtStatusErrorShapeInferenceFailed;
+      }
+      out_shape.push_back(static_cast<int32_t>(s));
     }
     output_shapes[0] = std::move(out_shape);
     return kLiteRtStatusOk;
   }
 
-  // If size is dynamic, output is dynamic rank (if input rank is known) or just
-  // matching rank.
+  // If size is dynamic, output is dynamic with matching rank.
   output_shapes[0] = Dims(input_shape.size(), -1);
   return kLiteRtStatusOk;
 }

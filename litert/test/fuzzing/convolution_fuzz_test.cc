@@ -722,6 +722,8 @@ auto ValidConv2DCaseDomain() {
                                                   dims[3]};
         const std::vector<int32_t> filter_shape = {dims[4], dims[5], dims[6],
                                                    dims[3]};
+        stride_height = std::min(stride_height, input_shape[1]);
+        stride_width = std::min(stride_width, input_shape[2]);
         return Conv2DCase{
             input_shape,        filter_shape,       TensorType_FLOAT32,
             TensorType_FLOAT32, TensorType_FLOAT32, kernel,
@@ -753,12 +755,27 @@ auto MalformedConv2DCaseDomain() {
       ValidConv2DCaseDomain());
 }
 
+auto StrideLargerThanInputConv2DCaseDomain() {
+  return fuzztest::Map(
+      [](Conv2DCase test_case, bool exceed_height) {
+        if (exceed_height) {
+          test_case.stride_height = test_case.input_shape[1] + 1;
+        } else {
+          test_case.stride_width = test_case.input_shape[2] + 1;
+        }
+        return test_case;
+      },
+      ValidConv2DCaseDomain(), fuzztest::Arbitrary<bool>());
+}
+
 auto ValidDepthwiseConvCaseDomain() {
   return fuzztest::Map(
       [](std::vector<int32_t> dims, int32_t stride_width, int32_t stride_height,
          int32_t dilation_width, int32_t dilation_height,
          WeightsStorage weights_storage) {
         const int32_t output_channels = dims[3] * dims[4];
+        stride_height = std::min(stride_height, dims[1]);
+        stride_width = std::min(stride_width, dims[2]);
         return DepthwiseConvCase{
             /*input_shape=*/{dims[0], dims[1], dims[2], dims[3]},
             /*filter_shape=*/{1, dims[5], dims[6], output_channels},
@@ -787,6 +804,19 @@ auto MalformedDepthwiseConvCaseDomain() {
         return test_case;
       },
       ValidDepthwiseConvCaseDomain());
+}
+
+auto StrideLargerThanInputDepthwiseConvCaseDomain() {
+  return fuzztest::Map(
+      [](DepthwiseConvCase test_case, bool exceed_height) {
+        if (exceed_height) {
+          test_case.stride_height = test_case.input_shape[1] + 1;
+        } else {
+          test_case.stride_width = test_case.input_shape[2] + 1;
+        }
+        return test_case;
+      },
+      ValidDepthwiseConvCaseDomain(), fuzztest::Arbitrary<bool>());
 }
 
 auto ValidTransposeConvCaseDomain() {
@@ -885,12 +915,23 @@ void Conv2DRejectsMismatchedChannels(const Conv2DCase& test_case) {
             RunResult::kRejected);
 }
 
+void Conv2DRejectsStrideLargerThanInput(const Conv2DCase& test_case) {
+  ASSERT_EQ(RunConv2D(test_case, ExecutionMode::kBuiltin),
+            RunResult::kRejected);
+}
+
 void DepthwiseConvExecutesValidCases(const DepthwiseConvCase& test_case) {
   ASSERT_EQ(RunDepthwiseConv(test_case, ExecutionMode::kBuiltin),
             RunResult::kSuccess);
 }
 
 void DepthwiseConvRejectsMalformedFilter(const DepthwiseConvCase& test_case) {
+  ASSERT_EQ(RunDepthwiseConv(test_case, ExecutionMode::kBuiltin),
+            RunResult::kRejected);
+}
+
+void DepthwiseConvRejectsStrideLargerThanInput(
+    const DepthwiseConvCase& test_case) {
   ASSERT_EQ(RunDepthwiseConv(test_case, ExecutionMode::kBuiltin),
             RunResult::kRejected);
 }
@@ -1037,10 +1078,14 @@ FUZZ_TEST(ConvolutionFuzzTest, Conv2DExecutesValidCases)
     .WithDomains(ValidConv2DCaseDomain());
 FUZZ_TEST(ConvolutionFuzzTest, Conv2DRejectsMismatchedChannels)
     .WithDomains(MalformedConv2DCaseDomain());
+FUZZ_TEST(ConvolutionFuzzTest, Conv2DRejectsStrideLargerThanInput)
+    .WithDomains(StrideLargerThanInputConv2DCaseDomain());
 FUZZ_TEST(ConvolutionFuzzTest, DepthwiseConvExecutesValidCases)
     .WithDomains(ValidDepthwiseConvCaseDomain());
 FUZZ_TEST(ConvolutionFuzzTest, DepthwiseConvRejectsMalformedFilter)
     .WithDomains(MalformedDepthwiseConvCaseDomain());
+FUZZ_TEST(ConvolutionFuzzTest, DepthwiseConvRejectsStrideLargerThanInput)
+    .WithDomains(StrideLargerThanInputDepthwiseConvCaseDomain());
 FUZZ_TEST(ConvolutionFuzzTest, TransposeConvExecutesValidCases)
     .WithDomains(ValidTransposeConvCaseDomain());
 FUZZ_TEST(ConvolutionFuzzTest, TransposeConvRejectsMalformedFilter)
@@ -1064,6 +1109,8 @@ auto ValidConv2DXnnpackCaseDomain() {
                                                   dims[3]};
         const std::vector<int32_t> filter_shape = {dims[4], dims[5], dims[6],
                                                    dims[3]};
+        stride_height = std::min(stride_height, input_shape[1]);
+        stride_width = std::min(stride_width, input_shape[2]);
         return Conv2DCase{input_shape,
                           filter_shape,
                           TensorType_FLOAT32,
@@ -1093,11 +1140,26 @@ auto MalformedConv2DXnnpackCaseDomain() {
       ValidConv2DXnnpackCaseDomain());
 }
 
+auto StrideLargerThanInputConv2DXnnpackCaseDomain() {
+  return fuzztest::Map(
+      [](Conv2DCase test_case, bool exceed_height) {
+        if (exceed_height) {
+          test_case.stride_height = test_case.input_shape[1] + 1;
+        } else {
+          test_case.stride_width = test_case.input_shape[2] + 1;
+        }
+        return test_case;
+      },
+      ValidConv2DXnnpackCaseDomain(), fuzztest::Arbitrary<bool>());
+}
+
 auto ValidDepthwiseConvXnnpackCaseDomain() {
   return fuzztest::Map(
       [](std::vector<int32_t> dims, int32_t stride_width, int32_t stride_height,
          int32_t dilation_width, int32_t dilation_height) {
         const int32_t output_channels = dims[3] * dims[4];
+        stride_height = std::min(stride_height, dims[1]);
+        stride_width = std::min(stride_width, dims[2]);
         return DepthwiseConvCase{
             /*input_shape=*/{dims[0], dims[1], dims[2], dims[3]},
             /*filter_shape=*/{1, dims[5], dims[6], output_channels},
@@ -1124,6 +1186,19 @@ auto MalformedDepthwiseConvXnnpackCaseDomain() {
         return test_case;
       },
       ValidDepthwiseConvXnnpackCaseDomain());
+}
+
+auto StrideLargerThanInputDepthwiseConvXnnpackCaseDomain() {
+  return fuzztest::Map(
+      [](DepthwiseConvCase test_case, bool exceed_height) {
+        if (exceed_height) {
+          test_case.stride_height = test_case.input_shape[1] + 1;
+        } else {
+          test_case.stride_width = test_case.input_shape[2] + 1;
+        }
+        return test_case;
+      },
+      ValidDepthwiseConvXnnpackCaseDomain(), fuzztest::Arbitrary<bool>());
 }
 
 auto ValidTransposeConvXnnpackCaseDomain() {
@@ -1248,6 +1323,11 @@ void Conv2DXnnpackRejectsMismatchedChannels(const Conv2DCase& test_case) {
             RunResult::kRejected);
 }
 
+void Conv2DXnnpackRejectsStrideLargerThanInput(const Conv2DCase& test_case) {
+  ASSERT_EQ(RunConv2D(test_case, ExecutionMode::kXnnpack),
+            RunResult::kRejected);
+}
+
 void DepthwiseConvXnnpackExecutesValidCases(
     const DepthwiseConvCase& test_case) {
   ASSERT_EQ(RunDepthwiseConv(test_case, ExecutionMode::kXnnpack),
@@ -1255,6 +1335,12 @@ void DepthwiseConvXnnpackExecutesValidCases(
 }
 
 void DepthwiseConvXnnpackRejectsMalformedFilter(
+    const DepthwiseConvCase& test_case) {
+  ASSERT_EQ(RunDepthwiseConv(test_case, ExecutionMode::kXnnpack),
+            RunResult::kRejected);
+}
+
+void DepthwiseConvXnnpackRejectsStrideLargerThanInput(
     const DepthwiseConvCase& test_case) {
   ASSERT_EQ(RunDepthwiseConv(test_case, ExecutionMode::kXnnpack),
             RunResult::kRejected);
@@ -1276,10 +1362,14 @@ FUZZ_TEST(ConvolutionFuzzTest, Conv2DXnnpackExecutesValidCases)
     .WithDomains(ValidConv2DXnnpackCaseDomain());
 FUZZ_TEST(ConvolutionFuzzTest, Conv2DXnnpackRejectsMismatchedChannels)
     .WithDomains(MalformedConv2DXnnpackCaseDomain());
+FUZZ_TEST(ConvolutionFuzzTest, Conv2DXnnpackRejectsStrideLargerThanInput)
+    .WithDomains(StrideLargerThanInputConv2DXnnpackCaseDomain());
 FUZZ_TEST(ConvolutionFuzzTest, DepthwiseConvXnnpackExecutesValidCases)
     .WithDomains(ValidDepthwiseConvXnnpackCaseDomain());
 FUZZ_TEST(ConvolutionFuzzTest, DepthwiseConvXnnpackRejectsMalformedFilter)
     .WithDomains(MalformedDepthwiseConvXnnpackCaseDomain());
+FUZZ_TEST(ConvolutionFuzzTest, DepthwiseConvXnnpackRejectsStrideLargerThanInput)
+    .WithDomains(StrideLargerThanInputDepthwiseConvXnnpackCaseDomain());
 FUZZ_TEST(ConvolutionFuzzTest, TransposeConvXnnpackExecutesValidCases)
     .WithDomains(ValidTransposeConvXnnpackCaseDomain());
 FUZZ_TEST(ConvolutionFuzzTest, TransposeConvXnnpackRejectsMalformedFilter)

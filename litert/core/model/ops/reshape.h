@@ -74,6 +74,18 @@ inline LiteRtStatus InferReshape(const ShapeInferenceContext& ctx,
     for (auto d : reshape_opts->new_shape) {
       new_shape.push_back(d);
     }
+  } else if (ctx.GetNumInputs() >= 2) {
+    Dims shape_tensor_dims = ctx.GetInputShape(kShapeTensorArgIndex);
+    if (shape_tensor_dims.size() == 1 && shape_tensor_dims[0] == 0) {
+      // 0-element 1D shape tensor specifies a 0D scalar output shape: {}.
+      new_shape.clear();
+    } else {
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
+  } else if (reshape_opts) {
+    // 1-input Reshape with empty reshape_opts->new_shape specifies a 0D scalar
+    // output shape: {}.
+    new_shape.clear();
   } else {
     return kLiteRtStatusErrorShapeInferenceFailed;
   }

@@ -162,8 +162,36 @@ TEST(SliceOpTest, Int64SizeTensorBaseFailure) {
   std::vector<Dims> output_shapes(1);
 
   LiteRtTensorT begin, size;
-  int32_t begin_data[] = {0};
+  int64_t begin_data[] = {0};
   int64_t size_data[] = {5};  // INT64 size tensor
+  SetWeightsFromOwnedBuffer(begin.Weights(),
+                            OwningBufferRef<uint8_t>(absl::string_view(
+                                reinterpret_cast<char*>(begin_data), 8)));
+  SetWeightsFromOwnedBuffer(size.Weights(),
+                            OwningBufferRef<uint8_t>(absl::string_view(
+                                reinterpret_cast<char*>(size_data), 8)));
+  begin.SetType(MakeRankedTensorType(kLiteRtElementTypeInt64, {1}));
+  size.SetType(MakeRankedTensorType(kLiteRtElementTypeInt64, {1}));
+
+  op.Inputs().push_back(nullptr);
+  op.Inputs().push_back(&begin);
+  op.Inputs().push_back(&size);
+
+  // Must return `{5}`, but on base commit casts INT64 to int32_t*, reading `{5,
+  // 0}` (`rank = 2`).
+  ASSERT_EQ(InferSlice(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre(5));
+}
+
+TEST(SliceOpTest, RejectsMismatchedBeginAndSizeTypes) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{10}, {1}, {1}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT begin, size;
+  int32_t begin_data[] = {0};
+  int64_t size_data[] = {5};
   SetWeightsFromOwnedBuffer(begin.Weights(),
                             OwningBufferRef<uint8_t>(absl::string_view(
                                 reinterpret_cast<char*>(begin_data), 4)));
@@ -177,11 +205,33 @@ TEST(SliceOpTest, Int64SizeTensorBaseFailure) {
   op.Inputs().push_back(&begin);
   op.Inputs().push_back(&size);
 
-  // Must return `{5}`, but on base commit casts INT64 to int32_t*, reading `{5,
-  // 0}` (`rank = 2`).
-  ASSERT_EQ(InferSlice(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusOk);
-  EXPECT_THAT(output_shapes[0], ElementsAre(5));
+  EXPECT_EQ(InferSlice(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+TEST(SliceOpTest, RejectsInvalidBeginType) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{10}, {1}, {1}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT begin, size;
+  float begin_data[] = {0.0f};
+  int32_t size_data[] = {5};
+  SetWeightsFromOwnedBuffer(begin.Weights(),
+                            OwningBufferRef<uint8_t>(absl::string_view(
+                                reinterpret_cast<char*>(begin_data), 4)));
+  SetWeightsFromOwnedBuffer(size.Weights(),
+                            OwningBufferRef<uint8_t>(absl::string_view(
+                                reinterpret_cast<char*>(size_data), 4)));
+  begin.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+  size.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {1}));
+
+  op.Inputs().push_back(nullptr);
+  op.Inputs().push_back(&begin);
+  op.Inputs().push_back(&size);
+
+  EXPECT_EQ(InferSlice(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(SliceOpTest, ZeroStrideBaseFailure) {

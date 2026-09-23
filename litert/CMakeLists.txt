@@ -206,6 +206,22 @@ if(EXISTS "${CMAKE_BINARY_DIR}/FP16-source/include")
     include_directories(${CMAKE_BINARY_DIR}/FP16-source/include)
 endif()
 
+# Add SafeInt headers include directory
+include(OverridableFetchContent)
+OverridableFetchContent_Declare(
+  safeint
+  GIT_REPOSITORY https://github.com/dcleblanc/SafeInt
+  GIT_TAG 72f0745e26091af6d1186fd91426377f16688ba7
+  GIT_PROGRESS TRUE
+  PREFIX "${CMAKE_BINARY_DIR}"
+  SOURCE_DIR "${CMAKE_BINARY_DIR}/safeint"
+)
+OverridableFetchContent_GetProperties(safeint)
+if(NOT safeint_POPULATED)
+  OverridableFetchContent_Populate(safeint)
+endif()
+include_directories(${safeint_SOURCE_DIR})
+
 # Find FlatBuffers
 #
 # TFLite is added via add_subdirectory(... "${TFLITE_BUILD_DIR}"), but its

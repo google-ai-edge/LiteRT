@@ -233,5 +233,63 @@ TEST(DepthwiseConvolutionOpTest, DepthMultiplierTest) {
   EXPECT_THAT(output_shapes[0], ElementsAre(1, 2, 2, 6));
 }
 
+TEST(DepthwiseConvolutionOpTest, EmptyBiasSucceeds) {
+  LiteRtOpT op;
+  // Input [1, 3, 2, 2], Filter [1, 2, 2, 4], Bias empty {}
+  std::vector<Dims> input_shapes = {{1, 3, 2, 2}, {1, 2, 2, 4}, {}};
+  std::vector<Dims> output_shapes(1);
+
+  auto options = CreateDepthwiseConvOptions(tflite::Padding_VALID, 1, 1, 2);
+
+  TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_DepthwiseConv2DOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  ASSERT_EQ(
+      InferDepthwiseConv2D(op, absl::MakeSpan(input_shapes), output_shapes),
+      kLiteRtStatusOk);
+
+  EXPECT_THAT(output_shapes[0], ElementsAre(1, 2, 1, 4));
+}
+
+TEST(DepthwiseConvolutionOpTest, NoBiasSucceeds) {
+  LiteRtOpT op;
+  // Input [1, 3, 2, 2], Filter [1, 2, 2, 4]
+  std::vector<Dims> input_shapes = {{1, 3, 2, 2}, {1, 2, 2, 4}};
+  std::vector<Dims> output_shapes(1);
+
+  auto options = CreateDepthwiseConvOptions(tflite::Padding_VALID, 1, 1, 2);
+
+  TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_DepthwiseConv2DOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  ASSERT_EQ(
+      InferDepthwiseConv2D(op, absl::MakeSpan(input_shapes), output_shapes),
+      kLiteRtStatusOk);
+
+  EXPECT_THAT(output_shapes[0], ElementsAre(1, 2, 1, 4));
+}
+
+TEST(DepthwiseConvolutionOpTest, BiasMismatchFailure) {
+  LiteRtOpT op;
+  // Input [1, 3, 2, 2], Filter [1, 2, 2, 4], Bias [2] -> mismatch 4 vs 2.
+  std::vector<Dims> input_shapes = {{1, 3, 2, 2}, {1, 2, 2, 4}, {2}};
+  std::vector<Dims> output_shapes(1);
+
+  auto options = CreateDepthwiseConvOptions(tflite::Padding_VALID, 1, 1, 2);
+
+  TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_DepthwiseConv2DOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  EXPECT_EQ(
+      InferDepthwiseConv2D(op, absl::MakeSpan(input_shapes), output_shapes),
+      kLiteRtStatusErrorShapeInferenceFailed);
+}
+
 }  // namespace
 }  // namespace litert::internal

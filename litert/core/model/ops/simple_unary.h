@@ -31,8 +31,9 @@ namespace litert::internal {
 // Infers the output shape for an identity op (output shape == input shape).
 inline LiteRtStatus InferIdentity(absl::Span<Dims> input_shapes,
                                   std::vector<Dims>& output_shapes) {
-  if (output_shapes.size() != 1) {
-    LITERT_LOG(LITERT_ERROR, "Invalid number of output shapes for unary op.");
+  if (input_shapes.empty() || output_shapes.size() != 1) {
+    LITERT_LOG(LITERT_ERROR,
+               "Invalid number of input/output shapes for unary op.");
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
   output_shapes[0] = input_shapes[0];

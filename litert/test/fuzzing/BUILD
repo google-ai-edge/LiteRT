@@ -49,6 +49,7 @@ cc_test(
         "//tflite:testdata/add.bin",
     ],
     deps = [
+        "//litert/core/model:verifier",
         "//litert/test:common",
         "//tflite:framework",
         "//tflite/core/api",
@@ -56,7 +57,6 @@ cc_test(
         "//tflite/tools:verifier",
         "@com_google_fuzztest//fuzztest",
         "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
-        "@com_google_googletest//:gtest",
     ],
 )
 
@@ -72,6 +72,7 @@ cc_library(
         "one_op_fuzz_model.h",
     ],
     deps = [
+        "//litert/core/model:verifier",
         "//tflite:framework",
         "//tflite:version",
         "//tflite/c:common",

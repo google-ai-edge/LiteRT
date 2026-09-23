@@ -20,6 +20,7 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/shape_inference_types.h"
 
@@ -45,9 +46,29 @@ inline LiteRtStatus InferTopKV2(const LiteRtOpT& op,
   }
 
   int32_t k = -1;
-  if (k_tensor.Weights().Buffer().Size() > 0) {
-    k = *reinterpret_cast<const int32_t*>(k_tensor.Weights().Buffer().Data());
-    if (input_shape.back() != -1 && k > input_shape.back()) {
+  auto buf = k_tensor.Weights().Buffer();
+  if (buf.Size() > 0) {
+    LiteRtElementType k_type = kLiteRtElementTypeNone;
+    if (k_tensor.Type().first == kLiteRtRankedTensorType) {
+      k_type = k_tensor.Type().second.ranked_tensor_type.element_type;
+    } else if (k_tensor.Type().first == kLiteRtUnrankedTensorType) {
+      k_type = k_tensor.Type().second.unranked_tensor_type.element_type;
+    }
+
+    if ((k_type == kLiteRtElementTypeInt16 ||
+         k_type == kLiteRtElementTypeUInt16) &&
+        buf.Size() >= sizeof(int16_t)) {
+      k = *reinterpret_cast<const int16_t*>(buf.Data());
+    } else if (k_type == kLiteRtElementTypeInt64 &&
+               buf.Size() >= sizeof(int64_t)) {
+      k = static_cast<int32_t>(*reinterpret_cast<const int64_t*>(buf.Data()));
+    } else if (buf.Size() >= sizeof(int32_t)) {
+      k = *reinterpret_cast<const int32_t*>(buf.Data());
+    } else {
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
+
+    if (k < 0 || (input_shape.back() != -1 && k > input_shape.back())) {
       return kLiteRtStatusErrorShapeInferenceFailed;
     }
   }

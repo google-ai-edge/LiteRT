@@ -276,5 +276,31 @@ TEST(ReshapeOpTest, Int64ShapeTensorBaseFailure) {
   EXPECT_THAT(result.output_shapes[0], ElementsAre(2, 3));
 }
 
+TEST(ReshapeOpTest, ZeroElementShapeTensor) {
+  TestShapeInferenceContext ctx(
+      {{1}, {0}}, {}, {{}, {}});  // {0} means 1D length 0, Input volume 1
+  InferenceResult result;
+
+  ASSERT_EQ(InferReshape(ctx, result), kLiteRtStatusOk);
+
+  EXPECT_THAT(result.output_shapes[0], ElementsAre());  // 0D scalar
+}
+
+TEST(ReshapeOpTest, EmptyOptionsNewShape) {
+  auto options = std::make_unique<tflite::ReshapeOptionsT>();
+  options->new_shape = {};  // empty
+  TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
+  tfl_options.value = options.release();
+
+  TestShapeInferenceContext ctx(
+      {{1}}, std::move(tfl_options));  // 1-input, Input volume 1
+  InferenceResult result;
+
+  ASSERT_EQ(InferReshape(ctx, result), kLiteRtStatusOk);
+
+  EXPECT_THAT(result.output_shapes[0], ElementsAre());  // 0D scalar
+}
+
 }  // namespace
 }  // namespace litert::internal

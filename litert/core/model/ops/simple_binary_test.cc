@@ -149,5 +149,24 @@ TEST(SimpleBinaryOpTest, ReferencePow) {
   EXPECT_THAT(out, ElementsAre(8.0f, 9.0f));
 }
 
+TEST(SimpleBinaryOpTest, EqualInvalidOutputsFailure) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{1, 2, 3}, {2, 1}};
+  std::vector<Dims> output_shapes(2);  // Invalid number of outputs
+
+  EXPECT_EQ(InferEqual(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+TEST(SimpleBinaryOpTest, EqualInvalidInputsFailure) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {
+      {1, 2, 3}};  // Invalid number of inputs (needs 2)
+  std::vector<Dims> output_shapes(1);
+
+  EXPECT_EQ(InferEqual(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
 }  // namespace
 }  // namespace litert::internal

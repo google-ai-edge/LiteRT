@@ -154,5 +154,14 @@ TEST(SimpleUnaryOpTest, ReferenceCast) {
   EXPECT_THAT(out_i32, ElementsAre(1, 2, -3));
 }
 
+TEST(SimpleUnaryOpTest, AbsEmptyInputsFailure) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {};
+  std::vector<Dims> output_shapes(1);
+
+  EXPECT_EQ(InferAbs(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
 }  // namespace
 }  // namespace litert::internal

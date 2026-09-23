@@ -75,13 +75,14 @@ robustness and provide coverage in advance of possible WebNN expansion. Their
 presence does not by itself expand the current threat model or change how a
 finding is classified.
 
-`tflite::Verify(...)` is one required ingress check, but it does not currently
-establish every application-specific WebNN invariant. A property that claims
-WebNN reachability must also keep its generated models within the relevant
-operator, type, rank, layout, quantization, constant-buffer, and output-metadata
-contracts expected from WebNN lowering. Other properties may deliberately go
-beyond that surface for general runtime robustness, but should say so during
-triage.
+`litert::Verify(...)` (which runs `tflite::Verify(...)`, LiteRT model loading,
+rank validation, and static shape inference `InferShapes`) is the required
+ingress check, though it may not establish every application-specific WebNN
+invariant. A property that claims WebNN reachability must also keep its
+generated models within the relevant operator, type, rank, layout, quantization,
+constant-buffer, and output-metadata contracts expected from WebNN lowering.
+Other properties may deliberately go beyond that surface for general runtime
+robustness, but should say so during triage.
 
 ## Directory structure
 
@@ -118,7 +119,7 @@ That preserves important parts of the real attack surface:
 
 1. Build a minimal FlatBuffer containing one operator.
 2. Check model-buffer and constant-buffer alignment.
-3. Run `tflite::Verify(...)`.
+3. Run `litert::Verify(..., run_spec.verify_options)`.
 4. Register only the operator and version range under test.
 5. Construct an `Interpreter` with a quota allocator.
 6. Resize runtime input tensors.
@@ -214,10 +215,20 @@ This split is important for several reasons:
 
 An invalid domain should not be arbitrary garbage. Start with an otherwise
 valid case and violate one relationship at a time. Examples include moving an
-axis just out of range, changing one filter channel count, using a padding
+axis just out of range, changing one filter channel count, setting a stride just
+larger than the input dimension (`stride = input_size + 1`), using a padding
 matrix with the wrong number of columns, or changing a reshape target by one
 element. This keeps the mutation close to the boundary being tested and makes
 it more likely that the intended validation code executes.
+
+**Never clamp a valid domain in isolation without a paired malformed property.**
+When a `Valid*Domain` restricts or clamps a parameter relationship (for example,
+clamping `stride_height = std::min(stride_height, input_shape[1])` so that valid
+properties stay on the valid side of `litert::Verify` or kernel checks), you
+must pair it with a corresponding `Malformed*Domain` / `Rejects*` property that
+explicitly crosses that boundary (such as `stride_height = input_shape[1] + 1`).
+Tightening a valid domain alone hides the out-of-range region from the fuzzer
+and leaves both the rejection check and any fallback path untested.
 
 Some boundary-stress tests need a conditional oracle. For example, a generated
 shape may be valid according to the operator contract but intentionally exceed
@@ -363,7 +374,7 @@ bytes. Packed types such as `INT4` require their packed storage size rather than
 `element_count * sizeof(T)`.
 
 Run the model verifier before interpreter construction. A per-op fuzzer may
-generate models directly and use `tflite::Verify(...)` as the global ingress
+generate models directly and use `litert::Verify(...)` as the global ingress
 check; it does not need to invoke a converter or WebNN lowering pipeline.
 
 Valid-case domains should satisfy the static invariants assigned to model
@@ -488,6 +499,8 @@ Before submitting a new per-op fuzzer, verify that:
 - the tested loading/kernel/delegate contract is clear;
 - valid and malformed cases use separate domains and exact outcomes;
 - malformed domains violate a specific documented invariant;
+- any constraint clamped in a valid domain (e.g., `std::min`) is paired with a
+  corresponding malformed property that crosses that boundary;
 - both constant and dynamic parameter paths are covered where applicable;
 - all materialization and expected-outcome arithmetic is checked;
 - tensor sizes and live allocations are bounded;

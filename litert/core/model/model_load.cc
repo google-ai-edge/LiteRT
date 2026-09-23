@@ -54,7 +54,15 @@ class FlatbufferContext {
       : tfl_flatbuffer_(tfl_flatbuffer), buffer_manager_(buffer_manager) {}
 
   Expected<void> SetOpCode(LiteRtOpT& litert_op, uint32_t ind) {
+    if (!PackedModel()->operator_codes() ||
+        ind >= PackedModel()->operator_codes()->size()) {
+      LITERT_LOG(LITERT_ERROR, "Operator code index out of range");
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+    }
     const auto* code = PackedModel()->operator_codes()->Get(ind);
+    if (code == nullptr) {
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+    }
     const int32_t builtin_code = code->builtin_code();
     const int32_t dep_code = code->deprecated_builtin_code();
     litert_op.SetOpCode(
@@ -69,11 +77,15 @@ class FlatbufferContext {
   // Get the buffer at the given index in the tflite model.
   Expected<const TflPackedBuffer*> GetTflBuffer(uint32_t ind) const {
     const auto* packed_model = tfl_flatbuffer_.PackedModel();
-    if (ind >= packed_model->buffers()->size()) {
+    if (!packed_model->buffers() || ind >= packed_model->buffers()->size()) {
       LITERT_LOG(LITERT_ERROR, "Buffer index out of range");
       return Error(kLiteRtStatusErrorInvalidArgument);
     }
-    return packed_model->buffers()->Get(ind);
+    const auto* buf = packed_model->buffers()->Get(ind);
+    if (buf == nullptr) {
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+    }
+    return buf;
   }
 
   BufferManager* GetBufferManager() { return buffer_manager_; }
@@ -262,9 +274,23 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context, LiteRtSubgraphT& parent,
       int zero_points_tensor_ind = details->zero_points();
       int block_size = details->block_size();
 
+      if (scales_tensor_ind < 0 ||
+          static_cast<size_t>(scales_tensor_ind) >= parent.Tensors().size()) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Invalid scales tensor index in blockwise quantization");
+        return kLiteRtStatusErrorInvalidFlatbuffer;
+      }
       LiteRtTensor scales_tensor = &parent.Tensor(scales_tensor_ind);
       LiteRtTensor zero_points_tensor = nullptr;
       if (zero_points_tensor_ind != -1) {
+        if (zero_points_tensor_ind < 0 ||
+            static_cast<size_t>(zero_points_tensor_ind) >=
+                parent.Tensors().size()) {
+          LITERT_LOG(
+              LITERT_ERROR,
+              "Invalid zero_points tensor index in blockwise quantization");
+          return kLiteRtStatusErrorInvalidFlatbuffer;
+        }
         zero_points_tensor = &parent.Tensor(zero_points_tensor_ind);
       }
 
@@ -324,6 +350,9 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
   // Unpack tensors.
   for (auto i = 0; i < num_tensors; ++i) {
     const auto* tfl_tensor = tfl_subgraph.tensors()->Get(i);
+    if (tfl_tensor == nullptr) {
+      return kLiteRtStatusErrorInvalidFlatbuffer;
+    }
     auto& litert_tensor = litert_subgraph.Tensor(i);
     LITERT_RETURN_IF_ERROR(
         UnpackTensor(context, litert_subgraph, *tfl_tensor, litert_tensor));
@@ -336,6 +365,9 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
       tfl_subgraph.operators() ? tfl_subgraph.operators()->size() : 0;
   for (auto i = 0; i < num_ops; ++i) {
     const auto* tfl_op = tfl_subgraph.operators()->Get(i);
+    if (tfl_op == nullptr) {
+      return kLiteRtStatusErrorInvalidFlatbuffer;
+    }
     LITERT_RETURN_IF_ERROR(UnpackOp(context, litert_subgraph, *tfl_op,
                                     litert_subgraph.EmplaceOp(), i));
   }
@@ -375,7 +407,8 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
 LiteRtStatus UnpackSignatures(std::vector<TflSignaturePtr>& tfl_signatures,
                               LiteRtModelT& parent) {
   for (auto& tfl_signature : tfl_signatures) {
-    if (tfl_signature->subgraph_index >= parent.Subgraphs().size()) {
+    if (tfl_signature == nullptr ||
+        tfl_signature->subgraph_index >= parent.Subgraphs().size()) {
       LITERT_LOG(LITERT_ERROR,
                  "Signature does not refer to a valid subgraph index.");
       return kLiteRtStatusErrorInvalidArgument;
@@ -400,7 +433,8 @@ LiteRtStatus UnpackSignatures(std::vector<TflSignaturePtr>& tfl_signatures,
     absl::flat_hash_map<LiteRtTensor, std::string> input_aliases;
     input_aliases.reserve(tfl_inputs.size());
     for (const auto& tfl_input : tfl_inputs) {
-      if (tfl_input->tensor_index >= litert_subgraph->Tensors().size()) {
+      if (tfl_input == nullptr ||
+          tfl_input->tensor_index >= litert_subgraph->Tensors().size()) {
         LITERT_LOG(LITERT_ERROR,
                    "Signature input does not refer to a valid tensor index.");
         return kLiteRtStatusErrorInvalidFlatbuffer;
@@ -414,7 +448,8 @@ LiteRtStatus UnpackSignatures(std::vector<TflSignaturePtr>& tfl_signatures,
     absl::flat_hash_map<LiteRtTensor, std::string> output_aliases;
     output_aliases.reserve(tfl_outputs.size());
     for (const auto& tfl_output : tfl_outputs) {
-      if (tfl_output->tensor_index >= litert_subgraph->Tensors().size()) {
+      if (tfl_output == nullptr ||
+          tfl_output->tensor_index >= litert_subgraph->Tensors().size()) {
         LITERT_LOG(LITERT_ERROR,
                    "Signature output does not refer to a valid tensor index.");
         return kLiteRtStatusErrorInvalidFlatbuffer;
@@ -451,7 +486,7 @@ LiteRtStatus UnpackSignatures(std::vector<TflSignaturePtr>& tfl_signatures,
                             tfl_signature->signature_key);
   }
 
-  if (tfl_signatures.empty()) {
+  if (tfl_signatures.empty() && !parent.Subgraphs().empty()) {
     parent.EmplaceSignature(MakeDefaultSignature(parent.MainSubgraph()));
   }
 
@@ -469,6 +504,9 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
     const auto num_subgraphs = packed_model->subgraphs()->size();
     for (auto i = 0; i < num_subgraphs; ++i) {
       const auto* tfl_subgraph = packed_model->subgraphs()->Get(i);
+      if (tfl_subgraph == nullptr) {
+        return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
       LITERT_RETURN_IF_ERROR(UnpackSubgraph(context, *tfl_subgraph,
                                             litert_model->EmplaceSubgraph()));
     }
@@ -479,10 +517,13 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
     std::vector<TflSignaturePtr> tfl_signatures;
     for (auto i = 0; i < packed_model->signature_defs()->size(); ++i) {
       const auto* tfl_signature = packed_model->signature_defs()->Get(i);
+      if (tfl_signature == nullptr) {
+        return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
       tfl_signatures.push_back(TflSignaturePtr(tfl_signature->UnPack()));
     }
     LITERT_RETURN_IF_ERROR(UnpackSignatures(tfl_signatures, *litert_model));
-  } else {
+  } else if (!litert_model->Subgraphs().empty()) {
     litert_model->EmplaceSignature(
         MakeDefaultSignature(litert_model->MainSubgraph()));
   }
@@ -491,7 +532,10 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
     const auto num_metadata = packed_model->metadata()->size();
     for (auto i = 0; i < num_metadata; ++i) {
       const auto* tfl_metadata = packed_model->metadata()->Get(i);
-      auto name = tfl_metadata->name()->str();
+      if (tfl_metadata == nullptr) {
+        return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
+      auto name = tfl_metadata->name() ? tfl_metadata->name()->str() : "";
       const auto buf_id = tfl_metadata->buffer();
       auto buf = ReadBuffer(context, buf_id);
       if (!buf) {
@@ -507,6 +551,9 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
     std::vector<TflOpCodePtr> tfl_op_codes(num_operator_codes);
     for (auto i = 0; i < num_operator_codes; ++i) {
       const auto* tfl_op_code = packed_model->operator_codes()->Get(i);
+      if (tfl_op_code == nullptr) {
+        return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
       TflOpCodePtr tfl_op_code_ptr(tfl_op_code->UnPack());
       tfl_op_codes[i] = std::move(tfl_op_code_ptr);
     }

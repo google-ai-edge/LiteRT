@@ -24,12 +24,12 @@ limitations under the License.
 #include <vector>
 
 #include "fuzztest/fuzztest.h"
+#include "litert/core/model/verifier.h"
 #include "litert/test/common.h"
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/interpreter.h"
 #include "tflite/kernels/register.h"
 #include "tflite/model_builder.h"
-#include "tflite/tools/verifier.h"
 
 namespace tflite {
 namespace testing {
@@ -38,14 +38,6 @@ namespace {
 // Avoid logging overhead with a no-op error reporter.
 class NullErrorReporter : public ErrorReporter {
   int Report(const char* format, va_list args) override { return 0; }
-};
-
-// The strict verifier guards against bogus models.
-class StrictVerifier : public TfLiteVerifier {
-  bool Verify(const char* data, int length, ErrorReporter* reporter) override {
-    return ::tflite::Verify(data, static_cast<size_t>(length),
-                            AlwaysTrueResolver{}, reporter);
-  }
 };
 
 std::vector<std::tuple<std::string>> GetSeeds() {
@@ -64,7 +56,7 @@ std::vector<std::tuple<std::string>> GetSeeds() {
 void ModelFuzzerTest(const std::string& data) {
   // Loading while using the model verifier should never crash (though it may
   // return a null model).
-  StrictVerifier verifier;
+  litert::LiteRtVerifier verifier;
   NullErrorReporter error_reporter;
   auto model = FlatBufferModel::VerifyAndBuildFromBuffer(
       data.data(), data.size(), &verifier, &error_reporter);

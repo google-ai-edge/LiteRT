@@ -35,8 +35,9 @@ namespace litert::internal {
 
 inline LiteRtStatus InferElementwiseBinary(absl::Span<Dims> input_shapes,
                                            std::vector<Dims>& output_shapes) {
-  if (input_shapes.size() != 2) {
-    LITERT_LOG(LITERT_ERROR, "Invalid number of input shapes for binary op.");
+  if (input_shapes.size() != 2 || output_shapes.size() != 1) {
+    LITERT_LOG(LITERT_ERROR,
+               "Invalid number of input/output shapes for binary op.");
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
   const auto& s1 = input_shapes[0];
