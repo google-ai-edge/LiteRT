@@ -70,6 +70,7 @@ MAIN_FUNCTION($0) {
   int k_slice = ucl::GetLocalId<0>();
   int v_slice = ucl::GetGroupId<0>();
   int h = ucl::GetGlobalId<1>();
+  int h_k = h / GQA_RATIO;
   int b = ucl::GetGlobalId<2>();
 
   int seq_len = args.output.Width();
@@ -77,18 +78,18 @@ MAIN_FUNCTION($0) {
   // Each thread owns 4 rows along D_k (k_slice * 4 + {0, 1, 2, 3}) for this v_slice.
   // Held entirely in 4 registers. Zero register spilling.
   int k_base = k_slice * 4;
-  Type s0 = args.recurrent_state_in.Read(k_base + 0, h, v_slice, b);
-  Type s1 = args.recurrent_state_in.Read(k_base + 1, h, v_slice, b);
-  Type s2 = args.recurrent_state_in.Read(k_base + 2, h, v_slice, b);
-  Type s3 = args.recurrent_state_in.Read(k_base + 3, h, v_slice, b);
+  StateType s0 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 0, h, v_slice, b));
+  StateType s1 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 1, h, v_slice, b));
+  StateType s2 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 2, h, v_slice, b));
+  StateType s3 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 3, h, v_slice, b));
 
   // Process sequence length sequentially
   for (int t = 0; t < seq_len; ++t) {
     // Read beta and g for this step (mapped from TFLite 3D shape [B, H, L] to MLDrift BHWC [B, 1, H, L])
     int t_slice = t / 4;
     int t_elem = t % 4;
-    Type beta_t_vec = args.beta_t.Read(h, 0, t_slice, b);
-    ScalarType beta_val = beta_t_vec.x;
+    ActivationType beta_t_vec = ucl::Convert<ActivationType>(args.beta_t.Read(h, 0, t_slice, b));
+    ActivationScalarType beta_val = beta_t_vec.x;
     if (t_elem == 1) {
       beta_val = beta_t_vec.y;
     } else if (t_elem == 2) {
@@ -97,8 +98,8 @@ MAIN_FUNCTION($0) {
       beta_val = beta_t_vec.w;
     }
 
-    Type g_t_vec = args.g_t.Read(h, 0, t_slice, b);
-    ScalarType g_val = g_t_vec.x;
+    ActivationType g_t_vec = ucl::Convert<ActivationType>(args.g_t.Read(h, 0, t_slice, b));
+    ActivationScalarType g_val = g_t_vec.x;
     if (t_elem == 1) {
       g_val = g_t_vec.y;
     } else if (t_elem == 2) {
@@ -107,8 +108,8 @@ MAIN_FUNCTION($0) {
       g_val = g_t_vec.w;
     }
 
-    ScalarType decay_scalar = exp(g_val);
-    Type decay_vec = ucl::Init<Type>(decay_scalar);
+    StateScalarType decay_scalar = (g_val <= 0.0) ? exp(ucl::Convert<StateScalarType>(g_val)) : 1.0;
+    StateType decay_vec = ucl::Init<StateType>(decay_scalar);
 
     // Apply decay to this thread's 4 rows
     s0 = s0 * decay_vec;
@@ -117,13 +118,13 @@ MAIN_FUNCTION($0) {
     s3 = s3 * decay_vec;
 
     // Load full vec4 K for this thread's k_slice directly
-    Type k_val = args.k_t.Read(t, h, k_slice, b);
+    StateType k_val = ucl::Convert<StateType>(args.k_t.Read(t, h_k, k_slice, b));
 
     // Compute this thread's partial dot product: sum_i (S[i] * k[i])
-    Type kv_mem = s0 * ucl::Init<Type>(k_val.x) +
-                  s1 * ucl::Init<Type>(k_val.y) +
-                  s2 * ucl::Init<Type>(k_val.z) +
-                  s3 * ucl::Init<Type>(k_val.w);
+    StateType kv_mem = s0 * ucl::Init<StateType>(k_val.x) +
+                       s1 * ucl::Init<StateType>(k_val.y) +
+                       s2 * ucl::Init<StateType>(k_val.z) +
+                       s3 * ucl::Init<StateType>(k_val.w);
 
     // Register-only butterfly XOR shuffle reduction across lanes
     for (int offset = 1; offset < HEAD_K_DIM_SLICES; offset *= 2) {
@@ -131,38 +132,39 @@ MAIN_FUNCTION($0) {
     }
 
     // Load V vector slice for this step
-    Type v_vec = args.v_t.Read(t, h, v_slice, b);
-    Type beta_factor = ucl::Init<Type>(beta_val);
-    Type delta_slice = (v_vec - kv_mem) * beta_factor;
+    StateType v_vec = ucl::Convert<StateType>(args.v_t.Read(t, h, v_slice, b));
+    StateScalarType beta_clean = (beta_val > 0.0) ? ucl::Convert<StateScalarType>(beta_val) : 0.0;
+    StateType beta_factor = ucl::Init<StateType>(beta_clean);
+    StateType delta_slice = (v_vec - kv_mem) * beta_factor;
 
     // Update recurrent state in-place with outer product: S += delta * k^T
-    s0 = s0 + delta_slice * ucl::Init<Type>(k_val.x);
-    s1 = s1 + delta_slice * ucl::Init<Type>(k_val.y);
-    s2 = s2 + delta_slice * ucl::Init<Type>(k_val.z);
-    s3 = s3 + delta_slice * ucl::Init<Type>(k_val.w);
+    s0 = s0 + delta_slice * ucl::Init<StateType>(k_val.x);
+    s1 = s1 + delta_slice * ucl::Init<StateType>(k_val.y);
+    s2 = s2 + delta_slice * ucl::Init<StateType>(k_val.z);
+    s3 = s3 + delta_slice * ucl::Init<StateType>(k_val.w);
 
     // Load full vec4 Q for this thread's k_slice directly
-    Type q_val = args.q_t.Read(t, h, k_slice, b);
+    StateType q_val = ucl::Convert<StateType>(args.q_t.Read(t, h_k, k_slice, b));
 
     // Compute attention output slice: sum_i (S[i] * q[i])
-    Type my_attn_out = s0 * ucl::Init<Type>(q_val.x) +
-                       s1 * ucl::Init<Type>(q_val.y) +
-                       s2 * ucl::Init<Type>(q_val.z) +
-                       s3 * ucl::Init<Type>(q_val.w);
+    StateType my_attn_out = s0 * ucl::Init<StateType>(q_val.x) +
+                            s1 * ucl::Init<StateType>(q_val.y) +
+                            s2 * ucl::Init<StateType>(q_val.z) +
+                            s3 * ucl::Init<StateType>(q_val.w);
 
     for (int offset = 1; offset < HEAD_K_DIM_SLICES; offset *= 2) {
       my_attn_out += simd_shuffle_xor(my_attn_out, offset);
     }
     if (k_slice == 0) {
-      args.output.Write(my_attn_out, t, h, v_slice, b);
+      args.output.Write(ucl::Convert<ActivationType>(my_attn_out), t, h, v_slice, b);
     }
   }
 
   // Write out final evolved recurrent state for this thread's 4 rows
-  args.recurrent_state_out.Write(s0, k_base + 0, h, v_slice, b);
-  args.recurrent_state_out.Write(s1, k_base + 1, h, v_slice, b);
-  args.recurrent_state_out.Write(s2, k_base + 2, h, v_slice, b);
-  args.recurrent_state_out.Write(s3, k_base + 3, h, v_slice, b);
+  args.recurrent_state_out.Write(ucl::Convert<StateType>(s0), k_base + 0, h, v_slice, b);
+  args.recurrent_state_out.Write(ucl::Convert<StateType>(s1), k_base + 1, h, v_slice, b);
+  args.recurrent_state_out.Write(ucl::Convert<StateType>(s2), k_base + 2, h, v_slice, b);
+  args.recurrent_state_out.Write(ucl::Convert<StateType>(s3), k_base + 3, h, v_slice, b);
 }
 )";
 
@@ -172,26 +174,27 @@ MAIN_FUNCTION($0) {
   int k_slice = ucl::GetLocalId<0>();
   int v_slice = ucl::GetGroupId<0>();
   int h = ucl::GetGlobalId<1>();
+  int h_k = h / GQA_RATIO;
   int b = ucl::GetGlobalId<2>();
 
-  __local Type scratch[HEAD_K_DIM_SLICES];
+  __local StateType scratch[HEAD_K_DIM_SLICES];
   int seq_len = args.output.Width();
 
   // Each thread owns 4 rows along D_k (k_slice * 4 + {0, 1, 2, 3}) for this v_slice.
   // Held entirely in 4 registers. Zero register spilling.
   int k_base = k_slice * 4;
-  Type s0 = args.recurrent_state_in.Read(k_base + 0, h, v_slice, b);
-  Type s1 = args.recurrent_state_in.Read(k_base + 1, h, v_slice, b);
-  Type s2 = args.recurrent_state_in.Read(k_base + 2, h, v_slice, b);
-  Type s3 = args.recurrent_state_in.Read(k_base + 3, h, v_slice, b);
+  StateType s0 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 0, h, v_slice, b));
+  StateType s1 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 1, h, v_slice, b));
+  StateType s2 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 2, h, v_slice, b));
+  StateType s3 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 3, h, v_slice, b));
 
   // Process sequence length sequentially
   for (int t = 0; t < seq_len; ++t) {
     // Read beta and g for this step (mapped from TFLite 3D shape [B, H, L] to MLDrift BHWC [B, 1, H, L])
     int t_slice = t / 4;
     int t_elem = t % 4;
-    Type beta_t_vec = args.beta_t.Read(h, 0, t_slice, b);
-    ScalarType beta_val = beta_t_vec.x;
+    ActivationType beta_t_vec = ucl::Convert<ActivationType>(args.beta_t.Read(h, 0, t_slice, b));
+    ActivationScalarType beta_val = beta_t_vec.x;
     if (t_elem == 1) {
       beta_val = beta_t_vec.y;
     } else if (t_elem == 2) {
@@ -200,8 +203,8 @@ MAIN_FUNCTION($0) {
       beta_val = beta_t_vec.w;
     }
 
-    Type g_t_vec = args.g_t.Read(h, 0, t_slice, b);
-    ScalarType g_val = g_t_vec.x;
+    ActivationType g_t_vec = ucl::Convert<ActivationType>(args.g_t.Read(h, 0, t_slice, b));
+    ActivationScalarType g_val = g_t_vec.x;
     if (t_elem == 1) {
       g_val = g_t_vec.y;
     } else if (t_elem == 2) {
@@ -210,8 +213,8 @@ MAIN_FUNCTION($0) {
       g_val = g_t_vec.w;
     }
 
-    ScalarType decay_scalar = exp(g_val);
-    Type decay_vec = ucl::Init<Type>(decay_scalar);
+    StateScalarType decay_scalar = (g_val <= 0.0) ? exp(ucl::Convert<StateScalarType>(g_val)) : 1.0;
+    StateType decay_vec = ucl::Init<StateType>(decay_scalar);
 
     // Apply decay to this thread's 4 rows
     s0 = s0 * decay_vec;
@@ -220,13 +223,13 @@ MAIN_FUNCTION($0) {
     s3 = s3 * decay_vec;
 
     // Load full vec4 K for this thread's k_slice directly
-    Type k_val = args.k_t.Read(t, h, k_slice, b);
+    StateType k_val = ucl::Convert<StateType>(args.k_t.Read(t, h_k, k_slice, b));
 
     // Compute this thread's partial dot product: sum_i (S[i] * k[i])
-    Type kv_mem = s0 * ucl::Init<Type>(k_val.x) +
-                  s1 * ucl::Init<Type>(k_val.y) +
-                  s2 * ucl::Init<Type>(k_val.z) +
-                  s3 * ucl::Init<Type>(k_val.w);
+    StateType kv_mem = s0 * ucl::Init<StateType>(k_val.x) +
+                       s1 * ucl::Init<StateType>(k_val.y) +
+                       s2 * ucl::Init<StateType>(k_val.z) +
+                       s3 * ucl::Init<StateType>(k_val.w);
 
     // Shared memory tree reduction across workgroup
     scratch[k_slice] = kv_mem;
@@ -241,24 +244,25 @@ MAIN_FUNCTION($0) {
     ucl::SyncThreads<WorkGroup, Local>();
 
     // Load V vector slice for this step
-    Type v_vec = args.v_t.Read(t, h, v_slice, b);
-    Type beta_factor = ucl::Init<Type>(beta_val);
-    Type delta_slice = (v_vec - kv_mem) * beta_factor;
+    StateType v_vec = ucl::Convert<StateType>(args.v_t.Read(t, h, v_slice, b));
+    StateScalarType beta_clean = (beta_val > 0.0) ? ucl::Convert<StateScalarType>(beta_val) : 0.0;
+    StateType beta_factor = ucl::Init<StateType>(beta_clean);
+    StateType delta_slice = (v_vec - kv_mem) * beta_factor;
 
     // Update recurrent state in-place with outer product: S += delta * k^T
-    s0 = s0 + delta_slice * ucl::Init<Type>(k_val.x);
-    s1 = s1 + delta_slice * ucl::Init<Type>(k_val.y);
-    s2 = s2 + delta_slice * ucl::Init<Type>(k_val.z);
-    s3 = s3 + delta_slice * ucl::Init<Type>(k_val.w);
+    s0 = s0 + delta_slice * ucl::Init<StateType>(k_val.x);
+    s1 = s1 + delta_slice * ucl::Init<StateType>(k_val.y);
+    s2 = s2 + delta_slice * ucl::Init<StateType>(k_val.z);
+    s3 = s3 + delta_slice * ucl::Init<StateType>(k_val.w);
 
     // Load full vec4 Q for this thread's k_slice directly
-    Type q_val = args.q_t.Read(t, h, k_slice, b);
+    StateType q_val = ucl::Convert<StateType>(args.q_t.Read(t, h_k, k_slice, b));
 
     // Compute attention output slice: sum_i (S[i] * q[i])
-    Type my_attn_out = s0 * ucl::Init<Type>(q_val.x) +
-                       s1 * ucl::Init<Type>(q_val.y) +
-                       s2 * ucl::Init<Type>(q_val.z) +
-                       s3 * ucl::Init<Type>(q_val.w);
+    StateType my_attn_out = s0 * ucl::Init<StateType>(q_val.x) +
+                            s1 * ucl::Init<StateType>(q_val.y) +
+                            s2 * ucl::Init<StateType>(q_val.z) +
+                            s3 * ucl::Init<StateType>(q_val.w);
 
     // Shared memory tree reduction across workgroup
     scratch[k_slice] = my_attn_out;
@@ -270,16 +274,16 @@ MAIN_FUNCTION($0) {
       ucl::SyncThreads<WorkGroup, Local>();
     }
     if (k_slice == 0) {
-      args.output.Write(scratch[0], t, h, v_slice, b);
+      args.output.Write(ucl::Convert<ActivationType>(scratch[0]), t, h, v_slice, b);
     }
     ucl::SyncThreads<WorkGroup, Local>();
   }
 
   // Write out final evolved recurrent state for this thread's 4 rows
-  args.recurrent_state_out.Write(s0, k_base + 0, h, v_slice, b);
-  args.recurrent_state_out.Write(s1, k_base + 1, h, v_slice, b);
-  args.recurrent_state_out.Write(s2, k_base + 2, h, v_slice, b);
-  args.recurrent_state_out.Write(s3, k_base + 3, h, v_slice, b);
+  args.recurrent_state_out.Write(ucl::Convert<StateType>(s0), k_base + 0, h, v_slice, b);
+  args.recurrent_state_out.Write(ucl::Convert<StateType>(s1), k_base + 1, h, v_slice, b);
+  args.recurrent_state_out.Write(ucl::Convert<StateType>(s2), k_base + 2, h, v_slice, b);
+  args.recurrent_state_out.Write(ucl::Convert<StateType>(s3), k_base + 3, h, v_slice, b);
 }
 )";
 
@@ -312,8 +316,14 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
   auto q_shape = q_t.GetBHWCShape();
   auto v_shape = v_t.GetBHWCShape();
 
-  int B = q_shape.b;
-  int H = q_shape.h;
+  int B = v_shape.b;
+  int H = v_shape.h;
+  int H_k = q_shape.h;
+  if (H_k <= 0 || H < H_k || (H % H_k != 0)) {
+    return absl::InvalidArgumentError(
+        "gated_delta_update requires H_v to be a positive multiple of H_k.");
+  }
+  int gqa_ratio = H / H_k;
   int D_k = q_shape.c;
   int D_v = v_shape.c;
 
@@ -342,9 +352,14 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
                                            : kGatedDeltaUpdateSharedMemShader;
 
   absl::StrReplaceAll(
-      {{"ScalarType", ::ml_drift::ToUclDataType(output.GetDataType(), 1)},
-       {"Type", ::ml_drift::ToUclDataType(output.GetDataType(), 4)},
-       {"HEAD_K_DIM_SLICES", std::to_string(q_slices)}},
+      {{"StateScalarType",
+        ::ml_drift::ToUclDataType(rec_state_in.GetDataType(), 1)},
+       {"StateType", ::ml_drift::ToUclDataType(rec_state_in.GetDataType(), 4)},
+       {"ActivationScalarType",
+        ::ml_drift::ToUclDataType(output.GetDataType(), 1)},
+       {"ActivationType", ::ml_drift::ToUclDataType(output.GetDataType(), 4)},
+       {"HEAD_K_DIM_SLICES", std::to_string(q_slices)},
+       {"GQA_RATIO", std::to_string(gqa_ratio)}},
       &code);
 
   op->code_ = std::move(code);

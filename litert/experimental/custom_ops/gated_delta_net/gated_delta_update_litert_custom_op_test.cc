@@ -28,6 +28,7 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
+#include "litert/experimental/custom_ops/gated_delta_net/gated_delta_update_impl.h"
 #include "litert/test/matchers.h"
 
 using testing::FloatNear;
@@ -51,21 +52,27 @@ void ComputeGoldenRecurrentGatedDelta(
     const std::vector<float>& v, const std::vector<float>& beta,
     const std::vector<float>& g, const std::vector<float>& initial_state,
     std::vector<float>& golden_out, std::vector<float>& golden_final_state,
-    int B, int H, int N, int D_k, int D_v) {
+    int B, int H, int N, int D_k, int D_v, int H_k = -1) {
   golden_out.resize(B * H * N * D_v);
   golden_final_state = initial_state;
+
+  const int actual_H_k = (H_k > 0) ? H_k : H;
+  const int gqa_ratio = H / actual_H_k;
 
   for (int b = 0; b < B; ++b) {
     for (int h = 0; h < H; ++h) {
       const int bh = b * H + h;
+      const int bh_k = b * actual_H_k + (h / gqa_ratio);
       float* S = golden_final_state.data() + bh * D_k * D_v;
 
       for (int t = 0; t < N; ++t) {
-        const float* q_t = q.data() + (bh * N + t) * D_k;
-        const float* k_t = k.data() + (bh * N + t) * D_k;
+        const float* q_t = q.data() + (bh_k * N + t) * D_k;
+        const float* k_t = k.data() + (bh_k * N + t) * D_k;
         const float* v_t = v.data() + (bh * N + t) * D_v;
-        const float beta_t = beta[bh * N + t];
-        const float g_decay = std::exp(g[bh * N + t]);
+        const float beta_raw = beta[bh * N + t];
+        const float beta_t = (beta_raw > 0.0f) ? beta_raw : 0.0f;
+        const float g_raw = g[bh * N + t];
+        const float g_decay = (g_raw <= 0.0f) ? std::exp(g_raw) : 1.0f;
         float* out_t = golden_out.data() + (bh * N + t) * D_v;
 
         // 1. Decay state S = S * exp(g)
@@ -433,6 +440,186 @@ TEST(GatedDeltaUpdateLiteRtCustomOpTest,
 
   EXPECT_THAT(out_span, Pointwise(FloatNear(1e-4f), golden_out));
   EXPECT_THAT(state_span, Pointwise(FloatNear(1e-4f), golden_final_state));
+}
+
+TEST(GatedDeltaUpdateLiteRtCustomOpTest,
+     GqaRatio2MultiBatchMultiStepRecurrent) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  GatedDeltaUpdateCustomOpKernel kernel;
+
+  const int B = 2;
+  const int H = 4;    // value heads
+  const int H_k = 2;  // key/query heads (GQA ratio = 2)
+  const int N = 8;
+  const int D_k = 4;
+  const int D_v = 4;
+
+  auto q_type = MakeRankedTensorType<float>({B, H_k, N, D_k});
+  auto v_type = MakeRankedTensorType<float>({B, H, N, D_v});
+  auto beta_type = MakeRankedTensorType<float>({B, H, N});
+  auto rec_type = MakeRankedTensorType<float>({B, H, D_k, D_v});
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto q_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, q_type,
+                                  sizeof(float) * B * H_k * N * D_k));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto k_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, q_type,
+                                  sizeof(float) * B * H_k * N * D_k));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto v_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, v_type,
+                                  sizeof(float) * B * H * N * D_v));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto beta_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, beta_type,
+                                  sizeof(float) * B * H * N));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto g_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, beta_type,
+                                  sizeof(float) * B * H * N));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto rec_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, rec_type,
+                                  sizeof(float) * B * H * D_k * D_v));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto out_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, v_type,
+                                  sizeof(float) * B * H * N * D_v));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto new_rec_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, rec_type,
+                                  sizeof(float) * B * H * D_k * D_v));
+
+  std::vector<float> q_data(B * H_k * N * D_k);
+  std::vector<float> k_data(B * H_k * N * D_k);
+  std::vector<float> v_data(B * H * N * D_v);
+  std::vector<float> beta_data(B * H * N);
+  std::vector<float> g_data(B * H * N);
+  std::vector<float> rec_data(B * H * D_k * D_v);
+
+  for (size_t i = 0; i < q_data.size(); ++i) q_data[i] = std::sin(i * 0.13f);
+  for (size_t i = 0; i < k_data.size(); ++i) k_data[i] = std::cos(i * 0.17f);
+  for (size_t i = 0; i < v_data.size(); ++i) v_data[i] = std::sin(i * 0.23f);
+  for (size_t i = 0; i < beta_data.size(); ++i)
+    beta_data[i] = 0.5f + 0.4f * std::sin(i * 0.31f);
+  for (size_t i = 0; i < g_data.size(); ++i)
+    g_data[i] = -0.1f * std::abs(std::cos(i * 0.41f));
+  for (size_t i = 0; i < rec_data.size(); ++i)
+    rec_data[i] = 0.1f * std::sin(i * 0.53f);
+
+  ASSERT_TRUE(q_buf.Write<float>(absl::MakeConstSpan(q_data)));
+  ASSERT_TRUE(k_buf.Write<float>(absl::MakeConstSpan(k_data)));
+  ASSERT_TRUE(v_buf.Write<float>(absl::MakeConstSpan(v_data)));
+  ASSERT_TRUE(beta_buf.Write<float>(absl::MakeConstSpan(beta_data)));
+  ASSERT_TRUE(g_buf.Write<float>(absl::MakeConstSpan(g_data)));
+  ASSERT_TRUE(rec_buf.Write<float>(absl::MakeConstSpan(rec_data)));
+
+  std::vector<float> golden_out;
+  std::vector<float> golden_final_state;
+  ComputeGoldenRecurrentGatedDelta(q_data, k_data, v_data, beta_data, g_data,
+                                   rec_data, golden_out, golden_final_state, B,
+                                   H, N, D_k, D_v, H_k);
+
+  std::vector<TensorBuffer> inputs;
+  inputs.push_back(std::move(q_buf));
+  inputs.push_back(std::move(k_buf));
+  inputs.push_back(std::move(v_buf));
+  inputs.push_back(std::move(beta_buf));
+  inputs.push_back(std::move(g_buf));
+  inputs.push_back(std::move(rec_buf));
+
+  std::vector<TensorBuffer> outputs;
+  outputs.push_back(std::move(out_buf));
+  outputs.push_back(std::move(new_rec_buf));
+
+  std::vector<Layout> in_layouts = {Layout(Dimensions({B, H_k, N, D_k})),
+                                    Layout(Dimensions({B, H_k, N, D_k})),
+                                    Layout(Dimensions({B, H, N, D_v})),
+                                    Layout(Dimensions({B, H, N})),
+                                    Layout(Dimensions({B, H, N})),
+                                    Layout(Dimensions({B, H, D_k, D_v}))};
+  std::vector<Layout> out_layouts(2);
+  EXPECT_TRUE(kernel.GetOutputLayouts(in_layouts, out_layouts));
+  EXPECT_EQ(out_layouts[0].Dimensions(), Dimensions({B, H, N, D_v}));
+  EXPECT_EQ(out_layouts[1].Dimensions(), Dimensions({B, H, D_k, D_v}));
+  EXPECT_TRUE(kernel.Run(inputs, outputs));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto out_lock,
+                              TensorBufferScopedLock::Create<const float>(
+                                  outputs[0], TensorBuffer::LockMode::kRead));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto state_lock,
+                              TensorBufferScopedLock::Create<const float>(
+                                  outputs[1], TensorBuffer::LockMode::kRead));
+
+  auto out_span = absl::MakeSpan(out_lock.second, golden_out.size());
+  auto state_span =
+      absl::MakeSpan(state_lock.second, golden_final_state.size());
+
+  EXPECT_THAT(out_span, Pointwise(FloatNear(1e-4f), golden_out));
+  EXPECT_THAT(state_span, Pointwise(FloatNear(1e-4f), golden_final_state));
+}
+
+TEST(GatedDeltaUpdateLiteRtCustomOpTest,
+     GqaRatio3RecurrentAndChunkedParityAndClamping) {
+  // B=1, H=6, H_k=2 (GQA ratio = 3, matching Qwen 27B 48/16), N=72 (> 64 chunk)
+  const int B = 1;
+  const int H = 6;
+  const int H_k = 2;
+  const int N = 72;
+  const int D_k = 4;
+  const int D_v = 4;
+
+  std::vector<float> q_data(B * H_k * N * D_k);
+  std::vector<float> k_data(B * H_k * N * D_k);
+  std::vector<float> v_data(B * H * N * D_v);
+  std::vector<float> beta_data(B * H * N);
+  std::vector<float> g_data(B * H * N);
+  std::vector<float> rec_data(B * H * D_k * D_v);
+
+  for (size_t i = 0; i < q_data.size(); ++i)
+    q_data[i] = 0.2f * std::sin(i * 0.1f);
+  for (size_t i = 0; i < k_data.size(); ++i)
+    k_data[i] = 0.2f * std::cos(i * 0.2f);
+  for (size_t i = 0; i < v_data.size(); ++i)
+    v_data[i] = 0.2f * std::sin(i * 0.3f);
+  for (size_t i = 0; i < beta_data.size(); ++i) {
+    // Include some negative values to verify beta clamping to 0.0
+    beta_data[i] = (i % 7 == 0) ? -0.25f : (0.3f + 0.2f * std::sin(i * 0.4f));
+  }
+  for (size_t i = 0; i < g_data.size(); ++i) {
+    // Include some positive values to verify g clamping to 0.0 (decay = 1.0)
+    g_data[i] = (i % 11 == 0) ? 0.5f : (-0.05f * std::abs(std::cos(i * 0.5f)));
+  }
+  for (size_t i = 0; i < rec_data.size(); ++i)
+    rec_data[i] = 0.1f * std::sin(i * 0.6f);
+
+  std::vector<float> golden_out;
+  std::vector<float> golden_state;
+  ComputeGoldenRecurrentGatedDelta(q_data, k_data, v_data, beta_data, g_data,
+                                   rec_data, golden_out, golden_state, B, H, N,
+                                   D_k, D_v, H_k);
+
+  std::vector<float> rec_out(B * H * N * D_v);
+  std::vector<float> rec_state(B * H * D_k * D_v);
+  ComputeGatedDeltaUpdateRecurrent(
+      q_data.data(), k_data.data(), v_data.data(), beta_data.data(),
+      g_data.data(), rec_data.data(), rec_out.data(), rec_state.data(), B, H, N,
+      D_k, D_v, H_k);
+
+  std::vector<float> chunked_out(B * H * N * D_v);
+  std::vector<float> chunked_state(B * H * D_k * D_v);
+  ComputeGatedDeltaUpdateChunked(
+      q_data.data(), k_data.data(), v_data.data(), beta_data.data(),
+      g_data.data(), rec_data.data(), chunked_out.data(), chunked_state.data(),
+      B, H, N, D_k, D_v, H_k);
+
+  EXPECT_THAT(rec_out, Pointwise(FloatNear(1e-4f), golden_out));
+  EXPECT_THAT(rec_state, Pointwise(FloatNear(1e-4f), golden_state));
+  EXPECT_THAT(chunked_out, Pointwise(FloatNear(1e-4f), golden_out));
+  EXPECT_THAT(chunked_state, Pointwise(FloatNear(1e-4f), golden_state));
 }
 
 TEST(GatedDeltaUpdateLiteRtCustomOpTest,

@@ -64,6 +64,7 @@
 // clang-format on
 #include "ml_drift_delegate/delegate/composite/custom_parsers.h"
 #include "ml_drift_delegate/delegate/composite/custom_transformations.h"
+#include "ml_drift_delegate/delegate/composite/gated_delta_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/custom_parsers.h"
 #include "ml_drift_delegate/delegate/composite/ir/litert_op_selector.h"
 #include "ml_drift_delegate/delegate/composite/litert_op_selector.h"
@@ -323,8 +324,35 @@ absl::Status DelegateKernel::InitializeGraphFloat32(
   }
 
   external_tensor_ids_.reserve(input_indices_.size() + output_indices_.size());
+  absl::flat_hash_set<::ml_drift::ValueId> preserved_fp32_values;
+  for (const auto* node : graph.nodes()) {
+    if (node->operation.type == "gated_delta_update") {
+      bool force_fp32 = true;
+      if (node->operation.attributes.has_value()) {
+        const auto* attr = std::any_cast<GatedDeltaUpdateAttributes>(
+            &node->operation.attributes);
+        if (attr && !attr->state_dtype.empty() &&
+            attr->state_dtype != "float32") {
+          force_fp32 = false;
+        }
+      }
+      if (force_fp32) {
+        auto inputs = graph.FindInputs(node->id);
+        if (inputs.size() >= 6 &&
+            inputs[5]->tensor.type == ::ml_drift::DataType::FLOAT32) {
+          preserved_fp32_values.insert(inputs[5]->id);
+        }
+        auto outputs = graph.FindOutputs(node->id);
+        if (outputs.size() >= 2 &&
+            outputs[1]->tensor.type == ::ml_drift::DataType::FLOAT32) {
+          preserved_fp32_values.insert(outputs[1]->id);
+        }
+      }
+    }
+  }
   ABSL_RETURN_IF_ERROR(UpdateCreateInfoWithExternalTensors(
-      context, create_info, input_tensor_refs, output_tensor_refs));
+      context, create_info, input_tensor_refs, output_tensor_refs,
+      preserved_fp32_values));
   if (!external_tensor_ids_.empty()) {
     ABSL_LOG(INFO)
         << "Total " << external_tensor_ids_.size()
@@ -1224,8 +1252,38 @@ absl::Status DelegateKernel::InitializeIrModel(
     });
   }
 
+  absl::flat_hash_set<::ml_drift::ValueId> preserved_fp32_values;
+  for (const auto& op : ir_model->ops()) {
+    if (op && op->name == "gated_delta_update") {
+      bool force_fp32 = true;
+      if (op->attr.has_value()) {
+        const auto* attr = std::any_cast<GatedDeltaUpdateAttributes>(&op->attr);
+        if (attr && !attr->state_dtype.empty() &&
+            attr->state_dtype != "float32") {
+          force_fp32 = false;
+        }
+      }
+      if (force_fp32) {
+        if (op->inputs.size() >= 6) {
+          const auto* in_tensor = ir_model->tensor(op->inputs[5]);
+          if (in_tensor &&
+              in_tensor->desc.GetDataType() == ::ml_drift::DataType::FLOAT32) {
+            preserved_fp32_values.insert(op->inputs[5]);
+          }
+        }
+        if (op->outputs.size() >= 2) {
+          const auto* out_tensor = ir_model->tensor(op->outputs[1]);
+          if (out_tensor &&
+              out_tensor->desc.GetDataType() == ::ml_drift::DataType::FLOAT32) {
+            preserved_fp32_values.insert(op->outputs[1]);
+          }
+        }
+      }
+    }
+  }
   ABSL_RETURN_IF_ERROR(UpdateCreateInfoWithExternalTensors(
-      context, create_info, input_tensor_refs, output_tensor_refs));
+      context, create_info, input_tensor_refs, output_tensor_refs,
+      preserved_fp32_values));
   if (!external_tensor_ids_.empty()) {
     ABSL_LOG(INFO)
         << "Total " << external_tensor_ids_.size()
