@@ -37,6 +37,8 @@ limitations under the License.
 
 namespace litert::tensor {
 
+struct MlDriftMixinTag;
+struct TfLiteMixinTag;
 struct XnnpackMixinTag;
 
 using ::testing::FloatNear;
@@ -3146,6 +3148,634 @@ TYPED_TEST_P(NumericalTestSuite, ResizeNearestNeighborOp) {
 }
 
 // Register all typed tests.
+TYPED_TEST_P(NumericalTestSuite, LogSoftmaxOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor<Tag> output = LogSoftmax(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "LogSoftmax op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
+                                   1.0f, 1.0f, 1.0f, 1.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(8);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // Row 0: x - log(sum(exp(x))) = x - 4.4401897.
+  // Row 1: log(1 / 4) = -1.3862944.
+  std::vector<float> expected_output = {-3.4401897f, -2.4401897f, -1.4401897f,
+                                        -0.4401897f, -1.3862944f, -1.3862944f,
+                                        -1.3862944f, -1.3862944f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, Relu0To1Op) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = Relu0To1(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Relu0To1 op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {-1.0f, 0.25f, 2.0f, 0.75f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<float> expected_output = {0.0f, 0.25f, 1.0f, 0.75f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, ReluN1To1Op) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = ReluN1To1(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "ReluN1To1 op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {-2.0f, -0.5f, 0.5f, 3.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<float> expected_output = {-1.0f, -0.5f, 0.5f, 1.0f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, ZerosLikeOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = ZerosLike(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "ZerosLike op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, -2.0f, 3.5f, -4.25f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(4, 1.0f);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<float> expected_output = {0.0f, 0.0f, 0.0f, 0.0f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, GreaterOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input1({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> input2({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = Greater(input1, input2);
+
+  auto status = this->bridge_->BuildGraph({input1, input2}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Greater op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input1_data = {1.0f, 7.0f, 3.0f, 4.0f};
+  std::vector<float> input2_data = {1.0f, 6.0f, 5.0f, -8.0f};
+
+  ASSERT_OK(this->bridge_->SetInput(input1, AsBytes(input1_data)));
+  ASSERT_OK(this->bridge_->SetInput(input2, AsBytes(input2_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<uint8_t> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<uint8_t> expected_output = {0, 1, 0, 1};
+  EXPECT_EQ(actual_output, expected_output);
+}
+
+TYPED_TEST_P(NumericalTestSuite, LogicalOrOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input1({.type = Type::kBOOL, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> input2({.type = Type::kBOOL, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = LogicalOr(input1, input2);
+
+  auto status = this->bridge_->BuildGraph({input1, input2}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "LogicalOr op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<bool> input1_bool = {true, true, false, false};
+  std::vector<uint8_t> input1_data(input1_bool.begin(), input1_bool.end());
+  std::vector<bool> input2_bool = {true, false, true, false};
+  std::vector<uint8_t> input2_data(input2_bool.begin(), input2_bool.end());
+
+  ASSERT_OK(this->bridge_->SetInput(input1, AsBytes(input1_data)));
+  ASSERT_OK(this->bridge_->SetInput(input2, AsBytes(input2_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<uint8_t> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<uint8_t> expected_output = {1, 1, 1, 0};
+  EXPECT_EQ(actual_output, expected_output);
+}
+
+TYPED_TEST_P(NumericalTestSuite, SpaceToDepthOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 4, 4, 1}});
+  Tensor<Tag> output = SpaceToDepth(input, 2);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "SpaceToDepth op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  // input[y][x] = 4 * y + x.
+  std::vector<float> input_data = {0.0f,  1.0f,  2.0f,  3.0f, 4.0f,  5.0f,
+                                   6.0f,  7.0f,  8.0f,  9.0f, 10.0f, 11.0f,
+                                   12.0f, 13.0f, 14.0f, 15.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(16);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // Each output pixel gathers its 2x2 input block in (row, col) order.
+  std::vector<float> expected_output = {0.0f,  1.0f,  4.0f,  5.0f, 2.0f,  3.0f,
+                                        6.0f,  7.0f,  8.0f,  9.0f, 12.0f, 13.0f,
+                                        10.0f, 11.0f, 14.0f, 15.0f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, BitwiseXorOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input1({.type = Type::kI32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> input2({.type = Type::kI32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = BitwiseXor(input1, input2);
+
+  auto status = this->bridge_->BuildGraph({input1, input2}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "BitwiseXor op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<int32_t> input1_data = {5, 3, -1, 0};
+  std::vector<int32_t> input2_data = {3, 3, 1, 7};
+  ASSERT_OK(this->bridge_->SetInput(input1, AsBytes(input1_data)));
+  ASSERT_OK(this->bridge_->SetInput(input2, AsBytes(input2_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<int32_t> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<int32_t> expected_output = {6, 0, -2, 7};
+  EXPECT_EQ(actual_output, expected_output);
+}
+
+TYPED_TEST_P(NumericalTestSuite, RightShiftOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input1({.type = Type::kI32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> input2({.type = Type::kI32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = RightShift(input1, input2);
+
+  auto status = this->bridge_->BuildGraph({input1, input2}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "RightShift op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<int32_t> input1_data = {16, -16, 7, 1024};
+  std::vector<int32_t> input2_data = {2, 2, 1, 10};
+  ASSERT_OK(this->bridge_->SetInput(input1, AsBytes(input1_data)));
+  ASSERT_OK(this->bridge_->SetInput(input2, AsBytes(input2_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<int32_t> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // Signed inputs use an arithmetic shift.
+  std::vector<int32_t> expected_output = {4, -4, 3, 1};
+  EXPECT_EQ(actual_output, expected_output);
+}
+
+TYPED_TEST_P(NumericalTestSuite, ProbeOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = Probe(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Probe op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, -2.0f, 3.5f, 0.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // Probe is an identity op used to observe intermediate values.
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), input_data));
+}
+
+TYPED_TEST_P(NumericalTestSuite, PadOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  std::vector<int32_t> paddings_data = {0, 0, 1, 1, 1, 1, 0, 0};
+  Tensor<Tag> paddings(
+      {.type = Type::kI32, .shape = {4, 2}, .buffer = paddings_data});
+  Tensor<Tag> output = Pad(input, paddings);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Pad op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, 2.0f, 3.0f, 4.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(16);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<float> expected_output = {
+      0.0f, 0.0f, 0.0f, 0.0f,  //
+      0.0f, 1.0f, 2.0f, 0.0f,  //
+      0.0f, 3.0f, 4.0f, 0.0f,  //
+      0.0f, 0.0f, 0.0f, 0.0f,
+  };
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, PadV2Op) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  std::vector<int32_t> paddings_data = {0, 0, 0, 1, 1, 0, 0, 0};
+  Tensor<Tag> paddings(
+      {.type = Type::kI32, .shape = {4, 2}, .buffer = paddings_data});
+  Tensor<Tag> constant_value(
+      {.type = Type::kFP32, .shape = {}, .buffer = 9.0f});
+  Tensor<Tag> output = PadV2(input, paddings, constant_value);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "PadV2 op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, 2.0f, 3.0f, 4.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  // Output shape: [1, 3, 3, 1] (one row after, one column before).
+  std::vector<float> actual_output(9);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<float> expected_output = {
+      9.0f, 1.0f, 2.0f,  //
+      9.0f, 3.0f, 4.0f,  //
+      9.0f, 9.0f, 9.0f,
+  };
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, GatherNdOp) {
+  using Tag = typename TypeParam::Tag;
+  struct TestCase {
+    std::vector<int> params_shape;
+    std::vector<float> params;
+    std::vector<int> indices_shape;
+    std::vector<int32_t> indices;
+    std::vector<float> expected;
+  };
+  std::vector<TestCase> test_cases = {
+      // Full-rank indices gather individual elements.
+      {.params_shape = {2, 2},
+       .params = {1.0f, 2.0f, 3.0f, 4.0f},
+       .indices_shape = {2, 2},
+       .indices = {0, 1, 1, 0},
+       .expected = {2.0f, 3.0f}},
+      // Partial indices gather whole rows.
+      {.params_shape = {2, 3},
+       .params = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f},
+       .indices_shape = {2, 1},
+       .indices = {1, 0},
+       .expected = {4.0f, 5.0f, 6.0f, 1.0f, 2.0f, 3.0f}},
+  };
+
+  for (const auto& tc : test_cases) {
+    auto bridge = TypeParam::CreateBridge();
+    ASSERT_OK(bridge->Initialize());
+    Tensor<Tag> params({.type = Type::kFP32, .shape = tc.params_shape});
+    Tensor<Tag> indices({.type = Type::kI32, .shape = tc.indices_shape});
+    Tensor<Tag> output = GatherNd(params, indices);
+
+    auto status = bridge->BuildGraph({params, indices}, {output});
+    if (status.code() == absl::StatusCode::kUnimplemented) {
+      GTEST_SKIP() << "GatherNd op is unimplemented on this backend.";
+    }
+    ASSERT_OK(status);
+
+    ASSERT_OK(bridge->SetInput(params, AsBytes(tc.params)));
+    ASSERT_OK(bridge->SetInput(indices, AsBytes(tc.indices)));
+
+    ASSERT_OK(bridge->Execute());
+
+    std::vector<float> actual_output(tc.expected.size());
+    ASSERT_OK(bridge->GetOutput(output, AsBytes(actual_output)));
+
+    EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), tc.expected));
+  }
+}
+
+TYPED_TEST_P(NumericalTestSuite, DynamicUpdateSliceOp) {
+  using Tag = typename TypeParam::Tag;
+  if constexpr (std::is_same_v<Tag, MlDriftMixinTag>) {
+    GTEST_SKIP()
+        << "DynamicUpdateSlice writes rank-2 updates at the wrong offset on "
+           "the ML Drift backend.";
+  }
+
+  Tensor<Tag> operand({.type = Type::kFP32, .shape = {3, 3}});
+  Tensor<Tag> update({.type = Type::kFP32, .shape = {2, 2}});
+  Tensor<Tag> output = DynamicUpdateSlice(operand, update, {1, 1});
+
+  auto status = this->bridge_->BuildGraph({operand, update}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "DynamicUpdateSlice op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> operand_data = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f,
+                                     6.0f, 7.0f, 8.0f, 9.0f};
+  std::vector<float> update_data = {10.0f, 20.0f, 30.0f, 40.0f};
+  ASSERT_OK(this->bridge_->SetInput(operand, AsBytes(operand_data)));
+  ASSERT_OK(this->bridge_->SetInput(update, AsBytes(update_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(9);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<float> expected_output = {
+      1.0f, 2.0f,  3.0f,   //
+      4.0f, 10.0f, 20.0f,  //
+      7.0f, 30.0f, 40.0f,
+  };
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, QuantizeOp) {
+  using Tag = typename TypeParam::Tag;
+  if constexpr (std::is_same_v<Tag, MlDriftMixinTag>) {
+    GTEST_SKIP()
+        << "Quantize produces incorrect values on the ML Drift backend.";
+  }
+
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 8}});
+  Tensor<Tag> output = Quantize(input, Type::kI8, /*scale=*/{0.5f},
+                                /*zero_point=*/{3});
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Quantize op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {-1.0f, 0.0f,    1.0f,  2.0f,
+                                   70.0f, -100.0f, 10.0f, -10.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<int8_t> actual_output(8);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // q = clamp(round(x / 0.5) + 3, -128, 127).
+  std::vector<int8_t> expected_output = {1, 3, 5, 7, 127, -128, 23, -17};
+  EXPECT_EQ(actual_output, expected_output);
+}
+
+TYPED_TEST_P(NumericalTestSuite, DequantizeOp) {
+  using Tag = typename TypeParam::Tag;
+  if constexpr (std::is_same_v<Tag, MlDriftMixinTag>) {
+    GTEST_SKIP()
+        << "Dequantize of int8 inputs fails to compile its OpenCL kernel "
+           "on the ML Drift backend.";
+  }
+
+  Tensor<Tag> input(
+      {.type = Type::kI8,
+       .shape = {1, 8},
+       .quantization = std::make_shared<PerChannelAffineQuantization>(
+           PerChannelAffineQuantization{/*scales=*/{0.5f},
+                                        /*zero_points=*/{3}})});
+  Tensor<Tag> output = Dequantize(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Dequantize op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<int8_t> input_data = {1, 3, 5, 7, 127, -128, 23, -17};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(8);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // x = (q - 3) * 0.5.
+  std::vector<float> expected_output = {-1.0f, 0.0f,   1.0f,  2.0f,
+                                        62.0f, -65.5f, 10.0f, -10.0f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, RopeOp) {
+  using Tag = typename TypeParam::Tag;
+  // [batch, tokens, heads, channels].
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 1, 4}});
+  // [tokens, channels]: cos in the first half, sin in the second half.
+  Tensor<Tag> weights({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor<Tag> output = Rope(input, weights);
+
+  auto status = this->bridge_->BuildGraph({input, weights}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Rope op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
+                                   1.0f, 2.0f, 3.0f, 4.0f};
+  std::vector<float> weights_data = {1.0f, 1.0f, 0.0f, 0.0f,
+                                     0.0f, 0.5f, 1.0f, 0.5f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+  ASSERT_OK(this->bridge_->SetInput(weights, AsBytes(weights_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(8);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // Token 0 has an identity rotation. For token 1:
+  //   out[c]        = x[c] * cos[c] - x[c + 2] * sin[c]
+  //   out[c + 2]    = x[c] * sin[c] + x[c + 2] * cos[c]
+  std::vector<float> expected_output = {1.0f,  2.0f,  3.0f, 4.0f,
+                                        -3.0f, -1.0f, 1.0f, 3.0f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, TopKOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {2, 4}});
+  std::vector<Tensor<Tag>> outputs = TopK(input, 2);
+  ASSERT_EQ(outputs.size(), 2);
+
+  auto status = this->bridge_->BuildGraph({input}, {outputs[0], outputs[1]});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "TopK op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, 4.0f, 2.0f, 3.0f,
+                                   8.0f, 5.0f, 7.0f, 6.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_values(4);
+  ASSERT_OK(this->bridge_->GetOutput(outputs[0], AsBytes(actual_values)));
+  std::vector<int32_t> actual_indices(4);
+  ASSERT_OK(this->bridge_->GetOutput(outputs[1], AsBytes(actual_indices)));
+
+  std::vector<float> expected_values = {4.0f, 3.0f, 8.0f, 7.0f};
+  std::vector<int32_t> expected_indices = {1, 3, 0, 2};
+  EXPECT_THAT(actual_values, Pointwise(FloatNear(1e-5), expected_values));
+  EXPECT_EQ(actual_indices, expected_indices);
+}
+
+TYPED_TEST_P(NumericalTestSuite, NonMaxSuppressionV5Op) {
+  using Tag = typename TypeParam::Tag;
+  if constexpr (std::is_same_v<Tag, TfLiteMixinTag>) {
+    GTEST_SKIP()
+        << "The TFLite serializer emits rank-1 threshold tensors, which "
+           "the TFLite NON_MAX_SUPPRESSION_V5 kernel rejects.";
+  }
+
+  // Boxes are [y1, x1, y2, x2].
+  Tensor<Tag> boxes({.type = Type::kFP32, .shape = {4, 4}});
+  Tensor<Tag> scores({.type = Type::kFP32, .shape = {4}});
+  Tensor<Tag> iou_threshold({.type = Type::kFP32, .shape = {}, .buffer = 0.5f});
+  Tensor<Tag> score_threshold(
+      {.type = Type::kFP32, .shape = {}, .buffer = 0.0f});
+  Tensor<Tag> soft_nms_sigma(
+      {.type = Type::kFP32, .shape = {}, .buffer = 0.0f});
+  std::vector<Tensor<Tag>> outputs =
+      NonMaxSuppressionV5(boxes, scores, /*max_output_size=*/3, iou_threshold,
+                          score_threshold, soft_nms_sigma);
+  ASSERT_EQ(outputs.size(), 3);
+
+  auto status = this->bridge_->BuildGraph({boxes, scores},
+                                          {outputs[0], outputs[1], outputs[2]});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "NonMaxSuppressionV5 op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> boxes_data = {
+      0.0f, 0.0f,  1.0f, 1.0f,   // Box 0.
+      0.0f, 0.1f,  1.0f, 1.1f,   // IoU 0.82 with box 0.
+      0.0f, -0.1f, 1.0f, 0.9f,   // IoU 0.82 with box 0.
+      0.0f, 10.0f, 1.0f, 11.0f,  // Disjoint from the others.
+  };
+  std::vector<float> scores_data = {0.9f, 0.75f, 0.6f, 0.95f};
+  ASSERT_OK(this->bridge_->SetInput(boxes, AsBytes(boxes_data)));
+  ASSERT_OK(this->bridge_->SetInput(scores, AsBytes(scores_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<int32_t> actual_indices(3);
+  ASSERT_OK(this->bridge_->GetOutput(outputs[0], AsBytes(actual_indices)));
+  std::vector<float> actual_scores(3);
+  ASSERT_OK(this->bridge_->GetOutput(outputs[1], AsBytes(actual_scores)));
+  std::vector<int32_t> actual_valid(1);
+  ASSERT_OK(this->bridge_->GetOutput(outputs[2], AsBytes(actual_valid)));
+
+  // Boxes 1 and 2 are suppressed by box 0; unused slots are zero-padded.
+  std::vector<int32_t> expected_indices = {3, 0, 0};
+  std::vector<float> expected_scores = {0.95f, 0.9f, 0.0f};
+  EXPECT_EQ(actual_valid[0], 2);
+  EXPECT_EQ(actual_indices, expected_indices);
+  EXPECT_THAT(actual_scores, Pointwise(FloatNear(1e-5), expected_scores));
+}
+
+TYPED_TEST_P(NumericalTestSuite, StableHLOCompositeOp) {
+  using Tag = typename TypeParam::Tag;
+  if constexpr (std::is_same_v<Tag, TfLiteMixinTag>) {
+    GTEST_SKIP() << "The TFLite builtin op resolver does not register "
+                    "STABLEHLO_COMPOSITE.";
+  }
+
+  Tensor<Tag> input1({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> input2({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = StableHLOComposite(
+      "test.mul_add",
+      [](Tensor<Tag> x, Tensor<Tag> y) { return Add(Mul(x, y), x); }, input1,
+      input2);
+
+  auto status = this->bridge_->BuildGraph({input1, input2}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "StableHLOComposite op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input1_data = {1.0f, 2.0f, -3.0f, 4.0f};
+  std::vector<float> input2_data = {5.0f, -1.0f, 2.0f, 0.5f};
+  ASSERT_OK(this->bridge_->SetInput(input1, AsBytes(input1_data)));
+  ASSERT_OK(this->bridge_->SetInput(input2, AsBytes(input2_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // x * y + x.
+  std::vector<float> expected_output = {6.0f, 0.0f, -9.0f, 6.0f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
 REGISTER_TYPED_TEST_SUITE_P(
     NumericalTestSuite, AddOp, SubOp, MulOp, DivOp, GeluOp, ReluOp, Relu6Op,
     LeakyReluOp, EluOp, HardSwishOp, LogisticOp, TanhOp, SqrtOp, RsqrtOp,
@@ -3159,7 +3789,11 @@ REGISTER_TYPED_TEST_SUITE_P(
     EmbeddingLookupOp, BatchMatmulOp, PReluOp, L2NormalizationOp, LstmOp,
     Conv2DOp, TransposeConvOp, TransposeConv2DOp, MaximumOp, MinimumOp,
     FloorModOp, FloorDivOp, SumOp, ReduceMaxOp, MeanOp, AveragePool2DOp,
-    MaxPool2DOp, SplitOp, PackOp, UnpackOp, ResizeNearestNeighborOp);
+    MaxPool2DOp, SplitOp, PackOp, UnpackOp, ResizeNearestNeighborOp,
+    LogSoftmaxOp, Relu0To1Op, ReluN1To1Op, ZerosLikeOp, GreaterOp, LogicalOrOp,
+    SpaceToDepthOp, BitwiseXorOp, RightShiftOp, ProbeOp, PadOp, PadV2Op,
+    GatherNdOp, DynamicUpdateSliceOp, QuantizeOp, DequantizeOp, RopeOp, TopKOp,
+    NonMaxSuppressionV5Op, StableHLOCompositeOp);
 
 }  // namespace litert::tensor
 
