@@ -49,7 +49,6 @@ android_library(
     srcs = [":java_srcs"],
     custom_package = "com.google.ai.edge.litert.support",
     manifest = "AndroidManifest.xml",
-    # LINT.IfChange(dep)
     deps = [
         "//tflite/java:tensorflowlite_api",
         "@com_google_auto_value",
@@ -58,7 +57,6 @@ android_library(
         "@maven//:androidx_annotation_annotation",
         "@org_checkerframework_qual",
     ],
-    # LINT.ThenChange(//ci/build_android_package.sh)
 )
 
 # This alias matches the associated .aar library name output style.
