@@ -107,7 +107,9 @@ cc_test(
         "//tflite/c:common",
         "//tflite/kernels:test_util",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
         "@com_google_googletest//:gtest_main",
+        "@eigen_archive//:eigen3",
         "@flatbuffers//:runtime_cc",
     ],
 )
@@ -124,6 +126,7 @@ cc_binary(
         "//tflite/c:common",
         "//tflite/kernels:test_util",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_benchmark//:benchmark_main",
         "@flatbuffers//:runtime_cc",
     ],
