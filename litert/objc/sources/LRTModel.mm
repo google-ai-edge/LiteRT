@@ -69,16 +69,12 @@ static NSArray<NSString *> *ConvertStringViewsToObjCArray(
                                     environment:(LRTEnvironment *)environment
                                           error:(NSError **)error {
   if (!modelFilePath) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"modelFilePath cannot be nil");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"modelFilePath cannot be nil");
     return nil;
   }
 
   if (![environment cppEnvironment]) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
     return nil;
   }
 
@@ -86,10 +82,7 @@ static NSArray<NSString *> *ConvertStringViewsToObjCArray(
       *[environment cppEnvironment], std::string(modelFilePath.UTF8String));
 
   if (!createResult.HasValue()) {
-    if (error) {
-      *error = CreateLRTError(static_cast<NSInteger>(createResult.Error().Status()),
-                              @(createResult.Error().Message().c_str()));
-    }
+    LRTSetErrorFromCppError(error, createResult.Error());
     return nil;
   }
 
@@ -103,16 +96,12 @@ static NSArray<NSString *> *ConvertStringViewsToObjCArray(
                                 environment:(LRTEnvironment *)environment
                                       error:(NSError **)error {
   if (!modelData || modelData.length == 0) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"modelData cannot be empty");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"modelData cannot be empty");
     return nil;
   }
 
   if (!environment || ![environment cppEnvironment]) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
     return nil;
   }
 
@@ -121,10 +110,7 @@ static NSArray<NSString *> *ConvertStringViewsToObjCArray(
   auto createResult = litert::Model::CreateFromBuffer(*[environment cppEnvironment], bufferRef);
 
   if (!createResult.HasValue()) {
-    if (error) {
-      *error = CreateLRTError(static_cast<NSInteger>(createResult.Error().Status()),
-                              @(createResult.Error().Message().c_str()));
-    }
+    LRTSetErrorFromCppError(error, createResult.Error());
     return nil;
   }
 
@@ -148,26 +134,19 @@ static NSArray<NSString *> *ConvertStringViewsToObjCArray(
 - (nullable NSArray<NSString *> *)inputNamesForSignatureIndex:(NSUInteger)signatureIndex
                                                         error:(NSError **)error {
   if (!_cppModel) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Model is not initialized");
-    }
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Model is not initialized");
     return nil;
   }
 
   if (signatureIndex >= _cppModel->GetNumSignatures()) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Signature index out of bounds");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Signature index out of bounds");
     return nil;
   }
 
   litert::Expected<std::vector<litert::StringView>> namesResult =
       _cppModel->GetSignatureInputNames(signatureIndex);
   if (!namesResult.HasValue()) {
-    if (error) {
-      *error = CreateLRTError(static_cast<NSInteger>(namesResult.Error().Status()),
-                              @(namesResult.Error().Message().c_str()));
-    }
+    LRTSetErrorFromCppError(error, namesResult.Error());
     return nil;
   }
 
@@ -177,26 +156,19 @@ static NSArray<NSString *> *ConvertStringViewsToObjCArray(
 - (nullable NSArray<NSString *> *)inputNamesForSignatureKey:(NSString *)signatureKey
                                                       error:(NSError **)error {
   if (!signatureKey) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"signatureKey cannot be nil");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"signatureKey cannot be nil");
     return nil;
   }
 
   if (!_cppModel) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Model is not initialized");
-    }
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Model is not initialized");
     return nil;
   }
 
   litert::Expected<std::vector<litert::StringView>> namesResult =
       _cppModel->GetSignatureInputNames(signatureKey.UTF8String);
   if (!namesResult.HasValue()) {
-    if (error) {
-      *error = CreateLRTError(static_cast<NSInteger>(namesResult.Error().Status()),
-                              @(namesResult.Error().Message().c_str()));
-    }
+    LRTSetErrorFromCppError(error, namesResult.Error());
     return nil;
   }
 
@@ -206,26 +178,19 @@ static NSArray<NSString *> *ConvertStringViewsToObjCArray(
 - (nullable NSArray<NSString *> *)outputNamesForSignatureIndex:(NSUInteger)signatureIndex
                                                          error:(NSError **)error {
   if (!_cppModel) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Model is not initialized");
-    }
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Model is not initialized");
     return nil;
   }
 
   if (signatureIndex >= _cppModel->GetNumSignatures()) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Signature index out of bounds");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Signature index out of bounds");
     return nil;
   }
 
   litert::Expected<std::vector<litert::StringView>> namesResult =
       _cppModel->GetSignatureOutputNames(signatureIndex);
   if (!namesResult.HasValue()) {
-    if (error) {
-      *error = CreateLRTError(static_cast<NSInteger>(namesResult.Error().Status()),
-                              @(namesResult.Error().Message().c_str()));
-    }
+    LRTSetErrorFromCppError(error, namesResult.Error());
     return nil;
   }
 
@@ -235,26 +200,19 @@ static NSArray<NSString *> *ConvertStringViewsToObjCArray(
 - (nullable NSArray<NSString *> *)outputNamesForSignatureKey:(NSString *)signatureKey
                                                        error:(NSError **)error {
   if (!signatureKey) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"signatureKey cannot be nil");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"signatureKey cannot be nil");
     return nil;
   }
 
   if (!_cppModel) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Model is not initialized");
-    }
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Model is not initialized");
     return nil;
   }
 
   litert::Expected<std::vector<litert::StringView>> namesResult =
       _cppModel->GetSignatureOutputNames(signatureKey.UTF8String);
   if (!namesResult.HasValue()) {
-    if (error) {
-      *error = CreateLRTError(static_cast<NSInteger>(namesResult.Error().Status()),
-                              @(namesResult.Error().Message().c_str()));
-    }
+    LRTSetErrorFromCppError(error, namesResult.Error());
     return nil;
   }
 
@@ -263,26 +221,19 @@ static NSArray<NSString *> *ConvertStringViewsToObjCArray(
 
 - (nullable NSData *)metadataForKey:(NSString *)metadataKey error:(NSError **)error {
   if (!metadataKey) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"metadataKey cannot be nil");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"metadataKey cannot be nil");
     return nil;
   }
 
   if (!_cppModel) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Model is not initialized");
-    }
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Model is not initialized");
     return nil;
   }
 
   litert::Expected<litert::Span<const uint8_t>> metaResult =
       _cppModel->Metadata(metadataKey.UTF8String);
   if (!metaResult.HasValue()) {
-    if (error) {
-      *error = CreateLRTError(static_cast<NSInteger>(metaResult.Error().Status()),
-                              @(metaResult.Error().Message().c_str()));
-    }
+    LRTSetErrorFromCppError(error, metaResult.Error());
     return nil;
   }
 

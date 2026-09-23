@@ -53,16 +53,12 @@ NS_ASSUME_NONNULL_BEGIN
                                                 options:(nullable LRTOptions *)options
                                                   error:(NSError **)error {
   if (!modelFilePath) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"modelFilePath cannot be nil");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"modelFilePath cannot be nil");
     return nil;
   }
 
   if (![environment cppEnvironment]) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
     return nil;
   }
 
@@ -73,10 +69,7 @@ NS_ASSUME_NONNULL_BEGIN
       *[environment cppEnvironment], std::string(modelFilePath.UTF8String), *cppOpts);
 
   if (!createResult.HasValue()) {
-    if (error) {
-      *error = CreateLRTError(static_cast<NSInteger>(createResult.Error().Status()),
-                              @(createResult.Error().Message().c_str()));
-    }
+    LRTSetErrorFromCppError(error, createResult.Error());
     return nil;
   }
 
@@ -91,16 +84,12 @@ NS_ASSUME_NONNULL_BEGIN
                                             options:(nullable LRTOptions *)options
                                               error:(NSError **)error {
   if (!modelData || modelData.length == 0) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"modelData cannot be empty");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"modelData cannot be empty");
     return nil;
   }
 
   if (!environment || ![environment cppEnvironment]) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
     return nil;
   }
 
@@ -113,10 +102,7 @@ NS_ASSUME_NONNULL_BEGIN
       litert::CompiledModel::Create(*[environment cppEnvironment], bufferRef, *cppOpts);
 
   if (!createResult.HasValue()) {
-    if (error) {
-      *error = CreateLRTError(static_cast<NSInteger>(createResult.Error().Status()),
-                              @(createResult.Error().Message().c_str()));
-    }
+    LRTSetErrorFromCppError(error, createResult.Error());
     return nil;
   }
 
@@ -140,10 +126,7 @@ NS_ASSUME_NONNULL_BEGIN
 static NSArray<LRTTensorBuffer *> *_Nullable CreateObjCTensorBuffersFromCppResult(
     litert::Expected<std::vector<litert::TensorBuffer>> &buffersResult, NSError **error) {
   if (!buffersResult.HasValue()) {
-    if (error) {
-      *error = CreateLRTError(static_cast<NSInteger>(buffersResult.Error().Status()),
-                              @(buffersResult.Error().Message().c_str()));
-    }
+    LRTSetErrorFromCppError(error, buffersResult.Error());
     return nil;
   }
 
@@ -176,18 +159,13 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
   cppBuffers.reserve(objcBuffers.count);
   for (LRTTensorBuffer *tensorBuffer in objcBuffers) {
     if (![tensorBuffer cppTensorBuffer]) {
-      if (error) {
-        NSString *msg = [NSString stringWithFormat:@"Invalid %@ tensor buffer", bufferKind];
-        *error = CreateLRTError(LRTErrorCodeInvalidArgument, msg);
-      }
+      LRTSetError(error, LRTErrorCodeInvalidArgument,
+                  [NSString stringWithFormat:@"Invalid %@ tensor buffer", bufferKind]);
       return NO;
     }
     litert::Expected<litert::TensorBuffer> dupResult = [tensorBuffer cppTensorBuffer]->Duplicate();
     if (!dupResult.HasValue()) {
-      if (error) {
-        *error = CreateLRTError(static_cast<NSInteger>(dupResult.Error().Status()),
-                                @(dupResult.Error().Message().c_str()));
-      }
+      LRTSetErrorFromCppError(error, dupResult.Error());
       return NO;
     }
     cppBuffers.push_back(std::move(dupResult.Value()));
@@ -203,9 +181,7 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
     createInputTensorBuffersForSignatureIndex:(NSUInteger)signatureIndex
                                         error:(NSError **)error {
   if (!_cppCompiledModel) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
-    }
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
     return nil;
   }
 
@@ -218,16 +194,12 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
                                              (NSString *)signatureKey
                                                                            error:(NSError **)error {
   if (!signatureKey) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"signatureKey cannot be nil");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"signatureKey cannot be nil");
     return nil;
   }
 
   if (!_cppCompiledModel) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
-    }
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
     return nil;
   }
 
@@ -244,9 +216,7 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
     createOutputTensorBuffersForSignatureIndex:(NSUInteger)signatureIndex
                                          error:(NSError **)error {
   if (!_cppCompiledModel) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
-    }
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
     return nil;
   }
 
@@ -259,16 +229,12 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
     createOutputTensorBuffersForSignatureKey:(NSString *)signatureKey
                                        error:(NSError **)error {
   if (!signatureKey) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"signatureKey cannot be nil");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"signatureKey cannot be nil");
     return nil;
   }
 
   if (!_cppCompiledModel) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
-    }
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
     return nil;
   }
 
@@ -288,9 +254,7 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
        signatureIndex:(NSUInteger)signatureIndex
                 error:(NSError **)error {
   if (!_cppCompiledModel) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
-    }
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
     return NO;
   }
 
@@ -307,10 +271,7 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
   litert::Expected<void> runResult =
       _cppCompiledModel->Run(signatureIndex, inputCppBuffers, outputCppBuffers);
   if (!runResult.HasValue()) {
-    if (error) {
-      *error = CreateLRTError(static_cast<NSInteger>(runResult.Error().Status()),
-                              @(runResult.Error().Message().c_str()));
-    }
+    LRTSetErrorFromCppError(error, runResult.Error());
     return NO;
   }
 
@@ -322,16 +283,12 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
          signatureKey:(NSString *)signatureKey
                 error:(NSError **)error {
   if (!signatureKey) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"signatureKey cannot be nil");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"signatureKey cannot be nil");
     return NO;
   }
 
   if (!_cppCompiledModel) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
-    }
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
     return NO;
   }
 
@@ -348,10 +305,7 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
   litert::Expected<void> runResult =
       _cppCompiledModel->Run(signatureKey.UTF8String, inputCppBuffers, outputCppBuffers);
   if (!runResult.HasValue()) {
-    if (error) {
-      *error = CreateLRTError(static_cast<NSInteger>(runResult.Error().Status()),
-                              @(runResult.Error().Message().c_str()));
-    }
+    LRTSetErrorFromCppError(error, runResult.Error());
     return NO;
   }
 
@@ -372,9 +326,7 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
                    newDimensions:(NSArray<NSNumber *> *)dimensions
                            error:(NSError **)error {
   if (!_cppCompiledModel) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
-    }
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
     return NO;
   }
 
@@ -388,10 +340,7 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
       _cppCompiledModel->ResizeInputTensor(signatureIndex, inputIndex, cppDims);
 
   if (!resizeResult.HasValue()) {
-    if (error) {
-      *error = CreateLRTError(static_cast<NSInteger>(resizeResult.Error().Status()),
-                              @(resizeResult.Error().Message().c_str()));
-    }
+    LRTSetErrorFromCppError(error, resizeResult.Error());
     return NO;
   }
 
@@ -403,26 +352,19 @@ static BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuff
                    newDimensions:(NSArray<NSNumber *> *)dimensions
                            error:(NSError **)error {
   if (!signatureKey) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeInvalidArgument, @"signatureKey cannot be nil");
-    }
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"signatureKey cannot be nil");
     return NO;
   }
 
   if (!_cppCompiledModel) {
-    if (error) {
-      *error = CreateLRTError(LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
-    }
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
     return NO;
   }
 
   litert::Expected<size_t> sigIndexResult =
       _cppCompiledModel->GetSignatureIndex(signatureKey.UTF8String);
   if (!sigIndexResult.HasValue()) {
-    if (error) {
-      *error = CreateLRTError(static_cast<NSInteger>(sigIndexResult.Error().Status()),
-                              @(sigIndexResult.Error().Message().c_str()));
-    }
+    LRTSetErrorFromCppError(error, sigIndexResult.Error());
     return NO;
   }
 

@@ -80,10 +80,7 @@ id _Nullable GetBridgedObjectForOption(const litert::Environment &env,
 
   auto envResult = litert::Environment::Create(litert::EnvironmentOptions(cppOptions));
   if (!envResult.HasValue()) {
-    if (error) {
-      *error = CreateLRTError(static_cast<NSInteger>(envResult.Error().Status()),
-                              @(envResult.Error().Message().c_str()));
-    }
+    LRTSetErrorFromCppError(error, envResult.Error());
     return nil;
   }
 
