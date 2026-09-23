@@ -177,7 +177,13 @@ GpuBackendOpenClLitert::GpuBackendOpenClLitert(
   }
 }
 
-GpuBackendOpenClLitert::~GpuBackendOpenClLitert() = default;
+GpuBackendOpenClLitert::~GpuBackendOpenClLitert() {
+  // Flush the compiled cache if it hasn't been flushed yet.
+  if (compiled_cache_.IsValid() && invoke_count_to_flush_compiled_cache_ > 0) {
+    invoke_count_to_flush_compiled_cache_ = 1;
+    FlushCompiledCacheIfNeeded();
+  }
+}
 
 absl::StatusOr<GpuMemoryHandle> GpuBackendOpenClLitert::GetGpuMemoryAllocated(
     const GpuTensorBufferPtr& tensor_buffer) {
@@ -397,13 +403,14 @@ void GpuBackendOpenClLitert::FlushCompiledCacheIfNeeded() {
     LITERT_LOG(LITERT_WARNING, "Failed to write cache file: %s, status=%s",
                compiled_cache_.ToString().c_str(), s.message());
     return;
-  } else {
-    LITERT_LOG(LITERT_VERBOSE,
-               "Flushed compiled cache file: %s, new=%d, total=%d",
-               compiled_cache_.ToString().c_str(),
-               num_compiled_programs_after - num_compiled_programs_,
-               num_compiled_programs_after);
   }
+
+  LITERT_LOG(LITERT_VERBOSE,
+             "Flushed compiled cache file: %s, new=%d, total=%d",
+             compiled_cache_.ToString().c_str(),
+             num_compiled_programs_after - num_compiled_programs_,
+             num_compiled_programs_after);
+  num_compiled_programs_ = num_compiled_programs_after;
 }
 
 GpuInferenceContextOpenClLitert::GpuInferenceContextOpenClLitert(
