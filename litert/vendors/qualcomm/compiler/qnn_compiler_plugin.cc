@@ -32,8 +32,10 @@
 
 #include "QnnCommon.h"  // from @qairt
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/strings/ascii.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
@@ -51,6 +53,10 @@
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
+#include "litert/vendors/qualcomm/compiler/transformations/entry_embedding_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/legalize_int32_ops_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/mlp_quant_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/rope_transformation.h"
 #include "litert/vendors/qualcomm/core/backends/backend_factory.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
@@ -402,6 +408,10 @@ class LiteRtCompilerPluginT {
 
   const LiteRtCompilerContext* ctx() const { return ctx_; }
 
+  std::vector<LiteRtTransformation>& Transformations() {
+    return transformations_;
+  }
+
  private:
   const LiteRtCompilerContext* ctx_;
   litert::Expected<litert::internal::OptionsWrapper> opts_ =
@@ -412,6 +422,7 @@ class LiteRtCompilerPluginT {
   std::optional<std::string> shared_library_dir_;
   QnnManager::Ptr qnn_manager_ = nullptr;
   std::unique_ptr<::qnn::QnnBackend> qnn_backend_ = nullptr;
+  std::vector<LiteRtTransformation> transformations_;
 };
 
 LiteRtStatus LiteRtCreateCompilerPlugin(
@@ -582,7 +593,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         LITERT_WARNING,
         "Overriding graph IO tensor mem type to Raw because Saver is enabled.");
     backend_options.SetGraphIOTensorMemType(::qnn::GraphIOTensorMemType::kRaw);
-    compose_graph_options.SetGraphIOTensorMemType(::qnn::GraphIOTensorMemType::kRaw);
+    compose_graph_options.SetGraphIOTensorMemType(
+        ::qnn::GraphIOTensorMemType::kRaw);
   }
   const bool ir_backend_override =
       !backend_options.GetDlcDir().empty() &&
@@ -606,7 +618,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     }
   }
 
-  QnnManager* qnn_manager = compiler_plugin->GetOrCreateQnnManager(backend_options);
+  QnnManager* qnn_manager =
+      compiler_plugin->GetOrCreateQnnManager(backend_options);
   if (!qnn_manager) {
     return kLiteRtStatusErrorRuntimeFailure;
   }
@@ -622,6 +635,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   WeightSharingMap weight_sharing_map;
   LiteRtContextHandleIdx next_context_handle_idx = 0;
 
+  const bool share_contexts = backend_options.GetEnableWeightSharing();
   std::vector<QnnManager::ContextHandle> context_handles;
 
   // Compile each partition (subgraph) individually.
@@ -632,15 +646,17 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     // seen and added to existing qnn context, use the largest weight size to
     // determine which context to use.
     LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(partition_idx));
-    for (const auto& op : subgraph.Ops()) {
-      for (const auto& input : op.Inputs()) {
-        if (input.IsConstant()) {
-          auto buffer_id = input.Weights().BufferId();
-          auto it = weight_sharing_map.find(buffer_id);
-          if (it != weight_sharing_map.end()) {
-            if (input.Weights().Bytes().size() >= largest_weight_size) {
-              context_handle_idx = it->second;
-              largest_weight_size = input.Weights().Bytes().size();
+    if (share_contexts) {
+      for (const auto& op : subgraph.Ops()) {
+        for (const auto& input : op.Inputs()) {
+          if (input.IsConstant()) {
+            auto buffer_id = input.Weights().BufferId();
+            auto it = weight_sharing_map.find(buffer_id);
+            if (it != weight_sharing_map.end()) {
+              if (input.Weights().Bytes().size() >= largest_weight_size) {
+                context_handle_idx = it->second;
+                largest_weight_size = input.Weights().Bytes().size();
+              }
             }
           }
         }
@@ -653,7 +669,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       LITERT_LOG(LITERT_INFO, "%s", "Creating context handle");
       auto context_configs = QnnManager::DefaultContextConfigs();
       if (backend_options.GetEnableWeightSharing()) {
-        if (backend_options.GetBackendType() != ::qnn::BackendType::kHtpBackend) {
+        if (backend_options.GetBackendType() !=
+            ::qnn::BackendType::kHtpBackend) {
           LITERT_LOG(LITERT_ERROR,
                      "Weight sharing is only supported in HTP backend.");
           return kLiteRtStatusErrorInvalidArgument;
@@ -667,7 +684,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                      "Disable weight sharing feature. Only support with "
                      "multiple partitions and on x86-64 host");
         }
-      } else if (backend_options.GetBackendType() == ::qnn::BackendType::kGpuBackend) {
+      } else if (backend_options.GetBackendType() ==
+                 ::qnn::BackendType::kGpuBackend) {
         if (backend_options.GetGpuPerformanceMode() !=
             ::qnn::GpuPerformanceMode::kDefault) {
           context_configs = QnnManager::GpuPerformanceContextConfigs(
@@ -711,7 +729,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         compiler_plugin->ctx(), *qnn_manager, *qnn_backend,
         context_handles[context_handle_idx].Get(),
         context_handles[context_handle_idx].get_profile_handle(),
-        partition.Get(), entry_point_name, compose_graph_options, &inputs, &outputs));
+        partition.Get(), entry_point_name, compose_graph_options, &inputs,
+        &outputs));
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
 
     if (!backend_options.GetSchematicDir().empty()) {
@@ -764,10 +783,116 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   return kLiteRtStatusOk;
 }
 
+namespace {
+
+// Experimental graph transformations (disabled by default; enabled manually
+// via comma-separated tokens in QualcommOptions::GetGraphTransform()).
+struct GraphTransformFilter {
+  bool legalize_int32_sign = false;
+  bool legalize_int32_reduce_max = false;
+  bool entry_embedding = false;
+  bool mlp_quant = false;
+  bool rope = false;
+
+  static GraphTransformFilter FromOptions(absl::string_view graph_transform) {
+    GraphTransformFilter filter;
+    if (graph_transform.empty()) {
+      return filter;
+    }
+    const auto tokens = absl::StrSplit(graph_transform, ',', absl::SkipEmpty());
+    for (absl::string_view raw_token : tokens) {
+      absl::string_view token = absl::StripAsciiWhitespace(raw_token);
+      bool enable = true;
+      if (!token.empty() && token.front() == '-') {
+        enable = false;
+        token.remove_prefix(1);
+      }
+      if (token == "experimental_all") {
+        filter.legalize_int32_sign = enable;
+        filter.legalize_int32_reduce_max = enable;
+        filter.entry_embedding = enable;
+        filter.mlp_quant = enable;
+        filter.rope = enable;
+      } else if (token == "experimental_legalize") {
+        filter.legalize_int32_sign = enable;
+        filter.legalize_int32_reduce_max = enable;
+      } else if (token == "experimental_model") {
+        filter.entry_embedding = enable;
+        filter.mlp_quant = enable;
+        filter.rope = enable;
+      } else if (token == "int32_sign") {
+        filter.legalize_int32_sign = enable;
+      } else if (token == "int32_reduce_max") {
+        filter.legalize_int32_reduce_max = enable;
+      } else if (token == "entry_embedding") {
+        filter.entry_embedding = enable;
+      } else if (token == "mlp_quant") {
+        filter.mlp_quant = enable;
+      } else if (token == "rope") {
+        filter.rope = enable;
+      }
+    }
+    return filter;
+  }
+};
+
+}  // namespace
+
 LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
     LiteRtCompilerPlugin compiler_plugin,
     LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns) {
-  *num_patterns = 0;
+  if (!compiler_plugin || !transformations || !num_patterns) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  ResetRopeTransformationState();
+  compiler_plugin->Transformations().clear();
+
+  const auto filter = GraphTransformFilter::FromOptions(
+      compiler_plugin->Options().GetGraphTransform());
+
+  if (filter.legalize_int32_sign) {
+    compiler_plugin->Transformations().push_back({
+        &LegalizeInt32SignTransformation,
+        "LegalizeInt32SignTransformation",
+        100,
+    });
+  }
+  if (filter.legalize_int32_reduce_max) {
+    compiler_plugin->Transformations().push_back({
+        &LegalizeInt32ReduceMaxTransformation,
+        "LegalizeInt32ReduceMaxTransformation",
+        100,
+    });
+  }
+  if (filter.entry_embedding) {
+    compiler_plugin->Transformations().push_back({
+        &EntryEmbeddingTransformation,
+        "EntryEmbeddingTransformation",
+        100,
+    });
+  }
+  if (filter.mlp_quant) {
+    compiler_plugin->Transformations().push_back({
+        &MLPInt8QuantTransformation,
+        "MLPInt8QuantTransformation",
+        100,
+    });
+  }
+  if (filter.rope) {
+    compiler_plugin->Transformations().push_back({
+        &RopeAttentionLayerTransformation,
+        "RopeAttentionLayerTransformation",
+        90,
+    });
+    compiler_plugin->Transformations().push_back({
+        &RopeCleanupTransformation,
+        "RopeCleanupTransformation",
+        80,
+    });
+  }
+
+  *num_patterns = compiler_plugin->Transformations().size();
+  *transformations = compiler_plugin->Transformations().data();
   return kLiteRtStatusOk;
 }
 
