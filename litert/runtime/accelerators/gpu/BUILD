@@ -381,6 +381,7 @@ litert_accelerator_library(
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_accelerator_def",
         "//litert/c/internal:litert_runtime_context_header",
+        "//litert/c/options:litert_gpu_options",
         "//litert/cc:litert_macros",
         "//litert/core:options",
         "//litert/runtime/accelerators:gpu_static_registry",
