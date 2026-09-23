@@ -48,6 +48,7 @@ limitations under the License.
 #include "tflite/kernels/internal/reference/depth_to_space.h"
 #include "tflite/kernels/internal/reference/dequantize.h"
 #include "tflite/kernels/internal/reference/div.h"
+#include "tflite/kernels/internal/reference/e8m0_utils.h"
 #include "tflite/kernels/internal/reference/elu.h"
 #include "tflite/kernels/internal/reference/exp.h"
 #include "tflite/kernels/internal/reference/fill.h"
