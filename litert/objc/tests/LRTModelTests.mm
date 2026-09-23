@@ -14,6 +14,7 @@
 
 #import <XCTest/XCTest.h>
 
+#include <cstring>
 #include <string>
 
 #import "third_party/odml/litert/litert/objc/apis/LRTEnvironment.h"
@@ -103,6 +104,32 @@ static NSString *GetTestModelPath() {
   XCTAssertNotNil(outputNames);
   XCTAssertNil(error);
   XCTAssertEqual(outputNames.count, 1);
+}
+
+- (void)testLoadModelFromMutableDataThatCallerLaterClobbers {
+  NSError *error = nil;
+  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(env);
+  XCTAssertNil(error);
+
+  NSMutableData *modelData = [NSMutableData dataWithContentsOfFile:GetTestModelPath()];
+  XCTAssertNotNil(modelData);
+
+  LRTModel *model = [LRTModel modelWithModelData:modelData environment:env error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  // The model owns its own copy of the bytes, so neither clobbering nor releasing the caller's
+  // buffer may affect it.
+  std::memset(modelData.mutableBytes, 0, modelData.length);
+  modelData = nil;
+
+  XCTAssertEqual(model.signatureKeys.count, 1);
+
+  NSArray<NSString *> *inputNames = [model inputNamesForSignatureIndex:0 error:&error];
+  XCTAssertNotNil(inputNames);
+  XCTAssertNil(error);
+  XCTAssertEqual(inputNames.count, 2);
 }
 
 - (void)testModelErrorHandling {

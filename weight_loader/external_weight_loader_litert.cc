@@ -127,6 +127,10 @@ void WeightAccess::SetDeviceBuffer(LiteRtTensorBufferPtr buffer) {
 
 namespace {
 
+#ifdef __EMSCRIPTEN__
+WebWeightUploadCallback g_web_weight_upload_callback = nullptr;
+#endif  // __EMSCRIPTEN__
+
 // Information about a single external weight tensor.
 struct LiteRtWeightInfo : public WeightInfo {
   // The index of the subgraph that contains the tensor.
@@ -922,8 +926,29 @@ class LiteRtWeightLoader : public WeightLoader {
   }
 
 #ifdef __EMSCRIPTEN__
-  absl::Status UploadWeightsOnWeb(const absl::flat_hash_map<int, wgpu::Buffer>&
+  absl::Status UploadWeightsOnWeb(const wgpu::Queue& queue,
+                                  const absl::flat_hash_map<int, wgpu::Buffer>&
                                       tfl_id_to_wgpu_buffer) override {
+    if (g_web_weight_upload_callback != nullptr) {
+      std::vector<WebWeightUploadRequest> requests;
+      requests.reserve(tfl_id_to_wgpu_buffer.size());
+      for (const auto& [id, buffer] : tfl_id_to_wgpu_buffer) {
+        auto entry_it = entries_.find(static_cast<uint32_t>(id));
+        if (entry_it == entries_.end()) {
+          return absl::InternalError(
+              "Could not find WeightInfo for buffer ID.");
+        }
+        const auto& info = infos_[entry_it->second.info_index];
+        requests.push_back(WebWeightUploadRequest{
+            .tfl_id = id,
+            .buffer = buffer,
+            .offset = info.offset,
+            .length = info.length,
+        });
+      }
+      return g_web_weight_upload_callback(queue, requests);
+    }
+
     std::vector<int> tfl_ids;
     std::vector<uint32_t> wgpu_buffers;
     std::vector<double> offsets;
@@ -1024,6 +1049,12 @@ class LiteRtWeightLoader : public WeightLoader {
 };
 
 }  // namespace
+
+#ifdef __EMSCRIPTEN__
+void RegisterWebWeightUploadCallback(WebWeightUploadCallback callback) {
+  g_web_weight_upload_callback = callback;
+}
+#endif  // __EMSCRIPTEN__
 
 std::unique_ptr<WeightLoader> CreateLiteRtWeightLoader(
     LiteRtRuntimeContext* runtime_context, const tflite::Model* flatbuffer,
