@@ -379,6 +379,13 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
 namespace {
 
 LiteRtDispatchInterface TheInterface = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtDispatchInterface),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .initialize = litert::mediatek::LiteRtInitialize,
     .get_vendor_id = litert::mediatek::LiteRtGetVendorId,
     .get_build_id = litert::mediatek::LiteRtGetBuildId,
@@ -409,6 +416,13 @@ LiteRtDispatchInterface TheInterface = {
 };
 
 LiteRtDispatchApi TheApi = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtDispatchApi),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .version = {.major = LITERT_API_VERSION_MAJOR,
                 .minor = LITERT_API_VERSION_MINOR,
                 .patch = LITERT_API_VERSION_PATCH},

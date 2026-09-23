@@ -290,6 +290,13 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
 // /////////////////////////////////////////////////////////////////////////////
 
 LiteRtDispatchInterface TheInterface = {
+    /*.abi_header=*/
+    {
+        /*.struct_size=*/sizeof(LiteRtDispatchInterface),
+        /*.major_version=*/1,
+        /*.minor_version=*/0,
+        /*.reserved=*/0,
+    },
     /*.initialize=*/LiteRtSamsungInitialize,
     /*.get_vendor_id=*/LiteRtSamsungGetVendorId,
     /*.get_build_id=*/LiteRtSamsungGetBuildId,
