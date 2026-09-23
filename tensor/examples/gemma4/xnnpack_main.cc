@@ -61,6 +61,10 @@ limitations under the License.
 #include "perfetto/tracing/track_event.h"  // from @perfetto
 #include "tflite/delegates/xnnpack/weight_cache.h"
 
+namespace {
+constexpr absl::string_view kAutoWeightCacheFlag = ":auto";
+}
+
 ABSL_FLAG(std::string, weights, "",
           "Path to safetensor weights file or directory.");
 ABSL_FLAG(std::string, tokenizer, "",
@@ -73,7 +77,8 @@ ABSL_FLAG(bool, verbose, false, "Verbose logging.");
 ABSL_FLAG(litert::tensor::examples::TokenPrinter::Kind, print,
           litert::tensor::examples::TokenPrinter::Kind::kTokens,
           "Output mode (tokens or progress).");
-ABSL_FLAG(std::string, weight_cache, "", "Path to XNNPack weight cache file.");
+ABSL_FLAG(std::string, weight_cache, std::string(kAutoWeightCacheFlag),
+          "Path to XNNPack weight cache file.");
 ABSL_FLAG(std::string, perfetto_output, "",
           "Path to output Perfetto trace file.");
 
@@ -82,7 +87,6 @@ namespace {
 
 constexpr int32_t kStartOfTurnToken = 105;
 constexpr int32_t kEndOfTurnToken = 106;
-constexpr absl::string_view kAutoWeightCacheFlag = ":auto";
 
 using ::litert::tensor::PerfettoSession;
 using ::litert::tensor::examples::DecodeTiming;
@@ -283,6 +287,7 @@ absl::StatusOr<LoadedTensors> LoadWeightsAndPrepareTensors(
       GemmaEmbeddingTable::Create(
           weights_handle["model.embed_tokens_per_layer.weight"],
           config.num_layers * config.per_layer_input_dim));
+
   return LoadedTensors{std::move(weights_handle), std::move(token_embedding),
                        std::move(emb_per_layer_table)};
 }
