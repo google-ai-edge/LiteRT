@@ -48,10 +48,12 @@ absl::StatusOr<::tflite::TensorType> ToTfLite(const Type type) {
       return ::tflite::TensorType_INT32;
     case Type::kI64:
       return ::tflite::TensorType_INT64;
-    case Type::kU4:
+    case Type::kU2:
       return absl::FailedPreconditionError(absl::StrFormat(
           "Serialisation of a tensor with '%s' type is not supported",
           ToString(type)));
+    case Type::kU4:
+      return ::tflite::TensorType_UINT4;
     case Type::kU8:
       return ::tflite::TensorType_UINT8;
     case Type::kU16:

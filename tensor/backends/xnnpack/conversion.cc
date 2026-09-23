@@ -84,6 +84,7 @@ xnn_datatype GetXnnpackType(const NnpackValue& value) {
     case Type::kBOOL:
     case Type::kI16:
     case Type::kI64:
+    case Type::kU2:
     case Type::kU4:
     case Type::kU8:
     case Type::kU16:
