@@ -81,6 +81,9 @@ ABSL_FLAG(std::string, weight_cache, std::string(kAutoWeightCacheFlag),
           "Path to XNNPack weight cache file.");
 ABSL_FLAG(std::string, perfetto_output, "",
           "Path to output Perfetto trace file.");
+ABSL_FLAG(bool, instruction_tuned, true,
+          "Wraps the prompt with turn instruction markers. This is only useful "
+          "for instruction tuned models.");
 
 namespace litert::tensor::examples::gemma4 {
 namespace {
@@ -753,7 +756,7 @@ absl::Status Run(const std::string& weights_path,
   std::string prompt = raw_prompt;
   if (const std::string start_of_turn =
           tokenizer.DecodeToken(kStartOfTurnToken);
-      model_variant == ModelVariant::kE4B &&
+      absl::GetFlag(FLAGS_instruction_tuned) &&
       !absl::StrContains(raw_prompt, start_of_turn)) {
     prompt = absl::StrCat(start_of_turn, "user\n", raw_prompt,
                           tokenizer.DecodeToken(kEndOfTurnToken), "\n",
