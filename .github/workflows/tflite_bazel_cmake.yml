@@ -101,20 +101,21 @@ jobs:
           python3 configure.py < <(yes "")
         # LINT.ThenChange(../ci/run_bazel_test_with_docker.sh:configure_tflite_build_flags)
 
-      - name: Build TFLite Linux artifacts with Bazel
-        # LINT.IfChange(tflite_bazel_targets)
-        shell: bash
-        run: |
-          bazel build \
-            --config=public_cache \
-            --config=bulk_build_cpu \
-            --repo_env=USE_PYWRAP_RULES=True \
-            -- \
-            //tflite:tensorflowlite \
-            //tflite/c:tensorflowlite_c \
-            //tflite/tools/benchmark:benchmark_model \
-            //tflite/converter:flatbuffer_translate
-        # LINT.ThenChange(../ci/run_bazel_test.sh:tflite_bazel_targets)
+      # TODO(b/556731502): Re-enable once Bazel remote cache hits in GitHub Actions runners.
+      # - name: Build TFLite Linux artifacts with Bazel
+      #   # LINT.IfChange(tflite_bazel_targets)
+      #   shell: bash
+      #   run: |
+      #     bazel build \
+      #       --config=public_cache \
+      #       --config=bulk_build_cpu \
+      #       --repo_env=USE_PYWRAP_RULES=True \
+      #       -- \
+      #       //tflite:tensorflowlite \
+      #       //tflite/c:tensorflowlite_c \
+      #       //tflite/tools/benchmark:benchmark_model \
+      #       //tflite/converter:flatbuffer_translate
+      #   # LINT.ThenChange(../ci/run_bazel_test.sh:tflite_bazel_targets)
 
       - name: Configure TFLite with CMake
         run: |
