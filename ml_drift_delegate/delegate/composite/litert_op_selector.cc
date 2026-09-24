@@ -23,6 +23,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
@@ -125,7 +126,7 @@ void LiteRtOpSelector::ParamTensorToBuffer(
   auto new_param_tensor = model_builder->AddTensor(new_desc);
   if (!model_builder->UpdateOutputTensor(param_tensor, new_param_tensor.id)
            .ok()) {
-    return;
+    model_builder->Copy(param_tensor, new_param_tensor);
   }
   replaced_tensors_[param_id] = std::make_unique<::ml_drift::Value>(
       ::ml_drift::Value{new_param_tensor.id, inputs[param_index]->tensor,
@@ -155,7 +156,7 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
       dst_ids[i] = outputs[i]->id;
     }
     model_builder->AddGpuOperation(src_ids, dst_ids, std::move(op),
-                                   node.operation.type);
+                                    node.operation.type);
     return absl::OkStatus();
   }
   if (node.operation.type == kGatedDeltaUpdateType) {
@@ -178,8 +179,14 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
   }
   if (node.operation.type == kSdpaTransposedType) {
     std::vector<::ml_drift::Value*> sdpa_inputs = inputs;
-    if (inputs.size() > 4) {
-      int param_index = 4;
+    int param_index = -1;
+    if (inputs.size() == 4 &&
+        inputs[3]->tensor.type == ::ml_drift::DataType::INT32) {
+      param_index = 3;
+    } else if (inputs.size() > 4) {
+      param_index = 4;
+    }
+    if (param_index >= 0) {
       // Ensure param tensor is a buffer tensor as kernel programs expect so.
       ParamTensorToBuffer(param_index, inputs, model_builder);
       if (replaced_tensors_.contains(inputs[param_index]->id)) {

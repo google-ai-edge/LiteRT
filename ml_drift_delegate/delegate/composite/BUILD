@@ -726,6 +726,7 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:gpu_model_builder",

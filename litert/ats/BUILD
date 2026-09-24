@@ -209,6 +209,7 @@ litert_define_ats(
     compile_only_suffix = "_aot",
     do_register = [
         "SingleOp",
+        "SdpaTransposed",
         "hf_mobilevit_small",
         "qai_hub_midas",
         "torchvision_mobilenet_v2",
@@ -232,8 +233,8 @@ litert_define_ats(
         "7d",  # OpenCL delegate only supports up to 4D tensor layouts
         "8d",  # OpenCL delegate only supports up to 4D tensor layouts
         "Pad.*[(][123]d",  # OpenCL Pad kernel requires 4D tensor layouts
-        "Transpose.*[(]1d_",  # OpenCL Transpose requires multidimensional tensors (rank >= 2)
-        "Transpose.*[(][1-8]d_(f32|i1|i4|i8|u8|i16|u16|i32|u32|i64|u64)<",  # OpenCL Transpose executes in FP16 texture buffers; only explicit FP16 Transpose is supported
+        "Transpose[^d].*[(]1d_",  # OpenCL Transpose requires multidimensional tensors (rank >= 2)
+        "Transpose[^d].*[(][1-8]d_(f32|i1|i4|i8|u8|i16|u16|i32|u32|i64|u64)<",  # OpenCL Transpose executes in FP16 texture buffers; only explicit FP16 Transpose is supported
         "FullyConnected.*(i8|u8)",  # OpenCL delegate does not support quantized INT8/UINT8 GEMM
         "FullyConnected.*_cst.*,1d_f32[^c]",  # OpenCL does not support dynamic bias
         "FullyConnected.*,2d_f32[^c]",  # OpenCL does not support dynamic weights
