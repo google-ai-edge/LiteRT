@@ -125,10 +125,21 @@ void ConvertConcat(
     const TfLiteContext& context, const TfLiteNode& node,
     const TfLiteRegistration& registration,
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
-    ::ml_drift::ir::IrModel& ir_model) {
+    const IrModelBuilderOptions& options, ::ml_drift::ir::IrModel& ir_model) {
   if (TryConvertConcatToPad(context, node, tensor_map, ir_model)) {
     return;
   }
+
+  // CONCATENATION requires all inputs to share the output's data type. The
+  // partitioner (FP16GraphPartitionHelper::RemapFp16InputTensors) rewires a
+  // float16 constant straight into this node, removing the DEQUANTIZE the
+  // graph declared in front of it; for a float32 concat that leaves a float16
+  // operand beside float32 ones. Read such a constant as float32 to restore
+  // what the graph declared. Only at float32 precision. Otherwise every float32
+  // tensor is lowered to float16.
+  const bool requires_float32_constants =
+      !options.enable_reduced_precision &&
+      context.tensors[node.outputs->data[0]].type == kTfLiteFloat32;
 
   std::vector<::ml_drift::ir::IrTensorId> input_ids;
   std::vector<::ml_drift::BHWDC> input_shapes;
@@ -138,7 +149,14 @@ void ConvertConcat(
     const TfLiteTensor* input_tensor = context.tensors + node.inputs->data[i];
     ::ml_drift::ir::IrTensorId input_id;
     if (tflite::IsConstantTensor(input_tensor)) {
-      input_id = AddConstInput(context, node.inputs->data[i], ir_model, {})->id;
+      const bool read_float16_constants_as_float32 =
+          requires_float32_constants && input_tensor->type == kTfLiteFloat16;
+      input_id =
+          read_float16_constants_as_float32
+              ? AddFloat16ConstAsFloat32Input(context, node.inputs->data[i],
+                                              ir_model, {})
+                    ->id
+              : AddConstInput(context, node.inputs->data[i], ir_model, {})->id;
     } else {
       input_id = tensor_map[node.inputs->data[i]];
     }
