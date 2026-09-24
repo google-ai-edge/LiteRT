@@ -33,7 +33,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
-#include "tsl/platform/fingerprint.h"
+#include "farmhash.h"
 
 namespace litert {
 
@@ -89,7 +89,7 @@ LazyResourceBlob LazyResourceBlob::CreateAndCopyData(
   absl::string_view data_view(reinterpret_cast<const char*>(data.data()),
                               data.size());
   size_t data_size = data_view.size();
-  uint64_t hash = tsl::Fingerprint64(data_view);
+  uint64_t hash = util::Fingerprint64(data_view.data(), data_view.size());
   {
     llvm::raw_fd_ostream blob_stream(rw_fd, /*shouldClose=*/true);
     blob_stream.write(data_view.data(), data_view.size());

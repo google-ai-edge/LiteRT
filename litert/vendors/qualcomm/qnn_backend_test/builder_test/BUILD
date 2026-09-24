@@ -17,7 +17,7 @@ _COMPATIBLE_OS = select({
 })
 
 _QNN_DEPS = select({
-    "@org_tensorflow//tensorflow:linux_x86_64": [
+    "//litert:linux_x86_64": [
         # copybara:uncomment_begin(google-only)
         # "@qairt//:linux_deps",
         # copybara:uncomment_end

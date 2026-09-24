@@ -26,12 +26,13 @@
 #include <utility>
 #include <vector>
 
+#include "absl/numeric/int128.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "tsl/platform/fingerprint.h"
+#include "farmhash.h"
 
 namespace litert::nvidia {
 namespace {
@@ -643,25 +644,55 @@ Expected<std::vector<uint8_t>> PackTensorRtSharedWeightShard(
   return PackTensorRtSharedWeightBundleImpl(shard_weights, {shard_entry});
 }
 
+namespace {
+
+inline uint64_t ShiftMix(uint64_t val) { return val ^ (val >> 47); }
+
+inline uint64_t FingerprintCat64(uint64_t fp1, uint64_t fp2) {
+  static const uint64_t kMul = 0xc6a4a7935bd1e995ULL;
+  uint64_t result = fp1 ^ kMul;
+  result ^= ShiftMix(fp2 * kMul) * kMul;
+  result *= kMul;
+  result = ShiftMix(result) * kMul;
+  result = ShiftMix(result);
+  return result;
+}
+
+inline TensorRtArtifactFingerprint FingerprintCat128(
+    const TensorRtArtifactFingerprint& a,
+    const TensorRtArtifactFingerprint& b) {
+  return {FingerprintCat64(a.low, b.low), FingerprintCat64(a.high, b.high)};
+}
+
+inline TensorRtArtifactFingerprint FingerprintCat128(
+    const TensorRtArtifactFingerprint& a, uint64_t b) {
+  auto x = FingerprintCat64(a.low, b);
+  return {x, FingerprintCat64(a.high, x)};
+}
+
+inline TensorRtArtifactFingerprint Fingerprint128(const void* data,
+                                                 size_t size) {
+  const auto fp =
+      util::Fingerprint128(static_cast<const char*>(data), size);
+  return {util::Uint128Low64(fp), util::Uint128High64(fp)};
+}
+
+}  // namespace
+
 TensorRtArtifactFingerprint FingerprintTensorRtArtifact(const void* data,
                                                         size_t size) {
   if (data == nullptr || size == 0) {
     return {};
   }
-  const auto fingerprint = tsl::Fingerprint128(
-      absl::string_view(static_cast<const char*>(data), size));
-  return {fingerprint.low64, fingerprint.high64};
+  return Fingerprint128(data, size);
 }
 
 void TensorRtAotFingerprintBuilder::Add(const void* data, size_t size) {
   if (data == nullptr || size == 0) {
     return;
   }
-  const auto chunk = tsl::Fingerprint128(
-      absl::string_view(static_cast<const char*>(data), size));
-  const tsl::Fprint128 accumulated{fingerprint_.low, fingerprint_.high};
-  const auto combined = tsl::FingerprintCat128(accumulated, chunk);
-  fingerprint_ = {combined.low64, combined.high64};
+  const auto chunk = Fingerprint128(data, size);
+  fingerprint_ = FingerprintCat128(fingerprint_, chunk);
   total_size_ += size;
   ++chunk_count_;
 }
@@ -670,10 +701,9 @@ TensorRtArtifactFingerprint TensorRtAotFingerprintBuilder::Finish() const {
   if (chunk_count_ == 0) {
     return {};
   }
-  auto fingerprint = tsl::FingerprintCat128(
-      {fingerprint_.low, fingerprint_.high}, total_size_);
-  fingerprint = tsl::FingerprintCat128(fingerprint, chunk_count_);
-  return {fingerprint.low64, fingerprint.high64};
+  auto fingerprint = FingerprintCat128(fingerprint_, total_size_);
+  fingerprint = FingerprintCat128(fingerprint, chunk_count_);
+  return fingerprint;
 }
 
 TensorRtArtifactFingerprint FingerprintTensorRtAotArtifact(const void* data,

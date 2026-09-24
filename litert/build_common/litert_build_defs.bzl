@@ -463,6 +463,7 @@ def litert_dynamic_lib(
     native.filegroup(
         name = so_name,
         srcs = [":" + shared_lib_name],
+        tags = tags,
         visibility = vis,
     )
 

@@ -46,7 +46,7 @@ cc_test(
         "@com_google_absl//absl/numeric:bits",
         "@qairt//:qnn_lib_headers",
     ] + select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             # copybara:uncomment_begin(google-only)
             # "@qairt//:linux_deps",
             # copybara:uncomment_end
@@ -170,7 +170,7 @@ cc_test(
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@qairt//:qnn_lib_headers",
     ] + select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             # copybara:uncomment_begin(google-only)
             # "@qairt//:linux_deps",
             # copybara:uncomment_end
@@ -222,7 +222,7 @@ cc_test(
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@qairt//:qnn_lib_headers",
     ] + select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             # copybara:uncomment_begin(google-only)
             # "@qairt//:linux_deps",
             # copybara:uncomment_end
