@@ -2433,9 +2433,9 @@ Expected<bool> LiteRtCompiledModelT::InputTensorNeedsResize(
                                   " (current: ", signature_shape[i],
                                   ", new: ", new_shape[i], ")")));
     } else {
-      // Dynamic dim ⇒ new value must be positive.
+      // A dynamic dimension may be zero for an empty tensor.
       LITERT_RETURN_IF_ERROR(
-          new_shape[i] > 0,
+          new_shape[i] >= 0,
           Unexpected(kLiteRtStatusErrorInvalidArgument,
                      absl::StrCat("Cannot auto-resize tensor ",
                                   tensor->name ? tensor->name : "<unnamed>",
@@ -2496,9 +2496,9 @@ Expected<void> LiteRtCompiledModelT::ResizeInputTensorImpl(
                       "New shape must not be empty.");
   }
   for (int dim : dims) {
-    if (dim <= 0) {
+    if (dim < 0) {
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                        "Dimensions must be positive.");
+                        "Dimensions must be nonnegative.");
     }
   }
 
