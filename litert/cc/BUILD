@@ -390,7 +390,7 @@ litert_device_test(
 #     ],
 #     tags = [
 #         "no_oss",
-#         "requires-gpu-nvidia",
+#         "requires-gpu-sm90",  # OpenCL/MIG-compatible
 #     ],
 #     deps = [
 #         ":litert_common",
@@ -587,7 +587,7 @@ litert_device_test(
 #         "nolinux",
 #         "nomacos",
 #         "nowindows",
-#         "requires-gpu-nvidia",
+#         "requires-gpu-sm90",  # OpenCL/MIG-compatible
 #     ],
 #     deps = [
 #         ":litert_common",

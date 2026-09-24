@@ -127,7 +127,7 @@ cc_library(
 #     name = "transformer_ops_numerical_test",
 #     srcs = ["transformer_ops_numerical_test.cc"],
 #     tags = [
-#         "requires-gpu-nvidia",
+#         "requires-gpu-sm90",  # OpenCL/MIG-compatible
 #     ],
 #     deps = [
 #         ":transformer_ops",

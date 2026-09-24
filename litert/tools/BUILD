@@ -617,7 +617,7 @@ cc_test(
 #     name = "benchmark_litert_model_gpu_test",
 #     srcs = ["benchmark_litert_model_gpu_test.cc"],
 #     data = ["//litert/test:testdata/mobilenet_v2_1.0_224.tflite"],
-#     tags = ["requires-gpu-nvidia"],
+#     tags = ["requires-gpu-sm90"],  # OpenCL/MIG-compatible
 #     deps = [
 #         ":benchmark_litert_model",
 #         "@com_google_googletest//:gtest_main",
@@ -841,7 +841,7 @@ cc_binary(
     copts = [
         "-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
     ],
-    tags = ["requires-gpu-nvidia"],
+    tags = ["requires-gpu-sm90"],  # OpenCL/MIG-compatible
     deps = NUMERICS_CHECK_DEPS + [
         ":gpu_numerics_threshold",
         "@com_google_absl//absl/strings",
@@ -874,7 +874,7 @@ cc_binary(
         "nolinux",
         "nomacos",
         "nowindows",
-        "requires-gpu-nvidia",
+        "requires-gpu-sm90",  # OpenCL/MIG-compatible
     ],
     deps = NUMERICS_CHECK_DEPS + [
         ":gpu_numerics_threshold",
@@ -962,7 +962,7 @@ cc_binary(
 
 cc_binary(
     name = "benchmark_model_vulkan",
-    tags = ["requires-gpu-nvidia"],
+    tags = ["requires-gpu-sm90"],  # OpenCL/MIG-compatible
     deps = [
         ":benchmark_model_main",
         # copybara:uncomment_begin(google-only)
@@ -981,7 +981,7 @@ cc_binary(
         "nolinux",
         "nomacos",
         "nowindows",
-        "requires-gpu-nvidia",
+        "requires-gpu-sm90",  # OpenCL/MIG-compatible
     ],
     deps = [
         ":benchmark_model_main",

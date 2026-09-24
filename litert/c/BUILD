@@ -478,7 +478,7 @@ cc_test(
 #     name = "litert_tensor_buffer_cl_test",
 #     srcs = ["litert_tensor_buffer_cl_test.cc"],
 #     tags = [
-#         "requires-gpu-nvidia",
+#         "requires-gpu-sm90",  # OpenCL/MIG-compatible
 #     ],
 #     deps = [
 #         ":litert_any",

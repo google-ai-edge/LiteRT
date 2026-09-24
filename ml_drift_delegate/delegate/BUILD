@@ -1137,7 +1137,7 @@ cc_test(
     name = "buffer_handler_opencl_test",
     srcs = ["buffer_handler_opencl_test.cc"],
     tags = [
-        "requires-gpu-nvidia",
+        "requires-gpu-sm90",  # OpenCL/MIG-compatible
     ],
     deps = [
         ":buffer_handler_opencl",
@@ -1178,7 +1178,7 @@ objc_library(
 #     name = "delegate_opencl_test",
 #     srcs = ["delegate_opencl_test.cc"],
 #     tags = [
-#         "requires-gpu-nvidia",
+#         "requires-gpu-sm90",  # OpenCL/MIG-compatible
 #     ],
 #     deps = [
 #         ":delegate_opencl",

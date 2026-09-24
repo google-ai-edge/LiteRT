@@ -186,7 +186,7 @@ cc_library(
 cc_test(
     name = "shared_memory_manager_cl_test",
     srcs = ["shared_memory_manager_cl_test.cc"],
-    tags = ["requires-gpu-nvidia"],
+    tags = ["requires-gpu-sm90"],  # OpenCL/MIG-compatible
     deps = [
         ":gf32_graph_adapter",
         ":graph_adapter",
@@ -215,7 +215,7 @@ cc_test(
 cc_test(
     name = "shared_memory_manager_cl_litert_test",
     srcs = ["shared_memory_manager_cl_litert_test.cc"],
-    tags = ["requires-gpu-nvidia"],
+    tags = ["requires-gpu-sm90"],  # OpenCL/MIG-compatible
     deps = [
         ":gf32_graph_adapter",
         ":graph_adapter",

@@ -448,7 +448,7 @@ cc_binary(
         "nolinux",
         "nomacos",
         "nowindows",
-        "requires-gpu-nvidia",
+        "requires-gpu-sm90",  # OpenCL/MIG-compatible
     ],
     deps = [
         ":ml_drift_opengl_accelerator",  # buildcleaner: keep
