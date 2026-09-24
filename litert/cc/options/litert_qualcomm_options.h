@@ -583,7 +583,7 @@ class QualcommOptions : public ConcreteOptionsBase {
     LrtQualcommOptionsGraphIOTensorMemType val;
     auto status = LrtQualcommOptionsGetGraphIOTensorMemType(options_, &val);
     if (status != kLiteRtStatusOk) {
-      return GraphIOTensorMemType::kMemHandle;
+      return GraphIOTensorMemType::kRaw;
     }
     return static_cast<GraphIOTensorMemType>(val);
   }
