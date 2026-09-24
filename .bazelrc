@@ -512,10 +512,6 @@ try-import %workspace%/warnings.bazelrc
 build:v2 --define=tf_api_version=2 --action_env=TF2_BEHAVIOR=1
 build --config=v2
 
-# Options to filter filepath prefixes when generating python api's
-build:litert_prefixes --define=litert_prefixes="external/org_tensorflow/"
-build --config=litert_prefixes
-
 # Disables generating api v2 under the submodule tensorflow/lite/python.
 build --define=disable_tf_lite_py=true
 
@@ -598,13 +594,3 @@ test:bulk_test_cpu --build_tests_only
 # TODO: b/397625618 Enable bzlmod
 common --noenable_bzlmod
 
-# BEGIN-INTERNAL
-# Flags for tensorflow source rules to use local_repository rather than http_archive.
-# NOTE: due to bazel caching, when switching from http_archive to local_repository,
-# do a bazel clean --expunge --async before building or use the
-# flag --override_repository=org_tensorflow=$TF_LOCAL_SOURCE_PATH
-build:use_local_tf --action_env=USE_LOCAL_TF=true
-build:use_local_tf --action_env=TF_LOCAL_SOURCE_PATH
-test:use_local_tf --action_env=USE_LOCAL_TF=true
-test:use_local_tf --action_env=TF_LOCAL_SOURCE_PATH
-# END-INTERNAL

@@ -32,9 +32,6 @@ $RepoRoot = Split-Path -Parent $ScriptDir
 $RepoRoot = Convert-WslPathToWindows $RepoRoot
 Set-Location $RepoRoot
 
-if (-not $env:TF_LOCAL_SOURCE_PATH) {
-  $env:TF_LOCAL_SOURCE_PATH = Join-Path $RepoRoot "third_party\tensorflow"
-}
 
 # Get the first instance found in PATH.
 $Bazel = (Get-Command bazel -ErrorAction SilentlyContinue | Select-Object -First 1).Source
@@ -396,7 +393,6 @@ $BazelArgs = @(
 if ($env:HERMETIC_PYTHON_VERSION) { $BazelArgs += "--repo_env=HERMETIC_PYTHON_VERSION=$($env:HERMETIC_PYTHON_VERSION)" }
 if ($env:BAZEL_CONFIG_FLAGS) { $BazelArgs += $env:BAZEL_CONFIG_FLAGS.Split(' ') }
 if ($env:NIGHTLY_RELEASE_DATE) { $BazelArgs += "--//ci/tools/python/wheel:nightly_iso_date=$($env:NIGHTLY_RELEASE_DATE)" }
-if ($env:USE_LOCAL_TF -eq 'true') { $BazelArgs += '--config=use_local_tf' }
 if ($env:CUSTOM_BAZEL_FLAGS) { $BazelArgs += $env:CUSTOM_BAZEL_FLAGS.Split(' ') }
 
 Write-Host 'Starting bazel build...'
@@ -421,7 +417,6 @@ $SdkArgs = @(
 )
 if ($env:HERMETIC_PYTHON_VERSION) { $SdkArgs += "--repo_env=HERMETIC_PYTHON_VERSION=$($env:HERMETIC_PYTHON_VERSION)" }
 if ($env:NIGHTLY_RELEASE_DATE) { $SdkArgs += "--//ci/tools/python/wheel:nightly_iso_date=$($env:NIGHTLY_RELEASE_DATE)" }
-if ($env:USE_LOCAL_TF -eq 'true') { $SdkArgs += '--config=use_local_tf' }
 if ($env:CUSTOM_BAZEL_FLAGS) { $SdkArgs += $env:CUSTOM_BAZEL_FLAGS.Split(' ') }
 
 $SdkTargets = @(

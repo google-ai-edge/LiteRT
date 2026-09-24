@@ -15,8 +15,6 @@
 # ==============================================================================
 set -ex
 
-# Run this script under the root directory.
-export TF_LOCAL_SOURCE_PATH=${TF_LOCAL_SOURCE_PATH:-"$(pwd)/third_party/tensorflow"}
 
 ARCH="$(uname -m)"
 OS_NAME="$(uname -s)"
@@ -79,10 +77,6 @@ if [ ! -z "${NIGHTLY_RELEASE_DATE}" ]; then
   BAZEL_FLAGS="${BAZEL_FLAGS} --//ci/tools/python/wheel:nightly_iso_date=${NIGHTLY_RELEASE_DATE}"
 fi
 
-# Conditionally use local submodules vs http_archve tf
-if [[ "${USE_LOCAL_TF}" == "true" ]]; then
-  BUILD_FLAGS+=("--config=use_local_tf")
-fi
 
 # Set linkopt for arm64 architecture, and remote_cache for x86_64.
 case "${ARCH}" in
