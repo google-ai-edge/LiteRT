@@ -425,9 +425,13 @@ litert_integration_test(
 #     name = "litert_guitar_device_integration_tests_kotlin",
 #     auto_deps = [
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test",
+#         "//litert/kotlin/src/tests/google:litert_kotlin_api_gpu_mh_test",
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_qualcomm",
+#         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_jit_mh_test_qualcomm",
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor",
+#         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_jit_mh_test_google_tensor",
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_mediatek",
+#         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_jit_mh_test_mediatek",
 #     ],
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
@@ -441,14 +445,27 @@ litert_integration_test(
 #                 is_instrumentation_test = True,
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_qualcomm"],
 #             ),
+#             litert_qualcomm_mh_guitar_test(
+#                 is_instrumentation_test = True,
+#                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_jit_mh_test_qualcomm"],
+#             ),
 #             litert_pixel_mh_guitar_test(
 #                 dimension_model = "pixel 11",
 #                 is_instrumentation_test = True,
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor"],
 #             ),
+#             litert_pixel_mh_guitar_test(
+#                 dimension_model = "pixel 11",
+#                 is_instrumentation_test = True,
+#                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_jit_mh_test_google_tensor"],
+#             ),
 #             litert_mediatek_mh_guitar_test(
 #                 is_instrumentation_test = True,
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_mediatek"],
+#             ),
+#             litert_mediatek_mh_guitar_test(
+#                 is_instrumentation_test = True,
+#                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_jit_mh_test_mediatek"],
 #             ),
 #         ],
 #     ),
