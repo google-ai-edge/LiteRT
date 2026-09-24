@@ -76,7 +76,7 @@ jobs:
       - name: Install CMake and Ninja
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ninja-build python3-pip
+          sudo apt-get install -y --no-install-recommends ninja-build python3-pip libc++-18-dev libc++abi-18-dev llvm-18 clang-18
           pip3 install cmake==3.28.3
           cmake --version
           ninja --version
@@ -93,6 +93,7 @@ jobs:
           sudo ln -sfn "$(python3 -c 'import site; print(site.getsitepackages()[0])')" /usr/local/lib/python3.11/site-packages
           export PYTHON_BIN_PATH="/usr/local/bin/python3"
           export PYTHON_LIB_PATH="/usr/local/lib/python3.11/site-packages"
+          export HERMETIC_PYTHON_VERSION=3.11
           export TF_NEED_ROCM=0
           export TF_NEED_CLANG=0
           export TF_NEED_CUDA=0
@@ -109,6 +110,7 @@ jobs:
             --config=public_cache \
             --config=bulk_build_cpu \
             --repo_env=USE_PYWRAP_RULES=True \
+            --repo_env=HERMETIC_PYTHON_VERSION=3.11 \
             -- \
             //tflite:tensorflowlite \
             //tflite/c:tensorflowlite_c \
