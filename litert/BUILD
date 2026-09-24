@@ -306,6 +306,7 @@ package_group(
     ],
     packages = [
         "//litert/kotlin/...",
+        "//litert/objc/...",
         "//litert/rust/...",
         "//litert/swift/...",
         "//litert/vendors/...",

@@ -142,6 +142,8 @@ objc_library(
     deps = [
         ":litert_objc_options",
         # Dependency placeholder: apple_frameworks XCTest,
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_gpu_options",
     ],
 )
 

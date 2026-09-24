@@ -45,17 +45,41 @@ constexpr LRTHardwareAccelerators kValidAcceleratorsMask =
   return [self initWithHardwareAccelerators:LRTHardwareAcceleratorNone];
 }
 
+#pragma mark - Properties
+
+- (void)setUsesMetalArgumentBuffers:(BOOL)usesMetalArgumentBuffers {
+  _usesMetalArgumentBuffers = usesMetalArgumentBuffers;
+  [self applyMetalOptions];
+}
+
+- (void)setEnablesMetalResidencySet:(BOOL)enablesMetalResidencySet {
+  _enablesMetalResidencySet = enablesMetalResidencySet;
+  [self applyMetalOptions];
+}
+
+#pragma mark - LRTOptions (Internal)
+
 - (litert::Options *)cppOptions {
-#if defined(__APPLE__)
-  if (self.usesMetalArgumentBuffers || self.enablesMetalResidencySet) {
-    auto gpuOptions = _cppOptions.GetGpuOptions();
-    if (gpuOptions.HasValue()) {
-      gpuOptions->SetUseMetalArgumentBuffers(self.usesMetalArgumentBuffers);
-      gpuOptions->EnableMetalResidencySet(self.enablesMetalResidencySet);
-    }
-  }
-#endif
   return &_cppOptions;
+}
+
+#pragma mark - Private
+
+/**
+ * Mirrors the Metal properties onto the underlying C++ GPU options.
+ *
+ * The C++ API lazily creates the GPU options on first access, so this is only called from the
+ * Metal property setters: options that never mention Metal keep their default, GPU-free C++
+ * representation.
+ */
+- (void)applyMetalOptions {
+#if defined(__APPLE__)
+  auto gpuOptions = _cppOptions.GetGpuOptions();
+  if (gpuOptions.HasValue()) {
+    gpuOptions->SetUseMetalArgumentBuffers(_usesMetalArgumentBuffers);
+    gpuOptions->EnableMetalResidencySet(_enablesMetalResidencySet);
+  }
+#endif  // defined(__APPLE__)
 }
 
 @end
