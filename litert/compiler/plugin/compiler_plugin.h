@@ -72,8 +72,8 @@ class CompiledResult {
   // to the number of subgraphs passed to the compilation step.
   Expected<LiteRtParamIndex> NumCalls() const;
 
-  explicit CompiledResult(const LiteRtCompilerPluginApi& parent)
-      : parent_(parent) {}
+  explicit CompiledResult(const LiteRtCompilerPluginInterface_V1* parent_v1)
+      : parent_v1_(parent_v1) {}
 
   CompiledResult(CompiledResult&& other) noexcept;
   CompiledResult& operator=(CompiledResult&& other) noexcept;
@@ -83,7 +83,7 @@ class CompiledResult {
   ~CompiledResult();
 
  private:
-  LiteRtCompilerPluginApi parent_;
+  const LiteRtCompilerPluginInterface_V1* parent_v1_ = nullptr;
   LiteRtCompiledResult compiled_result_handle_ = nullptr;
 };
 
@@ -110,8 +110,11 @@ class CompilerPlugin {
     max_transformation_iterations_ = max_transformation_iterations;
   }
 
-  // Get the compiler plugin's API version.
+  // Get the compiler plugin's internal build/API version.
   Expected<LiteRtApiVersion> ApiVersion() const;
+
+  // Get the negotiated C API version resolved with this plugin.
+  LiteRtApiVersion NegotiatedVersion() const { return negotiated_version_; }
 
   // Get the supported HW accelerators (e.g., GPU, NPU).
   Expected<LiteRtHwAccelerators> SupportedHardware() const;
@@ -123,7 +126,13 @@ class CompilerPlugin {
   // string returned by the underlying plugin are expected to have static
   // lifetime.
   absl::string_view SocManufacturer() const {
-    return plugin_api_.get_compiler_plugin_soc_manufacturer();
+    if (!LITERT_ABI_HAS_API(plugin_api_v1_, 1,
+                            get_compiler_plugin_soc_manufacturer)) {
+      return "";
+    }
+    const char* manufacturer =
+        plugin_api_v1_->get_compiler_plugin_soc_manufacturer();
+    return manufacturer != nullptr ? absl::string_view(manufacturer) : "";
   }
 
   // Get list of unique soc models targetable by this plugin.
@@ -184,14 +193,15 @@ class CompilerPlugin {
   SharedLibrary lib_;
   LiteRtOptions options_ = nullptr;
   LiteRtEnvironmentOptions env_ = nullptr;
-  LiteRtCompilerPluginApi plugin_api_ = {};
+  const LiteRtCompilerPluginInterface_V1* plugin_api_v1_ = nullptr;
   LiteRtCompilerPlugin plugin_handle_ = nullptr;
   std::vector<LiteRtTransformation> transformations_;
   size_t max_transformation_iterations_ = 100;
+  LiteRtApiVersion negotiated_version_ = {0, 0, 0};
 
   // Internal LiteRtCompiledResult wrapper.
 
-  CompiledResult MakeResult() const { return CompiledResult(plugin_api_); }
+  CompiledResult MakeResult() const { return CompiledResult(plugin_api_v1_); }
 };
 
 // Higher level functions for applying plugin to graph.

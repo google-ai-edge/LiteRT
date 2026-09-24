@@ -18,6 +18,7 @@
 #include <stddef.h>
 
 #include "litert/c/internal/litert_abi_header.h"
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -28,14 +29,15 @@ extern "C" {
 
 #define LITERT_CUSTOM_BUFFER_HANDLERS_DEF_MAX_SUPPORTED_BUFFER_TYPES 16
 
-/// A internal struct that holds custom tensor buffer handlers and supported
+/// An internal struct that holds custom tensor buffer handlers and supported
 /// buffer types.
-/// If a dispatch plugin wants to support custom tensor buffers, it can
-/// provide a non-null pointer to this struct in the LiteRtDispatchApi.
+/// If a dispatch plugin wants to support custom tensor buffers, it can return
+/// a pointer to this struct via LiteRtDispatchQueryInterface when queried with
+/// kLiteRtInterfaceCustomTensorBufferHandlers.
 ///
 /// @note This concrete type is shared between the runtime and the Dispatch
 ///     plugin and Accelerator plugin, so it must be ABI stable.
-typedef struct LiteRtCustomTensorBufferHandlersDef {
+typedef struct LiteRtCustomTensorBufferHandlersDef_V1 {
   LiteRtAbiHeader abi_header;
 
   CreateCustomTensorBuffer create_func;
@@ -51,27 +53,58 @@ typedef struct LiteRtCustomTensorBufferHandlersDef {
   size_t num_supported_buffer_types;
   LiteRtTensorBufferType supported_buffer_types
       [LITERT_CUSTOM_BUFFER_HANDLERS_DEF_MAX_SUPPORTED_BUFFER_TYPES];
-} LiteRtCustomTensorBufferHandlersDef;
+} LiteRtCustomTensorBufferHandlersDef_V1;
 
-#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
-    __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtCustomTensorBufferHandlersDef) == 136,
-              "LiteRtCustomTensorBufferHandlersDef size mismatch");
-static_assert(offsetof(LiteRtCustomTensorBufferHandlersDef, abi_header) == 0,
-              "LiteRtCustomTensorBufferHandlersDef abi_header offset mismatch");
-static_assert(offsetof(LiteRtCustomTensorBufferHandlersDef, device_tag) == 56,
-              "LiteRtCustomTensorBufferHandlersDef device_tag offset mismatch");
-static_assert(offsetof(LiteRtCustomTensorBufferHandlersDef, queue_tag) == 60,
-              "LiteRtCustomTensorBufferHandlersDef queue_tag offset mismatch");
-static_assert(offsetof(LiteRtCustomTensorBufferHandlersDef,
-                       num_supported_buffer_types) == 64,
-              "LiteRtCustomTensorBufferHandlersDef num_supported_buffer_types "
-              "offset mismatch");
-static_assert(offsetof(LiteRtCustomTensorBufferHandlersDef,
-                       supported_buffer_types) == 72,
-              "LiteRtCustomTensorBufferHandlersDef supported_buffer_types "
-              "offset mismatch");
-#endif  // __cplusplus
+typedef LiteRtCustomTensorBufferHandlersDef_V1
+    LiteRtCustomTensorBufferHandlersDef;
+
+LITERT_ABI_STATIC_ASSERT(
+    offsetof(LiteRtCustomTensorBufferHandlersDef_V1, abi_header) == 0,
+    "LiteRtCustomTensorBufferHandlersDef_V1 abi_header offset mismatch");
+
+#if (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8) || \
+    defined(__LP64__) || defined(_WIN64)
+LITERT_ABI_STATIC_ASSERT(
+    sizeof(LiteRtCustomTensorBufferHandlersDef_V1) == 136,
+    "LiteRtCustomTensorBufferHandlersDef_V1 size mismatch");
+LITERT_ABI_STATIC_ASSERT(
+    offsetof(LiteRtCustomTensorBufferHandlersDef_V1, device_tag) == 56,
+    "LiteRtCustomTensorBufferHandlersDef_V1 device_tag offset mismatch");
+LITERT_ABI_STATIC_ASSERT(
+    offsetof(LiteRtCustomTensorBufferHandlersDef_V1, queue_tag) == 60,
+    "LiteRtCustomTensorBufferHandlersDef_V1 queue_tag offset mismatch");
+LITERT_ABI_STATIC_ASSERT(
+    offsetof(LiteRtCustomTensorBufferHandlersDef_V1,
+             num_supported_buffer_types) == 64,
+    "LiteRtCustomTensorBufferHandlersDef_V1 num_supported_buffer_types "
+    "offset mismatch");
+LITERT_ABI_STATIC_ASSERT(
+    offsetof(LiteRtCustomTensorBufferHandlersDef_V1, supported_buffer_types) ==
+        72,
+    "LiteRtCustomTensorBufferHandlersDef_V1 supported_buffer_types "
+    "offset mismatch");
+#elif (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 4) || \
+    defined(__ILP32__) || defined(_WIN32)
+LITERT_ABI_STATIC_ASSERT(
+    sizeof(LiteRtCustomTensorBufferHandlersDef_V1) == 108,
+    "LiteRtCustomTensorBufferHandlersDef_V1 size mismatch");
+LITERT_ABI_STATIC_ASSERT(
+    offsetof(LiteRtCustomTensorBufferHandlersDef_V1, device_tag) == 32,
+    "LiteRtCustomTensorBufferHandlersDef_V1 device_tag offset mismatch");
+LITERT_ABI_STATIC_ASSERT(
+    offsetof(LiteRtCustomTensorBufferHandlersDef_V1, queue_tag) == 36,
+    "LiteRtCustomTensorBufferHandlersDef_V1 queue_tag offset mismatch");
+LITERT_ABI_STATIC_ASSERT(
+    offsetof(LiteRtCustomTensorBufferHandlersDef_V1,
+             num_supported_buffer_types) == 40,
+    "LiteRtCustomTensorBufferHandlersDef_V1 num_supported_buffer_types "
+    "offset mismatch");
+LITERT_ABI_STATIC_ASSERT(
+    offsetof(LiteRtCustomTensorBufferHandlersDef_V1, supported_buffer_types) ==
+        44,
+    "LiteRtCustomTensorBufferHandlersDef_V1 supported_buffer_types "
+    "offset mismatch");
+#endif
 
 #ifdef __cplusplus
 }

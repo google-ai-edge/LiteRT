@@ -65,6 +65,7 @@ cc_library(
     visibility = [
         "//visibility:public",
     ],
+    deps = ["//litert/c:litert_common"],
 )
 
 cc_test(
@@ -134,6 +135,7 @@ cc_library(
     hdrs = ["litert_custom_tensor_buffer_handlers_def.h"],
     deps = [
         ":litert_abi_header",
+        "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_tensor_buffer_types",
@@ -151,7 +153,6 @@ cc_library(
     deps = [
         ":litert_abi_header",
         "//litert/c:litert_any",
-        "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_model_types",

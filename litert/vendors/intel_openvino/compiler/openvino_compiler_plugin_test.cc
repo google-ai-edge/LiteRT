@@ -31,7 +31,7 @@
 #include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
 #include "litert/test/test_models.h"
-#include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
 #include "litert/vendors/intel_openvino/compiler/openvino_soc_config.h"
 
@@ -44,14 +44,15 @@ const auto kSupportedOps = Values("add_simple.tflite");
 const auto kSupportedSocModels = Values("LNL", "PTL");
 
 TEST(TestOVPlugin, PartitionAddGraph) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin, StaticallyLinkedPlugin::Create(LrtGetCompilerContext()));
   auto model = testing::LoadTestFileModel("add_simple.tflite");
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
 
   LiteRtOpListT selected_op_list;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
   const auto selected_ops = selected_op_list.Values();
 
   ASSERT_EQ(selected_ops.size(), 1);
@@ -59,17 +60,18 @@ TEST(TestOVPlugin, PartitionAddGraph) {
 }
 
 TEST(TestOVPlugin, CompileAddSubgraph) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin, StaticallyLinkedPlugin::Create(LrtGetCompilerContext()));
   auto model = testing::LoadTestFileModel("add_simple.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(
-      LiteRtCompilerPluginCompile(plugin.get(), "PTL", model.Get(), &compiled));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "PTL", model.Get(), &compiled));
 
   const void* byte_code;
   size_t byte_code_size;
 
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultByteCode(
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_byte_code(
       compiled, /*byte_code_idx=*/0, &byte_code, &byte_code_size));
 
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
@@ -80,26 +82,27 @@ TEST(TestOVPlugin, CompileAddSubgraph) {
   size_t op_data_size;
   LiteRtParamIndex byte_code_idx;
 
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultCallInfo(
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_call_info(
       compiled, /*call_idx=*/0, &op_data, &op_data_size, &byte_code_idx));
 
   absl::string_view op_data_string(reinterpret_cast<const char*>(op_data),
                                    op_data_size);
 
-  LiteRtDestroyCompiledResult(compiled);
+  plugin.Api()->destroy_compiled_result(compiled);
 }
 
 // TOPK_V2 with a constant K (input 1 carries a weights buffer) yields a static
 // output shape and must be selected for the OpenVINO partition.
 TEST(TestOVPlugin, PartitionTopKConstK) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin, StaticallyLinkedPlugin::Create(LrtGetCompilerContext()));
   auto model = testing::LoadTestFileModel("simple_topk_op.tflite");
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
 
   LiteRtOpListT selected_op_list;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
   const auto selected_ops = selected_op_list.Values();
 
   ASSERT_EQ(selected_ops.size(), 1);
@@ -110,14 +113,15 @@ TEST(TestOVPlugin, PartitionTopKConstK) {
 // the sorted-axis dimension dynamic, which NPU compilation cannot handle. The
 // op must be left unselected so it falls back to CPU.
 TEST(TestOVPlugin, PartitionTopKRuntimeKNotSelected) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin, StaticallyLinkedPlugin::Create(LrtGetCompilerContext()));
   auto model = testing::LoadTestFileModel("simple_topk_op_runtime_k.tflite");
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
 
   LiteRtOpListT selected_op_list;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
   const auto selected_ops = selected_op_list.Values();
 
   EXPECT_EQ(selected_ops.size(), 0);
@@ -126,23 +130,24 @@ TEST(TestOVPlugin, PartitionTopKRuntimeKNotSelected) {
 // A constant-K TOPK_V2 subgraph compiles to non-empty NPU bytecode, confirming
 // the folded static shape is accepted end-to-end.
 TEST(TestOVPlugin, CompileTopKConstK) {
-  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin, StaticallyLinkedPlugin::Create(LrtGetCompilerContext()));
   auto model = testing::LoadTestFileModel("simple_topk_op.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(
-      LiteRtCompilerPluginCompile(plugin.get(), "PTL", model.Get(), &compiled));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "PTL", model.Get(), &compiled));
 
   const void* byte_code;
   size_t byte_code_size;
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultByteCode(
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_byte_code(
       compiled, /*byte_code_idx=*/0, &byte_code, &byte_code_size));
 
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
                                      byte_code_size);
   ASSERT_FALSE(byte_code_string.empty());
 
-  LiteRtDestroyCompiledResult(compiled);
+  plugin.Api()->destroy_compiled_result(compiled);
 }
 
 // Tests for GetSocModelConfig

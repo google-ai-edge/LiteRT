@@ -17,6 +17,8 @@
 
 #include <stddef.h>
 
+#include "litert/c/internal/litert_abi_header.h"
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 
@@ -27,6 +29,11 @@
 extern "C" {
 #endif  // __cplusplus
 
+// Current ABI version for LiteRT Compiler Plugin interface tables (Layer 3).
+#define LITERT_COMPILER_PLUGIN_ABI_VERSION_MAJOR 1
+#define LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR 0
+#define LITERT_COMPILER_PLUGIN_ABI_VERSION_PATCH 0
+
 //
 // Api Interface
 //
@@ -34,8 +41,6 @@ extern "C" {
 typedef LiteRtStatus (*LiteRtGetCompilerPluginVersionT)(LiteRtApiVersion*);
 
 typedef const char* (*LiteRtGetCompilerPluginSocManufacturerT)();
-
-typedef struct LiteRtCompilerContext LiteRtCompilerContext;
 
 typedef LiteRtStatus (*LiteRtCreateCompilerPluginT)(
     const LiteRtCompilerContext*, LiteRtCompilerPlugin*,
@@ -51,7 +56,7 @@ typedef LiteRtStatus (*LiteRtGetNumCompilerPluginSupportedSocModelsT)(
 
 typedef LiteRtStatus (*LiteRtGetCompilerPluginSupportedSocModelT)(
     LiteRtCompilerPlugin, LiteRtParamIndex soc_model_idx,
-    const char** soc_moel_idx);
+    const char** soc_model_name);
 
 typedef LiteRtStatus (*LiteRtGetCompilerPluginSDKVersionT)(LiteRtCompilerPlugin,
                                                            const char**);
@@ -98,7 +103,17 @@ typedef LiteRtStatus (*LiteRtCompilerPluginCheckCompilerCompatibilityT)(
 //
 
 // Wraps all resolved functions from api interface.
-struct LiteRtCompilerPluginApi {
+typedef enum {
+  kLiteRtCompilerPluginInterfaceBasic = 0,
+} LiteRtCompilerPluginInterfaceId;
+
+LITERT_ABI_STATIC_ASSERT(
+    sizeof(LiteRtCompilerPluginInterfaceId) == 4,
+    "LiteRtCompilerPluginInterfaceId size must be 4 bytes");
+
+typedef struct LiteRtCompilerPluginInterface_V1 {
+  LiteRtAbiHeader abi_header;
+
   LiteRtGetCompilerPluginVersionT get_compiler_plugin_version;
   LiteRtGetCompilerPluginSocManufacturerT get_compiler_plugin_soc_manufacturer;
   LiteRtCreateCompilerPluginT create_compiler_plugin;
@@ -110,70 +125,43 @@ struct LiteRtCompilerPluginApi {
       get_num_compiler_plugin_supported_models;
   LiteRtGetCompilerPluginSupportedSocModelT
       get_compiler_plugin_supported_soc_model;
-  LiteRtGetCompilerPluginSDKVersionT get_compiler_plugin_sdk_version;
 
   LiteRtCompilerPluginPartitionT compiler_plugin_partition;
   LiteRtCompilerPluginCompileT compiler_plugin_compile;
 
   LiteRtDestroyCompiledResultT destroy_compiled_result;
   LiteRtGetCompiledResultByteCodeT get_compiled_result_byte_code;
-  LiteRtGetCompiledResultHandleT get_compiled_result_handle;
   LiteRtCompiledResultNumByteCodeModulesT get_compiled_result_num_byte_code;
   LiteRtGetCompiledResultCallInfoT get_compiled_result_call_info;
-  LiteRtGetNumCompiledResultCallsT get_compiled_result_num_calls;
+  LiteRtGetNumCompiledResultCallsT get_num_compiled_result_calls;
   LiteRtCompilerPluginRegisterAllTransformationsT register_all_transformations;
+
+  LiteRtGetCompilerPluginSDKVersionT get_compiler_plugin_sdk_version;
+  LiteRtGetCompiledResultHandleT get_compiled_result_handle;
   LiteRtCompilerPluginCheckCompilerCompatibilityT check_compiler_compatibility;
-};
+} LiteRtCompilerPluginInterface_V1;
+
+LITERT_ABI_STATIC_ASSERT(
+    offsetof(LiteRtCompilerPluginInterface_V1, abi_header) == 0,
+    "LiteRtCompilerPluginInterface_V1 abi_header must be at offset 0");
+
+typedef LiteRtStatus (*LiteRtCompilerPluginQueryInterfaceT)(
+    LiteRtCompilerPluginInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version, LiteRtInterface* out_interface);
+
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginQueryInterface(
+    LiteRtCompilerPluginInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version, LiteRtInterface* out_interface);
 
 #ifdef __cplusplus
 }
+#endif  // __cplusplus
 
+#ifdef __cplusplus
 #include "absl/strings/string_view.h"  // from @com_google_absl
 
-static constexpr absl::string_view kLiteRtGetCompilerPluginVersion =
-    "LiteRtGetCompilerPluginVersion";
-
-static constexpr absl::string_view kLiteRtGetCompilerPluginSupportedHardware =
-    "LiteRtGetCompilerPluginSupportedHardware";
-
-static constexpr absl::string_view kLiteRtGetCompilerPluginSocManufacturer =
-    "LiteRtGetCompilerPluginSocManufacturer";
-static constexpr absl::string_view
-    kLiteRtGetNumCompilerPluginSupportedSocModels =
-        "LiteRtGetNumCompilerPluginSupportedSocModels";
-static constexpr absl::string_view kLiteRtGetCompilerPluginSupportedSocModel =
-    "LiteRtGetCompilerPluginSupportedSocModel";
-static constexpr absl::string_view kLiteRtGetCompilerPluginSDKVersion =
-    "LiteRtGetCompilerPluginSDKVersion";
-
-static constexpr absl::string_view kLiteRtCreateCompilerPlugin =
-    "LiteRtCreateCompilerPlugin";
-static constexpr absl::string_view kLiteRtDestroyCompilerPlugin =
-    "LiteRtDestroyCompilerPlugin";
-
-static constexpr absl::string_view kLiteRtCompilerPluginPartition =
-    "LiteRtCompilerPluginPartition";
-static constexpr absl::string_view kLiteRtCompilerPluginCompile =
-    "LiteRtCompilerPluginCompile";
-
-static constexpr absl::string_view kLiteRtDestroyCompiledResult =
-    "LiteRtDestroyCompiledResult";
-static constexpr absl::string_view kLiteRtGetCompiledResultByteCode =
-    "LiteRtGetCompiledResultByteCode";
-static constexpr absl::string_view kLiteRtGetCompiledResultHandle =
-    "LiteRtGetCompiledResultHandle";
-static constexpr absl::string_view kLiteRtCompiledResultNumByteCodeModules =
-    "LiteRtCompiledResultNumByteCodeModules";
-static constexpr absl::string_view kLiteRtGetCompiledResultCallInfo =
-    "LiteRtGetCompiledResultCallInfo";
-static constexpr absl::string_view kLiteRtGetNumCompiledResultCalls =
-    "LiteRtGetNumCompiledResultCalls";
-static constexpr absl::string_view
-    kLiteRtCompilerPluginRegisterAllTransformations =
-        "LiteRtCompilerPluginRegisterAllTransformations";
-static constexpr absl::string_view
-    kLiteRtCompilerPluginCheckCompilerCompatibility =
-        "LiteRtCompilerPluginCheckCompilerCompatibility";
+static constexpr absl::string_view kLiteRtCompilerPluginQueryInterface =
+    "LiteRtCompilerPluginQueryInterface";
 
 #endif  // __cplusplus
 

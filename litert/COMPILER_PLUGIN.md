@@ -329,3 +329,109 @@ LiteRtStatus LiteRtGetCompiledResultByteCode(
 LiteRt provides various toolings for applying compiler plugins to model files,
 executing the result, and validating/benchmarking. Please refer to the
 documentation for the LiteRt's tooling: #TODO.
+
+-----
+
+## API Versioning and Extension
+
+LiteRt Compiler Plugin API uses a versioned interface negotiation pattern with
+an embedded `LiteRtAbiHeader` at offset 0 of every interface struct to ensure
+bidirectional ABI compatibility. This allows newer LiteRt runtimes to safely
+load older compiler plugins (and vice versa) without risk of out-of-bounds
+memory access or Control Flow Integrity (CFI) traps.
+
+### How it works
+
+1.  **Single Entry Point:** The plugin shared library exports a single C symbol:
+    `LiteRtCompilerPluginQueryInterface`.
+2.  **Bidirectional Negotiation:** The host runtime calls
+    `LiteRtCompilerPluginQueryInterface`, passing the requested interface ID
+    (e.g., `kLiteRtCompilerPluginInterfaceBasic`) and its own
+    `LiteRtApiVersion litert_runtime_version`. The plugin inspects
+    `litert_runtime_version.major` and returns a pointer to the corresponding
+    major interface table (e.g., `LiteRtCompilerPluginInterface_V1`) via
+    `LiteRtInterface* out_interface`.
+3.  **Major Tables + Header at Offset 0:** Every interface struct begins with
+    `LiteRtAbiHeader abi_header` at byte offset 0 (`struct_size`,
+    `major_version`, `minor_version`). Within a major version (`_V1`), new
+    functions for minor updates are strictly **appended to the end** of
+    `LiteRtCompilerPluginInterface_V1`.
+4.  **Bounds-Checked Invocation:** Before invoking any function pointer on the
+    returned table, the runtime uses `LITERT_ABI_HAS_API(api, 1, member_name)`
+    to verify both that
+    `offsetof(..., member_name) + sizeof(...) <= api->abi_header.struct_size`
+    and that the function pointer is non-null.
+
+### Example: Implementing and Extending the Interface
+
+#### 1. Interface definition in `litert_compiler_plugin_api.h`
+
+```c
+typedef struct LiteRtCompilerPluginInterface_V1 {
+  LiteRtAbiHeader abi_header;  // Must be at byte offset 0
+
+  LiteRtGetCompilerPluginVersionT get_compiler_plugin_version;
+  LiteRtGetCompilerPluginSocManufacturerT get_compiler_plugin_soc_manufacturer;
+  LiteRtCreateCompilerPluginT create_compiler_plugin;
+  LiteRtDestroyCompilerPluginT destroy_compiler_plugin;
+  // ... existing V1 methods ...
+
+  // New functions added in minor updates (e.g., V1.1) are appended at the end:
+  LiteRtCompilerPluginNewFunctionT new_function;
+} LiteRtCompilerPluginInterface_V1;
+```
+
+#### 2. Implementing the interface in the plugin (`example_plugin.cc`)
+
+```cpp
+static const LiteRtCompilerPluginInterface_V1 ExamplePluginInterface = {
+    .abi_header = {
+        .struct_size = sizeof(LiteRtCompilerPluginInterface_V1),
+        .major_version = 1,
+        .minor_version = 1,
+        .reserved = 0,
+    },
+    .get_compiler_plugin_version = LiteRtGetCompilerPluginVersion,
+    .get_compiler_plugin_soc_manufacturer = LiteRtGetCompilerPluginSocManufacturer,
+    .create_compiler_plugin = LiteRtCreateCompilerPlugin,
+    .destroy_compiler_plugin = LiteRtDestroyCompilerPlugin,
+    // ...
+    .new_function = LiteRtCompilerPluginNewFunction,
+};
+
+extern "C" LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtCompilerPluginQueryInterface(
+    LiteRtCompilerPluginInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version,
+    LiteRtInterface* out_interface) {
+  if (out_interface == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (interface_id == kLiteRtCompilerPluginInterfaceBasic) {
+    if (litert_runtime_version.major >= 1) {
+      *out_interface = &ExamplePluginInterface;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
+}
+```
+
+#### 3. How Runtime negotiates and uses it
+
+The runtime queries the interface once and checks `LITERT_ABI_HAS_API` before
+calling optional or newly added members:
+
+```cpp
+LiteRtInterface raw_api = nullptr;
+LiteRtApiVersion negotiated = {0, 0, 0};
+if (NegotiateInterface(query_fn, kLiteRtCompilerPluginInterfaceBasic,
+                       /*runtime_version=*/{1, 1, 0}, /*expected_abi_major=*/1,
+                       &raw_api, &negotiated) == kLiteRtStatusOk) {
+  const auto* api =
+      reinterpret_cast<const LiteRtCompilerPluginInterface_V1*>(raw_api);
+  if (LITERT_ABI_HAS_API(api, 1, new_function)) {
+    api->new_function(plugin);
+  }
+}
+```

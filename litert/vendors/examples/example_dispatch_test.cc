@@ -20,12 +20,17 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
+#include "litert/core/filesystem.h"
+#include "litert/core/version.h"
+#include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/simple_buffer.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -39,7 +44,7 @@ using ::litert::testing::SimpleBuffer;
 using ::testing::ElementsAre;
 
 struct DeviceDeleter {
-  explicit DeviceDeleter(LiteRtDispatchInterface& api) : api(api) {}
+  explicit DeviceDeleter(const LiteRtDispatchInterface_V1& api) : api(api) {}
 
   DeviceDeleter(const DeviceDeleter&) noexcept = default;
   DeviceDeleter(DeviceDeleter&&) noexcept = default;
@@ -48,18 +53,19 @@ struct DeviceDeleter {
     api.device_context_destroy(device_context);
   }
 
-  LiteRtDispatchInterface& api;
+  const LiteRtDispatchInterface_V1& api;
 };
 
 using DevicePtr = std::unique_ptr<LiteRtDispatchDeviceContextT, DeviceDeleter>;
 
-DevicePtr CreateDevicePtr(LiteRtDispatchInterface& api,
+DevicePtr CreateDevicePtr(const LiteRtDispatchInterface_V1& api,
                           LiteRtDispatchDeviceContext device_context) {
   return DevicePtr(device_context, DeviceDeleter(api));
 }
 
 struct InvocationContextDeleter {
-  explicit InvocationContextDeleter(LiteRtDispatchInterface& api) : api(api) {}
+  explicit InvocationContextDeleter(const LiteRtDispatchInterface_V1& api)
+      : api(api) {}
 
   InvocationContextDeleter(const InvocationContextDeleter&) noexcept = default;
   InvocationContextDeleter(InvocationContextDeleter&&) noexcept = default;
@@ -68,14 +74,14 @@ struct InvocationContextDeleter {
     api.invocation_context_destroy(invocation_context);
   }
 
-  LiteRtDispatchInterface& api;
+  const LiteRtDispatchInterface_V1& api;
 };
 
 using InvocationContextPtr =
     std::unique_ptr<LiteRtDispatchInvocationContextT, InvocationContextDeleter>;
 
 InvocationContextPtr CreateInvocationContextPtr(
-    LiteRtDispatchInterface& api,
+    const LiteRtDispatchInterface_V1& api,
     LiteRtDispatchInvocationContext invocation_context) {
   return InvocationContextPtr(invocation_context,
                               InvocationContextDeleter(api));
@@ -84,11 +90,16 @@ InvocationContextPtr CreateInvocationContextPtr(
 class ExampleDispatchTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    LITERT_ASSERT_OK(LiteRtDispatchGetApi(&api_));
-    ASSERT_NE(api_.interface, nullptr);
+    LiteRtApiVersion version = {.major = 1, .minor = 0, .patch = 0};
+    LiteRtInterface interface = nullptr;
+    LITERT_ASSERT_OK(LiteRtDispatchQueryInterface(kLiteRtInterfaceBasic,
+                                                  version, &interface));
+    ASSERT_NE(interface, nullptr);
+    api_ = reinterpret_cast<const LiteRtDispatchInterface_V1*>(interface);
+    ASSERT_TRUE(LITERT_ABI_IS_COMPATIBLE(api_, 1, 0));
   }
 
-  LiteRtDispatchInterface& Api() { return *api_.interface; }
+  const LiteRtDispatchInterface_V1& Api() { return *api_; }
 
   // Creates a device context and invocation context for a simple mul operation.
   std::pair<DevicePtr, InvocationContextPtr>
@@ -133,7 +144,7 @@ ops:mul(0,1)(2))";
   }
 
  private:
-  LiteRtDispatchApi api_;
+  const LiteRtDispatchInterface_V1* api_;
 };
 
 TEST_F(ExampleDispatchTest, InvocationContextCreateFromHandle) {
@@ -166,6 +177,9 @@ TEST_F(ExampleDispatchTest, InvocationContextCreateFromHandle) {
 }
 
 TEST_F(ExampleDispatchTest, CheckRuntimeCompatibility) {
+  // Note: check_runtime_compatibility validates Layer 2 framework API
+  // versioning, distinct from Layer 3 Option B interface negotiation via
+  // QueryInterface.
   LiteRtApiVersion api_version = {.major = 1, .minor = 0, .patch = 0};
   LiteRtEnvironmentOptions env = nullptr;
   LiteRtOptions options = nullptr;
@@ -399,6 +413,36 @@ ops:mul(0,1)(2)
 
   run_partition("partition_0");
   run_partition("partition_1");
+}
+
+TEST(ExampleDispatchDynamicTest, AsyncSubInterfaceGracefulDegradation) {
+  std::string example_path =
+      ::litert::internal::Join({testing::GetLiteRtPath("vendors/examples"),
+                                "libLiteRtDispatch_Example.so"});
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto lib, ::litert::SharedLibrary::Load(
+                    example_path, ::litert::RtldFlags::Now().Local()));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto query_fn,
+                              lib.LookupSymbol<LiteRtDispatchQueryInterfaceT>(
+                                  kLiteRtDispatchQueryInterface.data()));
+
+  // Basic interface negotiates successfully
+  LiteRtInterface basic_iface = nullptr;
+  LiteRtApiVersion negotiated = {0, 0, 0};
+  LITERT_ASSERT_OK(litert::internal::NegotiateInterface(
+      query_fn, kLiteRtInterfaceBasic,
+      /*runtime_version=*/LiteRtApiVersion{1, 0, 0},
+      /*expected_abi_major=*/1, &basic_iface, &negotiated));
+  ASSERT_NE(basic_iface, nullptr);
+
+  // Optional Async sub-interface returns unsupported without error/crash
+  LiteRtInterface async_iface = nullptr;
+  LiteRtStatus async_status = litert::internal::NegotiateInterface(
+      query_fn, kLiteRtInterfaceAsync,
+      /*runtime_version=*/LiteRtApiVersion{1, 0, 0},
+      /*expected_abi_major=*/1, &async_iface);
+  EXPECT_EQ(async_status, kLiteRtStatusErrorUnsupported);
+  EXPECT_EQ(async_iface, nullptr);
 }
 
 }  // namespace

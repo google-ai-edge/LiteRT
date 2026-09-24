@@ -22,6 +22,7 @@
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
@@ -32,6 +33,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/examples/example_common.h"
 #include "litert/vendors/examples/example_transformations.h"
 
@@ -413,4 +415,106 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
   *transformations = compiler_plugin->transformations.data();
 
   return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompilerPluginDummy(LiteRtCompilerPlugin compiler_plugin) {
+  if (!compiler_plugin) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_LOG(LITERT_INFO, "Dummy function called!");
+  return kLiteRtStatusOk;
+}
+
+namespace {
+
+// Example V1.1 flat extension struct used to test Option B minor version
+// append-only extensibility (abi_header at offset 0, new members appended at
+// end).
+typedef LiteRtStatus (*LiteRtCompilerPluginDummyT)(
+    LiteRtCompilerPlugin compiler_plugin);
+
+typedef struct LiteRtCompilerPluginInterface_V1_1 {
+  LiteRtAbiHeader abi_header;
+
+  LiteRtGetCompilerPluginVersionT get_compiler_plugin_version;
+  LiteRtGetCompilerPluginSocManufacturerT get_compiler_plugin_soc_manufacturer;
+  LiteRtCreateCompilerPluginT create_compiler_plugin;
+  LiteRtDestroyCompilerPluginT destroy_compiler_plugin;
+
+  LiteRtGetCompilerPluginSupportedHardwareT
+      get_compiler_plugin_supported_hardware;
+  LiteRtGetNumCompilerPluginSupportedSocModelsT
+      get_num_compiler_plugin_supported_models;
+  LiteRtGetCompilerPluginSupportedSocModelT
+      get_compiler_plugin_supported_soc_model;
+
+  LiteRtCompilerPluginPartitionT compiler_plugin_partition;
+  LiteRtCompilerPluginCompileT compiler_plugin_compile;
+
+  LiteRtDestroyCompiledResultT destroy_compiled_result;
+  LiteRtGetCompiledResultByteCodeT get_compiled_result_byte_code;
+  LiteRtCompiledResultNumByteCodeModulesT get_compiled_result_num_byte_code;
+  LiteRtGetCompiledResultCallInfoT get_compiled_result_call_info;
+  LiteRtGetNumCompiledResultCallsT get_num_compiled_result_calls;
+  LiteRtCompilerPluginRegisterAllTransformationsT register_all_transformations;
+
+  LiteRtGetCompilerPluginSDKVersionT get_compiler_plugin_sdk_version;
+  LiteRtGetCompiledResultHandleT get_compiled_result_handle;
+  LiteRtCompilerPluginCheckCompilerCompatibilityT check_compiler_compatibility;
+
+  // Appended in V1.1:
+  LiteRtCompilerPluginDummyT dummy;
+} LiteRtCompilerPluginInterface_V1_1;
+
+static const LiteRtCompilerPluginInterface_V1_1 ExamplePluginInterface_V1_1 = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtCompilerPluginInterface_V1_1),
+            .major_version = 1,
+            .minor_version = 1,
+            .reserved = 0,
+        },
+    .get_compiler_plugin_version = LiteRtGetCompilerPluginVersion,
+    .get_compiler_plugin_soc_manufacturer =
+        LiteRtGetCompilerPluginSocManufacturer,
+    .create_compiler_plugin = LiteRtCreateCompilerPlugin,
+    .destroy_compiler_plugin = LiteRtDestroyCompilerPlugin,
+    .get_compiler_plugin_supported_hardware =
+        LiteRtGetCompilerPluginSupportedHardware,
+    .get_num_compiler_plugin_supported_models =
+        LiteRtGetNumCompilerPluginSupportedSocModels,
+    .get_compiler_plugin_supported_soc_model =
+        LiteRtGetCompilerPluginSupportedSocModel,
+    .compiler_plugin_partition = LiteRtCompilerPluginPartition,
+    .compiler_plugin_compile = LiteRtCompilerPluginCompile,
+    .destroy_compiled_result = LiteRtDestroyCompiledResult,
+    .get_compiled_result_byte_code = LiteRtGetCompiledResultByteCode,
+    .get_compiled_result_num_byte_code = LiteRtCompiledResultNumByteCodeModules,
+    .get_compiled_result_call_info = LiteRtGetCompiledResultCallInfo,
+    .get_num_compiled_result_calls = LiteRtGetNumCompiledResultCalls,
+    .register_all_transformations =
+        LiteRtCompilerPluginRegisterAllTransformations,
+    .get_compiler_plugin_sdk_version = LiteRtGetCompilerPluginSDKVersion,
+    .get_compiled_result_handle = LiteRtGetCompiledResultHandle,
+    .check_compiler_compatibility =
+        LiteRtCompilerPluginCheckCompilerCompatibility,
+    .dummy = LiteRtCompilerPluginDummy,
+};
+
+}  // namespace
+
+extern "C" LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtCompilerPluginQueryInterface(LiteRtCompilerPluginInterfaceId interface_id,
+                                   LiteRtApiVersion litert_runtime_version,
+                                   LiteRtInterface* out_interface) {
+  if (out_interface == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (litert_runtime_version.major >= 1) {
+    if (interface_id == kLiteRtCompilerPluginInterfaceBasic) {
+      *out_interface = &ExamplePluginInterface_V1_1;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
 }
