@@ -49,6 +49,7 @@ exports_files(
     ],
     visibility = [
         # copybara:uncomment_begin(google-only)
+        # "//litert/swift:__subpackages__",
         # "//tflite:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
@@ -63,7 +64,14 @@ cc_library(
     ],
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts(),
-    visibility = ["//tflite/ios:__subpackages__"],
+    visibility = [
+        # copybara:uncomment_begin(google-only)
+        # "//litert/swift:__subpackages__",
+        # "//tflite/ios:__subpackages__",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
 )
 
 # LINT.IfChange(common)
