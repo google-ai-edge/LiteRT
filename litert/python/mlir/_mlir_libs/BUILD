@@ -15,7 +15,7 @@
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("@rules_python//python:py_library.bzl", "py_library")
 load("//litert/build_common:litert_build_defs.bzl", "if_google")
 load("//litert/build_common:symlink_files.bzl", "symlink_inputs")
 load("//litert/python:pytype.bzl", "pytype_strict_contrib_test")
@@ -119,13 +119,13 @@ pybind_extension(
     copts = PYBIND_COPTS,
     wrap_py_init = False,
     deps = [
+        "//third_party/py/python_runtime:headers",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@llvm-project//mlir:MLIRBindingsPythonHeaders",
         "@nanobind",
-        "@xla//third_party/python_runtime:headers",
     ] + if_google(
         [
             # google only: link everything statically here.
@@ -157,6 +157,7 @@ pybind_extension(
     copts = PYBIND_COPTS,
     wrap_py_init = False,
     deps = [
+        "//third_party/py/python_runtime:headers",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
@@ -165,7 +166,6 @@ pybind_extension(
         "@llvm-project//mlir:MLIRBindingsPythonHeaders",
         "@llvm-project//mlir:Support",
         "@nanobind",
-        "@xla//third_party/python_runtime:headers",
     ] + if_google(
         [
             # google only: link everything statically here.
@@ -194,10 +194,10 @@ pybind_extension(
     copts = PYBIND_COPTS,
     wrap_py_init = False,
     deps = [
+        "//third_party/py/python_runtime:headers",
         "@llvm-project//mlir:MLIRBindingsPythonHeaders",
         "@nanobind",
         "@rules_python//python/cc:current_py_cc_headers",
-        "@xla//third_party/python_runtime:headers",
     ] + if_google(
         [
             # google only: link everything statically here.

@@ -13,8 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
-load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
-load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],

@@ -18,8 +18,8 @@ pybind_extension(
         "_pywrap_flatbuffers.pyi",
     ],
     deps = [
+        "//third_party/py/python_runtime:headers",
         "@flatbuffers",
         "@pybind11",
-        "@xla//third_party/python_runtime:headers",
     ],
 )

@@ -15,7 +15,7 @@
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_binary.bzl", "py_binary")
 
 # copybara:uncomment package(default_applicable_licenses = ["//third_party/odml:license"])
 

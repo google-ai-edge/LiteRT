@@ -1,6 +1,6 @@
 """Default (OSS) build versions of Python pytype rules."""
 
-load("@xla//third_party/rules_python/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # Placeholder to use until bazel supports pytype_library.
 def pytype_library(name, pytype_deps = [], pytype_srcs = [], **kwargs):

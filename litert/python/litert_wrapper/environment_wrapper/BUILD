@@ -14,7 +14,7 @@
 
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("@rules_python//python:py_library.bzl", "py_library")
 
 WINDOWS_PYBIND_UNDEFS = select({
     "//litert:windows": [
@@ -38,8 +38,8 @@ cc_library(
         "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",
         "//litert/python/litert_wrapper/common:litert_wrapper_utils",
+        "//third_party/py/python_runtime:headers",  # buildcleaner: keep
         "@com_google_absl//absl/types:span",
-        "@xla//third_party/python_runtime:headers",  # buildcleaner: keep
     ],
 )
 
@@ -61,8 +61,8 @@ pybind_extension(
     wrap_py_init = True,
     deps = [
         ":environment_wrapper_lib",
+        "//third_party/py/python_runtime:headers",
         "@pybind11",
-        "@xla//third_party/python_runtime:headers",
     ],
 )
 

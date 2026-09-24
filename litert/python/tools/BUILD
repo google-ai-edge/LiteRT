@@ -1,4 +1,4 @@
-load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
+load("@rules_python//python:py_test.bzl", "py_test")
 
 # Copyright 2025 Google LLC.
 #

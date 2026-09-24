@@ -1,4 +1,4 @@
-load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_binary.bzl", "py_binary")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],

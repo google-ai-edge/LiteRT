@@ -1,5 +1,5 @@
-load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
-load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
 load("//litert/python:pytype.bzl", "pytype_strict_library")
 load("//litert/support_lib/metadata:build_defs.bzl", "stamp_metadata_parser_version")
 

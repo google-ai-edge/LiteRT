@@ -1,4 +1,4 @@
-# Copyright 2025 The Google AI Edge Authors. All Rights Reserved.
+# Copyright 2026 The Google AI Edge Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,23 +13,13 @@
 # limitations under the License.
 
 package(
-    default_applicable_licenses = ["//third_party/odml:license"],  # copybara:comment
+    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//visibility:public"],
 )
 
-exports_files(
-    ["LICENSE"],
-    visibility = ["//:__subpackages__"],
-)
+licenses(["notice"])
 
-exports_files([
-    "PATCH.perfetto",
-    "PATCH.sentencepiece",
-    "litert_workspace.bzl",
-    "requirements_lock_3_10.txt",
-    "requirements_lock_3_11.txt",
-    "requirements_lock_3_12.txt",
-    "requirements_lock_3_13.txt",
-    "requirements_lock_3_14.txt",
-    "requirements_lock_3_14_freethreaded.txt",
-])
+alias(
+    name = "headers",
+    actual = "@rules_python//python/cc:current_py_cc_headers",
+)

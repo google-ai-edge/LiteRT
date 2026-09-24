@@ -91,7 +91,7 @@ pybind_extension(
     deps = [
         ":gated_delta_update_tflite_op",
         "//tflite/c:common",
+        "//third_party/py/python_runtime:headers",
         "@pybind11",
-        "@xla//third_party/python_runtime:headers",
     ],
 )
