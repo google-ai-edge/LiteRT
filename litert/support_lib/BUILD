@@ -15,6 +15,30 @@ exports_files([
     "AndroidManifestImpl.xml",
 ])
 
+config_setting(
+    name = "public_maven_build",
+    define_values = {
+        "public_maven_build": "true",
+    },
+)
+
+# The Android Java toolchain tracks a recent JDK (Java 25 bytecode, class file
+# major 69, as of this writing). External consumers building against the
+# published AAR with a JDK 17 or 21 toolchain cannot read class files that new,
+# so pin the released artifacts to Java 17, matching
+# //litert/kotlin.
+#
+# Note: "--release 17", which litert/kotlin uses, does not work here. Beyond
+# setting the language and bytecode level, it also swaps the platform classpath
+# for the JDK's own API of that release, so the android.* classes these sources
+# reference become unresolvable. "-source" alone would not lower the bytecode
+# level and "-target" alone is rejected (it may not be older than the source
+# release), so both are needed.
+JAVACOPTS = select({
+    ":public_maven_build": ["-source 17 -target 17"],
+    "//conditions:default": [],
+})
+
 filegroup(
     name = "java_srcs",
     srcs = glob(["java/com/google/ai/edge/litert/support/**/*.java"]),
@@ -48,6 +72,7 @@ android_library(
     name = "litert_support_java",
     srcs = [":java_srcs"],
     custom_package = "com.google.ai.edge.litert.support",
+    javacopts = JAVACOPTS,
     manifest = "AndroidManifest.xml",
     deps = [
         "//tflite/java:tensorflowlite_api",
