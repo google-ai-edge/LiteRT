@@ -38,6 +38,7 @@ limitations under the License.
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
@@ -313,7 +314,15 @@ absl::StatusOr<OwningOpRef<ModuleOp>> LoadSlimModel(
   // effect only before the file is open, which is why this comes first.
   weights_file.rdbuf()->pubsetbuf(nullptr, 0);
   weights_file.open(weights_path, std::ios::binary);
-  if (weights_file) {
+  if (!weights_file) {
+    // A model that ships no weights is not an error, but a weights file that
+    // is there and will not open is: injecting nothing would hand back a
+    // module whose arguments are still unbound.
+    if (llvm::sys::fs::exists(weights_path)) {
+      return absl::InternalError(absl::StrCat("Failed to open weights file '",
+                                              weights_path, "'"));
+    }
+  } else {
     weights_file.seekg(0, std::ios::end);
     std::streampos end_pos = weights_file.tellg();
     if (end_pos < 0) {
