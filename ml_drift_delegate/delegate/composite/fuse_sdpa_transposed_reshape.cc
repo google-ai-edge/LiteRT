@@ -191,14 +191,18 @@ absl::Status FuseSdpaTransposedReshape(::ml_drift::ir::IrModel* model) {
       const auto* out_tensor = model->tensor(out_id);
       if (out_tensor &&
           IsFlattenedDecodeShape(mid_shape, out_tensor->desc.GetBHWCShape())) {
+        // Save op IDs before RemoveOp(c1_id), which erases from model->ops_
+        // and invalidates the raw IrOp* pointer c0.
+        const auto c0_id = c0->id;
+        const auto c1_id = c1->id;
         sdpa_op->outputs.clear();
         if (auto* mid_mut = model->GetMutableTensor(mid_id)) {
           mid_mut->producer.reset();
         }
         c1->outputs.clear();
         model->SetProducer(out_id, sdpa_op->id);
-        ABSL_RETURN_IF_ERROR(model->RemoveOp(c1->id));
-        ABSL_RETURN_IF_ERROR(model->RemoveOp(c0->id));
+        ABSL_RETURN_IF_ERROR(model->RemoveOp(c1_id));
+        ABSL_RETURN_IF_ERROR(model->RemoveOp(c0_id));
       }
     }
   }

@@ -178,7 +178,33 @@ void SdpaTransposedConvert(
     if (!flexbuffer_map["softcap"].IsNull()) {
       attr.softcap = flexbuffer_map["softcap"].AsFloat();
     }
+    if (!flexbuffer_map["is_causal"].IsNull()) {
+      attr.is_causal = flexbuffer_map["is_causal"].AsBool();
+    }
   }
+
+  // On Apple Metal GPUs, BuildSdpaTransposedGpuGraph dispatches fused
+  // FlashAttention prefill / FlashDecode kernels when from_cache_update is
+  // true (K/V produced by odml.cache_update). Those kernels enforce causal
+  // masking (key <= q_start + X) and active KV cache bounds (key <
+  // active_tokens) directly in registers using input4 (params) when
+  // attr.is_causal is set, whereas non-Apple backends fall back to decomposed
+  // BMM + SoftmaxReduce ops that still read the mask tensor.
+  bool skip_bool_mask_for_flash_sdpa = false;
+#ifdef __APPLE__
+  const int head_dim = q_shape.c;
+  const int q_w = q_shape.w;
+  const bool is_flash_prefill =
+      attr.is_prefill && head_dim % 4 == 0 && head_dim <= 128;
+  const bool is_flash_decode = !attr.is_prefill && q_w == 1 && head_dim == 128;
+  if (attr.is_causal && attr.from_cache_update && input4 != -1 &&
+      input3 != -1 &&
+      ir_model.tensor(input3)->desc.GetDataType() ==
+          ::ml_drift::DataType::BOOL &&
+      (is_flash_prefill || is_flash_decode)) {
+    skip_bool_mask_for_flash_sdpa = true;
+  }
+#endif  // __APPLE__
 
   ::ml_drift::ir::IrOp* sdpa = ir_model.add_op();
   sdpa->attr = std::move(attr);
@@ -186,7 +212,7 @@ void SdpaTransposedConvert(
   ir_model.AddConsumer(q_val, sdpa->id);
   ir_model.AddConsumer(k_val, sdpa->id);
   ir_model.AddConsumer(v_val, sdpa->id);
-  if (input3 != -1) {
+  if (input3 != -1 && !skip_bool_mask_for_flash_sdpa) {
     ir_model.AddConsumer(input3, sdpa->id);
   }
   if (input4 != -1) {

@@ -37,6 +37,11 @@ struct SdpaTransposedAttributes {
   // True if key and value caches were produced by `odml.cache_update`
   // (AddValuesToCache) with packed 4D GPU layouts.
   bool from_cache_update = false;
+  // True if causal masking (key <= q_start + query_idx) should be enforced
+  // implicitly in registers (e.g. when a causal BOOL mask is pruned for Flash
+  // SDPA or `is_causal` attribute is set). When false and `mask` is absent,
+  // attention is full (non-causal) over `[0, active_tokens)`.
+  bool is_causal = false;
 };
 
 class SdpaTransposedOperationParser : public TFLiteOperationParser {

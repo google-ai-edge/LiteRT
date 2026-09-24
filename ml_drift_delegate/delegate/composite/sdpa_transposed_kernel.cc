@@ -186,6 +186,16 @@ MAIN_FUNCTION($0) {
     active_tokens = param_val;
   }
 )";
+    if (!has_mask && attr.is_causal) {
+      op_code += R"(
+  float4 p_start_vec = ucl::Convert<float4>(args.params.Read(0, 0, 0, 0));
+  int start_val = (int)p_start_vec.x;
+  int q_start = (start_val > 0 && start_val < active_tokens)
+                    ? start_val
+                    : max(0, active_tokens - args.q.Width());
+  active_tokens = min(active_tokens, q_start + X + 1);
+)";
+    }
   }
 
   absl::StrAppend(&op_code, R"(
@@ -591,15 +601,38 @@ MAIN_FUNCTION($0) {
   }
 
   // 3. Absolute token positions and query staging in threadgroup memory.
-  absl::StrAppend(&op_code, R"(
+  // When a fixed-width prefill signature (dst_w, e.g. 1024) processes a
+  // partial chunk (active_tokens - q_start < dst_w, e.g. 128 tokens) and the
+  // BOOL mask is pruned, query columns X >= valid_w are inactive padding.
+  // Zero-fill those padded output columns and exit early for padded tiles.
+  absl::StrAppend(&op_code,
+                  "\n  int valid_w = min(dst_w, active_tokens - q_start);\n"
+                  "  if (X0 >= valid_w) {\n"
+                  "    if (tid < args.slices) {\n");
+  for (int i = 0; i < qt; ++i) {
+    absl::StrAppend(
+        &op_code, "      if (X", i, " < dst_w) {\n",
+        "        args.dst.Write(ucl::Convert<args.dst::type>(float4(0.0f)), X",
+        i, ", Y, tid);\n      }\n");
+  }
+  absl::StrAppend(&op_code, R"(    }
+    return;
+  }
+
   // Absolute positions of the query tokens handled by this threadgroup. A
-  // query token at absolute position P may attend to keys [0, P] inclusive.
+  // query token at absolute position P may attend to keys [0, P] inclusive
+  // when causal masking is enabled, or [0, active_tokens) for full attention.
 )");
+  const bool is_causal = attr.is_causal;
   for (int i = 0; i < qt; ++i) {
     absl::StrAppend(&op_code, "  int P", i, " = X", i, " + q_start;\n");
   }
-  absl::StrAppend(&op_code, "\n  int max_tokens = min(P", qt - 1,
-                  " + 1, active_tokens);\n\n");
+  if (is_causal) {
+    absl::StrAppend(&op_code, "\n  int max_tokens = min(P", qt - 1,
+                    " + 1, active_tokens);\n\n");
+  } else {
+    absl::StrAppend(&op_code, "\n  int max_tokens = active_tokens;\n\n");
+  }
   absl::StrAppend(&op_code, R"(  float inv_ln2 = 1.4426950408889634f;
 
   threadgroup half4 q_sh[)",
@@ -612,8 +645,9 @@ MAIN_FUNCTION($0) {
 )");
   for (int i = 0; i < qt; ++i) {
     absl::StrAppend(
-        &op_code, "    q_sh[", i, "][tid] = (X", i,
-        " < dst_w) ? ucl::Convert<half4>(ucl::Convert<float4>(args.q.Read(X", i,
+        &op_code, "    bool q_valid", i, " = (X", i, " < valid_w);\n",
+        "    q_sh[", i, "][tid] = q_valid", i,
+        " ? ucl::Convert<half4>(ucl::Convert<float4>(args.q.Read(X", i,
         ", Y, tid)) * inv_ln2) : half4(0.0h);\n");
   }
   absl::StrAppend(&op_code, R"(  }
@@ -637,193 +671,243 @@ MAIN_FUNCTION($0) {
   }
 
   // 5. KV buffer base addressing (Grouped-Query Attention).
+  // K layout (WeightsLayout::kOSpatialIOGroupO4I4):
+  //   [kv_heads, slices, k_o_slices, 4_keys, 4_channels] where each half4
+  //   holds 4 channels (4*c_slice..4*c_slice+3) for one key at linear index
+  //   k_head_base + c_slice * k_stride_slice + key_idx.
+  // V layout (WeightsLayout::kOSpatialIOGroupI4O4):
+  //   [kv_heads, k_o_slices, 4_keys, slices, 4_channels] where each half4
+  //   holds 4 channels (4*c_slice..4*c_slice+3) for key (g*4 + t) at linear
+  //   index v_base_head + g * v_stride_s + t.
   absl::StrAppend(&op_code, "\n  int kv_head = ",
                   (gqa_ratio > 1 ? absl::StrCat("Y / ", gqa_ratio) : "Y"),
                   ";\n  int k_head_base = kv_head * ", k_stride_head,
                   ";\n  int v_base_head = kv_head * ", v_stride_head,
                   " + tid * 4;\n\n");
 
-  // 6. Main key loop: iterate over key blocks of size kPrefillKeyBlock (128).
-  absl::StrAppend(&op_code,
-                  "  for (int key_base = 0; key_base < max_tokens; "
-                  "key_base += ",
-                  kPrefillKeyBlock, ") {\n");
-
-  // 6a. Key indexing and bounds clamping.
-  for (int j = 0; j < kt; ++j) {
-    absl::StrAppend(&op_code, "    int key", j, " = key_base + ",
-                    j * kPrefillSimdWidth, " + tid;\n");
-  }
-  for (int j = 0; j < kt; ++j) {
-    absl::StrAppend(&op_code, "    bool act", j, " = (key", j,
-                    " < active_tokens);\n");
-  }
-  absl::StrAppend(
-      &op_code,
-      "    // Inactive keys are clamped to offset 0 so the loads below\n"
-      "    // stay in bounds; their scores are forced to -inf after the "
-      "loop.\n");
-  for (int j = 0; j < kt; ++j) {
-    absl::StrAppend(&op_code, "    int kidx", j, " = k_head_base + (act", j,
-                    " ? key", j, " : 0);\n");
-  }
-  absl::StrAppend(&op_code, "\n");
-
-  // 6b. Q * K^T dot products across channel slices.
-  for (int i = 0; i < qt; ++i) {
-    for (int j = 0; j < kt; ++j) {
-      absl::StrAppend(&op_code, "    float d", i, "_", j, " = 0.0f;\n");
+  auto emit_key_block_body = [&](bool is_interior) {
+    if (is_interior) {
+      absl::StrAppend(&op_code,
+                      "    int kidx = k_head_base + key_base + tid;\n\n");
+    } else {
+      for (int j = 0; j < kt; ++j) {
+        absl::StrAppend(&op_code, "    int key", j, " = key_base + ",
+                        j * kPrefillSimdWidth, " + tid;\n");
+      }
+      for (int j = 0; j < kt; ++j) {
+        absl::StrAppend(&op_code, "    bool act", j, " = (key", j,
+                        " < active_tokens);\n");
+      }
+      for (int j = 0; j < kt; ++j) {
+        absl::StrAppend(&op_code, "    int kidx", j, " = k_head_base + (act", j,
+                        " ? key", j, " : 0);\n");
+      }
+      absl::StrAppend(&op_code, "\n");
     }
-  }
-  absl::StrAppend(&op_code, "\n    for (int c = 0; c < ", slices, "; ++c) {\n");
-  for (int j = 0; j < kt; ++j) {
-    absl::StrAppend(&op_code, "      half4 kv", j,
-                    " = ucl::Convert<half4>(args.k.Read(kidx", j, "));\n");
-  }
-  for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(&op_code, "      half4 qv", i, " = q_sh[", i, "][c];\n");
-  }
-  for (int i = 0; i < qt; ++i) {
-    for (int j = 0; j < kt; ++j) {
-      absl::StrAppend(&op_code, "      d", i, "_", j, " += (float)dot(qv", i,
-                      ", kv", j, ");\n");
-    }
-  }
-  for (int j = 0; j < kt; ++j) {
-    absl::StrAppend(&op_code, "      kidx", j, " += ", k_stride_slice, ";\n");
-  }
-  absl::StrAppend(&op_code, "    }\n");
 
-  // 6c. Optional softcapping.
-  if (has_softcap) {
-    absl::StrAppend(
-        &op_code,
-        "\n    // Q was pre-scaled by inv_ln2, so undo that before the\n"
-        "    // tanh and reapply it afterwards.\n");
+    // 6b. Q * K^T dot products across channel slices.
     for (int i = 0; i < qt; ++i) {
       for (int j = 0; j < kt; ++j) {
-        absl::StrAppend(&op_code, "    d", i, "_", j,
-                        " = (float)args.softcap * tanh((d", i, "_", j,
-                        " / inv_ln2) / (float)args.softcap) * inv_ln2;\n");
+        absl::StrAppend(&op_code, "    float d", i, "_", j, " = 0.0f;\n");
       }
     }
-  }
-
-  // 6d. Optional attention mask.
-  if (has_mask) {
-    absl::StrAppend(&op_code, "\n");
-    for (int j = 0; j < kt; ++j) {
-      absl::StrAppend(&op_code, "    int mslice", j, " = key", j, " >> 2;\n",
-                      "    int mcomp", j, " = key", j, " & 3;\n");
-    }
-    for (int i = 0; i < qt; ++i) {
+    absl::StrAppend(&op_code, "\n    for (int c = 0; c < ", slices,
+                    "; ++c) {\n");
+    if (is_interior) {
       for (int j = 0; j < kt; ++j) {
-        absl::StrAppend(
-            &op_code, "    half4 mk", i, "_", j, " = (X", i, " < dst_w && act",
-            j, ") ? ucl::Convert<half4>(args.mask.Read(X", i, ", 0, mslice", j,
-            ")) : half4(0.0h);\n", "    float mv", i, "_", j,
-            " = (float)((mcomp", j, " == 0) ? mk", i, "_", j, ".x : ((mcomp", j,
-            " == 1) ? mk", i, "_", j, ".y : ((mcomp", j, " == 2) ? mk", i, "_",
-            j, ".z : mk", i, "_", j, ".w)));\n");
+        absl::StrAppend(&op_code, "      half4 kv", j,
+                        " = ucl::Convert<half4>(args.k.Read(kidx + ",
+                        j * kPrefillSimdWidth, "));\n");
+      }
+    } else {
+      for (int j = 0; j < kt; ++j) {
+        absl::StrAppend(&op_code, "      half4 kv", j,
+                        " = ucl::Convert<half4>(args.k.Read(kidx", j, "));\n");
       }
     }
-    absl::StrAppend(&op_code, "    if (args.is_bool_mask) {\n");
+    for (int i = 0; i < qt; ++i) {
+      absl::StrAppend(&op_code, "      half4 qv", i, " = q_sh[", i, "][c];\n");
+    }
     for (int i = 0; i < qt; ++i) {
       for (int j = 0; j < kt; ++j) {
-        absl::StrAppend(&op_code, "      if (mv", i, "_", j, " < 0.5f) d", i,
-                        "_", j, " = -10000.0f;\n");
+        absl::StrAppend(&op_code, "      d", i, "_", j, " += (float)dot(qv", i,
+                        ", kv", j, ");\n");
       }
     }
-    absl::StrAppend(&op_code, "    } else {\n");
-    for (int i = 0; i < qt; ++i) {
+    if (is_interior) {
+      absl::StrAppend(&op_code, "      kidx += ", k_stride_slice, ";\n");
+    } else {
       for (int j = 0; j < kt; ++j) {
-        absl::StrAppend(&op_code, "      d", i, "_", j, " += mv", i, "_", j,
+        absl::StrAppend(&op_code, "      kidx", j, " += ", k_stride_slice,
                         ";\n");
       }
     }
     absl::StrAppend(&op_code, "    }\n");
-  }
 
-  // 6e. Causal masking (keys past current query token position are masked).
-  absl::StrAppend(&op_code, "\n");
-  for (int i = 0; i < qt; ++i) {
-    for (int j = 0; j < kt; ++j) {
-      absl::StrAppend(&op_code, "    if (!act", j, " || key", j, " > P", i,
-                      ") d", i, "_", j, " = -10000.0f;\n");
+    // 6c. Optional softcapping.
+    if (has_softcap) {
+      for (int i = 0; i < qt; ++i) {
+        for (int j = 0; j < kt; ++j) {
+          absl::StrAppend(&op_code, "    d", i, "_", j,
+                          " = (float)args.softcap * tanh((d", i, "_", j,
+                          " / inv_ln2) / (float)args.softcap) * inv_ln2;\n");
+        }
+      }
     }
-  }
 
-  // 6f. Online softmax reduction across keys.
-  absl::StrAppend(&op_code, R"(
-    // Online softmax over this key block. Each lane first reduces
-    // across the keys it owns, so the whole block costs one simd_max
-    // and one simd_sum per query.
+    // 6d. Optional attention mask & 6e. Active/causal key bounds.
+    if (!is_interior) {
+      if (has_mask) {
+        absl::StrAppend(&op_code, "\n");
+        for (int j = 0; j < kt; ++j) {
+          absl::StrAppend(&op_code, "    int mslice", j, " = key", j,
+                          " >> 2;\n", "    int mcomp", j, " = key", j,
+                          " & 3;\n");
+        }
+        for (int i = 0; i < qt; ++i) {
+          for (int j = 0; j < kt; ++j) {
+            absl::StrAppend(
+                &op_code, "    bool m_ok", i, "_", j, " = (X", i,
+                " < valid_w && act", j, ");\n", "    half4 mk", i, "_", j,
+                " = m_ok", i, "_", j, " ? ucl::Convert<half4>(args.mask.Read(X",
+                i, ", 0, mslice", j, ")) : half4(0.0h);\n", "    float mv", i,
+                "_", j, " = (float)((mcomp", j, " == 0) ? mk", i, "_", j,
+                ".x : ((mcomp", j, " == 1) ? mk", i, "_", j, ".y : ((mcomp", j,
+                " == 2) ? mk", i, "_", j, ".z : mk", i, "_", j, ".w)));\n");
+          }
+        }
+        absl::StrAppend(&op_code, "    if (args.is_bool_mask) {\n");
+        for (int i = 0; i < qt; ++i) {
+          for (int j = 0; j < kt; ++j) {
+            absl::StrAppend(&op_code, "      if (mv", i, "_", j, " < 0.5f) d",
+                            i, "_", j, " = -10000.0f;\n");
+          }
+        }
+        absl::StrAppend(&op_code, "    } else {\n");
+        for (int i = 0; i < qt; ++i) {
+          for (int j = 0; j < kt; ++j) {
+            absl::StrAppend(&op_code, "      d", i, "_", j, " += mv", i, "_", j,
+                            ";\n");
+          }
+        }
+        absl::StrAppend(&op_code, "    }\n");
+      }
+
+      absl::StrAppend(&op_code, "\n");
+      for (int i = 0; i < qt; ++i) {
+        for (int j = 0; j < kt; ++j) {
+          if (is_causal) {
+            absl::StrAppend(&op_code, "    if (!act", j, " || key", j, " > P",
+                            i, ") d", i, "_", j, " = -10000.0f;\n");
+          } else {
+            absl::StrAppend(&op_code, "    if (!act", j, ") d", i, "_", j,
+                            " = -10000.0f;\n");
+          }
+        }
+      }
+    }
+
+    // 6f. Online softmax reduction across keys.
+    for (int i = 0; i < qt; ++i) {
+      std::string local_max = absl::StrCat("d", i, "_0");
+      for (int j = 1; j < kt; ++j) {
+        local_max = absl::StrCat("max(", local_max, ", d", i, "_", j, ")");
+      }
+      absl::StrAppend(
+          &op_code, "    float m_loc", i, " = simd_max(", local_max, ");\n",
+          "    float m_n", i, " = max(m_prev", i, ", m_loc", i, ");\n",
+          "    float alp", i, " = exp2(m_prev", i, " - m_n", i, ");\n");
+      for (int j = 0; j < kt; ++j) {
+        absl::StrAppend(&op_code, "    half p", i, "_", j, " = (half)exp2(d", i,
+                        "_", j, " - m_n", i, ");\n");
+      }
+      std::string local_sum = absl::StrCat("(float)p", i, "_0");
+      for (int j = 1; j < kt; ++j) {
+        absl::StrAppend(&local_sum, " + (float)p", i, "_", j);
+      }
+      absl::StrAppend(&op_code, "    l_prev", i, " = fma(l_prev", i, ", alp", i,
+                      ", simd_sum(", local_sum, "));\n", "    m_prev", i,
+                      " = m_n", i, ";\n");
+    }
+
+    // 6g. Stage probabilities into threadgroup memory.
+    absl::StrAppend(&op_code, "\n");
+    for (int i = 0; i < qt; ++i) {
+      for (int j = 0; j < kt; ++j) {
+        absl::StrAppend(&op_code, "    p_sh[", i, "][", j * kPrefillSimdWidth,
+                        " + tid] = p", i, "_", j, ";\n");
+      }
+    }
+    absl::StrAppend(&op_code,
+                    "    simdgroup_barrier(mem_flags::mem_threadgroup);\n\n");
+
+    // 6h. P*V accumulation (channel-parallel).
+    if (is_interior) {
+      absl::StrAppend(&op_code, "    if (tid < ", slices, ") {\n");
+      for (int i = 0; i < qt; ++i) {
+        absl::StrAppend(&op_code, "      out_acc", i, " *= (float4)alp", i,
+                        ";\n");
+      }
+      absl::StrAppend(
+          &op_code, "      int vidx = v_base_head + (key_base / 4) * ",
+          v_stride_s, ";\n", "      for (int g = 0; g < ",
+          kPrefillKeyBlock / 4, "; ++g) {\n");
+    } else {
+      absl::StrAppend(
+          &op_code,
+          "    int g_end = (min(max_tokens, key_base + ", kPrefillKeyBlock,
+          ") - key_base + 3) / 4;\n", "    if (tid < ", slices, ") {\n");
+      for (int i = 0; i < qt; ++i) {
+        absl::StrAppend(&op_code, "      out_acc", i, " *= (float4)alp", i,
+                        ";\n");
+      }
+      absl::StrAppend(&op_code,
+                      "      int vidx = v_base_head + (key_base / 4) * ",
+                      v_stride_s, ";\n",
+                      "      for (int g = 0; g < g_end; ++g) {\n");
+    }
+    for (int t = 0; t < 4; ++t) {
+      absl::StrAppend(&op_code, "        half4 v", t,
+                      " = ucl::Convert<half4>(args.v.Read(vidx + ", t, "));\n");
+    }
+    absl::StrAppend(&op_code, "        int j4 = g * 4;\n");
+    for (int i = 0; i < qt; ++i) {
+      absl::StrAppend(
+          &op_code, "        out_acc", i,
+          " += float4(fma(half4(p_sh[", i, "][j4 + 0]), v0, fma(half4(p_sh[",
+          i, "][j4 + 1]), v1, fma(half4(p_sh[", i,
+          "][j4 + 2]), v2, half4(p_sh[", i, "][j4 + 3]) * v3))));\n");
+    }
+    absl::StrAppend(&op_code, "        vidx += ", v_stride_s, ";\n",
+                    "      }\n");
+    absl::StrAppend(&op_code, R"(    }
+    simdgroup_barrier(mem_flags::mem_threadgroup);
 )");
-  for (int i = 0; i < qt; ++i) {
-    std::string local_max = absl::StrCat("d", i, "_0");
-    for (int j = 1; j < kt; ++j) {
-      local_max = absl::StrCat("max(", local_max, ", d", i, "_", j, ")");
-    }
-    absl::StrAppend(
-        &op_code, "    float m_loc", i, " = simd_max(", local_max, ");\n",
-        "    float m_n", i, " = max(m_prev", i, ", m_loc", i, ");\n",
-        "    float alp", i, " = exp2(m_prev", i, " - m_n", i, ");\n");
-    for (int j = 0; j < kt; ++j) {
-      absl::StrAppend(&op_code, "    half p", i, "_", j, " = (half)exp2(d", i,
-                      "_", j, " - m_n", i, ");\n");
-    }
-    std::string local_sum = absl::StrCat("(float)p", i, "_0");
-    for (int j = 1; j < kt; ++j) {
-      absl::StrAppend(&local_sum, " + (float)p", i, "_", j);
-    }
-    absl::StrAppend(&op_code, "    l_prev", i, " = fma(l_prev", i, ", alp", i,
-                    ", simd_sum(", local_sum, "));\n", "    m_prev", i,
-                    " = m_n", i, ";\n");
-  }
+  };
 
-  // 6g. Stage probabilities into threadgroup memory.
-  absl::StrAppend(&op_code, "\n");
-  for (int i = 0; i < qt; ++i) {
-    for (int j = 0; j < kt; ++j) {
-      absl::StrAppend(&op_code, "    p_sh[", i, "][", j * kPrefillSimdWidth,
-                      " + tid] = p", i, "_", j, ";\n");
+  // 6. Main key loop: fast interior loop (when no external mask) + boundary
+  // tail.
+  absl::StrAppend(&op_code, "  int key_base = 0;\n");
+  if (!has_mask) {
+    if (is_causal) {
+      absl::StrAppend(&op_code,
+                      "  int interior_end = min(P0 + 1, max_tokens) - ",
+                      kPrefillKeyBlock, ";\n");
+    } else {
+      absl::StrAppend(&op_code, "  int interior_end = max_tokens - ",
+                      kPrefillKeyBlock, ";\n");
     }
+    absl::StrAppend(&op_code,
+                    "  for (; key_base <= interior_end; key_base += ",
+                    kPrefillKeyBlock, ") {\n");
+    emit_key_block_body(/*is_interior=*/true);
+    absl::StrAppend(&op_code, "  }\n");
   }
   absl::StrAppend(&op_code,
-                  "    simdgroup_barrier(mem_flags::mem_threadgroup);\n\n");
-
-  // 6h. P*V accumulation (channel-parallel).
-  absl::StrAppend(
-      &op_code, R"(    // P*V, channel-parallel: lane `tid` owns channels
-    // [4*tid, 4*tid+4). Groups beyond max_tokens are skipped so V
-    // is never read out of bounds.
-)",
-      "    int g_end = (min(max_tokens, key_base + ", kPrefillKeyBlock,
-      ") - key_base + 3) / 4;\n", "    if (tid < ", slices, ") {\n");
-  for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(&op_code, "      out_acc", i, " *= (float4)alp", i, ";\n");
-  }
-  absl::StrAppend(&op_code, "      int vidx = v_base_head + (key_base / 4) * ",
-                  v_stride_s, ";\n",
-                  "      for (int g = 0; g < g_end; ++g) {\n");
-  for (int t = 0; t < 4; ++t) {
-    absl::StrAppend(&op_code, "        half4 v", t,
-                    " = ucl::Convert<half4>(args.v.Read(vidx + ", t, "));\n");
-  }
-  absl::StrAppend(&op_code, "        int j4 = g * 4;\n");
-  for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(&op_code, "        out_acc", i, " += fma((float4)p_sh[", i,
-                    "][j4 + 0], (float4)v0, fma((float4)p_sh[", i,
-                    "][j4 + 1], (float4)v1, fma((float4)p_sh[", i,
-                    "][j4 + 2], (float4)v2, (float4)p_sh[", i,
-                    "][j4 + 3] * (float4)v3)));\n");
-  }
-  absl::StrAppend(&op_code, "        vidx += ", v_stride_s, ";\n", "      }\n");
-  absl::StrAppend(&op_code, R"(    }
-    simdgroup_barrier(mem_flags::mem_threadgroup);
-  }
-
-)");
+                  "  for (; key_base < max_tokens; key_base += ",
+                  kPrefillKeyBlock, ") {\n");
+  emit_key_block_body(/*is_interior=*/false);
+  absl::StrAppend(&op_code, "  }\n\n");
 
   // 7. Normalization by 1/L and global store.
   absl::StrAppend(&op_code,
@@ -836,10 +920,19 @@ MAIN_FUNCTION($0) {
   if (tid < args.slices) {
 )");
   for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(&op_code, "    if (X", i,
-                    " < dst_w) args.dst.Write(ucl::Convert<args.dst::type>("
-                    "out_acc",
-                    i, "), X", i, ", Y, tid);\n");
+    absl::StrAppend(
+        &op_code, "    if (X", i,
+        " < valid_w) {\n"
+        "      args.dst.Write(ucl::Convert<args.dst::type>(out_acc",
+        i, "), X", i,
+        ", Y, tid);\n"
+        "    } else if (X",
+        i,
+        " < dst_w) {\n"
+        "      args.dst.Write(ucl::Convert<args.dst::type>(float4(0.0f)), X",
+        i,
+        ", Y, tid);\n"
+        "    }\n");
   }
   op_code += "  }\n}\n";
 
