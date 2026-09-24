@@ -102,8 +102,8 @@ include_directories(${LITERT_GENERATED_INCLUDE_DIR})
 set(TFLITE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tflite" CACHE PATH "Path to TFLite source directory")
 set(TFLITE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/tflite_build" CACHE PATH "Path to TFLite build directory")
 
-set(TFLITE_ENABLE_XNNPACK ON CACHE BOOL "Enable XNNPACK in TFLite")
-set(TFLITE_ENABLE_GPU ON CACHE BOOL "Enable GPU in TFLite")
+option(TFLITE_ENABLE_XNNPACK "Enable XNNPACK in TFLite" ON)
+option(TFLITE_ENABLE_GPU "Enable GPU in TFLite" ON)
 if(LITERT_DISABLE_KLEIDIAI)
   set(XNNPACK_ENABLE_KLEIDIAI OFF CACHE BOOL "Disable KleidiAI in XNNPACK")
 endif()
@@ -149,8 +149,13 @@ if(CMAKE_CROSSCOMPILING)
       if(NOT HOSTCFG_RC EQUAL 0)
         message(FATAL_ERROR "Failed to configure host flatbuffers:\n${HOSTCFG_ERR}")
       endif()
+      if(NOT CMAKE_BUILD_PARALLEL_LEVEL)
+        set(_flatc_jobs 4)
+      else()
+        set(_flatc_jobs ${CMAKE_BUILD_PARALLEL_LEVEL})
+      endif()
       execute_process(
-        COMMAND ${CMAKE_COMMAND} --build . --target flatc -- -j${CMAKE_BUILD_PARALLEL_LEVEL}
+        COMMAND ${CMAKE_COMMAND} --build . --target flatc -- -j${_flatc_jobs}
         WORKING_DIRECTORY "${_root_host_flatc_dir}"
         RESULT_VARIABLE HOSTBUILD_RC
         ERROR_VARIABLE HOSTBUILD_ERR)

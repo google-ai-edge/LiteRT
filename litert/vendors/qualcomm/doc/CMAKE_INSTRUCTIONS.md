@@ -65,10 +65,10 @@ set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 ```
 
+<!-- disableFinding(LINK_RELATIVE_G3DOC) -->
 A ready-to-edit copy lives at
 [../toolchain/linux_aarch64_example_toolchain.cmake](../toolchain/linux_aarch64_example_toolchain.cmake).
 
-For the fully-supported IQ-8275 path with eSDK setup, see
-[HTP_INSTRUCTIONS.md](./HTP_INSTRUCTIONS.md) — the `linux-aarch64-iq8` preset
-wraps [../toolchain/linux_aarch64_iq8275.toolchain.cmake](../toolchain/linux_aarch64_iq8275.toolchain.cmake).
-
+For the fully-supported OpenEmbedded / Yocto Linux path with eSDK setup, see
+[HTP_INSTRUCTIONS.md](./HTP_INSTRUCTIONS.md) — the `linux-aarch64-oe-gcc11.2` preset
+wraps [../toolchain/linux_aarch64_oe_gcc11_2.toolchain.cmake](../toolchain/linux_aarch64_oe_gcc11_2.toolchain.cmake).

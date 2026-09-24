@@ -230,14 +230,15 @@ export LINUX_AARCH64_ESDK=${ESDK}
 cd ${LITERT}/litert
 
 # This takes a while to build flatc and download tensorflow
-cmake --preset linux-aarch64-iq8
-cmake --build cmake_build_linux_aarch64_8275/ --target run_model litert_runtime_c_api_shared_lib dispatch_api_qualcomm_so -j8
+cmake --preset linux-aarch64-oe-gcc11.2
+cmake --build cmake_build_linux_aarch64_oe_gcc11_2/ --target run_model litert_runtime_c_api_shared_lib dispatch_api_qualcomm_so -j8
 ```
 
-The built files are located in: -
-`${LITERT}/litert/cmake_build_linux_aarch64_8275/c/libLiteRt.so` -
-`${LITERT}/litert/cmake_build_linux_aarch64_8275/vendors/qualcomm/dispatch/libLiteRtDispatch_Qualcomm.so`
-- `${LITERT}/litert/cmake_build_linux_aarch64_8275/tools/run_model`
+The built files are located in:
+
+- `${LITERT}/litert/cmake_build_linux_aarch64_oe_gcc11_2/c/libLiteRt.so`
+- `${LITERT}/litert/cmake_build_linux_aarch64_oe_gcc11_2/vendors/qualcomm/dispatch/libLiteRtDispatch_Qualcomm.so`
+- `${LITERT}/litert/cmake_build_linux_aarch64_oe_gcc11_2/tools/run_model`
 
 Upload required QNN libraries, LiteRT files and compiled model from Linux
 workstation to IoT device.
@@ -247,9 +248,9 @@ adb push ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnSystem.so ${TEST_FOLDER}
 adb push ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnHtp.so ${TEST_FOLDER}
 adb push ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnHtp${HTP_ARCH}Stub.so ${TEST_FOLDER}
 adb push ${QAIRT}/lib/hexagon-${HEXAGON_ARCH}/unsigned/libQnnHtp${HTP_ARCH}Skel.so ${TEST_FOLDER}
-adb push ${LITERT}/litert/cmake_build_linux_aarch64_8275/c/libLiteRt.so ${TEST_FOLDER}
-adb push ${LITERT}/litert/cmake_build_linux_aarch64_8275/vendors/qualcomm/dispatch/libLiteRtDispatch_Qualcomm.so ${TEST_FOLDER}
-adb push ${LITERT}/litert/cmake_build_linux_aarch64_8275/tools/run_model ${TEST_FOLDER}
+adb push ${LITERT}/litert/cmake_build_linux_aarch64_oe_gcc11_2/c/libLiteRt.so ${TEST_FOLDER}
+adb push ${LITERT}/litert/cmake_build_linux_aarch64_oe_gcc11_2/vendors/qualcomm/dispatch/libLiteRtDispatch_Qualcomm.so ${TEST_FOLDER}
+adb push ${LITERT}/litert/cmake_build_linux_aarch64_oe_gcc11_2/tools/run_model ${TEST_FOLDER}
 ```
 
 Upload the model compiled by previous step from Linux workstation to IoT

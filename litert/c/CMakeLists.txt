@@ -302,6 +302,7 @@ set(_litert_runtime_c_api_private_archives
     # can resolve the symbol without also linking litert_cc_internal.a.
     litert_cc_internal
     tensorflow-lite
+    farmhash
     Threads::Threads
 )
 
@@ -361,13 +362,15 @@ target_link_libraries(litert_runtime_c_api_static
 )
 
 # Propagate platform GL/Metal requirements to consumers when statically linking
-if(APPLE)
-  target_link_libraries(litert_runtime_c_api_static
-      INTERFACE "-framework Metal" "-framework Foundation" "-framework OpenGL")
-elseif(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
-  find_package(OpenGL)
-  if (OpenGL_FOUND)
-    target_link_libraries(litert_runtime_c_api_static INTERFACE OpenGL::GL)
+if(LITERT_ENABLE_GPU)
+  if(APPLE)
+    target_link_libraries(litert_runtime_c_api_static
+        INTERFACE "-framework Metal" "-framework Foundation" "-framework OpenGL")
+  elseif(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
+    find_package(OpenGL)
+    if (OpenGL_FOUND)
+      target_link_libraries(litert_runtime_c_api_static INTERFACE OpenGL::GL)
+    endif()
   endif()
 endif()
 
@@ -394,12 +397,14 @@ else()
   target_link_options(litert_runtime_c_api_shared_lib PRIVATE -Wl,--no-undefined)
 endif()
 # GPU/GL dependencies by platform
-if(APPLE)
-  target_link_libraries(litert_runtime_c_api_shared_lib PRIVATE "-framework OpenGL")
-elseif(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
-  find_package(OpenGL)
-  if (OpenGL_FOUND)
-    target_link_libraries(litert_runtime_c_api_shared_lib PRIVATE OpenGL::GL)
+if(LITERT_ENABLE_GPU)
+  if(APPLE)
+    target_link_libraries(litert_runtime_c_api_shared_lib PRIVATE "-framework OpenGL")
+  elseif(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
+    find_package(OpenGL)
+    if (OpenGL_FOUND)
+      target_link_libraries(litert_runtime_c_api_shared_lib PRIVATE OpenGL::GL)
+    endif()
   endif()
 endif()
 if(LITERT_PLATFORM_ANDROID)
