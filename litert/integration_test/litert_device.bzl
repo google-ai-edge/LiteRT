@@ -54,6 +54,7 @@ def hidden_test_tags():
 #         target,
 #         run_as = "odml-device-lab",
 #         data = [],
+#         libs = [],
 #         exec_args = [],
 #         exec_env_vars = [],
 #         dimensions = {}):
@@ -64,6 +65,21 @@ def hidden_test_tags():
 #     }
 #
 #     push_files_list = []
+#
+#     for lib_target in libs:
+#         lib_target_split = lib_target.split(":")
+#         if len(lib_target_split) != 2:
+#             fail("Lib inputs must include a colon even if relative label")
+#         lib_id = lib_target_split[-1]
+#         files[lib_id] = [lib_target]
+#
+#         # Push shared libraries into their parent directory (trailing '/') so
+#         # AndroidFilePusherDecorator (with prepare_des_dir_when_src_is_file=true)
+#         # preserves the actual output .so filename regardless of the Bazel target name.
+#         push_files_list.append("{id}:{loc}/".format(
+#             id = lib_id,
+#             loc = device_rlocation(lib_target, get_parent = True),
+#         ))
 #
 #     for data_target in data:
 #         data_target_split = data_target.split(":")
@@ -177,7 +193,8 @@ def litert_device_exec(
             name = name + remote_suffix,
             target = target,
             run_as = backend.mh_user,
-            data = data + backend.libs,
+            data = data,
+            libs = backend.libs,
             exec_args = exec_args,
             exec_env_vars = backend.env_paths,
             dimensions = backend.default_mh_device,
