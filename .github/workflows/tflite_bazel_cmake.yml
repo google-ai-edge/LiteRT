@@ -93,8 +93,14 @@ jobs:
           pyenv install -s 3.11
           pyenv global 3.11
           echo "PYENV_ROOT=/pyenv" >> "$GITHUB_ENV"
-          echo "/pyenv/shims" >> "$GITHUB_PATH"
+          # In GHA, each echo to GITHUB_PATH prepends to PATH.
+          # To achieve PATH=/pyenv/shims:/pyenv/bin:... matching Kokoro:
           echo "/pyenv/bin" >> "$GITHUB_PATH"
+          echo "/pyenv/shims" >> "$GITHUB_PATH"
+          # Ensure HOME is /root so Bazelisk downloads to /root/.cache/bazelisk
+          # matching Kokoro Docker environment:
+          echo "HOME=/root" >> "$GITHUB_ENV"
+          echo "BAZELISK_HOME=/root/.cache/bazelisk" >> "$GITHUB_ENV"
 
       - name: Configure Bazel
         shell: bash
@@ -118,50 +124,19 @@ jobs:
         # LINT.IfChange(tflite_bazel_targets)
         shell: bash
         run: |
+          echo "PATH is: $PATH"
+          echo "HOME is: $HOME"
           bazel build \
             --config=public_cache \
             --config=bulk_build_cpu \
             --repo_env=USE_PYWRAP_RULES=True \
             --repo_env=HERMETIC_PYTHON_VERSION=3.11 \
-            --execution_log_json_file=/tmp/gha_exec.json \
             -- \
-            //tflite/converter:flatbuffer_translate || true
-
-          python3 -c "
-          import json
-          with open('/tmp/gha_exec.json', 'r') as f:
-              for i, line in enumerate(f):
-                  if 'command_line_flags.cc' in line and 'commandArgs' in line:
-                      print(f'GHA command_line_flags line: {i+1}')
-                      break
-          "
-          python3 -c "
-          with open('/tmp/gha_exec.json', 'r') as f:
-              for line in f:
-                  if 'command_line_flags.cc' in line and 'commandArgs' in line:
-                      print('=== GHA command_line_flags action ===')
-                      print(line[:500])
-                      for _ in range(100):
-                          l = next(f)
-                          print(l, end='')
-                          if '\"platform\"' in l:
-                              break
-                      break
-          "
-          python3 -c "
-          with open('/tmp/gha_exec.json', 'r') as f:
-              for line in f:
-                  if 'command_line_flags.cc' in line and 'commandArgs' in line:
-                      for l in f:
-                          if '\"runner\":' in l or '\"cacheHit\":' in l or '\"targetLabel\":' in l or '\"digest\":' in l:
-                              print(l, end='')
-                              if '\"digest\":' in l:
-                                  for _ in range(6):
-                                      print(next(f), end='')
-                                  break
-                      break
-          "
-          rm -f /tmp/gha_exec.json
+            //tflite:tensorflowlite \
+            //tflite/c:tensorflowlite_c \
+            //tflite/tools/benchmark:benchmark_model \
+            //tflite/converter:flatbuffer_translate
+        # LINT.ThenChange(../ci/run_bazel_test.sh:tflite_bazel_targets)
         # LINT.ThenChange(../ci/run_bazel_test.sh:tflite_bazel_targets)
 
       - name: Configure TFLite with CMake
