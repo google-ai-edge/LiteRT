@@ -7,40 +7,42 @@ cmake_minimum_required(VERSION 3.20)
 
 message(STATUS "Configuring Broadcom BNE support")
 
-set(_bstorm_so "${BSTORM_PREBUILT_DIR}/libbstorm_core.so")
-if(NOT EXISTS "${_bstorm_so}")
-  message(FATAL_ERROR
-    "libbstorm_core.so not found at ${_bstorm_so}.\n"
-    "  Supply via -DBSTORM_PREBUILT_DIR=<dir> or -DBSTORM_PREBUILT_URL=<url>")
-endif()
-
-if(BSTORM_HEADERS_DIR AND EXISTS "${BSTORM_HEADERS_DIR}")
-  set(_bstorm_inc "${BSTORM_HEADERS_DIR}")
-else()
-  set(_bstorm_inc "${CMAKE_CURRENT_SOURCE_DIR}/include")
-  if(NOT EXISTS "${_bstorm_inc}/bstorm_init.h")
-    message(FATAL_ERROR
-      "BSTORM headers not found.\n"
-      "  Supply via -DBSTORM_HEADERS_DIR=<dir> or -DBSTORM_HEADERS_URL=<url>")
-  endif()
-endif()
-
 set(LITERT_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 set(LITERT_REPO_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
 
-add_library(bstorm_core_shared SHARED IMPORTED GLOBAL)
-set_target_properties(bstorm_core_shared PROPERTIES
-  IMPORTED_LOCATION "${_bstorm_so}")
-target_include_directories(bstorm_core_shared INTERFACE
+if(NOT BSTORM_CORE_SOURCE_DIR)
+  set(BSTORM_CORE_SOURCE_DIR "${LITERT_REPO_ROOT_DIR}/../bstorm/core")
+endif()
+
+if(NOT EXISTS "${BSTORM_CORE_SOURCE_DIR}/CMakeLists.txt")
+  message(FATAL_ERROR
+    "BSTORM core source not found at ${BSTORM_CORE_SOURCE_DIR}.\n"
+    "  Supply via -DBSTORM_CORE_SOURCE_DIR=<dir>")
+endif()
+
+if(NOT DEFINED BSTORM_CHIP OR NOT DEFINED BSTORM_CHIP_REV OR NOT DEFINED BSTORM_BSTM_REV)
+  message(FATAL_ERROR
+    "BSTORM_CHIP, BSTORM_CHIP_REV, and BSTORM_BSTM_REV must all be set, e.g.\n"
+    "  -DBSTORM_CHIP=74110 -DBSTORM_CHIP_REV=b0 -DBSTORM_BSTM_REV=2003")
+endif()
+
+add_subdirectory("${BSTORM_CORE_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/core_build")
+
+add_library(bstorm_core_shared SHARED "${LITERT_SOURCE_DIR}/c/empty.cc")
+set_target_properties(bstorm_core_shared PROPERTIES OUTPUT_NAME bstorm_core)
+target_include_directories(bstorm_core_shared PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${LITERT_REPO_ROOT_DIR}
   ${CMAKE_BINARY_DIR}/include
-  ${_bstorm_inc}
-  ${_bstorm_inc}/core
-  ${_bstorm_inc}/src
+  ${BSTORM_CORE_SOURCE_DIR}/include
+  ${BSTORM_CORE_SOURCE_DIR}/src/core
+  ${BSTORM_CORE_SOURCE_DIR}/src
 )
+target_link_libraries(bstorm_core_shared PUBLIC bstorm_core_unified)
 
-add_subdirectory("${LITERT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/litert_build" EXCLUDE_FROM_ALL)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  add_subdirectory("${LITERT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/litert_build" EXCLUDE_FROM_ALL)
+endif()
 
 add_compile_options(
   -Wno-deprecated-declarations
