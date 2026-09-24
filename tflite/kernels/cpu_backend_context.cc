@@ -27,7 +27,6 @@ limitations under the License.
 
 #include "public/gemmlowp.h"
 #include "ruy/context.h"  // from @ruy
-#include "ruy/path.h"  // from @ruy
 #include "tflite/core/c/common.h"
 #include "tflite/core/macros.h"
 #include "tflite/external_cpu_backend_context.h"
