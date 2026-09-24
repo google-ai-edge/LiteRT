@@ -950,6 +950,21 @@ absl::Status BuildSdpaTransposedGpuGraph(
     return model_builder->UpdateOutputTensor(dst, output_id);
   }
 
+  const auto q_shape = q.tensor_desc.GetBHWCShape();
+  const auto k_shape = k.tensor_desc.GetBHWCShape();
+  if (k_shape.h <= 0 || q_shape.h < k_shape.h || q_shape.h % k_shape.h != 0) {
+    return absl::InvalidArgumentError(
+        "Query heads must be a positive multiple of KV heads.");
+  }
+  const int gqa_ratio = q_shape.h / k_shape.h;
+
+  ::ml_drift::GpuModelBuilder::TensorHandle q_for_bmm1 = q;
+  if (gqa_ratio > 1) {
+    q_for_bmm1 = model_builder->Reshape(
+        q, ::ml_drift::BHWC(q_shape.b, k_shape.h, gqa_ratio * q_shape.w,
+                            q_shape.c));
+  }
+
   ::ml_drift::GpuModelBuilder::TensorHandle logits;
   if (attr.from_cache_update) {
     ::ml_drift::WeightsDescription bmm1_desc = attr.bmm1_weights.desc;
@@ -966,8 +981,9 @@ absl::Status BuildSdpaTransposedGpuGraph(
     ABSL_ASSIGN_OR_RETURN(
         logits,
         model_builder->FullyConnectedExternalWeights(
-            q, bmm1_external_weights, /*biases=*/nullptr, /*src_exp=*/nullptr,
-            bmm1_runtime_check, param_desc ? &param_tensor : nullptr));
+            q_for_bmm1, bmm1_external_weights, /*biases=*/nullptr,
+            /*src_exp=*/nullptr, bmm1_runtime_check,
+            param_desc ? &param_tensor : nullptr));
   } else {
     ::ml_drift::BatchedMatMulAttributes bmm1_attr;
     bmm1_attr.transpose_left = false;
@@ -978,8 +994,8 @@ absl::Status BuildSdpaTransposedGpuGraph(
     }
     ABSL_ASSIGN_OR_RETURN(
         logits, model_builder->BatchedMatMul(
-                    q, k, bmm1_attr, /*src_exp=*/nullptr, bmm1_runtime_check,
-                    param_desc ? &param_tensor : nullptr));
+                    q_for_bmm1, k, bmm1_attr, /*src_exp=*/nullptr,
+                    bmm1_runtime_check, param_desc ? &param_tensor : nullptr));
   }
 
   if (attr.softcap.has_value() && *attr.softcap > 0.0f) {
@@ -991,6 +1007,14 @@ absl::Status BuildSdpaTransposedGpuGraph(
   }
 
   if (mask_desc != nullptr) {
+    const auto mask_shape = mask.tensor_desc.GetBHWCShape();
+    const bool reshape_logits_for_mask =
+        gqa_ratio > 1 && (mask_shape.h != 1 || mask_shape.w != 1);
+    if (reshape_logits_for_mask) {
+      logits = model_builder->Reshape(
+          logits,
+          ::ml_drift::BHWC(q_shape.b, q_shape.h, q_shape.w, k_shape.w));
+    }
     if (mask.tensor_desc.GetDataType() == ::ml_drift::DataType::BOOL) {
       ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::BHWC>,
                          ::ml_drift::DataType::FLOAT32>
@@ -1004,6 +1028,11 @@ absl::Status BuildSdpaTransposedGpuGraph(
       logits = model_builder->SelectV2(mask, logits, neg_val);
     } else {
       logits = model_builder->Add(logits, mask);
+    }
+    if (reshape_logits_for_mask) {
+      logits = model_builder->Reshape(
+          logits, ::ml_drift::BHWC(q_shape.b, k_shape.h, gqa_ratio * q_shape.w,
+                                   k_shape.w));
     }
   }
 
