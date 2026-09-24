@@ -714,7 +714,10 @@ def litert_accelerator_library(
             shared_lib_name = shared_lib_name,
             user_link_flags = gpu_accelerator_exported_symbols_linkopt() + [
                 "-Wl,-soname=" + shared_lib_name,
-            ] + litert_android_linkopts(),
+                "-Wl,--no-as-needed",
+            ] + litert_android_linkopts() + [
+                "-Wl,--as-needed",
+            ],
             visibility = [
                 "//third_party/odml/litert:__subpackages__",
                 "//litert:litert_internal_users",
