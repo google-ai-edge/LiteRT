@@ -26,10 +26,13 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "xnnpack.h"  // from @XNNPACK
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/backends/xnnpack/arithmetic.h"
+#include "tensor/backends/xnnpack/conversion.h"
+#include "tensor/backends/xnnpack/graph.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
@@ -287,6 +290,57 @@ TEST(Gemma4GraphTest, SingleKVHeadAttentionTest) {
               Pointwise(FloatNear(1e-4f),
                         {0.3220783f, 0.7085721f, 1.0950661f, 1.4815600f,
                          0.3003760f, 0.6974834f, 1.0945907f, 1.4916979f}));
+}
+
+TEST(Gemma4GraphTest, SingleKvHeadSupportsConsistentArithmetic) {
+  Config config = Config::E4B();
+  config.num_heads = 2;
+  config.num_kv_heads = 1;
+  config.head_dim = 4;
+  config.embed_dim = 4;
+  const auto weights = CreateDefaultWeights();
+
+  // Cover one-token and multi-token prefill, then decode with cached history.
+  for (const auto& [seq_len, cache_len] :
+       {std::pair{1, 0}, std::pair{3, 0}, std::pair{1, 2}}) {
+    SCOPED_TRACE(::testing::Message()
+                 << "seq_len=" << seq_len << ", cache_len=" << cache_len);
+    XnnTensor input({.type = Type::kFP32, .shape = {1, seq_len, 4}});
+    XnnTensor mask(
+        {.type = Type::kFP32, .shape = {1, 1, seq_len, seq_len + cache_len}});
+    XnnTensor cos(
+        {.type = Type::kFP32, .shape = {1, 1, seq_len, 4}, .buffer = 1.0f});
+    XnnTensor sin(
+        {.type = Type::kFP32, .shape = {1, 1, seq_len, 4}, .buffer = 0.0f});
+    XnnTensor key_cache = XnnTensor::Invalid();
+    XnnTensor value_cache = XnnTensor::Invalid();
+    if (cache_len > 0) {
+      key_cache =
+          XnnTensor({.type = Type::kFP32, .shape = {1, 1, cache_len, 4}});
+      value_cache =
+          XnnTensor({.type = Type::kFP32, .shape = {1, 1, cache_len, 4}});
+    }
+    XnnTensor eps(
+        {.type = Type::kFP32, .shape = {1}, .buffer = config.rms_norm_eps});
+    const XnnTensor no_shared_kv = TensorHandle::Invalid();
+    auto attention = Attention(input, mask, cos, sin, key_cache, value_cache,
+                               no_shared_kv, no_shared_kv, config, weights,
+                               "attn", /*is_global=*/false, eps);
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto graph, BuildXnnpackGraph({attention.output, attention.key_cache,
+                                       attention.value_cache}));
+
+    // This mode preserves an explicit Tile's broadcast, which fails runtime
+    // creation. Implicit BatchMatMul broadcasting must work without that
+    // optimizer rewrite, as well as in the default runner tests above.
+    xnn_runtime_t raw_runtime = nullptr;
+    const auto status = xnn_create_runtime_v3(
+        graph->GetSubgraph(), /*weights_cache=*/nullptr, /*threadpool=*/nullptr,
+        XNN_FLAG_SLOW_CONSISTENT_ARITHMETIC, &raw_runtime);
+    XnnpackRunner::RuntimePtr runtime(raw_runtime);
+    ASSERT_EQ(status, xnn_status_success);
+    EXPECT_EQ(xnn_reshape_runtime(runtime.get()), xnn_status_success);
+  }
 }
 
 // Grouped-Query Attention: specifically testing the per-head Slice -> Tile ->
