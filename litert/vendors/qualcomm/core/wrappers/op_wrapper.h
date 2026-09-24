@@ -100,6 +100,16 @@ class OpWrapper final {
   QnnOpCode op_code_{QnnOpCode::kUnknown};
 };
 
+bool IsElementWiseLess(const OpWrapper& op);
+
+bool IsElementWiseGreaterEqual(const OpWrapper& op);
+
+bool IsElementWiseOr(const OpWrapper& op);
+
+bool IsElementWiseNotEqual(const OpWrapper& op);
+
+bool IsElementWiseAnd(const OpWrapper& op);
+
 bool IsElementWiseMultiply(const OpWrapper& op);
 
 bool IsElementWiseAdd(const OpWrapper& op);

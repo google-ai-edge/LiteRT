@@ -17,6 +17,7 @@
 #include "litert/vendors/qualcomm/core/builders/cast_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/concatenation_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/pack_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/reshape_op_builder.h"
@@ -1902,6 +1903,143 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
     new_ops.clear();
   }
   return 1;
+}
+
+size_t OptimizeVisionMHA(std::function<bool(OpWrapper&)> validate_op_config,
+                         std::vector<OpWrapper>& ops, size_t start_index,
+                         TensorPool& tensor_pool, size_t pattern_size) {
+  constexpr size_t kQTranspose = 0;
+  constexpr size_t kKQuantize = 1;
+  constexpr size_t kKTranspose = 2;
+  constexpr size_t kKReshape = 3;
+  constexpr size_t kVTranspose = 4;
+  constexpr size_t kVReshape = 5;
+  constexpr size_t kQReshape = 6;
+  constexpr size_t kQKMatMul = 7;
+  constexpr size_t kQKReshape = 8;
+  constexpr size_t kSoftmax = 9;
+  constexpr size_t kSoftmaxReshape = 10;
+  constexpr size_t kContextMatMul = 11;
+  constexpr size_t kContextReshape = 12;
+  constexpr size_t kOutputTranspose = 13;
+  constexpr size_t kOutputQuantize = 14;
+  constexpr size_t kOutputReshape = 15;
+  constexpr size_t kPatternSize = 16;
+  constexpr uint32_t kHeadAxis = 2;
+  constexpr uint32_t kNumHeads = 12;
+
+  if (pattern_size != kPatternSize) {
+    QNN_LOG_WARNING("[G2G] Vision MHA: unsupported pattern size %zu.",
+                    pattern_size);
+    return 1;
+  }
+  QNN_LOG_INFO("[G2G] Vision MHA pattern matched at op %zu; validating.",
+               start_index);
+
+  const auto& q_transpose = ops[start_index + kQTranspose];
+  const auto& k_quantize = ops[start_index + kKQuantize];
+  const auto& k_transpose = ops[start_index + kKTranspose];
+  const auto& k_reshape = ops[start_index + kKReshape];
+  const auto& v_transpose = ops[start_index + kVTranspose];
+  const auto& v_reshape = ops[start_index + kVReshape];
+  const auto& q_reshape = ops[start_index + kQReshape];
+  const auto& qk_matmul = ops[start_index + kQKMatMul];
+  const auto& qk_reshape = ops[start_index + kQKReshape];
+  const auto& softmax = ops[start_index + kSoftmax];
+  const auto& softmax_reshape = ops[start_index + kSoftmaxReshape];
+  const auto& context_matmul = ops[start_index + kContextMatMul];
+  const auto& context_reshape = ops[start_index + kContextReshape];
+  const auto& output_transpose = ops[start_index + kOutputTranspose];
+  const auto& output_quantize = ops[start_index + kOutputQuantize];
+  const auto& output_reshape = ops[start_index + kOutputReshape];
+  const auto& q_input = q_transpose.GetInputTensor(0);
+  const auto& k_input = k_quantize.GetInputTensor(0);
+  const auto& v_input = v_transpose.GetInputTensor(0);
+
+  if (q_input.GetRank() != 4 || k_input.GetRank() != 4 ||
+      v_input.GetRank() != 4 || q_input.GetDimensions() != k_input.GetDimensions() ||
+      q_input.GetDimensions() != v_input.GetDimensions() ||
+      q_input.GetDimension(kHeadAxis) != kNumHeads ||
+      q_transpose.GetOutputTensor(0) != q_reshape.GetInputTensor(0) ||
+      k_quantize.GetOutputTensor(0) != k_transpose.GetInputTensor(0) ||
+      k_transpose.GetOutputTensor(0) != k_reshape.GetInputTensor(0) ||
+      v_transpose.GetOutputTensor(0) != v_reshape.GetInputTensor(0) ||
+      q_reshape.GetOutputTensor(0) != qk_matmul.GetInputTensor(0) ||
+      k_reshape.GetOutputTensor(0) != qk_matmul.GetInputTensor(1) ||
+      qk_matmul.GetOutputTensor(0) != qk_reshape.GetInputTensor(0) ||
+      qk_reshape.GetOutputTensor(0) != softmax.GetInputTensor(0) ||
+      softmax.GetOutputTensor(0) != softmax_reshape.GetInputTensor(0) ||
+      softmax_reshape.GetOutputTensor(0) != context_matmul.GetInputTensor(0) ||
+      v_reshape.GetOutputTensor(0) != context_matmul.GetInputTensor(1) ||
+      context_matmul.GetOutputTensor(0) != context_reshape.GetInputTensor(0) ||
+      context_reshape.GetOutputTensor(0) != output_transpose.GetInputTensor(0) ||
+      output_transpose.GetOutputTensor(0) != output_quantize.GetInputTensor(0) ||
+      output_quantize.GetOutputTensor(0) != output_reshape.GetInputTensor(0)) {
+    QNN_LOG_WARNING("[G2G] Vision MHA: connectivity or shape check failed.");
+    return 1;
+  }
+
+  std::vector<OpWrapper> new_ops;
+  const auto q_heads = UnpackTensor(tensor_pool, new_ops, q_input, kHeadAxis);
+  new_ops.emplace_back(k_quantize);
+  const auto k_heads = UnpackTensor(tensor_pool, new_ops,
+                                    k_quantize.GetOutputTensor(0), kHeadAxis);
+  const auto v_heads = UnpackTensor(tensor_pool, new_ops, v_input, kHeadAxis);
+  if (q_heads.size() != kNumHeads || k_heads.size() != kNumHeads ||
+      v_heads.size() != kNumHeads) {
+    QNN_LOG_WARNING("[G2G] Vision MHA: unexpected unpack output count.");
+    return 1;
+  }
+
+  std::vector<ConstTensorWrapperRef> context_heads;
+  context_heads.reserve(kNumHeads);
+  for (uint32_t head = 0; head < kNumHeads; ++head) {
+    const auto& qk_output = tensor_pool.CloneNativeTensorFrom(
+        qk_matmul.GetOutputTensor(0),
+        {q_heads[head].get().GetDimension(0),
+         q_heads[head].get().GetDimension(1),
+         k_heads[head].get().GetDimension(1)});
+    new_ops.emplace_back(CreateMatmulOp(q_heads[head], k_heads[head], qk_output,
+                                        /*transpose_in0=*/false,
+                                        /*transpose_in1=*/true));
+    const auto& softmax_output = tensor_pool.CloneNativeTensorFrom(
+        softmax.GetOutputTensor(0), qk_output.GetDimensions());
+    new_ops.emplace_back(
+        CreateOpWithSameParams(softmax, {qk_output}, {softmax_output}));
+    const auto& context_output = tensor_pool.CloneNativeTensorFrom(
+        context_matmul.GetOutputTensor(0), q_heads[head].get().GetDimensions());
+    new_ops.emplace_back(CreateOpWithSameParams(
+        context_matmul, {softmax_output, v_heads[head]}, {context_output}));
+    context_heads.emplace_back(context_output);
+  }
+
+  auto concat_dims = q_heads[0].get().GetDimensions();
+  concat_dims[kHeadAxis] *= kNumHeads;
+  const auto& concat_output = tensor_pool.CloneNativeTensorFrom(
+      context_matmul.GetOutputTensor(0), concat_dims);
+  new_ops.emplace_back(
+      CreateConcatenationOp(context_heads, concat_output, kHeadAxis));
+  new_ops.emplace_back(
+      CreateReshapeOp(concat_output, output_transpose.GetOutputTensor(0)));
+  new_ops.emplace_back(output_quantize);
+  new_ops.emplace_back(output_reshape);
+
+  CloneNamespace(q_transpose, new_ops);
+  for (size_t index = 0; index < new_ops.size(); ++index) {
+    new_ops[index].AddSuffixToName(absl::StrCat("_vision_mha_", index));
+  }
+
+  if (!std::all_of(new_ops.begin(), new_ops.end(), validate_op_config)) {
+    QNN_LOG_WARNING("[G2G] Vision MHA: transformed ops failed validation.");
+    return 1;
+  }
+  ops.erase(ops.begin() + start_index,
+            ops.begin() + start_index + pattern_size);
+  ops.insert(ops.begin() + start_index,
+             std::make_move_iterator(new_ops.begin()),
+             std::make_move_iterator(new_ops.end()));
+  QNN_LOG_INFO("[G2G] Vision MHA: transformed 12 heads to single-head ops.");
+  return new_ops.size();
 }
 
 }  // namespace qnn

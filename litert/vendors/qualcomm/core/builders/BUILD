@@ -97,6 +97,19 @@ cc_library(
 )
 
 cc_library(
+    name = "rotary_embedding_op_builder",
+    srcs = ["rotary_embedding_op_builder.cc"],
+    hdrs = ["rotary_embedding_op_builder.h"],
+    deps = [
+        ":op_builder",
+        "//litert/vendors/qualcomm/core:op_code",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
     name = "fully_connected_op_builder",
     srcs = ["fully_connected_op_builder.cc"],
     hdrs = ["fully_connected_op_builder.h"],
