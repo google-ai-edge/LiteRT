@@ -17,6 +17,7 @@
 package com.google.ai.edge.litert
 
 import android.content.res.AssetManager
+import androidx.annotation.VisibleForTesting
 
 /** The type of a tensor, including its element type and layout. */
 data class TensorType
@@ -334,13 +335,44 @@ private constructor(
   }
 
   /** Options to specify hardware acceleration for compiling a model. */
-  class Options constructor(internal val accelerators: Set<Accelerator>) {
+  class Options constructor(private val accelerators: Set<Accelerator>) {
 
     constructor(vararg accelerators: Accelerator) : this(setOf(*accelerators)) {}
+
+    private var autoFallbackToCpu: Boolean = true
 
     var cpuOptions: CpuOptions? = null
     var gpuOptions: GpuOptions? = null
     var qualcommOptions: QualcommOptions? = null
+
+    /**
+     * Disables automatically fall back to CPU when the accelerator is not available. The default is
+     * true.
+     *
+     * @return The options.
+     * @suppress
+     */
+    @VisibleForTesting(VisibleForTesting.NONE)
+    fun disableAutoFallbackToCpu(): Options {
+      this.autoFallbackToCpu = false
+      return this
+    }
+
+    /**
+     * Returns the set of accelerators for the options.
+     *
+     * @return The set of accelerators.
+     * @suppress
+     */
+    @VisibleForTesting(VisibleForTesting.PACKAGE_PRIVATE)
+    fun getAccelerators(): Set<Accelerator> {
+      // If NPU is the only accelerator, CPU is added to support partially compiled models.
+      // TODO(niuchl): Document this behavior in the AOT flow.
+      if (autoFallbackToCpu && accelerators.size == 1 && accelerators.first() == Accelerator.NPU) {
+        return setOf(Accelerator.NPU, Accelerator.CPU)
+      }
+      return accelerators
+    }
 
     companion object {
       @JvmStatic val CPU = Options(Accelerator.CPU)
@@ -511,14 +543,7 @@ private constructor(
       envManaged: Boolean = optionalEnv == null,
     ): CompiledModel {
       val env = optionalEnv ?: Environment.create()
-      val accelerators =
-        if (options.accelerators.size == 1 && options.accelerators.first() == Accelerator.NPU) {
-          // If NPU is the only accelerator, CPU is added to support partially compiled models.
-          // TODO(niuchl): Document this behavior in the AOT flow.
-          setOf(Accelerator.NPU, Accelerator.CPU)
-        } else {
-          options.accelerators
-        }
+      val accelerators = options.getAccelerators()
 
       val cpuOptionsMap = options.cpuOptions?.toMap() ?: mapOf()
       val gpuOptionsMap = options.gpuOptions?.toMap() ?: mapOf()
@@ -548,14 +573,7 @@ private constructor(
       envManaged: Boolean = optionalEnv == null,
     ): CompiledModel {
       val env = optionalEnv ?: Environment.create()
-      val accelerators =
-        if (options.accelerators.size == 1 && options.accelerators.first() == Accelerator.NPU) {
-          // If NPU is the only accelerator, CPU is added to support partially compiled models.
-          // TODO(niuchl): Document this behavior in the AOT flow.
-          setOf(Accelerator.NPU, Accelerator.CPU)
-        } else {
-          options.accelerators
-        }
+      val accelerators = options.getAccelerators()
 
       val cpuOptionsMap = options.cpuOptions?.toMap() ?: mapOf()
       val gpuOptionsMap = options.gpuOptions?.toMap() ?: mapOf()
