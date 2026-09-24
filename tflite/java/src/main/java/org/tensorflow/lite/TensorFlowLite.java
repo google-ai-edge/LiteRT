@@ -34,19 +34,42 @@ public final class TensorFlowLite {
   // apply the parameters.
   private static final Logger logger = Logger.getLogger(TensorFlowLite.class.getName());
 
-  private static final String[][] TFLITE_RUNTIME_LIBNAMES =
-      new String[][] {
-        // We load the first library that we find in each group.
-        new String[] {
-          // Regular TF Lite.
-          "tensorflowlite_jni", // Full library, including experimental features.
-          "tensorflowlite_jni_stable", // Subset excluding experimental features.
-        },
-        new String[] {
-          // TF Lite from system.
-          "tensorflowlite_jni_gms_client"
-        }
-      };
+  public static final String CUSTOM_APPLICATION_LIBRARY_NAME_PROPERTY =
+      "org.tensorflow.lite.custom_application_library_name";
+
+  public static final String CUSTOM_SYSTEM_LIBRARY_NAME_PROPERTY =
+      "org.tensorflow.lite.custom_system_library_name";
+
+  private static final String[][] tfliteRuntimeLibnames = initRuntimeLibNames();
+
+  private static String[] prependIfNotNull(String custom, String[] defaults) {
+    if (custom == null) {
+      return defaults;
+    }
+    String[] result = new String[defaults.length + 1];
+    result[0] = custom;
+    System.arraycopy(defaults, 0, result, 1, defaults.length);
+    return result;
+  }
+
+  private static String[][] initRuntimeLibNames() {
+    // We load the first library that we find in each group.
+    return new String[][] {
+      prependIfNotNull(
+          System.getProperty(CUSTOM_APPLICATION_LIBRARY_NAME_PROPERTY),
+          new String[] {
+            // Regular TF Lite.
+            "tensorflowlite_jni", // Full library, including experimental features.
+            "tensorflowlite_jni_stable" // Subset excluding experimental features.
+          }),
+      prependIfNotNull(
+          System.getProperty(CUSTOM_SYSTEM_LIBRARY_NAME_PROPERTY),
+          new String[] {
+            // TF Lite from system.
+            "tensorflowlite_jni_gms_client"
+          })
+    };
+  }
 
   private static final Throwable LOAD_LIBRARY_EXCEPTION;
   private static volatile boolean isInit = false;
@@ -57,7 +80,7 @@ public final class TensorFlowLite {
     // deps into their own custom native library, so it's not an error if the default library names
     // can't be loaded.
     Throwable loadLibraryException = null;
-    for (String[] group : TFLITE_RUNTIME_LIBNAMES) {
+    for (String[] group : tfliteRuntimeLibnames) {
       for (String libName : group) {
         try {
           System.loadLibrary(libName);
