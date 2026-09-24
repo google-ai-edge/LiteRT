@@ -797,6 +797,32 @@ cc_library(
 )
 
 cc_library(
+    name = "qkv_norm_rope",
+    testonly = True,
+    hdrs = ["qkv_norm_rope.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        ":reference_evaluator",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_rng",
+        "//litert/core/model",
+        "//litert/test:simple_buffer",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/backends/tflite:arithmetic_tflite",
+        "//tflite/types:half",
+        "@com_google_absl//absl/strings:string_view",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_library(
     name = "swiglu",
     testonly = True,
     hdrs = ["swiglu.h"],
@@ -838,6 +864,7 @@ cc_library(
         ":no_op",
         ":pad",
         ":pooling",
+        ":qkv_norm_rope",
         ":reduction",
         ":reshape",
         ":sdpa",

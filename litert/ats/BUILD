@@ -42,6 +42,7 @@ litert_define_ats(
         "OneHot",  # XNNPACK does not support OneHot
         "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
+        "QkvNormRope",  # XNNPACK does not support QkvNormRope composite op
         "Swiglu",  # XNNPACK does not support SwiGLU op
         "SelectV2",  # XNNPACK does not support SelectV2
         "tfl\\.floor_div",  # XNNPACK does not support FloorDiv
@@ -242,6 +243,7 @@ litert_define_ats(
         "BatchMatmul.*3d",  # ATS generator forces 1xB broadcast on 3D BatchMatmul
         "BatchMatmul.*4d",  # ATS generator forces 1xB broadcast on 4D BatchMatmul
         "Swiglu.*3d_f(16|32)<(?!1x)",  # GPU accelerator does not support SwiGLU with batch > 1
+        "QkvNormRope.*4d_f(16|32)<(?!1x)",  # GPU accelerator does not support QkvNormRope with batch > 1
         "SelectV2",  # OpenCL SelectV2 rejects multidimensional if/else broadcasting and uses kExact on FP16-rounded f32
         "Slice",  # OpenCL Slice uses kExact byte comparison on FP16-rounded f32 buffers
     ],
@@ -314,6 +316,7 @@ litert_test(
         "--dont_register=OneHot",  # XNNPACK does not support OneHot
         "--dont_register=Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "--dont_register=SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
+        "--dont_register=QkvNormRope",  # XNNPACK does not support QkvNormRope composite op
         "--dont_register=Swiglu",  # XNNPACK does not support SwiGLU op
         "--dont_register=SelectV2",  # XNNPACK does not support SelectV2
         "--dont_register=tfl\\.floor_div",  # XNNPACK does not support FloorDiv
@@ -394,6 +397,7 @@ litert_test(
         "--dont_register=8d",
         "--dont_register=Pad.*[(][123]d",
         "--dont_register=Swiglu.*3d_f(16|32)<(?!1x)",  # Metal accelerator does not support SwiGLU with batch > 1
+        "--dont_register=QkvNormRope.*4d_f(16|32)<(?!1x)",  # Metal accelerator does not support QkvNormRope with batch > 1
     ],
     copts = commandline_flag_copts(),
     data = [
@@ -457,6 +461,7 @@ litert_test(
         "--dont_register=8d",
         "--dont_register=Pad.*[(][123]d",
         "--dont_register=Swiglu.*3d_f(16|32)<(?!1x)",  # WebGPU accelerator does not support SwiGLU with batch > 1
+        "--dont_register=QkvNormRope.*4d_f(16|32)<(?!1x)",  # WebGPU accelerator does not support QkvNormRope with batch > 1
     ],
     copts = commandline_flag_copts(),
     data = [
@@ -551,6 +556,7 @@ cc_library(
         ":compile_fixture",
         ":configure",
         ":inference_fixture",
+        ":register_qkv_norm_rope",
         ":register_sdpa",
         ":register_sdpa_transposed",
         ":register_swiglu",
@@ -815,6 +821,23 @@ cc_library(
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators:common",
         "//litert/test/generators:reshape",
+    ],
+)
+
+cc_library(
+    name = "register_qkv_norm_rope",
+    testonly = True,
+    srcs = ["register_qkv_norm_rope.cc"],
+    hdrs = ["register_qkv_norm_rope.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:qkv_norm_rope",
+        "//tflite/types:half",
     ],
 )
 
