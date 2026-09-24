@@ -447,7 +447,7 @@ std::string AbslUnparseFlag(QualcommOptions::DspEncoding dsp_encoding) {
 
 ABSL_FLAG(litert::qualcomm::QualcommOptions::GraphIOTensorMemType,
           qualcomm_graph_io_tensor_mem_type,
-          litert::qualcomm::QualcommOptions::GraphIOTensorMemType::kMemHandle,
+          litert::qualcomm::QualcommOptions::GraphIOTensorMemType::kRaw,
           "Specifies mem type to be used for input and output tensors during "
           "graph creation. Valid settings:\"raw\" and \"memhandle\"");
 

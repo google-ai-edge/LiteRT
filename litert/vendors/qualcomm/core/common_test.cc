@@ -375,15 +375,14 @@ TEST(QnnOptionTest, SetGpuPerformanceMode) {
 
 TEST(QnnOptionTest, SetGraphIOTensorMemType) {
   Options options;
-  EXPECT_EQ(options.GetGraphIOTensorMemType(),
-            GraphIOTensorMemType::kMemHandle);
-
-  options.SetGraphIOTensorMemType(GraphIOTensorMemType::kRaw);
   EXPECT_EQ(options.GetGraphIOTensorMemType(), GraphIOTensorMemType::kRaw);
 
   options.SetGraphIOTensorMemType(GraphIOTensorMemType::kMemHandle);
   EXPECT_EQ(options.GetGraphIOTensorMemType(),
             GraphIOTensorMemType::kMemHandle);
+
+  options.SetGraphIOTensorMemType(GraphIOTensorMemType::kRaw);
+  EXPECT_EQ(options.GetGraphIOTensorMemType(), GraphIOTensorMemType::kRaw);
 }
 
 TEST(QnnOptionTest, Default) {
@@ -413,8 +412,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetOptimizationLevel(),
             OptimizationLevel::kHtpOptimizeForInferenceO3);
   EXPECT_EQ(options.GetGraphPriority(), GraphPriority::kDefault);
-  EXPECT_EQ(options.GetGraphIOTensorMemType(),
-            GraphIOTensorMemType::kMemHandle);
+  EXPECT_EQ(options.GetGraphIOTensorMemType(), GraphIOTensorMemType::kRaw);
   const CustomOpPackage& custom_op_package = options.GetCustomOpPackage();
   EXPECT_TRUE(custom_op_package.name.empty());
   EXPECT_TRUE(custom_op_package.interface_provider.empty());
