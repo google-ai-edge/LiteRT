@@ -314,6 +314,13 @@ absl::Status ModelFactory::Build() {
         t.quantization = std::make_unique<tflite::QuantizationParametersT>();
         t.quantization->scale = pcq->scales;
         t.quantization->zero_point = pcq->zero_points;
+        // Tensor API permits a shared zero point for per-channel scales.
+        // TFLite requires both arrays to have the same length. Expand only the
+        // serialized metadata, leaving the authoring tensor unchanged.
+        if (pcq->zero_points.size() == 1 && pcq->scales.size() > 1) {
+          t.quantization->zero_point.resize(pcq->scales.size(),
+                                            pcq->zero_points.front());
+        }
         t.quantization->quantized_dimension = pcq->quantized_dimension;
       } else if (auto bwq = tensor_info.quantization
                                 ->As<const BlockwiseQuantization>();

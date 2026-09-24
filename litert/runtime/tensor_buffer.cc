@@ -96,10 +96,9 @@ void FreeHostMemory(void* ptr) { litert_aligned_free(ptr); }
 
 // Returns the packed byte size of a tensor.
 //
-// Unlike `litert::internal::GetNumPackedBytes()`, which treats any 0 dimension
-// as an invalid argument error, this helper allows special temporary
-// scalar/reduction buffers (rank 1, dimension 0) and returns 0 bytes for them,
-// matching the validation bypass in `LiteRtTensorBufferT::IsValid()`.
+// Preserve the legacy temporary scalar/reduction placeholder (rank 1,
+// dimension 0), including its element-type validation bypass. Ordinary empty
+// tensors are handled by the common size utility.
 Expected<size_t> GetNumPackedBytesAllowEmptyScalar(
     const LiteRtRankedTensorType& tensor_type) {
   // Bypass for special temporary scalar buffer (rank 1, dim 0).
@@ -796,14 +795,14 @@ Expected<void> LiteRtTensorBufferT::IsValid() {
 
   // Check for static dimensions.
   for (auto i = 0; i < tensor_type_.layout.rank; ++i) {
-    if (tensor_type_.layout.dimensions[i] <= 0) {
+    if (tensor_type_.layout.dimensions[i] < 0) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "TensorBuffer must have all static dimensions");
     }
   }
 
   // Check for valid offset.
-  if (buffer_offset() >= buffer_size()) {
+  if (buffer_offset() > buffer_size()) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Invalid buffer offset");
   }

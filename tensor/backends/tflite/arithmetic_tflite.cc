@@ -362,6 +362,14 @@ absl::StatusOr<TfLiteOpBuildInfo> OpMixin<
   LRT_TENSOR_ASSIGN_OR_RETURN(const auto& input_info, GetInfo(op.inputs[0]));
   LRT_TENSOR_ASSIGN_OR_RETURN(auto from_type,
                               litert::tensor::ToTfLite(input_info.type));
+  LRT_TENSOR_ASSIGN_OR_RETURN(auto outputs, GetOutputs(op));
+  LRT_TENSOR_ASSIGN_OR_RETURN(const auto& output_info, GetInfo(outputs.at(0)));
+  if (input_info.quantization && data.to == Type::kFP32) {
+    return TfLiteOpBuildInfo(tflite::BuiltinOperator_DEQUANTIZE);
+  }
+  if (output_info.quantization) {
+    return TfLiteOpBuildInfo(tflite::BuiltinOperator_QUANTIZE);
+  }
 
   return TfLiteOpBuildInfo(::tflite::BuiltinOperator_CAST,
                            tflite::CastOptionsT{.in_data_type = from_type,

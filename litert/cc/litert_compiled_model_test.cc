@@ -350,7 +350,7 @@ TEST(CompiledModelTest, OwningCreateRunsAfterModelMove) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
       CompiledModelTestPeer::Create(env, std::move(model), options));
-  EXPECT_FALSE(model);
+  EXPECT_FALSE(model);  // NOLINT(bugprone-use-after-move)
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
                               compiled_model.CreateInputBuffers());
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
@@ -1599,6 +1599,97 @@ TEST(CompiledModelTest, ResizeInputTensorNonStrictAllowsStaticShapes) {
       /*input_index=*/size_t(0), absl::MakeConstSpan(new_dims)));
   LITERT_ASSERT_OK(compiled_model.ResizeInputTensorNonStrict(
       /*input_index=*/size_t(0), absl::MakeConstSpan(new_dims)));
+}
+
+TEST(CompiledModelTest, EmptyInputResizeAndRunTransitions) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+  for (bool strict : {true, false}) {
+    SCOPED_TRACE(strict);
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        CompiledModel model,
+        CompiledModel::Create(env,
+                              testing::GetTestFilePath(kDynamicModelFileName),
+                              HwAccelerators::kCpu));
+    for (int rows : {0, 3, 0, 1}) {
+      SCOPED_TRACE(rows);
+      const std::vector<int> dims = {rows, 2, 3};
+      for (size_t input = 0; input < 2; ++input) {
+        if (strict) {
+          LITERT_ASSERT_OK(model.ResizeInputTensor(input, dims));
+        } else {
+          LITERT_ASSERT_OK(model.ResizeInputTensorNonStrict(input, dims));
+        }
+        LITERT_ASSERT_OK_AND_ASSIGN(auto requirements,
+                                    model.GetInputBufferRequirements(input));
+        LITERT_ASSERT_OK_AND_ASSIGN(size_t bytes, requirements.BufferSize());
+        EXPECT_EQ(bytes, rows * 6 * sizeof(float));
+      }
+      LITERT_ASSERT_OK_AND_ASSIGN(auto inputs, model.CreateInputBuffers());
+      LITERT_ASSERT_OK_AND_ASSIGN(auto outputs, model.CreateOutputBuffers());
+      std::vector<float> values(rows * 6, 2.0f);
+      if (!values.empty()) {
+        for (auto& input : inputs) {
+          LITERT_ASSERT_OK(input.Write<float>(values));
+        }
+      }
+      LITERT_ASSERT_OK(model.Run(inputs, outputs));
+      LITERT_ASSERT_OK_AND_ASSIGN(auto layouts,
+                                  model.GetOutputTensorLayouts(size_t(0)));
+      ASSERT_EQ(layouts.size(), 1);
+      EXPECT_THAT(layouts[0].Dimensions(), ElementsAre(rows, 2, 3));
+      if (!values.empty()) {
+        LITERT_ASSERT_OK(outputs[0].Read<float>(absl::MakeSpan(values)));
+        EXPECT_THAT(values, ::testing::Each(4.0f));
+      }
+    }
+    const std::vector<int> invalid_dims = {-1, 2, 3};
+    LITERT_ASSERT_ERROR(model.ResizeInputTensor(size_t(0), invalid_dims));
+    LITERT_ASSERT_ERROR(
+        model.ResizeInputTensorNonStrict(size_t(0), invalid_dims));
+  }
+}
+
+TEST(CompiledModelTest, EmptyInputAutomaticResizeTransitions) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel model,
+      CompiledModel::Create(env,
+                            testing::GetTestFilePath(kDynamicModelFileName),
+                            HwAccelerators::kCpu));
+  for (int rows : {0, 3, 0, 1}) {
+    SCOPED_TRACE(rows);
+    const RankedTensorType type(ElementType::Float32,
+                                Layout(Dimensions({rows, 2, 3})));
+    const size_t bytes = rows * 6 * sizeof(float);
+    std::vector<TensorBuffer> inputs;
+    for (size_t input = 0; input < 2; ++input) {
+      LITERT_ASSERT_OK_AND_ASSIGN(
+          auto buffer, TensorBuffer::CreateManaged(
+                           env, TensorBufferType::kHostMemory, type, bytes));
+      if (rows != 0) {
+        const std::vector<float> values(rows * 6, 2.0f);
+        LITERT_ASSERT_OK(buffer.Write<float>(values));
+      }
+      inputs.push_back(std::move(buffer));
+    }
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto output, TensorBuffer::CreateManaged(
+                         env, TensorBufferType::kHostMemory, type, bytes));
+    std::vector<TensorBuffer> outputs;
+    outputs.push_back(std::move(output));
+    // Run must detect the empty/nonempty input layouts without an explicit
+    // ResizeInputTensor call, and keep the supplied output allocation valid.
+    LITERT_ASSERT_OK(model.Run(inputs, outputs));
+    LITERT_ASSERT_OK_AND_ASSIGN(auto layouts,
+                                model.GetOutputTensorLayouts(size_t(0)));
+    ASSERT_EQ(layouts.size(), 1);
+    EXPECT_THAT(layouts[0].Dimensions(), ElementsAre(rows, 2, 3));
+    if (rows != 0) {
+      std::vector<float> values(rows * 6);
+      LITERT_ASSERT_OK(outputs[0].Read<float>(absl::MakeSpan(values)));
+      EXPECT_THAT(values, ::testing::Each(4.0f));
+    }
+  }
 }
 
 TEST(CompiledModelTest, GetBufferRequirementsDetailed) {
