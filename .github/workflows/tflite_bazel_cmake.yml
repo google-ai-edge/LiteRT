@@ -69,23 +69,34 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
-      - name: Setup Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
-        with:
-          python-version: "3.11"
-
-      - name: Install CMake and Ninja
+      - name: Install System Dependencies, CMake, and Ninja
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ninja-build python3-pip libc++-18-dev libc++abi-18-dev llvm-18 clang-18
-          pip3 install cmake==3.28.3
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build \
+            libc++-18-dev libc++abi-18-dev llvm-18 clang-18 \
+            libssl-dev build-essential libbz2-dev libncurses5-dev libncursesw5-dev \
+            libffi-dev libreadline-dev libsqlite3-dev liblzma-dev zlib1g-dev git curl
+          python3.11 -m pip install cmake==3.28.3
           cmake --version
           ninja --version
 
-      - name: Configure Bazel
+      - name: Setup Pyenv Python 3.11
         # LINT.IfChange(configure_tflite_build_flags)
         # Keep compiler and Python configuration consistent with internal CI
-        # (run_bazel_test_with_docker.sh) to ensure Bazel remote cache hits.
+        # (run_bazel_test_with_docker.sh & tflite-py3.Dockerfile) to ensure Bazel remote cache hits.
+        shell: bash
+        run: |
+          git clone https://github.com/pyenv/pyenv.git /pyenv
+          export PYENV_ROOT=/pyenv
+          export PATH="$PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH"
+          pyenv install -s 3.11
+          pyenv global 3.11
+          echo "PYENV_ROOT=/pyenv" >> "$GITHUB_ENV"
+          echo "/pyenv/shims" >> "$GITHUB_PATH"
+          echo "/pyenv/bin" >> "$GITHUB_PATH"
+
+      - name: Configure Bazel
         shell: bash
         run: |
           chmod +x configure.py
