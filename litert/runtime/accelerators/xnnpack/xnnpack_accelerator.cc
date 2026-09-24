@@ -17,7 +17,6 @@
 #include <cstring>
 
 #include "litert/c/internal/litert_accelerator_def.h"
-#include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
@@ -40,8 +39,7 @@ struct CpuAcceleratorVersion {
   static constexpr int kMajor = 1;
   static constexpr int kMinor = 0;
   static constexpr int kPatch = 0;
-  static constexpr LiteRtApiVersion version = {kMajor, kMinor,
-                                               kPatch};  // NOLINT
+  static constexpr LiteRtApiVersion kVersion = {kMajor, kMinor, kPatch};
 };
 
 class CpuAccelerator final
@@ -96,9 +94,9 @@ class CpuAccelerator final
 
 #if !defined(LITERT_HAS_YNNPACK)
     if (parsed_options.enable_ynnpack) {
-      LITERT_LOG(LITERT_WARNING,
-                 "enable_ynnpack was ignored because YNNPACK support was not "
-                 "compiled into this build.");
+      return ErrorStatusBuilder(kLiteRtStatusErrorUnsupported)
+             << "enable_ynnpack was requested, but YNNPACK support was not "
+                "compiled into this build.";
     }
 #endif
 
