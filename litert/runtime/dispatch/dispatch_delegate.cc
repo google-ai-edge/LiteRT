@@ -207,17 +207,17 @@ litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
 
   const char* vendor_id = nullptr;
   LITERT_RETURN_IF_ERROR(LiteRtDispatchGetVendorId(&vendor_id));
-  LITERT_LOG(LITERT_DEBUG, "Dispatch API vendor ID: %s",
+  LITERT_LOG(LITERT_INFO, "Dispatch API vendor ID: %s",
              vendor_id != nullptr ? vendor_id : "(null)");
 
   const char* build_id = nullptr;
   LITERT_RETURN_IF_ERROR(LiteRtDispatchGetBuildId(&build_id));
-  LITERT_LOG(LITERT_DEBUG, "Dispatch API build ID: %s",
+  LITERT_LOG(LITERT_INFO, "Dispatch API build ID: %s",
              build_id != nullptr ? build_id : "(null)");
 
   LiteRtApiVersion api_version = {};
   LITERT_RETURN_IF_ERROR(LiteRtDispatchGetApiVersion(&api_version));
-  LITERT_LOG(LITERT_DEBUG, "Dispatch API version: %d.%d.%d", api_version.major,
+  LITERT_LOG(LITERT_INFO, "Dispatch API version: %d.%d.%d", api_version.major,
              api_version.minor, api_version.patch);
 
   // Check if the versions mach.

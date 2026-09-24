@@ -254,8 +254,14 @@ LiteRtStatus Info(Context& ctx) {
   }
 
   for (auto& plugin : *plugins) {
-    ctx.Out() << absl::StreamFormat("< LiteRtCompilerPlugin > \"%s\" | ",
-                                    plugin.SocManufacturer());
+    auto sdk_version = plugin.SdkVersion();
+    std::string sdk_ver_str =
+        (sdk_version.HasValue() && !sdk_version.Value().empty())
+            ? sdk_version.Value()
+            : "unknown";
+    ctx.Out() << absl::StreamFormat(
+        "< LiteRtCompilerPlugin > \"%s\" (SDK: %s) | ",
+        plugin.SocManufacturer(), sdk_ver_str);
     const auto& models = plugin.SocModels();
     for (auto it = models.begin(); it < models.end(); ++it) {
       ctx.Out() << absl::StreamFormat("\"%s\"", *it);

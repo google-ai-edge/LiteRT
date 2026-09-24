@@ -276,6 +276,18 @@ Expected<CompilerPlugin> CompilerPlugin::LoadPlugin(
                          Unexpected(kLiteRtStatusErrorWrongVersion,
                                     "Unsupported compiler plugin version"));
 
+  auto sdk_version = plugin.SdkVersion();
+  const std::string sdk_ver_str =
+      (sdk_version.HasValue() && !sdk_version.Value().empty())
+          ? sdk_version.Value()
+          : "unknown";
+  LITERT_LOG(
+      LITERT_INFO,
+      "Compiler plugin %.*s loaded: API version %d.%d.%d, SDK/Compiler version %s",
+      static_cast<int>(plugin.SocManufacturer().size()),
+      plugin.SocManufacturer().data(), api_version->major, api_version->minor,
+      api_version->patch, sdk_ver_str.c_str());
+
   // This should never change throughout the lifetime of the compiler
   // plugin so save to avoid recalling.
   auto soc_models = GetSocModels(plugin.plugin_api_, plugin.plugin_handle_);
