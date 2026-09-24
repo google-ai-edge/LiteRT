@@ -63,15 +63,16 @@ bundles, matching the `TensorFlowLite` and `TensorFlowLiteC` binary targets in
 
 ```shell
 bazel build -c opt --config=ios \
-  //litert/swift:TensorFlowLite_xcframework \
-  //litert/swift:TensorFlowLiteC_xcframework
+  //litert/swift:TensorFlowLite \
+  //litert/swift:TensorFlowLiteC
 ```
 
--   `TensorFlowLite_xcframework`: the Swift API. Contains
-    `TensorFlowLite.a` plus `TensorFlowLite.swiftmodule/*.swiftinterface`.
--   `TensorFlowLiteC_xcframework`: the C runtime. Contains
-    `TensorFlowLiteC.a` plus the flattened C headers and a `TensorFlowLiteC`
-    module map.
+-   `TensorFlowLite` (`TensorFlowLite.xcframework.zip`): the Swift API.
+    Contains `TensorFlowLite.a` plus
+    `TensorFlowLite.swiftmodule/*.swiftinterface`.
+-   `TensorFlowLiteC` (`TensorFlowLiteC.xcframework.zip`): the C runtime.
+    Contains `TensorFlowLiteC.a` plus the flattened C headers and a
+    `TensorFlowLiteC` module map.
 
 The two are kept separate rather than merged into one bundle. A Swift
 `apple_static_xcframework` can only vend the single module named by its

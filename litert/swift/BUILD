@@ -204,7 +204,7 @@ swift_library(
     # through `-Xcc -fmodule-map-file=`, and `-Xcc` flags are deliberately not
     # recorded in the interface. The verification sub-invocation therefore fails
     # with "no such module 'TensorFlowLiteC'". Consumers are unaffected: they
-    # resolve the module from `TensorFlowLiteC_xcframework` below, which is
+    # resolve the module from `:TensorFlowLiteC` below, which is
     # where the interface is compiled for real.
     copts = [
         "-swift-version",
@@ -233,11 +233,11 @@ swift_library(
     }),
 )
 
-# bazel build -c opt --config=ios //litert/swift:TensorFlowLite_xcframework
+# bazel build -c opt --config=ios //litert/swift:TensorFlowLite
 apple_static_xcframework(
-    name = "TensorFlowLite_xcframework",
+    name = "TensorFlowLite",
     # The C runtime is deliberately kept out of this bundle and shipped as
-    # `TensorFlowLiteC_xcframework` below. An `apple_static_xcframework` built
+    # `:TensorFlowLiteC` below. An `apple_static_xcframework` built
     # from Swift sources can only vend a single module -- the one named by
     # `bundle_name` -- so there is no way to also carry the `TensorFlowLiteC`
     # headers and modulemap in here, and `TensorFlowLite.swiftinterface`
@@ -262,14 +262,14 @@ apple_static_xcframework(
     ],
 )
 
-# The TensorFlow Lite C runtime that `TensorFlowLite_xcframework` links against,
+# The TensorFlow Lite C runtime that `:TensorFlowLite` links against,
 # packaged so that the `TensorFlowLiteC` binary target in Package.swift has an
 # artifact to resolve. Symbol hiding is not applied, matching
 # `//tflite/ios:TensorFlowLiteC_static_framework`.
 #
-# bazel build -c opt --config=ios //litert/swift:TensorFlowLiteC_xcframework
+# bazel build -c opt --config=ios //litert/swift:TensorFlowLiteC
 apple_static_xcframework(
-    name = "TensorFlowLiteC_xcframework",
+    name = "TensorFlowLiteC",
     bundle_name = "TensorFlowLiteC",
     ios = {
         "simulator": [
