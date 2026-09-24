@@ -442,8 +442,8 @@ void UnrolledConvert(std::ratio<2, 4>, InIt& in, OutIt& out) {
 
 template <class Cvt, class InIt, class OutIt>
 void UnrolledConvert(std::ratio<4, 4>, InIt& in, OutIt& out) {
-  out = {Cvt::Call(in->a), Cvt::Call(in->b), Cvt::Call(in->c),
-         Cvt::Call(in->d)};
+  *out = {Cvt::Call(in->a), Cvt::Call(in->b), Cvt::Call(in->c),
+          Cvt::Call(in->d)};
 }
 
 template <class Cvt, class InIt, class OutIt>
