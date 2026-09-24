@@ -5935,6 +5935,17 @@ class TransposeOperationParser : public TFLiteOperationParser {
     ::ml_drift::TransposeAttributes attr;
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> perm;
     reader->ReadTensor(1, &perm, ReadTensorFlags::kNoExtraBytes);
+    // Entries are validated against the input rank centrally, by
+    // InterpreterBuilder::ParseNodes. That check follows the TFLite contract,
+    // under which an axis may be given as a negative offset from the end, so
+    // normalize to the non-negative form that the `index_to_axis` lookups
+    // below require.
+    const int32_t perm_size = static_cast<int32_t>(perm.data.size());
+    for (int32_t& axis_index : perm.data) {
+      if (axis_index < 0) {
+        axis_index += perm_size;
+      }
+    }
     std::map<::ml_drift::Axis, int> axis_to_index = {
         {::ml_drift::Axis::BATCH, 0},
         {::ml_drift::Axis::HEIGHT, 1},
