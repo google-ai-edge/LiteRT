@@ -307,9 +307,13 @@ absl::StatusOr<OwningOpRef<ModuleOp>> LoadSlimModel(
       llvm::StringRef(model_dir.data(), model_dir.size()));
   llvm::sys::path::append(weights_path_buf, "params.bin");
   std::string weights_path = std::string(weights_path_buf.str());
-  std::ifstream weights_file(weights_path, std::ios::binary);
+  std::ifstream weights_file;
+  // Unbuffered, so that the 1GB reads below land straight in the destination
+  // rather than passing through a stream buffer on the way. setbuf has that
+  // effect only before the file is open, which is why this comes first.
+  weights_file.rdbuf()->pubsetbuf(nullptr, 0);
+  weights_file.open(weights_path, std::ios::binary);
   if (weights_file) {
-    weights_file.rdbuf()->pubsetbuf(nullptr, 0);
     weights_file.seekg(0, std::ios::end);
     std::streampos end_pos = weights_file.tellg();
     if (end_pos < 0) {
