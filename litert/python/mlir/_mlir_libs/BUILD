@@ -223,7 +223,7 @@ pytype_strict_contrib_test(
     deps = [
         ":converter_api_ext",
         "//third_party/py/mlir:ir",
+        "//third_party/py/numpy",
         "@absl_py//absl/testing:absltest",
-        "@org_tensorflow//third_party/py/numpy:headers",
     ],
 )

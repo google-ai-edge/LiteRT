@@ -27,7 +27,7 @@ pytype_strict_library(
         ":mmap_utils",
         # Dependency placeholder: gfile,
         # copybara:uncomment "//third_party/py/flatbuffers",
-        "@org_tensorflow//third_party/py/numpy:headers",
+        "//third_party/py/numpy",
         "//tflite/python:schema_py",
     ],
 )
@@ -73,8 +73,7 @@ pytype_strict_library(
     deps = [
         # Dependency placeholder: gfile,
         "@ml_dtypes_py//ml_dtypes",
-        # copybara:uncomment "@org_tensorflow//third_party/py/numpy:headers",
-        "@org_tensorflow//third_party/py/numpy",  # copybara:comment
+        "//third_party/py/numpy",
     ],
 )
 
@@ -84,8 +83,7 @@ py_test(
     deps = [
         ":benchmark_litert_model",
         "//litert/python/litert_wrapper/compiled_model_wrapper:options",
+        "//third_party/py/numpy",
         "@ml_dtypes_py//ml_dtypes",
-        # copybara:uncomment "@org_tensorflow//third_party/py/numpy:headers",
-        "@org_tensorflow//third_party/py/numpy",  # copybara:comment
     ],
 )

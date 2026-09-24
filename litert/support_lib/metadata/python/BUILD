@@ -27,8 +27,8 @@ py_library(
         "//litert/support_lib/metadata:schema_py",
         "//litert/support_lib/metadata/cc/python:_pywrap_metadata_version",
         "//litert/support_lib/metadata/flatbuffers_lib:_pywrap_flatbuffers",
+        "//third_party/py/numpy",
         "@flatbuffers//:runtime_py",
-        "@org_tensorflow//third_party/py/numpy:headers",
     ],
 )
 

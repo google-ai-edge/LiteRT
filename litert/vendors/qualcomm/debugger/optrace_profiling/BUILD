@@ -15,9 +15,9 @@ py_binary(
     ],
     # copybara:uncomment strict_deps = False,
     deps = [
+        "//third_party/py/numpy",
         "@absl_py//absl:app",
         "@absl_py//absl/flags",
         "@absl_py//absl/logging",
-        "@org_tensorflow//third_party/py/numpy",
     ],
 )

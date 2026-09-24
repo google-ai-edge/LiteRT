@@ -93,8 +93,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":_pywrap_litert_tensor_buffer_wrapper",
+        "//third_party/py/numpy",
         "@ml_dtypes_py//ml_dtypes",
-        "@org_tensorflow//third_party/py/numpy:headers",
     ],
 )
 
@@ -108,7 +108,7 @@ py_library(
 #     deps = [
 #         ":tensor_buffer",
 #         "@ml_dtypes_py//ml_dtypes",
-#         "@org_tensorflow//third_party/py/numpy:headers",
+#         "//third_party/py/numpy",
 #     ],
 # )
 # copybara:uncomment_end
