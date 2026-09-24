@@ -103,10 +103,10 @@ class CompilerPlugin {
 
   std::string DebugString() const;
 
-  int GetMaxTransformationIterations() const {
+  size_t GetMaxTransformationIterations() const {
     return max_transformation_iterations_;
   }
-  void SetMaxTransformationIterations(int max_transformation_iterations) {
+  void SetMaxTransformationIterations(size_t max_transformation_iterations) {
     max_transformation_iterations_ = max_transformation_iterations;
   }
 
@@ -187,7 +187,9 @@ class CompilerPlugin {
   LiteRtCompilerPluginApi plugin_api_ = {};
   LiteRtCompilerPlugin plugin_handle_ = nullptr;
   std::vector<LiteRtTransformation> transformations_;
-  size_t max_transformation_iterations_ = 100;
+  // Default 200 iterations provide adequate headroom while protecting against
+  // runaway transformation loops.
+  size_t max_transformation_iterations_ = 200;
 
   // Internal LiteRtCompiledResult wrapper.
 

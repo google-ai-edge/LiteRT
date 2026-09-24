@@ -693,5 +693,102 @@ TEST(TestQnnPlugin, CompileWithDlcDir) {
   LiteRtDestroyCompiledResult(compiled);
 }
 
+TEST(TestQnnPlugin, TransformationsDefaultRegistration) {
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  LiteRtTransformation* transformations = nullptr;
+  LiteRtParamIndex num_transformations = 0;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
+      plugin.get(), &transformations, &num_transformations));
+  EXPECT_EQ(num_transformations, 6);
+}
+
+TEST(TestQnnPlugin, TransformationsDisableAll) {
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
+  ASSERT_TRUE(qnn_opts);
+  qnn_opts->SetGraphTransform("disable_all_transforms");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+
+  LiteRtTransformation* transformations = nullptr;
+  LiteRtParamIndex num_transformations = 0;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
+      plugin.get(), &transformations, &num_transformations));
+  EXPECT_EQ(num_transformations, 0);
+}
+
+TEST(TestQnnPlugin, TransformationsDisableModelTransforms) {
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
+  ASSERT_TRUE(qnn_opts);
+  qnn_opts->SetGraphTransform("disable_model_transforms");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+
+  LiteRtTransformation* transformations = nullptr;
+  LiteRtParamIndex num_transformations = 0;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
+      plugin.get(), &transformations, &num_transformations));
+  // Only LegalizeInt32Sign and LegalizeInt32ReduceMax should be registered.
+  EXPECT_EQ(num_transformations, 2);
+}
+
+TEST(TestQnnPlugin, TransformationsDisableLegalizeTransforms) {
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
+  ASSERT_TRUE(qnn_opts);
+  qnn_opts->SetGraphTransform("disable_legalize_transforms");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+
+  LiteRtTransformation* transformations = nullptr;
+  LiteRtParamIndex num_transformations = 0;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
+      plugin.get(), &transformations, &num_transformations));
+  // EntryEmbedding, MLPInt8Quant, RopeAttention, RopeCleanup should be
+  // registered.
+  EXPECT_EQ(num_transformations, 4);
+}
+
+TEST(TestQnnPlugin, TransformationsSelectiveDisable) {
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
+  ASSERT_TRUE(qnn_opts);
+  qnn_opts->SetGraphTransform("no_rope,no_mlp_quant");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+
+  LiteRtTransformation* transformations = nullptr;
+  LiteRtParamIndex num_transformations = 0;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
+      plugin.get(), &transformations, &num_transformations));
+  // Sign, ReduceMax, EntryEmbedding should be registered (3 total).
+  EXPECT_EQ(num_transformations, 3);
+}
+
 }  // namespace
 }  // namespace litert
