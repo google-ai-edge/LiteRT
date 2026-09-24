@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -36,7 +37,9 @@
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/core/filesystem.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -63,6 +66,25 @@ litert::Expected<Environment> CreateDefaultEnvironment() {
       litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
 }
 
+litert::Expected<litert::Options> CreateOptionsWithGraphIOTensorMemType(
+    litert::qualcomm::QualcommOptions::GraphIOTensorMemType mem_type) {
+  LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
+  LITERT_ASSIGN_OR_RETURN(auto qualcomm_options,
+                          litert::qualcomm::QualcommOptions::Create());
+  qualcomm_options.SetGraphIOTensorMemType(mem_type);
+
+  const char* identifier = nullptr;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_RETURN_IF_ERROR(qualcomm_options.GetOpaqueOptionsData(
+      &identifier, &payload, &payload_deleter));
+  LITERT_ASSIGN_OR_RETURN(
+      auto opaque_options,
+      litert::OpaqueOptions::Create(identifier, payload, payload_deleter));
+  LITERT_RETURN_IF_ERROR(options.AddOpaqueOptions(std::move(opaque_options)));
+  return options;
+}
+
 TEST(Qualcomm, DispatchApiWithFastRpc) {
 #if !defined(__ANDROID__)
   GTEST_SKIP()
@@ -74,7 +96,10 @@ TEST(Qualcomm, DispatchApiWithFastRpc) {
 #endif
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options,
+      CreateOptionsWithGraphIOTensorMemType(
+          litert::qualcomm::QualcommOptions::GraphIOTensorMemType::kMemHandle));
   LITERT_ASSERT_OK_AND_ASSIGN(auto litert_opts,
                               litert::internal::LiteRtOptionsPtrBuilder::Build(
                                   options, env.GetHolder()));
@@ -346,7 +371,10 @@ TEST(Qualcomm, DispatchApiWithDmaBuf) {
 #endif
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options,
+      CreateOptionsWithGraphIOTensorMemType(
+          litert::qualcomm::QualcommOptions::GraphIOTensorMemType::kMemHandle));
   LITERT_ASSERT_OK_AND_ASSIGN(auto litert_opts,
                               litert::internal::LiteRtOptionsPtrBuilder::Build(
                                   options, env.GetHolder()));
@@ -644,7 +672,10 @@ TEST(Qualcomm, DispatchApiWithFastRpcInt16Model) {
       output_tensor_0.size() * sizeof(decltype(output_tensor_0)::value_type);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options,
+      CreateOptionsWithGraphIOTensorMemType(
+          litert::qualcomm::QualcommOptions::GraphIOTensorMemType::kMemHandle));
   auto litert_opts_expected = litert::internal::LiteRtOptionsPtrBuilder::Build(
       options, env.GetHolder());
   auto litert_opts = std::move(litert_opts_expected.Value());
@@ -951,7 +982,10 @@ TEST(Qualcomm, DispatchApiWithDmaBufInt16Model) {
       output_tensor_0.size() * sizeof(decltype(output_tensor_0)::value_type);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options,
+      CreateOptionsWithGraphIOTensorMemType(
+          litert::qualcomm::QualcommOptions::GraphIOTensorMemType::kMemHandle));
   LITERT_ASSERT_OK_AND_ASSIGN(auto litert_opts,
                               litert::internal::LiteRtOptionsPtrBuilder::Build(
                                   options, env.GetHolder()));

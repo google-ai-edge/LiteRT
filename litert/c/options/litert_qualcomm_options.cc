@@ -867,7 +867,7 @@ LiteRtStatus LrtQualcommOptionsGetGraphIOTensorMemType(
   }
 
   *graph_io_tensor_mem_type = options->graph_io_tensor_mem_type.value_or(
-      kLiteRtQualcommGraphIOTensorMemTypeMemHandle);
+      kLiteRtQualcommGraphIOTensorMemTypeRaw);
   return kLiteRtStatusOk;
 }
 
