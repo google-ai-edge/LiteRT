@@ -30,7 +30,7 @@
 #include "ml_drift/common/kernels/conv_wave_matrix.h"  // from @ml_drift
 #include "ml_drift/common/kernels/conv_wave_memory.h"  // from @ml_drift
 #include "ml_drift/common/kernels/fully_connected.h"  // from @ml_drift
-#include "ml_drift/common/kernels/google/custom/experts_remap.h"  // from @ml_drift
+#include "ml_drift/common/kernels/special/experts_remap.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift

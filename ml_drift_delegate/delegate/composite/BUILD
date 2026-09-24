@@ -149,7 +149,7 @@ cc_library(
         "@ml_drift//ml_drift/common/kernels:conv_wave_matrix",
         "@ml_drift//ml_drift/common/kernels:conv_wave_memory",
         "@ml_drift//ml_drift/common/kernels:fully_connected",
-        "@ml_drift//ml_drift/common/kernels/google/custom:experts_remap",
+        "@ml_drift//ml_drift/common/kernels/special:experts_remap",
         "@ml_drift//ml_drift/common/task:gpu_operation",
         "@ml_drift//ml_drift/common/task:tensor_desc",
     ],
