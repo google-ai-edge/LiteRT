@@ -128,7 +128,15 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
     graph_->keep_alive_buffers().push_back(info.buffer);
   }
 
-  std::vector<size_t> dims(info.shape.begin(), info.shape.end());
+  std::vector<size_t> dims;
+  dims.reserve(info.shape.size());
+  for (int dim : info.shape) {
+    if (dim < -1) {
+      return absl::InvalidArgumentError(
+          absl::StrCat(info.name, ": invalid negative tensor dimension ", dim));
+    }
+    dims.push_back(dim == -1 ? 0 : static_cast<size_t>(dim));
+  }
   const void* data_ptr = value.data.data();
   uint32_t external_id = is_external ? value.id : XNN_INVALID_VALUE_ID;
   xnn_subgraph_t sg = subgraph();
