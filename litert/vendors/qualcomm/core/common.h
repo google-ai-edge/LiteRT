@@ -323,7 +323,7 @@ class Options {
   GpuPerformanceMode gpu_performance_mode_ = GpuPerformanceMode::kHigh;
   std::string saver_output_dir_;
   GraphIOTensorMemType graph_io_tensor_mem_type_ =
-      GraphIOTensorMemType::kMemHandle;
+      GraphIOTensorMemType::kRaw;
   std::string schematic_dir_;
   // Currently we only support one custom op package.
   CustomOpPackage custom_op_package_;
