@@ -35,7 +35,7 @@ objc_library(
         "sources/LRTError+Internal.h",
     ],
     deps = [
-        "//third_party/apple_frameworks:Foundation",
+        # Dependency placeholder: apple_frameworks Foundation,
         # Dependency placeholder: apple_frameworks Metal,
         "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",
@@ -79,11 +79,11 @@ objc_library(
     ],
     deps = [
         ":litert_objc_environment",
+        # Dependency placeholder: apple_frameworks Foundation,
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
-        "//third_party/apple_frameworks:Foundation",
     ],
 )
 
@@ -128,8 +128,8 @@ objc_library(
         "sources/LRTOptions+Internal.h",
     ],
     deps = [
+        # Dependency placeholder: apple_frameworks Foundation,
         "//litert/cc:litert_options",
-        "//third_party/apple_frameworks:Foundation",
     ],
 )
 
@@ -171,7 +171,7 @@ objc_library(
     ],
     deps = [
         ":litert_objc_environment",
-        "//third_party/apple_frameworks:Foundation",
+        # Dependency placeholder: apple_frameworks Foundation,
         # Dependency placeholder: apple_frameworks Metal,
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
@@ -222,12 +222,12 @@ objc_library(
         ":litert_objc_environment",
         ":litert_objc_options",
         ":litert_objc_tensor_buffer",
+        # Dependency placeholder: apple_frameworks Foundation,
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
-        "//third_party/apple_frameworks:Foundation",
     ],
 )
 
