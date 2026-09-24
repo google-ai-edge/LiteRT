@@ -14,6 +14,7 @@
 #include "litert/vendors/qualcomm/core/transformation/mask.h"
 #include "litert/vendors/qualcomm/core/transformation/matmul_convert.h"
 #include "litert/vendors/qualcomm/core/transformation/mha_to_sha.h"
+#include "litert/vendors/qualcomm/core/transformation/relu_min_max.h"
 #include "litert/vendors/qualcomm/core/transformation/rotation_quant.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 
@@ -377,6 +378,13 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
       QnnOpCode::kTranspose,
   };
   Transform(validate_op_config, ops, tensor_pool, attn, OptimizeMHAAttn);
+
+  // Min + Max -> ReLUMinMax
+  const std::vector<QnnOpCode> min_max = {
+      QnnOpCode::kElementWiseMaximum,
+      QnnOpCode::kElementWiseMinimum,
+  };
+  Transform(validate_op_config, ops, tensor_pool, min_max, MinMaxToReLUMinMax);
 
   // FC -> Hadamard Transform
   const std::vector<QnnOpCode> fc = {
