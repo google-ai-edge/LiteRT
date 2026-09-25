@@ -454,7 +454,6 @@ litert_c_api_library(
 cc_test(
     name = "litert_tensor_buffer_test",
     srcs = ["litert_tensor_buffer_test.cc"],
-    tags = ["requires-gpu-nvidia"],
     deps = [
         ":litert_any",
         ":litert_common",
