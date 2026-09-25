@@ -24,7 +24,7 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
-#include "litert/c/options/litert_arm_options.h"
+#include "litert/c/options/litert_arm_vulkan_ml_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -32,13 +32,13 @@
 #include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/options/litert_arm_options.h"
-#include "litert/vendors/arm/capabilities.h"
+#include "litert/cc/options/litert_arm_vulkan_ml_options.h"
+#include "litert/vendors/arm_vulkan_ml/capabilities.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 
 namespace {
 
-constexpr char kPluginManufacturer[] = "Arm";
+constexpr char kPluginManufacturer[] = "Generic";
 constexpr char kDefaultSocModel[] = "Generic";
 
 }  // namespace
@@ -63,34 +63,38 @@ class LiteRtCompilerPluginT {
       return;
     }
 
-    auto target_options =
-        opaque_options_->FindOpaqueOptions(LrtArmOptionsGetIdentifier());
+    auto target_options = opaque_options_->FindOpaqueOptions(
+        LrtArmVulkanMLOptionsGetIdentifier());
     if (!target_options) {
       return;
     }
 
     const char* payload = static_cast<const char*>(target_options.Value());
-    LrtArmOptions arm_options = nullptr;
-    auto status = LrtCreateArmOptionsFromToml(payload, &arm_options);
+    LrtArmVulkanMLOptions arm_vulkan_ml_options = nullptr;
+    auto status =
+        LrtCreateArmVulkanMLOptionsFromToml(payload, &arm_vulkan_ml_options);
     if (status == kLiteRtStatusOk) {
-      arm_options_ = litert::arm::ArmOptions(arm_options);
+      arm_vulkan_ml_options_ =
+          litert::arm_vulkan_ml::ArmVulkanMLOptions(arm_vulkan_ml_options);
     } else {
-      LITERT_LOG(LITERT_ERROR, "Failed to parse Arm options: %d", status);
+      LITERT_LOG(LITERT_ERROR, "Failed to parse ArmVulkanML options: %d",
+                 status);
     }
   }
 
   bool IsJitRequested() const {
-    if (!arm_options_) {
+    if (!arm_vulkan_ml_options_) {
       return false;
     }
     litert::Expected<bool> enable_just_in_time =
-        arm_options_->GetEnableJustInTime();
+        arm_vulkan_ml_options_->GetEnableJustInTime();
     return enable_just_in_time && *enable_just_in_time;
   }
 
  private:
-  litert::Expected<litert::arm::ArmOptions> arm_options_ =
-      litert::Error(kLiteRtStatusErrorNotFound, "Arm options not found");
+  litert::Expected<litert::arm_vulkan_ml::ArmVulkanMLOptions>
+      arm_vulkan_ml_options_ = litert::Error(kLiteRtStatusErrorNotFound,
+                                             "ArmVulkanML options not found");
   litert::Expected<litert::internal::OptionsWrapper> litert_options_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
   litert::Expected<litert::internal::OpaqueOptionsWrapper> opaque_options_ =
@@ -110,8 +114,9 @@ LiteRtStatus EnsureJitMode(LiteRtCompilerPlugin compiler_plugin) {
   }
   if (!compiler_plugin->IsJitRequested()) {
     LITERT_LOG(LITERT_ERROR,
-               "Arm compiler only supports the JIT flow. Set the "
-               "Arm enable_just_in_time option to use this plugin.");
+               "Arm ML extensions for Vulkan compiler only supports the JIT "
+               "flow. Set the ArmVulkanML enable_just_in_time option to use "
+               "this plugin.");
     return kLiteRtStatusErrorUnsupported;
   }
   return kLiteRtStatusOk;
@@ -203,16 +208,18 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
   litert::Subgraph graph(subgraph);
   for (const auto& op : graph.Ops()) {
-    if (!litert::arm::IsSupportedOpCode(op.Code())) {
+    if (!litert::arm_vulkan_ml::IsSupportedOpCode(op.Code())) {
       continue;
     }
 
     bool is_supported = true;
     for (const auto& input : op.Inputs()) {
-      is_supported &= litert::arm::IsSupportedType(input.ElementType());
+      is_supported &=
+          litert::arm_vulkan_ml::IsSupportedType(input.ElementType());
     }
     for (const auto& output : op.Outputs()) {
-      is_supported &= litert::arm::IsSupportedType(output.ElementType());
+      is_supported &=
+          litert::arm_vulkan_ml::IsSupportedType(output.ElementType());
     }
 
     if (is_supported) {

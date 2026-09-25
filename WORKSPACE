@@ -401,10 +401,10 @@ models()
 
 # VENDOR SDKS ######################################################################################
 
-# ARM(R) -----------------------------------------------------------------------------------------
-load("//third_party/arm:workspace.bzl", "arm_deps")
+# Arm ML extensions for Vulkan Backend -----------------------------------------------------------
+load("//third_party/arm_vulkan_ml:workspace.bzl", "arm_vulkan_ml_deps")
 
-arm_deps()
+arm_vulkan_ml_deps()
 
 # QUALCOMM ---------------------------------------------------------------------------------------
 

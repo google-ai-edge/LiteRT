@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
-// <open-source-office@arm.com> SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+// SPDX-License-Identifier: Apache-2.0
 //
 
-#include "litert/c/options/litert_arm_options.h"
+#include "litert/c/options/litert_arm_vulkan_ml_options.h"
 
 #include <sstream>
 
@@ -26,33 +26,33 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/litert_toml_parser.h"
 
-struct LrtArmOptionsT {
+struct LrtArmVulkanMLOptionsT {
   bool enable_just_in_time = false;
 };
 
-const char* LrtArmOptionsGetIdentifier() { return "Arm"; }
+const char* LrtArmVulkanMLOptionsGetIdentifier() { return "ArmVulkanML"; }
 
-LiteRtStatus LrtCreateArmOptions(LrtArmOptions* options) {
+LiteRtStatus LrtCreateArmVulkanMLOptions(LrtArmVulkanMLOptions* options) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  *options = new LrtArmOptionsT;
+  *options = new LrtArmVulkanMLOptionsT;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LrtCreateArmOptionsFromToml(const char* toml_payload,
-                                         LrtArmOptions* options) {
+LiteRtStatus LrtCreateArmVulkanMLOptionsFromToml(
+    const char* toml_payload, LrtArmVulkanMLOptions* options) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  LITERT_RETURN_IF_ERROR(LrtCreateArmOptions(options));
+  LITERT_RETURN_IF_ERROR(LrtCreateArmVulkanMLOptions(options));
 
   if (toml_payload == nullptr || toml_payload[0] == '\0') {
     return kLiteRtStatusOk;
   }
 
-  LrtArmOptionsT& options_ref = **options;
+  LrtArmVulkanMLOptionsT& options_ref = **options;
   auto status = litert::internal::ParseToml(
       toml_payload,
       [&options_ref](absl::string_view key,
@@ -65,24 +65,26 @@ LiteRtStatus LrtCreateArmOptionsFromToml(const char* toml_payload,
       });
 
   if (status != kLiteRtStatusOk) {
-    LrtDestroyArmOptions(*options);
+    LrtDestroyArmVulkanMLOptions(*options);
     *options = nullptr;
   }
 
   return status;
 }
 
-void LrtDestroyArmOptions(LrtArmOptions options) { delete options; }
+void LrtDestroyArmVulkanMLOptions(LrtArmVulkanMLOptions options) {
+  delete options;
+}
 
-LiteRtStatus LrtGetOpaqueArmOptionsData(LrtArmOptions options,
-                                        const char** identifier, void** payload,
-                                        void (**payload_deleter)(void*)) {
+LiteRtStatus LrtGetOpaqueArmVulkanMLOptionsData(
+    LrtArmVulkanMLOptions options, const char** identifier, void** payload,
+    void (**payload_deleter)(void*)) {
   if (options == nullptr || identifier == nullptr || payload == nullptr ||
       payload_deleter == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  *identifier = LrtArmOptionsGetIdentifier();
+  *identifier = LrtArmVulkanMLOptionsGetIdentifier();
 
   std::ostringstream toml;
   toml << "enable_just_in_time = "
@@ -92,8 +94,8 @@ LiteRtStatus LrtGetOpaqueArmOptionsData(LrtArmOptions options,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LrtArmOptionsSetEnableJustInTime(LrtArmOptions options,
-                                              bool enable_just_in_time) {
+LiteRtStatus LrtArmVulkanMLOptionsSetEnableJustInTime(
+    LrtArmVulkanMLOptions options, bool enable_just_in_time) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -101,8 +103,8 @@ LiteRtStatus LrtArmOptionsSetEnableJustInTime(LrtArmOptions options,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LrtArmOptionsGetEnableJustInTime(LrtArmOptions options,
-                                              bool* enable_just_in_time) {
+LiteRtStatus LrtArmVulkanMLOptionsGetEnableJustInTime(
+    LrtArmVulkanMLOptions options, bool* enable_just_in_time) {
   if (options == nullptr || enable_just_in_time == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }

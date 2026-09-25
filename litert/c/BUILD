@@ -832,7 +832,7 @@ LITERT_C_API_COMMON_DEPS = [
     "//litert/c/internal:litert_tensor_buffer_registry",
     "//litert/c/options:litert_cpu_options",
     # copybara:uncomment "//litert/c/options/google:litert_google_tensor_privileged_options",
-    "//litert/c/options:litert_arm_options",
+    "//litert/c/options:litert_arm_vulkan_ml_options",
     "//litert/c/options:litert_google_tensor_options_type",
     "//litert/c/options:litert_google_tensor_options",
     "//litert/c/options:litert_gpu_options",
