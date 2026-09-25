@@ -12,7 +12,7 @@ LITERT_EXPERIMENTAL_VERSION = "2.3.0"
 
 # The next version of LiteRT SDK for Qualcomm.
 # The minor version code should be bumped after every release.
-# It contains QAIRT 2.49.0.260730
+# It contains QAIRT 2.50.0.260828
 LITERT_SDK_QUALCOMM_FULL_VERSION = "2.3.0"
 
 # The next version of LiteRT SDK for MediaTek version.
