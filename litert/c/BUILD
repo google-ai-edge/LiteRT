@@ -511,7 +511,7 @@ cc_test(
 #         "LITERT_DISABLE_OPENGL": "1",
 #     },
 #     tags = [
-#         "requires-gpu-nvidia",
+#         "requires-gpu-sm90-full",  # Vulkan/WebGPU: no driver on MIG
 #     ],
 #     deps = [
 #         ":litert_any",

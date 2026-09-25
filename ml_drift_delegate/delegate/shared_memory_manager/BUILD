@@ -332,7 +332,7 @@ cc_test(
     name = "shared_memory_manager_webgpu_test",
     srcs = ["shared_memory_manager_webgpu_test.cc"],
     tags = [
-        "requires-gpu-nvidia",
+        "requires-gpu-sm90-full",  # Vulkan/WebGPU: no driver on MIG
     ],
     deps = [
         ":gf32_graph_adapter",
@@ -388,7 +388,7 @@ cc_library(
 cc_test(
     name = "shared_memory_manager_vulkan_test",
     srcs = ["shared_memory_manager_vulkan_test.cc"],
-    tags = ["requires-gpu-nvidia"],
+    tags = ["requires-gpu-sm90-full"],  # Vulkan/WebGPU: no driver on MIG
     deps = [
         ":gf32_graph_adapter",
         ":graph_adapter",

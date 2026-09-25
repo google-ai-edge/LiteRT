@@ -1276,7 +1276,7 @@ cc_test(
         "LITERT_DISABLE_OPENCL": "1",
     },
     tags = [
-        "requires-gpu-nvidia",
+        "requires-gpu-sm90-full",  # Vulkan/WebGPU: no driver on MIG
     ],
     deps = [
         ":gated_delta_update_test_util",
@@ -1304,7 +1304,7 @@ cc_test(
         "LITERT_DISABLE_OPENCL": "1",
     },
     tags = [
-        "requires-gpu-nvidia",
+        "requires-gpu-sm90-full",  # Vulkan/WebGPU: no driver on MIG
     ],
     deps = [
         ":gated_delta_update_test_util",
