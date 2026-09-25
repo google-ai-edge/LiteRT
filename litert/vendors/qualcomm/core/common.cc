@@ -511,6 +511,12 @@ void Options::SetUseFoldReLU(bool use_fold_relu) {
 
 bool Options::GetUseFoldReLU() const { return use_fold_relu_; }
 
+void Options::SetUseShortOpNames(bool use_short_op_names) {
+  use_short_op_names_ = use_short_op_names;
+}
+
+bool Options::GetUseShortOpNames() const { return use_short_op_names_; }
+
 void Options::SetHtpPPoint(std::int32_t htp_p_point) {
   htp_p_point_ = htp_p_point;
 }
@@ -790,6 +796,7 @@ std::string Options::Dump() const {
   absl::StrAppend(&out, "[HTP]\n");
   field(2, "UseConvHMX", use_conv_hmx_);
   field(2, "UseFoldReLU", use_fold_relu_);
+  field(2, "UseShortOpNames", use_short_op_names_);
   field(2, "HtpDlbc", htp_dlbc_);
   field(2, "HtpDlbcWeights", htp_dlbc_weights_);
   field(2, "HtpPPoint", htp_p_point_);

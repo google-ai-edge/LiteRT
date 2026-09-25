@@ -366,6 +366,16 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  /// @brief When true, op names in the QNN graph omit the tensor-path namespace
+  /// prefix and the LiteRt OpId suffix, reducing context binary size for models
+  /// with long tensor names (e.g. LLMs).
+  void SetUseShortOpNames(bool use_short_op_names) {
+    LrtQualcommOptionsSetUseShortOpNames(options_, use_short_op_names);
+  }
+  bool GetUseShortOpNames() {
+    bool val;
+    auto status = LrtQualcommOptionsGetUseShortOpNames(options_, &val);
+
   /// @brief Enables HTP DLBC input compression.
   void SetHtpDlbc(bool htp_dlbc) {
     LrtQualcommOptionsSetHtpDlbc(options_, htp_dlbc);
