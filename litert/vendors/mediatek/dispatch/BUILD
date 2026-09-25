@@ -48,6 +48,9 @@ litert_dispatch_api(
     ],
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch_MediaTek.so",
+    static_srcs = [
+        "dispatch_api_static.cc",
+    ],
     tags = [
         # Remove when sdk is available to bazel.
         "nobuilder",
