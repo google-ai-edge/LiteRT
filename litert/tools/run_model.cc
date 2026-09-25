@@ -22,6 +22,19 @@
 #include <utility>
 #include <vector>
 
+#if defined(__ANDROID__)
+#include <dirent.h>
+#include <sys/stat.h>
+
+#include <fstream>
+#include <unordered_map>
+
+#include "absl/strings/ascii.h"  // from @com_google_absl
+#include "absl/strings/numbers.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
+#endif
+
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/flags/usage_config.h"  // from @com_google_absl
@@ -105,9 +118,144 @@ ABSL_FLAG(int64_t, scoped_weight_length, -1,
           "Byte length for --scoped_weight_group in --scoped_weight_file. "
           "-1 means until EOF.");
 ABSL_FLAG(int32_t, kernel_batch_size, -1, "Kernel batch size for the model.");
+ABSL_FLAG(bool, report_peak_memory_footprint, true,
+          "Report peak system RAM and DMA-BUF memory footprint.");
 
 namespace litert {
 namespace {
+
+#if defined(__ANDROID__)
+struct DmaBufSummary {
+  uint64_t total_bytes = 0;
+  struct Entry {
+    uint64_t inode = 0;
+    uint64_t size_bytes = 0;
+    std::string name;
+    std::string exp_name;
+  };
+  std::vector<Entry> entries;
+};
+
+DmaBufSummary GetProcessDmaBufUsage() {
+  DmaBufSummary summary;
+  DIR* dir = opendir("/proc/self/fdinfo");
+  if (dir == nullptr) {
+    return summary;
+  }
+
+  struct dirent* de = nullptr;
+  struct DmaBufItem {
+    uint64_t size = 0;
+    std::string name;
+    std::string exp_name;
+  };
+  std::unordered_map<uint64_t, DmaBufItem> buffers;
+
+  while ((de = readdir(dir)) != nullptr) {
+    if (de->d_name[0] == '.') {
+      continue;
+    }
+    std::string fd_path = absl::StrCat("/proc/self/fdinfo/", de->d_name);
+    std::ifstream file(fd_path);
+    if (!file.is_open()) {
+      continue;
+    }
+
+    uint64_t cur_ino = 0;
+    uint64_t cur_size = 0;
+    std::string cur_name;
+    std::string cur_exp;
+    std::string line;
+
+    while (std::getline(file, line)) {
+      if (absl::StartsWith(line, "size:\t") ||
+          absl::StartsWith(line, "size: ")) {
+        (void)absl::SimpleAtoi(line.substr(line.find_first_of(" \t") + 1),
+                               &cur_size);
+      } else if (absl::StartsWith(line, "ino:\t") ||
+                 absl::StartsWith(line, "ino: ")) {
+        (void)absl::SimpleAtoi(line.substr(line.find_first_of(" \t") + 1),
+                               &cur_ino);
+      } else if (absl::StartsWith(line, "exp_name:\t") ||
+                 absl::StartsWith(line, "exp_name: ")) {
+        cur_exp = std::string(absl::StripTrailingAsciiWhitespace(
+            line.substr(line.find_first_of(" \t") + 1)));
+      } else if (absl::StartsWith(line, "name:\t") ||
+                 absl::StartsWith(line, "name: ")) {
+        cur_name = std::string(absl::StripTrailingAsciiWhitespace(
+            line.substr(line.find_first_of(" \t") + 1)));
+      }
+    }
+
+    if (cur_size != 0 && !cur_exp.empty()) {
+      if (cur_ino == 0) {
+        struct stat st;
+        if (stat(absl::StrCat("/proc/self/fd/", de->d_name).c_str(), &st) ==
+            0) {
+          cur_ino = st.st_ino;
+        } else {
+          (void)absl::SimpleAtoi(de->d_name, &cur_ino);
+        }
+      }
+      buffers[cur_ino] = DmaBufItem{
+          .size = cur_size,
+          .name = cur_name.empty() ? cur_exp : cur_name,
+          .exp_name = cur_exp,
+      };
+    }
+  }
+  closedir(dir);
+
+  for (const auto& [ino, item] : buffers) {
+    summary.total_bytes += item.size;
+    summary.entries.push_back({
+        .inode = ino,
+        .size_bytes = item.size,
+        .name = item.name,
+        .exp_name = item.exp_name,
+    });
+  }
+
+  std::sort(
+      summary.entries.begin(), summary.entries.end(),
+      [](const auto& a, const auto& b) { return a.size_bytes > b.size_bytes; });
+  return summary;
+}
+
+void ReportMemoryUsage() {
+  std::ifstream status_file("/proc/self/status");
+  if (status_file.is_open()) {
+    std::string line;
+    while (std::getline(status_file, line)) {
+      if (absl::StartsWith(line, "VmHWM:") ||
+          absl::StartsWith(line, "VmRSS:")) {
+        ABSL_LOG(INFO) << line;
+      }
+    }
+  }
+
+  DmaBufSummary dmabuf = GetProcessDmaBufUsage();
+  if (dmabuf.total_bytes > 0) {
+    const double total_mb =
+        static_cast<double>(dmabuf.total_bytes) / (1024.0 * 1024.0);
+    ABSL_LOG(INFO) << "========================================";
+    ABSL_LOG(INFO) << absl::StrFormat(
+        "DMA-BUF hardware usage: %.2f MB (%zu unique buffers)", total_mb,
+        dmabuf.entries.size());
+    for (const auto& entry : dmabuf.entries) {
+      double sz_mb = static_cast<double>(entry.size_bytes) / (1024.0 * 1024.0);
+      if (sz_mb >= 0.1) {
+        ABSL_LOG(INFO) << absl::StrFormat(
+            "  - %-28s: %6.2f MB (Inode %llu, %s)", entry.name, sz_mb,
+            static_cast<uint64_t>(entry.inode), entry.exp_name);
+      }
+    }
+    ABSL_LOG(INFO) << "========================================";
+  } else {
+    ABSL_LOG(INFO) << "DMA-BUF usage: 0 bytes (no dmabuf fds found).";
+  }
+}
+#endif  // defined(__ANDROID__)
 
 litert::HwAcceleratorSet GetAccelerator() {
   const std::string accelerator_str = absl::GetFlag(FLAGS_accelerator);
@@ -515,6 +663,12 @@ Expected<void> RunModel() {
   if (!output_dir.empty()) {
     LITERT_RETURN_IF_ERROR(tensor_utils::WriteOutputBuffersToFiles(
         compiled_model, signature_index, output_buffers, output_dir));
+  }
+
+  if (absl::GetFlag(FLAGS_report_peak_memory_footprint)) {
+#if defined(__ANDROID__)
+    ReportMemoryUsage();
+#endif
   }
 
   ABSL_LOG(INFO) << "Model run completed";
