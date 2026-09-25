@@ -1066,12 +1066,15 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
         }
       }
 
+      LITERT_LOG(LITERT_INFO,
+                 "Calling ModifyGraphWithDelegate for accelerator.");
       if (compiled_model->interp_->ModifyGraphWithDelegate(
               delegate_ptr, compiled_model->active_subgraph_indices_) !=
           kTfLiteOk) {
         return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                           "Failed to modify graph with delegate");
       }
+      LITERT_LOG(LITERT_INFO, "ModifyGraphWithDelegate succeeded.");
 
       GraphCounts counts = compiled_model->GetGraphCounts();
       int delegated_ops = current_undelegated_nodes - counts.undelegated_nodes;
