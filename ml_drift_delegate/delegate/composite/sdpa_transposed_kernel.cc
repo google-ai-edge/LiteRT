@@ -984,6 +984,10 @@ MAIN_FUNCTION($0) {
 
 }  // namespace
 
+bool SupportsFusedSdpaKernels(const ::ml_drift::GpuInfo& gpu_info) {
+  return gpu_info.IsApple() && gpu_info.IsApiMetal();
+}
+
 absl::Status BuildSdpaTransposedGpuGraph(
     const std::vector<uint32_t>& input_ids, uint32_t output_id,
     const SdpaTransposedAttributes& attr,
@@ -1021,6 +1025,8 @@ absl::Status BuildSdpaTransposedGpuGraph(
   }
 
   const int head_dim = q.tensor_desc.GetBHWCShape().c;
+  const bool supports_fused_kernels =
+      SupportsFusedSdpaKernels(model_builder->gpu_info());
 
   // The fused Flash-Attention prefill kernel indexes K and V directly in the
   // packed 4D layout produced by `odml.cache_update`, so it requires
@@ -1033,7 +1039,7 @@ absl::Status BuildSdpaTransposedGpuGraph(
       head_dim <= 128 &&
       k.tensor_desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
       v.tensor_desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
-      model_builder->gpu_info().IsApple();
+      supports_fused_kernels;
 
   if (is_supported_flash_prefill) {
     auto dst = model_builder->AddTensor(q.tensor_desc.GetBHWCShape(),
@@ -1052,13 +1058,13 @@ absl::Status BuildSdpaTransposedGpuGraph(
 
   // Fused Flash-Decode is currently optimized for Apple Silicon with
   // head_dim = 128 (slices = 32 matching the 32-thread SIMD wave size).
-  // For other head dimensions or non-Apple GPUs, fall back to the multi-op
+  // For other head dimensions or non-Metal backends, fall back to the multi-op
   // graph.
   const bool is_supported_flash_decode =
       attr.from_cache_update && !attr.is_prefill && head_dim == 128 &&
       k.tensor_desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
       v.tensor_desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
-      model_builder->gpu_info().IsApple();
+      supports_fused_kernels;
 
   if (is_supported_flash_decode) {
     // Single fused Flash-Decode SDPA op.

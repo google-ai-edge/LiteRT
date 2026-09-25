@@ -29,6 +29,7 @@
 #include "absl/strings/str_replace.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/kernels/fully_connected.h"  // from @ml_drift
@@ -256,11 +257,12 @@ class SdpaTransposedKernelExecuteTest
 
 // Grouped-query attention, where several query heads share one KV head, is
 // implemented only by the fused Flash-Attention kernels, and those are selected
-// on Apple GPUs alone. The decomposed BMM fallback used on every other backend
-// indexes K and V with the query head directly, so it cannot represent these
-// shapes at all and the corresponding cases are skipped there.
+// on the Metal backend of Apple GPUs alone. The decomposed BMM fallback used on
+// every other backend indexes K and V with the query head directly, so it
+// cannot represent these shapes at all and the corresponding cases are skipped
+// there.
 bool SupportsGroupedQuery(::ml_drift::TestExecutionEnvironment& env) {
-  return env.GetGpuInfo().IsApple();
+  return SupportsFusedSdpaKernels(env.GetGpuInfo());
 }
 
 constexpr absl::string_view kGroupedQuerySkipReason =
@@ -678,6 +680,38 @@ INSTANTIATE_TEST_SUITE_P(
                        ToString(std::get<2>(info.param)));
       return absl::StrReplaceAll(name, {{":", ""}});
     });
+
+::ml_drift::GpuInfo MakeGpuInfo(::ml_drift::GpuVendor vendor,
+                                ::ml_drift::GpuApi api) {
+  ::ml_drift::GpuInfo gpu_info;
+  gpu_info.vendor = vendor;
+  gpu_info.gpu_api = api;
+  return gpu_info;
+}
+
+TEST(SupportsFusedSdpaKernelsTest, AppleGpuOnMetal) {
+  EXPECT_TRUE(SupportsFusedSdpaKernels(
+      MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kMetal)));
+}
+
+// The fused kernels are Metal Shading Language, so an Apple GPU driven through
+// any other API must take the multi-op fallback.
+TEST(SupportsFusedSdpaKernelsTest, AppleGpuOnWebGpuUsesFallback) {
+  EXPECT_FALSE(SupportsFusedSdpaKernels(
+      MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kWebGpu)));
+}
+
+TEST(SupportsFusedSdpaKernelsTest, AppleGpuOnOpenClUsesFallback) {
+  EXPECT_FALSE(SupportsFusedSdpaKernels(
+      MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kOpenCl)));
+}
+
+TEST(SupportsFusedSdpaKernelsTest, NonAppleGpuUsesFallback) {
+  EXPECT_FALSE(SupportsFusedSdpaKernels(
+      MakeGpuInfo(::ml_drift::GpuVendor::kAMD, ::ml_drift::GpuApi::kMetal)));
+  EXPECT_FALSE(SupportsFusedSdpaKernels(
+      MakeGpuInfo(::ml_drift::GpuVendor::kNvidia, ::ml_drift::GpuApi::kWebGpu)));
+}
 
 }  // namespace
 }  // namespace litert::ml_drift
