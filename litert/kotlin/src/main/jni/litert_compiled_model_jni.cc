@@ -35,6 +35,7 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_common.h"
@@ -209,6 +210,35 @@ CompiledModel& GetCompiledModel(jlong compiled_model_handle) {
       reinterpret_cast<CompiledModelWrapper*>(compiled_model_handle);
   ABSL_CHECK(wrapper != nullptr);
   return wrapper->compiled_model;
+}
+
+enum class ResizeInputTensorMode { kStrict, kNonStrict };
+
+void ResizeInputTensor(JNIEnv* env, jlong compiled_model_handle,
+                       jstring signature, jstring input_name,
+                       jintArray dimensions, ResizeInputTensorMode mode) {
+  auto& compiled_model = GetCompiledModel(compiled_model_handle);
+
+  AUTO_CLEANUP_JNI_STRING(env, signature);
+  ABSL_CHECK(signature_str != nullptr);
+  AUTO_CLEANUP_JNI_STRING(env, input_name);
+  ABSL_CHECK(input_name_str != nullptr);
+  const auto dimensions_size = env->GetArrayLength(dimensions);
+  AUTO_CLEANUP_JNI_INT_ARRAY(env, dimensions);
+  auto dimensions_span = absl::MakeConstSpan(
+      reinterpret_cast<const int*>(dimensions_array), dimensions_size);
+
+  auto result = mode == ResizeInputTensorMode::kStrict
+                    ? compiled_model.ResizeInputTensor(
+                          signature_str, input_name_str, dimensions_span)
+                    : compiled_model.ResizeInputTensorNonStrict(
+                          signature_str, input_name_str, dimensions_span);
+  if (!result) {
+    LITERT_LOG(LITERT_ERROR, "Failed to resize input tensor: %s",
+               result.Error().Message().c_str());
+    ThrowLiteRtException(env, result.Error().Status(),
+                         result.Error().Message());
+  }
 }
 
 // Populates a CpuOptions from the given cpu options.
@@ -911,6 +941,22 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeGetOutputBufferRequirements(
     return nullptr;
   }
   return CreateJavaTensorBufferRequirements(env, *requirements);
+}
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeResizeInputTensor(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle, jstring signature,
+    jstring input_name, jintArray dimensions) {
+  ResizeInputTensor(env, compiled_model_handle, signature, input_name,
+                    dimensions, ResizeInputTensorMode::kStrict);
+}
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeResizeInputTensorNonStrict(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle, jstring signature,
+    jstring input_name, jintArray dimensions) {
+  ResizeInputTensor(env, compiled_model_handle, signature, input_name,
+                    dimensions, ResizeInputTensorMode::kNonStrict);
 }
 
 JNIEXPORT jlongArray JNICALL

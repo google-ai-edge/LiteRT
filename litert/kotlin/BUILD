@@ -118,6 +118,7 @@ cc_library(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -184,12 +185,23 @@ tflite_jni_binary(
     linkscript = ":litert_api_version_script.lds",
     # Set stamp = 0 to avoid including internal info to the binary for the public release.
     stamp = 0,
+    visibility = [
+        "//third_party/odml/litert:__subpackages__",
+        "//litert/kotlin/src/tests:__pkg__",
+    ],
     deps = [
         ":litert_compiled_model_jni",
         ":litert_environment_jni",
         ":litert_tensor_buffer_jni",
-        "//litert/c/internal:litert_runtime_builtin_none",
-    ],
+    ] + select({
+        # The host JVM test needs the runtime linked into liblitert_jni.so.
+        "//litert:android": [
+            "//litert/c/internal:litert_runtime_builtin_none",
+        ],
+        "//conditions:default": [
+            "//litert/c/internal:litert_runtime_builtin_static",
+        ],
+    }),
 )
 
 cc_library(
@@ -356,7 +368,9 @@ kt_android_library(
     javacopts = JAVACOPTS,
     manifest = "src/main/AndroidManifest.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
-    visibility = litert_jni_friends(),
+    visibility = litert_jni_friends() + [
+        "//litert/kotlin/src/tests:__pkg__",
+    ],
     deps = LITERT_KOTLIN_DEPS_ALL,
 )
 
