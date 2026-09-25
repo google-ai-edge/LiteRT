@@ -6,15 +6,15 @@ on:
 
 permissions:
   contents: read # Required
-  # issues: write # Required
-  # pull-requests: write # Required
+  # issues: write # Required # zizmor: ignore[excessive-permissions]
+  # pull-requests: write # Required # zizmor: ignore[excessive-permissions]
 
 jobs:
   welcome:
     runs-on: ubuntu-latest
     permissions:
-      issues: write # Required
-      pull-requests: write # Required
+      issues: write # Required # zizmor: ignore[excessive-permissions]
+      pull-requests: write # Required # zizmor: ignore[excessive-permissions]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

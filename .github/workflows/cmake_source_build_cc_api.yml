@@ -55,12 +55,8 @@ jobs:
           fi
 
   source-build-cc-api:
-    name: "CMake-C++-API-example"
-    needs: check
-    if: needs.check.outputs.run_build == 'true'
-    # Building LiteRT from source with CMake/Ninja on "ubuntu-latest" (2 vCPUs)
-    # takes ~20 minutes. Keep it on "linux-x86-n2-16" to keep runtime under 10 minutes.
-    runs-on: linux-x86-n2-16
+    name: "CMake C++ API example"
+    runs-on: linux-x86-n2-16 # zizmor: ignore[self-hosted-runner]
     container:
       image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:12822904942562e7deb0c91fb0eb3dd9ec87b4292881108b166e44149422b87d
     env:
