@@ -1,6 +1,7 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -110,6 +111,13 @@ TEST(MiscTest, TestAlwaysFalse) {
   ASSERT_FALSE(::qnn::always_false<float>);
   ASSERT_FALSE(::qnn::always_false<double>);
   ASSERT_FALSE(::qnn::always_false<long double>);
+}
+
+TEST(MiscTests, Fp16BitsToFloat) {
+  EXPECT_FLOAT_EQ(Fp16BitsToFloat(0x0000), 0.0f);
+  EXPECT_FLOAT_EQ(Fp16BitsToFloat(0x3c00), 1.0f);
+  EXPECT_FLOAT_EQ(Fp16BitsToFloat(0xc000), -2.0f);
+  EXPECT_FLOAT_EQ(Fp16BitsToFloat(0x0001), std::ldexp(1.0f, -24));
 }
 
 TEST(MiscTests, Quantize) {
@@ -224,6 +232,40 @@ TEST(MiscTests, UnpackInt2Data) {
     EXPECT_EQ(dst[5], -2);
     EXPECT_EQ(dst[6], 1);
     EXPECT_EQ(dst[7], 0);
+  }
+}
+
+TEST(MiscTests, ConvertDataFromInt8ToInt4) {
+  const std::vector<std::int8_t> src{4, -2, 7, -8, 1};
+  std::vector<std::int8_t> dst;
+
+  ConvertDataFromInt8ToInt4(src, dst);
+
+  const std::vector<std::int8_t> expected{static_cast<std::int8_t>(0xe4),
+                                          static_cast<std::int8_t>(0x87),
+                                          static_cast<std::int8_t>(0x01)};
+  EXPECT_EQ(dst, expected);
+}
+
+TEST(MiscTests, PermutesBlockwiseQuantizationMetadata) {
+  std::vector<std::uint32_t> dimensions{4, 6, 8, 10};
+  std::vector<std::uint32_t> block_sizes{2, 3, 4, 5};
+  std::vector<Qnn_FloatScaleOffset_t> scale_offsets(16);
+  for (size_t i = 0; i < scale_offsets.size(); ++i) {
+    scale_offsets[i].scale = static_cast<float>(i);
+    scale_offsets[i].offset = -static_cast<float>(i);
+  }
+
+  ASSERT_TRUE(PermuteBlockwiseQuantizationMetadata(
+      dimensions, {1, 2, 3, 0}, absl::Span<std::uint32_t>(block_sizes),
+      absl::Span<Qnn_FloatScaleOffset_t>(scale_offsets)));
+
+  EXPECT_EQ(block_sizes, (std::vector<std::uint32_t>{3, 4, 5, 2}));
+  const std::vector<float> expected_scales{0, 8,  1, 9,  2, 10, 3, 11,
+                                           4, 12, 5, 13, 6, 14, 7, 15};
+  for (size_t i = 0; i < expected_scales.size(); ++i) {
+    EXPECT_EQ(scale_offsets[i].scale, expected_scales[i]);
+    EXPECT_EQ(scale_offsets[i].offset, -expected_scales[i]);
   }
 }
 

@@ -31,6 +31,8 @@ inline bool IsStrEq(const char* input, const char* golden) {
 
 }  // namespace miscs
 
+float Fp16BitsToFloat(std::uint16_t bits);
+
 // Returns the enum name for a Qnn_DataType_t (e.g. "QNN_DATATYPE_FLOAT_32"),
 // or "QNN_DATATYPE_UNKNOWN" for unrecognized values. For logging.
 const char* QnnDataTypeName(Qnn_DataType_t data_type);
@@ -65,9 +67,18 @@ void DequantizeInto(const absl::Span<const T>& in, const float scale,
 void ConvertDataFromInt8ToInt2(const std::vector<std::int8_t>& src,
                                std::vector<std::int8_t>& dst);
 
+void ConvertDataFromInt8ToInt4(const std::vector<std::int8_t>& src,
+                               std::vector<std::int8_t>& dst);
+
 std::vector<std::int8_t> UnpackInt2Data(const void* src, size_t src_bytes);
 
 std::vector<std::int8_t> UnpackInt4Data(const void* src, size_t src_bytes);
+
+bool PermuteBlockwiseQuantizationMetadata(
+    absl::Span<const std::uint32_t> dimensions,
+    absl::Span<const std::uint32_t> permutation,
+    absl::Span<std::uint32_t> block_sizes,
+    absl::Span<Qnn_FloatScaleOffset_t> scale_offsets);
 
 bool CreateDirectoryRecursive(const std::filesystem::path& dir_name);
 
