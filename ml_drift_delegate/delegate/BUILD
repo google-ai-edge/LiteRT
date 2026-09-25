@@ -294,7 +294,6 @@ objc_library(
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
         # Dependency placeholder: apple_frameworks Metal,
-        "@ml_drift//ml_drift/common:convert",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model",
