@@ -20,12 +20,14 @@
 #include <iomanip>
 #include <iostream>
 #include <numeric>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include "testing/base/public/gunit.h"
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_common.h"
@@ -35,6 +37,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/options/litert_gpu_options.h"
 #include "litert/core/options.h"
 #include "litert/experimental/custom_ops/gated_delta_net/gated_delta_update_tflite_op.h"
 #include "ml_drift_delegate/delegate/gated_delta_update_test_util.h"
@@ -61,6 +64,8 @@ void GenerateRandom(TensorBuffer& buffer, float min_val = 0.0f,
 Expected<litert::Options> CreateGpuOptions() {
   LITERT_ASSIGN_OR_RETURN(litert::Options options, litert::Options::Create());
   options.SetHardwareAccelerators(litert::HwAccelerators::kGpu);
+  LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
+  LITERT_RETURN_IF_ERROR(gpu_opts.EnableBenchmarkMode(true));
 
   static TfLiteRegistration reg =
       *litert_torch::gdn_kernels::GetGatedDeltaUpdateRegistration();
@@ -73,16 +78,12 @@ Expected<litert::Options> CreateGpuOptions() {
   return std::move(options);
 }
 
-TEST(GatedDeltaUpdateBenchmark, BenchmarkOp) {
-  // Qwen 3.5 0.8B representative dimensions: H=16, D_k=128, D_v=128, L=128
-  int B = 1;
-  int H = 16;
-  int L = 128;
-  int D_k = 128;
-  int D_v = 128;
-
-  std::vector<uint8_t> model_buffer =
-      CreateGatedDeltaUpdateModelBuffer(B, H, L, D_k, D_v);
+void RunBenchmarkCase(const std::string& name, int B, int H_k, int H_v, int L,
+                      int D_k, int D_v, int valid_L = -1) {
+  const bool has_valid_len = (valid_L >= 0);
+  std::vector<uint8_t> model_buffer = CreateGatedDeltaUpdateModelBuffer(
+      B, H_v, L, D_k, D_v, /*mode=*/0, H_k, /*state_dtype=*/"float32",
+      has_valid_len);
 
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
@@ -100,10 +101,6 @@ TEST(GatedDeltaUpdateBenchmark, BenchmarkOp) {
   auto output_buffers = compiled_model->CreateOutputBuffers();
   ASSERT_TRUE(output_buffers);
 
-  ASSERT_EQ(input_buffers->size(), 6);
-  ASSERT_EQ(output_buffers->size(), 2);
-
-  // Populate inputs
   std::srand(42);
   GenerateRandom((*input_buffers)[0], -0.5f, 0.5f);
   GenerateRandom((*input_buffers)[1], -0.5f, 0.5f);
@@ -112,22 +109,20 @@ TEST(GatedDeltaUpdateBenchmark, BenchmarkOp) {
   GenerateRandom((*input_buffers)[4], -1.0f, -0.1f);
   GenerateRandom((*input_buffers)[5], -0.5f, 0.5f);
 
-  std::cerr
-      << "\n================ GATED DELTA UPDATE BENCHMARK ================\n";
-  std::cerr << "Batch: " << B << ", Heads: " << H << ", SeqLen: " << L
-            << ", D_k: " << D_k << ", D_v: " << D_v << "\n";
+  if (has_valid_len) {
+    std::vector<int32_t> valid_len_vec(B, valid_L);
+    ASSERT_TRUE(
+        (*input_buffers)[6].Write<int32_t>(absl::MakeConstSpan(valid_len_vec)));
+  }
 
-  // Warmup GPU
   constexpr int kWarmupIters = 10;
   for (int i = 0; i < kWarmupIters; ++i) {
     ASSERT_TRUE(compiled_model->Run(*input_buffers, *output_buffers));
   }
 
-  // Benchmark GPU
-  constexpr int kBenchIters = 100;
+  constexpr int kBenchIters = 50;
   std::vector<double> latencies_us;
   latencies_us.reserve(kBenchIters);
-
   for (int i = 0; i < kBenchIters; ++i) {
     absl::Time t0 = absl::Now();
     ASSERT_TRUE(compiled_model->Run(*input_buffers, *output_buffers));
@@ -137,22 +132,48 @@ TEST(GatedDeltaUpdateBenchmark, BenchmarkOp) {
 
   std::sort(latencies_us.begin(), latencies_us.end());
   double min_us = latencies_us.front();
-  double max_us = latencies_us.back();
-  double sum_us =
-      std::accumulate(latencies_us.begin(), latencies_us.end(), 0.0);
-  double avg_us = sum_us / kBenchIters;
   double p50_us = latencies_us[kBenchIters / 2];
-  double p90_us = latencies_us[static_cast<size_t>(kBenchIters * 0.9)];
+  double avg_us =
+      std::accumulate(latencies_us.begin(), latencies_us.end(), 0.0) /
+      kBenchIters;
+  std::cerr << std::fixed << std::setprecision(2) << "  [" << name
+            << "] L=" << L
+            << (valid_L >= 0 ? " (valid=" + std::to_string(valid_L) + ")" : "")
+            << " | Min: " << min_us << " us | P50: " << p50_us
+            << " us | Avg: " << avg_us
+            << " us | 48-layer P50: " << (p50_us * 48.0 / 1000.0) << " ms\n";
+}
 
-  std::cerr << std::fixed << std::setprecision(3);
-  std::cerr << "\n--- GPU Latency (" << kBenchIters << " iterations) ---\n";
-  std::cerr << "  Min:    " << min_us << " us (" << min_us / 1000.0 << " ms)\n";
-  std::cerr << "  Avg:    " << avg_us << " us (" << avg_us / 1000.0 << " ms)\n";
-  std::cerr << "  Median: " << p50_us << " us (" << p50_us / 1000.0 << " ms)\n";
-  std::cerr << "  P90:    " << p90_us << " us (" << p90_us / 1000.0 << " ms)\n";
-  std::cerr << "  Max:    " << max_us << " us (" << max_us / 1000.0 << " ms)\n";
-  std::cerr
-      << "==============================================================\n\n";
+TEST(GatedDeltaUpdateBenchmark, BenchmarkQwen27B) {
+  std::cerr << "\n=== Qwen3.8-27B GDN Kernel Micro-Benchmark (H_k=16, H_v=48, "
+               "D=128) ===\n";
+  RunBenchmarkCase("Decode L=1", 1, 16, 48, 1, 128, 128, -1);
+
+  std::cerr << "--- Fixed L=128 ---\n";
+  RunBenchmarkCase("Baseline (no valid_len)", 1, 16, 48, 128, 128, 128, -1);
+  for (int valid_L : {16, 32, 64, 128}) {
+    RunBenchmarkCase("Explicit valid_len", 1, 16, 48, 128, 128, 128, valid_L);
+  }
+
+  std::cerr << "--- Fixed L=256 ---\n";
+  RunBenchmarkCase("Baseline (no valid_len)", 1, 16, 48, 256, 128, 128, -1);
+  for (int valid_L : {16, 32, 64, 128, 256}) {
+    RunBenchmarkCase("Explicit valid_len", 1, 16, 48, 256, 128, 128, valid_L);
+  }
+
+  std::cerr << "--- Fixed L=512 ---\n";
+  RunBenchmarkCase("Baseline (no valid_len)", 1, 16, 48, 512, 128, 128, -1);
+  for (int valid_L : {128, 256, 512}) {
+    RunBenchmarkCase("Explicit valid_len", 1, 16, 48, 512, 128, 128, valid_L);
+  }
+
+  std::cerr << "--- Fixed L=1024 ---\n";
+  RunBenchmarkCase("Baseline (no valid_len)", 1, 16, 48, 1024, 128, 128, -1);
+  for (int valid_L : {128, 256, 512, 1024}) {
+    RunBenchmarkCase("Explicit valid_len", 1, 16, 48, 1024, 128, 128, valid_L);
+  }
+  std::cerr << "==============================================================="
+               "=======\n\n";
 }
 
 }  // namespace

@@ -14,7 +14,9 @@
 
 #include "litert/experimental/custom_ops/gated_delta_net/gated_delta_update_impl.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <vector>
 
 #include "Eigen/Core"  // from @eigen_archive
@@ -54,7 +56,8 @@ void ComputeGatedDeltaUpdateRecurrent(const float* q_t, const float* k_t,
                                       const float* v_t, const float* beta_t,
                                       const float* g_t, const float* rec_state,
                                       float* core_out, float* new_rec, int B,
-                                      int H, int N, int D_k, int D_v, int H_k) {
+                                      int H, int N, int D_k, int D_v, int H_k,
+                                      const int* valid_len) {
   using Matrix =
       Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
   using Vector = Eigen::Matrix<float, Eigen::Dynamic, 1>;
@@ -78,7 +81,9 @@ void ComputeGatedDeltaUpdateRecurrent(const float* q_t, const float* k_t,
     const float* g_bh = g_t + bh * N;
     float* out_bh = core_out + bh * N * D_v;
 
-    for (int t = 0; t < N; ++t) {
+    const int active_len =
+        (valid_len != nullptr) ? std::clamp(valid_len[b], 0, N) : N;
+    for (int t = 0; t < active_len; ++t) {
       // Valid g_t <= 0 and beta_t > 0; right-padded positions use g_t > 0 and
       // beta_t <= 0 sentinels so state neither decays nor updates on padding.
       const float g_val = (g_bh[t] <= 0.0f) ? std::exp(g_bh[t]) : 1.0f;
@@ -93,6 +98,10 @@ void ComputeGatedDeltaUpdateRecurrent(const float* q_t, const float* k_t,
       Vector delta = (v_val - kv_mem) * beta_val;
       S_out.noalias() += k_val * delta.transpose();
       out_val = S_out.transpose() * q_val;
+    }
+    if (active_len < N) {
+      std::memset(out_bh + active_len * D_v, 0,
+                  (N - active_len) * D_v * sizeof(float));
     }
   }
 }

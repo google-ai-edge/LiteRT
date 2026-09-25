@@ -227,8 +227,10 @@ class GatedDeltaUpdateOp : public ::ml_drift::GPUOperation {
 //   float4 s2_3 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_3 + 2, h, v_slice, b));
 //   float4 s3_3 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_3 + 3, h, v_slice, b));
 //
-//   // Process sequence length sequentially
-//   for (int t = 0; t < 128; ++t) {
+//   int valid_len = clamp(args.valid_len.Read<int>(0, 0, 0, b).x, 0, 128);
+//
+//   // Process active sequence length sequentially
+//   for (int t = 0; t < valid_len; ++t) {
 //     // Uniform load across subgroup: all lanes read identical (h, 0, t_slice, b)
 //     int t_slice = t / 4;
 //     int t_elem = t % 4;
@@ -388,6 +390,12 @@ class GatedDeltaUpdateOp : public ::ml_drift::GPUOperation {
 //     }
 //   }
 //
+//   if (k_lane == 0) {
+//     for (int t = valid_len; t < 128; ++t) {
+//       args.output.Write(ucl::Init<float4>(0.0), t, h, v_slice, b);
+//     }
+//   }
+//
 //   // Write out final evolved recurrent state for this thread's owned rows and v_slice
 //   args.recurrent_state_out.Write(ucl::Convert<float4>(s0_0), k_base_0 + 0, h, v_slice, b);
 //   args.recurrent_state_out.Write(ucl::Convert<float4>(s1_0), k_base_0 + 1, h, v_slice, b);
@@ -443,8 +451,10 @@ class GatedDeltaUpdateOp : public ::ml_drift::GPUOperation {
 //   vec4<f32> s2_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_3 + 2, h, v_slice, b));
 //   vec4<f32> s3_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_3 + 3, h, v_slice, b));
 //
-//   // Process sequence length sequentially
-//   for (int t = 0; t < 128; ++t) {
+//   int valid_len = clamp(args.valid_len.Read<int>(0, 0, 0, b).x, 0, 128);
+//
+//   // Process active sequence length sequentially
+//   for (int t = 0; t < valid_len; ++t) {
 //     // Uniform load across subgroup: all lanes read identical (h, 0, t_slice, b)
 //     int t_slice = t / 4;
 //     int t_elem = t % 4;
@@ -604,6 +614,12 @@ class GatedDeltaUpdateOp : public ::ml_drift::GPUOperation {
 //     }
 //   }
 //
+//   if (k_lane == 0) {
+//     for (int t = valid_len; t < 128; ++t) {
+//       args.output.Write(ucl::Init<vec4<f32>>(0.0), t, h, v_slice, b);
+//     }
+//   }
+//
 //   // Write out final evolved recurrent state for this thread's owned rows and v_slice
 //   args.recurrent_state_out.Write(ucl::Convert<vec4<f32>>(s0_0), k_base_0 + 0, h, v_slice, b);
 //   args.recurrent_state_out.Write(ucl::Convert<vec4<f32>>(s1_0), k_base_0 + 1, h, v_slice, b);
@@ -637,9 +653,10 @@ MAIN_FUNCTION($0) {
   int b = ucl::GetGroupId<2>();
 
   STATE_INIT_DECLS
+  VALID_LEN_INIT
 
-  // Process sequence length sequentially
-  for (int t = 0; t < SEQ_LEN_EXPR; ++t) {
+  // Process active sequence length sequentially
+  for (int t = 0; t < LOOP_BOUND_EXPR; ++t) {
     // Uniform load across subgroup: all lanes read identical (h, 0, t_slice, b)
     int t_slice = t / 4;
     int t_elem = t % 4;
@@ -699,13 +716,151 @@ MAIN_FUNCTION($0) {
     }
   }
 
+  ZERO_PAD_TAIL_STEP
+
   // Write out final evolved recurrent state for this thread's owned rows and v_slice
   STATE_WRITE_OUT_STEP
 }
 )";
 
 // Shared memory-based shader (single-phase 2-barrier reduction for OpenCL /
-// WebGPU)
+// WebGPU without 32-lane subgroups).
+//
+// Final rendered shader example — Variant 3 (Shared-Memory Fallback, D_k=128,
+// D_v=128, HEAD_K_DIM_SLICES=32, SEQ_LEN_EXPR=128, GQA_RATIO=3,
+// StateType=float4, ActivationType=float4):
+// clang-format off
+// NOLINTBEGIN(whitespace/line_length)
+// ```cl
+// MAIN_FUNCTION($0) {
+//   int k_slice = ucl::GetLocalId<0>();
+//   int v_slice = ucl::GetGroupId<0>();
+//   int h = ucl::GetGroupId<1>();
+//   int h_k = h / 3;
+//   int b = ucl::GetGroupId<2>();
+//
+//   __local float4 scratch_kv[32];
+//   __local float4 scratch_out[32];
+//   __local float scratch_kq[32];
+//
+//   // Each thread owns 4 rows along D_k (k_slice * 4 + {0, 1, 2, 3}) for this v_slice.
+//   // Held entirely in 4 registers. Zero register spilling.
+//   int k_base = k_slice * 4;
+//   float4 s0 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 0, h, v_slice, b));
+//   float4 s1 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 1, h, v_slice, b));
+//   float4 s2 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 2, h, v_slice, b));
+//   float4 s3 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 3, h, v_slice, b));
+//   int valid_len = clamp(args.valid_len.Read<int>(0, 0, 0, b).x, 0, 128);
+//
+//   // Process active sequence length sequentially
+//   for (int t = 0; t < valid_len; ++t) {
+//     // Read beta and g for this step (mapped from TFLite 3D shape [B, H, L] to MLDrift BHWC [B, 1, H, L])
+//     int t_slice = t / 4;
+//     int t_elem = t % 4;
+//     float4 beta_t_vec = ucl::Convert<float4>(args.beta_t.Read(h, 0, t_slice, b));
+//     float beta_val = beta_t_vec.x;
+//     if (t_elem == 1) {
+//       beta_val = beta_t_vec.y;
+//     } else if (t_elem == 2) {
+//       beta_val = beta_t_vec.z;
+//     } else if (t_elem == 3) {
+//       beta_val = beta_t_vec.w;
+//     }
+//
+//     float4 g_t_vec = ucl::Convert<float4>(args.g_t.Read(h, 0, t_slice, b));
+//     float g_val = g_t_vec.x;
+//     if (t_elem == 1) {
+//       g_val = g_t_vec.y;
+//     } else if (t_elem == 2) {
+//       g_val = g_t_vec.z;
+//     } else if (t_elem == 3) {
+//       g_val = g_t_vec.w;
+//     }
+//
+//     float decay_scalar = exp(ucl::Convert<float>(g_val));
+//     float4 decay_vec = ucl::Init<float4>(decay_scalar);
+//
+//     // Apply decay to this thread's 4 rows
+//     s0 = s0 * decay_vec;
+//     s1 = s1 * decay_vec;
+//     s2 = s2 * decay_vec;
+//     s3 = s3 * decay_vec;
+//
+//     // Load full vec4 K and Q for this thread's k_slice directly
+//     float4 k_val = ucl::Convert<float4>(args.k_t.Read(t, h_k, k_slice, b));
+//     float4 q_val = ucl::Convert<float4>(args.q_t.Read(t, h_k, k_slice, b));
+//
+//     // Compute partial dot products before barrier
+//     float4 kv_mem = s0 * ucl::Init<float4>(k_val.x) +
+//                     s1 * ucl::Init<float4>(k_val.y) +
+//                     s2 * ucl::Init<float4>(k_val.z) +
+//                     s3 * ucl::Init<float4>(k_val.w);
+//     float4 sq_mem = s0 * ucl::Init<float4>(q_val.x) +
+//                     s1 * ucl::Init<float4>(q_val.y) +
+//                     s2 * ucl::Init<float4>(q_val.z) +
+//                     s3 * ucl::Init<float4>(q_val.w);
+//     float kq_dot = dot(k_val, q_val);
+//
+//     scratch_kv[k_slice] = kv_mem;
+//     scratch_out[k_slice] = sq_mem;
+//     scratch_kq[k_slice] = kq_dot;
+//     ucl::SyncThreads<WorkGroup, Local>();
+//     // Fold the 32 partial sums across 4 quarters (lanes 0..7 accumulate lanes
+//     // k_slice + {0, 8, 16, 24}) in a single barrier step instead of 5 tree-reduction
+//     // barriers, then sum the remaining 8 partial sums directly.
+//     if (k_slice < 8) {
+//       scratch_kv[k_slice] += scratch_kv[k_slice + 8] +
+//                              scratch_kv[k_slice + 16] +
+//                              scratch_kv[k_slice + 24];
+//       scratch_out[k_slice] += scratch_out[k_slice + 8] +
+//                               scratch_out[k_slice + 16] +
+//                               scratch_out[k_slice + 24];
+//       scratch_kq[k_slice] += scratch_kq[k_slice + 8] +
+//                              scratch_kq[k_slice + 16] +
+//                              scratch_kq[k_slice + 24];
+//     }
+//     ucl::SyncThreads<WorkGroup, Local>();
+//     kv_mem = scratch_kv[0] + scratch_kv[1] + scratch_kv[2] + scratch_kv[3] +
+//              scratch_kv[4] + scratch_kv[5] + scratch_kv[6] + scratch_kv[7];
+//
+//     // Load V vector slice for this step
+//     float4 v_vec = ucl::Convert<float4>(args.v_t.Read(t, h, v_slice, b));
+//     float4 beta_factor = ucl::Init<float4>(ucl::Convert<float>(beta_val));
+//     float4 delta_slice = (v_vec - kv_mem) * beta_factor;
+//
+//     // Update recurrent state in-place with outer product: S += delta * k^T
+//     s0 = s0 + delta_slice * ucl::Init<float4>(k_val.x);
+//     s1 = s1 + delta_slice * ucl::Init<float4>(k_val.y);
+//     s2 = s2 + delta_slice * ucl::Init<float4>(k_val.z);
+//     s3 = s3 + delta_slice * ucl::Init<float4>(k_val.w);
+//
+//     if (k_slice == 0) {
+//       float4 sq_sum = scratch_out[0] + scratch_out[1] + scratch_out[2] +
+//                       scratch_out[3] + scratch_out[4] + scratch_out[5] +
+//                       scratch_out[6] + scratch_out[7];
+//       float kq_sum = scratch_kq[0] + scratch_kq[1] + scratch_kq[2] +
+//                      scratch_kq[3] + scratch_kq[4] + scratch_kq[5] +
+//                      scratch_kq[6] + scratch_kq[7];
+//       float4 out_sum = sq_sum + delta_slice * ucl::Init<float4>(kq_sum);
+//       args.output.Write(ucl::Convert<float4>(out_sum), t, h, v_slice, b);
+//     }
+//   }
+//
+//   if (k_slice == 0) {
+//     for (int t = valid_len; t < 128; ++t) {
+//       args.output.Write(ucl::Init<float4>(0.0), t, h, v_slice, b);
+//     }
+//   }
+//
+//   // Write out final evolved recurrent state for this thread's 4 rows
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s0), k_base + 0, h, v_slice, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s1), k_base + 1, h, v_slice, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s2), k_base + 2, h, v_slice, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s3), k_base + 3, h, v_slice, b);
+// }
+// ```
+// NOLINTEND(whitespace/line_length)
+// clang-format on
 constexpr char kGatedDeltaUpdateSharedMemShader[] = R"(
 MAIN_FUNCTION($0) {
   int k_slice = ucl::GetLocalId<0>();
@@ -725,9 +880,10 @@ MAIN_FUNCTION($0) {
   StateType s1 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 1, h, v_slice, b));
   StateType s2 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 2, h, v_slice, b));
   StateType s3 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 3, h, v_slice, b));
+  VALID_LEN_INIT
 
-  // Process sequence length sequentially
-  for (int t = 0; t < SEQ_LEN_EXPR; ++t) {
+  // Process active sequence length sequentially
+  for (int t = 0; t < LOOP_BOUND_EXPR; ++t) {
     // Read beta and g for this step (mapped from TFLite 3D shape [B, H, L] to MLDrift BHWC [B, 1, H, L])
     int t_slice = t / 4;
     int t_elem = t % 4;
@@ -791,6 +947,8 @@ MAIN_FUNCTION($0) {
     SHARED_REDUCE_ATTN_OUT
   }
 
+  ZERO_PAD_TAIL_STEP
+
   // Write out final evolved recurrent state for this thread's 4 rows
   args.recurrent_state_out.Write(ucl::Convert<StateType>(s0), k_base + 0, h, v_slice, b);
   args.recurrent_state_out.Write(ucl::Convert<StateType>(s1), k_base + 1, h, v_slice, b);
@@ -808,6 +966,7 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
   const auto& beta_t = definition.src_tensors[3];
   const auto& g_t = definition.src_tensors[4];
   const auto& rec_state_in = definition.src_tensors[5];
+  const bool has_valid_len = definition.src_tensors.size() >= 7;
 
   const auto& output = definition.dst_tensors[0];
   const auto& rec_state_out = definition.dst_tensors[1];
@@ -866,6 +1025,9 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
   op->AddSrcTensor("beta_t", beta_t);
   op->AddSrcTensor("g_t", g_t);
   op->AddSrcTensor("recurrent_state_in", rec_state_in);
+  if (has_valid_len) {
+    op->AddSrcTensor("valid_len", definition.src_tensors[6]);
+  }
 
   op->AddDstTensor("output", output);
   op->AddDstTensor("recurrent_state_out", rec_state_out);
@@ -1025,8 +1187,29 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
       args.output.Write(ucl::Convert<ActivationType>(out_sum), t, h, v_slice, b);
     })";
 
+  std::string valid_len_init =
+      has_valid_len
+          ? "int valid_len = clamp(args.valid_len.Read<int>(0, 0, 0, b).x, 0, "
+            "SEQ_LEN_EXPR);"
+          : "";
+  std::string loop_bound_expr = has_valid_len ? "valid_len" : "SEQ_LEN_EXPR";
+  std::string zero_pad_lane_cond =
+      can_use_shuffle ? "k_lane == 0" : "k_slice == 0";
+  std::string zero_pad_tail_step =
+      has_valid_len
+          ? "if (" + zero_pad_lane_cond +
+                ") {\n"
+                "    for (int t = valid_len; t < SEQ_LEN_EXPR; ++t) {\n"
+                "      args.output.Write(ucl::Init<ActivationType>(0.0), t, h, "
+                "v_slice, b);\n"
+                "    }\n"
+                "  }"
+          : "";
+
   absl::StrReplaceAll(
       {{"STATE_INIT_DECLS", absl::StripAsciiWhitespace(state_init_decls)},
+       {"VALID_LEN_INIT", valid_len_init},
+       {"LOOP_BOUND_EXPR", loop_bound_expr},
        {"DECAY_STEP", absl::StripAsciiWhitespace(decay_step)},
        {"KV_MEM_STEP", absl::StripAsciiWhitespace(kv_mem_step)},
        {"SIMD_REDUCE_KV_MEM", absl::StripAsciiWhitespace(simd_reduce_kv_mem)},
@@ -1034,6 +1217,7 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
        {"ATTN_OUT_STEP", absl::StripAsciiWhitespace(attn_out_step)},
        {"SIMD_REDUCE_ATTN_OUT",
         absl::StripAsciiWhitespace(simd_reduce_attn_out)},
+       {"ZERO_PAD_TAIL_STEP", zero_pad_tail_step},
        {"STATE_WRITE_OUT_STEP",
         absl::StripAsciiWhitespace(state_write_out_step)},
        {"SHARED_REDUCE_KV_MEM", shared_reduce_kv_mem},

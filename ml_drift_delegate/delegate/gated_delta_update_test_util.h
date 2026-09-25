@@ -32,7 +32,7 @@ namespace litert::ml_drift {
 // gated_delta_update custom op node with the given tensor dimensions.
 inline std::vector<uint8_t> CreateGatedDeltaUpdateModelBuffer(
     int B, int H, int N, int D_k, int D_v, int mode = 0, int H_k = -1,
-    const std::string& state_dtype = "float32") {
+    const std::string& state_dtype = "float32", bool has_valid_len = false) {
   flatbuffers::FlatBufferBuilder builder;
 
   // 1. Operator code: Custom op "gated_delta_update"
@@ -57,30 +57,44 @@ inline std::vector<uint8_t> CreateGatedDeltaUpdateModelBuffer(
   // 3: beta [B, H, N]
   // 4: g [B, H, N]
   // 5: initial_state [B, H, D_k, D_v]
+  // 6 (optional): valid_len [B] (INT32)
   // Outputs:
-  // 6: out [B, H, N, D_v]
-  // 7: final_state [B, H, D_k, D_v]
+  // 6 (or 7): out [B, H, N, D_v]
+  // 7 (or 8): final_state [B, H, D_k, D_v]
   int actual_H_k = (H_k > 0) ? H_k : H;
-  const std::vector<std::vector<int32_t>> shapes = {
+  std::vector<std::vector<int32_t>> shapes = {
       {B, actual_H_k, N, D_k},
       {B, actual_H_k, N, D_k},
       {B, H, N, D_v},
       {B, H, N},
       {B, H, N},
-      {B, H, D_k, D_v},
-      {B, H, N, D_v},
       {B, H, D_k, D_v},
   };
+  std::vector<std::string> names = {"q",    "k", "v",
+                                    "beta", "g", "initial_state"};
+  std::vector<tflite::TensorType> dtypes(6, tflite::TensorType_FLOAT32);
 
-  const std::vector<std::string> names = {
-      "q", "k", "v", "beta", "g", "initial_state", "out", "final_state"};
+  if (has_valid_len) {
+    shapes.push_back({B});
+    names.push_back("valid_len");
+    dtypes.push_back(tflite::TensorType_INT32);
+  }
+
+  const int32_t out_idx = static_cast<int32_t>(shapes.size());
+  shapes.push_back({B, H, N, D_v});
+  names.push_back("out");
+  dtypes.push_back(tflite::TensorType_FLOAT32);
+
+  const int32_t final_state_idx = static_cast<int32_t>(shapes.size());
+  shapes.push_back({B, H, D_k, D_v});
+  names.push_back("final_state");
+  dtypes.push_back(tflite::TensorType_FLOAT32);
 
   std::vector<flatbuffers::Offset<tflite::Tensor>> tensors;
-  for (int i = 0; i < 8; ++i) {
+  for (size_t i = 0; i < shapes.size(); ++i) {
     auto shape_vec = builder.CreateVector(shapes[i]);
     auto name_str = builder.CreateString(names[i]);
-    tensors.push_back(tflite::CreateTensor(builder, shape_vec,
-                                           tflite::TensorType_FLOAT32,
+    tensors.push_back(tflite::CreateTensor(builder, shape_vec, dtypes[i],
                                            /*buffer=*/0, name_str));
   }
   auto tensors_vec = builder.CreateVector(tensors);
@@ -96,7 +110,10 @@ inline std::vector<uint8_t> CreateGatedDeltaUpdateModelBuffer(
 
   // 5. Operator
   std::vector<int32_t> op_inputs = {0, 1, 2, 3, 4, 5};
-  std::vector<int32_t> op_outputs = {6, 7};
+  if (has_valid_len) {
+    op_inputs.push_back(6);
+  }
+  std::vector<int32_t> op_outputs = {out_idx, final_state_idx};
   auto op_inputs_vec = builder.CreateVector(op_inputs);
   auto op_outputs_vec = builder.CreateVector(op_outputs);
 
@@ -108,8 +125,8 @@ inline std::vector<uint8_t> CreateGatedDeltaUpdateModelBuffer(
   auto operators_vec = builder.CreateVector(operators);
 
   // 6. Subgraph
-  std::vector<int32_t> subgraph_inputs = {0, 1, 2, 3, 4, 5};
-  std::vector<int32_t> subgraph_outputs = {6, 7};
+  std::vector<int32_t> subgraph_inputs = op_inputs;
+  std::vector<int32_t> subgraph_outputs = op_outputs;
   auto sg_inputs_vec = builder.CreateVector(subgraph_inputs);
   auto sg_outputs_vec = builder.CreateVector(subgraph_outputs);
 
