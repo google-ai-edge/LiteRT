@@ -28,6 +28,15 @@
 #include "litert/runtime/accelerators/gpu_static_registry.h"
 #include "litert/runtime/accelerators/registration_helper.h"
 
+// Defined by Bazel only when the mldrift_compatibility dep is linked (Android
+// with GPU enabled and build_common:mldrift_compatibility_check not disabled).
+// Other build systems (e.g. CMake) skip the check.
+#if defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
+#include <sys/system_properties.h>
+
+#include "tflite/experimental/acceleration/compatibility/mldrift_compatibility.h"
+#endif  // defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
+
 extern "C" {
 const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef = nullptr;
 }
@@ -44,6 +53,24 @@ namespace litert::internal {
 
 LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
 #if !defined(LITERT_DISABLE_GPU)
+#if defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
+  char bypass_prop[PROP_VALUE_MAX] = {0};
+  const bool is_gpu_compatibility_check_bypassed =
+      __system_property_get("debug.litert.bypass_gpu_compatibility",
+                            bypass_prop) > 0 &&
+      bypass_prop[0] == '1';
+
+  // Devices absent from the ML Drift allowlist fall back to CPU:
+  // auto_registration ignores kLiteRtStatusErrorUnsupported.
+  if (!is_gpu_compatibility_check_bypassed &&
+      !tflite::acceleration::IsMlDriftGpuSupportedOnThisDevice()) {
+    LITERT_LOG(LITERT_INFO,
+               "GPU accelerator is not supported on this device according to "
+               "the ML Drift compatibility list.");
+    return kLiteRtStatusErrorUnsupported;
+  }
+#endif  // defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
+
   static constexpr absl::string_view kGpuAcceleratorLibs[] = {
       "libLiteRtGpuAccelerator" SO_EXT,
 #ifdef __ANDROID__

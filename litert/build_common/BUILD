@@ -167,6 +167,31 @@ selects.config_setting_group(
     ],
 )
 
+# Checks the ML Drift GPU compatibility list before registering the GPU
+# accelerator on Android. Disable with
+# --//litert/build_common:mldrift_compatibility_check=false
+# (e.g. for integration tests on devices outside the allowlist).
+bool_flag(
+    name = "mldrift_compatibility_check",
+    build_setting_default = True,
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "mldrift_compatibility_check_enabled",
+    flag_values = {
+        ":mldrift_compatibility_check": "true",
+    },
+)
+
+selects.config_setting_group(
+    name = "android_gpu_mldrift_compatibility_check_enabled",
+    match_all = [
+        ":android_gpu_enabled",
+        ":mldrift_compatibility_check_enabled",
+    ],
+)
+
 exports_files(srcs = [
     "export_litert_gpu_accelerator_darwin.lds",
     "export_litert_gpu_accelerator_linux.lds",
