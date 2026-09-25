@@ -61,6 +61,14 @@ TensorWrapper& TensorPool::CreateNativeTensorWithSuffix(
                                        quant_params, dimensions);
 }
 
+TensorWrapper& TensorPool::CreateNullTensor() {
+  const auto id = tensor_wrappers_.size();
+  auto tensor_name = std::to_string(id) + kQnnSuffix;
+  return tensor_wrappers_.emplace_back(
+      std::move(tensor_name), QNN_TENSOR_TYPE_NULL, QNN_DATATYPE_UNDEFINED,
+      QuantizeParamsWrapperVariant{}, std::vector<std::uint32_t>{});
+}
+
 TensorWrapper& TensorPool::CreateStaticTensor(
     Qnn_DataType_t data_type, const QuantizeParamsWrapperVariant& quant_params,
     const std::vector<std::uint32_t>& dimensions, std::uint32_t bytes,
