@@ -185,6 +185,17 @@ LITERT_DEFINE_HANDLE(LiteRtExternalLiteRtBufferContext);
 #define LITERT_DISABLE_OPENGL_SUPPORT
 #endif
 
+// copybara:uncomment_begin(google-only)
+// #if defined(LITERT_PLATFORM_MICRODROID)
+// #ifndef LITERT_DISABLE_AHWB_SUPPORT
+// #define LITERT_DISABLE_AHWB_SUPPORT
+// #endif
+// #ifndef LITERT_DISABLE_OPENGL_SUPPORT
+// #define LITERT_DISABLE_OPENGL_SUPPORT
+// #endif
+// #endif  // LITERT_PLATFORM_MICRODROID
+// copybara:uncomment_end
+
 #if defined(LITERT_DISABLE_METAL_SUPPORT)
 #define LITERT_HAS_METAL_SUPPORT 0
 #else

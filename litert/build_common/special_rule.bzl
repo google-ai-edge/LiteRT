@@ -64,6 +64,10 @@ def litert_android_linkopts():
         "//conditions:default": [],
     })
 
+def litert_platform_defines():
+    """This is a no-op outside of Google."""
+    return []
+
 def litert_metal_opts():
     return select({
         "//litert:ios": ["-ObjC++", "-fobjc-arc"],

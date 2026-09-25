@@ -403,3 +403,13 @@ config_setting(
     define_values = {"litert_keep_symbols": "true"},
     visibility = ["//visibility:public"],
 )
+
+# Configuration for Microdroid guest VM builds.
+config_setting(
+    name = "microdroid",
+    constraint_values = ["@platforms//os:android"],
+    values = {
+        "define": "microdroid=1",
+    },
+    visibility = ["//visibility:public"],
+)
