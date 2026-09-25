@@ -209,8 +209,8 @@ TEST(Gemma4GraphTest, ModelTest) {
       {.name = "rope_local_sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
   inputs.weights = CreateGemma4GraphTestWeights(2);
 
-  Gemma4Outputs<XnnpackMixinTag> model_outputs =
-      BuildGemma4Graph(inputs, config);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<XnnpackMixinTag> model_outputs,
+                                  BuildGemma4Graph(inputs, config));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner, XnnpackRunner::Create({model_outputs.logits}));
@@ -278,8 +278,8 @@ TEST(Gemma4GraphTest, GlobalLayerGraphTest) {
       {.name = "rope_global_sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
   inputs.weights = CreateGemma4GraphTestWeights(2);
 
-  Gemma4Outputs<XnnpackMixinTag> model_outputs =
-      BuildGemma4Graph(inputs, config);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<XnnpackMixinTag> model_outputs,
+                                  BuildGemma4Graph(inputs, config));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner, XnnpackRunner::Create({model_outputs.logits}));
@@ -354,8 +354,8 @@ TEST(Gemma4GraphTest, KVCacheGraphTest) {
       {.name = "value_cache", .type = Type::kFP32, .shape = {1, 1, 2, 4}})};
   inputs.weights = CreateGemma4GraphTestWeights(1);
 
-  Gemma4Outputs<XnnpackMixinTag> model_outputs =
-      BuildGemma4Graph(inputs, config);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<XnnpackMixinTag> model_outputs,
+                                  BuildGemma4Graph(inputs, config));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,
@@ -437,8 +437,8 @@ TEST(Gemma4GraphTest, SharedKVCacheGraphTest) {
       {.name = "rope_local_sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
   inputs.weights = CreateGemma4GraphTestWeights(3);
 
-  Gemma4Outputs<XnnpackMixinTag> model_outputs =
-      BuildGemma4Graph(inputs, config);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<XnnpackMixinTag> model_outputs,
+                                  BuildGemma4Graph(inputs, config));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,
@@ -556,8 +556,8 @@ TEST(Gemma4GraphTest, PerLayerInputsGraphTest) {
                     .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}})});
   }
 
-  Gemma4Outputs<XnnpackMixinTag> model_outputs =
-      BuildGemma4Graph(inputs, config);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<XnnpackMixinTag> model_outputs,
+                                  BuildGemma4Graph(inputs, config));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner, XnnpackRunner::Create({model_outputs.logits}));
@@ -625,8 +625,8 @@ TEST(Gemma4GraphTest, NoLogitSoftcappingGraphTest) {
 
   inputs.weights = CreateGemma4GraphTestWeights(2);
 
-  Gemma4Outputs<XnnpackMixinTag> model_outputs =
-      BuildGemma4Graph(inputs, config);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<XnnpackMixinTag> model_outputs,
+                                  BuildGemma4Graph(inputs, config));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner, XnnpackRunner::Create({model_outputs.logits}));
@@ -755,8 +755,8 @@ TEST(Gemma4GraphTest, PerLayerInputsWithProjectionGraphTest) {
   inputs.rope_local_sin = rope_local_sin;
   inputs.weights = weights;
 
-  Gemma4Outputs<XnnpackMixinTag> model_outputs =
-      BuildGemma4Graph(inputs, config);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Gemma4Outputs<XnnpackMixinTag> model_outputs,
+                                  BuildGemma4Graph(inputs, config));
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner, XnnpackRunner::Create({model_outputs.logits}));
   ASSERT_THAT(runner.SetInput(embedded_input, embedded_input_data), IsOk());
@@ -856,8 +856,9 @@ TEST(Gemma4GraphTest, WeightCacheTest) {
     inputs.rope_local_sin = rope_local_sin;
     inputs.weights = weights;
 
-    Gemma4Outputs<XnnpackMixinTag> model_outputs =
-        BuildGemma4Graph(inputs, config);
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        Gemma4Outputs<XnnpackMixinTag> model_outputs,
+        BuildGemma4Graph(inputs, config));
 
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
         XnnpackRunner runner, XnnpackRunner::Create({model_outputs.logits}));
@@ -906,8 +907,9 @@ TEST(Gemma4GraphTest, WeightCacheTest) {
     inputs.rope_local_sin = rope_local_sin;
     inputs.weights = weights;
 
-    Gemma4Outputs<XnnpackMixinTag> model_outputs =
-        BuildGemma4Graph(inputs, config);
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        Gemma4Outputs<XnnpackMixinTag> model_outputs,
+        BuildGemma4Graph(inputs, config));
 
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
         XnnpackRunner runner, XnnpackRunner::Create({model_outputs.logits}));

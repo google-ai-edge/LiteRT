@@ -50,8 +50,10 @@ cc_library(
         "//tensor:datatypes",
         "//tensor/examples/gemma4/helpers:transformer",
         "//tensor/examples/ops/transformer:transformer_ops",
+        "//tensor/utils:macros",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
     ],
 )

@@ -23,6 +23,7 @@ limitations under the License.
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/buffer.h"
@@ -31,6 +32,7 @@ limitations under the License.
 #include "tensor/examples/gemma4/helpers/transformer.h"
 #include "tensor/examples/ops/transformer/transformer_ops.h"
 #include "tensor/tensor.h"
+#include "tensor/utils/macros.h"
 
 namespace litert::tensor::examples::gemma4 {
 
@@ -87,8 +89,8 @@ inline std::vector<int> GetKvCacheSharingPatterns(const Config& config) {
 }
 
 template <class... Mixins>
-Gemma4Outputs<Mixins...> BuildGemma4Graph(const Gemma4Inputs<Mixins...>& inputs,
-                                          const Config& config) {
+absl::StatusOr<Gemma4Outputs<Mixins...>> BuildGemma4Graph(
+    const Gemma4Inputs<Mixins...>& inputs, const Config& config) {
   ABSL_VLOG(4) << "Building Gemma4 Graph, seq_len="
                << inputs.embedded_input.GetShape()[1];
 
@@ -142,16 +144,16 @@ Gemma4Outputs<Mixins...> BuildGemma4Graph(const Gemma4Inputs<Mixins...>& inputs,
     if (config.per_layer_input_dim > 0 &&
         layer_idx < inputs.per_layer_token_embeddings.size() &&
         inputs.per_layer_token_embeddings[layer_idx].GetStatus().ok()) {
-      Tensor proj_w = GetWeight(
-          inputs.weights,
-          absl::StrCat("model.layers.", layer_idx,
-                       ".per_layer_model_projection.weight"),
-          Type::kFP32, {config.per_layer_input_dim, config.embed_dim});
+      LRT_TENSOR_ASSIGN_OR_RETURN(
+          Tensor proj_w,
+          GetWeight(inputs.weights,
+                    absl::StrCat("model.layers.", layer_idx,
+                                 ".per_layer_model_projection.weight")));
       Tensor proj_out = FullyConnected(inputs.embedded_input, proj_w);
 
-      Tensor norm_w =
-          GetWeight(inputs.weights, "model.per_layer_projection_norm.weight",
-                    Type::kFP32, {config.per_layer_input_dim});
+      LRT_TENSOR_ASSIGN_OR_RETURN(
+          Tensor norm_w,
+          GetWeight(inputs.weights, "model.per_layer_projection_norm.weight"));
       Tensor normed_proj = RmsNorm(proj_out, norm_w, eps_tensor);
 
       float sqrt_per_layer_dim =
@@ -165,10 +167,11 @@ Gemma4Outputs<Mixins...> BuildGemma4Graph(const Gemma4Inputs<Mixins...>& inputs,
       per_layer_input = Mul(sum_emb, rsqrt_2);
     }
 
-    TransformerLayerOutput<Mixins...> layer_out =
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        TransformerLayerOutput<Mixins...> layer_out,
         TransformerLayer(hidden_states, attention_mask, cos, sin, key_cache,
                          value_cache, per_layer_input, shared_key, shared_value,
-                         config, inputs.weights, layer_idx, eps_tensor);
+                         config, inputs.weights, layer_idx, eps_tensor));
 
     hidden_states = layer_out.output;
 
@@ -180,17 +183,16 @@ Gemma4Outputs<Mixins...> BuildGemma4Graph(const Gemma4Inputs<Mixins...>& inputs,
   }
 
   // Final RMSNorm
-  Tensor final_norm_scale = GetWeight(inputs.weights, "model.norm.weight",
-                                      Type::kFP32, {config.embed_dim});
+  LRT_TENSOR_ASSIGN_OR_RETURN(Tensor final_norm_scale,
+                              GetWeight(inputs.weights, "model.norm.weight"));
   Tensor final_output = RmsNorm(hidden_states, final_norm_scale, eps_tensor);
 
   // LM Head.
-  Tensor lm_head =
-      inputs.weights.contains("lm_head.weight")
-          ? GetWeight(inputs.weights, "lm_head.weight", Type::kFP32,
-                      {config.vocab_size, config.embed_dim})
-          : GetWeight(inputs.weights, "model.embed_tokens.weight", Type::kFP32,
-                      {config.vocab_size, config.embed_dim});
+  LRT_TENSOR_ASSIGN_OR_RETURN(
+      Tensor lm_head,
+      GetWeight(inputs.weights, inputs.weights.contains("lm_head.weight")
+                                    ? "lm_head.weight"
+                                    : "model.embed_tokens.weight"));
   Tensor logits = FullyConnected(final_output, lm_head);
 
   // Logits Soft Capping
@@ -205,7 +207,8 @@ Gemma4Outputs<Mixins...> BuildGemma4Graph(const Gemma4Inputs<Mixins...>& inputs,
     logits = Mul(capped_logits, soft_cap_tensor);
   }
 
-  return {logits, updated_key_caches, updated_value_caches};
+  return Gemma4Outputs<Mixins...>{logits, updated_key_caches,
+                                  updated_value_caches};
 }
 
 }  // namespace litert::tensor::examples::gemma4

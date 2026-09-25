@@ -19,6 +19,7 @@ limitations under the License.
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -230,9 +231,11 @@ TEST(Gemma4GraphTest, SingleKVHeadAttentionTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<XnnpackMixinTag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,
@@ -298,7 +301,7 @@ TEST(Gemma4GraphTest, SingleKvHeadSupportsConsistentArithmetic) {
   config.num_kv_heads = 1;
   config.head_dim = 4;
   config.embed_dim = 4;
-  const auto weights = CreateDefaultWeights();
+  absl::flat_hash_map<std::string, XnnTensor> weights = CreateDefaultWeights();
 
   // Cover one-token and multi-token prefill, then decode with cached history.
   for (const auto& [seq_len, cache_len] :
@@ -323,18 +326,21 @@ TEST(Gemma4GraphTest, SingleKvHeadSupportsConsistentArithmetic) {
     XnnTensor eps(
         {.type = Type::kFP32, .shape = {1}, .buffer = config.rms_norm_eps});
     const XnnTensor no_shared_kv = TensorHandle::Invalid();
-    auto attention = Attention(input, mask, cos, sin, key_cache, value_cache,
-                               no_shared_kv, no_shared_kv, config, weights,
-                               "attn", /*is_global=*/false, eps);
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-        auto graph, BuildXnnpackGraph({attention.output, attention.key_cache,
-                                       attention.value_cache}));
+        AttentionOutput<XnnpackMixinTag> attention,
+        Attention(input, mask, cos, sin, key_cache, value_cache, no_shared_kv,
+                  no_shared_kv, config, weights, "attn",
+                  Config::LayerType::kLocalSliding, eps));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        std::unique_ptr<XnnpackGraph> graph,
+        BuildXnnpackGraph(
+            {attention.output, attention.key_cache, attention.value_cache}));
 
     // This mode preserves an explicit Tile's broadcast, which fails runtime
     // creation. Implicit BatchMatMul broadcasting must work without that
     // optimizer rewrite, as well as in the default runner tests above.
     xnn_runtime_t raw_runtime = nullptr;
-    const auto status = xnn_create_runtime_v3(
+    const xnn_status status = xnn_create_runtime_v3(
         graph->GetSubgraph(), /*weights_cache=*/nullptr, /*threadpool=*/nullptr,
         XNN_FLAG_SLOW_CONSISTENT_ARITHMETIC, &raw_runtime);
     XnnpackRunner::RuntimePtr runtime(raw_runtime);
@@ -370,9 +376,11 @@ TEST(Gemma4GraphTest, MultiKvHeadsGqaAttentionTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<XnnpackMixinTag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,
@@ -470,9 +478,11 @@ TEST(Gemma4GraphTest, MultiHeadAttentionTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<XnnpackMixinTag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,
@@ -566,9 +576,11 @@ TEST(Gemma4GraphTest, SoftCappingAttentionTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<XnnpackMixinTag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,
@@ -628,7 +640,8 @@ TEST(Gemma4GraphTest, SoftCappingAttentionTest) {
                          0.3003760f, 0.6974834f, 1.0945907f, 1.4916979f}));
 }
 
-// Verifies Attention layer configured as a Global Layer (is_global = true).
+// Verifies Attention layer configured as a Global Layer
+// (layer_type = kGlobal).
 // `global_key_size` should be used for the key dimension instead of `head_dim`.
 TEST(Gemma4GraphTest, GlobalLayerAttentionTest) {
   Config config = Config::E4B();
@@ -651,15 +664,17 @@ TEST(Gemma4GraphTest, GlobalLayerAttentionTest) {
   XnnTensor shared_key = XnnTensor::Invalid();
   XnnTensor shared_value = XnnTensor::Invalid();
 
-  // is_global=true uses global_key_size (4) instead of head_dim (2)
+  // kGlobal uses global_key_size (4) instead of head_dim (2)
   XnnTensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/true, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<XnnpackMixinTag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kGlobal, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,
@@ -748,9 +763,11 @@ TEST(Gemma4GraphTest, KVCacheAttentionTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<XnnpackMixinTag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,
@@ -850,9 +867,11 @@ TEST(Gemma4GraphTest, EmptyKVCacheAttentionTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<XnnpackMixinTag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,
@@ -947,9 +966,11 @@ TEST(Gemma4GraphTest, MultiKvHeadsGqaDynamicKVCacheAttentionTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<XnnpackMixinTag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,
@@ -1028,9 +1049,11 @@ TEST(Gemma4GraphTest, SharedKVAttentionTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<XnnpackMixinTag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,
@@ -1123,9 +1146,11 @@ TEST(Gemma4GraphTest, MismatchedSharedKVAttentionTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<XnnpackMixinTag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,

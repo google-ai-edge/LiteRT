@@ -190,9 +190,11 @@ TEST(Gemma4GraphTest, TransformerLayerTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  TransformerLayerOutput<XnnpackMixinTag> layer_out = TransformerLayer(
-      input, attention_mask, cos, sin, key_cache, value_cache, per_layer_input,
-      shared_key, shared_value, config, weights, 0, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      TransformerLayerOutput<XnnpackMixinTag> layer_out,
+      TransformerLayer(input, attention_mask, cos, sin, key_cache, value_cache,
+                       per_layer_input, shared_key, shared_value, config,
+                       weights, 0, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,
@@ -268,9 +270,11 @@ TEST(Gemma4GraphTest, DisabledPostNormsTransformerLayerTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  TransformerLayerOutput<XnnpackMixinTag> layer_out = TransformerLayer(
-      input, attention_mask, cos, sin, key_cache, value_cache, per_layer_input,
-      shared_key, shared_value, config, weights, 0, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      TransformerLayerOutput<XnnpackMixinTag> layer_out,
+      TransformerLayer(input, attention_mask, cos, sin, key_cache, value_cache,
+                       per_layer_input, shared_key, shared_value, config,
+                       weights, 0, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(XnnpackRunner runner,
                                   XnnpackRunner::Create({layer_out.output}));
@@ -355,9 +359,11 @@ TEST(Gemma4GraphTest, PerLayerInputTransformerLayerTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  TransformerLayerOutput<XnnpackMixinTag> layer_out = TransformerLayer(
-      input, attention_mask, cos, sin, key_cache, value_cache, per_layer_input,
-      shared_key, shared_value, config, weights, 0, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      TransformerLayerOutput<XnnpackMixinTag> layer_out,
+      TransformerLayer(input, attention_mask, cos, sin, key_cache, value_cache,
+                       per_layer_input, shared_key, shared_value, config,
+                       weights, 0, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(XnnpackRunner runner,
                                   XnnpackRunner::Create({layer_out.output}));
@@ -422,9 +428,11 @@ TEST(Gemma4GraphTest, KVCacheTransformerLayerTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  TransformerLayerOutput<XnnpackMixinTag> layer_out = TransformerLayer(
-      input, attention_mask, cos, sin, key_cache, value_cache, per_layer_input,
-      shared_key, shared_value, config, weights, 0, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      TransformerLayerOutput<XnnpackMixinTag> layer_out,
+      TransformerLayer(input, attention_mask, cos, sin, key_cache, value_cache,
+                       per_layer_input, shared_key, shared_value, config,
+                       weights, 0, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,
@@ -511,9 +519,11 @@ TEST(Gemma4GraphTest, SharedKVTransformerLayerTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  TransformerLayerOutput<XnnpackMixinTag> layer_out = TransformerLayer(
-      input, attention_mask, cos, sin, key_cache, value_cache, per_layer_input,
-      shared_key, shared_value, config, weights, 0, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      TransformerLayerOutput<XnnpackMixinTag> layer_out,
+      TransformerLayer(input, attention_mask, cos, sin, key_cache, value_cache,
+                       per_layer_input, shared_key, shared_value, config,
+                       weights, 0, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,
@@ -596,9 +606,11 @@ TEST(Gemma4GraphTest, SoftCappingTransformerLayerTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  TransformerLayerOutput<XnnpackMixinTag> layer_out = TransformerLayer(
-      input, attention_mask, cos, sin, key_cache, value_cache, per_layer_input,
-      shared_key, shared_value, config, weights, 0, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      TransformerLayerOutput<XnnpackMixinTag> layer_out,
+      TransformerLayer(input, attention_mask, cos, sin, key_cache, value_cache,
+                       per_layer_input, shared_key, shared_value, config,
+                       weights, 0, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,
@@ -676,9 +688,11 @@ TEST(Gemma4GraphTest, GlobalLayerTransformerLayerTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  TransformerLayerOutput<XnnpackMixinTag> layer_out = TransformerLayer(
-      input, attention_mask, cos, sin, key_cache, value_cache, per_layer_input,
-      shared_key, shared_value, config, weights, 0, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      TransformerLayerOutput<XnnpackMixinTag> layer_out,
+      TransformerLayer(input, attention_mask, cos, sin, key_cache, value_cache,
+                       per_layer_input, shared_key, shared_value, config,
+                       weights, 0, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,
@@ -877,9 +891,11 @@ TEST(Gemma4GraphTest, MultiKvHeadsGqaTransformerLayerTest) {
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  TransformerLayerOutput<XnnpackMixinTag> layer_out = TransformerLayer(
-      input, attention_mask, cos, sin, key_cache, value_cache, per_layer_input,
-      shared_key, shared_value, config, weights, 0, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      TransformerLayerOutput<XnnpackMixinTag> layer_out,
+      TransformerLayer(input, attention_mask, cos, sin, key_cache, value_cache,
+                       per_layer_input, shared_key, shared_value, config,
+                       weights, 0, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       XnnpackRunner runner,

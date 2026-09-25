@@ -404,15 +404,15 @@ absl::StatusOr<BuiltGraphs> BuildModelGraphs(
       Gemma4Inputs<XnnpackMixinTag> prefill_inputs,
       CreateGemma4Inputs(config, /*input_seq_len=*/seq_len, /*kv_cache_len=*/0,
                          weights_handle, verbose));
-  Gemma4Outputs<XnnpackMixinTag> prefill_outputs =
-      BuildGemma4Graph(prefill_inputs, config);
+  LRT_TENSOR_ASSIGN_OR_RETURN(Gemma4Outputs<XnnpackMixinTag> prefill_outputs,
+                              BuildGemma4Graph(prefill_inputs, config));
 
   LRT_TENSOR_ASSIGN_OR_RETURN(
       Gemma4Inputs<XnnpackMixinTag> decode_inputs,
       CreateGemma4Inputs(config, /*input_seq_len=*/1, /*kv_cache_len=*/seq_len,
                          weights_handle, /*verbose=*/false));
-  Gemma4Outputs<XnnpackMixinTag> decode_outputs =
-      BuildGemma4Graph(decode_inputs, config);
+  LRT_TENSOR_ASSIGN_OR_RETURN(Gemma4Outputs<XnnpackMixinTag> decode_outputs,
+                              BuildGemma4Graph(decode_inputs, config));
 
   return BuiltGraphs{std::move(prefill_inputs), std::move(prefill_outputs),
                      std::move(decode_inputs), std::move(decode_outputs)};
