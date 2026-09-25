@@ -81,6 +81,16 @@ top level tensorflow directory.
 *   [Google Shell Style Guide](https://google.github.io/styleguide/shellguide.html)
 *   [Google Objective-C Style Guide](https://google.github.io/styleguide/objcguide.html)
 
+#### Security Requirements for GitHub Actions
+
+We use [Zizmor](https://github.com/woodruffw/zizmor) to enforce security best practices for our GitHub Actions workflows.
+
+If you are modifying or adding any workflows in `.github/workflows/`:
+* Your changes will be automatically scanned by Zizmor during the continuous integration process.
+* You must ensure your workflows are free of common security vulnerabilities (e.g., script injections, overly permissive tokens).
+* If your PR fails the Zizmor check, review the action logs for mitigation steps.
+* Any changes to the Zizmor configuration or workflow structures may require approval from the security/infrastructure team.
+
 #### License
 
 Include a license at the top of new files.

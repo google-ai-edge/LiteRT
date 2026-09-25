@@ -17,14 +17,14 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: read # Required
 
 jobs:
   build_wheels:
     name: "Build Wheels - Python ${{ matrix.python-version }}"
-    runs-on: linux-x86-n2-16
+    runs-on: linux-x86-n2-16 # zizmor: ignore[self-hosted-runner]
     container:
-      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:d6b429665f5269698f88ccd00bcb8a6eb685332c302f08f29fe0738cd6a6610c
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:12822904942562e7deb0c91fb0eb3dd9ec87b4292881108b166e44149422b87d
     strategy:
       fail-fast: false # Allow other matrix jobs to continue if one fails
       matrix:
@@ -38,10 +38,11 @@ jobs:
           git lfs install
 
       - name: Checkout code
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: 'recursive'
           lfs: true
+          persist-credentials: false
 
       - name: Install System Dependencies
         run: |
@@ -56,7 +57,7 @@ jobs:
         run: |
           # The month is used as a cache-buster.
           CACHE_MONTH=$(TZ='America/Los_Angeles' date +%Y-%m)
-          CACHE_RESTORE_KEY_2="${WORKFLOW_NAME}-${PYTHON_VERSION}-$CACHE_MONTH"
+          CACHE_RESTORE_KEY_2="${GITHUB_WORKFLOW}-${{ matrix.python-version }}-$CACHE_MONTH"
           echo "CACHE_RESTORE_KEY_2=$CACHE_RESTORE_KEY_2" >> "$GITHUB_OUTPUT"
 
           if [ -f "WORKSPACE" ]; then
@@ -90,7 +91,7 @@ jobs:
 
       - name: Restore bazel cache
         id: bazel-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 # zizmor: ignore[cache-poisoning]
         with:
           path: ~/.cache/bazel
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
@@ -106,9 +107,9 @@ jobs:
           CACHE_PRIMARY_KEY: ${{ steps.bazel-cache.outputs.cache-primary-key }}
           CACHE_MATCHED_KEY: ${{ steps.bazel-cache.outputs.cache-matched-key }}
         run: |
-          echo "Cache Hit: ${CACHE_HIT}"
-          echo "Cache Primary Key: ${CACHE_PRIMARY_KEY}"
-          echo "Cache Matched Key: ${CACHE_MATCHED_KEY}"
+          echo "Cache Hit: $CACHE_HIT"
+          echo "Cache Primary Key: $CACHE_PRIMARY_KEY"
+          echo "Cache Matched Key: $CACHE_MATCHED_KEY"
 
       - name: Set BAZEL_CONFIG_FLAGS for Cache
         shell: bash
@@ -155,7 +156,7 @@ jobs:
           find $(pwd)/dist -type f
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.0
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: lite-rt-artifacts-py${{ matrix.python-version }}-${{ github.run_id }}
           path: |
@@ -163,7 +164,7 @@ jobs:
             dist/*.tar.gz
 
       - name: Save bazel cache
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 # zizmor: ignore[cache-poisoning]
         if: always()
         with:
           path: ~/.cache/bazel
@@ -176,7 +177,7 @@ jobs:
     if: success() && github.ref == 'refs/heads/main'
     steps:
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.4.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
@@ -184,7 +185,7 @@ jobs:
         run: python -m pip install twine
 
       - name: Download all wheel artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.1.8
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: lite-rt-artifacts-*
           path: dist
@@ -196,5 +197,6 @@ jobs:
       - name: Upload to PyPI
         env:
           TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_UPLOAD_TOKEN }}
+          TWINE_PASSWORD: # zizmor: ignore[secrets-outside-env] ${{ secrets.PYPI_UPLOAD_TOKEN }}
+        # zizmor: ignore[use-trusted-publishing]
         run: twine upload --skip-existing --non-interactive --verbose dist/*.whl dist/*.tar.gz
