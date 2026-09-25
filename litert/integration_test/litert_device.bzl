@@ -22,9 +22,11 @@ This module defines various macros which helps to execute a binary target on a d
 #
 # copybara:uncomment_end
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_platform//platform_data:defs.bzl", "platform_data")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
-load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "get_spec")
+load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "get_spec", "host_rlocation")
 load("//litert/integration_test:litert_device_script.bzl", "litert_device_script")
 
 # MISCELLANEOUS ####################################################################################
@@ -57,8 +59,49 @@ def hidden_test_tags():
 #         libs = [],
 #         exec_args = [],
 #         exec_env_vars = [],
-#         dimensions = {}):
+#         dimensions = {},
+#         platform = "android"):
 #     """Wraps the mobile harness "mobile_test" macro"""
+#
+#     if platform == "macos":
+#         mac_bin_name = name + "_mac_bin"
+#         platform_data(
+#             name = mac_bin_name,
+#             testonly = True,
+#             platform = "@bazel_tools//tools:host_platform",
+#             tags = hidden_test_tags(),
+#             target = target,
+#         )
+#         mac_files = {
+#             "mac_bin": [":" + mac_bin_name],
+#         }
+#         mac_params = {
+#             "options": " ".join(exec_args).replace("\\'", "'"),
+#         }
+#         if libs:
+#             mac_files["accelerator_dylib"] = [libs[0]]
+#             mac_params["dyld_library_path"] = "$$(accelerator_dylib)"
+#         mobile_test(
+#             tags = hidden_test_tags(),
+#             name = name,
+#             size = "enormous",
+#             files = mac_files,
+#             params = mac_params,
+#             args = [
+#                 "--run_as={}".format(run_as),
+#                 "--allocation_exit_strategy=FAIL_FAST_NO_MATCH",
+#                 "--test_timeout_sec=1800",
+#                 "--start_timeout_sec=1800",
+#                 "--job_timeout_sec=3600",
+#             ],
+#             device = "Mac",
+#             driver = "AiEdgeMacModelEval",
+#             visibility = [
+#                 "//litert/integration_test:__subpackages__",
+#                 "//litert/google:__subpackages__",
+#             ],
+#         )
+#         return
 #
 #     files = {
 #         "bin": [target],
@@ -148,6 +191,7 @@ def litert_device_exec(
         name,
         target,
         backend_id = "cpu",
+        platform = "android",
         data = [],
         exec_args = [],
         remote_suffix = "",
@@ -164,6 +208,7 @@ def litert_device_exec(
     Args:
         name: Name of the target.
         backend_id: The backend id to use for the test (e.g. QUALCOMM_ID, GOOGLE_TENSOR_ID).
+        platform: Target OS platform ("android" or "macos").
         target: The binary target to execute on device.
         data: List of data files to push to the device.
         exec_args: List of arguments to pass to the executable.
@@ -173,19 +218,45 @@ def litert_device_exec(
         testonly: Whether the target is testonly.
         tags: List of tags to apply to the generated targets.
     """
-    backend = get_spec(backend_id)
+    backend = get_spec(backend_id, platform = platform)
 
-    litert_device_script(
-        name = name + local_suffix,
-        data = data,
-        bin = target,
-        script = "//litert/integration_test:mobile_install.sh",
-        exec_args = exec_args,
-        model_providers = model_providers,
-        testonly = testonly,
-        backend_id = backend_id,
-        tags = hidden_test_tags() + tags,
-    )
+    if local_suffix != None:
+        local_name = name + local_suffix
+        if platform == "macos":
+            local_env = {}
+            if backend.libs:
+                lib_dir = host_rlocation(backend.libs[0], get_parent = True)
+                local_env = {
+                    "DYLD_LIBRARY_PATH": lib_dir,
+                    "LITERT_RUNTIME_LIB_DIR": lib_dir,
+                }
+            sh_test(
+                name = local_name,
+                srcs = ["//litert/integration_test:host_exec.sh"],
+                args = ["./" + host_rlocation(target)] + [a.replace("\\'", "").replace("\"", "") for a in exec_args],
+                data = [target] + backend.libs + data,
+                env = local_env,
+                tags = [
+                    "local",
+                    "manual",
+                ] + tags,
+                target_compatible_with = [
+                    "@platforms//os:macos",
+                ],
+                testonly = testonly,
+            )
+        else:
+            litert_device_script(
+                name = local_name,
+                data = data,
+                bin = target,
+                script = "//litert/integration_test:mobile_install.sh",
+                exec_args = exec_args,
+                model_providers = model_providers,
+                testonly = testonly,
+                backend_id = backend_id,
+                tags = hidden_test_tags() + tags,
+            )
 
     if remote_suffix != None:
         # Note model providers are not compatible with mobile harness.
@@ -198,6 +269,7 @@ def litert_device_exec(
             exec_args = exec_args,
             exec_env_vars = backend.env_paths,
             dimensions = backend.default_mh_device,
+            platform = platform,
         )
 
 def litert_device_test(

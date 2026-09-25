@@ -121,6 +121,7 @@ def _make_target_ref(name):
 def commandline_flag_copts():
     return select({
         "//litert:android": ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"] + if_oss(["-DABSL_FLAGS_STRIP_NAMES=0"]),
+        "//litert:macos": ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"] + if_oss(["-DABSL_FLAGS_STRIP_NAMES=0"]),
         "//conditions:default": [],
     })
 
