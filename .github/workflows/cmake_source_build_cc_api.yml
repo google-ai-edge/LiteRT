@@ -59,8 +59,8 @@ jobs:
     needs: check
     if: needs.check.outputs.run_build == 'true'
     # Building LiteRT from source with CMake/Ninja on "ubuntu-latest" (2 vCPUs)
-    # takes ~20 minutes. Keep it on "linux-x86-n2-16" to keep runtime under 10 minutes.
-    runs-on: linux-x86-n2-16
+    # takes ~20 minutes. Keep it on "linux-x86-n4-16" to keep runtime under 10 minutes.
+    runs-on: linux-x86-n4-16
     container:
       image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:d6b429665f5269698f88ccd00bcb8a6eb685332c302f08f29fe0738cd6a6610c
     env:

@@ -24,7 +24,7 @@ concurrency:
 jobs:
   clang-tidy:
     name: "clang-tidy"
-    # Use GitHub-hosted runner to avoid consuming self-hosted linux-x86-n2-16
+    # Use GitHub-hosted runner to avoid consuming self-hosted linux-x86-n4-16
     # runner pool capacity, since clang-tidy only inspects changed PR files.
     runs-on: ubuntu-latest
     env:

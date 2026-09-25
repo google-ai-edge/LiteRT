@@ -64,7 +64,7 @@ jobs:
     needs: check
     if: needs.check.outputs.run_build == 'true'
     # Task execution time doesn't exceed 10 minutes, so we don't need to use
-    # "linux-x86-n2-16". Use GitHub-hosted "ubuntu-latest" instead.
+    # "linux-x86-n4-16". Use GitHub-hosted "ubuntu-latest" instead.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
