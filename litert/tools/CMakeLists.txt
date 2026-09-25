@@ -23,7 +23,6 @@ target_include_directories(litert_tool_display
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -48,7 +47,6 @@ target_include_directories(litert_tensor_utils
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -72,7 +70,6 @@ target_include_directories(litert_dump
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -96,7 +93,6 @@ target_include_directories(litert_apply_plugin
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -150,7 +146,6 @@ target_include_directories(litert_npu_numerics_check
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -218,7 +213,6 @@ target_include_directories(run_model
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/..
         ${CMAKE_CURRENT_SOURCE_DIR}/../..
-        ${TENSORFLOW_SOURCE_DIR}
 )
 
 # absl strips flag names/registration on Android by default (ABSL_FLAGS_STRIP_NAMES=1).
@@ -291,7 +285,6 @@ target_include_directories(analyze_model
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/..
         ${CMAKE_CURRENT_SOURCE_DIR}/../..
-        ${TENSORFLOW_SOURCE_DIR}
 )
 
 # Platform-aware linking for analyze_model
@@ -333,7 +326,6 @@ target_include_directories(apply_plugin_main
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/..
         ${CMAKE_CURRENT_SOURCE_DIR}/../..
-        ${TENSORFLOW_SOURCE_DIR}
 )
 
 # Platform-aware linking
@@ -409,7 +401,6 @@ target_include_directories(extract_bytecode
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/..
         ${CMAKE_CURRENT_SOURCE_DIR}/../..
-        ${TENSORFLOW_SOURCE_DIR}
 )
 
 if(ANDROID OR APPLE)
@@ -444,7 +435,6 @@ target_include_directories(npu_numerics_check
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/..
         ${CMAKE_CURRENT_SOURCE_DIR}/../..
-        ${TENSORFLOW_SOURCE_DIR}
 )
 
 # Platform-aware linking

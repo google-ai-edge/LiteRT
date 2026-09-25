@@ -176,28 +176,11 @@ else()
 endif()
 
 
-# Get TensorFlow source directory from TFLite build
-if(EXISTS "${TFLITE_BUILD_DIR}")
-    include("${TFLITE_BUILD_DIR}/tensorflow_src_dir.cmake" OPTIONAL)
-endif()
-
-# Set default TensorFlow source directory if not found
-if(NOT TENSORFLOW_SOURCE_DIR)
-    if(EXISTS "${TFLITE_BUILD_DIR}/tensorflow-src")
-        set(TENSORFLOW_SOURCE_DIR "${TFLITE_BUILD_DIR}/tensorflow-src")
-    else()
-        message(FATAL_ERROR "TensorFlow source directory not found. Please build TFLite first or set TENSORFLOW_SOURCE_DIR")
-    endif()
-endif()
-
-message(STATUS "Using TensorFlow source directory: ${TENSORFLOW_SOURCE_DIR}")
-
 # Include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${TFLITE_SOURCE_DIR}
-    ${TENSORFLOW_SOURCE_DIR}
 )
 
 list(APPEND CMAKE_MODULE_PATH "${TFLITE_SOURCE_DIR}/tools/cmake/modules")

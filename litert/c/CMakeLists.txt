@@ -169,7 +169,6 @@ target_include_directories(litert_logging
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
 )
 
@@ -192,7 +191,6 @@ target_include_directories(litert_c_api
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opencl_headers>
     PRIVATE
@@ -266,7 +264,6 @@ target_include_directories(litert_runtime_c_api_shared_lib
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/opencl_headers>
     PRIVATE
@@ -339,8 +336,7 @@ if(LITERT_PLATFORM_ANDROID)
   set_target_properties(litert_tflite_gpu_gl_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
   target_include_directories(litert_tflite_gpu_gl_core
     PUBLIC
-      $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
-      $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>)
+      $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>)
   target_link_libraries(litert_tflite_gpu_gl_core
     PUBLIC
       absl::status

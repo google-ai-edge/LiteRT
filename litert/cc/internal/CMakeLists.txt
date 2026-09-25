@@ -83,7 +83,6 @@ target_include_directories(litert_cc_internal
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
 )
 
@@ -109,7 +108,6 @@ target_include_directories(litert_cc_internal_extra
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
 )
 
