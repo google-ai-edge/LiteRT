@@ -122,11 +122,12 @@ jobs:
           for source in changed:
             if not source.startswith("litert/"):
               continue
+            if "schema" in Path(source).parts:
+              continue
             if source in compilable:
               selected.append(source)
             elif Path(source).suffix in header_suffixes:
               # For headers and .inc files, find compilable translation units that include them.
-              source_filename = Path(source).name
               including_sources = []
               for comp_path in compilable:
                 full_comp_path = repo / comp_path
@@ -136,7 +137,7 @@ jobs:
                   content = full_comp_path.read_text(errors="ignore")
                 except Exception:
                   continue
-                if source_filename in content:
+                if source in content:
                   including_sources.append(comp_path)
                   if len(including_sources) >= 3:
                     break
