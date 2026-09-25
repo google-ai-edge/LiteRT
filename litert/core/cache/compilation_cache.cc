@@ -95,13 +95,21 @@ uint64_t GetHash(const LiteRtOptionsT& options) {
     HashCombine(seed, signature_key);
   }
 
+  std::vector<std::pair<std::string_view, uint64_t>> opaque_option_hashes;
   for (LiteRtOpaqueOptions it = options.options; it;) {
     uint64_t opaque_hash = 0;
+    const char* identifier = nullptr;
     // It's fine if an opaque option doesn't implement hashing; we skip it.
-    if (LiteRtGetOpaqueOptionsHash(it, &opaque_hash) == kLiteRtStatusOk) {
-      HashCombine(seed, opaque_hash);
+    if (LiteRtGetOpaqueOptionsHash(it, &opaque_hash) == kLiteRtStatusOk &&
+        LiteRtGetOpaqueOptionsIdentifier(it, &identifier) == kLiteRtStatusOk) {
+      opaque_option_hashes.emplace_back(identifier, opaque_hash);
     }
     if (LiteRtGetNextOpaqueOptions(&it) != kLiteRtStatusOk) break;
+  }
+
+  std::sort(opaque_option_hashes.begin(), opaque_option_hashes.end());
+  for (const auto& [identifier, opaque_hash] : opaque_option_hashes) {
+    HashCombine(seed, identifier, opaque_hash);
   }
 
   return seed;
