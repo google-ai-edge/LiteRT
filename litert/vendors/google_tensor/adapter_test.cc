@@ -17,6 +17,7 @@
 #include <sys/types.h>
 
 #include <cstddef>
+#include <fstream>
 #include <optional>
 #include <string>
 
@@ -25,8 +26,6 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
-#include "litert/cc/litert_buffer_ref.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/vendors/google_tensor/compiler/google_tensor_options.pb.h"
@@ -40,6 +39,17 @@ using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
     GoogleTensorOptions;
 using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
     GoogleTensorOptionsTruncationType;
+
+namespace {
+
+std::string ReadTestModel(absl::string_view filename) {
+  std::string path = litert::testing::GetTestFilePath(filename);
+  std::ifstream stream(path, std::ios::binary);
+  return std::string((std::istreambuf_iterator<char>(stream)),
+                     std::istreambuf_iterator<char>());
+}
+
+}  // namespace
 
 TEST(AdapterTest, CreateSuccess) {
   auto adapter_result = Adapter::Create(/*shared_library_dir=*/
@@ -62,21 +72,8 @@ TEST(AdapterTest, CompileSuccess) {
                               Adapter::Create(/*shared_library_dir=*/
                                               std::nullopt));
 
-  auto model = litert::testing::LoadTestFileModel("mul_simple.tflite");
-  ASSERT_NE(model.Get(), nullptr);
-  LiteRtModel litert_model = model.Get();
-
-  LITERT_LOG(LITERT_INFO, "%s", "Serializing model");
-  litert::OwningBufferRef buf;
-
-  // Using weak pointer to link the data to the buffer.
-  auto [data, size, offset] = buf.GetWeak();
-
-  const auto opts = litert::SerializationOptions::Defaults();
-  auto serialize_status =
-      LiteRtSerializeModel(litert_model, &data, &size, &offset, false, opts);
-  ASSERT_EQ(serialize_status, kLiteRtStatusOk);
-  ASSERT_GT(buf.Size(), 0);
+  std::string model_content = ReadTestModel("mul_simple.tflite");
+  ASSERT_FALSE(model_content.empty());
 
   GoogleTensorOptions google_tensor_options;
   google_tensor_options.set_float_truncation_type(
@@ -89,15 +86,10 @@ TEST(AdapterTest, CompileSuccess) {
 
   std::string options_str = google_tensor_options.SerializeAsString();
 
-  ASSERT_GT(buf.Size(), 0);
-  LITERT_LOG(LITERT_INFO, "buffer_str size: %d", buf.Size());
-  LITERT_LOG(LITERT_INFO, "Compling model...");
-
   char** compiled_code_data = nullptr;
   size_t* compiled_code_sizes = nullptr;
   size_t num_bytecodes = 0;
 
-  absl::string_view model_buffer_view(buf.StrView());
   // Ensure memory allocated by the C API is freed.
   absl::Cleanup code_cleanup = [&] {
     if (compiled_code_data) {
@@ -105,15 +97,38 @@ TEST(AdapterTest, CompileSuccess) {
                                 num_bytecodes);
     }
   };
-  LITERT_ASSERT_OK(adapter->Compile(
-      model_buffer_view.data(), model_buffer_view.size(), options_str.data(),
-      options_str.size(), &compiled_code_data,
-      &compiled_code_sizes, &num_bytecodes));
+  LITERT_ASSERT_OK(adapter->Compile(model_content.data(), model_content.size(),
+                                    options_str.data(), options_str.size(),
+                                    &compiled_code_data, &compiled_code_sizes,
+                                    &num_bytecodes));
   ASSERT_NE(compiled_code_data, nullptr);
   ASSERT_GT(num_bytecodes, 0);
   for (int i = 0; i < num_bytecodes; ++i) {
     ASSERT_GT(compiled_code_sizes[i], 0);
   }
+}
+
+TEST(AdapterTest, GetUnsupportedOpsSuccess) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto adapter,
+                              Adapter::Create(/*shared_library_dir=*/
+                                              std::nullopt));
+
+  std::string model_content = ReadTestModel("mul_simple.tflite");
+  ASSERT_FALSE(model_content.empty());
+
+  GoogleTensorOptions google_tensor_options;
+  google_tensor_options.set_float_truncation_type(
+      GoogleTensorOptionsTruncationType::FLOAT_TRUNCATION_TYPE_HALF);
+  google_tensor_options.mutable_compiler_config()->set_device(
+      DeviceType::DEVICE_TYPE_TENSOR_G5);
+
+  std::string options_str = google_tensor_options.SerializeAsString();
+
+  Expected<std::vector<UnsupportedOp>> unsupported_ops =
+      adapter->GetUnsupportedOps(model_content.data(), model_content.size(),
+                                 options_str.data(), options_str.size());
+  LITERT_ASSERT_OK(unsupported_ops);
+  EXPECT_TRUE(unsupported_ops->empty());
 }
 
 }  // namespace google_tensor

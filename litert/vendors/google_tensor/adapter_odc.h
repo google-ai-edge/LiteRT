@@ -46,7 +46,7 @@ class AdapterOdc : public Adapter {
                          size_t** compiled_code_sizes,
                          size_t* num_bytecodes) override;
 
-  Expected<std::vector<int32_t>> GetUnsupportedOps(
+  Expected<std::vector<UnsupportedOp>> GetUnsupportedOps(
       const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
       size_t options_size) override;
 
