@@ -22,9 +22,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
   check:
     name: Check Changes
@@ -144,10 +141,6 @@ jobs:
             ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_2 }}-
 
       - name: Check cache hit
-        env:
-          CACHE_HIT: ${{ steps.bazel-cache.outputs.cache-hit }}
-          CACHE_PRIMARY_KEY: ${{ steps.bazel-cache.outputs.cache-primary-key }}
-          CACHE_MATCHED_KEY: ${{ steps.bazel-cache.outputs.cache-matched-key }}
         run: |
           echo "Cache Hit: $env:STEPS_BAZEL_CACHE_OUTPUTS_CACHE_HIT"
           echo "Cache Primary Key: $env:STEPS_BAZEL_CACHE_OUTPUTS_CACHE_PRIMARY_KEY"
