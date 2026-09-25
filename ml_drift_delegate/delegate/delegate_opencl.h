@@ -54,6 +54,9 @@ namespace litert::ml_drift {
 // RAII wrapper.
 MlDriftDelegateOptionsPtr MlDriftClDelegateDefaultOptionsPtr();
 
+// Returns true if OpenCL is supported and usable on this platform.
+bool IsOpenClSupported();
+
 // Creates a new ML Drift OpenCL delegate object.
 TfLiteDelegatePtr CreateMlDriftClDelegate(MlDriftDelegateOptionsPtr options,
                                           LiteRtEnvironment env);

@@ -155,8 +155,7 @@ class GpuAccelerator {
     LiteRtGpuBackend backend = kLiteRtGpuBackendAutomatic;
     LrtGetGpuOptionsGpuBackend(&backend, gpu_options_payload);
     if (backend == kLiteRtGpuBackendAutomatic) {
-      auto has_opencl = ::ml_drift::cl::LoadOpenCL();
-      if (!has_opencl.ok()) {
+      if (!litert::ml_drift::IsOpenClSupported()) {
         LITERT_LOG(
             LITERT_INFO,
             "OpenCL not supported on this platform. Using WebGPU instead.");
