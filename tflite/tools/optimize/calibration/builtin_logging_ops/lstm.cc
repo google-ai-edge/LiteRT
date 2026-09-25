@@ -18,10 +18,10 @@ limitations under the License.
 #include <cstdio>
 #include <vector>
 
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/interpreter.h"
+#include "tflite/kernels/internal/compatibility.h"
 #include "tflite/kernels/internal/portable_tensor_utils.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/internal/tensor_utils.h"
