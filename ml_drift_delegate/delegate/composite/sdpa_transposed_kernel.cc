@@ -14,6 +14,7 @@
 
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.h"
 
+#include <algorithm>
 #include <any>
 #include <cstdint>
 #include <memory>
@@ -443,28 +444,36 @@ MAIN_FUNCTION($0) {
   return std::make_unique<FusedFlashDecodeSdpaOp>(std::move(custom_op));
 }
 
-// Prefill tiling. Each threadgroup runs one 32-lane SIMD group and owns
-// kPrefillQueryTile query columns; each lane owns kPrefillKeysPerLane keys, so
-// one loop iteration covers kPrefillSimdWidth * kPrefillKeysPerLane keys.
-constexpr int kPrefillSimdWidth = 32;
-constexpr int kPrefillQueryTile = 8;
-constexpr int kPrefillKeysPerLane = 4;
-constexpr int kPrefillKeyBlock = kPrefillSimdWidth * kPrefillKeysPerLane;
+// Prefill tiling: Each threadgroup runs 4 SIMD groups (128 threads)
+// and owns BQ=32 query rows
+// (4 warps x 8 rows/warp) across GQA sibling query heads sharing the same KV
+// head, stepping by BK=16 keys per iteration.
+// Threadgroup memory is Q_smem (32x132 halfs = 8,448 B) + KV_smem (2,560 halfs
+// = 5,120 B) = 13,568 B (< 16 KB), allowing 2 full threadgroups (8 warps = 256
+// threads) per Apple GPU core while keeping live registers <= 48 per thread
+// (zero register spills).
+constexpr int kPrefillThreadsPerTg = 128;
+constexpr int kPrefillTotalRows = 32;
+constexpr int kPrefillKeyBlock = 16;
 
 class FusedFlashAttentionPrefillOp : public ::ml_drift::GPUOperation {
  public:
   FusedFlashAttentionPrefillOp() = default;
+  FusedFlashAttentionPrefillOp(int q_per_head, int heads_per_tg)
+      : q_per_head_(q_per_head), heads_per_tg_(heads_per_tg) {}
 
   ::ml_drift::int3 GetGridSize() const override {
-    return ::ml_drift::int3(
-        (dst_[0]->Width() + kPrefillQueryTile - 1) / kPrefillQueryTile,
-        dst_[0]->Height() * kPrefillSimdWidth, 1);
+    const int num_q_tiles = (dst_[0]->Width() + q_per_head_ - 1) / q_per_head_;
+    const int num_head_groups =
+        (dst_[0]->Height() + heads_per_tg_ - 1) / heads_per_tg_;
+    return ::ml_drift::int3(num_q_tiles,
+                            num_head_groups * kPrefillThreadsPerTg, 1);
   }
 
   std::vector<::ml_drift::int3> GetPossibleKernelWorkGroups(
       ::ml_drift::TuningType tuning_type, const ::ml_drift::GpuInfo& gpu_info,
       const ::ml_drift::KernelInfo& kernel_info) const override {
-    return {::ml_drift::int3(1, 32, 1)};
+    return {::ml_drift::int3(1, kPrefillThreadsPerTg, 1)};
   }
 
   FusedFlashAttentionPrefillOp(FusedFlashAttentionPrefillOp&&) = default;
@@ -473,6 +482,10 @@ class FusedFlashAttentionPrefillOp : public ::ml_drift::GPUOperation {
   FusedFlashAttentionPrefillOp(const FusedFlashAttentionPrefillOp&) = delete;
   FusedFlashAttentionPrefillOp& operator=(const FusedFlashAttentionPrefillOp&) =
       delete;
+
+ private:
+  int q_per_head_ = kPrefillTotalRows;
+  int heads_per_tg_ = 1;
 };
 
 std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashAttentionPrefill(
@@ -484,7 +497,6 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashAttentionPrefill(
     const ::ml_drift::TensorDescriptor* param_desc,
     const ::ml_drift::TensorDescriptor& dst_desc,
     const SdpaTransposedAttributes& attr) {
-  FusedFlashAttentionPrefillOp custom_op;
   int slices = dst_desc.GetBHWCShape().c / 4;
   int v_stride_s = slices * 4;
   int k_o_slices = (k_desc.GetBHWCShape().w + 3) / 4;
@@ -498,7 +510,18 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashAttentionPrefill(
           ? (q_heads / kv_heads)
           : 1;
 
-  custom_op.work_group_size_ = ::ml_drift::int3(1, 32, 1);
+  // Step A: Group GQA sibling heads and query tokens into the 4 warps (32 query
+  // rows) of the threadgroup so all warps share a single cooperative K/V load.
+  int heads_per_tg = 1;
+  if (gqa_ratio % 4 == 0) {
+    heads_per_tg = 4;
+  } else if (gqa_ratio % 2 == 0) {
+    heads_per_tg = 2;
+  }
+  const int q_per_head = kPrefillTotalRows / heads_per_tg;
+
+  FusedFlashAttentionPrefillOp custom_op(q_per_head, heads_per_tg);
+  custom_op.work_group_size_ = ::ml_drift::int3(1, kPrefillThreadsPerTg, 1);
   custom_op.args_.AddInt("cache_size", k_desc.GetBHWCShape().w);
   custom_op.args_.AddInt("slices", slices);
 
@@ -529,57 +552,57 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashAttentionPrefill(
 
   custom_op.AddDstTensor("dst", dst_desc);
 
-  // Key-parallel prefill with register blocking.
-  //
-  // Lanes own keys rather than channels during Q*K^T, so each dot product runs
-  // to completion inside the lane and needs no cross-lane communication. Q is
-  // staged in threadgroup memory so every lane can read every channel.
-  //
-  // Each lane owns kPrefillKeysPerLane keys instead of one. With a single key
-  // the inner loop issued five memory instructions per sixteen FMAs (one K
-  // load, plus one q_sh load for each query) because a q_sh value fed exactly
-  // one dot product before being discarded. Holding several keys per lane
-  // reuses each q_sh load across all of them: at four keys the loop issues
-  // eight memory instructions per sixty-four FMAs, 2.5x fewer per FMA. It also
-  // divides the number of cross-lane softmax reductions and threadgroup
-  // barriers by the same factor, since a block now spans 128 keys.
-  //
-  // P*V stays channel-parallel (lane `tid` owns channels [4*tid, 4*tid+4)),
-  // with P handed across through threadgroup memory. Both phases keep their
-  // coalesced access patterns: K is [head][channel_slice][position] so lanes
-  // read consecutive positions at a fixed channel, and V is
-  // [head][key_group][channel_slice][key_in_group] so lanes read consecutive
-  // channels at a fixed key.
-  const int qt = kPrefillQueryTile;
-  const int kt = kPrefillKeysPerLane;
+  const int td = (slices + 1) / 2;  // 8-channel MMA tiles along head_dim
+  const int bd_padded = td * 8;
+  const int ldq = bd_padded + 4;    // 132 halfs (8,448 B for 32 rows)
+  const int ldk = 20;               // 16 keys + 4 padding halfs
+  const int ldv = bd_padded + 4;    // 132 halfs
+  const int q_smem_size = kPrefillTotalRows * ldq;
+  const int kv_smem_size = std::max(bd_padded * ldk, kPrefillKeyBlock * ldv);
+  const int k_load_iters = (slices + 7) / 8;
 
   std::string op_code;
-
-  // 1. Threadgroup setup and query tile coordinates.
   absl::StrAppend(&op_code, R"(
+#include <metal_simdgroup_matrix>
+
+inline float2 mma_f16_f32_8x8(half2 A, half2 B, float2 C) {
+  metal::simdgroup_matrix<float, 8, 8> D_mat;
+  metal::simdgroup_matrix<half, 8, 8> A_mat;
+  metal::simdgroup_matrix<half, 8, 8> B_mat;
+  metal::simdgroup_matrix<float, 8, 8> C_mat;
+  reinterpret_cast<thread half2&>(A_mat.thread_elements()) = A;
+  reinterpret_cast<thread half2&>(B_mat.thread_elements()) = B;
+  reinterpret_cast<thread float2&>(C_mat.thread_elements()) = C;
+  metal::simdgroup_multiply_accumulate(D_mat, A_mat, B_mat, C_mat);
+  return reinterpret_cast<thread float2&>(D_mat.thread_elements());
+}
+
 MAIN_FUNCTION($0) {
   int tile_x = ucl::GetGlobalId<0>();
-  int Y = ucl::GetGroupId<1>();
+  int tg_y = ucl::GetGroupId<1>();
   int tid = ucl::GetLocalId<1>();
+  int sg_id = tid >> 5;
+  int lane_id = tid & 31;
 
+  int Y0 = tg_y * )",
+                  heads_per_tg, R"(;
   int X0 = tile_x * )",
-                  qt, ";\n");
-  for (int i = 1; i < qt; ++i) {
-    absl::StrAppend(&op_code, "  int X", i, " = X0 + ", i, ";\n");
-  }
-  absl::StrAppend(&op_code, R"(
+                  q_per_head, R"(;
+  int Y_warp = Y0 + (sg_id % )",
+                  heads_per_tg, R"();
+  int X_warp = X0 + (sg_id / )",
+                  heads_per_tg, R"() * 8;
+
   int dst_w = args.dst.Width();
-  if (X0 >= dst_w || Y >= args.dst.Height()) {
+  int dst_h = args.dst.Height();
+  if (X0 >= dst_w || Y0 >= dst_h) {
     return;
   }
 
   int active_tokens = args.cache_size;
-  // Absolute position in the KV cache of the first query token of this chunk.
-  // Zero unless the prompt is prefilled in several chunks.
   int q_start = 0;
 )");
 
-  // 2. Runtime parameters (cache size & chunk start offset).
   if (has_param) {
     absl::StrAppend(&op_code, R"(
   int param_slice = args.src_end_ch_index / 4;
@@ -590,8 +613,6 @@ MAIN_FUNCTION($0) {
   if (param_val > 0 && param_val <= args.cache_size) {
     active_tokens = param_val;
   }
-  // params[0] is the index in the KV cache at which the current chunk starts,
-  // see FillSingleBufferCacheParamTensor() in the LiteRT-LM runtime.
   float4 p_start_vec = ucl::Convert<float4>(args.params.Read(0, 0, 0, 0));
   int start_val = (int)p_start_vec.x;
   if (start_val > 0 && start_val < active_tokens) {
@@ -600,77 +621,87 @@ MAIN_FUNCTION($0) {
 )");
   }
 
-  // 3. Absolute token positions and query staging in threadgroup memory.
   // When a fixed-width prefill signature (dst_w, e.g. 1024) processes a
   // partial chunk (active_tokens - q_start < dst_w, e.g. 128 tokens) and the
   // BOOL mask is pruned, query columns X >= valid_w are inactive padding.
   // Zero-fill those padded output columns and exit early for padded tiles.
-  absl::StrAppend(&op_code,
-                  "\n  int valid_w = min(dst_w, active_tokens - q_start);\n"
-                  "  if (X0 >= valid_w) {\n"
-                  "    if (tid < args.slices) {\n");
-  for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(
-        &op_code, "      if (X", i, " < dst_w) {\n",
-        "        args.dst.Write(ucl::Convert<args.dst::type>(float4(0.0f)), X",
-        i, ", Y, tid);\n      }\n");
-  }
-  absl::StrAppend(&op_code, R"(    }
+  absl::StrAppend(&op_code, R"(
+  int valid_w = min(dst_w, active_tokens - q_start);
+  if (X0 >= valid_w) {
+    if (lane_id < args.slices && Y_warp < dst_h) {
+      for (int r = 0; r < 8; ++r) {
+        if (X_warp + r < dst_w) {
+          args.dst.Write(ucl::Convert<args.dst::type>(float4(0.0f)),
+                         X_warp + r, Y_warp, lane_id);
+        }
+      }
+    }
     return;
   }
-
-  // Absolute positions of the query tokens handled by this threadgroup. A
-  // query token at absolute position P may attend to keys [0, P] inclusive
-  // when causal masking is enabled, or [0, active_tokens) for full attention.
 )");
+
   const bool is_causal = attr.is_causal;
-  for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(&op_code, "  int P", i, " = X", i, " + q_start;\n");
-  }
   if (is_causal) {
-    absl::StrAppend(&op_code, "\n  int max_tokens = min(P", qt - 1,
-                    " + 1, active_tokens);\n\n");
+    absl::StrAppend(&op_code, "\n  int max_tokens = min(X0 + ", q_per_head,
+                    " + q_start, active_tokens);\n");
   } else {
-    absl::StrAppend(&op_code, "\n  int max_tokens = active_tokens;\n\n");
+    absl::StrAppend(&op_code, "\n  int max_tokens = active_tokens;\n");
   }
   absl::StrAppend(&op_code, R"(  float inv_ln2 = 1.4426950408889634f;
 
-  threadgroup half4 q_sh[)",
-                  qt, "][", slices, R"(];
-  threadgroup half p_sh[)",
-                  qt, "][", kPrefillKeyBlock, R"(];
+  // Threadgroup memory: 8,448 B (Q_smem) + 5,120 B (KV_smem) = 13,568 B.
+  threadgroup half Q_smem[)",
+                  q_smem_size, R"(];
+  threadgroup half KV_smem[)",
+                  kv_smem_size, R"(];
+  threadgroup half* K_smem = KV_smem;
+  threadgroup half* V_smem = KV_smem;
 
-  if (tid < )",
+  // Stage scaled Q into Q_smem[sg_id * 8 + r][lane_id * 4].
+  for (int r = 0; r < 8; ++r) {
+    int q_x = X_warp + r;
+    int q_row_off = (sg_id * 8 + r) * )",
+                  ldq, R"(;
+    if (lane_id < )",
                   slices, R"() {
+      bool q_ok = (q_x < valid_w && Y_warp < dst_h);
+      half4 q_v = q_ok ? ucl::Convert<half4>(
+                             ucl::Convert<float4>(
+                                 args.q.Read(q_x, Y_warp, lane_id)) *
+                             inv_ln2)
+                       : half4(0.0h);
+      *reinterpret_cast<threadgroup half4*>(
+          &Q_smem[q_row_off + lane_id * 4]) = q_v;
+    }
 )");
-  for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(
-        &op_code, "    bool q_valid", i, " = (X", i, " < valid_w);\n",
-        "    q_sh[", i, "][tid] = q_valid", i,
-        " ? ucl::Convert<half4>(ucl::Convert<float4>(args.q.Read(X", i,
-        ", Y, tid)) * inv_ln2) : half4(0.0h);\n");
+  if (bd_padded > slices * 4) {
+    absl::StrAppend(&op_code, "    if (lane_id == 0) {\n");
+    for (int c = slices * 4; c < bd_padded; ++c) {
+      absl::StrAppend(&op_code, "      Q_smem[q_row_off + ", c, "] = 0.0h;\n");
+    }
+    absl::StrAppend(&op_code, "    }\n");
   }
   absl::StrAppend(&op_code, R"(  }
-  simdgroup_barrier(mem_flags::mem_threadgroup);
 
+  // Apple simdgroup_matrix<T, 8, 8> lane-to-(row, col) fragment mapping.
+  int qid = lane_id >> 2;
+  int sm = (qid & 4) + ((lane_id >> 1) & 3);
+  int sn = ((qid & 2) << 1) + ((lane_id & 1) << 1);
+  int q_smem_base = (sg_id * 8 + sm) * )",
+                  ldq, R"( + sn;
+
+  int X_row = X_warp + sm;
+  int P_row = X_row + q_start;
+  bool row_valid = (X_row < valid_w && Y_warp < dst_h);
+
+  float m_prev = -10000.0f;
+  float l_prev = 0.0f;
 )");
-
-  // 4. Online softmax tracking variables:
-  // m_prev: running max of dot-product scores (initialized to -inf)
-  // l_prev: running sum of exp(score - max) (initialized to 0)
-  // out_acc: unnormalized output accumulator
-  absl::StrAppend(&op_code, "  // Online softmax tracking variables:\n");
-  for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(&op_code, "  float m_prev", i, " = -10000.0f;\n");
-  }
-  for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(&op_code, "  float l_prev", i, " = 0.0f;\n");
-  }
-  for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(&op_code, "  float4 out_acc", i, " = float4(0.0f);\n");
+  for (int id = 0; id < td; ++id) {
+    absl::StrAppend(&op_code, "  float2 o_frag", id, " = float2(0.0f);\n");
   }
 
-  // 5. KV buffer base addressing (Grouped-Query Attention).
+  // KV buffer base addressing (Grouped-Query Attention).
   // K layout (WeightsLayout::kOSpatialIOGroupO4I4):
   //   [kv_heads, slices, k_o_slices, 4_keys, 4_channels] where each half4
   //   holds 4 channels (4*c_slice..4*c_slice+3) for one key at linear index
@@ -678,211 +709,218 @@ MAIN_FUNCTION($0) {
   // V layout (WeightsLayout::kOSpatialIOGroupI4O4):
   //   [kv_heads, k_o_slices, 4_keys, slices, 4_channels] where each half4
   //   holds 4 channels (4*c_slice..4*c_slice+3) for key (g*4 + t) at linear
-  //   index v_base_head + g * v_stride_s + t.
+  //   index v_head_base + (g*4 + v_k_sub) * slices + v_c_slice.
   absl::StrAppend(&op_code, "\n  int kv_head = ",
-                  (gqa_ratio > 1 ? absl::StrCat("Y / ", gqa_ratio) : "Y"),
+                  (gqa_ratio > 1 ? absl::StrCat("Y0 / ", gqa_ratio) : "Y0"),
                   ";\n  int k_head_base = kv_head * ", k_stride_head,
-                  ";\n  int v_base_head = kv_head * ", v_stride_head,
-                  " + tid * 4;\n\n");
+                  ";\n  int v_head_base = kv_head * ", v_stride_head,
+                  ";\n  int k_s = tid & 15;\n  int k_cg = tid >> 4;\n"
+                  "  int v_k_sub = tid & 3;\n  int v_c_slice = tid >> 2;\n"
+                  "  int v_c_col = v_c_slice * 4;\n\n");
 
   auto emit_key_block_body = [&](bool is_interior) {
-    if (is_interior) {
-      absl::StrAppend(&op_code,
-                      "    int kidx = k_head_base + key_base + tid;\n\n");
-    } else {
-      for (int j = 0; j < kt; ++j) {
-        absl::StrAppend(&op_code, "    int key", j, " = key_base + ",
-                        j * kPrefillSimdWidth, " + tid;\n");
-      }
-      for (int j = 0; j < kt; ++j) {
-        absl::StrAppend(&op_code, "    bool act", j, " = (key", j,
-                        " < active_tokens);\n");
-      }
-      for (int j = 0; j < kt; ++j) {
-        absl::StrAppend(&op_code, "    int kidx", j, " = k_head_base + (act", j,
-                        " ? key", j, " : 0);\n");
-      }
-      absl::StrAppend(&op_code, "\n");
-    }
-
-    // 6b. Q * K^T dot products across channel slices.
-    for (int i = 0; i < qt; ++i) {
-      for (int j = 0; j < kt; ++j) {
-        absl::StrAppend(&op_code, "    float d", i, "_", j, " = 0.0f;\n");
-      }
-    }
-    absl::StrAppend(&op_code, "\n    for (int c = 0; c < ", slices,
-                    "; ++c) {\n");
-    if (is_interior) {
-      for (int j = 0; j < kt; ++j) {
-        absl::StrAppend(&op_code, "      half4 kv", j,
-                        " = ucl::Convert<half4>(args.k.Read(kidx + ",
-                        j * kPrefillSimdWidth, "));\n");
-      }
-    } else {
-      for (int j = 0; j < kt; ++j) {
-        absl::StrAppend(&op_code, "      half4 kv", j,
-                        " = ucl::Convert<half4>(args.k.Read(kidx", j, "));\n");
-      }
-    }
-    for (int i = 0; i < qt; ++i) {
-      absl::StrAppend(&op_code, "      half4 qv", i, " = q_sh[", i, "][c];\n");
-    }
-    for (int i = 0; i < qt; ++i) {
-      for (int j = 0; j < kt; ++j) {
-        absl::StrAppend(&op_code, "      d", i, "_", j, " += (float)dot(qv", i,
-                        ", kv", j, ");\n");
-      }
-    }
-    if (is_interior) {
-      absl::StrAppend(&op_code, "      kidx += ", k_stride_slice, ";\n");
-    } else {
-      for (int j = 0; j < kt; ++j) {
-        absl::StrAppend(&op_code, "      kidx", j, " += ", k_stride_slice,
-                        ";\n");
-      }
-    }
-    absl::StrAppend(&op_code, "    }\n");
-
-    // 6c. Optional softcapping.
-    if (has_softcap) {
-      for (int i = 0; i < qt; ++i) {
-        for (int j = 0; j < kt; ++j) {
-          absl::StrAppend(&op_code, "    d", i, "_", j,
-                          " = (float)args.softcap * tanh((d", i, "_", j,
-                          " / inv_ln2) / (float)args.softcap) * inv_ln2;\n");
-        }
-      }
-    }
-
-    // 6d. Optional attention mask & 6e. Active/causal key bounds.
-    if (!is_interior) {
-      if (has_mask) {
-        absl::StrAppend(&op_code, "\n");
-        for (int j = 0; j < kt; ++j) {
-          absl::StrAppend(&op_code, "    int mslice", j, " = key", j,
-                          " >> 2;\n", "    int mcomp", j, " = key", j,
-                          " & 3;\n");
-        }
-        for (int i = 0; i < qt; ++i) {
-          for (int j = 0; j < kt; ++j) {
-            absl::StrAppend(
-                &op_code, "    bool m_ok", i, "_", j, " = (X", i,
-                " < valid_w && act", j, ");\n", "    half4 mk", i, "_", j,
-                " = m_ok", i, "_", j, " ? ucl::Convert<half4>(args.mask.Read(X",
-                i, ", 0, mslice", j, ")) : half4(0.0h);\n", "    float mv", i,
-                "_", j, " = (float)((mcomp", j, " == 0) ? mk", i, "_", j,
-                ".x : ((mcomp", j, " == 1) ? mk", i, "_", j, ".y : ((mcomp", j,
-                " == 2) ? mk", i, "_", j, ".z : mk", i, "_", j, ".w)));\n");
-          }
-        }
-        absl::StrAppend(&op_code, "    if (args.is_bool_mask) {\n");
-        for (int i = 0; i < qt; ++i) {
-          for (int j = 0; j < kt; ++j) {
-            absl::StrAppend(&op_code, "      if (mv", i, "_", j, " < 0.5f) d",
-                            i, "_", j, " = -10000.0f;\n");
-          }
-        }
-        absl::StrAppend(&op_code, "    } else {\n");
-        for (int i = 0; i < qt; ++i) {
-          for (int j = 0; j < kt; ++j) {
-            absl::StrAppend(&op_code, "      d", i, "_", j, " += mv", i, "_", j,
-                            ";\n");
-          }
-        }
-        absl::StrAppend(&op_code, "    }\n");
-      }
-
-      absl::StrAppend(&op_code, "\n");
-      for (int i = 0; i < qt; ++i) {
-        for (int j = 0; j < kt; ++j) {
-          if (is_causal) {
-            absl::StrAppend(&op_code, "    if (!act", j, " || key", j, " > P",
-                            i, ") d", i, "_", j, " = -10000.0f;\n");
-          } else {
-            absl::StrAppend(&op_code, "    if (!act", j, ") d", i, "_", j,
-                            " = -10000.0f;\n");
-          }
-        }
-      }
-    }
-
-    // 6f. Online softmax reduction across keys.
-    for (int i = 0; i < qt; ++i) {
-      std::string local_max = absl::StrCat("d", i, "_0");
-      for (int j = 1; j < kt; ++j) {
-        local_max = absl::StrCat("max(", local_max, ", d", i, "_", j, ")");
-      }
-      absl::StrAppend(
-          &op_code, "    float m_loc", i, " = simd_max(", local_max, ");\n",
-          "    float m_n", i, " = max(m_prev", i, ", m_loc", i, ");\n",
-          "    float alp", i, " = exp2(m_prev", i, " - m_n", i, ");\n");
-      for (int j = 0; j < kt; ++j) {
-        absl::StrAppend(&op_code, "    half p", i, "_", j, " = (half)exp2(d", i,
-                        "_", j, " - m_n", i, ");\n");
-      }
-      std::string local_sum = absl::StrCat("(float)p", i, "_0");
-      for (int j = 1; j < kt; ++j) {
-        absl::StrAppend(&local_sum, " + (float)p", i, "_", j);
-      }
-      absl::StrAppend(&op_code, "    l_prev", i, " = fma(l_prev", i, ", alp", i,
-                      ", simd_sum(", local_sum, "));\n", "    m_prev", i,
-                      " = m_n", i, ";\n");
-    }
-
-    // 6g. Stage probabilities into threadgroup memory.
-    absl::StrAppend(&op_code, "\n");
-    for (int i = 0; i < qt; ++i) {
-      for (int j = 0; j < kt; ++j) {
-        absl::StrAppend(&op_code, "    p_sh[", i, "][", j * kPrefillSimdWidth,
-                        " + tid] = p", i, "_", j, ";\n");
-      }
-    }
     absl::StrAppend(&op_code,
-                    "    simdgroup_barrier(mem_flags::mem_threadgroup);\n\n");
-
-    // 6h. P*V accumulation (channel-parallel).
-    if (is_interior) {
-      absl::StrAppend(&op_code, "    if (tid < ", slices, ") {\n");
-      for (int i = 0; i < qt; ++i) {
-        absl::StrAppend(&op_code, "      out_acc", i, " *= (float4)alp", i,
-                        ";\n");
-      }
+                    "    threadgroup_barrier(mem_flags::mem_threadgroup);\n");
+    // 1. Coalesced K load (16 contiguous half4 keys across k_s = tid & 15,
+    // 8 slices per iteration across k_cg = tid >> 4).
+    if (is_interior && (slices % 8 == 0)) {
       absl::StrAppend(
-          &op_code, "      int vidx = v_base_head + (key_base / 4) * ",
-          v_stride_s, ";\n", "      for (int g = 0; g < ",
-          kPrefillKeyBlock / 4, "; ++g) {\n");
+          &op_code, "    #pragma unroll\n    for (int r = 0; r < ",
+          k_load_iters, "; ++r) {\n      int c_sl = r * 8 + k_cg;\n",
+          "      half4 kv = ucl::Convert<half4>(args.k.Read(k_head_base + "
+          "c_sl * ",
+          k_stride_slice, " + key_base + k_s));\n",
+          "      int k_r = c_sl * 4;\n", "      K_smem[(k_r + 0) * ", ldk,
+          " + k_s] = kv.x;\n", "      K_smem[(k_r + 1) * ", ldk,
+          " + k_s] = kv.y;\n", "      K_smem[(k_r + 2) * ", ldk,
+          " + k_s] = kv.z;\n", "      K_smem[(k_r + 3) * ", ldk,
+          " + k_s] = kv.w;\n    }\n");
     } else {
       absl::StrAppend(
-          &op_code,
-          "    int g_end = (min(max_tokens, key_base + ", kPrefillKeyBlock,
-          ") - key_base + 3) / 4;\n", "    if (tid < ", slices, ") {\n");
-      for (int i = 0; i < qt; ++i) {
-        absl::StrAppend(&op_code, "      out_acc", i, " *= (float4)alp", i,
-                        ";\n");
+          &op_code, "    #pragma unroll\n    for (int r = 0; r < ",
+          k_load_iters, "; ++r) {\n      int c_sl = r * 8 + k_cg;\n",
+          "      bool k_ok = (c_sl < ", slices,
+          " && (key_base + k_s) < active_tokens);\n",
+          "      half4 kv = k_ok ? "
+          "ucl::Convert<half4>(args.k.Read(k_head_base + c_sl * ",
+          k_stride_slice, " + key_base + k_s)) : half4(0.0h);\n",
+          "      if (c_sl < ", slices, ") {\n",
+          "        int k_r = c_sl * 4;\n", "        K_smem[(k_r + 0) * ", ldk,
+          " + k_s] = kv.x;\n", "        K_smem[(k_r + 1) * ", ldk,
+          " + k_s] = kv.y;\n", "        K_smem[(k_r + 2) * ", ldk,
+          " + k_s] = kv.z;\n", "        K_smem[(k_r + 3) * ", ldk,
+          " + k_s] = kv.w;\n      }\n    }\n");
+    }
+    if (bd_padded > slices * 4) {
+      absl::StrAppend(&op_code, "    if (tid < 16) {\n");
+      for (int c = slices * 4; c < bd_padded; ++c) {
+        absl::StrAppend(&op_code, "      K_smem[", c * ldk,
+                        " + tid] = 0.0h;\n");
       }
-      absl::StrAppend(&op_code,
-                      "      int vidx = v_base_head + (key_base / 4) * ",
-                      v_stride_s, ";\n",
-                      "      for (int g = 0; g < g_end; ++g) {\n");
+      absl::StrAppend(&op_code, "    }\n");
     }
-    for (int t = 0; t < 4; ++t) {
-      absl::StrAppend(&op_code, "        half4 v", t,
-                      " = ucl::Convert<half4>(args.v.Read(vidx + ", t, "));\n");
+    absl::StrAppend(
+        &op_code, "    threadgroup_barrier(mem_flags::mem_threadgroup);\n\n",
+        "    // 2. Hardware FP16->FP32 simdgroup_matrix Q * K^T (8x16 per "
+        "warp).\n",
+        "    float2 s_frag0 = float2(0.0f);\n",
+        "    float2 s_frag1 = float2(0.0f);\n",
+        "    #pragma unroll\n    for (int dd = 0; dd < ", td, "; ++dd) {\n",
+        "      half2 qf = *reinterpret_cast<const threadgroup "
+        "half2*>(&Q_smem[q_smem_base + dd * 8]);\n",
+        "      int k_off = (dd * 8 + sm) * ", ldk, " + sn;\n",
+        "      half2 kf0 = *reinterpret_cast<const threadgroup "
+        "half2*>(&K_smem[k_off + 0]);\n",
+        "      half2 kf1 = *reinterpret_cast<const threadgroup "
+        "half2*>(&K_smem[k_off + 8]);\n",
+        "      s_frag0 = mma_f16_f32_8x8(qf, kf0, s_frag0);\n",
+        "      s_frag1 = mma_f16_f32_8x8(qf, kf1, s_frag1);\n    }\n");
+
+    // 3. Optional softcapping, mask, and active/causal key bounds.
+    if (has_softcap) {
+      for (int ik = 0; ik < 2; ++ik) {
+        absl::StrAppend(
+            &op_code, "    s_frag", ik,
+            ".x = (float)args.softcap * tanh((s_frag", ik,
+            ".x / inv_ln2) / (float)args.softcap) * inv_ln2;\n", "    s_frag",
+            ik, ".y = (float)args.softcap * tanh((s_frag", ik,
+            ".y / inv_ln2) / (float)args.softcap) * inv_ln2;\n");
+      }
     }
-    absl::StrAppend(&op_code, "        int j4 = g * 4;\n");
-    for (int i = 0; i < qt; ++i) {
-      absl::StrAppend(
-          &op_code, "        out_acc", i,
-          " += float4(fma(half4(p_sh[", i, "][j4 + 0]), v0, fma(half4(p_sh[",
-          i, "][j4 + 1]), v1, fma(half4(p_sh[", i,
-          "][j4 + 2]), v2, half4(p_sh[", i, "][j4 + 3]) * v3))));\n");
+
+    if (!is_interior) {
+      for (int ik = 0; ik < 2; ++ik) {
+        absl::StrAppend(&op_code, "    int col", ik, "_0 = key_base + ", ik * 8,
+                        " + sn;\n", "    int col", ik, "_1 = col", ik,
+                        "_0 + 1;\n");
+        if (has_mask) {
+          for (int c = 0; c < 2; ++c) {
+            absl::StrAppend(
+                &op_code, "    bool m_ok", ik, "_", c, " = (row_valid && col",
+                ik, "_", c, " < active_tokens);\n", "    int msl", ik, "_", c,
+                " = col", ik, "_", c, " >> 2;\n", "    int mcm", ik, "_", c,
+                " = col", ik, "_", c, " & 3;\n", "    half4 mk", ik, "_", c,
+                " = m_ok", ik, "_", c,
+                " ? ucl::Convert<half4>(args.mask.Read(X_row, 0, msl", ik, "_",
+                c, ")) : half4(0.0h);\n", "    float mv", ik, "_", c,
+                " = (float)((mcm", ik, "_", c, " == 0) ? mk", ik, "_", c,
+                ".x : ((mcm", ik, "_", c, " == 1) ? mk", ik, "_", c,
+                ".y : ((mcm", ik, "_", c, " == 2) ? mk", ik, "_", c, ".z : mk",
+                ik, "_", c, ".w)));\n", "    if (args.is_bool_mask) {\n",
+                "      if (mv", ik, "_", c, " < 0.5f) s_frag", ik,
+                (c == 0 ? ".x" : ".y"), " = -10000.0f;\n", "    } else {\n",
+                "      s_frag", ik, (c == 0 ? ".x" : ".y"), " += mv", ik, "_",
+                c, ";\n", "    }\n");
+          }
+        }
+        if (is_causal) {
+          absl::StrAppend(&op_code, "    if (col", ik,
+                          "_0 >= active_tokens || col", ik,
+                          "_0 > P_row) s_frag", ik, ".x = -10000.0f;\n",
+                          "    if (col", ik, "_1 >= active_tokens || col", ik,
+                          "_1 > P_row) s_frag", ik, ".y = -10000.0f;\n");
+        } else {
+          absl::StrAppend(&op_code, "    if (col", ik,
+                          "_0 >= active_tokens) s_frag", ik,
+                          ".x = -10000.0f;\n", "    if (col", ik,
+                          "_1 >= active_tokens) s_frag", ik,
+                          ".y = -10000.0f;\n");
+        }
+      }
     }
-    absl::StrAppend(&op_code, "        vidx += ", v_stride_s, ";\n",
-                    "      }\n");
-    absl::StrAppend(&op_code, R"(    }
-    simdgroup_barrier(mem_flags::mem_threadgroup);
+
+    // 4. Online softmax reduction across the 4 threads sharing row `sm`
+    // (lanes XOR 1 and XOR 8 in Apple's 8x8 simdgroup_matrix layout).
+    absl::StrAppend(&op_code, R"(
+    float row_max = max(max(s_frag0.x, s_frag0.y), max(s_frag1.x, s_frag1.y));
+    row_max = max(row_max, simd_shuffle_xor(row_max, ushort(1)));
+    row_max = max(row_max, simd_shuffle_xor(row_max, ushort(8)));
+    float m_new = max(m_prev, row_max);
+    float alp = exp2(m_prev - m_new);
+
+    float2 p0_f = exp2(s_frag0 - m_new);
+    float2 p1_f = exp2(s_frag1 - m_new);
+
+    float row_sum = (p0_f.x + p0_f.y) + (p1_f.x + p1_f.y);
+    row_sum += simd_shuffle_xor(row_sum, ushort(1));
+    row_sum += simd_shuffle_xor(row_sum, ushort(8));
+    l_prev = fma(l_prev, alp, row_sum);
+    m_prev = m_new;
+
+    half2 p_frag0 = half2(p0_f);
+    half2 p_frag1 = half2(p1_f);
 )");
+    for (int id = 0; id < td; ++id) {
+      absl::StrAppend(&op_code, "    o_frag", id, " *= alp;\n");
+    }
+
+    // 5. Coalesced half4 V load into V_smem[16][ldv] (placed after softmax so
+    // s_frag0..1 are already dead, keeping register pressure low).
+    absl::StrAppend(&op_code,
+                    "\n    threadgroup_barrier(mem_flags::mem_threadgroup);\n");
+    if (is_interior) {
+      if (slices == 32) {
+        absl::StrAppend(
+            &op_code,
+            "    {\n      int v_idx = v_head_base + (key_base / 4) * ",
+            v_stride_s,
+            " + tid;\n"
+            "      #pragma unroll\n      for (int g = 0; g < 4; ++g) {\n"
+            "        half4 vv = ucl::Convert<half4>(args.v.Read(v_idx + g * ",
+            v_stride_s,
+            "));\n"
+            "        *reinterpret_cast<threadgroup half4*>(&V_smem[(g * 4 + "
+            "v_k_sub) * ",
+            ldv, " + v_c_col]) = vv;\n      }\n    }\n");
+      } else {
+        absl::StrAppend(
+            &op_code, "    if (v_c_slice < ", slices, ") {\n",
+            "      int v_idx = v_head_base + (key_base / 4) * ", v_stride_s,
+            " + tid;\n"
+            "      #pragma unroll\n      for (int g = 0; g < 4; ++g) {\n"
+            "        half4 vv = ucl::Convert<half4>(args.v.Read(v_idx + g * ",
+            v_stride_s,
+            "));\n"
+            "        *reinterpret_cast<threadgroup half4*>(&V_smem[(g * 4 + "
+            "v_k_sub) * ",
+            ldv, " + v_c_col]) = vv;\n      }\n    }\n");
+      }
+    } else {
+      absl::StrAppend(
+          &op_code, "    if (v_c_slice < ", slices, ") {\n",
+          "      #pragma unroll\n      for (int g = 0; g < 4; ++g) {\n",
+          "        int gk = key_base + g * 4 + v_k_sub;\n",
+          "        half4 vv = (gk < active_tokens) ? "
+          "ucl::Convert<half4>(args.v.Read(v_head_base + (key_base / 4 + g) * ",
+          v_stride_s, " + tid)) : half4(0.0h);\n",
+          "        *reinterpret_cast<threadgroup half4*>(&V_smem[(g * 4 + "
+          "v_k_sub) * ",
+          ldv, " + v_c_col]) = vv;\n      }\n    }\n");
+    }
+    if (bd_padded > slices * 4) {
+      absl::StrAppend(&op_code, "    if (tid < 16) {\n");
+      for (int c = slices * 4; c < bd_padded; ++c) {
+        absl::StrAppend(&op_code, "      V_smem[tid * ", ldv, " + ", c,
+                        "] = 0.0h;\n");
+      }
+      absl::StrAppend(&op_code, "    }\n");
+    }
+
+    // 6. Wait for V_smem and compute P * V (8x128 per warp).
+    absl::StrAppend(&op_code,
+                    "    threadgroup_barrier(mem_flags::mem_threadgroup);\n");
+    for (int id = 0; id < td; ++id) {
+      absl::StrAppend(
+          &op_code, "    {\n      int v_col = ", id * 8, " + sn;\n",
+          "      half2 vf0 = *reinterpret_cast<const threadgroup "
+          "half2*>(&V_smem[(0 + sm) * ",
+          ldv, " + v_col]);\n", "      o_frag", id,
+          " = mma_f16_f32_8x8(p_frag0, vf0, o_frag", id, ");\n",
+          "      half2 vf1 = *reinterpret_cast<const threadgroup "
+          "half2*>(&V_smem[(8 + sm) * ",
+          ldv, " + v_col]);\n", "      o_frag", id,
+          " = mma_f16_f32_8x8(p_frag1, vf1, o_frag", id, ");\n", "    }\n");
+    }
   };
 
   // 6. Main key loop: fast interior loop (when no external mask) + boundary
@@ -891,7 +929,8 @@ MAIN_FUNCTION($0) {
   if (!has_mask) {
     if (is_causal) {
       absl::StrAppend(&op_code,
-                      "  int interior_end = min(P0 + 1, max_tokens) - ",
+                      "  int interior_end = min(X0 + q_start + 1, max_tokens)"
+                      " - ",
                       kPrefillKeyBlock, ";\n");
     } else {
       absl::StrAppend(&op_code, "  int interior_end = max_tokens - ",
@@ -903,38 +942,41 @@ MAIN_FUNCTION($0) {
     emit_key_block_body(/*is_interior=*/true);
     absl::StrAppend(&op_code, "  }\n");
   }
-  absl::StrAppend(&op_code,
-                  "  for (; key_base < max_tokens; key_base += ",
+  absl::StrAppend(&op_code, "  for (; key_base < max_tokens; key_base += ",
                   kPrefillKeyBlock, ") {\n");
   emit_key_block_body(/*is_interior=*/false);
   absl::StrAppend(&op_code, "  }\n\n");
 
-  // 7. Normalization by 1/L and global store.
-  absl::StrAppend(&op_code,
-                  "  // Final normalization by sum of exponentiated scores.\n");
-  for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(&op_code, "  out_acc", i, " = out_acc", i,
-                    " / (float4)(l_prev", i, " + 1e-10f);\n");
+  // 7. Normalize output and write float4 slices via Q_smem (reusing Q_smem so
+  // KV_smem stays at 5,120 B).
+  absl::StrAppend(&op_code, R"(  float inv_l = 1.0f / (l_prev + 1e-10f);
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  threadgroup half* warp_smem = &Q_smem[sg_id * 8 * )",
+                  ldq, "];\n");
+  for (int id = 0; id < td; ++id) {
+    absl::StrAppend(&op_code,
+                    "  *reinterpret_cast<threadgroup half2*>(&warp_smem[sm * ",
+                    ldq, " + ", id * 8, " + sn]) = half2(o_frag", id,
+                    " * inv_l);\n");
   }
-  absl::StrAppend(&op_code, R"(
-  if (tid < args.slices) {
+  absl::StrAppend(&op_code, R"(  simdgroup_barrier(mem_flags::mem_threadgroup);
+  if (lane_id < args.slices && Y_warp < dst_h) {
+    for (int r = 0; r < 8; ++r) {
+      int out_x = X_warp + r;
+      if (out_x < valid_w) {
+        half4 out_v = *reinterpret_cast<const threadgroup half4*>(
+            &warp_smem[r * )",
+                  ldq, R"( + lane_id * 4]);
+        args.dst.Write(ucl::Convert<args.dst::type>(out_v), out_x, Y_warp,
+                       lane_id);
+      } else if (out_x < dst_w) {
+        args.dst.Write(ucl::Convert<args.dst::type>(float4(0.0f)), out_x,
+                       Y_warp, lane_id);
+      }
+    }
+  }
+}
 )");
-  for (int i = 0; i < qt; ++i) {
-    absl::StrAppend(
-        &op_code, "    if (X", i,
-        " < valid_w) {\n"
-        "      args.dst.Write(ucl::Convert<args.dst::type>(out_acc",
-        i, "), X", i,
-        ", Y, tid);\n"
-        "    } else if (X",
-        i,
-        " < dst_w) {\n"
-        "      args.dst.Write(ucl::Convert<args.dst::type>(float4(0.0f)), X",
-        i,
-        ", Y, tid);\n"
-        "    }\n");
-  }
-  op_code += "  }\n}\n";
 
   custom_op.code_ = std::move(op_code);
   return std::make_unique<FusedFlashAttentionPrefillOp>(std::move(custom_op));
