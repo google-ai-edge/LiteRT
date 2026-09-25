@@ -1,6 +1,8 @@
 name: "linux_x86_64"
 on:
   push:
+    branches:
+    - test-remote-cache-fix
     tags:
     - v*.*.*
   pull_request:
@@ -72,25 +74,52 @@ jobs:
         with:
           lfs: true
 
-      - name: Setup Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.4.0
-        with:
-          python-version: "3.11"
-
       - name: Install System Dependencies
+        # Install build toolchains and dependencies matching the internal Kokoro CI image
+        # (ci/tflite-py3.Dockerfile: libc++-18-dev, llvm-18, clang-18) to ensure environment consistency.
         run: |
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends libc++-18-dev libc++abi-18-dev llvm-18 clang-18
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libc++-18-dev libc++abi-18-dev llvm-18 clang-18 \
+            libssl-dev build-essential libbz2-dev libncurses5-dev libncursesw5-dev \
+            libffi-dev libreadline-dev libsqlite3-dev liblzma-dev zlib1g-dev git curl
 
-      - name: Configure tensorflow & python path
+      - name: Setup Pyenv Python 3.11
+        # Keep compiler and Python configuration consistent with internal CI
+        # (run_bazel_test_with_docker.sh & tflite-py3.Dockerfile) to ensure Bazel remote cache hits.
+        shell: bash
+        run: |
+          git clone https://github.com/pyenv/pyenv.git /pyenv
+          export PYENV_ROOT=/pyenv
+          export PATH="$PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH"
+          pyenv install -s 3.11
+          pyenv global 3.11
+          echo "PYENV_ROOT=/pyenv" >> "$GITHUB_ENV"
+          # In GHA, each echo to GITHUB_PATH prepends to PATH.
+          # To achieve PATH=/pyenv/shims:/pyenv/bin:... matching Kokoro:
+          echo "/pyenv/bin" >> "$GITHUB_PATH"
+          echo "/pyenv/shims" >> "$GITHUB_PATH"
+          # Ensure HOME is /root so Bazelisk downloads to /root/.cache/bazelisk
+          # matching Kokoro Docker environment:
+          echo "HOME=/root" >> "$GITHUB_ENV"
+          echo "BAZELISK_HOME=/root/.cache/bazelisk" >> "$GITHUB_ENV"
+
+      - name: Configure Bazel
+        shell: bash
         run: |
           chmod +x configure.py
-          export PYTHON_BIN_PATH=$(which python3)
-          export PYTHON_LIB_PATH=$(python3 -c 'import site; print(site.getsitepackages()[0])')
+          sudo ln -sf "$(which python3)" /usr/local/bin/python3
+          sudo mkdir -p /usr/local/lib/python3.11
+          sudo ln -sfn "$(python3 -c 'import site; print(site.getsitepackages()[0])')" /usr/local/lib/python3.11/site-packages
+          export PYTHON_BIN_PATH="/usr/local/bin/python3"
+          export PYTHON_LIB_PATH="/usr/local/lib/python3.11/site-packages"
+          export HERMETIC_PYTHON_VERSION=3.11
           export TF_NEED_ROCM=0
+          export TF_NEED_CLANG=0
           export TF_NEED_CUDA=0
           export TF_SET_ANDROID_WORKSPACE=0
           export CC_OPT_FLAGS='-Wno-sign-compare'
-          yes "" | python3 configure.py
+          python3 configure.py < <(yes "")
 
       - name: Run bazel build on Linux
         env:
@@ -104,6 +133,7 @@ jobs:
             "--test_output=errors"
             "--keep_going"
             "--repo_env=USE_PYWRAP_RULES=True"
+            "--repo_env=HERMETIC_PYTHON_VERSION=3.11"
           )
 
           LITERT_EXCLUDED_TARGETS=(
@@ -126,6 +156,9 @@ jobs:
 
       - name: Build Intel OpenVINO plugin for Linux
         run: |
-          bazel build --config=public_cache \
+          bazel build \
+            --config=public_cache \
+            --repo_env=USE_PYWRAP_RULES=True \
+            --repo_env=HERMETIC_PYTHON_VERSION=3.11 \
             //litert/vendors/intel_openvino/compiler:libLiteRtCompilerPlugin_IntelOpenvino.so \
             //litert/vendors/intel_openvino/dispatch:libLiteRtDispatch_IntelOpenvino.so
