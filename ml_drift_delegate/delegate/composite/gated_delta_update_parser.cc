@@ -32,11 +32,15 @@ namespace litert::ml_drift {
 absl::Status GatedDeltaUpdateOperationParser::IsSupported(
     const TfLiteContext* context, const TfLiteNode* tflite_node,
     const TfLiteRegistration*) {
-  if (tflite_node->inputs->size != 6) {
-    return absl::UnavailableError("gated_delta_update expects 6 inputs.");
+  if (tflite_node->inputs->size != 6 && tflite_node->inputs->size != 7) {
+    return absl::UnavailableError("gated_delta_update expects 6 or 7 inputs.");
   }
   for (int i = 0; i < 6; ++i) {
     ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, i));
+  }
+  if (tflite_node->inputs->size == 7) {
+    ABSL_RETURN_IF_ERROR(
+        PreCheckRuntimeOrConstantInput(context, tflite_node, 6));
   }
   ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
@@ -78,7 +82,10 @@ void GatedDeltaUpdateOperationParser::Parse(const TfLiteNode* tflite_node,
                                             ObjectReader* reader) {
   auto* node = graph->NewNode();
   node->operation.type = kGatedDeltaUpdateType;
-  for (int i = 0; i < 6; ++i) {
+  for (int i = 0; i < tflite_node->inputs->size; ++i) {
+    // Skip input 5 (recurrent_state_in); we read and update output 1
+    // (recurrent_state_out) in-place.
+    if (i == 5) continue;
     if (reader->CanReadValue(i)) {
       reader->AddInput(node, i);
     } else {
