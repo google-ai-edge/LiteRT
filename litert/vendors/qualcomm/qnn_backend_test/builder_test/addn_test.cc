@@ -34,8 +34,8 @@ TEST_P(QnnModelTest, AddNThreeInputs) {
                                 {input0_tensor, input1_tensor, input2_tensor},
                                 {output_tensor});
   ASSERT_EQ(ops.size(), 2u);
-  EXPECT_EQ(ops[0].GetOpCode(), ::qnn::QnnOpCode::kElementWiseBinary);
-  EXPECT_EQ(ops[1].GetOpCode(), ::qnn::QnnOpCode::kElementWiseBinary);
+  EXPECT_EQ(ops[0].GetOpCode(), ::qnn::QnnOpCode::kElementWiseAdd);
+  EXPECT_EQ(ops[1].GetOpCode(), ::qnn::QnnOpCode::kElementWiseAdd);
 
   qnn_model_.MoveOpsToGraph(std::move(ops));
 
@@ -77,7 +77,7 @@ TEST_P(QnnModelTest, AddNTwoInputsEmitsSingleAdd) {
   auto ops = ::qnn::BuildAddNOp(tensor_pool_, {input0_tensor, input1_tensor},
                                 {output_tensor});
   ASSERT_EQ(ops.size(), 1u);
-  EXPECT_EQ(ops[0].GetOpCode(), ::qnn::QnnOpCode::kElementWiseBinary);
+  EXPECT_EQ(ops[0].GetOpCode(), ::qnn::QnnOpCode::kElementWiseAdd);
 
   qnn_model_.MoveOpsToGraph(std::move(ops));
 
