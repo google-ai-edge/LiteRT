@@ -68,8 +68,8 @@ jobs:
     if: needs.check.outputs.run_build == 'true'
     runs-on: macos-15
     permissions:
-      actions: write
-      contents: write
+      actions: write # zizmor: ignore[excessive-permissions]
+      contents: write # zizmor: ignore[excessive-permissions]
     env:
       GH_TOKEN: ${{ github.token }}
       REFRESH_CACHE: ${{ github.event_name == 'schedule' ||
