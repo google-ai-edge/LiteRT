@@ -95,6 +95,7 @@ struct LrtQualcommOptionsT {
   std::optional<LrtQualcommOptionsBackend> qnn_backend;
   std::optional<bool> enable_weight_sharing;
   std::optional<bool> enable_just_in_time;
+  std::optional<LrtQualcommOptionsOpNameFormat> op_name_format;
   std::optional<bool> use_conv_hmx;
   std::optional<bool> use_fold_relu;
   std::optional<bool> htp_dlbc;
@@ -183,6 +184,12 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return v.Error().Status();
           LrtQualcommOptionsSetEnableJustInTime(parsed_options, *v);
+        } else if (key == "op_name_format") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetOpNameFormat(
+              parsed_options,
+              static_cast<LrtQualcommOptionsOpNameFormat>(*v));
         } else if (key == "use_conv_hmx") {
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -424,6 +431,10 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->enable_just_in_time.has_value()) {
     absl::StrAppend(&toml_str, "enable_just_in_time = ",
                     *options->enable_just_in_time ? "true" : "false", "\n");
+  }
+  if (options->op_name_format.has_value()) {
+    absl::StrAppend(&toml_str, "op_name_format = ",
+                    static_cast<int>(*options->op_name_format), "\n");
   }
   if (options->use_conv_hmx.has_value()) {
     absl::StrAppend(&toml_str, "use_conv_hmx = ",
@@ -906,6 +917,31 @@ LiteRtStatus LrtQualcommOptionsGetUseFoldReLU(LrtQualcommOptions options,
   }
 
   *use_fold_relu = options->use_fold_relu.value_or(true);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetOpNameFormat(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsOpNameFormat op_name_format) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->op_name_format = op_name_format;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetOpNameFormat(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsOpNameFormat* op_name_format) {
+  if (op_name_format == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *op_name_format = options->op_name_format.value_or(
+      kLiteRtQualcommOpNameFormatBasic);
 
   return kLiteRtStatusOk;
 }

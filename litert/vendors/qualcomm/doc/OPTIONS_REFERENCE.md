@@ -52,7 +52,7 @@ flowchart TB
     end
     subgraph ROW2[" "]
         direction LR
-        C_GEN["🛠 Compile · General<br/><div style='text-align:left'>────────────────────────<br/>enable_just_in_time<br/>graph_io_tensor_mem_type<br/>graph_priority</div>"]
+        C_GEN["🛠 Compile · General<br/><div style='text-align:left'>────────────────────────<br/>enable_just_in_time<br/>graph_io_tensor_mem_type<br/>graph_priority<br/>op_name_format</div>"]
         C_HTP["🛠 Compile · HTP<br/><div style='text-align:left'>───────────────────────<br/>use_conv_hmx<br/>use_fold_relu<br/>htp_dlbc<br/>htp_dlbc_weights<br/>htp_p_point<br/>htp_weight_sharing_channel_tile_size<br/>optimization_level<br/>vtcm_size<br/>num_hvx_threads<br/>use_int64_bias_as_int32<br/>enable_weight_sharing</div>"]
         C_OTHER["🛠 Compile · IR / SAVER / Debug<br/><div style='text-align:left'>──────────────────────────────<br/>dlc_dir<br/>saver_output_dir<br/>dump_tensor_ids<br/>ir_json_dir</div>"]
         C_GEN ~~~ C_HTP ~~~ C_OTHER
@@ -62,7 +62,7 @@ flowchart TB
 
 | Category | Options |
 |----------|---------|
-| **General / SDK** | `log_level`, `backend`, `graph_priority`, `custom_op_package`, `enable_just_in_time`, `graph_io_tensor_mem_type`, `profiling` |
+| **General / SDK** | `log_level`, `backend`, `graph_priority`, `custom_op_package`, `enable_just_in_time`, `graph_io_tensor_mem_type`, `profiling`, `op_name_format` |
 | **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_dlbc`, `htp_dlbc_weights`, `htp_p_point`, `htp_weight_sharing_channel_tile_size`, `htp_performance_mode`, `htp_pd_session`, `htp_device_id`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
 | **DSP** | `dsp_performance_mode`, `dsp_pd_session` |
 | **LPAI** | `lpai_target`, `lpai_fps`, `lpai_ftrt_ratio`, `lpai_client_perf_type`, `lpai_core_affinity_type`, `lpai_core_selection` |
@@ -95,6 +95,7 @@ key and the C / C++ setters follow the same name (see §10 for examples), with
 | Graph I/O mem type | `graph_io_tensor_mem_type` | `memhandle` | compile | `raw` · `memhandle`. Mem type for graph I/O tensors at graph-creation. |
 | Profiling | `profiling` | `off` | both | `off` · `basic` · `detailed` · `linting` · `optrace`. Higher = more detailed report. Read at compile (context creation) and dispatch (graph execution). |
 | Custom op package | `custom_op_package` | *(empty)* | both | See note below. |
+| Op name format | `op_name_format` | `basic` | compile | Controls how QNN graph op names are formed. `detailed`: includes the tensor-path namespace prefix and LiteRt op ID suffix — full traceability for debugging. `basic`: omits them, producing shorter op names. |
 
 ### `custom_op_package` details
 

@@ -366,6 +366,27 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  /// @brief When enabled, detailed op information is omitted from QNN graph
+  /// op names.
+  enum class OpNameFormat : int {
+    kBasic = kLiteRtQualcommOpNameFormatBasic,
+    kDetailed = kLiteRtQualcommOpNameFormatDetailed,
+  };
+
+  void SetOpNameFormat(OpNameFormat op_name_format) {
+    LrtQualcommOptionsSetOpNameFormat(
+        options_,
+        static_cast<LrtQualcommOptionsOpNameFormat>(op_name_format));
+  }
+  OpNameFormat GetOpNameFormat() {
+    LrtQualcommOptionsOpNameFormat val;
+    auto status = LrtQualcommOptionsGetOpNameFormat(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return OpNameFormat::kBasic;
+    }
+    return static_cast<OpNameFormat>(val);
+  }
+
   /// @brief Enables HTP DLBC input compression.
   void SetHtpDlbc(bool htp_dlbc) {
     LrtQualcommOptionsSetHtpDlbc(options_, htp_dlbc);

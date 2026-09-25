@@ -133,6 +133,18 @@ ABSL_DECLARE_FLAG(bool, qualcomm_use_conv_hmx);
 
 ABSL_DECLARE_FLAG(bool, qualcomm_use_fold_relu);
 
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::OpNameFormat,
+                  qualcomm_op_name_format);
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text, QualcommOptions::OpNameFormat* out,
+                   std::string* error);
+
+std::string AbslUnparseFlag(QualcommOptions::OpNameFormat v);
+
+}  // namespace litert::qualcomm
+
 ABSL_DECLARE_FLAG(bool, qualcomm_htp_dlbc);
 
 ABSL_DECLARE_FLAG(bool, qualcomm_htp_dlbc_weights);
