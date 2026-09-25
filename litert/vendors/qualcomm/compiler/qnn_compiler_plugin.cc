@@ -59,6 +59,7 @@
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
+#include "litert/vendors/qualcomm/transformations/fold_const_dequantize.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
 using ::litert::qnn::QnnManager;
@@ -412,6 +413,9 @@ class LiteRtCompilerPluginT {
   std::optional<std::string> shared_library_dir_;
   QnnManager::Ptr qnn_manager_ = nullptr;
   std::unique_ptr<::qnn::QnnBackend> qnn_backend_ = nullptr;
+
+ public:
+  std::vector<LiteRtTransformation> transformations;
 };
 
 LiteRtStatus LiteRtCreateCompilerPlugin(
@@ -765,7 +769,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
     LiteRtCompilerPlugin compiler_plugin,
     LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns) {
-  *num_patterns = 0;
+  compiler_plugin->transformations.push_back(
+      {&FoldConstDequantizeTransformation, "FoldConstDequantize", 100});
+  *num_patterns = compiler_plugin->transformations.size();
+  *transformations = compiler_plugin->transformations.data();
+
   return kLiteRtStatusOk;
 }
 
