@@ -14,6 +14,8 @@
 
 #include "litert/tools/apply_plugin.h"
 
+#include "litert/tools/apply_input_shapes.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -377,6 +379,15 @@ LiteRtStatus Compile(Context& ctx) {
   }
   auto& model = *model_wrap->Get();
 
+  if (!ctx.Run().positional_inputs.empty() || !ctx.Run().name_inputs.empty()) {
+    auto status = ApplyInputShapes(model_wrap->Get(), /*signature_key=*/"",
+                                   ctx.Run().positional_inputs,
+                                   ctx.Run().name_inputs);
+    if (!status) {
+      return status.Error().Status();
+    }
+  }
+
   auto plugin = LoadPlugin(ctx);
   if (!plugin) {
     return plugin.Error().Status();
@@ -441,6 +452,15 @@ LiteRtStatus Apply(Context& ctx) {
     return model_wrap.Error().Status();
   }
   auto& model = *model_wrap->Get();
+
+  if (!ctx.Run().positional_inputs.empty() || !ctx.Run().name_inputs.empty()) {
+    auto status = ApplyInputShapes(model_wrap->Get(), /*signature_key=*/"",
+                                   ctx.Run().positional_inputs,
+                                   ctx.Run().name_inputs);
+    if (!status) {
+      return status.Error().Status();
+    }
+  }
 
   auto plugin = LoadPlugin(ctx);
   if (!plugin) {
