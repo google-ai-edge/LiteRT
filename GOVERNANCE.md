@@ -5,7 +5,8 @@
 LiteRT is a Google-led open-source project. This policy defines the technical
 governance for [LiteRT](https://github.com/google-ai-edge/litert),
 [litert-torch](https://github.com/google-ai-edge/litert-torch),
-[LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM), and
+[LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM),
+[litert-CLI](https://github.com/google-ai-edge/litert-CLI)and
 [litert-samples](https://github.com/google-ai-edge/litert-samples).
 
 Google retains final authority over the project's technical direction, roadmap,
