@@ -38,6 +38,12 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
      */
     SystemRuntimeHandle(23),
     /**
+     * This for internal use only. Reserved for use by LiteRT in Play services.
+     *
+     * @suppress
+     */
+    Context(28),
+    /**
      * This for internal use only.
      *
      * @suppress
