@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {add, author, AuthoredModel, CompiledModel, div, Environment, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, mul, relu, sub, supportsFeature, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
+import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, elu, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maxPool2d, maximum, mean, minimum, mul, neg, notEqual, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, round, rsqrt, select, sin, slice, softmax, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, transpose, transposeConv2d, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -1682,6 +1682,856 @@ describe('LiteRt', () => {
          res2.delete();
          authoredModel.delete();
        });
+
+    it('compiles and executes authored batchMatMul graph', async () => {
+      await resetLiteRt(true, {threads: false});
+      const dataA = new Float32Array([1, 2, 3, 4, 5, 6]);
+      const dataB = new Float32Array([7, 8, 9, 1, 2, 3]);
+      const tensorA = Tensor.fromTypedArray(dataA, [2, 3]);
+      const tensorB = Tensor.fromTypedArray(dataB, [3, 2]);
+
+      const model = author(
+          (a: Tensor, b: Tensor) => a.batchMatMul(b), {accelerator: 'wasm'});
+      const out = await model.run(tensorA, tensorB);
+
+      expect(Array.from(await out.data())).toEqual([31, 19, 85, 55]);
+
+      tensorA.delete();
+      tensorB.delete();
+      out.delete();
+      model.delete();
+    });
+
+    it('compiles and executes authored fullyConnected graph with and without bias',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const inputData = new Float32Array([1, 2, 3]);
+         const weightData = new Float32Array([1, 2, 3, 4, 5, 6]);
+         const biasData = new Float32Array([10, 20]);
+
+         const inputTensor = Tensor.fromTypedArray(inputData, [1, 3]);
+         const weightTensor = Tensor.fromTypedArray(weightData, [2, 3]);
+         const biasTensor = Tensor.fromTypedArray(biasData, [2]);
+
+         // Without bias: 1*1+2*2+3*3=14, 1*4+2*5+3*6=32
+         const modelNoBias = author(
+             (x: Tensor, w: Tensor) => x.fullyConnected(w),
+             {accelerator: 'wasm'});
+         const outNoBias = await modelNoBias.run(inputTensor, weightTensor);
+         expect(Array.from(await outNoBias.data())).toEqual([14, 32]);
+
+         // With bias: [14+10, 32+20] = [24, 52]
+         const modelWithBias = author(
+             (x: Tensor, w: Tensor, b: Tensor) => x.fullyConnected(w, b),
+             {accelerator: 'wasm'});
+         const outWithBias =
+             await modelWithBias.run(inputTensor, weightTensor, biasTensor);
+         expect(Array.from(await outWithBias.data())).toEqual([24, 52]);
+
+         inputTensor.delete();
+         weightTensor.delete();
+         biasTensor.delete();
+         outNoBias.delete();
+         outWithBias.delete();
+         modelNoBias.delete();
+         modelWithBias.delete();
+       });
+
+    it('compiles and executes authored activation graphs (softmax, logistic, tanh, gelu)',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+
+         // Softmax: equal logits [0.0, 0.0] -> [0.5, 0.5]
+         const tensorLogits =
+             Tensor.fromTypedArray(new Float32Array([0.0, 0.0]), [1, 2]);
+         const softmaxModel = author(
+             (x: Tensor) => x.softmax(), {accelerator: 'wasm'});
+         const softmaxOut = await softmaxModel.run(tensorLogits);
+         const softmaxData = Array.from(await softmaxOut.data());
+         expect(softmaxData[0]).toBeCloseTo(0.5, 3);
+         expect(softmaxData[1]).toBeCloseTo(0.5, 3);
+
+         // Logistic (sigmoid): 0.0 -> 0.5
+         const tensorZero = new Tensor(new Float32Array([0.0]));
+         const logisticModel = author(
+             (x: Tensor) => x.logistic(), {accelerator: 'wasm'});
+         const logisticOut = await logisticModel.run(tensorZero);
+         const logisticData = Array.from(await logisticOut.data());
+         expect(logisticData[0]).toBeCloseTo(0.5, 3);
+
+         // Tanh: 0.0 -> 0.0
+         const tanhModel = author(
+             (x: Tensor) => x.tanh(), {accelerator: 'wasm'});
+         const tanhOut = await tanhModel.run(tensorZero);
+         const tanhData = Array.from(await tanhOut.data());
+         expect(tanhData[0]).toBeCloseTo(0.0, 3);
+
+         // GELU: 0.0 -> 0.0, 1.0 -> ~0.8413
+         const tensorGeluInput =
+             Tensor.fromTypedArray(new Float32Array([0.0, 1.0]), [2]);
+         const geluModel = author(
+             (x: Tensor) => x.gelu(), {accelerator: 'wasm'});
+         const geluOut = await geluModel.run(tensorGeluInput);
+         const geluData = Array.from(await geluOut.data());
+         expect(geluData[0]).toBeCloseTo(0.0, 3);
+         expect(geluData[1]).toBeCloseTo(0.8413, 2);
+
+         tensorLogits.delete();
+         tensorZero.delete();
+         tensorGeluInput.delete();
+         softmaxOut.delete();
+         logisticOut.delete();
+         tanhOut.delete();
+         geluOut.delete();
+         softmaxModel.delete();
+         logisticModel.delete();
+         tanhModel.delete();
+         geluModel.delete();
+       });
+
+    it('compiles and executes authored conv2d and depthwiseConv2d graphs',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+
+         // Input: [1, 2, 2, 1], Filter: [1, 2, 2, 1]
+         const inputData = new Float32Array([1, 2, 3, 4]);
+         const filterData = new Float32Array([1, 1, 1, 1]);
+         const biasData = new Float32Array([5]);
+
+         const inputTensor = Tensor.fromTypedArray(inputData, [1, 2, 2, 1]);
+         const filterTensor = Tensor.fromTypedArray(filterData, [1, 2, 2, 1]);
+         const biasTensor = Tensor.fromTypedArray(biasData, [1]);
+
+         // Standard conv2d with bias: (1+2+3+4) + 5 = 15
+         const convModel = author(
+             (x: Tensor, f: Tensor, b: Tensor) =>
+                 x.conv2d(f, {padding: 'VALID', bias: b}),
+             {accelerator: 'wasm'});
+         const convOut =
+             await convModel.run(inputTensor, filterTensor, biasTensor);
+         expect(Array.from(await convOut.data())).toEqual([15]);
+
+         // Depthwise conv2d: 1+2+3+4 = 10
+         const dwConvModel = author(
+             (x: Tensor, f: Tensor) =>
+                 x.depthwiseConv2d(f, {padding: 'VALID'}),
+             {accelerator: 'wasm'});
+         const dwConvOut = await dwConvModel.run(inputTensor, filterTensor);
+         expect(Array.from(await dwConvOut.data())).toEqual([10]);
+
+         inputTensor.delete();
+         filterTensor.delete();
+         biasTensor.delete();
+         convOut.delete();
+         dwConvOut.delete();
+         convModel.delete();
+         dwConvModel.delete();
+       });
+
+    it('compiles and executes authored shaping and slicing graphs (reshape, transpose, concat, slice, pad)',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+
+         // 1. Reshape: [2, 3] -> [3, 2]
+         const tensorA =
+             Tensor.fromTypedArray(new Float32Array([1, 2, 3, 4, 5, 6]), [2, 3]);
+         const reshapeModel =
+             author((x: Tensor) => x.reshape([3, 2]), {accelerator: 'wasm'});
+         const reshapeOut = await reshapeModel.run(tensorA);
+         expect(Array.from(await reshapeOut.data()))
+             .toEqual([1, 2, 3, 4, 5, 6]);
+
+         // 2. Transpose: [2, 3] -> [3, 2] with perm [1, 0]
+         const transposeModel =
+             author((x: Tensor) => x.transpose([1, 0]), {accelerator: 'wasm'});
+         const transposeOut = await transposeModel.run(tensorA);
+         expect(Array.from(await transposeOut.data()))
+             .toEqual([1, 4, 2, 5, 3, 6]);
+
+         // 3. Concat: [1, 2] and [1, 2] along axis 0 -> [2, 2], and along axis -1 -> [1, 4]
+         const tensorC1 =
+             Tensor.fromTypedArray(new Float32Array([1, 2]), [1, 2]);
+         const tensorC2 =
+             Tensor.fromTypedArray(new Float32Array([3, 4]), [1, 2]);
+         const concatModel = author(
+             (x: Tensor, y: Tensor) => x.concat(y, 0), {accelerator: 'wasm'});
+         const concatOut = await concatModel.run(tensorC1, tensorC2);
+         expect(Array.from(await concatOut.data())).toEqual([1, 2, 3, 4]);
+
+         const concatNegAxisModel = author(
+             (x: Tensor, y: Tensor) => x.concat(y, -1), {accelerator: 'wasm'});
+         const concatNegAxisOut =
+             await concatNegAxisModel.run(tensorC1, tensorC2);
+         expect(concatNegAxisOut.shape).toEqual([1, 4]);
+         expect(Array.from(await concatNegAxisOut.data())).toEqual([1, 2, 3, 4]);
+         concatNegAxisOut.delete();
+         concatNegAxisModel.delete();
+
+         // 4. Slice: extract 1 element from [2, 3] at begin=[1, 1], size=[1, 2]
+         const sliceModel = author(
+             (x: Tensor) => x.slice([1, 1], [1, 2]), {accelerator: 'wasm'});
+         const sliceOut = await sliceModel.run(tensorA);
+         expect(Array.from(await sliceOut.data())).toEqual([5, 6]);
+
+         // 5. Pad: [1, 2] padded with [0, 0] along dim 0 and [1, 1] along dim 1 -> [1, 4]
+         const padTensor = Tensor.fromTypedArray(
+             new Int32Array([0, 0, 1, 1]), [2, 2]);
+         const padModel = author(
+             (x: Tensor) => x.pad(padTensor), {accelerator: 'wasm'});
+         const padOut = await padModel.run(tensorC1);
+         expect(Array.from(await padOut.data())).toEqual([0, 1, 2, 0]);
+
+         const padArrayModel = author(
+             (x: Tensor) => x.pad([[0, 0], [1, 1]]), {accelerator: 'wasm'});
+         const padArrayOut = await padArrayModel.run(tensorC1);
+         expect(Array.from(await padArrayOut.data())).toEqual([0, 1, 2, 0]);
+         padArrayOut.delete();
+         padArrayModel.delete();
+
+         const invalidFloatPad = Tensor.fromTypedArray(
+             new Float32Array([0, 0, 1, 1]), [2, 2]);
+         expect(() => tensorC1.pad(invalidFloatPad))
+             .toThrowError(/dtype 'int32'/);
+         invalidFloatPad.delete();
+
+         tensorA.delete();
+         tensorC1.delete();
+         tensorC2.delete();
+         padTensor.delete();
+         reshapeOut.delete();
+         transposeOut.delete();
+         concatOut.delete();
+         sliceOut.delete();
+         padOut.delete();
+         reshapeModel.delete();
+         transposeModel.delete();
+         concatModel.delete();
+         sliceModel.delete();
+         padModel.delete();
+       });
+
+    it('compiles and executes authored reduction graphs (mean, sum)',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+
+         // Tensor [2, 3]: [[1, 2, 3], [4, 5, 6]]
+         const tensorA =
+             Tensor.fromTypedArray(new Float32Array([1, 2, 3, 4, 5, 6]), [2, 3]);
+
+         // Sum along axis 1: [1+2+3, 4+5+6] = [6, 15]
+         const sumModel = author(
+             (x: Tensor) => x.sum(1), {accelerator: 'wasm'});
+         const sumOut = await sumModel.run(tensorA);
+         expect(Array.from(await sumOut.data())).toEqual([6, 15]);
+
+         // Mean along axis 0: [(1+4)/2, (2+5)/2, (3+6)/2] = [2.5, 3.5, 4.5]
+         const meanModel = author(
+             (x: Tensor) => x.mean(0), {accelerator: 'wasm'});
+         const meanOut = await meanModel.run(tensorA);
+         expect(Array.from(await meanOut.data())).toEqual([2.5, 3.5, 4.5]);
+
+         tensorA.delete();
+         sumOut.delete();
+         meanOut.delete();
+         sumModel.delete();
+         meanModel.delete();
+       });
+
+    it('compiles and executes authored elementary math graphs (abs, neg, sqrt, rsqrt, exp, log, sin, cos, ceil, floor, round)',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+
+         // Input tensor
+         const input = Tensor.fromTypedArray(
+             new Float32Array([-1.5, 0.0, 1.5, 4.0]), [4]);
+
+         // abs: [1.5, 0.0, 1.5, 4.0]
+         const absModel = author((x: Tensor) => abs(x), {accelerator: 'wasm'});
+         const absOut = await absModel.run(input);
+         expect(Array.from(await absOut.data())).toEqual([1.5, 0.0, 1.5, 4.0]);
+         absOut.delete();
+         absModel.delete();
+
+         // neg: [1.5, -0.0, -1.5, -4.0]
+         const negModel = author((x: Tensor) => x.neg(), {accelerator: 'wasm'});
+         const negOut = await negModel.run(input);
+         expect(Array.from(await negOut.data())).toEqual([1.5, -0, -1.5, -4.0]);
+         negOut.delete();
+         negModel.delete();
+
+         // ceil: [-1, 0, 2, 4]
+         const ceilModel = author((x: Tensor) => ceil(x), {accelerator: 'wasm'});
+         const ceilOut = await ceilModel.run(input);
+         expect(Array.from(await ceilOut.data())).toEqual([-1, 0, 2, 4]);
+         ceilOut.delete();
+         ceilModel.delete();
+
+         // floor: [-2, 0, 1, 4]
+         const floorModel =
+             author((x: Tensor) => floor(x), {accelerator: 'wasm'});
+         const floorOut = await floorModel.run(input);
+         expect(Array.from(await floorOut.data())).toEqual([-2, 0, 1, 4]);
+         floorOut.delete();
+         floorModel.delete();
+
+         // round: [-2, 0, 2, 4]
+         const roundModel =
+             author((x: Tensor) => round(x), {accelerator: 'wasm'});
+         const roundOut = await roundModel.run(input);
+         expect(Array.from(await roundOut.data())).toEqual([-2, 0, 2, 4]);
+         roundOut.delete();
+         roundModel.delete();
+
+         // Positive inputs for sqrt, rsqrt, log
+         const posInput = Tensor.fromTypedArray(
+             new Float32Array([1.0, 4.0, 9.0, 16.0]), [4]);
+
+         // sqrt: [1.0, 2.0, 3.0, 4.0]
+         const sqrtModel = author((x: Tensor) => sqrt(x), {accelerator: 'wasm'});
+         const sqrtOut = await sqrtModel.run(posInput);
+         expect(Array.from(await sqrtOut.data())).toEqual([1.0, 2.0, 3.0, 4.0]);
+         sqrtOut.delete();
+         sqrtModel.delete();
+
+         // rsqrt: [1.0, 0.5, 1/3, 0.25]
+         const rsqrtModel =
+             author((x: Tensor) => rsqrt(x), {accelerator: 'wasm'});
+         const rsqrtOut = await rsqrtModel.run(posInput);
+         const rsqrtData = Array.from(await rsqrtOut.data() as Float32Array);
+         expect(rsqrtData[0]).toBeCloseTo(1.0, 4);
+         expect(rsqrtData[1]).toBeCloseTo(0.5, 4);
+         expect(rsqrtData[2]).toBeCloseTo(1 / 3, 4);
+         expect(rsqrtData[3]).toBeCloseTo(0.25, 4);
+         rsqrtOut.delete();
+         rsqrtModel.delete();
+
+         // exp and log
+         const expInput =
+             Tensor.fromTypedArray(new Float32Array([0.0, 1.0, 2.0]), [3]);
+         const expModel = author((x: Tensor) => exp(x), {accelerator: 'wasm'});
+         const expOut = await expModel.run(expInput);
+         const expData = Array.from(await expOut.data() as Float32Array);
+         expect(expData[0]).toBeCloseTo(1.0, 4);
+         expect(expData[1]).toBeCloseTo(Math.E, 4);
+         expect(expData[2]).toBeCloseTo(Math.exp(2), 4);
+         expOut.delete();
+         expModel.delete();
+
+         const logInput = Tensor.fromTypedArray(
+             new Float32Array([1.0, Math.E, Math.exp(2)]), [3]);
+         const logModel = author((x: Tensor) => log(x), {accelerator: 'wasm'});
+         const logOut = await logModel.run(logInput);
+         const logData = Array.from(await logOut.data() as Float32Array);
+         expect(logData[0]).toBeCloseTo(0.0, 4);
+         expect(logData[1]).toBeCloseTo(1.0, 4);
+         expect(logData[2]).toBeCloseTo(2.0, 4);
+         logOut.delete();
+         logModel.delete();
+         expInput.delete();
+         logInput.delete();
+
+         // Trigonometric: sin and cos on [0, Math.PI / 2, Math.PI]
+         const trigInput = Tensor.fromTypedArray(
+             new Float32Array([0.0, Math.PI / 2, Math.PI]), [3]);
+
+         const sinModel = author((x: Tensor) => sin(x), {accelerator: 'wasm'});
+         const sinOut = await sinModel.run(trigInput);
+         const sinData = Array.from(await sinOut.data() as Float32Array);
+         expect(sinData[0]).toBeCloseTo(0.0, 4);
+         expect(sinData[1]).toBeCloseTo(1.0, 4);
+         expect(sinData[2]).toBeCloseTo(0.0, 4);
+         sinOut.delete();
+         sinModel.delete();
+
+         const cosModel = author((x: Tensor) => cos(x), {accelerator: 'wasm'});
+         const cosOut = await cosModel.run(trigInput);
+         const cosData = Array.from(await cosOut.data() as Float32Array);
+         expect(cosData[0]).toBeCloseTo(1.0, 4);
+         expect(cosData[1]).toBeCloseTo(0.0, 4);
+         expect(cosData[2]).toBeCloseTo(-1.0, 4);
+         cosOut.delete();
+         cosModel.delete();
+
+         input.delete();
+         posInput.delete();
+         trigInput.delete();
+       });
+
+    it('compiles and executes authored binary math graphs (pow, minimum, maximum, floorDiv, floorMod)',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+
+         const a = Tensor.fromTypedArray(
+             new Float32Array([2.0, 3.0, 7.0, -7.0]), [4]);
+         const b = Tensor.fromTypedArray(
+             new Float32Array([3.0, 2.0, 3.0, 3.0]), [4]);
+
+         // pow: [2^3, 3^2, 7^3, (-7)^3] = [8, 9, 343, -343]
+         const powModel = author(
+             (x: Tensor, y: Tensor) => pow(x, y), {accelerator: 'wasm'});
+         const powOut = await powModel.run(a, b);
+         expect(Array.from(await powOut.data())).toEqual([8, 9, 343, -343]);
+         powOut.delete();
+         powModel.delete();
+
+         // minimum: [min(2,3), min(3,2), min(7,3), min(-7,3)] = [2, 2, 3, -7]
+         const minModel = author(
+             (x: Tensor, y: Tensor) => x.minimum(y), {accelerator: 'wasm'});
+         const minOut = await minModel.run(a, b);
+         expect(Array.from(await minOut.data())).toEqual([2, 2, 3, -7]);
+         minOut.delete();
+         minModel.delete();
+
+         // maximum: [max(2,3), max(3,2), max(7,3), max(-7,3)] = [3, 3, 7, 3]
+         const maxModel = author(
+             (x: Tensor, y: Tensor) => maximum(x, y), {accelerator: 'wasm'});
+         const maxOut = await maxModel.run(a, b);
+         expect(Array.from(await maxOut.data())).toEqual([3, 3, 7, 3]);
+         maxOut.delete();
+         maxModel.delete();
+
+         // floorDiv: [floor(2/3), floor(3/2), floor(7/3), floor(-7/3)] = [0, 1, 2, -3]
+         const floorDivModel = author(
+             (x: Tensor, y: Tensor) => floorDiv(x, y), {accelerator: 'wasm'});
+         const floorDivOut = await floorDivModel.run(a, b);
+         expect(Array.from(await floorDivOut.data())).toEqual([0, 1, 2, -3]);
+         floorDivOut.delete();
+         floorDivModel.delete();
+
+         // floorMod: [2%3, 3%2, 7%3, -7%3] = [2, 1, 1, 2]
+         const floorModModel = author(
+             (x: Tensor, y: Tensor) => floorMod(x, y), {accelerator: 'wasm'});
+         const floorModOut = await floorModModel.run(a, b);
+         expect(Array.from(await floorModOut.data())).toEqual([2, 1, 1, 2]);
+         floorModOut.delete();
+         floorModModel.delete();
+
+         a.delete();
+         b.delete();
+       });
+
+    it('compiles and executes authored comparison and logic graphs (equal, notEqual, less, greater, lessEqual, greaterEqual, logicalAnd, logicalOr, logicalNot, select)',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+
+         const a = Tensor.fromTypedArray(
+             new Float32Array([1.0, 2.0, 5.0, 4.0]), [4]);
+         const b = Tensor.fromTypedArray(
+             new Float32Array([1.0, 3.0, 2.0, 4.0]), [4]);
+
+         // equal: [1, 0, 0, 1]
+         const eqModel = author(
+             (x: Tensor, y: Tensor) => equal(x, y), {accelerator: 'wasm'});
+         const eqOut = await eqModel.run(a, b);
+         expect(Array.from(await eqOut.data()).map(Number)).toEqual([1, 0, 0, 1]);
+         eqOut.delete();
+         eqModel.delete();
+
+         // notEqual: [0, 1, 1, 0]
+         const neqModel = author(
+             (x: Tensor, y: Tensor) => notEqual(x, y), {accelerator: 'wasm'});
+         const neqOut = await neqModel.run(a, b);
+         expect(Array.from(await neqOut.data()).map(Number)).toEqual([0, 1, 1, 0]);
+         neqOut.delete();
+         neqModel.delete();
+
+         // less: [0, 1, 0, 0]
+         const ltModel = author(
+             (x: Tensor, y: Tensor) => less(x, y), {accelerator: 'wasm'});
+         const ltOut = await ltModel.run(a, b);
+         expect(Array.from(await ltOut.data()).map(Number)).toEqual([0, 1, 0, 0]);
+         ltOut.delete();
+         ltModel.delete();
+
+         // greater: [0, 0, 1, 0]
+         const gtModel = author(
+             (x: Tensor, y: Tensor) => greater(x, y), {accelerator: 'wasm'});
+         const gtOut = await gtModel.run(a, b);
+         expect(Array.from(await gtOut.data()).map(Number)).toEqual([0, 0, 1, 0]);
+         gtOut.delete();
+         gtModel.delete();
+
+         // lessEqual: [1, 1, 0, 1]
+         const leModel = author(
+             (x: Tensor, y: Tensor) => lessEqual(x, y), {accelerator: 'wasm'});
+         const leOut = await leModel.run(a, b);
+         expect(Array.from(await leOut.data()).map(Number)).toEqual([1, 1, 0, 1]);
+         leOut.delete();
+         leModel.delete();
+
+         // greaterEqual: [1, 0, 1, 1]
+         const geModel = author(
+             (x: Tensor, y: Tensor) => greaterEqual(x, y), {accelerator: 'wasm'});
+         const geOut = await geModel.run(a, b);
+         expect(Array.from(await geOut.data()).map(Number)).toEqual([1, 0, 1, 1]);
+         geOut.delete();
+         geModel.delete();
+
+         // logicalAnd: equal(x, y) AND greater(x, y) -> [0, 0, 0, 0]
+         const andModel = author(
+             (x: Tensor, y: Tensor) => logicalAnd(equal(x, y), greater(x, y)),
+             {accelerator: 'wasm'});
+         const andOut = await andModel.run(a, b);
+         expect(Array.from(await andOut.data()).map(Number)).toEqual([0, 0, 0, 0]);
+         andOut.delete();
+         andModel.delete();
+
+         // logicalOr: equal(x, y) OR greater(x, y) -> [1, 0, 1, 1]
+         const orModel = author(
+             (x: Tensor, y: Tensor) => logicalOr(equal(x, y), greater(x, y)),
+             {accelerator: 'wasm'});
+         const orOut = await orModel.run(a, b);
+         expect(Array.from(await orOut.data()).map(Number)).toEqual([1, 0, 1, 1]);
+         orOut.delete();
+         orModel.delete();
+
+         // logicalNot: NOT equal(x, y) -> [0, 1, 1, 0]
+         const notModel = author(
+             (x: Tensor, y: Tensor) => logicalNot(equal(x, y)),
+             {accelerator: 'wasm'});
+         const notOut = await notModel.run(a, b);
+         expect(Array.from(await notOut.data()).map(Number)).toEqual([0, 1, 1, 0]);
+         notOut.delete();
+         notModel.delete();
+
+         // select: cond = equal(x, y) [1, 0, 0, 1]
+         // trueVal=[10, 20, 30, 40], falseVal=[-1, -2, -3, -4] -> [10, -2, -3, 40]
+         const trueVal =
+             Tensor.fromTypedArray(new Float32Array([10, 20, 30, 40]), [4]);
+         const falseVal =
+             Tensor.fromTypedArray(new Float32Array([-1, -2, -3, -4]), [4]);
+         const selModel = author(
+             (x: Tensor, y: Tensor, t: Tensor, f: Tensor) =>
+                 select(equal(x, y), t, f),
+             {accelerator: 'wasm'});
+         const selOut = await selModel.run(a, b, trueVal, falseVal);
+         expect(Array.from(await selOut.data())).toEqual([10, -2, -3, 40]);
+         selOut.delete();
+         selModel.delete();
+         trueVal.delete();
+         falseVal.delete();
+
+         a.delete();
+         b.delete();
+       });
+
+    it('compiles and executes authored extended activation graphs (relu6, leakyRelu, elu, hardSwish, logSoftmax)',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+
+         // Input: [-3.0, -1.0, 0.0, 2.0, 8.0]
+         const input = Tensor.fromTypedArray(
+             new Float32Array([-3.0, -1.0, 0.0, 2.0, 8.0]), [5]);
+
+         // relu6: [0, 0, 0, 2, 6]
+         const relu6Model =
+             author((x: Tensor) => x.relu6(), {accelerator: 'wasm'});
+         const relu6Out = await relu6Model.run(input);
+         expect(Array.from(await relu6Out.data())).toEqual([0, 0, 0, 2, 6]);
+         relu6Out.delete();
+         relu6Model.delete();
+
+         // leakyRelu(0.1): [-0.3, -0.1, 0, 2, 8]
+         const leakyModel = author(
+             (x: Tensor) => x.leakyRelu(0.1), {accelerator: 'wasm'});
+         const leakyOut = await leakyModel.run(input);
+         const leakyData = Array.from(await leakyOut.data() as Float32Array);
+         expect(leakyData[0]).toBeCloseTo(-0.3, 4);
+         expect(leakyData[1]).toBeCloseTo(-0.1, 4);
+         expect(leakyData[2]).toBeCloseTo(0.0, 4);
+         expect(leakyData[3]).toBeCloseTo(2.0, 4);
+         expect(leakyData[4]).toBeCloseTo(8.0, 4);
+         leakyOut.delete();
+         leakyModel.delete();
+
+         // elu: x < 0 ? exp(x) - 1 : x
+         const eluModel = author((x: Tensor) => elu(x), {accelerator: 'wasm'});
+         const eluOut = await eluModel.run(input);
+         const eluData = Array.from(await eluOut.data() as Float32Array);
+         expect(eluData[0]).toBeCloseTo(Math.exp(-3) - 1, 4);
+         expect(eluData[1]).toBeCloseTo(Math.exp(-1) - 1, 4);
+         expect(eluData[2]).toBeCloseTo(0.0, 4);
+         expect(eluData[3]).toBeCloseTo(2.0, 4);
+         expect(eluData[4]).toBeCloseTo(8.0, 4);
+         eluOut.delete();
+         eluModel.delete();
+
+         // hardSwish: x * relu6(x + 3) / 6
+         const hsModel =
+             author((x: Tensor) => hardSwish(x), {accelerator: 'wasm'});
+         const hsOut = await hsModel.run(input);
+         const hsData = Array.from(await hsOut.data() as Float32Array);
+         expect(hsData[0]).toBeCloseTo(0.0, 4);
+         expect(hsData[1]).toBeCloseTo(-1 / 3, 4);
+         expect(hsData[2]).toBeCloseTo(0.0, 4);
+         expect(hsData[3]).toBeCloseTo(5 / 3, 4);
+         expect(hsData[4]).toBeCloseTo(8.0, 4);
+         hsOut.delete();
+         hsModel.delete();
+
+         // logSoftmax: log(softmax(x))
+         const lsInput =
+             Tensor.fromTypedArray(new Float32Array([1.0, 2.0, 3.0]), [1, 3]);
+         const lsModel =
+             author((x: Tensor) => logSoftmax(x), {accelerator: 'wasm'});
+         const lsOut = await lsModel.run(lsInput);
+         const lsData = Array.from(await lsOut.data() as Float32Array);
+         const sumExp = Math.exp(1) + Math.exp(2) + Math.exp(3);
+         expect(lsData[0]).toBeCloseTo(1.0 - Math.log(sumExp), 4);
+         expect(lsData[1]).toBeCloseTo(2.0 - Math.log(sumExp), 4);
+         expect(lsData[2]).toBeCloseTo(3.0 - Math.log(sumExp), 4);
+         lsOut.delete();
+         lsModel.delete();
+         lsInput.delete();
+
+         input.delete();
+       });
+
+    it('compiles and executes authored dimension alignment and partitioning graphs (expandDims, squeeze, tile, pack, unpack, split)',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+
+         // expandDims: [2, 3] -> [2, 1, 3]
+         const mat = Tensor.fromTypedArray(
+             new Float32Array([1, 2, 3, 4, 5, 6]), [2, 3]);
+         const expModel = author(
+             (x: Tensor) => expandDims(x, 1), {accelerator: 'wasm'});
+         const expOut = await expModel.run(mat);
+         expect(expOut.shape).toEqual([2, 1, 3]);
+         expect(Array.from(await expOut.data())).toEqual([1, 2, 3, 4, 5, 6]);
+         expOut.delete();
+         expModel.delete();
+
+         // squeeze: [2, 1, 3] -> [2, 3]
+         const sqInput = Tensor.fromTypedArray(
+             new Float32Array([1, 2, 3, 4, 5, 6]), [2, 1, 3]);
+         const sqModel = author(
+             (x: Tensor) => squeeze(x, [1]), {accelerator: 'wasm'});
+         const sqOut = await sqModel.run(sqInput);
+         expect(sqOut.shape).toEqual([2, 3]);
+         expect(Array.from(await sqOut.data())).toEqual([1, 2, 3, 4, 5, 6]);
+         sqOut.delete();
+         sqModel.delete();
+         sqInput.delete();
+
+         // tile: [2, 2] tiled [1, 2] -> [2, 4]
+         const tileInput =
+             Tensor.fromTypedArray(new Float32Array([1, 2, 3, 4]), [2, 2]);
+         const tileModel = author(
+             (x: Tensor) => tile(x, [1, 2]), {accelerator: 'wasm'});
+         const tileOut = await tileModel.run(tileInput);
+         expect(tileOut.shape).toEqual([2, 4]);
+         expect(Array.from(await tileOut.data()))
+             .toEqual([1, 2, 1, 2, 3, 4, 3, 4]);
+         tileOut.delete();
+         tileModel.delete();
+         tileInput.delete();
+
+         // pack: two [2] tensors -> [2, 2]
+         const t1 = Tensor.fromTypedArray(new Float32Array([1, 2]), [2]);
+         const t2 = Tensor.fromTypedArray(new Float32Array([3, 4]), [2]);
+         const packModel = author(
+             (a: Tensor, b: Tensor) => pack([a, b], 0), {accelerator: 'wasm'});
+         const packOut = await packModel.run(t1, t2);
+         expect(packOut.shape).toEqual([2, 2]);
+         expect(Array.from(await packOut.data())).toEqual([1, 2, 3, 4]);
+         packOut.delete();
+         packModel.delete();
+
+         const packNegAxisModel = author(
+             (a: Tensor, b: Tensor) => pack([a, b], -1), {accelerator: 'wasm'});
+         const packNegAxisOut = await packNegAxisModel.run(t1, t2);
+         expect(packNegAxisOut.shape).toEqual([2, 2]);
+         expect(Array.from(await packNegAxisOut.data())).toEqual([1, 3, 2, 4]);
+         packNegAxisOut.delete();
+         packNegAxisModel.delete();
+
+         // unpack: [2, 3] -> two [3] tensors
+         const unpackModel = author(
+             (x: Tensor) => unpack(x, 2, 0), {accelerator: 'wasm'});
+         const unpackOuts = await unpackModel.run(mat);
+         expect(Array.isArray(unpackOuts)).toBeTrue();
+         expect(unpackOuts.length).toBe(2);
+         expect(unpackOuts[0].shape).toEqual([3]);
+         expect(Array.from(await unpackOuts[0].data())).toEqual([1, 2, 3]);
+         expect(unpackOuts[1].shape).toEqual([3]);
+         expect(Array.from(await unpackOuts[1].data())).toEqual([4, 5, 6]);
+         unpackOuts[0].delete();
+         unpackOuts[1].delete();
+         unpackModel.delete();
+
+         const unpackNegAxisModel = author(
+             (x: Tensor) => unpack(x, 3, -1), {accelerator: 'wasm'});
+         const unpackNegAxisOuts = await unpackNegAxisModel.run(mat);
+         expect(unpackNegAxisOuts.length).toBe(3);
+         expect(unpackNegAxisOuts[0].shape).toEqual([2]);
+         expect(Array.from(await unpackNegAxisOuts[0].data())).toEqual([1, 4]);
+         expect(Array.from(await unpackNegAxisOuts[1].data())).toEqual([2, 5]);
+         expect(Array.from(await unpackNegAxisOuts[2].data())).toEqual([3, 6]);
+         unpackNegAxisOuts[0].delete();
+         unpackNegAxisOuts[1].delete();
+         unpackNegAxisOuts[2].delete();
+         unpackNegAxisModel.delete();
+
+         // split: [4] -> two [2] tensors
+         const splitInput =
+             Tensor.fromTypedArray(new Float32Array([10, 20, 30, 40]), [4]);
+         const splitModel = author(
+             (x: Tensor) => split(x, 2, 0), {accelerator: 'wasm'});
+         const splitOuts = await splitModel.run(splitInput);
+         expect(Array.isArray(splitOuts)).toBeTrue();
+         expect(splitOuts.length).toBe(2);
+         expect(splitOuts[0].shape).toEqual([2]);
+         expect(Array.from(await splitOuts[0].data())).toEqual([10, 20]);
+         expect(splitOuts[1].shape).toEqual([2]);
+         expect(Array.from(await splitOuts[1].data())).toEqual([30, 40]);
+         splitOuts[0].delete();
+         splitOuts[1].delete();
+         splitModel.delete();
+         splitInput.delete();
+
+         t1.delete();
+         t2.delete();
+         mat.delete();
+       });
+
+    it('compiles and executes authored extrema and index reduction graphs (reduceMax, argMax)',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+
+         // Input: [2, 3] matrix
+         // [[1.0, 5.0, 2.0],
+         //  [4.0, 3.0, 6.0]]
+         const mat = Tensor.fromTypedArray(
+             new Float32Array([1.0, 5.0, 2.0, 4.0, 3.0, 6.0]), [2, 3]);
+
+         // reduceMax across axis 1: [5.0, 6.0]
+         const rmaxModel = author(
+             (x: Tensor) => reduceMax(x, 1), {accelerator: 'wasm'});
+         const rmaxOut = await rmaxModel.run(mat);
+         expect(rmaxOut.shape).toEqual([2]);
+         expect(Array.from(await rmaxOut.data())).toEqual([5.0, 6.0]);
+         rmaxOut.delete();
+         rmaxModel.delete();
+
+         // reduceMax across axis 0 with keepDims=true: [[4.0, 5.0, 6.0]]
+         const rmaxKdModel = author(
+             (x: Tensor) => x.reduceMax(0, true), {accelerator: 'wasm'});
+         const rmaxKdOut = await rmaxKdModel.run(mat);
+         expect(rmaxKdOut.shape).toEqual([1, 3]);
+         expect(Array.from(await rmaxKdOut.data())).toEqual([4.0, 5.0, 6.0]);
+         rmaxKdOut.delete();
+         rmaxKdModel.delete();
+
+         // argMax across axis 1: indices [1, 2]
+         const argmaxModel = author(
+             (x: Tensor) => argMax(x, 1), {accelerator: 'wasm'});
+         const argmaxOut = await argmaxModel.run(mat);
+         expect(argmaxOut.shape).toEqual([2]);
+         expect(Array.from(await argmaxOut.data()).map(Number)).toEqual([1, 2]);
+         argmaxOut.delete();
+         argmaxModel.delete();
+
+         // argMax across axis 0: indices [1, 0, 1]
+         const argmax0Model = author(
+             (x: Tensor) => x.argMax(0), {accelerator: 'wasm'});
+         const argmax0Out = await argmax0Model.run(mat);
+         expect(argmax0Out.shape).toEqual([3]);
+         expect(Array.from(await argmax0Out.data()).map(Number)).toEqual([1, 0, 1]);
+         argmax0Out.delete();
+         argmax0Model.delete();
+
+         mat.delete();
+       });
+
+    it('compiles and executes authored spatial resizing and pooling graphs (resizeBilinear, resizeNearestNeighbor, maxPool2d, avgPool2d)',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+
+         // Input: [1, 2, 2, 1] image
+         // [[1.0, 2.0],
+         //  [3.0, 4.0]]
+         const img = Tensor.fromTypedArray(
+             new Float32Array([1.0, 2.0, 3.0, 4.0]), [1, 2, 2, 1]);
+
+         // resizeBilinear to [1, 4, 4, 1]
+         const bilModel = author(
+             (x: Tensor) => resizeBilinear(x, [4, 4]), {accelerator: 'wasm'});
+         const bilOut = await bilModel.run(img);
+         expect(bilOut.shape).toEqual([1, 4, 4, 1]);
+         bilOut.delete();
+         bilModel.delete();
+
+         // resizeNearestNeighbor to [1, 4, 4, 1] via method
+         const nnModel = author(
+             (x: Tensor) => x.resizeNearestNeighbor([4, 4]), {accelerator: 'wasm'});
+         const nnOut = await nnModel.run(img);
+         expect(nnOut.shape).toEqual([1, 4, 4, 1]);
+         nnOut.delete();
+         nnModel.delete();
+
+         // maxPool2d: 2x2 filter on [1, 2, 2, 1] -> [1, 1, 1, 1], max is 4.0
+         const maxPoolModel = author(
+             (x: Tensor) => maxPool2d(x, {filterSize: [2, 2], strides: [2, 2], padding: 'VALID'}),
+             {accelerator: 'wasm'});
+         const maxPoolOut = await maxPoolModel.run(img);
+         expect(maxPoolOut.shape).toEqual([1, 1, 1, 1]);
+         expect(Array.from(await maxPoolOut.data())).toEqual([4.0]);
+         maxPoolOut.delete();
+         maxPoolModel.delete();
+
+         // avgPool2d: 2x2 filter on [1, 2, 2, 1] -> [1, 1, 1, 1], avg is (1+2+3+4)/4 = 2.5
+         const avgPoolModel = author(
+             (x: Tensor) => x.avgPool2d({filterSize: [2, 2], strides: [2, 2], padding: 'VALID'}),
+             {accelerator: 'wasm'});
+         const avgPoolOut = await avgPoolModel.run(img);
+         expect(avgPoolOut.shape).toEqual([1, 1, 1, 1]);
+         expect(Array.from(await avgPoolOut.data())).toEqual([2.5]);
+         avgPoolOut.delete();
+         avgPoolModel.delete();
+
+         img.delete();
+       });
+
+    it('compiles and executes authored transposeConv2d graphs', async () => {
+      await resetLiteRt(true, {threads: false});
+
+      // Input: [1, 1, 1, 1], Filter: [1, 2, 2, 1], Bias: [1.0]
+      const inputTensor =
+          Tensor.fromTypedArray(new Float32Array([2.0]), [1, 1, 1, 1]);
+      const filterTensor = Tensor.fromTypedArray(
+          new Float32Array([1.0, 1.0, 1.0, 1.0]), [1, 2, 2, 1]);
+      const biasTensor = Tensor.fromTypedArray(new Float32Array([1.0]), [1]);
+
+      // transposeConv2d with bias: 2 * 1 + 1 = 3 for each spatial element
+      const tconvModel = author(
+          (x: Tensor, f: Tensor, b: Tensor) =>
+              x.transposeConv2d(
+                  f, [1, 2, 2, 1], {strides: 2, padding: 'SAME', bias: b}),
+          {accelerator: 'wasm'});
+      const tconvOut =
+          await tconvModel.run(inputTensor, filterTensor, biasTensor);
+      expect(tconvOut.shape).toEqual([1, 2, 2, 1]);
+      expect(Array.from(await tconvOut.data())).toEqual([3.0, 3.0, 3.0, 3.0]);
+      tconvOut.delete();
+      tconvModel.delete();
+
+      // Standalone transposeConv2d without bias: 2 * 1 = 2 for each element
+      const tconvNoBiasModel = author(
+          (x: Tensor, f: Tensor) =>
+              transposeConv2d(x, f, [1, 2, 2, 1], {strides: 2, padding: 'SAME'}),
+          {accelerator: 'wasm'});
+      const tconvNoBiasOut =
+          await tconvNoBiasModel.run(inputTensor, filterTensor);
+      expect(tconvNoBiasOut.shape).toEqual([1, 2, 2, 1]);
+      expect(Array.from(await tconvNoBiasOut.data())).toEqual([2.0, 2.0, 2.0, 2.0]);
+      tconvNoBiasOut.delete();
+      tconvNoBiasModel.delete();
+
+      inputTensor.delete();
+      filterTensor.delete();
+      biasTensor.delete();
+    });
 
     it('can copy to a different environment', async () => {
       await resetLiteRt(true, {threads: false});
