@@ -450,6 +450,80 @@ export declare interface LiteRtWasm extends WasmModule {
   sub(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
   div(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
   relu(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  batchMatMul(
+    x: LiteRtTensorHandle,
+    y: LiteRtTensorHandle,
+    adjX?: boolean,
+    adjY?: boolean,
+  ): LiteRtTensorHandle;
+  fullyConnected(
+    input: LiteRtTensorHandle,
+    weights: LiteRtTensorHandle,
+    bias?: LiteRtTensorHandle,
+  ): LiteRtTensorHandle;
+  softmax(a: LiteRtTensorHandle, beta?: number): LiteRtTensorHandle;
+  logistic(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  tanh(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  gelu(input: LiteRtTensorHandle, approximate?: boolean): LiteRtTensorHandle;
+  conv2d(
+    input: LiteRtTensorHandle,
+    filter: LiteRtTensorHandle,
+    bias?: LiteRtTensorHandle,
+    strideH?: number,
+    strideW?: number,
+    padding?: number,
+    dilationH?: number,
+    dilationW?: number,
+  ): LiteRtTensorHandle;
+  depthwiseConv2d(
+    input: LiteRtTensorHandle,
+    filter: LiteRtTensorHandle,
+    bias?: LiteRtTensorHandle,
+    strideH?: number,
+    strideW?: number,
+    padding?: number,
+    depthMultiplier?: number,
+    dilationH?: number,
+    dilationW?: number,
+  ): LiteRtTensorHandle;
+  reshape(input: LiteRtTensorHandle, shape: number[]): LiteRtTensorHandle;
+  transpose(input: LiteRtTensorHandle, perm: number[]): LiteRtTensorHandle;
+  concatenation(
+    inputs: LiteRtTensorHandle[],
+    axis: number,
+  ): LiteRtTensorHandle;
+  slice(
+    input: LiteRtTensorHandle,
+    begin: number[],
+    size: number[],
+  ): LiteRtTensorHandle;
+  pad(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  mean(
+    a: LiteRtTensorHandle,
+    axes: number[],
+    keepDims: boolean,
+  ): LiteRtTensorHandle;
+  sum(
+    a: LiteRtTensorHandle,
+    axes: number[],
+    keepDims: boolean,
+  ): LiteRtTensorHandle;
+  abs(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  neg(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  sqrt(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  rsqrt(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  exp(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  log(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  sin(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  cos(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  ceil(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  floor(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  round(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  pow(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  minimum(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  maximum(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  floorDiv(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  floorMod(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
 }
 
 /**
