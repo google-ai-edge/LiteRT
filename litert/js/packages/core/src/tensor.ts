@@ -387,6 +387,30 @@ export class Tensor implements Deletable, WithEnvironment {
     )}]`;
   }
 
+  batchMatMul(other: Tensor, adjX?: boolean, adjY?: boolean): Tensor {
+    return batchMatMul(this, other, adjX, adjY);
+  }
+
+  fullyConnected(weights: Tensor, bias?: Tensor): Tensor {
+    return fullyConnected(this, weights, bias);
+  }
+
+  softmax(beta?: number): Tensor {
+    return softmax(this, beta);
+  }
+
+  logistic(): Tensor {
+    return logistic(this);
+  }
+
+  tanh(): Tensor {
+    return tanh(this);
+  }
+
+  gelu(approximate?: boolean): Tensor {
+    return gelu(this, approximate);
+  }
+
   async data(): Promise<TypedArray> {
     this.ensureNotDeleted();
     if (
@@ -848,3 +872,97 @@ export const div: (a: Tensor, b: Tensor) => Tensor = makeBinOp((wasm, a, b) =>
 export const relu: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
   wasm.relu(a),
 );
+
+/**
+ * Multiplies slices of two tensors in batches.
+ *
+ * @param x The first input tensor with rank >= 2.
+ * @param y The second input tensor with rank >= 2.
+ * @param adjX Whether to transpose the last two dimensions of x.
+ * @param adjY Whether to transpose the last two dimensions of y.
+ * @returns The matrix product tensor.
+ */
+export function batchMatMul(
+    x: Tensor,
+    y: Tensor,
+    adjX: boolean = false,
+    adjY: boolean = false,
+    ): Tensor {
+  x.ensureNotDeleted();
+  y.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.batchMatMul(
+      x.liteRtTensorHandle,
+      y.liteRtTensorHandle,
+      adjX,
+      adjY,
+  );
+  return new Tensor(resultHandle, x.environment);
+}
+
+/**
+ * Computes a matrix multiplication with optional bias.
+ *
+ * @param input Input tensor of shape [batch, in_features] or higher rank.
+ * @param weights Weights matrix of shape [out_features, in_features].
+ * @param bias Optional bias vector of shape [out_features].
+ * @returns Output tensor of shape [batch, out_features].
+ */
+export function fullyConnected(
+    input: Tensor,
+    weights: Tensor,
+    bias?: Tensor,
+    ): Tensor {
+  input.ensureNotDeleted();
+  weights.ensureNotDeleted();
+  if (bias) bias.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.fullyConnected(
+      input.liteRtTensorHandle,
+      weights.liteRtTensorHandle,
+      bias ? bias.liteRtTensorHandle : (undefined as any),
+  );
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Computes the softmax activation of a tensor.
+ *
+ * @param a The input tensor.
+ * @param beta Optional scaling factor (default: 1.0).
+ * @returns The softmax output tensor.
+ */
+export function softmax(a: Tensor, beta: number = 1.0): Tensor {
+  a.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.softmax(a.liteRtTensorHandle, beta);
+  return new Tensor(resultHandle, a.environment);
+}
+
+/**
+ * Computes the logistic (sigmoid) activation element-wise: 1 / (1 + exp(-x)).
+ */
+export const logistic: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.logistic(a),
+);
+
+/**
+ * Computes the hyperbolic tangent activation element-wise.
+ */
+export const tanh: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.tanh(a),
+);
+
+/**
+ * Computes the Gaussian Error Linear Unit (GELU) activation.
+ *
+ * @param input The input tensor.
+ * @param approximate Whether to use the faster tanh approximation.
+ * @returns The GELU output tensor.
+ */
+export function gelu(input: Tensor, approximate: boolean = false): Tensor {
+  input.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.gelu(input.liteRtTensorHandle, approximate);
+  return new Tensor(resultHandle, input.environment);
+}

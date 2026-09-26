@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {add, author, AuthoredModel, CompiledModel, div, Environment, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, mul, relu, sub, supportsFeature, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
+import {add, author, AuthoredModel, batchMatMul, CompiledModel, div, Environment, fullyConnected, gelu, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, logistic, mul, relu, softmax, sub, supportsFeature, tanh, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -1681,6 +1681,112 @@ describe('LiteRt', () => {
          res1.delete();
          res2.delete();
          authoredModel.delete();
+       });
+
+    it('compiles and executes authored batchMatMul graph', async () => {
+      await resetLiteRt(true, {threads: false});
+      const dataA = new Float32Array([1, 2, 3, 4, 5, 6]);
+      const dataB = new Float32Array([7, 8, 9, 1, 2, 3]);
+      const tensorA = Tensor.fromTypedArray(dataA, [2, 3]);
+      const tensorB = Tensor.fromTypedArray(dataB, [3, 2]);
+
+      const model = author(
+          (a: Tensor, b: Tensor) => a.batchMatMul(b), {accelerator: 'wasm'});
+      const out = await model.run(tensorA, tensorB);
+
+      expect(Array.from(await out.data())).toEqual([31, 19, 85, 55]);
+
+      tensorA.delete();
+      tensorB.delete();
+      out.delete();
+      model.delete();
+    });
+
+    it('compiles and executes authored fullyConnected graph with and without bias',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const inputData = new Float32Array([1, 2, 3]);
+         const weightData = new Float32Array([1, 2, 3, 4, 5, 6]);
+         const biasData = new Float32Array([10, 20]);
+
+         const inputTensor = Tensor.fromTypedArray(inputData, [1, 3]);
+         const weightTensor = Tensor.fromTypedArray(weightData, [2, 3]);
+         const biasTensor = Tensor.fromTypedArray(biasData, [2]);
+
+         // Without bias: 1*1+2*2+3*3=14, 1*4+2*5+3*6=32
+         const modelNoBias = author(
+             (x: Tensor, w: Tensor) => x.fullyConnected(w),
+             {accelerator: 'wasm'});
+         const outNoBias = await modelNoBias.run(inputTensor, weightTensor);
+         expect(Array.from(await outNoBias.data())).toEqual([14, 32]);
+
+         // With bias: [14+10, 32+20] = [24, 52]
+         const modelWithBias = author(
+             (x: Tensor, w: Tensor, b: Tensor) => x.fullyConnected(w, b),
+             {accelerator: 'wasm'});
+         const outWithBias =
+             await modelWithBias.run(inputTensor, weightTensor, biasTensor);
+         expect(Array.from(await outWithBias.data())).toEqual([24, 52]);
+
+         inputTensor.delete();
+         weightTensor.delete();
+         biasTensor.delete();
+         outNoBias.delete();
+         outWithBias.delete();
+         modelNoBias.delete();
+         modelWithBias.delete();
+       });
+
+    it('compiles and executes authored activation graphs (softmax, logistic, tanh, gelu)',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+
+         // Softmax: equal logits [0.0, 0.0] -> [0.5, 0.5]
+         const tensorLogits =
+             Tensor.fromTypedArray(new Float32Array([0.0, 0.0]), [1, 2]);
+         const softmaxModel = author(
+             (x: Tensor) => x.softmax(), {accelerator: 'wasm'});
+         const softmaxOut = await softmaxModel.run(tensorLogits);
+         const softmaxData = Array.from(await softmaxOut.data());
+         expect(softmaxData[0]).toBeCloseTo(0.5, 3);
+         expect(softmaxData[1]).toBeCloseTo(0.5, 3);
+
+         // Logistic (sigmoid): 0.0 -> 0.5
+         const tensorZero = new Tensor(new Float32Array([0.0]));
+         const logisticModel = author(
+             (x: Tensor) => x.logistic(), {accelerator: 'wasm'});
+         const logisticOut = await logisticModel.run(tensorZero);
+         const logisticData = Array.from(await logisticOut.data());
+         expect(logisticData[0]).toBeCloseTo(0.5, 3);
+
+         // Tanh: 0.0 -> 0.0
+         const tanhModel = author(
+             (x: Tensor) => x.tanh(), {accelerator: 'wasm'});
+         const tanhOut = await tanhModel.run(tensorZero);
+         const tanhData = Array.from(await tanhOut.data());
+         expect(tanhData[0]).toBeCloseTo(0.0, 3);
+
+         // GELU: 0.0 -> 0.0, 1.0 -> ~0.8413
+         const tensorGeluInput =
+             Tensor.fromTypedArray(new Float32Array([0.0, 1.0]), [2]);
+         const geluModel = author(
+             (x: Tensor) => x.gelu(), {accelerator: 'wasm'});
+         const geluOut = await geluModel.run(tensorGeluInput);
+         const geluData = Array.from(await geluOut.data());
+         expect(geluData[0]).toBeCloseTo(0.0, 3);
+         expect(geluData[1]).toBeCloseTo(0.8413, 2);
+
+         tensorLogits.delete();
+         tensorZero.delete();
+         tensorGeluInput.delete();
+         softmaxOut.delete();
+         logisticOut.delete();
+         tanhOut.delete();
+         geluOut.delete();
+         softmaxModel.delete();
+         logisticModel.delete();
+         tanhModel.delete();
+         geluModel.delete();
        });
 
     it('can copy to a different environment', async () => {

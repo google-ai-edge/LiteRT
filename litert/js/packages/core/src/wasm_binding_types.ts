@@ -450,6 +450,21 @@ export declare interface LiteRtWasm extends WasmModule {
   sub(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
   div(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
   relu(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  batchMatMul(
+    x: LiteRtTensorHandle,
+    y: LiteRtTensorHandle,
+    adjX?: boolean,
+    adjY?: boolean,
+  ): LiteRtTensorHandle;
+  fullyConnected(
+    input: LiteRtTensorHandle,
+    weights: LiteRtTensorHandle,
+    bias?: LiteRtTensorHandle,
+  ): LiteRtTensorHandle;
+  softmax(a: LiteRtTensorHandle, beta?: number): LiteRtTensorHandle;
+  logistic(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  tanh(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  gelu(input: LiteRtTensorHandle, approximate?: boolean): LiteRtTensorHandle;
 }
 
 /**
