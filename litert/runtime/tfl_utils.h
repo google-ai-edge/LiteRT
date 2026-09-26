@@ -24,9 +24,17 @@
 #include "litert/core/options.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "tflite/c/c_api_types.h"
+#include "tflite/c/common.h"
 #include "tflite/interpreter.h"
 
 namespace litert::internal {
+
+// Returns true if the tensor is allocated at runtime (either arena-allocated
+// or non-CPU accelerator/unbound tensor).
+inline bool IsRuntimeTensor(const TfLiteTensor* tensor) {
+  return tensor != nullptr && (tensor->allocation_type == kTfLiteArenaRw ||
+                               tensor->allocation_type == kTfLiteNonCpu);
+}
 
 // Binds an external memory buffer to a specific input tensor in the
 // interpreter. This function sets the tensor's allocation type to

@@ -51,6 +51,7 @@
 #include "ml_drift/common/transformations/model_transformations.h"  // from @ml_drift
 #include "ml_drift/common/types.h"  // from @ml_drift
 #include "ml_drift/common/util.h"  // from @ml_drift
+#include "litert/runtime/tfl_utils.h"
 #include "ml_drift_delegate/tflite/custom_parsers.h"
 #include "ml_drift_delegate/tflite/lstm_parser.h"
 #include "ml_drift_delegate/tflite/model_builder_helper.h"
@@ -6869,7 +6870,7 @@ bool IsAllAllowedTensors(TfLiteContext* context,
         break;
       }
     }
-    if (t->allocation_type == kTfLiteArenaRw && !type_supported) {
+    if (::litert::internal::IsRuntimeTensor(t) && !type_supported) {
       *unsupported_details += "Tensor type(" +
                               std::string(TfLiteTypeGetName(t->type)) +
                               ") is not supported. " + std::string(t->name);
