@@ -23,6 +23,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
@@ -125,6 +126,10 @@ ml_drift::cl::CLContextOptions GetClContextOptions(GpuPriority gpu_priority) {
     LITERT_LOG(LITERT_DEBUG, "Using low priority for GPU accelerator.");
     options.performance = ml_drift::cl::PerformanceHint::kLow;
     options.priority = ml_drift::cl::PriorityHint::kLow;
+  } else if (gpu_priority == kGpuHighPriority) {
+    LITERT_LOG(LITERT_INFO, "Using high priority for GPU accelerator.");
+    options.performance = ml_drift::cl::PerformanceHint::kHigh;
+    options.priority = ml_drift::cl::PriorityHint::kHigh;
   }
   return options;
 }
@@ -211,9 +216,28 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
         reinterpret_cast<cl_context>(context_id.int_value),
         /*has_ownership=*/false, device);
 
-    ml_drift::cl::CLCommandQueue queue(
-        reinterpret_cast<cl_command_queue>(command_queue.int_value),
-        /*has_ownership=*/false);
+    ml_drift::cl::CLCommandQueue queue;
+    bool created_high_priority_queue = false;
+    if (queue_options.priority == ml_drift::cl::PriorityHint::kHigh) {
+      auto high_prio_queue_status = ml_drift::cl::CreateCLCommandQueue(
+          device, context, &queue, queue_options);
+      if (high_prio_queue_status.ok()) {
+        created_high_priority_queue = true;
+      } else {
+        LITERT_LOG(LITERT_WARNING,
+                   "Failed to create high priority command queue, falling back "
+                   "to default.");
+        queue = ml_drift::cl::CLCommandQueue(
+            reinterpret_cast<cl_command_queue>(command_queue.int_value),
+            /*has_ownership=*/false);
+      }
+    } else {
+      queue = ml_drift::cl::CLCommandQueue(
+          reinterpret_cast<cl_command_queue>(command_queue.int_value),
+          /*has_ownership=*/false);
+    }
+
+    const cl_command_queue active_cl_queue = queue.queue();
 
     LITERT_ASSIGN_OR_RETURN(
         resources->cl_env,
@@ -229,13 +253,22 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
         LiteRtAny delegate_env_ptr,
         litert::ToLiteRtAny(reinterpret_cast<const void*>(resources.get())));
 
-    const std::array<LiteRtEnvOption, 2> environment_options = {
+    std::vector<LiteRtEnvOption> environment_options = {
         LiteRtEnvOption{.tag = kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
                         .value = callback},
         LiteRtEnvOption{
             .tag = kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,
             .value = delegate_env_ptr},
     };
+    if (created_high_priority_queue) {
+      LITERT_ASSIGN_OR_RETURN(
+          LiteRtAny new_queue_any,
+          litert::ToLiteRtAny(reinterpret_cast<int64_t>(active_cl_queue)));
+      environment_options.push_back(LiteRtEnvOption{
+          .tag = kLiteRtEnvOptionTagOpenClCommandQueue,
+          .value = new_queue_any,
+      });
+    }
 
     LITERT_RETURN_IF_ERROR(runtime_context->add_environment_options(
         litert_env, environment_options.size(), environment_options.data(),

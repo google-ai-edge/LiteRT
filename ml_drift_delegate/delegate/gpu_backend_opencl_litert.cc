@@ -300,21 +300,25 @@ GpuBackendOpenClLitert::GetGpuBufferRequirements(
 
 absl::StatusOr<GpuBackend::GpuBufferRequirements>
 GpuBackendOpenClLitert::GetGpuBufferRequirementsForNonExternalTensors() {
-#if LITERT_HAS_OPENGL_SUPPORT
-  if (gl_interop_fabric_) {
-    return GpuBufferRequirements{
-        .buffer_types = {kLiteRtTensorBufferTypeOpenClBufferPacked,
-                         kLiteRtTensorBufferTypeGlBuffer},
-        // No strides for packed buffer.
-        .strides = {0, 0},
-    };
-  }
-#endif
-  return GpuBufferRequirements{
+  GpuBufferRequirements requirements{
       .buffer_types = {kLiteRtTensorBufferTypeOpenClBufferPacked},
       // No strides for packed buffer.
       .strides = {0},
   };
+#if LITERT_HAS_OPENGL_SUPPORT
+  if (gl_interop_fabric_) {
+    requirements.buffer_types.push_back(kLiteRtTensorBufferTypeGlBuffer);
+    requirements.strides.push_back(0);
+  }
+#endif
+#if LITERT_HAS_AHWB_SUPPORT
+  if (cl_env()->device().GetInfo().SupportsExtension("cl_arm_import_memory") &&
+      ::ml_drift::cl::clImportMemoryARM != nullptr) {
+    requirements.buffer_types.push_back(kLiteRtTensorBufferTypeAhwb);
+    requirements.strides.push_back(0);
+  }
+#endif
+  return requirements;
 }
 
 absl::StatusOr<std::unique_ptr<GpuInferenceContext>>

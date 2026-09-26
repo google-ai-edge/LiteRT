@@ -465,6 +465,25 @@ Expected<void> GpuEnvironment::AddEnvironmentOptions(
           reinterpret_cast<void*>(const_cast<void*>(opt.value.ptr_value));
       continue;
     }
+#if LITERT_HAS_OPENCL_SUPPORT
+    if (opt.tag == kLiteRtEnvOptionTagOpenClCommandQueue &&
+        opt.value.type == kLiteRtAnyTypeInt) {
+      options_.command_queue =
+          reinterpret_cast<cl_command_queue>(opt.value.int_value);
+      const bool has_ownership =
+          tflite::gpu::cl::clRetainCommandQueue != nullptr &&
+          tflite::gpu::cl::clRetainCommandQueue(options_.command_queue) ==
+              CL_SUCCESS;
+      command_queue_ = tflite::gpu::cl::CLCommandQueue(options_.command_queue,
+                                                       has_ownership);
+      for (auto& gen_opt : generated_options_) {
+        if (gen_opt.tag == kLiteRtEnvOptionTagOpenClCommandQueue) {
+          gen_opt.value = opt.value;
+        }
+      }
+      continue;
+    }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       absl::StrFormat("Cannot add the following option to "
                                       "existing GPU environment. Tag: %d",
