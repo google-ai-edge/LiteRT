@@ -513,6 +513,28 @@ LiteRtStatus LiteRtDispatchGetHooks(LiteRtDispatchDeviceContext device_context,
   return TheApi.interface->get_hooks(device_context, hook, user_data);
 }
 
+LiteRtStatus LiteRtDispatchDeviceContextSetActiveFunctions(
+    LiteRtDispatchDeviceContext device_context,
+    const char* const* function_names, int num_function_names) {
+  if (!device_context || num_function_names < 0 ||
+      (num_function_names > 0 && !function_names)) {
+    LITERT_LOG(LITERT_ERROR, "Invalid input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!TheApi.interface) {
+    LITERT_LOG(LITERT_ERROR, "Dispatch API interface not found");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  // This is only a hint, so it is fine for vendors not to implement it.
+  if (!TheApi.interface->device_context_set_active_functions) {
+    return kLiteRtStatusOk;
+  }
+  LITERT_PERFETTO_TRACE_EVENT(
+      "Dispatch API device_context_set_active_functions");
+  return TheApi.interface->device_context_set_active_functions(
+      device_context, function_names, num_function_names);
+}
+
 LiteRtStatus LiteRtDispatchStartMetricsCollection(
     LiteRtDispatchInvocationContext invocation_context, int detail_level) {
   if (!invocation_context) {
