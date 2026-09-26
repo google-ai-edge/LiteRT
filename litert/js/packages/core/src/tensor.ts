@@ -387,6 +387,14 @@ export class Tensor implements Deletable, WithEnvironment {
     )}]`;
   }
 
+  batchMatMul(other: Tensor, adjX?: boolean, adjY?: boolean): Tensor {
+    return batchMatMul(this, other, adjX, adjY);
+  }
+
+  fullyConnected(weights: Tensor, bias?: Tensor): Tensor {
+    return fullyConnected(this, weights, bias);
+  }
+
   async data(): Promise<TypedArray> {
     this.ensureNotDeleted();
     if (
@@ -848,3 +856,55 @@ export const div: (a: Tensor, b: Tensor) => Tensor = makeBinOp((wasm, a, b) =>
 export const relu: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
   wasm.relu(a),
 );
+
+/**
+ * Multiplies slices of two tensors in batches.
+ *
+ * @param x The first input tensor with rank >= 2.
+ * @param y The second input tensor with rank >= 2.
+ * @param adjX Whether to transpose the last two dimensions of x.
+ * @param adjY Whether to transpose the last two dimensions of y.
+ * @returns The matrix product tensor.
+ */
+export function batchMatMul(
+    x: Tensor,
+    y: Tensor,
+    adjX: boolean = false,
+    adjY: boolean = false,
+    ): Tensor {
+  x.ensureNotDeleted();
+  y.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.batchMatMul(
+      x.liteRtTensorHandle,
+      y.liteRtTensorHandle,
+      adjX,
+      adjY,
+  );
+  return new Tensor(resultHandle, x.environment);
+}
+
+/**
+ * Computes a matrix multiplication with optional bias.
+ *
+ * @param input Input tensor of shape [batch, in_features] or higher rank.
+ * @param weights Weights matrix of shape [out_features, in_features].
+ * @param bias Optional bias vector of shape [out_features].
+ * @returns Output tensor of shape [batch, out_features].
+ */
+export function fullyConnected(
+    input: Tensor,
+    weights: Tensor,
+    bias?: Tensor,
+    ): Tensor {
+  input.ensureNotDeleted();
+  weights.ensureNotDeleted();
+  if (bias) bias.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.fullyConnected(
+      input.liteRtTensorHandle,
+      weights.liteRtTensorHandle,
+      bias ? bias.liteRtTensorHandle : (undefined as any),
+  );
+  return new Tensor(resultHandle, input.environment);
+}
