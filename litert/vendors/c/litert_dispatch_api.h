@@ -145,6 +145,10 @@ typedef LiteRtStatus (*LiteRtDispatchGetHooksT)(
     LiteRtDispatchDeviceContext device_context, LiteRtHook* hook,
     void** user_data);
 
+typedef LiteRtStatus (*LiteRtDispatchDeviceContextSetActiveFunctionsT)(
+    LiteRtDispatchDeviceContext device_context,
+    const char* const* function_names, int num_function_names);
+
 typedef struct LiteRtDispatchInterface_V1 {
   LiteRtAbiHeader abi_header;
 
@@ -179,6 +183,10 @@ typedef struct LiteRtDispatchInterface_V1 {
   // Optional extensions (capability-gated).
   LiteRtDispatchAttachEdgeBufferT attach_edge_buffer;
   LiteRtDispatchDetachEdgeBufferT detach_edge_buffer;
+
+  // Optional, may be null.
+  LiteRtDispatchDeviceContextSetActiveFunctionsT
+      device_context_set_active_functions;
 } LiteRtDispatchInterface_V1;
 
 static_assert(offsetof(LiteRtDispatchInterface_V1, abi_header) == 0,
