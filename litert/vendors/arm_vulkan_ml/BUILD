@@ -24,7 +24,7 @@ cc_library(
 build_test(
     name = "build_so_test",
     targets = [
-        "//litert/vendors/arm/compiler:compiler_plugin_so",
-        "//litert/vendors/arm/dispatch:dispatch_api_so",
+        "//litert/vendors/arm_vulkan_ml/compiler:compiler_plugin_so",
+        "//litert/vendors/arm_vulkan_ml/dispatch:dispatch_api_so",
     ],
 )

@@ -329,11 +329,11 @@ else()
   message(STATUS "Skipping OpenVINO dispatch: openvino/openvino.hpp not found")
 endif()
 
-# Arm
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/arm/dispatch/dispatch_api.cc")
-  _litert_add_dispatch_so(Arm "arm/dispatch" "Arm")
+# Arm ML extensions for Vulkan
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/arm_vulkan_ml/dispatch/dispatch_api.cc")
+  _litert_add_dispatch_so(ArmVulkanML "arm_vulkan_ml/dispatch" "ArmVulkanML")
 else()
-  message(STATUS "Skipping Arm dispatch: arm/dispatch/dispatch_api.cc not found")
+  message(STATUS "Skipping Arm ML extensions for Vulkan dispatch: arm_vulkan_ml/dispatch/dispatch_api.cc not found")
 endif()
 
 # Qualcomm

@@ -33,8 +33,8 @@ cc_library(
         "src",
     ],
     deps = [
-        "@arm_dep_spirv_headers//:spirv_common_headers",
-        "@arm_dep_spirv_headers//:spirv_cpp_headers",
+        "@arm_vulkan_ml_dep_spirv_headers//:spirv_common_headers",
+        "@arm_vulkan_ml_dep_spirv_headers//:spirv_cpp_headers",
     ],
 )
 

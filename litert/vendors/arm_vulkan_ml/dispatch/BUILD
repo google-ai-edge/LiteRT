@@ -25,10 +25,10 @@ litert_dynamic_lib(
     export_litert_only = True,
     linkopts = litert_android_linkopts() + [
         "-Wl,-rpath,$$ORIGIN",
-        "-Wl,-soname=libLiteRtDispatch_Arm.so",
+        "-Wl,-soname=libLiteRtDispatch_ArmVulkanML.so",
     ],
     shared_lib_name = "dispatch_api_so",
-    so_name = "libLiteRtDispatch_Arm.so",
+    so_name = "libLiteRtDispatch_ArmVulkanML.so",
     visibility = ["//litert:litert_public"],
     deps = [
         "//litert/c:litert_common",

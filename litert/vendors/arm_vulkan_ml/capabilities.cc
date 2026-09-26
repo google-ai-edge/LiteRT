@@ -1,12 +1,12 @@
-// SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
-// <open-source-office@arm.com> SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+// SPDX-License-Identifier: Apache-2.0
 
-#include "litert/vendors/arm/capabilities.h"
+#include "litert/vendors/arm_vulkan_ml/capabilities.h"
 
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_element_type.h"
 
-namespace litert::arm {
+namespace litert::arm_vulkan_ml {
 
 // Operations currently accepted by the TOSA legalization flow.
 bool IsSupportedOpCode(LiteRtOpCode op_code) {
@@ -135,4 +135,4 @@ bool IsSupportedType(ElementType type) {
          type == ElementType::Float32;
 }
 
-}  // namespace litert::arm
+}  // namespace litert::arm_vulkan_ml
