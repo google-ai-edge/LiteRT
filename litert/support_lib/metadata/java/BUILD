@@ -14,6 +14,15 @@ METADATA_SRCS = glob(
     ["com/google/ai/edge/litert/support/metadata/**/*.java"],
 )
 
+# Pin the released Maven artifact to Java 17 bytecode (class file major 61),
+# matching the "litert-support-api" AAR.
+# See //litert/support_lib/BUILD for why "-source 17 -target 17"
+# is used instead of "--release 17".
+JAVACOPTS = select({
+    "//litert/support_lib:public_maven_build": ["-source 17 -target 17"],
+    "//conditions:default": [],
+})
+
 android_library(
     name = "litert_metadata",
     srcs = METADATA_SRCS,
@@ -44,6 +53,7 @@ android_library(
         "//litert/support_lib/metadata:metadata_schema_fbs_android_srcjar",
         "//litert/support_lib/metadata/schema:schema_fbs_android_srcjar",
     ],
+    javacopts = JAVACOPTS,
     manifest = "AndroidManifest.xml",
     deps = [
         # Need to be consistent as the deps used in flatbuffer_android_library.
