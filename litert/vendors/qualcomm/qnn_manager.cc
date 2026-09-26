@@ -18,6 +18,10 @@
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
 #include <stdlib.h>
+#if !defined(_WIN32)
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
 
 #include <array>
 #include <cstdint>
@@ -652,16 +656,66 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     ::qnn::QnnBackend& qnn_backend,
     absl::Span<const QnnContext_Config_t*> configs,
     absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle) {
+  std::vector<const QnnContext_Config_t*> effective_configs;
+  for (const auto* cfg : configs) {
+    if (cfg != nullptr) {
+      effective_configs.push_back(cfg);
+    }
+  }
+  QnnHtpContext_CustomConfig_t htp_read_budget_custom_config =
+      QNN_HTP_CONTEXT_CUSTOM_CONFIG_INIT;
+  QnnContext_Config_t htp_read_budget_config = QNN_CONTEXT_CONFIG_INIT;
+  if (options_.GetBackendType() == ::qnn::BackendType::kHtpBackend) {
+    constexpr uint64_t kDefaultFileReadMemoryBudgetInMb = 16;
+    htp_read_budget_custom_config.option =
+        QNN_HTP_CONTEXT_CONFIG_OPTION_FILE_READ_MEMORY_BUDGET;
+    htp_read_budget_custom_config.fileReadMemoryBudgetInMb =
+        kDefaultFileReadMemoryBudgetInMb;
+    htp_read_budget_config.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
+    htp_read_budget_config.customConfig = &htp_read_budget_custom_config;
+    effective_configs.push_back(&htp_read_budget_config);
+  }
+  effective_configs.push_back(nullptr);
+
+#if !defined(_WIN32)
+  const int64_t page_size = sysconf(_SC_PAGESIZE);
+  uintptr_t aligned_start = 0;
+  uintptr_t aligned_end = 0;
+  if (page_size > 0 && !bytecode.empty()) {
+    const uintptr_t mask = static_cast<uintptr_t>(page_size) - 1;
+    const uintptr_t start = reinterpret_cast<uintptr_t>(bytecode.data());
+    const uintptr_t end = start + bytecode.size();
+    aligned_start = (start + mask) & ~mask;
+    aligned_end = end & ~mask;
+#if defined(MADV_NOHUGEPAGE)
+    const uintptr_t outer_start = start & ~mask;
+    const uintptr_t outer_end = (end + mask) & ~mask;
+    if (outer_end > outer_start) {
+      madvise(reinterpret_cast<void*>(outer_start), outer_end - outer_start,
+              MADV_NOHUGEPAGE);
+    }
+#endif
+  }
+#endif
+
   Qnn_ContextHandle_t context_handle;
   if (auto status = Api()->contextCreateFromBinary(
           qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
-          configs.data(), bytecode.data(), bytecode.size(), &context_handle,
-          profile_handle);
+          effective_configs.data(), bytecode.data(), bytecode.size(),
+          &context_handle, profile_handle);
       status != QNN_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to create QNN context: %d", status);
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to create QNN context");
   }
+
+#if !defined(_WIN32)
+  if (aligned_end > aligned_start) {
+    madvise(reinterpret_cast<void*>(aligned_start), aligned_end - aligned_start,
+            MADV_DONTNEED);
+  }
+#endif
+
   auto context_deleter = Api()->contextFree;
   auto profile_deleter = Api()->profileFree;
   return ContextHandle{context_handle, profile_handle, context_deleter,
