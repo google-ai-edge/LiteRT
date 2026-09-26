@@ -221,6 +221,11 @@ struct WebWeightUploadRequest {
   wgpu::Buffer buffer;
   uint64_t offset;
   uint64_t length;
+
+  bool operator==(const WebWeightUploadRequest& other) const {
+    return tfl_id == other.tfl_id && buffer.Get() == other.buffer.Get() &&
+           offset == other.offset && length == other.length;
+  }
 };
 
 using WebWeightUploadCallback =

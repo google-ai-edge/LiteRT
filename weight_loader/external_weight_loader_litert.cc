@@ -28,56 +28,6 @@
 #include <windows.h>
 #endif  // !defined(_WIN32)
 
-#ifdef __EMSCRIPTEN__
-#include <emscripten.h>
-#include <emscripten/val.h>
-
-namespace litert_web {
-emscripten::val GetStreamWeightsCallback();
-}
-
-// clang-format off
-EM_ASYNC_JS(
-    int, CallStreamWeightsOnWeb,
-    (const int* tfl_ids, const uint32_t* wgpu_buffers, const double* offsets,
-     const double* lengths, int count),
-    {
-      const callback = Module.getStreamWeightsCallback();
-      if (typeof callback !== 'function') {
-        console.error(
-            'Stream weights callback is not registered or is not a function');
-        return 1;
-      }
-      const view = new DataView(Module.HEAPU8.buffer);
-      // Pointers arrive as signed i32 and read back as negative once the heap
-      // grows past 2GB. The `>>>` operator reinterprets the signed int as an
-      // unsigned int32.
-      const tflIdsPtr = tfl_ids >>> 0;
-      const wgpuBuffersPtr = wgpu_buffers >>> 0;
-      const offsetsPtr = offsets >>> 0;
-      const lengthsPtr = lengths >>> 0;
-      const tflIdsArray = new Int32Array(count);
-      const wgpuBuffersArray = new Uint32Array(count);
-      const offsetsArray = new Float64Array(count);
-      const lengthsArray = new Float64Array(count);
-      for (let i = 0; i < count; i++) {
-        tflIdsArray[i] = view.getInt32(tflIdsPtr + i * 4, true);
-        wgpuBuffersArray[i] = view.getUint32(wgpuBuffersPtr + i * 4, true);
-        offsetsArray[i] = view.getFloat64(offsetsPtr + i * 8, true);
-        lengthsArray[i] = view.getFloat64(lengthsPtr + i * 8, true);
-      }
-      try {
-        await callback(
-            tflIdsArray, wgpuBuffersArray, offsetsArray, lengthsArray);
-      } catch (e) {
-        console.error('Error in streamWeightsOnWeb:', e);
-        return 1;
-      }
-      return 0;
-    });
-// clang-format on
-#endif  // __EMSCRIPTEN__
-
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
@@ -929,54 +879,26 @@ class LiteRtWeightLoader : public WeightLoader {
   absl::Status UploadWeightsOnWeb(const wgpu::Queue& queue,
                                   const absl::flat_hash_map<int, wgpu::Buffer>&
                                       tfl_id_to_wgpu_buffer) override {
-    if (g_web_weight_upload_callback != nullptr) {
-      std::vector<WebWeightUploadRequest> requests;
-      requests.reserve(tfl_id_to_wgpu_buffer.size());
-      for (const auto& [id, buffer] : tfl_id_to_wgpu_buffer) {
-        auto entry_it = entries_.find(static_cast<uint32_t>(id));
-        if (entry_it == entries_.end()) {
-          return absl::InternalError(
-              "Could not find WeightInfo for buffer ID.");
-        }
-        const auto& info = infos_[entry_it->second.info_index];
-        requests.push_back(WebWeightUploadRequest{
-            .tfl_id = id,
-            .buffer = buffer,
-            .offset = info.offset,
-            .length = info.length,
-        });
-      }
-      return g_web_weight_upload_callback(queue, requests);
+    if (g_web_weight_upload_callback == nullptr) {
+      return absl::FailedPreconditionError(
+          "Web weight upload callback is not registered.");
     }
-
-    std::vector<int> tfl_ids;
-    std::vector<uint32_t> wgpu_buffers;
-    std::vector<double> offsets;
-    std::vector<double> lengths;
-    tfl_ids.reserve(tfl_id_to_wgpu_buffer.size());
-    wgpu_buffers.reserve(tfl_id_to_wgpu_buffer.size());
-    offsets.reserve(tfl_id_to_wgpu_buffer.size());
-    lengths.reserve(tfl_id_to_wgpu_buffer.size());
+    std::vector<WebWeightUploadRequest> requests;
+    requests.reserve(tfl_id_to_wgpu_buffer.size());
     for (const auto& [id, buffer] : tfl_id_to_wgpu_buffer) {
-      tfl_ids.push_back(id);
-      wgpu_buffers.push_back(reinterpret_cast<uint32_t>(buffer.Get()));
       auto entry_it = entries_.find(static_cast<uint32_t>(id));
-      if (entry_it != entries_.end()) {
-        const auto& info = infos_[entry_it->second.info_index];
-        offsets.push_back(static_cast<double>(info.offset));
-        lengths.push_back(static_cast<double>(info.length));
-      } else {
+      if (entry_it == entries_.end()) {
         return absl::InternalError("Could not find WeightInfo for buffer ID.");
       }
+      const auto& info = infos_[entry_it->second.info_index];
+      requests.push_back(WebWeightUploadRequest{
+          .tfl_id = id,
+          .buffer = buffer,
+          .offset = info.offset,
+          .length = info.length,
+      });
     }
-
-    int result =
-        CallStreamWeightsOnWeb(tfl_ids.data(), wgpu_buffers.data(),
-                               offsets.data(), lengths.data(), tfl_ids.size());
-    if (result != 0) {
-      return absl::InternalError("Failed to stream weights on web");
-    }
-    return absl::OkStatus();
+    return g_web_weight_upload_callback(queue, requests);
   }
 #endif  // __EMSCRIPTEN__
 
