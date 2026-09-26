@@ -718,10 +718,6 @@ bool IsOpenClSupported() {
   if (!::ml_drift::cl::CreateDefaultGPUDevice(&device).ok()) {
     return false;
   }
-  // TODO(b/558798407): Remove once the clvk/Mesa ANV driver issue is fixed.
-  if (device.GetInfo().IsIntel() && device.GetInfo().opencl_info.IsCLVK()) {
-    return false;
-  }
   return true;
 }
 

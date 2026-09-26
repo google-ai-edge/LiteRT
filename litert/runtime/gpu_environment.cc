@@ -229,13 +229,6 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
   if (options_.device_id && options_.platform_id) {
     device_ =
         tflite::gpu::cl::CLDevice(options_.device_id, options_.platform_id);
-    // TODO(b/558798407): Remove once the clvk/Mesa ANV driver issue is fixed.
-    if (device_.GetInfo().IsIntel() && device_.GetInfo().opencl_info.IsCLVK()) {
-      properties_.is_opencl_available = false;
-      LITERT_LOG(LITERT_WARNING,
-                 "OpenCL via clvk on Intel GPU is not supported.");
-      return {};
-    }
     LITERT_LOG(
         LITERT_INFO,
         "Created OpenCL device from provided device id and platform id.");
@@ -243,13 +236,6 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
     LITERT_RETURN_IF_ERROR(
         tflite::gpu::cl::CreateDefaultGPUDevice(&device_).ok())
         << "Failed to create default OpenCL device";
-    // TODO(b/558798407): Remove once the clvk/Mesa ANV driver issue is fixed.
-    if (device_.GetInfo().IsIntel() && device_.GetInfo().opencl_info.IsCLVK()) {
-      properties_.is_opencl_available = false;
-      LITERT_LOG(LITERT_WARNING,
-                 "OpenCL via clvk on Intel GPU is not supported.");
-      return {};
-    }
     // New option: cl_device_id
     LITERT_ASSIGN_OR_RETURN(
         auto device_id,
