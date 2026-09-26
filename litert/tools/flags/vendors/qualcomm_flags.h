@@ -93,6 +93,7 @@ ABSL_DECLARE_FLAG(std::string, qualcomm_qnn_lib_dir);
 ABSL_DECLARE_FLAG(std::string, qualcomm_dsp_skel_dir);
 
 ABSL_DECLARE_FLAG(uint32_t, qualcomm_vtcm_size);
+ABSL_DECLARE_FLAG(uint32_t, qualcomm_htp_device_id);
 
 ABSL_DECLARE_FLAG(uint32_t, qualcomm_num_hvx_thread);
 
