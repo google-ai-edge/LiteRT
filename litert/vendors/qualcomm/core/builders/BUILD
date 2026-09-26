@@ -46,6 +46,7 @@ cc_library(
     hdrs = ["elementwise_op_builder.h"],
     deps = [
         ":op_builder",
+        ":select_op_builder",
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
