@@ -31,6 +31,7 @@ constructor(val elementType: ElementType, val layout: Layout? = null) {
     INT8,
     BOOLEAN,
     INT64,
+    INT16,
   }
 
   /** Layout of a tensor. */
