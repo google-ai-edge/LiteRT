@@ -404,6 +404,18 @@ typedef int LiteRtHwAcceleratorSet;
 // For indexing into LiteRT collections or counting LiteRT things.
 typedef size_t LiteRtParamIndex;
 
+// Metrics tracking delegation and graph partitioning across hardware
+// accelerators.
+typedef struct LiteRtDelegationMetrics {
+  int total_node_count;
+  int npu_delegated_node_count;
+  int npu_partition_count;
+  int gpu_delegated_node_count;
+  int gpu_partition_count;
+  int cpu_delegated_node_count;
+  int cpu_partition_count;
+} LiteRtDelegationMetrics;
+
 #if defined(_WIN32)
 // Provides posix_memalign() missing in Windows.
 #include <errno.h>

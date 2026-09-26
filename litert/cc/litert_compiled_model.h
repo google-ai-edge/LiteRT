@@ -1088,6 +1088,18 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return non_cpu_fully_accelerated;
   }
 
+  using DelegationMetrics = LiteRtDelegationMetrics;
+
+  /// @brief Returns delegation metrics (total node count, delegated node
+  /// counts, and partition counts across NPU, GPU, and CPU) for the compiled
+  /// model.
+  Expected<DelegationMetrics> GetDelegationMetrics() const {
+    DelegationMetrics delegation_metrics = {};
+    LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelGetDelegationMetrics(
+        Get(), &delegation_metrics));
+    return delegation_metrics;
+  }
+
   /// @brief Sets a callback function that will be called after every node/op
   /// during model execution to check if the execution should be cancelled.
   ///

@@ -567,6 +567,14 @@ class RuntimeProxy {
         non_cpu_fully_accelerated);
   }
 
+  LiteRtStatus CompiledModelGetDelegationMetrics(
+      LiteRtCompiledModel compiled_model,
+      LiteRtDelegationMetrics* delegation_metrics) {
+    LITERT_PROXY_METHOD_STATUS(
+        litert_compiled_model_get_delegation_metrics, compiled_model,
+        delegation_metrics);
+  }
+
   LiteRtStatus CompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
                                         LiteRtProfiler* profiler) {
     LITERT_PROXY_METHOD_STATUS(litert_compiled_model_get_profiler,
