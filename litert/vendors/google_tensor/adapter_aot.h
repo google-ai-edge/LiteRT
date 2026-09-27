@@ -85,11 +85,47 @@ typedef bool (*CompilerGetUnsupportedOps)(
 
 typedef void (*CompilerFreeUnsupportedOps)(int32_t* unsupported_op_indices);
 
+// Types and function pointers below mirror the C ABI exposed by
+// `liblitert_plugin_compiler.so` (declared in
+// `platforms/darwinn/compiler/external/litert_plugin_compiler.h`) for dynamic
+// loading via `dlsym`.
+
+enum GoogleTensorCompositeValidationCategory {
+  GOOGLE_TENSOR_COMPOSITE_VALIDATION_OK = 0,
+  GOOGLE_TENSOR_COMPOSITE_VALIDATION_UNSUPPORTED_COMPOSITE = 1,
+  GOOGLE_TENSOR_COMPOSITE_VALIDATION_INTERNAL_ERROR = 2,
+};
+
+struct GoogleTensorCompositeOpDescriptor {
+  const char* composite_name;
+};
+
+struct GoogleTensorCompositeOpValidationResult {
+  bool is_supported;
+  GoogleTensorCompositeValidationCategory category;
+  char* failure_reason;
+};
+
+// Function pointer type for `GoogleTensorValidateCompositeOps`.
+// Validates a batch of `num_ops` composite operations described by
+// `op_descriptors` and populates `out_results`.
+typedef bool (*CompilerValidateCompositeOps)(
+    const GoogleTensorCompositeOpDescriptor* op_descriptors,
+    size_t descriptor_struct_size, size_t num_ops,
+    GoogleTensorCompositeOpValidationResult* out_results,
+    size_t result_struct_size);
+
+// Function pointer type for `GoogleTensorFreeCompositeOpValidationResults`.
+// Frees dynamically allocated fields in `results`.
+typedef void (*CompilerFreeCompositeOpValidationResults)(
+    GoogleTensorCompositeOpValidationResult* results, size_t num_results);
+
 // This class adapts the google tensor compiler API for dynamic loading.
 class AdapterAot : public Adapter {
  public:
   // A smart pointer for managing TensorAdapter objects.
   using Ptr = std::unique_ptr<AdapterAot>;
+  using Adapter::AreCompositesSupported;
 
   AdapterAot();
   ~AdapterAot() override;
@@ -108,6 +144,10 @@ class AdapterAot : public Adapter {
       const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
       size_t options_size) override;
 
+  Expected<std::vector<bool>> AreCompositesSupported(
+      absl::Span<const std::string> composite_names, const char* options_data,
+      size_t options_size) override;
+
   bool IsAot() const override { return true; }
 
   void FreeCompiledCode(char** compiled_code_data, size_t* compiled_code_sizes,
@@ -121,6 +161,9 @@ class AdapterAot : public Adapter {
     CompilerFreeErrorMessage free_error_message = nullptr;
     CompilerGetUnsupportedOps get_unsupported_ops = nullptr;
     CompilerFreeUnsupportedOps free_unsupported_ops = nullptr;
+    CompilerValidateCompositeOps validate_composite_ops = nullptr;
+    CompilerFreeCompositeOpValidationResults
+        free_composite_op_validation_results = nullptr;
   };
 
   void* dlib_handle_ = nullptr;

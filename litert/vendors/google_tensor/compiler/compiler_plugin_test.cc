@@ -24,6 +24,7 @@
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_op_options.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_environment.h"
@@ -156,7 +157,7 @@ TEST(TestGoogleTensorPlugin, GetFilterOutcome) {
   // 3. MATCHES_NOT_RUN_ON_TPU (Blocklist) - Match -> kDoNotRunOnTpu
   filters.set_filter_behavior(OpFilters::MATCHES_NOT_RUN_ON_TPU);
   auto* filter1 = filters.add_filters();
-  filter1->set_op_name_pattern(std::string(output_name));
+  filter1->set_op_name_pattern(output_name);
   EXPECT_EQ(::google_tensor::GetFilterOutcome(op, filters),
             FilterOutcome::kDoNotRunOnTpu);
 
@@ -171,7 +172,7 @@ TEST(TestGoogleTensorPlugin, GetFilterOutcome) {
             FilterOutcome::kDoNotRunOnTpu);
 
   // 6. MATCHES_RUN_ON_TPU (Allowlist) - Match -> kRunOnTpu
-  filter1->set_op_name_pattern(std::string(output_name));
+  filter1->set_op_name_pattern(output_name);
   EXPECT_EQ(::google_tensor::GetFilterOutcome(op, filters),
             FilterOutcome::kRunOnTpu);
 
@@ -301,8 +302,8 @@ TEST(TestCallGoogleTensorPlugin, PartitionRmsNormCompositeOp) {
   const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
       selected_op_list.Values();
 
-  ASSERT_THAT(selected_ops.size(), 1);
-  ASSERT_THAT(selected_ops[0].first->OpCode(), kLiteRtOpCodeShloComposite);
+  ASSERT_EQ(selected_ops.size(), 1);
+  EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeShloComposite);
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionUnsupportedCompositeOp) {
@@ -317,7 +318,207 @@ TEST(TestCallGoogleTensorPlugin, PartitionUnsupportedCompositeOp) {
   const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
       selected_op_list.Values();
 
-  ASSERT_THAT(selected_ops.size(), 0);
+  ASSERT_EQ(selected_ops.size(), 0);
+}
+
+void AddCompositeOpToSubgraph(LiteRtSubgraphT& subgraph,
+                              absl::string_view composite_name) {
+  LiteRtOpT& composite = subgraph.EmplaceOp();
+  composite.SetOpCode(kLiteRtOpCodeShloComposite);
+  ::tflite::StableHLOCompositeOptionsT opts;
+  opts.name = std::string(composite_name);
+  opts.decomposition_subgraph_index = 0;
+  litert::internal::TflOptions2 options;
+  options.type = tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  options.Set(std::move(opts));
+  litert::internal::SetTflOptions2(composite, std::move(options));
+}
+
+void AddTflOpToSubgraph(LiteRtSubgraphT& subgraph, LiteRtOpCode op_code) {
+  LiteRtOpT& op = subgraph.EmplaceOp();
+  op.SetOpCode(op_code);
+}
+
+TEST(TestCallGoogleTensorPlugin, PartitionMultipleSupportedCompositeOps) {
+  PluginPtr plugin = CreatePlugin(LrtGetCompilerContext());
+  LiteRtModelT model;
+  LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
+  AddCompositeOpToSubgraph(subgraph, "odml.rms_norm");
+  AddCompositeOpToSubgraph(subgraph, "odml.group_norm");
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
+      plugin.get(), /*soc_model=*/nullptr, &subgraph, &selected_op_list));
+  const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
+      selected_op_list.Values();
+
+  ASSERT_EQ(selected_ops.size(), 2);
+  EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeShloComposite);
+  EXPECT_EQ(selected_ops[1].first->OpCode(), kLiteRtOpCodeShloComposite);
+
+  const char* first_op_name = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetSHLOCompositeOpName(selected_ops[0].first, &first_op_name));
+  EXPECT_STREQ(first_op_name, "odml.rms_norm");
+
+  const char* second_op_name = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetSHLOCompositeOpName(selected_ops[1].first, &second_op_name));
+  EXPECT_STREQ(second_op_name, "odml.group_norm");
+}
+
+TEST(TestCallGoogleTensorPlugin, PartitionMixedMultipleCompositeOps) {
+  PluginPtr plugin = CreatePlugin(LrtGetCompilerContext());
+  LiteRtModelT model;
+  LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
+  AddCompositeOpToSubgraph(subgraph, "odml.rms_norm");
+  AddCompositeOpToSubgraph(subgraph, "odml.softmax");
+  AddCompositeOpToSubgraph(subgraph, "odml.group_norm");
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
+      plugin.get(), /*soc_model=*/nullptr, &subgraph, &selected_op_list));
+  const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
+      selected_op_list.Values();
+
+  // Only the two supported composite ops should be selected.
+  ASSERT_EQ(selected_ops.size(), 2);
+  EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeShloComposite);
+  EXPECT_EQ(selected_ops[1].first->OpCode(), kLiteRtOpCodeShloComposite);
+
+  const char* first_op_name = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetSHLOCompositeOpName(selected_ops[0].first, &first_op_name));
+  EXPECT_STREQ(first_op_name, "odml.rms_norm");
+
+  const char* second_op_name = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetSHLOCompositeOpName(selected_ops[1].first, &second_op_name));
+  EXPECT_STREQ(second_op_name, "odml.group_norm");
+}
+
+TEST(TestCallGoogleTensorPlugin, PartitionCompositeOpsWithInputValidation) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
+                              options.GetOptions<GoogleTensorOptions>());
+  google_tensor_options.SetExperimentalEnableInputValidator(true);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+
+  LiteRtModelT model;
+  LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
+  AddCompositeOpToSubgraph(subgraph, "odml.rms_norm");
+  AddCompositeOpToSubgraph(subgraph, "odml.softmax");
+  AddCompositeOpToSubgraph(subgraph, "odml.group_norm");
+  // A plain TFL op is added to observe that non-composite ops still go through
+  // op support checks while composite validation is enabled.
+  AddTflOpToSubgraph(subgraph, kLiteRtOpCodeTflAdd);
+  // `tfl.fake_quant` is listed in `kUnSupportedOps`, so it must never be
+  // selected regardless of which validation path runs.
+  AddTflOpToSubgraph(subgraph, kLiteRtOpCodeTflFakeQuant);
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
+      plugin.get(), /*soc_model=*/nullptr, &subgraph, &selected_op_list));
+  const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
+      selected_op_list.Values();
+
+  // `odml.softmax` is unsupported, so the plugin falls back to static mapping
+  // and only the two supported composites plus the supported TFL op are
+  // selected.
+  ASSERT_EQ(selected_ops.size(), 3);
+  EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeShloComposite);
+  EXPECT_EQ(selected_ops[1].first->OpCode(), kLiteRtOpCodeShloComposite);
+  EXPECT_EQ(selected_ops[2].first->OpCode(), kLiteRtOpCodeTflAdd);
+
+  const char* first_op_name = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetSHLOCompositeOpName(selected_ops[0].first, &first_op_name));
+  EXPECT_STREQ(first_op_name, "odml.rms_norm");
+
+  const char* second_op_name = nullptr;
+  LITERT_ASSERT_OK(
+      LiteRtGetSHLOCompositeOpName(selected_ops[1].first, &second_op_name));
+  EXPECT_STREQ(second_op_name, "odml.group_norm");
+}
+
+// `simple_reducemax_op.tflite` holds a single f32 `tfl.reduce_max`. That op is
+// absent from the static `kUnSupportedOps` list, but the input validator
+// rejects f32 reductions when float truncation is disabled. It therefore only
+// gets filtered out when the partitioner actually reaches the input validator.
+inline constexpr absl::string_view kFloatReduceMaxModel =
+    "simple_reducemax_op.tflite";
+
+TEST(TestCallGoogleTensorPlugin,
+     PartitionFloatReduceMaxWithoutInputValidation) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
+                              options.GetOptions<GoogleTensorOptions>());
+  google_tensor_options.SetExperimentalEnableInputValidator(false);
+  google_tensor_options.SetFloatTruncationType(
+      kLiteRtGoogleTensorFloatTruncationTypeNoTruncation);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ExtendedModel model = testing::LoadTestFileModel(kFloatReduceMaxModel);
+  LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(
+      LiteRtCompilerPluginPartition(plugin.get(), /*soc_model=*/"Tensor_G5",
+                                    subgraph.Get(), &selected_op_list));
+  const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
+      selected_op_list.Values();
+
+  // Only the static op support check runs, and it accepts `tfl.reduce_max`
+  // regardless of its element type.
+  ASSERT_EQ(selected_ops.size(), 1);
+  EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeTflReduceMax);
+}
+
+TEST(TestCallGoogleTensorPlugin, PartitionFloatReduceMaxWithInputValidation) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
+                              options.GetOptions<GoogleTensorOptions>());
+  google_tensor_options.SetExperimentalEnableInputValidator(true);
+  // The input validator only rejects f32 reductions when the compiler is not
+  // allowed to truncate them to a narrower float type.
+  google_tensor_options.SetFloatTruncationType(
+      kLiteRtGoogleTensorFloatTruncationTypeNoTruncation);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ExtendedModel model = testing::LoadTestFileModel(kFloatReduceMaxModel);
+  LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
+
+  LiteRtOpListT selected_op_list;
+  // The input validator only runs for the chip revisions behind `Tensor_G5`
+  // and newer, so the soc model must be set explicitly.
+  LITERT_ASSERT_OK(
+      LiteRtCompilerPluginPartition(plugin.get(), /*soc_model=*/"Tensor_G5",
+                                    subgraph.Get(), &selected_op_list));
+  const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
+      selected_op_list.Values();
+
+  // The subgraph has no composite op, so dynamic validation runs and the input
+  // validator reports the f32 `tfl.reduce_max` as unsupported.
+  EXPECT_EQ(selected_ops.size(), 0);
 }
 
 TEST(TestCallGoogleTensorPlugin, CompileWithExtraOptions) {
@@ -326,8 +527,8 @@ TEST(TestCallGoogleTensorPlugin, CompileWithExtraOptions) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
                               options.GetOptions<GoogleTensorOptions>());
 
-  google_tensor_options.SetExtraOptions("test_extra_options");
-  EXPECT_EQ(google_tensor_options.GetExtraOptions(), "test_extra_options");
+  google_tensor_options.SetExtraOptions("prefix: \"/tmp/\"");
+  EXPECT_EQ(google_tensor_options.GetExtraOptions(), "prefix: \"/tmp/\"");
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto litert_opts,
