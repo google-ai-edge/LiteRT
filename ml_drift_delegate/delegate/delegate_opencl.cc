@@ -125,6 +125,10 @@ ml_drift::cl::CLContextOptions GetClContextOptions(GpuPriority gpu_priority) {
     LITERT_LOG(LITERT_DEBUG, "Using low priority for GPU accelerator.");
     options.performance = ml_drift::cl::PerformanceHint::kLow;
     options.priority = ml_drift::cl::PriorityHint::kLow;
+  } else if (gpu_priority == kGpuHighPriority) {
+    LITERT_LOG(LITERT_INFO, "Using high priority for GPU accelerator.");
+    options.performance = ml_drift::cl::PerformanceHint::kHigh;
+    options.priority = ml_drift::cl::PriorityHint::kHigh;
   }
   return options;
 }
@@ -207,13 +211,39 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
         reinterpret_cast<cl_device_id>(device_id.int_value),
         reinterpret_cast<cl_platform_id>(platform_id.int_value));
 
-    ml_drift::cl::CLContext context(
-        reinterpret_cast<cl_context>(context_id.int_value),
-        /*has_ownership=*/false, device);
+    cl_context cl_ctx = reinterpret_cast<cl_context>(context_id.int_value);
+    if (context_options.performance == ml_drift::cl::PerformanceHint::kHigh) {
+      if (device.GetInfo().SupportsExtension("cl_qcom_perf_hint")) {
+        auto pfn_set_perf_hint = reinterpret_cast<clSetPerfHintQCOM_fn>(
+            ml_drift::cl::clGetExtensionFunctionAddressForPlatform(
+                reinterpret_cast<cl_platform_id>(platform_id.int_value),
+                "clSetPerfHintQCOM"));
+        if (pfn_set_perf_hint) {
+          LITERT_LOG(LITERT_INFO, "Setting QCOM GPU perf hint to HIGH.");
+          pfn_set_perf_hint(cl_ctx, CL_PERF_HINT_HIGH_QCOM);
+        }
+      }
+    }
 
-    ml_drift::cl::CLCommandQueue queue(
-        reinterpret_cast<cl_command_queue>(command_queue.int_value),
-        /*has_ownership=*/false);
+    ml_drift::cl::CLContext context(cl_ctx, /*has_ownership=*/false, device);
+
+    ml_drift::cl::CLCommandQueue queue;
+    if (queue_options.priority == ml_drift::cl::PriorityHint::kHigh) {
+      auto high_prio_queue_status = ml_drift::cl::CreateCLCommandQueue(
+          device, context, &queue, queue_options);
+      if (!high_prio_queue_status.ok()) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Failed to create high priority command queue, falling back "
+                   "to default.");
+        queue = ml_drift::cl::CLCommandQueue(
+            reinterpret_cast<cl_command_queue>(command_queue.int_value),
+            /*has_ownership=*/false);
+      }
+    } else {
+      queue = ml_drift::cl::CLCommandQueue(
+          reinterpret_cast<cl_command_queue>(command_queue.int_value),
+          /*has_ownership=*/false);
+    }
 
     LITERT_ASSIGN_OR_RETURN(
         resources->cl_env,
