@@ -147,7 +147,7 @@ MAIN_FUNCTION($0) {
   float4 w0 = ucl::Convert<float4>()" + absl::Substitute(weight_read_expr, "ch0") + R"();
   conv_out.x = s0.x * w0.x + s0.y * w0.y + p.x * w0.z;
   )" + absl::Substitute(next_state_write_expr,
-                        "float4(s0.y, p.x, 0.0f, 0.0f)", "ch0") + R"(;
+                        "ucl::Init<float4>(s0.y, p.x, 0.0f, 0.0f)", "ch0") + R"(;
 
   // Channel 1
   int ch1 = 4 * S + 1;
@@ -155,7 +155,7 @@ MAIN_FUNCTION($0) {
   float4 w1 = ucl::Convert<float4>()" + absl::Substitute(weight_read_expr, "ch1") + R"();
   conv_out.y = s1.x * w1.x + s1.y * w1.y + p.y * w1.z;
   )" + absl::Substitute(next_state_write_expr,
-                        "float4(s1.y, p.y, 0.0f, 0.0f)", "ch1") + R"(;
+                        "ucl::Init<float4>(s1.y, p.y, 0.0f, 0.0f)", "ch1") + R"(;
 
   // Channel 2
   int ch2 = 4 * S + 2;
@@ -163,7 +163,7 @@ MAIN_FUNCTION($0) {
   float4 w2 = ucl::Convert<float4>()" + absl::Substitute(weight_read_expr, "ch2") + R"();
   conv_out.z = s2.x * w2.x + s2.y * w2.y + p.z * w2.z;
   )" + absl::Substitute(next_state_write_expr,
-                        "float4(s2.y, p.z, 0.0f, 0.0f)", "ch2") + R"(;
+                        "ucl::Init<float4>(s2.y, p.z, 0.0f, 0.0f)", "ch2") + R"(;
 
   // Channel 3
   int ch3 = 4 * S + 3;
@@ -171,7 +171,7 @@ MAIN_FUNCTION($0) {
   float4 w3 = ucl::Convert<float4>()" + absl::Substitute(weight_read_expr, "ch3") + R"();
   conv_out.w = s3.x * w3.x + s3.y * w3.y + p.w * w3.z;
   )" + absl::Substitute(next_state_write_expr,
-                        "float4(s3.y, p.w, 0.0f, 0.0f)", "ch3") + R"(;
+                        "ucl::Init<float4>(s3.y, p.w, 0.0f, 0.0f)", "ch3") + R"(;
 )" + bias_code + R"(
   float4 y = c * conv_out;
   args.out.Write(ucl::Convert<args.out::type>(y), 0, 0, S);

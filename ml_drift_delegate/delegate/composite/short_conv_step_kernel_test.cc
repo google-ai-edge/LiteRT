@@ -48,6 +48,12 @@ class ShortConvStepFloatTest : public ::ml_drift::FloatTest {
     if (!exec_env) {
       GTEST_SKIP() << "TestExecutionEnvironment not initialized.";
     }
+    const auto data_type = ::ml_drift::DeduceDataTypeFromPrecision(precision());
+    if (!exec_env->IsStorageSupported(storage(), data_type)) {
+      GTEST_SKIP() << "Unsupported data type: "
+                   << ::ml_drift::ToString(data_type)
+                   << " storage type: " << ::ml_drift::ToString(storage());
+    }
   }
 };
 
@@ -219,28 +225,16 @@ absl::Status RunShortConvStepTest(
 }
 
 TEST_P(ShortConvStepFloatTest, SmallSize) {
-  if (!exec_env->IsStorageSupported(storage(), ::ml_drift::DataType::FLOAT32)) {
-    GTEST_SKIP() << "Unsupported storage type: "
-                 << ::ml_drift::ToString(storage());
-  }
   ASSERT_OK(RunShortConvStepTest(*exec_env, precision(), storage(),
                                 /*hidden_size=*/4, /*with_bias=*/false));
 }
 
 TEST_P(ShortConvStepFloatTest, FullSizeHidden2048) {
-  if (!exec_env->IsStorageSupported(storage(), ::ml_drift::DataType::FLOAT32)) {
-    GTEST_SKIP() << "Unsupported storage type: "
-                 << ::ml_drift::ToString(storage());
-  }
   ASSERT_OK(RunShortConvStepTest(*exec_env, precision(), storage(),
                                 /*hidden_size=*/2048, /*with_bias=*/false));
 }
 
 TEST_P(ShortConvStepFloatTest, WithBias) {
-  if (!exec_env->IsStorageSupported(storage(), ::ml_drift::DataType::FLOAT32)) {
-    GTEST_SKIP() << "Unsupported storage type: "
-                 << ::ml_drift::ToString(storage());
-  }
   ASSERT_OK(RunShortConvStepTest(*exec_env, precision(), storage(),
                                 /*hidden_size=*/2048, /*with_bias=*/true));
 }

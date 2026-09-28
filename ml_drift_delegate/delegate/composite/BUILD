@@ -677,6 +677,28 @@ mld_kernel_test(
     ],
 )
 
+mld_kernel_test(
+    name = "short_conv_step_kernel_test",
+    srcs = ["short_conv_step_kernel_test.cc"],
+    platforms = [
+        "opencl",
+        "webgpu",
+    ],
+    deps = [
+        ":short_conv_step_kernel",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+    ],
+)
+
 # The Mac test targets are defined separately from mld_kernel_test to tag the
 # objc_library and cc_test with "manual", "notap", and "nobuilder". This prevents
 # non-Apple presubmits (TAP on Linux) from failing during target analysis due to
