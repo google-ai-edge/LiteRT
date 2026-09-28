@@ -53,6 +53,13 @@ QAIRT_CONTENT_DIR = 'qairt/2.50.0.260828'
 # ../../../../../../litert/vendors/CMakeLists.txt:qairt_headers_dir,
 # )
 QAIRT_TARGET_DIR = 'ai_edge_litert_sdk_qualcomm/data'
+_QAIRT_PREFIX = 'qairt/'
+QAIRT_VERSION = (
+    QAIRT_CONTENT_DIR[len(_QAIRT_PREFIX) :]
+    if QAIRT_CONTENT_DIR.startswith(_QAIRT_PREFIX)
+    else QAIRT_CONTENT_DIR
+)
+QAIRT_SHORT_VERSION = '.'.join(QAIRT_VERSION.split('.')[:3])
 # ---
 
 
@@ -201,8 +208,14 @@ class CustomBuildPy(_build_py):
 setuptools.setup(
     name=PACKAGE_NAME.replace('_', '-'),
     version=PACKAGE_VERSION,
-    description='Qualcomm SDK for AI Edge LiteRT',
-    long_description='Qualcomm SDK for AI Edge LiteRT.',
+    description=(
+        'Qualcomm SDK for AI Edge LiteRT (includes'
+        f' QAIRT-{QAIRT_SHORT_VERSION} ({QAIRT_VERSION}))'
+    ),
+    long_description=(
+        'Qualcomm SDK for AI Edge LiteRT.\n\nThis package includes'
+        f' QAIRT-{QAIRT_SHORT_VERSION} (`{QAIRT_VERSION}`).'
+    ),
     long_description_content_type='text/markdown',
     url='https://www.tensorflow.org/lite/',
     author='Google AI Edge Authors',
