@@ -113,46 +113,53 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedQkvNormRoPE(
 
   std::string reduction_code;
   for (int offset = half_slices / 2; offset > 0; offset >>= 1) {
-    absl::StrAppend(&reduction_code,
-                    "    if (tid < ", offset,
+    absl::StrAppend(&reduction_code, "  if (tid < ", offset,
                     ") { shared_sum[tid] += shared_sum[tid + ", offset,
-                    "]; }\n    ucl::SyncThreads<WorkGroup, Local>();\n");
+                    "]; }\n  ucl::SyncThreads<WorkGroup, Local>();\n");
   }
 
-  std::string op_code = absl::StrCat(R"(
+  std::string op_code =
+      absl::StrCat(R"(
 MAIN_FUNCTION($0) {
   int X = ucl::GetGlobalId<0>();
   int Y = ucl::GetGlobalId<1>();
   int S = ucl::GetGlobalId<2>();
   int tid = ucl::GetLocalId<2>();
-  if (X >= args.q_out.Width() || Y >= args.total_heads || S >= args.half_slices) {
+  bool is_active = (X < args.q_out.Width() && Y < args.total_heads && S < args.half_slices);
+
+  float4 val0 = ucl::Init<float4>(0.0f);
+  float4 val1 = ucl::Init<float4>(0.0f);
+  if (is_active) {
+    int base_slice = Y * args.total_slices_per_head;
+    val0 = ucl::Convert<float4>(args.qkv.Read(X, 0, base_slice + S, 0));
+    val1 = ucl::Convert<float4>(args.qkv.Read(X, 0, base_slice + S + args.half_slices, 0));
+  }
+
+  __local float shared_sum[)",
+                   half_slices, R"(];
+  shared_sum[tid] = dot(val0, val0) + dot(val1, val1);
+  ucl::SyncThreads<WorkGroup, Local>();
+)",
+                   reduction_code, R"(
+  if (!is_active) {
     return;
   }
 
-  int base_slice = Y * args.total_slices_per_head;
-  float4 val0 = ucl::Convert<float4>(args.qkv.Read(X, 0, base_slice + S, 0));
-  float4 val1 = ucl::Convert<float4>(args.qkv.Read(X, 0, base_slice + S + args.half_slices, 0));
-
-  __local float shared_sum[)", half_slices, R"(];
-
   if (Y < args.num_heads) {
     // === QUERY HEAD ===
-    shared_sum[tid] = dot(val0, val0) + dot(val1, val1);
-    ucl::SyncThreads<WorkGroup, Local>();
-)", reduction_code, R"(
     float inv_std = rsqrt(shared_sum[0] / ucl::Convert<float>(args.head_dim) + args.epsilon);
-    float w0_x = args.q_weight.Read(0, 0, 0, S * 4 + 0).x;
-    float w0_y = args.q_weight.Read(0, 0, 0, S * 4 + 1).x;
-    float w0_z = args.q_weight.Read(0, 0, 0, S * 4 + 2).x;
-    float w0_w = args.q_weight.Read(0, 0, 0, S * 4 + 3).x;
-    float4 w0 = float4(w0_x, w0_y, w0_z, w0_w);
+    float w0_x = args.q_weight.Read<float>(0, 0, 0, S * 4 + 0).x;
+    float w0_y = args.q_weight.Read<float>(0, 0, 0, S * 4 + 1).x;
+    float w0_z = args.q_weight.Read<float>(0, 0, 0, S * 4 + 2).x;
+    float w0_w = args.q_weight.Read<float>(0, 0, 0, S * 4 + 3).x;
+    float4 w0 = ucl::Init<float4>(w0_x, w0_y, w0_z, w0_w);
 
     int s1_base = (S + args.half_slices) * 4;
-    float w1_x = args.q_weight.Read(0, 0, 0, s1_base + 0).x;
-    float w1_y = args.q_weight.Read(0, 0, 0, s1_base + 1).x;
-    float w1_z = args.q_weight.Read(0, 0, 0, s1_base + 2).x;
-    float w1_w = args.q_weight.Read(0, 0, 0, s1_base + 3).x;
-    float4 w1 = float4(w1_x, w1_y, w1_z, w1_w);
+    float w1_x = args.q_weight.Read<float>(0, 0, 0, s1_base + 0).x;
+    float w1_y = args.q_weight.Read<float>(0, 0, 0, s1_base + 1).x;
+    float w1_z = args.q_weight.Read<float>(0, 0, 0, s1_base + 2).x;
+    float w1_w = args.q_weight.Read<float>(0, 0, 0, s1_base + 3).x;
+    float4 w1 = ucl::Init<float4>(w1_x, w1_y, w1_z, w1_w);
 
     val0 = val0 * inv_std * w0;
     val1 = val1 * inv_std * w1;
@@ -171,10 +178,13 @@ MAIN_FUNCTION($0) {
 
     float4 min_timescale = ucl::Init<float4>(args.min_timescale);
     float4 max_timescale = ucl::Init<float4>(args.max_timescale);
-    float4 timescale = min_timescale * )", pow_func_name, R"((max_timescale / min_timescale, fraction);
+    float4 timescale = min_timescale * )",
+                   pow_func_name, R"((max_timescale / min_timescale, fraction);
     float4 sinusoid_inp = pos_val / timescale;
-    Type sin_val = ucl::Convert<Type>()", sin_func_name, R"((sinusoid_inp));
-    Type cos_val = ucl::Convert<Type>()", cos_func_name, R"((sinusoid_inp));
+    Type sin_val = ucl::Convert<Type>()",
+                   sin_func_name, R"((sinusoid_inp));
+    Type cos_val = ucl::Convert<Type>()",
+                   cos_func_name, R"((sinusoid_inp));
 
     Type v0 = ucl::Convert<Type>(val0);
     Type v1 = ucl::Convert<Type>(val1);
@@ -186,22 +196,19 @@ MAIN_FUNCTION($0) {
   } else if (Y < args.num_heads + args.num_kv_heads) {
     // === KEY HEAD ===
     int kv_head = Y - args.num_heads;
-    shared_sum[tid] = dot(val0, val0) + dot(val1, val1);
-    ucl::SyncThreads<WorkGroup, Local>();
-)", reduction_code, R"(
     float inv_std = rsqrt(shared_sum[0] / ucl::Convert<float>(args.head_dim) + args.epsilon);
-    float w0_x = args.k_weight.Read(0, 0, 0, S * 4 + 0).x;
-    float w0_y = args.k_weight.Read(0, 0, 0, S * 4 + 1).x;
-    float w0_z = args.k_weight.Read(0, 0, 0, S * 4 + 2).x;
-    float w0_w = args.k_weight.Read(0, 0, 0, S * 4 + 3).x;
-    float4 w0 = float4(w0_x, w0_y, w0_z, w0_w);
+    float w0_x = args.k_weight.Read<float>(0, 0, 0, S * 4 + 0).x;
+    float w0_y = args.k_weight.Read<float>(0, 0, 0, S * 4 + 1).x;
+    float w0_z = args.k_weight.Read<float>(0, 0, 0, S * 4 + 2).x;
+    float w0_w = args.k_weight.Read<float>(0, 0, 0, S * 4 + 3).x;
+    float4 w0 = ucl::Init<float4>(w0_x, w0_y, w0_z, w0_w);
 
     int s1_base = (S + args.half_slices) * 4;
-    float w1_x = args.k_weight.Read(0, 0, 0, s1_base + 0).x;
-    float w1_y = args.k_weight.Read(0, 0, 0, s1_base + 1).x;
-    float w1_z = args.k_weight.Read(0, 0, 0, s1_base + 2).x;
-    float w1_w = args.k_weight.Read(0, 0, 0, s1_base + 3).x;
-    float4 w1 = float4(w1_x, w1_y, w1_z, w1_w);
+    float w1_x = args.k_weight.Read<float>(0, 0, 0, s1_base + 0).x;
+    float w1_y = args.k_weight.Read<float>(0, 0, 0, s1_base + 1).x;
+    float w1_z = args.k_weight.Read<float>(0, 0, 0, s1_base + 2).x;
+    float w1_w = args.k_weight.Read<float>(0, 0, 0, s1_base + 3).x;
+    float4 w1 = ucl::Init<float4>(w1_x, w1_y, w1_z, w1_w);
 
     val0 = val0 * inv_std * w0;
     val1 = val1 * inv_std * w1;
@@ -220,10 +227,13 @@ MAIN_FUNCTION($0) {
 
     float4 min_timescale = ucl::Init<float4>(args.min_timescale);
     float4 max_timescale = ucl::Init<float4>(args.max_timescale);
-    float4 timescale = min_timescale * )", pow_func_name, R"((max_timescale / min_timescale, fraction);
+    float4 timescale = min_timescale * )",
+                   pow_func_name, R"((max_timescale / min_timescale, fraction);
     float4 sinusoid_inp = pos_val / timescale;
-    Type sin_val = ucl::Convert<Type>()", sin_func_name, R"((sinusoid_inp));
-    Type cos_val = ucl::Convert<Type>()", cos_func_name, R"((sinusoid_inp));
+    Type sin_val = ucl::Convert<Type>()",
+                   sin_func_name, R"((sinusoid_inp));
+    Type cos_val = ucl::Convert<Type>()",
+                   cos_func_name, R"((sinusoid_inp));
 
     Type v0 = ucl::Convert<Type>(val0);
     Type v1 = ucl::Convert<Type>(val1);

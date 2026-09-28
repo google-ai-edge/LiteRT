@@ -555,7 +555,6 @@ cc_library(
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:kernel_info",
         "@ml_drift//ml_drift/common:model",
-        "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:types",
         "@ml_drift//ml_drift/common/task:gpu_operation",
@@ -567,6 +566,31 @@ cc_library(
 alias(
     name = "qwen3_qkv_norm_rope_kernel",
     actual = ":qkv_norm_rope_kernel",
+)
+
+mld_kernel_test(
+    name = "qkv_norm_rope_kernel_test",
+    srcs = ["qkv_norm_rope_kernel_test.cc"],
+    platforms = [
+        "opencl",
+        "webgpu",
+    ],
+    deps = [
+        ":qkv_norm_rope_kernel",
+        ":qkv_norm_rope_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+    ],
 )
 
 cc_library(
