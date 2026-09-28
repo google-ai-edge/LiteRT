@@ -590,6 +590,15 @@ export declare interface LiteRtWasm extends WasmModule {
     strideW: number,
     padding: number,
   ): LiteRtTensorHandle;
+  transposeConv2d(
+    input: LiteRtTensorHandle,
+    filter: LiteRtTensorHandle,
+    outputShape: number[],
+    bias: LiteRtTensorHandle | undefined,
+    strideH: number,
+    strideW: number,
+    padding: number,
+  ): LiteRtTensorHandle;
 }
 
 /**

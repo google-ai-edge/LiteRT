@@ -593,6 +593,14 @@ export class Tensor implements Deletable, WithEnvironment {
     return avgPool2d(this, filterSizeOrOptions, strides, padding);
   }
 
+  transposeConv2d(
+    filter: Tensor,
+    outputShape: number[],
+    options: TransposeConv2dOptions = {},
+  ): Tensor {
+    return transposeConv2d(this, filter, outputShape, options);
+  }
+
   abs(): Tensor {
     return abs(this);
   }
@@ -1397,6 +1405,17 @@ export interface Pool2dOptions {
   padding?: Padding;
 }
 
+/**
+ * Options for 2D transposed convolution operations.
+ */
+export interface TransposeConv2dOptions {
+  strides?: number | [number, number];
+  strideH?: number;
+  strideW?: number;
+  padding?: Padding;
+  bias?: Tensor;
+}
+
 function parsePadding(padding: Padding = 'SAME'): number {
   if (typeof padding === 'number') {
     return padding;
@@ -2056,6 +2075,51 @@ export function avgPool2d(
     strideH,
     strideW,
     paddingVal,
+  );
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Performs a 2D transposed convolution (deconvolution) on an input tensor.
+ *
+ * @param input Input tensor of shape [batch, height, width, in_channels].
+ * @param filter Filter weights tensor of shape [out_channels, filter_h, filter_w, in_channels].
+ * @param outputShape 4D target output shape [batch, out_h, out_w, out_channels].
+ * @param options Strides, padding, and optional bias.
+ * @returns Deconvolved output tensor.
+ */
+export function transposeConv2d(
+  input: Tensor,
+  filter: Tensor,
+  outputShape: number[],
+  options: TransposeConv2dOptions = {},
+): Tensor {
+  ensureTensorsOk(
+    options.bias ? [input, filter, options.bias] : [input, filter],
+  );
+  let strideH = 1;
+  let strideW = 1;
+  if (options.strides !== undefined) {
+    if (Array.isArray(options.strides)) {
+      strideH = options.strides[0];
+      strideW = options.strides[1];
+    } else {
+      strideH = options.strides;
+      strideW = options.strides;
+    }
+  }
+  if (options.strideH !== undefined) strideH = options.strideH;
+  if (options.strideW !== undefined) strideW = options.strideW;
+  const padding = parsePadding(options.padding);
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.transposeConv2d(
+    input.liteRtTensorHandle,
+    filter.liteRtTensorHandle,
+    Array.from(outputShape),
+    options.bias?.liteRtTensorHandle,
+    strideH,
+    strideW,
+    padding,
   );
   return new Tensor(resultHandle, input.environment);
 }

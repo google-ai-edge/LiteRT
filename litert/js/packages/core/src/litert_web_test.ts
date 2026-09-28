@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, elu, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maxPool2d, maximum, mean, minimum, mul, neg, notEqual, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, round, rsqrt, select, sin, slice, softmax, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, transpose, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
+import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, elu, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maxPool2d, maximum, mean, minimum, mul, neg, notEqual, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, round, rsqrt, select, sin, slice, softmax, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, transpose, transposeConv2d, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -2762,6 +2762,65 @@ describe('LiteRt', () => {
           avgPoolOut.delete();
           avgPoolModel.delete();
         });
+      }
+    });
+
+    describe('authored transposeConv2d graphs', () => {
+      let inputTensor: Tensor;
+      let filterTensor: Tensor;
+      let biasTensor: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        inputTensor =
+            Tensor.fromTypedArray(new Float32Array([2.0]), [1, 1, 1, 1]);
+        filterTensor = Tensor.fromTypedArray(
+            new Float32Array([1.0, 1.0, 1.0, 1.0]), [1, 2, 2, 1]);
+        biasTensor = Tensor.fromTypedArray(new Float32Array([1.0]), [1]);
+      });
+
+      afterAll(() => {
+        inputTensor.delete();
+        filterTensor.delete();
+        biasTensor.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(
+            `compiles and executes transposeConv2d with bias on ${accelerator}`,
+            async () => {
+              const tconvModel = author(
+                  (x: Tensor, f: Tensor, b: Tensor) =>
+                      x.transposeConv2d(
+                          f, [1, 2, 2, 1],
+                          {strides: 2, padding: 'SAME', bias: b}),
+                  {accelerator});
+              const tconvOut =
+                  await tconvModel.run(inputTensor, filterTensor, biasTensor);
+              expect(tconvOut.shape).toEqual([1, 2, 2, 1]);
+              expect(Array.from(await tconvOut.data()))
+                  .toEqual([3.0, 3.0, 3.0, 3.0]);
+              tconvOut.delete();
+              tconvModel.delete();
+            });
+
+        it(
+            `compiles and executes transposeConv2d without bias on ` +
+                `${accelerator}`,
+            async () => {
+              const tconvNoBiasModel = author(
+                  (x: Tensor, f: Tensor) =>
+                      transposeConv2d(
+                          x, f, [1, 2, 2, 1], {strides: 2, padding: 'SAME'}),
+                  {accelerator});
+              const tconvNoBiasOut =
+                  await tconvNoBiasModel.run(inputTensor, filterTensor);
+              expect(tconvNoBiasOut.shape).toEqual([1, 2, 2, 1]);
+              expect(Array.from(await tconvNoBiasOut.data()))
+                  .toEqual([2.0, 2.0, 2.0, 2.0]);
+              tconvNoBiasOut.delete();
+              tconvNoBiasModel.delete();
+            });
       }
     });
 
