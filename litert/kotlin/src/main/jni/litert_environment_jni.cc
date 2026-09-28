@@ -55,6 +55,19 @@ int ToJniAccelerator(litert::HwAccelerators accelerator) {
   }
 }
 
+// Returns true if the value of the option with the given tag is a pointer,
+// which is passed from Kotlin as its decimal string representation.
+bool IsPointerOption(litert::EnvironmentOptions::Tag tag) {
+  switch (tag) {
+    case litert::EnvironmentOptions::Tag::kSystemRuntimeHandle:
+    case litert::EnvironmentOptions::Tag::kSystemGpuAcceleratorHandle:
+    case litert::EnvironmentOptions::Tag::kContext:
+      return true;
+    default:
+      return false;
+  }
+}
+
 }  // namespace
 
 #ifdef __cplusplus
@@ -76,8 +89,7 @@ JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Environment_nativeCreate(
     for (int i = 0; i < num_tags; ++i) {
       auto value = values_vector[i];
       auto tag = static_cast<litert::EnvironmentOptions::Tag>(tags_array[i]);
-      if (tag == litert::EnvironmentOptions::Tag::kSystemRuntimeHandle ||
-          tag == litert::EnvironmentOptions::Tag::kSystemGpuAcceleratorHandle) {
+      if (IsPointerOption(tag)) {
         int64_t handle;
         ABSL_CHECK(absl::SimpleAtoi(value, &handle))
             << "Failed to parse handle option: " << value;
