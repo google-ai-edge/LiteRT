@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {add, author, AuthoredModel, batchMatMul, CompiledModel, div, Environment, fullyConnected, gelu, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, logistic, mul, relu, softmax, sub, supportsFeature, tanh, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
+import {add, author, AuthoredModel, batchMatMul, CompiledModel, conv2d, depthwiseConv2d, div, Environment, fullyConnected, gelu, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, logistic, mul, relu, softmax, sub, supportsFeature, tanh, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -1807,6 +1807,77 @@ describe('LiteRt', () => {
           geluOut.delete();
           geluModel.delete();
         });
+      }
+    });
+
+    describe('authored conv2d and depthwiseConv2d graphs', () => {
+      let inputTensor: Tensor;
+      let filterTensor: Tensor;
+      let biasTensor: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        const inputData = new Float32Array([1, 2, 3, 4]);
+        const filterData = new Float32Array([1, 1, 1, 1]);
+        const biasData = new Float32Array([5]);
+        inputTensor = Tensor.fromTypedArray(inputData, [1, 2, 2, 1]);
+        filterTensor = Tensor.fromTypedArray(filterData, [1, 2, 2, 1]);
+        biasTensor = Tensor.fromTypedArray(biasData, [1]);
+      });
+
+      afterAll(() => {
+        inputTensor.delete();
+        filterTensor.delete();
+        biasTensor.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes conv2d on ${accelerator}`, async () => {
+          const convModel = author(
+              (x: Tensor, f: Tensor, b: Tensor) =>
+                  x.conv2d(f, {padding: 'VALID', bias: b}),
+              {accelerator});
+          const convOut =
+              await convModel.run(inputTensor, filterTensor, biasTensor);
+          expect(Array.from(await convOut.data())).toEqual([15]);
+
+          const convStandaloneModel = author(
+              (x: Tensor, f: Tensor, b: Tensor) =>
+                  conv2d(x, f, {padding: 'VALID', bias: b}),
+              {accelerator});
+          const convStandaloneOut = await convStandaloneModel.run(
+              inputTensor, filterTensor, biasTensor);
+          expect(Array.from(await convStandaloneOut.data())).toEqual([15]);
+
+          convOut.delete();
+          convStandaloneOut.delete();
+          convModel.delete();
+          convStandaloneModel.delete();
+        });
+
+        it(`compiles and executes depthwiseConv2d on ${accelerator}`,
+           async () => {
+             const dwConvModel = author(
+                 (x: Tensor, f: Tensor) =>
+                     x.depthwiseConv2d(f, {padding: 'VALID'}),
+                 {accelerator});
+             const dwConvOut =
+                 await dwConvModel.run(inputTensor, filterTensor);
+             expect(Array.from(await dwConvOut.data())).toEqual([10]);
+
+             const dwConvStandaloneModel = author(
+                 (x: Tensor, f: Tensor) =>
+                     depthwiseConv2d(x, f, {padding: 'VALID'}),
+                 {accelerator});
+             const dwConvStandaloneOut =
+                 await dwConvStandaloneModel.run(inputTensor, filterTensor);
+             expect(Array.from(await dwConvStandaloneOut.data())).toEqual([10]);
+
+             dwConvOut.delete();
+             dwConvStandaloneOut.delete();
+             dwConvModel.delete();
+             dwConvStandaloneModel.delete();
+           });
       }
     });
 

@@ -411,6 +411,14 @@ export class Tensor implements Deletable, WithEnvironment {
     return gelu(this, approximate);
   }
 
+  conv2d(filter: Tensor, options?: Conv2dOptions): Tensor {
+    return conv2d(this, filter, options);
+  }
+
+  depthwiseConv2d(filter: Tensor, options?: DepthwiseConv2dOptions): Tensor {
+    return depthwiseConv2d(this, filter, options);
+  }
+
   async data(): Promise<TypedArray> {
     this.ensureNotDeleted();
     if (
@@ -970,5 +978,108 @@ export function gelu(input: Tensor, approximate = false): Tensor {
   input.ensureNotDeleted();
   const wasm = getGlobalLiteRt().liteRtWasm;
   const resultHandle = wasm.gelu(input.liteRtTensorHandle, approximate);
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Padding mode for 2D spatial operations.
+ */
+export type Padding = 'SAME' | 'VALID' | 0 | 1;
+
+/**
+ * Options for 2D convolution operations.
+ */
+export interface Conv2dOptions {
+  strideH?: number;
+  strideW?: number;
+  padding?: Padding;
+  dilationH?: number;
+  dilationW?: number;
+  bias?: Tensor;
+}
+
+/**
+ * Options for depthwise 2D convolution operations.
+ */
+export interface DepthwiseConv2dOptions extends Conv2dOptions {
+  depthMultiplier?: number;
+}
+
+function parsePadding(padding: Padding = 'SAME'): number {
+  if (typeof padding === 'number') {
+    return padding;
+  }
+  return padding.toUpperCase() === 'VALID' ? 1 : 0;
+}
+
+/**
+ * Performs a standard 2D convolution on an input tensor of shape [B, H, W, C_in].
+ *
+ * @param input Input tensor of shape [batch, height, width, in_channels].
+ * @param filter Filter weights tensor of shape [out_channels, filter_h, filter_w, in_channels].
+ * @param options Optional strides, padding, dilation, and bias.
+ * @returns Convolved output tensor.
+ */
+export function conv2d(
+  input: Tensor,
+  filter: Tensor,
+  options: Conv2dOptions = {},
+): Tensor {
+  input.ensureNotDeleted();
+  filter.ensureNotDeleted();
+  if (options.bias) options.bias.ensureNotDeleted();
+  const strideH = options.strideH ?? 1;
+  const strideW = options.strideW ?? 1;
+  const padding = parsePadding(options.padding);
+  const dilationH = options.dilationH ?? 1;
+  const dilationW = options.dilationW ?? 1;
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.conv2d(
+    input.liteRtTensorHandle,
+    filter.liteRtTensorHandle,
+    options.bias?.liteRtTensorHandle,
+    strideH,
+    strideW,
+    padding,
+    dilationH,
+    dilationW,
+  );
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Performs a depthwise 2D convolution on an input tensor of shape [B, H, W, C_in].
+ *
+ * @param input Input tensor of shape [batch, height, width, in_channels].
+ * @param filter Filter weights tensor of shape [1, filter_h, filter_w, in_channels * depth_multiplier].
+ * @param options Optional strides, padding, depth multiplier, dilation, and bias.
+ * @returns Convolved output tensor.
+ */
+export function depthwiseConv2d(
+  input: Tensor,
+  filter: Tensor,
+  options: DepthwiseConv2dOptions = {},
+): Tensor {
+  input.ensureNotDeleted();
+  filter.ensureNotDeleted();
+  if (options.bias) options.bias.ensureNotDeleted();
+  const strideH = options.strideH ?? 1;
+  const strideW = options.strideW ?? 1;
+  const padding = parsePadding(options.padding);
+  const depthMultiplier = options.depthMultiplier ?? 1;
+  const dilationH = options.dilationH ?? 1;
+  const dilationW = options.dilationW ?? 1;
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.depthwiseConv2d(
+    input.liteRtTensorHandle,
+    filter.liteRtTensorHandle,
+    options.bias?.liteRtTensorHandle,
+    strideH,
+    strideW,
+    padding,
+    depthMultiplier,
+    dilationH,
+    dilationW,
+  );
   return new Tensor(resultHandle, input.environment);
 }

@@ -465,6 +465,27 @@ export declare interface LiteRtWasm extends WasmModule {
   logistic(a: LiteRtTensorHandle): LiteRtTensorHandle;
   tanh(a: LiteRtTensorHandle): LiteRtTensorHandle;
   gelu(input: LiteRtTensorHandle, approximate?: boolean): LiteRtTensorHandle;
+  conv2d(
+    input: LiteRtTensorHandle,
+    filter: LiteRtTensorHandle,
+    bias?: LiteRtTensorHandle,
+    strideH?: number,
+    strideW?: number,
+    padding?: number,
+    dilationH?: number,
+    dilationW?: number,
+  ): LiteRtTensorHandle;
+  depthwiseConv2d(
+    input: LiteRtTensorHandle,
+    filter: LiteRtTensorHandle,
+    bias?: LiteRtTensorHandle,
+    strideH?: number,
+    strideW?: number,
+    padding?: number,
+    depthMultiplier?: number,
+    dilationH?: number,
+    dilationW?: number,
+  ): LiteRtTensorHandle;
 }
 
 /**
