@@ -524,6 +524,19 @@ export declare interface LiteRtWasm extends WasmModule {
   maximum(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
   floorDiv(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
   floorMod(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  equal(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  notEqual(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  less(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  greater(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  greaterEqual(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  logicalAnd(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  logicalOr(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  logicalNot(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  select(
+    condition: LiteRtTensorHandle,
+    trueVal: LiteRtTensorHandle,
+    falseVal: LiteRtTensorHandle,
+  ): LiteRtTensorHandle;
 }
 
 /**

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {abs, add, author, AuthoredModel, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, Environment, exp, floor, floorDiv, floorMod, fullyConnected, gelu, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logistic, maximum, mean, minimum, mul, neg, pad, pow, relu, reshape, round, rsqrt, sin, slice, softmax, sqrt, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, transpose, type TypedArray, unloadLiteRt} from '@litertjs/core';
+import {abs, add, author, AuthoredModel, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, Environment, equal, exp, floor, floorDiv, floorMod, fullyConnected, gelu, greater, greaterEqual, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, maximum, mean, minimum, mul, neg, notEqual, pad, pow, relu, reshape, round, rsqrt, select, sin, slice, softmax, sqrt, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, transpose, type TypedArray, unloadLiteRt} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -2265,6 +2265,138 @@ describe('LiteRt', () => {
           expect(Array.from(await floorModOut.data())).toEqual([2, 1, 1, 2]);
           floorModOut.delete();
           floorModModel.delete();
+        });
+      }
+    });
+
+    describe('authored comparison and logic graphs', () => {
+      let a: Tensor;
+      let b: Tensor;
+      let trueVal: Tensor;
+      let falseVal: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        a = Tensor.fromTypedArray(
+            new Float32Array([1.0, 2.0, 5.0, 4.0]), [4]);
+        b = Tensor.fromTypedArray(
+            new Float32Array([1.0, 3.0, 2.0, 4.0]), [4]);
+        trueVal =
+            Tensor.fromTypedArray(new Float32Array([10, 20, 30, 40]), [4]);
+        falseVal =
+            Tensor.fromTypedArray(new Float32Array([-1, -2, -3, -4]), [4]);
+      });
+
+      afterAll(() => {
+        trueVal.delete();
+        falseVal.delete();
+        a.delete();
+        b.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes equal on ${accelerator}`, async () => {
+          const eqModel = author(
+              (x: Tensor, y: Tensor) => equal(x, y), {accelerator});
+          const eqOut = await eqModel.run(a, b);
+          expect(Array.from(await eqOut.data()).map(Number))
+              .toEqual([1, 0, 0, 1]);
+          eqOut.delete();
+          eqModel.delete();
+        });
+
+        it(`compiles and executes notEqual on ${accelerator}`, async () => {
+          const neqModel = author(
+              (x: Tensor, y: Tensor) => notEqual(x, y), {accelerator});
+          const neqOut = await neqModel.run(a, b);
+          expect(Array.from(await neqOut.data()).map(Number))
+              .toEqual([0, 1, 1, 0]);
+          neqOut.delete();
+          neqModel.delete();
+        });
+
+        it(`compiles and executes less on ${accelerator}`, async () => {
+          const ltModel = author(
+              (x: Tensor, y: Tensor) => less(x, y), {accelerator});
+          const ltOut = await ltModel.run(a, b);
+          expect(Array.from(await ltOut.data()).map(Number))
+              .toEqual([0, 1, 0, 0]);
+          ltOut.delete();
+          ltModel.delete();
+        });
+
+        it(`compiles and executes greater on ${accelerator}`, async () => {
+          const gtModel = author(
+              (x: Tensor, y: Tensor) => greater(x, y), {accelerator});
+          const gtOut = await gtModel.run(a, b);
+          expect(Array.from(await gtOut.data()).map(Number))
+              .toEqual([0, 0, 1, 0]);
+          gtOut.delete();
+          gtModel.delete();
+        });
+
+        it(`compiles and executes lessEqual on ${accelerator}`, async () => {
+          const leModel = author(
+              (x: Tensor, y: Tensor) => lessEqual(x, y), {accelerator});
+          const leOut = await leModel.run(a, b);
+          expect(Array.from(await leOut.data()).map(Number))
+              .toEqual([1, 1, 0, 1]);
+          leOut.delete();
+          leModel.delete();
+        });
+
+        it(`compiles and executes greaterEqual on ${accelerator}`, async () => {
+          const geModel = author(
+              (x: Tensor, y: Tensor) => greaterEqual(x, y), {accelerator});
+          const geOut = await geModel.run(a, b);
+          expect(Array.from(await geOut.data()).map(Number))
+              .toEqual([1, 0, 1, 1]);
+          geOut.delete();
+          geModel.delete();
+        });
+
+        it(`compiles and executes logicalAnd on ${accelerator}`, async () => {
+          const andModel = author(
+              (x: Tensor, y: Tensor) => logicalAnd(equal(x, y), greater(x, y)),
+              {accelerator});
+          const andOut = await andModel.run(a, b);
+          expect(Array.from(await andOut.data()).map(Number))
+              .toEqual([0, 0, 0, 0]);
+          andOut.delete();
+          andModel.delete();
+        });
+
+        it(`compiles and executes logicalOr on ${accelerator}`, async () => {
+          const orModel = author(
+              (x: Tensor, y: Tensor) => logicalOr(equal(x, y), greater(x, y)),
+              {accelerator});
+          const orOut = await orModel.run(a, b);
+          expect(Array.from(await orOut.data()).map(Number))
+              .toEqual([1, 0, 1, 1]);
+          orOut.delete();
+          orModel.delete();
+        });
+
+        it(`compiles and executes logicalNot on ${accelerator}`, async () => {
+          const notModel = author(
+              (x: Tensor, y: Tensor) => logicalNot(equal(x, y)),
+              {accelerator});
+          const notOut = await notModel.run(a, b);
+          expect(Array.from(await notOut.data()).map(Number))
+              .toEqual([0, 1, 1, 0]);
+          notOut.delete();
+          notModel.delete();
+        });
+
+        it(`compiles and executes select on ${accelerator}`, async () => {
+          const selModel = author(
+              (x: Tensor, y: Tensor, t: Tensor, f: Tensor) =>
+                  select(equal(x, y), t, f),
+              {accelerator});
+          const selOut = await selModel.run(a, b, trueVal, falseVal);
+          expect(Array.from(await selOut.data())).toEqual([10, -2, -3, 40]);
+          selOut.delete();
+          selModel.delete();
         });
       }
     });

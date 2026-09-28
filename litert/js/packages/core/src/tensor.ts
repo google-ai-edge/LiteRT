@@ -396,6 +396,46 @@ export class Tensor implements Deletable, WithEnvironment {
     return floorMod(this, other);
   }
 
+  equal(other: Tensor): Tensor {
+    return equal(this, other);
+  }
+
+  notEqual(other: Tensor): Tensor {
+    return notEqual(this, other);
+  }
+
+  less(other: Tensor): Tensor {
+    return less(this, other);
+  }
+
+  greater(other: Tensor): Tensor {
+    return greater(this, other);
+  }
+
+  lessEqual(other: Tensor): Tensor {
+    return lessEqual(this, other);
+  }
+
+  greaterEqual(other: Tensor): Tensor {
+    return greaterEqual(this, other);
+  }
+
+  logicalAnd(other: Tensor): Tensor {
+    return logicalAnd(this, other);
+  }
+
+  logicalOr(other: Tensor): Tensor {
+    return logicalOr(this, other);
+  }
+
+  logicalNot(): Tensor {
+    return logicalNot(this);
+  }
+
+  select(trueVal: Tensor, falseVal: Tensor): Tensor {
+    return select(this, trueVal, falseVal);
+  }
+
   relu(): Tensor {
     return relu(this);
   }
@@ -1001,6 +1041,86 @@ export const floorDiv: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
 export const floorMod: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
   (wasm, a, b) => wasm.floorMod(a, b),
 );
+
+/**
+ * Returns the truth value of (a == b) element-wise.
+ */
+export const equal: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
+  (wasm, a, b) => wasm.equal(a, b),
+);
+
+/**
+ * Returns the truth value of (a != b) element-wise.
+ */
+export const notEqual: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
+  (wasm, a, b) => wasm.notEqual(a, b),
+);
+
+/**
+ * Returns the truth value of (a < b) element-wise.
+ */
+export const less: (a: Tensor, b: Tensor) => Tensor = makeBinOp((wasm, a, b) =>
+  wasm.less(a, b),
+);
+
+/**
+ * Returns the truth value of (a > b) element-wise.
+ */
+export const greater: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
+  (wasm, a, b) => wasm.greater(a, b),
+);
+
+/**
+ * Returns the truth value of (a >= b) element-wise.
+ */
+export const greaterEqual: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
+  (wasm, a, b) => wasm.greaterEqual(a, b),
+);
+
+/**
+ * Returns the truth value of (a <= b) element-wise.
+ */
+export const lessEqual: (a: Tensor, b: Tensor) => Tensor = (a, b) =>
+  greaterEqual(b, a);
+
+/**
+ * Computes logical AND element-wise.
+ */
+export const logicalAnd: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
+  (wasm, a, b) => wasm.logicalAnd(a, b),
+);
+
+/**
+ * Computes logical OR element-wise.
+ */
+export const logicalOr: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
+  (wasm, a, b) => wasm.logicalOr(a, b),
+);
+
+/**
+ * Computes logical NOT element-wise.
+ */
+export const logicalNot: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.logicalNot(a),
+);
+
+/**
+ * Selects elements from trueVal or falseVal depending on condition.
+ */
+export function select(
+  condition: Tensor,
+  trueVal: Tensor,
+  falseVal: Tensor,
+): Tensor {
+  ensureTensorsOk([condition, trueVal, falseVal]);
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.select(
+    condition.liteRtTensorHandle,
+    trueVal.liteRtTensorHandle,
+    falseVal.liteRtTensorHandle,
+  );
+  return new Tensor(resultHandle, condition.environment);
+}
 
 /**
  * Computes rectified linear unit element-wise.
