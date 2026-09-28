@@ -461,6 +461,10 @@ export declare interface LiteRtWasm extends WasmModule {
     weights: LiteRtTensorHandle,
     bias?: LiteRtTensorHandle,
   ): LiteRtTensorHandle;
+  softmax(a: LiteRtTensorHandle, beta?: number): LiteRtTensorHandle;
+  logistic(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  tanh(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  gelu(input: LiteRtTensorHandle, approximate?: boolean): LiteRtTensorHandle;
 }
 
 /**

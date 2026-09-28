@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {add, author, AuthoredModel, batchMatMul, CompiledModel, div, Environment, fullyConnected, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, mul, relu, sub, supportsFeature, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
+import {add, author, AuthoredModel, batchMatMul, CompiledModel, div, Environment, fullyConnected, gelu, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, logistic, mul, relu, softmax, sub, supportsFeature, tanh, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -1743,6 +1743,72 @@ describe('LiteRt', () => {
          weightTensor.delete();
          biasTensor.delete();
        });
+
+    describe('authored activation graphs', () => {
+      let tensorLogits: Tensor;
+      let tensorZero: Tensor;
+      let tensorGeluInput: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        tensorLogits =
+            Tensor.fromTypedArray(new Float32Array([0.0, 0.0]), [1, 2]);
+        tensorZero = new Tensor(new Float32Array([0.0]));
+        tensorGeluInput =
+            Tensor.fromTypedArray(new Float32Array([0.0, 1.0]), [2]);
+      });
+
+      afterAll(() => {
+        tensorLogits.delete();
+        tensorZero.delete();
+        tensorGeluInput.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes softmax on ${accelerator}`, async () => {
+          const softmaxModel = author(
+              (x: Tensor) => softmax(x).add(x.softmax()), {accelerator});
+          const softmaxOut = await softmaxModel.run(tensorLogits);
+          const softmaxData = Array.from(await softmaxOut.data());
+          expect(softmaxData[0]).toBeCloseTo(1.0, 3);
+          expect(softmaxData[1]).toBeCloseTo(1.0, 3);
+          softmaxOut.delete();
+          softmaxModel.delete();
+        });
+
+        it(`compiles and executes logistic on ${accelerator}`, async () => {
+          const logisticModel = author(
+              (x: Tensor) => logistic(x).add(x.logistic()), {accelerator});
+          const logisticOut = await logisticModel.run(tensorZero);
+          const logisticData = Array.from(await logisticOut.data());
+          expect(logisticData[0]).toBeCloseTo(1.0, 3);
+          logisticOut.delete();
+          logisticModel.delete();
+        });
+
+        it(`compiles and executes tanh on ${accelerator}`, async () => {
+          const tanhModel = author(
+              (x: Tensor) => tanh(x).add(x.tanh()), {accelerator});
+          const tanhOut = await tanhModel.run(tensorGeluInput);
+          const tanhData = Array.from(await tanhOut.data());
+          expect(tanhData[0]).toBeCloseTo(0.0, 3);
+          expect(tanhData[1]).toBeCloseTo(2 * Math.tanh(1.0), 3);
+          tanhOut.delete();
+          tanhModel.delete();
+        });
+
+        it(`compiles and executes gelu on ${accelerator}`, async () => {
+          const geluModel = author(
+              (x: Tensor) => gelu(x).add(x.gelu()), {accelerator});
+          const geluOut = await geluModel.run(tensorGeluInput);
+          const geluData = Array.from(await geluOut.data());
+          expect(geluData[0]).toBeCloseTo(0.0, 3);
+          expect(geluData[1]).toBeCloseTo(2 * 0.8413, 2);
+          geluOut.delete();
+          geluModel.delete();
+        });
+      }
+    });
 
     it('can copy to a different environment', async () => {
       await resetLiteRt(true, {threads: false});

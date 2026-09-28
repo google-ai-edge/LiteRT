@@ -395,6 +395,22 @@ export class Tensor implements Deletable, WithEnvironment {
     return fullyConnected(this, weights, bias);
   }
 
+  softmax(beta?: number): Tensor {
+    return softmax(this, beta);
+  }
+
+  logistic(): Tensor {
+    return logistic(this);
+  }
+
+  tanh(): Tensor {
+    return tanh(this);
+  }
+
+  gelu(approximate?: boolean): Tensor {
+    return gelu(this, approximate);
+  }
+
   async data(): Promise<TypedArray> {
     this.ensureNotDeleted();
     if (
@@ -906,5 +922,53 @@ export function fullyConnected(
       weights.liteRtTensorHandle,
       bias?.liteRtTensorHandle,
   );
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Computes the softmax activation of a tensor.
+ *
+ * @param a The input tensor.
+ * @param beta Optional scaling factor (default: 1.0).
+ * @returns The softmax output tensor.
+ */
+export function softmax(a: Tensor, beta = 1.0): Tensor {
+  a.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.softmax(a.liteRtTensorHandle, beta);
+  return new Tensor(resultHandle, a.environment);
+}
+
+/**
+ * Computes the logistic (sigmoid) activation element-wise: 1 / (1 + exp(-x)).
+ *
+ * @param a The input tensor.
+ * @returns The logistic output tensor.
+ */
+export const logistic: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.logistic(a),
+);
+
+/**
+ * Computes the hyperbolic tangent activation element-wise.
+ *
+ * @param a The input tensor.
+ * @returns The hyperbolic tangent output tensor.
+ */
+export const tanh: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.tanh(a),
+);
+
+/**
+ * Computes the Gaussian Error Linear Unit (GELU) activation.
+ *
+ * @param input The input tensor.
+ * @param approximate Whether to use the faster tanh approximation.
+ * @returns The GELU output tensor.
+ */
+export function gelu(input: Tensor, approximate = false): Tensor {
+  input.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.gelu(input.liteRtTensorHandle, approximate);
   return new Tensor(resultHandle, input.environment);
 }
