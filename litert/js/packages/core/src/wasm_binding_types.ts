@@ -498,6 +498,16 @@ export declare interface LiteRtWasm extends WasmModule {
     size: number[],
   ): LiteRtTensorHandle;
   pad(input: LiteRtTensorHandle, paddings: LiteRtTensorHandle): LiteRtTensorHandle;
+  mean(
+    a: LiteRtTensorHandle,
+    axes: number[],
+    keepDims: boolean,
+  ): LiteRtTensorHandle;
+  sum(
+    a: LiteRtTensorHandle,
+    axes: number[],
+    keepDims: boolean,
+  ): LiteRtTensorHandle;
 }
 
 /**

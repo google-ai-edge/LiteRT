@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {add, author, AuthoredModel, batchMatMul, CompiledModel, concat, conv2d, depthwiseConv2d, div, Environment, fullyConnected, gelu, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, logistic, mul, pad, relu, reshape, slice, softmax, sub, supportsFeature, tanh, Tensor, TensorBufferType, transpose, type TypedArray, unloadLiteRt} from '@litertjs/core';
+import {add, author, AuthoredModel, batchMatMul, CompiledModel, concat, conv2d, depthwiseConv2d, div, Environment, fullyConnected, gelu, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, logistic, mean, mul, pad, relu, reshape, slice, softmax, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, transpose, type TypedArray, unloadLiteRt} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -2010,6 +2010,57 @@ describe('LiteRt', () => {
             .toThrowError(/dtype 'int32'/);
         invalidFloatPad.delete();
       });
+    });
+
+    describe('authored reduction graphs', () => {
+      let tensorA: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        tensorA = Tensor.fromTypedArray(
+            new Float32Array([1, 2, 3, 4, 5, 6]), [2, 3]);
+      });
+
+      afterAll(() => {
+        tensorA.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes sum on ${accelerator}`, async () => {
+          const sumModel = author(
+              (x: Tensor) => x.sum(1), {accelerator});
+          const sumOut = await sumModel.run(tensorA);
+          expect(Array.from(await sumOut.data())).toEqual([6, 15]);
+
+          const sumStandaloneModel = author(
+              (x: Tensor) => sum(x, 1), {accelerator});
+          const sumStandaloneOut = await sumStandaloneModel.run(tensorA);
+          expect(Array.from(await sumStandaloneOut.data())).toEqual([6, 15]);
+
+          sumOut.delete();
+          sumStandaloneOut.delete();
+          sumModel.delete();
+          sumStandaloneModel.delete();
+        });
+
+        it(`compiles and executes mean on ${accelerator}`, async () => {
+          const meanModel = author(
+              (x: Tensor) => x.mean(0), {accelerator});
+          const meanOut = await meanModel.run(tensorA);
+          expect(Array.from(await meanOut.data())).toEqual([2.5, 3.5, 4.5]);
+
+          const meanStandaloneModel = author(
+              (x: Tensor) => mean(x, 0), {accelerator});
+          const meanStandaloneOut = await meanStandaloneModel.run(tensorA);
+          expect(Array.from(await meanStandaloneOut.data()))
+              .toEqual([2.5, 3.5, 4.5]);
+
+          meanOut.delete();
+          meanStandaloneOut.delete();
+          meanModel.delete();
+          meanStandaloneModel.delete();
+        });
+      }
     });
 
     it('can copy to a different environment', async () => {

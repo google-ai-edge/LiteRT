@@ -440,6 +440,14 @@ export class Tensor implements Deletable, WithEnvironment {
     return pad(this, paddings);
   }
 
+  mean(axes?: number | number[], keepDims = false): Tensor {
+    return mean(this, axes, keepDims);
+  }
+
+  sum(axes?: number | number[], keepDims = false): Tensor {
+    return sum(this, axes, keepDims);
+  }
+
   async data(): Promise<TypedArray> {
     this.ensureNotDeleted();
     if (
@@ -1253,4 +1261,55 @@ export function pad(input: Tensor, paddings: Tensor | number[][]): Tensor {
     }
   }
   return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Computes the mean of elements across specified dimensions of a tensor.
+ *
+ * @param a The input tensor.
+ * @param axes The dimensions to reduce. If undefined, reduces all dimensions.
+ * @param keepDims Whether to retain reduced dimensions with length 1.
+ * @returns The reduced tensor.
+ */
+export function mean(
+  a: Tensor,
+  axes?: number | number[],
+  keepDims = false,
+): Tensor {
+  a.ensureNotDeleted();
+  const axesArray = normalizeAxes(axes, a.type.layout.dimensions.length);
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.mean(a.liteRtTensorHandle, axesArray, keepDims);
+  return new Tensor(resultHandle, a.environment);
+}
+
+function normalizeAxes(
+  axes: number | number[] | undefined,
+  rank: number,
+): number[] {
+  if (axes === undefined) {
+    return Array.from({length: rank}, (_, i) => i);
+  }
+  const axesArray = typeof axes === 'number' ? [axes] : axes;
+  return axesArray.map((axis) => (axis < 0 ? axis + rank : axis));
+}
+
+/**
+ * Computes the sum of elements across specified dimensions of a tensor.
+ *
+ * @param a The input tensor.
+ * @param axes The dimensions to reduce. If undefined, reduces all dimensions.
+ * @param keepDims Whether to retain reduced dimensions with length 1.
+ * @returns The reduced tensor.
+ */
+export function sum(
+  a: Tensor,
+  axes?: number | number[],
+  keepDims = false,
+): Tensor {
+  a.ensureNotDeleted();
+  const axesArray = normalizeAxes(axes, a.type.layout.dimensions.length);
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.sum(a.liteRtTensorHandle, axesArray, keepDims);
+  return new Tensor(resultHandle, a.environment);
 }
