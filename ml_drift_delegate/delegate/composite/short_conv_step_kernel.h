@@ -45,8 +45,9 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
     const ::ml_drift::TensorDescriptor& conv_weight_desc,
     const ::ml_drift::TensorDescriptor* conv_bias_desc,
     const ::ml_drift::TensorDescriptor& dst_desc,
-    const ::ml_drift::TensorDescriptor& next_state_desc,
-    int num_slices, int hidden_size, int conv_L_cache);
+    const ::ml_drift::TensorDescriptor& next_state_desc, int num_slices,
+    int hidden_size, int conv_L_cache, bool is_gated = true,
+    bool use_silu = false);
 
 }  // namespace litert::ml_drift
 
