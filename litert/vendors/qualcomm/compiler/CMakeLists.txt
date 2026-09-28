@@ -43,6 +43,8 @@ target_link_libraries(qnn_compiler_plugin
 
 set_target_properties(qnn_compiler_plugin PROPERTIES
     OUTPUT_NAME "LiteRtCompilerPlugin_Qualcomm"
+    BUILD_WITH_INSTALL_RPATH TRUE
+    INSTALL_RPATH "\$ORIGIN"
 )
 
 if(APPLE)
@@ -58,6 +60,7 @@ if(APPLE)
 elseif(UNIX)
     target_link_options(qnn_compiler_plugin PRIVATE
         "-Wl,-soname=libLiteRtCompilerPlugin_Qualcomm.so"
+        "-Wl,-rpath,\$ORIGIN"
     )
 
     target_link_libraries(qnn_compiler_plugin PRIVATE

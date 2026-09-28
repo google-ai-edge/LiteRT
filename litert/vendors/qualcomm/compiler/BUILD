@@ -95,13 +95,6 @@ litert_dynamic_lib(
         "@com_google_absl//absl/strings:string_view",
         "@qairt//:qnn_lib_headers",
     ] + select({
-        "//litert:android_arm64": [
-            "@qairt//:libQnnHtp.so",
-            "@qairt//:libQnnIr.so",
-            "@qairt//:libQnnLpai.so",
-            "@qairt//:libQnnSaver.so",
-            "@qairt//:libQnnSystem.so",
-        ],
         "//litert:linux_x86_64": [
             "@qairt//:libQnnHtp.so",
             "@qairt//:libQnnIr.so",
@@ -231,7 +224,7 @@ litert_test(
         "@com_google_absl//absl/strings:string_view",
         "@qairt//:qnn_lib_headers",
     ] + select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             # copybara:uncomment_begin(google-only)
             # "@qairt//:linux_deps",
             # copybara:uncomment_end

@@ -110,6 +110,12 @@ LiteRtStatus CreateDelegate(
         &gpu_delegate_options->litert_external_tensors_mode,
         gpu_options_payload);
 
+    bool use_ir_model;
+    if (LrtGetGpuOptionsUseIrModel(&use_ir_model, gpu_options_payload) ==
+        kLiteRtStatusOk) {
+      gpu_delegate_options->use_ir_model = use_ir_model;
+    }
+
     LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
         &gpu_delegate_options->allow_src_quantized_fc_conv_ops,
         gpu_options_payload);
@@ -273,6 +279,16 @@ LiteRtStatus CreateDelegate(
     LrtGetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
         &preferred_device_substr, gpu_options_payload);
     gpu_delegate_options->preferred_device_substr = preferred_device_substr;
+  } else if (gpu_delegate_options != nullptr) {
+    LrtGpuOptions* default_gpu_options = nullptr;
+    if (LrtCreateGpuOptions(&default_gpu_options) == kLiteRtStatusOk) {
+      bool use_ir_model;
+      if (LrtGetGpuOptionsUseIrModel(&use_ir_model, default_gpu_options) ==
+          kLiteRtStatusOk) {
+        gpu_delegate_options->use_ir_model = use_ir_model;
+      }
+      LrtDestroyGpuOptions(default_gpu_options);
+    }
   }
 
   if (gpu_delegate_options != nullptr) {

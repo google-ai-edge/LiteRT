@@ -53,6 +53,40 @@ namespace ml_drift {
 namespace internal {
 
 #ifdef __ANDROID__
+// Checks whether AHardwareBuffer allocation with AHARDWAREBUFFER_FORMAT_BLOB
+// and AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER is supported on the current device.
+// The result is cached to avoid repeated failed Gralloc allocations and logcat
+// spam on devices where Gralloc does not support this combination.
+bool IsAhwbGpuDataBufferSupported() {
+  if (__builtin_available(android 26, *)) {
+    if (&AHardwareBuffer_allocate == nullptr ||
+        &AHardwareBuffer_release == nullptr) {
+      return false;
+    }
+    AHardwareBuffer_Desc test_desc = {};
+    test_desc.width = 64;
+    test_desc.height = 1;
+    test_desc.layers = 1;
+    test_desc.format = AHARDWAREBUFFER_FORMAT_BLOB;
+    test_desc.usage = AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER;
+
+    if (__builtin_available(android 29, *)) {
+      if (&AHardwareBuffer_isSupported != nullptr &&
+          !AHardwareBuffer_isSupported(&test_desc)) {
+        return false;
+      }
+    }
+
+    AHardwareBuffer* test_ahwb = nullptr;
+    if (AHardwareBuffer_allocate(&test_desc, &test_ahwb) != 0) {
+      return false;
+    }
+    AHardwareBuffer_release(test_ahwb);
+    return true;
+  }
+  return false;
+}
+
 // Tries to allocate a cl::Tensor backed by an AHardwareBuffer via the
 // cl_arm_import_memory extension. On Mali GPUs, standard clCreateBuffer /
 // clCreateImage maps GPU memory into the process address space, inflating RSS.
@@ -77,6 +111,9 @@ bool TryCreateTensorViaAhwb(
   if (tensor_desc.GetStorageType() != TensorStorageType::TEXTURE_2D) {
     return false;
   }
+
+  static const bool s_ahwb_supported = IsAhwbGpuDataBufferSupported();
+  if (!s_ahwb_supported) return false;
 
   // Compute the buffer size: width * height * channels * sizeof(element).
   std::vector<uint64_t> storage_dims = tensor_desc.GetStorageDims();

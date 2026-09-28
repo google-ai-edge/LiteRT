@@ -390,7 +390,7 @@ litert_device_test(
 #     ],
 #     tags = [
 #         "no_oss",
-#         "requires-gpu-nvidia",
+#         "requires-gpu-sm90",  # OpenCL/MIG-compatible
 #     ],
 #     deps = [
 #         ":litert_common",
@@ -454,7 +454,7 @@ litert_device_test(
 #     data = ["//litert/test:testdata/simple_model.tflite"],
 #     tags = [
 #         "no_oss",
-#         "requires-gpu-nvidia",
+#         "requires-gpu-sm90-full",  # Vulkan/WebGPU: no driver on MIG
 #     ],
 #     deps = [
 #         ":litert_common",
@@ -497,7 +497,7 @@ litert_device_test(
 #     data = ["//litert/test:testdata/simple_model.tflite"],
 #     tags = [
 #         "no_oss",
-#         "requires-gpu-nvidia",
+#         "requires-gpu-sm90-full",  # Vulkan/WebGPU: no driver on MIG
 #     ],
 #     deps = [
 #         ":litert_common",
@@ -587,7 +587,7 @@ litert_device_test(
 #         "nolinux",
 #         "nomacos",
 #         "nowindows",
-#         "requires-gpu-nvidia",
+#         "requires-gpu-sm90",  # OpenCL/MIG-compatible
 #     ],
 #     deps = [
 #         ":litert_common",

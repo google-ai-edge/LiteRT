@@ -294,7 +294,6 @@ objc_library(
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
         # Dependency placeholder: apple_frameworks Metal,
-        "@ml_drift//ml_drift/common:convert",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model",
@@ -1139,7 +1138,7 @@ cc_test(
     name = "buffer_handler_opencl_test",
     srcs = ["buffer_handler_opencl_test.cc"],
     tags = [
-        "requires-gpu-nvidia",
+        "requires-gpu-sm90",  # OpenCL/MIG-compatible
     ],
     deps = [
         ":buffer_handler_opencl",
@@ -1180,7 +1179,7 @@ objc_library(
 #     name = "delegate_opencl_test",
 #     srcs = ["delegate_opencl_test.cc"],
 #     tags = [
-#         "requires-gpu-nvidia",
+#         "requires-gpu-sm90",  # OpenCL/MIG-compatible
 #     ],
 #     deps = [
 #         ":delegate_opencl",
@@ -1276,7 +1275,7 @@ cc_test(
         "LITERT_DISABLE_OPENCL": "1",
     },
     tags = [
-        "requires-gpu-nvidia",
+        "requires-gpu-sm90-full",  # Vulkan/WebGPU: no driver on MIG
     ],
     deps = [
         ":gated_delta_update_test_util",
@@ -1304,7 +1303,7 @@ cc_test(
         "LITERT_DISABLE_OPENCL": "1",
     },
     tags = [
-        "requires-gpu-nvidia",
+        "requires-gpu-sm90-full",  # Vulkan/WebGPU: no driver on MIG
     ],
     deps = [
         ":gated_delta_update_test_util",

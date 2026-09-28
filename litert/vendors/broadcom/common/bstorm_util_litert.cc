@@ -328,20 +328,48 @@ bstorm_result bstorm_LiteRt_BlobShapeFromTensor(struct bstorm_BlobShape* shape,
                        err_convert);
   B_STORM_CHECKED_LITERT_CALL(rc, LiteRtGetQuantizationTypeId,
                               (tensor, &q_type_id), err_convert);
-  if (q_type_id == kLiteRtQuantizationPerTensor) {
-    LiteRtQuantizationPerTensor per_tensor_quant;
-    B_STORM_CHECKED_LITERT_CALL(rc, LiteRtGetPerTensorQuantization,
-                                (tensor, &per_tensor_quant), err_convert);
-    shape->quantization.type = bstorm_QuantizationType_Asymmetric;
-    shape->quantization.data.asymmetric.scale = per_tensor_quant.scale;
-    shape->quantization.data.asymmetric.zero_point =
-        bstorm_LiteRt_safeInt64(per_tensor_quant.zero_point);
-  } else if (q_type_id != kLiteRtQuantizationNone) {
-    B_STORM_ERROR_VERBOSE(rc, NotSupported, err_convert,
-                          "Unsupported quantization type: %d", q_type_id);
+  switch (q_type_id) {
+    case kLiteRtQuantizationPerTensor: {
+      LiteRtQuantizationPerTensor per_tensor_quant;
+      B_STORM_CHECKED_LITERT_CALL(rc, LiteRtGetPerTensorQuantization,
+                                  (tensor, &per_tensor_quant), err_convert);
+      shape->quantization.type = bstorm_QuantizationType_Asymmetric;
+      shape->quantization.data.asymmetric.scale = per_tensor_quant.scale;
+      shape->quantization.data.asymmetric.zero_point =
+          bstorm_LiteRt_safeInt64(per_tensor_quant.zero_point);
+      break;
+    }
+    case kLiteRtQuantizationPerChannel: {
+      LiteRtQuantizationPerChannel per_channel_quant;
+      B_STORM_CHECKED_LITERT_CALL(rc, LiteRtGetPerChannelQuantization,
+                                  (tensor, &per_channel_quant), err_convert);
+      B_STORM_CHECKED_CALL(
+          rc, bstorm_AffineQuantization_Alloc,
+          (&shape->quantization.data.affine,
+           (unsigned)per_channel_quant.num_channels),
+          err_convert);
+      shape->quantization.data.affine.dimension =
+          (unsigned)per_channel_quant.quantized_dimension;
+      for (uint64_t i = 0; i < per_channel_quant.num_channels; ++i) {
+        shape->quantization.data.affine.quantization[i].scale =
+            per_channel_quant.scales[i];
+        shape->quantization.data.affine.quantization[i].zero_point =
+            bstorm_LiteRt_safeInt64(per_channel_quant.zero_points[i]);
+      }
+      shape->quantization.type = bstorm_QuantizationType_Affine;
+      break;
+    }
+    case kLiteRtQuantizationNone:
+      break;
+
+    default:
+      B_STORM_ERROR_VERBOSE(rc, NotSupported, err_convert,
+                            "Unsupported quantization type: %d", q_type_id);
+      break;
   }
   return rc;
 
 err_convert:
+  bstorm_BlobShape_Free(shape);
   return rc;
 }

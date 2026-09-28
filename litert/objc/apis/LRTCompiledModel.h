@@ -49,6 +49,9 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  * Creates and compiles a LiteRT model from in-memory model data.
  *
+ * @note The returned compiled model keeps a reference to @c modelData (copying it if it is
+ * mutable), so callers are free to release or mutate their own buffer afterwards.
+ *
  * @param modelData In-memory model byte data.
  * @param environment LiteRT environment instance.
  * @param options Optional compilation options.

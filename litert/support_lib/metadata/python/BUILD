@@ -1,5 +1,5 @@
-load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
-load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
 load("//litert/python:pytype.bzl", "pytype_strict_library")
 load("//litert/support_lib/metadata:build_defs.bzl", "stamp_metadata_parser_version")
 
@@ -27,8 +27,8 @@ py_library(
         "//litert/support_lib/metadata:schema_py",
         "//litert/support_lib/metadata/cc/python:_pywrap_metadata_version",
         "//litert/support_lib/metadata/flatbuffers_lib:_pywrap_flatbuffers",
+        "//third_party/py/numpy",
         "@flatbuffers//:runtime_py",
-        "@org_tensorflow//third_party/py/numpy:headers",
     ],
 )
 

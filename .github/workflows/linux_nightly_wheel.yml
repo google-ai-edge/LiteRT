@@ -22,7 +22,7 @@ permissions:
 jobs:
   build_wheels:
     name: "Build Wheels - Python ${{ matrix.python-version }}"
-    runs-on: linux-x86-n2-16
+    runs-on: linux-x86-n4-16
     container:
       image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:d6b429665f5269698f88ccd00bcb8a6eb685332c302f08f29fe0738cd6a6610c
     strategy:

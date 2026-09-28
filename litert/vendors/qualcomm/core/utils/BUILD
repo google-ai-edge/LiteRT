@@ -108,7 +108,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/backends:htp_backend",
         "//litert/vendors/qualcomm/core/backends:ir_backend",
     ] + select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             # copybara:uncomment_begin(google-only)
             # "@qairt//:linux_deps",
             # copybara:uncomment_end

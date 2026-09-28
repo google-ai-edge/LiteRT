@@ -14,6 +14,7 @@
 
 #import <XCTest/XCTest.h>
 
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -135,6 +136,55 @@ static NSString *GetTestDynamicModelPath() {
 
   BOOL runSuccess = [model runWithInputs:inputs outputs:outputs error:&error];
   XCTAssertTrue(runSuccess);
+  XCTAssertNil(error);
+
+  NSData *outputData = [outputs[0] readDataWithError:&error];
+  XCTAssertNotNil(outputData);
+  XCTAssertEqual(outputData.length, sizeof(kTestOutputTensor));
+
+  const float *outputFloat = static_cast<const float *>(outputData.bytes);
+  for (size_t i = 0; i < kTestOutputSize; ++i) {
+    XCTAssertEqualWithAccuracy(outputFloat[i], kTestOutputTensor[i], kTestAccuracy);
+  }
+}
+
+- (void)testRunFromMutableModelDataThatCallerLaterClobbers {
+  NSError *error = nil;
+  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(env);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+
+  NSMutableData *modelData = [NSMutableData dataWithContentsOfFile:GetTestModelPath()];
+  XCTAssertNotNil(modelData);
+
+  LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelData:modelData
+                                                             environment:env
+                                                                 options:options
+                                                                   error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  // The compiled model owns its own copy of the bytes, so neither clobbering nor releasing the
+  // caller's buffer may affect inference.
+  std::memset(modelData.mutableBytes, 0, modelData.length);
+  modelData = nil;
+
+  NSArray<LRTTensorBuffer *> *inputs = [model createInputTensorBuffersWithError:&error];
+  XCTAssertNotNil(inputs);
+  XCTAssertNil(error);
+
+  NSArray<LRTTensorBuffer *> *outputs = [model createOutputTensorBuffersWithError:&error];
+  XCTAssertNotNil(outputs);
+  XCTAssertNil(error);
+
+  NSData *input0Data = [NSData dataWithBytes:kTestInput0Tensor length:sizeof(kTestInput0Tensor)];
+  NSData *input1Data = [NSData dataWithBytes:kTestInput1Tensor length:sizeof(kTestInput1Tensor)];
+  XCTAssertTrue([inputs[0] writeData:input0Data error:&error]);
+  XCTAssertTrue([inputs[1] writeData:input1Data error:&error]);
+
+  XCTAssertTrue([model runWithInputs:inputs outputs:outputs error:&error]);
   XCTAssertNil(error);
 
   NSData *outputData = [outputs[0] readDataWithError:&error];

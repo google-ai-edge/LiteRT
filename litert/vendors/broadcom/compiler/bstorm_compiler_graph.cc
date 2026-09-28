@@ -161,9 +161,7 @@ bstorm_result bstorm_LiteRt_compiler_graph::get_supported_operations(
       (context, bstorm_graph_, supported.get(), info.nodes, &options),
       err_supported);
   for (unsigned i = 0; i < info.nodes; ++i) {
-    if (supported[i]) {
-      supported_nodes.push_back(supported[i]);
-    }
+    supported_nodes.push_back(supported[i]);
   }
   return rc;
 
@@ -317,7 +315,7 @@ bstorm_result bstorm_LiteRt_compiler_graph::graph_precompile_to_file(
   bstorm_result rc = BSTORM_RESULT_INITIALIZER();
   struct bstorm_compiler_bstm_offline_config offline_config;
   struct bstorm_bstm_config bstm_config;
-  struct bstorm_flatbuf transformed;
+  struct bstorm_flatbuf transformed ={};
   const struct bstorm_Graph* graph_to_compile;
 
   B_STORM_CHECKED_CALL(
@@ -347,7 +345,7 @@ bstorm_result bstorm_LiteRt_compiler_graph::graph_precompile_to_buffer(
   bstorm_result rc = BSTORM_RESULT_INITIALIZER();
   struct bstorm_compiler_bstm_offline_config offline_config;
   struct bstorm_bstm_config bstm_config;
-  struct bstorm_flatbuf transformed;
+  struct bstorm_flatbuf transformed ={};
   const struct bstorm_Graph* graph_to_compile;
 
   B_STORM_CHECKED_CALL(

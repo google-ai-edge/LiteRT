@@ -61,6 +61,10 @@ set(LITERT_RUNTIME_SOURCES
     ${TFLITE_SOURCE_DIR}/profiling/time.cc
 )
 
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dispatch/fabric/fabric_kernel.cc")
+  list(APPEND LITERT_RUNTIME_SOURCES dispatch/fabric/fabric_kernel.cc)
+endif()
+
 # Runtime library
 add_library(litert_runtime STATIC ${LITERT_RUNTIME_SOURCES})
 
@@ -88,7 +92,6 @@ target_include_directories(litert_runtime
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${LITERT_XNNPACK_INCLUDE_DIR}>
         $<BUILD_INTERFACE:${LITERT_PTHREADPOOL_INCLUDE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opencl_headers>

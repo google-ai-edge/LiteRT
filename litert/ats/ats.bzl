@@ -16,25 +16,15 @@
 Macros to define pre-configured ATS test suites and run through the litert_device* macros.
 """
 
-load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
-load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "dispatch_device_rlocation", "is_npu_backend", "plugin_device_rlocation", "version_target_suffix")
+load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "dispatch_device_rlocation", "host_rlocation", "is_gpu_backend", "is_npu_backend", "plugin_device_rlocation", "version_target_suffix")
 load("//litert/integration_test:litert_device_script.bzl", "litert_device_script")
 
-def _host_rlocation(label, get_parent = False):
-    abs_label = absolute_label(label)
-    res = abs_label.replace("@", "external/").replace("//", "").replace(":", "/")
-    if get_parent:
-        return res[:res.rfind("/")]
-    return res
-
-def _make_ats_args(quote_re, init = [], **kwargs):
+def _make_ats_args(init = [], **kwargs):
     def _fmt_re(re):
         if len(re) == 1:
             return re[0]
-        if quote_re:
-            return "\\'({})\\'".format("|".join(re))
-        return "({})".format("|".join(re))
+        return "\\'({})\\'".format("|".join(re))
 
     extra_flags = kwargs.get("extra_flags", [])
     exec_args = [
@@ -43,13 +33,12 @@ def _make_ats_args(quote_re, init = [], **kwargs):
 
     backend = kwargs.get("backend", "cpu")
     if is_npu_backend(backend):
-        exec_args += [
-            "--backend=npu",
-        ]
+        backend_flag = "npu"
+    elif is_gpu_backend(backend):
+        backend_flag = "gpu"
     else:
-        exec_args.append(
-            "--backend=\"{}\"".format(backend),
-        )
+        backend_flag = backend
+    exec_args.append("--backend={}".format(backend_flag))
 
     dont_register = kwargs.get("dont_register", [])
     if dont_register:
@@ -80,7 +69,8 @@ def litert_define_ats(
         do_register = [],
         param_seeds = {},
         extra_flags = [],
-        models = None):
+        models = None,
+        platform = "android"):
     """Defines a pre-configured ATS test suite.
 
     Args:
@@ -97,6 +87,7 @@ def litert_define_ats(
           If provided, the default model provider is disabled and the specified models are used.
           This overrides any models provided via the `--models` flag at runtime if both are used
           (though typically one would use one or the other).
+      platform: Target OS platform ("android" or "macos").
     """
     if "append" not in dir(backend):
         backend = [backend]
@@ -117,7 +108,7 @@ def litert_define_ats(
         data = models
 
         extra_models_device = [device_rlocation(m, get_parent = True) for m in models]
-        extra_models_host = [_host_rlocation(m, get_parent = True) for m in models]
+        extra_models_host = [host_rlocation(m, get_parent = True) for m in models]
 
         if "ExtraModel" not in do_register:
             do_register = do_register + ["ExtraModel"]
@@ -127,8 +118,9 @@ def litert_define_ats(
         version_suffix = "_" + version_target_suffix(b) if version_target_suffix(b) else ""
 
         init_run_args = []
-        for m in extra_models_device:
-            init_run_args.append("--extra_models={}".format(m))
+        if platform != "macos" or models:
+            for m in extra_models_device:
+                init_run_args.append("--extra_models={}".format(m))
 
         if is_npu_backend(b):
             init_run_args += [
@@ -143,7 +135,6 @@ def litert_define_ats(
             do_register = do_register,
             param_seeds = param_seeds,
             extra_flags = extra_flags,
-            quote_re = True,
         )
 
         if jit_suffix != None:
@@ -154,6 +145,7 @@ def litert_define_ats(
                 local_suffix = "",
                 exec_args = run_args,
                 backend_id = b,
+                platform = platform,
                 model_providers = model_providers,
                 data = data,
             )
@@ -169,7 +161,6 @@ def litert_define_ats(
             do_register = do_register,
             param_seeds = param_seeds,
             extra_flags = extra_flags,
-            quote_re = True,
         )
 
         if compile_only_suffix != None:

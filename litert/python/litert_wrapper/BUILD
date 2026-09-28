@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# copybara:uncomment load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
+# copybara:uncomment load("@rules_python//python:py_test.bzl", "py_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -35,7 +35,7 @@ package(
 #         "//litert/python/litert_wrapper/compiled_model_wrapper:compiled_model",
 #         "//litert/python/litert_wrapper/tensor_buffer_wrapper:tensor_buffer",
 #         "@com_google_protobuf//:protobuf_python:use_fast_cpp_protos",  # Automatically added go/proto_python_upb_flip
-#         "@org_tensorflow//third_party/py/numpy:headers",
+#         "//third_party/py/numpy",
 #         "//third_party/py/tensorflow",
 #         "@org_tensorflow//tensorflow/python/platform:resource_loader",
 #     ],

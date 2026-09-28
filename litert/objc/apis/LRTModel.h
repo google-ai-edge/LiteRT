@@ -42,8 +42,8 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  * Loads a LiteRT model from in-memory model data.
  *
- * @note The caller must ensure that @c modelData remains valid and immutable for the
- * lifetime of the @c LRTModel instance.
+ * @note The returned model keeps a reference to @c modelData (copying it if it is mutable), so
+ * callers are free to release or mutate their own buffer afterwards.
  *
  * @param modelData The model file content as @c NSData.
  * @param environment The environment instance to use for loading the model.

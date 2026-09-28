@@ -36,22 +36,23 @@ To run ATS on your local workstation host, you can run the base `:ats` binary:
 bazel run //litert/ats:ats -- [flags]
 ```
 
-### Running ATS on macOS (Metal GPU)
+### Running ATS on macOS (CPU, Metal GPU, and WebGPU)
 
-To execute ATS using Apple Silicon Metal GPU acceleration on a local Mac:
+To execute ATS on a local Apple Silicon Mac (`--config=darwin_arm64`):
 
 ```bash
+# Run CPU (XNNPACK) ATS locally
+bazel test //litert/ats:cpu_macos_ats \
+  --config=darwin_arm64 \
+  --test_output=streamed
+
+# Run Metal GPU ATS locally
 bazel test //litert/ats:metal_macos_ats \
   --config=darwin_arm64 \
   --//third_party/bazel_rules/rules_apple/apple/build_settings:signing_certificate_name="-" \
   --test_output=streamed
-```
 
-### Running ATS on macOS (WebGPU)
-
-To execute ATS using Dawn-over-Metal WebGPU acceleration on a local Mac:
-
-```bash
+# Run WebGPU (Dawn-over-Metal) ATS locally
 bazel test //litert/ats:webgpu_macos_ats \
   --config=darwin_arm64 \
   --//third_party/bazel_rules/rules_apple/apple/build_settings:signing_certificate_name="-" \

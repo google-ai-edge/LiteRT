@@ -262,9 +262,9 @@ cc_library(
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@farmhash_archive//:farmhash",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
-        "@tsl//tsl/platform:fingerprint",
     ],
 )
 

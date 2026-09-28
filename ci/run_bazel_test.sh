@@ -21,20 +21,26 @@ EXPERIMENTAL_TARGETS_ONLY="${EXPERIMENTAL_TARGETS_ONLY:-false}"
 LITERT_TARGETS_ONLY="${LITERT_TARGETS_ONLY:-false}"
 TEST_LANG_FILTERS="${TEST_LANG_FILTERS:-cc,py}"
 
-BUILD_FLAGS=(
-    "--config=bulk_test_cpu"
-    "--test_lang_filters=${TEST_LANG_FILTERS}"
+# Common flags for both building and testing.
+COMMON_BUILD_FLAGS=(
+    "--config=bulk_build_cpu"
     "--keep_going"
     "--repo_env=USE_PYWRAP_RULES=True"
-  )
+)
 
 # Add Bazel --config flags based on kokoro injected env ie. --config=public_cache
-BUILD_FLAGS+=(${BAZEL_CONFIG_FLAGS})
+COMMON_BUILD_FLAGS+=(${BAZEL_CONFIG_FLAGS})
 
-# Conditionally use local submodules vs http_archve tf
+# Conditionally use local submodules vs http_archive tf
 if [[ "${USE_LOCAL_TF}" == "true" ]]; then
-  BUILD_FLAGS+=("--config=use_local_tf")
+  COMMON_BUILD_FLAGS+=("--config=use_local_tf")
 fi
+
+# Flags specific to testing.
+TEST_FLAGS=(
+    "--config=bulk_test_cpu"
+    "--test_lang_filters=${TEST_LANG_FILTERS}"
+)
 
 # TODO: (b/381310257) - Investigate failing test not included in cpu_full
 # TODO: (b/381110338) - Clang errors
@@ -101,7 +107,17 @@ LITERT_EXCLUDED_TARGETS=(
 
 
 if [ "$LITERT_TARGETS_ONLY" == "true" ]; then
-    bazel test "${BUILD_FLAGS[@]}" -- //litert/... "${LITERT_EXCLUDED_TARGETS[@]}"
+    bazel test "${COMMON_BUILD_FLAGS[@]}" "${TEST_FLAGS[@]}" -- //litert/... "${LITERT_EXCLUDED_TARGETS[@]}"
 else
-    bazel test "${BUILD_FLAGS[@]}" -- //tflite/... "${EXCLUDED_TARGETS[@]}"
+    # Build core TFLite targets to populate remote cache for presubmits (e.g. tflite_bazel_cmake.yml).
+    # LINT.IfChange(tflite_bazel_targets)
+    bazel build \
+      "${COMMON_BUILD_FLAGS[@]}" \
+      -- \
+      //tflite:tensorflowlite \
+      //tflite/c:tensorflowlite_c \
+      //tflite/tools/benchmark:benchmark_model \
+      //tflite/converter:flatbuffer_translate
+    # LINT.ThenChange(../workflows/tflite_bazel_cmake.yml:tflite_bazel_targets)
+    bazel test "${COMMON_BUILD_FLAGS[@]}" "${TEST_FLAGS[@]}" -- //tflite/... "${EXCLUDED_TARGETS[@]}"
 fi

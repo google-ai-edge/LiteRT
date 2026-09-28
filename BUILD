@@ -23,9 +23,7 @@ exports_files(
 )
 
 exports_files([
-    "PATCH.flatbuffers_windows_no_bash",
     "PATCH.perfetto",
-    "PATCH.protobuf_port_msvc_compat",
     "PATCH.sentencepiece",
     "litert_workspace.bzl",
     "requirements_lock_3_10.txt",

@@ -35,12 +35,15 @@ endif()
 
 set_target_properties(dispatch_api_qualcomm_so PROPERTIES
     OUTPUT_NAME "LiteRtDispatch_Qualcomm"
+    BUILD_WITH_INSTALL_RPATH TRUE
+    INSTALL_RPATH "\$ORIGIN"
 )
 
 if(UNIX AND NOT APPLE)
-    # Set soname
+    # Set soname and rpath to search origin directory for libLiteRt.so
     target_link_options(dispatch_api_qualcomm_so PRIVATE 
         "-Wl,-soname=libLiteRtDispatch_Qualcomm.so"
+        "-Wl,-rpath,\$ORIGIN"
     )
 
     target_link_libraries(dispatch_api_qualcomm_so PRIVATE 

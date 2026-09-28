@@ -64,8 +64,8 @@ endif()
 # LINT.IfChange(qairt_headers_dir)
 if(NOT QAIRT_HEADERS_DIR)
   if(NOT QAIRT_HEADERS_URL AND NOT QAIRT_GIT_REPO)
-    set(QAIRT_HEADERS_URL "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.49.0.260730/v2.49.0.260730.zip")
-    set(QAIRT_HEADERS_SUBDIR "qairt/2.49.0.260730")
+    set(QAIRT_HEADERS_URL "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.50.0.260828/v2.50.0.260828.zip")
+    set(QAIRT_HEADERS_SUBDIR "qairt/2.50.0.260828")
   endif()
   if(QAIRT_HEADERS_URL)
     set(_qnn_archive "${CMAKE_BINARY_DIR}/_deps/qnn_headers.zip")
@@ -265,7 +265,6 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
     PUBLIC
       $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
       $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/..>
-      $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
       $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/${DIR}>
       $<$<BOOL:${NEUROPILOT_HEADERS_DIR}>:${NEUROPILOT_HEADERS_DIR}>
@@ -359,4 +358,19 @@ if(LITERT_ENABLE_SAMSUNG)
   add_subdirectory(samsung)
 else()
   message(STATUS "Skipping Samsung dispatch: LITECORE_HEADERS_DIR not set")
+endif()
+
+# Broadcom
+option(LITERT_ENABLE_BROADCOM "Enable Broadcom BNE build" ON)
+if(LITERT_ENABLE_BROADCOM)
+  if(NOT BSTORM_CORE_SOURCE_DIR)
+    set(_BSTORM_CORE_CHECK "${CMAKE_CURRENT_SOURCE_DIR}/../../../bstorm/core")
+  else()
+    set(_BSTORM_CORE_CHECK "${BSTORM_CORE_SOURCE_DIR}")
+  endif()
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/broadcom/CMakeLists.txt" AND EXISTS "${_BSTORM_CORE_CHECK}/CMakeLists.txt")
+    add_subdirectory(broadcom)
+  else()
+    message(STATUS "Skipping Broadcom dispatch: BSTORM core source not found at ${_BSTORM_CORE_CHECK}")
+  endif()
 endif()

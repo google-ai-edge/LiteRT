@@ -1158,6 +1158,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
+        "@llvm-project//mlir:TransformUtils",
     ],
 )
 
@@ -1555,6 +1556,7 @@ cc_library(
     srcs = [
         "transforms/decompose_hybrid_quantization.cc",
         "transforms/default_quant_params.cc",
+        "transforms/fold_stablehlo_constant_transforms_pass.cc",
         "transforms/generated_post_quantize.inc",
         "transforms/generated_quantize.inc",
         "transforms/lower_quant_annotations_helper.cc",

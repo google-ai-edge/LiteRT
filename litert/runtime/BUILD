@@ -470,7 +470,7 @@ cc_library(
 #     name = "gpu_environment_test",
 #     srcs = ["gpu_environment_test.cc"],
 #     linkopts = litert_android_linkopts(),
-#     tags = ["requires-gpu-nvidia"],
+#     tags = ["requires-gpu-sm90"],  # OpenCL/MIG-compatible
 #     deps = [
 #         ":gpu_environment",
 #         "@com_google_googletest//:gtest_main",
@@ -768,7 +768,7 @@ cc_test(
     ],
     linkopts = litert_android_linkopts(),
     # require GPU to run OpenCL tests.
-    tags = ["requires-gpu-nvidia"],
+    tags = ["requires-gpu-sm90"],  # OpenCL/MIG-compatible
     deps = [
         ":compiled_model",
         ":external_litert_buffer_context",

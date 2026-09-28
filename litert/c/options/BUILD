@@ -228,10 +228,27 @@ cc_test(
     ],
 )
 
+config_setting(
+    name = "litert_gpu_use_ir_model_true",
+    define_values = {"litert_gpu_use_ir_model": "true"},
+    visibility = ["//visibility:private"],
+)
+
+config_setting(
+    name = "litert_gpu_use_ir_model_false",
+    define_values = {"litert_gpu_use_ir_model": "false"},
+    visibility = ["//visibility:private"],
+)
+
 cc_library(
     name = "litert_gpu_options",
     srcs = ["litert_gpu_options.cc"],
     hdrs = ["litert_gpu_options.h"],
+    defines = select({
+        ":litert_gpu_use_ir_model_true": ["LITERT_GPU_USE_IR_MODEL=true"],
+        ":litert_gpu_use_ir_model_false": ["LITERT_GPU_USE_IR_MODEL=false"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",

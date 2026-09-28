@@ -118,12 +118,16 @@ TEST(FuseSdpaTransposedReshapeTest, FusesTransposeAndReshapeIrModel) {
   model.AddConsumer(perm->id, reshape->id);
   model.SetProducer(out->id, reshape->id);
 
+  const auto tr_id = tr->id;
+  const auto reshape_id = reshape->id;
+  const auto sdpa_id = sdpa->id;
+
   ASSERT_TRUE(ir::FuseSdpaTransposedReshape(&model).ok());
-  EXPECT_EQ(model.op(tr->id), nullptr);
-  EXPECT_EQ(model.op(reshape->id), nullptr);
-  ASSERT_NE(model.op(sdpa->id), nullptr);
-  ASSERT_EQ(model.op(sdpa->id)->outputs.size(), 1u);
-  EXPECT_EQ(model.op(sdpa->id)->outputs[0], out->id);
+  EXPECT_EQ(model.op(tr_id), nullptr);
+  EXPECT_EQ(model.op(reshape_id), nullptr);
+  ASSERT_NE(model.op(sdpa_id), nullptr);
+  ASSERT_EQ(model.op(sdpa_id)->outputs.size(), 1u);
+  EXPECT_EQ(model.op(sdpa_id)->outputs[0], out->id);
 }
 
 }  // namespace

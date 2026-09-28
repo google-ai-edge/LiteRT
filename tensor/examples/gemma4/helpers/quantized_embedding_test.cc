@@ -100,11 +100,8 @@ TEST(QuantizedEmbeddingTest, Int8PerChannelLookup) {
 }
 
 TEST(QuantizedEmbeddingTest, Int4PerChannelUsesLogicalShape) {
-  // Each logical row has four elements stored in two bytes.
-  const std::vector<uint8_t> packed_bytes = {
-      0x21, 0x43,  // row 0: [1, 2, 3, 4]
-      0x65, 0x87   // row 1: [5, 6, 7, -8]
-  };
+  // Each logical row has four elements.
+  const std::vector<int4_t> packed_bytes = {{1, 2}, {3, 4}, {5, 6}, {7, 8}};
   TensorHandle tensor(
       {.name = "emb_i4_per_channel",
        .type = Type::kI4,
@@ -125,17 +122,14 @@ TEST(QuantizedEmbeddingTest, Int4PerChannelUsesLogicalShape) {
   const std::vector<int32_t> tokens = {1, 0};
   std::vector<float> output(tokens.size() * 4);
   ASSERT_THAT(table->Lookup(tokens, absl::MakeSpan(output)), IsOk());
-  EXPECT_THAT(output, ElementsAre(10.0f, 12.0f, 14.0f, -16.0f,
-                                  1.0f, 2.0f, 3.0f, 4.0f));
+  EXPECT_THAT(output,
+              ElementsAre(10.0f, 12.0f, 14.0f, -16.0f, 1.0f, 2.0f, 3.0f, 4.0f));
 }
 
-TEST(QuantizedEmbeddingTest, Int4OddEmbeddingDimIsRejected) {
+TEST(QuantizedEmbeddingTest, Int4EmbeddingDimNotMultipleOfTwoIsRejected) {
   // Three 4-bit elements per row cannot be byte aligned, so consecutive rows
   // would straddle a byte boundary.
-  const std::vector<uint8_t> packed_bytes = {
-      0x21, 0x03,  // row 0
-      0x65, 0x07   // row 1
-  };
+  const std::vector<int4_t> packed_bytes = {{1, 2}, {3, 4}, {5, 6}, {7, 8}};
   TensorHandle tensor(
       {.name = "emb_i4_odd",
        .type = Type::kI4,
@@ -152,16 +146,7 @@ TEST(QuantizedEmbeddingTest, Int4OddEmbeddingDimIsRejected) {
 
 TEST(QuantizedEmbeddingTest, Int4BlockwisePackedLookup) {
   // Vocab size = 2, Embedding dim = 4 (block size = 2, so 2 blocks per row)
-  // Row 0 values: [1, -2, 3, -4]
-  //   nibble 0 (low) = 1 (0x1), nibble 1 (high) = -2 (0xE)
-  //   nibble 2 (low) = 3 (0x3), nibble 3 (high) = -4 (0xC)
-  // Row 1 values: [-8, 7, 0, -1]
-  //   nibble 0 (low) = -8 (0x8), nibble 1 (high) = 7 (0x7)
-  //   nibble 2 (low) = 0 (0x0), nibble 3 (high) = -1 (0xF)
-  const std::vector<uint8_t> packed_bytes = {
-      0xE1, 0xC3,  // row 0
-      0x78, 0xF0   // row 1
-  };
+  const std::vector<int4_t> packed_bytes = {{1, -2}, {3, -4}, {-8, 7}, {0, -1}};
 
   // 2 blocks per row:
   // row 0 block 0 scale = 0.5, row 0 block 1 scale = 2.0
@@ -241,10 +226,7 @@ TEST(QuantizedEmbeddingTest, LookupSingleTokenFp32) {
 }
 
 TEST(QuantizedEmbeddingTest, LookupSingleTokenInt4) {
-  const std::vector<uint8_t> packed_bytes = {
-      0xE1, 0xC3,  // row 0: [1, -2, 3, -4]
-      0x78, 0xF0   // row 1: [-8, 7, 0, -1]
-  };
+  const std::vector<int4_t> packed_bytes = {{1, -2}, {3, -4}, {-8, 7}, {0, -1}};
   std::vector<float> scales = {0.5f, 2.0f, 1.0f, 0.25f};
 
   TensorHandle tensor(
@@ -285,13 +267,8 @@ TEST(QuantizedEmbeddingTest, LookupPerLayerSingleToken) {
 
 TEST(QuantizedEmbeddingTest, Int4BlockwisePhysicalHalvedShapeAutoDeduce) {
   // Physical packed shape = {2, 2} (2 rows, 2 bytes per row = 4 4-bit elements
-  // per row) Row 0 values: [1, -2, 3, -4] -> bytes: 0xE1, 0xC3 Row 1 values:
-  // [-8, 7, 0, -1] -> bytes: 0x78, 0xF0
-  std::vector<uint8_t> packed_bytes = {
-      0xE1, 0xC3,  // row 0
-      0x78, 0xF0   // row 1
-  };
-  auto buffer = OwningCpuBuffer::Copy<Type::kU8>(packed_bytes);
+  // per row)
+  const std::vector<int4_t> packed_bytes = {{1, -2}, {3, -4}, {-8, 7}, {0, -1}};
 
   // 2 blocks per row (block_size = 2, logical dim = 4):
   std::vector<float> scales = {0.5f, 2.0f, 1.0f, 0.25f};
@@ -303,7 +280,7 @@ TEST(QuantizedEmbeddingTest, Int4BlockwisePhysicalHalvedShapeAutoDeduce) {
   TensorHandle tensor({.name = "emb_i4_packed",
                        .type = Type::kI4,
                        .shape = {2, 2},
-                       .buffer = buffer,
+                       .buffer = packed_bytes,
                        .quantization = quant});
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::unique_ptr<GemmaEmbeddingTable> table,
@@ -321,11 +298,7 @@ TEST(QuantizedEmbeddingTest, Int4BlockwisePhysicalHalvedShapeAutoDeduce) {
 
 TEST(QuantizedEmbeddingTest, Int4BlockwisePhysicalHalvedShapeWithExpectedDim) {
   // Physical packed shape = {2, 2}, explicitly passing expected_emb_dim = 4
-  std::vector<uint8_t> packed_bytes = {
-      0xE1, 0xC3,  // row 0
-      0x78, 0xF0   // row 1
-  };
-  auto buffer = OwningCpuBuffer::Copy<Type::kU8>(packed_bytes);
+  const std::vector<int4_t> packed_bytes = {{1, -2}, {3, -4}, {-8, 7}, {0, -1}};
 
   std::vector<float> scales = {0.5f, 2.0f, 1.0f, 0.25f};
   auto quant = std::make_shared<BlockwiseQuantization>(
@@ -335,12 +308,12 @@ TEST(QuantizedEmbeddingTest, Int4BlockwisePhysicalHalvedShapeWithExpectedDim) {
   TensorHandle tensor({.name = "emb_i4_packed",
                        .type = Type::kI4,
                        .shape = {2, 2},
-                       .buffer = buffer,
+                       .buffer = packed_bytes,
                        .quantization = quant});
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::unique_ptr<GemmaEmbeddingTable> table,
-                                  GemmaEmbeddingTable::Create(
-                                      tensor, /*expected_emb_dim=*/4));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<GemmaEmbeddingTable> table,
+      GemmaEmbeddingTable::Create(tensor, /*expected_emb_dim=*/4));
 
   EXPECT_EQ(table->EmbeddingDim(), 4);
 
@@ -361,14 +334,13 @@ TEST(QuantizedEmbeddingTest, Int8BlockwiseAsymmetricLookup) {
   std::vector<float> scales = {0.1f, 0.2f, 0.5f, 1.0f};
   std::vector<int64_t> zero_points = {2, -5, 1, -2};
 
-  TensorHandle tensor(
-      {.name = "emb_i8_bw_asym",
-       .type = Type::kI8,
-       .shape = {2, 4},
-       .buffer = std::make_shared<SpanCpuBuffer>(data),
-       .quantization = std::make_shared<BlockwiseQuantization>(
-           scales, zero_points, /*block_size=*/2,
-           /*quantized_dimension=*/0)});
+  TensorHandle tensor({.name = "emb_i8_bw_asym",
+                       .type = Type::kI8,
+                       .shape = {2, 4},
+                       .buffer = std::make_shared<SpanCpuBuffer>(data),
+                       .quantization = std::make_shared<BlockwiseQuantization>(
+                           scales, zero_points, /*block_size=*/2,
+                           /*quantized_dimension=*/0)});
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::unique_ptr<GemmaEmbeddingTable> table,
                                   GemmaEmbeddingTable::Create(tensor));
@@ -386,21 +358,17 @@ TEST(QuantizedEmbeddingTest, Int8BlockwiseAsymmetricLookup) {
 }
 
 TEST(QuantizedEmbeddingTest, Int4BlockwiseAsymmetricLookup) {
-  const std::vector<uint8_t> packed_bytes = {
-      0xE1, 0xC3,  // row 0: [1, -2, 3, -4]
-      0x78, 0xF0   // row 1: [-8, 7, 0, -1]
-  };
+  const std::vector<int4_t> packed_bytes = {{1, -2}, {3, -4}, {-8, 7}, {0, -1}};
   std::vector<float> scales = {0.5f, 2.0f, 1.0f, 0.25f};
   std::vector<int64_t> zero_points = {1, -1, 2, -2};
 
-  TensorHandle tensor(
-      {.name = "emb_i4_bw_asym",
-       .type = Type::kI4,
-       .shape = {2, 4},
-       .buffer = std::make_shared<SpanCpuBuffer>(packed_bytes),
-       .quantization = std::make_shared<BlockwiseQuantization>(
-           scales, zero_points, /*block_size=*/2,
-           /*quantized_dimension=*/0)});
+  TensorHandle tensor({.name = "emb_i4_bw_asym",
+                       .type = Type::kI4,
+                       .shape = {2, 4},
+                       .buffer = packed_bytes,
+                       .quantization = std::make_shared<BlockwiseQuantization>(
+                           scales, zero_points, /*block_size=*/2,
+                           /*quantized_dimension=*/0)});
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::unique_ptr<GemmaEmbeddingTable> table,
                                   GemmaEmbeddingTable::Create(tensor));
@@ -415,6 +383,58 @@ TEST(QuantizedEmbeddingTest, Int4BlockwiseAsymmetricLookup) {
                                  // row 1: [(-8-2)*1.0, (7-2)*1.0,
                                  // (0-(-2))*0.25, (-1-(-2))*0.25]
                                  -10.0f, 5.0f, 0.5f, 0.25f}));
+}
+
+TEST(QuantizedEmbeddingTest, Int2BlockwiseAsymmetricLookup) {
+  const std::vector<int2_t> packed_bytes = {{1, -2, 0, -1}, {-1, 0, 1, -2}};
+  std::vector<float> scales = {0.5f, 2.0f, 1.0f, 0.25f};
+  std::vector<int64_t> zero_points = {1, -1, 2, -2};
+
+  TensorHandle tensor({.name = "emb_i2_bw_asym",
+                       .type = Type::kI2,
+                       .shape = {2, 4},
+                       .buffer = packed_bytes,
+                       .quantization = std::make_shared<BlockwiseQuantization>(
+                           scales, zero_points, /*block_size=*/2,
+                           /*quantized_dimension=*/0)});
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::unique_ptr<GemmaEmbeddingTable> table,
+                                  GemmaEmbeddingTable::Create(tensor));
+
+  EXPECT_EQ(table->VocabSize(), 2);
+  EXPECT_EQ(table->EmbeddingDim(), 4);
+
+  std::vector<int32_t> tokens = {0, 1};
+  std::vector<float> output(tokens.size() * 4);
+  ASSERT_THAT(table->Lookup(tokens, absl::MakeSpan(output)), IsOk());
+  EXPECT_THAT(output, Pointwise(FloatNearMatcher(1e-5f),
+                                {// row 0: [(1-1)*0.5, (-2-1)*0.5,
+                                 // (0-(-1))*2.0, (-1-(-1))*2.0]
+                                 0.0f, -1.5f, 2.0f, 0.0f,
+                                 // row 1: [(-1-2)*1.0, (0-2)*1.0,
+                                 // (1-(-2))*0.25, (-2-(-2))*0.25]
+                                 -3.0f, -2.0f, 0.75f, 0.0f}));
+
+  EXPECT_THAT(table->Lookup(/*token_id=*/1),
+              IsOkAndHolds(Pointwise(FloatNearMatcher(1e-5f),
+                                     {-3.0f, -2.0f, 0.75f, 0.0f})));
+}
+
+TEST(QuantizedEmbeddingTest, Int2EmbeddingDimNotMultipleOfFourIsRejected) {
+  const std::vector<int2_t> packed_bytes = {{1, -2, 0, -1}, {-1, 0, 1, -2}};
+  TensorHandle tensor(
+      {.name = "emb_i2_odd",
+       .type = Type::kI2,
+       .shape = {2, 2},
+       .buffer = packed_bytes,
+       .quantization = std::make_shared<BlockwiseQuantization>(
+           std::vector<float>{0.5f, 1.0f}, std::vector<int64_t>{0},
+           /*block_size=*/2,
+           /*quantized_dimension=*/0)});
+
+  EXPECT_THAT(GemmaEmbeddingTable::Create(tensor), Not(IsOk()));
+  EXPECT_THAT(GemmaEmbeddingTable::Create(tensor, /*expected_emb_dim=*/2),
+              Not(IsOk()));
 }
 
 }  // namespace

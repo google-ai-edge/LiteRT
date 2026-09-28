@@ -19,12 +19,21 @@
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 
 namespace litert::ml_drift {
+
+// Whether the fused Flash-Attention prefill/decode kernels can be used on this
+// GPU. Their source is Metal Shading Language (`simd_sum`, `simd_max`,
+// `threadgroup` memory), so they are only valid on the Metal backend of an
+// Apple GPU. `GpuInfo::IsApple()` alone is a vendor check and is also true for
+// WebGPU and OpenCL running on Apple hardware, where the kernels would not
+// compile. Shape-specific conditions are checked separately by the caller.
+bool SupportsFusedSdpaKernels(const ::ml_drift::GpuInfo& gpu_info);
 
 absl::Status BuildSdpaTransposedGpuGraph(
     const std::vector<uint32_t>& input_ids, uint32_t output_id,

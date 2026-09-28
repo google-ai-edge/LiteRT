@@ -118,9 +118,7 @@ cc_library(
     ] + select({
         "//litert:without_builtin_ops": [],
         "//conditions:default": ["//tflite/kernels:builtin_ops"],
-    }) + [
-        "@tsl//tsl/platform",
-    ],
+    }),
 )
 
 cc_library(

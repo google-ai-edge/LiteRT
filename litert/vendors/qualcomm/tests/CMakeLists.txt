@@ -15,8 +15,6 @@ target_sources(litert_test_common
 target_include_directories(litert_test_common PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../../test
     ${CMAKE_CURRENT_SOURCE_DIR}/../../
-    ${TENSORFLOW_SOURCE_DIR}
-    ${TENSORFLOW_SOURCE_DIR}/third_party/xla/third_party/tsl
 )
 
 target_link_libraries(litert_test_common PUBLIC

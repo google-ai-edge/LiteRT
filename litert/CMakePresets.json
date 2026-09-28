@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 3,
   "configurePresets": [
     {
       "name": "default",
@@ -54,16 +54,20 @@
       }
     },
     {
-      "name": "linux-aarch64-iq8",
-      "displayName": "Linux aarch64 (IQ8275)",
+      "name": "linux-aarch64-oe-gcc11.2",
+      "displayName": "Linux aarch64 OpenEmbedded (GCC 11.2)",
       "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/cmake_build_linux_aarch64_8275",
-      "toolchainFile": "${sourceDir}/vendors/qualcomm/toolchain/linux_aarch64_iq8275.toolchain.cmake",
+      "binaryDir": "${sourceDir}/cmake_build_linux_aarch64_oe_gcc11_2",
+      "toolchainFile": "${sourceDir}/vendors/qualcomm/toolchain/linux_aarch64_oe_gcc11_2.toolchain.cmake",
       "cacheVariables": {
         "CMAKE_SYSTEM_NAME": "Linux",
         "CMAKE_SYSTEM_PROCESSOR": "aarch64",
         "CMAKE_BUILD_TYPE": "Release",
-        "LITERT_AUTO_BUILD_TFLITE": "ON"
+        "LITERT_ENABLE_GPU": "OFF",
+        "TFLITE_ENABLE_GPU": "OFF",
+        "LITERT_AUTO_BUILD_TFLITE": "ON",
+        "LITERT_HOST_C_COMPILER": "/usr/bin/gcc",
+        "LITERT_HOST_CXX_COMPILER": "/usr/bin/g++"
       }
     },
     {

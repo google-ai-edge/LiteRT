@@ -14,8 +14,8 @@
 
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension", "pywrap_binaries", "pywrap_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
-load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
 
 WINDOWS_PYBIND_UNDEFS = select({
     "//litert:windows": [
@@ -38,9 +38,9 @@ cc_library(
     deps = [
         "//tflite/converter:converter_flags_proto_cc",
         "//tflite/converter:model_flags_proto_cc",
+        "//third_party/py/python_runtime:headers",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-        "@xla//third_party/python_runtime:headers",
     ],
 )
 

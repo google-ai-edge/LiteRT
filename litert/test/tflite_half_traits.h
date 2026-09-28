@@ -106,7 +106,7 @@ class RangedGenerator<tflite::half, Dist> final
 
   template <typename Rng>
   DataType operator()(Rng& rng) {
-    return static_cast<DataType>(dist_(rng));
+    return GetOrFlush(static_cast<DataType>(dist_(rng)));
   }
 
   DataType Max() const override { return static_cast<DataType>(dist_.max()); }

@@ -57,6 +57,7 @@ litert_lib(
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -105,6 +106,7 @@ litert_lib(
         "//litert/cc/internal:litert_shared_library",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -118,6 +120,7 @@ litert_lib(
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
+        "@com_google_absl//absl/types:span",
     ] + select({
         "//litert:android": [":adapter_odc"],
         "//conditions:default": [":adapter_aot"],
@@ -142,6 +145,7 @@ cc_test(
         # Sanitizer runtime doesn't work with anything that uses dlopen.
         "nosan",
         "manual",
+        "noheapcheck",
     ],
     # This test can only be run on Android and Linux.
     target_compatible_with = select({
@@ -151,14 +155,17 @@ cc_test(
     }),
     deps = [
         ":adapter",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
+        "//litert/core/model:model_serialize",
         "//litert/test:common",
+        "//litert/test:load_test_model",
         "//litert/test:matchers",
         "//litert/vendors/google_tensor/compiler:google_tensor_options_cc_proto",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_googletest//:gtest_main",
+        "@com_google_googletest//:gtest_main_no_heapcheck",
     ],
 )

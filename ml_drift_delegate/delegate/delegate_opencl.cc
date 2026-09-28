@@ -632,8 +632,8 @@ TfLiteDelegatePtr CreateMlDriftClDelegate(MlDriftDelegateOptionsPtr options,
     }
   }
 
-  if (auto result = ::ml_drift::cl::LoadOpenCL(); !result.ok()) {
-    ABSL_LOG(ERROR) << "Failed to open OpenCL library: " << result;
+  if (!IsOpenClSupported()) {
+    ABSL_LOG(ERROR) << "OpenCL is not supported on this platform.";
     return {nullptr, LiteRtDeleteMlDriftClDelegate};
   }
 
@@ -708,6 +708,17 @@ TfLiteDelegatePtr CreateMlDriftClDelegate(MlDriftDelegateOptionsPtr options,
     delegate->flags |= kTfLiteDelegateFlagsHintFullyDelegatedToSingleDelegate;
   }
   return delegate;
+}
+
+bool IsOpenClSupported() {
+  if (!::ml_drift::cl::LoadOpenCL().ok()) {
+    return false;
+  }
+  ::ml_drift::cl::CLDevice device;
+  if (!::ml_drift::cl::CreateDefaultGPUDevice(&device).ok()) {
+    return false;
+  }
+  return true;
 }
 
 }  // namespace litert::ml_drift

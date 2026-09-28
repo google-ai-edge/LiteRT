@@ -1,6 +1,8 @@
 name: "windows_x86_64"
 on:
   push:
+    branches:
+    - main
     tags:
     - v*..
   pull_request:
@@ -46,6 +48,8 @@ jobs:
               - '!g3doc/**'
               - '!site/**'
               - '!LICENSE'
+              - '!litert/objc/**'
+              - '!litert/swift/**'
       - name: Determine if build should run
         id: check
         shell: bash

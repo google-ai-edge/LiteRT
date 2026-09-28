@@ -306,7 +306,8 @@ class LitertBuffer : public Buffer {
     auto env = env_;
 
     auto addr_or = shared_tb->Lock(litert::TensorBuffer::LockMode::kRead);
-    ABSL_CHECK(addr_or.HasValue());
+    ABSL_CHECK(addr_or.HasValue())
+        << "shared_tb->Lock(kRead) failed: " << addr_or.Error().Message();
     auto size_or = shared_tb->PackedSize();
     ABSL_CHECK(size_or.HasValue());
 
@@ -326,7 +327,9 @@ class LitertBuffer : public Buffer {
     auto env = env_;
 
     auto addr_or = shared_tb->Lock(litert::TensorBuffer::LockMode::kReadWrite);
-    ABSL_CHECK(addr_or.HasValue());
+    ABSL_CHECK(addr_or.HasValue())
+        << "shared_tb->Lock(kReadWrite) failed: "
+        << addr_or.Error().Message();
     auto size_or = shared_tb->PackedSize();
     ABSL_CHECK(size_or.HasValue());
 

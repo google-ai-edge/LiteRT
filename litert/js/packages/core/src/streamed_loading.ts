@@ -18,6 +18,7 @@ import {CompiledModel} from './compiled_model';
 import {getGlobalLiteRt} from './global_litert';
 import {Model} from './model';
 import {CompileOptions, fillCompileOptions} from './model_types';
+import {EmscriptenVector, WebWeightUploadRequest} from './wasm_binding_types';
 
 /**
  * A global lock to ensure only one model is being compiled at a time.
@@ -25,13 +26,6 @@ import {CompileOptions, fillCompileOptions} from './model_types';
  * for streamed weight loading.
  */
 let compilationLock: Promise<void> = Promise.resolve();
-
-interface WeightRequest {
-  id: number;
-  wgpuBufferId: number;
-  offset: number;
-  length: number;
-}
 
 /**
  * Loads a model from a flatbuffer and streams its weights from a separate
@@ -67,93 +61,98 @@ export async function loadModelAndWeights(
   try {
     // Register the callback for this specific loading session
     wasm.registerStreamWeightsCallback(async (
-        tflIds: Int32Array,
-        wgpuBufferIds: Uint32Array,
-        offsets: Float64Array,
-        lengths: Float64Array,
+        queue: GPUQueue,
+        wasmRequests: EmscriptenVector<WebWeightUploadRequest>,
         ) => {
-      // Sort the requests by offset so we can read the stream sequentially
-      const requests: WeightRequest[] = [];
-      if (tflIds.length !== wgpuBufferIds.length) {
-        throw new Error(
-            `Stream weights callback received arrays of different lengths: ` +
-            `tflIds=${tflIds.length}, wgpuBufferIds=${wgpuBufferIds.length}, `);
-      }
-      for (let i = 0; i < tflIds.length; i++) {
-        requests.push({
-          id: tflIds[i],
-          wgpuBufferId: wgpuBufferIds[i],
-          offset: offsets[i],
-          length: lengths[i],
-        });
-      }
-      requests.sort((a, b) => a.offset - b.offset);
-      console.log(`[StreamWeights] Starting loading session for ${requests.length} tensors:`, JSON.stringify(requests));
-
-      const reader = weightsStream.getReader();
-      let streamOffset = 0;
-      let buffer = new Uint8Array(0);
-      let reqIndex = 0;
-
       try {
-        while (reqIndex < requests.length) {
-          const req = requests[reqIndex];
-          const relStart = req.offset - streamOffset;
-          const relEnd = relStart + req.length;
-          if (relEnd <= buffer.length) {
-            // We have enough data to fulfill the current tensor request
-            if (relStart < 0) {
-              throw new Error(
-                  `Stream logic error: weight starts before current buffer (req.offset=${
-                      req.offset}, streamOffset=${streamOffset}).`);
-            }
-
-            let weightData = buffer.subarray(relStart, relEnd);
-            // WebGPU writeBuffer requires 4-byte alignment for the data size.
-            // If it's not aligned, we create a padded copy.
-            if (weightData.byteLength % 4 !== 0) {
-              const paddedSize = (weightData.byteLength + 3) & ~3;
-              const paddedData = new Uint8Array(paddedSize);
-              paddedData.set(weightData);
-              weightData = paddedData;
-            }
-
-            const gpuBuffer = wasm.WebGPU.getJsObject(req.wgpuBufferId);
-            if (!gpuBuffer) {
-              throw new Error(
-                  `Failed to find GPUBuffer for ID: ${req.wgpuBufferId}`);
-            }
-            console.log(`[StreamWeights] Writing ${weightData.byteLength} bytes to GPUBuffer ${req.wgpuBufferId} (tflId=${req.id}, first 5 bytes=${Array.from(weightData.slice(0, 5))})`);
-            env.webGpuDevice!.queue.writeBuffer(gpuBuffer, 0, weightData);
-            reqIndex++;
-          } else {
-            // Need more data from the stream
-            const {done, value} = await reader.read();
-            if (done) {
-              throw new Error(
-                  `Stream ended before all weights were loaded.`);
-            }
-            const newBuffer = new Uint8Array(buffer.length + value.length);
-            newBuffer.set(buffer);
-            newBuffer.set(value, buffer.length);
-            buffer = newBuffer;
+        // Sort the requests by offset so we can read the stream sequentially
+        const requests: WebWeightUploadRequest[] = [];
+        try {
+          const count = wasmRequests.size();
+          for (let i = 0; i < count; i++) {
+            requests.push(wasmRequests.get(i)!);
           }
-
-          // Compact buffer to free up memory
-          if (reqIndex < requests.length) {
-            const nextStartRel = requests[reqIndex].offset - streamOffset;
-            const bytesToDiscard = Math.min(nextStartRel, buffer.length);
-            // Compact if we have at least 1MB of processed data, or if we can
-            // discard the entire buffer
-            if (bytesToDiscard > 1024 * 1024 ||
-                bytesToDiscard === buffer.length) {
-              buffer = buffer.slice(bytesToDiscard);
-              streamOffset += bytesToDiscard;
-            }
-          }
+        } finally {
+          wasmRequests.delete();
         }
-      } finally {
-        reader.releaseLock();
+        requests.sort((a, b) => a.offset - b.offset);
+        console.log(
+            `[StreamWeights] Starting loading session for ${
+                requests.length} tensors:`,
+            JSON.stringify(requests));
+
+        const reader = weightsStream.getReader();
+        let streamOffset = 0;
+        let buffer = new Uint8Array(0);
+        let reqIndex = 0;
+
+        try {
+          while (reqIndex < requests.length) {
+            const req = requests[reqIndex];
+            const relStart = req.offset - streamOffset;
+            const relEnd = relStart + req.length;
+            if (relEnd <= buffer.length) {
+              // We have enough data to fulfill the current tensor request
+              if (relStart < 0) {
+                throw new Error(
+                    `Stream logic error: weight starts before current buffer (req.offset=${
+                        req.offset}, streamOffset=${streamOffset}).`);
+              }
+
+              let weightData = buffer.subarray(relStart, relEnd);
+              // WebGPU writeBuffer requires 4-byte alignment for the data size.
+              // If it's not aligned, we create a padded copy.
+              if (weightData.byteLength % 4 !== 0) {
+                const paddedSize = (weightData.byteLength + 3) & ~3;
+                const paddedData = new Uint8Array(paddedSize);
+                paddedData.set(weightData);
+                weightData = paddedData;
+              }
+
+              const gpuBuffer = wasm.WebGPU.getJsObject(req.wgpuBufferId);
+              if (!gpuBuffer) {
+                throw new Error(
+                    `Failed to find GPUBuffer for ID: ${req.wgpuBufferId}`);
+              }
+              console.log(
+                  `[StreamWeights] Writing ${weightData.byteLength} bytes to GPUBuffer ${
+                      req.wgpuBufferId} (tflId=${req.tflId}, first 5 bytes=${
+                      Array.from(weightData.slice(0, 5))})`);
+              queue.writeBuffer(gpuBuffer, 0, weightData);
+              reqIndex++;
+            } else {
+              // Need more data from the stream
+              const {done, value} = await reader.read();
+              if (done) {
+                throw new Error(
+                    `Stream ended before all weights were loaded.`);
+              }
+              const newBuffer = new Uint8Array(buffer.length + value.length);
+              newBuffer.set(buffer);
+              newBuffer.set(value, buffer.length);
+              buffer = newBuffer;
+            }
+
+            // Compact buffer to free up memory
+            if (reqIndex < requests.length) {
+              const nextStartRel = requests[reqIndex].offset - streamOffset;
+              const bytesToDiscard = Math.min(nextStartRel, buffer.length);
+              // Compact if we have at least 1MB of processed data, or if we can
+              // discard the entire buffer
+              if (bytesToDiscard > 1024 * 1024 ||
+                  bytesToDiscard === buffer.length) {
+                buffer = buffer.slice(bytesToDiscard);
+                streamOffset += bytesToDiscard;
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+        return true;
+      } catch (e) {
+        console.error('Error in streamWeightsOnWeb:', e);
+        return false;
       }
     });
 

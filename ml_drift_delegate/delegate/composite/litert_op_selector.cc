@@ -123,10 +123,17 @@ void LiteRtOpSelector::ParamTensorToBuffer(
   ::ml_drift::TensorDescriptor new_desc = param_tensor.tensor_desc;
   new_desc.SetStorageType(::ml_drift::TensorStorageType::BUFFER);
   auto new_param_tensor = model_builder->AddTensor(new_desc);
-  if (!model_builder->UpdateOutputTensor(param_tensor, new_param_tensor.id)
-           .ok()) {
-    return;
-  }
+  // Emit an explicit copy instead of re-pointing the producer of `param_id` at
+  // `new_param_tensor`. The param tensor can be read by other consumers that
+  // expect the original (non-BUFFER) storage type, e.g. the channel slices that
+  // the ring-buffer SDPA path applies to it. Re-pointing the producer would
+  // leave `param_id` without any producer, so those consumers would read
+  // uninitialized memory.
+  //
+  // When the param tensor has no other consumer, `LinkNodes()` merges this copy
+  // back into the producer, which yields exactly the same graph as re-pointing
+  // the producer would have.
+  model_builder->Copy(param_tensor, new_param_tensor);
   replaced_tensors_[param_id] = std::make_unique<::ml_drift::Value>(
       ::ml_drift::Value{new_param_tensor.id, inputs[param_index]->tensor,
                         inputs[param_index]->quant_params});

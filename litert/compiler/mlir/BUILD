@@ -149,6 +149,7 @@ cc_library(
         "//tflite/converter/quantization/common/quantization_lib:quantization_config",
         "//tflite/converter/stablehlo:legalize_stablehlo_to_vhlo_pass",
         "//tflite/converter/stablehlo:prepare_hlo",
+        "//third_party/py/python_runtime:headers",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -174,7 +175,6 @@ cc_library(
         "@stablehlo//:stablehlo_passes",
         "@stablehlo//:stablehlo_passes_optimization",
         "@stablehlo//:vhlo_ops",
-        "@xla//third_party/python_runtime:headers",
     ],
 )
 

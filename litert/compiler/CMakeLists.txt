@@ -26,7 +26,6 @@ target_include_directories(litert_compiler_plugin
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}

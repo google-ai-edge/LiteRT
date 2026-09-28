@@ -161,7 +161,7 @@ class SafetensorLoader {
   std::vector<std::string> GetTensorNames() const;
 
   // Gets tensor info by name.
-  absl::StatusOr<SafetensorTensorInfo> GetTensorInfo(
+  absl::StatusOr<const SafetensorTensorInfo&> GetTensorInfo(
       absl::string_view name) const;
 
   // Gets the quantization config, if the checkpoint declares one.

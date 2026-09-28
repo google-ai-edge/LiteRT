@@ -131,10 +131,7 @@ cc_library(
 cc_test(
     name = "ml_drift_delegate_create_test",
     srcs = ["ml_drift_delegate_create_test.cc"],
-    tags = [
-        "no_oss",
-        "requires-gpu-nvidia",
-    ],
+    tags = ["no_oss"],
     deps = [
         ":ml_drift_delegate_create",
         "//litert/c:litert_any",
@@ -448,7 +445,7 @@ cc_binary(
         "nolinux",
         "nomacos",
         "nowindows",
-        "requires-gpu-nvidia",
+        "requires-gpu-sm90",  # OpenCL/MIG-compatible
     ],
     deps = [
         ":ml_drift_opengl_accelerator",  # buildcleaner: keep

@@ -42,6 +42,8 @@ limitations under the License.
 #include "absl/algorithm/container.h"
 #include "absl/log/absl_check.h"
 #include "absl/log/absl_log.h"
+#include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "absl/types/span.h"
 #include "Eigen/Core"  // from @eigen_archive
 #include "flatbuffers/buffer.h"  // from @flatbuffers
@@ -63,7 +65,6 @@ limitations under the License.
 #include "tflite/types/fp16.h"
 #include "tflite/types/half.h"
 #include "tflite/util.h"
-#include "tsl/platform/logging.h"
 
 namespace tflite {
 

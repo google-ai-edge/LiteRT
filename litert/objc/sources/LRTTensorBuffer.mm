@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "litert/cc/litert_element_type.h"
@@ -53,25 +54,72 @@ bool IsMetalTextureType(LRTTensorBufferType type) {
   }
 }
 
-bool ValidateAndExtractDimensions(NSArray<NSNumber *> *dimensions,
-                                  litert::Dimensions &outDimensions, NSError **error) {
+/**
+ * Returns the C++ environment backing @c environment, or nullptr if there is none.
+ *
+ * Messaging a nil @c environment returns nullptr as well, so this also covers a nil argument.
+ */
+litert::Environment *_Nullable ValidatedCppEnvironment(LRTEnvironment *_Nullable environment,
+                                                       NSError *_Nullable *_Nullable error) {
+  litert::Environment *cppEnvironment = [environment cppEnvironment];
+  if (cppEnvironment == nullptr) {
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
+  }
+  return cppEnvironment;
+}
+
+/** Returns the tensor type described by @c elementType and @c dimensions, or nullopt if invalid. */
+std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
+    LRTElementType elementType, NSArray<NSNumber *> *_Nullable dimensions,
+    NSError *_Nullable *_Nullable error) {
+  if (elementType == LRTElementTypeNone) {
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTElementType required");
+    return std::nullopt;
+  }
   if (dimensions == nil) {
     LRTSetError(error, LRTErrorCodeInvalidArgument, @"Dimensions array cannot be nil");
-    return false;
+    return std::nullopt;
   }
-  outDimensions.clear();
-  outDimensions.reserve(dimensions.count);
+
+  litert::Dimensions tensorDimensions;
+  tensorDimensions.reserve(dimensions.count);
   for (NSNumber *dimension in dimensions) {
     if (dimension == nil || dimension.intValue < 0) {
       LRTSetError(error, LRTErrorCodeInvalidArgument, @"Dimension values must be non-negative");
-      return false;
+      return std::nullopt;
     }
-    outDimensions.push_back(dimension.intValue);
+    tensorDimensions.push_back(dimension.intValue);
   }
-  return true;
+  return litert::RankedTensorType(static_cast<litert::ElementType>(elementType),
+                                  litert::Layout(tensorDimensions));
 }
 
 }  // namespace
+
+@interface LRTTensorBuffer ()
+
+/**
+ * Wraps Metal memory owned by the caller in a tensor buffer.
+ *
+ * @param environment LiteRT environment instance.
+ * @param metalMemory The @c id<MTLBuffer> or @c id<MTLTexture> to wrap.
+ * @param bufferType Buffer type describing @c metalMemory.
+ * @param sizeBytes Size of @c metalMemory in bytes; pass 0 for textures, whose size LiteRT
+ * derives from the tensor type.
+ * @param elementType Data element type.
+ * @param dimensions Tensor shape dimensions array.
+ * @param error Out-parameter populated on failure.
+ * @return A new LRTTensorBuffer instance, or nil on failure.
+ */
++ (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                         metalMemory:(id)metalMemory
+                                          bufferType:(LRTTensorBufferType)bufferType
+                                           sizeBytes:(NSUInteger)sizeBytes
+                                         elementType:(LRTElementType)elementType
+                                          dimensions:(NSArray<NSNumber *> *)dimensions
+                                               error:(NSError **)error;
+
+@end
 
 @implementation LRTTensorBuffer {
   std::unique_ptr<litert::TensorBuffer> _cppTensorBuffer;
@@ -123,14 +171,8 @@ bool ValidateAndExtractDimensions(NSArray<NSNumber *> *dimensions,
                                          elementType:(LRTElementType)elementType
                                           dimensions:(NSArray<NSNumber *> *)dimensions
                                                error:(NSError **)error {
-  if (environment == nil) {
-    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
-    return nil;
-  }
-
-  litert::Environment *cppEnvironment = [environment cppEnvironment];
-  if (!cppEnvironment) {
-    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
+  litert::Environment *cppEnvironment = ValidatedCppEnvironment(environment, error);
+  if (cppEnvironment == nullptr) {
     return nil;
   }
 
@@ -139,27 +181,19 @@ bool ValidateAndExtractDimensions(NSArray<NSNumber *> *dimensions,
     return nil;
   }
 
-  if (elementType == LRTElementTypeNone) {
-    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTElementType required");
-    return nil;
-  }
-
   if (size == 0) {
     LRTSetError(error, LRTErrorCodeInvalidArgument, @"Buffer size must be greater than 0");
     return nil;
   }
 
-  litert::Dimensions tensorDimensions;
-  if (!ValidateAndExtractDimensions(dimensions, tensorDimensions, error)) {
+  std::optional<litert::RankedTensorType> tensorType =
+      RankedTensorTypeFromDimensions(elementType, dimensions, error);
+  if (!tensorType.has_value()) {
     return nil;
   }
 
-  litert::RankedTensorType tensorType(static_cast<litert::ElementType>(elementType),
-                                      litert::Layout(tensorDimensions));
-
   auto bufferResult = litert::TensorBuffer::CreateManaged(
-      *cppEnvironment, static_cast<litert::TensorBufferType>(bufferType), tensorType, size);
-
+      *cppEnvironment, static_cast<litert::TensorBufferType>(bufferType), *tensorType, size);
   if (!bufferResult.HasValue()) {
     LRTSetErrorFromCppError(error, bufferResult.Error());
     return nil;
@@ -174,47 +208,17 @@ bool ValidateAndExtractDimensions(NSArray<NSNumber *> *dimensions,
                                          elementType:(LRTElementType)elementType
                                           dimensions:(NSArray<NSNumber *> *)dimensions
                                                error:(NSError **)error {
-  if (environment == nil) {
-    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
-    return nil;
-  }
-
-  litert::Environment *cppEnvironment = [environment cppEnvironment];
-  if (!cppEnvironment) {
-    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
-    return nil;
-  }
-
   if (metalBuffer == nil) {
     LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid MTLBuffer required");
     return nil;
   }
-
-  if (elementType == LRTElementTypeNone) {
-    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTElementType required");
-    return nil;
-  }
-
-  litert::Dimensions tensorDimensions;
-  if (!ValidateAndExtractDimensions(dimensions, tensorDimensions, error)) {
-    return nil;
-  }
-
-  litert::RankedTensorType tensorType(static_cast<litert::ElementType>(elementType),
-                                      litert::Layout(tensorDimensions));
-
-  auto bufferResult = litert::TensorBuffer::CreateFromMetalBuffer(
-      *cppEnvironment, tensorType,
-      static_cast<litert::TensorBufferType>(LRTTensorBufferTypeMetalBuffer),
-      (__bridge void *)metalBuffer, metalBuffer.length);
-
-  if (!bufferResult.HasValue()) {
-    LRTSetErrorFromCppError(error, bufferResult.Error());
-    return nil;
-  }
-
-  auto cppPtr = std::make_unique<litert::TensorBuffer>(std::move(bufferResult.Value()));
-  return [[LRTTensorBuffer alloc] initInternalWithCppTensorBuffer:std::move(cppPtr)];
+  return [self tensorBufferWithEnvironment:environment
+                               metalMemory:metalBuffer
+                                bufferType:LRTTensorBufferTypeMetalBuffer
+                                 sizeBytes:metalBuffer.length
+                               elementType:elementType
+                                dimensions:dimensions
+                                     error:error];
 }
 
 + (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
@@ -222,40 +226,40 @@ bool ValidateAndExtractDimensions(NSArray<NSNumber *> *dimensions,
                                          elementType:(LRTElementType)elementType
                                           dimensions:(NSArray<NSNumber *> *)dimensions
                                                error:(NSError **)error {
-  if (environment == nil) {
-    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
-    return nil;
-  }
-
-  litert::Environment *cppEnvironment = [environment cppEnvironment];
-  if (!cppEnvironment) {
-    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
-    return nil;
-  }
-
   if (metalTexture == nil) {
     LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid MTLTexture required");
     return nil;
   }
+  return [self tensorBufferWithEnvironment:environment
+                               metalMemory:metalTexture
+                                bufferType:LRTTensorBufferTypeMetalTexture
+                                 sizeBytes:0
+                               elementType:elementType
+                                dimensions:dimensions
+                                     error:error];
+}
 
-  if (elementType == LRTElementTypeNone) {
-    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTElementType required");
++ (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                         metalMemory:(id)metalMemory
+                                          bufferType:(LRTTensorBufferType)bufferType
+                                           sizeBytes:(NSUInteger)sizeBytes
+                                         elementType:(LRTElementType)elementType
+                                          dimensions:(NSArray<NSNumber *> *)dimensions
+                                               error:(NSError **)error {
+  litert::Environment *cppEnvironment = ValidatedCppEnvironment(environment, error);
+  if (cppEnvironment == nullptr) {
     return nil;
   }
 
-  litert::Dimensions tensorDimensions;
-  if (!ValidateAndExtractDimensions(dimensions, tensorDimensions, error)) {
+  std::optional<litert::RankedTensorType> tensorType =
+      RankedTensorTypeFromDimensions(elementType, dimensions, error);
+  if (!tensorType.has_value()) {
     return nil;
   }
-
-  litert::RankedTensorType tensorType(static_cast<litert::ElementType>(elementType),
-                                      litert::Layout(tensorDimensions));
 
   auto bufferResult = litert::TensorBuffer::CreateFromMetalBuffer(
-      *cppEnvironment, tensorType,
-      static_cast<litert::TensorBufferType>(LRTTensorBufferTypeMetalTexture),
-      (__bridge void *)metalTexture, /*size_bytes=*/0);
-
+      *cppEnvironment, *tensorType, static_cast<litert::TensorBufferType>(bufferType),
+      (__bridge void *)metalMemory, sizeBytes);
   if (!bufferResult.HasValue()) {
     LRTSetErrorFromCppError(error, bufferResult.Error());
     return nil;
@@ -353,6 +357,8 @@ bool ValidateAndExtractDimensions(NSArray<NSNumber *> *dimensions,
   }
 
   void *hostAddr = *lockResult;
+  // Writing a shorter or longer NSData than the buffer is allowed: extra bytes are dropped and
+  // the remaining bytes of the buffer keep their previous contents.
   size_t copyLength = std::min<size_t>(data.length, self.size);
   std::memcpy(hostAddr, data.bytes, copyLength);
   _cppTensorBuffer->Unlock();

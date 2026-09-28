@@ -21,6 +21,7 @@
 #include <functional>
 #include <iostream>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -72,6 +73,8 @@ ABSL_FLAG(bool, external_tensor_mode, false,
 ABSL_FLAG(bool, print_outputs, false, "Whether to print the output tensors.");
 ABSL_FLAG(bool, enable_constant_tensors_sharing, false,
           "Whether to enable constant tensors sharing.");
+ABSL_FLAG(std::optional<bool>, gpu_use_ir_model, std::nullopt,
+          "Whether to use IrModel instead of legacy GraphFloat32 for GPU.");
 ABSL_FLAG(bool, use_fp16, false, "Whether to use FP32 precision.");
 ABSL_FLAG(bool, deterministic_inputs, true,
           "If true, generate deterministic inputs for reproducibility.");
@@ -244,6 +247,19 @@ Expected<void> ConfigureScopedWeightSource(Options& options) {
   return {};
 }
 
+}  // namespace
+
+namespace tools {
+class GpuNumericsCheck {
+ public:
+  static void SetUseIrModel(GpuOptions& gpu_options, bool use_ir_model) {
+    gpu_options.SetUseIrModel(use_ir_model);
+  }
+};
+}  // namespace tools
+
+namespace {
+
 Expected<Options> GetGpuOptions() {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kGpu|HwAccelerators::kCpu);
@@ -265,6 +281,10 @@ Expected<Options> GetGpuOptions() {
 
   if (absl::GetFlag(FLAGS_enable_constant_tensors_sharing)) {
     gpu_options.EnableConstantTensorSharing(true);
+  }
+  if (auto use_ir_model = absl::GetFlag(FLAGS_gpu_use_ir_model);
+      use_ir_model.has_value()) {
+    tools::GpuNumericsCheck::SetUseIrModel(gpu_options, *use_ir_model);
   }
   LITERT_RETURN_IF_ERROR(ConfigureScopedWeightSource(options));
   return options;

@@ -30,22 +30,27 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/**
+ * Converts C++ string views, which need not be NUL-terminated, into an array of NSStrings.
+ *
+ * Callers index the result by tensor or signature index, so a name that is not valid UTF-8
+ * becomes an empty string rather than being dropped, which would shift every later index.
+ */
 static NSArray<NSString *> *ConvertStringViewsToObjCArray(
     const std::vector<litert::StringView> &stringViews) {
   NSMutableArray<NSString *> *array = [NSMutableArray arrayWithCapacity:stringViews.size()];
-  for (const auto &sv : stringViews) {
-    NSString *str = [[NSString alloc] initWithBytes:sv.data()
-                                             length:sv.size()
-                                           encoding:NSUTF8StringEncoding];
-    if (str != nil) {
-      [array addObject:str];
-    }
+  for (const auto &stringView : stringViews) {
+    NSString *string = [[NSString alloc] initWithBytes:stringView.data()
+                                                length:stringView.size()
+                                              encoding:NSUTF8StringEncoding];
+    [array addObject:string ?: @""];
   }
   return [array copy];
 }
 
 @implementation LRTModel {
   std::unique_ptr<litert::Model> _cppModel;
+  /** Model bytes the model reads from, or nil when it was loaded from a file. */
   NSData *_Nullable _modelData;
 }
 
@@ -56,7 +61,7 @@ static NSArray<NSString *> *ConvertStringViewsToObjCArray(
   if (self) {
     _cppModel = std::move(cppModel);
     _environment = environment;
-    _modelData = [modelData copy];
+    _modelData = modelData;
   }
   return self;
 }
@@ -105,8 +110,12 @@ static NSArray<NSString *> *ConvertStringViewsToObjCArray(
     return nil;
   }
 
-  litert::BufferRef<uint8_t> bufferRef(static_cast<const uint8_t *>(modelData.bytes),
-                                       modelData.length);
+  // LiteRT does not copy the model bytes, it reads them for as long as the model is alive. Hold
+  // on to an immutable copy so that callers may release their buffer, or pass an NSMutableData
+  // and keep mutating it, without corrupting the model.
+  NSData *ownedModelData = [modelData copy];
+  litert::BufferRef<uint8_t> bufferRef(static_cast<const uint8_t *>(ownedModelData.bytes),
+                                       ownedModelData.length);
   auto createResult = litert::Model::CreateFromBuffer(*[environment cppEnvironment], bufferRef);
 
   if (!createResult.HasValue()) {
@@ -117,7 +126,7 @@ static NSArray<NSString *> *ConvertStringViewsToObjCArray(
   auto cppPtr = std::make_unique<litert::Model>(std::move(createResult.Value()));
   return [[LRTModel alloc] initInternalWithCppModel:std::move(cppPtr)
                                         environment:environment
-                                          modelData:modelData];
+                                          modelData:ownedModelData];
 }
 
 - (NSArray<NSString *> *)signatureKeys {

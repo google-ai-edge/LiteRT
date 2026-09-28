@@ -121,6 +121,7 @@ def _make_target_ref(name):
 def commandline_flag_copts():
     return select({
         "//litert:android": ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"] + if_oss(["-DABSL_FLAGS_STRIP_NAMES=0"]),
+        "//litert:macos": ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"] + if_oss(["-DABSL_FLAGS_STRIP_NAMES=0"]),
         "//conditions:default": [],
     })
 
@@ -463,6 +464,7 @@ def litert_dynamic_lib(
     native.filegroup(
         name = so_name,
         srcs = [":" + shared_lib_name],
+        tags = tags,
         visibility = vis,
     )
 
@@ -713,7 +715,10 @@ def litert_accelerator_library(
             shared_lib_name = shared_lib_name,
             user_link_flags = gpu_accelerator_exported_symbols_linkopt() + [
                 "-Wl,-soname=" + shared_lib_name,
-            ] + litert_android_linkopts(),
+                "-Wl,--no-as-needed",
+            ] + litert_android_linkopts() + [
+                "-Wl,--as-needed",
+            ],
             visibility = [
                 "//third_party/odml/litert:__subpackages__",
                 "//litert:litert_internal_users",

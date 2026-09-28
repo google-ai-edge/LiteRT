@@ -261,7 +261,7 @@ litert_test(
         "@com_google_absl//absl/base:no_destructor",
         "@qairt//:qnn_lib_headers",
     ] + select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             # copybara:uncomment_begin(google-only)
             # "@qairt//:linux_deps",
             # copybara:uncomment_end
@@ -294,7 +294,7 @@ litert_test(
         "@com_google_absl//absl/base:no_destructor",
         "@qairt//:qnn_lib_headers",
     ] + select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             # copybara:uncomment_begin(google-only)
             # "@qairt//:linux_deps",
             # copybara:uncomment_end

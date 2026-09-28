@@ -730,7 +730,9 @@ bool DelegateKernel::ReadFromSerializedData() {
 }
 
 std::string DelegateKernel::ComputeOptionsFingerprint() const {
-  // Generate fingerprints for the relevant delegate data options.
+// Generate fingerprints for the relevant delegate data options.
+// Pack the struct to prevent hashing uninitialized alignment padding bytes.
+#pragma pack(push, 1)
   struct {
     MlDriftDelegatePrecision precision;
     bool convert_weights_on_gpu;
@@ -757,6 +759,7 @@ std::string DelegateKernel::ComputeOptionsFingerprint() const {
     bool use_metal_argument_buffers;
 #endif  // __APPLE__
   } options_to_fingerprint = {};
+#pragma pack(pop)
   options_to_fingerprint.precision = delegate_data_->options->precision;
   options_to_fingerprint.convert_weights_on_gpu =
       delegate_data_->options->convert_weights_on_gpu;

@@ -29,6 +29,7 @@
 #include "absl/strings/str_replace.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/kernels/fully_connected.h"  // from @ml_drift
@@ -256,11 +257,12 @@ class SdpaTransposedKernelExecuteTest
 
 // Grouped-query attention, where several query heads share one KV head, is
 // implemented only by the fused Flash-Attention kernels, and those are selected
-// on Apple GPUs alone. The decomposed BMM fallback used on every other backend
-// indexes K and V with the query head directly, so it cannot represent these
-// shapes at all and the corresponding cases are skipped there.
+// on the Metal backend of Apple GPUs alone. The decomposed BMM fallback used on
+// every other backend indexes K and V with the query head directly, so it
+// cannot represent these shapes at all and the corresponding cases are skipped
+// there.
 bool SupportsGroupedQuery(::ml_drift::TestExecutionEnvironment& env) {
-  return env.GetGpuInfo().IsApple();
+  return SupportsFusedSdpaKernels(env.GetGpuInfo());
 }
 
 constexpr absl::string_view kGroupedQuerySkipReason =
@@ -279,7 +281,8 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
                                    int BK = 2, int T = 2, int S = 4, int H = 8,
                                    MaskMode mask_mode = MaskMode::kBool,
                                    int KV = 0, int q_start = 0,
-                                   bool from_cache_update = true) {
+                                   bool from_cache_update = true,
+                                   bool is_causal = false) {
   if (KV <= 0) KV = BK;
   if (KV > BK || BK % KV != 0) {
     return absl::InvalidArgumentError(
@@ -343,6 +346,7 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
   attr.runtime_check.src_end_ch_index = 2;
   attr.from_cache_update = from_cache_update;
   attr.is_prefill = (T > 1);
+  attr.is_causal = is_causal;
 
   auto k_weights_shape = ::ml_drift::OHWI(
       k_activation_shape.w, k_activation_shape.h, 1, k_activation_shape.c);
@@ -428,16 +432,12 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
     }
   }
 
-  // Only the fused prefill kernel derives the causal bound from token
-  // positions, and it is selected just for multi-token cache-update shapes with
-  // head_dim <= 128 on Apple GPUs. This mirrors `is_supported_flash_prefill` in
-  // sdpa_transposed_kernel.cc; everywhere else the decomposed graph attends to
-  // every key when no mask is supplied, so the reference must match that.
-  const bool uses_fused_prefill = T > 1 && from_cache_update && H % 4 == 0 &&
-                                  H <= 128 && env.GetGpuInfo().IsApple();
+  // Without a mask tensor (`MaskMode::kNone`), SDPA attends to all active keys
+  // unless `attr.is_causal` is set (e.g., when the parser prunes a BOOL causal
+  // mask for Flash SDPA).
   std::vector<float> expected_out_data = ComputeSdpaReferenceOutput(
       q_data, k_data, v_data, mask_data, BK, T, S, H, mask_mode, KV, q_start,
-      /*implicit_causal=*/uses_fused_prefill);
+      /*implicit_causal=*/is_causal);
 
   std::vector<float> rearranged_k_data;
   std::vector<float> rearranged_v_data;
@@ -652,6 +652,19 @@ TEST_P(SdpaTransposedKernelExecuteTest, SingleTokenDecodeGroupedQuery) {
   EXPECT_TRUE(status.ok()) << status.message();
 }
 
+// Verifies that when the parser prunes a BOOL causal mask (`MaskMode::kNone`
+// with `attr.is_causal = true`), the fused FlashAttention prefill kernel still
+// enforces causal masking (`key <= q_start + X`) in registers.
+TEST_P(SdpaTransposedKernelExecuteTest,
+       PrefillImplicitCausalWhenBoolMaskPruned) {
+  if (!SupportsGroupedQuery(*exec_env)) GTEST_SKIP() << kGroupedQuerySkipReason;
+  auto status = RunSdpaTransposedTest(
+      *exec_env, precision(), storage(), /*BK=*/16, /*T=*/32, /*S=*/512,
+      /*H=*/128, MaskMode::kNone, /*KV=*/8, /*q_start=*/256,
+      /*from_cache_update=*/true, /*is_causal=*/true);
+  EXPECT_TRUE(status.ok()) << status.message();
+}
+
 INSTANTIATE_TEST_SUITE_P(
     SdpaTransposedKernelExecuteTestSuite, SdpaTransposedKernelExecuteTest,
     Combine(ValuesIn({::ml_drift::CalculationsPrecision::F32,
@@ -667,6 +680,38 @@ INSTANTIATE_TEST_SUITE_P(
                        ToString(std::get<2>(info.param)));
       return absl::StrReplaceAll(name, {{":", ""}});
     });
+
+::ml_drift::GpuInfo MakeGpuInfo(::ml_drift::GpuVendor vendor,
+                                ::ml_drift::GpuApi api) {
+  ::ml_drift::GpuInfo gpu_info;
+  gpu_info.vendor = vendor;
+  gpu_info.gpu_api = api;
+  return gpu_info;
+}
+
+TEST(SupportsFusedSdpaKernelsTest, AppleGpuOnMetal) {
+  EXPECT_TRUE(SupportsFusedSdpaKernels(
+      MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kMetal)));
+}
+
+// The fused kernels are Metal Shading Language, so an Apple GPU driven through
+// any other API must take the multi-op fallback.
+TEST(SupportsFusedSdpaKernelsTest, AppleGpuOnWebGpuUsesFallback) {
+  EXPECT_FALSE(SupportsFusedSdpaKernels(
+      MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kWebGpu)));
+}
+
+TEST(SupportsFusedSdpaKernelsTest, AppleGpuOnOpenClUsesFallback) {
+  EXPECT_FALSE(SupportsFusedSdpaKernels(
+      MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kOpenCl)));
+}
+
+TEST(SupportsFusedSdpaKernelsTest, NonAppleGpuUsesFallback) {
+  EXPECT_FALSE(SupportsFusedSdpaKernels(
+      MakeGpuInfo(::ml_drift::GpuVendor::kAMD, ::ml_drift::GpuApi::kMetal)));
+  EXPECT_FALSE(SupportsFusedSdpaKernels(
+      MakeGpuInfo(::ml_drift::GpuVendor::kNvidia, ::ml_drift::GpuApi::kWebGpu)));
+}
 
 }  // namespace
 }  // namespace litert::ml_drift

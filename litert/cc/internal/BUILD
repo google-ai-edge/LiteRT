@@ -631,7 +631,7 @@ cc_test(
     ],
     tags = [
         "no_oss",
-        "requires-gpu-nvidia",
+        "requires-gpu-sm90",  # OpenCL/MIG-compatible
     ],
     deps = [
         ":litert_compiled_model_next",

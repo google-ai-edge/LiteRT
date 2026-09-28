@@ -436,14 +436,30 @@ export declare interface LiteRtWasm extends WasmModule {
       expectedRankedTensorType: LiteRtRankedTensorType,
       requirements: LiteRtTensorBufferRequirements,
       ): void;
-  registerStreamWeightsCallback(callback: Function|undefined): void;
-  getStreamWeightsCallback(): Function|undefined;
+  registerStreamWeightsCallback(
+      callback:
+          | ((
+                queue: GPUQueue,
+                requests: EmscriptenVector<WebWeightUploadRequest>,
+            ) => Promise<boolean | void>)
+          | undefined,
+  ): void;
   getThreadCount(): number;
   add(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
   mul(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
   sub(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
   div(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
   relu(a: LiteRtTensorHandle): LiteRtTensorHandle;
+}
+
+/**
+ * A C++ weight_loader::WebWeightUploadRequest in Wasm.
+ */
+export declare interface WebWeightUploadRequest {
+  tflId: number;
+  wgpuBufferId: number;
+  offset: number;
+  length: number;
 }
 
 /**

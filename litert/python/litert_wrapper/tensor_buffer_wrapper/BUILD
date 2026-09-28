@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# copybara:uncomment load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
+# copybara:uncomment load("@rules_python//python:py_test.bzl", "py_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("@rules_python//python:py_library.bzl", "py_library")
 
 WINDOWS_PYBIND_UNDEFS = select({
     "//litert:windows": [
@@ -50,9 +50,9 @@ cc_library(
         "//tflite:framework",
         "//tflite/core:framework",
         "//tflite/types:half",
+        "//third_party/py/python_runtime:headers",  # buildcleaner: keep
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/types:span",
-        "@xla//third_party/python_runtime:headers",  # buildcleaner: keep
     ],
 )
 
@@ -79,8 +79,8 @@ pybind_extension(
         "//litert/cc:litert_model",
         "//litert/cc:litert_tensor_buffer",
         "//tflite:framework",
+        "//third_party/py/python_runtime:headers",
         "@pybind11",
-        "@xla//third_party/python_runtime:headers",
     ],
 )
 
@@ -93,8 +93,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":_pywrap_litert_tensor_buffer_wrapper",
+        "//third_party/py/numpy",
         "@ml_dtypes_py//ml_dtypes",
-        "@org_tensorflow//third_party/py/numpy:headers",
     ],
 )
 
@@ -108,7 +108,7 @@ py_library(
 #     deps = [
 #         ":tensor_buffer",
 #         "@ml_dtypes_py//ml_dtypes",
-#         "@org_tensorflow//third_party/py/numpy:headers",
+#         "//third_party/py/numpy",
 #     ],
 # )
 # copybara:uncomment_end

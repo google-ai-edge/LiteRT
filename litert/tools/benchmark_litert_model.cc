@@ -75,7 +75,10 @@ HwAcceleratorSet GetRequestedHardwareAccelerators(
   return hardware_accelerators;
 }
 
-Options CreateCompiledModelOptions(const BenchmarkParams& params) {
+}  // namespace
+
+Options BenchmarkLiteRtModel::CreateCompiledModelOptions(
+    const BenchmarkParams& params) {
   auto use_gpu = params.Get<bool>("use_gpu");
   auto use_npu = params.Get<bool>("use_npu");
   auto use_cpu = params.Get<bool>("use_cpu");
@@ -101,6 +104,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
       params.Get<bool>("gpu_cache_compiled_programs_only");
   auto gpu_madvise_original_shared_tensors =
       params.Get<bool>("gpu_madvise_original_shared_tensors");
+  auto gpu_use_ir_model = params.Get<std::string>("gpu_use_ir_model");
   auto xnnpack_weight_cache_file_path =
       params.Get<std::string>("xnnpack_weight_cache_file_path");
   auto mediatek_nerun_pilot_version =
@@ -210,6 +214,14 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     if (gpu_cache_compiled_programs_only) {
       gpu_options.CacheCompiledProgramsOnly(true);
     }
+    if (gpu_use_ir_model == "true" || gpu_use_ir_model == "1") {
+      gpu_options.SetUseIrModel(true);
+    } else if (gpu_use_ir_model == "false" || gpu_use_ir_model == "0") {
+      gpu_options.SetUseIrModel(false);
+    } else if (!gpu_use_ir_model.empty() && gpu_use_ir_model != "default") {
+      LITERT_LOG(LITERT_ERROR, "Invalid gpu_use_ir_model: %s",
+                 gpu_use_ir_model.c_str());
+    }
     gpu_options.SetMadviseOriginalSharedTensors(
         gpu_madvise_original_shared_tensors);
 
@@ -253,6 +265,8 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
 
   return compilation_options;
 }
+
+namespace {
 
 litert::Expected<Environment> CreateDefaultEnvironment(
     const BenchmarkParams& params) {

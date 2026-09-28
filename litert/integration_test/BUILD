@@ -438,13 +438,16 @@ litert_integration_test(
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_gpu_mh_test"],
 #             ),
 #             litert_qualcomm_mh_guitar_test(
+#                 is_instrumentation_test = True,
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_qualcomm"],
 #             ),
 #             litert_pixel_mh_guitar_test(
 #                 dimension_model = "pixel 11",
+#                 is_instrumentation_test = True,
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor"],
 #             ),
 #             litert_mediatek_mh_guitar_test(
+#                 is_instrumentation_test = True,
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_mediatek"],
 #             ),
 #         ],

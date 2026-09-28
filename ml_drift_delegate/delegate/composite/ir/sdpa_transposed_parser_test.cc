@@ -44,7 +44,9 @@ using ::testing::Eq;
 using ::testing::SizeIs;
 
 TfLiteStablehloCompositeParams* CreateSdpaTransposedParams(
-    std::optional<float> softcap = std::nullopt) {
+    std::optional<float> softcap = std::nullopt,
+    std::optional<bool> is_causal = std::nullopt,
+    std::optional<bool> from_cache_update = std::nullopt) {
   size_t total_size = sizeof(TfLiteStablehloCompositeParams);
   std::vector<uint8_t> buffer;
 
@@ -52,6 +54,12 @@ TfLiteStablehloCompositeParams* CreateSdpaTransposedParams(
   fbb.Map([&]() {
     if (softcap.has_value()) {
       fbb.Float("softcap", *softcap);
+    }
+    if (is_causal.has_value()) {
+      fbb.Bool("is_causal", *is_causal);
+    }
+    if (from_cache_update.has_value()) {
+      fbb.Bool("from_cache_update", *from_cache_update);
     }
   });
   fbb.Finish();
@@ -225,6 +233,76 @@ TEST_F(ConvertSdpaTransposedTest, WithSoftcap) {
   EXPECT_TRUE(attr->softcap.has_value());
   EXPECT_EQ(*attr->softcap, 30.0f);
 }
+
+TEST_F(ConvertSdpaTransposedTest, BoolMaskKeptWhenIsCausalFalse) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 1, 4, 64});    // q (prefill)
+  builder.AddInput(kTfLiteFloat32, {1, 1, 128, 64});  // k
+  builder.AddInput(kTfLiteFloat32, {1, 1, 128, 64});  // v
+  builder.AddInput(kTfLiteBool, {1, 1, 4, 128});      // bool mask
+  builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});       // param tensor
+  builder.AddOutput(kTfLiteFloat32, {1, 1, 4, 64});   // result
+
+  TfLiteStablehloCompositeParams* params = CreateSdpaTransposedParams(
+      /*softcap=*/std::nullopt, /*is_causal=*/false,
+      /*from_cache_update=*/true);
+  builder.SetParameters(params);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  EXPECT_THAT(op->name, Eq("sdpa_transposed"));
+  // Because is_causal=false was explicitly specified, the BOOL mask input must
+  // NOT be pruned even on Apple.
+  EXPECT_THAT(op->inputs, SizeIs(5));
+
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::SdpaTransposedAttributes>(&op->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_FALSE(attr->is_causal);
+}
+
+#ifdef __APPLE__
+TEST_F(ConvertSdpaTransposedTest, BoolMaskPrunedWhenIsCausalTrueOnApple) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 1, 4, 64});    // q (prefill)
+  builder.AddInput(kTfLiteFloat32, {1, 1, 128, 64});  // k
+  builder.AddInput(kTfLiteFloat32, {1, 1, 128, 64});  // v
+  builder.AddInput(kTfLiteBool, {1, 1, 4, 128});      // bool mask
+  builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});       // param tensor
+  builder.AddOutput(kTfLiteFloat32, {1, 1, 4, 64});   // result
+
+  TfLiteStablehloCompositeParams* params = CreateSdpaTransposedParams(
+      /*softcap=*/std::nullopt, /*is_causal=*/true,
+      /*from_cache_update=*/true);
+  builder.SetParameters(params);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  EXPECT_THAT(op->name, Eq("sdpa_transposed"));
+  // On Apple, the global BOOL causal mask is pruned leaving 4 inputs (q, k, v,
+  // params) and attr.is_causal = true.
+  EXPECT_THAT(op->inputs, SizeIs(4));
+
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::SdpaTransposedAttributes>(&op->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_TRUE(attr->is_causal);
+}
+#endif  // __APPLE__
 
 }  // namespace
 }  // namespace litert::ml_drift::ir

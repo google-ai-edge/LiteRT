@@ -454,7 +454,6 @@ litert_c_api_library(
 cc_test(
     name = "litert_tensor_buffer_test",
     srcs = ["litert_tensor_buffer_test.cc"],
-    tags = ["requires-gpu-nvidia"],
     deps = [
         ":litert_any",
         ":litert_common",
@@ -478,7 +477,7 @@ cc_test(
 #     name = "litert_tensor_buffer_cl_test",
 #     srcs = ["litert_tensor_buffer_cl_test.cc"],
 #     tags = [
-#         "requires-gpu-nvidia",
+#         "requires-gpu-sm90",  # OpenCL/MIG-compatible
 #     ],
 #     deps = [
 #         ":litert_any",
@@ -511,7 +510,7 @@ cc_test(
 #         "LITERT_DISABLE_OPENGL": "1",
 #     },
 #     tags = [
-#         "requires-gpu-nvidia",
+#         "requires-gpu-sm90-full",  # Vulkan/WebGPU: no driver on MIG
 #     ],
 #     deps = [
 #         ":litert_any",
