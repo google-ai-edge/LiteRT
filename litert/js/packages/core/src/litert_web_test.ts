@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {abs, add, author, AuthoredModel, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, elu, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maximum, mean, minimum, mul, neg, notEqual, pack, pad, pow, relu, relu6, reshape, round, rsqrt, select, sin, slice, softmax, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, transpose, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
+import {abs, add, argMax, author, AuthoredModel, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, elu, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maximum, mean, minimum, mul, neg, notEqual, pack, pad, pow, reduceMax, relu, relu6, reshape, round, rsqrt, select, sin, slice, softmax, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, transpose, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -2625,6 +2625,78 @@ describe('LiteRt', () => {
           splitModel.delete();
         });
       }
+    });
+
+    describe('authored extrema and index reduction graphs', () => {
+      let mat: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        mat = Tensor.fromTypedArray(
+            new Float32Array([1.0, 5.0, 2.0, 4.0, 3.0, 6.0]), [2, 3]);
+      });
+
+      afterAll(() => {
+        mat.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes reduceMax on ${accelerator}`, async () => {
+          const rmaxModel = author(
+              (x: Tensor) => reduceMax(x, 1), {accelerator});
+          const rmaxOut = await rmaxModel.run(mat);
+          expect(rmaxOut.shape).toEqual([2]);
+          expect(Array.from(await rmaxOut.data())).toEqual([5.0, 6.0]);
+          rmaxOut.delete();
+          rmaxModel.delete();
+
+          const rmaxKdModel = author(
+              (x: Tensor) => x.reduceMax(0, true), {accelerator});
+          const rmaxKdOut = await rmaxKdModel.run(mat);
+          expect(rmaxKdOut.shape).toEqual([1, 3]);
+          expect(Array.from(await rmaxKdOut.data())).toEqual([4.0, 5.0, 6.0]);
+          rmaxKdOut.delete();
+          rmaxKdModel.delete();
+
+          const rmaxAllModel = author(
+              (x: Tensor) => reduceMax(x), {accelerator});
+          const rmaxAllOut = await rmaxAllModel.run(mat);
+          expect(Array.from(await rmaxAllOut.data())).toEqual([6]);
+          rmaxAllOut.delete();
+          rmaxAllModel.delete();
+        });
+
+        it(`compiles and executes argMax on ${accelerator}`, async () => {
+          const argmaxModel = author(
+              (x: Tensor) => argMax(x, 1), {accelerator});
+          const argmaxOut = await argmaxModel.run(mat);
+          expect(argmaxOut.shape).toEqual([2]);
+          expect(Array.from(await argmaxOut.data()).map(Number))
+              .toEqual([1, 2]);
+          argmaxOut.delete();
+          argmaxModel.delete();
+
+          const argmax0Model = author(
+              (x: Tensor) => x.argMax(0), {accelerator});
+          const argmax0Out = await argmax0Model.run(mat);
+          expect(argmax0Out.shape).toEqual([3]);
+          expect(Array.from(await argmax0Out.data()).map(Number))
+              .toEqual([1, 0, 1]);
+          argmax0Out.delete();
+          argmax0Model.delete();
+        });
+      }
+
+      it('compiles and executes argMax with outputType int64 on wasm',
+         async () => {
+           const amax64Model = author(
+               (x: Tensor) => argMax(x, 1, 'int64'), {accelerator: 'wasm'});
+           const amax64Out = await amax64Model.run(mat);
+           expect(Array.from(await amax64Out.data() as BigInt64Array))
+               .toEqual([1n, 2n]);
+           amax64Out.delete();
+           amax64Model.delete();
+         });
     });
 
     it('can copy to a different environment', async () => {

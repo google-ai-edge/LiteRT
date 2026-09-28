@@ -552,6 +552,16 @@ export declare interface LiteRtWasm extends WasmModule {
     axis: number,
     numSplits: number,
   ): LiteRtTensorHandle[];
+  reduceMax(
+    a: LiteRtTensorHandle,
+    axes: number[],
+    keepDims: boolean,
+  ): LiteRtTensorHandle;
+  argMax(
+    a: LiteRtTensorHandle,
+    axis: number,
+    outputType?: string,
+  ): LiteRtTensorHandle;
 }
 
 /**

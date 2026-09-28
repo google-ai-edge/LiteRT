@@ -548,6 +548,14 @@ export class Tensor implements Deletable, WithEnvironment {
     return sum(this, axes, keepDims);
   }
 
+  reduceMax(axes?: number | number[], keepDims = false): Tensor {
+    return reduceMax(this, axes, keepDims);
+  }
+
+  argMax(axis = 0, outputType: 'int32' | 'int64' = 'int32'): Tensor {
+    return argMax(this, axis, outputType);
+  }
+
   abs(): Tensor {
     return abs(this);
   }
@@ -1738,6 +1746,53 @@ export function sum(
   const axesArray = normalizeAxes(axes, a.type.layout.dimensions.length);
   const wasm = getGlobalLiteRt().liteRtWasm;
   const resultHandle = wasm.sum(a.liteRtTensorHandle, axesArray, keepDims);
+  return new Tensor(resultHandle, a.environment);
+}
+
+/**
+ * Computes the maximum of elements across specified dimensions of a tensor.
+ *
+ * @param a The input tensor.
+ * @param axes The dimensions to reduce. If undefined, reduces all dimensions.
+ * @param keepDims Whether to retain reduced dimensions with length 1.
+ * @returns The reduced tensor.
+ */
+export function reduceMax(
+  a: Tensor,
+  axes?: number | number[],
+  keepDims = false,
+): Tensor {
+  a.ensureNotDeleted();
+  let axesArray: number[];
+  if (axes === undefined) {
+    const rank = a.type.layout.dimensions.length;
+    axesArray = Array.from({length: rank}, (_, i) => i);
+  } else if (typeof axes === 'number') {
+    axesArray = [axes];
+  } else {
+    axesArray = axes;
+  }
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.reduceMax(a.liteRtTensorHandle, axesArray, keepDims);
+  return new Tensor(resultHandle, a.environment);
+}
+
+/**
+ * Returns the index with the largest value across axes of a tensor.
+ *
+ * @param a The input tensor.
+ * @param axis The dimension to reduce across (default: 0).
+ * @param outputType The output integer data type ('int32' or 'int64', default: 'int32').
+ * @returns The tensor containing the argmax indices.
+ */
+export function argMax(
+  a: Tensor,
+  axis = 0,
+  outputType: 'int32' | 'int64' = 'int32',
+): Tensor {
+  a.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.argMax(a.liteRtTensorHandle, axis, outputType);
   return new Tensor(resultHandle, a.environment);
 }
 
