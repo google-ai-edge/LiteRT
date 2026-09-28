@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {abs, add, author, AuthoredModel, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, Environment, exp, floor, fullyConnected, gelu, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logistic, mean, mul, neg, pad, relu, reshape, round, rsqrt, sin, slice, softmax, sqrt, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, transpose, type TypedArray, unloadLiteRt} from '@litertjs/core';
+import {abs, add, author, AuthoredModel, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, Environment, exp, floor, floorDiv, floorMod, fullyConnected, gelu, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logistic, maximum, mean, minimum, mul, neg, pad, pow, relu, reshape, round, rsqrt, sin, slice, softmax, sqrt, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, transpose, type TypedArray, unloadLiteRt} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -2200,6 +2200,71 @@ describe('LiteRt', () => {
           expect(cosData[2]).toBeCloseTo(-1.0, 4);
           cosOut.delete();
           cosModel.delete();
+        });
+      }
+    });
+
+    describe('authored binary math graphs', () => {
+      let a: Tensor;
+      let b: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        a = Tensor.fromTypedArray(
+            new Float32Array([2.0, 3.0, 7.0, -7.0]), [4]);
+        b = Tensor.fromTypedArray(
+            new Float32Array([3.0, 2.0, 3.0, 3.0]), [4]);
+      });
+
+      afterAll(() => {
+        a.delete();
+        b.delete();
+      });
+
+      it('compiles and executes pow on wasm', async () => {
+        const powModel = author(
+            (x: Tensor, y: Tensor) => pow(x, y), {accelerator: 'wasm'});
+        const powOut = await powModel.run(a, b);
+        expect(Array.from(await powOut.data())).toEqual([8, 9, 343, -343]);
+        powOut.delete();
+        powModel.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes minimum on ${accelerator}`, async () => {
+          const minModel = author(
+              (x: Tensor, y: Tensor) => minimum(x, y), {accelerator});
+          const minOut = await minModel.run(a, b);
+          expect(Array.from(await minOut.data())).toEqual([2, 2, 3, -7]);
+          minOut.delete();
+          minModel.delete();
+        });
+
+        it(`compiles and executes maximum on ${accelerator}`, async () => {
+          const maxModel = author(
+              (x: Tensor, y: Tensor) => maximum(x, y), {accelerator});
+          const maxOut = await maxModel.run(a, b);
+          expect(Array.from(await maxOut.data())).toEqual([3, 3, 7, 3]);
+          maxOut.delete();
+          maxModel.delete();
+        });
+
+        it(`compiles and executes floorDiv on ${accelerator}`, async () => {
+          const floorDivModel = author(
+              (x: Tensor, y: Tensor) => floorDiv(x, y), {accelerator});
+          const floorDivOut = await floorDivModel.run(a, b);
+          expect(Array.from(await floorDivOut.data())).toEqual([0, 1, 2, -3]);
+          floorDivOut.delete();
+          floorDivModel.delete();
+        });
+
+        it(`compiles and executes floorMod on ${accelerator}`, async () => {
+          const floorModModel = author(
+              (x: Tensor, y: Tensor) => floorMod(x, y), {accelerator});
+          const floorModOut = await floorModModel.run(a, b);
+          expect(Array.from(await floorModOut.data())).toEqual([2, 1, 1, 2]);
+          floorModOut.delete();
+          floorModModel.delete();
         });
       }
     });

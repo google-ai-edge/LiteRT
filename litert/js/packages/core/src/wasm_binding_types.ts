@@ -519,6 +519,11 @@ export declare interface LiteRtWasm extends WasmModule {
   ceil(a: LiteRtTensorHandle): LiteRtTensorHandle;
   floor(a: LiteRtTensorHandle): LiteRtTensorHandle;
   round(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  pow(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  minimum(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  maximum(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  floorDiv(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  floorMod(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
 }
 
 /**

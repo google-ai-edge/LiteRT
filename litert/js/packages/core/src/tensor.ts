@@ -376,6 +376,26 @@ export class Tensor implements Deletable, WithEnvironment {
     return div(this, other);
   }
 
+  pow(other: Tensor): Tensor {
+    return pow(this, other);
+  }
+
+  minimum(other: Tensor): Tensor {
+    return minimum(this, other);
+  }
+
+  maximum(other: Tensor): Tensor {
+    return maximum(this, other);
+  }
+
+  floorDiv(other: Tensor): Tensor {
+    return floorDiv(this, other);
+  }
+
+  floorMod(other: Tensor): Tensor {
+    return floorMod(this, other);
+  }
+
   relu(): Tensor {
     return relu(this);
   }
@@ -945,6 +965,41 @@ export const sub: (a: Tensor, b: Tensor) => Tensor = makeBinOp((wasm, a, b) =>
  */
 export const div: (a: Tensor, b: Tensor) => Tensor = makeBinOp((wasm, a, b) =>
   wasm.div(a, b),
+);
+
+/**
+ * Computes the power of one tensor to another (a^b) element-wise.
+ */
+export const pow: (a: Tensor, b: Tensor) => Tensor = makeBinOp((wasm, a, b) =>
+  wasm.pow(a, b),
+);
+
+/**
+ * Computes the element-wise minimum of two tensors.
+ */
+export const minimum: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
+  (wasm, a, b) => wasm.minimum(a, b),
+);
+
+/**
+ * Computes the element-wise maximum of two tensors.
+ */
+export const maximum: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
+  (wasm, a, b) => wasm.maximum(a, b),
+);
+
+/**
+ * Computes the element-wise floor division (floor(a / b)).
+ */
+export const floorDiv: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
+  (wasm, a, b) => wasm.floorDiv(a, b),
+);
+
+/**
+ * Computes the element-wise floor division remainder (floorMod(a, b)).
+ */
+export const floorMod: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
+  (wasm, a, b) => wasm.floorMod(a, b),
 );
 
 /**
