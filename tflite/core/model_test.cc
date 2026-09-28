@@ -124,7 +124,136 @@ std::string BuildMultiAxisQuantizationModelBuffer(
                      builder.GetSize());
 }
 
+// Builds a single-TRANSPOSE model whose `perm` is a constant int32 tensor
+// holding `perm_data`, over an input of shape `input_shape`.
+std::string BuildTransposeModelBuffer(const std::vector<int32_t>& input_shape,
+                                      const std::vector<int32_t>& perm_data) {
+  flatbuffers::FlatBufferBuilder builder;
+
+  std::vector<uint8_t> perm_bytes(perm_data.size() * sizeof(int32_t));
+  memcpy(perm_bytes.data(), perm_data.data(), perm_bytes.size());
+  std::vector<flatbuffers::Offset<Buffer>> buffers = {
+      CreateBufferDirect(builder), CreateBufferDirect(builder, &perm_bytes)};
+
+  std::vector<int32_t> input_dims = input_shape;
+  std::vector<int32_t> perm_dims = {static_cast<int32_t>(perm_data.size())};
+  std::vector<int32_t> output_dims = input_shape;
+  std::vector<flatbuffers::Offset<Tensor>> tensors = {
+      CreateTensorDirect(builder, &input_dims, TensorType_FLOAT32,
+                         /*buffer=*/0, "input"),
+      CreateTensorDirect(builder, &perm_dims, TensorType_INT32,
+                         /*buffer=*/1, "perm"),
+      CreateTensorDirect(builder, &output_dims, TensorType_FLOAT32,
+                         /*buffer=*/0, "output"),
+  };
+
+  std::vector<flatbuffers::Offset<OperatorCode>> operator_codes = {
+      CreateOperatorCodeDirect(
+          builder, /*deprecated_builtin_code=*/BuiltinOperator_TRANSPOSE,
+          /*custom_code=*/nullptr, /*version=*/1, BuiltinOperator_TRANSPOSE)};
+  std::vector<int32_t> op_inputs = {0, 1};
+  std::vector<int32_t> op_outputs = {2};
+  std::vector<flatbuffers::Offset<Operator>> operators = {
+      CreateOperatorDirect(builder, /*opcode_index=*/0, &op_inputs,
+                           &op_outputs)};
+
+  std::vector<int32_t> subgraph_inputs = {0};
+  std::vector<int32_t> subgraph_outputs = {2};
+  std::vector<flatbuffers::Offset<SubGraph>> subgraphs = {CreateSubGraphDirect(
+      builder, &tensors, &subgraph_inputs, &subgraph_outputs, &operators)};
+
+  auto model =
+      CreateModelDirect(builder, TFLITE_SCHEMA_VERSION, &operator_codes,
+                        &subgraphs, "transpose test", &buffers);
+  FinishModelBuffer(builder, model);
+  return std::string(reinterpret_cast<const char*>(builder.GetBufferPointer()),
+                     builder.GetSize());
+}
+
+TfLiteStatus BuildInterpreterForTransposeModel(const std::string& model_buffer,
+                                               TestErrorReporter* reporter) {
+  auto model = FlatBufferModel::BuildFromBuffer(model_buffer.data(),
+                                                model_buffer.size(), reporter);
+  if (model == nullptr) return kTfLiteError;
+  ops::builtin::BuiltinOpResolver resolver;
+  std::unique_ptr<Interpreter> interpreter;
+  return InterpreterBuilder(*model, resolver)(&interpreter);
+}
+
 }  // namespace
+
+TEST(BasicFlatBufferModel, TestTransposePermAxisTooLarge) {
+  TestErrorReporter reporter;
+  EXPECT_EQ(BuildInterpreterForTransposeModel(
+                BuildTransposeModelBuffer(/*input_shape=*/{1, 2, 3},
+                                          /*perm_data=*/{0, 1, 3}),
+                &reporter),
+            kTfLiteError);
+  EXPECT_NE(reporter.error_messages().find(
+                "perm[2] = 3 is out of bounds for a permutation of 3 axes"),
+            std::string::npos);
+}
+
+TEST(BasicFlatBufferModel, TestTransposePermAxisTooNegative) {
+  TestErrorReporter reporter;
+  EXPECT_EQ(BuildInterpreterForTransposeModel(
+                BuildTransposeModelBuffer(/*input_shape=*/{1, 2, 3},
+                                          /*perm_data=*/{0, 1, -4}),
+                &reporter),
+            kTfLiteError);
+  EXPECT_NE(reporter.error_messages().find(
+                "perm[2] = -4 is out of bounds for a permutation of 3 axes"),
+            std::string::npos);
+}
+
+TEST(BasicFlatBufferModel, TestTransposePermRepeatsAxis) {
+  TestErrorReporter reporter;
+  EXPECT_EQ(BuildInterpreterForTransposeModel(
+                BuildTransposeModelBuffer(/*input_shape=*/{1, 2, 3, 4},
+                                          /*perm_data=*/{0, 0, 1, 2}),
+                &reporter),
+            kTfLiteError);
+  EXPECT_NE(reporter.error_messages().find("perm[1] repeats axis 0"),
+            std::string::npos);
+}
+
+TEST(BasicFlatBufferModel, TestTransposePermRepeatsAxisViaNegativeSpelling) {
+  TestErrorReporter reporter;
+  EXPECT_EQ(BuildInterpreterForTransposeModel(
+                BuildTransposeModelBuffer(/*input_shape=*/{1, 2, 3},
+                                          /*perm_data=*/{0, 1, -2}),
+                &reporter),
+            kTfLiteError);
+  EXPECT_NE(reporter.error_messages().find("perm[2] repeats axis 1"),
+            std::string::npos);
+}
+
+TEST(BasicFlatBufferModel, TestTransposePermLengthIsCheckedAtPrepare) {
+  TestErrorReporter reporter;
+  const std::string model_buffer = BuildTransposeModelBuffer(
+      /*input_shape=*/{1, 2, 3}, /*perm_data=*/{0, 1});
+  auto model = FlatBufferModel::BuildFromBuffer(model_buffer.data(),
+                                                model_buffer.size(), &reporter);
+  ASSERT_NE(model, nullptr);
+  ops::builtin::BuiltinOpResolver resolver;
+  std::unique_ptr<Interpreter> interpreter;
+  ASSERT_EQ(InterpreterBuilder(*model, resolver)(&interpreter), kTfLiteOk);
+  EXPECT_NE(interpreter->AllocateTensors(), kTfLiteOk);
+}
+
+TEST(BasicFlatBufferModel, TestTransposePermValidIsAccepted) {
+  TestErrorReporter reporter;
+  EXPECT_EQ(BuildInterpreterForTransposeModel(
+                BuildTransposeModelBuffer(/*input_shape=*/{1, 2, 3},
+                                          /*perm_data=*/{0, 2, 1}),
+                &reporter),
+            kTfLiteOk);
+  EXPECT_EQ(BuildInterpreterForTransposeModel(
+                BuildTransposeModelBuffer(/*input_shape=*/{1, 2, 3},
+                                          /*perm_data=*/{0, -1, -2}),
+                &reporter),
+            kTfLiteOk);
+}
 
 TEST(BasicFlatBufferModel, TestNonExistentFiles) {
   ASSERT_TRUE(!FlatBufferModel::BuildFromFile("/tmp/tflite_model_1234"));
