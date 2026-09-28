@@ -542,6 +542,16 @@ export declare interface LiteRtWasm extends WasmModule {
   elu(a: LiteRtTensorHandle): LiteRtTensorHandle;
   hardSwish(a: LiteRtTensorHandle): LiteRtTensorHandle;
   logSoftmax(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  expandDims(input: LiteRtTensorHandle, axis: number): LiteRtTensorHandle;
+  squeeze(input: LiteRtTensorHandle, squeezeDims?: number[]): LiteRtTensorHandle;
+  tile(input: LiteRtTensorHandle, multiples: number[]): LiteRtTensorHandle;
+  pack(tensors: LiteRtTensorHandle[], axis: number): LiteRtTensorHandle;
+  unpack(input: LiteRtTensorHandle, num: number, axis: number): LiteRtTensorHandle[];
+  split(
+    input: LiteRtTensorHandle,
+    axis: number,
+    numSplits: number,
+  ): LiteRtTensorHandle[];
 }
 
 /**

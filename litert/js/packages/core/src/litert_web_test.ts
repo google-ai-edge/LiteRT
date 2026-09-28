@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {abs, add, author, AuthoredModel, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, elu, Environment, equal, exp, floor, floorDiv, floorMod, fullyConnected, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maximum, mean, minimum, mul, neg, notEqual, pad, pow, relu, relu6, reshape, round, rsqrt, select, sin, slice, softmax, sqrt, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, transpose, type TypedArray, unloadLiteRt} from '@litertjs/core';
+import {abs, add, author, AuthoredModel, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, elu, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maximum, mean, minimum, mul, neg, notEqual, pack, pad, pow, relu, relu6, reshape, round, rsqrt, select, sin, slice, softmax, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, transpose, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -2493,6 +2493,136 @@ describe('LiteRt', () => {
           expect(lsData[2]).toBeCloseTo(3.0 - Math.log(sumExp), 4);
           lsOut.delete();
           lsModel.delete();
+        });
+      }
+    });
+
+    describe('authored dimension alignment and partitioning graphs', () => {
+      let mat: Tensor;
+      let sqInput: Tensor;
+      let tileInput: Tensor;
+      let t1: Tensor;
+      let t2: Tensor;
+      let splitInput: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        mat = Tensor.fromTypedArray(
+            new Float32Array([1, 2, 3, 4, 5, 6]), [2, 3]);
+        sqInput = Tensor.fromTypedArray(
+            new Float32Array([1, 2, 3, 4, 5, 6]), [2, 1, 3]);
+        tileInput =
+            Tensor.fromTypedArray(new Float32Array([1, 2, 3, 4]), [2, 2]);
+        t1 = Tensor.fromTypedArray(new Float32Array([1, 2]), [2]);
+        t2 = Tensor.fromTypedArray(new Float32Array([3, 4]), [2]);
+        splitInput =
+            Tensor.fromTypedArray(new Float32Array([10, 20, 30, 40]), [4]);
+      });
+
+      afterAll(() => {
+        sqInput.delete();
+        tileInput.delete();
+        splitInput.delete();
+        t1.delete();
+        t2.delete();
+        mat.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes expandDims on ${accelerator}`, async () => {
+          const expModel = author(
+              (x: Tensor) => expandDims(x, 1), {accelerator});
+          const expOut = await expModel.run(mat);
+          expect(expOut.shape).toEqual([2, 1, 3]);
+          expect(Array.from(await expOut.data())).toEqual([1, 2, 3, 4, 5, 6]);
+          expOut.delete();
+          expModel.delete();
+        });
+
+        it(`compiles and executes squeeze on ${accelerator}`, async () => {
+          const sqModel = author(
+              (x: Tensor) => squeeze(x, [1]), {accelerator});
+          const sqOut = await sqModel.run(sqInput);
+          expect(sqOut.shape).toEqual([2, 3]);
+          expect(Array.from(await sqOut.data())).toEqual([1, 2, 3, 4, 5, 6]);
+          sqOut.delete();
+          sqModel.delete();
+        });
+
+        it(`compiles and executes tile on ${accelerator}`, async () => {
+          const tileModel = author(
+              (x: Tensor) => tile(x, [1, 2]), {accelerator});
+          const tileOut = await tileModel.run(tileInput);
+          expect(tileOut.shape).toEqual([2, 4]);
+          expect(Array.from(await tileOut.data()))
+              .toEqual([1, 2, 1, 2, 3, 4, 3, 4]);
+          tileOut.delete();
+          tileModel.delete();
+        });
+
+        it(`compiles and executes pack on ${accelerator}`, async () => {
+          const packModel = author(
+              (a: Tensor, b: Tensor) => pack([a, b], 0), {accelerator});
+          const packOut = await packModel.run(t1, t2);
+          expect(packOut.shape).toEqual([2, 2]);
+          expect(Array.from(await packOut.data())).toEqual([1, 2, 3, 4]);
+          packOut.delete();
+          packModel.delete();
+
+          const packNegAxisModel = author(
+              (a: Tensor, b: Tensor) => pack([a, b], -1), {accelerator});
+          const packNegAxisOut = await packNegAxisModel.run(t1, t2);
+          expect(packNegAxisOut.shape).toEqual([2, 2]);
+          expect(Array.from(await packNegAxisOut.data()))
+              .toEqual([1, 3, 2, 4]);
+          packNegAxisOut.delete();
+          packNegAxisModel.delete();
+        });
+
+        it(`compiles and executes unpack on ${accelerator}`, async () => {
+          const unpackModel = author(
+              (x: Tensor) => unpack(x, 2, 0), {accelerator});
+          const unpackOuts = await unpackModel.run(mat);
+          expect(Array.isArray(unpackOuts)).toBeTrue();
+          expect(unpackOuts.length).toBe(2);
+          expect(unpackOuts[0].shape).toEqual([3]);
+          expect(Array.from(await unpackOuts[0].data())).toEqual([1, 2, 3]);
+          expect(unpackOuts[1].shape).toEqual([3]);
+          expect(Array.from(await unpackOuts[1].data())).toEqual([4, 5, 6]);
+          unpackOuts[0].delete();
+          unpackOuts[1].delete();
+          unpackModel.delete();
+
+          const unpackNegAxisModel = author(
+              (x: Tensor) => unpack(x, 3, -1), {accelerator});
+          const unpackNegAxisOuts = await unpackNegAxisModel.run(mat);
+          expect(unpackNegAxisOuts.length).toBe(3);
+          expect(unpackNegAxisOuts[0].shape).toEqual([2]);
+          expect(Array.from(await unpackNegAxisOuts[0].data()))
+              .toEqual([1, 4]);
+          expect(Array.from(await unpackNegAxisOuts[1].data()))
+              .toEqual([2, 5]);
+          expect(Array.from(await unpackNegAxisOuts[2].data()))
+              .toEqual([3, 6]);
+          unpackNegAxisOuts[0].delete();
+          unpackNegAxisOuts[1].delete();
+          unpackNegAxisOuts[2].delete();
+          unpackNegAxisModel.delete();
+        });
+
+        it(`compiles and executes split on ${accelerator}`, async () => {
+          const splitModel = author(
+              (x: Tensor) => split(x, 2, 0), {accelerator});
+          const splitOuts = await splitModel.run(splitInput);
+          expect(Array.isArray(splitOuts)).toBeTrue();
+          expect(splitOuts.length).toBe(2);
+          expect(splitOuts[0].shape).toEqual([2]);
+          expect(Array.from(await splitOuts[0].data())).toEqual([10, 20]);
+          expect(splitOuts[1].shape).toEqual([2]);
+          expect(Array.from(await splitOuts[1].data())).toEqual([30, 40]);
+          splitOuts[0].delete();
+          splitOuts[1].delete();
+          splitModel.delete();
         });
       }
     });

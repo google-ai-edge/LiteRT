@@ -520,6 +520,26 @@ export class Tensor implements Deletable, WithEnvironment {
     return pad(this, paddings);
   }
 
+  expandDims(axis: number): Tensor {
+    return expandDims(this, axis);
+  }
+
+  squeeze(squeezeDims?: number[]): Tensor {
+    return squeeze(this, squeezeDims);
+  }
+
+  tile(multiples: number[]): Tensor {
+    return tile(this, multiples);
+  }
+
+  unpack(num: number, axis = 0): Tensor[] {
+    return unpack(this, num, axis);
+  }
+
+  split(numSplits: number, axis = 0): Tensor[] {
+    return split(this, numSplits, axis);
+  }
+
   mean(axes?: number | number[], keepDims = false): Tensor {
     return mean(this, axes, keepDims);
   }
@@ -1538,6 +1558,136 @@ export function pad(input: Tensor, paddings: Tensor | number[][]): Tensor {
     }
   }
   return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Inserts a dimension of 1 into a tensor's shape.
+ *
+ * @param input The input tensor.
+ * @param axis The dimension index at which to expand the shape.
+ * @returns The expanded tensor.
+ */
+export function expandDims(input: Tensor, axis: number): Tensor {
+  input.ensureNotDeleted();
+  const rank = input.type.layout.dimensions.length;
+  const normalizedAxis = axis < 0 ? axis + rank + 1 : axis;
+  if (normalizedAxis < 0 || normalizedAxis > rank) {
+    throw new Error(
+      `expandDims axis ${axis} is out of bounds for tensor of rank ${rank}.`,
+    );
+  }
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.expandDims(input.liteRtTensorHandle, normalizedAxis);
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Removes dimensions of size 1 from the shape of a tensor.
+ *
+ * @param input The input tensor.
+ * @param squeezeDims Optional list of dimensions to squeeze. If empty, squeezes all dimensions of size 1.
+ * @returns The squeezed tensor.
+ */
+export function squeeze(input: Tensor, squeezeDims?: number[]): Tensor {
+  input.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.squeeze(input.liteRtTensorHandle, squeezeDims);
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Constructs a tensor by tiling a given tensor multiples times.
+ *
+ * @param input The input tensor.
+ * @param multiples 1D array of integers specifying the number of repeats per dimension.
+ * @returns The tiled tensor.
+ */
+export function tile(input: Tensor, multiples: number[]): Tensor {
+  input.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.tile(input.liteRtTensorHandle, multiples);
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Packs a list of rank-R tensors into one rank-(R+1) tensor.
+ *
+ * @param inputs Array of tensors with identical shapes.
+ * @param axis The axis along which to pack (default: 0).
+ * @returns The packed tensor.
+ */
+export function pack(inputs: Tensor[], axis = 0): Tensor {
+  if (inputs.length === 0) {
+    throw new Error('pack requires at least one input tensor.');
+  }
+  ensureTensorsOk(inputs);
+  const rank = inputs[0].type.layout.dimensions.length;
+  const normalizedAxis = axis < 0 ? axis + rank + 1 : axis;
+  if (normalizedAxis < 0 || normalizedAxis > rank) {
+    throw new Error(
+      `pack axis ${axis} is out of bounds for input tensor of rank ${rank}.`,
+    );
+  }
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const handles = inputs.map((t) => t.liteRtTensorHandle);
+  const resultHandle = wasm.pack(handles, normalizedAxis);
+  return new Tensor(resultHandle, inputs[0].environment);
+}
+
+/**
+ * Unpacks the given dimension of a rank-R tensor into rank-(R-1) tensors.
+ *
+ * @param input The input tensor.
+ * @param num The number of tensors to unpack along axis.
+ * @param axis The axis along which to unpack (default: 0).
+ * @returns An array of unpacked tensors.
+ */
+export function unpack(input: Tensor, num: number, axis = 0): Tensor[] {
+  input.ensureNotDeleted();
+  const rank = input.type.layout.dimensions.length;
+  const normalizedAxis = axis < 0 ? axis + rank : axis;
+  if (normalizedAxis < 0 || normalizedAxis >= rank) {
+    throw new Error(
+      `unpack axis ${axis} is out of bounds for tensor of rank ${rank}.`,
+    );
+  }
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandles = wasm.unpack(
+    input.liteRtTensorHandle,
+    num,
+    normalizedAxis,
+  );
+  return resultHandles.map((h) => new Tensor(h, input.environment));
+}
+
+/**
+ * Splits a tensor into sub-tensors along a specified axis.
+ *
+ * @param input The input tensor.
+ * @param numSplits The number of pieces to split the tensor into.
+ * @param axis The dimension along which to split (default: 0).
+ * @returns An array of split tensors.
+ */
+export function split(
+  input: Tensor,
+  numSplits: number,
+  axis = 0,
+): Tensor[] {
+  input.ensureNotDeleted();
+  const rank = input.type.layout.dimensions.length;
+  const normalizedAxis = axis < 0 ? axis + rank : axis;
+  if (normalizedAxis < 0 || normalizedAxis >= rank) {
+    throw new Error(
+      `split axis ${axis} is out of bounds for tensor of rank ${rank}.`,
+    );
+  }
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandles = wasm.split(
+    input.liteRtTensorHandle,
+    normalizedAxis,
+    numSplits,
+  );
+  return resultHandles.map((h) => new Tensor(h, input.environment));
 }
 
 /**
