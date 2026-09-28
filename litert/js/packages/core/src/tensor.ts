@@ -556,6 +556,43 @@ export class Tensor implements Deletable, WithEnvironment {
     return argMax(this, axis, outputType);
   }
 
+  resizeBilinear(
+    size: [number, number] | number[],
+    alignCornersOrOptions?: boolean | ResizeOptions,
+    halfPixelCenters?: boolean,
+  ): Tensor {
+    return resizeBilinear(this, size, alignCornersOrOptions, halfPixelCenters);
+  }
+
+  resizeNearestNeighbor(
+    size: [number, number] | number[],
+    alignCornersOrOptions?: boolean | ResizeOptions,
+    halfPixelCenters?: boolean,
+  ): Tensor {
+    return resizeNearestNeighbor(
+      this,
+      size,
+      alignCornersOrOptions,
+      halfPixelCenters,
+    );
+  }
+
+  maxPool2d(
+    filterSizeOrOptions?: number | [number, number] | Pool2dOptions,
+    strides?: number | [number, number],
+    padding?: Padding,
+  ): Tensor {
+    return maxPool2d(this, filterSizeOrOptions, strides, padding);
+  }
+
+  avgPool2d(
+    filterSizeOrOptions?: number | [number, number] | Pool2dOptions,
+    strides?: number | [number, number],
+    padding?: Padding,
+  ): Tensor {
+    return avgPool2d(this, filterSizeOrOptions, strides, padding);
+  }
+
   abs(): Tensor {
     return abs(this);
   }
@@ -1339,6 +1376,27 @@ export interface DepthwiseConv2dOptions extends Conv2dOptions {
   depthMultiplier?: number;
 }
 
+/**
+ * Options for image resizing operations.
+ */
+export interface ResizeOptions {
+  alignCorners?: boolean;
+  halfPixelCenters?: boolean;
+}
+
+/**
+ * Options for 2D pooling operations (max pooling and average pooling).
+ */
+export interface Pool2dOptions {
+  filterSize?: number | [number, number];
+  filterHeight?: number;
+  filterWidth?: number;
+  strides?: number | [number, number];
+  strideH?: number;
+  strideW?: number;
+  padding?: Padding;
+}
+
 function parsePadding(padding: Padding = 'SAME'): number {
   if (typeof padding === 'number') {
     return padding;
@@ -1794,6 +1852,212 @@ export function argMax(
   const wasm = getGlobalLiteRt().liteRtWasm;
   const resultHandle = wasm.argMax(a.liteRtTensorHandle, axis, outputType);
   return new Tensor(resultHandle, a.environment);
+}
+
+/**
+ * Resizes 4D images using bilinear interpolation.
+ *
+ * @param input 4D tensor of shape [batch, height, width, channels].
+ * @param size Target [targetHeight, targetWidth].
+ * @param alignCornersOrOptions If boolean, alignCorners flag; if ResizeOptions, options object.
+ * @param halfPixelCenters Whether half pixel centers are used.
+ * @returns The resized tensor.
+ */
+export function resizeBilinear(
+  input: Tensor,
+  size: [number, number] | number[],
+  alignCornersOrOptions?: boolean | ResizeOptions,
+  halfPixelCenters?: boolean,
+): Tensor {
+  input.ensureNotDeleted();
+  let alignCorners = false;
+  let halfPixel = false;
+  if (typeof alignCornersOrOptions === 'boolean') {
+    alignCorners = alignCornersOrOptions;
+    halfPixel = halfPixelCenters ?? false;
+  } else if (alignCornersOrOptions) {
+    alignCorners = alignCornersOrOptions.alignCorners ?? false;
+    halfPixel = alignCornersOrOptions.halfPixelCenters ?? false;
+  }
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.resizeBilinear(
+    input.liteRtTensorHandle,
+    Array.from(size),
+    alignCorners,
+    halfPixel,
+  );
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Resizes 4D images using nearest neighbor interpolation.
+ *
+ * @param input 4D tensor of shape [batch, height, width, channels].
+ * @param size Target [targetHeight, targetWidth].
+ * @param alignCornersOrOptions If boolean, alignCorners flag; if ResizeOptions, options object.
+ * @param halfPixelCenters Whether half pixel centers are used.
+ * @returns The resized tensor.
+ */
+export function resizeNearestNeighbor(
+  input: Tensor,
+  size: [number, number] | number[],
+  alignCornersOrOptions?: boolean | ResizeOptions,
+  halfPixelCenters?: boolean,
+): Tensor {
+  input.ensureNotDeleted();
+  let alignCorners = false;
+  let halfPixel = false;
+  if (typeof alignCornersOrOptions === 'boolean') {
+    alignCorners = alignCornersOrOptions;
+    halfPixel = halfPixelCenters ?? false;
+  } else if (alignCornersOrOptions) {
+    alignCorners = alignCornersOrOptions.alignCorners ?? false;
+    halfPixel = alignCornersOrOptions.halfPixelCenters ?? false;
+  }
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.resizeNearestNeighbor(
+    input.liteRtTensorHandle,
+    Array.from(size),
+    alignCorners,
+    halfPixel,
+  );
+  return new Tensor(resultHandle, input.environment);
+}
+
+function parsePoolParams(
+  filterSizeOrOptions?: number | [number, number] | Pool2dOptions,
+  strides?: number | [number, number],
+  padding?: Padding,
+): {
+  filterHeight: number;
+  filterWidth: number;
+  strideH: number;
+  strideW: number;
+  paddingVal: number;
+} {
+  let filterHeight = 2;
+  let filterWidth = 2;
+  let strideH = 2;
+  let strideW = 2;
+  let paddingVal = 0;
+
+  if (
+    typeof filterSizeOrOptions === 'object' &&
+    !Array.isArray(filterSizeOrOptions)
+  ) {
+    const opts = filterSizeOrOptions;
+    if (opts.filterSize !== undefined) {
+      if (Array.isArray(opts.filterSize)) {
+        filterHeight = opts.filterSize[0];
+        filterWidth = opts.filterSize[1];
+      } else {
+        filterHeight = opts.filterSize;
+        filterWidth = opts.filterSize;
+      }
+    }
+    if (opts.filterHeight !== undefined) filterHeight = opts.filterHeight;
+    if (opts.filterWidth !== undefined) filterWidth = opts.filterWidth;
+
+    if (opts.strides !== undefined) {
+      if (Array.isArray(opts.strides)) {
+        strideH = opts.strides[0];
+        strideW = opts.strides[1];
+      } else {
+        strideH = opts.strides;
+        strideW = opts.strides;
+      }
+    } else {
+      strideH = filterHeight;
+      strideW = filterWidth;
+    }
+    if (opts.strideH !== undefined) strideH = opts.strideH;
+    if (opts.strideW !== undefined) strideW = opts.strideW;
+    paddingVal = parsePadding(opts.padding);
+  } else {
+    if (filterSizeOrOptions !== undefined) {
+      if (Array.isArray(filterSizeOrOptions)) {
+        filterHeight = filterSizeOrOptions[0];
+        filterWidth = filterSizeOrOptions[1];
+      } else {
+        filterHeight = filterSizeOrOptions;
+        filterWidth = filterSizeOrOptions;
+      }
+    }
+    if (strides !== undefined) {
+      if (Array.isArray(strides)) {
+        strideH = strides[0];
+        strideW = strides[1];
+      } else {
+        strideH = strides;
+        strideW = strides;
+      }
+    } else {
+      strideH = filterHeight;
+      strideW = filterWidth;
+    }
+    paddingVal = parsePadding(padding);
+  }
+  return {filterHeight, filterWidth, strideH, strideW, paddingVal};
+}
+
+/**
+ * Performs 2D max pooling on an input tensor of shape [B, H, W, C].
+ *
+ * @param input 4D tensor.
+ * @param filterSizeOrOptions Filter dimensions or pool options object.
+ * @param strides Stride dimensions along height and width.
+ * @param padding Padding mode ('SAME' or 'VALID').
+ * @returns Max pooled tensor.
+ */
+export function maxPool2d(
+  input: Tensor,
+  filterSizeOrOptions?: number | [number, number] | Pool2dOptions,
+  strides?: number | [number, number],
+  padding?: Padding,
+): Tensor {
+  input.ensureNotDeleted();
+  const {filterHeight, filterWidth, strideH, strideW, paddingVal} =
+    parsePoolParams(filterSizeOrOptions, strides, padding);
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.maxPool2d(
+    input.liteRtTensorHandle,
+    filterHeight,
+    filterWidth,
+    strideH,
+    strideW,
+    paddingVal,
+  );
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Performs 2D average pooling on an input tensor of shape [B, H, W, C].
+ *
+ * @param input 4D tensor.
+ * @param filterSizeOrOptions Filter dimensions or pool options object.
+ * @param strides Stride dimensions along height and width.
+ * @param padding Padding mode ('SAME' or 'VALID').
+ * @returns Average pooled tensor.
+ */
+export function avgPool2d(
+  input: Tensor,
+  filterSizeOrOptions?: number | [number, number] | Pool2dOptions,
+  strides?: number | [number, number],
+  padding?: Padding,
+): Tensor {
+  input.ensureNotDeleted();
+  const {filterHeight, filterWidth, strideH, strideW, paddingVal} =
+    parsePoolParams(filterSizeOrOptions, strides, padding);
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.avgPool2d(
+    input.liteRtTensorHandle,
+    filterHeight,
+    filterWidth,
+    strideH,
+    strideW,
+    paddingVal,
+  );
+  return new Tensor(resultHandle, input.environment);
 }
 
 /**

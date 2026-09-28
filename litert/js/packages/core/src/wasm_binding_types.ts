@@ -562,6 +562,34 @@ export declare interface LiteRtWasm extends WasmModule {
     axis: number,
     outputType?: string,
   ): LiteRtTensorHandle;
+  resizeBilinear(
+    input: LiteRtTensorHandle,
+    size: number[],
+    alignCorners: boolean,
+    halfPixelCenters: boolean,
+  ): LiteRtTensorHandle;
+  resizeNearestNeighbor(
+    input: LiteRtTensorHandle,
+    size: number[],
+    alignCorners: boolean,
+    halfPixelCenters: boolean,
+  ): LiteRtTensorHandle;
+  maxPool2d(
+    input: LiteRtTensorHandle,
+    filterHeight: number,
+    filterWidth: number,
+    strideH: number,
+    strideW: number,
+    padding: number,
+  ): LiteRtTensorHandle;
+  avgPool2d(
+    input: LiteRtTensorHandle,
+    filterHeight: number,
+    filterWidth: number,
+    strideH: number,
+    strideW: number,
+    padding: number,
+  ): LiteRtTensorHandle;
 }
 
 /**

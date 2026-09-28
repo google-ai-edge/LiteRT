@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {abs, add, argMax, author, AuthoredModel, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, elu, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maximum, mean, minimum, mul, neg, notEqual, pack, pad, pow, reduceMax, relu, relu6, reshape, round, rsqrt, select, sin, slice, softmax, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, transpose, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
+import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, elu, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maxPool2d, maximum, mean, minimum, mul, neg, notEqual, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, round, rsqrt, select, sin, slice, softmax, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, transpose, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -2697,6 +2697,72 @@ describe('LiteRt', () => {
            amax64Out.delete();
            amax64Model.delete();
          });
+    });
+
+    describe('authored spatial resizing and pooling graphs', () => {
+      let img: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        img = Tensor.fromTypedArray(
+            new Float32Array([1.0, 2.0, 3.0, 4.0]), [1, 2, 2, 1]);
+      });
+
+      afterAll(() => {
+        img.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes resizeBilinear on ${accelerator}`,
+           async () => {
+          const bilModel = author(
+              (x: Tensor) => resizeBilinear(x, [4, 4]), {accelerator});
+          const bilOut = await bilModel.run(img);
+          expect(bilOut.shape).toEqual([1, 4, 4, 1]);
+          expect(Array.from(await bilOut.data())).toEqual([
+            1, 1.5, 2, 2, 2, 2.5, 3, 3, 3, 3.5, 4, 4, 3, 3.5, 4, 4,
+          ]);
+          bilOut.delete();
+          bilModel.delete();
+        });
+
+        it(`compiles and executes resizeNearestNeighbor on ${accelerator}`,
+           async () => {
+          const nnModel = author(
+              (x: Tensor) => resizeNearestNeighbor(x, [4, 4]), {accelerator});
+          const nnOut = await nnModel.run(img);
+          expect(nnOut.shape).toEqual([1, 4, 4, 1]);
+          expect(Array.from(await nnOut.data())).toEqual([
+            1, 1, 2, 2, 1, 1, 2, 2, 3, 3, 4, 4, 3, 3, 4, 4,
+          ]);
+          nnOut.delete();
+          nnModel.delete();
+        });
+
+        it(`compiles and executes maxPool2d on ${accelerator}`, async () => {
+          const maxPoolModel = author(
+              (x: Tensor) => maxPool2d(
+                  x, {filterSize: [2, 2], strides: [2, 2], padding: 'VALID'}),
+              {accelerator});
+          const maxPoolOut = await maxPoolModel.run(img);
+          expect(maxPoolOut.shape).toEqual([1, 1, 1, 1]);
+          expect(Array.from(await maxPoolOut.data())).toEqual([4.0]);
+          maxPoolOut.delete();
+          maxPoolModel.delete();
+        });
+
+        it(`compiles and executes avgPool2d on ${accelerator}`, async () => {
+          const avgPoolModel = author(
+              (x: Tensor) => avgPool2d(
+                  x, {filterSize: [2, 2], strides: [2, 2], padding: 'VALID'}),
+              {accelerator});
+          const avgPoolOut = await avgPoolModel.run(img);
+          expect(avgPoolOut.shape).toEqual([1, 1, 1, 1]);
+          expect(Array.from(await avgPoolOut.data())).toEqual([2.5]);
+          avgPoolOut.delete();
+          avgPoolModel.delete();
+        });
+      }
     });
 
     it('can copy to a different environment', async () => {
