@@ -62,22 +62,26 @@ absl::Status RunShortConvStepTest(
     ::ml_drift::CalculationsPrecision precision,
     ::ml_drift::TensorStorageType storage,
     int hidden_size,
-    bool with_bias) {
-  const int conv_L_cache = 3;
+    bool with_bias,
+    int conv_L_cache = 3,
+    bool is_gated = true,
+    bool use_silu = false) {
+  const int state_len = conv_L_cache - 1;
+  const int in_channels = is_gated ? (3 * hidden_size) : hidden_size;
   const int num_slices = (hidden_size + 3) / 4;
   ::ml_drift::DataType data_type =
       ::ml_drift::DeduceDataTypeFromPrecision(precision);
 
-  // 1. in_proj [1, 1, 1, 3 * hidden_size]
+  // 1. in_proj [1, 1, 1, in_channels]
   ::ml_drift::TensorDescriptor in_proj_desc(
       data_type, storage, ::ml_drift::Layout::BHWC);
-  in_proj_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, 3 * hidden_size));
+  in_proj_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, in_channels));
 
-  // 2. conv_state [1, 1, hidden_size, conv_L_cache - 1]
+  // 2. conv_state [1, 1, hidden_size, state_len]
   ::ml_drift::TensorDescriptor conv_state_desc(
       data_type, storage, ::ml_drift::Layout::BHWC);
   conv_state_desc.SetBHWCShape(
-      ::ml_drift::BHWC(1, 1, hidden_size, conv_L_cache - 1));
+      ::ml_drift::BHWC(1, 1, hidden_size, state_len));
 
   // 3. conv_weight [hidden_size, 1, 1, conv_L_cache]
   ::ml_drift::TensorDescriptor conv_weight_desc(
@@ -98,39 +102,45 @@ absl::Status RunShortConvStepTest(
       data_type, storage, ::ml_drift::Layout::BHWC);
   dst_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, hidden_size));
 
-  // 6. next_state [1, 1, hidden_size, conv_L_cache - 1]
+  // 6. next_state [1, 1, hidden_size, state_len]
   ::ml_drift::TensorDescriptor next_state_desc(
       data_type, storage, ::ml_drift::Layout::BHWC);
   next_state_desc.SetBHWCShape(
-      ::ml_drift::BHWC(1, 1, hidden_size, conv_L_cache - 1));
+      ::ml_drift::BHWC(1, 1, hidden_size, state_len));
 
   // Create Op
   auto op = CreateFusedShortConvStep(
       in_proj_desc, conv_state_desc, conv_weight_desc,
       conv_bias_desc.get(), dst_desc, next_state_desc,
-      num_slices, hidden_size, conv_L_cache);
+      num_slices, hidden_size, conv_L_cache, is_gated, use_silu);
 
   // Synthesize input data
-  std::vector<float> in_proj_data(3 * hidden_size);
-  // b in [0, hidden_size), c in [hidden_size, 2*hidden_size),
-  // x in [2*hidden_size, 3*hidden_size)
-  for (int i = 0; i < hidden_size; ++i) {
-    in_proj_data[i] = 0.5f + 0.1f * (i % 7);                        // b
-    in_proj_data[hidden_size + i] = 1.2f - 0.05f * (i % 5);         // c
-    in_proj_data[2 * hidden_size + i] = 0.8f + 0.15f * (i % 9);     // x
+  std::vector<float> in_proj_data(in_channels);
+  if (is_gated) {
+    for (int i = 0; i < hidden_size; ++i) {
+      in_proj_data[i] = 0.5f + 0.1f * (i % 7);                        // b
+      in_proj_data[hidden_size + i] = 1.2f - 0.05f * (i % 5);         // c
+      in_proj_data[2 * hidden_size + i] = 0.8f + 0.15f * (i % 9);     // x
+    }
+  } else {
+    for (int i = 0; i < hidden_size; ++i) {
+      in_proj_data[i] = -0.4f + 0.15f * (i % 9);
+    }
   }
 
-  std::vector<float> conv_state_data(hidden_size * 2);
+  std::vector<float> conv_state_data(hidden_size * state_len);
   for (int i = 0; i < hidden_size; ++i) {
-    conv_state_data[i * 2 + 0] = 0.2f * (i + 1);  // oldest
-    conv_state_data[i * 2 + 1] = 0.3f * (i + 1);  // newest
+    for (int t = 0; t < state_len; ++t) {
+      conv_state_data[i * state_len + t] = 0.1f * (t + 2) * ((i % 11) + 1);
+    }
   }
 
-  std::vector<float> conv_weight_data(hidden_size * 3);
+  std::vector<float> conv_weight_data(hidden_size * conv_L_cache);
   for (int i = 0; i < hidden_size; ++i) {
-    conv_weight_data[i * 3 + 0] = 0.1f + 0.01f * i;
-    conv_weight_data[i * 3 + 1] = 0.2f + 0.02f * i;
-    conv_weight_data[i * 3 + 2] = 0.3f + 0.03f * i;
+    for (int k = 0; k < conv_L_cache; ++k) {
+      conv_weight_data[i * conv_L_cache + k] =
+          0.1f * (k + 1) + 0.01f * (k + 1) * (i % 13);
+    }
   }
 
   std::vector<float> conv_bias_data;
@@ -152,7 +162,7 @@ absl::Status RunShortConvStepTest(
   // Initialize output buffers
   std::vector<float> zero_out(hidden_size, 0.0f);
   dst_desc.UploadData(zero_out.data());
-  std::vector<float> zero_state(hidden_size * 2, 0.0f);
+  std::vector<float> zero_state(hidden_size * state_len, 0.0f);
   next_state_desc.UploadData(zero_state.data());
 
   std::vector<::ml_drift::TensorDescriptor*> src_cpu = {
@@ -169,37 +179,39 @@ absl::Status RunShortConvStepTest(
   std::vector<float> dst_result(hidden_size);
   dst_desc.DownloadData(dst_result.data());
 
-  std::vector<float> next_state_result(hidden_size * 2);
+  std::vector<float> next_state_result(hidden_size * state_len);
   next_state_desc.DownloadData(next_state_result.data());
 
   // Compute reference results
   const float tol =
       (precision == ::ml_drift::CalculationsPrecision::F16) ? 1e-2f : 1e-4f;
   for (int i = 0; i < hidden_size; ++i) {
-    float b = in_proj_data[i];
-    float c = in_proj_data[hidden_size + i];
-    float x = in_proj_data[2 * hidden_size + i];
-    float p = b * x;
+    float p = 0.0f;
+    float c = 1.0f;
+    if (is_gated) {
+      float b = in_proj_data[i];
+      c = in_proj_data[hidden_size + i];
+      float x = in_proj_data[2 * hidden_size + i];
+      p = b * x;
+    } else {
+      p = in_proj_data[i];
+    }
 
-    float s0 = conv_state_data[i * 2 + 0];
-    float s1 = conv_state_data[i * 2 + 1];
-
-    float w0 = conv_weight_data[i * 3 + 0];
-    float w1 = conv_weight_data[i * 3 + 1];
-    float w2 = conv_weight_data[i * 3 + 2];
-
-    float conv_val = s0 * w0 + s1 * w1 + p * w2;
+    float conv_val = 0.0f;
+    for (int t = 0; t < state_len; ++t) {
+      conv_val += conv_state_data[i * state_len + t] *
+                  conv_weight_data[i * conv_L_cache + t];
+    }
+    conv_val += p * conv_weight_data[i * conv_L_cache + state_len];
     if (with_bias) {
       conv_val += conv_bias_data[i];
     }
-    float expected_y = c * conv_val;
-    float expected_next_s0 = s1;
-    float expected_next_s1 = p;
+    if (use_silu) {
+      conv_val = conv_val / (1.0f + std::exp(-conv_val));
+    }
+    float expected_y = is_gated ? (c * conv_val) : conv_val;
 
     float actual_y = dst_result[i];
-    float actual_next_s0 = next_state_result[i * 2 + 0];
-    float actual_next_s1 = next_state_result[i * 2 + 1];
-
     float max_err_y = std::max(tol, tol * std::abs(expected_y));
     if (std::abs(actual_y - expected_y) > max_err_y) {
       return absl::InternalError(absl::StrCat(
@@ -207,17 +219,17 @@ absl::Status RunShortConvStepTest(
           ", got ", actual_y,
           " (diff = ", std::abs(actual_y - expected_y), ")"));
     }
-    float max_err_s0 = std::max(tol, tol * std::abs(expected_next_s0));
-    if (std::abs(actual_next_s0 - expected_next_s0) > max_err_s0) {
-      return absl::InternalError(absl::StrCat(
-          "next_state[0] mismatch at channel ", i, ": expected ",
-          expected_next_s0, ", got ", actual_next_s0));
-    }
-    float max_err_s1 = std::max(tol, tol * std::abs(expected_next_s1));
-    if (std::abs(actual_next_s1 - expected_next_s1) > max_err_s1) {
-      return absl::InternalError(absl::StrCat(
-          "next_state[1] mismatch at channel ", i, ": expected ",
-          expected_next_s1, ", got ", actual_next_s1));
+
+    for (int t = 0; t < state_len; ++t) {
+      float expected_next_s =
+          (t + 1 < state_len) ? conv_state_data[i * state_len + t + 1] : p;
+      float actual_next_s = next_state_result[i * state_len + t];
+      float max_err_s = std::max(tol, tol * std::abs(expected_next_s));
+      if (std::abs(actual_next_s - expected_next_s) > max_err_s) {
+        return absl::InternalError(absl::StrCat(
+            "next_state[", t, "] mismatch at channel ", i, ": expected ",
+            expected_next_s, ", got ", actual_next_s));
+      }
     }
   }
 
@@ -237,6 +249,20 @@ TEST_P(ShortConvStepFloatTest, FullSizeHidden2048) {
 TEST_P(ShortConvStepFloatTest, WithBias) {
   ASSERT_OK(RunShortConvStepTest(*exec_env, precision(), storage(),
                                 /*hidden_size=*/2048, /*with_bias=*/true));
+}
+
+TEST_P(ShortConvStepFloatTest, UngatedSiluConv4Small) {
+  ASSERT_OK(RunShortConvStepTest(*exec_env, precision(), storage(),
+                                /*hidden_size=*/16, /*with_bias=*/false,
+                                /*conv_L_cache=*/4, /*is_gated=*/false,
+                                /*use_silu=*/true));
+}
+
+TEST_P(ShortConvStepFloatTest, UngatedSiluConv4FullSize) {
+  ASSERT_OK(RunShortConvStepTest(*exec_env, precision(), storage(),
+                                /*hidden_size=*/6144, /*with_bias=*/false,
+                                /*conv_L_cache=*/4, /*is_gated=*/false,
+                                /*use_silu=*/true));
 }
 
 INSTANTIATE_TEST_SUITE_P(
