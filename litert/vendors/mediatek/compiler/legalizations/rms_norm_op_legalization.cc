@@ -29,9 +29,10 @@ namespace litert::mediatek {
 
 namespace {
 
-absl::Span<const int32_t> GetDimensions(const litert::compiler::Tensor& op) {
+std::vector<int32_t> GetDimensions(const litert::compiler::Tensor& op) {
   LITERT_ASSIGN_OR_ABORT(auto tensor_type, op.RankedTensorType());
-  return tensor_type.Layout().Dimensions();
+  auto dims = tensor_type.Layout().Dimensions();
+  return std::vector<int32_t>(dims.begin(), dims.end());
 }
 
 inline ElementType GetElementType(const litert::compiler::Tensor& tensor) {
@@ -77,8 +78,12 @@ Expected<void> LegalizeRmsNormOp(const NeuronAdapterApi& neuron_adapter_api,
   input_indices.push_back(gamma_tensor_id);
 
   // Beta: Set 0 as default beta
-  std::vector<uint32_t> beta_shape = {
-      static_cast<uint32_t>(GetDimensions(op.Inputs()[1])[0])};
+  auto gamma_dims = GetDimensions(op.Inputs()[1]);
+  if (gamma_dims.empty()) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Gamma dimensions cannot be empty");
+  }
+  std::vector<uint32_t> beta_shape = {static_cast<uint32_t>(gamma_dims[0])};
   int32_t beta_bytes = sizeof(float) * beta_shape[0];
   LITERT_ASSIGN_OR_RETURN(auto beta_extra_data_idx,
                           operand_map.RegisterExtraData(beta_bytes));
@@ -90,7 +95,7 @@ Expected<void> LegalizeRmsNormOp(const NeuronAdapterApi& neuron_adapter_api,
                                   beta_bytes));
   input_indices.push_back(beta_tensor_id);
 
-  // Eplison
+  // Epsilon
   float epsilon_value = std::numeric_limits<float>::epsilon();
   LITERT_ASSIGN_OR_RETURN(auto epsilon_tensor_id,
                           operand_map.AddScalarFloat32(epsilon_value));

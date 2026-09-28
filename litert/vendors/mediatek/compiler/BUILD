@@ -61,6 +61,7 @@ litert_dynamic_lib(
         "//litert/vendors/mediatek/schema:mediatek_litert_schema",
         "//litert/vendors/mediatek/schema:neuron_litert_schema",
         "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@flatbuffers",

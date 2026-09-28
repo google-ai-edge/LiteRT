@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -147,7 +148,7 @@ constexpr auto kNumPluginSocModels =
 std::optional<const char*> FindSocModel(absl::string_view soc_model_name) {
   std::optional<const char*> soc_model;
   for (auto i = 0; i < kNumPluginSocModels; ++i) {
-    if (soc_model_name == kPluginSocModels[i].first) {
+    if (absl::EqualsIgnoreCase(soc_model_name, kPluginSocModels[i].first)) {
       soc_model = kPluginSocModels[i].second;
       break;
     }
