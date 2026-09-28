@@ -192,10 +192,11 @@ class XnnpackWeightHooks final : public TensorMappingHooks {
     }
     LRT_TENSOR_ASSIGN_OR_RETURN(TensorHandle proj_w,
                                 mapping.Get(kPerLayerModelProjection));
-    if (proj_w.GetType() != Type::kFP32) {
-      return absl::UnimplementedError(
-          absl::StrCat(kPerLayerModelProjection, " has type ", proj_w.GetType(),
-                       ", expected FP32."));
+    // Slicing a quantized weight would also require slicing its quantization
+    // parameters.
+    if (proj_w.GetQuantization() != nullptr) {
+      return absl::UnimplementedError(absl::StrCat(
+          "Slicing quantized ", kPerLayerModelProjection, " isn't supported."));
     }
     LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & proj_w_buf, proj_w.GetBuffer());
     auto proj_locked = proj_w_buf.Lock();
@@ -205,9 +206,15 @@ class XnnpackWeightHooks final : public TensorMappingHooks {
           absl::StrCat("Null buffer data for ", kPerLayerModelProjection));
     }
 
-    const size_t layer_w_bytes =
-        static_cast<size_t>(config_.per_layer_input_dim) * config_.embed_dim *
-        sizeof(float);
+    const Type type = proj_w.GetType();
+    const size_t layer_w_elements =
+        static_cast<size_t>(config_.per_layer_input_dim) * config_.embed_dim;
+    if (layer_w_elements * BitSize(type) % 8 != 0) {
+      return absl::InvalidArgumentError(
+          absl::StrCat(kPerLayerModelProjection, " layers of type ", type,
+                       " don't start on a byte boundary."));
+    }
+    const size_t layer_w_bytes = BufferSize(type, layer_w_elements);
     if (proj_locked.size() < (layer + 1) * layer_w_bytes) {
       return absl::InvalidArgumentError(
           absl::StrCat(kPerLayerModelProjection, " holds ", proj_locked.size(),
@@ -217,7 +224,7 @@ class XnnpackWeightHooks final : public TensorMappingHooks {
     const std::byte* layer_bytes = proj_w_bytes + layer * layer_w_bytes;
     return TensorHandle({
         .name = std::string(model_name),
-        .type = Type::kFP32,
+        .type = type,
         .shape = {config_.per_layer_input_dim, config_.embed_dim},
         // The combined weight is stored in the checkpoint mapping, which keeps
         // its data alive for the slices that don't own their data.
