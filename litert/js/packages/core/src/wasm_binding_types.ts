@@ -486,6 +486,18 @@ export declare interface LiteRtWasm extends WasmModule {
     dilationH?: number,
     dilationW?: number,
   ): LiteRtTensorHandle;
+  reshape(input: LiteRtTensorHandle, shape: number[]): LiteRtTensorHandle;
+  transpose(input: LiteRtTensorHandle, perm: number[]): LiteRtTensorHandle;
+  concatenation(
+    inputs: LiteRtTensorHandle[],
+    axis: number,
+  ): LiteRtTensorHandle;
+  slice(
+    input: LiteRtTensorHandle,
+    begin: number[],
+    size: number[],
+  ): LiteRtTensorHandle;
+  pad(input: LiteRtTensorHandle, paddings: LiteRtTensorHandle): LiteRtTensorHandle;
 }
 
 /**

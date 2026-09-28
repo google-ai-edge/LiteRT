@@ -419,6 +419,27 @@ export class Tensor implements Deletable, WithEnvironment {
     return depthwiseConv2d(this, filter, options);
   }
 
+  reshape(shape: number[]): Tensor {
+    return reshape(this, shape);
+  }
+
+  transpose(perm: number[]): Tensor {
+    return transpose(this, perm);
+  }
+
+  concat(others: Tensor | Tensor[], axis = 0): Tensor {
+    const list = Array.isArray(others) ? [this, ...others] : [this, others];
+    return concat(list, axis);
+  }
+
+  slice(begin: number[], size: number[]): Tensor {
+    return slice(this, begin, size);
+  }
+
+  pad(paddings: Tensor | number[][]): Tensor {
+    return pad(this, paddings);
+  }
+
   async data(): Promise<TypedArray> {
     this.ensureNotDeleted();
     if (
@@ -1081,5 +1102,155 @@ export function depthwiseConv2d(
     dilationH,
     dilationW,
   );
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Reshapes a tensor to a new shape.
+ *
+ * @param input The input tensor.
+ * @param shape The target dimensions.
+ * @returns The reshaped tensor.
+ */
+export function reshape(input: Tensor, shape: number[]): Tensor {
+  input.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.reshape(input.liteRtTensorHandle, shape);
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Permutes the dimensions of a tensor according to a given permutation.
+ *
+ * @param input The input tensor.
+ * @param perm The permutation array specifying the dimension ordering.
+ * @returns The transposed tensor.
+ */
+export function transpose(input: Tensor, perm: number[]): Tensor {
+  input.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.transpose(input.liteRtTensorHandle, perm);
+  return new Tensor(resultHandle, input.environment);
+}
+
+function ensureTensorsOk(tensors: Tensor | Tensor[]) {
+  tensors = Array.isArray(tensors) ? tensors : [tensors];
+  for (let i = 0; i < tensors.length; i++) {
+    const tensor = tensors[i];
+    tensor.ensureNotDeleted();
+    if (tensor.environment !== tensors[0].environment) {
+      throw new Error(
+        `Tensor 0 and tensor ${i} are from different environments`,
+      );
+    }
+  }
+}
+
+/**
+ * Concatenates a list of tensors along a specified axis.
+ *
+ * @param inputs Array of tensors with matching shapes except along axis.
+ * @param axis The dimension along which to concatenate (default: 0).
+ * @returns The concatenated tensor.
+ */
+export function concat(inputs: Tensor[], axis = 0): Tensor {
+  if (inputs.length === 0) {
+    throw new Error('concat requires at least one input tensor.');
+  }
+  ensureTensorsOk(inputs);
+  const rank = inputs[0].type.layout.dimensions.length;
+  const normalizedAxis = axis < 0 ? axis + rank : axis;
+  if (normalizedAxis < 0 || normalizedAxis >= rank) {
+    throw new Error(
+      `concat axis ${axis} is out of bounds for tensor of rank ${rank}.`,
+    );
+  }
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const handles = inputs.map((t) => t.liteRtTensorHandle);
+  const resultHandle = wasm.concatenation(handles, normalizedAxis);
+  return new Tensor(resultHandle, inputs[0].environment);
+}
+
+/**
+ * Alias for `concat` matching the C++ LiteRT op name.
+ */
+export const concatenation = concat;
+
+/**
+ * Extracts a sub-tensor slice from an input tensor.
+ *
+ * @param input The input tensor.
+ * @param begin 0-based starting offsets for each dimension.
+ * @param size Number of elements to extract along each dimension.
+ * @returns The sliced tensor.
+ */
+export function slice(
+  input: Tensor,
+  begin: number[],
+  size: number[],
+): Tensor {
+  input.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.slice(input.liteRtTensorHandle, begin, size);
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Pads a tensor according to the specified padding dimensions.
+ *
+ * @param input The input tensor.
+ * @param paddings A 2D int32 tensor or array of shape [rank, 2] indicating before/after padding per axis.
+ * @returns The padded tensor.
+ */
+export function pad(input: Tensor, paddings: Tensor | number[][]): Tensor {
+  input.ensureNotDeleted();
+  const rank = input.type.layout.dimensions.length;
+  let paddingsTensor: Tensor;
+  let ownsPaddingsTensor = false;
+  if (paddings instanceof Tensor) {
+    ensureTensorsOk([input, paddings]);
+    if (paddings.type.dtype !== 'int32') {
+      throw new Error(
+        `pad requires paddings tensor to have dtype 'int32', but got '${paddings.type.dtype}'.`,
+      );
+    }
+    const padDims = paddings.type.layout.dimensions;
+    if (padDims.length !== 2 || padDims[0] !== rank || padDims[1] !== 2) {
+      throw new Error(
+        `pad requires paddings shape to be [${rank}, 2], but got [${padDims.join(', ')}].`,
+      );
+    }
+    paddingsTensor = paddings;
+  } else {
+    if (paddings.length !== rank || paddings.some((p) => p.length !== 2)) {
+      throw new Error(`pad requires paddings shape to be [${rank}, 2].`);
+    }
+    const flatPaddings = new Int32Array(rank * 2);
+    for (let i = 0; i < rank; ++i) {
+      if (paddings[i][0] < 0 || paddings[i][1] < 0) {
+        throw new Error('pad values must be non-negative.');
+      }
+      flatPaddings[i * 2] = paddings[i][0];
+      flatPaddings[i * 2 + 1] = paddings[i][1];
+    }
+    paddingsTensor = Tensor.fromTypedArray(
+      flatPaddings,
+      [rank, 2],
+      input.environment,
+    );
+    ownsPaddingsTensor = true;
+  }
+  let resultHandle: LiteRtTensorHandle;
+  try {
+    const wasm = getGlobalLiteRt().liteRtWasm;
+    resultHandle = wasm.pad(
+      input.liteRtTensorHandle,
+      paddingsTensor.liteRtTensorHandle,
+    );
+  } finally {
+    if (ownsPaddingsTensor) {
+      paddingsTensor.delete();
+    }
+  }
   return new Tensor(resultHandle, input.environment);
 }

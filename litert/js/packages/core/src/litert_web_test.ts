@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {add, author, AuthoredModel, batchMatMul, CompiledModel, conv2d, depthwiseConv2d, div, Environment, fullyConnected, gelu, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, logistic, mul, relu, softmax, sub, supportsFeature, tanh, Tensor, TensorBufferType, type TypedArray, unloadLiteRt} from '@litertjs/core';
+import {add, author, AuthoredModel, batchMatMul, CompiledModel, concat, conv2d, depthwiseConv2d, div, Environment, fullyConnected, gelu, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, logistic, mul, pad, relu, reshape, slice, softmax, sub, supportsFeature, tanh, Tensor, TensorBufferType, transpose, type TypedArray, unloadLiteRt} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -1879,6 +1879,137 @@ describe('LiteRt', () => {
              dwConvStandaloneModel.delete();
            });
       }
+    });
+
+    describe('authored shaping and slicing graphs', () => {
+      let tensorA: Tensor;
+      let tensorC1: Tensor;
+      let tensorC2: Tensor;
+      let padTensor: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        tensorA = Tensor.fromTypedArray(
+            new Float32Array([1, 2, 3, 4, 5, 6]), [2, 3]);
+        tensorC1 = Tensor.fromTypedArray(new Float32Array([1, 2]), [1, 2]);
+        tensorC2 = Tensor.fromTypedArray(new Float32Array([3, 4]), [1, 2]);
+        padTensor = Tensor.fromTypedArray(
+            new Int32Array([0, 0, 1, 1]), [2, 2]);
+      });
+
+      afterAll(() => {
+        tensorA.delete();
+        tensorC1.delete();
+        tensorC2.delete();
+        padTensor.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes reshape on ${accelerator}`, async () => {
+          const reshapeModel =
+              author((x: Tensor) => reshape(x, [3, 2]), {accelerator});
+          const reshapeOut = await reshapeModel.run(tensorA);
+          expect(reshapeOut.shape).toEqual([3, 2]);
+          expect(Array.from(await reshapeOut.data()))
+              .toEqual([1, 2, 3, 4, 5, 6]);
+          reshapeOut.delete();
+          reshapeModel.delete();
+
+          const reshapeMethodModel =
+              author((x: Tensor) => x.reshape([3, 2]), {accelerator});
+          const reshapeMethodOut = await reshapeMethodModel.run(tensorA);
+          expect(reshapeMethodOut.shape).toEqual([3, 2]);
+          expect(Array.from(await reshapeMethodOut.data()))
+              .toEqual([1, 2, 3, 4, 5, 6]);
+          reshapeMethodOut.delete();
+          reshapeMethodModel.delete();
+        });
+
+        it(`compiles and executes transpose on ${accelerator}`, async () => {
+          const transposeModel =
+              author((x: Tensor) => transpose(x, [1, 0]), {accelerator});
+          const transposeOut = await transposeModel.run(tensorA);
+          expect(transposeOut.shape).toEqual([3, 2]);
+          expect(Array.from(await transposeOut.data()))
+              .toEqual([1, 4, 2, 5, 3, 6]);
+          transposeOut.delete();
+          transposeModel.delete();
+
+          const transposeMethodModel =
+              author((x: Tensor) => x.transpose([1, 0]), {accelerator});
+          const transposeMethodOut =
+              await transposeMethodModel.run(tensorA);
+          expect(transposeMethodOut.shape).toEqual([3, 2]);
+          expect(Array.from(await transposeMethodOut.data()))
+              .toEqual([1, 4, 2, 5, 3, 6]);
+          transposeMethodOut.delete();
+          transposeMethodModel.delete();
+        });
+
+        it(`compiles and executes concat on ${accelerator}`, async () => {
+          const concatModel = author(
+              (x: Tensor, y: Tensor) => concat([x, y], 0), {accelerator});
+          const concatOut = await concatModel.run(tensorC1, tensorC2);
+          expect(concatOut.shape).toEqual([2, 2]);
+          expect(Array.from(await concatOut.data())).toEqual([1, 2, 3, 4]);
+          concatOut.delete();
+          concatModel.delete();
+
+          const concatNegAxisModel = author(
+              (x: Tensor, y: Tensor) => x.concat(y, -1), {accelerator});
+          const concatNegAxisOut =
+              await concatNegAxisModel.run(tensorC1, tensorC2);
+          expect(concatNegAxisOut.shape).toEqual([1, 4]);
+          expect(Array.from(await concatNegAxisOut.data()))
+              .toEqual([1, 2, 3, 4]);
+          concatNegAxisOut.delete();
+          concatNegAxisModel.delete();
+        });
+
+        it(`compiles and executes slice on ${accelerator}`, async () => {
+          const sliceModel = author(
+              (x: Tensor) => slice(x, [1, 1], [1, 2]), {accelerator});
+          const sliceOut = await sliceModel.run(tensorA);
+          expect(sliceOut.shape).toEqual([1, 2]);
+          expect(Array.from(await sliceOut.data())).toEqual([5, 6]);
+          sliceOut.delete();
+          sliceModel.delete();
+
+          const sliceMethodModel = author(
+              (x: Tensor) => x.slice([1, 1], [1, 2]), {accelerator});
+          const sliceMethodOut = await sliceMethodModel.run(tensorA);
+          expect(sliceMethodOut.shape).toEqual([1, 2]);
+          expect(Array.from(await sliceMethodOut.data())).toEqual([5, 6]);
+          sliceMethodOut.delete();
+          sliceMethodModel.delete();
+        });
+
+        it(`compiles and executes pad on ${accelerator}`, async () => {
+          const padModel = author(
+              (x: Tensor) => pad(x, padTensor), {accelerator});
+          const padOut = await padModel.run(tensorC1);
+          expect(padOut.shape).toEqual([1, 4]);
+          expect(Array.from(await padOut.data())).toEqual([0, 1, 2, 0]);
+          padOut.delete();
+          padModel.delete();
+
+          const padArrayModel = author(
+              (x: Tensor) => x.pad([[0, 0], [1, 1]]), {accelerator});
+          const padArrayOut = await padArrayModel.run(tensorC1);
+          expect(padArrayOut.shape).toEqual([1, 4]);
+          expect(Array.from(await padArrayOut.data())).toEqual([0, 1, 2, 0]);
+          padArrayOut.delete();
+          padArrayModel.delete();
+        });
+      }
+
+      it('throws error for invalid pad tensor dtype', () => {
+        const invalidFloatPad = Tensor.fromTypedArray(
+            new Float32Array([0, 0, 1, 1]), [2, 2]);
+        expect(() => tensorC1.pad(invalidFloatPad))
+            .toThrowError(/dtype 'int32'/);
+        invalidFloatPad.delete();
+      });
     });
 
     it('can copy to a different environment', async () => {
