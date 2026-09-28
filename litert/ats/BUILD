@@ -1348,7 +1348,8 @@ make_download_model_provider(
 #
 # guitar_workflow_test(
 #     name = "litert_ats_guitar_pixel_9",
-#     auto_deps = PIXEL_9_ATS_GUITAR_TARGETS,
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
 #             litert_pixel_9_mh_guitar_test(
@@ -1371,7 +1372,8 @@ make_download_model_provider(
 #
 # guitar_workflow_test(
 #     name = "litert_ats_guitar_qualcomm_s24",
-#     auto_deps = QUALCOMM_S24_ATS_GUITAR_TARGETS,
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
 #             litert_qualcomm_mh_guitar_test(
@@ -1394,7 +1396,8 @@ make_download_model_provider(
 #
 # guitar_workflow_test(
 #     name = "litert_ats_guitar_mediatek_mt6989",
-#     auto_deps = MEDIATEK_MT6989_ATS_GUITAR_TARGETS,
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
 #             litert_mediatek_mh_guitar_test(
@@ -1419,7 +1422,8 @@ make_download_model_provider(
 #
 # guitar_workflow_test(
 #     name = "litert_ats_guitar_macos",
-#     auto_deps = MACOS_ATS_GUITAR_TARGETS,
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
 #             litert_macos_mh_guitar_test(
