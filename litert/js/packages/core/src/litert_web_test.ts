@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {add, author, AuthoredModel, batchMatMul, CompiledModel, concat, conv2d, depthwiseConv2d, div, Environment, fullyConnected, gelu, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, logistic, mean, mul, pad, relu, reshape, slice, softmax, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, transpose, type TypedArray, unloadLiteRt} from '@litertjs/core';
+import {abs, add, author, AuthoredModel, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, Environment, exp, floor, fullyConnected, gelu, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logistic, mean, mul, neg, pad, relu, reshape, round, rsqrt, sin, slice, softmax, sqrt, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, transpose, type TypedArray, unloadLiteRt} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -2059,6 +2059,147 @@ describe('LiteRt', () => {
           meanStandaloneOut.delete();
           meanModel.delete();
           meanStandaloneModel.delete();
+        });
+      }
+    });
+
+    describe('authored elementary math graphs', () => {
+      let input: Tensor;
+      let posInput: Tensor;
+      let expInput: Tensor;
+      let logInput: Tensor;
+      let trigInput: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        input = Tensor.fromTypedArray(
+            new Float32Array([-1.5, 0.0, 1.5, 4.0]), [4]);
+        posInput = Tensor.fromTypedArray(
+            new Float32Array([1.0, 4.0, 9.0, 16.0]), [4]);
+        expInput =
+            Tensor.fromTypedArray(new Float32Array([0.0, 1.0, 2.0]), [3]);
+        logInput = Tensor.fromTypedArray(
+            new Float32Array([1.0, Math.E, Math.exp(2)]), [3]);
+        trigInput = Tensor.fromTypedArray(
+            new Float32Array([0.0, Math.PI / 2, Math.PI]), [3]);
+      });
+
+      afterAll(() => {
+        expInput.delete();
+        logInput.delete();
+        input.delete();
+        posInput.delete();
+        trigInput.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes abs on ${accelerator}`, async () => {
+          const absModel = author((x: Tensor) => abs(x), {accelerator});
+          const absOut = await absModel.run(input);
+          expect(Array.from(await absOut.data())).toEqual([1.5, 0.0, 1.5, 4.0]);
+          absOut.delete();
+          absModel.delete();
+        });
+
+        it(`compiles and executes neg on ${accelerator}`, async () => {
+          const negModel = author((x: Tensor) => neg(x), {accelerator});
+          const negOut = await negModel.run(input);
+          expect(Array.from(await negOut.data()))
+              .toEqual([1.5, -0, -1.5, -4.0]);
+          negOut.delete();
+          negModel.delete();
+        });
+
+        it(`compiles and executes ceil on ${accelerator}`, async () => {
+          const ceilModel = author((x: Tensor) => ceil(x), {accelerator});
+          const ceilOut = await ceilModel.run(input);
+          expect(Array.from(await ceilOut.data())).toEqual([-1, 0, 2, 4]);
+          ceilOut.delete();
+          ceilModel.delete();
+        });
+
+        it(`compiles and executes floor on ${accelerator}`, async () => {
+          const floorModel =
+              author((x: Tensor) => floor(x), {accelerator});
+          const floorOut = await floorModel.run(input);
+          expect(Array.from(await floorOut.data())).toEqual([-2, 0, 1, 4]);
+          floorOut.delete();
+          floorModel.delete();
+        });
+
+        it(`compiles and executes round on ${accelerator}`, async () => {
+          const roundModel =
+              author((x: Tensor) => round(x), {accelerator});
+          const roundOut = await roundModel.run(input);
+          expect(Array.from(await roundOut.data())).toEqual([-2, 0, 2, 4]);
+          roundOut.delete();
+          roundModel.delete();
+        });
+
+        it(`compiles and executes sqrt on ${accelerator}`, async () => {
+          const sqrtModel = author((x: Tensor) => sqrt(x), {accelerator});
+          const sqrtOut = await sqrtModel.run(posInput);
+          expect(Array.from(await sqrtOut.data()))
+              .toEqual([1.0, 2.0, 3.0, 4.0]);
+          sqrtOut.delete();
+          sqrtModel.delete();
+        });
+
+        it(`compiles and executes rsqrt on ${accelerator}`, async () => {
+          const rsqrtModel =
+              author((x: Tensor) => rsqrt(x), {accelerator});
+          const rsqrtOut = await rsqrtModel.run(posInput);
+          const rsqrtData = Array.from(await rsqrtOut.data() as Float32Array);
+          expect(rsqrtData[0]).toBeCloseTo(1.0, 4);
+          expect(rsqrtData[1]).toBeCloseTo(0.5, 4);
+          expect(rsqrtData[2]).toBeCloseTo(1 / 3, 4);
+          expect(rsqrtData[3]).toBeCloseTo(0.25, 4);
+          rsqrtOut.delete();
+          rsqrtModel.delete();
+        });
+
+        it(`compiles and executes exp on ${accelerator}`, async () => {
+          const expModel = author((x: Tensor) => exp(x), {accelerator});
+          const expOut = await expModel.run(expInput);
+          const expData = Array.from(await expOut.data() as Float32Array);
+          expect(expData[0]).toBeCloseTo(1.0, 4);
+          expect(expData[1]).toBeCloseTo(Math.E, 4);
+          expect(expData[2]).toBeCloseTo(Math.exp(2), 4);
+          expOut.delete();
+          expModel.delete();
+        });
+
+        it(`compiles and executes log on ${accelerator}`, async () => {
+          const logModel = author((x: Tensor) => log(x), {accelerator});
+          const logOut = await logModel.run(logInput);
+          const logData = Array.from(await logOut.data() as Float32Array);
+          expect(logData[0]).toBeCloseTo(0.0, 4);
+          expect(logData[1]).toBeCloseTo(1.0, 4);
+          expect(logData[2]).toBeCloseTo(2.0, 4);
+          logOut.delete();
+          logModel.delete();
+        });
+
+        it(`compiles and executes sin on ${accelerator}`, async () => {
+          const sinModel = author((x: Tensor) => sin(x), {accelerator});
+          const sinOut = await sinModel.run(trigInput);
+          const sinData = Array.from(await sinOut.data() as Float32Array);
+          expect(sinData[0]).toBeCloseTo(0.0, 4);
+          expect(sinData[1]).toBeCloseTo(1.0, 4);
+          expect(sinData[2]).toBeCloseTo(0.0, 4);
+          sinOut.delete();
+          sinModel.delete();
+        });
+
+        it(`compiles and executes cos on ${accelerator}`, async () => {
+          const cosModel = author((x: Tensor) => cos(x), {accelerator});
+          const cosOut = await cosModel.run(trigInput);
+          const cosData = Array.from(await cosOut.data() as Float32Array);
+          expect(cosData[0]).toBeCloseTo(1.0, 4);
+          expect(cosData[1]).toBeCloseTo(0.0, 4);
+          expect(cosData[2]).toBeCloseTo(-1.0, 4);
+          cosOut.delete();
+          cosModel.delete();
         });
       }
     });

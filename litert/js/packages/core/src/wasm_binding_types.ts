@@ -508,6 +508,17 @@ export declare interface LiteRtWasm extends WasmModule {
     axes: number[],
     keepDims: boolean,
   ): LiteRtTensorHandle;
+  abs(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  neg(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  sqrt(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  rsqrt(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  exp(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  log(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  sin(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  cos(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  ceil(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  floor(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  round(a: LiteRtTensorHandle): LiteRtTensorHandle;
 }
 
 /**

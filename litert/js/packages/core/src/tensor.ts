@@ -448,6 +448,50 @@ export class Tensor implements Deletable, WithEnvironment {
     return sum(this, axes, keepDims);
   }
 
+  abs(): Tensor {
+    return abs(this);
+  }
+
+  neg(): Tensor {
+    return neg(this);
+  }
+
+  sqrt(): Tensor {
+    return sqrt(this);
+  }
+
+  rsqrt(): Tensor {
+    return rsqrt(this);
+  }
+
+  exp(): Tensor {
+    return exp(this);
+  }
+
+  log(): Tensor {
+    return log(this);
+  }
+
+  sin(): Tensor {
+    return sin(this);
+  }
+
+  cos(): Tensor {
+    return cos(this);
+  }
+
+  ceil(): Tensor {
+    return ceil(this);
+  }
+
+  floor(): Tensor {
+    return floor(this);
+  }
+
+  round(): Tensor {
+    return round(this);
+  }
+
   async data(): Promise<TypedArray> {
     this.ensureNotDeleted();
     if (
@@ -1313,3 +1357,80 @@ export function sum(
   const resultHandle = wasm.sum(a.liteRtTensorHandle, axesArray, keepDims);
   return new Tensor(resultHandle, a.environment);
 }
+
+/**
+ * Computes the absolute value element-wise.
+ */
+export const abs: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.abs(a),
+);
+
+/**
+ * Computes numerical negative (-x) element-wise.
+ */
+export const neg: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.neg(a),
+);
+
+/**
+ * Computes the square root element-wise.
+ */
+export const sqrt: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.sqrt(a),
+);
+
+/**
+ * Computes reciprocal of square root (1 / sqrt(x)) element-wise.
+ */
+export const rsqrt: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.rsqrt(a),
+);
+
+/**
+ * Computes exponential (e^x) element-wise.
+ */
+export const exp: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.exp(a),
+);
+
+/**
+ * Computes natural logarithm (ln(x)) element-wise.
+ */
+export const log: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.log(a),
+);
+
+/**
+ * Computes sine (sin(x)) element-wise.
+ */
+export const sin: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.sin(a),
+);
+
+/**
+ * Computes cosine (cos(x)) element-wise.
+ */
+export const cos: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.cos(a),
+);
+
+/**
+ * Computes ceiling (smallest integer >= x) element-wise.
+ */
+export const ceil: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.ceil(a),
+);
+
+/**
+ * Computes floor (largest integer <= x) element-wise.
+ */
+export const floor: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.floor(a),
+);
+
+/**
+ * Rounds elements to the nearest integer element-wise.
+ */
+export const round: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.round(a),
+);
