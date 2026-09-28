@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, elu, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maxPool2d, maximum, mean, minimum, mul, neg, notEqual, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, round, rsqrt, select, sin, slice, softmax, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, transpose, transposeConv2d, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
+import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, elu, embeddingLookup, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gather, gatherNd, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maxPool2d, maximum, mean, minimum, mul, neg, notEqual, oneHot, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, round, rsqrt, select, sin, slice, softmax, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, transpose, transposeConv2d, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -2822,6 +2822,89 @@ describe('LiteRt', () => {
               tconvNoBiasModel.delete();
             });
       }
+    });
+
+    describe('authored indexing and gathering graphs', () => {
+      let params: Tensor;
+      let indices: Tensor;
+      let mat: Tensor;
+      let ndIndices: Tensor;
+      let catIndices: Tensor;
+      let weights: Tensor;
+      let lookupIds: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        params = Tensor.fromTypedArray(
+            new Float32Array([10.0, 20.0, 30.0, 40.0]), [4]);
+        indices = Tensor.fromTypedArray(new Int32Array([1, 3]), [2]);
+        mat = Tensor.fromTypedArray(
+            new Float32Array([1.0, 2.0, 3.0, 4.0]), [2, 2]);
+        ndIndices =
+            Tensor.fromTypedArray(new Int32Array([0, 1, 1, 0]), [2, 2]);
+        catIndices =
+            Tensor.fromTypedArray(new Int32Array([0, 1, 2]), [3]);
+        weights = Tensor.fromTypedArray(
+            new Float32Array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]), [3, 2]);
+        lookupIds = Tensor.fromTypedArray(new Int32Array([2, 0]), [2]);
+      });
+
+      afterAll(() => {
+        params.delete();
+        indices.delete();
+        mat.delete();
+        ndIndices.delete();
+        catIndices.delete();
+        weights.delete();
+        lookupIds.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes gather on ${accelerator}`, async () => {
+          const gatherModel = author(
+              (p: Tensor, idx: Tensor) => gather(p, idx, 0),
+              {accelerator});
+          const gatherOut = await gatherModel.run(params, indices);
+          expect(gatherOut.shape).toEqual([2]);
+          expect(Array.from(await gatherOut.data())).toEqual([20.0, 40.0]);
+          gatherOut.delete();
+          gatherModel.delete();
+        });
+
+        it(`compiles and executes gatherNd on ${accelerator}`, async () => {
+          const gatherNdModel = author(
+              (m: Tensor, idx: Tensor) => gatherNd(m, idx),
+              {accelerator});
+          const gatherNdOut = await gatherNdModel.run(mat, ndIndices);
+          expect(gatherNdOut.shape).toEqual([2]);
+          expect(Array.from(await gatherNdOut.data())).toEqual([2.0, 3.0]);
+          gatherNdOut.delete();
+          gatherNdModel.delete();
+        });
+
+        it(`compiles and executes oneHot on ${accelerator}`, async () => {
+          const oneHotModel = author(
+              (idx: Tensor) => oneHot(idx, 3), {accelerator});
+          const oneHotOut = await oneHotModel.run(catIndices);
+          expect(oneHotOut.shape).toEqual([3, 3]);
+          expect(Array.from(await oneHotOut.data()))
+              .toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+          oneHotOut.delete();
+          oneHotModel.delete();
+        });
+      }
+
+      it('compiles and executes embeddingLookup on wasm', async () => {
+        const embModel = author(
+            (w: Tensor, ids: Tensor) => embeddingLookup(w, ids),
+            {accelerator: 'wasm'});
+        const embOut = await embModel.run(weights, lookupIds);
+        expect(embOut.shape).toEqual([2, 2]);
+        expect(Array.from(await embOut.data()))
+            .toEqual([5.0, 6.0, 1.0, 2.0]);
+        embOut.delete();
+        embModel.delete();
+      });
     });
 
     it('can copy to a different environment', async () => {

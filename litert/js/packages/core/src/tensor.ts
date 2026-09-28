@@ -601,6 +601,27 @@ export class Tensor implements Deletable, WithEnvironment {
     return transposeConv2d(this, filter, outputShape, options);
   }
 
+  gather(indices: Tensor, axis = 0, batchDims = 0): Tensor {
+    return gather(this, indices, axis, batchDims);
+  }
+
+  gatherNd(indices: Tensor): Tensor {
+    return gatherNd(this, indices);
+  }
+
+  oneHot(
+    depth: number,
+    onValue = 1.0,
+    offValue = 0.0,
+    axis = -1,
+  ): Tensor {
+    return oneHot(this, depth, onValue, offValue, axis);
+  }
+
+  embeddingLookup(ids: Tensor): Tensor {
+    return embeddingLookup(this, ids);
+  }
+
   abs(): Tensor {
     return abs(this);
   }
@@ -2123,6 +2144,88 @@ export function transposeConv2d(
   );
   return new Tensor(resultHandle, input.environment);
 }
+
+/**
+ * Gathers slices from input along axis according to indices.
+ *
+ * @param input The tensor from which to gather values.
+ * @param indices The index tensor.
+ * @param axis The axis along which to index (default: 0).
+ * @param batchDims The number of batch dimensions (default: 0).
+ * @returns Gathered tensor.
+ */
+export function gather(
+  input: Tensor,
+  indices: Tensor,
+  axis = 0,
+  batchDims = 0,
+): Tensor {
+  ensureTensorsOk([input, indices]);
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.gather(
+    input.liteRtTensorHandle,
+    indices.liteRtTensorHandle,
+    axis,
+    batchDims,
+  );
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Gathers slices from input according to multi-dimensional indices.
+ *
+ * @param input The tensor from which to gather values.
+ * @param indices Index tensor of shape [..., M] where M <= rank(input).
+ * @returns Gathered tensor.
+ */
+export function gatherNd(input: Tensor, indices: Tensor): Tensor {
+  ensureTensorsOk([input, indices]);
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.gatherNd(
+    input.liteRtTensorHandle,
+    indices.liteRtTensorHandle,
+  );
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Generates a one-hot tensor from categorical indices.
+ *
+ * @param indices Tensor of indices.
+ * @param depth The depth of the one hot dimension.
+ * @param onValue The value for the active position (default: 1.0).
+ * @param offValue The value for inactive positions (default: 0.0).
+ * @param axis The axis to insert the one-hot dimension (default: -1).
+ * @returns One-hot encoded tensor.
+ */
+export function oneHot(
+  indices: Tensor,
+  depth: number,
+  onValue = 1.0,
+  offValue = 0.0,
+  axis = -1,
+): Tensor {
+  indices.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.oneHot(
+    indices.liteRtTensorHandle,
+    depth,
+    onValue,
+    offValue,
+    axis,
+  );
+  return new Tensor(resultHandle, indices.environment);
+}
+
+/**
+ * Looks up embedding vectors for the given IDs from an embedding weights table.
+ *
+ * @param weights Embedding weights table tensor.
+ * @param ids Tensor of IDs to look up.
+ * @returns Embedding tensor.
+ */
+export const embeddingLookup: (weights: Tensor, ids: Tensor) => Tensor =
+  makeBinOp((wasm, weights, ids) => wasm.embeddingLookup(weights, ids));
 
 /**
  * Computes the absolute value element-wise.

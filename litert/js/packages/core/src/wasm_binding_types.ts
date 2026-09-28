@@ -599,6 +599,27 @@ export declare interface LiteRtWasm extends WasmModule {
     strideW: number,
     padding: number,
   ): LiteRtTensorHandle;
+  gather(
+    input: LiteRtTensorHandle,
+    indices: LiteRtTensorHandle,
+    axis: number,
+    batchDims: number,
+  ): LiteRtTensorHandle;
+  gatherNd(
+    input: LiteRtTensorHandle,
+    indices: LiteRtTensorHandle,
+  ): LiteRtTensorHandle;
+  oneHot(
+    indices: LiteRtTensorHandle,
+    depth: number,
+    onValue: number,
+    offValue: number,
+    axis: number,
+  ): LiteRtTensorHandle;
+  embeddingLookup(
+    weights: LiteRtTensorHandle,
+    ids: LiteRtTensorHandle,
+  ): LiteRtTensorHandle;
 }
 
 /**
