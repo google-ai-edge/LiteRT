@@ -471,6 +471,26 @@ export class Tensor implements Deletable, WithEnvironment {
     return gelu(this, approximate);
   }
 
+  relu6(): Tensor {
+    return relu6(this);
+  }
+
+  leakyRelu(alpha?: number): Tensor {
+    return leakyRelu(this, alpha);
+  }
+
+  elu(): Tensor {
+    return elu(this);
+  }
+
+  hardSwish(): Tensor {
+    return hardSwish(this);
+  }
+
+  logSoftmax(): Tensor {
+    return logSoftmax(this);
+  }
+
   conv2d(filter: Tensor, options?: Conv2dOptions): Tensor {
     return conv2d(this, filter, options);
   }
@@ -1228,6 +1248,44 @@ export function gelu(input: Tensor, approximate = false): Tensor {
   const resultHandle = wasm.gelu(input.liteRtTensorHandle, approximate);
   return new Tensor(resultHandle, input.environment);
 }
+
+/**
+ * Computes Rectified Linear 6 activation: min(max(0, x), 6).
+ */
+export const relu6: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.relu6(a),
+);
+
+/**
+ * Computes Leaky ReLU activation: max(alpha * x, x).
+ */
+export function leakyRelu(a: Tensor, alpha = 0.2): Tensor {
+  a.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.leakyRelu(a.liteRtTensorHandle, alpha);
+  return new Tensor(resultHandle, a.environment);
+}
+
+/**
+ * Computes Exponential Linear Unit (ELU) activation: x < 0 ? exp(x) - 1 : x.
+ */
+export const elu: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.elu(a),
+);
+
+/**
+ * Computes Hard Swish activation: x * relu6(x + 3) / 6.
+ */
+export const hardSwish: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.hardSwish(a),
+);
+
+/**
+ * Computes Log-Softmax activation element-wise.
+ */
+export const logSoftmax: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
+  wasm.logSoftmax(a),
+);
 
 /**
  * Padding mode for 2D spatial operations.

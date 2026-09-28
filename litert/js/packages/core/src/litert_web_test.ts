@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {abs, add, author, AuthoredModel, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, Environment, equal, exp, floor, floorDiv, floorMod, fullyConnected, gelu, greater, greaterEqual, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, maximum, mean, minimum, mul, neg, notEqual, pad, pow, relu, reshape, round, rsqrt, select, sin, slice, softmax, sqrt, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, transpose, type TypedArray, unloadLiteRt} from '@litertjs/core';
+import {abs, add, author, AuthoredModel, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, elu, Environment, equal, exp, floor, floorDiv, floorMod, fullyConnected, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maximum, mean, minimum, mul, neg, notEqual, pad, pow, relu, relu6, reshape, round, rsqrt, select, sin, slice, softmax, sqrt, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, transpose, type TypedArray, unloadLiteRt} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -2397,6 +2397,102 @@ describe('LiteRt', () => {
           expect(Array.from(await selOut.data())).toEqual([10, -2, -3, 40]);
           selOut.delete();
           selModel.delete();
+        });
+      }
+    });
+
+    describe('authored extended activation graphs', () => {
+      let input: Tensor;
+      let lsInput: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        input = Tensor.fromTypedArray(
+            new Float32Array([-3.0, -1.0, 0.0, 2.0, 8.0]), [5]);
+        lsInput =
+            Tensor.fromTypedArray(new Float32Array([1.0, 2.0, 3.0]), [1, 3]);
+      });
+
+      afterAll(() => {
+        lsInput.delete();
+        input.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes relu6 on ${accelerator}`, async () => {
+          const relu6Model =
+              author((x: Tensor) => relu6(x), {accelerator});
+          const relu6Out = await relu6Model.run(input);
+          expect(Array.from(await relu6Out.data())).toEqual([0, 0, 0, 2, 6]);
+          relu6Out.delete();
+          relu6Model.delete();
+        });
+
+        it(`compiles and executes leakyRelu on ${accelerator}`, async () => {
+          const leakyDefaultModel = author(
+              (x: Tensor) => leakyRelu(x), {accelerator});
+          const leakyDefaultOut = await leakyDefaultModel.run(input);
+          const leakyDefaultData =
+              Array.from(await leakyDefaultOut.data() as Float32Array);
+          expect(leakyDefaultData[0]).toBeCloseTo(-0.6, 4);
+          expect(leakyDefaultData[1]).toBeCloseTo(-0.2, 4);
+          expect(leakyDefaultData[2]).toBeCloseTo(0.0, 4);
+          expect(leakyDefaultData[3]).toBeCloseTo(2.0, 4);
+          expect(leakyDefaultData[4]).toBeCloseTo(8.0, 4);
+          leakyDefaultOut.delete();
+          leakyDefaultModel.delete();
+
+          const leakyModel = author(
+              (x: Tensor) => x.leakyRelu(0.1), {accelerator});
+          const leakyOut = await leakyModel.run(input);
+          const leakyData = Array.from(await leakyOut.data() as Float32Array);
+          expect(leakyData[0]).toBeCloseTo(-0.3, 4);
+          expect(leakyData[1]).toBeCloseTo(-0.1, 4);
+          expect(leakyData[2]).toBeCloseTo(0.0, 4);
+          expect(leakyData[3]).toBeCloseTo(2.0, 4);
+          expect(leakyData[4]).toBeCloseTo(8.0, 4);
+          leakyOut.delete();
+          leakyModel.delete();
+        });
+
+        it(`compiles and executes elu on ${accelerator}`, async () => {
+          const eluModel = author((x: Tensor) => elu(x), {accelerator});
+          const eluOut = await eluModel.run(input);
+          const eluData = Array.from(await eluOut.data() as Float32Array);
+          expect(eluData[0]).toBeCloseTo(Math.exp(-3) - 1, 4);
+          expect(eluData[1]).toBeCloseTo(Math.exp(-1) - 1, 4);
+          expect(eluData[2]).toBeCloseTo(0.0, 4);
+          expect(eluData[3]).toBeCloseTo(2.0, 4);
+          expect(eluData[4]).toBeCloseTo(8.0, 4);
+          eluOut.delete();
+          eluModel.delete();
+        });
+
+        it(`compiles and executes hardSwish on ${accelerator}`, async () => {
+          const hsModel =
+              author((x: Tensor) => hardSwish(x), {accelerator});
+          const hsOut = await hsModel.run(input);
+          const hsData = Array.from(await hsOut.data() as Float32Array);
+          expect(hsData[0]).toBeCloseTo(0.0, 4);
+          expect(hsData[1]).toBeCloseTo(-1 / 3, 4);
+          expect(hsData[2]).toBeCloseTo(0.0, 4);
+          expect(hsData[3]).toBeCloseTo(5 / 3, 4);
+          expect(hsData[4]).toBeCloseTo(8.0, 4);
+          hsOut.delete();
+          hsModel.delete();
+        });
+
+        it(`compiles and executes logSoftmax on ${accelerator}`, async () => {
+          const lsModel =
+              author((x: Tensor) => logSoftmax(x), {accelerator});
+          const lsOut = await lsModel.run(lsInput);
+          const lsData = Array.from(await lsOut.data() as Float32Array);
+          const sumExp = Math.exp(1) + Math.exp(2) + Math.exp(3);
+          expect(lsData[0]).toBeCloseTo(1.0 - Math.log(sumExp), 4);
+          expect(lsData[1]).toBeCloseTo(2.0 - Math.log(sumExp), 4);
+          expect(lsData[2]).toBeCloseTo(3.0 - Math.log(sumExp), 4);
+          lsOut.delete();
+          lsModel.delete();
         });
       }
     });

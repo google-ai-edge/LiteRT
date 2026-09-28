@@ -537,6 +537,11 @@ export declare interface LiteRtWasm extends WasmModule {
     trueVal: LiteRtTensorHandle,
     falseVal: LiteRtTensorHandle,
   ): LiteRtTensorHandle;
+  relu6(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  leakyRelu(a: LiteRtTensorHandle, alpha?: number): LiteRtTensorHandle;
+  elu(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  hardSwish(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  logSoftmax(a: LiteRtTensorHandle): LiteRtTensorHandle;
 }
 
 /**
