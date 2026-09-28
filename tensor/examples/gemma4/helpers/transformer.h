@@ -18,13 +18,13 @@ limitations under the License.
 
 #include <string>
 
-#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
 #include "tensor/examples/gemma4/helpers/attention.h"
 #include "tensor/examples/ops/transformer/transformer_ops.h"
+#include "tensor/examples/utils/tensor_mapping.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
 
@@ -46,15 +46,13 @@ absl::StatusOr<TransformerLayerOutput<Mixins...>> TransformerLayer(
     const Tensor<Mixins...>& key_cache, const Tensor<Mixins...>& value_cache,
     const Tensor<Mixins...>& per_layer_input,
     const Tensor<Mixins...>& shared_key, const Tensor<Mixins...>& shared_value,
-    const Config& config,
-    const absl::flat_hash_map<std::string, Tensor<Mixins...>>& weights,
-    int layer_idx, const Tensor<Mixins...>& eps_tensor) {
+    const Config& config, TensorMapping& weights, int layer_idx,
+    const Tensor<Mixins...>& eps_tensor) {
   std::string layer_prefix = absl::StrCat("model.layers.", layer_idx);
 
   LRT_TENSOR_ASSIGN_OR_RETURN(
-      Tensor pre_attn_norm_scale,
-      GetWeight(weights,
-                absl::StrCat(layer_prefix, ".input_layernorm.weight")));
+      Tensor<Mixins...> pre_attn_norm_scale,
+      weights.Get(absl::StrCat(layer_prefix, ".input_layernorm.weight")));
   Tensor normed_input = RmsNorm(input, pre_attn_norm_scale, eps_tensor);
 
   LRT_TENSOR_ASSIGN_OR_RETURN(
@@ -68,39 +66,39 @@ absl::StatusOr<TransformerLayerOutput<Mixins...>> TransformerLayer(
 
   if (config.use_post_attn_norm) {
     LRT_TENSOR_ASSIGN_OR_RETURN(
-        Tensor post_attn_norm_scale,
-        GetWeight(weights, absl::StrCat(layer_prefix,
-                                        ".post_attention_layernorm.weight")));
+        Tensor<Mixins...> post_attn_norm_scale,
+        weights.Get(
+            absl::StrCat(layer_prefix, ".post_attention_layernorm.weight")));
     attn_output = RmsNorm(attn_output, post_attn_norm_scale, eps_tensor);
   }
 
   Tensor attn_residual = Add(attn_output, input);
 
   LRT_TENSOR_ASSIGN_OR_RETURN(
-      Tensor pre_ffn_norm_scale,
-      GetWeight(weights, absl::StrCat(layer_prefix,
-                                      ".pre_feedforward_layernorm.weight")));
+      Tensor<Mixins...> pre_ffn_norm_scale,
+      weights.Get(
+          absl::StrCat(layer_prefix, ".pre_feedforward_layernorm.weight")));
   Tensor normed_attn_output =
       RmsNorm(attn_residual, pre_ffn_norm_scale, eps_tensor);
 
   LRT_TENSOR_ASSIGN_OR_RETURN(
-      Tensor gate_proj,
-      GetWeight(weights, absl::StrCat(layer_prefix, ".mlp.gate_proj.weight")));
+      Tensor<Mixins...> gate_proj,
+      weights.Get(absl::StrCat(layer_prefix, ".mlp.gate_proj.weight")));
   LRT_TENSOR_ASSIGN_OR_RETURN(
-      Tensor up_proj,
-      GetWeight(weights, absl::StrCat(layer_prefix, ".mlp.up_proj.weight")));
+      Tensor<Mixins...> up_proj,
+      weights.Get(absl::StrCat(layer_prefix, ".mlp.up_proj.weight")));
   LRT_TENSOR_ASSIGN_OR_RETURN(
-      Tensor down_proj,
-      GetWeight(weights, absl::StrCat(layer_prefix, ".mlp.down_proj.weight")));
+      Tensor<Mixins...> down_proj,
+      weights.Get(absl::StrCat(layer_prefix, ".mlp.down_proj.weight")));
 
   Tensor ffn_output = FeedForward(normed_attn_output, gate_proj, up_proj,
                                   down_proj, FFNActivation::kGeluApproximate);
 
   if (config.use_post_ffw_norm) {
     LRT_TENSOR_ASSIGN_OR_RETURN(
-        Tensor post_ffn_norm_scale,
-        GetWeight(weights, absl::StrCat(layer_prefix,
-                                        ".post_feedforward_layernorm.weight")));
+        Tensor<Mixins...> post_ffn_norm_scale,
+        weights.Get(
+            absl::StrCat(layer_prefix, ".post_feedforward_layernorm.weight")));
     ffn_output = RmsNorm(ffn_output, post_ffn_norm_scale, eps_tensor);
   }
 
@@ -111,19 +109,19 @@ absl::StatusOr<TransformerLayerOutput<Mixins...>> TransformerLayer(
   if (config.per_layer_input_dim > 0 && per_layer_input.GetStatus().ok() &&
       !per_layer_input.GetShape().empty()) {
     LRT_TENSOR_ASSIGN_OR_RETURN(
-        Tensor per_layer_input_gate,
-        GetWeight(weights,
-                  absl::StrCat(layer_prefix, ".per_layer_input_gate.weight")));
+        Tensor<Mixins...> per_layer_input_gate,
+        weights.Get(
+            absl::StrCat(layer_prefix, ".per_layer_input_gate.weight")));
 
     LRT_TENSOR_ASSIGN_OR_RETURN(
-        Tensor per_layer_projection,
-        GetWeight(weights,
-                  absl::StrCat(layer_prefix, ".per_layer_projection.weight")));
+        Tensor<Mixins...> per_layer_projection,
+        weights.Get(
+            absl::StrCat(layer_prefix, ".per_layer_projection.weight")));
 
     LRT_TENSOR_ASSIGN_OR_RETURN(
-        Tensor post_per_layer_input_norm,
-        GetWeight(weights, absl::StrCat(layer_prefix,
-                                        ".post_per_layer_input_norm.weight")));
+        Tensor<Mixins...> post_per_layer_input_norm,
+        weights.Get(
+            absl::StrCat(layer_prefix, ".post_per_layer_input_norm.weight")));
 
     Tensor gate_val = FullyConnected(ffn_residual, per_layer_input_gate);
     Tensor gated = Mul(Gelu(gate_val, /*approximate=*/true), per_layer_input);
@@ -134,8 +132,8 @@ absl::StatusOr<TransformerLayerOutput<Mixins...>> TransformerLayer(
   }
 
   LRT_TENSOR_ASSIGN_OR_RETURN(
-      Tensor layer_scalar,
-      GetWeight(weights, absl::StrCat(layer_prefix, ".layer_scalar")));
+      Tensor<Mixins...> layer_scalar,
+      weights.Get(absl::StrCat(layer_prefix, ".layer_scalar")));
   Tensor output = Mul(ffn_residual, layer_scalar);
 
   return TransformerLayerOutput<Mixins...>{

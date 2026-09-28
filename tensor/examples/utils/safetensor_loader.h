@@ -147,10 +147,14 @@ struct QuantizationConfig {
 };
 
 // SafeTensor file loader using safetensors-cpp library.
+//
 // Supports loading tensors from HuggingFace safetensor format, including
 // weights compressed with the `compressed-tensors` library.
 class SafetensorLoader {
  public:
+  // Creates a loader that doesn't hold any tensor.
+  SafetensorLoader() = default;
+
   // Loads a safetensor file or a directory of safetensor files.
   //
   // The quantization config is read from the safetensors header metadata when
@@ -177,19 +181,7 @@ class SafetensorLoader {
   // `<module>.weight` will detect and load that triplet.
   absl::StatusOr<TensorHandle> LoadTensor(absl::string_view name) const;
 
-  // Loads all tensors into a map.
-  absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>>
-  LoadAllTensors() const;
-
-  // Loads weights with name mapping.
-  // Converts HuggingFace weight names to model weight names.
-  absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>>
-  LoadWeightsWithMapping(
-      const absl::flat_hash_map<std::string, std::string>& name_mapping) const;
-
  private:
-  SafetensorLoader() = default;
-
   // Loads a single safetensor file and appends its tensors.
   absl::Status AddSafetensorFile(const std::string& path);
 

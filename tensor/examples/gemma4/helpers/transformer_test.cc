@@ -29,6 +29,7 @@ limitations under the License.
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
 #include "tensor/examples/ops/transformer/transformer_ops_xnnpack.h"  // IWYU pragma: keep
+#include "tensor/examples/utils/tensor_mapping.h"
 #include "tensor/runners/xnnpack/runner.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/matchers.h"
@@ -40,8 +41,8 @@ using ::testing::FloatNear;
 using ::testing::Pointwise;
 using XnnTensor = Tensor<XnnpackMixinTag>;
 
-absl::flat_hash_map<std::string, XnnTensor> CreateDefaultWeights() {
-  absl::flat_hash_map<std::string, XnnTensor> weights;
+absl::flat_hash_map<std::string, TensorHandle> CreateDefaultWeights() {
+  absl::flat_hash_map<std::string, TensorHandle> weights;
 
   weights.insert(
       {"model.layers.0.self_attn.q_proj.weight",
@@ -177,7 +178,7 @@ TEST(Gemma4GraphTest, TransformerLayerTest) {
   XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
   XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateDefaultWeights();
+  LazyTensorMapping weights(CreateDefaultWeights());
 
   XnnTensor key_cache;
   XnnTensor value_cache;
@@ -257,7 +258,7 @@ TEST(Gemma4GraphTest, DisabledPostNormsTransformerLayerTest) {
   XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
   XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateDefaultWeights();
+  LazyTensorMapping weights(CreateDefaultWeights());
 
   XnnTensor key_cache;
   XnnTensor value_cache;
@@ -324,9 +325,10 @@ TEST(Gemma4GraphTest, PerLayerInputTransformerLayerTest) {
   XnnTensor per_layer_input(
       {.name = "per_layer_input", .type = Type::kFP32, .shape = {1, 2, 2}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateDefaultWeights();
+  absl::flat_hash_map<std::string, TensorHandle> weight_map =
+      CreateDefaultWeights();
 
-  weights.insert(
+  weight_map.insert(
       {"model.layers.0.per_layer_input_gate.weight",
        XnnTensor({.name = "per_layer_input_gate",
                   .type = Type::kFP32,
@@ -334,7 +336,7 @@ TEST(Gemma4GraphTest, PerLayerInputTransformerLayerTest) {
                   .buffer = std::vector<float>{0.5f, 0.0f, 0.0f, 0.0f, 0.0f,
                                                0.5f, 0.0f, 0.0f}})});
 
-  weights.insert(
+  weight_map.insert(
       {"model.layers.0.per_layer_projection.weight",
        XnnTensor({.name = "per_layer_projection",
                   .type = Type::kFP32,
@@ -342,12 +344,14 @@ TEST(Gemma4GraphTest, PerLayerInputTransformerLayerTest) {
                   .buffer = std::vector<float>{1.0f, 0.0f, 0.0f, 1.0f, 0.5f,
                                                0.0f, 0.0f, 0.5f}})});
 
-  weights.insert(
+  weight_map.insert(
       {"model.layers.0.post_per_layer_input_norm.weight",
        XnnTensor({.name = "post_per_layer_norm",
                   .type = Type::kFP32,
                   .shape = {4},
                   .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}})});
+
+  LazyTensorMapping weights(std::move(weight_map));
 
   XnnTensor key_cache;
   XnnTensor value_cache;
@@ -417,7 +421,7 @@ TEST(Gemma4GraphTest, KVCacheTransformerLayerTest) {
   XnnTensor value_cache(
       {.name = "value_cache", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateDefaultWeights();
+  LazyTensorMapping weights(CreateDefaultWeights());
 
   XnnTensor per_layer_input;
   XnnTensor shared_key;
@@ -508,7 +512,7 @@ TEST(Gemma4GraphTest, SharedKVTransformerLayerTest) {
   XnnTensor shared_value(
       {.name = "shared_value", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateDefaultWeights();
+  LazyTensorMapping weights(CreateDefaultWeights());
 
   XnnTensor key_cache;
   XnnTensor value_cache;
@@ -593,7 +597,7 @@ TEST(Gemma4GraphTest, SoftCappingTransformerLayerTest) {
   XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
   XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateDefaultWeights();
+  LazyTensorMapping weights(CreateDefaultWeights());
 
   XnnTensor key_cache;
   XnnTensor value_cache;
@@ -675,7 +679,7 @@ TEST(Gemma4GraphTest, GlobalLayerTransformerLayerTest) {
   XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
   XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateDefaultWeights();
+  LazyTensorMapping weights(CreateDefaultWeights());
 
   XnnTensor key_cache;
   XnnTensor value_cache;
@@ -739,8 +743,8 @@ TEST(Gemma4GraphTest, GlobalLayerTransformerLayerTest) {
                          0.909716f, 1.061335f, 1.212954f}));
 }
 
-absl::flat_hash_map<std::string, XnnTensor> CreateGqaTransformerWeights() {
-  absl::flat_hash_map<std::string, XnnTensor> weights;
+absl::flat_hash_map<std::string, TensorHandle> CreateGqaTransformerWeights() {
+  absl::flat_hash_map<std::string, TensorHandle> weights;
 
   std::vector<float> q_proj_buf(128, 0.0f);
   for (int row = 0; row < 16; ++row) {
@@ -877,8 +881,7 @@ TEST(Gemma4GraphTest, MultiKvHeadsGqaTransformerLayerTest) {
   XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
   XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights =
-      CreateGqaTransformerWeights();
+  LazyTensorMapping weights(CreateGqaTransformerWeights());
 
   XnnTensor key_cache;
   XnnTensor value_cache;

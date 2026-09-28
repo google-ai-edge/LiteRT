@@ -16,31 +16,17 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_HELPERS_ATTENTION_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_HELPERS_ATTENTION_H_
 
-#include <string>
-
-#include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
 #include "tensor/examples/ops/transformer/transformer_ops.h"
+#include "tensor/examples/utils/tensor_mapping.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
 
 namespace litert::tensor::examples::gemma4 {
-
-template <class... Mixins>
-absl::StatusOr<Tensor<Mixins...>> GetWeight(
-    const absl::flat_hash_map<std::string, Tensor<Mixins...>>& weights,
-    absl::string_view name) {
-  auto it = weights.find(name);
-  if (it != weights.end()) {
-    return it->second;
-  }
-  return absl::NotFoundError(absl::StrCat("Tensor ", name, " was not loaded."));
-}
 
 template <class... Mixins>
 struct AttentionOutput {
@@ -57,21 +43,20 @@ absl::StatusOr<AttentionOutput<Mixins...>> Attention(
     const Tensor<Mixins...>& cos, const Tensor<Mixins...>& sin,
     const Tensor<Mixins...>& key_cache, const Tensor<Mixins...>& value_cache,
     const Tensor<Mixins...>& shared_key, const Tensor<Mixins...>& shared_value,
-    const Config& config,
-    const absl::flat_hash_map<std::string, Tensor<Mixins...>>& weights,
-    absl::string_view name, Config::LayerType layer_type,
-    const Tensor<Mixins...>& rmsnorm_eps) {
+    const Config& config, TensorMapping& weights, absl::string_view name,
+    Config::LayerType layer_type, const Tensor<Mixins...>& rmsnorm_eps) {
   int head_dim = layer_type == Config::LayerType::kGlobal
                      ? config.global_key_size
                      : config.head_dim;
   int q_out_dim = config.num_heads * head_dim;
 
   LRT_TENSOR_ASSIGN_OR_RETURN(
-      Tensor q_proj, GetWeight(weights, absl::StrCat(name, ".q_proj.weight")));
+      Tensor<Mixins...> q_proj,
+      weights.Get(absl::StrCat(name, ".q_proj.weight")));
 
   LRT_TENSOR_ASSIGN_OR_RETURN(
-      Tensor q_norm_scale,
-      GetWeight(weights, absl::StrCat(name, ".q_norm.weight")));
+      Tensor<Mixins...> q_norm_scale,
+      weights.Get(absl::StrCat(name, ".q_norm.weight")));
 
   Tensor q = FullyConnected(input, q_proj);
 
@@ -108,14 +93,14 @@ absl::StatusOr<AttentionOutput<Mixins...>> Attention(
     updated_value_cache = shared_value;
   } else {
     LRT_TENSOR_ASSIGN_OR_RETURN(
-        Tensor k_proj,
-        GetWeight(weights, absl::StrCat(name, ".k_proj.weight")));
+        Tensor<Mixins...> k_proj,
+        weights.Get(absl::StrCat(name, ".k_proj.weight")));
     LRT_TENSOR_ASSIGN_OR_RETURN(
-        Tensor v_proj,
-        GetWeight(weights, absl::StrCat(name, ".v_proj.weight")));
+        Tensor<Mixins...> v_proj,
+        weights.Get(absl::StrCat(name, ".v_proj.weight")));
     LRT_TENSOR_ASSIGN_OR_RETURN(
-        Tensor k_norm_scale,
-        GetWeight(weights, absl::StrCat(name, ".k_norm.weight")));
+        Tensor<Mixins...> k_norm_scale,
+        weights.Get(absl::StrCat(name, ".k_norm.weight")));
 
     Tensor k = FullyConnected(input, k_proj);
     Tensor v = FullyConnected(input, v_proj);
@@ -165,7 +150,8 @@ absl::StatusOr<AttentionOutput<Mixins...>> Attention(
   context = Reshape(context, {batch_size, seq_len, q_out_dim});
 
   LRT_TENSOR_ASSIGN_OR_RETURN(
-      Tensor o_proj, GetWeight(weights, absl::StrCat(name, ".o_proj.weight")));
+      Tensor<Mixins...> o_proj,
+      weights.Get(absl::StrCat(name, ".o_proj.weight")));
 
   Tensor output = FullyConnected(context, o_proj);
   return AttentionOutput<Mixins...>{output, updated_key_cache,

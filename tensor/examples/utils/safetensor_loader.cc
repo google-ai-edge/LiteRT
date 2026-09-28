@@ -1203,36 +1203,4 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadPackedTensor(
       .quantization = std::move(quantization)});
 }
 
-absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>>
-SafetensorLoader::LoadAllTensors() const {
-  absl::flat_hash_map<std::string, TensorHandle> tensors;
-  for (const auto& [name, info] : tensor_infos_) {
-    absl::StatusOr<TensorHandle> tensor_or = LoadTensor(name);
-    if (!tensor_or.ok()) {
-      ABSL_LOG(WARNING) << "Failed to load tensor " << name << ": "
-                        << tensor_or.status();
-      continue;
-    }
-    tensors[name] = std::move(*tensor_or);
-  }
-  return tensors;
-}
-
-absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>>
-SafetensorLoader::LoadWeightsWithMapping(
-    const absl::flat_hash_map<std::string, std::string>& name_mapping) const {
-  TRACE_EVENT(kTensorApiCategory, "LoadWeightsWithMapping");
-  absl::flat_hash_map<std::string, TensorHandle> tensors;
-  for (const auto& [hf_name, model_name] : name_mapping) {
-    absl::StatusOr<TensorHandle> tensor_or = LoadTensor(hf_name);
-    if (!tensor_or.ok()) {
-      ABSL_LOG(WARNING) << "Failed to load tensor " << hf_name << ": "
-                        << tensor_or.status();
-      continue;
-    }
-    tensor_or->SetName(model_name);
-    tensors[model_name] = std::move(*tensor_or);
-  }
-  return tensors;
-}
 }  // namespace litert::tensor::examples

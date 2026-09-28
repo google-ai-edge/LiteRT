@@ -19,6 +19,10 @@ limitations under the License.
 #include <string>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "tensor/examples/utils/tensor_mapping.h"
+#include "tensor/tensor.h"
 
 namespace litert::tensor::examples::gemma4 {
 
@@ -26,6 +30,16 @@ namespace litert::tensor::examples::gemma4 {
 // to model tensor names used by the Gemma 4 computation graph.
 absl::flat_hash_map<std::string, std::string> GetGemma4WeightMapping(
     int n_layers);
+
+// Mapping hooks that provide the Gemma 4 weights that checkpoints may omit.
+//
+// - "lm_head.weight" falls back to the tied embedding weights
+//   ("model.embed_tokens.weight").
+class Gemma4WeightHooks : public TensorMappingHooks {
+ public:
+  absl::StatusOr<TensorHandle> OnNotFound(
+      TensorMapping& mapping, absl::string_view model_name) override;
+};
 
 }  // namespace litert::tensor::examples::gemma4
 

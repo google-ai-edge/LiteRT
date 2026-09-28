@@ -76,6 +76,44 @@ cc_test(
 )
 
 cc_library(
+    name = "tensor_mapping",
+    srcs = ["tensor_mapping.cc"],
+    hdrs = ["tensor_mapping.h"],
+    deps = [
+        ":safetensor_loader",
+        "//tensor",
+        "//tensor/utils:macros",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "tensor_mapping_test",
+    srcs = ["tensor_mapping_test.cc"],
+    deps = [
+        ":safetensor_loader",
+        ":safetensor_test_util",
+        ":tensor_mapping",
+        "//tensor",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/utils:macros",
+        "//tensor/utils:matchers",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "safetensor_loader",
     srcs = ["safetensor_loader.cc"],
     hdrs = ["safetensor_loader.h"],
@@ -98,16 +136,34 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "safetensor_test_util",
+    testonly = True,
+    srcs = ["safetensor_test_util.cc"],
+    hdrs = ["safetensor_test_util.h"],
+    deps = [
+        ":safetensors",
+        "//tensor",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
 cc_test(
     name = "safetensor_loader_test",
     srcs = ["safetensor_loader_test.cc"],
     deps = [
         ":safetensor_loader",
+        ":safetensor_test_util",
         ":safetensors",
         "//tensor",
         "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/utils:matchers",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",

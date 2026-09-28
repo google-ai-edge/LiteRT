@@ -31,15 +31,17 @@ limitations under the License.
 
 #include "xnnpack.h"  // from @XNNPACK
 #include "absl/algorithm/container.h"  // from @com_google_absl
-#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/strings/strip.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/backends/xnnpack/arithmetic.h"
 #include "tensor/buffer.h"
@@ -55,6 +57,7 @@ limitations under the License.
 #include "tensor/examples/utils/initialization.h"
 #include "tensor/examples/utils/perfetto_session.h"
 #include "tensor/examples/utils/safetensor_loader.h"
+#include "tensor/examples/utils/tensor_mapping.h"
 #include "tensor/runners/xnnpack/runner.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
@@ -101,83 +104,130 @@ using ::litert::tensor::examples::TokenPrinter;
 
 using XnnTensor = Tensor<XnnpackMixinTag>;
 
-absl::Status MapGemma4WeightIdentifiers(
-    tflite::xnnpack::MMapWeightCacheProvider& cache_provider,
-    const absl::flat_hash_map<std::string, TensorHandle>& weights_handle) {
-  TRACE_EVENT(kTensorApiCategory, "MapGemma4WeightIdentifiers");
-  for (const auto& [name, tensor] : weights_handle) {
-    LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & buffer, tensor.GetBuffer());
+// Weight mapping hooks that prepare the weights for the XNNPack graph.
+//
+// - BF16 weights are converted to FP32.
+// - The weights are registered with the XNNPack weight cache, if any.
+// - The combined per-layer model projection weight matrix
+//   ("model.per_layer_model_projection.weight") of shape
+//   [num_layers, per_layer_input_dim, embed_dim] is sliced into individual
+//   per-layer 2D weight tensors
+//   ("model.layers.<l>.per_layer_model_projection.weight") of shape
+//   [per_layer_input_dim, embed_dim] for each layer `l`.
+class XnnpackWeightHooks final : public TensorMappingHooks {
+ public:
+  // Constructor.
+  //
+  // - `config`: model configuration.
+  // - `weight_cache`: if not null, the weights are registered with it. Must
+  //   outlive the hooks.
+  XnnpackWeightHooks(const Config& config,
+                     tflite::xnnpack::MMapWeightCacheProvider* weight_cache)
+      : config_(config), weight_cache_(weight_cache) {}
+
+  absl::Status OnLoaded(absl::string_view model_name,
+                        TensorHandle& weight) override {
+    if (weight.GetType() == Type::kBF16) {
+      LRT_TENSOR_RETURN_IF_ERROR(FallbackBF16ToFp32(weight));
+    }
+    return MapWeightIdentifier(model_name, weight);
+  }
+
+  absl::StatusOr<TensorHandle> OnNotFound(
+      TensorMapping& mapping, absl::string_view model_name) override {
+    if (auto [layer, str] = std::tuple(0, model_name);
+        absl::ConsumePrefix(&str, kPerLayerModelProjectionPrefix) &&
+        absl::ConsumeSuffix(&str, kPerLayerModelProjectionSuffix) &&
+        absl::SimpleAtoi(str, &layer)) {
+      return SlicePerLayerModelProjection(mapping, model_name, layer);
+    }
+    return TensorMappingHooks::OnNotFound(mapping, model_name);
+  }
+
+ private:
+  static constexpr absl::string_view kPerLayerModelProjection =
+      "model.per_layer_model_projection.weight";
+  static constexpr absl::string_view kPerLayerModelProjectionPrefix =
+      "model.layers.";
+  static constexpr absl::string_view kPerLayerModelProjectionSuffix =
+      ".per_layer_model_projection.weight";
+
+  absl::Status MapWeightIdentifier(absl::string_view model_name,
+                                   TensorHandle& weight) {
+    if (weight_cache_ == nullptr) {
+      return absl::OkStatus();
+    }
+    LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & buffer, weight.GetBuffer());
     auto locked = buffer.Lock();
-    uint64_t identifier = static_cast<uint64_t>(std::hash<std::string>{}(name));
-    if (!cache_provider.MapBufferIdentifier(locked.data(), locked.size(),
+    const uint64_t identifier =
+        static_cast<uint64_t>(std::hash<absl::string_view>{}(model_name));
+    if (!weight_cache_->MapBufferIdentifier(locked.data(), locked.size(),
                                             identifier)) {
       return absl::InternalError(
-          absl::StrCat("Failed to map weight identifier for ", name));
+          absl::StrCat("Failed to map weight identifier for ", model_name));
     }
+    return absl::OkStatus();
   }
-  return absl::OkStatus();
-}
 
-absl::Status FallbackBF16WeightsToFp32(
-    absl::flat_hash_map<std::string, TensorHandle>& weights_handle) {
-  TRACE_EVENT(kTensorApiCategory, "FallbackBF16WeightsToFp32");
-  for (auto& [name, tensor] : weights_handle) {
-    if (tensor.GetType() != Type::kBF16) {
-      continue;
-    }
+  static absl::Status FallbackBF16ToFp32(TensorHandle& tensor) {
+    TRACE_EVENT(kTensorApiCategory, "FallbackBF16ToFp32");
     LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & buffer, tensor.GetBuffer());
     std::shared_ptr<OwningCpuBuffer> fp32_buf =
         OwningCpuBuffer::Copy<Type::kFP32>(buffer.Lock().As<const bf16_t>());
     if (fp32_buf == nullptr) {
-      return absl::ResourceExhaustedError(
-          absl::StrCat("Failed to allocate FP32 buffer for weight ", name));
+      return absl::ResourceExhaustedError(absl::StrCat(
+          "Failed to allocate FP32 buffer for weight ", tensor.GetName()));
     }
     tensor.SetType(Type::kFP32);
     tensor.SetBuffer(fp32_buf);
-  }
-  return absl::OkStatus();
-}
-
-// Slices the combined per-layer model projection weight matrix
-// ("model.per_layer_model_projection.weight") of shape
-// [num_layers, per_layer_input_dim, embed_dim] into individual per-layer 2D
-// weight tensors ("model.layers.<l>.per_layer_model_projection.weight") of
-// shape [per_layer_input_dim, embed_dim] for each layer `l`.
-absl::Status SlicePerLayerModelProjectionWeights(
-    const Config& config,
-    absl::flat_hash_map<std::string, TensorHandle>& weights_handle) {
-  TRACE_EVENT(kTensorApiCategory, "SlicePerLayerModelProjectionWeights");
-  auto proj_w_it =
-      weights_handle.find("model.per_layer_model_projection.weight");
-  if (proj_w_it == weights_handle.end()) {
     return absl::OkStatus();
   }
 
-  LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & proj_w_buf,
-                              proj_w_it->second.GetBuffer());
-  auto proj_locked = proj_w_buf.Lock();
-  const std::byte* proj_w_bytes = proj_locked.data();
-  if (proj_w_bytes == nullptr) {
-    return absl::InternalError(
-        "Null buffer data for model.per_layer_model_projection.weight");
-  }
+  absl::StatusOr<TensorHandle> SlicePerLayerModelProjection(
+      TensorMapping& mapping, absl::string_view model_name, int layer) {
+    if (layer < 0 || layer >= config_.num_layers) {
+      return absl::NotFoundError(absl::StrCat("No weight maps to ", model_name,
+                                              ", the model has ",
+                                              config_.num_layers, " layers."));
+    }
+    LRT_TENSOR_ASSIGN_OR_RETURN(TensorHandle proj_w,
+                                mapping.Get(kPerLayerModelProjection));
+    if (proj_w.GetType() != Type::kFP32) {
+      return absl::UnimplementedError(
+          absl::StrCat(kPerLayerModelProjection, " has type ", proj_w.GetType(),
+                       ", expected FP32."));
+    }
+    LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & proj_w_buf, proj_w.GetBuffer());
+    auto proj_locked = proj_w_buf.Lock();
+    const std::byte* proj_w_bytes = proj_locked.data();
+    if (proj_w_bytes == nullptr) {
+      return absl::InternalError(
+          absl::StrCat("Null buffer data for ", kPerLayerModelProjection));
+    }
 
-  const size_t layer_w_bytes = static_cast<size_t>(config.per_layer_input_dim) *
-                               config.embed_dim * sizeof(float);
+    const size_t layer_w_bytes =
+        static_cast<size_t>(config_.per_layer_input_dim) * config_.embed_dim *
+        sizeof(float);
+    if (proj_locked.size() < (layer + 1) * layer_w_bytes) {
+      return absl::InvalidArgumentError(
+          absl::StrCat(kPerLayerModelProjection, " holds ", proj_locked.size(),
+                       " bytes, which is too small to slice layer ", layer));
+    }
 
-  for (int l = 0; l < config.num_layers; ++l) {
-    const std::byte* layer_bytes = proj_w_bytes + l * layer_w_bytes;
-    std::string name =
-        absl::StrCat("model.layers.", l, ".per_layer_model_projection.weight");
-    weights_handle[name] = Tensor({
-        .name = name,
+    const std::byte* layer_bytes = proj_w_bytes + layer * layer_w_bytes;
+    return TensorHandle({
+        .name = std::string(model_name),
         .type = Type::kFP32,
-        .shape = {config.per_layer_input_dim, config.embed_dim},
+        .shape = {config_.per_layer_input_dim, config_.embed_dim},
+        // The combined weight is stored in the checkpoint mapping, which keeps
+        // its data alive for the slices that don't own their data.
         .buffer = std::make_shared<SpanCpuBuffer>(layer_bytes, layer_w_bytes),
     });
   }
-  return absl::OkStatus();
-}
+
+  Config config_;
+  tflite::xnnpack::MMapWeightCacheProvider* weight_cache_;
+};
 
 absl::Status FillAttentionMask(const Shape& shape, const absl::Span<float> mask,
                                const bool is_local,
@@ -267,31 +317,34 @@ void AppendTokenToKvCache(std::vector<float>& cache_buf,
 }
 
 struct LoadedTensors {
-  absl::flat_hash_map<std::string, TensorHandle> weights_handle;
+  LazyTensorMapping weights;
   std::unique_ptr<GemmaEmbeddingTable> token_embedding;
   std::unique_ptr<GemmaEmbeddingTable> emb_per_layer_table;
 };
 
 absl::StatusOr<LoadedTensors> LoadWeightsAndPrepareTensors(
-    const SafetensorLoader& loader, const Config& config) {
+    SafetensorLoader loader, const Config& config,
+    tflite::xnnpack::MMapWeightCacheProvider* weight_cache) {
   TRACE_EVENT(kTensorApiCategory, "LoadWeightsAndPrepareTensors");
-  auto weight_mapping = GetGemma4WeightMapping(config.num_layers);
-  LRT_TENSOR_ASSIGN_OR_RETURN(auto weights_handle,
-                              loader.LoadWeightsWithMapping(weight_mapping));
-  LRT_TENSOR_RETURN_IF_ERROR(FallbackBF16WeightsToFp32(weights_handle));
-  LRT_TENSOR_RETURN_IF_ERROR(
-      SlicePerLayerModelProjectionWeights(config, weights_handle));
+  LazyTensorMapping weights(GetGemma4WeightMapping(config.num_layers),
+                            std::move(loader));
+  weights.Register<Gemma4WeightHooks>().Register<XnnpackWeightHooks>(
+      config, weight_cache);
+  LRT_TENSOR_ASSIGN_OR_RETURN(TensorHandle embed_tokens,
+                              weights.Get("model.embed_tokens.weight"));
   LRT_TENSOR_ASSIGN_OR_RETURN(
       std::unique_ptr<GemmaEmbeddingTable> token_embedding,
-      GemmaEmbeddingTable::Create(weights_handle["model.embed_tokens.weight"],
-                                  config.embed_dim));
+      GemmaEmbeddingTable::Create(embed_tokens, config.embed_dim));
+  LRT_TENSOR_ASSIGN_OR_RETURN(
+      TensorHandle embed_tokens_per_layer,
+      weights.Get("model.embed_tokens_per_layer.weight"));
   LRT_TENSOR_ASSIGN_OR_RETURN(
       std::unique_ptr<GemmaEmbeddingTable> emb_per_layer_table,
       GemmaEmbeddingTable::Create(
-          weights_handle["model.embed_tokens_per_layer.weight"],
+          embed_tokens_per_layer,
           config.num_layers * config.per_layer_input_dim));
 
-  return LoadedTensors{std::move(weights_handle), std::move(token_embedding),
+  return LoadedTensors{std::move(weights), std::move(token_embedding),
                        std::move(emb_per_layer_table)};
 }
 
@@ -303,9 +356,7 @@ struct BuiltGraphs {
 };
 
 absl::StatusOr<Gemma4Inputs<XnnpackMixinTag>> CreateGemma4Inputs(
-    const Config& config, int input_seq_len, int kv_cache_len,
-    const absl::flat_hash_map<std::string, TensorHandle>& weights_handle,
-    bool verbose) {
+    const Config& config, int input_seq_len, int kv_cache_len) {
   const int batch_size = 1;
   Gemma4Inputs<XnnpackMixinTag> inputs;
 
@@ -382,37 +433,25 @@ absl::StatusOr<Gemma4Inputs<XnnpackMixinTag>> CreateGemma4Inputs(
          .shape = {batch_size, input_seq_len, config.per_layer_input_dim}}));
   }
 
-  for (auto& [name, xnnpack_tensor] : weights_handle) {
-    if (xnnpack_tensor.GetBuffer().ok()) {
-      inputs.weights.emplace(name, xnnpack_tensor);
-      if (verbose) {
-        ABSL_LOG(INFO) << "Added weight: " << name << " shape: ["
-                       << absl::StrJoin(xnnpack_tensor.GetShape(), ", ") << "]";
-      }
-    }
-  }
-
   return inputs;
 }
 
-absl::StatusOr<BuiltGraphs> BuildModelGraphs(
-    const Config& config, int seq_len,
-    const absl::flat_hash_map<std::string, TensorHandle>& weights_handle,
-    bool verbose) {
+absl::StatusOr<BuiltGraphs> BuildModelGraphs(const Config& config, int seq_len,
+                                             TensorMapping& weights) {
   TRACE_EVENT(kTensorApiCategory, "BuildModelGraphs");
   LRT_TENSOR_ASSIGN_OR_RETURN(
       Gemma4Inputs<XnnpackMixinTag> prefill_inputs,
-      CreateGemma4Inputs(config, /*input_seq_len=*/seq_len, /*kv_cache_len=*/0,
-                         weights_handle, verbose));
-  LRT_TENSOR_ASSIGN_OR_RETURN(Gemma4Outputs<XnnpackMixinTag> prefill_outputs,
-                              BuildGemma4Graph(prefill_inputs, config));
-
+      CreateGemma4Inputs(config, /*input_seq_len=*/seq_len,
+                         /*kv_cache_len=*/0));
   LRT_TENSOR_ASSIGN_OR_RETURN(
-      Gemma4Inputs<XnnpackMixinTag> decode_inputs,
-      CreateGemma4Inputs(config, /*input_seq_len=*/1, /*kv_cache_len=*/seq_len,
-                         weights_handle, /*verbose=*/false));
+      Gemma4Outputs<XnnpackMixinTag> prefill_outputs,
+      BuildGemma4Graph(prefill_inputs, weights, config));
+
+  LRT_TENSOR_ASSIGN_OR_RETURN(Gemma4Inputs<XnnpackMixinTag> decode_inputs,
+                              CreateGemma4Inputs(config, /*input_seq_len=*/1,
+                                                 /*kv_cache_len=*/seq_len));
   LRT_TENSOR_ASSIGN_OR_RETURN(Gemma4Outputs<XnnpackMixinTag> decode_outputs,
-                              BuildGemma4Graph(decode_inputs, config));
+                              BuildGemma4Graph(decode_inputs, weights, config));
 
   return BuiltGraphs{std::move(prefill_inputs), std::move(prefill_outputs),
                      std::move(decode_inputs), std::move(decode_outputs)};
@@ -773,9 +812,6 @@ absl::Status Run(const std::string& weights_path,
                  << " n_kv_heads=" << config.num_kv_heads
                  << " vocab_size=" << config.vocab_size;
 
-  LRT_TENSOR_ASSIGN_OR_RETURN(LoadedTensors loaded_tensors,
-                              LoadWeightsAndPrepareTensors(loader, config));
-
   std::string weight_cache_path = absl::GetFlag(FLAGS_weight_cache);
   if (weight_cache_path == kAutoWeightCacheFlag) {
     weight_cache_path = absl::StrCat(weights_path, ".cache");
@@ -784,14 +820,18 @@ absl::Status Run(const std::string& weights_path,
   const bool use_weight_cache = !weight_cache_path.empty();
   if (use_weight_cache) {
     TRACE_EVENT(kTensorApiCategory, "MapWeightCache");
-    LRT_TENSOR_RETURN_IF_ERROR(MapGemma4WeightIdentifiers(
-        weight_cache_provider, loaded_tensors.weights_handle));
     if (!weight_cache_provider.LoadOrStartBuild(weight_cache_path.c_str())) {
       return absl::InternalError(absl::StrCat(
           "Failed to load or start build for XNNPack weight cache file: ",
           weight_cache_path));
     }
   }
+
+  LRT_TENSOR_ASSIGN_OR_RETURN(
+      LoadedTensors loaded_tensors,
+      LoadWeightsAndPrepareTensors(
+          std::move(loader), config,
+          use_weight_cache ? &weight_cache_provider : nullptr));
 
   TRACE_EVENT_BEGIN(kTensorApiCategory, "TokenizerEncode");
   std::vector<int32_t> input_tokens =
@@ -807,8 +847,7 @@ absl::Status Run(const std::string& weights_path,
 
   LRT_TENSOR_ASSIGN_OR_RETURN(
       BuiltGraphs graphs,
-      BuildModelGraphs(config, seq_len, loaded_tensors.weights_handle,
-                       verbose));
+      BuildModelGraphs(config, seq_len, loaded_tensors.weights));
 
   LRT_TENSOR_RETURN_IF_ERROR(graphs.prefill_outputs.logits.GetStatus())
       << "Output logits tensor isn't valid.";
