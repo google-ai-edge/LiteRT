@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, elu, embeddingLookup, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gather, gatherNd, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maxPool2d, maximum, mean, minimum, mul, neg, notEqual, oneHot, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, round, rsqrt, select, sin, slice, softmax, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, transpose, transposeConv2d, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
+import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, elu, embeddingLookup, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gather, gatherNd, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maxPool2d, maximum, mean, minimum, mul, neg, nonMaxSuppression, notEqual, oneHot, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, round, rsqrt, select, sin, slice, softmax, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, topK, transpose, transposeConv2d, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -2905,6 +2905,64 @@ describe('LiteRt', () => {
         embOut.delete();
         embModel.delete();
       });
+    });
+
+    describe('authored ranking and detection post-processing graphs', () => {
+      let mat: Tensor;
+      let boxes: Tensor;
+      let scores: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        mat = Tensor.fromTypedArray(
+            new Float32Array([10, 50, 20, 40, 15, 35, 65, 25]), [2, 4]);
+        boxes = Tensor.fromTypedArray(
+            new Float32Array([0, 0, 1, 1, 0, 0, 1, 1]), [2, 4]);
+        scores =
+            Tensor.fromTypedArray(new Float32Array([0.9, 0.75]), [2]);
+      });
+
+      afterAll(() => {
+        mat.delete();
+        boxes.delete();
+        scores.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes topK on ${accelerator}`, async () => {
+          const topkModel = author(
+              (x: Tensor) => topK(x, 2), {accelerator});
+          const topkOut = await topkModel.run(mat);
+          expect(topkOut.values.shape).toEqual([2, 2]);
+          expect(topkOut.indices.shape).toEqual([2, 2]);
+          expect(Array.from(await topkOut.values.data()))
+              .toEqual([50, 40, 65, 35]);
+          expect(Array.from(await topkOut.indices.data()).map(Number))
+              .toEqual([1, 3, 2, 1]);
+          topkOut.values.delete();
+          topkOut.indices.delete();
+          topkModel.delete();
+        });
+
+        it(`compiles and executes nonMaxSuppression on ${accelerator}`,
+           async () => {
+             const nmsModel = author(
+                 (b: Tensor, s: Tensor) =>
+                     nonMaxSuppression(b, s, 2, {iouThreshold: 0.5}),
+                 {accelerator});
+             const nmsOut = await nmsModel.run(boxes, scores);
+             expect(Array.from(await nmsOut.validOutputs.data()).map(Number))
+                 .toEqual([1]);
+             const indicesData =
+                 Array.from(await nmsOut.selectedIndices.data()).map(Number);
+             expect(indicesData[0]).toBe(0);
+
+             nmsOut.selectedIndices.delete();
+             nmsOut.selectedScores.delete();
+             nmsOut.validOutputs.delete();
+             nmsModel.delete();
+           });
+      }
     });
 
     it('can copy to a different environment', async () => {

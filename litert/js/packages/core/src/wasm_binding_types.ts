@@ -620,6 +620,18 @@ export declare interface LiteRtWasm extends WasmModule {
     weights: LiteRtTensorHandle,
     ids: LiteRtTensorHandle,
   ): LiteRtTensorHandle;
+  topK(
+    input: LiteRtTensorHandle,
+    k: number,
+  ): [LiteRtTensorHandle, LiteRtTensorHandle];
+  nonMaxSuppressionV5(
+    boxes: LiteRtTensorHandle,
+    scores: LiteRtTensorHandle,
+    maxOutputSize: number,
+    iouThreshold: number,
+    scoreThreshold: number,
+    softNmsSigma: number,
+  ): [LiteRtTensorHandle, LiteRtTensorHandle, LiteRtTensorHandle];
 }
 
 /**

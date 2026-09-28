@@ -622,6 +622,18 @@ export class Tensor implements Deletable, WithEnvironment {
     return embeddingLookup(this, ids);
   }
 
+  topK(k: number): TopKResult {
+    return topK(this, k);
+  }
+
+  nonMaxSuppression(
+    scores: Tensor,
+    maxOutputSize: number,
+    options: NonMaxSuppressionOptions = {},
+  ): NonMaxSuppressionResult {
+    return nonMaxSuppression(this, scores, maxOutputSize, options);
+  }
+
   abs(): Tensor {
     return abs(this);
   }
@@ -1437,6 +1449,32 @@ export interface TransposeConv2dOptions {
   bias?: Tensor;
 }
 
+/**
+ * Result of the topK operation.
+ */
+export interface TopKResult {
+  values: Tensor;
+  indices: Tensor;
+}
+
+/**
+ * Options for non-max suppression (NMS) operation.
+ */
+export interface NonMaxSuppressionOptions {
+  iouThreshold?: number;
+  scoreThreshold?: number;
+  softNmsSigma?: number;
+}
+
+/**
+ * Result of the non-max suppression (NMS) operation.
+ */
+export interface NonMaxSuppressionResult {
+  selectedIndices: Tensor;
+  selectedScores: Tensor;
+  validOutputs: Tensor;
+}
+
 function parsePadding(padding: Padding = 'SAME'): number {
   if (typeof padding === 'number') {
     return padding;
@@ -2226,6 +2264,58 @@ export function oneHot(
  */
 export const embeddingLookup: (weights: Tensor, ids: Tensor) => Tensor =
   makeBinOp((wasm, weights, ids) => wasm.embeddingLookup(weights, ids));
+
+/**
+ * Finds the values and indices of the k largest elements for the last dimension.
+ *
+ * @param input The tensor to compute top-k over.
+ * @param k Number of top elements to look for along the last dimension.
+ * @returns Object containing the values and indices tensors.
+ */
+export function topK(input: Tensor, k: number): TopKResult {
+  input.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const handles = wasm.topK(input.liteRtTensorHandle, k);
+  return {
+    values: new Tensor(handles[0], input.environment),
+    indices: new Tensor(handles[1], input.environment),
+  };
+}
+
+/**
+ * Performs Non-Maximum Suppression (NMS) on bounding boxes according to their scores.
+ *
+ * @param boxes 2D float32 tensor of shape [num_boxes, 4] representing box coordinates.
+ * @param scores 1D float32 tensor of shape [num_boxes] representing detection scores.
+ * @param maxOutputSize Maximum number of boxes to be selected.
+ * @param options IOU threshold, score threshold, and soft-NMS sigma options.
+ * @returns Object containing selectedIndices, selectedScores, and validOutputs scalar.
+ */
+export function nonMaxSuppression(
+  boxes: Tensor,
+  scores: Tensor,
+  maxOutputSize: number,
+  options: NonMaxSuppressionOptions = {},
+): NonMaxSuppressionResult {
+  ensureTensorsOk([boxes, scores]);
+  const iouThreshold = options.iouThreshold ?? 0.5;
+  const scoreThreshold = options.scoreThreshold ?? 0.0;
+  const softNmsSigma = options.softNmsSigma ?? 0.0;
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const handles = wasm.nonMaxSuppressionV5(
+    boxes.liteRtTensorHandle,
+    scores.liteRtTensorHandle,
+    maxOutputSize,
+    iouThreshold,
+    scoreThreshold,
+    softNmsSigma,
+  );
+  return {
+    selectedIndices: new Tensor(handles[0], boxes.environment),
+    selectedScores: new Tensor(handles[1], boxes.environment),
+    validOutputs: new Tensor(handles[2], boxes.environment),
+  };
+}
 
 /**
  * Computes the absolute value element-wise.
