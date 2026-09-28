@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, depthwiseConv2d, div, elu, embeddingLookup, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gather, gatherNd, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maxPool2d, maximum, mean, minimum, mul, neg, nonMaxSuppression, notEqual, oneHot, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, round, rsqrt, select, sin, slice, softmax, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, topK, transpose, transposeConv2d, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
+import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, cumsum, depthToSpace, depthwiseConv2d, div, elu, embeddingLookup, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gather, gatherNd, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maximum, maxPool2d, mean, minimum, mul, neg, nonMaxSuppression, notEqual, oneHot, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, reverse, round, rsqrt, select, sin, slice, softmax, spaceToDepth, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, topK, transpose, transposeConv2d, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -2962,6 +2962,102 @@ describe('LiteRt', () => {
              nmsOut.validOutputs.delete();
              nmsModel.delete();
            });
+      }
+    });
+
+    describe('authored cumulative, spatial layout, and sequence ops', () => {
+      let vec: Tensor;
+      let img: Tensor;
+      let actIn: Tensor;
+      let alpha: Tensor;
+      let update: Tensor;
+      let s2dIn: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        vec = Tensor.fromTypedArray(new Float32Array([1, 2, 3, 4]), [4]);
+        img = Tensor.fromTypedArray(
+            new Float32Array([1, 2, 3, 4]), [1, 2, 2, 1]);
+        actIn = Tensor.fromTypedArray(new Float32Array([-2.0, 3.0]), [2]);
+        alpha = Tensor.fromTypedArray(new Float32Array([0.5, 0.5]), [2]);
+        update = Tensor.fromTypedArray(new Float32Array([9.0, 8.0]), [2]);
+        s2dIn = Tensor.fromTypedArray(
+            new Float32Array([1, 2, 3, 4]), [1, 1, 1, 4]);
+      });
+
+      afterAll(() => {
+        img.delete();
+        actIn.delete();
+        alpha.delete();
+        update.delete();
+        s2dIn.delete();
+        vec.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes cumsum on ${accelerator}`, async () => {
+          if (accelerator === 'webgpu') {
+            pending('cumsum does not work on WebGPU yet');
+            return;
+          }
+          const csModel = author(
+              (x: Tensor) => cumsum(x, 0), {accelerator});
+          const csOut = await csModel.run(vec);
+          expect(csOut.shape).toEqual([4]);
+          expect(Array.from(await csOut.data())).toEqual([1, 3, 6, 10]);
+          csOut.delete();
+          csModel.delete();
+        });
+
+        it(`compiles and executes reverse on ${accelerator}`, async () => {
+          const revModel = author(
+              (x: Tensor) => reverse(x, 0), {accelerator});
+          const revOut = await revModel.run(vec);
+          expect(revOut.shape).toEqual([4]);
+          expect(Array.from(await revOut.data())).toEqual([4, 3, 2, 1]);
+          revOut.delete();
+          revModel.delete();
+        });
+
+        it(`compiles and executes spaceToDepth on ${accelerator}`, async () => {
+          const s2dModel = author(
+              (x: Tensor) => spaceToDepth(x, 2), {accelerator});
+          const s2dOut = await s2dModel.run(img);
+          expect(s2dOut.shape).toEqual([1, 1, 1, 4]);
+          s2dOut.delete();
+          s2dModel.delete();
+        });
+
+        it(`compiles and executes depthToSpace on ${accelerator}`, async () => {
+          const d2sModel = author(
+              (x: Tensor) => depthToSpace(x, 2), {accelerator});
+          const d2sOut = await d2sModel.run(s2dIn);
+          expect(d2sOut.shape).toEqual([1, 2, 2, 1]);
+          expect(Array.from(await d2sOut.data())).toEqual([1, 2, 3, 4]);
+          d2sOut.delete();
+          d2sModel.delete();
+        });
+
+        it(`compiles and executes pRelu on ${accelerator}`, async () => {
+          const preluModel = author(
+              (x: Tensor, a: Tensor) => x.pRelu(a), {accelerator});
+          const preluOut = await preluModel.run(actIn, alpha);
+          expect(Array.from(await preluOut.data())).toEqual([-1.0, 3.0]);
+          preluOut.delete();
+          preluModel.delete();
+        });
+
+        it(`compiles and executes dynamicUpdateSlice on ${accelerator}`,
+           async () => {
+          const dusModel = author(
+              (op: Tensor, up: Tensor) => op.dynamicUpdateSlice(up, [1]),
+              {accelerator});
+          const dusOut = await dusModel.run(vec, update);
+          expect(dusOut.shape).toEqual([4]);
+          expect(Array.from(await dusOut.data())).toEqual([1.0, 9.0, 8.0, 4.0]);
+          dusOut.delete();
+          dusModel.delete();
+        });
       }
     });
 

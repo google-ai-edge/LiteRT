@@ -632,6 +632,33 @@ export declare interface LiteRtWasm extends WasmModule {
     scoreThreshold: number,
     softNmsSigma: number,
   ): [LiteRtTensorHandle, LiteRtTensorHandle, LiteRtTensorHandle];
+  cumsum(
+    input: LiteRtTensorHandle,
+    axis: number,
+    exclusive: boolean,
+    reverse: boolean,
+  ): LiteRtTensorHandle;
+  reverse(
+    input: LiteRtTensorHandle,
+    axes: number[],
+  ): LiteRtTensorHandle;
+  spaceToDepth(
+    input: LiteRtTensorHandle,
+    blockSize: number,
+  ): LiteRtTensorHandle;
+  depthToSpace(
+    input: LiteRtTensorHandle,
+    blockSize: number,
+  ): LiteRtTensorHandle;
+  prelu(
+    input: LiteRtTensorHandle,
+    alpha: LiteRtTensorHandle,
+  ): LiteRtTensorHandle;
+  dynamicUpdateSlice(
+    operand: LiteRtTensorHandle,
+    update: LiteRtTensorHandle,
+    startIndices: number[],
+  ): LiteRtTensorHandle;
 }
 
 /**

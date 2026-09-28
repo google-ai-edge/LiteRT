@@ -634,6 +634,34 @@ export class Tensor implements Deletable, WithEnvironment {
     return nonMaxSuppression(this, scores, maxOutputSize, options);
   }
 
+  cumsum(
+    axis = 0,
+    exclusive = false,
+    reverse = false,
+  ): Tensor {
+    return cumsum(this, axis, exclusive, reverse);
+  }
+
+  reverse(axes: number | number[]): Tensor {
+    return reverse(this, axes);
+  }
+
+  spaceToDepth(blockSize: number): Tensor {
+    return spaceToDepth(this, blockSize);
+  }
+
+  depthToSpace(blockSize: number): Tensor {
+    return depthToSpace(this, blockSize);
+  }
+
+  pRelu(alpha: Tensor): Tensor {
+    return pRelu(this, alpha);
+  }
+
+  dynamicUpdateSlice(update: Tensor, startIndices: number[]): Tensor {
+    return dynamicUpdateSlice(this, update, startIndices);
+  }
+
   abs(): Tensor {
     return abs(this);
   }
@@ -2315,6 +2343,110 @@ export function nonMaxSuppression(
     selectedScores: new Tensor(handles[1], boxes.environment),
     validOutputs: new Tensor(handles[2], boxes.environment),
   };
+}
+
+/**
+ * Computes the cumulative sum of the tensor along axis.
+ *
+ * @param input Input tensor.
+ * @param axis Axis along which to compute the cumulative sum (default: 0).
+ * @param exclusive Whether to perform exclusive cumsum (default: false).
+ * @param reverse Whether to perform cumsum in reverse order (default: false).
+ * @returns Cumulative sum tensor.
+ */
+export function cumsum(
+  input: Tensor,
+  axis = 0,
+  exclusive = false,
+  reverse = false,
+): Tensor {
+  input.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.cumsum(
+    input.liteRtTensorHandle,
+    axis,
+    exclusive,
+    reverse,
+  );
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Reverses variable length slices along specified dimensions.
+ *
+ * @param input Input tensor.
+ * @param axes Axis or axes along which to reverse.
+ * @returns Reversed tensor.
+ */
+export function reverse(input: Tensor, axes: number | number[]): Tensor {
+  input.ensureNotDeleted();
+  const axesArray = typeof axes === 'number' ? [axes] : axes;
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.reverse(input.liteRtTensorHandle, axesArray);
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Rearranges blocks of spatial data into depth.
+ *
+ * @param input 4D tensor of shape [batch, height, width, depth].
+ * @param blockSize Size of spatial block, >= 2.
+ * @returns Tensor of shape [batch, height/blockSize, width/blockSize, depth*(blockSize^2)].
+ */
+export function spaceToDepth(input: Tensor, blockSize: number): Tensor {
+  input.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.spaceToDepth(input.liteRtTensorHandle, blockSize);
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Rearranges data from depth into blocks of spatial data.
+ *
+ * @param input 4D tensor of shape [batch, height, width, depth].
+ * @param blockSize Size of spatial block, >= 2.
+ * @returns Tensor of shape [batch, height*blockSize, width*blockSize, depth/(blockSize^2)].
+ */
+export function depthToSpace(input: Tensor, blockSize: number): Tensor {
+  input.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.depthToSpace(input.liteRtTensorHandle, blockSize);
+  return new Tensor(resultHandle, input.environment);
+}
+
+/**
+ * Computes parametric ReLU activation: max(0, x) + alpha * min(0, x).
+ *
+ * @param input Input tensor.
+ * @param alpha Multiplier tensor for negative elements.
+ * @returns Activated tensor.
+ */
+export const pRelu: (input: Tensor, alpha: Tensor) => Tensor = makeBinOp(
+  (wasm, input, alpha) => wasm.prelu(input, alpha),
+);
+
+/**
+ * Updates a slice of operand with update starting at startIndices.
+ *
+ * @param operand Base tensor to update.
+ * @param update Tensor of updates to insert into operand.
+ * @param startIndices N-dimensional starting indices.
+ * @returns Updated tensor.
+ */
+export function dynamicUpdateSlice(
+  operand: Tensor,
+  update: Tensor,
+  startIndices: number[],
+): Tensor {
+  operand.ensureNotDeleted();
+  update.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = wasm.dynamicUpdateSlice(
+    operand.liteRtTensorHandle,
+    update.liteRtTensorHandle,
+    startIndices,
+  );
+  return new Tensor(resultHandle, operand.environment);
 }
 
 /**
