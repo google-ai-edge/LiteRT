@@ -27,6 +27,9 @@ Keep the file list in sync with `tflite/tools/cmake/modules/
 Findtensorflow_headers.cmake`.
 """
 
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("@bazel_tools//tools/build_defs/repo:jvm.bzl", "jvm_import_external")
+
 _TENSORFLOW_BASE_URL = "https://raw.githubusercontent.com/tensorflow/tensorflow/v2.21.0/"
 
 # <path in the shim repository>: [<path in the TensorFlow repository>, <sha256>]
@@ -166,3 +169,262 @@ def tensorflow_shim_repositories():
         name = "llvm-project",
         shim_dir = "llvm_project",
     )
+
+def _archive_with_build_files_impl(ctx):
+    ctx.download_and_extract(
+        url = ctx.attr.urls,
+        sha256 = ctx.attr.sha256,
+        stripPrefix = ctx.attr.strip_prefix,
+    )
+    for label, path in ctx.attr.build_files.items():
+        ctx.delete(path)
+        ctx.symlink(label, path)
+
+# Like `http_archive`, but can add build files to subdirectories.
+_archive_with_build_files = repository_rule(
+    implementation = _archive_with_build_files_impl,
+    attrs = {
+        "build_files": attr.label_keyed_string_dict(allow_files = True),
+        "sha256": attr.string(mandatory = True),
+        "strip_prefix": attr.string(),
+        "urls": attr.string_list(mandatory = True),
+    },
+)
+
+def tensorflow_shim_dependencies():
+    """Defines the external repositories that TensorFlow's workspace used to add.
+
+    LiteRT build files use these directly. The versions match the ones that
+    TensorFlow's `tf_workspace*()` macros declared, except for zlib, which uses
+    the version and build file from protobuf.
+    """
+    if not native.existing_rule("zlib"):
+        http_archive(
+            name = "zlib",
+            build_file = "@com_google_protobuf//third_party:zlib.BUILD",
+            sha256 = "38ef96b8dfe510d42707d9c781877914792541133e1870841463bfa73f883e32",
+            strip_prefix = "zlib-1.3.1",
+            urls = [
+                "https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.xz",
+                "https://zlib.net/zlib-1.3.1.tar.xz",
+            ],
+        )
+
+    if not native.existing_rule("absl_py"):
+        http_archive(
+            name = "absl_py",
+            sha256 = "8a3d0830e4eb4f66c4fa907c06edf6ce1c719ced811a12e26d9d3162f8471758",
+            strip_prefix = "abseil-py-2.1.0",
+            urls = ["https://github.com/abseil/abseil-py/archive/refs/tags/v2.1.0.tar.gz"],
+        )
+
+    if not native.existing_rule("ml_dtypes_py"):
+        _archive_with_build_files(
+            name = "ml_dtypes_py",
+            build_files = {
+                Label("//third_party/py/ml_dtypes:ml_dtypes_py.BUILD"): "BUILD.bazel",
+                Label("//third_party/py/ml_dtypes:ml_dtypes.BUILD"): "ml_dtypes/BUILD.bazel",
+            },
+            sha256 = "f6e5880666661351e6cd084ac4178ddc4dabcde7e9a73722981c0d1500cf5937",
+            strip_prefix = "ml_dtypes-00d98cd92ade342fef589c0470379abb27baebe9",
+            urls = ["https://github.com/jax-ml/ml_dtypes/archive/00d98cd92ade342fef589c0470379abb27baebe9/ml_dtypes-00d98cd92ade342fef589c0470379abb27baebe9.tar.gz"],
+        )
+
+    if not native.existing_rule("com_google_fuzztest"):
+        http_archive(
+            name = "com_google_fuzztest",
+            sha256 = "c75f224b34c3c62ee901381fb743f6326f7b91caae0ceb8fe62f3fd36f187627",
+            strip_prefix = "fuzztest-58b4e7065924f1a284952b84ea827ce35a87e4dc",
+            urls = ["https://github.com/google/fuzztest/archive/58b4e7065924f1a284952b84ea827ce35a87e4dc.zip"],
+        )
+
+    if not native.existing_rule("jsoncpp_git"):
+        http_archive(
+            name = "jsoncpp_git",
+            sha256 = "f409856e5920c18d0c2fb85276e24ee607d2a09b5e7d5f0a371368903c275da2",
+            strip_prefix = "jsoncpp-1.9.5",
+            urls = ["https://github.com/open-source-parsers/jsoncpp/archive/1.9.5.tar.gz"],
+        )
+
+    if not native.existing_rule("tflite_mobilenet_float"):
+        http_archive(
+            name = "tflite_mobilenet_float",
+            build_file = Label("//third_party/tflite_mobilenet:tflite_mobilenet_float.BUILD"),
+            sha256 = "2fadeabb9968ec6833bee903900dda6e61b3947200535874ce2fe42a8493abc0",
+            urls = ["https://storage.googleapis.com/download.tensorflow.org/models/mobilenet_v1_2018_08_02/mobilenet_v1_1.0_224.tgz"],
+        )
+
+    if not native.existing_rule("com_google_benchmark"):
+        http_archive(
+            name = "com_google_benchmark",
+            sha256 = "552ca3d4d1af4beeb1907980f7096315aa24150d6baf5ac1e5ad90f04846c670",
+            strip_prefix = "benchmark-f7547e29ccaed7b64ef4f7495ecfff1c9f6f3d03",
+            urls = ["https://github.com/google/benchmark/archive/f7547e29ccaed7b64ef4f7495ecfff1c9f6f3d03.tar.gz"],
+        )
+
+    if not native.existing_rule("hexagon_nn"):
+        http_archive(
+            name = "hexagon_nn",
+            build_file = Label("//third_party/hexagon:hexagon.BUILD"),
+            sha256 = "f577b4c150b72e11e9dfb3f9d14f9772ba8fe460f7d65c84a7327ea9bef44d8e",
+            urls = ["https://storage.googleapis.com/mirror.tensorflow.org/storage.cloud.google.com/download.tensorflow.org/tflite/hexagon_nn_headers_v1.20.0.9.tgz"],
+        )
+
+    if not native.existing_rule("kissfft"):
+        http_archive(
+            name = "kissfft",
+            build_file = Label("//third_party/kissfft:kissfft.BUILD"),
+            sha256 = "76c1aac87ddb7258f34b08a13f0eebf9e53afa299857568346aa5c82bcafaf1a",
+            strip_prefix = "kissfft-131.1.0",
+            urls = ["https://github.com/mborgerding/kissfft/archive/refs/tags/131.1.0.tar.gz"],
+        )
+
+    if not native.existing_rule("vulkan_headers"):
+        _archive_with_build_files(
+            name = "vulkan_headers",
+            build_files = {
+                Label("//third_party/vulkan_headers:vulkan_headers.BUILD"): "BUILD.bazel",
+                Label("//third_party/vulkan_headers:tensorflow/vulkan_hpp_dispatch_loader_dynamic.cc"): "tensorflow/vulkan_hpp_dispatch_loader_dynamic.cc",
+            },
+            sha256 = "602aedcc4c6057473d0f7fee1bcc3aa01bf191371b2b5bbca949cebc03cf393a",
+            strip_prefix = "Vulkan-Headers-32c07c0c5334aea069e518206d75e002ccd85389",
+            urls = ["https://github.com/KhronosGroup/Vulkan-Headers/archive/32c07c0c5334aea069e518206d75e002ccd85389.tar.gz"],
+        )
+
+    if not native.existing_rule("tflite_mobilenet_ssd_quant_protobuf"):
+        http_archive(
+            name = "tflite_mobilenet_ssd_quant_protobuf",
+            build_file = Label("//third_party/tflite_mobilenet:tflite_mobilenet.BUILD"),
+            sha256 = "09280972c5777f1aa775ef67cb4ac5d5ed21970acd8535aeca62450ef14f0d79",
+            strip_prefix = "ssd_mobilenet_v1_quantized_300x300_coco14_sync_2018_07_18",
+            urls = ["https://storage.googleapis.com/download.tensorflow.org/models/object_detection/ssd_mobilenet_v1_quantized_300x300_coco14_sync_2018_07_18.tar.gz"],
+        )
+
+    if not native.existing_rule("org_checkerframework_qual"):
+        jvm_import_external(
+            name = "org_checkerframework_qual",
+            artifact_sha256 = "d261fde25d590f6b69db7721d469ac1b0a19a17ccaaaa751c31f0d8b8260b894",
+            artifact_urls = ["https://repo1.maven.org/maven2/org/checkerframework/checker-qual/2.10.0/checker-qual-2.10.0.jar"],
+            licenses = ["notice"],
+            rule_name = "java_import",
+        )
+
+    if not native.existing_rule("com_google_auto_value_annotations"):
+        jvm_import_external(
+            name = "com_google_auto_value_annotations",
+            artifact_sha256 = "d095936c432f2afc671beaab67433e7cef50bba4a861b77b9c46561b801fae69",
+            artifact_urls = ["https://repo1.maven.org/maven2/com/google/auto/value/auto-value-annotations/1.6/auto-value-annotations-1.6.jar"],
+            default_visibility = ["@com_google_auto_value//:__pkg__"],
+            licenses = ["notice"],
+            neverlink = True,
+            rule_name = "java_import",
+        )
+
+    if not native.existing_rule("com_google_auto_value"):
+        jvm_import_external(
+            name = "com_google_auto_value",
+            artifact_sha256 = "fd811b92bb59ae8a4cf7eb9dedd208300f4ea2b6275d726e4df52d8334aaae9d",
+            artifact_urls = ["https://repo1.maven.org/maven2/com/google/auto/value/auto-value/1.6/auto-value-1.6.jar"],
+            exports = ["@com_google_auto_value_annotations"],
+            extra_build_file_content = _AUTO_VALUE_PLUGINS,
+            generated_rule_name = "processor",
+            licenses = ["notice"],
+            rule_name = "java_import",
+        )
+
+    # Test-only Java dependencies of `tflite/java`.
+    if not native.existing_rule("junit"):
+        jvm_import_external(
+            name = "junit",
+            artifact_sha256 = "59721f0805e223d84b90677887d9ff567dc534d7c502ca903c0c2b17f05c116a",
+            artifact_urls = ["https://repo1.maven.org/maven2/junit/junit/4.12/junit-4.12.jar"],
+            licenses = ["reciprocal"],
+            rule_name = "java_import",
+            testonly_ = True,
+            deps = ["@org_hamcrest_core"],
+        )
+
+    if not native.existing_rule("org_hamcrest_core"):
+        jvm_import_external(
+            name = "org_hamcrest_core",
+            artifact_sha256 = "66fdef91e9739348df7a096aa384a5685f4e875584cce89386a7a47251c4d8e9",
+            artifact_urls = ["https://repo1.maven.org/maven2/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar"],
+            licenses = ["notice"],
+            rule_name = "java_import",
+            testonly_ = True,
+        )
+
+    if not native.existing_rule("com_google_truth"):
+        jvm_import_external(
+            name = "com_google_truth",
+            artifact_sha256 = "032eddc69652b0a1f8d458f999b4a9534965c646b8b5de0eba48ee69407051df",
+            artifact_urls = ["https://repo1.maven.org/maven2/com/google/truth/truth/0.32/truth-0.32.jar"],
+            licenses = ["notice"],
+            rule_name = "java_import",
+            testonly_ = True,
+            deps = ["@com_google_guava"],
+        )
+
+    if not native.existing_rule("com_google_guava"):
+        jvm_import_external(
+            name = "com_google_guava",
+            artifact_sha256 = "6db0c3a244c397429c2e362ea2837c3622d5b68bb95105d37c21c36e5bc70abf",
+            artifact_urls = ["https://repo1.maven.org/maven2/com/google/guava/guava/25.1-jre/guava-25.1-jre.jar"],
+            exports = [
+                "@com_google_code_findbugs_jsr305",
+                "@com_google_errorprone_error_prone_annotations",
+            ],
+            licenses = ["notice"],
+            rule_name = "java_import",
+        )
+
+    if not native.existing_rule("com_google_code_findbugs_jsr305"):
+        jvm_import_external(
+            name = "com_google_code_findbugs_jsr305",
+            artifact_sha256 = "bec0b24dcb23f9670172724826584802b80ae6cbdaba03bdebdef9327b962f6a",
+            artifact_urls = ["https://repo1.maven.org/maven2/com/google/code/findbugs/jsr305/2.0.3/jsr305-2.0.3.jar"],
+            licenses = ["notice"],
+            rule_name = "java_import",
+        )
+
+    if not native.existing_rule("com_google_errorprone_error_prone_annotations"):
+        jvm_import_external(
+            name = "com_google_errorprone_error_prone_annotations",
+            artifact_sha256 = "03d0329547c13da9e17c634d1049ea2ead093925e290567e1a364fd6b1fc7ff8",
+            artifact_urls = ["https://repo1.maven.org/maven2/com/google/errorprone/error_prone_annotations/2.1.3/error_prone_annotations-2.1.3.jar"],
+            licenses = ["notice"],
+            rule_name = "java_import",
+        )
+
+_AUTO_VALUE_PLUGINS = """
+java_plugin(
+    name = "AutoAnnotationProcessor",
+    output_licenses = ["unencumbered"],
+    processor_class = "com.google.auto.value.processor.AutoAnnotationProcessor",
+    deps = [":processor"],
+)
+
+java_plugin(
+    name = "AutoOneOfProcessor",
+    output_licenses = ["unencumbered"],
+    processor_class = "com.google.auto.value.processor.AutoOneOfProcessor",
+    deps = [":processor"],
+)
+
+java_plugin(
+    name = "AutoValueProcessor",
+    output_licenses = ["unencumbered"],
+    processor_class = "com.google.auto.value.processor.AutoValueProcessor",
+    deps = [":processor"],
+)
+
+java_library(
+    name = "com_google_auto_value",
+    exported_plugins = [
+        ":AutoAnnotationProcessor",
+        ":AutoOneOfProcessor",
+        ":AutoValueProcessor",
+    ],
+    exports = ["@com_google_auto_value_annotations"],
+)
+"""

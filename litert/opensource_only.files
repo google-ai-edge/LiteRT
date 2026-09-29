@@ -47,4 +47,5 @@
 /opensource_only/third_party/tensorflow_shim/xla/xla/tsl/platform/BUILD:
 /opensource_only/third_party/tensorflow_shim/xla/xla/tsl/platform/build_config_root.bzl:
 /opensource_only/third_party/tensorflow_shim/xla/xla/tsl/util/BUILD:
+/opensource_only/third_party/vulkan_headers/tensorflow/vulkan_hpp_dispatch_loader_dynamic.cc:
 /tensor/examples/utils/initialization:.cc
