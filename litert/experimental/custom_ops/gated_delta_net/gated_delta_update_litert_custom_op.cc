@@ -130,9 +130,10 @@ Expected<void> GatedDeltaUpdateCustomOpKernel::Run(
     return Unexpected(Status::kErrorInvalidArgument,
                       "Input rank must be >= 4 for GatedDeltaUpdate");
   }
-  const int B = q_dims[0];
-  const int H = q_dims[1];
-  const int N = q_dims[2];
+  const int B = v_dims[0];
+  const int H = v_dims[1];
+  const int H_k = q_dims[1];
+  const int N = v_dims[2];
   const int D_k = q_dims[3];
   const int D_v = v_dims[3];
 
@@ -166,7 +167,7 @@ Expected<void> GatedDeltaUpdateCustomOpKernel::Run(
   ComputeGatedDeltaUpdateRecurrent(q_lock.second, k_lock.second, v_lock.second,
                                    beta_lock.second, g_lock.second,
                                    rec_lock.second, out_lock.second,
-                                   new_rec_lock.second, B, H, N, D_k, D_v);
+                                   new_rec_lock.second, B, H, N, D_k, D_v, H_k);
 
   return {};
 }
