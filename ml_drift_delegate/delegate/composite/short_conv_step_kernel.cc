@@ -22,7 +22,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/substitute.h"  // from @com_google_absl
@@ -64,7 +63,8 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
     const ::ml_drift::TensorDescriptor* conv_bias_desc,
     const ::ml_drift::TensorDescriptor& dst_desc,
     const ::ml_drift::TensorDescriptor& next_state_desc,
-    int num_slices, int hidden_size, int conv_L_cache) {
+    int num_slices, int hidden_size, int conv_L_cache,
+    bool is_gated, bool use_silu) {
   FusedShortConvStepOp custom_op;
   custom_op.args_.AddInt("num_slices", num_slices);
   custom_op.args_.AddInt("hidden_size", hidden_size);
@@ -105,10 +105,57 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
         "0, $1)";
   }
 
-  ABSL_LOG(INFO) << "ShortConvStep: hidden_size=" << hidden_size
-                 << ", num_slices=" << num_slices
-                 << ", conv_L_cache=" << conv_L_cache
-                 << ", has_bias=" << (conv_bias_desc != nullptr);
+  std::string input_read_code;
+  if (is_gated) {
+    input_read_code = R"(
+  float4 b = ucl::Convert<float4>(args.in_proj.Read(0, 0, S));
+  float4 c = ucl::Convert<float4>(args.in_proj.Read(0, 0, S + args.num_slices));
+  float4 x = ucl::Convert<float4>(args.in_proj.Read(0, 0, S + 2 * args.num_slices));
+  float4 p = b * x;
+)";
+  } else {
+    input_read_code = R"(
+  float4 p = ucl::Convert<float4>(args.in_proj.Read(0, 0, S));
+)";
+  }
+
+  auto make_channel_code = [&](int idx, const char* comp) {
+    std::string ch = absl::Substitute("ch$0", idx);
+    std::string s = absl::Substitute("s$0", idx);
+    std::string w = absl::Substitute("w$0", idx);
+    std::string dot_expr;
+    std::string next_state_val;
+    if (conv_L_cache == 4) {
+      dot_expr = absl::Substitute(
+          "conv_out.$0 = $1.x * $2.x + $1.y * $2.y + $1.z * $2.z + "
+          "p.$0 * $2.w;",
+          comp, s, w);
+      next_state_val = absl::Substitute(
+          "ucl::Init<float4>($0.y, $0.z, p.$1, 0.0f)", s, comp);
+    } else {
+      dot_expr = absl::Substitute(
+          "conv_out.$0 = $1.x * $2.x + $1.y * $2.y + p.$0 * $2.z;", comp, s, w);
+      next_state_val = absl::Substitute(
+          "ucl::Init<float4>($0.y, p.$1, 0.0f, 0.0f)", s, comp);
+    }
+    return absl::Substitute(
+        R"(
+  // Channel $0
+  int $1 = 4 * S + $0;
+  float4 $2 = ucl::Convert<float4>($4);
+  float4 $3 = ucl::Convert<float4>($5);
+  $6
+  $7;
+)",
+        idx, ch, s, w, absl::Substitute(state_read_expr, ch),
+        absl::Substitute(weight_read_expr, ch), dot_expr,
+        absl::Substitute(next_state_write_expr, next_state_val, ch));
+  };
+
+  std::string channels_code = make_channel_code(0, "x") +
+                              make_channel_code(1, "y") +
+                              make_channel_code(2, "z") +
+                              make_channel_code(3, "w");
 
   std::string bias_code = "";
   if (conv_bias_desc != nullptr) {
@@ -118,6 +165,16 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
   conv_out += bias;
 )";
   }
+
+  std::string silu_code = "";
+  if (use_silu) {
+    silu_code = R"(
+  conv_out = conv_out / (ucl::Init<float4>(1.0f) + exp(-conv_out));
+)";
+  }
+
+  std::string output_code =
+      is_gated ? "  float4 y = c * conv_out;\n" : "  float4 y = conv_out;\n";
 
   std::string op_code = R"(
 MAIN_FUNCTION($0) {
@@ -133,47 +190,10 @@ MAIN_FUNCTION($0) {
   if (X >= args.out.Width() || Y >= args.out.Height() || S >= args.out.Slices()) {
     return;
   }
-
-  float4 b = ucl::Convert<float4>(args.in_proj.Read(0, 0, S));
-  float4 c = ucl::Convert<float4>(args.in_proj.Read(0, 0, S + args.num_slices));
-  float4 x = ucl::Convert<float4>(args.in_proj.Read(0, 0, S + 2 * args.num_slices));
-  float4 p = b * x;
-
+)" + input_read_code + R"(
   float4 conv_out;
-
-  // Channel 0
-  int ch0 = 4 * S + 0;
-  float4 s0 = ucl::Convert<float4>()" + absl::Substitute(state_read_expr, "ch0") + R"();
-  float4 w0 = ucl::Convert<float4>()" + absl::Substitute(weight_read_expr, "ch0") + R"();
-  conv_out.x = s0.x * w0.x + s0.y * w0.y + p.x * w0.z;
-  )" + absl::Substitute(next_state_write_expr,
-                        "ucl::Init<float4>(s0.y, p.x, 0.0f, 0.0f)", "ch0") + R"(;
-
-  // Channel 1
-  int ch1 = 4 * S + 1;
-  float4 s1 = ucl::Convert<float4>()" + absl::Substitute(state_read_expr, "ch1") + R"();
-  float4 w1 = ucl::Convert<float4>()" + absl::Substitute(weight_read_expr, "ch1") + R"();
-  conv_out.y = s1.x * w1.x + s1.y * w1.y + p.y * w1.z;
-  )" + absl::Substitute(next_state_write_expr,
-                        "ucl::Init<float4>(s1.y, p.y, 0.0f, 0.0f)", "ch1") + R"(;
-
-  // Channel 2
-  int ch2 = 4 * S + 2;
-  float4 s2 = ucl::Convert<float4>()" + absl::Substitute(state_read_expr, "ch2") + R"();
-  float4 w2 = ucl::Convert<float4>()" + absl::Substitute(weight_read_expr, "ch2") + R"();
-  conv_out.z = s2.x * w2.x + s2.y * w2.y + p.z * w2.z;
-  )" + absl::Substitute(next_state_write_expr,
-                        "ucl::Init<float4>(s2.y, p.z, 0.0f, 0.0f)", "ch2") + R"(;
-
-  // Channel 3
-  int ch3 = 4 * S + 3;
-  float4 s3 = ucl::Convert<float4>()" + absl::Substitute(state_read_expr, "ch3") + R"();
-  float4 w3 = ucl::Convert<float4>()" + absl::Substitute(weight_read_expr, "ch3") + R"();
-  conv_out.w = s3.x * w3.x + s3.y * w3.y + p.w * w3.z;
-  )" + absl::Substitute(next_state_write_expr,
-                        "ucl::Init<float4>(s3.y, p.w, 0.0f, 0.0f)", "ch3") + R"(;
-)" + bias_code + R"(
-  float4 y = c * conv_out;
+)" + channels_code + bias_code +
+                        silu_code + output_code + R"(
   args.out.Write(ucl::Convert<args.out::type>(y), 0, 0, S);
 }
 )";
@@ -210,7 +230,7 @@ absl::Status BuildShortConvStepGpuGraph(
   }
 
   auto in_proj_shape = in_proj.tensor_desc.GetBHWCShape();
-  int hidden_size = in_proj_shape.c / 3;
+  int hidden_size = attr.is_gated ? (in_proj_shape.c / 3) : in_proj_shape.c;
   int num_slices = (hidden_size + 3) / 4;
 
   auto dst_desc = in_proj.tensor_desc;
@@ -223,7 +243,7 @@ absl::Status BuildShortConvStepGpuGraph(
   auto op = CreateFusedShortConvStep(
       in_proj.tensor_desc, conv_state.tensor_desc, conv_weight.tensor_desc,
       conv_bias_desc, dst_desc, next_state_desc, num_slices, hidden_size,
-      attr.conv_L_cache);
+      attr.conv_L_cache, attr.is_gated, attr.use_silu);
 
   std::vector<::ml_drift::TensorHandle> src_tensors = {in_proj, conv_state,
                                                       conv_weight};
