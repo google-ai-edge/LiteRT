@@ -1520,8 +1520,14 @@ cc_test(
     deps = [
         ":test_main",
         ":xnnpack_delegate_test_mode",
+        "//tflite:framework",
+        "//tflite:schema_fbs_version",
         "//tflite/c:c_api_types",
+        "//tflite/core:framework",
+        "//tflite/core/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
+        "@flatbuffers//:runtime_cc",
         "@pthreadpool",
     ],
 )
