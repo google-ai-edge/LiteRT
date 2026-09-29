@@ -83,9 +83,9 @@ def litert_workspace():
     # XNNPACK
     tf_http_archive(
         name = "XNNPACK",
-        sha256 = "aab0ed2b3972125ca057b8e2b16127fbf68f8128ea07dd7efe56cdb92f2c1917",
-        strip_prefix = "XNNPACK-d89ef6669a14db203b3b7935b1b3862cb63fb6df",
-        urls = tf_mirror_urls("https://github.com/google/XNNPACK/archive/d89ef6669a14db203b3b7935b1b3862cb63fb6df.zip"),
+        sha256 = "989b33b609b2172073ad03ca1acd99f1ecf8c50d626d673ee1858e9771ca4b57",
+        strip_prefix = "XNNPACK-35997e71119d191c807068a4d2aa28bf6048b59b",
+        urls = tf_mirror_urls("https://github.com/google/XNNPACK/archive/35997e71119d191c807068a4d2aa28bf6048b59b.zip"),
     )
 
     # KleidiAI (XNNPACK dependency)
@@ -115,9 +115,9 @@ def litert_workspace():
     # Slinky (XNNPACK dependency)
     tf_http_archive(
         name = "slinky",
-        sha256 = "6ba811c39fd400149d58a42a1a5ad33e7fe2554c9a45990788779e0657039405",
-        strip_prefix = "slinky-2c9e129fc82215530af851cfd8d3094de0519241",
-        urls = tf_mirror_urls("https://github.com/dsharlet/slinky/archive/2c9e129fc82215530af851cfd8d3094de0519241.zip"),
+        sha256 = "e6125bb88be445bb3ccbaf609accdaf5ae4f0563b93775f1824fd4388609b402",
+        strip_prefix = "slinky-97c346749bf0f7fbdc2b0b8e6ff0c380806a32e2",
+        urls = tf_mirror_urls("https://github.com/dsharlet/slinky/archive/97c346749bf0f7fbdc2b0b8e6ff0c380806a32e2.zip"),
     )
 
     # cpuinfo
