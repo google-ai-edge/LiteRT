@@ -50,31 +50,31 @@ void BuildAndVerifyMoeGpuModel(int sequence_size, int num_experts,
                                int num_blocks, ::ml_drift::GpuModel* gpu_model,
                                const ::ml_drift::GpuInfo& gpu_info) {
   ::ml_drift::CreateGpuModelInfo create_info;
-  create_info.precision = ::ml_drift::CalculationsPrecision::F32;
+  create_info.precision = ::ml_drift::CalculationsPrecision::kF32;
   ::ml_drift::GpuModelBuilder model_builder(gpu_info, {});
 
   auto src =
       model_builder.AddTensor(::ml_drift::BHWC(1, 1, sequence_size, model_dim),
-                              ::ml_drift::DataType::FLOAT32);
+                              ::ml_drift::DataType::kFloat32);
   auto top_weights = model_builder.AddTensor(
       ::ml_drift::BHWC(1, 1, sequence_size, num_active_experts),
-      ::ml_drift::DataType::FLOAT32);
+      ::ml_drift::DataType::kFloat32);
   auto top_indices = model_builder.AddTensor(
       ::ml_drift::BHWC(1, 1, sequence_size, num_active_experts),
-      ::ml_drift::DataType::INT32);
+      ::ml_drift::DataType::kInt32);
 
-  ::ml_drift::DataType weight_data_type = ::ml_drift::DataType::FLOAT32;
+  ::ml_drift::DataType weight_data_type = ::ml_drift::DataType::kFloat32;
   if (weight_type == ir::MoeExpertsAttributes::WeightType::kInt8) {
-    weight_data_type = ::ml_drift::DataType::INT8;
+    weight_data_type = ::ml_drift::DataType::kInt8;
   } else if (weight_type == ir::MoeExpertsAttributes::WeightType::kInt4) {
-    weight_data_type = ::ml_drift::DataType::INT4;
+    weight_data_type = ::ml_drift::DataType::kInt4;
   }
 
   auto add_weight_tensor = [&](int out_ch, int in_ch) {
     if (weight_type == ir::MoeExpertsAttributes::WeightType::kInt4) {
-      ::ml_drift::TensorDescriptor desc(::ml_drift::DataType::INT4,
-                                        ::ml_drift::TensorStorageType::BUFFER,
-                                        ::ml_drift::Layout::LINEAR);
+      ::ml_drift::TensorDescriptor desc(::ml_drift::DataType::kInt4,
+                                        ::ml_drift::TensorStorageType::kBuffer,
+                                        ::ml_drift::Layout::kLinear);
       desc.SetBHWCShape(::ml_drift::BHWC(out_ch, num_experts, 1, in_ch));
       return model_builder.AddTensor(desc);
     }
@@ -86,10 +86,10 @@ void BuildAndVerifyMoeGpuModel(int sequence_size, int num_experts,
   auto ff1_weight = add_weight_tensor(hidden_dim, model_dim);
   auto linear_weight = add_weight_tensor(model_dim, hidden_dim);
   auto per_expert_scale = model_builder.AddTensor(
-      ::ml_drift::BHWC(1, 1, 1, num_experts), ::ml_drift::DataType::FLOAT32);
+      ::ml_drift::BHWC(1, 1, 1, num_experts), ::ml_drift::DataType::kFloat32);
   auto dst =
       model_builder.AddTensor(::ml_drift::BHWC(1, 1, sequence_size, model_dim),
-                              ::ml_drift::DataType::FLOAT32);
+                              ::ml_drift::DataType::kFloat32);
 
   ir::MoeExpertsAttributes attr;
   attr.num_experts = num_experts;
