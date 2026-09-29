@@ -102,8 +102,8 @@ CreateDispatchTokenIndices(::ml_drift::GpuModelBuilder* model_builder,
     }
   }
   ::ml_drift::TensorDescriptor token_indices_desc(
-      ::ml_drift::DataType::INT32, ::ml_drift::TensorStorageType::BUFFER,
-      ::ml_drift::Layout::HWC);
+      ::ml_drift::DataType::kInt32, ::ml_drift::TensorStorageType::kBuffer,
+      ::ml_drift::Layout::kHWC);
   token_indices_desc.UploadData(token_indices);
   return model_builder->AddConstantTensor(std::move(token_indices_desc));
 }
@@ -142,7 +142,7 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> ExpertFullyConnected(
   }
 
   std::vector<::ml_drift::GpuModelBuilder::TensorHandle> converted_weights =
-      model_builder->WeightsConversion(weights, ::ml_drift::Layout::OHWI,
+      model_builder->WeightsConversion(weights, ::ml_drift::Layout::kOHWI,
                                        weights_desc, weights_shape,
                                        scale_handle_ptr,
                                        /*weights_zero_point=*/nullptr);
@@ -236,7 +236,7 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> ScaleWithBatchIds(
     result.scale_zp_shape = weight_scale->shape;
   }
   std::vector<::ml_drift::GpuModelBuilder::TensorHandle> converted_weights =
-      model_builder->WeightsConversion(weights, ::ml_drift::Layout::OHWI,
+      model_builder->WeightsConversion(weights, ::ml_drift::Layout::kOHWI,
                                        result.desc, result.shape,
                                        scale_handle_ptr,
                                        /*weights_zero_point=*/nullptr);
@@ -285,7 +285,7 @@ absl::Status BuildMoeExpertsGpuGraph(
                                                   model_builder, sequence_size,
                                                   num_active_experts));
     expert_src = model_builder->Gather(src_tokens, token_indices,
-                                       ::ml_drift::Axis::HEIGHT);
+                                       ::ml_drift::Axis::kHeight);
     expert_params = flat_top_indices;
   }
 

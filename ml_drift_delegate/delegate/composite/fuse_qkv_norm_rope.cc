@@ -72,12 +72,12 @@ struct QkvNormRopeMatch {
     ::ml_drift::GraphFloat32* graph, const ::ml_drift::BHWC& shape,
     const std::vector<float>& data, ::ml_drift::NodeId insert_after_id,
     ::ml_drift::Node** out_node,
-    ::ml_drift::DataType dtype = ::ml_drift::DataType::FLOAT32) {
+    ::ml_drift::DataType dtype = ::ml_drift::DataType::kFloat32) {
   ::ml_drift::Node* node = nullptr;
   if (!graph->InsertNodeAfter(insert_after_id, &node).ok() || !node) {
     return nullptr;
   }
-  node->operation.type = ToString(::ml_drift::OperationType::CONSTANT);
+  node->operation.type = ToString(::ml_drift::OperationType::kConstant);
   ::ml_drift::Value* value = graph->NewValue();
   value->tensor.type = dtype;
   value->tensor.shape = shape;
@@ -102,7 +102,7 @@ absl::Status FuseQkvNormRoPE(::ml_drift::GraphFloat32* graph) {
 
   for (::ml_drift::Node* node : graph->nodes()) {
     if (!node ||
-        node->operation.type != ToString(::ml_drift::OperationType::ROPE)) {
+        node->operation.type != ToString(::ml_drift::OperationType::kRope)) {
       continue;
     }
 
@@ -229,12 +229,13 @@ absl::Status FuseQkvNormRoPE(::ml_drift::GraphFloat32* graph) {
         auto outs = graph->FindOutputs(c->id);
         if (!outs.empty()) {
           for (::ml_drift::Node* cc : graph->FindConsumers(outs[0]->id)) {
-            if (cc->operation.type == ToString(::ml_drift::OperationType::ROPE))
+            if (cc->operation.type ==
+                ToString(::ml_drift::OperationType::kRope))
               rope_k = cc;
           }
         }
       } else if (c->operation.type ==
-                 ToString(::ml_drift::OperationType::ROPE)) {
+                 ToString(::ml_drift::OperationType::kRope)) {
         rope_k = c;
       }
     }
@@ -342,9 +343,9 @@ absl::Status FuseQkvNormRoPE(::ml_drift::GraphFloat32* graph) {
     ::ml_drift::NodeId insert_after =
         qkv_producer ? qkv_producer->id : match.slice_q->id;
 
-    ::ml_drift::DataType weight_dtype =
-        match.qkv_val ? match.qkv_val->tensor.type
-                      : ::ml_drift::DataType::FLOAT32;
+    ::ml_drift::DataType weight_dtype = match.qkv_val
+                                            ? match.qkv_val->tensor.type
+                                            : ::ml_drift::DataType::kFloat32;
 
     ::ml_drift::Node* q_w_node = nullptr;
     ::ml_drift::Value* q_w_val =

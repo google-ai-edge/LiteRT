@@ -56,7 +56,7 @@ void GetFullyConnectedNode(int weights_tensor_id, int bias_tensor_id,
   if (weights_tensor->type == kTfLiteInt8) {
     // uniform/per channel int8 quantization
     node->operation.type =
-        ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8);
+        ToString(::ml_drift::OperationType::kFullyConnectedInt8);
     ::ml_drift::FullyConnectedInt8Attributes fc_attr;
 
     fc_attr.scale.shape = ::ml_drift::OHWI(quant_params->scale->size, 1, 1, 1);
@@ -92,9 +92,9 @@ void GetFullyConnectedNode(int weights_tensor_id, int bias_tensor_id,
     }
     node->operation.attributes = std::move(fc_attr);
   } else {
-    node->operation.type = ToString(::ml_drift::OperationType::FULLY_CONNECTED);
+    node->operation.type = ToString(::ml_drift::OperationType::kFullyConnected);
     ::ml_drift::FullyConnectedAttributes fc_attr;
-    ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32> weights;
+    ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32> weights;
     reader->ReadTensor(weights_tensor_id, &weights,
                        ReadTensorFlags::kExtraBytes);
     fc_attr.weights.data = std::move(weights.data);
@@ -192,9 +192,9 @@ void BuildLstmGate(::ml_drift::GraphFloat32* graph, ObjectReader* reader,
     // #3 elementwise multiplication: cell_weight .* cell_state
     cell_state_times_weights = CreateNewSimilarValue(graph, cell_state);
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::MUL);
+    node->operation.type = ToString(::ml_drift::OperationType::kMul);
     ::ml_drift::ElementwiseAttributes attr;
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
         weights;
     reader->ReadTensor(cell_weight_id, &weights,
                        ReadTensorFlags::kNoExtraBytes);
@@ -209,7 +209,7 @@ void BuildLstmGate(::ml_drift::GraphFloat32* graph, ObjectReader* reader,
   ::ml_drift::Node* add_node = graph->NewNode();
   {
     // #4 elementwise addition: #1 + #2 + #3
-    add_node->operation.type = ToString(::ml_drift::OperationType::ADD);
+    add_node->operation.type = ToString(::ml_drift::OperationType::kAdd);
     graph->AddConsumer(add_node->id, input_times_weights->id);
     graph->AddConsumer(add_node->id, output_state_times_weights->id);
     if (has_peephole) {
@@ -232,7 +232,7 @@ void BuildLstmGate(::ml_drift::GraphFloat32* graph, ObjectReader* reader,
     // #6 Normalization: normalize(temp)
     ::ml_drift::Node* node = graph->NewNode();
     node->operation.type =
-        ToString(::ml_drift::OperationType::MEAN_STDDEV_NORMALIZATION);
+        ToString(::ml_drift::OperationType::kMeanStddevNormalization);
     graph->AddConsumer(node->id, gate_before_normalization->id);
     graph->SetProducer(node->id, normalized_gate->id);
   }
@@ -241,9 +241,9 @@ void BuildLstmGate(::ml_drift::GraphFloat32* graph, ObjectReader* reader,
   {
     // #7 Elementwise multiplication: norm_weights .* #6
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::MUL);
+    node->operation.type = ToString(::ml_drift::OperationType::kMul);
     ::ml_drift::ElementwiseAttributes attr;
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
         norm_weights;
     reader->ReadTensor(normalization_weight_id, &norm_weights,
                        ReadTensorFlags::kNoExtraBytes);
@@ -257,9 +257,9 @@ void BuildLstmGate(::ml_drift::GraphFloat32* graph, ObjectReader* reader,
   {
     // #8 Elementwise add: #7 + bias
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::ADD);
+    node->operation.type = ToString(::ml_drift::OperationType::kAdd);
     ::ml_drift::ElementwiseAttributes attr;
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> bias;
     reader->ReadTensor(bias_id, &bias, ReadTensorFlags::kNoExtraBytes);
     attr.param = std::move(bias);
     node->operation.attributes = std::move(attr);
@@ -294,7 +294,7 @@ void BuildCellStateUpdate(::ml_drift::GraphFloat32* graph, ObjectReader* reader,
   {
     // #1 elementwise multiplication: forget_gate .* cell_state
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::MUL);
+    node->operation.type = ToString(::ml_drift::OperationType::kMul);
     graph->AddConsumer(node->id, forget_gate->id);
     graph->AddConsumer(node->id, cell_state->id);
     graph->SetProducer(node->id, cell_state_contrib->id);
@@ -305,7 +305,7 @@ void BuildCellStateUpdate(::ml_drift::GraphFloat32* graph, ObjectReader* reader,
     // #2 elementwise multiplication: input_gate .* cell_gate
     // Note, with CIFG input_gate is equal to 1-forget_gate.
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::MUL);
+    node->operation.type = ToString(::ml_drift::OperationType::kMul);
     graph->AddConsumer(node->id, input_gate->id);
     graph->AddConsumer(node->id, cell_gate->id);
     graph->SetProducer(node->id, cell_gate_contrib->id);
@@ -314,7 +314,7 @@ void BuildCellStateUpdate(::ml_drift::GraphFloat32* graph, ObjectReader* reader,
   {
     // #3 elementwise add: #1 + #2
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::ADD);
+    node->operation.type = ToString(::ml_drift::OperationType::kAdd);
     graph->AddConsumer(node->id, cell_state_contrib->id);
     graph->AddConsumer(node->id, cell_gate_contrib->id);
     graph->SetProducer(node->id, new_cell_state->id);
@@ -330,7 +330,7 @@ void BuildCellStateUpdate(::ml_drift::GraphFloat32* graph, ObjectReader* reader,
   {
     // #4 elementwise minimum: min(#3, clip)
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::MINIMUM);
+    node->operation.type = ToString(::ml_drift::OperationType::kMinimum);
     ::ml_drift::ElementwiseAttributes attr;
     attr.param = cell_clip;
     node->operation.attributes = std::move(attr);
@@ -342,7 +342,7 @@ void BuildCellStateUpdate(::ml_drift::GraphFloat32* graph, ObjectReader* reader,
   {
     // #5 elementwise maximum: max(#4, -clip)
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::MAXIMUM);
+    node->operation.type = ToString(::ml_drift::OperationType::kMaximum);
     ::ml_drift::ElementwiseAttributes attr;
     attr.param = -cell_clip;
     node->operation.attributes = std::move(attr);
@@ -384,9 +384,9 @@ void BuildOutputStateUpdate(::ml_drift::GraphFloat32* graph,
     // #1 activation: activate(cell_state)
     ::ml_drift::Node* node = graph->NewNode();
     if (activation == kTfLiteActTanh) {
-      node->operation.type = ToString(::ml_drift::OperationType::TANH);
+      node->operation.type = ToString(::ml_drift::OperationType::kTanh);
     } else {
-      node->operation.type = ToString(::ml_drift::OperationType::SIGMOID);
+      node->operation.type = ToString(::ml_drift::OperationType::kSigmoid);
     }
     graph->AddConsumer(node->id, cell_state->id);
     graph->SetProducer(node->id, activated_state->id);
@@ -397,7 +397,7 @@ void BuildOutputStateUpdate(::ml_drift::GraphFloat32* graph,
   {
     // #2 elementwise multiplication: output_gate .* #1
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::MUL);
+    node->operation.type = ToString(::ml_drift::OperationType::kMul);
     graph->AddConsumer(node->id, activated_state->id);
     graph->AddConsumer(node->id, output_gate->id);
     graph->SetProducer(node->id, new_output_state->id);
@@ -432,7 +432,7 @@ void BuildOutputStateUpdate(::ml_drift::GraphFloat32* graph,
   {
     // #4 elementwise minimum: min(#3, clip)
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::MINIMUM);
+    node->operation.type = ToString(::ml_drift::OperationType::kMinimum);
     ::ml_drift::ElementwiseAttributes attr;
     attr.param = proj_clip;
     node->operation.attributes = std::move(attr);
@@ -444,7 +444,7 @@ void BuildOutputStateUpdate(::ml_drift::GraphFloat32* graph,
   {
     // #5 elementwise maximum: max(#4, -clip)
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::MAXIMUM);
+    node->operation.type = ToString(::ml_drift::OperationType::kMaximum);
     ::ml_drift::ElementwiseAttributes attr;
     attr.param = -proj_clip;
     node->operation.attributes = std::move(attr);
@@ -501,7 +501,7 @@ void ParseLSTMAttributes(
     ::ml_drift::Node* node = graph->NewNode();
     input_gate = CreateNewSimilarValue(graph, forget_gate);
 
-    node->operation.type = ToString(::ml_drift::OperationType::SUB);
+    node->operation.type = ToString(::ml_drift::OperationType::kSub);
     ::ml_drift::ElementwiseAttributes attr;
     attr.param = 1.0f;
     attr.runtime_tensor_is_second = true;
@@ -553,7 +553,7 @@ void ParseLSTMAttributes(
   {
     // Copy updated output state to output.
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::COPY);
+    node->operation.type = ToString(::ml_drift::OperationType::kCopy);
     graph->AddConsumer(node->id, new_output_state->id);
     reader->AddOutput(node, tflite::ops::builtin::lstm::full::kOutputTensor);
   }

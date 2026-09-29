@@ -40,11 +40,11 @@ namespace {
 ::ml_drift::BHWC GetShape(const ::ml_drift::BHWC& shape,
                           const SizedLayout& layout, int num_dims) {
   if ((num_dims == 0 || num_dims == 1) &&
-      layout.layout_1d == ::ml_drift::Layout::SCALAR) {
+      layout.layout_1d == ::ml_drift::Layout::kScalar) {
     return ::ml_drift::BHWC(1, 1, 1, shape.b);
-  } else if (num_dims == 2 && layout.layout_2d == ::ml_drift::Layout::HW) {
+  } else if (num_dims == 2 && layout.layout_2d == ::ml_drift::Layout::kHW) {
     return ::ml_drift::BHWC(1, 1, shape.b, shape.c);
-  } else if (num_dims == 3 && layout.layout_3d == ::ml_drift::Layout::HWC) {
+  } else if (num_dims == 3 && layout.layout_3d == ::ml_drift::Layout::kHWC) {
     return ::ml_drift::BHWC(1, shape.b, shape.w, shape.c);
   } else {
     return shape;
@@ -81,7 +81,7 @@ void SetValueAndAttrFromTfLiteTensor(const TfLiteTensor* tfl_tensor,
        tfl_tensor->type == kTfLiteInt2 || tfl_tensor->type == kTfLiteBool ||
        tfl_tensor->type == kTfLiteInt32));
   ::ml_drift::Node* node = graph_->NewNode();
-  node->operation.type = ToString(::ml_drift::OperationType::CONSTANT);
+  node->operation.type = ToString(::ml_drift::OperationType::kConstant);
   ::ml_drift::Value* value = graph_->NewValue();
   graph_->SetProducer(node->id, value->id);
   ::ml_drift::ConstTensorAttributes attr;
@@ -212,11 +212,11 @@ absl::Status ObjectReader::ReadSharedTensor(
   *input = graph->NewValue();
 
   if (tflite_tensor->type == kTfLiteInt8) {
-    (*input)->tensor.type = ::ml_drift::DataType::INT8;
+    (*input)->tensor.type = ::ml_drift::DataType::kInt8;
   } else if (tflite_tensor->type == kTfLiteInt4) {
-    (*input)->tensor.type = ::ml_drift::DataType::INT4;
+    (*input)->tensor.type = ::ml_drift::DataType::kInt4;
   } else if (tflite_tensor->type == kTfLiteInt2) {
-    (*input)->tensor.type = ::ml_drift::DataType::INT2;
+    (*input)->tensor.type = ::ml_drift::DataType::kInt2;
   }
   (*input)->tensor.shape = ::ml_drift::BHWC(batch, 1, 1, channel);
   (*input)->tensor.ref = tensor_idx;
@@ -262,11 +262,11 @@ void ObjectReader::ReadQuantizedValueByTensorIdx(
   *input_int8 = graph_->NewValue();
 
   if (tflite_tensor->type == kTfLiteInt8) {
-    (*input_int8)->tensor.type = ::ml_drift::DataType::INT8;
+    (*input_int8)->tensor.type = ::ml_drift::DataType::kInt8;
   } else if (tflite_tensor->type == kTfLiteInt4) {
-    (*input_int8)->tensor.type = ::ml_drift::DataType::INT4;
+    (*input_int8)->tensor.type = ::ml_drift::DataType::kInt4;
   } else if (tflite_tensor->type == kTfLiteInt2) {
-    (*input_int8)->tensor.type = ::ml_drift::DataType::INT2;
+    (*input_int8)->tensor.type = ::ml_drift::DataType::kInt2;
   }
   (*input_int8)->tensor.shape = ::ml_drift::BHWC(batch, 1, 1, channel);
   (*input_int8)->tensor.ref = tensor_idx;

@@ -32,7 +32,7 @@ namespace {
                                         ::ml_drift::ir::IrTensorId input_id,
                                         const ::ml_drift::BHWC& new_shape) {
   auto* reshape_op = ir_model.add_op();
-  reshape_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+  reshape_op->name = ToString(::ml_drift::OperationType::kReshape);
   ::ml_drift::ReshapeAttributes attr;
   attr.new_shape = new_shape;
   reshape_op->attr = attr;
@@ -57,7 +57,7 @@ namespace {
   if (tflite::IsConstantTensor(tfl_tensor)) {
     current_id =
         AddConstInput(context, tfl_input_id, ir_model,
-                      SizedLayout{.layout_1d = ::ml_drift::Layout::SCALAR})
+                      SizedLayout{.layout_1d = ::ml_drift::Layout::kScalar})
             ->id;
   } else {
     current_id = tensor_map[tfl_input_id];
@@ -91,7 +91,7 @@ void ConvertDynamicUpdateSlice(
       GetRightAlignedInput(context, node.inputs->data[2], tensor_map, ir_model);
 
   ::ml_drift::ir::IrOp* ir_op = ir_model.add_op();
-  ir_op->name = ToString(::ml_drift::OperationType::DYNAMIC_UPDATE_SLICE);
+  ir_op->name = ToString(::ml_drift::OperationType::kDynamicUpdateSlice);
   ir_model.AddConsumer(operand_id, ir_op->id);
   ir_model.AddConsumer(update_id, ir_op->id);
   ir_model.AddConsumer(start_indices_id, ir_op->id);
@@ -115,7 +115,7 @@ void ConvertDynamicUpdateSlice(
 
     // Reshape right-aligned output back to the original shape
     ::ml_drift::ir::IrOp* output_reshape_op = ir_model.add_op();
-    output_reshape_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+    output_reshape_op->name = ToString(::ml_drift::OperationType::kReshape);
     ::ml_drift::ReshapeAttributes out_attr;
     out_attr.new_shape = original_out_shape;
     output_reshape_op->attr = out_attr;

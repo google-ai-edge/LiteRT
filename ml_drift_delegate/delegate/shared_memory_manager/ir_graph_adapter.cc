@@ -50,7 +50,7 @@ DataType IrModelAdapter::ResolveSharedTensorType(
   const DataType graph_value_type =
       graph_.tensor(shared_tensor_id)->desc.GetDataType();
   if (IsFloatType(graph_value_type)) {
-    if (default_data_type == DataType::FLOAT32) {
+    if (default_data_type == DataType::kFloat32) {
       std::vector<uint32_t> consumers = FindConsumerOps(shared_tensor_id);
       if (consumers.size() == 1 && OpHasInputs(consumers[0])) {
         DataType input_type = GetOpFirstInputType(consumers[0]);
@@ -72,22 +72,22 @@ void IrModelAdapter::UploadTensorData(const TfLiteTensor& tensor,
   // weights from MediaPipe (e.g. inpainting models) or non-float constants
   // (e.g. shape/pack/lookup tensors).
   switch (tensor_desc.GetDataType()) {
-    case DataType::INT8:
+    case DataType::kInt8:
       tensor_desc.UploadData<int8_t>(tensor.data.int8);
       break;
-    case DataType::UINT8:
+    case DataType::kUint8:
       tensor_desc.UploadData<uint8_t>(tensor.data.uint8);
       break;
-    case DataType::INT32:
+    case DataType::kInt32:
       tensor_desc.UploadData<int32_t>(tensor.data.i32);
       break;
-    case DataType::INT64:
+    case DataType::kInt64:
       tensor_desc.UploadData<int64_t>(tensor.data.i64);
       break;
-    case DataType::BOOL:
+    case DataType::kBool:
       tensor_desc.UploadData<bool>(tensor.data.b);
       break;
-    case DataType::FLOAT16:
+    case DataType::kFloat16:
       if (tensor.type == TfLiteType::kTfLiteFloat16) {
         tensor_desc.UploadData<half>(
             reinterpret_cast<const half*>(tensor.data.f16));

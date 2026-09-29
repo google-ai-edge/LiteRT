@@ -457,26 +457,26 @@ TfLiteDelegatePtr CreateMlDriftOpenGlDelegate(MlDriftDelegateOptionsPtr options,
         // PowerVR Rogue GE8xxx and older have precision issues (RTZ) with FP16
         // leading to accuracy failures (b/274571359).
         delegate_data->calculation_precision =
-            ::ml_drift::CalculationsPrecision::F32;
+            ::ml_drift::CalculationsPrecision::kF32;
       } else {
         delegate_data->calculation_precision =
-            gpu_info.SupportsFP16() ? ::ml_drift::CalculationsPrecision::F16
-                                    : ::ml_drift::CalculationsPrecision::F32;
+            gpu_info.SupportsFP16() ? ::ml_drift::CalculationsPrecision::kF16
+                                    : ::ml_drift::CalculationsPrecision::kF32;
       }
       break;
     }
     case kFp16:
       delegate_data->calculation_precision =
-          ::ml_drift::CalculationsPrecision::F16;
+          ::ml_drift::CalculationsPrecision::kF16;
       break;
     case kFp32:
       delegate_data->calculation_precision =
-          ::ml_drift::CalculationsPrecision::F32;
+          ::ml_drift::CalculationsPrecision::kF32;
       break;
   }
   if (delegate_data->options->use_f32_accum_for_fp16) {
     delegate_data->calculation_precision =
-        ::ml_drift::CalculationsPrecision::F32_F16;
+        ::ml_drift::CalculationsPrecision::kF32F16;
   }
 
   // Initialize the ml_drift gl delegate.

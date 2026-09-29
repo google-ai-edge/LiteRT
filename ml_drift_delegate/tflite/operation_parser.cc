@@ -453,28 +453,28 @@ absl::Status PreCheckMaybeFuseActivationForElementwiseNode(
     ::ml_drift::OperationType operation_type, const TfLiteNode* tflite_node) {
   TfLiteFusedActivation activation = kTfLiteActNone;
   switch (operation_type) {
-    case ::ml_drift::OperationType::MUL: {
+    case ::ml_drift::OperationType::kMul: {
       const TfLiteMulParams* tf_options;
       if (PreCheckBuiltinData(tflite_node, &tf_options).ok()) {
         activation = tf_options->activation;
       }
       break;
     }
-    case ::ml_drift::OperationType::ADD: {
+    case ::ml_drift::OperationType::kAdd: {
       const TfLiteAddParams* tf_options;
       if (PreCheckBuiltinData(tflite_node, &tf_options).ok()) {
         activation = tf_options->activation;
       }
       break;
     }
-    case ::ml_drift::OperationType::SUB: {
+    case ::ml_drift::OperationType::kSub: {
       const TfLiteSubParams* tf_options;
       if (PreCheckBuiltinData(tflite_node, &tf_options).ok()) {
         activation = tf_options->activation;
       }
       break;
     }
-    case ::ml_drift::OperationType::DIV: {
+    case ::ml_drift::OperationType::kDiv: {
       const TfLiteDivParams* tf_options;
       if (PreCheckBuiltinData(tflite_node, &tf_options).ok()) {
         activation = tf_options->activation;

@@ -63,7 +63,7 @@ GpuInfo GetTestGpuInfo() {
   gpu_info.opencl_info.image2d_max_width = 16384;
   gpu_info.opencl_info.image2d_max_height = 16384;
   gpu_info.opencl_info.image_buffer_max_size = 65536;
-  for (auto type : {DataType::FLOAT32, DataType::FLOAT16, DataType::INT32}) {
+  for (auto type : {DataType::kFloat32, DataType::kFloat16, DataType::kInt32}) {
     gpu_info.opencl_info.supported_images_2d.r_layout.insert(type);
     gpu_info.opencl_info.supported_images_2d.rg_layout.insert(type);
     gpu_info.opencl_info.supported_images_2d.rgb_layout.insert(type);
@@ -83,17 +83,17 @@ TEST(LiteRtOpSelectorTest,
      ParamTensorToBufferPreservesProducerForOtherConsumers) {
   const GpuInfo gpu_info = GetTestGpuInfo();
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F32;
-  create_info.storage_type = TensorStorageType::TEXTURE_2D;
+  create_info.precision = CalculationsPrecision::kF32;
+  create_info.storage_type = TensorStorageType::kTexture2D;
 
   GpuModelBuilderOptions options;
-  options.storage = TensorStorageType::TEXTURE_2D;
+  options.storage = TensorStorageType::kTexture2D;
   GpuModelBuilder builder(gpu_info, options);
 
   // Graph input and an internal producer that writes `param_tensor` with
   // TEXTURE_2D storage (modeling the in-graph concat that builds `param'`).
   const TensorDescriptor param_tex_desc(
-      DataType::INT32, TensorStorageType::TEXTURE_2D, Layout::HWC);
+      DataType::kInt32, TensorStorageType::kTexture2D, Layout::kHWC);
   TensorDescriptor raw_param_desc = param_tex_desc;
   raw_param_desc.SetBHWCShape(BHWC(1, 1, 1, 7));
   TensorDescriptor param_desc = param_tex_desc;
@@ -105,19 +105,19 @@ TEST(LiteRtOpSelectorTest,
 
   // Tensors for `add_values_to_cache` (inputs: src_k, src_v, param; outputs:
   // dst_k, dst_v).
-  TensorDescriptor kv_desc(DataType::FLOAT32, TensorStorageType::TEXTURE_2D,
-                           Layout::HWC);
+  TensorDescriptor kv_desc(DataType::kFloat32, TensorStorageType::kTexture2D,
+                           Layout::kHWC);
   kv_desc.SetBHWCShape(BHWC(1, 1, 8, 64));
   auto src_k = builder.AddTensor(kv_desc);
   auto src_v = builder.AddTensor(kv_desc);
   auto dst_k = builder.AddTensor(kv_desc);
   auto dst_v = builder.AddTensor(kv_desc);
 
-  Value v_src_k{src_k.id, {DataType::FLOAT32, BHWC(1, 1, 8, 64)}};
-  Value v_src_v{src_v.id, {DataType::FLOAT32, BHWC(1, 1, 8, 64)}};
-  Value v_param{param.id, {DataType::INT32, BHWC(1, 1, 1, 7)}};
-  Value v_dst_k{dst_k.id, {DataType::FLOAT32, BHWC(1, 1, 8, 64)}};
-  Value v_dst_v{dst_v.id, {DataType::FLOAT32, BHWC(1, 1, 8, 64)}};
+  Value v_src_k{src_k.id, {DataType::kFloat32, BHWC(1, 1, 8, 64)}};
+  Value v_src_v{src_v.id, {DataType::kFloat32, BHWC(1, 1, 8, 64)}};
+  Value v_param{param.id, {DataType::kInt32, BHWC(1, 1, 1, 7)}};
+  Value v_dst_k{dst_k.id, {DataType::kFloat32, BHWC(1, 1, 8, 64)}};
+  Value v_dst_v{dst_v.id, {DataType::kFloat32, BHWC(1, 1, 8, 64)}};
 
   OperationDef cache_op_def;
   cache_op_def.src_tensors = {src_k.tensor_desc, src_v.tensor_desc,
@@ -187,7 +187,7 @@ TEST(LiteRtOpSelectorTest,
       const ValueId cache_param_id = node.inputs[2];
       ASSERT_TRUE(gpu_model.tensors.contains(cache_param_id));
       EXPECT_EQ(gpu_model.tensors.at(cache_param_id).GetStorageType(),
-                TensorStorageType::BUFFER);
+                TensorStorageType::kBuffer);
     }
   }
   EXPECT_TRUE(found_cache_node);

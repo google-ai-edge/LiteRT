@@ -186,7 +186,7 @@ TEST_F(ConvertRuntimeBatchedMatMulTest, Int8Basic) {
           &op->attr);
   ASSERT_NE(attr, nullptr);
   EXPECT_TRUE(attr->external_weights.has_value());
-  EXPECT_EQ(attr->external_weights->desc.type, ::ml_drift::DataType::UINT8);
+  EXPECT_EQ(attr->external_weights->desc.type, ::ml_drift::DataType::kUint8);
   EXPECT_TRUE(attr->scale.has_value());
 }
 

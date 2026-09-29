@@ -178,7 +178,7 @@ TEST_F(ConvertRopeTest, PartialRotaryFactorAliasAndKernelType) {
   builder.SetParameters(CreateRopeParams(
       /*max_timescale=*/0.0f, /*theta_key=*/"max_timescale",
       /*proportion=*/0.5f, /*proportion_key=*/"partial_rotary_factor",
-      /*kernel_type=*/::ml_drift::RoPEKernelType::INTERLEAVED_2D));
+      /*kernel_type=*/::ml_drift::RoPEKernelType::kInterleaved2D));
 
   auto interpreter = builder.Build();
   ASSERT_NE(interpreter, nullptr);
@@ -193,7 +193,7 @@ TEST_F(ConvertRopeTest, PartialRotaryFactorAliasAndKernelType) {
   ASSERT_NE(attr, nullptr);
   EXPECT_THAT(attr->proportion, FloatEq(0.5f));
   EXPECT_THAT(attr->kernel_type,
-              Eq(::ml_drift::RoPEKernelType::INTERLEAVED_2D));
+              Eq(::ml_drift::RoPEKernelType::kInterleaved2D));
   // Defaults are preserved for anything the flexbuffer does not carry.
   EXPECT_THAT(attr->max_timescale, FloatEq(10000.0f));
   EXPECT_THAT(attr->min_timescale, FloatEq(1.0f));

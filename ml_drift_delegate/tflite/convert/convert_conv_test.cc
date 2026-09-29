@@ -170,22 +170,20 @@ TEST_P(ConvertConvTest, Parameterized) {
     const bool is_int4 = dtype_ == kTfLiteInt4;
     const bool is_int8 = dtype_ == kTfLiteInt8;
     if (is_int4 && !is_fallback) {
-      EXPECT_FALSE((
-          std::get<
-              ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4>>(
-              attr->weights)
-              .data.empty()));
-    } else if (is_int8 && !is_fallback) {
-      EXPECT_FALSE((
-          std::get<
-              ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>>(
-              attr->weights)
-              .data.empty()));
-    } else {
       EXPECT_FALSE((std::get<::ml_drift::Tensor<::ml_drift::OHWI,
-                                                ::ml_drift::DataType::FLOAT32>>(
+                                                ::ml_drift::DataType::kInt4>>(
                         attr->weights)
                         .data.empty()));
+    } else if (is_int8 && !is_fallback) {
+      EXPECT_FALSE((std::get<::ml_drift::Tensor<::ml_drift::OHWI,
+                                                ::ml_drift::DataType::kInt8>>(
+                        attr->weights)
+                        .data.empty()));
+    } else {
+      EXPECT_FALSE(
+          (std::get<::ml_drift::Tensor<
+               ::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>(attr->weights)
+               .data.empty()));
     }
     if (use_bias_) {
       EXPECT_FALSE(attr->bias.data.empty());
@@ -202,7 +200,7 @@ TEST_P(ConvertConvTest, Parameterized) {
     }
   } else {
     EXPECT_TRUE((std::get<::ml_drift::Tensor<::ml_drift::OHWI,
-                                             ::ml_drift::DataType::FLOAT32>>(
+                                             ::ml_drift::DataType::kFloat32>>(
                      attr->weights)
                      .data.empty()));
     EXPECT_TRUE(attr->bias.data.empty());
@@ -443,7 +441,7 @@ TEST(ConvertConvTest, SpannedWeights) {
   ASSERT_TRUE(attr);
 
   const auto& weights = std::get<
-      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>(
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>(
       attr->weights);
   EXPECT_TRUE(weights.data.empty());
   EXPECT_FALSE(weights.spanned_data.empty());

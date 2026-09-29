@@ -30,7 +30,7 @@ namespace litert::ml_drift {
 constexpr const char kMoeExpertsType[] = "moe_experts";
 
 using MoeScaleTensor =
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>;
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>;
 
 struct MoeExpertsAttributes {
   enum class WeightType {

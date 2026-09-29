@@ -69,7 +69,7 @@ void RopeOperationParser::Parse(const TfLiteNode* tflite_node,
                                 ::ml_drift::GraphFloat32* graph,
                                 ObjectReader* reader) {
   auto* node = graph->NewNode();
-  node->operation.type = ToString(::ml_drift::OperationType::ROPE);
+  node->operation.type = ToString(::ml_drift::OperationType::kRope);
   {
     constexpr int kIndex = 0;
     if (reader->IsConstantTensor(kIndex)) {

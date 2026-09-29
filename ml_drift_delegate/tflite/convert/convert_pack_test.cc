@@ -67,7 +67,7 @@ TEST_P(ConvertPackTest, SingleInput) {
   // Should be a single RESHAPE op.
   ASSERT_THAT(ir_model->ops(), SizeIs(1));
   EXPECT_THAT(ir_model->ops()[0]->name,
-              Eq(ToString(::ml_drift::OperationType::RESHAPE)));
+              Eq(ToString(::ml_drift::OperationType::kReshape)));
 }
 
 TEST_P(ConvertPackTest, MultiInputAxis0) {
@@ -92,11 +92,11 @@ TEST_P(ConvertPackTest, MultiInputAxis0) {
   // Should have 2 RESHAPE ops followed by 1 CONCAT op.
   ASSERT_THAT(ir_model->ops(), SizeIs(3));
   EXPECT_THAT(ir_model->ops()[0]->name,
-              Eq(ToString(::ml_drift::OperationType::RESHAPE)));
+              Eq(ToString(::ml_drift::OperationType::kReshape)));
   EXPECT_THAT(ir_model->ops()[1]->name,
-              Eq(ToString(::ml_drift::OperationType::RESHAPE)));
+              Eq(ToString(::ml_drift::OperationType::kReshape)));
   EXPECT_THAT(ir_model->ops()[2]->name,
-              Eq(ToString(::ml_drift::OperationType::CONCAT)));
+              Eq(ToString(::ml_drift::OperationType::kConcat)));
 
   const auto* concat_attr =
       std::any_cast<::ml_drift::ConcatAttributes>(&ir_model->ops()[2]->attr);
@@ -126,7 +126,7 @@ TEST_P(ConvertPackTest, MultiInputAxis2) {
   // 3 RESHAPEs + 1 CONCAT
   ASSERT_THAT(ir_model->ops(), SizeIs(4));
   EXPECT_THAT(ir_model->ops()[3]->name,
-              Eq(ToString(::ml_drift::OperationType::CONCAT)));
+              Eq(ToString(::ml_drift::OperationType::kConcat)));
 }
 
 TEST_P(ConvertPackTest, NegativeAxis) {
@@ -150,7 +150,7 @@ TEST_P(ConvertPackTest, NegativeAxis) {
 
   ASSERT_THAT(ir_model->ops(), SizeIs(3));
   EXPECT_THAT(ir_model->ops()[2]->name,
-              Eq(ToString(::ml_drift::OperationType::CONCAT)));
+              Eq(ToString(::ml_drift::OperationType::kConcat)));
 }
 
 INSTANTIATE_TEST_SUITE_P(ConvertPackTest, ConvertPackTest,

@@ -38,7 +38,7 @@ void ConvertTransposeConv(const TfLiteContext& context, const TfLiteNode& node,
                           const IrModelBuilderOptions& options,
                           ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* ir_op = ir_model.add_op();
-  ir_op->name = ToString(::ml_drift::OperationType::CONVOLUTION_TRANSPOSED);
+  ir_op->name = ToString(::ml_drift::OperationType::kConvolutionTransposed);
 
   const bool builtin_op =
       registration.builtin_code == kTfLiteBuiltinTransposeConv;

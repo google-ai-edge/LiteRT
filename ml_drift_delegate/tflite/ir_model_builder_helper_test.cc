@@ -70,26 +70,26 @@ TEST(IrModelBuilderHelperTest, ExtractTensorShape) {
 TEST(IrModelBuilderHelperTest, GetConcatAxis) {
   EXPECT_EQ(GetConcatAxis({::ml_drift::BHWDC(1, 2, 3, 1, 5)},
                           ::ml_drift::BHWDC(2, 2, 3, 1, 5)),
-            ::ml_drift::Axis::BATCH);
+            ::ml_drift::Axis::kBatch);
   EXPECT_EQ(GetConcatAxis({::ml_drift::BHWDC(1, 2, 3, 1, 5)},
                           ::ml_drift::BHWDC(1, 4, 3, 1, 5)),
-            ::ml_drift::Axis::HEIGHT);
+            ::ml_drift::Axis::kHeight);
   EXPECT_EQ(GetConcatAxis({::ml_drift::BHWDC(1, 2, 3, 1, 5)},
                           ::ml_drift::BHWDC(1, 2, 6, 1, 5)),
-            ::ml_drift::Axis::WIDTH);
+            ::ml_drift::Axis::kWidth);
   EXPECT_EQ(GetConcatAxis({::ml_drift::BHWDC(1, 2, 3, 1, 5)},
                           ::ml_drift::BHWDC(1, 2, 3, 2, 5)),
-            ::ml_drift::Axis::DEPTH);
+            ::ml_drift::Axis::kDepth);
   EXPECT_EQ(GetConcatAxis({::ml_drift::BHWDC(1, 2, 3, 1, 5)},
                           ::ml_drift::BHWDC(1, 2, 3, 1, 10)),
-            ::ml_drift::Axis::CHANNELS);
+            ::ml_drift::Axis::kChannels);
 }
 
 TEST(IrModelBuilderHelperTest, UpdatePadding) {
   ::ml_drift::DepthwiseConvolution2DAttributes attr;
   attr.weights
-      .emplace<
-          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>()
+      .emplace<::ml_drift::Tensor<::ml_drift::OHWI,
+                                  ::ml_drift::DataType::kFloat32>>()
       .shape = ::ml_drift::OHWI(1, 3, 3, 1);
   attr.strides = ::ml_drift::HW(2, 2);
   attr.dilations = ::ml_drift::HW(1, 1);

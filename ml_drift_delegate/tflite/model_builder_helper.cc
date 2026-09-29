@@ -86,29 +86,29 @@ absl::Status GetNodeAndRegistration(TfLiteContext* context, int node_id,
 ::ml_drift::DataType ToDataType(TfLiteType type) {
   switch (type) {
     case kTfLiteFloat32:
-      return ::ml_drift::DataType::FLOAT32;
+      return ::ml_drift::DataType::kFloat32;
     case kTfLiteInt16:
-      return ::ml_drift::DataType::INT16;
+      return ::ml_drift::DataType::kInt16;
     case kTfLiteInt32:
-      return ::ml_drift::DataType::INT32;
+      return ::ml_drift::DataType::kInt32;
     case kTfLiteInt64:
-      return ::ml_drift::DataType::INT64;
+      return ::ml_drift::DataType::kInt64;
     case kTfLiteFloat16:
-      return ::ml_drift::DataType::FLOAT16;
+      return ::ml_drift::DataType::kFloat16;
     case kTfLiteBFloat16:
-      return ::ml_drift::DataType::BFLOAT16;
+      return ::ml_drift::DataType::kBfloat16;
     case kTfLiteInt8:
-      return ::ml_drift::DataType::INT8;
+      return ::ml_drift::DataType::kInt8;
     case kTfLiteUInt32:
-      return ::ml_drift::DataType::UINT32;
+      return ::ml_drift::DataType::kUint32;
     case kTfLiteUInt16:
-      return ::ml_drift::DataType::UINT16;
+      return ::ml_drift::DataType::kUint16;
     case kTfLiteUInt8:
-      return ::ml_drift::DataType::UINT8;
+      return ::ml_drift::DataType::kUint8;
     case kTfLiteBool:
-      return ::ml_drift::DataType::BOOL;
+      return ::ml_drift::DataType::kBool;
     default:
-      return ::ml_drift::DataType::UNKNOWN;
+      return ::ml_drift::DataType::kUnknown;
   }
 }
 
@@ -133,15 +133,15 @@ absl::Status GetNodeAndRegistration(TfLiteContext* context, int node_id,
   if (index < 0) index = dims->size + index;
   std::vector<::ml_drift::Axis> index_to_axis;
   if (dims->size == 1) {
-    index_to_axis = {::ml_drift::Axis::BATCH};
+    index_to_axis = {::ml_drift::Axis::kBatch};
   } else if (dims->size == 2) {
-    index_to_axis = {::ml_drift::Axis::BATCH, ::ml_drift::Axis::CHANNELS};
+    index_to_axis = {::ml_drift::Axis::kBatch, ::ml_drift::Axis::kChannels};
   } else if (dims->size == 3) {
-    index_to_axis = {::ml_drift::Axis::BATCH, ::ml_drift::Axis::WIDTH,
-                     ::ml_drift::Axis::CHANNELS};
+    index_to_axis = {::ml_drift::Axis::kBatch, ::ml_drift::Axis::kWidth,
+                     ::ml_drift::Axis::kChannels};
   } else {
-    index_to_axis = {::ml_drift::Axis::BATCH, ::ml_drift::Axis::HEIGHT,
-                     ::ml_drift::Axis::WIDTH, ::ml_drift::Axis::CHANNELS};
+    index_to_axis = {::ml_drift::Axis::kBatch, ::ml_drift::Axis::kHeight,
+                     ::ml_drift::Axis::kWidth, ::ml_drift::Axis::kChannels};
   }
   return index_to_axis[index];
 }
@@ -363,7 +363,7 @@ void HandleFusedActivation(TfLiteFusedActivation fused_activation,
       ::ml_drift::Node* activation_node =
           NewPassthroughNode(graph, node, outputs[0]);
       activation_node->operation.type =
-          ToString(::ml_drift::OperationType::RELU);
+          ToString(::ml_drift::OperationType::kRelu);
       activation_node->operation.attributes = attr;
       return;
     }
@@ -371,21 +371,21 @@ void HandleFusedActivation(TfLiteFusedActivation fused_activation,
       ::ml_drift::Node* activation_node =
           NewPassthroughNode(graph, node, outputs[0]);
       activation_node->operation.type =
-          ToString(::ml_drift::OperationType::TANH);
+          ToString(::ml_drift::OperationType::kTanh);
       return;
     }
     case kTfLiteActSigmoid: {
       ::ml_drift::Node* activation_node =
           NewPassthroughNode(graph, node, outputs[0]);
       activation_node->operation.type =
-          ToString(::ml_drift::OperationType::SIGMOID);
+          ToString(::ml_drift::OperationType::kSigmoid);
       return;
     }
     case kTfLiteActSignBit:
       ::ml_drift::Node* activation_node =
           NewPassthroughNode(graph, node, outputs[0]);
       activation_node->operation.type =
-          ToString(::ml_drift::OperationType::SIGN);
+          ToString(::ml_drift::OperationType::kSign);
       return;
     // DO NOT add `default:` for compiler checks.
   }

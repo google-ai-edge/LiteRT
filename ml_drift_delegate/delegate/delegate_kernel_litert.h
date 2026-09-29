@@ -159,7 +159,7 @@ class DelegateKernelLiteRt : public DelegateKernel {
     for (const auto& pattern :
          delegate_data_->options->litert_buffer_storage_tensor_patterns) {
       if (strncmp(tensor_name, pattern.c_str(), pattern.size()) == 0) {
-        return ::ml_drift::TensorStorageType::BUFFER;
+        return ::ml_drift::TensorStorageType::kBuffer;
       }
     }
     return DelegateKernel::GetStorageType();

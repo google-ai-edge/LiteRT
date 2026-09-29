@@ -128,15 +128,15 @@ bool IsConv2dSupported(const TfLiteContext* absl_nonnull context,
     absl::Status status;
     if (weights.type == kTfLiteInt8 || weights.type == kTfLiteUInt8) {
       status =
-          CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>(
+          CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>(
               &weights, /*enable_spanned_weights=*/false);
     } else if (weights.type == kTfLiteInt4) {
       status =
-          CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4>(
+          CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt4>(
               &weights, /*enable_spanned_weights=*/false);
     } else {
       status =
-          CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>(
+          CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>(
               &weights);
     }
     if (!status.ok()) {
@@ -159,7 +159,7 @@ bool IsConv2dSupported(const TfLiteContext* absl_nonnull context,
   }
   if (bias && IsConstantTensor(bias)) {
     const absl::Status status =
-        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>(
+        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>(
             bias);
     if (!status.ok()) {
       *error = status.message();

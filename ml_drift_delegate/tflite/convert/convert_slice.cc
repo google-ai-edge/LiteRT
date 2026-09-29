@@ -63,7 +63,7 @@ void ConvertSlice(
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* ir_op = ir_model.add_op();
-  ir_op->name = ToString(::ml_drift::OperationType::SLICE);
+  ir_op->name = ToString(::ml_drift::OperationType::kSlice);
 
   const int tfl_input_id = node.inputs->data[0];
   ::ml_drift::ir::IrTensorId input_id = tensor_map[tfl_input_id];
@@ -71,12 +71,12 @@ void ConvertSlice(
   const int output_id = node.outputs->data[0];
   ir_model.SetProducer(tensor_map[output_id], ir_op->id);
 
-  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32>
+  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32>
       starts_tensor;
   PopulateTensor(&context.tensors[node.inputs->data[1]], node.inputs->data[1],
                  &starts_tensor, PopulateTensorFlags::kNoExtraBytes);
 
-  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32>
+  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32>
       sizes_tensor;
   PopulateTensor(&context.tensors[node.inputs->data[2]], node.inputs->data[2],
                  &sizes_tensor, PopulateTensorFlags::kNoExtraBytes);

@@ -139,15 +139,15 @@ absl::Status RunQkvNormRopeTest(::ml_drift::TestExecutionEnvironment& env,
   for (int t = 0; t < seq_len; ++t) {
     pos_data[t] = t + 3;
   }
-  ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::BHWC>,
-                     ::ml_drift::DataType::INT32>
+  ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::kBHWC>,
+                     ::ml_drift::DataType::kInt32>
       pos_tensor_cpu;
   pos_tensor_cpu.shape = pos_shape;
   pos_tensor_cpu.data = pos_data;
 
-  ::ml_drift::TensorDescriptor pos_desc(::ml_drift::DataType::INT32,
-                                        ::ml_drift::TensorStorageType::BUFFER,
-                                        ::ml_drift::Layout::HWC);
+  ::ml_drift::TensorDescriptor pos_desc(::ml_drift::DataType::kInt32,
+                                        ::ml_drift::TensorStorageType::kBuffer,
+                                        ::ml_drift::Layout::kHWC);
   pos_desc.UploadData(pos_tensor_cpu);
   auto pos = builder.AddConstantTensor(std::move(pos_desc));
 
@@ -235,7 +235,7 @@ absl::Status RunQkvNormRopeTest(::ml_drift::TestExecutionEnvironment& env,
                           &gpu_model));
 
   const float tolerance =
-      (precision == ::ml_drift::CalculationsPrecision::F16) ? 1e-2f : 1e-4f;
+      (precision == ::ml_drift::CalculationsPrecision::kF16) ? 1e-2f : 1e-4f;
   EXPECT_THAT(q_out_cpu.data, Pointwise(FloatNear(tolerance), expected_q));
   EXPECT_THAT(k_out_cpu.data, Pointwise(FloatNear(tolerance), expected_k));
   EXPECT_THAT(v_out_cpu.data, Pointwise(FloatNear(tolerance), expected_v));
@@ -283,10 +283,10 @@ TEST_P(QkvNormRopeKernelTest, MultiTokenPrefillHeadDim128) {
 
 INSTANTIATE_TEST_SUITE_P(
     QkvNormRopeKernelTestSuite, QkvNormRopeKernelTest,
-    Combine(ValuesIn({::ml_drift::CalculationsPrecision::F32,
-                      ::ml_drift::CalculationsPrecision::F16}),
-            ValuesIn({::ml_drift::TensorStorageType::BUFFER,
-                      ::ml_drift::TensorStorageType::TEXTURE_2D})),
+    Combine(ValuesIn({::ml_drift::CalculationsPrecision::kF32,
+                      ::ml_drift::CalculationsPrecision::kF16}),
+            ValuesIn({::ml_drift::TensorStorageType::kBuffer,
+                      ::ml_drift::TensorStorageType::kTexture2D})),
     [](const TestParamInfo<QkvNormRopeKernelTest::ParamType>& info) {
       return ::ml_drift::ToString(info.param);
     });

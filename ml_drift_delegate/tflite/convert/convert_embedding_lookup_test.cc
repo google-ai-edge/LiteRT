@@ -116,28 +116,28 @@ TEST_P(ConvertEmbeddingLookupTest, Parameterized) {
               ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt2);
     EXPECT_TRUE(
         (std::holds_alternative<
-            ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::UINT8>>(
+            ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kUint8>>(
             attr->weights)));
   } else if (dtype_ == kTfLiteInt4) {
     EXPECT_EQ(attr->weights_type,
               ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt4);
     EXPECT_TRUE(
         (std::holds_alternative<
-            ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::UINT8>>(
+            ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kUint8>>(
             attr->weights)));
   } else if (dtype_ == kTfLiteInt8) {
     EXPECT_EQ(attr->weights_type,
               ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt8);
     EXPECT_TRUE(
         (std::holds_alternative<
-            ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>>(
+            ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>>(
             attr->weights)));
   } else if (dtype_ == kTfLiteFloat32) {
     EXPECT_EQ(attr->weights_type,
               ::ml_drift::EmbeddingLookupAttributes::WeightsType::kFloat32);
-    EXPECT_TRUE(
-        (std::holds_alternative<::ml_drift::Tensor<
-             ::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>(attr->weights)));
+    EXPECT_TRUE((
+        std::holds_alternative<::ml_drift::Tensor<
+            ::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>(attr->weights)));
   }
 }
 

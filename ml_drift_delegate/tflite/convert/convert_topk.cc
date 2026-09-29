@@ -43,7 +43,7 @@ void ConvertTopK(
   // Insert a RESHAPE if input tensor [N] is mis-auto-expanded to [N,1,1,1].
   if (is_1d) {
     ::ml_drift::ir::IrOp* reshape_op = ir_model.add_op();
-    reshape_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+    reshape_op->name = ToString(::ml_drift::OperationType::kReshape);
 
     ::ml_drift::ReshapeAttributes reshape_attr;
     ::ml_drift::BHWC new_shape(1, 1, 1, input_tensor->dims->data[0]);
@@ -60,7 +60,7 @@ void ConvertTopK(
   }
 
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
-  op->name = ToString(::ml_drift::OperationType::TOP_K);
+  op->name = ToString(::ml_drift::OperationType::kTopK);
   ::ml_drift::TopKAttributes attr;
 
   const int32_t k = k_tensor->data.i32[0];
@@ -81,7 +81,7 @@ void ConvertTopK(
     ir_model.SetProducer(top_k_interim_indices->id, op->id);
 
     ::ml_drift::ir::IrOp* reshape_values_op = ir_model.add_op();
-    reshape_values_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+    reshape_values_op->name = ToString(::ml_drift::OperationType::kReshape);
     ::ml_drift::ReshapeAttributes reshape_values_attr;
     reshape_values_attr.new_shape = ::ml_drift::BHWC(k, 1, 1, 1);
     reshape_values_op->attr = std::move(reshape_values_attr);
@@ -89,7 +89,7 @@ void ConvertTopK(
     ir_model.SetProducer(tensor_map[output_id_values], reshape_values_op->id);
 
     ::ml_drift::ir::IrOp* reshape_indices_op = ir_model.add_op();
-    reshape_indices_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+    reshape_indices_op->name = ToString(::ml_drift::OperationType::kReshape);
     ::ml_drift::ReshapeAttributes reshape_indices_attr;
     reshape_indices_attr.new_shape = ::ml_drift::BHWC(k, 1, 1, 1);
     reshape_indices_op->attr = std::move(reshape_indices_attr);

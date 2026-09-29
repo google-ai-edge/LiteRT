@@ -106,7 +106,7 @@ absl::Status BuildSwigluGpuGraph(
     ABSL_ASSIGN_OR_RETURN(auto gate, model_builder->GetTensor(input_ids[0]));
     ABSL_ASSIGN_OR_RETURN(auto up, model_builder->GetTensor(input_ids[1]));
     auto sigmoid_gate =
-        model_builder->Elementwise(gate, ::ml_drift::OperationType::SIGMOID);
+        model_builder->Elementwise(gate, ::ml_drift::OperationType::kSigmoid);
     auto silu_gate = model_builder->Multiplication(gate, sigmoid_gate);
     auto output = model_builder->Multiplication(silu_gate, up);
     return model_builder->UpdateOutputTensor(output, output_id);

@@ -52,7 +52,7 @@ struct ShortConvStepMatch {
 
   ::ml_drift::BHWC weight_shape;
   std::vector<float> weight_data;
-  ::ml_drift::DataType weight_dtype = ::ml_drift::DataType::FLOAT32;
+  ::ml_drift::DataType weight_dtype = ::ml_drift::DataType::kFloat32;
 
   std::set<::ml_drift::NodeId> nodes_to_delete;
   ::ml_drift::NodeId insert_after_id = 0;
@@ -62,12 +62,12 @@ struct ShortConvStepMatch {
     ::ml_drift::GraphFloat32* graph, const ::ml_drift::BHWC& shape,
     const std::vector<float>& data, ::ml_drift::NodeId insert_after_id,
     ::ml_drift::Node** out_node,
-    ::ml_drift::DataType dtype = ::ml_drift::DataType::FLOAT32) {
+    ::ml_drift::DataType dtype = ::ml_drift::DataType::kFloat32) {
   ::ml_drift::Node* node = nullptr;
   if (!graph->InsertNodeAfter(insert_after_id, &node).ok() || !node) {
     return nullptr;
   }
-  node->operation.type = ToString(::ml_drift::OperationType::CONSTANT);
+  node->operation.type = ToString(::ml_drift::OperationType::kConstant);
   ::ml_drift::Value* value = graph->NewValue();
   value->tensor.type = dtype;
   value->tensor.shape = shape;
@@ -129,7 +129,7 @@ absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph) {
   for (::ml_drift::Node* node : graph->nodes()) {
     if (!node || matched_node_ids.count(node->id)) continue;
     if (node->operation.type !=
-        ToString(::ml_drift::OperationType::REDUCE_SUM)) {
+        ToString(::ml_drift::OperationType::kReduceSum)) {
       continue;
     }
 
@@ -139,7 +139,7 @@ absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph) {
 
     ::ml_drift::Node* mul_conv = graph->FindProducer(reduce_in->id);
     if (!mul_conv ||
-        mul_conv->operation.type != ToString(::ml_drift::OperationType::MUL)) {
+        mul_conv->operation.type != ToString(::ml_drift::OperationType::kMul)) {
       continue;
     }
 
@@ -159,12 +159,12 @@ absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph) {
                 mul_conv->operation.attributes);
         if (auto* t_f32 =
                 std::get_if<::ml_drift::Tensor<::ml_drift::BHWC,
-                                               ::ml_drift::DataType::FLOAT32>>(
+                                               ::ml_drift::DataType::kFloat32>>(
                     &attr.param)) {
           weight_shape = t_f32->shape;
           weight_data = t_f32->data;
         } else if (auto* t_lin = std::get_if<::ml_drift::Tensor<
-                       ::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>>(
+                       ::ml_drift::Linear, ::ml_drift::DataType::kFloat32>>(
                        &attr.param)) {
           weight_data = t_lin->data;
         }
@@ -173,7 +173,7 @@ absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph) {
       for (::ml_drift::Value* in_val : mul_inputs) {
         ::ml_drift::Node* producer = graph->FindProducer(in_val->id);
         if (producer && producer->operation.type ==
-                            ToString(::ml_drift::OperationType::CONCAT)) {
+                            ToString(::ml_drift::OperationType::kConcat)) {
           win_val = in_val;
         } else {
           conv_weight_val = in_val;
@@ -184,9 +184,8 @@ absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph) {
     if (!win_val || (!conv_weight_val && weight_data.empty())) continue;
 
     ::ml_drift::Node* concat_win_node = graph->FindProducer(win_val->id);
-    if (!concat_win_node ||
-        concat_win_node->operation.type !=
-            ToString(::ml_drift::OperationType::CONCAT)) {
+    if (!concat_win_node || concat_win_node->operation.type !=
+                                ToString(::ml_drift::OperationType::kConcat)) {
       continue;
     }
 
@@ -198,7 +197,7 @@ absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph) {
     ::ml_drift::Value* next_state_val = nullptr;
     for (::ml_drift::Node* c : graph->FindConsumers(win_val->id)) {
       if (c &&
-          (c->operation.type == ToString(::ml_drift::OperationType::SLICE) ||
+          (c->operation.type == ToString(::ml_drift::OperationType::kSlice) ||
            c->operation.type == "strided_slice")) {
         slice_state_node = c;
         auto outs = graph->FindOutputs(c->id);
@@ -214,13 +213,13 @@ absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph) {
 
     for (::ml_drift::Value* v : win_inputs) {
       ::ml_drift::Node* prod = graph->FindProducer(v->id);
-      if (prod && (prod->operation.type ==
-                       ToString(::ml_drift::OperationType::RESHAPE) ||
-                   prod->operation.type ==
-                       ToString(::ml_drift::OperationType::MUL))) {
+      if (prod &&
+          (prod->operation.type ==
+               ToString(::ml_drift::OperationType::kReshape) ||
+           prod->operation.type == ToString(::ml_drift::OperationType::kMul))) {
         px_val = v;
         if (prod->operation.type ==
-            ToString(::ml_drift::OperationType::RESHAPE)) {
+            ToString(::ml_drift::OperationType::kReshape)) {
           px_reshape_node = prod;
         }
       } else {
@@ -244,9 +243,8 @@ absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph) {
       bx_mul_node = graph->FindProducer(px_val->id);
     }
 
-    if (!bx_mul_node ||
-        bx_mul_node->operation.type !=
-            ToString(::ml_drift::OperationType::MUL)) {
+    if (!bx_mul_node || bx_mul_node->operation.type !=
+                            ToString(::ml_drift::OperationType::kMul)) {
       continue;
     }
 
@@ -257,10 +255,10 @@ absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph) {
     ::ml_drift::Node* slice_x = graph->FindProducer(bx_inputs[1]->id);
     if (!slice_b || !slice_x) continue;
     if ((slice_b->operation.type !=
-             ToString(::ml_drift::OperationType::SLICE) &&
+             ToString(::ml_drift::OperationType::kSlice) &&
          slice_b->operation.type != "strided_slice") ||
         (slice_x->operation.type !=
-             ToString(::ml_drift::OperationType::SLICE) &&
+             ToString(::ml_drift::OperationType::kSlice) &&
          slice_x->operation.type != "strided_slice")) {
       continue;
     }
@@ -302,7 +300,7 @@ absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph) {
     // Optional reshape after reduce_sum: [1, 1, H, 1] -> [1, 1, 1, H]
     for (::ml_drift::Node* c : graph->FindConsumers(red_out->id)) {
       if (c &&
-          c->operation.type == ToString(::ml_drift::OperationType::RESHAPE)) {
+          c->operation.type == ToString(::ml_drift::OperationType::kReshape)) {
         red_reshape = c;
         auto outs = graph->FindOutputs(c->id);
         if (!outs.empty()) red_out = outs[0];
@@ -314,7 +312,7 @@ absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph) {
     ::ml_drift::Node* bias_add_node = nullptr;
     ::ml_drift::Value* conv_bias_val = nullptr;
     for (::ml_drift::Node* c : graph->FindConsumers(red_out->id)) {
-      if (c && c->operation.type == ToString(::ml_drift::OperationType::ADD)) {
+      if (c && c->operation.type == ToString(::ml_drift::OperationType::kAdd)) {
         auto add_ins = graph->FindInputs(c->id);
         if (add_ins.size() == 2) {
           ::ml_drift::Value* other =
@@ -332,16 +330,15 @@ absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph) {
     ::ml_drift::Node* gating_mul = nullptr;
     ::ml_drift::Node* slice_c = nullptr;
     for (::ml_drift::Node* c : graph->FindConsumers(red_out->id)) {
-      if (c && c->operation.type == ToString(::ml_drift::OperationType::MUL)) {
+      if (c && c->operation.type == ToString(::ml_drift::OperationType::kMul)) {
         auto g_ins = graph->FindInputs(c->id);
         if (g_ins.size() == 2) {
           ::ml_drift::Value* c_val =
               (g_ins[0] == red_out) ? g_ins[1] : g_ins[0];
           slice_c = graph->FindProducer(c_val->id);
-          if (slice_c &&
-              (slice_c->operation.type ==
-                   ToString(::ml_drift::OperationType::SLICE) ||
-               slice_c->operation.type == "strided_slice")) {
+          if (slice_c && (slice_c->operation.type ==
+                              ToString(::ml_drift::OperationType::kSlice) ||
+                          slice_c->operation.type == "strided_slice")) {
             auto c_ins = graph->FindInputs(slice_c->id);
             if (!c_ins.empty() && c_ins[0] == in_proj_val) {
               gating_mul = c;
@@ -497,10 +494,10 @@ struct IrShortConvStepMatch {
     ::ml_drift::ir::IrModel* ir_model, const ::ml_drift::BHWC& shape,
     const std::vector<float>& data) {
   ::ml_drift::ir::IrOp* const_op = ir_model->add_op();
-  const_op->name = ToString(::ml_drift::OperationType::CONSTANT);
+  const_op->name = ToString(::ml_drift::OperationType::kConstant);
 
   ::ml_drift::ir::IrTensor* const_tensor =
-      ir_model->add_tensor(::ml_drift::DataType::FLOAT32, shape);
+      ir_model->add_tensor(::ml_drift::DataType::kFloat32, shape);
   ir_model->SetProducer(const_tensor->id, const_op->id);
 
   ::ml_drift::TensorFloat32 tensor;
@@ -519,11 +516,10 @@ struct IrShortConvStepMatch {
   while (true) {
     auto consumers = model->FindConsumers(tid);
     if (consumers.size() == 1 &&
-        (consumers[0]->name == "reshape" ||
-         consumers[0]->name == "transpose" ||
-         consumers[0]->name == ToString(::ml_drift::OperationType::RESHAPE) ||
+        (consumers[0]->name == "reshape" || consumers[0]->name == "transpose" ||
+         consumers[0]->name == ToString(::ml_drift::OperationType::kReshape) ||
          consumers[0]->name ==
-             ToString(::ml_drift::OperationType::TRANSPOSE)) &&
+             ToString(::ml_drift::OperationType::kTranspose)) &&
         !consumers[0]->outputs.empty()) {
       if (intermediate_ops) intermediate_ops->push_back(consumers[0]);
       tid = consumers[0]->outputs[0];
@@ -540,10 +536,9 @@ struct IrShortConvStepMatch {
   while (true) {
     auto* prod = model->FindProducer(tid);
     if (prod &&
-        (prod->name == "reshape" ||
-         prod->name == "transpose" ||
-         prod->name == ToString(::ml_drift::OperationType::RESHAPE) ||
-         prod->name == ToString(::ml_drift::OperationType::TRANSPOSE)) &&
+        (prod->name == "reshape" || prod->name == "transpose" ||
+         prod->name == ToString(::ml_drift::OperationType::kReshape) ||
+         prod->name == ToString(::ml_drift::OperationType::kTranspose)) &&
         !prod->inputs.empty()) {
       if (intermediate_ops) intermediate_ops->push_back(prod);
       tid = prod->inputs[0];
@@ -604,7 +599,7 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
 
   for (const auto& op_ptr : model->ops()) {
     if (!op_ptr || matched_op_ids.count(op_ptr->id)) continue;
-    if (op_ptr->name != ToString(::ml_drift::OperationType::REDUCE_SUM) &&
+    if (op_ptr->name != ToString(::ml_drift::OperationType::kReduceSum) &&
         op_ptr->name != "reduce_sum" && op_ptr->name != "sum") {
       continue;
     }
@@ -619,7 +614,7 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
         PeelBackward(model, reduce_sum_op->inputs[0], &intermediate_ops);
     ::ml_drift::ir::IrOp* mul_conv = model->FindProducer(reduce_in_tid);
     if (!mul_conv ||
-        (mul_conv->name != ToString(::ml_drift::OperationType::MUL) &&
+        (mul_conv->name != ToString(::ml_drift::OperationType::kMul) &&
          mul_conv->name != "mul")) {
       continue;
     }
@@ -638,12 +633,12 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
                 mul_conv->attr);
         if (auto* t_f32 =
                 std::get_if<::ml_drift::Tensor<::ml_drift::BHWC,
-                                               ::ml_drift::DataType::FLOAT32>>(
+                                               ::ml_drift::DataType::kFloat32>>(
                     &attr.param)) {
           weight_shape = t_f32->shape;
           weight_data = t_f32->data;
         } else if (auto* t_lin = std::get_if<::ml_drift::Tensor<
-                       ::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>>(
+                       ::ml_drift::Linear, ::ml_drift::DataType::kFloat32>>(
                        &attr.param)) {
           weight_data = t_lin->data;
         }
@@ -653,9 +648,9 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
         ::ml_drift::ir::IrTensorId peeled =
             PeelBackward(model, in_tid, &intermediate_ops);
         ::ml_drift::ir::IrOp* prod = model->FindProducer(peeled);
-        if (prod && (prod->name == "concat" ||
-                     prod->name ==
-                         ToString(::ml_drift::OperationType::CONCAT))) {
+        if (prod &&
+            (prod->name == "concat" ||
+             prod->name == ToString(::ml_drift::OperationType::kConcat))) {
           win_tid = peeled;
         } else {
           conv_weight_tid = peeled;
@@ -670,7 +665,7 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
     if (!concat_win_node ||
         (concat_win_node->name != "concat" &&
          concat_win_node->name !=
-             ToString(::ml_drift::OperationType::CONCAT))) {
+             ToString(::ml_drift::OperationType::kConcat))) {
       continue;
     }
     if (concat_win_node->inputs.size() < 2) continue;
@@ -680,7 +675,7 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
     for (::ml_drift::ir::IrOp* c : model->FindConsumers(win_tid)) {
       if (!c) continue;
       if (c->name == "slice" || c->name == "strided_slice" ||
-          c->name == ToString(::ml_drift::OperationType::SLICE)) {
+          c->name == ToString(::ml_drift::OperationType::kSlice)) {
         slice_state_node = c;
         if (!c->outputs.empty()) next_state_tid = c->outputs[0];
         break;
@@ -695,7 +690,7 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
           PeelBackward(model, v, &intermediate_ops);
       ::ml_drift::ir::IrOp* prod = model->FindProducer(peeled);
       if (prod && (prod->name == "mul" ||
-                   prod->name == ToString(::ml_drift::OperationType::MUL))) {
+                   prod->name == ToString(::ml_drift::OperationType::kMul))) {
         px_tid = peeled;
       } else {
         conv_state_tid = peeled;
@@ -712,7 +707,7 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
     ::ml_drift::ir::IrOp* bx_mul_node = model->FindProducer(px_tid);
     if (!bx_mul_node ||
         (bx_mul_node->name != "mul" &&
-         bx_mul_node->name != ToString(::ml_drift::OperationType::MUL))) {
+         bx_mul_node->name != ToString(::ml_drift::OperationType::kMul))) {
       continue;
     }
     if (bx_mul_node->inputs.size() != 2) continue;
@@ -725,9 +720,9 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
     ::ml_drift::ir::IrOp* slice_x = model->FindProducer(x_in);
     if (!slice_b || !slice_x) continue;
     if ((slice_b->name != "slice" && slice_b->name != "strided_slice" &&
-         slice_b->name != ToString(::ml_drift::OperationType::SLICE)) ||
+         slice_b->name != ToString(::ml_drift::OperationType::kSlice)) ||
         (slice_x->name != "slice" && slice_x->name != "strided_slice" &&
-         slice_x->name != ToString(::ml_drift::OperationType::SLICE))) {
+         slice_x->name != ToString(::ml_drift::OperationType::kSlice))) {
       continue;
     }
 
@@ -761,9 +756,9 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
       }
     } else if (conv_weight_tid != 0) {
       auto* w_prod = model->FindProducer(conv_weight_tid);
-      if (w_prod && (w_prod->name == "constant" ||
-                     w_prod->name ==
-                         ToString(::ml_drift::OperationType::CONSTANT))) {
+      if (w_prod &&
+          (w_prod->name == "constant" ||
+           w_prod->name == ToString(::ml_drift::OperationType::kConstant))) {
         if (w_prod->attr.type() ==
             typeid(::ml_drift::ConstTensorAttributes)) {
           const auto& c_attr =
@@ -791,8 +786,9 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
     ::ml_drift::ir::IrOp* bias_add_op = nullptr;
     std::optional<::ml_drift::ir::IrTensorId> conv_bias_tid;
     for (::ml_drift::ir::IrOp* c : model->FindConsumers(curr_conv_out)) {
-      if (c && (c->name == "add" ||
-                c->name == ToString(::ml_drift::OperationType::ADD)) &&
+      if (c &&
+          (c->name == "add" ||
+           c->name == ToString(::ml_drift::OperationType::kAdd)) &&
           c->inputs.size() == 2) {
         bias_add_op = c;
         conv_bias_tid = (c->inputs[0] == curr_conv_out) ? c->inputs[1]
@@ -808,8 +804,9 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
     ::ml_drift::ir::IrOp* gating_mul = nullptr;
     ::ml_drift::ir::IrOp* slice_c = nullptr;
     for (::ml_drift::ir::IrOp* c : model->FindConsumers(curr_conv_out)) {
-      if (c && (c->name == "mul" ||
-                c->name == ToString(::ml_drift::OperationType::MUL)) &&
+      if (c &&
+          (c->name == "mul" ||
+           c->name == ToString(::ml_drift::OperationType::kMul)) &&
           c->inputs.size() == 2) {
         ::ml_drift::ir::IrTensorId c_val_tid =
             (c->inputs[0] == curr_conv_out) ? c->inputs[1] : c->inputs[0];
@@ -817,7 +814,7 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
         ::ml_drift::ir::IrOp* prod_c = model->FindProducer(c_val_tid);
         if (prod_c &&
             (prod_c->name == "slice" || prod_c->name == "strided_slice" ||
-             prod_c->name == ToString(::ml_drift::OperationType::SLICE))) {
+             prod_c->name == ToString(::ml_drift::OperationType::kSlice))) {
           if (!prod_c->inputs.empty() &&
               PeelBackward(model, prod_c->inputs[0], &intermediate_ops) ==
                   in_proj_tid) {

@@ -85,22 +85,22 @@ class CheckPopulateTensorTest : public ::testing::Test {
 
 TEST_F(CheckPopulateTensorTest, ValidTensors) {
   tensor_.bytes = 1;
-  EXPECT_OK((CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>(
+  EXPECT_OK((CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>(
       &tensor_, /*enable_spanned_weights=*/false)));
-  EXPECT_OK((CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4>(
+  EXPECT_OK((CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt4>(
       &tensor_, /*enable_spanned_weights=*/false)));
-  EXPECT_OK((CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>(
+  EXPECT_OK((CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>(
       &tensor_, /*enable_spanned_weights=*/true)));
-  EXPECT_OK((CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4>(
+  EXPECT_OK((CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt4>(
       &tensor_, /*enable_spanned_weights=*/true)));
   EXPECT_OK(
-      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>(
+      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>(
           &tensor_, /*enable_spanned_weights=*/false)));
   EXPECT_OK(
-      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>(
+      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>(
           &tensor_, /*enable_spanned_weights=*/true)));
   EXPECT_OK(
-      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT16>(
+      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat16>(
           &tensor_, /*enable_spanned_weights=*/false)));
 }
 
@@ -108,13 +108,13 @@ TEST_F(CheckPopulateTensorTest, ValidTensors) {
 TEST_F(CheckPopulateTensorTest, InvalidQuantizationType) {
   tensor_.quantization.type = kTfLiteNoQuantization;
   EXPECT_THAT(
-      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>(
+      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>(
           &tensor_, /*enable_spanned_weights=*/false)),
       StatusIs(absl::StatusCode::kInvalidArgument,
                HasSubstr("quantization.type must be "
                          "kTfLiteAffineQuantization")));
   EXPECT_THAT(
-      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4>(
+      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt4>(
           &tensor_, /*enable_spanned_weights=*/false)),
       StatusIs(absl::StatusCode::kInvalidArgument,
                HasSubstr("quantization.type must be "
@@ -124,12 +124,12 @@ TEST_F(CheckPopulateTensorTest, InvalidQuantizationType) {
 TEST_F(CheckPopulateTensorTest, InvalidQuantizedDimension) {
   quant_params_.quantized_dimension = 1;
   EXPECT_THAT(
-      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>(
+      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>(
           &tensor_, /*enable_spanned_weights=*/false)),
       StatusIs(absl::StatusCode::kInvalidArgument,
                HasSubstr("quantized_dimension must be 0")));
   EXPECT_THAT(
-      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4>(
+      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt4>(
           &tensor_, /*enable_spanned_weights=*/false)),
       StatusIs(absl::StatusCode::kInvalidArgument,
                HasSubstr("quantized_dimension must be 0")));
@@ -138,14 +138,14 @@ TEST_F(CheckPopulateTensorTest, InvalidQuantizedDimension) {
 TEST_F(CheckPopulateTensorTest, NullQuantParams) {
   quant_params_.scale = nullptr;
   EXPECT_THAT(
-      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>(
+      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>(
           &tensor_, /*enable_spanned_weights=*/false)),
       StatusIs(absl::StatusCode::kInvalidArgument,
                HasSubstr("scale must not be null")));
   quant_params_.scale = scale_arr_;
   quant_params_.zero_point = nullptr;
   EXPECT_THAT(
-      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>(
+      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>(
           &tensor_, /*enable_spanned_weights=*/false)),
       StatusIs(absl::StatusCode::kInvalidArgument,
                HasSubstr("zero_point must not be null")));
@@ -154,7 +154,7 @@ TEST_F(CheckPopulateTensorTest, NullQuantParams) {
 
 TEST_F(CheckPopulateTensorTest, UnsupportedTypeForZeroCopy) {
   EXPECT_THAT(
-      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT16>(
+      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat16>(
           &tensor_, /*enable_spanned_weights=*/true)),
       StatusIs(absl::StatusCode::kInvalidArgument,
                HasSubstr("Unsupported type for zero-copy")));
@@ -165,7 +165,7 @@ TEST_F(CheckPopulateTensorTest, DimSizeMismatch) {
   tensor_.dims = TfLiteIntArrayCreate(1);
   tensor_.dims->data[0] = 1;
   EXPECT_THAT(
-      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>(
+      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>(
           &tensor_, /*enable_spanned_weights=*/false)),
       StatusIs(
           absl::StatusCode::kInvalidArgument,
@@ -180,7 +180,7 @@ TEST_F(CheckPopulateTensorTest, InvalidQuantizedDims) {
   tensor_.dims = TfLiteIntArrayCreate(1);
   tensor_.dims->data[0] = 1;
   EXPECT_THAT(
-      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>(
+      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>(
           &tensor_, /*enable_spanned_weights=*/false)),
       StatusIs(
           absl::StatusCode::kInvalidArgument,
@@ -193,7 +193,7 @@ TEST_F(CheckPopulateTensorTest, InvalidQuantizedDims) {
   tensor_.dims->data[1] = 1;
   tensor_.dims->data[2] = 1;
   EXPECT_THAT(
-      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>(
+      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>(
           &tensor_, /*enable_spanned_weights=*/false)),
       StatusIs(
           absl::StatusCode::kInvalidArgument,
@@ -209,7 +209,7 @@ TEST_F(CheckPopulateTensorTest, CheckAllDimensionsForNonFloat) {
   tensor_.dims->data[0] = 1;
   tensor_.dims->data[1] = 1;
   EXPECT_THAT(
-      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT16>(
+      (CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat16>(
           &tensor_, /*enable_spanned_weights=*/false)),
       StatusIs(absl::StatusCode::kInvalidArgument,
                HasSubstr("Expected a 4D tensor of shape OxHxWxI")));

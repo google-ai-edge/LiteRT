@@ -424,7 +424,7 @@ TEST_F(ConvertElementwiseTest, ConstantInputLinear) {
       std::any_cast<::ml_drift::ElementwiseAttributes>(&op->attr);
   ASSERT_TRUE(attr);
   const auto* t = std::get_if<
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>>(
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>>(
       &attr->param);
   ASSERT_TRUE(t);
   EXPECT_EQ(t->shape.v, 4);
@@ -459,7 +459,7 @@ TEST_F(ConvertElementwiseTest, ConstantInputBHWC) {
       std::any_cast<::ml_drift::ElementwiseAttributes>(&op->attr);
   ASSERT_TRUE(attr);
   const auto* t = std::get_if<
-      ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT32>>(
+      ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>>(
       &attr->param);
   ASSERT_TRUE(t);
   EXPECT_EQ(t->shape, ::ml_drift::BHWC(1, 1, 3, 4));
@@ -665,7 +665,7 @@ TEST_F(ConvertElementwiseTest, ConstantInput2D) {
       std::any_cast<::ml_drift::ElementwiseAttributes>(&op->attr);
   ASSERT_TRUE(attr);
   const auto* t = std::get_if<
-      ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT32>>(
+      ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>>(
       &attr->param);
   ASSERT_TRUE(t);
   EXPECT_EQ(t->shape, ::ml_drift::BHWC(1, 1, 4, 4));
@@ -694,7 +694,7 @@ TEST_F(ConvertElementwiseTest, ConstantInput3D) {
       std::any_cast<::ml_drift::ElementwiseAttributes>(&op->attr);
   ASSERT_TRUE(attr);
   const auto* t = std::get_if<
-      ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT32>>(
+      ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>>(
       &attr->param);
   ASSERT_TRUE(t);
   EXPECT_EQ(t->shape, ::ml_drift::BHWC(1, 4, 4, 3));

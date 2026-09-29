@@ -71,7 +71,7 @@ bool IsDequantizeSupported(const TfLiteContext* absl_nonnull context,
     }
     if (input->dims->size == 2) {
       const absl::Status status =
-          CheckPopulateTensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32>(
+          CheckPopulateTensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32>(
               input);
       if (!status.ok()) {
         *error = status.message();
@@ -79,7 +79,7 @@ bool IsDequantizeSupported(const TfLiteContext* absl_nonnull context,
       }
     } else if (input->dims->size == 3) {
       const absl::Status status =
-          CheckPopulateTensor<::ml_drift::HWC, ::ml_drift::DataType::FLOAT32>(
+          CheckPopulateTensor<::ml_drift::HWC, ::ml_drift::DataType::kFloat32>(
               input);
       if (!status.ok()) {
         *error = status.message();
@@ -87,7 +87,7 @@ bool IsDequantizeSupported(const TfLiteContext* absl_nonnull context,
       }
     } else if (input->dims->size == 4) {
       const absl::Status status =
-          CheckPopulateTensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT32>(
+          CheckPopulateTensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>(
               input);
       if (!status.ok()) {
         *error = status.message();

@@ -363,7 +363,7 @@ LiteRtStatus LiteRtImportOpenClMemory(LiteRtGpuDeviceId device_id,
         static_cast<cl_GLuint>(reinterpret_cast<uintptr_t>(hw_buffer_handle));
     ::ml_drift::cl::CLMemory cl_mem_obj;
     auto status = ::ml_drift::cl::CreateClMemoryFromGlBuffer(
-        gl_buffer_id, ::ml_drift::AccessType::READ_WRITE, &context,
+        gl_buffer_id, ::ml_drift::AccessType::kReadWrite, &context,
         &cl_mem_obj);
     if (status.ok()) {
       cl_memory = cl_mem_obj.Release();

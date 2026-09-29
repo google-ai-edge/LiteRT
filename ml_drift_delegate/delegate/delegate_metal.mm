@@ -370,18 +370,18 @@ TfLiteDelegatePtr CreateMlDriftMetalDelegate(MlDriftDelegateOptionsPtr options,
     case kDefault:
       delegate_data->calculation_precision =
           delegate_data->shared_backend->GetInfo()->IsRoundToNearestSupported()
-              ? ::ml_drift::CalculationsPrecision::F16
-              : ::ml_drift::CalculationsPrecision::F32_F16;
+              ? ::ml_drift::CalculationsPrecision::kF16
+              : ::ml_drift::CalculationsPrecision::kF32F16;
       break;
     case kFp16:
-      delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::F16;
+      delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::kF16;
       break;
     case kFp32:
-      delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::F32;
+      delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::kF32;
       break;
   }
   if (delegate_data->options->use_f32_accum_for_fp16) {
-    delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::F32_F16;
+    delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::kF32F16;
   }
   const bool hint_fully_delegated_to_single_delegate =
       delegate_data->options->hint_fully_delegated_to_single_delegate;

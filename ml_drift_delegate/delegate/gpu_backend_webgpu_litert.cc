@@ -127,15 +127,15 @@ GpuBackendWebGpuLitert::GetGpuBufferRequirements(
     ::ml_drift::TensorStorageType used_storage_type,
     ::ml_drift::DataType data_type) {
   GpuBufferRequirements requirements;
-  if (used_storage_type == ::ml_drift::TensorStorageType::TEXTURE_2D) {
-    if (data_type == ::ml_drift::DataType::FLOAT16) {
+  if (used_storage_type == ::ml_drift::TensorStorageType::kTexture2D) {
+    if (data_type == ::ml_drift::DataType::kFloat16) {
       requirements.buffer_types.push_back(
           kLiteRtTensorBufferTypeWebGpuTextureFp16);
     } else {
       requirements.buffer_types.push_back(kLiteRtTensorBufferTypeWebGpuTexture);
     }
-  } else if (used_storage_type == ::ml_drift::TensorStorageType::IMAGE_BUFFER) {
-    if (data_type == ::ml_drift::DataType::FLOAT16) {
+  } else if (used_storage_type == ::ml_drift::TensorStorageType::kImageBuffer) {
+    if (data_type == ::ml_drift::DataType::kFloat16) {
       requirements.buffer_types.push_back(
           kLiteRtTensorBufferTypeWebGpuImageBufferFp16);
     } else {
@@ -143,7 +143,7 @@ GpuBackendWebGpuLitert::GetGpuBufferRequirements(
           kLiteRtTensorBufferTypeWebGpuImageBuffer);
     }
   } else {
-    if (data_type == ::ml_drift::DataType::FLOAT16) {
+    if (data_type == ::ml_drift::DataType::kFloat16) {
       requirements.buffer_types.push_back(
           kLiteRtTensorBufferTypeWebGpuBufferFp16);
     } else {

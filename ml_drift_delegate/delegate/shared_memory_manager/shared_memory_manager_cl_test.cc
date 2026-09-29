@@ -78,8 +78,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF16FromF32) {
   ValueIdToSharedTensorMap quant_param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F16;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   GraphFloat32 graph;
   Node* node = graph.NewNode();
@@ -140,7 +140,7 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF16FromF32) {
                          manager->GetExternalConstantTensor(global_id));
     EXPECT_NE(external_tensor, nullptr);
     EXPECT_EQ(external_tensor->GetDescriptor().GetDataType(),
-              DataType::FLOAT16);
+              DataType::kFloat16);
   }
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
@@ -150,8 +150,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF16FromF16) {
   ValueIdToSharedTensorMap quant_param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F16;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   GraphFloat32 graph;
   Node* node = graph.NewNode();
@@ -199,7 +199,7 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF16FromF16) {
                          manager->GetExternalConstantTensor(global_id));
     EXPECT_NE(external_tensor, nullptr);
     EXPECT_EQ(external_tensor->GetDescriptor().GetDataType(),
-              DataType::FLOAT16);
+              DataType::kFloat16);
   }
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
@@ -209,8 +209,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF16) {
   ValueIdToSharedTensorMap quant_param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F32;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF32;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   GraphFloat32 graph;
   Node* node = graph.NewNode();
@@ -219,7 +219,7 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF16) {
   graph.AddConsumer(node->id, input->id);
   graph.SetProducer(node->id, output->id);
   input->tensor.shape = BHWC(1, 1, 1, 10);
-  input->tensor.type = DataType::FLOAT16;
+  input->tensor.type = DataType::kFloat16;
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerCl(
@@ -259,7 +259,7 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF16) {
                          manager->GetExternalConstantTensor(global_id));
     EXPECT_NE(external_tensor, nullptr);
     EXPECT_EQ(external_tensor->GetDescriptor().GetDataType(),
-              DataType::FLOAT16);
+              DataType::kFloat16);
   }
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
@@ -269,8 +269,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF32) {
   ValueIdToSharedTensorMap quant_param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F32;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF32;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   GraphFloat32 graph;
   Node* node = graph.NewNode();
@@ -279,7 +279,7 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF32) {
   graph.AddConsumer(node->id, input->id);
   graph.SetProducer(node->id, output->id);
   input->tensor.shape = BHWC(1, 1, 1, 10);
-  input->tensor.type = DataType::FLOAT32;
+  input->tensor.type = DataType::kFloat32;
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerCl(
@@ -319,7 +319,7 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF32) {
                          manager->GetExternalConstantTensor(global_id));
     EXPECT_NE(external_tensor, nullptr);
     EXPECT_EQ(external_tensor->GetDescriptor().GetDataType(),
-              DataType::FLOAT32);
+              DataType::kFloat32);
   }
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
@@ -329,8 +329,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalQuantizedTensor) {
   ValueIdToSharedTensorMap quant_param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F16;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   GraphFloat32 graph;
   Node* node = graph.NewNode();
@@ -415,8 +415,8 @@ TEST_F(SharedMemoryManagerTest, CreateQuantizedTensorMixedPrecision) {
 
   CreateGpuModelInfo create_info;
   // Mixed precision is only supported with F32 precision.
-  create_info.precision = CalculationsPrecision::F32;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF32;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   GraphFloat32 graph;
   Node* node = graph.NewNode();
@@ -425,7 +425,7 @@ TEST_F(SharedMemoryManagerTest, CreateQuantizedTensorMixedPrecision) {
   graph.AddConsumer(node->id, input->id);
   graph.SetProducer(node->id, output->id);
   input->tensor.shape = BHWC(1, 1, 1, 10);
-  input->tensor.type = DataType::FLOAT16;  // input is fp16
+  input->tensor.type = DataType::kFloat16;  // input is fp16
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerCl(
@@ -473,7 +473,7 @@ TEST_F(SharedMemoryManagerTest, CreateQuantizedTensorMixedPrecision) {
                            manager->GetExternalConstantTensor(global_id));
       EXPECT_NE(external_tensor, nullptr);
       EXPECT_EQ(external_tensor->GetDescriptor().GetDataType(),
-                DataType::FLOAT16);
+                DataType::kFloat16);
     }
   }
   EXPECT_TRUE(scale_zp_found);
@@ -493,8 +493,8 @@ void RunBlockwiseQuantizationTest(cl::Environment& env, TfLiteType zp_type,
   ValueIdToSharedTensorMap quant_param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F16;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   GraphFloat32 graph;
   Node* node = graph.NewNode();
@@ -613,7 +613,7 @@ void RunBlockwiseQuantizationTest(cl::Environment& env, TfLiteType zp_type,
                            manager->GetExternalConstantTensor(global_id));
       EXPECT_NE(external_tensor, nullptr);
       EXPECT_EQ(external_tensor->GetDescriptor().GetDataType(),
-                DataType::FLOAT16);
+                DataType::kFloat16);
       EXPECT_EQ(external_tensor->GetDescriptor().GetBHWCShape(),
                 BHWC(1, 1, 25, 8));
     }
@@ -670,8 +670,8 @@ TEST_F(SharedMemoryManagerTest, IrSharedConstantIsMutatedInPlaceWithStableId) {
   ValueIdToSharedTensorMap quant_param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F16;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   ir::IrModel graph;
   ir::IrOp* op = graph.add_op();
@@ -684,7 +684,7 @@ TEST_F(SharedMemoryManagerTest, IrSharedConstantIsMutatedInPlaceWithStableId) {
   graph.AddConsumer(weights, op_id);
   graph.SetProducer(output, op_id);
   graph.GetMutableTensor(weights)->desc.SetBHWCShape(BHWC(1, 1, 1, 10));
-  graph.GetMutableTensor(weights)->desc.SetDataType(DataType::FLOAT32);
+  graph.GetMutableTensor(weights)->desc.SetDataType(DataType::kFloat32);
   const uint32_t original_weights_id = weights;
 
   TfLiteContext context;
@@ -721,7 +721,7 @@ TEST_F(SharedMemoryManagerTest, IrSharedConstantIsMutatedInPlaceWithStableId) {
             original_weights_id);
   ASSERT_NE(graph.tensor(original_weights_id), nullptr);
   EXPECT_EQ(graph.tensor(original_weights_id)->desc.GetDataType(),
-            DataType::FLOAT16);
+            DataType::kFloat16);
 
   // The id map is keyed on the stable id.
   ASSERT_EQ(local_to_global_id_map.size(), 1);

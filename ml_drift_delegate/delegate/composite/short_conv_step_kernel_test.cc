@@ -69,19 +69,19 @@ absl::Status RunShortConvStepTest(
       ::ml_drift::DeduceDataTypeFromPrecision(precision);
 
   // 1. in_proj [1, 1, 1, 3 * hidden_size]
-  ::ml_drift::TensorDescriptor in_proj_desc(
-      data_type, storage, ::ml_drift::Layout::BHWC);
+  ::ml_drift::TensorDescriptor in_proj_desc(data_type, storage,
+                                            ::ml_drift::Layout::kBHWC);
   in_proj_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, 3 * hidden_size));
 
   // 2. conv_state [1, 1, hidden_size, conv_L_cache - 1]
-  ::ml_drift::TensorDescriptor conv_state_desc(
-      data_type, storage, ::ml_drift::Layout::BHWC);
+  ::ml_drift::TensorDescriptor conv_state_desc(data_type, storage,
+                                               ::ml_drift::Layout::kBHWC);
   conv_state_desc.SetBHWCShape(
       ::ml_drift::BHWC(1, 1, hidden_size, conv_L_cache - 1));
 
   // 3. conv_weight [hidden_size, 1, 1, conv_L_cache]
-  ::ml_drift::TensorDescriptor conv_weight_desc(
-      data_type, storage, ::ml_drift::Layout::BHWC);
+  ::ml_drift::TensorDescriptor conv_weight_desc(data_type, storage,
+                                                ::ml_drift::Layout::kBHWC);
   conv_weight_desc.SetBHWCShape(
       ::ml_drift::BHWC(hidden_size, 1, 1, conv_L_cache));
 
@@ -89,18 +89,18 @@ absl::Status RunShortConvStepTest(
   std::unique_ptr<::ml_drift::TensorDescriptor> conv_bias_desc = nullptr;
   if (with_bias) {
     conv_bias_desc = std::make_unique<::ml_drift::TensorDescriptor>(
-        data_type, storage, ::ml_drift::Layout::BHWC);
+        data_type, storage, ::ml_drift::Layout::kBHWC);
     conv_bias_desc->SetBHWCShape(::ml_drift::BHWC(1, 1, 1, hidden_size));
   }
 
   // 5. dst [1, 1, 1, hidden_size]
-  ::ml_drift::TensorDescriptor dst_desc(
-      data_type, storage, ::ml_drift::Layout::BHWC);
+  ::ml_drift::TensorDescriptor dst_desc(data_type, storage,
+                                        ::ml_drift::Layout::kBHWC);
   dst_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, hidden_size));
 
   // 6. next_state [1, 1, hidden_size, conv_L_cache - 1]
-  ::ml_drift::TensorDescriptor next_state_desc(
-      data_type, storage, ::ml_drift::Layout::BHWC);
+  ::ml_drift::TensorDescriptor next_state_desc(data_type, storage,
+                                               ::ml_drift::Layout::kBHWC);
   next_state_desc.SetBHWCShape(
       ::ml_drift::BHWC(1, 1, hidden_size, conv_L_cache - 1));
 
@@ -174,7 +174,7 @@ absl::Status RunShortConvStepTest(
 
   // Compute reference results
   const float tol =
-      (precision == ::ml_drift::CalculationsPrecision::F16) ? 1e-2f : 1e-4f;
+      (precision == ::ml_drift::CalculationsPrecision::kF16) ? 1e-2f : 1e-4f;
   for (int i = 0; i < hidden_size; ++i) {
     float b = in_proj_data[i];
     float c = in_proj_data[hidden_size + i];
@@ -241,9 +241,9 @@ TEST_P(ShortConvStepFloatTest, WithBias) {
 
 INSTANTIATE_TEST_SUITE_P(
     ShortConvStepFloatTestSuite, ShortConvStepFloatTest,
-    Combine(ValuesIn({::ml_drift::CalculationsPrecision::F32,
-                      ::ml_drift::CalculationsPrecision::F16}),
-            ValuesIn({::ml_drift::TensorStorageType::BUFFER})),
+    Combine(ValuesIn({::ml_drift::CalculationsPrecision::kF32,
+                      ::ml_drift::CalculationsPrecision::kF16}),
+            ValuesIn({::ml_drift::TensorStorageType::kBuffer})),
     [](const TestParamInfo<ShortConvStepFloatTest::ParamType>& info) {
       return ::ml_drift::ToString(info.param);
     });

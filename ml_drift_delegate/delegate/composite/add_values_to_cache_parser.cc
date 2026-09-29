@@ -103,8 +103,8 @@ void AddValuesToCacheOperationParser::Parse(const TfLiteNode* tflite_node,
       output_2->quant_params.reset();
     }
     // we expect uint8 instead of int8.
-    output_1->tensor.type = ::ml_drift::DataType::UINT8;
-    output_2->tensor.type = ::ml_drift::DataType::UINT8;
+    output_1->tensor.type = ::ml_drift::DataType::kUint8;
+    output_2->tensor.type = ::ml_drift::DataType::kUint8;
   }
 
   const auto* params = static_cast<const TfLiteStablehloCompositeParams*>(

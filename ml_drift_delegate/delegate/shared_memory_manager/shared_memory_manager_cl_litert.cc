@@ -108,7 +108,7 @@ bool TryCreateTensorViaAhwb(
     ml_drift::TensorDescriptor& tensor_desc,
     std::unique_ptr<GpuSpatialTensor>& tensor) {
   if (cl::clImportMemoryARM == nullptr) return false;
-  if (tensor_desc.GetStorageType() != TensorStorageType::TEXTURE_2D) {
+  if (tensor_desc.GetStorageType() != TensorStorageType::kTexture2D) {
     return false;
   }
 

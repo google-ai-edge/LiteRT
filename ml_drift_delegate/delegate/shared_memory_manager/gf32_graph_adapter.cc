@@ -47,10 +47,10 @@ void GraphFloat32Adapter::SetValueShapeAndType(uint32_t value_id,
 DataType GraphFloat32Adapter::ResolveSharedTensorType(
     uint32_t shared_tensor_id, DataType default_data_type) const {
   DataType data_type = default_data_type;
-  if (default_data_type == DataType::FLOAT32) {
+  if (default_data_type == DataType::kFloat32) {
     std::vector<uint32_t> consumers = FindConsumerOps(shared_tensor_id);
     if (consumers.size() == 1 && OpHasInputs(consumers[0])) {
-      data_type = DataType::FLOAT16;
+      data_type = DataType::kFloat16;
       data_type = GetOpFirstInputType(consumers[0]);
     }
   }
@@ -63,7 +63,7 @@ void GraphFloat32Adapter::UploadTensorData(
   // Support uploading float16 data for float16 tensors, otherwise upload float
   // data. This is used for the models with fp16 weights from MediaPipe. (e.g.
   // inpainting models)
-  if (tensor_desc.GetDataType() == DataType::FLOAT16) {
+  if (tensor_desc.GetDataType() == DataType::kFloat16) {
     if (tensor.type == TfLiteType::kTfLiteFloat16) {
       tensor_desc.UploadData<half>(reinterpret_cast<half*>(tensor.data.f16));
     } else {

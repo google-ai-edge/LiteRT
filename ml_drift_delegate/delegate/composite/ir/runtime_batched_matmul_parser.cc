@@ -123,7 +123,7 @@ void Reshape(::ml_drift::ir::IrModel* ir_model,
              ::ml_drift::ir::IrTensorId before,
              ::ml_drift::ir::IrTensorId after) {
   ::ml_drift::ir::IrOp* reshape = ir_model->add_op();
-  reshape->name = ToString(::ml_drift::OperationType::RESHAPE);
+  reshape->name = ToString(::ml_drift::OperationType::kReshape);
   ::ml_drift::ReshapeAttributes reshape_attr;
   reshape_attr.new_shape = ir_model->tensor(after)->desc.GetBHWCShape();
   reshape->attr = reshape_attr;
@@ -194,7 +194,7 @@ void RuntimeBatchedMatMulConvert(
     // TODO: b/404330171 - As FC doesn't support integer weights, we use FP16
     // here. The precision information must be passed from the delegate.
     external_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
-        ::ml_drift::DataType::FLOAT16, external_weights.weights_shape);
+        ::ml_drift::DataType::kFloat16, external_weights.weights_shape);
     RuntimeCheckParams& runtime_check = attr.runtime_check;
     if (is_src) {
       runtime_check.src_end_ch_index = kActiveTokensAlignedIndex;
@@ -208,7 +208,7 @@ void RuntimeBatchedMatMulConvert(
     const TfLiteTensor* rhs_tensor =
         &context.tensors[tflite_node.inputs->data[1]];
     if (rhs_tensor->type == kTfLiteInt8) {
-      external_weights.desc.type = ::ml_drift::DataType::UINT8;
+      external_weights.desc.type = ::ml_drift::DataType::kUint8;
       float scale = 1.0f;
       int channel_count = 1;
 
@@ -232,13 +232,13 @@ void RuntimeBatchedMatMulConvert(
           ir_model.ResetQuantParams(right_value);
         }
         ir_model.GetMutableTensor(right_value)
-            ->desc.SetDataType(::ml_drift::DataType::UINT8);
+            ->desc.SetDataType(::ml_drift::DataType::kUint8);
 
         scale = flexbuffer_map["scale"].AsFloat();
         channel_count = rhs_tensor->dims->data[2];
       }
-      ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::LINEAR>,
-                         ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::kLinear>,
+                         ::ml_drift::DataType::kFloat32>
           scale_tensor;
       scale_tensor.shape = ::ml_drift::Linear(channel_count);
       scale_tensor.data = std::vector<float>(channel_count, scale);

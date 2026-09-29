@@ -263,15 +263,15 @@ GpuBackendOpenClLitert::GetGpuBufferRequirements(
     ::ml_drift::TensorStorageType used_storage_type,
     ::ml_drift::DataType data_type) {
   GpuBufferRequirements requirements;
-  if (used_storage_type == ::ml_drift::TensorStorageType::TEXTURE_2D) {
-    if (data_type == ::ml_drift::DataType::FLOAT16) {
+  if (used_storage_type == ::ml_drift::TensorStorageType::kTexture2D) {
+    if (data_type == ::ml_drift::DataType::kFloat16) {
       requirements.buffer_types.push_back(
           kLiteRtTensorBufferTypeOpenClTextureFp16);
     } else {
       requirements.buffer_types.push_back(kLiteRtTensorBufferTypeOpenClTexture);
     }
-  } else if (used_storage_type == ::ml_drift::TensorStorageType::IMAGE_BUFFER) {
-    if (data_type == ::ml_drift::DataType::FLOAT16) {
+  } else if (used_storage_type == ::ml_drift::TensorStorageType::kImageBuffer) {
+    if (data_type == ::ml_drift::DataType::kFloat16) {
       requirements.buffer_types.push_back(
           kLiteRtTensorBufferTypeOpenClImageBufferFp16);
     } else {
@@ -279,7 +279,7 @@ GpuBackendOpenClLitert::GetGpuBufferRequirements(
           kLiteRtTensorBufferTypeOpenClImageBuffer);
     }
   } else {
-    if (data_type == ::ml_drift::DataType::FLOAT16) {
+    if (data_type == ::ml_drift::DataType::kFloat16) {
       requirements.buffer_types.push_back(
           kLiteRtTensorBufferTypeOpenClBufferFp16);
     } else {

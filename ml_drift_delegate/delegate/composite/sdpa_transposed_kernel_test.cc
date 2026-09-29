@@ -285,18 +285,18 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
 
   ::ml_drift::DataType datatype;
   switch (precision) {
-    case ::ml_drift::CalculationsPrecision::F16:
-      datatype = ::ml_drift::DataType::FLOAT16;
+    case ::ml_drift::CalculationsPrecision::kF16:
+      datatype = ::ml_drift::DataType::kFloat16;
       break;
-    case ::ml_drift::CalculationsPrecision::F32:
-      datatype = ::ml_drift::DataType::FLOAT32;
+    case ::ml_drift::CalculationsPrecision::kF32:
+      datatype = ::ml_drift::DataType::kFloat32;
       break;
     default:
       return absl::InvalidArgumentError("Unsupported precision.");
   }
 
   ::ml_drift::TensorStorageType kv_storage_type =
-      from_cache_update ? ::ml_drift::TensorStorageType::BUFFER : storage;
+      from_cache_update ? ::ml_drift::TensorStorageType::kBuffer : storage;
 
   auto q = builder.AddTensor(::ml_drift::BHWC(1, BK, T, H), datatype);
   auto q_shape = q.tensor_desc.GetBHWCShape();
@@ -312,23 +312,23 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
   if (mask_mode == MaskMode::kBool) {
     auto mask_float = builder.AddTensor(mask_shape, datatype);
     mask_feed_handle = mask_float;
-    mask_handle = builder.Cast(mask_float, ::ml_drift::DataType::BOOL);
+    mask_handle = builder.Cast(mask_float, ::ml_drift::DataType::kBool);
   } else if (mask_mode == MaskMode::kFloatAdditive) {
     auto mask_float = builder.AddTensor(mask_shape, datatype);
     mask_feed_handle = mask_float;
     mask_handle = mask_float;
   }
 
-  ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::BHWC>,
-                     ::ml_drift::DataType::INT32>
+  ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::kBHWC>,
+                     ::ml_drift::DataType::kInt32>
       param_tensor_cpu;
   param_tensor_cpu.shape = ::ml_drift::BHWC(1, 1, 1, 7);
   // {cache update start index, cache update end index, active tokens}.
   param_tensor_cpu.data = {q_start, S, S, 0, 0, 0, 0};
 
-  ::ml_drift::TensorDescriptor param_desc(::ml_drift::DataType::INT32,
-                                          ::ml_drift::TensorStorageType::BUFFER,
-                                          ::ml_drift::Layout::BHWC);
+  ::ml_drift::TensorDescriptor param_desc(
+      ::ml_drift::DataType::kInt32, ::ml_drift::TensorStorageType::kBuffer,
+      ::ml_drift::Layout::kBHWC);
   param_desc.UploadData(param_tensor_cpu);
   auto param_tensor = builder.AddConstantTensor(std::move(param_desc));
 
@@ -347,7 +347,7 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
       k_activation_shape.w, k_activation_shape.h, 1, k_activation_shape.c);
   attr.bmm1_weights.weights_shape = k_weights_shape;
   attr.bmm1_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
-      ::ml_drift::DataType::FLOAT32, attr.bmm1_weights.weights_shape);
+      ::ml_drift::DataType::kFloat32, attr.bmm1_weights.weights_shape);
   attr.bmm1_weights.desc.layout =
       ::ml_drift::WeightsLayout::kOSpatialIOGroupO4I4;
 
@@ -355,7 +355,7 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
       v_activation_shape.w, v_activation_shape.h, 1, v_activation_shape.c);
   attr.bmm2_weights.weights_shape = v_weights_shape;
   attr.bmm2_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
-      ::ml_drift::DataType::FLOAT32, attr.bmm2_weights.weights_shape);
+      ::ml_drift::DataType::kFloat32, attr.bmm2_weights.weights_shape);
 
   std::vector<uint32_t> graph_input_ids = {q.id, k.id, v.id};
   if (mask_handle.has_value()) {
@@ -481,7 +481,7 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
   // math errs by up to a few hundredths on results near 10. The fused Apple
   // kernels compute in half precision even when F32 is requested.
   const bool half_precision_math =
-      precision == ::ml_drift::CalculationsPrecision::F16 ||
+      precision == ::ml_drift::CalculationsPrecision::kF16 ||
       SupportsFusedSdpaKernels(env.GetGpuInfo());
   float tolerance = (half_precision_math && S >= 512)
                         ? 6e-2f
@@ -698,10 +698,10 @@ TEST_P(SdpaTransposedKernelExecuteTest,
 
 INSTANTIATE_TEST_SUITE_P(
     SdpaTransposedKernelExecuteTestSuite, SdpaTransposedKernelExecuteTest,
-    Combine(ValuesIn({::ml_drift::CalculationsPrecision::F32,
-                      ::ml_drift::CalculationsPrecision::F16}),
-            ValuesIn({::ml_drift::TensorStorageType::TEXTURE_2D,
-                      ::ml_drift::TensorStorageType::BUFFER}),
+    Combine(ValuesIn({::ml_drift::CalculationsPrecision::kF32,
+                      ::ml_drift::CalculationsPrecision::kF16}),
+            ValuesIn({::ml_drift::TensorStorageType::kTexture2D,
+                      ::ml_drift::TensorStorageType::kBuffer}),
             ValuesIn({MaskMode::kBool, MaskMode::kFloatAdditive,
                       MaskMode::kNone})),
     [](const TestParamInfo<SdpaTransposedKernelExecuteTest::ParamType>& info) {

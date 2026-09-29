@@ -72,8 +72,8 @@
   ml_drift::ValueIdToSharedTensorMap quant_param_tensors;
 
   ml_drift::CreateGpuModelInfo create_info;
-  create_info.precision = ml_drift::CalculationsPrecision::F16;
-  create_info.storage_type = ml_drift::TensorStorageType::BUFFER;
+  create_info.precision = ml_drift::CalculationsPrecision::kF16;
+  create_info.storage_type = ml_drift::TensorStorageType::kBuffer;
 
   ml_drift::GraphFloat32 graph;
   ml_drift::Node* node = graph.NewNode();
@@ -123,7 +123,7 @@
     XCTAssertTrue(status_or_tensor.ok());
     ml_drift::GpuSpatialTensor* external_tensor = *status_or_tensor;
     XCTAssertNotEqual(external_tensor, nullptr);
-    XCTAssertEqual(external_tensor->GetDescriptor().GetDataType(), ml_drift::DataType::FLOAT16);
+    XCTAssertEqual(external_tensor->GetDescriptor().GetDataType(), ml_drift::DataType::kFloat16);
   }
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
@@ -134,8 +134,8 @@
   ml_drift::ValueIdToSharedTensorMap quant_param_tensors;
 
   ml_drift::CreateGpuModelInfo create_info;
-  create_info.precision = ml_drift::CalculationsPrecision::F16;
-  create_info.storage_type = ml_drift::TensorStorageType::BUFFER;
+  create_info.precision = ml_drift::CalculationsPrecision::kF16;
+  create_info.storage_type = ml_drift::TensorStorageType::kBuffer;
 
   ml_drift::GraphFloat32 graph;
   ml_drift::Node* node = graph.NewNode();
@@ -185,7 +185,7 @@
     XCTAssertTrue(status_or_tensor.ok());
     ml_drift::GpuSpatialTensor* external_tensor = *status_or_tensor;
     XCTAssertNotEqual(external_tensor, nullptr);
-    XCTAssertEqual(external_tensor->GetDescriptor().GetDataType(), ml_drift::DataType::FLOAT16);
+    XCTAssertEqual(external_tensor->GetDescriptor().GetDataType(), ml_drift::DataType::kFloat16);
   }
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
@@ -196,8 +196,8 @@
   ml_drift::ValueIdToSharedTensorMap quant_param_tensors;
 
   ml_drift::CreateGpuModelInfo create_info;
-  create_info.precision = ml_drift::CalculationsPrecision::F32;
-  create_info.storage_type = ml_drift::TensorStorageType::BUFFER;
+  create_info.precision = ml_drift::CalculationsPrecision::kF32;
+  create_info.storage_type = ml_drift::TensorStorageType::kBuffer;
 
   ml_drift::GraphFloat32 graph;
   ml_drift::Node* node = graph.NewNode();
@@ -206,7 +206,7 @@
   graph.AddConsumer(node->id, input->id);
   graph.SetProducer(node->id, output->id);
   input->tensor.shape = ml_drift::BHWC(1, 1, 1, 10);
-  input->tensor.type = ml_drift::DataType::FLOAT16;
+  input->tensor.type = ml_drift::DataType::kFloat16;
 
   TfLiteContext context;
   id<MTLDevice> device = MTLCreateSystemDefaultDevice();
@@ -248,7 +248,7 @@
     XCTAssertTrue(status_or_tensor.ok());
     ml_drift::GpuSpatialTensor* external_tensor = *status_or_tensor;
     XCTAssertNotEqual(external_tensor, nullptr);
-    XCTAssertEqual(external_tensor->GetDescriptor().GetDataType(), ml_drift::DataType::FLOAT16);
+    XCTAssertEqual(external_tensor->GetDescriptor().GetDataType(), ml_drift::DataType::kFloat16);
   }
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
@@ -259,8 +259,8 @@
   ml_drift::ValueIdToSharedTensorMap quant_param_tensors;
 
   ml_drift::CreateGpuModelInfo create_info;
-  create_info.precision = ml_drift::CalculationsPrecision::F32;
-  create_info.storage_type = ml_drift::TensorStorageType::BUFFER;
+  create_info.precision = ml_drift::CalculationsPrecision::kF32;
+  create_info.storage_type = ml_drift::TensorStorageType::kBuffer;
 
   ml_drift::GraphFloat32 graph;
   ml_drift::Node* node = graph.NewNode();
@@ -269,7 +269,7 @@
   graph.AddConsumer(node->id, input->id);
   graph.SetProducer(node->id, output->id);
   input->tensor.shape = ml_drift::BHWC(1, 1, 1, 10);
-  input->tensor.type = ml_drift::DataType::FLOAT32;
+  input->tensor.type = ml_drift::DataType::kFloat32;
 
   TfLiteContext context;
   id<MTLDevice> device = MTLCreateSystemDefaultDevice();
@@ -311,7 +311,7 @@
     XCTAssertTrue(status_or_tensor.ok());
     ml_drift::GpuSpatialTensor* external_tensor = *status_or_tensor;
     XCTAssertNotEqual(external_tensor, nullptr);
-    XCTAssertEqual(external_tensor->GetDescriptor().GetDataType(), ml_drift::DataType::FLOAT32);
+    XCTAssertEqual(external_tensor->GetDescriptor().GetDataType(), ml_drift::DataType::kFloat32);
   }
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
@@ -322,8 +322,8 @@
   ml_drift::ValueIdToSharedTensorMap quant_param_tensors;
 
   ml_drift::CreateGpuModelInfo create_info;
-  create_info.precision = ml_drift::CalculationsPrecision::F32;
-  create_info.storage_type = ml_drift::TensorStorageType::BUFFER;
+  create_info.precision = ml_drift::CalculationsPrecision::kF32;
+  create_info.storage_type = ml_drift::TensorStorageType::kBuffer;
 
   ml_drift::GraphFloat32 graph;
   ml_drift::Node* node = graph.NewNode();
@@ -332,7 +332,7 @@
   graph.AddConsumer(node->id, input->id);
   graph.SetProducer(node->id, output->id);
   input->tensor.shape = ml_drift::BHWC(1, 1, 1, 10);
-  input->tensor.type = ml_drift::DataType::FLOAT16;
+  input->tensor.type = ml_drift::DataType::kFloat16;
 
   TfLiteContext context;
   id<MTLDevice> device = MTLCreateSystemDefaultDevice();
@@ -384,7 +384,7 @@
       XCTAssertTrue(status_or_tensor.ok());
       ml_drift::GpuSpatialTensor* external_tensor = *status_or_tensor;
       XCTAssertNotEqual(external_tensor, nullptr);
-      XCTAssertEqual(external_tensor->GetDescriptor().GetDataType(), ml_drift::DataType::FLOAT16);
+      XCTAssertEqual(external_tensor->GetDescriptor().GetDataType(), ml_drift::DataType::kFloat16);
     }
   }
   XCTAssertTrue(scale_zp_found);
@@ -404,8 +404,8 @@
   ml_drift::ValueIdToSharedTensorMap quant_param_tensors;
 
   ml_drift::CreateGpuModelInfo create_info;
-  create_info.precision = ml_drift::CalculationsPrecision::F16;
-  create_info.storage_type = ml_drift::TensorStorageType::BUFFER;
+  create_info.precision = ml_drift::CalculationsPrecision::kF16;
+  create_info.storage_type = ml_drift::TensorStorageType::kBuffer;
 
   ml_drift::GraphFloat32 graph;
   ml_drift::Node* node = graph.NewNode();
@@ -525,7 +525,7 @@
       XCTAssertTrue(status_or_tensor.ok());
       ml_drift::GpuSpatialTensor* external_tensor = *status_or_tensor;
       XCTAssertNotEqual(external_tensor, nullptr);
-      XCTAssertEqual(external_tensor->GetDescriptor().GetDataType(), ml_drift::DataType::FLOAT16);
+      XCTAssertEqual(external_tensor->GetDescriptor().GetDataType(), ml_drift::DataType::kFloat16);
       XCTAssertEqual(external_tensor->GetDescriptor().GetBHWCShape(), ml_drift::BHWC(1, 1, 25, 8));
     }
   }
@@ -594,8 +594,8 @@
   ml_drift::ValueIdToSharedTensorMap quant_param_tensors;
 
   ml_drift::CreateGpuModelInfo create_info;
-  create_info.precision = ml_drift::CalculationsPrecision::F16;
-  create_info.storage_type = ml_drift::TensorStorageType::BUFFER;
+  create_info.precision = ml_drift::CalculationsPrecision::kF16;
+  create_info.storage_type = ml_drift::TensorStorageType::kBuffer;
 
   ml_drift::ir::IrModel graph;
   ml_drift::ir::IrOp* op = graph.add_op();
@@ -607,7 +607,7 @@
   graph.AddConsumer(weights, op_id);
   graph.SetProducer(output, op_id);
   graph.GetMutableTensor(weights)->desc.SetBHWCShape(ml_drift::BHWC(1, 1, 1, 10));
-  graph.GetMutableTensor(weights)->desc.SetDataType(ml_drift::DataType::FLOAT32);
+  graph.GetMutableTensor(weights)->desc.SetDataType(ml_drift::DataType::kFloat32);
   const uint32_t original_weights_id = weights;
 
   TfLiteContext context;
@@ -646,7 +646,7 @@
   XCTAssertEqual(static_cast<uint32_t>(graph.op(op_id)->inputs[0]), original_weights_id);
   XCTAssertNotEqual(graph.tensor(original_weights_id), nullptr);
   XCTAssertEqual(graph.tensor(original_weights_id)->desc.GetDataType(),
-                 ml_drift::DataType::FLOAT16);
+                 ml_drift::DataType::kFloat16);
 
   // The id map is keyed on the stable id.
   XCTAssertEqual(local_to_global_id_map.size(), 1);

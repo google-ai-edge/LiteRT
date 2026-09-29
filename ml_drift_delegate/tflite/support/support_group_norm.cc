@@ -93,7 +93,7 @@ bool IsGroupNormSupported(const TfLiteContext* absl_nonnull context,
       return false;
     }
     const absl::Status status =
-        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>(
+        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>(
             gamma);
     if (!status.ok()) {
       *error = status.message();
@@ -105,7 +105,7 @@ bool IsGroupNormSupported(const TfLiteContext* absl_nonnull context,
       return false;
     }
     const absl::Status status =
-        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>(
+        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>(
             beta);
     if (!status.ok()) {
       *error = status.message();

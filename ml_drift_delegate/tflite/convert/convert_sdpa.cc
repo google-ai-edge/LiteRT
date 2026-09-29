@@ -33,7 +33,7 @@ void ConvertSdpa(
     ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* sdpa_op = ir_model.add_op();
   sdpa_op->name =
-      ToString(::ml_drift::OperationType::SCALED_DOT_PRODUCT_ATTENTION);
+      ToString(::ml_drift::OperationType::kScaledDotProductAttention);
 
   ir_model.AddConsumer(tensor_map[node.inputs->data[0]], sdpa_op->id);  // Q
   ir_model.AddConsumer(tensor_map[node.inputs->data[1]], sdpa_op->id);  // K

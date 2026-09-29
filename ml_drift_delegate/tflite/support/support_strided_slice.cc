@@ -86,22 +86,24 @@ bool IsStridedSliceSupported(
   if (!CheckNotConstant(input, "inputs[0]", *error)) return false;
   if (!CheckIsConstant(begin, "inputs[1]", *error)) return false;
   absl::Status status =
-      CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::INT32>(
+      CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32>(
           &begin);
   if (!status.ok()) {
     *error = status.message();
     return false;
   }
   if (!CheckIsConstant(end, "inputs[2]", *error)) return false;
-  status = CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::INT32>(
-      &end);
+  status =
+      CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32>(
+          &end);
   if (!status.ok()) {
     *error = status.message();
     return false;
   }
   if (!CheckIsConstant(strides, "inputs[3]", *error)) return false;
-  status = CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::INT32>(
-      &strides);
+  status =
+      CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32>(
+          &strides);
   if (!status.ok()) {
     *error = status.message();
     return false;

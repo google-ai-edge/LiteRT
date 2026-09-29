@@ -38,8 +38,8 @@ namespace {
 
 TEST(ConvertAuxTest, HandleFusedActivationNone) {
   ::ml_drift::ir::IrModel model;
-  ::ml_drift::ir::IrTensor* t =
-      model.add_tensor(::ml_drift::DataType::FLOAT32, ::ml_drift::HWC(1, 1, 1));
+  ::ml_drift::ir::IrTensor* t = model.add_tensor(::ml_drift::DataType::kFloat32,
+                                                 ::ml_drift::HWC(1, 1, 1));
   t->id = 0;
   ::ml_drift::ir::IrOp* op = model.add_op();
   op->id = 0;
@@ -56,10 +56,10 @@ TEST(ConvertAuxTest, HandleFusedActivationNone) {
 // input->op->activation_input->activation_op->output
 TEST(ConvertAuxTest, HandleFusedActivationRelu) {
   ::ml_drift::ir::IrModel model;
-  ::ml_drift::ir::IrTensor* input =
-      model.add_tensor(::ml_drift::DataType::FLOAT32, ::ml_drift::HWC(1, 1, 1));
-  ::ml_drift::ir::IrTensor* output =
-      model.add_tensor(::ml_drift::DataType::FLOAT32, ::ml_drift::HWC(1, 1, 1));
+  ::ml_drift::ir::IrTensor* input = model.add_tensor(
+      ::ml_drift::DataType::kFloat32, ::ml_drift::HWC(1, 1, 1));
+  ::ml_drift::ir::IrTensor* output = model.add_tensor(
+      ::ml_drift::DataType::kFloat32, ::ml_drift::HWC(1, 1, 1));
   ::ml_drift::ir::IrOp* op = model.add_op();
   model.AddConsumer(input->id, op->id);
   absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId> tensor_map;
@@ -93,10 +93,10 @@ TEST(ConvertAuxTest, HandleFusedActivationRelu) {
 
 TEST(ConvertAuxTest, HandleFusedActivationRelu6) {
   ::ml_drift::ir::IrModel model;
-  ::ml_drift::ir::IrTensor* input =
-      model.add_tensor(::ml_drift::DataType::FLOAT32, ::ml_drift::HWC(1, 1, 1));
-  ::ml_drift::ir::IrTensor* output =
-      model.add_tensor(::ml_drift::DataType::FLOAT32, ::ml_drift::HWC(1, 1, 1));
+  ::ml_drift::ir::IrTensor* input = model.add_tensor(
+      ::ml_drift::DataType::kFloat32, ::ml_drift::HWC(1, 1, 1));
+  ::ml_drift::ir::IrTensor* output = model.add_tensor(
+      ::ml_drift::DataType::kFloat32, ::ml_drift::HWC(1, 1, 1));
   ::ml_drift::ir::IrOp* op = model.add_op();
   model.AddConsumer(input->id, op->id);
   absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId> tensor_map;
@@ -130,10 +130,10 @@ TEST(ConvertAuxTest, HandleFusedActivationRelu6) {
 
 TEST(ConvertAuxTest, HandleFusedActivationReluN1To1) {
   ::ml_drift::ir::IrModel model;
-  ::ml_drift::ir::IrTensor* input =
-      model.add_tensor(::ml_drift::DataType::FLOAT32, ::ml_drift::HWC(1, 1, 1));
-  ::ml_drift::ir::IrTensor* output =
-      model.add_tensor(::ml_drift::DataType::FLOAT32, ::ml_drift::HWC(1, 1, 1));
+  ::ml_drift::ir::IrTensor* input = model.add_tensor(
+      ::ml_drift::DataType::kFloat32, ::ml_drift::HWC(1, 1, 1));
+  ::ml_drift::ir::IrTensor* output = model.add_tensor(
+      ::ml_drift::DataType::kFloat32, ::ml_drift::HWC(1, 1, 1));
   ::ml_drift::ir::IrOp* op = model.add_op();
   model.AddConsumer(input->id, op->id);
   absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId> tensor_map;
@@ -167,10 +167,10 @@ TEST(ConvertAuxTest, HandleFusedActivationReluN1To1) {
 
 TEST(ConvertAuxTest, HandleFusedActivationTanh) {
   ::ml_drift::ir::IrModel model;
-  ::ml_drift::ir::IrTensor* input =
-      model.add_tensor(::ml_drift::DataType::FLOAT32, ::ml_drift::HWC(1, 1, 1));
-  ::ml_drift::ir::IrTensor* output =
-      model.add_tensor(::ml_drift::DataType::FLOAT32, ::ml_drift::HWC(1, 1, 1));
+  ::ml_drift::ir::IrTensor* input = model.add_tensor(
+      ::ml_drift::DataType::kFloat32, ::ml_drift::HWC(1, 1, 1));
+  ::ml_drift::ir::IrTensor* output = model.add_tensor(
+      ::ml_drift::DataType::kFloat32, ::ml_drift::HWC(1, 1, 1));
   ::ml_drift::ir::IrOp* op = model.add_op();
   model.AddConsumer(input->id, op->id);
   absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId> tensor_map;
@@ -198,10 +198,10 @@ TEST(ConvertAuxTest, HandleFusedActivationTanh) {
 
 TEST(ConvertAuxTest, HandleFusedActivationSigmoid) {
   ::ml_drift::ir::IrModel model;
-  ::ml_drift::ir::IrTensor* input =
-      model.add_tensor(::ml_drift::DataType::FLOAT32, ::ml_drift::HWC(1, 1, 1));
-  ::ml_drift::ir::IrTensor* output =
-      model.add_tensor(::ml_drift::DataType::FLOAT32, ::ml_drift::HWC(1, 1, 1));
+  ::ml_drift::ir::IrTensor* input = model.add_tensor(
+      ::ml_drift::DataType::kFloat32, ::ml_drift::HWC(1, 1, 1));
+  ::ml_drift::ir::IrTensor* output = model.add_tensor(
+      ::ml_drift::DataType::kFloat32, ::ml_drift::HWC(1, 1, 1));
   ::ml_drift::ir::IrOp* op = model.add_op();
   model.AddConsumer(input->id, op->id);
   absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId> tensor_map;
@@ -229,10 +229,10 @@ TEST(ConvertAuxTest, HandleFusedActivationSigmoid) {
 
 TEST(ConvertAuxTest, HandleFusedActivationSignBit) {
   ::ml_drift::ir::IrModel model;
-  ::ml_drift::ir::IrTensor* input =
-      model.add_tensor(::ml_drift::DataType::FLOAT32, ::ml_drift::HWC(1, 1, 1));
-  ::ml_drift::ir::IrTensor* output =
-      model.add_tensor(::ml_drift::DataType::FLOAT32, ::ml_drift::HWC(1, 1, 1));
+  ::ml_drift::ir::IrTensor* input = model.add_tensor(
+      ::ml_drift::DataType::kFloat32, ::ml_drift::HWC(1, 1, 1));
+  ::ml_drift::ir::IrTensor* output = model.add_tensor(
+      ::ml_drift::DataType::kFloat32, ::ml_drift::HWC(1, 1, 1));
   ::ml_drift::ir::IrOp* op = model.add_op();
   model.AddConsumer(input->id, op->id);
   absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId> tensor_map;
@@ -259,7 +259,7 @@ TEST(ConvertAuxTest, HandleFusedActivationSignBit) {
 }
 
 TEST(ConvertAuxTest, PopulateTensorCopy) {
-  ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT32>
+  ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>
       dst_tensor;
   TfLiteTensor tfl_tensor;
   tfl_tensor.type = kTfLiteFloat32;
@@ -310,7 +310,7 @@ TEST(ConvertAuxTest, AddConstInput) {
   ::ml_drift::ir::IrTensor* tensor = AddConstInput(context, 0, model, layout);
 
   ASSERT_NE(tensor, nullptr);
-  EXPECT_EQ(tensor->desc.GetDataType(), ::ml_drift::DataType::FLOAT32);
+  EXPECT_EQ(tensor->desc.GetDataType(), ::ml_drift::DataType::kFloat32);
   EXPECT_EQ(tensor->desc.GetBHWCShape(), ::ml_drift::BHWC(1, 2, 1, 2));
 
   // Check the op produced it
@@ -348,7 +348,7 @@ TEST(ConvertAuxTest, AddConstInputInt32) {
   ::ml_drift::ir::IrTensor* tensor = AddConstInput(context, 0, model, layout);
 
   ASSERT_NE(tensor, nullptr);
-  EXPECT_EQ(tensor->desc.GetDataType(), ::ml_drift::DataType::INT32);
+  EXPECT_EQ(tensor->desc.GetDataType(), ::ml_drift::DataType::kInt32);
   EXPECT_EQ(tensor->desc.GetBHWCShape(), ::ml_drift::BHWC(2, 1, 1, 1));
 
   const ::ml_drift::ir::IrOp* op = model.op(0);
@@ -377,7 +377,7 @@ TEST(ConvertAuxTest, AddConstInputInt32ScalarLayout) {
 
   ::ml_drift::ir::IrModel model;
   SizedLayout layout;
-  layout.layout_1d = ::ml_drift::Layout::SCALAR;
+  layout.layout_1d = ::ml_drift::Layout::kScalar;
   ::ml_drift::ir::IrTensor* tensor = AddConstInput(context, 0, model, layout);
 
   // SCALAR moves the 1-D extent off the batch axis and onto channels.
@@ -419,7 +419,7 @@ TEST(ConvertAuxTest, AddConstInputBool) {
   ::ml_drift::ir::IrTensor* tensor = AddConstInput(context, 0, model, layout);
 
   ASSERT_NE(tensor, nullptr);
-  EXPECT_EQ(tensor->desc.GetDataType(), ::ml_drift::DataType::BOOL);
+  EXPECT_EQ(tensor->desc.GetDataType(), ::ml_drift::DataType::kBool);
   EXPECT_EQ(tensor->desc.GetBHWCShape(), ::ml_drift::BHWC(2, 1, 1, 1));
 
   const ::ml_drift::ir::IrOp* op = model.op(0);
@@ -463,7 +463,7 @@ TEST(ConvertAuxTest, AddConstInputInt8) {
 
   ASSERT_NE(tensor, nullptr);
   // Note: kTfLiteInt8 is currently read as TensorFloat32.
-  EXPECT_EQ(tensor->desc.GetDataType(), ::ml_drift::DataType::FLOAT32);
+  EXPECT_EQ(tensor->desc.GetDataType(), ::ml_drift::DataType::kFloat32);
   EXPECT_EQ(tensor->desc.GetBHWCShape(), ::ml_drift::BHWC(2, 1, 1, 1));
 
   const ::ml_drift::ir::IrOp* op = model.op(0);
@@ -480,7 +480,7 @@ TEST(ConvertAuxTest, AddConstInputInt8) {
 }
 
 TEST(ConvertAuxTest, PopulateTensorZeroCopy) {
-  ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT32>
+  ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>
       dst_tensor;
   TfLiteTensor tfl_tensor;
   tfl_tensor.type = kTfLiteFloat32;
@@ -513,7 +513,7 @@ TEST(ConvertAuxTest, PopulateTensorZeroCopy) {
 }
 
 TEST(ConvertAuxTest, PopulateTensorCopyF16) {
-  ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT16>
+  ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat16>
       dst_tensor;
   TfLiteTensor tfl_tensor;
   tfl_tensor.type = kTfLiteFloat16;
@@ -546,7 +546,7 @@ TEST(ConvertAuxTest, PopulateTensorCopyF16) {
 }
 
 TEST(ConvertAuxTest, PopulateTensorZeroCopyF16DeathTest) {
-  ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT16>
+  ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat16>
       dst_tensor;
   TfLiteTensor tfl_tensor;
   tfl_tensor.type = kTfLiteFloat16;
@@ -577,8 +577,8 @@ TEST(ConvertAuxTest, PopulateTensorZeroCopyF16DeathTest) {
 template <::ml_drift::DataType T>
 void RunQuantizationCopyTest() {
   ::ml_drift::Tensor<::ml_drift::BHWC, T> dst_tensor;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32> scale;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32> zero_point;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32> scale;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32> zero_point;
   TfLiteTensor tfl_tensor;
   tfl_tensor.type = kTfLiteInt8;
   tfl_tensor.dims = TfLiteIntArrayCreate(4);
@@ -628,8 +628,8 @@ void RunQuantizationCopyTest() {
 template <::ml_drift::DataType T>
 void RunQuantizationZeroCopyTest() {
   ::ml_drift::Tensor<::ml_drift::BHWC, T> dst_tensor;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32> scale;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32> zero_point;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32> scale;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32> zero_point;
   TfLiteTensor tfl_tensor;
   tfl_tensor.type = kTfLiteInt8;
   tfl_tensor.dims = TfLiteIntArrayCreate(4);
@@ -692,23 +692,23 @@ class PopulateTensorQuantizationTest
 
 INSTANTIATE_TEST_SUITE_P(PopulateTensorQuantizationTests,
                          PopulateTensorQuantizationTest,
-                         ::testing::Values(::ml_drift::DataType::INT8,
-                                           ::ml_drift::DataType::INT4),
+                         ::testing::Values(::ml_drift::DataType::kInt8,
+                                           ::ml_drift::DataType::kInt4),
                          QuantizationTestName());
 
 TEST_P(PopulateTensorQuantizationTest, Copy) {
-  if (GetParam() == ::ml_drift::DataType::INT8) {
-    RunQuantizationCopyTest<::ml_drift::DataType::INT8>();
+  if (GetParam() == ::ml_drift::DataType::kInt8) {
+    RunQuantizationCopyTest<::ml_drift::DataType::kInt8>();
   } else {
-    RunQuantizationCopyTest<::ml_drift::DataType::INT4>();
+    RunQuantizationCopyTest<::ml_drift::DataType::kInt4>();
   }
 }
 
 TEST_P(PopulateTensorQuantizationTest, ZeroCopy) {
-  if (GetParam() == ::ml_drift::DataType::INT8) {
-    RunQuantizationZeroCopyTest<::ml_drift::DataType::INT8>();
+  if (GetParam() == ::ml_drift::DataType::kInt8) {
+    RunQuantizationZeroCopyTest<::ml_drift::DataType::kInt8>();
   } else {
-    RunQuantizationZeroCopyTest<::ml_drift::DataType::INT4>();
+    RunQuantizationZeroCopyTest<::ml_drift::DataType::kInt4>();
   }
 }
 
@@ -730,7 +730,7 @@ TEST(ConvertAuxTest, ConfigSharedQuantizedFullyConnectedInt8PerChannel) {
   weights_tensor.quantization.params = &quant_params;
 
   ::ml_drift::OHWI weights_shape(4, 1, 1, 8);
-  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias;
+  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> bias;
   ::ml_drift::ir::IrOp fc_op(0);
 
   EXPECT_TRUE(ConfigSharedQuantizedFullyConnected(weights_tensor, weights_shape,
@@ -763,7 +763,7 @@ TEST(ConvertAuxTest,
   weights_tensor.quantization.params = &quant_params;
 
   ::ml_drift::OHWI weights_shape(4, 1, 1, 8);
-  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias;
+  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> bias;
   ::ml_drift::ir::IrOp fc_op(0);
 
   EXPECT_TRUE(ConfigSharedQuantizedFullyConnected(weights_tensor, weights_shape,
@@ -797,7 +797,7 @@ TEST(ConvertAuxTest, ConfigSharedQuantizedFullyConnectedInt4) {
   weights_tensor.quantization.params = &quant_params;
 
   ::ml_drift::OHWI weights_shape(2, 1, 1, 4);
-  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias;
+  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> bias;
   ::ml_drift::ir::IrOp fc_op(0);
 
   EXPECT_TRUE(ConfigSharedQuantizedFullyConnected(weights_tensor, weights_shape,
@@ -829,7 +829,7 @@ TEST(ConvertAuxTest, ConfigSharedQuantizedFullyConnectedInt2) {
   weights_tensor.quantization.params = &quant_params;
 
   ::ml_drift::OHWI weights_shape(2, 1, 1, 4);
-  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias;
+  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> bias;
   ::ml_drift::ir::IrOp fc_op(0);
 
   EXPECT_TRUE(ConfigSharedQuantizedFullyConnected(weights_tensor, weights_shape,

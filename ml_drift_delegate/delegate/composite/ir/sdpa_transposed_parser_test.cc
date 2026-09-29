@@ -120,8 +120,8 @@ TEST_F(ConvertSdpaTransposedTest, BasicFp32) {
   const auto* attr =
       std::any_cast<::litert::ml_drift::SdpaTransposedAttributes>(&op->attr);
   ASSERT_NE(attr, nullptr);
-  EXPECT_EQ(attr->bmm1_weights.desc.type, ::ml_drift::DataType::FLOAT32);
-  EXPECT_EQ(attr->bmm2_weights.desc.type, ::ml_drift::DataType::FLOAT32);
+  EXPECT_EQ(attr->bmm1_weights.desc.type, ::ml_drift::DataType::kFloat32);
+  EXPECT_EQ(attr->bmm2_weights.desc.type, ::ml_drift::DataType::kFloat32);
   EXPECT_FALSE(attr->from_cache_update);
 }
 
@@ -150,8 +150,8 @@ TEST_F(ConvertSdpaTransposedTest, BasicFp16) {
   const auto* attr =
       std::any_cast<::litert::ml_drift::SdpaTransposedAttributes>(&op->attr);
   ASSERT_NE(attr, nullptr);
-  EXPECT_EQ(attr->bmm1_weights.desc.type, ::ml_drift::DataType::FLOAT16);
-  EXPECT_EQ(attr->bmm2_weights.desc.type, ::ml_drift::DataType::FLOAT16);
+  EXPECT_EQ(attr->bmm1_weights.desc.type, ::ml_drift::DataType::kFloat16);
+  EXPECT_EQ(attr->bmm2_weights.desc.type, ::ml_drift::DataType::kFloat16);
 }
 
 TEST_F(ConvertSdpaTransposedTest, ThreeInputs) {

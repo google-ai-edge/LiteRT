@@ -102,12 +102,12 @@ struct SerializationWeightCacheTest : public ::testing::TestWithParam<bool> {
     const int num_external_tensors = 20;
     // Create a few different types of tensors to help verify
     // serialized tensors are matched with their correct ids.
-    static const DataType kDataTypes[] = {DataType::FLOAT32, DataType::INT8};
+    static const DataType kDataTypes[] = {DataType::kFloat32, DataType::kInt8};
     static const TensorStorageType kStorageTypes[] = {
-        TensorStorageType::TEXTURE_2D, TensorStorageType::IMAGE_BUFFER,
-        TensorStorageType::BUFFER};
-    static const Layout kLayouts[] = {Layout::HWC, Layout::BHWDC,
-                                      Layout::LINEAR, Layout::BHWC};
+        TensorStorageType::kTexture2D, TensorStorageType::kImageBuffer,
+        TensorStorageType::kBuffer};
+    static const Layout kLayouts[] = {Layout::kHWC, Layout::kBHWDC,
+                                      Layout::kLinear, Layout::kBHWC};
 
     for (size_t i = 0; i < num_external_tensors; ++i) {
       DataType data_type = kDataTypes[i % 2];
@@ -120,7 +120,7 @@ struct SerializationWeightCacheTest : public ::testing::TestWithParam<bool> {
       for (size_t j = 0; j < i; ++j) {
         data[j] = j;
       }
-      tensor_descs[i].SetAccess(ml_drift::AccessType::READ);
+      tensor_descs[i].SetAccess(ml_drift::AccessType::kRead);
       tensor_descs[i].SetData(std::move(data));
     }
   }
@@ -210,7 +210,7 @@ TEST_P(SerializationWeightCacheTest, LookUpFailsIfKeyDoesntMatch) {
 
   uint32_t global_tensor_id = 12345;
   ml_drift::TensorDescriptor tensor_desc;
-  tensor_desc.SetAccess(ml_drift::AccessType::READ);
+  tensor_desc.SetAccess(ml_drift::AccessType::kRead);
   EXPECT_THAT(
       cache.LookUp(global_tensor_id, GetQuantizationParamTensor(), tensor_desc),
       StatusIs(::util::error::INVALID_ARGUMENT,
@@ -257,7 +257,7 @@ TEST_P(SerializationWeightCacheTest,
       unique_model_identifier));
   uint32_t global_tensor_id = 10;
   ml_drift::TensorDescriptor tensor_desc;
-  tensor_desc.SetAccess(ml_drift::AccessType::READ);
+  tensor_desc.SetAccess(ml_drift::AccessType::kRead);
   ASSERT_OK(cache.Insert(global_tensor_id, GetQuantizationParamTensor(),
                          tensor_desc));
   EXPECT_OK(cache.StopBuild());
@@ -278,7 +278,7 @@ TEST_P(SerializationWeightCacheTest, LookUpIntegerOverflowFails) {
                              unique_model_identifier));
   uint32_t global_tensor_id = 10;
   ml_drift::TensorDescriptor tensor_desc;
-  tensor_desc.SetAccess(ml_drift::AccessType::READ);
+  tensor_desc.SetAccess(ml_drift::AccessType::kRead);
   tensor_desc.SetData({1, 2, 3, 4});
   ASSERT_OK(cache.Insert(global_tensor_id, GetQuantizationParamTensor(),
                          tensor_desc));
@@ -306,7 +306,7 @@ TEST_P(SerializationWeightCacheTest, LookUpOutOfBoundsFails) {
                              unique_model_identifier));
   uint32_t global_tensor_id = 10;
   ml_drift::TensorDescriptor tensor_desc;
-  tensor_desc.SetAccess(ml_drift::AccessType::READ);
+  tensor_desc.SetAccess(ml_drift::AccessType::kRead);
   tensor_desc.SetData({1, 2, 3, 4});
   ASSERT_OK(cache.Insert(global_tensor_id, GetQuantizationParamTensor(),
                          tensor_desc));
@@ -356,7 +356,7 @@ TEST_P(SerializationWeightCacheTest, InsertHandlesOOMGracefully) {
 TEST_P(SerializationWeightCacheTest, ExceedsMaxSupportedSubgraphsFails) {
   const uint64_t unique_model_identifier_base = 1000;
   ml_drift::TensorDescriptor tensor_desc;
-  tensor_desc.SetAccess(ml_drift::AccessType::READ);
+  tensor_desc.SetAccess(ml_drift::AccessType::kRead);
 
   for (int i = 0; i <= ml_drift::kMaxSupportedSubgraphs; ++i) {
     ASSERT_OK(cache.StartBuild(tmp_dir, "exceeds_max_subgraphs",
@@ -398,7 +398,7 @@ TEST_P(SerializationWeightCacheTest, UniqueModelIdentifierIsUsedToRejectCache) {
                              unique_model_identifier));
   uint32_t global_tensor_id = 10;
   ml_drift::TensorDescriptor tensor_desc;
-  tensor_desc.SetAccess(ml_drift::AccessType::READ);
+  tensor_desc.SetAccess(ml_drift::AccessType::kRead);
   ASSERT_OK(cache.Insert(global_tensor_id, GetQuantizationParamTensor(),
                          tensor_desc));
   EXPECT_OK(cache.StopBuild());
@@ -419,7 +419,7 @@ TEST_P(SerializationWeightCacheTest, MultipleSubgraphsShareCacheWorks) {
   ASSERT_OK(cache.StartBuild(tmp_dir, "multiple_subgraphs_share_cache", 111));
   uint32_t id1 = 10;
   ml_drift::TensorDescriptor desc1;
-  desc1.SetAccess(ml_drift::AccessType::READ);
+  desc1.SetAccess(ml_drift::AccessType::kRead);
   ASSERT_OK(cache.Insert(id1, GetQuantizationParamTensor(), desc1));
   EXPECT_OK(cache.StopBuild());
 
@@ -429,7 +429,7 @@ TEST_P(SerializationWeightCacheTest, MultipleSubgraphsShareCacheWorks) {
   ASSERT_OK(cache.StartBuild(tmp_dir, "multiple_subgraphs_share_cache", 222));
   uint32_t id2 = 20;
   ml_drift::TensorDescriptor desc2;
-  desc2.SetAccess(ml_drift::AccessType::WRITE);
+  desc2.SetAccess(ml_drift::AccessType::kWrite);
   ASSERT_OK(cache.Insert(id2, GetQuantizationParamTensor(), desc2));
   EXPECT_OK(cache.StopBuild());
 
@@ -455,7 +455,7 @@ TEST_P(SerializationWeightCacheTest, LoadFailureThenStartBuildSucceeds) {
   ASSERT_OK(cache.StartBuild(tmp_dir, model_token, identifier1));
   uint32_t id1 = 10;
   ml_drift::TensorDescriptor desc1;
-  desc1.SetAccess(ml_drift::AccessType::READ);
+  desc1.SetAccess(ml_drift::AccessType::kRead);
   ASSERT_OK(cache.Insert(id1, GetQuantizationParamTensor(), desc1));
   EXPECT_OK(cache.StopBuild());
 
@@ -473,7 +473,7 @@ TEST_P(SerializationWeightCacheTest, LoadFailureThenStartBuildSucceeds) {
   ASSERT_OK(new_cache.StartBuild(tmp_dir, model_token, identifier2));
   uint32_t id2 = 20;
   ml_drift::TensorDescriptor desc2;
-  desc2.SetAccess(ml_drift::AccessType::WRITE);
+  desc2.SetAccess(ml_drift::AccessType::kWrite);
   ASSERT_OK(new_cache.Insert(id2, GetQuantizationParamTensor(), desc2));
   EXPECT_OK(new_cache.StopBuild());
 
@@ -510,7 +510,7 @@ TEST(SerializationWeightCacheTest, FileDescriptorSupportWorks) {
 
   uint32_t tensor_id = 10;
   ml_drift::TensorDescriptor desc;
-  desc.SetAccess(ml_drift::AccessType::READ);
+  desc.SetAccess(ml_drift::AccessType::kRead);
   std::vector<uint8_t> data = {1, 2, 3, 4};
   desc.SetData(std::move(data));
 

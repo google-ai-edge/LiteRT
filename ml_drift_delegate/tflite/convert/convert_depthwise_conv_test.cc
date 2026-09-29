@@ -113,12 +113,12 @@ TEST_P(ConvertDepthwiseConvTest, Parameterized) {
   ASSERT_TRUE(attr);
   if (const_weights_) {
     EXPECT_FALSE((std::get<::ml_drift::Tensor<::ml_drift::OHWI,
-                                              ::ml_drift::DataType::FLOAT32>>(
+                                              ::ml_drift::DataType::kFloat32>>(
                       attr->weights)
                       .data.empty()));
   } else {
     EXPECT_TRUE((std::get<::ml_drift::Tensor<::ml_drift::OHWI,
-                                             ::ml_drift::DataType::FLOAT32>>(
+                                             ::ml_drift::DataType::kFloat32>>(
                      attr->weights)
                      .data.empty()));
   }
@@ -198,7 +198,7 @@ TEST(ConvertDepthwiseConvTest, SpannedWeights) {
   ASSERT_TRUE(attr);
 
   const auto& weights = std::get<
-      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>(
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>(
       attr->weights);
   EXPECT_TRUE(weights.data.empty());
   EXPECT_FALSE(weights.spanned_data.empty());
@@ -245,7 +245,7 @@ TEST(ConvertDepthwiseConvTest, TransposeWeights1x1DepthMultiplier) {
   ASSERT_TRUE(attr);
 
   const auto& weights = std::get<
-      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>(
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>(
       attr->weights);
   EXPECT_FALSE(weights.data.empty());
 
@@ -299,7 +299,7 @@ TEST(ConvertDepthwiseConvTest, ConstantWeightsAndBiasPopulatedIntoAttributes) {
   ASSERT_TRUE(attr);
 
   const auto& weights = std::get<
-      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>(
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>(
       attr->weights);
   EXPECT_FALSE(weights.data.empty());
   EXPECT_GE(weights.data.size(), 2);

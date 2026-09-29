@@ -42,7 +42,7 @@ void ConvertBitcast(
     // Ex: for si8 -> si32 we might have shapes such as
     //     (2, 2, 4) -> (bitcast) -> (2, 2, 1) -> (reshape) -> (2, 2)
     ::ml_drift::ir::IrOp* bitcast_op = ir_model.add_op();
-    bitcast_op->name = ToString(::ml_drift::OperationType::BITCAST);
+    bitcast_op->name = ToString(::ml_drift::OperationType::kBitcast);
     ir_model.AddConsumer(tensor_map[input_id], bitcast_op->id);
 
     ::ml_drift::BHWDC interim_shape = ExtractTensorShape(src_tensor->dims);
@@ -57,7 +57,7 @@ void ConvertBitcast(
       ir_model.SetProducer(interim_val->id, bitcast_op->id);
 
       ::ml_drift::ir::IrOp* reshape_op = ir_model.add_op();
-      reshape_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+      reshape_op->name = ToString(::ml_drift::OperationType::kReshape);
       ::ml_drift::ReshapeAttributes reshape_attr;
       reshape_attr.new_shape =
           ir_model.tensor(tensor_map[output_id])->desc.GetBHWCShape();
@@ -80,7 +80,7 @@ void ConvertBitcast(
 
     if (input_shape != interim_shape) {  // check reshape needed
       ::ml_drift::ir::IrOp* reshape_op = ir_model.add_op();
-      reshape_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+      reshape_op->name = ToString(::ml_drift::OperationType::kReshape);
       ir_model.AddConsumer(tensor_map[input_id], reshape_op->id);
 
       ::ml_drift::ir::IrTensor* interim_val = ir_model.add_tensor(
@@ -94,12 +94,12 @@ void ConvertBitcast(
       ir_model.SetProducer(interim_val->id, reshape_op->id);
 
       ::ml_drift::ir::IrOp* bitcast_op = ir_model.add_op();
-      bitcast_op->name = ToString(::ml_drift::OperationType::BITCAST);
+      bitcast_op->name = ToString(::ml_drift::OperationType::kBitcast);
       ir_model.AddConsumer(interim_val->id, bitcast_op->id);
       ir_model.SetProducer(tensor_map[output_id], bitcast_op->id);
     } else {
       ::ml_drift::ir::IrOp* bitcast_op = ir_model.add_op();
-      bitcast_op->name = ToString(::ml_drift::OperationType::BITCAST);
+      bitcast_op->name = ToString(::ml_drift::OperationType::kBitcast);
       ir_model.AddConsumer(tensor_map[input_id], bitcast_op->id);
       ir_model.SetProducer(tensor_map[output_id], bitcast_op->id);
     }
@@ -108,7 +108,7 @@ void ConvertBitcast(
     // Ex: for f32 -> si32 we might have shapes such as
     //     (2, 2, 4) -> (bitcast) -> (2, 2, 4)
     ::ml_drift::ir::IrOp* bitcast_op = ir_model.add_op();
-    bitcast_op->name = ToString(::ml_drift::OperationType::BITCAST);
+    bitcast_op->name = ToString(::ml_drift::OperationType::kBitcast);
     ir_model.AddConsumer(tensor_map[input_id], bitcast_op->id);
     ir_model.SetProducer(tensor_map[output_id], bitcast_op->id);
   }

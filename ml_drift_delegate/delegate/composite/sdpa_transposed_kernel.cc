@@ -117,7 +117,7 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashDecodeSdpa(
   bool has_mask = (mask_desc != nullptr);
   bool is_bool_mask = false;
   if (has_mask) {
-    is_bool_mask = (mask_desc->GetDataType() == ::ml_drift::DataType::BOOL);
+    is_bool_mask = (mask_desc->GetDataType() == ::ml_drift::DataType::kBool);
     custom_op.args_.AddInt("is_bool_mask", is_bool_mask ? 1 : 0);
     custom_op.AddSrcTensor("mask", *mask_desc);
   }
@@ -556,7 +556,7 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashAttentionPrefill(
   bool has_mask = (mask_desc != nullptr);
   if (has_mask) {
     bool is_bool_mask =
-        (mask_desc->GetDataType() == ::ml_drift::DataType::BOOL);
+        (mask_desc->GetDataType() == ::ml_drift::DataType::kBool);
     custom_op.args_.AddInt("is_bool_mask", is_bool_mask ? 1 : 0);
     custom_op.AddSrcTensor("mask", *mask_desc);
   }
@@ -1034,7 +1034,7 @@ absl::Status BuildSdpaTransposedGpuGraph(
     ABSL_ASSIGN_OR_RETURN(auto mask_or_param,
                           model_builder->GetTensor(input_ids[3]));
     if (mask_or_param.tensor_desc.GetDataType() ==
-        ::ml_drift::DataType::INT32) {
+        ::ml_drift::DataType::kInt32) {
       param_tensor = mask_or_param;
       param_desc = &param_tensor.tensor_desc;
     } else {
@@ -1061,8 +1061,10 @@ absl::Status BuildSdpaTransposedGpuGraph(
   const bool is_supported_flash_prefill =
       attr.is_prefill && attr.from_cache_update && head_dim % 4 == 0 &&
       head_dim <= 128 &&
-      k.tensor_desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
-      v.tensor_desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
+      k.tensor_desc.GetStorageType() ==
+          ::ml_drift::TensorStorageType::kBuffer &&
+      v.tensor_desc.GetStorageType() ==
+          ::ml_drift::TensorStorageType::kBuffer &&
       supports_fused_kernels;
 
   if (is_supported_flash_prefill) {
@@ -1086,8 +1088,10 @@ absl::Status BuildSdpaTransposedGpuGraph(
   // graph.
   const bool is_supported_flash_decode =
       attr.from_cache_update && !attr.is_prefill && head_dim == 128 &&
-      k.tensor_desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
-      v.tensor_desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
+      k.tensor_desc.GetStorageType() ==
+          ::ml_drift::TensorStorageType::kBuffer &&
+      v.tensor_desc.GetStorageType() ==
+          ::ml_drift::TensorStorageType::kBuffer &&
       supports_fused_kernels;
 
   if (is_supported_flash_decode) {
@@ -1169,7 +1173,7 @@ absl::Status BuildSdpaTransposedGpuGraph(
     const float cap_val = *attr.softcap;
     logits = model_builder->Multiplication(logits, 1.0f / cap_val);
     logits =
-        model_builder->Elementwise(logits, ::ml_drift::OperationType::TANH);
+        model_builder->Elementwise(logits, ::ml_drift::OperationType::kTanh);
     logits = model_builder->Multiplication(logits, cap_val);
   }
 
@@ -1181,9 +1185,9 @@ absl::Status BuildSdpaTransposedGpuGraph(
       logits = model_builder->Reshape(
           logits, ::ml_drift::BHWC(q_shape.b, q_shape.h, q_shape.w, k_shape.w));
     }
-    if (mask.tensor_desc.GetDataType() == ::ml_drift::DataType::BOOL) {
-      ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::BHWC>,
-                         ::ml_drift::DataType::FLOAT32>
+    if (mask.tensor_desc.GetDataType() == ::ml_drift::DataType::kBool) {
+      ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::kBHWC>,
+                         ::ml_drift::DataType::kFloat32>
           fill_tensor;
       fill_tensor.shape = ::ml_drift::BHWC(1, 1, 1, 1);
       // Use a large negative value to simulate -inf. std::limit<float>::min()

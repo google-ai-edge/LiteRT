@@ -85,7 +85,7 @@ using ::litert::ml_drift::ReleaseDataCallback;
 using ::litert::ml_drift::UnownedDataTensorDescriptor;
 
 void UnpackInt4IntoInt8(const int8_t* src, const size_t src_size,
-                        ml_drift::Tensor<OHWI, DataType::INT8>* dst) {
+                        ml_drift::Tensor<OHWI, DataType::kInt8>* dst) {
   constexpr int uint4_bits = 4;
   constexpr int kUint4ValuesPerUint8Value =
       std::numeric_limits<uint8_t>::digits / uint4_bits;
@@ -96,7 +96,7 @@ void UnpackInt4IntoInt8(const int8_t* src, const size_t src_size,
 }
 
 void UnpackInt2ToInt8(const int8_t* src, const size_t src_size,
-                      ml_drift::Tensor<OHWI, DataType::INT8>* dst) {
+                      ml_drift::Tensor<OHWI, DataType::kInt8>* dst) {
   constexpr int uint2_bits = 2;
   constexpr int kUint2ValuesPerUint8Value =
       std::numeric_limits<uint8_t>::digits / uint2_bits;
@@ -157,7 +157,7 @@ void RewriteDenormalScales(const GpuInfo& gpu_info,
   }
   if ((!gpu_info.IsApiOpenCl() ||
        gpu_info.opencl_info.is_fp16_ftz_hardware_forced) &&
-      create_info.precision != CalculationsPrecision::F32) {
+      create_info.precision != CalculationsPrecision::kF32) {
     const float min_normal_fp16 = 6.1035e-5f;
     for (int i = 0; i < size; ++i) {
       const float val = scales[i];
@@ -223,8 +223,8 @@ void MadviseData(void* ptr, size_t space) {
 TensorDescriptor SharedMemoryManager::GetInt8TensorDesc(
     const GpuInfo& gpu_info, const CreateGpuModelInfo& create_info,
     const OHWI& shape, const int8_t* data, bool is_weight_sum_i_required,
-    Tensor<Linear, DataType::INT32>* weights_sum_i) {
-  Tensor<OHWI, DataType::INT8> weights_i8;
+    Tensor<Linear, DataType::kInt32>* weights_sum_i) {
+  Tensor<OHWI, DataType::kInt8> weights_i8;
   weights_i8.shape = shape;
   weights_i8.data.resize(weights_i8.shape.DimensionsProduct());
   weights_i8.data.assign(data, data + weights_i8.shape.DimensionsProduct());
@@ -244,7 +244,7 @@ TensorDescriptor SharedMemoryManager::GetInt4TensorDesc(
     const GpuInfo& gpu_info, const CreateGpuModelInfo& create_info,
     const OHWI& shape, const int8_t* data, size_t bytes,
     bool is_weight_sum_i_required,
-    Tensor<Linear, DataType::INT32>* weights_sum_i,
+    Tensor<Linear, DataType::kInt32>* weights_sum_i,
     bool experimental_int4_unpacking) {
   if (experimental_int4_unpacking) {
     auto status =
@@ -257,7 +257,7 @@ TensorDescriptor SharedMemoryManager::GetInt4TensorDesc(
       return status.value();
     }
   }
-  ml_drift::Tensor<OHWI, DataType::INT8> weights_i8;
+  ml_drift::Tensor<OHWI, DataType::kInt8> weights_i8;
   weights_i8.shape = shape;
   weights_i8.data.resize(weights_i8.shape.DimensionsProduct());
 
@@ -278,7 +278,7 @@ TensorDescriptor SharedMemoryManager::GetInt2TensorDesc(
     const GpuInfo& gpu_info, const CreateGpuModelInfo& create_info,
     const OHWI& shape, const int8_t* data, size_t bytes,
     bool is_weight_sum_i_required,
-    Tensor<Linear, DataType::INT32>* weights_sum_i,
+    Tensor<Linear, DataType::kInt32>* weights_sum_i,
     bool experimental_int2_unpacking) {
   if (experimental_int2_unpacking) {
     auto status =
@@ -291,7 +291,7 @@ TensorDescriptor SharedMemoryManager::GetInt2TensorDesc(
       return status.value();
     }
   }
-  ml_drift::Tensor<OHWI, DataType::INT8> weights_i8;
+  ml_drift::Tensor<OHWI, DataType::kInt8> weights_i8;
   weights_i8.shape = shape;
   weights_i8.data.resize(weights_i8.shape.DimensionsProduct());
 
@@ -314,8 +314,8 @@ SharedMemoryManager::GetInt4TensorDescExperimental(
     const GpuInfo& gpu_info, const CreateGpuModelInfo& create_info,
     const OHWI& shape, const int8_t* data, size_t bytes,
     bool is_weight_sum_i_required,
-    Tensor<Linear, DataType::INT32>* weights_sum_i) {
-  ml_drift::Tensor<OHWI, DataType::UINT8> weights_u8;
+    Tensor<Linear, DataType::kInt32>* weights_sum_i) {
+  ml_drift::Tensor<OHWI, DataType::kUint8> weights_u8;
   weights_u8.shape = shape;
   // Remove const qualifier because ml_drift::Tensor requires the spanned_data
   // to be mutable. However, this function does not actually modify the data.
@@ -342,12 +342,12 @@ SharedMemoryManager::GetInt4TensorDescExperimental(
 
   TensorDescriptor weights_u8_td;
   if (weights_desc.IsLinearLayout()) {
-    weights_u8_td = TensorDescriptor(weights_desc.type,
-                                     TensorStorageType::BUFFER, Layout::LINEAR);
+    weights_u8_td = TensorDescriptor(
+        weights_desc.type, TensorStorageType::kBuffer, Layout::kLinear);
     weights_u8_td.SetBHWDCShape(BHWDC(1, 1, 1, 1, rearranged_weights.size()));
   } else {
-    weights_u8_td = TensorDescriptor(DataType::UINT16,
-                                     TensorStorageType::TEXTURE_2D, Layout::HW);
+    weights_u8_td = TensorDescriptor(
+        DataType::kUint16, TensorStorageType::kTexture2D, Layout::kHW);
     uint2 tex_size = Get2dResourceSize(weights_desc, shape);
     constexpr int uint4_bits = 4;
     constexpr int kUint4ElementsPerUint16Texel =
@@ -364,8 +364,8 @@ SharedMemoryManager::GetInt2TensorDescExperimental(
     const GpuInfo& gpu_info, const CreateGpuModelInfo& create_info,
     const OHWI& shape, const int8_t* data, size_t bytes,
     bool is_weight_sum_i_required,
-    Tensor<Linear, DataType::INT32>* weights_sum_i) {
-  ml_drift::Tensor<OHWI, DataType::UINT8> weights_u8;
+    Tensor<Linear, DataType::kInt32>* weights_sum_i) {
+  ml_drift::Tensor<OHWI, DataType::kUint8> weights_u8;
   weights_u8.shape = shape;
   // Remove const qualifier because ml_drift::Tensor requires the spanned_data
   // to be mutable. However, this function does not actually modify the data.
@@ -392,12 +392,12 @@ SharedMemoryManager::GetInt2TensorDescExperimental(
 
   TensorDescriptor weights_u8_td;
   if (weights_desc.IsLinearLayout()) {
-    weights_u8_td = TensorDescriptor(weights_desc.type,
-                                     TensorStorageType::BUFFER, Layout::LINEAR);
+    weights_u8_td = TensorDescriptor(
+        weights_desc.type, TensorStorageType::kBuffer, Layout::kLinear);
     weights_u8_td.SetBHWDCShape(BHWDC(1, 1, 1, 1, rearranged_weights.size()));
   } else {
-    weights_u8_td = TensorDescriptor(DataType::UINT8,
-                                     TensorStorageType::TEXTURE_2D, Layout::HW);
+    weights_u8_td = TensorDescriptor(
+        DataType::kUint8, TensorStorageType::kTexture2D, Layout::kHW);
     uint2 tex_size = Get2dResourceSize(weights_desc, shape);
     constexpr int uint2_bits = 2;
     constexpr int kUint2ElementsPerUint8Texel =
@@ -415,11 +415,11 @@ namespace {
 // constant weight of BHWC `bhwc_shape` carried by `tflite_tensor`.
 absl::Status CalculateWeightsSumI(
     const TfLiteTensor& tflite_tensor, const BHWC& bhwc_shape,
-    Tensor<Linear, DataType::INT32>* weights_sum_i) {
+    Tensor<Linear, DataType::kInt32>* weights_sum_i) {
   OHWI shape(bhwc_shape.b, bhwc_shape.h, bhwc_shape.w, bhwc_shape.c);
   const int8_t* data = tflite_tensor.data.int8;
 
-  Tensor<OHWI, DataType::INT8> weights_i8;
+  Tensor<OHWI, DataType::kInt8> weights_i8;
   weights_i8.shape = shape;
   weights_i8.data.resize(weights_i8.shape.DimensionsProduct());
 
@@ -533,9 +533,9 @@ absl::Status SharedMemoryManager::CreateQuantizedInt8WeightsTensor(
     const ValueId& shared_tensor_id, const uint32_t global_tensor_id,
     const TfLiteTensor& tflite_tensor, SharedConstTensor& shared_tensor,
     bool is_weight_sum_i_required,
-    Tensor<Linear, DataType::INT32>* weights_sum_i) {
+    Tensor<Linear, DataType::kInt32>* weights_sum_i) {
   BHWC bhwc_shape = graph_adapter_->GetValueShape(shared_tensor_id);
-  graph_adapter_->SetValueType(shared_tensor_id, DataType::UINT8);
+  graph_adapter_->SetValueType(shared_tensor_id, DataType::kUint8);
   OHWI shape(bhwc_shape.b, bhwc_shape.h, bhwc_shape.w, bhwc_shape.c);
 
   WeightsDescription weights_desc = GetFullyConnectedInt8WeightsDesc(
@@ -563,7 +563,7 @@ absl::Status SharedMemoryManager::CreateQuantizedInt8WeightsTensor(
             MaybeGetExternalBufferId(shared_tensor_id);
         weight_id_to_external_buffer_id_[shared_tensor_id] = external_buffer_id;
         weights_manager_->RegisterWeightsConversion(
-            {shared_tensor_id}, weights_desc, shape, DataType::INT8,
+            {shared_tensor_id}, weights_desc, shape, DataType::kInt8,
             tflite_tensor.data.int8, {}, {});
 
         auto weights_i8_tensor_desc =
@@ -601,7 +601,7 @@ absl::Status SharedMemoryManager::CreateQuantizedInt4WeightsTensor(
     const ValueId& shared_tensor_id, const uint32_t global_tensor_id,
     const TfLiteTensor& tflite_tensor, SharedConstTensor& shared_tensor,
     bool is_weight_sum_i_required,
-    Tensor<Linear, DataType::INT32>* weights_sum_i) {
+    Tensor<Linear, DataType::kInt32>* weights_sum_i) {
   BHWC bhwc_shape = graph_adapter_->GetValueShape(shared_tensor_id);
   OHWI shape(bhwc_shape.b, bhwc_shape.h, bhwc_shape.w, bhwc_shape.c);
 
@@ -635,7 +635,7 @@ absl::Status SharedMemoryManager::CreateQuantizedInt4WeightsTensor(
           weight_id_to_external_buffer_id_[shared_tensor_id] =
               external_buffer_id;
           weights_manager_->RegisterWeightsConversion(
-              {shared_tensor_id}, weights_desc, shape, DataType::INT4,
+              {shared_tensor_id}, weights_desc, shape, DataType::kInt4,
               tflite_tensor.data.int8, {}, {});
 
           auto weights_i4_tensor_desc =
@@ -677,7 +677,7 @@ absl::Status SharedMemoryManager::CreateQuantizedInt2WeightsTensor(
     const ValueId& shared_tensor_id, const uint32_t global_tensor_id,
     const TfLiteTensor& tflite_tensor, SharedConstTensor& shared_tensor,
     bool is_weight_sum_i_required,
-    Tensor<Linear, DataType::INT32>* weights_sum_i) {
+    Tensor<Linear, DataType::kInt32>* weights_sum_i) {
   BHWC bhwc_shape = graph_adapter_->GetValueShape(shared_tensor_id);
   OHWI shape(bhwc_shape.b, bhwc_shape.h, bhwc_shape.w, bhwc_shape.c);
 
@@ -701,7 +701,7 @@ absl::Status SharedMemoryManager::CreateQuantizedInt2WeightsTensor(
             MaybeGetExternalBufferId(shared_tensor_id);
         weight_id_to_external_buffer_id_[shared_tensor_id] = external_buffer_id;
         weights_manager_->RegisterWeightsConversion(
-            {shared_tensor_id}, weights_desc, shape, DataType::INT2,
+            {shared_tensor_id}, weights_desc, shape, DataType::kInt2,
             tflite_tensor.data.int8, {}, {});
 
         auto weights_i2_tensor_desc =
@@ -803,21 +803,21 @@ absl::Status SharedMemoryManager::CreateAffineQuantizationParams(
           weights_sum_i_value_id,
           AddInputWithData<int32_t>(
               shared_tensor->weights_sum_i_global_tensor_id.value(),
-              scale_shape, fc_op_id, nullptr, DataType::INT32));
+              scale_shape, fc_op_id, nullptr, DataType::kInt32));
     } else if (weights_manager_) {
       BHWC scale_or_zero_point_shape = BHWC(
           1, 1, 1, tflite_tensor.dims->data[quant_params->quantized_dimension]);
       ABSL_ASSIGN_OR_RETURN(
           weights_sum_i_value_id,
           AddInputNode(shared_tensor->weights_sum_i_global_tensor_id.value(),
-                       scale_or_zero_point_shape, fc_op_id, DataType::INT32));
-      DataType src_data_type = DataType::INT4;
+                       scale_or_zero_point_shape, fc_op_id, DataType::kInt32));
+      DataType src_data_type = DataType::kInt4;
       if (tflite_tensor.type == TfLiteType::kTfLiteInt8) {
-        src_data_type = DataType::INT8;
+        src_data_type = DataType::kInt8;
       } else if (tflite_tensor.type == TfLiteType::kTfLiteInt4) {
-        src_data_type = DataType::INT4;
+        src_data_type = DataType::kInt4;
       } else if (tflite_tensor.type == TfLiteType::kTfLiteInt2) {
-        src_data_type = DataType::INT2;
+        src_data_type = DataType::kInt2;
       }
       weights_manager_->RegisterWeightsSumIConversion(
           {weights_sum_i_value_id}, weights_shape, src_data_type,
@@ -828,7 +828,7 @@ absl::Status SharedMemoryManager::CreateAffineQuantizationParams(
                                      : shared_tensor->weights_sum_i.data.data();
       absl::StatusOr<ValueId> status_or_value_id = AddInputWithData(
           shared_tensor->weights_sum_i_global_tensor_id.value(), scale_shape,
-          fc_op_id, weights_sum_i_data, DataType::INT32);
+          fc_op_id, weights_sum_i_data, DataType::kInt32);
 
       // If the weights_sum_i is empty and there is no entry in the cache, we
       // will get an error when trying to add the input. In this case, we
@@ -971,7 +971,7 @@ absl::Status SharedMemoryManager::CreateQuantizedTensorWithScaleAndZeroPoint(
   }
   uint32_t fc_op_id = weight_consumers[0];
   DataType data_type = data_type_;
-  if (data_type_ == DataType::FLOAT32) {
+  if (data_type_ == DataType::kFloat32) {
     if (graph_adapter_->OpHasInputs(fc_op_id)) {
       DataType input_type = graph_adapter_->GetOpFirstInputType(fc_op_id);
       if (IsFloatType(input_type)) {
@@ -989,9 +989,9 @@ absl::Status SharedMemoryManager::CreateQuantizedTensorWithScaleAndZeroPoint(
   // required to avoid dereferencing null data during initialization.
   if (!is_streamed) {
     if (graph_adapter_->GetOpTypeName(fc_op_id) ==
-            ToString(OperationType::FULLY_CONNECTED_INT8) ||
+            ToString(OperationType::kFullyConnectedInt8) ||
         graph_adapter_->GetOpTypeName(fc_op_id) ==
-            ToString(OperationType::FULLY_CONNECTED_INT4)) {
+            ToString(OperationType::kFullyConnectedInt4)) {
       const BHWC fc_src_shape = graph_adapter_->GetOpFirstInputShape(fc_op_id);
       const bool is_conv_int8_supported =
           IsConvInt8Supported(create_info_, gpu_info_, fc_src_shape) &&
@@ -1092,7 +1092,7 @@ absl::StatusOr<ValueId> SharedMemoryManager::AddInputWithData(
   }
 
   TensorDescriptor tensor_desc =
-      TensorDescriptor(data_type, create_info_.storage_type, Layout::LINEAR);
+      TensorDescriptor(data_type, create_info_.storage_type, Layout::kLinear);
   tensor_desc.SetBHWCShape(graph_adapter_->GetValueShape(local_value_id));
   ABSL_RETURN_IF_ERROR(tensor_desc.UpdateToSupportedStorageType(
       gpu_info_, tensor_desc.GetBHWCShape()));
@@ -1132,7 +1132,7 @@ absl::StatusOr<ValueId> SharedMemoryManager::AddScaleNodeWithData(
       ValueId local_value_id,
       AddInputNode(global_tensor_id, bhwc_shape, consumer_op_id, data_type));
 
-  Tensor<OHWI, DataType::FLOAT32> scale_values;
+  Tensor<OHWI, DataType::kFloat32> scale_values;
   scale_values.data.resize(shape.DimensionsProduct());
   for (int i = 0; i < shape.DimensionsProduct(); ++i) {
     scale_values.data[i] = data[i];  // implicit cast of int8 -> fp32
@@ -1175,16 +1175,16 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
   }
   uint32_t fc_op_id = weight_consumers[0];
   DataType data_type = data_type_;
-  if (data_type_ == DataType::FLOAT32) {
+  if (data_type_ == DataType::kFloat32) {
     if (graph_adapter_->OpHasInputs(fc_op_id)) {
       data_type = graph_adapter_->GetOpFirstInputType(fc_op_id);
     }
   }
   bool is_weight_sum_i_required = false;
   if (graph_adapter_->GetOpTypeName(fc_op_id) ==
-          ToString(OperationType::FULLY_CONNECTED_INT8) ||
+          ToString(OperationType::kFullyConnectedInt8) ||
       graph_adapter_->GetOpTypeName(fc_op_id) ==
-          ToString(OperationType::FULLY_CONNECTED_INT4)) {
+          ToString(OperationType::kFullyConnectedInt4)) {
     const BHWC fc_src_shape = graph_adapter_->GetOpFirstInputShape(fc_op_id);
     const bool is_conv_int8_supported =
         IsConvInt8Supported(create_info_, gpu_info_, fc_src_shape) &&
@@ -1224,7 +1224,8 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
         ABSL_ASSIGN_OR_RETURN(
             ValueId weights_sum_i_value_id,
             AddInputNode(shared_tensor.weights_sum_i_global_tensor_id.value(),
-                         scale_or_zero_point_shape, fc_op_id, DataType::INT32));
+                         scale_or_zero_point_shape, fc_op_id,
+                         DataType::kInt32));
         (*external_tensors)[weights_sum_i_value_id] = GlobalId::BuildParamId(
             shared_tensor.weights_sum_i_global_tensor_id.value());
       } else {
@@ -1239,17 +1240,17 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
               weights_sum_i_value_id,
               AddInputNode(shared_tensor.weights_sum_i_global_tensor_id.value(),
                            scale_or_zero_point_shape, fc_op_id,
-                           DataType::INT32));
+                           DataType::kInt32));
 
           OHWI weights_shape = OHWI(shared_const_shape.b, shared_const_shape.h,
                                     shared_const_shape.w, shared_const_shape.c);
-          DataType src_data_type = DataType::INT4;
+          DataType src_data_type = DataType::kInt4;
           if (tflite_tensor.type == TfLiteType::kTfLiteInt8) {
-            src_data_type = DataType::INT8;
+            src_data_type = DataType::kInt8;
           } else if (tflite_tensor.type == TfLiteType::kTfLiteInt4) {
-            src_data_type = DataType::INT4;
+            src_data_type = DataType::kInt4;
           } else if (tflite_tensor.type == TfLiteType::kTfLiteInt2) {
-            src_data_type = DataType::INT2;
+            src_data_type = DataType::kInt2;
           }
           weights_manager_->RegisterWeightsSumIConversion(
               {weights_sum_i_value_id}, weights_shape, src_data_type,
@@ -1284,7 +1285,7 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
           absl::StatusOr<ValueId> status_or_value_id = AddInputWithData(
               shared_tensor.weights_sum_i_global_tensor_id.value(),
               weights_sum_i_shape, fc_op_id, weights_sum_i_data,
-              DataType::INT32);
+              DataType::kInt32);
           if (!status_or_value_id.ok()) {
             return status_or_value_id.status();
           }
@@ -1432,9 +1433,9 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
   // an unnecessary batch axis.
   Layout layout = shared_tflite_tensor.layout.has_value()
                       ? shared_tflite_tensor.layout.value()
-                      : (value_shape.b == 1 ? Layout::HWC : Layout::BHWC);
+                      : (value_shape.b == 1 ? Layout::kHWC : Layout::kBHWC);
   BHWC shape =
-      layout == Layout::LINEAR ? BHWC(1, 1, 1, value_shape.c) : value_shape;
+      layout == Layout::kLinear ? BHWC(1, 1, 1, value_shape.c) : value_shape;
   tensor_desc =
       ml_drift::TensorDescriptor(data_type, create_info_.storage_type, layout);
   tensor_desc.SetBHWCShape(shape);
@@ -1559,9 +1560,9 @@ SharedMemoryManager::CreatePrepackedWeightsTensorFromTfliteTensor(
     const TfLiteTensor& tflite_tensor) {
   DataType data_type = weights_desc.type;
   int count = shape.DimensionsProduct();
-  if (data_type == DataType::UINT4) {
+  if (data_type == DataType::kUint4) {
     count /= 2;
-  } else if (data_type == DataType::UINT2 || data_type == DataType::INT2) {
+  } else if (data_type == DataType::kUint2 || data_type == DataType::kInt2) {
     return absl::InternalError(
         "INT2 and UINT2 data types are not supported for prepacked tensors.");
   }
@@ -1569,8 +1570,8 @@ SharedMemoryManager::CreatePrepackedWeightsTensorFromTfliteTensor(
       reinterpret_cast<const uint8_t*>(tflite_tensor.data.data), count);
 
   if (weights_desc.IsLinearLayout()) {
-    TensorDescriptor tensor_desc(data_type, TensorStorageType::BUFFER,
-                                 Layout::LINEAR);
+    TensorDescriptor tensor_desc(data_type, TensorStorageType::kBuffer,
+                                 Layout::kLinear);
     tensor_desc.SetBHWDCShape(BHWDC(1, 1, 1, 1, count));
     UnownedDataTensorDescriptor unowned_desc(tensor_desc, data);
     std::unique_ptr<GpuSpatialTensor> tensor;
@@ -1580,12 +1581,12 @@ SharedMemoryManager::CreatePrepackedWeightsTensorFromTfliteTensor(
     return tensor;
   }
 
-  DataType texture_type = DataType::UINT32;
-  if (data_type == DataType::UINT4) {
-    texture_type = DataType::UINT16;
+  DataType texture_type = DataType::kUint32;
+  if (data_type == DataType::kUint4) {
+    texture_type = DataType::kUint16;
   }
-  TensorDescriptor tensor_desc(texture_type, TensorStorageType::TEXTURE_2D,
-                               Layout::HW);
+  TensorDescriptor tensor_desc(texture_type, TensorStorageType::kTexture2D,
+                               Layout::kHW);
   uint2 tex_size = Get2dResourceSize(weights_desc, shape);
   // Values are packed: 4 x uint4 = uint16, 4 x uint8 = uint32.
   tex_size.x /= 4;

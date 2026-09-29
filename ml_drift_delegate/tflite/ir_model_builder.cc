@@ -315,7 +315,7 @@ class IrModelBuilder {
         shared_info.global_id = tensor->buffer_source.global_id;
         shared_info.dequant_forced = tensor->buffer_source.dequant_forced;
         if (tensor->buffer_source.force_linear_layout) {
-          shared_info.layout = ::ml_drift::Layout::LINEAR;
+          shared_info.layout = ::ml_drift::Layout::kLinear;
         }
         shared_tensors_->try_emplace(ir_tensor_id, shared_info);
       }
@@ -573,7 +573,7 @@ class IrModelBuilder {
           static_cast<const TfLiteAffineQuantization*>(
               tflite_tensor.quantization.params);
       if (params && params->scale && params->scale->size == 1) {
-        dtype = ::ml_drift::DataType::FLOAT32;
+        dtype = ::ml_drift::DataType::kFloat32;
         ::ml_drift::ir::IrQuantParams quant;
         PopulateQuantParams(tflite_tensor, &quant);
         quant_params = quant;
@@ -686,35 +686,35 @@ class IrModelBuilder {
   ::ml_drift::DataType GetDtype(TfLiteType tflite_type) const {
     switch (tflite_type) {
       case kTfLiteFloat32:
-        return ::ml_drift::DataType::FLOAT32;
+        return ::ml_drift::DataType::kFloat32;
       case kTfLiteFloat16:
-        return ::ml_drift::DataType::FLOAT16;
+        return ::ml_drift::DataType::kFloat16;
       case kTfLiteBFloat16:
-        return ::ml_drift::DataType::BFLOAT16;
+        return ::ml_drift::DataType::kBfloat16;
       case kTfLiteInt2:
-        return ::ml_drift::DataType::INT2;
+        return ::ml_drift::DataType::kInt2;
       case kTfLiteInt4:
-        return ::ml_drift::DataType::INT4;
+        return ::ml_drift::DataType::kInt4;
       case kTfLiteUInt4:
-        return ::ml_drift::DataType::UINT4;
+        return ::ml_drift::DataType::kUint4;
       case kTfLiteInt8:
-        return ::ml_drift::DataType::INT8;
+        return ::ml_drift::DataType::kInt8;
       case kTfLiteUInt8:
-        return ::ml_drift::DataType::UINT8;
+        return ::ml_drift::DataType::kUint8;
       case kTfLiteInt16:
-        return ::ml_drift::DataType::INT16;
+        return ::ml_drift::DataType::kInt16;
       case kTfLiteUInt16:
-        return ::ml_drift::DataType::UINT16;
+        return ::ml_drift::DataType::kUint16;
       case kTfLiteInt32:
-        return ::ml_drift::DataType::INT32;
+        return ::ml_drift::DataType::kInt32;
       case kTfLiteUInt32:
-        return ::ml_drift::DataType::UINT32;
+        return ::ml_drift::DataType::kUint32;
       case kTfLiteBool:
-        return ::ml_drift::DataType::BOOL;
+        return ::ml_drift::DataType::kBool;
       default:
         // Returning UNKNOWN allows the framework to fail gracefully downstream
         // when it attempts to select a GPU kernel.
-        return ::ml_drift::DataType::UNKNOWN;
+        return ::ml_drift::DataType::kUnknown;
     }
   }
 

@@ -37,7 +37,7 @@ void ConvertSelect(
   ::ml_drift::SelectV2Attributes attr;
 
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
-  op->name = ToString(::ml_drift::OperationType::SELECT_V2);
+  op->name = ToString(::ml_drift::OperationType::kSelectV2);
   op->attr = attr;
 
   // Handle input 0 (cond)
@@ -51,7 +51,7 @@ void ConvertSelect(
 
   // num_dims == 3; convert HWC to 1HWC for constant tensors
   SizedLayout constants_layout;
-  constants_layout.layout_3d = ::ml_drift::Layout::HWC;
+  constants_layout.layout_3d = ::ml_drift::Layout::kHWC;
 
   // Handle input 1 (if)
   if (tflite::IsConstantTensor(context.tensors + if_id)) {

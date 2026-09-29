@@ -28,7 +28,7 @@ void ConvertRelu(
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* relu_op = ir_model.add_op();
-  relu_op->name = ToString(::ml_drift::OperationType::RELU);
+  relu_op->name = ToString(::ml_drift::OperationType::kRelu);
   ir_model.AddConsumer(tensor_map[node.inputs->data[0]], relu_op->id);
   ir_model.SetProducer(tensor_map[node.outputs->data[0]], relu_op->id);
 

@@ -67,18 +67,18 @@ namespace litert::ml_drift::ir {
     const std::vector<::ml_drift::BHWDC>& input_shapes,
     const ::ml_drift::BHWDC& output_shape) {
   if (input_shapes[0].h != output_shape.h) {
-    return ::ml_drift::Axis::HEIGHT;
+    return ::ml_drift::Axis::kHeight;
   }
   if (input_shapes[0].w != output_shape.w) {
-    return ::ml_drift::Axis::WIDTH;
+    return ::ml_drift::Axis::kWidth;
   }
   if (input_shapes[0].d != output_shape.d) {
-    return ::ml_drift::Axis::DEPTH;
+    return ::ml_drift::Axis::kDepth;
   }
   if (input_shapes[0].c != output_shape.c) {
-    return ::ml_drift::Axis::CHANNELS;
+    return ::ml_drift::Axis::kChannels;
   }
-  return ::ml_drift::Axis::BATCH;
+  return ::ml_drift::Axis::kBatch;
 }
 
 void ResolveNegativeIndices(const TfLiteIntArray& input_dims,

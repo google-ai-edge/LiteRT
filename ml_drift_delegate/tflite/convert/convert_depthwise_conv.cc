@@ -46,7 +46,7 @@ void TransposeWeights(const TfLiteTensor* input, const TfLiteTensor* filter,
   const int filter_width = filter->dims->data[2];
   const int kernel_spatial_size = filter_height * filter_width;
 
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32> weights;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32> weights;
   const auto& src_weights = GetFloatWeights(*attr);
   weights.id = src_weights.id;
   weights.shape = ::ml_drift::OHWI(depth_multiplier, filter_height,
@@ -69,7 +69,7 @@ void TransposeWeights(const TfLiteTensor* input, const TfLiteTensor* filter,
   }
 
   attr->weights.emplace<
-      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>(
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>(
       std::move(weights));
 }
 }  // namespace
@@ -80,7 +80,7 @@ void ConvertDepthwiseConv(
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     const IrModelBuilderOptions& options, ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* dw_conv_op = ir_model.add_op();
-  dw_conv_op->name = ToString(::ml_drift::OperationType::DEPTHWISE_CONVOLUTION);
+  dw_conv_op->name = ToString(::ml_drift::OperationType::kDepthwiseConvolution);
 
   const auto* params =
       static_cast<const TfLiteDepthwiseConvParams*>(node.builtin_data);
@@ -89,7 +89,7 @@ void ConvertDepthwiseConv(
 
   ::ml_drift::DepthwiseConvolution2DAttributes attr;
   auto& weights = attr.weights.emplace<
-      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>();
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>();
 
   const int input_id = node.inputs->data[0];
   ir_model.AddConsumer(tensor_map[input_id], dw_conv_op->id);

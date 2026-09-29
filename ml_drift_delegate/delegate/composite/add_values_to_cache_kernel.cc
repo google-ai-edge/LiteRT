@@ -80,7 +80,7 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateAddValuesToCache(
   custom_op.AddSrcTensor("src_k", src_k);
   custom_op.AddSrcTensor("src_v", src_v);
   ::ml_drift::BufferDescriptor params_buffer;
-  params_buffer.element_type = ::ml_drift::DataType::INT32;
+  params_buffer.element_type = ::ml_drift::DataType::kInt32;
   params_buffer.element_size = 1;
   custom_op.AddSrcBuffer("params", params_buffer);
   custom_op.AddDstTensor("cache_k", cache_k);
@@ -93,9 +93,9 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateAddValuesToCache(
   // quantized cache case. Expects src_k and src_v to be float and quantize
   // inside the shader.
   bool quantized_cache = false;
-  if ((src_k.GetDataType() == ::ml_drift::DataType::FLOAT32 ||
-       src_k.GetDataType() == ::ml_drift::DataType::FLOAT16) &&
-      cache_k.GetDataType() == ::ml_drift::DataType::UINT8) {
+  if ((src_k.GetDataType() == ::ml_drift::DataType::kFloat32 ||
+       src_k.GetDataType() == ::ml_drift::DataType::kFloat16) &&
+      cache_k.GetDataType() == ::ml_drift::DataType::kUint8) {
     float max_value_k = static_cast<float>(INT8_MAX) * scale_k;
     float min_value_k = static_cast<float>(INT8_MIN) * scale_k;
     float inverse_scale_k = 1.0f / scale_k;

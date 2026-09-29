@@ -298,13 +298,13 @@ absl::Status CreateSharedWebGpuTensor(
 
   // TODO: b/423950292 - Support other data types.
   bool is_supported_texture =
-      tensor_desc.GetStorageType() == TensorStorageType::TEXTURE_2D &&
-      tensor_desc.GetDataType() == DataType::UINT16;
+      tensor_desc.GetStorageType() == TensorStorageType::kTexture2D &&
+      tensor_desc.GetDataType() == DataType::kUint16;
   bool is_supported_buffer =
-      tensor_desc.GetStorageType() == TensorStorageType::BUFFER &&
-      (tensor_desc.GetDataType() == DataType::UINT2 ||
-       tensor_desc.GetDataType() == DataType::UINT4 ||
-       tensor_desc.GetDataType() == DataType::UINT8);
+      tensor_desc.GetStorageType() == TensorStorageType::kBuffer &&
+      (tensor_desc.GetDataType() == DataType::kUint2 ||
+       tensor_desc.GetDataType() == DataType::kUint4 ||
+       tensor_desc.GetDataType() == DataType::kUint8);
 
   if ((is_supported_buffer || is_supported_texture) &&
       env.device().HasFeature(wgpu::FeatureName::HostMappedPointer)) {
@@ -318,7 +318,7 @@ absl::Status CreateSharedWebGpuTensor(
     // valid release_data_callback that can be used to release the mmap'd
     // memory. In the future, we should add support for no-copy textures
     // as well.
-    if (tensor_desc.GetStorageType() == TensorStorageType::BUFFER &&
+    if (tensor_desc.GetStorageType() == TensorStorageType::kBuffer &&
         release_data_callback) {
       return ::ml_drift::webgpu_internal::CopyBufferToBuffer(
           &env, tensor_desc, page_adjusted_offset,

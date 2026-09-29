@@ -45,7 +45,7 @@ TfLiteIntArray* GetIrModelOpsToReplace(TfLiteContext* context,
   ir_options.enable_infinite_float_capping =
       delegate_data.options->enable_infinite_float_capping;
   ir_options.enable_reduced_precision = delegate_data.calculation_precision !=
-                                        ::ml_drift::CalculationsPrecision::F32;
+                                        ::ml_drift::CalculationsPrecision::kF32;
   ir_options.allow_quant_ops = true;
   ir_options.start_node_index = start_node_index;
   ir_options.end_node_index = end_node_index;

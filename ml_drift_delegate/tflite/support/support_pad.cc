@@ -116,7 +116,7 @@ bool IsPadSupported(const TfLiteContext* absl_nonnull context,
     return false;
   }
   const absl::Status status =
-      CheckPopulateTensor<::ml_drift::HW, ::ml_drift::DataType::INT32>(
+      CheckPopulateTensor<::ml_drift::HW, ::ml_drift::DataType::kInt32>(
           &paddings_tensor);
   if (!status.ok()) {
     *error = status.message();
@@ -133,7 +133,7 @@ bool IsPadSupported(const TfLiteContext* absl_nonnull context,
       return false;
     }
     const absl::Status status =
-        CheckPopulateTensor<::ml_drift::Scalar, ::ml_drift::DataType::FLOAT32>(
+        CheckPopulateTensor<::ml_drift::Scalar, ::ml_drift::DataType::kFloat32>(
             &const_val_tensor);
     if (!status.ok()) {
       *error = status.message();

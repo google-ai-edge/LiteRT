@@ -50,7 +50,7 @@ constexpr int kActiveTokensAlignedIndex = 2;
 void Reshape(::ml_drift::GraphFloat32* graph, ::ml_drift::Value* before,
              ::ml_drift::Value* after) {
   ::ml_drift::Node* reshape = graph->NewNode();
-  reshape->operation.type = ToString(::ml_drift::OperationType::RESHAPE);
+  reshape->operation.type = ToString(::ml_drift::OperationType::kReshape);
   ::ml_drift::ReshapeAttributes reshape_attr;
   reshape_attr.new_shape = after->tensor.shape;
   reshape->operation.attributes = reshape_attr;
@@ -96,7 +96,7 @@ void SdpaTransposedOperationParser::Parse(const TfLiteNode* tflite_node,
   if (tflite_node->inputs->size == 4) {
     auto* mask_or_param = reader->ReadValue(3);
     if (mask_or_param &&
-        mask_or_param->tensor.type == ::ml_drift::DataType::INT32) {
+        mask_or_param->tensor.type == ::ml_drift::DataType::kInt32) {
       param_tensor = mask_or_param;
     } else {
       mask = mask_or_param;
@@ -183,7 +183,7 @@ void SdpaTransposedOperationParser::Parse(const TfLiteNode* tflite_node,
       attr.is_prefill && head_dim % 4 == 0 && head_dim <= 128;
   const bool is_flash_decode = !attr.is_prefill && q_w == 1 && head_dim == 128;
   if (attr.is_causal && attr.from_cache_update && param_tensor != nullptr &&
-      mask != nullptr && mask->tensor.type == ::ml_drift::DataType::BOOL &&
+      mask != nullptr && mask->tensor.type == ::ml_drift::DataType::kBool &&
       (is_flash_prefill || is_flash_decode)) {
     skip_bool_mask_for_flash_sdpa = true;
   }

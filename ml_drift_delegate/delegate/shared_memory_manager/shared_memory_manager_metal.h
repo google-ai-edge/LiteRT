@@ -238,7 +238,7 @@ inline std::unique_ptr<ml_drift::SharedMemoryManager> MakeSharedMemoryManagerMet
         auto metal_tensor = std::make_unique<metal::MetalSpatialTensor>();
         // Create a shared buffer to avoid extra copy. The release callback is called when the
         // buffer is deallocated.
-        if (release_data_callback && tensor_desc.GetStorageType() == TensorStorageType::BUFFER) {
+        if (release_data_callback && tensor_desc.GetStorageType() == TensorStorageType::kBuffer) {
           const uint8_t* data_ptr = tensor_desc.GetData().data();
           const size_t bytes_count = tensor_desc.GetData().size();
           const uint8_t* raw_data_ptr = data_ptr - page_adjusted_offset;

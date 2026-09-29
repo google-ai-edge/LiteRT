@@ -31,7 +31,7 @@ void ConvertPixelShuffle(const TfLiteContext& context, const TfLiteNode& node,
                          ::ml_drift::ir::TensorMap& tensor_map,
                          ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* ir_op = ir_model.add_op();
-  ir_op->name = ToString(::ml_drift::OperationType::DEPTH_TO_SPACE);
+  ir_op->name = ToString(::ml_drift::OperationType::kDepthToSpace);
 
   const int input_id = tensor_map[node.inputs->data[0]];
   ir_model.AddConsumer(input_id, ir_op->id);

@@ -41,11 +41,11 @@ namespace {
 ::ml_drift::BHWC GetShape(const ::ml_drift::BHWC& shape,
                           const SizedLayout& layout, int num_dims) {
   if ((num_dims == 0 || num_dims == 1) &&
-      layout.layout_1d == ::ml_drift::Layout::SCALAR) {
+      layout.layout_1d == ::ml_drift::Layout::kScalar) {
     return ::ml_drift::BHWC(1, 1, 1, shape.b);
-  } else if (num_dims == 2 && layout.layout_2d == ::ml_drift::Layout::HW) {
+  } else if (num_dims == 2 && layout.layout_2d == ::ml_drift::Layout::kHW) {
     return ::ml_drift::BHWC(1, 1, shape.b, shape.c);
-  } else if (num_dims == 3 && layout.layout_3d == ::ml_drift::Layout::HWC) {
+  } else if (num_dims == 3 && layout.layout_3d == ::ml_drift::Layout::kHWC) {
     return ::ml_drift::BHWC(1, shape.b, shape.w, shape.c);
   } else {
     return shape;
@@ -187,20 +187,20 @@ void HandleFusedActivation(
               : (fused_activation == kTfLiteActReluN1To1 ? 1.0f : 6.0f);
       attr.activation_min =
           fused_activation == kTfLiteActReluN1To1 ? -1.0f : 0.0f;
-      activation_op->name = ToString(::ml_drift::OperationType::RELU);
+      activation_op->name = ToString(::ml_drift::OperationType::kRelu);
       activation_op->attr = attr;
       return;
     }
     case kTfLiteActTanh: {
-      activation_op->name = ToString(::ml_drift::OperationType::TANH);
+      activation_op->name = ToString(::ml_drift::OperationType::kTanh);
       return;
     }
     case kTfLiteActSigmoid: {
-      activation_op->name = ToString(::ml_drift::OperationType::SIGMOID);
+      activation_op->name = ToString(::ml_drift::OperationType::kSigmoid);
       return;
     }
     case kTfLiteActSignBit: {
-      activation_op->name = ToString(::ml_drift::OperationType::SIGN);
+      activation_op->name = ToString(::ml_drift::OperationType::kSign);
       return;
     }
     case kTfLiteActNone:
@@ -229,7 +229,7 @@ bool MarkSharedBias(::ml_drift::ir::IrTensorId bias_id,
 
 bool ConfigSharedQuantizedFullyConnected(
     const TfLiteTensor& weights_tensor, const ::ml_drift::OHWI& weights_shape,
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias,
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> bias,
     ::ml_drift::ir::IrOp* fc_op) {
   // Scale is per-output-channel by default; blockwise quantization also splits
   // the input dimension into blocks (parity with GraphFloat32).
@@ -269,7 +269,7 @@ bool ConfigSharedQuantizedFullyConnected(
 
   switch (weights_tensor.type) {
     case kTfLiteInt8: {
-      fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8);
+      fc_op->name = ToString(::ml_drift::OperationType::kFullyConnectedInt8);
       ::ml_drift::FullyConnectedInt8Attributes attr;
       attr.weights.shape = weights_shape;
       attr.scale.shape = scale_shape;
@@ -279,9 +279,9 @@ bool ConfigSharedQuantizedFullyConnected(
       return true;
     }
     case kTfLiteInt4: {
-      fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT4);
+      fc_op->name = ToString(::ml_drift::OperationType::kFullyConnectedInt4);
       ::ml_drift::FullyConnectedInt4Attributes attr;
-      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4> weights;
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt4> weights;
       weights.shape = weights_shape;
       attr.weights = std::move(weights);
       attr.scale.shape = scale_shape;
@@ -291,9 +291,9 @@ bool ConfigSharedQuantizedFullyConnected(
       return true;
     }
     case kTfLiteInt2: {
-      fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT2);
+      fc_op->name = ToString(::ml_drift::OperationType::kFullyConnectedInt2);
       ::ml_drift::FullyConnectedInt2Attributes attr;
-      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT2> weights;
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt2> weights;
       weights.shape = weights_shape;
       attr.weights = std::move(weights);
       attr.scale.shape = scale_shape;
@@ -319,7 +319,7 @@ void PopulateBlockwiseQuantizedFullyConnected(
   const ::ml_drift::OHWI weights_shape(output_channels, 1, 1, input_channels);
 
   // Weights: OHWI(o, 1, 1, i), int4 unpacked into int8.
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8> weights;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8> weights;
   weights.id = weights_id;
   weights.shape = weights_shape;
   if (copy_weights) {
@@ -408,7 +408,7 @@ void PopulateBlockwiseQuantizedFullyConnected(
        tfl_tensor->type == kTfLiteInt2 || tfl_tensor->type == kTfLiteBool ||
        tfl_tensor->type == kTfLiteInt32));
   ::ml_drift::ir::IrOp* node = ir_model.add_op();
-  node->name = ToString(::ml_drift::OperationType::CONSTANT);
+  node->name = ToString(::ml_drift::OperationType::kConstant);
   ::ml_drift::ir::IrTensor* tensor;
   ::ml_drift::ConstTensorAttributes attr;
   if (tfl_tensor->type == kTfLiteFloat16) {
@@ -443,19 +443,19 @@ void PopulateBlockwiseQuantizedFullyConnected(
   index = ResolveNegativeIndex(index, tflite_tensor.dims->size);
   std::vector<::ml_drift::Axis> index_to_axis;
   if (dims->size == 1) {
-    index_to_axis = {::ml_drift::Axis::BATCH};
+    index_to_axis = {::ml_drift::Axis::kBatch};
   } else if (dims->size == 2) {
-    index_to_axis = {::ml_drift::Axis::BATCH, ::ml_drift::Axis::CHANNELS};
+    index_to_axis = {::ml_drift::Axis::kBatch, ::ml_drift::Axis::kChannels};
   } else if (dims->size == 3) {
-    index_to_axis = {::ml_drift::Axis::BATCH, ::ml_drift::Axis::WIDTH,
-                     ::ml_drift::Axis::CHANNELS};
+    index_to_axis = {::ml_drift::Axis::kBatch, ::ml_drift::Axis::kWidth,
+                     ::ml_drift::Axis::kChannels};
   } else if (dims->size == 4) {
-    index_to_axis = {::ml_drift::Axis::BATCH, ::ml_drift::Axis::HEIGHT,
-                     ::ml_drift::Axis::WIDTH, ::ml_drift::Axis::CHANNELS};
+    index_to_axis = {::ml_drift::Axis::kBatch, ::ml_drift::Axis::kHeight,
+                     ::ml_drift::Axis::kWidth, ::ml_drift::Axis::kChannels};
   } else {
-    index_to_axis = {::ml_drift::Axis::BATCH, ::ml_drift::Axis::HEIGHT,
-                     ::ml_drift::Axis::WIDTH, ::ml_drift::Axis::DEPTH,
-                     ::ml_drift::Axis::CHANNELS};
+    index_to_axis = {::ml_drift::Axis::kBatch, ::ml_drift::Axis::kHeight,
+                     ::ml_drift::Axis::kWidth, ::ml_drift::Axis::kDepth,
+                     ::ml_drift::Axis::kChannels};
   }
   return index_to_axis[index];
 }

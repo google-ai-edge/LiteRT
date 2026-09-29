@@ -42,7 +42,7 @@ void ConvertReverse(const TfLiteContext& context, const TfLiteNode& node,
   }
 
   ::ml_drift::ir::IrOp* reverse_op = ir_model.add_op();
-  reverse_op->name = ToString(::ml_drift::OperationType::REVERSE);
+  reverse_op->name = ToString(::ml_drift::OperationType::kReverse);
   reverse_op->attr = std::move(attr);
 
   ir_model.AddConsumer(tensor_map[node.inputs->data[0]], reverse_op->id);

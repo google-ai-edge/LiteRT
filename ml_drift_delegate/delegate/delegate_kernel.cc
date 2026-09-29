@@ -255,7 +255,7 @@ absl::Status DelegateKernel::InitializeGraphFloat32(
   options.enable_infinite_float_capping =
       delegate_data_->options->enable_infinite_float_capping;
   options.enable_reduced_precision = delegate_data_->calculation_precision !=
-                                     ::ml_drift::CalculationsPrecision::F32;
+                                     ::ml_drift::CalculationsPrecision::kF32;
   // Build GraphFloat32.
   ::ml_drift::GraphFloat32 graph;
   CustomOperationParserFactory custom_parser_factory;
@@ -1094,7 +1094,7 @@ absl::Status DelegateKernel::InitializeIrModel(
   options.enable_infinite_float_capping =
       delegate_data_->options->enable_infinite_float_capping;
   options.enable_reduced_precision = delegate_data_->calculation_precision !=
-                                     ::ml_drift::CalculationsPrecision::F32;
+                                     ::ml_drift::CalculationsPrecision::kF32;
   std::unique_ptr<::ml_drift::ir::IrModel> ir_model;
 
   const TfLiteIntArray* input_tensors = delegate_params->input_tensors;

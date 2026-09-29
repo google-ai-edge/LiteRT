@@ -69,7 +69,7 @@ TEST_P(ConvertCumsumTest, CumsumOperation4D) {
   const ::ml_drift::CumsumAttributes* attr =
       std::any_cast<::ml_drift::CumsumAttributes>(&cumsum_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->axis, ::ml_drift::Axis::CHANNELS);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::kChannels);
 }
 
 TEST_P(ConvertCumsumTest, CumsumOperationNegativeAxis) {
@@ -99,7 +99,7 @@ TEST_P(ConvertCumsumTest, CumsumOperationNegativeAxis) {
       std::any_cast<::ml_drift::CumsumAttributes>(&cumsum_op->attr);
   ASSERT_TRUE(attr);
   // Rank 4, axis -1 resolves to 3 (CHANNELS)
-  EXPECT_EQ(attr->axis, ::ml_drift::Axis::CHANNELS);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::kChannels);
 }
 
 TEST_P(ConvertCumsumTest, CumsumOperation2D) {
@@ -129,7 +129,7 @@ TEST_P(ConvertCumsumTest, CumsumOperation2D) {
       std::any_cast<::ml_drift::CumsumAttributes>(&cumsum_op->attr);
   ASSERT_TRUE(attr);
   // Rank 2, axis 1 maps to WIDTH in ExtractAxisFromIndex
-  EXPECT_EQ(attr->axis, ::ml_drift::Axis::CHANNELS);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::kChannels);
 }
 
 TEST_P(ConvertCumsumTest, CumsumOperation3D) {
@@ -159,7 +159,7 @@ TEST_P(ConvertCumsumTest, CumsumOperation3D) {
       std::any_cast<::ml_drift::CumsumAttributes>(&cumsum_op->attr);
   ASSERT_TRUE(attr);
   // Rank 3, axis 2 maps to CHANNELS in ExtractAxisFromIndex
-  EXPECT_EQ(attr->axis, ::ml_drift::Axis::CHANNELS);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::kChannels);
 }
 
 INSTANTIATE_TEST_SUITE_P(ConvertCumsumTest, ConvertCumsumTest,

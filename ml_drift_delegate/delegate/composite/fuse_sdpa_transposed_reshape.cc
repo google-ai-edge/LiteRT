@@ -57,9 +57,9 @@ absl::Status FuseSdpaTransposedReshape(::ml_drift::GraphFloat32* graph) {
   if (!graph) return absl::OkStatus();
 
   const std::string reshape_op_name =
-      ToString(::ml_drift::OperationType::RESHAPE);
+      ToString(::ml_drift::OperationType::kReshape);
   const std::string transpose_op_name =
-      ToString(::ml_drift::OperationType::TRANSPOSE);
+      ToString(::ml_drift::OperationType::kTranspose);
 
   std::vector<::ml_drift::NodeId> sdpa_node_ids;
   for (::ml_drift::Node* node : graph->nodes()) {
@@ -130,9 +130,9 @@ absl::Status FuseSdpaTransposedReshape(::ml_drift::ir::IrModel* model) {
   if (!model) return absl::OkStatus();
 
   const std::string reshape_op_name =
-      ToString(::ml_drift::OperationType::RESHAPE);
+      ToString(::ml_drift::OperationType::kReshape);
   const std::string transpose_op_name =
-      ToString(::ml_drift::OperationType::TRANSPOSE);
+      ToString(::ml_drift::OperationType::kTranspose);
 
   for (size_t i = 0; i < model->ops().size(); ++i) {
     ::ml_drift::ir::IrOp* sdpa_op = model->ops()[i].get();

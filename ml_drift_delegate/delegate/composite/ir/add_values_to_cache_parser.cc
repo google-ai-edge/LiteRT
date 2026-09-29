@@ -117,9 +117,9 @@ void AddValuesToCacheConvert(
     ir_model.ResetQuantParams(output_1_id);
     ir_model.ResetQuantParams(output_2_id);
     ir_model.GetMutableTensor(output_1_id)
-        ->desc.SetDataType(::ml_drift::DataType::UINT8);
+        ->desc.SetDataType(::ml_drift::DataType::kUint8);
     ir_model.GetMutableTensor(output_2_id)
-        ->desc.SetDataType(::ml_drift::DataType::UINT8);
+        ->desc.SetDataType(::ml_drift::DataType::kUint8);
   }
 
   ir_model.SetProducer(tensor_map[tflite_node.outputs->data[0]],

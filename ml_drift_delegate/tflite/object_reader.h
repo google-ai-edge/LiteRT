@@ -46,25 +46,25 @@ enum class ReadTensorFlags {
 };
 
 struct SizedLayout {
-  ::ml_drift::Layout layout_1d = ::ml_drift::Layout::BHWC;  // Bx1x1x1
-  ::ml_drift::Layout layout_2d = ::ml_drift::Layout::BHWC;  // Bx1x1xC
-  ::ml_drift::Layout layout_3d = ::ml_drift::Layout::BHWC;  // Bx1xWxC
-  ::ml_drift::Layout layout_4d = ::ml_drift::Layout::BHWC;  // BxHxWxC
+  ::ml_drift::Layout layout_1d = ::ml_drift::Layout::kBHWC;  // Bx1x1x1
+  ::ml_drift::Layout layout_2d = ::ml_drift::Layout::kBHWC;  // Bx1x1xC
+  ::ml_drift::Layout layout_3d = ::ml_drift::Layout::kBHWC;  // Bx1xWxC
+  ::ml_drift::Layout layout_4d = ::ml_drift::Layout::kBHWC;  // BxHxWxC
 };
 
 template <typename ShapeT, ::ml_drift::DataType Type>
 void TfLiteTensorToTensorCopyData(
     const TfLiteTensor* const tflite_tensor,
     ::ml_drift::Tensor<ShapeT, Type>* tensor, ReadTensorFlags flags,
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>* scale =
-        nullptr,
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32>*
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>*
+        scale = nullptr,
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32>*
         zero_point = nullptr) {
   const int extra_elements = flags == ReadTensorFlags::kExtraBytes
                                  ? XNN_EXTRA_BYTES / sizeof(float)
                                  : 0;
-  if (scale != nullptr && (Type == ::ml_drift::DataType::INT8 ||
-                           Type == ::ml_drift::DataType::INT4)) {
+  if (scale != nullptr && (Type == ::ml_drift::DataType::kInt8 ||
+                           Type == ::ml_drift::DataType::kInt4)) {
     ABSL_QCHECK_EQ(tflite_tensor->bytes % SizeOf(Type), 0);
     tensor->data.resize(tflite_tensor->bytes / SizeOf(Type) + extra_elements);
     std::memcpy(tensor->data.data(), tflite_tensor->data.raw_const,
@@ -106,16 +106,16 @@ template <typename ShapeT, ::ml_drift::DataType Type>
 void TfLiteTensorToTensorZeroCopy(
     const TfLiteTensor* const tflite_tensor,
     ::ml_drift::Tensor<ShapeT, Type>* tensor,
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>* scale =
-        nullptr,
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32>*
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>*
+        scale = nullptr,
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32>*
         zero_point = nullptr) {
   // TODO: b/378522761 - Support other types.
-  if constexpr (Type == ::ml_drift::DataType::FLOAT32) {
+  if constexpr (Type == ::ml_drift::DataType::kFloat32) {
     tensor->spanned_data = absl::MakeSpan(tflite_tensor->data.f,
                                           ::tflite::NumElements(tflite_tensor));
-  } else if constexpr (Type == ::ml_drift::DataType::INT4 ||
-                       Type == ::ml_drift::DataType::INT8) {
+  } else if constexpr (Type == ::ml_drift::DataType::kInt4 ||
+                       Type == ::ml_drift::DataType::kInt8) {
     ABSL_CHECK(scale);
     ABSL_CHECK(zero_point);
     tensor->spanned_data =
@@ -298,9 +298,9 @@ class ObjectReader {
   void ReadTensor(
       int node_input_index, TensorT* tensor, ReadTensorFlags flags,
       bool enable_spanned_weights = false,
-      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>*
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>*
           scale = nullptr,
-      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32>*
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32>*
           zero_point = nullptr) const {
     tensor->id = node_->inputs->data[node_input_index];
     const TfLiteTensor* const tflite_tensor = context_->tensors + tensor->id;

@@ -44,10 +44,10 @@ enum class PopulateTensorFlags {
 };
 
 struct SizedLayout {
-  ::ml_drift::Layout layout_1d = ::ml_drift::Layout::BHWC;  // Bx1x1x1
-  ::ml_drift::Layout layout_2d = ::ml_drift::Layout::BHWC;  // Bx1x1xC
-  ::ml_drift::Layout layout_3d = ::ml_drift::Layout::BHWC;  // Bx1xWxC
-  ::ml_drift::Layout layout_4d = ::ml_drift::Layout::BHWC;  // BxHxWxC
+  ::ml_drift::Layout layout_1d = ::ml_drift::Layout::kBHWC;  // Bx1x1x1
+  ::ml_drift::Layout layout_2d = ::ml_drift::Layout::kBHWC;  // Bx1x1xC
+  ::ml_drift::Layout layout_3d = ::ml_drift::Layout::kBHWC;  // Bx1xWxC
+  ::ml_drift::Layout layout_4d = ::ml_drift::Layout::kBHWC;  // BxHxWxC
 };
 
 namespace convert_aux_internal {
@@ -152,8 +152,8 @@ template <typename ShapeT, ::ml_drift::DataType Type>
 inline void SetQuantizationParams(
     const TfLiteTensor* tflite_tensor, bool enable_spanned_weights,
     int extra_elements, ::ml_drift::Tensor<ShapeT, Type>* tensor,
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>* scale,
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32>*
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>* scale,
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32>*
         zero_point) {
   const auto* quant_params = static_cast<TfLiteAffineQuantization*>(
       tflite_tensor->quantization.params);
@@ -189,15 +189,15 @@ inline void PopulateTensorInternal(
     const TfLiteTensor* const tflite_tensor,
     ::ml_drift::Tensor<ShapeT, Type>* tensor, PopulateTensorFlags flags,
     bool enable_spanned_weights,
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>* scale,
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32>*
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>* scale,
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32>*
         zero_point) {
   const int extra_elements =
       flags == PopulateTensorFlags::kExtraBytes && !enable_spanned_weights
           ? XNN_EXTRA_BYTES / SizeOf(Type)
           : 0;
   // TODO: b/378522761 - Support other types.
-  if constexpr (Type == ::ml_drift::DataType::FLOAT32) {
+  if constexpr (Type == ::ml_drift::DataType::kFloat32) {
     if (enable_spanned_weights) {
       tensor->spanned_data = absl::MakeSpan(tflite_tensor->data.f,
                                             tflite::NumElements(tflite_tensor));
@@ -205,10 +205,10 @@ inline void PopulateTensorInternal(
       tensor->data.resize(tflite::NumElements(tflite_tensor) + extra_elements);
       CopyData(*tflite_tensor, &tensor->data[0]);
     }
-  } else if constexpr (Type == ::ml_drift::DataType::INT2 ||
-                       Type == ::ml_drift::DataType::INT4 ||
-                       Type == ::ml_drift::DataType::INT8 ||
-                       Type == ::ml_drift::DataType::UINT8) {
+  } else if constexpr (Type == ::ml_drift::DataType::kInt2 ||
+                       Type == ::ml_drift::DataType::kInt4 ||
+                       Type == ::ml_drift::DataType::kInt8 ||
+                       Type == ::ml_drift::DataType::kUint8) {
     ABSL_CHECK(scale);
     ABSL_CHECK(zero_point);
     if (enable_spanned_weights) {
@@ -268,7 +268,7 @@ bool MarkSharedBias(::ml_drift::ir::IrTensorId bias_id,
 // consumer of `fc_op` by the caller.
 bool ConfigSharedQuantizedFullyConnected(
     const TfLiteTensor& weights_tensor, const ::ml_drift::OHWI& weights_shape,
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias,
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> bias,
     ::ml_drift::ir::IrOp* fc_op);
 
 // Populates `attr` for a native (const) blockwise-quantized int4
@@ -303,9 +303,9 @@ template <typename TensorT>
 inline void PopulateTensor(
     const TfLiteTensor* tflite_tensor, int tensor_id, TensorT* tensor,
     PopulateTensorFlags flags, bool enable_spanned_weights = false,
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>* scale =
-        nullptr,
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32>*
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>*
+        scale = nullptr,
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32>*
         zero_point = nullptr) {
   tensor->id = tensor_id;
   convert_aux_internal::PopulateTensorInternal(

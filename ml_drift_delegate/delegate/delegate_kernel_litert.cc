@@ -64,7 +64,7 @@ absl::StatusOr<::ml_drift::TensorDescriptor> CreateTensorDescriptor(
     ::ml_drift::DataType data_type,
     ::ml_drift::CalculationsPrecision calculation_precision,
     ::ml_drift::TensorStorageType storage_type) {
-  if (data_type == ::ml_drift::DataType::FLOAT32) {
+  if (data_type == ::ml_drift::DataType::kFloat32) {
     data_type = DeduceDataTypeFromPrecision(calculation_precision);
   }
 
@@ -693,11 +693,11 @@ absl::Status DelegateKernelLiteRt::InitTensorConverters(
     TfLiteTensor* tflite_tensor = &context->tensors[input_indices_[i]];
     ::ml_drift::BufferDescriptor src_desc;
     src_desc.element_type = ToDataType(tflite_tensor->type);
-    if (src_desc.element_type == ::ml_drift::DataType::UNKNOWN) {
+    if (src_desc.element_type == ::ml_drift::DataType::kUnknown) {
       return absl::InvalidArgumentError("model input type is not supported.");
     }
     src_desc.element_size = 1;
-    src_desc.memory_type = ::ml_drift::MemoryType::GLOBAL;
+    src_desc.memory_type = ::ml_drift::MemoryType::kGlobal;
     ABSL_ASSIGN_OR_RETURN(input_converters_[i],
                           backend_->CreateBuffer2TensorConverter(
                               src_desc, gpu_tensor->GetDescriptor()));
@@ -713,11 +713,11 @@ absl::Status DelegateKernelLiteRt::InitTensorConverters(
     TfLiteTensor* tflite_tensor = &context->tensors[output_indices_[i]];
     ::ml_drift::BufferDescriptor dst_desc;
     dst_desc.element_type = ToDataType(tflite_tensor->type);
-    if (dst_desc.element_type == ::ml_drift::DataType::UNKNOWN) {
+    if (dst_desc.element_type == ::ml_drift::DataType::kUnknown) {
       return absl::InvalidArgumentError("model output type is not supported.");
     }
     dst_desc.element_size = 1;
-    dst_desc.memory_type = ::ml_drift::MemoryType::GLOBAL;
+    dst_desc.memory_type = ::ml_drift::MemoryType::kGlobal;
     ABSL_ASSIGN_OR_RETURN(output_converters_[i],
                           backend_->CreateTensor2BufferConverter(
                               gpu_tensor->GetDescriptor(), dst_desc));

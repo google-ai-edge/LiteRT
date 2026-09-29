@@ -85,7 +85,7 @@ TEST_P(ConvertPadTest, BasicPad) {
   const ::ml_drift::PadAttributes* attr =
       std::any_cast<::ml_drift::PadAttributes>(&pad_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->type, ::ml_drift::PaddingContentType::ZEROS);
+  EXPECT_EQ(attr->type, ::ml_drift::PaddingContentType::kZeros);
   EXPECT_EQ(attr->prepended.h, 1);
   EXPECT_EQ(attr->prepended.w, 1);
   EXPECT_EQ(attr->appended.h, 1);
@@ -130,7 +130,7 @@ TEST_P(ConvertPadTest, BasicPad3x2) {
   const ::ml_drift::PadAttributes* attr =
       std::any_cast<::ml_drift::PadAttributes>(&pad_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->type, ::ml_drift::PaddingContentType::ZEROS);
+  EXPECT_EQ(attr->type, ::ml_drift::PaddingContentType::kZeros);
 
   // For 3x2, prepended/appended b is implicitly 1 based on mapping.
   EXPECT_EQ(attr->prepended.b, 1);
@@ -191,7 +191,7 @@ TEST_P(ConvertPadTest, PadV2) {
   const ::ml_drift::PadAttributes* attr =
       std::any_cast<::ml_drift::PadAttributes>(&pad_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->type, ::ml_drift::PaddingContentType::ZEROS);
+  EXPECT_EQ(attr->type, ::ml_drift::PaddingContentType::kZeros);
   EXPECT_FLOAT_EQ(attr->constant_values, 3.14f);
   EXPECT_EQ(attr->prepended.h, 1);
   EXPECT_EQ(attr->prepended.w, 3);
@@ -237,7 +237,7 @@ TEST_P(ConvertPadTest, MirrorPad) {
   const ::ml_drift::PadAttributes* attr =
       std::any_cast<::ml_drift::PadAttributes>(&pad_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->type, ::ml_drift::PaddingContentType::REFLECT);
+  EXPECT_EQ(attr->type, ::ml_drift::PaddingContentType::kReflect);
 
   // Sanity check inference.
   ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
@@ -293,7 +293,7 @@ TEST_P(ConvertPadTest, PadV2WithCapping) {
   const ::ml_drift::PadAttributes* attr =
       std::any_cast<::ml_drift::PadAttributes>(&pad_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->type, ::ml_drift::PaddingContentType::ZEROS);
+  EXPECT_EQ(attr->type, ::ml_drift::PaddingContentType::kZeros);
 
   // enable_reduced_precision is false, so we use max float
   EXPECT_FLOAT_EQ(attr->constant_values, ::ml_drift::kMaxHalf);
@@ -351,7 +351,7 @@ TEST_P(ConvertPadTest, PadV2WithCappingNegInf) {
   const ::ml_drift::PadAttributes* attr =
       std::any_cast<::ml_drift::PadAttributes>(&pad_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->type, ::ml_drift::PaddingContentType::ZEROS);
+  EXPECT_EQ(attr->type, ::ml_drift::PaddingContentType::kZeros);
 
   // enable_reduced_precision means we use -kMaxHalf
   EXPECT_FLOAT_EQ(attr->constant_values, -::ml_drift::kMaxHalf);

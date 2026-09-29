@@ -27,7 +27,7 @@ void ConvertReshape(const TfLiteContext& context, const TfLiteNode& node,
                     ::ml_drift::ir::TensorMap& tensor_map,
                     ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* ir_op = ir_model.add_op();
-  ir_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+  ir_op->name = ToString(::ml_drift::OperationType::kReshape);
   const int input_id = node.inputs->data[0];
   ir_model.AddConsumer(tensor_map[input_id], ir_op->id);
   const int output_id = node.outputs->data[0];

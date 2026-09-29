@@ -76,7 +76,7 @@ TEST_F(ConvertBatchMatMulTest, ConvertToFullyConnected) {
 
   ASSERT_THAT(ir_model->ops(), SizeIs(1));
   const ::ml_drift::ir::IrOp* op = ir_model->op(0);
-  EXPECT_EQ(op->name, ToString(::ml_drift::OperationType::FULLY_CONNECTED));
+  EXPECT_EQ(op->name, ToString(::ml_drift::OperationType::kFullyConnected));
   EXPECT_THAT(op->inputs,
               SizeIs(1));  // FullyConnected expects 1 input in this system
 
@@ -112,7 +112,7 @@ TEST_F(ConvertBatchMatMulTest, ConvertToFullyConnectedWithAdjY) {
 
   ASSERT_THAT(ir_model->ops(), SizeIs(1));
   const ::ml_drift::ir::IrOp* op = ir_model->op(0);
-  EXPECT_EQ(op->name, ToString(::ml_drift::OperationType::FULLY_CONNECTED));
+  EXPECT_EQ(op->name, ToString(::ml_drift::OperationType::kFullyConnected));
   EXPECT_THAT(op->inputs, SizeIs(1));
 
   const ::ml_drift::FullyConnectedAttributes* attr =
@@ -136,7 +136,7 @@ TEST_F(ConvertBatchMatMulTest, ConvertToBatchedMatMul) {
 
   ASSERT_THAT(ir_model->ops(), SizeIs(1));
   const ::ml_drift::ir::IrOp* op = ir_model->op(0);
-  EXPECT_EQ(op->name, ToString(::ml_drift::OperationType::BATCHED_MATMUL));
+  EXPECT_EQ(op->name, ToString(::ml_drift::OperationType::kBatchedMatmul));
   EXPECT_THAT(op->inputs, SizeIs(2));
 }
 
@@ -154,13 +154,13 @@ TEST_F(ConvertBatchMatMulTest, ConvertToBatchedMatMul5D) {
   ASSERT_THAT(ir_model->ops(), SizeIs(4));
 
   EXPECT_EQ(ir_model->op(0)->name,
-            ToString(::ml_drift::OperationType::RESHAPE));
+            ToString(::ml_drift::OperationType::kReshape));
   EXPECT_EQ(ir_model->op(1)->name,
-            ToString(::ml_drift::OperationType::RESHAPE));
+            ToString(::ml_drift::OperationType::kReshape));
   EXPECT_EQ(ir_model->op(2)->name,
-            ToString(::ml_drift::OperationType::BATCHED_MATMUL));
+            ToString(::ml_drift::OperationType::kBatchedMatmul));
   EXPECT_EQ(ir_model->op(3)->name,
-            ToString(::ml_drift::OperationType::RESHAPE));
+            ToString(::ml_drift::OperationType::kReshape));
 
   // Check shapes after reshape
   const ::ml_drift::ir::IrOp* reshape_left_op = ir_model->op(0);
@@ -206,13 +206,13 @@ TEST_F(ConvertBatchMatMulTest, ConvertToBatchedMatMul4DReshape) {
   ASSERT_THAT(ir_model->ops(), SizeIs(4));
 
   EXPECT_EQ(ir_model->op(0)->name,
-            ToString(::ml_drift::OperationType::RESHAPE));
+            ToString(::ml_drift::OperationType::kReshape));
   EXPECT_EQ(ir_model->op(1)->name,
-            ToString(::ml_drift::OperationType::RESHAPE));
+            ToString(::ml_drift::OperationType::kReshape));
   EXPECT_EQ(ir_model->op(2)->name,
-            ToString(::ml_drift::OperationType::BATCHED_MATMUL));
+            ToString(::ml_drift::OperationType::kBatchedMatmul));
   EXPECT_EQ(ir_model->op(3)->name,
-            ToString(::ml_drift::OperationType::RESHAPE));
+            ToString(::ml_drift::OperationType::kReshape));
 
   // Check shapes after reshape
   const ::ml_drift::ir::IrOp* reshape_left_op = ir_model->op(0);

@@ -56,14 +56,14 @@ void ConvertGather(
     // RESHAPE inserted for runtime indices below.
     SizedLayout indices_layout;
     if (indices_are_1d) {
-      indices_layout.layout_1d = ::ml_drift::Layout::SCALAR;
+      indices_layout.layout_1d = ::ml_drift::Layout::kScalar;
     }
     ::ml_drift::ir::IrTensor* const_tensor =
         AddConstInput(context, indices_id, ir_model, indices_layout);
     final_indices_id = const_tensor->id;
   } else if (indices_are_1d) {
     ::ml_drift::ir::IrOp* reshape_op = ir_model.add_op();
-    reshape_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+    reshape_op->name = ToString(::ml_drift::OperationType::kReshape);
 
     ::ml_drift::ReshapeAttributes reshape_attr;
     ::ml_drift::BHWC new_shape(1, 1, 1, indices_tensor->dims->data[0]);
@@ -85,7 +85,7 @@ void ConvertGather(
   attr.axis = ExtractAxisFromIndex(*input_tensor, params->axis);
 
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
-  op->name = ToString(::ml_drift::OperationType::GATHER);
+  op->name = ToString(::ml_drift::OperationType::kGather);
   op->attr = std::move(attr);
   ir_model.AddConsumer(final_input_id, op->id);
   ir_model.AddConsumer(final_indices_id, op->id);

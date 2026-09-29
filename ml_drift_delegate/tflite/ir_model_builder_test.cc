@@ -248,7 +248,7 @@ class IrModelBuilderTest : public ::testing::Test {
 
     bool found_conv = false;
     for (const auto& op : test_data_.ir_model.ops()) {
-      if (op->name == ToString(::ml_drift::OperationType::CONVOLUTION_2D)) {
+      if (op->name == ToString(::ml_drift::OperationType::kConvolution2D)) {
         found_conv = true;
         int num_inputs_to_conv = 0;
         for (const auto& tensor : test_data_.ir_model.tensors()) {
@@ -391,7 +391,7 @@ TEST_F(IrModelBuilderTest, ForcesLinearLayoutForSharedBias) {
       EXPECT_EQ(info.tflite_tensor_id, kBiasTensorIndex);
       found_bias = true;
       ASSERT_TRUE(info.layout.has_value());
-      EXPECT_EQ(info.layout.value(), ::ml_drift::Layout::LINEAR);
+      EXPECT_EQ(info.layout.value(), ::ml_drift::Layout::kLinear);
       // The 1-D bias's 8 channels must live in the channel dim, not batch, so
       // the LINEAR reshape to (1,1,1,c) preserves them.
       EXPECT_EQ(tensor->desc.GetBHWCShape().b, 1);
@@ -420,7 +420,7 @@ TEST_F(IrModelBuilderTest, ForcesLinearLayoutForSharedFullyConnectedBias) {
       EXPECT_EQ(info.tflite_tensor_id, kBiasTensorIndex);
       found_bias = true;
       ASSERT_TRUE(info.layout.has_value());
-      EXPECT_EQ(info.layout.value(), ::ml_drift::Layout::LINEAR);
+      EXPECT_EQ(info.layout.value(), ::ml_drift::Layout::kLinear);
       EXPECT_EQ(tensor->desc.GetBHWCShape().b, 1);
       EXPECT_EQ(tensor->desc.GetBHWCShape().c, 8);
     }
@@ -445,11 +445,11 @@ TEST_F(IrModelBuilderTest,
   bool found_conv = false;
   const ::ml_drift::ir::IrOp* fc_op = nullptr;
   for (const auto& op : test_data_.ir_model.ops()) {
-    if (op->name == ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8)) {
+    if (op->name == ToString(::ml_drift::OperationType::kFullyConnectedInt8)) {
       found_fc = true;
       fc_op = op.get();
     }
-    if (op->name == ToString(::ml_drift::OperationType::CONVOLUTION_2D)) {
+    if (op->name == ToString(::ml_drift::OperationType::kConvolution2D)) {
       found_conv = true;
     }
   }
@@ -496,7 +496,7 @@ TEST_F(IrModelBuilderTest, ConfiguresSharedQuantizedFullyConnected) {
 
   const ::ml_drift::ir::IrOp* fc_op = nullptr;
   for (const auto& op : test_data_.ir_model.ops()) {
-    if (op->name == ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8)) {
+    if (op->name == ToString(::ml_drift::OperationType::kFullyConnectedInt8)) {
       fc_op = op.get();
     }
   }
@@ -536,7 +536,7 @@ TEST_F(IrModelBuilderTest, ConfiguresSharedQuantizedEmbeddingLookup) {
 
   const ::ml_drift::ir::IrOp* el_op = nullptr;
   for (const auto& op : test_data_.ir_model.ops()) {
-    if (op->name == ToString(::ml_drift::OperationType::EMBEDDING_LOOKUP)) {
+    if (op->name == ToString(::ml_drift::OperationType::kEmbeddingLookup)) {
       el_op = op.get();
     }
   }
@@ -550,7 +550,7 @@ TEST_F(IrModelBuilderTest, ConfiguresSharedQuantizedEmbeddingLookup) {
   EXPECT_EQ(attr.scale_zp_shape, ::ml_drift::OHWI(5, 1, 1, 1));
   EXPECT_TRUE(
       (std::holds_alternative<
-          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>>(
+          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>>(
           attr.weights)));
 
   bool found_shared_weights = false;
@@ -598,7 +598,7 @@ TEST_F(IrModelBuilderTest, ConfiguresSharedBlockwiseEmbeddingLookup) {
 
   const ::ml_drift::ir::IrOp* el_op = nullptr;
   for (const auto& op : test_data_.ir_model.ops()) {
-    if (op->name == ToString(::ml_drift::OperationType::EMBEDDING_LOOKUP)) {
+    if (op->name == ToString(::ml_drift::OperationType::kEmbeddingLookup)) {
       el_op = op.get();
     }
   }
@@ -615,7 +615,7 @@ TEST_F(IrModelBuilderTest, ConfiguresSharedBlockwiseEmbeddingLookup) {
             ::ml_drift::OHWI(5, 1, 1, kEmbeddingDim / kBlockSize));
   EXPECT_TRUE(
       (std::holds_alternative<
-          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::UINT8>>(
+          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kUint8>>(
           attr.weights)));
 
   bool found_shared_weights = false;
@@ -643,10 +643,10 @@ TEST_F(IrModelBuilderTest, ReducesSharedInt4PointwiseConvToFullyConnected) {
   const ::ml_drift::ir::IrOp* fc_op = nullptr;
   bool found_conv = false;
   for (const auto& op : test_data_.ir_model.ops()) {
-    if (op->name == ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT4)) {
+    if (op->name == ToString(::ml_drift::OperationType::kFullyConnectedInt4)) {
       fc_op = op.get();
     }
-    if (op->name == ToString(::ml_drift::OperationType::CONVOLUTION_2D)) {
+    if (op->name == ToString(::ml_drift::OperationType::kConvolution2D)) {
       found_conv = true;
     }
   }
@@ -687,11 +687,11 @@ TEST_F(IrModelBuilderTest, DoesNotReduceSharedInt2PointwiseConv) {
   bool found_conv = false;
   bool found_fc = false;
   for (const auto& op : test_data_.ir_model.ops()) {
-    if (op->name == ToString(::ml_drift::OperationType::CONVOLUTION_2D)) {
+    if (op->name == ToString(::ml_drift::OperationType::kConvolution2D)) {
       found_conv = true;
     }
-    if (op->name == ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT2) ||
-        op->name == ToString(::ml_drift::OperationType::FULLY_CONNECTED)) {
+    if (op->name == ToString(::ml_drift::OperationType::kFullyConnectedInt2) ||
+        op->name == ToString(::ml_drift::OperationType::kFullyConnected)) {
       found_fc = true;
     }
   }
@@ -742,7 +742,7 @@ TEST_F(IrModelBuilderTest,
 
   const ::ml_drift::ir::IrOp* fc_op = nullptr;
   for (const auto& op : test_data_.ir_model.ops()) {
-    if (op->name == ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8)) {
+    if (op->name == ToString(::ml_drift::OperationType::kFullyConnectedInt8)) {
       fc_op = op.get();
     }
   }

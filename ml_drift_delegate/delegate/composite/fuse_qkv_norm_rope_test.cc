@@ -50,11 +50,11 @@ TEST(FuseQkvNormRoPETest, FusesQkvNormRopeSubgraphSuccessfully) {
 
   // Graph inputs
   auto* qkv_input = graph.NewValue();
-  qkv_input->tensor.type = ::ml_drift::DataType::FLOAT32;
+  qkv_input->tensor.type = ::ml_drift::DataType::kFloat32;
   qkv_input->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kTotalChannels);
 
   auto* pos_input = graph.NewValue();
-  pos_input->tensor.type = ::ml_drift::DataType::INT32;
+  pos_input->tensor.type = ::ml_drift::DataType::kInt32;
   pos_input->tensor.shape = ::ml_drift::BHWC(1, 1, 1, 1);
 
   // Producer for qkv
@@ -71,7 +71,7 @@ TEST(FuseQkvNormRoPETest, FusesQkvNormRopeSubgraphSuccessfully) {
   slice_q_attr.strides = ::ml_drift::BHWC(1, 1, 1, 1);
   slice_q->operation.attributes = slice_q_attr;
   auto* slice_q_out = graph.NewValue();
-  slice_q_out->tensor.type = ::ml_drift::DataType::FLOAT32;
+  slice_q_out->tensor.type = ::ml_drift::DataType::kFloat32;
   slice_q_out->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kQChannels);
   graph.AddConsumer(slice_q->id, qkv_input->id);
   graph.SetProducer(slice_q->id, slice_q_out->id);
@@ -84,7 +84,7 @@ TEST(FuseQkvNormRoPETest, FusesQkvNormRopeSubgraphSuccessfully) {
   slice_k_attr.strides = ::ml_drift::BHWC(1, 1, 1, 1);
   slice_k->operation.attributes = slice_k_attr;
   auto* slice_k_out = graph.NewValue();
-  slice_k_out->tensor.type = ::ml_drift::DataType::FLOAT32;
+  slice_k_out->tensor.type = ::ml_drift::DataType::kFloat32;
   slice_k_out->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kKChannels);
   graph.AddConsumer(slice_k->id, qkv_input->id);
   graph.SetProducer(slice_k->id, slice_k_out->id);
@@ -97,7 +97,7 @@ TEST(FuseQkvNormRoPETest, FusesQkvNormRopeSubgraphSuccessfully) {
   slice_v_attr.strides = ::ml_drift::BHWC(1, 1, 1, 1);
   slice_v->operation.attributes = slice_v_attr;
   auto* slice_v_out = graph.NewValue();
-  slice_v_out->tensor.type = ::ml_drift::DataType::FLOAT32;
+  slice_v_out->tensor.type = ::ml_drift::DataType::kFloat32;
   slice_v_out->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kVChannels);
   graph.AddConsumer(slice_v->id, qkv_input->id);
   graph.SetProducer(slice_v->id, slice_v_out->id);
@@ -106,7 +106,7 @@ TEST(FuseQkvNormRoPETest, FusesQkvNormRopeSubgraphSuccessfully) {
   auto* q_pre_norm = graph.NewNode();
   q_pre_norm->operation.type = "reshape";
   auto* q_norm_in = graph.NewValue();
-  q_norm_in->tensor.type = ::ml_drift::DataType::FLOAT32;
+  q_norm_in->tensor.type = ::ml_drift::DataType::kFloat32;
   q_norm_in->tensor.shape = ::ml_drift::BHWC(1, kNumHeads, 1, kHeadDim);
   graph.AddConsumer(q_pre_norm->id, slice_q_out->id);
   graph.SetProducer(q_pre_norm->id, q_norm_in->id);
@@ -115,13 +115,14 @@ TEST(FuseQkvNormRoPETest, FusesQkvNormRopeSubgraphSuccessfully) {
   norm_q->operation.type = "rms_norm";
   ::ml_drift::RmsNormAttributes norm_q_attr;
   norm_q_attr.epsilon = 1e-6f;
-  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> scale_q;
+  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
+      scale_q;
   scale_q.shape = ::ml_drift::Linear(kHeadDim);
   scale_q.data = std::vector<float>(kHeadDim, 1.0f);
   norm_q_attr.scale = std::move(scale_q);
   norm_q->operation.attributes = std::move(norm_q_attr);
   auto* q_norm_out = graph.NewValue();
-  q_norm_out->tensor.type = ::ml_drift::DataType::FLOAT32;
+  q_norm_out->tensor.type = ::ml_drift::DataType::kFloat32;
   q_norm_out->tensor.shape = ::ml_drift::BHWC(1, kNumHeads, 1, kHeadDim);
   graph.AddConsumer(norm_q->id, q_norm_in->id);
   graph.SetProducer(norm_q->id, q_norm_out->id);
@@ -129,20 +130,20 @@ TEST(FuseQkvNormRoPETest, FusesQkvNormRopeSubgraphSuccessfully) {
   auto* q_pre_rope = graph.NewNode();
   q_pre_rope->operation.type = "transpose";
   auto* q_rope_in = graph.NewValue();
-  q_rope_in->tensor.type = ::ml_drift::DataType::FLOAT32;
+  q_rope_in->tensor.type = ::ml_drift::DataType::kFloat32;
   q_rope_in->tensor.shape = ::ml_drift::BHWC(1, kNumHeads, 1, kHeadDim);
   graph.AddConsumer(q_pre_rope->id, q_norm_out->id);
   graph.SetProducer(q_pre_rope->id, q_rope_in->id);
 
   auto* rope_q = graph.NewNode();
-  rope_q->operation.type = ToString(::ml_drift::OperationType::ROPE);
+  rope_q->operation.type = ToString(::ml_drift::OperationType::kRope);
   ::ml_drift::RoPEAttributes rope_q_attr;
   rope_q_attr.max_timescale = 1000000.0f;
   rope_q_attr.min_timescale = 1.0f;
   rope_q_attr.proportion = 1.0f;
   rope_q->operation.attributes = rope_q_attr;
   auto* q_final_out = graph.NewValue();
-  q_final_out->tensor.type = ::ml_drift::DataType::FLOAT32;
+  q_final_out->tensor.type = ::ml_drift::DataType::kFloat32;
   q_final_out->tensor.shape = ::ml_drift::BHWC(1, kNumHeads, 1, kHeadDim);
   graph.AddConsumer(rope_q->id, q_rope_in->id);
   graph.AddConsumer(rope_q->id, pos_input->id);
@@ -152,7 +153,7 @@ TEST(FuseQkvNormRoPETest, FusesQkvNormRopeSubgraphSuccessfully) {
   auto* k_pre_norm = graph.NewNode();
   k_pre_norm->operation.type = "reshape";
   auto* k_norm_in = graph.NewValue();
-  k_norm_in->tensor.type = ::ml_drift::DataType::FLOAT32;
+  k_norm_in->tensor.type = ::ml_drift::DataType::kFloat32;
   k_norm_in->tensor.shape = ::ml_drift::BHWC(1, kNumKvHeads, 1, kHeadDim);
   graph.AddConsumer(k_pre_norm->id, slice_k_out->id);
   graph.SetProducer(k_pre_norm->id, k_norm_in->id);
@@ -161,13 +162,14 @@ TEST(FuseQkvNormRoPETest, FusesQkvNormRopeSubgraphSuccessfully) {
   norm_k->operation.type = "rms_norm";
   ::ml_drift::RmsNormAttributes norm_k_attr;
   norm_k_attr.epsilon = 1e-6f;
-  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> scale_k;
+  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
+      scale_k;
   scale_k.shape = ::ml_drift::Linear(kHeadDim);
   scale_k.data = std::vector<float>(kHeadDim, 1.0f);
   norm_k_attr.scale = std::move(scale_k);
   norm_k->operation.attributes = std::move(norm_k_attr);
   auto* k_norm_out = graph.NewValue();
-  k_norm_out->tensor.type = ::ml_drift::DataType::FLOAT32;
+  k_norm_out->tensor.type = ::ml_drift::DataType::kFloat32;
   k_norm_out->tensor.shape = ::ml_drift::BHWC(1, kNumKvHeads, 1, kHeadDim);
   graph.AddConsumer(norm_k->id, k_norm_in->id);
   graph.SetProducer(norm_k->id, k_norm_out->id);
@@ -175,20 +177,20 @@ TEST(FuseQkvNormRoPETest, FusesQkvNormRopeSubgraphSuccessfully) {
   auto* k_pre_rope = graph.NewNode();
   k_pre_rope->operation.type = "transpose";
   auto* k_rope_in = graph.NewValue();
-  k_rope_in->tensor.type = ::ml_drift::DataType::FLOAT32;
+  k_rope_in->tensor.type = ::ml_drift::DataType::kFloat32;
   k_rope_in->tensor.shape = ::ml_drift::BHWC(1, kNumKvHeads, 1, kHeadDim);
   graph.AddConsumer(k_pre_rope->id, k_norm_out->id);
   graph.SetProducer(k_pre_rope->id, k_rope_in->id);
 
   auto* rope_k = graph.NewNode();
-  rope_k->operation.type = ToString(::ml_drift::OperationType::ROPE);
+  rope_k->operation.type = ToString(::ml_drift::OperationType::kRope);
   ::ml_drift::RoPEAttributes rope_k_attr;
   rope_k_attr.max_timescale = 1000000.0f;
   rope_k_attr.min_timescale = 1.0f;
   rope_k_attr.proportion = 1.0f;
   rope_k->operation.attributes = rope_k_attr;
   auto* k_final_out = graph.NewValue();
-  k_final_out->tensor.type = ::ml_drift::DataType::FLOAT32;
+  k_final_out->tensor.type = ::ml_drift::DataType::kFloat32;
   k_final_out->tensor.shape = ::ml_drift::BHWC(1, kNumKvHeads, 1, kHeadDim);
   graph.AddConsumer(rope_k->id, k_rope_in->id);
   graph.AddConsumer(rope_k->id, pos_input->id);
@@ -198,7 +200,7 @@ TEST(FuseQkvNormRoPETest, FusesQkvNormRopeSubgraphSuccessfully) {
   auto* v_reshape = graph.NewNode();
   v_reshape->operation.type = "reshape";
   auto* v_final_out = graph.NewValue();
-  v_final_out->tensor.type = ::ml_drift::DataType::FLOAT32;
+  v_final_out->tensor.type = ::ml_drift::DataType::kFloat32;
   v_final_out->tensor.shape = ::ml_drift::BHWC(1, kNumKvHeads, 1, kHeadDim);
   graph.AddConsumer(v_reshape->id, slice_v_out->id);
   graph.SetProducer(v_reshape->id, v_final_out->id);

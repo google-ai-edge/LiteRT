@@ -1247,7 +1247,7 @@ TEST(ModelBuilderTest, BuildModel_SimpleAdd) {
   EXPECT_EQ(graph.nodes().size(), 1);
   EXPECT_EQ(
       ::ml_drift::OperationTypeFromString(graph.nodes()[0]->operation.type),
-      ::ml_drift::OperationType::ADD);
+      ::ml_drift::OperationType::kAdd);
 
   TfLiteIntArrayFree(params.nodes_to_replace);
   TfLiteIntArrayFree(params.input_tensors);
@@ -1364,7 +1364,7 @@ TEST(ModelBuilderTest, BuildModel_EmbeddingLookupBlockwiseQuantized) {
   ASSERT_EQ(graph.nodes().size(), 1);
   EXPECT_EQ(
       ::ml_drift::OperationTypeFromString(graph.nodes()[0]->operation.type),
-      ::ml_drift::OperationType::EMBEDDING_LOOKUP);
+      ::ml_drift::OperationType::kEmbeddingLookup);
 
   auto attr = std::any_cast<::ml_drift::EmbeddingLookupAttributes>(
       graph.nodes()[0]->operation.attributes);
@@ -1455,16 +1455,16 @@ TEST(ModelBuilderTest, BuildModel_BroadcastMul) {
   EXPECT_EQ(graph.nodes().size(), 4);
   EXPECT_EQ(
       ::ml_drift::OperationTypeFromString(graph.nodes()[0]->operation.type),
-      ::ml_drift::OperationType::RESHAPE);
+      ::ml_drift::OperationType::kReshape);
   EXPECT_EQ(
       ::ml_drift::OperationTypeFromString(graph.nodes()[1]->operation.type),
-      ::ml_drift::OperationType::RESHAPE);
+      ::ml_drift::OperationType::kReshape);
   EXPECT_EQ(
       ::ml_drift::OperationTypeFromString(graph.nodes()[2]->operation.type),
-      ::ml_drift::OperationType::MUL);
+      ::ml_drift::OperationType::kMul);
   EXPECT_EQ(
       ::ml_drift::OperationTypeFromString(graph.nodes()[3]->operation.type),
-      ::ml_drift::OperationType::RESHAPE);
+      ::ml_drift::OperationType::kReshape);
 
   const auto& reshape_attr0 =
       std::any_cast<const ::ml_drift::ReshapeAttributes&>(
@@ -2719,10 +2719,10 @@ TEST_F(FullyConnectedOperationParserTest, ParseSrc3dDst2d) {
   ASSERT_EQ(graph_.nodes().size(), 2);  // added reshape node for output
   ASSERT_EQ(
       ::ml_drift::OperationTypeFromString(graph_.nodes()[0]->operation.type),
-      ::ml_drift::OperationType::FULLY_CONNECTED);
+      ::ml_drift::OperationType::kFullyConnected);
   ASSERT_EQ(
       ::ml_drift::OperationTypeFromString(graph_.nodes()[1]->operation.type),
-      ::ml_drift::OperationType::RESHAPE);
+      ::ml_drift::OperationType::kReshape);
   auto fc_input = graph_.FindInputs(graph_.nodes()[0]->id)[0];
   ASSERT_EQ(fc_input->tensor.shape, ::ml_drift::BHWC(1, 1, 16, 4));
   auto fc_output = graph_.FindOutputs(graph_.nodes()[0]->id)[0];
@@ -3942,7 +3942,7 @@ TEST(RoPEParserTest, TestParseAttributesCustom) {
     fbb.Float("max_timescale", 50000.0f);
     fbb.Float("proportion", 0.5f);
     fbb.Int("kernel_type",
-            static_cast<int>(::ml_drift::RoPEKernelType::INTERLEAVED_2D));
+            static_cast<int>(::ml_drift::RoPEKernelType::kInterleaved2D));
   });
   fbb.Finish();
   context->node()->custom_initial_data = fbb.GetBuffer().data();
@@ -3967,7 +3967,7 @@ TEST(RoPEParserTest, TestParseAttributesCustom) {
   EXPECT_NEAR(attr.min_timescale, 2.0f, 1e-6f);
   EXPECT_NEAR(attr.max_timescale, 50000.0f, 1e-6f);
   EXPECT_NEAR(attr.proportion, 0.5f, 1e-6f);
-  EXPECT_EQ(attr.kernel_type, ::ml_drift::RoPEKernelType::INTERLEAVED_2D);
+  EXPECT_EQ(attr.kernel_type, ::ml_drift::RoPEKernelType::kInterleaved2D);
 }
 
 TEST(RoPEParserTest, TestParseAttributesComposite) {
@@ -3988,7 +3988,7 @@ TEST(RoPEParserTest, TestParseAttributesComposite) {
     fbb.Float("max_timescale", 50000.0f);
     fbb.Float("proportion", 0.5f);
     fbb.Int("kernel_type",
-            static_cast<int>(::ml_drift::RoPEKernelType::INTERLEAVED_2D));
+            static_cast<int>(::ml_drift::RoPEKernelType::kInterleaved2D));
   });
   fbb.Finish();
   composite_params->attributes = fbb.GetBuffer().data();
@@ -4013,7 +4013,7 @@ TEST(RoPEParserTest, TestParseAttributesComposite) {
   EXPECT_NEAR(attr.min_timescale, 2.0f, 1e-6f);
   EXPECT_NEAR(attr.max_timescale, 50000.0f, 1e-6f);
   EXPECT_NEAR(attr.proportion, 0.5f, 1e-6f);
-  EXPECT_EQ(attr.kernel_type, ::ml_drift::RoPEKernelType::INTERLEAVED_2D);
+  EXPECT_EQ(attr.kernel_type, ::ml_drift::RoPEKernelType::kInterleaved2D);
 }
 
 TEST(ScaledDotProductAttentionParserTest, TestIsSupportedNoMask) {

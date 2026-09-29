@@ -319,10 +319,10 @@ absl::Status GpuBackendWebGpu::UpdateSpatialTensor(
 #if defined(__APPLE__)
   // If the device is Apple and it meets the right storage & data types, use
   // an optimized path.
-  if (desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
-      (desc.GetDataType() == ::ml_drift::DataType::UINT8 ||
-       desc.GetDataType() == ::ml_drift::DataType::UINT4 ||
-       desc.GetDataType() == ::ml_drift::DataType::UINT2)) {
+  if (desc.GetStorageType() == ::ml_drift::TensorStorageType::kBuffer &&
+      (desc.GetDataType() == ::ml_drift::DataType::kUint8 ||
+       desc.GetDataType() == ::ml_drift::DataType::kUint4 ||
+       desc.GetDataType() == ::ml_drift::DataType::kUint2)) {
     ::ml_drift::TensorDescriptor desc_no_data;
     desc.CopyWithoutData(&desc_no_data);
     ABSL_RETURN_IF_ERROR(

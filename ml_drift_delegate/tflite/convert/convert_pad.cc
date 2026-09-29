@@ -38,7 +38,7 @@ void ConvertPad(
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     const IrModelBuilderOptions& options, ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* pad_op = ir_model.add_op();
-  pad_op->name = ToString(::ml_drift::OperationType::PAD);
+  pad_op->name = ToString(::ml_drift::OperationType::kPad);
 
   const int input_id = tensor_map[node.inputs->data[0]];
   ir_model.AddConsumer(input_id, pad_op->id);
@@ -46,18 +46,18 @@ void ConvertPad(
 
   ::ml_drift::PadAttributes attr;
   if (registration.builtin_code == kTfLiteBuiltinMirrorPad) {
-    attr.type = ::ml_drift::PaddingContentType::REFLECT;
+    attr.type = ::ml_drift::PaddingContentType::kReflect;
   } else {
-    attr.type = ::ml_drift::PaddingContentType::ZEROS;
+    attr.type = ::ml_drift::PaddingContentType::kZeros;
   }
 
-  ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::INT32> paddings;
+  ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kInt32> paddings;
   PopulateTensor(&context.tensors[node.inputs->data[1]], node.inputs->data[1],
                  &paddings, PopulateTensorFlags::kNoExtraBytes);
 
   if (registration.builtin_code == kTfLiteBuiltinPadv2 &&
       node.inputs->size == 3) {
-    ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::kFloat32>
         const_tensor;
     PopulateTensor(&context.tensors[node.inputs->data[2]], node.inputs->data[2],
                    &const_tensor, PopulateTensorFlags::kNoExtraBytes);

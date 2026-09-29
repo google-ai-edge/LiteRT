@@ -61,13 +61,13 @@ void PopulateQuantizedAttributes(const TfLiteTensor* weights_tensor,
                                  const TfLiteTensor* bias_tensor, int bias_id,
                                  bool bias_is_const,
                                  bool enable_spanned_weights, AttrType& attr) {
-  ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::INT8> weights;
+  ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kInt8> weights;
   PopulateTensor(weights_tensor, weights_id, &weights,
                  PopulateTensorFlags::kExtraBytes, enable_spanned_weights,
                  &attr.scale, &attr.zero_point);
 
   int num_elements = weights.shape.DimensionsProduct();
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8> fc_weights;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8> fc_weights;
   fc_weights.spanned_data = std::move(weights.spanned_data);
   fc_weights.id = weights.id;
   fc_weights.shape.o = weights.shape.h;
@@ -162,7 +162,7 @@ void ConvertFullyConnected(
         PopulateBlockwiseQuantizedFullyConnected(
             context, *weights_tensor, weights_id, bias_tensor, bias_id,
             bias_is_const, options.enable_spanned_weights, attr);
-        fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT4);
+        fc_op->name = ToString(::ml_drift::OperationType::kFullyConnectedInt4);
         fc_op->attr = std::move(attr);
       } else {
         // Affine (per-tensor or per-channel) int8/int4/int2 weights are
@@ -172,12 +172,13 @@ void ConvertFullyConnected(
         PopulateQuantizedAttributes(weights_tensor, weights_id, bias_tensor,
                                     bias_id, bias_is_const,
                                     options.enable_spanned_weights, attr);
-        fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8);
+        fc_op->name = ToString(::ml_drift::OperationType::kFullyConnectedInt8);
         fc_op->attr = std::move(attr);
       }
     } else {
       ::ml_drift::FullyConnectedAttributes attr;
-      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32> weights;
+      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32>
+          weights;
       PopulateTensor(weights_tensor, weights_id, &weights,
                      PopulateTensorFlags::kExtraBytes,
                      options.enable_spanned_weights);
@@ -203,10 +204,10 @@ void ConvertFullyConnected(
         conv_attr.padding.prepended = ::ml_drift::HW(0, 0);
         conv_attr.weights = attr.weights;
         conv_attr.bias = attr.bias;
-        fc_op->name = ToString(::ml_drift::OperationType::CONVOLUTION_2D);
+        fc_op->name = ToString(::ml_drift::OperationType::kConvolution2D);
         fc_op->attr = std::move(conv_attr);
       } else {
-        fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED);
+        fc_op->name = ToString(::ml_drift::OperationType::kFullyConnected);
         fc_op->attr = std::move(attr);
       }
     }
@@ -223,7 +224,7 @@ void ConvertFullyConnected(
     // A const (non-shared) bias is embedded into the op attributes; a runtime
     // or shared bias is added as a runtime consumer below (parity with
     // GraphFloat32 and the const-weights branch above).
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> bias;
     if (bias_is_const) {
       PopulateTensor(bias_tensor, bias_id, &bias,
                      PopulateTensorFlags::kNoExtraBytes,
@@ -246,7 +247,7 @@ void ConvertFullyConnected(
       // Keeping this move of `bias` in the same if/else as the quantized path
       // makes the two consumers provably mutually exclusive.
       if (input_shape.h != 1 || input_shape.w != 1) {
-        fc_op->name = ToString(::ml_drift::OperationType::CONVOLUTION_2D);
+        fc_op->name = ToString(::ml_drift::OperationType::kConvolution2D);
         ::ml_drift::Convolution2DAttributes conv_attr;
         conv_attr.strides = ::ml_drift::HW(1, 1);
         conv_attr.dilations = ::ml_drift::HW(1, 1);
@@ -254,12 +255,12 @@ void ConvertFullyConnected(
         conv_attr.padding.prepended = ::ml_drift::HW(0, 0);
         conv_attr.groups = 1;
         auto& w = conv_attr.weights.emplace<::ml_drift::Tensor<
-            ::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>();
+            ::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>();
         w.shape = ::ml_drift::OHWI(output_shape.c, 1, 1, input_shape.c);
         conv_attr.bias = std::move(bias);
         fc_op->attr = std::move(conv_attr);
       } else {
-        fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED);
+        fc_op->name = ToString(::ml_drift::OperationType::kFullyConnected);
         ::ml_drift::FullyConnectedAttributes attr;
         attr.bias = std::move(bias);
         fc_op->attr = std::move(attr);
@@ -270,7 +271,7 @@ void ConvertFullyConnected(
     // non-const weights. Manually add a reshape here if necessary.
     if (current_shape.h != 1 || current_shape.w != 1) {
       ::ml_drift::ir::IrOp* reshape_op = ir_model.add_op();
-      reshape_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+      reshape_op->name = ToString(::ml_drift::OperationType::kReshape);
       ir_model.AddConsumer(tensor_map[weights_id], reshape_op->id);
       ::ml_drift::ReshapeAttributes reshape_attr;
       reshape_attr.new_shape =
@@ -311,7 +312,7 @@ void ConvertFullyConnected(
     ir_model.SetProducer(intermediate->id, fc_op->id);
 
     ::ml_drift::ir::IrOp* reshape_op = ir_model.add_op();
-    reshape_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+    reshape_op->name = ToString(::ml_drift::OperationType::kReshape);
     ir_model.AddConsumer(intermediate->id, reshape_op->id);
     ::ml_drift::ReshapeAttributes reshape_attr;
     reshape_attr.new_shape = output_shape;

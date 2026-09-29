@@ -44,12 +44,12 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepSuccessfully) {
 
   // in_proj [1, 1, 1, 3 * kHiddenSize]
   auto* in_proj_input = graph.NewValue();
-  in_proj_input->tensor.type = ::ml_drift::DataType::FLOAT32;
+  in_proj_input->tensor.type = ::ml_drift::DataType::kFloat32;
   in_proj_input->tensor.shape = ::ml_drift::BHWC(1, 1, 1, 3 * kHiddenSize);
 
   // conv_state [1, 1, kHiddenSize, kStateCacheSize]
   auto* conv_state_input = graph.NewValue();
-  conv_state_input->tensor.type = ::ml_drift::DataType::FLOAT32;
+  conv_state_input->tensor.type = ::ml_drift::DataType::kFloat32;
   conv_state_input->tensor.shape =
       ::ml_drift::BHWC(1, 1, kHiddenSize, kStateCacheSize);
 
@@ -64,34 +64,34 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepSuccessfully) {
 
   // Slices: b, c, x
   auto* slice_b_node = graph.NewNode();
-  slice_b_node->operation.type = ToString(::ml_drift::OperationType::SLICE);
+  slice_b_node->operation.type = ToString(::ml_drift::OperationType::kSlice);
   auto* b_val = graph.NewValue();
-  b_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  b_val->tensor.type = ::ml_drift::DataType::kFloat32;
   b_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(slice_b_node->id, in_proj_input->id);
   graph.SetProducer(slice_b_node->id, b_val->id);
 
   auto* slice_c_node = graph.NewNode();
-  slice_c_node->operation.type = ToString(::ml_drift::OperationType::SLICE);
+  slice_c_node->operation.type = ToString(::ml_drift::OperationType::kSlice);
   auto* c_val = graph.NewValue();
-  c_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  c_val->tensor.type = ::ml_drift::DataType::kFloat32;
   c_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(slice_c_node->id, in_proj_input->id);
   graph.SetProducer(slice_c_node->id, c_val->id);
 
   auto* slice_x_node = graph.NewNode();
-  slice_x_node->operation.type = ToString(::ml_drift::OperationType::SLICE);
+  slice_x_node->operation.type = ToString(::ml_drift::OperationType::kSlice);
   auto* x_val = graph.NewValue();
-  x_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  x_val->tensor.type = ::ml_drift::DataType::kFloat32;
   x_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(slice_x_node->id, in_proj_input->id);
   graph.SetProducer(slice_x_node->id, x_val->id);
 
   // bx_mul: b * x
   auto* bx_mul_node = graph.NewNode();
-  bx_mul_node->operation.type = ToString(::ml_drift::OperationType::MUL);
+  bx_mul_node->operation.type = ToString(::ml_drift::OperationType::kMul);
   auto* bx_val = graph.NewValue();
-  bx_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  bx_val->tensor.type = ::ml_drift::DataType::kFloat32;
   bx_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(bx_mul_node->id, b_val->id);
   graph.AddConsumer(bx_mul_node->id, x_val->id);
@@ -100,9 +100,9 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepSuccessfully) {
   // px_reshape: [1, 1, 1, kHiddenSize] -> [1, 1, kHiddenSize, 1]
   auto* px_reshape_node = graph.NewNode();
   px_reshape_node->operation.type =
-      ToString(::ml_drift::OperationType::RESHAPE);
+      ToString(::ml_drift::OperationType::kReshape);
   auto* px_reshaped_val = graph.NewValue();
-  px_reshaped_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  px_reshaped_val->tensor.type = ::ml_drift::DataType::kFloat32;
   px_reshaped_val->tensor.shape = ::ml_drift::BHWC(1, 1, kHiddenSize, 1);
   graph.AddConsumer(px_reshape_node->id, bx_val->id);
   graph.SetProducer(px_reshape_node->id, px_reshaped_val->id);
@@ -110,9 +110,9 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepSuccessfully) {
   // concat_win: conv_state + px_reshaped -> window [1, 1, kH, kFilterSize]
   auto* concat_win_node = graph.NewNode();
   concat_win_node->operation.type =
-      ToString(::ml_drift::OperationType::CONCAT);
+      ToString(::ml_drift::OperationType::kConcat);
   auto* win_val = graph.NewValue();
-  win_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  win_val->tensor.type = ::ml_drift::DataType::kFloat32;
   win_val->tensor.shape = ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize);
   graph.AddConsumer(concat_win_node->id, conv_state_input->id);
   graph.AddConsumer(concat_win_node->id, px_reshaped_val->id);
@@ -120,13 +120,14 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepSuccessfully) {
 
   // slice_state: window -> next_state [1, 1, kHiddenSize, kStateCacheSize]
   auto* slice_state_node = graph.NewNode();
-  slice_state_node->operation.type = ToString(::ml_drift::OperationType::SLICE);
+  slice_state_node->operation.type =
+      ToString(::ml_drift::OperationType::kSlice);
   ::ml_drift::SliceAttributes state_slice_attr;
   state_slice_attr.starts = ::ml_drift::BHWC(0, 0, 0, 1);
   state_slice_attr.ends = ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize);
   slice_state_node->operation.attributes = state_slice_attr;
   auto* next_state_val = graph.NewValue();
-  next_state_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  next_state_val->tensor.type = ::ml_drift::DataType::kFloat32;
   next_state_val->tensor.shape =
       ::ml_drift::BHWC(1, 1, kHiddenSize, kStateCacheSize);
   graph.AddConsumer(slice_state_node->id, win_val->id);
@@ -134,7 +135,7 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepSuccessfully) {
 
   // mul_conv with constant weight
   auto* mul_conv_node = graph.NewNode();
-  mul_conv_node->operation.type = ToString(::ml_drift::OperationType::MUL);
+  mul_conv_node->operation.type = ToString(::ml_drift::OperationType::kMul);
   ::ml_drift::ElementwiseAttributes mul_attr;
   ::ml_drift::TensorFloat32 weight_tensor;
   weight_tensor.shape = ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize);
@@ -142,7 +143,7 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepSuccessfully) {
   mul_attr.param = std::move(weight_tensor);
   mul_conv_node->operation.attributes = std::move(mul_attr);
   auto* mul_conv_out = graph.NewValue();
-  mul_conv_out->tensor.type = ::ml_drift::DataType::FLOAT32;
+  mul_conv_out->tensor.type = ::ml_drift::DataType::kFloat32;
   mul_conv_out->tensor.shape =
       ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize);
   graph.AddConsumer(mul_conv_node->id, win_val->id);
@@ -150,9 +151,9 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepSuccessfully) {
 
   // reduce_sum: window sum [1, 1, kHiddenSize, 1]
   auto* reduce_node = graph.NewNode();
-  reduce_node->operation.type = ToString(::ml_drift::OperationType::REDUCE_SUM);
+  reduce_node->operation.type = ToString(::ml_drift::OperationType::kReduceSum);
   auto* reduce_out = graph.NewValue();
-  reduce_out->tensor.type = ::ml_drift::DataType::FLOAT32;
+  reduce_out->tensor.type = ::ml_drift::DataType::kFloat32;
   reduce_out->tensor.shape = ::ml_drift::BHWC(1, 1, kHiddenSize, 1);
   graph.AddConsumer(reduce_node->id, mul_conv_out->id);
   graph.SetProducer(reduce_node->id, reduce_out->id);
@@ -160,18 +161,18 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepSuccessfully) {
   // red_reshape: [1, 1, kHiddenSize, 1] -> [1, 1, 1, kHiddenSize]
   auto* red_reshape_node = graph.NewNode();
   red_reshape_node->operation.type =
-      ToString(::ml_drift::OperationType::RESHAPE);
+      ToString(::ml_drift::OperationType::kReshape);
   auto* red_reshaped_val = graph.NewValue();
-  red_reshaped_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  red_reshaped_val->tensor.type = ::ml_drift::DataType::kFloat32;
   red_reshaped_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(red_reshape_node->id, reduce_out->id);
   graph.SetProducer(red_reshape_node->id, red_reshaped_val->id);
 
   // gating_mul: red_reshaped * c_val -> final_out [1, 1, 1, kHiddenSize]
   auto* gating_mul_node = graph.NewNode();
-  gating_mul_node->operation.type = ToString(::ml_drift::OperationType::MUL);
+  gating_mul_node->operation.type = ToString(::ml_drift::OperationType::kMul);
   auto* final_out_val = graph.NewValue();
-  final_out_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  final_out_val->tensor.type = ::ml_drift::DataType::kFloat32;
   final_out_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(gating_mul_node->id, red_reshaped_val->id);
   graph.AddConsumer(gating_mul_node->id, c_val->id);
@@ -252,18 +253,18 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepWithBiasSuccessfully) {
 
   // in_proj [1, 1, 1, 3 * kHiddenSize]
   auto* in_proj_input = graph.NewValue();
-  in_proj_input->tensor.type = ::ml_drift::DataType::FLOAT32;
+  in_proj_input->tensor.type = ::ml_drift::DataType::kFloat32;
   in_proj_input->tensor.shape = ::ml_drift::BHWC(1, 1, 1, 3 * kHiddenSize);
 
   // conv_state [1, 1, kHiddenSize, kStateCacheSize]
   auto* conv_state_input = graph.NewValue();
-  conv_state_input->tensor.type = ::ml_drift::DataType::FLOAT32;
+  conv_state_input->tensor.type = ::ml_drift::DataType::kFloat32;
   conv_state_input->tensor.shape =
       ::ml_drift::BHWC(1, 1, kHiddenSize, kStateCacheSize);
 
   // conv_bias [1, 1, 1, kHiddenSize]
   auto* conv_bias_input = graph.NewValue();
-  conv_bias_input->tensor.type = ::ml_drift::DataType::FLOAT32;
+  conv_bias_input->tensor.type = ::ml_drift::DataType::kFloat32;
   conv_bias_input->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
 
   // Dummy producers
@@ -281,34 +282,34 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepWithBiasSuccessfully) {
 
   // Slices: b, c, x
   auto* slice_b_node = graph.NewNode();
-  slice_b_node->operation.type = ToString(::ml_drift::OperationType::SLICE);
+  slice_b_node->operation.type = ToString(::ml_drift::OperationType::kSlice);
   auto* b_val = graph.NewValue();
-  b_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  b_val->tensor.type = ::ml_drift::DataType::kFloat32;
   b_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(slice_b_node->id, in_proj_input->id);
   graph.SetProducer(slice_b_node->id, b_val->id);
 
   auto* slice_c_node = graph.NewNode();
-  slice_c_node->operation.type = ToString(::ml_drift::OperationType::SLICE);
+  slice_c_node->operation.type = ToString(::ml_drift::OperationType::kSlice);
   auto* c_val = graph.NewValue();
-  c_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  c_val->tensor.type = ::ml_drift::DataType::kFloat32;
   c_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(slice_c_node->id, in_proj_input->id);
   graph.SetProducer(slice_c_node->id, c_val->id);
 
   auto* slice_x_node = graph.NewNode();
-  slice_x_node->operation.type = ToString(::ml_drift::OperationType::SLICE);
+  slice_x_node->operation.type = ToString(::ml_drift::OperationType::kSlice);
   auto* x_val = graph.NewValue();
-  x_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  x_val->tensor.type = ::ml_drift::DataType::kFloat32;
   x_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(slice_x_node->id, in_proj_input->id);
   graph.SetProducer(slice_x_node->id, x_val->id);
 
   // bx_mul: b * x
   auto* bx_mul_node = graph.NewNode();
-  bx_mul_node->operation.type = ToString(::ml_drift::OperationType::MUL);
+  bx_mul_node->operation.type = ToString(::ml_drift::OperationType::kMul);
   auto* bx_val = graph.NewValue();
-  bx_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  bx_val->tensor.type = ::ml_drift::DataType::kFloat32;
   bx_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(bx_mul_node->id, b_val->id);
   graph.AddConsumer(bx_mul_node->id, x_val->id);
@@ -317,9 +318,9 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepWithBiasSuccessfully) {
   // px_reshape: [1, 1, 1, kHiddenSize] -> [1, 1, kHiddenSize, 1]
   auto* px_reshape_node = graph.NewNode();
   px_reshape_node->operation.type =
-      ToString(::ml_drift::OperationType::RESHAPE);
+      ToString(::ml_drift::OperationType::kReshape);
   auto* px_reshaped_val = graph.NewValue();
-  px_reshaped_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  px_reshaped_val->tensor.type = ::ml_drift::DataType::kFloat32;
   px_reshaped_val->tensor.shape = ::ml_drift::BHWC(1, 1, kHiddenSize, 1);
   graph.AddConsumer(px_reshape_node->id, bx_val->id);
   graph.SetProducer(px_reshape_node->id, px_reshaped_val->id);
@@ -327,9 +328,9 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepWithBiasSuccessfully) {
   // concat_win: conv_state + px_reshaped -> window [1, 1, kH, kFilterSize]
   auto* concat_win_node = graph.NewNode();
   concat_win_node->operation.type =
-      ToString(::ml_drift::OperationType::CONCAT);
+      ToString(::ml_drift::OperationType::kConcat);
   auto* win_val = graph.NewValue();
-  win_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  win_val->tensor.type = ::ml_drift::DataType::kFloat32;
   win_val->tensor.shape = ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize);
   graph.AddConsumer(concat_win_node->id, conv_state_input->id);
   graph.AddConsumer(concat_win_node->id, px_reshaped_val->id);
@@ -337,13 +338,14 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepWithBiasSuccessfully) {
 
   // slice_state: window -> next_state [1, 1, kHiddenSize, kStateCacheSize]
   auto* slice_state_node = graph.NewNode();
-  slice_state_node->operation.type = ToString(::ml_drift::OperationType::SLICE);
+  slice_state_node->operation.type =
+      ToString(::ml_drift::OperationType::kSlice);
   ::ml_drift::SliceAttributes state_slice_attr;
   state_slice_attr.starts = ::ml_drift::BHWC(0, 0, 0, 1);
   state_slice_attr.ends = ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize);
   slice_state_node->operation.attributes = state_slice_attr;
   auto* next_state_val = graph.NewValue();
-  next_state_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  next_state_val->tensor.type = ::ml_drift::DataType::kFloat32;
   next_state_val->tensor.shape =
       ::ml_drift::BHWC(1, 1, kHiddenSize, kStateCacheSize);
   graph.AddConsumer(slice_state_node->id, win_val->id);
@@ -351,7 +353,7 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepWithBiasSuccessfully) {
 
   // mul_conv with constant weight
   auto* mul_conv_node = graph.NewNode();
-  mul_conv_node->operation.type = ToString(::ml_drift::OperationType::MUL);
+  mul_conv_node->operation.type = ToString(::ml_drift::OperationType::kMul);
   ::ml_drift::ElementwiseAttributes mul_attr;
   ::ml_drift::TensorFloat32 weight_tensor;
   weight_tensor.shape = ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize);
@@ -359,7 +361,7 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepWithBiasSuccessfully) {
   mul_attr.param = std::move(weight_tensor);
   mul_conv_node->operation.attributes = std::move(mul_attr);
   auto* mul_conv_out = graph.NewValue();
-  mul_conv_out->tensor.type = ::ml_drift::DataType::FLOAT32;
+  mul_conv_out->tensor.type = ::ml_drift::DataType::kFloat32;
   mul_conv_out->tensor.shape =
       ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize);
   graph.AddConsumer(mul_conv_node->id, win_val->id);
@@ -367,9 +369,9 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepWithBiasSuccessfully) {
 
   // reduce_sum: window sum [1, 1, kHiddenSize, 1]
   auto* reduce_node = graph.NewNode();
-  reduce_node->operation.type = ToString(::ml_drift::OperationType::REDUCE_SUM);
+  reduce_node->operation.type = ToString(::ml_drift::OperationType::kReduceSum);
   auto* reduce_out = graph.NewValue();
-  reduce_out->tensor.type = ::ml_drift::DataType::FLOAT32;
+  reduce_out->tensor.type = ::ml_drift::DataType::kFloat32;
   reduce_out->tensor.shape = ::ml_drift::BHWC(1, 1, kHiddenSize, 1);
   graph.AddConsumer(reduce_node->id, mul_conv_out->id);
   graph.SetProducer(reduce_node->id, reduce_out->id);
@@ -377,18 +379,18 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepWithBiasSuccessfully) {
   // red_reshape: [1, 1, kHiddenSize, 1] -> [1, 1, 1, kHiddenSize]
   auto* red_reshape_node = graph.NewNode();
   red_reshape_node->operation.type =
-      ToString(::ml_drift::OperationType::RESHAPE);
+      ToString(::ml_drift::OperationType::kReshape);
   auto* red_reshaped_val = graph.NewValue();
-  red_reshaped_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  red_reshaped_val->tensor.type = ::ml_drift::DataType::kFloat32;
   red_reshaped_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(red_reshape_node->id, reduce_out->id);
   graph.SetProducer(red_reshape_node->id, red_reshaped_val->id);
 
   // bias_add: red_reshaped + bias -> biased_out [1, 1, 1, kHiddenSize]
   auto* bias_add_node = graph.NewNode();
-  bias_add_node->operation.type = ToString(::ml_drift::OperationType::ADD);
+  bias_add_node->operation.type = ToString(::ml_drift::OperationType::kAdd);
   auto* biased_out_val = graph.NewValue();
-  biased_out_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  biased_out_val->tensor.type = ::ml_drift::DataType::kFloat32;
   biased_out_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(bias_add_node->id, red_reshaped_val->id);
   graph.AddConsumer(bias_add_node->id, conv_bias_input->id);
@@ -396,9 +398,9 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepWithBiasSuccessfully) {
 
   // gating_mul: biased_out * c_val -> final_out [1, 1, 1, kHiddenSize]
   auto* gating_mul_node = graph.NewNode();
-  gating_mul_node->operation.type = ToString(::ml_drift::OperationType::MUL);
+  gating_mul_node->operation.type = ToString(::ml_drift::OperationType::kMul);
   auto* final_out_val = graph.NewValue();
-  final_out_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  final_out_val->tensor.type = ::ml_drift::DataType::kFloat32;
   final_out_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(gating_mul_node->id, biased_out_val->id);
   graph.AddConsumer(gating_mul_node->id, c_val->id);
@@ -481,11 +483,11 @@ TEST(FuseShortConvStepTest, DoesNotFuseWhenChannelsNotMultipleOfFour) {
   constexpr int kFilterSize = 3;
 
   auto* in_proj_input = graph.NewValue();
-  in_proj_input->tensor.type = ::ml_drift::DataType::FLOAT32;
+  in_proj_input->tensor.type = ::ml_drift::DataType::kFloat32;
   in_proj_input->tensor.shape = ::ml_drift::BHWC(1, 1, 1, 3 * kHiddenSize);
 
   auto* conv_state_input = graph.NewValue();
-  conv_state_input->tensor.type = ::ml_drift::DataType::FLOAT32;
+  conv_state_input->tensor.type = ::ml_drift::DataType::kFloat32;
   conv_state_input->tensor.shape =
       ::ml_drift::BHWC(1, 1, kHiddenSize, kStateCacheSize);
 
@@ -498,33 +500,33 @@ TEST(FuseShortConvStepTest, DoesNotFuseWhenChannelsNotMultipleOfFour) {
   graph.SetProducer(dummy_state->id, conv_state_input->id);
 
   auto* slice_b_node = graph.NewNode();
-  slice_b_node->operation.type = ToString(::ml_drift::OperationType::SLICE);
+  slice_b_node->operation.type = ToString(::ml_drift::OperationType::kSlice);
   auto* b_val = graph.NewValue();
-  b_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  b_val->tensor.type = ::ml_drift::DataType::kFloat32;
   b_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(slice_b_node->id, in_proj_input->id);
   graph.SetProducer(slice_b_node->id, b_val->id);
 
   auto* slice_c_node = graph.NewNode();
-  slice_c_node->operation.type = ToString(::ml_drift::OperationType::SLICE);
+  slice_c_node->operation.type = ToString(::ml_drift::OperationType::kSlice);
   auto* c_val = graph.NewValue();
-  c_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  c_val->tensor.type = ::ml_drift::DataType::kFloat32;
   c_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(slice_c_node->id, in_proj_input->id);
   graph.SetProducer(slice_c_node->id, c_val->id);
 
   auto* slice_x_node = graph.NewNode();
-  slice_x_node->operation.type = ToString(::ml_drift::OperationType::SLICE);
+  slice_x_node->operation.type = ToString(::ml_drift::OperationType::kSlice);
   auto* x_val = graph.NewValue();
-  x_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  x_val->tensor.type = ::ml_drift::DataType::kFloat32;
   x_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(slice_x_node->id, in_proj_input->id);
   graph.SetProducer(slice_x_node->id, x_val->id);
 
   auto* bx_mul_node = graph.NewNode();
-  bx_mul_node->operation.type = ToString(::ml_drift::OperationType::MUL);
+  bx_mul_node->operation.type = ToString(::ml_drift::OperationType::kMul);
   auto* bx_val = graph.NewValue();
-  bx_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  bx_val->tensor.type = ::ml_drift::DataType::kFloat32;
   bx_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(bx_mul_node->id, b_val->id);
   graph.AddConsumer(bx_mul_node->id, x_val->id);
@@ -532,38 +534,39 @@ TEST(FuseShortConvStepTest, DoesNotFuseWhenChannelsNotMultipleOfFour) {
 
   auto* px_reshape_node = graph.NewNode();
   px_reshape_node->operation.type =
-      ToString(::ml_drift::OperationType::RESHAPE);
+      ToString(::ml_drift::OperationType::kReshape);
   auto* px_reshaped_val = graph.NewValue();
-  px_reshaped_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  px_reshaped_val->tensor.type = ::ml_drift::DataType::kFloat32;
   px_reshaped_val->tensor.shape = ::ml_drift::BHWC(1, 1, kHiddenSize, 1);
   graph.AddConsumer(px_reshape_node->id, bx_val->id);
   graph.SetProducer(px_reshape_node->id, px_reshaped_val->id);
 
   auto* concat_win_node = graph.NewNode();
   concat_win_node->operation.type =
-      ToString(::ml_drift::OperationType::CONCAT);
+      ToString(::ml_drift::OperationType::kConcat);
   auto* win_val = graph.NewValue();
-  win_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  win_val->tensor.type = ::ml_drift::DataType::kFloat32;
   win_val->tensor.shape = ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize);
   graph.AddConsumer(concat_win_node->id, conv_state_input->id);
   graph.AddConsumer(concat_win_node->id, px_reshaped_val->id);
   graph.SetProducer(concat_win_node->id, win_val->id);
 
   auto* slice_state_node = graph.NewNode();
-  slice_state_node->operation.type = ToString(::ml_drift::OperationType::SLICE);
+  slice_state_node->operation.type =
+      ToString(::ml_drift::OperationType::kSlice);
   ::ml_drift::SliceAttributes state_slice_attr;
   state_slice_attr.starts = ::ml_drift::BHWC(0, 0, 0, 1);
   state_slice_attr.ends = ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize);
   slice_state_node->operation.attributes = state_slice_attr;
   auto* next_state_val = graph.NewValue();
-  next_state_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  next_state_val->tensor.type = ::ml_drift::DataType::kFloat32;
   next_state_val->tensor.shape =
       ::ml_drift::BHWC(1, 1, kHiddenSize, kStateCacheSize);
   graph.AddConsumer(slice_state_node->id, win_val->id);
   graph.SetProducer(slice_state_node->id, next_state_val->id);
 
   auto* mul_conv_node = graph.NewNode();
-  mul_conv_node->operation.type = ToString(::ml_drift::OperationType::MUL);
+  mul_conv_node->operation.type = ToString(::ml_drift::OperationType::kMul);
   ::ml_drift::ElementwiseAttributes mul_attr;
   ::ml_drift::TensorFloat32 weight_tensor;
   weight_tensor.shape = ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize);
@@ -571,33 +574,33 @@ TEST(FuseShortConvStepTest, DoesNotFuseWhenChannelsNotMultipleOfFour) {
   mul_attr.param = std::move(weight_tensor);
   mul_conv_node->operation.attributes = std::move(mul_attr);
   auto* mul_conv_out = graph.NewValue();
-  mul_conv_out->tensor.type = ::ml_drift::DataType::FLOAT32;
+  mul_conv_out->tensor.type = ::ml_drift::DataType::kFloat32;
   mul_conv_out->tensor.shape =
       ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize);
   graph.AddConsumer(mul_conv_node->id, win_val->id);
   graph.SetProducer(mul_conv_node->id, mul_conv_out->id);
 
   auto* reduce_node = graph.NewNode();
-  reduce_node->operation.type = ToString(::ml_drift::OperationType::REDUCE_SUM);
+  reduce_node->operation.type = ToString(::ml_drift::OperationType::kReduceSum);
   auto* reduce_out = graph.NewValue();
-  reduce_out->tensor.type = ::ml_drift::DataType::FLOAT32;
+  reduce_out->tensor.type = ::ml_drift::DataType::kFloat32;
   reduce_out->tensor.shape = ::ml_drift::BHWC(1, 1, kHiddenSize, 1);
   graph.AddConsumer(reduce_node->id, mul_conv_out->id);
   graph.SetProducer(reduce_node->id, reduce_out->id);
 
   auto* red_reshape_node = graph.NewNode();
   red_reshape_node->operation.type =
-      ToString(::ml_drift::OperationType::RESHAPE);
+      ToString(::ml_drift::OperationType::kReshape);
   auto* red_reshaped_val = graph.NewValue();
-  red_reshaped_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  red_reshaped_val->tensor.type = ::ml_drift::DataType::kFloat32;
   red_reshaped_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(red_reshape_node->id, reduce_out->id);
   graph.SetProducer(red_reshape_node->id, red_reshaped_val->id);
 
   auto* gating_mul_node = graph.NewNode();
-  gating_mul_node->operation.type = ToString(::ml_drift::OperationType::MUL);
+  gating_mul_node->operation.type = ToString(::ml_drift::OperationType::kMul);
   auto* final_out_val = graph.NewValue();
-  final_out_val->tensor.type = ::ml_drift::DataType::FLOAT32;
+  final_out_val->tensor.type = ::ml_drift::DataType::kFloat32;
   final_out_val->tensor.shape = ::ml_drift::BHWC(1, 1, 1, kHiddenSize);
   graph.AddConsumer(gating_mul_node->id, red_reshaped_val->id);
   graph.AddConsumer(gating_mul_node->id, c_val->id);
@@ -626,12 +629,12 @@ TEST(FuseShortConvStepIrModelTest, FusesGatedShortConvStepSuccessfully) {
   constexpr int kFilterSize = 3;
 
   // in_proj [1, 1, 1, 3 * kHiddenSize]
-  auto* in_proj_input = model.add_tensor(
-      ::ml_drift::DataType::FLOAT32,
-      ::ml_drift::BHWC(1, 1, 1, 3 * kHiddenSize));
-  auto* conv_state_input = model.add_tensor(
-      ::ml_drift::DataType::FLOAT32,
-      ::ml_drift::BHWC(1, 1, kHiddenSize, kStateCacheSize));
+  auto* in_proj_input =
+      model.add_tensor(::ml_drift::DataType::kFloat32,
+                       ::ml_drift::BHWC(1, 1, 1, 3 * kHiddenSize));
+  auto* conv_state_input =
+      model.add_tensor(::ml_drift::DataType::kFloat32,
+                       ::ml_drift::BHWC(1, 1, kHiddenSize, kStateCacheSize));
   model.add_input(in_proj_input->id);
   model.add_input(conv_state_input->id);
 
@@ -645,30 +648,30 @@ TEST(FuseShortConvStepIrModelTest, FusesGatedShortConvStepSuccessfully) {
 
   // Slices: b, c, x
   auto* slice_b = model.add_op();
-  slice_b->name = ToString(::ml_drift::OperationType::SLICE);
-  auto* b_val = model.add_tensor(::ml_drift::DataType::FLOAT32,
+  slice_b->name = ToString(::ml_drift::OperationType::kSlice);
+  auto* b_val = model.add_tensor(::ml_drift::DataType::kFloat32,
                                  ::ml_drift::BHWC(1, 1, 1, kHiddenSize));
   model.AddConsumer(in_proj_input->id, slice_b->id);
   model.SetProducer(b_val->id, slice_b->id);
 
   auto* slice_c = model.add_op();
-  slice_c->name = ToString(::ml_drift::OperationType::SLICE);
-  auto* c_val = model.add_tensor(::ml_drift::DataType::FLOAT32,
+  slice_c->name = ToString(::ml_drift::OperationType::kSlice);
+  auto* c_val = model.add_tensor(::ml_drift::DataType::kFloat32,
                                  ::ml_drift::BHWC(1, 1, 1, kHiddenSize));
   model.AddConsumer(in_proj_input->id, slice_c->id);
   model.SetProducer(c_val->id, slice_c->id);
 
   auto* slice_x = model.add_op();
-  slice_x->name = ToString(::ml_drift::OperationType::SLICE);
-  auto* x_val = model.add_tensor(::ml_drift::DataType::FLOAT32,
+  slice_x->name = ToString(::ml_drift::OperationType::kSlice);
+  auto* x_val = model.add_tensor(::ml_drift::DataType::kFloat32,
                                  ::ml_drift::BHWC(1, 1, 1, kHiddenSize));
   model.AddConsumer(in_proj_input->id, slice_x->id);
   model.SetProducer(x_val->id, slice_x->id);
 
   // bx_mul: b * x
   auto* bx_mul = model.add_op();
-  bx_mul->name = ToString(::ml_drift::OperationType::MUL);
-  auto* bx_val = model.add_tensor(::ml_drift::DataType::FLOAT32,
+  bx_mul->name = ToString(::ml_drift::OperationType::kMul);
+  auto* bx_val = model.add_tensor(::ml_drift::DataType::kFloat32,
                                   ::ml_drift::BHWC(1, 1, 1, kHiddenSize));
   model.AddConsumer(b_val->id, bx_mul->id);
   model.AddConsumer(x_val->id, bx_mul->id);
@@ -676,41 +679,41 @@ TEST(FuseShortConvStepIrModelTest, FusesGatedShortConvStepSuccessfully) {
 
   // px_reshape: [1, 1, 1, kHiddenSize] -> [1, 1, kHiddenSize, 1]
   auto* px_reshape = model.add_op();
-  px_reshape->name = ToString(::ml_drift::OperationType::RESHAPE);
-  auto* px_val = model.add_tensor(::ml_drift::DataType::FLOAT32,
+  px_reshape->name = ToString(::ml_drift::OperationType::kReshape);
+  auto* px_val = model.add_tensor(::ml_drift::DataType::kFloat32,
                                   ::ml_drift::BHWC(1, 1, kHiddenSize, 1));
   model.AddConsumer(bx_val->id, px_reshape->id);
   model.SetProducer(px_val->id, px_reshape->id);
 
   // concat: conv_state + px
   auto* concat_win = model.add_op();
-  concat_win->name = ToString(::ml_drift::OperationType::CONCAT);
-  auto* win_val = model.add_tensor(
-      ::ml_drift::DataType::FLOAT32,
-      ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize));
+  concat_win->name = ToString(::ml_drift::OperationType::kConcat);
+  auto* win_val =
+      model.add_tensor(::ml_drift::DataType::kFloat32,
+                       ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize));
   model.AddConsumer(conv_state_input->id, concat_win->id);
   model.AddConsumer(px_val->id, concat_win->id);
   model.SetProducer(win_val->id, concat_win->id);
 
   // slice_state
   auto* slice_state = model.add_op();
-  slice_state->name = ToString(::ml_drift::OperationType::SLICE);
+  slice_state->name = ToString(::ml_drift::OperationType::kSlice);
   ::ml_drift::SliceAttributes slice_state_attr;
   slice_state_attr.starts = ::ml_drift::BHWC(0, 0, 0, 1);
   slice_state_attr.ends = ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize);
   slice_state->attr = slice_state_attr;
-  auto* next_state_val = model.add_tensor(
-      ::ml_drift::DataType::FLOAT32,
-      ::ml_drift::BHWC(1, 1, kHiddenSize, kStateCacheSize));
+  auto* next_state_val =
+      model.add_tensor(::ml_drift::DataType::kFloat32,
+                       ::ml_drift::BHWC(1, 1, kHiddenSize, kStateCacheSize));
   model.AddConsumer(win_val->id, slice_state->id);
   model.SetProducer(next_state_val->id, slice_state->id);
 
   // conv weight tensor
   auto* weight_op = model.add_op();
-  weight_op->name = ToString(::ml_drift::OperationType::CONSTANT);
-  auto* weight_val = model.add_tensor(
-      ::ml_drift::DataType::FLOAT32,
-      ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize));
+  weight_op->name = ToString(::ml_drift::OperationType::kConstant);
+  auto* weight_val =
+      model.add_tensor(::ml_drift::DataType::kFloat32,
+                       ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize));
   ::ml_drift::ConstTensorAttributes weight_attr;
   ::ml_drift::TensorFloat32 w_tensor;
   w_tensor.shape = ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize);
@@ -721,34 +724,34 @@ TEST(FuseShortConvStepIrModelTest, FusesGatedShortConvStepSuccessfully) {
 
   // mul_conv
   auto* mul_conv = model.add_op();
-  mul_conv->name = ToString(::ml_drift::OperationType::MUL);
-  auto* mul_conv_out = model.add_tensor(
-      ::ml_drift::DataType::FLOAT32,
-      ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize));
+  mul_conv->name = ToString(::ml_drift::OperationType::kMul);
+  auto* mul_conv_out =
+      model.add_tensor(::ml_drift::DataType::kFloat32,
+                       ::ml_drift::BHWC(1, 1, kHiddenSize, kFilterSize));
   model.AddConsumer(win_val->id, mul_conv->id);
   model.AddConsumer(weight_val->id, mul_conv->id);
   model.SetProducer(mul_conv_out->id, mul_conv->id);
 
   // reduce_sum
   auto* reduce_sum = model.add_op();
-  reduce_sum->name = ToString(::ml_drift::OperationType::REDUCE_SUM);
-  auto* reduce_out = model.add_tensor(::ml_drift::DataType::FLOAT32,
+  reduce_sum->name = ToString(::ml_drift::OperationType::kReduceSum);
+  auto* reduce_out = model.add_tensor(::ml_drift::DataType::kFloat32,
                                       ::ml_drift::BHWC(1, 1, kHiddenSize, 1));
   model.AddConsumer(mul_conv_out->id, reduce_sum->id);
   model.SetProducer(reduce_out->id, reduce_sum->id);
 
   // red_reshape
   auto* red_reshape = model.add_op();
-  red_reshape->name = ToString(::ml_drift::OperationType::RESHAPE);
-  auto* red_reshaped = model.add_tensor(::ml_drift::DataType::FLOAT32,
+  red_reshape->name = ToString(::ml_drift::OperationType::kReshape);
+  auto* red_reshaped = model.add_tensor(::ml_drift::DataType::kFloat32,
                                         ::ml_drift::BHWC(1, 1, 1, kHiddenSize));
   model.AddConsumer(reduce_out->id, red_reshape->id);
   model.SetProducer(red_reshaped->id, red_reshape->id);
 
   // gating_mul
   auto* gating_mul = model.add_op();
-  gating_mul->name = ToString(::ml_drift::OperationType::MUL);
-  auto* final_out = model.add_tensor(::ml_drift::DataType::FLOAT32,
+  gating_mul->name = ToString(::ml_drift::OperationType::kMul);
+  auto* final_out = model.add_tensor(::ml_drift::DataType::kFloat32,
                                      ::ml_drift::BHWC(1, 1, 1, kHiddenSize));
   model.AddConsumer(red_reshaped->id, gating_mul->id);
   model.AddConsumer(c_val->id, gating_mul->id);

@@ -79,7 +79,7 @@ void Reshape(::ml_drift::ir::IrModel* ir_model,
              ::ml_drift::ir::IrTensorId before,
              ::ml_drift::ir::IrTensorId after) {
   ::ml_drift::ir::IrOp* reshape = ir_model->add_op();
-  reshape->name = ToString(::ml_drift::OperationType::RESHAPE);
+  reshape->name = ToString(::ml_drift::OperationType::kReshape);
   ::ml_drift::ReshapeAttributes reshape_attr;
   reshape_attr.new_shape = ir_model->tensor(after)->desc.GetBHWCShape();
   reshape->attr = reshape_attr;
@@ -134,7 +134,7 @@ void SdpaTransposedConvert(
   ::litert::ml_drift::SdpaTransposedAttributes attr;
   const bool has_param_tensor =
       (input3 != -1 && ir_model.tensor(input3)->desc.GetDataType() ==
-                           ::ml_drift::DataType::INT32) ||
+                           ::ml_drift::DataType::kInt32) ||
       (input4 != -1);
   if (has_param_tensor) {
     attr.runtime_check.src_end_ch_index = kActiveTokensAlignedIndex;
@@ -202,7 +202,7 @@ void SdpaTransposedConvert(
   if (attr.is_causal && attr.from_cache_update && input4 != -1 &&
       input3 != -1 &&
       ir_model.tensor(input3)->desc.GetDataType() ==
-          ::ml_drift::DataType::BOOL &&
+          ::ml_drift::DataType::kBool &&
       (is_flash_prefill || is_flash_decode)) {
     skip_bool_mask_for_flash_sdpa = true;
   }

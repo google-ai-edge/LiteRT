@@ -118,11 +118,11 @@ void LiteRtOpSelector::ParamTensorToBuffer(
   }
   auto param_tensor = param_tensor_handle_or.value();
   if (param_tensor.tensor_desc.GetStorageType() ==
-      ::ml_drift::TensorStorageType::BUFFER) {
+      ::ml_drift::TensorStorageType::kBuffer) {
     return;
   }
   ::ml_drift::TensorDescriptor new_desc = param_tensor.tensor_desc;
-  new_desc.SetStorageType(::ml_drift::TensorStorageType::BUFFER);
+  new_desc.SetStorageType(::ml_drift::TensorStorageType::kBuffer);
   auto new_param_tensor = model_builder->AddTensor(new_desc);
   // Emit an explicit copy instead of re-pointing the producer of `param_id` at
   // `new_param_tensor`. The param tensor can be read by other consumers that
@@ -188,7 +188,7 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     std::vector<::ml_drift::Value*> sdpa_inputs = inputs;
     int param_index = -1;
     if (inputs.size() == 4 &&
-        inputs[3]->tensor.type == ::ml_drift::DataType::INT32) {
+        inputs[3]->tensor.type == ::ml_drift::DataType::kInt32) {
       param_index = 3;
     } else if (inputs.size() > 4) {
       param_index = 4;
@@ -217,7 +217,7 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
   if (node.operation.type == kShortConvStepType) {
     return CreateShortConvStepFromNode(inputs, outputs, node, model_builder);
   }
-  if (node.operation.type == ToString(::ml_drift::OperationType::ROPE)) {
+  if (node.operation.type == ToString(::ml_drift::OperationType::kRope)) {
     return CreateRoPEFromNode(inputs, outputs, node, model_builder);
   }
   return ::ml_drift::GPUOperationFromNode(gpu_info_, op_def, create_info_,

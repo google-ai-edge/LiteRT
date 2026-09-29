@@ -78,7 +78,7 @@ TEST_P(ConvertConcatTest, ConcatAlongBatch) {
   const ::ml_drift::ConcatAttributes* attr =
       std::any_cast<::ml_drift::ConcatAttributes>(&concat_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->axis, ::ml_drift::Axis::BATCH);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::kBatch);
 
   // Sanity check inference.
   ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
@@ -115,7 +115,7 @@ TEST_P(ConvertConcatTest, ConcatAlongHeight) {
   const ::ml_drift::ConcatAttributes* attr =
       std::any_cast<::ml_drift::ConcatAttributes>(&concat_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->axis, ::ml_drift::Axis::HEIGHT);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::kHeight);
 
   // Sanity check inference.
   ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
@@ -152,7 +152,7 @@ TEST_P(ConvertConcatTest, ConcatAlongWidth) {
   const ::ml_drift::ConcatAttributes* attr =
       std::any_cast<::ml_drift::ConcatAttributes>(&concat_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->axis, ::ml_drift::Axis::WIDTH);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::kWidth);
 
   // Sanity check inference.
   ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
@@ -189,7 +189,7 @@ TEST_P(ConvertConcatTest, ConcatAlongDepth) {
   const ::ml_drift::ConcatAttributes* attr =
       std::any_cast<::ml_drift::ConcatAttributes>(&concat_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->axis, ::ml_drift::Axis::DEPTH);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::kDepth);
 
   // Sanity check inference.
   ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
@@ -226,7 +226,7 @@ TEST_P(ConvertConcatTest, ConcatAlongChannel) {
   const ::ml_drift::ConcatAttributes* attr =
       std::any_cast<::ml_drift::ConcatAttributes>(&concat_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->axis, ::ml_drift::Axis::CHANNELS);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::kChannels);
 
   // Sanity check inference.
   ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
@@ -264,7 +264,7 @@ TEST_P(ConvertConcatTest, ConcatThreeInputs) {
   const ::ml_drift::ConcatAttributes* attr =
       std::any_cast<::ml_drift::ConcatAttributes>(&concat_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->axis, ::ml_drift::Axis::CHANNELS);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::kChannels);
 
   // Sanity check inference.
   ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
@@ -341,7 +341,7 @@ TEST_P(ConvertConcatTest, ConcatAlongChannelWithActivation) {
   const ::ml_drift::ConcatAttributes* attr =
       std::any_cast<::ml_drift::ConcatAttributes>(&concat_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->axis, ::ml_drift::Axis::CHANNELS);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::kChannels);
 
   const ::ml_drift::ir::IrOp* relu_op = ir_model->op(1);
   EXPECT_EQ(relu_op->name, "relu");
@@ -460,7 +460,7 @@ TEST_P(ConvertConcatTest, ConcatWithConstantZerosInputToPad) {
   const ::ml_drift::PadAttributes* attr =
       std::any_cast<::ml_drift::PadAttributes>(&pad_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->type, ::ml_drift::PaddingContentType::ZEROS);
+  EXPECT_EQ(attr->type, ::ml_drift::PaddingContentType::kZeros);
   EXPECT_EQ(attr->appended.c, 4);
 
   // Sanity check inference.

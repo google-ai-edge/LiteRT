@@ -118,7 +118,7 @@ bool IsTransposeConvSupported(
   }
   if (IsConstantTensor(&weights)) {
     const absl::Status status =
-        CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>(
+        CheckPopulateTensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>(
             &weights);
     if (!status.ok()) {
       *error = status.message();

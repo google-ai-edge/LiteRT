@@ -106,14 +106,14 @@ absl::Status GpuBackendMetalLitert::AssociateGpuEvent(GpuEventHandle event, Lite
 absl::StatusOr<GpuBackend::GpuBufferRequirements> GpuBackendMetalLitert::GetGpuBufferRequirements(
     ::ml_drift::TensorStorageType used_storage_type, ::ml_drift::DataType data_type) {
   GpuBufferRequirements requirements;
-  if (used_storage_type == ::ml_drift::TensorStorageType::TEXTURE_2D) {
-    if (data_type == ::ml_drift::DataType::FLOAT16) {
+  if (used_storage_type == ::ml_drift::TensorStorageType::kTexture2D) {
+    if (data_type == ::ml_drift::DataType::kFloat16) {
       requirements.buffer_types.push_back(kLiteRtTensorBufferTypeMetalTextureFp16);
     } else {
       requirements.buffer_types.push_back(kLiteRtTensorBufferTypeMetalTexture);
     }
   } else {
-    if (data_type == ::ml_drift::DataType::FLOAT16) {
+    if (data_type == ::ml_drift::DataType::kFloat16) {
       requirements.buffer_types.push_back(kLiteRtTensorBufferTypeMetalBufferFp16);
     } else {
       requirements.buffer_types.push_back(kLiteRtTensorBufferTypeMetalBuffer);

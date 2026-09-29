@@ -79,7 +79,7 @@ struct SharedConstTensor {
   // this field to be set even if weights_sum_i_global_tensor_id is not set.
   // This can happen if the first time the weights_sum_i is calculated, that
   // subgraph did not need the weights_sum_i tensor.
-  Tensor<Linear, DataType::INT32> weights_sum_i;
+  Tensor<Linear, DataType::kInt32> weights_sum_i;
   std::optional<uint32_t> scale_global_tensor_id;
   std::optional<uint32_t> zero_point_global_tensor_id;
   std::optional<uint32_t> weights_sum_i_global_tensor_id;
@@ -108,18 +108,18 @@ class SharedMemoryManager {
       const GpuInfo& gpu_info, const CreateGpuModelInfo& create_info,
       const OHWI& shape, const int8_t* data,
       bool is_weight_sum_i_required = false,
-      Tensor<Linear, DataType::INT32>* weights_sum_i = nullptr);
+      Tensor<Linear, DataType::kInt32>* weights_sum_i = nullptr);
   static TensorDescriptor GetInt4TensorDesc(
       const GpuInfo& gpu_info, const CreateGpuModelInfo& create_info,
       const OHWI& shape, const int8_t* data, size_t bytes,
       bool is_weight_sum_i_required = false,
-      Tensor<Linear, DataType::INT32>* weights_sum_i = nullptr,
+      Tensor<Linear, DataType::kInt32>* weights_sum_i = nullptr,
       bool experimental_int4_unpacking = false);
   static TensorDescriptor GetInt2TensorDesc(
       const GpuInfo& gpu_info, const CreateGpuModelInfo& create_info,
       const OHWI& shape, const int8_t* data, size_t bytes,
       bool is_weight_sum_i_required = false,
-      Tensor<Linear, DataType::INT32>* weights_sum_i = nullptr,
+      Tensor<Linear, DataType::kInt32>* weights_sum_i = nullptr,
       bool experimental_int2_unpacking = false);
   // Experimental version of GetInt4TensorDesc that rearranges in a 4 bit format
   // instead of a 8 bit format to save on memory and latency.
@@ -130,7 +130,7 @@ class SharedMemoryManager {
       const GpuInfo& gpu_info, const CreateGpuModelInfo& create_info,
       const OHWI& shape, const int8_t* data, size_t bytes,
       bool is_weight_sum_i_required = false,
-      Tensor<Linear, DataType::INT32>* weights_sum_i = nullptr);
+      Tensor<Linear, DataType::kInt32>* weights_sum_i = nullptr);
 
   // Experimental version of GetInt2TensorDesc that rearranges in a 2 bit format
   // instead of a 8 bit format to save on memory and latency.
@@ -141,7 +141,7 @@ class SharedMemoryManager {
       const GpuInfo& gpu_info, const CreateGpuModelInfo& create_info,
       const OHWI& shape, const int8_t* data, size_t bytes,
       bool is_weight_sum_i_required = false,
-      Tensor<Linear, DataType::INT32>* weights_sum_i = nullptr);
+      Tensor<Linear, DataType::kInt32>* weights_sum_i = nullptr);
 
   using CreateTensorFunc = std::function<absl::Status(
       TensorDescriptor&, size_t /*page_adjusted_offset*/,
@@ -294,7 +294,7 @@ class SharedMemoryManager {
       const ValueId& shared_tensor_id, uint32_t global_tensor_id,
       const TfLiteTensor& tflite_tensor, SharedConstTensor& shared_tensor,
       bool is_weight_sum_i_required = false,
-      Tensor<Linear, DataType::INT32>* weights_sum_i = nullptr);
+      Tensor<Linear, DataType::kInt32>* weights_sum_i = nullptr);
 
   // Creates quantized int4 weights tensor, applying weights rearrangement
   // required by inference.
@@ -302,7 +302,7 @@ class SharedMemoryManager {
       const ValueId& shared_tensor_id, uint32_t global_tensor_id,
       const TfLiteTensor& tflite_tensor, SharedConstTensor& shared_tensor,
       bool is_weight_sum_i_required = false,
-      Tensor<Linear, DataType::INT32>* weights_sum_i = nullptr);
+      Tensor<Linear, DataType::kInt32>* weights_sum_i = nullptr);
 
   // Creates quantized int2 weights tensor, applying weights rearrangement
   // required by inference.
@@ -310,7 +310,7 @@ class SharedMemoryManager {
       const ValueId& shared_tensor_id, uint32_t global_tensor_id,
       const TfLiteTensor& tflite_tensor, SharedConstTensor& shared_tensor,
       bool is_weight_sum_i_required = false,
-      Tensor<Linear, DataType::INT32>* weights_sum_i = nullptr);
+      Tensor<Linear, DataType::kInt32>* weights_sum_i = nullptr);
 
   // Creates scale and zero point tensors for affine quantized weights.
   absl::Status CreateAffineQuantizationParams(

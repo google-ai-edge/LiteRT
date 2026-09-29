@@ -67,7 +67,7 @@ TEST_P(ConvertUnpackTest, SingleOutput) {
   // Should be a single RESHAPE op.
   ASSERT_THAT(ir_model->ops(), SizeIs(1));
   EXPECT_THAT(ir_model->ops()[0]->name,
-              Eq(ToString(::ml_drift::OperationType::RESHAPE)));
+              Eq(ToString(::ml_drift::OperationType::kReshape)));
 }
 
 TEST_P(ConvertUnpackTest, MultiOutputAxis0) {
@@ -92,11 +92,11 @@ TEST_P(ConvertUnpackTest, MultiOutputAxis0) {
   // Should have 1 SPLIT op followed by 2 RESHAPE ops.
   ASSERT_THAT(ir_model->ops(), SizeIs(3));
   EXPECT_THAT(ir_model->ops()[0]->name,
-              Eq(ToString(::ml_drift::OperationType::SPLIT)));
+              Eq(ToString(::ml_drift::OperationType::kSplit)));
   EXPECT_THAT(ir_model->ops()[1]->name,
-              Eq(ToString(::ml_drift::OperationType::RESHAPE)));
+              Eq(ToString(::ml_drift::OperationType::kReshape)));
   EXPECT_THAT(ir_model->ops()[2]->name,
-              Eq(ToString(::ml_drift::OperationType::RESHAPE)));
+              Eq(ToString(::ml_drift::OperationType::kReshape)));
 
   const auto* split_attr =
       std::any_cast<::ml_drift::SplitAttributes>(&ir_model->ops()[0]->attr);
@@ -126,7 +126,7 @@ TEST_P(ConvertUnpackTest, MultiOutputAxis2) {
   // 1 SPLIT + 3 RESHAPEs
   ASSERT_THAT(ir_model->ops(), SizeIs(4));
   EXPECT_THAT(ir_model->ops()[0]->name,
-              Eq(ToString(::ml_drift::OperationType::SPLIT)));
+              Eq(ToString(::ml_drift::OperationType::kSplit)));
 }
 
 TEST_P(ConvertUnpackTest, NegativeAxis) {
@@ -150,7 +150,7 @@ TEST_P(ConvertUnpackTest, NegativeAxis) {
 
   ASSERT_THAT(ir_model->ops(), SizeIs(3));
   EXPECT_THAT(ir_model->ops()[0]->name,
-              Eq(ToString(::ml_drift::OperationType::SPLIT)));
+              Eq(ToString(::ml_drift::OperationType::kSplit)));
 }
 
 INSTANTIATE_TEST_SUITE_P(ConvertUnpackTest, ConvertUnpackTest,

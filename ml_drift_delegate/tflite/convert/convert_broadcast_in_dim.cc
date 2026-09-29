@@ -53,7 +53,7 @@ void ConvertBroadcastInDim(
 
   // Add transpose op
   ::ml_drift::ir::IrOp* transpose_op = ir_model.add_op();
-  transpose_op->name = ToString(::ml_drift::OperationType::TRANSPOSE);
+  transpose_op->name = ToString(::ml_drift::OperationType::kTranspose);
   const int input_id = node.inputs->data[0];
   ir_model.AddConsumer(tensor_map[input_id], transpose_op->id);
 
@@ -126,7 +126,7 @@ void ConvertBroadcastInDim(
         interim_shape);
     ir_model.SetProducer(transpose_output_tensor->id, transpose_op->id);
     ::ml_drift::ir::IrOp* tile_op = ir_model.add_op();
-    tile_op->name = ToString(::ml_drift::OperationType::TILE);
+    tile_op->name = ToString(::ml_drift::OperationType::kTile);
     ir_model.AddConsumer(transpose_output_tensor->id, tile_op->id);
     ir_model.SetProducer(tensor_map[output_id], tile_op->id);
   } else {

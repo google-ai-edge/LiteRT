@@ -61,7 +61,7 @@ bool IsSliceSupported(const TfLiteContext* absl_nonnull context,
     return false;
   }
   absl::Status status =
-      CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::INT32>(
+      CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32>(
           &begin);
   if (!status.ok()) {
     *error = status.message();
@@ -70,8 +70,9 @@ bool IsSliceSupported(const TfLiteContext* absl_nonnull context,
   if (!CheckIsConstant(size, "inputs[2]", *error)) {
     return false;
   }
-  status = CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::INT32>(
-      &size);
+  status =
+      CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32>(
+          &size);
   if (!status.ok()) {
     *error = status.message();
     return false;
