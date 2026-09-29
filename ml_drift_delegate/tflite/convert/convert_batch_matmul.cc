@@ -109,7 +109,32 @@ void ConvertBatchMatMul(
   bool left_is_5d =
       input0_desc->desc.GetLayout() == ::ml_drift::Layout::BHWDC ||
       l_shape.d > 1;
+  bool right_is_5d =
+      input1_desc->desc.GetLayout() == ::ml_drift::Layout::BHWDC ||
+      r_shape.d > 1;
+  // The conv-based BMM broadcasts the right batch along the flattened left
+  // batch's LAST dim. When the right batch lives in the b dim (r_shape.b != 1,
+  // r_shape.h == 1), TFLite's right-aligned broadcast picks the FIRST left
+  // batch dim. Swap the left batch dims (b,h) here and un-swap the output
+  // below so the kernel's last-dim mapping stays correct.
+  const bool swap_left_batch =
+      !left_is_5d && !right_is_5d && l_shape.b != 1 && l_shape.h != 1 &&
+      r_shape.b != 1 && r_shape.h == 1;
   if (left_is_5d || l_shape.b != 1) {
+    if (swap_left_batch) {
+      ::ml_drift::ir::IrOp* transpose_left = ir_model.add_op();
+      transpose_left->name = ToString(::ml_drift::OperationType::TRANSPOSE);
+      ::ml_drift::TransposeAttributes transpose_attr;
+      transpose_attr.perm = ::ml_drift::BHWC(1, 0, 2, 3);
+      transpose_left->attr = std::move(transpose_attr);
+
+      ir_model.AddConsumer(left_id, transpose_left->id);
+      ::ml_drift::ir::IrTensor* left_swapped = ir_model.add_tensor(
+          input0_desc->desc.GetDataType(),
+          ::ml_drift::BHWC(l_shape.h, l_shape.b, l_shape.w, l_shape.c));
+      ir_model.SetProducer(left_swapped->id, transpose_left->id);
+      left_id = left_swapped->id;
+    }
     ::ml_drift::ir::IrOp* reshape_left = ir_model.add_op();
     reshape_left->name = ToString(::ml_drift::OperationType::RESHAPE);
     ::ml_drift::ReshapeAttributes reshape_attr;
@@ -133,9 +158,6 @@ void ConvertBatchMatMul(
     left_id = left_tensor->id;
   }
 
-  bool right_is_5d =
-      input1_desc->desc.GetLayout() == ::ml_drift::Layout::BHWDC ||
-      r_shape.d > 1;
   if (right_is_5d || r_shape.b != 1) {
     ::ml_drift::ir::IrOp* reshape_right = ir_model.add_op();
     reshape_right->name = ToString(::ml_drift::OperationType::RESHAPE);
@@ -201,6 +223,13 @@ void ConvertBatchMatMul(
       reshape_attr.new_shape = ::ml_drift::BHWDC(
           out_shape.b, out_shape.h, out_shape.w, out_shape.d, out_shape.c);
       reshape_result->attr = reshape_attr;
+    } else if (swap_left_batch) {
+      // The conv output rows follow the swapped (h,b) batch order; un-swap
+      // back to the original (b,h) order with a trailing transpose.
+      ::ml_drift::ReshapeAttributes reshape_attr;
+      reshape_attr.new_shape =
+          ::ml_drift::BHWC(out_shape.h, out_shape.b, out_shape.w, out_shape.c);
+      reshape_result->attr = reshape_attr;
     } else {
       ::ml_drift::ReshapeAttributes reshape_attr;
       reshape_attr.new_shape =
@@ -209,7 +238,23 @@ void ConvertBatchMatMul(
     }
 
     ir_model.AddConsumer(result_id, reshape_result->id);
-    ir_model.SetProducer(tensor_map[output_id], reshape_result->id);
+    if (swap_left_batch) {
+      ::ml_drift::ir::IrTensor* out_swapped = ir_model.add_tensor(
+          output_desc->desc.GetDataType(),
+          ::ml_drift::BHWC(out_shape.h, out_shape.b, out_shape.w, out_shape.c));
+      ir_model.SetProducer(out_swapped->id, reshape_result->id);
+
+      ::ml_drift::ir::IrOp* transpose_out = ir_model.add_op();
+      transpose_out->name = ToString(::ml_drift::OperationType::TRANSPOSE);
+      ::ml_drift::TransposeAttributes transpose_attr;
+      transpose_attr.perm = ::ml_drift::BHWC(1, 0, 2, 3);
+      transpose_out->attr = std::move(transpose_attr);
+
+      ir_model.AddConsumer(out_swapped->id, transpose_out->id);
+      ir_model.SetProducer(tensor_map[output_id], transpose_out->id);
+    } else {
+      ir_model.SetProducer(tensor_map[output_id], reshape_result->id);
+    }
   }
 }
 
