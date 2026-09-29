@@ -287,6 +287,83 @@ apple_static_xcframework(
     ],
 )
 
+# The delegate headers are vended by their own xcframeworks but include the
+# TFLite C headers, which live in `Headers/TensorFlowLiteC/` of
+# `:TensorFlowLiteC`. Their `#include` paths are therefore rewritten to
+# `TensorFlowLiteC/<header>.h`. Mirrors `strip_common_include_path_subspecs` in
+# //tflite/ios.
+strip_common_include_path_prefix(
+    name = "TensorFlowLiteCCoreML_headers",
+    hdr_labels = [
+        "//tflite/delegates/coreml:coreml_delegate.h",
+    ],
+    prefix = "TensorFlowLiteC/",
+)
+
+strip_common_include_path_prefix(
+    name = "TensorFlowLiteCMetal_headers",
+    hdr_labels = [
+        "//tflite/delegates/gpu:metal_delegate.h",
+    ],
+    prefix = "TensorFlowLiteC/",
+)
+
+# The Core ML delegate, packaged so that the `TensorFlowLiteCCoreML` binary
+# target in Package.swift has an artifact to resolve. CoreMLDelegate.swift
+# imports this module. The TFLite runtime is left out and resolved from
+# `:TensorFlowLiteC` instead, so that it is only linked once.
+#
+# bazel build -c opt --config=ios --define=use_coreml_delegate=1 //litert/swift:TensorFlowLiteCCoreML
+apple_static_xcframework(
+    name = "TensorFlowLiteCCoreML",
+    avoid_deps = [
+        ":TensorFlowLiteC_objc",
+    ],
+    bundle_name = "TensorFlowLiteCCoreML",
+    ios = {
+        "simulator": [
+            "x86_64",
+            "arm64",
+        ],
+        "device": ["arm64"],
+    },
+    minimum_os_versions = {"ios": "15.0"},
+    public_hdrs = [
+        ":TensorFlowLiteCCoreML_headers",
+    ],
+    deps = [
+        "//tflite/delegates/coreml:coreml_delegate",
+    ],
+)
+
+# The Metal delegate, packaged so that the `TensorFlowLiteCMetal` binary target
+# in Package.swift has an artifact to resolve. MetalDelegate.swift imports this
+# module. The TFLite runtime is left out and resolved from `:TensorFlowLiteC`
+# instead, so that it is only linked once.
+#
+# bazel build -c opt --config=ios --define=use_metal_delegate=1 //litert/swift:TensorFlowLiteCMetal
+apple_static_xcframework(
+    name = "TensorFlowLiteCMetal",
+    avoid_deps = [
+        ":TensorFlowLiteC_objc",
+    ],
+    bundle_name = "TensorFlowLiteCMetal",
+    ios = {
+        "simulator": [
+            "x86_64",
+            "arm64",
+        ],
+        "device": ["arm64"],
+    },
+    minimum_os_versions = {"ios": "15.0"},
+    public_hdrs = [
+        ":TensorFlowLiteCMetal_headers",
+    ],
+    deps = [
+        "//tflite/delegates/gpu:metal_delegate",
+    ],
+)
+
 # The full source list, including both delegates. Consumed by the all-delegates
 # variant that the tests build against, which lives in its own package so the
 # two `TensorFlowLite` modules don't share an output directory.
@@ -362,9 +439,17 @@ apple_xcframework(
     ],
 )
 
+# A static build of the LiteRT C API for C and Objective-C consumers, shipped as
+# the `CLiteRT_static` binary target in Package.swift. SwiftPM requires the
+# binary target name to match the `.xcframework` name inside the zip, so the
+# bundle (and therefore the Clang module) is named `CLiteRT_static` rather than
+# `CLiteRT`. This also keeps it from clashing with the `CLiteRT` module of the
+# dynamic `:CLiteRT` framework that the Swift `LiteRT` target depends on.
+#
+# bazel build -c opt --config=ios //litert/swift:CLiteRT_static
 apple_static_xcframework(
     name = "CLiteRT_static",
-    bundle_name = "CLiteRT",
+    bundle_name = "CLiteRT_static",
     ios = {
         "simulator": [
             "arm64",

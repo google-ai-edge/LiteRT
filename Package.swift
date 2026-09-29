@@ -41,6 +41,10 @@ let package = Package(
       targets: ["LiteRtMetalAccelerator"]
     ),
     .library(
+      name: "CLiteRT_static",
+      targets: ["CLiteRT_static"]
+    ),
+    .library(
       name: "TensorFlowLite",
       targets: ["TensorFlowLite"]
     ),
@@ -54,6 +58,11 @@ let package = Package(
     .binaryTarget(
       name: "CLiteRT_mac",
       path: "prebuilt/CLiteRT_mac.xcframework.zip"
+    ),
+    // Static build of the C API for C and Objective-C consumers (iOS only).
+    .binaryTarget(
+      name: "CLiteRT_static",
+      path: "prebuilt/CLiteRT_static.xcframework.zip"
     ),
     // Optional GPU Accelerator Plugin Target
     .binaryTarget(

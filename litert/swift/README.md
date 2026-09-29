@@ -57,33 +57,30 @@ standard Swift project conventions:
 
 ## Distributable Artifacts
 
-The `TensorFlowLite` module ships as two complementary static `.xcframework`
-bundles, matching the `TensorFlowLite` and `TensorFlowLiteC` binary targets in
-`Package.swift`:
+In the Swift package, the `TensorFlowLite` module is compiled from
+`Sources/TensorFlowLite/` and depends on three prebuilt static `.xcframework`
+bundles, matching the `TensorFlowLiteC`, `TensorFlowLiteCCoreML` and
+`TensorFlowLiteCMetal` binary targets in `Package.swift`:
 
 ```shell
 bazel build -c opt --config=ios \
-  //litert/swift:TensorFlowLite \
   //litert/swift:TensorFlowLiteC
+bazel build -c opt --config=ios --define=use_coreml_delegate=1 \
+  //litert/swift:TensorFlowLiteCCoreML
+bazel build -c opt --config=ios --define=use_metal_delegate=1 \
+  //litert/swift:TensorFlowLiteCMetal
 ```
 
--   `TensorFlowLite` (`TensorFlowLite.xcframework.zip`): the Swift API.
-    Contains `TensorFlowLite.a` plus
-    `TensorFlowLite.swiftmodule/*.swiftinterface`.
 -   `TensorFlowLiteC` (`TensorFlowLiteC.xcframework.zip`): the C runtime.
     Contains `TensorFlowLiteC.a` plus the flattened C headers and a
     `TensorFlowLiteC` module map.
+-   `TensorFlowLiteCCoreML` (`TensorFlowLiteCCoreML.xcframework.zip`): the
+    Core ML delegate, imported by `CoreMLDelegate.swift`.
+-   `TensorFlowLiteCMetal` (`TensorFlowLiteCMetal.xcframework.zip`): the Metal
+    delegate, imported by `MetalDelegate.swift`.
 
-The two are kept separate rather than merged into one bundle. A Swift
-`apple_static_xcframework` can only vend the single module named by its
-`bundle_name`, so the `TensorFlowLiteC` headers and module map cannot live
-inside `TensorFlowLite.xcframework` -- yet `TensorFlowLite.swiftinterface`
-contains `import TensorFlowLiteC`, because `Delegate.swift` exposes
-`TfLiteDelegate` in its public API. Consumers therefore need the C module
-resolvable on its own regardless, and linking the runtime into both bundles
-would only add duplicate symbols for apps that also use the C or Objective-C
-API. This mirrors how the upstream `TensorFlowLiteSwift` CocoaPod depends on
-the separate `TensorFlowLiteC` pod.
+The delegate bundles do not link the TFLite runtime; both resolve it from
+`TensorFlowLiteC`, so that it is only linked once.
 
 ## Key Classes
 
