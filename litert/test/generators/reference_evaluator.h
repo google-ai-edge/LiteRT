@@ -38,7 +38,8 @@ namespace litert::testing {
 class ReferenceEvaluator {
  public:
   // Container representing intermediate tensor data and shape during reference
-  // evaluation. Holds float32 (including converted float16) or int32 data.
+  // evaluation. Holds float32 (including converted float16) or int32 (including
+  // converted bool) data.
   struct TensorData {
     // The data type of the tensor elements.
     LiteRtElementType element_type = kLiteRtElementTypeNone;
@@ -49,7 +50,7 @@ class ReferenceEvaluator {
     // Buffer for float32 and converted float16 tensor data.
     std::vector<float> f32_data;
 
-    // Buffer for int32 tensor data.
+    // Buffer for int32 and converted bool tensor data.
     std::vector<int32_t> i32_data;
 
     // Computes the total number of elements from `dimensions`. Returns an error

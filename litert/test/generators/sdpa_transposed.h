@@ -269,7 +269,7 @@ class SdpaTransposed : public TestGraph {
         param_span[i] = 0;
       }
       // Index 0 is the starting KV cache offset (q_start) of the query chunk;
-      // indices 1 and 2 specify the active token count (and 4-aligned active
+      // indices 1 and 2 specify the active token count (and 32-aligned active
       // token count) for runtime bounds checks, testing partial KV cache
       // population (active_kv_len < kv_len).
       param_span[0] = static_cast<int32_t>(q_start);
@@ -293,10 +293,11 @@ class SdpaTransposed : public TestGraph {
  private:
   static size_t ActiveKvLen(const Params& params) {
     if constexpr (kWithParamTensor) {
-      // Round kv_len / 2 down to a multiple of 4 to align with 4-element GPU
-      // vector slices expected by param_tensor[2] (kActiveTokensAlignedIndex).
-      const size_t half = (params.kv_len / 2) & ~size_t{3};
-      return (half >= params.q_seq_len && half >= 4) ? half : params.kv_len;
+      // Round kv_len / 2 down to a multiple of 32 to align with
+      // ConvRuntimeCheckDesc::kChannelsAlignment (32) expected by
+      // param_tensor[2] (kActiveTokensAlignedIndex).
+      const size_t half = (params.kv_len / 2) & ~size_t{31};
+      return (half >= params.q_seq_len && half >= 32) ? half : params.kv_len;
     }
     return params.kv_len;
   }

@@ -30,6 +30,7 @@
 #include "litert/test/simple_buffer.h"
 #include "tensor/arithmetic.h"
 #include "tensor/backends/tflite/arithmetic_tflite.h"
+#include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/tensor.h"
 
@@ -250,6 +251,61 @@ TEST(ReferenceEvaluatorTest, RunCompositeSwiglu) {
   float expected_1 = (2.0f / (1.0f + std::exp(-2.0f))) * 0.5f;
   std::vector<float> expected = {0.0f, expected_1};
   EXPECT_THAT(out_span, Pointwise(FloatNear(1e-5f), expected));
+}
+
+TEST(ReferenceEvaluatorTest, RunCompositeSelectV2WithBoolMask) {
+  using TensorTf = litert::tensor::Tensor<litert::tensor::TfLiteMixinTag>;
+
+  TensorTf scores = litert::tensor::Create(
+      "scores", litert::tensor::ApiType<float>::value, {1, 2, 2, 2});
+  TensorTf mask =
+      litert::tensor::Create("mask", litert::tensor::Type::kBOOL, {1, 1, 2, 2});
+
+  TensorTf out = litert::tensor::StableHLOComposite(
+      litert::tensor::StableHLOCompositeOptions{.name = "test_bool_select"},
+      [](auto s, auto m) {
+        TensorTf neg_inf = litert::tensor::Create(
+            "neg_inf", litert::tensor::ApiType<float>::value,
+            /*shape=*/{1, 1, 1, 1},
+            litert::tensor::OwningCpuBuffer::CopyAs(
+                litert::tensor::ApiType<float>::value,
+                std::vector<float>{-10000.0f}));
+        return litert::tensor::SelectV2(m, s, neg_inf);
+      },
+      scores, mask);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto model,
+                              litert::testing::SaveTensorGraph({out}));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_scores,
+                              SimpleBuffer::Create<float>({1, 2, 2, 2}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_mask,
+                              SimpleBuffer::Create<bool>({1, 1, 2, 2}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_out,
+                              SimpleBuffer::Create<float>({1, 2, 2, 2}));
+
+  auto scores_span = b_scores.Span<float>();
+  for (size_t i = 0; i < 8; ++i) {
+    scores_span[i] = static_cast<float>(i + 1);
+  }
+  auto mask_span = b_mask.Span<bool>();
+  mask_span[0] = true;
+  mask_span[1] = false;
+  mask_span[2] = false;
+  mask_span[3] = true;
+
+  VarBuffers inputs;
+  inputs.push_back(std::move(b_scores));
+  inputs.push_back(std::move(b_mask));
+  VarBuffers outputs;
+  outputs.push_back(std::move(b_out));
+
+  LITERT_ASSERT_OK(
+      ReferenceEvaluator::EvaluateCompositeReference(*model, inputs, outputs));
+
+  std::vector<float> expected = {1.0f, -10000.0f, -10000.0f, 4.0f,
+                                 5.0f, -10000.0f, -10000.0f, 8.0f};
+  EXPECT_THAT(outputs[0].Span<float>(), Pointwise(FloatNear(1e-5f), expected));
 }
 
 }  // namespace

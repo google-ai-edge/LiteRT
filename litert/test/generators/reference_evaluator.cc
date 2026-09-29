@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -36,6 +37,7 @@
 #include "litert/core/model/ops/concatenation.h"
 #include "litert/core/model/ops/matmul.h"
 #include "litert/core/model/ops/reductions.h"
+#include "litert/core/model/ops/select.h"
 #include "litert/core/model/ops/simple_binary.h"
 #include "litert/core/model/ops/simple_unary.h"
 #include "litert/core/model/ops/slice.h"
@@ -92,6 +94,12 @@ Expected<void> ReferenceEvaluator::TensorData::AssignData(const void* data,
   } else if (element_type == kLiteRtElementTypeInt32) {
     const int32_t* ptr = static_cast<const int32_t*>(data);
     i32_data.assign(ptr, ptr + num_elements);
+  } else if (element_type == kLiteRtElementTypeBool) {
+    const bool* ptr = static_cast<const bool*>(data);
+    i32_data.resize(num_elements);
+    for (size_t j = 0; j < num_elements; ++j) {
+      i32_data[j] = ptr[j] ? 1 : 0;
+    }
   } else {
     return Error(kLiteRtStatusErrorUnsupported,
                  "Unsupported element type in ReferenceEvaluator::TensorData");
@@ -129,6 +137,15 @@ Expected<void> ReferenceEvaluator::TensorData::CopyTo(
                    "Output int32 buffer size mismatch");
     }
     std::copy(i32_data.begin(), i32_data.end(), span.begin());
+  } else if (out_buf.Type().ElementType() == ElementType::Bool) {
+    auto span = out_buf.Span<bool>();
+    if (span.size() != i32_data.size()) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Output bool buffer size mismatch");
+    }
+    for (size_t j = 0; j < i32_data.size(); ++j) {
+      span[j] = (i32_data[j] != 0);
+    }
   } else {
     return Error(kLiteRtStatusErrorUnsupported,
                  "Unsupported output element type in ReferenceEvaluator");
@@ -541,12 +558,49 @@ void ReferenceEvaluator::RegisterStandardOps() {
           } else if (!in.i32_data.empty()) {
             out.i32_data = in.i32_data;
           }
+        } else if (out.element_type == kLiteRtElementTypeBool) {
+          if (!in.f32_data.empty()) {
+            for (size_t i = 0; i < in.f32_data.size(); ++i) {
+              out.i32_data[i] = (in.f32_data[i] != 0.0f) ? 1 : 0;
+            }
+          } else if (!in.i32_data.empty()) {
+            for (size_t i = 0; i < in.i32_data.size(); ++i) {
+              out.i32_data[i] = (in.i32_data[i] != 0) ? 1 : 0;
+            }
+          }
         } else {
           return Error(kLiteRtStatusErrorUnsupported,
                        "Unsupported Cast element type in ReferenceEvaluator");
         }
         return {};
       });
+
+  auto select_handler = [](const LiteRtOpT& op, const TensorEnv& env,
+                           TensorData& out) -> Expected<void> {
+    const auto& cond = env.at(op.Inputs()[0]);
+    const auto& x = env.at(op.Inputs()[1]);
+    const auto& y = env.at(op.Inputs()[2]);
+    auto cond_bool = std::make_unique<bool[]>(cond.i32_data.size());
+    for (size_t i = 0; i < cond.i32_data.size(); ++i) {
+      cond_bool[i] = (cond.i32_data[i] != 0);
+    }
+    if (!out.f32_data.empty()) {
+      litert::internal::ReferenceSelect(
+          cond_bool.get(), cond.dimensions.data(), cond.dimensions.size(),
+          x.f32_data.data(), x.dimensions.data(), x.dimensions.size(),
+          y.f32_data.data(), y.dimensions.data(), y.dimensions.size(),
+          out.f32_data.data(), out.dimensions.data(), out.dimensions.size());
+    } else if (!out.i32_data.empty()) {
+      litert::internal::ReferenceSelect(
+          cond_bool.get(), cond.dimensions.data(), cond.dimensions.size(),
+          x.i32_data.data(), x.dimensions.data(), x.dimensions.size(),
+          y.i32_data.data(), y.dimensions.data(), y.dimensions.size(),
+          out.i32_data.data(), out.dimensions.data(), out.dimensions.size());
+    }
+    return {};
+  };
+  RegisterOp(kLiteRtOpCodeTflSelect, select_handler);
+  RegisterOp(kLiteRtOpCodeTflSelectV2, std::move(select_handler));
 }
 
 Expected<void> ReferenceEvaluator::ExecuteOp(const LiteRtOpT& op,
@@ -567,7 +621,8 @@ Expected<void> ReferenceEvaluator::ExecuteOp(const LiteRtOpT& op,
     out.element_type =
         op.Outputs()[0]->Type().second.ranked_tensor_type.element_type;
     LITERT_ASSIGN_OR_RETURN(size_t out_elements, out.NumElements());
-    if (out.element_type == kLiteRtElementTypeInt32) {
+    if (out.element_type == kLiteRtElementTypeInt32 ||
+        out.element_type == kLiteRtElementTypeBool) {
       out.i32_data.resize(out_elements);
     } else {
       out.f32_data.resize(out_elements);
