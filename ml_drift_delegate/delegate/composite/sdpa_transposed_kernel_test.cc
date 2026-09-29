@@ -416,13 +416,18 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
   if (mask_mode == MaskMode::kBool) {
     for (int t = 0; t < T; ++t) {
       for (int s = 0; s < S; ++s) {
-        mask_data[t * S + s] = (s <= t + q_start) ? 1.0f : 0.0f;
+        const bool unmasked =
+            (T == 1) ? (s == 0 || s % 4 != 3) : (s <= t + q_start);
+        mask_data[t * S + s] = unmasked ? 1.0f : 0.0f;
       }
     }
   } else if (mask_mode == MaskMode::kFloatAdditive) {
     for (int t = 0; t < T; ++t) {
       for (int s = 0; s < S; ++s) {
-        mask_data[t * S + s] = (s <= t + q_start) ? 0.0f : -10000.0f;
+        const bool unmasked =
+            (T == 1) ? (s == 0 || s % 4 != 3) : (s <= t + q_start);
+        mask_data[t * S + s] =
+            unmasked ? -0.25f * static_cast<float>((t + s) % 4) : -10000.0f;
       }
     }
   }

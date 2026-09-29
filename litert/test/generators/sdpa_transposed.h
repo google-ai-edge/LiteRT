@@ -64,8 +64,9 @@ class SdpaTransposed : public TestGraph {
     size_t kv_len = 128;
     size_t head_dim = 128;
     float scale = 1.0f;
-    float softcap_val = 50.0f;
+    float softcap_val = 1.0f;
     bool bool_mask = true;
+    bool causal = true;
   };
 
   using Ptr = std::unique_ptr<SdpaTransposed>;
@@ -80,34 +81,35 @@ class SdpaTransposed : public TestGraph {
     int kv_len;
     int head_dim;
     bool bool_mask;
+    bool causal;
   };
 
   // Stratified grid of 16 realistic transposed LLM attention workloads.
   // ATS test suites should specify iters >= 16 to ensure full coverage.
   static constexpr GridConfig kStratifiedGrid[] = {
       // ─── 1. Standard Head Dimension (Head Dim = 128) Decode Workloads ───
-      {1, 1, 8, 1, 32, 128, true},     // 0: MQA (8:1) Short Decode
-      {1, 1, 8, 1, 128, 128, true},    // 1: MQA (8:1) Medium Decode
-      {1, 1, 8, 1, 1024, 128, true},   // 2: MQA (8:1) Long Context Decode
-      {1, 1, 8, 1, 2048, 128, false},  // 3: MQA (8:1) Ultra-Long Float Mask
-      {1, 2, 8, 1, 128, 128, true},    // 4: GQA (8:2) Medium Decode
-      {1, 2, 8, 1, 1024, 128, true},   // 5: GQA (8:2) Long Decode
-      {1, 4, 8, 1, 256, 128, false},   // 6: GQA (8:4) Decode w/ Float Mask
-      {1, 8, 8, 1, 512, 128, true},    // 7: MHA (8:8) Decode
+      {1, 1, 8, 1, 32, 128, true, true},     // 0: MQA (8:1) Short Decode
+      {1, 1, 8, 1, 128, 128, true, true},    // 1: MQA (8:1) Medium Decode
+      {1, 1, 8, 1, 1024, 128, true, true},   // 2: MQA (8:1) Long Context Decode
+      {1, 1, 8, 1, 2048, 128, false, true},  // 3: MQA (8:1) Ultra-Long Float
+      {1, 2, 8, 1, 128, 128, true, true},    // 4: GQA (8:2) Medium Decode
+      {1, 2, 8, 1, 1024, 128, true, true},   // 5: GQA (8:2) Long Decode
+      {1, 4, 8, 1, 256, 128, false, true},   // 6: GQA (8:4) Decode w/ Float
+      {1, 8, 8, 1, 512, 128, true, true},    // 7: MHA (8:8) Decode
 
       // ─── 2. Non-Standard Head Dimensions (Head Dim = 64, 256) ───
-      {1, 4, 4, 1, 256, 64, true},   // 8: MHA D=64 Decode (Tiny LLM)
-      {1, 1, 8, 1, 512, 256, true},  // 9: MQA D=256 Decode (Large Head Dim)
+      {1, 4, 4, 1, 256, 64, true, true},   // 8: MHA D=64 Decode (Tiny LLM)
+      {1, 1, 8, 1, 512, 256, true, true},  // 9: MQA D=256 Decode (Large D)
 
       // ─── 3. Prefill & Extended Sequence Workloads ───
-      // Note: With an all-zero mask, these T > 1 cases intentionally exercise
-      // non-causal attention on the decomposed fallback path.
-      {1, 1, 8, 2, 32, 128, true},    // 10: MQA Two-Token Boundary Prefill
-      {1, 2, 8, 4, 64, 128, true},    // 11: GQA Medium Sequence Prefill
-      {1, 2, 8, 8, 128, 128, false},  // 12: GQA Long Sequence w/ Float Mask
-      {1, 4, 8, 16, 256, 128, true},  // 13: GQA Large Context Prefill
-      {1, 4, 4, 4, 64, 64, true},     // 14: MHA D=64 Prefill
-      {1, 8, 8, 8, 128, 256, true},   // 15: MHA D=256 Prefill
+      // Rows 10–13 test causal prefill (mask built from the query offset
+      // q_start); rows 14–15 test non-causal prefill on the decomposed path.
+      {1, 1, 8, 2, 32, 128, true, true},     // 10: MQA Causal Prefill
+      {1, 2, 8, 4, 64, 128, true, true},     // 11: GQA Causal Prefill
+      {1, 2, 8, 8, 128, 128, false, true},   // 12: GQA Causal Float Prefill
+      {1, 4, 8, 16, 256, 128, true, true},   // 13: GQA Large Causal Prefill
+      {1, 4, 4, 4, 64, 64, true, false},     // 14: MHA D=64 Non-Causal (Bool)
+      {1, 8, 8, 8, 128, 256, false, false},  // 15: MHA D=256 Non-Causal (Float)
   };
 
   template <typename Rng>
@@ -125,8 +127,9 @@ class SdpaTransposed : public TestGraph {
     params.kv_len = entry.kv_len;
     params.head_dim = entry.head_dim;
     params.scale = 1.0f;
-    params.softcap_val = 50.0f;
+    params.softcap_val = 1.0f;
     params.bool_mask = entry.bool_mask;
+    params.causal = entry.causal;
 
     return Create(std::move(params));
   }
@@ -203,24 +206,55 @@ class SdpaTransposed : public TestGraph {
     LITERT_RETURN_IF_ERROR((v.template WriteRandom<T>(builder, device)));
     inputs.push_back(std::move(v));
 
+    const size_t active_kv_len = ActiveKvLen(params_);
+    const size_t q_start =
+        (kWithParamTensor && params_.q_seq_len > 1 && params_.causal &&
+         active_kv_len >= params_.q_seq_len)
+            ? (active_kv_len - params_.q_seq_len)
+            : 0;
+
     // 4. Optional Mask input [B, 1, S_q, KV_LEN]
     if constexpr (kWithMask) {
       std::array<Layout::Dim, 4> mask_shape = {
           static_cast<Layout::Dim>(params_.batch), 1,
           static_cast<Layout::Dim>(params_.q_seq_len),
           static_cast<Layout::Dim>(params_.kv_len)};
-      LITERT_ASSIGN_OR_RETURN(auto mask, SimpleBuffer::Create<T>(mask_shape));
-      auto mask_span = mask.Span<T>();
-
-      for (size_t b = 0; b < params_.batch; ++b) {
-        for (size_t s_q = 0; s_q < params_.q_seq_len; ++s_q) {
-          for (size_t j = 0; j < params_.kv_len; ++j) {
-            size_t idx = (b * params_.q_seq_len + s_q) * params_.kv_len + j;
-            mask_span[idx] = static_cast<T>(0.0f);
+      auto fill_mask = [&](auto mask_span, auto val_fn) {
+        for (size_t b = 0; b < params_.batch; ++b) {
+          for (size_t s_q = 0; s_q < params_.q_seq_len; ++s_q) {
+            const size_t causal_bound =
+                (params_.q_seq_len == 1 || !params_.causal)
+                    ? active_kv_len
+                    : (q_start + s_q + 1);
+            for (size_t j = 0; j < params_.kv_len; ++j) {
+              const size_t idx =
+                  (b * params_.q_seq_len + s_q) * params_.kv_len + j;
+              mask_span[idx] = val_fn(b, s_q, j, causal_bound);
+            }
           }
         }
+      };
+      if (params_.bool_mask) {
+        LITERT_ASSIGN_OR_RETURN(auto mask,
+                                SimpleBuffer::Create<bool>(mask_shape));
+        fill_mask(mask.Span<bool>(),
+                  [](size_t b, size_t s_q, size_t j, size_t causal_bound) {
+                    return (j == 0) ||
+                           (j < causal_bound && ((b + s_q + j) % 4 != 3));
+                  });
+        inputs.push_back(std::move(mask));
+      } else {
+        LITERT_ASSIGN_OR_RETURN(auto mask, SimpleBuffer::Create<T>(mask_shape));
+        fill_mask(mask.Span<T>(),
+                  [](size_t b, size_t s_q, size_t j, size_t causal_bound) {
+                    const float val =
+                        (j < causal_bound)
+                            ? -0.25f * static_cast<float>((b + s_q + j) % 4)
+                            : -10000.0f;
+                    return static_cast<T>(val);
+                  });
+        inputs.push_back(std::move(mask));
       }
-      inputs.push_back(std::move(mask));
     }
 
     // 5. Optional Param Tensor input [1, 1, 1, 7]
@@ -234,9 +268,13 @@ class SdpaTransposed : public TestGraph {
       for (size_t i = 0; i < 7; ++i) {
         param_span[i] = 0;
       }
-      // Index 2 specifies the active token count for runtime bounds checks,
-      // informing delegates of the populated KV cache size without reshaping.
-      param_span[2] = static_cast<int32_t>(params_.kv_len);
+      // Index 0 is the starting KV cache offset (q_start) of the query chunk;
+      // indices 1 and 2 specify the active token count (and 4-aligned active
+      // token count) for runtime bounds checks, testing partial KV cache
+      // population (active_kv_len < kv_len).
+      param_span[0] = static_cast<int32_t>(q_start);
+      param_span[1] = static_cast<int32_t>(active_kv_len);
+      param_span[2] = static_cast<int32_t>(active_kv_len);
       inputs.push_back(std::move(param));
     }
 
@@ -253,6 +291,16 @@ class SdpaTransposed : public TestGraph {
       : TestGraph(std::move(model)), params_(std::move(params)) {}
 
  private:
+  static size_t ActiveKvLen(const Params& params) {
+    if constexpr (kWithParamTensor) {
+      // Round kv_len / 2 down to a multiple of 4 to align with 4-element GPU
+      // vector slices expected by param_tensor[2] (kActiveTokensAlignedIndex).
+      const size_t half = (params.kv_len / 2) & ~size_t{3};
+      return (half >= params.q_seq_len && half >= 4) ? half : params.kv_len;
+    }
+    return params.kv_len;
+  }
+
   static Expected<LiteRtModelT::Ptr> BuildGraph(const Params& params) {
     using TensorTf = litert::tensor::Tensor<litert::tensor::TfLiteMixinTag>;
 
@@ -276,8 +324,11 @@ class SdpaTransposed : public TestGraph {
 
     TensorTf mask;
     if constexpr (kWithMask) {
-      mask = litert::tensor::Create("mask", litert::tensor::ApiType<T>::value,
-                                    {b, 1, q_seq_len, kv_len});
+      const auto mask_type = params.bool_mask
+                                 ? litert::tensor::Type::kBOOL
+                                 : litert::tensor::ApiType<T>::value;
+      mask =
+          litert::tensor::Create("mask", mask_type, {b, 1, q_seq_len, kv_len});
     }
 
     TensorTf param_tensor;
@@ -298,6 +349,7 @@ class SdpaTransposed : public TestGraph {
       fbb.Int("k_ts_idx", 2);
       fbb.Int("v_ts_idx", 3);
       if constexpr (kSoftCap) {
+        fbb.Float("logit_cap", params.softcap_val);
         fbb.Float("softcap", params.softcap_val);
       }
     });
@@ -334,7 +386,30 @@ class SdpaTransposed : public TestGraph {
       auto scores = pre_mask_scores;
       if constexpr (kWithMask) {
         auto rest_tuple = std::forward_as_tuple(rest...);
-        scores = litert::tensor::Add(pre_mask_scores, std::get<0>(rest_tuple));
+        auto mask_in = std::get<0>(rest_tuple);
+        if (params.bool_mask) {
+          TensorTf neg_inf = litert::tensor::Create(
+              "sdpa_neg_inf", litert::tensor::ApiType<T>::value,
+              /*shape=*/{1, 1, 1, 1},
+              litert::tensor::OwningCpuBuffer::CopyAs(
+                  litert::tensor::ApiType<T>::value,
+                  std::vector<float>{-10000.0f}));
+          scores = litert::tensor::SelectV2(mask_in, pre_mask_scores, neg_inf);
+        } else {
+          scores = litert::tensor::Add(pre_mask_scores, mask_in);
+        }
+      } else if constexpr (kWithParamTensor) {
+        const int active_kv_len = static_cast<int>(ActiveKvLen(params));
+        std::vector<float> active_mask_vals(kv_len, -10000.0f);
+        for (int j = 0; j < active_kv_len; ++j) {
+          active_mask_vals[j] = 0.0f;
+        }
+        TensorTf active_mask = litert::tensor::Create(
+            "sdpa_active_mask", litert::tensor::ApiType<T>::value,
+            /*shape=*/{1, 1, 1, kv_len},
+            litert::tensor::OwningCpuBuffer::CopyAs(
+                litert::tensor::ApiType<T>::value, active_mask_vals));
+        scores = litert::tensor::Add(pre_mask_scores, active_mask);
       }
       auto probs = litert::tensor::Softmax(scores, /*beta=*/1.0f);
       auto probs_for_bmm =

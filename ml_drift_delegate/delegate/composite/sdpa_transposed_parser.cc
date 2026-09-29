@@ -160,6 +160,8 @@ void SdpaTransposedOperationParser::Parse(const TfLiteNode* tflite_node,
     }
     if (!flexbuffer_map["softcap"].IsNull()) {
       attr.softcap = flexbuffer_map["softcap"].AsFloat();
+    } else if (!flexbuffer_map["logit_cap"].IsNull()) {
+      attr.softcap = flexbuffer_map["logit_cap"].AsFloat();
     }
     if (!flexbuffer_map["is_causal"].IsNull()) {
       attr.is_causal = flexbuffer_map["is_causal"].AsBool();

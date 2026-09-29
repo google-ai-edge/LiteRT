@@ -115,9 +115,9 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashDecodeSdpa(
   custom_op.AddSrcTensor("v", v_desc);
 
   bool has_mask = (mask_desc != nullptr);
+  bool is_bool_mask = false;
   if (has_mask) {
-    bool is_bool_mask =
-        (mask_desc->GetDataType() == ::ml_drift::DataType::BOOL);
+    is_bool_mask = (mask_desc->GetDataType() == ::ml_drift::DataType::BOOL);
     custom_op.args_.AddInt("is_bool_mask", is_bool_mask ? 1 : 0);
     custom_op.AddSrcTensor("mask", *mask_desc);
   }
@@ -259,6 +259,30 @@ MAIN_FUNCTION($0) {
     d2 = (half4)args.softcap * tanh(d2 / (half4)args.softcap);
     d3 = (half4)args.softcap * tanh(d3 / (half4)args.softcap);
 )";
+  }
+
+  if (has_mask) {
+    op_code += R"(
+    half4 m_vec0 = ucl::Convert<half4>(args.mask.Read(X, 0, chunk + 0));
+    half4 m_vec1 = ucl::Convert<half4>(args.mask.Read(X, 0, chunk + 1));
+    half4 m_vec2 = ucl::Convert<half4>(args.mask.Read(X, 0, chunk + 2));
+    half4 m_vec3 = ucl::Convert<half4>(args.mask.Read(X, 0, chunk + 3));
+)";
+    if (is_bool_mask) {
+      op_code += R"(
+    d0 = select(d0, half4(-10000.0h), m_vec0 < 0.5h);
+    d1 = select(d1, half4(-10000.0h), m_vec1 < 0.5h);
+    d2 = select(d2, half4(-10000.0h), m_vec2 < 0.5h);
+    d3 = select(d3, half4(-10000.0h), m_vec3 < 0.5h);
+)";
+    } else {
+      op_code += R"(
+    d0 += m_vec0;
+    d1 += m_vec1;
+    d2 += m_vec2;
+    d3 += m_vec3;
+)";
+    }
   }
 
   absl::StrAppend(&op_code, R"(
@@ -810,7 +834,7 @@ MAIN_FUNCTION($0) {
                 "      if (mv", ik, "_", c, " < 0.5f) s_frag", ik,
                 (c == 0 ? ".x" : ".y"), " = -10000.0f;\n", "    } else {\n",
                 "      s_frag", ik, (c == 0 ? ".x" : ".y"), " += mv", ik, "_",
-                c, ";\n", "    }\n");
+                c, " * inv_ln2;\n", "    }\n");
           }
         }
         if (is_causal) {
