@@ -135,6 +135,9 @@ LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
                    plugin_path.data());
         gpu_accelerator_registered = true;
         break;
+      } else {
+        LITERT_LOG(LITERT_INFO, "Failed to load via AcceleratorDef: %s",
+                   registration.Error().Message().c_str());
       }
       // Try to load a GPU accelerator using `LiteRtRegisterGpuAccelerator`
       // symbol.
@@ -148,6 +151,9 @@ LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
                    plugin_path.data());
         gpu_accelerator_registered = true;
         break;
+      } else {
+        LITERT_LOG(LITERT_INFO, "Failed to load via FunctionPointer: %s",
+                   registration.Error().Message().c_str());
       }
     }
   }
