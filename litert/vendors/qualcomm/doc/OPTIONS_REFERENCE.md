@@ -90,7 +90,7 @@ key and the C / C++ setters follow the same name (see §10 for examples), with
 |--------|------|---------|-------|----------------|
 | Log level | `log_level` | `info` | both | `off` · `error` · `warn` · `info` · `verbose` · `debug`. SDK libs only — not LiteRT's own logging. |
 | Backend | `backend` | `htp` | both | `gpu` · `htp` · `dsp` · `ir`. |
-| Graph priority | `graph_priority` | `default` | compile | `default` · `low` · `normal` · `normal_high` · `high`. `default` maps to normal. |
+| Graph priority | `graph_priority` | `default` | both | `default` · `low` · `normal` · `normal_high` · `high`. `default` maps to normal. On HTP the dispatch-time value is applied when the context binary is loaded and overrides the compile-time value, so it can be set together with `htp_file_read_memory_budget_mb` and both take effect. |
 | Just-In-Time | `enable_just_in_time` | `false` | compile | Pass QNN context plugin→dispatcher in-memory, skipping serialization. |
 | Graph I/O mem type | `graph_io_tensor_mem_type` | `memhandle` | compile | `raw` · `memhandle`. Mem type for graph I/O tensors at graph-creation. |
 | Profiling | `profiling` | `off` | both | `off` · `basic` · `detailed` · `linting` · `optrace`. Higher = more detailed report. Read at compile (context creation) and dispatch (graph execution). |
@@ -132,8 +132,37 @@ target:HTP"
 | HTP PD session | `htp_pd_session` | `unsigned` | dispatch | `unsigned` preserves the existing device configuration. `signed` enables QNN SignedPD. `adaptive` uses unsigned PD only when QNN reports support, otherwise it enables SignedPD. |
 | VTCM size | `vtcm_size` | `0` (=max) | compile | VTCM size (MB) of target device. `0` → device max. |
 | HVX threads | `num_hvx_thread` | `0` (=max) | compile | HVX threads for target device. `0` → device max. |
+| HTP file read memory budget | `htp_file_read_memory_budget_mb` | `0` (=off) | dispatch | Caps host memory (MB) QNN uses to read the context binary during HTP deserialization, and releases the bytecode pages afterwards. `0` disables the feature (QNN default). A small budget can greatly reduce peak host RSS for large models; may impact init time. HTP only; no effect on other backends or Windows. |
 | INT64→INT32 bias | `use_int64_bias_as_int32` | `true` | compile | Convert FullyConnected/Conv2D bias int64 → int32. |
 | Weight sharing | `enable_weight_sharing` | `false` | compile | Subgraphs share weight tensors. **x86 AOT only** — unsupported on device. |
+
+### HTP file read memory budget (peak RSS reduction)
+
+`htp_file_read_memory_budget_mb` caps the host memory QNN uses to read a context
+binary during HTP deserialization and releases the bytecode pages once the
+context is created. It is **off by default (`0`)**; the default path is
+unchanged, so enabling it is opt-in.
+
+Setting a small budget dramatically lowers peak host memory for large LLM
+models. Measured on **SM8850 / Gemma-4 2B decode** (≈510 MB context binary):
+
+| `htp_file_read_memory_budget_mb` | Peak host RSS (VmHWM) | Throughput |
+|----------------------------------|-----------------------|------------|
+| `0` (default, off)               | ≈ 553 MB              | baseline   |
+| `16`                             | ≈ 78 MB (**−86%**)    | within noise (< 0.3%) |
+
+**Recommendation:** for large models, set `16`. It reclaims the bulk of the
+deserialization footprint with no measurable throughput impact; init time may
+be slightly affected. HTP backend only (no effect on
+other backends or Windows).
+
+This is a dispatch-time (deserialization) option, so it is applied when the
+context binary is loaded for inference:
+
+```bash
+run_model --graph=model.tflite --accelerator=npu \
+    --qualcomm_htp_file_read_memory_budget_mb=16
+```
 
 ---
 

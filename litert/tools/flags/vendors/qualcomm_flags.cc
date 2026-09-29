@@ -547,6 +547,13 @@ ABSL_FLAG(uint32_t, qualcomm_vtcm_size, 0,
           "The vtcm size of the target device. If this option is set to 0, the "
           "max size of vtcm size will be used.");
 
+ABSL_FLAG(uint32_t, qualcomm_htp_file_read_memory_budget_mb, 0,
+          "Caps the host memory (MB) used to read a context binary during HTP "
+          "deserialization. 0 disables the feature (default). Setting a small "
+          "budget such as 16 significantly reduces peak host RSS for large LLM "
+          "models (e.g. ~85% lower VmHWM on Gemma with no throughput impact); "
+          "may slightly impact init time.");
+
 ABSL_FLAG(uint32_t, qualcomm_num_hvx_thread, 0,
           "The number of hvx threads for the target device. If this option is "
           "set to 0, the max number of hvx threads will be used.");
@@ -560,8 +567,9 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::OptimizationLevel,
 ABSL_FLAG(litert::qualcomm::QualcommOptions::GraphPriority,
           qualcomm_graph_priority,
           litert::qualcomm::QualcommOptions::GraphPriority::kDefault,
-          "QNN graph priority, If the option is set to 'default', the "
-          "QNN_PRIORITY_DEFAULT (Equal to QNN_PRIORITY_NORMAL) will be used.");
+          "QNN graph priority. 'default' maps to QNN_PRIORITY_NORMAL. Effective "
+          "at both compile and dispatch time; on HTP the dispatch-time value "
+          "wins.");
 
 ABSL_FLAG(std::string, qualcomm_saver_output_dir, "",
           "Saver output directory. If provided, you can obtain saver_output.c "
@@ -1002,6 +1010,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto vtcm_size = absl::GetFlag(FLAGS_qualcomm_vtcm_size);
   opts.SetVtcmSize(vtcm_size);
+
+  const auto htp_file_read_memory_budget_mb =
+      absl::GetFlag(FLAGS_qualcomm_htp_file_read_memory_budget_mb);
+  opts.SetHtpFileReadMemoryBudgetMb(htp_file_read_memory_budget_mb);
 
   const auto num_hvx_threads = absl::GetFlag(FLAGS_qualcomm_num_hvx_thread);
   opts.SetNumHvxThreads(num_hvx_threads);
