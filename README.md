@@ -1,12 +1,12 @@
 # LiteRT
 
 <p align="center">
-  <img src="./g3doc/sources/litert_logo.png" alt="LiteRT Logo"/>
+  <img src="https://raw.githubusercontent.com/google-ai-edge/LiteRT/main/docs/sources/litert_logo.png" alt="LiteRT Logo"/>
 </p>
 
 Google's on-device runtime for high-performance ML & GenAI deployment on edge platforms.
 
-📖 [Get Started](#-installation) | 🤝 [Contributing](#-contributing) | 📜 [License](#-license) | 🛡 [Security Policy](SECURITY.md) | 📄 [Documentation](https://ai.google.dev/edge/litert)
+📖 [Get Started](#-installation) | 🤝 [Contributing](#-contributing--getting-help) | 📜 [License](#-license) | 🛡 [Security Policy](SECURITY.md) | 📄 [Documentation](https://ai.google.dev/edge/litert)
 
 ---
 
@@ -35,8 +35,8 @@ Quick setup for LiteRT-CLI below
 
 ```bash
 # 1. Create a virtual environment with Python 3.13.
-#\ TIP: Sometimes setting env var [UV_INDEX_URL](https://pypi.org/simple) helps
-# resolve dependency resolution errors.
+# TIP: If you hit dependency resolution errors, try:
+#   export UV_INDEX_URL=https://pypi.org/simple
 uv venv --clear --python=3.13 --seed
 source .venv/bin/activate
 
@@ -54,12 +54,12 @@ litert --help
 
 * **🔌 Unified NPU Acceleration:** **Broad Silicon Support.** Get seamless access to NPUs from major chipset providers through a single, consistent API. [See LiteRT NPU](https://ai.google.dev/edge/litert/next/npu).
 
-* **🏎️ Faster GPU Acceleration via ML Drift:** **Suporting Gen-AI Inference.** Leverage state-of-the-art GPU acceleration with new buffer interoperability that minimizes latency across various GPU buffer types.
+* **🏎️ Faster GPU Acceleration via ML Drift:** **Supporting Gen-AI Inference.** Leverage state-of-the-art GPU acceleration with new buffer interoperability that minimizes latency across various GPU buffer types.
 
 ---
 ## ⚙️ LiteRT Runtime and Tools
 
-From model to on-device deployment for Pytorch, TensorFlow, and Jax models:
+From model to on-device deployment for PyTorch, TensorFlow, and JAX models:
 
 ```mermaid
 graph LR
@@ -83,8 +83,8 @@ Every developer's path is different. Here are a few common journeys to help you 
 
 | If you want to... | Use this path... |
 | :--- | :--- |
-| **🏁Upgrade from TensorFlow Lite/ LiteRT V1.x x** | Use [LiteRT Migration Guide](https://ai.google.dev/edge/litert/migration) to upgrade to LiteRT V2.x |
-| **🌱 Run a pretrained model (like image segmenation) on mobile** | Follow step-by-step instructions via Android Studio to create a [Real-time segmentation](https://developers.google.com/codelabs/litert-image-segmentation-android#0) App for CPU/GPU/NPU inference. Source code link. |
+| **🏁Upgrade from TensorFlow Lite/ LiteRT V1.x** | Use [LiteRT Migration Guide](https://ai.google.dev/edge/litert/migration) to upgrade to LiteRT V2.x |
+| **🌱 Run a pretrained model (like image segmentation) on mobile** | Follow step-by-step instructions via Android Studio to create a [Real-time segmentation](https://developers.google.com/codelabs/litert-image-segmentation-android#0) App for CPU/GPU/NPU inference. [Source code](https://github.com/google-ai-edge/litert-samples/tree/main/samples/litert/image_segmentation). |
 | **🔄 Convert PyTorch Models** | Use [LiteRT Torch Converter](https://github.com/google-ai-edge/litert-torch) for `.tflite` (Classic) or [Generative Torch API](https://github.com/google-ai-edge/litert-torch/tree/main/litert_torch/generative) for `.litertlm` (LLMs). |
 | **🧠Deploy Generative AI** | Optimize and run quantized LLMs or diffusion models on-device using [LiteRT LM](https://github.com/google-ai-edge/LiteRT-LM). |
 | **⚡Maximize Performance** | Explore the [LiteRT API](https://ai.google.dev/edge/api/litert/c) & [LiteRT NPU Acceleration](https://ai.google.dev/edge/litert/next/npu) to leverage underlying hardware acceleration. |
@@ -98,7 +98,7 @@ LiteRT is designed for cross-platform deployment on a wide range of hardware.
 
 | Platform | CPU | GPU APIs | NPU / Hardware Accelerators |
 | :--- | :---: | :--- | :--- |
-| **🤖 Android** | ✅ | ✅ OpenCL <br>✅ OpenGL |✅ Broadcom, ✅ Google Tensor,<br> ✅ Intel ✅ MediaTek, ✅ [Qualcomm](./litert/vendors/qualcomm/README.md),<br> S.LSI\* |
+| **🤖 Android** | ✅ | ✅ OpenCL <br>✅ OpenGL |✅ Broadcom, ✅ Google Tensor,<br> ✅ Intel ✅ MediaTek, ✅ [Qualcomm](https://github.com/google-ai-edge/LiteRT/blob/main/litert/vendors/qualcomm/README.md),<br> ✅ S.LSI |
 | **🍎 iOS** | ✅ | ✅ Metal | ANE\* |
 | **🐧 Linux** | ✅ | ✅ WebGPU | ✅ Broadcom,<br> ✅  Intel|
 | **🍎 macOS** | ✅ | ✅ WebGPU <br> ✅ Metal | ANE\* |
@@ -112,7 +112,7 @@ LiteRT is designed for cross-platform deployment on a wide range of hardware.
 
 ## 📊 New Models
 
-Recently added supported models to Hugging Face LiteRT Community .
+Recently added supported models to Hugging Face LiteRT Community.
 
 | Model Family | Size / Variant | Modality | Hugging Face Hub |
 | :--- | :--- | :--- | :--- |
@@ -126,11 +126,12 @@ Find more models at the [Hugging Face LiteRT Community Page](https://huggingface
 
 ## 🔗 Sample Apps & Colabs
 
-Find official sample applications and code examples for LiteRT (compiled_model_api) here:
+Find official sample applications and code examples for LiteRT's Compiled Model API here:
 
-* **[LiteRT Samples](https://github.com/google-ai-edge/litert-samples/tree/main/compiled_model_api):** A collection of sample applications.
-* **[ASR Sample App](https://github.com/google-ai-edge/litert-samples/tree/main/compiled_model_api/speech_recognition):** Automatic Speech Recognition LiteRT Sample App
-* **[Image Segmentation](https://github.com/google-ai-edge/litert-samples/tree/main/compiled_model_api/speech_recognition):** C++ and Kotlin Image Segmentation app demonstrating AOT and on-device compilation examples
+* **[LiteRT Samples](https://github.com/google-ai-edge/litert-samples/tree/main/samples/litert):** A collection of sample applications.
+* **[ASR Sample App](https://github.com/google-ai-edge/litert-samples/tree/main/samples/litert/speech_recognition):** Automatic Speech Recognition LiteRT Sample App
+* **[Image Segmentation](https://github.com/google-ai-edge/litert-samples/tree/main/samples/litert/image_segmentation):** C++ and Kotlin Image Segmentation app demonstrating AOT and on-device compilation examples
+* **[Agent Skills](https://github.com/google-ai-edge/litert-samples/tree/main/skills):** `SKILL.md` playbooks for AI coding agents covering conversion, quantization, on-device verification, benchmarking, app scaffolding, and TFLite migration.
 ---
 
 ## 🏁 Installation
@@ -147,7 +148,7 @@ You can build LiteRT artifacts for Linux and Android (via cross-compilation) usi
 
 > **Note:** For more information about using the Docker interactive shell or building different targets, please check `docker_build/README.md`.
 
-For detailed instructions on building runtime libraries with the Docker container, refer to the [CMake Build Instructions](./g3doc/instructions/CMAKE_BUILD_INSTRUCTIONS.md) and [Bazel Build Instructions](./g3doc/instructions/BUILD_INSTRUCTIONS.md).
+For detailed instructions on building runtime libraries with the Docker container, refer to the [CMake Build Instructions](https://github.com/google-ai-edge/LiteRT/blob/main/docs/instructions/CMAKE_BUILD_INSTRUCTIONS.md) and [Bazel Build Instructions](https://github.com/google-ai-edge/LiteRT/blob/main/docs/instructions/BUILD_INSTRUCTIONS.md).
 
 ## 🚀 Roadmap
 
@@ -172,7 +173,7 @@ Our commitment is to make LiteRT the best runtime for *any* on-device ML deploym
 | May 2026 | [Arm and Google AI Edge optimization](https://developers.googleblog.com/accelerating-on-device-ai-a-look-at-arm-and-google-ai-edge-optimization/) |
 | April 2026 | [Building real-world on-device AI with LiteRT and NPU](https://developers.googleblog.com/building-real-world-on-device-ai-with-litert-and-npu/) |
 
-[👉 Read more on the official LiteRT Developer Website](https://developers.googleblog.com/search/?query=LiteRT)
+[👉 Read more LiteRT posts on the Google Developers Blog](https://developers.googleblog.com/search/?query=LiteRT)
 
 ---
 
@@ -191,9 +192,12 @@ LiteRT is part of a larger [Google AI-Edge](https://ai.google.dev/edge) ecosyste
 ---
 
 ### 🛑 AI Coding Directives (Strict Constraints)
-When generating deployment code for this repository:
-* **MUST USE:** The Compiled Model API for all new kotlin and C++ native execution tasks.
-* **DO NOT USE:** `tflite::Interpreter`, `InterpreterBuilder`, or manual delegate creation. TensorFlow Lite packages and tensorflow/lite/ are in maintenance mode and only receive critical security and stability updates. All active on-device ML development, optimizations, and new features have transitioned to LiteRT.
+When generating application code that uses LiteRT (this does not apply to LiteRT's own runtime internals):
+* **MUST USE:** The Compiled Model API for all new inference code in Kotlin, C++, Python, and JavaScript.
+* **DO NOT USE:** The TensorFlow Lite `Interpreter` API (for example `tflite::Interpreter`, `org.tensorflow.lite.Interpreter`, `tf.lite.Interpreter`) or manual delegate creation. TensorFlow Lite packages and `tensorflow/lite/` are in maintenance mode and only receive critical security and stability updates.
+* **CODE EXAMPLES:** Take code from the [LiteRT documentation](https://ai.google.dev/edge/litert/overview), not from older TensorFlow Lite examples. To move existing code over, follow the [LiteRT Migration Guide](https://ai.google.dev/edge/litert/migration).
+* **AGENT SKILLS:** Use the [LiteRT agent skills](https://github.com/google-ai-edge/litert-samples/tree/main/skills) for step-by-step workflows (convert, quantize, verify, benchmark, build apps, and migrate from TensorFlow Lite).
+
 ---
 
 ## 🙌 Contributing & Getting Help
