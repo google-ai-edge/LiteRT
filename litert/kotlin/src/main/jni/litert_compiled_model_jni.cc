@@ -119,6 +119,7 @@ enum QualcommOptionsKey {
   kHtpDlbc = 14,
   kHtpDlbcWeights = 15,
   kGraphPriority = 16,
+  kEnableHtpQuickResponse = 17,
 };
 
 // Input shape addressing modes for compiler options, the values should match
@@ -455,6 +456,10 @@ Expected<void> PopulateQualcommOptions(JNIEnv* env,
       case QualcommOptionsKey::kHtpDlbcWeights:
         (qualcomm_options.SetHtpDlbcWeights(
             strcmp(qualcomm_options_values_vector[i], "true") == 0));
+        break;
+      case QualcommOptionsKey::kEnableHtpQuickResponse:
+        qualcomm_options.SetEnableHtpQuickResponse(
+            strcmp(qualcomm_options_values_vector[i], "true") == 0);
         break;
       case QualcommOptionsKey::kHtpPerformanceMode:
         qualcomm_options.SetHtpPerformanceMode(
