@@ -395,19 +395,17 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::DetachInput(
-    int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+    int graph_input_index, LiteRtTensorBufferHandle /*tensor_buffer_handle*/) {
   auto& tensor = inputs_[graph_input_index];
-  LITERT_RETURN_IF_ERROR(
-      DetachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle));
+  LITERT_RETURN_IF_ERROR(DetachBuffer(tensor.GetQnnTensor()));
   input_buffer_handles_[graph_input_index] = -1;
   return {};
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
-    int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+    int graph_output_index, LiteRtTensorBufferHandle /*tensor_buffer_handle*/) {
   auto& tensor = outputs_[graph_output_index];
-  LITERT_RETURN_IF_ERROR(
-      DetachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle));
+  LITERT_RETURN_IF_ERROR(DetachBuffer(tensor.GetQnnTensor()));
   output_buffer_handles_[graph_output_index] = -1;
   return {};
 }
@@ -489,15 +487,19 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
-    Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  const auto mem_type = tensor.version == QNN_TENSOR_VERSION_1
-                            ? tensor.v1.memType
-                            : tensor.v2.memType;
-  if (mem_type == QNN_TENSORMEMTYPE_RAW) {
-    return device_context_->UnregisterTensorBuffer(tensor_buffer_handle);
+    Qnn_Tensor_t& tensor) {
+  // The buffer stays registered, since it may still be attached to other
+  // tensors: its QNN memory handle is released when it is unregistered.
+  if (tensor.version == QNN_TENSOR_VERSION_1) {
+    tensor.v1.memType = QNN_TENSORMEMTYPE_UNDEFINED;
+    tensor.v1.clientBuf = QNN_CLIENT_BUFFER_INIT;
+  } else if (tensor.version == QNN_TENSOR_VERSION_2) {
+    tensor.v2.memType = QNN_TENSORMEMTYPE_UNDEFINED;
+    tensor.v2.clientBuf = QNN_CLIENT_BUFFER_INIT;
+  } else {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Unsupported QNN tensor version");
   }
-  LITERT_RETURN_IF_ERROR(
-      device_context_->UnregisterTensorBuffer(tensor_buffer_handle, tensor));
   return {};
 }
 

@@ -261,14 +261,19 @@ LiteRtDispatchDeviceContextT::GetOrCreateContext(
 }
 
 litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
-    LiteRtTensorBufferHandle tensor_buffer_handle, const Qnn_Tensor_t& tensor) {
-  LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
-                          GetTensorBuffer(tensor_buffer_handle));
-  LITERT_LOG(LITERT_DEBUG, "Unregistering tensor buffer %p", tensor_buffer);
+    LiteRtTensorBufferHandle tensor_buffer_handle) {
+  LITERT_ASSIGN_OR_RETURN(auto* registry_entry,
+                          tensor_buffer_registry_.Get(tensor_buffer_handle));
+  LITERT_LOG(LITERT_DEBUG, "Unregistering tensor buffer %p",
+             registry_entry->tensor_buffer);
+  // Cleared first, so that unregistering the buffer again releases nothing.
+  Qnn_MemHandle_t mem_handle =
+      std::exchange(registry_entry->qnn_mem_handle, nullptr);
   LITERT_RETURN_IF_ERROR(
       tensor_buffer_registry_.Unregister(tensor_buffer_handle));
-  LITERT_ASSIGN_OR_RETURN(auto mem_handle,
-                          GetMemHandle(tensor_buffer_handle, tensor));
+  if (mem_handle == nullptr) {
+    return {};
+  }
   if (auto status = qnn_manager_.Api()->memDeRegister(&mem_handle, 1UL);
       status != QNN_SUCCESS) {
     return Unexpected(

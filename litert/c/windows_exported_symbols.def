@@ -78,6 +78,7 @@ EXPORTS
   LiteRtCompiledModelGetProfiler
   LiteRtCompiledModelIsFullyAccelerated
   LiteRtCompiledModelIsNonCpuFullyAccelerated
+  LiteRtCompiledModelRegisterTensorBuffer
   LiteRtCompiledModelRemoveDispatchAnnotation
   LiteRtCompiledModelReportError
   LiteRtCompiledModelResizeInputTensor
@@ -86,6 +87,7 @@ EXPORTS
   LiteRtCompiledModelSetSchedulingInfo
   LiteRtCompiledModelStartMetricsCollection
   LiteRtCompiledModelStopMetricsCollection
+  LiteRtCompiledModelUnregisterTensorBuffer
   LiteRtCreateAccelerator
   LiteRtCreateCompiledModel
   LiteRtCreateEnvironment
