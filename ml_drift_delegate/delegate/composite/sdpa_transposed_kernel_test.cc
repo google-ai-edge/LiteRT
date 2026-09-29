@@ -27,7 +27,6 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_replace.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
@@ -255,21 +254,14 @@ class SdpaTransposedKernelExecuteTest
   MaskMode mask_mode() const { return std::get<2>(GetParam()); }
 };
 
-// Grouped-query attention, where several query heads share one KV head, is
-// supported both by the fused Apple Flash-Attention kernels and by the
-// decomposed GPU graph fallback (which packs the GQA head group into W).
-bool SupportsGroupedQuery(::ml_drift::TestExecutionEnvironment& /*env*/) {
-  return true;
-}
-
-constexpr absl::string_view kGroupedQuerySkipReason = "";
-
 // `KV` is the number of key/value heads (defaults to `BK`, i.e. plain MHA) and
 // `q_start` is the absolute position of the first query token inside the KV
 // cache (non-zero when a prompt is prefilled in several chunks).
 // `from_cache_update` selects the packed 4D K/V layout produced by
 // `odml.cache_update`; when false the test feeds plain tensors, which routes
 // the graph through the decomposed BMM fallback.
+// `flatten_output` writes a single-token result as [1, 1, 1, BK * H] instead
+// of [1, BK, 1, H], the layout `FuseSdpaTransposedReshape` produces for decode.
 absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
                                    ::ml_drift::CalculationsPrecision precision,
                                    ::ml_drift::TensorStorageType storage,
@@ -277,12 +269,17 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
                                    MaskMode mask_mode = MaskMode::kBool,
                                    int KV = 0, int q_start = 0,
                                    bool from_cache_update = true,
-                                   bool is_causal = false) {
+                                   bool is_causal = false,
+                                   bool flatten_output = false) {
   if (KV <= 0) KV = BK;
   if (KV > BK || BK % KV != 0) {
     return absl::InvalidArgumentError(
         "The number of query heads must be a multiple of the number of KV "
         "heads.");
+  }
+  if (flatten_output && T != 1) {
+    return absl::InvalidArgumentError(
+        "Only single-token outputs can be flattened.");
   }
   ::ml_drift::GpuModelBuilder builder(env.GetGpuInfo(), {}, precision, storage);
 
@@ -335,7 +332,10 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
   param_desc.UploadData(param_tensor_cpu);
   auto param_tensor = builder.AddConstantTensor(std::move(param_desc));
 
-  auto out_tensor = builder.AddTensor(::ml_drift::BHWC(1, BK, T, H), datatype);
+  const ::ml_drift::BHWC out_shape = flatten_output
+                                         ? ::ml_drift::BHWC(1, 1, 1, BK * H)
+                                         : ::ml_drift::BHWC(1, BK, T, H);
+  auto out_tensor = builder.AddTensor(out_shape, datatype);
 
   SdpaTransposedAttributes attr;
   attr.runtime_check.src_end_ch_index = 2;
@@ -471,16 +471,21 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
   }
 
   ::ml_drift::TensorFloat32 out_tensor_cpu;
-  out_tensor_cpu.shape = ::ml_drift::BHWC(1, BK, T, H);
+  out_tensor_cpu.shape = out_shape;
   out_tensor_cpu.data.resize(BK * T * H);
   std::vector<::ml_drift::TensorFloat32*> dst_cpu = {&out_tensor_cpu};
 
   ABSL_RETURN_IF_ERROR(env.ExecuteGpuModel(src_cpu, dst_cpu, &gpu_model));
 
-  float tolerance =
-      (precision == ::ml_drift::CalculationsPrecision::F16 && S >= 512)
-          ? 6e-2f
-          : ((H > 16) ? 1.5e-2f : 2e-3f);
+  // At 512 keys the test data produces logits near 100, so half-precision
+  // math errs by up to a few hundredths on results near 10. The fused Apple
+  // kernels compute in half precision even when F32 is requested.
+  const bool half_precision_math =
+      precision == ::ml_drift::CalculationsPrecision::F16 ||
+      SupportsFusedSdpaKernels(env.GetGpuInfo());
+  float tolerance = (half_precision_math && S >= 512)
+                        ? 6e-2f
+                        : ((H > 16) ? 1.5e-2f : 2e-3f);
   EXPECT_THAT(
       out_tensor_cpu.data,
       testing::Pointwise(testing::FloatNear(tolerance), expected_out_data));
@@ -550,7 +555,6 @@ TEST_P(SdpaTransposedKernelExecuteTest, StandardTensorsFallback) {
 // must apply the causal mask against its own token index, which regressed when
 // the exporter packed query heads into the sequence dimension.
 TEST_P(SdpaTransposedKernelExecuteTest, PrefillMultiTokenGroupedQuery) {
-  if (!SupportsGroupedQuery(*exec_env)) GTEST_SKIP() << kGroupedQuerySkipReason;
   auto status = RunSdpaTransposedTest(*exec_env, precision(), storage(),
                                       /*BK=*/8, /*T=*/4, /*S=*/8, /*H=*/8,
                                       mask_mode(), /*KV=*/2);
@@ -559,7 +563,6 @@ TEST_P(SdpaTransposedKernelExecuteTest, PrefillMultiTokenGroupedQuery) {
 
 TEST_P(SdpaTransposedKernelExecuteTest,
        PrefillMultiTokenGroupedQueryHeadDim128) {
-  if (!SupportsGroupedQuery(*exec_env)) GTEST_SKIP() << kGroupedQuerySkipReason;
   auto status = RunSdpaTransposedTest(*exec_env, precision(), storage(),
                                       /*BK=*/8, /*T=*/8, /*S=*/16, /*H=*/128,
                                       mask_mode(), /*KV=*/2);
@@ -572,7 +575,6 @@ TEST_P(SdpaTransposedKernelExecuteTest,
 // the Qwen3 models use: several query tiles, several key tiles, and edges that
 // do not divide evenly.
 TEST_P(SdpaTransposedKernelExecuteTest, PrefillHeadDim128MultipleQueryTiles) {
-  if (!SupportsGroupedQuery(*exec_env)) GTEST_SKIP() << kGroupedQuerySkipReason;
   auto status = RunSdpaTransposedTest(*exec_env, precision(), storage(),
                                       /*BK=*/8, /*T=*/24, /*S=*/32, /*H=*/128,
                                       mask_mode(), /*KV=*/2);
@@ -580,7 +582,6 @@ TEST_P(SdpaTransposedKernelExecuteTest, PrefillHeadDim128MultipleQueryTiles) {
 }
 
 TEST_P(SdpaTransposedKernelExecuteTest, PrefillHeadDim128MultipleKeyTiles) {
-  if (!SupportsGroupedQuery(*exec_env)) GTEST_SKIP() << kGroupedQuerySkipReason;
   auto status = RunSdpaTransposedTest(*exec_env, precision(), storage(),
                                       /*BK=*/8, /*T=*/64, /*S=*/96, /*H=*/128,
                                       mask_mode(), /*KV=*/2);
@@ -589,7 +590,6 @@ TEST_P(SdpaTransposedKernelExecuteTest, PrefillHeadDim128MultipleKeyTiles) {
 
 // Query and key counts that are not multiples of the 8x32 tiling.
 TEST_P(SdpaTransposedKernelExecuteTest, PrefillHeadDim128RaggedTiles) {
-  if (!SupportsGroupedQuery(*exec_env)) GTEST_SKIP() << kGroupedQuerySkipReason;
   auto status = RunSdpaTransposedTest(*exec_env, precision(), storage(),
                                       /*BK=*/8, /*T=*/13, /*S=*/44, /*H=*/128,
                                       mask_mode(), /*KV=*/2);
@@ -597,7 +597,6 @@ TEST_P(SdpaTransposedKernelExecuteTest, PrefillHeadDim128RaggedTiles) {
 }
 
 TEST_P(SdpaTransposedKernelExecuteTest, PrefillHeadDim128ChunkedStartOffset) {
-  if (!SupportsGroupedQuery(*exec_env)) GTEST_SKIP() << kGroupedQuerySkipReason;
   auto status = RunSdpaTransposedTest(*exec_env, precision(), storage(),
                                       /*BK=*/8, /*T=*/16, /*S=*/64, /*H=*/128,
                                       mask_mode(), /*KV=*/2, /*q_start=*/40);
@@ -607,7 +606,6 @@ TEST_P(SdpaTransposedKernelExecuteTest, PrefillHeadDim128ChunkedStartOffset) {
 // Head dim 64 (two channels per lane instead of four) exercises the same
 // tiling with a different per-lane channel split.
 TEST_P(SdpaTransposedKernelExecuteTest, PrefillHeadDim64MultipleTiles) {
-  if (!SupportsGroupedQuery(*exec_env)) GTEST_SKIP() << kGroupedQuerySkipReason;
   auto status = RunSdpaTransposedTest(*exec_env, precision(), storage(),
                                       /*BK=*/8, /*T=*/20, /*S=*/48, /*H=*/64,
                                       mask_mode(), /*KV=*/4);
@@ -630,7 +628,6 @@ TEST_P(SdpaTransposedKernelExecuteTest, PrefillMultiTokenChunkedStartOffset) {
 // 0.6B model, which retrieves correctly at long context, and the 4B model,
 // which does not.
 TEST_P(SdpaTransposedKernelExecuteTest, PrefillQwen3_0_6BHeadGeometry) {
-  if (!SupportsGroupedQuery(*exec_env)) GTEST_SKIP() << kGroupedQuerySkipReason;
   auto status = RunSdpaTransposedTest(*exec_env, precision(), storage(),
                                       /*BK=*/16, /*T=*/32, /*S=*/512, /*H=*/128,
                                       mask_mode(), /*KV=*/8, /*q_start=*/256);
@@ -638,20 +635,48 @@ TEST_P(SdpaTransposedKernelExecuteTest, PrefillQwen3_0_6BHeadGeometry) {
 }
 
 TEST_P(SdpaTransposedKernelExecuteTest, PrefillQwen3_4BHeadGeometry) {
-  if (!SupportsGroupedQuery(*exec_env)) GTEST_SKIP() << kGroupedQuerySkipReason;
   auto status = RunSdpaTransposedTest(*exec_env, precision(), storage(),
                                       /*BK=*/32, /*T=*/32, /*S=*/512, /*H=*/128,
                                       mask_mode(), /*KV=*/8, /*q_start=*/256);
   EXPECT_TRUE(status.ok()) << status.message();
 }
 
-// Grouped-query decode. Head dim 128 keeps this on the fused flash-decode
-// kernel on Apple GPUs and on the decomposed fallback elsewhere.
+// Grouped-query decode. On the Metal backend, head dim 128 selects the fused
+// flash-decode kernel; elsewhere the decomposed graph folds each group of
+// query heads into the token axis.
 TEST_P(SdpaTransposedKernelExecuteTest, SingleTokenDecodeGroupedQuery) {
-  if (!SupportsGroupedQuery(*exec_env)) GTEST_SKIP() << kGroupedQuerySkipReason;
   auto status = RunSdpaTransposedTest(*exec_env, precision(), storage(),
                                       /*BK=*/8, /*T=*/1, /*S=*/32, /*H=*/128,
                                       mask_mode(), /*KV=*/2);
+  EXPECT_TRUE(status.ok()) << status.message();
+}
+
+// Qwen3 0.6B decode as it reaches the delegate: 16 query heads share 8 KV
+// heads, the output is flattened to [1, 1, 1, 16 * 128], and the token being
+// decoded is the last of a full 512-entry cache, so every key is visible.
+TEST_P(SdpaTransposedKernelExecuteTest,
+       SingleTokenDecodeQwen3_0_6BHeadGeometryFlattenedOutput) {
+  auto status = RunSdpaTransposedTest(
+      *exec_env, precision(), storage(), /*BK=*/16, /*T=*/1, /*S=*/512,
+      /*H=*/128, mask_mode(), /*KV=*/8, /*q_start=*/511,
+      /*from_cache_update=*/true, /*is_causal=*/false, /*flatten_output=*/true);
+  EXPECT_TRUE(status.ok()) << status.message();
+}
+
+// Grouped-query attention on plain K/V tensors, which always takes the
+// decomposed BatchedMatMul graph.
+TEST_P(SdpaTransposedKernelExecuteTest, StandardTensorsFallbackGroupedQuery) {
+  auto status = RunSdpaTransposedTest(
+      *exec_env, precision(), storage(), /*BK=*/8, /*T=*/4, /*S=*/8, /*H=*/8,
+      mask_mode(), /*KV=*/2, /*q_start=*/0, /*from_cache_update=*/false);
+  EXPECT_TRUE(status.ok()) << status.message();
+}
+
+TEST_P(SdpaTransposedKernelExecuteTest,
+       SingleTokenDecodeGroupedQueryStandardTensors) {
+  auto status = RunSdpaTransposedTest(
+      *exec_env, precision(), storage(), /*BK=*/8, /*T=*/1, /*S=*/32, /*H=*/128,
+      mask_mode(), /*KV=*/2, /*q_start=*/0, /*from_cache_update=*/false);
   EXPECT_TRUE(status.ok()) << status.message();
 }
 
