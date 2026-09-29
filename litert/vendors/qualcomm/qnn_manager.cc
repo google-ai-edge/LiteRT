@@ -655,8 +655,8 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
   Qnn_ContextHandle_t context_handle;
   if (auto status = Api()->contextCreateFromBinary(
           qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
-          configs.data(), bytecode.data(), bytecode.size(), &context_handle,
-          profile_handle);
+          configs.size() <= 1 ? nullptr : configs.data(), bytecode.data(),
+          bytecode.size(), &context_handle, profile_handle);
       status != QNN_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to create QNN context: %d", status);
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
