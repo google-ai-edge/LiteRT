@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_RUNTIME_DISPATCH_DISPATCH_DELEGATE_KERNEL_H_
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -26,6 +27,7 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/container/node_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/runtime/external_litert_buffer_context.h"
@@ -125,6 +127,14 @@ class DispatchDelegateKernel : public DispatchKernelInterface {
   // them if their execution has completed.
   void ProcessDeferredUnregistrations();
 
+  // Registers the buffers newly registered in buffer_context_ that this kernel
+  // can use, and releases the handles of the unregistered ones.
+  void SyncRegisteredBuffers();
+
+  // Unregisters `buffer_handle` from the Dispatch API, unless it is still used
+  // by registered_buffers_, tensor_buffer_infos_ or deferred_unregistrations_.
+  void ReleaseBufferHandle(LiteRtTensorBufferHandle buffer_handle);
+
   Expected<void> ScheduleAsyncExecution(TfLiteOpaqueContext* context);
   Expected<void> ScheduleSyncExecution(TfLiteOpaqueContext* context);
 
@@ -199,6 +209,23 @@ class DispatchDelegateKernel : public DispatchKernelInterface {
 
   // Hold stale TensorInfo records for non-blocking out-fence unregistration.
   std::vector<std::pair<int, TensorInfo>> deferred_unregistrations_;
+
+  // A buffer registered in buffer_context_ that this kernel has registered with
+  // the Dispatch API. Binding it to a tensor reuses its handle.
+  struct RegisteredBufferInfo {
+    LiteRtTensorBufferPtr tensor_buffer;
+    LiteRtTensorBufferHandle buffer_handle;
+  };
+  absl::flat_hash_map<LiteRtTensorBuffer, RegisteredBufferInfo>
+      registered_buffers_;
+
+  // Buffer types that the Dispatch API accepts for the I/Os of this kernel.
+  absl::flat_hash_set<LiteRtTensorBufferType> supported_buffer_types_;
+
+  // Calls SyncRegisteredBuffers() when buffer_context_ registers or
+  // unregisters a buffer. buffer_context_ holds it weakly, since it may be
+  // destroyed first.
+  std::shared_ptr<std::function<void()>> registration_listener_;
 };
 
 }  // namespace litert::internal

@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <iterator>
 #include <memory>
 #include <set>
@@ -26,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/container/node_hash_set.h"  // from @com_google_absl
@@ -126,57 +128,30 @@ DispatchDelegateKernel::~DispatchDelegateKernel() {
     }
   }
 
-  // Unregister all active buffer handles.
-  for (const auto& p : tensor_buffer_infos_) {
-    auto& tensor_buffer_info = p.second;
-    auto status = LiteRtDispatchUnregisterTensorBuffer(
-        device_context_, tensor_buffer_info.buffer_handle);
-    if (status != kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_ERROR, "Failed to unregister active buffer %lu: %d",
-                 tensor_buffer_info.buffer_handle, status);
+  // Unregister each buffer handle once, since registered buffers share theirs.
+  // Deferred ones need no detaching, since their replacements were attached.
+  absl::flat_hash_set<LiteRtTensorBufferHandle> unregistered_handles;
+  auto unregister = [&](LiteRtTensorBufferHandle buffer_handle) {
+    if (!unregistered_handles.insert(buffer_handle).second) {
+      return;
+    }
+    if (auto status = LiteRtDispatchUnregisterTensorBuffer(device_context_,
+                                                           buffer_handle);
+        status != kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_ERROR, "Failed to unregister buffer %lu: %d",
+                 buffer_handle, status);
+    }
+  };
+  for (const auto& [tensor_id, tensor_info] : tensor_buffer_infos_) {
+    unregister(tensor_info.buffer_handle);
+  }
+  for (const auto& [tensor_id, tensor_info] : deferred_unregistrations_) {
+    if (tensor_info.buffer_handle) {
+      unregister(tensor_info.buffer_handle);
     }
   }
-
-  // Unregister all stale/deferred buffer handles.
-  for (auto& p : deferred_unregistrations_) {
-    int tensor_id = p.first;
-    auto& info = p.second;
-    if (info.buffer_handle) {
-      // Check for the fence if it exists.
-      if (info.out_fence_buffer && info.out_fence_buffer->HasEvent()) {
-        if (auto ev_res = info.out_fence_buffer->GetEvent();
-            ev_res && *ev_res) {
-          // Check if the fence is signaled without blocking.
-          if (!(*ev_res)->Wait(0).HasValue()) {
-            LITERT_LOG(LITERT_WARNING,
-                       "Deferred buffer %lu fence not signaled during teardown",
-                       info.buffer_handle);
-          }
-        }
-      }
-
-      // Detach from all invocation contexts before unregistering.
-      auto itpc_it = io_tensors_port_connections_.find(tensor_id);
-      if (itpc_it != io_tensors_port_connections_.end()) {
-        const auto& port_connections = itpc_it->second;
-        for (auto& pc : port_connections) {
-          auto* invocation_context = node_invocation_contexts_[pc.node_idx];
-          if (pc.is_input_port) {
-            (void)LiteRtDispatchDetachInput(invocation_context, pc.port_idx,
-                                            info.buffer_handle);
-          } else {
-            (void)LiteRtDispatchDetachOutput(invocation_context, pc.port_idx,
-                                             info.buffer_handle);
-          }
-        }
-      }
-      auto status = LiteRtDispatchUnregisterTensorBuffer(device_context_,
-                                                         info.buffer_handle);
-      if (status != kLiteRtStatusOk) {
-        LITERT_LOG(LITERT_ERROR, "Failed to unregister deferred buffer %lu: %d",
-                   info.buffer_handle, status);
-      }
-    }
+  for (const auto& [tensor_buffer, registered] : registered_buffers_) {
+    unregister(registered.buffer_handle);
   }
 
   // Destroy all invocation contexts.
@@ -425,6 +400,13 @@ Expected<void> DispatchDelegateKernel::InitHelper(
 
   // Compute requirements across the graph.
   LITERT_RETURN_IF_ERROR(ComputeRequirements(context));
+
+  // Register the buffers already registered in buffer_context_, and those
+  // registered later right away.
+  SyncRegisteredBuffers();
+  registration_listener_ = std::make_shared<std::function<void()>>(
+      [this] { SyncRegisteredBuffers(); });
+  buffer_context_->AddRegistrationListener(registration_listener_);
 
   return {};
 }
@@ -811,6 +793,10 @@ Expected<void> DispatchDelegateKernel::ComputeRequirements(
       LITERT_ASSIGN_OR_RETURN(
           LiteRtTensorBufferRequirementsPtr buffer_requirements,
           GetBufferRequirements(node_idx, tfl_tensor, i, /*is_input=*/true));
+      const auto& input_buffer_types =
+          buffer_requirements->SupportedBufferTypes();
+      supported_buffer_types_.insert(input_buffer_types.begin(),
+                                     input_buffer_types.end());
       LITERT_RETURN_IF_ERROR(buffer_context_->RegisterBufferRequirements(
           tfl_tensor, std::move(buffer_requirements)));
     }
@@ -824,6 +810,10 @@ Expected<void> DispatchDelegateKernel::ComputeRequirements(
       LITERT_ASSIGN_OR_RETURN(
           LiteRtTensorBufferRequirementsPtr buffer_requirements,
           GetBufferRequirements(node_idx, tfl_tensor, i, /*is_input=*/false));
+      const auto& output_buffer_types =
+          buffer_requirements->SupportedBufferTypes();
+      supported_buffer_types_.insert(output_buffer_types.begin(),
+                                     output_buffer_types.end());
       LITERT_RETURN_IF_ERROR(buffer_context_->RegisterBufferRequirements(
           tfl_tensor, std::move(buffer_requirements)));
     }
@@ -851,36 +841,68 @@ void DispatchDelegateKernel::ProcessDeferredUnregistrations() {
     }
 
     if (ready) {
-      int t_id = it->first;
-      // Detach from all invocation contexts before unregistering.
-      auto itpc_it = io_tensors_port_connections_.find(t_id);
-      if (itpc_it != io_tensors_port_connections_.end()) {
-        const auto& port_connections = itpc_it->second;
-        for (auto& pc : port_connections) {
-          auto* invocation_context = node_invocation_contexts_[pc.node_idx];
-          if (pc.is_input_port) {
-            (void)LiteRtDispatchDetachInput(invocation_context, pc.port_idx,
-                                            info.buffer_handle);
-          } else {
-            (void)LiteRtDispatchDetachOutput(invocation_context, pc.port_idx,
-                                             info.buffer_handle);
-          }
-        }
-      }
-      if (auto active_it = tensor_buffer_infos_.find(t_id);
-          active_it != tensor_buffer_infos_.end()) {
-        // Some dispatch runtimes clear an invocation port during detach. Force
-        // the active buffer for this tensor to be reattached before invoking.
-        active_it->second.attached = false;
-      }
-
-      (void)LiteRtDispatchUnregisterTensorBuffer(device_context_,
-                                                 info.buffer_handle);
+      // No detaching is needed, since the replacement was attached in the
+      // invocation that deferred it. Keep the buffer alive until its handle is
+      // released.
+      TensorInfo stale_info = std::move(info);
       it = deferred_unregistrations_.erase(it);
+      ReleaseBufferHandle(stale_info.buffer_handle);
     } else {
       ++it;
     }
   }
+}
+
+void DispatchDelegateKernel::SyncRegisteredBuffers() {
+  const auto& in_context = buffer_context_->GetRegisteredBuffers();
+
+  // Release the buffers no longer registered in buffer_context_, keeping them
+  // alive until their handles are released.
+  std::vector<RegisteredBufferInfo> released;
+  for (auto it = registered_buffers_.begin();
+       it != registered_buffers_.end();) {
+    if (in_context.find(it->first) == in_context.end()) {
+      released.push_back(std::move(it->second));
+      registered_buffers_.erase(it++);
+    } else {
+      ++it;
+    }
+  }
+  for (const auto& registered : released) {
+    ReleaseBufferHandle(registered.buffer_handle);
+  }
+
+  // Register the newly registered buffers that this kernel can use.
+  for (const auto& [tensor_buffer, registered] : in_context) {
+    if (registered_buffers_.contains(tensor_buffer) ||
+        !supported_buffer_types_.contains(tensor_buffer->buffer_type())) {
+      continue;
+    }
+    LiteRtTensorBufferHandle buffer_handle = 0;
+    if (auto status = LiteRtDispatchRegisterTensorBuffer(
+            device_context_, tensor_buffer, &buffer_handle);
+        status != kLiteRtStatusOk) {
+      // Not retried: the buffer is registered when it is bound instead.
+      LITERT_LOG(LITERT_WARNING, "Failed to register a buffer: %d", status);
+      continue;
+    }
+    tensor_buffer->Duplicate();
+    registered_buffers_[tensor_buffer] = {LiteRtTensorBufferPtr(tensor_buffer),
+                                          buffer_handle};
+  }
+}
+
+void DispatchDelegateKernel::ReleaseBufferHandle(
+    LiteRtTensorBufferHandle buffer_handle) {
+  const auto uses_handle = [buffer_handle](const auto& entry) {
+    return entry.second.buffer_handle == buffer_handle;
+  };
+  if (absl::c_any_of(registered_buffers_, uses_handle) ||
+      absl::c_any_of(tensor_buffer_infos_, uses_handle) ||
+      absl::c_any_of(deferred_unregistrations_, uses_handle)) {
+    return;
+  }
+  (void)LiteRtDispatchUnregisterTensorBuffer(device_context_, buffer_handle);
 }
 
 Expected<void> DispatchDelegateKernel::AllocateAndRegisterBuffer(
@@ -1073,8 +1095,13 @@ Expected<void> DispatchDelegateKernel::RegisterBufferWithDispatchApi(
     int tensor_id, LiteRtTensorBufferPtr&& tensor_buffer) {
   LiteRtTensorBufferHandle buffer_handle = 0;
   if (tensor_buffer && tensor_buffer.get()) {
-    LITERT_RETURN_IF_ERROR(LiteRtDispatchRegisterTensorBuffer(
-        device_context_, tensor_buffer.get(), &buffer_handle));
+    if (auto it = registered_buffers_.find(tensor_buffer.get());
+        it != registered_buffers_.end()) {
+      buffer_handle = it->second.buffer_handle;
+    } else {
+      LITERT_RETURN_IF_ERROR(LiteRtDispatchRegisterTensorBuffer(
+          device_context_, tensor_buffer.get(), &buffer_handle));
+    }
   } else {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Invalid tensor buffer");

@@ -49,6 +49,9 @@ GetBufferToHandle() {
       new absl::flat_hash_map<LiteRtTensorBuffer, LiteRtTensorBufferHandle>();
   return *buffer_to_handle;
 }
+static int g_num_registrations = 0;
+static int g_num_unregistrations = 0;
+static int g_num_detaches = 0;
 static LiteRtEnvironment g_env = nullptr;
 static const LiteRtRuntimeContext* g_runtime_context = nullptr;
 
@@ -80,6 +83,16 @@ LiteRtTensorBufferHandle LiteRtDispatch_MockDispatchGetHandle(
   if (it != GetBufferToHandle().end()) return it->second;
   return 0;
 }
+
+int LiteRtDispatch_MockDispatchNumRegistrations() {
+  return g_num_registrations;
+}
+
+int LiteRtDispatch_MockDispatchNumUnregistrations() {
+  return g_num_unregistrations;
+}
+
+int LiteRtDispatch_MockDispatchNumDetaches() { return g_num_detaches; }
 
 LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
   // Load real API
@@ -126,6 +139,7 @@ LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
             context, buffer, handle);
         if (s == kLiteRtStatusOk) {
           GetBufferToHandle()[buffer] = *handle;
+          ++g_num_registrations;
         }
         return s;
       };
@@ -134,7 +148,22 @@ LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
   g_intercepted_interface.unregister_tensor_buffer =
       [](LiteRtDispatchDeviceContext context, LiteRtTensorBufferHandle handle) {
         GetUnregisteredHandles().insert(handle);
+        ++g_num_unregistrations;
         return g_real_api.interface->unregister_tensor_buffer(context, handle);
+      };
+
+  // Override Detach to track calls
+  g_intercepted_interface.detach_input =
+      [](LiteRtDispatchInvocationContext context, int index,
+         LiteRtTensorBufferHandle handle) {
+        ++g_num_detaches;
+        return g_real_api.interface->detach_input(context, index, handle);
+      };
+  g_intercepted_interface.detach_output =
+      [](LiteRtDispatchInvocationContext context, int index,
+         LiteRtTensorBufferHandle handle) {
+        ++g_num_detaches;
+        return g_real_api.interface->detach_output(context, index, handle);
       };
 
   // Provide Async interface
@@ -198,6 +227,12 @@ LiteRtTensorBufferHandle LiteRtDispatch_MockDispatchGetHandle(
     LiteRtTensorBuffer buffer) {
   return 0;
 }
+
+int LiteRtDispatch_MockDispatchNumRegistrations() { return 0; }
+
+int LiteRtDispatch_MockDispatchNumUnregistrations() { return 0; }
+
+int LiteRtDispatch_MockDispatchNumDetaches() { return 0; }
 
 LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
   return kLiteRtStatusErrorRuntimeFailure;

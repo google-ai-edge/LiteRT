@@ -21,6 +21,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
@@ -264,7 +265,58 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
     return &it->second;
   }
 
+  // A tensor buffer registered by RegisterBuffer(), with its count.
+  struct RegisteredBuffer {
+    LiteRtTensorBufferPtr tensor_buffer;
+    int count = 0;
+  };
+
+  // Registers `tensor_buffer` until UnregisterBuffer() is called as many times.
+  // Unlike RegisterTensorBuffer(), it does not bind it to a tensor.
+  void RegisterBuffer(LiteRtTensorBufferT* tensor_buffer) {
+    auto& registered = registered_buffers_[tensor_buffer];
+    if (registered.count++ == 0) {
+      LiteRtDuplicateTensorBuffer(tensor_buffer);
+      registered.tensor_buffer.reset(tensor_buffer);
+      NotifyRegistrationListeners();
+    }
+  }
+
+  // Releases a registration made by RegisterBuffer().
+  void UnregisterBuffer(LiteRtTensorBufferT* tensor_buffer) {
+    auto it = registered_buffers_.find(tensor_buffer);
+    if (it != registered_buffers_.end() && --it->second.count == 0) {
+      registered_buffers_.erase(it);
+      NotifyRegistrationListeners();
+    }
+  }
+
+  // Returns the buffers registered by RegisterBuffer().
+  const std::unordered_map<LiteRtTensorBufferT*, RegisteredBuffer>&
+  GetRegisteredBuffers() const {
+    return registered_buffers_;
+  }
+
+  // Adds a listener called when a buffer is first registered or last
+  // unregistered. It is held weakly, so that its owner can outlive this
+  // context.
+  void AddRegistrationListener(std::weak_ptr<std::function<void()>> listener) {
+    registration_listeners_.push_back(std::move(listener));
+  }
+
  private:
+  void NotifyRegistrationListeners() {
+    for (auto it = registration_listeners_.begin();
+         it != registration_listeners_.end();) {
+      if (auto listener = it->lock()) {
+        (*listener)();
+        ++it;
+      } else {
+        it = registration_listeners_.erase(it);
+      }
+    }
+  }
+
   LiteRtEnvironment env_;
   GetTensorIdentifierFn get_tensor_identifier_fn_;
   std::unordered_map<litert::internal::TfLiteTensorIdentifier,
@@ -298,6 +350,13 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
   // Per-signature dispatch annotations.
   std::unordered_map<size_t, std::unordered_map<std::string, std::string>>
       per_signature_annotations_;
+
+  // Tensor buffers registered by RegisterBuffer().
+  std::unordered_map<LiteRtTensorBufferT*, RegisteredBuffer>
+      registered_buffers_;
+
+  // Listeners added by AddRegistrationListener().
+  std::vector<std::weak_ptr<std::function<void()>>> registration_listeners_;
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_EXTERNAL_LITERT_BUFFER_CONTEXT_H_

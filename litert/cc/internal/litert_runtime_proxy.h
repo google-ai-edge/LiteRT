@@ -567,6 +567,18 @@ class RuntimeProxy {
         non_cpu_fully_accelerated);
   }
 
+  LiteRtStatus CompiledModelRegisterTensorBuffer(
+      LiteRtCompiledModel compiled_model, LiteRtTensorBuffer tensor_buffer) {
+    LITERT_PROXY_METHOD_STATUS(litert_compiled_model_register_tensor_buffer,
+                               compiled_model, tensor_buffer);
+  }
+
+  LiteRtStatus CompiledModelUnregisterTensorBuffer(
+      LiteRtCompiledModel compiled_model, LiteRtTensorBuffer tensor_buffer) {
+    LITERT_PROXY_METHOD_STATUS(litert_compiled_model_unregister_tensor_buffer,
+                               compiled_model, tensor_buffer);
+  }
+
   LiteRtStatus CompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
                                         LiteRtProfiler* profiler) {
     LITERT_PROXY_METHOD_STATUS(litert_compiled_model_get_profiler,
