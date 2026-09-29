@@ -551,14 +551,15 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   LITERT_LOG(LITERT_INFO, "Starting QNN compilation for %d subgraphs.",
              num_partitions);
 
-  auto options = compiler_plugin->Options();
+  auto backend_options = compiler_plugin->Options();
+  auto compose_graph_options = compiler_plugin->Options();
   std::optional<::qnn::SocInfo> opt_soc_model;
   LITERT_RETURN_IF_ERROR(
-      ResolveTargetSocInfo(options, soc_model, opt_soc_model));
+      ResolveTargetSocInfo(backend_options, soc_model, opt_soc_model));
   if (soc_model != nullptr) {
     LITERT_LOG(LITERT_INFO, "Compiling QNN SoC target: %s", soc_model);
   }
-  if (options.GetBackendType() == ::qnn::BackendType::kLpaiBackend) {
+  if (backend_options.GetBackendType() == ::qnn::BackendType::kLpaiBackend) {
     LITERT_LOG(LITERT_INFO, "LPAI HW version: v%d.",
                static_cast<int>(opt_soc_model->lpai_hw_version));
   }
@@ -569,30 +570,31 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   // model.
   result->context_bin.resize(num_partitions);
   result->byte_code_index.resize(num_partitions);
-  if (!options.GetSchematicDir().empty()) {
+  if (!backend_options.GetSchematicDir().empty()) {
     LITERT_LOG(LITERT_INFO,
                "Schematic directory is set. Enabling optrace profiling. "
                "(Original profiling level: %d)",
-               static_cast<int>(options.GetProfiling()));
-    options.SetProfiling(::qnn::Profiling::kOptrace);
+               static_cast<int>(backend_options.GetProfiling()));
+    backend_options.SetProfiling(::qnn::Profiling::kOptrace);
   }
-  if (!options.GetSaverOutputDir().empty()) {
+  if (!backend_options.GetSaverOutputDir().empty()) {
     LITERT_LOG(
         LITERT_WARNING,
         "Overriding graph IO tensor mem type to Raw because Saver is enabled.");
-    options.SetGraphIOTensorMemType(::qnn::GraphIOTensorMemType::kRaw);
+    backend_options.SetGraphIOTensorMemType(::qnn::GraphIOTensorMemType::kRaw);
+    compose_graph_options.SetGraphIOTensorMemType(::qnn::GraphIOTensorMemType::kRaw);
   }
   const bool ir_backend_override =
-      !options.GetDlcDir().empty() &&
-      options.GetBackendType() != ::qnn::BackendType::kIrBackend;
+      !backend_options.GetDlcDir().empty() &&
+      backend_options.GetBackendType() != ::qnn::BackendType::kIrBackend;
   if (ir_backend_override) {
     LITERT_LOG(LITERT_WARNING,
-               "Overriding backend type to IR Backend because DLC dir is set.");
-    options.SetBackendType(::qnn::BackendType::kIrBackend);
+               "Using IR Backend for compilation because DLC dir is set.");
+    backend_options.SetBackendType(::qnn::BackendType::kIrBackend);
   }
 
-  if (options.GetBackendType() == ::qnn::BackendType::kIrBackend) {
-    std::string dlc_dir(options.GetDlcDir());
+  if (backend_options.GetBackendType() == ::qnn::BackendType::kIrBackend) {
+    std::string dlc_dir(backend_options.GetDlcDir());
     if (!dlc_dir.empty()) {
       std::error_code ec;
       std::filesystem::create_directories(dlc_dir, ec);
@@ -604,12 +606,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     }
   }
 
-  QnnManager* qnn_manager = compiler_plugin->GetOrCreateQnnManager(options);
+  QnnManager* qnn_manager = compiler_plugin->GetOrCreateQnnManager(backend_options);
   if (!qnn_manager) {
     return kLiteRtStatusErrorRuntimeFailure;
   }
   ::qnn::QnnBackend* qnn_backend =
-      compiler_plugin->GetOrCreateQnnBackend(options, opt_soc_model);
+      compiler_plugin->GetOrCreateQnnBackend(backend_options, opt_soc_model);
   if (!qnn_backend) {
     return kLiteRtStatusErrorRuntimeFailure;
   }
@@ -650,8 +652,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       // Initialize context.
       LITERT_LOG(LITERT_INFO, "%s", "Creating context handle");
       auto context_configs = QnnManager::DefaultContextConfigs();
-      if (options.GetEnableWeightSharing()) {
-        if (options.GetBackendType() != ::qnn::BackendType::kHtpBackend) {
+      if (backend_options.GetEnableWeightSharing()) {
+        if (backend_options.GetBackendType() != ::qnn::BackendType::kHtpBackend) {
           LITERT_LOG(LITERT_ERROR,
                      "Weight sharing is only supported in HTP backend.");
           return kLiteRtStatusErrorInvalidArgument;
@@ -665,17 +667,17 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                      "Disable weight sharing feature. Only support with "
                      "multiple partitions and on x86-64 host");
         }
-      } else if (options.GetBackendType() == ::qnn::BackendType::kGpuBackend) {
-        if (options.GetGpuPerformanceMode() !=
+      } else if (backend_options.GetBackendType() == ::qnn::BackendType::kGpuBackend) {
+        if (backend_options.GetGpuPerformanceMode() !=
             ::qnn::GpuPerformanceMode::kDefault) {
           context_configs = QnnManager::GpuPerformanceContextConfigs(
-              options.GetGpuPerformanceMode());
+              backend_options.GetGpuPerformanceMode());
           LITERT_LOG(LITERT_INFO, "Enable GPU performance mode: %d",
-                     static_cast<int>(options.GetGpuPerformanceMode()));
+                     static_cast<int>(backend_options.GetGpuPerformanceMode()));
         }
       }
       auto context_handle = qnn_manager->CreateContextHandle(
-          *qnn_backend, context_configs, options.GetProfiling());
+          *qnn_backend, context_configs, backend_options.GetProfiling());
       if (!context_handle) {
         LITERT_LOG(LITERT_ERROR, "%s", context_handle.Error().Message().data());
         return context_handle.Error().Status();
@@ -709,15 +711,15 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         compiler_plugin->ctx(), *qnn_manager, *qnn_backend,
         context_handles[context_handle_idx].Get(),
         context_handles[context_handle_idx].get_profile_handle(),
-        partition.Get(), entry_point_name, options, &inputs, &outputs));
+        partition.Get(), entry_point_name, compose_graph_options, &inputs, &outputs));
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
 
-    if (!options.GetSchematicDir().empty()) {
+    if (!backend_options.GetSchematicDir().empty()) {
       LITERT_RETURN_IF_ERROR(
-          MoveSchematic(entry_point_name, options.GetSchematicDir()));
+          MoveSchematic(entry_point_name, backend_options.GetSchematicDir()));
     }
 
-    if (options.GetEnableJustInTime()) {
+    if (backend_options.GetEnableJustInTime()) {
       auto jit_graph = std::make_unique<litert::qnn::QnnJitGraph>();
       jit_graph->context_handle = context_handles[context_handle_idx].Get();
       jit_graph->graph_name = entry_point_name;
@@ -727,7 +729,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     }
   }
 
-  if (!options.GetSaverOutputDir().empty()) {
+  if (!backend_options.GetSaverOutputDir().empty()) {
     LITERT_LOG(LITERT_WARNING,
                "Since Saver is enabled, functional context binaries are "
                "excluded from the compiled TFLite.");
@@ -736,14 +738,14 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     return kLiteRtStatusOk;
   }
 
-  if (options.GetBackendType() == ::qnn::BackendType::kIrBackend) {
+  if (backend_options.GetBackendType() == ::qnn::BackendType::kIrBackend) {
     LITERT_LOG(LITERT_WARNING,
                "Since IR backend is enabled, functional context binaries are "
                "excluded from the compiled TFLite.");
     result->context_bin.resize(next_context_handle_idx);
     *compiled_result = result.release();
     return kLiteRtStatusOk;
-  } else if (options.GetEnableJustInTime()) {
+  } else if (backend_options.GetEnableJustInTime()) {
     LITERT_LOG(LITERT_INFO,
                "Just-In-Time enabled. Skipping context binary generation.");
     result->context_handles = std::move(context_handles);
