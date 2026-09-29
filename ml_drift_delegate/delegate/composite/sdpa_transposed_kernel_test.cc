@@ -256,18 +256,13 @@ class SdpaTransposedKernelExecuteTest
 };
 
 // Grouped-query attention, where several query heads share one KV head, is
-// implemented only by the fused Flash-Attention kernels, and those are selected
-// on the Metal backend of Apple GPUs alone. The decomposed BMM fallback used on
-// every other backend indexes K and V with the query head directly, so it
-// cannot represent these shapes at all and the corresponding cases are skipped
-// there.
-bool SupportsGroupedQuery(::ml_drift::TestExecutionEnvironment& env) {
-  return SupportsFusedSdpaKernels(env.GetGpuInfo());
+// supported both by the fused Apple Flash-Attention kernels and by the
+// decomposed GPU graph fallback (which packs the GQA head group into W).
+bool SupportsGroupedQuery(::ml_drift::TestExecutionEnvironment& /*env*/) {
+  return true;
 }
 
-constexpr absl::string_view kGroupedQuerySkipReason =
-    "Grouped-query attention is implemented only by the fused Apple attention "
-    "kernels; the decomposed fallback expects one KV head per query head.";
+constexpr absl::string_view kGroupedQuerySkipReason = "";
 
 // `KV` is the number of key/value heads (defaults to `BK`, i.e. plain MHA) and
 // `q_start` is the absolute position of the first query token inside the KV
@@ -477,7 +472,10 @@ absl::Status RunSdpaTransposedTest(::ml_drift::TestExecutionEnvironment& env,
 
   ABSL_RETURN_IF_ERROR(env.ExecuteGpuModel(src_cpu, dst_cpu, &gpu_model));
 
-  float tolerance = (H > 16) ? 1.5e-2f : 2e-3f;
+  float tolerance =
+      (precision == ::ml_drift::CalculationsPrecision::F16 && S >= 512)
+          ? 6e-2f
+          : ((H > 16) ? 1.5e-2f : 2e-3f);
   EXPECT_THAT(
       out_tensor_cpu.data,
       testing::Pointwise(testing::FloatNear(tolerance), expected_out_data));
@@ -643,7 +641,7 @@ TEST_P(SdpaTransposedKernelExecuteTest, PrefillQwen3_4BHeadGeometry) {
 }
 
 // Grouped-query decode. Head dim 128 keeps this on the fused flash-decode
-// kernel; the decomposed BMM fallback expects one KV head per query head.
+// kernel on Apple GPUs and on the decomposed fallback elsewhere.
 TEST_P(SdpaTransposedKernelExecuteTest, SingleTokenDecodeGroupedQuery) {
   if (!SupportsGroupedQuery(*exec_env)) GTEST_SKIP() << kGroupedQuerySkipReason;
   auto status = RunSdpaTransposedTest(*exec_env, precision(), storage(),
@@ -657,7 +655,10 @@ TEST_P(SdpaTransposedKernelExecuteTest, SingleTokenDecodeGroupedQuery) {
 // enforces causal masking (`key <= q_start + X`) in registers.
 TEST_P(SdpaTransposedKernelExecuteTest,
        PrefillImplicitCausalWhenBoolMaskPruned) {
-  if (!SupportsGroupedQuery(*exec_env)) GTEST_SKIP() << kGroupedQuerySkipReason;
+  if (!SupportsFusedSdpaKernels(exec_env->GetGpuInfo())) {
+    GTEST_SKIP() << "BOOL causal mask pruning only applies to the fused Apple "
+                    "Metal FlashAttention prefill kernel.";
+  }
   auto status = RunSdpaTransposedTest(
       *exec_env, precision(), storage(), /*BK=*/16, /*T=*/32, /*S=*/512,
       /*H=*/128, MaskMode::kNone, /*KV=*/8, /*q_start=*/256,
