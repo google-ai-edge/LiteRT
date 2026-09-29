@@ -73,7 +73,8 @@ MAIN_FUNCTION($0) {
   float4 sig = 1.0f / (1.0f + exp(-gate));
   float4 silu = gate * sig;
   float4 res = silu * up;
-  args.dst_tensor.Write(ucl::Convert<args.dst_tensor::type>(res), X, Y, S);
+  args.dst_tensor::type res_value = ucl::Convert<args.dst_tensor::type>(res);
+  args.dst_tensor.Write(res_value, X, Y, S);
 }
 )";
   custom_op.code_ = std::move(op_code);

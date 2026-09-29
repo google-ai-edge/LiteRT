@@ -15,6 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_GATED_DELTA_UPDATE_PARSER_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_GATED_DELTA_UPDATE_PARSER_H_
 
+#include <string>
+
 #include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/object_reader.h"
@@ -28,6 +30,7 @@ constexpr const char kGatedDeltaUpdateType[] = "gated_delta_update";
 // an internal implementation detail of the kernel rather than an attribute.
 struct GatedDeltaUpdateAttributes {
   int mode = 0;  // 0: recurrent, 1: chunked
+  std::string state_dtype = "float32";
 };
 
 class GatedDeltaUpdateOperationParser : public TFLiteOperationParser {
