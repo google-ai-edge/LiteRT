@@ -22,7 +22,6 @@
 #include "HTP/QnnHtpProperty.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
-#include "QnnGraph.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include "QnnProperty.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
@@ -30,6 +29,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/backend_utils.h"
 #include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
+#include "litert/vendors/qualcomm/core/backends/htp_quick_response.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
@@ -63,6 +63,7 @@ class HtpBackend::HtpPerfControl {
       : api_(api), device_id_(device_id) {}
 
   ~HtpPerfControl() {
+    voting_thread_.reset();
     DownVote();
     if (htp_perf_infra_ != nullptr && power_config_id_ != 0) {
       htp_perf_infra_->perfInfra.destroyPowerConfigId(power_config_id_);
@@ -481,7 +482,7 @@ class HtpBackend::HtpPerfControl {
 HtpBackend::HtpBackend(const QNN_INTERFACE_VER_TYPE* qnn_api)
     : QnnBackend(qnn_api) {}
 
-HtpBackend::~HtpBackend() = default;
+HtpBackend::~HtpBackend() { StopBackgroundWork(); }
 
 HtpBackend::QnnDevicePlatformInfo HtpBackend::CreateDevicePlatformInfo() {
   const QnnDevice_PlatformInfo_t* local_qnn_device_platform_info = nullptr;
@@ -680,6 +681,27 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   device_handle_ = std::move(local_device_handle);
 
   return true;
+}
+
+void HtpBackend::StartBackgroundWork(const Options& options) {
+  if (!options.GetEnableHtpQuickResponse()) {
+    return;
+  }
+
+  if (htp_quick_response_) {
+    return;
+  }
+
+  htp_quick_response_ = HtpQuickResponse::Create(QnnApi(), *this);
+  if (!htp_quick_response_) {
+    QNN_LOG_WARNING(
+        "Failed to initialize HTP quick response; continuing without it.");
+  }
+}
+
+void HtpBackend::StopBackgroundWork() {
+  htp_quick_response_.reset();
+  htp_perf_control_.reset();
 }
 
 bool HtpBackend::SetPerformanceMode(const Options& options) {

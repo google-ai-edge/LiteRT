@@ -59,6 +59,10 @@ class QnnBackend {
   virtual void ScheduleUpVote() { return; }
   virtual void ScheduleDownVote() { return; }
 
+  virtual void StartBackgroundWork(const Options& options) {}
+
+  virtual void StopBackgroundWork() {}
+
   const SocInfo& GetSocInfo() const { return soc_info_; }
 
   virtual GraphConfigBuilder BuildGraphConfigs(

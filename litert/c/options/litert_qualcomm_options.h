@@ -356,6 +356,13 @@ LiteRtStatus LrtQualcommOptionsSetHtpPdSession(
 LiteRtStatus LrtQualcommOptionsGetHtpPdSession(
     LrtQualcommOptions options, LrtQualcommOptionsHtpPdSession* htp_pd_session);
 
+// Keeps HTP responsive. Defaults to false.
+LiteRtStatus LrtQualcommOptionsSetEnableHtpQuickResponse(
+    LrtQualcommOptions options, bool enable_htp_quick_response);
+
+LiteRtStatus LrtQualcommOptionsGetEnableHtpQuickResponse(
+    LrtQualcommOptions options, bool* enable_htp_quick_response);
+
 typedef enum LrtQualcommOptionsDspPerfCtrlMode {
   kLiteRtQualcommDspPerfCtrlModeManual = 0,
   kLiteRtQualcommDspPerfCtrlModeAuto = 1,

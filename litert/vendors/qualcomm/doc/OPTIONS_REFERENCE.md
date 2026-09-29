@@ -47,7 +47,7 @@ flowchart TB
     subgraph ROW1[" "]
         direction LR
         BOTH["🌐 Both<br/><div style='text-align:left'>─────────────────<br/>log_level<br/>backend<br/>custom_op_package<br/>profiling<br/>htp_device_id</div>"]
-        DISPATCH["🚀 Dispatch<br/><div style='text-align:left'>────────────────────────<br/>HTP: htp_performance_mode, htp_perf_ctrl_mode, htp_pd_session, htp_context_init_acceleration<br/>DSP: dsp_performance_mode, dsp_perf_ctrl_mode, dsp_pd_session</div>"]
+        DISPATCH["🚀 Dispatch<br/><div style='text-align:left'>────────────────────────<br/>HTP: htp_performance_mode, htp_perf_ctrl_mode, htp_pd_session, htp_context_init_acceleration, enable_htp_quick_response<br/>DSP: dsp_performance_mode, dsp_perf_ctrl_mode, dsp_pd_session</div>"]
         BOTH ~~~ DISPATCH
     end
     subgraph ROW2[" "]
@@ -63,7 +63,7 @@ flowchart TB
 | Category | Options |
 |----------|---------|
 | **General / SDK** | `log_level`, `backend`, `graph_priority`, `custom_op_package`, `enable_just_in_time`, `graph_io_tensor_mem_type`, `profiling`, `op_name_format` |
-| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_dlbc`, `htp_dlbc_weights`, `htp_p_point`, `htp_weight_sharing_channel_tile_size`, `htp_performance_mode`, `htp_perf_ctrl_mode`, `htp_pd_session`, `htp_context_init_acceleration`, `htp_device_id`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
+| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_dlbc`, `htp_dlbc_weights`, `htp_p_point`, `htp_weight_sharing_channel_tile_size`, `htp_performance_mode`, `htp_perf_ctrl_mode`, `htp_pd_session`, `htp_context_init_acceleration`, `htp_device_id`, `enable_htp_quick_response`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
 | **DSP** | `dsp_performance_mode`, `dsp_perf_ctrl_mode`, `dsp_pd_session` |
 | **LPAI** | `lpai_target`, `lpai_fps`, `lpai_ftrt_ratio`, `lpai_client_perf_type`, `lpai_core_affinity_type`, `lpai_core_selection` |
 | **IR** | `dlc_dir` |
@@ -136,6 +136,7 @@ target:HTP"
 | HTP PD session | `htp_pd_session` | `unsigned` | dispatch | `unsigned` preserves the existing device configuration. `signed` enables QNN SignedPD. `adaptive` uses unsigned PD only when QNN reports support, otherwise it enables SignedPD. |
 | HTP device ID | `htp_device_id` | `0` | both | A nonzero value selects the matching platform-reported HTP `deviceId`; it requires QNN platform information. `0` leaves device selection to QNN's default configuration. |
 | HTP context init acceleration | `htp_context_init_acceleration` | `false` | dispatch | Uses all HTP hardware threads while deserializing a context binary. It can contend with concurrent HTP graph execution. |
+| HTP quick response | `enable_htp_quick_response` | `false` | dispatch | Keeps HTP responsive. |
 | VTCM size | `vtcm_size` | `0` (=max) | compile | VTCM size (MB) of target device. `0` → device max. |
 | HVX threads | `num_hvx_thread` | `0` (=max) | compile | HVX threads for target device. `0` → device max. |
 | HTP file read memory budget | `htp_file_read_memory_budget_mb` | `0` (=off) | dispatch | Caps host memory (MB) QNN uses to read the context binary during HTP deserialization, and releases the bytecode pages afterwards. `0` disables the feature (QNN default). Choose an explicit budget based on the model and target environment; it can trade peak host RSS for initialization time. HTP only; no effect on other backends or Windows. |

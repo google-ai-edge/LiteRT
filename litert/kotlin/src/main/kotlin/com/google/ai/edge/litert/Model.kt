@@ -210,6 +210,7 @@ private constructor(
     val htpDlbc: Boolean? = null,
     val htpDlbcWeights: Boolean? = null,
     val graphPriority: GraphPriority? = null,
+    val enableHtpQuickResponse: Boolean? = null,
   ) {
     /** Log level for Qualcomm options. */
     enum class LogLevel constructor(val value: Int) {
@@ -270,6 +271,7 @@ private constructor(
       useFoldRelu?.let { builder.writeBool("use_fold_relu", it) }
       htpDlbc?.let { builder.writeBool("htp_dlbc", it) }
       htpDlbcWeights?.let { builder.writeBool("htp_dlbc_weights", it) }
+      enableHtpQuickResponse?.let { builder.writeBool("enable_htp_quick_response", it) }
       htpPerformanceMode?.let { builder.writeInt("htp_performance_mode", it.value.toLong()) }
       profiling?.let { builder.writeInt("profiling", it.value.toLong()) }
       irJsonDir?.let { builder.writeString("ir_json_dir", it) }
