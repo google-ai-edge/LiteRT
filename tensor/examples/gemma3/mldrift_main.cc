@@ -473,7 +473,7 @@ absl::StatusOr<PrefillResult> RunPrefillOpenCl(
   auto runner_ptr = std::make_unique<MlDriftModelRunner<
       Gemma3_MlDrift_Model, Gemma3_MlDrift_Inputs, Gemma3_MlDrift_Outputs>>(
       model, inputs, outputs, float_weights, int8_weights,
-      /*build_gpu_model=*/true, ml_drift::CalculationsPrecision::F16,
+      /*build_gpu_model=*/true, ml_drift::CalculationsPrecision::kF16,
       shared_env, shared_build_ctx);
   auto& runner = *runner_ptr;
 
@@ -669,7 +669,7 @@ absl::StatusOr<std::unique_ptr<OpenClDecodeState>> BuildDecodeRunnerOpenCl(
                                           Gemma3_MlDrift_Decode_Inputs,
                                           Gemma3_MlDrift_Decode_Outputs>>(
           model, state->inputs, state->outputs, float_weights, int8_weights,
-          /*build_gpu_model=*/false, ml_drift::CalculationsPrecision::F16,
+          /*build_gpu_model=*/false, ml_drift::CalculationsPrecision::kF16,
           shared_env, shared_build_ctx);
 
   ABSL_LOG(INFO) << "BuildDecodeRunnerOpenCl: Retrieving weight tensors from "
