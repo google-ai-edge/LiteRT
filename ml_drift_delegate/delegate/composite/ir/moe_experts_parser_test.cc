@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <memory>
 #include <string>
 #include <utility>
@@ -76,49 +77,6 @@ constexpr int kModelDim = 64;
 constexpr int kHiddenDim = 128;
 constexpr int kNumTokens = 4;
 
-std::vector<uint8_t> ZeroBytes(int num_elements, size_t element_size) {
-  return std::vector<uint8_t>(num_elements * element_size, 0);
-}
-
-// Adds the ten inputs of an int8 moe op. The `*_blocks` arguments set the
-// innermost extent of each scale tensor: 1 is per-output-channel quantization,
-// and larger values split the input axis into that many equally sized blocks.
-// Gate and ff1 block along `kModelDim`; linear blocks along `kHiddenDim`.
-void AddInt8MoeInputs(SingleOpInterpreterBuilder& builder, int gate_blocks,
-                      int ff1_blocks, int linear_blocks) {
-  builder.AddInput(kTfLiteFloat32, {1, 1, kNumTokens, kModelDim});  // src
-  builder.AddInput(kTfLiteFloat32,
-                   {1, 1, kNumTokens, kNumActiveExperts});  // top_weights
-  builder.AddInput(kTfLiteInt32,
-                   {1, 1, kNumTokens, kNumActiveExperts});  // top_indices
-
-  builder.AddConstInput(
-      kTfLiteInt8, {kHiddenDim, kNumExperts, 1, kModelDim},
-      ZeroBytes(kHiddenDim * kNumExperts * kModelDim, sizeof(int8_t)));
-  builder.AddConstInput(
-      kTfLiteFloat32, {kHiddenDim, kNumExperts, 1, gate_blocks},
-      ZeroBytes(kHiddenDim * kNumExperts * gate_blocks, sizeof(float)));
-
-  builder.AddConstInput(
-      kTfLiteInt8, {kHiddenDim, kNumExperts, 1, kModelDim},
-      ZeroBytes(kHiddenDim * kNumExperts * kModelDim, sizeof(int8_t)));
-  builder.AddConstInput(
-      kTfLiteFloat32, {kHiddenDim, kNumExperts, 1, ff1_blocks},
-      ZeroBytes(kHiddenDim * kNumExperts * ff1_blocks, sizeof(float)));
-
-  builder.AddConstInput(
-      kTfLiteInt8, {kModelDim, kNumExperts, 1, kHiddenDim},
-      ZeroBytes(kModelDim * kNumExperts * kHiddenDim, sizeof(int8_t)));
-  builder.AddConstInput(
-      kTfLiteFloat32, {kModelDim, kNumExperts, 1, linear_blocks},
-      ZeroBytes(kModelDim * kNumExperts * linear_blocks, sizeof(float)));
-
-  builder.AddConstInput(kTfLiteFloat32, {1, 1, 1, kNumExperts},
-                        ZeroBytes(kNumExperts, sizeof(float)));
-
-  builder.AddOutput(kTfLiteFloat32, {1, 1, kNumTokens, kModelDim});
-}
-
 // Replaces a tensor's affine quantization with V2 blockwise quantization
 // pointing at `zero_point_tensor` (use a negative index for the tflite
 // optional-tensor convention, which means the weights are symmetric).
@@ -151,7 +109,56 @@ class ConvertMoeExpertsTest : public ::testing::Test {
 
   void TearDown() override { DeleteStubDelegate(delegate_); }
 
+  // Returns a zero-filled buffer that lives as long as the fixture.
+  // `AddConstInput` stores a pointer to the data rather than copying it, so the
+  // buffer has to outlive the interpreter built from it.
+  const std::vector<uint8_t>& ZeroBytes(int num_elements, size_t element_size) {
+    return const_buffers_.emplace_back(num_elements * element_size, 0);
+  }
+
+  // Adds the ten inputs of an int8 moe op. The `*_blocks` arguments set the
+  // innermost extent of each scale tensor: 1 is per-output-channel
+  // quantization, and larger values split the input axis into that many
+  // equally sized blocks. Gate and ff1 block along `kModelDim`; linear blocks
+  // along `kHiddenDim`.
+  void AddInt8MoeInputs(SingleOpInterpreterBuilder& builder, int gate_blocks,
+                        int ff1_blocks, int linear_blocks) {
+    builder.AddInput(kTfLiteFloat32, {1, 1, kNumTokens, kModelDim});  // src
+    builder.AddInput(kTfLiteFloat32,
+                     {1, 1, kNumTokens, kNumActiveExperts});  // top_weights
+    builder.AddInput(kTfLiteInt32,
+                     {1, 1, kNumTokens, kNumActiveExperts});  // top_indices
+
+    builder.AddConstInput(
+        kTfLiteInt8, {kHiddenDim, kNumExperts, 1, kModelDim},
+        ZeroBytes(kHiddenDim * kNumExperts * kModelDim, sizeof(int8_t)));
+    builder.AddConstInput(
+        kTfLiteFloat32, {kHiddenDim, kNumExperts, 1, gate_blocks},
+        ZeroBytes(kHiddenDim * kNumExperts * gate_blocks, sizeof(float)));
+
+    builder.AddConstInput(
+        kTfLiteInt8, {kHiddenDim, kNumExperts, 1, kModelDim},
+        ZeroBytes(kHiddenDim * kNumExperts * kModelDim, sizeof(int8_t)));
+    builder.AddConstInput(
+        kTfLiteFloat32, {kHiddenDim, kNumExperts, 1, ff1_blocks},
+        ZeroBytes(kHiddenDim * kNumExperts * ff1_blocks, sizeof(float)));
+
+    builder.AddConstInput(
+        kTfLiteInt8, {kModelDim, kNumExperts, 1, kHiddenDim},
+        ZeroBytes(kModelDim * kNumExperts * kHiddenDim, sizeof(int8_t)));
+    builder.AddConstInput(
+        kTfLiteFloat32, {kModelDim, kNumExperts, 1, linear_blocks},
+        ZeroBytes(kModelDim * kNumExperts * linear_blocks, sizeof(float)));
+
+    builder.AddConstInput(kTfLiteFloat32, {1, 1, 1, kNumExperts},
+                          ZeroBytes(kNumExperts, sizeof(float)));
+
+    builder.AddOutput(kTfLiteFloat32, {1, 1, kNumTokens, kModelDim});
+  }
+
   TfLiteDelegate* delegate_;
+  // A deque, because growing it never moves the buffers already handed out.
+  std::deque<std::vector<uint8_t>> const_buffers_;
 };
 
 TEST_F(ConvertMoeExpertsTest, Fp32Basic) {
