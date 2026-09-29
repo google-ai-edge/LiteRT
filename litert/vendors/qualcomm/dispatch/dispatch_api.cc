@@ -17,6 +17,7 @@
 #endif
 
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <string>
@@ -79,6 +80,20 @@ static std::unique_ptr<::qnn::QnnBackend>& QnnBackendStorage() {
 }
 
 ::qnn::QnnBackend& QnnBackend() { return *QnnBackendStorage(); }
+
+void StopQnnBackgroundWork() {
+  if (QnnBackendStorage() != nullptr) {
+    QnnBackendStorage()->StopBackgroundWork();
+  }
+}
+
+void RegisterQnnBackgroundWorkCleanup() {
+  static const bool registered = [] {
+    std::atexit(StopQnnBackgroundWork);
+    return true;
+  }();
+  (void)registered;
+}
 
 LiteRtEnvironmentOptions TheEnvironmentOptions = nullptr;
 
@@ -166,6 +181,7 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
 
     std::swap(QnnManagerStorage(), *qnn_manager);
     std::swap(QnnBackendStorage(), qnn_backend);
+    RegisterQnnBackgroundWorkCleanup();
   }
 
   Qnn_ApiVersion_t qnn_api_version;
