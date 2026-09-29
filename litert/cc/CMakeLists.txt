@@ -43,6 +43,7 @@ set(LITERT_CC_PUBLIC_HEADERS
     litert_tensor_buffer_requirements.h
     litert_tensor_buffer_types.h
     litert_tensor_buffer.h
+    options/litert_aml_options.h
     options/litert_arm_options.h
     options/litert_compiler_options.h
     options/litert_concrete_options_base.h

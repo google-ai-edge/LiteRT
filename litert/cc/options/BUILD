@@ -244,6 +244,21 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_aml_options",
+    hdrs = ["litert_aml_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_aml_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_handle",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
     name = "litert_runtime_options",
     hdrs = ["litert_runtime_options.h"],
     deps = [

@@ -50,6 +50,7 @@ set(LITERT_C_PUBLIC_HEADERS
     litert_tensor_buffer_types.h
     litert_tensor_buffer.h
     litert_webgpu_types.h
+    options/litert_aml_options.h
     options/litert_arm_options.h
     options/litert_compiler_options.h
     options/litert_cpu_options.h
@@ -108,6 +109,7 @@ set(LITERT_C_PUBLIC_SOURCES
     options/litert_runtime_options.cc
     options/litert_samsung_options.cc
     options/litert_webnn_options.cc
+    options/litert_aml_options.cc
 )
 
 file(GLOB LITERT_C_DISCOVERED_PUBLIC_HEADERS
