@@ -14,6 +14,9 @@
 /opensource_only/ci/tools/python/vendor_sdk/samsung/BUILD:
 /opensource_only/ci/tools/python/wheel/BUILD:
 /opensource_only/ci/tools/python/wheel/utils/BUILD:
+/opensource_only/third_party/tensorflow_shim/llvm_project/BUILD:
+/opensource_only/third_party/tensorflow_shim/llvm_project/mlir/BUILD:
+/opensource_only/third_party/tensorflow_shim/llvm_project/mlir/tblgen.bzl:
 /opensource_only/third_party/tensorflow_shim/org_tensorflow/BUILD:
 /opensource_only/third_party/tensorflow_shim/org_tensorflow/tensorflow/BUILD:
 /opensource_only/third_party/tensorflow_shim/org_tensorflow/tensorflow/core/example/BUILD:
@@ -32,4 +35,16 @@
 /opensource_only/third_party/tensorflow_shim/org_tensorflow/tensorflow/tensorflow.default.bzl:
 /opensource_only/third_party/tensorflow_shim/org_tensorflow/third_party/fft2d/BUILD:
 /opensource_only/third_party/tensorflow_shim/org_tensorflow/third_party/py/numpy/BUILD:
+/opensource_only/third_party/tensorflow_shim/xla/BUILD:
+/opensource_only/third_party/tensorflow_shim/xla/third_party/python_runtime/BUILD:
+/opensource_only/third_party/tensorflow_shim/xla/third_party/rules_python/python/BUILD:
+/opensource_only/third_party/tensorflow_shim/xla/third_party/rules_python/python/common.bzl:
+/opensource_only/third_party/tensorflow_shim/xla/third_party/rules_python/python/py_binary.bzl:
+/opensource_only/third_party/tensorflow_shim/xla/third_party/rules_python/python/py_library.bzl:
+/opensource_only/third_party/tensorflow_shim/xla/third_party/rules_python/python/py_test.bzl:
+/opensource_only/third_party/tensorflow_shim/xla/xla/tsl/framework/convolution/BUILD:
+/opensource_only/third_party/tensorflow_shim/xla/xla/tsl/lib/random/BUILD:
+/opensource_only/third_party/tensorflow_shim/xla/xla/tsl/platform/BUILD:
+/opensource_only/third_party/tensorflow_shim/xla/xla/tsl/platform/build_config_root.bzl:
+/opensource_only/third_party/tensorflow_shim/xla/xla/tsl/util/BUILD:
 /tensor/examples/utils/initialization:.cc

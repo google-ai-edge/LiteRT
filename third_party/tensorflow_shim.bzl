@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Stand-in `@org_tensorflow` repository.
+"""Stand-in `@org_tensorflow`, `@xla` and `@llvm-project` repositories.
 
 The exported `tflite/` BUILD files still load a few Starlark macros from
-TensorFlow and depend on a handful of its header-only targets. Rather than
-fetching the source tree, `tensorflow_shim_repositories()` creates a small
-repository that contains:
+TensorFlow, XLA and MLIR and depend on a handful of their header-only targets.
+Rather than fetching those source trees, `tensorflow_shim_repositories()`
+creates small repositories that contain:
 
   * the build files under `third_party/tensorflow_shim/<name>/`, and
   * the few source files those build files need, downloaded individually from
@@ -69,6 +69,41 @@ _TENSORFLOW_FILES = {
     ],
 }
 
+_XLA_FILES = {
+    "LICENSE": [
+        "third_party/xla/LICENSE",
+        "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1",
+    ],
+    "xla/tsl/framework/convolution/eigen_convolution_helpers.h": [
+        "third_party/xla/xla/tsl/framework/convolution/eigen_convolution_helpers.h",
+        "3fd52ebb0f14b9c4f3b3e225d1e7b29c712c3046d34e07936bfec0e0c1f41152",
+    ],
+    "xla/tsl/framework/convolution/eigen_spatial_convolutions-inl.h": [
+        "third_party/xla/xla/tsl/framework/convolution/eigen_spatial_convolutions-inl.h",
+        "c0bec189723d52b4495dec62e197e2a4ffe7725bc313676984384e8b8fbb7a13",
+    ],
+    "xla/tsl/lib/random/philox_random.h": [
+        "third_party/xla/xla/tsl/lib/random/philox_random.h",
+        "7a7659f95c59419373261af305736311bfd839b281259703b23f4df9b391a43e",
+    ],
+    "xla/tsl/lib/random/random_distributions_utils.h": [
+        "third_party/xla/xla/tsl/lib/random/random_distributions_utils.h",
+        "1d65158a878510a1ec5835c5f26962b0ebe45bd56ecaec7e38314a8ac5e7a517",
+    ],
+    "xla/tsl/util/stat_summarizer_options.h": [
+        "third_party/xla/xla/tsl/util/stat_summarizer_options.h",
+        "9f7d7cc5de38ae6e97a8982dc386a012ed70144c768ef2525fd25054de41c2b2",
+    ],
+    "xla/tsl/util/stats_calculator.cc": [
+        "third_party/xla/xla/tsl/util/stats_calculator.cc",
+        "704c6d22240a521a7cbee591cd932121f0f6dcbaf179037758a7f3bd4d851e82",
+    ],
+    "xla/tsl/util/stats_calculator.h": [
+        "third_party/xla/xla/tsl/util/stats_calculator.h",
+        "f5628ba1fbf39e7c4d2b280ff78c8daba40d9d462a97f8aa2abc0c5371b9f241",
+    ],
+}
+
 # Upper bound on the number of directories in the shim tree. Starlark has no
 # recursion, so the tree is walked with a bounded loop.
 _MAX_DIRS = 1000
@@ -114,10 +149,20 @@ _tensorflow_shim_repository = repository_rule(
 )
 
 def tensorflow_shim_repositories():
-    """Defines the `@org_tensorflow` shim repository."""
+    """Defines the `@org_tensorflow`, `@xla` and `@llvm-project` shim repositories."""
     _tensorflow_shim_repository(
         name = "org_tensorflow",
         base_url = _TENSORFLOW_BASE_URL,
         files = _TENSORFLOW_FILES,
         shim_dir = "org_tensorflow",
+    )
+    _tensorflow_shim_repository(
+        name = "xla",
+        base_url = _TENSORFLOW_BASE_URL,
+        files = _XLA_FILES,
+        shim_dir = "xla",
+    )
+    _tensorflow_shim_repository(
+        name = "llvm-project",
+        shim_dir = "llvm_project",
     )
