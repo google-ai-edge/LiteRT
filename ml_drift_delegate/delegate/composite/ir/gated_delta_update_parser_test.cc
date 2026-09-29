@@ -94,5 +94,61 @@ TEST_F(ConvertGatedDeltaUpdateTest, BasicCustomOpConversion) {
   EXPECT_EQ(attr->mode, 0);
 }
 
+TEST_F(ConvertGatedDeltaUpdateTest, GqaHeadRatioCustomOpConversion) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("gated_delta_update");
+
+  // Qwen 27B linear attention GQA configuration: H_v = 48, H_k = 16 (ratio = 3)
+  int B = 1, H_v = 48, H_k = 16, N = 8, D_k = 128, D_v = 128;
+  builder.AddInput(kTfLiteFloat32, {B, H_k, N, D_k});     // q
+  builder.AddInput(kTfLiteFloat32, {B, H_k, N, D_k});     // k
+  builder.AddInput(kTfLiteFloat32, {B, H_v, N, D_v});     // v
+  builder.AddInput(kTfLiteFloat32, {B, H_v, N});          // beta
+  builder.AddInput(kTfLiteFloat32, {B, H_v, N});          // g
+  builder.AddInput(kTfLiteFloat32, {B, H_v, D_k, D_v});   // initial_state
+  builder.AddOutput(kTfLiteFloat32, {B, H_v, N, D_v});    // out
+  builder.AddOutput(kTfLiteFloat32, {B, H_v, D_k, D_v});  // final_state
+
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() { fbb.Int("mode", 1); });
+  fbb.Finish();
+  auto fbb_buf = fbb.GetBuffer();
+  void* custom_data = malloc(fbb_buf.size());
+  memcpy(custom_data, fbb_buf.data(), fbb_buf.size());
+  builder.SetCustomData(custom_data, fbb_buf.size());
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  EXPECT_THAT(ir_model->ops()[0]->name, Eq("gated_delta_update"));
+}
+
+TEST_F(ConvertGatedDeltaUpdateTest, RejectInvalidGqaHeadRatio) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("gated_delta_update");
+
+  // H_v = 48 is not divisible by H_k = 10
+  int B = 1, H_v = 48, H_k = 10, N = 4, D_k = 16, D_v = 16;
+  builder.AddInput(kTfLiteFloat32, {B, H_k, N, D_k});     // q
+  builder.AddInput(kTfLiteFloat32, {B, H_k, N, D_k});     // k
+  builder.AddInput(kTfLiteFloat32, {B, H_v, N, D_v});     // v
+  builder.AddInput(kTfLiteFloat32, {B, H_v, N});          // beta
+  builder.AddInput(kTfLiteFloat32, {B, H_v, N});          // g
+  builder.AddInput(kTfLiteFloat32, {B, H_v, D_k, D_v});   // initial_state
+  builder.AddOutput(kTfLiteFloat32, {B, H_v, N, D_v});    // out
+  builder.AddOutput(kTfLiteFloat32, {B, H_v, D_k, D_v});  // final_state
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  // Stub delegate does not partition unsupported ops into the IR model.
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  EXPECT_EQ(ir_model, nullptr);
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir
