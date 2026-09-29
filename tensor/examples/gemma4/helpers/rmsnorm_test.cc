@@ -28,6 +28,7 @@ limitations under the License.
 #include "tensor/examples/ops/transformer/transformer_ops.h"
 #include "tensor/examples/ops/transformer/transformer_ops_graph.h"
 #include "tensor/examples/ops/transformer/transformer_ops_xnnpack.h"  // IWYU pragma: keep
+#include "tensor/examples/ops/transformer/transformer_ops_ynnpack.h"  // IWYU pragma: keep
 #include "tensor/internal/arithmetic_helpers.h"
 #include "tensor/internal/graph.h"
 #include "tensor/internal/mixin.h"

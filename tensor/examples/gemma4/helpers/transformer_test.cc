@@ -30,6 +30,7 @@ limitations under the License.
 #include "tensor/examples/gemma4/gemma4_config.h"
 #include "tensor/examples/gemma4/test_backends.h"
 #include "tensor/examples/ops/transformer/transformer_ops_xnnpack.h"  // IWYU pragma: keep
+#include "tensor/examples/ops/transformer/transformer_ops_ynnpack.h"  // IWYU pragma: keep
 #include "tensor/examples/utils/tensor_mapping.h"
 #include "tensor/runners/xnnpack/runner.h"
 #include "tensor/tensor.h"
