@@ -101,7 +101,9 @@ class DelegateKernel {
       const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
           input_tensor_refs,
       const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
-          output_tensor_refs) = 0;
+          output_tensor_refs,
+      const absl::flat_hash_set<::ml_drift::ValueId>& preserved_fp32_values =
+          {}) = 0;
 
   // Returns true if the given id is an external shared constant tensor.
   bool IsExternalSharedConstantTensor(::ml_drift::ValueId id) {
