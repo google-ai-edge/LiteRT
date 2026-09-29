@@ -563,6 +563,14 @@ void Options::SetHtpPdSession(HtpPdSession htp_pd_session) {
 
 HtpPdSession Options::GetHtpPdSession() const { return htp_pd_session_; }
 
+void Options::SetEnableHtpQuickResponse(bool enable_htp_quick_response) {
+  enable_htp_quick_response_ = enable_htp_quick_response;
+}
+
+bool Options::GetEnableHtpQuickResponse() const {
+  return enable_htp_quick_response_;
+}
+
 void Options::SetDspPerfCtrlMode(DspPerfCtrlMode dsp_perf_ctrl_mode) {
   dsp_perf_ctrl_mode_ = dsp_perf_ctrl_mode;
 }
@@ -786,6 +794,7 @@ std::string Options::Dump() const {
   field(2, "HtpPerformanceMode", htp_performance_mode_);
   field(2, "HtpPerfCtrlMode", htp_perf_ctrl_mode_);
   field(2, "HtpPdSession", htp_pd_session_);
+  field(2, "EnableHtpQuickResponse", enable_htp_quick_response_);
   field(2, "VtcmSize", vtcm_size_);
   field(2, "NumHvxThreads", num_hvx_threads_);
   field(2, "OptimizationLevel", optimization_level_);

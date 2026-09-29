@@ -47,7 +47,7 @@ flowchart TB
     subgraph ROW1[" "]
         direction LR
         BOTH["🌐 Both<br/><div style='text-align:left'>─────────────────<br/>log_level<br/>backend<br/>custom_op_package<br/>profiling</div>"]
-        DISPATCH["🚀 Dispatch<br/><div style='text-align:left'>────────────────────────<br/>HTP: htp_performance_mode, htp_pd_session<br/>DSP: dsp_performance_mode, dsp_pd_session</div>"]
+        DISPATCH["🚀 Dispatch<br/><div style='text-align:left'>────────────────────────<br/>HTP: htp_performance_mode, htp_pd_session, enable_htp_quick_response<br/>DSP: dsp_performance_mode, dsp_pd_session</div>"]
         BOTH ~~~ DISPATCH
     end
     subgraph ROW2[" "]
@@ -63,7 +63,7 @@ flowchart TB
 | Category | Options |
 |----------|---------|
 | **General / SDK** | `log_level`, `backend`, `graph_priority`, `custom_op_package`, `enable_just_in_time`, `graph_io_tensor_mem_type`, `profiling` |
-| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_p_point`, `htp_performance_mode`, `htp_pd_session`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
+| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_p_point`, `htp_performance_mode`, `htp_pd_session`, `enable_htp_quick_response`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
 | **DSP** | `dsp_performance_mode`, `dsp_pd_session` |
 | **LPAI** | `lpai_target`, `lpai_fps`, `lpai_ftrt_ratio`, `lpai_client_perf_type`, `lpai_core_affinity_type`, `lpai_core_selection` |
 | **IR** | `dlc_dir` |
@@ -130,6 +130,7 @@ target:HTP"
 | Optimization level | `optimization_level` | `O3` | compile | `O1` (inference) · `O2` (prepare) · `O3` (inference, aggressive). |
 | HTP perf mode | `htp_performance_mode` | `default` | dispatch | `default` · `sustained_high_performance` · `burst` · `high_performance` · `power_saver` · `low_power_saver` · `high_power_saver` · `low_balanced` · `balanced` · `extreme_power_saver`. |
 | HTP PD session | `htp_pd_session` | `unsigned` | dispatch | `unsigned` preserves the existing device configuration. `signed` enables QNN SignedPD. `adaptive` uses unsigned PD only when QNN reports support, otherwise it enables SignedPD. |
+| HTP quick response | `enable_htp_quick_response` | `false` | dispatch | Periodically executes a low-priority single-ADD graph every 10 ms to keep HTP responsive. Reuses the dispatch backend and device; not started by the compiler. |
 | VTCM size | `vtcm_size` | `0` (=max) | compile | VTCM size (MB) of target device. `0` → device max. |
 | HVX threads | `num_hvx_thread` | `0` (=max) | compile | HVX threads for target device. `0` → device max. |
 | INT64→INT32 bias | `use_int64_bias_as_int32` | `true` | compile | Convert FullyConnected/Conv2D bias int64 → int32. |
@@ -253,6 +254,7 @@ use_conv_hmx = true
 vtcm_size = 8
 htp_performance_mode = 2   # burst
 htp_pd_session = 0         # unsigned (default); 1 = signed, 2 = adaptive
+enable_htp_quick_response = false
 dsp_pd_session = 0         # unsigned (default); 1 = signed, 2 = adaptive
 profiling = 2              # detailed
 ```

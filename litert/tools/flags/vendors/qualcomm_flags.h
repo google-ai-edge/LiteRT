@@ -175,6 +175,7 @@ std::string AbslUnparseFlag(QualcommOptions::HtpPerfCtrlMode options);
 
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::HtpPdSession,
                   qualcomm_htp_pd_session);
+ABSL_DECLARE_FLAG(bool, qualcomm_enable_htp_quick_response);
 
 namespace litert::qualcomm {
 

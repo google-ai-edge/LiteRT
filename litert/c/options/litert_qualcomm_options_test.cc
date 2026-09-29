@@ -208,16 +208,31 @@ TEST(LiteRtQualcommOptionsTest, HtpPdSession) {
   LITERT_ASSERT_OK(LrtQualcommOptionsSetHtpPdSession(
       qualcomm_options, kLiteRtQualcommHtpAdaptivePd));
   auto parsed = SerializeAndParse(qualcomm_options);
-  EXPECT_EQ(parsed.GetHtpPdSession(),
-            QualcommOptions::HtpPdSession::kAdaptive);
+  EXPECT_EQ(parsed.GetHtpPdSession(), QualcommOptions::HtpPdSession::kAdaptive);
 
   EXPECT_EQ(
       LrtQualcommOptionsSetHtpPdSession(
           qualcomm_options,
           static_cast<LrtQualcommOptionsHtpPdSession>(
-              static_cast<int>(QualcommOptions::HtpPdSession::kAdaptive) +
-              1)),
+              static_cast<int>(QualcommOptions::HtpPdSession::kAdaptive) + 1)),
       kLiteRtStatusErrorInvalidArgument);
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, EnableHtpQuickResponse) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  bool default_value = true;
+  LITERT_ASSERT_OK(LrtQualcommOptionsGetEnableHtpQuickResponse(qualcomm_options,
+                                                               &default_value));
+  EXPECT_FALSE(default_value);
+
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsSetEnableHtpQuickResponse(qualcomm_options, true));
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_TRUE(parsed.GetEnableHtpQuickResponse());
+
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
@@ -253,8 +268,7 @@ TEST(LiteRtQualcommOptionsTest, DspPdSession) {
       LrtQualcommOptionsSetDspPdSession(
           qualcomm_options,
           static_cast<LrtQualcommOptionsDspPdSession>(
-              static_cast<int>(QualcommOptions::DspPdSession::kAdaptive) +
-              1)),
+              static_cast<int>(QualcommOptions::DspPdSession::kAdaptive) + 1)),
       kLiteRtStatusErrorInvalidArgument);
   LrtDestroyQualcommOptions(qualcomm_options);
 }
@@ -263,8 +277,8 @@ TEST(LiteRtQualcommOptionsTest, DspEncoding) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
 
-  EXPECT_EQ(LrtQualcommOptionsSetDspEncoding(
-                nullptr, kLiteRtQualcommDspEncodingDynamic),
+  EXPECT_EQ(LrtQualcommOptionsSetDspEncoding(nullptr,
+                                             kLiteRtQualcommDspEncodingDynamic),
             kLiteRtStatusErrorInvalidArgument);
 
   LrtQualcommOptions invalid_options = nullptr;
@@ -513,6 +527,10 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetHtpPdSession(),
             QualcommOptions::HtpPdSession::kAdaptive);
 
+  EXPECT_FALSE(options->GetEnableHtpQuickResponse());
+  options->SetEnableHtpQuickResponse(true);
+  EXPECT_TRUE(options->GetEnableHtpQuickResponse());
+
   EXPECT_EQ(options->GetDspPerformanceMode(),
             QualcommOptions::DspPerformanceMode::kDefault);
   options->SetDspPerformanceMode(QualcommOptions::DspPerformanceMode::kBurst);
@@ -527,8 +545,7 @@ TEST(QualcommOptionsTest, CppWrapper) {
 
   EXPECT_EQ(options->GetDspEncoding(), QualcommOptions::DspEncoding::kStatic);
   options->SetDspEncoding(QualcommOptions::DspEncoding::kDynamic);
-  EXPECT_EQ(options->GetDspEncoding(),
-            QualcommOptions::DspEncoding::kDynamic);
+  EXPECT_EQ(options->GetDspEncoding(), QualcommOptions::DspEncoding::kDynamic);
 
   EXPECT_EQ(options->GetProfiling(), QualcommOptions::Profiling::kOff);
   options->SetProfiling(QualcommOptions::Profiling::kDetailed);

@@ -204,6 +204,9 @@ class Options {
   void SetHtpPdSession(HtpPdSession htp_pd_session);
   HtpPdSession GetHtpPdSession() const;
 
+  void SetEnableHtpQuickResponse(bool enable_htp_quick_response);
+  bool GetEnableHtpQuickResponse() const;
+
   void SetDspPerfCtrlMode(DspPerfCtrlMode dsp_perf_ctrl_mode);
   DspPerfCtrlMode GetDspPerfCtrlMode() const;
 
@@ -307,6 +310,7 @@ class Options {
   DspPerformanceMode dsp_performance_mode_ = DspPerformanceMode::kDefault;
   HtpPerfCtrlMode htp_perf_ctrl_mode_ = HtpPerfCtrlMode::kManual;
   HtpPdSession htp_pd_session_ = HtpPdSession::kUnsigned;
+  bool enable_htp_quick_response_ = false;
   DspPerfCtrlMode dsp_perf_ctrl_mode_ = DspPerfCtrlMode::kManual;
   DspPdSession dsp_pd_session_ = DspPdSession::kUnsigned;
   DspEncoding dsp_encoding_ = DspEncoding::kStatic;

@@ -233,6 +233,7 @@ private constructor(
     val vtcmSize: Int? = null,
     val numHvxThreads: Int? = null,
     val optimizationLevel: OptimizationLevel? = null,
+    val enableHtpQuickResponse: Boolean? = null,
   ) {
     /** Log level for Qualcomm options. */
     enum class LogLevel constructor(val value: Int) {
@@ -290,6 +291,7 @@ private constructor(
       VTCM_SIZE(11),
       NUM_HVX_THREADS(12),
       OPTIMIZATION_LEVEL(13),
+      ENABLE_HTP_QUICK_RESPONSE(16),
     }
 
     // Converts the options to a map, with all values converted to strings.
@@ -309,6 +311,9 @@ private constructor(
       }
       if (useFoldRelu != null) {
         map[Key.USE_FOLD_RELU] = useFoldRelu.toString()
+      }
+      if (enableHtpQuickResponse != null) {
+        map[Key.ENABLE_HTP_QUICK_RESPONSE] = enableHtpQuickResponse.toString()
       }
       if (htpPerformanceMode != null) {
         map[Key.HTP_PERFORMANCE_MODE] = htpPerformanceMode.value.toString()

@@ -140,6 +140,10 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::HtpPdSession,
           "platforms that load signed HTP Skel libraries. 'adaptive' uses "
           "unsigned PD when supported, otherwise signed PD.");
 
+ABSL_FLAG(bool, qualcomm_enable_htp_quick_response, false,
+          "Whether to keep HTP responsive by periodically executing a "
+          "low-priority graph.");
+
 ABSL_FLAG(litert::qualcomm::QualcommOptions::DspPerfCtrlMode,
           qualcomm_dsp_perf_ctrl_mode,
           litert::qualcomm::QualcommOptions::DspPerfCtrlMode::kManual,
@@ -972,6 +976,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto htp_pd_session = absl::GetFlag(FLAGS_qualcomm_htp_pd_session);
   opts.SetHtpPdSession(htp_pd_session);
+
+  const auto enable_htp_quick_response =
+      absl::GetFlag(FLAGS_qualcomm_enable_htp_quick_response);
+  opts.SetEnableHtpQuickResponse(enable_htp_quick_response);
 
   const auto dsp_perf_ctrl_mode =
       absl::GetFlag(FLAGS_qualcomm_dsp_perf_ctrl_mode);
