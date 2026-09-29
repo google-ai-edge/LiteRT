@@ -181,6 +181,26 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "moe_experts_kernel_test",
+    srcs = ["moe_experts_kernel_test.cc"],
+    deps = [
+        ":moe_experts_kernel",
+        ":moe_experts_parser",
+        "//ml_drift_delegate/delegate/composite/ir:moe_experts_parser",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+    ],
+)
+
 cc_library(
     name = "rope_parser",
     srcs = ["rope_parser.cc"],
