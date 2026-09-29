@@ -26,6 +26,7 @@
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
+#include "ml_drift/common/gpu_model_builder_moe_util.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/kernels/fully_connected.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
@@ -35,7 +36,6 @@
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift/common/types.h"  // from @ml_drift
-#include "ml_drift_delegate/delegate/composite/experts_remap_builder.h"
 #include "ml_drift_delegate/delegate/composite/ir/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 
@@ -272,17 +272,18 @@ absl::Status BuildMoeExpertsGpuGraph(
       top_indices, ::ml_drift::BHWC(1, 1, 1, num_dispatches));
 
   if (use_packed_groups) {
-    auto vals = CreateExpertsRemap(*model_builder, top_indices, num_experts);
+    auto vals = ::ml_drift::CreateExpertsRemap(*model_builder, top_indices,
+                                               num_experts);
     experts_packed_remap = vals[2];
     expert_params = vals[1];  // experts count and offsets
-    expert_src = ExpertsRemapTo(*model_builder, src, experts_packed_remap,
-                                num_active_experts);
+    expert_src = ::ml_drift::ExpertsRemapTo(
+        *model_builder, src, experts_packed_remap, num_active_experts);
   } else {
     auto src_tokens = model_builder->Reshape(
         src, ::ml_drift::BHWC(1, sequence_size, 1, model_dim));
-    ABSL_ASSIGN_OR_RETURN(auto token_indices,
-                          CreateDispatchTokenIndices(model_builder, sequence_size,
-                                                     num_active_experts));
+    ABSL_ASSIGN_OR_RETURN(auto token_indices, CreateDispatchTokenIndices(
+                                                  model_builder, sequence_size,
+                                                  num_active_experts));
     expert_src = model_builder->Gather(src_tokens, token_indices,
                                        ::ml_drift::Axis::HEIGHT);
     expert_params = flat_top_indices;
@@ -295,11 +296,11 @@ absl::Status BuildMoeExpertsGpuGraph(
           const std::string& name)
       -> absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> {
     if (use_packed_groups) {
-      auto w =
-          BuildExpertWeights(model_builder, input, weights_handle, scale_ptr,
-                             in_channels, out_channels, num_experts, weight_type);
-      return MakeConvWithPackedGroups(*model_builder, input, expert_params, w,
-                                      num_active_experts);
+      auto w = BuildExpertWeights(model_builder, input, weights_handle,
+                                  scale_ptr, in_channels, out_channels,
+                                  num_experts, weight_type);
+      return ::ml_drift::MakeConvWithPackedGroups(
+          *model_builder, input, expert_params, w, num_active_experts);
     } else {
       return ExpertFullyConnected(model_builder, create_info, input,
                                   expert_params, weights_handle, scale_ptr,
@@ -324,8 +325,9 @@ absl::Status BuildMoeExpertsGpuGraph(
                             model_dim, "moe_linear"));
 
   if (use_packed_groups) {
-    expert_outputs = ExpertsRemapFrom(*model_builder, expert_outputs,
-                                      experts_packed_remap, num_active_experts);
+    expert_outputs =
+        ::ml_drift::ExpertsRemapFrom(*model_builder, expert_outputs,
+                                     experts_packed_remap, num_active_experts);
     expert_outputs =
         model_builder->Transpose(expert_outputs, ::ml_drift::BHWC(0, 2, 1, 3));
     expert_outputs = model_builder->Reshape(
