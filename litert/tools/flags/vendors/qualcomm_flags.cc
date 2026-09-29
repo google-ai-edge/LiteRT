@@ -552,6 +552,11 @@ ABSL_FLAG(uint32_t, qualcomm_htp_device_id, 0,
           "A nonzero value requires a matching platform-reported device; 0 "
           "leaves device selection to QNN's default configuration.");
 
+ABSL_FLAG(uint32_t, qualcomm_htp_file_read_memory_budget_mb, 0,
+          "Caps the host memory (MB) used to read a context binary during HTP "
+          "deserialization. 0 disables the feature (default). A smaller budget "
+          "may reduce peak host RSS and increase initialization time.");
+
 ABSL_FLAG(uint32_t, qualcomm_num_hvx_thread, 0,
           "The number of hvx threads for the target device. If this option is "
           "set to 0, the max number of hvx threads will be used.");
@@ -565,8 +570,9 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::OptimizationLevel,
 ABSL_FLAG(litert::qualcomm::QualcommOptions::GraphPriority,
           qualcomm_graph_priority,
           litert::qualcomm::QualcommOptions::GraphPriority::kDefault,
-          "QNN graph priority, If the option is set to 'default', the "
-          "QNN_PRIORITY_DEFAULT (Equal to QNN_PRIORITY_NORMAL) will be used.");
+          "QNN graph priority. 'default' maps to QNN_PRIORITY_NORMAL. Effective "
+          "at both compile and dispatch time; on HTP the dispatch-time value "
+          "wins.");
 
 ABSL_FLAG(std::string, qualcomm_saver_output_dir, "",
           "Saver output directory. If provided, you can obtain saver_output.c "
@@ -1020,6 +1026,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto htp_device_id = absl::GetFlag(FLAGS_qualcomm_htp_device_id);
   opts.SetHtpDeviceId(htp_device_id);
+
+  const auto htp_file_read_memory_budget_mb =
+      absl::GetFlag(FLAGS_qualcomm_htp_file_read_memory_budget_mb);
+  opts.SetHtpFileReadMemoryBudgetMB(htp_file_read_memory_budget_mb);
 
   const auto num_hvx_threads = absl::GetFlag(FLAGS_qualcomm_num_hvx_thread);
   opts.SetNumHvxThreads(num_hvx_threads);
