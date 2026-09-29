@@ -70,12 +70,14 @@ bool IsAhwbGpuDataBufferSupported() {
     test_desc.format = AHARDWAREBUFFER_FORMAT_BLOB;
     test_desc.usage = AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER;
 
+#if __ANDROID_API__ >= 29
     if (__builtin_available(android 29, *)) {
       if (&AHardwareBuffer_isSupported != nullptr &&
           !AHardwareBuffer_isSupported(&test_desc)) {
         return false;
       }
     }
+#endif
 
     AHardwareBuffer* test_ahwb = nullptr;
     if (AHardwareBuffer_allocate(&test_desc, &test_ahwb) != 0) {
