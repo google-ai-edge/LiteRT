@@ -19,6 +19,7 @@ limitations under the License.
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -1039,6 +1040,116 @@ TYPED_TEST(AttentionTest, MultiKvHeadsGqaDynamicKVCacheAttentionTest) {
               Pointwise(FloatNear(1e-4f),
                         {0.2701873f, 0.6819012f, 1.0936151f, 1.5053290f,
                          0.7441726f, 0.9039949f, 1.0638173f, 1.2236395f}));
+}
+
+// Grouped-Query Attention over two decode steps whose KV cache grows in
+// between. This is the shape incremental decoding produces: the graph is built
+// once and re-run with a longer cache, so every extent derived from the cache
+// length has to stay dynamic rather than be frozen when the graph is built.
+TYPED_TEST(AttentionTest, MultiKvHeadsGqaGrowingKVCacheAttentionTest) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
+  Config config = Config::E4B();
+  config.num_heads = 4;
+  config.num_kv_heads = 2;
+  config.head_dim = 4;
+  config.embed_dim = 8;
+
+  // 1 token decode step.
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 1, 8}});
+  // The mask covers the cached tokens plus the new one, so it grows with the
+  // cache.
+  Tensor attention_mask(
+      {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 1, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 1, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 1, 4}});
+
+  Tensor key_cache(
+      {.name = "key_cache", .type = Type::kFP32, .shape = {1, 2, 3, 4}});
+  Tensor value_cache(
+      {.name = "value_cache", .type = Type::kFP32, .shape = {1, 2, 3, 4}});
+
+  LazyTensorMapping weights(CreateGqaWeights());
+
+  Tensor shared_key = Tensor::Invalid();
+  Tensor shared_value = Tensor::Invalid();
+
+  Tensor eps_tensor({
+      .type = Type::kFP32,
+      .shape = {1},
+      .buffer = config.rms_norm_eps,
+  });
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<Tag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      Runner runner, Runner::Create({attn_out.output, attn_out.key_cache,
+                                     attn_out.value_cache}));
+
+  const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
+                                           1.0f, 2.0f, 3.0f, 4.0f};
+  ASSERT_THAT(runner.SetInput(input, input_data), IsOk());
+
+  const std::array<float, 4> cos_data = {1.0f, 1.0f, 1.0f, 1.0f};
+  const std::array<float, 4> sin_data = {0.0f, 0.0f, 0.0f, 0.0f};
+  ASSERT_THAT(runner.SetInput(cos, cos_data), IsOk());
+  ASSERT_THAT(runner.SetInput(sin, sin_data), IsOk());
+
+  // The new key and value are only ever the projection of the single new
+  // token, so they do not depend on the cache length.
+  const std::vector<float> expected_kc = {0.2985111f, 0.6965259f, 1.0945408f,
+                                          1.4925557f, 0.7481243f, 0.9056241f,
+                                          1.0631239f, 1.2206237f};
+  const std::vector<float> expected_vc = {0.2701873f, 0.6819012f, 1.0936151f,
+                                          1.5053290f, 0.7441726f, 0.9039949f,
+                                          1.0638173f, 1.2236395f};
+
+  // Expected data computed using the script in `./reference/attention.py`.
+  const std::vector<std::vector<float>> expected_outputs = {
+      {0.5797290f, 1.5080730f, 2.4364171f, 3.3647606f, 4.2931042f, 5.2214484f,
+       6.1497927f, 7.0781364f},
+      {0.5419821f, 1.4119579f, 2.2819335f, 3.1519091f, 4.0218849f, 4.8918605f,
+       5.7618365f, 6.6318121f},
+  };
+
+  for (int32_t cache_len : {3, 4}) {
+    SCOPED_TRACE(absl::StrCat("cache_len=", cache_len));
+
+    const std::array<int32_t, 4> cache_shape = {1, 2, cache_len, 4};
+    ASSERT_THAT(runner.ReshapeInput(key_cache, cache_shape), IsOk());
+    ASSERT_THAT(runner.ReshapeInput(value_cache, cache_shape), IsOk());
+    const std::array<int32_t, 4> mask_shape = {1, 1, 1, cache_len + 1};
+    ASSERT_THAT(runner.ReshapeInput(attention_mask, mask_shape), IsOk());
+
+    const std::vector<float> kc_data(2 * cache_len * 4, 0.5f);
+    const std::vector<float> vc_data(2 * cache_len * 4, 0.2f);
+    const std::vector<float> mask_data(cache_len + 1, 0.0f);
+    ASSERT_THAT(runner.SetInput(key_cache, kc_data), IsOk());
+    ASSERT_THAT(runner.SetInput(value_cache, vc_data), IsOk());
+    ASSERT_THAT(runner.SetInput(attention_mask, mask_data), IsOk());
+
+    ASSERT_THAT(runner.Run(), IsOk());
+
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(LockedBufferSpan<const std::byte> res_out,
+                                    runner.ReadOutput(attn_out.output));
+    EXPECT_THAT(std::move(res_out).As<const float>(),
+                Pointwise(FloatNear(1e-4f), expected_outputs[cache_len - 3]));
+
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(LockedBufferSpan<const std::byte> res_kc,
+                                    runner.ReadOutput(attn_out.key_cache));
+    EXPECT_THAT(std::move(res_kc).As<const float>(),
+                Pointwise(FloatNear(1e-4f), expected_kc));
+
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(LockedBufferSpan<const std::byte> res_vc,
+                                    runner.ReadOutput(attn_out.value_cache));
+    EXPECT_THAT(std::move(res_vc).As<const float>(),
+                Pointwise(FloatNear(1e-4f), expected_vc));
+  }
 }
 
 // Checks when shared_key and shared_value tensors are provided, which should
