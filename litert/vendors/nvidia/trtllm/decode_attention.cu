@@ -78,6 +78,10 @@ __host__ __device__ constexpr size_t SharedBytesFor() {
          static_cast<size_t>(kRowsCap) * kChunk * sizeof(bool);
 }
 
+// Clang may retain loops despite the kernel's best-effort unroll hints, and
+// reports the failed transformation at the kernel's declaration.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpass-failed"
 // One block per (chunk of keys, head). Shared memory: q as [rows][E][32]
 // halves (lane-major so each lane reads its own slice without bank
 // conflicts), then scores/probabilities [rows][kChunk], then row max and
@@ -352,6 +356,7 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
     ws_l[part + tid] = l_s[tid];
   }
 }
+#pragma clang diagnostic pop
 
 // One block per (row, head): combine the split partials. The warps take
 // interleaved splits (each lane a depth slice) so many partial rows are in

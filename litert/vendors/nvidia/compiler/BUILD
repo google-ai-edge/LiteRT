@@ -161,6 +161,7 @@ cc_test(
     }),
     deps = [
         ":subbyte_gemv_plugin",
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
         "@com_google_googletest//:gtest_main",
         "@local_cuda//:cuda_headers",
         "@local_cuda//:cuda_runtime",
@@ -193,6 +194,7 @@ cc_library(
         "//litert/vendors/nvidia:cache_layout",
         "//litert/vendors/nvidia:memory_profile",
         "//litert/vendors/nvidia:tensorrt_logger",
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
         "@com_google_absl//absl/types:span",
         "@local_cuda//:cuda_headers",
         "@local_tensorrt_rtx//:tensorrt_rtx_headers",

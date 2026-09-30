@@ -18,12 +18,14 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <new>
 
 #include "cuda_runtime_api.h"
 #include "driver_types.h"
 #include "NvInferRuntime.h"
 #include "litert/vendors/nvidia/trtllm/int2_gemv.h"
+#include "litert/vendors/nvidia/trtllm/subbyte_gemm.h"
 
 namespace litert::nvidia {
 namespace {
@@ -34,21 +36,45 @@ constexpr char kPluginNamespace[] = "";
 constexpr char kBitWidthField[] = "bit_width";
 constexpr char kRowsField[] = "rows";
 constexpr char kColumnsField[] = "columns";
+constexpr char kGateField[] = "gate";
+constexpr char kTiledField[] = "tiled";
+constexpr int kFields = 5;
+
+// The activation rows [..., columns] of a descriptor, or 0.
+int64_t ActivationRows(const nvinfer1::Dims& dims, int32_t columns) {
+  if (dims.nbDims < 1 || dims.d[dims.nbDims - 1] != columns) {
+    return 0;
+  }
+  int64_t rows = 1;
+  for (int i = 0; i + 1 < dims.nbDims; ++i) {
+    if (dims.d[i] <= 0 || dims.d[i] > std::numeric_limits<int32_t>::max() ||
+        rows > std::numeric_limits<int32_t>::max() / dims.d[i]) {
+      return 0;
+    }
+    rows *= dims.d[i];
+  }
+  return rows;
+}
 
 class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
                                 public nvinfer1::IPluginV3OneCore,
                                 public nvinfer1::IPluginV3OneBuild,
                                 public nvinfer1::IPluginV3OneRuntime {
  public:
-  SubbyteGemvPlugin(int32_t bit_width, int32_t rows, int32_t columns) noexcept
+  SubbyteGemvPlugin(int32_t bit_width, int32_t rows, int32_t columns,
+                    int32_t gate, int32_t tiled) noexcept
       : bit_width_(bit_width),
         rows_(rows),
         columns_(columns),
+        gate_(gate),
+        tiled_(tiled),
         fields_{
             {{kBitWidthField, &bit_width_, nvinfer1::PluginFieldType::kINT32,
               1},
              {kRowsField, &rows_, nvinfer1::PluginFieldType::kINT32, 1},
-             {kColumnsField, &columns_, nvinfer1::PluginFieldType::kINT32, 1}}},
+             {kColumnsField, &columns_, nvinfer1::PluginFieldType::kINT32, 1},
+             {kGateField, &gate_, nvinfer1::PluginFieldType::kINT32, 1},
+             {kTiledField, &tiled_, nvinfer1::PluginFieldType::kINT32, 1}}},
         field_collection_{static_cast<int32_t>(fields_.size()),
                           fields_.data()} {}
 
@@ -66,7 +92,8 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
   }
 
   nvinfer1::IPluginV3* clone() noexcept override {
-    return new (std::nothrow) SubbyteGemvPlugin(bit_width_, rows_, columns_);
+    return new (std::nothrow)
+        SubbyteGemvPlugin(bit_width_, rows_, columns_, gate_, tiled_);
   }
 
   const char* getPluginName() const noexcept override { return kPluginName; }
@@ -118,7 +145,8 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
       return 1;
     }
     outputs[0] = inputs[0];
-    outputs[0].d[outputs[0].nbDims - 1] = expr_builder.constant(rows_);
+    outputs[0].d[outputs[0].nbDims - 1] =
+        expr_builder.constant(OutputChannels());
     return outputs[0].d[outputs[0].nbDims - 1] != nullptr ? 0 : 1;
   }
 
@@ -142,19 +170,51 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
                : 1;
   }
 
+  size_t getWorkspaceSize(const nvinfer1::DynamicPluginTensorDesc* inputs,
+                          int32_t num_inputs,
+                          const nvinfer1::DynamicPluginTensorDesc* outputs,
+                          int32_t num_outputs) const noexcept override {
+    static_cast<void>(outputs);
+    if (inputs == nullptr || num_inputs != 3 || num_outputs != 1) {
+      return 0;
+    }
+    if (tiled_ == 0) {
+      return 0;
+    }
+    const LiteRtNvidiaGemmShape shape =
+        GemmShape(ActivationRows(inputs[0].max, columns_));
+    return LiteRtNvidiaSubbyteGemmWorkspaceBytes(&shape);
+  }
+
   int32_t enqueue(const nvinfer1::PluginTensorDesc* input_desc,
                   const nvinfer1::PluginTensorDesc* output_desc,
                   const void* const* inputs, void* const* outputs,
                   void* workspace, cudaStream_t stream) noexcept override {
-    static_cast<void>(input_desc);
     static_cast<void>(output_desc);
-    static_cast<void>(workspace);
-    if (inputs == nullptr || outputs == nullptr) {
+    if (input_desc == nullptr || inputs == nullptr || outputs == nullptr) {
       return 1;
     }
-    const cudaError_t status = LiteRtNvidiaLaunchBf16SubbytePerChannelGemv(
-        inputs[0], static_cast<const uint8_t*>(inputs[1]), inputs[2],
-        outputs[0], bit_width_, columns_, rows_, stream);
+    // One activation row (decode) is a GEMV over row-major weights; many
+    // rows (prefill) are a GEMM on the tensor cores over tiled weights.
+    const int64_t rows = ActivationRows(input_desc[0].dims, columns_);
+    cudaError_t status = cudaErrorInvalidValue;
+    if (tiled_ == 0) {
+      if (rows == 1) {
+        status = LiteRtNvidiaLaunchBf16SubbytePerChannelGemv(
+            inputs[0], static_cast<const uint8_t*>(inputs[1]), inputs[2],
+            outputs[0], bit_width_, columns_, rows_, stream);
+      }
+    } else {
+      const LiteRtNvidiaGemmShape shape = GemmShape(rows);
+      const nvinfer1::Dims& weight_dims = input_desc[1].dims;
+      if (weight_dims.nbDims == 1 && weight_dims.d[0] > 0 &&
+          static_cast<size_t>(weight_dims.d[0]) ==
+              LiteRtNvidiaSubbyteGemmTiledWeightBytes(&shape)) {
+        status = LiteRtNvidiaLaunchBf16Int4Gemm(
+            &shape, inputs[0], static_cast<const uint8_t*>(inputs[1]),
+            inputs[2], outputs[0], workspace, stream);
+      }
+    }
     if (status != cudaSuccess) {
       std::fprintf(stderr,
                    "[LiteRtNvidiaSubbyteGemv] CUDA launch failed: %s (%d): "
@@ -178,10 +238,21 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
   }
 
  private:
+  // With a gate the weights hold the gate and the up projection.
+  int32_t OutputChannels() const noexcept {
+    return gate_ != 0 ? rows_ / 2 : rows_;
+  }
+
+  LiteRtNvidiaGemmShape GemmShape(int64_t rows) const noexcept {
+    return {static_cast<int32_t>(rows), columns_, OutputChannels(), gate_};
+  }
+
   int32_t bit_width_;
   int32_t rows_;
   int32_t columns_;
-  std::array<nvinfer1::PluginField, 3> fields_;
+  int32_t gate_;
+  int32_t tiled_;
+  std::array<nvinfer1::PluginField, kFields> fields_;
   nvinfer1::PluginFieldCollection field_collection_;
 };
 
@@ -191,7 +262,9 @@ class SubbyteGemvPluginCreator final : public nvinfer1::IPluginCreatorV3One {
       : fields_{
             {{kBitWidthField, nullptr, nvinfer1::PluginFieldType::kINT32, 1},
              {kRowsField, nullptr, nvinfer1::PluginFieldType::kINT32, 1},
-             {kColumnsField, nullptr, nvinfer1::PluginFieldType::kINT32, 1}}},
+             {kColumnsField, nullptr, nvinfer1::PluginFieldType::kINT32, 1},
+             {kGateField, nullptr, nvinfer1::PluginFieldType::kINT32, 1},
+             {kTiledField, nullptr, nvinfer1::PluginFieldType::kINT32, 1}}},
         field_collection_{static_cast<int32_t>(fields_.size()),
                           fields_.data()} {}
 
@@ -206,6 +279,8 @@ class SubbyteGemvPluginCreator final : public nvinfer1::IPluginCreatorV3One {
     int32_t bit_width = 0;
     int32_t rows = 0;
     int32_t columns = 0;
+    int32_t gate = 0;
+    int32_t tiled = 0;
     for (int32_t i = 0; i < fields->nbFields; ++i) {
       const auto& field = fields->fields[i];
       if (field.name == nullptr || field.data == nullptr ||
@@ -220,9 +295,16 @@ class SubbyteGemvPluginCreator final : public nvinfer1::IPluginCreatorV3One {
         rows = value;
       } else if (std::strcmp(field.name, kColumnsField) == 0) {
         columns = value;
+      } else if (std::strcmp(field.name, kGateField) == 0) {
+        gate = value;
+      } else if (std::strcmp(field.name, kTiledField) == 0) {
+        tiled = value;
       }
     }
-    return CreateSubbyteGemvPlugin(bit_width, rows, columns);
+    if (tiled != 0 && tiled != 1) {
+      return nullptr;
+    }
+    return CreateSubbyteGemvPlugin(bit_width, rows, columns, gate, tiled != 0);
   }
 
   const nvinfer1::PluginFieldCollection* getFieldNames() noexcept override {
@@ -237,19 +319,34 @@ class SubbyteGemvPluginCreator final : public nvinfer1::IPluginCreatorV3One {
   }
 
  private:
-  std::array<nvinfer1::PluginField, 3> fields_;
+  std::array<nvinfer1::PluginField, kFields> fields_;
   nvinfer1::PluginFieldCollection field_collection_;
 };
 
 }  // namespace
 
 nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(int32_t bit_width, int32_t rows,
-                                             int32_t columns) noexcept {
+                                             int32_t columns, int32_t gate,
+                                             bool tiled) noexcept {
   if ((bit_width != 2 && bit_width != 4) || rows <= 0 || columns <= 0 ||
       columns % 16 != 0) {
     return nullptr;
   }
-  return new (std::nothrow) SubbyteGemvPlugin(bit_width, rows, columns);
+  if (gate != 0 && (!tiled || rows % 2 != 0 ||
+                    (gate != kLiteRtNvidiaGemmGateGeluTanh &&
+                     gate != kLiteRtNvidiaGemmGateGeluErf))) {
+    return nullptr;
+  }
+  if (tiled) {
+    // Any number of activation rows the GEMM supports.
+    const LiteRtNvidiaGemmShape shape = {128, columns,
+                                         gate != 0 ? rows / 2 : rows, gate};
+    if (bit_width != 4 || !LiteRtNvidiaSubbyteGemmSupports(&shape)) {
+      return nullptr;
+    }
+  }
+  return new (std::nothrow)
+      SubbyteGemvPlugin(bit_width, rows, columns, gate, tiled ? 1 : 0);
 }
 
 void EnsureSubbyteGemvPluginRegistered() noexcept {}

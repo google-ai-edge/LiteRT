@@ -15,6 +15,7 @@
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -25,6 +26,7 @@
 #include "driver_types.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_rtx_plugin_compat.h"
 #include "NvInfer.h"
+#include "litert/vendors/nvidia/trtllm/subbyte_gemm.h"
 
 namespace litert::nvidia {
 namespace {
@@ -186,6 +188,186 @@ TEST(SubbyteGemvPluginTest, SerializesAndMatchesReference) {
           << "bit_width=" << bit_width << " row=" << row;
     }
   }
+}
+
+TEST(SubbyteGemvPluginTest, ManyRowsRunAsGemm) {
+  // Prefill: 128 activation rows against INT4 weights, plain and with the
+  // gate and up projections of a feed-forward block fused (GELU gate).
+  struct Case {
+    int32_t channels;  // output channels
+    int32_t columns;
+    int32_t gate;
+  };
+  constexpr int kActivationRows = 128;
+  for (const Case& test_case : {Case{130, 256, 0}, Case{3840, 1024, 0},
+                                Case{64, 512, 1}, Case{250, 256, 2}}) {
+    SCOPED_TRACE(::testing::Message() << "channels=" << test_case.channels
+                                      << " columns=" << test_case.columns
+                                      << " gate=" << test_case.gate);
+    const int columns = test_case.columns;
+    const int weight_rows =
+        test_case.gate != 0 ? 2 * test_case.channels : test_case.channels;
+    std::vector<uint16_t> activation(kActivationRows * columns);
+    std::vector<uint8_t> packed(weight_rows * columns / 2, 0);
+    std::vector<uint16_t> scales(weight_rows);
+    uint32_t state = 12345u + weight_rows + columns;
+    const auto next = [&]() {
+      state = state * 1664525u + 1013904223u;
+      return state >> 8;
+    };
+    for (auto& value : activation) {
+      value =
+          FloatToBf16Bits(static_cast<float>(next() % 2048) / 512.0f - 2.0f);
+    }
+    for (auto& byte : packed) {
+      byte = static_cast<uint8_t>(next());
+    }
+    for (auto& scale : scales) {
+      scale =
+          FloatToBf16Bits(0.004f + static_cast<float>(next() % 8) / 1024.0f);
+    }
+
+    const LiteRtNvidiaGemmShape shape = {kActivationRows, columns,
+                                         test_case.channels, test_case.gate};
+    std::vector<uint8_t> tiled(LiteRtNvidiaSubbyteGemmTiledWeightBytes(&shape));
+    ASSERT_TRUE(LiteRtNvidiaSubbyteGemmTileWeights(&shape, packed.data(),
+                                                   tiled.data()));
+
+    TestLogger logger;
+    std::unique_ptr<nvinfer1::IBuilder> builder(
+        nvinfer1::createInferBuilder(logger));
+    ASSERT_NE(builder, nullptr);
+    std::unique_ptr<nvinfer1::INetworkDefinition> network(
+        builder->createNetworkV2(/*flags=*/0));
+    ASSERT_NE(network, nullptr);
+    auto* activation_input =
+        network->addInput("activation", nvinfer1::DataType::kBF16,
+                          nvinfer1::Dims{3, {1, kActivationRows, columns}});
+    ASSERT_NE(activation_input, nullptr);
+    nvinfer1::Weights packed_weights{nvinfer1::DataType::kINT8, tiled.data(),
+                                     static_cast<int64_t>(tiled.size())};
+    auto* packed_layer = network->addConstant(
+        nvinfer1::Dims{1, {static_cast<int32_t>(tiled.size())}},
+        packed_weights);
+    ASSERT_NE(packed_layer, nullptr);
+    nvinfer1::Weights scale_weights{nvinfer1::DataType::kBF16, scales.data(),
+                                    static_cast<int64_t>(scales.size())};
+    auto* scale_layer =
+        network->addConstant(nvinfer1::Dims{1, {weight_rows}}, scale_weights);
+    ASSERT_NE(scale_layer, nullptr);
+    std::unique_ptr<nvinfer1::IPluginV3> plugin(CreateSubbyteGemvPlugin(
+        /*bit_width=*/4, weight_rows, columns, test_case.gate,
+        /*tiled=*/true));
+    ASSERT_NE(plugin, nullptr);
+    nvinfer1::ITensor* inputs[] = {activation_input, packed_layer->getOutput(0),
+                                   scale_layer->getOutput(0)};
+    auto* plugin_layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+        *network, inputs, std::size(inputs), *plugin);
+    ASSERT_NE(plugin_layer, nullptr);
+    auto* output = plugin_layer->getOutput(0);
+    ASSERT_NE(output, nullptr);
+    const auto output_dims = output->getDimensions();
+    ASSERT_EQ(output_dims.nbDims, 3);
+    EXPECT_EQ(output_dims.d[1], kActivationRows);
+    EXPECT_EQ(output_dims.d[2], test_case.channels);
+    output->setName("output");
+    network->markOutput(*output);
+    std::unique_ptr<nvinfer1::IBuilderConfig> config(
+        builder->createBuilderConfig());
+    ASSERT_NE(config, nullptr);
+    std::unique_ptr<nvinfer1::IHostMemory> serialized(
+        builder->buildSerializedNetwork(*network, *config));
+    ASSERT_NE(serialized, nullptr);
+    network.reset();
+    plugin.reset();
+
+    std::unique_ptr<nvinfer1::IRuntime> runtime(
+        nvinfer1::createInferRuntime(logger));
+    ASSERT_NE(runtime, nullptr);
+    std::unique_ptr<nvinfer1::ICudaEngine> engine(
+        runtime->deserializeCudaEngine(serialized->data(), serialized->size()));
+    ASSERT_NE(engine, nullptr);
+    std::unique_ptr<nvinfer1::IExecutionContext> context(
+        engine->createExecutionContext());
+    ASSERT_NE(context, nullptr);
+    uint16_t* device_activation = nullptr;
+    uint16_t* device_output = nullptr;
+    const size_t output_elements =
+        static_cast<size_t>(kActivationRows) * test_case.channels;
+    ASSERT_EQ(cudaMalloc(reinterpret_cast<void**>(&device_activation),
+                         activation.size() * sizeof(uint16_t)),
+              cudaSuccess);
+    ASSERT_EQ(cudaMalloc(reinterpret_cast<void**>(&device_output),
+                         output_elements * sizeof(uint16_t)),
+              cudaSuccess);
+    ASSERT_EQ(cudaMemcpy(device_activation, activation.data(),
+                         activation.size() * sizeof(uint16_t),
+                         cudaMemcpyHostToDevice),
+              cudaSuccess);
+    ASSERT_TRUE(context->setTensorAddress("activation", device_activation));
+    ASSERT_TRUE(context->setTensorAddress("output", device_output));
+    ASSERT_TRUE(context->enqueueV3(/*stream=*/nullptr));
+    std::vector<uint16_t> actual(output_elements);
+    ASSERT_EQ(
+        cudaMemcpy(actual.data(), device_output,
+                   actual.size() * sizeof(uint16_t), cudaMemcpyDeviceToHost),
+        cudaSuccess);
+    cudaFree(device_activation);
+    cudaFree(device_output);
+
+    const auto dot = [&](int row, int channel) {
+      double sum = 0.0;
+      for (int column = 0; column < columns; ++column) {
+        const size_t index = static_cast<size_t>(channel) * columns + column;
+        const int bits = (packed[index / 2] >> (4 * (index % 2))) & 15;
+        sum += static_cast<double>(
+                   Bf16BitsToFloat(activation[row * columns + column])) *
+               ((bits ^ 8) - 8);
+      }
+      return sum * Bf16BitsToFloat(scales[channel]);
+    };
+    const auto gelu = [&](double x) {
+      return test_case.gate == 1
+                 ? 0.5 * x *
+                       (1.0 + std::tanh(0.7978845608028654 *
+                                        (x + 0.044715 * x * x * x)))
+                 : 0.5 * x * (1.0 + std::erf(x * 0.7071067811865476));
+    };
+    for (int row : {0, 1, 63, 127}) {
+      double error = 0.0;
+      double norm = 0.0;
+      for (int channel = 0; channel < test_case.channels; ++channel) {
+        const double expected = test_case.gate != 0
+                                    ? gelu(dot(row, channel)) *
+                                          dot(row, test_case.channels + channel)
+                                    : dot(row, channel);
+        const double value =
+            Bf16BitsToFloat(actual[row * test_case.channels + channel]);
+        error += (value - expected) * (value - expected);
+        norm += expected * expected;
+      }
+      // BF16 rounding alone is about 1.7e-3 of the norm of a row.
+      EXPECT_LE(std::sqrt(error), 3.0e-3 * std::sqrt(norm)) << "row=" << row;
+    }
+  }
+}
+
+TEST(SubbyteGemvPluginTest, RejectsInvalidGatesAndTiledShapes) {
+  const auto create = [](int32_t bit_width, int32_t rows, int32_t columns,
+                         int32_t gate, bool tiled) {
+    return std::unique_ptr<nvinfer1::IPluginV3>(
+        CreateSubbyteGemvPlugin(bit_width, rows, columns, gate, tiled));
+  };
+  EXPECT_NE(create(4, 128, 256, /*gate=*/1, /*tiled=*/true), nullptr);
+  EXPECT_NE(create(4, 130, 256, /*gate=*/0, /*tiled=*/true), nullptr);
+  EXPECT_EQ(create(4, 128, 256, /*gate=*/3, /*tiled=*/true), nullptr);
+  EXPECT_EQ(create(4, 129, 256, /*gate=*/1, /*tiled=*/true), nullptr);
+  // The GEMM takes INT4 weights and input dims in multiples of 128, and a
+  // gate needs the GEMM.
+  EXPECT_EQ(create(2, 128, 256, /*gate=*/1, /*tiled=*/true), nullptr);
+  EXPECT_EQ(create(2, 128, 256, /*gate=*/0, /*tiled=*/true), nullptr);
+  EXPECT_EQ(create(4, 128, 272, /*gate=*/0, /*tiled=*/true), nullptr);
+  EXPECT_EQ(create(4, 128, 256, /*gate=*/1, /*tiled=*/false), nullptr);
 }
 
 }  // namespace

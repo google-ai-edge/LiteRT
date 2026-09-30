@@ -468,7 +468,7 @@ Usage:
   run_head.sh cache clear (--all|--profile e2b|12b|--kind KIND) [--yes]
 
 Defaults: 12b, short, prefill 1024 (long: 128), MTP off, all metrics, warm caches.
-Auto residency: resident for short and non-MTP 32k/prefill 128; otherwise lazy.
+Auto residency: resident for short and for non-MTP long presets; otherwise lazy.
 One model/workload per invocation.
 Environment: LITERT_LM_DIR, TENSORRT_RTX_ROOT, CUDA_HOME, LITERT_BENCH_ROOT.
 LITERT_BENCH_ALLOW_BACKGROUND_ACTIVITY defaults to 1 (warn); set 0 for strict idle.
@@ -527,7 +527,6 @@ else
   [[ $profile != e2b || ( $workload == short && $mtp == false ) ]] || die 'E2B supports short, non-MTP presets only'
   prefill=${prefill:-$([[ $workload == short ]] && echo 1024 || echo 128)}
   [[ $prefill == 128 || $prefill == 1024 ]] || die 'Prefill must be 128 or 1024'
-  [[ $workload != 128k || $prefill == 128 ]] || die '128k requires prefill 128'
 fi
 
 resolve_paths() {
@@ -577,9 +576,10 @@ case "$workload:$prefill" in
   32k:128) NB_INPUT=32768; NB_OUTPUT=256; NB_CONTEXT=34818; iterations=4; warmups=1; processes=2 ;;
   32k:1024) NB_INPUT=32768; NB_OUTPUT=256; NB_CONTEXT=33792; iterations=4; warmups=1; processes=2 ;;
   128k:128) NB_INPUT=128001; NB_OUTPUT=128; NB_CONTEXT=130816; iterations=4; warmups=1; processes=1 ;;
+  128k:1024) NB_INPUT=128001; NB_OUTPUT=128; NB_CONTEXT=130048; iterations=4; warmups=1; processes=1 ;;
 esac
 NB_LAZY=0
-[[ $residency != lazy && ( $residency != auto || $workload == short || ( $workload == 32k && $prefill == 128 && $mtp == false ) ) ]] || NB_LAZY=1
+[[ $residency != lazy && ( $residency != auto || $workload == short || $mtp == false ) ]] || NB_LAZY=1
 export NB_INPUT NB_OUTPUT NB_CONTEXT NB_LAZY
 export NB_REPORT=$NB_ROOT/reports/$(date -u +%Y%m%dT%H%M%S)-$$ NB_CWD=$NB_RT
 helper init "$invocation"
