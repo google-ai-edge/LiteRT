@@ -27,7 +27,9 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
+#if !defined(LITERT_QUALCOMM_AOT)
 #include "litert/runtime/accelerators/auto_registration.h"
+#endif
 #if !defined(LITERT_DISABLE_GPU)
 #include "litert/runtime/gpu_environment.h"
 #endif  // !defined(LITERT_DISABLE_GPU)
@@ -69,7 +71,9 @@ LiteRtStatus LiteRtCreateEnvironment(int num_options,
 
   LITERT_ASSIGN_OR_RETURN(auto env,
                           LiteRtEnvironmentT::CreateWithOptions(options_span));
+#if !defined(LITERT_QUALCOMM_AOT)
   litert::TriggerAcceleratorAutomaticRegistration(*env);
+#endif
 
   // Check if any GPU-related options are present using modern C++ algorithms
   constexpr std::array<LiteRtEnvOptionTag, 12> kGpuOptionTags = {

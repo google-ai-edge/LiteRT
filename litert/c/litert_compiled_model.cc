@@ -274,8 +274,12 @@ LiteRtStatus LiteRtSetCompiledModelCancellationFunction(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
+#if defined(LITERT_QUALCOMM_AOT)
+  return kLiteRtStatusErrorUnsupported;
+#else
   compiled_model->SetCancellationFunction(data, check_cancelled_func);
   return kLiteRtStatusOk;
+#endif
 }
 
 void LiteRtDestroyCompiledModel(LiteRtCompiledModel compiled_model) {
@@ -369,6 +373,9 @@ LiteRtStatus LiteRtCompiledModelSetDispatchAnnotation(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
+#if defined(LITERT_QUALCOMM_AOT)
+  return kLiteRtStatusErrorUnsupported;
+#else
   // Get the buffer context and set the annotation
   auto* buffer_context = compiled_model->GetBufferContext();
   if (!buffer_context) {
@@ -379,6 +386,7 @@ LiteRtStatus LiteRtCompiledModelSetDispatchAnnotation(
   buffer_context->SetSignatureDispatchAnnotation(signature_index, key, value);
 
   return kLiteRtStatusOk;
+#endif
 }
 
 LiteRtStatus LiteRtCompiledModelGetDispatchAnnotation(
@@ -396,6 +404,10 @@ LiteRtStatus LiteRtCompiledModelGetDispatchAnnotation(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
+#if defined(LITERT_QUALCOMM_AOT)
+  *value = nullptr;
+  return kLiteRtStatusErrorUnsupported;
+#else
   // Get the buffer context and retrieve the annotation
   auto* buffer_context = compiled_model->GetBufferContext();
   if (!buffer_context) {
@@ -413,6 +425,7 @@ LiteRtStatus LiteRtCompiledModelGetDispatchAnnotation(
   }
 
   return kLiteRtStatusOk;
+#endif
 }
 
 LiteRtStatus LiteRtCompiledModelRemoveDispatchAnnotation(
@@ -429,6 +442,9 @@ LiteRtStatus LiteRtCompiledModelRemoveDispatchAnnotation(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
+#if defined(LITERT_QUALCOMM_AOT)
+  return kLiteRtStatusErrorUnsupported;
+#else
   // Get the buffer context and remove the annotation
   auto* buffer_context = compiled_model->GetBufferContext();
   if (!buffer_context) {
@@ -439,6 +455,7 @@ LiteRtStatus LiteRtCompiledModelRemoveDispatchAnnotation(
   buffer_context->RemoveSignatureDispatchAnnotation(signature_index, key);
 
   return kLiteRtStatusOk;
+#endif
 }
 
 LiteRtStatus LiteRtCompiledModelReportError(LiteRtCompiledModel compiled_model,

@@ -36,7 +36,7 @@
 #include "litert/core/util/perfetto_profiling.h"
 #include "tflite/converter/allocation.h"
 #include "tflite/stderr_reporter.h"
-#if !defined(LITERT_DISABLE_NPU)
+#if !defined(LITERT_DISABLE_NPU) && !defined(LITERT_QUALCOMM_AOT)
 #include "litert/core/model/model_serialize.h"
 #endif  // !defined(LITERT_DISABLE_NPU)
 
@@ -259,7 +259,7 @@ LiteRtStatus LiteRtSerializeModel(LiteRtModel model, uint8_t** buf,
   if (!model || !buf || !size || !offset) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-#if defined(LITERT_DISABLE_NPU)
+#if defined(LITERT_DISABLE_NPU) || defined(LITERT_QUALCOMM_AOT)
   if (destroy_model) {
     delete model;
   }

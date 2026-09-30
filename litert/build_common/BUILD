@@ -39,6 +39,7 @@ string_flag(
         "npu",
         "gpu,npu",
         "cpu_only",
+        "qualcomm_aot",
     ],
     visibility = ["//visibility:public"],
 )
@@ -115,6 +116,30 @@ config_setting(
 config_setting(
     name = "build_include_cpu_only",
     flag_values = {":build_include": "cpu_only"},
+)
+
+# A fixed-shape, FastRPC-only runtime that invokes precompiled contexts directly.
+config_setting(
+    name = "qualcomm_aot",
+    flag_values = {":build_include": "qualcomm_aot"},
+)
+
+selects.config_setting_group(
+    name = "standard_runtime",
+    match_any = [
+        ":build_include_gpu",
+        ":build_include_npu",
+        ":build_include_gpu_npu",
+        ":build_include_cpu_only",
+    ],
+)
+
+selects.config_setting_group(
+    name = "android_standard_runtime",
+    match_all = [
+        "//litert:android",
+        ":standard_runtime",
+    ],
 )
 
 selects.config_setting_group(
@@ -208,6 +233,7 @@ copy_file(
         ":build_include_gpu_define": "config/build_config_gpu.h",
         ":build_include_npu": "config/build_config_npu.h",
         ":build_include_cpu_only": "config/build_config_cpu_only.h",
+        ":qualcomm_aot": "config/build_config_qualcomm_aot.h",
         # Note: build_include_gpu_npu is removed to avoid illegal ambiguous match error b/w
         # build_include_gpu_define (define flag) and build_include_gpu_npu (string flag w/ default).
         # LINT.IfChange(build_config_header_default).

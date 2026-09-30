@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <utility>
 
@@ -130,12 +131,25 @@ bool FastRpcBuffer::IsSupported() {
 
 Expected<FastRpcBuffer> FastRpcBuffer::Alloc(size_t size) {
 #if LITERT_HAS_FASTRPC_SUPPORT
+  // rpcmem_alloc takes an int, even though tensor buffer sizes use size_t.
+  if (size == 0 || size > std::numeric_limits<int>::max()) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "FastRPC allocation size must fit in a positive int");
+  }
   absl::MutexLock lock(&TheMutex);
   if (auto status = InitLibraryIfNeededUnlocked(); !status) {
     return status.Error();
   }
   void* addr = TheFastRpcMemLibrary->Alloc(size);
+  if (!addr) {
+    return Unexpected(kLiteRtStatusErrorMemoryAllocationFailure,
+                      "rpcmem_alloc failed");
+  }
   int fd = TheFastRpcMemLibrary->ToFd(addr);
+  if (fd < 0) {
+    TheFastRpcMemLibrary->Free(addr);
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure, "rpcmem_to_fd failed");
+  }
   return FastRpcBuffer{.fd = fd, .addr = addr};
 #else   // LITERT_HAS_FASTRPC_SUPPORT
   return Unexpected(kLiteRtStatusErrorUnsupported,

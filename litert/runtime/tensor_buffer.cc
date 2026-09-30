@@ -249,6 +249,10 @@ LiteRtTensorBufferT::~LiteRtTensorBufferT() {
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromHostMemory(
     const LiteRtRankedTensorType& tensor_type, absl::Span<uint8_t> host_memory,
     LiteRtHostMemoryDeallocator deallocator) {
+#if defined(LITERT_QUALCOMM_AOT)
+  return Unexpected(kLiteRtStatusErrorUnsupported,
+                    "Qualcomm AOT supports only FastRPC tensor buffers");
+#else
   Ptr tensor_buffer(new LiteRtTensorBufferT(/*env=*/nullptr, tensor_type,
                                             kLiteRtTensorBufferTypeHostMemory,
                                             host_memory.size()));
@@ -262,6 +266,7 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromHostMemory(
   }
 
   return tensor_buffer;
+#endif
 }
 
 Expected<LiteRtTensorBufferT::Ptr>
@@ -691,6 +696,12 @@ LiteRtTensorBufferT::CreateManagedWithAlignment(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
     const LiteRtRankedTensorType& tensor_type, size_t buffer_size,
     size_t alignment) {
+#if defined(LITERT_QUALCOMM_AOT)
+  if (buffer_type != kLiteRtTensorBufferTypeFastRpc) {
+    return Unexpected(kLiteRtStatusErrorUnsupported,
+                      "Qualcomm AOT supports only FastRPC tensor buffers");
+  }
+#endif
   switch (buffer_type) {
     case kLiteRtTensorBufferTypeHostMemory:
       return CreateManagedOnHostMemory(tensor_type, buffer_size, alignment);

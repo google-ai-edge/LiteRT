@@ -14,9 +14,11 @@
 
 #include "litert/c/internal/litert_runtime_context.h"
 
+#include "litert/c/litert_common.h"
+#if !defined(LITERT_QUALCOMM_AOT)
 #include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/internal/litert_external_litert_buffer_context.h"
-#include "litert/c/litert_common.h"
+#endif
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_event.h"
@@ -39,6 +41,7 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
               .reserved = 0,
           },
       .create_tensor_buffer_requirements = LiteRtCreateTensorBufferRequirements,
+#if !defined(LITERT_QUALCOMM_AOT)
       .get_external_litert_buffer_context_tensor_buffer =
           LiteRtGetExternalLiteRtBufferContextTensorBuffer,
       .external_litert_buffer_context_create_tensor_buffer =
@@ -55,6 +58,7 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
           LiteRtExternalLiteRtBufferContextIsAsyncExecutionMode,
       .external_litert_buffer_context_destroy =
           LiteRtDestroyExternalLiteRtBufferContext,
+#endif
       .get_opaque_options = LiteRtGetOpaqueOptions,
       .find_opaque_options_data = LiteRtFindOpaqueOptionsData,
       .destroy_options = LiteRtDestroyOptions,
@@ -63,8 +67,10 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
       .environment_has_gpu_environment = LiteRtEnvironmentHasGpuEnvironment,
       .add_environment_options = LiteRtAddEnvironmentOptions,
       .gpu_environment_create = LiteRtGpuEnvironmentCreate,
+#if !defined(LITERT_QUALCOMM_AOT)
       .wrap_delegate = LiteRtWrapDelegate,
       .unwrap_delegate = LiteRtUnwrapDelegate,
+#endif
       .create_tensor_buffer_from_host_memory =
           LiteRtCreateTensorBufferFromHostMemory,
       .create_managed_tensor_buffer = LiteRtCreateManagedTensorBuffer,
@@ -100,8 +106,10 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
       .set_custom_event = LiteRtSetCustomEvent,
       .get_custom_event = LiteRtGetCustomEvent,
       .wait_event = LiteRtWaitEvent,
+#if !defined(LITERT_QUALCOMM_AOT)
       .external_litert_buffer_context_get_run_options =
           LiteRtExternalLiteRtBufferContextGetRunOptions,
+#endif
       .get_options_hardware_accelerators = LiteRtGetOptionsHardwareAccelerators,
       .append_metric = LiteRtAppendMetric,
   };
