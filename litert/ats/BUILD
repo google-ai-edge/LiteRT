@@ -38,7 +38,7 @@ litert_define_ats(
     backend = "cpu",
     compile_only_suffix = None,
     dont_register = [
-        "(_i32<[^>]+>(?!_cst)|->.*_i32)",  # XNNPACK does not support dynamic int32 math (allows int32 static constants)
+        "(_i32<[^>]+>(?!_cst)|->[(][^)]*_i32)",  # XNNPACK does not support dynamic int32 math (allows int32 static constants)
         "OneHot",  # XNNPACK does not support OneHot
         "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
@@ -55,12 +55,11 @@ litert_define_ats(
         "tfl\\.reduce_prod",  # XNNPACK does not support ReduceProd
         "LogSoftmax",  # XNNPACK does not support LogSoftmax
         "Pooling",  # XNNPACK rejects pooling when stride > filter size
-        "FullyConnected.*(i8|u8|SHUFFLED)",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
+        "FullyConnected.*([23]d_i8,2d_i8|u8|SHUFFLED)",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
         "Sdpa.*f16",  # XNNPACK delegate does not support f16 SDPA
         "Sdpa.*x8x[0-9]+>.*x1x[0-9]+>",  # XNNPACK delegate does not support 8-head MQA decode
-        "FullyConnected.*,2d_f32.*,1d_f32",
-        "FullyConnected.*,2d_f32[^c]",
-        "FullyConnected.*_cst.*,1d_f32[^c]",
+        "FullyConnected.*,2d_f32<[^>]+>(?!_cst)",
+        "FullyConnected.*,1d_f32<[^>]+>(?!_cst)",
         "Transpose.*([(][78]d|[(][1-8]d_(i1|i4|i16|u16|i32|u32|i64|u64)<)",  # XNNPACK Transpose supports FP32, FP16, INT8, and UINT8 types up to rank 6
         # Explicit ExtraModel exclusions (unsupported by XNNPACK):
         "simple_add_dynamic_shape",
@@ -234,7 +233,7 @@ litert_define_ats(
         "Pad.*[(][123]d",  # OpenCL Pad kernel requires 4D tensor layouts
         "Transpose[^d].*[(]1d_",  # OpenCL Transpose requires multidimensional tensors (rank >= 2)
         "Transpose[^d].*[(][1-8]d_(f32|i1|i4|i8|u8|i16|u16|i32|u32|i64|u64)<",  # OpenCL Transpose executes in FP16 texture buffers; only explicit FP16 Transpose is supported
-        "FullyConnected.*(i8|u8)",  # OpenCL delegate does not support quantized INT8/UINT8 GEMM
+        "FullyConnected.*(i4|i8|u8)",  # OpenCL delegate does not support quantized INT4/INT8/UINT8 GEMM
         "FullyConnected.*_cst.*,1d_f32[^c]",  # OpenCL does not support dynamic bias
         "FullyConnected.*,2d_f32[^c]",  # OpenCL does not support dynamic weights
         "FullyConnected.*,2d_f32.*,1d_f32",  # OpenCL dynamic bias permutations
@@ -307,7 +306,7 @@ litert_define_ats(
     backend = "cpu",
     compile_only_suffix = None,
     dont_register = [
-        "(_i32<[^>]+>(?!_cst)|->.*_i32)",  # XNNPACK does not support dynamic int32 math (allows int32 static constants)
+        "(_i32<[^>]+>(?!_cst)|->[(][^)]*_i32)",  # XNNPACK does not support dynamic int32 math (allows int32 static constants)
         "OneHot",  # XNNPACK does not support OneHot
         "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
@@ -326,12 +325,11 @@ litert_define_ats(
         "Pooling",  # XNNPACK rejects pooling when stride > filter size
         "Conv2d.*f16",  # XNNPACK delegate at ToT does not yet support f16 Conv2d
         "BatchMatmul.*f16",  # XNNPACK delegate at ToT does not yet support f16 BatchMatmul
-        "FullyConnected.*(f16|i8|u8|SHUFFLED)",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
+        "FullyConnected.*(f16|[23]d_i8,2d_i8|u8|SHUFFLED)",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
         "Sdpa.*f16",  # XNNPACK delegate does not support f16 SDPA
         "Sdpa.*x8x[0-9]+>.*x1x[0-9]+>",  # XNNPACK delegate does not support 8-head MQA decode
-        "FullyConnected.*,2d_f32.*,1d_f32",
-        "FullyConnected.*,2d_f32[^c]",
-        "FullyConnected.*_cst.*,1d_f32[^c]",
+        "FullyConnected.*,2d_f32<[^>]+>(?!_cst)",
+        "FullyConnected.*,1d_f32<[^>]+>(?!_cst)",
         "Transpose.*([(][78]d|[(][1-8]d_(i1|i4|i16|u16|i32|u32|i64|u64)<)",  # XNNPACK Transpose supports FP32, FP16, INT8, and UINT8 types up to rank 6
         # Explicit ExtraModel exclusions (unsupported by XNNPACK):
         "simple_add_dynamic_shape",
@@ -432,7 +430,7 @@ litert_test(
     name = "ats",
     srcs = ["ats.cc"],
     args = [
-        "--dont_register=(_i32<[^>]+>(?!_cst)|->.*_i32)",  # XNNPACK does not support dynamic int32 math (allows int32 static constants)
+        "--dont_register=(_i32<[^>]+>(?!_cst)|->[(][^)]*_i32)",  # XNNPACK does not support dynamic int32 math (allows int32 static constants)
         "--dont_register=OneHot",  # XNNPACK does not support OneHot
         "--dont_register=Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "--dont_register=SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
@@ -449,12 +447,11 @@ litert_test(
         "--dont_register=tfl\\.reduce_prod",  # XNNPACK does not support ReduceProd
         "--dont_register=LogSoftmax",  # XNNPACK does not support LogSoftmax
         "--dont_register=Pooling",  # XNNPACK rejects pooling when stride > filter size
-        "--dont_register=FullyConnected.*(i8|u8|SHUFFLED)",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
+        "--dont_register=FullyConnected.*([23]d_i8,2d_i8|u8|SHUFFLED)",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
         "--dont_register=Sdpa.*f16",  # XNNPACK delegate does not support f16 SDPA
         "--dont_register=Sdpa.*x8x[0-9]+>.*x1x[0-9]+>",  # XNNPACK delegate does not support 8-head MQA decode
-        "--dont_register=FullyConnected.*,2d_f32.*,1d_f32",
-        "--dont_register=FullyConnected.*,2d_f32[^c]",
-        "--dont_register=FullyConnected.*_cst.*,1d_f32[^c]",
+        "--dont_register=FullyConnected.*,2d_f32<[^>]+>(?!_cst)",
+        "--dont_register=FullyConnected.*,1d_f32<[^>]+>(?!_cst)",
         "--dont_register=Transpose.*([(][78]d|[(][1-8]d_(i1|i4|i16|u16|i32|u32|i64|u64)<)",  # XNNPACK Transpose supports FP32, FP16, INT8, and UINT8 types up to rank 6
         # Explicit ExtraModel exclusions (unsupported by XNNPACK):
         "--dont_register=simple_add_dynamic_shape",
@@ -684,6 +681,7 @@ cc_library(
         "//litert/test/generators:common",
         "//litert/test/generators:fully_connected",
         "//tensor:arithmetic_graph",
+        "//tensor:datatypes",
         "//tflite/schema:schema_fbs",
         "//tflite/types:half",
     ],
