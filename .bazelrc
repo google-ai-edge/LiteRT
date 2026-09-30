@@ -130,7 +130,13 @@ build --incompatible_enforce_config_setting_visibility
 # TODO: also enable this flag after fixing the visibility violations
 # build --incompatible_config_setting_private_default_visibility
 
+# Build with the real TensorFlow instead of the `@org_tensorflow` shim. The
+# converter and the tflite/testing tests need it.
+common:with_tensorflow --repo_env=LITERT_WITH_TENSORFLOW=1
+build:with_tensorflow --define=litert_prefixes="external/org_tensorflow/"
+
 # LiteRT Converter build options
+build:litert_converter --config=with_tensorflow
 build:litert_converter --copt=-Wno-macro-redefined --copt=-DMLIR_PYTHON_PACKAGE_PREFIX=litert_converter.mlir.
 
 # Compiler MLIR Builds

@@ -31,6 +31,7 @@ if [ ! -d /root_dir ]; then
     -e DOCKER_PYTHON_VERSION=${DOCKER_PYTHON_VERSION} \
     -e EXPERIMENTAL_TARGETS_ONLY=${EXPERIMENTAL_TARGETS_ONLY:-false} \
     -e LITERT_TARGETS_ONLY=${LITERT_TARGETS_ONLY:-false} \
+    -e LITERT_WITH_TENSORFLOW=${LITERT_WITH_TENSORFLOW:-0} \
     -e IS_PRESUBMIT_GITHUB=${IS_PRESUBMIT_GITHUB:-false} \
     -e BAZEL_CONFIG_FLAGS=${BAZEL_CONFIG_FLAGS} \
     --entrypoint /script_dir/run_bazel_test_with_docker.sh \

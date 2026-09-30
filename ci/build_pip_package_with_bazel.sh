@@ -93,6 +93,10 @@ fi
 
 if [[ ! -z "${BUILD_CONVERTER}" ]]; then
   BAZEL_FLAGS="${BAZEL_FLAGS} --//ci/tools/python/wheel:build_converter=${BUILD_CONVERTER}"
+  if [[ "${BUILD_CONVERTER}" == "true" ]]; then
+    # The converter needs the real TensorFlow.
+    BAZEL_FLAGS="${BAZEL_FLAGS} --config=with_tensorflow"
+  fi
 fi
 
 # Conditionally use local submodules vs http_archve tf
