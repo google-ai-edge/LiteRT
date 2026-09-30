@@ -364,7 +364,7 @@ TEST(TestQnnPlugin, ShareContextBinary) {
   LiteRtParamIndex num_byte_code;
   LITERT_ASSERT_OK(
       LiteRtCompiledResultNumByteCodeModules(compiled, &num_byte_code));
-  ASSERT_EQ(num_byte_code, 1);
+  ASSERT_EQ(num_byte_code, 2);
 
   LiteRtDestroyCompiledResult(compiled);
 }
@@ -691,6 +691,105 @@ TEST(TestQnnPlugin, CompileWithDlcDir) {
   // Clean up
   std::filesystem::remove_all(temp_dir);
   LiteRtDestroyCompiledResult(compiled);
+}
+
+TEST(TestQnnPlugin, TransformationsDefaultRegistration) {
+  auto plugin = CreatePlugin(LrtGetCompilerContext());
+  LiteRtTransformation* transformations = nullptr;
+  LiteRtParamIndex num_transformations = 0;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
+      plugin.get(), &transformations, &num_transformations));
+  EXPECT_EQ(num_transformations, 0);
+}
+
+TEST(TestQnnPlugin, TransformationsEnableAll) {
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
+  ASSERT_TRUE(qnn_opts);
+  qnn_opts->SetGraphTransform("experimental_all");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+
+  LiteRtTransformation* transformations = nullptr;
+  LiteRtParamIndex num_transformations = 0;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
+      plugin.get(), &transformations, &num_transformations));
+  EXPECT_EQ(num_transformations, 8);
+}
+
+TEST(TestQnnPlugin, TransformationsEnableLegalizeTransforms) {
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
+  ASSERT_TRUE(qnn_opts);
+  qnn_opts->SetGraphTransform("experimental_legalize");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+
+  LiteRtTransformation* transformations = nullptr;
+  LiteRtParamIndex num_transformations = 0;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
+      plugin.get(), &transformations, &num_transformations));
+  // Only LegalizeInt32Sign and LegalizeInt32ReduceMax should be registered.
+  EXPECT_EQ(num_transformations, 2);
+}
+
+TEST(TestQnnPlugin, TransformationsEnableModelTransforms) {
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
+  ASSERT_TRUE(qnn_opts);
+  qnn_opts->SetGraphTransform("experimental_model");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+
+  LiteRtTransformation* transformations = nullptr;
+  LiteRtParamIndex num_transformations = 0;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
+      plugin.get(), &transformations, &num_transformations));
+  // EntryEmbedding, EntryEmbeddingTrigFold, MLPInt8Quant, AttentionChunk,
+  // RopeTransformation, OrphanCleanup should be registered.
+  EXPECT_EQ(num_transformations, 6);
+}
+
+TEST(TestQnnPlugin, TransformationsSelectiveEnableAndDisable) {
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
+  ASSERT_TRUE(qnn_opts);
+  qnn_opts->SetGraphTransform(
+      "experimental_all,-rope,-mlp_quant,-attention_chunk");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+
+  LiteRtTransformation* transformations = nullptr;
+  LiteRtParamIndex num_transformations = 0;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
+      plugin.get(), &transformations, &num_transformations));
+  // Sign, ReduceMax, EntryEmbedding, EntryEmbeddingTrigFold, OrphanCleanup
+  // should be registered (5 total).
+  EXPECT_EQ(num_transformations, 5);
 }
 
 }  // namespace
