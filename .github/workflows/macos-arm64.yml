@@ -104,6 +104,11 @@ jobs:
             "-//litert/runtime/accelerators/gpu/..."
             "-//litert/tools/..."
             "-//litert/vendors/..."
+            # Require TensorFlow. Only Internal CI 'cpu_full' tests them, on Linux
+            # with LITERT_WITH_TENSORFLOW=1. macOS and Windows CI do not test them.
+            "-//litert/compiler/..."
+            "-//litert/integration_test/models:single_op"
+            "-//litert/integration_test/models:single_op_files"
           )
 
           bazel test \

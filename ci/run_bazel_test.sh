@@ -34,10 +34,6 @@ COMMON_BUILD_FLAGS=(
 # Add Bazel --config flags based on kokoro injected env ie. --config=public_cache
 COMMON_BUILD_FLAGS+=(${BAZEL_CONFIG_FLAGS})
 
-# Conditionally use local submodules vs http_archive tf
-if [[ "${USE_LOCAL_TF}" == "true" ]]; then
-  COMMON_BUILD_FLAGS+=("--config=use_local_tf")
-fi
 
 # Flags specific to testing.
 TEST_FLAGS=(
@@ -241,8 +237,7 @@ else
       -- \
       //tflite:tensorflowlite \
       //tflite/c:tensorflowlite_c \
-      //tflite/tools/benchmark:benchmark_model \
-      //tflite/converter:flatbuffer_translate
+      //tflite/tools/benchmark:benchmark_model
     # LINT.ThenChange(../workflows/tflite_bazel_cmake.yml:tflite_bazel_targets)
     bazel test "${COMMON_BUILD_FLAGS[@]}" "${TEST_FLAGS[@]}" -- //tflite/... "${EXCLUDED_TARGETS[@]}" \
       "${LITERT_TF_TARGETS[@]}"

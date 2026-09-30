@@ -120,7 +120,6 @@ jobs:
           export NIGHTLY_RELEASE_DATE=$(TZ='America/Los_Angeles' date +%Y%m%d)
           export CI_BUILD_PYTHON=python${{ matrix.python-version }}
           export HERMETIC_PYTHON_VERSION=${{ matrix.python-version }}
-          export USE_LOCAL_TF=false
 
           # The 'bazel' command will be intercepted by bazelisk,
           # which will download/use the version specified in .bazelversion

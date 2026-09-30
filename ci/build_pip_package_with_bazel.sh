@@ -15,8 +15,6 @@
 # ==============================================================================
 set -ex
 
-# Run this script under the root directory.
-export TF_LOCAL_SOURCE_PATH=${TF_LOCAL_SOURCE_PATH:-"$(pwd)/third_party/tensorflow"}
 
 # Build configuration: "opt" (default) or "dbg" for debug builds.
 LITERT_BUILD_MODE=${LITERT_BUILD_MODE:-opt}
@@ -99,10 +97,6 @@ if [[ ! -z "${BUILD_CONVERTER}" ]]; then
   fi
 fi
 
-# Conditionally use local submodules vs http_archve tf
-if [[ "${USE_LOCAL_TF}" == "true" ]]; then
-  BUILD_FLAGS+=("--config=use_local_tf")
-fi
 
 # Set linkopt for arm64 architecture, and remote_cache for x86_64.
 case "${ARCH}" in

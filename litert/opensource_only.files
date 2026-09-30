@@ -14,6 +14,10 @@
 /opensource_only/ci/tools/python/vendor_sdk/samsung/BUILD:
 /opensource_only/ci/tools/python/wheel/BUILD:
 /opensource_only/ci/tools/python/wheel/utils/BUILD:
+/opensource_only/third_party/android/BUILD:
+/opensource_only/third_party/android/android.bzl.tpl:
+/opensource_only/third_party/android/android_configure.BUILD.tpl:
+/opensource_only/third_party/android/android_configure.bzl:
 /opensource_only/third_party/tensorflow_shim/llvm_project/BUILD:
 /opensource_only/third_party/tensorflow_shim/llvm_project/mlir/BUILD:
 /opensource_only/third_party/tensorflow_shim/llvm_project/mlir/tblgen.bzl:
@@ -33,6 +37,10 @@
 /opensource_only/third_party/tensorflow_shim/org_tensorflow/tensorflow/pytype.default.bzl:
 /opensource_only/third_party/tensorflow_shim/org_tensorflow/tensorflow/tensorflow.bzl:
 /opensource_only/third_party/tensorflow_shim/org_tensorflow/tensorflow/tensorflow.default.bzl:
+/opensource_only/third_party/tensorflow_shim/org_tensorflow/tensorflow/workspace0.bzl:
+/opensource_only/third_party/tensorflow_shim/org_tensorflow/tensorflow/workspace1.bzl:
+/opensource_only/third_party/tensorflow_shim/org_tensorflow/tensorflow/workspace2.bzl:
+/opensource_only/third_party/tensorflow_shim/org_tensorflow/tensorflow/workspace3.bzl:
 /opensource_only/third_party/tensorflow_shim/org_tensorflow/third_party/fft2d/BUILD:
 /opensource_only/third_party/tensorflow_shim/org_tensorflow/third_party/py/numpy/BUILD:
 /opensource_only/third_party/tensorflow_shim/xla/BUILD:

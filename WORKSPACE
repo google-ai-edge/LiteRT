@@ -11,6 +11,29 @@ workspace(name = "litert")
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+# By default, `@org_tensorflow` and `@xla` provide only the Starlark macros and
+# the few header-only targets that the exported tflite/ BUILD files use. They
+# do not contain the TensorFlow or XLA sources.
+#
+# The converter and the tflite/testing tests need the real TensorFlow. Set
+# LITERT_WITH_TENSORFLOW=1 (or use `--config=with_tensorflow`) to fetch it and
+# run TensorFlow's `tf_workspace*()` macros below. Otherwise those macros are
+# no-ops.
+load(
+    "//third_party:tensorflow_shim.bzl",
+    "litert_tf_config",
+    "tensorflow_shim_dependencies",
+    "tensorflow_shim_repositories",
+)
+
+litert_tf_config(name = "litert_tf_config")
+
+load("@litert_tf_config//:config.bzl", "WITH_TENSORFLOW")
+
+tensorflow_shim_repositories(with_tensorflow = WITH_TENSORFLOW)
+
+tensorflow_shim_dependencies(with_tensorflow = WITH_TENSORFLOW)
+
 # Darts Clone. Declare this before TensorFlow's workspace macros so they do not
 # install their own incompatible BUILD overlay.
 http_archive(
@@ -27,6 +50,16 @@ http_archive(
     sha256 = "d973501a40c55126b31accc2d9f08d931ec3cc190c0430309a5e341d3c0ce32a",
     strip_prefix = "FP16-4dfe081cf6bcd15db339cf2680b9281b8451eeb3",
     url = "https://github.com/Maratyszcza/FP16/archive/4dfe081cf6bcd15db339cf2680b9281b8451eeb3.zip",
+)
+
+# Declared before `rules_shell_dependencies()` and `apple_rules_dependencies()`
+# because both declare an older `bazel_skylib` with `maybe()`. `@rules_cc`
+# needs 1.9.0 for the `scope` attribute on `bool_flag`. A `load()` freezes the
+# repositories declared before it, so a later redeclaration would be ignored.
+http_archive(
+    name = "bazel_skylib",
+    sha256 = "3b5b49006181f5f8ff626ef8ddceaa95e9bb8ad294f7b5d7b11ea9f7ddaf8c59",
+    urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/1.9.0/bazel-skylib-1.9.0.tar.gz"],
 )
 
 http_archive(
@@ -58,22 +91,15 @@ http_archive(
     ],
 )
 
+load("//:rbe_platform.bzl", "ml_build_rbe_platform")
+
+ml_build_rbe_platform()
+
 # Use 3.22.0 (from 3.5.1 of tensorflow) to fix binary signing issue on MacOS Tahoe.
 http_archive(
     name = "build_bazel_rules_apple",
     sha256 = "a78f26c22ac8d6e3f3fcaad50eace4d9c767688bd7254b75bdf4a6735b299f6a",
     url = "https://github.com/bazelbuild/rules_apple/releases/download/3.22.0/rules_apple.3.22.0.tar.gz",
-)
-
-# Declared before `apple_rules_dependencies()` because that macro also declares
-# `bazel_skylib`, and the first declaration of a repository wins. The pinned
-# TensorFlow expects 1.9.0: its `@rules_cc` uses the `scope` attribute on
-# `bool_flag`, which older bazel_skylib releases do not define. Keep this in
-# sync with the version in TensorFlow's `tensorflow/workspace3.bzl`.
-http_archive(
-    name = "bazel_skylib",
-    sha256 = "3b5b49006181f5f8ff626ef8ddceaa95e9bb8ad294f7b5d7b11ea9f7ddaf8c59",
-    urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/1.9.0/bazel-skylib-1.9.0.tar.gz"],
 )
 
 load(
@@ -118,22 +144,12 @@ http_archive(
     url = "https://github.com/apple/coremltools/archive/8.0.tar.gz",
 )
 
-# Load the custom repository rule to select either a local TensorFlow source or a remote http_archive.
-load("//:tensorflow_source_rules.bzl", "tensorflow_source_repo")
-
-tensorflow_source_repo(
-    name = "org_tensorflow",
-    sha256 = "7bf06cfd5ff9b462b1b25ca4dc3613fa5e3847fd8e291ff0a8de2ca5a812590a",
-    strip_prefix = "tensorflow-5c0b7a5946f0f485e3a532b2a00e03f42a6e14c1",
-    urls = ["https://github.com/tensorflow/tensorflow/archive/5c0b7a5946f0f485e3a532b2a00e03f42a6e14c1.tar.gz"],
-)
-
-# Declare LiteRT-owned repositories first so they take precedence over any
-# fallback declarations in TensorFlow's workspace macros.
+# Declare LiteRT-owned external repositories.
 load("//:litert_workspace.bzl", "litert_workspace")
 
 litert_workspace()
 
+# No-op unless LITERT_WITH_TENSORFLOW=1.
 load("@org_tensorflow//tensorflow:workspace3.bzl", "tf_workspace3")
 
 tf_workspace3()
@@ -145,6 +161,15 @@ bazel_features_deps()
 load("@rules_cc//cc:extensions.bzl", "compatibility_proxy_repo")
 
 compatibility_proxy_repo()
+
+load("@rules_java//java:rules_java_deps.bzl", java_compatibility_proxy_repo = "compatibility_proxy_repo")
+
+java_compatibility_proxy_repo()
+
+# buildifier: disable=bzl-visibility
+load("@com_google_protobuf//bazel/private:proto_bazel_features.bzl", "proto_bazel_features")
+
+proto_bazel_features(name = "proto_bazel_features")
 
 # Initialize hermetic Python
 load("//third_party/py:python_init_rules.bzl", "python_init_rules")
@@ -182,8 +207,9 @@ python_init_pip()
 load("@pypi//:requirements.bzl", "install_deps")
 
 install_deps()
-# End hermetic Python initialization
 
+# No-ops unless LITERT_WITH_TENSORFLOW=1. With TensorFlow, the repositories
+# these declare take precedence over the ones declared below.
 load("@org_tensorflow//tensorflow:workspace2.bzl", "tf_workspace2")
 
 tf_workspace2()
@@ -195,6 +221,36 @@ tf_workspace1()
 load("@org_tensorflow//tensorflow:workspace0.bzl", "tf_workspace0")
 
 tf_workspace0()
+
+load("@rules_ml_toolchain//py:python_configure.bzl", "python_configure")
+
+python_configure(name = "local_config_python")
+
+load("@com_google_protobuf//python/dist:system_python.bzl", "system_python")
+
+system_python(
+    name = "system_python",
+    minimum_python_version = "3.9",
+)
+# End hermetic Python initialization
+
+# Android SDK and NDK repositories from the ANDROID_* environment variables.
+load("//third_party/android:android_configure.bzl", "android_configure")
+
+android_configure(name = "local_config_android")
+
+load("@local_config_android//:android.bzl", "android_workspace")
+
+android_workspace()
+
+# Apple and Swift toolchains, including `@local_config_apple_cc`.
+load("@build_bazel_rules_swift//swift:repositories.bzl", "swift_rules_dependencies")
+
+swift_rules_dependencies()
+
+load("@build_bazel_apple_support//lib:repositories.bzl", "apple_support_dependencies")
+
+apple_support_dependencies()
 
 load(
     "//third_party/py:python_wheel.bzl",
@@ -323,11 +379,22 @@ maven_install(
     version_conflict_policy = "pinned",
 )
 
-# Kotlin rules
+maven_install(
+    name = "maven",
+    artifacts = ["androidx.annotation:annotation:aar:1.1.0"],
+    repositories = [
+        "https://maven.google.com",
+        "https://repo1.maven.org/maven2",
+    ],
+)
+
+# Kotlin rules. Same version that `protobuf_deps()` declared first when
+# TensorFlow's workspace macros ran. v2.x pulls in rules_android 0.7.0, which
+# needs rules_android's Android SDK toolchains to be registered.
 http_archive(
     name = "rules_kotlin",
-    sha256 = "13d5b767d697473ced9b55547a18a6ab65ab3fae5440555deee8a44c886b50aa",
-    url = "https://github.com/bazelbuild/rules_kotlin/releases/download/v2.3.20/rules_kotlin-v2.3.20.tar.gz",
+    sha256 = "3b772976fec7bdcda1d84b9d39b176589424c047eb2175bed09aac630e50af43",
+    url = "https://github.com/bazelbuild/rules_kotlin/releases/download/v1.9.6/rules_kotlin-v1.9.6.tar.gz",
 )
 
 # Sentencepiece
@@ -370,14 +437,16 @@ http_archive(
     url = "https://github.com/dcleblanc/SafeInt/archive/72f0745e26091af6d1186fd91426377f16688ba7.tar.gz",
 )
 
-# RE2
+# RE2. Same revision as TensorFlow's `tensorflow/workspace2.bzl`, which used to
+# declare it first. The 2024-03-01 release does not build with recent clang.
 http_archive(
     name = "com_googlesource_code_re2",
-    sha256 = "7b2b3aa8241eac25f674e5b5b2e23d4ac4f0a8891418a2661869f736f03f57f4",
-    strip_prefix = "re2-2024-03-01",
+    repo_mapping = {"@abseil-cpp": "@com_google_absl"},
+    sha256 = "8635bc46ac8d73974b4198229805287c8d620245f2081af155d7d96d4988a3a5",
+    strip_prefix = "re2-927f5d53caf8111721e734cf24724686bb745f55",
     urls = [
-        "https://github.com/google/re2/archive/refs/tags/2024-03-01.tar.gz",
-        "https://storage.googleapis.com/mirror.tensorflow.org/github.com/google/re2/archive/refs/tags/2024-03-01.tar.gz",
+        "https://github.com/google/re2/archive/927f5d53caf8111721e734cf24724686bb745f55.tar.gz",
+        "https://storage.googleapis.com/mirror.tensorflow.org/github.com/google/re2/archive/927f5d53caf8111721e734cf24724686bb745f55.tar.gz",
     ],
 )
 

@@ -17,7 +17,6 @@
 load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@com_google_protobuf//bazel:py_proto_library.bzl", "py_proto_library")
-load("@rules_python//python:py_library.bzl", "py_library")
 
 _WELL_KNOWN_PROTOS = [
     "@com_google_protobuf//:any_proto",
@@ -109,10 +108,13 @@ def tf_proto_library(
         visibility = visibility,
         deps = [":" + name],
     )
-    py_library(
+
+    # An alias rather than a py_library so that the default outputs are the
+    # generated `*_pb2.py` files. The wheel build copies them via `$(SRCS)`.
+    native.alias(
         name = name + "_py",
         testonly = testonly,
+        actual = ":" + name + "_py_proto",
         compatible_with = compatible_with,
         visibility = visibility,
-        deps = [":" + name + "_py_proto"],
     )

@@ -133,8 +133,7 @@ jobs:
             -- \
             //tflite:tensorflowlite \
             //tflite/c:tensorflowlite_c \
-            //tflite/tools/benchmark:benchmark_model \
-            //tflite/converter:flatbuffer_translate
+            //tflite/tools/benchmark:benchmark_model
         # LINT.ThenChange(../ci/run_bazel_test.sh:tflite_bazel_targets)
 
       - name: Configure TFLite with CMake

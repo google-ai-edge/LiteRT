@@ -20,18 +20,15 @@ load(
     "//litert/build_common:special_rule.bzl",
     "litert_android_linkopts",
     "litert_jni_friends",
+    "litert_jni_linkopts",
+    "litert_linkopts_no_undefined",
 )
+load("//tflite:build_def.bzl", "tflite_jni_binary")
 
 # copybara:uncomment_begin(google-only)
 # load("//litert/kotlin:google/dackka.bzl", "dackka")
 #
 # copybara:uncomment_end
-load(
-    "//tflite:build_def.bzl",
-    "tflite_jni_binary",
-    "tflite_jni_linkopts",
-    "tflite_linkopts_no_undefined",
-)
 load("//tflite/java:aar_with_jni.bzl", "aar_with_jni")
 
 package(
@@ -144,7 +141,7 @@ cc_library(
 #     name = "litert_api_jni_lib",
 #     binary_name = "liblitert_jni.so",
 #     lds = ":litert_api_version_script.lds",
-#     linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + litert_android_linkopts(),
+#     linkopts = litert_jni_linkopts() + litert_linkopts_no_undefined() + litert_android_linkopts(),
 #     visibility = litert_jni_friends(),
 #     deps = [
 #         ":litert_compiled_model_jni",
@@ -169,7 +166,7 @@ cc_library(
 #     name = "litert_impl_jni_lib",
 #     binary_name = "libLiteRt.so",
 #     lds = ":litert_version_script.lds",
-#     linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + litert_android_linkopts(),
+#     linkopts = litert_jni_linkopts() + litert_linkopts_no_undefined() + litert_android_linkopts(),
 #     deps = [
 #         "//litert/c:litert_tflite_runtime_c_api_so_shim",  # runtime
 #         "//tflite/java/src/main/native",  # TFLite JNI
@@ -180,7 +177,7 @@ cc_library(
 # copybara:comment_begin(oss-only)
 tflite_jni_binary(
     name = "litert_jni",
-    linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + litert_android_linkopts(),
+    linkopts = litert_jni_linkopts() + litert_linkopts_no_undefined() + litert_android_linkopts(),
     linkscript = ":litert_api_version_script.lds",
     # Set stamp = 0 to avoid including internal info to the binary for the public release.
     stamp = 0,
@@ -199,7 +196,7 @@ cc_library(
 
 tflite_jni_binary(
     name = "LiteRt",
-    linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + litert_android_linkopts(),
+    linkopts = litert_jni_linkopts() + litert_linkopts_no_undefined() + litert_android_linkopts(),
     linkscript = ":litert_version_script.lds",
     # Set stamp = 0 to avoid including internal info to the binary for the public release.
     stamp = 0,

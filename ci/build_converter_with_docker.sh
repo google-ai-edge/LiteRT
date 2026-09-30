@@ -32,7 +32,6 @@ if [ ! -d /root_dir ]; then
   docker build . -t tflite-builder -f ${DOCKER_FILE}
 
   docker run \
-    -v ${SCRIPT_DIR}/../third_party/tensorflow:/third_party_tensorflow \
     -v ${ROOT_DIR}:/root_dir \
     -v ${SCRIPT_DIR}:/script_dir \
     -e NIGHTLY_RELEASE_DATE=${NIGHTLY_RELEASE_DATE} \
@@ -41,7 +40,6 @@ if [ ! -d /root_dir ]; then
     -e CUSTOM_BAZEL_FLAGS=${CUSTOM_BAZEL_FLAGS} \
     -e TEST_MANYLINUX_COMPLIANCE="${TEST_MANYLINUX_COMPLIANCE}" \
     -e RELEASE_VERSION=${RELEASE_VERSION} \
-    -e USE_LOCAL_TF=${USE_LOCAL_TF:-false} \
     --entrypoint /script_dir/build_converter_with_docker.sh \
     tflite-builder
   exit 0
@@ -51,7 +49,6 @@ else
 
   export CI_BUILD_PYTHON="python${DOCKER_PYTHON_VERSION}"
   export HERMETIC_PYTHON_VERSION="${DOCKER_PYTHON_VERSION}"
-  export TF_LOCAL_SOURCE_PATH="/root_dir/third_party/tensorflow"
 
   # Run configure
   configs=(

@@ -29,6 +29,7 @@ Findtensorflow_headers.cmake`.
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@bazel_tools//tools/build_defs/repo:jvm.bzl", "jvm_import_external")
+load("//:tensorflow_source_rules.bzl", "tensorflow_source_repo")
 
 _TENSORFLOW_BASE_URL = "https://raw.githubusercontent.com/tensorflow/tensorflow/v2.21.0/"
 
@@ -151,8 +152,40 @@ _tensorflow_shim_repository = repository_rule(
     },
 )
 
-def tensorflow_shim_repositories():
-    """Defines the `@org_tensorflow`, `@xla` and `@llvm-project` shim repositories."""
+def _litert_tf_config_impl(ctx):
+    value = ctx.os.environ.get("LITERT_WITH_TENSORFLOW", "").strip().lower()
+    ctx.file("BUILD", "")
+    ctx.file(
+        "config.bzl",
+        "# Generated from LITERT_WITH_TENSORFLOW.\nWITH_TENSORFLOW = %s\n" %
+        (value in ["1", "true", "yes"]),
+    )
+
+# Exposes `WITH_TENSORFLOW` from the LITERT_WITH_TENSORFLOW environment variable
+# so that the WORKSPACE can choose between the shim and the real TensorFlow.
+litert_tf_config = repository_rule(
+    implementation = _litert_tf_config_impl,
+    environ = ["LITERT_WITH_TENSORFLOW"],
+    local = True,
+)
+
+def tensorflow_shim_repositories(with_tensorflow = False):
+    """Defines the `@org_tensorflow`, `@xla` and `@llvm-project` repositories.
+
+    Args:
+      with_tensorflow: If True, `@org_tensorflow` is the real TensorFlow source
+        tree, which the converter needs. TensorFlow's workspace macros then
+        define `@xla`, `@llvm-project` and the other dependencies. Otherwise
+        the three repositories are the shims.
+    """
+    if with_tensorflow:
+        tensorflow_source_repo(
+            name = "org_tensorflow",
+            sha256 = "7bf06cfd5ff9b462b1b25ca4dc3613fa5e3847fd8e291ff0a8de2ca5a812590a",
+            strip_prefix = "tensorflow-5c0b7a5946f0f485e3a532b2a00e03f42a6e14c1",
+            urls = ["https://github.com/tensorflow/tensorflow/archive/5c0b7a5946f0f485e3a532b2a00e03f42a6e14c1.tar.gz"],
+        )
+        return
     _tensorflow_shim_repository(
         name = "org_tensorflow",
         base_url = _TENSORFLOW_BASE_URL,
@@ -191,13 +224,20 @@ _archive_with_build_files = repository_rule(
     },
 )
 
-def tensorflow_shim_dependencies():
+def tensorflow_shim_dependencies(with_tensorflow = False):
     """Defines the external repositories that TensorFlow's workspace used to add.
 
     LiteRT build files use these directly. The versions match the ones that
     TensorFlow's `tf_workspace*()` macros declared, except for zlib, which uses
     the version and build file from protobuf.
+
+    Args:
+      with_tensorflow: If True, does nothing. TensorFlow's workspace macros
+        define these repositories.
     """
+    if with_tensorflow:
+        return
+
     if not native.existing_rule("zlib"):
         http_archive(
             name = "zlib",

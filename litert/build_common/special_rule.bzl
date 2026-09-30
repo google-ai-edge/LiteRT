@@ -68,6 +68,26 @@ def litert_platform_defines():
     """This is a no-op outside of Google."""
     return []
 
+def litert_jni_linkopts():
+    return select({
+        "//litert:android": [
+            "-Wl,-s",
+            "-latomic",
+            "-Wl,--gc-sections",
+            "-Wl,--as-needed",
+            "-Wl,-z,max-page-size=16384",
+        ],
+        "//conditions:default": [
+            "-Wl,-s",
+        ],
+    })
+
+def litert_linkopts_no_undefined():
+    return select({
+        "//litert:macos": ["-Wl,-undefined,error"],
+        "//conditions:default": ["-Wl,--no-undefined"],
+    })
+
 def litert_metal_opts():
     return select({
         "//litert:ios": ["-ObjC++", "-fobjc-arc"],
