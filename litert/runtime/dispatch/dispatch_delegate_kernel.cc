@@ -45,8 +45,10 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/options/litert_dispatch_delegate_vendor_options.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
+#include "litert/runtime/dispatch/dispatch_options_utils.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
@@ -635,6 +637,55 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
   LITERT_ASSIGN_OR_RETURN(
       auto dispatch_delegate_options,
       FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
+
+  // If there is a function name, record the mapping between node port indices
+  // and their corresponding opaque tensor names. If function_name is empty,
+  // this is an anonymous node without an external function name, so we skip
+  // recording the mapping.
+  if (!function_name.empty()) {
+    const int* in_indices = nullptr;
+    int num_inputs = 0;
+    TfLiteOpaqueNodeInputs(node, &in_indices, &num_inputs);
+    std::vector<TensorPortMapping> input_ports;
+    input_ports.reserve(num_inputs);
+    for (int i = 0; i < num_inputs; ++i) {
+      TfLiteOpaqueTensor* tensor =
+          TfLiteOpaqueContextGetOpaqueTensor(context, in_indices[i]);
+      const char* name = tensor ? TfLiteOpaqueTensorName(tensor) : nullptr;
+      if (name != nullptr && name[0] != '\0') {
+        TensorPortMapping port_map;
+        port_map.opaque_tensor_name = name;
+        port_map.port_index = i;
+        input_ports.push_back(std::move(port_map));
+      }
+    }
+
+    const int* out_indices = nullptr;
+    int num_outputs = 0;
+    TfLiteOpaqueNodeOutputs(node, &out_indices, &num_outputs);
+    std::vector<TensorPortMapping> output_ports;
+    output_ports.reserve(num_outputs);
+    for (int i = 0; i < num_outputs; ++i) {
+      TfLiteOpaqueTensor* tensor =
+          TfLiteOpaqueContextGetOpaqueTensor(context, out_indices[i]);
+      const char* name = tensor ? TfLiteOpaqueTensorName(tensor) : nullptr;
+      if (name != nullptr && name[0] != '\0') {
+        TensorPortMapping port_map;
+        port_map.opaque_tensor_name = name;
+        port_map.port_index = i;
+        output_ports.push_back(std::move(port_map));
+      }
+    }
+
+    // Record the mapping if there are any named input or output tensors.
+    if (!input_ports.empty() || !output_ports.empty()) {
+      LITERT_ASSIGN_OR_RETURN(
+          auto* vendor_options,
+          GetOrCreateDispatchDelegateVendorOptions(options_->options));
+      LITERT_RETURN_IF_ERROR(vendor_options->SetNodeTensorPortMapping(
+          function_name, std::move(input_ports), std::move(output_ports)));
+    }
+  }
 
   auto exec_handle_expected =
       dispatch_delegate_options.GetExecHandle(function_name);
