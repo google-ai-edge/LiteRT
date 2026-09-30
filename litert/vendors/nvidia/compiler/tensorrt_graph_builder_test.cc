@@ -86,6 +86,20 @@ uint16_t Fp16Bits(float value) {
   return static_cast<uint16_t>(half);
 }
 
+uint16_t FloatToBf16(float value) {
+  uint32_t bits = 0;
+  std::memcpy(&bits, &value, sizeof(bits));
+  bits += 0x7fff + ((bits >> 16) & 1);
+  return static_cast<uint16_t>(bits >> 16);
+}
+
+float Bf16ToFloat(uint16_t value) {
+  const uint32_t bits = static_cast<uint32_t>(value) << 16;
+  float result = 0.0f;
+  std::memcpy(&result, &bits, sizeof(result));
+  return result;
+}
+
 float Fp16ToFloat(uint16_t half) {
   const uint32_t sign = static_cast<uint32_t>(half & 0x8000) << 16;
   const uint32_t exponent = (half >> 10) & 0x1F;
@@ -309,10 +323,14 @@ TEST(TensorRtGraphBuilderTest, CudaSubbyteGemvGroupSharesOneLaunch) {
     ASSERT_NE(inspector, nullptr);
     const std::string layers = inspector->getEngineInformation(
         nvinfer1::LayerInformationFormat::kONELINE);
+    // The launches are named after their output, "cuda_subbyte_gemv_<tensor>"
+    // or "cuda_subbyte_gemv_group_<tensors>".
     size_t plugin_layers = 0;
-    for (size_t at = layers.find("PluginV3"); at != std::string::npos;
-         at = layers.find("PluginV3", at + 1)) {
-      ++plugin_layers;
+    for (size_t at = layers.find("cuda_subbyte_gemv_"); at != std::string::npos;
+         at = layers.find("cuda_subbyte_gemv_", at + 1)) {
+      if (layers.compare(at, 23, "cuda_subbyte_gemv_slice") != 0) {
+        ++plugin_layers;
+      }
     }
     EXPECT_EQ(plugin_layers, fuse ? 1 : rows.size()) << layers;
 
@@ -359,6 +377,251 @@ TEST(TensorRtGraphBuilderTest, CudaSubbyteGemvGroupSharesOneLaunch) {
             << "fc=" << f << " n=" << n;
       }
       EXPECT_EQ(cudaFree(device_outputs[f]), cudaSuccess);
+    }
+    EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+    EXPECT_EQ(cudaFree(device_input), cudaSuccess);
+  }
+}
+
+// Column tiles of 8 row tiles (1024 activation rows) that fill the device:
+// the CUDA GEMM takes products of three blocks per two multiprocessors.
+int32_t ColumnTilesThatFillTheDevice() {
+  int device = 0;
+  int multiprocessors = 0;
+  if (cudaGetDevice(&device) != cudaSuccess ||
+      cudaDeviceGetAttribute(&multiprocessors, cudaDevAttrMultiProcessorCount,
+                             device) != cudaSuccess) {
+    return 0;
+  }
+  return (multiprocessors * 3 + 15) / 16;
+}
+
+TEST(TensorRtGraphBuilderTest, CudaGemmForManyActivationRows) {
+  // Prefill: INT4 fully connected ops over 1024 activation rows run on the
+  // CUDA GEMM, and the gate and up projections of a feed-forward block (fully
+  // connected, GELU, multiply) in one launch that applies the gate. A product
+  // too small to fill the device keeps the TensorRT lowering. Results match
+  // an FP32 reference.
+  constexpr int32_t kM = 1024;
+  constexpr int32_t kK = 256;
+  constexpr int32_t kSmall = 130;
+  const int32_t tiles = ColumnTilesThatFillTheDevice();
+  ASSERT_GT(tiles, 0);
+  const int32_t projection_channels = tiles * 128 - 126;
+  const int32_t hidden_channels = tiles * 64;
+  // Unset (the default) runs every product that is large enough on the GEMM,
+  // "gated" only the feed-forward pair.
+  for (const char* mode : {"", "gated", "0"}) {
+    SCOPED_TRACE(testing::Message() << "mode=" << mode);
+    const bool gemm = std::strcmp(mode, "0") != 0;
+    const bool all = mode[0] == '\0';
+    LiteRtModelT model;
+    auto& graph = model.EmplaceSubgraph();
+    const auto tensor =
+        [&](const char* name, LiteRtElementType type,
+            const std::vector<int32_t>& dims) -> LiteRtTensorT& {
+      auto& value = graph.EmplaceTensor();
+      value.SetName(name);
+      value.SetType(MakeRankedTensorType(type, dims));
+      return value;
+    };
+    auto& input = tensor("input", kLiteRtElementTypeFloat32, {kM, kK});
+    graph.Inputs().push_back(&input);
+    auto& other_input =
+        tensor("other_input", kLiteRtElementTypeFloat32, {kM, kK});
+    graph.Inputs().push_back(&other_input);
+    // Weights of the projection, the gate, the up projection and the small
+    // projection.
+    const std::array<int32_t, 4> rows = {projection_channels, hidden_channels,
+                                         hidden_channels, kSmall};
+    const std::array<const char*, 4> names = {"projection", "gate", "up",
+                                              "small"};
+    std::array<std::vector<int8_t>, 4> values;
+    std::array<std::vector<uint8_t>, 4> packed;
+    std::array<std::vector<float>, 4> scales;
+    std::array<LiteRtTensorT*, 4> weights{};
+    for (size_t f = 0; f < rows.size(); ++f) {
+      values[f].resize(static_cast<size_t>(rows[f]) * kK);
+      for (size_t i = 0; i < values[f].size(); ++i) {
+        values[f][i] = static_cast<int8_t>((i * 5 + i / 7 + f * 3) % 16) - 8;
+      }
+      packed[f] = PackInt4(values[f]);
+      auto& weight = tensor(names[f], kLiteRtElementTypeInt4, {rows[f], kK});
+      SetWeightsFromUnownedBuffer(
+          weight.Weights(),
+          litert::BufferRef<uint8_t>(packed[f].data(), packed[f].size()));
+      scales[f].resize(rows[f]);
+      for (int32_t n = 0; n < rows[f]; ++n) {
+        scales[f][n] = 0.002f * (1 + (n + f) % 5);
+      }
+      const std::vector<int64_t> zero_points(rows[f], 0);
+      weight.SetQarams(MakePerChannelQuantization(scales[f], zero_points,
+                                                  /*quantized_dim=*/0, weight));
+      weights[f] = &weight;
+    }
+    const auto fully_connected = [&](LiteRtTensorT& activation,
+                                     LiteRtTensorT& weight, const char* name,
+                                     int32_t channels) -> LiteRtTensorT& {
+      auto& output = tensor(name, kLiteRtElementTypeFloat32, {kM, channels});
+      auto& fc = graph.EmplaceOp();
+      fc.SetOpCode(kLiteRtOpCodeTflFullyConnected);
+      tflite::FullyConnectedOptionsT fc_options;
+      fc_options.keep_num_dims = true;
+      tflite::BuiltinOptionsUnion options;
+      options.Set(std::move(fc_options));
+      litert::internal::SetTflOptions(fc, std::move(options));
+      litert::internal::AttachInput(&activation, fc);
+      litert::internal::AttachInput(&weight, fc);
+      litert::internal::AttachOutput(&output, fc);
+      return output;
+    };
+    auto& projected =
+        fully_connected(input, *weights[0], "projected", projection_channels);
+    graph.Outputs().push_back(&projected);
+    // Gemma's feed-forward block: the gate projection is reshaped before the
+    // GELU and multiplies the up projection as it is.
+    auto& gate =
+        fully_connected(input, *weights[1], "gate_projection", hidden_channels);
+    auto& gate_3d =
+        tensor("gate_3d", kLiteRtElementTypeFloat32, {1, kM, hidden_channels});
+    auto& reshape = graph.EmplaceOp();
+    reshape.SetOpCode(kLiteRtOpCodeTflReshape);
+    litert::internal::AttachInput(&gate, reshape);
+    litert::internal::AttachOutput(&gate_3d, reshape);
+    auto& gated =
+        tensor("gated", kLiteRtElementTypeFloat32, {1, kM, hidden_channels});
+    auto& gelu = graph.EmplaceOp();
+    gelu.SetOpCode(kLiteRtOpCodeTflGelu);
+    tflite::GeluOptionsT gelu_options;
+    gelu_options.approximate = true;
+    tflite::BuiltinOptionsUnion gelu_union;
+    gelu_union.Set(std::move(gelu_options));
+    litert::internal::SetTflOptions(gelu, std::move(gelu_union));
+    litert::internal::AttachInput(&gate_3d, gelu);
+    litert::internal::AttachOutput(&gated, gelu);
+    auto& up =
+        fully_connected(input, *weights[2], "up_projection", hidden_channels);
+    auto& hidden =
+        tensor("hidden", kLiteRtElementTypeFloat32, {1, kM, hidden_channels});
+    graph.Outputs().push_back(&hidden);
+    auto& multiply = graph.EmplaceOp();
+    multiply.SetOpCode(kLiteRtOpCodeTflMul);
+    tflite::BuiltinOptionsUnion multiply_options;
+    multiply_options.Set(tflite::MulOptionsT{});
+    litert::internal::SetTflOptions(multiply, std::move(multiply_options));
+    litert::internal::AttachInput(&gated, multiply);
+    litert::internal::AttachInput(&up, multiply);
+    litert::internal::AttachOutput(&hidden, multiply);
+    auto& small =
+        fully_connected(other_input, *weights[3], "small_projected", kSmall);
+    graph.Outputs().push_back(&small);
+
+    setenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS", "cuda_gemv", 1);
+    if (mode[0] != '\0') {
+      setenv("LITERT_NVIDIA_TENSORRT_CUDA_GEMM", mode, 1);
+    }
+    auto built = litert::nvidia::BuildTensorRtEngine(
+        litert::compiler::Subgraph(LrtGetCompilerContext(), &graph));
+    unsetenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS");
+    unsetenv("LITERT_NVIDIA_TENSORRT_CUDA_GEMM");
+    ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+    ASSERT_EQ(built->input_names.size(), 2u);
+    ASSERT_EQ(built->output_names.size(), 3u);
+    litert::nvidia::TensorRtLogger logger;
+    std::unique_ptr<nvinfer1::IRuntime> runtime(
+        nvinfer1::createInferRuntime(logger));
+    ASSERT_NE(runtime, nullptr);
+    std::unique_ptr<nvinfer1::ICudaEngine> engine(
+        runtime->deserializeCudaEngine(built->engine.data(),
+                                       built->engine.size()));
+    ASSERT_NE(engine, nullptr);
+    std::unique_ptr<nvinfer1::IEngineInspector> inspector(
+        engine->createEngineInspector());
+    ASSERT_NE(inspector, nullptr);
+    const std::string layers = inspector->getEngineInformation(
+        nvinfer1::LayerInformationFormat::kONELINE);
+    EXPECT_EQ(layers.find("cuda_subbyte_gated_gemm") != std::string::npos, gemm)
+        << layers;
+    EXPECT_EQ(layers.find("cuda_subbyte_gemv_") != std::string::npos, all)
+        << layers;
+    // The small projection always is a TensorRT matmul.
+    EXPECT_TRUE(layers.find("Matrix Multiply") != std::string::npos ||
+                layers.find("Fc") != std::string::npos)
+        << layers;
+
+    std::unique_ptr<nvinfer1::IExecutionContext> context(
+        engine->createExecutionContext());
+    ASSERT_NE(context, nullptr);
+    std::vector<float> activations(static_cast<size_t>(kM) * kK);
+    uint32_t state = 99u;
+    for (auto& value : activations) {
+      state = state * 1664525u + 1013904223u;
+      value =
+          static_cast<float>((state >> 8) & 0xFFFF) / 65535.0f * 4.0f - 2.0f;
+    }
+    // Both inputs hold the same activations.
+    void* device_input = nullptr;
+    ASSERT_EQ(cudaMalloc(&device_input, activations.size() * sizeof(float)),
+              cudaSuccess);
+    ASSERT_EQ(
+        cudaMemcpy(device_input, activations.data(),
+                   activations.size() * sizeof(float), cudaMemcpyHostToDevice),
+        cudaSuccess);
+    for (const auto& name : built->input_names) {
+      ASSERT_TRUE(context->setTensorAddress(name.c_str(), device_input));
+    }
+    const std::array<int32_t, 3> channels = {projection_channels,
+                                             hidden_channels, kSmall};
+    std::array<void*, 3> device_outputs{};
+    for (size_t i = 0; i < channels.size(); ++i) {
+      ASSERT_EQ(cudaMalloc(&device_outputs[i], static_cast<size_t>(kM) *
+                                                   channels[i] * sizeof(float)),
+                cudaSuccess);
+      ASSERT_TRUE(context->setTensorAddress(built->output_names[i].c_str(),
+                                            device_outputs[i]));
+    }
+    cudaStream_t stream = nullptr;
+    ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+    ASSERT_TRUE(context->enqueueV3(stream));
+    ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+    const auto dot = [&](int f, int m, int n) {
+      double sum = 0.0;
+      for (int32_t k = 0; k < kK; ++k) {
+        // The engine computes on BF16 activations.
+        sum += static_cast<double>(Bf16ToFloat(
+                   FloatToBf16(activations[static_cast<size_t>(m) * kK + k]))) *
+               values[f][static_cast<size_t>(n) * kK + k];
+      }
+      return sum * scales[f][n];
+    };
+    for (size_t i = 0; i < channels.size(); ++i) {
+      std::vector<float> actual(static_cast<size_t>(kM) * channels[i]);
+      ASSERT_EQ(
+          cudaMemcpy(actual.data(), device_outputs[i],
+                     actual.size() * sizeof(float), cudaMemcpyDeviceToHost),
+          cudaSuccess);
+      for (int m : {0, 1, 127, 128, 601, kM - 1}) {
+        double error = 0.0;
+        double norm = 0.0;
+        for (int32_t n = 0; n < channels[i]; ++n) {
+          double expected = dot(i == 0 ? 0 : 3, m, n);
+          if (i == 1) {
+            const double x = dot(1, m, n);
+            expected = 0.5 * x *
+                       (1.0 + std::tanh(0.7978845608028654 *
+                                        (x + 0.044715 * x * x * x))) *
+                       dot(2, m, n);
+          }
+          const double value = actual[static_cast<size_t>(m) * channels[i] + n];
+          error += (value - expected) * (value - expected);
+          norm += expected * expected;
+        }
+        // BF16 results: about 2e-3 of the norm of a row for one rounding, two
+        // more for the matmul lowering of the gate (its factors are BF16).
+        EXPECT_LE(std::sqrt(error), 6.0e-3 * std::sqrt(norm))
+            << "output=" << i << " row=" << m;
+      }
+      EXPECT_EQ(cudaFree(device_outputs[i]), cudaSuccess);
     }
     EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
     EXPECT_EQ(cudaFree(device_input), cudaSuccess);

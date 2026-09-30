@@ -58,6 +58,7 @@
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
 #include "litert/vendors/nvidia/trtllm/global_attention.h"
+#include "litert/vendors/nvidia/trtllm/subbyte_gemm.h"
 #include "litert/vendors/nvidia/trtllm/tiled_attention.h"
 
 namespace litert::nvidia {
@@ -176,6 +177,29 @@ bool GlobalAttentionPluginEnabled() {
 bool LocalAttentionPluginEnabled() {
   return EnvEnabled("LITERT_NVIDIA_TENSORRT_LOCAL_ATTENTION_PLUGIN",
                     /*default_value=*/true);
+}
+
+// With the CUDA subbyte GEMV, fully connected layers over many activation
+// rows (prefill) with INT4 weights run as a tensor-core GEMM in the same
+// plugin (trtllm/subbyte_gemm.h) when they are large enough to keep the
+// device busy. It accumulates in FP16 over 128 input dims at a time and in
+// FP32 beyond, at one and a half times the throughput of TensorRT's
+// FP32-accumulating matmul (Gemma 4 12B, 1024 rows on an RTX 5080: 175
+// against 110 TFLOP/s), and takes the gate and up projections of a
+// feed-forward block as one launch that also applies the GELU gate.
+// LITERT_NVIDIA_TENSORRT_CUDA_GEMM=gated limits it to those pairs; =0 keeps
+// the TensorRT lowering for every layer.
+enum class CudaGemmMode { kOff, kGated, kAll };
+
+CudaGemmMode GetCudaGemmMode() {
+  const char* value = std::getenv("LITERT_NVIDIA_TENSORRT_CUDA_GEMM");
+  if (value == nullptr || value[0] == '\0') {
+    return CudaGemmMode::kAll;
+  }
+  if (std::strcmp(value, "gated") == 0) {
+    return CudaGemmMode::kGated;
+  }
+  return std::strcmp(value, "0") == 0 ? CudaGemmMode::kOff : CudaGemmMode::kAll;
 }
 
 // The tensor-core kernels skip keys that no query row can see, which is exact
@@ -2767,22 +2791,74 @@ class TensorRtGraphBuilder {
       return Error(kLiteRtStatusErrorUnsupported,
                    "CUDA subbyte GEMV activation shape does not match weights");
     }
+    int64_t rows = 1;
     for (int i = 0; i + 1 < dims.nbDims; ++i) {
-      if (dims.d[i] != 1) {
-        return Error(kLiteRtStatusErrorUnsupported,
-                     "CUDA subbyte GEMV requires static M=1");
-      }
+      rows *= dims.d[i];
+    }
+    if (rows != 1 && !CudaGemmTakes(rows, columns, /*bit_width=*/4)) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "CUDA subbyte GEMV requires static M=1, or rows the CUDA "
+                   "GEMM takes");
     }
     return {};
+  }
+
+  // The activation rows [..., columns] of a fully connected layer.
+  static int64_t GemmRows(nvinfer1::ITensor* activation) {
+    const auto dims = activation->getDimensions();
+    int64_t rows = 1;
+    for (int i = 0; i + 1 < dims.nbDims; ++i) {
+      rows *= dims.d[i];
+    }
+    return rows;
+  }
+
+  // Whether `rows` activation rows of `columns` dims run on the CUDA GEMM.
+  static bool CudaGemmTakes(int64_t rows, int64_t columns, int bit_width) {
+    if (GetCudaGemmMode() == CudaGemmMode::kOff || bit_width != 4 ||
+        rows <= 1 || rows > std::numeric_limits<int32_t>::max() ||
+        columns > std::numeric_limits<int32_t>::max()) {
+      return false;
+    }
+    // Any even number of output channels works.
+    const LiteRtNvidiaGemmShape shape = {static_cast<int32_t>(rows),
+                                         static_cast<int32_t>(columns), 2,
+                                         kLiteRtNvidiaGemmGateNone};
+    return LiteRtNvidiaSubbyteGemmSupports(&shape) &&
+           LiteRtNvidiaSubbyteGemmAvailable();
   }
 
   // A single projection and a row-concatenated group use the same plugin.
   // Keep constant names and layer creation order identical in both paths so
   // refit identities and TensorRT's generated graph are unchanged.
+  //
+  // Many activation rows run as a GEMM, which reads the weights in tiles.
   Expected<nvinfer1::ITensor*> AddSubbyteGemvPlugin(
       nvinfer1::ITensor* activation, const SubbyteGemvWeights& info,
       std::vector<uint8_t> packed, absl::Span<const float> scales,
-      const std::string& suffix, const std::string& output_name) {
+      const std::string& suffix, const std::string& output_name,
+      int32_t gate = 0) {
+    const int64_t activation_rows = GemmRows(activation);
+    const bool tiled = activation_rows != 1 || gate != 0;
+    if (tiled) {
+      const LiteRtNvidiaGemmShape shape = {
+          static_cast<int32_t>(activation_rows), info.columns,
+          gate != 0 ? info.rows / 2 : info.rows, gate};
+      if (!CudaGemmTakes(activation_rows, info.columns, info.bit_width) ||
+          !LiteRtNvidiaSubbyteGemmSupports(&shape) ||
+          !LiteRtNvidiaSubbyteGemmFillsDevice(&shape)) {
+        return Error(kLiteRtStatusErrorUnsupported,
+                     "The CUDA GEMM does not take this product");
+      }
+      std::vector<uint8_t> tiles(
+          LiteRtNvidiaSubbyteGemmTiledWeightBytes(&shape));
+      if (!LiteRtNvidiaSubbyteGemmTileWeights(&shape, packed.data(),
+                                              tiles.data())) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to tile CUDA GEMM weights");
+      }
+      packed = std::move(tiles);
+    }
     owned_weights_.push_back(std::move(packed));
     nvinfer1::Dims packed_dims{};
     packed_dims.nbDims = 1;
@@ -2806,8 +2882,8 @@ class TensorRtGraphBuilder {
         AddFloatConstant(scales, scale_dims,
                          "cuda_subbyte_gemv_scales" + suffix,
                          nvinfer1::DataType::kBF16));
-    TrtPtr<nvinfer1::IPluginV3> plugin(
-        CreateSubbyteGemvPlugin(info.bit_width, info.rows, info.columns));
+    TrtPtr<nvinfer1::IPluginV3> plugin(CreateSubbyteGemvPlugin(
+        info.bit_width, info.rows, info.columns, gate, tiled));
     if (!plugin) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to create CUDA subbyte GEMV plugin");
@@ -2820,10 +2896,140 @@ class TensorRtGraphBuilder {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add CUDA subbyte GEMV plugin layer");
     }
+    layer->setName(KeepName(UniqueName(output_name)));
     layer->getOutput(0)->setName(KeepName(UniqueName(output_name)));
     owned_plugins_.push_back(std::move(plugin));
     uses_cuda_subbyte_gemv_ = true;
     return layer->getOutput(0);
+  }
+
+  // A gated feed-forward pair over many activation rows,
+  //   mul(gelu(fully_connected(x, gate)), fully_connected(x, up))
+  // with reshapes of single use in between, which the CUDA GEMM computes in
+  // one launch.
+  struct GatedFeedForward {
+    std::optional<Op> up;
+    std::optional<Op> multiply;
+    std::vector<LiteRtOp> members;  // everything but the gate projection
+    int32_t gate = 0;
+  };
+
+  std::optional<GatedFeedForward> FindGatedFeedForward(const Op& gate_op) {
+    const auto gate_info = InspectSubbyteGemvWeights(gate_op.Inputs()[1]);
+    if (!gate_info || gate_info->bit_width != 4 ||
+        gate_op.Inputs().size() != 2 || !HasNoFusedActivation(gate_op)) {
+      return std::nullopt;
+    }
+    GatedFeedForward found;
+    // gate projection -> [reshape] -> gelu -> multiply.
+    Tensor value = gate_op.Outputs()[0];
+    auto user = SingleUser(value, 0);
+    if (user && user->Code() == kLiteRtOpCodeTflReshape) {
+      found.members.push_back(user->Get());
+      value = user->Outputs()[0];
+      user = SingleUser(value, 0);
+    }
+    bool approximate = false;
+    if (!user || user->Code() != kLiteRtOpCodeTflGelu ||
+        LiteRtGetGeluApproximateOption(user->Get(), &approximate) !=
+            kLiteRtStatusOk) {
+      return std::nullopt;
+    }
+    found.gate = approximate ? kLiteRtNvidiaGemmGateGeluTanh
+                             : kLiteRtNvidiaGemmGateGeluErf;
+    found.members.push_back(user->Get());
+    value = user->Outputs()[0];
+    if (value.Uses().size() != 1) {
+      return std::nullopt;
+    }
+    const Op multiply = value.Uses()[0].user;
+    if (multiply.Code() != kLiteRtOpCodeTflMul ||
+        multiply.Inputs().size() != 2 || multiply.Outputs().size() != 1 ||
+        !HasNoFusedActivation(multiply)) {
+      return std::nullopt;
+    }
+    // up projection -> [reshape] -> the other operand.
+    Tensor other = multiply.Inputs()[1 - value.Uses()[0].user_arg_ind];
+    auto producer = SingleUseProducer(other);
+    if (producer && producer->Code() == kLiteRtOpCodeTflReshape) {
+      found.members.push_back(producer->Get());
+      other = producer->Inputs()[0];
+      producer = SingleUseProducer(other);
+    }
+    if (!producer || producer->Code() != kLiteRtOpCodeTflFullyConnected ||
+        producer->Inputs().size() != 2 ||
+        producer->Inputs()[0].Get() != gate_op.Inputs()[0].Get() ||
+        !HasNoFusedActivation(*producer)) {
+      return std::nullopt;
+    }
+    const auto up_info = InspectSubbyteGemvWeights(producer->Inputs()[1]);
+    if (!up_info || up_info->bit_width != 4 ||
+        up_info->rows != gate_info->rows ||
+        up_info->columns != gate_info->columns) {
+      return std::nullopt;
+    }
+    // Every member comes after the gate projection, which emits the launch,
+    // and no intermediate result leaves the pair.
+    const auto gate_order = op_order_.find(gate_op.Get());
+    found.members.push_back(producer->Get());
+    found.members.push_back(multiply.Get());
+    for (LiteRtOp member : found.members) {
+      const auto order = op_order_.find(member);
+      if (gate_order == op_order_.end() || order == op_order_.end() ||
+          order->second <= gate_order->second) {
+        return std::nullopt;
+      }
+    }
+    if (graph_outputs_.count(gate_op.Outputs()[0].Get()) != 0 ||
+        graph_outputs_.count(multiply.Inputs()[0].Get()) != 0 ||
+        graph_outputs_.count(multiply.Inputs()[1].Get()) != 0 ||
+        graph_outputs_.count(producer->Outputs()[0].Get()) != 0) {
+      return std::nullopt;
+    }
+    found.up = *producer;
+    found.multiply = multiply;
+    return found;
+  }
+
+  // Emits the launch of a gated feed-forward pair at its gate projection and
+  // binds the result of the multiplication; the other members are not
+  // lowered.
+  Expected<void> AddGatedFeedForward(const Op& gate_op,
+                                     const GatedFeedForward& pair,
+                                     nvinfer1::ITensor* activation,
+                                     nvinfer1::DataType compute_type) {
+    LITERT_ASSIGN_OR_RETURN(auto info,
+                            InspectSubbyteGemvWeights(gate_op.Inputs()[1]));
+    LITERT_RETURN_IF_ERROR(
+        ValidateSubbyteGemvActivation(activation, compute_type, info.columns));
+    std::vector<uint8_t> packed;
+    std::vector<float> scales;
+    std::string suffix;
+    for (const Tensor& weights : {gate_op.Inputs()[1], pair.up->Inputs()[1]}) {
+      const auto bytes = weights.Weights().Bytes();
+      packed.insert(packed.end(), bytes.begin(), bytes.end());
+      const auto q = weights.PerChannelQuantization();
+      scales.insert(scales.end(), q.scales, q.scales + q.num_channels);
+      suffix += "_" + std::to_string(weights.TensorIndex());
+    }
+    LITERT_ASSIGN_OR_RETURN(
+        auto* gated,
+        AddSubbyteGemvPlugin(
+            activation, {info.bit_width, 2 * info.rows, info.columns},
+            std::move(packed), absl::MakeConstSpan(scales), suffix,
+            "cuda_subbyte_gated_gemm" + suffix, pair.gate));
+    LITERT_ASSIGN_OR_RETURN(auto out_type,
+                            pair.multiply->Outputs()[0].RankedTensorType());
+    LITERT_ASSIGN_OR_RETURN(auto out_dims, ConvertDims(out_type));
+    LITERT_ASSIGN_OR_RETURN(gated, ReshapeTensor(gated, out_dims));
+    for (LiteRtOp member : pair.members) {
+      unlowered_ops_.insert(member);
+    }
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX fused CUDA gated feed-forward GEMM: N=%d "
+               "K=%d tensors=%s",
+               info.rows, info.columns, suffix.c_str() + 1);
+    return SetOutputTensor(pair.multiply->Outputs()[0], gated);
   }
 
   // Fully connected ops that read the same activation (Gemma's q/k/v and
@@ -2840,6 +3046,26 @@ class TensorRtGraphBuilder {
     }
     LITERT_ASSIGN_OR_RETURN(auto first,
                             InspectSubbyteGemvWeights(op.Inputs()[1]));
+    // Over many activation rows, the projections of a later gated
+    // feed-forward pair run as a launch of their own.
+    std::unordered_set<LiteRtOp> gated;
+    if (GemmRows(activation) != 1) {
+      for (const auto& use : op.Inputs()[0].Uses()) {
+        const Op& user = use.user;
+        if (use.user_arg_ind != 0 || user.Get() == op.Get() ||
+            user.Code() != kLiteRtOpCodeTflFullyConnected ||
+            user.Inputs().size() < 2 || user.Outputs().size() != 1 ||
+            op_order_.find(user.Get()) == op_order_.end() ||
+            op_order_[user.Get()] < op_order_[op.Get()]) {
+          continue;
+        }
+        if (const auto pair = FindGatedFeedForward(user);
+            pair.has_value() && pair->up->Get() != op.Get()) {
+          gated.insert(user.Get());
+          gated.insert(pair->up->Get());
+        }
+      }
+    }
     std::vector<Op> group;
     for (const auto& use : op.Inputs()[0].Uses()) {
       const Op& user = use.user;
@@ -2848,7 +3074,8 @@ class TensorRtGraphBuilder {
           user.Inputs().size() < 2 || user.Outputs().size() != 1 ||
           op_order_.find(user.Get()) == op_order_.end() ||
           op_order_[user.Get()] < op_order_[op.Get()] ||
-          fused_gemv_outputs_.find(user.Get()) != fused_gemv_outputs_.end()) {
+          fused_gemv_outputs_.find(user.Get()) != fused_gemv_outputs_.end() ||
+          gated.count(user.Get()) != 0) {
         continue;
       }
       auto info = InspectSubbyteGemvWeights(user.Inputs()[1]);
@@ -5114,9 +5341,38 @@ class TensorRtGraphBuilder {
         }
       }
     }
+    int64_t rows = 1;
+    {
+      const auto in_dims = input->getDimensions();
+      for (int i = 0; i + 1 < in_dims.nbDims; ++i) {
+        rows *= in_dims.d[i];
+      }
+    }
+    const bool cuda_gemm =
+        !static_m_is_one &&
+        CudaGemmTakes(
+            rows, input->getDimensions().d[input->getDimensions().nbDims - 1],
+            op.Inputs()[1].ElementType() == litert::ElementType::Int4 ? 4 : 2);
     if (Fp16ActivationsEnabled() &&
         predequant_mode == PredequantMode::kCudaGemv && sub_byte_weights &&
-        static_m_is_one) {
+        cuda_gemm) {
+      if (const auto pair = FindGatedFeedForward(op); pair.has_value()) {
+        LITERT_ASSIGN_OR_RETURN(auto* activation,
+                                AddCastTensor(input, compute_type));
+        auto gated = AddGatedFeedForward(op, *pair, activation, compute_type);
+        if (gated.HasValue()) {
+          return {};
+        }
+        LITERT_LOG(LITERT_INFO,
+                   "CUDA gated feed-forward GEMM unavailable for tensor %u: %s",
+                   op.Inputs()[1].TensorIndex(),
+                   gated.Error().Message().c_str());
+      }
+    }
+    if (Fp16ActivationsEnabled() &&
+        predequant_mode == PredequantMode::kCudaGemv && sub_byte_weights &&
+        (static_m_is_one ||
+         (cuda_gemm && GetCudaGemmMode() == CudaGemmMode::kAll))) {
       LITERT_ASSIGN_OR_RETURN(input, AddCastTensor(input, compute_type));
       auto fused = AddCudaSubbyteGemvGroup(op, input, compute_type);
       if (fused.HasValue()) {
