@@ -15,8 +15,10 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_MEDIATEK_COMPILER_COMPILE_MODEL_H_
 #define ODML_LITERT_LITERT_VENDORS_MEDIATEK_COMPILER_COMPILE_MODEL_H_
 
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/litert_expected.h"
@@ -27,12 +29,16 @@ namespace litert::mediatek {
 Expected<NeuronCompilationPtr> CompileModel(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
     std::optional<std::string> soc_model, LrtMediatekOptions* mediatek_opts,
-    int subgraph_index, bool get_supported_mode = false);
+    int subgraph_index, bool get_supported_mode = false,
+    std::optional<std::string> extract_static_data_path = std::nullopt);
 
 Expected<void> GetSupportedOperations(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
     std::optional<std::string> soc_model, LrtMediatekOptions* mediatek_opts,
     const int subgraph_index, bool* support_flags, int num_ops);
+
+Expected<std::vector<std::vector<int8_t>>> ParseExtractedStaticWeights(
+    const std::string& file_path);
 
 }  // namespace litert::mediatek
 

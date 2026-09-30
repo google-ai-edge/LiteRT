@@ -17,10 +17,10 @@
 #include <cstdint>
 #include <string>
 #include <tuple>
-#include <unordered_set>
 #include <vector>
 
 #include "neuron/api/NeuronAdapter.h"
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -62,7 +62,7 @@ Expected<void> CreateModel(const LiteRtCompilerContext* ctx,
                            const litert::compiler::Subgraph& partition,
                            const std::string& model_name, NeuronModel* model,
                            OperandMap* operand_map,
-                           std::unordered_set<int>* unknown_op_indices) {
+                           absl::flat_hash_set<int>* unknown_op_indices) {
   if (neuron_adapter_api.api().model_set_name(model, model_name.c_str()) !=
       NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure, "Failed to set model name");

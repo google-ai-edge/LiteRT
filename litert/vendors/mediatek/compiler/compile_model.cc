@@ -14,12 +14,19 @@
 
 #include "litert/vendors/mediatek/compiler/compile_model.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <cstring>
+#include <fstream>
+#include <ios>
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "neuron/api/NeuronAdapter.h"
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -64,7 +71,8 @@ absl::string_view ResolveOptionBundle(LrtMediatekOptions* mediatek_opts,
 Expected<NeuronCompilationPtr> CompileModel(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
     std::optional<std::string> soc_model, LrtMediatekOptions* mediatek_opts,
-    const int subgraph_index, bool get_supported_mode) {
+    const int subgraph_index, bool get_supported_mode,
+    std::optional<std::string> extract_static_data_path) {
   // LITERT_USE_JIT is automatically defined based on the build target.
   // It is defined on devices with MediaTek hardwares.
 #if LITERT_USE_JIT
@@ -99,6 +107,13 @@ Expected<NeuronCompilationPtr> CompileModel(
     if (!option_bundle.empty()) {
       compile_options = absl::StrCat(" --option-bundle=", option_bundle);
     }
+  }
+
+  if (!get_supported_mode && extract_static_data_path.has_value() &&
+      !extract_static_data_path->empty()) {
+    absl::StrAppend(&compile_options,
+                    " --opt-static-sharing --extract-static-data=",
+                    *extract_static_data_path);
   }
 
   // This is needed in order to support FP32 acativations since TFLite doesn't
@@ -225,6 +240,143 @@ Expected<void> GetSupportedOperations(
                  "Failed to get supported op of compilation");
   }
   return {};
+}
+
+namespace {
+
+constexpr uint32_t kExtractedWeightsMagic = 0xbbced1ec;
+
+struct ExtractedWeightEntry {
+  uint64_t order = 0;
+  uint64_t offset = 0;
+  uint64_t size = 0;
+};
+
+bool ParseQuotedUint64(absl::string_view text, size_t* pos, uint64_t* out) {
+  const size_t open_quote = text.find('"', *pos);
+  if (open_quote == absl::string_view::npos) {
+    return false;
+  }
+  const size_t close_quote = text.find('"', open_quote + 1);
+  if (close_quote == absl::string_view::npos) {
+    return false;
+  }
+  uint64_t value = 0;
+  for (size_t i = open_quote + 1; i < close_quote; ++i) {
+    const char c = text[i];
+    if (c < '0' || c > '9') {
+      return false;
+    }
+    value = value * 10 + static_cast<uint64_t>(c - '0');
+  }
+  *out = value;
+  *pos = close_quote + 1;
+  return true;
+}
+
+}  // namespace
+
+Expected<std::vector<std::vector<int8_t>>> ParseExtractedStaticWeights(
+    const std::string& file_path) {
+  std::ifstream file(file_path, std::ios::binary | std::ios::ate);
+  if (!file.is_open()) {
+    return std::vector<std::vector<int8_t>>{};
+  }
+  const std::streamoff total_size_signed = file.tellg();
+  if (total_size_signed < 12) {
+    return std::vector<std::vector<int8_t>>{};
+  }
+  const uint64_t total_size = static_cast<uint64_t>(total_size_signed);
+  const uint64_t footer_offset = total_size - 12;
+
+  file.seekg(static_cast<std::streamoff>(footer_offset), std::ios::beg);
+  uint8_t footer[12];
+  if (!file.read(reinterpret_cast<char*>(footer), sizeof(footer))) {
+    return Error(kLiteRtStatusErrorFileIO,
+                 "Failed to read extracted weights footer");
+  }
+
+  uint64_t json_offset = 0;
+  uint32_t magic = 0;
+  std::memcpy(&json_offset, footer, sizeof(uint64_t));
+  std::memcpy(&magic, footer + sizeof(uint64_t), sizeof(uint32_t));
+  if (magic != kExtractedWeightsMagic || json_offset > footer_offset) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid extracted weights footer");
+  }
+
+  const uint64_t json_size = footer_offset - json_offset;
+  std::string json_text(json_size, '\0');
+  file.seekg(static_cast<std::streamoff>(json_offset), std::ios::beg);
+  if (json_size > 0 && !file.read(json_text.data(), json_size)) {
+    return Error(kLiteRtStatusErrorFileIO,
+                 "Failed to read extracted weights metadata JSON");
+  }
+
+  std::vector<ExtractedWeightEntry> entries;
+  size_t pos = 0;
+  while (pos < json_text.size()) {
+    if (json_text.find('"', pos) == std::string::npos) {
+      break;
+    }
+    ExtractedWeightEntry entry;
+    if (!ParseQuotedUint64(json_text, &pos, &entry.order)) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Failed to parse weight order in extracted weights JSON");
+    }
+    const size_t open_bracket = json_text.find('[', pos);
+    if (open_bracket == std::string::npos) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Malformed entry in extracted weights JSON");
+    }
+    pos = open_bracket + 1;
+    if (!ParseQuotedUint64(json_text, &pos, &entry.offset) ||
+        !ParseQuotedUint64(json_text, &pos, &entry.size)) {
+      return Error(
+          kLiteRtStatusErrorInvalidArgument,
+          "Failed to parse weight offset/size in extracted weights JSON");
+    }
+    const size_t close_bracket = json_text.find(']', pos);
+    if (close_bracket == std::string::npos) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Missing closing bracket in extracted weights JSON");
+    }
+    pos = close_bracket + 1;
+    if (entry.offset > json_offset || entry.size > json_offset - entry.offset) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Extracted weight range out of bounds");
+    }
+    entries.push_back(entry);
+  }
+
+  std::sort(entries.begin(), entries.end(),
+            [](const ExtractedWeightEntry& a, const ExtractedWeightEntry& b) {
+              return a.order < b.order;
+            });
+
+  const uint64_t base_order = entries.empty() ? 0 : entries.front().order;
+  std::vector<std::vector<int8_t>> weight_buffers;
+  weight_buffers.reserve(entries.size());
+  for (size_t i = 0; i < entries.size(); ++i) {
+    if (entries[i].order != base_order + i) {
+      return Error(
+          kLiteRtStatusErrorInvalidArgument,
+          absl::StrFormat("Non-contiguous weight order in extracted weights "
+                          "JSON: expected %lu, got %lu",
+                          base_order + i, entries[i].order));
+    }
+    std::vector<int8_t> buf(entries[i].size);
+    if (entries[i].size > 0) {
+      file.seekg(static_cast<std::streamoff>(entries[i].offset), std::ios::beg);
+      if (!file.read(reinterpret_cast<char*>(buf.data()), entries[i].size)) {
+        return Error(kLiteRtStatusErrorFileIO,
+                     "Failed to read extracted weight buffer payload");
+      }
+    }
+    weight_buffers.push_back(std::move(buf));
+  }
+
+  return weight_buffers;
 }
 
 }  // namespace litert::mediatek

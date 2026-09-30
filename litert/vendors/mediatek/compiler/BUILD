@@ -41,12 +41,22 @@ litert_dynamic_lib(
     deps = [
         ":compile_model",
         ":create_model",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        # Needed at dlopen time (flatbuffers::ClassicLocale).
+        "@flatbuffers",  # keep
+        "@neuro_pilot//:neuron_host_headers",
         "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_compiler_context",
         "//litert/c/options:litert_mediatek_options",
+        "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_context_wrapper",
@@ -58,14 +68,16 @@ litert_dynamic_lib(
         "//litert/vendors/mediatek:neuron_adapter_api",
         "//litert/vendors/mediatek/compiler/legalizations:common_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:operand_map",
+        "//litert/vendors/mediatek/compiler/transformations:attention_chunk_transformation",
+        "//litert/vendors/mediatek/compiler/transformations:attention_mask_transformation",
+        "//litert/vendors/mediatek/compiler/transformations:entry_embedding_transformation",
+        "//litert/vendors/mediatek/compiler/transformations:index_arith_transformation",
+        "//litert/vendors/mediatek/compiler/transformations:mlp_quant_transformation",
+        "//litert/vendors/mediatek/compiler/transformations:orphan_cleanup_transformation",
         "//litert/vendors/mediatek/compiler/transformations:rms_norm_quant_transformation",
+        "//litert/vendors/mediatek/compiler/transformations:rope_transformation",
         "//litert/vendors/mediatek/schema:mediatek_litert_schema",
         "//litert/vendors/mediatek/schema:neuron_litert_schema",
-        "@com_google_absl//absl/cleanup",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@flatbuffers",
     ],
 )
 
@@ -107,6 +119,7 @@ cc_library(
         "//litert/vendors/mediatek/compiler/legalizations:sub_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:transpose_conv_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:transpose_op_legalization",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@neuro_pilot//:neuron_host_headers",
     ],
 )
@@ -127,6 +140,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
         "@neuro_pilot//:neuron_host_headers",
     ],
 )
@@ -166,6 +180,7 @@ litert_test(
     ungrte = True,
     use_sys_malloc = True,
     deps = [
+        ":compile_model",
         ":compiler_plugin",  # buildcleaner: keep
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
@@ -182,6 +197,8 @@ litert_test(
         "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/cc:litert_compiler_plugin",
         "//litert/vendors/mediatek:neuron_adapter_api",
+        "//litert/vendors/mediatek/schema:mediatek_litert_schema",
+        "//litert/vendors/mediatek/schema:neuron_litert_schema",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
     ],

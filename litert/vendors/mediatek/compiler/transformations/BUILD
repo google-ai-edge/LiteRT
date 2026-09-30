@@ -21,6 +21,29 @@ package(
 )
 
 cc_library(
+    name = "attention_mask_transformation",
+    srcs = ["attention_mask_transformation.cc"],
+    hdrs = ["attention_mask_transformation.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context_header",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/compiler/cc:litert_builder",
+        "//litert/compiler/cc:litert_matchers",
+        "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
     name = "rms_norm_quant_transformation",
     srcs = ["rms_norm_quant_transformation.cc"],
     hdrs = ["rms_norm_quant_transformation.h"],
@@ -39,6 +62,154 @@ cc_library(
         "//litert/compiler/cc:litert_op_options",
         "//litert/compiler/cc:litert_quantization",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "orphan_cleanup_transformation",
+    srcs = ["orphan_cleanup_transformation.cc"],
+    hdrs = ["orphan_cleanup_transformation.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_compiler_context_header",
+        "//litert/compiler/cc:litert_builder",
+        "//litert/compiler/cc:litert_model",
+        "@com_google_absl//absl/container:flat_hash_set",
+    ],
+)
+
+cc_library(
+    name = "index_arith_transformation",
+    srcs = ["index_arith_transformation.cc"],
+    hdrs = ["index_arith_transformation.h"],
+    deps = [
+        ":orphan_cleanup_transformation",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context_header",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/compiler/cc:litert_builder",
+        "//litert/compiler/cc:litert_matchers",
+        "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "entry_embedding_transformation",
+    srcs = ["entry_embedding_transformation.cc"],
+    hdrs = ["entry_embedding_transformation.h"],
+    deps = [
+        ":orphan_cleanup_transformation",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context_header",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/compiler/cc:litert_builder",
+        "//litert/compiler/cc:litert_matchers",
+        "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "rope_transformation",
+    srcs = ["rope_transformation.cc"],
+    hdrs = ["rope_transformation.h"],
+    deps = [
+        ":orphan_cleanup_transformation",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context_header",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/compiler/cc:litert_builder",
+        "//litert/compiler/cc:litert_matchers",
+        "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "attention_chunk_transformation",
+    srcs = ["attention_chunk_transformation.cc"],
+    hdrs = ["attention_chunk_transformation.h"],
+    deps = [
+        ":orphan_cleanup_transformation",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context_header",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/compiler/cc:litert_builder",
+        "//litert/compiler/cc:litert_matchers",
+        "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "attention_chunk_transformation_test",
+    srcs = ["attention_chunk_transformation_test.cc"],
+    deps = [
+        ":attention_chunk_transformation",
+        ":orphan_cleanup_transformation",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/compiler/cc:litert_builder",
+        "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
+        "//litert/core/model",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "mlp_quant_transformation",
+    srcs = ["mlp_quant_transformation.cc"],
+    hdrs = ["mlp_quant_transformation.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context_header",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/compiler/cc:litert_builder",
+        "//litert/compiler/cc:litert_matchers",
+        "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
     ],
 )
 
@@ -61,6 +232,53 @@ cc_test(
         "//litert/compiler/cc:litert_op_options",
         "//litert/core/model",
         "//litert/test:load_test_model",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "transformations_test",
+    srcs = ["transformations_test.cc"],
+    deps = [
+        ":attention_mask_transformation",
+        ":entry_embedding_transformation",
+        ":orphan_cleanup_transformation",
+        ":rope_transformation",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/compiler/cc:litert_builder",
+        "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
+        "//litert/core/model",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "index_arith_transformation_test",
+    srcs = ["index_arith_transformation_test.cc"],
+    deps = [
+        ":index_arith_transformation",
+        ":orphan_cleanup_transformation",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/compiler/cc:litert_builder",
+        "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
+        "//litert/core/model",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],

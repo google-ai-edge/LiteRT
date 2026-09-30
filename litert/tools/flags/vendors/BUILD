@@ -140,7 +140,6 @@ cc_test(
     ],
     deps = [
         ":mediatek_flags",
-        "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_mediatek_options",

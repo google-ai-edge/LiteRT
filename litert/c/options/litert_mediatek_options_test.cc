@@ -293,6 +293,30 @@ TEST(LrtMediatekOptionsTest, AotCompilationOptions) {
   LrtDestroyMediatekOptions(options);
 }
 
+TEST(LrtMediatekOptionsTest, EnableWeightSharing) {
+  LrtMediatekOptions* options;
+  LITERT_ASSERT_OK(LrtCreateMediatekOptions(&options));
+
+  bool enable_weight_sharing;
+  LITERT_ASSERT_OK(LrtGetMediatekOptionsEnableWeightSharing(
+      options, &enable_weight_sharing));
+  EXPECT_FALSE(enable_weight_sharing);
+
+  LITERT_ASSERT_OK(LrtSetMediatekOptionsEnableWeightSharing(options, true));
+  LITERT_ASSERT_OK(LrtGetMediatekOptionsEnableWeightSharing(
+      options, &enable_weight_sharing));
+  EXPECT_TRUE(enable_weight_sharing);
+
+  LrtMediatekOptions* parsed;
+  SerializeAndParse(options, &parsed);
+  bool parsed_ews;
+  LrtGetMediatekOptionsEnableWeightSharing(parsed, &parsed_ews);
+  EXPECT_TRUE(parsed_ews);
+
+  LrtDestroyMediatekOptions(parsed);
+  LrtDestroyMediatekOptions(options);
+}
+
 TEST(LrtMediatekOptionsTest, OptionBundleDefaults) {
   LrtMediatekOptions* options;
   LITERT_ASSERT_OK(LrtCreateMediatekOptions(&options));
@@ -414,6 +438,10 @@ TEST(MediatekOptionsTest, CppWrapper) {
   EXPECT_EQ(options.GetOptionBundleDecode(), "decode-bundle");
   options.SetOptionBundlePrefill("prefill-bundle");
   EXPECT_EQ(options.GetOptionBundlePrefill(), "prefill-bundle");
+
+  EXPECT_FALSE(options.GetEnableWeightSharing());
+  options.SetEnableWeightSharing(true);
+  EXPECT_TRUE(options.GetEnableWeightSharing());
 }
 
 }  // namespace
