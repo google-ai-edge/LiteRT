@@ -211,7 +211,9 @@ litert_lib(
         ":weight_bank",
         ":weight_bank_attributes",
         "//litert/c/internal:litert_logging",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
+        "@farmhash_archive//:farmhash",
     ] + _OPENVINO_DEPS,
 )
 
@@ -259,6 +261,26 @@ litert_lib(
         ":openvino_soc_config",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/c/options:litert_intel_openvino_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "@com_google_absl//absl/strings",
+    ] + _OPENVINO_DEPS,
+)
+
+litert_test(
+    name = "openvino_compile_context_test",
+    srcs = ["openvino_compile_context_test.cc"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":openvino_compile_context",
+        "//litert/c:litert_common",
         "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_intel_openvino_options",

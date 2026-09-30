@@ -45,6 +45,12 @@ struct PoolLayout {
   // BufferId -> pool offset, for AliasAndTagSharedConstants. Derived from
   // |buffers| on demand, so an entry's offset has one source of truth.
   std::map<int32_t, size_t> OffsetMap() const;
+
+  // Content-derived NPUW weights-bank name ("litert_npuw_<16-hex>") computed by
+  // fingerprinting each buffer's (buffer_id, bytes) in ascending-BufferId
+  // order. Identical pools yield identical names while unrelated models get
+  // distinct names, avoiding BankManager collisions across models at import.
+  std::string WeightsBankName() const;
 };
 
 // Lays out |weight_bank|'s buffers in ascending-BufferId order, calling

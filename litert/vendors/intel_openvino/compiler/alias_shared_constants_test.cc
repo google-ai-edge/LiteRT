@@ -278,6 +278,35 @@ TEST(BuildPoolTest, KeepsEveryBufferWhenNotPruning) {
   EXPECT_EQ(layout.buffers.size(), 2u);
 }
 
+TEST(BuildPoolTest, WeightsBankNameIsDeterministicAndContentDerived) {
+  WeightBank bank_a1;
+  bank_a1.RegisterGeneratedConstant("w0", {1, 2, 3, 4});
+  bank_a1.RegisterGeneratedConstant("w1", {5, 6, 7, 8});
+  const auto layout_a1 =
+      BuildPool(/*live_names=*/{}, bank_a1, /*prune_dead=*/false);
+
+  WeightBank bank_a2;
+  bank_a2.RegisterGeneratedConstant("w0", {1, 2, 3, 4});
+  bank_a2.RegisterGeneratedConstant("w1", {5, 6, 7, 8});
+  const auto layout_a2 =
+      BuildPool(/*live_names=*/{}, bank_a2, /*prune_dead=*/false);
+
+  WeightBank bank_b;
+  bank_b.RegisterGeneratedConstant("w0", {1, 2, 3, 9});
+  bank_b.RegisterGeneratedConstant("w1", {5, 6, 7, 8});
+  const auto layout_b =
+      BuildPool(/*live_names=*/{}, bank_b, /*prune_dead=*/false);
+
+  const std::string name_a1 = layout_a1.WeightsBankName();
+  const std::string name_a2 = layout_a2.WeightsBankName();
+  const std::string name_b = layout_b.WeightsBankName();
+
+  EXPECT_EQ(name_a1.size(), 28u);
+  EXPECT_EQ(name_a1.substr(0, 12), "litert_npuw_");
+  EXPECT_EQ(name_a1, name_a2);
+  EXPECT_NE(name_a1, name_b);
+}
+
 }  // namespace
 }  // namespace openvino
 }  // namespace litert
