@@ -78,7 +78,6 @@ swift_test(
         ":LiteRT_Swift",
         # Dependency placeholder: apple_frameworks Metal,
         # Dependency placeholder: swift foundation,
-        "//third_party/swift/swift-testing",
         # Dependency placeholder: swift xctest,
     ],
 )
