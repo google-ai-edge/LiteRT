@@ -312,7 +312,14 @@ GpuBackendOpenClLitert::GetGpuBufferRequirementsForNonExternalTensors() {
   }
 #endif
 #if LITERT_HAS_AHWB_SUPPORT
-  if (cl_env()->device().GetInfo().SupportsExtension("cl_arm_import_memory") &&
+  // `cl_arm_import_memory` alone only guarantees the base import API (e.g.
+  // host / dma_buf import types). Importing with
+  // CL_IMPORT_TYPE_ANDROID_HARDWARE_BUFFER_ARM additionally requires
+  // `cl_arm_import_memory_android_hardware_buffer`; drivers such as PowerVR
+  // DXT on Pixel 10 advertise the former but not the latter, and fail
+  // clImportMemoryARM with CL_INVALID_PROPERTY.
+  if (cl_env()->device().GetInfo().SupportsExtension(
+          "cl_arm_import_memory_android_hardware_buffer") &&
       ::ml_drift::cl::clImportMemoryARM != nullptr) {
     requirements.buffer_types.push_back(kLiteRtTensorBufferTypeAhwb);
     requirements.strides.push_back(0);

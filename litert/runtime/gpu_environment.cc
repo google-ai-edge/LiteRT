@@ -167,7 +167,12 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
 #if LITERT_HAS_OPENCL_SUPPORT
 bool SupportsAhwbClInteropHelper(tflite::gpu::cl::CLDevice device) {
 #if LITERT_HAS_AHWB_SUPPORT
-  return device.GetInfo().SupportsExtension("cl_arm_import_memory") &&
+  // Importing AHardwareBuffers requires the
+  // `cl_arm_import_memory_android_hardware_buffer` extension; the base
+  // `cl_arm_import_memory` extension does not imply support for
+  // CL_IMPORT_TYPE_ANDROID_HARDWARE_BUFFER_ARM (e.g. PowerVR DXT on Pixel 10).
+  return device.GetInfo().SupportsExtension(
+             "cl_arm_import_memory_android_hardware_buffer") &&
          ::tflite::gpu::cl::clImportMemoryARM != nullptr;
 #else   // LITERT_HAS_AHWB_SUPPORT
   return false;
