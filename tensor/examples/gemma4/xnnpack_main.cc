@@ -36,12 +36,10 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
-#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/strings/strip.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/backends/xnnpack/arithmetic.h"
 #include "tensor/buffer.h"
@@ -104,56 +102,20 @@ using ::litert::tensor::examples::TokenPrinter;
 
 using XnnTensor = Tensor<XnnpackMixinTag>;
 
-// Weight mapping hooks that prepare the weights for the XNNPack graph.
-//
-// - BF16 weights are converted to FP32.
-// - The weights are registered with the XNNPack weight cache, if any.
-// - The combined per-layer model projection weight matrix
-//   ("model.per_layer_model_projection.weight") of shape
-//   [num_layers, per_layer_input_dim, embed_dim] is sliced into individual
-//   per-layer 2D weight tensors
-//   ("model.layers.<l>.per_layer_model_projection.weight") of shape
-//   [per_layer_input_dim, embed_dim] for each layer `l`.
+// Weight mapping hooks that register the weights with the XNNPack weight cache,
+// if any.
 class XnnpackWeightHooks final : public TensorMappingHooks {
  public:
   // Constructor.
   //
-  // - `config`: model configuration.
   // - `weight_cache`: if not null, the weights are registered with it. Must
   //   outlive the hooks.
-  XnnpackWeightHooks(const Config& config,
-                     tflite::xnnpack::MMapWeightCacheProvider* weight_cache)
-      : config_(config), weight_cache_(weight_cache) {}
+  explicit XnnpackWeightHooks(
+      tflite::xnnpack::MMapWeightCacheProvider* weight_cache)
+      : weight_cache_(weight_cache) {}
 
   absl::Status OnLoaded(absl::string_view model_name,
                         TensorHandle& weight) override {
-    if (weight.GetType() == Type::kBF16) {
-      LRT_TENSOR_RETURN_IF_ERROR(FallbackBF16ToFp32(weight));
-    }
-    return MapWeightIdentifier(model_name, weight);
-  }
-
-  absl::StatusOr<TensorHandle> OnNotFound(
-      TensorMapping& mapping, absl::string_view model_name) override {
-    if (auto [layer, str] = std::tuple(0, model_name);
-        absl::ConsumePrefix(&str, kPerLayerModelProjectionPrefix) &&
-        absl::ConsumeSuffix(&str, kPerLayerModelProjectionSuffix) &&
-        absl::SimpleAtoi(str, &layer)) {
-      return SlicePerLayerModelProjection(mapping, model_name, layer);
-    }
-    return TensorMappingHooks::OnNotFound(mapping, model_name);
-  }
-
- private:
-  static constexpr absl::string_view kPerLayerModelProjection =
-      "model.per_layer_model_projection.weight";
-  static constexpr absl::string_view kPerLayerModelProjectionPrefix =
-      "model.layers.";
-  static constexpr absl::string_view kPerLayerModelProjectionSuffix =
-      ".per_layer_model_projection.weight";
-
-  absl::Status MapWeightIdentifier(absl::string_view model_name,
-                                   TensorHandle& weight) {
     if (weight_cache_ == nullptr) {
       return absl::OkStatus();
     }
@@ -169,70 +131,7 @@ class XnnpackWeightHooks final : public TensorMappingHooks {
     return absl::OkStatus();
   }
 
-  static absl::Status FallbackBF16ToFp32(TensorHandle& tensor) {
-    TRACE_EVENT(kTensorApiCategory, "FallbackBF16ToFp32");
-    LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & buffer, tensor.GetBuffer());
-    std::shared_ptr<OwningCpuBuffer> fp32_buf =
-        OwningCpuBuffer::Copy<Type::kFP32>(buffer.Lock().As<const bf16_t>());
-    if (fp32_buf == nullptr) {
-      return absl::ResourceExhaustedError(absl::StrCat(
-          "Failed to allocate FP32 buffer for weight ", tensor.GetName()));
-    }
-    tensor.SetType(Type::kFP32);
-    tensor.SetBuffer(fp32_buf);
-    return absl::OkStatus();
-  }
-
-  absl::StatusOr<TensorHandle> SlicePerLayerModelProjection(
-      TensorMapping& mapping, absl::string_view model_name, int layer) {
-    if (layer < 0 || layer >= config_.num_layers) {
-      return absl::NotFoundError(absl::StrCat("No weight maps to ", model_name,
-                                              ", the model has ",
-                                              config_.num_layers, " layers."));
-    }
-    LRT_TENSOR_ASSIGN_OR_RETURN(TensorHandle proj_w,
-                                mapping.Get(kPerLayerModelProjection));
-    // Slicing a quantized weight would also require slicing its quantization
-    // parameters.
-    if (proj_w.GetQuantization() != nullptr) {
-      return absl::UnimplementedError(absl::StrCat(
-          "Slicing quantized ", kPerLayerModelProjection, " isn't supported."));
-    }
-    LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & proj_w_buf, proj_w.GetBuffer());
-    auto proj_locked = proj_w_buf.Lock();
-    const std::byte* proj_w_bytes = proj_locked.data();
-    if (proj_w_bytes == nullptr) {
-      return absl::InternalError(
-          absl::StrCat("Null buffer data for ", kPerLayerModelProjection));
-    }
-
-    const Type type = proj_w.GetType();
-    const size_t layer_w_elements =
-        static_cast<size_t>(config_.per_layer_input_dim) * config_.embed_dim;
-    if (layer_w_elements * BitSize(type) % 8 != 0) {
-      return absl::InvalidArgumentError(
-          absl::StrCat(kPerLayerModelProjection, " layers of type ", type,
-                       " don't start on a byte boundary."));
-    }
-    const size_t layer_w_bytes = BufferSize(type, layer_w_elements);
-    if (proj_locked.size() < (layer + 1) * layer_w_bytes) {
-      return absl::InvalidArgumentError(
-          absl::StrCat(kPerLayerModelProjection, " holds ", proj_locked.size(),
-                       " bytes, which is too small to slice layer ", layer));
-    }
-
-    const std::byte* layer_bytes = proj_w_bytes + layer * layer_w_bytes;
-    return TensorHandle({
-        .name = std::string(model_name),
-        .type = type,
-        .shape = {config_.per_layer_input_dim, config_.embed_dim},
-        // The combined weight is stored in the checkpoint mapping, which keeps
-        // its data alive for the slices that don't own their data.
-        .buffer = std::make_shared<SpanCpuBuffer>(layer_bytes, layer_w_bytes),
-    });
-  }
-
-  Config config_;
+ private:
   tflite::xnnpack::MMapWeightCacheProvider* weight_cache_;
 };
 
@@ -335,8 +234,9 @@ absl::StatusOr<LoadedTensors> LoadWeightsAndPrepareTensors(
   TRACE_EVENT(kTensorApiCategory, "LoadWeightsAndPrepareTensors");
   LazyTensorMapping weights(GetGemma4WeightMapping(config.num_layers),
                             std::move(loader));
-  weights.Register<Gemma4WeightHooks>().Register<XnnpackWeightHooks>(
-      config, weight_cache);
+  weights.Register<Gemma4WeightHooks>(config)
+      .Register<FallbackBF16ToFp32Hooks>()
+      .Register<XnnpackWeightHooks>(weight_cache);
   LRT_TENSOR_ASSIGN_OR_RETURN(TensorHandle embed_tokens,
                               weights.Get("model.embed_tokens.weight"));
   LRT_TENSOR_ASSIGN_OR_RETURN(

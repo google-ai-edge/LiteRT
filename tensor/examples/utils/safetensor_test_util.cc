@@ -64,6 +64,8 @@ safetensors::dtype SafetensorDtype(Type type) {
       return safetensors::dtype::kINT64;
     case Type::kFP32:
       return safetensors::dtype::kFLOAT32;
+    case Type::kBF16:
+      return safetensors::dtype::kBFLOAT16;
     default:
       ADD_FAILURE() << "Unsupported test tensor type: " << ToString(type);
       return safetensors::dtype::kFLOAT32;

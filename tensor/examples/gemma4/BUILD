@@ -86,11 +86,39 @@ cc_library(
     srcs = ["gemma4_weights.cc"],
     hdrs = ["gemma4_weights.h"],
     deps = [
+        ":gemma4_config",
         "//tensor",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/examples/utils:perfetto_session",
         "//tensor/examples/utils:tensor_mapping",
+        "//tensor/utils:macros",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@perfetto//:libperfetto_client_experimental",
+    ],
+)
+
+cc_test(
+    name = "gemma4_weights_test",
+    srcs = ["gemma4_weights_test.cc"],
+    deps = [
+        ":gemma4_config",
+        ":gemma4_weights",
+        "//tensor",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/examples/utils:safetensor_loader",
+        "//tensor/examples/utils:safetensor_test_util",
+        "//tensor/examples/utils:tensor_mapping",
+        "//tensor/utils:matchers",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
