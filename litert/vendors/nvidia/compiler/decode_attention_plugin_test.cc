@@ -217,5 +217,108 @@ TEST_F(DecodeAttentionPluginTest, EnqueueRejectsMissingBuffers) {
   }
 }
 
+// Prefill over a cache followed by the keys of the chunk.
+class NewKeysAttentionPluginTest : public testing::Test {
+ protected:
+  void SetUp() override {
+    plugin_.reset(CreateDecodeAttentionPlugin(-45824.0f, /*new_keys=*/true));
+    ASSERT_NE(plugin_, nullptr);
+    runtime_ = static_cast<nvinfer1::IPluginV3OneRuntime*>(
+        plugin_->getCapabilityInterface(
+            nvinfer1::PluginCapabilityType::kRUNTIME));
+    ASSERT_NE(runtime_, nullptr);
+    SetShape(/*heads=*/8, /*tokens=*/1024, /*query_heads=*/2, /*depth=*/256,
+             /*cache_len=*/1152);
+  }
+
+  void SetShape(int heads, int tokens, int query_heads, int depth,
+                int cache_len) {
+    inputs_[0].dims = nvinfer1::Dims4{1, heads, query_heads * tokens, depth};
+    inputs_[0].type = nvinfer1::DataType::kBF16;
+    inputs_[1].dims = nvinfer1::Dims4{1, heads, cache_len, depth};
+    inputs_[1].type = nvinfer1::DataType::kHALF;
+    inputs_[2] = inputs_[1];
+    inputs_[3].dims = nvinfer1::Dims4{1, 1, tokens, cache_len + tokens};
+    inputs_[3].type = nvinfer1::DataType::kBOOL;
+    inputs_[4].dims = nvinfer1::Dims4{1, heads, tokens, depth};
+    inputs_[4].type = nvinfer1::DataType::kHALF;
+    inputs_[5] = inputs_[4];
+    for (auto& input : inputs_) input.format = nvinfer1::TensorFormat::kLINEAR;
+    output_ = inputs_[0];
+  }
+
+  int ShapeStatus() {
+    return runtime_->onShapeChange(inputs_.data(), inputs_.size(), &output_, 1);
+  }
+
+  std::unique_ptr<nvinfer1::IPluginV3> plugin_;
+  nvinfer1::IPluginV3OneRuntime* runtime_ = nullptr;
+  std::array<nvinfer1::PluginTensorDesc, 6> inputs_{};
+  nvinfer1::PluginTensorDesc output_{};
+};
+
+TEST_F(NewKeysAttentionPluginTest, AcceptsRingCachesAndSingleHeadCaches) {
+  for (auto type : {nvinfer1::DataType::kHALF, nvinfer1::DataType::kBF16}) {
+    for (int tokens : {128, 1024}) {
+      SetShape(8, tokens, 2, 256, 1152);
+      inputs_[0].type = type;
+      output_ = inputs_[0];
+      EXPECT_EQ(ShapeStatus(), 0) << "tokens=" << tokens;
+      inputs_[3].dims.d[2] = 2 * tokens;  // A mask row per query row.
+      EXPECT_EQ(ShapeStatus(), 0) << "tokens=" << tokens;
+      SetShape(1, tokens, 16, 512, 4096);
+      EXPECT_EQ(ShapeStatus(), 0) << "tokens=" << tokens;
+    }
+  }
+}
+
+TEST_F(NewKeysAttentionPluginTest, RejectsUnsupportedShapes) {
+  SetShape(8, 32, 2, 256, 1152);  // Half a block of query rows.
+  EXPECT_NE(ShapeStatus(), 0);
+  SetShape(8, 1024, 2, 256, 1150);  // The new keys must start a tile.
+  EXPECT_NE(ShapeStatus(), 0);
+  SetShape(8, 1024, 2, 128, 1152);  // Depth 128.
+  EXPECT_NE(ShapeStatus(), 0);
+  SetShape(8, 1024, 2, 256, 1152);
+  --inputs_[3].dims.d[3];  // The mask covers the cache and the new keys.
+  EXPECT_NE(ShapeStatus(), 0);
+  SetShape(8, 1024, 2, 256, 1152);
+  inputs_[4].dims.d[1] = 4;
+  inputs_[5] = inputs_[4];
+  EXPECT_NE(ShapeStatus(), 0);
+  SetShape(8, 1024, 2, 256, 1152);
+  --inputs_[5].dims.d[2];
+  EXPECT_NE(ShapeStatus(), 0);
+}
+
+TEST_F(NewKeysAttentionPluginTest, RejectsInvalidCountsAndTypes) {
+  for (int count : {0, 4, 5, 7}) {
+    EXPECT_NE(runtime_->onShapeChange(inputs_.data(), count, &output_, 1), 0);
+  }
+  inputs_[4].type = nvinfer1::DataType::kBF16;
+  EXPECT_NE(ShapeStatus(), 0);
+  inputs_[4].type = nvinfer1::DataType::kHALF;
+  inputs_[5].format = nvinfer1::TensorFormat::kCHW2;
+  EXPECT_NE(ShapeStatus(), 0);
+}
+
+TEST_F(NewKeysAttentionPluginTest, EnqueueRejectsMissingBuffers) {
+  uint16_t sentinel = 0;
+  std::array<const void*, 6> input_buffers;
+  input_buffers.fill(&sentinel);
+  input_buffers[5] = nullptr;
+  void* output_buffer = &sentinel;
+  EXPECT_NE(runtime_->enqueue(inputs_.data(), &output_, input_buffers.data(),
+                              &output_buffer, &sentinel, nullptr),
+            0);
+}
+
+TEST_F(DecodeAttentionPluginTest, RejectsNewKeyInputs) {
+  std::array<nvinfer1::PluginTensorDesc, 6> inputs{};
+  for (int i = 0; i < 4; ++i) inputs[i] = inputs_[i];
+  inputs[4] = inputs[5] = inputs_[1];
+  EXPECT_NE(runtime_->onShapeChange(inputs.data(), 6, &output_, 1), 0);
+}
+
 }  // namespace
 }  // namespace litert::nvidia

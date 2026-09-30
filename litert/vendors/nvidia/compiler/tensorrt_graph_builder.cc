@@ -58,6 +58,7 @@
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
 #include "litert/vendors/nvidia/trtllm/global_attention.h"
+#include "litert/vendors/nvidia/trtllm/tiled_attention.h"
 
 namespace litert::nvidia {
 namespace {
@@ -164,8 +165,21 @@ bool GlobalAttentionPluginEnabled() {
                     /*default_value=*/true);
 }
 
-// The global kernels skip keys that no query row can see, which is exact as
-// long as a masked score underflows in the softmax.
+// Prefill attention over a ring cache (Gemma 4 local layers) reads the cache
+// before its update and the keys and values of the chunk itself:
+// concatenated scores, select, softmax, and the sum of two value products. It
+// runs on the tensor-core kernels of trtllm/tiled_attention.h as one launch
+// of the same plugin, which only computes the tiles of keys some query row of
+// a block can see (about half of them in a sliding window). Set
+// LITERT_NVIDIA_TENSORRT_LOCAL_ATTENTION_PLUGIN=0 to keep the TensorRT
+// lowering.
+bool LocalAttentionPluginEnabled() {
+  return EnvEnabled("LITERT_NVIDIA_TENSORRT_LOCAL_ATTENTION_PLUGIN",
+                    /*default_value=*/true);
+}
+
+// The tensor-core kernels skip keys that no query row can see, which is exact
+// as long as a masked score underflows in the softmax.
 constexpr float kMaxGlobalAttentionFill = -1000.0f;
 
 // runtime_bmm multiplies activations against FP16 KV caches. By default the
@@ -1970,6 +1984,7 @@ class TensorRtGraphBuilder {
     for (size_t i = 0; i < num_ops_to_lower; ++i) {
       op_order_[ops[i].Get()] = i;
     }
+    LITERT_RETURN_IF_ERROR(FindPrefillAttentionBlocks(subgraph));
     std::vector<Op> prefill_cache_updates;
     for (size_t i = 0; i < num_ops_to_lower; ++i) {
       if (ops[i].Code() == kLiteRtOpCodeShloComposite &&
@@ -4199,17 +4214,19 @@ class TensorRtGraphBuilder {
     return {};
   }
 
-  // One decode attention block: the four ops between the in-place K/V cache
-  // updates and the output projection, all with single uses.
+  // One attention block, all of whose intermediate results have single uses:
+  // in decode and for the global layers of prefill the four ops between the
+  // in-place K/V cache updates and the output projection, which read the
+  // updated caches; for the ring caches of prefill the ops between the old
+  // caches, the chunk's own keys and values, and the join of the two value
+  // products.
   struct DecodeAttentionBlock {
-    LiteRtOp scores_op = nullptr;  // runtime_bmm(q, k_out)
-    LiteRtOp select_op = nullptr;  // select_v2(mask, scores, fill)
-    LiteRtOp softmax_op = nullptr;
-    LiteRtOp values_op = nullptr;  // runtime_bmm(probs, v_out)
     LiteRtTensor q = nullptr;
-    LiteRtTensor k_out = nullptr;
+    LiteRtTensor k_out = nullptr;  // the key cache the block reads
     LiteRtTensor v_out = nullptr;
     LiteRtTensor mask = nullptr;
+    LiteRtTensor k_new = nullptr;  // the chunk's keys, for a ring cache
+    LiteRtTensor v_new = nullptr;
     std::optional<Tensor> output;
     float fill = 0.0f;
     bool emitted = false;
@@ -4398,10 +4415,6 @@ class TensorRtGraphBuilder {
         continue;
       }
       DecodeAttentionBlock block;
-      block.scores_op = scores_op->Get();
-      block.select_op = select_op->Get();
-      block.softmax_op = softmax_op->Get();
-      block.values_op = values_op->Get();
       block.q = q.Get();
       block.k_out = k_out.Get();
       block.v_out = v_out.Get();
@@ -4410,8 +4423,8 @@ class TensorRtGraphBuilder {
       block.fill = *fill;
       const size_t index = attention_blocks_.size();
       attention_blocks_.push_back(block);
-      for (LiteRtOp member : {block.scores_op, block.select_op,
-                              block.softmax_op, block.values_op}) {
+      for (LiteRtOp member : {scores_op->Get(), select_op->Get(),
+                              softmax_op->Get(), values_op->Get()}) {
         fused_attention_ops_[member] = index;
       }
       if (tiled.has_value()) {
@@ -4451,6 +4464,245 @@ class TensorRtGraphBuilder {
     return {};
   }
 
+  // The op that computes `tensor`, if `tensor` has no other reader than the
+  // op's consumer.
+  static std::optional<Op> SingleUseProducer(const Tensor& tensor) {
+    auto producer = tensor.GetDefiningOp();
+    if (tensor.Uses().size() != 1 || !producer) {
+      return std::nullopt;
+    }
+    return *producer;
+  }
+
+  // a @ b^T with b the rows of a cache or of the chunk: the runtime_bmm
+  // composite or a batch matmul that transposes its right operand.
+  static bool IsTransposedMatmul(const Op& op) {
+    if (IsRuntimeBmm(op)) {
+      return true;
+    }
+    bool adj_x = false;
+    bool adj_y = false;
+    return op.Code() == kLiteRtOpCodeTflBatchMatmul &&
+           op.Inputs().size() == 2 && op.Outputs().size() == 1 &&
+           LiteRtGetBatchMatmulAdjXOption(op.Get(), &adj_x) ==
+               kLiteRtStatusOk &&
+           LiteRtGetBatchMatmulAdjYOption(op.Get(), &adj_y) ==
+               kLiteRtStatusOk &&
+           !adj_x && adj_y;
+  }
+
+  // slice(tensor, {0, 0, 0, begin}) of shape [1, heads, rows, size]; the
+  // static output shape determines the size operand.
+  static bool IsLastAxisSlice(const Op& op, int32_t heads, int32_t rows,
+                              int32_t begin, int32_t size) {
+    if (op.Code() != kLiteRtOpCodeTflSlice || op.Inputs().size() != 3 ||
+        op.Outputs().size() != 1) {
+      return false;
+    }
+    const auto begins = ReadInt32Constant(op.Inputs()[1]);
+    return begins && *begins == std::vector<int32_t>{0, 0, 0, begin} &&
+           TensorHasShape(op.Outputs()[0], {1, heads, rows, size});
+  }
+
+  // Matches, per prefill update of a ring cache, the attention block that
+  // reads the cache before the update and the chunk's own keys and values,
+  //   scores = concatenation(q @ k_cache^T, q @ k_new^T)
+  //   probs  = softmax(select_v2(mask [1,1,rows|tokens,S + n], scores, fill))
+  //   out    = probs[..., :S] @ v_cache + probs[..., S:] @ v_new
+  // with v_cache a value cache held as [B, H, S, D], and records it for the
+  // fused CUDA attention plugin when the tensor-core kernels take its shape.
+  // `out` is the attention join the cache update orders itself after (see
+  // FindPrefillAttentionJoin).
+  Expected<void> FindPrefillAttentionBlocks(const Subgraph& subgraph) {
+    if (!LocalAttentionPluginEnabled() || !Fp16ActivationsEnabled() ||
+        RuntimeBmmContextLimit() != 0 ||
+        !LiteRtNvidiaTiledAttentionAvailable()) {
+      return {};
+    }
+    size_t num_blocks = 0;
+    for (const auto& update : subgraph.Ops()) {
+      if (update.Code() != kLiteRtOpCodeShloComposite ||
+          CompositeOpName(update) != "odml.cache_update" ||
+          !PrefillCacheUpdateRingMode(update).has_value()) {
+        continue;
+      }
+      const Tensor k_new = update.Inputs()[0];
+      const Tensor v_new = update.Inputs()[1];
+      const Tensor k_cache = update.Inputs()[3];
+      const Tensor v_cache = update.Inputs()[4];
+      const auto value_info = in_place_caches_.find(v_cache.Get());
+      if (in_place_caches_.count(k_cache.Get()) == 0 ||
+          value_info == in_place_caches_.end() ||
+          value_info->second.op != update.Get() ||
+          !value_info->second.transposed) {
+        continue;
+      }
+      // The readers of the caches.
+      const auto reader = [&](const Tensor& cache) -> std::optional<Op> {
+        std::optional<Op> found;
+        for (const auto& use : cache.Uses()) {
+          if (use.user.Get() == update.Get()) continue;
+          if (found.has_value() || use.user_arg_ind != 1 ||
+              !IsTransposedMatmul(use.user)) {
+            return std::nullopt;
+          }
+          found = use.user;
+        }
+        return found;
+      };
+      const auto cache_scores_op = reader(k_cache);
+      const auto cache_values_op = reader(v_cache);
+      if (!cache_scores_op || !cache_values_op) {
+        continue;
+      }
+      const Tensor q = cache_scores_op->Inputs()[0];
+      const Tensor output_cache = cache_values_op->Outputs()[0];
+      auto q_type = q.RankedTensorType();
+      auto k_type = k_cache.RankedTensorType();
+      auto new_type = k_new.RankedTensorType();
+      if (!q_type || !k_type || !new_type) {
+        continue;
+      }
+      const auto q_dims = q_type->Layout().Dimensions();
+      const auto k_dims = k_type->Layout().Dimensions();
+      const auto new_dims = new_type->Layout().Dimensions();
+      if (q_dims.size() != 4 || q_dims[0] != 1 || k_dims[1] != q_dims[1] ||
+          k_dims[3] != q_dims[3]) {
+        continue;
+      }
+      const int32_t heads = q_dims[1];
+      const int32_t rows = q_dims[2];
+      const int32_t depth = q_dims[3];
+      const int32_t cache_len = k_dims[2];
+      const int32_t new_len = new_dims[2];
+      if (!TensorHasShape(cache_scores_op->Outputs()[0],
+                          {1, heads, rows, cache_len}) ||
+          !TensorHasShape(output_cache, {1, heads, rows, depth})) {
+        continue;
+      }
+      // Scores: the cache and the chunk side by side.
+      const auto concat_op = SingleUser(cache_scores_op->Outputs()[0], 0);
+      int32_t axis = 0;
+      if (!concat_op || concat_op->Code() != kLiteRtOpCodeTflConcatenation ||
+          concat_op->Inputs().size() != 2 ||
+          LiteRtGetConcatenationAxisOption(concat_op->Get(), &axis) !=
+              kLiteRtStatusOk ||
+          (axis != 3 && axis != -1) ||
+          !TensorHasShape(concat_op->Outputs()[0],
+                          {1, heads, rows, cache_len + new_len})) {
+        continue;
+      }
+      const auto new_scores_op = SingleUseProducer(concat_op->Inputs()[1]);
+      if (!new_scores_op || IsRuntimeBmm(*new_scores_op) ||
+          !IsTransposedMatmul(*new_scores_op) ||
+          new_scores_op->Inputs()[0].Get() != q.Get() ||
+          new_scores_op->Inputs()[1].Get() != k_new.Get()) {
+        continue;
+      }
+      const auto select_op = SingleUser(concat_op->Outputs()[0], 1);
+      if (!select_op || select_op->Code() != kLiteRtOpCodeTflSelectV2 ||
+          select_op->Inputs().size() != 3) {
+        continue;
+      }
+      const Tensor mask = select_op->Inputs()[0];
+      const auto fill = ReadFloatScalar(select_op->Inputs()[2]);
+      auto mask_type = mask.RankedTensorType();
+      if (!fill || *fill > kMaxGlobalAttentionFill || !mask_type ||
+          mask.ElementType() != litert::ElementType::Bool) {
+        continue;
+      }
+      const auto mask_dims = mask_type->Layout().Dimensions();
+      if (mask_dims.size() != 4 || mask_dims[0] != 1 || mask_dims[1] != 1 ||
+          mask_dims[3] != cache_len + new_len) {
+        continue;
+      }
+      const auto softmax_op = SingleUser(select_op->Outputs()[0], 0);
+      float beta = 1.0f;
+      if (!softmax_op || softmax_op->Code() != kLiteRtOpCodeTflSoftmax ||
+          LiteRtGetSoftmaxBetaOption(softmax_op->Get(), &beta) !=
+              kLiteRtStatusOk ||
+          beta != 1.0f) {
+        continue;
+      }
+      // Values: the two halves of the probabilities against the cache and the
+      // chunk, added up.
+      const auto cache_probs_op =
+          SingleUseProducer(cache_values_op->Inputs()[0]);
+      const auto join_op = SingleUser(output_cache, 0);
+      const auto join_other = SingleUser(output_cache, 1);
+      const auto& add_op = join_op ? join_op : join_other;
+      if (!cache_probs_op ||
+          !IsLastAxisSlice(*cache_probs_op, heads, rows, 0, cache_len) ||
+          !add_op || add_op->Code() != kLiteRtOpCodeTflAdd ||
+          add_op->Inputs().size() != 2 || add_op->Outputs().size() != 1) {
+        continue;
+      }
+      const auto new_values_op =
+          SingleUseProducer(add_op->Inputs()[join_op ? 1 : 0]);
+      bool adj_x = false;
+      bool adj_y = false;
+      if (!new_values_op ||
+          new_values_op->Code() != kLiteRtOpCodeTflBatchMatmul ||
+          new_values_op->Inputs().size() != 2 ||
+          new_values_op->Inputs()[1].Get() != v_new.Get() ||
+          LiteRtGetBatchMatmulAdjXOption(new_values_op->Get(), &adj_x) !=
+              kLiteRtStatusOk ||
+          LiteRtGetBatchMatmulAdjYOption(new_values_op->Get(), &adj_y) !=
+              kLiteRtStatusOk ||
+          adj_x || adj_y) {
+        continue;
+      }
+      const auto new_probs_op = SingleUseProducer(new_values_op->Inputs()[0]);
+      const Tensor probs = softmax_op->Outputs()[0];
+      const Tensor output = add_op->Outputs()[0];
+      if (!new_probs_op ||
+          !IsLastAxisSlice(*new_probs_op, heads, rows, cache_len, new_len) ||
+          cache_probs_op->Inputs()[0].Get() != probs.Get() ||
+          new_probs_op->Inputs()[0].Get() != probs.Get() ||
+          probs.Uses().size() != 2 ||
+          graph_outputs_.count(output_cache.Get()) != 0 ||
+          !TensorHasShape(output, {1, heads, rows, depth})) {
+        continue;
+      }
+      // The cache update forwards the join (see LowerCompositeCacheUpdate);
+      // without one it would order itself after results that are not
+      // computed.
+      const auto join = FindPrefillAttentionJoin(update);
+      const LiteRtNvidiaAttentionShape shape = {heads, rows,      mask_dims[2],
+                                                depth, cache_len, new_len};
+      if (!join.has_value() || join->Get() != output.Get() ||
+          !LiteRtNvidiaTiledAttentionSupports(&shape)) {
+        continue;
+      }
+      DecodeAttentionBlock block;
+      block.q = q.Get();
+      block.k_out = k_cache.Get();
+      block.v_out = v_cache.Get();
+      block.mask = mask.Get();
+      block.k_new = k_new.Get();
+      block.v_new = v_new.Get();
+      block.output = output;
+      block.fill = *fill;
+      const size_t index = attention_blocks_.size();
+      attention_blocks_.push_back(block);
+      for (LiteRtOp member :
+           {cache_scores_op->Get(), new_scores_op->Get(), concat_op->Get(),
+            select_op->Get(), softmax_op->Get(), cache_probs_op->Get(),
+            new_probs_op->Get(), cache_values_op->Get(), new_values_op->Get(),
+            add_op->Get()}) {
+        fused_attention_ops_[member] = index;
+      }
+      ++num_blocks;
+    }
+    if (num_blocks != 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX fusing %zu prefill attention blocks over "
+                 "ring caches into the CUDA attention plugin",
+                 num_blocks);
+    }
+    return {};
+  }
+
   // Emits the plugin for a block once all of its inputs are lowered (the
   // mask is usually computed after the score matmul in op order); later
   // members of the same block are no-ops.
@@ -4459,8 +4711,10 @@ class TensorRtGraphBuilder {
     if (block.emitted) {
       return {};
     }
-    for (LiteRtTensor input : {block.q, block.k_out, block.v_out, block.mask}) {
-      if (tensor_map_.find(input) == tensor_map_.end()) {
+    const bool new_keys = block.k_new != nullptr;
+    for (LiteRtTensor input : {block.q, block.k_out, block.v_out, block.mask,
+                               block.k_new, block.v_new}) {
+      if (input != nullptr && tensor_map_.find(input) == tensor_map_.end()) {
         return {};
       }
     }
@@ -4469,22 +4723,34 @@ class TensorRtGraphBuilder {
         q->getType() != nvinfer1::DataType::kBF16) {
       LITERT_ASSIGN_OR_RETURN(q, AddCastTensor(q, ModeFloatType()));
     }
-    TrtPtr<nvinfer1::IPluginV3> plugin(CreateDecodeAttentionPlugin(block.fill));
+    TrtPtr<nvinfer1::IPluginV3> plugin(
+        CreateDecodeAttentionPlugin(block.fill, new_keys));
     if (!plugin) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to create CUDA decode attention plugin");
     }
-    nvinfer1::ITensor* inputs[] = {q, tensor_map_[block.k_out],
-                                   tensor_map_[block.v_out],
-                                   tensor_map_[block.mask]};
-    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
-        *network_, inputs, std::size(inputs), *plugin);
+    std::vector<nvinfer1::ITensor*> inputs = {q, tensor_map_[block.k_out],
+                                              tensor_map_[block.v_out],
+                                              tensor_map_[block.mask]};
+    if (new_keys) {
+      for (LiteRtTensor fresh : {block.k_new, block.v_new}) {
+        LITERT_ASSIGN_OR_RETURN(
+            auto* rows,
+            AddCastTensor(tensor_map_[fresh], nvinfer1::DataType::kHALF));
+        inputs.push_back(rows);
+      }
+    }
+    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(*network_, inputs.data(),
+                                                     inputs.size(), *plugin);
     if (layer == nullptr || layer->getOutput(0) == nullptr) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add CUDA decode attention plugin layer");
     }
+    const char* name =
+        new_keys ? "cuda_prefill_attention" : "cuda_decode_attention";
+    layer->setName(KeepName(UniqueName(name)));
     auto* out = layer->getOutput(0);
-    out->setName(KeepName(UniqueName("cuda_decode_attention")));
+    out->setName(KeepName(UniqueName(name)));
     owned_plugins_.push_back(std::move(plugin));
     block.emitted = true;
     return SetOutputTensor(*block.output, out);

@@ -331,13 +331,15 @@ TEST(GlobalAttentionTest, PrefillRowsMatchReference) {
   if (!HasComputeCapability80()) {
     GTEST_SKIP() << "Requires compute capability 8.0 or newer.";
   }
-  // 4 tokens (streaming kernel, four row tiles) and 8, 16 and 128 tokens
-  // (staged kernel) at the start, the middle and the end of a cache.
+  // 4, 8 and 16 tokens (streaming kernel, several row tiles) and 64 and 128
+  // tokens (tiled kernel) at the start, the middle and the end of a cache.
   RunCase({64, 4, 3000, 0, 0, -1, -1.0e4f, false});
   RunCase({64, 4, 3000, 1500, 9, -1, -INFINITY, true});
   RunCase({128, 8, 2000, 0, 0, -1, -45824.0f, false});
   RunCase({256, 16, 2100, 1111, 0, -1, -45824.0f, false});
   RunCase({256, 16, 2100, 2084, 11, -1, -INFINITY, false});
+  RunCase({1024, 64, 2100, 0, 0, -1, -45824.0f, false});
+  RunCase({1024, 64, 2100, 2036, 11, -1, -INFINITY, false});
   RunCase({2048, 128, 5000, 3333, 0, -1, -45824.0f, true});
   RunCase({2048, 128, 5000, 4872, 0, -1, -45824.0f, false});
 }
@@ -351,6 +353,7 @@ TEST(GlobalAttentionTest, RowsWithoutVisibleKeysAverageTheSequence) {
   RunCase({16, 1, 700, 300, 0, 0, -1.0e4f, false});
   RunCase({64, 4, 900, 300, 0, 2, -1.0e4f, false});
   RunCase({256, 16, 900, 300, 0, 5, -1.0e4f, false});
+  RunCase({1024, 64, 900, 300, 0, 5, -1.0e4f, false});
 }
 
 }  // namespace

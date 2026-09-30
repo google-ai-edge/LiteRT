@@ -31,7 +31,15 @@ namespace litert::nvidia {
 // mask of rows / 16 or any other divisor of rows, whose row r % mask_rows
 // applies to query row r. Those shapes run on tensor-core kernels that only
 // read the keys some row can see (trtllm/global_attention.h).
-nvinfer1::IPluginV3* CreateDecodeAttentionPlugin(float fill) noexcept;
+//
+// With `new_keys` the plugin attends to a cache followed by the keys of the
+// chunk being prefilled, which are not in the cache yet:
+//   inputs  q, k, v, mask [1, 1, mask_rows, S + n] bool,
+//           k_new [1, H, n, D] FP16, v_new [1, H, n, D] FP16
+// for the shapes of trtllm/tiled_attention.h (D 256 or 512, rows and
+// mask_rows in multiples of 32768 / D, S a multiple of 16).
+nvinfer1::IPluginV3* CreateDecodeAttentionPlugin(
+    float fill, bool new_keys = false) noexcept;
 
 // Referenced by the dispatch library so the creator's registration object is
 // retained when linking the shared library used for engine deserialization.

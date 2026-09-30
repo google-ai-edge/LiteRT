@@ -20,10 +20,12 @@
 #include <cmath>
 #include <cstdint>
 
+#include "litert/vendors/nvidia/trtllm/tiled_attention.h"
+
 namespace {
 
-// Both kernels walk the keys in tiles with an online softmax (running row
-// maximum and sum) and compute the two products with m16n8k16 tensor-core
+// The kernel walks the keys in tiles with an online softmax (running row
+// maximum and sum) and computes the two products with m16n8k16 tensor-core
 // operations that accumulate in fp32. Probabilities are the fp16 "A" operand
 // of the value product, stored scaled by 2^14 so that small ones keep
 // precision; the row sums use the same rounded values.
@@ -34,24 +36,15 @@ constexpr int kVectorsPerRow = kDepth / 8;  // 16-byte vectors per cache row
 constexpr int kMaxSegments = 64;
 
 // Streaming kernel (decode): one block owns 16 query rows and reads each key
-// and value once, straight into tensor-core operands.
+// and value once, straight into tensor-core operands. Prefill, with 16 rows
+// per prompt token, runs on the tiled kernel (tiled_attention.h), whose
+// blocks share every key and value they read among 64 rows.
 constexpr int kStreamRows = 16;
 constexpr int kStreamTile = 64;
 constexpr int kStreamThreads = 256;
 constexpr int kStreamWarps = kStreamThreads / 32;
 constexpr int kMaxStreamSplits = 336;
-
-// Staged kernel (prefill): one block owns 32 query rows and stages each
-// 32-key tile of K, then V, in shared memory. The L2 cache serves about 4 TB/s
-// on an RTX 5080 and the tensor cores 116 TFLOP/s, so a block has to spend at
-// least 27 FLOPs per byte it reads; 16 rows per block (one read of K and V
-// per 16 rows) cannot.
-constexpr int kStagedRows = 32;
-constexpr int kStagedTile = 32;
-constexpr int kStagedThreads = 256;
-constexpr int kMaxStagedSplits = 8;
-constexpr size_t kMaxStagedPartialBytes = size_t{64} << 20;
-constexpr int kMinStagedRows = 128;
+constexpr int kMinTiledRows = 128;
 
 __device__ __forceinline__ void Mma(float& d0, float& d1, float& d2, float& d3,
                                     uint32_t a0, uint32_t a1, uint32_t a2,
@@ -61,31 +54,6 @@ __device__ __forceinline__ void Mma(float& d0, float& d1, float& d2, float& d3,
       "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
       : "+f"(d0), "+f"(d1), "+f"(d2), "+f"(d3)
       : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
-}
-
-// ldmatrix.x4: lanes 0-7 pass the addresses of the rows of matrix 0 (eight
-// 16-bit elements each), lanes 8-15 those of matrix 1, and so on. Every lane
-// receives its operand fragment of each matrix.
-__device__ __forceinline__ void LoadMatrixX4(uint32_t& r0, uint32_t& r1,
-                                             uint32_t& r2, uint32_t& r3,
-                                             const void* shared_pointer) {
-  const uint32_t address =
-      static_cast<uint32_t>(__cvta_generic_to_shared(shared_pointer));
-  asm volatile(
-      "ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];\n"
-      : "=r"(r0), "=r"(r1), "=r"(r2), "=r"(r3)
-      : "r"(address));
-}
-
-__device__ __forceinline__ void LoadMatrixX4Trans(uint32_t& r0, uint32_t& r1,
-                                                  uint32_t& r2, uint32_t& r3,
-                                                  const void* shared_pointer) {
-  const uint32_t address =
-      static_cast<uint32_t>(__cvta_generic_to_shared(shared_pointer));
-  asm volatile(
-      "ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%0,%1,%2,%3}, [%4];\n"
-      : "=r"(r0), "=r"(r1), "=r"(r2), "=r"(r3)
-      : "r"(address));
 }
 
 __device__ __forceinline__ uint32_t PackHalves(float lo, float hi) {
@@ -469,299 +437,6 @@ __global__ void __launch_bounds__(kStreamThreads, 3)
   }
 }
 
-struct StagedLayout {
-  // Row strides are padded so that the eight rows of one ldmatrix fall in
-  // distinct shared-memory banks.
-  static constexpr int kRowBytes = kDepth * 2 + 16;
-  static constexpr int kProbRowBytes = kStagedTile * 2 + 16;
-  static constexpr size_t kQuery = 0;
-  static constexpr size_t kCache =
-      kQuery + static_cast<size_t>(kStagedRows) * kRowBytes;
-  static constexpr size_t kScores =
-      kCache + static_cast<size_t>(kStagedTile) * kRowBytes;
-  static constexpr size_t kProbs =
-      kScores + static_cast<size_t>(kStagedRows) * kStagedTile * sizeof(float);
-  static constexpr size_t kMax =
-      kProbs + static_cast<size_t>(kStagedRows) * kProbRowBytes;
-  static constexpr size_t kSum = kMax + kStagedRows * sizeof(float);
-  static constexpr size_t kScale = kSum + kStagedRows * sizeof(float);
-  static constexpr size_t kFirst = kScale + kStagedRows * sizeof(float);
-  static constexpr size_t kEnd = kFirst + kStagedRows * sizeof(int);
-  static constexpr size_t kBytes = kEnd + kStagedRows * sizeof(int);
-};
-
-// grid (splits, rows / 32), eight warps. Warp w: row group w / 4 (16 rows);
-// scores for keys 8 * (w % 4) .. +7 of the tile; values for dims
-// [(w % 4) * kDepth / 4, +kDepth / 4). Each thread loads the next tile into
-// registers while the warp computes and stores it to shared memory once the
-// block is done with the tile it replaces.
-template <typename T>
-__global__ void __launch_bounds__(kStagedThreads, 1)
-    StagedAttentionKernel(const T* __restrict__ q, const __half* __restrict__ k,
-                          const __half* __restrict__ v,
-                          const bool* __restrict__ mask,
-                          const int* __restrict__ summary, int mask_rows,
-                          int segments, int seq, float fill,
-                          float* __restrict__ ws_acc,
-                          float* __restrict__ ws_m, float* __restrict__ ws_l,
-                          T* __restrict__ out) {
-  using Layout = StagedLayout;
-  constexpr int kStageVectors =
-      kStagedTile * kVectorsPerRow / kStagedThreads;  // per thread
-  constexpr int kWarpDims = kDepth / 4;
-  constexpr int kNSlices = kWarpDims / 8;
-  extern __shared__ __align__(16) unsigned char smem[];
-  unsigned char* query_s = smem + Layout::kQuery;
-  unsigned char* cache_s = smem + Layout::kCache;
-  float* scores_s = reinterpret_cast<float*>(smem + Layout::kScores);
-  unsigned char* probs_s = smem + Layout::kProbs;
-  float* max_s = reinterpret_cast<float*>(smem + Layout::kMax);
-  float* sum_s = reinterpret_cast<float*>(smem + Layout::kSum);
-  float* scale_s = reinterpret_cast<float*>(smem + Layout::kScale);
-  int* first_s = reinterpret_cast<int*>(smem + Layout::kFirst);
-  int* end_s = reinterpret_cast<int*>(smem + Layout::kEnd);
-
-  const int splits = gridDim.x;
-  const int split = blockIdx.x;
-  const int r0 = blockIdx.y * kStagedRows;
-  const int tid = threadIdx.x;
-  const int warp = tid >> 5;
-  const int lane = tid & 31;
-  const int g = lane >> 2;
-  const int t = lane & 3;
-  const int row_group = warp >> 2;
-  const int quarter = warp & 3;
-
-  if (tid < kStagedRows) {
-    InitializeRow(tid, r0, mask, summary, mask_rows, segments, seq, first_s,
-                  end_s, max_s, sum_s);
-  }
-#pragma unroll
-  for (int j = 0; j < kStagedRows * kVectorsPerRow / kStagedThreads; ++j) {
-    const int i = tid + j * kStagedThreads;
-    const int row = i / kVectorsPerRow;
-    const int vector = i % kVectorsPerRow;
-    *reinterpret_cast<int4*>(query_s + row * Layout::kRowBytes + vector * 16) =
-        LoadQueryVector(q + static_cast<size_t>(r0 + row) * kDepth, vector);
-  }
-  float acc[kNSlices][4];
-#pragma unroll
-  for (int ns = 0; ns < kNSlices; ++ns) {
-    acc[ns][0] = acc[ns][1] = acc[ns][2] = acc[ns][3] = 0.0f;
-  }
-  __syncthreads();
-  int full_end;
-  int tile_end;
-  TileRange(first_s, end_s, kStagedRows, kStagedTile, seq, &full_end,
-            &tile_end);
-
-  // Per-lane operand addresses. A 16x16 "A" operand is {rows 0-7, rows 8-15}
-  // x {cols 0-7, cols 8-15}.
-  const int a_row = (lane & 7) + ((lane >> 3) & 1) * 8;
-  const int a_col = (lane >> 4) * 8;
-  const unsigned char* query_lane =
-      query_s + (row_group * 16 + a_row) * Layout::kRowBytes + a_col * 2;
-  const unsigned char* probs_lane =
-      probs_s + (row_group * 16 + a_row) * Layout::kProbRowBytes + a_col * 2;
-  // Scores "B" (dims x keys): matrices {0, 1} are the quarter's 8 keys at
-  // dims {0-7, 8-15} of slice s, matrices {2, 3} the same keys at slice s + 1.
-  const unsigned char* key_lane =
-      cache_s + (quarter * 8 + (lane & 7)) * Layout::kRowBytes +
-      ((lane >> 3) & 1) * 16 + (lane >> 4) * 32;
-  // Values "B" (keys x dims), loaded transposed: matrices {0, 1} are keys
-  // {0-7, 8-15} of the slice at dims 0-7, matrices {2, 3} the same keys at
-  // dims 8-15.
-  const unsigned char* value_lane =
-      cache_s + ((lane & 7) + ((lane >> 3) & 1) * 8) * Layout::kRowBytes +
-      (quarter * kWarpDims + (lane >> 4) * 8) * 2;
-
-  int4 staged[kStageVectors];
-  auto load_tile = [&](const __half* cache, int tile) {
-#pragma unroll
-    for (int j = 0; j < kStageVectors; ++j) {
-      const int i = tid + j * kStagedThreads;
-      const int key = min(tile * kStagedTile + i / kVectorsPerRow, seq - 1);
-      staged[j] = reinterpret_cast<const int4*>(
-          cache + static_cast<size_t>(key) * kDepth)[i % kVectorsPerRow];
-    }
-  };
-  auto store_tile = [&]() {
-#pragma unroll
-    for (int j = 0; j < kStageVectors; ++j) {
-      const int i = tid + j * kStagedThreads;
-      *reinterpret_cast<int4*>(cache_s +
-                               (i / kVectorsPerRow) * Layout::kRowBytes +
-                               (i % kVectorsPerRow) * 16) = staged[j];
-    }
-  };
-
-  if (split < tile_end) {
-    load_tile(k, split);
-  }
-  for (int c = split; c < tile_end; c += splits) {
-    const int j0 = c * kStagedTile;
-    store_tile();
-    __syncthreads();
-    load_tile(v, c);
-
-    // Scores: rows of the row group x the quarter's 8 keys, two k-slices per
-    // iteration into alternating accumulators.
-    float s0[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    float s1[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-#pragma unroll
-    for (int s = 0; s < kSlices; s += 2) {
-      uint32_t a0, a1, a2, a3, c0, c1, c2, c3, b0, b1, b2, b3;
-      LoadMatrixX4(a0, a1, a2, a3, query_lane + s * 32);
-      LoadMatrixX4(c0, c1, c2, c3, query_lane + (s + 1) * 32);
-      LoadMatrixX4(b0, b1, b2, b3, key_lane + s * 32);
-      Mma(s0[0], s0[1], s0[2], s0[3], a0, a1, a2, a3, b0, b1);
-      Mma(s1[0], s1[1], s1[2], s1[3], c0, c1, c2, c3, b2, b3);
-    }
-    {
-      float* lo = scores_s + (row_group * 16 + g) * kStagedTile +
-                  quarter * 8 + 2 * t;
-      float* hi = lo + 8 * kStagedTile;
-      *reinterpret_cast<float2*>(lo) =
-          make_float2(s0[0] + s1[0], s0[1] + s1[1]);
-      *reinterpret_cast<float2*>(hi) =
-          make_float2(s0[2] + s1[2], s0[3] + s1[3]);
-    }
-    __syncthreads();
-
-    // Online softmax: thread handles row tid / 8, keys 4 * (tid % 8) .. +3.
-    // The value tile replaces the key tile in shared memory meanwhile.
-    store_tile();
-    {
-      const int row = tid >> 3;
-      const int kq = (tid & 7) * 4;
-      float sc[4];
-      *reinterpret_cast<float4*>(&sc[0]) =
-          *reinterpret_cast<const float4*>(scores_s + row * kStagedTile + kq);
-      if (c >= full_end) {
-        const bool* mask_row =
-            mask == nullptr
-                ? nullptr
-                : mask + static_cast<size_t>((r0 + row) % mask_rows) * seq;
-#pragma unroll
-        for (int e = 0; e < 4; ++e) {
-          // Keys past the end of the cache do not exist: no weight, even for
-          // a row whose scores are all `fill`.
-          const int key = j0 + kq + e;
-          const bool visible =
-              mask_row == nullptr || mask_row[min(key, seq - 1)];
-          sc[e] = key < seq ? (visible ? sc[e] : fill) : -INFINITY;
-        }
-      }
-      float tile_max = fmaxf(fmaxf(sc[0], sc[1]), fmaxf(sc[2], sc[3]));
-#pragma unroll
-      for (int offset = 4; offset > 0; offset >>= 1) {
-        tile_max =
-            fmaxf(tile_max, __shfl_xor_sync(0xffffffffu, tile_max, offset));
-      }
-      const float old_max = max_s[row];
-      const float new_max = fmaxf(old_max, tile_max);
-      const bool finite = new_max > -INFINITY;
-      const __half2 p01 = __floats2half2_rn(
-          finite ? __expf(sc[0] - new_max) * kProbScale : 0.0f,
-          finite ? __expf(sc[1] - new_max) * kProbScale : 0.0f);
-      const __half2 p23 = __floats2half2_rn(
-          finite ? __expf(sc[2] - new_max) * kProbScale : 0.0f,
-          finite ? __expf(sc[3] - new_max) * kProbScale : 0.0f);
-      const float2 r01 = __half22float2(p01);
-      const float2 r23 = __half22float2(p23);
-      float tile_sum = r01.x + r01.y + r23.x + r23.y;
-#pragma unroll
-      for (int offset = 4; offset > 0; offset >>= 1) {
-        tile_sum += __shfl_xor_sync(0xffffffffu, tile_sum, offset);
-      }
-      uint32_t* prob_words = reinterpret_cast<uint32_t*>(
-          probs_s + row * Layout::kProbRowBytes + kq * 2);
-      prob_words[0] = *reinterpret_cast<const uint32_t*>(&p01);
-      prob_words[1] = *reinterpret_cast<const uint32_t*>(&p23);
-      if ((tid & 7) == 0) {
-        const float scale =
-            old_max > -INFINITY ? __expf(old_max - new_max) : 0.0f;
-        max_s[row] = new_max;
-        sum_s[row] = sum_s[row] * scale + tile_sum;
-        scale_s[row] = scale;
-      }
-    }
-    __syncthreads();
-
-    // Values: rows of the row group x dims [quarter * kWarpDims, +kWarpDims).
-    if (c + splits < tile_end) {
-      load_tile(k, c + splits);
-    }
-    {
-      const float scale_lo = scale_s[row_group * 16 + g];
-      const float scale_hi = scale_s[row_group * 16 + g + 8];
-      if (scale_lo != 1.0f || scale_hi != 1.0f) {
-#pragma unroll
-        for (int ns = 0; ns < kNSlices; ++ns) {
-          acc[ns][0] *= scale_lo;
-          acc[ns][1] *= scale_lo;
-          acc[ns][2] *= scale_hi;
-          acc[ns][3] *= scale_hi;
-        }
-      }
-#pragma unroll
-      for (int ks = 0; ks < kStagedTile / 16; ++ks) {
-        uint32_t a0, a1, a2, a3;
-        LoadMatrixX4(a0, a1, a2, a3, probs_lane + ks * 32);
-        const unsigned char* values =
-            value_lane + ks * 16 * Layout::kRowBytes;
-#pragma unroll
-        for (int ns = 0; ns < kNSlices; ns += 2) {
-          uint32_t b0, b1, b2, b3;
-          LoadMatrixX4Trans(b0, b1, b2, b3, values + ns * 16);
-          Mma(acc[ns][0], acc[ns][1], acc[ns][2], acc[ns][3], a0, a1, a2, a3,
-              b0, b1);
-          Mma(acc[ns + 1][0], acc[ns + 1][1], acc[ns + 1][2], acc[ns + 1][3],
-              a0, a1, a2, a3, b2, b3);
-        }
-      }
-    }
-    __syncthreads();
-  }
-
-  // acc[ns][{0, 1}] are row g, dims 8 * ns + 2t + {0, 1} of the warp's range.
-  const int row_lo = row_group * 16 + g;
-  const size_t column = static_cast<size_t>(quarter) * kWarpDims + 2 * t;
-  if (splits == 1) {
-    const float sum_lo = sum_s[row_lo];
-    const float sum_hi = sum_s[row_lo + 8];
-    const float inv_lo = sum_lo > 0.0f ? 1.0f / sum_lo : 0.0f;
-    const float inv_hi = sum_hi > 0.0f ? 1.0f / sum_hi : 0.0f;
-    uint32_t* out_lo = reinterpret_cast<uint32_t*>(
-        out + static_cast<size_t>(r0 + row_lo) * kDepth + column);
-    uint32_t* out_hi = reinterpret_cast<uint32_t*>(
-        out + static_cast<size_t>(r0 + row_lo + 8) * kDepth + column);
-#pragma unroll
-    for (int ns = 0; ns < kNSlices; ++ns) {
-      out_lo[ns * 4] =
-          PackOutput<T>(acc[ns][0] * inv_lo, acc[ns][1] * inv_lo);
-      out_hi[ns * 4] =
-          PackOutput<T>(acc[ns][2] * inv_hi, acc[ns][3] * inv_hi);
-    }
-    return;
-  }
-  const size_t part = static_cast<size_t>(blockIdx.y) * splits + split;
-  float* acc_lo = ws_acc + (part * kStagedRows + row_lo) * kDepth + column;
-  float* acc_hi =
-      ws_acc + (part * kStagedRows + row_lo + 8) * kDepth + column;
-#pragma unroll
-  for (int ns = 0; ns < kNSlices; ++ns) {
-    *reinterpret_cast<float2*>(acc_lo + ns * 8) =
-        make_float2(acc[ns][0], acc[ns][1]);
-    *reinterpret_cast<float2*>(acc_hi + ns * 8) =
-        make_float2(acc[ns][2], acc[ns][3]);
-  }
-  if (tid < kStagedRows) {
-    ws_m[part * kStagedRows + tid] = max_s[tid];
-    ws_l[part * kStagedRows + tid] = sum_s[tid];
-  }
-}
-
 // One block per query row: merges the partial sums of the splits.
 constexpr int kCombineThreads = 256;
 constexpr int kCombineWarps = kCombineThreads / 32;
@@ -770,17 +445,17 @@ template <typename T>
 __global__ void __launch_bounds__(kCombineThreads)
     CombineKernel(const float* __restrict__ ws_acc,
                   const float* __restrict__ ws_m,
-                  const float* __restrict__ ws_l, int splits, int block_rows,
+                  const float* __restrict__ ws_l, int splits,
                   T* __restrict__ out) {
   constexpr int kElems = kDepth / kCombineThreads;  // dims per thread
   __shared__ float max_s[kCombineWarps];
   const int row = blockIdx.x;
-  const int r = row % block_rows;
+  const int r = row % kStreamRows;
   const int tid = threadIdx.x;
-  const size_t base = static_cast<size_t>(row / block_rows) * splits;
+  const size_t base = static_cast<size_t>(row / kStreamRows) * splits;
   float m = -INFINITY;
   for (int s = tid; s < splits; s += kCombineThreads) {
-    m = fmaxf(m, ws_m[(base + s) * block_rows + r]);
+    m = fmaxf(m, ws_m[(base + s) * kStreamRows + r]);
   }
 #pragma unroll
   for (int offset = 16; offset > 0; offset >>= 1) {
@@ -802,7 +477,7 @@ __global__ void __launch_bounds__(kCombineThreads)
     acc[e] = 0.0f;
   }
   for (int s = 0; s < splits; ++s) {
-    const size_t idx = (base + s) * block_rows + r;
+    const size_t idx = (base + s) * kStreamRows + r;
     const float ms = ws_m[idx];
     const float w = ms > -INFINITY ? __expf(ms - m) : 0.0f;
     l = fmaf(w, ws_l[idx], l);
@@ -819,21 +494,9 @@ __global__ void __launch_bounds__(kCombineThreads)
       PackOutput<T>(acc[0] * inv, acc[1] * inv);
 }
 
-// The split counts bound the workspace, which is sized from the shapes alone
+// The split count bounds the workspace, which is sized from the shapes alone
 // (the plan may be built on another device than the one that runs it).
-bool StagedShape(int rows) {
-  return rows >= kMinStagedRows && rows % kStagedRows == 0;
-}
-
 int MaxSplits(int rows, int seq) {
-  if (StagedShape(rows)) {
-    const size_t part_bytes =
-        static_cast<size_t>(rows) * (kDepth + 2) * sizeof(float);
-    const size_t fit = kMaxStagedPartialBytes / part_bytes;
-    return fit < 1 ? 1
-                   : (fit > kMaxStagedSplits ? kMaxStagedSplits
-                                             : static_cast<int>(fit));
-  }
   const int tiles = (seq + kStreamTile - 1) / kStreamTile;
   const int wanted = kMaxStreamSplits / (rows / kStreamRows);
   return wanted < 1 ? 1 : (wanted < tiles ? wanted : tiles);
@@ -850,64 +513,36 @@ size_t SummaryBytes(int mask_rows) {
   return (bytes + 255) / 256 * 256;
 }
 
-struct DeviceLimits {
-  int multiprocessors = 0;
-  int shared_memory_optin = 0;
-};
-
-cudaError_t GetDeviceLimits(DeviceLimits* limits) {
-  int device = 0;
-  cudaError_t status = cudaGetDevice(&device);
-  if (status != cudaSuccess) return status;
-  status = cudaDeviceGetAttribute(&limits->multiprocessors,
-                                  cudaDevAttrMultiProcessorCount, device);
-  if (status != cudaSuccess) return status;
-  return cudaDeviceGetAttribute(&limits->shared_memory_optin,
-                                cudaDevAttrMaxSharedMemoryPerBlockOptin,
-                                device);
+size_t StreamingWorkspaceBytes(int rows, int mask_rows, int seq) {
+  const size_t parts = static_cast<size_t>(rows) * MaxSplits(rows, seq);
+  return SummaryBytes(mask_rows) +
+         parts * (static_cast<size_t>(kDepth) + 2) * sizeof(float);
 }
 
-// One staged block fills a multiprocessor: prefer the split count whose
-// blocks leave the fewest multiprocessors idle in the last wave.
-int StagedSplits(int row_tiles, int max_splits, int multiprocessors) {
-  int best = 1;
-  double best_fill = 0.0;
-  for (int s = 1; s <= max_splits; ++s) {
-    const int blocks = row_tiles * s;
-    const int waves = (blocks + multiprocessors - 1) / multiprocessors;
-    const double fill =
-        static_cast<double>(blocks) / (static_cast<double>(waves) * multiprocessors);
-    if (fill > best_fill + 0.02) {
-      best_fill = fill;
-      best = s;
-    }
-  }
-  return best;
+// The shape for the tiled kernel, if it takes it.
+bool TiledShape(int rows, int mask_rows, int seq,
+                LiteRtNvidiaAttentionShape* shape) {
+  *shape = {/*heads=*/1, rows, mask_rows, kDepth, /*cache_len=*/seq,
+            /*new_len=*/0};
+  return rows >= kMinTiledRows && LiteRtNvidiaTiledAttentionSupports(shape);
 }
 
 template <typename T>
 cudaError_t Launch(const T* q, const __half* k, const __half* v,
                    const bool* mask, int mask_rows, int rows, int seq,
                    float fill, T* out, void* workspace, cudaStream_t stream) {
-  DeviceLimits limits;
-  cudaError_t status = GetDeviceLimits(&limits);
+  int device = 0;
+  int multiprocessors = 0;
+  cudaError_t status = cudaGetDevice(&device);
   if (status != cudaSuccess) return status;
+  status = cudaDeviceGetAttribute(&multiprocessors,
+                                  cudaDevAttrMultiProcessorCount, device);
+  if (status != cudaSuccess) return status;
+  // About two blocks per multiprocessor, within the workspace bound.
+  const int row_tiles = rows / kStreamRows;
   const int max_splits = MaxSplits(rows, seq);
-  const bool staged =
-      StagedShape(rows) &&
-      static_cast<size_t>(limits.shared_memory_optin) >= StagedLayout::kBytes;
-  const int block_rows = staged ? kStagedRows : kStreamRows;
-  const int row_tiles = rows / block_rows;
-  int splits;
-  if (staged) {
-    splits = StagedSplits(row_tiles, max_splits, limits.multiprocessors);
-  } else {
-    // About two blocks per multiprocessor, within the workspace bound.
-    const int tiles = (seq + kStreamTile - 1) / kStreamTile;
-    splits = (2 * limits.multiprocessors + row_tiles - 1) / row_tiles;
-    splits = splits < max_splits ? splits : max_splits;
-    splits = splits < tiles ? splits : tiles;
-  }
+  int splits = (2 * multiprocessors + row_tiles - 1) / row_tiles;
+  splits = splits < max_splits ? splits : max_splits;
   const int segments = SegmentCount(mask_rows);
   int* summary = static_cast<int*>(workspace);
   float* ws_acc = reinterpret_cast<float*>(static_cast<char*>(workspace) +
@@ -921,30 +556,14 @@ cudaError_t Launch(const T* q, const __half* k, const __half* v,
     status = cudaGetLastError();
     if (status != cudaSuccess) return status;
   }
-  if (staged) {
-    static bool attribute_set = false;  // per instantiation
-    if (!attribute_set) {
-      status = cudaFuncSetAttribute(
-          StagedAttentionKernel<T>, cudaFuncAttributeMaxDynamicSharedMemorySize,
-          static_cast<int>(StagedLayout::kBytes));
-      if (status != cudaSuccess) return status;
-      attribute_set = true;
-    }
-    StagedAttentionKernel<T>
-        <<<dim3(splits, row_tiles), kStagedThreads, StagedLayout::kBytes,
-           stream>>>(q, k, v, mask, summary, mask_rows, segments, seq, fill,
-                     ws_acc, ws_m, ws_l, out);
-  } else {
-    StreamingAttentionKernel<T>
-        <<<dim3(splits, row_tiles), kStreamThreads, 0, stream>>>(
-            q, k, v, mask, summary, mask_rows, segments, seq, fill, ws_acc,
-            ws_m, ws_l, out);
-  }
+  StreamingAttentionKernel<T>
+      <<<dim3(splits, row_tiles), kStreamThreads, 0, stream>>>(
+          q, k, v, mask, summary, mask_rows, segments, seq, fill, ws_acc, ws_m,
+          ws_l, out);
   status = cudaGetLastError();
   if (status != cudaSuccess || splits == 1) return status;
   CombineKernel<T><<<rows, kCombineThreads, 0, stream>>>(ws_acc, ws_m, ws_l,
-                                                         splits, block_rows,
-                                                         out);
+                                                         splits, out);
   return cudaGetLastError();
 }
 
@@ -965,11 +584,15 @@ extern "C" size_t LiteRtNvidiaGlobalAttentionWorkspaceBytes(int32_t rows,
       seq <= 0) {
     return 0;
   }
-  // The streaming kernel, which also serves staged shapes on devices with too
-  // little shared memory, never uses more splits than fit this bound.
-  const size_t parts = static_cast<size_t>(rows) * MaxSplits(rows, seq);
-  return SummaryBytes(mask_rows) +
-         parts * (static_cast<size_t>(depth) + 2) * sizeof(float);
+  // The streaming kernel also serves the shapes of the tiled kernel on
+  // devices that cannot run it.
+  const size_t streaming = StreamingWorkspaceBytes(rows, mask_rows, seq);
+  LiteRtNvidiaAttentionShape shape;
+  if (!TiledShape(rows, mask_rows, seq, &shape)) {
+    return streaming;
+  }
+  const size_t tiled = LiteRtNvidiaTiledAttentionWorkspaceBytes(&shape);
+  return streaming > tiled ? streaming : tiled;
 }
 
 extern "C" cudaError_t LiteRtNvidiaLaunchGlobalAttention(
@@ -983,6 +606,14 @@ extern "C" cudaError_t LiteRtNvidiaLaunchGlobalAttention(
       workspace == nullptr || seq <= 0 ||
       !LiteRtNvidiaGlobalAttentionSupports(rows, mask_rows, depth)) {
     return cudaErrorInvalidValue;
+  }
+  // Without a mask the workspace may have been sized for any mask_rows.
+  LiteRtNvidiaAttentionShape shape;
+  if (mask != nullptr && TiledShape(rows, mask_rows, seq, &shape) &&
+      LiteRtNvidiaTiledAttentionAvailable()) {
+    return LiteRtNvidiaLaunchTiledAttention(
+        &shape, q, q_bf16, k, v, /*k_new=*/nullptr, /*v_new=*/nullptr, mask,
+        fill, out, workspace, stream);
   }
   if (q_bf16) {
     return Launch(static_cast<const __nv_bfloat16*>(q),
