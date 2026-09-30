@@ -96,7 +96,7 @@ TEST(TestMediatekPlugin, RegisterAllTransformations) {
   ASSERT_EQ(plugin.Api()->register_all_transformations(
                 plugin.Get(), &transformations, &num_patterns),
             kLiteRtStatusOk);
-  ASSERT_EQ(num_patterns, 1);
+  ASSERT_EQ(num_patterns, 10);
   ASSERT_NE(transformations, nullptr);
   EXPECT_STREQ(transformations[0].name, "RmsNormQuantTransformation");
   EXPECT_EQ(transformations[0].benefit, 100);
