@@ -17,11 +17,17 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <system_error>
+#include <vector>
 
+#include "QnnOpDef.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "nlohmann/json.hpp"  // from @com_github_nlohmann_json
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_any.h"
@@ -66,6 +72,7 @@ const auto kSupportedOps =
                     "simple_ceil_op.tflite",
                     "simple_concatenation_fused_relu6_op.tflite",
                     "simple_concatenation_op.tflite",
+                    "simple_concatenation_op_boolean.tflite",
                     "simple_conv_2d_fused_relu_op.tflite",
                     "simple_conv_2d_op.tflite",
                     "simple_conv_3d_op.tflite",
@@ -130,11 +137,13 @@ const auto kSupportedOps =
                     "simple_sign_op.tflite",
                     "simple_sin_op.tflite",
                     "simple_slice_op.tflite",
+                    "simple_slice_op_boolean.tflite",
                     "simple_softmax_op.tflite",
                     "simple_scatter_nd_op.tflite",
                     "simple_space_to_depth_op.tflite",
                     "simple_split_op.tflite",
                     "simple_strided_slice_op.tflite",
+                    "simple_strided_slice_op_boolean.tflite",
                     "simple_sqrt_op.tflite",
                     "simple_sub_fused_relu_N1_1_op.tflite",
                     "simple_sub_op.tflite",
@@ -467,10 +476,10 @@ TEST(TestQnnPlugin, LpaiCompatibilityResolvesHardwareVersionTarget) {
                 kApiVersion, plugin.get(), nullptr, nullptr, "v7"));
 }
 
-class QnnPlyginSupportedSocCompilationTest
+class QnnPluginSupportedSocCompilationTest
     : public ::testing::TestWithParam<std::string> {};
 
-TEST_P(QnnPlyginSupportedSocCompilationTest, CompileMulSubgraph) {
+TEST_P(QnnPluginSupportedSocCompilationTest, CompileMulSubgraph) {
   auto plugin = CreatePlugin(LrtGetCompilerContext());
   auto model = testing::LoadTestFileModel("one_mul.tflite");
   auto soc_model = GetParam();
@@ -508,7 +517,7 @@ TEST_P(QnnPlyginSupportedSocCompilationTest, CompileMulSubgraph) {
   LiteRtDestroyCompiledResult(compiled);
 }
 
-INSTANTIATE_TEST_SUITE_P(SupportedOpsTest, QnnPlyginSupportedSocCompilationTest,
+INSTANTIATE_TEST_SUITE_P(SupportedOpsTest, QnnPluginSupportedSocCompilationTest,
                          kSupportedSocModels);
 
 class QnnPluginOpValidationTest : public ::testing::TestWithParam<std::string> {
@@ -568,6 +577,127 @@ TEST_P(QnnPluginOpCompatibilityTest, SupportedOpsTest) {
 
   LiteRtDestroyCompiledResult(compiled);
 }
+
+// QNN HTP has no usable BOOL_8 kernel for Concat / Slice / StridedSlice:
+// QNN_OP_STRIDED_SLICE rejects BOOL_8 outright, and QNN_OP_CONCAT silently
+// evaluates a *static* BOOL_8 operand as 0 instead of 1. The op builders in
+// qnn_compose_graph.cc therefore legalize these ops through FLOAT_32 by
+// wrapping them in Cast(BOOL_8 -> FLOAT_32) ... Cast(FLOAT_32 -> BOOL_8).
+struct BooleanLegalizationTestCase {
+  // TFLite model exercising a single BOOL_8 op.
+  std::string model;
+  // QNN op type the BOOL_8 op is expected to lower to.
+  std::string qnn_op_type;
+};
+
+class QnnPluginBooleanLegalizationTest
+    : public ::testing::TestWithParam<BooleanLegalizationTestCase> {};
+
+TEST_P(QnnPluginBooleanLegalizationTest, Bool8OpIsComputedInFloat32) {
+  const BooleanLegalizationTestCase& test_case = GetParam();
+  LITERT_LOG(LITERT_INFO, "Testing BOOL_8 legalization for: %s",
+             test_case.model.c_str());
+
+  // Dump the composed QNN graph so the rewrite can be inspected. The directory
+  // is per-test-case because gtest may shard this suite across processes.
+  std::string dump_dir_name = test_case.model;
+  dump_dir_name = dump_dir_name.substr(0, dump_dir_name.find('.'));
+  std::filesystem::path temp_dir =
+      std::filesystem::temp_directory_path() /
+      ("litert_qnn_bool_legalize_" + dump_dir_name);
+  std::filesystem::remove_all(temp_dir);
+  std::filesystem::create_directories(temp_dir);
+
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
+  ASSERT_TRUE(qnn_opts);
+  qnn_opts->SetIrJsonDir(temp_dir.string());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto model = testing::LoadTestFileModel(test_case.model);
+
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
+                                               model.Get(), &compiled));
+
+  std::filesystem::path ir_json_path = temp_dir / "qnn_partition_0.json";
+  ASSERT_TRUE(std::filesystem::exists(ir_json_path));
+
+  std::ifstream ir_json_file(ir_json_path);
+  ASSERT_TRUE(ir_json_file.is_open());
+  nlohmann::json ir_json;
+  ir_json_file >> ir_json;
+  ir_json_file.close();
+
+  const nlohmann::json& tensors = ir_json["graph"]["tensors"];
+  const nlohmann::json& nodes = ir_json["graph"]["nodes"];
+
+  // The legalization must introduce Cast ops around the BOOL_8 op.
+  const auto op_types = ir_json["op_types"].get<std::vector<std::string>>();
+  EXPECT_THAT(op_types, ::testing::Contains(QNN_OP_CAST));
+  ASSERT_THAT(op_types, ::testing::Contains(test_case.qnn_op_type));
+
+  // Every operand of the BOOL_8 op must have been rewritten to FLOAT_32. This
+  // covers the static operand of Concat, which is the one QNN HTP miscompiles.
+  int num_legalized_nodes = 0;
+  for (const auto& [node_name, node] : nodes.items()) {
+    if (node["type"] != test_case.qnn_op_type) {
+      continue;
+    }
+    ++num_legalized_nodes;
+    std::vector<std::string> operands =
+        node["input_names"].get<std::vector<std::string>>();
+    const auto outputs = node["output_names"].get<std::vector<std::string>>();
+    operands.insert(operands.end(), outputs.begin(), outputs.end());
+    for (const std::string& operand : operands) {
+      ASSERT_TRUE(tensors.contains(operand)) << operand;
+      EXPECT_EQ(tensors[operand]["data_type"].get<int>(),
+                static_cast<int>(QNN_DATATYPE_FLOAT_32))
+          << "Operand '" << operand << "' of node '" << node_name
+          << "' was not legalized to FLOAT_32.";
+    }
+  }
+  EXPECT_EQ(num_legalized_nodes, 1);
+
+  // The subgraph boundary must stay BOOL_8 so the rewrite is transparent to
+  // the runtime and to neighbouring (non-delegated) ops.
+  bool has_bool8_tensor = false;
+  for (const auto& [tensor_name, tensor] : tensors.items()) {
+    if (tensor["data_type"].get<int>() ==
+        static_cast<int>(QNN_DATATYPE_BOOL_8)) {
+      has_bool8_tensor = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(has_bool8_tensor)
+      << "Expected the graph I/O to remain BOOL_8 after legalization.";
+
+  std::filesystem::remove_all(temp_dir);
+  LiteRtDestroyCompiledResult(compiled);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Bool8Legalization, QnnPluginBooleanLegalizationTest,
+    Values(
+        // Appending a static `true` to a streaming attention mask.
+        BooleanLegalizationTestCase{"simple_concatenation_op_boolean.tflite",
+                                    QNN_OP_CONCAT},
+        // Trimming the oldest mask entry (`mask[:, 1:]`).
+        BooleanLegalizationTestCase{"simple_slice_op_boolean.tflite",
+                                    QNN_OP_STRIDED_SLICE},
+        BooleanLegalizationTestCase{"simple_strided_slice_op_boolean.tflite",
+                                    QNN_OP_STRIDED_SLICE}),
+    [](const ::testing::TestParamInfo<BooleanLegalizationTestCase>& info) {
+      std::string name = info.param.model;
+      name = name.substr(0, name.find('.'));
+      return name;
+    });
 
 INSTANTIATE_TEST_SUITE_P(SupportedOpsTest, QnnPluginOpCompatibilityTest,
                          kSupportedOps);
