@@ -3146,6 +3146,103 @@ TYPED_TEST_P(NumericalTestSuite, ResizeNearestNeighborOp) {
 }
 
 // Register all typed tests.
+TYPED_TEST_P(NumericalTestSuite, LogSoftmaxOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor<Tag> output = LogSoftmax(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "LogSoftmax op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
+                                   1.0f, 1.0f, 1.0f, 1.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(8);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // Row 0: x - log(sum(exp(x))) = x - 4.4401897.
+  // Row 1: log(1 / 4) = -1.3862944.
+  std::vector<float> expected_output = {-3.4401897f, -2.4401897f, -1.4401897f,
+                                        -0.4401897f, -1.3862944f, -1.3862944f,
+                                        -1.3862944f, -1.3862944f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, Relu0To1Op) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = Relu0To1(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Relu0To1 op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {-1.0f, 0.25f, 2.0f, 0.75f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<float> expected_output = {0.0f, 0.25f, 1.0f, 0.75f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, ReluN1To1Op) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = ReluN1To1(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "ReluN1To1 op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {-2.0f, -0.5f, 0.5f, 3.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<float> expected_output = {-1.0f, -0.5f, 0.5f, 1.0f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, ZerosLikeOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = ZerosLike(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "ZerosLike op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, -2.0f, 3.5f, -4.25f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(4, 1.0f);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<float> expected_output = {0.0f, 0.0f, 0.0f, 0.0f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
 REGISTER_TYPED_TEST_SUITE_P(
     NumericalTestSuite, AddOp, SubOp, MulOp, DivOp, GeluOp, ReluOp, Relu6Op,
     LeakyReluOp, EluOp, HardSwishOp, LogisticOp, TanhOp, SqrtOp, RsqrtOp,
@@ -3159,7 +3256,8 @@ REGISTER_TYPED_TEST_SUITE_P(
     EmbeddingLookupOp, BatchMatmulOp, PReluOp, L2NormalizationOp, LstmOp,
     Conv2DOp, TransposeConvOp, TransposeConv2DOp, MaximumOp, MinimumOp,
     FloorModOp, FloorDivOp, SumOp, ReduceMaxOp, MeanOp, AveragePool2DOp,
-    MaxPool2DOp, SplitOp, PackOp, UnpackOp, ResizeNearestNeighborOp);
+    MaxPool2DOp, SplitOp, PackOp, UnpackOp, ResizeNearestNeighborOp,
+    LogSoftmaxOp, Relu0To1Op, ReluN1To1Op, ZerosLikeOp);
 
 }  // namespace litert::tensor
 
