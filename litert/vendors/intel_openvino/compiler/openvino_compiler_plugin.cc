@@ -58,6 +58,7 @@
 #include "litert/vendors/intel_openvino/compiler/openvino_soc_config.h"
 #include "litert/vendors/intel_openvino/compiler/weight_bank.h"
 #include "litert/vendors/intel_openvino/compiler/weights_to_parameters.h"
+#include "farmhash.h"
 
 namespace {
 
@@ -100,6 +101,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflOneHot,
     kLiteRtOpCodeTflUnpack,
     kLiteRtOpCodeTflReduceAll,
+    kLiteRtOpCodeTflReduceAny,
     kLiteRtOpCodeShloComposite,
     // These ops donot call get_attribute
     kLiteRtOpCodeTflDequantize,
@@ -561,6 +563,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     // the SAME ascending-id order Serialize() lays out, so a Constant's WLCA
     // bin_offset equals its position in the temp file staged at dispatch.
     std::map<int32_t, size_t> pool_offset_of;
+    // Content-derived NPUW weights-bank name for the NPU shared path (stays
+    // empty for the GPU path / non-shared compiles).
+    // ConfigureForNpuWeightSharing bakes this into the blob; it MUST be unique
+    // per distinct weight pool or NPUW's global, name-keyed BankManager
+    // collides across models at import.
+    std::string npu_weights_bank_name;
     if (share_weights) {
       for (int p = 0; p < num_partitions; ++p) {
         auto subgraph = model.Subgraph(p);
@@ -577,11 +585,29 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       std::map<uint32_t, absl::Span<const uint8_t>> ordered(
           weight_bank.Buffers().begin(), weight_bank.Buffers().end());
       size_t running_offset = 0;
+      // Fingerprint the pool so the bank name is content-derived: identical
+      // pools yield identical names (so partitions sharing this Compile call's
+      // pool still dedup) while unrelated models get distinct names. Each
+      // buffer is fingerprinted in place (no copy of the pool), and the
+      // (buffer_id, fingerprint) pairs, in the SAME ascending-id order the
+      // pool is laid out, are fingerprinted once more into a single value.
+      // Fingerprint64 is stable across platforms and releases, so the same
+      // model always bakes the same name.
+      std::vector<uint64_t> per_buffer_fingerprints;
+      per_buffer_fingerprints.reserve(2 * ordered.size());
       for (const auto& [buffer_id, bytes] : ordered) {
         global_graph.buffers.push_back({buffer_id, running_offset, bytes});
         pool_offset_of[static_cast<int32_t>(buffer_id)] = running_offset;
         running_offset += bytes.size();
+        per_buffer_fingerprints.push_back(buffer_id);
+        per_buffer_fingerprints.push_back(util::Fingerprint64(
+            reinterpret_cast<const char*>(bytes.data()), bytes.size()));
       }
+      const uint64_t pool_fingerprint = util::Fingerprint64(
+          reinterpret_cast<const char*>(per_buffer_fingerprints.data()),
+          per_buffer_fingerprints.size() * sizeof(uint64_t));
+      npu_weights_bank_name =
+          absl::StrFormat("litert_npuw_%016x", pool_fingerprint);
     }
 
     ov::Core core;
@@ -598,7 +624,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         // NPU shared path: turn on NPUW/CWAI so export_model emits a weightless
         // blob whose constants are referenced by WeightlessCacheAttribute
         // bin_offset instead of baked in.
-        context.ConfigureForNpuWeightSharing();
+        context.ConfigureForNpuWeightSharing(npu_weights_bank_name);
       }
 
       auto graph_name = absl::StrFormat("Partition_%d", partition_idx);
