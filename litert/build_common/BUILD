@@ -63,9 +63,32 @@ config_setting(
     define_values = {"tflite_with_xnnpack": "false"},
 )
 
+# Enables YNNPACK. Equivalent to `--define=litert_enable_ynnpack=true`, but can also be set from a
+# Starlark transition (transitions on `--define` are not supported).
+bool_flag(
+    name = "enable_ynnpack",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
 config_setting(
-    name = "litert_enable_ynnpack",
+    name = "litert_enable_ynnpack_define",
     define_values = {"litert_enable_ynnpack": "true"},
+)
+
+config_setting(
+    name = "litert_enable_ynnpack_flag",
+    flag_values = {":enable_ynnpack": "true"},
+)
+
+# Matches if YNNPACK is enabled with either `--define=litert_enable_ynnpack=true` or
+# `--//litert/build_common:enable_ynnpack`.
+selects.config_setting_group(
+    name = "litert_enable_ynnpack",
+    match_any = [
+        ":litert_enable_ynnpack_define",
+        ":litert_enable_ynnpack_flag",
+    ],
     visibility = ["//visibility:public"],
 )
 
