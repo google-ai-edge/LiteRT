@@ -51,8 +51,8 @@ cc_library(
         "litert_dispatch_api.h",
     ],
     deps = [
+        "@com_google_absl//absl/strings:string_view",
         "//litert/c/internal:litert_abi_header",
-        "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
         "//litert/c:litert_profiler_types",
         # only depend on the headers, not the implementation.
         "//litert/c/internal:litert_dispatch_headers",

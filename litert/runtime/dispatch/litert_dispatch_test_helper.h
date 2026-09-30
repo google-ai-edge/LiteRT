@@ -12,20 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#if defined(LITERT_USE_STATIC_LINKED_DISPATCH_API)
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_DISPATCH_LITERT_DISPATCH_TEST_HELPER_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_DISPATCH_LITERT_DISPATCH_TEST_HELPER_H_
 
-#include "litert/vendors/c/litert_dispatch_api.h"
+namespace litert::internal {
 
-namespace {
-class StaticDispatchInitializer {
- public:
-  StaticDispatchInitializer() {
-    LiteRtStaticLinkedDispatchQueryInterface = LiteRtDispatchQueryInterface;
-  }
-};
+// Resets internal dispatch global state for testing.
+void ResetDispatchForTest();
 
-// Register the statically linked API pointer.
-StaticDispatchInitializer g_dispatch_initializer;
-}  // namespace
+}  // namespace litert::internal
 
-#endif  // defined(LITERT_USE_STATIC_LINKED_DISPATCH_API)
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_DISPATCH_LITERT_DISPATCH_TEST_HELPER_H_
