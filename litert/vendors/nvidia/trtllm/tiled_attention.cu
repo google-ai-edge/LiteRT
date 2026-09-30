@@ -154,6 +154,9 @@ struct Geometry {
   static constexpr int kWarpSlices = kSlices / kGroupWarps;  // 16
   static constexpr int kChain = 8;
   static constexpr int kWarpChains = kWarpSlices / kChain;   // 2
+  // Tiles whose value products accumulate in fp16 before they are added to
+  // the fp32 sums.
+  static constexpr int kValueChain = 8;
   // Partial sums per score in shared memory: fp16 chains or fp32 sums.
   static constexpr int kPartials =
       kHalfScores ? kGroupWarps * kWarpChains : kGroupWarps;
@@ -179,9 +182,9 @@ struct Geometry {
       kScores + static_cast<size_t>(kPartials) * kRows * kTile * kPartialBytes;
   static constexpr size_t kState =
       kProbs + static_cast<size_t>(kRows) * kProbRowBytes;
-  // Row maximum, sum, scale and factor, then a flag per softmax warp.
+  // Row maximum, sum and scale, then a flag per softmax warp.
   static constexpr size_t kBitmaps =
-      kState + static_cast<size_t>(kRows) * 4 * sizeof(float) +
+      kState + static_cast<size_t>(kRows) * 3 * sizeof(float) +
       kWarps * sizeof(int);
   static constexpr size_t kBytes =
       kBitmaps + 2 * kMaxBitmapWords * sizeof(uint32_t);
@@ -288,11 +291,11 @@ struct Sources {
 //
 // Each thread loads the next tile into registers while its warp computes and
 // stores it to shared memory once the block is done with the tile it
-// replaces. The scores accumulate in fp32. The value product of a tile is one
-// fp16 sum over its 16 keys per output, with weights relative to the largest
-// of their row in the tile and divided by the tile size, so that the sum
-// cannot overflow and small weights keep their precision; the tiles of a row
-// are combined in fp32.
+// replaces. The softmax weights of a row are relative to its largest score so
+// far and divided by the keys of kValueChain tiles: the value products of up
+// to that many tiles accumulate in fp16, which cannot overflow, before they
+// are added to the fp32 sums of the row, and the sums so far are rescaled
+// when a larger score turns up.
 template <typename T, int kD>
 __global__ void __launch_bounds__(kThreads, 1)
     TiledAttentionKernel(const T* __restrict__ q, Sources src,
@@ -312,8 +315,7 @@ __global__ void __launch_bounds__(kThreads, 1)
   float* max_s = reinterpret_cast<float*>(smem + G::kState);
   float* sum_s = max_s + G::kRows;
   float* scale_s = sum_s + G::kRows;
-  float* factor_s = scale_s + G::kRows;
-  int* rescaled_s = reinterpret_cast<int*>(factor_s + G::kRows);
+  int* rescaled_s = reinterpret_cast<int*>(scale_s + G::kRows);
   uint32_t* any_s = reinterpret_cast<uint32_t*>(smem + G::kBitmaps);
   uint32_t* all_s = any_s + kMaxBitmapWords;
 
@@ -368,9 +370,12 @@ __global__ void __launch_bounds__(kThreads, 1)
         LoadQueryVector(q_head + static_cast<size_t>(r0 + row) * kD, vector);
   }
   float acc[G::kNSlices][4];
+  uint32_t chain_v[G::kNSlices][2];
+  int chained = 0;
 #pragma unroll
   for (int ns = 0; ns < G::kNSlices; ++ns) {
     acc[ns][0] = acc[ns][1] = acc[ns][2] = acc[ns][3] = 0.0f;
+    chain_v[ns][0] = chain_v[ns][1] = 0;
   }
   __syncthreads();
 
@@ -438,34 +443,82 @@ __global__ void __launch_bounds__(kThreads, 1)
     }
   };
 
-  int c = next_tile(split);
-  if (c < tiles) {
-    load_tile(/*values=*/false, c);
-  }
-  while (c < tiles) {
-    const int j0 = c * kTile;
-    store_tile();
-    __syncthreads();
-    load_tile(/*values=*/true, c);
-
-    // Scores for rows (g, g + 8) of the row group x keys 8 kg + 2t, + 1 over
-    // the warp's k-slices.
+  // Scores for rows (g, g + 8) of the row group x keys 8 kg + 2t, + 1 over
+  // the warp's k-slices, of the key tile in shared memory. They stay in
+  // registers until the softmax of the tile before is done with the scores
+  // in shared memory.
+  uint32_t scores[8];
+  auto compute_scores = [&]() {
     if (kHalfScores) {
       uint32_t chain[G::kWarpChains][2][2];
+      // The operands of a k-slice are in registers a k-slice before their
+      // multiplications, which then never wait for shared memory.
+      uint32_t a[4], b[4];
+      LoadMatrixX4(a[0], a[1], a[2], a[3], query_lane);
+      LoadMatrixX4(b[0], b[1], b[2], b[3], key_lane);
 #pragma unroll
       for (int s = 0; s < G::kWarpSlices; ++s) {
-        uint32_t a0, a1, a2, a3, b0, b1, b2, b3;
-        LoadMatrixX4(a0, a1, a2, a3, query_lane + s * 32);
-        LoadMatrixX4(b0, b1, b2, b3, key_lane + s * 32);
+        uint32_t na[4], nb[4];
+        if (s + 1 < G::kWarpSlices) {
+          LoadMatrixX4(na[0], na[1], na[2], na[3], query_lane + (s + 1) * 32);
+          LoadMatrixX4(nb[0], nb[1], nb[2], nb[3], key_lane + (s + 1) * 32);
+        }
         uint32_t* sums = chain[s / G::kChain][0];
         if (s % G::kChain == 0) {
-          MmaHalfProduct(sums[0], sums[1], a0, a1, a2, a3, b0, b1);
-          MmaHalfProduct(sums[2], sums[3], a0, a1, a2, a3, b2, b3);
+          MmaHalfProduct(sums[0], sums[1], a[0], a[1], a[2], a[3], b[0], b[1]);
+          MmaHalfProduct(sums[2], sums[3], a[0], a[1], a[2], a[3], b[2], b[3]);
         } else {
-          MmaHalf(sums[0], sums[1], a0, a1, a2, a3, b0, b1);
-          MmaHalf(sums[2], sums[3], a0, a1, a2, a3, b2, b3);
+          MmaHalf(sums[0], sums[1], a[0], a[1], a[2], a[3], b[0], b[1]);
+          MmaHalf(sums[2], sums[3], a[0], a[1], a[2], a[3], b[2], b[3]);
+        }
+        if (s + 1 < G::kWarpSlices) {
+#pragma unroll
+          for (int i = 0; i < 4; ++i) {
+            a[i] = na[i];
+            b[i] = nb[i];
+          }
         }
       }
+#pragma unroll
+      for (int i = 0; i < 8; ++i) {
+        scores[i] = chain[i / 4][(i / 2) % 2][i % 2];
+      }
+    } else {
+      float sc[2][4];
+#pragma unroll
+      for (int kg = 0; kg < 2; ++kg) {
+        sc[kg][0] = sc[kg][1] = sc[kg][2] = sc[kg][3] = 0.0f;
+      }
+      uint32_t a[4], b[4];
+      LoadMatrixX4(a[0], a[1], a[2], a[3], query_lane);
+      LoadMatrixX4(b[0], b[1], b[2], b[3], key_lane);
+#pragma unroll
+      for (int s = 0; s < G::kWarpSlices; ++s) {
+        uint32_t na[4], nb[4];
+        if (s + 1 < G::kWarpSlices) {
+          LoadMatrixX4(na[0], na[1], na[2], na[3], query_lane + (s + 1) * 32);
+          LoadMatrixX4(nb[0], nb[1], nb[2], nb[3], key_lane + (s + 1) * 32);
+        }
+        Mma(sc[0][0], sc[0][1], sc[0][2], sc[0][3], a[0], a[1], a[2], a[3],
+            b[0], b[1]);
+        Mma(sc[1][0], sc[1][1], sc[1][2], sc[1][3], a[0], a[1], a[2], a[3],
+            b[2], b[3]);
+        if (s + 1 < G::kWarpSlices) {
+#pragma unroll
+          for (int i = 0; i < 4; ++i) {
+            a[i] = na[i];
+            b[i] = nb[i];
+          }
+        }
+      }
+#pragma unroll
+      for (int i = 0; i < 8; ++i) {
+        scores[i] = __float_as_uint(sc[i / 4][i % 4]);
+      }
+    }
+  };
+  auto store_scores = [&]() {
+    if (kHalfScores) {
 #pragma unroll
       for (int ch = 0; ch < G::kWarpChains; ++ch) {
         uint32_t* lo = chains_s +
@@ -475,25 +528,12 @@ __global__ void __launch_bounds__(kThreads, 1)
                            (kTile / 2) +
                        t;
         uint32_t* hi = lo + 8 * (kTile / 2);
-        lo[0] = chain[ch][0][0];
-        lo[4] = chain[ch][1][0];
-        hi[0] = chain[ch][0][1];
-        hi[4] = chain[ch][1][1];
+        lo[0] = scores[ch * 4];
+        lo[4] = scores[ch * 4 + 2];
+        hi[0] = scores[ch * 4 + 1];
+        hi[4] = scores[ch * 4 + 3];
       }
     } else {
-      float sc[2][4];
-#pragma unroll
-      for (int kg = 0; kg < 2; ++kg) {
-        sc[kg][0] = sc[kg][1] = sc[kg][2] = sc[kg][3] = 0.0f;
-      }
-#pragma unroll
-      for (int s = 0; s < G::kWarpSlices; ++s) {
-        uint32_t a0, a1, a2, a3, b0, b1, b2, b3;
-        LoadMatrixX4(a0, a1, a2, a3, query_lane + s * 32);
-        LoadMatrixX4(b0, b1, b2, b3, key_lane + s * 32);
-        Mma(sc[0][0], sc[0][1], sc[0][2], sc[0][3], a0, a1, a2, a3, b0, b1);
-        Mma(sc[1][0], sc[1][1], sc[1][2], sc[1][3], a0, a1, a2, a3, b2, b3);
-      }
       float* lo = scores_s +
                   (static_cast<size_t>(part) * G::kRows + row_group * 16 + g) *
                       kTile +
@@ -502,113 +542,157 @@ __global__ void __launch_bounds__(kThreads, 1)
 #pragma unroll
       for (int kg = 0; kg < 2; ++kg) {
         *reinterpret_cast<float2*>(lo + 8 * kg) =
-            make_float2(sc[kg][0], sc[kg][1]);
+            make_float2(__uint_as_float(scores[kg * 4]),
+                        __uint_as_float(scores[kg * 4 + 1]));
         *reinterpret_cast<float2*>(hi + 8 * kg) =
-            make_float2(sc[kg][2], sc[kg][3]);
+            make_float2(__uint_as_float(scores[kg * 4 + 2]),
+                        __uint_as_float(scores[kg * 4 + 3]));
       }
     }
-    __syncthreads();
+  };
 
-    // Softmax of the tile: thread handles row tid / kRowThreads and
-    // kThreadKeys keys. The value tile replaces the key tile in shared memory
-    // meanwhile.
+  // Softmax of tile c from the scores in shared memory: a thread handles row
+  // tid / kRowThreads and kThreadKeys keys.
+  auto softmax = [&](int c) {
+    const int j0 = c * kTile;
+    const int row = tid / G::kRowThreads;
+    const int kq = (tid % G::kRowThreads) * G::kThreadKeys;
+    float sc[G::kThreadKeys];
+#pragma unroll
+    for (int e = 0; e < G::kThreadKeys; e += 2) {
+      float2 sum = make_float2(0.0f, 0.0f);
+#pragma unroll
+      for (int p = 0; p < G::kPartials; ++p) {
+        const size_t pair = (static_cast<size_t>(p) * G::kRows + row) *
+                                (kTile / 2) +
+                            (kq + e) / 2;
+        const float2 partial =
+            kHalfScores
+                ? UnpackHalves(chains_s[pair])
+                : *reinterpret_cast<const float2*>(scores_s + 2 * pair);
+        sum.x += partial.x;
+        sum.y += partial.y;
+      }
+      sc[e] = sum.x;
+      sc[e + 1] = sum.y;
+    }
+    if (((all_s[c >> 5] >> (c & 31)) & 1u) == 0) {
+      const bool* mask_row =
+          mask == nullptr
+              ? nullptr
+              : mask + static_cast<size_t>((r0 + row) % mask_rows) * seq;
+#pragma unroll
+      for (int e = 0; e < G::kThreadKeys; ++e) {
+        // Keys past the end of the sequence do not exist: no weight, even
+        // for a row whose scores are all `fill`.
+        const int key = j0 + kq + e;
+        const bool visible =
+            mask_row == nullptr || mask_row[min(key, seq - 1)];
+        sc[e] = key < seq ? (visible ? sc[e] : fill) : -INFINITY;
+      }
+    }
+    float tile_max = sc[0];
+#pragma unroll
+    for (int e = 1; e < G::kThreadKeys; ++e) {
+      tile_max = fmaxf(tile_max, sc[e]);
+    }
+#pragma unroll
+    for (int offset = G::kRowThreads / 2; offset > 0; offset >>= 1) {
+      tile_max =
+          fmaxf(tile_max, __shfl_xor_sync(0xffffffffu, tile_max, offset));
+    }
+    // Weights are relative to the largest score of the row so far, and
+    // divided by the keys of a chain of tiles: the fp16 sum of a chain of
+    // value products cannot overflow.
+    const float old_max = max_s[row];
+    const float new_max = fmaxf(old_max, tile_max);
+    const bool finite = new_max > -INFINITY;
+    constexpr float kUnit = 1.0f / (kTile * G::kValueChain);
+    float tile_sum = 0.0f;
+    uint32_t* prob_words = reinterpret_cast<uint32_t*>(
+        probs_s + row * G::kProbRowBytes + kq * 2);
+#pragma unroll
+    for (int e = 0; e < G::kThreadKeys; e += 2) {
+      const __half2 packed = __floats2half2_rn(
+          finite ? __expf(sc[e] - new_max) * kUnit : 0.0f,
+          finite ? __expf(sc[e + 1] - new_max) * kUnit : 0.0f);
+      // The row sums use the rounded weights the value product sees.
+      const float2 rounded = __half22float2(packed);
+      tile_sum += rounded.x + rounded.y;
+      prob_words[e / 2] = *reinterpret_cast<const uint32_t*>(&packed);
+    }
+#pragma unroll
+    for (int offset = G::kRowThreads / 2; offset > 0; offset >>= 1) {
+      tile_sum += __shfl_xor_sync(0xffffffffu, tile_sum, offset);
+    }
+    // The rows of a warp are those of one row group; the running sums of a
+    // row group are only rescaled when the maximum of one of its rows grew.
+    const float scale = old_max >= new_max ? 1.0f : __expf(old_max - new_max);
+    if (tid % G::kRowThreads == 0) {
+      max_s[row] = new_max;
+      sum_s[row] = sum_s[row] * scale + tile_sum;
+      scale_s[row] = scale;
+    }
+    const bool rescaled = __any_sync(0xffffffffu, scale != 1.0f);
+    if (lane == 0) {
+      rescaled_s[warp] = rescaled ? 1 : 0;
+    }
+  };
+
+  // A tile is loaded into registers as soon as those are free, a phase
+  // before the block stores and needs it. Two phases per tile c:
+  //   A  the softmax of c, and the scores of the next tile from its keys;
+  //   B  the value products of c.
+  // The two warps of a tensor unit (w and w + 4) take phase A in opposite
+  // orders, so that the unit multiplies for one while the other computes the
+  // softmax.
+  const bool scores_first = (warp & 4) != 0;
+  int c = next_tile(split);
+  int next = tiles;
+  if (c < tiles) {
+    load_tile(/*values=*/false, c);
     store_tile();
-    {
-      const int row = tid / G::kRowThreads;
-      const int kq = (tid % G::kRowThreads) * G::kThreadKeys;
-      float sc[G::kThreadKeys];
-#pragma unroll
-      for (int e = 0; e < G::kThreadKeys; e += 2) {
-        float2 sum = make_float2(0.0f, 0.0f);
-#pragma unroll
-        for (int p = 0; p < G::kPartials; ++p) {
-          const size_t pair = (static_cast<size_t>(p) * G::kRows + row) *
-                                  (kTile / 2) +
-                              (kq + e) / 2;
-          const float2 partial =
-              kHalfScores
-                  ? UnpackHalves(chains_s[pair])
-                  : *reinterpret_cast<const float2*>(scores_s + 2 * pair);
-          sum.x += partial.x;
-          sum.y += partial.y;
-        }
-        sc[e] = sum.x;
-        sc[e + 1] = sum.y;
-      }
-      if (((all_s[c >> 5] >> (c & 31)) & 1u) == 0) {
-        const bool* mask_row =
-            mask == nullptr
-                ? nullptr
-                : mask + static_cast<size_t>((r0 + row) % mask_rows) * seq;
-#pragma unroll
-        for (int e = 0; e < G::kThreadKeys; ++e) {
-          // Keys past the end of the sequence do not exist: no weight, even
-          // for a row whose scores are all `fill`.
-          const int key = j0 + kq + e;
-          const bool visible =
-              mask_row == nullptr || mask_row[min(key, seq - 1)];
-          sc[e] = key < seq ? (visible ? sc[e] : fill) : -INFINITY;
-        }
-      }
-      float tile_max = sc[0];
-#pragma unroll
-      for (int e = 1; e < G::kThreadKeys; ++e) {
-        tile_max = fmaxf(tile_max, sc[e]);
-      }
-#pragma unroll
-      for (int offset = G::kRowThreads / 2; offset > 0; offset >>= 1) {
-        tile_max =
-            fmaxf(tile_max, __shfl_xor_sync(0xffffffffu, tile_max, offset));
-      }
-      const bool finite = tile_max > -INFINITY;
-      float tile_sum = 0.0f;
-      uint32_t* prob_words = reinterpret_cast<uint32_t*>(
-          probs_s + row * G::kProbRowBytes + kq * 2);
-#pragma unroll
-      for (int e = 0; e < G::kThreadKeys; e += 2) {
-        const __half2 packed = __floats2half2_rn(
-            finite ? __expf(sc[e] - tile_max) * (1.0f / kTile) : 0.0f,
-            finite ? __expf(sc[e + 1] - tile_max) * (1.0f / kTile) : 0.0f);
-        // The row sums use the rounded weights the value product sees.
-        const float2 rounded = __half22float2(packed);
-        tile_sum += rounded.x + rounded.y;
-        prob_words[e / 2] = *reinterpret_cast<const uint32_t*>(&packed);
-      }
-#pragma unroll
-      for (int offset = G::kRowThreads / 2; offset > 0; offset >>= 1) {
-        tile_sum += __shfl_xor_sync(0xffffffffu, tile_sum, offset);
-      }
-      // The rows of a warp are those of one row group; the running sums of a
-      // row group are only rescaled when the maximum of one of its rows grew.
-      float scale = 1.0f;
-      if (tid % G::kRowThreads == 0) {
-        const float old_max = max_s[row];
-        const float new_max = fmaxf(old_max, tile_max);
-        scale = old_max >= new_max ? 1.0f : __expf(old_max - new_max);
-        const float factor = finite ? __expf(tile_max - new_max) : 0.0f;
-        max_s[row] = new_max;
-        sum_s[row] = sum_s[row] * scale + tile_sum * factor;
-        scale_s[row] = scale;
-        factor_s[row] = factor;
-      }
-      const bool rescaled = __any_sync(0xffffffffu, scale != 1.0f);
-      if (lane == 0) {
-        rescaled_s[warp] = rescaled ? 1 : 0;
-      }
-    }
-    __syncthreads();
-
-    // Values: rows of the row group x the warp's dims, one fp16 sum over the
-    // 16 keys of the tile per output.
-    const int next = next_tile(c + splits);
+    next = next_tile(c + splits);
     if (next < tiles) {
       load_tile(/*values=*/false, next);
     }
+    __syncthreads();
+    compute_scores();
+    __syncthreads();
+    store_scores();
+  }
+  while (c < tiles) {
+    if (next < tiles) {
+      store_tile();
+    }
+    load_tile(/*values=*/true, c);
+    __syncthreads();
+    if (scores_first) {
+      if (next < tiles) {
+        compute_scores();
+      }
+      softmax(c);
+    } else {
+      softmax(c);
+      if (next < tiles) {
+        compute_scores();
+      }
+    }
+    __syncthreads();
+
+    store_tile();
+    int after = tiles;
+    if (next < tiles) {
+      store_scores();
+      after = next_tile(next + splits);
+      if (after < tiles) {
+        load_tile(/*values=*/false, after);
+      }
+    }
+    __syncthreads();
+    // Values: rows of the row group x the warp's dims. The fp16 sums of up
+    // to kValueChain tiles are added to the fp32 sums at once.
     {
-      const float scale_lo = scale_s[row_group * 16 + g];
-      const float scale_hi = scale_s[row_group * 16 + g + 8];
-      const float factor_lo = factor_s[row_group * 16 + g];
-      const float factor_hi = factor_s[row_group * 16 + g + 8];
       bool rescaled = false;
 #pragma unroll
       for (int w = 0; w < G::kGroupWarps; ++w) {
@@ -616,47 +700,58 @@ __global__ void __launch_bounds__(kThreads, 1)
       }
       uint32_t a0, a1, a2, a3;
       LoadMatrixX4(a0, a1, a2, a3, probs_lane);
-      constexpr int kBatch = 16;  // n-slices per batch of fp16 sums
+      uint32_t b[4];
+      LoadMatrixX4Trans(b[0], b[1], b[2], b[3], value_lane);
+      if (rescaled || chained == G::kValueChain) {
+        // The chain so far and the sums are relative to the previous
+        // maximum of their row.
+        const float scale_lo = scale_s[row_group * 16 + g];
+        const float scale_hi = scale_s[row_group * 16 + g + 8];
 #pragma unroll
-      for (int n0 = 0; n0 < G::kNSlices; n0 += kBatch) {
-        uint32_t sums[kBatch][2];
-#pragma unroll
-        for (int i = 0; i < kBatch; i += 2) {
-          uint32_t b0, b1, b2, b3;
-          LoadMatrixX4Trans(b0, b1, b2, b3, value_lane + (n0 + i) * 16);
-          MmaHalfProduct(sums[i][0], sums[i][1], a0, a1, a2, a3, b0, b1);
-          MmaHalfProduct(sums[i + 1][0], sums[i + 1][1], a0, a1, a2, a3, b2,
-                         b3);
+        for (int ns = 0; ns < G::kNSlices; ++ns) {
+          const float2 lo = UnpackHalves(chain_v[ns][0]);
+          const float2 hi = UnpackHalves(chain_v[ns][1]);
+          acc[ns][0] = (acc[ns][0] + lo.x) * scale_lo;
+          acc[ns][1] = (acc[ns][1] + lo.y) * scale_lo;
+          acc[ns][2] = (acc[ns][2] + hi.x) * scale_hi;
+          acc[ns][3] = (acc[ns][3] + hi.y) * scale_hi;
+          chain_v[ns][0] = chain_v[ns][1] = 0;
         }
-        if (rescaled) {
+        chained = 0;
+      }
+      ++chained;
 #pragma unroll
-          for (int i = 0; i < kBatch; ++i) {
-            const float2 lo = UnpackHalves(sums[i][0]);
-            const float2 hi = UnpackHalves(sums[i][1]);
-            float* a = acc[n0 + i];
-            a[0] = fmaf(a[0], scale_lo, lo.x * factor_lo);
-            a[1] = fmaf(a[1], scale_lo, lo.y * factor_lo);
-            a[2] = fmaf(a[2], scale_hi, hi.x * factor_hi);
-            a[3] = fmaf(a[3], scale_hi, hi.y * factor_hi);
-          }
-        } else {
+      for (int ns = 0; ns < G::kNSlices; ns += 2) {
+        uint32_t nb[4];
+        if (ns + 2 < G::kNSlices) {
+          LoadMatrixX4Trans(nb[0], nb[1], nb[2], nb[3],
+                            value_lane + (ns + 2) * 16);
+        }
+        MmaHalf(chain_v[ns][0], chain_v[ns][1], a0, a1, a2, a3, b[0], b[1]);
+        MmaHalf(chain_v[ns + 1][0], chain_v[ns + 1][1], a0, a1, a2, a3, b[2],
+                b[3]);
+        if (ns + 2 < G::kNSlices) {
 #pragma unroll
-          for (int i = 0; i < kBatch; ++i) {
-            const float2 lo = UnpackHalves(sums[i][0]);
-            const float2 hi = UnpackHalves(sums[i][1]);
-            float* a = acc[n0 + i];
-            a[0] = fmaf(lo.x, factor_lo, a[0]);
-            a[1] = fmaf(lo.y, factor_lo, a[1]);
-            a[2] = fmaf(hi.x, factor_hi, a[2]);
-            a[3] = fmaf(hi.y, factor_hi, a[3]);
+          for (int i = 0; i < 4; ++i) {
+            b[i] = nb[i];
           }
         }
       }
     }
     __syncthreads();
     c = next;
+    next = after;
   }
 
+#pragma unroll
+  for (int ns = 0; ns < G::kNSlices; ++ns) {
+    const float2 lo = UnpackHalves(chain_v[ns][0]);
+    const float2 hi = UnpackHalves(chain_v[ns][1]);
+    acc[ns][0] += lo.x;
+    acc[ns][1] += lo.y;
+    acc[ns][2] += hi.x;
+    acc[ns][3] += hi.y;
+  }
   // acc[ns][{0, 1}] are row g, dims 8 * ns + 2t + {0, 1} of the warp's range.
   const int row_lo = row_group * 16 + g;
   const size_t column = static_cast<size_t>(part) * G::kWarpDims + 2 * t;
