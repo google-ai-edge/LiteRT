@@ -26,6 +26,8 @@
 #include "driver_types.h"
 #include "NvInferRuntime.h"
 #include "litert/vendors/nvidia/trtllm/decode_attention.h"
+#include "litert/vendors/nvidia/trtllm/global_attention.h"
+#include "litert/vendors/nvidia/trtllm/tiled_attention.h"
 
 namespace litert::nvidia {
 namespace {
@@ -34,11 +36,24 @@ constexpr char kPluginName[] = "LiteRtNvidiaDecodeAttention";
 constexpr char kPluginVersion[] = "1";
 constexpr char kPluginNamespace[] = "";
 constexpr char kFillField[] = "fill";
-constexpr int32_t kNumInputs = 4;
+constexpr char kNewKeysField[] = "new_keys";
 constexpr int32_t kMaxRows = 16;
+
+// q, k, v and mask, then k_new and v_new.
+int32_t NumInputs(bool new_keys) { return new_keys ? 6 : 4; }
 
 bool SupportedDepth(int64_t depth) {
   return depth == 128 || depth == 256 || depth == 512;
+}
+
+// A single-head cache of depth 512 read by 16 query rows per token (decode)
+// or per prompt token (prefill) runs on the tensor-core kernels; mask row
+// r % mask_rows applies to query row r.
+bool UsesGlobalKernel(const nvinfer1::Dims& q, const nvinfer1::Dims& mask) {
+  return q.d[1] == 1 &&
+         LiteRtNvidiaGlobalAttentionSupports(static_cast<int32_t>(q.d[2]),
+                                             static_cast<int32_t>(mask.d[2]),
+                                             static_cast<int32_t>(q.d[3]));
 }
 
 bool ValidDimensions(const nvinfer1::Dims& dims) {
@@ -51,16 +66,27 @@ bool ValidDimensions(const nvinfer1::Dims& dims) {
   return true;
 }
 
+// The attention over a cache followed by the keys of the chunk being
+// prefilled (tiled_attention.h).
+LiteRtNvidiaAttentionShape NewKeysShape(const nvinfer1::Dims& q,
+                                        const nvinfer1::Dims& k,
+                                        const nvinfer1::Dims& mask,
+                                        const nvinfer1::Dims& k_new) {
+  return {static_cast<int32_t>(q.d[1]),    static_cast<int32_t>(q.d[2]),
+          static_cast<int32_t>(mask.d[2]), static_cast<int32_t>(q.d[3]),
+          static_cast<int32_t>(k.d[2]),    static_cast<int32_t>(k_new.d[2])};
+}
+
 // Validate the concrete kernel contract before narrowing dimensions or reading
 // buffers. Format negotiation alone does not establish matching K/V shapes.
 bool ValidDescriptors(const nvinfer1::PluginTensorDesc* inputs,
-                      const nvinfer1::PluginTensorDesc* output) {
+                      const nvinfer1::PluginTensorDesc* output, bool new_keys) {
   if (inputs == nullptr || output == nullptr ||
       !ValidDimensions(output->dims) ||
       output->format != nvinfer1::TensorFormat::kLINEAR) {
     return false;
   }
-  for (int i = 0; i < kNumInputs; ++i) {
+  for (int i = 0; i < NumInputs(new_keys); ++i) {
     if (!ValidDimensions(inputs[i].dims) ||
         inputs[i].format != nvinfer1::TensorFormat::kLINEAR) {
       return false;
@@ -82,10 +108,32 @@ bool ValidDescriptors(const nvinfer1::PluginTensorDesc* inputs,
       return false;
     }
   }
-  return q.d[0] == 1 && k.d[0] == 1 && q.d[2] <= kMaxRows &&
-         SupportedDepth(q.d[3]) && k.d[1] == q.d[1] && k.d[3] == q.d[3] &&
-         mask.d[0] == 1 && mask.d[1] == 1 && mask.d[3] == k.d[2] &&
-         (mask.d[2] == 1 || mask.d[2] == q.d[2]);
+  if (q.d[0] != 1 || k.d[0] != 1 || k.d[1] != q.d[1] || k.d[3] != q.d[3] ||
+      mask.d[0] != 1 || mask.d[1] != 1) {
+    return false;
+  }
+  if (new_keys) {
+    const auto& k_new = inputs[4].dims;
+    if (inputs[4].type != nvinfer1::DataType::kHALF ||
+        inputs[5].type != nvinfer1::DataType::kHALF || k_new.d[0] != 1 ||
+        k_new.d[1] != k.d[1] || k_new.d[3] != k.d[3] ||
+        mask.d[3] != k.d[2] + k_new.d[2]) {
+      return false;
+    }
+    for (int i = 0; i < 4; ++i) {
+      if (inputs[5].dims.d[i] != k_new.d[i]) {
+        return false;
+      }
+    }
+    const LiteRtNvidiaAttentionShape shape = NewKeysShape(q, k, mask, k_new);
+    return LiteRtNvidiaTiledAttentionSupports(&shape);
+  }
+  if (mask.d[3] != k.d[2]) {
+    return false;
+  }
+  return UsesGlobalKernel(q, mask) ||
+         (q.d[2] <= kMaxRows && SupportedDepth(q.d[3]) &&
+          (mask.d[2] == 1 || mask.d[2] == q.d[2]));
 }
 
 class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
@@ -93,9 +141,12 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
                                     public nvinfer1::IPluginV3OneBuild,
                                     public nvinfer1::IPluginV3OneRuntime {
  public:
-  explicit DecodeAttentionPlugin(float fill) noexcept
+  DecodeAttentionPlugin(float fill, bool new_keys) noexcept
       : fill_(fill),
-        fields_{{{kFillField, &fill_, nvinfer1::PluginFieldType::kFLOAT32, 1}}},
+        new_keys_(new_keys ? 1 : 0),
+        fields_{{{kFillField, &fill_, nvinfer1::PluginFieldType::kFLOAT32, 1},
+                 {kNewKeysField, &new_keys_, nvinfer1::PluginFieldType::kINT32,
+                  1}}},
         field_collection_{static_cast<int32_t>(fields_.size()),
                           fields_.data()} {}
 
@@ -113,7 +164,7 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
   }
 
   nvinfer1::IPluginV3* clone() noexcept override {
-    return new (std::nothrow) DecodeAttentionPlugin(fill_);
+    return new (std::nothrow) DecodeAttentionPlugin(fill_, new_keys_ != 0);
   }
 
   const char* getPluginName() const noexcept override { return kPluginName; }
@@ -131,7 +182,7 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
                              const nvinfer1::DataType* input_types,
                              int32_t num_inputs) const noexcept override {
     if (output_types == nullptr || input_types == nullptr ||
-        num_inputs != kNumInputs || num_outputs != 1) {
+        num_inputs != InputCount() || num_outputs != 1) {
       return 1;
     }
     output_types[0] = input_types[0];
@@ -141,25 +192,25 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
   bool supportsFormatCombination(
       int32_t position, const nvinfer1::DynamicPluginTensorDesc* in_out,
       int32_t num_inputs, int32_t num_outputs) noexcept override {
-    if (in_out == nullptr || num_inputs != kNumInputs || num_outputs != 1 ||
-        position < 0 || position > kNumInputs) {
+    if (in_out == nullptr || num_inputs != InputCount() || num_outputs != 1 ||
+        position < 0 || position > num_inputs) {
       return false;
     }
     const auto& desc = in_out[position].desc;
     if (desc.format != nvinfer1::TensorFormat::kLINEAR) {
       return false;
     }
+    if (position == num_inputs) {
+      return desc.type == in_out[0].desc.type;
+    }
     switch (position) {
       case 0:
         return desc.type == nvinfer1::DataType::kHALF ||
                desc.type == nvinfer1::DataType::kBF16;
-      case 1:
-      case 2:
-        return desc.type == nvinfer1::DataType::kHALF;
       case 3:
         return desc.type == nvinfer1::DataType::kBOOL;
       default:
-        return desc.type == in_out[0].desc.type;
+        return desc.type == nvinfer1::DataType::kHALF;
     }
   }
 
@@ -170,7 +221,7 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
       nvinfer1::IExprBuilder& expr_builder) noexcept override {
     static_cast<void>(shape_inputs);
     static_cast<void>(expr_builder);
-    if (inputs == nullptr || outputs == nullptr || num_inputs != kNumInputs ||
+    if (inputs == nullptr || outputs == nullptr || num_inputs != InputCount() ||
         num_shape_inputs != 0 || num_outputs != 1 || inputs[0].nbDims != 4) {
       return 1;
     }
@@ -183,7 +234,7 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
                           const nvinfer1::DynamicPluginTensorDesc* outputs,
                           int32_t num_outputs) noexcept override {
     return inputs != nullptr && outputs != nullptr &&
-                   num_inputs == kNumInputs && num_outputs == 1
+                   num_inputs == InputCount() && num_outputs == 1
                ? 0
                : 1;
   }
@@ -192,8 +243,8 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
                         int32_t num_inputs,
                         const nvinfer1::PluginTensorDesc* outputs,
                         int32_t num_outputs) noexcept override {
-    return num_inputs == kNumInputs && num_outputs == 1 &&
-                   ValidDescriptors(inputs, outputs)
+    return num_inputs == InputCount() && num_outputs == 1 &&
+                   ValidDescriptors(inputs, outputs, new_keys_ != 0)
                ? 0
                : 1;
   }
@@ -203,12 +254,27 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
                           const nvinfer1::DynamicPluginTensorDesc* outputs,
                           int32_t num_outputs) const noexcept override {
     static_cast<void>(outputs);
-    if (inputs == nullptr || num_inputs != kNumInputs || num_outputs != 1 ||
-        !ValidDimensions(inputs[0].max) || !ValidDimensions(inputs[1].max)) {
+    if (inputs == nullptr || num_inputs != InputCount() || num_outputs != 1 ||
+        !ValidDimensions(inputs[0].max) || !ValidDimensions(inputs[1].max) ||
+        !ValidDimensions(inputs[3].max)) {
       return 0;
     }
     const auto& q = inputs[0].max;
     const auto& k = inputs[1].max;
+    if (new_keys_ != 0) {
+      if (!ValidDimensions(inputs[4].max)) {
+        return 0;
+      }
+      const LiteRtNvidiaAttentionShape shape =
+          NewKeysShape(q, k, inputs[3].max, inputs[4].max);
+      return LiteRtNvidiaTiledAttentionWorkspaceBytes(&shape);
+    }
+    if (UsesGlobalKernel(q, inputs[3].max)) {
+      return LiteRtNvidiaGlobalAttentionWorkspaceBytes(
+          static_cast<int32_t>(q.d[2]),
+          static_cast<int32_t>(inputs[3].max.d[2]),
+          static_cast<int32_t>(k.d[2]), static_cast<int32_t>(q.d[3]));
+    }
     return LiteRtNvidiaDecodeAttentionWorkspaceBytes(
         static_cast<int32_t>(q.d[1]), static_cast<int32_t>(q.d[2]),
         static_cast<int32_t>(k.d[2]), static_cast<int32_t>(q.d[3]));
@@ -218,11 +284,12 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
                   const nvinfer1::PluginTensorDesc* output_desc,
                   const void* const* inputs, void* const* outputs,
                   void* workspace, cudaStream_t stream) noexcept override {
-    if (!ValidDescriptors(input_desc, output_desc) || inputs == nullptr ||
-        outputs == nullptr || outputs[0] == nullptr || workspace == nullptr) {
+    if (!ValidDescriptors(input_desc, output_desc, new_keys_ != 0) ||
+        inputs == nullptr || outputs == nullptr || outputs[0] == nullptr ||
+        workspace == nullptr) {
       return 1;
     }
-    for (int i = 0; i < kNumInputs; ++i) {
+    for (int i = 0; i < InputCount(); ++i) {
       if (inputs[i] == nullptr) return 1;
     }
     const auto& q = input_desc[0].dims;
@@ -233,10 +300,27 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
     const int32_t depth = static_cast<int32_t>(q.d[3]);
     const int32_t seq = static_cast<int32_t>(k.d[2]);
     const int32_t mask_rows = static_cast<int32_t>(mask.d[2]);
-    const cudaError_t status = LiteRtNvidiaLaunchDecodeAttention(
-        inputs[0], input_desc[0].type == nvinfer1::DataType::kBF16, inputs[1],
-        inputs[2], static_cast<const bool*>(inputs[3]), mask_rows, heads, rows,
-        seq, depth, fill_, outputs[0], workspace, stream);
+    const bool q_bf16 = input_desc[0].type == nvinfer1::DataType::kBF16;
+    cudaError_t status = cudaSuccess;
+    if (new_keys_ != 0) {
+      const LiteRtNvidiaAttentionShape shape =
+          NewKeysShape(q, k, mask, input_desc[4].dims);
+      status = LiteRtNvidiaLaunchTiledAttention(
+          &shape, inputs[0], q_bf16, inputs[1], inputs[2], inputs[4], inputs[5],
+          static_cast<const bool*>(inputs[3]), fill_, outputs[0], workspace,
+          stream);
+    } else {
+      status =
+          UsesGlobalKernel(q, mask)
+              ? LiteRtNvidiaLaunchGlobalAttention(
+                    inputs[0], q_bf16, inputs[1], inputs[2],
+                    static_cast<const bool*>(inputs[3]), mask_rows, rows, seq,
+                    depth, fill_, outputs[0], workspace, stream)
+              : LiteRtNvidiaLaunchDecodeAttention(
+                    inputs[0], q_bf16, inputs[1], inputs[2],
+                    static_cast<const bool*>(inputs[3]), mask_rows, heads, rows,
+                    seq, depth, fill_, outputs[0], workspace, stream);
+    }
     if (status != cudaSuccess) {
       std::fprintf(stderr,
                    "[LiteRtNvidiaDecodeAttention] CUDA launch failed: %s (%d): "
@@ -260,8 +344,11 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
   }
 
  private:
+  int32_t InputCount() const noexcept { return NumInputs(new_keys_ != 0); }
+
   float fill_;
-  std::array<nvinfer1::PluginField, 1> fields_;
+  int32_t new_keys_;
+  std::array<nvinfer1::PluginField, 2> fields_;
   nvinfer1::PluginFieldCollection field_collection_;
 };
 
@@ -270,7 +357,8 @@ class DecodeAttentionPluginCreator final
  public:
   DecodeAttentionPluginCreator() noexcept
       : fields_{
-            {{kFillField, nullptr, nvinfer1::PluginFieldType::kFLOAT32, 1}}},
+            {{kFillField, nullptr, nvinfer1::PluginFieldType::kFLOAT32, 1},
+             {kNewKeysField, nullptr, nvinfer1::PluginFieldType::kINT32, 1}}},
         field_collection_{static_cast<int32_t>(fields_.size()),
                           fields_.data()} {}
 
@@ -283,15 +371,21 @@ class DecodeAttentionPluginCreator final
       return nullptr;
     }
     float fill = 0.0f;
+    int32_t new_keys = 0;
     for (int32_t i = 0; i < fields->nbFields; ++i) {
       const auto& field = fields->fields[i];
-      if (field.name != nullptr && field.data != nullptr &&
-          field.type == nvinfer1::PluginFieldType::kFLOAT32 &&
-          field.length == 1 && std::strcmp(field.name, kFillField) == 0) {
+      if (field.name == nullptr || field.data == nullptr || field.length != 1) {
+        continue;
+      }
+      if (field.type == nvinfer1::PluginFieldType::kFLOAT32 &&
+          std::strcmp(field.name, kFillField) == 0) {
         fill = *static_cast<const float*>(field.data);
+      } else if (field.type == nvinfer1::PluginFieldType::kINT32 &&
+                 std::strcmp(field.name, kNewKeysField) == 0) {
+        new_keys = *static_cast<const int32_t*>(field.data);
       }
     }
-    return CreateDecodeAttentionPlugin(fill);
+    return CreateDecodeAttentionPlugin(fill, new_keys != 0);
   }
 
   const nvinfer1::PluginFieldCollection* getFieldNames() noexcept override {
@@ -306,14 +400,15 @@ class DecodeAttentionPluginCreator final
   }
 
  private:
-  std::array<nvinfer1::PluginField, 1> fields_;
+  std::array<nvinfer1::PluginField, 2> fields_;
   nvinfer1::PluginFieldCollection field_collection_;
 };
 
 }  // namespace
 
-nvinfer1::IPluginV3* CreateDecodeAttentionPlugin(float fill) noexcept {
-  return new (std::nothrow) DecodeAttentionPlugin(fill);
+nvinfer1::IPluginV3* CreateDecodeAttentionPlugin(float fill,
+                                                 bool new_keys) noexcept {
+  return new (std::nothrow) DecodeAttentionPlugin(fill, new_keys);
 }
 
 void EnsureDecodeAttentionPluginRegistered() noexcept {}
