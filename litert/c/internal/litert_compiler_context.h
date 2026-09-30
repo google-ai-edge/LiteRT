@@ -18,8 +18,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <cstdint>
-
 #include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"

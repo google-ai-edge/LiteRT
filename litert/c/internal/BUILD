@@ -151,7 +151,6 @@ cc_library(
     deps = [
         ":litert_abi_header",
         "//litert/c:litert_any",
-        "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_model_types",
