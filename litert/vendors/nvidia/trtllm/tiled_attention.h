@@ -38,8 +38,10 @@
 // the tiles none of its rows can see. Keys no row can see must therefore not
 // matter to the result, which holds when exp(fill - max score) underflows (any
 // customary mask fill does); a row that sees no key at all still gets the
-// softmax over all keys. The scores accumulate in FP32; the values accumulate
-// in FP16 over the 16 keys of a tile and in FP32 over the tiles.
+// softmax over all keys. The values accumulate in FP16 over the 16 keys of a
+// tile and in FP32 over the tiles. The scores of FP16 queries accumulate in
+// FP32; those of BF16 queries, which are only precise to 8 bits, accumulate
+// in FP16 over at most 128 dims and in FP32 beyond.
 struct LiteRtNvidiaAttentionShape {
   int32_t heads;
   int32_t rows;  // per head

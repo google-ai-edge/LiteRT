@@ -55,6 +55,19 @@ __device__ __forceinline__ void MmaHalf(uint32_t& d0, uint32_t& d1,
 // ldmatrix.x4: lanes 0-7 pass the addresses of the rows of matrix 0 (eight
 // 16-bit elements each), lanes 8-15 those of matrix 1, and so on. Every lane
 // receives its operand fragment of each matrix.
+// The same without an addend: d = a . b.
+__device__ __forceinline__ void MmaHalfProduct(uint32_t& d0, uint32_t& d1,
+                                               uint32_t a0, uint32_t a1,
+                                               uint32_t a2, uint32_t a3,
+                                               uint32_t b0, uint32_t b1) {
+  const uint32_t zero = 0;
+  asm volatile(
+      "mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 "
+      "{%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%8,%8};\n"
+      : "=r"(d0), "=r"(d1)
+      : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1), "r"(zero));
+}
+
 __device__ __forceinline__ void LoadMatrixX4(uint32_t& r0, uint32_t& r1,
                                              uint32_t& r2, uint32_t& r3,
                                              const void* shared_pointer) {
@@ -127,13 +140,24 @@ __device__ __forceinline__ uint32_t PackOutput(float lo, float hi) {
 // A block of eight warps owns kRows query rows in kRowGroups groups of 16.
 // kGroupWarps warps share a row group: each computes the scores over
 // kWarpSlices k-slices (16 dims each) and the values of kWarpDims dims.
-template <int kD>
+//
+// BF16 queries carry a relative rounding error of 2^-9 into every score, more
+// than fp16 accumulation over chains of kChain k-slices adds, so their scores
+// accumulate in fp16 (twice the tensor-core throughput) and the chains are
+// added up in fp32. The scores of FP16 queries accumulate in fp32.
+template <int kD, bool kHalfScores>
 struct Geometry {
   static constexpr int kRows = kBlockElements / kD;          // 64 | 128
   static constexpr int kRowGroups = kRows / 16;              // 4 | 8
   static constexpr int kGroupWarps = kWarps / kRowGroups;    // 2 | 1
   static constexpr int kSlices = kD / 16;                    // 32 | 16
   static constexpr int kWarpSlices = kSlices / kGroupWarps;  // 16
+  static constexpr int kChain = 8;
+  static constexpr int kWarpChains = kWarpSlices / kChain;   // 2
+  // Partial sums per score in shared memory: fp16 chains or fp32 sums.
+  static constexpr int kPartials =
+      kHalfScores ? kGroupWarps * kWarpChains : kGroupWarps;
+  static constexpr int kPartialBytes = kHalfScores ? 2 : 4;
   static constexpr int kWarpDims = kD / kGroupWarps;         // 256
   static constexpr int kNSlices = kWarpDims / 8;             // 32
   static constexpr int kVectorsPerRow = kD / 8;  // 16-byte vectors per row
@@ -152,19 +176,24 @@ struct Geometry {
   static constexpr size_t kScores =
       kCache + static_cast<size_t>(kTile) * kRowBytes;
   static constexpr size_t kProbs =
-      kScores +
-      static_cast<size_t>(kGroupWarps) * kRows * kTile * sizeof(float);
+      kScores + static_cast<size_t>(kPartials) * kRows * kTile * kPartialBytes;
   static constexpr size_t kState =
       kProbs + static_cast<size_t>(kRows) * kProbRowBytes;
+  // Row maximum, sum, scale and factor, then a flag per softmax warp.
   static constexpr size_t kBitmaps =
-      kState + static_cast<size_t>(kRows) * 4 * sizeof(float);
+      kState + static_cast<size_t>(kRows) * 4 * sizeof(float) +
+      kWarps * sizeof(int);
   static constexpr size_t kBytes =
       kBitmaps + 2 * kMaxBitmapWords * sizeof(uint32_t);
 };
 
 constexpr size_t kSharedBytes =
-    Geometry<256>::kBytes > Geometry<512>::kBytes ? Geometry<256>::kBytes
-                                                  : Geometry<512>::kBytes;
+    Geometry<256, false>::kBytes > Geometry<512, false>::kBytes
+        ? Geometry<256, false>::kBytes
+        : Geometry<512, false>::kBytes;
+static_assert(Geometry<256, true>::kBytes == Geometry<256, false>::kBytes &&
+                  Geometry<512, true>::kBytes == Geometry<512, false>::kBytes,
+              "both score precisions take the same shared memory");
 
 // row_bits[(mask_row * 2 + {0, 1}) * words + w]: bit c is set when the mask
 // row sees a key of tile 32 w + c / when it sees all 16 keys of the tile.
@@ -272,16 +301,19 @@ __global__ void __launch_bounds__(kThreads, 1)
                          int mask_rows, int rows, float fill,
                          float* __restrict__ ws_acc, float* __restrict__ ws_m,
                          float* __restrict__ ws_l, T* __restrict__ out) {
-  using G = Geometry<kD>;
+  constexpr bool kHalfScores = IsBf16<T>::kValue;
+  using G = Geometry<kD, kHalfScores>;
   extern __shared__ __align__(16) unsigned char smem[];
   unsigned char* query_s = smem + G::kQuery;
   unsigned char* cache_s = smem + G::kCache;
   float* scores_s = reinterpret_cast<float*>(smem + G::kScores);
+  uint32_t* chains_s = reinterpret_cast<uint32_t*>(smem + G::kScores);
   unsigned char* probs_s = smem + G::kProbs;
   float* max_s = reinterpret_cast<float*>(smem + G::kState);
   float* sum_s = max_s + G::kRows;
   float* scale_s = sum_s + G::kRows;
   float* factor_s = scale_s + G::kRows;
+  int* rescaled_s = reinterpret_cast<int*>(factor_s + G::kRows);
   uint32_t* any_s = reinterpret_cast<uint32_t*>(smem + G::kBitmaps);
   uint32_t* all_s = any_s + kMaxBitmapWords;
 
@@ -417,8 +449,38 @@ __global__ void __launch_bounds__(kThreads, 1)
     load_tile(/*values=*/true, c);
 
     // Scores for rows (g, g + 8) of the row group x keys 8 kg + 2t, + 1 over
-    // the warp's k-slices, in fp32.
-    {
+    // the warp's k-slices.
+    if (kHalfScores) {
+      uint32_t chain[G::kWarpChains][2][2];
+#pragma unroll
+      for (int s = 0; s < G::kWarpSlices; ++s) {
+        uint32_t a0, a1, a2, a3, b0, b1, b2, b3;
+        LoadMatrixX4(a0, a1, a2, a3, query_lane + s * 32);
+        LoadMatrixX4(b0, b1, b2, b3, key_lane + s * 32);
+        uint32_t* sums = chain[s / G::kChain][0];
+        if (s % G::kChain == 0) {
+          MmaHalfProduct(sums[0], sums[1], a0, a1, a2, a3, b0, b1);
+          MmaHalfProduct(sums[2], sums[3], a0, a1, a2, a3, b2, b3);
+        } else {
+          MmaHalf(sums[0], sums[1], a0, a1, a2, a3, b0, b1);
+          MmaHalf(sums[2], sums[3], a0, a1, a2, a3, b2, b3);
+        }
+      }
+#pragma unroll
+      for (int ch = 0; ch < G::kWarpChains; ++ch) {
+        uint32_t* lo = chains_s +
+                       ((static_cast<size_t>(part) * G::kWarpChains + ch) *
+                            G::kRows +
+                        row_group * 16 + g) *
+                           (kTile / 2) +
+                       t;
+        uint32_t* hi = lo + 8 * (kTile / 2);
+        lo[0] = chain[ch][0][0];
+        lo[4] = chain[ch][1][0];
+        hi[0] = chain[ch][0][1];
+        hi[4] = chain[ch][1][1];
+      }
+    } else {
       float sc[2][4];
 #pragma unroll
       for (int kg = 0; kg < 2; ++kg) {
@@ -456,23 +518,22 @@ __global__ void __launch_bounds__(kThreads, 1)
       const int kq = (tid % G::kRowThreads) * G::kThreadKeys;
       float sc[G::kThreadKeys];
 #pragma unroll
-      for (int e = 0; e < G::kThreadKeys; e += 4) {
-        float4 sum = *reinterpret_cast<const float4*>(
-            scores_s + static_cast<size_t>(row) * kTile + kq + e);
+      for (int e = 0; e < G::kThreadKeys; e += 2) {
+        float2 sum = make_float2(0.0f, 0.0f);
 #pragma unroll
-        for (int p = 1; p < G::kGroupWarps; ++p) {
-          const float4 more = *reinterpret_cast<const float4*>(
-              scores_s + (static_cast<size_t>(p) * G::kRows + row) * kTile +
-              kq + e);
-          sum.x += more.x;
-          sum.y += more.y;
-          sum.z += more.z;
-          sum.w += more.w;
+        for (int p = 0; p < G::kPartials; ++p) {
+          const size_t pair = (static_cast<size_t>(p) * G::kRows + row) *
+                                  (kTile / 2) +
+                              (kq + e) / 2;
+          const float2 partial =
+              kHalfScores
+                  ? UnpackHalves(chains_s[pair])
+                  : *reinterpret_cast<const float2*>(scores_s + 2 * pair);
+          sum.x += partial.x;
+          sum.y += partial.y;
         }
         sc[e] = sum.x;
         sc[e + 1] = sum.y;
-        sc[e + 2] = sum.z;
-        sc[e + 3] = sum.w;
       }
       if (((all_s[c >> 5] >> (c & 31)) & 1u) == 0) {
         const bool* mask_row =
@@ -517,16 +578,22 @@ __global__ void __launch_bounds__(kThreads, 1)
       for (int offset = G::kRowThreads / 2; offset > 0; offset >>= 1) {
         tile_sum += __shfl_xor_sync(0xffffffffu, tile_sum, offset);
       }
+      // The rows of a warp are those of one row group; the running sums of a
+      // row group are only rescaled when the maximum of one of its rows grew.
+      float scale = 1.0f;
       if (tid % G::kRowThreads == 0) {
         const float old_max = max_s[row];
         const float new_max = fmaxf(old_max, tile_max);
-        const float scale =
-            old_max > -INFINITY ? __expf(old_max - new_max) : 0.0f;
+        scale = old_max >= new_max ? 1.0f : __expf(old_max - new_max);
         const float factor = finite ? __expf(tile_max - new_max) : 0.0f;
         max_s[row] = new_max;
         sum_s[row] = sum_s[row] * scale + tile_sum * factor;
         scale_s[row] = scale;
         factor_s[row] = factor;
+      }
+      const bool rescaled = __any_sync(0xffffffffu, scale != 1.0f);
+      if (lane == 0) {
+        rescaled_s[warp] = rescaled ? 1 : 0;
       }
     }
     __syncthreads();
@@ -542,6 +609,11 @@ __global__ void __launch_bounds__(kThreads, 1)
       const float scale_hi = scale_s[row_group * 16 + g + 8];
       const float factor_lo = factor_s[row_group * 16 + g];
       const float factor_hi = factor_s[row_group * 16 + g + 8];
+      bool rescaled = false;
+#pragma unroll
+      for (int w = 0; w < G::kGroupWarps; ++w) {
+        rescaled = rescaled || rescaled_s[row_group * G::kGroupWarps + w] != 0;
+      }
       uint32_t a0, a1, a2, a3;
       LoadMatrixX4(a0, a1, a2, a3, probs_lane);
       constexpr int kBatch = 16;  // n-slices per batch of fp16 sums
@@ -549,25 +621,35 @@ __global__ void __launch_bounds__(kThreads, 1)
       for (int n0 = 0; n0 < G::kNSlices; n0 += kBatch) {
         uint32_t sums[kBatch][2];
 #pragma unroll
-        for (int i = 0; i < kBatch; ++i) {
-          sums[i][0] = sums[i][1] = 0;
-        }
-#pragma unroll
         for (int i = 0; i < kBatch; i += 2) {
           uint32_t b0, b1, b2, b3;
           LoadMatrixX4Trans(b0, b1, b2, b3, value_lane + (n0 + i) * 16);
-          MmaHalf(sums[i][0], sums[i][1], a0, a1, a2, a3, b0, b1);
-          MmaHalf(sums[i + 1][0], sums[i + 1][1], a0, a1, a2, a3, b2, b3);
+          MmaHalfProduct(sums[i][0], sums[i][1], a0, a1, a2, a3, b0, b1);
+          MmaHalfProduct(sums[i + 1][0], sums[i + 1][1], a0, a1, a2, a3, b2,
+                         b3);
         }
+        if (rescaled) {
 #pragma unroll
-        for (int i = 0; i < kBatch; ++i) {
-          const float2 lo = UnpackHalves(sums[i][0]);
-          const float2 hi = UnpackHalves(sums[i][1]);
-          float* a = acc[n0 + i];
-          a[0] = fmaf(a[0], scale_lo, lo.x * factor_lo);
-          a[1] = fmaf(a[1], scale_lo, lo.y * factor_lo);
-          a[2] = fmaf(a[2], scale_hi, hi.x * factor_hi);
-          a[3] = fmaf(a[3], scale_hi, hi.y * factor_hi);
+          for (int i = 0; i < kBatch; ++i) {
+            const float2 lo = UnpackHalves(sums[i][0]);
+            const float2 hi = UnpackHalves(sums[i][1]);
+            float* a = acc[n0 + i];
+            a[0] = fmaf(a[0], scale_lo, lo.x * factor_lo);
+            a[1] = fmaf(a[1], scale_lo, lo.y * factor_lo);
+            a[2] = fmaf(a[2], scale_hi, hi.x * factor_hi);
+            a[3] = fmaf(a[3], scale_hi, hi.y * factor_hi);
+          }
+        } else {
+#pragma unroll
+          for (int i = 0; i < kBatch; ++i) {
+            const float2 lo = UnpackHalves(sums[i][0]);
+            const float2 hi = UnpackHalves(sums[i][1]);
+            float* a = acc[n0 + i];
+            a[0] = fmaf(lo.x, factor_lo, a[0]);
+            a[1] = fmaf(lo.y, factor_lo, a[1]);
+            a[2] = fmaf(hi.x, factor_hi, a[2]);
+            a[3] = fmaf(hi.y, factor_hi, a[3]);
+          }
         }
       }
     }
@@ -623,7 +705,7 @@ __global__ void __launch_bounds__(kD / 2)
                   T* __restrict__ out) {
   constexpr int kCombineThreads = kD / 2;
   constexpr int kCombineWarps = kCombineThreads / 32;
-  constexpr int kBlockRows = Geometry<kD>::kRows;
+  constexpr int kBlockRows = kBlockElements / kD;
   __shared__ float max_s[kCombineWarps];
   const int row = blockIdx.x;
   const int r = row % kBlockRows;
@@ -743,7 +825,7 @@ cudaError_t LaunchBlocks(const LiteRtNvidiaAttentionShape& shape, const T* q,
                          const uint32_t* block_bits, float fill, int splits,
                          float* ws_acc, float* ws_m, float* ws_l, T* out,
                          cudaStream_t stream) {
-  using G = Geometry<kD>;
+  using G = Geometry<kD, IsBf16<T>::kValue>;
   static bool attribute_set = false;  // per instantiation
   if (!attribute_set) {
     const cudaError_t status = cudaFuncSetAttribute(
