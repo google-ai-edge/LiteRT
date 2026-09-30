@@ -187,7 +187,11 @@ class CompilerPlugin {
   LiteRtCompilerPluginApi plugin_api_ = {};
   LiteRtCompilerPlugin plugin_handle_ = nullptr;
   std::vector<LiteRtTransformation> transformations_;
-  size_t max_transformation_iterations_ = 100;
+  // Every successful rewrite restarts the scan and counts as one iteration, so
+  // this bounds the total number of rewrites per subgraph. Transformer models
+  // with per-layer rewrites (e.g. 16 layers x several patterns) easily exceed
+  // a few hundred rewrites.
+  size_t max_transformation_iterations_ = 1000;
 
   // Internal LiteRtCompiledResult wrapper.
 
