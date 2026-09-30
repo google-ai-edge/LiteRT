@@ -381,6 +381,7 @@ cc_library(
     name = "litert_tensor_buffer_types",
     hdrs = ["litert_tensor_buffer_types.h"],
     compatible_with = get_compatible_with_portable(),
+    deps = [":litert_common"],
 )
 
 cc_library(
