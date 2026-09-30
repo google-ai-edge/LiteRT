@@ -2027,11 +2027,13 @@ TEST(TensorRtGraphBuilderTest, RejectsInvalidReadOnlyValueCacheContract) {
   }
 }
 
-TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
-  // The decode attention block (in-place K/V updates, runtime_bmm scores,
-  // select_v2 mask, softmax, runtime_bmm values) lowers to one CUDA plugin
-  // launch when the experimental plugin is enabled; its result matches an
-  // FP32 host reference and the default TensorRT lowering.
+TEST(TensorRtGraphBuilderTest, AttentionPluginBlock) {
+  // The attention block (in-place K/V updates, runtime_bmm scores, select_v2
+  // mask, softmax, runtime_bmm values) lowers to one CUDA plugin launch: by
+  // default for a single-head cache of depth 512 (tensor-core kernels, decode
+  // and prefill rows, mask tiled over the query heads), and for the other
+  // decode shapes when the experimental plugin is enabled. Its result matches
+  // an FP32 host reference and the TensorRT lowering.
   struct Case {
     int heads;
     int rows;
@@ -2039,21 +2041,29 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
     int depth;
     int mask_rows;
     uint16_t fill_bits;
+    int update_rows;  // cache rows written by this invocation
+    int mask_copies;  // > 0: the mask is tiled this many times over the rows
+    bool global;      // handled by the tensor-core kernels
   };
   const std::vector<Case> cases = {
-      {2, 2, 300, 128, 2, 0xFC00},   // -inf fill, two chunks
-      {1, 16, 600, 512, 1, 0xF0E2},  // -10000 fill, shared mask row
+      {2, 2, 300, 128, 2, 0xFC00, 1, 0, false},      // -inf fill, two chunks
+      {1, 16, 600, 512, 1, 0xF0E2, 1, 0, true},      // -10000 fill, shared row
+      {1, 16, 600, 512, 1, 0xF0E2, 1, 16, true},     // decode, tiled mask
+      {1, 64, 700, 512, 4, 0xFC00, 4, 16, true},     // prefill of 4 tokens
+      {1, 256, 900, 512, 16, 0xF0E2, 16, 16, true},  // prefill of 16 tokens
   };
   for (const auto& test_case : cases) {
     const int heads = test_case.heads;
     const int rows = test_case.rows;
     const int seq = test_case.seq;
     const int depth = test_case.depth;
+    const int update_rows = test_case.update_rows;
     const int position = seq / 2 + 3;
-    SCOPED_TRACE(::testing::Message() << "heads=" << heads << " rows=" << rows
-                                      << " seq=" << seq << " depth=" << depth);
+    SCOPED_TRACE(::testing::Message()
+                 << "heads=" << heads << " rows=" << rows << " seq=" << seq
+                 << " depth=" << depth << " copies=" << test_case.mask_copies);
     // Deterministic inputs in FP16.
-    uint32_t state = 12345u + seq;
+    uint32_t state = 12345u + seq + rows;
     const auto next = [&]() -> float {
       state = state * 1664525u + 1013904223u;
       return static_cast<float>((state >> 8) & 0xFFFF) / 65535.0f * 2.0f - 1.0f;
@@ -2067,34 +2077,45 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       k_ref[i] = Fp16ToFloat(k_host[i]);
       v_ref[i] = Fp16ToFloat(v_host[i]);
     }
-    std::vector<uint16_t> k_update(heads * depth), v_update(heads * depth);
-    for (int i = 0; i < heads * depth; ++i) {
+    // Updates as the engine sees them in memory: [heads, update_rows, depth]
+    // rows for keys and for the values it holds as [B, H, S, D].
+    const size_t update_elements =
+        static_cast<size_t>(heads) * update_rows * depth;
+    std::vector<uint16_t> k_update(update_elements), v_update(update_elements);
+    for (size_t i = 0; i < update_elements; ++i) {
       k_update[i] = Fp16Bits(next() * 0.5f);
       v_update[i] = Fp16Bits(next());
     }
-    std::vector<uint16_t> q_host(heads * rows * depth);
+    std::vector<uint16_t> q_host(static_cast<size_t>(heads) * rows * depth);
     std::vector<float> q_ref(q_host.size());
     for (size_t i = 0; i < q_host.size(); ++i) {
       q_host[i] = Fp16Bits(next() * 0.25f);
       q_ref[i] = Fp16ToFloat(q_host[i]);
     }
-    std::vector<uint8_t> mask_host(test_case.mask_rows * seq);
+    std::vector<uint8_t> mask_host(static_cast<size_t>(test_case.mask_rows) *
+                                   seq);
     for (int r = 0; r < test_case.mask_rows; ++r) {
       for (int j = 0; j < seq; ++j) {
-        mask_host[r * seq + j] = (j <= position - r && j % 7 != 3) ? 1 : 0;
+        mask_host[static_cast<size_t>(r) * seq + j] =
+            (j <= position + r && j % 7 != 3) ? 1 : 0;
       }
     }
     const float fill = Fp16ToFloat(test_case.fill_bits);
     // Host reference: caches after the update, masked softmax, weighted sum.
     for (int h = 0; h < heads; ++h) {
-      for (int d = 0; d < depth; ++d) {
-        const size_t idx =
-            (static_cast<size_t>(h) * seq + position) * depth + d;
-        k_ref[idx] = Fp16ToFloat(k_update[h * depth + d]);
-        v_ref[idx] = Fp16ToFloat(v_update[h * depth + d]);
+      for (int u = 0; u < update_rows; ++u) {
+        for (int d = 0; d < depth; ++d) {
+          const size_t idx =
+              (static_cast<size_t>(h) * seq + position + u) * depth + d;
+          const size_t from =
+              (static_cast<size_t>(h) * update_rows + u) * depth + d;
+          k_ref[idx] = Fp16ToFloat(k_update[from]);
+          v_ref[idx] = Fp16ToFloat(v_update[from]);
+        }
       }
     }
-    std::vector<float> expected(heads * rows * depth, 0.0f);
+    std::vector<float> expected(static_cast<size_t>(heads) * rows * depth,
+                                0.0f);
     std::vector<float> scores(seq);
     for (int h = 0; h < heads; ++h) {
       for (int r = 0; r < rows; ++r) {
@@ -2105,8 +2126,9 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
             score += q_ref[(static_cast<size_t>(h) * rows + r) * depth + d] *
                      k_ref[(static_cast<size_t>(h) * seq + j) * depth + d];
           }
-          const int mask_row = test_case.mask_rows == 1 ? 0 : r;
-          scores[j] = mask_host[mask_row * seq + j] ? score : fill;
+          const int mask_row = r % test_case.mask_rows;
+          scores[j] =
+              mask_host[static_cast<size_t>(mask_row) * seq + j] ? score : fill;
           max_score = std::max(max_score, scores[j]);
         }
         float sum = 0.0f;
@@ -2128,6 +2150,8 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       SCOPED_TRACE(::testing::Message() << "plugin=" << plugin);
       setenv("LITERT_NVIDIA_TENSORRT_DECODE_ATTENTION_PLUGIN",
              plugin ? "1" : "0", 1);
+      setenv("LITERT_NVIDIA_TENSORRT_GLOBAL_ATTENTION_PLUGIN",
+             plugin ? "1" : "0", 1);
       LiteRtModelT model;
       auto& graph = model.EmplaceSubgraph();
       auto& k_cache = graph.EmplaceTensor();
@@ -2142,12 +2166,12 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       graph.Inputs().push_back(&v_cache);
       auto& k_upd = graph.EmplaceTensor();
       k_upd.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat16,
-                                         {1, heads, 1, depth}));
+                                         {1, heads, update_rows, depth}));
       k_upd.SetName("k_update");
       graph.Inputs().push_back(&k_upd);
       auto& v_upd = graph.EmplaceTensor();
       v_upd.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat16,
-                                         {1, heads, depth, 1}));
+                                         {1, heads, depth, update_rows}));
       v_upd.SetName("v_update");
       graph.Inputs().push_back(&v_upd);
       auto& k_start = graph.EmplaceTensor();
@@ -2205,6 +2229,34 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       context_out.SetName("context");
       graph.Outputs().push_back(&context_out);
 
+      // The model tiles the mask over the query heads.
+      LiteRtTensorT* select_mask = &mask;
+      if (test_case.mask_copies > 0) {
+        auto& stacked = graph.EmplaceTensor();
+        stacked.SetType(MakeRankedTensorType(
+            kLiteRtElementTypeBool,
+            {1, test_case.mask_copies, test_case.mask_rows, seq}));
+        auto& tiled = graph.EmplaceTensor();
+        tiled.SetType(
+            MakeRankedTensorType(kLiteRtElementTypeBool, {1, 1, rows, seq}));
+        auto& concat = graph.EmplaceOp();
+        concat.SetOpCode(kLiteRtOpCodeTflConcatenation);
+        tflite::ConcatenationOptionsT concatenation;
+        concatenation.axis = 1;
+        tflite::BuiltinOptionsUnion concat_options;
+        concat_options.Set(std::move(concatenation));
+        litert::internal::SetTflOptions(concat, std::move(concat_options));
+        for (int i = 0; i < test_case.mask_copies; ++i) {
+          litert::internal::AttachInput(&mask, concat);
+        }
+        litert::internal::AttachOutput(&stacked, concat);
+        auto& reshape = graph.EmplaceOp();
+        reshape.SetOpCode(kLiteRtOpCodeTflReshape);
+        litert::internal::AttachInput(&stacked, reshape);
+        litert::internal::AttachOutput(&tiled, reshape);
+        select_mask = &tiled;
+      }
+
       auto& k_dus = graph.EmplaceOp();
       k_dus.SetOpCode(kLiteRtOpCodeTflDynamicUpdateSlice);
       litert::internal::AttachInput(&k_cache, k_dus);
@@ -2234,7 +2286,7 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       add_runtime_bmm(q, k_out, scores_t);
       auto& select = graph.EmplaceOp();
       select.SetOpCode(kLiteRtOpCodeTflSelectV2);
-      litert::internal::AttachInput(&mask, select);
+      litert::internal::AttachInput(select_mask, select);
       litert::internal::AttachInput(&scores_t, select);
       litert::internal::AttachInput(&fill_const, select);
       litert::internal::AttachOutput(&masked, select);
@@ -2254,6 +2306,7 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       auto built = litert::nvidia::BuildTensorRtEngine(
           litert::compiler::Subgraph(LrtGetCompilerContext(), &graph));
       unsetenv("LITERT_NVIDIA_TENSORRT_DECODE_ATTENTION_PLUGIN");
+      unsetenv("LITERT_NVIDIA_TENSORRT_GLOBAL_ATTENTION_PLUGIN");
       ASSERT_TRUE(built.HasValue()) << built.Error().Message();
       litert::nvidia::TensorRtLogger logger;
       std::unique_ptr<nvinfer1::IRuntime> runtime(
@@ -2278,7 +2331,7 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       ASSERT_NE(context, nullptr);
 
       // The value cache buffer holds [B, H, S, D] (the engine layout); the
-      // model's [B, H, D, S] update is a [B, H, 1, D] row in memory.
+      // model's [B, H, D, n] update is [B, H, n, D] rows in memory.
       void* d_k = nullptr;
       void* d_v = nullptr;
       void* d_ku = nullptr;
@@ -2292,6 +2345,18 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       const std::array<int32_t, 4> k_start_host = {0, 0, position, 0};
       const std::array<int32_t, 4> v_start_host = {0, 0, 0, position};
       const int32_t position_host = position;
+      // The engine reads the model's [B, H, D, n] value update.
+      std::vector<uint16_t> v_update_model(update_elements);
+      for (int h = 0; h < heads; ++h) {
+        for (int u = 0; u < update_rows; ++u) {
+          for (int d = 0; d < depth; ++d) {
+            v_update_model[(static_cast<size_t>(h) * depth + d) * update_rows +
+                           u] =
+                v_update[(static_cast<size_t>(h) * update_rows + u) * depth +
+                         d];
+          }
+        }
+      }
       ASSERT_EQ(cudaMalloc(&d_k, cache_elements * 2), cudaSuccess);
       ASSERT_EQ(cudaMalloc(&d_v, cache_elements * 2), cudaSuccess);
       ASSERT_EQ(cudaMalloc(&d_ku, k_update.size() * 2), cudaSuccess);
@@ -2311,8 +2376,8 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       ASSERT_EQ(cudaMemcpy(d_ku, k_update.data(), k_update.size() * 2,
                            cudaMemcpyHostToDevice),
                 cudaSuccess);
-      ASSERT_EQ(cudaMemcpy(d_vu, v_update.data(), v_update.size() * 2,
-                           cudaMemcpyHostToDevice),
+      ASSERT_EQ(cudaMemcpy(d_vu, v_update_model.data(),
+                           v_update_model.size() * 2, cudaMemcpyHostToDevice),
                 cudaSuccess);
       ASSERT_EQ(cudaMemcpy(d_ks, k_start_host.data(), sizeof(k_start_host),
                            cudaMemcpyHostToDevice),

@@ -26,6 +26,7 @@
 #include "driver_types.h"
 #include "NvInferRuntime.h"
 #include "litert/vendors/nvidia/trtllm/decode_attention.h"
+#include "litert/vendors/nvidia/trtllm/global_attention.h"
 
 namespace litert::nvidia {
 namespace {
@@ -39,6 +40,16 @@ constexpr int32_t kMaxRows = 16;
 
 bool SupportedDepth(int64_t depth) {
   return depth == 128 || depth == 256 || depth == 512;
+}
+
+// A single-head cache of depth 512 read by 16 query rows per token (decode)
+// or per prompt token (prefill) runs on the tensor-core kernels; mask row
+// r % mask_rows applies to query row r.
+bool UsesGlobalKernel(const nvinfer1::Dims& q, const nvinfer1::Dims& mask) {
+  return q.d[1] == 1 &&
+         LiteRtNvidiaGlobalAttentionSupports(static_cast<int32_t>(q.d[2]),
+                                             static_cast<int32_t>(mask.d[2]),
+                                             static_cast<int32_t>(q.d[3]));
 }
 
 bool ValidDimensions(const nvinfer1::Dims& dims) {
@@ -82,10 +93,13 @@ bool ValidDescriptors(const nvinfer1::PluginTensorDesc* inputs,
       return false;
     }
   }
-  return q.d[0] == 1 && k.d[0] == 1 && q.d[2] <= kMaxRows &&
-         SupportedDepth(q.d[3]) && k.d[1] == q.d[1] && k.d[3] == q.d[3] &&
-         mask.d[0] == 1 && mask.d[1] == 1 && mask.d[3] == k.d[2] &&
-         (mask.d[2] == 1 || mask.d[2] == q.d[2]);
+  if (q.d[0] != 1 || k.d[0] != 1 || k.d[1] != q.d[1] || k.d[3] != q.d[3] ||
+      mask.d[0] != 1 || mask.d[1] != 1 || mask.d[3] != k.d[2]) {
+    return false;
+  }
+  return UsesGlobalKernel(q, mask) ||
+         (q.d[2] <= kMaxRows && SupportedDepth(q.d[3]) &&
+          (mask.d[2] == 1 || mask.d[2] == q.d[2]));
 }
 
 class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
@@ -204,11 +218,18 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
                           int32_t num_outputs) const noexcept override {
     static_cast<void>(outputs);
     if (inputs == nullptr || num_inputs != kNumInputs || num_outputs != 1 ||
-        !ValidDimensions(inputs[0].max) || !ValidDimensions(inputs[1].max)) {
+        !ValidDimensions(inputs[0].max) || !ValidDimensions(inputs[1].max) ||
+        !ValidDimensions(inputs[3].max)) {
       return 0;
     }
     const auto& q = inputs[0].max;
     const auto& k = inputs[1].max;
+    if (UsesGlobalKernel(q, inputs[3].max)) {
+      return LiteRtNvidiaGlobalAttentionWorkspaceBytes(
+          static_cast<int32_t>(q.d[2]),
+          static_cast<int32_t>(inputs[3].max.d[2]),
+          static_cast<int32_t>(k.d[2]), static_cast<int32_t>(q.d[3]));
+    }
     return LiteRtNvidiaDecodeAttentionWorkspaceBytes(
         static_cast<int32_t>(q.d[1]), static_cast<int32_t>(q.d[2]),
         static_cast<int32_t>(k.d[2]), static_cast<int32_t>(q.d[3]));
@@ -233,10 +254,17 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
     const int32_t depth = static_cast<int32_t>(q.d[3]);
     const int32_t seq = static_cast<int32_t>(k.d[2]);
     const int32_t mask_rows = static_cast<int32_t>(mask.d[2]);
-    const cudaError_t status = LiteRtNvidiaLaunchDecodeAttention(
-        inputs[0], input_desc[0].type == nvinfer1::DataType::kBF16, inputs[1],
-        inputs[2], static_cast<const bool*>(inputs[3]), mask_rows, heads, rows,
-        seq, depth, fill_, outputs[0], workspace, stream);
+    const bool q_bf16 = input_desc[0].type == nvinfer1::DataType::kBF16;
+    const cudaError_t status =
+        UsesGlobalKernel(q, mask)
+            ? LiteRtNvidiaLaunchGlobalAttention(
+                  inputs[0], q_bf16, inputs[1], inputs[2],
+                  static_cast<const bool*>(inputs[3]), mask_rows, rows, seq,
+                  depth, fill_, outputs[0], workspace, stream)
+            : LiteRtNvidiaLaunchDecodeAttention(
+                  inputs[0], q_bf16, inputs[1], inputs[2],
+                  static_cast<const bool*>(inputs[3]), mask_rows, heads, rows,
+                  seq, depth, fill_, outputs[0], workspace, stream);
     if (status != cudaSuccess) {
       std::fprintf(stderr,
                    "[LiteRtNvidiaDecodeAttention] CUDA launch failed: %s (%d): "

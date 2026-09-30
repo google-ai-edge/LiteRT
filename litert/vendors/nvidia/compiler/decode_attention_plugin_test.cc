@@ -73,6 +73,48 @@ TEST_F(DecodeAttentionPluginTest, AcceptsSupportedShapesAndTypes) {
   }
 }
 
+TEST_F(DecodeAttentionPluginTest, AcceptsSingleHeadRowsInMultiplesOf16) {
+  // Decode (16 query rows) and prefill (16 rows per prompt token) over a
+  // single-head cache of depth 512; mask row r % mask_rows serves row r.
+  inputs_[1].dims = nvinfer1::Dims4{1, 1, 32768, 512};
+  inputs_[2] = inputs_[1];
+  for (auto type : {nvinfer1::DataType::kHALF, nvinfer1::DataType::kBF16}) {
+    for (int tokens : {1, 8, 128, 1024}) {
+      inputs_[0].type = type;
+      inputs_[0].dims = nvinfer1::Dims4{1, 1, 16 * tokens, 512};
+      output_ = inputs_[0];
+      for (int mask_rows : {1, tokens, 16 * tokens}) {
+        inputs_[3].dims.d[2] = mask_rows;
+        EXPECT_EQ(ShapeStatus(), 0)
+            << "tokens=" << tokens << " mask_rows=" << mask_rows;
+      }
+    }
+  }
+}
+
+TEST_F(DecodeAttentionPluginTest, RejectsUnsupportedSingleHeadShapes) {
+  inputs_[1].dims = nvinfer1::Dims4{1, 1, 32768, 512};
+  inputs_[2] = inputs_[1];
+  inputs_[0].dims = nvinfer1::Dims4{1, 1, 48, 512};
+  output_ = inputs_[0];
+  inputs_[3].dims.d[2] = 5;  // Does not divide the rows.
+  EXPECT_NE(ShapeStatus(), 0);
+  inputs_[0].dims.d[2] = 24;  // More than 16 rows, not a multiple of 16.
+  output_ = inputs_[0];
+  inputs_[3].dims.d[2] = 1;
+  EXPECT_NE(ShapeStatus(), 0);
+  inputs_[0].dims = nvinfer1::Dims4{1, 1, 32, 256};  // Depth 256.
+  output_ = inputs_[0];
+  inputs_[1].dims.d[3] = 256;
+  inputs_[2] = inputs_[1];
+  EXPECT_NE(ShapeStatus(), 0);
+  inputs_[0].dims = nvinfer1::Dims4{1, 2, 32, 512};  // Two cache heads.
+  output_ = inputs_[0];
+  inputs_[1].dims = nvinfer1::Dims4{1, 2, 32768, 512};
+  inputs_[2] = inputs_[1];
+  EXPECT_NE(ShapeStatus(), 0);
+}
+
 TEST_F(DecodeAttentionPluginTest, RejectsInvalidShapeArguments) {
   EXPECT_NE(runtime_->onShapeChange(nullptr, 4, &output_, 1), 0);
   EXPECT_NE(runtime_->onShapeChange(inputs_.data(), 4, nullptr, 1), 0);

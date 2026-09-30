@@ -25,6 +25,12 @@ namespace litert::nvidia {
 //   output  softmax(select(mask, q @ k^T, fill)) @ v as [1, H, rows, D] in
 //           q's type.
 // rows <= 16 and D in {128, 256, 512}; the products accumulate in FP32.
+//
+// A single-head cache (H == 1) of depth 512 also takes rows that are any
+// multiple of 16 (decode, and prefill with 16 rows per prompt token) and a
+// mask of rows / 16 or any other divisor of rows, whose row r % mask_rows
+// applies to query row r. Those shapes run on tensor-core kernels that only
+// read the keys some row can see (trtllm/global_attention.h).
 nvinfer1::IPluginV3* CreateDecodeAttentionPlugin(float fill) noexcept;
 
 // Referenced by the dispatch library so the creator's registration object is
