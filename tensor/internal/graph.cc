@@ -27,22 +27,22 @@ limitations under the License.
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/source_location.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/utils/macros.h"
-#include "tensor/utils/source_location.h"
 
 namespace litert::tensor::graph {
 
 Operation::~Operation() = default;
 
-Tensor ErrorTensor(absl::Status status, source_location op_loc) {
+Tensor ErrorTensor(absl::Status status, absl::SourceLocation op_loc) {
   Tensor t{.group = NewTensorGroup(0, std::move(op_loc)), .index = 0};
   t.group->status = std::move(status);
   return t;
 }
 
-Tensor NewTensor(source_location op_loc) {
+Tensor NewTensor(absl::SourceLocation op_loc) {
   return Tensor{.group = NewTensorGroup(1, std::move(op_loc)), .index = 0};
 }
 
@@ -52,7 +52,7 @@ Tensor NewTensor(std::shared_ptr<TensorGroup>& group) {
 }
 
 std::shared_ptr<TensorGroup> NewTensorGroup(size_t count,
-                                            source_location op_loc) {
+                                            absl::SourceLocation op_loc) {
   auto group = std::make_shared<TensorGroup>();
   group->tensor_infos.resize(count);
   group->loc = std::move(op_loc);
@@ -149,9 +149,9 @@ absl::Status GetStatus(const Tensor& tensor) {
   return absl::OkStatus();
 }
 
-source_location GetLocation(const Tensor& tensor) {
+absl::SourceLocation GetLocation(const Tensor& tensor) {
   if (!tensor.group) {
-    return source_location();
+    return absl::SourceLocation();
   }
   return tensor.group->loc;
 }
@@ -169,7 +169,7 @@ void OpDebugger::DebugOp(const Operation& op) {
   absl::string_view op_name = op.GetName();
   std::vector<std::string> inputs;
   std::vector<std::string> outputs;
-  source_location loc;
+  absl::SourceLocation loc;
 
   auto locked_group = op.outputs_group.lock();
   TensorGroup* group = locked_group.get();

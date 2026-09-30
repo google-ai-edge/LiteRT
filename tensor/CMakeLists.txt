@@ -30,6 +30,7 @@ target_link_libraries(litert_tensor_api_utils
         absl::log
         absl::status
         absl::statusor
+        absl::source_location
 )
 
 add_library(litert_tensor_api_internal STATIC

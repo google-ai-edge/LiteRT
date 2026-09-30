@@ -23,6 +23,7 @@ limitations under the License.
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/types/source_location.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/ops/transformer/transformer_ops_graph.h"
@@ -30,7 +31,6 @@ limitations under the License.
 #include "tensor/internal/graph.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
-#include "tensor/utils/source_location.h"
 
 namespace litert::tensor {
 
@@ -225,7 +225,7 @@ Tensor<Mixins...> RotaryEmbedding(const Tensor<Mixins...>& input,
   op->max_timescale = max_timescale;
   // op->rope_wavelength = rope_wavelength;
   op->inputs = {input.GetRaw(), segment_pos.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = input_info.shape;
@@ -241,7 +241,7 @@ Tensor<Mixins...> RmsNorm(const Tensor<Mixins...>& input,
   auto op = std::make_shared<graph::RmsNormOperation>();
   RegisterMixins<Mixins...>(op);
   op->inputs = {input.GetRaw(), scale.GetRaw(), epsilon.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = input_info.shape;
@@ -258,7 +258,7 @@ Tensor<Mixins...> FillSegmentPos(const Tensor<Mixins...>& params,
   RegisterMixins<Mixins...>(op);
   op->param_index = param_index;
   op->inputs = {params.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = shape;
   output_info.type = output_type;
@@ -277,7 +277,7 @@ Tensor<Mixins...> FillAttentionMask(const Tensor<Mixins...>& params,
   op->sliding_window_size = sliding_window_size;
   op->is_decode = is_decode;
   op->inputs = {params.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = shape;
   output_info.type = Type::kFP32;
@@ -292,7 +292,7 @@ std::pair<Tensor<Mixins...>, Tensor<Mixins...>> FillRopeCosSin(
   RegisterMixins<Mixins...>(op);
   op->rope_base = rope_base;
 
-  auto out_group = graph::NewTensorGroup(2, source_location::current());
+  auto out_group = graph::NewTensorGroup(2, absl::SourceLocation::current());
   op->outputs_group = out_group;
   out_group->producer = op;
 
@@ -329,7 +329,7 @@ std::vector<Tensor<Mixins...>> AddValuesToKvCache(
   op->inputs = {key_cache.GetRaw(), value_cache.GetRaw(), key.GetRaw(),
                 value.GetRaw(), params.GetRaw()};
 
-  auto out_group = graph::NewTensorGroup(2, source_location::current());
+  auto out_group = graph::NewTensorGroup(2, absl::SourceLocation::current());
   op->outputs_group = out_group;
   out_group->producer = op;
   std::vector<Tensor<Mixins...>> outputs;
@@ -370,7 +370,7 @@ std::vector<Tensor<Mixins...>> AddValuesToCache(
   op->inputs = {key_cache.GetRaw(), value_cache.GetRaw(), key.GetRaw(),
                 value.GetRaw(), params.GetRaw()};
 
-  auto out_group = graph::NewTensorGroup(2, source_location::current());
+  auto out_group = graph::NewTensorGroup(2, absl::SourceLocation::current());
   op->outputs_group = out_group;
   out_group->producer = op;
   std::vector<Tensor<Mixins...>> outputs;
@@ -399,7 +399,7 @@ Tensor<Mixins...> QkNorm(const Tensor<Mixins...>& input,
   auto op = std::make_shared<graph::QkNormOperation>();
   RegisterMixins<Mixins...>(op);
   op->inputs = {input.GetRaw(), scale.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = input_info.shape;
@@ -415,7 +415,7 @@ Tensor<Mixins...> ActivationSparsity(const Tensor<Mixins...>& input,
   RegisterMixins<Mixins...>(op);
   op->stddev_multiplier = stddev_multiplier;
   op->inputs = {input.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = input_info.shape;
@@ -430,7 +430,7 @@ Tensor<Mixins...> SelectMask(const Tensor<Mixins...>& scores,
   auto op = std::make_shared<graph::SelectMaskOperation>();
   RegisterMixins<Mixins...>(op);
   op->inputs = {scores.GetRaw(), mask.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   const graph::TensorInformation& scores_info = *GetInfo(scores.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = scores_info.shape;
@@ -446,7 +446,7 @@ Tensor<Mixins...> WriteCurrentTokens(const Tensor<Mixins...>& input,
   RegisterMixins<Mixins...>(op);
   op->inputs = {input.GetRaw(), params.GetRaw()};
   LRT_TENSOR_ASSIGN_OR_ABORT(auto input_info, graph::GetInfo(input.GetRaw()));
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = {1};
   output_info.type = input_info.type;
@@ -468,7 +468,7 @@ Tensor<Mixins...> MatMulWithCache(const Tensor<Mixins...>& lhs,
   op->sliding_window_size = sliding_window_size;
   LRT_TENSOR_ASSIGN_OR_ABORT(auto lhs_info, graph::GetInfo(lhs.GetRaw()));
   LRT_TENSOR_ASSIGN_OR_ABORT(auto rhs_info, graph::GetInfo(rhs.GetRaw()));
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
 
   std::vector<int> out_shape = lhs_info.shape;
@@ -500,7 +500,7 @@ std::pair<Tensor<Mixins...>, Tensor<Mixins...>> ExtractLocalCache(
   op->global_cache_size = global_cache_size;
   op->inputs = {k.GetRaw(), v.GetRaw(), params.GetRaw()};
 
-  auto out_group = graph::NewTensorGroup(2, source_location::current());
+  auto out_group = graph::NewTensorGroup(2, absl::SourceLocation::current());
   op->outputs_group = out_group;
   out_group->producer = op;
 
@@ -532,7 +532,7 @@ Tensor<Mixins...> SoftmaxWithRuntimeCheck(
   op->start_ch_index = start_ch_index;
   op->end_ch_index = end_ch_index;
   op->inputs = {input.GetRaw(), params.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = input_info.shape;

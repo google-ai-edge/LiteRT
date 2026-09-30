@@ -22,6 +22,7 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_matchers.h"  // from @com_google_absl
+#include "absl/types/source_location.h"  // from @com_google_absl
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma4/test_backends.h"
 #include "tensor/examples/ops/transformer/transformer_ops.h"
@@ -32,7 +33,6 @@ limitations under the License.
 #include "tensor/internal/mixin.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/matchers.h"
-#include "tensor/utils/source_location.h"
 
 namespace litert::tensor::examples::gemma4 {
 namespace {
@@ -117,7 +117,7 @@ TYPED_TEST(RmsNormTest, WithAttributeEpsilon) {
   AddInputs(op, input, scale);
   op->epsilon = 1e-6f;
 
-  TensorHandle output = AddOutput(op, source_location::current());
+  TensorHandle output = AddOutput(op, absl::SourceLocation::current());
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(graph::TensorInformation & output_info,
                                   graph::GetInfo(output.GetRaw()));
   output_info.shape = {1, 1, 4};
@@ -153,7 +153,7 @@ TYPED_TEST(RmsNormTest, RejectsInvalidInputCounts) {
     Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 1, 4}});
     AddInputs(op, input);
 
-    TensorHandle output = AddOutput(op, source_location::current());
+    TensorHandle output = AddOutput(op, absl::SourceLocation::current());
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(graph::TensorInformation & output_info,
                                     graph::GetInfo(output.GetRaw()));
     output_info.shape = {1, 1, 4};
@@ -175,7 +175,7 @@ TYPED_TEST(RmsNormTest, RejectsInvalidInputCounts) {
     Tensor input4({.name = "input4", .type = Type::kFP32, .shape = {1, 1, 4}});
     AddInputs(op, input1, input2, input3, input4);
 
-    TensorHandle output = AddOutput(op, source_location::current());
+    TensorHandle output = AddOutput(op, absl::SourceLocation::current());
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(graph::TensorInformation & output_info,
                                     graph::GetInfo(output.GetRaw()));
     output_info.shape = {1, 1, 4};
@@ -202,14 +202,14 @@ TYPED_TEST(RmsNormTest, RejectsInvalidOutputCounts) {
     AddInputs(op, input, scale);
 
     // Add first output
-    TensorHandle output1 = AddOutput(op, source_location::current());
+    TensorHandle output1 = AddOutput(op, absl::SourceLocation::current());
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(graph::TensorInformation & output_info1,
                                     graph::GetInfo(output1.GetRaw()));
     output_info1.shape = {1, 1, 4};
     output_info1.type = Type::kFP32;
 
     // Add second output
-    TensorHandle output2 = AddOutput(op, source_location::current());
+    TensorHandle output2 = AddOutput(op, absl::SourceLocation::current());
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(graph::TensorInformation & output_info2,
                                     graph::GetInfo(output2.GetRaw()));
     output_info2.shape = {1, 1, 4};

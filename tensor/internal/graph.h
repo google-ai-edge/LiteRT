@@ -50,10 +50,10 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/source_location.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/type_id.h"
-#include "tensor/utils/source_location.h"
 
 namespace litert::tensor::graph {
 
@@ -158,7 +158,7 @@ struct TensorGroup {
 
   // Use for debugging. This should hold the location of the op call that
   // creates this object.
-  source_location loc;
+  absl::SourceLocation loc;
   // Keeps track of the validity of this group. If an operation detects a
   // precondition violation, it should return an invalid group.
   //
@@ -263,17 +263,17 @@ class OpDebugger {
 };
 
 // Creates a tensor holding the given status.
-Tensor ErrorTensor(absl::Status status,
-                   source_location op_loc = source_location::current());
+Tensor ErrorTensor(absl::Status status, absl::SourceLocation op_loc =
+                                            absl::SourceLocation::current());
 
 // Creates a tensor group with a single tensor.
 //
 // `op_loc` should track the location of the function that creates this tensor.
 //
-// Note: `op_loc` is intentionally non defaulted to `source_location::current()`
-// to force you to pass in the location of the function that creates this
-// tensor.
-Tensor NewTensor(source_location op_loc);
+// Note: `op_loc` is intentionally non defaulted to
+// `absl::SourceLocation::current()` to force you to pass in the location of the
+// function that creates this tensor.
+Tensor NewTensor(absl::SourceLocation op_loc);
 
 // Adds a tensor to an existing tensor group.
 Tensor NewTensor(std::shared_ptr<TensorGroup>& group);
@@ -282,11 +282,11 @@ Tensor NewTensor(std::shared_ptr<TensorGroup>& group);
 //
 // `op_loc` should track the location of the function that creates this tensor.
 //
-// Note: `op_loc` is intentionally non defaulted to `source_location::current()`
-// to force you to pass in the location of the function that creates this
-// tensor.
+// Note: `op_loc` is intentionally non defaulted to
+// `absl::SourceLocation::current()` to force you to pass in the location of the
+// function that creates this tensor.
 std::shared_ptr<TensorGroup> NewTensorGroup(size_t count,
-                                            source_location op_loc);
+                                            absl::SourceLocation op_loc);
 
 // Creates a tensor handle from an existing tensor group.
 //
@@ -332,7 +332,7 @@ absl::StatusOr<Buffer&> GetBuffer(Tensor& tensor);
 absl::Status GetStatus(const Tensor& tensor);
 
 // Gets the location where a tensor was created.
-source_location GetLocation(const Tensor& tensor);
+absl::SourceLocation GetLocation(const Tensor& tensor);
 
 }  // namespace litert::tensor::graph
 

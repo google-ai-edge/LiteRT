@@ -25,6 +25,7 @@ limitations under the License.
 #include <vector>
 
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/types/source_location.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/string.h"  // from @flatbuffers
 #include "ml_drift/webgpu/spatial_tensor.h"  // from @ml_drift
@@ -1358,7 +1359,7 @@ EMSCRIPTEN_BINDINGS(litert_tensor_core) {
                     stride_h, stride_w,
                     static_cast<::litert::tensor::Padding>(padding), 1, 1,
                     depth_multiplier, ::litert::tensor::kActNone,
-                    std::source_location::current()));
+                    absl::SourceLocation::current()));
               }))
       .function(
           "transposeConv2d",

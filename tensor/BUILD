@@ -34,12 +34,12 @@ cc_library(
         ":datatypes",
         "//tensor/internal:graph",
         "//tensor/utils:macros",
-        "//tensor/utils:source_location",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:source_location",
     ],
 )
 
@@ -112,13 +112,13 @@ cc_library(
         "//tensor/internal:arithmetic_helpers",
         "//tensor/internal:graph",
         "//tensor/utils:macros",
-        "//tensor/utils:source_location",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:optional",
+        "@com_google_absl//absl/types:source_location",
         "@com_google_absl//absl/types:span",
     ],
 )

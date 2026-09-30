@@ -24,6 +24,7 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
+#include "absl/types/source_location.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
@@ -32,7 +33,6 @@ limitations under the License.
 #include "tensor/internal/utils.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
-#include "tensor/utils/source_location.h"
 
 namespace litert::tensor {
 
@@ -74,7 +74,8 @@ void AddInputs(std::shared_ptr<Op>& operation,
 //
 // `op_loc` should be the location of the creating operation function call.
 template <class Op>
-TensorHandle AddOutput(std::shared_ptr<Op>& operation, source_location op_loc) {
+TensorHandle AddOutput(std::shared_ptr<Op>& operation,
+                       absl::SourceLocation op_loc) {
   static_assert(std::is_base_of_v<graph::Operation, Op>,
                 "The operation is not derived from graph::Operation.");
   std::shared_ptr<graph::TensorGroup> group = operation->outputs_group.lock();
@@ -109,7 +110,7 @@ void RegisterMixins(std::shared_ptr<Op>& operation) {
 }
 
 template <class Op, class... Mixins, class... Tensors>
-TensorHandle ElementwiseOp(source_location loc, TensorHandle a,
+TensorHandle ElementwiseOp(absl::SourceLocation loc, TensorHandle a,
                            Tensors&... tensors) {
   LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(a, tensors...));
   auto operation = std::make_shared<Op>();

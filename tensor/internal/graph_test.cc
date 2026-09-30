@@ -18,11 +18,11 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/types/source_location.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/type_id.h"
 #include "tensor/utils/matchers.h"
-#include "tensor/utils/source_location.h"
 
 namespace litert::tensor::graph {
 namespace {
@@ -40,7 +40,7 @@ MATCHER_P(IsLocation, loc, "") {
 }
 
 TEST(TensorTest, NewTensorGroupWorks) {
-  const auto loc = source_location::current();
+  const auto loc = absl::SourceLocation::current();
   const std::shared_ptr<const TensorGroup> g = NewTensorGroup(3, loc);
   EXPECT_NE(g, nullptr);
   EXPECT_THAT(g->tensor_infos, SizeIs(3));
@@ -50,7 +50,7 @@ TEST(TensorTest, NewTensorGroupWorks) {
 }
 
 TEST(TensorTest, NewTensorCreatesAValidTensor) {
-  const auto loc = source_location::current();
+  const auto loc = absl::SourceLocation::current();
   Tensor a = NewTensor(loc);
   EXPECT_EQ(a.index, 0);
   ASSERT_NE(a.group, nullptr);
@@ -59,13 +59,13 @@ TEST(TensorTest, NewTensorCreatesAValidTensor) {
 }
 
 TEST(TensorTest, SetAndGetTensorName) {
-  Tensor a = NewTensor(source_location::current());
+  Tensor a = NewTensor(absl::SourceLocation::current());
   EXPECT_THAT(SetName(a, "my tensor name"), IsOk());
   EXPECT_THAT(GetName(a), IsOkAndHolds(StrEq("my tensor name")));
 }
 
 TEST(TensorTest, SetAndGetBuffer) {
-  Tensor a = NewTensor(source_location::current());
+  Tensor a = NewTensor(absl::SourceLocation::current());
   auto buffer = OwningCpuBuffer::Copy<Type::kI32>({1, 2, 3, 4});
   EXPECT_THAT(SetBuffer(a, buffer), IsOk());
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & retrieved_buffer, GetBuffer(a));
@@ -75,13 +75,13 @@ TEST(TensorTest, SetAndGetBuffer) {
 TEST(TensorTest, DefaultTensorIsInvalid) {
   Tensor a;
   EXPECT_THAT(GetStatus(a), Not(IsOk()));
-  EXPECT_THAT(GetLocation(a), IsLocation(source_location()));
+  EXPECT_THAT(GetLocation(a), IsLocation(absl::SourceLocation()));
   EXPECT_THAT(GetProducer(a), Not(IsOk()));
   EXPECT_THAT(GetConsumers(a), Not(IsOk()));
 }
 
 TEST(TensorTest, TensorWithWringIndexIsInvalid) {
-  Tensor a = NewTensor(source_location::current());
+  Tensor a = NewTensor(absl::SourceLocation::current());
   a.index = 3;
   EXPECT_THAT(GetStatus(a), Not(IsOk()));
 }

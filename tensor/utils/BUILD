@@ -11,10 +11,10 @@ cc_library(
     hdrs = ["macros.h"],
     includes = ["../utils"],  # copybara:comment
     deps = [
-        ":source_location",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/types:source_location",
     ],
 )
 
@@ -55,10 +55,3 @@ cc_library(
         "@com_google_googletest//:gtest",
     ],
 )
-
-cc_library(
-    name = "source_location",
-    hdrs = ["source_location.h"],
-)
-
-# OSS: source_location_cc_library
