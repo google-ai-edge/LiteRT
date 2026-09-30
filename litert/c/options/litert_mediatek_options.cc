@@ -46,6 +46,7 @@ struct LrtMediatekOptions {
   std::optional<bool> use_get_supported_operations;
   std::string mediatek_dla_dir;
   std::string aot_compilation_options;
+  std::optional<bool> enable_weight_sharing;
 };
 
 LiteRtStatus LrtCreateMediatekOptions(LrtMediatekOptions** options) {
@@ -136,6 +137,11 @@ LiteRtStatus LrtCreateMediatekOptionsFromToml(const char* toml_payload,
           return LrtSetMediatekOptionsAotCompilationOptions(
               *options, std::string(value).c_str());
         }
+        if (key == "enable_weight_sharing") {
+          LITERT_ASSIGN_OR_RETURN(auto enable,
+                                  ::litert::internal::ParseTomlBool(value));
+          return LrtSetMediatekOptionsEnableWeightSharing(*options, enable);
+        }
 
         // Ignore unknown keys to allow for forward compatibility.
         return kLiteRtStatusOk;
@@ -208,6 +214,10 @@ LiteRtStatus LrtGetOpaqueMediatekOptionsData(const LrtMediatekOptions* options,
   if (!options->aot_compilation_options.empty()) {
     absl::StrAppendFormat(&toml_str, "aot_compilation_options = \"%s\"\n",
                           options->aot_compilation_options);
+  }
+  if (options->enable_weight_sharing.has_value()) {
+    absl::StrAppendFormat(&toml_str, "enable_weight_sharing = %s\n",
+                          *options->enable_weight_sharing ? "true" : "false");
   }
 
   *identifier = "mediatek";
@@ -473,5 +483,24 @@ LiteRtStatus LrtGetMediatekOptionsAotCompilationOptions(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *aot_compilation_options = options->aot_compilation_options.c_str();
+  return kLiteRtStatusOk;
+}
+
+// enable_weight_sharing -----------------------------------------------------
+LiteRtStatus LrtSetMediatekOptionsEnableWeightSharing(
+    LrtMediatekOptions* options, bool enable_weight_sharing) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->enable_weight_sharing = enable_weight_sharing;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetMediatekOptionsEnableWeightSharing(
+    const LrtMediatekOptions* options, bool* enable_weight_sharing) {
+  if (options == nullptr || enable_weight_sharing == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *enable_weight_sharing = options->enable_weight_sharing.value_or(false);
   return kLiteRtStatusOk;
 }
