@@ -22,14 +22,14 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_matchers.h"  // from @com_google_absl
-#include "tensor/backends/xnnpack/arithmetic.h"
 #include "tensor/datatypes.h"
+#include "tensor/examples/gemma4/test_backends.h"
 #include "tensor/examples/ops/transformer/transformer_ops.h"
 #include "tensor/examples/ops/transformer/transformer_ops_graph.h"
-#include "tensor/examples/ops/transformer/transformer_ops_xnnpack.h"
+#include "tensor/examples/ops/transformer/transformer_ops_xnnpack.h"  // IWYU pragma: keep
 #include "tensor/internal/arithmetic_helpers.h"
 #include "tensor/internal/graph.h"
-#include "tensor/runners/xnnpack/runner.h"
+#include "tensor/internal/mixin.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/matchers.h"
 #include "tensor/utils/source_location.h"
@@ -41,21 +41,26 @@ using ::absl_testing::StatusIs;
 using ::testing::FloatNear;
 using ::testing::HasSubstr;
 using ::testing::Pointwise;
-using XnnTensor = Tensor<XnnpackMixinTag>;
 
-TEST(Gemma4GraphTest, RmsNormTest) {
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 1, 4}});
+template <class Backend>
+class RmsNormTest : public ::testing::Test {};
+TYPED_TEST_SUITE(RmsNormTest, TestBackends, TestBackendNames);
 
-  XnnTensor scale({.name = "scale",
-                   .type = Type::kFP32,
-                   .shape = {4},
-                   .buffer = std::vector<float>{1.0f, 1.3f, 0.9f, 1.5f}});
+TYPED_TEST(RmsNormTest, MatchesReference) {
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
 
-  XnnTensor eps_tensor({.type = Type::kFP32, .shape = {1}, .buffer = 1e-6f});
-  XnnTensor output = RmsNorm(input, scale, eps_tensor);
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 1, 4}});
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(XnnpackRunner runner,
-                                  XnnpackRunner::Create({output}));
+  Tensor scale({.name = "scale",
+                .type = Type::kFP32,
+                .shape = {4},
+                .buffer = std::vector<float>{1.0f, 1.3f, 0.9f, 1.5f}});
+
+  Tensor eps_tensor({.type = Type::kFP32, .shape = {1}, .buffer = 1e-6f});
+  Tensor output = RmsNorm(input, scale, eps_tensor);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
 
   const std::array<float, 4> input_data = {1.0f, 2.0f, 3.0f, 4.0f};
   ASSERT_THAT(runner.SetInput(input, input_data), IsOk());
@@ -64,20 +69,21 @@ TEST(Gemma4GraphTest, RmsNormTest) {
 
   // Expected data computed using the script in `./reference/rmsnorm.py`.
   EXPECT_THAT(
-      runner.ReadOutputAs<float>(output),
+      runner.template ReadOutputAs<float>(output),
       IsOkAndHolds(Pointwise(FloatNear(1e-5f),
                              {0.365148f, 0.949386f, 0.985901f, 2.190890f})));
 }
 
-TEST(Gemma4GraphTest, RmsNormNoScaleTest) {
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 1, 4}});
+TYPED_TEST(RmsNormTest, WithoutScale) {
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
 
-  XnnTensor eps_tensor({.type = Type::kFP32, .shape = {1}, .buffer = 1e-6f});
-  XnnTensor output =
-      RmsNorm(input, XnnTensor(TensorHandle::Invalid()), eps_tensor);
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 1, 4}});
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(XnnpackRunner runner,
-                                  XnnpackRunner::Create({output}));
+  Tensor eps_tensor({.type = Type::kFP32, .shape = {1}, .buffer = 1e-6f});
+  Tensor output = RmsNorm(input, Tensor(TensorHandle::Invalid()), eps_tensor);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
 
   const std::array<float, 4> input_data = {1.0f, 2.0f, 3.0f, 4.0f};
   ASSERT_THAT(runner.SetInput(input, input_data), IsOk());
@@ -86,24 +92,28 @@ TEST(Gemma4GraphTest, RmsNormNoScaleTest) {
 
   // Expected data computed using the script in `./reference/rmsnorm.py`.
   EXPECT_THAT(
-      runner.ReadOutputAs<float>(output),
+      runner.template ReadOutputAs<float>(output),
       IsOkAndHolds(Pointwise(FloatNear(1e-5f),
                              {0.365148f, 0.730297f, 1.095445f, 1.460593f})));
 }
 
-TEST(Gemma4GraphTest, RmsNormWithAttributeEpsilonTest) {
+TYPED_TEST(RmsNormTest, WithAttributeEpsilon) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
   // This test manually constructs the RmsNormOperation to verify that the
   // backend correctly handles the case where epsilon is set as an operation
   // attribute (`op->epsilon`) rather than as an input tensor. The `RmsNorm`
   // helper function always passes epsilon as an input tensor.
   auto op = std::make_shared<graph::RmsNormOperation>();
-  RegisterMixins<XnnpackMixinTag>(op);
+  RegisterMixins<Tag>(op);
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 1, 4}});
-  XnnTensor scale({.name = "scale",
-                   .type = Type::kFP32,
-                   .shape = {4},
-                   .buffer = std::vector<float>{1.0f, 1.3f, 0.9f, 1.5f}});
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 1, 4}});
+  Tensor scale({.name = "scale",
+                .type = Type::kFP32,
+                .shape = {4},
+                .buffer = std::vector<float>{1.0f, 1.3f, 0.9f, 1.5f}});
   AddInputs(op, input, scale);
   op->epsilon = 1e-6f;
 
@@ -113,8 +123,7 @@ TEST(Gemma4GraphTest, RmsNormWithAttributeEpsilonTest) {
   output_info.shape = {1, 1, 4};
   output_info.type = Type::kFP32;
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(XnnpackRunner runner,
-                                  XnnpackRunner::Create({output}));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
 
   const std::array<float, 4> input_data = {1.0f, 2.0f, 3.0f, 4.0f};
   ASSERT_THAT(runner.SetInput(input, input_data), IsOk());
@@ -123,21 +132,25 @@ TEST(Gemma4GraphTest, RmsNormWithAttributeEpsilonTest) {
 
   // Expected data computed using the script in `./reference/rmsnorm.py`.
   EXPECT_THAT(
-      runner.ReadOutputAs<float>(output),
+      runner.template ReadOutputAs<float>(output),
       IsOkAndHolds(Pointwise(FloatNear(1e-5f),
                              {0.365148f, 0.949386f, 0.985901f, 2.190890f})));
 }
 
-TEST(Gemma4GraphTest, RmsNormInvalidInputsTest) {
+TYPED_TEST(RmsNormTest, RejectsInvalidInputCounts) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+  using Operation = typename TypeParam::Operation;
+
   // Test with 1 input (too few)
   {
     auto op = std::make_shared<graph::RmsNormOperation>();
-    RegisterMixins<XnnpackMixinTag>(op);
-    using XnnpackRmsNormMixin =
-        graph::OpMixin<graph::RmsNormOperation, XnnpackMixinTag>;
-    static_assert(std::is_base_of_v<XnnpackOperation, XnnpackRmsNormMixin>);
+    RegisterMixins<Tag>(op);
+    using RmsNormMixin = graph::OpMixin<graph::RmsNormOperation, Tag>;
+    static_assert(std::is_base_of_v<Operation, RmsNormMixin>);
 
-    XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 1, 4}});
+    Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 1, 4}});
     AddInputs(op, input);
 
     TensorHandle output = AddOutput(op, source_location::current());
@@ -146,7 +159,7 @@ TEST(Gemma4GraphTest, RmsNormInvalidInputsTest) {
     output_info.shape = {1, 1, 4};
     output_info.type = Type::kFP32;
 
-    EXPECT_THAT(XnnpackRunner::Create({output}),
+    EXPECT_THAT(Runner::Create({output}),
                 StatusIs(absl::StatusCode::kInvalidArgument,
                          HasSubstr("RmsNorm expects 2 or 3 inputs")));
   }
@@ -154,16 +167,12 @@ TEST(Gemma4GraphTest, RmsNormInvalidInputsTest) {
   // Test with 4 inputs (too many)
   {
     auto op = std::make_shared<graph::RmsNormOperation>();
-    RegisterMixins<XnnpackMixinTag>(op);
+    RegisterMixins<Tag>(op);
 
-    XnnTensor input1(
-        {.name = "input1", .type = Type::kFP32, .shape = {1, 1, 4}});
-    XnnTensor input2(
-        {.name = "input2", .type = Type::kFP32, .shape = {1, 1, 4}});
-    XnnTensor input3(
-        {.name = "input3", .type = Type::kFP32, .shape = {1, 1, 4}});
-    XnnTensor input4(
-        {.name = "input4", .type = Type::kFP32, .shape = {1, 1, 4}});
+    Tensor input1({.name = "input1", .type = Type::kFP32, .shape = {1, 1, 4}});
+    Tensor input2({.name = "input2", .type = Type::kFP32, .shape = {1, 1, 4}});
+    Tensor input3({.name = "input3", .type = Type::kFP32, .shape = {1, 1, 4}});
+    Tensor input4({.name = "input4", .type = Type::kFP32, .shape = {1, 1, 4}});
     AddInputs(op, input1, input2, input3, input4);
 
     TensorHandle output = AddOutput(op, source_location::current());
@@ -172,20 +181,24 @@ TEST(Gemma4GraphTest, RmsNormInvalidInputsTest) {
     output_info.shape = {1, 1, 4};
     output_info.type = Type::kFP32;
 
-    EXPECT_THAT(XnnpackRunner::Create({output}),
+    EXPECT_THAT(Runner::Create({output}),
                 StatusIs(absl::StatusCode::kInvalidArgument,
                          HasSubstr("RmsNorm expects 2 or 3 inputs")));
   }
 }
 
-TEST(Gemma4GraphTest, RmsNormInvalidOutputsTest) {
+TYPED_TEST(RmsNormTest, RejectsInvalidOutputCounts) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
   // Test with 2 outputs (too many)
   {
     auto op = std::make_shared<graph::RmsNormOperation>();
-    RegisterMixins<XnnpackMixinTag>(op);
+    RegisterMixins<Tag>(op);
 
-    XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 1, 4}});
-    XnnTensor scale({.name = "scale", .type = Type::kFP32, .shape = {4}});
+    Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 1, 4}});
+    Tensor scale({.name = "scale", .type = Type::kFP32, .shape = {4}});
     AddInputs(op, input, scale);
 
     // Add first output
@@ -202,22 +215,25 @@ TEST(Gemma4GraphTest, RmsNormInvalidOutputsTest) {
     output_info2.shape = {1, 1, 4};
     output_info2.type = Type::kFP32;
 
-    EXPECT_THAT(XnnpackRunner::Create({output1}),
+    EXPECT_THAT(Runner::Create({output1}),
                 StatusIs(absl::StatusCode::kInvalidArgument,
                          HasSubstr("RmsNorm expects 1 output, got 2")));
   }
 }
 
-TEST(Gemma4GraphTest, RmsNormScalarInputTest) {
+TYPED_TEST(RmsNormTest, RejectsScalarInput) {
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
   // Test with scalar input (empty shape)
   {
-    XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {}});
-    XnnTensor scale({.name = "scale", .type = Type::kFP32, .shape = {4}});
-    XnnTensor eps_tensor({.type = Type::kFP32, .shape = {1}, .buffer = 1e-6f});
-    XnnTensor output = RmsNorm(input, scale, eps_tensor);
+    Tensor input({.name = "input", .type = Type::kFP32, .shape = {}});
+    Tensor scale({.name = "scale", .type = Type::kFP32, .shape = {4}});
+    Tensor eps_tensor({.type = Type::kFP32, .shape = {1}, .buffer = 1e-6f});
+    Tensor output = RmsNorm(input, scale, eps_tensor);
 
     EXPECT_THAT(
-        XnnpackRunner::Create({output}),
+        Runner::Create({output}),
         StatusIs(
             absl::StatusCode::kInvalidArgument,
             HasSubstr("RmsNorm input tensor must have at least 1 dimension")));

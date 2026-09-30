@@ -40,6 +40,19 @@ cc_test(
 )
 
 cc_library(
+    name = "test_backends",
+    testonly = True,
+    hdrs = ["test_backends.h"],
+    deps = [
+        "//tensor",
+        "//tensor/backends/xnnpack:arithmetic",
+        "//tensor/backends/xnnpack:conversion",
+        "//tensor/runners/xnnpack:runner",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_library(
     name = "gemma4_graph",
     hdrs = ["gemma4_graph.h"],
     deps = [
@@ -66,6 +79,7 @@ cc_test(
         ":gemma4_config",
         ":gemma4_graph",
         ":gemma4_weights",
+        ":test_backends",
         "//tensor",
         "//tensor:buffer",
         "//tensor:datatypes",
