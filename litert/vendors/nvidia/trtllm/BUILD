@@ -29,6 +29,7 @@ cuda_library(
         "global_attention.cu",
         "head_kernels.cu",
         "int2_gemv.cu",
+        "subbyte_gemm.cu",
         "tiled_attention.cu",
     ],
     hdrs = [
@@ -36,6 +37,7 @@ cuda_library(
         "global_attention.h",
         "head_kernels.h",
         "int2_gemv.h",
+        "subbyte_gemm.h",
         "tiled_attention.h",
     ],
     # Tensor-core instructions require SM80; also include RTX Blackwell kernels.
@@ -67,6 +69,7 @@ cc_library(
         "global_attention.h",
         "head_kernels.h",
         "int2_gemv.h",
+        "subbyte_gemm.h",
         "tiled_attention.h",
     ],
     tags = ["manual"],
@@ -122,6 +125,27 @@ cc_test(
 cc_test(
     name = "tiled_attention_test",
     srcs = ["tiled_attention_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "subbyte_gemm_test",
+    srcs = ["subbyte_gemm_test.cc"],
     tags = [
         "exclusive",
         "manual",
