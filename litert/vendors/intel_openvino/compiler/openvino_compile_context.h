@@ -52,7 +52,17 @@ class OpenVinoCompileContext {
   // Enables the NPUW weight-sharing compile knobs on an NPU target so that
   // export_model emits a WEIGHTLESS blob (constants referenced by
   // WeightlessCacheAttribute bin_offset rather than baked in).
-  void ConfigureForNpuWeightSharing();
+  //
+  // |weights_bank_name| names the NPUW weights bank baked into the blob. It
+  // MUST be unique per distinct weight pool: NPUW's BankManager is a global
+  // singleton keyed by this name, so two compiled models that bake the same
+  // name resolve to the SAME in-memory bank at import time. On OpenVINO
+  // 2026.3.1 that makes the second model's deserialization collide on
+  // already-registered uids and hard-assert (weights_bank.cpp:238). A
+  // content-derived name lets partitions that genuinely share a pool dedup,
+  // while isolating unrelated models (e.g. the main text decoder vs. the
+  // auxiliary cache-update model).
+  void ConfigureForNpuWeightSharing(const std::string& weights_bank_name);
 
   // Runs NPU-specific optimization passes on the given OV model.
   void OptimizeModel(const std::shared_ptr<ov::Model>& model) const;
