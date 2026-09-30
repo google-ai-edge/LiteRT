@@ -31,6 +31,7 @@
 #include "cuda_runtime_api.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
@@ -611,6 +612,105 @@ TEST_F(AotEngineResidencyTest,
   ASSERT_EQ(unlink(original.c_str()), 0);
   ASSERT_EQ(rename(saved.c_str(), original.c_str()), 0);
   Run(a_, 20.0f, 1.0f);
+}
+
+TEST_F(AotEngineResidencyTest, UploadsHostWritesWhenAnInvocationReadsThem) {
+  ScopedEnvironment eager("LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES", "0");
+  const auto* handlers = api_.tensor_buffer_handlers_def;
+  ASSERT_NE(handlers, nullptr);
+  // Input and output are CUDA tensor buffers of the dispatch library.
+  ASSERT_EQ(cudaFree(input_.device_ptr), cudaSuccess);
+  ASSERT_EQ(cudaFree(output_.device_ptr), cudaSuccess);
+  input_.device_ptr = output_.device_ptr = nullptr;
+  auto type = TensorType();
+  HwMemoryInfoPtr input_info = nullptr;
+  HwMemoryInfoPtr output_info = nullptr;
+  ASSERT_EQ(handlers->create_func(nullptr, nullptr, &type, kCudaBufferType,
+                                  kBytes, kBytes, &input_info),
+            kLiteRtStatusOk);
+  ASSERT_EQ(handlers->create_func(nullptr, nullptr, &type, kCudaBufferType,
+                                  kBytes, kBytes, &output_info),
+            kLiteRtStatusOk);
+  input_.device_ptr = input_info->memory_handle;
+  output_.device_ptr = output_info->memory_handle;
+  CreateDevice();
+  ASSERT_FALSE(HasFatalFailure());
+  auto bytes = BuildBytecode("a", 1.0f, false);
+  ASSERT_TRUE(bytes) << bytes.Error().Message();
+  ASSERT_EQ(CreateContext(*bytes, "a", &a_), kLiteRtStatusOk);
+  Bind(a_);
+  ASSERT_FALSE(HasFatalFailure());
+
+  const auto write = [&](HwMemoryInfoPtr info, float base) {
+    void* host = nullptr;
+    ASSERT_EQ(
+        handlers->lock_func(info, kLiteRtTensorBufferLockModeWrite, &host),
+        kLiteRtStatusOk);
+    ASSERT_NE(host, nullptr);
+    for (int i = 0; i < kElements; ++i) {
+      static_cast<float*>(host)[i] = base + i;
+    }
+    ASSERT_EQ(handlers->unlock_func(info), kLiteRtStatusOk);
+  };
+  const auto expect_host = [&](HwMemoryInfoPtr info, float base) {
+    void* host = nullptr;
+    ASSERT_EQ(handlers->lock_func(info, kLiteRtTensorBufferLockModeRead, &host),
+              kLiteRtStatusOk);
+    ASSERT_NE(host, nullptr);
+    for (int i = 0; i < kElements; ++i) {
+      EXPECT_FLOAT_EQ(static_cast<const float*>(host)[i], base + i) << i;
+    }
+    ASSERT_EQ(handlers->unlock_func(info), kLiteRtStatusOk);
+  };
+  const auto expect_device = [&](const void* device_ptr, float base,
+                                 float step) {
+    std::array<float, kElements> device;
+    ASSERT_EQ(
+        cudaMemcpy(device.data(), device_ptr, kBytes, cudaMemcpyDeviceToHost),
+        cudaSuccess);
+    for (int i = 0; i < kElements; ++i) {
+      EXPECT_FLOAT_EQ(device[i], base + step * i) << i;
+    }
+  };
+
+  // Two host writes before the invocation: nothing reaches the device until
+  // the invocation reads the buffer, and the host reads what it wrote.
+  ASSERT_EQ(handlers->clear_func(input_info), kLiteRtStatusOk);
+  write(input_info, 100.0f);
+  write(input_info, 5.0f);
+  ASSERT_FALSE(HasFatalFailure());
+  expect_device(input_.device_ptr, 0.0f, 0.0f);
+  expect_host(input_info, 5.0f);
+  ASSERT_EQ(api_.interface->invoke(a_), kLiteRtStatusOk);
+  expect_device(input_.device_ptr, 5.0f, 1.0f);
+  expect_host(output_info, 6.0f);
+
+  // The invocation overwrites what the host wrote to its output.
+  write(output_info, 777.0f);
+  write(input_info, 20.0f);
+  ASSERT_EQ(api_.interface->invoke(a_), kLiteRtStatusOk);
+  expect_host(output_info, 21.0f);
+  expect_host(input_info, 20.0f);
+
+  // Clearing the buffer discards what the host wrote.
+  write(input_info, 50.0f);
+  ASSERT_EQ(handlers->clear_func(input_info), kLiteRtStatusOk);
+  ASSERT_EQ(api_.interface->invoke(a_), kLiteRtStatusOk);
+  expect_device(output_.device_ptr, 1.0f, 0.0f);
+
+  {
+    ScopedEnvironment immediate("LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD", "0");
+    write(input_info, 9.0f);
+    expect_device(input_.device_ptr, 9.0f, 1.0f);
+    ASSERT_EQ(api_.interface->invoke(a_), kLiteRtStatusOk);
+    expect_host(output_info, 10.0f);
+  }
+
+  EXPECT_EQ(api_.interface->invocation_context_destroy(a_), kLiteRtStatusOk);
+  contexts_.clear();
+  EXPECT_EQ(handlers->destroy_func(input_info), kLiteRtStatusOk);
+  EXPECT_EQ(handlers->destroy_func(output_info), kLiteRtStatusOk);
+  input_.device_ptr = output_.device_ptr = nullptr;
 }
 
 TEST_F(AotEngineResidencyTest, DefaultEagerModeDoesNotReopenArtifacts) {

@@ -177,6 +177,8 @@ struct CudaTensorBufferInfo : HwMemoryInfo {
   LiteRtTensorBufferLockMode lock_mode = kLiteRtTensorBufferLockModeRead;
   bool locked = false;
   bool owns_handle = true;
+  // The host wrote host_cache after the device copy was last current.
+  bool host_dirty = false;
 };
 
 struct NvidiaGreedySamplerContext {
@@ -205,6 +207,98 @@ bool PinnedHostStagingEnabled() {
   const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_PINNED_HOST_STAGING");
   return value == nullptr || value[0] == '\0' || std::strcmp(value, "0") != 0;
 }
+
+// What the host writes to a CUDA tensor buffer reaches the device when an
+// invocation reads the buffer, not when the host unlocks it: a runtime that
+// locks a buffer several times before it invokes uploads it once. LiteRT-LM
+// clears and then fills its attention masks before every prefill, 127 MiB
+// each time at a capacity of 130048 tokens.
+// LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD=0 uploads at every unlock.
+bool DeferredUploadEnabled() {
+  const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD");
+  return value == nullptr || value[0] == '\0' || std::strcmp(value, "0") != 0;
+}
+
+// The CUDA tensor buffers by device pointer, for the invocations that read
+// and write them through that pointer.
+class CudaTensorBufferRegistry {
+ public:
+  static CudaTensorBufferRegistry& Get() {
+    static auto* registry = new CudaTensorBufferRegistry;
+    return *registry;
+  }
+
+  void Add(CudaTensorBufferInfo* info) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    buffers_.emplace(info->memory_handle, info);
+  }
+
+  void Remove(CudaTensorBufferInfo* info) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto range = buffers_.equal_range(info->memory_handle);
+    for (auto it = range.first; it != range.second; ++it) {
+      if (it->second == info) {
+        buffers_.erase(it);
+        return;
+      }
+    }
+  }
+
+  void MarkHostWrite(CudaTensorBufferInfo* info) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    info->host_dirty = true;
+  }
+
+  // Whether the host copy is newer than the device copy.
+  bool HostIsNewer(CudaTensorBufferInfo* info) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return info->host_dirty;
+  }
+
+  // Uploads what the host wrote to the buffers at `handle`, in `stream`
+  // order. Returns the bytes uploaded in `bytes`.
+  LiteRtStatus Upload(void* handle, cudaStream_t stream, size_t* bytes) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto range = buffers_.equal_range(handle);
+    for (auto it = range.first; it != range.second; ++it) {
+      CudaTensorBufferInfo* info = it->second;
+      if (!info->host_dirty || info->host_cache == nullptr) {
+        continue;
+      }
+      const size_t copy_bytes =
+          info->packed_bytes == 0 ? info->bytes : info->packed_bytes;
+      // Pageable memory is staged before cudaMemcpyAsync returns; pinned
+      // memory must stay as it is until the stream gets to the copy, which
+      // the invocation waits for.
+      const cudaError_t status =
+          cudaMemcpyAsync(info->memory_handle, info->host_cache, copy_bytes,
+                          cudaMemcpyHostToDevice, stream);
+      if (status != cudaSuccess) {
+        LITERT_LOG(LITERT_ERROR, "cudaMemcpyAsync deferred H2D failed: %s",
+                   cudaGetErrorString(status));
+        return kLiteRtStatusErrorRuntimeFailure;
+      }
+      info->host_dirty = false;
+      if (bytes != nullptr) {
+        *bytes += copy_bytes;
+      }
+    }
+    return kLiteRtStatusOk;
+  }
+
+  // The device copy of the buffers at `handle` is about to be overwritten.
+  void Discard(void* handle) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto range = buffers_.equal_range(handle);
+    for (auto it = range.first; it != range.second; ++it) {
+      it->second->host_dirty = false;
+    }
+  }
+
+ private:
+  std::mutex mutex_;
+  std::unordered_multimap<void*, CudaTensorBufferInfo*> buffers_;
+};
 
 LiteRtStatus ValidateCudaDevicePointer(void* device_ptr) {
   if (device_ptr == nullptr) {
@@ -263,6 +357,7 @@ LiteRtStatus CreateCudaTensorBuffer(LiteRtGpuDeviceId device_id,
   info->bytes = bytes;
   info->packed_bytes = packed_bytes;
   info->owns_handle = true;
+  CudaTensorBufferRegistry::Get().Add(info);
   *hw_memory_info = info;
   return kLiteRtStatusOk;
 }
@@ -293,6 +388,7 @@ LiteRtStatus ImportCudaTensorBuffer(LiteRtGpuDeviceId device_id,
   info->bytes = bytes;
   info->packed_bytes = packed_bytes;
   info->owns_handle = false;
+  CudaTensorBufferRegistry::Get().Add(info);
   *hw_memory_info = info;
   return kLiteRtStatusOk;
 }
@@ -302,6 +398,7 @@ LiteRtStatus DestroyCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   if (info == nullptr) {
     return kLiteRtStatusOk;
   }
+  CudaTensorBufferRegistry::Get().Remove(info);
   LiteRtStatus status = kLiteRtStatusOk;
   if (info->host_cache != nullptr) {
     if (info->host_cache_pinned) {
@@ -358,8 +455,11 @@ LiteRtStatus LockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info,
     }
   }
   const size_t copy_bytes = CopyBytes(*info);
-  if (copy_bytes > 0 && (mode == kLiteRtTensorBufferLockModeRead ||
-                         mode == kLiteRtTensorBufferLockModeReadWrite)) {
+  // A host copy that is newer than the device copy is what the host reads.
+  if (copy_bytes > 0 &&
+      (mode == kLiteRtTensorBufferLockModeRead ||
+       mode == kLiteRtTensorBufferLockModeReadWrite) &&
+      !CudaTensorBufferRegistry::Get().HostIsNewer(info)) {
     LiteRtStatus status =
         CudaStatus(cudaMemcpy(info->host_cache, info->memory_handle, copy_bytes,
                               cudaMemcpyDeviceToHost),
@@ -387,9 +487,13 @@ LiteRtStatus UnlockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   if (copy_bytes > 0 &&
       (info->lock_mode == kLiteRtTensorBufferLockModeWrite ||
        info->lock_mode == kLiteRtTensorBufferLockModeReadWrite)) {
-    status = CudaStatus(cudaMemcpy(info->memory_handle, info->host_cache,
-                                   copy_bytes, cudaMemcpyHostToDevice),
-                        "cudaMemcpy CUDA tensor buffer H2D unlock");
+    if (DeferredUploadEnabled()) {
+      CudaTensorBufferRegistry::Get().MarkHostWrite(info);
+    } else {
+      status = CudaStatus(cudaMemcpy(info->memory_handle, info->host_cache,
+                                     copy_bytes, cudaMemcpyHostToDevice),
+                          "cudaMemcpy CUDA tensor buffer H2D unlock");
+    }
   }
   info->locked = false;
   return status;
@@ -404,6 +508,7 @@ LiteRtStatus ClearCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   if (copy_bytes == 0) {
     return kLiteRtStatusOk;
   }
+  CudaTensorBufferRegistry::Get().Discard(info->memory_handle);
   return CudaStatus(cudaMemset(info->memory_handle, 0, copy_bytes),
                     "cudaMemset CUDA tensor buffer");
 }
@@ -1009,6 +1114,7 @@ class LiteRtDispatchDeviceContextT {
                 handle, buffer_size, buffer_offset, packed_size));
         record.owns_device_ptr = false;
         record.direct_cuda_buffer = true;
+        record.cuda_handle = handle;
       }
     }
 
@@ -1050,6 +1156,8 @@ class LiteRtDispatchDeviceContextT {
     size_t size = 0;
     bool owns_device_ptr = true;
     bool direct_cuda_buffer = false;
+    // The device pointer of the CUDA tensor buffer `device_ptr` is a view of.
+    void* cuda_handle = nullptr;
     bool host_tensor_buffer = false;
     bool transient_device_ptr = false;
     bool dense_layout = true;
@@ -1476,6 +1584,10 @@ class LiteRtDispatchInvocationContextT {
                    "cudaMemcpyAsync H2D"));
       } else {
         ++profile_metrics.direct_inputs;
+        size_t uploaded = 0;
+        LITERT_RETURN_IF_ERROR(CudaTensorBufferRegistry::Get().Upload(
+            record->cuda_handle, stream_, &uploaded));
+        profile_metrics.h2d_bytes += uploaded;
       }
       LITERT_ASSIGN_OR_RETURN(
           const bool did_bind,
@@ -1499,6 +1611,10 @@ class LiteRtDispatchInvocationContextT {
                               device_context_->GetRecord(output_handles_[i]));
       LITERT_RETURN_IF_ERROR(device_context_->EnsureDevicePtr(record));
       transient_device_ptrs.Add(record);
+      if (record->direct_cuda_buffer) {
+        // The invocation overwrites the buffer, host writes included.
+        CudaTensorBufferRegistry::Get().Discard(record->cuda_handle);
+      }
       if (bytecode_.output_names[i].empty()) {
         // The external W2 vocabulary head writes this LiteRT output after the
         // TensorRT-RTX prefix, so it has no TensorRT engine binding.

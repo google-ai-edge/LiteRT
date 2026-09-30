@@ -253,6 +253,7 @@ cc_test(
     deps = [
         ":dispatch_api",
         "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c/internal:litert_runtime_context_header",
