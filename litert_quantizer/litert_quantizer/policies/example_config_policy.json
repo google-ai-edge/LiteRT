@@ -1,0 +1,174 @@
+{
+  "configs": {
+    "dynamic_wi8_afp32": {
+      "weight_tensor_config": {
+        "num_bits": 8,
+        "symmetric": [true],
+        "granularity": ["CHANNELWISE", "TENSORWISE"],
+        "dtype": "INT"
+      },
+      "explicit_dequantize": false,
+      "compute_precision": "INTEGER"
+    },
+    "dynamic_wi4_afp32": {
+      "weight_tensor_config": {
+        "num_bits": 4,
+        "symmetric": [true],
+        "granularity": ["CHANNELWISE", "TENSORWISE"],
+        "dtype": "INT"
+      },
+      "explicit_dequantize": false,
+      "compute_precision": "INTEGER"
+    },
+    "static_wi8_ai16": {
+      "activation_tensor_config": {
+        "num_bits": 16,
+        "symmetric": [true],
+        "granularity": ["TENSORWISE"],
+        "dtype": "INT"
+      },
+      "weight_tensor_config": {
+        "num_bits": 8,
+        "symmetric": [true],
+        "granularity": ["CHANNELWISE", "TENSORWISE"],
+        "dtype": "INT"
+      },
+      "explicit_dequantize": false,
+      "compute_precision": "INTEGER"
+    },
+    "static_wi4_ai16": {
+      "activation_tensor_config": {
+        "num_bits": 16,
+        "symmetric": [true],
+        "granularity": ["TENSORWISE"],
+        "dtype": "INT"
+      },
+      "weight_tensor_config": {
+        "num_bits": 4,
+        "symmetric": [true],
+        "granularity": ["CHANNELWISE", "TENSORWISE"],
+        "dtype": "INT"
+      },
+      "explicit_dequantize": false,
+      "compute_precision": "INTEGER"
+    },
+    "static_wi8_ai8": {
+      "activation_tensor_config": {
+        "num_bits": 8,
+        "symmetric": [true, false],
+        "granularity": ["TENSORWISE"],
+        "dtype": "INT"
+      },
+      "weight_tensor_config": {
+        "num_bits": 8,
+        "symmetric": [true],
+        "granularity": ["CHANNELWISE", "TENSORWISE"],
+        "dtype": "INT"
+      },
+      "explicit_dequantize": false,
+      "compute_precision": "INTEGER"
+    },
+    "static_wi4_ai8": {
+      "activation_tensor_config": {
+        "num_bits": 8,
+        "symmetric": [true, false],
+        "granularity": ["TENSORWISE"],
+        "dtype": "INT"
+      },
+      "weight_tensor_config": {
+        "num_bits": 4,
+        "symmetric": [true],
+        "granularity": ["CHANNELWISE", "TENSORWISE"],
+        "dtype": "INT"
+      },
+      "explicit_dequantize": false,
+      "compute_precision": "INTEGER"
+    },
+    "weightonly_wi8_afp32": {
+      "weight_tensor_config": {
+        "num_bits": 8,
+        "symmetric": [true, false],
+        "granularity": ["CHANNELWISE", "TENSORWISE"],
+        "dtype": "INT"
+      },
+      "explicit_dequantize": true,
+      "compute_precision": "FLOAT"
+    },
+    "weightonly_wi4_afp32": {
+      "weight_tensor_config": {
+        "num_bits": 4,
+        "symmetric": [true, false],
+        "granularity": ["CHANNELWISE", "TENSORWISE"],
+        "dtype": "INT"
+      },
+      "explicit_dequantize": true,
+      "compute_precision": "FLOAT"
+    }
+  },
+  "ops_per_config": {
+    "static_wi8_ai16": [
+      "FULLY_CONNECTED",
+      "CONV_2D",
+      "DEPTHWISE_CONV_2D",
+      "AVERAGE_POOL_2D",
+      "RESHAPE",
+      "SOFTMAX",
+      "TANH",
+      "TRANSPOSE",
+      "GELU",
+      "ADD",
+      "CONV_2D_TRANSPOSE",
+      "SUB",
+      "MUL",
+      "BATCH_MATMUL",
+      "MEAN",
+      "RSQRT",
+      "CONCATENATION",
+      "STRIDED_SLICE",
+      "SPLIT",
+      "LOGISTIC"
+    ],
+    "static_wi8_ai8": [
+      "FULLY_CONNECTED",
+      "CONV_2D",
+      "DEPTHWISE_CONV_2D",
+      "AVERAGE_POOL_2D",
+      "RESHAPE",
+      "SOFTMAX",
+      "TANH",
+      "TRANSPOSE",
+      "GELU",
+      "ADD",
+      "CONV_2D_TRANSPOSE",
+      "SUB",
+      "MUL",
+      "BATCH_MATMUL",
+      "MEAN",
+      "RSQRT",
+      "CONCATENATION",
+      "STRIDED_SLICE",
+      "SPLIT",
+      "LOGISTIC"
+    ],
+    "static_wi4_ai8": ["FULLY_CONNECTED", "CONV_2D"],
+    "static_wi4_ai16": ["FULLY_CONNECTED", "CONV_2D"],
+    "dynamic_wi8_afp32": [
+      "FULLY_CONNECTED",
+      "CONV_2D",
+      "BATCH_MATMUL",
+      "EMBEDDING_LOOKUP",
+      "DEPTHWISE_CONV_2D",
+      "CONV_2D_TRANSPOSE"
+    ],
+    "dynamic_wi4_afp32": ["FULLY_CONNECTED", "EMBEDDING_LOOKUP"],
+    "weightonly_wi8_afp32": [
+      "FULLY_CONNECTED",
+      "CONV_2D",
+      "BATCH_MATMUL",
+      "EMBEDDING_LOOKUP",
+      "DEPTHWISE_CONV_2D",
+      "CONV_2D_TRANSPOSE"
+    ],
+    "weightonly_wi4_afp32": ["FULLY_CONNECTED"]
+  }
+}

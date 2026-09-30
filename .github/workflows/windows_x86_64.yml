@@ -50,6 +50,7 @@ jobs:
               - '!LICENSE'
               - '!litert/objc/**'
               - '!litert/swift/**'
+              - '!litert_quantizer/**'
       - name: Determine if build should run
         id: check
         shell: bash

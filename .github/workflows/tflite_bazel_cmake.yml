@@ -41,6 +41,7 @@ jobs:
               - '!g3doc/**'
               - '!site/**'
               - '!LICENSE'
+              - '!litert_quantizer/**'
       - name: Determine if build should run
         id: check
         shell: bash
