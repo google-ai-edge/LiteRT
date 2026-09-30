@@ -30,10 +30,8 @@ namespace litert::ml_drift {
 
 // Programmatically builds an in-memory TFLite FlatBuffer containing a single
 // gated_delta_update custom op node with the given tensor dimensions.
-inline std::vector<uint8_t> CreateGatedDeltaUpdateModelBuffer(int B, int H,
-                                                              int N, int D_k,
-                                                              int D_v,
-                                                              int mode = 0) {
+inline std::vector<uint8_t> CreateGatedDeltaUpdateModelBuffer(
+    int B, int H, int N, int D_k, int D_v, int mode = 0, int H_k = -1) {
   flatbuffers::FlatBufferBuilder builder;
 
   // 1. Operator code: Custom op "gated_delta_update"
@@ -52,8 +50,8 @@ inline std::vector<uint8_t> CreateGatedDeltaUpdateModelBuffer(int B, int H,
 
   // 3. Tensors:
   // Inputs:
-  // 0: q [B, H, N, D_k]
-  // 1: k [B, H, N, D_k]
+  // 0: q [B, H_k, N, D_k]
+  // 1: k [B, H_k, N, D_k]
   // 2: v [B, H, N, D_v]
   // 3: beta [B, H, N]
   // 4: g [B, H, N]
@@ -61,9 +59,11 @@ inline std::vector<uint8_t> CreateGatedDeltaUpdateModelBuffer(int B, int H,
   // Outputs:
   // 6: out [B, H, N, D_v]
   // 7: final_state [B, H, D_k, D_v]
+  int actual_H_k = (H_k > 0) ? H_k : H;
   const std::vector<std::vector<int32_t>> shapes = {
-      {B, H, N, D_k}, {B, H, N, D_k},   {B, H, N, D_v}, {B, H, N},
-      {B, H, N},      {B, H, D_k, D_v}, {B, H, N, D_v}, {B, H, D_k, D_v},
+      {B, actual_H_k, N, D_k}, {B, actual_H_k, N, D_k}, {B, H, N, D_v},
+      {B, H, N},               {B, H, N},               {B, H, D_k, D_v},
+      {B, H, N, D_v},          {B, H, D_k, D_v},
   };
 
   const std::vector<std::string> names = {

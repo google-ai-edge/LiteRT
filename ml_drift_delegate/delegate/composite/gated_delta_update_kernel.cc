@@ -70,6 +70,7 @@ MAIN_FUNCTION($0) {
   int k_slice = ucl::GetLocalId<0>();
   int v_slice = ucl::GetGroupId<0>();
   int h = ucl::GetGlobalId<1>();
+  int h_k = h / GQA_RATIO;
   int b = ucl::GetGlobalId<2>();
 
   int seq_len = args.output.Width();
@@ -107,7 +108,7 @@ MAIN_FUNCTION($0) {
       g_val = g_t_vec.w;
     }
 
-    ScalarType decay_scalar = exp(g_val);
+    ScalarType decay_scalar = (g_val <= 0.0) ? exp(g_val) : 1.0;
     Type decay_vec = ucl::Init<Type>(decay_scalar);
 
     // Apply decay to this thread's 4 rows
@@ -117,7 +118,7 @@ MAIN_FUNCTION($0) {
     s3 = s3 * decay_vec;
 
     // Load full vec4 K for this thread's k_slice directly
-    Type k_val = args.k_t.Read(t, h, k_slice, b);
+    Type k_val = args.k_t.Read(t, h_k, k_slice, b);
 
     // Compute this thread's partial dot product: sum_i (S[i] * k[i])
     Type kv_mem = s0 * ucl::Init<Type>(k_val.x) +
@@ -132,7 +133,8 @@ MAIN_FUNCTION($0) {
 
     // Load V vector slice for this step
     Type v_vec = args.v_t.Read(t, h, v_slice, b);
-    Type beta_factor = ucl::Init<Type>(beta_val);
+    ScalarType beta_clean = (beta_val > 0.0) ? beta_val : 0.0;
+    Type beta_factor = ucl::Init<Type>(beta_clean);
     Type delta_slice = (v_vec - kv_mem) * beta_factor;
 
     // Update recurrent state in-place with outer product: S += delta * k^T
@@ -142,7 +144,7 @@ MAIN_FUNCTION($0) {
     s3 = s3 + delta_slice * ucl::Init<Type>(k_val.w);
 
     // Load full vec4 Q for this thread's k_slice directly
-    Type q_val = args.q_t.Read(t, h, k_slice, b);
+    Type q_val = args.q_t.Read(t, h_k, k_slice, b);
 
     // Compute attention output slice: sum_i (S[i] * q[i])
     Type my_attn_out = s0 * ucl::Init<Type>(q_val.x) +
@@ -172,6 +174,7 @@ MAIN_FUNCTION($0) {
   int k_slice = ucl::GetLocalId<0>();
   int v_slice = ucl::GetGroupId<0>();
   int h = ucl::GetGlobalId<1>();
+  int h_k = h / GQA_RATIO;
   int b = ucl::GetGlobalId<2>();
 
   __local Type scratch[HEAD_K_DIM_SLICES];
@@ -210,7 +213,7 @@ MAIN_FUNCTION($0) {
       g_val = g_t_vec.w;
     }
 
-    ScalarType decay_scalar = exp(g_val);
+    ScalarType decay_scalar = (g_val <= 0.0) ? exp(g_val) : 1.0;
     Type decay_vec = ucl::Init<Type>(decay_scalar);
 
     // Apply decay to this thread's 4 rows
@@ -220,7 +223,7 @@ MAIN_FUNCTION($0) {
     s3 = s3 * decay_vec;
 
     // Load full vec4 K for this thread's k_slice directly
-    Type k_val = args.k_t.Read(t, h, k_slice, b);
+    Type k_val = args.k_t.Read(t, h_k, k_slice, b);
 
     // Compute this thread's partial dot product: sum_i (S[i] * k[i])
     Type kv_mem = s0 * ucl::Init<Type>(k_val.x) +
@@ -242,7 +245,8 @@ MAIN_FUNCTION($0) {
 
     // Load V vector slice for this step
     Type v_vec = args.v_t.Read(t, h, v_slice, b);
-    Type beta_factor = ucl::Init<Type>(beta_val);
+    ScalarType beta_clean = (beta_val > 0.0) ? beta_val : 0.0;
+    Type beta_factor = ucl::Init<Type>(beta_clean);
     Type delta_slice = (v_vec - kv_mem) * beta_factor;
 
     // Update recurrent state in-place with outer product: S += delta * k^T
@@ -252,7 +256,7 @@ MAIN_FUNCTION($0) {
     s3 = s3 + delta_slice * ucl::Init<Type>(k_val.w);
 
     // Load full vec4 Q for this thread's k_slice directly
-    Type q_val = args.q_t.Read(t, h, k_slice, b);
+    Type q_val = args.q_t.Read(t, h_k, k_slice, b);
 
     // Compute attention output slice: sum_i (S[i] * q[i])
     Type my_attn_out = s0 * ucl::Init<Type>(q_val.x) +
@@ -312,8 +316,14 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
   auto q_shape = q_t.GetBHWCShape();
   auto v_shape = v_t.GetBHWCShape();
 
-  int B = q_shape.b;
-  int H = q_shape.h;
+  int B = v_shape.b;
+  int H = v_shape.h;
+  int H_k = q_shape.h;
+  if (H_k <= 0 || H < H_k || (H % H_k != 0)) {
+    return absl::InvalidArgumentError(
+        "gated_delta_update requires H_v to be a positive multiple of H_k.");
+  }
+  int gqa_ratio = H / H_k;
   int D_k = q_shape.c;
   int D_v = v_shape.c;
 
@@ -344,7 +354,8 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
   absl::StrReplaceAll(
       {{"ScalarType", ::ml_drift::ToUclDataType(output.GetDataType(), 1)},
        {"Type", ::ml_drift::ToUclDataType(output.GetDataType(), 4)},
-       {"HEAD_K_DIM_SLICES", std::to_string(q_slices)}},
+       {"HEAD_K_DIM_SLICES", std::to_string(q_slices)},
+       {"GQA_RATIO", std::to_string(gqa_ratio)}},
       &code);
 
   op->code_ = std::move(code);
