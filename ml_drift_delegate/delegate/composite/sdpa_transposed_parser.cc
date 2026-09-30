@@ -181,7 +181,12 @@ void SdpaTransposedOperationParser::Parse(const TfLiteNode* tflite_node,
   const int q_w = q_val->tensor.shape.w;
   const bool is_flash_prefill =
       attr.is_prefill && head_dim % 4 == 0 && head_dim <= 128;
-  const bool is_flash_decode = !attr.is_prefill && q_w == 1 && head_dim == 128;
+  // Flash-Decode runs the wave-SIMD kernel for head_dim 128 and otherwise the
+  // work-group kernel, which needs the head_dim / 4 channel slices to divide
+  // its 256 work items on Apple GPUs (see `IsSupportedFlashDecode`), i.e.
+  // head_dim 4, 8, ..., 1024.
+  const bool is_flash_decode = !attr.is_prefill && q_w == 1 && head_dim > 0 &&
+                               head_dim % 4 == 0 && (256 * 4) % head_dim == 0;
   if (attr.is_causal && attr.from_cache_update && param_tensor != nullptr &&
       mask != nullptr && mask->tensor.type == ::ml_drift::DataType::kBool &&
       (is_flash_prefill || is_flash_decode)) {

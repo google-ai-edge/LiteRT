@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "ml_drift_delegate/delegate/composite/swiglu_parser.h"
+#include "ml_drift_delegate/delegate/composite/glu_parser.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -21,6 +21,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/object_reader.h"
@@ -30,18 +31,17 @@
 
 namespace litert::ml_drift {
 
-absl::Status SwigluOperationParser::IsSupported(
-    const TfLiteContext* context, const TfLiteNode* tflite_node,
-    const TfLiteRegistration*) {
+absl::Status GluOperationParser::IsSupported(const TfLiteContext* context,
+                                             const TfLiteNode* tflite_node,
+                                             const TfLiteRegistration*) {
   if (tflite_node->inputs->size != 1 && tflite_node->inputs->size != 2) {
     return absl::InvalidArgumentError(
-        absl::StrCat("SwiGLU expects 1 or 2 inputs, but got ",
+        absl::StrCat("odml.swiglu expects 1 or 2 inputs, but got ",
                      tflite_node->inputs->size));
   }
   if (tflite_node->outputs->size != 1) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("SwiGLU expects 1 output, but got ",
-                     tflite_node->outputs->size));
+    return absl::InvalidArgumentError(absl::StrCat(
+        "odml.swiglu expects 1 output, but got ", tflite_node->outputs->size));
   }
   for (int i = 0; i < tflite_node->inputs->size; ++i) {
     ABSL_RETURN_IF_ERROR(
@@ -51,10 +51,10 @@ absl::Status SwigluOperationParser::IsSupported(
   return absl::OkStatus();
 }
 
-void SwigluOperationParser::Parse(const TfLiteNode* tflite_node,
-                                  const TfLiteRegistration*,
-                                  ::ml_drift::GraphFloat32* graph,
-                                  ObjectReader* reader) {
+void GluOperationParser::Parse(const TfLiteNode* tflite_node,
+                               const TfLiteRegistration*,
+                               ::ml_drift::GraphFloat32* graph,
+                               ObjectReader* reader) {
   auto* node = graph->NewNode();
   node->operation.type = kSwigluType;
   for (int i = 0; i < tflite_node->inputs->size; ++i) {
@@ -67,7 +67,7 @@ void SwigluOperationParser::Parse(const TfLiteNode* tflite_node,
   }
   reader->AddOutputs(node);
 
-  SwigluAttributes attr;
+  GluAttributes attr;
   const uint8_t* buffer_t = nullptr;
   size_t length = 0;
   if (tflite_node->custom_initial_data &&
@@ -92,8 +92,19 @@ void SwigluOperationParser::Parse(const TfLiteNode* tflite_node,
     if (!flexbuffer_map["gate_size"].IsNull()) {
       attr.gate_size = flexbuffer_map["gate_size"].AsInt32();
     }
+    if (flexbuffer_map["activation"].IsString()) {
+      attr.activation =
+          ParseGluActivation(flexbuffer_map["activation"].AsString().str());
+    }
   }
   node->operation.attributes = std::move(attr);
+}
+
+GluActivation ParseGluActivation(absl::string_view activation) {
+  if (activation == "gelu_tanh" || activation == "gelu_pytorch_tanh") {
+    return GluActivation::kGeluTanh;
+  }
+  return GluActivation::kSilu;
 }
 
 }  // namespace litert::ml_drift

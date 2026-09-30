@@ -14,6 +14,7 @@
 
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_kernel.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -99,14 +100,29 @@ void ComputeQkvNormRopeReference(const std::vector<float>& qkv_data,
           const float sin_val = std::sin(sinusoid);
 
           const int out_base = (dst_head * seq_len + t) * head_dim;
-          (*dst)[out_base + i] = v0 * cos_val - v1 * sin_val;
-          (*dst)[out_base + i + half_dim] = v1 * cos_val + v0 * sin_val;
+          if (fraction < attr.proportion) {
+            (*dst)[out_base + i] = v0 * cos_val - v1 * sin_val;
+            (*dst)[out_base + i + half_dim] = v1 * cos_val + v0 * sin_val;
+          } else {
+            (*dst)[out_base + i] = v0;
+            (*dst)[out_base + i + half_dim] = v1;
+          }
         }
       } else {
         const int kv_head = y - (num_heads + num_kv_heads);
         const int out_base = (kv_head * seq_len + t) * head_dim;
+        float inv_std = 1.0f;
+        if (attr.has_v_norm) {
+          float sum_sq = 0.0f;
+          for (int c = 0; c < head_dim; ++c) {
+            sum_sq += head_ptr[c] * head_ptr[c];
+          }
+          inv_std =
+              1.0f /
+              std::sqrt(sum_sq / static_cast<float>(head_dim) + attr.epsilon);
+        }
         for (int c = 0; c < head_dim; ++c) {
-          (*expected_v)[out_base + c] = head_ptr[c];
+          (*expected_v)[out_base + c] = head_ptr[c] * inv_std;
         }
       }
     }
@@ -117,11 +133,13 @@ absl::Status RunQkvNormRopeTest(::ml_drift::TestExecutionEnvironment& env,
                                 ::ml_drift::CalculationsPrecision precision,
                                 ::ml_drift::TensorStorageType storage,
                                 int num_heads, int num_kv_heads, int seq_len,
-                                int head_dim) {
+                                int head_dim, bool has_v_norm = false,
+                                float proportion = 1.0f) {
   ::ml_drift::GpuModelBuilder builder(env.GetGpuInfo(), {}, precision, storage);
   const ::ml_drift::DataType data_type =
       ::ml_drift::DeduceDataTypeFromPrecision(precision);
 
+  const bool is_q_only = (num_kv_heads == 0);
   const int total_heads = num_heads + 2 * num_kv_heads;
   const int total_dim = total_heads * head_dim;
 
@@ -129,11 +147,11 @@ absl::Status RunQkvNormRopeTest(::ml_drift::TestExecutionEnvironment& env,
   const ::ml_drift::BHWC pos_shape(1, 1, 1, seq_len);
   const ::ml_drift::BHWC weight_shape(head_dim, 1, 1, 1);
   const ::ml_drift::BHWC q_out_shape(1, num_heads, seq_len, head_dim);
-  const ::ml_drift::BHWC kv_out_shape(1, num_kv_heads, seq_len, head_dim);
+  const ::ml_drift::BHWC kv_out_shape(1, std::max(1, num_kv_heads), seq_len,
+                                      head_dim);
 
   auto qkv = builder.AddTensor(qkv_shape, data_type);
   auto q_weight = builder.AddTensor(weight_shape, data_type);
-  auto k_weight = builder.AddTensor(weight_shape, data_type);
 
   std::vector<int32_t> pos_data(seq_len);
   for (int t = 0; t < seq_len; ++t) {
@@ -152,8 +170,6 @@ absl::Status RunQkvNormRopeTest(::ml_drift::TestExecutionEnvironment& env,
   auto pos = builder.AddConstantTensor(std::move(pos_desc));
 
   auto q_out = builder.AddTensor(q_out_shape, data_type);
-  auto k_out = builder.AddTensor(kv_out_shape, data_type);
-  auto v_out = builder.AddTensor(kv_out_shape, data_type);
 
   QkvNormRopeAttributes attr;
   attr.num_heads = num_heads;
@@ -161,29 +177,9 @@ absl::Status RunQkvNormRopeTest(::ml_drift::TestExecutionEnvironment& env,
   attr.head_dim = head_dim;
   attr.min_timescale = 1.0f;
   attr.max_timescale = 10000.0f;
-  attr.proportion = 1.0f;
+  attr.proportion = proportion;
   attr.epsilon = 1e-6f;
-
-  ::ml_drift::Value qkv_val{qkv.id, {}, {}};
-  ::ml_drift::Value pos_val{pos.id, {}, {}};
-  ::ml_drift::Value q_weight_val{q_weight.id, {}, {}};
-  ::ml_drift::Value k_weight_val{k_weight.id, {}, {}};
-  ::ml_drift::Value q_out_val{q_out.id, {}, {}};
-  ::ml_drift::Value k_out_val{k_out.id, {}, {}};
-  ::ml_drift::Value v_out_val{v_out.id, {}, {}};
-
-  ::ml_drift::Node node = {1, {}};
-  node.operation.type = std::string(kQkvNormRopeType);
-  node.operation.attributes = attr;
-
-  ABSL_RETURN_IF_ERROR(CreateQkvNormRopeFromNode(
-      {&qkv_val, &pos_val, &q_weight_val, &k_weight_val},
-      {&q_out_val, &k_out_val, &v_out_val}, node, &builder));
-
-  ::ml_drift::GpuModel gpu_model;
-  ABSL_RETURN_IF_ERROR(builder.GetGpuModel(
-      {{qkv.id, 0}, {q_weight.id, 1}, {k_weight.id, 2}},
-      {{q_out.id, 0}, {k_out.id, 1}, {v_out.id, 2}}, &gpu_model));
+  attr.has_v_norm = has_v_norm;
 
   std::vector<float> qkv_data(seq_len * total_dim);
   for (size_t i = 0; i < qkv_data.size(); ++i) {
@@ -212,13 +208,55 @@ absl::Status RunQkvNormRopeTest(::ml_drift::TestExecutionEnvironment& env,
   q_weight_tensor.shape = weight_shape;
   q_weight_tensor.data = q_weight_data;
 
-  ::ml_drift::TensorFloat32 k_weight_tensor;
-  k_weight_tensor.shape = weight_shape;
-  k_weight_tensor.data = k_weight_data;
-
   ::ml_drift::TensorFloat32 q_out_cpu;
   q_out_cpu.shape = q_out_shape;
   q_out_cpu.data.resize(q_out_shape.DimensionsProduct());
+
+  ::ml_drift::Value qkv_val{qkv.id, {}, {}};
+  ::ml_drift::Value pos_val{pos.id, {}, {}};
+  ::ml_drift::Value q_weight_val{q_weight.id, {}, {}};
+  ::ml_drift::Value q_out_val{q_out.id, {}, {}};
+
+  ::ml_drift::Node node = {1, {}};
+  node.operation.type = std::string(kQkvNormRopeType);
+  node.operation.attributes = attr;
+
+  const float tolerance =
+      (precision == ::ml_drift::CalculationsPrecision::kF16) ? 1e-2f : 1e-4f;
+
+  if (is_q_only) {
+    ABSL_RETURN_IF_ERROR(
+        CreateQkvNormRopeFromNode({&qkv_val, &pos_val, &q_weight_val},
+                                  {&q_out_val}, node, &builder));
+    ::ml_drift::GpuModel gpu_model;
+    ABSL_RETURN_IF_ERROR(builder.GetGpuModel(
+        {{qkv.id, 0}, {q_weight.id, 1}}, {{q_out.id, 0}}, &gpu_model));
+    ABSL_RETURN_IF_ERROR(env.ExecuteGpuModel(
+        {qkv_tensor, q_weight_tensor},
+        std::vector<::ml_drift::TensorFloat32*>{&q_out_cpu}, &gpu_model));
+    EXPECT_THAT(q_out_cpu.data, Pointwise(FloatNear(tolerance), expected_q));
+    return absl::OkStatus();
+  }
+
+  auto k_weight = builder.AddTensor(weight_shape, data_type);
+  auto k_out = builder.AddTensor(kv_out_shape, data_type);
+  auto v_out = builder.AddTensor(kv_out_shape, data_type);
+  ::ml_drift::Value k_weight_val{k_weight.id, {}, {}};
+  ::ml_drift::Value k_out_val{k_out.id, {}, {}};
+  ::ml_drift::Value v_out_val{v_out.id, {}, {}};
+
+  ABSL_RETURN_IF_ERROR(CreateQkvNormRopeFromNode(
+      {&qkv_val, &pos_val, &q_weight_val, &k_weight_val},
+      {&q_out_val, &k_out_val, &v_out_val}, node, &builder));
+
+  ::ml_drift::GpuModel gpu_model;
+  ABSL_RETURN_IF_ERROR(builder.GetGpuModel(
+      {{qkv.id, 0}, {q_weight.id, 1}, {k_weight.id, 2}},
+      {{q_out.id, 0}, {k_out.id, 1}, {v_out.id, 2}}, &gpu_model));
+
+  ::ml_drift::TensorFloat32 k_weight_tensor;
+  k_weight_tensor.shape = weight_shape;
+  k_weight_tensor.data = k_weight_data;
 
   ::ml_drift::TensorFloat32 k_out_cpu;
   k_out_cpu.shape = kv_out_shape;
@@ -234,8 +272,6 @@ absl::Status RunQkvNormRopeTest(::ml_drift::TestExecutionEnvironment& env,
                               &q_out_cpu, &k_out_cpu, &v_out_cpu},
                           &gpu_model));
 
-  const float tolerance =
-      (precision == ::ml_drift::CalculationsPrecision::kF16) ? 1e-2f : 1e-4f;
   EXPECT_THAT(q_out_cpu.data, Pointwise(FloatNear(tolerance), expected_q));
   EXPECT_THAT(k_out_cpu.data, Pointwise(FloatNear(tolerance), expected_k));
   EXPECT_THAT(v_out_cpu.data, Pointwise(FloatNear(tolerance), expected_v));
@@ -279,6 +315,34 @@ TEST_P(QkvNormRopeKernelTest, MultiTokenPrefillHeadDim128) {
   ASSERT_OK(RunQkvNormRopeTest(*exec_env, precision(), storage(),
                                /*num_heads=*/8, /*num_kv_heads=*/2,
                                /*seq_len=*/8, /*head_dim=*/128));
+}
+
+TEST_P(QkvNormRopeKernelTest, Gemma4SlidingHeadDim256WithVNorm) {
+  ASSERT_OK(RunQkvNormRopeTest(*exec_env, precision(), storage(),
+                               /*num_heads=*/8, /*num_kv_heads=*/2,
+                               /*seq_len=*/1, /*head_dim=*/256,
+                               /*has_v_norm=*/true, /*proportion=*/1.0f));
+}
+
+TEST_P(QkvNormRopeKernelTest, Gemma4GlobalHeadDim512ProportionalRoPEWithVNorm) {
+  ASSERT_OK(RunQkvNormRopeTest(*exec_env, precision(), storage(),
+                               /*num_heads=*/8, /*num_kv_heads=*/2,
+                               /*seq_len=*/1, /*head_dim=*/512,
+                               /*has_v_norm=*/true, /*proportion=*/0.25f));
+}
+
+TEST_P(QkvNormRopeKernelTest, Gemma4SharedLayerQOnlyHeadDim256) {
+  ASSERT_OK(RunQkvNormRopeTest(*exec_env, precision(), storage(),
+                               /*num_heads=*/8, /*num_kv_heads=*/0,
+                               /*seq_len=*/1, /*head_dim=*/256,
+                               /*has_v_norm=*/false, /*proportion=*/1.0f));
+}
+
+TEST_P(QkvNormRopeKernelTest, Gemma4SharedLayerQOnlyHeadDim512Proportional) {
+  ASSERT_OK(RunQkvNormRopeTest(*exec_env, precision(), storage(),
+                               /*num_heads=*/8, /*num_kv_heads=*/0,
+                               /*seq_len=*/1, /*head_dim=*/512,
+                               /*has_v_norm=*/false, /*proportion=*/0.25f));
 }
 
 INSTANTIATE_TEST_SUITE_P(

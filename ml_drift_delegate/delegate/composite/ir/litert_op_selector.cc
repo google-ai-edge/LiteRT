@@ -31,12 +31,12 @@
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_kernel.h"
 #include "ml_drift_delegate/delegate/composite/gated_delta_update_kernel.h"
+#include "ml_drift_delegate/delegate/composite/glu_kernel.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_kernel.h"
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_kernel.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_kernel.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.h"
 #include "ml_drift_delegate/delegate/composite/short_conv_step_kernel.h"
-#include "ml_drift_delegate/delegate/composite/swiglu_kernel.h"
 
 namespace litert::ml_drift::ir {
 
@@ -77,7 +77,7 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
   } else if (op.name == "sdpa_transposed") {
     return CreateSdpaTransposedFromIrOp(inputs, outputs, op, model_builder);
   } else if (op.name == "swiglu") {
-    return CreateSwigluFromIrOp(inputs, outputs, op, model_builder);
+    return CreateGluFromIrOp(inputs, outputs, op, model_builder);
   } else if (op.name == "qkv_norm_rope") {
     return CreateQkvNormRopeFromIrOp(inputs, outputs, op, model_builder);
   } else if (op.name == "short_conv_step") {
