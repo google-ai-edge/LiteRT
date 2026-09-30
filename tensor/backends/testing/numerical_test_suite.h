@@ -3243,6 +3243,62 @@ TYPED_TEST_P(NumericalTestSuite, ZerosLikeOp) {
   EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
 }
 
+TYPED_TEST_P(NumericalTestSuite, GreaterOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input1({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> input2({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = Greater(input1, input2);
+
+  auto status = this->bridge_->BuildGraph({input1, input2}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Greater op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input1_data = {1.0f, 7.0f, 3.0f, 4.0f};
+  std::vector<float> input2_data = {1.0f, 6.0f, 5.0f, -8.0f};
+
+  ASSERT_OK(this->bridge_->SetInput(input1, AsBytes(input1_data)));
+  ASSERT_OK(this->bridge_->SetInput(input2, AsBytes(input2_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<uint8_t> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<uint8_t> expected_output = {0, 1, 0, 1};
+  EXPECT_EQ(actual_output, expected_output);
+}
+
+TYPED_TEST_P(NumericalTestSuite, LogicalOrOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input1({.type = Type::kBOOL, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> input2({.type = Type::kBOOL, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = LogicalOr(input1, input2);
+
+  auto status = this->bridge_->BuildGraph({input1, input2}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "LogicalOr op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<bool> input1_bool = {true, true, false, false};
+  std::vector<uint8_t> input1_data(input1_bool.begin(), input1_bool.end());
+  std::vector<bool> input2_bool = {true, false, true, false};
+  std::vector<uint8_t> input2_data(input2_bool.begin(), input2_bool.end());
+
+  ASSERT_OK(this->bridge_->SetInput(input1, AsBytes(input1_data)));
+  ASSERT_OK(this->bridge_->SetInput(input2, AsBytes(input2_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<uint8_t> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<uint8_t> expected_output = {1, 1, 1, 0};
+  EXPECT_EQ(actual_output, expected_output);
+}
+
 REGISTER_TYPED_TEST_SUITE_P(
     NumericalTestSuite, AddOp, SubOp, MulOp, DivOp, GeluOp, ReluOp, Relu6Op,
     LeakyReluOp, EluOp, HardSwishOp, LogisticOp, TanhOp, SqrtOp, RsqrtOp,
@@ -3257,7 +3313,7 @@ REGISTER_TYPED_TEST_SUITE_P(
     Conv2DOp, TransposeConvOp, TransposeConv2DOp, MaximumOp, MinimumOp,
     FloorModOp, FloorDivOp, SumOp, ReduceMaxOp, MeanOp, AveragePool2DOp,
     MaxPool2DOp, SplitOp, PackOp, UnpackOp, ResizeNearestNeighborOp,
-    LogSoftmaxOp, Relu0To1Op, ReluN1To1Op, ZerosLikeOp);
+    LogSoftmaxOp, Relu0To1Op, ReluN1To1Op, ZerosLikeOp, GreaterOp, LogicalOrOp);
 
 }  // namespace litert::tensor
 
