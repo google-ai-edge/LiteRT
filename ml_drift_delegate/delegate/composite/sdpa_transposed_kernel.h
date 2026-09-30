@@ -27,12 +27,10 @@
 
 namespace litert::ml_drift {
 
-// Whether the fused Flash-Attention prefill/decode kernels can be used on this
-// GPU. Their source is Metal Shading Language (`simd_sum`, `simd_max`,
-// `threadgroup` memory), so they are only valid on the Metal backend of an
-// Apple GPU. `GpuInfo::IsApple()` alone is a vendor check and is also true for
-// WebGPU and OpenCL running on Apple hardware, where the kernels would not
-// compile. Shape-specific conditions are checked separately by the caller.
+// Whether fused Flash-Attention prefill/decode kernels can be used on this GPU.
+// Enabled on the Metal backend of Apple GPUs (prefill and decode) and on the
+// OpenCL backend (decode). Shape-specific conditions are checked separately by
+// the caller.
 bool SupportsFusedSdpaKernels(const ::ml_drift::GpuInfo& gpu_info);
 
 absl::Status BuildSdpaTransposedGpuGraph(
