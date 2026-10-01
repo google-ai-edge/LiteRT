@@ -1119,3 +1119,42 @@ ios_unit_test(
     runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
     deps = [":litert_tensor_buffer_test_library"],
 )
+
+# Files that make up the LiteRT C++ SDK.
+#
+# lint IfChange(litert_cc_sdk_files)
+filegroup(
+    name = "litert_cc_sdk_files",
+    srcs = [
+        "litert_any.h",
+        "litert_builder.h",
+        "litert_common.h",
+        "litert_compiled_model.h",
+        "litert_custom_op_kernel.h",
+        "litert_custom_tensor_buffer.h",
+        "litert_environment.h",
+        "litert_environment_options.h",
+        "litert_event.h",
+        "litert_event_type.h",
+        "litert_gl_types.h",
+        "litert_layout.cc",
+        "litert_layout.h",
+        "litert_metrics.h",
+        "litert_model.h",
+        "litert_model_types.h",
+        "litert_op_code.h",
+        "litert_op_options.h",
+        "litert_opaque_options.h",
+        "litert_opencl_types.h",
+        "litert_options.h",
+        "litert_platform_support.h",
+        "litert_profiler.h",
+        "litert_profiler_event.h",
+        "litert_tensor_buffer.h",
+        "litert_tensor_buffer_requirements.h",
+        "litert_tensor_buffer_types.h",
+        "litert_webgpu_types.h",
+    ],
+    visibility = ["//litert/cc_sdk:__pkg__"],
+)
+# lint ThenChange(litert/cc_sdk/litert_cc_sdk_hdrs.txt, litert/cc_sdk/litert_cc_sdk_srcs.txt)

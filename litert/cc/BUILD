@@ -1350,3 +1350,37 @@ exports_files(glob([
     "*.h",
     "*.cc",
 ]))
+
+# Files that make up the LiteRT C++ SDK.
+#
+# lint IfChange(litert_cc_sdk_files)
+filegroup(
+    name = "litert_cc_sdk_files",
+    srcs = [
+        "litert_any.h",
+        "litert_api_types.h",
+        "litert_buffer_ref.h",
+        "litert_common.h",
+        "litert_compiled_model.h",
+        "litert_custom_op_kernel.h",
+        "litert_element_type.h",
+        "litert_environment.h",
+        "litert_environment_options.h",
+        "litert_event.h",
+        "litert_expected.h",
+        "litert_layout.h",
+        "litert_macros.h",
+        "litert_model.h",
+        "litert_model_types.h",
+        "litert_opaque_options.h",
+        "litert_options.h",
+        "litert_profiler.h",
+        "litert_ranked_tensor_type.h",
+        "litert_string_util.h",
+        "litert_tensor_buffer.h",
+        "litert_tensor_buffer_requirements.h",
+        "litert_tensor_buffer_types.h",
+    ],
+    visibility = ["//litert/cc_sdk:__pkg__"],
+)
+# lint ThenChange(litert/cc_sdk/litert_cc_sdk_hdrs.txt, litert/cc_sdk/litert_cc_sdk_srcs.txt)

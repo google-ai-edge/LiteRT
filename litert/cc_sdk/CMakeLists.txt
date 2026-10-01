@@ -115,6 +115,7 @@ target_include_directories(litert_cc_api
 target_link_libraries(litert_cc_api
     PUBLIC
         absl::status
+        absl::flat_hash_map
         absl::statusor
         absl::span
         absl::strings

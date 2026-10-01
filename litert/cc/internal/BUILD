@@ -743,3 +743,33 @@ cc_library(
         ],
     }),
 )
+
+# Files that make up the LiteRT C++ SDK.
+#
+# lint IfChange(litert_cc_sdk_files)
+filegroup(
+    name = "litert_cc_sdk_files",
+    srcs = [
+        "litert_c_types_printing.h",
+        "litert_consts.h",
+        "litert_detail.h",
+        "litert_handle.h",
+        "litert_logging.h",
+        "litert_numerics.h",
+        "litert_op_options.h",
+        "litert_platform_support.h",
+        "litert_runtime_proxy.h",
+        "litert_shared_library.h",
+        "litert_shared_library_windows.h",
+        "litert_source_location.h",
+        "litert_tensor_buffer_utils.h",
+        "litert_tfl_types.h",
+        "litert_tflite_error_status_builder.h",
+        "scoped_file.h",
+        "scoped_file_posix.h",
+        "scoped_file_win.h",
+        "scoped_weight_source.h",
+    ],
+    visibility = ["//litert/cc_sdk:__pkg__"],
+)
+# lint ThenChange(litert/cc_sdk/litert_cc_sdk_hdrs.txt, litert/cc_sdk/litert_cc_sdk_srcs.txt)

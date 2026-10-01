@@ -286,3 +286,26 @@ exports_files(glob([
     "*.h",
     "*.cc",
 ]))
+
+# Files that make up the LiteRT C++ SDK.
+#
+# lint IfChange(litert_cc_sdk_files)
+filegroup(
+    name = "litert_cc_sdk_files",
+    srcs = [
+        "litert_arm_options.h",
+        "litert_compiler_options.h",
+        "litert_concrete_options_base.h",
+        "litert_cpu_options.h",
+        "litert_google_tensor_options.h",
+        "litert_gpu_options.h",
+        "litert_intel_openvino_options.h",
+        "litert_magic_number_options.h",
+        "litert_mediatek_options.h",
+        "litert_qualcomm_options.h",
+        "litert_runtime_options.h",
+        "litert_samsung_options.h",
+    ],
+    visibility = ["//litert/cc_sdk:__pkg__"],
+)
+# lint ThenChange(litert/cc_sdk/litert_cc_sdk_hdrs.txt, litert/cc_sdk/litert_cc_sdk_srcs.txt)

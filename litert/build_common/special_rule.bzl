@@ -182,3 +182,8 @@ def litert_jni_friends():
     "litert/kotlin:litert_api_no_jni" and "litert/kotlin:litert_api_jni" libraries directly."""
 
     return []
+
+def litert_sdk_friends():
+    """Internal visibility for direct clients of LiteRT SDK files."""
+
+    return []

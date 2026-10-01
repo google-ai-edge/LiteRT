@@ -726,3 +726,23 @@ cc_library(
     ],
     alwayslink = True,
 )
+
+# Files that make up the LiteRT C++ SDK.
+#
+# lint IfChange(litert_cc_sdk_files)
+filegroup(
+    name = "litert_cc_sdk_files",
+    srcs = [
+        "litert_accelerator.h",
+        "litert_logging.cc",
+        "litert_logging.h",
+        "litert_options_helper.h",
+        "litert_runtime_api_export.h",
+        "litert_runtime_builtin.cc",
+        "litert_runtime_builtin.h",
+        "litert_runtime_c_api.h",
+        "litert_scheduling_info.h",
+    ],
+    visibility = ["//litert/cc_sdk:__pkg__"],
+)
+# lint ThenChange(litert/cc_sdk/litert_cc_sdk_hdrs.txt, litert/cc_sdk/litert_cc_sdk_srcs.txt)
