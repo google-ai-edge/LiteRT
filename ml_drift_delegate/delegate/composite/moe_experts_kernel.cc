@@ -15,133 +15,26 @@
 #include "ml_drift_delegate/delegate/composite/moe_experts_kernel.h"
 
 #include <any>
-#include <memory>
 #include <utility>
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
-#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder_moe_util.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
-#include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
-#include "ml_drift/common/types.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/ir/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 
 namespace litert::ml_drift {
 namespace {
-
-class ScaleWithBatchIdsOp : public ::ml_drift::GPUOperation {
- public:
-  ScaleWithBatchIdsOp() = default;
-  ::ml_drift::int3 GetGridSize() const override {
-    return ::ml_drift::int3(dst_[0]->Width() * dst_[0]->Batch(),
-                            dst_[0]->Height(), dst_[0]->Slices());
-  }
-
-  ScaleWithBatchIdsOp(ScaleWithBatchIdsOp&& operation) = default;
-  ScaleWithBatchIdsOp& operator=(ScaleWithBatchIdsOp&& operation) = default;
-  ScaleWithBatchIdsOp(const ScaleWithBatchIdsOp&) = delete;
-  ScaleWithBatchIdsOp& operator=(const ScaleWithBatchIdsOp&) = delete;
-};
-
-std::unique_ptr<::ml_drift::GPUOperation> CreateScaleWithBatchIds(
-    const ::ml_drift::TensorDescriptor& input,
-    const ::ml_drift::TensorDescriptor& active_ids,
-    const ::ml_drift::TensorDescriptor& active_scales,
-    const ::ml_drift::TensorDescriptor& scales,
-    const ::ml_drift::TensorDescriptor& dst) {
-  ScaleWithBatchIdsOp op;
-  op.AddSrcTensor("input", input);
-  op.AddSrcTensor("active_ids", active_ids);
-  op.AddSrcTensor("active_scales", active_scales);
-  op.AddSrcTensor("scales", scales);
-  op.AddDstTensor("dst", dst);
-  op.tensor_to_grid_ = ::ml_drift::TensorToGrid::kWBToX_HDToY_SToZ;
-  op.code_ = R"(
-MAIN_FUNCTION($0) {
-  int linear_id = ucl::GetGlobalId<0>();
-  int x = linear_id / args.dst.Batch();
-  int b = linear_id % args.dst.Batch();
-  int y = ucl::GetGlobalId<1>();
-  int s = ucl::GetGlobalId<2>();
-  if (x >= args.dst.Width() || y >= args.dst.Height() ||
-      s >= args.dst.Slices()) {
-    return;
-  }
-  float4 sum = ucl::Init<float4>(0.0f);
-  for (int ae_id = 0; ae_id < args.input.Width(); ++ae_id) {
-    int expert_id;
-    args.active_ids.ReadPerChannel<int>(expert_id, x, 0, ae_id, b);
-    float scale_value;
-    args.scales.ReadPerChannel<float>(scale_value, 0, 0, expert_id, 0);
-    float4 in_value = ucl::Convert<float4>(args.input.Read(ae_id, x, s, b));
-    float active_scale;
-    args.active_scales.ReadPerChannel<float>(active_scale, x, 0, ae_id, b);
-    sum += in_value * (scale_value * active_scale);
-  }
-  args.dst.Write(ucl::Convert<args.dst::type>(sum), x, y, s, b);
-}
-)";
-  return std::make_unique<ScaleWithBatchIdsOp>(std::move(op));
-}
-
-absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle>
-CreateDispatchTokenIndices(::ml_drift::GpuModelBuilder* model_builder,
-                           int sequence_size, int num_active_experts) {
-  const int num_dispatches = sequence_size * num_active_experts;
-  ::ml_drift::TensorInt32 token_indices;
-  token_indices.shape = ::ml_drift::BHWC(1, 1, 1, num_dispatches);
-  token_indices.data.resize(num_dispatches);
-  for (int token = 0; token < sequence_size; ++token) {
-    for (int route = 0; route < num_active_experts; ++route) {
-      token_indices.data[token * num_active_experts + route] = token;
-    }
-  }
-  ::ml_drift::TensorDescriptor token_indices_desc(
-      ::ml_drift::DataType::kInt32, ::ml_drift::TensorStorageType::kBuffer,
-      ::ml_drift::Layout::kHWC);
-  token_indices_desc.UploadData(token_indices);
-  return model_builder->AddConstantTensor(std::move(token_indices_desc));
-}
-
-absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> ScaleWithBatchIds(
-    ::ml_drift::GpuModelBuilder* model_builder,
-    const ::ml_drift::GpuModelBuilder::TensorHandle& input,
-    const ::ml_drift::GpuModelBuilder::TensorHandle& active_ids,
-    const ::ml_drift::GpuModelBuilder::TensorHandle& active_scales,
-    const ::ml_drift::GpuModelBuilder::TensorHandle& scales) {
-  const ::ml_drift::BHWC input_shape = input.tensor_desc.GetBHWCShape();
-  const ::ml_drift::BHWC ids_shape = active_ids.tensor_desc.GetBHWCShape();
-  const ::ml_drift::BHWC weights_shape =
-      active_scales.tensor_desc.GetBHWCShape();
-  if (input_shape.h != ids_shape.w || input_shape.w != ids_shape.c ||
-      ids_shape != weights_shape) {
-    return absl::InvalidArgumentError(
-        "MoE ScaleWithBatchIds requires input [B, S, AE, D] and active_ids / "
-        "active_scales [B, 1, S, AE].");
-  }
-  const ::ml_drift::BHWC dst_shape(input_shape.b, 1, input_shape.h,
-                                   input_shape.c);
-  ::ml_drift::GpuModelBuilder::TensorHandle dst =
-      model_builder->AddTensor(dst_shape, input.tensor_desc.GetDataType());
-  model_builder->AddGpuOperation(
-      {input, active_ids, active_scales, scales}, {dst},
-      CreateScaleWithBatchIds(input.tensor_desc, active_ids.tensor_desc,
-                              active_scales.tensor_desc, scales.tensor_desc,
-                              dst.tensor_desc),
-      "moe_scale_with_batch_ids");
-  return dst;
-}
 
 ::ml_drift::GpuModelBuilder::Weights BuildExpertWeights(
     ::ml_drift::GpuModelBuilder* model_builder,
@@ -205,12 +98,11 @@ absl::Status BuildMoeExpertsGpuGraph(
     const ::ml_drift::BHWC& output_shape) {
   const ::ml_drift::BHWC src_shape = src.tensor_desc.GetBHWCShape();
   const int sequence_size = src_shape.w;
-  const int num_dispatches = sequence_size * num_active_experts;
   const bool use_packed_groups =
       sequence_size * num_active_experts > num_experts;
 
-  ::ml_drift::GpuModelBuilder::TensorHandle expert_src;
-  ::ml_drift::GpuModelBuilder::TensorHandle expert_params;
+  auto expert_src = src;
+  auto expert_params = top_indices;
   ::ml_drift::GpuModelBuilder::TensorHandle experts_packed_remap;
 
   if (use_packed_groups) {
@@ -220,22 +112,17 @@ absl::Status BuildMoeExpertsGpuGraph(
     expert_params = vals[1];  // experts count and offsets
     expert_src = ::ml_drift::ExpertsRemapTo(
         *model_builder, src, experts_packed_remap, num_active_experts);
-  } else {
+  } else if (sequence_size != 1) {
+    auto t =
+        model_builder->Tile(src, ::ml_drift::Axis::kHeight, num_active_experts);
+    t = model_builder->Transpose(t, ::ml_drift::BHWC(0, 2, 1, 3));
+    auto packed_shape = t.tensor_desc.GetBHWCShape();
+    packed_shape.h = packed_shape.w * packed_shape.h;
+    packed_shape.w = 1;
+    expert_src = model_builder->Reshape(t, packed_shape);
     expert_params = model_builder->Reshape(
-        top_indices, ::ml_drift::BHWC(1, 1, 1, num_dispatches));
-    if (sequence_size == 1) {
-      expert_src =
-          model_builder->Reshape(src, ::ml_drift::BHWC(1, 1, 1, model_dim));
-    } else {
-      auto src_tokens = model_builder->Reshape(
-          src, ::ml_drift::BHWC(1, sequence_size, 1, model_dim));
-      ABSL_ASSIGN_OR_RETURN(
-          auto token_indices,
-          CreateDispatchTokenIndices(model_builder, sequence_size,
-                                     num_active_experts));
-      expert_src = model_builder->Gather(src_tokens, token_indices,
-                                         ::ml_drift::Axis::kHeight);
-    }
+        top_indices,
+        ::ml_drift::BHWC(1, 1, 1, sequence_size * num_active_experts));
   }
 
   auto run_expert_projection =
@@ -282,20 +169,11 @@ absl::Status BuildMoeExpertsGpuGraph(
         ::ml_drift::BHWC(1, sequence_size, num_active_experts, model_dim));
   }
 
-  auto active_ids = model_builder->Reshape(
-      top_indices, ::ml_drift::BHWC(1, 1, sequence_size, num_active_experts));
-  auto active_scales = model_builder->Reshape(
-      top_weights, ::ml_drift::BHWC(1, 1, sequence_size, num_active_experts));
-  auto expert_scales = model_builder->Reshape(
-      per_expert_scale, ::ml_drift::BHWC(1, 1, 1, num_experts));
-
   ABSL_ASSIGN_OR_RETURN(
       auto combined,
-      ScaleWithBatchIds(model_builder, expert_outputs, active_ids,
-                        active_scales, expert_scales));
-  if (combined.tensor_desc.GetBHWCShape() != output_shape) {
-    combined = model_builder->Reshape(combined, output_shape);
-  }
+      ::ml_drift::ScaleWithBatchIds(*model_builder, expert_outputs, top_indices,
+                                    top_weights, per_expert_scale));
+  combined = model_builder->Reshape(combined, output_shape);
   return model_builder->UpdateOutputTensor(combined, output_id);
 }
 
