@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "ml_drift_delegate/delegate/composite/ir/swiglu_parser.h"
+#include "ml_drift_delegate/delegate/composite/ir/glu_parser.h"
 
 #include <cstdint>
 
@@ -21,7 +21,7 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
-#include "ml_drift_delegate/delegate/composite/swiglu_parser.h"
+#include "ml_drift_delegate/delegate/composite/glu_parser.h"
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
 #include "tflite/c/builtin_op_data.h"
@@ -31,9 +31,9 @@
 namespace litert::ml_drift::ir {
 namespace {
 
-absl::Status SwigluIsSupported(const TfLiteContext* context,
-                               const TfLiteNode* tflite_node,
-                               const TfLiteRegistration* /*registration*/) {
+absl::Status GluIsSupported(const TfLiteContext* context,
+                            const TfLiteNode* tflite_node,
+                            const TfLiteRegistration* /*registration*/) {
   int num_runtime_inputs = 0;
   for (int i = 0; i < tflite_node->inputs->size; ++i) {
     if (tflite_node->inputs->data[i] != kTfLiteOptionalTensor &&
@@ -45,36 +45,35 @@ absl::Status SwigluIsSupported(const TfLiteContext* context,
 
   if (num_runtime_inputs != 1 && num_runtime_inputs != 2) {
     return absl::InvalidArgumentError(absl::StrCat(
-        "SwiGLU expects 1 or 2 inputs, but got ", num_runtime_inputs));
+        "odml.swiglu expects 1 or 2 inputs, but got ", num_runtime_inputs));
   }
 
   if (tflite_node->outputs->size != 1) {
-    return absl::InvalidArgumentError("SwiGLU expects 1 output.");
+    return absl::InvalidArgumentError("odml.swiglu expects 1 output.");
   }
 
   return absl::OkStatus();
 }
 
-void SwigluConvert(
+void GluConvert(
     const TfLiteContext& /*context*/, const TfLiteNode& tflite_node,
     const TfLiteRegistration& /*registration*/,
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     const IrModelBuilderOptions& /*options*/,
     ::ml_drift::ir::IrModel& ir_model) {
-  ::ml_drift::ir::IrOp* swiglu_op = ir_model.add_op();
-  swiglu_op->name = "swiglu";
+  ::ml_drift::ir::IrOp* glu_op = ir_model.add_op();
+  glu_op->name = "swiglu";
 
   for (int i = 0; i < tflite_node.inputs->size; ++i) {
     if (tflite_node.inputs->data[i] != kTfLiteOptionalTensor) {
-      ir_model.AddConsumer(tensor_map[tflite_node.inputs->data[i]],
-                           swiglu_op->id);
+      ir_model.AddConsumer(tensor_map[tflite_node.inputs->data[i]], glu_op->id);
     }
   }
-  ir_model.SetProducer(tensor_map[tflite_node.outputs->data[0]], swiglu_op->id);
+  ir_model.SetProducer(tensor_map[tflite_node.outputs->data[0]], glu_op->id);
 
   const auto* params = static_cast<const TfLiteStablehloCompositeParams*>(
       tflite_node.builtin_data);
-  ::litert::ml_drift::SwigluAttributes attr;
+  ::litert::ml_drift::GluAttributes attr;
   if (params && params->attributes && params->attributes_size > 0) {
     const flexbuffers::Map flexbuffer_map =
         flexbuffers::GetRoot(
@@ -83,6 +82,10 @@ void SwigluConvert(
             .AsMap();
     if (!flexbuffer_map["gate_size"].IsNull()) {
       attr.gate_size = flexbuffer_map["gate_size"].AsInt32();
+    }
+    if (flexbuffer_map["activation"].IsString()) {
+      attr.activation = ::litert::ml_drift::ParseGluActivation(
+          flexbuffer_map["activation"].AsString().str());
     }
   } else if (tflite_node.custom_initial_data &&
              tflite_node.custom_initial_data_size > 0) {
@@ -94,14 +97,16 @@ void SwigluConvert(
     if (!flexbuffer_map["gate_size"].IsNull()) {
       attr.gate_size = flexbuffer_map["gate_size"].AsInt32();
     }
+    if (flexbuffer_map["activation"].IsString()) {
+      attr.activation = ::litert::ml_drift::ParseGluActivation(
+          flexbuffer_map["activation"].AsString().str());
+    }
   }
-  swiglu_op->attr = attr;
+  glu_op->attr = attr;
 }
 
 }  // namespace
 
-CustomIrOpParser GetSwigluParser() {
-  return {SwigluIsSupported, SwigluConvert};
-}
+CustomIrOpParser GetGluParser() { return {GluIsSupported, GluConvert}; }
 
 }  // namespace litert::ml_drift::ir

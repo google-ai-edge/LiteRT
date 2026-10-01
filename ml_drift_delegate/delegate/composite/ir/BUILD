@@ -113,11 +113,11 @@ cc_library(
 )
 
 cc_library(
-    name = "swiglu_parser",
-    srcs = ["swiglu_parser.cc"],
-    hdrs = ["swiglu_parser.h"],
+    name = "glu_parser",
+    srcs = ["glu_parser.cc"],
+    hdrs = ["glu_parser.h"],
     deps = [
-        "//ml_drift_delegate/delegate/composite:swiglu_parser",
+        "//ml_drift_delegate/delegate/composite:glu_parser",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//ml_drift_delegate/tflite:ir_model_builder_helper",
         "//tflite/c:common",
@@ -205,13 +205,13 @@ cc_library(
     deps = [
         ":add_values_to_cache_parser",
         ":gated_delta_update_parser",
+        ":glu_parser",
         ":moe_experts_parser",
         ":qkv_norm_rope_parser",
         ":rope_parser",
         ":runtime_batched_matmul_parser",
         ":sdpa_transposed_parser",
         ":short_conv_step_parser",
-        ":swiglu_parser",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//tflite/c:common",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -225,12 +225,12 @@ cc_library(
     deps = [
         "//ml_drift_delegate/delegate/composite:add_values_to_cache_kernel",
         "//ml_drift_delegate/delegate/composite:gated_delta_update_kernel",
+        "//ml_drift_delegate/delegate/composite:glu_kernel",
         "//ml_drift_delegate/delegate/composite:moe_experts_kernel",
         "//ml_drift_delegate/delegate/composite:qkv_norm_rope_kernel",
         "//ml_drift_delegate/delegate/composite:runtime_batched_matmul_kernel",
         "//ml_drift_delegate/delegate/composite:sdpa_transposed_kernel",
         "//ml_drift_delegate/delegate/composite:short_conv_step_kernel",
-        "//ml_drift_delegate/delegate/composite:swiglu_kernel",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
@@ -343,11 +343,11 @@ cc_test(
 )
 
 cc_test(
-    name = "swiglu_parser_test",
-    srcs = ["swiglu_parser_test.cc"],
+    name = "glu_parser_test",
+    srcs = ["glu_parser_test.cc"],
     deps = [
-        ":swiglu_parser",
-        "//ml_drift_delegate/delegate/composite:swiglu_parser",
+        ":glu_parser",
+        "//ml_drift_delegate/delegate/composite:glu_parser",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//ml_drift_delegate/tflite/convert:convert_testing_utils",
         "//ml_drift_delegate/tflite/convert:stub_delegate",

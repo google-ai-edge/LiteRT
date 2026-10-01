@@ -328,9 +328,9 @@ cc_test(
 )
 
 cc_library(
-    name = "swiglu_parser",
-    srcs = ["swiglu_parser.cc"],
-    hdrs = ["swiglu_parser.h"],
+    name = "glu_parser",
+    srcs = ["glu_parser.cc"],
+    hdrs = ["glu_parser.h"],
     deps = [
         "//ml_drift_delegate/tflite:object_reader",
         "//ml_drift_delegate/tflite:operation_parser",
@@ -344,11 +344,11 @@ cc_library(
 )
 
 cc_library(
-    name = "swiglu_kernel",
-    srcs = ["swiglu_kernel.cc"],
-    hdrs = ["swiglu_kernel.h"],
+    name = "glu_kernel",
+    srcs = ["glu_kernel.cc"],
+    hdrs = ["glu_kernel.h"],
     deps = [
-        ":swiglu_parser",
+        ":glu_parser",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@ml_drift//ml_drift/common:gpu_model_builder",
@@ -684,13 +684,13 @@ cc_library(
     deps = [
         ":add_values_to_cache_parser",
         ":gated_delta_update_parser",
+        ":glu_parser",
         ":moe_experts_parser",
         ":qkv_norm_rope_parser",
         ":rope_parser",
         ":runtime_batched_matmul_parser",
         ":sdpa_transposed_parser",
         ":short_conv_step_parser",
-        ":swiglu_parser",
         "//ml_drift_delegate/tflite:operation_parser",
         "//ml_drift_delegate/tflite:unimplemented_operation_parser",
         "@com_google_absl//absl/log:absl_log",
@@ -802,6 +802,8 @@ cc_library(
         ":add_values_to_cache_parser",
         ":gated_delta_update_kernel",
         ":gated_delta_update_parser",
+        ":glu_kernel",
+        ":glu_parser",
         ":moe_experts_kernel",
         ":moe_experts_parser",
         ":qkv_norm_rope_kernel",
@@ -812,8 +814,6 @@ cc_library(
         ":sdpa_transposed_parser",
         ":short_conv_step_kernel",
         ":short_conv_step_parser",
-        ":swiglu_kernel",
-        ":swiglu_parser",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",

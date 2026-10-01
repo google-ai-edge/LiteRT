@@ -19,13 +19,13 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/delegate/composite/gated_delta_update_parser.h"
+#include "ml_drift_delegate/delegate/composite/glu_parser.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/short_conv_step_parser.h"
-#include "ml_drift_delegate/delegate/composite/swiglu_parser.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
 #include "ml_drift_delegate/tflite/unimplemented_operation_parser.h"
 
@@ -49,7 +49,7 @@ std::unique_ptr<TFLiteOperationParser> CustomOperationParserFactory::Create(
     return std::make_unique<RopeOperationParser>();
   }
   if (op_name == "odml.swiglu") {
-    return std::make_unique<SwigluOperationParser>();
+    return std::make_unique<GluOperationParser>();
   }
   if (op_name == kQkvNormRopeType) {
     return std::make_unique<QkvNormRopeOperationParser>();

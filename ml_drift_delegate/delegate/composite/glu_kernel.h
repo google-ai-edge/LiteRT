@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_SWIGLU_KERNEL_H_
-#define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_SWIGLU_KERNEL_H_
+#ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_GLU_KERNEL_H_
+#define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_GLU_KERNEL_H_
 
 #include <vector>
 
@@ -24,12 +24,12 @@
 
 namespace litert::ml_drift {
 
-absl::Status CreateSwigluFromNode(
-    const std::vector<::ml_drift::Value*>& inputs,
-    const std::vector<::ml_drift::Value*>& outputs,
-    const ::ml_drift::Node& node, ::ml_drift::GpuModelBuilder* model_builder);
+absl::Status CreateGluFromNode(const std::vector<::ml_drift::Value*>& inputs,
+                               const std::vector<::ml_drift::Value*>& outputs,
+                               const ::ml_drift::Node& node,
+                               ::ml_drift::GpuModelBuilder* model_builder);
 
-absl::Status CreateSwigluFromIrOp(
+absl::Status CreateGluFromIrOp(
     const std::vector<const ::ml_drift::ir::IrTensor*>& inputs,
     const std::vector<const ::ml_drift::ir::IrTensor*>& outputs,
     const ::ml_drift::ir::IrOp& node,
@@ -37,4 +37,4 @@ absl::Status CreateSwigluFromIrOp(
 
 }  // namespace litert::ml_drift
 
-#endif  // THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_SWIGLU_KERNEL_H_
+#endif  // THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_GLU_KERNEL_H_
