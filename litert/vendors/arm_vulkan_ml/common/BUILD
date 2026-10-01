@@ -11,6 +11,6 @@ package(
 )
 
 cc_library(
-    name = "arm_jit_executable",
-    hdrs = ["arm_jit_executable.h"],
+    name = "arm_vulkan_ml_jit_executable",
+    hdrs = ["arm_vulkan_ml_jit_executable.h"],
 )

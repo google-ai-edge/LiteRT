@@ -1,17 +1,17 @@
-# LiteRT Arm&reg; Integration
+# LiteRT Arm® ML Extensions for Vulkan® Integration
 
-This directory contains the LiteRT vendor integration for Arm targets. It is
-currently a work in progress: the compiler plugin only accepts the JIT flow,
-and the dispatch implementation does not yet execute models.
+This directory contains the LiteRT vendor integration for Arm® Mali™ GPUs
+supporting the ML Extensions for Vulkan. It is currently a work in progress:
+the compiler plugin only accepts the JIT flow, and the dispatch implementation
+does not yet execute models.
 
-- `compiler/` builds `libLiteRtCompilerPlugin_Arm.so`.
-- `dispatch/` builds `libLiteRtDispatch_Arm.so`.
-- `common/` contains types shared by the Arm integration.
+- `compiler/` builds `libLiteRtCompilerPlugin_ArmVulkanML.so`.
+- `dispatch/` builds `libLiteRtDispatch_ArmVulkanML.so`.
+- `common/` contains types shared by the integration.
 
 ## Compiler plugin support
 
-The compiler plugin currently targets an Arm hardware using the generic SoC model.
-It participates in partitioning only when the Arm `enable_just_in_time` option
+It participates in partitioning only when the `enable_just_in_time` option
 is set to `true`.
 
 ### Supported data types
@@ -148,28 +148,32 @@ legalization flow:
 The source of truth for these lists is
 [`capabilities.cc`](capabilities.cc).
 
-## Arm SDK dependencies
+## Dependencies
 
 Bazel downloads the integration's pinned source dependencies on demand. These
-archives are upstream releases; it is their use by the LiteRT Arm integration
+archives are upstream releases; it is their use by the integration
 that is still under development.
 
 - [AI/ML SDK VGF Library v0.9.0](https://github.com/arm/ai-ml-sdk-vgf-library/tree/v0.9.0)
   provides VGF decoding and parsing.
-- [TOSA for SPIR-V&trade; Codegen v2.0.0](https://github.com/arm/tosa-for-spirv-codegen/tree/v2.0.0)
-  provides TOSA to SPIR-V&trade; code generation.
-- [Khronos&reg; Vulkan&reg; Headers v1.4.349](https://github.com/KhronosGroup/Vulkan-Headers/tree/v1.4.349)
-  provides the required Vulkan&reg; definitions.
-- [Khronos&reg; SPIR-V&trade; Headers from Vulkan&reg; SDK 1.4.328.0](https://github.com/KhronosGroup/SPIRV-Headers/tree/vulkan-sdk-1.4.328.0)
-  provides the required SPIR-V&trade; definitions.
+- [TOSA for SPIR-V™ Codegen v2.0.0](https://github.com/arm/tosa-for-spirv-codegen/tree/v2.0.0)
+  provides TOSA to SPIR-V™ code generation.
+- [Khronos® Vulkan® Headers v1.4.349](https://github.com/KhronosGroup/Vulkan-Headers/tree/v1.4.349)
+  provides the required Vulkan® definitions.
+- [Khronos® SPIR-V™ Headers from Vulkan® SDK 1.4.328.0](https://github.com/KhronosGroup/SPIRV-Headers/tree/vulkan-sdk-1.4.328.0)
+  provides the required SPIR-V™ definitions.
 
+<!-- disableFinding(LINK_RELATIVE_G3DOC) -->
 The dependency declarations and checksums are in
-[`third_party/arm/workspace.bzl`](../../../third_party/arm/workspace.bzl).
+[`third_party/arm_vulkan_ml/workspace.bzl`](../../../third_party/arm_vulkan_ml/workspace.bzl).
 
 To verify that the shared libraries build:
 
 ```sh
-bazel test //litert/vendors/arm:build_so_test
+bazel test //litert/vendors/arm_vulkan_ml:build_so_test
 ```
 
-Arm is a registered trademark of Arm Limited (or its subsidiaries or affiliates).
+## Trademark Notice
+
+Arm® and Mali™ are registered trademarks or trademarks of Arm Limited (or its subsidiaries or affiliates) in the US and/or elsewhere.
+Khronos® and Vulkan® are registered trademarks, and SPIR-V™ is a trademark of The Khronos Group Inc.

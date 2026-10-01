@@ -30,7 +30,7 @@ litert_dynamic_lib(
     ],
     linkstatic = 1,
     shared_lib_name = "compiler_plugin_so",
-    so_name = "libLiteRtCompilerPlugin_Arm.so",
+    so_name = "libLiteRtCompilerPlugin_ArmVulkanML.so",
     ungrte = True,
     visibility = [
         "//ci/tools/python/wheel:__subpackages__",
@@ -40,7 +40,7 @@ litert_dynamic_lib(
         "//litert/c:litert_builder",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
-        "//litert/c/options:litert_arm_options",
+        "//litert/c/options:litert_arm_vulkan_ml_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
@@ -49,13 +49,13 @@ litert_dynamic_lib(
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_opaque_options_wrapper",
         "//litert/cc/internal:litert_options_wrapper",
-        "//litert/cc/options:litert_arm_options",
+        "//litert/cc/options:litert_arm_vulkan_ml_options",
         "//litert/c:litert_model",
-        "//litert/vendors/arm:capabilities",
+        "//litert/vendors/arm_vulkan_ml:capabilities",
         # copybara:comment_begin(oss-only)
         "@ai_ml_sdk_vgf_library//:vgf",  # TODO: Placeholder include. Review when mature.
         "@ai_ml_sdk_vgf_library//:vgf_utils",  # TODO: Placeholder include. Review when mature.
-        "@arm_dep_vulkan_headers//:vulkan_headers",  # TODO: Placeholder include. Review when mature.
+        "@arm_vulkan_ml_dep_vulkan_headers//:vulkan_headers",  # TODO: Placeholder include. Review when mature.
         "@tosa_for_spirv_codegen",  # TODO: Placeholder include. Review when mature.
         # copybara:comment_end
     ],
@@ -79,7 +79,7 @@ cc_test(
         "//litert/c/internal:litert_compiler_context_testonly",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_options",
-        "//litert/cc/options:litert_arm_options",
+        "//litert/cc/options:litert_arm_vulkan_ml_options",
         "//litert/core/model",
         "//litert/test:load_test_model",
         "//litert/test:matchers",

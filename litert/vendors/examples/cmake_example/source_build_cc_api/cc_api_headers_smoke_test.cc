@@ -11,6 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+// <open-source-office@arm.com> SPDX-License-Identifier: Apache-2.0
+//
 
 #include <type_traits>
 
@@ -37,7 +41,7 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
-#include "litert/cc/options/litert_arm_options.h"
+#include "litert/cc/options/litert_arm_vulkan_ml_options.h"
 #include "litert/cc/options/litert_compiler_options.h"
 #include "litert/cc/options/litert_concrete_options_base.h"
 #include "litert/cc/options/litert_cpu_options.h"

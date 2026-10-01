@@ -9,7 +9,7 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_options.h"
-#include "litert/cc/options/litert_arm_options.h"
+#include "litert/cc/options/litert_arm_vulkan_ml_options.h"
 #include "litert/core/model/model.h"
 #include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
@@ -28,9 +28,10 @@ struct JitPlugin {
 JitPlugin CreateJitPlugin() {
   auto options = Options::Create();
   EXPECT_TRUE(options);
-  auto arm_options = options->GetOptions<arm::ArmOptions>();
-  EXPECT_TRUE(arm_options);
-  EXPECT_TRUE(arm_options->SetEnableJustInTime(true));
+  auto arm_vulkan_ml_options =
+      options->GetOptions<arm_vulkan_ml::ArmVulkanMLOptions>();
+  EXPECT_TRUE(arm_vulkan_ml_options);
+  EXPECT_TRUE(arm_vulkan_ml_options->SetEnableJustInTime(true));
 
   auto env = Environment::Create({});
   EXPECT_TRUE(env);
@@ -42,7 +43,7 @@ JitPlugin CreateJitPlugin() {
           std::move(*c_options)};
 }
 
-TEST(ArmCompilerPluginPartitionTest, SelectsSupportedOperations) {
+TEST(ArmVulkanMLCompilerPluginPartitionTest, SelectsSupportedOperations) {
   auto jit_plugin = CreateJitPlugin();
   auto model = testing::LoadTestFileModel(
       "single_add_default_a8w8_recipe_quantized.tflite");
@@ -59,7 +60,7 @@ TEST(ArmCompilerPluginPartitionTest, SelectsSupportedOperations) {
   }
 }
 
-TEST(ArmCompilerPluginPartitionTest, RejectsUnsupportedOperation) {
+TEST(ArmVulkanMLCompilerPluginPartitionTest, RejectsUnsupportedOperation) {
   auto jit_plugin = CreateJitPlugin();
   auto model = testing::LoadTestFileModel("simple_topk_op.tflite");
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
@@ -71,7 +72,7 @@ TEST(ArmCompilerPluginPartitionTest, RejectsUnsupportedOperation) {
   EXPECT_TRUE(selected_ops.Values().empty());
 }
 
-TEST(ArmCompilerPluginPartitionTest, ValidatesArgumentsAndJitMode) {
+TEST(ArmVulkanMLCompilerPluginPartitionTest, ValidatesArgumentsAndJitMode) {
   LiteRtOpListT selected_ops;
   EXPECT_EQ(
       LiteRtCompilerPluginPartition(nullptr, nullptr, nullptr, &selected_ops),

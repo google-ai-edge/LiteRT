@@ -31,9 +31,9 @@ package(
 )
 
 cc_library(
-    name = "litert_arm_options",
-    srcs = ["litert_arm_options.cc"],
-    hdrs = ["litert_arm_options.h"],
+    name = "litert_arm_vulkan_ml_options",
+    srcs = ["litert_arm_vulkan_ml_options.cc"],
+    hdrs = ["litert_arm_vulkan_ml_options.h"],
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
@@ -379,8 +379,8 @@ exports_files(glob(["litert_*.h"]))
 filegroup(
     name = "litert_cc_sdk_files",
     srcs = [
-        "litert_arm_options.cc",
-        "litert_arm_options.h",
+        "litert_arm_vulkan_ml_options.cc",
+        "litert_arm_vulkan_ml_options.h",
         "litert_compiler_options.cc",
         "litert_compiler_options.h",
         "litert_cpu_options.cc",

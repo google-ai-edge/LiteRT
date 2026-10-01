@@ -12,7 +12,7 @@
 class LiteRtDispatchDeviceContextT {};
 class LiteRtDispatchInvocationContextT {};
 
-namespace litert::arm {
+namespace litert::arm_vulkan_ml {
 
 LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
                         LiteRtEnvironment environment, LiteRtOptions options) {
@@ -26,7 +26,7 @@ LiteRtStatus GetVendorId(const char** vendor_id) {
   if (vendor_id == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *vendor_id = "Arm";
+  *vendor_id = "ArmVulkanML";
   return kLiteRtStatusOk;
 }
 
@@ -215,35 +215,38 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
   return kLiteRtStatusOk;
 }
 
-}  // namespace litert::arm
+}  // namespace litert::arm_vulkan_ml
 
 LiteRtDispatchInterface TheInterface = {
-    .initialize = litert::arm::Initialize,
-    .get_vendor_id = litert::arm::GetVendorId,
-    .get_build_id = litert::arm::GetBuildId,
-    .get_capabilities = litert::arm::GetCapabilities,
-    .device_context_create = litert::arm::DeviceContextCreate,
-    .device_context_destroy = litert::arm::DeviceContextDestroy,
-    .get_input_requirements = litert::arm::GetInputRequirements,
-    .get_output_requirements = litert::arm::GetOutputRequirements,
-    .register_tensor_buffer = litert::arm::RegisterTensorBuffer,
-    .unregister_tensor_buffer = litert::arm::UnregisterTensorBuffer,
-    .invocation_context_create = litert::arm::InvocationContextCreate,
-    .invocation_context_destroy = litert::arm::InvocationContextDestroy,
+    .initialize = litert::arm_vulkan_ml::Initialize,
+    .get_vendor_id = litert::arm_vulkan_ml::GetVendorId,
+    .get_build_id = litert::arm_vulkan_ml::GetBuildId,
+    .get_capabilities = litert::arm_vulkan_ml::GetCapabilities,
+    .device_context_create = litert::arm_vulkan_ml::DeviceContextCreate,
+    .device_context_destroy = litert::arm_vulkan_ml::DeviceContextDestroy,
+    .get_input_requirements = litert::arm_vulkan_ml::GetInputRequirements,
+    .get_output_requirements = litert::arm_vulkan_ml::GetOutputRequirements,
+    .register_tensor_buffer = litert::arm_vulkan_ml::RegisterTensorBuffer,
+    .unregister_tensor_buffer = litert::arm_vulkan_ml::UnregisterTensorBuffer,
+    .invocation_context_create = litert::arm_vulkan_ml::InvocationContextCreate,
+    .invocation_context_destroy =
+        litert::arm_vulkan_ml::InvocationContextDestroy,
     .invocation_context_set_scheduling_info =
-        litert::arm::InvocationContextSetSchedulingInfo,
-    .attach_input = litert::arm::AttachInput,
-    .attach_output = litert::arm::AttachOutput,
-    .detach_input = litert::arm::DetachInput,
-    .detach_output = litert::arm::DetachOutput,
-    .invoke = litert::arm::Invoke,
+        litert::arm_vulkan_ml::InvocationContextSetSchedulingInfo,
+    .attach_input = litert::arm_vulkan_ml::AttachInput,
+    .attach_output = litert::arm_vulkan_ml::AttachOutput,
+    .detach_input = litert::arm_vulkan_ml::DetachInput,
+    .detach_output = litert::arm_vulkan_ml::DetachOutput,
+    .invoke = litert::arm_vulkan_ml::Invoke,
     .start_metrics_collection = nullptr,
     .stop_metrics_collection = nullptr,
     .get_num_metrics = nullptr,
     .get_metric = nullptr,
     .destroy_metrics = nullptr,
-    .check_runtime_compatibility = litert::arm::CheckRuntimeCompatibility,
-    .invocation_context_set_options = litert::arm::InvocationContextSetOptions,
+    .check_runtime_compatibility =
+        litert::arm_vulkan_ml::CheckRuntimeCompatibility,
+    .invocation_context_set_options =
+        litert::arm_vulkan_ml::InvocationContextSetOptions,
 };
 
 LiteRtDispatchApi TheApi = {

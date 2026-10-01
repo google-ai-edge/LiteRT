@@ -39,12 +39,12 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_arm_options",
-    hdrs = ["litert_arm_options.h"],
+    name = "litert_arm_vulkan_ml_options",
+    hdrs = ["litert_arm_vulkan_ml_options.h"],
     deps = [
         ":litert_concrete_options_base",
         "//litert/c:litert_common",
-        "//litert/c/options:litert_arm_options",
+        "//litert/c/options:litert_arm_vulkan_ml_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_detail",
@@ -293,7 +293,7 @@ exports_files(glob([
 filegroup(
     name = "litert_cc_sdk_files",
     srcs = [
-        "litert_arm_options.h",
+        "litert_arm_vulkan_ml_options.h",
         "litert_compiler_options.h",
         "litert_concrete_options_base.h",
         "litert_cpu_options.h",

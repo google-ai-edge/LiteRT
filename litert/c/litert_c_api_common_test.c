@@ -11,6 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+// SPDX-License-Identifier: Apache-2.0
+//
 
 // This file exists to verify that the below header files can build, link,
 // and run as C code.
@@ -44,7 +48,7 @@
 #include "litert/c/litert_profiler_event.h"  // NOLINT
 #include "litert/c/litert_tensor_buffer.h"   // NOLINT
 #include "litert/c/litert_tensor_buffer_requirements.h"  // NOLINT
-#include "litert/c/options/litert_arm_options.h"  // NOLINT
+#include "litert/c/options/litert_arm_vulkan_ml_options.h"  // NOLINT
 #include "litert/c/options/litert_compiler_options.h"  // NOLINT
 #include "litert/c/options/litert_cpu_options.h"  // NOLINT
 #include "litert/c/options/litert_google_tensor_options.h"  // NOLINT

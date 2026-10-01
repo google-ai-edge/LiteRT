@@ -104,7 +104,7 @@ jobs:
       - name: Build Android Artifacts with Bazel
         run: |
           bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/kotlin:litert
-          bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/vendors/arm/...
+          bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/vendors/arm_vulkan_ml/...
 
       - name: Upload Android Artifacts
         if: github.event_name != 'pull_request'

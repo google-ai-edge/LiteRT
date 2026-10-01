@@ -50,7 +50,7 @@ set(LITERT_C_PUBLIC_HEADERS
     litert_tensor_buffer_types.h
     litert_tensor_buffer.h
     litert_webgpu_types.h
-    options/litert_arm_options.h
+    options/litert_arm_vulkan_ml_options.h
     options/litert_compiler_options.h
     options/litert_cpu_options.h
     options/litert_google_tensor_options.h
@@ -97,7 +97,7 @@ set(LITERT_C_PUBLIC_SOURCES
     litert_builder.cc
     litert_tensor_buffer.cc
     litert_tensor_buffer_requirements.cc
-    options/litert_arm_options.cc
+    options/litert_arm_vulkan_ml_options.cc
     options/litert_compiler_options.cc
     options/litert_cpu_options.cc
     options/litert_google_tensor_options.cc
