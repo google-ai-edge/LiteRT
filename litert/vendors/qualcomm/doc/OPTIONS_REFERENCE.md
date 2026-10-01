@@ -46,7 +46,7 @@ consumed at two distinct moments:
 flowchart TB
     subgraph ROW1[" "]
         direction LR
-        BOTH["🌐 Both<br/><div style='text-align:left'>─────────────────<br/>log_level<br/>backend<br/>custom_op_package<br/>profiling</div>"]
+        BOTH["🌐 Both<br/><div style='text-align:left'>─────────────────<br/>log_level<br/>backend<br/>custom_op_package<br/>profiling<br/>htp_device_id</div>"]
         DISPATCH["🚀 Dispatch<br/><div style='text-align:left'>────────────────────────<br/>HTP: htp_performance_mode, htp_pd_session<br/>DSP: dsp_performance_mode, dsp_pd_session</div>"]
         BOTH ~~~ DISPATCH
     end
@@ -63,9 +63,8 @@ flowchart TB
 | Category | Options |
 |----------|---------|
 | **General / SDK** | `log_level`, `backend`, `graph_priority`, `custom_op_package`, `enable_just_in_time`, `graph_io_tensor_mem_type`, `profiling` |
-| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_p_point`, `htp_performance_mode`, `htp_pd_session`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
+| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_p_point`, `htp_performance_mode`, `htp_pd_session`, `htp_device_id`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
 | **DSP** | `dsp_performance_mode`, `dsp_pd_session` |
-| **LPAI** | `lpai_target`, `lpai_fps`, `lpai_ftrt_ratio`, `lpai_client_perf_type`, `lpai_core_affinity_type`, `lpai_core_selection` |
 | **IR** | `dlc_dir` |
 | **SAVER** | `saver_output_dir` |
 | **Debug** | `dump_tensor_ids`, `ir_json_dir` |
@@ -130,6 +129,7 @@ target:HTP"
 | Optimization level | `optimization_level` | `O3` | compile | `O1` (inference) · `O2` (prepare) · `O3` (inference, aggressive). |
 | HTP perf mode | `htp_performance_mode` | `default` | dispatch | `default` · `sustained_high_performance` · `burst` · `high_performance` · `power_saver` · `low_power_saver` · `high_power_saver` · `low_balanced` · `balanced` · `extreme_power_saver`. |
 | HTP PD session | `htp_pd_session` | `unsigned` | dispatch | `unsigned` preserves the existing device configuration. `signed` enables QNN SignedPD. `adaptive` uses unsigned PD only when QNN reports support, otherwise it enables SignedPD. |
+| HTP device ID | `htp_device_id` | `0` | both | A nonzero value selects the matching platform-reported HTP `deviceId`; it requires QNN platform information. `0` leaves device selection to QNN's default configuration. |
 | VTCM size | `vtcm_size` | `0` (=max) | compile | VTCM size (MB) of target device. `0` → device max. |
 | HVX threads | `num_hvx_thread` | `0` (=max) | compile | HVX threads for target device. `0` → device max. |
 | INT64→INT32 bias | `use_int64_bias_as_int32` | `true` | compile | Convert FullyConnected/Conv2D bias int64 → int32. |
@@ -142,33 +142,10 @@ target:HTP"
 | Option | CLI flag (`--qualcomm_…`) | Default | Phase | Notes |
 |--------|------|---------|-------|----------------|
 | DSP perf mode | `dsp_performance_mode` | `default` | dispatch | `default` · `sustained_high_performance` · `burst` · `high_performance` · `power_saver` · `low_power_saver` · `high_power_saver` · `low_balanced` · `balanced`. |
-| DSP PD session | `dsp_pd_session` | `unsigned` | dispatch | `unsigned` preserves the existing backend configuration. `signed` requests SignedPD. `adaptive` requests unsigned PD only when QNN reports unsigned-PD support, otherwise it requests SignedPD. |
 
 ---
 
-## 6. LPAI options
-
-| Option | CLI flag (`--qualcomm_…`) | Default | Phase | Notes |
-|--------|------|---------|-------|----------------|
-| LPAI target | `lpai_target` | `adsp` | compile | Target environment: `x86`, `arm`, `adsp`, `tensilica`. |
-| LPAI FPS | `lpai_fps` | `1` | compile | Target inference rate. |
-| LPAI FTRT ratio | `lpai_ftrt_ratio` | `10` | compile | Faster-than-real-time ratio. |
-| LPAI client perf type | `lpai_client_perf_type` | `default` | compile | `default`, `real_time`, `non_real_time`. |
-| LPAI core affinity | `lpai_core_affinity_type` | `default` | compile | `default`, `soft`, `hard`. |
-| LPAI core selection | `lpai_core_selection` | `0` | compile | Core-selection bitmask, `0` leaves SDK default. |
-
-LPAI accepts `v5` or `v6` directly through `soc_model`. A Snapdragon SoC name
-with an LPAI entry in the LiteRT SoC table is also accepted. For example,
-`SM8850` resolves to `v6`.
-
-With `apply_plugin_main`, specify the target with:
-
-```bash
---qualcomm_backend=lpai \
---soc_model=v6
-```
-
-## 7. IR options
+## 6. IR options
 
 QNN intermediate-representation dumps — diagnostic artifacts produced at compile time.
 
@@ -178,7 +155,7 @@ QNN intermediate-representation dumps — diagnostic artifacts produced at compi
 
 ---
 
-## 8. SAVER options
+## 7. SAVER options
 
 | Option | CLI flag (`--qualcomm_…`) | Default | Phase | Notes |
 |--------|------|---------|-------|----------------|
@@ -186,7 +163,7 @@ QNN intermediate-representation dumps — diagnostic artifacts produced at compi
 
 ---
 
-## 9. Debug options
+## 8. Debug options
 
 | Option | CLI flag (`--qualcomm_…`) | Default | Phase | Notes |
 |--------|------|---------|-------|----------------|
@@ -195,7 +172,7 @@ QNN intermediate-representation dumps — diagnostic artifacts produced at compi
 
 ---
 
-## 10. Deprecated / retired options
+## 9. Deprecated / retired options
 
 These remain as **no-ops** purely to preserve the C ABI contract. Setting them
 does nothing.
@@ -207,7 +184,7 @@ does nothing.
 
 ---
 
-## 11. Worked examples
+## 10. Worked examples
 
 ### CLI — compile (`apply_plugin_main`)
 
@@ -220,7 +197,6 @@ apply_plugin_main \
     --qualcomm_optimization_level=O3 \
     --qualcomm_use_conv_hmx=true \
     --qualcomm_vtcm_size=8 \
-    --qualcomm_htp_pd_session=unsigned \
     --qualcomm_profiling=detailed
 ```
 
@@ -228,7 +204,12 @@ apply_plugin_main \
 
 ```bash
 run_model \
-    --graph=model_compiled.tflite \
+    --graph=model.tflite \
+    --accelerator=npu \
+    --compiler_plugin_library_dir=/path/to/compiler/plugins \
+    --qualcomm_backend=htp \
+    --qualcomm_enable_just_in_time=true \
+    --qualcomm_htp_device_id=0 \
     --qualcomm_htp_performance_mode=burst \
     --qualcomm_profiling=detailed
 ```
@@ -250,9 +231,9 @@ qnn_backend = 2            # htp   (note the key is qnn_backend, not backend)
 optimization_level = 2     # O3 == kOptimizeForInferenceO3
 use_conv_hmx = true
 vtcm_size = 8
+enable_just_in_time = true
+htp_device_id = 0
 htp_performance_mode = 2   # burst
-htp_pd_session = 0         # unsigned (default); 1 = signed, 2 = adaptive
-dsp_pd_session = 0         # unsigned (default); 1 = signed, 2 = adaptive
 profiling = 2              # detailed
 ```
 
@@ -267,6 +248,8 @@ opts.SetOptimizationLevel(
     litert::qualcomm::QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
 opts.SetUseConvHMX(true);
 opts.SetVtcmSize(8);
+opts.SetEnableJustInTime(true);
+opts.SetHtpDeviceId(0);
 opts.SetHtpPerformanceMode(
     litert::qualcomm::QualcommOptions::HtpPerformanceMode::kBurst);
 opts.SetProfiling(litert::qualcomm::QualcommOptions::Profiling::kDetailed);
@@ -283,6 +266,8 @@ LrtQualcommOptionsSetBackend(opts, kLiteRtQualcommBackendHtp);
 LrtQualcommOptionsSetOptimizationLevel(opts, kHtpOptimizeForInferenceO3);
 LrtQualcommOptionsSetUseConvHMX(opts, true);
 LrtQualcommOptionsSetVtcmSize(opts, 8);
+LrtQualcommOptionsSetEnableJustInTime(opts, true);
+LrtQualcommOptionsSetHtpDeviceId(opts, 0);
 LrtQualcommOptionsSetHtpPerformanceMode(
     opts, kLiteRtQualcommHtpPerformanceModeBurst);
 LrtQualcommOptionsSetProfiling(opts, kLiteRtQualcommProfilingDetailed);
