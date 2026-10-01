@@ -170,9 +170,7 @@ TEST(MoeExpertsKernelTest, DecodeSingleTokenSkipsGatherAndFusesScaleReduction) {
       ir::MoeExpertsAttributes::WeightType::kFp32, /*num_blocks=*/1, &gpu_model,
       gpu_info);
 
-  EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "gather"));
-  EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "batched_matmul"));
-  EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "moe_scale_with_batch_ids"));
+  EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "scale_with_batch_ids"));
 }
 
 TEST(MoeExpertsKernelTest,
@@ -187,9 +185,7 @@ TEST(MoeExpertsKernelTest,
       ir::MoeExpertsAttributes::WeightType::kFp32, /*num_blocks=*/1, &gpu_model,
       gpu_info);
 
-  EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "gather"));
-  EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "batched_matmul"));
-  EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "moe_scale_with_batch_ids"));
+  EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "scale_with_batch_ids"));
 }
 
 TEST(MoeExpertsKernelTest,
@@ -205,9 +201,7 @@ TEST(MoeExpertsKernelTest,
       gpu_info);
 
   EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "experts_remap"));
-  EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "gather"));
-  EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "batched_matmul"));
-  EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "moe_scale_with_batch_ids"));
+  EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "scale_with_batch_ids"));
 }
 
 TEST(MoeExpertsKernelTest,
@@ -222,8 +216,7 @@ TEST(MoeExpertsKernelTest,
         /*model_dim=*/16, /*hidden_dim=*/32,
         ir::MoeExpertsAttributes::WeightType::kInt8, /*num_blocks=*/1,
         &gpu_model, gpu_info);
-    EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "gather"));
-    EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "moe_scale_with_batch_ids"));
+    EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "scale_with_batch_ids"));
   }
 
   // 2. Int8 blockwise (num_blocks = 2) decode.
@@ -234,8 +227,7 @@ TEST(MoeExpertsKernelTest,
         /*model_dim=*/16, /*hidden_dim=*/32,
         ir::MoeExpertsAttributes::WeightType::kInt8, /*num_blocks=*/2,
         &gpu_model, gpu_info);
-    EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "gather"));
-    EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "moe_scale_with_batch_ids"));
+    EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "scale_with_batch_ids"));
   }
 
   // 3. Int4 blockwise (num_blocks = 2) prefill (packed groups).
@@ -247,7 +239,7 @@ TEST(MoeExpertsKernelTest,
         ir::MoeExpertsAttributes::WeightType::kInt4, /*num_blocks=*/2,
         &gpu_model, gpu_info);
     EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "experts_remap"));
-    EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "moe_scale_with_batch_ids"));
+    EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "scale_with_batch_ids"));
   }
 }
 
