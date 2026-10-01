@@ -784,6 +784,48 @@ TEST_P(SdpaTransposedKernelExecuteTest,
   EXPECT_TRUE(status.ok()) << status.message();
 }
 
+// Gemma 4 sliding-window decode: head dim 256 (64 channel slices) with 4 query
+// heads per KV head and a flattened output.
+TEST_P(SdpaTransposedKernelExecuteTest,
+       SingleTokenDecodeGemma4SlidingHeadDim256FlattenedOutput) {
+  auto status = RunSdpaTransposedTest(
+      *exec_env, precision(), storage(), /*BK=*/8, /*T=*/1, /*S=*/64,
+      /*H=*/256, mask_mode(), /*KV=*/2, /*q_start=*/63,
+      /*from_cache_update=*/true, /*is_causal=*/false, /*flatten_output=*/true);
+  EXPECT_TRUE(status.ok()) << status.message();
+}
+
+// Gemma 4 global-attention decode: head dim 512 (128 channel slices) with 4
+// query heads per KV head and a flattened output.
+TEST_P(SdpaTransposedKernelExecuteTest,
+       SingleTokenDecodeGemma4GlobalHeadDim512FlattenedOutput) {
+  auto status = RunSdpaTransposedTest(
+      *exec_env, precision(), storage(), /*BK=*/8, /*T=*/1, /*S=*/64,
+      /*H=*/512, mask_mode(), /*KV=*/2, /*q_start=*/63,
+      /*from_cache_update=*/true, /*is_causal=*/false, /*flatten_output=*/true);
+  EXPECT_TRUE(status.ok()) << status.message();
+}
+
+// Single-token decode with a pruned BOOL causal mask (`MaskMode::kNone`,
+// `attr.is_causal = true`) for the head dims whose BOOL mask the Apple parsers
+// prune (head_dim / 4 dividing 256), using a partially filled cache.
+TEST_P(SdpaTransposedKernelExecuteTest,
+       SingleTokenDecodeImplicitCausalPrunedMaskHeadDims) {
+  if (!IsAppleMetal(exec_env->GetGpuInfo())) {
+    GTEST_SKIP() << "BOOL causal mask pruning only applies to the fused Apple "
+                    "Metal Flash-Decode kernel.";
+  }
+  for (int head_dim : {4, 64, 128, 256, 512, 1024}) {
+    auto status = RunSdpaTransposedTest(
+        *exec_env, precision(), storage(), /*BK=*/8, /*T=*/1, /*S=*/64,
+        /*H=*/head_dim, MaskMode::kNone, /*KV=*/2, /*q_start=*/49,
+        /*from_cache_update=*/true, /*is_causal=*/true, /*flatten_output=*/true,
+        /*active_tokens=*/50);
+    EXPECT_TRUE(status.ok())
+        << "head_dim=" << head_dim << ": " << status.message();
+  }
+}
+
 // Grouped-query attention on plain K/V tensors, which always takes the
 // decomposed BatchedMatMul graph.
 TEST_P(SdpaTransposedKernelExecuteTest, StandardTensorsFallbackGroupedQuery) {
