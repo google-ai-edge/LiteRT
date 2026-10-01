@@ -588,6 +588,54 @@ mld_kernel_test(
     ],
 )
 
+objc_library(
+    name = "qkv_norm_rope_kernel_test_objc_lib",
+    testonly = True,
+    srcs = [
+        "qkv_norm_rope_kernel_test.cc",
+        "@ml_drift//ml_drift/common/kernels/tests:kernel_test.h",
+        "@ml_drift//ml_drift/common/kernels/tests:metal_kernel_test.mm",
+    ],
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":qkv_norm_rope_kernel",
+        ":qkv_norm_rope_parser",
+        "@com_google_googletest//:gtest",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        # Dependency placeholder: apple_frameworks Metal,
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+        "@ml_drift//ml_drift/metal/testing:test_util",
+    ],
+)
+
+cc_test(
+    name = "qkv_norm_rope_kernel_test_mac",
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":qkv_norm_rope_kernel_test_objc_lib",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "gated_delta_update_parser",
     srcs = ["gated_delta_update_parser.cc"],
