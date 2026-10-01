@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:symlink_files.bzl", "symlink_files")  # @unused
 load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")  # @unused
+load("//tflite:build_def.bzl", "tflite_linkopts")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -382,6 +385,40 @@ objc_library(
         # Dependency placeholder: apple_frameworks Metal,
         # Dependency placeholder: apple_frameworks XCTest,
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+# A minimal CompiledModel program for CPU. Used to track the size of a minimal
+# LiteRT CPU runtime. See docs/instructions/MINIMAL_BUILD.md.
+cc_binary(
+    name = "minimal_compiled_model",
+    srcs = ["minimal_compiled_model.cc"],
+    # Same size-oriented link flags as the TFLite size tracking binaries.
+    linkopts = tflite_linkopts(),
+    linkstatic = 1,
+    deps = [
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_tensor_buffer",
+    ],
+)
+
+sh_test(
+    name = "minimal_compiled_model_test",
+    srcs = ["minimal_compiled_model_test.sh"],
+    args = [
+        "$(rootpath :minimal_compiled_model)",
+        "$(rootpath testdata/transformer.tflite)",
+    ],
+    data = [
+        "testdata/transformer.tflite",
+        ":minimal_compiled_model",
+    ],
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
     ],
 )
 

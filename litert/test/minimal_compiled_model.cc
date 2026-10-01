@@ -1,0 +1,78 @@
+// Copyright 2026 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// A minimal program that runs a model on CPU with the LiteRT CompiledModel
+// API. It is used to track the binary size of a minimal LiteRT CPU runtime
+// (see docs/instructions/MINIMAL_BUILD.md), so keep it free of extra
+// dependencies.
+//
+// Usage: minimal_compiled_model <model.tflite>
+
+#include <cstdio>
+#include <cstring>
+
+#include "litert/cc/litert_common.h"
+#include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_tensor_buffer.h"
+
+int main(int argc, char** argv) {
+  if (argc != 2) {
+    std::fprintf(stderr, "Usage: %s <model.tflite>\n", argv[0]);
+    return 2;
+  }
+
+  auto env = litert::Environment::Create({});
+  if (!env) {
+    std::fprintf(stderr, "Failed to create environment: %s\n",
+                 env.Error().Message().c_str());
+    return 1;
+  }
+
+  auto compiled_model = litert::CompiledModel::Create(
+      *env, argv[1], litert::HwAccelerators::kCpu);
+  if (!compiled_model) {
+    std::fprintf(stderr, "Failed to create compiled model: %s\n",
+                 compiled_model.Error().Message().c_str());
+    return 1;
+  }
+
+  auto inputs = compiled_model->CreateInputBuffers();
+  auto outputs = compiled_model->CreateOutputBuffers();
+  if (!inputs || !outputs) {
+    std::fprintf(stderr, "Failed to create tensor buffers\n");
+    return 1;
+  }
+
+  // Fill every input with zeros.
+  for (auto& input : *inputs) {
+    auto size = input.PackedSize();
+    auto data = input.Lock(litert::TensorBuffer::LockMode::kWrite);
+    if (!size || !data) {
+      std::fprintf(stderr, "Failed to write input\n");
+      return 1;
+    }
+    std::memset(*data, 0, *size);
+    (void)input.Unlock();
+  }
+
+  if (auto status = compiled_model->Run(*inputs, *outputs); !status) {
+    std::fprintf(stderr, "Failed to run: %s\n",
+                 status.Error().Message().c_str());
+    return 1;
+  }
+
+  std::printf("OK: %zu inputs, %zu outputs\n", inputs->size(), outputs->size());
+  return 0;
+}
