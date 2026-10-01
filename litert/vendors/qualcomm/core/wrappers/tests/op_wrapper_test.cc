@@ -493,6 +493,41 @@ TEST(OpWrapperTest, IsElementWiseTest) {
       QNN_OP_ELEMENT_WISE_BINARY_OPERATION_MULTIPLY);
   EXPECT_TRUE(IsElementWiseMultiply(mul_op));
 
+  OpWrapper less_op("name", QNN_OP_ELEMENT_WISE_BINARY,
+                    QnnOpCode::kElementWiseBinary);
+  less_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_LESS);
+  EXPECT_TRUE(IsElementWiseLess(less_op));
+
+  OpWrapper greater_equal_op("name", QNN_OP_ELEMENT_WISE_BINARY,
+                             QnnOpCode::kElementWiseBinary);
+  greater_equal_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_GREATER_EQUAL);
+  EXPECT_TRUE(IsElementWiseGreaterEqual(greater_equal_op));
+
+  OpWrapper or_op("name", QNN_OP_ELEMENT_WISE_BINARY,
+                  QnnOpCode::kElementWiseBinary);
+  or_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_OR);
+  EXPECT_TRUE(IsElementWiseOr(or_op));
+
+  OpWrapper not_equal_op("name", QNN_OP_ELEMENT_WISE_BINARY,
+                         QnnOpCode::kElementWiseBinary);
+  not_equal_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_NOT_EQUAL);
+  EXPECT_TRUE(IsElementWiseNotEqual(not_equal_op));
+
+  OpWrapper and_op("name", QNN_OP_ELEMENT_WISE_BINARY,
+                   QnnOpCode::kElementWiseBinary);
+  and_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_AND);
+  EXPECT_TRUE(IsElementWiseAnd(and_op));
+
   OpWrapper not_op("name", QNN_OP_ELEMENT_WISE_UNARY,
                    QnnOpCode::kElementWiseUnary);
   not_op.AddScalarParam<std::uint32_t>(

@@ -348,6 +348,37 @@ bool IsElementWiseOpImpl(const OpWrapper& op, QnnOpCode op_code,
 }
 }  // namespace
 
+bool IsElementWiseLess(const OpWrapper& op) {
+  return IsElementWiseOpImpl(op, QnnOpCode::kElementWiseBinary,
+                             QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+                             QNN_OP_ELEMENT_WISE_BINARY_OPERATION_LESS);
+}
+
+bool IsElementWiseGreaterEqual(const OpWrapper& op) {
+  return IsElementWiseOpImpl(
+      op, QnnOpCode::kElementWiseBinary,
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_GREATER_EQUAL);
+}
+
+bool IsElementWiseOr(const OpWrapper& op) {
+  return IsElementWiseOpImpl(op, QnnOpCode::kElementWiseBinary,
+                             QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+                             QNN_OP_ELEMENT_WISE_BINARY_OPERATION_OR);
+}
+
+bool IsElementWiseNotEqual(const OpWrapper& op) {
+  return IsElementWiseOpImpl(op, QnnOpCode::kElementWiseBinary,
+                             QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+                             QNN_OP_ELEMENT_WISE_BINARY_OPERATION_NOT_EQUAL);
+}
+
+bool IsElementWiseAnd(const OpWrapper& op) {
+  return IsElementWiseOpImpl(op, QnnOpCode::kElementWiseBinary,
+                             QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+                             QNN_OP_ELEMENT_WISE_BINARY_OPERATION_AND);
+}
+
 bool IsElementWiseMultiply(const OpWrapper& op) {
   return IsElementWiseOpImpl(op, QnnOpCode::kElementWiseBinary,
                              QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,

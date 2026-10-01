@@ -15,6 +15,9 @@ target_sources(qnn_transformation
         mha_to_sha.cc
         kv_swapped_attn.cc
         rotation_quant.cc
+        onehot_fc.cc
+        rope.cc
+        convert_fc_convert.cc
 )
 
 target_include_directories(qnn_transformation

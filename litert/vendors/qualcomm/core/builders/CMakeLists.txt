@@ -51,6 +51,7 @@ target_sources(qnn_builders
         reshape_op_builder.cc
         resize_op_builder.cc
         reverse_op_builder.cc
+        rotary_embedding_op_builder.cc
         rms_norm_op_builder.cc
         select_op_builder.cc
         slice_op_builder.cc
