@@ -15,10 +15,32 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
+# copybara:uncomment_begin(google-only)
+# load("//tools/build_defs/build_test:build_test.bzl", "build_test")
+# copybara:uncomment_end
+
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = ["//litert:__subpackages__"],
 )
+
+# copybara:uncomment_begin(google-only)
+# # Mirrors the android_x86_64 step of the Kokoro prebuilt_binaries job
+# # (third_party/odml/kokoro/litert/generic/linux_x86_cpu/prebuilt_binaries/common.gcl).
+# # Referenced from the `third_party.openvino.android_x86_64` TAP buildable unit so
+# # that OpenVINO re-import CLs fail presubmit if these plugins stop building, instead
+# # of only being caught post-submit by the litert Kokoro job (see cl/991463461).
+# # Google-only: //tools/build_defs/build_test has no OSS equivalent. See
+# # //third_party/openvino/BUILD for the flags to run this locally.
+# build_test(
+#     name = "prebuilt_plugins_build_test",
+#     allow_empty_target = False,
+#     targets = [
+#         "//litert/vendors/intel_openvino/compiler:intel_openvino_compiler_plugin_so",
+#         "//litert/vendors/intel_openvino/dispatch:dispatch_api_so",
+#     ],
+# )
+# copybara:uncomment_end
 
 cc_library(
     name = "ov_utils",
