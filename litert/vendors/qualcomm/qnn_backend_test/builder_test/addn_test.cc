@@ -1,6 +1,7 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -14,9 +15,9 @@
 
 namespace litert::qnn {
 namespace {
-#if defined(__ANDROID__)
 using testing::ElementsAre;
-#endif
+using testing::FloatNear;
+using testing::Pointwise;
 
 INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
                          QnnTestPrinter);
