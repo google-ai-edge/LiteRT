@@ -3,6 +3,7 @@
 
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -76,6 +77,17 @@ TEST(TensorWrapperTest, CopyTensorTest) {
   for (size_t i = 0; i < data.size(); i++) {
     EXPECT_EQ((*tensor_data)[i], data[i]);
   }
+}
+
+TEST(TensorWrapperTest, SetBoolTensorData) {
+  TensorWrapper tensor_wrapper{
+      "", QNN_TENSOR_TYPE_STATIC, QNN_DATATYPE_BOOL_8, {}, {3}};
+  static constexpr std::array<bool, 3> kData{true, false, true};
+
+  ASSERT_TRUE(tensor_wrapper.SetTensorData<bool>(absl::MakeConstSpan(kData)));
+  const auto tensor_data = tensor_wrapper.GetTensorData<bool>();
+  ASSERT_TRUE(tensor_data);
+  EXPECT_THAT(tensor_data.value(), testing::ElementsAreArray(kData));
 }
 
 TEST(TensorWrapperTest, MoveTensorTest) {
