@@ -421,6 +421,13 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
 namespace {
 
 LiteRtDispatchInterface TheInterface = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtDispatchInterface),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .initialize = litert::openvino::DispatchInitialize,
     .get_vendor_id = litert::openvino::DispatchGetVendorId,
     .get_build_id = litert::openvino::DispatchGetBuildId,
@@ -452,6 +459,13 @@ LiteRtDispatchInterface TheInterface = {
 };
 
 LiteRtCustomTensorBufferHandlersDef TheTensorBufferHandlers = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtCustomTensorBufferHandlersDef),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .create_func = litert::openvino::CreateOpenVinoTensorBuffer,
     .destroy_func = litert::openvino::DestroyOpenVinoTensorBuffer,
     .lock_func = litert::openvino::LockOpenVinoTensorBuffer,
@@ -465,6 +479,13 @@ LiteRtCustomTensorBufferHandlersDef TheTensorBufferHandlers = {
 };
 
 LiteRtDispatchApi TheApi = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtDispatchApi),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .version = {.major = LITERT_API_VERSION_MAJOR,
                 .minor = LITERT_API_VERSION_MINOR,
                 .patch = LITERT_API_VERSION_PATCH},

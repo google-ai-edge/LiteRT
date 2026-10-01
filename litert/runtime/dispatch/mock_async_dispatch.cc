@@ -138,6 +138,12 @@ LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
       };
 
   // Provide Async interface
+  g_intercepted_async_interface.abi_header = LiteRtAbiHeader{
+      .struct_size = sizeof(LiteRtDispatchAsyncInterface),
+      .major_version = 1,
+      .minor_version = 0,
+      .reserved = 0,
+  };
   g_intercepted_async_interface.invoke_async =
       [](LiteRtDispatchInvocationContext context, int num_events,
          LiteRtEvent* events) {

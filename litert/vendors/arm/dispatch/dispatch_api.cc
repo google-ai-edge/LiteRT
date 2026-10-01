@@ -218,6 +218,13 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
 }  // namespace litert::arm
 
 LiteRtDispatchInterface TheInterface = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtDispatchInterface),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .initialize = litert::arm::Initialize,
     .get_vendor_id = litert::arm::GetVendorId,
     .get_build_id = litert::arm::GetBuildId,
@@ -244,6 +251,7 @@ LiteRtDispatchInterface TheInterface = {
     .destroy_metrics = nullptr,
     .check_runtime_compatibility = litert::arm::CheckRuntimeCompatibility,
     .invocation_context_set_options = litert::arm::InvocationContextSetOptions,
+    .get_hooks = nullptr,
 };
 
 LiteRtDispatchApi TheApi = {
