@@ -337,6 +337,7 @@ class Quantizer:
       weight_num_bits: int,
       weight_granularity: qtyping.QuantGranularity = qtyping.QuantGranularity.CHANNELWISE,
       algorithm_key: str = algorithm_manager.AlgorithmName.MIN_MAX_UNIFORM_QUANT,
+      activation_algorithm_params: Optional[dict[str, Any]] = None,
   ):
     """Adds a static quantization configuration to the recipe.
 
@@ -357,6 +358,10 @@ class Quantizer:
       weight_num_bits: Number of bits for weight quantization.
       weight_granularity: Granularity of weight quantization.
       algorithm_key: Algorithm key to be applied.
+      activation_algorithm_params: Optional algorithm parameters for the
+        activation tensors, e.g. `{"range_method": "histogram_mse"}` to derive
+        activation ranges from calibration histograms. See
+        `naive_min_max_quantize.ActivationRangeMethod`.
     """
     self._recipe_manager.add_static_config(
         regex,
@@ -365,6 +370,7 @@ class Quantizer:
         weight_num_bits,
         weight_granularity,
         algorithm_key,
+        activation_algorithm_params,
     )
 
   @property

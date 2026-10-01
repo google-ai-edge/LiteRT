@@ -314,13 +314,13 @@ calibration.
 * **`CALIBRATION_PRESERVE_ALL_TENSORS` (Default)**: Preserves all intermediate
   tensors in memory, allowing Python-level tensor inspection and collecting
   arbitrary statistics across all layers. Recommended when using algorithms that
-  require custom activation statistics (such as GPTQ) or when inspecting
-  intermediate activations.
-* **`CALIBRATION_PROFILER_BASED` (Recommended, except for GPTQ)**: Uses TFLite's
-  internal C++ profiler-based calibration. It executes directly in C++ with
-  lower memory overhead and is significantly faster. Currently, only min/max
-  collection is supported by this mode, so it can be utilized for all
-  quantization algorithms except GPTQ.
+  require custom activation statistics (such as GPTQ or OSCAR) or when
+  inspecting intermediate activations.
+* **`CALIBRATION_PROFILER_BASED` (Recommended, except for GPTQ/OSCAR)**: Uses
+  TFLite's internal C++ profiler-based calibration. It executes directly in C++
+  with lower memory overhead and is significantly faster. It supports both
+  min/max and histogram collection natively in C++, so it can be utilized for
+  all quantization algorithms except GPTQ and OSCAR.
 
 #### Calibration API: `Quantizer.calibrate()`
 
@@ -382,6 +382,33 @@ for samples in dataset:
 
 # 3. Extract accumulated calibration statistics.
 calibration_result = interpreter.get_calibration_results()
+```
+
+#### Histogram-Based Activation Calibration
+
+For models with heavy-tailed activation distributions or outliers, set the
+activation `range_method` to `"histogram_mse"` or `"histogram_percentile"`.
+Calibration then collects bounded histograms of the activations, and
+quantization chooses clipping ranges that minimize quantization MSE or clip
+extreme tail percentiles (`"min_percentile"` and `"max_percentile"`, default
+0.001 and 99.999). This works with any algorithm whose activations use min/max
+ranges, in both `CALIBRATION_PROFILER_BASED` and
+`CALIBRATION_PRESERVE_ALL_TENSORS` modes:
+
+```python
+from litert_quantizer import calibrator, quantizer, recipe
+
+qt = quantizer.Quantizer("path/to/model.tflite")
+qt.load_quantization_recipe(
+    recipe.static_wi8_ai8(
+        activation_algorithm_params={"range_method": "histogram_mse"}
+    )
+)
+calibration_result = qt.calibrate(
+    calibration_data,
+    mode=calibrator.CalibrationMode.CALIBRATION_PROFILER_BASED,
+)
+quantized_model = qt.quantize(calibration_result=calibration_result)
 ```
 
 ### Step 4: Quantize & Export the Model

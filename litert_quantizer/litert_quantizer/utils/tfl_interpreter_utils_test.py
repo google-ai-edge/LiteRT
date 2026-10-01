@@ -17,8 +17,10 @@ import pathlib
 from unittest import mock
 
 from absl.testing import absltest
+from absl.testing import parameterized
 import numpy as np
 
+from ai_edge_litert.tools import flatbuffer_utils
 from litert_quantizer.utils import test_utils
 from litert_quantizer.utils import tfl_interpreter_utils
 
@@ -451,6 +453,72 @@ class TflUtilsMultiSignatureModelTest(absltest.TestCase):
     self.assertEqual(weight_content, 10)
     multiply_output_content = mul_tensor_content["PartitionedCall_1:0"]
     self.assertEqual(multiply_output_content, [20.0])
+
+
+class TflUtilsSignaturelessModelTest(parameterized.TestCase):
+
+  def setUp(self):
+    super().setUp()
+    np.random.seed(0)
+    self._signature_model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / "conv_fc_mnist.tflite"
+    )
+    model = flatbuffer_utils.read_model(self._signature_model_path)
+    model.signatureDefs = []
+    self._model = bytes(flatbuffer_utils.convert_object_to_bytearray(model))
+    self._input_data = np.random.rand(1, 28, 28, 1).astype(np.float32)
+
+  @parameterized.parameters(None, tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY)
+  def test_tensor_names_and_subgraph_index(self, signature_key):
+    self.assertEqual(
+        tfl_interpreter_utils.get_input_tensor_names(
+            self._model, signature_key
+        ),
+        ["serving_default_conv2d_input:0"],
+    )
+    self.assertEqual(
+        tfl_interpreter_utils.get_output_tensor_names(
+            self._model, signature_key
+        ),
+        ["StatefulPartitionedCall:0"],
+    )
+    tfl_interpreter = tfl_interpreter_utils.create_tfl_interpreter(self._model)
+    self.assertEqual(
+        tfl_interpreter_utils.get_signature_main_subgraph_index(
+            tfl_interpreter, signature_key
+        ),
+        0,
+    )
+
+  @parameterized.parameters(
+      "serving_default_conv2d_input", "serving_default_conv2d_input:0"
+  )
+  def test_invoke_interpreter_signature_matches_signature_model(
+      self, input_name
+  ):
+    expected = tfl_interpreter_utils.invoke_interpreter_signature(
+        tfl_interpreter_utils.create_tfl_interpreter(
+            self._signature_model_path
+        ),
+        {"conv2d_input": self._input_data},
+    )
+    output = tfl_interpreter_utils.invoke_interpreter_signature(
+        tfl_interpreter_utils.create_tfl_interpreter(self._model),
+        {input_name: self._input_data},
+    )
+    self.assertEqual(list(output), ["StatefulPartitionedCall:0"])
+    np.testing.assert_allclose(
+        output["StatefulPartitionedCall:0"], next(iter(expected.values()))
+    )
+
+  def test_invoke_interpreter_signature_raises_on_unknown_input(self):
+    with self.assertRaisesRegex(
+        ValueError, "not found in signature_input_data"
+    ):
+      tfl_interpreter_utils.invoke_interpreter_signature(
+          tfl_interpreter_utils.create_tfl_interpreter(self._model),
+          {"wrong_name": self._input_data},
+      )
 
 
 class TflUtilsIntegerInputModelTest(absltest.TestCase):
