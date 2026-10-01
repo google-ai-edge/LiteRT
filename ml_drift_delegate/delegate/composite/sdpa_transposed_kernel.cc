@@ -326,6 +326,58 @@ class FusedFlashDecodeCombineOp : public ::ml_drift::GPUOperation {
   int splits_ = 1;
 };
 
+// Generates the shader code that bounds `active_tokens` by the causal position
+// of query `X` when the BOOL causal mask was pruned (`attr.is_causal` without a
+// mask tensor). Expects `active_tokens` and, with `has_param`,
+// `has_active_tokens` (whether `params` held an in-range active token count) to
+// be defined.
+//
+// Multi-token queries clamp to `q_start + X + 1`. `q_start` is read from
+// `param[0]` when it is in range (0 < q_start < active_tokens); otherwise the
+// queries are assumed to be the last `q.Width()` active tokens.
+//
+// A single-token decode query is the newest token, so the active token count
+// is already its causal bound. On a sliding-window ring-buffer cache,
+// `param[0]` is the ring write offset (step % window) rather than an absolute
+// position, and clamping to it would drop visible keys once the ring wraps. So
+// `param[0]` only bounds a single query when the active token count is missing
+// or out of range, and only if `param[0]` itself is in range
+// (0 < param[0] < cache_size).
+std::string GenerateImplicitCausalBoundCode(bool has_param,
+                                            bool is_single_query) {
+  if (is_single_query) {
+    if (!has_param) return "";
+    return R"(
+  if (!has_active_tokens) {
+    float4 p_start_vec = ucl::Convert<float4>(args.params.Read(0, 0, 0, 0));
+    int start_val = (int)p_start_vec.x;
+    if (start_val > 0 && start_val < active_tokens) {
+      active_tokens = start_val + 1;
+    }
+  }
+)";
+  }
+  if (!has_param) {
+    // Without `params`, the query tokens are the last `q.Width()` entries.
+    return R"(
+  {
+    int q_start = max(0, active_tokens - args.q.Width());
+    active_tokens = min(active_tokens, q_start + X + 1);
+  }
+)";
+  }
+  return R"(
+  {
+    float4 p_start_vec = ucl::Convert<float4>(args.params.Read(0, 0, 0, 0));
+    int start_val = (int)p_start_vec.x;
+    int q_start = (start_val > 0 && start_val < active_tokens)
+                      ? start_val
+                      : max(0, active_tokens - args.q.Width());
+    active_tokens = min(active_tokens, q_start + X + 1);
+  }
+)";
+}
+
 // Generates the wave-SIMD (32-lane) reduction Flash-Decode kernel source.
 //
 // Execution model:
@@ -350,7 +402,7 @@ std::string GenerateWaveSimdFlashDecodeCode(
     int num_simd_groups, int slices, int gqa_ratio, int k_stride_head,
     int k_stride_slice, int v_stride_head, int v_stride_s, bool has_mask,
     bool is_bool_mask, int mask_width, bool has_param, bool is_causal,
-    bool has_softcap, bool is_flattened_dst) {
+    bool is_single_query, bool has_softcap, bool is_flattened_dst) {
   const int v_stride_2s = v_stride_s * 2;
   const int v_stride_3s = v_stride_s * 3;
   const int v_stride_4s = v_stride_s * 4;
@@ -384,26 +436,14 @@ MAIN_FUNCTION($0) {
   float4 p_vec = ucl::Convert<float4>(args.params.Read(0, 0, param_slice, 0));
   float p_raw = (param_comp == 0) ? p_vec.x : ((param_comp == 1) ? p_vec.y : ((param_comp == 2) ? p_vec.z : p_vec.w));
   int param_val = (int)p_raw;
-  if (param_val > 0 && param_val <= args.cache_size) {
+  bool has_active_tokens = param_val > 0 && param_val <= args.cache_size;
+  if (has_active_tokens) {
     active_tokens = param_val;
   }
 )";
   }
   if (!has_mask && is_causal) {
-    // Without `params` (or with an unset query start), the query tokens are
-    // the last `q.Width()` active tokens.
-    op_code += has_param ? R"(
-  float4 p_start_vec = ucl::Convert<float4>(args.params.Read(0, 0, 0, 0));
-  int start_val = (int)p_start_vec.x;
-  int q_start = (start_val > 0 && start_val < active_tokens)
-                    ? start_val
-                    : max(0, active_tokens - args.q.Width());
-  active_tokens = min(active_tokens, q_start + X + 1);
-)"
-                         : R"(
-  int q_start = max(0, active_tokens - args.q.Width());
-  active_tokens = min(active_tokens, q_start + X + 1);
-)";
+    op_code += GenerateImplicitCausalBoundCode(has_param, is_single_query);
   }
 
   absl::StrAppend(&op_code, R"(
@@ -721,7 +761,7 @@ std::string GenerateWorkGroupFlashDecodeCode(
     int slices, int group_size, int cache_size, int k_stride_head,
     int k_stride_slice, int v_stride_head, int v_stride_block, bool has_mask,
     bool is_bool_mask, int mask_width, bool has_param, bool is_causal,
-    bool has_softcap, bool is_flattened_dst) {
+    bool is_single_query, bool has_softcap, bool is_flattened_dst) {
   const int reduce_threads = config.tuning.reduce_threads;
   const int threads = config.tuning.threads;
   const int heads = config.heads;
@@ -813,6 +853,7 @@ std::string GenerateWorkGroupFlashDecodeCode(
                   slices, ", i % ", slices, R"());
   }
   int active_tokens = args.cache_size;
+  bool has_active_tokens = false;
 )");
 
   if (has_param) {
@@ -826,31 +867,16 @@ std::string GenerateWorkGroupFlashDecodeCode(
                 : param_comp == 2 ? p_vec.z
                                   : p_vec.w;
     int param_val = (int)p_raw;
-    if (param_val > 0 && param_val <= args.cache_size) {
+    has_active_tokens = param_val > 0 && param_val <= args.cache_size;
+    if (has_active_tokens) {
       active_tokens = param_val;
     }
   }
 )");
-    if (!has_mask && is_causal) {
-      absl::StrAppend(&c, R"(
-  {
-    float4 p_start_vec = ucl::Convert<float4>(args.params.Read(0, 0, 0, 0));
-    int start_val = (int)p_start_vec.x;
-    int q_start = (start_val > 0 && start_val < active_tokens)
-                      ? start_val
-                      : max(0, active_tokens - args.q.Width());
-    active_tokens = min(active_tokens, q_start + X + 1);
   }
-)");
-    }
-  } else if (!has_mask && is_causal) {
-    // Without `params`, the query tokens are the last `q.Width()` entries.
-    absl::StrAppend(&c, R"(
-  {
-    int q_start = max(0, active_tokens - args.q.Width());
-    active_tokens = min(active_tokens, q_start + X + 1);
-  }
-)");
+  if (!has_mask && is_causal) {
+    absl::StrAppend(
+        &c, GenerateImplicitCausalBoundCode(has_param, is_single_query));
   }
 
   absl::StrAppend(&c, per_head(R"(
@@ -1102,16 +1128,21 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashDecodeSdpa(
   op.AddDstTensor("dst", dst_desc);
 
   const int mask_width = has_mask ? mask_desc->GetBHWCShape().w : 1;
+  // See `GenerateImplicitCausalBoundCode` for how a single-token decode query
+  // range-checks `param[0]` instead of clamping to it.
+  const bool is_single_query = q_desc.GetBHWCShape().w == 1;
   if (config.use_wave_simd) {
     op.code_ = GenerateWaveSimdFlashDecodeCode(
         config.tuning.num_simd_groups, slices, group_size, k_stride_head,
         k_stride_slice, v_stride_head, v_stride_block, has_mask, is_bool_mask,
-        mask_width, has_param, attr.is_causal, has_softcap, is_flattened_dst);
+        mask_width, has_param, attr.is_causal, is_single_query, has_softcap,
+        is_flattened_dst);
   } else {
     op.code_ = GenerateWorkGroupFlashDecodeCode(
         gpu_info, config, slices, group_size, cache_size, k_stride_head,
         k_stride_slice, v_stride_head, v_stride_block, has_mask, is_bool_mask,
-        mask_width, has_param, attr.is_causal, has_softcap, is_flattened_dst);
+        mask_width, has_param, attr.is_causal, is_single_query, has_softcap,
+        is_flattened_dst);
   }
   ResolveWaveSimd(gpu_info, &op.code_);
   return std::make_unique<FusedFlashDecodeSdpaOp>(std::move(op));

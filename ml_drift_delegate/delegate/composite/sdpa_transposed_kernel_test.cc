@@ -287,6 +287,9 @@ MATCHER_P2(FloatNearWithRelativeTolerance, abs_tolerance, rel_tolerance,
 // For a single-token decode, the mask also hides every key at or past
 // `decode_mask_keys` (`active_tokens` when it is 0), as the runtime mask hides
 // the unfilled cache entries.
+// `param_active_tokens`, when set, is written to the param tensor instead of
+// `active_tokens` (e.g. an out-of-range count), while the reference output
+// still attends to `active_tokens` keys.
 absl::Status RunSdpaTransposedTest(
     ::ml_drift::TestExecutionEnvironment& env,
     ::ml_drift::CalculationsPrecision precision,
@@ -294,7 +297,8 @@ absl::Status RunSdpaTransposedTest(
     int H = 8, MaskMode mask_mode = MaskMode::kBool, int KV = 0,
     int q_start = 0, bool from_cache_update = true, bool is_causal = false,
     bool flatten_output = false, int active_tokens = 0,
-    int decode_mask_keys = 0) {
+    int decode_mask_keys = 0,
+    std::optional<int> param_active_tokens = std::nullopt) {
   if (KV <= 0) KV = BK;
   if (active_tokens <= 0) active_tokens = S;
   if (decode_mask_keys <= 0) decode_mask_keys = active_tokens;
@@ -350,7 +354,8 @@ absl::Status RunSdpaTransposedTest(
       param_tensor_cpu;
   param_tensor_cpu.shape = ::ml_drift::BHWC(1, 1, 1, 7);
   // {cache update start index, cache update end index, active tokens}.
-  param_tensor_cpu.data = {q_start, S, active_tokens, 0, 0, 0, 0};
+  param_tensor_cpu.data = {
+      q_start, S, param_active_tokens.value_or(active_tokens), 0, 0, 0, 0};
 
   ::ml_drift::TensorDescriptor param_desc(
       ::ml_drift::DataType::kInt32, ::ml_drift::TensorStorageType::kBuffer,
@@ -810,6 +815,83 @@ TEST_P(SdpaTransposedKernelExecuteTest,
       /*H=*/128, MaskMode::kNone, /*KV=*/8, /*q_start=*/256,
       /*from_cache_update=*/true, /*is_causal=*/true);
   EXPECT_TRUE(status.ok()) << status.message();
+}
+
+// Verifies that for single-token decode (`T = 1`) with a pruned BOOL causal
+// mask (`MaskMode::kNone`, `attr.is_causal = true`) on a sliding-window ring
+// buffer that has wrapped around (`q_start = step % S < S - 1`, while
+// `active_tokens = S`), the fused Flash-Decode kernel attends to all `S` active
+// keys rather than clamping `active_tokens` to `q_start + 1`. Head dim 128
+// takes the wave-SIMD variant on Metal and head dim 256 the work-group variant.
+TEST_P(SdpaTransposedKernelExecuteTest,
+       SingleTokenDecodeRingBufferWrapAroundImplicitCausal) {
+  if (!IsAppleMetal(exec_env->GetGpuInfo())) {
+    GTEST_SKIP() << "BOOL causal mask pruning only applies to the fused Apple "
+                    "Metal Flash-Decode kernel.";
+  }
+  for (int head_dim : {128, 256}) {
+    auto status = RunSdpaTransposedTest(
+        *exec_env, precision(), storage(), /*BK=*/8, /*T=*/1, /*S=*/64,
+        /*H=*/head_dim, MaskMode::kNone, /*KV=*/2, /*q_start=*/4,
+        /*from_cache_update=*/true, /*is_causal=*/true, /*flatten_output=*/true,
+        /*active_tokens=*/64);
+    EXPECT_TRUE(status.ok()) << "head_dim=" << head_dim << ": "
+                             << status.message();
+  }
+}
+
+// Verifies how single-token decode with a pruned BOOL causal mask range-checks
+// the params:
+// - An out-of-range `param[0]` is ignored when the active token count is valid.
+// - A missing or out-of-range active token count falls back to bounding the
+//   keys by an in-range `param[0]` (`param[0] + 1` keys).
+// - With both out of range (or `param[0]` unset), all `S` cache entries are
+//   attended.
+TEST_P(SdpaTransposedKernelExecuteTest,
+       SingleTokenDecodeImplicitCausalOutOfRangeParams) {
+  if (!IsAppleMetal(exec_env->GetGpuInfo())) {
+    GTEST_SKIP() << "BOOL causal mask pruning only applies to the fused Apple "
+                    "Metal Flash-Decode kernel.";
+  }
+  constexpr int kS = 64;
+  struct Case {
+    int q_start;
+    std::optional<int> param_active_tokens;
+    int expected_active_tokens;
+  };
+  const Case cases[] = {
+      {/*q_start=*/-3, std::nullopt, /*expected_active_tokens=*/40},
+      {/*q_start=*/kS, std::nullopt, /*expected_active_tokens=*/40},
+      {/*q_start=*/1000, std::nullopt, /*expected_active_tokens=*/40},
+      {/*q_start=*/40, /*param_active_tokens=*/0,
+       /*expected_active_tokens=*/41},
+      {/*q_start=*/40, /*param_active_tokens=*/-1,
+       /*expected_active_tokens=*/41},
+      {/*q_start=*/40, /*param_active_tokens=*/kS + 1,
+       /*expected_active_tokens=*/41},
+      {/*q_start=*/0, /*param_active_tokens=*/-1,
+       /*expected_active_tokens=*/kS},
+      {/*q_start=*/-3, /*param_active_tokens=*/-1,
+       /*expected_active_tokens=*/kS},
+      {/*q_start=*/kS, /*param_active_tokens=*/kS + 1,
+       /*expected_active_tokens=*/kS},
+  };
+  for (int head_dim : {128, 256}) {
+    for (const Case& c : cases) {
+      auto status = RunSdpaTransposedTest(
+          *exec_env, precision(), storage(), /*BK=*/8, /*T=*/1, /*S=*/kS,
+          /*H=*/head_dim, MaskMode::kNone, /*KV=*/2, c.q_start,
+          /*from_cache_update=*/true, /*is_causal=*/true,
+          /*flatten_output=*/true,
+          /*active_tokens=*/c.expected_active_tokens,
+          /*decode_mask_keys=*/0, c.param_active_tokens);
+      EXPECT_TRUE(status.ok())
+          << "head_dim=" << head_dim << ", q_start=" << c.q_start
+          << ", param_active_tokens="
+          << c.param_active_tokens.value_or(c.expected_active_tokens) << ": "
+          << status.message();
+    }
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(
