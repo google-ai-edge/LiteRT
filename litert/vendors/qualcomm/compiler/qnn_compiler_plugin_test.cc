@@ -364,7 +364,7 @@ TEST(TestQnnPlugin, ShareContextBinary) {
   LiteRtParamIndex num_byte_code;
   LITERT_ASSERT_OK(
       LiteRtCompiledResultNumByteCodeModules(compiled, &num_byte_code));
-  ASSERT_EQ(num_byte_code, 1);
+  ASSERT_EQ(num_byte_code, 2);
 
   LiteRtDestroyCompiledResult(compiled);
 }
