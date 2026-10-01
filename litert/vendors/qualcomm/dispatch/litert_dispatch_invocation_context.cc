@@ -538,8 +538,14 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
     LITERT_RETURN_IF_ERROR(Profile());
   }
 
-  // TODO (chunhsue-qti): pass folder as option
-  std::string dump_folder = "/data/local/tmp/dumped_tensors/";
+  // TODO (chunhsue-qti): pass folder as option.
+#if defined(__ANDROID__)
+  const std::filesystem::path dump_folder =
+      "/data/local/tmp/dumped_tensors/";
+#else
+  const std::filesystem::path dump_folder =
+      std::filesystem::temp_directory_path() / "litert_dumped_tensors";
+#endif
   for (int i = 0; i < outputs_.size(); ++i) {
     if (outputs_.at(i).IsMarkedDump()) {
       auto status = WriteTensorTo(dump_folder, outputs_[i]);

@@ -126,6 +126,7 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetUseInt64BiasAsInt32(qualcomm_options.GetUseInt64BiasAsInt32());
   qnn_options.SetBackendType(
       static_cast<::qnn::BackendType>(qualcomm_options.GetBackend()));
+  qnn_options.SetSocModel(qualcomm_options.GetSocModel());
   qnn_options.SetEnableWeightSharing(qualcomm_options.GetEnableWeightSharing());
   qnn_options.SetEnableJustInTime(qualcomm_options.GetEnableJustInTime());
   qnn_options.SetUseConvHMX(qualcomm_options.GetUseConvHMX());

@@ -568,6 +568,10 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::Backend, qualcomm_backend,
           litert::qualcomm::QualcommOptions::Backend::kHtp,
           "QNN backend to use.");
 
+ABSL_FLAG(std::string, qualcomm_soc_model, "",
+          "Target Qualcomm SoC model for host simulation/emulation (for "
+          "example, SM8750). Physical targets normally detect the SoC.");
+
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text, QualcommOptions::Backend* options,
@@ -897,6 +901,9 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto qnn_backend = absl::GetFlag(FLAGS_qualcomm_backend);
   opts.SetBackend(qnn_backend);
+
+  const std::string soc_model = absl::GetFlag(FLAGS_qualcomm_soc_model);
+  opts.SetSocModel(soc_model);
 
   const std::string saver_output_dir =
       absl::GetFlag(FLAGS_qualcomm_saver_output_dir);

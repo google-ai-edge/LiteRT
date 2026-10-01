@@ -372,6 +372,15 @@ LiteRtStatus LrtQualcommOptionsSetBackend(
 LiteRtStatus LrtQualcommOptionsGetBackend(
     LrtQualcommOptions options, LrtQualcommOptionsBackend* qnn_backend);
 
+// Target Qualcomm SoC model used when the runtime cannot discover physical
+// hardware, for example when running an AOT context with an x86 simulator.
+// Examples: "SM8750", "SM8850". Defaults to an empty string.
+LiteRtStatus LrtQualcommOptionsSetSocModel(LrtQualcommOptions options,
+                                           const char* soc_model);
+
+LiteRtStatus LrtQualcommOptionsGetSocModel(LrtQualcommOptions options,
+                                           const char** soc_model);
+
 LiteRtStatus LrtQualcommOptionsSetSaverOutputDir(LrtQualcommOptions options,
                                                  const char* saver_output_dir);
 

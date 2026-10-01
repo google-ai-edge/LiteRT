@@ -148,6 +148,9 @@ class Options {
   void SetBackendType(BackendType backend_type);
   BackendType GetBackendType() const;
 
+  void SetSocModel(absl::string_view soc_model);
+  absl::string_view GetSocModel() const;
+
   void SetProfiling(Profiling profiling);
   Profiling GetProfiling() const;
 
@@ -258,6 +261,7 @@ class Options {
  private:
   LogLevel log_level_ = LogLevel::kInfo;
   BackendType backend_type_ = BackendType::kHtpBackend;
+  std::string soc_model_;
   Profiling profiling_ = Profiling::kOff;
   bool use_int64_bias_as_int32_ = true;
   bool enable_weight_sharing_ = false;

@@ -451,18 +451,23 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
   ::litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
+  const auto& options = compiler_plugin->Options();
+  const auto configured_soc_model = options.GetSocModel();
+  if ((soc_model == nullptr || soc_model[0] == '\0') &&
+      !configured_soc_model.empty()) {
+    soc_model = configured_soc_model.data();
+  }
   const auto opt_soc_model = ::qnn::FindOrCreateSocInfo(soc_model);
   if (soc_model && !opt_soc_model) {
     LITERT_LOG(LITERT_ERROR, "Unexpected SoC model: %s", soc_model);
     return kLiteRtStatusErrorInvalidArgument;
   }
-  QnnManager* qnn_manager =
-      compiler_plugin->GetOrCreateQnnManager(compiler_plugin->Options());
+  QnnManager* qnn_manager = compiler_plugin->GetOrCreateQnnManager(options);
   if (!qnn_manager) {
     return kLiteRtStatusErrorRuntimeFailure;
   }
-  ::qnn::QnnBackend* qnn_backend = compiler_plugin->GetOrCreateQnnBackend(
-      compiler_plugin->Options(), opt_soc_model);
+  ::qnn::QnnBackend* qnn_backend =
+      compiler_plugin->GetOrCreateQnnBackend(options, opt_soc_model);
   if (!qnn_backend) {
     return kLiteRtStatusErrorRuntimeFailure;
   }
@@ -524,6 +529,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
   litert::compiler::Model model(compiler_plugin->ctx(), partitions);
   auto num_partitions = model.NumSubgraphs();
+  auto options = compiler_plugin->Options();
+  const auto configured_soc_model = options.GetSocModel();
+  if ((soc_model == nullptr || soc_model[0] == '\0') &&
+      !configured_soc_model.empty()) {
+    soc_model = configured_soc_model.data();
+  }
 
   LITERT_LOG(LITERT_INFO,
              "Starting QNN Compilation for %d subgraphs, soc_model=%s",
@@ -543,7 +554,6 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   // model.
   result->context_bin.resize(num_partitions);
   result->byte_code_index.resize(num_partitions);
-  auto options = compiler_plugin->Options();
   if (!options.GetSchematicDir().empty()) {
     LITERT_LOG(LITERT_INFO,
                "Schematic directory is set. Enabling optrace profiling. "

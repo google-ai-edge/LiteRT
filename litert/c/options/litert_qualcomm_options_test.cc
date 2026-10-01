@@ -117,6 +117,18 @@ TEST(LiteRtQualcommOptionsTest, Backend) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, SocModel) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetSocModel(qualcomm_options, "SM8750"));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetSocModel(), "SM8750");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, EnableWeightSharing) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -497,6 +509,10 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetBackend(), QualcommOptions::Backend::kHtp);
   options->SetBackend(QualcommOptions::Backend::kDsp);
   EXPECT_EQ(options->GetBackend(), QualcommOptions::Backend::kDsp);
+
+  EXPECT_EQ(options->GetSocModel(), "");
+  options->SetSocModel("SM8750");
+  EXPECT_EQ(options->GetSocModel(), "SM8750");
 
   EXPECT_EQ(options->GetSaverOutputDir(), "");
   options->SetSaverOutputDir("tmp");

@@ -429,6 +429,12 @@ void Options::SetBackendType(BackendType backend_type) {
 
 BackendType Options::GetBackendType() const { return backend_type_; }
 
+void Options::SetSocModel(absl::string_view soc_model) {
+  soc_model_ = soc_model;
+}
+
+absl::string_view Options::GetSocModel() const { return soc_model_; }
+
 void Options::SetProfiling(Profiling profiling) { profiling_ = profiling; }
 
 Profiling Options::GetProfiling() const { return profiling_; }
@@ -682,6 +688,7 @@ std::string Options::Dump() const {
   absl::StrAppend(&out, "[GENERAL]\n");
   field(2, "LogLevel", log_level_);
   field(2, "BackendType", backend_type_);
+  field(2, "SocModel", soc_model_);
   field(2, "Profiling", profiling_);
   field(2, "UseInt64BiasAsInt32", use_int64_bias_as_int32_);
   field(2, "EnableWeightSharing", enable_weight_sharing_);

@@ -40,6 +40,7 @@
 #include "litert/vendors/qualcomm/core/backends/backend_factory.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
@@ -139,8 +140,15 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
     return qnn_manager.Error().Status();
   } else {
+    const auto soc_model = qnn_options.GetSocModel();
+    const auto soc_info = ::qnn::FindOrCreateSocInfo(soc_model.data());
+    if (!soc_model.empty() && !soc_info.has_value()) {
+      LITERT_LOG(LITERT_ERROR, "Unexpected Qualcomm SoC model: %s",
+                 soc_model.data());
+      return kLiteRtStatusErrorInvalidArgument;
+    }
     auto qnn_backend = ::qnn::CreateBackend((*qnn_manager)->Api(), qnn_options,
-                                            std::nullopt, false);
+                                            soc_info, false);
     if (!qnn_backend) {
       LITERT_LOG(LITERT_ERROR, "Failed to initialize QNN backend");
       return kLiteRtStatusErrorRuntimeFailure;

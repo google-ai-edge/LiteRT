@@ -93,6 +93,7 @@ struct LrtQualcommOptionsT {
   std::optional<bool> use_qint16_as_quint16;
   std::optional<bool> use_int64_bias_as_int32;
   std::optional<LrtQualcommOptionsBackend> qnn_backend;
+  std::optional<std::string> soc_model;
   std::optional<bool> enable_weight_sharing;
   std::optional<bool> enable_just_in_time;
   std::optional<bool> use_conv_hmx;
@@ -165,6 +166,9 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetBackend(
               parsed_options, static_cast<LrtQualcommOptionsBackend>(*v));
+        } else if (key == "soc_model") {
+          status = LrtQualcommOptionsSetSocModel(parsed_options,
+                                                 std::string(value).c_str());
         } else if (key == "enable_weight_sharing") {
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -354,6 +358,9 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   }
   if (options->qnn_backend.has_value()) {
     toml << "qnn_backend = " << static_cast<int>(*options->qnn_backend) << "\n";
+  }
+  if (options->soc_model.has_value()) {
+    toml << "soc_model = \"" << *options->soc_model << "\"\n";
   }
   if (options->enable_weight_sharing.has_value()) {
     toml << "enable_weight_sharing = "
@@ -1131,6 +1138,27 @@ LiteRtStatus LrtQualcommOptionsGetBackend(
 
   *qnn_backend = options->qnn_backend.value_or(kLiteRtQualcommBackendHtp);
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetSocModel(LrtQualcommOptions options,
+                                           const char* soc_model) {
+  if (options == nullptr || soc_model == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->soc_model = soc_model;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetSocModel(LrtQualcommOptions options,
+                                           const char** soc_model) {
+  if (options == nullptr || soc_model == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *soc_model =
+      options->soc_model.has_value() ? options->soc_model->c_str() : "";
   return kLiteRtStatusOk;
 }
 

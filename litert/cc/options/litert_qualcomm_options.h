@@ -486,6 +486,22 @@ class QualcommOptions : public ConcreteOptionsBase {
     return static_cast<Backend>(val);
   }
 
+  /// @brief Sets the target Qualcomm SoC for host simulation or emulation.
+  ///
+  /// Physical targets normally discover their SoC from the device. An x86
+  /// host cannot, so it needs the model's AOT target explicitly.
+  void SetSocModel(const std::string& soc_model) {
+    LrtQualcommOptionsSetSocModel(options_, soc_model.c_str());
+  }
+  StringView GetSocModel() const {
+    const char* val;
+    auto status = LrtQualcommOptionsGetSocModel(options_, &val);
+    if (status != kLiteRtStatusOk) {
+      return "";
+    }
+    return val;
+  }
+
   void SetSaverOutputDir(const std::string& saver_output_dir) {
     LrtQualcommOptionsSetSaverOutputDir(options_, saver_output_dir.c_str());
   }

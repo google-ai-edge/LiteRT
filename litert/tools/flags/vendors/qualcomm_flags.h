@@ -40,6 +40,8 @@ bool AbslParseFlag(absl::string_view text, QualcommOptions::LogLevel* options,
 
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::Backend, qualcomm_backend);
 
+ABSL_DECLARE_FLAG(std::string, qualcomm_soc_model);
+
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text, QualcommOptions::Backend* options,

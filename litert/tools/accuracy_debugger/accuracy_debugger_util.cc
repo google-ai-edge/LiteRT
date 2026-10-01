@@ -23,6 +23,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -356,7 +357,11 @@ ExtractedModel ExtractOps(const std::vector<const LiteRtOpT*>& ops,
            GetOriginalTensorIndex(reverse_tensor_map.at(b), original_model);
   };
 
-  std::sort(island_inputs_new.begin(), island_inputs_new.end(), sort_by_orig);
+  // Keep boundary inputs in deterministic first-use order. Besides matching
+  // the operator semantics naturally, this is required by backends such as
+  // QNN LPAI whose serialized context reports graph inputs in first-use order.
+  // Re-sorting them by original tensor index would make the DispatchOp edges
+  // positional mismatches for inputs with different quantization parameters.
   std::sort(island_outputs_new.begin(), island_outputs_new.end(), sort_by_orig);
 
   for (auto* in : island_inputs_new) main_sg.Inputs().push_back(in);
@@ -745,6 +750,19 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
                                  litert::Options& accel_opts,
                                  const AccuracyDebuggerOptions& options,
                                  AccuracyDebuggerSummary* summary) {
+  std::optional<litert::Environment> cpu_env;
+  if (!options.use_gpu_ref) {
+    auto cpu_env_res = litert::Environment::Create({});
+    if (!cpu_env_res) {
+      return absl::InternalError(
+          absl::StrCat("Failed to create CPU reference environment: ",
+                       cpu_env_res.Error().Message()));
+    }
+    cpu_env.emplace(std::move(*cpu_env_res));
+  }
+  litert::Environment& reference_env =
+      options.use_gpu_ref ? env : *cpu_env;
+
   auto cpu_opts_res = litert::Options::Create();
   if (!cpu_opts_res) return absl::InternalError("Opts failed");
   if (options.use_gpu_ref) {
@@ -843,13 +861,13 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
     auto serialized_res = litert::internal::SerializeModel(std::move(em.model));
     if (!serialized_res) return absl::InternalError("Serialize failed");
     auto serialized = std::move(*serialized_res);
+    std::string work_unit_filename = absl::StrFormat(
+        "op_%04d_%s_i%d_o%d.tflite", global_op_counter, sanitized_opcode,
+        em.inputs.size(), em.outputs.size());
 
     if (options.dump_only) {
-      std::string filename = absl::StrFormat(
-          "op_%04d_%s_i%d_o%d.tflite", global_op_counter, sanitized_opcode,
-          em.inputs.size(), em.outputs.size());
       std::string dump_path =
-          litert::internal::Join({options.output_dir, filename});
+          litert::internal::Join({options.output_dir, work_unit_filename});
       std::ofstream dump_file(dump_path, std::ios::binary);
       if (!dump_file.is_open()) {
         ABSL_LOG(ERROR) << "Failed to open dump file: " << dump_path;
@@ -863,7 +881,8 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
     }
 
     // --- CPU Path (Golden Reference) ---
-    auto cpu_model_res = CompiledModel::Create(env, serialized, *cpu_opts_res);
+    auto cpu_model_res =
+        CompiledModel::Create(reference_env, serialized, *cpu_opts_res);
     if (!cpu_model_res) {
       ComparisonResult final_res;
       final_res.failed = true;
@@ -923,8 +942,9 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
         }
       }
     }
+    size_t extracted_signature_index = 0;
     auto cpu_run_status =
-        cpu_model.Run(static_cast<size_t>(0), cpu_inputs, cpu_outputs);
+        cpu_model.Run(extracted_signature_index, cpu_inputs, cpu_outputs);
     if (!cpu_run_status) {
       ComparisonResult final_res;
       final_res.failed = true;
@@ -990,10 +1010,24 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
     if (unit.skip_accel) {
       worst_res.failing_metrics.push_back("SKIPPED_FOR_NPU");
     } else {
-      auto accel_model_res = CompiledModel::Create(env, serialized, accel_opts);
+      Expected<CompiledModel> accel_model_res = [&]() {
+        if (options.precompiled_model_dir.empty()) {
+          return CompiledModel::Create(env, serialized, accel_opts);
+        }
+        std::string precompiled_model_path = litert::internal::Join(
+            {options.precompiled_model_dir, work_unit_filename});
+        ABSL_LOG(INFO) << "Loading precompiled accelerator model: "
+                       << precompiled_model_path;
+        return CompiledModel::Create(env, precompiled_model_path, accel_opts);
+      }();
       if (!accel_model_res) {
+        ABSL_LOG(ERROR) << "Failed to create accelerator model for " << op_info
+                        << ": " << accel_model_res.Error().Message();
         worst_res.failed = true;
-        worst_res.failing_metrics.push_back("ACCEL_COMPILE_FAILED");
+        worst_res.failing_metrics.push_back(
+            options.precompiled_model_dir.empty()
+                ? "ACCEL_COMPILE_FAILED"
+                : "PRECOMPILED_MODEL_LOAD_FAILED");
       } else {
         auto& accel_model = *accel_model_res;
         auto fully_accel_exp = accel_model.IsFullyAccelerated();
@@ -1020,8 +1054,8 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
                     absl::MakeSpan(source_map.at(orig)));
               }
             }
-            auto run_status = accel_model.Run(static_cast<size_t>(0),
-                                              accel_inputs, accel_outputs);
+            auto run_status = accel_model.Run(
+                extracted_signature_index, accel_inputs, accel_outputs);
             if (!run_status) {
               worst_res.failed = true;
               worst_res.failing_metrics.push_back("ACCEL_RUN_FAILED");
