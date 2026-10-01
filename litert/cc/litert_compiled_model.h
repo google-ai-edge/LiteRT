@@ -331,6 +331,33 @@ inline Expected<RankedTensorType> FetchSignatureOutputTensorTypeByIndex(
 
 }  // namespace internal::compiled_model_detail
 
+/// @brief A `TensorBuffer` registered with the NPU of a `CompiledModel` by
+/// `CompiledModel::RegisterBuffer()`.
+///
+/// Destroying it releases the registration, so it must not outlive the compiled
+/// model, nor be destroyed concurrently with a run of it.
+class RegisteredBuffer {
+ private:
+  friend class CompiledModel;
+
+  struct Unregisterer {
+    internal::EnvironmentHolder env;
+    LiteRtCompiledModel compiled_model;
+
+    void operator()(LiteRtTensorBuffer tensor_buffer) const {
+      (void)env.runtime->CompiledModelUnregisterTensorBuffer(compiled_model,
+                                                             tensor_buffer);
+    }
+  };
+
+  RegisteredBuffer(const internal::EnvironmentHolder& env,
+                   LiteRtCompiledModel compiled_model,
+                   LiteRtTensorBuffer tensor_buffer)
+      : tensor_buffer_(tensor_buffer, Unregisterer{env, compiled_model}) {}
+
+  std::unique_ptr<LiteRtTensorBufferT, Unregisterer> tensor_buffer_;
+};
+
 /// @brief A high-level inference API for LiteRT.
 ///
 /// The `CompiledModel` is created by providing a model with compilation
@@ -1086,6 +1113,19 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelIsNonCpuFullyAccelerated(
         Get(), &non_cpu_fully_accelerated));
     return non_cpu_fully_accelerated;
+  }
+
+  /// @brief Registers `buffer` with the NPU of this compiled model, so that
+  /// runs reuse the registration whichever tensors the buffer is bound to.
+  ///
+  /// The registration is released when the returned object is destroyed. See
+  /// `LiteRtCompiledModelRegisterTensorBuffer()` for details.
+  /// @note Must not be called concurrently with a run of this compiled model.
+  [[nodiscard]] Expected<RegisteredBuffer> RegisterBuffer(
+      const TensorBuffer& buffer) const {
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->CompiledModelRegisterTensorBuffer(Get(), buffer.Get()));
+    return RegisteredBuffer(env_, Get(), buffer.Get());
   }
 
   /// @brief Sets a callback function that will be called after every node/op

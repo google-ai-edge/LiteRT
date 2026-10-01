@@ -321,6 +321,22 @@ LiteRtStatus LiteRtCompiledModelIsNonCpuFullyAccelerated(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtCompiledModelRegisterTensorBuffer(
+    LiteRtCompiledModel compiled_model, LiteRtTensorBuffer tensor_buffer) {
+  LITERT_RETURN_IF_ERROR(compiled_model != nullptr && tensor_buffer != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+  compiled_model->GetBufferContext()->RegisterBuffer(tensor_buffer);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelUnregisterTensorBuffer(
+    LiteRtCompiledModel compiled_model, LiteRtTensorBuffer tensor_buffer) {
+  LITERT_RETURN_IF_ERROR(compiled_model != nullptr && tensor_buffer != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+  compiled_model->GetBufferContext()->UnregisterBuffer(tensor_buffer);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
                                             LiteRtProfiler* profiler) {
   LITERT_RETURN_IF_ERROR(compiled_model != nullptr && profiler != nullptr,

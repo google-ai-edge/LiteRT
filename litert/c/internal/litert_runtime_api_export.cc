@@ -264,5 +264,9 @@ extern "C" LITERT_CAPI_EXPORT const LiteRtRuntimeCApiStruct
             LiteRtGetAcceleratorHardwareSupport,
         .litert_compiled_model_is_non_cpu_fully_accelerated =
             LiteRtCompiledModelIsNonCpuFullyAccelerated,
+        .litert_compiled_model_register_tensor_buffer =
+            LiteRtCompiledModelRegisterTensorBuffer,
+        .litert_compiled_model_unregister_tensor_buffer =
+            LiteRtCompiledModelUnregisterTensorBuffer,
         // Google-internal LINT.ThenChange()
     };
