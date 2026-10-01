@@ -66,6 +66,9 @@ void GatedDeltaUpdateConvert(
     if (!flexbuffer_map["mode"].IsNull()) {
       attr.mode = flexbuffer_map["mode"].AsInt32();
     }
+    if (!flexbuffer_map["state_dtype"].IsNull()) {
+      attr.state_dtype = flexbuffer_map["state_dtype"].AsString().str();
+    }
   } else if (tflite_node.custom_initial_data &&
              tflite_node.custom_initial_data_size > 0) {
     const flexbuffers::Map flexbuffer_map =
@@ -75,6 +78,9 @@ void GatedDeltaUpdateConvert(
             .AsMap();
     if (!flexbuffer_map["mode"].IsNull()) {
       attr.mode = flexbuffer_map["mode"].AsInt32();
+    }
+    if (!flexbuffer_map["state_dtype"].IsNull()) {
+      attr.state_dtype = flexbuffer_map["state_dtype"].AsString().str();
     }
   }
   op->attr = attr;

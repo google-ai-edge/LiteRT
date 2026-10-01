@@ -103,6 +103,9 @@ void GatedDeltaUpdateOperationParser::Parse(const TfLiteNode* tflite_node,
     if (!flexbuffer_map["mode"].IsNull()) {
       attr.mode = flexbuffer_map["mode"].AsInt32();
     }
+    if (!flexbuffer_map["state_dtype"].IsNull()) {
+      attr.state_dtype = flexbuffer_map["state_dtype"].AsString().str();
+    }
   }
   node->operation.attributes = std::move(attr);
 }

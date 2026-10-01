@@ -83,11 +83,13 @@ void CompareBuffers(absl::Span<const float> actual,
 //   3. delta = (v_t - kv_mem) * beta_t
 //   4. S_t = S'_t + k_t * delta^T
 //   5. y_t = (S_t)^T * q_t
-void ComputeGoldenRecurrentGatedDelta(
-    const float* q, const float* k, const float* v, const float* beta,
-    const float* g, const float* initial_state, float* golden_out,
-    float* golden_final_state, int B, int H, int N, int D_k, int D_v,
-    int H_k = -1) {
+void ComputeGoldenRecurrentGatedDelta(const float* q, const float* k,
+                                      const float* v, const float* beta,
+                                      const float* g,
+                                      const float* initial_state,
+                                      float* golden_out,
+                                      float* golden_final_state, int B, int H,
+                                      int N, int D_k, int D_v, int H_k = -1) {
   int state_elements = B * H * D_k * D_v;
   std::memcpy(golden_final_state, initial_state,
               state_elements * sizeof(float));
@@ -176,8 +178,7 @@ void RunGatedDeltaUpdateTest(int B, int H, int N, int D_k, int D_v,
                              float tolerance = 1e-4, bool use_fp32 = true,
                              int H_k = -1) {
   int actual_H_k = (H_k > 0) ? H_k : H;
-  auto model_buf =
-      CreateGatedDeltaUpdateModelBuffer(B, H, N, D_k, D_v, 0, H_k);
+  auto model_buf = CreateGatedDeltaUpdateModelBuffer(B, H, N, D_k, D_v, 0, H_k);
 
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
@@ -251,9 +252,23 @@ TEST(GatedDeltaUpdateGpuTest, SingleTokenDecode) {
   RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/1, /*D_k=*/16, /*D_v=*/16);
 }
 
+TEST(GatedDeltaUpdateGpuTest, SingleTokenDecodeFP16) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/1, /*D_k=*/16, /*D_v=*/16,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-2,
+                          /*use_fp32=*/false);
+}
+
 // 2. Multi-token prefill sequence (N > 1).
 TEST(GatedDeltaUpdateGpuTest, MultiTokenPrefill) {
   RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/8, /*D_k=*/16, /*D_v=*/16);
+}
+
+TEST(GatedDeltaUpdateGpuTest, MultiTokenPrefillFP16) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/8, /*D_k=*/16, /*D_v=*/16,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-2,
+                          /*use_fp32=*/false);
 }
 
 // 3. Cold start: initial recurrent state is all zeros.
@@ -315,8 +330,7 @@ TEST(GatedDeltaUpdateGpuTest, HeadDimension16) {
 
 void ExpectGatedDeltaUpdateRejected(int B, int H, int N, int D_k, int D_v,
                                     int H_k = -1) {
-  auto model_buf =
-      CreateGatedDeltaUpdateModelBuffer(B, H, N, D_k, D_v, 0, H_k);
+  auto model_buf = CreateGatedDeltaUpdateModelBuffer(B, H, N, D_k, D_v, 0, H_k);
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
 

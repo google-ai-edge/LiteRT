@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
@@ -149,7 +150,9 @@ class DelegateKernelLiteRt : public DelegateKernel {
       const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
           input_tensor_refs,
       const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
-          output_tensor_refs) override;
+          output_tensor_refs,
+      const absl::flat_hash_set<::ml_drift::ValueId>& preserved_fp32_values)
+      override;
 
   // Returns the storage type for the given tensor name.
   // If the tensor name matches any of the buffer storage type patterns,
@@ -183,6 +186,9 @@ class DelegateKernelLiteRt : public DelegateKernel {
     // Reference to the GPU model creation info that will be populated with
     // tensor descriptors and external tensor configurations
     ::ml_drift::CreateGpuModelInfo& create_info;
+
+    // Set of ValueIds whose FP32 precision must be preserved.
+    const absl::flat_hash_set<::ml_drift::ValueId>& preserved_fp32_values;
   };
 
   // Registers LiteRT buffer requirements for the given tensor.
