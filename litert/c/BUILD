@@ -163,8 +163,12 @@ litert_c_api_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
-        "//litert/runtime/accelerators:auto_registration",
     ] + select({
+        "//litert/build_common:qualcomm_aot": [],
+        "//conditions:default": [
+            "//litert/runtime/accelerators:auto_registration",
+        ],
+    }) + select({
         "//litert/build_common:build_include_gpu_enabled": [
             "//litert/runtime:gpu_environment",
         ],
@@ -356,14 +360,16 @@ litert_c_api_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/runtime:event",
-        "//tflite/delegates/gpu/cl:opencl_wrapper",
     ],
     deps = [
         ":litert_common",
         ":litert_event_type",
         ":litert_gl_types",
         ":litert_opencl_types",
-    ],
+    ] + select({
+        "//litert/build_common:qualcomm_aot": [],
+        "//conditions:default": ["//tflite/delegates/gpu/cl:opencl_wrapper"],
+    }),
 )
 
 cc_test(
@@ -393,7 +399,10 @@ cc_library(
     name = "litert_opencl_types",
     hdrs = ["litert_opencl_types.h"],
     compatible_with = get_compatible_with_portable(),
-    deps = ["@opencl_headers"],
+    deps = select({
+        "//litert/build_common:qualcomm_aot": [],
+        "//conditions:default": ["@opencl_headers"],
+    }),
 )
 
 cc_library(
@@ -421,9 +430,11 @@ litert_c_api_library(
         "//litert/core/util:perfetto_profiling",
         "//litert/runtime:tensor_buffer",
         "//litert/runtime:tensor_buffer_requirements",
-        "@opencl_headers",
         ":litert_tensor_buffer_requirements_impl",
-    ] + gles_deps(),
+    ] + select({
+        "//litert/build_common:qualcomm_aot": [],
+        "//conditions:default": ["@opencl_headers"],
+    }) + gles_deps(),
     linkopts = litert_android_linkopts() + gles_linkopts() + litert_metal_linkopts(),
     deps = [
         ":litert_common",
@@ -817,29 +828,39 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_model_impl",
     ":litert_model_types",
     ":litert_op_code",
-    ":litert_op_options",
     ":litert_opaque_options_impl",
-    ":litert_profiler_impl",
-    ":litert_builder_impl",
     ":litert_tensor_buffer_impl",
-    "//litert/c/internal:litert_accelerator_registration",
     "//litert/c/internal:litert_accelerator_impl",
-    "//litert/c/internal:litert_dispatch_delegate",
-    "//litert/c/internal:litert_external_litert_buffer_context",
     "//litert/c/internal:litert_logging",
     "//litert/c/internal:litert_runtime_api_export",
     "//litert/c/internal:litert_tensor_buffer_registry",
-    "//litert/c/options:litert_cpu_options",
-    # copybara:uncomment "//litert/c/options/google:litert_google_tensor_privileged_options",
-    "//litert/c/options:litert_arm_options",
-    "//litert/c/options:litert_google_tensor_options_type",
-    "//litert/c/options:litert_google_tensor_options",
-    "//litert/c/options:litert_gpu_options",
-    "//litert/c/options:litert_mediatek_options",
     "//litert/c/options:litert_qualcomm_options",
-    "//litert/c/options:litert_intel_openvino_options",
-    "//litert/c/options:litert_samsung_options",
+    ":litert_optional_runtime_apis",
 ]
+
+cc_library(
+    name = "litert_optional_runtime_apis",
+    deps = select({
+        "//litert/build_common:qualcomm_aot": [],
+        "//conditions:default": [
+            ":litert_builder_impl",
+            ":litert_op_options",
+            ":litert_profiler_impl",
+            "//litert/c/internal:litert_accelerator_registration",
+            "//litert/c/internal:litert_dispatch_delegate",
+            "//litert/c/internal:litert_external_litert_buffer_context",
+            "//litert/c/options:litert_arm_options",
+            "//litert/c/options:litert_cpu_options",
+            "//litert/c/options:litert_google_tensor_options",
+            "//litert/c/options:litert_google_tensor_options_type",
+            "//litert/c/options:litert_gpu_options",
+            "//litert/c/options:litert_intel_openvino_options",
+            "//litert/c/options:litert_mediatek_options",
+            "//litert/c/options:litert_samsung_options",
+            # copybara:uncomment "//litert/c/options/google:litert_google_tensor_privileged_options",
+        ],
+    }),
+)
 
 LITERT_RUNTIME_C_API_DARWIN_FORCE_LINKOPTS = [
     # The macOS/iOS dylib must export the full LiteRt C API surface. The
@@ -1069,13 +1090,15 @@ cc_library(
         "@com_google_absl//absl/types:span",
         "//litert/c/internal:litert_runtime_c_api",
         "//litert/c/internal:litert_scheduling_info",
-        "@opencl_headers",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
         "//tflite/profiling:profile_buffer",
         "//litert/build_common:build_config",
-    ] + gles_headers() + select({
+    ] + select({
+        "//litert/build_common:qualcomm_aot": [],
+        "//conditions:default": ["@opencl_headers"],
+    }) + gles_headers() + select({
         "//litert:windows": [":litert_runtime_c_api_dll_import"],
         "//conditions:default": [],
     }),

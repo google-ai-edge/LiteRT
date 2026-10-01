@@ -602,7 +602,10 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
   LITERT_ASSIGN_OR_RETURN(auto model, UnpackModel(std::move(**flatbuffer)));
   model->SetSourcePath(std::string(filename));
 
-  // Load bytecode of each dispatch op and attach it to the model.
+#if !defined(LITERT_QUALCOMM_AOT)
+  // Load bytecode of each dispatch op and attach it to the model. The direct
+  // runtime validates and passes the original allocation to Dispatch; it does
+  // not need the mutable asset mapping used by compilation and serialization.
   absl::flat_hash_map<size_t, unsigned int> buffer_id_map;
   const auto& model_flatbuffer = GetTflFlatbuffer(*model);
   const auto allocation_size = model_flatbuffer.Buf().Size();
@@ -639,6 +642,7 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
     }
   }
 
+#endif  // !defined(LITERT_QUALCOMM_AOT)
   return std::move(model);
 }
 

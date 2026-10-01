@@ -15,6 +15,12 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_
 #define ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_
 
+#include "litert/c/litert_common.h"
+
+#if defined(LITERT_QUALCOMM_AOT)
+#include "litert/runtime/compiled_model_dispatch.h"
+#else
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -601,4 +607,5 @@ class LiteRtCompiledModelT {
   std::vector<std::unique_ptr<TfLiteRegistration>> owned_tflite_registrations_;
 };
 
+#endif  // LITERT_QUALCOMM_AOT
 #endif  // ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_

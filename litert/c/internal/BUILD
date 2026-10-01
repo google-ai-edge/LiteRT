@@ -231,8 +231,6 @@ cc_library(
     ],
     deps = [
         ":litert_abi_header",
-        ":litert_delegate_wrapper",
-        ":litert_external_litert_buffer_context",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
@@ -249,11 +247,17 @@ cc_library(
         "//litert/c:litert_tensor_buffer_header",
         "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c:litert_tensor_buffer_types",
-        "//litert/c/options:litert_gpu_options",
-        "//litert/c/options:litert_webnn_options",
         "//tflite/c:c_api_types",
-        "//tflite/c:common",
-    ],
+    ] + select({
+        "//litert/build_common:qualcomm_aot": [],
+        "//conditions:default": [
+            ":litert_delegate_wrapper",
+            ":litert_external_litert_buffer_context",
+            "//litert/c/options:litert_gpu_options",
+            "//litert/c/options:litert_webnn_options",
+            "//tflite/c:common",
+        ],
+    }),
 )
 
 cc_library(
@@ -433,8 +437,10 @@ cc_library(
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
         "@com_google_absl//absl/types:span",
-        "@opencl_headers",
-    ],
+    ] + select({
+        "//litert/build_common:qualcomm_aot": [],
+        "//conditions:default": ["@opencl_headers"],
+    }),
 )
 
 cc_library(

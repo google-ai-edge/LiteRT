@@ -236,8 +236,10 @@ RUNTIME_TENSOR_BUFFER_HEADER_DEPS = [
     "//litert/c:litert_webgpu_types",
     "//litert/cc:litert_expected",
     "//litert/cc:litert_macros",
-    "@opencl_headers",
 ] + select({
+    "//litert/build_common:qualcomm_aot": [],
+    "//conditions:default": ["@opencl_headers"],
+}) + select({
     "//litert/build_common:android_gpu_enabled": [
         ":gl_buffer",
         ":gl_texture",
@@ -254,8 +256,10 @@ RUNTIME_TENSOR_BUFFER_HEADER_DEPS = [
     "//conditions:default": [],
 }) + select({
     "//litert/build_common:litert_disable_cpu": [],
+    "//litert/build_common:qualcomm_aot": [],
     "//conditions:default": ["@XNNPACK"],
 }) + select({
+    "//litert/build_common:qualcomm_aot": [":fastrpc_buffer"],
     "//litert/build_common:build_include_npu_enabled": [
         ":dmabuf_buffer",
         ":fastrpc_buffer",
@@ -263,7 +267,7 @@ RUNTIME_TENSOR_BUFFER_HEADER_DEPS = [
     ],
     "//conditions:default": [],
 }) + select({
-    "//litert:android": [
+    "//litert/build_common:android_standard_runtime": [
         ":ahwb_buffer",
     ],
     "//conditions:default": [],
@@ -639,8 +643,52 @@ cc_test(
 # )
 # copybara:uncomment_end
 
-cc_library(
+alias(
     name = "compiled_model",
+    actual = select({
+        "//litert/build_common:qualcomm_aot": ":compiled_model_dispatch",
+        "//conditions:default": ":compiled_model_interpreter",
+    }),
+)
+
+cc_library(
+    name = "compiled_model_dispatch",
+    srcs = ["compiled_model_dispatch.cc"],
+    hdrs = [
+        "compiled_model.h",
+        "compiled_model_dispatch.h",
+    ],
+    target_compatible_with = select({
+        "//litert/build_common:qualcomm_aot": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }) + ["@platforms//os:android"],
+    deps = [
+        ":metrics",
+        ":tensor_buffer",
+        ":tensor_buffer_requirements",
+        "//litert/c:litert_common",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_requirements",
+        "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_runtime_context",
+        "//litert/c/internal:litert_scheduling_info",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/core:build_stamp",
+        "//litert/core:dispatch_op_schema",
+        "//litert/core:options",
+        "//litert/core/model",
+        "//litert/core/util:tensor_type_util",
+        "//litert/runtime/dispatch",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "@com_google_absl//absl/types:span",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_library(
+    name = "compiled_model_interpreter",
     srcs = [
         "compiled_model.cc",
     ],
@@ -755,6 +803,32 @@ cc_library(
             "//tflite/kernels:reference_ops",
         ],
     }),
+)
+
+cc_test(
+    name = "compiled_model_dispatch_test",
+    srcs = ["compiled_model_dispatch_test.cc"],
+    target_compatible_with = select({
+        "//litert/build_common:qualcomm_aot": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }) + ["@platforms//os:android"],
+    deps = [
+        "//litert/c:litert_compiled_model",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_event",
+        "//litert/c:litert_model",
+        "//litert/c:litert_options",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_requirements",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//litert/core:dispatch_op_schema",
+        "//litert/core/model",
+        "//litert/runtime/dispatch",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers//:runtime_cc",
+    ],
 )
 
 cc_test(
