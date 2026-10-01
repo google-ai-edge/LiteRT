@@ -650,11 +650,16 @@ cc_library(
     ],
     copts = litert_metal_opts() + select({
         "//litert:without_builtin_ops": [
-            # No builtin ops. Xnnpack is used for CPU backend.
+            # Omit default TFLite builtin/reference kernels. Operations must be
+            # handled by an accelerator (e.g. XNNPACK) or a selective op
+            # resolver provided by the application.
             "-DLITERT_NO_BUILTIN_OPS",
         ],
+        "//conditions:default": [],
+    }) + select({
         "//litert/build_common:litert_disable_cpu": [
-            # No support for CPU backend. Builtin ops are still needed for GPU.
+            # Omit the XNNPACK CPU accelerator. CPU execution uses TFLite
+            # builtin kernels (or selected ops) instead.
             "-DLITERT_DISABLE_CPU",
         ],
         "//conditions:default": [],
@@ -738,19 +743,22 @@ cc_library(
         ],
         "//conditions:default": [],
     }) + select({
-        "//litert:without_builtin_ops": [
-            # No builtin ops. Xnnpack is used for CPU backend.
-            ":litert_cpu_options",
-            "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",  # buildcleaner: keep
-        ],
         "//litert/build_common:litert_disable_cpu": [
-            # No support for CPU backend. Builtin ops are still needed for GPU.
-            "//tflite/kernels:builtin_ops",
-            "//tflite/kernels:reference_ops",
+            # Omit the XNNPACK CPU accelerator (e.g. cpu_backend=builtin or
+            # cpu_backend=selective). Builtin ops are still available for CPU
+            # and GPU fallback unless without_builtin_ops is also set.
         ],
         "//conditions:default": [
             ":litert_cpu_options",
             "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",  # buildcleaner: keep
+        ],
+    }) + select({
+        "//litert:without_builtin_ops": [
+            # Omit default TFLite builtin/reference kernels (e.g.
+            # litert_builtin_ops=false or cpu_backend=selective). XNNPACK or a
+            # selective op resolver is used instead.
+        ],
+        "//conditions:default": [
             "//tflite/kernels:builtin_ops",
             "//tflite/kernels:reference_ops",
         ],
@@ -812,11 +820,13 @@ cc_test(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+        "@flatbuffers//:runtime_cc",
         "@ml_drift//ml_drift/cl:cl_command_queue",
         "@ml_drift//ml_drift/cl:cl_context",
         "@ml_drift//ml_drift/cl:environment",
