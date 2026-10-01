@@ -3299,6 +3299,35 @@ TYPED_TEST_P(NumericalTestSuite, LogicalOrOp) {
   EXPECT_EQ(actual_output, expected_output);
 }
 
+TYPED_TEST_P(NumericalTestSuite, SpaceToDepthOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 4, 4, 1}});
+  Tensor<Tag> output = SpaceToDepth(input, 2);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "SpaceToDepth op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  // input[y][x] = 4 * y + x.
+  std::vector<float> input_data = {0.0f,  1.0f,  2.0f,  3.0f, 4.0f,  5.0f,
+                                   6.0f,  7.0f,  8.0f,  9.0f, 10.0f, 11.0f,
+                                   12.0f, 13.0f, 14.0f, 15.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(16);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // Each output pixel gathers its 2x2 input block in (row, col) order.
+  std::vector<float> expected_output = {0.0f,  1.0f,  4.0f,  5.0f, 2.0f,  3.0f,
+                                        6.0f,  7.0f,  8.0f,  9.0f, 12.0f, 13.0f,
+                                        10.0f, 11.0f, 14.0f, 15.0f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
 REGISTER_TYPED_TEST_SUITE_P(
     NumericalTestSuite, AddOp, SubOp, MulOp, DivOp, GeluOp, ReluOp, Relu6Op,
     LeakyReluOp, EluOp, HardSwishOp, LogisticOp, TanhOp, SqrtOp, RsqrtOp,
@@ -3313,7 +3342,8 @@ REGISTER_TYPED_TEST_SUITE_P(
     Conv2DOp, TransposeConvOp, TransposeConv2DOp, MaximumOp, MinimumOp,
     FloorModOp, FloorDivOp, SumOp, ReduceMaxOp, MeanOp, AveragePool2DOp,
     MaxPool2DOp, SplitOp, PackOp, UnpackOp, ResizeNearestNeighborOp,
-    LogSoftmaxOp, Relu0To1Op, ReluN1To1Op, ZerosLikeOp, GreaterOp, LogicalOrOp);
+    LogSoftmaxOp, Relu0To1Op, ReluN1To1Op, ZerosLikeOp, GreaterOp, LogicalOrOp,
+    SpaceToDepthOp);
 
 }  // namespace litert::tensor
 
