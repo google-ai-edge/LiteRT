@@ -89,14 +89,6 @@ if [ ! -z "${NIGHTLY_RELEASE_DATE}" ]; then
   BAZEL_FLAGS="${BAZEL_FLAGS} --//ci/tools/python/wheel:nightly_iso_date=${NIGHTLY_RELEASE_DATE}"
 fi
 
-if [[ ! -z "${BUILD_CONVERTER}" ]]; then
-  BAZEL_FLAGS="${BAZEL_FLAGS} --//ci/tools/python/wheel:build_converter=${BUILD_CONVERTER}"
-  if [[ "${BUILD_CONVERTER}" == "true" ]]; then
-    # The converter needs the real TensorFlow.
-    BAZEL_FLAGS="${BAZEL_FLAGS} --config=with_tensorflow"
-  fi
-fi
-
 
 # Set linkopt for arm64 architecture, and remote_cache for x86_64.
 case "${ARCH}" in

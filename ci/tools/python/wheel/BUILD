@@ -1,4 +1,4 @@
-load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("//ci/tools/python/wheel/utils:platforms.bzl", "get_wheel_platform_name")
 load("//ci/tools/python/wheel/utils:py_manylinux_compliance_test.bzl", "verify_manylinux_compliance_test")
 load("//ci/tools/python/wheel/utils:py_wheel.bzl", "py_wheel")
@@ -13,16 +13,6 @@ package(
 string_flag(
     name = "nightly_iso_date",
     build_setting_default = "",
-)
-
-bool_flag(
-    name = "build_converter",
-    build_setting_default = False,
-)
-
-config_setting(
-    name = "build_converter_enabled",
-    flag_values = {":build_converter": "true"},
 )
 
 genrule(
@@ -144,14 +134,7 @@ ALL_PY_SRC_MODULES = [
     "//litert/python/aot/vendors/intel_openvino:target",
     "//litert/python/tools:flatbuffer_utils",
     "//litert/python/tools:benchmark_litert_model",
-] + select({
-    ":build_converter_enabled": [
-        "//litert/python/mlir",
-        "//litert/python/tools/model_utils",
-        "//litert/python/tools/model_utils:testing",
-    ],
-    "//conditions:default": [],
-})
+]
 
 # This includes the dependencies that lives outside of litert/python/. e.g. litert/tools/
 PACKAGE_DATA = select({
@@ -196,15 +179,9 @@ py_wheel(
         "//tflite/profiling/proto:profiling_info_py",
         "//tflite/python:schema_py",
         "//tflite/python/metrics:metrics_interface",
-    ] + litert_gpu_accelerator_prebuilts() + select({
-        ":build_converter_enabled": [
-            "//litert/python:pywrap_litert_with_converter_binaries",
-            "//litert/python/mlir/_mlir_libs:libLiteRTCompilerMLIR.so",
-        ],
-        "//conditions:default": [
-            "//litert/python:pywrap_litert_binaries",
-        ],
-    }),
+    ] + litert_gpu_accelerator_prebuilts() + [
+        "//litert/python:pywrap_litert_binaries",
+    ],
     license_file = "//:LICENSE",
     nightly_suffix = ":nightly_iso_date",
     package_data = PACKAGE_DATA,
