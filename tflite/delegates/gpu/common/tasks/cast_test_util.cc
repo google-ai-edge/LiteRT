@@ -16,6 +16,7 @@ limitations under the License.
 #include "tflite/delegates/gpu/common/tasks/cast_test_util.h"
 
 #include <memory>
+#include <utility>
 
 #include "tflite/delegates/gpu/common/status.h"
 #include "tflite/delegates/gpu/common/task/testing_util.h"

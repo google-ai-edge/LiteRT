@@ -17,6 +17,7 @@ limitations under the License.
 
 #include <cmath>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "tflite/delegates/gpu/common/data_type.h"
