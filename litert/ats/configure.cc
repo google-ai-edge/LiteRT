@@ -65,6 +65,9 @@ ABSL_FLAG(std::string, backend, "cpu",
 ABSL_FLAG(bool, cpu_hint_fully_delegated, true,
           "Whether to hint at fully delegating to a single delegate for CPU.");
 
+ABSL_FLAG(bool, enable_ynnpack, false,
+          "Whether to enable the YNNPACK CPU backend.");
+
 ABSL_FLAG(std::string, dispatch_dir, "",
           "Path to directory containing the dispatch library. Only relevant "
           "for NPU.");
@@ -190,6 +193,8 @@ Expected<Options> ParseOptions(ExecutionBackend backend) {
     LITERT_RETURN_IF_ERROR(
         cpu_opts.SetHintFullyDelegatedToSingleDelegate(
             absl::GetFlag(FLAGS_cpu_hint_fully_delegated)));
+    LITERT_RETURN_IF_ERROR(
+        cpu_opts.SetEnableYNNPack(absl::GetFlag(FLAGS_enable_ynnpack)));
   } else if (backend == ExecutionBackend::kGpu) {
     options.SetHardwareAccelerators(HwAccelerators::kGpu);
     LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());

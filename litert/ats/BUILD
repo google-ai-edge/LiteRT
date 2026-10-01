@@ -33,40 +33,80 @@ package(
 # Note: The `litert_define_ats` targets below define test suites that execute tests on-device
 # using the underlying base `ats` binary compiled further down in this file.
 
+XNNPACK_DONT_REGISTER = [
+    "(_i32<[^>]+>(?!_cst)|->[(][^)]*_i32)",  # XNNPACK does not support dynamic int32 math (allows int32 static constants)
+    "OneHot",  # XNNPACK does not support OneHot
+    "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
+    "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
+    "QkvNormRope",  # XNNPACK does not support QkvNormRope composite op
+    "Swiglu",  # XNNPACK does not support SwiGLU op
+    "SelectV2",  # XNNPACK does not support SelectV2
+    "tfl\\.floor_div",  # XNNPACK does not support FloorDiv
+    "tfl\\.pow",  # XNNPACK does not support Pow
+    "tfl\\.prelu",  # XNNPACK requires PRelu alpha to be statically allocated
+    "tfl\\.zeros_like",  # XNNPACK does not support ZerosLike
+    "tfl\\.sign",  # XNNPACK does not support Sign
+    "tfl\\.relu_0_to_1",  # XNNPACK does not support Relu0To1
+    "tfl\\.elu",  # XNNPACK does not support Elu
+    "tfl\\.reduce_prod",  # XNNPACK does not support ReduceProd
+    "LogSoftmax",  # XNNPACK does not support LogSoftmax
+    "Pooling",  # XNNPACK rejects pooling when stride > filter size
+    "FullyConnected.*([23]d_i8,2d_i8|u8|SHUFFLED)",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
+    "Sdpa.*f16",  # XNNPACK delegate does not support f16 SDPA
+    "Sdpa.*x8x[0-9]+>.*x1x[0-9]+>",  # XNNPACK delegate does not support 8-head MQA decode
+    "FullyConnected.*,2d_f32<[^>]+>(?!_cst)",
+    "FullyConnected.*,1d_f32<[^>]+>(?!_cst)",
+    "Transpose.*([(][78]d|[(][1-8]d_(i1|i4|i16|u16|i32|u32|i64|u64)<)",  # XNNPACK Transpose supports FP32, FP16, INT8, and UINT8 types up to rank 6
+    # Explicit ExtraModel exclusions (unsupported by XNNPACK):
+    "simple_add_dynamic_shape",
+    "hf_all_minilm_l6_v2",
+    "u2net_lite",
+    "whisper_tiny_decoder",
+    "yolo11n",
+]
+
+YNNPACK_DONT_REGISTER = [
+    "Binary.*i32",  # YNNPACK does not support int32 binary arithmetic
+    "NoOp.*i32",  # YNNPACK does not support int32 NoOp (add)
+    "OneHot",  # YNNPACK does not support OneHot
+    "SelectV2",  # YNNPACK does not support SelectV2
+    "tfl\\.floor_div",  # YNNPACK does not support FloorDiv
+    "tfl\\.zeros_like",  # YNNPACK does not support ZerosLike
+    "tfl\\.reduce_prod",  # YNNPACK does not support ReduceProd
+    "tfl\\.tile",  # YNNPACK does not support Tile (used in MQA TransformerLayer)
+    "Pad.*<([0-9]+x)*1(x[0-9]+)*>",  # YNNPACK does not support padding on extent-1 dimensions
+    "Sdpa.*f16",  # YNNPACK does not support mixed fp32_fp16_fp32 dot in f16 SDPA
+    "SdpaTransposed",  # SdpaTransposed generator does not yet set logit_cap attribute for YNNPACK
+    "FullyConnected.*(i4|u8)",  # YNNPACK delegate requires even output dims for INT4 weights and does not support UINT8 FullyConnected
+    "Transpose.*[(][1-8]d_(i1|i16|u16|u32|i64|u64)<",  # YNNPACK Transpose supports FP32, FP16, INT4, INT8, UINT8, and INT32 types
+    # Explicit ExtraModel exclusions (unsupported by YNNPACK):
+    "simple_add_dynamic_shape",
+    "hf_all_minilm_l6_v2",
+    "hf_mobilevit_small",
+    "qai_hub_midas",
+    "qai_hub_real_esrgan_x4plus",
+    "torchvision_resnet18",
+    "u2net_lite",
+    "whisper_tiny_decoder",
+    "yamnet",
+    "yolo11n",
+]
+
 litert_define_ats(
     name = "cpu_ats",
     backend = "cpu",
     compile_only_suffix = None,
-    dont_register = [
-        "(_i32<[^>]+>(?!_cst)|->[(][^)]*_i32)",  # XNNPACK does not support dynamic int32 math (allows int32 static constants)
-        "OneHot",  # XNNPACK does not support OneHot
-        "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
-        "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
-        "QkvNormRope",  # XNNPACK does not support QkvNormRope composite op
-        "Swiglu",  # XNNPACK does not support SwiGLU op
-        "SelectV2",  # XNNPACK does not support SelectV2
-        "tfl\\.floor_div",  # XNNPACK does not support FloorDiv
-        "tfl\\.pow",  # XNNPACK does not support Pow
-        "tfl\\.prelu",  # XNNPACK requires PRelu alpha to be statically allocated
-        "tfl\\.zeros_like",  # XNNPACK does not support ZerosLike
-        "tfl\\.sign",  # XNNPACK does not support Sign
-        "tfl\\.relu_0_to_1",  # XNNPACK does not support Relu0To1
-        "tfl\\.elu",  # XNNPACK does not support Elu
-        "tfl\\.reduce_prod",  # XNNPACK does not support ReduceProd
-        "LogSoftmax",  # XNNPACK does not support LogSoftmax
-        "Pooling",  # XNNPACK rejects pooling when stride > filter size
-        "FullyConnected.*([23]d_i8,2d_i8|u8|SHUFFLED)",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
-        "Sdpa.*f16",  # XNNPACK delegate does not support f16 SDPA
-        "Sdpa.*x8x[0-9]+>.*x1x[0-9]+>",  # XNNPACK delegate does not support 8-head MQA decode
-        "FullyConnected.*,2d_f32<[^>]+>(?!_cst)",
-        "FullyConnected.*,1d_f32<[^>]+>(?!_cst)",
-        "Transpose.*([(][78]d|[(][1-8]d_(i1|i4|i16|u16|i32|u32|i64|u64)<)",  # XNNPACK Transpose supports FP32, FP16, INT8, and UINT8 types up to rank 6
-        # Explicit ExtraModel exclusions (unsupported by XNNPACK):
-        "simple_add_dynamic_shape",
-        "hf_all_minilm_l6_v2",
-        "u2net_lite",
-        "whisper_tiny_decoder",
-        "yolo11n",
+    dont_register = XNNPACK_DONT_REGISTER,
+    jit_suffix = "",
+)
+
+litert_define_ats(
+    name = "ynnpack_cpu_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    dont_register = YNNPACK_DONT_REGISTER,
+    extra_flags = [
+        "--enable_ynnpack=true",
     ],
     jit_suffix = "",
 )
@@ -346,6 +386,18 @@ litert_define_ats(
 )
 
 litert_define_ats(
+    name = "ynnpack_cpu_macos_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    dont_register = YNNPACK_DONT_REGISTER,
+    extra_flags = [
+        "--enable_ynnpack=true",
+    ],
+    jit_suffix = "",
+    platform = "macos",
+)
+
+litert_define_ats(
     name = "metal_macos_ats",
     backend = "metal",
     compile_only_suffix = None,
@@ -429,37 +481,7 @@ litert_define_ats(
 litert_test(
     name = "ats",
     srcs = ["ats.cc"],
-    args = [
-        "--dont_register=(_i32<[^>]+>(?!_cst)|->[(][^)]*_i32)",  # XNNPACK does not support dynamic int32 math (allows int32 static constants)
-        "--dont_register=OneHot",  # XNNPACK does not support OneHot
-        "--dont_register=Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
-        "--dont_register=SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
-        "--dont_register=QkvNormRope",  # XNNPACK does not support QkvNormRope composite op
-        "--dont_register=Swiglu",  # XNNPACK does not support SwiGLU op
-        "--dont_register=SelectV2",  # XNNPACK does not support SelectV2
-        "--dont_register=tfl\\.floor_div",  # XNNPACK does not support FloorDiv
-        "--dont_register=tfl\\.pow",  # XNNPACK does not support Pow
-        "--dont_register=tfl\\.prelu",  # XNNPACK requires PRelu alpha to be statically allocated
-        "--dont_register=tfl\\.zeros_like",  # XNNPACK does not support ZerosLike
-        "--dont_register=tfl\\.sign",  # XNNPACK does not support Sign
-        "--dont_register=tfl\\.relu_0_to_1",  # XNNPACK does not support Relu0To1
-        "--dont_register=tfl\\.elu",  # XNNPACK does not support Elu
-        "--dont_register=tfl\\.reduce_prod",  # XNNPACK does not support ReduceProd
-        "--dont_register=LogSoftmax",  # XNNPACK does not support LogSoftmax
-        "--dont_register=Pooling",  # XNNPACK rejects pooling when stride > filter size
-        "--dont_register=FullyConnected.*([23]d_i8,2d_i8|u8|SHUFFLED)",  # XNNPACK delegate at ToT does not yet support these FullyConnected presets
-        "--dont_register=Sdpa.*f16",  # XNNPACK delegate does not support f16 SDPA
-        "--dont_register=Sdpa.*x8x[0-9]+>.*x1x[0-9]+>",  # XNNPACK delegate does not support 8-head MQA decode
-        "--dont_register=FullyConnected.*,2d_f32<[^>]+>(?!_cst)",
-        "--dont_register=FullyConnected.*,1d_f32<[^>]+>(?!_cst)",
-        "--dont_register=Transpose.*([(][78]d|[(][1-8]d_(i1|i4|i16|u16|i32|u32|i64|u64)<)",  # XNNPACK Transpose supports FP32, FP16, INT8, and UINT8 types up to rank 6
-        # Explicit ExtraModel exclusions (unsupported by XNNPACK):
-        "--dont_register=simple_add_dynamic_shape",
-        "--dont_register=hf_all_minilm_l6_v2",
-        "--dont_register=u2net_lite",
-        "--dont_register=whisper_tiny_decoder",
-        "--dont_register=yolo11n",
-    ],
+    args = ["--dont_register=" + p for p in XNNPACK_DONT_REGISTER],
     copts = commandline_flag_copts(),
     linkstatic = True,
     no_main = True,
@@ -479,6 +501,44 @@ litert_test(
         ":register_transformer_layer",
         "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_detail",
+        "//litert/runtime/accelerators/ynnpack:ynnpack_accelerator",  # buildcleaner: keep
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+# Like `ats` above, `ynnpack_ats` is executed directly on the host machine with
+# YNNPACK enabled, whereas `ynnpack_cpu_ats` and `ynnpack_cpu_macos_ats` above
+# wrap `ats` for on-device and macOS execution.
+litert_test(
+    name = "ynnpack_ats",
+    srcs = ["ats.cc"],
+    args = [
+        "--enable_ynnpack=true",
+    ] + ["--dont_register=" + p for p in YNNPACK_DONT_REGISTER],
+    copts = commandline_flag_copts(),
+    linkstatic = True,
+    no_main = True,
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    ungrte = if_oss(True, False),
+    use_sys_malloc = True,
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        ":register_composite_ops",
+        ":register_single_ops",
+        ":register_transformer_layer",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc/internal:litert_detail",
+        "//litert/runtime/accelerators/ynnpack:ynnpack_accelerator",  # buildcleaner: keep
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_check",
@@ -1343,6 +1403,7 @@ make_download_model_provider(
 # PIXEL_9_ATS_GUITAR_TARGETS = [
 #     ":gpu_ats_remote",
 #     ":cpu_ats_remote",
+#     ":ynnpack_cpu_ats_remote",
 # ]
 #
 # guitar_workflow_test(
@@ -1367,6 +1428,7 @@ make_download_model_provider(
 # QUALCOMM_S24_ATS_GUITAR_TARGETS = [
 #     ":gpu_ats_remote",
 #     ":cpu_ats_remote",
+#     ":ynnpack_cpu_ats_remote",
 # ]
 #
 # guitar_workflow_test(
@@ -1391,6 +1453,7 @@ make_download_model_provider(
 # MEDIATEK_MT6989_ATS_GUITAR_TARGETS = [
 #     ":gpu_ats_remote",
 #     ":cpu_ats_remote",
+#     ":ynnpack_cpu_ats_remote",
 # ]
 #
 # guitar_workflow_test(
@@ -1417,6 +1480,7 @@ make_download_model_provider(
 #     ":metal_macos_ats_remote",
 #     ":webgpu_macos_ats_remote",
 #     ":cpu_macos_ats_remote",
+#     ":ynnpack_cpu_macos_ats_remote",
 # ]
 #
 # guitar_workflow_test(
