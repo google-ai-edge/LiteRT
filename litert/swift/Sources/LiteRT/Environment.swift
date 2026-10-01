@@ -50,8 +50,8 @@ public final class Environment {
   public init(options: [Option] = []) throws {
     var resolvedOptions = options
     if !options.contains(where: { if case .runtimeLibraryDir = $0 { return true }; return false }) {
-      // The accelerator is distributed either as a plain dylib or, on iOS, as
-      // a framework bundle, whose executable is named after the bundle.
+      // The accelerator is distributed either as a plain dylib or as a
+      // framework bundle, whose executable is named after the bundle.
       let libNames = ["libLiteRtMetalAccelerator.dylib", "LiteRtMetalAccelerator"]
       let candidateURLs = [
         Bundle(identifier: "com.google.odml.litert.CLiteRT")?.bundleURL,
