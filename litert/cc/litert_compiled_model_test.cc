@@ -266,6 +266,25 @@ TEST(CompiledModelTest, Basic) {
                               compiled_model.IsNonCpuFullyAccelerated());
   ASSERT_FALSE(nonCpuFullyAccelerated);
 
+  LITERT_ASSERT_OK_AND_ASSIGN(auto delegation_metrics,
+                              compiled_model.GetDelegationMetrics());
+  EXPECT_GT(delegation_metrics.total_node_count, 0);
+  EXPECT_FALSE(delegation_metrics.accelerators.empty());
+  int cpu_delegated_nodes = 0;
+  int cpu_partitions = 0;
+  for (const auto& acc : delegation_metrics.accelerators) {
+    EXPECT_FALSE(acc.accelerator_name.empty());
+    if (acc.hardware_type & kLiteRtHwAcceleratorCpu) {
+      cpu_delegated_nodes += acc.delegated_node_count;
+      cpu_partitions += acc.partition_count;
+    } else {
+      EXPECT_EQ(acc.delegated_node_count, 0);
+      EXPECT_EQ(acc.partition_count, 0);
+    }
+  }
+  EXPECT_GT(cpu_delegated_nodes, 0);
+  EXPECT_GT(cpu_partitions, 0);
+
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(

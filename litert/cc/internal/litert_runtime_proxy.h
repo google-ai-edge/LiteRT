@@ -567,6 +567,62 @@ class RuntimeProxy {
         non_cpu_fully_accelerated);
   }
 
+  LiteRtStatus CompiledModelGetDelegationMetrics(
+      LiteRtCompiledModelConst compiled_model,
+      LiteRtDelegationMetricsConst* delegation_metrics) {
+    LITERT_PROXY_METHOD_STATUS(litert_compiled_model_get_delegation_metrics,
+                               compiled_model, delegation_metrics);
+  }
+
+  LiteRtStatus GetDelegationMetricsTotalNodeCount(
+      LiteRtDelegationMetricsConst metrics, int* total_node_count) {
+    LITERT_PROXY_METHOD_STATUS(litert_get_delegation_metrics_total_node_count,
+                               metrics, total_node_count);
+  }
+
+  LiteRtStatus GetNumDelegationMetricsAccelerators(
+      LiteRtDelegationMetricsConst metrics,
+      LiteRtParamIndex* num_accelerators) {
+    LITERT_PROXY_METHOD_STATUS(litert_get_num_delegation_metrics_accelerators,
+                               metrics, num_accelerators);
+  }
+
+  LiteRtStatus GetDelegationMetricsAccelerator(
+      LiteRtDelegationMetricsConst metrics, LiteRtParamIndex index,
+      LiteRtAcceleratorDelegationMetricsConst* accelerator_metrics) {
+    LITERT_PROXY_METHOD_STATUS(litert_get_delegation_metrics_accelerator,
+                               metrics, index, accelerator_metrics);
+  }
+
+  LiteRtStatus GetAcceleratorDelegationMetricsName(
+      LiteRtAcceleratorDelegationMetricsConst metrics, const char** name) {
+    LITERT_PROXY_METHOD_STATUS(litert_get_accelerator_delegation_metrics_name,
+                               metrics, name);
+  }
+
+  LiteRtStatus GetAcceleratorDelegationMetricsHardwareType(
+      LiteRtAcceleratorDelegationMetricsConst metrics,
+      LiteRtHwAcceleratorSet* hardware_type) {
+    LITERT_PROXY_METHOD_STATUS(
+        litert_get_accelerator_delegation_metrics_hardware_type, metrics,
+        hardware_type);
+  }
+
+  LiteRtStatus GetAcceleratorDelegationMetricsDelegatedNodeCount(
+      LiteRtAcceleratorDelegationMetricsConst metrics,
+      int* delegated_node_count) {
+    LITERT_PROXY_METHOD_STATUS(
+        litert_get_accelerator_delegation_metrics_delegated_node_count, metrics,
+        delegated_node_count);
+  }
+
+  LiteRtStatus GetAcceleratorDelegationMetricsPartitionCount(
+      LiteRtAcceleratorDelegationMetricsConst metrics, int* partition_count) {
+    LITERT_PROXY_METHOD_STATUS(
+        litert_get_accelerator_delegation_metrics_partition_count, metrics,
+        partition_count);
+  }
+
   LiteRtStatus CompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
                                         LiteRtProfiler* profiler) {
     LITERT_PROXY_METHOD_STATUS(litert_compiled_model_get_profiler,

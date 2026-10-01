@@ -72,6 +72,7 @@ EXPORTS
   LiteRtClearTensorBuffer
   LiteRtClearTensorBufferEvent
   LiteRtCompiledModelClearErrors
+  LiteRtCompiledModelGetDelegationMetrics
   LiteRtCompiledModelGetDispatchAnnotation
   LiteRtCompiledModelGetErrorMessages
   LiteRtCompiledModelGetProfiler
@@ -140,6 +141,10 @@ EXPORTS
   LiteRtExternalLiteRtBufferContextUnregisterTensorBuffer
   LiteRtFindOpaqueOptionsData
   LiteRtFullyConnectedGetQuantizedBiasTypeOption
+  LiteRtGetAcceleratorDelegationMetricsDelegatedNodeCount
+  LiteRtGetAcceleratorDelegationMetricsHardwareType
+  LiteRtGetAcceleratorDelegationMetricsName
+  LiteRtGetAcceleratorDelegationMetricsPartitionCount
   LiteRtGetAcceleratorEnvironment
   LiteRtGetAddFusedActivationOption
   LiteRtGetAveragePool2dFilterHeightOption
@@ -175,6 +180,8 @@ EXPORTS
   LiteRtGetConv3dStrideWOption
   LiteRtGetCumsumExclusiveOption
   LiteRtGetCumsumReverseOption
+  LiteRtGetDelegationMetricsAccelerator
+  LiteRtGetDelegationMetricsTotalNodeCount
   LiteRtGetDepthToSpaceBlockSizeOption
   LiteRtGetDepthwiseConv2dDepthMultiplierOption
   LiteRtGetDepthwiseConv2dDilationHOption
@@ -221,6 +228,7 @@ EXPORTS
   LiteRtGetModelSubgraph
   LiteRtGetMulFusedActivationOption
   LiteRtGetNextOpaqueOptions
+  LiteRtGetNumDelegationMetricsAccelerators
   LiteRtGetNumMetrics
   LiteRtGetNumModelSignatures
   LiteRtGetNumModelSubgraphs

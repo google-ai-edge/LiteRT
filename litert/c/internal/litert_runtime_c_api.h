@@ -46,7 +46,7 @@ extern "C" {
 // LiteRT CompiledModels ABI version number, in semver 2 format
 // (see https://semver.org).  This is the ABI version number for
 // the methods in LiteRtRuntimeCApiStruct, which is defined below.
-#define LITERT_RUNTIME_ABI_VERSION "1.1.0"
+#define LITERT_RUNTIME_ABI_VERSION "1.2.0"
 // TODO(b/493650900): declare that as an extern const (and
 // initialize it in a .cc file) rather than using a macro.
 
@@ -760,6 +760,45 @@ typedef struct LiteRtRuntimeCApiStruct {
   // This API was added in version 1.1.0.
   LiteRtStatus (*litert_compiled_model_is_non_cpu_fully_accelerated)(
       LiteRtCompiledModel compiled_model, bool* non_cpu_fully_accelerated);
+  // litert_compiled_model.h: LiteRtCompiledModelGetDelegationMetrics
+  // This API was added in version 1.2.0.
+  LiteRtStatus (*litert_compiled_model_get_delegation_metrics)(
+      LiteRtCompiledModelConst compiled_model,
+      LiteRtDelegationMetricsConst* delegation_metrics);
+  // litert_compiled_model.h: LiteRtGetDelegationMetricsTotalNodeCount
+  // This API was added in version 1.2.0.
+  LiteRtStatus (*litert_get_delegation_metrics_total_node_count)(
+      LiteRtDelegationMetricsConst metrics, int* total_node_count);
+  // litert_compiled_model.h: LiteRtGetNumDelegationMetricsAccelerators
+  // This API was added in version 1.2.0.
+  LiteRtStatus (*litert_get_num_delegation_metrics_accelerators)(
+      LiteRtDelegationMetricsConst metrics, LiteRtParamIndex* num_accelerators);
+  // litert_compiled_model.h: LiteRtGetDelegationMetricsAccelerator
+  // This API was added in version 1.2.0.
+  LiteRtStatus (*litert_get_delegation_metrics_accelerator)(
+      LiteRtDelegationMetricsConst metrics, LiteRtParamIndex index,
+      LiteRtAcceleratorDelegationMetricsConst* accelerator_metrics);
+  // litert_compiled_model.h: LiteRtGetAcceleratorDelegationMetricsName
+  // This API was added in version 1.2.0.
+  LiteRtStatus (*litert_get_accelerator_delegation_metrics_name)(
+      LiteRtAcceleratorDelegationMetricsConst metrics, const char** name);
+  // litert_compiled_model.h: LiteRtGetAcceleratorDelegationMetricsHardwareType
+  // This API was added in version 1.2.0.
+  LiteRtStatus (*litert_get_accelerator_delegation_metrics_hardware_type)(
+      LiteRtAcceleratorDelegationMetricsConst metrics,
+      LiteRtHwAcceleratorSet* hardware_type);
+  // litert_compiled_model.h:
+  // LiteRtGetAcceleratorDelegationMetricsDelegatedNodeCount
+  // This API was added in version 1.2.0.
+  LiteRtStatus (
+      *litert_get_accelerator_delegation_metrics_delegated_node_count)(
+      LiteRtAcceleratorDelegationMetricsConst metrics,
+      int* delegated_node_count);
+  // litert_compiled_model.h:
+  // LiteRtGetAcceleratorDelegationMetricsPartitionCount
+  // This API was added in version 1.2.0.
+  LiteRtStatus (*litert_get_accelerator_delegation_metrics_partition_count)(
+      LiteRtAcceleratorDelegationMetricsConst metrics, int* partition_count);
 } LiteRtRuntimeCApiStruct;
 
 // LINT.ThenChange(:version_number)

@@ -1005,8 +1005,11 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
 
   compiled_model->delegation_metrics_.total_node_count =
       compiled_model->CountTotalNodes();
-  int current_undelegated_nodes =
-      compiled_model->delegation_metrics_.total_node_count;
+  GraphCounts prev_counts = {
+      .undelegated_nodes = compiled_model->delegation_metrics_.total_node_count,
+      .partitions = 0,
+  };
+  int cpu_delegated_node_count = 0;
 
   // Apply accelerators matching the requested hardware support to the
   // model in the order they were registered.
@@ -1037,16 +1040,15 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
       continue;
     }
 
-    LITERT_DEBUG_CODE({
-      const char* accelerator_name = nullptr;
-      if (accelerator->GetName(accelerator.get(), &accelerator_name) !=
-              kLiteRtStatusOk ||
-          !accelerator_name) {
-        LITERT_LOG(LITERT_WARNING, "Failed to get name for accelerator");
-      } else {
-        LITERT_LOG(LITERT_DEBUG, "Apply accelerator %s", accelerator_name);
-      }
-    });
+    const char* accelerator_name = nullptr;
+    if (accelerator->GetName(accelerator.get(), &accelerator_name) !=
+            kLiteRtStatusOk ||
+        !accelerator_name) {
+      accelerator_name = "";
+      LITERT_LOG(LITERT_WARNING, "Failed to get name for accelerator");
+    } else {
+      LITERT_LOG(LITERT_DEBUG, "Apply accelerator %s", accelerator_name);
+    }
 
     {
       LITERT_PERFETTO_TRACE_EVENT("CompiledModel Delegate Graph Conversion");
@@ -1094,24 +1096,22 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
       }
 
       GraphCounts counts = compiled_model->GetGraphCounts();
-      int delegated_ops = current_undelegated_nodes - counts.undelegated_nodes;
-      if (is_npu_accelerator) {
-        compiled_model->delegation_metrics_.npu_delegated_node_count +=
-            delegated_ops;
-        compiled_model->delegation_metrics_.npu_partition_count =
-            counts.npu_partitions;
-      } else if (accelerator_supported_hardware & kLiteRtHwAcceleratorGpu) {
-        compiled_model->delegation_metrics_.gpu_delegated_node_count +=
-            delegated_ops;
-        compiled_model->delegation_metrics_.gpu_partition_count =
-            counts.gpu_partitions;
-      } else if (accelerator_supported_hardware & kLiteRtHwAcceleratorCpu) {
-        compiled_model->delegation_metrics_.cpu_delegated_node_count +=
-            delegated_ops;
-        compiled_model->delegation_metrics_.cpu_partition_count =
-            counts.cpu_partitions;
+      int delegated_ops =
+          prev_counts.undelegated_nodes - counts.undelegated_nodes;
+      int partitions = counts.partitions - prev_counts.partitions;
+      prev_counts = counts;
+
+      if (accelerator_supported_hardware & kLiteRtHwAcceleratorCpu) {
+        cpu_delegated_node_count += delegated_ops;
       }
-      current_undelegated_nodes = counts.undelegated_nodes;
+
+      compiled_model->delegation_metrics_.accelerators.push_back(
+          LiteRtAcceleratorDelegationMetricsT{
+              /*accelerator_name=*/accelerator_name,
+              /*hardware_type=*/accelerator_supported_hardware,
+              /*delegated_node_count=*/delegated_ops,
+              /*partition_count=*/partitions,
+          });
 
       if (compiled_model->profiler_ != nullptr) {
         compiled_model->profiler_->TriggerHook(kLiteRtHookTypeCompilerStop,
@@ -1125,12 +1125,12 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
   }
 
   compiled_model->non_cpu_fully_delegated_ =
-      (compiled_model->delegation_metrics_.cpu_delegated_node_count == 0) &&
-      (current_undelegated_nodes == 0) &&
+      (cpu_delegated_node_count == 0) &&
+      (prev_counts.undelegated_nodes == 0) &&
       (compiled_model->delegation_metrics_.total_node_count > 0);
 
   if (!(hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-      current_undelegated_nodes > 0) {
+      prev_counts.undelegated_nodes > 0) {
     return Error(
         kLiteRtStatusErrorCompilation,
         "Some ops are not accelerated. Add kLiteRtHwAcceleratorCpu to the "
@@ -1303,18 +1303,10 @@ LiteRtCompiledModelT::GraphCounts LiteRtCompiledModelT::GetGraphCounts() const {
     const auto& nodes_and_registration = subgraph->nodes_and_registration();
     for (int node_index : execution_plan) {
       const TfLiteRegistration& reg = nodes_and_registration[node_index].second;
-      bool is_cpu_delegate =
-          reg.custom_name &&
-          (reg.custom_name == absl::string_view("TfLiteXNNPackDelegate") ||
-           reg.custom_name == absl::string_view("YNNPackDelegate"));
-      if (reg.builtin_code == kTfLiteBuiltinCustom &&
-          litert::internal::kLiteRtDispatchOpCustomName == reg.custom_name) {
-        counts.npu_partitions++;
-      } else if (reg.builtin_code == kTfLiteBuiltinDelegate &&
-                 !is_cpu_delegate) {
-        counts.gpu_partitions++;
-      } else if (is_cpu_delegate) {
-        counts.cpu_partitions++;
+      if (reg.builtin_code == kTfLiteBuiltinDelegate ||
+          (reg.builtin_code == kTfLiteBuiltinCustom &&
+           litert::internal::kLiteRtDispatchOpCustomName == reg.custom_name)) {
+        counts.partitions++;
       } else {
         counts.undelegated_nodes++;
       }

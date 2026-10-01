@@ -67,6 +67,105 @@ TEST(CompiledModelTest, Basic) {
 
   LiteRtDestroyOptions(jit_compilation_options);
 
+  LiteRtDelegationMetricsConst delegation_metrics = nullptr;
+  EXPECT_EQ(
+      LiteRtCompiledModelGetDelegationMetrics(nullptr, &delegation_metrics),
+      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtCompiledModelGetDelegationMetrics(compiled_model, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  LITERT_ASSERT_OK(LiteRtCompiledModelGetDelegationMetrics(
+      compiled_model, &delegation_metrics));
+  ASSERT_NE(delegation_metrics, nullptr);
+
+  int total_node_count = 0;
+  EXPECT_EQ(
+      LiteRtGetDelegationMetricsTotalNodeCount(nullptr, &total_node_count),
+      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(
+      LiteRtGetDelegationMetricsTotalNodeCount(delegation_metrics, nullptr),
+      kLiteRtStatusErrorInvalidArgument);
+  LITERT_ASSERT_OK(LiteRtGetDelegationMetricsTotalNodeCount(delegation_metrics,
+                                                            &total_node_count));
+  EXPECT_GT(total_node_count, 0);
+
+  LiteRtParamIndex num_accelerators = 0;
+  EXPECT_EQ(
+      LiteRtGetNumDelegationMetricsAccelerators(nullptr, &num_accelerators),
+      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(
+      LiteRtGetNumDelegationMetricsAccelerators(delegation_metrics, nullptr),
+      kLiteRtStatusErrorInvalidArgument);
+  LITERT_ASSERT_OK(LiteRtGetNumDelegationMetricsAccelerators(
+      delegation_metrics, &num_accelerators));
+  ASSERT_GT(num_accelerators, 0);
+
+  LiteRtAcceleratorDelegationMetricsConst oob_acc = nullptr;
+  EXPECT_EQ(LiteRtGetDelegationMetricsAccelerator(nullptr, 0, &oob_acc),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(
+      LiteRtGetDelegationMetricsAccelerator(delegation_metrics, 0, nullptr),
+      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtGetDelegationMetricsAccelerator(delegation_metrics,
+                                                  num_accelerators, &oob_acc),
+            kLiteRtStatusErrorIndexOOB);
+
+  int cpu_delegated_nodes = 0;
+  int cpu_partitions = 0;
+  for (LiteRtParamIndex i = 0; i < num_accelerators; ++i) {
+    LiteRtAcceleratorDelegationMetricsConst acc = nullptr;
+    LITERT_ASSERT_OK(
+        LiteRtGetDelegationMetricsAccelerator(delegation_metrics, i, &acc));
+    ASSERT_NE(acc, nullptr);
+
+    const char* accelerator_name = nullptr;
+    EXPECT_EQ(
+        LiteRtGetAcceleratorDelegationMetricsName(nullptr, &accelerator_name),
+        kLiteRtStatusErrorInvalidArgument);
+    EXPECT_EQ(LiteRtGetAcceleratorDelegationMetricsName(acc, nullptr),
+              kLiteRtStatusErrorInvalidArgument);
+    LITERT_ASSERT_OK(
+        LiteRtGetAcceleratorDelegationMetricsName(acc, &accelerator_name));
+    EXPECT_NE(accelerator_name, nullptr);
+
+    LiteRtHwAcceleratorSet hardware_type = kLiteRtHwAcceleratorNone;
+    EXPECT_EQ(LiteRtGetAcceleratorDelegationMetricsHardwareType(nullptr,
+                                                                &hardware_type),
+              kLiteRtStatusErrorInvalidArgument);
+    EXPECT_EQ(LiteRtGetAcceleratorDelegationMetricsHardwareType(acc, nullptr),
+              kLiteRtStatusErrorInvalidArgument);
+    LITERT_ASSERT_OK(
+        LiteRtGetAcceleratorDelegationMetricsHardwareType(acc, &hardware_type));
+
+    int delegated_node_count = 0;
+    EXPECT_EQ(LiteRtGetAcceleratorDelegationMetricsDelegatedNodeCount(
+                  nullptr, &delegated_node_count),
+              kLiteRtStatusErrorInvalidArgument);
+    EXPECT_EQ(
+        LiteRtGetAcceleratorDelegationMetricsDelegatedNodeCount(acc, nullptr),
+        kLiteRtStatusErrorInvalidArgument);
+    LITERT_ASSERT_OK(LiteRtGetAcceleratorDelegationMetricsDelegatedNodeCount(
+        acc, &delegated_node_count));
+
+    int partition_count = 0;
+    EXPECT_EQ(LiteRtGetAcceleratorDelegationMetricsPartitionCount(
+                  nullptr, &partition_count),
+              kLiteRtStatusErrorInvalidArgument);
+    EXPECT_EQ(LiteRtGetAcceleratorDelegationMetricsPartitionCount(acc, nullptr),
+              kLiteRtStatusErrorInvalidArgument);
+    LITERT_ASSERT_OK(LiteRtGetAcceleratorDelegationMetricsPartitionCount(
+        acc, &partition_count));
+
+    if (hardware_type & kLiteRtHwAcceleratorCpu) {
+      cpu_delegated_nodes += delegated_node_count;
+      cpu_partitions += partition_count;
+    } else {
+      EXPECT_EQ(delegated_node_count, 0);
+      EXPECT_EQ(partition_count, 0);
+    }
+  }
+  EXPECT_GT(cpu_delegated_nodes, 0);
+  EXPECT_GT(cpu_partitions, 0);
+
   LiteRtSubgraph subgraph;
   LITERT_ASSERT_OK(LiteRtGetModelSubgraph(model, 0, &subgraph));
 

@@ -87,6 +87,10 @@ LITERT_DEFINE_HANDLE(LiteRtEvent);
 LITERT_DEFINE_HANDLE(LiteRtLogger);
 // LiteRT Metrics object. (litert_metrics.h)
 LITERT_DEFINE_HANDLE(LiteRtMetrics);
+// LiteRT DelegationMetrics object. (litert_compiled_model.h)
+LITERT_DEFINE_HANDLE(LiteRtDelegationMetrics);
+// LiteRT AcceleratorDelegationMetrics object. (litert_compiled_model.h)
+LITERT_DEFINE_HANDLE(LiteRtAcceleratorDelegationMetrics);
 
 // Constant data behind a tensor stored in the model. (litert_model.h)
 LITERT_DEFINE_HANDLE(LiteRtWeights);

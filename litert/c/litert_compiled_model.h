@@ -260,6 +260,53 @@ LiteRtStatus LiteRtCompiledModelIsFullyAccelerated(
 LiteRtStatus LiteRtCompiledModelIsNonCpuFullyAccelerated(
     LiteRtCompiledModel compiled_model, bool* non_cpu_fully_accelerated);
 
+// Returns an opaque handle to delegation metrics (total node count and
+// per-accelerator delegated node counts and partition counts) for the compiled
+// model.
+//
+// Note: CompiledModel owns the returned delegation_metrics handle, any
+// accelerator metrics handles obtained from it, and their accelerator name
+// strings. They are only valid during the compiled_model's lifetime.
+LiteRtStatus LiteRtCompiledModelGetDelegationMetrics(
+    LiteRtCompiledModelConst compiled_model,
+    LiteRtDelegationMetricsConst* delegation_metrics);
+
+// Returns the total number of operations in the graph across active subgraphs
+// before delegation.
+LiteRtStatus LiteRtGetDelegationMetricsTotalNodeCount(
+    LiteRtDelegationMetricsConst metrics, int* total_node_count);
+
+// Returns the number of per-accelerator delegation metrics entries.
+LiteRtStatus LiteRtGetNumDelegationMetricsAccelerators(
+    LiteRtDelegationMetricsConst metrics, LiteRtParamIndex* num_accelerators);
+
+// Returns the per-accelerator delegation metrics handle at the given index.
+LiteRtStatus LiteRtGetDelegationMetricsAccelerator(
+    LiteRtDelegationMetricsConst metrics, LiteRtParamIndex index,
+    LiteRtAcceleratorDelegationMetricsConst* accelerator_metrics);
+
+// Returns the name of the registered hardware accelerator (e.g.
+// "NpuAccelerator", "LiteRT GPU", "CpuAccelerator").
+LiteRtStatus LiteRtGetAcceleratorDelegationMetricsName(
+    LiteRtAcceleratorDelegationMetricsConst metrics, const char** name);
+
+// Returns the bitfield of hardware accelerator types supported by this
+// accelerator.
+LiteRtStatus LiteRtGetAcceleratorDelegationMetricsHardwareType(
+    LiteRtAcceleratorDelegationMetricsConst metrics,
+    LiteRtHwAcceleratorSet* hardware_type);
+
+// Returns the number of original model operations absorbed/delegated to this
+// accelerator.
+LiteRtStatus LiteRtGetAcceleratorDelegationMetricsDelegatedNodeCount(
+    LiteRtAcceleratorDelegationMetricsConst metrics, int* delegated_node_count);
+
+// Returns the number of contiguous delegated subgraphs (delegate kernel nodes
+// in the execution plan) created for this accelerator. Multiple original model
+// operations may be fused into a single partition.
+LiteRtStatus LiteRtGetAcceleratorDelegationMetricsPartitionCount(
+    LiteRtAcceleratorDelegationMetricsConst metrics, int* partition_count);
+
 // Gets the profiler for the model. CompiledModel owns the profiler.
 LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
                                             LiteRtProfiler* profiler);

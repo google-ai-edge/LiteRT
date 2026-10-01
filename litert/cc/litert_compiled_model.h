@@ -1088,6 +1088,75 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return non_cpu_fully_accelerated;
   }
 
+  struct AcceleratorDelegationMetrics {
+    // Name of the registered hardware accelerator (e.g. "NpuAccelerator",
+    // "LiteRT GPU", "CpuAccelerator").
+    std::string accelerator_name;
+
+    // Bitfield of hardware accelerator types supported by this accelerator.
+    LiteRtHwAcceleratorSet hardware_type = kLiteRtHwAcceleratorNone;
+
+    // Number of original model operations absorbed/delegated to this
+    // accelerator.
+    int delegated_node_count = 0;
+
+    // Number of contiguous delegated subgraphs (delegate kernel nodes in the
+    // execution plan) created for this accelerator. Multiple original model
+    // operations may be fused into a single partition.
+    int partition_count = 0;
+  };
+
+  struct DelegationMetrics {
+    // Total number of operations in the graph across active subgraphs before
+    // delegation.
+    int total_node_count = 0;
+
+    // Per-accelerator delegation metrics.
+    std::vector<AcceleratorDelegationMetrics> accelerators;
+  };
+
+  /// @brief Returns delegation metrics (total node count and per-accelerator
+  /// delegated node counts and partition counts) for the compiled model.
+  Expected<DelegationMetrics> GetDelegationMetrics() const {
+    LiteRtDelegationMetricsConst c_metrics = nullptr;
+    LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelGetDelegationMetrics(
+        Get(), &c_metrics));
+    DelegationMetrics metrics;
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetDelegationMetricsTotalNodeCount(
+        c_metrics, &metrics.total_node_count));
+    LiteRtParamIndex num_accelerators = 0;
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetNumDelegationMetricsAccelerators(
+        c_metrics, &num_accelerators));
+    metrics.accelerators.reserve(num_accelerators);
+    for (LiteRtParamIndex i = 0; i < num_accelerators; ++i) {
+      LiteRtAcceleratorDelegationMetricsConst c_acc = nullptr;
+      LITERT_RETURN_IF_ERROR(
+          env_.runtime->GetDelegationMetricsAccelerator(c_metrics, i, &c_acc));
+      const char* name = nullptr;
+      LITERT_RETURN_IF_ERROR(
+          env_.runtime->GetAcceleratorDelegationMetricsName(c_acc, &name));
+      LiteRtHwAcceleratorSet hardware_type = kLiteRtHwAcceleratorNone;
+      LITERT_RETURN_IF_ERROR(
+          env_.runtime->GetAcceleratorDelegationMetricsHardwareType(
+              c_acc, &hardware_type));
+      int delegated_node_count = 0;
+      LITERT_RETURN_IF_ERROR(
+          env_.runtime->GetAcceleratorDelegationMetricsDelegatedNodeCount(
+              c_acc, &delegated_node_count));
+      int partition_count = 0;
+      LITERT_RETURN_IF_ERROR(
+          env_.runtime->GetAcceleratorDelegationMetricsPartitionCount(
+              c_acc, &partition_count));
+      metrics.accelerators.push_back(AcceleratorDelegationMetrics{
+          .accelerator_name = name ? name : "",
+          .hardware_type = hardware_type,
+          .delegated_node_count = delegated_node_count,
+          .partition_count = partition_count,
+      });
+    }
+    return metrics;
+  }
+
   /// @brief Sets a callback function that will be called after every node/op
   /// during model execution to check if the execution should be cancelled.
   ///
