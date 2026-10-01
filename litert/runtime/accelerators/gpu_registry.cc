@@ -75,6 +75,9 @@ LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 #if LITERT_HAS_METAL_SUPPORT
       "libLiteRtMetalAccelerator" SO_EXT,
+      // As on iOS, the macOS framework bundle ships the accelerator as
+      // LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator.
+      "LiteRtMetalAccelerator",
 #endif  // LITERT_HAS_METAL_SUPPORT
 #endif  // !__ANDROID__ && !TARGET_OS_IPHONE
 

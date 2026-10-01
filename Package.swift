@@ -76,14 +76,7 @@ let package = Package(
         .target(name: "CLiteRT", condition: .when(platforms: [.iOS])),
         .target(name: "CLiteRT_mac", condition: .when(platforms: [.macOS])),
       ],
-      path: "litert/swift/Sources/LiteRT",
-      exclude: [
-        "BUILD",
-        "Info.plist",
-      ],
-      linkerSettings: [
-        .unsafeFlags(["-Xlinker", "-all_load"])
-      ]
+      path: "litert/swift/Sources/LiteRT"
     ),
     // The Test Target
     .testTarget(
@@ -112,11 +105,7 @@ let package = Package(
         .target(name: "TensorFlowLiteCCoreML", condition: .when(platforms: [.iOS])),
         .target(name: "TensorFlowLiteCMetal", condition: .when(platforms: [.iOS])),
       ],
-      path: "litert/swift/Sources/TensorFlowLite",
-      linkerSettings: [
-        .unsafeFlags(["-Xlinker", "-weak_framework", "-Xlinker", "CoreML"]),
-        .unsafeFlags(["-Xlinker", "-weak_framework", "-Xlinker", "Metal"]),
-      ]
+      path: "litert/swift/Sources/TensorFlowLite"
     ),
     // The TensorFlow Lite Test Target
     .testTarget(

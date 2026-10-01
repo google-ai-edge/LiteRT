@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_SWIFT_SOURCES_LITERTC_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_SWIFT_SOURCES_LITERTC_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_SWIFT_SOURCES_CLITERT_CLITERT_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_SWIFT_SOURCES_CLITERT_CLITERT_H_
 
 #include "litert/c/litert_any.h"  // IWYU pragma: keep
 #include "litert/c/litert_common.h"  // IWYU pragma: keep
