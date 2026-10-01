@@ -292,6 +292,12 @@ void PopulateBlockwiseQuantizedFullyConnected(
                                         ::ml_drift::ir::IrModel& ir_model,
                                         const SizedLayout& layout);
 
+// Adds a float16 constant input as a float32 IR tensor, converting the data
+// on the host.
+::ml_drift::ir::IrTensor* AddFloat16ConstAsFloat32Input(
+    const TfLiteContext& context, int tensor_id,
+    ::ml_drift::ir::IrModel& ir_model, const SizedLayout& layout);
+
 // Populates an ml_drift tensor with data from a TfLite tensor.
 // If enable_spanned_weights is true, tensor->spanned_data will be populated
 // with a span pointing to the TfLite tensor's data. Otherwise, tensor->data

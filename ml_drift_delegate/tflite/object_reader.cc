@@ -109,6 +109,22 @@ void SetValueAndAttrFromTfLiteTensor(const TfLiteTensor* tfl_tensor,
   return value;
 }
 
+::ml_drift::Value* ObjectReader::AddFloat16ConstAsFloat32Input(
+    int index, const SizedLayout& layout) {
+  const TfLiteTensor* tfl_tensor = GetInputTensor(index);
+  ABSL_CHECK(tfl_tensor && tfl_tensor->type == kTfLiteFloat16);
+  ::ml_drift::Node* node = graph_->NewNode();
+  node->operation.type = ToString(::ml_drift::OperationType::CONSTANT);
+  ::ml_drift::Value* value = graph_->NewValue();
+  graph_->SetProducer(node->id, value->id);
+  ::ml_drift::ConstTensorAttributes attr;
+  value->tensor.ref = -1;
+  SetValueAndAttrFromTfLiteTensor<::ml_drift::TensorFloat32>(tfl_tensor, layout,
+                                                              value, attr);
+  node->operation.attributes = std::move(attr);
+  return value;
+}
+
 // static
 bool ObjectReader::CanReadNonConstantTensor(
     TfLiteContext* context,
