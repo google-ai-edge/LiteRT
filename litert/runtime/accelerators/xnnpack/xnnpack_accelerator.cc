@@ -92,14 +92,6 @@ class CpuAccelerator final
         return options_data_status;
     }
 
-#if !defined(LITERT_HAS_YNNPACK)
-    if (parsed_options.enable_ynnpack) {
-      return ErrorStatusBuilder(kLiteRtStatusErrorUnsupported)
-             << "enable_ynnpack was requested, but YNNPACK support was not "
-                "compiled into this build.";
-    }
-#endif
-
     if (parsed_options.kernel_mode != kLiteRtCpuKernelModeDelegate) {
       *delegate_wrapper = nullptr;
       return kLiteRtStatusOk;
@@ -112,11 +104,9 @@ class CpuAccelerator final
                            ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure))
         << "XNNPack delegate failed to be created.";
 
-    bool use_single_delegate_hint =
-        parsed_options.hint_fully_delegated_to_single_delegate;
-#if defined(LITERT_HAS_YNNPACK)
-    use_single_delegate_hint &= !parsed_options.enable_ynnpack;
-#endif
+    const bool use_single_delegate_hint =
+        parsed_options.hint_fully_delegated_to_single_delegate &&
+        !parsed_options.enable_ynnpack;
     if (use_single_delegate_hint) {
       reinterpret_cast<TfLiteDelegate*>(xnnpack_delegate)->flags |=
           kTfLiteDelegateFlagsHintFullyDelegatedToSingleDelegate;
@@ -180,7 +170,9 @@ static const LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
         },
 };
 
-// Accelerator definition pointer referenced by auto_registration.cc.
+// Accelerator definition pointer referenced by cpu_registry.cc.
+// TODO(gcarranza): Rename LiteRtStaticLinkedAcceleratorCpuDef to
+// LiteRtStaticLinkedAcceleratorXnnpackDef once downstream callers are updated.
 const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef =
     &LiteRtCpuAcceleratorImpl;
 

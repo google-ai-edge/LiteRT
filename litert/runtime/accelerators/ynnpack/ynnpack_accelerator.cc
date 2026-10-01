@@ -109,6 +109,11 @@ class YnnpackAccelerator final
                            ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure))
         << "YNNPack delegate failed to be created.";
 
+    if (parsed_options.hint_fully_delegated_to_single_delegate) {
+      ynnpack_delegate->flags |=
+          kTfLiteDelegateFlagsHintFullyDelegatedToSingleDelegate;
+    }
+
     auto* opaque_delegate =
         reinterpret_cast<TfLiteOpaqueDelegate*>(ynnpack_delegate);
     auto deleter = +[](TfLiteOpaqueDelegate* delegate) {

@@ -305,6 +305,25 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
             cpu_options.kernel_mode == kLiteRtCpuKernelModeReference;
         use_reference_cpu_kernels =
             cpu_options.kernel_mode == kLiteRtCpuKernelModeReference;
+        if (cpu_options.enable_ynnpack &&
+            !use_builtin_or_reference_cpu_backend) {
+          bool ynnpack_registered = false;
+          for (const auto& accelerator : env->GetAcceleratorRegistry()) {
+            const char* name = nullptr;
+            if (accelerator->GetName(accelerator.get(), &name) ==
+                    kLiteRtStatusOk &&
+                name != nullptr &&
+                absl::string_view(name) == "YNNPackAccelerator") {
+              ynnpack_registered = true;
+              break;
+            }
+          }
+          if (!ynnpack_registered) {
+            return Unexpected(kLiteRtStatusErrorUnsupported,
+                              "enable_ynnpack was requested, but the YNNPACK "
+                              "accelerator is not registered or linked.");
+          }
+        }
       }
     }
   }

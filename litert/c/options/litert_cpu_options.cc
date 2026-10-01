@@ -128,7 +128,7 @@ LiteRtStatus LrtGetOpaqueCpuOptionsData(const LrtCpuOptions* options,
   return kLiteRtStatusOk;
 }
 
-const char* LrtGetCpuOptionsIdentifier() { return "xnnpack"; }
+const char* LrtGetCpuOptionsIdentifier() { return "cpu_options"; }
 
 LiteRtStatus LrtSetCpuOptionsKernelMode(LrtCpuOptions* options,
                                         LiteRtCpuKernelMode mode) {
