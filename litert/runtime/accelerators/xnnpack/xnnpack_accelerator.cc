@@ -171,9 +171,7 @@ static const LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
 };
 
 // Accelerator definition pointer referenced by cpu_registry.cc.
-// TODO(gcarranza): Rename LiteRtStaticLinkedAcceleratorCpuDef to
-// LiteRtStaticLinkedAcceleratorXnnpackDef once downstream callers are updated.
-const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef =
+const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorXnnpackDef =
     &LiteRtCpuAcceleratorImpl;
 
 }  // extern "C"

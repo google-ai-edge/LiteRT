@@ -33,21 +33,14 @@ const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorYnnpackDef = nullptr;
 
 #if defined(LITERT_USE_XNNPACK)
 // Defined in xnnpack_accelerator.cc.
-// TODO(gcarranza): Rename LiteRtStaticLinkedAcceleratorCpuDef to
-// LiteRtStaticLinkedAcceleratorXnnpackDef once downstream callers are updated.
-extern const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef;
+extern const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorXnnpackDef;
 #else
-const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef = nullptr;
+const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorXnnpackDef = nullptr;
 #endif
 }  // extern "C"
 
 namespace litert::internal {
 
-// TODO(gcarranza): Remove weak attribute once downstream RegisterCpuAccelerator
-// overrides (e.g. litert_lm_advanced_main.cc) are removed.
-#if !defined(_MSC_VER)
-__attribute__((weak))
-#endif
 LiteRtStatus RegisterCpuAccelerator(LiteRtEnvironment environment) {
   bool cpu_accelerator_registered = false;
 
@@ -67,9 +60,9 @@ LiteRtStatus RegisterCpuAccelerator(LiteRtEnvironment environment) {
     cpu_accelerator_registered = true;
   }
 
-  if (LiteRtStaticLinkedAcceleratorCpuDef != nullptr) {
+  if (LiteRtStaticLinkedAcceleratorXnnpackDef != nullptr) {
     auto status = litert::internal::RegisterAcceleratorFromDef(
-        environment, LiteRtStaticLinkedAcceleratorCpuDef);
+        environment, LiteRtStaticLinkedAcceleratorXnnpackDef);
     if (status != kLiteRtStatusOk) {
       LITERT_LOG(
           LITERT_WARNING,
