@@ -27,6 +27,8 @@
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_options.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
@@ -53,6 +55,75 @@ LiteRtOptionsT GetTestOptions() {
       .version = {.major = 1, .minor = 0, .patch = 0},
       .hardware_accelerators = kLiteRtHwAcceleratorNpu,
   };
+}
+
+struct TestOpaqueOptionPayload {
+  uint64_t hash;
+};
+
+uint64_t GetTestOpaqueOptionPayloadHash(const void* payload_data) {
+  return static_cast<const TestOpaqueOptionPayload*>(payload_data)->hash;
+}
+
+Expected<LiteRtOpaqueOptions> CreateTestOpaqueOption(const char* identifier,
+                                                      uint64_t hash) {
+  LiteRtOpaqueOptions option = nullptr;
+  LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
+      identifier, new TestOpaqueOptionPayload{.hash = hash},
+      [](void* payload_data) {
+        delete static_cast<TestOpaqueOptionPayload*>(payload_data);
+      },
+      &option));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtSetOpaqueOptionsHash(option, GetTestOpaqueOptionPayloadHash));
+  return option;
+}
+
+TEST(CompilationCacheTest, ModelHashIgnoresOpaqueOptionInsertionOrder) {
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model,
+      LoadModelFromFile(litert::testing::GetTestFilePath(kModelFileName)));
+
+  LiteRtOptions options_in_forward_order = nullptr;
+  LITERT_ABORT_IF_ERROR(LiteRtCreateOptions(&options_in_forward_order));
+  LITERT_ASSIGN_OR_ABORT(
+      LiteRtOpaqueOptions alpha_option,
+      CreateTestOpaqueOption("alpha", /*hash=*/101));
+  LITERT_ASSIGN_OR_ABORT(
+      LiteRtOpaqueOptions zulu_option,
+      CreateTestOpaqueOption("zulu", /*hash=*/202));
+  LITERT_ABORT_IF_ERROR(
+      LiteRtAddOpaqueOptions(options_in_forward_order, alpha_option));
+  LITERT_ABORT_IF_ERROR(
+      LiteRtAddOpaqueOptions(options_in_forward_order, zulu_option));
+
+  LiteRtOptions options_in_reverse_order = nullptr;
+  LITERT_ABORT_IF_ERROR(LiteRtCreateOptions(&options_in_reverse_order));
+  LITERT_ASSIGN_OR_ABORT(
+      LiteRtOpaqueOptions reverse_zulu_option,
+      CreateTestOpaqueOption("zulu", /*hash=*/202));
+  LITERT_ASSIGN_OR_ABORT(
+      LiteRtOpaqueOptions reverse_alpha_option,
+      CreateTestOpaqueOption("alpha", /*hash=*/101));
+  LITERT_ABORT_IF_ERROR(
+      LiteRtAddOpaqueOptions(options_in_reverse_order, reverse_zulu_option));
+  LITERT_ABORT_IF_ERROR(
+      LiteRtAddOpaqueOptions(options_in_reverse_order, reverse_alpha_option));
+
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey forward_key,
+      CompilationCache::GetModelHash(*model, *options_in_forward_order,
+                                     GetTestCompilerPluginInfo()));
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey reverse_key,
+      CompilationCache::GetModelHash(*model, *options_in_reverse_order,
+                                     GetTestCompilerPluginInfo()));
+
+  EXPECT_EQ(forward_key.content_hash, reverse_key.content_hash);
+  EXPECT_EQ(forward_key.config_hash, reverse_key.config_hash);
+
+  LiteRtDestroyOptions(options_in_forward_order);
+  LiteRtDestroyOptions(options_in_reverse_order);
 }
 
 TEST(CompilationCacheTest, CacheMiss) {
