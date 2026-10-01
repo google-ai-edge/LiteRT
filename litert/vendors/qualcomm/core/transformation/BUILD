@@ -60,6 +60,7 @@ cc_library(
     srcs = ["graph_to_graph.cc"],
     hdrs = ["graph_to_graph.h"],
     deps = [
+        ":deq_q",
         ":embedding_gemma",
         ":kv_swapped_attn",
         ":mask",
@@ -69,6 +70,19 @@ cc_library(
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+    ],
+)
+
+cc_library(
+    name = "deq_q",
+    srcs = ["deq_q.cc"],
+    hdrs = ["deq_q.h"],
+    deps = [
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:quantize_op_builder",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
     ],
 )
 
