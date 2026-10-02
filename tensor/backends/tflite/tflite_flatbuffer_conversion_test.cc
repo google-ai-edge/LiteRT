@@ -27,6 +27,7 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
@@ -125,7 +126,15 @@ class TfLiteTestBackendBridge : public TestBackendBridge {
     }
 
     std::vector<TensorHandle> output_handles(outputs.begin(), outputs.end());
-    LRT_TENSOR_RETURN_IF_ERROR(model_builder_.AddSubgraph(output_handles));
+    if (auto subgraph = model_builder_.AddSubgraph(output_handles);
+        !subgraph.ok()) {
+      const absl::Status& s = subgraph.status();
+      if (s.code() == absl::StatusCode::kInvalidArgument &&
+          absl::StrContains(s.message(), "does not implement")) {
+        return absl::UnimplementedError(s.message());
+      }
+      return s;
+    }
     LRT_TENSOR_ASSIGN_OR_RETURN(model_data_, model_builder_.CreateFlatbuffer());
     model_ = tflite::FlatBufferModel::BuildFromBuffer(model_data_.data(),
                                                       model_data_.size());
