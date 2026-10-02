@@ -75,17 +75,18 @@ BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuffers,
                                      NSError **error) {
   cppBuffers.reserve(objcBuffers.count);
   for (LRTTensorBuffer *tensorBuffer in objcBuffers) {
-    if (![tensorBuffer cppTensorBuffer]) {
+    litert::TensorBuffer *cppTensorBuffer = [tensorBuffer cppTensorBuffer];
+    if (cppTensorBuffer == nullptr) {
       LRTSetError(error, LRTErrorCodeInvalidArgument,
                   [NSString stringWithFormat:@"Invalid %@ tensor buffer", bufferKind]);
       return NO;
     }
-    litert::Expected<litert::TensorBuffer> dupResult = [tensorBuffer cppTensorBuffer]->Duplicate();
-    if (!dupResult.HasValue()) {
-      LRTSetErrorFromCppError(error, dupResult.Error());
+    litert::Expected<litert::TensorBuffer> duplicateResult = cppTensorBuffer->Duplicate();
+    if (!duplicateResult.HasValue()) {
+      LRTSetErrorFromCppError(error, duplicateResult.Error());
       return NO;
     }
-    cppBuffers.push_back(std::move(dupResult.Value()));
+    cppBuffers.push_back(std::move(duplicateResult.Value()));
   }
   return YES;
 }
@@ -96,21 +97,6 @@ BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuffers,
   std::unique_ptr<litert::CompiledModel> _cppCompiledModel;
   /** Model bytes the compiled model was built from, or nil when it was compiled from a file. */
   NSData *_Nullable _modelData;
-}
-
-- (instancetype)initInternalWithCppCompiledModel:
-                    (std::unique_ptr<litert::CompiledModel>)cppCompiledModel
-                                     environment:(LRTEnvironment *)environment
-                                         options:(nullable LRTOptions *)options
-                                       modelData:(nullable NSData *)modelData {
-  self = [super init];
-  if (self) {
-    _cppCompiledModel = std::move(cppCompiledModel);
-    _environment = environment;
-    _options = options;
-    _modelData = modelData;
-  }
-  return self;
 }
 
 + (nullable instancetype)compiledModelWithModelFilePath:(NSString *)modelFilePath
@@ -139,8 +125,8 @@ BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuffers,
     return nil;
   }
 
-  auto cppPtr = std::make_unique<litert::CompiledModel>(std::move(createResult.Value()));
-  return [[LRTCompiledModel alloc] initInternalWithCppCompiledModel:std::move(cppPtr)
+  auto cppCompiledModel = std::make_unique<litert::CompiledModel>(std::move(createResult.Value()));
+  return [[LRTCompiledModel alloc] initInternalWithCppCompiledModel:std::move(cppCompiledModel)
                                                         environment:environment
                                                             options:options
                                                           modelData:nil];
@@ -177,8 +163,8 @@ BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuffers,
     return nil;
   }
 
-  auto cppPtr = std::make_unique<litert::CompiledModel>(std::move(createResult.Value()));
-  return [[LRTCompiledModel alloc] initInternalWithCppCompiledModel:std::move(cppPtr)
+  auto cppCompiledModel = std::make_unique<litert::CompiledModel>(std::move(createResult.Value()));
+  return [[LRTCompiledModel alloc] initInternalWithCppCompiledModel:std::move(cppCompiledModel)
                                                         environment:environment
                                                             options:options
                                                           modelData:ownedModelData];
@@ -194,6 +180,23 @@ BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuffers,
   NSAssert(signatureKey != nil, @"LiteRT default signature key is not valid UTF-8");
   return signatureKey;
 }
+
+- (instancetype)initInternalWithCppCompiledModel:
+                    (std::unique_ptr<litert::CompiledModel>)cppCompiledModel
+                                     environment:(LRTEnvironment *)environment
+                                         options:(nullable LRTOptions *)options
+                                       modelData:(nullable NSData *)modelData {
+  self = [super init];
+  if (self) {
+    _cppCompiledModel = std::move(cppCompiledModel);
+    _environment = environment;
+    _options = [options copy];
+    _modelData = [modelData copy];
+  }
+  return self;
+}
+
+#pragma mark - Public
 
 - (nullable NSArray<LRTTensorBuffer *> *)createInputTensorBuffersWithError:(NSError **)error {
   return [self createInputTensorBuffersForSignatureIndex:0 error:error];
@@ -332,14 +335,23 @@ BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuffers,
     return NO;
   }
 
-  std::vector<int> cppDims;
-  cppDims.reserve(dimensions.count);
-  for (NSNumber *dim in dimensions) {
-    cppDims.push_back(dim.intValue);
+  if (dimensions.count == 0) {
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Dimensions array cannot be empty");
+    return NO;
+  }
+
+  std::vector<int> cppDimensions;
+  cppDimensions.reserve(dimensions.count);
+  for (NSNumber *dimension in dimensions) {
+    if (dimension == nil || dimension.intValue <= 0) {
+      LRTSetError(error, LRTErrorCodeInvalidArgument, @"Dimension values must be positive");
+      return NO;
+    }
+    cppDimensions.push_back(dimension.intValue);
   }
 
   litert::Expected<void> resizeResult =
-      _cppCompiledModel->ResizeInputTensor(signatureIndex, inputIndex, cppDims);
+      _cppCompiledModel->ResizeInputTensor(signatureIndex, inputIndex, cppDimensions);
 
   if (!resizeResult.HasValue()) {
     LRTSetErrorFromCppError(error, resizeResult.Error());

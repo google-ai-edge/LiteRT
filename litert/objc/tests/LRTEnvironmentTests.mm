@@ -37,4 +37,13 @@
   XCTAssertNil(error);
 }
 
+- (void)testEnvironmentOptionsCopyAndEquality {
+  LRTEnvironmentOptions *options = [[LRTEnvironmentOptions alloc] init];
+  LRTEnvironmentOptions *copiedOptions = [options copy];
+  XCTAssertNotNil(copiedOptions);
+  XCTAssertNotEqual(copiedOptions, options);
+  XCTAssertEqualObjects(copiedOptions, options);
+  XCTAssertEqual(copiedOptions.hash, options.hash);
+}
+
 @end

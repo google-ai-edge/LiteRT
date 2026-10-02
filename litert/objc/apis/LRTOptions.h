@@ -25,15 +25,7 @@ typedef NS_OPTIONS(NSUInteger, LRTHardwareAccelerators) {
 };
 
 /** Options for compiling a LiteRT model. */
-@interface LRTOptions : NSObject
-
-/**
- * Initializes options with specified hardware accelerators bitmask.
- *
- * @param hardwareAccelerators Enabled hardware accelerators bitmask.
- */
-- (instancetype)initWithHardwareAccelerators:(LRTHardwareAccelerators)hardwareAccelerators
-    NS_DESIGNATED_INITIALIZER;
+@interface LRTOptions : NSObject <NSCopying>
 
 /** Hardware accelerators bitmask enabled for compilation. */
 @property(nonatomic, assign, readonly) LRTHardwareAccelerators hardwareAccelerators;
@@ -60,6 +52,22 @@ typedef NS_OPTIONS(NSUInteger, LRTHardwareAccelerators) {
  * page faults and hitching during subsequent inference runs.
  */
 @property(nonatomic, assign) BOOL enablesMetalResidencySet;
+
+/**
+ * Initializes options with specified hardware accelerators bitmask.
+ *
+ * @param hardwareAccelerators Enabled hardware accelerators bitmask.
+ */
+- (instancetype)initWithHardwareAccelerators:(LRTHardwareAccelerators)hardwareAccelerators
+    NS_DESIGNATED_INITIALIZER;
+
+/**
+ * Returns whether the receiver is equal to another @c LRTOptions instance.
+ *
+ * @param otherOptions The options instance to compare with the receiver.
+ * @return @c YES if both instances have identical compilation settings, @c NO otherwise.
+ */
+- (BOOL)isEqualToOptions:(LRTOptions *)otherOptions;
 
 @end
 
