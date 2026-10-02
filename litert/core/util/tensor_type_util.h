@@ -63,16 +63,20 @@ inline Expected<size_t> GetNumBytesFromElements(size_t num_elements,
 // Get the number of elements in a tensor with given dimensions.
 template <typename T>
 Expected<size_t> GetNumElements(absl::Span<T> dimensions) {
-  size_t num_elements = 1;
-  for (auto i = 0; i < dimensions.size(); ++i) {
-    auto dim = dimensions[i];
+  // Validate all dimensions before accepting an empty tensor. In particular,
+  // a zero dimension must not hide an unresolved negative dimension, and a
+  // later zero makes the product empty even if an earlier product overflows.
+  bool empty = false;
+  for (auto dim : dimensions) {
     if (IsNegative(dim)) {
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
                         "Unexpected negative dimension");
-    } else if (dim == 0) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                        "Unexpected 0 dimension");
     }
+    empty |= dim == 0;
+  }
+  if (empty) return size_t{0};
+  size_t num_elements = 1;
+  for (auto dim : dimensions) {
     const size_t dimension = static_cast<size_t>(dim);
     if (dimension > std::numeric_limits<size_t>::max() / num_elements) {
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
@@ -129,21 +133,25 @@ Expected<size_t> GetNumBytes(LiteRtElementType element_type,
     return element_size.Error();
   }
   auto rank = dimensions.size();
-  size_t num_elements = 1;
+  bool empty = false;
   for (auto i = 0; i < rank; ++i) {
     const auto dimension = dimensions[i];
     const auto stride = strides[i];
     if (IsNegative(dimension)) {
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
                         "Unexpected negative dimension");
-    } else if (dimension == 0) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                        "Unexpected 0 dimension");
     }
     if (IsNegative(stride)) {
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
                         "Unexpected negative stride");
     }
+    empty |= dimension == 0;
+  }
+  if (empty) return size_t{0};
+  size_t num_elements = 1;
+  for (auto i = 0; i < rank; ++i) {
+    const auto dimension = dimensions[i];
+    const auto stride = strides[i];
     const size_t dim_less_one = static_cast<size_t>(dimension) - 1;
     const size_t stride_size = static_cast<size_t>(stride);
     if (dim_less_one != 0 &&
