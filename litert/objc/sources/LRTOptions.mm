@@ -45,6 +45,35 @@ constexpr LRTHardwareAccelerators kValidAcceleratorsMask =
   return [self initWithHardwareAccelerators:LRTHardwareAcceleratorNone];
 }
 
+- (BOOL)isEqual:(nullable id)object {
+  if (self == object) {
+    return YES;
+  }
+  if (![object isKindOfClass:[LRTOptions class]]) {
+    return NO;
+  }
+  return [self isEqualToOptions:(LRTOptions *)object];
+}
+
+- (NSUInteger)hash {
+  return _hardwareAccelerators ^ (_usesMetalArgumentBuffers ? (1UL << 8) : 0) ^
+         (_enablesMetalResidencySet ? (1UL << 9) : 0);
+}
+
+#pragma mark - NSCopying
+
+- (id)copyWithZone:(nullable NSZone *)zone {
+  LRTOptions *copy =
+      [[LRTOptions allocWithZone:zone] initWithHardwareAccelerators:_hardwareAccelerators];
+  if (_usesMetalArgumentBuffers) {
+    copy.usesMetalArgumentBuffers = YES;
+  }
+  if (_enablesMetalResidencySet) {
+    copy.enablesMetalResidencySet = YES;
+  }
+  return copy;
+}
+
 #pragma mark - Properties
 
 - (void)setUsesMetalArgumentBuffers:(BOOL)usesMetalArgumentBuffers {
@@ -55,6 +84,17 @@ constexpr LRTHardwareAccelerators kValidAcceleratorsMask =
 - (void)setEnablesMetalResidencySet:(BOOL)enablesMetalResidencySet {
   _enablesMetalResidencySet = enablesMetalResidencySet;
   [self applyMetalOptions];
+}
+
+#pragma mark - Public
+
+- (BOOL)isEqualToOptions:(LRTOptions *)otherOptions {
+  if (!otherOptions) {
+    return NO;
+  }
+  return _hardwareAccelerators == otherOptions.hardwareAccelerators &&
+         _usesMetalArgumentBuffers == otherOptions.usesMetalArgumentBuffers &&
+         _enablesMetalResidencySet == otherOptions.enablesMetalResidencySet;
 }
 
 #pragma mark - LRTOptions (Internal)

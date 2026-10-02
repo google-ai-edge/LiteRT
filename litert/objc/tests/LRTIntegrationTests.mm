@@ -46,15 +46,15 @@ static NSString *GetTestModelPath() {
 
 - (void)testEndToEndInferenceFromFilePath {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
 
   NSString *modelPath = GetTestModelPath();
   LRTCompiledModel *compiledModel = [LRTCompiledModel compiledModelWithModelFilePath:modelPath
-                                                                         environment:env
+                                                                         environment:environment
                                                                              options:options
                                                                                error:&error];
   XCTAssertNotNil(compiledModel);
@@ -95,19 +95,20 @@ static NSString *GetTestModelPath() {
   XCTSkipIf(device == nil, @"Metal is not supported on this device/simulator.");
 
   NSError *error = nil;
-  LRTEnvironmentOptions *envOptions = [[LRTEnvironmentOptions alloc] init];
-  envOptions.metalDevice = device;
-  envOptions.metalCommandQueue = [device newCommandQueue];
+  LRTEnvironmentOptions *environmentOptions = [[LRTEnvironmentOptions alloc] init];
+  environmentOptions.metalDevice = device;
+  environmentOptions.metalCommandQueue = [device newCommandQueue];
 
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:envOptions error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:environmentOptions
+                                                                 error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorGPU];
 
   NSString *modelPath = GetTestModelPath();
   LRTCompiledModel *compiledModel = [LRTCompiledModel compiledModelWithModelFilePath:modelPath
-                                                                         environment:env
+                                                                         environment:environment
                                                                              options:options
                                                                                error:&error];
   XCTAssertNotNil(compiledModel);

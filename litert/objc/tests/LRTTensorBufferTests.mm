@@ -29,12 +29,12 @@
 
 - (void)testManagedHostMemoryBufferCreation {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   NSUInteger size = 16 * sizeof(float);
-  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:env
+  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:environment
                                                                     size:size
                                                              elementType:LRTElementTypeFloat32
                                                               dimensions:@[ @4, @4 ]
@@ -66,12 +66,13 @@
   XCTSkipIf(device == nil, @"Metal is not supported on this device/simulator.");
 
   NSError *error = nil;
-  LRTEnvironmentOptions *envOptions = [[LRTEnvironmentOptions alloc] init];
-  envOptions.metalDevice = device;
-  envOptions.metalCommandQueue = [device newCommandQueue];
+  LRTEnvironmentOptions *environmentOptions = [[LRTEnvironmentOptions alloc] init];
+  environmentOptions.metalDevice = device;
+  environmentOptions.metalCommandQueue = [device newCommandQueue];
 
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:envOptions error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:environmentOptions
+                                                                 error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   NSUInteger size = 16 * sizeof(float);
@@ -79,7 +80,7 @@
                                                   options:MTLResourceStorageModeShared];
   XCTAssertNotNil(metalBuffer);
 
-  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:env
+  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:environment
                                                              metalBuffer:metalBuffer
                                                              elementType:LRTElementTypeFloat32
                                                               dimensions:@[ @4, @4 ]
@@ -99,12 +100,13 @@
   XCTSkipIf(device == nil, @"Metal is not supported on this device/simulator.");
 
   NSError *error = nil;
-  LRTEnvironmentOptions *envOptions = [[LRTEnvironmentOptions alloc] init];
-  envOptions.metalDevice = device;
-  envOptions.metalCommandQueue = [device newCommandQueue];
+  LRTEnvironmentOptions *environmentOptions = [[LRTEnvironmentOptions alloc] init];
+  environmentOptions.metalDevice = device;
+  environmentOptions.metalCommandQueue = [device newCommandQueue];
 
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:envOptions error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:environmentOptions
+                                                                 error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   MTLTextureDescriptor *textureDescriptor =
@@ -116,7 +118,7 @@
   id<MTLTexture> metalTexture = [device newTextureWithDescriptor:textureDescriptor];
   XCTAssertNotNil(metalTexture);
 
-  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:env
+  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:environment
                                                             metalTexture:metalTexture
                                                              elementType:LRTElementTypeFloat32
                                                               dimensions:@[ @4, @4, @4 ]
@@ -133,8 +135,8 @@
 
 - (void)testVariousElementTypes {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   NSArray<NSNumber *> *elementTypes = @[
@@ -146,17 +148,17 @@
     @(LRTElementTypeFloat16),
   ];
 
-  for (NSNumber *typeNum in elementTypes) {
-    LRTElementType type = (LRTElementType)typeNum.integerValue;
-    LRTTensorBuffer *buf = [LRTTensorBuffer tensorBufferWithEnvironment:env
-                                                                   size:32
-                                                            elementType:type
-                                                             dimensions:@[ @2, @4 ]
-                                                                  error:&error];
-    XCTAssertNotNil(buf, @"Failed for element type: %ld", (long)type);
+  for (NSNumber *typeNumber in elementTypes) {
+    LRTElementType type = (LRTElementType)typeNumber.integerValue;
+    LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:environment
+                                                                      size:32
+                                                               elementType:type
+                                                                dimensions:@[ @2, @4 ]
+                                                                     error:&error];
+    XCTAssertNotNil(buffer, @"Failed for element type: %ld", (long)type);
     XCTAssertNil(error);
-    XCTAssertEqual(buf.elementType, type);
-    XCTAssertEqual(buf.bufferType, LRTTensorBufferTypeHostMemory);
+    XCTAssertEqual(buffer.elementType, type);
+    XCTAssertEqual(buffer.bufferType, LRTTensorBufferTypeHostMemory);
   }
 }
 
@@ -165,17 +167,18 @@
   XCTSkipIf(device == nil, @"Metal is not supported on this device/simulator.");
 
   NSError *error = nil;
-  LRTEnvironmentOptions *envOptions = [[LRTEnvironmentOptions alloc] init];
-  envOptions.metalDevice = device;
-  envOptions.metalCommandQueue = [device newCommandQueue];
+  LRTEnvironmentOptions *environmentOptions = [[LRTEnvironmentOptions alloc] init];
+  environmentOptions.metalDevice = device;
+  environmentOptions.metalCommandQueue = [device newCommandQueue];
 
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:envOptions error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:environmentOptions
+                                                                 error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   NSUInteger size = 16 * sizeof(float);
   LRTTensorBuffer *buffer =
-      [LRTTensorBuffer managedMetalTensorBufferWithEnvironment:env
+      [LRTTensorBuffer managedMetalTensorBufferWithEnvironment:environment
                                                           size:size
                                                    elementType:LRTElementTypeFloat32
                                                     dimensions:@[ @4, @4 ]
@@ -205,13 +208,13 @@
 
 - (void)testManagedTensorBufferWithExplicitType {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   NSUInteger size = 8 * sizeof(int32_t);
   LRTTensorBuffer *buffer =
-      [LRTTensorBuffer tensorBufferWithEnvironment:env
+      [LRTTensorBuffer tensorBufferWithEnvironment:environment
                                         bufferType:LRTTensorBufferTypeHostMemory
                                               size:size
                                        elementType:LRTElementTypeInt32
@@ -247,11 +250,11 @@
 
 - (void)testTensorBufferWithZeroSizeFails {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
-  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:env
+  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:environment
                                                                     size:0
                                                              elementType:LRTElementTypeFloat32
                                                               dimensions:@[ @4 ]
@@ -263,11 +266,11 @@
 
 - (void)testTensorBufferWithInvalidElementTypeFails {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
-  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:env
+  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:environment
                                                                     size:16
                                                              elementType:LRTElementTypeNone
                                                               dimensions:@[ @4 ]
@@ -279,11 +282,11 @@
 
 - (void)testTensorBufferWithNilDimensionsFails {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
-  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:env
+  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:environment
                                                                     size:16
                                                              elementType:LRTElementTypeFloat32
                                                               dimensions:nil
@@ -295,11 +298,11 @@
 
 - (void)testTensorBufferWithNegativeDimensionFails {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
-  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:env
+  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:environment
                                                                     size:16
                                                              elementType:LRTElementTypeFloat32
                                                               dimensions:@[ @(-1) ]
@@ -311,11 +314,11 @@
 
 - (void)testTensorBufferWithNilMetalBufferFails {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
-  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:env
+  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:environment
                                                              metalBuffer:nil
                                                              elementType:LRTElementTypeFloat32
                                                               dimensions:@[ @4 ]
@@ -327,11 +330,11 @@
 
 - (void)testTensorBufferWithNilMetalTextureFails {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
-  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:env
+  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:environment
                                                             metalTexture:nil
                                                              elementType:LRTElementTypeFloat32
                                                               dimensions:@[ @4 ]
@@ -343,11 +346,11 @@
 
 - (void)testTensorBufferWriteNilDataFails {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
-  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:env
+  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:environment
                                                                     size:16
                                                              elementType:LRTElementTypeFloat32
                                                               dimensions:@[ @4 ]

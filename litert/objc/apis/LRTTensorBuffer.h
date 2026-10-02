@@ -95,7 +95,23 @@ typedef NS_ENUM(NSInteger, LRTTensorBufferType) {
 /** Wraps a LiteRT tensor buffer holding model inputs or outputs. */
 @interface LRTTensorBuffer : NSObject
 
-- (instancetype)init NS_UNAVAILABLE;
+/** Buffer storage type (HostMemory, MetalBuffer, etc.). */
+@property(nonatomic, readonly) LRTTensorBufferType bufferType;
+
+/** Element type of tensor elements. */
+@property(nonatomic, readonly) LRTElementType elementType;
+
+/** Tensor shape dimension sizes. */
+@property(nonatomic, readonly, copy) NSArray<NSNumber *> *dimensions;
+
+/** Packed buffer size in bytes. */
+@property(nonatomic, readonly) NSUInteger size;
+
+/** Metal buffer reference if backing memory is a Metal buffer, or nil otherwise. */
+@property(nonatomic, readonly, nullable) id<MTLBuffer> metalBuffer;
+
+/** Metal texture reference if backing memory is a Metal texture, or nil otherwise. */
+@property(nonatomic, readonly, nullable) id<MTLTexture> metalTexture;
 
 /**
  * Creates a managed host memory tensor buffer.
@@ -179,23 +195,7 @@ typedef NS_ENUM(NSInteger, LRTTensorBufferType) {
                                           dimensions:(NSArray<NSNumber *> *)dimensions
                                                error:(NSError **)error;
 
-/** Buffer storage type (HostMemory, MetalBuffer, etc.). */
-@property(nonatomic, readonly) LRTTensorBufferType bufferType;
-
-/** Element type of tensor elements. */
-@property(nonatomic, readonly) LRTElementType elementType;
-
-/** Tensor shape dimension sizes. */
-@property(nonatomic, readonly, copy) NSArray<NSNumber *> *dimensions;
-
-/** Packed buffer size in bytes. */
-@property(nonatomic, readonly) NSUInteger size;
-
-/** Metal buffer reference if backing memory is a Metal buffer, or nil otherwise. */
-@property(nonatomic, readonly, nullable) id<MTLBuffer> metalBuffer;
-
-/** Metal texture reference if backing memory is a Metal texture, or nil otherwise. */
-@property(nonatomic, readonly, nullable) id<MTLTexture> metalTexture;
+- (instancetype)init NS_UNAVAILABLE;
 
 /**
  * Copies and returns the raw byte data from the tensor buffer.
