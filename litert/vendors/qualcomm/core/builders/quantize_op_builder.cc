@@ -74,7 +74,7 @@ std::vector<OpWrapper> BuildQuantizeOpDefault(
 std::vector<OpWrapper> BuildQuantizeOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs, BackendType backend_type) {
-  if (backend_type == BackendType::kLpaiBackend) {
+  if (true) {
     return BuildQuantizeOpLPAI(tensor_pool, inputs, outputs);
   }
   return BuildQuantizeOpDefault(tensor_pool, inputs, outputs);
