@@ -33,6 +33,7 @@
 #include "litert/ats/common.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
@@ -67,6 +68,12 @@ ABSL_FLAG(bool, cpu_hint_fully_delegated, true,
 
 ABSL_FLAG(bool, enable_ynnpack, false,
           "Whether to enable the YNNPACK CPU backend.");
+
+ABSL_FLAG(std::string, cpu_kernel_mode, "delegate",
+          "CPU kernel mode for the \"actual\" backend when --backend=cpu. One "
+          "of: delegate (XNNPACK, default), builtin (TFLite builtin kernels "
+          "without delegates) or reference (TFLite reference kernels). The "
+          "reference backend always uses the default mode.");
 
 ABSL_FLAG(std::string, dispatch_dir, "",
           "Path to directory containing the dispatch library. Only relevant "
@@ -171,6 +178,20 @@ Expected<ExecutionBackend> ParseBackend() {
   }
 }
 
+Expected<LiteRtCpuKernelMode> ParseCpuKernelMode() {
+  const auto mode_flag = absl::GetFlag(FLAGS_cpu_kernel_mode);
+  if (mode_flag == "delegate" || mode_flag == "xnnpack") {
+    return kLiteRtCpuKernelModeDelegate;
+  } else if (mode_flag == "builtin") {
+    return kLiteRtCpuKernelModeBuiltin;
+  } else if (mode_flag == "reference") {
+    return kLiteRtCpuKernelModeReference;
+  }
+  return Error(
+      kLiteRtStatusErrorInvalidArgument,
+      absl::StrFormat("Unknown cpu_kernel_mode: %s", mode_flag.c_str()));
+}
+
 Expected<Options> ParseOptions(ExecutionBackend backend) {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   if (backend == ExecutionBackend::kNpu) {
@@ -195,6 +216,8 @@ Expected<Options> ParseOptions(ExecutionBackend backend) {
             absl::GetFlag(FLAGS_cpu_hint_fully_delegated)));
     LITERT_RETURN_IF_ERROR(
         cpu_opts.SetEnableYNNPack(absl::GetFlag(FLAGS_enable_ynnpack)));
+    LITERT_ASSIGN_OR_RETURN(auto kernel_mode, ParseCpuKernelMode());
+    LITERT_RETURN_IF_ERROR(cpu_opts.SetKernelMode(kernel_mode));
   } else if (backend == ExecutionBackend::kGpu) {
     options.SetHardwareAccelerators(HwAccelerators::kGpu);
     LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());

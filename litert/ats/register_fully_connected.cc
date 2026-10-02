@@ -99,13 +99,12 @@ void RegisterFullyConnectedImpl(const AtsConf& options, size_t& test_id,
       TypeList<std::false_type>>                     // DynamicBias
     (iters, test_id, options, cap);
 
-  // Full Integer Quantization (INT8/UINT8 activations & weights)
+  // Full Integer Quantization (INT8 activations & weights)
   RegisterCombinations<
       Fixture,
       FullyConnected,
       SizeListC<2, 3>,
-      TypeList<TypeTuple<int8_t, int8_t, int8_t>,    // INT8 in/wt, INT8 out
-               TypeTuple<uint8_t, uint8_t, uint8_t>>,  // UINT8 in/wt, UINT8 out
+      TypeList<TypeTuple<int8_t, int8_t, int8_t>>,   // INT8 in/wt, INT8 out
       OpCodeListC<kLiteRtOpCodeTflFullyConnected>,
       TypeList<std::true_type, std::false_type>,     // KeepNumDims
       TypeList<FaC<tflite::ActivationFunctionType_NONE>,
@@ -122,6 +121,30 @@ void RegisterFullyConnectedImpl(const AtsConf& options, size_t& test_id,
       TypeList<std::false_type>,                     // DynamicFilter
       TypeList<std::false_type>>                     // DynamicBias
     (iters, test_id, options, cap);
+
+  // UINT8 is per-tensor only; per-channel quantization requires signed
+  // weights in the TFLite quantization spec.
+  RegisterCombinations<
+      Fixture,
+      FullyConnected,
+      SizeListC<2, 3>,
+      TypeList<TypeTuple<uint8_t, uint8_t, uint8_t>>,  // UINT8 in/wt, UINT8 out
+      OpCodeListC<kLiteRtOpCodeTflFullyConnected>,
+      TypeList<std::true_type, std::false_type>,     // KeepNumDims
+      TypeList<FaC<tflite::ActivationFunctionType_NONE>,
+               FaC<tflite::ActivationFunctionType_RELU>>,  // FusedActivation
+      TypeList<std::true_type, std::false_type>,     // HasBias
+      TypeList<std::false_type>,                     // AsymmetricQuantizeInputs
+      TypeList<std::integral_constant<
+          litert::tensor::FullyConnectedWeightsFormat,
+                                      litert::tensor::kWeightsFormatDefault>,
+               std::integral_constant<
+                   litert::tensor::FullyConnectedWeightsFormat,
+                   litert::tensor::kWeightsFormatShuffled4x16Int8>>,
+      TypeList<std::false_type>,                     // PerChannel
+      TypeList<std::false_type>,                     // DynamicFilter
+      TypeList<std::false_type>>                     // DynamicBias
+    (iters, test_id, options, cap, "CoreSingleOp");
 
   // Full Integer Quantization with INT4 weights
   // (INT8 activations x INT4 weights)

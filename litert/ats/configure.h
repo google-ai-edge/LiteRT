@@ -50,6 +50,9 @@ ABSL_DECLARE_FLAG(bool, cpu_hint_fully_delegated);
 // Whether to enable the YNNPACK CPU backend.
 ABSL_DECLARE_FLAG(bool, enable_ynnpack);
 
+// CPU kernel mode for the "actual" backend: delegate, builtin or reference.
+ABSL_DECLARE_FLAG(std::string, cpu_kernel_mode);
+
 // Comma-separated test-generator/seed pairings in the form
 // <generator_name>:<seed>. This seed will be used to generator the randomized
 // parameters for all invocations of the respective test-generator.

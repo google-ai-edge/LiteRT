@@ -428,6 +428,15 @@ class AtsInferenceTest : public RngTest {
         } else if (actual[i].Type().ElementType() == ElementType::Float16) {
           CheckFloatElementwiseOutputImpl(actual[i].AsView<tflite::half>(),
                                           ref[i].AsView<tflite::half>(), spec);
+        } else if (actual[i].Type().ElementType() == ElementType::Int32) {
+          // Integer outputs of float-elementwise ops must match exactly.
+          CheckQuantizedBucketOutputImpl(actual[i].AsView<int32_t>(),
+                                         ref[i].AsView<int32_t>(),
+                                         /*bucket_tolerance=*/0);
+        } else if (actual[i].Type().ElementType() == ElementType::Int64) {
+          CheckQuantizedBucketOutputImpl(actual[i].AsView<int64_t>(),
+                                         ref[i].AsView<int64_t>(),
+                                         /*bucket_tolerance=*/0);
         } else {
           FAIL() << "Unsupported float elementwise element type";
         }

@@ -1956,6 +1956,9 @@ template <class Sink>
 void AbslStringify(Sink& sink, const FullyConnectedOptionsT& opts) {
   ::litert::internal::OptionStrBuilder b(sink);
   b("fa", opts.fused_activation_function);
+  if (opts.weights_format != FullyConnectedOptionsWeightsFormat_DEFAULT) {
+    b("wf", EnumNameFullyConnectedOptionsWeightsFormat(opts.weights_format));
+  }
 }
 
 template <class Sink>

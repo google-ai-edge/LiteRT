@@ -21,6 +21,9 @@ connected local devices:
 # Run CPU tests
 bazel run //litert/ats:cpu_ats -- [flags]
 
+# Run CPU tests on the TFLite built-in kernels (no delegate)
+bazel run //litert/ats:builtin_cpu_ats -- [flags]
+
 # Run GPU tests
 bazel run //litert/ats:gpu_ats -- [flags]
 
@@ -65,6 +68,9 @@ bazel test //litert/ats:webgpu_macos_ats \
     `npu`).
 *   `--soc_manufacturer=<manufacturer>`: Optional. Specify the NPU
     manufacturer when `--backend=npu` (e.g., `qualcomm`, `mediatek`).
+*   `--cpu_kernel_mode=<mode>`: Optional. CPU kernels to test when
+    `--backend=cpu`: `delegate` (default, XNNPACK), `builtin` (TFLite built-in
+    kernels without a delegate), or `reference` (TFLite reference kernels).
 *   `--compile_mode`: Run in compilation-only mode (useful for testing AOT
     compilation for NPUs).
 *   `--do_register=<pattern>`: Only run tests whose names match the given regex

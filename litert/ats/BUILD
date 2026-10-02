@@ -91,6 +91,16 @@ YNNPACK_DONT_REGISTER = [
     "yolo11n",
 ]
 
+BUILTIN_DONT_REGISTER = [
+    "_f16",  # TFLite built-in kernels do not support FLOAT16 tensors
+    "wf=SHUFFLED4x16INT8",  # Built-in FC needs a 2nd workspace output for this format
+]
+
+BUILTIN_EXTRA_FLAGS = [
+    "--cpu_kernel_mode=builtin",
+    "--data_seed=42",
+]
+
 litert_define_ats(
     name = "cpu_ats",
     backend = "cpu",
@@ -107,6 +117,17 @@ litert_define_ats(
     extra_flags = [
         "--enable_ynnpack=true",
     ],
+    jit_suffix = "",
+)
+
+# Runs the TFLite built-in CPU kernels (no delegate) against the generator
+# references. Used to guard refactoring of the built-in kernels.
+litert_define_ats(
+    name = "builtin_cpu_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    dont_register = BUILTIN_DONT_REGISTER,
+    extra_flags = BUILTIN_EXTRA_FLAGS,
     jit_suffix = "",
 )
 
@@ -534,6 +555,40 @@ litert_test(
         "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_detail",
         "//litert/runtime/accelerators/ynnpack:ynnpack_accelerator",  # buildcleaner: keep
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+# Like `ats` above, `builtin_ats` is executed directly on the host machine, but
+# with the TFLite built-in CPU kernels instead of XNNPACK. `builtin_cpu_ats`
+# above wraps `ats` for on-device execution.
+litert_test(
+    name = "builtin_ats",
+    srcs = ["ats.cc"],
+    args = BUILTIN_EXTRA_FLAGS + ["--dont_register=" + p for p in BUILTIN_DONT_REGISTER],
+    copts = commandline_flag_copts(),
+    linkstatic = True,
+    no_main = True,
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    ungrte = if_oss(True, False),
+    use_sys_malloc = True,
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        ":register_composite_ops",
+        ":register_single_ops",
+        ":register_transformer_layer",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc/internal:litert_detail",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_check",
@@ -1028,6 +1083,7 @@ cc_library(
         ":common",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",
