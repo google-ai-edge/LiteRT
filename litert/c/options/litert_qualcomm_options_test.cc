@@ -247,6 +247,19 @@ TEST(LiteRtQualcommOptionsTest, DlcDir) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, PreparedDlcDir) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsSetPreparedDlcDir(qualcomm_options, "prepared_dir"));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetPreparedDlcDir(), "prepared_dir");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, GraphTransform) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -473,6 +486,10 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetDlcDir(), "");
   options->SetDlcDir("tmp");
   EXPECT_EQ(options->GetDlcDir(), "tmp");
+
+  EXPECT_EQ(options->GetPreparedDlcDir(), "");
+  options->SetPreparedDlcDir("prepared");
+  EXPECT_EQ(options->GetPreparedDlcDir(), "prepared");
 
   EXPECT_EQ(options->GetGraphTransform(), "");
   options->SetGraphTransform("option1,option2");

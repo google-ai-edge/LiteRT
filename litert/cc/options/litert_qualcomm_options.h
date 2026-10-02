@@ -387,6 +387,18 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  void SetPreparedDlcDir(const std::string& prepared_dlc_dir) {
+    LrtQualcommOptionsSetPreparedDlcDir(options_, prepared_dlc_dir.c_str());
+  }
+  StringView GetPreparedDlcDir() {
+    const char* val;
+    auto status = LrtQualcommOptionsGetPreparedDlcDir(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
+
   void SetGraphTransform(const std::string& graph_transform) {
     LrtQualcommOptionsSetGraphTransform(options_, graph_transform.c_str());
   }

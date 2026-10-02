@@ -54,7 +54,7 @@ flowchart TB
         direction LR
         C_GEN["🛠 Compile · General<br/><div style='text-align:left'>────────────────────────<br/>enable_just_in_time<br/>graph_io_tensor_mem_type<br/>graph_priority</div>"]
         C_HTP["🛠 Compile · HTP<br/><div style='text-align:left'>───────────────────────<br/>use_conv_hmx<br/>use_fold_relu<br/>htp_p_point<br/>optimization_level<br/>vtcm_size<br/>num_hvx_threads<br/>use_int64_bias_as_int32<br/>enable_weight_sharing</div>"]
-        C_OTHER["🛠 Compile · IR / SAVER / Debug<br/><div style='text-align:left'>──────────────────────────────<br/>dlc_dir<br/>saver_output_dir<br/>dump_tensor_ids<br/>ir_json_dir</div>"]
+        C_OTHER["🛠 Compile · IR / SAVER / Debug<br/><div style='text-align:left'>──────────────────────────────<br/>dlc_dir<br/>prepared_dlc_dir<br/>saver_output_dir<br/>dump_tensor_ids<br/>ir_json_dir</div>"]
         C_GEN ~~~ C_HTP ~~~ C_OTHER
     end
     ROW1 ~~~ ROW2
@@ -65,7 +65,7 @@ flowchart TB
 | **General / SDK** | `log_level`, `backend`, `graph_priority`, `custom_op_package`, `enable_just_in_time`, `graph_io_tensor_mem_type`, `profiling` |
 | **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_p_point`, `htp_performance_mode`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
 | **DSP** | `dsp_performance_mode` |
-| **IR** | `dlc_dir` |
+| **IR / artifacts** | `dlc_dir`, `prepared_dlc_dir` |
 | **SAVER** | `saver_output_dir` |
 | **Debug** | `dump_tensor_ids`, `ir_json_dir` |
 
@@ -150,6 +150,7 @@ QNN intermediate-representation dumps — diagnostic artifacts produced at compi
 | Option | CLI flag (`--qualcomm_…`) | Default | Phase | Notes |
 |--------|------|---------|-------|----------------|
 | DLC dir | `dlc_dir` | *(empty)* | compile | If set, compile QNN graphs as DLC to this dir. |
+| Prepared DLC dir | `prepared_dlc_dir` | *(empty)* | compile | If set, compile source DLCs and emit HTP-prepared `qnn_partition_<N>_htp.dlc` files containing an executable context cache for the selected SoC. Requires a SoC model. This direct path does not add generator-only HTP op-mapping metadata. |
 
 ---
 

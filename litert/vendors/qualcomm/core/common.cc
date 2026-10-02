@@ -541,6 +541,14 @@ absl::string_view Options::GetDlcDir() const { return dlc_dir_; }
 
 void Options::SetDlcDir(absl::string_view dlc_dir) { dlc_dir_ = dlc_dir; }
 
+absl::string_view Options::GetPreparedDlcDir() const {
+  return prepared_dlc_dir_;
+}
+
+void Options::SetPreparedDlcDir(absl::string_view prepared_dlc_dir) {
+  prepared_dlc_dir_ = prepared_dlc_dir;
+}
+
 absl::string_view Options::GetGraphTransform() const {
   return graph_transform_;
 }
@@ -720,6 +728,7 @@ std::string Options::Dump() const {
   absl::StrAppend(&out, "[IR]\n");
   field(2, "IrJsonDir", ir_json_dir_);
   field(2, "DlcDir", dlc_dir_);
+  field(2, "PreparedDlcDir", prepared_dlc_dir_);
 
   // --- SAVER ---
   absl::StrAppend(&out, "[SAVER]\n");

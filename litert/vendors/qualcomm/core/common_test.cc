@@ -255,6 +255,14 @@ TEST(QnnOptionTest, SetDlcDir) {
   EXPECT_TRUE(options.GetDlcDir().empty());
 }
 
+TEST(QnnOptionTest, SetPreparedDlcDir) {
+  Options options;
+  options.SetPreparedDlcDir("tmp/");
+  EXPECT_EQ(options.GetPreparedDlcDir(), "tmp/");
+  options.SetPreparedDlcDir("");
+  EXPECT_TRUE(options.GetPreparedDlcDir().empty());
+}
+
 TEST(QnnOptionTest, SetGraphTransform) {
   Options options;
   options.SetGraphTransform("option1,option2");
@@ -371,6 +379,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetDspPerfCtrlMode(), DspPerfCtrlMode::kManual);
   EXPECT_TRUE(options.GetIrJsonDir().empty());
   EXPECT_TRUE(options.GetDlcDir().empty());
+  EXPECT_TRUE(options.GetPreparedDlcDir().empty());
   EXPECT_TRUE(options.GetGraphTransform().empty());
   EXPECT_EQ(options.GetVtcmSize(), 0);
   EXPECT_EQ(options.GetNumHvxThreads(), 0);

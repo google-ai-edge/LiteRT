@@ -310,6 +310,12 @@ LiteRtStatus LrtQualcommOptionsSetDlcDir(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetDlcDir(LrtQualcommOptions options,
                                          const char** dlc_dir);
 
+LiteRtStatus LrtQualcommOptionsSetPreparedDlcDir(LrtQualcommOptions options,
+                                                 const char* prepared_dlc_dir);
+
+LiteRtStatus LrtQualcommOptionsGetPreparedDlcDir(LrtQualcommOptions options,
+                                                 const char** prepared_dlc_dir);
+
 LiteRtStatus LrtQualcommOptionsSetGraphTransform(LrtQualcommOptions options,
                                                  const char* graph_transform);
 

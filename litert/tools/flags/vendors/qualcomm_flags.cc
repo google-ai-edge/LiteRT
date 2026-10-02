@@ -433,6 +433,10 @@ ABSL_FLAG(
     std::string, qualcomm_dlc_dir, "",
     "DLC directory. If provided, you can obtain Qnn graphs in DLC format.");
 
+ABSL_FLAG(std::string, qualcomm_prepared_dlc_dir, "",
+          "Prepared DLC directory. If provided, LiteRT prepares each QNN IR "
+          "DLC for the selected HTP target and embeds its context cache.");
+
 ABSL_FLAG(std::string, qualcomm_graph_transform, "",
           "Comma-separated list of graph transform options to apply, e.g. "
           "\"option1,option2\".");
@@ -872,6 +876,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const std::string dlc_dir = absl::GetFlag(FLAGS_qualcomm_dlc_dir);
   opts.SetDlcDir(dlc_dir);
+
+  const std::string prepared_dlc_dir =
+      absl::GetFlag(FLAGS_qualcomm_prepared_dlc_dir);
+  opts.SetPreparedDlcDir(prepared_dlc_dir);
 
   const std::string graph_transform =
       absl::GetFlag(FLAGS_qualcomm_graph_transform);

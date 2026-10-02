@@ -330,6 +330,11 @@ class LiteRtCompilerPluginT {
 
   const ::qnn::Options& Options() const { return qnn_options_; }
 
+  litert::Expected<QnnManager::Ptr> CreateQnnManager(
+      const ::qnn::Options& options) const {
+    return QnnManager::Create(options, shared_library_dir_);
+  }
+
   QnnManager* GetOrCreateQnnManager(const ::qnn::Options& options) {
     if (qnn_manager_) {
       if (qnn_manager_->GetOptions().GetBackendType() ==
@@ -342,7 +347,7 @@ class LiteRtCompilerPluginT {
                  static_cast<int>(qnn_manager_->GetOptions().GetBackendType()),
                  static_cast<int>(options.GetBackendType()));
     }
-    auto qnn_manager_or = QnnManager::Create(options, shared_library_dir_);
+    auto qnn_manager_or = CreateQnnManager(options);
     if (!qnn_manager_or) {
       LITERT_LOG(LITERT_ERROR, "%s", qnn_manager_or.Error().Message().data());
       return nullptr;
@@ -529,7 +534,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
   litert::compiler::Model model(compiler_plugin->ctx(), partitions);
   auto num_partitions = model.NumSubgraphs();
-  auto options = compiler_plugin->Options();
+  const auto original_options = compiler_plugin->Options();
+  auto options = original_options;
   const auto configured_soc_model = options.GetSocModel();
   if ((soc_model == nullptr || soc_model[0] == '\0') &&
       !configured_soc_model.empty()) {
@@ -546,6 +552,28 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   } else if (soc_model) {
     LITERT_LOG(LITERT_ERROR, "Unexpected SoC model: %s", soc_model);
     return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  const std::string prepared_dlc_dir(options.GetPreparedDlcDir());
+  if (!prepared_dlc_dir.empty()) {
+    if (!opt_soc_model) {
+      LITERT_LOG(LITERT_ERROR,
+                 "A Qualcomm SoC model is required to generate prepared "
+                 "DLCs.");
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    if (!options.GetSaverOutputDir().empty() || options.GetEnableJustInTime() ||
+        options.GetEnableWeightSharing()) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Prepared DLC generation is incompatible with Saver, "
+                 "Just-In-Time, and weight-sharing modes.");
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    if (options.GetDlcDir().empty()) {
+      // Keep the source and prepared DLCs together when the caller does not
+      // request a separate source-DLC directory.
+      options.SetDlcDir(prepared_dlc_dir);
+    }
   }
 
   auto result = std::make_unique<LiteRtCompiledResultT>();
@@ -586,6 +614,15 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                    dlc_dir.c_str(), ec.message().c_str());
         return kLiteRtStatusErrorRuntimeFailure;
       }
+    }
+  }
+  if (!prepared_dlc_dir.empty()) {
+    std::error_code ec;
+    std::filesystem::create_directories(prepared_dlc_dir, ec);
+    if (ec) {
+      LITERT_LOG(LITERT_ERROR, "Failed to create prepared DLC directory %s: %s",
+                 prepared_dlc_dir.c_str(), ec.message().c_str());
+      return kLiteRtStatusErrorRuntimeFailure;
     }
   }
 
@@ -709,6 +746,48 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       jit_graph->inputs = std::move(inputs);
       jit_graph->outputs = std::move(outputs);
       result->jit_graphs.push_back(std::move(jit_graph));
+    }
+  }
+
+  if (!prepared_dlc_dir.empty()) {
+    auto htp_options = original_options;
+    htp_options.SetBackendType(::qnn::BackendType::kHtpBackend);
+    htp_options.SetDlcDir("");
+    htp_options.SetPreparedDlcDir("");
+    htp_options.SetProfiling(::qnn::Profiling::kOff);
+
+    auto htp_manager_or = compiler_plugin->CreateQnnManager(htp_options);
+    if (!htp_manager_or) {
+      LITERT_LOG(LITERT_ERROR, "%s", htp_manager_or.Error().Message().data());
+      return htp_manager_or.Error().Status();
+    }
+    auto htp_manager = std::move(*htp_manager_or);
+    auto htp_backend = ::qnn::CreateBackend(htp_manager->Api(), htp_options,
+                                            opt_soc_model, true);
+    if (!htp_backend) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Failed to initialize HTP backend for prepared DLCs.");
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+
+    const std::filesystem::path source_dir(std::string(options.GetDlcDir()));
+    const std::filesystem::path output_dir(prepared_dlc_dir);
+    for (const std::string& graph_name : result->graph_names) {
+      auto context_handle = htp_manager->CreateContextHandle(
+          *htp_backend, QnnManager::DefaultContextConfigs(),
+          ::qnn::Profiling::kOff);
+      if (!context_handle) {
+        LITERT_LOG(LITERT_ERROR, "%s", context_handle.Error().Message().data());
+        return context_handle.Error().Status();
+      }
+
+      const std::filesystem::path source_path =
+          source_dir / absl::StrCat(graph_name, ".dlc");
+      const std::filesystem::path output_path =
+          output_dir / absl::StrCat(graph_name, "_htp.dlc");
+      LITERT_RETURN_IF_ERROR(htp_manager->GeneratePreparedDlc(
+          source_path.generic_string(), output_path.generic_string(),
+          *htp_backend, context_handle->Get()));
     }
   }
 

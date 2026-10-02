@@ -21,6 +21,7 @@
 
 #include <array>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -37,6 +38,7 @@
 #include "QnnTypes.h"  // from @qairt
 #include "System/QnnSystemCommon.h"  // from @qairt
 #include "System/QnnSystemContext.h"  // from @qairt
+#include "System/QnnSystemDlc.h"  // from @qairt
 #include "System/QnnSystemInterface.h"  // from @qairt
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
@@ -130,6 +132,25 @@ Expected<absl::Span<const QnnSystemInterface_t*>> LoadSystemProvidersFromLib(
   }
   return absl::MakeSpan(interface_providers, num_providers);
 }
+
+struct SystemGraphInfoDeleter {
+  uint32_t num_graphs = 0;
+
+  void operator()(QnnSystemContext_GraphInfo_t* graph_infos) const {
+    if (graph_infos == nullptr) {
+      return;
+    }
+    for (uint32_t i = 0; i < num_graphs; ++i) {
+      if (graph_infos[i].version != QNN_SYSTEM_CONTEXT_GRAPH_INFO_VERSION_1) {
+        continue;
+      }
+      free(const_cast<char*>(graph_infos[i].graphInfoV1.graphName));
+      free(graph_infos[i].graphInfoV1.graphInputs);
+      free(graph_infos[i].graphInfoV1.graphOutputs);
+    }
+    free(graph_infos);
+  }
+};
 
 }  // namespace
 
@@ -398,6 +419,118 @@ LiteRtStatus QnnManager::GenerateContextBinary(
   LITERT_LOG(LITERT_INFO, "Serialized a context bin of size (bytes): %lu\n",
              written_bin_size);
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus QnnManager::GeneratePreparedDlc(
+    absl::string_view source_dlc_path, absl::string_view output_dlc_path,
+    ::qnn::QnnBackend& qnn_backend, Qnn_ContextHandle_t context_handle) {
+  if (source_dlc_path.empty() || output_dlc_path.empty()) {
+    LITERT_LOG(LITERT_ERROR, "%s",
+               "Source and output DLC paths must not be empty.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  const QnnApi* api = Api();
+  const QnnSystemApi* system_api = SystemApi();
+  if (api == nullptr || system_api == nullptr ||
+      qnn_backend.GetBackendHandle() == nullptr || context_handle == nullptr ||
+      api->graphRetrieve == nullptr || api->graphFinalize == nullptr ||
+      api->contextAddToDlc == nullptr ||
+      system_api->systemDlcCreateFromFileWithDestinationDir == nullptr ||
+      system_api->systemDlcComposeGraphs == nullptr ||
+      system_api->systemDlcSave == nullptr ||
+      system_api->systemDlcFree == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "Required QNN prepared-DLC APIs are unavailable.");
+    return kLiteRtStatusErrorUnsupported;
+  }
+
+  const std::string source_path(source_dlc_path);
+  const std::string output_path(output_dlc_path);
+  std::filesystem::path output_fs_path(output_path);
+  const std::string destination_dir =
+      output_fs_path.has_parent_path()
+          ? output_fs_path.parent_path().generic_string()
+          : ".";
+
+  QnnSystemDlc_Handle_t raw_dlc_handle = nullptr;
+  Qnn_ErrorHandle_t status =
+      system_api->systemDlcCreateFromFileWithDestinationDir(
+          qnn_backend.GetLogHandle(), source_path.c_str(),
+          destination_dir.c_str(), &raw_dlc_handle);
+  if (status != QNN_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR, "Failed to open source DLC %s. QNN error: %llu",
+               source_path.c_str(), static_cast<unsigned long long>(status));
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  std::unique_ptr<void, QnnSystemDlc_freeFn_t> dlc_handle(
+      raw_dlc_handle, system_api->systemDlcFree);
+
+  QnnSystemContext_GraphInfo_t* raw_graph_infos = nullptr;
+  uint32_t num_graphs = 0;
+  // Keep graph configs empty to match Qualcomm's context-binary-generator
+  // flow. Applying LiteRT's direct-HTP overrides while composing a serialized
+  // IR graph changes its preparation instead of simply preparing the DLC.
+  status = system_api->systemDlcComposeGraphs(
+      dlc_handle.get(), nullptr, 0, qnn_backend.GetBackendHandle(),
+      context_handle, *interface_,
+      QNN_SYSTEM_CONTEXT_GRAPH_INFO_VERSION_1, &raw_graph_infos, &num_graphs);
+  std::unique_ptr<QnnSystemContext_GraphInfo_t, SystemGraphInfoDeleter>
+      graph_infos(raw_graph_infos, SystemGraphInfoDeleter{num_graphs});
+  if (status != QNN_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR,
+               "Failed to compose graphs from source DLC %s. QNN error: %llu",
+               source_path.c_str(), static_cast<unsigned long long>(status));
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  if (num_graphs == 0 || graph_infos == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "Source DLC %s contains no graphs.",
+               source_path.c_str());
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  for (uint32_t i = 0; i < num_graphs; ++i) {
+    if (graph_infos.get()[i].version !=
+            QNN_SYSTEM_CONTEXT_GRAPH_INFO_VERSION_1 ||
+        graph_infos.get()[i].graphInfoV1.graphName == nullptr) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Source DLC %s returned unsupported graph metadata.",
+                 source_path.c_str());
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+    const char* composed_graph_name =
+        graph_infos.get()[i].graphInfoV1.graphName;
+    Qnn_GraphHandle_t graph_handle = nullptr;
+    status =
+        api->graphRetrieve(context_handle, composed_graph_name, &graph_handle);
+    if (status != QNN_SUCCESS) {
+      LITERT_LOG(LITERT_ERROR, "Failed to retrieve graph %s. QNN error: %llu",
+                 composed_graph_name, static_cast<unsigned long long>(status));
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+    status = api->graphFinalize(graph_handle, nullptr, nullptr);
+    if (status != QNN_SUCCESS) {
+      LITERT_LOG(LITERT_ERROR, "Failed to finalize graph %s. QNN error: %llu",
+                 composed_graph_name, static_cast<unsigned long long>(status));
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+  }
+
+  status = api->contextAddToDlc(context_handle, dlc_handle.get());
+  if (status != QNN_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR,
+               "Failed to embed context cache in DLC. QNN error: %llu",
+               static_cast<unsigned long long>(status));
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  status = system_api->systemDlcSave(dlc_handle.get(), output_path.c_str());
+  if (status != QNN_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR, "Failed to save prepared DLC %s. QNN error: %llu",
+               output_path.c_str(), static_cast<unsigned long long>(status));
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  LITERT_LOG(LITERT_INFO, "Saved prepared DLC: %s", output_path.c_str());
   return kLiteRtStatusOk;
 }
 

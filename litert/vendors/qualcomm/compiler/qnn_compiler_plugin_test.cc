@@ -647,5 +647,42 @@ TEST(TestQnnPlugin, CompileWithDlcDir) {
   LiteRtDestroyCompiledResult(compiled);
 }
 
+TEST(TestQnnPlugin, CompileWithPreparedDlcDir) {
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
+  ASSERT_TRUE(qnn_opts);
+
+  const std::filesystem::path temp_dir =
+      std::filesystem::temp_directory_path() / "litert_qnn_test_prepared_dlc";
+  std::filesystem::remove_all(temp_dir);
+  std::filesystem::create_directories(temp_dir);
+  qnn_opts->SetPreparedDlcDir(temp_dir.string());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto model = testing::LoadTestFileModel("one_mul.tflite");
+
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "SM8650",
+                                               model.Get(), &compiled));
+
+  const std::filesystem::path source_dlc = temp_dir / "qnn_partition_0.dlc";
+  const std::filesystem::path prepared_dlc =
+      temp_dir / "qnn_partition_0_htp.dlc";
+  EXPECT_TRUE(std::filesystem::exists(source_dlc));
+  EXPECT_TRUE(std::filesystem::exists(prepared_dlc));
+  EXPECT_GT(std::filesystem::file_size(prepared_dlc),
+            std::filesystem::file_size(source_dlc));
+
+  std::filesystem::remove_all(temp_dir);
+  LiteRtDestroyCompiledResult(compiled);
+}
+
 }  // namespace
 }  // namespace litert

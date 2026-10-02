@@ -106,6 +106,7 @@ struct LrtQualcommOptionsT {
   std::optional<std::vector<std::int32_t>> dump_tensor_ids;
   std::optional<std::string> ir_json_dir;
   std::optional<std::string> dlc_dir;
+  std::optional<std::string> prepared_dlc_dir;
   std::optional<std::string> graph_transform;
   std::optional<std::uint32_t> vtcm_size;
   std::optional<std::uint32_t> num_hvx_threads;
@@ -230,6 +231,9 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
         } else if (key == "dlc_dir") {
           status = LrtQualcommOptionsSetDlcDir(parsed_options,
                                                std::string(value).c_str());
+        } else if (key == "prepared_dlc_dir") {
+          status = LrtQualcommOptionsSetPreparedDlcDir(
+              parsed_options, std::string(value).c_str());
         } else if (key == "graph_transform") {
           status = LrtQualcommOptionsSetGraphTransform(
               parsed_options, std::string(value).c_str());
@@ -410,6 +414,9 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   }
   if (options->dlc_dir.has_value()) {
     toml << "dlc_dir = \"" << *options->dlc_dir << "\"\n";
+  }
+  if (options->prepared_dlc_dir.has_value()) {
+    toml << "prepared_dlc_dir = \"" << *options->prepared_dlc_dir << "\"\n";
   }
   if (options->graph_transform.has_value()) {
     toml << "graph_transform = \"" << *options->graph_transform << "\"\n";
@@ -997,6 +1004,30 @@ LiteRtStatus LrtQualcommOptionsGetDlcDir(LrtQualcommOptions options,
   }
 
   *dlc_dir = options->dlc_dir.has_value() ? options->dlc_dir->c_str() : "";
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetPreparedDlcDir(LrtQualcommOptions options,
+                                                 const char* prepared_dlc_dir) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->prepared_dlc_dir = prepared_dlc_dir;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetPreparedDlcDir(
+    LrtQualcommOptions options, const char** prepared_dlc_dir) {
+  if (options == nullptr || prepared_dlc_dir == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *prepared_dlc_dir = options->prepared_dlc_dir.has_value()
+                          ? options->prepared_dlc_dir->c_str()
+                          : "";
 
   return kLiteRtStatusOk;
 }

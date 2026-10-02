@@ -84,6 +84,8 @@ ABSL_DECLARE_FLAG(std::string, qualcomm_ir_json_dir);
 
 ABSL_DECLARE_FLAG(std::string, qualcomm_dlc_dir);
 
+ABSL_DECLARE_FLAG(std::string, qualcomm_prepared_dlc_dir);
+
 ABSL_DECLARE_FLAG(std::string, qualcomm_graph_transform);
 
 ABSL_DECLARE_FLAG(std::string, qualcomm_saver_output_dir);

@@ -11,8 +11,10 @@ standard QNN tools take over.
 ```mermaid
 flowchart LR
     M[".tflite"] -->|"1.1 apply_plugin_main<br/>--qualcomm_dlc_dir<br/>(LiteRT)"| D["qnn_partition_&lt;N&gt;.dlc"]
+    M -->|"1.3 apply_plugin_main<br/>--qualcomm_prepared_dlc_dir"| P["qnn_partition_&lt;N&gt;_htp.dlc<br/>prepared DLC"]
     D -.->|"3.2 qnn-net-run --dlc_path<br/>(QAIRT, online prepare)"| R["Result_*/<br/>output tensors"]
     D -->|"2.1 qnn-context-binary-generator<br/>(QAIRT, offline prepare)"| B["qnn_partition_&lt;N&gt;.bin<br/>context binary"]
+    P -->|"3.3 qnn-net-run --dlc_path<br/>(QAIRT, cached context)"| R
     M -->|"1.2 apply_plugin_main<br/>(LiteRT)"| C["compiled .tflite"]
     C -. "2.2 extract_bytecode<br/>(LiteRT)" .-> B
     B -->|"3.1 qnn-net-run --retrieve_context<br/>(QAIRT)"| R
@@ -22,10 +24,12 @@ flowchart LR
 | ---- | ---- | ----- | ----- | ------ | ----- |
 | 1.1 | `apply_plugin_main --qualcomm_dlc_dir` | LiteRT | `.tflite` | `qnn_partition_<N>.dlc` | Compiles the graph into a `.dlc`. |
 | 1.2 | `apply_plugin_main` | LiteRT | `.tflite` | compiled `.tflite` | Compiles the graph into a LiteRT `.tflite` with the QNN context binary embedded. Feeds step 2.2. |
+| 1.3 | `apply_plugin_main --qualcomm_prepared_dlc_dir` | LiteRT | `.tflite` | `qnn_partition_<N>_htp.dlc` | Compiles and prepares an HTP DLC for the selected SoC without invoking `qnn-context-binary-generator`. |
 | 2.1 | `qnn-context-binary-generator` | QAIRT | `.dlc` (from step 1.1) | `qnn_partition_<N>.bin` (context binary) | Offline prepare from a `.dlc`. |
 | 2.2 | `extract_bytecode` | LiteRT | compiled `.tflite` (from step 1.2) | `qnn_partition_<N>.bin` (context binary) | Extracts the embedded context binary. Skips step 1.1/2.1 if you already have a LiteRT-compiled `.tflite`. |
 | 3.1 | `qnn-net-run --retrieve_context` | QAIRT | context binary (from step 2) | `Result_*/` (output tensors) | Run the pre-built context binary (solid path). |
 | 3.2 | `qnn-net-run --dlc_path` | QAIRT | `.dlc` (from step 1.1) | `Result_*/` (output tensors) | Prepare the `.dlc` online (dotted path). |
+| 3.3 | `qnn-net-run --dlc_path` | QAIRT | prepared `.dlc` (from step 1.3) | `Result_*/` (output tensors) | Loads the executable context cache already embedded in the DLC. |
 
 > 💡 Once LiteRT has compiled the `.dlc`, the whole QNN/QAIRT toolchain is open
 > to you: the `.dlc` is a standard Qualcomm artifact, so in principle every QNN
@@ -133,6 +137,32 @@ bazel-bin/litert/tools/apply_plugin_main \
 This is the standard HTP compile flow. See
 [HTP_INSTRUCTIONS.md](./HTP_INSTRUCTIONS.md) for the full walkthrough (including
 the CMake build and on-device options). The `-o` `compiled.tflite` is what §2.2 reads.
+
+### 1.3 Compile directly to an HTP-prepared DLC
+
+`--qualcomm_prepared_dlc_dir=<dir>` generates both the intermediate source DLC
+and `qnn_partition_<N>_htp.dlc`, which contains an executable context cache for
+the selected `--soc_model`. This removes the deployment dependency on
+`qnn-context-binary-generator`:
+
+```bash
+bazel-bin/litert/tools/apply_plugin_main \
+  --cmd apply \
+  --model ${SOURCE_MODEL_PATH} \
+  --soc_manufacturer Qualcomm --soc_model ${SOC_MODEL} \
+  --libs ${LITERT}/bazel-bin/litert/vendors/qualcomm/compiler \
+  -o ${X86_HOST_ARTIFACT_FOLDER}/prepared_artifacts.tflite \
+  --qualcomm_prepared_dlc_dir ${X86_HOST_ARTIFACT_FOLDER}
+```
+
+The `.tflite` output has the same artifact-only IR semantics described in
+§1.1. Run the prepared DLC with `qnn-net-run --model libQnnModelDlc.so
+--dlc_path qnn_partition_0_htp.dlc`. The direct public-API path embeds the same
+kind of executable context cache as the generator, but it does not embed the
+optional HTP op-mapping record produced by the generator's
+`--save_backend_op_mapping` mode. The preparation stage deliberately uses
+Qualcomm's default generator graph configuration rather than replaying
+LiteRT's direct-HTP graph overrides.
 
 --------------------------------------------------------------------------------
 

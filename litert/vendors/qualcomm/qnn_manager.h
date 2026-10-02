@@ -129,6 +129,13 @@ class QnnManager {
   LiteRtStatus GenerateContextBinary(Qnn_ContextHandle_t context_handle,
                                      std::vector<char>& buffer);
 
+  // Composes and finalizes a source DLC on the current backend, embeds the
+  // resulting context cache, and saves it as a prepared DLC.
+  LiteRtStatus GeneratePreparedDlc(absl::string_view source_dlc_path,
+                                   absl::string_view output_dlc_path,
+                                   ::qnn::QnnBackend& qnn_backend,
+                                   Qnn_ContextHandle_t context_handle);
+
   LiteRtStatus ValidateOp(::qnn::QnnBackend& qnn_backend, ::qnn::OpWrapper& op);
 
   const ::qnn::Options& GetOptions() const { return options_; }

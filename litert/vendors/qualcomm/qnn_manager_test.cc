@@ -85,6 +85,7 @@ TEST(QnnManagerTest, GetOptions) {
   if (!options) {
     GTEST_SKIP() << "Skipping test because targeted backend is not supported";
   }
+  options->SetPreparedDlcDir("prepared");
 
   auto qnn = CreateQnnManager(*options);
   ASSERT_TRUE(qnn);
@@ -101,6 +102,7 @@ TEST(QnnManagerTest, GetOptions) {
   EXPECT_EQ(options->GetDumpTensorIds(), options_ref.GetDumpTensorIds());
   EXPECT_EQ(options->GetIrJsonDir(), options_ref.GetIrJsonDir());
   EXPECT_EQ(options->GetDlcDir(), options_ref.GetDlcDir());
+  EXPECT_EQ(options->GetPreparedDlcDir(), options_ref.GetPreparedDlcDir());
 }
 
 TEST(QnnManagerTest, GetSdkVersion) {
