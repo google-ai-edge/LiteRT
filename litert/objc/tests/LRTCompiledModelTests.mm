@@ -70,7 +70,7 @@ static NSString *GetTestDynamicModelPath() {
   XCTAssertNotNil(model);
   XCTAssertNil(error);
   XCTAssertEqual(model.environment, env);
-  XCTAssertEqual(model.options, options);
+  XCTAssertEqualObjects(model.options, options);
 
   NSArray<LRTTensorBuffer *> *inputs = [model createInputTensorBuffersWithError:&error];
   XCTAssertNotNil(inputs);
@@ -437,6 +437,66 @@ static NSString *GetTestDynamicModelPath() {
   XCTAssertEqualObjects(inputs[1].dimensions, newDims);
   XCTAssertEqual(inputs[0].size, kNewSize * sizeof(float));
   XCTAssertEqual(inputs[1].size, kNewSize * sizeof(float));
+}
+
+- (void)testResizeInputTensorWithEmptyDimensionsFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTCompiledModel *model =
+      [LRTCompiledModel compiledModelWithModelFilePath:GetTestDynamicModelPath()
+                                           environment:environment
+                                               options:options
+                                                 error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  XCTAssertFalse([model resizeInputTensorAtIndex:0 newDimensions:@[] error:&error]);
+  XCTAssertNotNil(error);
+  XCTAssertEqual(error.code, LRTErrorCodeInvalidArgument);
+}
+
+- (void)testResizeInputTensorWithNonPositiveDimensionFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTCompiledModel *model =
+      [LRTCompiledModel compiledModelWithModelFilePath:GetTestDynamicModelPath()
+                                           environment:environment
+                                               options:options
+                                                 error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  NSArray<NSNumber *> *invalidDimensions = @[ @1, @0, @3 ];
+  XCTAssertFalse([model resizeInputTensorAtIndex:0 newDimensions:invalidDimensions error:&error]);
+  XCTAssertNotNil(error);
+  XCTAssertEqual(error.code, LRTErrorCodeInvalidArgument);
+}
+
+- (void)testMutatingOptionsAfterCompilationDoesNotMutateCompiledModelOptions {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:GetTestModelPath()
+                                                                 environment:environment
+                                                                     options:options
+                                                                       error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+  XCTAssertFalse(model.options.usesMetalArgumentBuffers);
+
+  options.usesMetalArgumentBuffers = YES;
+  XCTAssertFalse(model.options.usesMetalArgumentBuffers);
 }
 
 @end
