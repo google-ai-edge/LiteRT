@@ -15,26 +15,40 @@ limitations under the License.
 
 #include "tensor/runners/litert/lambda_model_runner.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_common.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
+#include "litert/cc/litert_tensor_buffer.h"
 #include "tensor/arithmetic.h"
 #include "tensor/backends/tflite/arithmetic_tflite.h"
 #include "tensor/backends/tflite/tflite_flatbuffer_conversion.h"
+#include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/runners/litert/feedback_loop_config.h"
 #include "tensor/runners/litert/litert_dynamic_runner.h"
 #include "tensor/tensor.h"
+#include "tensor/utils/matchers.h"
 
 namespace litert::tensor {
 namespace {
+
+using ::absl_testing::StatusIs;
+using ::litert::tensor::IsOk;
 
 TEST(LambdaModelRunnerTest, SimpleLambda) {
   LITERT_ASSIGN_OR_ABORT(auto env, Environment::Create({}));
@@ -133,6 +147,132 @@ TEST(LitertDynamicRunnerTest, CreateFromBufferAndBinaryInput) {
   auto locked_span = buffer_or->Lock();
   const float* data = reinterpret_cast<const float*>(locked_span.data());
   EXPECT_EQ(data[0], 3.0f);
+}
+
+// Concatenation exercises growing and shrinking history across signatures,
+// with an output whose size changes after resize.
+TEST(LitertDynamicRunnerTest, ActiveHistoryAcrossSignatures) {
+  LITERT_ASSIGN_OR_ABORT(auto env, Environment::Create({}));
+  LITERT_ASSIGN_OR_ABORT(auto options, Options::Create());
+  ASSERT_TRUE(options.SetHardwareAccelerators(HwAccelerators::kCpu));
+  ModelFactory factory;
+  for (const auto& [name, rows] : std::vector<std::pair<std::string, int>>{
+           {"prefill", 4}, {"decode", 1}}) {
+    Tensor<TfLiteMixinTag> past(
+        {.name = "past", .type = Type::kFP32, .shape = {1, 1}});
+    Tensor<TfLiteMixinTag> chunk(
+        {.name = "chunk", .type = Type::kFP32, .shape = {rows, 1}});
+    auto result = Concatenation({past, chunk}, 0);
+    result.SetName("result");
+    ASSERT_THAT(factory.AddSignature({result}, name), IsOk());
+  }
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto model, factory.CreateFlatbuffer());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto runner,
+      LitertDynamicRunner::Create(
+          env,
+          absl::Span<const uint8_t>(
+              reinterpret_cast<const uint8_t*>(model.data()), model.size()),
+          options));
+  alignas(64) float history[128] = {};
+  for (int i = 0; i < 128; ++i) history[i] = static_cast<float>(i);
+  for (int length : {2, 3, 32, 1}) {
+    for (const auto& [name, rows] : std::vector<std::pair<std::string, int>>{
+             {"prefill", 4}, {"decode", 1}}) {
+      const std::vector<int> shape{length, 1};
+      ASSERT_THAT(runner.ResizeInput(name, "past", shape, false), IsOk());
+      EXPECT_THAT(runner.Run(name),
+                  StatusIs(absl::StatusCode::kFailedPrecondition));
+      RankedTensorType type(ElementType::Float32,
+                            Layout(Dimensions(shape.begin(), shape.end())));
+      LITERT_ASSIGN_OR_ABORT(
+          auto input, TensorBuffer::CreateFromHostMemory(env, type, history,
+                                                         sizeof(history)));
+      ASSERT_THAT(runner.SetInputBuffer(name, "past", std::move(input)),
+                  IsOk());
+      LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto handle,
+                                      runner.GetInput(name, "past"));
+      EXPECT_EQ(handle.GetShape(), shape);
+      {
+        auto history_lock = handle.GetBufferPtr()->Lock();
+        EXPECT_EQ(history_lock.data(),
+                  reinterpret_cast<const std::byte*>(history));
+      }
+      std::vector<float> chunk(rows, 100.0f);
+      ASSERT_THAT(
+          runner.SetInput(name, "chunk",
+                          absl::Span<const uint8_t>(
+                              reinterpret_cast<const uint8_t*>(chunk.data()),
+                              chunk.size() * sizeof(float))),
+          IsOk());
+      ASSERT_THAT(runner.Run(name), IsOk());
+      LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto result,
+                                      runner.GetOutput(name, "result"));
+      EXPECT_EQ(result.GetShape(), (Shape{length + rows, 1}));
+      auto data = result.GetBufferPtr()->Lock().As<const float>();
+      ASSERT_EQ(data.size(), length + rows);
+      for (int i = 0; i < length; ++i) EXPECT_EQ(data.data()[i], history[i]);
+      for (int i = 0; i < rows; ++i) EXPECT_EQ(data.data()[length + i], 100.0f);
+    }
+  }
+  EXPECT_THAT(runner.ResizeInput("prefill", "past", {-1, 1}, false),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(runner.ResizeInput("missing", "past", {2, 1}, false),
+              StatusIs(absl::StatusCode::kNotFound));
+  EXPECT_THAT(runner.ResizeInput("prefill", size_t{999}, {2, 1}, false),
+              StatusIs(absl::StatusCode::kNotFound));
+  // A rejected resize leaves the last successful binding usable.
+  EXPECT_THAT(runner.Run("prefill"), IsOk());
+}
+
+TEST(LitertDynamicRunnerTest, ResizeCopyInputAndValidateBorrowedShape) {
+  LITERT_ASSIGN_OR_ABORT(auto env, Environment::Create({}));
+  LITERT_ASSIGN_OR_ABORT(auto options, Options::Create());
+  ASSERT_TRUE(options.SetHardwareAccelerators(HwAccelerators::kCpu));
+  Tensor<TfLiteMixinTag> x({.name = "x", .type = Type::kFP32, .shape = {1}});
+  auto y = Add(x, 1.0f);
+  y.SetName("y");
+  std::vector<char> model;
+  ASSERT_THAT(Save(std::vector<Tensor<TfLiteMixinTag>>{y}, model), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto runner,
+      LitertDynamicRunner::Create(
+          env,
+          absl::Span<const uint8_t>(
+              reinterpret_cast<const uint8_t*>(model.data()), model.size()),
+          options));
+  EXPECT_THAT(runner.ResizeInput("x", {3}),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  ASSERT_THAT(runner.ResizeInput("x", {3}, false), IsOk());
+  alignas(64) float data[32] = {1, 2, 3};
+  LITERT_ASSIGN_OR_ABORT(
+      auto wrong,
+      TensorBuffer::CreateFromHostMemory(
+          env, RankedTensorType(ElementType::Float32, Layout(Dimensions{1})),
+          data, sizeof(data)));
+  EXPECT_THAT(runner.SetInputBuffer("x", std::move(wrong)),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  LITERT_ASSIGN_OR_ABORT(
+      auto wrong_out,
+      TensorBuffer::CreateFromHostMemory(
+          env, RankedTensorType(ElementType::Float32, Layout(Dimensions{1})),
+          data, sizeof(data)));
+  EXPECT_THAT(runner.SetOutputBuffer("y", std::move(wrong_out)),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  ASSERT_THAT(runner.SetInput("x", absl::Span<const uint8_t>(
+                                       reinterpret_cast<const uint8_t*>(data),
+                                       3 * sizeof(float))),
+              IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto result, runner.GetOutput("y"));
+  EXPECT_EQ(result.GetShape(), (Shape{3}));
+  auto output = result.GetBufferPtr()->Lock().As<const float>();
+  ASSERT_EQ(output.size(), 3);
+  EXPECT_EQ(output.data()[0], 2);
+  EXPECT_EQ(output.data()[2], 4);
+  ASSERT_THAT(runner.RegisterFeedbackLoop("x", "y"), IsOk());
+  EXPECT_THAT(runner.ResizeInput("x", {2}, false),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
 TEST(LitertDynamicRunnerTest, FeedbackLoopTest) {
