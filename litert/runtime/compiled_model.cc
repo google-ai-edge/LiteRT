@@ -283,7 +283,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Runtime Initialization");
   int num_threads = 1;
   [[maybe_unused]] bool use_builtin_or_reference_cpu_backend = false;
-  bool use_reference_cpu_kernels = false;
+  [[maybe_unused]] bool use_reference_cpu_kernels = false;
 #if !defined(LITERT_DISABLE_CPU)
   LiteRtCpuOptionsT cpu_options;
   if (jit_compilation_options &&
@@ -329,31 +329,49 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   }
 #endif  // !defined(LITERT_DISABLE_CPU)
 
-#ifdef LITERT_NO_BUILTIN_OPS
-  if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-      use_builtin_or_reference_cpu_backend) {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                      "Builtin and reference CPU kernel modes require builtin "
-                      "kernels.");
-  }
-  // Use StubOpResolver which provides minimal stub implementations for all
-  // builtin ops. These stubs allow the model to pass validation, but the
-  // actual operations will be handled by LiteRT's accelerator system
-  // (NPU > GPU > CPU) through their respective delegates.
-  litert::internal::StubOpResolver resolver_storage;
-  tflite::MutableOpResolver* resolver = &resolver_storage;
-#else
+  const bool has_user_op_resolver =
+      jit_compilation_options &&
+      jit_compilation_options->op_resolver != nullptr;
   std::unique_ptr<tflite::MutableOpResolver> resolver_storage;
-  if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-      use_reference_cpu_kernels) {
-    resolver_storage =
-        std::make_unique<tflite::ops::builtin::BuiltinRefOpResolver>();
-  } else {
-    resolver_storage = std::make_unique<
-        tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates>();
-  }
-  tflite::MutableOpResolver* resolver = resolver_storage.get();
+  tflite::MutableOpResolver* resolver = nullptr;
+  if (has_user_op_resolver) {
+#ifdef LITERT_NO_BUILTIN_OPS
+    if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
+        use_reference_cpu_kernels) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Reference CPU kernel mode requires reference "
+                        "kernels.");
+    }
 #endif  // LITERT_NO_BUILTIN_OPS
+    resolver_storage = std::make_unique<tflite::MutableOpResolver>(
+        *jit_compilation_options->op_resolver);
+    resolver = resolver_storage.get();
+  } else {
+#ifdef LITERT_NO_BUILTIN_OPS
+    if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
+        use_builtin_or_reference_cpu_backend) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Builtin and reference CPU kernel modes require "
+                        "builtin kernels.");
+    }
+    // Use StubOpResolver which provides minimal stub implementations for all
+    // builtin ops. These stubs allow the model to pass validation, but the
+    // actual operations will be handled by LiteRT's accelerator system
+    // (NPU > GPU > CPU) through their respective delegates.
+    resolver_storage = std::make_unique<litert::internal::StubOpResolver>();
+    resolver = resolver_storage.get();
+#else
+    if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
+        use_reference_cpu_kernels) {
+      resolver_storage =
+          std::make_unique<tflite::ops::builtin::BuiltinRefOpResolver>();
+    } else {
+      resolver_storage = std::make_unique<
+          tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates>();
+    }
+    resolver = resolver_storage.get();
+#endif  // LITERT_NO_BUILTIN_OPS
+  }
 
   // Apply custom ops.
   if (jit_compilation_options) {

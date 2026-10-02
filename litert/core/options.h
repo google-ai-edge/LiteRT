@@ -46,6 +46,10 @@ struct LiteRtExternalTensorBinding {
 struct TfLiteRegistration;
 struct TfLiteOperator;
 
+namespace tflite {
+class MutableOpResolver;
+}  // namespace tflite
+
 struct LiteRtOptionsT {
   struct CustomOpOption {
     std::string op_name;
@@ -67,6 +71,11 @@ struct LiteRtOptionsT {
   std::vector<CustomOpOption> custom_op_options;
   std::vector<const TfLiteRegistration*> custom_tflite_op_registrations;
   std::vector<const TfLiteOperator*> custom_tflite_op_operators;
+  // Optional non-owning pointer to an application-provided TFLite
+  // MutableOpResolver. When set, CompiledModel copies its registrations into
+  // the runtime's op resolver instead of creating the default builtin op
+  // resolver.
+  const tflite::MutableOpResolver* op_resolver = nullptr;
   std::vector<LiteRtExternalTensorBinding> external_tensor_bindings;
   // Non-owning pointer used to expose the runtime's WeightLoader to delegates.
   // It may be set by compiled model when scoped_weight_source is set, or by the
