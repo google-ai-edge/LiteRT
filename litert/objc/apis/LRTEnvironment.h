@@ -18,7 +18,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 /** Options used to configure a LiteRT execution environment. */
-@interface LRTEnvironmentOptions : NSObject
+@interface LRTEnvironmentOptions : NSObject <NSCopying>
 
 /** Metal device handle (`id<MTLDevice>`) for GPU environment initialization. */
 @property(nonatomic, nullable) id<MTLDevice> metalDevice;
@@ -26,12 +26,24 @@ NS_ASSUME_NONNULL_BEGIN
 /** Metal command queue handle (`id<MTLCommandQueue>`) for GPU environment initialization. */
 @property(nonatomic, nullable) id<MTLCommandQueue> metalCommandQueue;
 
+/**
+ * Returns whether the receiver is equal to another @c LRTEnvironmentOptions instance.
+ *
+ * @param otherOptions The environment options instance to compare with the receiver.
+ * @return @c YES if both instances reference the same Metal resources, @c NO otherwise.
+ */
+- (BOOL)isEqualToEnvironmentOptions:(LRTEnvironmentOptions *)otherOptions;
+
 @end
 
 /** High-level environment context holding LiteRT runtime state. */
 @interface LRTEnvironment : NSObject
 
-- (instancetype)init NS_UNAVAILABLE;
+/** The Metal device associated with this environment, if available. */
+@property(nonatomic, readonly, nullable) id<MTLDevice> metalDevice;
+
+/** The Metal command queue associated with this environment, if available. */
+@property(nonatomic, readonly, nullable) id<MTLCommandQueue> metalCommandQueue;
 
 /**
  * Creates and returns a new LiteRT environment instance.
@@ -43,11 +55,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable instancetype)environmentWithOptions:(nullable LRTEnvironmentOptions *)options
                                           error:(NSError **)error;
 
-/** The Metal device associated with this environment, if available. */
-@property(nonatomic, readonly, nullable) id<MTLDevice> metalDevice;
-
-/** The Metal command queue associated with this environment, if available. */
-@property(nonatomic, readonly, nullable) id<MTLCommandQueue> metalCommandQueue;
+- (instancetype)init NS_UNAVAILABLE;
 
 @end
 
