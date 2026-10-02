@@ -25,7 +25,11 @@ NS_ASSUME_NONNULL_BEGIN
  */
 @interface LRTModel : NSObject
 
-- (instancetype)init NS_UNAVAILABLE;
+/** Environment associated with this model. */
+@property(nonatomic, readonly) LRTEnvironment *environment;
+
+/** The signature keys defined in the model. */
+@property(nonatomic, readonly, copy) NSArray<NSString *> *signatureKeys;
 
 /**
  * Loads a LiteRT model from a file path.
@@ -54,11 +58,7 @@ NS_ASSUME_NONNULL_BEGIN
                                 environment:(LRTEnvironment *)environment
                                       error:(NSError **)error;
 
-/** Environment associated with this model. */
-@property(nonatomic, readonly) LRTEnvironment *environment;
-
-/** The signature keys defined in the model. */
-@property(nonatomic, readonly, copy) NSArray<NSString *> *signatureKeys;
+- (instancetype)init NS_UNAVAILABLE;
 
 /**
  * Returns the list of input tensor names for a given signature index.
