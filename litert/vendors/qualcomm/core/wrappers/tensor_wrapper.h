@@ -291,38 +291,6 @@ void TransposeFromOHWIToHWIO(absl::Span<const T> weight_data,
 }
 
 template <typename T>
-void TransposeFromDHWOIToDHWIO(absl::Span<const T> weight_data,
-                               const std::vector<std::uint32_t> &weight_dims,
-                               std::vector<T> &weight_data_transpose) {
-  weight_data_transpose.resize(weight_data.size());
-  const uint32_t depth = weight_dims[0];
-  const uint32_t height = weight_dims[1];
-  const uint32_t width = weight_dims[2];
-  const uint32_t channel_out = weight_dims[3];
-  const uint32_t channel_in = weight_dims[4];
-
-  for (uint32_t d = 0; d < depth; ++d) {
-    for (uint32_t h = 0; h < height; ++h) {
-      for (uint32_t w = 0; w < width; ++w) {
-        for (uint32_t o = 0; o < channel_out; ++o) {
-          for (uint32_t i = 0; i < channel_in; ++i) {
-            const uint32_t src =
-                ((((d * height + h) * width + w) * channel_out + o) *
-                 channel_in) +
-                i;
-            const uint32_t dst =
-                ((((d * height + h) * width + w) * channel_in + i) *
-                 channel_out) +
-                o;
-            weight_data_transpose[dst] = weight_data[src];
-          }
-        }
-      }
-    }
-  }
-}
-
-template <typename T>
 void DilateDHWIO(absl::Span<const T> weight_data,
                  const std::vector<std::uint32_t> &weight_dims,
                  const std::array<std::uint32_t, 3> &dilation,
@@ -345,7 +313,7 @@ void DilateDHWIO(absl::Span<const T> weight_data,
   const std::size_t dilated_size = static_cast<std::size_t>(dilated_depth) *
                                    dilated_height * dilated_width * channel_in *
                                    channel_out;
-  dilated_data.assign(dilated_size, T{});
+  dilated_data.assign(dilated_size, T{0});
 
   for (std::uint32_t d = 0; d < depth; ++d) {
     for (std::uint32_t h = 0; h < height; ++h) {

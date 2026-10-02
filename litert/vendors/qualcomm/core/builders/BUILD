@@ -718,6 +718,7 @@ cc_library(
     hdrs = ["transpose_conv3d_op_builder.h"],
     deps = [
         ":op_builder",
+        ":transpose_op_builder",
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/utils:log",

@@ -7,12 +7,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "QnnOpDef.h"         // from @qairt
 #include "QnnTypes.h"         // from @qairt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
@@ -45,6 +47,7 @@ std::vector<OpWrapper> BuildTransposeConv3dOp(
     const std::uint32_t stride_h, const std::uint32_t stride_w,
     const std::uint32_t dilation_d, const std::uint32_t dilation_h,
     const std::uint32_t dilation_w, const PaddingType padding_type) {
+  std::vector<OpWrapper> ops;
   if (inputs.size() <= kInputIndex || outputs.empty()) {
     QNN_LOG_ERROR("TransposeConv3d requires at least 3 inputs and 1 output.");
     return {};
@@ -66,38 +69,56 @@ std::vector<OpWrapper> BuildTransposeConv3dOp(
     return {};
   }
 
-  const std::vector<std::uint32_t>& filter_dims = filter_tensor.GetDimensions();
-  std::vector<std::uint32_t> qnn_filter_dims{
-      filter_dims[kFilterDepthIndex], filter_dims[kFilterHeightIndex],
-      filter_dims[kFilterWidthIndex], filter_dims[kFilterChannelInIndex],
-      filter_dims[kFilterChannelOutIndex]};
-
-  auto filter_data = filter_tensor.GetTensorData<float>();
-  if (!filter_data.has_value()) {
-    QNN_LOG_ERROR("TransposeConv3d failed to read filter data.");
-    return {};
-  }
-  std::vector<float> qnn_filter_data;
-  TransposeFromDHWOIToDHWIO(filter_data.value(), filter_dims,
-                             qnn_filter_data);
-
   const std::array<std::uint32_t, kSpatialRank> requested_dilation{
       dilation_d, dilation_h, dilation_w};
   const std::array<std::uint32_t, kSpatialRank> qnn_dilation{1, 1, 1};
+  TensorWrapper* filter_to_transpose = &filter_tensor;
   if (requested_dilation != qnn_dilation) {
+    auto filter_data = filter_tensor.GetTensorData<float>();
+    if (!filter_data.has_value()) {
+      QNN_LOG_ERROR("TransposeConv3d failed to read filter data.");
+      return {};
+    }
     std::vector<std::uint32_t> dilated_filter_dims;
     std::vector<float> dilated_filter_data;
-    DilateDHWIO(absl::Span<const float>(qnn_filter_data), qnn_filter_dims,
+    DilateDHWIO(filter_data.value(), filter_tensor.GetDimensions(),
                 requested_dilation, dilated_filter_dims, dilated_filter_data);
-    qnn_filter_dims = std::move(dilated_filter_dims);
-    qnn_filter_data = std::move(dilated_filter_data);
+    filter_to_transpose = &tensor_pool.CreateStaticTensor(
+        filter_tensor.GetDataType(), filter_tensor.GetQuantParams(),
+        dilated_filter_dims,
+        sizeof(decltype(dilated_filter_data)::value_type) *
+            dilated_filter_data.size(),
+        dilated_filter_data.data());
   }
 
-  TensorWrapper& transposed_filter_tensor = tensor_pool.CreateStaticTensor(
-      filter_tensor.GetDataType(), filter_tensor.GetQuantParams(),
-      qnn_filter_dims, sizeof(decltype(qnn_filter_data)::value_type) *
-                           qnn_filter_data.size(),
-      qnn_filter_data.data());
+  const std::vector<std::uint32_t>& filter_dims =
+      filter_to_transpose->GetDimensions();
+  const std::vector<std::uint32_t> qnn_filter_dims{
+      filter_dims[kFilterDepthIndex], filter_dims[kFilterHeightIndex],
+      filter_dims[kFilterWidthIndex], filter_dims[kFilterChannelInIndex],
+      filter_dims[kFilterChannelOutIndex]};
+  QuantizeParamsWrapperVariant qnn_filter_quant_params =
+      filter_to_transpose->GetQuantParams();
+  if (auto* axis_quant_params =
+          std::get_if<AxisScaleOffsetQuantizeParamsWrapper>(
+              &qnn_filter_quant_params)) {
+    const std::array<std::int32_t, kTensorRank> new_axis{
+        kFilterDepthIndex, kFilterHeightIndex, kFilterWidthIndex,
+        kFilterChannelInIndex, kFilterChannelOutIndex};
+    axis_quant_params->SetAxis(new_axis[axis_quant_params->GetAxis()]);
+  }
+  TensorWrapper& transposed_filter_tensor =
+      tensor_pool.CreateNativeTensor(filter_to_transpose->GetDataType(),
+                                     qnn_filter_quant_params, qnn_filter_dims);
+  const std::array<std::uint32_t, kTensorRank> permute_data{
+      kFilterDepthIndex, kFilterHeightIndex, kFilterWidthIndex,
+      kFilterChannelInIndex, kFilterChannelOutIndex};
+  const std::vector<std::uint32_t> permute_shape{kTensorRank};
+  TensorWrapper& permute_tensor = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_UINT_32, QuantizeParamsWrapperVariant{}, permute_shape,
+      sizeof(permute_data[0]) * permute_data.size(), permute_data.data());
+  ops.emplace_back(CreateTransposeOp(*filter_to_transpose,
+                                     transposed_filter_tensor, permute_tensor));
 
   // stride param
   const std::array<std::uint32_t, kSpatialRank> stride_data{stride_d, stride_h,
@@ -139,9 +160,10 @@ std::vector<OpWrapper> BuildTransposeConv3dOp(
     bias_tensor = &(inputs[kBiasIndex].get());
   }
 
-  return MakeVector(CreateTransposeConv3dOp(
+  ops.emplace_back(CreateTransposeConv3dOp(
       input_tensor, transposed_filter_tensor, bias_tensor, output_tensor,
       stride_tensor, padding_tensor, dilation_tensor));
+  return ops;
 }
 
 OpWrapper CreateTransposeConv3dOp(const TensorWrapper& input,

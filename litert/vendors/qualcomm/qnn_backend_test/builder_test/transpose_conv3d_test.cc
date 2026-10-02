@@ -20,6 +20,7 @@ namespace {
 using testing::FloatNear;
 using testing::Pointwise;
 
+constexpr std::size_t kTransposeInputIndex = 0;
 constexpr std::size_t kOpFilterIndex = 1;
 
 INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
@@ -54,8 +55,9 @@ TEST_P(QnnModelTest, TransposeConv3dSimpleFloat32) {
       {output_tensor}, /*stride_d=*/1, /*stride_h=*/1, /*stride_w=*/1,
       /*dilation_d=*/1, /*dilation_h=*/1, /*dilation_w=*/1,
       ::qnn::PaddingType::Valid);
-  ASSERT_EQ(ops.size(), 1u);
-  EXPECT_EQ(ops[0].GetOpCode(), ::qnn::QnnOpCode::kTransposeConv3d);
+  ASSERT_EQ(ops.size(), 2u);
+  EXPECT_EQ(ops[0].GetOpCode(), ::qnn::QnnOpCode::kTranspose);
+  EXPECT_EQ(ops[1].GetOpCode(), ::qnn::QnnOpCode::kTransposeConv3d);
 
   qnn_model_.MoveOpsToGraph(std::move(ops));
   ASSERT_TRUE(qnn_model_.ValidateOpConfig());
@@ -116,7 +118,7 @@ TEST_P(QnnModelTest, TransposeConv3dPaddingSame) {
       {output_tensor}, /*stride_d=*/1, /*stride_h=*/1, /*stride_w=*/1,
       /*dilation_d=*/1, /*dilation_h=*/1, /*dilation_w=*/1,
       ::qnn::PaddingType::Same);
-  ASSERT_EQ(ops.size(), 1u);
+  ASSERT_EQ(ops.size(), 2u);
 
   qnn_model_.MoveOpsToGraph(std::move(ops));
   ASSERT_TRUE(qnn_model_.ValidateOpConfig());
@@ -174,18 +176,21 @@ TEST_P(QnnModelTest, TransposeConv3dDilation) {
       {output_tensor}, /*stride_d=*/1, /*stride_h=*/1, /*stride_w=*/1,
       /*dilation_d=*/1, /*dilation_h=*/2, /*dilation_w=*/1,
       ::qnn::PaddingType::Valid);
-  ASSERT_EQ(ops.size(), 1u);
-  ASSERT_GT(ops[0].GetInputCount(), kOpFilterIndex);
-  EXPECT_EQ(ops[0].GetInputTensor(kOpFilterIndex).GetDimensions(),
-            std::vector<std::uint32_t>({1, 3, 2, 1, 2}));
+  ASSERT_EQ(ops.size(), 2u);
+  ASSERT_GT(ops[0].GetInputCount(), kTransposeInputIndex);
+  EXPECT_EQ(ops[0].GetInputTensor(kTransposeInputIndex).GetDimensions(),
+            std::vector<std::uint32_t>({1, 3, 2, 2, 1}));
   auto dilated_filter_data =
-      ops[0].GetInputTensor(kOpFilterIndex).GetTensorData<float>();
+      ops[0].GetInputTensor(kTransposeInputIndex).GetTensorData<float>();
   ASSERT_TRUE(dilated_filter_data);
   EXPECT_THAT(dilated_filter_data.value(),
               Pointwise(FloatNear(1e-3),
                         {1, -1, 1, 1, 0, 0, 0, 0, -1, 1, 1, -1}));
+  ASSERT_GT(ops[1].GetInputCount(), kOpFilterIndex);
+  EXPECT_EQ(ops[1].GetInputTensor(kOpFilterIndex).GetDimensions(),
+            std::vector<std::uint32_t>({1, 3, 2, 1, 2}));
   auto dilation_data =
-      ops[0].GetTensorParam(2).GetTensor().GetTensorData<std::uint32_t>();
+      ops[1].GetTensorParam(2).GetTensor().GetTensorData<std::uint32_t>();
   ASSERT_TRUE(dilation_data);
   EXPECT_THAT(dilation_data.value(), testing::ElementsAre(1, 1, 1));
 

@@ -24,17 +24,6 @@
 namespace qnn {
 namespace {
 
-TEST(TensorWrapperTest, TransposeFromDHWOIToDHWIO) {
-  const std::vector<std::uint32_t> weight_dims{1, 1, 1, 3, 2};
-  const std::vector<int> weight_data{10, 11, 20, 21, 30, 31};
-  std::vector<int> transposed_data;
-
-  TransposeFromDHWOIToDHWIO(absl::Span<const int>(weight_data), weight_dims,
-                             transposed_data);
-
-  EXPECT_THAT(transposed_data, testing::ElementsAre(10, 20, 30, 11, 21, 31));
-}
-
 TEST(TensorWrapperTest, DilateDHWIO) {
   const std::vector<std::uint32_t> weight_dims{2, 2, 2, 2, 2};
   std::vector<int> weight_data(32);
