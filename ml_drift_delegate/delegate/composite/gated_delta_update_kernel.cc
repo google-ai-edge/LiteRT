@@ -23,6 +23,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/ascii.h"  // from @com_google_absl
 #include "absl/strings/str_replace.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
@@ -40,15 +41,15 @@ namespace {
 
 class GatedDeltaUpdateOp : public ::ml_drift::GPUOperation {
  public:
-  GatedDeltaUpdateOp(int batch_size, int num_heads, int v_slices, int k_slices)
+  GatedDeltaUpdateOp(int batch_size, int num_heads, int v_groups, int k_slices)
       : batch_size_(batch_size),
         num_heads_(num_heads),
-        v_slices_(v_slices),
+        v_groups_(v_groups),
         k_slices_(k_slices) {}
 
   ::ml_drift::int3 GetGridSize() const override {
-    // Grid: X=K Slices * Value Slices, Y=Height (Heads), Z=Batch
-    return ::ml_drift::int3(k_slices_ * v_slices_, num_heads_, batch_size_);
+    // Grid: X=K Slices * Value Groups, Y=Height (Heads), Z=Batch
+    return ::ml_drift::int3(k_slices_ * v_groups_, num_heads_, batch_size_);
   }
 
   std::vector<::ml_drift::int3> GetPossibleKernelWorkGroups(
@@ -65,31 +66,230 @@ class GatedDeltaUpdateOp : public ::ml_drift::GPUOperation {
  private:
   int batch_size_ = 1;
   int num_heads_ = 1;
-  int v_slices_ = 1;
+  int v_groups_ = 1;
   int k_slices_ = 4;
 };
 
 // SIMD shuffle-based shader (register-only reduction, zero shared
-// memory, zero barriers).
+// memory, zero barriers). Collectively processes V_TILE v_slices per subgroup
+// so q_t/k_t loads are reused, beta_t/g_t are loaded uniformly across the
+// subgroup, v_t loads are distributed across lanes and shared via
+// simd_broadcast, and lanes 0..V_TILE-1 write consecutive v_slices of attn_out
+// in parallel.
+//
+// Final rendered shader example (Metal, D_k=128, D_v=128, V_TILE=4,
+// SEQ_LEN_EXPR=128, GQA_RATIO=3, StateType=float4, ActivationType=float4):
+// clang-format off
+// NOLINTBEGIN(whitespace/line_length)
+// ```msl
+// MAIN_FUNCTION($0) {
+//   int k_slice = ucl::GetLocalId<0>();
+//   int k_base = k_slice * 4;
+//   int v_base = ucl::GetGroupId<0>() * 4;
+//   int h = ucl::GetGlobalId<1>();
+//   int h_k = h / 3;
+//   int b = ucl::GetGlobalId<2>();
+//
+//   float4 s0_0 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 0, h, v_base + 0, b));
+//   float4 s1_0 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 1, h, v_base + 0, b));
+//   float4 s2_0 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 2, h, v_base + 0, b));
+//   float4 s3_0 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 3, h, v_base + 0, b));
+//   float4 s0_1 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 0, h, v_base + 1, b));
+//   float4 s1_1 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 1, h, v_base + 1, b));
+//   float4 s2_1 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 2, h, v_base + 1, b));
+//   float4 s3_1 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 3, h, v_base + 1, b));
+//   float4 s0_2 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 0, h, v_base + 2, b));
+//   float4 s1_2 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 1, h, v_base + 2, b));
+//   float4 s2_2 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 2, h, v_base + 2, b));
+//   float4 s3_2 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 3, h, v_base + 2, b));
+//   float4 s0_3 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 0, h, v_base + 3, b));
+//   float4 s1_3 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 1, h, v_base + 3, b));
+//   float4 s2_3 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 2, h, v_base + 3, b));
+//   float4 s3_3 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base + 3, h, v_base + 3, b));
+//
+//   // Process sequence length sequentially
+//   for (int t = 0; t < 128; ++t) {
+//     // Uniform load across subgroup: all lanes read identical (h, 0, t_slice, b)
+//     int t_slice = t / 4;
+//     int t_elem = t % 4;
+//     float4 beta_t_vec = ucl::Convert<float4>(args.beta_t.Read(h, 0, t_slice, b));
+//     float beta_val = beta_t_vec.x;
+//     if (t_elem == 1) {
+//       beta_val = beta_t_vec.y;
+//     } else if (t_elem == 2) {
+//       beta_val = beta_t_vec.z;
+//     } else if (t_elem == 3) {
+//       beta_val = beta_t_vec.w;
+//     }
+//
+//     float4 g_t_vec = ucl::Convert<float4>(args.g_t.Read(h, 0, t_slice, b));
+//     float g_val = g_t_vec.x;
+//     if (t_elem == 1) {
+//       g_val = g_t_vec.y;
+//     } else if (t_elem == 2) {
+//       g_val = g_t_vec.z;
+//     } else if (t_elem == 3) {
+//       g_val = g_t_vec.w;
+//     }
+//
+//     float decay_scalar = exp(ucl::Convert<float>(g_val));
+//     float4 decay_vec = ucl::Init<float4>(decay_scalar);
+//
+//     // Load full vec4 K once for this thread's k_slice and share across V_TILE
+//     float4 k_val = ucl::Convert<float4>(args.k_t.Read(t, h_k, k_slice, b));
+//
+//     float4 kv_mem_0 = ucl::Init<float4>(0.0);
+//     float4 kv_mem_1 = ucl::Init<float4>(0.0);
+//     float4 kv_mem_2 = ucl::Init<float4>(0.0);
+//     float4 kv_mem_3 = ucl::Init<float4>(0.0);
+//     s0_0 = s0_0 * decay_vec;
+//     s1_0 = s1_0 * decay_vec;
+//     s2_0 = s2_0 * decay_vec;
+//     s3_0 = s3_0 * decay_vec;
+//     kv_mem_0 = s0_0 * ucl::Init<float4>(k_val.x) +
+//                 s1_0 * ucl::Init<float4>(k_val.y) +
+//                 s2_0 * ucl::Init<float4>(k_val.z) +
+//                 s3_0 * ucl::Init<float4>(k_val.w);
+//     s0_1 = s0_1 * decay_vec;
+//     s1_1 = s1_1 * decay_vec;
+//     s2_1 = s2_1 * decay_vec;
+//     s3_1 = s3_1 * decay_vec;
+//     kv_mem_1 = s0_1 * ucl::Init<float4>(k_val.x) +
+//                 s1_1 * ucl::Init<float4>(k_val.y) +
+//                 s2_1 * ucl::Init<float4>(k_val.z) +
+//                 s3_1 * ucl::Init<float4>(k_val.w);
+//     s0_2 = s0_2 * decay_vec;
+//     s1_2 = s1_2 * decay_vec;
+//     s2_2 = s2_2 * decay_vec;
+//     s3_2 = s3_2 * decay_vec;
+//     kv_mem_2 = s0_2 * ucl::Init<float4>(k_val.x) +
+//                 s1_2 * ucl::Init<float4>(k_val.y) +
+//                 s2_2 * ucl::Init<float4>(k_val.z) +
+//                 s3_2 * ucl::Init<float4>(k_val.w);
+//     s0_3 = s0_3 * decay_vec;
+//     s1_3 = s1_3 * decay_vec;
+//     s2_3 = s2_3 * decay_vec;
+//     s3_3 = s3_3 * decay_vec;
+//     kv_mem_3 = s0_3 * ucl::Init<float4>(k_val.x) +
+//                 s1_3 * ucl::Init<float4>(k_val.y) +
+//                 s2_3 * ucl::Init<float4>(k_val.z) +
+//                 s3_3 * ucl::Init<float4>(k_val.w);
+//
+//     kv_mem_0 = simd_sum(kv_mem_0);
+//     kv_mem_1 = simd_sum(kv_mem_1);
+//     kv_mem_2 = simd_sum(kv_mem_2);
+//     kv_mem_3 = simd_sum(kv_mem_3);
+//
+//     // Distribute v_slice loads across lanes 0..V_TILE-1 and share via subgroup broadcast
+//     float4 v_loaded = ucl::Init<float4>(0.0);
+//     if (k_slice < 4) {
+//       v_loaded = ucl::Convert<float4>(args.v_t.Read(t, h, v_base + k_slice, b));
+//     }
+//     float4 v_vec_0 = simd_broadcast(v_loaded, 0);
+//     float4 v_vec_1 = simd_broadcast(v_loaded, 1);
+//     float4 v_vec_2 = simd_broadcast(v_loaded, 2);
+//     float4 v_vec_3 = simd_broadcast(v_loaded, 3);
+//
+//     float4 beta_factor = ucl::Init<float4>(ucl::Convert<float>(beta_val));
+//
+//     // Load full vec4 Q once for this thread's k_slice and share across V_TILE
+//     float4 q_val = ucl::Convert<float4>(args.q_t.Read(t, h_k, k_slice, b));
+//
+//     float4 my_attn_out_0 = ucl::Init<float4>(0.0);
+//     float4 my_attn_out_1 = ucl::Init<float4>(0.0);
+//     float4 my_attn_out_2 = ucl::Init<float4>(0.0);
+//     float4 my_attn_out_3 = ucl::Init<float4>(0.0);
+//     float4 delta_slice_0 = (v_vec_0 - kv_mem_0) * beta_factor;
+//     s0_0 = s0_0 + delta_slice_0 * ucl::Init<float4>(k_val.x);
+//     s1_0 = s1_0 + delta_slice_0 * ucl::Init<float4>(k_val.y);
+//     s2_0 = s2_0 + delta_slice_0 * ucl::Init<float4>(k_val.z);
+//     s3_0 = s3_0 + delta_slice_0 * ucl::Init<float4>(k_val.w);
+//     my_attn_out_0 = s0_0 * ucl::Init<float4>(q_val.x) +
+//                     s1_0 * ucl::Init<float4>(q_val.y) +
+//                     s2_0 * ucl::Init<float4>(q_val.z) +
+//                     s3_0 * ucl::Init<float4>(q_val.w);
+//     float4 delta_slice_1 = (v_vec_1 - kv_mem_1) * beta_factor;
+//     s0_1 = s0_1 + delta_slice_1 * ucl::Init<float4>(k_val.x);
+//     s1_1 = s1_1 + delta_slice_1 * ucl::Init<float4>(k_val.y);
+//     s2_1 = s2_1 + delta_slice_1 * ucl::Init<float4>(k_val.z);
+//     s3_1 = s3_1 + delta_slice_1 * ucl::Init<float4>(k_val.w);
+//     my_attn_out_1 = s0_1 * ucl::Init<float4>(q_val.x) +
+//                     s1_1 * ucl::Init<float4>(q_val.y) +
+//                     s2_1 * ucl::Init<float4>(q_val.z) +
+//                     s3_1 * ucl::Init<float4>(q_val.w);
+//     float4 delta_slice_2 = (v_vec_2 - kv_mem_2) * beta_factor;
+//     s0_2 = s0_2 + delta_slice_2 * ucl::Init<float4>(k_val.x);
+//     s1_2 = s1_2 + delta_slice_2 * ucl::Init<float4>(k_val.y);
+//     s2_2 = s2_2 + delta_slice_2 * ucl::Init<float4>(k_val.z);
+//     s3_2 = s3_2 + delta_slice_2 * ucl::Init<float4>(k_val.w);
+//     my_attn_out_2 = s0_2 * ucl::Init<float4>(q_val.x) +
+//                     s1_2 * ucl::Init<float4>(q_val.y) +
+//                     s2_2 * ucl::Init<float4>(q_val.z) +
+//                     s3_2 * ucl::Init<float4>(q_val.w);
+//     float4 delta_slice_3 = (v_vec_3 - kv_mem_3) * beta_factor;
+//     s0_3 = s0_3 + delta_slice_3 * ucl::Init<float4>(k_val.x);
+//     s1_3 = s1_3 + delta_slice_3 * ucl::Init<float4>(k_val.y);
+//     s2_3 = s2_3 + delta_slice_3 * ucl::Init<float4>(k_val.z);
+//     s3_3 = s3_3 + delta_slice_3 * ucl::Init<float4>(k_val.w);
+//     my_attn_out_3 = s0_3 * ucl::Init<float4>(q_val.x) +
+//                     s1_3 * ucl::Init<float4>(q_val.y) +
+//                     s2_3 * ucl::Init<float4>(q_val.z) +
+//                     s3_3 * ucl::Init<float4>(q_val.w);
+//
+//     my_attn_out_0 = simd_sum(my_attn_out_0);
+//     my_attn_out_1 = simd_sum(my_attn_out_1);
+//     my_attn_out_2 = simd_sum(my_attn_out_2);
+//     my_attn_out_3 = simd_sum(my_attn_out_3);
+//     float4 out_to_write = my_attn_out_0;
+//     if (k_slice == 1) {
+//       out_to_write = my_attn_out_1;
+//     }
+//     if (k_slice == 2) {
+//       out_to_write = my_attn_out_2;
+//     }
+//     if (k_slice == 3) {
+//       out_to_write = my_attn_out_3;
+//     }
+//     if (k_slice < 4) {
+//       args.output.Write(ucl::Convert<float4>(out_to_write), t, h, v_base + k_slice, b);
+//     }
+//   }
+//
+//   // Write out final evolved recurrent state for this thread's 4 rows across V_TILE
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s0_0), k_base + 0, h, v_base + 0, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s1_0), k_base + 1, h, v_base + 0, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s2_0), k_base + 2, h, v_base + 0, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s3_0), k_base + 3, h, v_base + 0, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s0_1), k_base + 0, h, v_base + 1, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s1_1), k_base + 1, h, v_base + 1, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s2_1), k_base + 2, h, v_base + 1, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s3_1), k_base + 3, h, v_base + 1, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s0_2), k_base + 0, h, v_base + 2, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s1_2), k_base + 1, h, v_base + 2, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s2_2), k_base + 2, h, v_base + 2, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s3_2), k_base + 3, h, v_base + 2, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s0_3), k_base + 0, h, v_base + 3, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s1_3), k_base + 1, h, v_base + 3, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s2_3), k_base + 2, h, v_base + 3, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s3_3), k_base + 3, h, v_base + 3, b);
+// }
+// ```
+// NOLINTEND(whitespace/line_length)
+// clang-format on
 constexpr char kGatedDeltaUpdateShuffleShader[] = R"(
 MAIN_FUNCTION($0) {
   int k_slice = ucl::GetLocalId<0>();
-  int v_slice = ucl::GetGroupId<0>();
+  int k_base = k_slice * 4;
+  int v_base = ucl::GetGroupId<0>() * V_TILE;
   int h = ucl::GetGlobalId<1>();
   int h_k = h / GQA_RATIO;
   int b = ucl::GetGlobalId<2>();
 
-  // Each thread owns 4 rows along D_k (k_slice * 4 + {0, 1, 2, 3}) for this v_slice.
-  // Held entirely in 4 registers. Zero register spilling.
-  int k_base = k_slice * 4;
-  StateType s0 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 0, h, v_slice, b));
-  StateType s1 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 1, h, v_slice, b));
-  StateType s2 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 2, h, v_slice, b));
-  StateType s3 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 3, h, v_slice, b));
+  STATE_INIT_DECLS
 
   // Process sequence length sequentially
   for (int t = 0; t < SEQ_LEN_EXPR; ++t) {
-    // Read beta and g for this step (mapped from TFLite 3D shape [B, H, L] to MLDrift BHWC [B, 1, H, L])
+    // Uniform load across subgroup: all lanes read identical (h, 0, t_slice, b)
     int t_slice = t / 4;
     int t_elem = t % 4;
     ActivationType beta_t_vec = ucl::Convert<ActivationType>(args.beta_t.Read(h, 0, t_slice, b));
@@ -115,54 +315,34 @@ MAIN_FUNCTION($0) {
     StateScalarType decay_scalar = exp(ucl::Convert<StateScalarType>(g_val));
     StateType decay_vec = ucl::Init<StateType>(decay_scalar);
 
-    // Apply decay to this thread's 4 rows
-    s0 = s0 * decay_vec;
-    s1 = s1 * decay_vec;
-    s2 = s2 * decay_vec;
-    s3 = s3 * decay_vec;
-
-    // Load full vec4 K for this thread's k_slice directly
+    // Load full vec4 K once for this thread's k_slice and share across V_TILE
     StateType k_val = ucl::Convert<StateType>(args.k_t.Read(t, h_k, k_slice, b));
 
-    // Compute this thread's partial dot product: sum_i (S[i] * k[i])
-    StateType kv_mem = s0 * ucl::Init<StateType>(k_val.x) +
-                       s1 * ucl::Init<StateType>(k_val.y) +
-                       s2 * ucl::Init<StateType>(k_val.z) +
-                       s3 * ucl::Init<StateType>(k_val.w);
+    KV_MEM_INIT_DECLS
+    DECAY_AND_KV_MEM_STEP
 
     SIMD_REDUCE_KV_MEM
 
-    // Load V vector slice for this step
-    StateType v_vec = ucl::Convert<StateType>(args.v_t.Read(t, h, v_slice, b));
+    // Distribute v_slice loads across lanes 0..V_TILE-1 and share via subgroup broadcast
+    StateType v_loaded = ucl::Init<StateType>(0.0);
+    if (k_slice < V_TILE) {
+      v_loaded = ucl::Convert<StateType>(args.v_t.Read(t, h, v_base + k_slice, b));
+    }
+    V_BROADCAST_DECLS
+
     StateType beta_factor = ucl::Init<StateType>(ucl::Convert<StateScalarType>(beta_val));
-    StateType delta_slice = (v_vec - kv_mem) * beta_factor;
 
-    // Update recurrent state in-place with outer product: S += delta * k^T
-    s0 = s0 + delta_slice * ucl::Init<StateType>(k_val.x);
-    s1 = s1 + delta_slice * ucl::Init<StateType>(k_val.y);
-    s2 = s2 + delta_slice * ucl::Init<StateType>(k_val.z);
-    s3 = s3 + delta_slice * ucl::Init<StateType>(k_val.w);
-
-    // Load full vec4 Q for this thread's k_slice directly
+    // Load full vec4 Q once for this thread's k_slice and share across V_TILE
     StateType q_val = ucl::Convert<StateType>(args.q_t.Read(t, h_k, k_slice, b));
 
-    // Compute attention output slice: sum_i (S[i] * q[i])
-    StateType my_attn_out = s0 * ucl::Init<StateType>(q_val.x) +
-                            s1 * ucl::Init<StateType>(q_val.y) +
-                            s2 * ucl::Init<StateType>(q_val.z) +
-                            s3 * ucl::Init<StateType>(q_val.w);
+    ATTN_OUT_INIT_DECLS
+    UPDATE_STATE_AND_ATTN_OUT_STEP
 
     SIMD_REDUCE_ATTN_OUT
-    if (k_slice == 0) {
-      args.output.Write(ucl::Convert<ActivationType>(my_attn_out), t, h, v_slice, b);
-    }
   }
 
-  // Write out final evolved recurrent state for this thread's 4 rows
-  args.recurrent_state_out.Write(ucl::Convert<StateType>(s0), k_base + 0, h, v_slice, b);
-  args.recurrent_state_out.Write(ucl::Convert<StateType>(s1), k_base + 1, h, v_slice, b);
-  args.recurrent_state_out.Write(ucl::Convert<StateType>(s2), k_base + 2, h, v_slice, b);
-  args.recurrent_state_out.Write(ucl::Convert<StateType>(s3), k_base + 3, h, v_slice, b);
+  // Write out final evolved recurrent state for this thread's 4 rows across V_TILE
+  STATE_WRITE_OUT_STEP
 }
 )";
 
@@ -303,7 +483,21 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
   int q_slices = D_k / 4;
   int v_slices = D_v / 4;
 
-  auto op = std::make_unique<GatedDeltaUpdateOp>(B, H, v_slices, q_slices);
+  bool is_power_of_two = (q_slices > 0) && ((q_slices & (q_slices - 1)) == 0);
+  bool can_use_metal_shuffle =
+      gpu_info && gpu_info->IsApiMetal() && is_power_of_two && (q_slices <= 32);
+
+  int v_tile = 1;
+  if (can_use_metal_shuffle) {
+    if (v_slices % 4 == 0 && q_slices >= 4) {
+      v_tile = 4;
+    } else if (v_slices % 2 == 0 && q_slices >= 2) {
+      v_tile = 2;
+    }
+  }
+  int v_groups = v_slices / v_tile;
+
+  auto op = std::make_unique<GatedDeltaUpdateOp>(B, H, v_groups, q_slices);
 
   op->AddSrcTensor("q_t", q_t);
   op->AddSrcTensor("k_t", k_t);
@@ -315,25 +509,110 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
   op->AddDstTensor("output", output);
   op->AddDstTensor("recurrent_state_out", rec_state_out);
 
-  bool is_power_of_two = (q_slices > 0) && ((q_slices & (q_slices - 1)) == 0);
-  bool can_use_metal_shuffle =
-      gpu_info && gpu_info->IsApiMetal() && is_power_of_two && (q_slices <= 32);
-
   std::string code = can_use_metal_shuffle ? kGatedDeltaUpdateShuffleShader
                                            : kGatedDeltaUpdateSharedMemShader;
 
-  std::string simd_reduce_kv_mem =
-      (q_slices == 32)
-          ? "kv_mem = simd_sum(kv_mem);"
-          : R"(for (int offset = 1; offset < HEAD_K_DIM_SLICES; offset *= 2) {
-      kv_mem += simd_shuffle_xor(kv_mem, offset);
-    })";
-  std::string simd_reduce_attn_out =
-      (q_slices == 32)
-          ? "my_attn_out = simd_sum(my_attn_out);"
-          : R"(for (int offset = 1; offset < HEAD_K_DIM_SLICES; offset *= 2) {
-      my_attn_out += simd_shuffle_xor(my_attn_out, offset);
-    })";
+  std::string state_init_decls;
+  std::string kv_mem_init_decls;
+  std::string decay_and_kv_mem_step;
+  std::string simd_reduce_kv_mem;
+  std::string v_broadcast_decls;
+  std::string attn_out_init_decls;
+  std::string update_state_and_attn_out_step;
+  std::string simd_reduce_attn_out;
+  std::string state_write_out_step;
+
+  for (int m = 0; m < v_tile; ++m) {
+    std::string ms = std::to_string(m);
+    state_init_decls +=
+        "  StateType s0_" + ms +
+        " = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 0, "
+        "h, v_base + " +
+        ms + ", b));\n" + "  StateType s1_" + ms +
+        " = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 1, "
+        "h, v_base + " +
+        ms + ", b));\n" + "  StateType s2_" + ms +
+        " = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 2, "
+        "h, v_base + " +
+        ms + ", b));\n" + "  StateType s3_" + ms +
+        " = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 3, "
+        "h, v_base + " +
+        ms + ", b));\n";
+
+    kv_mem_init_decls +=
+        "    StateType kv_mem_" + ms + " = ucl::Init<StateType>(0.0);\n";
+
+    decay_and_kv_mem_step +=
+        "    s0_" + ms + " = s0_" + ms + " * decay_vec;\n" + "    s1_" + ms +
+        " = s1_" + ms + " * decay_vec;\n" + "    s2_" + ms + " = s2_" + ms +
+        " * decay_vec;\n" + "    s3_" + ms + " = s3_" + ms + " * decay_vec;\n" +
+        "    kv_mem_" + ms + " = s0_" + ms +
+        " * ucl::Init<StateType>(k_val.x) +\n" + "                s1_" + ms +
+        " * ucl::Init<StateType>(k_val.y) +\n" + "                s2_" + ms +
+        " * ucl::Init<StateType>(k_val.z) +\n" + "                s3_" + ms +
+        " * ucl::Init<StateType>(k_val.w);\n";
+
+    if (q_slices == 32) {
+      simd_reduce_kv_mem +=
+          "    kv_mem_" + ms + " = simd_sum(kv_mem_" + ms + ");\n";
+      simd_reduce_attn_out +=
+          "    my_attn_out_" + ms + " = simd_sum(my_attn_out_" + ms + ");\n";
+    } else {
+      simd_reduce_kv_mem +=
+          "    for (int offset = 1; offset < HEAD_K_DIM_SLICES; offset *= 2) "
+          "{\n"
+          "      kv_mem_" +
+          ms + " += simd_shuffle_xor(kv_mem_" + ms + ", offset);\n    }\n";
+      simd_reduce_attn_out +=
+          "    for (int offset = 1; offset < HEAD_K_DIM_SLICES; offset *= 2) "
+          "{\n"
+          "      my_attn_out_" +
+          ms + " += simd_shuffle_xor(my_attn_out_" + ms + ", offset);\n    }\n";
+    }
+    v_broadcast_decls += "    StateType v_vec_" + ms +
+                         " = simd_broadcast(v_loaded, " + ms + ");\n";
+
+    attn_out_init_decls +=
+        "    StateType my_attn_out_" + ms + " = ucl::Init<StateType>(0.0);\n";
+
+    update_state_and_attn_out_step +=
+        "    StateType delta_slice_" + ms + " = (v_vec_" + ms + " - kv_mem_" +
+        ms + ") * beta_factor;\n" + "    s0_" + ms + " = s0_" + ms +
+        " + delta_slice_" + ms + " * ucl::Init<StateType>(k_val.x);\n" +
+        "    s1_" + ms + " = s1_" + ms + " + delta_slice_" + ms +
+        " * ucl::Init<StateType>(k_val.y);\n" + "    s2_" + ms + " = s2_" + ms +
+        " + delta_slice_" + ms + " * ucl::Init<StateType>(k_val.z);\n" +
+        "    s3_" + ms + " = s3_" + ms + " + delta_slice_" + ms +
+        " * ucl::Init<StateType>(k_val.w);\n" + "    my_attn_out_" + ms +
+        " = s0_" + ms + " * ucl::Init<StateType>(q_val.x) +\n" +
+        "                    s1_" + ms +
+        " * ucl::Init<StateType>(q_val.y) +\n" + "                    s2_" +
+        ms + " * ucl::Init<StateType>(q_val.z) +\n" +
+        "                    s3_" + ms + " * ucl::Init<StateType>(q_val.w);\n";
+
+    state_write_out_step +=
+        "  args.recurrent_state_out.Write(ucl::Convert<StateType>(s0_" + ms +
+        "), k_base + 0, h, v_base + " + ms + ", b);\n" +
+        "  args.recurrent_state_out.Write(ucl::Convert<StateType>(s1_" + ms +
+        "), k_base + 1, h, v_base + " + ms + ", b);\n" +
+        "  args.recurrent_state_out.Write(ucl::Convert<StateType>(s2_" + ms +
+        "), k_base + 2, h, v_base + " + ms + ", b);\n" +
+        "  args.recurrent_state_out.Write(ucl::Convert<StateType>(s3_" + ms +
+        "), k_base + 3, h, v_base + " + ms + ", b);\n";
+  }
+
+  simd_reduce_attn_out += "    StateType out_to_write = my_attn_out_0;\n";
+  for (int m = 1; m < v_tile; ++m) {
+    std::string ms = std::to_string(m);
+    simd_reduce_attn_out += "    if (k_slice == " + ms +
+                            ") {\n      out_to_write = my_attn_out_" + ms +
+                            ";\n    }\n";
+  }
+  simd_reduce_attn_out +=
+      "    if (k_slice < V_TILE) {\n"
+      "      args.output.Write(ucl::Convert<ActivationType>(out_to_write), t, "
+      "h, v_base + k_slice, b);\n"
+      "    }\n";
 
   std::string shared_reduce_kv_mem = (q_slices == 32)
                                          ? R"(scratch_kv[k_slice] = kv_mem;
@@ -386,14 +665,27 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
       args.output.Write(ucl::Convert<ActivationType>(out_sum), t, h, v_slice, b);
     })";
 
-  absl::StrReplaceAll({{"SIMD_REDUCE_KV_MEM", simd_reduce_kv_mem},
-                       {"SIMD_REDUCE_ATTN_OUT", simd_reduce_attn_out},
-                       {"SHARED_REDUCE_KV_MEM", shared_reduce_kv_mem},
-                       {"SHARED_REDUCE_ATTN_OUT", shared_reduce_attn_out}},
-                      &code);
+  absl::StrReplaceAll(
+      {{"STATE_INIT_DECLS", absl::StripAsciiWhitespace(state_init_decls)},
+       {"KV_MEM_INIT_DECLS", absl::StripAsciiWhitespace(kv_mem_init_decls)},
+       {"DECAY_AND_KV_MEM_STEP",
+        absl::StripAsciiWhitespace(decay_and_kv_mem_step)},
+       {"SIMD_REDUCE_KV_MEM", absl::StripAsciiWhitespace(simd_reduce_kv_mem)},
+       {"V_BROADCAST_DECLS", absl::StripAsciiWhitespace(v_broadcast_decls)},
+       {"ATTN_OUT_INIT_DECLS", absl::StripAsciiWhitespace(attn_out_init_decls)},
+       {"UPDATE_STATE_AND_ATTN_OUT_STEP",
+        absl::StripAsciiWhitespace(update_state_and_attn_out_step)},
+       {"SIMD_REDUCE_ATTN_OUT",
+        absl::StripAsciiWhitespace(simd_reduce_attn_out)},
+       {"STATE_WRITE_OUT_STEP",
+        absl::StripAsciiWhitespace(state_write_out_step)},
+       {"SHARED_REDUCE_KV_MEM", shared_reduce_kv_mem},
+       {"SHARED_REDUCE_ATTN_OUT", shared_reduce_attn_out}},
+      &code);
 
   absl::StrReplaceAll(
       {{"SEQ_LEN_EXPR", std::to_string(seq_len)},
+       {"V_TILE", std::to_string(v_tile)},
        {"StateScalarType",
         ::ml_drift::ToUclDataType(rec_state_in.GetDataType(), 1)},
        {"StateType", ::ml_drift::ToUclDataType(rec_state_in.GetDataType(), 4)},
