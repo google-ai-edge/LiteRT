@@ -89,6 +89,7 @@ tf_custom_op_library(
     ],
     deps = [
         "//tflite/experimental/microfrontend/lib:frontend",
+        "@org_tensorflow//tensorflow/core/platform:protobuf",
     ],
 )
 
