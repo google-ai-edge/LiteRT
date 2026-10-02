@@ -356,8 +356,12 @@ litert_c_api_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/runtime:event",
-        "//tflite/delegates/gpu/cl:opencl_wrapper",
-    ],
+    ] + select({
+        "//litert/build_common:build_include_gpu_enabled": [
+            "//tflite/delegates/gpu/cl:opencl_wrapper",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         ":litert_common",
         ":litert_event_type",

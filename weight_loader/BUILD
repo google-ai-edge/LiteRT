@@ -48,7 +48,9 @@ cc_library(
     ] + select({
         "//conditions:default": [],
         # copybara:uncomment_begin(google-only)
-        # "//tools/cc_target_os:emscripten": [
+        # # WebGPU headers and upload callbacks are only needed on Emscripten when
+        # # GPU support is enabled (omitted in cpu_only builds).
+        # "//litert/build_common:emscripten_gpu_enabled": [
         # "@ml_drift//ml_drift/webgpu:webgpu_headers",
         # ],
         # copybara:uncomment_end
