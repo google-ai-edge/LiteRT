@@ -15,6 +15,7 @@
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 
 #include <cstddef>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
@@ -121,6 +122,64 @@ TEST(DispatchDelegateOptionsTest, SetAllocBaseFileRegion) {
   auto has_alloc_base_file_region = options->HasAllocBaseFileRegion();
   ASSERT_TRUE(has_alloc_base_file_region);
   ASSERT_TRUE(*has_alloc_base_file_region);
+}
+
+TEST(DispatchDelegateOptionsTest, GetNodeTensorPortMappingNotFound) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  auto mapping_or = options->GetNodeTensorPortMapping("nonexistent_op");
+  EXPECT_FALSE(mapping_or.HasValue());
+  EXPECT_EQ(mapping_or.Error().Status(), kLiteRtStatusErrorNotFound);
+}
+
+TEST(DispatchDelegateOptionsTest, SetAndGetNodeTensorPortMapping) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  std::vector<TensorPortMapping> input_ports = {
+      {"input_0", 0},
+      {"input_1", 1},
+  };
+  std::vector<TensorPortMapping> output_ports = {
+      {"output_0", 0},
+  };
+
+  auto status = options->SetNodeTensorPortMapping("subgraph_0", input_ports,
+                                                  output_ports);
+  ASSERT_TRUE(status.HasValue());
+
+  auto mapping_or = options->GetNodeTensorPortMapping("subgraph_0");
+  ASSERT_TRUE(mapping_or.HasValue());
+  ASSERT_NE(mapping_or.Value(), nullptr);
+
+  const auto& mapping = *mapping_or.Value();
+  ASSERT_EQ(mapping.input_tensor_ports.size(), 2);
+  EXPECT_EQ(mapping.input_tensor_ports[0].opaque_tensor_name, "input_0");
+  EXPECT_EQ(mapping.input_tensor_ports[0].port_index, 0);
+  EXPECT_EQ(mapping.input_tensor_ports[1].opaque_tensor_name, "input_1");
+  EXPECT_EQ(mapping.input_tensor_ports[1].port_index, 1);
+
+  ASSERT_EQ(mapping.output_tensor_ports.size(), 1);
+  EXPECT_EQ(mapping.output_tensor_ports[0].opaque_tensor_name, "output_0");
+  EXPECT_EQ(mapping.output_tensor_ports[0].port_index, 0);
+}
+
+TEST(DispatchDelegateOptionsTest, RegisterAndGetFunctionSignature) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  auto signature = options->GetFunctionSignature("nonexistent_fn");
+  EXPECT_FALSE(signature.HasValue());
+  EXPECT_EQ(signature.Error().Status(), kLiteRtStatusErrorNotFound);
+
+  ASSERT_TRUE(
+      options->RegisterFunctionSignature("subgraph_1_fn", "my_vision_signature")
+          .HasValue());
+
+  signature = options->GetFunctionSignature("subgraph_1_fn");
+  ASSERT_TRUE(signature.HasValue());
+  EXPECT_EQ(signature.Value(), "my_vision_signature");
 }
 
 }  // namespace
