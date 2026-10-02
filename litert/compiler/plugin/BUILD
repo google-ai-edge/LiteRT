@@ -55,6 +55,8 @@ cc_library(
         "//litert/core:options",
         "//litert/core:version",
         "//litert/core/model",
+        "//litert/core/model:shape_inference",
+        "//litert/core/model:shape_inference_types",
         "//litert/core/util:perfetto_profiling",
         "//litert/vendors/c:litert_compiler_plugin",
         "//litert/vendors/c:litert_compiler_plugin_api",
@@ -243,6 +245,7 @@ cc_library(
         "//litert/c/options:litert_compiler_options",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
