@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -330,6 +331,113 @@ void ShapeInferenceEngine::RegisterStandardOps() {
                    static_cast<StatelessFuncPtr>(InferPack));
   RegisterInferrer(kLiteRtOpCodeTflStridedSlice,
                    static_cast<StatelessFuncPtr>(InferStridedSlice));
+
+  // SHLO composite ops (e.g. `odml.scaled_dot_product_attention`) carry their
+  // semantics in a separate decomposition subgraph referenced by
+  // `decomposition_subgraph_index`. Unlike the stateless inferrers above, this
+  // one needs the engine itself: it looks the decomposition subgraph up on
+  // `model_`, pushes the composite's input shapes into that subgraph, runs
+  // shape inference over its ops, and reports the decomposition's output
+  // shapes back as the composite's outputs.
+  //
+  // Side effects: the decomposition subgraph's tensor types are updated in
+  // place (so a later pass over that subgraph sees static shapes), and any
+  // constant-folded data flowing through the composite is propagated via
+  // `transient_data_` so downstream inferrers (Reshape, StridedSlice, ...)
+  // keep working across the composite boundary.
+  auto infer_shlo_composite = [this](const ShapeInferenceContext& ctx,
+                                     InferenceResult& result) -> LiteRtStatus {
+    const LiteRtOpT* op = ctx.GetOp();
+    if (!model_ || !op) {
+      return kLiteRtStatusErrorUnsupportedOpShapeInferer;
+    }
+    const auto* comp_opts =
+        litert::internal::GetTflOptions2(*op).AsStableHLOCompositeOptions();
+    if (!comp_opts || comp_opts->decomposition_subgraph_index < 0 ||
+        static_cast<size_t>(comp_opts->decomposition_subgraph_index) >=
+            model_->NumSubgraphs()) {
+      return kLiteRtStatusErrorUnsupportedOpShapeInferer;
+    }
+    LiteRtSubgraphT* decomp_subgraph =
+        model_->Subgraphs()[comp_opts->decomposition_subgraph_index];
+    if (ctx.GetNumInputs() != decomp_subgraph->Inputs().size() ||
+        ctx.GetNumOutputs() != decomp_subgraph->Outputs().size()) {
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
+
+    // Guard against cyclic decompositions (A -> B -> A, or a composite whose
+    // decomposition is its own subgraph), which would otherwise recurse
+    // forever. The set is scoped to the current nesting chain only.
+    if (!active_composite_subgraphs_.insert(decomp_subgraph).second) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Cyclic recursion detected in composite op decomposition");
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
+    absl::Cleanup active_cleanup = [&] {
+      active_composite_subgraphs_.erase(decomp_subgraph);
+    };
+
+    // `transient_data_` is keyed by tensor pointer and belongs to the subgraph
+    // currently being inferred. Swap in a fresh map for the decomposition so
+    // nested inference can't read or clobber the outer subgraph's folded
+    // data, and restore the outer map on every exit path.
+    TensorDataMap saved_transient_data = std::move(transient_data_);
+    transient_data_.clear();
+    absl::Cleanup restore_transient = [&] {
+      transient_data_ = std::move(saved_transient_data);
+    };
+
+    // Seed the decomposition inputs with the composite's input shapes, element
+    // types and (if available) constant data.
+    for (size_t i = 0; i < ctx.GetNumInputs(); ++i) {
+      LiteRtTensorT* inner_in = decomp_subgraph->Inputs()[i];
+      if (!inner_in) continue;
+      Dims in_shape = ctx.GetInputShape(i);
+      LiteRtElementType elem_type = ctx.GetInputElementType(i);
+      if (elem_type == kLiteRtElementTypeNone &&
+          inner_in->Type().first == kLiteRtRankedTensorType) {
+        elem_type = inner_in->Type().second.ranked_tensor_type.element_type;
+      }
+      if (elem_type != kLiteRtElementTypeNone) {
+        inner_in->SetType(
+            MakeRankedTensorType(elem_type, absl::MakeConstSpan(in_shape)));
+      }
+      absl::Span<const uint8_t> in_data = ctx.GetInputData(i);
+      if (!in_data.empty()) {
+        transient_data_[inner_in].assign(in_data.begin(), in_data.end());
+      }
+    }
+
+    // Run inference over the decomposition in topological (stored) order.
+    // Nested composites recurse through this same inferrer.
+    for (auto* inner_op : decomp_subgraph->Ops()) {
+      if (auto status = InferOpShapes(inner_op, /*validation_only=*/false);
+          status != kLiteRtStatusOk) {
+        return status;
+      }
+    }
+
+    // Read the decomposition's output shapes (and any folded data) back as
+    // the composite op's result.
+    result.output_shapes.resize(ctx.GetNumOutputs());
+    for (size_t i = 0; i < ctx.GetNumOutputs(); ++i) {
+      LiteRtTensorT* inner_out = decomp_subgraph->Outputs()[i];
+      if (!inner_out) continue;
+      if (inner_out->Type().first == kLiteRtRankedTensorType) {
+        const auto& inner_layout =
+            inner_out->Type().second.ranked_tensor_type.layout;
+        result.output_shapes[i].assign(
+            inner_layout.dimensions,
+            inner_layout.dimensions + inner_layout.rank);
+      }
+      if (auto it = transient_data_.find(inner_out);
+          it != transient_data_.end()) {
+        result.propagated_data[i] = std::move(it->second);
+      }
+    }
+    return kLiteRtStatusOk;
+  };
+  RegisterInferrer(kLiteRtOpCodeShloComposite, std::move(infer_shlo_composite));
 }
 
 void ShapeInferenceEngine::RegisterInferrer(LiteRtOpCode op_code,
