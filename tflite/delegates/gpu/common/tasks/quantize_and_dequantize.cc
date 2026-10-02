@@ -18,8 +18,6 @@ limitations under the License.
 #include <string>
 #include <utility>
 
-#include "absl/strings/str_cat.h"
-#include "absl/types/variant.h"
 #include "tflite/delegates/gpu/common/tensor.h"
 
 namespace tflite {
