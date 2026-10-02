@@ -17,9 +17,18 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_COMPILER_PLUGIN_LITERT_COMPILER_OPTIONS_H_
 
 #include <cstddef>
+#include <cstdint>
+#include <string>
+#include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_compiler_options.h"
+
+struct LiteRtCompilerOptionsInputShapeEntry {
+  std::string signature_key;
+  std::string name;  // Empty for positional_input_shapes.
+  std::vector<int32_t> dims;
+};
 
 // Internal LiteRt compiler options struct.
 struct LiteRtCompilerOptionsT {
@@ -29,6 +38,15 @@ struct LiteRtCompilerOptionsT {
   bool dummy_option = false;
 
   size_t max_partitions = 0;
+
+  std::vector<LiteRtCompilerOptionsInputShapeEntry> positional_input_shapes;
+  std::vector<LiteRtCompilerOptionsInputShapeEntry> tensor_input_shapes;
+  std::vector<LiteRtCompilerOptionsInputShapeEntry> signature_input_shapes;
+
+  bool HasInputShapes() const {
+    return !positional_input_shapes.empty() || !tensor_input_shapes.empty() ||
+           !signature_input_shapes.empty();
+  }
 
   static const char* Identifier() { return "compiler_options_string"; }
 };

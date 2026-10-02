@@ -14,13 +14,17 @@
 #include "litert/tools/flags/apply_plugin_flags.h"
 
 #include <string>
+#include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/flags/flag.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_compiler_options.h"
+#include "litert/test/matchers.h"
 
 namespace litert {
 namespace {
@@ -64,6 +68,84 @@ TEST(ApplyPluginFlagsTest, ParseFlagsAndGetPartitionStrategySuccess) {
                          options.Value().GetPartitionStrategy());
   EXPECT_EQ(partition_strategy,
             kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
+}
+
+// Serializes CompilerOptions to its TOML payload.
+std::string ToToml(const CompilerOptions& options) {
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  if (LrtGetOpaqueCompilerOptionsData(options.Get(), &identifier, &payload,
+                                      &payload_deleter) != kLiteRtStatusOk) {
+    return "";
+  }
+  std::string toml_str(static_cast<const char*>(payload));
+  if (payload_deleter) payload_deleter(payload);
+  return toml_str;
+}
+
+class ApplyPluginInputShapeFlagsTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    absl::SetFlag(&FLAGS_signature, "");
+    absl::SetFlag(&FLAGS_input, {});
+    absl::SetFlag(&FLAGS_input_name, {});
+    absl::SetFlag(&FLAGS_signature_name, {});
+  }
+};
+
+TEST_F(ApplyPluginInputShapeFlagsTest, PositionalInputShapes) {
+  absl::SetFlag(&FLAGS_signature, "serving_default");
+  absl::SetFlag(&FLAGS_input, {"1:224:224:3", "1:-1"});
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CompilerOptions::Create());
+  LITERT_ASSERT_OK(UpdateCompilerOptionsFromFlags(options));
+
+  EXPECT_THAT(
+      ToToml(options),
+      ::testing::HasSubstr(
+          "positional_input_shapes = "
+          "[\"serving_default@1:224:224:3\", \"serving_default@1:-1\"]"));
+}
+
+TEST_F(ApplyPluginInputShapeFlagsTest, NamedInputShapes) {
+  absl::SetFlag(&FLAGS_input_name, {"arg0@1:224:224:3"});
+  absl::SetFlag(&FLAGS_signature_name, {"image@1:224:224:3"});
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CompilerOptions::Create());
+  LITERT_ASSERT_OK(UpdateCompilerOptionsFromFlags(options));
+
+  const std::string toml_str = ToToml(options);
+  EXPECT_THAT(toml_str, ::testing::HasSubstr(
+                            "tensor_input_shapes = [\"@arg0@1:224:224:3\"]"));
+  EXPECT_THAT(toml_str,
+              ::testing::HasSubstr(
+                  "signature_input_shapes = [\"@image@1:224:224:3\"]"));
+}
+
+TEST_F(ApplyPluginInputShapeFlagsTest, MalformedPositionalSpecsFail) {
+  for (const char* bad : {"", "1:abc:3", "1::3", "a@1:2"}) {
+    absl::SetFlag(&FLAGS_input, {bad});
+    LITERT_ASSERT_OK_AND_ASSIGN(auto options, CompilerOptions::Create());
+    EXPECT_FALSE(UpdateCompilerOptionsFromFlags(options).HasValue())
+        << "spec: " << bad;
+  }
+}
+
+TEST_F(ApplyPluginInputShapeFlagsTest, MalformedNamedSpecsFail) {
+  for (const char* bad : {"missing_at_sign", "@1:2:3", "arg0@", "arg0@1:x"}) {
+    absl::SetFlag(&FLAGS_input_name, {bad});
+    absl::SetFlag(&FLAGS_signature_name, {});
+    LITERT_ASSERT_OK_AND_ASSIGN(auto options, CompilerOptions::Create());
+    EXPECT_FALSE(UpdateCompilerOptionsFromFlags(options).HasValue())
+        << "input_name spec: " << bad;
+
+    absl::SetFlag(&FLAGS_input_name, {});
+    absl::SetFlag(&FLAGS_signature_name, {bad});
+    LITERT_ASSERT_OK_AND_ASSIGN(auto options2, CompilerOptions::Create());
+    EXPECT_FALSE(UpdateCompilerOptionsFromFlags(options2).HasValue())
+        << "signature_name spec: " << bad;
+  }
 }
 
 }  // namespace
