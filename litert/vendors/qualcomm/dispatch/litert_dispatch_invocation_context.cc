@@ -269,10 +269,15 @@ LiteRtDispatchInvocationContextT::Create(
     }
   }
 
-  LITERT_ASSIGN_OR_RETURN(
-      const auto& context_handle,
-      device_context.GetOrCreateContext(
-          exec_bytecode_ptr, exec_bytecode_buffer->size, profile_handle));
+  std::vector<std::string> graph_names;
+  graph_names.reserve(graphs.size());
+  for (const auto& graph : graphs) {
+    graph_names.push_back(graph.Name());
+  }
+  LITERT_ASSIGN_OR_RETURN(const auto& context_handle,
+                          device_context.GetOrCreateContext(
+                              exec_bytecode_ptr, exec_bytecode_buffer->size,
+                              graph_names, function_name, profile_handle));
 
   Qnn_GraphHandle_t graph_handle;
   if (auto status = qnn.Api()->graphRetrieve(context_handle.Get(),

@@ -16,6 +16,8 @@
 
 #include <cstddef>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -42,6 +44,8 @@ struct Payload {
   size_t alloc_base_size = 0;
   // Indicates whether the file region metadata (offset or size) is populated.
   bool has_alloc_base_file_region = false;
+  // Dispatch functions of the active signatures. Empty if all are active.
+  std::vector<std::string> active_function_names;
 };
 
 }  // namespace
@@ -132,6 +136,19 @@ Expected<size_t> DispatchDelegateOptions::GetAllocBaseSize() {
 Expected<bool> DispatchDelegateOptions::HasAllocBaseFileRegion() {
   LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
   return payload->has_alloc_base_file_region;
+}
+
+Expected<void> DispatchDelegateOptions::SetActiveFunctionNames(
+    std::vector<std::string> names) {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  payload->active_function_names = std::move(names);
+  return {};
+}
+
+Expected<std::vector<std::string>>
+DispatchDelegateOptions::GetActiveFunctionNames() {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  return payload->active_function_names;
 }
 
 }  // namespace litert::internal

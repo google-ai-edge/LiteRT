@@ -16,6 +16,9 @@
 #define ODML_LITERT_LITERT_RUNTIME_DISPATCH_DISPATCH_OPAQUE_OPTIONS_H_
 
 #include <cstddef>
+#include <string>
+#include <vector>
+
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
@@ -103,6 +106,16 @@ class DispatchDelegateOptions : public OpaqueOptions {
 
   // Returns whether the file region metadata (offset or size) is populated.
   Expected<bool> HasAllocBaseFileRegion();
+
+  // active_function_names -----------------------------------------------------
+
+  // Function names of the dispatch ops in the selected signatures. Empty when
+  // all signatures are active. The dispatch delegate forwards them to the
+  // Dispatch API via LiteRtDispatchDeviceContextSetActiveFunctions().
+  Expected<void> SetActiveFunctionNames(std::vector<std::string> names);
+
+  // Get the active function names.
+  Expected<std::vector<std::string>> GetActiveFunctionNames();
 };
 
 }  // namespace litert::internal
