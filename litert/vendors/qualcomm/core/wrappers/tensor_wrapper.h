@@ -184,6 +184,15 @@ class TensorWrapper final {
     qnn_tensor_.v2.memHandle = memory_handle;
   }
 
+  // Overrides shape and data type in-place. Used by builders that know the
+  // correct spec for a tensor whose shape/type was set to a placeholder by
+  // the TFLite model (e.g. TFLite_Detection_PostProcess outputs).
+  void OverrideDataType(Qnn_DataType_t data_type) { SetDataType(data_type); }
+
+  void OverrideDimensions(const std::vector<std::uint32_t>& dimensions) {
+    SetDimensions(dimensions);
+  }
+
   void ConvertFromQuantI16ToQuantU16();
 
  private:
@@ -191,6 +200,12 @@ class TensorWrapper final {
 
   void SetDataType(Qnn_DataType_t data_type) {
     qnn_tensor_.v2.dataType = data_type;
+  }
+
+  void SetDimensions(const std::vector<std::uint32_t>& dimensions) {
+    dimensions_ = dimensions;
+    qnn_tensor_.v2.rank = dimensions_.size();
+    qnn_tensor_.v2.dimensions = dimensions_.data();
   }
 
   void SetTensorType(Qnn_TensorType_t tensor_type) {
