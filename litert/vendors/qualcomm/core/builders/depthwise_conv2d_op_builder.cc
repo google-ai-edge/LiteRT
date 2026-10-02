@@ -27,7 +27,7 @@ constexpr size_t kBatchIndex = 0;
 constexpr size_t kHeightIndex = 1;
 constexpr size_t kWidthIndex = 2;
 constexpr size_t kChannelIndex = 3;
-constexpr std::uint32_t kConv2dMinStride = 4;
+constexpr std::uint32_t kConv2dMinStride = 2;
 constexpr std::uint32_t kConv2dMinFilterSize = 4;
 
 bool ShouldUseGroupedConv2d(const TensorWrapper& filter_tensor,
