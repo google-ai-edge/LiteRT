@@ -11,20 +11,36 @@ with a size cap) needs much less.
 This guide covers:
 
 *   The build flags that control what goes into the LiteRT runtime.
-*   How to build the two common CPU configurations:
+*   How to build the common CPU configurations:
     *   **CPU with XNNPACK** (the default CPU path).
     *   **CPU with built-in ops only** (no XNNPACK).
+    *   **CPU with selective built-in ops** (no XNNPACK, only the ops used by
+        the model).
 *   How the runtime `kernel_mode` option relates to, and differs from, the
     build flags.
 *   Typical binary sizes on a Linux ARM32 target, and known limitations.
 
 ## Build Flags
 
-| Flag | Effect |
-| ---- | ------ |
-| `--//litert/build_common:build_include=cpu_only` | Leaves out GPU and NPU support (compiler plugin, compilation cache, dispatch, GPU environment). The default is `gpu,npu`. |
-| `--//litert/build_common:cpu_backend=builtin` | Leaves out the XNNPACK CPU accelerator and delegate. CPU execution uses the TFLite built-in kernels. The default is `xnnpack`. |
-| `--define=litert_builtin_ops=false` | Leaves out the TFLite built-in kernels and uses a stub op resolver instead (`LITERT_NO_BUILTIN_OPS`). Every op must then be handled by an accelerator (XNNPACK on CPU). |
+| Flag                                                                     | Effect                                       |
+| ------------------------------------------------------------------------ | -------------------------------------------- |
+| `--//litert/build_common:build_include=cpu_only` | Leaves out GPU and NPU support (compiler     |
+:                                                                          : plugin, compilation cache, dispatch, GPU     :
+:                                                                          : environment). The default is `gpu,npu`.      :
+| `--//litert/build_common:cpu_backend=builtin`    | Leaves out the XNNPACK CPU accelerator and   |
+:                                                                          : delegate. CPU execution uses the TFLite      :
+:                                                                          : built-in kernels. The default is `xnnpack`.  :
+| `--//litert/build_common:cpu_backend=selective`  | Leaves out the XNNPACK CPU accelerator,      |
+:                                                                          : built-in kernels, and reference kernels      :
+:                                                                          : (`LITERT_DISABLE_CPU` and                    :
+:                                                                          : `LITERT_NO_BUILTIN_OPS`). The application    :
+:                                                                          : provides a selective op resolver via         :
+:                                                                          : `litert\:\:tflite_support\:\:SetOpResolver`. :
+| `--define=litert_builtin_ops=false`                                      | Leaves out the TFLite built-in kernels and   |
+:                                                                          : uses a stub op resolver instead              :
+:                                                                          : (`LITERT_NO_BUILTIN_OPS`). Every op must     :
+:                                                                          : then be handled by an accelerator (XNNPACK   :
+:                                                                          : on CPU) or a user-provided op resolver.      :
 
 These flags are handled by `select()`s in:
 
@@ -87,6 +103,74 @@ bazel build -c opt \
     fails to run.
 *   **When to use:** Models that XNNPACK is known to fully support.
 
+### Option D: CPU with selective built-in ops (no XNNPACK, model-specific ops)
+
+Generate a `RegisterSelectedOps` function for your model(s) using TFLite's
+`gen_selected_ops` rule in your `BUILD` file:
+
+```python
+load("//third_party/tensorflow/lite:build_def.bzl", "gen_selected_ops")
+
+gen_selected_ops(
+    name = "my_model_selected_ops",
+    model = ["my_model.tflite"],
+)
+
+cc_binary(
+    name = "my_app",
+    srcs = [
+        "my_app.cc",
+        ":my_model_selected_ops",
+    ],
+    deps = [
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_options",
+        "//litert/tflite_support/op_resolver",
+        "//third_party/tensorflow/lite:framework",
+        "//third_party/tensorflow/lite:mutable_op_resolver",
+        "//third_party/tensorflow/lite/kernels:builtin_ops",
+    ],
+)
+```
+
+Populate a `tflite::MutableOpResolver` with `RegisterSelectedOps` and pass it to
+`litert::tflite_support::SetOpResolver`:
+
+```cpp
+#include "litert/tflite_support/op_resolver/op_resolver.h"
+#include "third_party/tensorflow/lite/mutable_op_resolver.h"
+
+void RegisterSelectedOps(::tflite::MutableOpResolver* resolver);
+
+// ...
+tflite::MutableOpResolver resolver;
+RegisterSelectedOps(&resolver);
+LITERT_ASSIGN_OR_RETURN(auto options, litert::Options::Create());
+LITERT_RETURN_IF_ERROR(
+    options.SetHardwareAccelerators(litert::HwAccelerators::kCpu));
+LITERT_RETURN_IF_ERROR(
+    litert::tflite_support::SetOpResolver(options, &resolver));
+LITERT_ASSIGN_OR_RETURN(
+    auto compiled_model,
+    litert::CompiledModel::Create(env, model_path, options));
+```
+
+Build with `cpu_backend=selective`:
+
+```sh
+bazel build -c opt \
+  --//litert/build_common:build_include=cpu_only \
+  --//litert/build_common:cpu_backend=selective \
+  //your/package:my_app
+```
+
+*   **Linked:** Only the built-in kernels referenced by `RegisterSelectedOps`.
+    No XNNPACK, no unused built-in kernels, and no reference kernels.
+*   **Runtime behavior:** Every op in the model runs on its registered TFLite
+    built-in (or custom) kernel.
+*   **When to use:** Fixed-model deployments where binary size is critical.
+
 ## Runtime `kernel_mode` vs. Build Flags
 
 `CpuOptions::SetKernelMode()` chooses at runtime which of the **already
@@ -112,26 +196,20 @@ Test program: `//litert/test:minimal_compiled_model`.
 Sizes are the loadable ELF sections (code + read-only data + data, excluding
 symbol tables and `.bss`).
 
-| Configuration | Loadable size |
-| ------------- | ------------- |
-| Default (`gpu,npu`, XNNPACK, all ops) | 5.45 MB |
-| Option A: `cpu_only` + XNNPACK | 5.11 MB |
-| Option B: `cpu_only` + `cpu_backend=builtin` | 3.87 MB |
-| Option C: `cpu_only` + XNNPACK only | 2.68 MB |
-| Reference: TFLite `Interpreter` + selective op resolver\* | 0.74 MB |
+Configuration                                             | Loadable size
+--------------------------------------------------------- | -------------
+Default (`gpu,npu`, XNNPACK, all ops)                     | 5.45 MB
+Option A: `cpu_only` + XNNPACK                            | 5.11 MB
+Option B: `cpu_only` + `cpu_backend=builtin`              | 3.87 MB
+Option C: `cpu_only` + XNNPACK only                       | 2.68 MB
+Option D: `cpu_only` + `cpu_backend=selective` (18 ops)   | 2.18 MB
+Reference: TFLite `Interpreter` + selective op resolver\* | 0.74 MB
 
 \* A separate test program that runs the same model with the TFLite
 `Interpreter` API and registers only the 18 op types the model uses.
 
 ## Known Limitations
 
-*   **No selective op registration.** The runtime creates
-    `BuiltinOpResolverWithoutDefaultDelegates` (or `BuiltinRefOpResolver`)
-    directly, so every built-in kernel and every reference kernel is always
-    linked, even when the model uses only a few ops. Selective op registration
-    for `CompiledModel` is planned. A prototype that lets the application
-    provide the op resolver saves about 1.3 MB for a model with 15 op types on
-    the ARM32 target above.
 *   **XNNPACK is linked as a whole.** The XNNPACK delegate references every
     XNNPACK subgraph operator, so XNNPACK cannot be trimmed per model.
 

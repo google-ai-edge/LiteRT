@@ -60,6 +60,8 @@ config_setting(
 # Selects the kernels used by the CPU backend.
 #   xnnpack: XNNPACK accelerator, with TFLite builtin kernels as fallback.
 #   builtin: TFLite builtin kernels only. XNNPACK is not linked.
+#   selective: Application-selected kernels only. Neither XNNPACK nor the full
+#              TFLite builtin kernel library is linked.
 # Usage: --//litert/build_common:cpu_backend=builtin
 string_flag(
     name = "cpu_backend",
@@ -67,6 +69,7 @@ string_flag(
     values = [
         "xnnpack",
         "builtin",
+        "selective",
     ],
     visibility = ["//visibility:public"],
 )
@@ -74,6 +77,15 @@ string_flag(
 config_setting(
     name = "cpu_backend_builtin",
     flag_values = {":cpu_backend": "builtin"},
+)
+
+# Selective op registration mode: omits both the XNNPACK CPU accelerator and the
+# default full TFLite builtin kernel library (`builtin_ops` / `reference_ops`).
+# The application is responsible for linking and registering only the ops
+# needed by its model (e.g. via TFLite's `gen_selected_ops`).
+config_setting(
+    name = "cpu_backend_selective",
+    flag_values = {":cpu_backend": "selective"},
 )
 
 # Legacy way to leave out XNNPACK. Relies on the same definition with TFLite to
@@ -84,11 +96,12 @@ config_setting(
 )
 
 # Leaves out the XNNPACK CPU accelerator (defines LITERT_DISABLE_CPU). CPU
-# execution still works through the TFLite builtin kernels.
+# execution still works through the TFLite builtin kernels (or selected ops).
 selects.config_setting_group(
     name = "litert_disable_cpu",
     match_any = [
         ":cpu_backend_builtin",
+        ":cpu_backend_selective",
         ":tflite_without_xnnpack",
     ],
 )
