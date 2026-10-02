@@ -15,7 +15,9 @@
 
 namespace litert::qnn {
 namespace {
-using testing::ElementsAre;
+using testing::ElementsAre; // NOLINT
+using testing::FloatNear;   // NOLINT
+using testing::Pointwise;   // NOLINT
 
 INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
                          QnnTestPrinter);
