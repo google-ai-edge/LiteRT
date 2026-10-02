@@ -23,7 +23,11 @@ NS_ASSUME_NONNULL_BEGIN
 /** A compiled LiteRT model ready for inference execution. */
 @interface LRTCompiledModel : NSObject
 
-- (instancetype)init NS_UNAVAILABLE;
+/** Environment used to build this compiled model. */
+@property(nonatomic, readonly) LRTEnvironment *environment;
+
+/** Options used during model compilation. */
+@property(nonatomic, readonly, nullable) LRTOptions *options;
 
 /**
  * Creates and compiles a LiteRT model from a file path.
@@ -70,11 +74,7 @@ NS_ASSUME_NONNULL_BEGIN
  */
 + (NSString *)defaultSignatureKey;
 
-/** Environment used to build this compiled model. */
-@property(nonatomic, readonly) LRTEnvironment *environment;
-
-/** Options used during model compilation. */
-@property(nonatomic, readonly, nullable) LRTOptions *options;
+- (instancetype)init NS_UNAVAILABLE;
 
 /**
  * Creates input tensor buffers according to the model's default signature requirements.

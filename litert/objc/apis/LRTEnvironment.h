@@ -31,7 +31,11 @@ NS_ASSUME_NONNULL_BEGIN
 /** High-level environment context holding LiteRT runtime state. */
 @interface LRTEnvironment : NSObject
 
-- (instancetype)init NS_UNAVAILABLE;
+/** The Metal device associated with this environment, if available. */
+@property(nonatomic, readonly, nullable) id<MTLDevice> metalDevice;
+
+/** The Metal command queue associated with this environment, if available. */
+@property(nonatomic, readonly, nullable) id<MTLCommandQueue> metalCommandQueue;
 
 /**
  * Creates and returns a new LiteRT environment instance.
@@ -43,11 +47,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable instancetype)environmentWithOptions:(nullable LRTEnvironmentOptions *)options
                                           error:(NSError **)error;
 
-/** The Metal device associated with this environment, if available. */
-@property(nonatomic, readonly, nullable) id<MTLDevice> metalDevice;
-
-/** The Metal command queue associated with this environment, if available. */
-@property(nonatomic, readonly, nullable) id<MTLCommandQueue> metalCommandQueue;
+- (instancetype)init NS_UNAVAILABLE;
 
 @end
 

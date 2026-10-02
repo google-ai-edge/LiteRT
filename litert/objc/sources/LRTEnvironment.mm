@@ -28,19 +28,19 @@
 
 namespace {
 
-id _Nullable GetBridgedObjectForOption(const litert::Environment &env,
+id _Nullable GetBridgedObjectForOption(const litert::Environment &environment,
                                        litert::EnvironmentOptions::Tag optionTag) {
-  auto options = env.GetOptions();
+  auto options = environment.GetOptions();
   if (!options.HasValue()) return nil;
 
-  auto optionVal = options->GetOption(optionTag);
-  if (!optionVal.HasValue()) return nil;
+  auto optionValue = options->GetOption(optionTag);
+  if (!optionValue.HasValue()) return nil;
 
-  if (std::holds_alternative<const void *>(*optionVal)) {
-    return (__bridge id)std::get<const void *>(*optionVal);
+  if (std::holds_alternative<const void *>(*optionValue)) {
+    return (__bridge id)std::get<const void *>(*optionValue);
   }
-  if (std::holds_alternative<void *>(*optionVal)) {
-    return (__bridge id)std::get<void *>(*optionVal);
+  if (std::holds_alternative<void *>(*optionValue)) {
+    return (__bridge id)std::get<void *>(*optionValue);
   }
   return nil;
 }
@@ -53,6 +53,36 @@ id _Nullable GetBridgedObjectForOption(const litert::Environment &env,
 @implementation LRTEnvironment {
   std::unique_ptr<litert::Environment> _cppEnvironment;
 }
+
++ (nullable instancetype)environmentWithOptions:(nullable LRTEnvironmentOptions *)options
+                                          error:(NSError **)error {
+  std::vector<litert::EnvironmentOptions::Option> cppOptions;
+
+  if (options) {
+    id<MTLDevice> metalDevice = options.metalDevice;
+    if (metalDevice) {
+      // LiteRT retains internal ownership of the raw pointer before Environment::Create returns.
+      cppOptions.emplace_back(litert::EnvironmentOptions::Tag::kMetalDevice,
+                              (__bridge const void *)metalDevice);
+    }
+    id<MTLCommandQueue> metalCommandQueue = options.metalCommandQueue;
+    if (metalCommandQueue) {
+      // LiteRT retains internal ownership of the raw pointer before Environment::Create returns.
+      cppOptions.emplace_back(litert::EnvironmentOptions::Tag::kMetalCommandQueue,
+                              (__bridge const void *)metalCommandQueue);
+    }
+  }
+
+  auto environmentResult = litert::Environment::Create(litert::EnvironmentOptions(cppOptions));
+  if (!environmentResult.HasValue()) {
+    LRTSetErrorFromCppError(error, environmentResult.Error());
+    return nil;
+  }
+
+  auto cppEnvironment = std::make_unique<litert::Environment>(std::move(environmentResult.Value()));
+  return [[LRTEnvironment alloc] initInternalWithEnvironment:std::move(cppEnvironment)];
+}
+
 - (instancetype)initInternalWithEnvironment:(std::unique_ptr<litert::Environment>)cppEnvironment {
   self = [super init];
   if (self) {
@@ -61,49 +91,26 @@ id _Nullable GetBridgedObjectForOption(const litert::Environment &env,
   return self;
 }
 
-+ (nullable instancetype)environmentWithOptions:(nullable LRTEnvironmentOptions *)options
-                                          error:(NSError **)error {
-  std::vector<litert::EnvironmentOptions::Option> cppOptions;
-
-  if (options) {
-    if (options.metalDevice) {
-      // LiteRT retains internal ownership of the raw pointer before Environment::Create returns.
-      cppOptions.emplace_back(litert::EnvironmentOptions::Tag::kMetalDevice,
-                              (__bridge const void *)options.metalDevice);
-    }
-    if (options.metalCommandQueue) {
-      // LiteRT retains internal ownership of the raw pointer before Environment::Create returns.
-      cppOptions.emplace_back(litert::EnvironmentOptions::Tag::kMetalCommandQueue,
-                              (__bridge const void *)options.metalCommandQueue);
-    }
-  }
-
-  auto envResult = litert::Environment::Create(litert::EnvironmentOptions(cppOptions));
-  if (!envResult.HasValue()) {
-    LRTSetErrorFromCppError(error, envResult.Error());
-    return nil;
-  }
-
-  auto cppEnv = std::make_unique<litert::Environment>(std::move(envResult.Value()));
-  return [[LRTEnvironment alloc] initInternalWithEnvironment:std::move(cppEnv)];
-}
-
-- (nullable litert::Environment *)cppEnvironment {
-  return _cppEnvironment.get();
-}
+#pragma mark - Properties
 
 - (nullable id<MTLDevice>)metalDevice {
   if (!_cppEnvironment) return nil;
-  id obj =
+  id bridgedObject =
       GetBridgedObjectForOption(*_cppEnvironment, litert::EnvironmentOptions::Tag::kMetalDevice);
-  return (id<MTLDevice>)obj;
+  return (id<MTLDevice>)bridgedObject;
 }
 
 - (nullable id<MTLCommandQueue>)metalCommandQueue {
   if (!_cppEnvironment) return nil;
-  id obj = GetBridgedObjectForOption(*_cppEnvironment,
-                                     litert::EnvironmentOptions::Tag::kMetalCommandQueue);
-  return (id<MTLCommandQueue>)obj;
+  id bridgedObject = GetBridgedObjectForOption(*_cppEnvironment,
+                                               litert::EnvironmentOptions::Tag::kMetalCommandQueue);
+  return (id<MTLCommandQueue>)bridgedObject;
+}
+
+#pragma mark - LRTEnvironment (Internal)
+
+- (nullable litert::Environment *)cppEnvironment {
+  return _cppEnvironment.get();
 }
 
 @end
