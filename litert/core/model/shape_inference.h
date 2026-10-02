@@ -17,6 +17,7 @@
 
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
@@ -76,6 +77,7 @@ class ShapeInferenceEngine {
   LiteRtModelT* model_ = nullptr;
   absl::flat_hash_map<LiteRtOpCode, StatelessOpInferrer> registry_;
   TensorDataMap transient_data_;
+  absl::flat_hash_set<const LiteRtSubgraphT*> active_composite_subgraphs_;
 };
 
 }  // namespace litert::internal

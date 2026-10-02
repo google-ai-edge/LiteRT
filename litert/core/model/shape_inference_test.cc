@@ -724,5 +724,125 @@ TEST(ShapeInferenceTest, StridedSliceUnregisteredBaseFailure) {
   EXPECT_EQ(engine.InferShapes(), kLiteRtStatusErrorShapeInferenceFailed);
 }
 
+TEST(ShapeInferenceTest,
+     InferCompositeOpShapesPropagatesToDecompositionSubgraph) {
+  LiteRtModelT model;
+  auto& main_sg = model.EmplaceSubgraph();
+  auto& decomp_sg = model.EmplaceSubgraph();
+
+  // Decomposition subgraph: TflMul
+  auto& d_in0 = decomp_sg.EmplaceTensor();
+  d_in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 16}));
+  decomp_sg.Inputs().push_back(&d_in0);
+
+  auto& d_in1 = decomp_sg.EmplaceTensor();
+  d_in1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 16}));
+  decomp_sg.Inputs().push_back(&d_in1);
+
+  auto& d_out = decomp_sg.EmplaceTensor();
+  d_out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 16}));
+  decomp_sg.Outputs().push_back(&d_out);
+
+  auto& mul_op = decomp_sg.EmplaceOp();
+  mul_op.SetOpCode(kLiteRtOpCodeTflMul);
+  AttachInput(&d_in0, mul_op);
+  AttachInput(&d_in1, mul_op);
+  AttachOutput(&d_out, mul_op);
+
+  // Main subgraph: composite op pointing to decomp_sg (index 1). Inputs are
+  // static; the composite output and decomposition tensors start dynamic.
+  auto& m_in0 = main_sg.EmplaceTensor();
+  m_in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {8, 16}));
+  main_sg.Inputs().push_back(&m_in0);
+
+  auto& m_in1 = main_sg.EmplaceTensor();
+  m_in1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {8, 16}));
+  main_sg.Inputs().push_back(&m_in1);
+
+  auto& m_out = main_sg.EmplaceTensor();
+  m_out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 16}));
+  main_sg.Outputs().push_back(&m_out);
+
+  auto& comp_op = main_sg.EmplaceOp();
+  comp_op.SetOpCode(kLiteRtOpCodeShloComposite);
+  AttachInput(&m_in0, comp_op);
+  AttachInput(&m_in1, comp_op);
+  AttachOutput(&m_out, comp_op);
+
+  tflite::StableHLOCompositeOptionsT comp_options;
+  comp_options.name = "test_composite";
+  comp_options.decomposition_subgraph_index = 1;
+
+  internal::TflOptions2 tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  tfl_options.Set(std::move(comp_options));
+  litert::internal::SetTflOptions2(comp_op, std::move(tfl_options));
+
+  ShapeInferenceEngine engine(&model);
+  ASSERT_EQ(engine.InferSubgraphShapes(&main_sg), kLiteRtStatusOk);
+
+  // Both the composite output in the main subgraph AND the decomposition
+  // subgraph tensors must now have shape {8, 16}.
+  EXPECT_EQ(m_out.Type().second.ranked_tensor_type.layout.dimensions[0], 8);
+  EXPECT_EQ(m_out.Type().second.ranked_tensor_type.layout.dimensions[1], 16);
+  EXPECT_EQ(d_in0.Type().second.ranked_tensor_type.layout.dimensions[0], 8);
+  EXPECT_EQ(d_out.Type().second.ranked_tensor_type.layout.dimensions[0], 8);
+}
+
+TEST(ShapeInferenceTest, CompositeOpWithInvalidDecompositionIndexFails) {
+  LiteRtModelT model;
+  auto& main_sg = model.EmplaceSubgraph();
+  auto& m_in = main_sg.EmplaceTensor();
+  m_in.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 4}));
+  auto& m_out = main_sg.EmplaceTensor();
+  m_out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 4}));
+  main_sg.Inputs() = {&m_in};
+  main_sg.Outputs() = {&m_out};
+  auto& comp_op = main_sg.EmplaceOp();
+  comp_op.SetOpCode(kLiteRtOpCodeShloComposite);
+  AttachInput(&m_in, comp_op);
+  AttachOutput(&m_out, comp_op);
+
+  tflite::StableHLOCompositeOptionsT comp_options;
+  comp_options.name = "dangling";
+  comp_options.decomposition_subgraph_index = 7;  // Out of range.
+  internal::TflOptions2 tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  tfl_options.Set(std::move(comp_options));
+  litert::internal::SetTflOptions2(comp_op, std::move(tfl_options));
+
+  ShapeInferenceEngine engine(&model);
+  EXPECT_EQ(engine.InferOpShapes(&comp_op),
+            kLiteRtStatusErrorUnsupportedOpShapeInferer);
+}
+
+TEST(ShapeInferenceTest, CompositeOpSelfRecursionIsRejected) {
+  // A composite op whose decomposition subgraph is the subgraph containing it.
+  LiteRtModelT model;
+  auto& sg = model.EmplaceSubgraph();
+  auto& in = sg.EmplaceTensor();
+  in.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 4}));
+  auto& out = sg.EmplaceTensor();
+  out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 4}));
+  sg.Inputs() = {&in};
+  sg.Outputs() = {&out};
+  auto& comp_op = sg.EmplaceOp();
+  comp_op.SetOpCode(kLiteRtOpCodeShloComposite);
+  AttachInput(&in, comp_op);
+  AttachOutput(&out, comp_op);
+
+  tflite::StableHLOCompositeOptionsT comp_options;
+  comp_options.name = "self";
+  comp_options.decomposition_subgraph_index = 0;
+  internal::TflOptions2 tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  tfl_options.Set(std::move(comp_options));
+  litert::internal::SetTflOptions2(comp_op, std::move(tfl_options));
+
+  ShapeInferenceEngine engine(&model);
+  EXPECT_EQ(engine.InferOpShapes(&comp_op),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
 }  // namespace
 }  // namespace litert::internal
