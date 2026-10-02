@@ -144,6 +144,8 @@ cc_test(
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_model",
+        "//litert/cc:litert_options",
+        "//litert/cc/options:litert_compiler_options",
         "//litert/core:build_stamp",
         "//litert/core:dispatch_op_schema",
         "//litert/core/model",

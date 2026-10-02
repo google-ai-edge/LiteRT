@@ -29,6 +29,8 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_compiler_options.h"
 #include "litert/core/build_stamp.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/core/model/model.h"
@@ -178,6 +180,39 @@ TEST(TestApplyPluginTool, TestApply) {
   EXPECT_THAT(serialized.StrView().substr(offset, size),
               HasSubstr("inputs:0,1\noutputs:2\nconst_map:\ntensors:[2x2],[2x2]"
                         ",[2x2]\nops:mul(0,1)(2)"));
+}
+
+TEST(TestApplyPluginTool, TestApplyWithInputShapes) {
+  auto run = MakeBaseRun(ApplyPluginRun::Cmd::APPLY);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto litert_options, Options::Create());
+  auto compiler_options = litert_options.GetCompilerOptions();
+  ASSERT_TRUE(compiler_options.HasValue());
+  const int32_t new_shape[] = {4, 4};
+  LITERT_ASSERT_OK((*compiler_options).AddPositionalInputShape(new_shape));
+  LITERT_ASSERT_OK((*compiler_options).AddPositionalInputShape(new_shape));
+  run->options = std::move(litert_options);
+
+  std::stringstream out;
+  run->outs.push_back(out);
+  LITERT_ASSERT_OK(ApplyPlugin(std::move(run)));
+
+  const auto out_str = out.str();
+  BufferRef<uint8_t> serialized(out_str.data(), out_str.size());
+
+  auto model = Model::CreateFromBuffer(serialized);
+  EXPECT_EQ(model->Get()->NumSubgraphs(), 1);
+
+  auto* op = model->Get()->MainSubgraph()->Ops().front();
+  ASSERT_EQ(op->OpCode(), kLiteRtOpCodeTflCustom);
+
+  const auto options = internal::GetDispatchOpOptions(op->CustomOptions());
+  const auto& [size, offset, name] = options;
+  EXPECT_EQ(name, "partition_0");
+  ASSERT_LE(offset + size, serialized.Size());
+
+  EXPECT_THAT(serialized.StrView().substr(offset, size),
+              HasSubstr("inputs:0,1\noutputs:2\nconst_map:\ntensors:[4x4],[4x4]"
+                        ",[4x4]\nops:mul(0,1)(2)"));
 }
 
 TEST(TestApplyPluginTool, TestCompileToMultiByteCode) {
