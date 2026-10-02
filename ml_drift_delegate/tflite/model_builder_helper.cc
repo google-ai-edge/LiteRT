@@ -99,6 +99,10 @@ absl::Status GetNodeAndRegistration(TfLiteContext* context, int node_id,
       return ::ml_drift::DataType::kBfloat16;
     case kTfLiteInt8:
       return ::ml_drift::DataType::kInt8;
+    case kTfLiteInt4:
+      return ::ml_drift::DataType::kInt4;
+    case kTfLiteInt2:
+      return ::ml_drift::DataType::kInt2;
     case kTfLiteUInt32:
       return ::ml_drift::DataType::kUint32;
     case kTfLiteUInt16:

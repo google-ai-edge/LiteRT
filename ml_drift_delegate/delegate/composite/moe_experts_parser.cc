@@ -15,6 +15,7 @@
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -203,6 +204,15 @@ absl::Status ValidateInt8ZeroPoint(const TfLiteContext* context,
           static_cast<const TfLiteBlockwiseQuantization*>(
               tensor->quantization.params)
               ->zero_point,
+          name);
+    case kTfLiteMultiAxisQuantization:
+      // Emitted by the converter for per-expert blockwise weights. The block
+      // scales are also passed to the op as the separate *_scale inputs.
+      return ValidateBlockwiseInt8ZeroPoint(
+          context,
+          static_cast<const TfLiteMultiAxisQuantization*>(
+              tensor->quantization.params)
+              ->zero_points,
           name);
     case kTfLiteBlockwiseQuantizationV2:
       return ValidateBlockwiseInt8ZeroPoint(
@@ -403,6 +413,7 @@ void AddQuantizedConstInputPreserveShape(::ml_drift::GraphFloat32* graph,
                                          ObjectReader* reader,
                                          int node_input_index,
                                          ::ml_drift::Node* node) {
+  reader->AllowSharingInput(node_input_index);
   const TfLiteTensor* tensor = reader->GetInputTensor(node_input_index);
   ::ml_drift::Value* input = graph->NewValue();
   input->tensor.type = ToDataType(tensor->type);
@@ -410,6 +421,14 @@ void AddQuantizedConstInputPreserveShape(::ml_drift::GraphFloat32* graph,
   input->tensor.ref = reader->GetTensorId(node_input_index);
   input->tensor.is_variable_input = tensor->is_variable;
   graph->AddConsumer(node->id, input->id);
+  const ObjectReader::ConstantInputSharingInfo share =
+      reader->GetSharingInfoByNodeInputIndex(node_input_index);
+  if (share.IsShared()) {
+    reader->SetSharedTensor(input->id, share.PreferredId(),
+                            reader->GetTensorId(node_input_index),
+                            /*dequant_forced=*/false,
+                            /*layout=*/std::nullopt);
+  }
 }
 
 void AddConstInput(::ml_drift::GraphFloat32* graph, ObjectReader* reader,

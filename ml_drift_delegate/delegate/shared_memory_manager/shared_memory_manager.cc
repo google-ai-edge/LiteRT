@@ -171,6 +171,20 @@ void RewriteDenormalScales(const GpuInfo& gpu_info,
   }
 }
 
+constexpr char kMoeExpertsOpType[] = "moe_experts";
+
+// Returns true if `value_id` is consumed by a single moe_experts op.
+// moe_experts receives its quantization scales as separate op inputs, so its
+// shared weights are packed regardless of the TFLite quantization type (e.g.
+// multi-axis quantization, which is not handled for other ops).
+bool IsMoeExpertsWeights(const GraphAdapter& graph_adapter,
+                         uint32_t value_id) {
+  const std::vector<uint32_t> consumers =
+      graph_adapter.FindConsumerOps(value_id);
+  return consumers.size() == 1 &&
+         graph_adapter.GetOpTypeName(consumers[0]) == kMoeExpertsOpType;
+}
+
 }  // namespace
 
 void MadviseData(void* ptr, size_t space) {
@@ -1038,6 +1052,11 @@ absl::Status SharedMemoryManager::CreateQuantizedTensorWithScaleAndZeroPoint(
         is_weight_sum_i_required, &shared_tensor->weights_sum_i));
   }
 
+  // moe_experts consumes its block scales as separate op inputs.
+  if (graph_adapter_->GetOpTypeName(fc_op_id) == kMoeExpertsOpType) {
+    return absl::OkStatus();
+  }
+
   if (tflite_tensor.quantization.type ==
       TfLiteQuantizationType::kTfLiteAffineQuantization) {
     return CreateAffineQuantizationParams(
@@ -1159,12 +1178,6 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
     const TfLiteTensor& tflite_tensor,
     absl::flat_hash_map<ValueId, GlobalId>* external_tensors) {
   auto& shared_tensor = buffer_id_to_spatial_tensor_.at(global_tensor_id);
-  if (!shared_tensor.scale_global_tensor_id.has_value()) {
-    return absl::InternalError("Expected scale tensor id to be set.");
-  }
-  if (!shared_tensor.zero_point_global_tensor_id.has_value()) {
-    return absl::InternalError("Expected zero point tensor id to be set.");
-  }
   BHWC shared_const_shape = graph_adapter_->GetValueShape(shared_tensor_id);
 
   std::vector<uint32_t> weight_consumers =
@@ -1174,6 +1187,40 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
     return absl::InternalError("Expected to have only one weights consumer.");
   }
   uint32_t fc_op_id = weight_consumers[0];
+  if (graph_adapter_->GetOpTypeName(fc_op_id) == kMoeExpertsOpType) {
+    if (weights_manager_) {
+      OHWI shape(shared_const_shape.b, shared_const_shape.h,
+                 shared_const_shape.w, shared_const_shape.c);
+      WeightsDescription weights_desc =
+          tflite_tensor.type == kTfLiteInt4
+              ? GetFullyConnectedInt4WeightsDesc(
+                    gpu_info_, shape,
+                    create_info_.hints.Check(ModelHints::kPreferTextureWeights))
+              : GetFullyConnectedInt8WeightsDesc(
+                    gpu_info_, shape,
+                    create_info_.hints.Check(
+                        ModelHints::kPreferTextureWeights));
+      auto weights_int_tensor_desc =
+          GetTensorDescriptorsForWeightsLayout(shape, weights_desc)[0];
+      graph_adapter_->SetValueShapeAndType(
+          shared_tensor_id, weights_int_tensor_desc.GetBHWCShape(),
+          weights_int_tensor_desc.GetDataType());
+    } else {
+      auto* weights = shared_tensor.GetWeights();
+      graph_adapter_->SetValueShapeAndType(
+          shared_tensor_id,
+          BHWC(weights->Batch(), weights->Height(), weights->Width(),
+               weights->Channels()),
+          weights->GetDescriptor().GetDataType());
+    }
+    return absl::OkStatus();
+  }
+  if (!shared_tensor.scale_global_tensor_id.has_value()) {
+    return absl::InternalError("Expected scale tensor id to be set.");
+  }
+  if (!shared_tensor.zero_point_global_tensor_id.has_value()) {
+    return absl::InternalError("Expected zero point tensor id to be set.");
+  }
   DataType data_type = data_type_;
   if (data_type_ == DataType::kFloat32) {
     if (graph_adapter_->OpHasInputs(fc_op_id)) {
@@ -1396,7 +1443,8 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
   if ((tensor.quantization.type ==
            TfLiteQuantizationType::kTfLiteAffineQuantization ||
        tensor.quantization.type ==
-           TfLiteQuantizationType::kTfLiteBlockwiseQuantization) &&
+           TfLiteQuantizationType::kTfLiteBlockwiseQuantization ||
+       IsMoeExpertsWeights(*graph_adapter_, shared_tensor_id)) &&
       !shared_tflite_tensor.dequant_forced) {
     return CreateQuantizedTensorWithScaleAndZeroPoint(
         shared_tensor_id, shared_tflite_tensor.global_id, tensor,
@@ -1515,7 +1563,8 @@ absl::Status SharedMemoryManager::RegisterExternalConstantTensors(
       (tensor.quantization.type ==
            TfLiteQuantizationType::kTfLiteAffineQuantization ||
        tensor.quantization.type ==
-           TfLiteQuantizationType::kTfLiteBlockwiseQuantization)) {
+           TfLiteQuantizationType::kTfLiteBlockwiseQuantization ||
+       IsMoeExpertsWeights(*graph_adapter_, shared_tensor_id))) {
     if (!shared_tflite_tensor.dequant_forced) {
       ABSL_RETURN_IF_ERROR(RetrieveTensorWithScaleAndZeroPoint(
           shared_tensor_id, shared_tflite_tensor.global_id, tensor,

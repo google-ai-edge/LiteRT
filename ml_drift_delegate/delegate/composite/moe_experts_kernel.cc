@@ -114,6 +114,19 @@ CreateDispatchTokenIndices(::ml_drift::GpuModelBuilder* model_builder,
   return model_builder->AddConstantTensor(std::move(token_indices_desc));
 }
 
+// Returns true if `weights` were already repacked into the GPU weights layout
+// (e.g. by SharedMemoryManager for shared constant tensors), in which case
+// WeightsConversion must be skipped.
+bool IsPrepackedWeights(
+    const ::ml_drift::GpuModelBuilder::TensorHandle& weights) {
+  const ::ml_drift::DataType type = weights.tensor_desc.GetDataType();
+  return type == ::ml_drift::DataType::kUint32 ||
+         type == ::ml_drift::DataType::kUint16 ||
+         type == ::ml_drift::DataType::kUint8 ||
+         type == ::ml_drift::DataType::kUint4 ||
+         type == ::ml_drift::DataType::kUint2;
+}
+
 absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> ScaleWithBatchIds(
     ::ml_drift::GpuModelBuilder* model_builder,
     const ::ml_drift::GpuModelBuilder::TensorHandle& input,
@@ -180,12 +193,16 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> ScaleWithBatchIds(
     // code path; the kernel indexes it by expert and block already.
     result.scale_zp_shape = weight_scale->shape;
   }
-  std::vector<::ml_drift::GpuModelBuilder::TensorHandle> converted_weights =
-      model_builder->WeightsConversion(weights, ::ml_drift::Layout::kOHWI,
-                                       result.desc, result.shape,
-                                       scale_handle_ptr,
-                                       /*weights_zero_point=*/nullptr);
-  result.weights = converted_weights[0];
+  if (IsPrepackedWeights(weights)) {
+    result.weights = weights;
+  } else {
+    std::vector<::ml_drift::GpuModelBuilder::TensorHandle> converted_weights =
+        model_builder->WeightsConversion(weights, ::ml_drift::Layout::kOHWI,
+                                         result.desc, result.shape,
+                                         scale_handle_ptr,
+                                         /*weights_zero_point=*/nullptr);
+    result.weights = converted_weights[0];
+  }
   return result;
 }
 
