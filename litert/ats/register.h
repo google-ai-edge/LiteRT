@@ -137,9 +137,8 @@ class RegisterFunctor {
         continue;
       }
       auto names = NamesForNextTest(
-          test_id_, options_,
-          absl::StrFormat("%s_%s", prefix_, Fixture::Name()), Logic::Name(),
-          test_graph.Value()->Graph());
+          test_id_, options_, Fixture::Name(), Logic::Name(),
+          test_graph.Value()->Graph(), prefix_override_);
       if (!names) {
         continue;
       }
@@ -149,19 +148,20 @@ class RegisterFunctor {
   }
 
   RegisterFunctor(size_t iters, size_t& test_id, const AtsConf& options,
-                  typename Fixture::Capture& cap, absl::string_view prefix)
+                  typename Fixture::Capture& cap,
+                  absl::string_view prefix_override)
       : iters_(iters),
         test_id_(test_id),
         options_(options),
         cap_(cap),
-        prefix_(prefix) {}
+        prefix_override_(prefix_override) {}
 
  private:
   const size_t iters_;
   size_t& test_id_;
   const AtsConf& options_;
   typename Fixture::Capture& cap_;
-  absl::string_view prefix_;
+  absl::string_view prefix_override_;
 };
 
 // Specializes the given test logic template with the cartesian product of
@@ -172,8 +172,8 @@ template <typename Fixture, template <typename...> typename Logic,
           typename... Lists>
 void RegisterCombinations(size_t iters, size_t& test_id, const AtsConf& options,
                           typename Fixture::Capture& cap,
-                          absl::string_view prefix = "SingleOp") {
-  RegisterFunctor<Fixture> f(iters, test_id, options, cap, prefix);
+                          absl::string_view prefix_override = "") {
+  RegisterFunctor<Fixture> f(iters, test_id, options, cap, prefix_override);
   ExpandProduct<Logic, Lists...>(f);
 }
 

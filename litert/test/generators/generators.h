@@ -21,7 +21,6 @@
 #include "litert/test/generators/conv_2d.h"  // IWYU pragma: export
 #include "litert/test/generators/depthwise_conv_2d.h"  // IWYU pragma: export
 #include "litert/test/generators/extra_model.h"  // IWYU pragma: export
-#include "litert/test/generators/no_op.h"  // IWYU pragma: export
 #include "litert/test/generators/unary.h"  // IWYU pragma: export
 #include "litert/test/generators/reduction.h"  // IWYU pragma: export
 #include "litert/test/generators/pooling.h"  // IWYU pragma: export

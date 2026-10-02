@@ -18,105 +18,135 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/ats/common.h"
 #include "litert/ats/compile_fixture.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/inference_fixture.h"
 #include "litert/ats/register_composite_ops.h"
-#include "litert/ats/register_core_ops.h"
+#include "litert/ats/register_single_ops.h"
+#include "litert/c/litert_op_code.h"
 
 namespace litert::testing {
 namespace {
 
-struct RegistrationSpan {
-  size_t start_id;
-  size_t end_id;
-  std::string expected_prefix;
-  std::string fixture_kind;
-};
+using ::testing::Contains;
+using ::testing::HasSubstr;
+using ::testing::Not;
+using ::testing::StartsWith;
 
-std::vector<RegistrationSpan>& GetSpans() {
-  static auto* spans = new std::vector<RegistrationSpan>();
-  return *spans;
+std::vector<const ::testing::TestSuite*>& SingleOpSuites() {
+  static auto* suites = new std::vector<const ::testing::TestSuite*>();
+  return *suites;
 }
 
-TEST(RegisterOpsContractTest, AllCoreOpsHaveCoreSingleOpPrefix) {
-  const auto* unit_test = ::testing::UnitTest::GetInstance();
-  size_t verified_count = 0;
+std::vector<const ::testing::TestSuite*>& CompositeOpSuites() {
+  static auto* suites = new std::vector<const ::testing::TestSuite*>();
+  return *suites;
+}
 
-  for (int i = 0; i < unit_test->total_test_suite_count(); ++i) {
-    const auto* suite = unit_test->GetTestSuite(i);
-    absl::string_view name = suite->name();
-    if (absl::StartsWith(name, "CoreSingleOp_")) {
-      EXPECT_THAT(name, ::testing::Not(::testing::StartsWith("ats_")))
-          << "GTest suite " << name
-          << " must be grouped by family_logic without ats_<id>_ prefix";
-      ++verified_count;
+std::vector<const ::testing::TestSuite*> CollectNewSuites(int& next_suite_idx) {
+  const auto* unit_test = ::testing::UnitTest::GetInstance();
+  std::vector<const ::testing::TestSuite*> suites;
+  for (; next_suite_idx < unit_test->total_test_suite_count();
+       ++next_suite_idx) {
+    suites.push_back(unit_test->GetTestSuite(next_suite_idx));
+  }
+  return suites;
+}
+
+// Returns the set of formatted op names (e.g. "tfl.add") that satisfy
+// IsCoreSingleOp(op_code).
+const absl::flat_hash_set<std::string>& CoreSingleOpNames() {
+  static const auto* names = [] {
+    auto* set = new absl::flat_hash_set<std::string>();
+    for (int code = 0; code <= kLiteRtOpCodeShloComposite; ++code) {
+      const auto op_code = static_cast<LiteRtOpCode>(code);
+      if (IsCoreSingleOp(op_code)) {
+        set->insert(absl::StrFormat("%v", op_code));
+      }
+    }
+    return set;
+  }();
+  return *names;
+}
+
+// Extracts the op name before '{' or '(' from a test name like
+// "tfl.add{fused_activation_function=NONE}(2d_f32,2d_f32)->(2d_f32)".
+absl::string_view ExtractOpName(absl::string_view test_name) {
+  const size_t end = test_name.find_first_of("{(");
+  return end == absl::string_view::npos ? test_name : test_name.substr(0, end);
+}
+
+void VerifySuiteTestsNormalizedAndDeduplicated(
+    const ::testing::TestSuite* suite) {
+  EXPECT_GT(suite->total_test_count(), 0);
+  absl::flat_hash_set<absl::string_view> seen_names;
+  for (int i = 0; i < suite->total_test_count(); ++i) {
+    absl::string_view test_name = suite->GetTestInfo(i)->name();
+    EXPECT_THAT(test_name, Not(StartsWith(suite->name())))
+        << "Test method name " << test_name
+        << " must not redundantly repeat the suite name " << suite->name();
+    EXPECT_THAT(test_name, Not(HasSubstr("<")))
+        << "Test method name " << test_name
+        << " must not contain concrete random dimensions '<...>'";
+    EXPECT_THAT(seen_names, Not(Contains(test_name)))
+        << "Duplicate GTest test method name " << test_name << " in suite "
+        << suite->name();
+    seen_names.insert(test_name);
+  }
+}
+
+TEST(RegisterOpsContractTest, SingleOpsUseCoreOrStandardSingleOpPrefix) {
+  size_t core_suite_count = 0;
+  size_t single_suite_count = 0;
+
+  for (const auto* suite : SingleOpSuites()) {
+    absl::string_view suite_name = suite->name();
+    const bool is_core = absl::StartsWith(suite_name, "CoreSingleOp_");
+    const bool is_single = absl::StartsWith(suite_name, "SingleOp_");
+    ASSERT_TRUE(is_core || is_single)
+        << "Suite registered by RegisterSingleOps has unexpected prefix: "
+        << suite_name;
+
+    if (is_core) {
+      ++core_suite_count;
+    } else {
+      ++single_suite_count;
+    }
+
+    for (int i = 0; i < suite->total_test_count(); ++i) {
+      absl::string_view test_name = suite->GetTestInfo(i)->name();
+      absl::string_view op_name = ExtractOpName(test_name);
+      EXPECT_EQ(is_core, CoreSingleOpNames().contains(op_name))
+          << "Suite " << suite_name << " has mismatched prefix for op "
+          << op_name << " (test: " << test_name << ")";
     }
   }
 
-  EXPECT_GT(verified_count, 0) << "Expected at least one CoreSingleOp test "
-                                  "suite to be registered and verified";
+  EXPECT_GT(core_suite_count, 0);
+  EXPECT_GT(single_suite_count, 0);
 }
 
-TEST(RegisterOpsContractTest, AllCompositeOpsHaveCompositeOpPrefix) {
-  const auto* unit_test = ::testing::UnitTest::GetInstance();
-  size_t verified_count = 0;
-
-  for (int i = 0; i < unit_test->total_test_suite_count(); ++i) {
-    const auto* suite = unit_test->GetTestSuite(i);
-    absl::string_view name = suite->name();
-    if (absl::StartsWith(name, "CompositeOp_")) {
-      EXPECT_THAT(name, ::testing::Not(::testing::StartsWith("ats_")))
-          << "GTest suite " << name
-          << " must be grouped by family_logic without ats_<id>_ prefix";
-      ++verified_count;
-    }
+TEST(RegisterOpsContractTest, CompositeOpsUseCompositeOpPrefix) {
+  EXPECT_FALSE(CompositeOpSuites().empty());
+  for (const auto* suite : CompositeOpSuites()) {
+    EXPECT_THAT(suite->name(), StartsWith("CompositeOp_"));
   }
-
-  EXPECT_GT(verified_count, 0) << "Expected at least one CompositeOp test "
-                                  "suite to be registered and verified";
 }
 
 TEST(RegisterOpsContractTest,
      TestMethodNamesAreNormalizedAndDeduplicatedForTestGrid) {
-  const auto* unit_test = ::testing::UnitTest::GetInstance();
-  size_t verified_count = 0;
-
-  for (const auto& span : GetSpans()) {
-    const std::string suite_prefix =
-        absl::StrFormat("%s_%s_", span.expected_prefix, span.fixture_kind);
-    for (int i = 0; i < unit_test->total_test_suite_count(); ++i) {
-      const auto* suite = unit_test->GetTestSuite(i);
-      absl::string_view suite_name = suite->name();
-      if (!absl::StartsWith(suite_name, suite_prefix)) {
-        continue;
-      }
-      EXPECT_GT(suite->total_test_count(), 0);
-      std::vector<std::string> seen_names;
-      for (int j = 0; j < suite->total_test_count(); ++j) {
-        absl::string_view test_name = suite->GetTestInfo(j)->name();
-        EXPECT_THAT(test_name,
-                    ::testing::Not(::testing::StartsWith(suite_prefix)))
-            << "Test method name " << test_name
-            << " must not redundantly repeat the suite prefix " << suite_prefix;
-        EXPECT_THAT(test_name, ::testing::Not(::testing::HasSubstr("<")))
-            << "Test method name " << test_name
-            << " must not contain concrete random dimensions '<...>'";
-        EXPECT_THAT(seen_names, ::testing::Not(::testing::Contains(test_name)))
-            << "Duplicate GTest test method name " << test_name
-            << " in suite " << suite_name
-            << "; random shape iterations must be grouped into 1 GTest test";
-        seen_names.emplace_back(test_name);
-        ++verified_count;
-      }
-    }
+  for (const auto* suite : SingleOpSuites()) {
+    VerifySuiteTestsNormalizedAndDeduplicated(suite);
   }
-
-  EXPECT_GT(verified_count, 0);
+  for (const auto* suite : CompositeOpSuites()) {
+    VerifySuiteTestsNormalizedAndDeduplicated(suite);
+  }
 }
 
 }  // namespace
@@ -129,33 +159,21 @@ int main(int argc, char** argv) {
   ABSL_CHECK(options.HasValue())
       << "Failed to parse ATS options: " << options.Error().Message();
 
+  int next_suite_idx =
+      ::testing::UnitTest::GetInstance()->total_test_suite_count();
   size_t test_id = 0;
   litert::testing::AtsInferenceTest::Capture i_cap;
   litert::testing::AtsCompileTest::Capture c_cap;
 
-  // 1. Register Core Ops (Inference)
-  size_t core_inf_start = test_id;
-  litert::testing::RegisterCoreOps(*options, test_id, i_cap);
-  litert::testing::GetSpans().push_back(
-      {core_inf_start, test_id, "CoreSingleOp", "inference"});
+  litert::testing::RegisterSingleOps(*options, test_id, i_cap);
+  litert::testing::RegisterSingleOps(*options, test_id, c_cap);
+  litert::testing::SingleOpSuites() =
+      litert::testing::CollectNewSuites(next_suite_idx);
 
-  // 2. Register Core Ops (Compile)
-  size_t core_comp_start = test_id;
-  litert::testing::RegisterCoreOps(*options, test_id, c_cap);
-  litert::testing::GetSpans().push_back(
-      {core_comp_start, test_id, "CoreSingleOp", "compile"});
-
-  // 3. Register Composite Ops (Inference)
-  size_t comp_inf_start = test_id;
   litert::testing::RegisterCompositeOps(*options, test_id, i_cap);
-  litert::testing::GetSpans().push_back(
-      {comp_inf_start, test_id, "CompositeOp", "inference"});
-
-  // 4. Register Composite Ops (Compile)
-  size_t comp_comp_start = test_id;
   litert::testing::RegisterCompositeOps(*options, test_id, c_cap);
-  litert::testing::GetSpans().push_back(
-      {comp_comp_start, test_id, "CompositeOp", "compile"});
+  litert::testing::CompositeOpSuites() =
+      litert::testing::CollectNewSuites(next_suite_idx);
 
   // Filter GoogleTest execution to ONLY run the contract validation tests.
   // This prevents the actual generated models from executing during the

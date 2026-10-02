@@ -34,7 +34,6 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_detail.h"
-#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/filesystem.h"
@@ -95,8 +94,9 @@ Expected<void> CheckAts() {
   {
     RegisterExtraModels<AtsInferenceTest>(test_id, cpu_inference_options,
                                           i_cap);
-    RegisterCombinations<AtsInferenceTest, NoOp, SizeListC<1>,
-                         TypeList<float, int32_t>>(
+    RegisterCombinations<AtsInferenceTest, BinaryNoBroadcast, SizeListC<2>,
+                         TypeList<float, int32_t>,
+                         OpCodeListC<kLiteRtOpCodeTflAdd>>(
         /*iters=*/1, test_id, cpu_inference_options, i_cap);
     RegisterCombinations<AtsInferenceTest, BinaryNoBroadcast, SizeListC<1>,
                          TypeList<float>,

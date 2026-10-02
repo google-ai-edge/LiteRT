@@ -48,43 +48,6 @@ cc_library(
 )
 
 cc_library(
-    name = "no_op",
-    testonly = True,
-    hdrs = ["no_op.h"],
-    deps = [
-        ":common",
-        ":graph_helpers",
-        "//litert/c:litert_op_code",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_element_type",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_layout",
-        "//litert/cc:litert_macros",
-        "//litert/cc/internal:litert_c_types_printing",
-        "//litert/cc/internal:litert_detail",
-        "//litert/cc/internal:litert_rng",
-        "//litert/core/model",
-        "//litert/test:simple_buffer",
-        "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-cc_test(
-    name = "no_op_test",
-    srcs = ["no_op_test.cc"],
-    deps = [
-        ":common",
-        ":no_op",
-        "//litert/cc/internal:litert_rng",
-        "//litert/test:matchers",
-        "//litert/test:rng_fixture",
-        "//litert/test:simple_buffer",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
     name = "binary_no_bcast",
     testonly = True,
     hdrs = ["binary_no_bcast.h"],
@@ -818,7 +781,6 @@ cc_library(
         "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/backends/tflite:arithmetic_tflite",
-        "//tflite/types:half",
         "@com_google_absl//absl/strings:string_view",
         "@flatbuffers//:runtime_cc",
     ],
@@ -863,7 +825,6 @@ cc_library(
         ":extra_model",
         ":fully_connected",
         ":mean",
-        ":no_op",
         ":pad",
         ":pooling",
         ":qkv_norm_rope",
