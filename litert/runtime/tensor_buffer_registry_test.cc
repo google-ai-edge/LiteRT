@@ -34,7 +34,7 @@
 
 namespace {
 
-struct CustomHwMemoryInfo : public HwMemoryInfo {
+struct CustomHwMemoryInfo : public HwMemoryInfoV1 {
   size_t bytes;
   void* mapped_ptr;
 };
