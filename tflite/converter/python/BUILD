@@ -115,6 +115,7 @@ cc_library(
         ":conversion_failure_reporter",
         "//tflite/converter:common",
         "//tflite/converter:converter_flags_proto_cc",
+        "//tflite/converter:downcast_x64",
         "//tflite/converter:flatbuffer_export",
         "//tflite/converter:optimize_broadcast_like_pass_options",
         "//tflite/converter:tensorflow_lite",
