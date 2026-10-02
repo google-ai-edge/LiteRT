@@ -19,6 +19,9 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <ios>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <utility>
@@ -30,6 +33,8 @@
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "flatbuffers/detached_buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
 #include "ml_drift/cl/cl_context.h"  // from @ml_drift
 #include "ml_drift/cl/environment.h"  // from @ml_drift
@@ -76,6 +81,7 @@
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include "ml_drift_delegate/delegate/buffer_handler_opencl.h"
 #include "tflite/interpreter.h"
+#include "tflite/schema/schema_generated.h"
 
 namespace litert {
 namespace {
@@ -1424,6 +1430,100 @@ TEST(CompiledModelTest, GetOutputTensorShapes) {
   EXPECT_EQ(output_tensor_shapes[0].rank, 1);
   EXPECT_EQ(output_tensor_shapes[0].dimensions[0], 2);
 
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+// Returns a copy of `simple_model.tflite` whose output tensor has no shape
+// recorded in the flatbuffer.
+//
+// Why this model exists: some models declare outputs without a shape (rank 0)
+// and rely on an op to compute the real output shape in its Prepare() step,
+// which only runs when tensors are allocated. Clearing the output shape of the
+// simple ADD model reproduces that situation with a CPU-only model: the
+// flatbuffer declares rank 0, while ADD's Prepare() resizes the output to the
+// [2] shape of its inputs.
+//
+// The returned buffer must outlive any LiteRtModel created from it.
+Expected<flatbuffers::DetachedBuffer> BuildSimpleModelWithShapelessOutput() {
+  // Read the original model bytes.
+  std::ifstream input_file(testing::GetTestFilePath(kModelFileName),
+                           std::ios::binary);
+  if (!input_file.is_open()) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Failed to open simple_model.tflite");
+  }
+  const std::string original_model((std::istreambuf_iterator<char>(input_file)),
+                                   std::istreambuf_iterator<char>());
+
+  // Unpack into the mutable object API so the output tensor can be edited.
+  std::unique_ptr<tflite::ModelT> tfl_model =
+      tflite::UnPackModel(original_model.data());
+  if (tfl_model == nullptr || tfl_model->subgraphs.size() != 1 ||
+      tfl_model->subgraphs[0]->outputs.size() != 1) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Expected one subgraph with one output");
+  }
+  tflite::SubGraphT& subgraph = *tfl_model->subgraphs[0];
+
+  // Drop the statically known output shape, leaving a rank-0 declaration.
+  tflite::TensorT& output_tensor = *subgraph.tensors[subgraph.outputs[0]];
+  output_tensor.shape.clear();
+  output_tensor.shape_signature.clear();
+
+  // Serialize the edited model into a buffer owned by the caller.
+  flatbuffers::FlatBufferBuilder builder;
+  tflite::FinishModelBuffer(builder,
+                            tflite::Model::Pack(builder, tfl_model.get()));
+  return builder.Release();
+}
+
+// Regression test for querying output shapes before the first Run().
+//
+// A caller that sizes its output buffers before running the model asks for
+// the output shapes without `update_allocation`. The signature has never been
+// allocated at that point, so the compiled model must allocate it first;
+// otherwise the rank-0 output reports the declared shape instead of the
+// runtime [2] shape that ADD's Prepare() sets.
+TEST(CompiledModelTest, OutputShapesBeforeFirstRunReflectRuntimeShapes) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel from simple_model.tflite with its output shape removed.
+  // `model_buffer` must stay alive until the model is destroyed.
+  LITERT_ASSERT_OK_AND_ASSIGN(flatbuffers::DetachedBuffer model_buffer,
+                              BuildSimpleModelWithShapelessOutput());
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromBuffer(env_ptr, model_buffer.data(),
+                                        model_buffer.size(), &model),
+            kLiteRtStatusOk);
+
+  // Create CompiledModel on CPU.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+
+  // Query output shapes before any Run(), without requesting an allocation
+  // update.
+  std::vector<LiteRtLayout> output_layouts(1);
+  absl::Span<LiteRtLayout> output_layouts_span = absl::MakeSpan(output_layouts);
+  LITERT_ASSERT_OK(compiled_model->GetOutputTensorShapes(
+      litert::kDefaultSignatureKey, output_layouts_span,
+      /*update_allocation=*/false));
+
+  // The output must carry the runtime [2] shape, not the declared rank 0.
+  ASSERT_EQ(output_layouts[0].rank, 1);
+  EXPECT_EQ(output_layouts[0].dimensions[0], 2);
+
+  compiled_model.reset();
   LiteRtDestroyOptions(jit_compilation_options);
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(env_ptr);

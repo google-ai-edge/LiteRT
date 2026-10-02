@@ -2635,7 +2635,12 @@ Expected<bool> LiteRtCompiledModelT::SignatureNeedsAllocation(
     const tflite::SignatureRunner* runner) const {
   auto iter = signature_needs_allocation_.find(runner);
   if (iter == signature_needs_allocation_.end()) {
-    return false;
+    // No record means the signature has never been allocated. Until
+    // AllocateTensors() runs, output tensors still carry the shapes serialized
+    // in the model, which can differ from the runtime shapes (e.g. outputs
+    // declared as rank 0 whose shape is set by an op's Prepare()). Report that
+    // allocation is needed so the first shape query returns runtime shapes.
+    return true;
   }
   return iter->second;
 }
