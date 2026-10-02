@@ -19,6 +19,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -121,6 +122,15 @@ class NnpackRunner {
                         reinterpret_cast<const std::byte*>(seq.data()),
                         seq.size() * sizeof(T)),
                     /*copy_data=*/true);
+  }
+
+  // Sets the input data corresponding to `tensor` by copying `seq`.
+  //
+  // The sequence is unconditionally copied.
+  template <class T>
+  absl::Status SetInputAsCopy(const TensorHandle& tensor,
+                              std::initializer_list<T> seq) {
+    return SetInputAsCopy(tensor, absl::MakeConstSpan(seq.begin(), seq.size()));
   }
 
   // Sets the output data corresponding to `tensor`.
