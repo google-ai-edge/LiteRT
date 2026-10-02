@@ -13,6 +13,8 @@
 # limitations under the License.
 
 # LiteRT C++ API
+#
+# LINT.IfChange
 cmake_minimum_required(VERSION 3.20)
 
 project(litert_cc_api LANGUAGES CXX C)
@@ -167,3 +169,4 @@ target_link_libraries(dump_model_simple
         absl::log_internal_message
         absl::log_internal_check_op
 )
+# Google-internal LINT.ThenChange()
