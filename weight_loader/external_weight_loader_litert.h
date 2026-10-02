@@ -25,7 +25,9 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#ifdef __EMSCRIPTEN__
+#include "litert/c/internal/litert_runtime_context.h"
+#include "litert/c/litert_common.h"
+#if defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
 // copybara:comment_begin
 #include <webgpu/webgpu_cpp.h>
 // copybara:comment_end
@@ -37,9 +39,7 @@ namespace wgpu {
 class Buffer;
 class Queue;
 }  // namespace wgpu
-#endif  // __EMSCRIPTEN__
-#include "litert/c/internal/litert_runtime_context.h"
-#include "litert/c/litert_common.h"
+#endif  // defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
 #include "litert/cc/internal/scoped_weight_source.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -215,7 +215,7 @@ std::unique_ptr<WeightLoader> CreateLiteRtWeightLoader(
     std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source = nullptr,
     const WeightInMemoryMap* weight_in_memory_map = nullptr);
 
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
 struct WebWeightUploadRequest {
   int tfl_id;
   wgpu::Buffer buffer;
@@ -233,7 +233,7 @@ using WebWeightUploadCallback =
                      absl::Span<const WebWeightUploadRequest> requests);
 
 void RegisterWebWeightUploadCallback(WebWeightUploadCallback callback);
-#endif  // __EMSCRIPTEN__
+#endif  // defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
 
 }  // namespace weight_loader
 
