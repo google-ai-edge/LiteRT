@@ -351,7 +351,8 @@ TEST(GatedDeltaUpdateGpuTest, RejectOddHeadDimension19) {
 }
 
 // 14. Large power-of-2 head dimension 256 (64 k_slices, exceeding 32-lane SIMD
-// width). Exercises shared-memory reduction path across all backends.
+// width). Exercises v_tile=2, k_threads=16, k_rounds=4 in the subgroup shuffle
+// shader (or shared-memory reduction on backends without wave32 shuffle).
 TEST(GatedDeltaUpdateGpuTest, HeadDimension256) {
   RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/2, /*D_k=*/256, /*D_v=*/256);
 }
@@ -364,8 +365,7 @@ TEST(GatedDeltaUpdateGpuTest, RejectNonPowerOfTwoHeadDimension384) {
                                  /*D_v=*/384);
 }
 
-// 16. Multi-batch test with large head dimension 256 (exercising shared-memory
-// reduction path with B > 1).
+// 16. Multi-batch test with large head dimension 256 (B > 1).
 TEST(GatedDeltaUpdateGpuTest, MultiBatchHeadDimension256) {
   RunGatedDeltaUpdateTest(/*B=*/2, /*H=*/2, /*N=*/2, /*D_k=*/256, /*D_v=*/256);
 }
@@ -395,7 +395,7 @@ TEST(GatedDeltaUpdateGpuTest, Qwen27BLinearAttentionDecode) {
                           /*use_fp32=*/true, /*H_k=*/16);
 }
 
-// 20. GQA Ratio 4 with large head dimension D_k = 256 (shared-memory path).
+// 20. GQA Ratio 4 with large head dimension D_k = 256.
 TEST(GatedDeltaUpdateGpuTest, GqaRatio4SharedMemReductionD256) {
   RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/8, /*N=*/4, /*D_k=*/256, /*D_v=*/256,
                           /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
@@ -416,6 +416,164 @@ TEST(GatedDeltaUpdateGpuTest, GqaMultiQueryAttentionMqa) {
 TEST(GatedDeltaUpdateGpuTest, RejectInvalidGqaHeadRatio) {
   ExpectGatedDeltaUpdateRejected(/*B=*/1, /*H=*/6, /*N=*/2, /*D_k=*/16,
                                  /*D_v=*/16, /*H_k=*/4);
+}
+
+// 23. Right-padded sequence steps (beta == 0 && g == 0) early-exit
+// verification.
+TEST(GatedDeltaUpdateGpuTest, RightPaddedSequenceEarlyExit) {
+  const int B = 1, H = 48, H_k = 16, N = 16, valid_len = 6, D_k = 128,
+            D_v = 128;
+  auto model_buf = CreateGatedDeltaUpdateModelBuffer(B, H, N, D_k, D_v, 0, H_k);
+
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+  auto options = CreateGpuOptions(/*use_fp32=*/true);
+  ASSERT_TRUE(options);
+  auto compiled_model = CompiledModel::Create(
+      *env, litert::BufferRef<uint8_t>(model_buf.data(), model_buf.size()),
+      *options);
+  ASSERT_TRUE(compiled_model);
+
+  auto input_buffers = compiled_model->CreateInputBuffers();
+  ASSERT_TRUE(input_buffers);
+  auto output_buffers = compiled_model->CreateOutputBuffers();
+  ASSERT_TRUE(output_buffers);
+
+  std::srand(99);
+  auto q_data = GenerateRandom(B * H_k * N * D_k, -0.5f, 0.5f);
+  auto k_data = GenerateRandom(B * H_k * N * D_k, -0.5f, 0.5f);
+  auto v_data = GenerateRandom(B * H * N * D_v, -0.5f, 0.5f);
+  auto beta_data = GenerateRandom(B * H * N, 0.1f, 0.9f);
+  auto g_data = GenerateRandom(B * H * N, -1.0f, -0.1f);
+  auto state_data = GenerateRandom(B * H * D_k * D_v, -0.5f, 0.5f);
+
+  // Zero out padded tokens t >= valid_len
+  for (int hk = 0; hk < H_k; ++hk) {
+    for (int t = valid_len; t < N; ++t) {
+      for (int d = 0; d < D_k; ++d) {
+        q_data[(hk * N + t) * D_k + d] = 0.0f;
+        k_data[(hk * N + t) * D_k + d] = 0.0f;
+      }
+    }
+  }
+  for (int h = 0; h < H; ++h) {
+    for (int t = valid_len; t < N; ++t) {
+      beta_data[h * N + t] = 0.0f;
+      g_data[h * N + t] = 0.0f;
+      for (int d = 0; d < D_v; ++d) {
+        v_data[(h * N + t) * D_v + d] = 0.0f;
+      }
+    }
+  }
+
+  ASSERT_TRUE((*input_buffers)[0].Write<float>(absl::MakeConstSpan(q_data)));
+  ASSERT_TRUE((*input_buffers)[1].Write<float>(absl::MakeConstSpan(k_data)));
+  ASSERT_TRUE((*input_buffers)[2].Write<float>(absl::MakeConstSpan(v_data)));
+  ASSERT_TRUE((*input_buffers)[3].Write<float>(absl::MakeConstSpan(beta_data)));
+  ASSERT_TRUE((*input_buffers)[4].Write<float>(absl::MakeConstSpan(g_data)));
+  ASSERT_TRUE(
+      (*input_buffers)[5].Write<float>(absl::MakeConstSpan(state_data)));
+
+  std::vector<float> golden_out(B * H * N * D_v);
+  std::vector<float> golden_final_state(B * H * D_k * D_v);
+  ComputeGoldenRecurrentGatedDelta(
+      q_data.data(), k_data.data(), v_data.data(), beta_data.data(),
+      g_data.data(), state_data.data(), golden_out.data(),
+      golden_final_state.data(), B, H, N, D_k, D_v, H_k);
+
+  ASSERT_TRUE(compiled_model->Run(*input_buffers, *output_buffers));
+
+  std::vector<float> actual_out(B * H * N * D_v);
+  std::vector<float> actual_final_state(B * H * D_k * D_v);
+  ASSERT_TRUE((*output_buffers)[0].Read<float>(absl::MakeSpan(actual_out)));
+  ASSERT_TRUE(
+      (*output_buffers)[1].Read<float>(absl::MakeSpan(actual_final_state)));
+
+  CompareBuffers(actual_out, golden_out, 1e-3f);
+  CompareBuffers(actual_final_state, golden_final_state, 1e-3f);
+}
+
+// 24. Asymmetric D_k < D_v with large value dimension: (D_k=64, D_v=256) and
+// (D_k=128, D_v=256) (2x value expansion, v_tile=4, k_rounds=4).
+TEST(GatedDeltaUpdateGpuTest, AsymmetricLargeValueDim64x256And128x256) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/64, /*D_v=*/256,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/128, /*D_v=*/256,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+}
+
+// 25. Asymmetric D_k > D_v with minimum value dimension D_v = 16 across
+// v_tile = 4 (D_k=128), v_tile = 2 (D_k=256), and v_tile = 1 (D_k=512).
+TEST(GatedDeltaUpdateGpuTest, AsymmetricSmallValueDim16AcrossVTiles) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/128, /*D_v=*/16,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/256, /*D_v=*/16,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/512, /*D_v=*/16,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+}
+
+// 26. D_k = 256 with FP16 precision and asymmetric D_v = 512 (v_tile = 2,
+// k_threads = 16, k_rounds = 4, k_load_chunks = 2).
+TEST(GatedDeltaUpdateGpuTest, HeadDimension256FP16AndAsymmetric512) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/256, /*D_v=*/256,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/2e-2,
+                          /*use_fp32=*/false);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/2, /*D_k=*/256, /*D_v=*/512,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+}
+
+// 27. Head dimension D_k = 512 (128 k_slices): exercises v_tile = 1,
+// k_threads = 32, k_rounds = 4, k_load_chunks = 4 in the subgroup shuffle
+// shader while keeping per-thread recurrent state bounded to 16 float4
+// registers (tested across D_v=128 FP32/FP16 and symmetric D_v=512).
+TEST(GatedDeltaUpdateGpuTest, HeadDimension512) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/512, /*D_v=*/128,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true, /*H_k=*/1);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/512, /*D_v=*/128,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/2e-2,
+                          /*use_fp32=*/false, /*H_k=*/1);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/2, /*D_k=*/512, /*D_v=*/512,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+}
+
+// 28. Head dimension D_k = 1024 (256 k_slices > kSubgroupSize * kMaxKRounds):
+// exercises the shared-memory fallback shader with work_group_size_x = 256 so
+// each thread holds only 1 round (4 float4 state registers).
+TEST(GatedDeltaUpdateGpuTest, HeadDimension1024SharedMemFallback) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/2, /*D_k=*/1024, /*D_v=*/16,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/2, /*D_k=*/1024, /*D_v=*/64,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+}
+
+// 29. Excessive head dimension D_k = 2048 (512 k_slices >
+// kMaxSharedMemWorkGroupSize) must be rejected.
+TEST(GatedDeltaUpdateGpuTest, RejectExcessiveHeadDimension2048) {
+  ExpectGatedDeltaUpdateRejected(/*B=*/1, /*H=*/1, /*N=*/1, /*D_k=*/2048,
+                                 /*D_v=*/64);
 }
 
 }  // namespace
