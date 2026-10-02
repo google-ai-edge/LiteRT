@@ -189,6 +189,29 @@ cc_library(
     }),
 )
 
+cc_test(
+    name = "gpu_backend_webgpu_test",
+    srcs = ["gpu_backend_webgpu_test.cc"],
+    deps = [
+        ":gpu_backend",
+        ":gpu_backend_webgpu",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:model_hints",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/webgpu:execution_environment",
+        "@ml_drift//ml_drift/webgpu:spatial_tensor",
+        "@ml_drift//ml_drift/webgpu:webgpu_headers",
+    ],
+)
+
 cc_library(
     name = "gpu_backend_webgpu_litert",
     srcs = [

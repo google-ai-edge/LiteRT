@@ -33,6 +33,7 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/synchronization/notification.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -417,9 +418,15 @@ GpuInferenceContextWebGpu::~GpuInferenceContextWebGpu() {
   }
 }
 
+::ml_drift::webgpu::SpatialTensor*
+GpuInferenceContextWebGpu::GetSpatialTensorInternal(::ml_drift::ValueId id) {
+  absl::MutexLock lock(backend_->memory_manager_mutex());
+  return ctx_->GetTensor(id);
+}
+
 absl::StatusOr<::ml_drift::GpuSpatialTensor*>
 GpuInferenceContextWebGpu::GetSpatialTensor(::ml_drift::ValueId id) {
-  auto* tensor = ctx_->GetTensor(id);
+  auto* tensor = GetSpatialTensorInternal(id);
   if (tensor == nullptr) {
     // Returning OK(nullptr) here makes callers dereference null instead of
     // failing, which turns a recoverable setup error into a SIGSEGV.
@@ -431,20 +438,21 @@ GpuInferenceContextWebGpu::GetSpatialTensor(::ml_drift::ValueId id) {
 
 absl::Status GpuInferenceContextWebGpu::BindSpatialTensor(
     ::ml_drift::ValueId id, ::ml_drift::GpuSpatialTensor* tensor) {
+  absl::MutexLock lock(backend_->memory_manager_mutex());
   return ctx_->SetTensor(
       id, static_cast<::ml_drift::webgpu::SpatialTensor*>(tensor));
 }
 
 absl::Status GpuInferenceContextWebGpu::WriteDataToWeightTensor(
     ::ml_drift::ValueId id, absl::Span<const uint8_t> data) {
-  auto* wgpu_tensor = ctx_->GetTensor(id);
-  return wgpu_tensor->WriteDataViaStaging(backend_->wgpu_env(), data.data());
+  return GetSpatialTensorInternal(id)->WriteDataViaStaging(backend_->wgpu_env(),
+                                                           data.data());
 }
 
 absl::Status GpuInferenceContextWebGpu::ReadWeightTensorToDescriptor(
     ::ml_drift::ValueId id, ::ml_drift::TensorDescriptor& desc) {
-  auto* wgpu_tensor = ctx_->GetTensor(id);
-  return wgpu_tensor->ToDescriptor(backend_->wgpu_env().device(), &desc);
+  return GetSpatialTensorInternal(id)->ToDescriptor(
+      backend_->wgpu_env().device(), &desc);
 }
 
 absl::Status GpuInferenceContextWebGpu::UploadWeightsOnWeb(
@@ -489,6 +497,7 @@ absl::Status GpuInferenceContextWebGpu::UploadWeightsOnWeb(
 absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffers(
     std::vector<wgpu::CommandBuffer>& command_buffers,
     bool submit_command_buffers) {
+  absl::MutexLock lock(backend_->memory_manager_mutex());
   ABSL_ASSIGN_OR_RETURN(
       command_buffers,
       ctx_->CreateCommandBuffers(
