@@ -49,21 +49,22 @@ static NSString *GetTestModelPath() {
   XCTSkipIf(device == nil, @"Metal is not supported on this device/simulator.");
 
   NSError *error = nil;
-  LRTEnvironmentOptions *envOptions = [[LRTEnvironmentOptions alloc] init];
-  envOptions.metalDevice = device;
-  envOptions.metalCommandQueue = [device newCommandQueue];
+  LRTEnvironmentOptions *environmentOptions = [[LRTEnvironmentOptions alloc] init];
+  environmentOptions.metalDevice = device;
+  environmentOptions.metalCommandQueue = [device newCommandQueue];
 
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:envOptions error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:environmentOptions
+                                                                 error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
-  XCTAssertEqual(env.metalDevice, envOptions.metalDevice);
-  XCTAssertEqual(env.metalCommandQueue, envOptions.metalCommandQueue);
+  XCTAssertEqual(environment.metalDevice, environmentOptions.metalDevice);
+  XCTAssertEqual(environment.metalCommandQueue, environmentOptions.metalCommandQueue);
 
   LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorGPU];
   NSString *modelPath = GetTestModelPath();
 
   LRTCompiledModel *compiledModel = [LRTCompiledModel compiledModelWithModelFilePath:modelPath
-                                                                         environment:env
+                                                                         environment:environment
                                                                              options:options
                                                                                error:&error];
   XCTAssertNotNil(compiledModel);
@@ -112,8 +113,8 @@ static NSString *GetTestModelPath() {
   constexpr const float kTestOutputTensorForPipelineTest[] = {21.0f, 42.0f};
 
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorGPU];
@@ -121,7 +122,7 @@ static NSString *GetTestModelPath() {
 
   // Create 1st model.
   LRTCompiledModel *compiledModel1 = [LRTCompiledModel compiledModelWithModelFilePath:modelPath
-                                                                          environment:env
+                                                                          environment:environment
                                                                               options:options
                                                                                 error:&error];
   XCTAssertNotNil(compiledModel1);
@@ -139,7 +140,7 @@ static NSString *GetTestModelPath() {
 
   // Create 2nd model.
   LRTCompiledModel *compiledModel2 = [LRTCompiledModel compiledModelWithModelFilePath:modelPath
-                                                                          environment:env
+                                                                          environment:environment
                                                                               options:options
                                                                                 error:&error];
   XCTAssertNotNil(compiledModel2);
@@ -186,57 +187,58 @@ static NSString *GetTestModelPath() {
   XCTSkipIf(device == nil, @"Metal is not supported on this device/simulator.");
 
   NSError *error = nil;
-  LRTEnvironmentOptions *envOptions = [[LRTEnvironmentOptions alloc] init];
-  envOptions.metalDevice = device;
-  envOptions.metalCommandQueue = [device newCommandQueue];
+  LRTEnvironmentOptions *environmentOptions = [[LRTEnvironmentOptions alloc] init];
+  environmentOptions.metalDevice = device;
+  environmentOptions.metalCommandQueue = [device newCommandQueue];
 
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:envOptions error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:environmentOptions
+                                                                 error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorGPU];
   NSString *modelPath = GetTestModelPath();
 
   LRTCompiledModel *compiledModel = [LRTCompiledModel compiledModelWithModelFilePath:modelPath
-                                                                         environment:env
+                                                                         environment:environment
                                                                              options:options
                                                                                error:&error];
   XCTAssertNotNil(compiledModel);
   XCTAssertNil(error);
 
   // Allocate explicit MTLBuffers.
-  id<MTLBuffer> mtlInput0 = [device newBufferWithLength:sizeof(kTestInput0Tensor)
-                                                options:MTLResourceStorageModeShared];
-  XCTAssertNotNil(mtlInput0);
-  std::memcpy(mtlInput0.contents, kTestInput0Tensor, sizeof(kTestInput0Tensor));
+  id<MTLBuffer> metalInput0 = [device newBufferWithLength:sizeof(kTestInput0Tensor)
+                                                  options:MTLResourceStorageModeShared];
+  XCTAssertNotNil(metalInput0);
+  std::memcpy(metalInput0.contents, kTestInput0Tensor, sizeof(kTestInput0Tensor));
 
-  id<MTLBuffer> mtlInput1 = [device newBufferWithLength:sizeof(kTestInput1Tensor)
-                                                options:MTLResourceStorageModeShared];
-  XCTAssertNotNil(mtlInput1);
-  std::memcpy(mtlInput1.contents, kTestInput1Tensor, sizeof(kTestInput1Tensor));
+  id<MTLBuffer> metalInput1 = [device newBufferWithLength:sizeof(kTestInput1Tensor)
+                                                  options:MTLResourceStorageModeShared];
+  XCTAssertNotNil(metalInput1);
+  std::memcpy(metalInput1.contents, kTestInput1Tensor, sizeof(kTestInput1Tensor));
 
-  id<MTLBuffer> mtlOutput0 = [device newBufferWithLength:sizeof(kTestOutputTensor)
-                                                 options:MTLResourceStorageModeShared];
-  XCTAssertNotNil(mtlOutput0);
+  id<MTLBuffer> metalOutput0 = [device newBufferWithLength:sizeof(kTestOutputTensor)
+                                                   options:MTLResourceStorageModeShared];
+  XCTAssertNotNil(metalOutput0);
 
-  LRTTensorBuffer *input0 = [LRTTensorBuffer tensorBufferWithEnvironment:env
-                                                             metalBuffer:mtlInput0
+  LRTTensorBuffer *input0 = [LRTTensorBuffer tensorBufferWithEnvironment:environment
+                                                             metalBuffer:metalInput0
                                                              elementType:LRTElementTypeFloat32
                                                               dimensions:@[ @2 ]
                                                                    error:&error];
   XCTAssertNotNil(input0);
   XCTAssertNil(error);
 
-  LRTTensorBuffer *input1 = [LRTTensorBuffer tensorBufferWithEnvironment:env
-                                                             metalBuffer:mtlInput1
+  LRTTensorBuffer *input1 = [LRTTensorBuffer tensorBufferWithEnvironment:environment
+                                                             metalBuffer:metalInput1
                                                              elementType:LRTElementTypeFloat32
                                                               dimensions:@[ @2 ]
                                                                    error:&error];
   XCTAssertNotNil(input1);
   XCTAssertNil(error);
 
-  LRTTensorBuffer *output0 = [LRTTensorBuffer tensorBufferWithEnvironment:env
-                                                              metalBuffer:mtlOutput0
+  LRTTensorBuffer *output0 = [LRTTensorBuffer tensorBufferWithEnvironment:environment
+                                                              metalBuffer:metalOutput0
                                                               elementType:LRTElementTypeFloat32
                                                                dimensions:@[ @2 ]
                                                                     error:&error];
@@ -249,7 +251,7 @@ static NSString *GetTestModelPath() {
   XCTAssertTrue(runSuccess);
   XCTAssertNil(error);
 
-  const float *outputFloat = static_cast<const float *>(mtlOutput0.contents);
+  const float *outputFloat = static_cast<const float *>(metalOutput0.contents);
   for (size_t i = 0; i < kTestOutputSize; ++i) {
     XCTAssertEqualWithAccuracy(outputFloat[i], kTestOutputTensor[i], kTestAccuracy);
   }
@@ -260,20 +262,21 @@ static NSString *GetTestModelPath() {
   XCTSkipIf(device == nil, @"Metal is not supported on this device/simulator.");
 
   NSError *error = nil;
-  LRTEnvironmentOptions *envOptions = [[LRTEnvironmentOptions alloc] init];
-  envOptions.metalDevice = device;
+  LRTEnvironmentOptions *environmentOptions = [[LRTEnvironmentOptions alloc] init];
+  environmentOptions.metalDevice = device;
   // Intentionally omit setting metalCommandQueue to test command queue fallback.
 
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:envOptions error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:environmentOptions
+                                                                 error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
-  XCTAssertEqual(env.metalDevice, envOptions.metalDevice);
+  XCTAssertEqual(environment.metalDevice, environmentOptions.metalDevice);
 
   LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorGPU];
   NSString *modelPath = GetTestModelPath();
 
   LRTCompiledModel *compiledModel = [LRTCompiledModel compiledModelWithModelFilePath:modelPath
-                                                                         environment:env
+                                                                         environment:environment
                                                                              options:options
                                                                                error:&error];
   XCTAssertNotNil(compiledModel);
@@ -314,8 +317,8 @@ static NSString *GetTestModelPath() {
   XCTSkipIf(device == nil, @"Metal is not supported on this device/simulator.");
 
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorGPU];
@@ -326,7 +329,7 @@ static NSString *GetTestModelPath() {
 
   NSString *modelPath = GetTestModelPath();
   LRTCompiledModel *compiledModel = [LRTCompiledModel compiledModelWithModelFilePath:modelPath
-                                                                         environment:env
+                                                                         environment:environment
                                                                              options:options
                                                                                error:&error];
   XCTAssertNotNil(compiledModel);

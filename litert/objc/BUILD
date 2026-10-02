@@ -164,10 +164,13 @@ objc_library(
     name = "litert_objc_tensor_buffer",
     srcs = [
         "sources/LRTTensorBuffer.mm",
+        "sources/LRTTensorBufferRequirements.mm",
     ],
     hdrs = [
         "apis/LRTTensorBuffer.h",
+        "apis/LRTTensorBufferRequirements.h",
         "sources/LRTTensorBuffer+Internal.h",
+        "sources/LRTTensorBufferRequirements+Internal.h",
     ],
     deps = [
         ":litert_objc_environment",
@@ -178,6 +181,7 @@ objc_library(
         "//litert/cc:litert_layout",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
     ],
 )
@@ -228,6 +232,7 @@ objc_library(
         "//litert/cc:litert_environment",
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_requirements",
     ],
 )
 

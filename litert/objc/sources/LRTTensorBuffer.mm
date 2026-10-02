@@ -125,20 +125,6 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
   std::unique_ptr<litert::TensorBuffer> _cppTensorBuffer;
 }
 
-- (instancetype)initInternalWithCppTensorBuffer:
-    (std::unique_ptr<litert::TensorBuffer>)cppTensorBuffer {
-  self = [super init];
-  if (self) {
-    _cppTensorBuffer = std::move(cppTensorBuffer);
-  }
-  return self;
-}
-
-+ (nullable instancetype)tensorBufferWithCppTensorBuffer:(litert::TensorBuffer)cppTensorBuffer {
-  auto cppPtr = std::make_unique<litert::TensorBuffer>(std::move(cppTensorBuffer));
-  return [[LRTTensorBuffer alloc] initInternalWithCppTensorBuffer:std::move(cppPtr)];
-}
-
 + (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
                                                 size:(NSUInteger)size
                                          elementType:(LRTElementType)elementType
@@ -199,8 +185,8 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
     return nil;
   }
 
-  auto cppPtr = std::make_unique<litert::TensorBuffer>(std::move(bufferResult.Value()));
-  return [[LRTTensorBuffer alloc] initInternalWithCppTensorBuffer:std::move(cppPtr)];
+  auto cppTensorBuffer = std::make_unique<litert::TensorBuffer>(std::move(bufferResult.Value()));
+  return [[LRTTensorBuffer alloc] initInternalWithCppTensorBuffer:std::move(cppTensorBuffer)];
 }
 
 + (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
@@ -265,9 +251,20 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
     return nil;
   }
 
-  auto cppPtr = std::make_unique<litert::TensorBuffer>(std::move(bufferResult.Value()));
-  return [[LRTTensorBuffer alloc] initInternalWithCppTensorBuffer:std::move(cppPtr)];
+  auto cppTensorBuffer = std::make_unique<litert::TensorBuffer>(std::move(bufferResult.Value()));
+  return [[LRTTensorBuffer alloc] initInternalWithCppTensorBuffer:std::move(cppTensorBuffer)];
 }
+
+- (instancetype)initInternalWithCppTensorBuffer:
+    (std::unique_ptr<litert::TensorBuffer>)cppTensorBuffer {
+  self = [super init];
+  if (self) {
+    _cppTensorBuffer = std::move(cppTensorBuffer);
+  }
+  return self;
+}
+
+#pragma mark - Properties
 
 - (LRTTensorBufferType)bufferType {
   if (!_cppTensorBuffer) return LRTTensorBufferTypeUnknown;
@@ -293,7 +290,7 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
   for (auto dimension : shape) {
     [dimensions addObject:@(dimension)];
   }
-  return [dimensions copy];
+  return dimensions;
 }
 
 - (NSUInteger)size {
@@ -319,6 +316,8 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
   return (__bridge id<MTLTexture>)*metalMemoryResult;
 }
 
+#pragma mark - Public
+
 - (nullable NSData *)readDataWithError:(NSError **)error {
   if (!_cppTensorBuffer) {
     LRTSetError(error, LRTErrorCodeInvalidArgument, @"Invalid tensor buffer");
@@ -332,8 +331,8 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
     return nil;
   }
 
-  void *hostAddr = *lockResult;
-  NSData *data = [NSData dataWithBytes:hostAddr length:self.size];
+  void *hostAddress = *lockResult;
+  NSData *data = [NSData dataWithBytes:hostAddress length:self.size];
   _cppTensorBuffer->Unlock();
   return data;
 }
@@ -356,13 +355,20 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
     return NO;
   }
 
-  void *hostAddr = *lockResult;
+  void *hostAddress = *lockResult;
   // Writing a shorter or longer NSData than the buffer is allowed: extra bytes are dropped and
   // the remaining bytes of the buffer keep their previous contents.
   size_t copyLength = std::min<size_t>(data.length, self.size);
-  std::memcpy(hostAddr, data.bytes, copyLength);
+  std::memcpy(hostAddress, data.bytes, copyLength);
   _cppTensorBuffer->Unlock();
   return YES;
+}
+
+#pragma mark - LRTTensorBuffer (Internal)
+
++ (nullable instancetype)tensorBufferWithCppTensorBuffer:(litert::TensorBuffer)cppTensorBuffer {
+  auto ownedCppTensorBuffer = std::make_unique<litert::TensorBuffer>(std::move(cppTensorBuffer));
+  return [[LRTTensorBuffer alloc] initInternalWithCppTensorBuffer:std::move(ownedCppTensorBuffer)];
 }
 
 - (nullable litert::TensorBuffer *)cppTensorBuffer {
