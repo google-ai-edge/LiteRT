@@ -1,0 +1,18 @@
+{
+  "optimizations": {
+    "uncompress_native_libraries": {
+      "enabled": false
+    },
+    "splits_config": {
+      "split_dimension": [
+        {
+          "value": "DEVICE_GROUP",
+          "suffix_stripping": {
+            "enabled": true,
+            "default_suffix": "other"
+          }
+        }
+      ]
+    }
+  }
+}
