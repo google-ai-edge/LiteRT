@@ -28,6 +28,10 @@
 
 namespace litert::qnn {
 namespace {
+using testing::ElementsAre;       // NOLINT
+using testing::ElementsAreArray;  // NOLINT
+using testing::FloatNear;         // NOLINT
+using testing::Pointwise;         // NOLINT
 
 using UnaryBuilder = std::function<std::vector<::qnn::OpWrapper>(
     ::qnn::TensorPool&, const std::vector<::qnn::TensorWrapperRef>&,
