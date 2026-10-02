@@ -47,6 +47,28 @@ class CastIntegerSignToFloat : public ov::pass::MatcherPass {
   CastIntegerSignToFloat();
 };
 
+// Rewrites large boolean Constants into a u8 Constant followed by a
+// Convert(u8->boolean):
+//   Constant(boolean) -> Constant(u8) -> Convert(u8->boolean)
+//
+// Why: with NPU weight-sharing enabled, NPUW's weightless / CWAI flow
+// externalizes model constants and, at import time, "unpacks" (decompresses)
+// each weight into its compute type. NPUW's unpack table
+// (npuw/util.cpp) supports only i4/u4/i8/nf4 sources; a boolean weight makes it
+// throw "Unknown unpack combination boolean -> u8" and the whole (sub)model
+// falls back to CPU. OpenVINO stores boolean as one byte per element (0/1), so
+// reinterpreting those bytes as u8 is a lossless, zero-copy byte identity; the
+// trailing Convert restores boolean semantics for downstream consumers (e.g.
+// the attention-mask Select). A u8 weight needs no decompression, so NPUW's
+// unpack is never invoked. The inserted Convert is marked
+// disable_constant_folding so ConstantFolding does not re-fold it back into a
+// boolean Constant, which would reintroduce the very weight we removed.
+class DecomposeBooleanConstant : public ov::pass::MatcherPass {
+ public:
+  OPENVINO_MATCHER_PASS_RTTI("DecomposeBooleanConstant");
+  DecomposeBooleanConstant();
+};
+
 // Fuses the "split-attention" sub-graph produced by some Gemma-style models
 // (attention computed separately against the persistent KV cache and the
 // current step's KV, merged via Concat) into a single
@@ -133,6 +155,16 @@ class NpuOptimizer {
     return *this;
   }
 
+  // Toggles the DecomposeBooleanConstant pass. Disabled by default.
+  // OpenVinoCompileContext enables it whenever NPU weight sharing is on,
+  // because NPUW's weightless weight-sharing flow cannot unpack boolean
+  // weights (see the class comment above); leaving a boolean weight in the
+  // graph forces the affected (sub)model onto CPU.
+  NpuOptimizer& SetDecomposeBooleanConstants(bool enable) {
+    decompose_boolean_constants_ = enable;
+    return *this;
+  }
+
   // Toggles the FuseSplitAttentionToSDPA pass. Disabled by default; enable
   // via config key "fuse_split_attention_to_sdpa" = "true" to collapse the
   // Gemma-style split-attention pattern into a single SDPA op.
@@ -163,6 +195,7 @@ class NpuOptimizer {
   bool constant_fold_ = false;
   bool eliminate_matmul_fq_ = false;
   bool cast_integer_sign_to_float_ = true;
+  bool decompose_boolean_constants_ = false;
   bool fuse_split_attention_to_sdpa_ = false;
   bool sdpa_pad_kv_to_alignment_ = true;
   bool enable_moe_gather_ = false;
