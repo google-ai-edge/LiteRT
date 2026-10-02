@@ -19,7 +19,7 @@ load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:symlink_files.bzl", "symlink_files")  # @unused
 load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")  # @unused
-load("//tflite:build_def.bzl", "tflite_linkopts")
+load("//tflite:build_def.bzl", "gen_selected_ops", "tflite_linkopts")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -388,11 +388,29 @@ objc_library(
     ],
 )
 
+gen_selected_ops(
+    name = "minimal_compiled_model_selected_ops",
+    model = [
+        "testdata/transformer.tflite",
+    ],
+)
+
 # A minimal CompiledModel program for CPU. Used to track the size of a minimal
 # LiteRT CPU runtime. See docs/instructions/MINIMAL_BUILD.md.
 cc_binary(
     name = "minimal_compiled_model",
-    srcs = ["minimal_compiled_model.cc"],
+    srcs = ["minimal_compiled_model.cc"] + select({
+        "//litert/build_common:cpu_backend_selective": [
+            ":minimal_compiled_model_selected_ops",
+        ],
+        "//conditions:default": [],
+    }),
+    copts = select({
+        "//litert/build_common:cpu_backend_selective": [
+            "-DLITERT_SELECTIVE_OPS",
+        ],
+        "//conditions:default": [],
+    }),
     # Same size-oriented link flags as the TFLite size tracking binaries.
     linkopts = tflite_linkopts(),
     linkstatic = 1,
@@ -401,7 +419,16 @@ cc_binary(
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_tensor_buffer",
-    ],
+    ] + select({
+        "//litert/build_common:cpu_backend_selective": [
+            "//litert/cc:litert_options",
+            "//litert/tflite_support/op_resolver",
+            "//tflite:framework",
+            "//tflite:mutable_op_resolver",
+            "//tflite/kernels:builtin_ops",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 sh_test(
