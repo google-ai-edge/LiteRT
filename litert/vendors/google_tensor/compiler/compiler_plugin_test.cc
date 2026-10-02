@@ -425,7 +425,7 @@ TEST(TestCallGoogleTensorPlugin, PartitionCompositeOpsWithInputValidation) {
 
   LiteRtOpListT selected_op_list;
   LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, &subgraph, &selected_op_list));
+      plugin.get(), /*soc_model=*/"Tensor_G5", &subgraph, &selected_op_list));
   const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
       selected_op_list.Values();
 
@@ -521,6 +521,38 @@ TEST(TestCallGoogleTensorPlugin, PartitionFloatReduceMaxWithInputValidation) {
   EXPECT_EQ(selected_ops.size(), 0);
 }
 
+TEST(TestCallGoogleTensorPlugin,
+     PartitionUnsupportedDeviceSkipsInputValidation) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
+                              options.GetOptions<GoogleTensorOptions>());
+  google_tensor_options.SetExperimentalEnableInputValidator(true);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+
+  LiteRtModelT model;
+  LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
+  AddTflOpToSubgraph(subgraph, kLiteRtOpCodeTflAdd);
+  AddTflOpToSubgraph(subgraph, kLiteRtOpCodeTflFakeQuant);
+
+  LiteRtOpListT selected_op_list;
+  // `Tensor_G3` is not supported by the input validator, so the plugin must
+  // skip dynamic validation and fall back to static op support checks.
+  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
+      plugin.get(), /*soc_model=*/"Tensor_G3", &subgraph, &selected_op_list));
+  const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
+      selected_op_list.Values();
+
+  ASSERT_EQ(selected_ops.size(), 1);
+  EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeTflAdd);
+}
+
 TEST(TestCallGoogleTensorPlugin, CompileWithExtraOptions) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
@@ -566,8 +598,9 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithInputValidator) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
 
   LiteRtOpListT selected_op_list;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  LITERT_ASSERT_OK(
+      LiteRtCompilerPluginPartition(plugin.get(), /*soc_model=*/"Tensor_G5",
+                                    subgraph.Get(), &selected_op_list));
   const auto selected_ops = selected_op_list.Values();
 
   // Verify compilation path with validator enabled succeeds.

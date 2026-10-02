@@ -1030,8 +1030,15 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   // copybara:uncomment_begin(google-only)
   // // TODO(b/551885395): Remove this experimental flag once the feature is
   // // matured.
+  // const DeviceType device_type =
+      // google_tensor_options.compiler_config().device();
+  // const bool is_input_validator_supported_device =
+      // device_type == DeviceType::DEVICE_TYPE_TENSOR_G5 ||
+      // device_type == DeviceType::DEVICE_TYPE_TENSOR_G6 ||
+      // device_type == DeviceType::DEVICE_TYPE_TENSOR_G7;
   // enable_input_validation =
-      // google_tensor_options.experimental_enable_input_validator();
+      // google_tensor_options.experimental_enable_input_validator() &&
+      // is_input_validator_supported_device;
   // copybara:uncomment_end
 
   bool use_static_fallback = true;
