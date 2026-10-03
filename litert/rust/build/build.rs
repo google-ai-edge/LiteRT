@@ -368,8 +368,11 @@ fn copy_wrapper_h(out_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Error>>
 }
 
 fn dump_all_env_vars() {
-    for (key, value) in env::vars() {
-        info!("Environment: {}: {}", key, value);
+    println!("cargo::rerun-if-env-changed=LITERT_RUST_BUILD_DUMP_ENV_VARS");
+    if env::var("LITERT_RUST_BUILD_DUMP_ENV_VARS").is_ok() {
+        for (key, value) in env::vars() {
+            info!("Environment: {}: {}", key, value);
+        }
     }
 }
 
