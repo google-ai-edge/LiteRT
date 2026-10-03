@@ -89,7 +89,6 @@ class LiteRtDispatchInvocationContextT {
   }
 
   Qnn_ContextHandle_t GetContextHandle() { return raw_context_handle_; }
-  Qnn_ContextHandle_t ContextHandle() { return raw_context_handle_; }
 
  private:
   LiteRtDispatchInvocationContextT(
