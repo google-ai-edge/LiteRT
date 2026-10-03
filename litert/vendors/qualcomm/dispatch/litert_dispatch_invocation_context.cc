@@ -479,15 +479,21 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
-    Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  const auto mem_type = tensor.version == QNN_TENSOR_VERSION_1
-                            ? tensor.v1.memType
-                            : tensor.v2.memType;
-  if (mem_type == QNN_TENSORMEMTYPE_RAW) {
-    return device_context_->UnregisterTensorBuffer(tensor_buffer_handle);
+    Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle /*tensor_buffer_handle*/) {
+  if (tensor.version == QNN_TENSOR_VERSION_1) {
+    tensor.v1.memType = QNN_TENSORMEMTYPE_UNDEFINED;
+    tensor.v1.clientBuf.data = nullptr;
+    tensor.v1.clientBuf.dataSize = 0;
+    tensor.v1.memHandle = nullptr;
+  } else if (tensor.version == QNN_TENSOR_VERSION_2) {
+    tensor.v2.memType = QNN_TENSORMEMTYPE_UNDEFINED;
+    tensor.v2.clientBuf.data = nullptr;
+    tensor.v2.clientBuf.dataSize = 0;
+    tensor.v2.memHandle = nullptr;
+  } else {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Unsupported QNN tensor version");
   }
-  LITERT_RETURN_IF_ERROR(
-      device_context_->UnregisterTensorBuffer(tensor_buffer_handle, tensor));
   return {};
 }
 
