@@ -32,7 +32,11 @@ cc_library(
 cc_library(
     name = "backend_utils",
     hdrs = ["backend_utils.h"],
-    deps = ["@com_google_absl//absl/types:span"],
+    deps = [
+        "//litert/vendors/qualcomm/core:common",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
+    ],
 )
 
 cc_library(

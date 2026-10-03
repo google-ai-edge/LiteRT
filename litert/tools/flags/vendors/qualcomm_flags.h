@@ -94,6 +94,8 @@ ABSL_DECLARE_FLAG(std::string, qualcomm_dsp_skel_dir);
 
 ABSL_DECLARE_FLAG(uint32_t, qualcomm_vtcm_size);
 
+ABSL_DECLARE_FLAG(uint32_t, qualcomm_htp_file_read_memory_budget_mb);
+
 ABSL_DECLARE_FLAG(uint32_t, qualcomm_num_hvx_thread);
 
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::OptimizationLevel,
