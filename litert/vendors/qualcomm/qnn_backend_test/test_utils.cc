@@ -3,20 +3,38 @@
 
 #include "litert/vendors/qualcomm/qnn_backend_test/test_utils.h"
 
+#include <cstdint>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/backends/backend_factory.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
+#include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/utils/qnn_model.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 namespace litert::qnn {
+
+std::vector<std::int8_t> PackLowBitWeights(
+    std::uint32_t bitwidth, const std::vector<std::int8_t>& weights) {
+  if (bitwidth == 2) {
+    std::vector<std::int8_t> packed;
+    ::qnn::ConvertDataFromInt8ToInt2(weights, packed);
+    return packed;
+  }
+  if (bitwidth == 4) {
+    std::vector<std::int8_t> packed;
+    ::qnn::ConvertDataFromInt8ToInt4(weights, packed);
+    return packed;
+  }
+  return weights;
+}
 
 std::string QnnTestPrinter(
     const ::testing::TestParamInfo<std::tuple<::qnn::Options, const char*>>&

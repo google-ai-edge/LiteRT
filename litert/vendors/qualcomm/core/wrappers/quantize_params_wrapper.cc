@@ -348,4 +348,63 @@ void BwAxisScaleOffsetQuantizeParamsWrapper::SetAxis(const std::int32_t axis) {
   qnn_quantize_param_.bwAxisScaleOffsetEncoding.axis = axis;
 }
 
+BwFloatBlockQuantizeParamsWrapper::BwFloatBlockQuantizeParamsWrapper(
+    std::uint32_t bitwidth, absl::Span<const std::uint32_t> block_sizes,
+    absl::Span<const float> scales, absl::Span<const std::int32_t> zero_points)
+    : bitwidth_(bitwidth),
+      block_sizes_(block_sizes.begin(), block_sizes.end()),
+      scale_offsets_(scales.size()) {
+  assert(zero_points.size() == scales.size());
+  for (size_t i = 0; i < scales.size(); ++i) {
+    scale_offsets_[i].scale = scales[i];
+    scale_offsets_[i].offset = -zero_points[i] * scales[i];
+  }
+}
+
+BwFloatBlockQuantizeParamsWrapper::BwFloatBlockQuantizeParamsWrapper(
+    const Qnn_BwFloatBlockEncoding_t& encoding,
+    absl::Span<const std::uint32_t> dimensions)
+    : bitwidth_(encoding.bitwidth) {
+  if (dimensions.empty() || !encoding.blockSize || !encoding.floatScaleOffset) {
+    return;
+  }
+  block_sizes_.assign(encoding.blockSize,
+                      encoding.blockSize + dimensions.size());
+  size_t count = 1;
+  for (size_t d = 0; d < dimensions.size(); ++d) {
+    if (dimensions[d] == 0 || block_sizes_[d] == 0) {
+      block_sizes_.clear();
+      return;
+    }
+    const size_t blocks = 1 + (dimensions[d] - 1) / block_sizes_[d];
+    if (blocks > scale_offsets_.max_size() / count) {
+      block_sizes_.clear();
+      return;
+    }
+    count *= blocks;
+  }
+  scale_offsets_.assign(encoding.floatScaleOffset,
+                        encoding.floatScaleOffset + count);
+}
+
+void BwFloatBlockQuantizeParamsWrapper::CloneTo(Qnn_QuantizeParams_t& dst) {
+  dst = QNN_QUANTIZE_PARAMS_INIT;
+  dst.encodingDefinition = QNN_DEFINITION_DEFINED;
+  dst.quantizationEncoding = QNN_QUANTIZATION_ENCODING_BW_FLOAT_BLOCK;
+  dst.bwFloatBlockEncoding.bitwidth = bitwidth_;
+  dst.bwFloatBlockEncoding.blockSize = block_sizes_.data();
+  dst.bwFloatBlockEncoding.floatScaleOffset = scale_offsets_.data();
+}
+
+bool BwFloatBlockQuantizeParamsWrapper::operator==(
+    const BwFloatBlockQuantizeParamsWrapper& other) const {
+  return bitwidth_ == other.bitwidth_ && block_sizes_ == other.block_sizes_ &&
+         scale_offsets_.size() == other.scale_offsets_.size() &&
+         std::equal(scale_offsets_.begin(), scale_offsets_.end(),
+                    other.scale_offsets_.begin(),
+                    [](const auto& a, const auto& b) {
+                      return a.scale == b.scale && a.offset == b.offset;
+                    });
+}
+
 }  // namespace qnn

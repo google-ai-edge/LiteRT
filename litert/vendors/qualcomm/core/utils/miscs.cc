@@ -9,9 +9,11 @@
 #endif
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <system_error>
 #include <vector>
 
@@ -25,6 +27,21 @@ static constexpr int kRequiredNumProviders{1};
 }
 typedef Qnn_ErrorHandle_t (*QnnInterfaceGetProvidersFn_t)(
     const QnnInterface_t*** provider_list, uint32_t* num_providers);
+
+float Fp16BitsToFloat(std::uint16_t bits) {
+  const float sign = (bits & 0x8000) == 0 ? 1.0f : -1.0f;
+  const std::uint32_t exponent = (bits >> 10) & 0x1f;
+  const std::uint32_t mantissa = bits & 0x03ff;
+  if (exponent == 0) {
+    return sign * std::ldexp(static_cast<float>(mantissa), -24);
+  }
+  if (exponent == 0x1f) {
+    return mantissa == 0 ? sign * std::numeric_limits<float>::infinity()
+                         : std::numeric_limits<float>::quiet_NaN();
+  }
+  return sign * std::ldexp(static_cast<float>(mantissa + 0x0400),
+                           static_cast<int>(exponent) - 25);
+}
 
 void ConvertDataFromInt8ToInt2(const std::vector<std::int8_t>& src,
                                std::vector<std::int8_t>& dst) {
@@ -48,6 +65,76 @@ void ConvertDataFromInt8ToInt2(const std::vector<std::int8_t>& src,
     std::int8_t byte = num1 | (num2 << 2) | (num3 << 4) | (num4 << 6);
     dst.emplace_back(byte);
   }
+}
+
+void ConvertDataFromInt8ToInt4(const std::vector<std::int8_t>& src,
+                               std::vector<std::int8_t>& dst) {
+  dst.clear();
+  dst.reserve((src.size() + 1) / 2);
+  for (size_t i = 0; i < src.size(); i += 2) {
+    const std::uint8_t low = static_cast<std::uint8_t>(src[i]) & 0x0f;
+    const std::uint8_t high =
+        i + 1 < src.size() ? (static_cast<std::uint8_t>(src[i + 1]) & 0x0f) << 4
+                           : 0;
+    dst.push_back(static_cast<std::int8_t>(low | high));
+  }
+}
+
+bool PermuteBlockwiseQuantizationMetadata(
+    absl::Span<const std::uint32_t> dimensions,
+    absl::Span<const std::uint32_t> permutation,
+    absl::Span<std::uint32_t> block_sizes,
+    absl::Span<Qnn_FloatScaleOffset_t> scale_offsets) {
+  const size_t rank = dimensions.size();
+  if (rank == 0 || permutation.size() != rank || block_sizes.size() != rank) {
+    QNN_LOG_ERROR("Cannot permute malformed blockwise quantization metadata.");
+    return false;
+  }
+
+  std::vector<size_t> grid(rank);
+  std::vector<size_t> strides(rank);
+  std::vector<bool> seen(rank, false);
+  size_t count = 1;
+  for (size_t d = rank; d-- > 0;) {
+    const size_t axis = permutation[d];
+    if (dimensions[d] == 0 || block_sizes[d] == 0 || axis >= rank ||
+        seen[axis]) {
+      QNN_LOG_ERROR(
+          "Cannot permute malformed blockwise quantization metadata.");
+      return false;
+    }
+    seen[axis] = true;
+    grid[d] = 1 + (dimensions[d] - 1) / block_sizes[d];
+    if (grid[d] > std::numeric_limits<size_t>::max() / count) {
+      QNN_LOG_ERROR("Blockwise quantization scale grid size overflows.");
+      return false;
+    }
+    strides[d] = count;
+    count *= grid[d];
+  }
+  if (scale_offsets.size() != count) {
+    QNN_LOG_ERROR("Blockwise quantization scale grid size does not match.");
+    return false;
+  }
+
+  const std::vector<std::uint32_t> old_block_sizes(block_sizes.begin(),
+                                                   block_sizes.end());
+  const std::vector<Qnn_FloatScaleOffset_t> old_scale_offsets(
+      scale_offsets.begin(), scale_offsets.end());
+  for (size_t d = 0; d < rank; ++d) {
+    block_sizes[d] = old_block_sizes[permutation[d]];
+  }
+  for (size_t dst = 0; dst < count; ++dst) {
+    size_t remaining = dst;
+    size_t src = 0;
+    for (size_t d = rank; d-- > 0;) {
+      const size_t axis = permutation[d];
+      src += (remaining % grid[axis]) * strides[axis];
+      remaining /= grid[axis];
+    }
+    scale_offsets[dst] = old_scale_offsets[src];
+  }
+  return true;
 }
 
 bool CreateDirectoryRecursive(const std::filesystem::path& dir_name) {
