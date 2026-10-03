@@ -33,7 +33,7 @@ namespace metadata {
 //
 // This class is NOT thread-safe.
 //
-// [1]: https://www.tensorflow.org/lite/convert/metadata
+// [1]: https://developers.google.com/edge/litert/conversion/tensorflow/metadata
 class ModelMetadataPopulator {
  public:
   // Creates a ModelMetadataPopulator from the provided TFLite Model FlatBuffer
