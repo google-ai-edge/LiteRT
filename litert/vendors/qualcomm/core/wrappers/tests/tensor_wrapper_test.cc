@@ -24,6 +24,42 @@
 namespace qnn {
 namespace {
 
+TEST(TensorWrapperTest, DilateDHWIO) {
+  const std::vector<std::uint32_t> weight_dims{2, 2, 2, 2, 2};
+  std::vector<int> weight_data(32);
+  std::iota(weight_data.begin(), weight_data.end(), 1);
+  const std::array<std::uint32_t, 3> dilation{2, 2, 2};
+  std::vector<std::uint32_t> dilated_dims;
+  std::vector<int> dilated_data;
+
+  DilateDHWIO(absl::Span<const int>(weight_data), weight_dims, dilation,
+              dilated_dims, dilated_data);
+
+  EXPECT_THAT(dilated_dims, testing::ElementsAre(3, 3, 3, 2, 2));
+
+  const auto dhwio_index = [](const std::vector<std::uint32_t>& dims,
+                               std::size_t d, std::size_t h, std::size_t w,
+                               std::size_t i, std::size_t o) {
+    return ((((d * dims[1] + h) * dims[2] + w) * dims[3] + i) * dims[4]) +
+           o;
+  };
+  for (std::size_t d = 0; d < weight_dims[0]; ++d) {
+    for (std::size_t h = 0; h < weight_dims[1]; ++h) {
+      for (std::size_t w = 0; w < weight_dims[2]; ++w) {
+        for (std::size_t i = 0; i < weight_dims[3]; ++i) {
+          for (std::size_t o = 0; o < weight_dims[4]; ++o) {
+            EXPECT_EQ(dilated_data[dhwio_index(dilated_dims, d * dilation[0],
+                                                h * dilation[1],
+                                                w * dilation[2], i, o)],
+                      weight_data[dhwio_index(weight_dims, d, h, w, i, o)]);
+          }
+        }
+      }
+    }
+  }
+  EXPECT_EQ(std::count(dilated_data.begin(), dilated_data.end(), 0), 76);
+}
+
 TEST(TensorWrapperTest, SanityTest) {
   TensorWrapper tensor_wrapper{};
 

@@ -692,6 +692,34 @@ TEST(LiteRtBuilderTest, BuildConv3dOpOption) {
             tflite::ActivationFunctionType_RELU);
 }
 
+TEST(LiteRtBuilderTest, BuildConv3dTransposeOpOption) {
+  LiteRtBuilderT builder;
+
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflConv3dTranspose, {}, {});
+  uint32_t padding = 1;
+  int32_t stride_w = 2;
+  int32_t stride_h = 3;
+  int32_t stride_d = 4;
+  int32_t dilation_w_factor = 5;
+  int32_t dilation_h_factor = 6;
+  int32_t dilation_d_factor = 7;
+  uint32_t fused_activation_function = 1;
+  LITERT_ASSERT_OK(LiteRtBuilderBuildConv3dTransposeOpOption(
+      &builder, &op, &padding, &stride_w, &stride_h, &stride_d,
+      &dilation_w_factor, &dilation_h_factor, &dilation_d_factor,
+      &fused_activation_function));
+  auto* opts = litert::internal::GetTflOptions(op).AsConv3DOptions();
+  EXPECT_EQ(opts->padding, tflite::Padding_VALID);
+  EXPECT_EQ(opts->stride_w, 2);
+  EXPECT_EQ(opts->stride_h, 3);
+  EXPECT_EQ(opts->stride_d, 4);
+  EXPECT_EQ(opts->dilation_w_factor, 5);
+  EXPECT_EQ(opts->dilation_h_factor, 6);
+  EXPECT_EQ(opts->dilation_d_factor, 7);
+  EXPECT_EQ(opts->fused_activation_function,
+            tflite::ActivationFunctionType_RELU);
+}
+
 TEST(LiteRtBuilderTest, BuildDepthwiseConv2dOpOption) {
   LiteRtBuilderT builder;
 

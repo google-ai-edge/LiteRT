@@ -798,6 +798,41 @@ LiteRtStatus LiteRtBuilderBuildConv3dOpOption(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtBuilderBuildConv3dTransposeOpOption(
+    LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
+    int32_t* stride_h, int32_t* stride_d, int32_t* dilation_w_factor,
+    int32_t* dilation_h_factor, int32_t* dilation_d_factor,
+    uint32_t* fused_activation_function) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(padding, stride_w, stride_h, stride_d, dilation_w_factor,
+                       dilation_h_factor, dilation_d_factor,
+                       fused_activation_function)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!builder->IsOpAllocated(op)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (op->OpCode() != kLiteRtOpCodeTflConv3dTranspose) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  litert::internal::TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_Conv3DOptions;
+  auto options = std::make_unique<tflite::Conv3DOptionsT>();
+  options->padding = static_cast<tflite::Padding>(*padding);
+  options->stride_w = *stride_w;
+  options->stride_h = *stride_h;
+  options->stride_d = *stride_d;
+  options->dilation_w_factor = *dilation_w_factor;
+  options->dilation_h_factor = *dilation_h_factor;
+  options->dilation_d_factor = *dilation_d_factor;
+  options->fused_activation_function =
+      static_cast<tflite::ActivationFunctionType>(*fused_activation_function);
+  tfl_options.value = options.release();
+  litert::internal::SetTflOptions(*op, std::move(tfl_options));
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtBuilderBuildDepthwiseConv2dOpOption(
     LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
     int32_t* stride_h, int32_t* depth_multiplier,

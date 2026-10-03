@@ -28,7 +28,7 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
               .struct_size = sizeof(LiteRtCompilerContext),
               // LINT.IfChange(compiler_context_version)
               .major_version = 1,
-              .minor_version = 3,
+              .minor_version = 5,
               .reserved = 0,
               // LINT.ThenChange(./litert_compiler_context.h:compiler_context_table)
           },
@@ -289,6 +289,24 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
       .build_transpose_conv_op_option = LiteRtBuilderBuildTransposeConvOpOption,
       .build_unpack_op_option = LiteRtBuilderBuildUnpackOpOption,
       .get_split_v_num_splits_option = LiteRtGetSplitVNumSplitsOption,
+      .get_conv_3d_transpose_padding_option =
+          LiteRtGetConv3dTransposePaddingOption,
+      .get_conv_3d_transpose_stride_d_option =
+          LiteRtGetConv3dTransposeStrideDOption,
+      .get_conv_3d_transpose_stride_w_option =
+          LiteRtGetConv3dTransposeStrideWOption,
+      .get_conv_3d_transpose_stride_h_option =
+          LiteRtGetConv3dTransposeStrideHOption,
+      .get_conv_3d_transpose_fused_activation_option =
+          LiteRtGetConv3dTransposeFusedActivationOption,
+      .get_conv_3d_transpose_dilation_d_option =
+          LiteRtGetConv3dTransposeDilationDOption,
+      .get_conv_3d_transpose_dilation_w_option =
+          LiteRtGetConv3dTransposeDilationWOption,
+      .get_conv_3d_transpose_dilation_h_option =
+          LiteRtGetConv3dTransposeDilationHOption,
+      .build_conv_3d_transpose_op_option =
+          LiteRtBuilderBuildConv3dTransposeOpOption,
   };
   return &ctx;
 }
