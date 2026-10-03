@@ -41,9 +41,9 @@ cc_library(
         "//tflite/kernels:kernel_util",
         "//tflite/kernels:lstm_shared",
         "//tflite/kernels:op_macros",
+        "//tflite/kernels/internal:compatibility",
         "//tflite/kernels/internal:reference",
         "//tflite/kernels/internal:tensor_utils",
-        "@ruy//ruy/profiler:instrumentation",
     ],
 )
 

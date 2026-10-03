@@ -19,7 +19,6 @@ limitations under the License.
 
 #include <memory>
 
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/kernels/internal/optimized/cpu_check.h"
 #include "tflite/kernels/internal/optimized/depthwiseconv_3x3_filter_common.h"
 #include "tflite/kernels/internal/types.h"
