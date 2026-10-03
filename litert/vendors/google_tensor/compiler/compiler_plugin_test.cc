@@ -71,13 +71,13 @@ TEST(TestGoogleTensorPlugin, GetConfigInfo) {
                                                               &soc_model_name));
     soc_model_names.push_back(soc_model_name);
   }
-  EXPECT_THAT(soc_model_names,
-              UnorderedElementsAre("Tensor_G3", "Tensor_G4", "Tensor_G5",
-                                   "Tensor_G6",
-                                   // copybara:uncomment_begin(google-only)
-                                   // "Tensor_G7"
-                                   // copybara:uncomment_end
-                                   ));
+  EXPECT_THAT(
+      soc_model_names,
+      UnorderedElementsAre("Tensor_G3", "Tensor_G4", "Tensor_G5", "Tensor_G6",
+                           // copybara:uncomment_begin(google-only)
+                           // "Tensor_G7"
+                           // copybara:uncomment_end
+                           ));
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionSimpleMultiAdd) {
@@ -578,8 +578,6 @@ TEST(TestCallGoogleTensorPlugin, CompileWithExtraOptions) {
   };
 }
 
-
-
 TEST(TestCallGoogleTensorPlugin, PartitionWithInputValidator) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
@@ -607,7 +605,6 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithInputValidator) {
   // Add and Mul should be supported by default.
   EXPECT_GT(selected_ops.size(), 0);
 }
-
 
 }  // namespace
 }  // namespace litert

@@ -68,6 +68,7 @@ litert_dynamic_lib(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_c_types_printing",
         "//litert/cc/internal:litert_context_wrapper",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_opaque_options_wrapper",
