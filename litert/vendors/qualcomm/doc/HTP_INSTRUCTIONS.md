@@ -99,14 +99,14 @@ adb push ${LITERT}/bazel-bin/litert/vendors/qualcomm/dispatch/libLiteRtDispatch_
 adb push ${LITERT}/bazel-bin/litert/tools/run_model ${TEST_FOLDER}
 adb push ${SOURCE_MODEL_DIR}/${COMPILED_MODEL_PATH} ${TEST_FOLDER}
 
-adb shell "export LD_LIBRARY_PATH=${TEST_FOLDER} && export ADSP_LIBRARY_PATH=${TEST_FOLDER} && cd ${TEST_FOLDER} && ./run_model --graph=${TEST_FOLDER}/${COMPILED_MODEL_PATH} --dispatch_library_dir=${TEST_FOLDER}"
+adb shell "export LD_LIBRARY_PATH=${TEST_FOLDER} && export ADSP_LIBRARY_PATH=${TEST_FOLDER} && cd ${TEST_FOLDER} && ./run_model --graph=${TEST_FOLDER}/${COMPILED_MODEL_PATH} --accelerator npu  --dispatch_library_dir=${TEST_FOLDER}"
 ```
 
 You can use `--helpfull` to find all Qualcomm options and descriptions. For
 example, we execute a model on Android device with burst mode via HTP Backend:
 
 ```bash
-adb shell "export LD_LIBRARY_PATH=/tmp/test_folder/ && export ADSP_LIBRARY_PATH=/tmp/test_folder/ && cd /tmp/test_folder/ && ./run_model --graph=./model_compiled.tflite --dispatch_library_dir=/tmp/test_folder/ --iterations 50 --qualcomm_htp_performance_mode burst --qualcomm_log_level off"
+adb shell "export LD_LIBRARY_PATH=/tmp/test_folder/ && export ADSP_LIBRARY_PATH=/tmp/test_folder/ && cd /tmp/test_folder/ && ./run_model --graph=./model_compiled.tflite --accelerator npu --dispatch_library_dir=/tmp/test_folder/ --iterations 50 --qualcomm_htp_performance_mode burst --qualcomm_log_level off"
 ```
 
 ### Build with CMake
@@ -172,14 +172,14 @@ adb push ${LITERT}/litert/cmake_build_android_arm64/vendors/qualcomm/dispatch/li
 adb push ${LITERT}/litert/cmake_build_android_arm64/tools/run_model ${TEST_FOLDER}
 adb push ${SOURCE_MODEL_DIR}/${COMPILED_MODEL_PATH} ${TEST_FOLDER}
 
-adb shell "export LD_LIBRARY_PATH=${TEST_FOLDER} && export ADSP_LIBRARY_PATH=${TEST_FOLDER} && cd ${TEST_FOLDER} && ./run_model --graph=${TEST_FOLDER}/${COMPILED_MODEL_PATH} --dispatch_library_dir=${TEST_FOLDER}"
+adb shell "export LD_LIBRARY_PATH=${TEST_FOLDER} && export ADSP_LIBRARY_PATH=${TEST_FOLDER} && cd ${TEST_FOLDER} && ./run_model --graph=${TEST_FOLDER}/${COMPILED_MODEL_PATH} --accelerator npu  --dispatch_library_dir=${TEST_FOLDER}"
 ```
 
 You can use `--helpfull` to find all Qualcomm options and descriptions. For
 example, we execute a model on Android device with burst mode via HTP Backend:
 
 ```bash
-adb shell "export LD_LIBRARY_PATH=/tmp/test_folder/ && export ADSP_LIBRARY_PATH=/tmp/test_folder/ && cd /tmp/test_folder/ && ./run_model --graph=./model_compiled.tflite --dispatch_library_dir=/tmp/test_folder/ --iterations 50 --qualcomm_htp_performance_mode burst --qualcomm_log_level off"
+adb shell "export LD_LIBRARY_PATH=/tmp/test_folder/ && export ADSP_LIBRARY_PATH=/tmp/test_folder/ && cd /tmp/test_folder/ && ./run_model --graph=./model_compiled.tflite --accelerator npu --dispatch_library_dir=/tmp/test_folder/ --iterations 50 --qualcomm_htp_performance_mode burst --qualcomm_log_level off"
 ```
 
 #### Run on device (IoT device with oe-linux)
@@ -265,14 +265,14 @@ Execute the compiled model on IoT device with QNN HTP backend via adb tool, some
 error logs for IQ-8275 execution are expected.
 
 ```bash
-adb shell "export LD_LIBRARY_PATH=${TEST_FOLDER} && export ADSP_LIBRARY_PATH=${TEST_FOLDER} && cd ${TEST_FOLDER} && ./run_model --graph=${TEST_FOLDER}/${COMPILED_MODEL_PATH} --dispatch_library_dir=${TEST_FOLDER}"
+adb shell "export LD_LIBRARY_PATH=${TEST_FOLDER} && export ADSP_LIBRARY_PATH=${TEST_FOLDER} && cd ${TEST_FOLDER} && ./run_model --graph=${TEST_FOLDER}/${COMPILED_MODEL_PATH} --accelerator npu  --dispatch_library_dir=${TEST_FOLDER}"
 ```
 
 You can use `--helpfull` to find all Qualcomm options and descriptions. For
 example, we execute a model on IoT device with burst mode via HTP Backend:
 
 ```bash
-adb shell "export LD_LIBRARY_PATH=/tmp/test_folder/ && export ADSP_LIBRARY_PATH=/tmp/test_folder/ && cd /tmp/test_folder/ && ./run_model --graph=./model_compiled.tflite --dispatch_library_dir=/tmp/test_folder/ --iterations 50 --qualcomm_htp_performance_mode burst --qualcomm_log_level off"
+adb shell "export LD_LIBRARY_PATH=/tmp/test_folder/ && export ADSP_LIBRARY_PATH=/tmp/test_folder/ && cd /tmp/test_folder/ && ./run_model --graph=./model_compiled.tflite --accelerator npu --dispatch_library_dir=/tmp/test_folder/ --iterations 50 --qualcomm_htp_performance_mode burst --qualcomm_log_level off"
 ```
 
 --------------------------------------------------------------------------------
