@@ -236,7 +236,11 @@ def get_tensor_name(tensor: qtyping.TensorT) -> str:
   Returns:
     tensor_name: name of the buffer
   """
-  return tensor.name.decode("utf-8")
+  if tensor.name is None:
+    return ""
+  if isinstance(tensor.name, str):
+    return tensor.name
+  return tensor.name.decode("utf-8", errors="replace")
 
 
 def get_tensor_data(
@@ -251,16 +255,37 @@ def get_tensor_data(
   Returns:
     tensor_data: data inside the tensor
   """
+  if (
+      tensor.buffer is None
+      or tensor.buffer < 0
+      or tensor.buffer >= len(buffers)
+  ):
+    return None
   tensor_buffer = buffers[tensor.buffer]
   buffer_data = tensor_buffer.data
   if buffer_data is None:
     return None
-  data = np.frombuffer(
-      buffer_data, dtype=TENSOR_CODE_TO_TYPE[tensor.type].lower()
-  )
-  if tensor.shape is not None:
-    data = np.reshape(data, tensor.shape)
-  return data
+  if tensor.buffer == 0 and len(buffer_data) == 0:
+    return None
+  try:
+    data = np.frombuffer(
+        buffer_data, dtype=TENSOR_CODE_TO_TYPE[tensor.type].lower()
+    )
+    if tensor.shape is not None:
+      data = np.reshape(data, tensor.shape)
+    return data
+  except (ValueError, TypeError):
+    return None
+
+
+def is_quantized_tensor(tensor: qtyping.TensorT) -> bool:
+  """Checks if a tensor has valid quantization parameters."""
+  if tensor.quantization is None or tensor.quantization.scale is None:
+    return False
+  return len(tensor.quantization.scale) > 0
+
+
+_is_quantized_tensor = is_quantized_tensor
 
 
 def has_same_quantization(
@@ -278,17 +303,22 @@ def has_same_quantization(
 
   def to_tuple(val):
     if val is None:
-      val = []
+      return ()
     return tuple(val)
 
-  same_type = tensor1.type == tensor2.type
+  t1_quantized = _is_quantized_tensor(tensor1)
+  t2_quantized = _is_quantized_tensor(tensor2)
 
   # Return True if both tensors are not quantized.
-  if tensor1.quantization is None and tensor2.quantization is None:
-    return True
-  if tensor1.quantization.scale is None and tensor2.quantization.scale is None:
+  if not t1_quantized and not t2_quantized:
     return True
 
+  # If one tensor is quantized and the other is not, they don't match.
+  if t1_quantized != t2_quantized:
+    return False
+
+  # Both tensors are quantized; compare type and quantization parameters.
+  same_type = tensor1.type == tensor2.type
   same_scale = to_tuple(tensor1.quantization.scale) == to_tuple(
       tensor2.quantization.scale
   )
@@ -308,9 +338,7 @@ def is_float_model(flatbuffer_model: qtyping.ModelT) -> bool:
   """Checks that the model is float and not already quantized."""
   for subgraph in flatbuffer_model.subgraphs:
     for tensor in subgraph.tensors:
-      if tensor.quantization is None:
-        continue
-      if tensor.quantization.scale is not None:
+      if _is_quantized_tensor(tensor):
         return False
   return True
 

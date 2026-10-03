@@ -141,6 +141,18 @@ class FlatbufferUtilsTest(absltest.TestCase):
     weight_tensor_name = tfl_flatbuffer_utils.get_tensor_name(weight_tensor)
     self.assertEqual(weight_tensor_name, "sequential/conv2d/Conv2D")
 
+    # Check tensor with string name
+    dummy_tensor = qtyping.TensorT()
+    dummy_tensor.name = "string_tensor_name"
+    self.assertEqual(
+        tfl_flatbuffer_utils.get_tensor_name(dummy_tensor),
+        "string_tensor_name",
+    )
+
+    # Check tensor with None name
+    dummy_tensor.name = None
+    self.assertEqual(tfl_flatbuffer_utils.get_tensor_name(dummy_tensor), "")
+
   # TODO: b/325123193 - test tensor with data outside of flatbuffer.
   def test_get_tensor_data(self):
     subgraph0 = self._test_model.subgraphs[0]
@@ -163,6 +175,38 @@ class FlatbufferUtilsTest(absltest.TestCase):
     )
     self.assertIsNone(input_tensor_data)
 
+    # Check tensor with empty bytes buffer
+    empty_tensor = qtyping.TensorT()
+    empty_tensor.buffer = 0
+    empty_tensor.shape = [1, 10]
+    empty_tensor.type = qtyping.TensorType.FLOAT32
+    empty_buffer = qtyping.BufferT()
+    empty_buffer.data = b""
+    self.assertIsNone(
+        tfl_flatbuffer_utils.get_tensor_data(empty_tensor, [empty_buffer])
+    )
+
+    # Check tensor with invalid buffer index
+    empty_tensor.buffer = 999
+    self.assertIsNone(
+        tfl_flatbuffer_utils.get_tensor_data(empty_tensor, [empty_buffer])
+    )
+
+  def test_is_quantized_tensor(self):
+    tensor = qtyping.TensorT()
+    tensor.quantization = None
+    self.assertFalse(tfl_flatbuffer_utils.is_quantized_tensor(tensor))
+
+    tensor.quantization = qtyping.QuantizationParametersT()
+    tensor.quantization.scale = None
+    self.assertFalse(tfl_flatbuffer_utils.is_quantized_tensor(tensor))
+
+    tensor.quantization.scale = []
+    self.assertFalse(tfl_flatbuffer_utils.is_quantized_tensor(tensor))
+
+    tensor.quantization.scale = [0.1]
+    self.assertTrue(tfl_flatbuffer_utils.is_quantized_tensor(tensor))
+
   def test_has_same_quantization_succeeds(self):
     tensor0, tensor1 = self._test_model.subgraphs[0].tensors[:2]
     tensor0.quantization.scale = np.array([1, 2, 3]).astype(np.float32)
@@ -173,9 +217,54 @@ class FlatbufferUtilsTest(absltest.TestCase):
         tfl_flatbuffer_utils.has_same_quantization(tensor0, tensor1)
     )
 
-  def test_has_same_quantization_succeds_not_quantized(self):
+  def test_has_same_quantization_succeeds_not_quantized(self):
     tensor0, tensor1 = self._test_model.subgraphs[0].tensors[:2]
     tensor0.type = 10
+    self.assertTrue(
+        tfl_flatbuffer_utils.has_same_quantization(tensor0, tensor1)
+    )
+
+  # Maintain backward-compatible test name alias for previous spelling typo
+  test_has_same_quantization_succeds_not_quantized = (
+      test_has_same_quantization_succeeds_not_quantized
+  )
+
+  def test_has_same_quantization_asymmetric_none(self):
+    tensor0, tensor1 = self._test_model.subgraphs[0].tensors[:2]
+    tensor0.quantization = None
+    tensor1.quantization = qtyping.QuantizationParametersT()
+    tensor1.quantization.scale = None
+    self.assertTrue(
+        tfl_flatbuffer_utils.has_same_quantization(tensor0, tensor1)
+    )
+    self.assertTrue(
+        tfl_flatbuffer_utils.has_same_quantization(tensor1, tensor0)
+    )
+
+    tensor1.quantization = None
+    self.assertTrue(
+        tfl_flatbuffer_utils.has_same_quantization(tensor0, tensor1)
+    )
+
+  def test_has_same_quantization_fails_one_quantized_one_none(self):
+    tensor0, tensor1 = self._test_model.subgraphs[0].tensors[:2]
+    tensor0.quantization = None
+    tensor1.quantization = qtyping.QuantizationParametersT()
+    tensor1.quantization.scale = np.array([1, 2, 3]).astype(np.float32)
+    tensor1.quantization.zeroPoint = np.array([3, 2, 1]).astype(np.int32)
+    self.assertFalse(
+        tfl_flatbuffer_utils.has_same_quantization(tensor0, tensor1)
+    )
+    self.assertFalse(
+        tfl_flatbuffer_utils.has_same_quantization(tensor1, tensor0)
+    )
+
+  def test_has_same_quantization_empty_scale_list(self):
+    tensor0, tensor1 = self._test_model.subgraphs[0].tensors[:2]
+    tensor0.quantization = qtyping.QuantizationParametersT()
+    tensor0.quantization.scale = []
+    tensor1.quantization = qtyping.QuantizationParametersT()
+    tensor1.quantization.scale = None
     self.assertTrue(
         tfl_flatbuffer_utils.has_same_quantization(tensor0, tensor1)
     )
@@ -202,6 +291,14 @@ class FlatbufferUtilsTest(absltest.TestCase):
         pathlib.Path(TEST_DATA_PREFIX_PATH) / "conv_fc_mnist.tflite"
     )
     model = tfl_flatbuffer_utils.read_model(test_model_path)
+    self.assertTrue(tfl_flatbuffer_utils.is_float_model(model))
+
+  def test_check_is_float_model_true_when_scale_is_empty(self):
+    test_model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / "conv_fc_mnist.tflite"
+    )
+    model = tfl_flatbuffer_utils.read_model(test_model_path)
+    model.subgraphs[0].tensors[0].quantization.scale = []
     self.assertTrue(tfl_flatbuffer_utils.is_float_model(model))
 
   def test_check_is_float_model_false_when_model_is_quantized(self):
