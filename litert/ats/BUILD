@@ -1424,6 +1424,7 @@ make_download_model_provider(
 #     ":gpu_ats_remote",
 #     ":cpu_ats_remote",
 #     ":ynnpack_cpu_ats_remote",
+#     ":builtin_cpu_ats_remote",
 # ]
 #
 # guitar_workflow_test(
@@ -1449,6 +1450,7 @@ make_download_model_provider(
 #     ":gpu_ats_remote",
 #     ":cpu_ats_remote",
 #     ":ynnpack_cpu_ats_remote",
+#     ":builtin_cpu_ats_remote",
 # ]
 #
 # guitar_workflow_test(
@@ -1474,6 +1476,7 @@ make_download_model_provider(
 #     ":gpu_ats_remote",
 #     ":cpu_ats_remote",
 #     ":ynnpack_cpu_ats_remote",
+#     ":builtin_cpu_ats_remote",
 # ]
 #
 # guitar_workflow_test(
