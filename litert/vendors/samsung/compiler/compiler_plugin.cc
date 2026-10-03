@@ -191,7 +191,7 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
   }
   *call_info = compiled_result->per_op_data.at(call_idx).data();
   *call_info_size = compiled_result->per_op_data.at(call_idx).size();
-  *byte_code_idx = 0;
+  *byte_code_idx = call_idx;
   return kLiteRtStatusOk;
 }
 
