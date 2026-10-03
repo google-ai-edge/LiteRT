@@ -426,11 +426,14 @@ Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
              transformations_.size());
   for (auto& subgraph : model.Subgraphs()) {
     bool subgraph_modified = true;
-    int iterations = 0;
+    size_t iterations = 0;
     while (subgraph_modified) {
       subgraph_modified = false;
-      LITERT_LOG(LITERT_DEBUG, "Iteration %d", iterations);
+      LITERT_LOG(LITERT_DEBUG, "Iteration %zu", iterations);
       if (iterations++ >= max_transformation_iterations_) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Hit max transformation iterations limit (%zu)",
+                   max_transformation_iterations_);
         break;
       }
       std::queue<LiteRtOp> worklist;
@@ -732,9 +735,9 @@ Expected<PartitionResult> PartitionModel(
       max_partitions = compiler_options->max_partitions;
     }
 
-    LITERT_RETURN_IF_ERROR(PartitionSubgraph(
-        std::move(*selected_ops), *subgraph, dispatch_ops, model, strategy,
-        max_partitions));
+    LITERT_RETURN_IF_ERROR(PartitionSubgraph(std::move(*selected_ops),
+                                             *subgraph, dispatch_ops, model,
+                                             strategy, max_partitions));
     num_partitions = dispatch_ops.size() - num_partitions;
     LITERT_LOG(LITERT_INFO,
                "Partitioned subgraph<%d>, selected %lu "
