@@ -239,6 +239,8 @@ LiteRtStatus CreateDelegate(
     LrtGetGpuOptionsGpuPriority(&gpu_priority, gpu_options_payload);
     if (gpu_priority == kLiteRtGpuPriorityLow) {
       gpu_delegate_options->gpu_priority = kGpuLowPriority;
+    } else if (gpu_priority == kLiteRtGpuPriorityHigh) {
+      gpu_delegate_options->gpu_priority = kGpuHighPriority;
     } else {
       gpu_delegate_options->gpu_priority = kGpuNormalPriority;
     }
