@@ -20,35 +20,38 @@ _ANDROID_SDK_API_LEVEL = "ANDROID_SDK_API_LEVEL"
 _ANDROID_BUILD_TOOLS_VERSION = "ANDROID_BUILD_TOOLS_VERSION"
 
 _ANDROID_SDK_REPO_TEMPLATE = """
-    native.android_sdk_repository(
-        name="androidsdk",
-        path="%s",
-        api_level=%s,
-        build_tools_version="%s",
-    )
+    if "androidsdk" not in native.existing_rules():
+        native.android_sdk_repository(
+            name="androidsdk",
+            path="%s",
+            api_level=%s,
+            build_tools_version="%s",
+        )
 """
 
 _ANDROID_NDK_REPO_TEMPLATE_INTERNAL = """
-    native.android_ndk_repository(
-        name="androidndk",
-        path="%s",
-        api_level=%s,
-    )
+    if "androidndk" not in native.existing_rules():
+        native.android_ndk_repository(
+            name="androidndk",
+            path="%s",
+            api_level=%s,
+        )
 """
 
 _ANDROID_NDK_REPO_TEMPLATE_STARLARK = """
-    android_ndk_repository(
-        name="androidndk",
-        path="%s",
-        api_level=%s,
-    )
+    if "androidndk" not in native.existing_rules():
+        android_ndk_repository(
+            name="androidndk",
+            path="%s",
+            api_level=%s,
+        )
 
-    # Bind android/crosstool to support legacy select()
-    # https://github.com/bazelbuild/rules_android_ndk/issues/31#issuecomment-1396182185
-    native.bind(
-        name = "android/crosstool",
-        actual = "@androidndk//:toolchain",
-    )
+        # Bind android/crosstool to support legacy select()
+        # https://github.com/bazelbuild/rules_android_ndk/issues/31#issuecomment-1396182185
+        native.bind(
+            name = "android/crosstool",
+            actual = "@androidndk//:toolchain",
+        )
 """
 
 _ANDROID_NDK_VERION_FOR_STARLARK_RULES = 25
