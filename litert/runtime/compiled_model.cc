@@ -33,7 +33,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/options/litert_cpu_options.h"
-#include "tflite/c/c_api.h"
+#include "tflite/c/c_api_opaque.h"
 #include "tflite/mutable_op_resolver.h"
 
 #if !defined(LITERT_WINDOWS_OS)
@@ -95,9 +95,7 @@
 #include "litert/runtime/custom_op_dispatcher.h"
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
-#if !defined(LITERT_DISABLE_CPU)
 #include "litert/runtime/litert_cpu_options.h"
-#endif  // !defined(LITERT_DISABLE_CPU)
 #include "litert/runtime/litert_runtime_options.h"
 #include "litert/runtime/magic_number_utils.h"
 #include "litert/runtime/metrics.h"
@@ -284,7 +282,6 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   int num_threads = 1;
   [[maybe_unused]] bool use_builtin_or_reference_cpu_backend = false;
   [[maybe_unused]] bool use_reference_cpu_kernels = false;
-#if !defined(LITERT_DISABLE_CPU)
   LiteRtCpuOptionsT cpu_options;
   if (jit_compilation_options &&
       (hardware_accelerators & kLiteRtHwAcceleratorCpu)) {
@@ -327,7 +324,6 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       }
     }
   }
-#endif  // !defined(LITERT_DISABLE_CPU)
 
 #ifdef LITERT_NO_BUILTIN_OPS
   if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&

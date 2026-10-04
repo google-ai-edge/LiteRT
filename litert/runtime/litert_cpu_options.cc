@@ -22,6 +22,16 @@
 #include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/litert_toml_parser.h"
+#include "tflite/delegates/xnnpack/xnnpack_delegate.h"
+
+LiteRtCpuOptionsT::LiteRtCpuOptionsT() : xnn{} {
+#if defined(LITERT_DISABLE_XNNPACK)
+  // Parsing CPU options must not require linking the XNNPACK delegate.
+  xnn.num_threads = 1;
+#else
+  xnn = TfLiteXNNPackDelegateOptionsDefault();
+#endif
+}
 
 namespace litert {
 namespace internal {
