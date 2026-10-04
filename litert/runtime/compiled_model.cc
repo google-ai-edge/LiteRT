@@ -33,7 +33,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/options/litert_cpu_options.h"
-#include "tflite/c/c_api.h"
+#include "tflite/c/c_api_opaque.h"
 #include "tflite/mutable_op_resolver.h"
 
 #if !defined(LITERT_WINDOWS_OS)
@@ -95,12 +95,11 @@
 #include "litert/runtime/custom_op_dispatcher.h"
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
-#if !defined(LITERT_DISABLE_CPU)
 #include "litert/runtime/litert_cpu_options.h"
-#endif  // !defined(LITERT_DISABLE_CPU)
 #include "litert/runtime/litert_runtime_options.h"
 #include "litert/runtime/magic_number_utils.h"
 #include "litert/runtime/metrics.h"
+#include "litert/runtime/op_resolver.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/runtime/tensor_identifier.h"
@@ -112,10 +111,6 @@
 #include "tflite/core/interpreter_builder.h"
 #include "tflite/interpreter.h"
 #include "tflite/interpreter_options.h"
-#if !defined(LITERT_NO_BUILTIN_OPS)
-#include "tflite/kernels/register.h"
-#include "tflite/kernels/register_ref.h"
-#endif  // LITERT_NO_BUILTIN_OPS
 
 #if defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/runtime/stub_op_resolver.h"
@@ -284,7 +279,6 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   int num_threads = 1;
   [[maybe_unused]] bool use_builtin_or_reference_cpu_backend = false;
   [[maybe_unused]] bool use_reference_cpu_kernels = false;
-#if !defined(LITERT_DISABLE_CPU)
   LiteRtCpuOptionsT cpu_options;
   if (jit_compilation_options &&
       (hardware_accelerators & kLiteRtHwAcceleratorCpu)) {
@@ -327,7 +321,6 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       }
     }
   }
-#endif  // !defined(LITERT_DISABLE_CPU)
 
 #ifdef LITERT_NO_BUILTIN_OPS
   if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
@@ -343,15 +336,11 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   litert::internal::StubOpResolver resolver_storage;
   tflite::MutableOpResolver* resolver = &resolver_storage;
 #else
-  std::unique_ptr<tflite::MutableOpResolver> resolver_storage;
-  if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-      use_reference_cpu_kernels) {
-    resolver_storage =
-        std::make_unique<tflite::ops::builtin::BuiltinRefOpResolver>();
-  } else {
-    resolver_storage = std::make_unique<
-        tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates>();
-  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto resolver_storage,
+      litert::internal::CreateOpResolver(
+          (hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
+          use_reference_cpu_kernels));
   tflite::MutableOpResolver* resolver = resolver_storage.get();
 #endif  // LITERT_NO_BUILTIN_OPS
 

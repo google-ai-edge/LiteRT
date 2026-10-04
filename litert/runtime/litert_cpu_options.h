@@ -22,7 +22,7 @@
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"
 
 // This is essentially the same struct as delegates/ynnpack/ynnpack_delegate.h
-// We set the default value to false to avoid unitialized memory access.
+// We set the default value to false to avoid uninitialized memory access.
 struct LiteRtYnnpackOptionsT {
   // The number of threads to use for parallel execution.
   int num_threads = 1;
@@ -40,9 +40,11 @@ struct LiteRtYnnpackOptionsT {
 // pass CPU options to the interpreter and will be used in the framework
 // code.
 struct LiteRtCpuOptionsT {
+  LiteRtCpuOptionsT();
+
   LiteRtCpuKernelMode kernel_mode = kLiteRtCpuKernelModeDelegate;
   bool enable_ynnpack = false;
-  TfLiteXNNPackDelegateOptions xnn = TfLiteXNNPackDelegateOptionsDefault();
+  TfLiteXNNPackDelegateOptions xnn;
   LiteRtYnnpackOptionsT ynn;
   // We need to keep the string alive because `TfLiteXNNPackDelegateOptions`
   // expects a `const char*` for `weight_cache_file_path` and does not manage

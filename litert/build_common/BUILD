@@ -74,6 +74,14 @@ string_flag(
     visibility = ["//visibility:public"],
 )
 
+# Replace the default all-ops resolver at link time for a fixed set of models.
+# See litert_selected_op_resolver() in selective_ops.bzl.
+label_flag(
+    name = "op_resolver",
+    build_setting_default = "//litert/runtime:default_op_resolver",
+    visibility = ["//visibility:public"],
+)
+
 config_setting(
     name = "cpu_backend_builtin",
     flag_values = {":cpu_backend": "builtin"},
@@ -199,6 +207,15 @@ selects.config_setting_group(
         "//litert:android",
         ":build_include_gpu_enabled",
     ],
+)
+
+selects.config_setting_group(
+    name = "emscripten_gpu_enabled",
+    match_all = [
+        "//litert:emscripten",
+        ":build_include_gpu_enabled",
+    ],
+    visibility = ["//visibility:public"],
 )
 
 selects.config_setting_group(

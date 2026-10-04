@@ -77,9 +77,9 @@ void WeightAccess::SetDeviceBuffer(LiteRtTensorBufferPtr buffer) {
 
 namespace {
 
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__) && !defined(LITERT_DISABLE_GPU)
 WebWeightUploadCallback g_web_weight_upload_callback = nullptr;
-#endif  // __EMSCRIPTEN__
+#endif  // defined(__EMSCRIPTEN__) && !defined(LITERT_DISABLE_GPU)
 
 // Information about a single external weight tensor.
 struct LiteRtWeightInfo : public WeightInfo {
@@ -875,7 +875,7 @@ class LiteRtWeightLoader : public WeightLoader {
     return &(*it->second.access);
   }
 
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__) && !defined(LITERT_DISABLE_GPU)
   absl::Status UploadWeightsOnWeb(const wgpu::Queue& queue,
                                   const absl::flat_hash_map<int, wgpu::Buffer>&
                                       tfl_id_to_wgpu_buffer) override {
@@ -900,7 +900,7 @@ class LiteRtWeightLoader : public WeightLoader {
     }
     return g_web_weight_upload_callback(queue, requests);
   }
-#endif  // __EMSCRIPTEN__
+#endif  // defined(__EMSCRIPTEN__) && !defined(LITERT_DISABLE_GPU)
 
   absl::Status DiscardExternalWeightByBuffer(
       uint32_t external_buffer_id) override {
@@ -972,11 +972,11 @@ class LiteRtWeightLoader : public WeightLoader {
 
 }  // namespace
 
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__) && !defined(LITERT_DISABLE_GPU)
 void RegisterWebWeightUploadCallback(WebWeightUploadCallback callback) {
   g_web_weight_upload_callback = callback;
 }
-#endif  // __EMSCRIPTEN__
+#endif  // defined(__EMSCRIPTEN__) && !defined(LITERT_DISABLE_GPU)
 
 std::unique_ptr<WeightLoader> CreateLiteRtWeightLoader(
     LiteRtRuntimeContext* runtime_context, const tflite::Model* flatbuffer,
