@@ -18,6 +18,8 @@ limitations under the License.
 #include <string>
 #include <utility>
 
+#include "absl/status/status.h"
+#include "third_party/gloop/util/status/status_macros.h"
 #include "tflite/delegates/gpu/common/task/work_group_picking.h"
 
 namespace tflite {
