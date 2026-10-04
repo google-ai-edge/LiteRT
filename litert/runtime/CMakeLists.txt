@@ -30,6 +30,7 @@ set(LITERT_RUNTIME_SOURCES
     compiled_model.cc
     custom_buffer.cc
     custom_op_dispatcher.cc
+    default_op_resolver.cc
     dispatch/dispatch_delegate.cc
     dispatch/dispatch_delegate_kernel.cc
     dispatch/dispatch_kernel_facade.cc

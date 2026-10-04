@@ -1,0 +1,46 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LiteRT CPU WASM comparison</title>
+<style>
+  body { font: 16px system-ui; max-width: 72rem; margin: 2rem auto; padding: 1rem; }
+  button { font: inherit; padding: .6rem 1rem; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+<h1>LiteRT CPU WASM comparison</h1>
+<p>Compares CompiledModel with the TFLite interpreter using the same model and
+  selected operators. Checks all probabilities and embeddings on 20 prompts,
+  then measures 100 warm calls. Timings exclude downloads.</p>
+<p>This test runs locally on the main thread and may briefly freeze this page.
+  It sends no predictions or prompts to a server.</p>
+<button id="run">Run comparison</button>
+<pre id="result">Ready.</pre>
+<script src="interpreter.js"></script>
+<script>const interpreterFactory = createByteModelModule;</script>
+<script src="compiled_model.js"></script>
+<script type="module">
+  import {benchmark} from './byte_model_benchmark.mjs';
+  const button = document.querySelector('#run');
+  const output = document.querySelector('#result');
+  button.onclick = async () => {
+    button.disabled = true;
+    output.textContent = 'Downloading artifacts, then running comparison…';
+    try {
+      const binaries = await Promise.all(
+          ['interpreter.wasm', 'compiled_model.wasm', 'model.tflite'].map(
+              async path => {
+                const response = await fetch(path);
+                if (!response.ok) throw new Error(`${path}: ${response.status}`);
+                return new Uint8Array(await response.arrayBuffer());
+              }));
+      const results = await benchmark(interpreterFactory, binaries[0],
+          createByteModelModule, binaries[1], binaries[2]);
+      output.textContent = JSON.stringify({userAgent: navigator.userAgent,
+        crossOriginIsolated, ...results}, null, 2);
+    } catch (error) {
+      output.textContent = `FAILED: ${error.stack || error}`;
+    } finally {
+      button.disabled = false;
+    }
+  };
+</script>

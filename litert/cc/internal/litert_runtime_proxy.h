@@ -38,19 +38,25 @@
 #include "litert/c/litert_webgpu_types.h"
 #include "litert/cc/litert_api_types.h"
 
+#ifdef LITERT_CC_STATIC_DISPATCH_UNSUPPORTED
+#error "cc_static_dispatch requires statically linking the LiteRT runtime."
+#endif
+
+#ifdef LITERT_CC_STATIC_DISPATCH
+#include "litert/c/internal/litert_runtime_api_table.h"
+#endif
+
 namespace litert {
 class Environment;
 class Options;
 
 namespace internal {
 
-#define LITERT_PROXY_METHOD_STATUS(method, ...)  \
-  LITERT_INTERNAL_CHECK(runtime_c_api_->method); \
-  return runtime_c_api_->method(__VA_ARGS__);
+#define LITERT_PROXY_METHOD_STATUS(method, ...) \
+  return GetFunction<&LiteRtRuntimeCApiStruct::method>()(__VA_ARGS__);
 
-#define LITERT_PROXY_METHOD_VOID(method, ...)    \
-  LITERT_INTERNAL_CHECK(runtime_c_api_->method); \
-  runtime_c_api_->method(__VA_ARGS__);
+#define LITERT_PROXY_METHOD_VOID(method, ...) \
+  GetFunction<&LiteRtRuntimeCApiStruct::method>()(__VA_ARGS__);
 
 // A proxy class that provides a C++ interface to the LiteRT Runtime C Api.
 //
@@ -66,10 +72,32 @@ class RuntimeProxy {
   ///
   /// If the system runtime handle is not provided, the builtin runtime will be
   /// used.
+#ifdef LITERT_CC_STATIC_DISPATCH
+  explicit RuntimeProxy(const LiteRtRuntimeCApiStruct* runtime_c_api)
+      : runtime_c_api_(runtime_c_api) {}
+#else
   explicit RuntimeProxy(const LiteRtRuntimeCApiStruct* runtime_c_api)
       : runtime_c_api_(LITERT_INTERNAL_DIE_IF_NULL(
             runtime_c_api == nullptr ? GetLiteRtRuntimeBuiltin()
-                                     : runtime_c_api)) {};
+                                     : runtime_c_api)) {}
+#endif
+
+  // Materialize the full table only when a caller needs C API interoperability.
+  const LiteRtRuntimeCApiStruct* GetCApi() const {
+    return runtime_c_api_ ? runtime_c_api_ : GetLiteRtRuntimeBuiltin();
+  }
+
+  template <auto Member>
+  auto GetFunction() const {
+#ifdef LITERT_CC_STATIC_DISPATCH
+    auto function = runtime_c_api_ ? runtime_c_api_->*Member
+                                   : kLiteRtRuntimeBuiltinStatic.*Member;
+#else
+    auto function = runtime_c_api_->*Member;
+#endif
+    LITERT_INTERNAL_CHECK(function);
+    return function;
+  }
 
   ~RuntimeProxy() = default;
 
@@ -671,8 +699,8 @@ class RuntimeProxy {
                                         const char* format, Args&&... args) {
     // We cannot forward variadic arguments, so this function cannot use the
     // macro.
-    LITERT_INTERNAL_CHECK(runtime_c_api_->litert_compiled_model_report_error);
-    return runtime_c_api_->litert_compiled_model_report_error(
+    return GetFunction<
+        &LiteRtRuntimeCApiStruct::litert_compiled_model_report_error>()(
         compiled_model, format, std::forward<Args>(args)...);
   }
 

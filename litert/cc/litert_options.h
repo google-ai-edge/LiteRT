@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 
+#include "litert/c/internal/litert_runtime_c_api.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
 #include "litert/cc/internal/litert_runtime_proxy.h"
@@ -440,8 +441,9 @@ class Options {
     }
 
     return internal::LiteRtOptionsPtr(
-        litert_options, internal::LiteRtDestroyOptionsDeleter{
-                            runtime->runtime_c_api_->litert_destroy_options});
+        litert_options,
+        internal::LiteRtDestroyOptionsDeleter{runtime->GetFunction<
+            &LiteRtRuntimeCApiStruct::litert_destroy_options>()});
   }
 
   std::optional<LiteRtHwAcceleratorSet> lite_rt_hw_accelerator_set_;

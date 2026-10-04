@@ -11,6 +11,16 @@ workspace(name = "litert")
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+# 4.0.6 is the last emsdk release supporting WORKSPACE-based consumers.
+http_archive(
+    name = "emsdk",
+    patch_args = ["-p1"],
+    patches = ["//third_party/emsdk:compat.patch"],
+    sha256 = "2d3292d508b4f5477f490b080b38a34aaefed43e85258a1de72cb8dde3f8f3af",
+    strip_prefix = "emsdk-4.0.6/bazel",
+    urls = ["https://github.com/emscripten-core/emsdk/archive/refs/tags/4.0.6.tar.gz"],
+)
+
 # By default, `@org_tensorflow` and `@xla` provide only the Starlark macros and
 # the few header-only targets that the exported tflite/ BUILD files use. They
 # do not contain the TensorFlow or XLA sources.
@@ -546,3 +556,16 @@ maybe(
     android_sdk_repository,
     name = "androidsdk",
 )
+
+# Emscripten is only downloaded when a WASM target is built.
+load("@emsdk//:deps.bzl", emsdk_deps = "deps")
+
+emsdk_deps()
+
+load("@emsdk//:emscripten_deps.bzl", emsdk_emscripten_deps = "emscripten_deps")
+
+emsdk_emscripten_deps(emscripten_version = "4.0.6")
+
+load("@emsdk//:toolchains.bzl", "register_emscripten_toolchains")
+
+register_emscripten_toolchains()
