@@ -61,6 +61,58 @@ TYPED_TEST_P(NnpackRunnerTest, SetInputRejectsNonExternalTensors) {
               absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
+TYPED_TEST_P(NnpackRunnerTest, SetNumThreadsBeforeRunUsesThreads) {
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+
+  TensorType a({.name = "a",
+                .type = Type::kFP32,
+                .shape = {8},
+                .buffer = std::vector<float>{1, 2, 3, 4, 5, 6, 7, 8}});
+  TensorType b({.name = "b",
+                .type = Type::kFP32,
+                .shape = {8},
+                .buffer = std::vector<float>{2, 4, 6, 8, 10, 12, 14, 16}});
+  TensorType c = Add(a, b);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({c}));
+  ASSERT_THAT(runner.SetNumThreads(4), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+  EXPECT_THAT(runner.template ReadOutputAs<float>(c),
+              absl_testing::IsOkAndHolds(testing::Pointwise(
+                  testing::FloatEq(), {3, 6, 9, 12, 15, 18, 21, 24})));
+}
+
+TYPED_TEST_P(NnpackRunnerTest, SetNumThreadsFailsAfterPrepare) {
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+
+  TensorType a({.name = "a",
+                .type = Type::kFP32,
+                .shape = {2},
+                .buffer = std::vector<float>{1.f, 2.f}});
+  TensorType b({.name = "b",
+                .type = Type::kFP32,
+                .shape = {2},
+                .buffer = std::vector<float>{3.f, 4.f}});
+  TensorType c = Add(a, b);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({c}));
+  ASSERT_THAT(runner.SetNumThreads(2), IsOk());
+  ASSERT_THAT(runner.PrepareRuntime(), IsOk());
+
+  // The runtime now uses the thread pool it was created with, so it can't be
+  // replaced anymore.
+  EXPECT_THAT(runner.SetNumThreads(4),
+              absl_testing::StatusIs(absl::StatusCode::kFailedPrecondition));
+
+  // The runtime is still usable.
+  ASSERT_THAT(runner.Run(), IsOk());
+  EXPECT_THAT(runner.template ReadOutputAs<float>(c),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {4, 6})));
+}
+
 TYPED_TEST_P(NnpackRunnerTest, ComputesConstantAdd) {
   using TensorType = typename TestFixture::TensorType;
   using Runner = typename TestFixture::Runner;
@@ -1410,7 +1462,8 @@ TYPED_TEST_P(NnpackRunnerTest, FailsWhenNonOwningViewTooSmall) {
 
 REGISTER_TYPED_TEST_SUITE_P(
     NnpackRunnerTest, SetInputRejectsNonExternalTensors, ComputesConstantAdd,
-    ComputesRuntimeInputAdd, MoveConstructorTransfersRuntime,
+    ComputesRuntimeInputAdd, SetNumThreadsBeforeRunUsesThreads,
+    SetNumThreadsFailsAfterPrepare, MoveConstructorTransfersRuntime,
     MoveAssignmentTransfersRuntime, ConstantsAreNotBoundAsExternals,
     ComputesConstantMul, ComputesConstantSub, ComputesConstantDiv,
     ComputesMaximumAndMinimum, ComputesPow, ComputesAbs, ComputesSquare,

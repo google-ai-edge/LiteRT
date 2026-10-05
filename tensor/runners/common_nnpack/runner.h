@@ -50,7 +50,20 @@ class NnpackRunner {
   NnpackRunner(const NnpackRunner&) = delete;
   NnpackRunner& operator=(const NnpackRunner&) = delete;
 
-  virtual void SetNumThreads(size_t num_threads) { num_threads_ = num_threads; }
+  // Sets the number of threads used to run the graph.
+  //
+  // This must be called before the runtime is prepared, i.e. before
+  // `PrepareRuntime()` or the first `Run()`. Returns a
+  // `FailedPreconditionError` otherwise, because the runtime holds on to the
+  // thread pool it was created with.
+  virtual absl::Status SetNumThreads(size_t num_threads) {
+    if (runtime_prepared_) {
+      return absl::FailedPreconditionError(
+          "SetNumThreads must be called before the runtime is prepared.");
+    }
+    num_threads_ = num_threads;
+    return absl::OkStatus();
+  }
 
   // Sets the input data corresponding to `tensor` from `external_tensor`.
   //

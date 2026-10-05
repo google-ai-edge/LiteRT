@@ -113,12 +113,12 @@ absl::StatusOr<CompiledRunners<XnnpackRunner>> CompileRunners(
   LRT_TENSOR_ASSIGN_OR_RETURN(
       XnnpackRunner runner,
       XnnpackRunner::Create(graphs.prefill_outputs.GetAllHandles()));
-  runner.SetNumThreads(num_threads);
+  LRT_TENSOR_RETURN_IF_ERROR(runner.SetNumThreads(num_threads));
 
   LRT_TENSOR_ASSIGN_OR_RETURN(
       XnnpackRunner decode_runner,
       XnnpackRunner::Create(graphs.decode_outputs.GetAllHandles()));
-  decode_runner.SetNumThreads(num_threads);
+  LRT_TENSOR_RETURN_IF_ERROR(decode_runner.SetNumThreads(num_threads));
 
   if (weight_cache != nullptr) {
     runner.SetWeightsCache(&weight_cache->GetCacheProvider());
