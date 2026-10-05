@@ -14,13 +14,18 @@
 
 #include <string>
 #include <utility>
+#include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_options.h"
 #include "litert/cc/internal/litert_dispatch_delegate.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_options.h"
 #include "litert/core/util/flatbuffer_tools.h"
+#include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -35,6 +40,11 @@ namespace {
 
 int DeviceContextCreateCount = 0;
 int DeviceContextDestroyCount = 0;
+
+std::vector<std::string>& LastActiveFunctions() {
+  static absl::NoDestructor<std::vector<std::string>> last_active_functions;
+  return *last_active_functions;
+}
 
 LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
                         LiteRtEnvironment environment, LiteRtOptions options) {
@@ -70,6 +80,18 @@ LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus DeviceContextSetActiveFunctions(
+    LiteRtDispatchDeviceContext device_context,
+    const char* const* function_names, int num_function_names) {
+  LastActiveFunctions().clear();
+  for (int i = 0; i < num_function_names; ++i) {
+    if (function_names[i]) {
+      LastActiveFunctions().push_back(function_names[i]);
+    }
+  }
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
                                        LiteRtEnvironmentOptions env,
                                        LiteRtOptions options) {
@@ -102,6 +124,8 @@ LiteRtDispatchInterface DeviceContextTestInterface = {
     /*.destroy_metrics=*/nullptr,
     /*.check_runtime_compatibility=*/CheckRuntimeCompatibility,
     /*.invocation_context_set_options=*/nullptr,
+    /*.get_hooks=*/nullptr,
+    /*.device_context_set_active_functions=*/DeviceContextSetActiveFunctions,
 };
 
 LiteRtDispatchApi DeviceContextTestApi = {
@@ -182,6 +206,55 @@ TEST(DispatchDelegateDeviceContextTest,
 
     EXPECT_EQ(DeviceContextCreateCount, 1);
     EXPECT_EQ(DeviceContextDestroyCount, 0);
+    EXPECT_TRUE(LastActiveFunctions().empty());
+  }
+
+  EXPECT_EQ(DeviceContextCreateCount, 1);
+  EXPECT_EQ(DeviceContextDestroyCount, 1);
+}
+
+TEST(DispatchDelegateDeviceContextTest,
+     ForwardsActiveFunctionNamesToDeviceContext) {
+  StaticLinkedDispatchApiScope static_dispatch_api(GetDeviceContextTestApi);
+  DeviceContextCreateCount = 0;
+  DeviceContextDestroyCount = 0;
+  LastActiveFunctions().clear();
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto c_options,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto dispatch_options,
+                              internal::DispatchDelegateOptions::Create());
+  const std::vector<std::string> expected_functions = {"qnn_partition_0",
+                                                       "qnn_partition_1"};
+  LITERT_ASSERT_OK(dispatch_options.SetActiveFunctionNames(expected_functions));
+  ASSERT_EQ(LiteRtAddOpaqueOptions(c_options.get(), dispatch_options.Release()),
+            kLiteRtStatusOk);
+
+  {
+    DispatchDelegatePtr dispatch_delegate = {nullptr, nullptr};
+
+    const std::string multi_signature_model_path =
+        litert::testing::GetTfliteFilePath("testdata/multi_signatures.bin");
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto flatbuffer, litert::internal::FlatbufferWrapper::CreateFromTflFile(
+                             multi_signature_model_path));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        litert::testing::TflRuntime::Ptr runtime,
+        litert::testing::TflRuntime::CreateFromFlatBuffer(
+            std::move(flatbuffer)));
+    tflite::Interpreter& interpreter = runtime->Interpreter();
+
+    dispatch_delegate = CreateDispatchDelegatePtr(env.Get(), c_options.get());
+    ASSERT_EQ(interpreter.ModifyGraphWithDelegate(dispatch_delegate.get()),
+              kTfLiteOk);
+
+    EXPECT_EQ(DeviceContextCreateCount, 1);
+    EXPECT_THAT(LastActiveFunctions(),
+                ::testing::ElementsAreArray(expected_functions));
   }
 
   EXPECT_EQ(DeviceContextCreateCount, 1);

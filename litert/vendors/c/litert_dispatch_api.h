@@ -142,6 +142,10 @@ typedef LiteRtStatus (*LiteRtDispatchGetHooksT)(
     LiteRtDispatchDeviceContext device_context, LiteRtHook* hook,
     void** user_data);
 
+typedef LiteRtStatus (*LiteRtDispatchDeviceContextSetActiveFunctionsT)(
+    LiteRtDispatchDeviceContext device_context,
+    const char* const* function_names, int num_function_names);
+
 typedef struct LiteRtDispatchInterface {
   LiteRtDispatchInitializeT initialize;
   LiteRtDispatchGetVendorIdT get_vendor_id;
@@ -170,6 +174,9 @@ typedef struct LiteRtDispatchInterface {
   LiteRtDispatchCheckRuntimeCompatibilityT check_runtime_compatibility;
   LiteRtDispatchInvocationContextSetOptionsT invocation_context_set_options;
   LiteRtDispatchGetHooksT get_hooks;
+  // Optional, may be null.
+  LiteRtDispatchDeviceContextSetActiveFunctionsT
+      device_context_set_active_functions;
 
 #if defined(LITERT_ENABLE_FABRIC_INTEGRATION)
   // Optional extensions (capability-gated).
