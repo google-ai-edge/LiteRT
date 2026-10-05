@@ -656,19 +656,13 @@ cc_library(
             "-DLITERT_NO_BUILTIN_OPS",
         ],
         "//conditions:default": [],
-    }) + select({
-        "//litert/build_common:litert_disable_cpu": [
-            # Omit the XNNPACK CPU accelerator. CPU execution uses TFLite
-            # builtin kernels (or selected ops) instead.
-            "-DLITERT_DISABLE_CPU",
-        ],
-        "//conditions:default": [],
     }),
     linkopts = litert_metal_linkopts(),
     deps = [
         ":accelerator",
         ":custom_op_dispatcher",
         ":external_litert_buffer_context",
+        ":litert_cpu_options",
         ":litert_runtime_options",
         ":magic_number_utils",
         ":metrics",
@@ -713,7 +707,6 @@ cc_library(
         "//tflite:builtin_ops",
         "//tflite:framework",
         "//tflite:model_builder",
-        "//tflite/c:c_api",
         "//tflite/converter:allocation",
         "//weight_loader:external_weight_loader",
         "@com_google_absl//absl/cleanup",
@@ -749,7 +742,6 @@ cc_library(
             # and GPU fallback unless without_builtin_ops is also set.
         ],
         "//conditions:default": [
-            ":litert_cpu_options",
             "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",  # buildcleaner: keep
         ],
     }) + select({
@@ -1005,14 +997,21 @@ cc_library(
     name = "litert_cpu_options",
     srcs = ["litert_cpu_options.cc"],
     hdrs = ["litert_cpu_options.h"],
+    copts = select({
+        "//litert/build_common:litert_disable_cpu": ["-DLITERT_DISABLE_XNNPACK"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//litert/c:litert_common",
         "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
-        "//tflite/delegates/xnnpack:xnnpack_delegate",
+        "//tflite/delegates/xnnpack:xnnpack_delegate_hdrs_only",
         "@com_google_absl//absl/strings:string_view",
-    ],
+    ] + select({
+        "//litert/build_common:litert_disable_cpu": [],
+        "//conditions:default": ["//tflite/delegates/xnnpack:xnnpack_delegate"],
+    }),
 )
 
 cc_test(

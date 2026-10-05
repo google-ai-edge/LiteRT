@@ -90,8 +90,8 @@ def litert_linkopts_no_undefined():
 
 def litert_metal_opts():
     return select({
-        "//litert:ios": ["-ObjC++", "-fobjc-arc"],
-        "//litert:macos": ["-ObjC++", "-fobjc-arc"],
+        "//litert/build_common:ios_gpu_enabled": ["-ObjC++", "-fobjc-arc"],
+        "//litert/build_common:macos_gpu_enabled": ["-ObjC++", "-fobjc-arc"],
         "//conditions:default": [],
     })
 
@@ -101,15 +101,15 @@ def litert_metal_linkopts():
 
 def litert_metal_deps_without_gpu_environment():
     return select({
-        "//litert:ios": ["//tflite/delegates/gpu/metal:metal_device"],
-        "//litert:macos": ["//tflite/delegates/gpu/metal:metal_device"],
+        "//litert/build_common:ios_gpu_enabled": ["//tflite/delegates/gpu/metal:metal_device"],
+        "//litert/build_common:macos_gpu_enabled": ["//tflite/delegates/gpu/metal:metal_device"],
         "//conditions:default": [],
     })
 
 def litert_metal_deps():
     return litert_metal_deps_without_gpu_environment() + select({
-        "//litert:ios": ["//litert/runtime:metal_info"],
-        "//litert:macos": ["//litert/runtime:metal_info"],
+        "//litert/build_common:ios_gpu_enabled": ["//litert/runtime:metal_info"],
+        "//litert/build_common:macos_gpu_enabled": ["//litert/runtime:metal_info"],
         "//conditions:default": [],
     })
 
@@ -148,7 +148,7 @@ def litert_gpu_accelerator_prebuilts():
 # form part of the header dependencies of litert_runtime_c_api.h.  In the internal build environment,
 # whenever `compatible_with = get_compatible_with_portable()` is used on a build target, it MUST
 # also be applied to ALL other targets that that target depends on.  However, this restriction is
-# currently not enforced in the OSS build environment.  To minimize maintainence effort, this
+# currently not enforced in the OSS build environment.  To minimize maintenance effort, this
 # annotation should be used as sparingly as possible.
 def get_compatible_with_portable():
     return None

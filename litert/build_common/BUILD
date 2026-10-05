@@ -202,6 +202,15 @@ selects.config_setting_group(
 )
 
 selects.config_setting_group(
+    name = "emscripten_gpu_enabled",
+    match_all = [
+        "//litert:emscripten",
+        ":build_include_gpu_enabled",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+selects.config_setting_group(
     name = "linux_gpu_enabled",
     match_all = [
         "//litert:linux",
