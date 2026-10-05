@@ -32,11 +32,18 @@ The package provides these products:
 | `LiteRT_dynamic`         | `LiteRT` with the Swift wrapper linked dynamically                       | iOS, macOS |
 | `LiteRtMetalAccelerator` | Prebuilt Metal GPU accelerator, as a dynamic framework                   | iOS, macOS |
 | `CLiteRT_static`         | Static LiteRT C API for C and Objective-C, module `CLiteRT_static`       | iOS        |
-| `TensorFlowLite`         | `TensorFlowLite` Swift module, including the Core ML and Metal delegates | iOS        |
+| `TensorFlowLite`         | `TensorFlowLite` Swift module, without the Core ML and Metal delegates   | iOS        |
 
 The `LiteRT_static` and `LiteRT_dynamic` product types only affect the Swift
 wrapper. The C runtime always comes from `CLiteRT.xcframework` (a dynamic
 framework) on iOS and `CLiteRT_mac.xcframework` (a dylib) on macOS.
+
+> [!TIP]
+> The `TensorFlowLite` product does not ship with the Core ML and Metal
+> delegates. To run models on the GPU, we recommend switching to the `LiteRT`
+> and `LiteRtMetalAccelerator` products, and migrating from `Interpreter` to
+> `CompiledModel`. See [Adding LiteRT to Your App](#adding-litert-to-your-app)
+> and the [Usage Example](#usage-example).
 
 ### Adding LiteRT to Your App
 
@@ -227,10 +234,10 @@ in a separate package avoids an output collision with `:TensorFlowLite_Swift`.
 The Swift code is compiled from source, while the C runtimes it wraps are
 consumed as prebuilt `.xcframework` archives:
 
-| Swift module     | C module(s) imported                                               | Prebuilt archive(s)                                                                                                |
-| ---------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `LiteRT`         | `CLiteRT`                                                          | `CLiteRT.xcframework.zip` (iOS), `CLiteRT_mac.xcframework.zip` (macOS)                                             |
-| `TensorFlowLite` | `TensorFlowLiteC`, `TensorFlowLiteCCoreML`, `TensorFlowLiteCMetal` | `TensorFlowLiteC.xcframework.zip`, `TensorFlowLiteCCoreML.xcframework.zip`, `TensorFlowLiteCMetal.xcframework.zip` |
+| Swift module     | C module(s) imported | Prebuilt archive(s)                                                    |
+| ---------------- | -------------------- | ---------------------------------------------------------------------- |
+| `LiteRT`         | `CLiteRT`            | `CLiteRT.xcframework.zip` (iOS), `CLiteRT_mac.xcframework.zip` (macOS) |
+| `TensorFlowLite` | `TensorFlowLiteC`    | `TensorFlowLiteC.xcframework.zip`                                      |
 
 In Bazel, the Swift libraries depend on the C libraries directly. In the Swift
 package, `Package.swift` declares each archive as a `binaryTarget`:
@@ -274,6 +281,10 @@ bazel test //litert/swift/Tests/TensorFlowLite:Tests
 
 The TensorFlowLite tests always build with both delegates.
 
+The Swift package does not ship the delegate C libraries, so `Package.swift`
+excludes both files from the `TensorFlowLite` target, and
+`MetalDelegateTests.swift` from the `TensorFlowLiteTests` target.
+
 ### Building the Prebuilt Archives
 
 For development, `Package.swift` expects the following archives in
@@ -287,8 +298,6 @@ archives are the ones published for a release.
 | `CLiteRT_static.xcframework.zip`         | `:CLiteRT_static`           |                                    |
 | `LiteRtMetalAccelerator.xcframework.zip` | `:LiteRtMetalAccelerator`   |                                    |
 | `TensorFlowLiteC.xcframework.zip`        | `:TensorFlowLiteC`          |                                    |
-| `TensorFlowLiteCCoreML.xcframework.zip`  | `:TensorFlowLiteCCoreML`    | `--define=use_coreml_delegate=1`   |
-| `TensorFlowLiteCMetal.xcframework.zip`   | `:TensorFlowLiteCMetal`     | `--define=use_metal_delegate=1`    |
 | `CLiteRT_mac.xcframework.zip`            | `:CLiteRT_mac` (see below)  | `--config=macos_arm64`             |
 
 `:LiteRtMetalAccelerator` repackages the prebuilt Metal accelerator dylibs from
@@ -302,10 +311,6 @@ bazel build -c opt --config=ios \
   //litert/swift:CLiteRT_static \
   //litert/swift:LiteRtMetalAccelerator \
   //litert/swift:TensorFlowLiteC
-bazel build -c opt --config=ios --define=use_coreml_delegate=1 \
-  //litert/swift:TensorFlowLiteCCoreML
-bazel build -c opt --config=ios --define=use_metal_delegate=1 \
-  //litert/swift:TensorFlowLiteCMetal
 ```
 
 The archives are written to
