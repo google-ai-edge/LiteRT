@@ -30,6 +30,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -551,6 +552,247 @@ TEST(TensorUtilsTest, WriteOutputBuffersToFilesUnwritableDir) {
       WriteOutputBuffersToFiles(compiled_model, /*signature_index=*/0,
                                 output_buffers, "/path/that/does/not/exist"),
       IsError(kLiteRtStatusErrorRuntimeFailure));
+}
+
+TEST(TensorUtilsTest, ParseInputListFileMultiLine) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto temp_dir,
+                              testing::UniqueTestDirectory::Create());
+  std::string list_path =
+      (std::filesystem::path(std::string(temp_dir.Str())) / "input_list.txt")
+          .string();
+  {
+    std::ofstream ofs(list_path);
+    ofs << "a0.raw a1.raw\n";
+    ofs << "\n";  // Blank lines are skipped.
+    ofs << "b0.raw b1.raw\n";
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto lines, ParseInputListFile(list_path));
+  ASSERT_EQ(lines.size(), 2);
+  EXPECT_THAT(lines[0], ElementsAre("a0.raw", "a1.raw"));
+  EXPECT_THAT(lines[1], ElementsAre("b0.raw", "b1.raw"));
+}
+
+TEST(TensorUtilsTest,
+     ParseInputListFileSkipsLeadingMetadataAndKeepsNamedInputs) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto temp_dir,
+                              testing::UniqueTestDirectory::Create());
+  std::string list_path =
+      (std::filesystem::path(std::string(temp_dir.Str())) / "input_list.txt")
+          .string();
+  {
+    std::ofstream ofs(list_path);
+    ofs << "  #start_logits end_logits\n";
+    ofs << "  %intermediate_tensor\n";
+    ofs << "input_ids:=ids.raw input_mask:=mask.raw "
+           "segment_ids:=segments.raw\n";
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto lines, ParseInputListFile(list_path));
+  ASSERT_EQ(lines.size(), 1);
+  EXPECT_THAT(lines[0],
+              ElementsAre("input_ids:=ids.raw", "input_mask:=mask.raw",
+                          "segment_ids:=segments.raw"));
+}
+
+TEST(TensorUtilsTest, ParseInputListFileSingleInputSingleLine) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto temp_dir,
+                              testing::UniqueTestDirectory::Create());
+  std::string list_path =
+      (std::filesystem::path(std::string(temp_dir.Str())) / "input_list.txt")
+          .string();
+  {
+    std::ofstream ofs(list_path);
+    ofs << "/abs/path/input0.raw\n";
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto lines, ParseInputListFile(list_path));
+  ASSERT_EQ(lines.size(), 1);
+  EXPECT_THAT(lines[0], ElementsAre("/abs/path/input0.raw"));
+}
+
+TEST(TensorUtilsTest, ParseInputListFileMissingFile) {
+  EXPECT_THAT(ParseInputListFile("/path/that/does/not/exist/input_list.txt"),
+              IsError(kLiteRtStatusErrorNotFound));
+}
+
+TEST(TensorUtilsTest, ParseInputListFileEmpty) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto temp_dir,
+                              testing::UniqueTestDirectory::Create());
+  std::string list_path =
+      (std::filesystem::path(std::string(temp_dir.Str())) / "input_list.txt")
+          .string();
+  { std::ofstream ofs(list_path); }  // Empty file.
+
+  EXPECT_THAT(ParseInputListFile(list_path),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
+TEST(TensorUtilsTest, FillInputBuffersFromFileListPositional) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(
+          env, testing::GetTestFilePath("simple_quantized_ops.tflite"),
+          HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_names,
+      compiled_model.GetSignatureInputNames(/*signature_index=*/0));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_buffers,
+      compiled_model.CreateInputBuffers(/*signature_index=*/0));
+  ASSERT_EQ(input_buffers.size(), input_names.size());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto temp_dir,
+                              testing::UniqueTestDirectory::Create());
+
+  std::vector<std::string> file_paths(input_buffers.size());
+  for (size_t i = 0; i < input_buffers.size(); ++i) {
+    LITERT_ASSERT_OK_AND_ASSIGN(size_t cur_size, input_buffers[i].Size());
+    std::string file_path = (std::filesystem::path(std::string(temp_dir.Str())) /
+                             absl::StrFormat("sample_input_%d.raw", i))
+                                .string();
+    std::vector<char> raw_data(cur_size, static_cast<char>(i + 1));
+    std::ofstream ofs(file_path, std::ios::binary);
+    ofs.write(raw_data.data(), raw_data.size());
+    file_paths[i] = file_path;
+  }
+
+  LITERT_EXPECT_OK(FillInputBuffersFromFileList(
+      compiled_model, /*signature_index=*/0, input_buffers,
+      absl::MakeConstSpan(file_paths), /*quantize_inputs=*/false));
+
+  for (size_t i = 0; i < input_buffers.size(); ++i) {
+    LITERT_ASSERT_OK_AND_ASSIGN(size_t size, input_buffers[i].Size());
+    std::vector<uint8_t> read_result(size);
+    LITERT_EXPECT_OK(
+        input_buffers[i].Read<uint8_t>(absl::MakeSpan(read_result)));
+    EXPECT_THAT(read_result, ::testing::Each(static_cast<uint8_t>(i + 1)));
+  }
+}
+
+TEST(TensorUtilsTest, FillInputBuffersFromFileListNamed) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(
+          env, testing::GetTestFilePath("simple_quantized_ops.tflite"),
+          HwAccelerators::kCpu));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_names,
+      compiled_model.GetSignatureInputNames(/*signature_index=*/0));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_buffers,
+      compiled_model.CreateInputBuffers(/*signature_index=*/0));
+  ASSERT_EQ(input_buffers.size(), input_names.size());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto temp_dir,
+                              testing::UniqueTestDirectory::Create());
+  std::vector<std::string> named_file_paths;
+  for (size_t i = input_buffers.size(); i-- > 0;) {
+    LITERT_ASSERT_OK_AND_ASSIGN(size_t cur_size, input_buffers[i].Size());
+    std::string file_path =
+        (std::filesystem::path(std::string(temp_dir.Str())) /
+         absl::StrFormat("named_sample_input_%d.raw", i))
+            .string();
+    std::vector<char> raw_data(cur_size, static_cast<char>(i + 1));
+    std::ofstream ofs(file_path, std::ios::binary);
+    ofs.write(raw_data.data(), raw_data.size());
+    named_file_paths.push_back(
+        absl::StrFormat("%s:=%s", input_names[i], file_path));
+  }
+
+  LITERT_EXPECT_OK(FillInputBuffersFromFileList(
+      compiled_model, /*signature_index=*/0, input_buffers,
+      absl::MakeConstSpan(named_file_paths), /*quantize_inputs=*/false));
+
+  for (size_t i = 0; i < input_buffers.size(); ++i) {
+    LITERT_ASSERT_OK_AND_ASSIGN(size_t size, input_buffers[i].Size());
+    std::vector<uint8_t> read_result(size);
+    LITERT_EXPECT_OK(
+        input_buffers[i].Read<uint8_t>(absl::MakeSpan(read_result)));
+    EXPECT_THAT(read_result, ::testing::Each(static_cast<uint8_t>(i + 1)));
+  }
+}
+
+TEST(TensorUtilsTest,
+     FillInputBuffersFromFileListUnknownNameFallsBackToPosition) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(
+          env, testing::GetTestFilePath("simple_quantized_ops.tflite"),
+          HwAccelerators::kCpu));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_buffers,
+      compiled_model.CreateInputBuffers(/*signature_index=*/0));
+  ASSERT_EQ(input_buffers.size(), 2);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto temp_dir,
+                              testing::UniqueTestDirectory::Create());
+  std::vector<std::string> named_file_paths;
+  for (size_t i = 0; i < input_buffers.size(); ++i) {
+    LITERT_ASSERT_OK_AND_ASSIGN(size_t input_size, input_buffers[i].Size());
+    std::string file_path =
+        (std::filesystem::path(std::string(temp_dir.Str())) /
+         absl::StrFormat("input_%d.raw", i))
+            .string();
+    std::vector<char> raw_data(input_size, static_cast<char>(42 + i));
+    std::ofstream ofs(file_path, std::ios::binary);
+    ofs.write(raw_data.data(), raw_data.size());
+    named_file_paths.push_back(
+        absl::StrFormat("model_zoo_name_%d:0:=%s", i, file_path));
+  }
+  LITERT_EXPECT_OK(FillInputBuffersFromFileList(
+      compiled_model, /*signature_index=*/0, input_buffers,
+      absl::MakeConstSpan(named_file_paths), /*quantize_inputs=*/false));
+
+  for (size_t i = 0; i < input_buffers.size(); ++i) {
+    LITERT_ASSERT_OK_AND_ASSIGN(size_t input_size, input_buffers[i].Size());
+    std::vector<uint8_t> read_result(input_size);
+    LITERT_EXPECT_OK(
+        input_buffers[i].Read<uint8_t>(absl::MakeSpan(read_result)));
+    EXPECT_THAT(read_result, ::testing::Each(42 + i));
+  }
+}
+
+TEST(TensorUtilsTest, FillInputBuffersFromFileListRejectsEmptyName) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(
+          env, testing::GetTestFilePath("simple_quantized_ops.tflite"),
+          HwAccelerators::kCpu));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_buffers,
+      compiled_model.CreateInputBuffers(/*signature_index=*/0));
+
+  std::vector<std::string> file_paths(input_buffers.size(), ":=input.raw");
+  EXPECT_THAT(FillInputBuffersFromFileList(
+                  compiled_model, /*signature_index=*/0, input_buffers,
+                  absl::MakeConstSpan(file_paths), /*quantize_inputs=*/false),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
+TEST(TensorUtilsTest, FillInputBuffersFromFileListMismatchedCount) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(
+          env, testing::GetTestFilePath("simple_quantized_ops.tflite"),
+          HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_buffers,
+      compiled_model.CreateInputBuffers(/*signature_index=*/0));
+
+  std::vector<std::string> too_few_file_paths;  // Empty, regardless of model.
+  EXPECT_THAT(FillInputBuffersFromFileList(
+                  compiled_model, /*signature_index=*/0, input_buffers,
+                  absl::MakeConstSpan(too_few_file_paths),
+                  /*quantize_inputs=*/false),
+              IsError(kLiteRtStatusErrorInvalidArgument));
 }
 
 }  // namespace
