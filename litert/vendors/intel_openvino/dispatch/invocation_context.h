@@ -104,6 +104,9 @@ class LiteRtDispatchInvocationContextT {
   std::optional<LiteRtSchedulingInfo> scheduling_info_;
 #if defined(__ANDROID__)
   void* ctx = nullptr;
+  // Last priority handed to the compiled model, so an unchanged value is not
+  // re-applied on every inference.
+  std::optional<ov::hint::Priority> applied_model_priority_;
 #endif
 };
 

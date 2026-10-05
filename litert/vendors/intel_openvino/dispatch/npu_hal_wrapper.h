@@ -20,6 +20,7 @@
 #include <dlfcn.h>
 
 #include <cstdint>
+#include <optional>
 
 #include "openvino/runtime/properties.hpp"
 #include "litert/c/internal/litert_logging.h"
@@ -31,29 +32,29 @@ extern "C" {
 int npu_hal_submit_inference_async(void** ctx, void* infer_request,
                                    int32_t job_priority, int32_t original_uid);
 void npu_hal_release_context(void* ctx);
+typedef enum {
+  NPU_HAL_MODEL_PRIORITY_LOW = 0,
+  NPU_HAL_MODEL_PRIORITY_MEDIUM = 1,
+  NPU_HAL_MODEL_PRIORITY_HIGH = 2,
+} npu_hal_model_priority_e;
+npu_hal_model_priority_e npu_hal_resolve_ov_model_priority(int32_t job_priority,
+                                                          int32_t original_uid);
 }
 
 namespace litert::openvino {
 
-// Job priority used when the caller supplies none but the NPU HAL is present.
-// Middle of the [0, 1000] range -> MEDIUM scheduling priority.
-inline constexpr int32_t kDefaultJobPriority = 500;
-
-inline ov::hint::Priority ToOvModelPriority(int32_t job_priority) {
-  // LiteRT priority is [0, 1000] where lower value means higher priority.
-  if (job_priority <= 333) {
-    return ov::hint::Priority::HIGH;
-  }
-  if (job_priority <= 666) {
-    return ov::hint::Priority::MEDIUM;
-  }
-  return ov::hint::Priority::LOW;
-}
+// Caller job priority when none is supplied. [0, 1000], default 0 = no demotion
+// (job priority can only demote). Reported to the HAL as-is.
+inline constexpr int32_t kDefaultJobPriority = 0;
 
 // Function symbols resolved from libnpu_hal_hook.so under a single dlopen.
 struct NpuHalHooks {
   decltype(&npu_hal_submit_inference_async) submit_inference_async = nullptr;
   decltype(&npu_hal_release_context) release_context = nullptr;
+  // Optional unified resolver. Absent only on a pre-resolver hook, in which
+  // case no model-priority hint is applied.
+  decltype(&npu_hal_resolve_ov_model_priority) resolve_ov_model_priority =
+      nullptr;
   // Set when the library loaded but a required symbol could not be resolved.
   bool load_error = false;
 };
@@ -96,9 +97,34 @@ inline const NpuHalHooks& GetNpuHalHooks() {
       resolved.load_error = true;
       return resolved;
     }
+
+    // Optional unified resolver.
+    resolved.resolve_ov_model_priority =
+        reinterpret_cast<decltype(&npu_hal_resolve_ov_model_priority)>(
+            dlsym(handle, "npu_hal_resolve_ov_model_priority"));
     return resolved;
   }();
   return hooks;
+}
+
+// This process's OpenVINO model-priority hint for a given job priority and the
+// app the work is attributed to (original_uid). Returns nullopt with a
+// pre-resolver hook; in that case the caller leaves the model priority at
+// OpenVINO's default.
+inline std::optional<ov::hint::Priority> ResolveOvModelPriority(
+    int32_t job_priority, int32_t original_uid) {
+  const NpuHalHooks& hooks = GetNpuHalHooks();
+  if (hooks.resolve_ov_model_priority == nullptr) {
+    return std::nullopt;
+  }
+  switch (hooks.resolve_ov_model_priority(job_priority, original_uid)) {
+    case NPU_HAL_MODEL_PRIORITY_HIGH:
+      return ov::hint::Priority::HIGH;
+    case NPU_HAL_MODEL_PRIORITY_MEDIUM:
+      return ov::hint::Priority::MEDIUM;
+    default:
+      return ov::hint::Priority::LOW;
+  }
 }
 
 }  // namespace litert::openvino
