@@ -536,18 +536,28 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesSoftmax) {
                   testing::Pointwise(testing::FloatNear(1e-5), {0.5f, 0.5f})));
 }
 
-TYPED_TEST_P(NnpackRunnerTest, SoftmaxRejectsBetaNotEqualToOne) {
-  using TensorType = typename TestFixture::TensorType;
-  using Runner = typename TestFixture::Runner;
+TYPED_TEST_P(NnpackRunnerTest, ComputesSoftmaxWithBeta) {
+  if constexpr (!TestFixture::Traits::kSupportsSoftmaxBeta) {
+    GTEST_SKIP() << "Softmax with beta != 1 is not supported by this backend";
+  } else {
+    using TensorType = typename TestFixture::TensorType;
+    using Runner = typename TestFixture::Runner;
 
-  TensorType input({.name = "input",
-                    .type = Type::kFP32,
-                    .shape = {2},
-                    .buffer = std::vector<float>{0.f, 0.f}});
-  TensorType output = Softmax(input, /*beta=*/2.0f);
+    TensorType input({.name = "input",
+                      .type = Type::kFP32,
+                      .shape = {2},
+                      .buffer = std::vector<float>{0.f, 1.f}});
+    TensorType output = Softmax(input, /*beta=*/2.0f);
 
-  EXPECT_THAT(Runner::Create({output}),
-              absl_testing::StatusIs(absl::StatusCode::kUnimplemented));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
+    ASSERT_THAT(runner.Run(), IsOk());
+    // softmax(beta * x) with beta = 2 and x = {0, 1}.
+    const float e2 = std::exp(2.0f);
+    EXPECT_THAT(
+        runner.template ReadOutputAs<float>(output),
+        absl_testing::IsOkAndHolds(testing::Pointwise(
+            testing::FloatNear(1e-5), {1.f / (1.f + e2), e2 / (1.f + e2)})));
+  }
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesConv2D) {
@@ -1469,7 +1479,7 @@ REGISTER_TYPED_TEST_SUITE_P(
     ComputesMaximumAndMinimum, ComputesPow, ComputesAbs, ComputesSquare,
     ComputesRsqrt, ComputesSqrt, ComputesNeg, ComputesTanh, ComputesSigmoid,
     ComputesCos, ComputesSin, ComputesGelu, ComputesSoftmax,
-    SoftmaxRejectsBetaNotEqualToOne, ComputesConv2D, ComputesDepthwiseConv2D,
+    ComputesSoftmaxWithBeta, ComputesConv2D, ComputesDepthwiseConv2D,
     ComputesFullyConnected, BatchMatMulSupportsTransposeFlags,
     ComputesTranspose, ComputesMeanKeepDimsAndSqueeze, TransposeAndMeanCombined,
     ComputesSlice, ComputesConcatenation, SliceAndConcatenationCombined,
