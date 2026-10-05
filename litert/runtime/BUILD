@@ -640,6 +640,43 @@ cc_test(
 # copybara:uncomment_end
 
 cc_library(
+    name = "op_resolver_header",
+    hdrs = ["op_resolver.h"],
+    deps = [
+        "//litert/cc:litert_expected",
+        "//tflite:mutable_op_resolver",
+    ],
+)
+
+cc_library(
+    name = "selected_op_resolver",
+    srcs = ["selected_op_resolver.cc"],
+    hdrs = ["selected_op_resolver.h"],
+    visibility = ["//litert:litert_cc_users_static_link"],
+    deps = [
+        ":op_resolver_header",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//tflite:mutable_op_resolver",
+        "//tflite/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
+    ],
+)
+
+cc_library(
+    name = "default_op_resolver",
+    srcs = ["default_op_resolver.cc"],
+    deps = [
+        ":op_resolver_header",
+        "//litert/cc:litert_expected",
+        "//tflite:mutable_op_resolver",
+        "//tflite/kernels:builtin_ops",
+        "//tflite/kernels:reference_ops",
+    ],
+    alwayslink = True,
+)
+
+cc_library(
     name = "compiled_model",
     srcs = [
         "compiled_model.cc",
@@ -656,22 +693,17 @@ cc_library(
             "-DLITERT_NO_BUILTIN_OPS",
         ],
         "//conditions:default": [],
-    }) + select({
-        "//litert/build_common:litert_disable_cpu": [
-            # Omit the XNNPACK CPU accelerator. CPU execution uses TFLite
-            # builtin kernels (or selected ops) instead.
-            "-DLITERT_DISABLE_CPU",
-        ],
-        "//conditions:default": [],
     }),
     linkopts = litert_metal_linkopts(),
     deps = [
         ":accelerator",
         ":custom_op_dispatcher",
         ":external_litert_buffer_context",
+        ":litert_cpu_options",
         ":litert_runtime_options",
         ":magic_number_utils",
         ":metrics",
+        ":op_resolver_header",
         ":profiler",
         ":tensor_buffer",
         ":tensor_buffer_requirements",
@@ -713,7 +745,6 @@ cc_library(
         "//tflite:builtin_ops",
         "//tflite:framework",
         "//tflite:model_builder",
-        "//tflite/c:c_api",
         "//tflite/converter:allocation",
         "//weight_loader:external_weight_loader",
         "@com_google_absl//absl/cleanup",
@@ -749,7 +780,6 @@ cc_library(
             # and GPU fallback unless without_builtin_ops is also set.
         ],
         "//conditions:default": [
-            ":litert_cpu_options",
             "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",  # buildcleaner: keep
         ],
     }) + select({
@@ -759,8 +789,7 @@ cc_library(
             # selective op resolver is used instead.
         ],
         "//conditions:default": [
-            "//tflite/kernels:builtin_ops",
-            "//tflite/kernels:reference_ops",
+            "//litert/build_common:op_resolver",
         ],
     }),
 )
@@ -1005,14 +1034,21 @@ cc_library(
     name = "litert_cpu_options",
     srcs = ["litert_cpu_options.cc"],
     hdrs = ["litert_cpu_options.h"],
+    copts = select({
+        "//litert/build_common:litert_disable_cpu": ["-DLITERT_DISABLE_XNNPACK"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//litert/c:litert_common",
         "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
-        "//tflite/delegates/xnnpack:xnnpack_delegate",
+        "//tflite/delegates/xnnpack:xnnpack_delegate_hdrs_only",
         "@com_google_absl//absl/strings:string_view",
-    ],
+    ] + select({
+        "//litert/build_common:litert_disable_cpu": [],
+        "//conditions:default": ["//tflite/delegates/xnnpack:xnnpack_delegate"],
+    }),
 )
 
 cc_test(

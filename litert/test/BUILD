@@ -17,6 +17,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//litert/build_common:selective_ops.bzl", "litert_selected_op_resolver", "litert_selected_op_resolver_test")
 load("//litert/build_common:symlink_files.bzl", "symlink_files")  # @unused
 load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")  # @unused
 load("//tflite:build_def.bzl", "tflite_linkopts")
@@ -419,6 +420,33 @@ sh_test(
         "noios",
         "nomacos",
         "nowindows",
+    ],
+)
+
+litert_selected_op_resolver(
+    name = "simple_model_op_resolver",
+    models = ["testdata/simple_model.tflite"],
+)
+
+litert_selected_op_resolver_test(
+    name = "selective_compiled_model_test",
+    srcs = ["selective_compiled_model_test.cc"],
+    data = [
+        "testdata/simple_model.tflite",
+        "testdata/simple_mul_op.tflite",
+    ],
+    op_resolver = ":simple_model_op_resolver",
+    deps = [
+        ":common",
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_cpu_options",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_options",
+        "//litert/runtime:op_resolver_header",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
