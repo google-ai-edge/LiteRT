@@ -23,6 +23,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -172,6 +173,7 @@ GpuBackendWebGpuLitert::CreateInferenceContext(
   auto ctx = std::make_unique<GpuInferenceContextWebGpuLitert>(
       this, may_share_memory_manager ? &memory_manager() : nullptr, create_info,
       num_steps_of_command_buffer_preparations());
+  absl::MutexLock lock(memory_manager_mutex());
   ABSL_RETURN_IF_ERROR(ctx->wgpu_ctx().InitFromGpuModel(
       wgpu_env(), create_info, &gpu_model, serialized_model));
   RETURN_IF_WEBGPU_ERROR();
@@ -185,6 +187,7 @@ GpuBackendWebGpuLitert::RestoreInferenceContext(
   auto ctx = std::make_unique<GpuInferenceContextWebGpuLitert>(
       this, &memory_manager(), create_info,
       num_steps_of_command_buffer_preparations());
+  absl::MutexLock lock(memory_manager_mutex());
   ABSL_RETURN_IF_ERROR(ctx->wgpu_ctx().RestoreDeserialized(
       serialized_model, wgpu_env(), &create_info));
   RETURN_IF_WEBGPU_ERROR();

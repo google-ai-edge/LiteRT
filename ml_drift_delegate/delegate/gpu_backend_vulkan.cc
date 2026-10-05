@@ -29,6 +29,7 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
@@ -389,6 +390,7 @@ GpuInferenceContextVulkan::~GpuInferenceContextVulkan() {
 
 absl::StatusOr<::ml_drift::GpuSpatialTensor*>
 GpuInferenceContextVulkan::GetSpatialTensor(::ml_drift::ValueId id) {
+  absl::MutexLock lock(ctx_mutex_);
   auto* tensor = ctx_.GetTensor(id);
   if (tensor == nullptr) {
     // Returning OK(nullptr) here makes callers dereference null instead of
@@ -401,6 +403,7 @@ GpuInferenceContextVulkan::GetSpatialTensor(::ml_drift::ValueId id) {
 
 absl::Status GpuInferenceContextVulkan::BindSpatialTensor(
     ::ml_drift::ValueId id, ::ml_drift::GpuSpatialTensor* tensor) {
+  absl::MutexLock lock(ctx_mutex_);
   return ctx_.SetTensor(id, static_cast<VulkanSpatialTensor*>(tensor));
 }
 
@@ -470,11 +473,14 @@ absl::Status GpuInferenceContextVulkan::Dispatch() {
   }
 
   // Schedule another next_command_buffers_thread_ to prepare command buffers
-  // in parallel with the current Dispatch() call.
+  // in parallel with the current Dispatch() call. Note that
+  // set_num_steps_of_command_buffer_preparations() is supposed to be set only
+  // for LLMs where external tensors are not expected to change while cached
+  // command buffers are in use.
   next_command_buffers_thread_ = std::make_unique<std::thread>([this]() {
     auto& next_buffer = next_command_buffers_[next_command_buffers_index_];
-    if (auto s = ctx_.AddToCommandBuffer(next_buffer.VkCB());
-        !s.ok()) {
+    absl::MutexLock lock(ctx_mutex_);
+    if (auto s = ctx_.AddToCommandBuffer(next_buffer.VkCB()); !s.ok()) {
       ABSL_LOG(ERROR) << "Failed to prepare next command buffers: " << s;
     } else {
       next_command_buffers_index_ =

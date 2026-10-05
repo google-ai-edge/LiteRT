@@ -189,6 +189,30 @@ cc_library(
     }),
 )
 
+cc_test(
+    name = "gpu_backend_webgpu_test",
+    srcs = ["gpu_backend_webgpu_test.cc"],
+    tags = ["requires-gpu-sm90-full"],  # Vulkan/WebGPU: no driver on MIG
+    deps = [
+        ":gpu_backend",
+        ":gpu_backend_webgpu",
+        "//third_party/vulkan_loader",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:model_hints",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/webgpu:execution_environment",
+        "@ml_drift//ml_drift/webgpu:spatial_tensor",
+    ],
+)
+
 cc_library(
     name = "gpu_backend_webgpu_litert",
     srcs = [
@@ -218,6 +242,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
         "@ml_drift//ml_drift/common:data_type",
@@ -398,6 +423,7 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_info",
@@ -415,6 +441,32 @@ cc_library(
         "@ml_drift//ml_drift/syrtis:environment",
         "@ml_drift//ml_drift/syrtis:vulkan_inference_context",
         "@ml_drift//ml_drift/syrtis:vulkan_spatial_tensor",
+    ],
+)
+
+cc_test(
+    name = "gpu_backend_vulkan_test",
+    srcs = ["gpu_backend_vulkan_test.cc"],
+    tags = ["requires-gpu-sm90-full"],  # Vulkan/WebGPU: no driver on MIG
+    deps = [
+        ":gpu_backend",
+        ":gpu_backend_vulkan",
+        ":shared_vulkan_env",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//third_party/vulkan_loader",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_googletest//:gtest_main_no_heapcheck",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:model_hints",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/syrtis:vulkan_spatial_tensor",
+        "@ml_drift//ml_drift/syrtis/testing:vulkan_test",
     ],
 )
 

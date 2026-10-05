@@ -25,6 +25,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
@@ -148,6 +149,9 @@ class GpuBackendVulkan : public GpuBackend {
   int num_steps_of_command_buffer_preparations() const {
     return num_steps_of_command_buffer_preparations_;
   }
+  // Sets the number of steps to prepare command buffers in advance. This is
+  // supposed to be set only for LLMs where external tensors are not expected to
+  // change while cached command buffers are in use.
   void set_num_steps_of_command_buffer_preparations(
       int num_steps_of_command_buffer_preparations) {
     num_steps_of_command_buffer_preparations_ =
@@ -234,6 +238,7 @@ class GpuInferenceContextVulkan : public GpuInferenceContext {
 
  private:
   GpuBackendVulkan* const backend_;
+  absl::Mutex ctx_mutex_;
   ::ml_drift::syrtis::VulkanInferenceContext ctx_;
 
   // Command buffers prepared ahead to reduce the overhead of command buffer

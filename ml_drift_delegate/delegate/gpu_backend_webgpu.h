@@ -27,6 +27,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/synchronization/notification.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -151,9 +152,12 @@ class GpuBackendWebGpu : public GpuBackend {
     return *env_;
   }
 
+  // Accessing memory_manager() requires holding memory_manager_mutex() when
+  // num_steps_of_command_buffer_preparations_ > 0.
   ::ml_drift::webgpu::MemoryManager& memory_manager() {
     return memory_manager_;
   }
+  absl::Mutex& memory_manager_mutex() { return memory_manager_mutex_; }
 
   // Encoders for IO tensors.
   wgpu::CommandEncoder* command_encoder() const {
@@ -180,6 +184,9 @@ class GpuBackendWebGpu : public GpuBackend {
   int num_steps_of_command_buffer_preparations() const {
     return num_steps_of_command_buffer_preparations_;
   }
+  // Sets the number of steps to prepare command buffers in advance. This is
+  // supposed to be set only for LLMs where external tensors are not expected to
+  // change while cached command buffers are in use.
   void set_num_steps_of_command_buffer_preparations(
       int num_steps_of_command_buffer_preparations) {
     num_steps_of_command_buffer_preparations_ =
@@ -189,6 +196,7 @@ class GpuBackendWebGpu : public GpuBackend {
  private:
   std::unique_ptr<::ml_drift::webgpu::ExecutionEnvironment> env_owned_;
   ::ml_drift::webgpu::ExecutionEnvironment* const env_;
+  absl::Mutex memory_manager_mutex_;
   ::ml_drift::webgpu::MemoryManager memory_manager_;
   int num_steps_of_command_buffer_preparations_ = 0;
 
@@ -257,6 +265,8 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
   GpuBackendWebGpu* backend() const { return backend_; };
 
  private:
+  absl::StatusOr<::ml_drift::webgpu::SpatialTensor*> GetSpatialTensorInternal(
+      ::ml_drift::ValueId id);
   // Prepares command buffers for Dispatch() call.
   absl::Status PrepareCommandBuffers(
       std::vector<wgpu::CommandBuffer>& command_buffers,

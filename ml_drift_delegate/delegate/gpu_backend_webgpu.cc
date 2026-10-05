@@ -33,6 +33,7 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/synchronization/notification.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -224,6 +225,7 @@ GpuBackendWebGpu::CreateInferenceContext(
   auto ctx = std::make_unique<GpuInferenceContextWebGpu>(
       this, may_share_memory_manager ? &memory_manager_ : nullptr, create_info,
       num_steps_of_command_buffer_preparations_);
+  absl::MutexLock lock(memory_manager_mutex_);
   ABSL_RETURN_IF_ERROR(ctx->wgpu_ctx().InitFromGpuModel(
       *env_, create_info, &gpu_model, serialized_model));
   return std::move(ctx);
@@ -236,6 +238,7 @@ GpuBackendWebGpu::RestoreInferenceContext(
   auto ctx = std::make_unique<GpuInferenceContextWebGpu>(
       this, &memory_manager_, create_info,
       num_steps_of_command_buffer_preparations_);
+  absl::MutexLock lock(memory_manager_mutex_);
   ABSL_RETURN_IF_ERROR(ctx->wgpu_ctx().RestoreDeserialized(
       serialized_model, *env_, &create_info));
   return std::move(ctx);
@@ -417,8 +420,9 @@ GpuInferenceContextWebGpu::~GpuInferenceContextWebGpu() {
   }
 }
 
-absl::StatusOr<::ml_drift::GpuSpatialTensor*>
-GpuInferenceContextWebGpu::GetSpatialTensor(::ml_drift::ValueId id) {
+absl::StatusOr<::ml_drift::webgpu::SpatialTensor*>
+GpuInferenceContextWebGpu::GetSpatialTensorInternal(::ml_drift::ValueId id) {
+  absl::MutexLock lock(backend_->memory_manager_mutex());
   auto* tensor = ctx_->GetTensor(id);
   if (tensor == nullptr) {
     // Returning OK(nullptr) here makes callers dereference null instead of
@@ -429,21 +433,27 @@ GpuInferenceContextWebGpu::GetSpatialTensor(::ml_drift::ValueId id) {
   return tensor;
 }
 
+absl::StatusOr<::ml_drift::GpuSpatialTensor*>
+GpuInferenceContextWebGpu::GetSpatialTensor(::ml_drift::ValueId id) {
+  return GetSpatialTensorInternal(id);
+}
+
 absl::Status GpuInferenceContextWebGpu::BindSpatialTensor(
     ::ml_drift::ValueId id, ::ml_drift::GpuSpatialTensor* tensor) {
+  absl::MutexLock lock(backend_->memory_manager_mutex());
   return ctx_->SetTensor(
       id, static_cast<::ml_drift::webgpu::SpatialTensor*>(tensor));
 }
 
 absl::Status GpuInferenceContextWebGpu::WriteDataToWeightTensor(
     ::ml_drift::ValueId id, absl::Span<const uint8_t> data) {
-  auto* wgpu_tensor = ctx_->GetTensor(id);
+  ABSL_ASSIGN_OR_RETURN(auto* wgpu_tensor, GetSpatialTensorInternal(id));
   return wgpu_tensor->WriteDataViaStaging(backend_->wgpu_env(), data.data());
 }
 
 absl::Status GpuInferenceContextWebGpu::ReadWeightTensorToDescriptor(
     ::ml_drift::ValueId id, ::ml_drift::TensorDescriptor& desc) {
-  auto* wgpu_tensor = ctx_->GetTensor(id);
+  ABSL_ASSIGN_OR_RETURN(auto* wgpu_tensor, GetSpatialTensorInternal(id));
   return wgpu_tensor->ToDescriptor(backend_->wgpu_env().device(), &desc);
 }
 
@@ -482,13 +492,15 @@ absl::Status GpuInferenceContextWebGpu::UploadWeightsOnWeb(
 
   return absl::OkStatus();
 #else
-  return absl::UnimplementedError("UploadWeightsOnWeb is only supported on Emscripten.");
+  return absl::UnimplementedError(
+      "UploadWeightsOnWeb is only supported on Emscripten.");
 #endif  // __EMSCRIPTEN__
 }
 
 absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffers(
     std::vector<wgpu::CommandBuffer>& command_buffers,
     bool submit_command_buffers) {
+  absl::MutexLock lock(backend_->memory_manager_mutex());
   ABSL_ASSIGN_OR_RETURN(
       command_buffers,
       ctx_->CreateCommandBuffers(
@@ -535,7 +547,10 @@ absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffersFromCached(
 
 #ifndef __EMSCRIPTEN__
   // Schedule another next_command_buffers_thread_ to prepare command buffers
-  // in parallel with the current Dispatch() call.
+  // in parallel with the current Dispatch() call. Note that
+  // set_num_steps_of_command_buffer_preparations() is supposed to be set only
+  // for LLMs where external tensors are not expected to change while cached
+  // command buffers are in use.
   next_command_buffers_thread_ = std::make_unique<std::thread>([this]() {
     if (auto s = PrepareCommandBuffers(
             next_command_buffers_[next_command_buffers_index_],
