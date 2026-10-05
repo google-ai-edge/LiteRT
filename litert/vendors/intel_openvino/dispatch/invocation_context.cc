@@ -64,6 +64,7 @@
 #include "litert/vendors/intel_openvino/dispatch/mapped_pages.h"
 #include "litert/vendors/intel_openvino/dispatch/weight_bank_runtime.h"
 #include "litert/vendors/intel_openvino/openvino_version_info.h"
+#include "litert/vendors/intel_openvino/utils.h"
 
 namespace {
 // This class is copied from the OpenVINO codebase with minor modifications
@@ -145,6 +146,48 @@ class SharedStreamBuffer : public std::streambuf {
   const size_t size_;
   size_t offset_;
 };
+
+// Extracts supported runtime configuration options and performance mode from
+// IntelOpenVinoOptions to apply to ov::Core::import_model.
+ov::AnyMap ExtractDispatchRuntimeProperties(
+    const ::litert::intel_openvino::IntelOpenVinoOptions* intel_openvino_opts) {
+  ov::AnyMap properties;
+  if (intel_openvino_opts == nullptr) {
+    return properties;
+  }
+
+  // 1. Extract allowed runtime properties from configs_map
+  int num_custom_options = intel_openvino_opts->GetNumConfigsMapOptions();
+  for (int i = 0; i < num_custom_options; ++i) {
+    auto [key, value] = intel_openvino_opts->GetConfigsMapOption(i);
+    if (litert::openvino::IsSupportedRuntimeOption(key)) {
+      properties[key] = value;
+      LITERT_LOG(LITERT_INFO, "Dispatch: applying runtime config: %s = %s",
+                 key.c_str(), value.c_str());
+    }
+  }
+
+  // 2. Set performance mode hint if not explicitly configured in configs_map
+  if (properties.find(ov::hint::performance_mode.name()) == properties.end()) {
+    switch (intel_openvino_opts->GetPerformanceMode()) {
+      case kLiteRtIntelOpenVinoPerformanceModeThroughput:
+        properties[ov::hint::performance_mode.name()] =
+            ov::hint::PerformanceMode::THROUGHPUT;
+        break;
+      case kLiteRtIntelOpenVinoPerformanceModeCumulativeThroughput:
+        properties[ov::hint::performance_mode.name()] =
+            ov::hint::PerformanceMode::CUMULATIVE_THROUGHPUT;
+        break;
+      case kLiteRtIntelOpenVinoPerformanceModeLatency:
+      default:
+        properties[ov::hint::performance_mode.name()] =
+            ov::hint::PerformanceMode::LATENCY;
+        break;
+    }
+  }
+
+  return properties;
+}
 
 }  // namespace
 
@@ -501,6 +544,9 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::ImportLocked() {
   try {
     litert::openvino::LogOpenVINOVersionInfoOnce("OpenVINO Dispatch",
                                                  device.c_str());
+    ov::AnyMap import_properties =
+        ExtractDispatchRuntimeProperties(intel_openvino_opts);
+
     if (npu_shared) {
       // Stage the deduplicated pool to a temp file once per model, then hand it
       // to NPUW. The temp file is a byte-for-byte copy of the contiguous pool
@@ -531,7 +577,6 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::ImportLocked() {
             kLiteRtStatusErrorRuntimeFailure,
             "Failed to stage shared weights bank to a temp file");
       }
-      ov::AnyMap import_properties;
       // NPU_USE_NPUW is required or the plain NPU plugin rejects the NPUW blob;
       // WEIGHTS_PATH + ENABLE_WEIGHTLESS are required or NPUW asserts "Blob is
       // weightless but no WEIGHTS_PATH nor MODEL_PTR property is provided!".
@@ -545,7 +590,8 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::ImportLocked() {
       compiled_model =
           core->import_model(model_stream, device, import_properties);
     } else {
-      compiled_model = core->import_model(model_stream, device);
+      compiled_model =
+          core->import_model(model_stream, device, import_properties);
     }
   } catch (const std::exception& e) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure, e.what());
