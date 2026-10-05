@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -224,6 +224,8 @@ void LiteRtDispatchInvocationContextT::ReleaseImportedLocked() {
   // go with it. attached_inputs_/attached_outputs_ are kept on purpose.
   infer_request_ = {};
   bound_weights_.clear();
+  // The next import creates a new compiled model at the default priority.
+  requested_model_priority_.reset();
   imported_ = false;
   LITERT_LOG(LITERT_INFO,
              "EVICT released imported model for '%s' (%zu byte payload); it "
@@ -699,9 +701,6 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
   // When the caller supplied no job priority, schedule at the default priority
   // instead of bypassing the HAL.
   if (npu_hal_hooks.submit_inference_async != nullptr) {
-    const int32_t job_priority = has_job_priority
-                                     ? scheduling_info->job_priority
-                                     : litert::openvino::kDefaultJobPriority;
     const bool has_original_uid =
         scheduling_info != nullptr &&
         (scheduling_info->fields_mask & kLiteRtSchedulingInfoFieldOriginalUid);
@@ -709,15 +708,29 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
                                      ? scheduling_info->original_uid
                                      : static_cast<int32_t>(getuid());
 
-    // Best-effort: some OpenVINO/NPU driver versions expose MODEL_PRIORITY as
-    // read-only on a compiled model. If it can't be set, ignore and continue.
-    try {
-      auto compiled_model = infer_request_.get_compiled_model();
-      compiled_model.set_property(ov::hint::model_priority(
-          litert::openvino::ToOvModelPriority(job_priority)));
-    } catch (const std::exception& e) {
-      LITERT_LOG(LITERT_WARNING,
-                 "NPU HAL model priority not applied, ignoring: %s", e.what());
+    // Caller's own job priority, [0, 1000] with smaller values meaning higher
+    // priority. Reported to the HAL as-is.
+    const int32_t job_priority = has_job_priority
+                                     ? scheduling_info->job_priority
+                                     : litert::openvino::kDefaultJobPriority;
+    // The hook owns the priority model and maps the result to the OpenVINO
+    // hint.
+    const std::optional<ov::hint::Priority> ov_priority =
+        litert::openvino::ResolveOvModelPriority(job_priority, original_uid);
+    if (ov_priority.has_value() && ov_priority != requested_model_priority_) {
+      // Best-effort: a plugin that rejects the model-priority property must not
+      // fail the invoke.
+      try {
+        auto compiled_model = infer_request_.get_compiled_model();
+        compiled_model.set_property(ov::hint::model_priority(*ov_priority));
+        requested_model_priority_ = ov_priority;
+      } catch (const std::exception& e) {
+        LITERT_LOG(LITERT_WARNING,
+                   "NPU HAL model priority not applied, ignoring: %s",
+                   e.what());
+        // Remember it anyway so a failing plugin is not retried every inference.
+        requested_model_priority_ = ov_priority;
+      }
     }
 
     auto wrapper = std::make_unique<ov_infer_request_wrapper>();
