@@ -152,7 +152,7 @@ class FlatbufferUtilsTest(absltest.TestCase):
         weight_tensor, self._test_model.buffers
     )
     self.assertEqual(
-        tuple(weight_tensor.shape), tuple(weight_tensor_data.shape)  # pytype: disable=attribute-error
+        tuple(weight_tensor.shape), tuple(weight_tensor_data.shape)  # pyrefly: ignore[missing-attribute]
     )
     self.assertAlmostEqual(weight_tensor_data[0][0][0][0], -0.12941549718379974)  # pyrefly: ignore[unsupported-operation]
 

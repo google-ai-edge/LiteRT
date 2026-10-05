@@ -100,7 +100,7 @@ class CalibratorTestBase(absltest.TestCase):
     )
     self._calibrator = calibrator.Calibrator(
         self._test_model_path,
-        mode=self.mode,  # pytype: disable=wrong-arg-types
+        mode=self.mode,  # pyrefly: ignore[bad-argument-type]
     )
 
   def test_calibrator_state_manipulation(self):
@@ -175,7 +175,7 @@ class CalibratorTestBase(absltest.TestCase):
         pathlib.Path(TEST_DATA_PREFIX_PATH)
         / "tests/models/branching_conv_fc.tflite"
     )
-    test_calibrator = calibrator.Calibrator(test_model_path, mode=self.mode)  # pytype: disable=wrong-arg-types
+    test_calibrator = calibrator.Calibrator(test_model_path, mode=self.mode)  # pyrefly: ignore[bad-argument-type]
     _add_default_int8xint8_integer_recipe(self._recipe_manager)
     dataset_gen = _representative_dataset_gen(size=(3, 4, 4, 1))
     test_calibrator.calibrate(
@@ -190,7 +190,7 @@ class CalibratorTestBase(absltest.TestCase):
         pathlib.Path(TEST_DATA_PREFIX_PATH)
         / "tests/models/reshape_with_empty_shape.tflite"
     )
-    test_calibrator = calibrator.Calibrator(test_model_path, mode=self.mode)  # pytype: disable=wrong-arg-types
+    test_calibrator = calibrator.Calibrator(test_model_path, mode=self.mode)  # pyrefly: ignore[bad-argument-type]
     _add_default_int8xint8_integer_recipe(self._recipe_manager)
     calib_data = tfl_interpreter_utils.create_random_normal_input_data(
         test_model_path, num_samples=4
@@ -462,14 +462,14 @@ class CalibrationInterpreterTestBase(absltest.TestCase):
   def test_initialization(self):
     interpreter = calibrator.CalibrationInterpreter(
         self._test_model_path,
-        mode=self.mode,  # pytype: disable=wrong-arg-types
+        mode=self.mode,  # pyrefly: ignore[bad-argument-type]
     )
     self.assertIsInstance(interpreter, calibrator.CalibrationInterpreter)
 
   def test_calibration_mode(self):
     interpreter = calibrator.CalibrationInterpreter(
         self._test_model_path,
-        mode=self.mode,  # pytype: disable=wrong-arg-types
+        mode=self.mode,  # pyrefly: ignore[bad-argument-type]
     )
     runner = interpreter.get_signature_runner()
 
@@ -488,7 +488,7 @@ class CalibrationInterpreterTestBase(absltest.TestCase):
   def test_save_calibration_result(self):
     interpreter = calibrator.CalibrationInterpreter(
         self._test_model_path,
-        mode=self.mode,  # pytype: disable=wrong-arg-types
+        mode=self.mode,  # pyrefly: ignore[bad-argument-type]
     )
     runner = interpreter.get_signature_runner()
     input_data = np.random.rand(1, 8).astype(np.float32)
@@ -505,7 +505,7 @@ class CalibrationInterpreterTestBase(absltest.TestCase):
   def test_get_signature_list(self):
     interpreter = calibrator.CalibrationInterpreter(
         self._test_model_path,
-        mode=self.mode,  # pytype: disable=wrong-arg-types
+        mode=self.mode,  # pyrefly: ignore[bad-argument-type]
     )
     signatures = interpreter.get_signature_list()
     self.assertNotEmpty(signatures)
@@ -514,7 +514,7 @@ class CalibrationInterpreterTestBase(absltest.TestCase):
   def test_runner_details(self):
     interpreter = calibrator.CalibrationInterpreter(
         self._test_model_path,
-        mode=self.mode,  # pytype: disable=wrong-arg-types
+        mode=self.mode,  # pyrefly: ignore[bad-argument-type]
     )
     runner = interpreter.get_signature_runner()
     input_details = runner.get_input_details()
@@ -528,7 +528,7 @@ class CalibrationInterpreterTestBase(absltest.TestCase):
     # Run calibration interpreter
     interpreter = calibrator.CalibrationInterpreter(
         self._test_model_path,
-        mode=self.mode,  # pytype: disable=wrong-arg-types
+        mode=self.mode,  # pyrefly: ignore[bad-argument-type]
     )
     calib_runner = interpreter.get_signature_runner()
     input_data = np.random.rand(1, 8).astype(np.float32)

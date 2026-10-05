@@ -411,7 +411,7 @@ class TensorUtilsTest(parameterized.TestCase):
     )
     self.assertSequenceEqual(
         list(expected_quantized_data.flatten()),
-        list(bias_quant_config.quantized_data.flatten()),  # pytype: disable=attribute-error
+        list(bias_quant_config.quantized_data.flatten()),  # pyrefly: ignore[missing-attribute]
     )
 
   @parameterized.parameters(True, False)
