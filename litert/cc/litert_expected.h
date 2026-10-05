@@ -171,7 +171,7 @@ class Error {
     LITERT_INTERNAL_DCHECK(status != kLiteRtStatusOk);
   }
 
-  LiteRtStatus status_;
+  LiteRtStatus status_ = kLiteRtStatusErrorUnknown;
   std::string message_;
 };
 

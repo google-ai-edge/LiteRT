@@ -176,5 +176,5 @@ jobs:
             clang-tidy-18 \
             -p "${CMAKE_BUILD_DIR}" \
             --checks="${CLANG_TIDY_CHECKS}" \
-            --header-filter='.*litert/.*' \
+            --header-filter='.*litert/[^.].*' \
             < /tmp/clang_tidy_files.txt
