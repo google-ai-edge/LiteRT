@@ -283,7 +283,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Runtime Initialization");
   int num_threads = 1;
   [[maybe_unused]] bool use_builtin_or_reference_cpu_backend = false;
-  bool use_reference_cpu_kernels = false;
+  [[maybe_unused]] bool use_reference_cpu_kernels = false;
 #if !defined(LITERT_DISABLE_CPU)
   LiteRtCpuOptionsT cpu_options;
   if (jit_compilation_options &&
