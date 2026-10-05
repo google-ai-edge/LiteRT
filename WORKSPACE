@@ -239,10 +239,6 @@ load("//third_party/android:android_configure.bzl", "android_configure")
 
 android_configure(name = "local_config_android")
 
-load("@local_config_android//:android.bzl", "android_workspace")
-
-android_workspace()
-
 # Apple and Swift toolchains, including `@local_config_apple_cc`.
 load("@build_bazel_rules_swift//swift:repositories.bzl", "swift_rules_dependencies")
 
@@ -529,6 +525,11 @@ load("@rules_android_ndk//:rules.bzl", "android_ndk_repository")
 android_ndk_repository(
     name = "androidndk",
     api_level = 26,
+)
+
+bind(
+    name = "android/crosstool",
+    actual = "@androidndk//:toolchain",
 )
 
 load("//:android_ndk_env.bzl", "check_android_ndk_env")
