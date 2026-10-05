@@ -74,5 +74,9 @@ elseif(UNIX)
         litert_cc_options
         "-Wl,--end-group"
     )
-endif()
 
+    target_link_options(qnn_compiler_plugin PRIVATE
+        "-Wl,--version-script=${PROJECT_SOURCE_DIR}/build_common/export_litert_only_linux.lds")
+    set_target_properties(qnn_compiler_plugin PROPERTIES
+        LINK_DEPENDS "${PROJECT_SOURCE_DIR}/build_common/export_litert_only_linux.lds")
+endif()

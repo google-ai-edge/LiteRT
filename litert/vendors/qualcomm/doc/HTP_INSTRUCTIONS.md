@@ -13,8 +13,8 @@ below cover the following modes:
 | ----------- | ---------- | ------------------- | ------------------------- |
 | **AOT (Bazel)** | Host (x86 Linux) | No, compiled offline | [AOT Flow](#aot-flow) > [Build with Bazel](#build-with-bazel) |
 | **AOT (CMake)** | Host (x86 Linux) | No, compiled offline | [AOT Flow](#aot-flow) > [Build with CMake](#build-with-cmake) |
-| **Real JIT** | Device, at load time | Yes, in memory without serialization/cache | [JIT on Android](#jit-on-android) |
-| **On-device AOT** | Device, on the first load | No, cached after first load | [JIT on Android](#jit-on-android) |
+| **Real JIT** | Device, at load time | Yes, in memory without serialization/cache | [JIT on Android](#jit-on-android) / [JIT on IoT](#jit-on-iot) |
+| **On-device AOT** | Device, on the first load | No, cached after first load | [JIT on Android](#jit-on-android) / [JIT on IoT](#jit-on-iot) |
 
 AOT is the most common path. Choose JIT when you cannot pre-compile on a host.
 **Real JIT** recompiles in memory every load, while **On-device AOT** compiles
@@ -49,6 +49,7 @@ Variable                    | Used by
 --------------------------- | -------
 `${ANDROID_NDK_HOME}`       | [Build with CMake](#build-with-cmake)
 `${IOT_DIR}`                | [Build with CMake](#build-with-cmake) > [Run on device (IoT device with oe-linux)](#run-on-device-iot-device-with-oe-linux)
+`${IOT_DEVICE_IP}`          | [Run on device (IoT device with Ubuntu)](#run-on-device-iot-device-with-ubuntu). The IQ-8275's IP address when flashed with Ubuntu and reached over `ssh`/`scp` instead of `adb`.
 `${CACHE_DIR}`              | [On-device AOT (cached JIT)](#on-device-aot-cached-jit). A writable directory on the device for the cached context binary.
 
 --------------------------------------------------------------------------------
@@ -74,6 +75,11 @@ bazel build -c opt --cxxopt=--std=c++17 --nocheck_visibility //litert/tools:appl
 export LD_LIBRARY_PATH=${QAIRT}/lib/x86_64-linux-clang
 bazel-bin/litert/tools/apply_plugin_main --cmd apply --libs bazel-bin/litert/vendors/qualcomm/compiler --soc_model ${SOC_MODEL} --soc_manufacturer Qualcomm --model ${SOURCE_MODEL_DIR}/${SOURCE_MODEL_PATH} -o ${SOURCE_MODEL_DIR}/${COMPILED_MODEL_PATH}
 ```
+
+This also works with `--config=linux_arm64` instead of `--config=android_arm64`
+to cross-compile for aarch64 Linux (IoT) targets instead of Android. See
+[Run on device (IoT device with linux_arm64)](#run-on-device-iot-device-with-linux_arm64)
+below.
 
 #### Run on device (Android)
 
@@ -108,6 +114,47 @@ example, we execute a model on Android device with burst mode via HTP Backend:
 ```bash
 adb shell "export LD_LIBRARY_PATH=/tmp/test_folder/ && export ADSP_LIBRARY_PATH=/tmp/test_folder/ && cd /tmp/test_folder/ && ./run_model --graph=./model_compiled.tflite --dispatch_library_dir=/tmp/test_folder/ --iterations 50 --qualcomm_htp_performance_mode burst --qualcomm_log_level off"
 ```
+
+#### Run on device (IoT device with Ubuntu)
+
+Bazel can also cross-compile straight to a generic aarch64 Linux target with
+`--config=linux_arm64`, instead of going through the CMake eSDK flow in
+[Run on device (IoT device with oe-linux)](#run-on-device-iot-device-with-oe-linux)
+below. AOT execution needs `libLiteRt.so`, `libLiteRtDispatch_Qualcomm.so`, and
+`run_model`; the compiler plugin is only needed by the [JIT on IoT](#jit-on-iot)
+flow. This is useful when you want a quick aarch64 Linux build to sanity-check
+or to deploy onto an IQ-8275 running either oe-linux or Ubuntu (see
+[IOT_DEVICE_SETUP.md](./IOT_DEVICE_SETUP.md)).
+
+```bash
+cd ${LITERT}
+
+bazel build -c opt --config=linux_arm64 //litert/c:libLiteRt.so
+bazel build -c opt --config=linux_arm64 //litert/vendors/qualcomm/dispatch:dispatch_api_so
+bazel build -c opt --config=linux_arm64 //litert/tools:run_model
+```
+
+Below is a sample deploying to an IQ-8275 flashed with the Ubuntu image
+instead of oe-linux (see
+[Flash IoT device (Ubuntu)](./IOT_DEVICE_SETUP.md#flash-iot-device-ubuntu)).
+The device is reached over `ssh`/`scp` instead of `adb`.
+
+```bash
+scp ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnSystem.so ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnHtp.so ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnHtp${HTP_ARCH}Stub.so ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${QAIRT}/lib/hexagon-${HEXAGON_ARCH}/unsigned/libQnnHtp${HTP_ARCH}Skel.so ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${LITERT}/bazel-out/aarch64-opt/bin/litert/c/libLiteRt.so ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${LITERT}/bazel-out/aarch64-opt/bin/litert/vendors/qualcomm/dispatch/libLiteRtDispatch_Qualcomm.so ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${LITERT}/bazel-out/aarch64-opt/bin/litert/tools/run_model ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${SOURCE_MODEL_DIR}/${COMPILED_MODEL_PATH} ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+
+ssh ubuntu@${IOT_DEVICE_IP} "export LD_LIBRARY_PATH=${TEST_FOLDER} && export ADSP_LIBRARY_PATH=${TEST_FOLDER} && cd ${TEST_FOLDER} && ./run_model --graph=${TEST_FOLDER}/${COMPILED_MODEL_PATH} --dispatch_library_dir=${TEST_FOLDER} --accelerator=npu"
+```
+
+`libLiteRt.so` and `libLiteRtDispatch_Qualcomm.so` are ABI-interchangeable
+across build systems and across both IQ-8275 OS images. Keep them on the same
+LiteRT revision and deploy a QAIRT SDK version supported by that revision.
 
 ### Build with CMake
 
@@ -364,4 +411,96 @@ example, we run on-device AOT on Android device with burst mode via HTP Backend:
 
 ```bash
 adb shell "export LD_LIBRARY_PATH=/tmp/test_folder/ && export ADSP_LIBRARY_PATH=/tmp/test_folder/ && cd /tmp/test_folder/ && ./run_model --graph=./model.tflite --accelerator npu --dispatch_library_dir=/tmp/test_folder/ --compiler_plugin_library_dir=/tmp/test_folder/ --compiler_cache_dir=/tmp/test_folder/cache --iterations 50 --qualcomm_htp_performance_mode burst --qualcomm_log_level off"
+```
+
+--------------------------------------------------------------------------------
+
+## JIT on IoT
+
+This flow compiles the original `.tflite` model on an IoT device (such as
+IQ-8275) at load time. It uses the same real-JIT and on-device-AOT modes as
+Android, but builds Linux aarch64 artifacts and deploys QAIRT's
+`aarch64-oe-linux-gcc11.2` libraries. The commands below were validated on
+both QC AOE and Ubuntu IoT device images.
+
+### Build on the x86 Linux host
+
+Unlike the AOT IoT flow, JIT also needs
+`libLiteRtCompilerPlugin_Qualcomm.so` and QNN's prepare/IR/Saver libraries.
+
+```bash
+cd ${LITERT}
+
+bazel build -c opt --config=linux_arm64 //litert/c:libLiteRt.so
+bazel build -c opt --config=linux_arm64 //litert/vendors/qualcomm/dispatch:dispatch_api_so
+bazel build -c opt --config=linux_arm64 //litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so
+bazel build -c opt --config=linux_arm64 //litert/tools:run_model
+```
+
+### Deploy to IoT device (oe-linux)
+
+For an IoT device running Qualcomm Linux (oe-linux), deploy through `adb`.
+The QAIRT Linux aarch64 libraries and the LiteRT artifacts are copied to the
+same `${TEST_FOLDER}` used by the execution commands below.
+
+```bash
+adb push ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnSystem.so ${TEST_FOLDER}
+adb push ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnHtp.so ${TEST_FOLDER}
+adb push ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnHtpPrepare.so ${TEST_FOLDER}
+adb push ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnIr.so ${TEST_FOLDER}
+adb push ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnSaver.so ${TEST_FOLDER}
+adb push ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnHtp${HTP_ARCH}Stub.so ${TEST_FOLDER}
+adb push ${QAIRT}/lib/hexagon-${HEXAGON_ARCH}/unsigned/libQnnHtp${HTP_ARCH}Skel.so ${TEST_FOLDER}
+adb push ${LITERT}/bazel-out/aarch64-opt/bin/litert/c/libLiteRt.so ${TEST_FOLDER}
+adb push ${LITERT}/bazel-out/aarch64-opt/bin/litert/vendors/qualcomm/dispatch/libLiteRtDispatch_Qualcomm.so ${TEST_FOLDER}
+adb push ${LITERT}/bazel-out/aarch64-opt/bin/litert/vendors/qualcomm/compiler/libLiteRtCompilerPlugin_Qualcomm.so ${TEST_FOLDER}
+adb push ${LITERT}/bazel-out/aarch64-opt/bin/litert/tools/run_model ${TEST_FOLDER}
+adb push ${SOURCE_MODEL_DIR}/${SOURCE_MODEL_PATH} ${TEST_FOLDER}
+```
+
+### Deploy to IoT device (Ubuntu)
+
+For an IoT device running Ubuntu, use `scp` instead of `adb`. Create
+`${TEST_FOLDER}` on the device before copying these same runtime, compiler, and
+QNN libraries.
+
+```bash
+ssh ubuntu@${IOT_DEVICE_IP} "mkdir -p ${TEST_FOLDER}"
+scp ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnSystem.so ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnHtp.so ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnHtpPrepare.so ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnIr.so ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnSaver.so ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${QAIRT}/lib/aarch64-oe-linux-gcc11.2/libQnnHtp${HTP_ARCH}Stub.so ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${QAIRT}/lib/hexagon-${HEXAGON_ARCH}/unsigned/libQnnHtp${HTP_ARCH}Skel.so ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${LITERT}/bazel-out/aarch64-opt/bin/litert/c/libLiteRt.so ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${LITERT}/bazel-out/aarch64-opt/bin/litert/vendors/qualcomm/dispatch/libLiteRtDispatch_Qualcomm.so ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${LITERT}/bazel-out/aarch64-opt/bin/litert/vendors/qualcomm/compiler/libLiteRtCompilerPlugin_Qualcomm.so ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${LITERT}/bazel-out/aarch64-opt/bin/litert/tools/run_model ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+scp ${SOURCE_MODEL_DIR}/${SOURCE_MODEL_PATH} ubuntu@${IOT_DEVICE_IP}:${TEST_FOLDER}/
+```
+
+### Real JIT (no serialization)
+
+Use the original model, not `${COMPILED_MODEL_PATH}`.
+
+```bash
+adb shell "export LD_LIBRARY_PATH=${TEST_FOLDER} && export ADSP_LIBRARY_PATH=${TEST_FOLDER} && cd ${TEST_FOLDER} && ./run_model --graph=${TEST_FOLDER}/${SOURCE_MODEL_PATH} --accelerator=npu --dispatch_library_dir=${TEST_FOLDER} --compiler_plugin_library_dir=${TEST_FOLDER} --qualcomm_qnn_lib_dir=${TEST_FOLDER} --qualcomm_dsp_skel_dir=${TEST_FOLDER} --qualcomm_enable_just_in_time=true"
+```
+
+```bash
+ssh ubuntu@${IOT_DEVICE_IP} "export LD_LIBRARY_PATH=${TEST_FOLDER} && export ADSP_LIBRARY_PATH=${TEST_FOLDER} && cd ${TEST_FOLDER} && ./run_model --graph=${TEST_FOLDER}/${SOURCE_MODEL_PATH} --accelerator=npu --dispatch_library_dir=${TEST_FOLDER} --compiler_plugin_library_dir=${TEST_FOLDER} --qualcomm_qnn_lib_dir=${TEST_FOLDER} --qualcomm_dsp_skel_dir=${TEST_FOLDER} --qualcomm_enable_just_in_time=true"
+```
+
+### On-device AOT (cached JIT)
+
+Omit `--qualcomm_enable_just_in_time=true` and add a writable compiler cache.
+The first load compiles and stores the context binary; later loads reuse it.
+
+```bash
+adb shell "export LD_LIBRARY_PATH=${TEST_FOLDER} && export ADSP_LIBRARY_PATH=${TEST_FOLDER} && cd ${TEST_FOLDER} && ./run_model --graph=${TEST_FOLDER}/${SOURCE_MODEL_PATH} --accelerator=npu --dispatch_library_dir=${TEST_FOLDER} --compiler_plugin_library_dir=${TEST_FOLDER} --compiler_cache_dir=${CACHE_DIR} --qualcomm_qnn_lib_dir=${TEST_FOLDER} --qualcomm_dsp_skel_dir=${TEST_FOLDER}"
+```
+
+```bash
+ssh ubuntu@${IOT_DEVICE_IP} "export LD_LIBRARY_PATH=${TEST_FOLDER} && export ADSP_LIBRARY_PATH=${TEST_FOLDER} && cd ${TEST_FOLDER} && ./run_model --graph=${TEST_FOLDER}/${SOURCE_MODEL_PATH} --accelerator=npu --dispatch_library_dir=${TEST_FOLDER} --compiler_plugin_library_dir=${TEST_FOLDER} --compiler_cache_dir=${CACHE_DIR} --qualcomm_qnn_lib_dir=${TEST_FOLDER} --qualcomm_dsp_skel_dir=${TEST_FOLDER}"
 ```

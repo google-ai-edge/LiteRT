@@ -41,14 +41,14 @@ set_target_properties(dispatch_api_qualcomm_so PROPERTIES
 
 if(UNIX AND NOT APPLE)
     # Set soname and rpath to search origin directory for libLiteRt.so
-    target_link_options(dispatch_api_qualcomm_so PRIVATE 
+    target_link_options(dispatch_api_qualcomm_so PRIVATE
         "-Wl,-soname=libLiteRtDispatch_Qualcomm.so"
         "-Wl,-rpath,\$ORIGIN"
     )
 
-    target_link_libraries(dispatch_api_qualcomm_so PRIVATE 
+    target_link_libraries(dispatch_api_qualcomm_so PRIVATE
         "-Wl,--start-group"
-        litert_runtime_c_api_shared_lib 
+        litert_runtime_c_api_shared_lib
         litert_compiler_plugin
         litert_cc_api
         litert_cc_options
@@ -56,4 +56,9 @@ if(UNIX AND NOT APPLE)
         Threads::Threads
         "-Wl,--end-group"
     )
+
+    target_link_options(dispatch_api_qualcomm_so PRIVATE
+        "-Wl,--version-script=${PROJECT_SOURCE_DIR}/build_common/export_litert_only_linux.lds")
+    set_target_properties(dispatch_api_qualcomm_so PROPERTIES
+        LINK_DEPENDS "${PROJECT_SOURCE_DIR}/build_common/export_litert_only_linux.lds")
 endif()
