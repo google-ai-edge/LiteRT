@@ -1,0 +1,19 @@
+diff --git a/emscripten_toolchain/BUILD.bazel b/emscripten_toolchain/BUILD.bazel
+--- a/emscripten_toolchain/BUILD.bazel
++++ b/emscripten_toolchain/BUILD.bazel
+@@ -1 +1,2 @@
++load("@rules_python//python:defs.bzl", "py_binary")
+ load(":toolchain.bzl", "emscripten_cc_toolchain_config_rule")
+diff --git a/deps.bzl b/deps.bzl
+--- a/deps.bzl
++++ b/deps.bzl
+@@ -44,7 +44,8 @@
+         sha256 = "158619723f1d8bd535dd6b93521f4e03cf24a5e107126d05685fbd9540ccad10",
+         urls = ["https://github.com/bazel-contrib/rules_nodejs/releases/download/v6.3.2/rules_nodejs-v6.3.2.tar.gz"],
+     )
+-    http_archive(
++    maybe(
++        http_archive,
+         name = "bazel_features",
+         sha256 = "f3082bfcdca73dc77dcd68faace806135a2e08c230b02b1d9fbdbd7db9d9c450",
+         strip_prefix = "bazel_features-0.1.0",

@@ -74,6 +74,39 @@ string_flag(
     visibility = ["//visibility:public"],
 )
 
+# Replace the default all-ops resolver at link time for a fixed set of models.
+# See litert_selected_op_resolver() in selective_ops.bzl.
+label_flag(
+    name = "op_resolver",
+    build_setting_default = "//litert/runtime:default_op_resolver",
+    visibility = ["//visibility:public"],
+)
+
+# Allow unused C APIs to be stripped from statically linked C++ applications.
+# Explicitly supplied system runtimes still use their own function table.
+bool_flag(
+    name = "cc_static_dispatch",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "cc_static_dispatch_enabled",
+    flag_values = {":cc_static_dispatch": "true"},
+)
+
+config_setting(
+    name = "cc_static_dispatch_dynamic",
+    define_values = {"litert_runtime_link_mode": "dynamic"},
+    flag_values = {":cc_static_dispatch": "true"},
+)
+
+config_setting(
+    name = "cc_static_dispatch_none",
+    define_values = {"litert_runtime_link_mode": "none"},
+    flag_values = {":cc_static_dispatch": "true"},
+)
+
 config_setting(
     name = "cpu_backend_builtin",
     flag_values = {":cpu_backend": "builtin"},
@@ -199,6 +232,15 @@ selects.config_setting_group(
         "//litert:android",
         ":build_include_gpu_enabled",
     ],
+)
+
+selects.config_setting_group(
+    name = "emscripten_gpu_enabled",
+    match_all = [
+        "//litert:emscripten",
+        ":build_include_gpu_enabled",
+    ],
+    visibility = ["//visibility:public"],
 )
 
 selects.config_setting_group(

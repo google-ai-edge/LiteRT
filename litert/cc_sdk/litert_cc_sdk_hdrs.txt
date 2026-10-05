@@ -2,6 +2,7 @@ litert/c/internal/litert_accelerator.h
 litert/c/internal/litert_logging.h
 litert/c/internal/litert_options_helper.h
 litert/c/internal/litert_runtime_api_export.h
+litert/c/internal/litert_runtime_api_table.h
 litert/c/internal/litert_runtime_builtin.h
 litert/c/internal/litert_runtime_c_api.h
 litert/c/internal/litert_scheduling_info.h
