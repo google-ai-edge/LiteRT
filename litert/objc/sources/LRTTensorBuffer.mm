@@ -59,8 +59,7 @@ bool IsMetalTextureType(LRTTensorBufferType type) {
  *
  * Messaging a nil @c environment returns nullptr as well, so this also covers a nil argument.
  */
-litert::Environment *_Nullable ValidatedCppEnvironment(LRTEnvironment *_Nullable environment,
-                                                       NSError *_Nullable *_Nullable error) {
+litert::Environment *ValidatedCppEnvironment(LRTEnvironment *environment, NSError **error) {
   litert::Environment *cppEnvironment = [environment cppEnvironment];
   if (cppEnvironment == nullptr) {
     LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTEnvironment required");
@@ -70,8 +69,7 @@ litert::Environment *_Nullable ValidatedCppEnvironment(LRTEnvironment *_Nullable
 
 /** Returns the tensor type described by @c elementType and @c dimensions, or nullopt if invalid. */
 std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
-    LRTElementType elementType, NSArray<NSNumber *> *_Nullable dimensions,
-    NSError *_Nullable *_Nullable error) {
+    LRTElementType elementType, NSArray<NSNumber *> *dimensions, NSError **error) {
   if (elementType == LRTElementTypeNone) {
     LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTElementType required");
     return std::nullopt;
@@ -111,13 +109,13 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
  * @param error Out-parameter populated on failure.
  * @return A new LRTTensorBuffer instance, or nil on failure.
  */
-+ (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
-                                         metalMemory:(id)metalMemory
-                                          bufferType:(LRTTensorBufferType)bufferType
-                                           sizeBytes:(NSUInteger)sizeBytes
-                                         elementType:(LRTElementType)elementType
-                                          dimensions:(NSArray<NSNumber *> *)dimensions
-                                               error:(NSError **)error;
++ (instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                metalMemory:(id)metalMemory
+                                 bufferType:(LRTTensorBufferType)bufferType
+                                  sizeBytes:(NSUInteger)sizeBytes
+                                elementType:(LRTElementType)elementType
+                                 dimensions:(NSArray<NSNumber *> *)dimensions
+                                      error:(NSError **)error;
 
 @end
 
@@ -125,25 +123,11 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
   std::unique_ptr<litert::TensorBuffer> _cppTensorBuffer;
 }
 
-- (instancetype)initInternalWithCppTensorBuffer:
-    (std::unique_ptr<litert::TensorBuffer>)cppTensorBuffer {
-  self = [super init];
-  if (self) {
-    _cppTensorBuffer = std::move(cppTensorBuffer);
-  }
-  return self;
-}
-
-+ (nullable instancetype)tensorBufferWithCppTensorBuffer:(litert::TensorBuffer)cppTensorBuffer {
-  auto cppPtr = std::make_unique<litert::TensorBuffer>(std::move(cppTensorBuffer));
-  return [[LRTTensorBuffer alloc] initInternalWithCppTensorBuffer:std::move(cppPtr)];
-}
-
-+ (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
-                                                size:(NSUInteger)size
-                                         elementType:(LRTElementType)elementType
-                                          dimensions:(NSArray<NSNumber *> *)dimensions
-                                               error:(NSError **)error {
++ (instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                       size:(NSUInteger)size
+                                elementType:(LRTElementType)elementType
+                                 dimensions:(NSArray<NSNumber *> *)dimensions
+                                      error:(NSError **)error {
   return [self tensorBufferWithEnvironment:environment
                                 bufferType:LRTTensorBufferTypeHostMemory
                                       size:size
@@ -152,11 +136,11 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
                                      error:error];
 }
 
-+ (nullable instancetype)managedMetalTensorBufferWithEnvironment:(LRTEnvironment *)environment
-                                                            size:(NSUInteger)size
-                                                     elementType:(LRTElementType)elementType
-                                                      dimensions:(NSArray<NSNumber *> *)dimensions
-                                                           error:(NSError **)error {
++ (instancetype)managedMetalTensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                                   size:(NSUInteger)size
+                                            elementType:(LRTElementType)elementType
+                                             dimensions:(NSArray<NSNumber *> *)dimensions
+                                                  error:(NSError **)error {
   return [self tensorBufferWithEnvironment:environment
                                 bufferType:LRTTensorBufferTypeMetalBuffer
                                       size:size
@@ -165,12 +149,12 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
                                      error:error];
 }
 
-+ (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
-                                          bufferType:(LRTTensorBufferType)bufferType
-                                                size:(NSUInteger)size
-                                         elementType:(LRTElementType)elementType
-                                          dimensions:(NSArray<NSNumber *> *)dimensions
-                                               error:(NSError **)error {
++ (instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                 bufferType:(LRTTensorBufferType)bufferType
+                                       size:(NSUInteger)size
+                                elementType:(LRTElementType)elementType
+                                 dimensions:(NSArray<NSNumber *> *)dimensions
+                                      error:(NSError **)error {
   litert::Environment *cppEnvironment = ValidatedCppEnvironment(environment, error);
   if (cppEnvironment == nullptr) {
     return nil;
@@ -199,15 +183,15 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
     return nil;
   }
 
-  auto cppPtr = std::make_unique<litert::TensorBuffer>(std::move(bufferResult.Value()));
-  return [[LRTTensorBuffer alloc] initInternalWithCppTensorBuffer:std::move(cppPtr)];
+  auto cppTensorBuffer = std::make_unique<litert::TensorBuffer>(std::move(bufferResult.Value()));
+  return [[LRTTensorBuffer alloc] initInternalWithCppTensorBuffer:std::move(cppTensorBuffer)];
 }
 
-+ (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
-                                         metalBuffer:(id<MTLBuffer>)metalBuffer
-                                         elementType:(LRTElementType)elementType
-                                          dimensions:(NSArray<NSNumber *> *)dimensions
-                                               error:(NSError **)error {
++ (instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                metalBuffer:(id<MTLBuffer>)metalBuffer
+                                elementType:(LRTElementType)elementType
+                                 dimensions:(NSArray<NSNumber *> *)dimensions
+                                      error:(NSError **)error {
   if (metalBuffer == nil) {
     LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid MTLBuffer required");
     return nil;
@@ -221,11 +205,11 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
                                      error:error];
 }
 
-+ (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
-                                        metalTexture:(id<MTLTexture>)metalTexture
-                                         elementType:(LRTElementType)elementType
-                                          dimensions:(NSArray<NSNumber *> *)dimensions
-                                               error:(NSError **)error {
++ (instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
+                               metalTexture:(id<MTLTexture>)metalTexture
+                                elementType:(LRTElementType)elementType
+                                 dimensions:(NSArray<NSNumber *> *)dimensions
+                                      error:(NSError **)error {
   if (metalTexture == nil) {
     LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid MTLTexture required");
     return nil;
@@ -239,13 +223,13 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
                                      error:error];
 }
 
-+ (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
-                                         metalMemory:(id)metalMemory
-                                          bufferType:(LRTTensorBufferType)bufferType
-                                           sizeBytes:(NSUInteger)sizeBytes
-                                         elementType:(LRTElementType)elementType
-                                          dimensions:(NSArray<NSNumber *> *)dimensions
-                                               error:(NSError **)error {
++ (instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                metalMemory:(id)metalMemory
+                                 bufferType:(LRTTensorBufferType)bufferType
+                                  sizeBytes:(NSUInteger)sizeBytes
+                                elementType:(LRTElementType)elementType
+                                 dimensions:(NSArray<NSNumber *> *)dimensions
+                                      error:(NSError **)error {
   litert::Environment *cppEnvironment = ValidatedCppEnvironment(environment, error);
   if (cppEnvironment == nullptr) {
     return nil;
@@ -265,9 +249,20 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
     return nil;
   }
 
-  auto cppPtr = std::make_unique<litert::TensorBuffer>(std::move(bufferResult.Value()));
-  return [[LRTTensorBuffer alloc] initInternalWithCppTensorBuffer:std::move(cppPtr)];
+  auto cppTensorBuffer = std::make_unique<litert::TensorBuffer>(std::move(bufferResult.Value()));
+  return [[LRTTensorBuffer alloc] initInternalWithCppTensorBuffer:std::move(cppTensorBuffer)];
 }
+
+- (instancetype)initInternalWithCppTensorBuffer:
+    (std::unique_ptr<litert::TensorBuffer>)cppTensorBuffer {
+  self = [super init];
+  if (self) {
+    _cppTensorBuffer = std::move(cppTensorBuffer);
+  }
+  return self;
+}
+
+#pragma mark - Properties
 
 - (LRTTensorBufferType)bufferType {
   if (!_cppTensorBuffer) return LRTTensorBufferTypeUnknown;
@@ -293,7 +288,7 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
   for (auto dimension : shape) {
     [dimensions addObject:@(dimension)];
   }
-  return [dimensions copy];
+  return dimensions;
 }
 
 - (NSUInteger)size {
@@ -303,7 +298,7 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
   return *sizeResult;
 }
 
-- (nullable id<MTLBuffer>)metalBuffer {
+- (id<MTLBuffer>)metalBuffer {
   if (!_cppTensorBuffer) return nil;
   if (!IsMetalBufferType(self.bufferType)) return nil;
   auto metalMemoryResult = _cppTensorBuffer->GetMetalBuffer();
@@ -311,7 +306,7 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
   return (__bridge id<MTLBuffer>)*metalMemoryResult;
 }
 
-- (nullable id<MTLTexture>)metalTexture {
+- (id<MTLTexture>)metalTexture {
   if (!_cppTensorBuffer) return nil;
   if (!IsMetalTextureType(self.bufferType)) return nil;
   auto metalMemoryResult = _cppTensorBuffer->GetMetalBuffer();
@@ -319,7 +314,9 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
   return (__bridge id<MTLTexture>)*metalMemoryResult;
 }
 
-- (nullable NSData *)readDataWithError:(NSError **)error {
+#pragma mark - Public
+
+- (NSData *)readDataWithError:(NSError **)error {
   if (!_cppTensorBuffer) {
     LRTSetError(error, LRTErrorCodeInvalidArgument, @"Invalid tensor buffer");
     return nil;
@@ -332,8 +329,8 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
     return nil;
   }
 
-  void *hostAddr = *lockResult;
-  NSData *data = [NSData dataWithBytes:hostAddr length:self.size];
+  void *hostAddress = *lockResult;
+  NSData *data = [NSData dataWithBytes:hostAddress length:self.size];
   _cppTensorBuffer->Unlock();
   return data;
 }
@@ -356,16 +353,23 @@ std::optional<litert::RankedTensorType> RankedTensorTypeFromDimensions(
     return NO;
   }
 
-  void *hostAddr = *lockResult;
+  void *hostAddress = *lockResult;
   // Writing a shorter or longer NSData than the buffer is allowed: extra bytes are dropped and
   // the remaining bytes of the buffer keep their previous contents.
   size_t copyLength = std::min<size_t>(data.length, self.size);
-  std::memcpy(hostAddr, data.bytes, copyLength);
+  std::memcpy(hostAddress, data.bytes, copyLength);
   _cppTensorBuffer->Unlock();
   return YES;
 }
 
-- (nullable litert::TensorBuffer *)cppTensorBuffer {
+#pragma mark - LRTTensorBuffer (Internal)
+
++ (instancetype)tensorBufferWithCppTensorBuffer:(litert::TensorBuffer)cppTensorBuffer {
+  auto ownedCppTensorBuffer = std::make_unique<litert::TensorBuffer>(std::move(cppTensorBuffer));
+  return [[LRTTensorBuffer alloc] initInternalWithCppTensorBuffer:std::move(ownedCppTensorBuffer)];
+}
+
+- (litert::TensorBuffer *)cppTensorBuffer {
   return _cppTensorBuffer.get();
 }
 

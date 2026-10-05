@@ -27,14 +27,6 @@ typedef NS_OPTIONS(NSUInteger, LRTHardwareAccelerators) {
 /** Options for compiling a LiteRT model. */
 @interface LRTOptions : NSObject
 
-/**
- * Initializes options with specified hardware accelerators bitmask.
- *
- * @param hardwareAccelerators Enabled hardware accelerators bitmask.
- */
-- (instancetype)initWithHardwareAccelerators:(LRTHardwareAccelerators)hardwareAccelerators
-    NS_DESIGNATED_INITIALIZER;
-
 /** Hardware accelerators bitmask enabled for compilation. */
 @property(nonatomic, assign, readonly) LRTHardwareAccelerators hardwareAccelerators;
 
@@ -60,6 +52,14 @@ typedef NS_OPTIONS(NSUInteger, LRTHardwareAccelerators) {
  * page faults and hitching during subsequent inference runs.
  */
 @property(nonatomic, assign) BOOL enablesMetalResidencySet;
+
+/**
+ * Initializes options with specified hardware accelerators bitmask.
+ *
+ * @param hardwareAccelerators Enabled hardware accelerators bitmask.
+ */
+- (instancetype)initWithHardwareAccelerators:(LRTHardwareAccelerators)hardwareAccelerators
+    NS_DESIGNATED_INITIALIZER;
 
 @end
 
