@@ -30,6 +30,7 @@
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
+#include "ml_drift_delegate/delegate/composite/short_conv_step_parser.h"
 
 namespace litert::ml_drift {
 namespace {
@@ -52,6 +53,7 @@ using ::ml_drift::TensorDescriptor;
 using ::ml_drift::TensorStorageType;
 using ::ml_drift::Value;
 using ::ml_drift::ValueId;
+using ::testing::HasSubstr;
 
 GpuInfo GetTestGpuInfo() {
   GpuInfo gpu_info;
@@ -191,6 +193,89 @@ TEST(LiteRtOpSelectorTest,
     }
   }
   EXPECT_TRUE(found_cache_node);
+}
+
+TEST(LiteRtOpSelectorTest, ShortConvStepUngatedSiluConv4) {
+  const GpuInfo gpu_info = GetTestGpuInfo();
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF32;
+  create_info.storage_type = TensorStorageType::kTexture2D;
+
+  GpuModelBuilderOptions options;
+  options.storage = TensorStorageType::kTexture2D;
+  GpuModelBuilder builder(gpu_info, options);
+
+  constexpr int kHiddenSize = 6144;
+  constexpr int kFilterSize = 4;
+  constexpr int kStateCacheSize = kFilterSize - 1;
+
+  TensorDescriptor in_proj_desc(DataType::kFloat32,
+                                TensorStorageType::kTexture2D, Layout::kHWC);
+  in_proj_desc.SetBHWCShape(BHWC(1, 1, 1, kHiddenSize));
+  TensorDescriptor conv_state_desc(DataType::kFloat32,
+                                   TensorStorageType::kTexture2D, Layout::kHWC);
+  conv_state_desc.SetBHWCShape(BHWC(1, 1, kHiddenSize, kStateCacheSize));
+  TensorDescriptor conv_weight_desc(
+      DataType::kFloat32, TensorStorageType::kTexture2D, Layout::kHWC);
+  conv_weight_desc.SetBHWCShape(BHWC(1, 1, kHiddenSize, kFilterSize));
+  TensorDescriptor out_desc(DataType::kFloat32, TensorStorageType::kTexture2D,
+                            Layout::kHWC);
+  out_desc.SetBHWCShape(BHWC(1, 1, 1, kHiddenSize));
+  TensorDescriptor next_state_desc(DataType::kFloat32,
+                                   TensorStorageType::kTexture2D, Layout::kHWC);
+  next_state_desc.SetBHWCShape(BHWC(1, 1, kHiddenSize, kStateCacheSize));
+
+  auto in_proj = builder.AddTensor(in_proj_desc);
+  auto conv_state = builder.AddTensor(conv_state_desc);
+  auto conv_weight = builder.AddTensor(conv_weight_desc);
+  auto out = builder.AddTensor(out_desc);
+  auto next_state = builder.AddTensor(next_state_desc);
+
+  Value v_in_proj{in_proj.id, {DataType::kFloat32, BHWC(1, 1, 1, kHiddenSize)}};
+  Value v_conv_state{
+      conv_state.id,
+      {DataType::kFloat32, BHWC(1, 1, kHiddenSize, kStateCacheSize)}};
+  Value v_conv_weight{
+      conv_weight.id,
+      {DataType::kFloat32, BHWC(1, 1, kHiddenSize, kFilterSize)}};
+  Value v_out{out.id, {DataType::kFloat32, BHWC(1, 1, 1, kHiddenSize)}};
+  Value v_next_state{
+      next_state.id,
+      {DataType::kFloat32, BHWC(1, 1, kHiddenSize, kStateCacheSize)}};
+
+  OperationDef op_def;
+  op_def.src_tensors = {in_proj.tensor_desc, conv_state.tensor_desc,
+                        conv_weight.tensor_desc};
+  op_def.dst_tensors = {out.tensor_desc, next_state.tensor_desc};
+
+  GraphFloat32 graph;
+  Node* conv_node = graph.NewNode();
+  conv_node->operation.type = kShortConvStepType;
+  ShortConvStepAttributes attr;
+  attr.conv_L_cache = kFilterSize;
+  attr.is_gated = false;
+  attr.use_silu = true;
+  conv_node->operation.attributes = attr;
+
+  LiteRtOpSelector selector(&create_info, &gpu_info);
+  ASSERT_OK(selector.GPUOperationFromNode(
+      op_def, {&v_in_proj, &v_conv_state, &v_conv_weight},
+      {&v_out, &v_next_state}, *conv_node, &builder));
+
+  GpuModel gpu_model;
+  ASSERT_OK(builder.GetGpuModel({in_proj.id, conv_state.id, conv_weight.id},
+                                {out.id, next_state.id}, &gpu_model));
+
+  ASSERT_EQ(gpu_model.nodes.size(), 1);
+  EXPECT_EQ(gpu_model.nodes[0].name, "short_conv_step");
+  const std::string& code = gpu_model.nodes[0].gpu_operation->code_;
+  EXPECT_THAT(
+      code,
+      HasSubstr("conv_out.x = s0.x * w0.x + s0.y * w0.y + s0.z * w0.z + p.x * "
+                "w0.w;"));
+  EXPECT_THAT(code, HasSubstr("(s0.y, s0.z, p.x, 0.0f)"));
+  EXPECT_THAT(code, HasSubstr("conv_out = conv_out / ("));
+  EXPECT_THAT(code, HasSubstr("+ exp(-conv_out));"));
 }
 
 }  // namespace

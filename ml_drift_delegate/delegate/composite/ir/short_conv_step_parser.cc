@@ -69,24 +69,28 @@ void ShortConvStepConvert(
   const auto* params = static_cast<const TfLiteStablehloCompositeParams*>(
       tflite_node.builtin_data);
   ::litert::ml_drift::ShortConvStepAttributes attr;
+  const uint8_t* buffer_t = nullptr;
+  size_t length = 0;
   if (params && params->attributes && params->attributes_size > 0) {
+    buffer_t = reinterpret_cast<const uint8_t*>(params->attributes);
+    length = params->attributes_size;
+  } else if (tflite_node.custom_initial_data &&
+             tflite_node.custom_initial_data_size > 0) {
+    buffer_t =
+        reinterpret_cast<const uint8_t*>(tflite_node.custom_initial_data);
+    length = tflite_node.custom_initial_data_size;
+  }
+  if (buffer_t && length > 0) {
     const flexbuffers::Map flexbuffer_map =
-        flexbuffers::GetRoot(
-            reinterpret_cast<const uint8_t*>(params->attributes),
-            params->attributes_size)
-            .AsMap();
+        flexbuffers::GetRoot(buffer_t, length).AsMap();
     if (!flexbuffer_map["conv_L_cache"].IsNull()) {
       attr.conv_L_cache = flexbuffer_map["conv_L_cache"].AsInt32();
     }
-  } else if (tflite_node.custom_initial_data &&
-             tflite_node.custom_initial_data_size > 0) {
-    const flexbuffers::Map flexbuffer_map =
-        flexbuffers::GetRoot(
-            reinterpret_cast<const uint8_t*>(tflite_node.custom_initial_data),
-            tflite_node.custom_initial_data_size)
-            .AsMap();
-    if (!flexbuffer_map["conv_L_cache"].IsNull()) {
-      attr.conv_L_cache = flexbuffer_map["conv_L_cache"].AsInt32();
+    if (!flexbuffer_map["is_gated"].IsNull()) {
+      attr.is_gated = flexbuffer_map["is_gated"].AsBool();
+    }
+    if (!flexbuffer_map["use_silu"].IsNull()) {
+      attr.use_silu = flexbuffer_map["use_silu"].AsBool();
     }
   }
   op->attr = attr;
