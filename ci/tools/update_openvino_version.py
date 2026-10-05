@@ -152,12 +152,13 @@ def _pep440_version(channel: str, urls: dict[str, str]) -> str:
       )
     return match.group(1)
 
-  # Release: the channel-dir path segment is the plain "{version}".
-  match = re.search(r"/packages/(\d+\.\d+\.\d+)/", urls["windows"])
+  # Release: the dir segment may omit ".0" (e.g. "2026.4"), so use the
+  # filename's "<major>.<minor>.<patch>.<build>" token.
+  match = re.search(r"_windows_(\d+\.\d+\.\d+)\.\d+\.", filename)
   if not match:
     raise ValueError(
-        "Could not find a '/packages/<version>/' path segment in release"
-        f" URL: {urls['windows']}"
+        "Could not find a '<major>.<minor>.<patch>.<build>' token in release"
+        f" filename: {filename}"
     )
   return match.group(1)
 
