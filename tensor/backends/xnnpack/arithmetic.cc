@@ -925,9 +925,11 @@ absl::Status OpMixin<SliceOperation, XnnpackMixinTag>::ToXnnpack(
   auto begin_locked = begin_info.buffer->Lock();
   const int32_t* begin_data =
       reinterpret_cast<const int32_t*>(begin_locked.data());
-  if (begin_info.shape.empty()) {
-    return absl::InvalidArgumentError(
-        absl::StrFormat("%s: begin tensor must not be a 0D scalar", op_name));
+  if (begin_info.shape.empty() || begin_info.shape[0] <= 0) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "%s: begin tensor must be a 1D tensor with a positive dimension; "
+        "got shape[0] = %d",
+        op_name, begin_info.shape.empty() ? 0 : begin_info.shape[0]));
   }
   size_t num_dims = begin_info.shape[0];
 
