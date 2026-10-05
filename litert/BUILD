@@ -278,7 +278,7 @@ package_group(
         "//litert/runtime/...",
         "//litert/sdk_util/...",
         "//litert/test/...",
-        "//litert/tflite_support/custom_op/...",
+        "//litert/tflite_support/...",
         "//litert/tools/...",
         "//litert/vendors/...",
         "//ml_drift_delegate/...",
