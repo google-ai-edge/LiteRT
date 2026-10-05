@@ -19,6 +19,7 @@
 #if defined(__ANDROID__)
 #include <dlfcn.h>
 
+#include <atomic>
 #include <cstdint>
 
 #include "openvino/runtime/properties.hpp"
@@ -31,6 +32,10 @@ extern "C" {
 int npu_hal_submit_inference_async(void** ctx, void* infer_request,
                                    int32_t job_priority, int32_t original_uid);
 void npu_hal_release_context(void* ctx);
+int npu_hal_query_priority(int32_t uid, int32_t* out_priority);
+typedef void (*npu_hal_priority_callback)(int32_t uid, int32_t new_priority,
+                                          int has_direct_access);
+int npu_hal_register_priority_callback(npu_hal_priority_callback callback);
 }
 
 namespace litert::openvino {
@@ -54,9 +59,31 @@ inline ov::hint::Priority ToOvModelPriority(int32_t job_priority) {
 struct NpuHalHooks {
   decltype(&npu_hal_submit_inference_async) submit_inference_async = nullptr;
   decltype(&npu_hal_release_context) release_context = nullptr;
+  // Optional: absent on older hooks, in which case the caller-supplied job
+  // priority is used unchanged.
+  decltype(&npu_hal_query_priority) query_priority = nullptr;
+  decltype(&npu_hal_register_priority_callback) register_priority_callback =
+      nullptr;
   // Set when the library loaded but a required symbol could not be resolved.
   bool load_error = false;
 };
+
+// This process's priority as last reported by the NPU HAL. NPU Manager
+// re-prioritises the process on foreground/background changes, so this is the
+// authoritative value rather than anything sampled at load time.
+inline std::atomic<int32_t>& HalPriorityRef() {
+  static std::atomic<int32_t> value{kDefaultJobPriority};
+  return value;
+}
+
+// Invoked on a binder thread by the HAL hook.
+inline void HalPriorityListener(int32_t uid, int32_t new_priority,
+                                int has_direct_access) {
+  HalPriorityRef().store(new_priority, std::memory_order_release);
+  LITERT_LOG(LITERT_INFO,
+             "NPU HAL priority changed: uid=%d priority=%d direct_access=%d",
+             uid, new_priority, has_direct_access);
+}
 
 // Loads libnpu_hal_hook.so exactly once and resolves all required symbols from
 // that single handle, storing them in the returned struct. If the library
@@ -94,9 +121,41 @@ inline const NpuHalHooks& GetNpuHalHooks() {
       resolved.load_error = true;
       return resolved;
     }
+
+    // Priority plumbing is optional so an older hook still works; without it
+    // the caller-supplied job priority is used as-is.
+    resolved.query_priority =
+        reinterpret_cast<decltype(&npu_hal_query_priority)>(
+            dlsym(handle, "npu_hal_query_priority"));
+    resolved.register_priority_callback =
+        reinterpret_cast<decltype(&npu_hal_register_priority_callback)>(
+            dlsym(handle, "npu_hal_register_priority_callback"));
+
+    if (resolved.query_priority != nullptr) {
+      int32_t priority = kDefaultJobPriority;
+      // -1 means "this process"; the hook substitutes getuid().
+      if (resolved.query_priority(-1, &priority) == 0) {
+        HalPriorityRef().store(priority, std::memory_order_release);
+        LITERT_LOG(LITERT_INFO, "NPU HAL initial priority: %d", priority);
+      }
+    }
+    if (resolved.register_priority_callback != nullptr) {
+      if (resolved.register_priority_callback(&HalPriorityListener) != 0) {
+        LITERT_LOG(LITERT_WARNING,
+                   "NPU HAL priority listener unavailable; priority will not "
+                   "follow foreground/background changes");
+      }
+    }
     return resolved;
   }();
   return hooks;
+}
+
+// This process's current NPU HAL priority. Falls back to kDefaultJobPriority
+// when the hook is absent or exposes no priority API.
+inline int32_t CurrentHalPriority() {
+  GetNpuHalHooks();  // Forces the one-time query and listener registration.
+  return HalPriorityRef().load(std::memory_order_acquire);
 }
 
 }  // namespace litert::openvino
