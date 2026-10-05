@@ -418,5 +418,80 @@ TEST(GatedDeltaUpdateGpuTest, RejectInvalidGqaHeadRatio) {
                                  /*D_v=*/16, /*H_k=*/4);
 }
 
+// 23. Right-padded sequence steps (beta == 0 && g == 0) early-exit
+// verification.
+TEST(GatedDeltaUpdateGpuTest, RightPaddedSequenceEarlyExit) {
+  const int B = 1, H = 48, H_k = 16, N = 16, valid_len = 6, D_k = 128,
+            D_v = 128;
+  auto model_buf = CreateGatedDeltaUpdateModelBuffer(B, H, N, D_k, D_v, 0, H_k);
+
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+  auto options = CreateGpuOptions(/*use_fp32=*/true);
+  ASSERT_TRUE(options);
+  auto compiled_model = CompiledModel::Create(
+      *env, litert::BufferRef<uint8_t>(model_buf.data(), model_buf.size()),
+      *options);
+  ASSERT_TRUE(compiled_model);
+
+  auto input_buffers = compiled_model->CreateInputBuffers();
+  ASSERT_TRUE(input_buffers);
+  auto output_buffers = compiled_model->CreateOutputBuffers();
+  ASSERT_TRUE(output_buffers);
+
+  std::srand(99);
+  auto q_data = GenerateRandom(B * H_k * N * D_k, -0.5f, 0.5f);
+  auto k_data = GenerateRandom(B * H_k * N * D_k, -0.5f, 0.5f);
+  auto v_data = GenerateRandom(B * H * N * D_v, -0.5f, 0.5f);
+  auto beta_data = GenerateRandom(B * H * N, 0.1f, 0.9f);
+  auto g_data = GenerateRandom(B * H * N, -1.0f, -0.1f);
+  auto state_data = GenerateRandom(B * H * D_k * D_v, -0.5f, 0.5f);
+
+  // Zero out padded tokens t >= valid_len
+  for (int hk = 0; hk < H_k; ++hk) {
+    for (int t = valid_len; t < N; ++t) {
+      for (int d = 0; d < D_k; ++d) {
+        q_data[(hk * N + t) * D_k + d] = 0.0f;
+        k_data[(hk * N + t) * D_k + d] = 0.0f;
+      }
+    }
+  }
+  for (int h = 0; h < H; ++h) {
+    for (int t = valid_len; t < N; ++t) {
+      beta_data[h * N + t] = 0.0f;
+      g_data[h * N + t] = 0.0f;
+      for (int d = 0; d < D_v; ++d) {
+        v_data[(h * N + t) * D_v + d] = 0.0f;
+      }
+    }
+  }
+
+  ASSERT_TRUE((*input_buffers)[0].Write<float>(absl::MakeConstSpan(q_data)));
+  ASSERT_TRUE((*input_buffers)[1].Write<float>(absl::MakeConstSpan(k_data)));
+  ASSERT_TRUE((*input_buffers)[2].Write<float>(absl::MakeConstSpan(v_data)));
+  ASSERT_TRUE((*input_buffers)[3].Write<float>(absl::MakeConstSpan(beta_data)));
+  ASSERT_TRUE((*input_buffers)[4].Write<float>(absl::MakeConstSpan(g_data)));
+  ASSERT_TRUE(
+      (*input_buffers)[5].Write<float>(absl::MakeConstSpan(state_data)));
+
+  std::vector<float> golden_out(B * H * N * D_v);
+  std::vector<float> golden_final_state(B * H * D_k * D_v);
+  ComputeGoldenRecurrentGatedDelta(
+      q_data.data(), k_data.data(), v_data.data(), beta_data.data(),
+      g_data.data(), state_data.data(), golden_out.data(),
+      golden_final_state.data(), B, H, N, D_k, D_v, H_k);
+
+  ASSERT_TRUE(compiled_model->Run(*input_buffers, *output_buffers));
+
+  std::vector<float> actual_out(B * H * N * D_v);
+  std::vector<float> actual_final_state(B * H * D_k * D_v);
+  ASSERT_TRUE((*output_buffers)[0].Read<float>(absl::MakeSpan(actual_out)));
+  ASSERT_TRUE(
+      (*output_buffers)[1].Read<float>(absl::MakeSpan(actual_final_state)));
+
+  CompareBuffers(actual_out, golden_out, 1e-3f);
+  CompareBuffers(actual_final_state, golden_final_state, 1e-3f);
+}
+
 }  // namespace
 }  // namespace litert::ml_drift
