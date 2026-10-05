@@ -97,6 +97,24 @@ cc_test(
 )
 
 cc_test(
+    name = "delegate_test",
+    srcs = ["delegate_test.cc"],
+    copts = tflite_copts(),
+    deps = [
+        ":ynnpack_delegate",
+        "//tflite:framework",
+        "//tflite:version",
+        "//tflite/c:c_api_types",
+        "//tflite/core:framework",
+        "//tflite/core/api",
+        "//tflite/core/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_test(
     name = "moe_test",
     srcs = ["moe_test.cc"],
     copts = tflite_copts(),
