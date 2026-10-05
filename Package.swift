@@ -84,28 +84,24 @@ let package = Package(
       dependencies: ["LiteRT"],
       path: "litert/swift/Tests/LiteRT"
     ),
-    // The Prebuilt TensorFlow Lite C Binary Targets
+    // The Prebuilt TensorFlow Lite C Binary Target
     .binaryTarget(
       name: "TensorFlowLiteC",
       path: "prebuilt/TensorFlowLiteC.xcframework.zip"
-    ),
-    .binaryTarget(
-      name: "TensorFlowLiteCCoreML",
-      path: "prebuilt/TensorFlowLiteCCoreML.xcframework.zip"
-    ),
-    .binaryTarget(
-      name: "TensorFlowLiteCMetal",
-      path: "prebuilt/TensorFlowLiteCMetal.xcframework.zip"
     ),
     // The TensorFlow Lite Swift Wrapper Target
     .target(
       name: "TensorFlowLite",
       dependencies: [
         .target(name: "TensorFlowLiteC", condition: .when(platforms: [.iOS])),
-        .target(name: "TensorFlowLiteCCoreML", condition: .when(platforms: [.iOS])),
-        .target(name: "TensorFlowLiteCMetal", condition: .when(platforms: [.iOS])),
       ],
-      path: "litert/swift/Sources/TensorFlowLite"
+      path: "litert/swift/Sources/TensorFlowLite",
+      // The Core ML and Metal delegate C libraries are not shipped in the
+      // package, so the delegates that import them are left out.
+      exclude: [
+        "CoreMLDelegate.swift",
+        "MetalDelegate.swift",
+      ]
     ),
     // The TensorFlow Lite Test Target
     .testTarget(
@@ -114,6 +110,8 @@ let package = Package(
       path: "litert/swift/Tests/TensorFlowLite",
       exclude: [
         "BUILD",
+        // Tests `MetalDelegate`, which the `TensorFlowLite` target leaves out.
+        "MetalDelegateTests.swift",
       ]
     ),
   ]
