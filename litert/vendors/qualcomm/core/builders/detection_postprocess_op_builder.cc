@@ -40,6 +40,12 @@ LiteRtStatus BuildDetectionPostprocessOp(
     const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs,
     std::vector<OpWrapper>& op_wrappers) {
+  if (custom_options.size() < 3) {
+    QNN_LOG_ERROR(
+        "TFLite_Detection_PostProcess: custom options buffer is too small to "
+        "be a valid flexbuffer.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   const auto root =
       flexbuffers::GetRoot(custom_options.data(), custom_options.size());
   if (!root.IsMap()) {
