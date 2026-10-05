@@ -608,6 +608,27 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_runtime_api_table",
+    hdrs = ["litert_runtime_api_table.h"],
+    visibility = ["//litert/cc/internal:__pkg__"],
+    deps = [
+        ":litert_accelerator_header",
+        ":litert_runtime_c_api",
+        "//litert/c:litert_compiled_model_header",
+        "//litert/c:litert_environment_header",
+        "//litert/c:litert_environment_options_header",
+        "//litert/c:litert_event_header",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_metrics_header",
+        "//litert/c:litert_model_header",
+        "//litert/c:litert_opaque_options_header",
+        "//litert/c:litert_options_header",
+        "//litert/c:litert_tensor_buffer_header",
+        "//litert/c:litert_tensor_buffer_requirements_header",
+    ],
+)
+
+cc_library(
     name = "litert_runtime_api_export",
     srcs = ["litert_runtime_api_export.cc"],
     hdrs = ["litert_runtime_api_export.h"],
@@ -619,6 +640,7 @@ cc_library(
     ],
     deps = [
         ":litert_accelerator",
+        ":litert_runtime_api_table",
         ":litert_runtime_c_api",
         "//litert/c:litert_common",
         "//litert/c:litert_compiled_model_impl",
@@ -738,6 +760,7 @@ filegroup(
         "litert_logging.h",
         "litert_options_helper.h",
         "litert_runtime_api_export.h",
+        "litert_runtime_api_table.h",
         "litert_runtime_builtin.cc",
         "litert_runtime_builtin.h",
         "litert_runtime_c_api.h",

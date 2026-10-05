@@ -261,7 +261,7 @@ class Environment {
   /// @brief Returns the underlying environment handle and runtime for C API.
   std::pair<const struct LiteRtRuntimeCApiStruct*, LiteRtEnvironment>
   GetHolderForCApi() const noexcept {
-    return {runtime_->runtime_c_api_, handle_.get()};
+    return {runtime_->GetCApi(), handle_.get()};
   }
 
   /// @internal
@@ -277,7 +277,7 @@ class Environment {
   /// runtime for C API.
   std::pair<const struct LiteRtRuntimeCApiStruct*, LiteRtEnvironment>
   ReleaseForCApi() noexcept {
-    return {runtime_->runtime_c_api_, handle_.release()};
+    return {runtime_->GetCApi(), handle_.release()};
   }
 
   /// @brief Returns `true` if the underlying LiteRT handle is valid.

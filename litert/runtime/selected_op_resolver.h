@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/c/internal/litert_runtime_api_export.h"
+#ifndef ODML_LITERT_LITERT_RUNTIME_SELECTED_OP_RESOLVER_H_
+#define ODML_LITERT_LITERT_RUNTIME_SELECTED_OP_RESOLVER_H_
 
-#include "litert/c/internal/litert_runtime_api_table.h"
-#include "litert/c/internal/litert_runtime_c_api.h"
-#include "litert/c/litert_common.h"
+// Facade for generated registration code. Applications depend on the LiteRT
+// helper rather than directly requesting access to restricted TFLite targets.
+#include "litert/runtime/op_resolver.h"  // IWYU pragma: export
+#include "tflite/kernels/builtin_op_kernels.h"  // IWYU pragma: export
+#include "tflite/schema/schema_generated.h"  // IWYU pragma: export
 
-extern "C" LITERT_CAPI_EXPORT const LiteRtRuntimeCApiStruct
-    kLiteRtRuntimeBuiltin = litert::internal::kLiteRtRuntimeBuiltinStatic;
+#endif  // ODML_LITERT_LITERT_RUNTIME_SELECTED_OP_RESOLVER_H_

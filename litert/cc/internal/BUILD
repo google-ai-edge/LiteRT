@@ -697,6 +697,12 @@ cc_test(
 cc_library(
     name = "litert_runtime_proxy_api",
     hdrs = ["litert_runtime_proxy.h"],
+    defines = select({
+        "//litert/build_common:cc_static_dispatch_dynamic": ["LITERT_CC_STATIC_DISPATCH_UNSUPPORTED"],
+        "//litert/build_common:cc_static_dispatch_none": ["LITERT_CC_STATIC_DISPATCH_UNSUPPORTED"],
+        "//litert/build_common:cc_static_dispatch_enabled": ["LITERT_CC_STATIC_DISPATCH"],
+        "//conditions:default": [],
+    }),
     visibility = [
         "//litert/cc:__pkg__",
     ],
@@ -721,7 +727,10 @@ cc_library(
         "//litert/cc:litert_api_types",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:die_if_null",
-    ],
+    ] + select({
+        "//litert/build_common:cc_static_dispatch_enabled": ["//litert/c/internal:litert_runtime_api_table"],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(

@@ -23,8 +23,10 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_accelerator_def.h"
 #include "litert/c/internal/litert_runtime_builtin.h"
+#include "litert/c/internal/litert_runtime_c_api.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -75,6 +77,48 @@ TEST(EnvironmentTest, CreateWithSystemRuntime) {
   auto env = litert::Environment::Create(
       litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
   EXPECT_TRUE(env);
+}
+
+TEST(EnvironmentTest, PreservesExternallyProvidedRuntime) {
+  LiteRtRuntimeCApiStruct runtime = *GetLiteRtRuntimeBuiltin();
+  runtime.litert_create_environment = [](int, const LiteRtEnvOption*,
+                                         LiteRtEnvironment*) {
+    return kLiteRtStatusErrorUnsupported;
+  };
+  const std::vector<EnvironmentOptions::Option> options = {{
+      EnvironmentOptions::Tag::kSystemRuntimeHandle,
+      LiteRtVariant(static_cast<const void*>(&runtime)),
+  }};
+  auto env =
+      Environment::Create(EnvironmentOptions(absl::MakeConstSpan(options)));
+  ASSERT_FALSE(env);
+  EXPECT_EQ(env.Error().Status(), kLiteRtStatusErrorUnsupported);
+}
+
+TEST(EnvironmentTest, CApiInteropPreservesRuntimeAndOwnership) {
+  LiteRtRuntimeCApiStruct external_runtime = *GetLiteRtRuntimeBuiltin();
+  const LiteRtRuntimeCApiStruct* runtimes[] = {GetLiteRtRuntimeBuiltin(),
+                                               &external_runtime};
+  for (const auto* runtime : runtimes) {
+    const std::vector<EnvironmentOptions::Option> options = {{
+        EnvironmentOptions::Tag::kSystemRuntimeHandle,
+        LiteRtVariant(static_cast<const void*>(runtime)),
+    }};
+    auto env =
+        Environment::Create(EnvironmentOptions(absl::MakeConstSpan(options)));
+    ASSERT_TRUE(env);
+    const auto holder = env->GetHolderForCApi();
+    EXPECT_EQ(holder.first, runtime);
+    EXPECT_NE(holder.second, nullptr);
+    const auto released = env->ReleaseForCApi();
+    EXPECT_EQ(released, holder);
+    EXPECT_FALSE(*env);
+    runtime->litert_destroy_environment(released.second);
+  }
+
+  auto env = Environment::Create({});
+  ASSERT_TRUE(env);
+  EXPECT_EQ(env->GetHolderForCApi().first, GetLiteRtRuntimeBuiltin());
 }
 
 TEST(EnvironmentTest, CreateWithSystemGpuAcceleratorHandle) {

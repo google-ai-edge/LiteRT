@@ -30,6 +30,7 @@ set(LITERT_C_INTERNAL_HEADERS
     internal/litert_logging_helper_with_runtime_context.h
     internal/litert_options_helper.h
     internal/litert_runtime_api_export.h
+    internal/litert_runtime_api_table.h
     internal/litert_runtime_builtin.h
     internal/litert_runtime_c_api.h
     internal/litert_runtime_context.h
