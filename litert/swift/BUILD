@@ -249,9 +249,9 @@ apple_static_xcframework(
         ":TensorFlowLiteC_objc",
     ],
     bundle_name = "TensorFlowLite",
+    # Must match the slices of `:TensorFlowLiteC`, which it links against.
     ios = {
         "simulator": [
-            "x86_64",
             "arm64",
         ],
         "device": ["arm64"],
@@ -271,9 +271,10 @@ apple_static_xcframework(
 apple_static_xcframework(
     name = "TensorFlowLiteC",
     bundle_name = "TensorFlowLiteC",
+    # Like `:CLiteRT`, the Simulator slice is arm64 only, so running in the
+    # Simulator requires an Apple silicon Mac.
     ios = {
         "simulator": [
-            "x86_64",
             "arm64",
         ],
         "device": ["arm64"],
