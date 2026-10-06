@@ -140,11 +140,20 @@ class BinaryNoBroadcast : public TestGraph {
     LITERT_RETURN_IF_ERROR((lhs.template WriteRandom<T>(data_builder, device)));
     LITERT_RETURN_IF_ERROR((rhs.template WriteRandom<T>(data_builder, device)));
     // Prevent overflow.
-    static const auto kScale = 3;
     auto lhs_dat = lhs.template Span<T>();
     auto rhs_dat = rhs.template Span<T>();
-    ScaleDown(lhs_dat, kScale);
-    ScaleDown(rhs_dat, kScale);
+    if constexpr (kOpCode == kLiteRtOpCodeTflMul && std::is_integral_v<T>) {
+      // Scale down 32-bit signed ints to <= sqrt(INT32_MAX) (~46340) so that
+      // their product does not exceed INT32_MAX, avoiding signed overflow UB.
+      // (2^31 - 1) / 46341 ~= 46340.
+      static const auto kScale = sizeof(T) >= 4 ? 46341 : 3;
+      ScaleDown(lhs_dat, kScale);
+      ScaleDown(rhs_dat, kScale);
+    } else {
+      static const auto kScale = 3;
+      ScaleDown(lhs_dat, kScale);
+      ScaleDown(rhs_dat, kScale);
+    }
     VarBuffers inputs;
     inputs.push_back(std::move(lhs));
     inputs.push_back(std::move(rhs));
