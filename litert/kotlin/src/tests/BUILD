@@ -34,3 +34,21 @@ android_local_test(
         "//third_party/java/truth",
     ],
 )
+
+android_local_test(
+    name = "compiled_model_resize_test",
+    size = "small",
+    srcs = ["java/com/google/ai/edge/litert/CompiledModelResizeTest.java"],
+    data = [
+        "//litert/test:testdata/dynamic_add_model.tflite",
+        "//litert/test:testdata/reverse_signature_model.tflite",
+        "//litert/test:testdata/simple_model.tflite",
+    ],
+    manifest = "AndroidManifest.xml",
+    test_class = "com.google.ai.edge.litert.CompiledModelResizeTest",
+    deps = [
+        "//litert/kotlin:litert_compiled_model_api",
+        "//third_party/java/junit",
+        "//third_party/java/truth",
+    ],
+)

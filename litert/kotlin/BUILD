@@ -115,6 +115,7 @@ cc_library(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -142,7 +143,9 @@ cc_library(
 #     binary_name = "liblitert_jni.so",
 #     lds = ":litert_api_version_script.lds",
 #     linkopts = litert_jni_linkopts() + litert_linkopts_no_undefined() + litert_android_linkopts(),
-#     visibility = litert_jni_friends(),
+#     visibility = litert_jni_friends() + [
+#         "//litert/kotlin/src/tests:__pkg__",
+#     ],
 #     deps = [
 #         ":litert_compiled_model_jni",
 #         ":litert_environment_jni",
