@@ -233,6 +233,18 @@ selects.config_setting_group(
     ],
 )
 
+# Matches Emscripten / WebAssembly builds when GPU (WebGPU) is enabled
+# (e.g. default `build_include` or `--build_include=gpu`). When building in
+# `build_include=cpu_only`, this is not matched, omitting WebGPU headers/code.
+selects.config_setting_group(
+    name = "emscripten_gpu_enabled",
+    match_all = [
+        "//litert:emscripten",
+        ":build_include_gpu_enabled",
+    ],
+    visibility = ["//third_party/odml/litert:__subpackages__"],
+)
+
 exports_files(srcs = [
     "export_litert_gpu_accelerator_darwin.lds",
     "export_litert_gpu_accelerator_linux.lds",

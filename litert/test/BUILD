@@ -19,7 +19,8 @@ load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:symlink_files.bzl", "symlink_files")  # @unused
 load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")  # @unused
-load("//tflite:build_def.bzl", "gen_selected_ops", "tflite_linkopts")
+load("//litert/test:cpu_only_data.bzl", "cpu_only_target")
+load("//tflite:build_def.bzl", "gen_selected_ops", "tflite_linkopts", "tflite_linkopts_unstripped")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -431,6 +432,27 @@ cc_binary(
     }),
 )
 
+# Unstripped variant of minimal_compiled_model used for symbol leak testing.
+cc_binary(
+    name = "minimal_compiled_model_for_symbol_test",
+    testonly = True,
+    srcs = ["minimal_compiled_model.cc"],
+    linkopts = tflite_linkopts_unstripped(),
+    linkstatic = 1,
+    deps = [
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_tensor_buffer",
+    ],
+)
+
+cpu_only_target(
+    name = "minimal_compiled_model_cpu_only",
+    testonly = True,
+    target = ":minimal_compiled_model_for_symbol_test",
+)
+
 sh_test(
     name = "minimal_compiled_model_test",
     srcs = ["minimal_compiled_model_test.sh"],
@@ -449,10 +471,27 @@ sh_test(
     ],
 )
 
+sh_test(
+    name = "minimal_compiled_model_symbol_test",
+    srcs = ["minimal_compiled_model_symbol_test.sh"],
+    args = [
+        "$(rootpath :minimal_compiled_model_cpu_only)",
+    ],
+    data = [
+        ":minimal_compiled_model_cpu_only",
+    ],
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+)
+
 exports_files(
     srcs = [
         "litert_c_api_dependency_test.sh",
         "litert_compiler_plugin_symbol_test.sh",
+        "minimal_compiled_model_symbol_test.sh",
     ] + glob([
         "testdata/**",
     ]),
