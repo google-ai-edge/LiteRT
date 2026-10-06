@@ -172,6 +172,7 @@ jobs:
           )
 
           $LITERT_EXCLUDED_TARGETS = @(
+            "-//litert/kotlin/src/tests/..."
             "-//litert/python:converter_wrapper_test"
             "-//litert/python/aot/..."
             "-//litert/python/tools:mmap_utils_test"
