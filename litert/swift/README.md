@@ -48,7 +48,8 @@ framework) on iOS and `CLiteRT_mac.xcframework` (a dylib) on macOS.
 ### Adding LiteRT to Your App
 
 The package requires Xcode 15 or later, and an app that targets iOS 15 or
-later, or macOS 12 or later.
+later, or macOS 12 or later. The iOS Simulator slices are arm64 only, so
+running in the Simulator requires an Apple silicon Mac.
 
 1.  In Xcode, open your app project and choose **File > Add Package
     Dependencies...**.
@@ -306,12 +307,17 @@ the `@litert_prebuilts` repository into an `.xcframework`.
 #### iOS archives
 
 ```shell
-bazel build -c opt --config=ios \
+bazel build -c opt --config=ios --copt=-fembed-bitcode=off \
   //litert/swift:CLiteRT \
   //litert/swift:CLiteRT_static \
   //litert/swift:LiteRtMetalAccelerator \
   //litert/swift:TensorFlowLiteC
 ```
+
+As in the release build, `--copt=-fembed-bitcode=off` overrides the
+`-fembed-bitcode` that `--config=ios` adds, so it must come after
+`--config=ios`. Nothing uses the embedded LLVM bitcode, and it makes up about
+two-thirds of the static libraries.
 
 The archives are written to
 `bazel-bin/litert/swift/`. Because the output directory
@@ -319,7 +325,7 @@ depends on the build flags, look it up with the same flags when copying, for
 example:
 
 ```shell
-IOS_BAZEL_BIN="$(bazel info -c opt --config=ios bazel-bin)"
+IOS_BAZEL_BIN="$(bazel info -c opt --config=ios --copt=-fembed-bitcode=off bazel-bin)"
 mkdir -p prebuilt
 cp "${IOS_BAZEL_BIN}/litert/swift/CLiteRT.xcframework.zip" prebuilt/
 ```
