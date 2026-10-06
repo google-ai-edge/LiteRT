@@ -15,15 +15,12 @@
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_UTILS_MACROS_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_UTILS_MACROS_H_
 
-#include <cstdlib>
-#include <memory>
-#include <sstream>
-#include <string>
 #include <type_traits>
 #include <utility>
 
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_builder.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/types/source_location.h"  // from @com_google_absl
 
@@ -82,62 +79,134 @@
 
 namespace litert::tensor {
 
-// A helper class for building and handling error statuses.
+namespace internal {
+
+template <class T, class = void>
+struct IsComplete : std::false_type {};
+
+template <class T>
+struct IsComplete<T, std::void_t<decltype(sizeof(T))>> : std::true_type {};
+
+template <class T>
+struct IsStatusOr : std::false_type {};
+
+template <class T>
+struct IsStatusOr<absl::StatusOr<T>> : std::true_type {};
+
+// Detects `Conversion::AsError(E, absl::SourceLocation)`.
+template <class Conversion, class E, class = void>
+struct HasLocationAwareAsError : std::false_type {};
+
+template <class Conversion, class E>
+struct HasLocationAwareAsError<
+    Conversion, E,
+    std::void_t<decltype(Conversion::AsError(
+        std::declval<E>(), std::declval<absl::SourceLocation>()))>>
+    : std::true_type {};
+
+// Detects `R Conversion::FromError(const absl::Status&, absl::SourceLocation)`.
+template <class Conversion, class R, class = void>
+struct HasFromErrorImpl : std::false_type {};
+
+template <class Conversion, class R>
+struct HasFromErrorImpl<
+    Conversion, R,
+    std::enable_if_t<std::is_same_v<decltype(Conversion::FromError(
+                                        std::declval<const absl::Status&>(),
+                                        std::declval<absl::SourceLocation>())),
+                                    R>>> : std::true_type {};
+
+// `Conversion` may be an `ErrorConversion` that was never specialized.
+template <class Conversion, class R>
+struct HasFromError : std::conjunction<IsComplete<Conversion>,
+                                       HasFromErrorImpl<Conversion, R>> {};
+
+}  // namespace internal
+
+// An `absl::StatusBuilder` that can also be created from, and converted to,
+// error types other than `absl::Status`.
 //
 // This class is meant to be used with the `LRT_TENSOR_RETURN_IF_ERROR` and
-// `LRT_TENSOR_ASSIGN_OR_RETURN` macros.
+// `LRT_TENSOR_ASSIGN_OR_RETURN` macros. Each macro call adds its location to
+// the status source location trace. All `absl::StatusBuilder` functions can be
+// used to customize the returned error.
 //
-// The error message can be extended with additional information using the `<<`
-// operator.
-class ErrorStatusBuilder {
+// Support for an error type `E` is added by specializing
+// `ErrorStatusBuilder::ErrorConversion<E>`:
+//
+// - To use an `E` value as a macro expression:
+//   - `static bool IsError(const E&)`.
+//   - `static absl::Status AsError(E)`, or
+//     `static absl::Status AsError(E, absl::SourceLocation)` to create the
+//     status at the macro call location.
+//   - Optionally, `static E& Forward(E&)` when `E` holds the value that
+//     `LRT_TENSOR_ASSIGN_OR_RETURN` assigns.
+// - To return an `E` using the macros' default return value:
+//   - `static E FromError(const absl::Status&, absl::SourceLocation)`.
+//   This isn't needed for types that can be constructed from an `absl::Status`.
+class ErrorStatusBuilder : public absl::StatusBuilder {
  public:
-  // @brief Specializes this class with an implicit conversion to
-  // `absl::Status` and an `IsError()` member.
   template <class Error, class CRTP = void>
   struct ErrorConversion;
 
-  template <class T>
+  template <class T, class = std::enable_if_t<!std::is_base_of_v<
+                         absl::StatusBuilder, std::decay_t<T>>>>
   explicit ErrorStatusBuilder(
       T&& error, absl::SourceLocation loc = absl::SourceLocation::current())
-      : error_(AsError(std::forward<T>(error))), loc_(loc) {}
+      : absl::StatusBuilder(AsError(std::forward<T>(error), loc), loc) {}
 
-  // NOLINTBEGIN(*-explicit-constructor): This class transparently converts to
-  // `absl::Status`.
-  operator absl::Status() const noexcept {
-    return absl::Status(error_.code(), LogMessage());
+  // Takes over the state of `builder`.
+  //
+  // `absl::StatusBuilder` functions return an `absl::StatusBuilder`. The macros
+  // use this to turn it back into an `ErrorStatusBuilder`, which keeps the
+  // conversions below available.
+  explicit ErrorStatusBuilder(absl::StatusBuilder&& builder)
+      : absl::StatusBuilder(std::move(builder)) {}
+
+  // Converts to return types other than `absl::Status` and `absl::StatusOr`,
+  // which `absl::StatusBuilder` already handles.
+  //
+  // Uses `ErrorConversion<T>::FromError` when it exists, otherwise constructs a
+  // `T` from the status (and the builder location if `T` accepts it).
+  template <
+      class T,
+      class = std::enable_if_t<
+          !std::is_same_v<T, absl::Status> && !internal::IsStatusOr<T>::value &&
+          !std::is_base_of_v<T, ErrorStatusBuilder> &&
+          (internal::HasFromError<ErrorConversion<T>, T>::value ||
+           std::is_constructible_v<T, absl::Status, absl::SourceLocation> ||
+           std::is_constructible_v<T, absl::Status>)>>
+  operator T() && {  // NOLINT(google-explicit-constructor)
+    const absl::SourceLocation loc = source_location();
+    absl::Status status = static_cast<absl::StatusBuilder&&>(*this);
+    if constexpr (internal::HasFromError<ErrorConversion<T>, T>::value) {
+      return ErrorConversion<T>::FromError(status, loc);
+    } else if constexpr (std::is_constructible_v<T, absl::Status,
+                                                 absl::SourceLocation>) {
+      return T(std::move(status), loc);
+    } else {
+      return T(std::move(status));
+    }
   }
-
-  template <class T>
-  operator absl::StatusOr<T>() const noexcept {
-    return operator absl::Status();
-  }
-
-  template <class T, class A = decltype(T(absl::OkStatus()))>
-  operator T() const noexcept {
-    return T(static_cast<absl::Status>(*this));
-  }
-  // NOLINTEND(*-explicit-constructor)
-
-  void Log() { ABSL_LOG(INFO) << LogMessage(); }
 
   template <class T>
   static constexpr bool IsError(T&& value) {
     return ErrorConversion<std::decay_t<T>>::IsError(std::forward<T>(value));
   }
 
+  // Converts `value` to an `absl::Status`.
+  //
+  // `loc` is forwarded to `ErrorConversion` specializations that create the
+  // status at the macro call location.
   template <class T>
-  static absl::Status AsError(T&& value) {
-    return ErrorConversion<std::decay_t<T>>::AsError(std::forward<T>(value));
-  }
-
-  // @brief Appends data to the error message.
-  template <class T>
-  ErrorStatusBuilder& operator<<(T&& val) {
-    if (!extra_log_) {
-      extra_log_ = std::make_unique<std::stringstream>();
+  static absl::Status AsError(
+      T&& value, absl::SourceLocation loc = absl::SourceLocation::current()) {
+    using Conversion = ErrorConversion<std::decay_t<T>>;
+    if constexpr (internal::HasLocationAwareAsError<Conversion, T&&>::value) {
+      return Conversion::AsError(std::forward<T>(value), loc);
+    } else {
+      return Conversion::AsError(std::forward<T>(value));
     }
-    *extra_log_ << static_cast<T&&>(val);
-    return *this;
   }
 
   template <class T>
@@ -154,30 +223,16 @@ class ErrorStatusBuilder {
   static T&& ForwardWrappedValue(T&& value) {
     return ErrorConversion<std::decay_t<T>>::Forward(std::forward<T>(value));
   }
-
- private:
-  bool ShouldLog() const noexcept {
-    return (!error_.message().empty() || extra_log_);
-  }
-
-  std::string LogMessage() const {
-    std::stringstream sstr;
-    const char* extra_log_sep = extra_log_ ? " " : "";
-    sstr << error_.message() << "\n└[" << loc_.file_name() << ":" << loc_.line()
-         << "]" << extra_log_sep << (extra_log_ ? extra_log_->str() : "");
-    return sstr.str();
-  }
-
-  absl::Status error_;
-  absl::SourceLocation loc_;
-  std::unique_ptr<std::stringstream> extra_log_;
 };
 
 // NOLINTBEGIN(*-explicit-constructor)
 template <>
 struct ErrorStatusBuilder::ErrorConversion<bool> {
   static constexpr bool IsError(bool value) { return !value; };
-  static absl::Status AsError(bool value) { return absl::UnknownError(""); }
+  // absl only records source locations for statuses with a message.
+  static absl::Status AsError(bool /*value*/, absl::SourceLocation loc) {
+    return absl::UnknownError("Check failed", loc);
+  }
 };
 
 template <class T>
@@ -207,15 +262,40 @@ struct ErrorStatusBuilder::ErrorConversion<absl::StatusOr<T>> {
 };
 // NOLINTEND(*-explicit-constructor)
 
+namespace internal {
+
+// Turns `absl::StatusBuilder` objects back into an `ErrorStatusBuilder`.
+//
+// `absl::StatusBuilder` functions return an `absl::StatusBuilder&`, which only
+// converts to `absl::Status` and `absl::StatusOr`. The macros return
+// `ReturnValue() = return_value` to keep the conversions to other types
+// available.
+//
+// Values that aren't an `absl::StatusBuilder` are returned unchanged.
+struct ReturnValue {
+  template <class T>
+  decltype(auto) operator=(T&& value) && {  // NOLINT(*-assign-operator*)
+    if constexpr (std::is_base_of_v<absl::StatusBuilder, std::decay_t<T>>) {
+      // We forcefully move. `value` is either a temporary or the macros' `_`
+      // variable.
+      // NOLINTNEXTLINE(bugprone-move-forwarding-reference)
+      return ErrorStatusBuilder(absl::StatusBuilder(std::move(value)));
+    } else {
+      return std::forward<T>(value);
+    }
+  }
+};
+
+}  // namespace internal
+
 class LogBeforeAbort {
  public:
-  explicit LogBeforeAbort(ErrorStatusBuilder builder)
+  explicit LogBeforeAbort(absl::StatusBuilder builder)
       : builder_(std::move(builder)) {}
 
   ~LogBeforeAbort() {
-    // Cast to a LiteRtStatus to trigger the logging mechanism.
-    builder_.Log();
-    std::abort();
+    ABSL_LOG(FATAL) << absl::Status(builder_).ToString(
+        absl::StatusToStringMode::kWithEverything);
   }
 
   template <class T>
@@ -225,7 +305,7 @@ class LogBeforeAbort {
   }
 
  private:
-  ErrorStatusBuilder builder_;
+  absl::StatusBuilder builder_;
 };
 
 }  // namespace litert::tensor
@@ -246,7 +326,7 @@ class LogBeforeAbort {
   if (auto status = EXPR;                                                \
       ::litert::tensor::ErrorStatusBuilder::IsError(status))             \
     if (::litert::tensor::ErrorStatusBuilder _(std::move(status)); true) \
-  return RETURN_VALUE
+  return ::litert::tensor::internal::ReturnValue() = RETURN_VALUE
 // NOLINTEND(readability/braces)
 
 #define LRT_TENSOR_ASSIGN_OR_RETURN_SELECT_OVERLOAD_HELPER(_1, _2, _3,    \
@@ -259,15 +339,15 @@ class LogBeforeAbort {
 #define LRT_TENSOR_ASSIGN_OR_RETURN_HELPER_2(TMP_VAR, DECL, EXPR) \
   LRT_TENSOR_ASSIGN_OR_RETURN_HELPER_3(TMP_VAR, DECL, EXPR, _)
 
-#define LRT_TENSOR_ASSIGN_OR_RETURN_HELPER_3(TMP_VAR, DECL, EXPR, \
-                                             RETURN_VALUE)        \
-  auto&& TMP_VAR = (EXPR);                                        \
-  if (::litert::tensor::ErrorStatusBuilder::IsError(TMP_VAR)) {   \
-    [[maybe_unused]] ::litert::tensor::ErrorStatusBuilder _(      \
-        std::move(TMP_VAR));                                      \
-    return RETURN_VALUE;                                          \
-  }                                                               \
-  _LRT_TENSOR_STRIP_PARENS(DECL) =                                \
+#define LRT_TENSOR_ASSIGN_OR_RETURN_HELPER_3(TMP_VAR, DECL, EXPR,      \
+                                             RETURN_VALUE)             \
+  auto&& TMP_VAR = (EXPR);                                             \
+  if (::litert::tensor::ErrorStatusBuilder::IsError(TMP_VAR)) {        \
+    [[maybe_unused]] ::litert::tensor::ErrorStatusBuilder _(           \
+        std::move(TMP_VAR));                                           \
+    return ::litert::tensor::internal::ReturnValue() = (RETURN_VALUE); \
+  }                                                                    \
+  _LRT_TENSOR_STRIP_PARENS(DECL) =                                     \
       ::litert::tensor::ErrorStatusBuilder::ForwardWrappedValue(TMP_VAR)
 
 #define LRT_TENSOR_ASSIGN_OR_ABORT_SELECT_OVERLOAD_HELPER(_1, _2, _3,    \

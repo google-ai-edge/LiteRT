@@ -13,6 +13,7 @@ cc_library(
     deps = [
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_builder",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/types:source_location",
     ],
@@ -24,8 +25,12 @@ cc_test(
     deps = [
         ":macros",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_builder",
         "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:cord",
+        "@com_google_absl//absl/types:source_location",
         "@com_google_googletest//:gtest_main",
     ],
 )

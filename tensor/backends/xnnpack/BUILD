@@ -39,6 +39,21 @@ cc_library(
         "@XNNPACK",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:source_location",
+    ],
+)
+
+cc_test(
+    name = "utils_test",
+    srcs = ["utils_test.cc"],
+    deps = [
+        ":utils",
+        "//tensor/utils:macros",
+        "@XNNPACK",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/types:source_location",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
