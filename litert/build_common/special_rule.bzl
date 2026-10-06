@@ -153,7 +153,12 @@ def litert_metal_deps():
 
 # Dependencies for GPU accelerators for each platform.
 def litert_gpu_accelerator_deps():
-    return []
+    return select({
+        "//litert/build_common:android_gpu_enabled": [
+            "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator",
+        ],
+        "//conditions:default": [],
+    })
 
 # Prebuilt dependencies for GPU accelerators for each platform.
 def litert_gpu_accelerator_prebuilts():

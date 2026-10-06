@@ -34,11 +34,11 @@
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/profiling_info.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
-#include "ml_drift/pelong/converter.h"  // from @ml_drift
-#include "ml_drift/pelong/egl_environment.h"  // from @ml_drift
-#include "ml_drift/pelong/gl_buffer.h"  // from @ml_drift
-#include "ml_drift/pelong/gl_inference_context.h"  // from @ml_drift
-#include "ml_drift/pelong/gl_spatial_tensor.h"  // from @ml_drift
+#include "ml_drift/gl/converter.h"  // from @ml_drift
+#include "ml_drift/gl/egl_environment.h"  // from @ml_drift
+#include "ml_drift/gl/gl_buffer.h"  // from @ml_drift
+#include "ml_drift/gl/gl_inference_context.h"  // from @ml_drift
+#include "ml_drift/gl/gl_spatial_tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "tflite/c/common.h"
@@ -193,11 +193,11 @@ class GpuInferenceContextOpenGl : public GpuInferenceContext {
   // Underlying OpenGL environment.
   ::ml_drift::gl::EglEnvironment* gl_env() const { return env_; }
   // Underlying OpenGL inference context.
-  ::ml_drift::pelong::GlInferenceContext& gl_ctx() { return ctx_; }
+  ::ml_drift::gl::GlInferenceContext& gl_ctx() { return ctx_; }
 
  private:
   ::ml_drift::gl::EglEnvironment* const env_;
-  ::ml_drift::pelong::GlInferenceContext ctx_;
+  ::ml_drift::gl::GlInferenceContext ctx_;
 };
 
 class GpuTensorWrapperOpenGl : public GpuTensorWrapper {
@@ -209,19 +209,19 @@ class GpuTensorWrapperOpenGl : public GpuTensorWrapper {
   ::ml_drift::GpuSpatialTensor& Get() override { return tensor_; }
 
   // Underlying OpenGL tensor.
-  ::ml_drift::pelong::GlSpatialTensor& gl_tensor() { return tensor_; }
-  const ::ml_drift::pelong::GlSpatialTensor& gl_tensor() const {
+  ::ml_drift::gl::GlSpatialTensor& gl_tensor() { return tensor_; }
+  const ::ml_drift::gl::GlSpatialTensor& gl_tensor() const {
     return tensor_;
   }
 
  private:
-  ::ml_drift::pelong::GlSpatialTensor tensor_;
+  ::ml_drift::gl::GlSpatialTensor tensor_;
 };
 
 class GpuIOBufferOpenGl : public GpuIOBuffer {
  public:
   explicit GpuIOBufferOpenGl(::ml_drift::gl::EglEnvironment* env,
-                             ::ml_drift::pelong::GlBuffer&& buffer);
+                             ::ml_drift::gl::GlBuffer&& buffer);
   ~GpuIOBufferOpenGl() override = default;
 
   // Implementation of GpuIOBuffer.
@@ -229,20 +229,20 @@ class GpuIOBufferOpenGl : public GpuIOBuffer {
   absl::Status Write(absl::Span<const uint8_t> data) override;
 
   // Underlying immutable OpenGL buffer.
-  const ::ml_drift::pelong::GlBuffer& gl_buffer() const { return buffer_; }
+  const ::ml_drift::gl::GlBuffer& gl_buffer() const { return buffer_; }
   // Underlying mutable OpenGL buffer.
-  ::ml_drift::pelong::GlBuffer& gl_buffer() { return buffer_; }
+  ::ml_drift::gl::GlBuffer& gl_buffer() { return buffer_; }
 
  private:
   ::ml_drift::gl::EglEnvironment* const env_;
-  ::ml_drift::pelong::GlBuffer buffer_;
+  ::ml_drift::gl::GlBuffer buffer_;
 };
 
 class Tensor2BufferConverterOpenGl : public Tensor2BufferConverter {
  public:
   explicit Tensor2BufferConverterOpenGl(
       ::ml_drift::gl::EglEnvironment* env,
-      std::unique_ptr<::ml_drift::pelong::TensorToBHWCBufferConverter>
+      std::unique_ptr<::ml_drift::gl::TensorToBHWCBufferConverter>
           converter);
   ~Tensor2BufferConverterOpenGl() override = default;
 
@@ -252,7 +252,7 @@ class Tensor2BufferConverterOpenGl : public Tensor2BufferConverter {
 
  private:
   ::ml_drift::gl::EglEnvironment* const env_;
-  const std::unique_ptr<::ml_drift::pelong::TensorToBHWCBufferConverter>
+  const std::unique_ptr<::ml_drift::gl::TensorToBHWCBufferConverter>
       converter_;
 };
 
@@ -260,7 +260,7 @@ class Buffer2TensorConverterOpenGl : public Buffer2TensorConverter {
  public:
   explicit Buffer2TensorConverterOpenGl(
       ::ml_drift::gl::EglEnvironment* env,
-      std::unique_ptr<::ml_drift::pelong::BHWCBufferToTensorConverter>
+      std::unique_ptr<::ml_drift::gl::BHWCBufferToTensorConverter>
           converter);
   ~Buffer2TensorConverterOpenGl() override = default;
 
@@ -270,7 +270,7 @@ class Buffer2TensorConverterOpenGl : public Buffer2TensorConverter {
 
  private:
   ::ml_drift::gl::EglEnvironment* const env_;
-  const std::unique_ptr<::ml_drift::pelong::BHWCBufferToTensorConverter>
+  const std::unique_ptr<::ml_drift::gl::BHWCBufferToTensorConverter>
       converter_;
 };
 

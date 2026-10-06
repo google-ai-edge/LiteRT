@@ -495,12 +495,49 @@ load("//third_party/google_tensor:workspace.bzl", "google_tensor")
 google_tensor()
 
 # ML Drift ----------------------------------------------------------------------------------
+ML_DRIFT_COMMIT = "1b18771f44c0be3d972847b31a80f6dc3d6964b5"
+
+ML_DRIFT_SHA256 = "0a7384901754a4ee84220561bcf5447fde4363cbc8a42c94743f183d178feb30"
+
 http_archive(
     name = "ml_drift",
+    patch_cmds = [
+        # Add external/ml_drift to flatc include paths for gl_inference_context_cc_fbs.
+        "sed -i -e 's|\"-I .\",|\"-I .\", \"-I external/ml_drift\",|g' ml_drift/gl/BUILD",
+    ],
     repo_mapping = {
         "@fp16": "@FP16",
+        "@com_github_google_re2": "@com_googlesource_code_re2",
     },
-    strip_prefix = "ml-drift-main",
+    sha256 = ML_DRIFT_SHA256,
+    strip_prefix = "ml-drift-" + ML_DRIFT_COMMIT,
+    urls = [
+        "https://github.com/google-ai-edge/ml-drift/archive/" + ML_DRIFT_COMMIT + ".tar.gz",
+    ],
+)
+
+EGL_HEADERS_COMMIT = "db3425b8246136faccb5e2782b5694960bd6edf1"
+
+http_archive(
+    name = "egl_headers",
+    build_file = "@ml_drift//third_party/egl_headers:egl_headers.BUILD",
+    sha256 = "3d6b42b23da8030f5b29ade07d7384c5f885e713f17f04650f6cd4b8329b88e8",
+    strip_prefix = "EGL-Registry-" + EGL_HEADERS_COMMIT + "/api",
+    urls = [
+        "https://github.com/KhronosGroup/EGL-Registry/archive/" + EGL_HEADERS_COMMIT + ".tar.gz",
+    ],
+)
+
+OPENGL_HEADERS_COMMIT = "1cdd228e34966dd6b95bd203e9f84faba0f371a1"
+
+http_archive(
+    name = "opengl_headers",
+    build_file = "@ml_drift//third_party/opengl_headers:opengl_headers.BUILD",
+    sha256 = "d8ac2e70b4a8173d4e30ceb726eb8b3137883d459e4666983eb1d2444483c62c",
+    strip_prefix = "OpenGL-Registry-" + OPENGL_HEADERS_COMMIT + "/api",
+    urls = [
+        "https://github.com/KhronosGroup/OpenGL-Registry/archive/" + OPENGL_HEADERS_COMMIT + ".tar.gz",
+    ],
 )
 
 # LiteRT GPU ----------------------------------------------------------------------------------

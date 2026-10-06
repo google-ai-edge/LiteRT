@@ -37,11 +37,11 @@
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/profiling_info.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
-#include "ml_drift/pelong/converter.h"  // from @ml_drift
-#include "ml_drift/pelong/egl_environment.h"  // from @ml_drift
-#include "ml_drift/pelong/gl_buffer.h"  // from @ml_drift
-#include "ml_drift/pelong/gl_inference_context.h"  // from @ml_drift
-#include "ml_drift/pelong/gl_spatial_tensor.h"  // from @ml_drift
+#include "ml_drift/gl/converter.h"  // from @ml_drift
+#include "ml_drift/gl/egl_environment.h"  // from @ml_drift
+#include "ml_drift/gl/gl_buffer.h"  // from @ml_drift
+#include "ml_drift/gl/gl_inference_context.h"  // from @ml_drift
+#include "ml_drift/gl/gl_spatial_tensor.h"  // from @ml_drift
 // clang-format off
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
@@ -88,7 +88,7 @@ absl::StatusOr<::ml_drift::GpuInfo> GpuBackendOpenGl::GetInfo() {
 
 absl::StatusOr<::ml_drift::TensorStorageType>
 GpuBackendOpenGl::GetFastestStorageType() {
-  return ::ml_drift::pelong::GetFastestStorageType(env_->gpu_info());
+  return ::ml_drift::gl::GetFastestStorageType(env_->gpu_info());
 }
 
 absl::StatusOr<GpuMemoryHandle> GpuBackendOpenGl::GetGpuMemoryAllocated(
@@ -210,7 +210,7 @@ absl::StatusOr<std::unique_ptr<GpuTensorWrapper>>
 GpuBackendOpenGl::CreateTensorWrapper(const ::ml_drift::TensorDescriptor& desc,
                                       GpuMemoryHandle gpu_memory) {
   auto gl_tensor = std::make_unique<GpuTensorWrapperOpenGl>();
-  ABSL_RETURN_IF_ERROR(::ml_drift::pelong::CreateTensorShared(
+  ABSL_RETURN_IF_ERROR(::ml_drift::gl::CreateTensorShared(
       static_cast<GLuint>(reinterpret_cast<uintptr_t>(gpu_memory)), desc,
       &gl_tensor->gl_tensor()));
   return std::move(gl_tensor);
@@ -237,8 +237,8 @@ absl::Status GpuBackendOpenGl::ReleaseSpatialTensorMemory(
 
 absl::StatusOr<std::unique_ptr<GpuIOBuffer>> GpuBackendOpenGl::CreateIOBuffer(
     GpuMemoryHandle gpu_memory) {
-  ::ml_drift::pelong::GlBuffer gl_buffer;
-  ::ml_drift::pelong::CreateSharedSSBOBuffer(
+  ::ml_drift::gl::GlBuffer gl_buffer;
+  ::ml_drift::gl::CreateSharedSSBOBuffer(
       static_cast<GLuint>(reinterpret_cast<uintptr_t>(gpu_memory)), &gl_buffer);
   return std::make_unique<GpuIOBufferOpenGl>(env_, std::move(gl_buffer));
 }
@@ -246,9 +246,9 @@ absl::StatusOr<std::unique_ptr<GpuIOBuffer>> GpuBackendOpenGl::CreateIOBuffer(
 absl::StatusOr<std::unique_ptr<GpuIOBuffer>>
 GpuBackendOpenGl::CreateIOBufferWithSize(::ml_drift::DataType data_type,
                                          size_t size, bool input) {
-  ::ml_drift::pelong::GlBuffer gl_buffer;
+  ::ml_drift::gl::GlBuffer gl_buffer;
   ABSL_RETURN_IF_ERROR(
-      ::ml_drift::pelong::CreateReadWriteBuffer(size, &gl_buffer));
+      ::ml_drift::gl::CreateReadWriteBuffer(size, &gl_buffer));
   return std::make_unique<GpuIOBufferOpenGl>(env_, std::move(gl_buffer));
 }
 
@@ -257,7 +257,7 @@ GpuBackendOpenGl::CreateTensor2BufferConverter(
     const ::ml_drift::TensorDescriptor& src_desc,
     const ::ml_drift::BufferDescriptor& dst_desc) {
   auto converter =
-      std::make_unique<::ml_drift::pelong::TensorToBHWCBufferConverter>();
+      std::make_unique<::ml_drift::gl::TensorToBHWCBufferConverter>();
   ABSL_RETURN_IF_ERROR(converter->Init(env_->gpu_info(), src_desc, dst_desc));
   return std::make_unique<Tensor2BufferConverterOpenGl>(env_,
                                                         std::move(converter));
@@ -268,7 +268,7 @@ GpuBackendOpenGl::CreateBuffer2TensorConverter(
     const ::ml_drift::BufferDescriptor& src_desc,
     const ::ml_drift::TensorDescriptor& dst_desc) {
   auto converter =
-      std::make_unique<::ml_drift::pelong::BHWCBufferToTensorConverter>();
+      std::make_unique<::ml_drift::gl::BHWCBufferToTensorConverter>();
   ABSL_RETURN_IF_ERROR(converter->Init(env_->gpu_info(), src_desc, dst_desc));
   return std::make_unique<Buffer2TensorConverterOpenGl>(env_,
                                                         std::move(converter));
@@ -370,7 +370,7 @@ absl::Status GpuInferenceContextOpenGl::SetCommandBufferHint(
 }
 
 GpuIOBufferOpenGl::GpuIOBufferOpenGl(::ml_drift::gl::EglEnvironment* env,
-                                     ::ml_drift::pelong::GlBuffer&& buffer)
+                                     ::ml_drift::gl::GlBuffer&& buffer)
     : env_(env), buffer_(std::move(buffer)) {}
 
 absl::Status GpuIOBufferOpenGl::Read(absl::Span<uint8_t> data) {
@@ -385,26 +385,26 @@ absl::Status GpuIOBufferOpenGl::Write(absl::Span<const uint8_t> data) {
 
 Tensor2BufferConverterOpenGl::Tensor2BufferConverterOpenGl(
     ::ml_drift::gl::EglEnvironment* env,
-    std::unique_ptr<::ml_drift::pelong::TensorToBHWCBufferConverter> converter)
+    std::unique_ptr<::ml_drift::gl::TensorToBHWCBufferConverter> converter)
     : env_(env), converter_(std::move(converter)) {}
 
 absl::Status Tensor2BufferConverterOpenGl::Convert(
     ::ml_drift::GpuSpatialTensor& src_tensor, GpuIOBuffer& dst_buffer) {
   return converter_->Convert(
-      static_cast<::ml_drift::pelong::GlSpatialTensor*>(&src_tensor),
+      static_cast<::ml_drift::gl::GlSpatialTensor*>(&src_tensor),
       &(static_cast<GpuIOBufferOpenGl&>(dst_buffer).gl_buffer()));
 }
 
 Buffer2TensorConverterOpenGl::Buffer2TensorConverterOpenGl(
     ::ml_drift::gl::EglEnvironment* env,
-    std::unique_ptr<::ml_drift::pelong::BHWCBufferToTensorConverter> converter)
+    std::unique_ptr<::ml_drift::gl::BHWCBufferToTensorConverter> converter)
     : env_(env), converter_(std::move(converter)) {}
 
 absl::Status Buffer2TensorConverterOpenGl::Convert(
     GpuIOBuffer& src_buffer, ::ml_drift::GpuSpatialTensor& dst_tensor) {
   return converter_->Convert(
       &(static_cast<GpuIOBufferOpenGl&>(src_buffer).gl_buffer()),
-      static_cast<::ml_drift::pelong::GlSpatialTensor*>(&dst_tensor));
+      static_cast<::ml_drift::gl::GlSpatialTensor*>(&dst_tensor));
 }
 
 }  // namespace litert::ml_drift

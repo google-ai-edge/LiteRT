@@ -104,7 +104,7 @@ cc_library(
         "//tflite:framework_stable",
         "//tflite:model_builder",
         "//tflite/c:common",
-        "//tflite/core:cc_api_stable",
+        "//tflite/core:private_cc_api_stable",
         "//tflite/core/api:op_resolver",
         "//tflite/core/c:private_common",
         "//tflite/kernels:kernel_util",

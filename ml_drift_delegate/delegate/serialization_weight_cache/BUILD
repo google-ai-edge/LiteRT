@@ -118,7 +118,7 @@ genrule(
         "@ml_drift//ml_drift/common/kernels:fully_connected.cc",
     ],
     outs = ["srcs/build_identifier.cc"],
-    cmd = "$(location :generate_build_identifier_py) --output $@ $(SRCS)",
+    cmd = "$(execpath :generate_build_identifier_py) --output $@ $(SRCS)",
     tools = [":generate_build_identifier_py"],
 )
 
@@ -126,7 +126,6 @@ py_binary(
     name = "generate_build_identifier_py",
     srcs = ["generate_build_identifier.py"],
     main = "generate_build_identifier.py",
-    strict_deps = False,
     tags = ["notap"],  # This should only be built as part of the related genrule.
 )
 
@@ -134,7 +133,6 @@ cc_library(
     name = "build_identifier",
     srcs = ["srcs/build_identifier.cc"],
     hdrs = ["build_identifier.h"],
-    hdrs_check = "strict",
     deps = ["@com_google_absl//absl/types:span"],
 )
 
