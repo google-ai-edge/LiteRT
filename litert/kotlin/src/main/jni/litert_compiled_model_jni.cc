@@ -594,6 +594,9 @@ jobject ToJavaElementType(JNIEnv* env, ElementType element_type) {
     case ElementType::Int32:
       element_type_name = "INT";
       break;
+    case ElementType::Int16:
+      element_type_name = "INT16";
+      break;
     case ElementType::Float32:
       element_type_name = "FLOAT";
       break;

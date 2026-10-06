@@ -103,6 +103,10 @@ inline void ThrowLiteRtException(JNIEnv* env, LiteRtStatus status,
 #define AUTO_CLEANUP_JNI_INT_ARRAY(env, jarray) \
   AUTO_CLEANUP_JNI_PRIMITIVE_ARRAY(env, jarray, Int)
 
+// A macro to help automatically release a JNI short array after use.
+#define AUTO_CLEANUP_JNI_SHORT_ARRAY(env, jarray) \
+  AUTO_CLEANUP_JNI_PRIMITIVE_ARRAY(env, jarray, Short)
+
 // A macro to help automatically release a JNI float array after use.
 #define AUTO_CLEANUP_JNI_FLOAT_ARRAY(env, jarray) \
   AUTO_CLEANUP_JNI_PRIMITIVE_ARRAY(env, jarray, Float)
