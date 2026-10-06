@@ -48,6 +48,46 @@ id GetBridgedObjectForOption(const litert::Environment &environment,
 }  // namespace
 
 @implementation LRTEnvironmentOptions
+
+- (BOOL)isEqual:(id)object {
+  if (self == object) {
+    return YES;
+  }
+  if (![object isKindOfClass:[LRTEnvironmentOptions class]]) {
+    return NO;
+  }
+  return [self isEqualToEnvironmentOptions:(LRTEnvironmentOptions *)object];
+}
+
+- (NSUInteger)hash {
+  return [_metalDevice hash] ^ [_metalCommandQueue hash];
+}
+
+#pragma mark - NSCopying
+
+- (id)copyWithZone:(NSZone *)zone {
+  // Metal devices and command queues are shared GPU handles rather than value objects (they do not
+  // conform to NSCopying), and buffers allocated by the caller can only be used with the device
+  // that created them. The copy therefore intentionally references the same Metal objects.
+  LRTEnvironmentOptions *copy = [[LRTEnvironmentOptions allocWithZone:zone] init];
+  copy.metalDevice = _metalDevice;
+  copy.metalCommandQueue = _metalCommandQueue;
+  return copy;
+}
+
+#pragma mark - Public
+
+- (BOOL)isEqualToEnvironmentOptions:(LRTEnvironmentOptions *)otherOptions {
+  if (!otherOptions) {
+    return NO;
+  }
+  BOOL devicesMatch =
+      (_metalDevice == otherOptions.metalDevice) || [_metalDevice isEqual:otherOptions.metalDevice];
+  BOOL queuesMatch = (_metalCommandQueue == otherOptions.metalCommandQueue) ||
+                     [_metalCommandQueue isEqual:otherOptions.metalCommandQueue];
+  return devicesMatch && queuesMatch;
+}
+
 @end
 
 @implementation LRTEnvironment {

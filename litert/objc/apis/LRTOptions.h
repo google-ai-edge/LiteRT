@@ -25,7 +25,7 @@ typedef NS_OPTIONS(NSUInteger, LRTHardwareAccelerators) {
 };
 
 /** Options for compiling a LiteRT model. */
-@interface LRTOptions : NSObject
+@interface LRTOptions : NSObject <NSCopying>
 
 /** Hardware accelerators bitmask enabled for compilation. */
 @property(nonatomic, assign, readonly) LRTHardwareAccelerators hardwareAccelerators;
@@ -60,6 +60,14 @@ typedef NS_OPTIONS(NSUInteger, LRTHardwareAccelerators) {
  */
 - (instancetype)initWithHardwareAccelerators:(LRTHardwareAccelerators)hardwareAccelerators
     NS_DESIGNATED_INITIALIZER;
+
+/**
+ * Returns whether the receiver is equal to another @c LRTOptions instance.
+ *
+ * @param otherOptions The options instance to compare with the receiver.
+ * @return @c YES if both instances have identical compilation settings, @c NO otherwise.
+ */
+- (BOOL)isEqualToOptions:(LRTOptions *)otherOptions;
 
 @end
 

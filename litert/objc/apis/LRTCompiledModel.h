@@ -27,7 +27,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly) LRTEnvironment *environment;
 
 /** Options used during model compilation. */
-@property(nonatomic, readonly, nullable) LRTOptions *options;
+@property(nonatomic, copy, readonly, nullable) LRTOptions *options;
 
 /**
  * Creates and compiles a LiteRT model from a file path.

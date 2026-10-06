@@ -17,14 +17,27 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/** Options used to configure a LiteRT execution environment. */
-@interface LRTEnvironmentOptions : NSObject
+/**
+ * Options used to configure a LiteRT execution environment.
+ *
+ * Copies share the same Metal device and command queue as the original, since those are GPU
+ * resource handles rather than values.
+ */
+@interface LRTEnvironmentOptions : NSObject <NSCopying>
 
 /** Metal device handle (`id<MTLDevice>`) for GPU environment initialization. */
 @property(nonatomic, nullable) id<MTLDevice> metalDevice;
 
 /** Metal command queue handle (`id<MTLCommandQueue>`) for GPU environment initialization. */
 @property(nonatomic, nullable) id<MTLCommandQueue> metalCommandQueue;
+
+/**
+ * Returns whether the receiver is equal to another @c LRTEnvironmentOptions instance.
+ *
+ * @param otherOptions The environment options instance to compare with the receiver.
+ * @return @c YES if both instances reference the same Metal resources, @c NO otherwise.
+ */
+- (BOOL)isEqualToEnvironmentOptions:(LRTEnvironmentOptions *)otherOptions;
 
 @end
 

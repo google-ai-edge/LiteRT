@@ -189,7 +189,7 @@ BOOL DuplicateObjCTensorBuffersToCpp(NSArray<LRTTensorBuffer *> *objcBuffers,
   if (self) {
     _cppCompiledModel = std::move(cppCompiledModel);
     _environment = environment;
-    _options = options;
+    _options = [options copy];
     _modelData = [modelData copy];
   }
   return self;
