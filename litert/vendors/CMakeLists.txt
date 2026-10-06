@@ -117,7 +117,7 @@ endif()
 
 if(NOT LITECORE_HEADERS_DIR)
   if(NOT LITECORE_HEADERS_URL AND NOT LITECORE_GIT_REPO)
-    set(LITECORE_HEADERS_URL "https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/1.1.0/ai-litecore-ubuntu2404-v1.1.0.tar.gz")
+    set(LITECORE_HEADERS_URL "https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/ai-litecore-ubuntu2404-v1.1.0.tar.gz")
   endif()
   if(LITECORE_HEADERS_URL)
     set(_litecore_archive "${CMAKE_BINARY_DIR}/_deps/litecore_headers.tar.gz")
