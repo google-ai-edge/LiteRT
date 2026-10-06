@@ -238,6 +238,7 @@ def litert_define_ats(
                 data = resolved_models.data,
                 is_test = True,
                 shard_count = aot_shard_count,
+                size = "large",
                 tags = [
                     "noasan",
                     "nomsan",
