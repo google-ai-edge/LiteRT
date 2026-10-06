@@ -43,7 +43,7 @@ class LiteRtDispatchInvocationContextT {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchInvocationContextT>;
 
-  // Downvotes the current performance mode on destruction.
+  // Schedules a final downvote when this context used auto mode.
   ~LiteRtDispatchInvocationContextT();
 
   static litert::Expected<Ptr> Create(
@@ -134,8 +134,8 @@ class LiteRtDispatchInvocationContextT {
   std::vector<LiteRtTensorBufferHandle> input_buffer_handles_;
   std::vector<LiteRtTensorBufferHandle> output_buffer_handles_;
   std::optional<LiteRtSchedulingInfo> scheduling_info_;
-  // Per-invocation performance-mode override (set via SetOptions).
-  // nullopt means "use the context-level options from qnn_manager_".
+  // Per-invocation performance-mode override (set via SetOptions). nullopt
+  // means to use the device-context options from qnn_manager_.
   std::optional<::qnn::Options> run_options_;
 };
 
