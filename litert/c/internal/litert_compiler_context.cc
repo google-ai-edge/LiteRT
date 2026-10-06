@@ -28,7 +28,7 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
               .struct_size = sizeof(LiteRtCompilerContext),
               // LINT.IfChange(compiler_context_version)
               .major_version = 1,
-              .minor_version = 3,
+              .minor_version = 4,
               .reserved = 0,
               // LINT.ThenChange(./litert_compiler_context.h:compiler_context_table)
           },
@@ -289,6 +289,14 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
       .build_transpose_conv_op_option = LiteRtBuilderBuildTransposeConvOpOption,
       .build_unpack_op_option = LiteRtBuilderBuildUnpackOpOption,
       .get_split_v_num_splits_option = LiteRtGetSplitVNumSplitsOption,
+      .get_local_response_normalization_radius_option =
+          LiteRtGetLocalResponseNormalizationRadiusOption,
+      .get_local_response_normalization_bias_option =
+          LiteRtGetLocalResponseNormalizationBiasOption,
+      .get_local_response_normalization_alpha_option =
+          LiteRtGetLocalResponseNormalizationAlphaOption,
+      .get_local_response_normalization_beta_option =
+          LiteRtGetLocalResponseNormalizationBetaOption,
   };
   return &ctx;
 }
