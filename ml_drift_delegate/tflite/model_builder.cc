@@ -6878,9 +6878,7 @@ bool IsAllAllowedTensors(TfLiteContext* context,
         break;
       }
     }
-    if ((t->allocation_type == kTfLiteArenaRw ||
-         t->allocation_type == kTfLiteNonCpu) &&
-        !type_supported) {
+    if (t->allocation_type == kTfLiteArenaRw && !type_supported) {
       *unsupported_details += "Tensor type(" +
                               std::string(TfLiteTypeGetName(t->type)) +
                               ") is not supported. " + std::string(t->name);

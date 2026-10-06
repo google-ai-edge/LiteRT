@@ -404,7 +404,10 @@ TEST(CompiledModelTest, OwningCreateRunsAfterModelMove) {
 //                               compiled_model.CreateOutputBuffers());
 //   const auto after = GetPrimarySubgraphAllocInfo(*interpreter);
 // 
-//   EXPECT_EQ(after.arena_size, before.arena_size);
+//   // The first output shape query allocates tensors for a never-allocated
+//   // signature, so TFLite's ArenaPlanner allocates host arena memory for the
+//   // I/O tensors.
+//   EXPECT_NE(after.arena_size, before.arena_size);
 //   EXPECT_EQ(after.arena_persist_size, before.arena_persist_size);
 //   EXPECT_EQ(after.dynamic_size, before.dynamic_size);
 //   EXPECT_EQ(after.resource_size, before.resource_size);
@@ -426,11 +429,7 @@ TEST(CompiledModelTest, OwningCreateRunsAfterModelMove) {
 //                               compiled_model.CreateOutputBuffers());
 //   const auto after = GetPrimarySubgraphAllocInfo(*interpreter);
 // 
-//   // Output tensors are marked kTfLiteNonCpu during CompiledModel
-//   // initialization, so TFLite's ArenaPlanner does not allocate host arena
-//   // memory for them even when AllocateTensors is invoked to resolve dynamic
-//   // output dimensions.
-//   EXPECT_EQ(after.arena_size, before.arena_size);
+//   EXPECT_NE(after.arena_size, before.arena_size);
 //   EXPECT_EQ(after.arena_persist_size, before.arena_persist_size);
 //   EXPECT_EQ(after.dynamic_size, before.dynamic_size);
 //   EXPECT_EQ(after.resource_size, before.resource_size);
