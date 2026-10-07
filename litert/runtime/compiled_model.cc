@@ -82,6 +82,8 @@
 #include "litert/core/build_stamp.h"
 #include "litert/core/error_reporter.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/model_load.h"
+#include "litert/core/model/shape_inference.h"
 #include "litert/core/util/perfetto_profiling.h"
 #include "tflite/model_builder.h"
 #if !defined(LITERT_DISABLE_NPU)
@@ -258,6 +260,10 @@ void ApplySchedulingInfoOverrides(const LiteRtSchedulingInfo& overrides,
 
 LiteRtCompiledModelT::LiteRtCompiledModelT(LiteRtEnvironmentT* env)
     : env_(env) {}
+
+void LiteRtOptionsReleaser::operator()(LiteRtOptionsT* options) const {
+  LiteRtDestroyOptions(options);
+}
 
 LiteRtCompiledModelT::~LiteRtCompiledModelT() {
   if (profiler_ != nullptr) {
@@ -838,6 +844,7 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
           maybe_initialized_model.Value() == true) {
         // The compiled model's flatbuffer has initialized by applying the
         // plugins.
+        jit_compiled_model_ = true;
         return {};
       }
       // Deliberate fall through, failing to apply plugins is a recoverable
@@ -928,6 +935,23 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
   if (hardware_accelerators == kLiteRtHwAcceleratorNone) {
     return litert::ErrorStatusBuilder::InvalidArgument()
            << "No acceleration provided.";
+  }
+
+  // Only source models that enter the JIT path can be specialized again. An
+  // AOT model already contains dispatch ops and has no source graph to rebuild.
+  const bool original_model_is_uncompiled = !IsCompiled(*model);
+
+  // JIT compilation consumes and rewrites `model`. Preserve the original
+  // FlatBuffer before any plugin or magic-number transformation so a later
+  // dynamic input resize can compile a graph specialized for that shape.
+  if (hardware_accelerators & kLiteRtHwAcceleratorNpu) {
+    const auto& tfl_wrapper = litert::internal::GetTflFlatbuffer(*model);
+    const auto source_buffer = tfl_wrapper.Buf();
+    if (source_buffer.Data() != nullptr && source_buffer.Size() > 0) {
+      compiled_model->source_model_buf_ = litert::OwningBufferRef<uint8_t>(
+          source_buffer.Data(), source_buffer.Size());
+      compiled_model->source_model_path_ = model->SourcePath();
+    }
   }
 
   // Decode selection before model conversion, not only before delegation.
@@ -1154,7 +1178,292 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
         "compilation accelerator set to allow using the CPU to run those.");
   }
   compiled_model->CheckCpuTensors();
+
+#if !defined(LITERT_DISABLE_NPU)
+  // Recompile only models which were actually JIT-translated to NPU dispatch
+  // ops, including graphs loaded from the JIT compilation cache. AOT models
+  // and NPU fallback paths keep the existing resize behavior.
+  compiled_model->shape_recompilation_enabled_ =
+      (hardware_accelerators & kLiteRtHwAcceleratorNpu) &&
+      original_model_is_uncompiled &&
+      compiled_model->source_model_buf_.Size() != 0 &&
+      compiled_model->jit_compiled_model_;
+  if (compiled_model->shape_recompilation_enabled_) {
+    LITERT_ASSIGN_OR_RETURN(
+        auto source_model,
+        litert::internal::LoadModelFromBuffer(
+            litert::BufferRef<uint8_t>(compiled_model->source_model_buf_)));
+    if (compiled_model->source_model_path_) {
+      source_model->SetSourcePath(*compiled_model->source_model_path_);
+    }
+    for (LiteRtSignature signature : source_model->Signatures()) {
+      for (size_t input_index = 0;
+           input_index < signature->InputNames().size(); ++input_index) {
+        LiteRtTensor input = signature->GetInputTensor(input_index);
+        auto ranked = input->Ranked();
+        if (!ranked ||
+            std::find(ranked->layout.dimensions,
+                      ranked->layout.dimensions + ranked->layout.rank,
+                      -1) == ranked->layout.dimensions + ranked->layout.rank) {
+          continue;
+        }
+        compiled_model->resizable_npu_inputs_.push_back({
+            .signature_key = std::string(signature->Key()),
+            .input_index = input_index,
+            .shape_signature =
+                std::vector<int>(ranked->layout.dimensions,
+                                 ranked->layout.dimensions + ranked->layout.rank),
+            .current_shape = {},
+        });
+      }
+    }
+    compiled_model->shape_recompilation_enabled_ =
+        !compiled_model->resizable_npu_inputs_.empty();
+    if (compiled_model->shape_recompilation_enabled_) {
+      compiled_model->RetainJitCompilationOptions(jit_compilation_options);
+    }
+  }
+#endif  // !defined(LITERT_DISABLE_NPU)
   return compiled_model;
+}
+
+Expected<void> LiteRtCompiledModelT::RestoreDynamicInputShapeSignatures() {
+  for (const auto& input : resizable_npu_inputs_) {
+    const bool signature_exists = std::any_of(
+        signature_keys_.begin(), signature_keys_.end(),
+        [&input](const std::string* key) { return *key == input.signature_key; });
+    if (!signature_exists) {
+      // Signature selection can remove an inactive signature from the compiled
+      // FlatBuffer. It does not need a runtime shape signature.
+      continue;
+    }
+
+    auto* runner = GetSignatureRunner(input.signature_key);
+    if (runner == nullptr || input.input_index >=
+                                 runner->subgraph_input_names().size()) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Failed to restore resized input signature");
+    }
+    const char* input_name =
+        runner->subgraph_input_names()[input.input_index];
+    auto* tensor = runner->input_tensor(input_name);
+    if (tensor == nullptr) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Failed to restore resized input tensor signature");
+    }
+
+    if (tensor->dims_signature != nullptr) {
+      TfLiteIntArrayFree(const_cast<TfLiteIntArray*>(tensor->dims_signature));
+    }
+    auto* dims_signature =
+        TfLiteIntArrayCreate(static_cast<int>(input.shape_signature.size()));
+    if (dims_signature == nullptr) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Failed to allocate input dimension signature");
+    }
+    for (size_t i = 0; i < input.shape_signature.size(); ++i) {
+      dims_signature->data[i] = input.shape_signature[i];
+    }
+    tensor->dims_signature = dims_signature;
+  }
+  return {};
+}
+
+void LiteRtCompiledModelT::SwapRecompiledRuntimeState(
+    LiteRtCompiledModelT& recompiled_model) {
+  using std::swap;
+  swap(model_directory_, recompiled_model.model_directory_);
+  swap(source_model_buf_, recompiled_model.source_model_buf_);
+  swap(source_model_path_, recompiled_model.source_model_path_);
+  swap(jit_compilation_options_owner_,
+       recompiled_model.jit_compilation_options_owner_);
+  swap(jit_compilation_options_, recompiled_model.jit_compilation_options_);
+  swap(jit_compiled_model_, recompiled_model.jit_compiled_model_);
+  swap(shape_recompilation_enabled_,
+       recompiled_model.shape_recompilation_enabled_);
+  swap(resizable_npu_inputs_, recompiled_model.resizable_npu_inputs_);
+  swap(model_buf_, recompiled_model.model_buf_);
+#if !defined(LITERT_DISABLE_NPU)
+  swap(cached_model_, recompiled_model.cached_model_);
+#endif  // !defined(LITERT_DISABLE_NPU)
+  swap(fb_model_, recompiled_model.fb_model_);
+  swap(fb_model_fd_, recompiled_model.fb_model_fd_);
+  swap(fb_model_file_offset_, recompiled_model.fb_model_file_offset_);
+  swap(fb_model_size_, recompiled_model.fb_model_size_);
+#if !defined(LITERT_DISABLE_NPU)
+  swap(compilation_cache_, recompiled_model.compilation_cache_);
+  swap(maybe_compiled_plugins_, recompiled_model.maybe_compiled_plugins_);
+  swap(apply_plugins_result_, recompiled_model.apply_plugins_result_);
+#endif  // !defined(LITERT_DISABLE_NPU)
+  swap(delegates_, recompiled_model.delegates_);
+  swap(weight_loader_owned_, recompiled_model.weight_loader_owned_);
+  swap(weight_loader_, recompiled_model.weight_loader_);
+  swap(custom_op_dispatchers_, recompiled_model.custom_op_dispatchers_);
+  swap(buffer_context_, recompiled_model.buffer_context_);
+  swap(interp_, recompiled_model.interp_);
+  swap(signature_keys_, recompiled_model.signature_keys_);
+  swap(active_subgraph_indices_, recompiled_model.active_subgraph_indices_);
+  swap(selected_signature_keys_, recompiled_model.selected_signature_keys_);
+  swap(cpu_buffer_requirements_, recompiled_model.cpu_buffer_requirements_);
+  swap(signature_runners_, recompiled_model.signature_runners_);
+  swap(signature_needs_allocation_,
+       recompiled_model.signature_needs_allocation_);
+  swap(model_scheduling_info_, recompiled_model.model_scheduling_info_);
+  swap(model_debug_feature_id_, recompiled_model.model_debug_feature_id_);
+  swap(cpu_tensors_, recompiled_model.cpu_tensors_);
+  swap(profiler_, recompiled_model.profiler_);
+  swap(error_reporter_, recompiled_model.error_reporter_);
+  swap(check_cancelled_func_, recompiled_model.check_cancelled_func_);
+  swap(check_cancelled_func_data_,
+       recompiled_model.check_cancelled_func_data_);
+  swap(check_cancelled_func_cpp_,
+       recompiled_model.check_cancelled_func_cpp_);
+  swap(non_cpu_fully_delegated_, recompiled_model.non_cpu_fully_delegated_);
+  swap(delegation_metrics_, recompiled_model.delegation_metrics_);
+  swap(owned_tflite_registrations_,
+       recompiled_model.owned_tflite_registrations_);
+}
+
+Expected<void> LiteRtCompiledModelT::RecompileNpuModelForResizedInput(
+    absl::string_view signature_key, size_t input_index,
+    absl::Span<const int> dims) {
+#if defined(LITERT_DISABLE_NPU)
+  return Unexpected(kLiteRtStatusErrorUnsupported,
+                    "NPU support is disabled in this LiteRT build");
+#else
+  if (!shape_recompilation_enabled_ || jit_compilation_options_ == nullptr ||
+      source_model_buf_.Size() == 0) {
+    return Unexpected(kLiteRtStatusErrorUnsupported,
+                      "NPU shape recompilation is unavailable");
+  }
+
+  auto requested_inputs = resizable_npu_inputs_;
+  auto resizable_input = std::find_if(
+      requested_inputs.begin(), requested_inputs.end(),
+      [signature_key, input_index](const ResizableNpuInput& input) {
+        return input.signature_key == signature_key &&
+               input.input_index == input_index;
+      });
+  if (resizable_input == requested_inputs.end()) {
+    return Unexpected(kLiteRtStatusErrorUnsupported,
+                      "Input does not support NPU shape recompilation");
+  }
+  if (dims.size() != resizable_input->shape_signature.size() ||
+      dims.size() > LITERT_TENSOR_MAX_RANK) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "New shape rank does not match the input signature");
+  }
+  for (size_t i = 0; i < dims.size(); ++i) {
+    if (dims[i] < 0 ||
+        (resizable_input->shape_signature[i] != -1 &&
+         resizable_input->shape_signature[i] != dims[i])) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "New shape is not compatible with input signature");
+    }
+  }
+  resizable_input->current_shape.assign(dims.begin(), dims.end());
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto source_model,
+      litert::internal::LoadModelFromBuffer(
+          litert::BufferRef<uint8_t>(source_model_buf_)));
+  if (source_model_path_) {
+    source_model->SetSourcePath(*source_model_path_);
+  }
+
+  // Specialize every input shape requested so far. This matters for models
+  // with multiple dynamic inputs which callers resize one at a time.
+  for (const auto& input : requested_inputs) {
+    if (input.current_shape.empty()) {
+      continue;
+    }
+    LITERT_ASSIGN_OR_RETURN(auto signature,
+                            source_model->FindSignature(input.signature_key));
+    LiteRtTensor source_input = signature.get().GetInputTensor(input.input_index);
+    LITERT_ASSIGN_OR_RETURN(auto ranked_type, source_input->Ranked());
+    source_input->SetType(MakeRankedTensorType(
+        ranked_type.element_type,
+        absl::MakeConstSpan(input.current_shape.data(),
+                            input.current_shape.size())));
+  }
+
+  // The Qualcomm compiler consumes the LiteRT IR tensor layouts. Propagate the
+  // concrete input shapes through the graph before handing it to the plugin.
+  litert::internal::ShapeInferenceEngine shape_inference(source_model.get());
+  LITERT_RETURN_IF_ERROR(shape_inference.InferShapes());
+
+  // The JIT cache keys on the FlatBuffer owned by the model wrapper, not the
+  // mutable LiteRT IR. Serialize the specialized shapes before creating the
+  // replacement model so each shape has a distinct cache entry.
+  LITERT_ASSIGN_OR_RETURN(
+      auto specialized_model_buf,
+      litert::internal::SerializeModel(std::move(*source_model)));
+  LITERT_ASSIGN_OR_RETURN(
+      auto specialized_model,
+      litert::internal::LoadModelFromBuffer(std::move(specialized_model_buf)));
+  if (source_model_path_) {
+    specialized_model->SetSourcePath(*source_model_path_);
+  }
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto recompiled,
+      Create(env_, specialized_model.get(), jit_compilation_options_));
+  recompiled->source_model_buf_ = source_model_buf_;
+  recompiled->source_model_path_ = source_model_path_;
+  recompiled->RetainJitCompilationOptions(jit_compilation_options_);
+  recompiled->shape_recompilation_enabled_ = true;
+  recompiled->resizable_npu_inputs_ = std::move(requested_inputs);
+  LITERT_RETURN_IF_ERROR(recompiled->RestoreDynamicInputShapeSignatures());
+
+  if (buffer_context_ != nullptr && recompiled->buffer_context_ != nullptr) {
+    recompiled->buffer_context_->SetDispatchAnnotations(
+        buffer_context_->GetDispatchAnnotations());
+    for (size_t signature_index = 0; signature_index < signature_keys_.size();
+         ++signature_index) {
+      const auto* annotations =
+          buffer_context_->GetSignatureDispatchAnnotations(signature_index);
+      if (annotations == nullptr) {
+        continue;
+      }
+      for (const auto& [key, value] : *annotations) {
+        recompiled->buffer_context_->SetSignatureDispatchAnnotation(
+            signature_index, key, value);
+      }
+    }
+  }
+  LITERT_RETURN_IF_ERROR(
+      recompiled->SetSchedulingInfo(&model_scheduling_info_));
+  if (check_cancelled_func_ != nullptr) {
+    recompiled->SetCancellationFunction(check_cancelled_func_data_,
+                                         check_cancelled_func_);
+  } else if (check_cancelled_func_cpp_) {
+    recompiled->SetCancellationFunction(std::move(check_cancelled_func_cpp_));
+  }
+
+  // A prior compilation can expose its owned weight loader through the shared
+  // options object. When the replacement reuses that loader, move its owner
+  // with the replacement state so the raw pointer remains valid after swap.
+  if (recompiled->weight_loader_ == weight_loader_owned_.get()) {
+    recompiled->weight_loader_owned_ = std::move(weight_loader_owned_);
+  }
+
+  SwapRecompiledRuntimeState(*recompiled);
+  return {};
+#endif  // defined(LITERT_DISABLE_NPU)
+}
+
+void LiteRtCompiledModelT::RetainJitCompilationOptions(
+    LiteRtOptions options) {
+  if (options == jit_compilation_options_owner_.get()) {
+    jit_compilation_options_ = options;
+    return;
+  }
+  jit_compilation_options_owner_.reset();
+  jit_compilation_options_ = options;
+  if (options != nullptr) {
+    options->reference_count.fetch_add(1, std::memory_order_relaxed);
+    jit_compilation_options_owner_.reset(options);
+  }
 }
 
 Expected<void> LiteRtCompiledModelT::InitializeActiveSubgraphs(
@@ -2546,6 +2855,32 @@ Expected<void> LiteRtCompiledModelT::ResizeInputTensorImpl(
     }
   }
 
+  if (shape_recompilation_enabled_) {
+    auto resizable_input = std::find_if(
+        resizable_npu_inputs_.begin(), resizable_npu_inputs_.end(),
+        [signature_key, input_index](const ResizableNpuInput& input) {
+          return input.signature_key == signature_key &&
+                 input.input_index == input_index;
+        });
+    if (resizable_input != resizable_npu_inputs_.end()) {
+      if (strict_mode) {
+        if (dims.size() != resizable_input->shape_signature.size()) {
+          return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                            "New shape rank does not match current shape rank.");
+        }
+        for (size_t i = 0; i < dims.size(); ++i) {
+          if (resizable_input->shape_signature[i] != -1 &&
+              resizable_input->shape_signature[i] != dims[i]) {
+            return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "New shape is not compatible with current shape.");
+          }
+        }
+      }
+      return RecompileNpuModelForResizedInput(signature_key, input_index,
+                                               dims);
+    }
+  }
+
   const TfLiteIntArray* signature_shape =
       (input_tensor->dims_signature && input_tensor->dims_signature->size > 0)
           ? input_tensor->dims_signature
@@ -2683,6 +3018,7 @@ void LiteRtCompiledModelT::SetCancellationFunction(
     absl::AnyInvocable<bool()> check_cancelled_func) {
   check_cancelled_func_cpp_ = std::move(check_cancelled_func);
   check_cancelled_func_ = nullptr;
+  check_cancelled_func_data_ = nullptr;
   if (!interp_) {
     return;
   }
@@ -2692,6 +3028,7 @@ void LiteRtCompiledModelT::SetCancellationFunction(
 void LiteRtCompiledModelT::SetCancellationFunction(
     void* data, bool (*check_cancelled_func)(void*)) {
   check_cancelled_func_ = check_cancelled_func;
+  check_cancelled_func_data_ = data;
   check_cancelled_func_cpp_ = nullptr;
 
   // Set the cancellation function on the underlying TFLite interpreter

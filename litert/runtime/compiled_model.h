@@ -72,6 +72,10 @@ class LiteRtDelegationMetricsT {
   std::vector<LiteRtAcceleratorDelegationMetricsT> accelerators;
 };
 
+struct LiteRtOptionsReleaser {
+  void operator()(LiteRtOptionsT* options) const;
+};
+
 // The LiteRtCompiledModelT is internal implementation of CompiledModel C++ API.
 class LiteRtCompiledModelT {
  public:
@@ -446,7 +450,31 @@ class LiteRtCompiledModelT {
                                                absl::Span<const int> dims,
                                                bool strict_mode);
 
+  // Rebuilds a JIT-compiled NPU model from the original FlatBuffer using the
+  // shapes requested through ResizeInputTensor().
+  litert::Expected<void> RecompileNpuModelForResizedInput(
+      absl::string_view signature_key, size_t input_index,
+      absl::Span<const int> dims);
 
+  // Restores dynamic dimension signatures after compiling a concrete shape so
+  // subsequent ResizeInputTensor() calls remain strict-resize compatible.
+  litert::Expected<void> RestoreDynamicInputShapeSignatures();
+
+  // Replaces the interpreter, delegates, and JIT artifacts after a successful
+  // recompilation. The temporary object is left owning the old runtime state.
+  void SwapRecompiledRuntimeState(LiteRtCompiledModelT& recompiled_model);
+
+  // Takes a reference to compilation options used for a later NPU shape
+  // specialization. The owner is declared before delegates so it is released
+  // only after they are destroyed.
+  void RetainJitCompilationOptions(LiteRtOptions options);
+
+  struct ResizableNpuInput {
+    std::string signature_key;
+    size_t input_index;
+    std::vector<int> shape_signature;
+    std::vector<int> current_shape;
+  };
 
   // Marks that the given signature needs tensor allocation.
   litert::Expected<void> MarkSignatureNeedsAllocation(
@@ -489,6 +517,20 @@ class LiteRtCompiledModelT {
 
   // File system hints about the originating model location.
   std::optional<std::string> model_directory_;
+
+  // The uncompiled model is retained for JIT NPU shape specialization. JIT
+  // compilation consumes the LiteRtModel passed to Create(), so this must be a
+  // separate FlatBuffer copy.
+  litert::OwningBufferRef<uint8_t> source_model_buf_;
+  std::optional<std::string> source_model_path_;
+  std::unique_ptr<LiteRtOptionsT, LiteRtOptionsReleaser>
+      jit_compilation_options_owner_;
+  LiteRtOptions jit_compilation_options_ = nullptr;
+  // Set only when an uncompiled source model is translated by JIT or loaded
+  // from its JIT compilation cache. It excludes AOT dispatch models.
+  bool jit_compiled_model_ = false;
+  bool shape_recompilation_enabled_ = false;
+  std::vector<ResizableNpuInput> resizable_npu_inputs_;
 
   litert::OwningBufferRef<uint8_t> model_buf_;
 #if !defined(LITERT_DISABLE_NPU)
@@ -589,6 +631,7 @@ class LiteRtCompiledModelT {
 
   // Cancellation support
   bool (*check_cancelled_func_)(void*) = nullptr;
+  void* check_cancelled_func_data_ = nullptr;
   absl::AnyInvocable<bool()> check_cancelled_func_cpp_;
 
   // Indicates whether the model is fully delegated on GPU or NPU.
