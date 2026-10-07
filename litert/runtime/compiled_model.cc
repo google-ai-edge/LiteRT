@@ -523,6 +523,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     signature_keys_.push_back(default_signature_key);
   }
   LITERT_RETURN_IF_ERROR(InitializeActiveSubgraphs(jit_compilation_options));
+  MarkSignatureIoTensorsNonCpu();
 
   signature_needs_allocation_.clear();
 
@@ -1230,6 +1231,83 @@ Expected<void> LiteRtCompiledModelT::ValidateSignatureIsActive(
       absl::StrFormat("Signature '%s' was not selected when the compiled model "
                       "was created.",
                       signature_key));
+}
+
+void LiteRtCompiledModelT::MarkSignatureIoTensorsNonCpu() {
+  const bool has_signature_defs = !interp_->signature_keys().empty();
+  for (const std::string* signature_key : signature_keys_) {
+    const int subgraph_index =
+        has_signature_defs
+            ? interp_->GetSubgraphIndexFromSignature(signature_key->c_str())
+            : 0;
+    if (subgraph_index < 0 || subgraph_index >= interp_->subgraphs_size()) {
+      continue;
+    }
+    tflite::Subgraph* subgraph = interp_->subgraph(subgraph_index);
+    for (const std::vector<int>* io :
+         {&subgraph->inputs(), &subgraph->outputs()}) {
+      for (int tensor_index : *io) {
+        // Subgraph::tensor() returns nullptr for kTfLiteOptionalTensor and
+        // out-of-range indices.
+        TfLiteTensor* tensor = subgraph->tensor(tensor_index);
+        if (tensor == nullptr || tensor->type == kTfLiteString) continue;
+        if (tensor->allocation_type == kTfLiteArenaRw ||
+            tensor->allocation_type == kTfLiteArenaRwPersistent) {
+          tensor->allocation_type = kTfLiteNonCpu;
+          tensor->data.data = nullptr;
+        }
+      }
+    }
+  }
+}
+
+Expected<LiteRtTensorBuffer> LiteRtCompiledModelT::GetBufferForUnboundInput(
+    TfLiteTensor* tensor) {
+  if (tensor->type == kTfLiteString || tensor->bytes == 0) return nullptr;
+  LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
+                          GetTensorIdentifier(*interp_, tensor));
+
+  auto it = unbound_input_buffers_.find(tensor_id);
+  if (it == unbound_input_buffers_.end()) {
+    // Never bound by the runtime: leave tensors that already have backing
+    // memory (external tensor bindings, accelerator buffers) alone.
+    if (tensor->data.raw != nullptr ||
+        buffer_context_->GetTensorBuffer(tensor)) {
+      return nullptr;
+    }
+  } else {
+    // Reuse the existing buffer unless the tensor has been resized since. The
+    // layout must match exactly, otherwise RegisterBuffer() would resize the
+    // tensor back to the buffer's shape.
+    const LiteRtLayout& layout = it->second->tensor_type().layout;
+    absl::Span<const int> tensor_shape;
+    if (tensor->dims != nullptr) {
+      tensor_shape =
+          absl::MakeConstSpan(tensor->dims->data, tensor->dims->size);
+    }
+    if (absl::MakeConstSpan(layout.dimensions, layout.rank) == tensor_shape) {
+      return it->second.get();
+    }
+  }
+
+  LITERT_ASSIGN_OR_RETURN(
+      const LiteRtRankedTensorType tensor_type,
+      litert::internal::ConvertTensorType(
+          reinterpret_cast<const TfLiteOpaqueTensor*>(tensor)));
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtTensorBufferT::Ptr buffer,
+      LiteRtTensorBufferT::CreateManaged(
+          env_, kLiteRtTensorBufferTypeHostMemory, tensor_type, tensor->bytes));
+  LITERT_ASSIGN_OR_RETURN(void* host_memory, buffer->GetHostBuffer());
+  std::memset(host_memory, 0, tensor->bytes);
+  LITERT_LOG(LITERT_VERBOSE,
+             "Bound zero-filled host buffer to unbound input %s",
+             tensor->name ? tensor->name : "<unnamed>");
+  // Ref-counted ownership: RegisterBuffer() may share it with the buffer
+  // context.
+  LiteRtTensorBufferPtr& slot = unbound_input_buffers_[tensor_id];
+  slot = LiteRtTensorBufferPtr(buffer.release());
+  return slot.get();
 }
 
 bool LiteRtCompiledModelT::HasNpuOps() const {
@@ -1951,9 +2029,8 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
               LiteRtLockTensorBuffer(buffer, &host_mem_addr, lock_mode);
           status != kLiteRtStatusOk) {
         return Unexpected(
-            status,
-            absl::StrFormat("Failed to lock the tensor buffer: %s",
-                            tensor->name ? tensor->name : "<unnamed>"));
+            status, absl::StrFormat("Failed to lock the tensor buffer: %s",
+                                    tensor->name ? tensor->name : "<unnamed>"));
       }
       locked_buffers[buffer] = host_mem_addr;
     }
@@ -2096,10 +2173,6 @@ Expected<void> LiteRtCompiledModelT::Run(
   });
 
   for (int i = 0; i < num_inputs; ++i) {
-    if (input_buffers[i] == nullptr) {
-      continue;
-    }
-
     int tensor_index = -1;
     const char* tensor_name = nullptr;
     TfLiteTensor* input_tensor = nullptr;
@@ -2113,10 +2186,18 @@ Expected<void> LiteRtCompiledModelT::Run(
       input_tensor = runner->input_tensor(tensor_name);
     }
 
-    auto res =
-        RegisterBuffer(runner, input_tensor, tensor_index, tensor_name,
-                       input_buffers[i], /*is_input=*/true, locked_buffers,
-                       constant_outputs, pending_string_output_copies);
+    LiteRtTensorBuffer input_buffer = input_buffers[i];
+    if (input_buffer == nullptr) {
+      // The caller may leave some inputs unbound (e.g. external tensor
+      // bindings). Tensors without backing memory get a runtime-owned buffer.
+      LITERT_ASSIGN_OR_RETURN(input_buffer,
+                              GetBufferForUnboundInput(input_tensor));
+      if (input_buffer == nullptr) continue;
+    }
+
+    auto res = RegisterBuffer(runner, input_tensor, tensor_index, tensor_name,
+                              input_buffer, /*is_input=*/true, locked_buffers,
+                              constant_outputs, pending_string_output_copies);
 
     if (!res) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,

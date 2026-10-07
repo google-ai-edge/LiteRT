@@ -400,6 +400,20 @@ class LiteRtCompiledModelT {
   // this root set and does not add transitively referenced callees.
   litert::Expected<void> InitializeActiveSubgraphs(LiteRtOptions options);
 
+  // Marks signature subgraph input and output tensors as kTfLiteNonCpu to
+  // prevent TFLite's ArenaPlanner from allocating host heap buffers for them.
+  void MarkSignatureIoTensorsNonCpu();
+
+  // Returns the buffer to bind to an input tensor for which the caller passed
+  // nullptr in Run(). Since signature I/O tensors are not allocated by TFLite's
+  // ArenaPlanner (see MarkSignatureIoTensorsNonCpu), such tensors would
+  // otherwise have no backing memory, so the runtime binds a zero-filled host
+  // buffer it owns, exactly as if the caller had provided one. Returns nullptr
+  // if the tensor already has backing memory (e.g. an external tensor binding)
+  // and must be left untouched.
+  litert::Expected<LiteRtTensorBuffer> GetBufferForUnboundInput(
+      TfLiteTensor* tensor);
+
   // Returns NotFound when an explicitly unselected signature is used.
   litert::Expected<void> ValidateSignatureIsActive(
       absl::string_view signature_key) const;
@@ -531,6 +545,13 @@ class LiteRtCompiledModelT {
   // Note: The ExternalLiteRtBufferContext must be destroyed after the
   // Interpreter.
   std::unique_ptr<LiteRtExternalLiteRtBufferContextT> buffer_context_;
+
+  // Zero-filled host buffers the runtime binds to input tensors for which the
+  // caller passed nullptr in Run(). See GetBufferForUnboundInput().
+  // Note: These buffers must be destroyed after the Interpreter.
+  absl::flat_hash_map<TfLiteTensorIdentifier, LiteRtTensorBufferPtr,
+                      TensorIdentifierHash, TensorIdentifierEqual>
+      unbound_input_buffers_;
 
   // The TFL interpreter.
   std::unique_ptr<::tflite::Interpreter> interp_;
