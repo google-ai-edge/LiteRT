@@ -30,6 +30,18 @@
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
 
+#if defined(LITERT_NO_BUILTIN_OPS)
+#include <memory>
+
+#include "tflite/mutable_op_resolver.h"
+
+namespace tflite {
+__attribute__((weak)) std::unique_ptr<MutableOpResolver> CreateOpResolver() {
+  return std::make_unique<MutableOpResolver>();
+}
+}  // namespace tflite
+#endif  // defined(LITERT_NO_BUILTIN_OPS)
+
 namespace litert::internal {
 
 TfLiteStatus SetCustomAllocationForInputTensor(

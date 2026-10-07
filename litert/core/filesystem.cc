@@ -17,8 +17,8 @@
 #include <chrono>  // NOLINT
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>  // NOLINT
-#include <fstream>
 #include <string>
 #include <system_error>  // NOLINT
 #include <vector>
@@ -51,23 +51,27 @@ size_t StdSize(const StdPath& std_path) {
 }
 
 LiteRtStatus StdIFRead(const StdPath& std_path, char* data, size_t size) {
-  std::ifstream in_file_stream(std_path, std::ifstream::binary);
-  if (!in_file_stream) {
+  std::FILE* f = std::fopen(std_path.string().c_str(), "rb");
+  if (!f) {
     return kLiteRtStatusErrorFileIO;
   }
 
-  in_file_stream.read(data, size);
-  if (!in_file_stream) {
+  size_t read_bytes = std::fread(data, 1, size, f);
+  std::fclose(f);
+  if (read_bytes != size) {
     return kLiteRtStatusErrorFileIO;
   }
 
-  in_file_stream.close();
   return kLiteRtStatusOk;
 }
 
 }  // namespace
 
-void Touch(absl::string_view path) { std::ofstream(MakeStdPath(path)); }
+void Touch(absl::string_view path) {
+  if (std::FILE* f = std::fopen(MakeStdPath(path).string().c_str(), "wb")) {
+    std::fclose(f);
+  }
+}
 
 std::string Join(const std::vector<absl::string_view>& paths) {
   StdPath std_path;

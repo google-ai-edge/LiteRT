@@ -51,7 +51,6 @@
 #include "litert/runtime/tfl_utils.h"
 #include "tflite/converter/allocation.h"
 #include "tflite/core/api/error_reporter.h"
-#include "tflite/delegates/utils/simple_opaque_delegate.h"
 #include "tflite/interpreter.h"
 #include "tflite/model_builder.h"
 

@@ -17,8 +17,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
-#include <iostream>
 #include <type_traits>
 #include <utility>
 
@@ -80,8 +80,8 @@ namespace internal {
 
 [[noreturn]] inline void CheckFailed(const char* expression, const char* file,
                                      int line) {
-  std::cerr << "LiteRT check failed: " << expression << " at " << file << ":"
-            << line << '\n';
+  std::fprintf(stderr, "LiteRT check failed: %s at %s:%d\n", expression, file,
+               line);
   std::abort();
 }
 

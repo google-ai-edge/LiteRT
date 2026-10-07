@@ -15,16 +15,16 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_ANY_H_
 #define ODML_LITERT_LITERT_CC_LITERT_ANY_H_
 
-#include <any>
 #include <cstdint>
 #include <limits>
-#include <sstream>
 #include <string>
 #include <type_traits>
 #include <variant>
 
+#ifndef LITERT_NO_ABSL
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#endif  // LITERT_NO_ABSL
 #include "litert/c/litert_any.h"
-#include "litert/c/litert_common.h"
 #include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
@@ -127,21 +127,33 @@ namespace internal {
 inline Expected<void> CheckType(const LiteRtAny& any,
                                 const LiteRtAnyType type) {
   if (any.type != type) {
+#ifndef LITERT_NO_ABSL
+    return Error(Status::kErrorInvalidArgument,
+                 absl::StrCat("Wrong LiteRtAny type. Expected ",
+                              LiteRtAnyTypeToString(type), ", got ",
+                              LiteRtAnyTypeToString(any.type), "."));
+#else
     return Error(Status::kErrorInvalidArgument,
                  std::string("Wrong LiteRtAny type. Expected ") +
                      LiteRtAnyTypeToString(type) + ", got " +
                      LiteRtAnyTypeToString(any.type) + ".");
+#endif  // LITERT_NO_ABSL
   }
   return {};
 }
 
 template <class T, class V>
 std::string OutOfRangeMessage(const char* type_name, V value) {
-  std::stringstream message;
-  message << "LiteRtAny " << type_name << " is out of range. "
-          << std::numeric_limits<T>::lowest() << " <= " << value
-          << " <= " << std::numeric_limits<T>::max();
-  return message.str();
+#ifndef LITERT_NO_ABSL
+  return absl::StrCat("LiteRtAny ", type_name, " is out of range. ",
+                      std::numeric_limits<T>::lowest(), " <= ", value,
+                      " <= ", std::numeric_limits<T>::max());
+#else
+  return std::string("LiteRtAny ") + type_name + " is out of range. " +
+         std::to_string(std::numeric_limits<T>::lowest()) + " <= " +
+         std::to_string(value) + " <= " +
+         std::to_string(std::numeric_limits<T>::max());
+#endif  // LITERT_NO_ABSL
 }
 
 template <class T>

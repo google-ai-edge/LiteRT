@@ -67,6 +67,7 @@ cc_library(
         ":litert_macros",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -133,6 +134,7 @@ cc_library(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
     ],
 )
 

@@ -415,6 +415,7 @@ cc_binary(
     # Same size-oriented link flags as the TFLite size tracking binaries.
     linkopts = tflite_linkopts(),
     linkstatic = 1,
+    # copybara:uncomment malloc = "//base:system_malloc",
     deps = [
         "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
@@ -439,6 +440,7 @@ cc_binary(
     srcs = ["minimal_compiled_model.cc"],
     linkopts = tflite_linkopts_unstripped(),
     linkstatic = 1,
+    # copybara:uncomment malloc = "//base:system_malloc",
     deps = [
         "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",

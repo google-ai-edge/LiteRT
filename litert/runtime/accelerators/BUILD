@@ -135,8 +135,12 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
-        "//litert/runtime/accelerators/dispatch:dispatch_accelerator",
-    ],
+    ] + select({
+        "//litert/build_common:build_include_npu_enabled": [
+            "//litert/runtime/accelerators/dispatch:dispatch_accelerator",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(

@@ -31,6 +31,7 @@ package(
 cc_library(
     name = "to_string",
     hdrs = ["to_string.h"],
+    deps = ["@com_google_absl//absl/strings"],
 )
 
 cc_library_with_testonly_vis(

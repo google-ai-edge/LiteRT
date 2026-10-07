@@ -17,7 +17,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <map>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -69,7 +68,7 @@ void LiteRtProfileSummarizer::ProcessProfiles(
         const char* profiling_string = interpreter.OpProfilingString(
             node_and_reg->second, &node_and_reg->first);
         if (profiling_string) {
-          type_in_stats += "/";
+          type_in_stats += '/';
           type_in_stats += profiling_string;
         }
       }
@@ -128,7 +127,7 @@ void LiteRtProfileSummarizer::ProcessProfiles(
 }
 
 std::string LiteRtProfileSummarizer::GetOutputString() const {
-  std::stringstream ss;
+  std::string output;
 
   auto get_header = [](absl::string_view title, int total_width) {
     std::string label = absl::StrCat(" ", title, " ");
@@ -159,10 +158,11 @@ std::string LiteRtProfileSummarizer::GetOutputString() const {
   }
 
   // 1. Run Order
-  ss << get_header("Run Order", 150);
-  ss << absl::StrFormat("%60s %10s %10s %10s %10s %10s %10s %14s   %s\n",
-                        "[node type]", "[start]", "[first]", "[avg ms]", "[%]",
-                        "[cdf%]", "[mem KB]", "[times called]", "[Name]");
+  output += get_header("Run Order", 150);
+  output +=
+      absl::StrFormat("%60s %10s %10s %10s %10s %10s %10s %14s   %s\n",
+                      "[node type]", "[start]", "[first]", "[avg ms]", "[%]",
+                      "[cdf%]", "[mem KB]", "[times called]", "[Name]");
 
   double cdf_us = 0;
   for (const auto& node : node_stats_) {
@@ -181,17 +181,19 @@ std::string LiteRtProfileSummarizer::GetOutputString() const {
         static_cast<double>(node.total_time_us) / safe_total_time_us * 100.0;
     double cdf_pct = cdf_us / safe_total_time_us * 100.0;
 
-    ss << absl::StrFormat(
+    output += absl::StrFormat(
         "%60s %10.3f %10.3f %10.3f %9.3f%% %9.3f%% %10.3f %14d   %s\n",
         node.node_type, start_ms, first_ms, avg_ms, pct, cdf_pct, 0.0,
         node.count, node.node_name);
   }
 
   // 2. Top by Computation Time
-  ss << "\n" << get_header("Top by Computation Time", 150);
-  ss << absl::StrFormat("%60s %10s %10s %10s %10s %10s %10s %14s   %s\n",
-                        "[node type]", "[start]", "[first]", "[avg ms]", "[%]",
-                        "[cdf%]", "[mem KB]", "[times called]", "[Name]");
+  output += '\n';
+  output += get_header("Top by Computation Time", 150);
+  output +=
+      absl::StrFormat("%60s %10s %10s %10s %10s %10s %10s %14s   %s\n",
+                      "[node type]", "[start]", "[first]", "[avg ms]", "[%]",
+                      "[cdf%]", "[mem KB]", "[times called]", "[Name]");
 
   std::vector<ProfileNodeInfo> sorted_nodes = node_stats_;
   absl::c_stable_sort(sorted_nodes,
@@ -216,19 +218,17 @@ std::string LiteRtProfileSummarizer::GetOutputString() const {
         static_cast<double>(node.total_time_us) / safe_total_time_us * 100.0;
     double cdf_pct = cdf_us / safe_total_time_us * 100.0;
 
-    ss << absl::StrFormat(
+    output += absl::StrFormat(
         "%60s %10.3f %10.3f %10.3f %9.3f%% %9.3f%% %10.3f %14d   %s\n",
         node.node_type, start_ms, first_ms, avg_ms, pct, cdf_pct, 0.0,
         node.count, node.node_name);
   }
 
-  ss << "\nNumber of nodes executed: " << node_stats_.size() << "\n";
-
-  // 3. Summary by node type
-  ss << "\n" << get_header("Summary by node type", 130);
-  ss << absl::StrFormat("%60s %10s %10s %10s %10s %10s %14s\n", "[Node type]",
-                        "[count]", "[avg ms]", "[avg %]", "[cdf %]", "[mem KB]",
-                        "[times called]");
+  absl::StrAppend(&output, "\nNumber of nodes executed: ", node_stats_.size(),
+                  "\n\n", get_header("Summary by node type", 130));
+  output += absl::StrFormat("%60s %10s %10s %10s %10s %10s %14s\n",
+                            "[Node type]", "[count]", "[avg ms]", "[avg %]",
+                            "[cdf %]", "[mem KB]", "[times called]");
 
   std::vector<std::pair<std::string, OpStat>> sorted_stats(stats_.begin(),
                                                            stats_.end());
@@ -251,32 +251,33 @@ std::string LiteRtProfileSummarizer::GetOutputString() const {
       if (node.node_type == name) node_count++;
     }
 
-    ss << absl::StrFormat("%60s %10d %10.3f %9.3f%% %9.3f%% %10.3f %14d\n",
-                          name, node_count, avg_ms, pct, cdf_pct, 0.0,
-                          stat.count);
+    output +=
+        absl::StrFormat("%60s %10d %10.3f %9.3f%% %9.3f%% %10.3f %14d\n", name,
+                        node_count, avg_ms, pct, cdf_pct, 0.0, stat.count);
   }
 
   // 4. Delegate Statistics (optional)
   if (!delegate_stats_.empty()) {
-    ss << "\n" << get_header("Delegate Statistics", 135);
-    ss << absl::StrFormat("%-80s %10s %10s %10s %10s %10s\n", "Op Name",
-                          "Count", "Avg(us)", "Min(us)", "Max(us)",
-                          "Total(us)");
+    output += '\n';
+    output += get_header("Delegate Statistics", 135);
+    output +=
+        absl::StrFormat("%-80s %10s %10s %10s %10s %10s\n", "Op Name", "Count",
+                        "Avg(us)", "Min(us)", "Max(us)", "Total(us)");
     for (const auto& [name, stat] : delegate_stats_) {
       double avg = static_cast<double>(stat.total_time_us) / stat.count;
-      ss << absl::StrFormat("%-80s %10lld %10.2f %10lld %10lld %10lld\n", name,
-                            stat.count, avg, stat.min_time_us, stat.max_time_us,
-                            stat.total_time_us);
+      output += absl::StrFormat("%-80s %10lld %10.2f %10lld %10lld %10lld\n",
+                                name, stat.count, avg, stat.min_time_us,
+                                stat.max_time_us, stat.total_time_us);
     }
   }
 
   // 5. Timings
-  ss << "\nTimings (microseconds): count=" << node_stats_.size()
-     << " curr=" << total_time_us << "\n";
-  ss << "Memory (bytes): count=0\n";
-  ss << node_stats_.size() << " nodes observed\n";
+  absl::StrAppend(&output,
+                  "\nTimings (microseconds): count=", node_stats_.size(),
+                  " curr=", total_time_us, "\nMemory (bytes): count=0\n",
+                  node_stats_.size(), " nodes observed\n");
 
-  return ss.str();
+  return output;
 }
 
 }  // namespace profiling

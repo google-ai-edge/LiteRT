@@ -16,17 +16,20 @@
 #define ODML_LITERT_LITERT_CC_LITERT_MACROS_H_
 
 #include <cstdlib>
-#include <iostream>
 #include <memory>
-#include <sstream>
 #include <string>
 #include <type_traits>
 #include <utility>
 
+#ifdef LITERT_NO_ABSL
+#include <sstream>
+#endif  // LITERT_NO_ABSL
+
 #ifndef LITERT_NO_ABSL
-#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #endif  // LITERT_NO_ABSL
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -194,10 +197,17 @@ class ErrorStatusBuilder {
   /// @brief Appends data to the error message.
   template <class T>
   ErrorStatusBuilder& operator<<(T&& val) {
+#ifndef LITERT_NO_ABSL
+    if (!extra_log_) {
+      extra_log_ = std::make_unique<std::string>();
+    }
+    absl::StrAppend(extra_log_.get(), std::forward<T>(val));
+#else
     if (!extra_log_) {
       extra_log_ = std::make_unique<std::stringstream>();
     }
     *extra_log_ << static_cast<T&&>(val);
+#endif  // LITERT_NO_ABSL
     return *this;
   }
 
@@ -265,7 +275,11 @@ class ErrorStatusBuilder {
 
   litert::Error error_;
   litert::SourceLocation loc_;
+#ifndef LITERT_NO_ABSL
+  std::unique_ptr<std::string> extra_log_;
+#else
   std::unique_ptr<std::stringstream> extra_log_;
+#endif  // LITERT_NO_ABSL
   LiteRtLogSeverity log_level_ = kLiteRtLogSeverityError;
 };
 
@@ -624,6 +638,13 @@ inline std::string ErrorStatusBuilder::LogMessage() const {
     min_severity = kLiteRtLogSeverityVerbose;
   }
   if (log_level_ >= min_severity) {
+#ifndef LITERT_NO_ABSL
+    return absl::StrCat(
+        LiteRtGetLogSeverityName(log_level_), ": [", loc_.file_name(), ":",
+        loc_.line(), "]", extra_log_ ? " " : "",
+        extra_log_ ? absl::string_view(*extra_log_) : absl::string_view(),
+        error_.Message().empty() ? "" : "\n└ ", error_.Message());
+#else
     std::stringstream sstr;
     sstr << LiteRtGetLogSeverityName(log_level_) << ": [" << loc_.file_name()
          << ':' << loc_.line() << ']';
@@ -634,6 +655,7 @@ inline std::string ErrorStatusBuilder::LogMessage() const {
       sstr << "\n└ " << error_.Message();
     }
     return sstr.str();
+#endif  // LITERT_NO_ABSL
   }
   return "";
 }

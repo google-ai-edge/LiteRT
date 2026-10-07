@@ -17,26 +17,34 @@
 
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <vector>
+
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 
 namespace litert::internal {
 
 template <typename T>
 std::string ToString(const T& t) {
-  std::ostringstream os;
-  os << t;
-  return os.str();
+  if constexpr (std::is_same_v<T, std::string>) {
+    return t;
+  } else if constexpr (std::is_arithmetic_v<T>) {
+    return absl::StrCat(t);
+  } else {
+    std::ostringstream os;
+    os << t;
+    return os.str();
+  }
 }
 
 template <typename Iter>
 std::string ToString(Iter begin, Iter end) {
-  std::ostringstream os;
-  os << "{";
+  std::string res = "{";
   for (auto i = begin; i != end; ++i) {
-    os << ToString(*i) << ", ";
+    absl::StrAppend(&res, ToString(*i), ", ");
   }
-  os << "}";
-  return os.str();
+  res += '}';
+  return res;
 }
 
 template <typename T>

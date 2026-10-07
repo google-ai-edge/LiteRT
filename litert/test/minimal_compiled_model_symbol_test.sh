@@ -13,8 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Verifies that a cpu_only LiteRT runtime binary contains no non-CPU (GPU,
-# OpenCL, WebGPU, Dawn, OpenGL) symbols or dynamic library dependencies.
+# Verifies that a minimal (cpu_only + selective) LiteRT runtime binary contains
+# no non-CPU (GPU, OpenCL, WebGPU, Dawn, OpenGL, NPU dispatch), unselected
+# builtin-op, or LiteRT C++ stream symbols or dynamic library dependencies.
 # Usage: minimal_compiled_model_symbol_test.sh <binary>
 
 set -euo pipefail
@@ -42,18 +43,39 @@ if [ -n "${GPU_LIBS}" ]; then
 fi
 
 echo "Checking symbol table in $(basename "${BINARY}")..."
-BANNED_SYMBOL_PATTERN="(clCreate|clGetPlatform|opencl_wrapper|qcom_wrapper|wgpu[A-Z]|wgpuBuffer|UploadWeightsOnWeb|CreateFromWebGpuBuffer|CreateFromOpenClMemory|CreateFromGlBuffer|CreateFromGlTexture)"
+# GPU symbols: Ensures GPU backends (OpenCL, WebGPU/Dawn, OpenGL/GLES) and their
+# buffer/texture wrappers are not pulled into CPU-only builds.
+BANNED_GPU_SYMBOLS="clCreate|clGetPlatform|opencl_wrapper|qcom_wrapper|wgpu[A-Z]|wgpuBuffer|UploadWeightsOnWeb|CreateFromWebGpuBuffer|CreateFromOpenClMemory|CreateFromGlBuffer|CreateFromGlTexture"
 
-LEAKED_SYMBOLS=$(nm -C "${BINARY}" 2>/dev/null | grep -E "${BANNED_SYMBOL_PATTERN}" || true)
+# NPU symbols: Ensures NPU dispatch accelerator, registration, and dispatch
+# delegate kernels are excluded in minimal CPU runtime builds.
+BANNED_NPU_SYMBOLS="DispatchAccelerator|LiteRtRegisterNpuAccelerator|LiteRtCreateDispatchDelegate|DispatchDelegateKernel"
+
+# Builtin-op symbols: Ensures unselected TFLite builtin ops and the default CPU
+# accelerator table are not linked when selective op registration is enabled.
+BANNED_BUILTIN_OP_SYMBOLS="LiteRtRegisterCpuAccelerator|BuiltinOpResolverWithoutDefaultDelegates|Register_CONV_2D|Register_LSTM|Register_SVDF"
+
+# Stream symbols: C++ std::iostream / std::stringstream pull in heavy virtual
+# tables, locales, and formatting logic. Ensures LiteRT uses lighter alternatives.
+BANNED_STREAM_SYMBOLS="litert::.*basic_.*stream|default_delete<.*basic_.*stream|unique_ptr<.*basic_.*stream"
+BANNED_SYMBOL_PATTERN="(${BANNED_GPU_SYMBOLS}|${BANNED_NPU_SYMBOLS}|${BANNED_BUILTIN_OP_SYMBOLS}|${BANNED_STREAM_SYMBOLS})"
+
+SYMBOLS=$(nm -C "${BINARY}")
+if [ -z "${SYMBOLS}" ]; then
+  echo "ERROR: Failed to read symbol table from $(basename "${BINARY}")"
+  exit 1
+fi
+
+LEAKED_SYMBOLS=$(grep -E "${BANNED_SYMBOL_PATTERN}" <<< "${SYMBOLS}" || true)
 if [ -n "${LEAKED_SYMBOLS}" ]; then
-  echo "ERROR: Found forbidden GPU symbols in $(basename "${BINARY}"):"
+  echo "ERROR: Found forbidden symbols in $(basename "${BINARY}"):"
   echo "${LEAKED_SYMBOLS}"
   SUCCESS=0
 fi
 
 if [ "${SUCCESS}" -eq 1 ]; then
-  echo "PASS: No GPU symbols found in $(basename "${BINARY}")"
+  echo "PASS: No forbidden symbols found in $(basename "${BINARY}")"
 else
-  echo "FAIL: Non-CPU symbols leaked into $(basename "${BINARY}")"
+  echo "FAIL: Forbidden symbols leaked into $(basename "${BINARY}")"
   exit 1
 fi

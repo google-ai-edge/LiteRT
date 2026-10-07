@@ -11,13 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""A rule that transitions a target to build_include=cpu_only."""
+"""A rule that transitions a target to build_include=cpu_only and cpu_backend=selective."""
 
 _BUILD_INCLUDE_SETTING = "//litert/build_common:build_include"
+_CPU_BACKEND_SETTING = "//litert/build_common:cpu_backend"
 
 def _cpu_only_transition_impl(_settings, _attr):
     return {
         _BUILD_INCLUDE_SETTING: "cpu_only",
+        _CPU_BACKEND_SETTING: "selective",
     }
 
 _cpu_only_transition = transition(
@@ -25,6 +27,7 @@ _cpu_only_transition = transition(
     inputs = [],
     outputs = [
         _BUILD_INCLUDE_SETTING,
+        _CPU_BACKEND_SETTING,
     ],
 )
 
@@ -53,7 +56,7 @@ def _cpu_only_target_impl(ctx):
 
 cpu_only_target = rule(
     implementation = _cpu_only_target_impl,
-    doc = "Builds `target` with `build_include=cpu_only`.",
+    doc = "Builds `target` with `build_include=cpu_only` and `cpu_backend=selective`.",
     attrs = {
         "target": attr.label(
             allow_files = True,
