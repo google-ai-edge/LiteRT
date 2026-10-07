@@ -54,24 +54,6 @@ float GetOptimizationValue(OptimizationLevel level) {
   }
 }
 
-Qnn_Priority_t GetGraphPriorityValue(GraphPriority graph_priority) {
-  // Default priority is NORMAL
-  switch (graph_priority) {
-    case GraphPriority::kDefault:
-      return QNN_PRIORITY_DEFAULT;
-    case GraphPriority::kLow:
-      return QNN_PRIORITY_LOW;
-    case GraphPriority::kNormal:
-      return QNN_PRIORITY_NORMAL;
-    case GraphPriority::kNormalHigh:
-      return QNN_PRIORITY_NORMAL_HIGH;
-    case GraphPriority::kHigh:
-      return QNN_PRIORITY_HIGH;
-    default:
-      return QNN_PRIORITY_UNDEFINED;
-  }
-}
-
 }  // namespace
 
 // HTP PERF CONTROL /////////////////////////////////////////////////////////

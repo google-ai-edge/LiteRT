@@ -613,6 +613,14 @@ std::uint32_t Options::GetVtcmSize() const { return vtcm_size_; }
 
 void Options::SetVtcmSize(std::uint32_t vtcm_size) { vtcm_size_ = vtcm_size; }
 
+std::uint32_t Options::GetHtpFileReadMemoryBudgetMb() const {
+  return htp_file_read_memory_budget_mb_;
+}
+
+void Options::SetHtpFileReadMemoryBudgetMb(std::uint32_t budget_mb) {
+  htp_file_read_memory_budget_mb_ = budget_mb;
+}
+
 std::uint32_t Options::GetNumHvxThreads() const { return num_hvx_threads_; }
 
 void Options::SetNumHvxThreads(std::uint32_t num_hvx_threads) {
@@ -788,6 +796,7 @@ std::string Options::Dump() const {
   field(2, "HtpPdSession", htp_pd_session_);
   field(2, "VtcmSize", vtcm_size_);
   field(2, "NumHvxThreads", num_hvx_threads_);
+  field(2, "HtpFileReadMemoryBudgetMb", htp_file_read_memory_budget_mb_);
   field(2, "OptimizationLevel", optimization_level_);
 
   // --- IR ---

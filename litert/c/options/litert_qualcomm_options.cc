@@ -111,6 +111,7 @@ struct LrtQualcommOptionsT {
   std::optional<std::string> graph_transform;
   std::optional<std::uint32_t> vtcm_size;
   std::optional<std::uint32_t> num_hvx_threads;
+  std::optional<std::uint32_t> htp_file_read_memory_budget_mb;
   std::optional<LrtQualcommOptionsOptimizationLevel> optimization_level;
   std::optional<LrtQualcommOptionsGraphPriority> graph_priority;
   std::optional<std::string> saver_output_dir;
@@ -262,6 +263,11 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetNumHvxThreads(
+              parsed_options, static_cast<uint32_t>(*v));
+        } else if (key == "htp_file_read_memory_budget_mb") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetHtpFileReadMemoryBudgetMb(
               parsed_options, static_cast<uint32_t>(*v));
         } else if (key == "optimization_level") {
           auto v = litert::internal::ParseTomlInt(value);
@@ -454,6 +460,10 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   }
   if (options->num_hvx_threads.has_value()) {
     toml << "num_hvx_threads = " << *options->num_hvx_threads << "\n";
+  }
+  if (options->htp_file_read_memory_budget_mb.has_value()) {
+    toml << "htp_file_read_memory_budget_mb = "
+         << *options->htp_file_read_memory_budget_mb << "\n";
   }
   if (options->optimization_level.has_value()) {
     toml << "optimization_level = "
@@ -1153,6 +1163,28 @@ LiteRtStatus LrtQualcommOptionsGetVtcmSize(LrtQualcommOptions options,
   }
 
   *vtcm_size = options->vtcm_size.value_or(0);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetHtpFileReadMemoryBudgetMb(
+    LrtQualcommOptions options, std::uint32_t budget_mb) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->htp_file_read_memory_budget_mb = budget_mb;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpFileReadMemoryBudgetMb(
+    LrtQualcommOptions options, std::uint32_t* budget_mb) {
+  if (options == nullptr || budget_mb == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *budget_mb = options->htp_file_read_memory_budget_mb.value_or(0);
 
   return kLiteRtStatusOk;
 }

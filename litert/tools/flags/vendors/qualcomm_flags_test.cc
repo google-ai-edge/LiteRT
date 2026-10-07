@@ -781,6 +781,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());
   EXPECT_EQ(options.Value().GetVtcmSize(), 0);
   EXPECT_EQ(options.Value().GetNumHvxThreads(), 0);
+  EXPECT_EQ(options.Value().GetHtpFileReadMemoryBudgetMb(), 0);
   EXPECT_EQ(options.Value().GetOptimizationLevel(),
             QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
   EXPECT_EQ(options.Value().GetGraphPriority(),

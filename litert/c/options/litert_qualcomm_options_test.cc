@@ -331,6 +331,25 @@ TEST(LiteRtQualcommOptionsTest, VtcmSize) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, HtpFileReadMemoryBudgetMb) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  // Default is 0 (feature disabled).
+  std::uint32_t default_budget = 123;
+  LITERT_ASSERT_OK(LrtQualcommOptionsGetHtpFileReadMemoryBudgetMb(
+      qualcomm_options, &default_budget));
+  EXPECT_EQ(default_budget, 0);
+
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsSetHtpFileReadMemoryBudgetMb(qualcomm_options, 16));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetHtpFileReadMemoryBudgetMb(), 16);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, NumHvxThreads) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -562,6 +581,10 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetVtcmSize(), 0);
   options->SetVtcmSize(4);
   EXPECT_EQ(options->GetVtcmSize(), 4);
+
+  EXPECT_EQ(options->GetHtpFileReadMemoryBudgetMb(), 0);
+  options->SetHtpFileReadMemoryBudgetMb(16);
+  EXPECT_EQ(options->GetHtpFileReadMemoryBudgetMb(), 16);
 
   EXPECT_EQ(options->GetNumHvxThreads(), 0);
   options->SetNumHvxThreads(4);

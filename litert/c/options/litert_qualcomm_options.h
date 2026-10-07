@@ -361,6 +361,12 @@ LiteRtStatus LrtQualcommOptionsSetVtcmSize(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetVtcmSize(LrtQualcommOptions options,
                                            uint32_t* vtcm_size);
 
+LiteRtStatus LrtQualcommOptionsSetHtpFileReadMemoryBudgetMb(
+    LrtQualcommOptions options, uint32_t budget_mb);
+
+LiteRtStatus LrtQualcommOptionsGetHtpFileReadMemoryBudgetMb(
+    LrtQualcommOptions options, uint32_t* budget_mb);
+
 LiteRtStatus LrtQualcommOptionsSetNumHvxThreads(LrtQualcommOptions options,
                                                 uint32_t num_hvx_threads);
 
