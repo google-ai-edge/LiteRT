@@ -6019,22 +6019,24 @@ class Subgraph {
                                  begin[i], node_index);
         return kTfLiteError;
       }
-      if (size[i] <= 0) {
-        // TODO(b/329228576): Add support for negative begin.
+      if (size[i] == 0 || size[i] < -1) {
         TF_LITE_MAYBE_KERNEL_LOG(logging_context,
                                  "size %" PRId64
-                                 " must be positive in SLICE node #%d",
+                                 " must be positive or -1 in SLICE node #%d",
                                  size[i], node_index);
         return kTfLiteError;
       }
     }
 
     if (subgraph != nullptr) {
-      // Convert to size_t.
-      std::array<size_t, XNN_MAX_TENSOR_DIMS> offsets;
-      std::copy(begin.begin(), begin.end(), offsets.begin());
-      std::array<size_t, XNN_MAX_TENSOR_DIMS> sizes;
-      std::copy(size.begin(), size.end(), sizes.begin());
+      std::array<size_t, XNN_MAX_TENSOR_DIMS> offsets{};
+      std::array<size_t, XNN_MAX_TENSOR_DIMS> sizes{};
+      for (int i = 0; i < num_dims; ++i) {
+        offsets[i] = static_cast<size_t>(begin[i]);
+        // XNNPACK interprets offset + size == 0 as the current input extent.
+        // Preserve TFLite's "to the end" semantics across input reshapes.
+        sizes[i] = static_cast<size_t>(size[i] == -1 ? -begin[i] : size[i]);
+      }
 
       const xnn_status status = xnn_define_static_slice(
           subgraph, num_dims, offsets.data(), sizes.data(),
