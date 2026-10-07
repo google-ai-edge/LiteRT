@@ -79,6 +79,9 @@ void GatedDeltaUpdateOperationParser::Parse(const TfLiteNode* tflite_node,
   auto* node = graph->NewNode();
   node->operation.type = kGatedDeltaUpdateType;
   for (int i = 0; i < 6; ++i) {
+    // Skip input 5 (recurrent_state_in); we read and update output 1
+    // (recurrent_state_out) in-place.
+    if (i == 5) continue;
     if (reader->CanReadValue(i)) {
       reader->AddInput(node, i);
     } else {

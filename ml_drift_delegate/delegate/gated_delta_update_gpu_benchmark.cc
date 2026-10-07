@@ -35,6 +35,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/options/litert_gpu_options.h"
 #include "litert/core/options.h"
 #include "litert/experimental/custom_ops/gated_delta_net/gated_delta_update_tflite_op.h"
 #include "ml_drift_delegate/delegate/gated_delta_update_test_util.h"
@@ -61,6 +62,9 @@ void GenerateRandom(TensorBuffer& buffer, float min_val = 0.0f,
 Expected<litert::Options> CreateGpuOptions() {
   LITERT_ASSIGN_OR_RETURN(litert::Options options, litert::Options::Create());
   options.SetHardwareAccelerators(litert::HwAccelerators::kGpu);
+  LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
+  gpu_opts.AddExternalTensorPattern("final_state");
+  gpu_opts.AddBufferStorageTensorPattern("final_state");
 
   static TfLiteRegistration reg =
       *litert_torch::gdn_kernels::GetGatedDeltaUpdateRegistration();
@@ -110,7 +114,7 @@ TEST(GatedDeltaUpdateBenchmark, BenchmarkOp) {
   GenerateRandom((*input_buffers)[2], -0.5f, 0.5f);
   GenerateRandom((*input_buffers)[3], 0.1f, 0.9f);
   GenerateRandom((*input_buffers)[4], -1.0f, -0.1f);
-  GenerateRandom((*input_buffers)[5], -0.5f, 0.5f);
+  GenerateRandom((*output_buffers)[1], -0.5f, 0.5f);
 
   std::cerr
       << "\n================ GATED DELTA UPDATE BENCHMARK ================\n";
