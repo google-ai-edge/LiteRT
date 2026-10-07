@@ -31,7 +31,11 @@ load(
     "tflite_ios_lab_runner",
     "tflite_portable_test_suite",
 )
-load("//tflite/delegates/gpu:build_defs.bzl", "gpu_delegate_linkopts")
+load(
+    "//tflite/delegates/gpu:build_defs.bzl",
+    "gpu_delegate_linkopts",
+    "gtest_main_no_heapcheck_deps",
+)
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -397,6 +401,30 @@ cc_test(
         ":delegate",
         "@com_google_googletest//:gtest_main",
     ],
+)
+
+cc_test(
+    name = "output_layout_test",
+    srcs = ["output_layout_test.cc"],
+    tags = tf_gpu_tests_tags() + [
+        "notap",
+        "tflite_not_portable_ios",
+    ],
+    deps = [
+        ":delegate",
+        ":delegate_options",
+        "//tflite/c:common",
+        "//tflite/core/c:common",
+        "//tflite/kernels:test_util",
+        "//tflite/schema:schema_fbs",
+    ] + gtest_main_no_heapcheck_deps() + select({
+        "@org_tensorflow//tensorflow:android": [],
+        "//conditions:default": [
+            # Host Linux needs GL/EGL stubs to satisfy unresolved references from :delegate.
+            "@org_tensorflow//third_party/GL/stub:EGL",
+            "@org_tensorflow//third_party/GL/stub:GLESv2",
+        ],
+    }),
 )
 
 cc_library(
