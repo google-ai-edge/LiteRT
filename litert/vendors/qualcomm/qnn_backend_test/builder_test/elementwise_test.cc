@@ -8,9 +8,9 @@
 #include <vector>
 
 #include "QnnTypes.h"  // from @qairt
-#include "absl/types/span.h"  // from @com_google_absl
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gelu_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/logistic_op_builder.h"
@@ -21,14 +21,18 @@
 #include "litert/vendors/qualcomm/core/builders/tanh_op_builder.h"
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
-#include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/utils/qnn_model.h"
+#include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_backend_test/test_utils.h"
 
 namespace litert::qnn {
 namespace {
+using testing::ElementsAre;       // NOLINT
+using testing::ElementsAreArray;  // NOLINT
+using testing::FloatNear;         // NOLINT
+using testing::Pointwise;         // NOLINT
 
 using UnaryBuilder = std::function<std::vector<::qnn::OpWrapper>(
     ::qnn::TensorPool&, const std::vector<::qnn::TensorWrapperRef>&,

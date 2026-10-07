@@ -1,21 +1,22 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
-
 #include <cstdint>
 #include <utility>
 #include <vector>
 
 #include "QnnTypes.h"  // from @qairt
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/builders/addn_op_builder.h"
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/qnn_backend_test/test_utils.h"
 
 namespace litert::qnn {
 namespace {
-using testing::ElementsAre;
+using testing::ElementsAre;  // NOLINT
+using testing::FloatNear;    // NOLINT
+using testing::Pointwise;    // NOLINT
 
 INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
                          QnnTestPrinter);
