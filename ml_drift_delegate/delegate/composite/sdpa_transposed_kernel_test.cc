@@ -806,6 +806,20 @@ TEST_P(SdpaTransposedKernelExecuteTest,
   EXPECT_TRUE(status.ok()) << status.message();
 }
 
+// Gemma 4 26B global-attention decode: head dim 512 with 8 query heads per KV
+// head. 8 heads per work group would need 37,888 B of local memory, more than
+// the 32 KB Apple GPUs allow, so the work-group Flash-Decode kernel processes
+// 4 heads per work group.
+TEST_P(SdpaTransposedKernelExecuteTest,
+       SingleTokenDecodeGemma4GlobalHeadDim512GroupSizeEight) {
+  auto status = RunSdpaTransposedTest(
+      *exec_env, precision(), storage(), /*BK=*/16, /*T=*/1, /*S=*/600,
+      /*H=*/512, mask_mode(), /*KV=*/2, /*q_start=*/560,
+      /*from_cache_update=*/true, /*is_causal=*/false, /*flatten_output=*/true,
+      /*active_tokens=*/FilledCacheEntries(mask_mode(), 561, 600));
+  EXPECT_TRUE(status.ok()) << status.message();
+}
+
 // Single-token decode with a pruned BOOL causal mask (`MaskMode::kNone`,
 // `attr.is_causal = true`) for the head dims whose BOOL mask the Apple parsers
 // prune (head_dim / 4 dividing 256), using a partially filled cache.
