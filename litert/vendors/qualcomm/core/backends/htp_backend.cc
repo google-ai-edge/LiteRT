@@ -730,7 +730,7 @@ GraphConfigBuilder HtpBackend::BuildGraphConfigs(
     config_builder.AddCustomConfig(hvx_threads);
   }
 
-  // DLBC (activations / inputs). Offline-prep only.
+  // DLBC input compression.
   if (options.GetHtpDlbc()) {
     QnnHtpGraph_CustomConfig_t dlbc = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
     dlbc.option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
@@ -739,7 +739,7 @@ GraphConfigBuilder HtpBackend::BuildGraphConfigs(
     config_builder.AddCustomConfig(dlbc);
   }
 
-  // DLBC weights. Offline-prep only.
+  // DLBC weight compression.
   if (options.GetHtpDlbcWeights()) {
     QnnHtpGraph_CustomConfig_t dlbc_weights = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
     dlbc_weights.option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;

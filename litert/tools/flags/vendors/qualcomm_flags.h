@@ -130,6 +130,10 @@ ABSL_DECLARE_FLAG(bool, qualcomm_use_conv_hmx);
 
 ABSL_DECLARE_FLAG(bool, qualcomm_use_fold_relu);
 
+ABSL_DECLARE_FLAG(bool, qualcomm_htp_dlbc);
+
+ABSL_DECLARE_FLAG(bool, qualcomm_htp_dlbc_weights);
+
 ABSL_DECLARE_FLAG(int32_t, qualcomm_htp_p_point);
 
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
