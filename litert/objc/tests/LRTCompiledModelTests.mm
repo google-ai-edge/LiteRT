@@ -55,8 +55,8 @@ static NSString *GetTestDynamicModelPath() {
 
 - (void)testCreateAndRunFromFilePath {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
@@ -64,12 +64,12 @@ static NSString *GetTestDynamicModelPath() {
   NSString *filePath = GetTestModelPath();
 
   LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:filePath
-                                                                 environment:env
+                                                                 environment:environment
                                                                      options:options
                                                                        error:&error];
   XCTAssertNotNil(model);
   XCTAssertNil(error);
-  XCTAssertEqual(model.environment, env);
+  XCTAssertEqual(model.environment, environment);
   XCTAssertEqualObjects(model.options, options);
 
   NSArray<LRTTensorBuffer *> *inputs = [model createInputTensorBuffersWithError:&error];
@@ -104,8 +104,8 @@ static NSString *GetTestDynamicModelPath() {
 
 - (void)testCreateAndRunFromModelData {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
 
   LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
 
@@ -114,7 +114,7 @@ static NSString *GetTestDynamicModelPath() {
   XCTAssertNotNil(modelData);
 
   LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelData:modelData
-                                                             environment:env
+                                                             environment:environment
                                                                  options:options
                                                                    error:&error];
   XCTAssertNotNil(model);
@@ -150,8 +150,8 @@ static NSString *GetTestDynamicModelPath() {
 
 - (void)testRunFromMutableModelDataThatCallerLaterClobbers {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
@@ -160,7 +160,7 @@ static NSString *GetTestDynamicModelPath() {
   XCTAssertNotNil(modelData);
 
   LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelData:modelData
-                                                             environment:env
+                                                             environment:environment
                                                                  options:options
                                                                    error:&error];
   XCTAssertNotNil(model);
@@ -203,15 +203,15 @@ static NSString *GetTestDynamicModelPath() {
 
 - (void)testMultiSignatureWithSignatureIndex {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
   NSString *filePath = GetTestModelPath();
 
   LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:filePath
-                                                                 environment:env
+                                                                 environment:environment
                                                                      options:options
                                                                        error:&error];
   XCTAssertNotNil(model);
@@ -246,15 +246,15 @@ static NSString *GetTestDynamicModelPath() {
 
 - (void)testMultiSignatureWithSignatureKey {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
   NSString *filePath = GetTestModelPath();
 
   LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:filePath
-                                                                 environment:env
+                                                                 environment:environment
                                                                      options:options
                                                                        error:&error];
   XCTAssertNotNil(model);
@@ -290,15 +290,15 @@ static NSString *GetTestDynamicModelPath() {
 
 - (void)testResizeInputTensor {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
   NSString *filePath = GetTestDynamicModelPath();
 
   LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:filePath
-                                                                 environment:env
+                                                                 environment:environment
                                                                      options:options
                                                                        error:&error];
   XCTAssertNotNil(model);
@@ -306,10 +306,10 @@ static NSString *GetTestDynamicModelPath() {
 
   // Resize input 0 and 1 to [1, 2, 3] (size 6).
   const size_t kNewSize = 6;
-  NSArray<NSNumber *> *newDims = @[ @1, @2, @3 ];
-  XCTAssertTrue([model resizeInputTensorAtIndex:0 newDimensions:newDims error:&error]);
+  NSArray<NSNumber *> *newDimensions = @[ @1, @2, @3 ];
+  XCTAssertTrue([model resizeInputTensorAtIndex:0 newDimensions:newDimensions error:&error]);
   XCTAssertNil(error);
-  XCTAssertTrue([model resizeInputTensorAtIndex:1 newDimensions:newDims error:&error]);
+  XCTAssertTrue([model resizeInputTensorAtIndex:1 newDimensions:newDimensions error:&error]);
   XCTAssertNil(error);
 
   // Re-create buffers.
@@ -317,8 +317,8 @@ static NSString *GetTestDynamicModelPath() {
   XCTAssertNotNil(inputs);
   XCTAssertNil(error);
   XCTAssertEqual(inputs.count, 2);
-  XCTAssertEqualObjects(inputs[0].dimensions, newDims);
-  XCTAssertEqualObjects(inputs[1].dimensions, newDims);
+  XCTAssertEqualObjects(inputs[0].dimensions, newDimensions);
+  XCTAssertEqualObjects(inputs[1].dimensions, newDimensions);
   XCTAssertEqual(inputs[0].size, kNewSize * sizeof(float));
   XCTAssertEqual(inputs[1].size, kNewSize * sizeof(float));
 
@@ -326,7 +326,7 @@ static NSString *GetTestDynamicModelPath() {
   XCTAssertNotNil(outputs);
   XCTAssertNil(error);
   XCTAssertEqual(outputs.count, 1);
-  XCTAssertEqualObjects(outputs[0].dimensions, newDims);
+  XCTAssertEqualObjects(outputs[0].dimensions, newDimensions);
   XCTAssertEqual(outputs[0].size, kNewSize * sizeof(float));
 
   // Write data of size 6.
@@ -358,15 +358,15 @@ static NSString *GetTestDynamicModelPath() {
 
 - (void)testMultiSignatureResizeWithSignatureIndex {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
   NSString *filePath = GetTestDynamicModelPath();
 
   LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:filePath
-                                                                 environment:env
+                                                                 environment:environment
                                                                      options:options
                                                                        error:&error];
   XCTAssertNotNil(model);
@@ -374,15 +374,15 @@ static NSString *GetTestDynamicModelPath() {
 
   // Resize input 0 and 1 to [1, 2, 3] (size 6).
   const size_t kNewSize = 6;
-  NSArray<NSNumber *> *newDims = @[ @1, @2, @3 ];
+  NSArray<NSNumber *> *newDimensions = @[ @1, @2, @3 ];
   XCTAssertTrue([model resizeInputTensorAtIndex:0
                                  signatureIndex:0
-                                  newDimensions:newDims
+                                  newDimensions:newDimensions
                                           error:&error]);
   XCTAssertNil(error);
   XCTAssertTrue([model resizeInputTensorAtIndex:1
                                  signatureIndex:0
-                                  newDimensions:newDims
+                                  newDimensions:newDimensions
                                           error:&error]);
   XCTAssertNil(error);
 
@@ -391,23 +391,23 @@ static NSString *GetTestDynamicModelPath() {
   XCTAssertNotNil(inputs);
   XCTAssertNil(error);
   XCTAssertEqual(inputs.count, 2);
-  XCTAssertEqualObjects(inputs[0].dimensions, newDims);
-  XCTAssertEqualObjects(inputs[1].dimensions, newDims);
+  XCTAssertEqualObjects(inputs[0].dimensions, newDimensions);
+  XCTAssertEqualObjects(inputs[1].dimensions, newDimensions);
   XCTAssertEqual(inputs[0].size, kNewSize * sizeof(float));
   XCTAssertEqual(inputs[1].size, kNewSize * sizeof(float));
 }
 
 - (void)testMultiSignatureResizeWithSignatureKey {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
   NSString *filePath = GetTestDynamicModelPath();
 
   LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:filePath
-                                                                 environment:env
+                                                                 environment:environment
                                                                      options:options
                                                                        error:&error];
   XCTAssertNotNil(model);
@@ -416,15 +416,15 @@ static NSString *GetTestDynamicModelPath() {
   NSString *signatureKey = [LRTCompiledModel defaultSignatureKey];
   // Resize input 0 and 1 to [1, 2, 3] (size 6).
   const size_t kNewSize = 6;
-  NSArray<NSNumber *> *newDims = @[ @1, @2, @3 ];
+  NSArray<NSNumber *> *newDimensions = @[ @1, @2, @3 ];
   XCTAssertTrue([model resizeInputTensorAtIndex:0
                                    signatureKey:signatureKey
-                                  newDimensions:newDims
+                                  newDimensions:newDimensions
                                           error:&error]);
   XCTAssertNil(error);
   XCTAssertTrue([model resizeInputTensorAtIndex:1
                                    signatureKey:signatureKey
-                                  newDimensions:newDims
+                                  newDimensions:newDimensions
                                           error:&error]);
   XCTAssertNil(error);
 
@@ -433,8 +433,8 @@ static NSString *GetTestDynamicModelPath() {
   XCTAssertNotNil(inputs);
   XCTAssertNil(error);
   XCTAssertEqual(inputs.count, 2);
-  XCTAssertEqualObjects(inputs[0].dimensions, newDims);
-  XCTAssertEqualObjects(inputs[1].dimensions, newDims);
+  XCTAssertEqualObjects(inputs[0].dimensions, newDimensions);
+  XCTAssertEqualObjects(inputs[1].dimensions, newDimensions);
   XCTAssertEqual(inputs[0].size, kNewSize * sizeof(float));
   XCTAssertEqual(inputs[1].size, kNewSize * sizeof(float));
 }
@@ -497,6 +497,81 @@ static NSString *GetTestDynamicModelPath() {
 
   options.usesMetalArgumentBuffers = YES;
   XCTAssertFalse(model.options.usesMetalArgumentBuffers);
+}
+
+- (void)testCompiledModelWithInvalidFilePathFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTCompiledModel *model =
+      [LRTCompiledModel compiledModelWithModelFilePath:@"/nonexistent/path/to/model.tflite"
+                                           environment:environment
+                                               options:options
+                                                 error:&error];
+  XCTAssertNil(model);
+  XCTAssertNotNil(error);
+  XCTAssertEqualObjects(error.domain, LRTErrorDomain);
+}
+
+- (void)testCompiledModelWithEmptyModelDataFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelData:[NSData data]
+                                                             environment:environment
+                                                                 options:options
+                                                                   error:&error];
+  XCTAssertNil(model);
+  XCTAssertNotNil(error);
+  XCTAssertEqual(error.code, LRTErrorCodeInvalidArgument);
+}
+
+- (void)testCreateInputTensorBuffersWithUnknownSignatureKeyFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:GetTestModelPath()
+                                                                 environment:environment
+                                                                     options:options
+                                                                       error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  NSArray<LRTTensorBuffer *> *inputs =
+      [model createInputTensorBuffersForSignatureKey:@"nonexistent_signature" error:&error];
+  XCTAssertNil(inputs);
+  XCTAssertNotNil(error);
+  XCTAssertEqualObjects(error.domain, LRTErrorDomain);
+}
+
+- (void)testCreateOutputTensorBuffersWithUnknownSignatureKeyFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:GetTestModelPath()
+                                                                 environment:environment
+                                                                     options:options
+                                                                       error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  NSArray<LRTTensorBuffer *> *outputs =
+      [model createOutputTensorBuffersForSignatureKey:@"nonexistent_signature" error:&error];
+  XCTAssertNil(outputs);
+  XCTAssertNotNil(error);
+  XCTAssertEqualObjects(error.domain, LRTErrorDomain);
 }
 
 @end
