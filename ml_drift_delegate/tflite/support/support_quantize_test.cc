@@ -63,7 +63,7 @@ TEST(SupportQuantizeTest, UnsupportedVersion) {
   context.tensors_size = 2;
   TfLiteNode node = {};
   TfLiteRegistration registration = {};
-  registration.version = 3;
+  registration.version = 5;
 
   int inputs[] = {1, 0};
   int outputs[] = {1, 1};
