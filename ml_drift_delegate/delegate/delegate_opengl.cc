@@ -31,7 +31,7 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
-#include "ml_drift/pelong/egl_environment.h"  // from @ml_drift
+#include "ml_drift/gl/egl_environment.h"  // from @ml_drift
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_any.h"

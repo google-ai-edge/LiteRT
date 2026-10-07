@@ -59,6 +59,7 @@ namespace internal {
 // The result is cached to avoid repeated failed Gralloc allocations and logcat
 // spam on devices where Gralloc does not support this combination.
 bool IsAhwbGpuDataBufferSupported() {
+#if __ANDROID_API__ >= 26 || defined(__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__)
   if (__builtin_available(android 26, *)) {
     if (&AHardwareBuffer_allocate == nullptr ||
         &AHardwareBuffer_release == nullptr) {
@@ -71,12 +72,15 @@ bool IsAhwbGpuDataBufferSupported() {
     test_desc.format = AHARDWAREBUFFER_FORMAT_BLOB;
     test_desc.usage = AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER;
 
+#if __ANDROID_API__ >= 29 || defined(__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__)
     if (__builtin_available(android 29, *)) {
       if (&AHardwareBuffer_isSupported != nullptr &&
           !AHardwareBuffer_isSupported(&test_desc)) {
         return false;
       }
     }
+#endif  // __ANDROID_API__ >= 29 ||
+        // defined(__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__)
 
     AHardwareBuffer* test_ahwb = nullptr;
     if (AHardwareBuffer_allocate(&test_desc, &test_ahwb) != 0) {
@@ -85,6 +89,8 @@ bool IsAhwbGpuDataBufferSupported() {
     AHardwareBuffer_release(test_ahwb);
     return true;
   }
+#endif  // __ANDROID_API__ >= 26 ||
+        // defined(__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__)
   return false;
 }
 
@@ -108,6 +114,7 @@ bool TryCreateTensorViaAhwb(
     const cl::Environment& env,
     ml_drift::TensorDescriptor& tensor_desc,
     std::unique_ptr<GpuSpatialTensor>& tensor) {
+#if __ANDROID_API__ >= 26 || defined(__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__)
   if (cl::clImportMemoryARM == nullptr) return false;
   if (tensor_desc.GetStorageType() != TensorStorageType::kTexture2D) {
     return false;
@@ -213,6 +220,12 @@ bool TryCreateTensorViaAhwb(
         buffer_memory, /*memory_owner=*/true, image_memory, desc_copy);
     return true;
   }
+#else
+  (void)env;
+  (void)tensor_desc;
+  (void)tensor;
+#endif  // __ANDROID_API__ >= 26 ||
+        // defined(__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__)
   return false;
 }
 #endif  // __ANDROID__

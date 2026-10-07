@@ -67,7 +67,7 @@
 
 #if LITERT_HAS_OPENGL_SUPPORT
 #include "ml_drift/cl/gl_interop.h"  // from @ml_drift
-#include "ml_drift/pelong/egl_environment.h"  // from @ml_drift
+#include "ml_drift/gl/egl_environment.h"  // from @ml_drift
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 using ::litert::ml_drift::DelegateKernelLiteRt;
