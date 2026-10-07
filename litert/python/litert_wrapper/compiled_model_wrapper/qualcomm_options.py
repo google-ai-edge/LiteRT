@@ -135,6 +135,9 @@ class QualcommOptions:
   enable_weight_sharing: Optional[bool] = None
   use_conv_hmx: Optional[bool] = None
   use_fold_relu: Optional[bool] = None
+  htp_dlbc: Optional[bool] = None
+  htp_dlbc_weights: Optional[bool] = None
+  enable_htp_quick_response: Optional[bool] = None
   profiling: Optional[QualcommProfiling] = None
   dump_tensor_ids: Optional[Sequence[int]] = None
   ir_json_dir: str = ""
@@ -168,6 +171,13 @@ class QualcommOptions:
         ),
         "qualcomm_use_fold_relu": option_utils.optional_bool_to_int(
             self.use_fold_relu
+        ),
+        "qualcomm_htp_dlbc": option_utils.optional_bool_to_int(self.htp_dlbc),
+        "qualcomm_htp_dlbc_weights": option_utils.optional_bool_to_int(
+            self.htp_dlbc_weights
+        ),
+        "qualcomm_enable_htp_quick_response": option_utils.optional_bool_to_int(
+            self.enable_htp_quick_response
         ),
         "qualcomm_profiling": option_utils.optional_enum_to_int(self.profiling),
         "qualcomm_has_dump_tensor_ids": self.dump_tensor_ids is not None,

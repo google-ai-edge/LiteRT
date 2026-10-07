@@ -204,6 +204,19 @@ class QualcommOptions : public ConcreteOptionsBase {
     return static_cast<HtpPdSession>(val);
   }
 
+  void SetEnableHtpQuickResponse(bool enable_htp_quick_response) {
+    LrtQualcommOptionsSetEnableHtpQuickResponse(options_,
+                                                enable_htp_quick_response);
+  }
+  bool GetEnableHtpQuickResponse() {
+    bool val;
+    auto status = LrtQualcommOptionsGetEnableHtpQuickResponse(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
+
   enum class DspPerfCtrlMode : int {
     kManual = kLiteRtQualcommDspPerfCtrlModeManual,
     kAuto = kLiteRtQualcommDspPerfCtrlModeAuto,
@@ -362,6 +375,32 @@ class QualcommOptions : public ConcreteOptionsBase {
     auto status = LrtQualcommOptionsGetUseFoldReLU(options_, &val);
     if (status == kLiteRtStatusErrorNotFound) {
       return true;
+    }
+    return val;
+  }
+
+  /// @brief Enables HTP DLBC input compression.
+  void SetHtpDlbc(bool htp_dlbc) {
+    LrtQualcommOptionsSetHtpDlbc(options_, htp_dlbc);
+  }
+  bool GetHtpDlbc() {
+    bool val;
+    auto status = LrtQualcommOptionsGetHtpDlbc(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
+
+  /// @brief Enables HTP DLBC weight compression.
+  void SetHtpDlbcWeights(bool htp_dlbc_weights) {
+    LrtQualcommOptionsSetHtpDlbcWeights(options_, htp_dlbc_weights);
+  }
+  bool GetHtpDlbcWeights() {
+    bool val;
+    auto status = LrtQualcommOptionsGetHtpDlbcWeights(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
     }
     return val;
   }

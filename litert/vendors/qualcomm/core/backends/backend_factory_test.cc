@@ -3,10 +3,14 @@
 
 #include "litert/vendors/qualcomm/core/backends/backend_factory.h"
 
+#include <atomic>
 #include <optional>
 #include <string>
 
 #include "QnnCommon.h"  // from @qairt
+#include "QnnContext.h"  // from @qairt
+#include "QnnGraph.h"  // from @qairt
+#include "QnnOpDef.h"  // from @qairt
 #include <gtest/gtest.h>
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/dsp_backend.h"
@@ -53,6 +57,149 @@ Qnn_ErrorHandle_t MockRegisterOpPackageFail(Qnn_BackendHandle_t /*backend*/,
                                             const char* /*target*/) {
   return QNN_COMMON_ERROR_NOT_SUPPORTED;
 }
+
+struct QuickResponseFactoryState {
+  std::atomic<int> context_create_count{0};
+  std::atomic<int> context_free_count{0};
+  std::atomic<bool> op_package_registered{false};
+  std::atomic<bool> context_created_after_op_package_registration{false};
+};
+
+QuickResponseFactoryState& GetQuickResponseFactoryState() {
+  static absl::NoDestructor<QuickResponseFactoryState> state;
+  return *state;
+}
+
+void ResetQuickResponseFactoryState() {
+  auto& state = GetQuickResponseFactoryState();
+  state.context_create_count = 0;
+  state.context_free_count = 0;
+  state.op_package_registered = false;
+  state.context_created_after_op_package_registration = false;
+}
+
+Qnn_ErrorHandle_t MockQuickResponseBackendCreate(Qnn_LogHandle_t,
+                                                 const QnnBackend_Config_t**,
+                                                 Qnn_BackendHandle_t* backend) {
+  static int backend_handle;
+  *backend = &backend_handle;
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockQuickResponseBackendFree(Qnn_BackendHandle_t) {
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockQuickResponseDeviceCreate(Qnn_LogHandle_t,
+                                                const QnnDevice_Config_t**,
+                                                Qnn_DeviceHandle_t* device) {
+  static int device_handle;
+  *device = &device_handle;
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockQuickResponseDeviceFree(Qnn_DeviceHandle_t) {
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockQuickResponseRegisterOpPackage(Qnn_BackendHandle_t,
+                                                     const char*, const char*,
+                                                     const char*) {
+  GetQuickResponseFactoryState().op_package_registered = true;
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockQuickResponseContextCreate(Qnn_BackendHandle_t,
+                                                 Qnn_DeviceHandle_t,
+                                                 const QnnContext_Config_t**,
+                                                 Qnn_ContextHandle_t* context) {
+  auto& state = GetQuickResponseFactoryState();
+  ++state.context_create_count;
+  state.context_created_after_op_package_registration =
+      state.op_package_registered.load();
+  static int context_handle;
+  *context = &context_handle;
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockQuickResponseContextFree(Qnn_ContextHandle_t,
+                                               Qnn_ProfileHandle_t) {
+  ++GetQuickResponseFactoryState().context_free_count;
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockQuickResponseGraphCreate(Qnn_ContextHandle_t, const char*,
+                                               const QnnGraph_Config_t**,
+                                               Qnn_GraphHandle_t* graph) {
+  static int graph_handle;
+  *graph = &graph_handle;
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockQuickResponseTensorCreate(Qnn_GraphHandle_t,
+                                                Qnn_Tensor_t*) {
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockQuickResponseValidateOp(Qnn_BackendHandle_t,
+                                              Qnn_OpConfig_t) {
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockQuickResponseGraphAddNode(Qnn_GraphHandle_t,
+                                                Qnn_OpConfig_t) {
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockQuickResponseGraphFinalize(Qnn_GraphHandle_t,
+                                                 Qnn_ProfileHandle_t,
+                                                 Qnn_SignalHandle_t) {
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockQuickResponseGraphExecute(Qnn_GraphHandle_t,
+                                                const Qnn_Tensor_t*, uint32_t,
+                                                Qnn_Tensor_t*, uint32_t,
+                                                Qnn_ProfileHandle_t,
+                                                Qnn_SignalHandle_t) {
+  return QNN_SUCCESS;
+}
+
+QNN_INTERFACE_VER_TYPE CreateQuickResponseFactoryApi() {
+  QNN_INTERFACE_VER_TYPE api{};
+  api.backendCreate = MockQuickResponseBackendCreate;
+  api.backendFree = MockQuickResponseBackendFree;
+  api.deviceCreate = MockQuickResponseDeviceCreate;
+  api.deviceFree = MockQuickResponseDeviceFree;
+  api.backendRegisterOpPackage = MockQuickResponseRegisterOpPackage;
+  api.contextCreate = MockQuickResponseContextCreate;
+  api.contextFree = MockQuickResponseContextFree;
+  api.graphCreate = MockQuickResponseGraphCreate;
+  api.tensorCreateGraphTensor = MockQuickResponseTensorCreate;
+  api.backendValidateOpConfig = MockQuickResponseValidateOp;
+  api.graphAddNode = MockQuickResponseGraphAddNode;
+  api.graphFinalize = MockQuickResponseGraphFinalize;
+  api.graphExecute = MockQuickResponseGraphExecute;
+  return api;
+}
+
+class TestQnnBackend : public QnnBackend {
+ public:
+  TestQnnBackend() : QnnBackend(&Api()) {}
+
+  bool Init(const Options&, std::optional<SocInfo>) override { return true; }
+
+  GraphConfigBuilder BuildGraphConfigs(const Options&,
+                                       absl::string_view) override {
+    return {};
+  }
+
+ private:
+  static const QNN_INTERFACE_VER_TYPE& Api() {
+    static const QNN_INTERFACE_VER_TYPE api{};
+    return api;
+  }
+};
 
 template <typename BackendT>
 void TestCreateBackend(BackendType backend_type,
@@ -130,6 +277,12 @@ void TestCreateBackend(BackendType backend_type,
   }
 }
 
+TEST(QnnBackendTest, StopBackgroundWorkBaseHookIsIdempotent) {
+  TestQnnBackend backend;
+  backend.StopBackgroundWork();
+  backend.StopBackgroundWork();
+}
+
 TEST(CreateBackendTest, CreateReturnsNullForUnsupportedBackend) {
   Options options;
   options.SetBackendType(BackendType::kUndefinedBackend);
@@ -137,6 +290,45 @@ TEST(CreateBackendTest, CreateReturnsNullForUnsupportedBackend) {
   auto backend = CreateBackend(nullptr, options, kDefaultSocInfo,
                                /*is_compiler=*/true);
   EXPECT_EQ(backend.get(), nullptr);
+}
+
+TEST(CreateBackendTest, HtpQuickResponseStartsOnlyForDispatch) {
+  auto api = CreateQuickResponseFactoryApi();
+  Options options;
+  options.SetBackendType(BackendType::kHtpBackend);
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetEnableHtpQuickResponse(true);
+  options.SetCustomOpPackage("MyPackage", "MyProvider",
+                             "/tmp/compile_package.so",
+                             "/tmp/dispatch_package.so", "HTP");
+
+  ResetQuickResponseFactoryState();
+  auto compiler_backend =
+      CreateBackend(&api, options, kDefaultSocInfo, /*is_compiler=*/true);
+  ASSERT_NE(compiler_backend, nullptr);
+  EXPECT_TRUE(GetQuickResponseFactoryState().op_package_registered.load());
+  EXPECT_EQ(GetQuickResponseFactoryState().context_create_count.load(), 0);
+
+  ResetQuickResponseFactoryState();
+  options.SetEnableHtpQuickResponse(false);
+  auto disabled_backend =
+      CreateBackend(&api, options, kDefaultSocInfo, /*is_compiler=*/false);
+  ASSERT_NE(disabled_backend, nullptr);
+  EXPECT_TRUE(GetQuickResponseFactoryState().op_package_registered.load());
+  EXPECT_EQ(GetQuickResponseFactoryState().context_create_count.load(), 0);
+
+  ResetQuickResponseFactoryState();
+  options.SetEnableHtpQuickResponse(true);
+  {
+    auto dispatch_backend =
+        CreateBackend(&api, options, kDefaultSocInfo, /*is_compiler=*/false);
+    ASSERT_NE(dispatch_backend, nullptr);
+    EXPECT_TRUE(GetQuickResponseFactoryState().op_package_registered.load());
+    EXPECT_EQ(GetQuickResponseFactoryState().context_create_count.load(), 1);
+    EXPECT_TRUE(GetQuickResponseFactoryState()
+                    .context_created_after_op_package_registration.load());
+  }
+  EXPECT_EQ(GetQuickResponseFactoryState().context_free_count.load(), 1);
 }
 
 TEST(CreateBackendTest, DISABLED_CreateGpuBackend) {

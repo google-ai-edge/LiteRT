@@ -3,6 +3,7 @@
 
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -26,6 +27,7 @@
 #include "QnnDevice.h"  // from @qairt
 #include "QnnGraph.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
+#include "QnnOpDef.h"  // from @qairt
 #include "QnnProperty.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 #include <gtest/gtest.h>
@@ -53,6 +55,18 @@ absl::NoDestructor<
     std::vector<std::vector<QnnHtpPerfInfrastructure_PowerConfig_t>>>
     captured_configs;
 bool htp_unsigned_pd_supported = false;
+std::atomic<int> quick_response_context_create_count{0};
+std::atomic<int> quick_response_context_free_count{0};
+std::atomic<int> quick_response_graph_create_count{0};
+std::atomic<int> quick_response_tensor_create_count{0};
+std::atomic<int> quick_response_validate_count{0};
+std::atomic<int> quick_response_add_node_count{0};
+std::atomic<int> quick_response_finalize_count{0};
+std::atomic<int> quick_response_execute_count{0};
+std::atomic<bool> quick_response_execute_has_buffers{false};
+std::atomic<bool> quick_response_graph_is_low_priority{false};
+Qnn_ErrorHandle_t quick_response_context_create_status = QNN_SUCCESS;
+const char* captured_quick_response_op_type = nullptr;
 
 // Test Platform Info structs
 QnnHtpDevice_DeviceInfoExtension_t test_htp_device_info_extension = {
@@ -144,6 +158,101 @@ Qnn_ErrorHandle_t MockPropertyHasCapability(QnnProperty_Key_t key) {
                  htp_unsigned_pd_supported
              ? QNN_PROPERTY_SUPPORTED
              : QNN_PROPERTY_NOT_SUPPORTED;
+}
+
+Qnn_ErrorHandle_t MockContextCreate(Qnn_BackendHandle_t, Qnn_DeviceHandle_t,
+                                    const QnnContext_Config_t**,
+                                    Qnn_ContextHandle_t* context) {
+  quick_response_context_create_count++;
+  if (quick_response_context_create_status != QNN_SUCCESS) {
+    return quick_response_context_create_status;
+  }
+  static int fake_context_handle;
+  *context = reinterpret_cast<Qnn_ContextHandle_t>(&fake_context_handle);
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockContextFree(Qnn_ContextHandle_t, Qnn_ProfileHandle_t) {
+  quick_response_context_free_count++;
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockGraphCreate(Qnn_ContextHandle_t, const char*,
+                                  const QnnGraph_Config_t** configs,
+                                  Qnn_GraphHandle_t* graph) {
+  quick_response_graph_create_count++;
+  quick_response_graph_is_low_priority =
+      configs != nullptr && configs[0] != nullptr &&
+      configs[0]->option == QNN_GRAPH_CONFIG_OPTION_PRIORITY &&
+      configs[0]->priority == QNN_PRIORITY_LOW;
+  static int fake_graph_handle;
+  *graph = reinterpret_cast<Qnn_GraphHandle_t>(&fake_graph_handle);
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockTensorCreateGraphTensor(Qnn_GraphHandle_t,
+                                              Qnn_Tensor_t*) {
+  quick_response_tensor_create_count++;
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockBackendValidateOpConfig(Qnn_BackendHandle_t,
+                                              Qnn_OpConfig_t op_config) {
+  quick_response_validate_count++;
+  captured_quick_response_op_type = op_config.v1.typeName;
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockGraphAddNode(Qnn_GraphHandle_t,
+                                   Qnn_OpConfig_t op_config) {
+  quick_response_add_node_count++;
+  captured_quick_response_op_type = op_config.v1.typeName;
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockGraphFinalize(Qnn_GraphHandle_t, Qnn_ProfileHandle_t,
+                                    Qnn_SignalHandle_t) {
+  quick_response_finalize_count++;
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockGraphExecute(Qnn_GraphHandle_t,
+                                   const Qnn_Tensor_t* inputs,
+                                   uint32_t num_inputs, Qnn_Tensor_t* outputs,
+                                   uint32_t num_outputs, Qnn_ProfileHandle_t,
+                                   Qnn_SignalHandle_t) {
+  quick_response_execute_count++;
+  quick_response_execute_has_buffers = num_inputs == 2 && num_outputs == 1 &&
+                                       inputs[0].v2.clientBuf.data != nullptr &&
+                                       inputs[1].v2.clientBuf.data != nullptr &&
+                                       outputs[0].v2.clientBuf.data != nullptr;
+  return QNN_SUCCESS;
+}
+
+void ResetQuickResponseMocks() {
+  quick_response_context_create_count = 0;
+  quick_response_context_free_count = 0;
+  quick_response_graph_create_count = 0;
+  quick_response_tensor_create_count = 0;
+  quick_response_validate_count = 0;
+  quick_response_add_node_count = 0;
+  quick_response_finalize_count = 0;
+  quick_response_execute_count = 0;
+  quick_response_execute_has_buffers = false;
+  quick_response_graph_is_low_priority = false;
+  quick_response_context_create_status = QNN_SUCCESS;
+  captured_quick_response_op_type = nullptr;
+}
+
+void InstallQuickResponseMocks(QNN_INTERFACE_VER_TYPE& api) {
+  api.contextCreate = MockContextCreate;
+  api.contextFree = MockContextFree;
+  api.graphCreate = MockGraphCreate;
+  api.tensorCreateGraphTensor = MockTensorCreateGraphTensor;
+  api.backendValidateOpConfig = MockBackendValidateOpConfig;
+  api.graphAddNode = MockGraphAddNode;
+  api.graphFinalize = MockGraphFinalize;
+  api.graphExecute = MockGraphExecute;
 }
 
 struct HtpPerfParams {
@@ -435,6 +544,84 @@ TEST(HtpBackendInitTest, CreatesBackendAndDevice) {
 #else
   EXPECT_TRUE(captured_device_configs->empty());
 #endif
+}
+
+TEST(HtpBackendInitTest, QuickResponseBuildsAndExecutesTinyGraph) {
+  backend_create_called = false;
+  device_create_called = false;
+  captured_device_configs->clear();
+  ResetQuickResponseMocks();
+
+  QNN_INTERFACE_VER_TYPE api{};
+  api.backendCreate = MockBackendCreateNoConfigs;
+  api.backendFree = MockBackendFree;
+  api.deviceCreate = MockDeviceCreate;
+  api.deviceFree = MockDeviceFree;
+  InstallQuickResponseMocks(api);
+
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetEnableHtpQuickResponse(true);
+
+  {
+    HtpBackend backend(&api);
+
+#if defined(__x86_64__) || defined(_M_X64)
+    ASSERT_TRUE(backend.Init(options, kFp16SocInfo));
+#else
+    ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+
+    backend.StartQuickResponse(options.GetEnableHtpQuickResponse());
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    EXPECT_TRUE(backend_create_called);
+    EXPECT_TRUE(device_create_called);
+    EXPECT_EQ(quick_response_context_create_count.load(), 1);
+    EXPECT_EQ(quick_response_graph_create_count.load(), 1);
+    EXPECT_EQ(quick_response_tensor_create_count.load(), 3);
+    EXPECT_EQ(quick_response_validate_count.load(), 1);
+    EXPECT_EQ(quick_response_add_node_count.load(), 1);
+    EXPECT_EQ(quick_response_finalize_count.load(), 1);
+    EXPECT_STREQ(captured_quick_response_op_type, QNN_OP_ELEMENT_WISE_ADD);
+    EXPECT_TRUE(quick_response_graph_is_low_priority.load());
+    EXPECT_GT(quick_response_execute_count.load(), 0);
+    EXPECT_TRUE(quick_response_execute_has_buffers.load());
+  }
+
+  EXPECT_EQ(quick_response_context_free_count.load(), 1);
+}
+
+TEST(HtpBackendInitTest, QuickResponseSetupFailureDoesNotFailInit) {
+  backend_create_called = false;
+  device_create_called = false;
+  captured_device_configs->clear();
+  ResetQuickResponseMocks();
+  quick_response_context_create_status = QNN_COMMON_ERROR_GENERAL;
+
+  QNN_INTERFACE_VER_TYPE api{};
+  api.backendCreate = MockBackendCreateNoConfigs;
+  api.backendFree = MockBackendFree;
+  api.deviceCreate = MockDeviceCreate;
+  api.deviceFree = MockDeviceFree;
+  InstallQuickResponseMocks(api);
+
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetEnableHtpQuickResponse(true);
+  HtpBackend backend(&api);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  EXPECT_TRUE(backend.Init(options, kFp16SocInfo));
+#else
+  EXPECT_TRUE(backend.Init(options, std::nullopt));
+#endif
+
+  backend.StartQuickResponse(options.GetEnableHtpQuickResponse());
+  EXPECT_TRUE(backend_create_called);
+  EXPECT_TRUE(device_create_called);
+  EXPECT_EQ(quick_response_context_create_count.load(), 1);
+  EXPECT_EQ(quick_response_graph_create_count.load(), 0);
+  EXPECT_EQ(quick_response_execute_count.load(), 0);
 }
 
 TEST(HtpBackendInitTest, SignedPdAddsOnlyTheSignedPdDeviceConfig) {
@@ -845,10 +1032,12 @@ TEST_F(HtpBackendDefaultGraphConfigTest, PPointAndHvxInsertedWhenSet) {
   EXPECT_EQ(hvx_cc->numHvxThreads, 4u);
 }
 
-TEST_F(HtpBackendDefaultGraphConfigTest, DlbcOptionsAppendOptimizationConfigs) {
+TEST_F(HtpBackendDefaultGraphConfigTest,
+       DlbcOptionsAppendOptimizationConfigsWithWeightSharing) {
   Options options;
+  options.SetEnableWeightSharing(true);
   options.SetHtpDlbc(true);
-  options.SetHtpDlbcWeights(true);  // weight sharing off by default, so kept.
+  options.SetHtpDlbcWeights(true);
   auto config_builder = backend_.BuildGraphConfigs(options, "graph");
   auto configs = config_builder.GetNullTerminatedConfigs();
 

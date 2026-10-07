@@ -130,6 +130,8 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetEnableJustInTime(qualcomm_options.GetEnableJustInTime());
   qnn_options.SetUseConvHMX(qualcomm_options.GetUseConvHMX());
   qnn_options.SetUseFoldReLU(qualcomm_options.GetUseFoldReLU());
+  qnn_options.SetHtpDlbc(qualcomm_options.GetHtpDlbc());
+  qnn_options.SetHtpDlbcWeights(qualcomm_options.GetHtpDlbcWeights());
   qnn_options.SetHtpPPoint(qualcomm_options.GetHtpPPoint());
   qnn_options.SetHtpPerformanceMode(static_cast<::qnn::HtpPerformanceMode>(
       qualcomm_options.GetHtpPerformanceMode()));
@@ -139,6 +141,8 @@ inline LiteRtStatus InitQnnOptions(
       qualcomm_options.GetHtpPerfCtrlMode()));
   qnn_options.SetHtpPdSession(
       static_cast<::qnn::HtpPdSession>(qualcomm_options.GetHtpPdSession()));
+  qnn_options.SetEnableHtpQuickResponse(
+      qualcomm_options.GetEnableHtpQuickResponse());
   qnn_options.SetDspPerfCtrlMode(static_cast<::qnn::DspPerfCtrlMode>(
       qualcomm_options.GetDspPerfCtrlMode()));
   qnn_options.SetDspPdSession(

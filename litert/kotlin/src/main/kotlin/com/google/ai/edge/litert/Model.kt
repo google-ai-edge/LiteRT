@@ -233,6 +233,9 @@ private constructor(
     val vtcmSize: Int? = null,
     val numHvxThreads: Int? = null,
     val optimizationLevel: OptimizationLevel? = null,
+    val htpDlbc: Boolean? = null,
+    val htpDlbcWeights: Boolean? = null,
+    val enableHtpQuickResponse: Boolean? = null,
   ) {
     /** Log level for Qualcomm options. */
     enum class LogLevel constructor(val value: Int) {
@@ -290,6 +293,9 @@ private constructor(
       VTCM_SIZE(11),
       NUM_HVX_THREADS(12),
       OPTIMIZATION_LEVEL(13),
+      HTP_DLBC(14),
+      HTP_DLBC_WEIGHTS(15),
+      ENABLE_HTP_QUICK_RESPONSE(16),
     }
 
     // Converts the options to a map, with all values converted to strings.
@@ -309,6 +315,15 @@ private constructor(
       }
       if (useFoldRelu != null) {
         map[Key.USE_FOLD_RELU] = useFoldRelu.toString()
+      }
+      if (htpDlbc != null) {
+        map[Key.HTP_DLBC] = htpDlbc.toString()
+      }
+      if (htpDlbcWeights != null) {
+        map[Key.HTP_DLBC_WEIGHTS] = htpDlbcWeights.toString()
+      }
+      if (enableHtpQuickResponse != null) {
+        map[Key.ENABLE_HTP_QUICK_RESPONSE] = enableHtpQuickResponse.toString()
       }
       if (htpPerformanceMode != null) {
         map[Key.HTP_PERFORMANCE_MODE] = htpPerformanceMode.value.toString()
@@ -380,6 +395,22 @@ private constructor(
     }
   }
 
+  /**
+   * The duration of the most recent native inference execution, in nanoseconds, or a negative value
+   * if this model has not been run yet or if the most recent run failed.
+   *
+   * The measured interval covers the native execution of the compiled model graph by the underlying
+   * runtime (and hardware accelerator synchronization), matching the semantics of TFLite's
+   * `Interpreter.getLastNativeInferenceDurationNanoseconds()` API. It excludes buffer registration,
+   * host memory locking/mapping, tensor allocation, and data marshalling between Kotlin and native
+   * memory.
+   */
+  val lastNativeInferenceDurationNanoseconds: Long
+    get() {
+      assertNotDestroyed()
+      return nativeGetLastInferenceDurationNanoseconds(handle)
+    }
+
   @Throws(LiteRtException::class)
   fun createInputBuffer(inputName: String, signature: String = ""): TensorBuffer {
     assertNotDestroyed()
@@ -418,11 +449,7 @@ private constructor(
 
   @Throws(LiteRtException::class)
   @JvmOverloads
-  fun resizeInputTensor(
-    inputName: String,
-    dimensions: IntArray,
-    signature: String = "",
-  ) {
+  fun resizeInputTensor(inputName: String, dimensions: IntArray, signature: String = "") {
     assertNotDestroyed()
 
     nativeResizeInputTensor(handle, signature, inputName, dimensions)
@@ -430,11 +457,7 @@ private constructor(
 
   @Throws(LiteRtException::class)
   @JvmOverloads
-  fun resizeInputTensorNonStrict(
-    inputName: String,
-    dimensions: IntArray,
-    signature: String = "",
-  ) {
+  fun resizeInputTensorNonStrict(inputName: String, dimensions: IntArray, signature: String = "") {
     assertNotDestroyed()
 
     nativeResizeInputTensorNonStrict(handle, signature, inputName, dimensions)
@@ -777,6 +800,9 @@ private constructor(
       outputName: String,
       signature: String,
     ): TensorType
+
+    @JvmStatic
+    private external fun nativeGetLastInferenceDurationNanoseconds(compiledModelHandle: Long): Long
 
     @JvmStatic private external fun nativeDestroy(handle: Long)
   }

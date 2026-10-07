@@ -20,10 +20,8 @@
 #include "HTP/QnnHtpGraph.h"  // from @qairt
 #include "HTP/QnnHtpPerfInfrastructure.h"  // from @qairt
 #include "HTP/QnnHtpProperty.h"  // from @qairt
-#include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
-#include "QnnGraph.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include "QnnProperty.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
@@ -31,6 +29,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/backend_utils.h"
 #include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
+#include "litert/vendors/qualcomm/core/backends/htp_quick_response.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
@@ -80,6 +79,7 @@ class HtpBackend::HtpPerfControl {
   explicit HtpPerfControl(const QNN_INTERFACE_VER_TYPE* api) : api_(api) {}
 
   ~HtpPerfControl() {
+    voting_thread_.reset();
     DownVote();
     if (htp_perf_infra_ != nullptr && power_config_id_ != 0) {
       htp_perf_infra_->perfInfra.destroyPowerConfigId(power_config_id_);
@@ -497,7 +497,7 @@ class HtpBackend::HtpPerfControl {
 HtpBackend::HtpBackend(const QNN_INTERFACE_VER_TYPE* qnn_api)
     : QnnBackend(qnn_api) {}
 
-HtpBackend::~HtpBackend() = default;
+HtpBackend::~HtpBackend() { StopBackgroundWork(); }
 
 HtpBackend::QnnDevicePlatformInfo HtpBackend::CreateDevicePlatformInfo() {
   const QnnDevice_PlatformInfo_t* local_qnn_device_platform_info = nullptr;
@@ -639,6 +639,23 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   return true;
 }
 
+void HtpBackend::StartQuickResponse(bool enable_htp_quick_response) {
+  if (!enable_htp_quick_response || htp_quick_response_) {
+    return;
+  }
+
+  htp_quick_response_ = HtpQuickResponse::Create(QnnApi(), *this);
+  if (!htp_quick_response_) {
+    QNN_LOG_WARNING(
+        "Failed to initialize HTP quick response; continuing without it.");
+  }
+}
+
+void HtpBackend::StopBackgroundWork() {
+  htp_quick_response_.reset();
+  htp_perf_control_.reset();
+}
+
 bool HtpBackend::SetPerformanceMode(const Options& options) {
   const auto perf_mode = options.GetHtpPerformanceMode();
   if (perf_mode != HtpPerformanceMode::kDefault) {
@@ -730,7 +747,7 @@ GraphConfigBuilder HtpBackend::BuildGraphConfigs(
     config_builder.AddCustomConfig(hvx_threads);
   }
 
-  // DLBC (activations / inputs). Offline-prep only.
+  // DLBC input compression.
   if (options.GetHtpDlbc()) {
     QnnHtpGraph_CustomConfig_t dlbc = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
     dlbc.option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
@@ -739,7 +756,7 @@ GraphConfigBuilder HtpBackend::BuildGraphConfigs(
     config_builder.AddCustomConfig(dlbc);
   }
 
-  // DLBC weights. Offline-prep only.
+  // DLBC weight compression.
   if (options.GetHtpDlbcWeights()) {
     QnnHtpGraph_CustomConfig_t dlbc_weights = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
     dlbc_weights.option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;

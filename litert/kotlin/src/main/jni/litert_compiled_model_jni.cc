@@ -112,6 +112,9 @@ enum QualcommOptionsKey {
   kVtcmSize = 11,
   kNumHvxThreads = 12,
   kOptimizationLevel = 13,
+  kHtpDlbc = 14,
+  kHtpDlbcWeights = 15,
+  kEnableHtpQuickResponse = 16,
 };
 
 // Precision for GPU options, the values should match the ones in Kotlin.
@@ -433,6 +436,18 @@ Expected<void> PopulateQualcommOptions(JNIEnv* env,
       case QualcommOptionsKey::kUseFoldRelu:
         (qualcomm_options.SetUseFoldReLU(
             strcmp(qualcomm_options_values_vector[i], "true") == 0));
+        break;
+      case QualcommOptionsKey::kHtpDlbc:
+        (qualcomm_options.SetHtpDlbc(
+            strcmp(qualcomm_options_values_vector[i], "true") == 0));
+        break;
+      case QualcommOptionsKey::kHtpDlbcWeights:
+        (qualcomm_options.SetHtpDlbcWeights(
+            strcmp(qualcomm_options_values_vector[i], "true") == 0));
+        break;
+      case QualcommOptionsKey::kEnableHtpQuickResponse:
+        qualcomm_options.SetEnableHtpQuickResponse(
+            strcmp(qualcomm_options_values_vector[i], "true") == 0);
         break;
       case QualcommOptionsKey::kHtpPerformanceMode:
         qualcomm_options.SetHtpPerformanceMode(
@@ -1278,6 +1293,19 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeGetOutputTensorType(
     return nullptr;
   }
   return ToJavaTensorType(env, *tensor_type);
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeGetLastInferenceDurationNanoseconds(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle) {
+  auto& compiled_model = GetCompiledModel(compiled_model_handle);
+  auto duration = compiled_model.LastInferenceDurationNanoseconds();
+  if (!duration) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get last inference duration: %s",
+               duration.Error().Message().c_str());
+    return -1;
+  }
+  return *duration;
 }
 
 JNIEXPORT void JNICALL

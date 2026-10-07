@@ -140,6 +140,10 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::HtpPdSession,
           "platforms that load signed HTP Skel libraries. 'adaptive' uses "
           "unsigned PD when supported, otherwise signed PD.");
 
+ABSL_FLAG(bool, qualcomm_enable_htp_quick_response, false,
+          "Whether to keep HTP responsive by periodically executing a "
+          "low-priority graph.");
+
 ABSL_FLAG(litert::qualcomm::QualcommOptions::DspPerfCtrlMode,
           qualcomm_dsp_perf_ctrl_mode,
           litert::qualcomm::QualcommOptions::DspPerfCtrlMode::kManual,
@@ -678,6 +682,11 @@ ABSL_FLAG(bool, qualcomm_use_fold_relu, true,
           "optimization is correct when quantization ranges for convolution "
           "are equal to or are subset of the Relu operation.");
 
+ABSL_FLAG(bool, qualcomm_htp_dlbc, false, "Enable HTP DLBC input compression.");
+
+ABSL_FLAG(bool, qualcomm_htp_dlbc_weights, false,
+          "Enable HTP DLBC weight compression.");
+
 ABSL_FLAG(
     std::int32_t, qualcomm_htp_p_point, 0,
     "P points are experimental (HTP backend with O3 only) and map to "
@@ -974,6 +983,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto htp_pd_session = absl::GetFlag(FLAGS_qualcomm_htp_pd_session);
   opts.SetHtpPdSession(htp_pd_session);
 
+  const auto enable_htp_quick_response =
+      absl::GetFlag(FLAGS_qualcomm_enable_htp_quick_response);
+  opts.SetEnableHtpQuickResponse(enable_htp_quick_response);
+
   const auto dsp_perf_ctrl_mode =
       absl::GetFlag(FLAGS_qualcomm_dsp_perf_ctrl_mode);
   opts.SetDspPerfCtrlMode(dsp_perf_ctrl_mode);
@@ -1019,6 +1032,12 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto use_fold_relu = absl::GetFlag(FLAGS_qualcomm_use_fold_relu);
   opts.SetUseFoldReLU(use_fold_relu);
+
+  const auto htp_dlbc = absl::GetFlag(FLAGS_qualcomm_htp_dlbc);
+  opts.SetHtpDlbc(htp_dlbc);
+
+  const auto htp_dlbc_weights = absl::GetFlag(FLAGS_qualcomm_htp_dlbc_weights);
+  opts.SetHtpDlbcWeights(htp_dlbc_weights);
 
   const auto htp_p_point = absl::GetFlag(FLAGS_qualcomm_htp_p_point);
   opts.SetHtpPPoint(htp_p_point);

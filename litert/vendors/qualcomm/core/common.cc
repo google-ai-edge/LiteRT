@@ -491,11 +491,6 @@ bool Options::GetUseInt64BiasAsInt32() const {
 
 void Options::SetEnableWeightSharing(bool enable_weight_sharing) {
   enable_weight_sharing_ = enable_weight_sharing;
-  // Mutually exclusive with DLBC weights (QAIRT 2.36+); weight sharing wins.
-  // Enforced here too so the outcome is order-independent.
-  if (enable_weight_sharing_) {
-    htp_dlbc_weights_ = false;
-  }
 }
 
 bool Options::GetEnableWeightSharing() const { return enable_weight_sharing_; }
@@ -527,8 +522,7 @@ void Options::SetHtpDlbc(bool htp_dlbc) { htp_dlbc_ = htp_dlbc; }
 bool Options::GetHtpDlbc() const { return htp_dlbc_; }
 
 void Options::SetHtpDlbcWeights(bool htp_dlbc_weights) {
-  // DLBC weights is mutually exclusive with weight sharing (QAIRT 2.36+).
-  htp_dlbc_weights_ = htp_dlbc_weights && !enable_weight_sharing_;
+  htp_dlbc_weights_ = htp_dlbc_weights;
 }
 
 bool Options::GetHtpDlbcWeights() const { return htp_dlbc_weights_; }
@@ -562,6 +556,14 @@ void Options::SetHtpPdSession(HtpPdSession htp_pd_session) {
 }
 
 HtpPdSession Options::GetHtpPdSession() const { return htp_pd_session_; }
+
+void Options::SetEnableHtpQuickResponse(bool enable_htp_quick_response) {
+  enable_htp_quick_response_ = enable_htp_quick_response;
+}
+
+bool Options::GetEnableHtpQuickResponse() const {
+  return enable_htp_quick_response_;
+}
 
 void Options::SetDspPerfCtrlMode(DspPerfCtrlMode dsp_perf_ctrl_mode) {
   dsp_perf_ctrl_mode_ = dsp_perf_ctrl_mode;
@@ -786,6 +788,7 @@ std::string Options::Dump() const {
   field(2, "HtpPerformanceMode", htp_performance_mode_);
   field(2, "HtpPerfCtrlMode", htp_perf_ctrl_mode_);
   field(2, "HtpPdSession", htp_pd_session_);
+  field(2, "EnableHtpQuickResponse", enable_htp_quick_response_);
   field(2, "VtcmSize", vtcm_size_);
   field(2, "NumHvxThreads", num_hvx_threads_);
   field(2, "OptimizationLevel", optimization_level_);

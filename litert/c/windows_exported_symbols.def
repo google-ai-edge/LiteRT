@@ -160,6 +160,7 @@ EXPORTS
   LiteRtGetCompiledModelEnvironment
   LiteRtGetCompiledModelInputBufferRequirements
   LiteRtGetCompiledModelInputTensorLayout
+  LiteRtGetCompiledModelLastInferenceDuration
   LiteRtGetCompiledModelOutputBufferRequirements
   LiteRtGetCompiledModelOutputTensorLayouts
   LiteRtGetConcatenationAxisOption

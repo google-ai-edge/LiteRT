@@ -15,6 +15,7 @@
 #include "litert/c/litert_compiled_model.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
@@ -230,10 +231,20 @@ TEST(CompiledModelTest, Basic) {
     LITERT_ASSERT_OK(LiteRtUnlockTensorBuffer(input_tensor_buffers[1]));
   }
 
+  int64_t duration = 0;
+  LiteRtCompiledModelConst const_compiled_model = compiled_model;
+  LITERT_ASSERT_OK(LiteRtGetCompiledModelLastInferenceDuration(
+      const_compiled_model, &duration));
+  EXPECT_EQ(duration, -1);
+
   LITERT_ASSERT_OK(LiteRtRunCompiledModel(
       compiled_model, /*signature_index=*/0, input_tensor_buffers.size(),
       input_tensor_buffers.data(), output_tensor_buffers.size(),
       output_tensor_buffers.data()));
+
+  LITERT_ASSERT_OK(LiteRtGetCompiledModelLastInferenceDuration(
+      const_compiled_model, &duration));
+  EXPECT_GT(duration, 0);
 
   {
     ABSL_LOG(INFO) << "Checking output...";

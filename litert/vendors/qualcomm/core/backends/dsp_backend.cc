@@ -38,6 +38,7 @@ class DspBackend::DspPerfControl {
   explicit DspPerfControl(const QNN_INTERFACE_VER_TYPE* api) : api_(api) {}
 
   ~DspPerfControl() {
+    voting_thread_.reset();
     DownVote();
     if (dsp_perf_infra_) {
       dsp_perf_infra_->destroyPowerConfigId(power_config_id_);
@@ -278,7 +279,7 @@ class DspBackend::DspPerfControl {
 DspBackend::DspBackend(const QNN_INTERFACE_VER_TYPE* qnn_api)
     : QnnBackend(qnn_api) {}
 
-DspBackend::~DspBackend() = default;
+DspBackend::~DspBackend() { StopBackgroundWork(); }
 
 GraphConfigBuilder DspBackend::BuildGraphConfigs(
     const Options& options, absl::string_view /*qnn_graph_name*/) {
@@ -372,6 +373,8 @@ bool DspBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
 
   return true;
 }
+
+void DspBackend::StopBackgroundWork() { dsp_perf_control_.reset(); }
 
 bool DspBackend::SetPerformanceMode(const Options& options) {
   const auto perf_mode = options.GetDspPerformanceMode();
