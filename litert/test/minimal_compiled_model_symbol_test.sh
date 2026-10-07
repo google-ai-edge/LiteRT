@@ -15,8 +15,8 @@
 
 # Verifies that a minimal (cpu_only + selective) LiteRT runtime binary contains
 # no non-CPU (GPU, OpenCL, WebGPU, Dawn, OpenGL, NPU dispatch), unselected
-# builtin-op, or C++ stream symbols (iostream/stringstream/ifstream) or dynamic
-# library dependencies.
+# builtin-op, external weight loader, absl::Status/Cord, or C++ stream symbols
+# (iostream/stringstream/ifstream) or dynamic library dependencies.
 # Usage: minimal_compiled_model_symbol_test.sh <binary>
 
 set -euo pipefail
@@ -56,11 +56,20 @@ BANNED_NPU_SYMBOLS="DispatchAccelerator|LiteRtRegisterNpuAccelerator|LiteRtCreat
 # accelerator table are not linked when selective op registration is enabled.
 BANNED_BUILTIN_OP_SYMBOLS="LiteRtRegisterCpuAccelerator|BuiltinOpResolverWithoutDefaultDelegates|Register_CONV_2D|Register_LSTM|Register_SVDF"
 
+# Weight loader symbols: Ensures external weight loader flatbuffers, schema, and
+# internal CPU weight restoration logic are omitted in selective LiteRT builds
+# (gated by LITERT_DISABLE_EXTERNAL_WEIGHTS).
+BANNED_WEIGHT_LOADER_SYMBOLS="weight_loader::|CreateLiteRtWeightLoader|RestoreExternalWeightsForCpu"
+
 # Stream symbols: C++ std::iostream / std::stringstream / std::ifstream pull in
 # heavy virtual tables, locales, and formatting logic. Ensures LiteRT and TFLite
 # dependencies use lighter alternatives.
-BANNED_STREAM_SYMBOLS="litert::.*basic_.*stream|default_delete<.*basic_.*stream|unique_ptr<.*basic_.*stream|basic_ifstream|basic_stringstream|basic_filebuf<.*>::"
-BANNED_SYMBOL_PATTERN="(${BANNED_GPU_SYMBOLS}|${BANNED_NPU_SYMBOLS}|${BANNED_BUILTIN_OP_SYMBOLS}|${BANNED_STREAM_SYMBOLS})"
+BANNED_STREAM_SYMBOLS="litert::.*basic_.*stream|default_delete<.*basic_.*stream|unique_ptr<.*basic_.*stream|basic_ifstream|basic_stringstream|basic_filebuf<.*>::|basic_istream<.*>::(read|seekg|tellg)"
+
+# Status symbols: Heavy absl::Status implementations pull in Cord representation
+# and heap-allocated error payloads. Minimal builds rely on lighter status paths.
+BANNED_STATUS_SYMBOLS="StatusRep|CordRep|ErrorStatusBuilder::ToAbslStatus|ErrorConversion<absl::Status"
+BANNED_SYMBOL_PATTERN="(${BANNED_GPU_SYMBOLS}|${BANNED_NPU_SYMBOLS}|${BANNED_BUILTIN_OP_SYMBOLS}|${BANNED_WEIGHT_LOADER_SYMBOLS}|${BANNED_STREAM_SYMBOLS}|${BANNED_STATUS_SYMBOLS})"
 
 SYMBOLS=$(nm -C "${BINARY}")
 if [ -z "${SYMBOLS}" ]; then
