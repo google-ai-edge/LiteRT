@@ -419,6 +419,82 @@ TEST(SerializationTest, AddingAnEmptySubgraphFails) {
   EXPECT_THAT(model_builder.AddSubgraph({}), Not(IsOk()));
 }
 
+TEST(SerializationTest, ShapeSignaturePreservesConcreteShapeAndStrictResize) {
+  const auto path = testing::TempDir() + "/explicit_shape_signature.tflite";
+  TensorTf input({.name = "input", .type = Type::kFP32, .shape = {1, 3, 4}});
+  auto output = Add(input, 1.0f);
+  ModelFactory factory;
+  ASSERT_THAT(factory.SetShapeSignature(input, {1, -1, 4}), IsOk());
+  ASSERT_THAT(factory.SetShapeSignature(output, {1, -1, 4}), IsOk());
+  ASSERT_THAT(factory.AddSignature({output}, "main"), IsOk());
+  ASSERT_THAT(factory.Save(path), IsOk());
+  // Export annotations don't mutate the authoring graph's concrete shapes.
+  EXPECT_THAT(input.GetShape(), ElementsAre(1, 3, 4));
+  EXPECT_THAT(output.GetShape(), ElementsAre(1, 3, 4));
+  auto model = tflite::FlatBufferModel::BuildFromFile(path.c_str());
+  ASSERT_NE(model, nullptr);
+  const auto* subgraph = model->GetModel()->subgraphs()->Get(0);
+  const auto* serialized_input =
+      subgraph->tensors()->Get(subgraph->inputs()->Get(0));
+  EXPECT_THAT(*serialized_input->shape(), ElementsAre(1, 3, 4));
+  ASSERT_NE(serialized_input->shape_signature(), nullptr);
+  EXPECT_THAT(*serialized_input->shape_signature(), ElementsAre(1, -1, 4));
+  const auto* serialized_output =
+      subgraph->tensors()->Get(subgraph->outputs()->Get(0));
+  EXPECT_THAT(*serialized_output->shape(), ElementsAre(1, 3, 4));
+  ASSERT_NE(serialized_output->shape_signature(), nullptr);
+  EXPECT_THAT(*serialized_output->shape_signature(), ElementsAre(1, -1, 4));
+
+  std::unique_ptr<tflite::Interpreter> interpreter;
+  tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
+  ASSERT_EQ(tflite::InterpreterBuilder(*model, resolver)(&interpreter),
+            kTfLiteOk);
+  const int input_index = interpreter->inputs()[0];
+  for (int rows : {3, 1, 7, 2, 0, 5}) {
+    ASSERT_EQ(interpreter->ResizeInputTensorStrict(input_index, {1, rows, 4}),
+              kTfLiteOk);
+    ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
+    for (int i = 0; i < rows * 4; ++i)
+      interpreter->typed_input_tensor<float>(0)[i] = float(i + rows);
+    ASSERT_EQ(interpreter->Invoke(), kTfLiteOk);
+    const auto* result = interpreter->output_tensor(0);
+    EXPECT_EQ(result->dims->data[1], rows);
+    for (int i = 0; i < rows * 4; ++i)
+      EXPECT_EQ(result->data.f[i], float(i + rows + 1));
+  }
+  EXPECT_EQ(interpreter->ResizeInputTensorStrict(input_index, {2, 5, 4}),
+            kTfLiteError);
+  EXPECT_EQ(interpreter->ResizeInputTensorStrict(input_index, {1, 5, 8}),
+            kTfLiteError);
+}
+
+TEST(SerializationTest, ShapeSignatureRejectsInvalidAnnotations) {
+  TensorTf input({.name = "input", .type = Type::kFP32, .shape = {1, 3, 4}});
+  TensorTf constant({.name = "constant",
+                     .shape = {2},
+                     .buffer = std::vector<float>{1.0f, 2.0f}});
+  ModelFactory factory;
+  EXPECT_THAT(factory.SetShapeSignature(input, {-1, 4}), Not(IsOk()));
+  EXPECT_THAT(factory.SetShapeSignature(input, {1, -2, 4}), Not(IsOk()));
+  EXPECT_THAT(factory.SetShapeSignature(input, {1, -1, 8}), Not(IsOk()));
+  EXPECT_THAT(factory.SetShapeSignature(constant, {-1}), Not(IsOk()));
+  EXPECT_THAT(factory.SetShapeSignature(TensorHandle::Invalid(), {-1}),
+              Not(IsOk()));
+}
+
+TEST(SerializationTest, ShapeSignatureDoesNotLeakIntoOtherFactories) {
+  TensorTf input({.name = "input", .type = Type::kFP32, .shape = {2}});
+  auto output = Add(input, 1.0f);
+  ModelFactory annotated, original;
+  ASSERT_THAT(annotated.SetShapeSignature(input, {-1}), IsOk());
+  ASSERT_THAT(annotated.AddSignature({output}, "main"), IsOk());
+  ASSERT_THAT(original.AddSignature({output}, "main"), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, original.CreateFlatbuffer());
+  const auto* subgraph = tflite::GetModel(bytes.data())->subgraphs()->Get(0);
+  const auto* tensor = subgraph->tensors()->Get(subgraph->inputs()->Get(0));
+  EXPECT_EQ(tensor->shape_signature(), nullptr);
+}
+
 TEST(SerializationTest, AddingAnEmptySignatureFails) {
   ModelFactory model_builder;
   EXPECT_THAT(model_builder.AddSignature({}, /*name=*/"sig-name"), Not(IsOk()));
