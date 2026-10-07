@@ -51,6 +51,7 @@ struct CompilationOptions {
   int qualcomm_enable_weight_sharing = -1;
   int qualcomm_use_conv_hmx = -1;
   int qualcomm_use_fold_relu = -1;
+  int qualcomm_enable_htp_quick_response = -1;
   int qualcomm_profiling = -1;
   bool qualcomm_has_dump_tensor_ids = false;
   std::vector<std::int32_t> qualcomm_dump_tensor_ids;

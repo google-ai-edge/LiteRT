@@ -112,6 +112,7 @@ enum QualcommOptionsKey {
   kVtcmSize = 11,
   kNumHvxThreads = 12,
   kOptimizationLevel = 13,
+  kEnableHtpQuickResponse = 16,
 };
 
 // Precision for GPU options, the values should match the ones in Kotlin.
@@ -433,6 +434,10 @@ Expected<void> PopulateQualcommOptions(JNIEnv* env,
       case QualcommOptionsKey::kUseFoldRelu:
         (qualcomm_options.SetUseFoldReLU(
             strcmp(qualcomm_options_values_vector[i], "true") == 0));
+        break;
+      case QualcommOptionsKey::kEnableHtpQuickResponse:
+        qualcomm_options.SetEnableHtpQuickResponse(
+            strcmp(qualcomm_options_values_vector[i], "true") == 0);
         break;
       case QualcommOptionsKey::kHtpPerformanceMode:
         qualcomm_options.SetHtpPerformanceMode(

@@ -181,6 +181,15 @@ TEST(QnnOptionTest, HtpPdSession) {
   EXPECT_EQ(options.GetHtpPdSession(), HtpPdSession::kAdaptive);
 }
 
+TEST(QnnOptionTest, EnableHtpQuickResponse) {
+  Options options;
+  EXPECT_FALSE(options.GetEnableHtpQuickResponse());
+  options.SetEnableHtpQuickResponse(true);
+  EXPECT_TRUE(options.GetEnableHtpQuickResponse());
+  options.SetEnableHtpQuickResponse(false);
+  EXPECT_FALSE(options.GetEnableHtpQuickResponse());
+}
+
 TEST(QnnOptionTest, DspPerfCtrlMode) {
   Options options;
 
@@ -401,6 +410,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetDspPerformanceMode(), DspPerformanceMode::kDefault);
   EXPECT_EQ(options.GetHtpPerfCtrlMode(), HtpPerfCtrlMode::kManual);
   EXPECT_EQ(options.GetHtpPdSession(), HtpPdSession::kUnsigned);
+  EXPECT_FALSE(options.GetEnableHtpQuickResponse());
   EXPECT_EQ(options.GetDspPerfCtrlMode(), DspPerfCtrlMode::kManual);
   EXPECT_EQ(options.GetDspPdSession(), DspPdSession::kUnsigned);
   EXPECT_EQ(options.GetDspEncoding(), DspEncoding::kStatic);

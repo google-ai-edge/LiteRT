@@ -96,8 +96,14 @@ cc_library(
 
 cc_library(
     name = "htp_backend",
-    srcs = ["htp_backend.cc"],
-    hdrs = ["htp_backend.h"],
+    srcs = [
+        "htp_backend.cc",
+        "htp_quick_response.cc",
+    ],
+    hdrs = [
+        "htp_backend.h",
+        "htp_quick_response.h",
+    ],
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         ":backend_utils",

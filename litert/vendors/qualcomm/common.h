@@ -139,6 +139,8 @@ inline LiteRtStatus InitQnnOptions(
       qualcomm_options.GetHtpPerfCtrlMode()));
   qnn_options.SetHtpPdSession(
       static_cast<::qnn::HtpPdSession>(qualcomm_options.GetHtpPdSession()));
+  qnn_options.SetEnableHtpQuickResponse(
+      qualcomm_options.GetEnableHtpQuickResponse());
   qnn_options.SetDspPerfCtrlMode(static_cast<::qnn::DspPerfCtrlMode>(
       qualcomm_options.GetDspPerfCtrlMode()));
   qnn_options.SetDspPdSession(

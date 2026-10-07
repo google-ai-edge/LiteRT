@@ -290,6 +290,7 @@ class VendorOptionsFlatteningTest(unittest.TestCase):
     )
     qualcomm_options.use_int64_bias_as_int32 = False
     qualcomm_options.enable_weight_sharing = True
+    qualcomm_options.enable_htp_quick_response = True
     qualcomm_options.dump_tensor_ids = [1, 3, 5]
     qualcomm_options.backend = options_lib.QualcommOptions.BACKEND.HTP
     qualcomm_options.graph_io_tensor_mem_type = (
@@ -302,6 +303,7 @@ class VendorOptionsFlatteningTest(unittest.TestCase):
     self.assertEqual(kwargs['qualcomm_htp_performance_mode'], 2)
     self.assertEqual(kwargs['qualcomm_use_int64_bias_as_int32'], 0)
     self.assertEqual(kwargs['qualcomm_enable_weight_sharing'], 1)
+    self.assertEqual(kwargs['qualcomm_enable_htp_quick_response'], 1)
     self.assertTrue(kwargs['qualcomm_has_dump_tensor_ids'])
     self.assertEqual(kwargs['qualcomm_dump_tensor_ids'], [1, 3, 5])
     self.assertEqual(kwargs['qualcomm_backend'], 2)

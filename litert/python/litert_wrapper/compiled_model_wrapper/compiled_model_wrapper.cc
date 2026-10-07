@@ -148,6 +148,8 @@ bool HasQualcommOptions(const CompilationOptions& compilation_options) {
              compilation_options.qualcomm_enable_weight_sharing) ||
          TriStateBoolIsSet(compilation_options.qualcomm_use_conv_hmx) ||
          TriStateBoolIsSet(compilation_options.qualcomm_use_fold_relu) ||
+         TriStateBoolIsSet(
+             compilation_options.qualcomm_enable_htp_quick_response) ||
          compilation_options.qualcomm_profiling >= 0 ||
          compilation_options.qualcomm_has_dump_tensor_ids ||
          !compilation_options.qualcomm_ir_json_dir.empty() ||
@@ -280,6 +282,11 @@ bool PopulateCompilationOptions(litert::Options& options,
     if (TriStateBoolIsSet(compilation_options.qualcomm_use_fold_relu)) {
       qualcomm_options.SetUseFoldReLU(
           TriStateBoolValue(compilation_options.qualcomm_use_fold_relu));
+    }
+    if (TriStateBoolIsSet(
+            compilation_options.qualcomm_enable_htp_quick_response)) {
+      qualcomm_options.SetEnableHtpQuickResponse(TriStateBoolValue(
+          compilation_options.qualcomm_enable_htp_quick_response));
     }
     if (compilation_options.qualcomm_profiling >= 0) {
       qualcomm_options.SetProfiling(

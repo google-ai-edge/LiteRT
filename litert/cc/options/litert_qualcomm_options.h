@@ -204,6 +204,19 @@ class QualcommOptions : public ConcreteOptionsBase {
     return static_cast<HtpPdSession>(val);
   }
 
+  void SetEnableHtpQuickResponse(bool enable_htp_quick_response) {
+    LrtQualcommOptionsSetEnableHtpQuickResponse(options_,
+                                                enable_htp_quick_response);
+  }
+  bool GetEnableHtpQuickResponse() {
+    bool val;
+    auto status = LrtQualcommOptionsGetEnableHtpQuickResponse(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
+
   enum class DspPerfCtrlMode : int {
     kManual = kLiteRtQualcommDspPerfCtrlModeManual,
     kAuto = kLiteRtQualcommDspPerfCtrlModeAuto,
