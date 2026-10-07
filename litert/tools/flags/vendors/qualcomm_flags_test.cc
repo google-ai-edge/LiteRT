@@ -780,6 +780,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
             QualcommOptions::DspEncoding::kStatic);
   EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());
   EXPECT_EQ(options.Value().GetVtcmSize(), 0);
+  EXPECT_EQ(options.Value().GetHtpDeviceId(), 0);
   EXPECT_EQ(options.Value().GetNumHvxThreads(), 0);
   EXPECT_EQ(options.Value().GetOptimizationLevel(),
             QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
@@ -813,6 +814,15 @@ TEST(QualcommOptionsFromFlagsTest, CustomQnnLibAndDspSkelDirs) {
 
   absl::SetFlag(&FLAGS_qualcomm_qnn_lib_dir, "");
   absl::SetFlag(&FLAGS_qualcomm_dsp_skel_dir, "");
+}
+
+TEST(QualcommOptionsFromFlagsTest, HtpDeviceId) {
+  absl::SetFlag(&FLAGS_qualcomm_htp_device_id, 2);
+  Expected<QualcommOptions> options = QualcommOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_EQ(options.Value().GetHtpDeviceId(), 2);
+  absl::SetFlag(&FLAGS_qualcomm_htp_device_id, 0);
 }
 
 }  // namespace
