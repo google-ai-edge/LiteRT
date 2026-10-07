@@ -177,10 +177,9 @@ export class LiteRt {
     try {
       hash = await LiteRt.getResourceHash(arrayBuffer);
       // @ts-expect-error Injected by an extension.
-      const [handle] = await navigator.crossOriginStorage.requestFileHandles(
-        [hash],
-        { create: true },
-      );
+      const handle = await navigator.crossOriginStorage.getFileHandle(hash, {
+        create: true,
+      });
       const writableStream = await handle.createWritable();
       await writableStream.write(arrayBuffer);
       await writableStream.close();
@@ -377,7 +376,7 @@ export class LiteRt {
           algorithm: 'SHA-256',
         }
         // @ts-expect-error This is injected by an extension.
-        const [handle] = await navigator.crossOriginStorage.requestFileHandles([hash]);
+        const handle = await navigator.crossOriginStorage.getFileHandle(hash);
         const blob = await handle.getFile();
         console.log(`Resource with hash "${hashValue}" found in Cross-Origin Storage.`);
         return blob;
