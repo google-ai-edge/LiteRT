@@ -247,15 +247,16 @@ std::vector<int64_t> MakeBegins(const std::vector<int32_t>& input_shape,
 std::vector<int64_t> MakeValidSizes(const std::vector<int32_t>& input_shape,
                                     const std::vector<int64_t>& begin,
                                     const std::vector<uint8_t>& size_seeds,
-                                    bool allow_special_sizes) {
+                                    bool allow_to_end_sizes,
+                                    bool allow_empty_sizes) {
   std::vector<int64_t> size(input_shape.size());
   for (size_t i = 0; i < input_shape.size(); ++i) {
     const uint8_t seed =
         size_seeds.empty() ? 0 : size_seeds[i % size_seeds.size()];
     const int64_t remaining = input_shape[i] - begin[i];
-    if (allow_special_sizes && seed % 3 == 0) {
+    if (allow_to_end_sizes && seed % 3 == 0) {
       size[i] = -1;
-    } else if (allow_special_sizes && seed % 3 == 1) {
+    } else if (allow_empty_sizes && seed % 3 == 1) {
       size[i] = 0;
     } else {
       size[i] = 1 + seed % remaining;
@@ -271,8 +272,10 @@ auto ValidSliceCaseDomain() {
          TensorType input_type, TensorType index_type,
          IndexSpecKind index_spec_kind) {
         std::vector<int64_t> begin = MakeBegins(input_shape, begin_seeds);
-        std::vector<int64_t> size = MakeValidSizes(
-            input_shape, begin, size_seeds, /*allow_special_sizes=*/true);
+        std::vector<int64_t> size =
+            MakeValidSizes(input_shape, begin, size_seeds,
+                           /*allow_to_end_sizes=*/true,
+                           /*allow_empty_sizes=*/true);
         return SliceCase{
             std::move(input_shape), std::move(begin), std::move(size),
             std::move(input_data),  input_type,       index_type,
@@ -347,8 +350,11 @@ auto XnnpackSliceCaseDomain() {
          std::vector<uint8_t> size_seeds, std::vector<uint8_t> input_data,
          TensorType input_type, TensorType index_type) {
         std::vector<int64_t> begin = MakeBegins(input_shape, begin_seeds);
-        std::vector<int64_t> size = MakeValidSizes(
-            input_shape, begin, size_seeds, /*allow_special_sizes=*/false);
+        // XNNPACK supports slice-to-end (size == -1) but not empty slices.
+        std::vector<int64_t> size =
+            MakeValidSizes(input_shape, begin, size_seeds,
+                           /*allow_to_end_sizes=*/true,
+                           /*allow_empty_sizes=*/false);
         return SliceCase{
             std::move(input_shape),   std::move(begin), std::move(size),
             std::move(input_data),    input_type,       index_type,
@@ -370,8 +376,10 @@ auto XnnpackUnsupportedRankSliceCaseDomain() {
          std::vector<uint8_t> size_seeds, TensorType input_type,
          TensorType index_type) {
         std::vector<int64_t> begin = MakeBegins(input_shape, begin_seeds);
-        std::vector<int64_t> size = MakeValidSizes(
-            input_shape, begin, size_seeds, /*allow_special_sizes=*/false);
+        std::vector<int64_t> size =
+            MakeValidSizes(input_shape, begin, size_seeds,
+                           /*allow_to_end_sizes=*/false,
+                           /*allow_empty_sizes=*/false);
         return SliceCase{
             std::move(input_shape),   std::move(begin), std::move(size),
             /*input_data=*/{},        input_type,       index_type,
@@ -394,8 +402,10 @@ auto XnnpackUnsupportedSizeSliceCaseDomain() {
          std::vector<uint8_t> size_seeds, uint8_t bad_axis, int64_t bad_size,
          TensorType input_type, TensorType index_type) {
         std::vector<int64_t> begin = MakeBegins(input_shape, begin_seeds);
-        std::vector<int64_t> size = MakeValidSizes(
-            input_shape, begin, size_seeds, /*allow_special_sizes=*/false);
+        std::vector<int64_t> size =
+            MakeValidSizes(input_shape, begin, size_seeds,
+                           /*allow_to_end_sizes=*/false,
+                           /*allow_empty_sizes=*/false);
         size[bad_axis % size.size()] = bad_size;
         return SliceCase{
             std::move(input_shape),   std::move(begin), std::move(size),
@@ -406,7 +416,9 @@ auto XnnpackUnsupportedSizeSliceCaseDomain() {
       SliceInputShapeDomain(/*max_rank=*/6),
       fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(6),
       fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(6),
-      fuzztest::Arbitrary<uint8_t>(), fuzztest::ElementOf<int64_t>({-1, 0}),
+      // XNNPACK rejects empty (0) sizes and negative sizes other than -1, which
+      // means "slice to the end" and is supported.
+      fuzztest::Arbitrary<uint8_t>(), fuzztest::ElementOf<int64_t>({-2, 0}),
       fuzztest::ElementOf<TensorType>(
           {TensorType_FLOAT32, TensorType_UINT8, TensorType_INT8}),
       fuzztest::ElementOf<TensorType>({TensorType_INT32, TensorType_INT64}));
