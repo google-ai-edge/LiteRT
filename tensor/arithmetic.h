@@ -806,6 +806,9 @@ Tensor<Mixins...> Reshape(
   }
 
   op->new_shape = new_shape;
+  // Keep the runtime inference marker in the shape operand. Output metadata
+  // still records the concrete shape at graph construction time.
+  if (op->inferred_axis >= 0) new_shape[op->inferred_axis] = kInferredDim;
   Tensor<Mixins...> shape_tensor(
       {.type = Type::kI32,
        .shape = {static_cast<int>(new_shape.size())},

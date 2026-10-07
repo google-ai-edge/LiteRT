@@ -487,9 +487,16 @@ OpMixin<ReshapeOperation, TfLiteMixinTag>::ToTfLite(
     const graph::Operation& op) const {
   LRT_TENSOR_ASSIGN_OR_RETURN(const ReshapeOperation& data,
                               op.As<ReshapeOperation>());
+  auto shape = data.new_shape;
+  if (data.inferred_axis >= 0) {
+    if (static_cast<size_t>(data.inferred_axis) >= shape.size()) {
+      return absl::InvalidArgumentError("Reshape inferred axis is out of range");
+    }
+    shape[data.inferred_axis] = -1;
+  }
   return TfLiteOpBuildInfo(
       ::tflite::BuiltinOperator_RESHAPE,
-      tflite::ReshapeOptionsT{.new_shape = data.new_shape});
+      tflite::ReshapeOptionsT{.new_shape = std::move(shape)});
 }
 
 absl::StatusOr<TfLiteOpBuildInfo>
