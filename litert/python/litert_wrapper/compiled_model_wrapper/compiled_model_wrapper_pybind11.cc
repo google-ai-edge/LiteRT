@@ -51,7 +51,8 @@ CompilationOptions BuildCompilationOptions(
     int qualcomm_graph_io_tensor_mem_type, int intel_openvino_graph_backend,
     int intel_openvino_performance_mode,
     const std::map<std::string, std::string>& intel_openvino_configs_map,
-    int intel_openvino_enable_weight_sharing) {
+    int intel_openvino_enable_weight_sharing, int qualcomm_htp_dlbc,
+    int qualcomm_htp_dlbc_weights) {
   CompilationOptions options;
   options.hardware_accel = hardware_accel;
   options.cpu_num_threads = cpu_num_threads;
@@ -75,6 +76,8 @@ CompilationOptions BuildCompilationOptions(
   options.qualcomm_enable_weight_sharing = qualcomm_enable_weight_sharing;
   options.qualcomm_use_conv_hmx = qualcomm_use_conv_hmx;
   options.qualcomm_use_fold_relu = qualcomm_use_fold_relu;
+  options.qualcomm_htp_dlbc = qualcomm_htp_dlbc;
+  options.qualcomm_htp_dlbc_weights = qualcomm_htp_dlbc_weights;
   options.qualcomm_profiling = qualcomm_profiling;
   options.qualcomm_has_dump_tensor_ids = qualcomm_has_dump_tensor_ids;
   options.qualcomm_dump_tensor_ids = qualcomm_dump_tensor_ids;
@@ -129,7 +132,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
          int qualcomm_graph_io_tensor_mem_type,
          int intel_openvino_graph_backend, int intel_openvino_performance_mode,
          const std::map<std::string, std::string>& intel_openvino_configs_map,
-         int intel_openvino_enable_weight_sharing) {
+         int intel_openvino_enable_weight_sharing, int qualcomm_htp_dlbc,
+         int qualcomm_htp_dlbc_weights) {
         std::string error;
         CompilationOptions compilation_options = BuildCompilationOptions(
             hardware_accel, cpu_num_threads, gpu_enforce_f32,
@@ -147,7 +151,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
             qualcomm_graph_priority, qualcomm_backend,
             qualcomm_saver_output_dir, qualcomm_graph_io_tensor_mem_type,
             intel_openvino_graph_backend, intel_openvino_performance_mode,
-            intel_openvino_configs_map, intel_openvino_enable_weight_sharing);
+            intel_openvino_configs_map, intel_openvino_enable_weight_sharing,
+            qualcomm_htp_dlbc, qualcomm_htp_dlbc_weights);
         CompiledModelWrapper* wrapper =
             CompiledModelWrapper::CreateWrapperFromFile(
                 environment_capsule.ptr(), model_path.c_str(),
@@ -189,7 +194,9 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       py::arg("intel_openvino_performance_mode") = -1,
       py::arg("intel_openvino_configs_map") =
           std::map<std::string, std::string>(),
-      py::arg("intel_openvino_enable_weight_sharing") = -1);
+      py::arg("intel_openvino_enable_weight_sharing") = -1,
+      py::arg("qualcomm_htp_dlbc") = -1,
+      py::arg("qualcomm_htp_dlbc_weights") = -1);
 
   // Factory method to create a CompiledModelWrapper from a model buffer.
   m.def(
@@ -217,7 +224,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
          int qualcomm_graph_io_tensor_mem_type,
          int intel_openvino_graph_backend, int intel_openvino_performance_mode,
          const std::map<std::string, std::string>& intel_openvino_configs_map,
-         int intel_openvino_enable_weight_sharing) {
+         int intel_openvino_enable_weight_sharing, int qualcomm_htp_dlbc,
+         int qualcomm_htp_dlbc_weights) {
         std::string error;
         PyObject* data_obj = model_data.ptr();
         CompilationOptions compilation_options = BuildCompilationOptions(
@@ -236,7 +244,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
             qualcomm_graph_priority, qualcomm_backend,
             qualcomm_saver_output_dir, qualcomm_graph_io_tensor_mem_type,
             intel_openvino_graph_backend, intel_openvino_performance_mode,
-            intel_openvino_configs_map, intel_openvino_enable_weight_sharing);
+            intel_openvino_configs_map, intel_openvino_enable_weight_sharing,
+            qualcomm_htp_dlbc, qualcomm_htp_dlbc_weights);
         CompiledModelWrapper* wrapper =
             CompiledModelWrapper::CreateWrapperFromBuffer(
                 environment_capsule.ptr(), data_obj, compilation_options,
@@ -278,7 +287,9 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       py::arg("intel_openvino_performance_mode") = -1,
       py::arg("intel_openvino_configs_map") =
           std::map<std::string, std::string>(),
-      py::arg("intel_openvino_enable_weight_sharing") = -1);
+      py::arg("intel_openvino_enable_weight_sharing") = -1,
+      py::arg("qualcomm_htp_dlbc") = -1,
+      py::arg("qualcomm_htp_dlbc_weights") = -1);
 
   // Bindings for the CompiledModelWrapper class.
   py::class_<CompiledModelWrapper>(m, "CompiledModelWrapper")

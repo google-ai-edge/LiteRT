@@ -208,6 +208,8 @@ def CreateCompiledModelFromFile(
         intel_openvino_performance_mode: int = ...,
         intel_openvino_configs_map: Dict[str, str] = ...,
         intel_openvino_enable_weight_sharing: int = ...,
+        qualcomm_htp_dlbc: int = ...,
+        qualcomm_htp_dlbc_weights: int = ...,
 ) -> CompiledModelWrapper:
     """Creates a compiled model from a model file.
 
@@ -261,6 +263,8 @@ def CreateCompiledModelFromBuffer(
         intel_openvino_performance_mode: int = ...,
         intel_openvino_configs_map: Dict[str, str] = ...,
         intel_openvino_enable_weight_sharing: int = ...,
+        qualcomm_htp_dlbc: int = ...,
+        qualcomm_htp_dlbc_weights: int = ...,
 ) -> CompiledModelWrapper:
     """Creates a compiled model from a model buffer.
 

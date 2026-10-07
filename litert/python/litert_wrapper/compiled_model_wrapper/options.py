@@ -146,6 +146,8 @@ class Options:
         "qualcomm_enable_weight_sharing": -1,
         "qualcomm_use_conv_hmx": -1,
         "qualcomm_use_fold_relu": -1,
+        "qualcomm_htp_dlbc": -1,
+        "qualcomm_htp_dlbc_weights": -1,
         "qualcomm_profiling": -1,
         "qualcomm_has_dump_tensor_ids": False,
         "qualcomm_dump_tensor_ids": [],
