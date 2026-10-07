@@ -392,9 +392,9 @@ else()
         -Wl,--no-whole-archive)
   target_link_options(litert_runtime_c_api_shared_lib PRIVATE -Wl,--no-undefined)
   target_link_options(litert_runtime_c_api_shared_lib PRIVATE
-      "-Wl,--version-script=${PROJECT_SOURCE_DIR}/build_common/export_litert_runtime_only_linux.lds")
+      "-Wl,--version-script=${PROJECT_SOURCE_DIR}/build_common/export_litert_runtime_cmake_linux.lds")
   set_target_properties(litert_runtime_c_api_shared_lib PROPERTIES
-      LINK_DEPENDS "${PROJECT_SOURCE_DIR}/build_common/export_litert_runtime_only_linux.lds")
+      LINK_DEPENDS "${PROJECT_SOURCE_DIR}/build_common/export_litert_runtime_cmake_linux.lds")
 endif()
 # GPU/GL dependencies by platform
 if(LITERT_ENABLE_GPU)
