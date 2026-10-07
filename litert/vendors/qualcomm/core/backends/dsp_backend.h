@@ -52,6 +52,8 @@ class DspBackend : public QnnBackend {
 
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
 
+  void StopBackgroundWork() override;
+
   bool SetPerformanceMode(const Options& options) override;
   void ScheduleUpVote() override;
   void ScheduleDownVote() override;

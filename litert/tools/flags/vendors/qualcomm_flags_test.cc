@@ -18,6 +18,7 @@
 
 #include <gtest/gtest.h>
 #include "absl/flags/flag.h"  // from @com_google_absl
+#include "absl/flags/reflection.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -763,6 +764,8 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_FALSE(options.Value().GetEnableWeightSharing());
   EXPECT_TRUE(options.Value().GetUseConvHMX());
   EXPECT_TRUE(options.Value().GetUseFoldReLU());
+  EXPECT_FALSE(options.Value().GetHtpDlbc());
+  EXPECT_FALSE(options.Value().GetHtpDlbcWeights());
   EXPECT_EQ(options.Value().GetHtpPPoint(), 0);
   EXPECT_EQ(options.Value().GetHtpPerformanceMode(),
             QualcommOptions::HtpPerformanceMode::kDefault);
@@ -772,6 +775,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
             QualcommOptions::HtpPerfCtrlMode::kManual);
   EXPECT_EQ(options.Value().GetHtpPdSession(),
             QualcommOptions::HtpPdSession::kUnsigned);
+  EXPECT_FALSE(options.Value().GetEnableHtpQuickResponse());
   EXPECT_EQ(options.Value().GetDspPerfCtrlMode(),
             QualcommOptions::DspPerfCtrlMode::kManual);
   EXPECT_EQ(options.Value().GetDspPdSession(),
@@ -813,6 +817,30 @@ TEST(QualcommOptionsFromFlagsTest, CustomQnnLibAndDspSkelDirs) {
 
   absl::SetFlag(&FLAGS_qualcomm_qnn_lib_dir, "");
   absl::SetFlag(&FLAGS_qualcomm_dsp_skel_dir, "");
+}
+
+TEST(QualcommOptionsFromFlagsTest, EnableHtpQuickResponse) {
+  absl::FlagSaver flag_saver;
+  absl::SetFlag(&FLAGS_qualcomm_enable_htp_quick_response, true);
+
+  Expected<QualcommOptions> options = QualcommOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_TRUE(options.Value().GetEnableHtpQuickResponse());
+}
+
+TEST(QualcommOptionsFromFlagsTest, DlbcFlags) {
+  absl::SetFlag(&FLAGS_qualcomm_htp_dlbc, true);
+  absl::SetFlag(&FLAGS_qualcomm_htp_dlbc_weights, true);
+
+  Expected<QualcommOptions> options = QualcommOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_TRUE(options.Value().GetHtpDlbc());
+  EXPECT_TRUE(options.Value().GetHtpDlbcWeights());
+
+  absl::SetFlag(&FLAGS_qualcomm_htp_dlbc, false);
+  absl::SetFlag(&FLAGS_qualcomm_htp_dlbc_weights, false);
 }
 
 }  // namespace

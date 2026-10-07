@@ -97,11 +97,14 @@ struct LrtQualcommOptionsT {
   std::optional<bool> enable_just_in_time;
   std::optional<bool> use_conv_hmx;
   std::optional<bool> use_fold_relu;
+  std::optional<bool> htp_dlbc;
+  std::optional<bool> htp_dlbc_weights;
   std::optional<std::int32_t> htp_p_point;
   std::optional<LrtQualcommOptionsHtpPerformanceMode> htp_performance_mode;
   std::optional<LrtQualcommOptionsDspPerformanceMode> dsp_performance_mode;
   std::optional<LrtQualcommOptionsHtpPerfCtrlMode> htp_perf_ctrl_mode;
   std::optional<LrtQualcommOptionsHtpPdSession> htp_pd_session;
+  std::optional<bool> enable_htp_quick_response;
   std::optional<LrtQualcommOptionsDspPerfCtrlMode> dsp_perf_ctrl_mode;
   std::optional<LrtQualcommOptionsDspPdSession> dsp_pd_session;
   std::optional<LrtQualcommOptionsDspEncoding> dsp_encoding;
@@ -186,6 +189,14 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetUseFoldReLU(parsed_options, *v);
+        } else if (key == "htp_dlbc") {
+          auto v = litert::internal::ParseTomlBool(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetHtpDlbc(parsed_options, *v);
+        } else if (key == "htp_dlbc_weights") {
+          auto v = litert::internal::ParseTomlBool(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetHtpDlbcWeights(parsed_options, *v);
         } else if (key == "htp_p_point") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -213,6 +224,11 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetHtpPdSession(
               parsed_options, static_cast<LrtQualcommOptionsHtpPdSession>(*v));
+        } else if (key == "enable_htp_quick_response") {
+          auto v = litert::internal::ParseTomlBool(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status =
+              LrtQualcommOptionsSetEnableHtpQuickResponse(parsed_options, *v);
         } else if (key == "dsp_perf_ctrl_mode") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -401,6 +417,13 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
     toml << "use_fold_relu = " << (*options->use_fold_relu ? "true" : "false")
          << "\n";
   }
+  if (options->htp_dlbc.has_value()) {
+    toml << "htp_dlbc = " << (*options->htp_dlbc ? "true" : "false") << "\n";
+  }
+  if (options->htp_dlbc_weights.has_value()) {
+    toml << "htp_dlbc_weights = "
+         << (*options->htp_dlbc_weights ? "true" : "false") << "\n";
+  }
   if (options->htp_p_point.has_value()) {
     toml << "htp_p_point = " << *options->htp_p_point << "\n";
   }
@@ -419,6 +442,10 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->htp_pd_session.has_value()) {
     toml << "htp_pd_session = " << static_cast<int>(*options->htp_pd_session)
          << "\n";
+  }
+  if (options->enable_htp_quick_response.has_value()) {
+    toml << "enable_htp_quick_response = "
+         << (*options->enable_htp_quick_response ? "true" : "false") << "\n";
   }
   if (options->dsp_perf_ctrl_mode.has_value()) {
     toml << "dsp_perf_ctrl_mode = "
@@ -846,6 +873,50 @@ LiteRtStatus LrtQualcommOptionsGetUseFoldReLU(LrtQualcommOptions options,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LrtQualcommOptionsSetHtpDlbc(LrtQualcommOptions options,
+                                          bool htp_dlbc) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->htp_dlbc = htp_dlbc;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpDlbc(LrtQualcommOptions options,
+                                          bool* htp_dlbc) {
+  if (htp_dlbc == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *htp_dlbc = options->htp_dlbc.value_or(false);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetHtpDlbcWeights(LrtQualcommOptions options,
+                                                 bool htp_dlbc_weights) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->htp_dlbc_weights = htp_dlbc_weights;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpDlbcWeights(LrtQualcommOptions options,
+                                                 bool* htp_dlbc_weights) {
+  if (htp_dlbc_weights == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *htp_dlbc_weights = options->htp_dlbc_weights.value_or(false);
+
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LrtQualcommOptionsSetGraphIOTensorMemType(
     LrtQualcommOptions options,
     LrtQualcommOptionsGraphIOTensorMemType graph_io_tensor_mem_type) {
@@ -993,6 +1064,27 @@ LiteRtStatus LrtQualcommOptionsGetHtpPdSession(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LrtQualcommOptionsSetEnableHtpQuickResponse(
+    LrtQualcommOptions options, bool enable_htp_quick_response) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->enable_htp_quick_response = enable_htp_quick_response;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetEnableHtpQuickResponse(
+    LrtQualcommOptions options, bool* enable_htp_quick_response) {
+  if (options == nullptr || enable_htp_quick_response == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *enable_htp_quick_response =
+      options->enable_htp_quick_response.value_or(false);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LrtQualcommOptionsSetDspPerfCtrlMode(
     LrtQualcommOptions options,
     LrtQualcommOptionsDspPerfCtrlMode dsp_perf_ctrl_mode) {
@@ -1043,8 +1135,7 @@ LiteRtStatus LrtQualcommOptionsGetDspPdSession(
 
 LiteRtStatus LrtQualcommOptionsSetDspEncoding(
     LrtQualcommOptions options, LrtQualcommOptionsDspEncoding dsp_encoding) {
-  if (options == nullptr ||
-      dsp_encoding < kLiteRtQualcommDspEncodingStatic ||
+  if (options == nullptr || dsp_encoding < kLiteRtQualcommDspEncodingStatic ||
       dsp_encoding > kLiteRtQualcommDspEncodingDynamic) {
     return kLiteRtStatusErrorInvalidArgument;
   }

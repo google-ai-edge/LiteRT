@@ -290,6 +290,9 @@ class VendorOptionsFlatteningTest(unittest.TestCase):
     )
     qualcomm_options.use_int64_bias_as_int32 = False
     qualcomm_options.enable_weight_sharing = True
+    qualcomm_options.htp_dlbc = True
+    qualcomm_options.htp_dlbc_weights = True
+    qualcomm_options.enable_htp_quick_response = True
     qualcomm_options.dump_tensor_ids = [1, 3, 5]
     qualcomm_options.backend = options_lib.QualcommOptions.BACKEND.HTP
     qualcomm_options.graph_io_tensor_mem_type = (
@@ -302,10 +305,25 @@ class VendorOptionsFlatteningTest(unittest.TestCase):
     self.assertEqual(kwargs['qualcomm_htp_performance_mode'], 2)
     self.assertEqual(kwargs['qualcomm_use_int64_bias_as_int32'], 0)
     self.assertEqual(kwargs['qualcomm_enable_weight_sharing'], 1)
+    self.assertEqual(kwargs['qualcomm_htp_dlbc'], 1)
+    self.assertEqual(kwargs['qualcomm_htp_dlbc_weights'], 1)
+    self.assertEqual(kwargs['qualcomm_enable_htp_quick_response'], 1)
     self.assertTrue(kwargs['qualcomm_has_dump_tensor_ids'])
     self.assertEqual(kwargs['qualcomm_dump_tensor_ids'], [1, 3, 5])
     self.assertEqual(kwargs['qualcomm_backend'], 2)
     self.assertEqual(kwargs['qualcomm_graph_io_tensor_mem_type'], 0)
+
+  def test_qualcomm_dlbc_defaults_to_unset(self):
+    options = options_lib.Options.create()
+    # Touch another Qualcomm option so Qualcomm kwargs are flattened.
+    options.qualcomm_options.log_level = (
+        options_lib.QualcommOptions.LOG_LEVEL.ERROR
+    )
+
+    kwargs = options._as_flat_kwargs()
+
+    self.assertEqual(kwargs['qualcomm_htp_dlbc'], -1)
+    self.assertEqual(kwargs['qualcomm_htp_dlbc_weights'], -1)
 
   def test_intel_openvino_options_flatten_to_pybind_kwargs(self):
     options = options_lib.Options.create()
