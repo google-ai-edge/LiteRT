@@ -71,6 +71,12 @@ absl::Status AddValuesToCacheIsSupported(
       return absl::InvalidArgumentError(
           "odml.cache_update is missing head_size.");
     }
+    ::litert::ml_drift::AddValuesToCacheAttributes layout;
+    if (absl::Status status = ::litert::ml_drift::ReadAddValuesToCacheLayout(
+            flexbuffer_map, layout);
+        !status.ok()) {
+      return status;
+    }
   }
 
   return absl::OkStatus();
@@ -109,6 +115,9 @@ void AddValuesToCacheConvert(
   if (!flexbuffer_map["is_ring_buffer"].IsNull()) {
     attr.is_ring_buffer = flexbuffer_map["is_ring_buffer"].AsBool();
   }
+  // AddValuesToCacheIsSupported() has already rejected unsupported layouts.
+  ::litert::ml_drift::ReadAddValuesToCacheLayout(flexbuffer_map, attr)
+      .IgnoreError();
   add_values_op->attr = std::move(attr);
 
   const TfLiteType out_type =
