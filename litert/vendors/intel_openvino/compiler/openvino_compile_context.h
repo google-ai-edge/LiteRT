@@ -18,11 +18,11 @@
 #include <memory>
 #include <string>
 
-#include "openvino/core/any.hpp"
-#include "openvino/core/model.hpp"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
+#include "openvino/core/any.hpp"
+#include "openvino/core/model.hpp"
 
 namespace litert {
 namespace openvino {
@@ -52,10 +52,23 @@ class OpenVinoCompileContext {
   // Enables the NPUW weight-sharing compile knobs on an NPU target so that
   // export_model emits a WEIGHTLESS blob (constants referenced by
   // WeightlessCacheAttribute bin_offset rather than baked in).
-  void ConfigureForNpuWeightSharing();
+  // |moe_multi_token_chunk| (from OptimizeModel's result) selects the NPUW
+  // pipeline: a multi-token chunk gets the host-router/REP pipeline, a
+  // single-token one gets the plain CWAI pipeline.
+  void ConfigureForNpuWeightSharing(bool moe_multi_token_chunk);
+
+  // Classification info OptimizeModel()'s NPU passes produced, beyond the
+  // in-place graph mutation, that ConfigureForNpuWeightSharing() needs.
+  struct OptimizeModelResult {
+    // Whether a multi-token-chunk MoE layer was detected and rewritten (see
+    // NpuOptimizer::Result::moe_is_multi_token_chunk). Always false on
+    // non-NPU targets or when MoE gather is disabled.
+    bool moe_is_multi_token_chunk = false;
+  };
 
   // Runs NPU-specific optimization passes on the given OV model.
-  void OptimizeModel(const std::shared_ptr<ov::Model>& model) const;
+  OptimizeModelResult OptimizeModel(
+      const std::shared_ptr<ov::Model>& model) const;
 
   const std::string& Device() const { return device_; }
   const ov::AnyMap& ConfigsMap() const { return configs_map_; }
@@ -69,9 +82,15 @@ class OpenVinoCompileContext {
   ov::AnyMap configs_map_;
   bool eliminate_fq_after_matmul_ = false;
   bool fuse_split_attention_to_sdpa_ = false;
+
   // Enables MoEGatherRewrite: turns Gemma4's dense masked MoE into gather-based
   // selective (K-of-N) expert computation. Set via config "enable_moe_gather".
   bool enable_moe_gather_ = false;
+
+  // Enables SplitSharedConstants pass: splits multi-consumer Constants into
+  // private per-consumer copies. Set via config "split_shared_constants".
+  bool split_shared_constants_ = false;
+
   // `sdpa_pad_kv_to_alignment_` is only meaningful when
   // `fuse_split_attention_to_sdpa_` is true and enabled by default. It controls
   // whether the `FuseSplitAttentionToSDPA` pass pads KV sequences up to the NPU
