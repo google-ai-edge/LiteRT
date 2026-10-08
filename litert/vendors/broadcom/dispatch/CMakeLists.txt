@@ -13,6 +13,7 @@ target_link_libraries(bstorm_dispatch_plugin PRIVATE
   bstorm_core_shared
   bstorm_util_litert
   litert_runtime_c_api_shared_lib
+  litert_c_api_dynamic_runtime_helpers
   absl::flat_hash_map
   dl
 )
