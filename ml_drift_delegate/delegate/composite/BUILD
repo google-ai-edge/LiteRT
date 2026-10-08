@@ -235,7 +235,6 @@ cc_library(
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common:types",
         "@ml_drift//ml_drift/common/task:gpu_operation",
         "@ml_drift//ml_drift/common/task:tensor_desc",

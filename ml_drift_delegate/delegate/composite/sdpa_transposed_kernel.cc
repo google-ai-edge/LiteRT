@@ -42,7 +42,6 @@
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/tuning_type.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
-#include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift/common/types.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 
@@ -1811,6 +1810,43 @@ MAIN_FUNCTION($0) {
   return std::make_unique<FusedFlashAttentionPrefillOp>(std::move(custom_op));
 }
 
+// Applies a BOOL attention mask to `logits`: `dst = mask ? logits : -10000`.
+//
+// This is an elementwise (linkable) operation, so `MergeNodes` fuses it into
+// the epilogue of the operation producing `logits` (the QK^T GEMM) instead of
+// running a separate pass over the logits like `GpuModelBuilder::SelectV2`.
+// The mask is read with the standard elementwise broadcast rules, so a
+// [1, 1, T, keys] mask applies to GQA-folded logits [b, kv_heads, gqa * T,
+// keys] directly: folded row `w` reads mask row `w % T`, its query token.
+::ml_drift::GpuModelBuilder::TensorHandle SelectBoolMask(
+    ::ml_drift::GpuModelBuilder* model_builder,
+    const ::ml_drift::GpuModelBuilder::TensorHandle& logits,
+    const ::ml_drift::GpuModelBuilder::TensorHandle& mask) {
+  ::ml_drift::ElementwiseDescriptor op_desc;
+  // Use a large negative value to simulate -inf. std::limit<float>::min()
+  // causes regression.
+  op_desc.args.AddFloat("mask_value", -10000.0f,
+                        logits.tensor_desc.GetDataType());
+  op_desc.code = R"(
+  out_value.x = in2_value.x ? in_value.x : args.mask_value;
+  out_value.y = in2_value.y ? in_value.y : args.mask_value;
+  out_value.z = in2_value.z ? in_value.z : args.mask_value;
+  out_value.w = in2_value.w ? in_value.w : args.mask_value;
+)";
+  auto dst = model_builder->AddTensor(logits.tensor_desc);
+  ::ml_drift::OperationDef definition;
+  definition.src_tensors.push_back(logits.tensor_desc);
+  definition.src_tensors.push_back(mask.tensor_desc);
+  definition.dst_tensors.push_back(dst.tensor_desc);
+  auto op = std::make_unique<::ml_drift::GPUOperation>(
+      ::ml_drift::CreateGpuOperation(definition, std::move(op_desc),
+                                     mask.tensor_desc.GetBHWCShape(),
+                                     dst.tensor_desc.GetBHWCShape()));
+  model_builder->AddGpuOperation({logits, mask}, {dst}, std::move(op),
+                                 "sdpa_select_mask");
+  return dst;
+}
+
 }  // namespace
 
 bool SupportsFusedSdpaKernels(const ::ml_drift::GpuInfo& gpu_info) {
@@ -1996,23 +2032,23 @@ absl::Status BuildSdpaTransposedGpuGraph(
 
   if (mask_desc != nullptr) {
     const auto mask_shape = mask.tensor_desc.GetBHWCShape();
+    // With GQA the logits are folded to [b, kv_heads, gqa_ratio * T, keys]. A
+    // [*, 1, T, keys] (or [*, 1, 1, keys]) mask applies to them directly: the
+    // elementwise width broadcast reads mask row `w % T`, the query token of
+    // folded row `w`. Other layouts (e.g. a mask per query head) need the
+    // logits unfolded to [b, heads, T, keys].
+    const bool mask_applies_to_folded_logits =
+        mask_shape.h == 1 && (mask_shape.w == 1 || mask_shape.w == q_shape.w);
     const bool reshape_logits_for_mask =
-        gqa_ratio > 1 && (mask_shape.h != 1 || mask_shape.w != 1);
+        gqa_ratio > 1 && !mask_applies_to_folded_logits;
     if (reshape_logits_for_mask) {
       logits = model_builder->Reshape(
           logits, ::ml_drift::BHWC(q_shape.b, q_shape.h, q_shape.w, k_shape.w));
     }
+    // Both ops are elementwise, so they get fused into the epilogue of the
+    // operation producing `logits`.
     if (mask.tensor_desc.GetDataType() == ::ml_drift::DataType::kBool) {
-      ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::kBHWC>,
-                         ::ml_drift::DataType::kFloat32>
-          fill_tensor;
-      fill_tensor.shape = ::ml_drift::BHWC(1, 1, 1, 1);
-      // Use a large negative value to simulate -inf. std::limit<float>::min()
-      // causes regression.
-      fill_tensor.data = {-10000.0f};
-      auto neg_val = model_builder->AddConstantTensor(
-          fill_tensor, logits.tensor_desc.GetDataType());
-      logits = model_builder->SelectV2(mask, logits, neg_val);
+      logits = SelectBoolMask(model_builder, logits, mask);
     } else {
       logits = model_builder->Add(logits, mask);
     }

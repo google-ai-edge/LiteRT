@@ -512,11 +512,13 @@ absl::Status RunSdpaTransposedTest(
 
   // At 512 keys the test data produces logits near 100, so half-precision
   // math errs by up to a few hundredths on results near 10. The fused Apple
-  // kernels compute in half precision even when F32 is requested.
+  // kernels compute in half precision even when F32 is requested. Head dim 512
+  // sums four times as many channels per logit as head dim 128, with the same
+  // effect on the logit magnitude.
   const bool half_precision_math =
       precision == ::ml_drift::CalculationsPrecision::kF16 ||
       IsAppleMetal(env.GetGpuInfo());
-  float tolerance = (half_precision_math && S >= 512)
+  float tolerance = (half_precision_math && (S >= 512 || H >= 512))
                         ? 6e-2f
                         : ((H > 16) ? 1.5e-2f : 2e-3f);
   // The half-precision error also grows with the magnitude of the result,
@@ -818,6 +820,25 @@ TEST_P(SdpaTransposedKernelExecuteTest,
       /*from_cache_update=*/true, /*is_causal=*/false, /*flatten_output=*/true,
       /*active_tokens=*/FilledCacheEntries(mask_mode(), 561, 600));
   EXPECT_TRUE(status.ok()) << status.message();
+}
+
+// Gemma 4 chunked prefill at head dims 256 (sliding window) and 512 (global
+// attention), which exceed the fused prefill kernel's head dim limit and take
+// the decomposed graph on every backend. With 8 query heads per KV head the
+// logits are folded to [1, KV, 8 * T, S], and the [1, 1, T, S] mask is applied
+// to them directly (folded row `w` reads mask row `w % T`) in the epilogue of
+// the QK^T GEMM.
+TEST_P(SdpaTransposedKernelExecuteTest, PrefillGemma4HeadDimsGroupedQuery) {
+  for (int head_dim : {256, 512}) {
+    auto status = RunSdpaTransposedTest(
+        *exec_env, precision(), storage(), /*BK=*/16, /*T=*/8, /*S=*/64,
+        /*H=*/head_dim, mask_mode(), /*KV=*/2, /*q_start=*/40,
+        /*from_cache_update=*/true, /*is_causal=*/false,
+        /*flatten_output=*/false,
+        /*active_tokens=*/FilledCacheEntries(mask_mode(), 48, 64));
+    EXPECT_TRUE(status.ok())
+        << "head_dim=" << head_dim << ": " << status.message();
+  }
 }
 
 // Single-token decode with a pruned BOOL causal mask (`MaskMode::kNone`,
