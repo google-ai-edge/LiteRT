@@ -15,8 +15,11 @@
 
 #include "litert/vendors/intel_openvino/dispatch/weight_bank_runtime.h"
 
+#include <algorithm>
+#include <cstdarg>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <map>
@@ -34,6 +37,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
+#include "tflite/converter/allocation.h"
 
 // Temp-file staging is platform-split. POSIX uses mkstemp, which creates the
 // file atomically (O_CREAT|O_EXCL, mode 0600); std::filesystem has no
@@ -44,7 +48,6 @@
 // interpose them. MSVC / clang-cl emit COFF and have no such interposition, so
 // Windows keeps std::filesystem.
 #ifdef LITERT_WINDOWS_OS
-#include <cstdio>
 #include <filesystem>  // NOLINT
 #include <fstream>
 #include <ios>
@@ -58,6 +61,108 @@
 
 namespace litert::openvino {
 namespace {
+
+// Size of one staging step. Every chunk boundary is then aligned to the page /
+// mapping granularity of all targets (4 KiB, 16 KiB ARM64 Android, 64 KiB
+// Windows, 2 MiB THP), the per-chunk RSS cost is negligible next to the pool,
+// and a multi-GB pool still takes only a few hundred iterations. Also keeps
+// each single write far below the 32-bit count limits of the Windows CRT.
+constexpr size_t kChunkBytes = size_t{16} << 20;  // 16 MiB
+
+// Bytes of the first mapped chunk compared against the in-memory pool before
+// anything is written: a wrong file offset would shift every weight without
+// any crash, so this cheap probe is what stands between a bad
+// LiteRtMemBuffer::alloc_base_file_offset and silently wrong outputs.
+constexpr size_t kProbeBytes = 4096;
+
+// Routes tflite::MMAPAllocation's error reports into the LiteRT log.
+class LogErrorReporter : public tflite::ErrorReporter {
+ public:
+  int Report(const char* format, va_list args) override {
+    char buf[512];
+    const int n = std::vsnprintf(buf, sizeof(buf), format, args);
+    LITERT_LOG(LITERT_WARNING, "NPU weight sharing: chunk mapping: %s", buf);
+    return n;
+  }
+};
+
+// Copies the pool to the staged file in kChunkBytes steps through
+// |write_chunk| (bool(const void*, size_t); false on a destination error).
+//
+// With a file-backed source each chunk is mapped from the model file on its
+// own (tflite::MMAPAllocation handles mmap vs. MapViewOfFile and the offset
+// alignment), written, and unmapped again -- the same map/use/unmap pattern
+// NPUW's LazyTensor uses to read weights -- so the pool never becomes resident
+// through the model's long-lived mapping and RSS grows by at most one chunk.
+// If a chunk cannot be mapped the copy continues from the same position out of
+// the in-memory pool (logged); bytes already written came from the file at
+// consecutive offsets and stay valid. Without an fd the whole copy is from
+// memory. Returns false only on a destination (write) failure.
+template <typename WriteFn>
+bool CopyPoolChunked(const PoolSource& src, WriteFn&& write_chunk,
+                     const char** strategy) {
+  const auto* data = static_cast<const uint8_t*>(src.data);
+  const size_t size = src.size;
+  size_t done = 0;
+
+  bool from_file = src.fd >= 0;
+  if (!from_file) {
+    LITERT_LOG(LITERT_WARNING,
+               "NPU weight sharing: model is not file-backed (fd=%d); staging "
+               "%zu-byte pool from memory, which faults it into RSS",
+               src.fd, size);
+  } else if (!tflite::MMAPAllocation::IsSupported()) {
+    LITERT_LOG(LITERT_WARNING,
+               "NPU weight sharing: file mapping unsupported on this build; "
+               "staging %zu-byte pool from memory, which faults it into RSS",
+               size);
+    from_file = false;
+  }
+
+  if (from_file) {
+    *strategy = "mmap chunks of model fd";
+    LogErrorReporter reporter;
+    while (done < size) {
+      const size_t n = std::min(kChunkBytes, size - done);
+      // MMAPAllocation dup's the fd and rejects a range past EOF, so the
+      // model's own descriptor is never touched and a truncated file surfaces
+      // as an invalid chunk rather than a fault.
+      tflite::MMAPAllocation chunk(src.fd, src.file_offset + done, n,
+                                   &reporter);
+      if (!chunk.valid()) {
+        LITERT_LOG(LITERT_WARNING,
+                   "NPU weight sharing: failed to map chunk [%llu, +%zu) of "
+                   "model fd %d after %zu/%zu bytes; continuing from memory",
+                   static_cast<unsigned long long>(src.file_offset + done), n,
+                   src.fd, done, size);
+        from_file = false;
+        break;
+      }
+      if (done == 0 &&
+          std::memcmp(chunk.base(), data, std::min(kProbeBytes, n)) != 0) {
+        LITERT_LOG(LITERT_WARNING,
+                   "NPU weight sharing: model fd %d at offset %llu does not "
+                   "match the in-memory pool (bad alloc_base_file_offset?); "
+                   "staging from memory instead",
+                   src.fd, static_cast<unsigned long long>(src.file_offset));
+        from_file = false;
+        break;
+      }
+      if (!write_chunk(chunk.base(), n)) return false;
+      done += n;
+    }  // chunk unmapped here
+  }
+
+  if (!from_file) {
+    *strategy = done == 0 ? "memory" : "mmap chunks, then memory";
+    while (done < size) {
+      const size_t n = std::min(kChunkBytes, size - done);
+      if (!write_chunk(data + done, n)) return false;
+      done += n;
+    }
+  }
+  return true;
+}
 
 #ifndef LITERT_WINDOWS_OS
 // mkstemp needs the directory spelled out in its template, so mirror what
@@ -183,9 +288,12 @@ std::string NpuSharedBank::Path() const {
   return bank_path_;
 }
 
-std::string NpuSharedBank::EnsureOnDisk(const void* data, size_t size) {
+std::string NpuSharedBank::EnsureOnDisk(const PoolSource& src) {
   absl::MutexLock lock(npu_bank_mutex_);
   if (!bank_path_.empty()) return bank_path_;  // write once, reuse
+
+  const void* data = src.data;
+  const size_t size = src.size;
 
   // Guard against a null/empty pool: writing 0 bytes yields an empty file that
   // NPUW would mmap to a zero-length region, so data()+bin_offset is undefined.
@@ -206,6 +314,8 @@ std::string NpuSharedBank::EnsureOnDisk(const void* data, size_t size) {
                bank_path_.c_str());
     return bank_path_;
   }
+
+  const char* strategy = "memory";
 
 #ifdef LITERT_WINDOWS_OS
   std::error_code ec;
@@ -247,12 +357,19 @@ std::string NpuSharedBank::EnsureOnDisk(const void* data, size_t size) {
                file_path.string().c_str());
     return {};
   }
-  out.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
+  const bool copied = CopyPoolChunked(
+      src,
+      [&out](const void* p, size_t n) {
+        out.write(static_cast<const char*>(p),
+                  static_cast<std::streamsize>(n));
+        return static_cast<bool>(out);
+      },
+      &strategy);
   out.close();
-  if (!out) {
+  if (!copied || !out) {
     LITERT_LOG(LITERT_ERROR,
-               "NPU weight sharing: failed to write temp file '%s'",
-               file_path.string().c_str());
+               "NPU weight sharing: failed to write temp file '%s' (via %s)",
+               file_path.string().c_str(), strategy);
     std::filesystem::remove(file_path, ec);
     return {};
   }
@@ -277,14 +394,22 @@ std::string NpuSharedBank::EnsureOnDisk(const void* data, size_t size) {
   }
   const std::string file_path(path_buf.data());
 
-  const int write_err = WriteAll(fd, data, size);
+  int write_err = 0;
+  const bool copied = CopyPoolChunked(
+      src,
+      [fd, &write_err](const void* p, size_t n) {
+        write_err = WriteAll(fd, p, n);
+        return write_err == 0;
+      },
+      &strategy);
   // Close even when the write failed, and treat a close error as a write
   // error: ENOSPC / EIO can surface only here.
   const int close_err = (::close(fd) == 0) ? 0 : errno;
-  if (write_err != 0 || close_err != 0) {
+  if (!copied || close_err != 0) {
     LITERT_LOG(LITERT_ERROR,
-               "NPU weight sharing: failed to write temp file '%s': %s",
-               file_path.c_str(),
+               "NPU weight sharing: failed to write temp file '%s' (via %s): "
+               "%s",
+               file_path.c_str(), strategy,
                std::strerror(write_err != 0 ? write_err : close_err));
     ::unlink(file_path.c_str());
     return {};
@@ -294,8 +419,8 @@ std::string NpuSharedBank::EnsureOnDisk(const void* data, size_t size) {
 #endif  // LITERT_WINDOWS_OS
   owns_bank_file_ = true;
   LITERT_LOG(LITERT_INFO,
-             "NPU weight sharing: staged %zu-byte weights bank to '%s'", size,
-             bank_path_.c_str());
+             "NPU weight sharing: staged %zu-byte weights bank to '%s' via %s",
+             size, bank_path_.c_str(), strategy);
   return bank_path_;
 }
 
