@@ -601,6 +601,57 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "litert_interpreter_builder",
+    srcs = ["litert_interpreter_builder.cc"],
+    hdrs = ["litert_interpreter_builder.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/cc/internal:litert_consts",
+        "//litert/core:build_stamp",
+        "//litert/core/model",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite:framework",
+        "//tflite:util",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/converter:allocation",
+        "//tflite/core:private_cc_api_stable",
+        "//tflite/core/api",
+        "//tflite/core/c:private_common",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/types:span",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_test(
+    name = "litert_interpreter_builder_test",
+    srcs = ["litert_interpreter_builder_test.cc"],
+    data = ["//litert/test:testdata/simple_model.tflite"],
+    deps = [
+        ":litert_interpreter_builder",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/model",
+        "//litert/core/model:model_load",
+        "//litert/core/util:flatbuffer_tools",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//tflite:framework",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 # copybara:uncomment_begin(google-only)
 # cc_library(
 #     name = "dispatch_runner_sb",
@@ -695,6 +746,7 @@ cc_library(
         ":accelerator",
         ":custom_op_dispatcher",
         ":external_litert_buffer_context",
+        ":litert_interpreter_builder",
         ":litert_runtime_options",
         ":metrics",
         ":profiler",
@@ -753,6 +805,7 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        "@flatbuffers//:runtime_cc",
     ] + select({
         "//litert/build_common:build_include_npu_enabled": [
             "//litert/compiler/plugin:compiler_plugin",
