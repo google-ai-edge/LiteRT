@@ -2832,15 +2832,15 @@ class TensorRtGraphBuilder {
   // Keep constant names and layer creation order identical in both paths so
   // refit identities and TensorRT's generated graph are unchanged.
   //
-  // Many activation rows run as a GEMM, which reads the weights in tiles.
+  // Many activation rows run as a GEMM over the same row-major weights.
   Expected<nvinfer1::ITensor*> AddSubbyteGemvPlugin(
       nvinfer1::ITensor* activation, const SubbyteGemvWeights& info,
       std::vector<uint8_t> packed, absl::Span<const float> scales,
       const std::string& suffix, const std::string& output_name,
       int32_t gate = 0) {
     const int64_t activation_rows = GemmRows(activation);
-    const bool tiled = activation_rows != 1 || gate != 0;
-    if (tiled) {
+    const bool gemm = activation_rows != 1 || gate != 0;
+    if (gemm) {
       const LiteRtNvidiaGemmShape shape = {
           static_cast<int32_t>(activation_rows), info.columns,
           gate != 0 ? info.rows / 2 : info.rows, gate};
@@ -2850,14 +2850,10 @@ class TensorRtGraphBuilder {
         return Error(kLiteRtStatusErrorUnsupported,
                      "The CUDA GEMM does not take this product");
       }
-      std::vector<uint8_t> tiles(
-          LiteRtNvidiaSubbyteGemmTiledWeightBytes(&shape));
-      if (!LiteRtNvidiaSubbyteGemmTileWeights(&shape, packed.data(),
-                                              tiles.data())) {
+      if (LiteRtNvidiaSubbyteGemmWeightBytes(&shape) != packed.size()) {
         return Error(kLiteRtStatusErrorCompilation,
-                     "Failed to tile CUDA GEMM weights");
+                     "Unexpected CUDA GEMM weight byte count");
       }
-      packed = std::move(tiles);
     }
     owned_weights_.push_back(std::move(packed));
     nvinfer1::Dims packed_dims{};
@@ -2883,7 +2879,7 @@ class TensorRtGraphBuilder {
                          "cuda_subbyte_gemv_scales" + suffix,
                          nvinfer1::DataType::kBF16));
     TrtPtr<nvinfer1::IPluginV3> plugin(CreateSubbyteGemvPlugin(
-        info.bit_width, info.rows, info.columns, gate, tiled));
+        info.bit_width, info.rows, info.columns, gate, gemm));
     if (!plugin) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to create CUDA subbyte GEMV plugin");

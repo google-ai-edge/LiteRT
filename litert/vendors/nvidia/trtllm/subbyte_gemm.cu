@@ -174,7 +174,7 @@ __global__ void __launch_bounds__(kThreads)
 // of the next chunk, one word of eight weights per k-slice.
 __global__ void __launch_bounds__(kThreads, 1)
     Int4GemmKernel(const __half* __restrict__ activation,
-                   const uint8_t* __restrict__ tiled_weights,
+                   const uint8_t* __restrict__ weights,
                    const __nv_bfloat16* __restrict__ scales,
                    const float* __restrict__ row_scale, int input_size,
                    int output_size, int gate,
@@ -204,15 +204,22 @@ __global__ void __launch_bounds__(kThreads, 1)
 
   // A thread copies the vectors tid, tid + kThreads, ... of the tile of a
   // chunk, one of each of kThreadRows activation rows, and copies and
-  // converts half of the 32 bytes of one weight row.
+  // converts half of the 32 bytes a chunk takes from one weight row. The
+  // weight rows of the block are the channels [n0, n0 + block_channels) of
+  // the row-major weights, with a gate of the gate projection followed by
+  // the up projection. Channels past the last one read the last one; their
+  // products are not stored.
   const int a_vector = tid % kChunkVectors;
   const int a_row = tid / kChunkVectors;
   const __half* activation_tile =
       activation + static_cast<size_t>(m0) * input_size + tid * 8;
   const int w_row = tid / 2;
-  const uint8_t* weight_tile =
-      tiled_weights +
-      static_cast<size_t>(blockIdx.y) * chunks * kTileChunkBytes + tid * 16;
+  const int w_channel = min(n0 + w_row % block_channels, output_size - 1);
+  const uint8_t* weight_row =
+      weights +
+      (static_cast<size_t>(w_row / block_channels) * output_size + w_channel) *
+          (input_size / 2) +
+      (tid % 2) * 16;
   unsigned char* activation_thread =
       activation_s + a_row * kRowBytes + a_vector * 16;
   unsigned char* packed_thread = packed_s + tid * 16;
@@ -232,7 +239,7 @@ __global__ void __launch_bounds__(kThreads, 1)
   };
   auto copy_packed = [&](int chunk, int buffer) {
     CopyAsync16(packed_thread + buffer * kTileChunkBytes,
-                weight_tile + static_cast<size_t>(chunk) * kTileChunkBytes);
+                weight_row + static_cast<size_t>(chunk) * (kChunk / 2));
   };
   auto packed = [&](int buffer) {
     return *reinterpret_cast<const int4*>(packed_thread +
@@ -490,48 +497,13 @@ extern "C" bool LiteRtNvidiaSubbyteGemmAvailable() {
          major >= 8 && static_cast<size_t>(shared_memory) >= kSharedBytes;
 }
 
-extern "C" size_t LiteRtNvidiaSubbyteGemmTiledWeightBytes(
+extern "C" size_t LiteRtNvidiaSubbyteGemmWeightBytes(
     const LiteRtNvidiaGemmShape* shape) {
   if (!LiteRtNvidiaSubbyteGemmSupports(shape)) {
     return 0;
   }
-  return static_cast<size_t>(ColumnTiles(*shape)) *
-         (shape->input_size / kChunk) * kTileChunkBytes;
-}
-
-extern "C" bool LiteRtNvidiaSubbyteGemmTileWeights(
-    const LiteRtNvidiaGemmShape* shape, const uint8_t* packed_weights,
-    uint8_t* tiled_weights) {
-  if (!LiteRtNvidiaSubbyteGemmSupports(shape) || packed_weights == nullptr ||
-      tiled_weights == nullptr) {
-    return false;
-  }
-  const int block_channels = BlockChannels(*shape);
-  const int chunks = shape->input_size / kChunk;
-  const size_t row_bytes = shape->input_size / 2;
-  constexpr size_t kChunkBytes = kChunk / 2;
-  for (int tile = 0; tile < ColumnTiles(*shape); ++tile) {
-    for (int row = 0; row < kBlockCols; ++row) {
-      // The weight row of the tile: a channel of the projection, or of the
-      // gate projection followed by the up projection.
-      const int n = tile * block_channels + row % block_channels;
-      const bool exists = n < shape->output_size;
-      const uint8_t* source =
-          packed_weights +
-          (static_cast<size_t>(row / block_channels) * shape->output_size + n) *
-              row_bytes;
-      for (int chunk = 0; chunk < chunks; ++chunk) {
-        uint8_t* target = tiled_weights +
-                          (static_cast<size_t>(tile) * chunks + chunk) *
-                              kTileChunkBytes +
-                          row * kChunkBytes;
-        for (size_t i = 0; i < kChunkBytes; ++i) {
-          target[i] = exists ? source[chunk * kChunkBytes + i] : 0;
-        }
-      }
-    }
-  }
-  return true;
+  return static_cast<size_t>(shape->gate != 0 ? 2 : 1) * shape->output_size *
+         (shape->input_size / 2);
 }
 
 extern "C" int32_t LiteRtNvidiaSubbyteGemmBlocks(
@@ -566,10 +538,10 @@ extern "C" size_t LiteRtNvidiaSubbyteGemmWorkspaceBytes(
 
 extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4Gemm(
     const LiteRtNvidiaGemmShape* shape, const void* activation,
-    const uint8_t* tiled_weights, const void* scales, void* output,
-    void* workspace, cudaStream_t stream) {
+    const uint8_t* weights, const void* scales, void* output, void* workspace,
+    cudaStream_t stream) {
   if (!LiteRtNvidiaSubbyteGemmSupports(shape) || activation == nullptr ||
-      tiled_weights == nullptr || scales == nullptr || output == nullptr ||
+      weights == nullptr || scales == nullptr || output == nullptr ||
       workspace == nullptr) {
     return cudaErrorInvalidValue;
   }
@@ -591,7 +563,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4Gemm(
   if (status != cudaSuccess) return status;
   Int4GemmKernel<<<dim3(shape->rows / kBlockRows, ColumnTiles(*shape)),
                    kThreads, kSharedBytes, stream>>>(
-      scaled, tiled_weights, static_cast<const __nv_bfloat16*>(scales),
+      scaled, weights, static_cast<const __nv_bfloat16*>(scales),
       row_scale, shape->input_size, shape->output_size, shape->gate,
       static_cast<__nv_bfloat16*>(output));
   return cudaGetLastError();

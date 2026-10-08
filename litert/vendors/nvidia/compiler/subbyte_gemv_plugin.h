@@ -28,10 +28,9 @@ namespace litert::nvidia {
 // One activation row (decode) runs as a GEMV with FP32 accumulation over the
 // raw TFLite row-major weight bytes (trtllm/int2_gemv.h).
 //
-// `tiled`: many activation rows (prefill) run with INT4 weights as a GEMM on
-// the tensor cores (trtllm/subbyte_gemm.h), for the shapes that supports.
-// The packed weights are then the raw bytes in the order of
-// LiteRtNvidiaSubbyteGemmTileWeights.
+// `gemm`: many activation rows (prefill) run with INT4 weights as a GEMM on
+// the tensor cores (trtllm/subbyte_gemm.h), for the shapes that supports. It
+// reads the same row-major bytes as the GEMV.
 //
 // A `gate` (LiteRtNvidiaGemmGate) fuses the two projections of a gated
 // feed-forward block in the GEMM: the weights and scales hold the gate
@@ -39,7 +38,7 @@ namespace litert::nvidia {
 // output is gelu(gate) * up, [..., rows / 2].
 nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(int32_t bit_width, int32_t rows,
                                              int32_t columns, int32_t gate = 0,
-                                             bool tiled = false) noexcept;
+                                             bool gemm = false) noexcept;
 
 // Referenced by the dispatch library so the creator's registration object is
 // retained when linking the shared library used for engine deserialization.

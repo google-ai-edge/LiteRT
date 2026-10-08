@@ -229,9 +229,7 @@ TEST(SubbyteGemvPluginTest, ManyRowsRunAsGemm) {
 
     const LiteRtNvidiaGemmShape shape = {kActivationRows, columns,
                                          test_case.channels, test_case.gate};
-    std::vector<uint8_t> tiled(LiteRtNvidiaSubbyteGemmTiledWeightBytes(&shape));
-    ASSERT_TRUE(LiteRtNvidiaSubbyteGemmTileWeights(&shape, packed.data(),
-                                                   tiled.data()));
+    ASSERT_EQ(LiteRtNvidiaSubbyteGemmWeightBytes(&shape), packed.size());
 
     TestLogger logger;
     std::unique_ptr<nvinfer1::IBuilder> builder(
@@ -244,10 +242,10 @@ TEST(SubbyteGemvPluginTest, ManyRowsRunAsGemm) {
         network->addInput("activation", nvinfer1::DataType::kBF16,
                           nvinfer1::Dims{3, {1, kActivationRows, columns}});
     ASSERT_NE(activation_input, nullptr);
-    nvinfer1::Weights packed_weights{nvinfer1::DataType::kINT8, tiled.data(),
-                                     static_cast<int64_t>(tiled.size())};
+    nvinfer1::Weights packed_weights{nvinfer1::DataType::kINT8, packed.data(),
+                                     static_cast<int64_t>(packed.size())};
     auto* packed_layer = network->addConstant(
-        nvinfer1::Dims{1, {static_cast<int32_t>(tiled.size())}},
+        nvinfer1::Dims{1, {static_cast<int32_t>(packed.size())}},
         packed_weights);
     ASSERT_NE(packed_layer, nullptr);
     nvinfer1::Weights scale_weights{nvinfer1::DataType::kBF16, scales.data(),
@@ -257,7 +255,7 @@ TEST(SubbyteGemvPluginTest, ManyRowsRunAsGemm) {
     ASSERT_NE(scale_layer, nullptr);
     std::unique_ptr<nvinfer1::IPluginV3> plugin(CreateSubbyteGemvPlugin(
         /*bit_width=*/4, weight_rows, columns, test_case.gate,
-        /*tiled=*/true));
+        /*gemm=*/true));
     ASSERT_NE(plugin, nullptr);
     nvinfer1::ITensor* inputs[] = {activation_input, packed_layer->getOutput(0),
                                    scale_layer->getOutput(0)};
@@ -352,22 +350,22 @@ TEST(SubbyteGemvPluginTest, ManyRowsRunAsGemm) {
   }
 }
 
-TEST(SubbyteGemvPluginTest, RejectsInvalidGatesAndTiledShapes) {
+TEST(SubbyteGemvPluginTest, RejectsInvalidGatesAndGemmShapes) {
   const auto create = [](int32_t bit_width, int32_t rows, int32_t columns,
-                         int32_t gate, bool tiled) {
+                         int32_t gate, bool gemm) {
     return std::unique_ptr<nvinfer1::IPluginV3>(
-        CreateSubbyteGemvPlugin(bit_width, rows, columns, gate, tiled));
+        CreateSubbyteGemvPlugin(bit_width, rows, columns, gate, gemm));
   };
-  EXPECT_NE(create(4, 128, 256, /*gate=*/1, /*tiled=*/true), nullptr);
-  EXPECT_NE(create(4, 130, 256, /*gate=*/0, /*tiled=*/true), nullptr);
-  EXPECT_EQ(create(4, 128, 256, /*gate=*/3, /*tiled=*/true), nullptr);
-  EXPECT_EQ(create(4, 129, 256, /*gate=*/1, /*tiled=*/true), nullptr);
+  EXPECT_NE(create(4, 128, 256, /*gate=*/1, /*gemm=*/true), nullptr);
+  EXPECT_NE(create(4, 130, 256, /*gate=*/0, /*gemm=*/true), nullptr);
+  EXPECT_EQ(create(4, 128, 256, /*gate=*/3, /*gemm=*/true), nullptr);
+  EXPECT_EQ(create(4, 129, 256, /*gate=*/1, /*gemm=*/true), nullptr);
   // The GEMM takes INT4 weights and input dims in multiples of 128, and a
   // gate needs the GEMM.
-  EXPECT_EQ(create(2, 128, 256, /*gate=*/1, /*tiled=*/true), nullptr);
-  EXPECT_EQ(create(2, 128, 256, /*gate=*/0, /*tiled=*/true), nullptr);
-  EXPECT_EQ(create(4, 128, 272, /*gate=*/0, /*tiled=*/true), nullptr);
-  EXPECT_EQ(create(4, 128, 256, /*gate=*/1, /*tiled=*/false), nullptr);
+  EXPECT_EQ(create(2, 128, 256, /*gate=*/1, /*gemm=*/true), nullptr);
+  EXPECT_EQ(create(2, 128, 256, /*gate=*/0, /*gemm=*/true), nullptr);
+  EXPECT_EQ(create(4, 128, 272, /*gate=*/0, /*gemm=*/true), nullptr);
+  EXPECT_EQ(create(4, 128, 256, /*gate=*/1, /*gemm=*/false), nullptr);
 }
 
 }  // namespace

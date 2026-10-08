@@ -129,15 +129,12 @@ void RunCase(const Case& test_case) {
     scale = FloatToBf16Bits(0.002f + 0.004f * std::fabs(next()));
   }
 
-  std::vector<uint8_t> tiled(LiteRtNvidiaSubbyteGemmTiledWeightBytes(&shape));
-  ASSERT_GE(tiled.size(), weights.size());
-  ASSERT_TRUE(
-      LiteRtNvidiaSubbyteGemmTileWeights(&shape, weights.data(), tiled.data()));
+  ASSERT_EQ(LiteRtNvidiaSubbyteGemmWeightBytes(&shape), weights.size());
 
   const size_t workspace_bytes = LiteRtNvidiaSubbyteGemmWorkspaceBytes(&shape);
   ASSERT_GT(workspace_bytes, 0u);
   auto activation_device = Upload(activation);
-  auto weights_device = Upload(tiled);
+  auto weights_device = Upload(weights);
   auto scales_device = Upload(scales);
   const size_t output_bytes =
       static_cast<size_t>(shape.rows) * output * sizeof(uint16_t);
@@ -222,7 +219,7 @@ TEST(SubbyteGemmTest, SupportsRowsAndInputsInMultiplesOf128) {
   EXPECT_FALSE(LiteRtNvidiaSubbyteGemmSupports(nullptr));
   LiteRtNvidiaGemmShape unsupported = {100, 3840, 15360, 0};
   EXPECT_EQ(LiteRtNvidiaSubbyteGemmWorkspaceBytes(&unsupported), 0u);
-  EXPECT_EQ(LiteRtNvidiaSubbyteGemmTiledWeightBytes(&unsupported), 0u);
+  EXPECT_EQ(LiteRtNvidiaSubbyteGemmWeightBytes(&unsupported), 0u);
   EXPECT_EQ(LiteRtNvidiaSubbyteGemmBlocks(&unsupported), 0);
 }
 
@@ -257,78 +254,16 @@ TEST(SubbyteGemmTest, LargeProductsFillTheDevice) {
   EXPECT_FALSE(LiteRtNvidiaSubbyteGemmFillsDevice(nullptr));
 }
 
-TEST(SubbyteGemmTest, TilesWeightsInTheOrderBlocksReadThem) {
-  constexpr int kInput = 256;
-  constexpr int kRowBytes = kInput / 2;
-  const auto fill = [](std::vector<uint8_t>& weights) {
-    for (size_t i = 0; i < weights.size(); ++i) {
-      weights[i] = static_cast<uint8_t>(i * 131 + (i >> 8) * 17 + 1);
-    }
-  };
-  {
-    // Two column tiles, the second of two channels and 126 rows of zeros.
-    const LiteRtNvidiaGemmShape shape = {128, kInput, 130,
-                                         kLiteRtNvidiaGemmGateNone};
-    std::vector<uint8_t> weights(130 * kRowBytes);
-    fill(weights);
-    std::vector<uint8_t> tiled(LiteRtNvidiaSubbyteGemmTiledWeightBytes(&shape),
-                               0xa5);
-    ASSERT_EQ(tiled.size(), 2u * 4 * 128 * 32);
-    ASSERT_TRUE(LiteRtNvidiaSubbyteGemmTileWeights(&shape, weights.data(),
-                                                   tiled.data()));
-    for (int tile = 0; tile < 2; ++tile) {
-      for (int chunk = 0; chunk < 4; ++chunk) {
-        for (int row = 0; row < 128; ++row) {
-          for (int i = 0; i < 32; ++i) {
-            const int channel = tile * 128 + row;
-            const uint8_t expected =
-                channel < 130 ? weights[channel * kRowBytes + chunk * 32 + i]
-                              : 0;
-            ASSERT_EQ(tiled[((tile * 4 + chunk) * 128 + row) * 32 + i],
-                      expected)
-                << "tile=" << tile << " chunk=" << chunk << " row=" << row
-                << " i=" << i;
-          }
-        }
-      }
-    }
-  }
-  {
-    // With a gate, rows [0, 64) of a tile are channels of the gate projection
-    // and rows [64, 128) the same channels of the up projection.
-    const LiteRtNvidiaGemmShape shape = {128, kInput, 66,
-                                         kLiteRtNvidiaGemmGateGeluTanh};
-    std::vector<uint8_t> weights(2 * 66 * kRowBytes);
-    fill(weights);
-    std::vector<uint8_t> tiled(LiteRtNvidiaSubbyteGemmTiledWeightBytes(&shape),
-                               0xa5);
-    ASSERT_EQ(tiled.size(), 2u * 4 * 128 * 32);
-    ASSERT_TRUE(LiteRtNvidiaSubbyteGemmTileWeights(&shape, weights.data(),
-                                                   tiled.data()));
-    for (int tile = 0; tile < 2; ++tile) {
-      for (int chunk = 0; chunk < 4; ++chunk) {
-        for (int row = 0; row < 128; ++row) {
-          for (int i = 0; i < 32; ++i) {
-            const int channel = tile * 64 + row % 64;
-            const int projection = row / 64;
-            const uint8_t expected =
-                channel < 66 ? weights[(projection * 66 + channel) * kRowBytes +
-                                       chunk * 32 + i]
-                             : 0;
-            ASSERT_EQ(tiled[((tile * 4 + chunk) * 128 + row) * 32 + i],
-                      expected)
-                << "tile=" << tile << " chunk=" << chunk << " row=" << row
-                << " i=" << i;
-          }
-        }
-      }
-    }
-  }
-  const LiteRtNvidiaGemmShape shape = {128, kInput, 130,
-                                       kLiteRtNvidiaGemmGateNone};
-  uint8_t byte = 0;
-  EXPECT_FALSE(LiteRtNvidiaSubbyteGemmTileWeights(&shape, nullptr, &byte));
-  EXPECT_FALSE(LiteRtNvidiaSubbyteGemmTileWeights(&shape, &byte, nullptr));
+TEST(SubbyteGemmTest, ReadsRowMajorWeights) {
+  // The weights are the TFLite bytes: a row of input_size / 2 bytes per
+  // channel, with a gate for the gate and the up projection.
+  LiteRtNvidiaGemmShape shape = {128, 256, 130, kLiteRtNvidiaGemmGateNone};
+  EXPECT_EQ(LiteRtNvidiaSubbyteGemmWeightBytes(&shape), 130u * 128);
+  shape = {1024, 3840, 15360, kLiteRtNvidiaGemmGateGeluTanh};
+  EXPECT_EQ(LiteRtNvidiaSubbyteGemmWeightBytes(&shape), 2u * 15360 * 1920);
+  // The size does not depend on the activation rows.
+  shape.rows = 128;
+  EXPECT_EQ(LiteRtNvidiaSubbyteGemmWeightBytes(&shape), 2u * 15360 * 1920);
 }
 
 TEST(SubbyteGemmTest, RejectsInvalidArguments) {

@@ -29,12 +29,13 @@
 // A block multiplies 128 activation rows by 128 weight rows. It reads the
 // activations, which a first launch scales per row by a power of two into
 // [-1, 1] and converts to FP16, and converts the weights to FP16 while it
-// multiplies. The weights are stored in the order the blocks read them
-// (LiteRtNvidiaSubbyteGemmTileWeights): 64 input dims of the 128 weight rows
-// of a block at a time. Products accumulate in FP16 over 128 input dims at a
-// time, which cannot overflow (activations of at most 1 times weights of at
-// most 8), and in FP32 beyond; the error this adds stays below the rounding
-// of a BF16 result.
+// multiplies. The weights are the raw TFLite row-major bytes [channels,
+// input_size], the layout the decode GEMV (int2_gemv.h) reads too, so prefill
+// and decode engines can share one copy of them: a block stages 64 input dims
+// of its 128 weight rows at a time. Products accumulate in FP16 over 128 input
+// dims at a time, which cannot overflow (activations of at most 1 times
+// weights of at most 8), and in FP32 beyond; the error this adds stays below
+// the rounding of a BF16 result.
 enum LiteRtNvidiaGemmGate : int32_t {
   // output[m][n] = y[m][n] for output_size channels.
   kLiteRtNvidiaGemmGateNone = 0,
@@ -64,19 +65,11 @@ extern "C" bool LiteRtNvidiaSubbyteGemmAvailable();
 extern "C" size_t LiteRtNvidiaSubbyteGemmWorkspaceBytes(
     const LiteRtNvidiaGemmShape* shape);
 
-// Reorders raw TFLite row-major weights [channels, input_size], with a gate
-// the gate projection followed by the up projection, into the
-// LiteRtNvidiaSubbyteGemmTiledWeightBytes() bytes the launch reads:
-// [column tile][64 input dims][128 weight rows], where the weight rows of a
-// column tile are 128 channels, or with a gate 64 channels of the gate
-// projection followed by the same channels of the up projection, and rows
-// past the last channel are zeros. Runs on the host; the result does not
-// depend on shape->rows.
-extern "C" size_t LiteRtNvidiaSubbyteGemmTiledWeightBytes(
+// The bytes of the row-major weights the launch reads: [channels,
+// input_size / 2], with a gate the gate projection followed by the up
+// projection (2 * output_size channels).
+extern "C" size_t LiteRtNvidiaSubbyteGemmWeightBytes(
     const LiteRtNvidiaGemmShape* shape);
-extern "C" bool LiteRtNvidiaSubbyteGemmTileWeights(
-    const LiteRtNvidiaGemmShape* shape, const uint8_t* packed_weights,
-    uint8_t* tiled_weights);
 
 // The blocks of a launch, one per 128 activation rows and column tile.
 extern "C" int32_t LiteRtNvidiaSubbyteGemmBlocks(
@@ -90,7 +83,7 @@ extern "C" bool LiteRtNvidiaSubbyteGemmFillsDevice(
 
 extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4Gemm(
     const LiteRtNvidiaGemmShape* shape, const void* activation,
-    const uint8_t* tiled_weights, const void* scales, void* output,
-    void* workspace, cudaStream_t stream);
+    const uint8_t* weights, const void* scales, void* output, void* workspace,
+    cudaStream_t stream);
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_TRTLLM_SUBBYTE_GEMM_H_
