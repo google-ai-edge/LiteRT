@@ -109,6 +109,7 @@ Generate a `RegisterSelectedOps` function for your model(s) using TFLite's
 `gen_selected_ops` rule in your `BUILD` file:
 
 ```python
+load("//litert/build_common:special_rule.bzl", "litert_linkopts")
 load("//third_party/tensorflow/lite:build_def.bzl", "gen_selected_ops")
 
 gen_selected_ops(
@@ -122,6 +123,8 @@ cc_binary(
         "my_app.cc",
         ":my_model_selected_ops",
     ],
+    linkopts = litert_linkopts(),
+    linkstatic = 1,
     deps = [
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
@@ -160,6 +163,7 @@ Build with `cpu_backend=selective`:
 
 ```sh
 bazel build -c opt \
+  --linkopt=-Wl,--gc-sections \
   --//litert/build_common:build_include=cpu_only \
   --//litert/build_common:cpu_backend=selective \
   //your/package:my_app

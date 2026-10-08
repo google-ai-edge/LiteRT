@@ -17,10 +17,11 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//litert/build_common:special_rule.bzl", "litert_linkopts", "litert_linkopts_unstripped")
 load("//litert/build_common:symlink_files.bzl", "symlink_files")  # @unused
 load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")  # @unused
 load("//litert/test:cpu_only_data.bzl", "cpu_only_target")
-load("//tflite:build_def.bzl", "gen_selected_ops", "tflite_linkopts", "tflite_linkopts_unstripped")
+load("//tflite:build_def.bzl", "gen_selected_ops")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -412,8 +413,8 @@ cc_binary(
         ],
         "//conditions:default": [],
     }),
-    # Same size-oriented link flags as the TFLite size tracking binaries.
-    linkopts = tflite_linkopts(),
+    # LiteRT size-oriented link flags.
+    linkopts = litert_linkopts(),
     linkstatic = 1,
     # copybara:uncomment malloc = "//base:system_malloc",
     deps = [
@@ -438,7 +439,7 @@ cc_binary(
     name = "minimal_compiled_model_for_symbol_test",
     testonly = True,
     srcs = ["minimal_compiled_model.cc"],
-    linkopts = tflite_linkopts_unstripped(),
+    linkopts = litert_linkopts_unstripped(),
     linkstatic = 1,
     # copybara:uncomment malloc = "//base:system_malloc",
     deps = [
