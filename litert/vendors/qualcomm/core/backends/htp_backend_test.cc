@@ -891,6 +891,21 @@ const QnnHtpGraph_CustomConfig_t* FindCustom(const ExtractedConfigs& ext,
   return it == ext.custom_configs.end() ? nullptr : it->second;
 }
 
+const QnnHtpGraph_CustomConfig_t* FindFinalizeConfig(
+    const ExtractedConfigs& ext, const char* key) {
+  auto [begin, end] =
+      ext.custom_configs.equal_range(
+          QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG);
+  for (auto it = begin; it != end; ++it) {
+    const QnnHtpGraph_CustomConfig_t* config = it->second;
+    if (config->finalizeConfig.key != nullptr &&
+        std::strcmp(config->finalizeConfig.key, key) == 0) {
+      return config;
+    }
+  }
+  return nullptr;
+}
+
 const QnnGraph_Config_t* FindPriority(const ExtractedConfigs& ext) {
   auto it = ext.graph_configs.find(QNN_GRAPH_CONFIG_OPTION_PRIORITY);
   return it == ext.graph_configs.end() ? nullptr : it->second;
@@ -972,6 +987,54 @@ TEST_F(HtpBackendDefaultGraphConfigTest, PPointAndHvxInsertedWhenSet) {
   EXPECT_EQ(hvx_cc->numHvxThreads, 4u);
 }
 
+TEST_F(HtpBackendDefaultGraphConfigTest,
+       WeightSharingChannelTileSizeInsertedWhenSet) {
+  Options options;
+  options.SetWeightSharingChannelTileSize(64);
+  auto config_builder = backend_.BuildGraphConfigs(options, "graph");
+  auto configs = config_builder.GetNullTerminatedConfigs();
+
+  ASSERT_EQ(configs.back(), nullptr);
+
+  auto ext = ExtractConfigs(configs);
+  ASSERT_EQ(
+      ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG),
+      1u);
+
+  const auto* tile_size_cc =
+      FindFinalizeConfig(ext, "weight_sharing_channel_tile_size");
+  ASSERT_NE(tile_size_cc, nullptr);
+  EXPECT_EQ(tile_size_cc->finalizeConfig.value.dataType, QNN_DATATYPE_INT_32);
+  EXPECT_EQ(tile_size_cc->finalizeConfig.value.int32Value, 64);
+}
+
+TEST_F(HtpBackendDefaultGraphConfigTest,
+       PPointAndWeightSharingChannelTileSizeCanBothBeInserted) {
+  Options options;
+  options.SetHtpPPoint(3);
+  options.SetWeightSharingChannelTileSize(64);
+  auto config_builder = backend_.BuildGraphConfigs(options, "graph");
+  auto configs = config_builder.GetNullTerminatedConfigs();
+
+  ASSERT_EQ(configs.back(), nullptr);
+
+  auto ext = ExtractConfigs(configs);
+  ASSERT_EQ(
+      ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG),
+      2u);
+
+  const auto* ppoint_cc = FindFinalizeConfig(ext, "P");
+  ASSERT_NE(ppoint_cc, nullptr);
+  EXPECT_EQ(ppoint_cc->finalizeConfig.value.dataType, QNN_DATATYPE_INT_32);
+  EXPECT_EQ(ppoint_cc->finalizeConfig.value.int32Value, 3);
+
+  const auto* tile_size_cc =
+      FindFinalizeConfig(ext, "weight_sharing_channel_tile_size");
+  ASSERT_NE(tile_size_cc, nullptr);
+  EXPECT_EQ(tile_size_cc->finalizeConfig.value.dataType, QNN_DATATYPE_INT_32);
+  EXPECT_EQ(tile_size_cc->finalizeConfig.value.int32Value, 64);
+}
+
 TEST_F(HtpBackendDefaultGraphConfigTest, DlbcOptionsAppendOptimizationConfigs) {
   Options options;
   options.SetHtpDlbc(true);
@@ -1008,6 +1071,33 @@ TEST_F(HtpBackendDefaultGraphConfigTest, NegativePPointSkipped) {
   EXPECT_FALSE(
       ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG))
       << "P-point config should be absent for negative HtpPPoint";
+}
+
+TEST_F(HtpBackendDefaultGraphConfigTest,
+       NonPositiveWeightSharingChannelTileSizeSkipped) {
+  Options options;
+  options.SetWeightSharingChannelTileSize(0);
+  {
+    auto config_builder = backend_.BuildGraphConfigs(options, "graph");
+    auto configs = config_builder.GetNullTerminatedConfigs();
+
+    auto ext = ExtractConfigs(configs);
+    EXPECT_FALSE(
+        ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG))
+        << "Weight sharing channel tile size config should be absent for zero";
+  }
+
+  options.SetWeightSharingChannelTileSize(-1);
+  {
+    auto config_builder = backend_.BuildGraphConfigs(options, "graph");
+    auto configs = config_builder.GetNullTerminatedConfigs();
+
+    auto ext = ExtractConfigs(configs);
+    EXPECT_FALSE(
+        ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG))
+        << "Weight sharing channel tile size config should be absent for "
+           "negative values";
+  }
 }
 
 TEST_F(HtpBackendDefaultGraphConfigTest, ValuesReflectOptions) {

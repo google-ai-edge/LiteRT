@@ -98,6 +98,7 @@ struct LrtQualcommOptionsT {
   std::optional<bool> use_conv_hmx;
   std::optional<bool> use_fold_relu;
   std::optional<std::int32_t> htp_p_point;
+  std::optional<std::int32_t> weight_sharing_channel_tile_size;
   std::optional<LrtQualcommOptionsHtpPerformanceMode> htp_performance_mode;
   std::optional<LrtQualcommOptionsDspPerformanceMode> dsp_performance_mode;
   std::optional<LrtQualcommOptionsHtpPerfCtrlMode> htp_perf_ctrl_mode;
@@ -191,6 +192,11 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetHtpPPoint(parsed_options, *v);
+        } else if (key == "weight_sharing_channel_tile_size") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetWeightSharingChannelTileSize(
+              parsed_options, *v);
         } else if (key == "htp_performance_mode") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -409,6 +415,10 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   }
   if (options->htp_p_point.has_value()) {
     toml << "htp_p_point = " << *options->htp_p_point << "\n";
+  }
+  if (options->weight_sharing_channel_tile_size.has_value()) {
+    toml << "weight_sharing_channel_tile_size = "
+         << *options->weight_sharing_channel_tile_size << "\n";
   }
   if (options->htp_performance_mode.has_value()) {
     toml << "htp_performance_mode = "
@@ -898,6 +908,34 @@ LiteRtStatus LrtQualcommOptionsGetHtpPPoint(LrtQualcommOptions options,
   }
 
   *htp_p_point = options->htp_p_point.value_or(0);
+
+  return kLiteRtStatusOk;
+}
+
+// weight_sharing_channel_tile_size -------------------------------------------
+
+LiteRtStatus LrtQualcommOptionsSetWeightSharingChannelTileSize(
+    LrtQualcommOptions options,
+    std::int32_t weight_sharing_channel_tile_size) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->weight_sharing_channel_tile_size =
+      weight_sharing_channel_tile_size;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetWeightSharingChannelTileSize(
+    LrtQualcommOptions options,
+    std::int32_t* weight_sharing_channel_tile_size) {
+  if (weight_sharing_channel_tile_size == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *weight_sharing_channel_tile_size =
+      options->weight_sharing_channel_tile_size.value_or(0);
 
   return kLiteRtStatusOk;
 }

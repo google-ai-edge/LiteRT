@@ -154,6 +154,29 @@ TEST(LiteRtQualcommOptionsTest, UseFoldReLU) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, WeightSharingChannelTileSize) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  std::int32_t default_value;
+  LITERT_ASSERT_OK(LrtQualcommOptionsGetWeightSharingChannelTileSize(
+      qualcomm_options, &default_value));
+  EXPECT_EQ(default_value, 0);
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetWeightSharingChannelTileSize(
+      qualcomm_options, 64));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetWeightSharingChannelTileSize(), 64);
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetWeightSharingChannelTileSize(
+      qualcomm_options, 0));
+  auto parsed_zero = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed_zero.GetWeightSharingChannelTileSize(), 0);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, HtpPerformanceMode) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -602,6 +625,12 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_TRUE(options->GetUseFoldReLU());
   options->SetUseFoldReLU(false);
   EXPECT_FALSE(options->GetUseFoldReLU());
+
+  EXPECT_EQ(options->GetWeightSharingChannelTileSize(), 0);
+  options->SetWeightSharingChannelTileSize(64);
+  EXPECT_EQ(options->GetWeightSharingChannelTileSize(), 64);
+  options->SetWeightSharingChannelTileSize(0);
+  EXPECT_EQ(options->GetWeightSharingChannelTileSize(), 0);
 
   EXPECT_EQ(options->GetBackend(), QualcommOptions::Backend::kHtp);
   options->SetBackend(QualcommOptions::Backend::kDsp);

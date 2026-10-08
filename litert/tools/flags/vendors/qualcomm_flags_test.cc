@@ -764,6 +764,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_TRUE(options.Value().GetUseConvHMX());
   EXPECT_TRUE(options.Value().GetUseFoldReLU());
   EXPECT_EQ(options.Value().GetHtpPPoint(), 0);
+  EXPECT_EQ(options.Value().GetWeightSharingChannelTileSize(), 0);
   EXPECT_EQ(options.Value().GetHtpPerformanceMode(),
             QualcommOptions::HtpPerformanceMode::kDefault);
   EXPECT_EQ(options.Value().GetDspPerformanceMode(),
@@ -823,6 +824,15 @@ TEST(QualcommOptionsFromFlagsTest, HtpDeviceId) {
   ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetHtpDeviceId(), 2);
   absl::SetFlag(&FLAGS_qualcomm_htp_device_id, 0);
+}
+
+TEST(QualcommOptionsFromFlagsTest, WeightSharingChannelTileSize) {
+  absl::SetFlag(&FLAGS_qualcomm_weight_sharing_channel_tile_size, 64);
+  Expected<QualcommOptions> options = QualcommOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_EQ(options.Value().GetWeightSharingChannelTileSize(), 64);
+  absl::SetFlag(&FLAGS_qualcomm_weight_sharing_channel_tile_size, 0);
 }
 
 }  // namespace

@@ -252,6 +252,15 @@ TEST(QnnOptionTest, HtpPPoint) {
   EXPECT_EQ(options.GetHtpPPoint(), 0);
 }
 
+TEST(QnnOptionTest, WeightSharingChannelTileSize) {
+  Options options;
+  EXPECT_EQ(options.GetWeightSharingChannelTileSize(), 0);
+  options.SetWeightSharingChannelTileSize(64);
+  EXPECT_EQ(options.GetWeightSharingChannelTileSize(), 64);
+  options.SetWeightSharingChannelTileSize(0);
+  EXPECT_EQ(options.GetWeightSharingChannelTileSize(), 0);
+}
+
 TEST(QnnOptionTest, HtpDlbc) {
   Options options;
   EXPECT_FALSE(options.GetHtpDlbc());
@@ -404,6 +413,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_TRUE(options.GetUseConvHMX());
   EXPECT_TRUE(options.GetUseFoldReLU());
   EXPECT_EQ(options.GetHtpPPoint(), 0);
+  EXPECT_EQ(options.GetWeightSharingChannelTileSize(), 0);
   EXPECT_FALSE(options.GetHtpDlbc());
   EXPECT_FALSE(options.GetHtpDlbcWeights());
   EXPECT_EQ(options.GetHtpPerformanceMode(), HtpPerformanceMode::kDefault);

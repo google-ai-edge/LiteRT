@@ -186,6 +186,10 @@ class Options {
   void SetHtpPPoint(std::int32_t htp_p_point);
   std::int32_t GetHtpPPoint() const;
 
+  void SetWeightSharingChannelTileSize(
+      std::int32_t weight_sharing_channel_tile_size);
+  std::int32_t GetWeightSharingChannelTileSize() const;
+
   void SetHtpDlbc(bool htp_dlbc);
   bool GetHtpDlbc() const;
 
@@ -304,6 +308,7 @@ class Options {
   bool use_conv_hmx_ = true;
   bool use_fold_relu_ = true;
   std::int32_t htp_p_point_ = 0;
+  std::int32_t weight_sharing_channel_tile_size_ = 0;
   bool htp_dlbc_ = false;
   bool htp_dlbc_weights_ = false;
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;

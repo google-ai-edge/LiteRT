@@ -688,6 +688,10 @@ ABSL_FLAG(
     "P points are experimental (HTP backend with O3 only) and map to "
     "predefined compiler configurations affecting latency and DRAM bandwidth.");
 
+ABSL_FLAG(std::int32_t, qualcomm_weight_sharing_channel_tile_size, 0,
+          "Channel tile size used by weight sharing during graph finalization. "
+          "A value of 0 disables this config.");
+
 ABSL_FLAG(litert::qualcomm::QualcommOptions::Backend, qualcomm_backend,
           litert::qualcomm::QualcommOptions::Backend::kHtp,
           "QNN backend to use.");
@@ -1030,6 +1034,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto htp_p_point = absl::GetFlag(FLAGS_qualcomm_htp_p_point);
   opts.SetHtpPPoint(htp_p_point);
+
+  const auto weight_sharing_channel_tile_size =
+      absl::GetFlag(FLAGS_qualcomm_weight_sharing_channel_tile_size);
+  opts.SetWeightSharingChannelTileSize(weight_sharing_channel_tile_size);
 
   const auto qnn_backend = absl::GetFlag(FLAGS_qualcomm_backend);
   opts.SetBackend(qnn_backend);
