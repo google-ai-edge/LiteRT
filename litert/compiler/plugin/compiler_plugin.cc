@@ -55,6 +55,8 @@
 #include "litert/core/environment.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/shape_inference.h"
+#include "litert/core/model/shape_inference_types.h"
 #include "litert/core/util/perfetto_profiling.h"
 #include "litert/core/version.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
@@ -391,6 +393,9 @@ Expected<std::string> CompilerPlugin::SdkVersion() const {
 }
 
 Expected<void> CompilerPlugin::RegisterAllTransformations() {
+  if (plugin_api_.register_all_transformations == nullptr) {
+    return {};
+  }
   LiteRtParamIndex num_patterns;
   LiteRtTransformation* transformations;
 
@@ -732,9 +737,9 @@ Expected<PartitionResult> PartitionModel(
       max_partitions = compiler_options->max_partitions;
     }
 
-    LITERT_RETURN_IF_ERROR(PartitionSubgraph(
-        std::move(*selected_ops), *subgraph, dispatch_ops, model, strategy,
-        max_partitions));
+    LITERT_RETURN_IF_ERROR(PartitionSubgraph(std::move(*selected_ops),
+                                             *subgraph, dispatch_ops, model,
+                                             strategy, max_partitions));
     num_partitions = dispatch_ops.size() - num_partitions;
     LITERT_LOG(LITERT_INFO,
                "Partitioned subgraph<%d>, selected %lu "
@@ -918,9 +923,63 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
   return {};
 }
 
+namespace {
+
+// Groups the input shape overrides carried by `compiler_options` by signature
+// key and applies them (plus shape inference) to the corresponding subgraphs.
+// Signatures are processed in first-seen order so error messages are stable.
+Expected<void> ApplyCompilerOptionsInputShapes(
+    const LiteRtCompilerOptionsT& compiler_options, LiteRtModelT& model) {
+  if (!compiler_options.HasInputShapes()) {
+    return {};
+  }
+
+  struct PerSignatureShapes {
+    std::vector<Dims> positional_inputs;
+    std::vector<std::pair<std::string, Dims>> tensor_inputs;
+    std::vector<std::pair<std::string, Dims>> signature_inputs;
+  };
+  std::vector<std::pair<std::string, PerSignatureShapes>> by_signature;
+  auto bucket_for = [&](const std::string& sig_key) -> PerSignatureShapes& {
+    for (auto& [key, bucket] : by_signature) {
+      if (key == sig_key) return bucket;
+    }
+    return by_signature.emplace_back(sig_key, PerSignatureShapes{}).second;
+  };
+
+  for (const auto& e : compiler_options.positional_input_shapes) {
+    bucket_for(e.signature_key).positional_inputs.push_back(e.dims);
+  }
+  for (const auto& e : compiler_options.tensor_input_shapes) {
+    bucket_for(e.signature_key).tensor_inputs.emplace_back(e.name, e.dims);
+  }
+  for (const auto& e : compiler_options.signature_input_shapes) {
+    bucket_for(e.signature_key).signature_inputs.emplace_back(e.name, e.dims);
+  }
+
+  ShapeInferenceEngine engine(&model);
+  for (const auto& [sig_key, bucket] : by_signature) {
+    LITERT_RETURN_IF_ERROR(engine.ApplyInputShapes(
+        sig_key, absl::MakeConstSpan(bucket.positional_inputs),
+        absl::MakeConstSpan(bucket.tensor_inputs),
+        absl::MakeConstSpan(bucket.signature_inputs)));
+    LITERT_LOG(LITERT_INFO, "Applied input shapes for signature '%s'.",
+               sig_key.empty() ? "<default>" : sig_key.c_str());
+  }
+  return {};
+}
+
+}  // namespace
+
 Expected<void> TransformModel(CompilerPlugin& compiler_plugin,
                               LiteRtModelT& model,
                               absl::string_view soc_model) {
+  if (auto compiler_options = compiler_plugin.CompilerOptions();
+      compiler_options.HasValue()) {
+    LITERT_RETURN_IF_ERROR(
+        ApplyCompilerOptionsInputShapes(compiler_options.Value(), model));
+  }
+
   auto status = compiler_plugin.RegisterAllTransformations();
   if (!status) {
     return status;

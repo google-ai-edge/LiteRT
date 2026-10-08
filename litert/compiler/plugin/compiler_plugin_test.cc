@@ -15,6 +15,7 @@
 #include "litert/compiler/plugin/compiler_plugin.h"
 
 #include <array>
+#include <cstdint>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -33,6 +34,8 @@
 #include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_compiler_options.h"
@@ -491,8 +494,8 @@ TEST(PartitionModelTest, MaxPartitionsSuccess) {
   LITERT_ASSERT_OK(LrtGetOpaqueCompilerOptionsData(
       compiler_options->Get(), &identifier, &payload, &payload_deleter));
   LiteRtOpaqueOptions opaque_opts = nullptr;
-  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(
-      identifier, payload, payload_deleter, &opaque_opts));
+  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(identifier, payload,
+                                             payload_deleter, &opaque_opts));
   auto opaque_compiler_options =
       litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
   litert_options->AddOpaqueOptions(std::move(opaque_compiler_options));
@@ -505,8 +508,7 @@ TEST(PartitionModelTest, MaxPartitionsSuccess) {
       auto plugin,
       CompilerPlugin::FindPlugin(kTestManufacturer,
                                  {GetLiteRtPath(kTestPluginSearchPath)},
-                                 /*env=*/nullptr,
-                                 litert_built_options.get()));
+                                 /*env=*/nullptr, litert_built_options.get()));
 
   auto partition_result = PartitionModel(plugin, model);
   ASSERT_TRUE(partition_result);
@@ -534,8 +536,8 @@ TEST(PartitionModelTest, MaxPartitionsFail) {
   LITERT_ASSERT_OK(LrtGetOpaqueCompilerOptionsData(
       compiler_options->Get(), &identifier, &payload, &payload_deleter));
   LiteRtOpaqueOptions opaque_opts = nullptr;
-  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(
-      identifier, payload, payload_deleter, &opaque_opts));
+  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(identifier, payload,
+                                             payload_deleter, &opaque_opts));
   auto opaque_compiler_options =
       litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
   litert_options->AddOpaqueOptions(std::move(opaque_compiler_options));
@@ -548,8 +550,7 @@ TEST(PartitionModelTest, MaxPartitionsFail) {
       auto plugin,
       CompilerPlugin::FindPlugin(kTestManufacturer,
                                  {GetLiteRtPath(kTestPluginSearchPath)},
-                                 /*env=*/nullptr,
-                                 litert_built_options.get()));
+                                 /*env=*/nullptr, litert_built_options.get()));
 
   auto partition_result = PartitionModel(plugin, model);
   EXPECT_FALSE(partition_result);
@@ -574,8 +575,8 @@ TEST(PartitionModelTest, MaxPartitionsSuccessLimit2) {
   LITERT_ASSERT_OK(LrtGetOpaqueCompilerOptionsData(
       compiler_options->Get(), &identifier, &payload, &payload_deleter));
   LiteRtOpaqueOptions opaque_opts = nullptr;
-  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(
-      identifier, payload, payload_deleter, &opaque_opts));
+  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(identifier, payload,
+                                             payload_deleter, &opaque_opts));
   auto opaque_compiler_options =
       litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
   litert_options->AddOpaqueOptions(std::move(opaque_compiler_options));
@@ -588,8 +589,7 @@ TEST(PartitionModelTest, MaxPartitionsSuccessLimit2) {
       auto plugin,
       CompilerPlugin::FindPlugin(kTestManufacturer,
                                  {GetLiteRtPath(kTestPluginSearchPath)},
-                                 /*env=*/nullptr,
-                                 litert_built_options.get()));
+                                 /*env=*/nullptr, litert_built_options.get()));
 
   auto partition_result = PartitionModel(plugin, model);
   ASSERT_TRUE(partition_result);
@@ -801,6 +801,135 @@ TEST(ApplyTest, ApplyLoadedPlugins) {
   EXPECT_TRUE(model.FindOpAsset(op));
 
   EXPECT_TRUE(model.FindMetadata(kLiteRtBuildStampKey));
+}
+
+// Test helpers for input shape refinement tests.
+struct MulGraph {
+  LiteRtTensorT* in0;
+  LiteRtTensorT* in1;
+  LiteRtTensorT* out;
+};
+
+// Appends `in0 * in1 -> out` with shape {-1, inner_dim} to `subgraph`.
+MulGraph BuildMulSubgraph(LiteRtSubgraphT& subgraph, int32_t inner_dim,
+                          LiteRtOpCode op_code = kLiteRtOpCodeTflMul) {
+  auto make = [&](int32_t d) {
+    auto& t = subgraph.EmplaceTensor();
+    t.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, d}));
+    return &t;
+  };
+  MulGraph g{make(inner_dim), make(inner_dim), make(inner_dim)};
+  subgraph.Inputs() = {g.in0, g.in1};
+  subgraph.Outputs() = {g.out};
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(op_code);
+  AttachInput(g.in0, op);
+  AttachInput(g.in1, op);
+  AttachOutput(g.out, op);
+  return g;
+}
+
+int32_t Dim0(const LiteRtTensorT& t) {
+  return t.Type().second.ranked_tensor_type.layout.dimensions[0];
+}
+int32_t Dim1(const LiteRtTensorT& t) {
+  return t.Type().second.ranked_tensor_type.layout.dimensions[1];
+}
+
+// Builds LiteRtOptions carrying CompilerOptions configured by `configure`
+// through the public C++ `Options::GetCompilerOptions()` path.
+template <typename Configure>
+Expected<litert::internal::LiteRtOptionsPtr> BuildOptionsWith(
+    litert::Environment& env, Configure configure) {
+  LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
+  auto compiler_options = options.GetCompilerOptions();
+  if (!compiler_options) return compiler_options.Error();
+  LITERT_RETURN_IF_ERROR(configure(*compiler_options));
+  return litert::internal::LiteRtOptionsPtrBuilder::Build(options,
+                                                          env.GetHolder());
+}
+
+TEST(ApplyTest, ApplyPluginsWithOptionsInputShapes) {
+  LiteRtModelT model;
+  MulGraph g = BuildMulSubgraph(model.EmplaceSubgraph(), /*inner_dim=*/8);
+
+  const std::string plugin_search_path = GetLiteRtPath(kTestPluginSearchPath);
+  const std::array environment_options = {
+      litert::EnvironmentOptions::Option{
+          /*.tag=*/litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
+          /*.value=*/plugin_search_path.c_str(),
+      },
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto env, litert::Environment::Create(
+                    litert::EnvironmentOptions(environment_options)));
+
+  const int32_t new_shape[] = {2, 8};
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto built_options,
+      BuildOptionsWith(env, [&](CompilerOptions& co) -> Expected<void> {
+        LITERT_RETURN_IF_ERROR(co.AddPositionalInputShape(new_shape));
+        return co.AddPositionalInputShape(new_shape);
+      }));
+
+  LiteRtHwAccelerators compilation_options = static_cast<LiteRtHwAccelerators>(
+      kLiteRtHwAcceleratorCpu | kLiteRtHwAcceleratorGpu |
+      kLiteRtHwAcceleratorNpu);
+  LITERT_ASSERT_OK(litert::internal::ApplyPlugins(env.GetHolder().handle,
+                                                  built_options.get(), &model,
+                                                  compilation_options));
+
+  // Shapes were refined before partitioning...
+  EXPECT_EQ(Dim0(*g.in0), 2);
+  EXPECT_EQ(Dim1(*g.in0), 8);
+  EXPECT_EQ(Dim0(*g.in1), 2);
+  EXPECT_EQ(Dim0(*g.out), 2);
+  EXPECT_EQ(Dim1(*g.out), 8);
+  // ...and the vendor plugin still compiled the (now static) subgraph.
+  auto& subgraph = *model.MainSubgraph();
+  ASSERT_EQ(subgraph.Ops().size(), 1);
+  EXPECT_EQ(subgraph.Ops().front()->OpCode(), kLiteRtOpCodeTflCustom);
+}
+
+TEST(ApplyTest, ApplyPluginsRejectsConflictingShapeModesForSameSignature) {
+  LiteRtModelT model;
+  MulGraph g = BuildMulSubgraph(model.EmplaceSubgraph(), /*inner_dim=*/8);
+  g.in0->SetName("arg0");
+
+  const std::string plugin_search_path = GetLiteRtPath(kTestPluginSearchPath);
+  const std::array environment_options = {
+      litert::EnvironmentOptions::Option{
+          /*.tag=*/litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
+          /*.value=*/plugin_search_path.c_str(),
+      },
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto env, litert::Environment::Create(
+                    litert::EnvironmentOptions(environment_options)));
+
+  const int32_t new_shape[] = {2, 8};
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto built_options,
+      BuildOptionsWith(env, [&](CompilerOptions& co) -> Expected<void> {
+        LITERT_RETURN_IF_ERROR(co.AddPositionalInputShape(new_shape));
+        LITERT_RETURN_IF_ERROR(co.AddPositionalInputShape(new_shape));
+        return co.AddTensorInputShape("arg0", new_shape);
+      }));
+
+  LiteRtHwAccelerators compilation_options = static_cast<LiteRtHwAccelerators>(
+      kLiteRtHwAcceleratorCpu | kLiteRtHwAcceleratorGpu |
+      kLiteRtHwAcceleratorNpu);
+  // ApplyPlugins is best-effort per plugin: the shape conflict is surfaced in
+  // the result and the plugin is skipped rather than failing the whole call.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto result, litert::internal::ApplyPlugins(env.GetHolder().handle,
+                                                  built_options.get(), &model,
+                                                  compilation_options));
+  EXPECT_EQ(result.num_applied_plugins, 0);
+  EXPECT_THAT(result.error_message, ::testing::HasSubstr("Only one of"));
+  // Model must be left untouched on failure.
+  EXPECT_EQ(Dim0(*g.in0), -1);
+  EXPECT_EQ(model.MainSubgraph()->Ops().front()->OpCode(), kLiteRtOpCodeTflMul);
 }
 
 TEST(PartitionTest, MappedCompositeOp) {
@@ -1072,6 +1201,9 @@ class CompilerPluginFriend : public ::testing::Test {
   void AddTransformation(CompilerPlugin& plugin, LiteRtTransformation t) {
     plugin.transformations_.push_back(t);
   }
+  void SetOptions(CompilerPlugin& plugin, LiteRtOptions options) {
+    plugin.options_ = options;
+  }
 };
 
 TEST_F(CompilerPluginFriend, GreedyPatternMatchAndRewrite) {
@@ -1163,89 +1295,89 @@ TEST_F(CompilerPluginFriend, MaxTransformationIterations) {
 
   // Chain of transformations:
   // 1. Add -> Mul
-  add_transform(
-      "Add_to_Mul",
-      [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
-         LiteRtOp op) -> LiteRtStatus {
-        if (op->OpCode() != kLiteRtOpCodeTflAdd)
-          return kLiteRtStatusErrorNotFound;
-        LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
-        auto& new_op =
-            b->BuildOp(kLiteRtOpCodeTflMul, op->Inputs(), op->Outputs());
-        (void)new_op;
-        b->EraseOp(op);
-        return kLiteRtStatusOk;
-      });
+  add_transform("Add_to_Mul",
+                [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
+                   LiteRtOp op) -> LiteRtStatus {
+                  if (op->OpCode() != kLiteRtOpCodeTflAdd)
+                    return kLiteRtStatusErrorNotFound;
+                  LiteRtBuilderT* b =
+                      reinterpret_cast<LiteRtBuilderT*>(builder);
+                  auto& new_op = b->BuildOp(kLiteRtOpCodeTflMul, op->Inputs(),
+                                            op->Outputs());
+                  (void)new_op;
+                  b->EraseOp(op);
+                  return kLiteRtStatusOk;
+                });
   // 2. Mul -> Sub
-  add_transform(
-      "Mul_to_Sub",
-      [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
-         LiteRtOp op) -> LiteRtStatus {
-        if (op->OpCode() != kLiteRtOpCodeTflMul)
-          return kLiteRtStatusErrorNotFound;
-        LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
-        auto& new_op =
-            b->BuildOp(kLiteRtOpCodeTflSub, op->Inputs(), op->Outputs());
-        (void)new_op;
-        b->EraseOp(op);
-        return kLiteRtStatusOk;
-      });
+  add_transform("Mul_to_Sub",
+                [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
+                   LiteRtOp op) -> LiteRtStatus {
+                  if (op->OpCode() != kLiteRtOpCodeTflMul)
+                    return kLiteRtStatusErrorNotFound;
+                  LiteRtBuilderT* b =
+                      reinterpret_cast<LiteRtBuilderT*>(builder);
+                  auto& new_op = b->BuildOp(kLiteRtOpCodeTflSub, op->Inputs(),
+                                            op->Outputs());
+                  (void)new_op;
+                  b->EraseOp(op);
+                  return kLiteRtStatusOk;
+                });
   // 3. Sub -> Div
-  add_transform(
-      "Sub_to_Div",
-      [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
-         LiteRtOp op) -> LiteRtStatus {
-        if (op->OpCode() != kLiteRtOpCodeTflSub)
-          return kLiteRtStatusErrorNotFound;
-        LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
-        auto& new_op =
-            b->BuildOp(kLiteRtOpCodeTflDiv, op->Inputs(), op->Outputs());
-        (void)new_op;
-        b->EraseOp(op);
-        return kLiteRtStatusOk;
-      });
+  add_transform("Sub_to_Div",
+                [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
+                   LiteRtOp op) -> LiteRtStatus {
+                  if (op->OpCode() != kLiteRtOpCodeTflSub)
+                    return kLiteRtStatusErrorNotFound;
+                  LiteRtBuilderT* b =
+                      reinterpret_cast<LiteRtBuilderT*>(builder);
+                  auto& new_op = b->BuildOp(kLiteRtOpCodeTflDiv, op->Inputs(),
+                                            op->Outputs());
+                  (void)new_op;
+                  b->EraseOp(op);
+                  return kLiteRtStatusOk;
+                });
   // 4. Div -> Cos
-  add_transform(
-      "Div_to_Cos",
-      [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
-         LiteRtOp op) -> LiteRtStatus {
-        if (op->OpCode() != kLiteRtOpCodeTflDiv)
-          return kLiteRtStatusErrorNotFound;
-        LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
-        auto& new_op =
-            b->BuildOp(kLiteRtOpCodeTflCos, op->Inputs(), op->Outputs());
-        (void)new_op;
-        b->EraseOp(op);
-        return kLiteRtStatusOk;
-      });
+  add_transform("Div_to_Cos",
+                [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
+                   LiteRtOp op) -> LiteRtStatus {
+                  if (op->OpCode() != kLiteRtOpCodeTflDiv)
+                    return kLiteRtStatusErrorNotFound;
+                  LiteRtBuilderT* b =
+                      reinterpret_cast<LiteRtBuilderT*>(builder);
+                  auto& new_op = b->BuildOp(kLiteRtOpCodeTflCos, op->Inputs(),
+                                            op->Outputs());
+                  (void)new_op;
+                  b->EraseOp(op);
+                  return kLiteRtStatusOk;
+                });
   // 5. Cos -> Sin
-  add_transform(
-      "Cos_to_Sin",
-      [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
-         LiteRtOp op) -> LiteRtStatus {
-        if (op->OpCode() != kLiteRtOpCodeTflCos)
-          return kLiteRtStatusErrorNotFound;
-        LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
-        auto& new_op =
-            b->BuildOp(kLiteRtOpCodeTflSin, op->Inputs(), op->Outputs());
-        (void)new_op;
-        b->EraseOp(op);
-        return kLiteRtStatusOk;
-      });
+  add_transform("Cos_to_Sin",
+                [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
+                   LiteRtOp op) -> LiteRtStatus {
+                  if (op->OpCode() != kLiteRtOpCodeTflCos)
+                    return kLiteRtStatusErrorNotFound;
+                  LiteRtBuilderT* b =
+                      reinterpret_cast<LiteRtBuilderT*>(builder);
+                  auto& new_op = b->BuildOp(kLiteRtOpCodeTflSin, op->Inputs(),
+                                            op->Outputs());
+                  (void)new_op;
+                  b->EraseOp(op);
+                  return kLiteRtStatusOk;
+                });
   // 6. Sin -> Log (Should not happen if max iterations = 5)
-  add_transform(
-      "Sin_to_Log",
-      [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
-         LiteRtOp op) -> LiteRtStatus {
-        if (op->OpCode() != kLiteRtOpCodeTflSin)
-          return kLiteRtStatusErrorNotFound;
-        LiteRtBuilderT* b = reinterpret_cast<LiteRtBuilderT*>(builder);
-        auto& new_op =
-            b->BuildOp(kLiteRtOpCodeTflLog, op->Inputs(), op->Outputs());
-        (void)new_op;
-        b->EraseOp(op);
-        return kLiteRtStatusOk;
-      });
+  add_transform("Sin_to_Log",
+                [](const LiteRtCompilerContext* context, LiteRtBuilder builder,
+                   LiteRtOp op) -> LiteRtStatus {
+                  if (op->OpCode() != kLiteRtOpCodeTflSin)
+                    return kLiteRtStatusErrorNotFound;
+                  LiteRtBuilderT* b =
+                      reinterpret_cast<LiteRtBuilderT*>(builder);
+                  auto& new_op = b->BuildOp(kLiteRtOpCodeTflLog, op->Inputs(),
+                                            op->Outputs());
+                  (void)new_op;
+                  b->EraseOp(op);
+                  return kLiteRtStatusOk;
+                });
 
   LiteRtModelT model;
   auto& subgraph = model.EmplaceSubgraph();
@@ -1304,6 +1436,141 @@ TEST_F(CompilerPluginFriend, MultipleIndependentMatches) {
   ASSERT_EQ(subgraph.Ops().size(), 2);
   EXPECT_EQ(subgraph.Ops()[0]->OpCode(), kLiteRtOpCodeTflMul);
   EXPECT_EQ(subgraph.Ops()[1]->OpCode(), kLiteRtOpCodeTflMul);
+}
+
+TEST_F(CompilerPluginFriend, TransformModelWithoutOptionsIsNoOp) {
+  CompilerPlugin plugin = CreatePlugin();
+  LiteRtModelT model;
+  MulGraph g = BuildMulSubgraph(model.EmplaceSubgraph(), /*inner_dim=*/16);
+
+  LITERT_ASSERT_OK(TransformModel(plugin, model));
+
+  EXPECT_EQ(Dim0(*g.in0), -1);
+  EXPECT_EQ(Dim0(*g.out), -1);
+}
+
+TEST_F(CompilerPluginFriend, TransformModelRefinesInputShapes) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  const int32_t new_shape[] = {4, 16};
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto built_opts,
+      BuildOptionsWith(env, [&](CompilerOptions& co) -> Expected<void> {
+        LITERT_RETURN_IF_ERROR(co.AddPositionalInputShape(new_shape));
+        return co.AddPositionalInputShape(new_shape);
+      }));
+  CompilerPlugin plugin = CreatePlugin();
+  SetOptions(plugin, built_opts.get());
+
+  LiteRtModelT model;
+  MulGraph g = BuildMulSubgraph(model.EmplaceSubgraph(), /*inner_dim=*/16);
+
+  LITERT_ASSERT_OK(TransformModel(plugin, model));
+
+  EXPECT_EQ(Dim0(*g.in0), 4);
+  EXPECT_EQ(Dim1(*g.in0), 16);
+  EXPECT_EQ(Dim0(*g.in1), 4);
+  EXPECT_EQ(Dim0(*g.out), 4);
+  EXPECT_EQ(Dim1(*g.out), 16);
+}
+
+TEST_F(CompilerPluginFriend, TransformModelKeepsDynamicDimsWhenRequested) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  const int32_t new_shape[] = {-1, 16};
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto built_opts,
+      BuildOptionsWith(env, [&](CompilerOptions& co) -> Expected<void> {
+        LITERT_RETURN_IF_ERROR(co.AddPositionalInputShape(new_shape));
+        return co.AddPositionalInputShape(new_shape);
+      }));
+  CompilerPlugin plugin = CreatePlugin();
+  SetOptions(plugin, built_opts.get());
+
+  LiteRtModelT model;
+  MulGraph g = BuildMulSubgraph(model.EmplaceSubgraph(), /*inner_dim=*/16);
+
+  LITERT_ASSERT_OK(TransformModel(plugin, model));
+
+  EXPECT_EQ(Dim0(*g.in0), -1);
+  EXPECT_EQ(Dim0(*g.out), -1);
+  EXPECT_EQ(Dim1(*g.out), 16);
+}
+
+TEST_F(CompilerPluginFriend, TransformModelRefinesMultipleSignatures) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  const int32_t prefill_shape[] = {1, 512};
+  const int32_t decode_shape[] = {1, 1};
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto built_opts,
+      BuildOptionsWith(env, [&](CompilerOptions& co) -> Expected<void> {
+        LITERT_RETURN_IF_ERROR(
+            co.AddSignatureInputShape("prefill", "tokens", prefill_shape));
+        LITERT_RETURN_IF_ERROR(
+            co.AddSignatureInputShape("prefill", "mask", prefill_shape));
+        LITERT_RETURN_IF_ERROR(
+            co.AddSignatureInputShape("decode", "tokens", decode_shape));
+        return co.AddSignatureInputShape("decode", "mask", decode_shape);
+      }));
+  CompilerPlugin plugin = CreatePlugin();
+  SetOptions(plugin, built_opts.get());
+
+  LiteRtModelT model;
+  auto& prefill_sg = model.EmplaceSubgraph();
+  MulGraph prefill = BuildMulSubgraph(prefill_sg, /*inner_dim=*/512);
+  model.EmplaceSignature(&prefill_sg,
+                         std::vector<std::string>{"tokens", "mask"},
+                         std::vector<LiteRtTensor>{prefill.in0, prefill.in1},
+                         std::vector<std::string>{"out"},
+                         std::vector<LiteRtTensor>{prefill.out}, "prefill");
+  auto& decode_sg = model.EmplaceSubgraph();
+  MulGraph decode = BuildMulSubgraph(decode_sg, /*inner_dim=*/1);
+  model.EmplaceSignature(&decode_sg, std::vector<std::string>{"tokens", "mask"},
+                         std::vector<LiteRtTensor>{decode.in0, decode.in1},
+                         std::vector<std::string>{"out"},
+                         std::vector<LiteRtTensor>{decode.out}, "decode");
+
+  LITERT_ASSERT_OK(TransformModel(plugin, model));
+
+  EXPECT_EQ(Dim0(*prefill.out), 1);
+  EXPECT_EQ(Dim1(*prefill.out), 512);
+  EXPECT_EQ(Dim0(*decode.out), 1);
+  EXPECT_EQ(Dim1(*decode.out), 1);
+}
+
+TEST_F(CompilerPluginFriend, TransformModelCompositeOpShapePropagation) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  const int32_t new_shape[] = {8, 32};
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto built_opts,
+      BuildOptionsWith(env, [&](CompilerOptions& co) -> Expected<void> {
+        LITERT_RETURN_IF_ERROR(co.AddPositionalInputShape(new_shape));
+        return co.AddPositionalInputShape(new_shape);
+      }));
+  CompilerPlugin plugin = CreatePlugin();
+  SetOptions(plugin, built_opts.get());
+
+  LiteRtModelT model;
+  auto& main_sg = model.EmplaceSubgraph();
+  auto& decomp_sg = model.EmplaceSubgraph();
+  // Decomposition subgraph (index 1): plain TflMul.
+  MulGraph decomp = BuildMulSubgraph(decomp_sg, /*inner_dim=*/32);
+  // Main subgraph: composite op delegating to decomposition subgraph 1.
+  MulGraph outer =
+      BuildMulSubgraph(main_sg, /*inner_dim=*/32, kLiteRtOpCodeShloComposite);
+  tflite::StableHLOCompositeOptionsT comp_options;
+  comp_options.name = "test_composite";
+  comp_options.decomposition_subgraph_index = 1;
+  internal::TflOptions2 tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  tfl_options.Set(std::move(comp_options));
+  litert::internal::SetTflOptions2(*main_sg.Ops().front(),
+                                   std::move(tfl_options));
+
+  LITERT_ASSERT_OK(TransformModel(plugin, model));
+
+  EXPECT_EQ(Dim0(*outer.out), 8);
+  EXPECT_EQ(Dim1(*outer.out), 32);
+  EXPECT_EQ(Dim0(*decomp.in0), 8);
+  EXPECT_EQ(Dim0(*decomp.out), 8);
 }
 
 }  // namespace litert::internal
