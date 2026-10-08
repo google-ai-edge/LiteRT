@@ -23,7 +23,8 @@ namespace litert::nvidia {
 
 // BF16 activations [..., columns] times signed INT2 or INT4 weights
 // [rows, columns] with BF16 per-channel scales:
-//   inputs  activation BF16, packed weights INT8, scales BF16
+//   inputs  activation BF16, packed weights INT8 (or a holder INT64, see
+//           below), scales BF16
 //   output  [..., rows] BF16
 // One activation row (decode) runs as a GEMV with FP32 accumulation over the
 // raw TFLite row-major weight bytes (trtllm/int2_gemv.h).
@@ -36,9 +37,19 @@ namespace litert::nvidia {
 // feed-forward block in the GEMM: the weights and scales hold the gate
 // projection followed by the up projection, rows / 2 channels each, and the
 // output is gelu(gate) * up, [..., rows / 2].
-nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(int32_t bit_width, int32_t rows,
-                                             int32_t columns, int32_t gate = 0,
-                                             bool gemm = false) noexcept;
+//
+// With `holder_granule` the weights input is not the packed weights but an
+// INT64 "holder" constant that many plugins of the engine read: the packed
+// weights are `weight_offset` bytes into the segment the holder stands for,
+// which starts at the first multiple of `holder_granule` (a power of two) in
+// the holder's device memory. The holder is one granule larger than the
+// segment, so the segment fits wherever TensorRT places the holder, and an
+// application can back it with CUDA virtual memory that it maps into several
+// engines (bytecode.h, TensorRtWeightStore).
+nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(
+    int32_t bit_width, int32_t rows, int32_t columns, int32_t gate = 0,
+    bool gemm = false, int64_t weight_offset = 0,
+    int64_t holder_granule = 0) noexcept;
 
 // Referenced by the dispatch library so the creator's registration object is
 // retained when linking the shared library used for engine deserialization.

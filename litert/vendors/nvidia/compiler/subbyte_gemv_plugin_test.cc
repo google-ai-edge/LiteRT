@@ -350,6 +350,218 @@ TEST(SubbyteGemvPluginTest, ManyRowsRunAsGemm) {
   }
 }
 
+TEST(SubbyteGemvPluginTest, ReadsWeightsAtAnOffsetInAHolder) {
+  // Two projections read their packed weights from one INT64 holder constant:
+  // the segment starts at the first granule boundary in the holder (here its
+  // first byte, with a 16-byte granule), a GEMV at offset 128 and a GEMM at
+  // the offset after it.
+  constexpr int kColumns = 256;
+  constexpr int kGemvRows = 9;
+  constexpr int kGemmChannels = 130;
+  constexpr int kActivationRows = 128;
+  constexpr int64_t kGranule = 16;
+  constexpr int64_t kGemvOffset = 128;
+  const int64_t gemv_bytes = kGemvRows * kColumns / 2;
+  const int64_t gemm_offset = (kGemvOffset + gemv_bytes + 127) / 128 * 128;
+  const int64_t gemm_bytes = kGemmChannels * kColumns / 2;
+  const int64_t segment_bytes = (gemm_offset + gemm_bytes + 127) / 128 * 128;
+  std::vector<uint64_t> holder((segment_bytes + kGranule) / 8,
+                               0xa5a5a5a5a5a5a5a5ull);
+  auto* holder_bytes = reinterpret_cast<uint8_t*>(holder.data());
+  uint32_t state = 77;
+  const auto next = [&]() {
+    state = state * 1664525u + 1013904223u;
+    return state >> 8;
+  };
+  for (int64_t i = 0; i < gemv_bytes; ++i) {
+    holder_bytes[kGemvOffset + i] = static_cast<uint8_t>(next());
+  }
+  for (int64_t i = 0; i < gemm_bytes; ++i) {
+    holder_bytes[gemm_offset + i] = static_cast<uint8_t>(next());
+  }
+  std::vector<uint16_t> gemv_scales(kGemvRows);
+  std::vector<uint16_t> gemm_scales(kGemmChannels);
+  for (auto& scale : gemv_scales) {
+    scale = FloatToBf16Bits(0.125f * static_cast<float>(next() % 8 + 1));
+  }
+  for (auto& scale : gemm_scales) {
+    scale = FloatToBf16Bits(0.004f + static_cast<float>(next() % 8) / 1024.0f);
+  }
+  std::vector<uint16_t> row(kColumns);
+  std::vector<uint16_t> rows(static_cast<size_t>(kActivationRows) * kColumns);
+  for (auto& value : row) {
+    value = FloatToBf16Bits(static_cast<float>(next() % 23) / 8.0f - 1.375f);
+  }
+  for (auto& value : rows) {
+    value = FloatToBf16Bits(static_cast<float>(next() % 2048) / 512.0f - 2.0f);
+  }
+
+  TestLogger logger;
+  std::unique_ptr<nvinfer1::IBuilder> builder(
+      nvinfer1::createInferBuilder(logger));
+  ASSERT_NE(builder, nullptr);
+  std::unique_ptr<nvinfer1::INetworkDefinition> network(
+      builder->createNetworkV2(/*flags=*/0));
+  ASSERT_NE(network, nullptr);
+  auto* row_input = network->addInput("row", nvinfer1::DataType::kBF16,
+                                      nvinfer1::Dims{2, {1, kColumns}});
+  auto* rows_input =
+      network->addInput("rows", nvinfer1::DataType::kBF16,
+                        nvinfer1::Dims{2, {kActivationRows, kColumns}});
+  ASSERT_NE(row_input, nullptr);
+  ASSERT_NE(rows_input, nullptr);
+  auto* holder_layer = network->addConstant(
+      nvinfer1::Dims{1, {static_cast<int64_t>(holder.size())}},
+      nvinfer1::Weights{nvinfer1::DataType::kINT64, holder.data(),
+                        static_cast<int64_t>(holder.size())});
+  ASSERT_NE(holder_layer, nullptr);
+  auto* gemv_scale_layer =
+      network->addConstant(nvinfer1::Dims{1, {kGemvRows}},
+                           nvinfer1::Weights{nvinfer1::DataType::kBF16,
+                                             gemv_scales.data(), kGemvRows});
+  auto* gemm_scale_layer = network->addConstant(
+      nvinfer1::Dims{1, {kGemmChannels}},
+      nvinfer1::Weights{nvinfer1::DataType::kBF16, gemm_scales.data(),
+                        kGemmChannels});
+  ASSERT_NE(gemv_scale_layer, nullptr);
+  ASSERT_NE(gemm_scale_layer, nullptr);
+  std::unique_ptr<nvinfer1::IPluginV3> gemv(CreateSubbyteGemvPlugin(
+      /*bit_width=*/4, kGemvRows, kColumns, /*gate=*/0, /*gemm=*/false,
+      kGemvOffset, kGranule));
+  std::unique_ptr<nvinfer1::IPluginV3> gemm(CreateSubbyteGemvPlugin(
+      /*bit_width=*/4, kGemmChannels, kColumns, /*gate=*/0, /*gemm=*/true,
+      gemm_offset, kGranule));
+  ASSERT_NE(gemv, nullptr);
+  ASSERT_NE(gemm, nullptr);
+  nvinfer1::ITensor* gemv_inputs[] = {row_input, holder_layer->getOutput(0),
+                                      gemv_scale_layer->getOutput(0)};
+  nvinfer1::ITensor* gemm_inputs[] = {rows_input, holder_layer->getOutput(0),
+                                      gemm_scale_layer->getOutput(0)};
+  auto* gemv_layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+      *network, gemv_inputs, std::size(gemv_inputs), *gemv);
+  auto* gemm_layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+      *network, gemm_inputs, std::size(gemm_inputs), *gemm);
+  ASSERT_NE(gemv_layer, nullptr);
+  ASSERT_NE(gemm_layer, nullptr);
+  gemv_layer->getOutput(0)->setName("row_output");
+  gemm_layer->getOutput(0)->setName("rows_output");
+  network->markOutput(*gemv_layer->getOutput(0));
+  network->markOutput(*gemm_layer->getOutput(0));
+  std::unique_ptr<nvinfer1::IBuilderConfig> config(
+      builder->createBuilderConfig());
+  ASSERT_NE(config, nullptr);
+  std::unique_ptr<nvinfer1::IHostMemory> serialized(
+      builder->buildSerializedNetwork(*network, *config));
+  ASSERT_NE(serialized, nullptr);
+  network.reset();
+  gemv.reset();
+  gemm.reset();
+
+  std::unique_ptr<nvinfer1::IRuntime> runtime(
+      nvinfer1::createInferRuntime(logger));
+  ASSERT_NE(runtime, nullptr);
+  std::unique_ptr<nvinfer1::ICudaEngine> engine(
+      runtime->deserializeCudaEngine(serialized->data(), serialized->size()));
+  ASSERT_NE(engine, nullptr);
+  std::unique_ptr<nvinfer1::IExecutionContext> context(
+      engine->createExecutionContext());
+  ASSERT_NE(context, nullptr);
+  uint16_t* device_row = nullptr;
+  uint16_t* device_rows = nullptr;
+  uint16_t* device_row_output = nullptr;
+  uint16_t* device_rows_output = nullptr;
+  const size_t rows_output_count =
+      static_cast<size_t>(kActivationRows) * kGemmChannels;
+  ASSERT_EQ(cudaMalloc(reinterpret_cast<void**>(&device_row), row.size() * 2),
+            cudaSuccess);
+  ASSERT_EQ(cudaMalloc(reinterpret_cast<void**>(&device_rows), rows.size() * 2),
+            cudaSuccess);
+  ASSERT_EQ(
+      cudaMalloc(reinterpret_cast<void**>(&device_row_output), kGemvRows * 2),
+      cudaSuccess);
+  ASSERT_EQ(cudaMalloc(reinterpret_cast<void**>(&device_rows_output),
+                       rows_output_count * 2),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(device_row, row.data(), row.size() * 2,
+                       cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(device_rows, rows.data(), rows.size() * 2,
+                       cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_TRUE(context->setTensorAddress("row", device_row));
+  ASSERT_TRUE(context->setTensorAddress("rows", device_rows));
+  ASSERT_TRUE(context->setTensorAddress("row_output", device_row_output));
+  ASSERT_TRUE(context->setTensorAddress("rows_output", device_rows_output));
+  ASSERT_TRUE(context->enqueueV3(/*stream=*/nullptr));
+  std::vector<uint16_t> row_output(kGemvRows);
+  std::vector<uint16_t> rows_output(rows_output_count);
+  ASSERT_EQ(cudaMemcpy(row_output.data(), device_row_output, kGemvRows * 2,
+                       cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(rows_output.data(), device_rows_output,
+                       rows_output_count * 2, cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  cudaFree(device_row);
+  cudaFree(device_rows);
+  cudaFree(device_row_output);
+  cudaFree(device_rows_output);
+
+  const auto weight = [&](int64_t offset, int channel, int column) {
+    const uint8_t byte =
+        holder_bytes[offset +
+                     (static_cast<int64_t>(channel) * kColumns + column) / 2];
+    const int nibble = (byte >> ((column & 1) * 4)) & 15;
+    return (nibble ^ 8) - 8;
+  };
+  for (int channel = 0; channel < kGemvRows; ++channel) {
+    float accumulator = 0.0f;
+    for (int column = 0; column < kColumns; ++column) {
+      accumulator +=
+          Bf16BitsToFloat(row[column]) * weight(kGemvOffset, channel, column);
+    }
+    EXPECT_EQ(
+        row_output[channel],
+        FloatToBf16Bits(accumulator * Bf16BitsToFloat(gemv_scales[channel])))
+        << "channel=" << channel;
+  }
+  for (int m : {0, 77, kActivationRows - 1}) {
+    double error = 0.0;
+    double norm = 0.0;
+    for (int channel = 0; channel < kGemmChannels; ++channel) {
+      double sum = 0.0;
+      for (int column = 0; column < kColumns; ++column) {
+        sum += static_cast<double>(Bf16BitsToFloat(
+                   rows[static_cast<size_t>(m) * kColumns + column])) *
+               weight(gemm_offset, channel, column);
+      }
+      const double expected = sum * Bf16BitsToFloat(gemm_scales[channel]);
+      const double value = Bf16BitsToFloat(
+          rows_output[static_cast<size_t>(m) * kGemmChannels + channel]);
+      error += (value - expected) * (value - expected);
+      norm += expected * expected;
+    }
+    EXPECT_LE(std::sqrt(error), 3.0e-3 * std::sqrt(norm)) << "row=" << m;
+  }
+}
+
+TEST(SubbyteGemvPluginTest, RejectsInvalidHolders) {
+  const auto create = [](int64_t weight_offset, int64_t holder_granule) {
+    return std::unique_ptr<nvinfer1::IPluginV3>(CreateSubbyteGemvPlugin(
+        /*bit_width=*/4, /*rows=*/128, /*columns=*/256, /*gate=*/0,
+        /*gemm=*/false, weight_offset, holder_granule));
+  };
+  EXPECT_NE(create(0, 0), nullptr);
+  EXPECT_NE(create(0, 2 << 20), nullptr);
+  EXPECT_NE(create(128, 2 << 20), nullptr);
+  // An offset needs a holder; the granule is a power of two of at least 16
+  // bytes and the offset keeps the kernels' 16-byte alignment.
+  EXPECT_EQ(create(128, 0), nullptr);
+  EXPECT_EQ(create(0, 3 << 20), nullptr);
+  EXPECT_EQ(create(0, 8), nullptr);
+  EXPECT_EQ(create(-128, 2 << 20), nullptr);
+  EXPECT_EQ(create(8, 2 << 20), nullptr);
+}
+
 TEST(SubbyteGemvPluginTest, RejectsInvalidGatesAndGemmShapes) {
   const auto create = [](int32_t bit_width, int32_t rows, int32_t columns,
                          int32_t gate, bool gemm) {
