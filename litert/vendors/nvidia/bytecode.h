@@ -29,6 +29,9 @@ inline constexpr uint32_t kTensorRtBytecodeVersion = 1;
 inline constexpr uint32_t kTensorRtBytecodeVersionWithTrtLlmHead = 2;
 inline constexpr uint32_t kTensorRtBytecodeVersionWithTypedHead = 3;
 inline constexpr uint32_t kTensorRtBytecodeVersionWithSharedWeights = 4;
+// Version 4 plus, per engine, an optional weight store: where the weights
+// the plan was built without come from.
+inline constexpr uint32_t kTensorRtBytecodeVersionWithWeightStore = 5;
 
 // Versioned POD payload behind LiteRtJitExecutable. The compiler plugin owns
 // the bytecode for the lifetime of the compiled result; dispatch reads it
@@ -169,6 +172,61 @@ struct TensorRtRefitWeight {
   size_t size = 0;
 };
 
+// A weight store describes the packed plugin weights that a plan was built
+// without. The plan holds each "segment" of them as one placeholder constant
+// (a "holder") that the plugins read at an offset; the bytes are pieces of the
+// source model file, uploaded once per process and mapped into the weight
+// memory of every engine that holds the same segment
+// (nvinfer1::IWeightsManager::restoreFromVmmAllocation).
+//
+// Bytes of the source model file that a segment copies.
+struct TensorRtWeightPiece {
+  uint64_t source_offset = 0;
+  uint64_t size = 0;
+  uint64_t segment_offset = 0;
+};
+
+struct TensorRtWeightSegment {
+  // The refittable TensorRT constant that stands for the segment. It is one
+  // CUDA virtual memory granule larger than the segment: the segment starts
+  // at the first granule boundary inside the constant.
+  std::string holder_name;
+  // A positive multiple of the granule.
+  uint64_t size = 0;
+  // Where the segment starts in the engine's weight data
+  // (nvinfer1::IWeightsManager): a multiple of the granule.
+  uint64_t payload_offset = 0;
+  // Identifies the source file and the pieces: engines whose segments have
+  // equal keys map the same device memory.
+  TensorRtArtifactFingerprint key;
+  std::vector<TensorRtWeightPiece> pieces;
+};
+
+// Weight data of the engine outside its segments, where it is not zero. The
+// data aliases the enclosing bytecode buffer.
+struct TensorRtWeightRun {
+  uint64_t offset = 0;
+  const uint8_t* data = nullptr;
+  size_t size = 0;
+};
+
+struct TensorRtWeightStore {
+  // The model file the pieces are read from, and its identity when the plan
+  // was built.
+  std::string source_path;
+  uint64_t source_size = 0;
+  TensorRtAotFileIdentity source_identity;
+  // The CUDA virtual memory granule the layout was computed for.
+  uint64_t granule = 0;
+  // nvinfer1::IWeightsManager::getSize() of the engine: a multiple of the
+  // granule.
+  uint64_t weight_data_size = 0;
+  // In increasing payload_offset order, not overlapping.
+  std::vector<TensorRtWeightSegment> segments;
+  // In increasing offset order, not overlapping each other or a segment.
+  std::vector<TensorRtWeightRun> private_runs;
+};
+
 // Owning input used when packing the shared store. Multiple engine entries
 // can reference the same element by index.
 struct TensorRtSharedWeight {
@@ -191,6 +249,7 @@ struct TensorRtBundleEntry {
   size_t engine_size = 0;
   const TensorRtLlmHead* trtllm_head = nullptr;
   std::vector<TensorRtSharedWeightRef> refit_weights;
+  const TensorRtWeightStore* weight_store = nullptr;
 };
 
 struct TensorRtBytecode {
@@ -202,6 +261,7 @@ struct TensorRtBytecode {
   size_t engine_size = 0;
   std::optional<TensorRtLlmHead> trtllm_head;
   std::vector<TensorRtRefitWeight> refit_weights;
+  std::optional<TensorRtWeightStore> weight_store;
 };
 
 Expected<std::vector<uint8_t>> PackTensorRtBytecode(
@@ -263,7 +323,7 @@ Expected<TensorRtAotManifest> ParseTensorRtAotManifest(const void* data,
                                                        size_t size);
 
 // Legacy bytecodes contain one engine and ignore function_name. Version 4
-// bundles require function_name when they contain more than one engine.
+// and 5 bundles require function_name when they contain more than one engine.
 Expected<TensorRtBytecode> ParseTensorRtBytecode(
     const void* data, size_t size, const char* function_name = nullptr);
 
