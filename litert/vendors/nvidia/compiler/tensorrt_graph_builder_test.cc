@@ -3802,3 +3802,138 @@ TEST(TensorRtGraphBuilderTest, ConstantInt64ToHalfCast) {
     EXPECT_EQ(cudaFree(device_input), cudaSuccess);
   }
 }
+
+TEST(TensorRtGraphBuilderTest, Fp16ActivationsKeepPositionsExact) {
+  // Gemma 4 graphs cast integer positions to float for the rotary angles
+  // (position * inverse frequency -> sin/cos) and, in E2B, round-trip them
+  // through float into cache update offsets. BF16 keeps 8 significant bits:
+  // narrowed, 777 becomes 776 and the angles move by whole radians.
+  constexpr int32_t kPositions = 4;
+  constexpr int32_t kFrequencies = 2;
+  const std::array<int32_t, kPositions> positions = {3, 300, 777, 1021};
+  const std::array<float, kFrequencies> inverse_frequencies = {1.0f, 0.01f};
+  const float zero = 0.0f;
+  LiteRtModelT model;
+  auto& graph = model.EmplaceSubgraph();
+  const auto tensor = [&](const char* name, LiteRtElementType type,
+                          const std::vector<int32_t>& dims) -> LiteRtTensorT& {
+    auto& value = graph.EmplaceTensor();
+    value.SetName(name);
+    value.SetType(MakeRankedTensorType(type, dims));
+    return value;
+  };
+  const auto op = [&](LiteRtOpCode code,
+                      std::initializer_list<LiteRtTensorT*> inputs,
+                      LiteRtTensorT& output) -> LiteRtOpT& {
+    auto& value = graph.EmplaceOp();
+    value.SetOpCode(code);
+    for (auto* input : inputs) {
+      litert::internal::AttachInput(input, value);
+    }
+    litert::internal::AttachOutput(&output, value);
+    return value;
+  };
+  auto& input_pos = tensor("input_pos", kLiteRtElementTypeInt32, {kPositions});
+  graph.Inputs().push_back(&input_pos);
+  auto& pos_float =
+      tensor("pos_float", kLiteRtElementTypeFloat32, {kPositions});
+  op(kLiteRtOpCodeTflCast, {&input_pos}, pos_float);
+  auto& pos_column =
+      tensor("pos_column", kLiteRtElementTypeFloat32, {kPositions, 1});
+  op(kLiteRtOpCodeTflReshape, {&pos_float}, pos_column);
+  auto& frequencies =
+      tensor("frequencies", kLiteRtElementTypeFloat32, {1, kFrequencies});
+  SetWeightsFromUnownedBuffer(
+      frequencies.Weights(),
+      litert::BufferRef<uint8_t>(
+          reinterpret_cast<const uint8_t*>(inverse_frequencies.data()),
+          sizeof(inverse_frequencies)));
+  auto& angles =
+      tensor("angles", kLiteRtElementTypeFloat32, {kPositions, kFrequencies});
+  auto& mul = op(kLiteRtOpCodeTflMul, {&pos_column, &frequencies}, angles);
+  tflite::BuiltinOptionsUnion mul_options;
+  mul_options.Set(tflite::MulOptionsT{});
+  litert::internal::SetTflOptions(mul, std::move(mul_options));
+  auto& cos =
+      tensor("cos", kLiteRtElementTypeFloat32, {kPositions, kFrequencies});
+  op(kLiteRtOpCodeTflCos, {&angles}, cos);
+  graph.Outputs().push_back(&cos);
+  // A cache offset: [0, position] cast back to integers.
+  auto& zero_tensor = tensor("zero", kLiteRtElementTypeFloat32, {1});
+  SetWeightsFromUnownedBuffer(
+      zero_tensor.Weights(),
+      litert::BufferRef<uint8_t>(reinterpret_cast<const uint8_t*>(&zero),
+                                 sizeof(zero)));
+  auto& offsets_float =
+      tensor("offsets_float", kLiteRtElementTypeFloat32, {1 + kPositions});
+  auto& concat = op(kLiteRtOpCodeTflConcatenation, {&zero_tensor, &pos_float},
+                    offsets_float);
+  tflite::ConcatenationOptionsT concatenation;
+  concatenation.axis = 0;
+  tflite::BuiltinOptionsUnion concat_options;
+  concat_options.Set(std::move(concatenation));
+  litert::internal::SetTflOptions(concat, std::move(concat_options));
+  auto& offsets = tensor("offsets", kLiteRtElementTypeInt32, {1 + kPositions});
+  op(kLiteRtOpCodeTflCast, {&offsets_float}, offsets);
+  graph.Outputs().push_back(&offsets);
+
+  const auto* compiler_context = LrtGetCompilerContext();
+  auto built = litert::nvidia::BuildTensorRtEngine(
+      litert::compiler::Subgraph(compiler_context, &graph));
+  ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+
+  litert::nvidia::TensorRtLogger logger;
+  std::unique_ptr<nvinfer1::IRuntime> runtime(
+      nvinfer1::createInferRuntime(logger));
+  ASSERT_NE(runtime, nullptr);
+  std::unique_ptr<nvinfer1::ICudaEngine> engine(runtime->deserializeCudaEngine(
+      built->engine.data(), built->engine.size()));
+  ASSERT_NE(engine, nullptr);
+  std::unique_ptr<nvinfer1::IExecutionContext> context(
+      engine->createExecutionContext());
+  ASSERT_NE(context, nullptr);
+  void* device_positions = nullptr;
+  void* device_cos = nullptr;
+  void* device_offsets = nullptr;
+  ASSERT_EQ(cudaMalloc(&device_positions, sizeof(positions)), cudaSuccess);
+  ASSERT_EQ(cudaMalloc(&device_cos, kPositions * kFrequencies * sizeof(float)),
+            cudaSuccess);
+  ASSERT_EQ(cudaMalloc(&device_offsets, (1 + kPositions) * sizeof(int32_t)),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(device_positions, positions.data(), sizeof(positions),
+                       cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_TRUE(context->setTensorAddress(built->input_names[0].c_str(),
+                                        device_positions));
+  ASSERT_TRUE(
+      context->setTensorAddress(built->output_names[0].c_str(), device_cos));
+  ASSERT_TRUE(context->setTensorAddress(built->output_names[1].c_str(),
+                                        device_offsets));
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+  ASSERT_TRUE(context->enqueueV3(stream));
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  std::array<float, kPositions * kFrequencies> actual_cos{};
+  std::array<int32_t, 1 + kPositions> actual_offsets{};
+  ASSERT_EQ(cudaMemcpy(actual_cos.data(), device_cos, sizeof(actual_cos),
+                       cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(actual_offsets.data(), device_offsets,
+                       sizeof(actual_offsets), cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  EXPECT_EQ(actual_offsets[0], 0);
+  for (int32_t p = 0; p < kPositions; ++p) {
+    EXPECT_EQ(actual_offsets[1 + p], positions[p]) << "p=" << p;
+    for (int32_t f = 0; f < kFrequencies; ++f) {
+      // The cosine itself is narrowed to BF16: about 3 significant digits.
+      const double expected =
+          std::cos(static_cast<double>(positions[p]) * inverse_frequencies[f]);
+      EXPECT_NEAR(actual_cos[p * kFrequencies + f], expected, 0.01)
+          << "position=" << positions[p] << " f=" << f;
+    }
+  }
+  EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+  EXPECT_EQ(cudaFree(device_offsets), cudaSuccess);
+  EXPECT_EQ(cudaFree(device_cos), cudaSuccess);
+  EXPECT_EQ(cudaFree(device_positions), cudaSuccess);
+}

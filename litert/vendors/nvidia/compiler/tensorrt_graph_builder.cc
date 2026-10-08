@@ -321,6 +321,12 @@ bool IsFloatLike(litert::ElementType type) {
          type == litert::ElementType::BFloat16;
 }
 
+// Integer types of positions and indices; their float casts stay exact.
+bool IsPositionElementType(litert::ElementType type) {
+  return type == litert::ElementType::Int32 ||
+         type == litert::ElementType::Int64;
+}
+
 bool IsTensorRtElementType(litert::ElementType type) {
   return IsFloatLike(type) || type == litert::ElementType::Float8E4M3FN ||
          type == litert::ElementType::Int4 ||
@@ -3692,6 +3698,42 @@ class TensorRtGraphBuilder {
     return out;
   }
 
+  // The FP32 view of `tensor` on the position path (see exact_fp32_map_): a
+  // value recorded there, or an unquantized FP32 constant such as the inverse
+  // RoPE frequencies, built in FP32 on first use. Null otherwise.
+  Expected<nvinfer1::ITensor*> GetExactFp32Tensor(const Tensor& tensor) {
+    if (auto it = exact_fp32_map_.find(tensor.Get());
+        it != exact_fp32_map_.end()) {
+      return it->second;
+    }
+    if (auto it = exact_fp32_constants_.find(tensor.Get());
+        it != exact_fp32_constants_.end()) {
+      return it->second;
+    }
+    if (!tensor.HasWeights() ||
+        tensor.ElementType() != litert::ElementType::Float32 ||
+        tensor.QTypeId() != kLiteRtQuantizationNone) {
+      return nullptr;
+    }
+    LITERT_ASSIGN_OR_RETURN(auto type, tensor.RankedTensorType());
+    LITERT_ASSIGN_OR_RETURN(auto dims, ConvertDims(type));
+    LITERT_ASSIGN_OR_RETURN(auto weights, MakeWeights(tensor));
+    auto* layer = network_->addConstant(dims, weights);
+    if (layer == nullptr || layer->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add TensorRT FP32 constant");
+    }
+    auto* out = layer->getOutput(0);
+    out->setName(KeepName(UniqueName("exact_fp32_constant_tensor_" +
+                                     std::to_string(tensor.TensorIndex()))));
+    exact_fp32_constants_[tensor.Get()] = out;
+    return out;
+  }
+
+  bool HasExactFp32Value(const Tensor& tensor) const {
+    return exact_fp32_map_.find(tensor.Get()) != exact_fp32_map_.end();
+  }
+
   Expected<nvinfer1::ITensor*> AddFusedActivation(nvinfer1::ITensor* input,
                                                   uint32_t activation) {
     using Opt = litert::ActivationFunctionType;
@@ -3825,6 +3867,16 @@ class TensorRtGraphBuilder {
   }
 
   Expected<void> SetOutputTensor(const Tensor& tensor, nvinfer1::ITensor* out) {
+    if (lowering_exact_fp32_) {
+      if (out == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "TensorRT layer produced null output");
+      }
+      out->setName(KeepName(UniqueName("exact_fp32_tensor_" +
+                                       std::to_string(tensor.TensorIndex()))));
+      exact_fp32_map_[tensor.Get()] = out;
+      return {};
+    }
     // FP16-activation invariant: no FP32 value enters the tensor map, so
     // every float consumer sees a uniform type and Myelin fuses freely.
     if (Fp16ActivationsEnabled() &&
@@ -3963,6 +4015,13 @@ class TensorRtGraphBuilder {
 
   Expected<void> LowerUnary(const Op& op) {
     LITERT_ASSIGN_OR_RETURN(auto* input, GetTensor(op.Inputs()[0]));
+    // Rotary angles reach whole radians at long positions; take them in FP32.
+    // The result is in [-1, 1] and SetOutputTensor narrows it as usual.
+    if ((op.Code() == kLiteRtOpCodeTflSin ||
+         op.Code() == kLiteRtOpCodeTflCos) &&
+        HasExactFp32Value(op.Inputs()[0])) {
+      LITERT_ASSIGN_OR_RETURN(input, GetExactFp32Tensor(op.Inputs()[0]));
+    }
     if (op.Code() == kLiteRtOpCodeTflTanh) {
       auto* layer =
           network_->addActivation(*input, nvinfer1::ActivationType::kTANH);
@@ -4026,10 +4085,20 @@ class TensorRtGraphBuilder {
                             op.Outputs()[0].RankedTensorType());
     LITERT_ASSIGN_OR_RETURN(auto trt_type,
                             ConvertDataType(output_type.ElementType()));
+    // Positions turned back into integers (e.g. cache update offsets) must
+    // come from the exact view, not from a rounded FP16/BF16 copy.
+    if (IsPositionElementType(output_type.ElementType()) &&
+        HasExactFp32Value(op.Inputs()[0])) {
+      LITERT_ASSIGN_OR_RETURN(input, GetExactFp32Tensor(op.Inputs()[0]));
+    }
     auto* layer = network_->addCast(*input, trt_type);
     if (layer == nullptr || layer->getOutput(0) == nullptr) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add TensorRT cast layer");
+    }
+    if (Fp16ActivationsEnabled() && trt_type == nvinfer1::DataType::kFLOAT &&
+        IsPositionElementType(op.Inputs()[0].ElementType())) {
+      exact_fp32_map_[op.Outputs()[0].Get()] = layer->getOutput(0);
     }
     return SetOutputTensor(op.Outputs()[0], layer->getOutput(0));
   }
@@ -6246,6 +6315,77 @@ class TensorRtGraphBuilder {
   }
 
   Expected<void> LowerOp(const Op& op) {
+    LITERT_RETURN_IF_ERROR(LowerOpByCode(op));
+    if (Fp16ActivationsEnabled() && IsExactFp32PathOp(op)) {
+      return LowerExactFp32(op);
+    }
+    return {};
+  }
+
+  // Arithmetic and data movement on values derived from positions (see
+  // exact_fp32_map_).
+  bool IsExactFp32PathOp(const Op& op) const {
+    switch (op.Code()) {
+      case kLiteRtOpCodeTflAdd:
+      case kLiteRtOpCodeTflMul:
+      case kLiteRtOpCodeTflSub:
+      case kLiteRtOpCodeTflDiv:
+      case kLiteRtOpCodeTflReshape:
+      case kLiteRtOpCodeTflSlice:
+      case kLiteRtOpCodeTflConcatenation:
+      case kLiteRtOpCodeTflTranspose:
+        break;
+      default:
+        return false;
+    }
+    for (const auto& input : op.Inputs()) {
+      if (HasExactFp32Value(input)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Lowers `op` a second time on the FP32 views of its float inputs and
+  // records its result in exact_fp32_map_; tensor_map_ keeps the
+  // activation-type result. Skipped unless every float input has an FP32 view
+  // (an exact value or an FP32 constant).
+  Expected<void> LowerExactFp32(const Op& op) {
+    struct Swap {
+      LiteRtTensor tensor;
+      nvinfer1::ITensor* exact;
+      nvinfer1::ITensor* saved;
+    };
+    std::vector<Swap> swaps;
+    for (const auto& input : op.Inputs()) {
+      if (!IsFloatLike(input.ElementType())) {
+        continue;
+      }
+      LITERT_ASSIGN_OR_RETURN(auto* exact, GetExactFp32Tensor(input));
+      if (exact == nullptr) {
+        return {};
+      }
+      auto it = tensor_map_.find(input.Get());
+      swaps.push_back(
+          {input.Get(), exact, it == tensor_map_.end() ? nullptr : it->second});
+    }
+    for (const auto& swap : swaps) {
+      tensor_map_[swap.tensor] = swap.exact;
+    }
+    lowering_exact_fp32_ = true;
+    auto lowered = LowerOpByCode(op);
+    lowering_exact_fp32_ = false;
+    for (const auto& swap : swaps) {
+      if (swap.saved != nullptr) {
+        tensor_map_[swap.tensor] = swap.saved;
+      } else {
+        tensor_map_.erase(swap.tensor);
+      }
+    }
+    return lowered;
+  }
+
+  Expected<void> LowerOpByCode(const Op& op) {
     if (auto fused = fused_attention_ops_.find(op.Get());
         fused != fused_attention_ops_.end()) {
       return LowerDecodeAttentionMember(fused->second);
@@ -6334,6 +6474,19 @@ class TensorRtGraphBuilder {
   std::vector<OwnedRefitWeight> owned_refit_weights_;
   std::vector<TrtPtr<nvinfer1::IPluginV3>> owned_plugins_;
   std::unordered_map<LiteRtTensor, nvinfer1::ITensor*> tensor_map_;
+  // In FP16/BF16 activation mode, FP32 views of the floats a model derives
+  // from integer positions: casts, then arithmetic and data movement up to
+  // sin/cos (rotary angles) or a cast back to integers (cache update offsets).
+  // Narrowing them would round the positions (BF16 keeps 8 significant bits,
+  // so above 256 they are off by up to 2, above 512 by up to 4), moving cache
+  // writes and rotating by angles off by whole radians. Only sin/cos and
+  // integer casts read these views; every other consumer sees tensor_map_.
+  std::unordered_map<LiteRtTensor, nvinfer1::ITensor*> exact_fp32_map_;
+  // FP32 copies of float constants used on that path (inverse frequencies).
+  std::unordered_map<LiteRtTensor, nvinfer1::ITensor*> exact_fp32_constants_;
+  // Set while LowerExactFp32 re-lowers an op; SetOutputTensor then records the
+  // FP32 result in exact_fp32_map_ instead of narrowing it into tensor_map_.
+  bool lowering_exact_fp32_ = false;
   // Network inputs in their boundary (pre-FP16-conversion) form; used by
   // in-place style ops (cache updates) that operate on the raw int8 data.
   std::unordered_map<LiteRtTensor, nvinfer1::ITensor*> raw_input_map_;
