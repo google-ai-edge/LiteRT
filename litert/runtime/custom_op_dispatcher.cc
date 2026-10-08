@@ -20,7 +20,7 @@
 #include <vector>
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
@@ -136,8 +136,8 @@ Expected<void> CustomOpDispatcher::PrepareHelper(void* user_data,
     if (layout.has_strides) {
       return Unexpected(
           kLiteRtStatusErrorInvalidArgument,
-          absl::StrFormat("Unexpected layout with strides for tensor %s",
-                          TfLiteOpaqueTensorName(tfl_opaque_tensor)));
+          absl::StrCat("Unexpected layout with strides for tensor ",
+                       TfLiteOpaqueTensorName(tfl_opaque_tensor)));
     }
     input_layouts[i] = static_cast<LiteRtLayout>(layout);
   }

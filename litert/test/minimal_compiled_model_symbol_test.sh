@@ -68,7 +68,7 @@ BANNED_STREAM_SYMBOLS="litert::.*basic_.*stream|default_delete<.*basic_.*stream|
 
 # Status symbols: Heavy absl::Status implementations pull in Cord representation
 # and heap-allocated error payloads. Minimal builds rely on lighter status paths.
-BANNED_STATUS_SYMBOLS="StatusRep|CordRep|ErrorStatusBuilder::ToAbslStatus|ErrorConversion<absl::Status"
+BANNED_STATUS_SYMBOLS="StatusRep|CordRep|ErrorStatusBuilder::ToAbslStatus|ErrorConversion<absl::Status|FormatPack|StrFormat"
 BANNED_SYMBOL_PATTERN="(${BANNED_GPU_SYMBOLS}|${BANNED_NPU_SYMBOLS}|${BANNED_BUILTIN_OP_SYMBOLS}|${BANNED_WEIGHT_LOADER_SYMBOLS}|${BANNED_STREAM_SYMBOLS}|${BANNED_STATUS_SYMBOLS})"
 
 SYMBOLS=$(nm -C "${BINARY}")

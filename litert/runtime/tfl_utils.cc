@@ -17,7 +17,7 @@
 #include <cstddef>
 #include <cstring>
 
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
@@ -110,8 +110,8 @@ Expected<void> ResizeTensor(const LiteRtLayout& layout,
       status != kTfLiteOk) {
     return Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
-        absl::StrFormat("Failed to resize TFL tensor %s: %d",
-                        TfLiteOpaqueTensorName(tfl_opaque_tensor), status));
+        absl::StrCat("Failed to resize TFL tensor ",
+                     TfLiteOpaqueTensorName(tfl_opaque_tensor), ": ", status));
   }
 
   return {};

@@ -1088,8 +1088,27 @@ cc_library(
 # copybara:uncomment_begin(google-only)
 # # Check that litert runtime doesn't depend on MLIR.
 # check_dependencies(
+#     name = "litert_runtime_c_api_no_mlir_deps_test",
 #     of = [":litert_runtime_c_api_shared_lib"],
 #     dont_match_regexp = "^//third_party/llvm/llvm-project/mlir",
+#     tags = ["nowindows"],
+# )
+#
+# # Prevent LiteRT C API and runtime implementations from directly depending on
+# # absl::StrFormat, which pulls FormatPack and formatting tables into minimal builds.
+# check_dependencies(
+#     name = "litert_c_api_no_str_format_deps_test",
+#     of = [
+#         ":litert_compiled_model_impl",
+#         ":litert_environment_impl",
+#         ":litert_event_impl",
+#         ":litert_model_impl",
+#         ":litert_options_impl",
+#         ":litert_tensor_buffer_impl",
+#         "//litert/runtime:compiled_model",
+#     ],
+#     depth = 1,
+#     dont_match_regexp = "^//third_party/absl/strings:str_format$",
 #     tags = ["nowindows"],
 # )
 # copybara:uncomment_end

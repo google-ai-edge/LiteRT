@@ -33,7 +33,7 @@
 #else
 #define XNN_EXTRA_BYTES 16
 #endif
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_tensor_buffer_registry.h"
@@ -816,10 +816,10 @@ Expected<void> LiteRtTensorBufferT::IsValid() {
     size_t min_required_bytes =
         sizeof(int32_t) + sizeof(int32_t) * (*num_elements + 1);
     if (min_required_bytes > buffer_size() - buffer_offset()) {
-      const std::string error_message = absl::StrFormat(
-          "Insufficient buffer size for TfString: Required at least %d bytes, "
-          "actual size %d bytes",
-          min_required_bytes, buffer_size() - buffer_offset());
+      const std::string error_message = absl::StrCat(
+          "Insufficient buffer size for TfString: Required at least ",
+          min_required_bytes, " bytes, actual size ",
+          buffer_size() - buffer_offset(), " bytes");
       return Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
     }
   } else {
@@ -827,9 +827,9 @@ Expected<void> LiteRtTensorBufferT::IsValid() {
         !num_bytes) {
       return Unexpected(num_bytes.Error());
     } else if (*num_bytes > buffer_size() - buffer_offset()) {
-      const std::string error_message = absl::StrFormat(
-          "Insufficient buffer size: Required %d bytes, actual size %d bytes",
-          *num_bytes, buffer_size() - buffer_offset());
+      const std::string error_message = absl::StrCat(
+          "Insufficient buffer size: Required ", *num_bytes,
+          " bytes, actual size ", buffer_size() - buffer_offset(), " bytes");
       return Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
     }
   }
@@ -856,9 +856,9 @@ Expected<void*> LiteRtTensorBufferT::GetHostBuffer() {
   }
   return Unexpected(
       kLiteRtStatusErrorRuntimeFailure,
-      absl::StrFormat("Cannot get %s buffer from %s tensor buffer",
-                      BufferTypeToString(kLiteRtTensorBufferTypeHostMemory),
-                      BufferTypeToString(buffer_type_)));
+      absl::StrCat(
+          "Cannot get ", BufferTypeToString(kLiteRtTensorBufferTypeHostMemory),
+          " buffer from ", BufferTypeToString(buffer_type_), " tensor buffer"));
 }
 
 Expected<AHardwareBuffer*> LiteRtTensorBufferT::GetAhwbBuffer() {
@@ -867,9 +867,9 @@ Expected<AHardwareBuffer*> LiteRtTensorBufferT::GetAhwbBuffer() {
   }
   return Unexpected(
       kLiteRtStatusErrorRuntimeFailure,
-      absl::StrFormat("Cannot get %s buffer from %s tensor buffer",
-                      BufferTypeToString(kLiteRtTensorBufferTypeAhwb),
-                      BufferTypeToString(buffer_type_)));
+      absl::StrCat(
+          "Cannot get ", BufferTypeToString(kLiteRtTensorBufferTypeAhwb),
+          " buffer from ", BufferTypeToString(buffer_type_), " tensor buffer"));
 }
 
 Expected<std::pair<void*, int>> LiteRtTensorBufferT::GetIonBuffer() {
@@ -879,9 +879,9 @@ Expected<std::pair<void*, int>> LiteRtTensorBufferT::GetIonBuffer() {
   }
   return Unexpected(
       kLiteRtStatusErrorRuntimeFailure,
-      absl::StrFormat("Cannot get %s buffer from %s tensor buffer",
-                      BufferTypeToString(kLiteRtTensorBufferTypeIon),
-                      BufferTypeToString(buffer_type_)));
+      absl::StrCat(
+          "Cannot get ", BufferTypeToString(kLiteRtTensorBufferTypeIon),
+          " buffer from ", BufferTypeToString(buffer_type_), " tensor buffer"));
 }
 
 Expected<std::pair<void*, int>> LiteRtTensorBufferT::GetDmaBufBuffer() {
@@ -891,9 +891,9 @@ Expected<std::pair<void*, int>> LiteRtTensorBufferT::GetDmaBufBuffer() {
   }
   return Unexpected(
       kLiteRtStatusErrorRuntimeFailure,
-      absl::StrFormat("Cannot get %s buffer from %s tensor buffer",
-                      BufferTypeToString(kLiteRtTensorBufferTypeDmaBuf),
-                      BufferTypeToString(buffer_type_)));
+      absl::StrCat(
+          "Cannot get ", BufferTypeToString(kLiteRtTensorBufferTypeDmaBuf),
+          " buffer from ", BufferTypeToString(buffer_type_), " tensor buffer"));
 }
 
 Expected<std::pair<void*, int>> LiteRtTensorBufferT::GetFastRpcBuffer() {
@@ -904,9 +904,9 @@ Expected<std::pair<void*, int>> LiteRtTensorBufferT::GetFastRpcBuffer() {
 
   return Unexpected(
       kLiteRtStatusErrorRuntimeFailure,
-      absl::StrFormat("Cannot get %s buffer from %s tensor buffer",
-                      BufferTypeToString(kLiteRtTensorBufferTypeFastRpc),
-                      BufferTypeToString(buffer_type_)));
+      absl::StrCat(
+          "Cannot get ", BufferTypeToString(kLiteRtTensorBufferTypeFastRpc),
+          " buffer from ", BufferTypeToString(buffer_type_), " tensor buffer"));
 }
 
 #if LITERT_HAS_OPENCL_SUPPORT
@@ -953,9 +953,9 @@ Expected<litert::internal::GlBuffer*> LiteRtTensorBufferT::GetGlBuffer() {
 
   return Unexpected(
       kLiteRtStatusErrorRuntimeFailure,
-      absl::StrFormat("Cannot get %s buffer from %s tensor buffer",
-                      BufferTypeToString(kLiteRtTensorBufferTypeGlBuffer),
-                      BufferTypeToString(buffer_type_)));
+      absl::StrCat(
+          "Cannot get ", BufferTypeToString(kLiteRtTensorBufferTypeGlBuffer),
+          " buffer from ", BufferTypeToString(buffer_type_), " tensor buffer"));
 }
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
