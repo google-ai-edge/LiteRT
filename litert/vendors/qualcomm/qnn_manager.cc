@@ -458,6 +458,17 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::QnnBackend& qnn_backend,
     return kLiteRtStatusOk;
   }
 
+  // Bypass StridedSlice OP validation.
+  if (SdkVersion{2, 50, 0} <= sdk_version &&
+      op.IsOpCode(::qnn::QnnOpCode::kStridedSlice) &&
+      op.GetInputTensor(0).GetDataType() == QNN_DATATYPE_BOOL_8 &&
+      op.GetOutputTensor(0).GetDataType() == QNN_DATATYPE_BOOL_8) {
+    LITERT_LOG(
+        LITERT_WARNING,
+        "SDK version is >= 2.50.0; StridedSlice OP validation is bypassed.");
+    return kLiteRtStatusOk;
+  }
+
   if (op.IsOpCode(::qnn::QnnOpCode::kFullyConnected) &&
       op.GetInputTensor(0).IsQuantI8() && op.GetInputTensor(1).IsQuantI8() &&
       op.GetInputTensor(1).IsQuantBitwidth(::qnn::kQuantBitWidth2) &&
