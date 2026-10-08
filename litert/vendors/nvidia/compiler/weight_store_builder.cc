@@ -74,6 +74,12 @@ TensorRtWeightStoreBuilder::Create(const std::string& model_path,
   std::unique_ptr<TensorRtWeightStoreBuilder> builder(
       new TensorRtWeightStoreBuilder());
   builder->source_path_ = resolved;
+  builder->source_fd_ = open(resolved, O_RDONLY | O_CLOEXEC);
+  if (builder->source_fd_ < 0) {
+    return Error(kLiteRtStatusErrorFileIO,
+                 "Failed to open TensorRT weight source " +
+                     std::string(resolved) + ": " + std::strerror(errno));
+  }
   builder->source_size_ = static_cast<uint64_t>(stat_buffer.st_size);
   builder->source_identity_ = {
       static_cast<uint64_t>(stat_buffer.st_dev),
@@ -126,6 +132,30 @@ TensorRtWeightStoreBuilder::Create(const std::string& model_path,
   return builder;
 }
 
+TensorRtWeightStoreBuilder::~TensorRtWeightStoreBuilder() {
+  if (source_fd_ >= 0) {
+    close(source_fd_);
+  }
+}
+
+bool TensorRtWeightStoreBuilder::EqualsSource(absl::Span<const uint8_t> bytes,
+                                              uint64_t offset) const {
+  std::vector<uint8_t> file(bytes.size());
+  for (size_t read = 0; read < file.size();) {
+    const ssize_t result =
+        pread(source_fd_, file.data() + read, file.size() - read,
+              static_cast<off_t>(offset + read));
+    if (result < 0 && errno == EINTR) {
+      continue;
+    }
+    if (result <= 0) {
+      return false;
+    }
+    read += static_cast<size_t>(result);
+  }
+  return std::memcmp(file.data(), bytes.data(), bytes.size()) == 0;
+}
+
 Expected<uint64_t> TensorRtWeightStoreBuilder::SourceOffset(
     absl::Span<const uint8_t> bytes) const {
   const uintptr_t begin = reinterpret_cast<uintptr_t>(bytes.data());
@@ -146,10 +176,12 @@ Expected<uint64_t> TensorRtWeightStoreBuilder::SourceOffset(
     return Error(kLiteRtStatusErrorNotFound,
                  "The weights lie past the end of the model file");
   }
-  // A private mapping may hold pages the process wrote to, which no longer
-  // match the file. The page map tells without touching the weights: a
-  // present page of the file is flagged as a file page, a modified one is
-  // anonymous memory, possibly swapped out.
+  // A private mapping may hold pages the process wrote to. The page map
+  // tells which without touching the weights: a present page of the file is
+  // flagged as a file page, a written one is anonymous memory, possibly
+  // swapped out. A written page can still hold what the file holds, when
+  // other bytes of the page were written or the same bytes were written
+  // back, so its part of the weights is compared with the file.
   const int pagemap = open("/proc/self/pagemap", O_RDONLY | O_CLOEXEC);
   if (pagemap < 0) {
     return Error(kLiteRtStatusErrorNotFound,
@@ -174,8 +206,17 @@ Expected<uint64_t> TensorRtWeightStoreBuilder::SourceOffset(
       break;
     }
     for (uint64_t i = 0; i < count; ++i) {
-      if ((entries[i] & kSwapped) != 0 ||
-          ((entries[i] & kPresent) != 0 && (entries[i] & kFilePage) == 0)) {
+      if ((entries[i] & kSwapped) == 0 &&
+          ((entries[i] & kPresent) == 0 || (entries[i] & kFilePage) != 0)) {
+        continue;
+      }
+      const uintptr_t part_begin =
+          std::max<uintptr_t>((page + i) * page_size, begin);
+      const uintptr_t part_end =
+          std::min<uintptr_t>((page + i + 1) * page_size, end);
+      if (!EqualsSource({reinterpret_cast<const uint8_t*>(part_begin),
+                         part_end - part_begin},
+                        offset + (part_begin - begin))) {
         unmodified = false;
         break;
       }

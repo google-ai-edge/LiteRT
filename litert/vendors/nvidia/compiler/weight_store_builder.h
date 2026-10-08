@@ -40,7 +40,8 @@ struct TensorRtWeightLocation {
 // (bytecode.h, TensorRtWeightStore).
 //
 // The weights of a launch are the concatenation of constant buffers of the
-// model ("members"), which must be views of the memory-mapped model file.
+// model ("members"), which must be views of the memory-mapped model file
+// that still hold what the file holds.
 // Launches with the same members get the same location, whichever partition
 // asks: the partitions of one model read the same segments wherever they use
 // the same weights. A partition's segments are final once EndPartition() has
@@ -67,8 +68,14 @@ class TensorRtWeightStoreBuilder {
   static Expected<std::unique_ptr<TensorRtWeightStoreBuilder>> Create(
       const std::string& model_path, uint64_t granule, uint64_t segment_bytes);
 
-  // kLiteRtStatusErrorNotFound if a member is not an unmodified view of the
-  // model file; the caller then keeps those weights in the plan.
+  ~TensorRtWeightStoreBuilder();
+  TensorRtWeightStoreBuilder(const TensorRtWeightStoreBuilder&) = delete;
+  TensorRtWeightStoreBuilder& operator=(const TensorRtWeightStoreBuilder&) =
+      delete;
+
+  // kLiteRtStatusErrorNotFound if a member is not a view of the model file
+  // or no longer holds the bytes of the file; the caller then keeps those
+  // weights in the plan.
   Expected<TensorRtWeightLocation> Add(
       absl::Span<const absl::Span<const uint8_t>> members);
 
@@ -92,12 +99,15 @@ class TensorRtWeightStoreBuilder {
 
   TensorRtWeightStoreBuilder() = default;
 
-  // The offset in the model file of `bytes`, if they are an unmodified view
-  // of it.
+  // The offset in the model file of `bytes`, if they are a view of it that
+  // holds what the file holds.
   Expected<uint64_t> SourceOffset(absl::Span<const uint8_t> bytes) const;
+  // Whether the file holds `bytes` at `offset`.
+  bool EqualsSource(absl::Span<const uint8_t> bytes, uint64_t offset) const;
   void CloseOpenSegment();
 
   std::string source_path_;
+  int source_fd_ = -1;
   uint64_t source_size_ = 0;
   TensorRtAotFileIdentity source_identity_;
   uint64_t granule_ = 0;

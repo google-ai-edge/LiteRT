@@ -185,7 +185,7 @@ TEST_F(WeightStoreBuilderTest, RejectsBuffersThatAreNotTheFile) {
   auto not_mapped = store.Add(heap);
   ASSERT_FALSE(not_mapped.HasValue());
   EXPECT_EQ(not_mapped.Error().Status(), kLiteRtStatusErrorNotFound);
-  // A page of the mapping that was written to no longer is the file's.
+  // Weights that were written to no longer are the file's.
   mapping_[200000 - kMapOffset] ^= 1;
   const absl::Span<const uint8_t> modified[] = {View(199000, 2000)};
   auto changed = store.Add(modified);
@@ -199,6 +199,29 @@ TEST_F(WeightStoreBuilderTest, RejectsBuffersThatAreNotTheFile) {
   const absl::Span<const uint8_t> read_before[] = {View(499000, 2000)};
   EXPECT_TRUE(store.Add(read_before).HasValue());
   EXPECT_FALSE(store.Add({}).HasValue());
+}
+
+TEST_F(WeightStoreBuilderTest, TakesWeightsOnWrittenPagesThatMatchTheFile) {
+  auto builder = TensorRtWeightStoreBuilder::Create(path_, kGranule, kGranule);
+  ASSERT_TRUE(builder.HasValue()) << builder.Error().Message();
+  auto& store = **builder;
+  // Another byte of the first page of the weights is written: the page
+  // becomes a private copy, and the weights on it still are the file's.
+  mapping_[299500 - kMapOffset] ^= 1;
+  const absl::Span<const uint8_t> beside[] = {View(300000, 20000)};
+  auto kept = store.Add(beside);
+  ASSERT_TRUE(kept.HasValue()) << kept.Error().Message();
+  // A byte of the weights is written back as it was.
+  volatile uint8_t* byte = mapping_ + (600000 - kMapOffset);
+  *byte = *byte;
+  const absl::Span<const uint8_t> rewritten[] = {View(599000, 2000)};
+  auto same = store.Add(rewritten);
+  ASSERT_TRUE(same.HasValue()) << same.Error().Message();
+  store.EndPartition();
+  ASSERT_EQ(store.segments().size(), 1u);
+  ASSERT_EQ(store.segments()[0].pieces.size(), 2u);
+  EXPECT_EQ(store.segments()[0].pieces[0].source_offset, 300000u);
+  EXPECT_EQ(store.segments()[0].pieces[1].source_offset, 599000u);
 }
 
 TEST_F(WeightStoreBuilderTest, NeedsAMappedFileAndAValidGranule) {
