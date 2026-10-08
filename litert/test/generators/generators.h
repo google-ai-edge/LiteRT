@@ -16,6 +16,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_
 
+// clang-format off
 #include "litert/test/generators/binary_no_bcast.h"  // IWYU pragma: export
 #include "litert/test/generators/common.h"  // IWYU pragma: export
 #include "litert/test/generators/conv_2d.h"  // IWYU pragma: export
@@ -41,5 +42,7 @@
 #include "litert/test/generators/swiglu.h"  // IWYU pragma: export
 #include "litert/test/generators/qkv_norm_rope.h"  // IWYU pragma: export
 #include "litert/test/generators/rms_norm.h"  // IWYU pragma: export
+#include "litert/test/generators/group_norm.h"  // IWYU pragma: export
+// clang-format on
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_
