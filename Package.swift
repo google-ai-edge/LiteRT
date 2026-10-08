@@ -53,21 +53,25 @@ let package = Package(
     // The Prebuilt Binary Target
     .binaryTarget(
       name: "CLiteRT",
-      path: "prebuilt/CLiteRT.xcframework.zip"
+      url: "https://github.com/google-ai-edge/LiteRT/releases/download/v2.3.0/CLiteRT.xcframework.zip",
+      checksum: "b36a1a4f1b3eeb04546b4cc2986902cd704439b37c34597ab0f804aed08f5a00"
     ),
     .binaryTarget(
       name: "CLiteRT_mac",
-      path: "prebuilt/CLiteRT_mac.xcframework.zip"
+      url: "https://github.com/google-ai-edge/LiteRT/releases/download/v2.3.0/CLiteRT_mac.xcframework.zip",
+      checksum: "071b9f4bebb483709ac3d7faf98123da5453a2ebf60ce8f819aa1e30b9535a98"
     ),
     // Static build of the C API for C and Objective-C consumers (iOS only).
     .binaryTarget(
       name: "CLiteRT_static",
-      path: "prebuilt/CLiteRT_static.xcframework.zip"
+      url: "https://github.com/google-ai-edge/LiteRT/releases/download/v2.3.0/CLiteRT_static.xcframework.zip",
+      checksum: "3742400af2c2b8e4a7f8dd87ccf1470bccf7f9866d80da56eefa76f899a7fb46"
     ),
     // Optional GPU Accelerator Plugin Target
     .binaryTarget(
       name: "LiteRtMetalAccelerator",
-      path: "prebuilt/LiteRtMetalAccelerator.xcframework.zip"
+      url: "https://github.com/google-ai-edge/LiteRT/releases/download/v2.3.0/LiteRtMetalAccelerator.xcframework.zip",
+      checksum: "e564e6678959098a35c1dbcffc60041afac25a845abcee998a53f958e342aeec"
     ),
     // The Swift Wrapper Target
     .target(
@@ -87,7 +91,8 @@ let package = Package(
     // The Prebuilt TensorFlow Lite C Binary Target
     .binaryTarget(
       name: "TensorFlowLiteC",
-      path: "prebuilt/TensorFlowLiteC.xcframework.zip"
+      url: "https://github.com/google-ai-edge/LiteRT/releases/download/v2.3.0/TensorFlowLiteC.xcframework.zip",
+      checksum: "f77274f9249af1e7dd1de88f57661944f80d177ff2c386b28aa3d466b7173f50"
     ),
     // The TensorFlow Lite Swift Wrapper Target
     .target(
