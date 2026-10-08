@@ -186,9 +186,11 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
             if (LrtCreateGpuOptionsFromToml(
                     reinterpret_cast<const char*>(gpu_payload_data),
                     &gpu_opts) == kLiteRtStatusOk) {
-              bool enable_residency = true;
+              // Residency stays disabled unless the run options ask for it.
+              bool enable_residency = false;
               if (LrtGetGpuOptionsMetalResidencySet(
-                      gpu_opts, &enable_residency) == kLiteRtStatusOk) {
+                      &enable_residency, enable_residency,
+                      gpu_opts) == kLiteRtStatusOk) {
                 auto* metal_backend = static_cast<litert::ml_drift::GpuBackendMetal*>(
                     delegate_kernel->backend());
                 metal_backend->SetResidencyRuntimeEnabled(enable_residency);
