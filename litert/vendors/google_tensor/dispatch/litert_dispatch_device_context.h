@@ -55,6 +55,8 @@ class LiteRtDispatchDeviceContextT {
     litert::google_tensor::TensorCoherencyMap input_coherency_map;
     // Map from (signature_name, tensor_name) to coherency preference.
     litert::google_tensor::TensorCoherencyMap output_coherency_map;
+    // Whether to use vendor-preferred fence for output events.
+    bool use_vendor_preferred_fence = false;
   };
 
   static LiteRtStatus Create(const LiteRtRuntimeContext* runtime_context,

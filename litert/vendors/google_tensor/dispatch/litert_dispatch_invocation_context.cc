@@ -14,7 +14,14 @@
 
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_invocation_context.h"
 
+#include <errno.h>
+#include <poll.h>
+#include <unistd.h>
+
+#include <atomic>
 #include <cinttypes>
+#include <cstdint>
+#include <cstring>
 #include <optional>
 #include <utility>
 
@@ -27,14 +34,127 @@
 #include "litert/c/litert_event_type.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_utils.h"
+#if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+#include "litert/c/options/google/litert_google_tensor_privileged_options_type.h"
+#endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_metrics.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
 namespace gt = litert::google_tensor;
+
+namespace {
+
+// Custom LiteRT event backed by a vendor-preferred fence file descriptor.
+class GoogleTensorVendorPreferredCustomEvent : public LiteRtCustomEventT {
+ public:
+  GoogleTensorVendorPreferredCustomEvent(int fd, bool owns_fd)
+      : fd_(fd), owns_fd_(owns_fd) {
+    Retain = &GoogleTensorVendorPreferredCustomEvent::RetainImpl;
+    Release = &GoogleTensorVendorPreferredCustomEvent::ReleaseImpl;
+    Wait = &GoogleTensorVendorPreferredCustomEvent::WaitImpl;
+    IsSignaled = &GoogleTensorVendorPreferredCustomEvent::IsSignaledImpl;
+    GetNative = &GoogleTensorVendorPreferredCustomEvent::GetNativeImpl;
+  }
+
+  ~GoogleTensorVendorPreferredCustomEvent() {
+    if (owns_fd_ && fd_ >= 0) {
+      close(fd_);
+    }
+  }
+
+ private:
+  static void RetainImpl(LiteRtCustomEvent event) {
+    if (event == nullptr) return;
+    auto* self = static_cast<GoogleTensorVendorPreferredCustomEvent*>(event);
+    self->ref_count_.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  static void ReleaseImpl(LiteRtCustomEvent event) {
+    if (event == nullptr) return;
+    auto* self = static_cast<GoogleTensorVendorPreferredCustomEvent*>(event);
+    if (self->ref_count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+      delete self;
+    }
+  }
+
+  static void WaitImpl(LiteRtCustomEvent event, int64_t timeout_in_ms) {
+    if (event == nullptr) return;
+    auto* self = static_cast<GoogleTensorVendorPreferredCustomEvent*>(event);
+    if (self->fd_ < 0) {
+      LITERT_LOG(LITERT_ERROR, "Invalid vendor-preferred fence fd %d in Wait",
+                 self->fd_);
+      return;
+    }
+
+    pollfd fds = {
+        .fd = self->fd_,
+        .events = POLLIN,
+    };
+
+    int ret;
+    do {
+      ret = poll(&fds, 1, timeout_in_ms);
+      if (ret == 1) {
+        if ((fds.revents & (POLLERR | POLLNVAL)) != 0) {
+          LITERT_LOG(LITERT_ERROR,
+                     "poll returned error revents=0x%x on vendor-preferred "
+                     "fence fd %d",
+                     fds.revents, self->fd_);
+        }
+        return;
+      } else if (ret == 0) {
+        LITERT_LOG(LITERT_WARNING, "Timeout expired: %" PRId64 " ms on fd %d",
+                   timeout_in_ms, self->fd_);
+        return;
+      }
+    } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
+
+    LITERT_LOG(LITERT_ERROR,
+               "Failed to wait on vendor-preferred fence fd %d: %s", self->fd_,
+               strerror(errno));
+  }
+
+  static int IsSignaledImpl(LiteRtCustomEvent event) {
+    if (event == nullptr) return 0;
+    auto* self = static_cast<GoogleTensorVendorPreferredCustomEvent*>(event);
+    if (self->fd_ < 0) return 0;
+
+    pollfd fds = {
+        .fd = self->fd_,
+        .events = POLLIN,
+    };
+
+    int ret;
+    do {
+      ret = poll(&fds, 1, /*timeout=*/0);
+      if (ret == 1) {
+        return (fds.revents & (POLLERR | POLLNVAL)) == 0 ? 1 : 0;
+      }
+      if (ret == 0) {
+        return 0;
+      }
+    } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
+
+    return 0;
+  }
+
+  static void* GetNativeImpl(LiteRtCustomEvent event) {
+    if (event == nullptr) return nullptr;
+    auto* self = static_cast<GoogleTensorVendorPreferredCustomEvent*>(event);
+    return static_cast<void*>(&self->fd_);
+  }
+
+  std::atomic<int> ref_count_{1};
+  int fd_ = -1;
+  bool owns_fd_ = false;
+};
+
+}  // namespace
 
 LiteRtStatus LiteRtDispatchInvocationContextT::CreateFromBytecode(
     LiteRtDispatchDeviceContext device_context,
@@ -246,7 +366,47 @@ LiteRtStatus LiteRtDispatchInvocationContextT::AttachInputEvent(
   LITERT_RETURN_IF_ERROR(
       device_context_->runtime_context()->get_event_event_type(input_event,
                                                                &type));
-  if (type != LiteRtEventTypeSyncFenceFd) {
+  int sync_fence_fd = -1;
+  ThrFenceType thr_fence_type;
+  if (type == LiteRtEventTypeSyncFenceFd) {
+    // This API does not return a duped fd, so `sync_fence_fd` must not be
+    // closed.
+    LITERT_RETURN_IF_ERROR(
+        device_context_->runtime_context()->get_event_sync_fence_fd(
+            input_event, &sync_fence_fd));
+
+    // On Android platforms, it is expected that `sync_fence_fd` is a dma-fence
+    // fd. On other Linux platforms, it is expected that `sync_fence_fd` is an
+    // eventfd.
+    thr_fence_type =
+#if defined(__ANDROID__)
+        kThrFenceTypeDma;
+#else
+        kThrFenceTypeEventFd;
+#endif
+  } else if (type == LiteRtEventTypeCustom) {
+    LiteRtCustomEvent custom_event = nullptr;
+    LITERT_RETURN_IF_ERROR(device_context_->runtime_context()->get_custom_event(
+        input_event, &custom_event));
+    if (custom_event == nullptr || custom_event->GetNative == nullptr) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Custom input event is null or missing GetNative callback");
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    void* native = custom_event->GetNative(custom_event);
+    if (native == nullptr) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Custom input event GetNative returned null pointer");
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    sync_fence_fd = *static_cast<const int*>(native);
+    if (sync_fence_fd < 0) {
+      LITERT_LOG(LITERT_ERROR, "Invalid custom event fence fd %d",
+                 sync_fence_fd);
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    thr_fence_type = kThrFenceTypeVendorPreferred;
+  } else {
     LITERT_LOG(LITERT_ERROR,
                "Attaching input event with type %d is not supported", type);
     return kLiteRtStatusErrorUnsupported;
@@ -254,23 +414,6 @@ LiteRtStatus LiteRtDispatchInvocationContextT::AttachInputEvent(
 
   LiteRtDispatchEdgeId edge_id;
   LITERT_RETURN_IF_ERROR(graph_->GetInputEdgeId(graph_input_index, edge_id));
-
-  int sync_fence_fd;
-  // This API does not return a duped fd, so `sync_fence_fd` must not be
-  // closed.
-  LITERT_RETURN_IF_ERROR(
-      device_context_->runtime_context()->get_event_sync_fence_fd(
-          input_event, &sync_fence_fd));
-
-  // On Android platforms, it is expected that `sync_fence_fd` is a dma-fence
-  // fd. On other Linux platforms, it is expected that `sync_fence_fd` is an
-  // eventfd.
-  ThrFenceType thr_fence_type =
-#if defined(__ANDROID__)
-      kThrFenceTypeDma;
-#else
-      kThrFenceTypeEventFd;
-#endif
 
   ThrFenceHandle thr_fence_handle;
   GT_LOG_RETURN_IF_SB_ERROR(
@@ -294,19 +437,40 @@ LiteRtStatus LiteRtDispatchInvocationContextT::AttachInputEvent(
   return kLiteRtStatusOk;
 }
 
+bool LiteRtDispatchInvocationContextT::ShouldUseVendorPreferredFence() const {
+#if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+  auto dev_priv_opts = device_context_->GetGoogleTensorPrivilegedOptions();
+  if (dev_priv_opts.has_value() && dev_priv_opts->use_vendor_preferred_fence) {
+    return true;
+  }
+#endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+  auto dev_gt_opts = device_context_->GetGoogleTensorOptions();
+  if (dev_gt_opts.has_value() && dev_gt_opts->use_vendor_preferred_fence) {
+    return true;
+  }
+
+  return false;
+}
+
 LiteRtStatus LiteRtDispatchInvocationContextT::InvokeAsync(
     absl::Span<LiteRtEvent> output_events) {
   if (output_events.size() != graph_->NumOutputEdges()) {
     LITERT_LOG(LITERT_ERROR,
-               "Graph has %zu outputs but %zu output events were provided",
-               graph_->NumOutputEdges(), output_events.size());
+                "Graph has %zu outputs but %zu output events were provided",
+                graph_->NumOutputEdges(), output_events.size());
     return kLiteRtStatusErrorInvalidArgument;
   }
 
+  const bool use_vendor_preferred_fence = ShouldUseVendorPreferredFence();
+  const ThrFenceType out_fence_type =
+      use_vendor_preferred_fence ? kThrFenceTypeVendorPreferred
+                                 : kThrFenceTypeDma;
+
   GT_LOG_RETURN_IF_SB_ERROR(
       thrInvocationContextPrepareForInvoke2(thr_invocation_context_,
-                                            kThrFenceTypeDma),
-      "Failed to prepare SB invocation context with dma-fence out-fence type");
+                                            out_fence_type),
+      "Failed to prepare SB invocation context with out-fence type %d",
+      out_fence_type);
 
   GT_LOG_RETURN_IF_SB_ERROR(
       thrInvocationContextInvokeOnce(thr_invocation_context_),
@@ -340,14 +504,29 @@ LiteRtStatus LiteRtDispatchInvocationContextT::InvokeAsync(
       close(sync_fence_fd);
     };
 
-    // `owns_fd=true` so that `sync_fence_fd` is closed when the event is
-    // destroyed.
-    LITERT_RETURN_IF_ERROR(
-        device_context_->runtime_context()->create_event_from_sync_fence_fd(
-            /*env=*/nullptr, sync_fence_fd, /*owns_fd=*/true,
-            &output_events[graph_output_index]));
+    if (use_vendor_preferred_fence) {
+      LITERT_RETURN_IF_ERROR(
+          device_context_->runtime_context()->create_managed_event(
+              /*env=*/nullptr, LiteRtEventTypeCustom,
+              &output_events[graph_output_index]));
+      auto* custom_event = new GoogleTensorVendorPreferredCustomEvent(
+          sync_fence_fd, /*owns_fd=*/true);
+      std::move(sync_fence_fd_cleanup).Cancel();
+      LiteRtStatus set_status =
+          device_context_->runtime_context()->set_custom_event(
+              output_events[graph_output_index], custom_event);
+      custom_event->Release(custom_event);
+      LITERT_RETURN_IF_ERROR(set_status);
+    } else {
+      // `owns_fd=true` so that `sync_fence_fd` is closed when the event is
+      // destroyed.
+      LITERT_RETURN_IF_ERROR(
+          device_context_->runtime_context()->create_event_from_sync_fence_fd(
+              /*env=*/nullptr, sync_fence_fd, /*owns_fd=*/true,
+              &output_events[graph_output_index]));
+      std::move(sync_fence_fd_cleanup).Cancel();
+    }
 
-    std::move(sync_fence_fd_cleanup).Cancel();
     std::move(thr_fence_handle_cleanup).Cancel();
     GT_LOG_RETURN_IF_SB_ERROR(
         thrUnregisterFence(device_context_->thr_context(), thr_fence_handle),

@@ -206,6 +206,14 @@ LiteRtStatus LrtGoogleTensorOptionsGetExtraOptions(
 // LiteRtStatus LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
 //     LrtGoogleTensorOptions options, bool* experimental_enable_input_validator);
 // copybara:uncomment_end
+
+// use_vendor_preferred_fence ------------------------------------------
+
+LiteRtStatus LrtGoogleTensorOptionsSetUseVendorPreferredFence(
+    LrtGoogleTensorOptions options, bool use_vendor_preferred_fence);
+
+LiteRtStatus LrtGoogleTensorOptionsGetUseVendorPreferredFence(
+    LrtGoogleTensorOptions options, bool* use_vendor_preferred_fence);
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
