@@ -158,6 +158,10 @@ class AtsConf {
   // Whether to minimize logging.
   bool Quiet() const { return quiet_; }
 
+  // Given name of a potential test, determines if it matches the positive
+  // `--do_register` filter (or if no `--do_register` filter was set).
+  bool MatchesDoRegister(absl::string_view name) const;
+
   // Given name of a potential test, determines if it should be run based on
   // the filter regex.
   bool ShouldRegister(const std::string& name) const;
@@ -297,8 +301,9 @@ class AtsConf {
                    std::vector<std::regex> neg_re,
                    std::vector<std::regex> pos_re,
                    std::vector<std::string> extra_models,
-                   std::optional<int> data_seed, size_t iters_per_test,
-                   int warmup_runs, std::chrono::milliseconds max_ms_per_test,
+                   std::optional<int> data_seed,
+                   size_t iters_per_test, int warmup_runs,
+                   std::chrono::milliseconds max_ms_per_test,
                    bool fail_on_timeout, bool dump_report, std::string csv,
                    bool compile_mode, std::string models_out, int32_t limit,
                    std::optional<internal::CompilerPlugin> plugin,

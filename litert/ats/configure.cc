@@ -85,12 +85,14 @@ ABSL_FLAG(std::string, plugin_dir, "",
 
 ABSL_FLAG(
     std::vector<std::string>, dont_register, std::vector<std::string>{},
-    "Regex for test selection. This is a negative search match, if the pattern "
-    "can be found anywhere in the test name, it will be skipped.");
+    "Regex for test selection. This is a negative search match; if the pattern "
+    "can be found anywhere in the test name, the test is registered in GTest "
+    "and marked SKIPPED so coverage stats remain complete.");
 
 ABSL_FLAG(std::vector<std::string>, do_register, std::vector<std::string>{},
-          "Regex for test selection. This is a positive search match, if the "
-          "pattern can be found anywhere in the test name, it will be run. "
+          "Regex for test selection. This is a positive search match; only "
+          "tests matching at least one pattern are registered (non-matching "
+          "tests are omitted from registration). "
           "This has lower priority over the dont_register filter.");
 
 ABSL_FLAG(
@@ -378,17 +380,19 @@ int AtsConf::GetSeedForParams(absl::string_view name) const {
   return it->second;
 }
 
+bool AtsConf::MatchesDoRegister(absl::string_view name) const {
+  return pos_re_.empty() ||
+         std::any_of(pos_re_.begin(), pos_re_.end(), [&name](const auto& re) {
+           return std::regex_search(name.data(), name.data() + name.size(), re);
+         });
+}
+
 bool AtsConf::ShouldRegister(const std::string& name) const {
   return ShouldRegister(absl::string_view(name));
 };
 
 bool AtsConf::ShouldRegister(absl::string_view name) const {
-  const bool include =
-      pos_re_.empty() ||
-      std::any_of(pos_re_.begin(), pos_re_.end(), [&name](const auto& re) {
-        return std::regex_search(name.data(), name.data() + name.size(), re);
-      });
-  if (!include) {
+  if (!MatchesDoRegister(name)) {
     return false;
   }
   const bool exclude =

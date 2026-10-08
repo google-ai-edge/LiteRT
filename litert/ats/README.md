@@ -73,10 +73,17 @@ bazel test //litert/ats:webgpu_macos_ats \
     kernels without a delegate), or `reference` (TFLite reference kernels).
 *   `--compile_mode`: Run in compilation-only mode (useful for testing AOT
     compilation for NPUs).
-*   `--do_register=<pattern>`: Only run tests whose names match the given regex
-    pattern. Can be specified multiple times.
-*   `--dont_register=<pattern>`: Skip tests whose names match the given regex
-    pattern. Can be specified multiple times.
+*   `--do_register=<pattern>`: Positive inclusion filter defining the suite's
+    test scope. Only tests whose names match at least one `--do_register` regex
+    are registered in GTest; non-matching tests are omitted from registration
+    entirely. Can be specified multiple times.
+*   `--dont_register=<pattern>`: Negative exclusion filter for backend-specific
+    unsupported tests. Matching tests are still registered in GTest and marked
+    `SKIPPED` (`GTEST_SKIP()`) so that coverage denominators (`subtests_passed`
+    and `capture.csv`) remain complete across backends. Takes precedence over
+    `--do_register`. Can be specified multiple times.
+*   `--extra_models=<path>`: Optional directory or `.tflite` model file path(s)
+    to register as `ExtraModel` tests.
 *   `--models_out=<path>`: Optional directory path where ATS will serialize and
     export generated `.tflite` model artifacts during test teardown.
 *   `--quiet`: Suppress printing the report summary to standard output.
@@ -87,9 +94,12 @@ bazel test //litert/ats:webgpu_macos_ats \
 > overriding them.
 
 > [!TIP]
-> **Test Name Matching**: Test names are constructed mapping to the template
-> `ats_<test_id>_<family>_<logic>`. The registration filters use regular
-> expressions to perform search matches against these names.
+> **Test Name Matching**: Registration filters match against the space-joined
+> string `<suite> <test> <desc>`, where `<suite>` is
+> `<prefix>_<fixture>_<logic>` (e.g., `CoreSingleOp_inference_Unary`,
+> `CompositeOp_inference_SdpaTransposed`, or `inference_ExtraModel`) and
+> `<desc>` contains the full op signature with concrete tensor shapes (or the
+> `.tflite` model filename).
 
 *   `--gtest_filter=<filter>`: Standard GoogleTest filter to select specific
     tests.

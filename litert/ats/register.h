@@ -109,8 +109,12 @@ std::optional<TestNames> NamesForNextTest(size_t& test_id,
                                           const AtsConf& options,
                                           Args&&... args) {
   auto names = TestNames::Create(test_id, std::forward<Args>(args)...);
-  names.should_skip = !options.ShouldRegister(
-      absl::StrCat(names.suite, " ", names.test, " ", names.desc));
+  const std::string full_name =
+      absl::StrCat(names.suite, " ", names.test, " ", names.desc);
+  if (!options.MatchesDoRegister(full_name)) {
+    return std::nullopt;
+  }
+  names.should_skip = !options.ShouldRegister(full_name);
   test_id++;
   return names;
 }

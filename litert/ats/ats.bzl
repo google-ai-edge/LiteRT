@@ -79,8 +79,10 @@ def litert_define_ats(
       jit_suffix: Suffix for the Just-In-Time execution target.
       compile_only_suffix: Suffix for the Compile-Only target.
       compile_aot_and_run_suffix: Suffix for the Compile AOT and Run target.
-      dont_register: A list of regular expressions for tests that should not be registered.
-      do_register: A list of regular expressions for tests that should be registered.
+      dont_register: A list of regular expressions for tests that should be skipped
+          (registered in GTest as SKIPPED so coverage stats remain complete).
+      do_register: A list of regular expressions for tests that should be registered
+          (non-matching tests are omitted from registration entirely).
       param_seeds: A dictionary of parameter seeds for the test suite.
       extra_flags: A list of extra flags to pass to the test suite.
       models: A list of labels or a single label to directories or files containing models.
