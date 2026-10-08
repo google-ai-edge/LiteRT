@@ -155,5 +155,69 @@ TEST(LiteRtCompilerOptionsTest, SetAndGetWCPartitionStrategy) {
             kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
 }
 
+TEST(LiteRtCompilerOptionsTest, AddInputShapesSerializesToToml) {
+  LrtCompilerOptions* options;
+  LITERT_ASSERT_OK(LrtCreateCompilerOptions(&options));
+  auto options_cleanup =
+      absl::MakeCleanup([options] { LrtDestroyCompilerOptions(options); });
+
+  const int32_t shape1[] = {1, 224, 224, 3};
+  const int32_t shape2[] = {1, 10};
+  LITERT_ASSERT_OK(LrtAddCompilerOptionsPositionalInputShape(
+      options, "serving_default", shape1, 4));
+  LITERT_ASSERT_OK(
+      LrtAddCompilerOptionsPositionalInputShape(options, "", shape2, 2));
+
+  LITERT_ASSERT_OK(LrtAddCompilerOptionsTensorInputShape(
+      options, "serving_default", "arg0", shape1, 4));
+
+  LITERT_ASSERT_OK(LrtAddCompilerOptionsSignatureInputShape(
+      options, "serving_default", "image", shape1, 4));
+
+  const char* id = nullptr;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_ASSERT_OK(LrtGetOpaqueCompilerOptionsData(options, &id, &payload,
+                                                   &payload_deleter));
+
+  EXPECT_STREQ(id, LrtGetCompilerOptionsIdentifier());
+  EXPECT_STREQ(static_cast<const char*>(payload),
+               "positional_input_shapes = [\"serving_default@1:224:224:3\", "
+               "\"@1:10\"]\n"
+               "tensor_input_shapes = "
+               "[\"serving_default@arg0@1:224:224:3\"]\n"
+               "signature_input_shapes = "
+               "[\"serving_default@image@1:224:224:3\"]\n");
+
+  payload_deleter(payload);
+}
+
+TEST(LiteRtCompilerOptionsTest, AddInputShapesInvalidArgs) {
+  LrtCompilerOptions* options;
+  LITERT_ASSERT_OK(LrtCreateCompilerOptions(&options));
+  auto options_cleanup =
+      absl::MakeCleanup([options] { LrtDestroyCompilerOptions(options); });
+
+  const int32_t shape[] = {1, 224, 224, 3};
+  EXPECT_EQ(LrtAddCompilerOptionsPositionalInputShape(nullptr, "", shape, 4),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtAddCompilerOptionsPositionalInputShape(options, "", nullptr, 4),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtAddCompilerOptionsPositionalInputShape(options, "", shape, 0),
+            kLiteRtStatusErrorInvalidArgument);
+
+  EXPECT_EQ(
+      LrtAddCompilerOptionsTensorInputShape(options, "", nullptr, shape, 4),
+      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtAddCompilerOptionsTensorInputShape(options, "", "", shape, 4),
+            kLiteRtStatusErrorInvalidArgument);
+
+  EXPECT_EQ(
+      LrtAddCompilerOptionsSignatureInputShape(options, "", nullptr, shape, 4),
+      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtAddCompilerOptionsSignatureInputShape(options, "", "", shape, 4),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
 }  // namespace
 }  // namespace litert::compiler

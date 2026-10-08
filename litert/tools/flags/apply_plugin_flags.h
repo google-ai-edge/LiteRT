@@ -39,6 +39,12 @@ std::string AbslUnparseFlag(
 
 ABSL_DECLARE_FLAG(size_t, compiler_options_max_partitions);
 
+// Input shape flags for compiler options.
+ABSL_DECLARE_FLAG(std::vector<std::string>, input);
+ABSL_DECLARE_FLAG(std::string, signature);
+ABSL_DECLARE_FLAG(std::vector<std::string>, input_name);
+ABSL_DECLARE_FLAG(std::vector<std::string>, signature_name);
+
 namespace litert {
 
 Expected<void> UpdateCompilerOptionsFromFlags(CompilerOptions& options);
