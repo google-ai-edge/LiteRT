@@ -506,6 +506,17 @@ TfLiteStatus InterpreterBuilder::ParseQuantization(
                            "Blockwise quantization details are missing.");
       return kTfLiteError;
     }
+    if (src_quantization->quantized_dimension() < 0 ||
+        (!dims.empty() &&
+         static_cast<size_t>(src_quantization->quantized_dimension()) >=
+             dims.size())) {
+      TF_LITE_REPORT_ERROR(
+          error_reporter_,
+          "quantized_dimension must be in range [0, %d). Was %d.",
+          static_cast<int>(dims.size()),
+          src_quantization->quantized_dimension());
+      return kTfLiteError;
+    }
     // `block_shape` supersedes `block_size`. It is only meaningful if it has
     // exactly one entry per dimension of the tensor, so reject anything else
     // rather than silently falling back to `block_size`, which would produce

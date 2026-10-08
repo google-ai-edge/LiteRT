@@ -125,7 +125,8 @@ std::string BuildMultiAxisQuantizationModelBuffer(
 }
 
 std::string BuildBlockwiseQuantizationModelBuffer(
-    const std::vector<int32_t>& block_shape, int32_t block_size = 32) {
+    const std::vector<int32_t>& block_shape, int32_t block_size = 32,
+    int32_t quantized_dimension = 0) {
   flatbuffers::FlatBufferBuilder builder;
 
   std::vector<int32_t> scale_shape = {2, 4, 1};
@@ -139,7 +140,7 @@ std::string BuildBlockwiseQuantizationModelBuffer(
   auto quantization = CreateQuantizationParameters(
       builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
       QuantizationDetails_BlockwiseQuantization, blockwise_quantization.Union(),
-      /*quantized_dimension=*/0);
+      quantized_dimension);
   std::vector<int32_t> weight_shape = {2, 4, 3};
   auto weight_tensor = CreateTensorDirect(
       builder, &weight_shape, TensorType_INT8, 0, "moe_weight", quantization);
@@ -344,6 +345,41 @@ TEST(BasicFlatBufferModel,
   EXPECT_NE(InterpreterBuilder(*model, TrivialResolver())(&interpreter),
             kTfLiteOk);
   EXPECT_EQ(interpreter, nullptr);
+}
+
+TEST(BasicFlatBufferModel,
+     TestRejectsBlockwiseQuantizationNegativeQuantizedDimension) {
+  for (const std::vector<int32_t>& block_shape :
+       {std::vector<int32_t>{}, std::vector<int32_t>{1, 1, 3}}) {
+    std::string model_buffer = BuildBlockwiseQuantizationModelBuffer(
+        block_shape, /*block_size=*/32, /*quantized_dimension=*/-1);
+    auto model = FlatBufferModel::BuildFromBuffer(model_buffer.data(),
+                                                  model_buffer.size());
+    ASSERT_TRUE(model);
+
+    std::unique_ptr<Interpreter> interpreter;
+    EXPECT_NE(InterpreterBuilder(*model, TrivialResolver())(&interpreter),
+              kTfLiteOk);
+    EXPECT_EQ(interpreter, nullptr);
+  }
+}
+
+TEST(BasicFlatBufferModel,
+     TestRejectsBlockwiseQuantizationOutOfBoundsQuantizedDimension) {
+  // The weight is rank 3, so quantized_dimension = 3 is out of bounds.
+  for (const std::vector<int32_t>& block_shape :
+       {std::vector<int32_t>{}, std::vector<int32_t>{1, 1, 3}}) {
+    std::string model_buffer = BuildBlockwiseQuantizationModelBuffer(
+        block_shape, /*block_size=*/32, /*quantized_dimension=*/3);
+    auto model = FlatBufferModel::BuildFromBuffer(model_buffer.data(),
+                                                  model_buffer.size());
+    ASSERT_TRUE(model);
+
+    std::unique_ptr<Interpreter> interpreter;
+    EXPECT_NE(InterpreterBuilder(*model, TrivialResolver())(&interpreter),
+              kTfLiteOk);
+    EXPECT_EQ(interpreter, nullptr);
+  }
 }
 
 TEST(BasicFlatBufferModel, TestNullDestination) {
