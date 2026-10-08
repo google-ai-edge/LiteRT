@@ -39,6 +39,7 @@ cc_library(
         "@FP16",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
+        "@org_tensorflow//third_party/gloop/util/gtl:c_memcpy",
     ],
 )
 
