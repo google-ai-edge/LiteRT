@@ -19,6 +19,8 @@
 #include "litert/ats/compile_fixture.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/inference_fixture.h"
+#include "litert/ats/register_group_norm.h"
+#include "litert/ats/register_layer_norm.h"
 #include "litert/ats/register_qkv_norm_rope.h"
 #include "litert/ats/register_rms_norm.h"
 #include "litert/ats/register_sdpa.h"
@@ -31,6 +33,8 @@ namespace {
 template <typename Fixture>
 void RegisterCompositeOpsImpl(const AtsConf& options, size_t& test_id,
                               typename Fixture::Capture& cap) {
+  RegisterGroupNorm(options, test_id, /*iters=*/16, cap);
+  RegisterLayerNorm(options, test_id, /*iters=*/16, cap);
   RegisterQkvNormRope(options, test_id, /*iters=*/16, cap);
   RegisterRmsNorm(options, test_id, /*iters=*/16, cap);
   RegisterSdpa(options, test_id, /*iters=*/20, cap);
