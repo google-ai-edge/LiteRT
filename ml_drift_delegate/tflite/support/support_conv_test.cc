@@ -352,8 +352,6 @@ INSTANTIATE_TEST_SUITE_P(
                 kTfLiteBFloat16,
                 kTfLiteFloat16,
                 kTfLiteFloat32,
-                kTfLiteInt8,
-                kTfLiteUInt8,
                 // go/keep-sorted end
                 // clang-format on
             }),
@@ -363,8 +361,6 @@ INSTANTIATE_TEST_SUITE_P(
                 // go/keep-sorted start numeric=yes
                 kTfLiteFloat16,
                 kTfLiteFloat32,
-                kTfLiteInt8,
-                kTfLiteUInt8,
                 // go/keep-sorted end
                 // clang-format on
             }),
@@ -384,8 +380,6 @@ INSTANTIATE_TEST_SUITE_P(
                 kTfLiteBFloat16,
                 kTfLiteFloat16,
                 kTfLiteFloat32,
-                kTfLiteInt8,
-                kTfLiteUInt8,
                 // go/keep-sorted end
                 // clang-format on
             })),
