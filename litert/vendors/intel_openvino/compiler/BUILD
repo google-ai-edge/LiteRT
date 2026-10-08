@@ -42,6 +42,7 @@ litert_lib(
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
+        ":weight_bank_attributes",
         "//litert/c/internal:litert_logging",
         "@intel_openvino//:openvino",
     ],
@@ -175,6 +176,16 @@ litert_test(
 )
 
 litert_lib(
+    name = "weight_bank_attributes",
+    hdrs = ["weight_bank_attributes.h"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_lib(
     name = "alias_shared_constants",
     srcs = [
         "alias_shared_constants.cc",
@@ -183,11 +194,14 @@ litert_lib(
         # WeightlessCacheAttribute on the NPU shared path.
         "weightless_caching_attributes.hpp",
     ],
-    hdrs = ["alias_shared_constants.h"],
+    hdrs = [
+        "alias_shared_constants.h",
+    ],
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         ":weight_bank",
+        ":weight_bank_attributes",
         "//litert/c/internal:litert_logging",
         "@com_google_absl//absl/types:span",
         "@intel_openvino//:openvino",
@@ -215,6 +229,7 @@ litert_test(
         ":alias_shared_constants",
         ":graph_iterator",
         ":weight_bank",
+        ":weight_bank_attributes",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_compiler_context",
         "//litert/cc/internal:litert_extended_model",

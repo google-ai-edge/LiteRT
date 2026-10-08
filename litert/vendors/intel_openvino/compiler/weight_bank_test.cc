@@ -14,10 +14,13 @@
 
 #include "litert/vendors/intel_openvino/compiler/weight_bank.h"
 
-#include <cstddef>
-#include <optional>
-
 #include <gtest/gtest.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <vector>
+
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/test/load_test_model.h"
@@ -104,6 +107,97 @@ TEST(WeightBankTest, BufferIdOfNameResolvesWeightTensors) {
   }
   EXPECT_GT(named_weights, 0u);
   EXPECT_EQ(bank.BufferIdOfName("no_such_tensor"), std::nullopt);
+}
+
+// A generated constant's BufferId is unresolvable until
+// FinalizeDerivedBuffers() runs, and afterwards lands past every real id.
+TEST(WeightBankTest, FinalizeDerivedBuffersAssignsIdPastRealOnes) {
+  auto cc_model = testing::LoadTestFileModel("add_cst.tflite");
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  litert::compiler::Model model(ctx, cc_model.Get());
+  auto graph = model.Subgraph(0);
+  ASSERT_TRUE(graph.HasValue());
+
+  WeightBank bank;
+  bank.AddSubgraph(graph.Value());
+  ASSERT_EQ(bank.NumBuffers(), 1u);
+
+  bank.RegisterGeneratedConstant("stacked_expert_weights",
+                                 std::vector<uint8_t>{1, 2, 3, 4});
+  EXPECT_EQ(bank.BufferIdOfName("stacked_expert_weights"), std::nullopt);
+
+  bank.FinalizeDerivedBuffers();
+
+  const auto id = bank.BufferIdOfName("stacked_expert_weights");
+  ASSERT_TRUE(id.has_value());
+  for (const auto& [real_id, bytes] : bank.Buffers()) {
+    if (real_id != *id) EXPECT_LT(real_id, *id);
+  }
+  EXPECT_EQ(bank.NumBuffers(), 2u);
+}
+
+// Registering the same key twice with identical bytes is a no-op; the second
+// registration must not create a second buffer.
+TEST(WeightBankTest, RegisterGeneratedConstantDedupesIdenticalBytes) {
+  WeightBank bank;
+  bank.RegisterGeneratedConstant("key", std::vector<uint8_t>{1, 2, 3});
+  bank.RegisterGeneratedConstant("key", std::vector<uint8_t>{1, 2, 3});
+  bank.FinalizeDerivedBuffers();
+
+  EXPECT_EQ(bank.NumBuffers(), 1u);
+}
+
+// Registering the same key twice with DIFFERENT bytes keeps the first
+// registration rather than silently overwriting it.
+TEST(WeightBankTest, RegisterGeneratedConstantKeepsFirstOnMismatch) {
+  WeightBank bank;
+  bank.RegisterGeneratedConstant("key", std::vector<uint8_t>{1, 2, 3});
+  bank.RegisterGeneratedConstant("key", std::vector<uint8_t>{9, 9});
+  bank.FinalizeDerivedBuffers();
+
+  const auto id = bank.BufferIdOfName("key");
+  ASSERT_TRUE(id.has_value());
+  const auto bytes = bank.Buffers().at(*id);
+  ASSERT_EQ(bytes.size(), 3u);
+  EXPECT_EQ(bytes[0], 1);
+}
+
+// FinalizeDerivedBuffers() must only assign ids once: a second call is
+// ignored rather than reassigning (and potentially colliding) ids.
+TEST(WeightBankTest, FinalizeDerivedBuffersIgnoresSecondCall) {
+  WeightBank bank;
+  bank.RegisterGeneratedConstant("key", std::vector<uint8_t>{1, 2, 3});
+  bank.FinalizeDerivedBuffers();
+  const auto id_before = bank.BufferIdOfName("key");
+  ASSERT_TRUE(id_before.has_value());
+
+  bank.RegisterGeneratedConstant("late_key", std::vector<uint8_t>{4, 5});
+  bank.FinalizeDerivedBuffers();
+
+  EXPECT_EQ(bank.BufferIdOfName("key"), id_before);
+  // The post-finalize registration never gets an id assigned.
+  EXPECT_EQ(bank.BufferIdOfName("late_key"), std::nullopt);
+}
+
+// Registering after finalization is a phase-ordering bug: the key is dropped,
+// and the ids and bytes already handed out are left untouched.
+TEST(WeightBankTest, RegisterGeneratedConstantAfterFinalizeIsDropped) {
+  WeightBank bank;
+  bank.RegisterGeneratedConstant("early", std::vector<uint8_t>{1, 2, 3});
+  bank.FinalizeDerivedBuffers();
+
+  const auto early_id = bank.BufferIdOfName("early");
+  ASSERT_TRUE(early_id.has_value());
+  const size_t num_before = bank.NumBuffers();
+
+  bank.RegisterGeneratedConstant("late", std::vector<uint8_t>{4, 5});
+
+  EXPECT_EQ(bank.BufferIdOfName("late"), std::nullopt);
+  EXPECT_EQ(bank.BufferIdOfName("early"), early_id);
+  EXPECT_EQ(bank.NumBuffers(), num_before);
+  const auto bytes = bank.Buffers().at(*early_id);
+  ASSERT_EQ(bytes.size(), 3u);
+  EXPECT_EQ(bytes[0], 1);
 }
 
 }  // namespace
