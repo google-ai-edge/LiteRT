@@ -112,6 +112,16 @@ properties. Internal keys (all default `false`):
     `fuse_split_attention_to_sdpa=true`. When the merged KV sequence length is
     not a multiple of 16, pad K/V (and the mask) up to the next multiple so the
     block still fuses.
+-   `split_shared_constants` — splits multi-consumer Constants into private
+    per-consumer copies (e.g. two different transformer layers' RMSNorm gain
+    vectors that were unified into one upstream Constant node). Currently
+    limited to Constants of exactly 256 or 512 elements, the sizes those gain
+    vectors take. Defaults to `false`.
+-   `enable_moe_gather` — rewrites Gemma4's dense masked Mixture-of-Experts
+    block into gather-based selective expert computation: single-token chunks
+    Gather just the top-K expert weights, multi-token chunks compute all
+    experts densely and combine them via a scattered per-token routing-weight
+    matrix. Defaults to `false`.
 
 ## Usage Example
 

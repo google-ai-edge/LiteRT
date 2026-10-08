@@ -633,12 +633,6 @@ LiteRtStatus LiteRtCompilerPluginCompile(
           litert::openvino::OpenVinoCompileContext::Create(
               compiler_plugin->GetIntelOpenVinoOptions(), partition_idx));
       LITERT_RETURN_IF_ERROR(context.ConfigureForSoc(soc_model));
-      if (share_npu) {
-        // NPU shared path: turn on NPUW/CWAI so export_model emits a weightless
-        // blob whose constants are referenced by WeightlessCacheAttribute
-        // bin_offset instead of baked in.
-        context.ConfigureForNpuWeightSharing();
-      }
 
       auto graph_name = absl::StrFormat("Partition_%d", partition_idx);
       litert::Expected<litert::compiler::Subgraph> expected_subgraph =
@@ -654,7 +648,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         auto ov_model = tflite_fe->convert(input_model);
 
         // Run NPU-specific optimization passes.
-        context.OptimizeModel(ov_model);
+        const auto optimize_result = context.OptimizeModel(ov_model);
+        if (share_npu) {
+          // Must run after OptimizeModel: it configures NPUW from what the
+          // passes classified, which is knowable only once they have run.
+          context.ConfigureForNpuWeightSharing(
+              optimize_result.moe_is_multi_token_chunk);
+        }
 
         ov::AnyMap configs = context.ConfigsMap();
         std::map<std::string, uint32_t> const_map;
