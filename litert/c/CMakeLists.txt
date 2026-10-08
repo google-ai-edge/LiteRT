@@ -346,6 +346,33 @@ if(LITERT_PLATFORM_ANDROID)
       flatbuffers::flatbuffers)
   target_compile_definitions(litert_tflite_gpu_gl_core PRIVATE CL_DELEGATE_NO_GL EGL_NO_X11)
   list(APPEND _litert_runtime_c_api_private_archives litert_tflite_gpu_gl_core)
+
+  set(LITERT_XNNPACK_INCLUDE_DIR "${CMAKE_BINARY_DIR}/xnnpack/include" CACHE PATH "Path to XNNPACK public headers used by LiteRT")
+  set(LITERT_PTHREADPOOL_INCLUDE_DIR "${CMAKE_BINARY_DIR}/pthreadpool-source/include" CACHE PATH "Path to pthreadpool headers used by LiteRT")
+
+  add_library(litert_mldrift_gpu_gl_core STATIC
+    ${ml_drift_SOURCE_DIR}/ml_drift/common/gpu_info.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/gl/egl_context.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/gl/egl_environment.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/gl/egl_surface.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/gl/gl_errors.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/gl/gl_sync.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/gl/request_gpu_info.cc)
+  set_target_properties(litert_mldrift_gpu_gl_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  target_include_directories(litert_mldrift_gpu_gl_core
+    PUBLIC
+      $<BUILD_INTERFACE:${ml_drift_SOURCE_DIR}>
+      $<BUILD_INTERFACE:${LITERT_XNNPACK_INCLUDE_DIR}>
+      $<BUILD_INTERFACE:${LITERT_PTHREADPOOL_INCLUDE_DIR}>)
+  target_link_libraries(litert_mldrift_gpu_gl_core
+    PUBLIC
+      absl::status
+      absl::strings
+      absl::span
+      absl::flat_hash_map
+      absl::flat_hash_set)
+  target_compile_definitions(litert_mldrift_gpu_gl_core PRIVATE EGL_NO_X11)
+  list(APPEND _litert_runtime_c_api_private_archives litert_mldrift_gpu_gl_core)
 endif()
 
 # Interface target that exposes static linking of the runtime C API and its

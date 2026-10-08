@@ -59,7 +59,7 @@ cc_library(
     ] + select({
         "//litert/build_common:build_include_gpu_enabled": [
             ":gpu_environment",
-            "//tflite/delegates/gpu/cl:opencl_wrapper",
+            "@ml_drift//ml_drift/cl:opencl_wrapper",
         ],
         "//conditions:default": [],
     }),
@@ -85,13 +85,15 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
-        "@com_google_absl//absl/types:span",
     ] + gles_deps() + select({
         "//litert/build_common:android_gpu_enabled": [
-            "//tflite/delegates/gpu/gl:egl_environment",
-            "//tflite/delegates/gpu/gl:gl_buffer",
+            "@ml_drift//ml_drift/gl:egl_environment",
+            "@ml_drift//ml_drift/gl:gl_call",
+            "@ml_drift//ml_drift/gl:gl_errors",
+            "@ml_drift//ml_drift/gl:portable",
         ],
         "//conditions:default": [],
     }),
@@ -152,9 +154,14 @@ cc_library(
         "//litert/c:litert_gl_types",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
-        "//tflite/delegates/gpu/gl:gl_texture",
         "@com_google_absl//absl/synchronization",
-    ],
+    ] + select({
+        "//litert/build_common:android_gpu_enabled": [
+            "@ml_drift//ml_drift/gl:gl_call",
+            "@ml_drift//ml_drift/gl:portable",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(
@@ -186,13 +193,12 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core/util:tensor_type_util",
-        "//tflite/delegates/gpu/cl:buffer",
-        "//tflite/delegates/gpu/cl:cl_context",
-        "//tflite/delegates/gpu/cl:opencl_wrapper",
-        "//tflite/delegates/gpu/cl:util",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
+        "@ml_drift//ml_drift/cl:cl_context",
+        "@ml_drift//ml_drift/cl:opencl_wrapper",
+        "@ml_drift//ml_drift/cl:util",
         "@opencl_headers",
     ],
 )
@@ -209,16 +215,16 @@ cc_library(
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
-        "//tflite/delegates/gpu/cl:cl_command_queue",
-        "//tflite/delegates/gpu/cl:cl_memory",
-        "//tflite/delegates/gpu/cl:tensor",
-        "//tflite/delegates/gpu/common:data_type",
-        "//tflite/delegates/gpu/common:shape",
-        "//tflite/delegates/gpu/common:tensor",
-        "//tflite/delegates/gpu/common:types",
-        "//tflite/delegates/gpu/common/task:tensor_desc",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@ml_drift//ml_drift/cl:cl_command_queue",
+        "@ml_drift//ml_drift/cl:cl_memory",
+        "@ml_drift//ml_drift/cl:tensor",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
         "@opencl_headers",
     ],
 )
@@ -241,9 +247,7 @@ RUNTIME_TENSOR_BUFFER_HEADER_DEPS = [
     "//litert/build_common:android_gpu_enabled": [
         ":gl_buffer",
         ":gl_texture",
-        "//tflite/delegates/gpu/gl:egl_environment",
-        "//tflite/delegates/gpu/gl:gl_buffer",
-        "//tflite/delegates/gpu/gl:gl_texture",
+        "@ml_drift//ml_drift/gl:egl_environment",
     ],
     "//conditions:default": [],
 }) + select({
@@ -420,6 +424,10 @@ cc_test(
 )
 
 GPU_ENVIRONMENT_DEPS = [
+    "@ml_drift//ml_drift/cl:cl_command_queue",
+    "@ml_drift//ml_drift/cl:cl_context",
+    "@ml_drift//ml_drift/cl:cl_device",
+    "@ml_drift//ml_drift/cl:opencl_wrapper",
     "//litert/c:litert_any",
     "//litert/c:litert_common",
     "//litert/c:litert_gl_types",
@@ -428,14 +436,10 @@ GPU_ENVIRONMENT_DEPS = [
     "//litert/cc:litert_macros",
     "//litert/core:environment_options",
     "@opencl_headers",
-    "//tflite/delegates/gpu/cl:cl_command_queue",
-    "//tflite/delegates/gpu/cl:cl_context",
-    "//tflite/delegates/gpu/cl:cl_device",
-    "//tflite/delegates/gpu/cl:opencl_wrapper",
 ] + select({
     "//litert:android": [
-        "//tflite/delegates/gpu/cl:gl_interop",
-        "//tflite/delegates/gpu/gl:egl_environment",
+        "@ml_drift//ml_drift/cl:gl_interop",
+        "@ml_drift//ml_drift/gl:egl_environment",
     ],
     "//conditions:default": [],
 }) + gles_deps()
@@ -894,8 +898,8 @@ cc_test(
         "@com_google_absl//absl/types:span",
     ] + gtest_main_no_heapcheck_deps() + select({
         "//litert:android": [
-            "//tflite/delegates/gpu/gl:egl_environment",
-            "//tflite/delegates/gpu/gl:gl_buffer",
+            "@ml_drift//ml_drift/gl:egl_environment",
+            "@ml_drift//ml_drift/gl:portable",
         ],
         "//conditions:default": [],
     }),
@@ -1065,11 +1069,12 @@ cc_library(
         "//litert/c:litert_model_header",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
-        "//tflite/delegates/gpu/common:data_type",
-        "//tflite/delegates/gpu/common:shape",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
     ],
 )
 
@@ -1081,8 +1086,9 @@ cc_test(
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/test:matchers",
-        "//tflite/delegates/gpu/common:data_type",
         "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
     ],
 )
 

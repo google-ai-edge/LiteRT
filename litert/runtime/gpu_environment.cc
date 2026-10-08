@@ -35,17 +35,22 @@
 #endif  // LITERT_HAS_METAL_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
+#include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
+#include "ml_drift/cl/cl_context.h"  // from @ml_drift
+#include "ml_drift/cl/cl_device.h"  // from @ml_drift
+#include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #include <CL/cl.h>
-#include "tflite/delegates/gpu/cl/cl_command_queue.h"
-#include "tflite/delegates/gpu/cl/cl_context.h"
-#include "tflite/delegates/gpu/cl/cl_device.h"
-#include "tflite/delegates/gpu/cl/opencl_wrapper.h"
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
 #include <EGL/egl.h>
+#include <EGL/eglext.h>
+#include <GLES3/gl31.h>
+#include <GLES3/gl32.h>
 
-#include "tflite/delegates/gpu/cl/gl_interop.h"
+#if LITERT_HAS_OPENCL_SUPPORT && !defined(CL_DELEGATE_NO_GL)
+#include "ml_drift/cl/gl_interop.h"  // from @ml_drift
+#endif  // LITERT_HAS_OPENCL_SUPPORT && !defined(CL_DELEGATE_NO_GL)
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace litert {
@@ -165,7 +170,7 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
 }
 
 #if LITERT_HAS_OPENCL_SUPPORT
-bool SupportsAhwbClInteropHelper(tflite::gpu::cl::CLDevice device) {
+bool SupportsAhwbClInteropHelper(::ml_drift::cl::CLDevice device) {
 #if LITERT_HAS_AHWB_SUPPORT
   // Importing AHardwareBuffers requires the
   // `cl_arm_import_memory_android_hardware_buffer` extension; the base
@@ -173,7 +178,7 @@ bool SupportsAhwbClInteropHelper(tflite::gpu::cl::CLDevice device) {
   // CL_IMPORT_TYPE_ANDROID_HARDWARE_BUFFER_ARM (e.g. PowerVR DXT on Pixel 10).
   return device.GetInfo().SupportsExtension(
              "cl_arm_import_memory_android_hardware_buffer") &&
-         ::tflite::gpu::cl::clImportMemoryARM != nullptr;
+         ::ml_drift::cl::clImportMemoryARM != nullptr;
 #else   // LITERT_HAS_AHWB_SUPPORT
   return false;
 #endif  // LITERT_HAS_AHWB_SUPPORT
@@ -226,20 +231,20 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
 #endif
 
   // Set up OpenCL.
-  LITERT_RETURN_IF_ERROR(tflite::gpu::cl::LoadOpenCL().ok())
+  LITERT_RETURN_IF_ERROR(::ml_drift::cl::LoadOpenCL().ok())
       << "Failed to load OpenCL for LiteRT.";
   properties_.is_opencl_available = true;
 
   // Set up device.
   if (options_.device_id && options_.platform_id) {
     device_ =
-        tflite::gpu::cl::CLDevice(options_.device_id, options_.platform_id);
+        ::ml_drift::cl::CLDevice(options_.device_id, options_.platform_id);
     LITERT_LOG(
         LITERT_INFO,
         "Created OpenCL device from provided device id and platform id.");
   } else {
     LITERT_RETURN_IF_ERROR(
-        tflite::gpu::cl::CreateDefaultGPUDevice(&device_).ok())
+        ::ml_drift::cl::CreateDefaultGPUDevice(&device_).ok())
         << "Failed to create default OpenCL device";
     // New option: cl_device_id
     LITERT_ASSIGN_OR_RETURN(
@@ -260,17 +265,17 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
   }
 
   // Set up OpenCL properties.
-#if LITERT_HAS_OPENGL_SUPPORT
+#if LITERT_HAS_OPENGL_SUPPORT && !defined(CL_DELEGATE_NO_GL)
   if (!disable_opengl) {
     // Set up GL interop properties when OpenCL and OpenGL are both supported.
     properties_.is_gl_sharing_supported =
-        tflite::gpu::cl::IsGlSharingSupported(device_);
+        ::ml_drift::cl::IsGlSharingSupported(device_);
     properties_.is_gl_to_cl_fast_sync_supported =
-        tflite::gpu::cl::IsClEventFromEglSyncSupported(device_);
+        ::ml_drift::cl::IsClEventFromEglSyncSupported(device_);
     properties_.is_cl_to_gl_fast_sync_supported =
-        tflite::gpu::cl::IsEglSyncFromClEventSupported();
+        ::ml_drift::cl::IsEglSyncFromClEventSupported();
   }
-#endif  // LITERT_HAS_OPENGL_SUPPORT
+#endif  // LITERT_HAS_OPENGL_SUPPORT && !defined(CL_DELEGATE_NO_GL)
   properties_.is_ahwb_cl_interop_supported =
       SupportsAhwbClInteropHelper(device_);
 
@@ -279,27 +284,27 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
     if (options_.IsGlAware()) {
       // TODO(b/383176413): Add check to confirm this context is GL-aware.
       // We currently assume that user configured context properly.
-      context_ = tflite::gpu::cl::CLContext(options_.context,
-                                            /*has_ownership=*/false);
+      context_ = ::ml_drift::cl::CLContext(options_.context,
+                                           /*has_ownership=*/false);
 #if LITERT_HAS_OPENGL_SUPPORT
       if (!disable_opengl) {
         LITERT_RETURN_IF_ERROR(eglGetCurrentContext() == options_.egl_context)
             << "EGL context is not the same as provided context";
         LITERT_RETURN_IF_ERROR(eglGetCurrentDisplay() == options_.egl_display)
             << "EGL display is not the same as provided display";
-        std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+        std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env;
         // This function call implicitly reuses provided EGL context and display
         // present on this thread.
         LITERT_RETURN_IF_ERROR(
-            tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok())
+            ::ml_drift::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok())
             << "Failed to create EGL environment";
         egl_env_ = std::move(egl_env);
         LITERT_LOG(LITERT_INFO, "Reusing provided EGL environment.");
       }
 #endif  // LITERT_HAS_OPENGL_SUPPORT
     } else {
-      context_ = tflite::gpu::cl::CLContext(options_.context,
-                                            /*has_ownership=*/false);
+      context_ = ::ml_drift::cl::CLContext(options_.context,
+                                           /*has_ownership=*/false);
       LITERT_LOG(LITERT_INFO, "Created OpenCL context from provided context.");
     }
   } else {
@@ -308,9 +313,9 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
     if (!options_.IsGlAware()) {
 #if LITERT_HAS_OPENGL_SUPPORT
       if (!disable_opengl) {
-        std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+        std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env;
         LITERT_RETURN_IF_ERROR(
-            tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok())
+            ::ml_drift::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok())
             << "Failed to create EGL environment";
         egl_env_ = std::move(egl_env);
         // New option: egl_display
@@ -338,9 +343,10 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
     }
     // If no OpenCL context is provided and EGL options are set, attempt to
     // create a default OpenCL context.
+#if !defined(CL_DELEGATE_NO_GL)
     if (options_.IsGlAware() && properties_.is_gl_sharing_supported) {
       LITERT_RETURN_IF_ERROR(
-          tflite::gpu::cl::CreateCLGLContext(
+          ::ml_drift::cl::CreateCLGLContext(
               device_,
               reinterpret_cast<cl_context_properties>(options_.egl_context),
               reinterpret_cast<cl_context_properties>(options_.egl_display),
@@ -348,9 +354,11 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
               .ok())
           << "Failed to create OpenGL-OpenCL shared context";
       LITERT_LOG(LITERT_INFO, "Created default OpenGL-OpenCL shared context.");
-    } else {
+    } else
+#endif  // !defined(CL_DELEGATE_NO_GL)
+    {
       LITERT_RETURN_IF_ERROR(
-          tflite::gpu::cl::CreateCLContext(device_, &context_).ok())
+          ::ml_drift::cl::CreateCLContext(device_, &context_).ok())
           << "Failed to create OpenCL context";
       LITERT_LOG(LITERT_INFO, "Created default OpenCL context.");
     }
@@ -364,10 +372,10 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
   }
   // Set up command queue.
   if (options_.command_queue) {
-    command_queue_ = tflite::gpu::cl::CLCommandQueue(options_.command_queue,
-                                                     /*has_ownership=*/false);
+    command_queue_ = ::ml_drift::cl::CLCommandQueue(options_.command_queue,
+                                                    /*has_ownership=*/false);
   } else {
-    LITERT_RETURN_IF_ERROR(tflite::gpu::cl::CreateCLCommandQueue(
+    LITERT_RETURN_IF_ERROR(::ml_drift::cl::CreateCLCommandQueue(
                                device_, context_, &command_queue_)
                                .ok())
         << "Failed to create OpenCL command queue";

@@ -52,10 +52,11 @@
 #include "tflite/interpreter.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
-#include "tflite/delegates/gpu/cl/cl_device.h"
-#include "tflite/delegates/gpu/cl/gl_interop.h"
-#include "tflite/delegates/gpu/cl/opencl_wrapper.h"
-#include "tflite/delegates/gpu/gl/egl_environment.h"
+#include "ml_drift/cl/cl_device.h"  // from @ml_drift
+#include "ml_drift/cl/gl_interop.h"  // from @ml_drift
+#include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
+#include "ml_drift/gl/egl_environment.h"  // from @ml_drift
+#include "ml_drift/gl/portable_gl31.h"  // from @ml_drift
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 using testing::ElementsAre;
@@ -146,9 +147,9 @@ TEST(CompiledModelGpuTest, DoubleEnvironmentWithInterleavedDestruction) {
 // that OpenGL support is available, we need to create the EGL environment
 // outside of the LiteRT environment.
 #if LITERT_HAS_OPENGL_SUPPORT
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+  std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env;
   ASSERT_TRUE(
-      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+      ::ml_drift::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
   env_options.push_back(
       {litert::EnvironmentOptions::Tag::kEglContext,
        reinterpret_cast<int64_t>(egl_env->context().context())});
@@ -548,14 +549,14 @@ bool IsGlClInteropSupported() {
     return false;
   }
 #if LITERT_HAS_OPENCL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
-  if (!tflite::gpu::cl::LoadOpenCL().ok()) {
+  if (!::ml_drift::cl::LoadOpenCL().ok()) {
     return false;
   }
-  tflite::gpu::cl::CLDevice device;
-  if (!tflite::gpu::cl::CreateDefaultGPUDevice(&device).ok()) {
+  ::ml_drift::cl::CLDevice device;
+  if (!::ml_drift::cl::CreateDefaultGPUDevice(&device).ok()) {
     return false;
   }
-  return tflite::gpu::cl::IsGlSharingSupported(device);
+  return ::ml_drift::cl::IsGlSharingSupported(device);
 #else
   return false;
 #endif  // LITERT_HAS_OPENCL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
@@ -956,9 +957,9 @@ TEST(CompiledModelGpuTest, BasicOpenGlWithProvidedEglEnvironment) {
   }
   bool external_tensors_mode = false;
 #if LITERT_HAS_OPENGL_SUPPORT
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+  std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env;
   ASSERT_TRUE(
-      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+      ::ml_drift::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
 
   std::vector<litert::EnvironmentOptions::Option> env_options;
   env_options.push_back(
@@ -1032,9 +1033,9 @@ TEST(CompiledModelGpuTest, GlBufferIdRecyclingRaceCondition) {
   }
 
   // Setup environment.
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+  std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env;
   ASSERT_TRUE(
-      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+      ::ml_drift::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
 
   std::vector<litert::Environment::Option> env_options;
   env_options.push_back(

@@ -37,7 +37,7 @@
 #endif  // LITERT_HAS_SYNC_FENCE_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
-#include "tflite/delegates/gpu/cl/opencl_wrapper.h"
+#include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 using litert::Error;
@@ -76,8 +76,8 @@ Expected<void> LiteRtEventT::Wait(int64_t timeout_in_ms) {
   if (type == LiteRtEventTypeOpenCl) {
 #if LITERT_HAS_OPENCL_SUPPORT
     LiteRtClInt res =
-        tflite::gpu::cl::clWaitForEvents(/*num_events=*/1,
-                                         /*event_list=*/&opencl_event);
+        ::ml_drift::cl::clWaitForEvents(/*num_events=*/1,
+                                        /*event_list=*/&opencl_event);
     if (res != LITE_RT_CL_SUCCESS) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    absl::StrCat("clWaitForEvents fails with error code ", res));
@@ -145,7 +145,7 @@ LiteRtEventT::~LiteRtEventT() {
 #endif  // LITERT_HAS_OPENGL_SUPPORT
   } else if (type == LiteRtEventTypeOpenCl) {
 #if LITERT_HAS_OPENCL_SUPPORT
-    tflite::gpu::cl::clReleaseEvent(opencl_event);
+    ::ml_drift::cl::clReleaseEvent(opencl_event);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
   } else if (type == LiteRtEventTypeCustom) {
 #if LITERT_HAS_CUSTOM_EVENT_SUPPORT
@@ -180,7 +180,7 @@ Expected<int> LiteRtEventT::GetSyncFenceFd() {
 Expected<void> LiteRtEventT::Signal() {
 #if LITERT_HAS_OPENCL_SUPPORT
   if (type == LiteRtEventTypeOpenCl) {
-    LiteRtClInt res = tflite::gpu::cl::clSetUserEventStatus(
+    LiteRtClInt res = ::ml_drift::cl::clSetUserEventStatus(
         opencl_event, LITE_RT_CL_COMPLETE);
     if (res != LITE_RT_CL_SUCCESS) {
       return Error(
@@ -200,7 +200,7 @@ Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEnvironment env,
 #if LITERT_HAS_OPENCL_SUPPORT
     LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment());
     LiteRtClInt res;
-    LiteRtClEvent user_event = tflite::gpu::cl::clCreateUserEvent(
+    LiteRtClEvent user_event = ::ml_drift::cl::clCreateUserEvent(
         gpu_env->GetContext()->context(), &res);
     if (res != LITE_RT_CL_SUCCESS) {
       return Error(

@@ -44,6 +44,8 @@ add_compile_options(
   -fpermissive
 )
 add_compile_definitions(CL_TARGET_OPENCL_VERSION=300)
+# OpenCL support via ML Drift is currently not built in CMake.
+add_compile_definitions(LITERT_DISABLE_OPENCL_SUPPORT)
 
 # Cmake flattens the transitive public and interface link to emit the final link
 # command. Which will trigger a warning on Apple platforms (ld64 still dedups
@@ -209,6 +211,65 @@ if(NOT safeint_POPULATED)
   OverridableFetchContent_Populate(safeint)
 endif()
 include_directories(${safeint_SOURCE_DIR})
+
+# Add ML Drift headers include directory
+include(OverridableFetchContent)
+OverridableFetchContent_Declare(
+  ml_drift
+  GIT_REPOSITORY https://github.com/google-ai-edge/ml-drift
+  GIT_TAG 29e3d2b41a7128d7d5dd9cd1ba09f226cca14d22
+  GIT_PROGRESS TRUE
+  PREFIX "${CMAKE_BINARY_DIR}"
+  SOURCE_DIR "${CMAKE_BINARY_DIR}/ml_drift"
+)
+OverridableFetchContent_GetProperties(ml_drift)
+if(NOT ml_drift_POPULATED)
+  OverridableFetchContent_Populate(ml_drift)
+endif()
+include_directories(${ml_drift_SOURCE_DIR})
+
+# Locate flatc compiler or fetch FlatBuffers to build flatc target
+set(LITERT_FLATC_EXECUTABLE "")
+if(TFLITE_HOST_TOOLS_DIR AND EXISTS "${TFLITE_HOST_TOOLS_DIR}/flatc")
+  set(LITERT_FLATC_EXECUTABLE "${TFLITE_HOST_TOOLS_DIR}/flatc")
+elseif(TFLITE_BUILD_DIR AND EXISTS "${TFLITE_BUILD_DIR}/host_flatc/_deps/flatbuffers-build/flatc")
+  set(LITERT_FLATC_EXECUTABLE "${TFLITE_BUILD_DIR}/host_flatc/_deps/flatbuffers-build/flatc")
+endif()
+if(NOT LITERT_FLATC_EXECUTABLE)
+  find_program(LITERT_FLATC_EXECUTABLE NAMES flatc)
+endif()
+if(NOT LITERT_FLATC_EXECUTABLE)
+  include(FetchContent)
+  FetchContent_Declare(flatbuffers
+    GIT_REPOSITORY https://github.com/google/flatbuffers.git
+    GIT_TAG v25.9.23)
+  set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(flatbuffers)
+  if(TARGET flatc)
+    set(LITERT_FLATC_EXECUTABLE $<TARGET_FILE:flatc>)
+  endif()
+endif()
+
+# Generate FlatBuffers headers for ML Drift if needed
+set(_mldrift_serialization_fbs "${ml_drift_SOURCE_DIR}/ml_drift/common/task/serialization_base.fbs")
+if(EXISTS "${_mldrift_serialization_fbs}")
+  set(_mldrift_task_dir "${ml_drift_SOURCE_DIR}/ml_drift/common/task")
+  set(_mldrift_serialization_hdr "${_mldrift_task_dir}/serialization_base_generated.h")
+  if(LITERT_FLATC_EXECUTABLE)
+    add_custom_command(
+      OUTPUT "${_mldrift_serialization_hdr}"
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${_mldrift_task_dir}"
+      COMMAND ${LITERT_FLATC_EXECUTABLE} --cpp --scoped-enums -I "${_mldrift_task_dir}" -o "${_mldrift_task_dir}" "${_mldrift_serialization_fbs}"
+      DEPENDS "${_mldrift_serialization_fbs}"
+      COMMENT "Generating serialization_base_generated.h for ML Drift with flatc"
+      VERBATIM
+    )
+    add_custom_target(mldrift_serialization_gen DEPENDS "${_mldrift_serialization_hdr}")
+    if(TARGET flatc)
+      add_dependencies(mldrift_serialization_gen flatc)
+    endif()
+  endif()
+endif()
 
 # Find FlatBuffers
 #

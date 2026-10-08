@@ -53,15 +53,15 @@
 #endif  // LITERT_HAS_AHWB_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
-#include "tflite/delegates/gpu/cl/cl_command_queue.h"
-#include "tflite/delegates/gpu/cl/cl_context.h"
-#include "tflite/delegates/gpu/cl/cl_device.h"
-#include "tflite/delegates/gpu/cl/opencl_wrapper.h"
+#include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
+#include "ml_drift/cl/cl_context.h"  // from @ml_drift
+#include "ml_drift/cl/cl_device.h"  // from @ml_drift
+#include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
-#include "tflite/delegates/gpu/cl/gl_interop.h"
-#include "tflite/delegates/gpu/gl/egl_environment.h"
+#include "ml_drift/cl/gl_interop.h"  // from @ml_drift
+#include "ml_drift/gl/egl_environment.h"  // from @ml_drift
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace litert {
@@ -93,12 +93,12 @@ int GetReferenceCount(const TensorBuffer& tensor_buffer) {
 class GlEnvironment {
  public:
   explicit GlEnvironment(
-      std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env)
+      std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env)
       : egl_env_(std::move(egl_env)) {}
 
   static std::unique_ptr<GlEnvironment> Create() {
-    std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
-    if (tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok()) {
+    std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env;
+    if (::ml_drift::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok()) {
       return std::make_unique<GlEnvironment>(std::move(egl_env));
     }
     return nullptr;
@@ -116,10 +116,10 @@ class GlEnvironment {
     });
     return environment_options;
   }
-  tflite::gpu::gl::EglEnvironment& GetEglEnvironment() { return *egl_env_; }
+  ::ml_drift::gl::EglEnvironment& GetEglEnvironment() { return *egl_env_; }
 
  private:
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env_;
+  std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env_;
 };
 #else
 class GlEnvironment {
@@ -135,22 +135,22 @@ class GlEnvironment {
 class ClEnvironment {
  public:
   explicit ClEnvironment(
-      std::unique_ptr<tflite::gpu::cl::CLDevice> device,
-      std::unique_ptr<tflite::gpu::cl::CLContext> context,
-      std::unique_ptr<tflite::gpu::cl::CLCommandQueue> command_queue)
+      std::unique_ptr<::ml_drift::cl::CLDevice> device,
+      std::unique_ptr<::ml_drift::cl::CLContext> context,
+      std::unique_ptr<::ml_drift::cl::CLCommandQueue> command_queue)
       : device_(std::move(device)),
         context_(std::move(context)),
         command_queue_(std::move(command_queue)) {}
 
   static std::unique_ptr<ClEnvironment> Create(GlEnvironment* gl_env) {
-    auto device = std::make_unique<tflite::gpu::cl::CLDevice>();
-    auto context = std::make_unique<tflite::gpu::cl::CLContext>();
-    auto command_queue = std::make_unique<tflite::gpu::cl::CLCommandQueue>();
-    if (tflite::gpu::cl::LoadOpenCL().ok()) {
-      ABSL_CHECK_OK(tflite::gpu::cl::CreateDefaultGPUDevice(device.get()));
+    auto device = std::make_unique<::ml_drift::cl::CLDevice>();
+    auto context = std::make_unique<::ml_drift::cl::CLContext>();
+    auto command_queue = std::make_unique<::ml_drift::cl::CLCommandQueue>();
+    if (::ml_drift::cl::LoadOpenCL().ok()) {
+      ABSL_CHECK_OK(::ml_drift::cl::CreateDefaultGPUDevice(device.get()));
       ABSL_CHECK(CreateContext(gl_env, *device, context.get()));
-      ABSL_CHECK_OK(tflite::gpu::cl::CreateCLCommandQueue(*device, *context,
-                                                          command_queue.get()));
+      ABSL_CHECK_OK(::ml_drift::cl::CreateCLCommandQueue(*device, *context,
+                                                         command_queue.get()));
       return std::make_unique<ClEnvironment>(
           std::move(device), std::move(context), std::move(command_queue));
     }
@@ -180,22 +180,22 @@ class ClEnvironment {
 
  private:
   static Expected<void> CreateContext(GlEnvironment* gl_env,
-                                      tflite::gpu::cl::CLDevice& device,
-                                      tflite::gpu::cl::CLContext* context) {
+                                      ::ml_drift::cl::CLDevice& device,
+                                      ::ml_drift::cl::CLContext* context) {
     if (gl_env == nullptr) {
-      if (!tflite::gpu::cl::CreateCLContext(device, context).ok()) {
+      if (!::ml_drift::cl::CreateCLContext(device, context).ok()) {
         return litert::Unexpected(Status::kErrorInvalidArgument,
                                   "Failed to create CL context");
       }
     } else {
 #if LITERT_HAS_OPENGL_SUPPORT
-      if (!tflite::gpu::cl::IsGlSharingSupported(device)) {
-        if (!tflite::gpu::cl::CreateCLContext(device, context).ok()) {
+      if (!::ml_drift::cl::IsGlSharingSupported(device)) {
+        if (!::ml_drift::cl::CreateCLContext(device, context).ok()) {
           return litert::Unexpected(Status::kErrorInvalidArgument,
                                     "Failed to create CL context");
         }
       } else {
-        if (!tflite::gpu::cl::CreateCLGLContext(
+        if (!::ml_drift::cl::CreateCLGLContext(
                  device,
                  reinterpret_cast<cl_context_properties>(
                      gl_env->GetEglEnvironment().context().context()),
@@ -216,9 +216,9 @@ class ClEnvironment {
     return {};
   }
 
-  std::unique_ptr<tflite::gpu::cl::CLDevice> device_;
-  std::unique_ptr<tflite::gpu::cl::CLContext> context_;
-  std::unique_ptr<tflite::gpu::cl::CLCommandQueue> command_queue_;
+  std::unique_ptr<::ml_drift::cl::CLDevice> device_;
+  std::unique_ptr<::ml_drift::cl::CLContext> context_;
+  std::unique_ptr<::ml_drift::cl::CLCommandQueue> command_queue_;
 };
 #else
 class ClEnvironment {
@@ -359,7 +359,7 @@ TEST(TensorBuffer, CreateManagedFromRequirements) {
 
 bool CanLoadOpenCl() {
 #if LITERT_HAS_OPENCL_SUPPORT
-  return tflite::gpu::cl::LoadOpenCL().ok();
+  return ::ml_drift::cl::LoadOpenCL().ok();
 #else
   return false;
 #endif
@@ -992,18 +992,14 @@ TEST(TensorBuffer, CreateFromGlTexture) {
   // Create GL texture.
   // TODO: Remove ifdef after managed gl texture is supported.
 #if LITERT_HAS_OPENGL_SUPPORT
-  tflite::gpu::gl::GlTexture gl_texture(GL_TEXTURE_2D, 1, GL_RGBA8, 1, 1,
-                                        /*has_ownership=*/true);
-  ASSERT_TRUE(gl_texture.is_valid());
-
   // Create tensor buffer from existing GL texture (e.g. this could be from
-  // Android Camera API).
+  // Android Camera API). Since deallocator is nullptr, GlTexture takes
+  // ownership of texture id 1 and deletes it upon destruction.
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer tensor_buffer,
       TensorBuffer::CreateFromGlTexture(
           user_gpu_env->GetEnvironment(), RankedTensorType(kTestTensorType),
-          gl_texture.target(), gl_texture.id(), gl_texture.format(),
-          gl_texture.bytes_size(), gl_texture.layer()));
+          GL_TEXTURE_2D, /*id=*/1, GL_RGBA8, /*size_bytes=*/1, /*layer=*/1));
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 }
 
