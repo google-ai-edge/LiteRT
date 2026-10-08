@@ -25,6 +25,7 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
@@ -1795,6 +1796,34 @@ TEST(SerializationTest, CanSerializeCast) {
   const auto* node_and_reg = interpreter->node_and_registration(0);
   ASSERT_NE(node_and_reg, nullptr);
   EXPECT_EQ(node_and_reg->second.builtin_code, tflite::BuiltinOperator_CAST);
+}
+
+TEST(SerializationTest, ExpandsSharedZeroPointWithoutMutatingGraph) {
+  const std::string path = testing::TempDir() + "/shared_zero_point.tflite";
+  auto quantization = std::make_shared<PerChannelAffineQuantization>(
+      std::vector<float>{0.5f, 0.25f}, std::vector<int64_t>{0}, 0);
+  TensorTf input({.name = "input",
+                  .type = Type::kI8,
+                  .shape = {2, 2},
+                  .quantization = quantization});
+  TensorTf output = Dequantize(input);
+  ASSERT_THAT(Save({output}, path), IsOk());
+  EXPECT_THAT(quantization->zero_points, ElementsAre(0));
+  std::unique_ptr<tflite::FlatBufferModel> model =
+      tflite::FlatBufferModel::BuildFromFile(path.c_str());
+  ASSERT_NE(model, nullptr);
+  std::unique_ptr<tflite::Interpreter> interpreter;
+  tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
+  ASSERT_EQ(tflite::InterpreterBuilder(*model, resolver)(&interpreter),
+            kTfLiteOk);
+  ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
+  const std::vector<int8_t> codes{2, 4, 8, 12};
+  absl::c_copy(codes, interpreter->typed_input_tensor<int8_t>(0));
+  ASSERT_EQ(interpreter->Invoke(), kTfLiteOk);
+  const std::vector<float> values{1, 2, 2, 3};
+  EXPECT_THAT(
+      absl::MakeSpan(interpreter->typed_output_tensor<float>(0), values.size()),
+      ElementsAreArray(values));
 }
 
 TEST(SerializationTest, CanSerializeReshape) {
