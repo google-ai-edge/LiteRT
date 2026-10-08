@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if defined(__ANDROID__) && __ANDROID_API__ >= 28
+#include <malloc.h>
+#endif
+
 #include <cstdio>
 #include <memory>
 #include <optional>
@@ -47,6 +51,20 @@
 namespace {
 
 using ::litert::qnn::QnnManager;
+
+void PurgeNativeHeap() {
+#if defined(__ANDROID__) && __ANDROID_API__ >= 28
+#ifndef M_PURGE
+#define M_PURGE -101
+#endif
+#ifndef M_PURGE_ALL
+#define M_PURGE_ALL -104
+#endif
+  if (mallopt(M_PURGE_ALL, 0) == 0) {
+    mallopt(M_PURGE, 0);
+  }
+#endif
+}
 
 static std::unique_ptr<QnnManager>& QnnManagerStorage() {
   static absl::NoDestructor<std::unique_ptr<QnnManager>> storage;
@@ -208,6 +226,7 @@ LiteRtStatus DeviceContextCreate(const LiteRtRuntimeContext* runtime_context,
 
 LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
   delete device_context;
+  PurgeNativeHeap();
   return kLiteRtStatusOk;
 }
 
@@ -277,6 +296,7 @@ LiteRtStatus InvocationContextCreate(
   auto context = LiteRtDispatchInvocationContextT::Create(
       Qnn(), QnnBackend(), *device_context, exec_type, exec_bytecode_buffer,
       function_name);
+  PurgeNativeHeap();
   if (!context) {
     LITERT_LOG(LITERT_ERROR,
                "Failed to create context from context binary: %s for function "
