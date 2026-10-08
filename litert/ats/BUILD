@@ -39,6 +39,7 @@ XNNPACK_DONT_REGISTER = [
     "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
     "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
     "QkvNormRope",  # XNNPACK does not support QkvNormRope composite op
+    "RmsNorm",  # XNNPACK does not support RmsNorm composite op
     "Swiglu",  # XNNPACK does not support SwiGLU op
     "SelectV2",  # XNNPACK does not support SelectV2
     "tfl\\.floor_div",  # XNNPACK does not support FloorDiv
@@ -322,6 +323,7 @@ litert_define_ats(
         "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
         "QkvNormRope",  # XNNPACK does not support QkvNormRope composite op
+        "RmsNorm",  # XNNPACK does not support RmsNorm composite op
         "Swiglu",  # XNNPACK does not support SwiGLU op
         "SelectV2",  # XNNPACK does not support SelectV2
         "tfl\\.floor_div",  # XNNPACK does not support FloorDiv
@@ -592,6 +594,7 @@ cc_library(
         ":configure",
         ":inference_fixture",
         ":register_qkv_norm_rope",
+        ":register_rms_norm",
         ":register_sdpa",
         ":register_sdpa_transposed",
         ":register_swiglu",
@@ -856,6 +859,23 @@ cc_library(
         ":register",
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators:qkv_norm_rope",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_rms_norm",
+    testonly = True,
+    srcs = ["register_rms_norm.cc"],
+    hdrs = ["register_rms_norm.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:rms_norm",
         "//tflite/types:half",
     ],
 )
