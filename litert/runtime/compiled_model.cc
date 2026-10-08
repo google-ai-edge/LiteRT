@@ -41,7 +41,9 @@
 #endif  // !defined(LITERT_WINDOWS_OS)
 
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
+#if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 #include "absl/status/status.h"  // from @com_google_absl
+#endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 #include "litert/c/litert_layout.h"
 #include "litert/cc/internal/litert_consts.h"
 #include "litert/core/filesystem.h"
@@ -105,7 +107,9 @@
 #include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "litert/runtime/tfl_utils.h"
+#if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 #include "weight_loader/external_weight_loader_litert.h"
+#endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 #include "tflite/converter/allocation.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/core/api/profiler.h"
@@ -548,6 +552,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   interp_->SetExternalContext(kTfLiteLiteRtBufferContext,
                               buffer_context_.get());
 
+#if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
   // Check if the external weights is provided by the client.
   if (jit_compilation_options == nullptr) {
     weight_loader_owned_ = weight_loader::CreateLiteRtWeightLoader(
@@ -617,9 +622,11 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
                  info.packing.data());
     }
   }
+#endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
   return {};
 }
 
+#if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 Expected<void> LiteRtCompiledModelT::RestoreExternalWeightsForCpu() {
   if (!weight_loader_) {
     return {};
@@ -687,6 +694,7 @@ Expected<void> LiteRtCompiledModelT::RestoreExternalWeightsForCpu() {
   }
   return {};
 }
+#endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 
 namespace {
 
@@ -987,6 +995,7 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
     LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(dispatch_options)));
   }
 
+#if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
   // Load and restore external weights for CPU execution before delegates are
   // applied. This ensures that XNNPack and other CPU delegates can see the
   // weight data.
@@ -1005,6 +1014,7 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
   if (should_restore_cpu) {
     LITERT_RETURN_IF_ERROR(compiled_model->RestoreExternalWeightsForCpu());
   }
+#endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 
   const bool npu_requested = hardware_accelerators & kLiteRtHwAcceleratorNpu;
   const bool has_npu_ops = compiled_model->HasNpuOps();

@@ -685,6 +685,12 @@ cc_library(
         ],
         "//conditions:default": [],
     }),
+    defines = select({
+        "//litert:without_builtin_ops": [
+            "LITERT_DISABLE_EXTERNAL_WEIGHTS",
+        ],
+        "//conditions:default": [],
+    }),
     linkopts = litert_metal_linkopts(),
     deps = [
         ":accelerator",
@@ -734,25 +740,22 @@ cc_library(
         "//tflite:builtin_ops",
         "//tflite:framework",
         "//tflite:model_builder",
+        "//tflite:mutable_op_resolver",
+        "//tflite/c:c_api_types_opaque_delegate",
+        "//tflite/c:common",
         "//tflite/converter:allocation",
-        "//weight_loader:external_weight_loader",
+        "//tflite/core:private_cc_api_stable",
+        "//tflite/core/api",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-    ] + [
-        "//tflite:mutable_op_resolver",
-        "//tflite/c:c_api_types_opaque_delegate",
-        "//tflite/c:common",
-        "//tflite/core:private_cc_api_stable",
-        "//tflite/core/api",
-        "//tflite/schema:schema_fbs",
     ] + select({
         "//litert/build_common:build_include_npu_enabled": [
             "//litert/compiler/plugin:compiler_plugin",
@@ -783,6 +786,8 @@ cc_library(
             "//tflite/c:c_api_opaque",
             "//tflite/kernels:builtin_ops",
             "//tflite/kernels:reference_ops",
+            "//weight_loader:external_weight_loader",
+            "@com_google_absl//absl/status",
         ],
     }),
 )

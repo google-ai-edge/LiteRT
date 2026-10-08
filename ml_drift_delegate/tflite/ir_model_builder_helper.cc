@@ -223,7 +223,9 @@ bool IsLinearConvertible(const TfLiteIntArray* dims) {
 }
 
 bool IsAffineQuantized8Bit(const TfLiteTensor& tensor) {
-  return (tensor.type == kTfLiteInt8 || tensor.type == kTfLiteUInt8) &&
+  return (tensor.type == kTfLiteInt8 || tensor.type == kTfLiteUInt8 ||
+          tensor.type == kTfLiteInt4 || tensor.type == kTfLiteUInt4 ||
+          tensor.type == kTfLiteInt2) &&
          tensor.quantization.type ==
              TfLiteQuantizationType::kTfLiteAffineQuantization;
 }
