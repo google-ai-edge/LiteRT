@@ -45,6 +45,47 @@ cc_library(
     ],
 )
 
+# CUDA virtual memory blocks. Linux only: the driver entry points are looked
+# up with dlsym.
+cc_library(
+    name = "cuda_vmm",
+    srcs = ["cuda_vmm.cc"],
+    hdrs = ["cuda_vmm.h"],
+    linkopts = ["-ldl"],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "cuda_vmm_test",
+    srcs = ["cuda_vmm_test.cc"],
+    tags = [
+        "manual",
+        "requires-gpu-sm90",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":cuda_vmm",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
 cc_library(
     name = "memory_profile",
     srcs = ["memory_profile.cc"],
