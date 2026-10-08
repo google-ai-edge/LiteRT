@@ -23,6 +23,7 @@
 #import "third_party/odml/litert/litert/objc/apis/LRTError.h"
 #import "third_party/odml/litert/litert/objc/apis/LRTOptions.h"
 #import "third_party/odml/litert/litert/objc/apis/LRTTensorBuffer.h"
+#import "third_party/odml/litert/litert/objc/apis/LRTTensorBufferRequirements.h"
 #include "litert/test/common.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 
@@ -570,6 +571,95 @@ static NSString *GetTestDynamicModelPath() {
   NSArray<LRTTensorBuffer *> *outputs =
       [model createOutputTensorBuffersForSignatureKey:@"nonexistent_signature" error:&error];
   XCTAssertNil(outputs);
+  XCTAssertNotNil(error);
+  XCTAssertEqualObjects(error.domain, LRTErrorDomain);
+}
+
+- (void)testInputAndOutputBufferRequirementsAtIndex {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:GetTestModelPath()
+                                                                 environment:environment
+                                                                     options:options
+                                                                       error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  LRTTensorBufferRequirements *inputRequirements = [model inputBufferRequirementsAtIndex:0
+                                                                                   error:&error];
+  XCTAssertNotNil(inputRequirements);
+  XCTAssertNil(error);
+  XCTAssertEqualObjects(inputRequirements.supportedBufferTypes,
+                        @[ @(LRTTensorBufferTypeHostMemory) ]);
+  XCTAssertGreaterThanOrEqual(inputRequirements.bufferSize, sizeof(kTestInput0Tensor));
+  XCTAssertGreaterThan(inputRequirements.alignment, 0U);
+  XCTAssertNotNil(inputRequirements.strides);
+
+  LRTTensorBufferRequirements *outputRequirements = [model outputBufferRequirementsAtIndex:0
+                                                                                     error:&error];
+  XCTAssertNotNil(outputRequirements);
+  XCTAssertNil(error);
+  XCTAssertEqualObjects(outputRequirements.supportedBufferTypes,
+                        @[ @(LRTTensorBufferTypeHostMemory) ]);
+  XCTAssertGreaterThanOrEqual(outputRequirements.bufferSize, sizeof(kTestOutputTensor));
+  XCTAssertGreaterThan(outputRequirements.alignment, 0U);
+}
+
+- (void)testInputAndOutputBufferRequirementsForNameAndSignatureKey {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:GetTestModelPath()
+                                                                 environment:environment
+                                                                     options:options
+                                                                       error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  NSString *signatureKey = [LRTCompiledModel defaultSignatureKey];
+  LRTTensorBufferRequirements *inputRequirements =
+      [model inputBufferRequirementsForName:@"arg0" signatureKey:signatureKey error:&error];
+  XCTAssertNotNil(inputRequirements);
+  XCTAssertNil(error);
+  XCTAssertEqualObjects(inputRequirements.supportedBufferTypes,
+                        @[ @(LRTTensorBufferTypeHostMemory) ]);
+  XCTAssertGreaterThanOrEqual(inputRequirements.bufferSize, sizeof(kTestInput0Tensor));
+
+  LRTTensorBufferRequirements *outputRequirements =
+      [model outputBufferRequirementsForName:@"tfl.add" signatureKey:signatureKey error:&error];
+  XCTAssertNotNil(outputRequirements);
+  XCTAssertNil(error);
+  XCTAssertEqualObjects(outputRequirements.supportedBufferTypes,
+                        @[ @(LRTTensorBufferTypeHostMemory) ]);
+  XCTAssertGreaterThanOrEqual(outputRequirements.bufferSize, sizeof(kTestOutputTensor));
+}
+
+- (void)testInputBufferRequirementsForUnknownNameFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:GetTestModelPath()
+                                                                 environment:environment
+                                                                     options:options
+                                                                       error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  NSString *signatureKey = [LRTCompiledModel defaultSignatureKey];
+  LRTTensorBufferRequirements *requirements = [model inputBufferRequirementsForName:@"unknown_input"
+                                                                       signatureKey:signatureKey
+                                                                              error:&error];
+  XCTAssertNil(requirements);
   XCTAssertNotNil(error);
   XCTAssertEqualObjects(error.domain, LRTErrorDomain);
 }

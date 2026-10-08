@@ -17,6 +17,7 @@
 #import "third_party/odml/litert/litert/objc/apis/LRTEnvironment.h"
 #import "third_party/odml/litert/litert/objc/apis/LRTOptions.h"
 #import "third_party/odml/litert/litert/objc/apis/LRTTensorBuffer.h"
+#import "third_party/odml/litert/litert/objc/apis/LRTTensorBufferRequirements.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -75,6 +76,78 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSString *)defaultSignatureKey;
 
 - (instancetype)init NS_UNAVAILABLE;
+
+/**
+ * Returns the buffer allocation requirements for the specified input tensor of the default
+ * signature.
+ *
+ * @param inputIndex The 0-based index of the input tensor.
+ * @param error Out-parameter populated on failure.
+ * @return Buffer requirements for the input tensor, or @c nil on failure.
+ */
+- (nullable LRTTensorBufferRequirements *)inputBufferRequirementsAtIndex:(NSUInteger)inputIndex
+                                                                   error:(NSError **)error;
+
+/**
+ * Returns the buffer allocation requirements for the specified input tensor of a given signature
+ * index.
+ *
+ * @param inputIndex The 0-based index of the input tensor.
+ * @param signatureIndex The 0-based index of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return Buffer requirements for the input tensor, or @c nil on failure.
+ */
+- (nullable LRTTensorBufferRequirements *)inputBufferRequirementsAtIndex:(NSUInteger)inputIndex
+                                                          signatureIndex:(NSUInteger)signatureIndex
+                                                                   error:(NSError **)error;
+
+/**
+ * Returns the buffer allocation requirements for the named input tensor of a given signature key.
+ *
+ * @param inputName The name of the input tensor in the signature.
+ * @param signatureKey The name/key of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return Buffer requirements for the input tensor, or @c nil on failure.
+ */
+- (nullable LRTTensorBufferRequirements *)inputBufferRequirementsForName:(NSString *)inputName
+                                                            signatureKey:(NSString *)signatureKey
+                                                                   error:(NSError **)error;
+
+/**
+ * Returns the buffer allocation requirements for the specified output tensor of the default
+ * signature.
+ *
+ * @param outputIndex The 0-based index of the output tensor.
+ * @param error Out-parameter populated on failure.
+ * @return Buffer requirements for the output tensor, or @c nil on failure.
+ */
+- (nullable LRTTensorBufferRequirements *)outputBufferRequirementsAtIndex:(NSUInteger)outputIndex
+                                                                    error:(NSError **)error;
+
+/**
+ * Returns the buffer allocation requirements for the specified output tensor of a given signature
+ * index.
+ *
+ * @param outputIndex The 0-based index of the output tensor.
+ * @param signatureIndex The 0-based index of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return Buffer requirements for the output tensor, or @c nil on failure.
+ */
+- (nullable LRTTensorBufferRequirements *)outputBufferRequirementsAtIndex:(NSUInteger)outputIndex
+                                                           signatureIndex:(NSUInteger)signatureIndex
+                                                                    error:(NSError **)error;
+
+/**
+ * Returns the buffer allocation requirements for the named output tensor of a given signature key.
+ *
+ * @param outputName The name of the output tensor in the signature.
+ * @param signatureKey The name/key of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return Buffer requirements for the output tensor, or @c nil on failure.
+ */
+- (nullable LRTTensorBufferRequirements *)outputBufferRequirementsForName:(NSString *)outputName
+                                                             signatureKey:(NSString *)signatureKey
+                                                                    error:(NSError **)error;
 
 /**
  * Creates input tensor buffers according to the model's default signature requirements.
