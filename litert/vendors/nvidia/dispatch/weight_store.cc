@@ -125,7 +125,9 @@ class Uploader {
         read += static_cast<size_t>(result);
       }
       // The device gets the only copy that is needed from here on: let the
-      // page cache drop its own.
+      // page cache drop its own. Keeping it would save the next process a
+      // read of the file, but a host that is short of memory pages a guest's
+      // cache out (WSL2), and getting it back is slower than the read.
       posix_fadvise(fd, static_cast<off_t>(offset + done),
                     static_cast<off_t>(bytes), POSIX_FADV_DONTNEED);
       LITERT_RETURN_IF_ERROR(Send(target + done, bytes));
