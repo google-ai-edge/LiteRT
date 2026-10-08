@@ -18,7 +18,6 @@ limitations under the License.
 
 #include <cstdint>
 
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/kernels/cpu_backend_context.h"
 #include "tflite/kernels/cpu_backend_gemm_custom_gemv.h"
 #include "tflite/kernels/cpu_backend_gemm_params.h"
