@@ -31,6 +31,9 @@ struct ShortConvStepAttributes {
   int32_t conv_L_cache = 3;
 };
 
+ShortConvStepAttributes ParseShortConvStepAttributes(
+    const TfLiteNode& tflite_node);
+
 class ShortConvStepOperationParser : public TFLiteOperationParser {
  public:
   absl::Status IsSupported(const TfLiteContext* context,
