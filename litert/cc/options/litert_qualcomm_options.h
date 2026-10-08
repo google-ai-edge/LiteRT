@@ -382,6 +382,23 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  /// @brief Controls the channel tile size used by weight sharing during graph
+  /// finalization.
+  ///
+  /// Defaults to 0, which disables the config.
+  void SetWeightSharingChannelTileSize(std::int32_t tile_size) {
+    LrtQualcommOptionsSetWeightSharingChannelTileSize(options_, tile_size);
+  }
+  std::int32_t GetWeightSharingChannelTileSize() {
+    std::int32_t val;
+    auto status =
+        LrtQualcommOptionsGetWeightSharingChannelTileSize(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return 0;
+    }
+    return val;
+  }
+
   /// @brief This option controls the profiling level.
   ///
   /// A higher level results in a more detailed report after execution.

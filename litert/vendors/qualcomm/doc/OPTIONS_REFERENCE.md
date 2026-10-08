@@ -53,7 +53,7 @@ flowchart TB
     subgraph ROW2[" "]
         direction LR
         C_GEN["🛠 Compile · General<br/><div style='text-align:left'>────────────────────────<br/>enable_just_in_time<br/>graph_io_tensor_mem_type<br/>graph_priority</div>"]
-        C_HTP["🛠 Compile · HTP<br/><div style='text-align:left'>───────────────────────<br/>use_conv_hmx<br/>use_fold_relu<br/>htp_p_point<br/>optimization_level<br/>vtcm_size<br/>num_hvx_threads<br/>use_int64_bias_as_int32<br/>enable_weight_sharing</div>"]
+        C_HTP["🛠 Compile · HTP<br/><div style='text-align:left'>───────────────────────<br/>use_conv_hmx<br/>use_fold_relu<br/>htp_p_point<br/>weight_sharing_channel_tile_size<br/>optimization_level<br/>vtcm_size<br/>num_hvx_threads<br/>use_int64_bias_as_int32<br/>enable_weight_sharing</div>"]
         C_OTHER["🛠 Compile · IR / SAVER / Debug<br/><div style='text-align:left'>──────────────────────────────<br/>dlc_dir<br/>saver_output_dir<br/>dump_tensor_ids<br/>ir_json_dir</div>"]
         C_GEN ~~~ C_HTP ~~~ C_OTHER
     end
@@ -63,7 +63,7 @@ flowchart TB
 | Category | Options |
 |----------|---------|
 | **General / SDK** | `log_level`, `backend`, `graph_priority`, `custom_op_package`, `enable_just_in_time`, `graph_io_tensor_mem_type`, `profiling` |
-| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_p_point`, `htp_performance_mode`, `htp_pd_session`, `htp_device_id`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
+| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_p_point`, `weight_sharing_channel_tile_size`, `htp_performance_mode`, `htp_pd_session`, `htp_device_id`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
 | **DSP** | `dsp_performance_mode`, `dsp_pd_session` |
 | **LPAI** | `lpai_target`, `lpai_fps`, `lpai_ftrt_ratio`, `lpai_client_perf_type`, `lpai_core_affinity_type`, `lpai_core_selection` |
 | **IR** | `dlc_dir` |
@@ -127,6 +127,7 @@ target:HTP"
 | Short Conv HMX | `use_conv_hmx` | `true` | compile | Faster, but short-depth / non-symmetric weights may be inaccurate. |
 | Fold ReLU | `use_fold_relu` | `true` | compile | Faster. Correct only when conv's quant range ⊆ the ReLU's. |
 | P-point | `htp_p_point` | `0` | compile | **Experimental** (HTP + `O3` only). Predefined configs trading latency vs. DRAM bandwidth. |
+| Weight sharing channel tile size | `weight_sharing_channel_tile_size` | `0` | compile | `0` disables this config. Positive values are passed as the QAIRT finalize config `weight_sharing_channel_tile_size`. |
 | Optimization level | `optimization_level` | `O3` | compile | `O1` (inference) · `O2` (prepare) · `O3` (inference, aggressive). |
 | HTP perf mode | `htp_performance_mode` | `default` | dispatch | `default` · `sustained_high_performance` · `burst` · `high_performance` · `power_saver` · `low_power_saver` · `high_power_saver` · `low_balanced` · `balanced` · `extreme_power_saver`. |
 | HTP PD session | `htp_pd_session` | `unsigned` | dispatch | `unsigned` preserves the existing device configuration. `signed` enables QNN SignedPD. `adaptive` uses unsigned PD only when QNN reports support, otherwise it enables SignedPD. |

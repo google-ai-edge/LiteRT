@@ -133,6 +133,8 @@ ABSL_DECLARE_FLAG(bool, qualcomm_use_fold_relu);
 
 ABSL_DECLARE_FLAG(int32_t, qualcomm_htp_p_point);
 
+ABSL_DECLARE_FLAG(int32_t, qualcomm_weight_sharing_channel_tile_size);
+
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::HtpPerformanceMode,

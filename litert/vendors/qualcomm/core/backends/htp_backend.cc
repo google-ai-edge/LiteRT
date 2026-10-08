@@ -783,6 +783,23 @@ GraphConfigBuilder HtpBackend::BuildGraphConfigs(
         htp_p_point);
   }
 
+  const std::int32_t weight_sharing_channel_tile_size =
+      options.GetWeightSharingChannelTileSize();
+  if (weight_sharing_channel_tile_size > 0) {
+    QnnHtpGraph_CustomConfig_t tile_size = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    tile_size.option = QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG;
+    tile_size.finalizeConfig.key = "weight_sharing_channel_tile_size";
+    tile_size.finalizeConfig.value = {
+        QNN_DATATYPE_INT_32,
+        {.int32Value = weight_sharing_channel_tile_size}};
+    config_builder.AddCustomConfig(tile_size);
+  } else if (weight_sharing_channel_tile_size < 0) {
+    QNN_LOG_WARNING(
+        "Invalid weight sharing channel tile size (%d): negative values not "
+        "supported, skipping weight sharing channel tile size config.",
+        weight_sharing_channel_tile_size);
+  }
+
   // Hvx Thread
   if (const std::uint32_t num_hvx_threads = options.GetNumHvxThreads();
       num_hvx_threads > 0) {
