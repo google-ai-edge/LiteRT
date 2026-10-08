@@ -208,6 +208,7 @@ cc_library(
         "@com_google_absl//absl/status:status_macros",
         "@flatbuffers",
         "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
@@ -694,6 +695,7 @@ cc_library(
         "//ml_drift_delegate/tflite:unimplemented_operation_parser",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:gpu_info",
     ],
 )
 

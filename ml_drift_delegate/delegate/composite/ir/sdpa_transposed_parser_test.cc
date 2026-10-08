@@ -27,11 +27,13 @@
 #include "testing/base/public/gunit.h"
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/tflite/convert/convert_testing_utils.h"
 #include "ml_drift_delegate/tflite/convert/stub_delegate.h"
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
+#include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/common.h"
 #include "tflite/core/c/builtin_op_data.h"
@@ -82,14 +84,18 @@ TfLiteStablehloCompositeParams* CreateSdpaTransposedParams(
 class ConvertSdpaTransposedTest : public ::testing::Test {
  protected:
   void SetUp() override {
+    gpu_info_.vendor = ::ml_drift::GpuVendor::kApple;
+    gpu_info_.gpu_api = ::ml_drift::GpuApi::kMetal;
+    const IrModelBuilderOptions options = {.gpu_info = &gpu_info_};
     CustomIrOpMap custom_parsers;
     custom_parsers["odml.sdpa_transposed"] = GetSdpaTransposedParser();
-    delegate_ = CreateStubDelegate(/*options=*/{}, std::move(custom_parsers));
+    delegate_ = CreateStubDelegate(options, std::move(custom_parsers));
     ASSERT_TRUE(delegate_);
   }
 
   void TearDown() override { DeleteStubDelegate(delegate_); }
 
+  ::ml_drift::GpuInfo gpu_info_;
   TfLiteDelegate* delegate_;
 };
 
@@ -346,6 +352,13 @@ TEST_F(ConvertSdpaTransposedTest, BoolMaskKeptForDecodeUnsupportedHeadDims) {
   for (int head_dim : {96, 384, 2048}) {
     ExpectDecodeSdpaInputs(delegate_, head_dim, /*expected_inputs=*/5);
   }
+}
+
+// Non-Metal backends on Apple (e.g. WebGPU) do not run the fused Metal SDPA
+// kernels and must keep the BOOL causal mask.
+TEST_F(ConvertSdpaTransposedTest, BoolMaskKeptOnNonMetalAppleBackend) {
+  gpu_info_.gpu_api = ::ml_drift::GpuApi::kWebGpu;
+  ExpectDecodeSdpaInputs(delegate_, /*head_dim=*/128, /*expected_inputs=*/5);
 }
 #endif  // __APPLE__
 

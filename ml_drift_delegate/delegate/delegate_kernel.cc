@@ -259,9 +259,12 @@ absl::Status DelegateKernel::InitializeGraphFloat32(
       delegate_data_->options->enable_infinite_float_capping;
   options.enable_reduced_precision = delegate_data_->calculation_precision !=
                                      ::ml_drift::CalculationsPrecision::kF32;
-  // Build GraphFloat32.
+  // Build GraphFloat32. Custom parsers may specialize the graph for the
+  // target device (e.g. the SDPA parser only prunes the causal mask on Metal).
+  ABSL_ASSIGN_OR_RETURN(const ::ml_drift::GpuInfo gpu_info,
+                        backend_->GetInfo());
   ::ml_drift::GraphFloat32 graph;
-  CustomOperationParserFactory custom_parser_factory;
+  CustomOperationParserFactory custom_parser_factory(&gpu_info);
   ABSL_RETURN_IF_ERROR(BuildFinalModel(
       context, delegate_params, options, &graph, &quant_conversion_map_,
       shared_tensors_ptr, tensor_to_buffer_id_map,
@@ -1132,10 +1135,15 @@ absl::Status DelegateKernel::InitializeIrModel(
 
   const TfLiteIntArray* output_tensors = delegate_params->output_tensors;
 
-  ::litert::ml_drift::ir::IrModelBuilderOptions ir_options;
-  ir_options.enable_infinite_float_capping =
-      options.enable_infinite_float_capping;
-  ir_options.enable_reduced_precision = options.enable_reduced_precision;
+  // Custom parsers may specialize the graph for the target device (e.g. the
+  // SDPA parser only prunes the causal mask on Metal).
+  ABSL_ASSIGN_OR_RETURN(const ::ml_drift::GpuInfo gpu_info,
+                        backend_->GetInfo());
+  const ::litert::ml_drift::ir::IrModelBuilderOptions ir_options = {
+      .enable_infinite_float_capping = options.enable_infinite_float_capping,
+      .enable_reduced_precision = options.enable_reduced_precision,
+      .gpu_info = &gpu_info,
+  };
 
   auto custom_parsers = ::litert::ml_drift::ir::GetCustomParsers();
 

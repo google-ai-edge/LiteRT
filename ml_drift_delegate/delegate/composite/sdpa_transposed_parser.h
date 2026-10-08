@@ -18,6 +18,7 @@
 #include <optional>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/tflite/object_reader.h"
@@ -46,12 +47,19 @@ struct SdpaTransposedAttributes {
 
 class SdpaTransposedOperationParser : public TFLiteOperationParser {
  public:
+  explicit SdpaTransposedOperationParser(
+      const ::ml_drift::GpuInfo* gpu_info = nullptr)
+      : gpu_info_(gpu_info) {}
+
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration*) final;
 
   void Parse(const TfLiteNode* tflite_node, const TfLiteRegistration*,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final;
+
+ private:
+  const ::ml_drift::GpuInfo* const gpu_info_;
 };
 
 }  // namespace litert::ml_drift

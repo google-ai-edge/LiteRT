@@ -148,6 +148,7 @@ cc_library(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:shape",
     ],

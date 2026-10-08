@@ -99,7 +99,7 @@ void SdpaTransposedConvert(
     const TfLiteContext& /*context*/, const TfLiteNode& tflite_node,
     const TfLiteRegistration& /*registration*/,
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
-    const IrModelBuilderOptions& /*options*/,
+    const IrModelBuilderOptions& options,
     ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrTensorId input0 = tensor_map[tflite_node.inputs->data[0]];
   ::ml_drift::ir::IrTensorId input1 = tensor_map[tflite_node.inputs->data[1]];
@@ -204,7 +204,8 @@ void SdpaTransposedConvert(
   // head_dim 4, 8, ..., 1024.
   const bool is_flash_decode = !attr.is_prefill && q_w == 1 && head_dim > 0 &&
                                head_dim % 4 == 0 && (256 * 4) % head_dim == 0;
-  if (attr.is_causal && attr.from_cache_update && input4 != -1 &&
+  if (options.gpu_info != nullptr && options.gpu_info->IsApiMetal() &&
+      attr.is_causal && attr.from_cache_update && input4 != -1 &&
       input3 != -1 &&
       ir_model.tensor(input3)->desc.GetDataType() ==
           ::ml_drift::DataType::kBool &&

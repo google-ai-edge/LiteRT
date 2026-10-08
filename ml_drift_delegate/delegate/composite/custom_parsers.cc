@@ -40,7 +40,7 @@ std::unique_ptr<TFLiteOperationParser> CustomOperationParserFactory::Create(
     return std::make_unique<RuntimeBatchedMatMulOperationParser>();
   }
   if (op_name == "odml.sdpa_transposed") {
-    return std::make_unique<SdpaTransposedOperationParser>();
+    return std::make_unique<SdpaTransposedOperationParser>(gpu_info_);
   }
   if (op_name == "moe") {
     return std::make_unique<MoeExpertsOperationParser>();

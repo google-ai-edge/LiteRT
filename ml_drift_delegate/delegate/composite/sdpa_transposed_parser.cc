@@ -187,8 +187,9 @@ void SdpaTransposedOperationParser::Parse(const TfLiteNode* tflite_node,
   // head_dim 4, 8, ..., 1024.
   const bool is_flash_decode = !attr.is_prefill && q_w == 1 && head_dim > 0 &&
                                head_dim % 4 == 0 && (256 * 4) % head_dim == 0;
-  if (attr.is_causal && attr.from_cache_update && param_tensor != nullptr &&
-      mask != nullptr && mask->tensor.type == ::ml_drift::DataType::kBool &&
+  if (gpu_info_ != nullptr && gpu_info_->IsApiMetal() && attr.is_causal &&
+      attr.from_cache_update && param_tensor != nullptr && mask != nullptr &&
+      mask->tensor.type == ::ml_drift::DataType::kBool &&
       (is_flash_prefill || is_flash_decode)) {
     skip_bool_mask_for_flash_sdpa = true;
   }
