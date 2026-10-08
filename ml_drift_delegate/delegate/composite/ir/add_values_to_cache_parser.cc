@@ -111,7 +111,11 @@ void AddValuesToCacheConvert(
   }
   add_values_op->attr = std::move(attr);
 
-  if (context.tensors[tflite_node.outputs->data[0]].type == kTfLiteInt8) {
+  const TfLiteType out_type =
+      context.tensors[tflite_node.outputs->data[0]].type;
+  if (out_type == kTfLiteInt8 || out_type == kTfLiteUInt8 ||
+      out_type == kTfLiteInt4 || out_type == kTfLiteUInt4 ||
+      out_type == kTfLiteInt2) {
     auto output_1_id = tensor_map[tflite_node.outputs->data[0]];
     auto output_2_id = tensor_map[tflite_node.outputs->data[1]];
     ir_model.ResetQuantParams(output_1_id);
