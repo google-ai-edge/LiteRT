@@ -62,20 +62,18 @@ def _import_litert():
   """Import LiteRT modules for both litert and ai_edge_litert."""
   try:
     # pylint: disable=g-import-not-at-top
-    # pytype: disable=import-error
-    from litert.python.litert_wrapper.compiled_model_wrapper import (
+    from litert.python.litert_wrapper.compiled_model_wrapper import (  # pyrefly: ignore[missing-import]
         compiled_model as _cm,
     )
-    from litert.python.litert_wrapper.compiled_model_wrapper import (
+    from litert.python.litert_wrapper.compiled_model_wrapper import (  # pyrefly: ignore[missing-import]
         hardware_accelerator as _ha,
     )
-    from litert.python.litert_wrapper.compiled_model_wrapper import (
+    from litert.python.litert_wrapper.compiled_model_wrapper import (  # pyrefly: ignore[missing-import]
         options as _options,
     )
-    from litert.python.litert_wrapper.environment_wrapper import (
+    from litert.python.litert_wrapper.environment_wrapper import (  # pyrefly: ignore[missing-import]
         environment as _env,
     )
-    # pytype: enable=import-error
     # pylint: enable=g-import-not-at-top
     return (
         _cm.CompiledModel,
@@ -89,14 +87,12 @@ def _import_litert():
     pass
   try:
     # pylint: disable=g-import-not-at-top
-    # pytype: disable=import-error
-    from ai_edge_litert.compiled_model import CompiledModel
-    from ai_edge_litert.hardware_accelerator import HardwareAccelerator
-    from ai_edge_litert.environment import Environment
-    from ai_edge_litert.environment import EnvironmentOptions
-    from ai_edge_litert.options import CpuOptions
-    from ai_edge_litert.options import Options
-    # pytype: enable=import-error
+    from ai_edge_litert.compiled_model import CompiledModel  # pyrefly: ignore[missing-import]
+    from ai_edge_litert.hardware_accelerator import HardwareAccelerator  # pyrefly: ignore[missing-import]
+    from ai_edge_litert.environment import Environment  # pyrefly: ignore[missing-import]
+    from ai_edge_litert.environment import EnvironmentOptions  # pyrefly: ignore[missing-import]
+    from ai_edge_litert.options import CpuOptions  # pyrefly: ignore[missing-import]
+    from ai_edge_litert.options import Options  # pyrefly: ignore[missing-import]
     # pylint: enable=g-import-not-at-top
     return (
         CompiledModel,
