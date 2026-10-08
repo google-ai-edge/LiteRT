@@ -171,6 +171,40 @@ cc_test(
 )
 
 cc_library(
+    name = "weight_store_builder",
+    srcs = ["weight_store_builder.cc"],
+    hdrs = ["weight_store_builder.h"],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/vendors/nvidia:bytecode",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "weight_store_builder_test",
+    srcs = ["weight_store_builder_test.cc"],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":weight_store_builder",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "tensorrt_graph_builder",
     srcs = ["tensorrt_graph_builder.cc"],
     hdrs = ["tensorrt_graph_builder.h"],
