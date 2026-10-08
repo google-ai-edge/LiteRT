@@ -52,6 +52,7 @@ class AttentionModel : public MultiOpModel {
   int runtime_bmm_params() const { return runtime_bmm_params_id_; }
   int mask() const { return mask_id_; }
   int output() const { return output_id_; }
+  bool IsDelegated() const;
 
   TfLiteStatus ResizeInputTensor(int id, const std::vector<int>& dims) {
     return interpreter_->ResizeInputTensor(id, dims);
