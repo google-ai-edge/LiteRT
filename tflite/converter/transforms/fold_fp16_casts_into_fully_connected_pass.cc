@@ -27,7 +27,7 @@ limitations under the License.
 #include "mlir/Support/TypeID.h"  // from @llvm-project
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"  // from @llvm-project
 #include "tflite/converter/ir/tfl_ops.h"
-#include "tflite/converter/transforms/passes.h"
+#include "tflite/converter/transforms/tfl_passes.h"
 
 namespace mlir {
 namespace TFL {
