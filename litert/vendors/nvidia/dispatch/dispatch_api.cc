@@ -66,6 +66,7 @@
 #include "litert/vendors/nvidia/dispatch/runtime_cache.h"
 #include "litert/vendors/nvidia/dispatch/tensor_buffer_layout.h"
 #include "litert/vendors/nvidia/dispatch/tensor_buffer_view.h"
+#include "litert/vendors/nvidia/dispatch/weight_store.h"
 #include "litert/vendors/nvidia/memory_profile.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
@@ -1778,6 +1779,7 @@ class LiteRtDispatchInvocationContextT {
     bytecode_.engine_data = nullptr;
     bytecode_.engine_size = 0;
     bytecode_.refit_weights.clear();
+    bytecode_.weight_store.reset();
     if (bytecode_.trtllm_head.has_value()) {
       bytecode_.trtllm_head->packed_weights = nullptr;
       bytecode_.trtllm_head->packed_weights_size = 0;
@@ -1844,8 +1846,10 @@ class LiteRtDispatchInvocationContextT {
       cudaStreamDestroy(stream_);
       stream_ = nullptr;
     }
+    weight_mapping_.reset();
     engine_.reset();
     runtime_.reset();
+    weight_memory_.reset();
     std::fill(bound_input_ptrs_.begin(), bound_input_ptrs_.end(), nullptr);
     std::fill(bound_output_ptrs_.begin(), bound_output_ptrs_.end(), nullptr);
     bound_arena_ptr_ = nullptr;
@@ -1945,6 +1949,7 @@ class LiteRtDispatchInvocationContextT {
     memory_profiler_.Log("stream_created", bytecode_.function_name.c_str());
     LITERT_RETURN_IF_ERROR(DeserializeEngine());
     LITERT_RETURN_IF_ERROR(RecordAliasedOutputs());
+    LITERT_RETURN_IF_ERROR(MapEngineWeights());
     LITERT_RETURN_IF_ERROR(RefitEngine());
     DumpEngineInfo();
     if (UseCudaGraph()) {
@@ -2041,6 +2046,40 @@ class LiteRtDispatchInvocationContextT {
                  "their input buffers",
                  bytecode_.function_name.c_str(), aliased);
     }
+    return {};
+  }
+
+  // A plan built without its packed plugin weights (bytecode.h,
+  // TensorRtWeightStore) gets them mapped in from device memory that is filled
+  // from the model file and shared by the engines of the process.
+  Expected<void> MapEngineWeights() {
+    if (!bytecode_.weight_store.has_value()) {
+      return {};
+    }
+    DispatchCpuTimer map_timer(/*enabled=*/true);
+    memory_profiler_.Log("engine_weights_map_begin",
+                         bytecode_.function_name.c_str());
+    LITERT_ASSIGN_OR_RETURN(weight_memory_,
+                            litert::nvidia::EngineWeightMemory::Create(
+                                *bytecode_.weight_store, stream_));
+    memory_profiler_.Log("engine_weights_on_device",
+                         bytecode_.function_name.c_str());
+    LITERT_ASSIGN_OR_RETURN(weight_mapping_,
+                            litert::nvidia::EngineWeightMapping::Create(
+                                *engine_, *weight_memory_, stream_));
+    LITERT_LOG(
+        LITERT_INFO,
+        "NVIDIA dispatch mapped the weights of %s "
+        "(weight_data_bytes=%llu segment_bytes=%llu "
+        "shared_segment_bytes=%llu private_bytes=%llu elapsed_ms=%.3f)",
+        bytecode_.function_name.c_str(),
+        static_cast<unsigned long long>(weight_memory_->weight_data_size()),
+        static_cast<unsigned long long>(weight_memory_->segment_bytes()),
+        static_cast<unsigned long long>(weight_memory_->shared_segment_bytes()),
+        static_cast<unsigned long long>(weight_memory_->private_bytes()),
+        map_timer.ElapsedMs());
+    memory_profiler_.Log("engine_weights_map_end",
+                         bytecode_.function_name.c_str());
     return {};
   }
 
@@ -2600,8 +2639,12 @@ class LiteRtDispatchInvocationContextT {
   litert::nvidia::TensorRtBytecode bytecode_;
   litert::nvidia::MemoryProfiler memory_profiler_;
   litert::nvidia::TensorRtLogger logger_;
+  // The device memory of the engine's weight store outlives the engine, and
+  // its mapping into the engine goes before the engine.
+  std::unique_ptr<litert::nvidia::EngineWeightMemory> weight_memory_;
   TrtPtr<nvinfer1::IRuntime> runtime_;
   TrtPtr<nvinfer1::ICudaEngine> engine_;
+  std::unique_ptr<litert::nvidia::EngineWeightMapping> weight_mapping_;
   TrtPtr<nvinfer1::IRuntimeCache> runtime_cache_;
   TrtPtr<nvinfer1::IRuntimeConfig> runtime_config_;
   TrtPtr<nvinfer1::IExecutionContext> execution_context_;
