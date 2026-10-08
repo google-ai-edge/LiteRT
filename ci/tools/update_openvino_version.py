@@ -53,6 +53,10 @@ _ALLOWED_HOST = "storage.openvinotoolkit.org"
 # OS keys, in the order they should appear in the generated file.
 _OS_KEYS = ("windows", "ubuntu24", "ubuntu22", "android")
 
+_NIGHTLY_VERSION_RE = re.compile(r"_(\d+\.\d+\.\d+\.dev\d+)_")
+_RELEASE_VERSION_RE = re.compile(r"_windows_(\d+\.\d+\.\d+)\.\d+\.")
+_COMMITTED_WINDOWS_URL_RE = re.compile(r'"windows":\s*"([^"]+)"')
+
 _TEMPLATE = '''# Copyright 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -144,7 +148,7 @@ def _pep440_version(channel: str, urls: dict[str, str]) -> str:
   """Derives the PEP 440 version string from the Windows URL."""
   filename = urls["windows"].rsplit("/", 1)[-1]
   if channel == "nightly":
-    match = re.search(r"_(\d+\.\d+\.\d+\.dev\d+)_", filename)
+    match = _NIGHTLY_VERSION_RE.search(filename)
     if not match:
       raise ValueError(
           "Could not find a '<version>.dev<date>' token in nightly"
@@ -152,12 +156,13 @@ def _pep440_version(channel: str, urls: dict[str, str]) -> str:
       )
     return match.group(1)
 
-  # Release: the channel-dir path segment is the plain "{version}".
-  match = re.search(r"/packages/(\d+\.\d+\.\d+)/", urls["windows"])
+  # Release: the dir segment may omit ".0" (e.g. "2026.4"), so use the
+  # filename's "<major>.<minor>.<patch>.<build>" token.
+  match = _RELEASE_VERSION_RE.search(filename)
   if not match:
     raise ValueError(
-        "Could not find a '/packages/<version>/' path segment in release"
-        f" URL: {urls['windows']}"
+        "Could not find a '<major>.<minor>.<patch>.<build>' token in release"
+        f" filename: {filename}"
     )
   return match.group(1)
 
@@ -231,7 +236,7 @@ def _render(
 def _load_committed_windows_url() -> str:
   """Extracts OPENVINO_URLS['windows'] from the committed .bzl (regex, no exec())."""
   text = OUTPUT_BZL.read_text()
-  match = re.search(r'"windows":\s*"([^"]+)"', text)
+  match = _COMMITTED_WINDOWS_URL_RE.search(text)
   if not match:
     raise ValueError(f"Could not find a windows URL in {OUTPUT_BZL}")
   return match.group(1)
