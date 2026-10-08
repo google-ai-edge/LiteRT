@@ -31,7 +31,7 @@ if [[ ! -d "${LITERT_DIR}/litert" || ! -d "${LITERT_DIR}/tflite" ]]; then
 fi
 
 run_build_and_stage() {
-  local platform="${PLATFORM:-linux_arm64_oe_glibc2.35}"
+  local platform="${PLATFORM:-aarch64-oe-linux-gcc11.2}"
   local preset="${PRESET:-linux-aarch64-oe-gcc11.2}"
   local bdir="${BDIR:-cmake_build_linux_aarch64_oe_gcc11_2}"
   local jobs="${JOBS:-$(nproc)}"
@@ -119,7 +119,7 @@ docker run --rm \
   -e RUN_DIRECTLY=true \
   -e LITERT_DIR=/litert_src \
   -e OUTPUT_DIR=/output \
-  -e PLATFORM="${PLATFORM:-linux_arm64_oe_glibc2.35}" \
+  -e PLATFORM="${PLATFORM:-aarch64-oe-linux-gcc11.2}" \
   -e PRESET="${PRESET:-linux-aarch64-oe-gcc11.2}" \
   -e BDIR="${BDIR:-cmake_build_linux_aarch64_oe_gcc11_2}" \
   -e JOBS="${JOBS:-$(nproc)}" \
