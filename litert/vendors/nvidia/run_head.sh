@@ -214,6 +214,7 @@ def save_result(data):
     lines = ['# NVIDIA benchmark report', '', 'Status: '+data['status'], '',
              'Invocation: `'+data['invocation']+'`', '',
              'Resolved engine residency: '+('lazy' if data.get('settings',{}).get('lazy')=='1' else 'resident')+'.',
+             'Plugin weights: '+data.get('settings',{}).get('weights','embedded')+'.',
              'Host decision: '+data.get('host',{}).get('decision','not prepared')+'.',
              *['WARNING: '+warning for warning in data.get('host',{}).get('warnings',[])], '',
              'Native synthetic benchmark; estimated TTFT is not measured first delivery. Memory passes are separate from throughput.',
@@ -382,7 +383,7 @@ def main(args):
     elif action == 'cache': cache_command(root_open(args[0]),args[1],args[2],args[3],args[4]=='yes')
     elif action == 'init':
         report = Path(os.environ['NB_REPORT']); (report/'logs').mkdir(parents=True)
-        keys = ('PROFILE','WORKLOAD','PREFILL','INPUT','OUTPUT','CONTEXT','LAZY','MTP','METRICS','STATE')
+        keys = ('PROFILE','WORKLOAD','PREFILL','INPUT','OUTPUT','CONTEXT','LAZY','MTP','WEIGHTS','METRICS','STATE')
         paths = {k.lower():os.environ['NB_'+k] for k in ('RT','LM','MODEL','CUDA','SDK','BUILD_RT','BUILD_LM','REPORT')}
         data = {'schema_version':2,'status':'running','invocation':args[0], 'paths':paths,
                 'settings':{k.lower():os.environ['NB_'+k] for k in keys},'jobs':[],
@@ -463,12 +464,14 @@ Usage:
   run_head.sh report [--profile e2b|12b] [--model-file PATH]
     [--workload short|32k|128k] [--prefill 128|1024] [--mtp]
     [--residency auto|lazy|resident] [--metrics verify,latency,memory|all]
-    [--cache-state warm|runtime-cold|cold|all]
+    [--cache-state warm|runtime-cold|cold|all] [--weights shared|private|embedded]
   run_head.sh cache list [--profile e2b|12b] [--kind build|aot|runtime|compiler|cpu]
   run_head.sh cache clear (--all|--profile e2b|12b|--kind KIND) [--yes]
 
 Defaults: 12b, short, prefill 1024 (long: 128), MTP off, all metrics, warm caches.
 Auto residency: resident for short and for non-MTP long presets; otherwise lazy.
+Weights (TensorRT-RTX 1.7; older SDKs embed): shared maps the packed plugin weights of the
+model file once for all engines, private once per engine, embedded keeps them in the plans.
 One model/workload per invocation.
 Environment: LITERT_LM_DIR, TENSORRT_RTX_ROOT, CUDA_HOME, LITERT_BENCH_ROOT.
 LITERT_BENCH_ALLOW_BACKGROUND_ACTIVITY defaults to 1 (warn); set 0 for strict idle.
@@ -482,7 +485,7 @@ die() { echo "ERROR: $*" >&2; exit 2; }
 invocation=$(printf '%q ' "$0" "$@")
 action=${1:---help}; shift || true
 profile=12b; workload=short; prefill=; model=; residency=auto; mtp=false
-metrics=all; cache_state=warm; kind=; apply=no; all=no; profile_filter=; cache_action=
+metrics=all; cache_state=warm; kind=; apply=no; all=no; profile_filter=; cache_action=; weights=shared
 case "$action" in
   -h|--help|help) usage; exit 0 ;;
   report) ;;
@@ -495,7 +498,7 @@ while (($#)); do
     -h|--help) usage; exit 0 ;;
     --mtp) [[ $action == report ]] || die 'Only report accepts --mtp'; mtp=true ;;
     --all|--yes) [[ $action == cache ]] || die "$option is a cache option"; if [[ $option == --all ]]; then all=yes; else apply=yes; fi ;;
-    --profile|--model-file|--workload|--prefill|--residency|--metrics|--cache-state|--kind)
+    --profile|--model-file|--workload|--prefill|--residency|--metrics|--cache-state|--weights|--kind)
       (($#)) && [[ $1 != --* ]] || die "Missing value for $option"
       value=$1; shift
       if [[ $action == cache && $option != --profile && $option != --kind ]]; then die "$option is a report option"; fi
@@ -507,6 +510,7 @@ while (($#)); do
         --residency) residency=$value ;;
         --metrics) metrics=$value ;;
         --cache-state) cache_state=$value ;;
+        --weights) weights=$value ;;
         --kind) [[ $action == cache ]] || die '--kind is a cache option'; kind=$value ;;
       esac ;;
     *) die "Unknown/retired option '$option'. Use --cache-state and --metrics; configure paths through environment. See --help." ;;
@@ -523,6 +527,7 @@ else
   [[ $workload =~ ^(short|32k|128k)$ ]] || die 'Invalid workload'
   [[ $residency =~ ^(auto|lazy|resident)$ ]] || die 'Invalid residency'
   [[ $cache_state =~ ^(warm|runtime-cold|cold|all)$ ]] || die 'Invalid cache state'
+  [[ $weights =~ ^(shared|private|embedded)$ ]] || die 'Invalid weights'
   [[ $metrics == all || $metrics =~ ^(verify|latency|memory)(,(verify|latency|memory))*$ ]] || die 'Metrics must be a nonempty subset of verify,latency,memory'
   [[ $profile != e2b || ( $workload == short && $mtp == false ) ]] || die 'E2B supports short, non-MTP presets only'
   prefill=${prefill:-$([[ $workload == short ]] && echo 1024 || echo 128)}
@@ -570,7 +575,7 @@ if [[ $action == cache ]]; then
   exit 0
 fi
 
-export NB_PROFILE=$profile NB_WORKLOAD=$workload NB_PREFILL=$prefill NB_MTP=$mtp NB_METRICS=$metrics NB_STATE=$cache_state
+export NB_PROFILE=$profile NB_WORKLOAD=$workload NB_PREFILL=$prefill NB_MTP=$mtp NB_METRICS=$metrics NB_STATE=$cache_state NB_WEIGHTS=$weights
 case "$workload:$prefill" in
   short:*) NB_INPUT=1024; NB_OUTPUT=256; NB_CONTEXT=2048; iterations=8; warmups=2; processes=1 ;;
   32k:128) NB_INPUT=32768; NB_OUTPUT=256; NB_CONTEXT=34818; iterations=4; warmups=1; processes=2 ;;
@@ -624,6 +629,8 @@ export LITERT_NVIDIA_TENSORRT_PARTITION_POLICY=gemma4 LITERT_NVIDIA_TENSORRT_FP1
 export LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS=cuda_gemv LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS=1
 export LITERT_NVIDIA_TENSORRT_JIT_HANDLE=0 LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH=$NB_MODEL
 export LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES=$NB_LAZY LITERT_NVIDIA_MTP_GPU_SAMPLING=$([[ $mtp == true ]] && echo 1 || echo 0)
+export LITERT_NVIDIA_TENSORRT_WEIGHT_STORE=$([[ $weights == embedded ]] && echo 0 || echo 1)
+export LITERT_NVIDIA_DISPATCH_SHARED_WEIGHT_SEGMENTS=$([[ $weights == private ]] && echo 0 || echo 1)
 export LITERT_NVIDIA_MEMORY_PROFILE=0 LITERT_NVIDIA_DISPATCH_PROFILE=0 LITERT_NVIDIA_DISPATCH_LAYER_PROFILE=0 LITERT_NVIDIA_DISPATCH_DUMP_IO=0
 [[ $profile != 12b ]] || export LITERT_NVIDIA_TENSORRT_MAX_FC_WEIGHT_BYTES=536870912
 export CUDA_CACHE_DISABLE=0 NB_CWD=$NB_LM
