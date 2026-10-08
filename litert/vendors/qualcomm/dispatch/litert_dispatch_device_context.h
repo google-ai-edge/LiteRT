@@ -34,7 +34,7 @@ class LiteRtDispatchDeviceContextT {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchDeviceContextT>;
 
-  ~LiteRtDispatchDeviceContextT() = default;
+  ~LiteRtDispatchDeviceContextT();
 
   static litert::Expected<Ptr> Create(
       const LiteRtRuntimeContext* runtime_context,
@@ -47,13 +47,13 @@ class LiteRtDispatchDeviceContextT {
   }
 
   litert::Expected<void> UnregisterTensorBuffer(
-      LiteRtTensorBufferHandle tensor_buffer_handle) {
-    return tensor_buffer_registry_.Unregister(tensor_buffer_handle);
-  }
+      LiteRtTensorBufferHandle tensor_buffer_handle);
 
   litert::Expected<void> UnregisterTensorBuffer(
       LiteRtTensorBufferHandle tensor_buffer_handle,
-      const Qnn_Tensor_t& tensor);
+      const Qnn_Tensor_t& /*tensor*/) {
+    return UnregisterTensorBuffer(tensor_buffer_handle);
+  }
 
   litert::Expected<LiteRtTensorBuffer> GetTensorBuffer(
       LiteRtTensorBufferHandle tensor_buffer_handle);
