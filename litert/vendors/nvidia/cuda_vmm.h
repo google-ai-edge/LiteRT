@@ -26,8 +26,9 @@ namespace litert::nvidia {
 // memory that TensorRT maps into the weight memory of several engines
 // (nvinfer1::IWeightsManager::restoreFromVmmAllocation). The entry points
 // belong to the CUDA driver library, which the runtime library loads itself;
-// they are looked up there at first use. The calling thread needs a current
-// CUDA context, which any CUDA runtime call that touches the device gives it.
+// they are looked up there at first use. A thread that creates a block needs
+// a current CUDA context, which any CUDA runtime call that touches the device
+// gives it; any thread may destroy the block.
 
 // The size every allocation and mapping is a multiple of on the current
 // device (2 MiB on the GPUs seen so far). An error if the driver library
@@ -58,6 +59,7 @@ class CudaVmmBlock {
  private:
   CudaVmmBlock() = default;
 
+  void* context_ = nullptr;  // CUcontext
   uint64_t handle_ = 0;
   uint64_t address_ = 0;
   uint64_t size_ = 0;

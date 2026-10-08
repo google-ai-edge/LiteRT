@@ -41,6 +41,9 @@ struct DriverApi {
   decltype(&cuMemMap) map = nullptr;
   decltype(&cuMemUnmap) unmap = nullptr;
   decltype(&cuMemSetAccess) set_access = nullptr;
+  decltype(&cuCtxGetCurrent) context_get_current = nullptr;
+  decltype(&cuCtxPushCurrent) context_push_current = nullptr;
+  decltype(&cuCtxPopCurrent) context_pop_current = nullptr;
   decltype(&cuGetErrorName) get_error_name = nullptr;
 };
 
@@ -68,6 +71,9 @@ const DriverApi* GetDriverApi() {
         !resolve(loaded->map, "cuMemMap") ||
         !resolve(loaded->unmap, "cuMemUnmap") ||
         !resolve(loaded->set_access, "cuMemSetAccess") ||
+        !resolve(loaded->context_get_current, "cuCtxGetCurrent") ||
+        !resolve(loaded->context_push_current, "cuCtxPushCurrent_v2") ||
+        !resolve(loaded->context_pop_current, "cuCtxPopCurrent_v2") ||
         !resolve(loaded->get_error_name, "cuGetErrorName")) {
       delete loaded;
       return nullptr;
@@ -111,8 +117,17 @@ Expected<uint64_t> CudaVmmGranule() {
   }
   LITERT_ASSIGN_OR_RETURN(auto properties, AllocationProperties());
   size_t granule = 0;
-  const CUresult result = api->get_allocation_granularity(
+  CUresult result = api->get_allocation_granularity(
       &granule, &properties, CU_MEM_ALLOC_GRANULARITY_MINIMUM);
+  if (result == CUDA_ERROR_NOT_INITIALIZED ||
+      result == CUDA_ERROR_INVALID_CONTEXT) {
+    // The first device call of the process: let the runtime library
+    // initialize the driver and the context of this thread.
+    if (cudaDeviceSynchronize() == cudaSuccess) {
+      result = api->get_allocation_granularity(
+          &granule, &properties, CU_MEM_ALLOC_GRANULARITY_MINIMUM);
+    }
+  }
   if (result != CUDA_SUCCESS) {
     return DriverError(*api, "cuMemGetAllocationGranularity", result);
   }
@@ -137,8 +152,15 @@ Expected<std::unique_ptr<CudaVmmBlock>> CudaVmmBlock::Create(uint64_t size) {
   LITERT_ASSIGN_OR_RETURN(auto properties, AllocationProperties());
   std::unique_ptr<CudaVmmBlock> block(new CudaVmmBlock());
   block->size_ = size;
+  CUcontext context = nullptr;
+  CUresult result = api->context_get_current(&context);
+  if (result != CUDA_SUCCESS || context == nullptr) {
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 "The thread has no current CUDA context");
+  }
+  block->context_ = context;
   CUmemGenericAllocationHandle handle = 0;
-  CUresult result = api->create(&handle, size, &properties, 0);
+  result = api->create(&handle, size, &properties, 0);
   if (result != CUDA_SUCCESS) {
     return DriverError(*api, "cuMemCreate", result);
   }
@@ -166,7 +188,13 @@ Expected<std::unique_ptr<CudaVmmBlock>> CudaVmmBlock::Create(uint64_t size) {
 
 CudaVmmBlock::~CudaVmmBlock() {
   const DriverApi* api = GetDriverApi();
-  if (api == nullptr) {
+  if (api == nullptr || context_ == nullptr) {
+    return;
+  }
+  // The thread that destroys the block may never have used CUDA: release it
+  // in the context it was created in.
+  if (api->context_push_current(static_cast<CUcontext>(context_)) !=
+      CUDA_SUCCESS) {
     return;
   }
   if (mapped_) {
@@ -178,6 +206,8 @@ CudaVmmBlock::~CudaVmmBlock() {
   if (handle_ != 0) {
     api->release(handle_);
   }
+  CUcontext popped = nullptr;
+  api->context_pop_current(&popped);
 }
 
 }  // namespace litert::nvidia

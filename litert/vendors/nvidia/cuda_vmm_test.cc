@@ -16,6 +16,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <thread>  // NOLINT(build/c++11)
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -69,6 +71,21 @@ TEST_F(CudaVmmTest, BlocksHoldWhatAStreamCopiesIntoThem) {
     ASSERT_EQ(cudaStreamSynchronize(stream_), cudaSuccess) << "round " << round;
     ASSERT_EQ(read, written) << "round " << round;
   }
+}
+
+TEST_F(CudaVmmTest, AThreadWithoutACudaContextReleasesABlock) {
+  size_t free_before = 0;
+  size_t total = 0;
+  ASSERT_EQ(cudaMemGetInfo(&free_before, &total), cudaSuccess);
+  auto block = CudaVmmBlock::Create(64 * granule_);
+  ASSERT_TRUE(block.HasValue()) << block.Error().Message();
+  size_t free_with_block = 0;
+  ASSERT_EQ(cudaMemGetInfo(&free_with_block, &total), cudaSuccess);
+  EXPECT_LE(free_with_block + 64 * granule_, free_before);
+  std::thread([owned = std::move(*block)]() mutable { owned.reset(); }).join();
+  size_t free_after = 0;
+  ASSERT_EQ(cudaMemGetInfo(&free_after, &total), cudaSuccess);
+  EXPECT_GE(free_after, free_with_block + 64 * granule_);
 }
 
 TEST_F(CudaVmmTest, RejectsSizesThatAreNotGranules) {
