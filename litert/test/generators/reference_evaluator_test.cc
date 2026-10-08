@@ -16,12 +16,12 @@
 
 #include <cmath>
 #include <cstddef>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
 #include "litert/test/generators/common.h"
@@ -77,8 +77,7 @@ TEST(ReferenceEvaluatorTest, RunCompositeArithmetic) {
   VarBuffers outputs;
   outputs.push_back(std::move(b_out));
 
-  LITERT_ASSERT_OK(
-      ReferenceEvaluator::EvaluateCompositeReference(*model, inputs, outputs));
+  LITERT_ASSERT_OK(ReferenceEvaluator::Evaluate(*model, inputs, outputs));
 
   auto out_span = outputs[0].Span<float>();
   // out = (x + 2) * x
@@ -140,8 +139,7 @@ TEST(ReferenceEvaluatorTest, RunCompositeBatchMatmulAndSoftmax) {
   VarBuffers outputs;
   outputs.push_back(std::move(b_out));
 
-  LITERT_ASSERT_OK(
-      ReferenceEvaluator::EvaluateCompositeReference(*model, inputs, outputs));
+  LITERT_ASSERT_OK(ReferenceEvaluator::Evaluate(*model, inputs, outputs));
 
   auto out_span = outputs[0].Span<float>();
   // Q * K^T = [[1, 0], [0, 1]]
@@ -156,56 +154,6 @@ TEST(ReferenceEvaluatorTest, RunCompositeBatchMatmulAndSoftmax) {
 
   std::vector<float> expected = {p1, p0, p0, p1};
   EXPECT_THAT(out_span, Pointwise(FloatNear(1e-5f), expected));
-}
-
-TEST(ReferenceEvaluatorTest, CustomOpRegistration) {
-  using TensorTf = litert::tensor::Tensor<litert::tensor::TfLiteMixinTag>;
-
-  TensorTf in1 =
-      litert::tensor::Create("in1", litert::tensor::ApiType<float>::value, {2});
-  TensorTf in2 =
-      litert::tensor::Create("in2", litert::tensor::ApiType<float>::value, {2});
-
-  TensorTf out = litert::tensor::StableHLOComposite(
-      litert::tensor::StableHLOCompositeOptions{.name = "custom_composite"},
-      [](auto x, auto y) { return litert::tensor::Add(x, y); }, in1, in2);
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto model,
-                              litert::testing::SaveTensorGraph({out}));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto b1, SimpleBuffer::Create<float>({2}));
-  LITERT_ASSERT_OK_AND_ASSIGN(auto b2, SimpleBuffer::Create<float>({2}));
-  LITERT_ASSERT_OK_AND_ASSIGN(auto b_out, SimpleBuffer::Create<float>({2}));
-
-  b1.Span<float>()[0] = 10.0f;
-  b1.Span<float>()[1] = 20.0f;
-  b2.Span<float>()[0] = 3.0f;
-  b2.Span<float>()[1] = 4.0f;
-
-  VarBuffers inputs;
-  inputs.push_back(std::move(b1));
-  inputs.push_back(std::move(b2));
-  VarBuffers outputs;
-  outputs.push_back(std::move(b_out));
-
-  ReferenceEvaluator custom_evaluator = ReferenceEvaluator::Create();
-  // Override Add with custom scaled addition: (a + b) * 2.0f
-  custom_evaluator.RegisterOp(
-      kLiteRtOpCodeTflAdd,
-      [](const LiteRtOpT& op, const ReferenceEvaluator::TensorEnv& env,
-         ReferenceEvaluator::TensorData& out) -> Expected<void> {
-        const auto& in1 = env.at(op.Inputs()[0]);
-        const auto& in2 = env.at(op.Inputs()[1]);
-        for (size_t i = 0; i < out.f32_data.size(); ++i) {
-          out.f32_data[i] = (in1.f32_data[i] + in2.f32_data[i]) * 2.0f;
-        }
-        return {};
-      });
-
-  LITERT_ASSERT_OK(custom_evaluator.EvaluateComposite(*model, inputs, outputs));
-
-  EXPECT_EQ(outputs[0].Span<float>()[0], 26.0f);
-  EXPECT_EQ(outputs[0].Span<float>()[1], 48.0f);
 }
 
 TEST(ReferenceEvaluatorTest, RunCompositeSwiglu) {
@@ -244,8 +192,7 @@ TEST(ReferenceEvaluatorTest, RunCompositeSwiglu) {
   VarBuffers outputs;
   outputs.push_back(std::move(b_out));
 
-  LITERT_ASSERT_OK(
-      ReferenceEvaluator::EvaluateCompositeReference(*model, inputs, outputs));
+  LITERT_ASSERT_OK(ReferenceEvaluator::Evaluate(*model, inputs, outputs));
 
   auto out_span = outputs[0].Span<float>();
   float expected_1 = (2.0f / (1.0f + std::exp(-2.0f))) * 0.5f;
@@ -300,11 +247,110 @@ TEST(ReferenceEvaluatorTest, RunCompositeSelectV2WithBoolMask) {
   VarBuffers outputs;
   outputs.push_back(std::move(b_out));
 
-  LITERT_ASSERT_OK(
-      ReferenceEvaluator::EvaluateCompositeReference(*model, inputs, outputs));
+  LITERT_ASSERT_OK(ReferenceEvaluator::Evaluate(*model, inputs, outputs));
 
   std::vector<float> expected = {1.0f, -10000.0f, -10000.0f, 4.0f,
                                  5.0f, -10000.0f, -10000.0f, 8.0f};
+  EXPECT_THAT(outputs[0].Span<float>(), Pointwise(FloatNear(1e-5f), expected));
+}
+
+TEST(ReferenceEvaluatorTest, RunCompositeWithConstantWeightInput) {
+  using TensorTf = litert::tensor::Tensor<litert::tensor::TfLiteMixinTag>;
+
+  TensorTf x = litert::tensor::Create(
+      "x", litert::tensor::ApiType<float>::value, {1, 2, 2});
+  TensorTf scale = litert::tensor::Create(
+      "scale", litert::tensor::ApiType<float>::value, {2},
+      litert::tensor::OwningCpuBuffer::CopyAs(
+          litert::tensor::ApiType<float>::value,
+          std::vector<float>{2.0f, 3.0f}));
+
+  TensorTf out = litert::tensor::StableHLOComposite(
+      litert::tensor::StableHLOCompositeOptions{.name = "test_const_scale"},
+      [](auto x_in, auto scale_in) {
+        return litert::tensor::Mul(x_in, scale_in);
+      },
+      x, scale);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto model,
+                              litert::testing::SaveTensorGraph({out}));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_x, SimpleBuffer::Create<float>({1, 2, 2}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_out,
+                              SimpleBuffer::Create<float>({1, 2, 2}));
+
+  auto x_span = b_x.Span<float>();
+  x_span[0] = 1.0f;
+  x_span[1] = 2.0f;
+  x_span[2] = 3.0f;
+  x_span[3] = 4.0f;
+
+  VarBuffers inputs;
+  inputs.push_back(std::move(b_x));
+  VarBuffers outputs;
+  outputs.push_back(std::move(b_out));
+
+  LITERT_ASSERT_OK(ReferenceEvaluator::Evaluate(*model, inputs, outputs));
+
+  std::vector<float> expected = {2.0f, 6.0f, 6.0f, 12.0f};
+  EXPECT_THAT(outputs[0].Span<float>(), Pointwise(FloatNear(1e-5f), expected));
+}
+
+TEST(ReferenceEvaluatorTest, RunChainedComposites) {
+  using TensorTf = litert::tensor::Tensor<litert::tensor::TfLiteMixinTag>;
+
+  TensorTf x =
+      litert::tensor::Create("x", litert::tensor::ApiType<float>::value, {2});
+  TensorTf y =
+      litert::tensor::Create("y", litert::tensor::ApiType<float>::value, {2});
+  TensorTf z =
+      litert::tensor::Create("z", litert::tensor::ApiType<float>::value, {2});
+
+  // First composite produces two intermediate tensors: (x + y, x - y).
+  auto [sum_xy, diff_xy] = litert::tensor::StableHLOComposite(
+      litert::tensor::StableHLOCompositeOptions{.name = "test_stage1"},
+      [](auto x_in, auto y_in) {
+        return std::make_tuple(litert::tensor::Add(x_in, y_in),
+                               litert::tensor::Sub(x_in, y_in));
+      },
+      x, y);
+
+  // Second composite consumes both outputs of stage1 plus z:
+  // (sum_xy * diff_xy) + z.
+  TensorTf out = litert::tensor::StableHLOComposite(
+      litert::tensor::StableHLOCompositeOptions{.name = "test_stage2"},
+      [](auto a_in, auto b_in, auto z_in) {
+        return litert::tensor::Add(litert::tensor::Mul(a_in, b_in), z_in);
+      },
+      sum_xy, diff_xy, z);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto model,
+                              litert::testing::SaveTensorGraph({out}));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_x, SimpleBuffer::Create<float>({2}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_y, SimpleBuffer::Create<float>({2}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_z, SimpleBuffer::Create<float>({2}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_out, SimpleBuffer::Create<float>({2}));
+
+  b_x.Span<float>()[0] = 5.0f;
+  b_x.Span<float>()[1] = 4.0f;
+  b_y.Span<float>()[0] = 3.0f;
+  b_y.Span<float>()[1] = 1.0f;
+  b_z.Span<float>()[0] = 2.0f;
+  b_z.Span<float>()[1] = 10.0f;
+
+  VarBuffers inputs;
+  inputs.push_back(std::move(b_x));
+  inputs.push_back(std::move(b_y));
+  inputs.push_back(std::move(b_z));
+  VarBuffers outputs;
+  outputs.push_back(std::move(b_out));
+
+  LITERT_ASSERT_OK(ReferenceEvaluator::Evaluate(*model, inputs, outputs));
+
+  // Element 0: (5 + 3) * (5 - 3) + 2 = 16 + 2 = 18
+  // Element 1: (4 + 1) * (4 - 1) + 10 = 15 + 10 = 25
+  std::vector<float> expected = {18.0f, 25.0f};
   EXPECT_THAT(outputs[0].Span<float>(), Pointwise(FloatNear(1e-5f), expected));
 }
 

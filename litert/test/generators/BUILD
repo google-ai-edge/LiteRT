@@ -722,7 +722,6 @@ cc_test(
         ":common",
         ":graph_helpers",
         ":reference_evaluator",
-        "//litert/c:litert_op_code",
         "//litert/cc:litert_expected",
         "//litert/core/model",
         "//litert/test:matchers",

@@ -32,11 +32,27 @@
 
 namespace litert::testing {
 
-// An evaluator that executes a LiteRtSubgraphT or the decomposition of a
-// composite operation using an extensible registry of reference operation
-// kernels.
+// Evaluates a LiteRtModelT (starting at subgraph 0, recursively evaluating any
+// composite operation decompositions) using reference operation kernels.
 class ReferenceEvaluator {
  public:
+  // Evaluates `model` from subgraph 0 using standard reference kernels,
+  // recursively evaluating any kLiteRtOpCodeShloComposite decomposition
+  // subgraphs.
+  static Expected<void> Evaluate(const LiteRtModelT& model,
+                                 const VarBuffers& inputs, VarBuffers& outputs);
+
+  // Deprecated alias for Evaluate(); kept for backwards compatibility while
+  // existing generators migrate to Evaluate().
+  static Expected<void> EvaluateCompositeReference(const LiteRtModelT& model,
+                                                   const VarBuffers& inputs,
+                                                   VarBuffers& outputs) {
+    return Evaluate(model, inputs, outputs);
+  }
+
+ private:
+  friend class absl::NoDestructor<ReferenceEvaluator>;
+
   // Container representing intermediate tensor data and shape during reference
   // evaluation. Holds float32 (including converted float16) or int32 (including
   // converted bool) data.
@@ -78,44 +94,23 @@ class ReferenceEvaluator {
   using OpKernelHandler = std::function<Expected<void>(
       const LiteRtOpT& op, const TensorEnv& env, TensorData& out)>;
 
-  // Creates an independent evaluator with standard ops registered.
-  // Prefer using the static Evaluate* convenience methods unless custom op
-  // registration or overriding is required.
-  static ReferenceEvaluator Create();
-
-  // Registers an op handler for a given op code.
-  void RegisterOp(LiteRtOpCode op_code, OpKernelHandler handler);
-
-  // Evaluates an arbitrary LiteRtSubgraphT using registered reference
-  // operations.
-  Expected<void> Evaluate(const LiteRtSubgraphT& subgraph,
-                          const VarBuffers& inputs, VarBuffers& outputs) const;
-
-  // Evaluates the decomposition subgraph of a composite op inside a
-  // LiteRtModelT.
-  Expected<void> EvaluateComposite(const LiteRtModelT& model,
-                                   const VarBuffers& inputs,
-                                   VarBuffers& outputs) const;
-
-  // Evaluates a LiteRtSubgraphT using the default singleton evaluator instance
-  // with standard reference kernels.
-  static Expected<void> EvaluateSubgraph(const LiteRtSubgraphT& subgraph,
-                                         const VarBuffers& inputs,
-                                         VarBuffers& outputs);
-
-  // Evaluates the decomposition of a composite operation inside a LiteRtModelT
-  // using the default singleton evaluator instance with standard reference
-  // kernels.
-  static Expected<void> EvaluateCompositeReference(const LiteRtModelT& model,
-                                                   const VarBuffers& inputs,
-                                                   VarBuffers& outputs);
-
- private:
-  friend class absl::NoDestructor<ReferenceEvaluator>;
-
   ReferenceEvaluator();
 
+  void RegisterOp(LiteRtOpCode op_code, OpKernelHandler handler);
+
   void RegisterStandardOps();
+
+  Expected<void> EvaluateModel(const LiteRtModelT& model,
+                               const VarBuffers& inputs,
+                               VarBuffers& outputs) const;
+
+  Expected<void> EvaluateSubgraphWithEnv(const LiteRtSubgraphT& subgraph,
+                                         const LiteRtModelT& model,
+                                         TensorEnv& tensor_env) const;
+
+  Expected<void> EvaluateCompositeOp(const LiteRtOpT& composite_op,
+                                     const LiteRtModelT& model,
+                                     TensorEnv& tensor_env) const;
 
   Expected<void> ExecuteOp(const LiteRtOpT& op, TensorEnv& env) const;
 

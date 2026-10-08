@@ -17,7 +17,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <functional>
 #include <memory>
 #include <utility>
@@ -51,8 +50,6 @@
 namespace litert::testing {
 
 ReferenceEvaluator::ReferenceEvaluator() { RegisterStandardOps(); }
-
-ReferenceEvaluator ReferenceEvaluator::Create() { return ReferenceEvaluator(); }
 
 void ReferenceEvaluator::RegisterOp(LiteRtOpCode op_code,
                                     OpKernelHandler handler) {
@@ -153,14 +150,13 @@ Expected<void> ReferenceEvaluator::TensorData::CopyTo(
   return {};
 }
 
-Expected<void> ReferenceEvaluator::Evaluate(const LiteRtSubgraphT& subgraph,
-                                            const VarBuffers& inputs,
-                                            VarBuffers& outputs) const {
-  if (inputs.size() < subgraph.Inputs().size()) {
-    return Error(kLiteRtStatusErrorInvalidArgument,
-                 absl::StrFormat("Expected at least %d inputs, got %d",
-                                 subgraph.Inputs().size(), inputs.size()));
+Expected<void> ReferenceEvaluator::EvaluateModel(const LiteRtModelT& model,
+                                                 const VarBuffers& inputs,
+                                                 VarBuffers& outputs) const {
+  if (model.Subgraphs().empty()) {
+    return Error(kLiteRtStatusErrorInvalidArgument, "Model has no subgraphs");
   }
+  const LiteRtSubgraphT& subgraph = *model.Subgraphs()[0];
   if (outputs.size() < subgraph.Outputs().size()) {
     return Error(kLiteRtStatusErrorInvalidArgument,
                  absl::StrFormat("Expected at least %d outputs, got %d",
@@ -169,10 +165,20 @@ Expected<void> ReferenceEvaluator::Evaluate(const LiteRtSubgraphT& subgraph,
 
   TensorEnv tensor_env;
 
-  // 1. Initialize subgraph inputs from VarBuffers.
+  // 1. Initialize non-weight subgraph inputs from VarBuffers (weight tensors in
+  // subgraph.Inputs() are populated in EvaluateSubgraphWithEnv).
+  size_t input_idx = 0;
   for (size_t i = 0; i < subgraph.Inputs().size(); ++i) {
     const LiteRtTensorT* in_tensor = subgraph.Inputs()[i];
-    const auto& in_buf = inputs[i];
+    if (in_tensor->Weights().Buffer().Size() > 0) {
+      continue;
+    }
+    if (input_idx >= inputs.size()) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   absl::StrFormat("Expected at least %d inputs, got %d",
+                                   subgraph.Inputs().size(), inputs.size()));
+    }
+    const auto& in_buf = inputs[input_idx++];
     TensorData tdata;
     const auto& dims = in_buf.Type().Layout().Dimensions();
     tdata.dimensions.assign(dims.begin(), dims.end());
@@ -183,28 +189,7 @@ Expected<void> ReferenceEvaluator::Evaluate(const LiteRtSubgraphT& subgraph,
     tensor_env[in_tensor] = std::move(tdata);
   }
 
-  // 2. Initialize constant weight tensors in the subgraph.
-  for (const auto* tensor : subgraph.Tensors()) {
-    if (tensor->Weights().Buffer().Size() == 0) continue;
-    auto [it, inserted] = tensor_env.try_emplace(tensor);
-    if (!inserted) continue;
-
-    TensorData& tdata = it->second;
-    if (tensor->Type().first == kLiteRtRankedTensorType) {
-      const auto& layout = tensor->Type().second.ranked_tensor_type.layout;
-      tdata.dimensions.assign(layout.dimensions,
-                              layout.dimensions + layout.rank);
-      tdata.element_type =
-          tensor->Type().second.ranked_tensor_type.element_type;
-    }
-    const auto& weights = tensor->Weights().Buffer();
-    LITERT_RETURN_IF_ERROR(tdata.AssignData(weights.Data()));
-  }
-
-  // 3. Execute operations in topological order.
-  for (const auto* op : subgraph.Ops()) {
-    LITERT_RETURN_IF_ERROR(ExecuteOp(*op, tensor_env));
-  }
+  LITERT_RETURN_IF_ERROR(EvaluateSubgraphWithEnv(subgraph, model, tensor_env));
 
   // 4. Copy results to outputs.
   for (size_t i = 0; i < subgraph.Outputs().size(); ++i) {
@@ -221,26 +206,40 @@ Expected<void> ReferenceEvaluator::Evaluate(const LiteRtSubgraphT& subgraph,
   return {};
 }
 
-Expected<void> ReferenceEvaluator::EvaluateComposite(
-    const LiteRtModelT& model, const VarBuffers& inputs,
-    VarBuffers& outputs) const {
-  if (model.Subgraphs().empty()) {
-    return Error(kLiteRtStatusErrorInvalidArgument, "Model has no subgraphs");
-  }
-  const auto& main_subgraph = *model.Subgraphs()[0];
-  const LiteRtOpT* composite_op = nullptr;
-  for (const auto* op : main_subgraph.Ops()) {
-    if (op->OpCode() == kLiteRtOpCodeShloComposite) {
-      composite_op = op;
-      break;
+Expected<void> ReferenceEvaluator::EvaluateSubgraphWithEnv(
+    const LiteRtSubgraphT& subgraph, const LiteRtModelT& model,
+    TensorEnv& tensor_env) const {
+  // 2. Initialize constant weight tensors in the subgraph.
+  for (const auto* tensor : subgraph.Tensors()) {
+    if (tensor->Weights().Buffer().Size() == 0) continue;
+    auto [it, inserted] = tensor_env.try_emplace(tensor);
+    if (!inserted) continue;
+    TensorData& tdata = it->second;
+    if (tensor->Type().first == kLiteRtRankedTensorType) {
+      const auto& layout = tensor->Type().second.ranked_tensor_type.layout;
+      tdata.dimensions.assign(layout.dimensions,
+                              layout.dimensions + layout.rank);
+      tdata.element_type =
+          tensor->Type().second.ranked_tensor_type.element_type;
     }
-  }
-  if (!composite_op) {
-    return Error(kLiteRtStatusErrorNotFound,
-                 "No composite op found in subgraph 0");
+    LITERT_RETURN_IF_ERROR(tdata.AssignData(tensor->Weights().Buffer().Data()));
   }
 
-  const auto& opts2 = ::litert::internal::GetTflOptions2(*composite_op);
+  // 3. Execute operations in topological order.
+  for (const auto* op : subgraph.Ops()) {
+    if (op->OpCode() == kLiteRtOpCodeShloComposite) {
+      LITERT_RETURN_IF_ERROR(EvaluateCompositeOp(*op, model, tensor_env));
+    } else {
+      LITERT_RETURN_IF_ERROR(ExecuteOp(*op, tensor_env));
+    }
+  }
+  return {};
+}
+
+Expected<void> ReferenceEvaluator::EvaluateCompositeOp(
+    const LiteRtOpT& composite_op, const LiteRtModelT& model,
+    TensorEnv& tensor_env) const {
+  const auto& opts2 = ::litert::internal::GetTflOptions2(composite_op);
   const auto* comp_opts = opts2.AsStableHLOCompositeOptions();
   if (!comp_opts) {
     return Error(kLiteRtStatusErrorNotFound,
@@ -257,20 +256,62 @@ Expected<void> ReferenceEvaluator::EvaluateComposite(
   }
 
   const auto& decomp_subgraph = *model.Subgraphs()[decomp_index];
-  return Evaluate(decomp_subgraph, inputs, outputs);
+  if (composite_op.Inputs().size() < decomp_subgraph.Inputs().size()) {
+    return Error(
+        kLiteRtStatusErrorInvalidArgument,
+        absl::StrFormat("Composite op has %d inputs, but decomposition "
+                        "subgraph %d expects %d inputs",
+                        composite_op.Inputs().size(), decomp_index,
+                        decomp_subgraph.Inputs().size()));
+  }
+  if (composite_op.Outputs().size() < decomp_subgraph.Outputs().size()) {
+    return Error(
+        kLiteRtStatusErrorInvalidArgument,
+        absl::StrFormat("Composite op has %d outputs, but decomposition "
+                        "subgraph %d produces %d outputs",
+                        composite_op.Outputs().size(), decomp_index,
+                        decomp_subgraph.Outputs().size()));
+  }
+
+  for (size_t i = 0; i < decomp_subgraph.Inputs().size(); ++i) {
+    const LiteRtTensorT* caller_in = composite_op.Inputs()[i];
+    auto it = tensor_env.find(caller_in);
+    if (it == tensor_env.end()) {
+      return Error(
+          kLiteRtStatusErrorNotFound,
+          absl::StrFormat("Composite input tensor %s not found in environment",
+                          caller_in->Name()));
+    }
+    TensorData in_data = it->second;
+    tensor_env[decomp_subgraph.Inputs()[i]] = std::move(in_data);
+  }
+
+  LITERT_RETURN_IF_ERROR(
+      EvaluateSubgraphWithEnv(decomp_subgraph, model, tensor_env));
+
+  for (size_t i = 0; i < decomp_subgraph.Outputs().size(); ++i) {
+    const LiteRtTensorT* decomp_out = decomp_subgraph.Outputs()[i];
+    auto it = tensor_env.find(decomp_out);
+    if (it == tensor_env.end()) {
+      return Error(
+          kLiteRtStatusErrorNotFound,
+          absl::StrFormat(
+              "Decomposition output tensor %s not found in environment",
+              decomp_out->Name()));
+    }
+    if (composite_op.Outputs()[i] != nullptr) {
+      TensorData out_data = it->second;
+      tensor_env[composite_op.Outputs()[i]] = std::move(out_data);
+    }
+  }
+  return {};
 }
 
-Expected<void> ReferenceEvaluator::EvaluateSubgraph(
-    const LiteRtSubgraphT& subgraph, const VarBuffers& inputs,
-    VarBuffers& outputs) {
+Expected<void> ReferenceEvaluator::Evaluate(const LiteRtModelT& model,
+                                            const VarBuffers& inputs,
+                                            VarBuffers& outputs) {
   static const absl::NoDestructor<ReferenceEvaluator> default_evaluator;
-  return default_evaluator->Evaluate(subgraph, inputs, outputs);
-}
-
-Expected<void> ReferenceEvaluator::EvaluateCompositeReference(
-    const LiteRtModelT& model, const VarBuffers& inputs, VarBuffers& outputs) {
-  static const absl::NoDestructor<ReferenceEvaluator> default_evaluator;
-  return default_evaluator->EvaluateComposite(model, inputs, outputs);
+  return default_evaluator->EvaluateModel(model, inputs, outputs);
 }
 
 void ReferenceEvaluator::RegisterStandardOps() {
