@@ -207,6 +207,18 @@ TEST(InitQnnOptionsTest, PropagatesQnnLibDirAndDspSkelDir) {
   EXPECT_EQ(qnn_options.GetDspSkelDir(), "/custom/dsp/skel/dir");
 }
 
+TEST(InitQnnOptionsTest, PropagatesWeightSharingChannelTileSize) {
+  auto qualcomm_options = litert::qualcomm::QualcommOptions::Create();
+  ASSERT_TRUE(qualcomm_options.HasValue());
+  qualcomm_options->SetHtpWeightSharingChannelTileSize(64);
+
+  ::qnn::Options qnn_options;
+  EXPECT_EQ(InitQnnOptions(qnn_options, qualcomm_options.Value()),
+            kLiteRtStatusOk);
+
+  EXPECT_EQ(qnn_options.GetHtpWeightSharingChannelTileSize(), 64);
+}
+
 TEST(QnnManagerTest, AdspLibraryPathPrecedence) {
   static constexpr char kAdsp[] = "ADSP_LIBRARY_PATH";
   const char* original_adsp_ptr = getenv(kAdsp);

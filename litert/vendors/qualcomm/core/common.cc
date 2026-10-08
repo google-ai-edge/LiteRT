@@ -522,6 +522,16 @@ void Options::SetHtpPPoint(std::int32_t htp_p_point) {
 
 std::int32_t Options::GetHtpPPoint() const { return htp_p_point_; }
 
+void Options::SetHtpWeightSharingChannelTileSize(
+    std::int32_t htp_weight_sharing_channel_tile_size) {
+  htp_weight_sharing_channel_tile_size_ =
+      htp_weight_sharing_channel_tile_size;
+}
+
+std::int32_t Options::GetHtpWeightSharingChannelTileSize() const {
+  return htp_weight_sharing_channel_tile_size_;
+}
+
 void Options::SetHtpDlbc(bool htp_dlbc) { htp_dlbc_ = htp_dlbc; }
 
 bool Options::GetHtpDlbc() const { return htp_dlbc_; }
@@ -789,6 +799,8 @@ std::string Options::Dump() const {
   field(2, "HtpDlbc", htp_dlbc_);
   field(2, "HtpDlbcWeights", htp_dlbc_weights_);
   field(2, "HtpPPoint", htp_p_point_);
+  field(2, "HtpWeightSharingChannelTileSize",
+        htp_weight_sharing_channel_tile_size_);
   field(2, "HtpPerformanceMode", htp_performance_mode_);
   field(2, "HtpPerfCtrlMode", htp_perf_ctrl_mode_);
   field(2, "HtpPdSession", htp_pd_session_);
