@@ -3437,7 +3437,7 @@ TEST(QuantizeOperationParserTest, TestIsSupported) {
   // Invalid op_version
   auto context = std::make_unique<StubTfLiteContext>(
       kTfLiteBuiltinQuantize,
-      /*op_version=*/3,
+      /*op_version=*/5,
       /*num_inputs=*/1,
       /*shape=*/std::vector<int>({1, 1, 1, 1}));
   auto parser = NewOperationParser(context->node(), context->registration(),
