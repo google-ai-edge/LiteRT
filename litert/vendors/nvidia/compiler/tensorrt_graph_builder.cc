@@ -25,6 +25,7 @@
 #include <deque>
 #include <initializer_list>
 #include <limits>
+#include <map>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -54,6 +55,7 @@
 #include "litert/vendors/nvidia/compiler/decode_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_rtx_plugin_compat.h"
+#include "litert/vendors/nvidia/compiler/weight_store_builder.h"
 #include "litert/vendors/nvidia/memory_profile.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
@@ -1912,7 +1914,9 @@ class TensorRtGraphBuilder {
  public:
   Expected<TensorRtBuildResult> Build(
       const Subgraph& subgraph,
-      absl::Span<const std::string> read_only_value_cache_inputs) {
+      absl::Span<const std::string> read_only_value_cache_inputs,
+      TensorRtWeightStoreBuilder* weight_store) {
+    weight_store_ = weight_store;
     LITERT_RETURN_IF_ERROR(
         FindReadOnlyValueCaches(subgraph, read_only_value_cache_inputs));
     memory_profiler_.Log("graph_build_begin");
@@ -2029,13 +2033,41 @@ class TensorRtGraphBuilder {
     LITERT_RETURN_IF_ERROR(MarkOutputs(subgraph, trtllm_head));
     memory_profiler_.Log("graph_lowered");
 
+    LITERT_RETURN_IF_ERROR(AddWeightHolders());
+
     // The CUDA GEMV plugin receives packed subbyte weights through an INT8
     // constant input. Those weights cannot use the safe stripping path below,
     // so keep the decode plan portable and self-contained instead of making it
     // refittable only for its comparatively tiny scale constants.
     const bool strip_plan =
         TensorRtSharedWeightsEnabled() && !uses_cuda_subbyte_gemv_;
-    if (strip_plan) {
+    if (!weight_holders_.empty()) {
+      // The plugin weights are placeholders for segments of a weight store.
+      // Only they are stripped: the other constants of the partition are
+      // small and stay in the plan, so the engine needs no refit.
+      for (const auto& weight : owned_refit_weights_) {
+        network_->unmarkWeightsRefittable(weight.name.c_str());
+      }
+      if (!config_->setNbComputeCapabilities(1) ||
+          !config_->setComputeCapability(nvinfer1::ComputeCapability::kCURRENT,
+                                         0)) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to target the current GPU for a stripped plan");
+      }
+      config_->setFlag(nvinfer1::BuilderFlag::kREFIT_INDIVIDUAL);
+      config_->setFlag(nvinfer1::BuilderFlag::kSTRIP_PLAN);
+      uint64_t holder_bytes = 0;
+      for (const auto& holder : weight_holders_) {
+        holder_bytes += holder.bytes;
+      }
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX building a plan without its packed "
+                 "plugin weights: %zu weight holders (%llu bytes) read by %zu "
+                 "plugins",
+                 weight_holders_.size(),
+                 static_cast<unsigned long long>(holder_bytes),
+                 holder_readers_.size());
+    } else if (strip_plan) {
       // Weight-stripped TensorRT-RTX plans require a GPU build targeting at
       // most one compute capability. Ordinary plans retain RTX's portable
       // multi-architecture default.
@@ -2094,6 +2126,7 @@ class TensorRtGraphBuilder {
     result.output_names = output_names_;
     result.trtllm_head = std::move(trtllm_head);
     result.is_stripped_plan = strip_plan;
+    result.weight_holders = std::move(weight_holders_);
     // TensorRT-RTX has consumed every network constant at this point. Destroy
     // the network before copying its serialized plan into the result so the
     // compiler-owned constants do not overlap that additional engine copy.
@@ -2833,13 +2866,22 @@ class TensorRtGraphBuilder {
   // refit identities and TensorRT's generated graph are unchanged.
   //
   // Many activation rows run as a GEMM over the same row-major weights.
+  //
+  // `members` are the row-major packed weights of the projections, in the
+  // order of their rows. With a weight store they stay in the model file and
+  // the plugin reads them in the holder of a segment; otherwise, or when a
+  // member is not a view of the model file, they are copied into a constant.
   Expected<nvinfer1::ITensor*> AddSubbyteGemvPlugin(
       nvinfer1::ITensor* activation, const SubbyteGemvWeights& info,
-      std::vector<uint8_t> packed, absl::Span<const float> scales,
-      const std::string& suffix, const std::string& output_name,
-      int32_t gate = 0) {
+      absl::Span<const absl::Span<const uint8_t>> members,
+      absl::Span<const float> scales, const std::string& suffix,
+      const std::string& output_name, int32_t gate = 0) {
     const int64_t activation_rows = GemmRows(activation);
     const bool gemm = activation_rows != 1 || gate != 0;
+    size_t packed_bytes = 0;
+    for (const auto& member : members) {
+      packed_bytes += member.size();
+    }
     if (gemm) {
       const LiteRtNvidiaGemmShape shape = {
           static_cast<int32_t>(activation_rows), info.columns,
@@ -2850,26 +2892,54 @@ class TensorRtGraphBuilder {
         return Error(kLiteRtStatusErrorUnsupported,
                      "The CUDA GEMM does not take this product");
       }
-      if (LiteRtNvidiaSubbyteGemmWeightBytes(&shape) != packed.size()) {
+      if (LiteRtNvidiaSubbyteGemmWeightBytes(&shape) != packed_bytes) {
         return Error(kLiteRtStatusErrorCompilation,
                      "Unexpected CUDA GEMM weight byte count");
       }
     }
-    owned_weights_.push_back(std::move(packed));
-    nvinfer1::Dims packed_dims{};
-    packed_dims.nbDims = 1;
-    packed_dims.d[0] = static_cast<int32_t>(owned_weights_.back().size());
-    nvinfer1::Weights packed_weights{
-        nvinfer1::DataType::kINT8, owned_weights_.back().data(),
-        static_cast<int64_t>(owned_weights_.back().size())};
-    auto* packed_constant = network_->addConstant(packed_dims, packed_weights);
-    if (packed_constant == nullptr ||
-        packed_constant->getOutput(0) == nullptr) {
-      return Error(kLiteRtStatusErrorCompilation,
-                   "Failed to add packed CUDA subbyte GEMV weights");
+    std::optional<TensorRtWeightLocation> location;
+    if (weight_store_ != nullptr) {
+      auto added = weight_store_->Add(members);
+      if (added.HasValue()) {
+        location = *added;
+      } else if (added.Error().Status() != kLiteRtStatusErrorNotFound) {
+        return added.Error();
+      } else {
+        LITERT_LOG(LITERT_INFO,
+                   "NVIDIA TensorRT-RTX keeping the CUDA subbyte weights%s in "
+                   "the plan: %s",
+                   suffix.c_str(), added.Error().Message().c_str());
+      }
     }
-    LITERT_RETURN_IF_ERROR(RegisterRefitWeight(
-        packed_weights, "cuda_subbyte_gemv_weights" + suffix));
+    nvinfer1::ITensor* packed_tensor = nullptr;
+    if (location.has_value()) {
+      // The holder of the segment replaces this once the segments of the
+      // partition are final (AddWeightHolders).
+      LITERT_ASSIGN_OR_RETURN(packed_tensor, ProvisionalWeightHolder());
+    } else {
+      std::vector<uint8_t> packed;
+      packed.reserve(packed_bytes);
+      for (const auto& member : members) {
+        packed.insert(packed.end(), member.begin(), member.end());
+      }
+      owned_weights_.push_back(std::move(packed));
+      nvinfer1::Dims packed_dims{};
+      packed_dims.nbDims = 1;
+      packed_dims.d[0] = static_cast<int32_t>(owned_weights_.back().size());
+      nvinfer1::Weights packed_weights{
+          nvinfer1::DataType::kINT8, owned_weights_.back().data(),
+          static_cast<int64_t>(owned_weights_.back().size())};
+      auto* packed_constant =
+          network_->addConstant(packed_dims, packed_weights);
+      if (packed_constant == nullptr ||
+          packed_constant->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to add packed CUDA subbyte GEMV weights");
+      }
+      LITERT_RETURN_IF_ERROR(RegisterRefitWeight(
+          packed_weights, "cuda_subbyte_gemv_weights" + suffix));
+      packed_tensor = packed_constant->getOutput(0);
+    }
     nvinfer1::Dims scale_dims{};
     scale_dims.nbDims = 1;
     scale_dims.d[0] = info.rows;
@@ -2879,24 +2949,96 @@ class TensorRtGraphBuilder {
                          "cuda_subbyte_gemv_scales" + suffix,
                          nvinfer1::DataType::kBF16));
     TrtPtr<nvinfer1::IPluginV3> plugin(CreateSubbyteGemvPlugin(
-        info.bit_width, info.rows, info.columns, gate, gemm));
+        info.bit_width, info.rows, info.columns, gate, gemm,
+        location.has_value() ? static_cast<int64_t>(location->offset) : 0,
+        location.has_value() ? static_cast<int64_t>(weight_store_->granule())
+                             : 0));
     if (!plugin) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to create CUDA subbyte GEMV plugin");
     }
-    nvinfer1::ITensor* inputs[] = {activation, packed_constant->getOutput(0),
-                                   scale_tensor};
+    nvinfer1::ITensor* inputs[] = {activation, packed_tensor, scale_tensor};
     auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
         *network_, inputs, std::size(inputs), *plugin);
     if (layer == nullptr || layer->getOutput(0) == nullptr) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add CUDA subbyte GEMV plugin layer");
     }
+    if (location.has_value()) {
+      holder_readers_.push_back({layer, location->segment});
+    }
     layer->setName(KeepName(UniqueName(output_name)));
     layer->getOutput(0)->setName(KeepName(UniqueName(output_name)));
     owned_plugins_.push_back(std::move(plugin));
     uses_cuda_subbyte_gemv_ = true;
     return layer->getOutput(0);
+  }
+
+  // A small INT64 constant that plugins take as their weights input until
+  // the holder of their segment exists.
+  Expected<nvinfer1::ITensor*> ProvisionalWeightHolder() {
+    if (provisional_weight_holder_ != nullptr) {
+      return provisional_weight_holder_;
+    }
+    constexpr int64_t kElements = 8;
+    owned_weights_.emplace_back(kElements * sizeof(int64_t), 0);
+    nvinfer1::Dims dims{};
+    dims.nbDims = 1;
+    dims.d[0] = kElements;
+    auto* layer = network_->addConstant(
+        dims, nvinfer1::Weights{nvinfer1::DataType::kINT64,
+                                owned_weights_.back().data(), kElements});
+    if (layer == nullptr || layer->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the provisional weight holder");
+    }
+    provisional_weight_holder_ = layer->getOutput(0);
+    return provisional_weight_holder_;
+  }
+
+  // Adds, for every segment of the weight store that this partition reads, a
+  // placeholder constant ("holder") one granule larger than the segment, and
+  // makes it the weights input of the plugins that read the segment. A
+  // placeholder has no values at build time (TensorRT-RTX 1.7): the plan is
+  // stripped of it, and the runtime maps the segment into the engine's weight
+  // memory at the first granule boundary inside the holder.
+  Expected<void> AddWeightHolders() {
+    if (holder_readers_.empty()) {
+      return {};
+    }
+    weight_store_->EndPartition();
+    const uint64_t granule = weight_store_->granule();
+    std::map<uint32_t, nvinfer1::ITensor*> holders;
+    for (const auto& reader : holder_readers_) {
+      auto [holder, inserted] = holders.try_emplace(reader.segment, nullptr);
+      if (inserted) {
+        const uint64_t bytes =
+            weight_store_->segments()[reader.segment].size + granule;
+        nvinfer1::Dims dims{};
+        dims.nbDims = 1;
+        dims.d[0] = static_cast<int64_t>(bytes / sizeof(int64_t));
+        auto* layer = network_->addConstant(
+            dims,
+            nvinfer1::Weights{nvinfer1::DataType::kINT64, nullptr, dims.d[0]});
+        if (layer == nullptr || layer->getOutput(0) == nullptr) {
+          return Error(kLiteRtStatusErrorCompilation,
+                       "Failed to add a weight holder placeholder");
+        }
+        std::string name =
+            "litert_weight_holder_" + std::to_string(reader.segment);
+        const char* kept_name = KeepName(name);
+        // A placeholder is named by the descriptor its layer returns.
+        if (!network_->setWeightsName(layer->getWeights(), kept_name)) {
+          return Error(kLiteRtStatusErrorCompilation,
+                       "Failed to name a weight holder placeholder");
+        }
+        layer->setName(kept_name);
+        holder->second = layer->getOutput(0);
+        weight_holders_.push_back({std::move(name), reader.segment, bytes});
+      }
+      reader.layer->setInput(1, *holder->second);
+    }
+    return {};
   }
 
   // A gated feed-forward pair over many activation rows,
@@ -2998,22 +3140,21 @@ class TensorRtGraphBuilder {
                             InspectSubbyteGemvWeights(gate_op.Inputs()[1]));
     LITERT_RETURN_IF_ERROR(
         ValidateSubbyteGemvActivation(activation, compute_type, info.columns));
-    std::vector<uint8_t> packed;
+    std::vector<absl::Span<const uint8_t>> members;
     std::vector<float> scales;
     std::string suffix;
     for (const Tensor& weights : {gate_op.Inputs()[1], pair.up->Inputs()[1]}) {
-      const auto bytes = weights.Weights().Bytes();
-      packed.insert(packed.end(), bytes.begin(), bytes.end());
+      members.push_back(weights.Weights().Bytes());
       const auto q = weights.PerChannelQuantization();
       scales.insert(scales.end(), q.scales, q.scales + q.num_channels);
       suffix += "_" + std::to_string(weights.TensorIndex());
     }
     LITERT_ASSIGN_OR_RETURN(
         auto* gated,
-        AddSubbyteGemvPlugin(
-            activation, {info.bit_width, 2 * info.rows, info.columns},
-            std::move(packed), absl::MakeConstSpan(scales), suffix,
-            "cuda_subbyte_gated_gemm" + suffix, pair.gate));
+        AddSubbyteGemvPlugin(activation,
+                             {info.bit_width, 2 * info.rows, info.columns},
+                             members, absl::MakeConstSpan(scales), suffix,
+                             "cuda_subbyte_gated_gemm" + suffix, pair.gate));
     LITERT_ASSIGN_OR_RETURN(auto out_type,
                             pair.multiply->Outputs()[0].RankedTensorType());
     LITERT_ASSIGN_OR_RETURN(auto out_dims, ConvertDims(out_type));
@@ -3095,15 +3236,14 @@ class TensorRtGraphBuilder {
         ValidateSubbyteGemvActivation(activation, compute_type, first.columns));
     const auto activation_dims = activation->getDimensions();
 
-    std::vector<uint8_t> packed;
+    std::vector<absl::Span<const uint8_t>> members;
     std::vector<float> scales;
     std::vector<int32_t> row_counts;
     std::string suffix;
     for (const auto& member : group) {
       const Tensor weights = member.Inputs()[1];
       LITERT_ASSIGN_OR_RETURN(auto info, InspectSubbyteGemvWeights(weights));
-      const auto bytes = weights.Weights().Bytes();
-      packed.insert(packed.end(), bytes.begin(), bytes.end());
+      members.push_back(weights.Weights().Bytes());
       const auto q = weights.PerChannelQuantization();
       scales.insert(scales.end(), q.scales, q.scales + q.num_channels);
       row_counts.push_back(info.rows);
@@ -3121,7 +3261,7 @@ class TensorRtGraphBuilder {
         AddSubbyteGemvPlugin(
             activation,
             {first.bit_width, static_cast<int32_t>(total_rows), first.columns},
-            std::move(packed), absl::MakeConstSpan(scales), suffix,
+            members, absl::MakeConstSpan(scales), suffix,
             "cuda_subbyte_gemv_group" + suffix));
 
     const int axis = activation_dims.nbDims - 1;
@@ -3168,11 +3308,11 @@ class TensorRtGraphBuilder {
     LITERT_RETURN_IF_ERROR(
         ValidateSubbyteGemvActivation(activation, compute_type, info.columns));
     const auto q = tensor.PerChannelQuantization();
-    const auto bytes = tensor.Weights().Bytes();
+    const absl::Span<const uint8_t> members[] = {tensor.Weights().Bytes()};
     const std::string suffix = "_" + std::to_string(tensor.TensorIndex());
     LITERT_ASSIGN_OR_RETURN(
         auto* output,
-        AddSubbyteGemvPlugin(activation, info, {bytes.begin(), bytes.end()},
+        AddSubbyteGemvPlugin(activation, info, members,
                              absl::Span<const float>(q.scales, q.num_channels),
                              suffix, "cuda_subbyte_gemv" + suffix));
     LITERT_LOG(LITERT_INFO,
@@ -6204,6 +6344,17 @@ class TensorRtGraphBuilder {
   std::vector<std::string> output_names_;
   int next_name_id_ = 0;
   bool uses_cuda_subbyte_gemv_ = false;
+  // The weight store of the model, if the plugin weights stay out of the plan,
+  // the plugin layers that read a segment of it, and the holders added for
+  // those segments.
+  struct HolderReader {
+    nvinfer1::ILayer* layer = nullptr;
+    uint32_t segment = 0;
+  };
+  TensorRtWeightStoreBuilder* weight_store_ = nullptr;
+  nvinfer1::ITensor* provisional_weight_holder_ = nullptr;
+  std::vector<HolderReader> holder_readers_;
+  std::vector<TensorRtWeightHolderBuildData> weight_holders_;
   // Lowering order of this partition's ops, and fused GEMV group outputs
   // awaiting their owning op (see AddCudaSubbyteGemvGroup).
   std::unordered_map<LiteRtOp, size_t> op_order_;
@@ -6331,11 +6482,12 @@ bool IsTensorRtOpSupported(const Op& op) {
 
 Expected<TensorRtBuildResult> BuildTensorRtEngine(
     const Subgraph& subgraph,
-    absl::Span<const std::string> read_only_value_cache_inputs) {
+    absl::Span<const std::string> read_only_value_cache_inputs,
+    TensorRtWeightStoreBuilder* weight_store) {
   const MemoryProfiler memory_profiler("compiler");
   auto result = [&]() {
     TensorRtGraphBuilder builder;
-    return builder.Build(subgraph, read_only_value_cache_inputs);
+    return builder.Build(subgraph, read_only_value_cache_inputs, weight_store);
   }();
   memory_profiler.Log("graph_builder_destroyed");
   return result;

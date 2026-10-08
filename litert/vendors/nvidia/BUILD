@@ -123,6 +123,12 @@ cc_test(
 )
 
 cc_library(
+    name = "tensorrt_features",
+    hdrs = ["tensorrt_features.h"],
+    deps = ["@local_tensorrt_rtx//:tensorrt_rtx_headers"],
+)
+
+cc_library(
     name = "tensorrt_logger",
     hdrs = ["tensorrt_logger.h"],
     deps = [

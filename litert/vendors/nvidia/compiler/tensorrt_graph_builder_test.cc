@@ -14,6 +14,10 @@
 
 #include "litert/vendors/nvidia/compiler/tensorrt_graph_builder.h"
 
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -36,6 +40,8 @@
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/core/model/model.h"
 #include "litert/vendors/nvidia/cache_layout.h"
+#include "litert/vendors/nvidia/compiler/weight_holder_calibration.h"
+#include "litert/vendors/nvidia/compiler/weight_store_builder.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
 #include "tflite/schema/schema_generated.h"
@@ -381,6 +387,283 @@ TEST(TensorRtGraphBuilderTest, CudaSubbyteGemvGroupSharesOneLaunch) {
     EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
     EXPECT_EQ(cudaFree(device_input), cudaSuccess);
   }
+}
+
+TEST(TensorRtGraphBuilderTest, WeightStoreKeepsPluginWeightsOutOfThePlan) {
+  if (!litert::nvidia::TensorRtWeightHoldersSupported()) {
+    GTEST_SKIP() << "Needs the weight placeholders of TensorRT-RTX 1.7.";
+  }
+  // The two projections of CudaSubbyteGemvGroupSharesOneLaunch, with their
+  // weights as views of a memory-mapped file, as the weights of a model file
+  // are. With a weight store the plan holds a placeholder instead of them.
+  constexpr int32_t kK = 64;
+  constexpr uint64_t kGranule = 2 << 20;
+  // The weights sit apart in the file: 8 rows at 4096 and 16 rows at 12288.
+  const std::array<int32_t, 2> rows = {8, 16};
+  const std::array<uint64_t, 2> file_offsets = {4096, 12288};
+  std::vector<std::vector<int8_t>> values(rows.size());
+  std::vector<uint8_t> file_bytes(1 << 16, 0x5a);
+  for (size_t f = 0; f < rows.size(); ++f) {
+    values[f].resize(static_cast<size_t>(rows[f]) * kK);
+    for (size_t i = 0; i < values[f].size(); ++i) {
+      values[f][i] = static_cast<int8_t>((i * 5 + f * 3) % 16) - 8;
+    }
+    const std::vector<uint8_t> packed = PackInt4(values[f]);
+    std::memcpy(file_bytes.data() + file_offsets[f], packed.data(),
+                packed.size());
+  }
+  std::string path = ::testing::TempDir() + "/weight_store_model.XXXXXX";
+  const int fd = mkstemp(path.data());
+  ASSERT_GE(fd, 0);
+  ASSERT_EQ(write(fd, file_bytes.data(), file_bytes.size()),
+            static_cast<ssize_t>(file_bytes.size()));
+  auto* mapping = static_cast<const uint8_t*>(mmap(
+      nullptr, file_bytes.size(), PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0));
+  close(fd);
+  ASSERT_NE(mapping, MAP_FAILED);
+
+  setenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS", "cuda_gemv", 1);
+  LiteRtModelT model;
+  auto& graph = model.EmplaceSubgraph();
+  auto& input = graph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 1, kK}));
+  input.SetName("input");
+  graph.Inputs().push_back(&input);
+  std::vector<std::vector<float>> scales(rows.size());
+  for (size_t f = 0; f < rows.size(); ++f) {
+    auto& weights = graph.EmplaceTensor();
+    weights.SetType(
+        MakeRankedTensorType(kLiteRtElementTypeInt4, {rows[f], kK}));
+    weights.SetName("weights" + std::to_string(f));
+    SetWeightsFromUnownedBuffer(
+        weights.Weights(),
+        litert::BufferRef<uint8_t>(mapping + file_offsets[f],
+                                   static_cast<size_t>(rows[f]) * kK / 2));
+    scales[f].resize(rows[f]);
+    for (int32_t n = 0; n < rows[f]; ++n) {
+      scales[f][n] = 0.005f * (n + 1 + f);
+    }
+    const std::vector<int64_t> zero_points(rows[f], 0);
+    weights.SetQarams(MakePerChannelQuantization(scales[f], zero_points,
+                                                 /*quantized_dim=*/0, weights));
+    auto& output = graph.EmplaceTensor();
+    output.SetType(
+        MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 1, rows[f]}));
+    output.SetName("output" + std::to_string(f));
+    graph.Outputs().push_back(&output);
+    auto& fc = graph.EmplaceOp();
+    fc.SetOpCode(kLiteRtOpCodeTflFullyConnected);
+    tflite::FullyConnectedOptionsT fc_options;
+    fc_options.keep_num_dims = true;
+    tflite::BuiltinOptionsUnion options;
+    options.Set(std::move(fc_options));
+    litert::internal::SetTflOptions(fc, std::move(options));
+    litert::internal::AttachInput(&input, fc);
+    litert::internal::AttachInput(&weights, fc);
+    litert::internal::AttachOutput(&output, fc);
+  }
+
+  auto store = litert::nvidia::TensorRtWeightStoreBuilder::Create(
+      path, kGranule, /*segment_bytes=*/kGranule);
+  ASSERT_TRUE(store.HasValue()) << store.Error().Message();
+  const auto* compiler_context = LrtGetCompilerContext();
+  auto built = litert::nvidia::BuildTensorRtEngine(
+      litert::compiler::Subgraph(compiler_context, &graph), {}, store->get());
+  unsetenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS");
+  ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+
+  // One launch reads both projections: one segment of one granule, made of
+  // the two pieces of the file, behind one holder of two granules.
+  ASSERT_EQ((*store)->segments().size(), 1);
+  const auto& segment = (*store)->segments()[0];
+  EXPECT_TRUE(segment.closed);
+  EXPECT_EQ(segment.size, kGranule);
+  ASSERT_EQ(segment.pieces.size(), 2);
+  EXPECT_EQ(segment.pieces[0].source_offset, file_offsets[0]);
+  EXPECT_EQ(segment.pieces[0].segment_offset, 0);
+  EXPECT_EQ(segment.pieces[1].source_offset, file_offsets[1]);
+  EXPECT_EQ(segment.pieces[1].segment_offset, rows[0] * kK / 2);
+  ASSERT_EQ(built->weight_holders.size(), 1);
+  EXPECT_EQ(built->weight_holders[0].segment, 0);
+  EXPECT_EQ(built->weight_holders[0].bytes, 2 * kGranule);
+  EXPECT_TRUE(built->refit_weights.empty());
+  // The plan holds neither the weights nor the 4 MiB placeholder.
+  EXPECT_LT(built->engine.size(), 1 << 20);
+
+  auto calibration = litert::nvidia::CalibrateTensorRtWeightHolders(
+      built->engine.data(), built->engine.size(), built->weight_holders,
+      kGranule);
+  ASSERT_TRUE(calibration.HasValue()) << calibration.Error().Message();
+  ASSERT_EQ(calibration->holder_offsets.size(), 1);
+  EXPECT_EQ(calibration->holder_offsets[0] % 128, 0);
+  EXPECT_EQ(calibration->weight_data_size % kGranule, 0);
+  const uint64_t holder_offset = calibration->holder_offsets[0];
+  const uint64_t segment_offset =
+      (holder_offset + kGranule - 1) / kGranule * kGranule;
+  EXPECT_LE(segment_offset + kGranule, calibration->weight_data_size);
+  // The private runs are whole pages outside the segment, in order.
+  uint64_t run_end = 0;
+  for (const auto& run : calibration->private_runs) {
+    EXPECT_EQ(run.offset % 4096, 0);
+    EXPECT_EQ(run.data.size() % 4096, 0);
+    EXPECT_GE(run.offset, run_end);
+    run_end = run.offset + run.data.size();
+    EXPECT_TRUE(run_end <= segment_offset ||
+                run.offset >= segment_offset + kGranule);
+  }
+  EXPECT_LE(run_end, calibration->weight_data_size);
+
+  // Load the plan as the runtime does, except that the holder is refitted
+  // from host memory instead of mapped: the segment goes where the plugin
+  // looks for it, at the first granule boundary inside the holder.
+  litert::nvidia::TensorRtLogger logger;
+  std::unique_ptr<nvinfer1::IRuntime> runtime(
+      nvinfer1::createInferRuntime(logger));
+  ASSERT_NE(runtime, nullptr);
+  std::unique_ptr<nvinfer1::ICudaEngine> engine(runtime->deserializeCudaEngine(
+      built->engine.data(), built->engine.size()));
+  ASSERT_NE(engine, nullptr);
+  std::vector<uint8_t> holder(built->weight_holders[0].bytes, 0xee);
+  for (const auto& piece : segment.pieces) {
+    std::memcpy(
+        holder.data() + (segment_offset - holder_offset) + piece.segment_offset,
+        file_bytes.data() + piece.source_offset, piece.size);
+  }
+  {
+    std::unique_ptr<nvinfer1::IRefitter> refitter(
+        nvinfer1::createInferRefitter(*engine, logger));
+    ASSERT_NE(refitter, nullptr);
+    // The holder is the only stripped weight of the plan.
+    ASSERT_EQ(refitter->getAllWeights(0, nullptr), 1);
+    ASSERT_TRUE(refitter->setNamedWeights(
+        built->weight_holders[0].name.c_str(),
+        nvinfer1::Weights{nvinfer1::DataType::kINT64, holder.data(),
+                          static_cast<int64_t>(holder.size() / 8)}));
+    ASSERT_TRUE(refitter->refitCudaEngine());
+  }
+  std::unique_ptr<nvinfer1::IExecutionContext> context(
+      engine->createExecutionContext());
+  ASSERT_NE(context, nullptr);
+  std::vector<float> activations(kK);
+  for (int32_t i = 0; i < kK; ++i) {
+    activations[i] = 0.25f * ((i % 7) - 3);
+  }
+  void* device_input = nullptr;
+  ASSERT_EQ(cudaMalloc(&device_input, activations.size() * sizeof(float)),
+            cudaSuccess);
+  ASSERT_EQ(
+      cudaMemcpy(device_input, activations.data(),
+                 activations.size() * sizeof(float), cudaMemcpyHostToDevice),
+      cudaSuccess);
+  ASSERT_TRUE(
+      context->setTensorAddress(built->input_names[0].c_str(), device_input));
+  std::vector<void*> device_outputs(rows.size(), nullptr);
+  for (size_t f = 0; f < rows.size(); ++f) {
+    ASSERT_EQ(cudaMalloc(&device_outputs[f], rows[f] * sizeof(float)),
+              cudaSuccess);
+    ASSERT_TRUE(context->setTensorAddress(built->output_names[f].c_str(),
+                                          device_outputs[f]));
+  }
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+  ASSERT_TRUE(context->enqueueV3(stream));
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  for (size_t f = 0; f < rows.size(); ++f) {
+    std::vector<float> actual(rows[f]);
+    ASSERT_EQ(cudaMemcpy(actual.data(), device_outputs[f],
+                         actual.size() * sizeof(float), cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    for (int32_t n = 0; n < rows[f]; ++n) {
+      float expected = 0.0f;
+      for (int32_t i = 0; i < kK; ++i) {
+        expected += activations[i] * values[f][n * kK + i];
+      }
+      expected *= scales[f][n];
+      EXPECT_NEAR(actual[n], expected, 0.02f * std::fabs(expected) + 1e-3f)
+          << "fc=" << f << " n=" << n;
+    }
+    EXPECT_EQ(cudaFree(device_outputs[f]), cudaSuccess);
+  }
+  EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+  EXPECT_EQ(cudaFree(device_input), cudaSuccess);
+  munmap(const_cast<uint8_t*>(mapping), file_bytes.size());
+  unlink(path.c_str());
+}
+
+TEST(TensorRtGraphBuilderTest, WeightsOutsideTheModelFileStayInThePlan) {
+  // With a weight store but weights that are not views of the model file (a
+  // model assembled in memory), the launch keeps its weights in the plan.
+  constexpr int32_t kK = 64;
+  constexpr int32_t kRows = 8;
+  std::string path = ::testing::TempDir() + "/weight_store_unused.XXXXXX";
+  const int fd = mkstemp(path.data());
+  ASSERT_GE(fd, 0);
+  ASSERT_EQ(write(fd, "model", 5), 5);
+  auto* mapping = mmap(nullptr, 5, PROT_READ, MAP_PRIVATE, fd, 0);
+  close(fd);
+  ASSERT_NE(mapping, MAP_FAILED);
+  auto store = litert::nvidia::TensorRtWeightStoreBuilder::Create(
+      path, /*granule=*/2 << 20, /*segment_bytes=*/2 << 20);
+  ASSERT_TRUE(store.HasValue()) << store.Error().Message();
+
+  setenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS", "cuda_gemv", 1);
+  LiteRtModelT model;
+  auto& graph = model.EmplaceSubgraph();
+  auto& input = graph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 1, kK}));
+  input.SetName("input");
+  graph.Inputs().push_back(&input);
+  std::vector<int8_t> values(static_cast<size_t>(kRows) * kK);
+  for (size_t i = 0; i < values.size(); ++i) {
+    values[i] = static_cast<int8_t>((i * 5) % 16) - 8;
+  }
+  const std::vector<uint8_t> packed = PackInt4(values);
+  auto& weights = graph.EmplaceTensor();
+  weights.SetType(MakeRankedTensorType(kLiteRtElementTypeInt4, {kRows, kK}));
+  weights.SetName("weights");
+  SetWeightsFromUnownedBuffer(
+      weights.Weights(),
+      litert::BufferRef<uint8_t>(packed.data(), packed.size()));
+  const std::vector<float> scales(kRows, 0.01f);
+  const std::vector<int64_t> zero_points(kRows, 0);
+  weights.SetQarams(MakePerChannelQuantization(scales, zero_points,
+                                               /*quantized_dim=*/0, weights));
+  auto& output = graph.EmplaceTensor();
+  output.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 1, kRows}));
+  output.SetName("output");
+  graph.Outputs().push_back(&output);
+  auto& fc = graph.EmplaceOp();
+  fc.SetOpCode(kLiteRtOpCodeTflFullyConnected);
+  tflite::FullyConnectedOptionsT fc_options;
+  fc_options.keep_num_dims = true;
+  tflite::BuiltinOptionsUnion options;
+  options.Set(std::move(fc_options));
+  litert::internal::SetTflOptions(fc, std::move(options));
+  litert::internal::AttachInput(&input, fc);
+  litert::internal::AttachInput(&weights, fc);
+  litert::internal::AttachOutput(&output, fc);
+
+  const auto* compiler_context = LrtGetCompilerContext();
+  auto built = litert::nvidia::BuildTensorRtEngine(
+      litert::compiler::Subgraph(compiler_context, &graph), {}, store->get());
+  unsetenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS");
+  ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+  EXPECT_TRUE(built->weight_holders.empty());
+  EXPECT_TRUE((*store)->segments().empty());
+  // The plan is self-contained: it runs without a refit.
+  litert::nvidia::TensorRtLogger logger;
+  std::unique_ptr<nvinfer1::IRuntime> runtime(
+      nvinfer1::createInferRuntime(logger));
+  ASSERT_NE(runtime, nullptr);
+  std::unique_ptr<nvinfer1::ICudaEngine> engine(runtime->deserializeCudaEngine(
+      built->engine.data(), built->engine.size()));
+  ASSERT_NE(engine, nullptr);
+  std::unique_ptr<nvinfer1::IExecutionContext> context(
+      engine->createExecutionContext());
+  ASSERT_NE(context, nullptr);
+  munmap(mapping, 5);
+  unlink(path.c_str());
 }
 
 // Column tiles of 8 row tiles (1024 activation rows) that fill the device:

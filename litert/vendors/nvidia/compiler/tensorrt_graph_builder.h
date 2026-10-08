@@ -27,6 +27,8 @@
 
 namespace litert::nvidia {
 
+class TensorRtWeightStoreBuilder;
+
 struct TensorRtLlmHeadBuildData {
   uint32_t hidden_output_port = 0;
   uint32_t logits_output_port = 0;
@@ -49,6 +51,14 @@ struct TensorRtRefitWeightBuildData {
   std::vector<uint8_t> data;
 };
 
+// A placeholder constant of the plan that stands for a segment of a weight
+// store (weight_store_builder.h): `bytes` is the segment plus one granule.
+struct TensorRtWeightHolderBuildData {
+  std::string name;
+  uint32_t segment = 0;
+  uint64_t bytes = 0;
+};
+
 struct TensorRtBuildResult {
   std::vector<uint8_t> engine;
   std::vector<std::string> input_names;
@@ -56,6 +66,8 @@ struct TensorRtBuildResult {
   std::optional<TensorRtLlmHeadBuildData> trtllm_head;
   std::vector<TensorRtRefitWeightBuildData> refit_weights;
   bool is_stripped_plan = false;
+  // Not empty when the plan was built without its packed plugin weights.
+  std::vector<TensorRtWeightHolderBuildData> weight_holders;
 };
 
 // Shared-weight mode builds stripped, refittable plans. The compiler plugin
@@ -64,9 +76,13 @@ bool TensorRtSharedWeightsEnabled();
 
 bool IsTensorRtOpSupported(const litert::compiler::Op& op);
 
+// With a `weight_store`, the packed weights of the CUDA subbyte plugins that
+// are views of the model file are not copied into the plan: the plugins read
+// them in placeholder constants that stand for segments of the store.
 Expected<TensorRtBuildResult> BuildTensorRtEngine(
     const litert::compiler::Subgraph& subgraph,
-    absl::Span<const std::string> read_only_value_cache_inputs = {});
+    absl::Span<const std::string> read_only_value_cache_inputs = {},
+    TensorRtWeightStoreBuilder* weight_store = nullptr);
 
 }  // namespace litert::nvidia
 
