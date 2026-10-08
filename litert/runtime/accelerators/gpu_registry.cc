@@ -28,12 +28,6 @@
 #include "litert/runtime/accelerators/gpu_static_registry.h"
 #include "litert/runtime/accelerators/registration_helper.h"
 
-// Set in BUILD together with the ml_drift_compatibility dep (Android with GPU
-// enabled). Builds without it (e.g. CMake) skip the check.
-#if defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
-#include "litert/runtime/accelerators/gpu/compatibility/ml_drift_compatibility.h"
-#endif  // defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
-
 extern "C" {
 const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef = nullptr;
 }
@@ -50,20 +44,6 @@ namespace litert::internal {
 
 LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
 #if !defined(LITERT_DISABLE_GPU)
-#if defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
-  // If a system runtime handle is provided (e.g. Google Play services), the
-  // ML Drift allowlist is not applied.
-  if (!environment->GetOption(kLiteRtEnvOptionTagSystemRuntimeHandle)
-           .has_value() &&
-      !ml_drift::GpuCompatibilityChecker::Instance()
-           .IsSupportedOnThisDevice()) {
-    LITERT_LOG(LITERT_INFO,
-               "GPU accelerator is not supported on this device according to "
-               "the ML Drift compatibility list.");
-    return kLiteRtStatusErrorUnsupported;
-  }
-#endif  // defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
-
   static constexpr absl::string_view kGpuAcceleratorLibs[] = {
       "libLiteRtGpuAccelerator" SO_EXT,
 #ifdef __ANDROID__
