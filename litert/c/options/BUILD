@@ -18,6 +18,10 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load(
+    "//litert/build_common:special_rule.bzl",
+    "litert_jni_copts",
+)
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -34,6 +38,7 @@ cc_library(
     name = "litert_arm_vulkan_ml_options",
     srcs = ["litert_arm_vulkan_ml_options.cc"],
     hdrs = ["litert_arm_vulkan_ml_options.h"],
+    copts = litert_jni_copts(),
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
@@ -48,12 +53,12 @@ cc_library(
     name = "litert_cpu_options",
     srcs = ["litert_cpu_options.cc"],
     hdrs = ["litert_cpu_options.h"],
+    copts = litert_jni_copts(),
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -75,6 +80,7 @@ cc_library(
     name = "litert_compiler_options",
     srcs = ["litert_compiler_options.cc"],
     hdrs = ["litert_compiler_options.h"],
+    copts = litert_jni_copts(),
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
@@ -100,11 +106,13 @@ cc_library(
     name = "litert_qualcomm_options",
     srcs = ["litert_qualcomm_options.cc"],
     hdrs = ["litert_qualcomm_options.h"],
+    copts = litert_jni_copts(),
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_common",
         "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
     # Keep the symbols in libLiteRt.dylib.
@@ -131,6 +139,7 @@ cc_library(
     name = "litert_google_tensor_options",
     srcs = ["litert_google_tensor_options.cc"],
     hdrs = ["litert_google_tensor_options.h"],
+    copts = litert_jni_copts(),
     deps = [
         ":litert_google_tensor_options_type",
         "//litert/c:litert_common",
@@ -139,7 +148,7 @@ cc_library(
         "//litert/core:litert_toml_parser",
         "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -163,12 +172,13 @@ cc_library(
     name = "litert_mediatek_options",
     srcs = ["litert_mediatek_options.cc"],
     hdrs = ["litert_mediatek_options.h"],
+    copts = litert_jni_copts(),
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -179,6 +189,7 @@ cc_library(
     name = "litert_intel_openvino_options",
     srcs = ["litert_intel_openvino_options.cc"],
     hdrs = ["litert_intel_openvino_options.h"],
+    copts = litert_jni_copts(),
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
@@ -208,10 +219,12 @@ cc_library(
     name = "litert_samsung_options",
     srcs = ["litert_samsung_options.cc"],
     hdrs = ["litert_samsung_options.h"],
+    copts = litert_jni_copts(),
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
     # Keep the symbols in libLiteRtRuntimeCApi.dylib.
@@ -244,6 +257,7 @@ cc_library(
     name = "litert_gpu_options",
     srcs = ["litert_gpu_options.cc"],
     hdrs = ["litert_gpu_options.h"],
+    copts = litert_jni_copts(),
     defines = select({
         ":litert_gpu_use_ir_model_true": ["LITERT_GPU_USE_IR_MODEL=true"],
         ":litert_gpu_use_ir_model_false": ["LITERT_GPU_USE_IR_MODEL=false"],
@@ -255,6 +269,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
     # Keep the symbols in libLiteRt.dylib.
@@ -265,6 +280,7 @@ cc_library(
     name = "litert_webnn_options",
     srcs = ["litert_webnn_options.cc"],
     hdrs = ["litert_webnn_options.h"],
+    copts = litert_jni_copts(),
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
@@ -291,10 +307,12 @@ cc_library(
     name = "litert_runtime_options",
     srcs = ["litert_runtime_options.cc"],
     hdrs = ["litert_runtime_options.h"],
+    copts = litert_jni_copts(),
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
     ],
     # Keep the symbols in libLiteRt.dylib.
     alwayslink = 1,

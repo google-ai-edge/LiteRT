@@ -18,11 +18,11 @@
 
 #include <cstdlib>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 
@@ -59,37 +59,38 @@ LiteRtStatus LrtGetOpaqueRuntimeOptionsData(const LrtRuntimeOptions* options,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  std::stringstream ss;
+  std::string toml_str;
   if (options->enable_profiling.has_value()) {
-    ss << "enable_profiling = "
-       << (options->enable_profiling.value() ? "true" : "false") << "\n";
+    absl::StrAppend(&toml_str, "enable_profiling = ",
+                    options->enable_profiling.value() ? "true" : "false", "\n");
   }
   if (options->error_reporter_mode.has_value()) {
-    ss << "error_reporter_mode = "
-       << static_cast<int>(options->error_reporter_mode.value()) << "\n";
+    absl::StrAppend(&toml_str, "error_reporter_mode = ",
+                    static_cast<int>(options->error_reporter_mode.value()),
+                    "\n");
   }
   if (options->compress_quantization_zero_points.has_value()) {
-    ss << "compress_quantization_zero_points = "
-       << (options->compress_quantization_zero_points.value() ? "true"
-                                                              : "false")
-       << "\n";
+    absl::StrAppend(
+        &toml_str, "compress_quantization_zero_points = ",
+        options->compress_quantization_zero_points.value() ? "true" : "false",
+        "\n");
   }
   if (options->disable_delegate_clustering.has_value()) {
-    ss << "disable_delegate_clustering = "
-       << (options->disable_delegate_clustering.value() ? "true" : "false")
-       << "\n";
+    absl::StrAppend(
+        &toml_str, "disable_delegate_clustering = ",
+        options->disable_delegate_clustering.value() ? "true" : "false", "\n");
   }
   if (!options->selected_signature_keys.empty()) {
-    ss << "selected_signature_keys = [";
+    absl::StrAppend(&toml_str, "selected_signature_keys = [");
     for (size_t i = 0; i < options->selected_signature_keys.size(); ++i) {
-      if (i > 0) ss << ", ";
-      ss << '"' << options->selected_signature_keys[i] << '"';
+      if (i > 0) absl::StrAppend(&toml_str, ", ");
+      absl::StrAppend(&toml_str, "\"", options->selected_signature_keys[i],
+                      "\"");
     }
-    ss << "]\n";
+    absl::StrAppend(&toml_str, "]\n");
   }
 
   *identifier = LrtGetRuntimeOptionsIdentifier();
-  std::string toml_str = ss.str();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
 
   return kLiteRtStatusOk;

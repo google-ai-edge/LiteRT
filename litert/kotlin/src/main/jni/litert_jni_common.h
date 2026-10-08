@@ -18,8 +18,9 @@
 #include <jni.h>
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl  // IWYU pragma: keep
-#include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 
 namespace litert {
@@ -32,30 +33,45 @@ constexpr int kAccelatorCpu = 1;
 constexpr int kAccelatorGpu = 2;
 constexpr int kAccelatorNpu = 3;
 
+// Parses an integer from a string.
+template <typename IntType = int>
+inline IntType ParseInt(absl::string_view str, absl::string_view name) {
+  IntType value = 0;
+  if (!absl::SimpleAtoi(str, &value)) {
+    LITERT_FATAL("Failed to parse %.*s: %.*s", static_cast<int>(name.size()),
+                 name.data(), static_cast<int>(str.size()), str.data());
+  }
+  return value;
+}
+
 // Throws a LiteRtException in Kotlin.
 inline void ThrowLiteRtException(JNIEnv* env, LiteRtStatus status,
                                  absl::string_view message) {
   auto ex_class = env->FindClass("com/google/ai/edge/litert/LiteRtException");
-  ABSL_CHECK(ex_class != nullptr) << "Failed to find LiteRtException class";
+  if (ex_class == nullptr) {
+    LITERT_FATAL("Failed to find LiteRtException class");
+  }
 
   auto constructor =
       env->GetMethodID(ex_class, "<init>", "(ILjava/lang/String;)V");
   if (constructor == nullptr) {
     env->DeleteLocalRef(ex_class);
-    ABSL_CHECK(false) << "Failed to get LiteRtException constructor";
+    LITERT_FATAL("Failed to get LiteRtException constructor");
   }
 
   auto message_jstr = env->NewStringUTF(message.data());
   if (message_jstr == nullptr) {
     env->DeleteLocalRef(ex_class);
-    ABSL_CHECK(false) << "Failed to create message string";
+    LITERT_FATAL("Failed to create message string");
   }
 
   auto ex_obj = env->NewObject(ex_class, constructor, status, message_jstr);
   env->DeleteLocalRef(message_jstr);
   env->DeleteLocalRef(ex_class);
 
-  ABSL_CHECK(ex_obj != nullptr) << "Failed to create LiteRtException object";
+  if (ex_obj == nullptr) {
+    LITERT_FATAL("Failed to create LiteRtException object");
+  }
   env->Throw((jthrowable)ex_obj);
 }
 

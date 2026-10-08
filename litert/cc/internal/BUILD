@@ -92,7 +92,6 @@ cc_library(
         ":litert_handle",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_event",
         "//litert/c:litert_gl_types",
         "//litert/c:litert_model_types",
         "//litert/c:litert_opencl_types",
