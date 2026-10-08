@@ -58,6 +58,7 @@ typedef enum {
 typedef enum {
   kGpuNormalPriority = 0,  // Default priority.
   kGpuLowPriority = 1,     // Low priority help to unblock UI workloads.
+  kGpuHighPriority = 2,    // High priority for time-critical workloads.
 } GpuPriority;
 
 struct MlDriftDelegateOptions {
