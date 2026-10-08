@@ -47,14 +47,13 @@ echo "Checking symbol table in $(basename "${BINARY}")..."
 # GPU symbols: Ensures GPU backends (OpenCL, WebGPU/Dawn, OpenGL/GLES) and their
 # buffer/texture wrappers are not pulled into CPU-only builds.
 BANNED_GPU_SYMBOLS="clCreate|clGetPlatform|opencl_wrapper|qcom_wrapper|wgpu[A-Z]|wgpuBuffer|UploadWeightsOnWeb|CreateFromWebGpuBuffer|CreateFromOpenClMemory|CreateFromGlBuffer|CreateFromGlTexture"
-
 # NPU symbols: Ensures NPU dispatch accelerator, registration, and dispatch
 # delegate kernels are excluded in minimal CPU runtime builds.
-BANNED_NPU_SYMBOLS="DispatchAccelerator|LiteRtRegisterNpuAccelerator|LiteRtCreateDispatchDelegate|DispatchDelegateKernel"
+BANNED_NPU_SYMBOLS="DispatchAccelerator|LiteRtRegisterNpuAccelerator|LiteRtCreateDispatchDelegate|DispatchDelegateKernel|LiteRtDispatchOpOptions"
 
 # Builtin-op symbols: Ensures unselected TFLite builtin ops and the default CPU
 # accelerator table are not linked when selective op registration is enabled.
-BANNED_BUILTIN_OP_SYMBOLS="LiteRtRegisterCpuAccelerator|BuiltinOpResolverWithoutDefaultDelegates|Register_CONV_2D|Register_LSTM|Register_SVDF"
+BANNED_BUILTIN_OP_SYMBOLS="LiteRtRegisterCpuAccelerator|BuiltinOpResolverWithoutDefaultDelegates|Register_CONV_2D|Register_LSTM|Register_SVDF|ReplaceMagicNumbersIfAny|ClassicLocale|BuiltinOptionsUnion::UnPack"
 
 # Weight loader symbols: Ensures external weight loader flatbuffers, schema, and
 # internal CPU weight restoration logic are omitted in selective LiteRT builds

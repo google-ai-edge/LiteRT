@@ -97,6 +97,12 @@ cc_library(
     name = "model_load",
     srcs = ["model_load.cc"],
     hdrs = ["model_load.h"],
+    copts = select({
+        "//litert:without_builtin_ops": [
+            "-DLITERT_NO_BUILTIN_OPS",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         ":buffer_manager",
         ":flatbuffer_to_litert",
@@ -108,14 +114,18 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:build_stamp",
-        "//litert/core:dispatch_op_schema",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/converter:allocation",
         "//tflite/converter/core:model_builder_base",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
-    ],
+    ] + select({
+        "//litert:without_builtin_ops": [],
+        "//conditions:default": [
+            "//litert/core:dispatch_op_schema",
+        ],
+    }),
 )
 
 cc_test(

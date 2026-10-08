@@ -31,7 +31,9 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/build_stamp.h"
+#if !defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/core/dispatch_op_schema.h"
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/flatbuffer_to_litert.h"
 #include "litert/core/model/model.h"
@@ -53,6 +55,7 @@ class FlatbufferContext {
                     BufferManager* buffer_manager)
       : tfl_flatbuffer_(tfl_flatbuffer), buffer_manager_(buffer_manager) {}
 
+#if !defined(LITERT_NO_BUILTIN_OPS)
   Expected<void> SetOpCode(LiteRtOpT& litert_op, uint32_t ind) {
     if (!PackedModel()->operator_codes() ||
         ind >= PackedModel()->operator_codes()->size()) {
@@ -73,6 +76,7 @@ class FlatbufferContext {
     litert::internal::SetTflOpCodeInd(litert_op, ind);
     return {};
   }
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
   // Get the buffer at the given index in the tflite model.
   Expected<const TflPackedBuffer*> GetTflBuffer(uint32_t ind) const {
@@ -109,6 +113,7 @@ bool IsRangeInAllocation(size_t offset, size_t size, size_t allocation_size) {
   return offset <= allocation_size && size <= allocation_size - offset;
 }
 
+#if !defined(LITERT_NO_BUILTIN_OPS)
 LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
                       const TflPackedOp& tfl_op, LiteRtOpT& litert_op,
                       size_t op_index) {
@@ -183,6 +188,7 @@ LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
 
   return kLiteRtStatusOk;
 }
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
 struct TflBufferContext {
   BufferRef<uint8_t> buffer;
@@ -359,6 +365,7 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
     litert_tensor.SetTensorIndex(i);
   }
 
+#if !defined(LITERT_NO_BUILTIN_OPS)
   // Unpack ops, pass litert_subgraph so they can look up the new litert
   // tensors.
   const auto num_ops =
@@ -371,6 +378,7 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
     LITERT_RETURN_IF_ERROR(UnpackOp(context, litert_subgraph, *tfl_op,
                                     litert_subgraph.EmplaceOp(), i));
   }
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
   // Update subgraph I/O.
   const auto num_inputs =
@@ -546,6 +554,7 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
     }
   }
 
+#if !defined(LITERT_NO_BUILTIN_OPS)
   if (packed_model->operator_codes()) {
     const auto num_operator_codes = packed_model->operator_codes()->size();
     std::vector<TflOpCodePtr> tfl_op_codes(num_operator_codes);
@@ -559,6 +568,7 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
     }
     litert::internal::SetTflOpCodes(*litert_model, std::move(tfl_op_codes));
   }
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
   return litert_model;
 }
@@ -602,6 +612,7 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
   LITERT_ASSIGN_OR_RETURN(auto model, UnpackModel(std::move(**flatbuffer)));
   model->SetSourcePath(std::string(filename));
 
+#if !defined(LITERT_NO_BUILTIN_OPS)
   // Load bytecode of each dispatch op and attach it to the model.
   absl::flat_hash_map<size_t, unsigned int> buffer_id_map;
   const auto& model_flatbuffer = GetTflFlatbuffer(*model);
@@ -638,6 +649,7 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
       }
     }
   }
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
   return std::move(model);
 }

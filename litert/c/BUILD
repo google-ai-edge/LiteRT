@@ -41,7 +41,6 @@ load(
     "exclude_wasm_target_compatible_with",
     "exclude_windows_target_compatible_with",
     "get_compatible_with_portable",
-    "gles_deps",
     "gles_headers",
     "gles_linkopts",
     "litert_android_linkopts",
@@ -427,7 +426,7 @@ litert_c_api_library(
         "//litert/runtime:tensor_buffer_requirements",
         "@opencl_headers",
         ":litert_tensor_buffer_requirements_impl",
-    ] + gles_deps(),
+    ],
     linkopts = litert_android_linkopts() + gles_linkopts() + litert_metal_linkopts(),
     deps = [
         ":litert_common",

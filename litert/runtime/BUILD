@@ -696,7 +696,6 @@ cc_library(
         ":custom_op_dispatcher",
         ":external_litert_buffer_context",
         ":litert_runtime_options",
-        ":magic_number_utils",
         ":metrics",
         ":profiler",
         ":tensor_buffer",
@@ -780,6 +779,7 @@ cc_library(
             "//tflite/c:c_api_without_op_resolver_without_alwayslink",
         ],
         "//conditions:default": [
+            ":magic_number_utils",
             "//tflite/c:c_api",
             "//tflite/c:c_api_opaque",
             "//tflite/kernels:builtin_ops",
