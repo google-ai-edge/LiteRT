@@ -285,6 +285,8 @@ def _IntelOpenVinoSpec():
                 # copybara:comment_end
             ],
             mh_devices = [{
+                "abi": "x86_64",
+                "device": "regex:ruby|moonstone|lapis",
                 "label": "litert-test-intel-ptl",
             }],
             dispatch = "libLiteRtDispatch_IntelOpenvino.so",
