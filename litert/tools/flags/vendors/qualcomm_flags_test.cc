@@ -788,7 +788,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
             QualcommOptions::GraphPriority::kDefault);
   EXPECT_EQ(options.Value().GetBackend(), QualcommOptions::Backend::kHtp);
   EXPECT_EQ(options.Value().GetGraphIOTensorMemType(),
-            QualcommOptions::GraphIOTensorMemType::kRaw);
+            QualcommOptions::GraphIOTensorMemType::kMemHandle);
   EXPECT_EQ(options.Value().GetLpaiTarget(),
             QualcommOptions::LpaiTarget::kAdsp);
   EXPECT_EQ(options.Value().GetLpaiFps(), 1);
