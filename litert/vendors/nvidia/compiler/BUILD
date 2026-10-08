@@ -351,6 +351,8 @@ litert_dynamic_lib(
     ],
     deps = [
         ":tensorrt_graph_builder",
+        ":weight_holder_calibration",
+        ":weight_store_builder",
         "//litert/c:litert_builder",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
@@ -367,6 +369,7 @@ litert_dynamic_lib(
         "//litert/vendors/c:litert_compiler_plugin",
         "//litert/vendors/nvidia:bytecode",
         "//litert/vendors/nvidia:cache_layout",
+        "//litert/vendors/nvidia:cuda_vmm",
         "//litert/vendors/nvidia:memory_profile",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",

@@ -56,6 +56,9 @@
 #include "litert/vendors/nvidia/bytecode.h"
 #include "litert/vendors/nvidia/cache_layout.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_graph_builder.h"
+#include "litert/vendors/nvidia/compiler/weight_holder_calibration.h"
+#include "litert/vendors/nvidia/compiler/weight_store_builder.h"
+#include "litert/vendors/nvidia/cuda_vmm.h"
 #include "litert/vendors/nvidia/memory_profile.h"
 #include "NvInferRuntime.h"
 #include "NvInferVersion.h"
@@ -139,6 +142,11 @@ struct PendingBundleEntry {
   std::vector<uint8_t> engine;
   std::optional<litert::nvidia::TensorRtLlmHeadBuildData> trtllm_head;
   std::vector<litert::nvidia::TensorRtSharedWeightRef> refit_weights;
+  // Where the packed plugin weights of a plan built without them come from;
+  // its private runs alias private_runs.
+  std::optional<litert::nvidia::TensorRtWeightStore> weight_store;
+  std::vector<litert::nvidia::TensorRtWeightHolderCalibration::Run>
+      private_runs;
 
   // The view borrows this entry and the caller-provided head storage.
   litert::nvidia::TensorRtBundleEntry View(
@@ -157,8 +165,10 @@ struct PendingBundleEntry {
       head.bf16_scales_size = trtllm_head->bf16_scales.size();
       head_ptr = &head;
     }
-    return {function_name, input_names, output_names, engine.data(),
-            engine.size(), head_ptr,    refit_weights};
+    return {function_name, input_names,
+            output_names,  engine.data(),
+            engine.size(), head_ptr,
+            refit_weights, weight_store.has_value() ? &*weight_store : nullptr};
   }
 };
 
@@ -486,6 +496,8 @@ std::string BuildCompilerSdkVersion() {
       "LITERT_NVIDIA_TENSORRT_SYNC_ALLOCATOR",
       "LITERT_NVIDIA_TENSORRT_TACTIC_DRAM_MB",
       "LITERT_NVIDIA_TENSORRT_VALUE_CACHE_LAYOUT",
+      "LITERT_NVIDIA_TENSORRT_WEIGHT_STORE",
+      "LITERT_NVIDIA_TENSORRT_WEIGHT_STORE_SEGMENT_MB",
       "LITERT_NVIDIA_TENSORRT_WORKSPACE_MB",
   };
 
@@ -1667,6 +1679,95 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   return kLiteRtStatusOk;
 }
 
+namespace {
+
+// The weight store of a compilation, or nullptr when the plans keep their
+// plugin weights: it needs the weight placeholders and the weights manager of
+// TensorRT-RTX 1.7, persistent shards that can describe it, the model file,
+// and CUDA virtual memory. LITERT_NVIDIA_TENSORRT_WEIGHT_STORE=0 turns it off.
+std::unique_ptr<litert::nvidia::TensorRtWeightStoreBuilder> CreateWeightStore(
+    bool shared_weights, const std::string& aot_cache_dir) {
+  if (!shared_weights || aot_cache_dir.empty() ||
+      !litert::nvidia::TensorRtWeightHoldersSupported() ||
+      !EnvEnabled("LITERT_NVIDIA_TENSORRT_WEIGHT_STORE",
+                  /*default_value=*/true)) {
+    return nullptr;
+  }
+  const std::string model_path = TensorRtAotModelPath();
+  if (model_path.empty()) {
+    return nullptr;
+  }
+  auto granule = litert::nvidia::CudaVmmGranule();
+  if (!granule) {
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX weight store is unavailable: %s",
+               granule.Error().Message().c_str());
+    return nullptr;
+  }
+  // TensorRT holds two copies of a placeholder while it builds, one
+  // placeholder at a time: the segment size bounds the host memory of the
+  // build, and every segment costs an engine about a granule of device
+  // memory around its holder.
+  const size_t segment_mb =
+      EnvSizeT("LITERT_NVIDIA_TENSORRT_WEIGHT_STORE_SEGMENT_MB", 256);
+  auto store = litert::nvidia::TensorRtWeightStoreBuilder::Create(
+      model_path, *granule, static_cast<uint64_t>(segment_mb) << 20);
+  if (!store) {
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX weight store is unavailable: %s",
+               store.Error().Message().c_str());
+    return nullptr;
+  }
+  LITERT_LOG(LITERT_INFO,
+             "NVIDIA TensorRT-RTX weight store enabled: source=%s granule=%llu "
+             "segment_mb=%zu",
+             (*store)->source_path().c_str(),
+             static_cast<unsigned long long>(*granule), segment_mb);
+  return std::move(*store);
+}
+
+// Describes, for the bytecode, the weight store of a plan from the holders
+// the plan was built with and where calibration found them. The description
+// borrows the private runs of `entry`.
+void DescribeWeightStore(
+    const litert::nvidia::TensorRtWeightStoreBuilder& builder,
+    const std::vector<litert::nvidia::TensorRtWeightHolderBuildData>& holders,
+    litert::nvidia::TensorRtWeightHolderCalibration calibration,
+    PendingBundleEntry& entry) {
+  litert::nvidia::TensorRtWeightStore store;
+  store.source_path = builder.source_path();
+  store.source_size = builder.source_size();
+  store.source_identity = builder.source_identity();
+  store.granule = builder.granule();
+  store.weight_data_size = calibration.weight_data_size;
+  store.segments.reserve(holders.size());
+  for (size_t i = 0; i < holders.size(); ++i) {
+    const auto& built = builder.segments()[holders[i].segment];
+    litert::nvidia::TensorRtWeightSegment segment;
+    segment.holder_name = holders[i].name;
+    segment.size = built.size;
+    segment.payload_offset =
+        (calibration.holder_offsets[i] + store.granule - 1) / store.granule *
+        store.granule;
+    segment.key = built.key;
+    segment.pieces = built.pieces;
+    store.segments.push_back(std::move(segment));
+  }
+  std::sort(store.segments.begin(), store.segments.end(),
+            [](const auto& a, const auto& b) {
+              return a.payload_offset < b.payload_offset;
+            });
+  entry.private_runs = std::move(calibration.private_runs);
+  store.private_runs.reserve(entry.private_runs.size());
+  for (const auto& run : entry.private_runs) {
+    store.private_runs.push_back(
+        {run.offset, run.data.data(), run.data.size()});
+  }
+  entry.weight_store = std::move(store);
+}
+
+}  // namespace
+
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
@@ -1770,6 +1871,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   size_t total_locator_bytes = 0;
   size_t total_shard_weight_bytes = 0;
   bool aot_artifacts_persisted = false;
+  const std::unique_ptr<litert::nvidia::TensorRtWeightStoreBuilder>
+      plugin_weight_store = CreateWeightStore(shared_weights, aot_cache_dir);
   memory_profiler.Log("compile_begin", soc_model);
 
   for (LiteRtParamIndex i = 0; i < num_partitions; ++i) {
@@ -1788,8 +1891,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       }
     }
     memory_profiler.Log("partition_build_begin", function_name.c_str());
-    auto engine_or =
-        litert::nvidia::BuildTensorRtEngine(subgraph, read_only_inputs[i]);
+    auto engine_or = litert::nvidia::BuildTensorRtEngine(
+        subgraph, read_only_inputs[i], plugin_weight_store.get());
     if (!engine_or) {
       std::string op_codes;
       for (const auto& op : subgraph.Ops()) {
@@ -1838,10 +1941,46 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                  "NVIDIA TensorRT-RTX compiled %s partition %d/%d: "
                  "plan_bytes=%zu refit_weights=%zu logical_weight_bytes=%zu "
                  "retained_unique_weight_bytes=%zu",
-                 engine.is_stripped_plan ? "stripped" : "self-contained",
+                 engine.is_stripped_plan         ? "stripped"
+                 : engine.weight_holders.empty() ? "self-contained"
+                                                 : "weight-store",
                  static_cast<int>(i + 1), static_cast<int>(num_partitions),
                  pending.engine.size(), pending.refit_weights.size(),
                  partition_logical_weight_bytes, weight_store.unique_bytes());
+      if (!engine.weight_holders.empty()) {
+        // The plan has placeholders for its packed plugin weights. Find where
+        // TensorRT put them in the weight data of an engine and keep the rest
+        // of that data, so that the runtime can map the weights in.
+        memory_profiler.Log("weight_holder_calibration_begin",
+                            function_name.c_str());
+        LITERT_ASSIGN_OR_RETURN(
+            auto calibration,
+            litert::nvidia::CalibrateTensorRtWeightHolders(
+                pending.engine.data(), pending.engine.size(),
+                engine.weight_holders, plugin_weight_store->granule()));
+        memory_profiler.Log("weight_holder_calibration_end",
+                            function_name.c_str());
+        DescribeWeightStore(*plugin_weight_store, engine.weight_holders,
+                            std::move(calibration), pending);
+        size_t private_bytes = 0;
+        for (const auto& run : pending.private_runs) {
+          private_bytes += run.data.size();
+        }
+        uint64_t segment_bytes = 0;
+        for (const auto& segment : pending.weight_store->segments) {
+          segment_bytes += segment.size;
+        }
+        LITERT_LOG(LITERT_INFO,
+                   "NVIDIA TensorRT-RTX weight store of partition %d/%d: "
+                   "holders=%zu segment_bytes=%llu weight_data_bytes=%llu "
+                   "private_bytes=%zu",
+                   static_cast<int>(i + 1), static_cast<int>(num_partitions),
+                   pending.weight_store->segments.size(),
+                   static_cast<unsigned long long>(segment_bytes),
+                   static_cast<unsigned long long>(
+                       pending.weight_store->weight_data_size),
+                   private_bytes);
+      }
       result->call_infos.push_back(function_name);
       if (!aot_cache_dir.empty()) {
         memory_profiler.Log("aot_shard_pack_begin", function_name.c_str());
