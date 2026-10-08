@@ -732,6 +732,8 @@ cc_library(
         "//litert/core:filesystem",
         "//litert/core:options",
         "//litert/core/model",
+        "//litert/core/model:model_load",
+        "//litert/core/model:shape_inference",
         "//litert/core/util:flatbuffer_tools",
         "//litert/core/util:perfetto_profiling",
         "//litert/runtime/dispatch:dispatch_opaque_options",

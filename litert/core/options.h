@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_
 #define ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_
 
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -65,7 +66,10 @@ struct LiteRtOptionsT {
   // - Breaking layout compatibility: set patch and minor to 0, increment major.
   //
   // Note: Changing a default value does not impact the version.
-  LiteRtApiVersion version = {.major = 1, .minor = 0, .patch = 0};
+  LiteRtApiVersion version = {.major = 1, .minor = 1, .patch = 0};
+  // C API clients own one reference. CompiledModel retains another reference
+  // only when it needs the options to JIT recompile an NPU model after resize.
+  std::atomic<size_t> reference_count{1};
   LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
   LiteRtOpaqueOptions options = nullptr;
   std::vector<CustomOpOption> custom_op_options;
