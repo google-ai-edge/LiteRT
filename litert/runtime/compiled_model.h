@@ -15,10 +15,8 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_
 #define ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -30,6 +28,7 @@
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
@@ -40,6 +39,7 @@
 #include "weight_loader/external_weight_loader_litert.h"
 #endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 #if !defined(LITERT_DISABLE_NPU)
+#include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/cache/compilation_cache.h"
 #endif  // !defined(LITERT_DISABLE_NPU)
 #include "litert/core/environment.h"
@@ -50,11 +50,9 @@
 #include "litert/runtime/metrics.h"
 #include "litert/runtime/profiler.h"
 #include "litert/runtime/tensor_identifier.h"
-#include "litert/runtime/tfl_utils.h"
 #include "tflite/converter/allocation.h"
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/interpreter.h"
-#include "tflite/model_builder.h"
 
 using TfLiteTensorIdentifier = litert::internal::TfLiteTensorIdentifier;
 using TensorIdentifierHash = litert::internal::TensorIdentifierHash;
@@ -149,8 +147,6 @@ class LiteRtCompiledModelT {
     return GetOutputTensorShapes(*signature_keys_[signature_index],
                                  output_layouts, update_allocation);
   }
-
-
 
   // Returns the layout for an input tensor identified by signature and index.
   litert::Expected<LiteRtLayout> GetInputTensorLayout(size_t signature_index,
@@ -309,8 +305,7 @@ class LiteRtCompiledModelT {
 
   // A opaque delegate and its metrics collection functions.
   struct Delegate {
-    std::unique_ptr<LiteRtDelegateWrapperT,
-                    void (*)(LiteRtDelegateWrapper)>
+    std::unique_ptr<LiteRtDelegateWrapperT, void (*)(LiteRtDelegateWrapper)>
         delegate;
     // NOLINTBEGIN(*-readability-class-member-naming)
     // Starts collection of HW-specific metrics at a specific level of detail.
@@ -327,67 +322,22 @@ class LiteRtCompiledModelT {
 
   // Initializes the internal TFLite interpreter and related objects.
   // This is called in the public Create*() methods.
-  // The flatbuffer_model_ must be set before calling this method.
+  // The model_ must be set before calling this method.
   litert::Expected<void> InitializeRuntime(
       LiteRtEnvironmentT* env, LiteRtHwAcceleratorSet hardware_accelerators,
       LiteRtOptions jit_compilation_options);
 
-  // Handles any JIT compilation and initializes the flatbuffer_model_ and
-  // related field within the compiled model.
-  //
-  // If no JIT compilation is requested, the compiled model will point to the
-  // underlying tflite::Model* owned by the input litert model. The compiled
-  // models alloc_ and model_buf_ will be nullptr as these are only relevant
-  // when compiled model owns a flatbuffer.
-  //
-  // If JIT compilation is requested and compilation caching is enabled, the
-  // compiled model will first check the cache for the compiled model. If the
-  // model is found in the cache, the compiled model will load the model from
-  // the cache and the JIT compilation will not occur. The alloc_ and
-  // model_buf_ will be initialized based on the cached model.
-  //
-  // If JIT compilation does occur (either because compilation caching is
-  // disabled or the model is not found in the cache), a new flatbuffer owned by
-  // the compiled model will be serialized from the result of compilation. The
-  // alloc_ and model_buf_ will be set for storage of the new flatbuffer.
-  //
-  // NOTE: JIT compilation invalidates the input litert model.
-  // TODO: Design a better abstraction for optional ownership for flatbuffer,
-  // consider caching JIT result.
+  // Handles any JIT compilation and initializes the model_ and related fields
+  // within the compiled model.
   litert::Expected<void> InitializeModel(LiteRtModelT& model,
                                          LiteRtHwAcceleratorSet hw_accelerators,
                                          LiteRtOptions options,
                                          LiteRtEnvironmentT& env);
 
-  // Returns the base address of the flatbuffer memory.
-  //
-  // If no JIT compilation has taken place, this points to flatbuffer memory
-  // owned by the incoming litert model (litert models always owns their
-  // flatbuffer memory until serialization).
-  //
-  // If JIT compilation has taken place, this points to the base address of the
-  // a newly serialized flatbuffer which is owned by the compiled model (in
-  // model_buf_);
-  //
-  // NOTE: This should never be nullptr after initialization.
-  const char* GetModelBase() {
-    if (fb_model_ == nullptr) {
-      return nullptr;
-    }
-
-    // fb_model_->allocation is only null when the flatbuffer is built with
-    // BuildFlatBufferFromModel, which is not currently in use in either
-    // litert::LoadModel or LiteRtCompiledModelT::Create.
-    const auto* alloc = fb_model_->allocation();
-    if (alloc) {
-      // NOTE: During JIT, alloc->base() == model_buf_.Data(), which is owned
-      // by the compiled model. Otherwise, model_buf_.Data() is nullptr and
-      // alloc->base() points a buffer owned by the incoming litert model.
-      return reinterpret_cast<const char*>(alloc->base());
-    }
-
-    return nullptr;
-  }
+  // Returns the base address of the flatbuffer memory when backed by a
+  // flatbuffer (either from the incoming LiteRtModelT, compilation cache, or
+  // NPU JIT serialization).
+  const char* GetModelBase() const { return model_base_; }
 
   // Returns the buffer requirements for the given tensor.
   litert::Expected<const LiteRtTensorBufferRequirementsT*>
@@ -462,8 +412,6 @@ class LiteRtCompiledModelT {
                                                absl::Span<const int> dims,
                                                bool strict_mode);
 
-
-
   // Marks that the given signature needs tensor allocation.
   litert::Expected<void> MarkSignatureNeedsAllocation(
       const tflite::SignatureRunner* runner);
@@ -509,11 +457,15 @@ class LiteRtCompiledModelT {
   std::optional<std::string> model_directory_;
 
   litert::OwningBufferRef<uint8_t> model_buf_;
+  std::unique_ptr<::tflite::Allocation> model_buf_allocation_;
 #if !defined(LITERT_DISABLE_NPU)
   std::optional<LiteRtModelT::Ptr> cached_model_;
 #endif  // !defined(LITERT_DISABLE_NPU)
-  // Flatbuffer model should outlive the interp_.
-  std::unique_ptr<::tflite::FlatBufferModel> fb_model_;
+  // Non-owning pointer to the LiteRtModelT (either the incoming model or
+  // cached_model_) used to initialize the runtime.
+  LiteRtModelT* model_ = nullptr;
+  const char* model_base_ = nullptr;
+  const ::tflite::Allocation* model_allocation_ = nullptr;
 
   // If JIT compilation hasn't happened, the flatbuffer fd belongs to the
   // incoming literal model. If JIT compilation has happened, the fd belongs to
@@ -598,8 +550,6 @@ class LiteRtCompiledModelT {
   // Owns model-level debug feature id storage when configured through
   // `SetSchedulingInfo`.
   std::string model_debug_feature_id_;
-
-
 
   // The set of CPU Tensors. This is used to manage TensorBufferRequirements
   // for shared CPU Tensors.

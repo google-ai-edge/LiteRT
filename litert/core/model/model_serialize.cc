@@ -230,6 +230,7 @@ LiteRtStatus PackTensor(SerializationContext& builder,
   LITERT_RETURN_IF_ERROR(builder.HandleTensorBuffer(tfl_tensor, litert_tensor));
 
   tfl_tensor.name = std::string(litert_tensor.Name());
+  tfl_tensor.external_buffer = litert_tensor.ExternalBufferId();
 
   return kLiteRtStatusOk;
 }
@@ -465,6 +466,13 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
         LITERT_LOG(LITERT_ERROR, "Failed to update dispatch op options");
         return Error(kLiteRtStatusErrorInvalidFlatbuffer);
       }
+      if (static_cast<size_t>(sg_ind) < litert_model.Subgraphs().size() &&
+          static_cast<size_t>(op_ind) <
+              litert_model.Subgraph(sg_ind).Ops().size()) {
+        litert_model.Subgraph(sg_ind).Op(op_ind).SetCustomOptions(
+            static_cast<const uint8_t*>(old_raw_opts.Data()),
+            old_raw_opts.Size());
+      }
     }
   }
 
@@ -560,6 +568,8 @@ Expected<OwningBufferRef<uint8_t>> SerializeModel(LiteRtModelT&& model,
   }
 
   auto serialized_tfl = SerializeFlatbuffer(**tfl_model);
+  litert::internal::SetTflOpCodes(model,
+                                  std::move((*tfl_model)->operator_codes));
   auto serialized_with_buffers =
       SerializeWithAppendedBuffers(builder, std::move(serialized_tfl), model);
   if (!serialized_with_buffers) {

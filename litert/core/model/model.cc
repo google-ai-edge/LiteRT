@@ -511,10 +511,12 @@ const TflOptions2& GetTflOptions2(const LiteRtOpT& litert_op) {
 }
 
 TflOptions&& TakeTflOptions(LiteRtOpT& litert_op) {
+  litert_op.fb_op_ = nullptr;
   return std::move(litert_op.tfl_option_);
 }
 
 TflOptions2&& TakeTflOptions2(LiteRtOpT& litert_op) {
+  litert_op.fb_op_ = nullptr;
   return std::move(litert_op.tfl_option_2_);
 }
 
@@ -701,8 +703,10 @@ bool IsSubgraphInput(const LiteRtTensorT& tensor) {
 
 void AttachInput(LiteRtTensor tensor, LiteRtOpT& op) {
   op.Inputs().push_back(tensor);
-  tensor->Users().push_back(&op);
-  tensor->UserArgInds().push_back(op.Inputs().size() - 1);
+  if (tensor != nullptr) {
+    tensor->Users().push_back(&op);
+    tensor->UserArgInds().push_back(op.Inputs().size() - 1);
+  }
 }
 
 void AttachOutput(LiteRtTensor tensor, LiteRtOpT& op) {

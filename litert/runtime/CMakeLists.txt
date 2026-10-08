@@ -46,6 +46,7 @@ set(LITERT_RUNTIME_SOURCES
     gl_texture.cc
     ion_buffer.cc
     litert_cpu_options.cc
+    litert_interpreter_builder.cc
     litert_runtime_options.cc
     magic_number_utils.cc
     profiler.cc

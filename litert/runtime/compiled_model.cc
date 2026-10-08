@@ -32,9 +32,11 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "litert/c/options/litert_cpu_options.h"
 #include "tflite/c/c_api.h"
 #include "tflite/mutable_op_resolver.h"
+#include "tflite/schema/schema_generated.h"
 
 #if !defined(LITERT_WINDOWS_OS)
 #include <unistd.h>
@@ -66,6 +68,7 @@
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler_event.h"
@@ -99,6 +102,7 @@
 #if !defined(LITERT_DISABLE_CPU)
 #include "litert/runtime/litert_cpu_options.h"
 #endif  // !defined(LITERT_DISABLE_CPU)
+#include "litert/runtime/litert_interpreter_builder.h"
 #include "litert/runtime/litert_runtime_options.h"
 #if !defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/runtime/magic_number_utils.h"
@@ -113,8 +117,8 @@
 #endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 #include "tflite/converter/allocation.h"
 #include "tflite/builtin_ops.h"
+#include "tflite/core/api/op_resolver.h"
 #include "tflite/core/api/profiler.h"
-#include "tflite/core/interpreter_builder.h"
 #include "tflite/interpreter.h"
 #include "tflite/interpreter_options.h"
 #if !defined(LITERT_NO_BUILTIN_OPS)
@@ -487,18 +491,20 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     }
   }
 
-  tflite::InterpreterBuilder builder(
-      fb_model_->GetModel(), *resolver, error_reporter_.get(),
-      &interpreter_options, fb_model_->allocation());
+  if (model_ == nullptr) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "LiteRtModel is null during runtime initialization");
+  }
   {
     LITERT_PERFETTO_TRACE_EVENT("CompiledModel TFLite Graph Conversion");
-    builder(&interp_);
+    litert::internal::BuildInterpreterFromLiteRtModel(
+        *model_, *resolver, error_reporter_.get(), interpreter_options,
+        model_allocation_, num_threads, &interp_);
   }
   if (interp_ == nullptr) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to build TFL interpreter");
   }
-  interp_->SetNumThreads(num_threads);
 
   if (jit_compilation_options) {
     const auto& bindings = jit_compilation_options->external_tensor_bindings;
@@ -553,20 +559,31 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
                               buffer_context_.get());
 
 #if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
+  const auto* fb_model =
+      litert::internal::GetTflFlatbuffer(*model_).FlatbufferModelPtr();
+  const tflite::Model* packed_model = fb_model ? fb_model->GetModel() : nullptr;
+  if (packed_model == nullptr && model_buf_.Data() != nullptr) {
+    packed_model = flatbuffers::GetRoot<tflite::Model>(model_buf_.Data());
+  }
   // Check if the external weights is provided by the client.
-  if (jit_compilation_options == nullptr) {
-    weight_loader_owned_ = weight_loader::CreateLiteRtWeightLoader(
-        LrtGetRuntimeContext(), fb_model_->GetModel(), model_directory_);
-    weight_loader_ = weight_loader_owned_.get();
-  } else if (jit_compilation_options->weight_loader == nullptr) {
-    weight_loader_owned_ = weight_loader::CreateLiteRtWeightLoader(
-        LrtGetRuntimeContext(), fb_model_->GetModel(), model_directory_,
-        std::move(jit_compilation_options->scoped_weight_source),
-        static_cast<const weight_loader::WeightInMemoryMap*>(
-            jit_compilation_options->weight_in_memory_map));
-    weight_loader_ = weight_loader_owned_.get();
-  } else {
+  if (jit_compilation_options != nullptr &&
+      jit_compilation_options->weight_loader != nullptr) {
     weight_loader_ = jit_compilation_options->weight_loader;
+  } else if (packed_model != nullptr) {
+    if (jit_compilation_options == nullptr) {
+      weight_loader_owned_ = weight_loader::CreateLiteRtWeightLoader(
+          LrtGetRuntimeContext(), packed_model, model_directory_);
+    } else {
+      weight_loader_owned_ = weight_loader::CreateLiteRtWeightLoader(
+          LrtGetRuntimeContext(), packed_model, model_directory_,
+          std::move(jit_compilation_options->scoped_weight_source),
+          static_cast<const weight_loader::WeightInMemoryMap*>(
+              jit_compilation_options->weight_in_memory_map));
+    }
+    weight_loader_ = weight_loader_owned_.get();
+  }
+  if (weight_loader_ == nullptr) {
+    return {};
   }
   auto weight_infos = weight_loader_->GetWeightInfo();
   if (weight_infos.empty()) {
@@ -863,29 +880,24 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
 #endif
   }
 
-  const auto& tfl_wrapper = litert::internal::GetTflFlatbuffer(model);
-  // Currently, in all situations where litert model was import from a
-  // flatbuffer, the litert model will own said flatbuffer and stored it in the
-  // OwningBufferRef.
-
-  if (auto tfl_buf = tfl_wrapper.Buf(); tfl_buf.Data() != nullptr) {
-    LITERT_LOG(
-        LITERT_INFO,
-        "Flatbuffer model initialized directly from incoming litert model.");
-    fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(
-        tfl_buf.StrData(), tfl_buf.Size(), error_reporter_.get());
-    SetModelSourceInfoFromAllocation(tfl_wrapper.FlatbufferModel().allocation(),
-                                     fb_model_fd_, fb_model_file_offset_,
-                                     fb_model_size_);
-    return {};
+  if (model.NumSubgraphs() == 0) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Model has no subgraphs");
   }
 
-  // If we reach here, it means we weren't able to initialize the compiled
-  // model, neither from the incoming litert model nor from a transformed model
-  // after applying the plugins.
+  model_ = &model;
+  const auto& tfl_wrapper = litert::internal::GetTflFlatbuffer(model);
+  if (tfl_wrapper.FlatbufferModelPtr() != nullptr &&
+      tfl_wrapper.FlatbufferModelPtr()->allocation() != nullptr) {
+    LITERT_LOG(LITERT_INFO,
+               "Model initialized directly from incoming litert model.");
+    model_base_ = tfl_wrapper.Buf().StrData();
+    model_allocation_ = tfl_wrapper.FlatbufferModel().allocation();
+    SetModelSourceInfoFromAllocation(model_allocation_, fb_model_fd_,
+                                     fb_model_file_offset_, fb_model_size_);
+  }
 
-  return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                    "Failed to build flatbuffer from incoming litert model");
+  return {};
 }
 
 namespace {
@@ -961,10 +973,6 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
 
   LITERT_RETURN_IF_ERROR(compiled_model->InitializeRuntime(
       env, hardware_accelerators, jit_compilation_options));
-  if (compiled_model->GetModelBase() == nullptr) {
-    return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "Failed to initialize model memory.");
-  }
 
   ScopedCompilationOptionsModifier scoped_modifier(jit_compilation_options);
 
@@ -1152,8 +1160,7 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
   }
 
   compiled_model->non_cpu_fully_delegated_ =
-      (cpu_delegated_node_count == 0) &&
-      (prev_counts.undelegated_nodes == 0) &&
+      (cpu_delegated_node_count == 0) && (prev_counts.undelegated_nodes == 0) &&
       (compiled_model->delegation_metrics_.total_node_count > 0);
 
   if (!(hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
@@ -1523,7 +1530,7 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
     return false;
   }
   LITERT_LOG(LITERT_INFO, "JIT compilation changed model, reserializing...");
-
+  model_ = &model;
   LITERT_ASSIGN_OR_RETURN(auto serialized, SerializeModel(std::move(model)));
 
   bool has_jit_handles = apply_plugins_result_.has_value() &&
@@ -1539,17 +1546,13 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
   }
 
   model_buf_ = std::move(serialized);
-  fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(
-      reinterpret_cast<const char*>(model_buf_.Data()), model_buf_.Size(),
-      error_reporter_.get());
-  if (fb_model_ == nullptr) {
-    return Unexpected(kLiteRtStatusErrorFileIO,
-                      "Failed to build flatbuffer from buffer");
-  }
+  model_base_ = model_buf_.StrData();
+  model_buf_allocation_ = std::make_unique<tflite::MemoryAllocation>(
+      model_buf_.Data(), model_buf_.Size(), error_reporter_.get());
+  model_allocation_ = model_buf_allocation_.get();
   LITERT_LOG(LITERT_DEBUG,
-             "Plugins applied, flatbuffer model initialized from  JIT compiled "
-             "model.");
-  SetModelSourceInfoFromAllocation(fb_model_->allocation(), fb_model_fd_,
+             "Plugins applied, model initialized from JIT compiled model.");
+  SetModelSourceInfoFromAllocation(model_allocation_, fb_model_fd_,
                                    fb_model_file_offset_, fb_model_size_);
   return true;
 }
@@ -1580,17 +1583,17 @@ bool LiteRtCompiledModelT::TryLoadingFromCache(
 
   // Cache hit and model loaded successfully, initialize the compiled model
   // with the cached model.
-  const auto& tfl_wrapper_from_cached_model =
-      litert::internal::GetTflFlatbuffer(*cached_model.value());
-
-  auto tfl_buf_from_cached_model = tfl_wrapper_from_cached_model.Buf();
-  fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(
-      tfl_buf_from_cached_model.StrData(), tfl_buf_from_cached_model.Size(),
-      error_reporter_.get());
-  SetModelSourceInfoFromAllocation(
-      tfl_wrapper_from_cached_model.FlatbufferModel().allocation(),
-      fb_model_fd_, fb_model_file_offset_, fb_model_size_);
   cached_model_ = std::move(cached_model.value());
+  model_ = cached_model_->get();
+  const auto& tfl_wrapper_from_cached_model =
+      litert::internal::GetTflFlatbuffer(*model_);
+  model_base_ = tfl_wrapper_from_cached_model.Buf().StrData();
+  model_allocation_ =
+      tfl_wrapper_from_cached_model.FlatbufferModelPtr() != nullptr
+          ? tfl_wrapper_from_cached_model.FlatbufferModelPtr()->allocation()
+          : nullptr;
+  SetModelSourceInfoFromAllocation(model_allocation_, fb_model_fd_,
+                                   fb_model_file_offset_, fb_model_size_);
   return true;
 }
 #endif  // !defined(LITERT_DISABLE_NPU)

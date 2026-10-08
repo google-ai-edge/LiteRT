@@ -174,17 +174,26 @@ LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
     litert_op.SetCustomOptions(custom_opts->data(), custom_opts->size());
   }
 
-  // TODO figure out how to parse builtins with the packed flatbuffer api.
-  TflOpPtr tfl_op_ptr(tfl_op.UnPack());
-  litert::internal::SetTflOptions(litert_op,
-                                  std::move(tfl_op_ptr->builtin_options));
-  litert::internal::SetTflOptions2(litert_op,
-                                   std::move(tfl_op_ptr->builtin_options_2));
+  if (const void* opts = tfl_op.builtin_options()) {
+    TflOptions tfl_options;
+    tfl_options.type = tfl_op.builtin_options_type();
+    tfl_options.value =
+        tflite::BuiltinOptionsUnion::UnPack(opts, tfl_options.type, nullptr);
+    litert::internal::SetTflOptions(litert_op, std::move(tfl_options));
+  }
+  if (const void* opts2 = tfl_op.builtin_options_2()) {
+    TflOptions2 tfl_options2;
+    tfl_options2.type = tfl_op.builtin_options_2_type();
+    tfl_options2.value =
+        tflite::BuiltinOptions2Union::UnPack(opts2, tfl_options2.type, nullptr);
+    litert::internal::SetTflOptions2(litert_op, std::move(tfl_options2));
+  }
 
   // OP CODE
 
   LITERT_RETURN_IF_ERROR(context.SetOpCode(litert_op, tfl_op.opcode_index()));
   litert_op.SetOpIndex(op_index);
+  litert_op.SetFbOp(&tfl_op);
 
   return kLiteRtStatusOk;
 }
@@ -316,6 +325,8 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context, LiteRtSubgraphT& parent,
   if (tfl_tensor.name()) {
     litert_tensor.SetName(tfl_tensor.name()->str());
   }
+
+  litert_tensor.SetExternalBufferId(tfl_tensor.external_buffer());
 
   if (tfl_tensor.is_variable()) {
     // TODO: b/365299994 - Support variable tensors.

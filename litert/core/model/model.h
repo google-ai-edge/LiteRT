@@ -423,6 +423,11 @@ class LiteRtTensorT {
     tensor_type_ = std::forward<Arg>(arg);
   }
 
+  uint32_t ExternalBufferId() const { return external_buffer_id_; }
+  void SetExternalBufferId(uint32_t external_buffer_id) {
+    external_buffer_id_ = external_buffer_id;
+  }
+
   // Get a new buffer that will live as long as this tensor. Used for storing
   // various buffers passed through c-api (dims, quantization etc).
   // NOTE: This is just scratch data unrelated to weights buffer.
@@ -461,6 +466,7 @@ class LiteRtTensorT {
   std::string name_;
 
   std::uint32_t tensor_index_ = 0;
+  uint32_t external_buffer_id_ = 0;
 
   std::vector<UserData> user_data_;
 };
@@ -529,10 +535,14 @@ class LiteRtOpT {
   void SetCustomOptions(Args&&... args) {
     custom_options_ =
         ::litert::OwningBufferRef<uint8_t>(std::forward<Args>(args)...);
+    fb_op_ = nullptr;
   }
 
   // Sets the custom options to zero length buffer.
-  void ClearCustomOptions() { custom_options_.Reset(); }
+  void ClearCustomOptions() {
+    custom_options_.Reset();
+    fb_op_ = nullptr;
+  }
 
   // Get the op code.
   LiteRtOpCode OpCode() const { return litert_op_code_; }
@@ -540,7 +550,11 @@ class LiteRtOpT {
   // Set the op code.
   void SetOpCode(LiteRtOpCode litert_op_code) {
     litert_op_code_ = litert_op_code;
+    fb_op_ = nullptr;
   }
+
+  const tflite::Operator* FbOp() const { return fb_op_; }
+  void SetFbOp(const tflite::Operator* fb_op) { fb_op_ = fb_op; }
 
   // Get the custom code if the op is a custom op.
   ::litert::Expected<absl::string_view> CustomCode() const {
@@ -605,6 +619,7 @@ class LiteRtOpT {
   int32_t tfl_op_code_ind_ = litert::internal::kDispatchOpCodeTflInd;
   ::litert::internal::TflOptions tfl_option_;
   ::litert::internal::TflOptions2 tfl_option_2_;
+  const tflite::Operator* fb_op_ = nullptr;
 };
 
 // Clears any attribute data and sets the op to be a dispatch op.
@@ -1224,16 +1239,19 @@ namespace litert::internal {
 template <class Arg>
 void SetTflOptions(LiteRtOpT& litert_op, Arg&& arg) {
   litert_op.tfl_option_ = std::forward<Arg>(arg);
+  litert_op.fb_op_ = nullptr;
 }
 
 template <class Arg>
 void SetTflOptions2(LiteRtOpT& litert_op, Arg&& arg) {
   litert_op.tfl_option_2_ = std::forward<Arg>(arg);
+  litert_op.fb_op_ = nullptr;
 }
 
 inline void ClearTflOptions(LiteRtOpT& litert_op) {
   litert_op.tfl_option_2_.Reset();
   litert_op.tfl_option_.Reset();
+  litert_op.fb_op_ = nullptr;
 }
 
 template <class Arg>
