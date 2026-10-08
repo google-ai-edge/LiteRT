@@ -174,6 +174,7 @@ cc_library(
         "@ml_drift//ml_drift/webgpu:webgpu_headers",
         "@ml_drift//ml_drift/webgpu:webgpu_weights_manager",
         # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate:ml_drift_webgpu_benchmark_util",
+        "//litert/c:litert_common",
         "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/delegate/shared_memory_manager",
         "//ml_drift_delegate/delegate/shared_memory_manager:gf32_graph_adapter",

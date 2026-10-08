@@ -582,20 +582,21 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     // TODO(b/456318365): Handle weight access request to support multiple
     // backends.
     request.opencl = false;
-    absl::Status prepare_status = weight_loader_->PrepareAccess(request, env);
+    LiteRtStatus prepare_status = weight_loader_->PrepareAccess(request, env);
 #ifdef __EMSCRIPTEN__
-    if (!prepare_status.ok()) {
+    if (prepare_status != kLiteRtStatusOk) {
       LITERT_LOG(LITERT_WARNING,
                  "External weight loader: failed to prepare CPU access: %s. "
                  "Continuing as weights may be provided via other means (e.g. "
                  "streaming).",
-                 std::string(prepare_status.message()).c_str());
+                 LiteRtGetStatusString(prepare_status));
     }
 #else
-    if (!prepare_status.ok()) {
+    if (prepare_status != kLiteRtStatusOk) {
       weight_loader_ = nullptr;
-      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                std::string(prepare_status.message()));
+      return litert::Unexpected(prepare_status,
+                                "External weight loader: failed to prepare CPU "
+                                "access to external weights.");
     }
 #endif
   }
@@ -611,15 +612,14 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
              "delegates",
              weight_infos.size());
   for (const auto& info : weight_infos) {
-    if (info.packing.empty()) {
+    if (info.packing == nullptr || info.packing[0] == '\0') {
       LITERT_LOG(LITERT_DEBUG,
                  "  Weight tensor: external_buffer_id=%u, packing=<none>",
                  info.external_buffer_id);
     } else {
       LITERT_LOG(LITERT_DEBUG,
-                 "  Weight tensor: external_buffer_id=%u, packing=%.*s",
-                 info.external_buffer_id, static_cast<int>(info.packing.size()),
-                 info.packing.data());
+                 "  Weight tensor: external_buffer_id=%u, packing=%s",
+                 info.external_buffer_id, info.packing);
     }
   }
 #endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)

@@ -492,6 +492,7 @@ cc_library(
         # "@mediapipe//mediapipe/tasks/web/genai:__subpackages__",
         # "//litert:__subpackages__",
         # "//ml_drift_delegate:__subpackages__",
+        # "//third_party/odml/litert/weight_loader:__pkg__",
         # "//third_party/odml/litert_lm/c:__pkg__",
         # "//third_party/odml/infra/ml_drift_delegate:__pkg__",
         # "//third_party/odml/infra/fabric:__subpackages__",

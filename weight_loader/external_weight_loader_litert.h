@@ -23,7 +23,6 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
@@ -90,8 +89,11 @@ using LiteRtTensorBufferPtr =
 struct WeightInfo {
   // The ID of the external buffer that contains the tensor data.
   uint32_t external_buffer_id;
-  // The packing format of the tensor data.
-  absl::string_view packing;
+  // The packing format of the tensor data as a NULL-terminated string for ABI
+  // stability. Never null. An empty string means no packing was specified.
+  // Points into the model flatbuffer (or static storage), so it remains valid
+  // for the lifetime of the `WeightLoader`.
+  const char* packing = "";
 };
 
 // A request to access the data of an external weight tensor.
@@ -107,6 +109,10 @@ struct WeightAccessRequest {
 struct WeightAccess;
 
 // An abstract class that defines the interface for loading external weights.
+//
+// Instances of this class are handed to dynamically loaded accelerators (e.g.
+// prebuilt GPU accelerator shared libraries), so its virtual methods must be
+// ABI-stable.
 class WeightLoader {
  public:
   virtual ~WeightLoader() = default;
@@ -119,12 +125,12 @@ class WeightLoader {
   // `SetExternalWeightByBuffer`. The `request` parameter specifies how the
   // data should be accessed (e.g., on the CPU or on an OpenCL device). The
   // `env` parameter is the LiteRT environment.
-  virtual absl::Status PrepareAccess(const WeightAccessRequest& request,
+  virtual LiteRtStatus PrepareAccess(const WeightAccessRequest& request,
                                      LiteRtEnvironmentT* env) = 0;
 
   // Prepares access to one external weight tensor. This is used by delegates
   // that only need a CPU mapping while a specific tensor is being uploaded.
-  virtual absl::Status PrepareAccessForBuffer(
+  virtual LiteRtStatus PrepareAccessForBuffer(
       uint32_t external_buffer_id, const WeightAccessRequest& request,
       LiteRtEnvironmentT* env) = 0;
 
@@ -140,7 +146,7 @@ class WeightLoader {
 
   // Sets the external weight tensor with the given buffer ID. The `access`
   // parameter provides access to the tensor data.
-  virtual absl::Status SetExternalWeightByBuffer(uint32_t external_buffer_id,
+  virtual LiteRtStatus SetExternalWeightByBuffer(uint32_t external_buffer_id,
                                                  WeightAccess access) = 0;
 
   // Gets access to the data of the external weight tensor with the given
@@ -149,22 +155,21 @@ class WeightLoader {
       uint32_t external_buffer_id) const = 0;
 
 #if defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
-  virtual absl::Status UploadWeightsOnWeb(
+  virtual LiteRtStatus UploadWeightsOnWeb(
       const wgpu::Queue& queue,
       const absl::flat_hash_map<int, wgpu::Buffer>& tfl_id_to_wgpu_buffer) {
-    return absl::UnimplementedError(
-        "UploadWeightsOnWeb is not implemented by default.");
+    return kLiteRtStatusErrorUnsupported;
   }
 #endif  // defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
 
   // Marks the host mapping for the external weight tensor as discardable.
-  virtual absl::Status DiscardExternalWeightByBuffer(
+  virtual LiteRtStatus DiscardExternalWeightByBuffer(
       uint32_t external_buffer_id) = 0;
 
   // Releases the prepared host/device access for one external weight tensor.
   // Callers must only use this after all consumers have finished reading the
   // data returned by GetExternalWeightByBuffer().
-  virtual absl::Status ReleaseExternalWeightByBuffer(
+  virtual LiteRtStatus ReleaseExternalWeightByBuffer(
       uint32_t external_buffer_id) = 0;
 };
 

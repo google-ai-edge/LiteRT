@@ -47,6 +47,7 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
@@ -738,9 +739,8 @@ void ParseFlatBuffer(const tflite::Model& model,
       info.group_id = buffer->group();
       info.offset = buffer->offset();
       info.length = buffer->length();
-      info.packing = buffer->packing()
-                         ? absl::string_view(buffer->packing()->string_view())
-                         : absl::string_view();
+      // FlatBuffers strings are always NUL-terminated.
+      info.packing = buffer->packing() ? buffer->packing()->c_str() : "";
 
       absl::StatusOr<LiteRtRankedTensorType> ranked_type =
           BuildRankedTensorType(*tensor_fb);
@@ -825,45 +825,25 @@ class LiteRtWeightLoader : public WeightLoader {
                                                       : it->second;
   }
 
-  absl::Status PrepareAccess(const WeightAccessRequest& request,
+  LiteRtStatus PrepareAccess(const WeightAccessRequest& request,
                              LiteRtEnvironmentT* env) override {
-    absl::flat_hash_set<uint32_t> prepared_ids;
-    for (const auto& [external_buffer_id, _] : entries_) {
-      const uint32_t canonical_external_buffer_id =
-          GetCanonicalExternalBufferId(external_buffer_id);
-      if (!prepared_ids.insert(canonical_external_buffer_id).second) {
-        continue;
-      }
-      LITERT_RETURN_IF_ERROR(
-          PrepareAccessForBuffer(canonical_external_buffer_id, request, env));
-    }
-    return absl::OkStatus();
+    return ToLiteRtStatus(PrepareAccessImpl(request, env), "PrepareAccess",
+                          kPrepareAccessFailureLogSeverity);
   }
 
-  absl::Status PrepareAccessForBuffer(uint32_t external_buffer_id,
+  LiteRtStatus PrepareAccessForBuffer(uint32_t external_buffer_id,
                                       const WeightAccessRequest& request,
                                       LiteRtEnvironmentT* env) override {
-    auto it = entries_.find(GetCanonicalExternalBufferId(external_buffer_id));
-    if (it == entries_.end()) {
-      return absl::InvalidArgumentError(
-          absl::StrFormat("Unknown external buffer id %u", external_buffer_id));
-    }
-    const LiteRtWeightInfo& info = infos_[it->second.info_index];
-    LITERT_ASSIGN_OR_RETURN(WeightSource source, ResolveWeightSource(info));
-    return PrepareEntryAccess(runtime_context_, it->second, info, source,
-                              request, env);
+    return ToLiteRtStatus(
+        PrepareAccessForBufferImpl(external_buffer_id, request, env),
+        "PrepareAccessForBuffer", kPrepareAccessFailureLogSeverity);
   }
 
-  absl::Status SetExternalWeightByBuffer(uint32_t external_buffer_id,
+  LiteRtStatus SetExternalWeightByBuffer(uint32_t external_buffer_id,
                                          WeightAccess access) override {
-    auto it = entries_.find(GetCanonicalExternalBufferId(external_buffer_id));
-    if (it == entries_.end()) {
-      return absl::InvalidArgumentError(
-          absl::StrFormat("Unknown external buffer id %u", external_buffer_id));
-    }
-    ReleaseEntry(it->second);
-    it->second.access = std::move(access);
-    return absl::OkStatus();
+    return ToLiteRtStatus(
+        SetExternalWeightByBufferImpl(external_buffer_id, std::move(access)),
+        "SetExternalWeightByBuffer");
   }
 
   const WeightAccess* GetExternalWeightByBuffer(
@@ -876,9 +856,97 @@ class LiteRtWeightLoader : public WeightLoader {
   }
 
 #if defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
-  absl::Status UploadWeightsOnWeb(const wgpu::Queue& queue,
+  LiteRtStatus UploadWeightsOnWeb(const wgpu::Queue& queue,
                                   const absl::flat_hash_map<int, wgpu::Buffer>&
                                       tfl_id_to_wgpu_buffer) override {
+    return ToLiteRtStatus(UploadWeightsOnWebImpl(queue, tfl_id_to_wgpu_buffer),
+                          "UploadWeightsOnWeb");
+  }
+#endif  // defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
+
+  LiteRtStatus DiscardExternalWeightByBuffer(
+      uint32_t external_buffer_id) override {
+    return ToLiteRtStatus(DiscardExternalWeightByBufferImpl(external_buffer_id),
+                          "DiscardExternalWeightByBuffer");
+  }
+
+  LiteRtStatus ReleaseExternalWeightByBuffer(
+      uint32_t external_buffer_id) override {
+    return ToLiteRtStatus(ReleaseExternalWeightByBufferImpl(external_buffer_id),
+                          "ReleaseExternalWeightByBuffer");
+  }
+
+ private:
+  // On the web, CPU access preparation is expected to fail for weights that
+  // are streamed in later, and callers ignore those failures. Avoid spamming
+  // the log with errors in that case.
+#if defined(__EMSCRIPTEN__)
+  static constexpr LiteRtLogSeverity kPrepareAccessFailureLogSeverity =
+      kLiteRtLogSeverityDebug;
+#else
+  static constexpr LiteRtLogSeverity kPrepareAccessFailureLogSeverity =
+      kLiteRtLogSeverityError;
+#endif  // defined(__EMSCRIPTEN__)
+
+  // Converts an internal `absl::Status` to the ABI-stable `LiteRtStatus` that
+  // is returned across the `WeightLoader` interface. The error message can't
+  // cross the interface, so it is logged here instead.
+  static LiteRtStatus ToLiteRtStatus(
+      const absl::Status& status, const char* method,
+      LiteRtLogSeverity severity = kLiteRtLogSeverityError) {
+    if (status.ok()) {
+      return kLiteRtStatusOk;
+    }
+    LITERT_LOG(severity, "WeightLoader::%s failed: %s", method,
+               status.ToString().c_str());
+    return litert::ErrorStatusBuilder(status).NoLog();
+  }
+
+  absl::Status PrepareAccessImpl(const WeightAccessRequest& request,
+                                 LiteRtEnvironmentT* env) {
+    absl::flat_hash_set<uint32_t> prepared_ids;
+    for (const auto& [external_buffer_id, _] : entries_) {
+      const uint32_t canonical_external_buffer_id =
+          GetCanonicalExternalBufferId(external_buffer_id);
+      if (!prepared_ids.insert(canonical_external_buffer_id).second) {
+        continue;
+      }
+      LITERT_RETURN_IF_ERROR(PrepareAccessForBufferImpl(
+          canonical_external_buffer_id, request, env));
+    }
+    return absl::OkStatus();
+  }
+
+  absl::Status PrepareAccessForBufferImpl(uint32_t external_buffer_id,
+                                          const WeightAccessRequest& request,
+                                          LiteRtEnvironmentT* env) {
+    auto it = entries_.find(GetCanonicalExternalBufferId(external_buffer_id));
+    if (it == entries_.end()) {
+      return absl::InvalidArgumentError(
+          absl::StrFormat("Unknown external buffer id %u", external_buffer_id));
+    }
+    const LiteRtWeightInfo& info = infos_[it->second.info_index];
+    LITERT_ASSIGN_OR_RETURN(WeightSource source, ResolveWeightSource(info));
+    return PrepareEntryAccess(runtime_context_, it->second, info, source,
+                              request, env);
+  }
+
+  absl::Status SetExternalWeightByBufferImpl(uint32_t external_buffer_id,
+                                             WeightAccess access) {
+    auto it = entries_.find(GetCanonicalExternalBufferId(external_buffer_id));
+    if (it == entries_.end()) {
+      return absl::InvalidArgumentError(
+          absl::StrFormat("Unknown external buffer id %u", external_buffer_id));
+    }
+    ReleaseEntry(it->second);
+    it->second.access = std::move(access);
+    return absl::OkStatus();
+  }
+
+#if defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
+  absl::Status UploadWeightsOnWebImpl(
+      const wgpu::Queue& queue,
+      const absl::flat_hash_map<int, wgpu::Buffer>& tfl_id_to_wgpu_buffer) {
     if (g_web_weight_upload_callback == nullptr) {
       return absl::FailedPreconditionError(
           "Web weight upload callback is not registered.");
@@ -902,8 +970,7 @@ class LiteRtWeightLoader : public WeightLoader {
   }
 #endif  // defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
 
-  absl::Status DiscardExternalWeightByBuffer(
-      uint32_t external_buffer_id) override {
+  absl::Status DiscardExternalWeightByBufferImpl(uint32_t external_buffer_id) {
     auto it = entries_.find(GetCanonicalExternalBufferId(external_buffer_id));
     if (it == entries_.end()) {
       return absl::InvalidArgumentError(
@@ -915,8 +982,7 @@ class LiteRtWeightLoader : public WeightLoader {
     return DiscardCpuMappingPages(*it->second.cpu_mapping);
   }
 
-  absl::Status ReleaseExternalWeightByBuffer(
-      uint32_t external_buffer_id) override {
+  absl::Status ReleaseExternalWeightByBufferImpl(uint32_t external_buffer_id) {
     auto it = entries_.find(GetCanonicalExternalBufferId(external_buffer_id));
     if (it == entries_.end()) {
       return absl::InvalidArgumentError(
@@ -926,7 +992,6 @@ class LiteRtWeightLoader : public WeightLoader {
     return absl::OkStatus();
   }
 
- private:
   absl::StatusOr<WeightSource> ResolveWeightSource(
       const LiteRtWeightInfo& info) {
     // Check weight in memory map first.

@@ -72,6 +72,7 @@
 #include "tflite/c/common.h"
 
 #ifdef __EMSCRIPTEN__
+#include "litert/c/litert_common.h"
 #include "weight_loader/external_weight_loader_litert.h"
 #endif  // __EMSCRIPTEN__
 
@@ -487,8 +488,13 @@ absl::Status GpuInferenceContextWebGpu::UploadWeightsOnWeb(
     tfl_id_to_wgpu_buffer[it->second] = wgpu_tensor->GetBufferHandle();
   }
 
-  ABSL_RETURN_IF_ERROR(weight_loader->UploadWeightsOnWeb(
-      backend_->wgpu_env().queue(), tfl_id_to_wgpu_buffer));
+  if (LiteRtStatus status = weight_loader->UploadWeightsOnWeb(
+          backend_->wgpu_env().queue(), tfl_id_to_wgpu_buffer);
+      status != kLiteRtStatusOk) {
+    return absl::InternalError(
+        absl::StrCat("Failed to upload external weights on web: ",
+                     LiteRtGetStatusString(status)));
+  }
 
   return absl::OkStatus();
 #else
