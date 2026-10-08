@@ -21,6 +21,7 @@ limitations under the License.
 #include <vector>
 
 #include "tensorflow/compiler/mlir/quantization/tensorflow/python/py_function_lib.h"
+#include "tensorflow/core/platform/macros.h"
 
 namespace tflite {
 
