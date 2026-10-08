@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # Keep GitHub Actions up to date
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    cooldown:
+      default-days: 7
+    groups:
+      # Group all github actions updates together to reduce PR noise
+      actions-dependencies:
+        patterns:
+          - "*"
