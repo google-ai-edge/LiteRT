@@ -209,6 +209,7 @@ cc_library(
         "//tflite/converter/schema:schema_utils",
         "//tflite:allocation",
         "//tflite:array",
+        "//tflite:builtin_ops",
         "//tflite:external_cpu_backend_context",
         "//tflite:graph_info",
         "//tflite:interpreter_options_header",
