@@ -6,9 +6,7 @@
 > to establish a CPU performance and numerical baseline for the **LiteRT-based
 > Tensor API** Gemma 4 implementation (`CompiledModel` + XNNPACK delegate).
 > Validated optimizations from this experiment will eventually be migrated into
-> the backend-agnostic implementations in
-> `tensor/examples/gemma4/` and
-> `tensor/models/gemma4/`.
+> the backend-agnostic implementation in `tensor/examples/gemma4/`.
 
 ## What This Experiment Explores
 
@@ -135,3 +133,9 @@ KV capacity scales from 256 to 16,896:
   (`main.cc`, `runner.h`, `kv_bank.h`, `host_buffer.h`).
 - `:bundle_loader` — unpacked `.litertlm` published-bundle and KV spec loader
   (`bundle_loader.{h,cc}`, `kv_cache.h`).
+- `:graph` — Gemma 4 E2B Tensor API graph layers, dynamic RoPE slicing, and
+  mobile-CT static INT8 linear layers (`gemma4_graph.h`, `transformer.h`,
+  `attention.h`, `feed_forward_network.h`, `mobile_fully_connected.h`,
+  `bundle_matched_ops.h`, `rope.h`, `active_graph_context.h`).
+- `:model_builder` — two-signature (`prefill`/`decode`) TFLite FlatBuffer graph
+  authoring via `AddGemma4Signatures` (`model_builder.{h,cc}`).
