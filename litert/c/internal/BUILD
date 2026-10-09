@@ -25,6 +25,7 @@ load(
     "//litert/build_common:special_rule.bzl",
     "friends_of_litert_runtime_builtin_static",
     "get_compatible_with_portable",
+    "litert_jni_copts",
     "litert_jni_friends",
 )
 
@@ -483,6 +484,7 @@ cc_library(
     srcs = ["litert_logging.cc"],
     hdrs = ["litert_logging.h"],
     compatible_with = get_compatible_with_portable(),
+    copts = litert_jni_copts(),
     linkopts = select({
         "//litert:android": ["-llog"],
         "//conditions:default": [],
@@ -713,6 +715,7 @@ cc_library(
 cc_library(
     name = "litert_runtime_builtin_none",
     srcs = ["litert_runtime_builtin.cc"],
+    copts = litert_jni_copts(),
     local_defines = ["LITERT_CC_RUNTIME_BUILTIN_NONE"],
     visibility = litert_jni_friends() + [
         "//litert/cc/internal:__pkg__",

@@ -44,6 +44,7 @@ load(
     "gles_headers",
     "gles_linkopts",
     "litert_android_linkopts",
+    "litert_jni_copts",
     "litert_metal_linkopts",
     "litert_metal_opts",
 )
@@ -68,6 +69,7 @@ cc_library(
     srcs = ["litert_common.cc"],
     hdrs = ["litert_common.h"],
     compatible_with = get_compatible_with_portable(),
+    copts = litert_jni_copts(),
     deps = ["//litert/build_common:build_config"],
 )
 
@@ -125,6 +127,7 @@ litert_c_api_library(
     name = "litert_metrics",
     srcs = ["litert_metrics.cc"],
     hdrs = ["litert_metrics.h"],
+    copts = litert_jni_copts(),
     # We want `compatible_with = get_compatible_with_portable()` only
     # for the header target, not for the impl target, to avoid having
     # to propagage similar `compatible_with` declarations into all the
@@ -176,6 +179,7 @@ litert_c_api_library(
     name = "litert_environment_options",
     srcs = ["litert_environment_options.cc"],
     hdrs = ["litert_environment_options.h"],
+    copts = litert_jni_copts(),
     # We want `compatible_with = get_compatible_with_portable()` only
     # for the header target, not for the impl target, to avoid having
     # to propagage similar `compatible_with` declarations into all the
@@ -211,6 +215,7 @@ cc_library(
     srcs = ["litert_layout.cc"],
     hdrs = ["litert_layout.h"],
     compatible_with = get_compatible_with_portable(),
+    copts = litert_jni_copts(),
     deps = [":litert_common"],
 )
 
@@ -558,6 +563,7 @@ litert_c_api_library(
     name = "litert_options",
     srcs = ["litert_options.cc"],
     hdrs = ["litert_options.h"],
+    copts = litert_jni_copts(),
     # We want `compatible_with = get_compatible_with_portable()` only
     # for the header target, not for the impl target, to avoid having
     # to propagage similar `compatible_with` declarations into all the
@@ -679,6 +685,7 @@ litert_c_api_library(
     name = "litert_opaque_options",
     srcs = ["litert_opaque_options.cc"],
     hdrs = ["litert_opaque_options.h"],
+    copts = litert_jni_copts(),
     # We want `compatible_with = get_compatible_with_portable()` only
     # for the header target, not for the impl target, to avoid having
     # to propagage similar `compatible_with` declarations into all the

@@ -15,6 +15,7 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vis")
+load("//litert/build_common:special_rule.bzl", "litert_jni_copts")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -156,6 +157,7 @@ cc_library(
     name = "environment_options",
     srcs = ["environment_options.cc"],
     hdrs = ["environment_options.h"],
+    copts = litert_jni_copts(),
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
@@ -306,6 +308,7 @@ cc_library(
     name = "litert_toml_parser",
     srcs = ["litert_toml_parser.cc"],
     hdrs = ["litert_toml_parser.h"],
+    copts = litert_jni_copts(),
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
