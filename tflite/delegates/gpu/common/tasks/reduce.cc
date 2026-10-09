@@ -15,9 +15,11 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/common/tasks/reduce.h"
 
+#include <map>
 #include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/strings/substitute.h"
 #include "tflite/delegates/gpu/common/status.h"

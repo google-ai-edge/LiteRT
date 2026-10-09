@@ -15,9 +15,13 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/common/tasks/conv_weights_converter_test_util.h"
 
+#include <cstdint>
+#include <cstring>
 #include <memory>
+#include <utility>
 #include <vector>
 
+#include "absl/types/span.h"
 #include "tflite/delegates/gpu/common/status.h"
 #include "tflite/delegates/gpu/common/task/testing_util.h"
 #include "tflite/delegates/gpu/common/task/weights_conversion.h"
