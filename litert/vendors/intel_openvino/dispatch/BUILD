@@ -31,10 +31,14 @@ litert_dynamic_lib(
         "openvino_shared_core.cc",
         "openvino_tensor_buffer.cc",
         "weight_bank_runtime.cc",
-    ],
+    ] + select({
+        "@platforms//os:windows": ["mapped_pages_win.cc"],
+        "//conditions:default": ["mapped_pages_linux.cc"],
+    }),
     hdrs = [
         "device_context.h",
         "invocation_context.h",
+        "mapped_pages.h",
         "npu_hal_wrapper.h",
         "openvino_shared_core.h",
         "openvino_tensor_buffer.h",
@@ -119,7 +123,10 @@ litert_bin(
         "openvino_shared_core.cc",
         "openvino_tensor_buffer.cc",
         "weight_bank_runtime.cc",
-    ],
+    ] + select({
+        "@platforms//os:windows": ["mapped_pages_win.cc"],
+        "//conditions:default": ["mapped_pages_linux.cc"],
+    }),
     copts = ["-fexceptions"] + select({
         "//litert/runtime/dispatch:windows_msvc": [
             "/DLITERT_COMPILE_LIBRARY",
@@ -180,6 +187,7 @@ litert_lib(
     hdrs = [
         "device_context.h",
         "invocation_context.h",
+        "mapped_pages.h",
         "npu_hal_wrapper.h",
         "openvino_shared_core.h",
         "openvino_tensor_buffer.h",
