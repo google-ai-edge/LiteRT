@@ -467,13 +467,11 @@ android_library(
 # runtime), with both the Compiled Model API and also the older TFLite Interpreter API.
 kt_android_library(
     name = "litert_api_no_jni",
-    srcs = LITERT_API_SRCS_ALL,
-    exports_manifest = 1,
-    javacopts = JAVACOPTS,
-    manifest = "src/main/AndroidManifest.xml",
-    proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = litert_jni_friends(),
-    deps = LITERT_KOTLIN_DEPS_ALL,
+    exports = [
+        ":litert_compiled_model_api_no_jni",
+        ":litert_interpreter_api_no_jni",
+    ],
 )
 
 # Pure Java/Kotlin API library (no native deps at build time, ":litert_api_jni" is needed at
