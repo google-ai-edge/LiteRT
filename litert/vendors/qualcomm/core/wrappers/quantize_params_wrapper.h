@@ -152,6 +152,10 @@ class BwAxisScaleOffsetQuantizeParamsWrapper final {
 
   void SetAxis(const std::int32_t axis);
 
+  std::int32_t GetAxis() const {
+    return qnn_quantize_param_.bwAxisScaleOffsetEncoding.axis;
+  }
+
   std::uint32_t GetBitwidth() const {
     return qnn_quantize_param_.bwAxisScaleOffsetEncoding.bitwidth;
   }
@@ -166,10 +170,39 @@ class BwAxisScaleOffsetQuantizeParamsWrapper final {
   Qnn_QuantizeParams_t qnn_quantize_param_ = QNN_QUANTIZE_PARAMS_INIT;
 };
 
+class BwFloatBlockQuantizeParamsWrapper final {
+ public:
+  explicit BwFloatBlockQuantizeParamsWrapper(
+      std::uint32_t bitwidth, absl::Span<const std::uint32_t> block_sizes,
+      absl::Span<const float> scales,
+      absl::Span<const std::int32_t> zero_points);
+  explicit BwFloatBlockQuantizeParamsWrapper(
+      const Qnn_BwFloatBlockEncoding_t& encoding,
+      absl::Span<const std::uint32_t> dimensions);
+
+  bool operator==(const BwFloatBlockQuantizeParamsWrapper& other) const;
+
+  void CloneTo(Qnn_QuantizeParams_t& dst);
+  std::uint32_t GetBitwidth() const { return bitwidth_; }
+  void SetBitwidth(std::uint32_t bitwidth) { bitwidth_ = bitwidth; }
+  absl::Span<std::uint32_t> GetBlockSizes() {
+    return {block_sizes_.data(), block_sizes_.size()};
+  }
+  absl::Span<Qnn_FloatScaleOffset_t> GetScaleOffsets() {
+    return {scale_offsets_.data(), scale_offsets_.size()};
+  }
+
+ private:
+  std::uint32_t bitwidth_;
+  std::vector<std::uint32_t> block_sizes_;
+  std::vector<Qnn_FloatScaleOffset_t> scale_offsets_;
+};
+
 using QuantizeParamsWrapperVariant = std::variant<
     UndefinedQuantizeParamsWrapper, ScaleOffsetQuantizeParamsWrapper,
     AxisScaleOffsetQuantizeParamsWrapper,
-    BwAxisScaleOffsetQuantizeParamsWrapper, BwScaleOffsetQuantizeParamsWrapper>;
+    BwAxisScaleOffsetQuantizeParamsWrapper, BwScaleOffsetQuantizeParamsWrapper,
+    BwFloatBlockQuantizeParamsWrapper>;
 
 }  // namespace qnn
 
