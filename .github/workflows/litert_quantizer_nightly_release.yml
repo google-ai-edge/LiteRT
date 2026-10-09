@@ -91,6 +91,7 @@ jobs:
   run-pip-install-and-import-test:
     needs: build-and-release-nightly
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
 
@@ -109,12 +110,14 @@ jobs:
         env:
           VERSION: ${{ needs.build-and-release-nightly.outputs.version }}
         run: |
-          # A new release can take a few minutes to show up on PyPI.
-          for attempt in 1 2 3 4 5; do
-            python -m pip install "litert-quantizer-nightly==${VERSION}" && exit 0
-            sleep 60
-          done
-          exit 1
+          # Look up the wheel via the per-version JSON API instead of
+          # `pip install ...==${VERSION}`: PyPI's CDN can keep serving a stale
+          # project index after an upload, but this URL didn't exist before
+          # the upload, so it can't be stale.
+          WHEEL_URL=$(curl -fsSL --retry 5 --retry-delay 60 --retry-all-errors \
+            "https://pypi.org/pypi/litert-quantizer-nightly/${VERSION}/json" \
+            | python -c 'import json, sys; print(next(u["url"] for u in json.load(sys.stdin)["urls"] if u["packagetype"] == "bdist_wheel"))')
+          python -m pip install "litert-quantizer-nightly @ ${WHEEL_URL}"
 
       - name: Import litert-quantizer
         run: |
