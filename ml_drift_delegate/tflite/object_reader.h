@@ -348,6 +348,11 @@ class ObjectReader {
 
   ::ml_drift::Value* AddConstInput(int index, const SizedLayout& layout);
 
+  // Adds a float16 constant input as a float32 graph tensor, converting the
+  // data on the host.
+  ::ml_drift::Value* AddFloat16ConstAsFloat32Input(int index,
+                                                   const SizedLayout& layout);
+
  private:
   ::ml_drift::GraphFloat32* graph_;
   TfLiteContext* context_;
