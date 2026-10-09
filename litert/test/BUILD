@@ -516,6 +516,7 @@ exports_files(
     srcs = [
         "litert_c_api_dependency_test.sh",
         "litert_compiler_plugin_symbol_test.sh",
+        "litert_jni_symbol_test.sh",
         "minimal_compiled_model_symbol_test.sh",
     ] + glob([
         "testdata/**",

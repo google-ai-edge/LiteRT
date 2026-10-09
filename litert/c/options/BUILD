@@ -53,7 +53,6 @@ cc_library(
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -105,6 +104,7 @@ cc_library(
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_common",
         "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
     # Keep the symbols in libLiteRt.dylib.
@@ -139,7 +139,7 @@ cc_library(
         "//litert/core:litert_toml_parser",
         "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -168,7 +168,7 @@ cc_library(
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -212,6 +212,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
     # Keep the symbols in libLiteRtRuntimeCApi.dylib.
@@ -255,6 +256,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
     # Keep the symbols in libLiteRt.dylib.
@@ -295,6 +297,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
     ],
     # Keep the symbols in libLiteRt.dylib.
     alwayslink = 1,

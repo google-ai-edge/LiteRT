@@ -20,7 +20,6 @@
 #include <string>
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_macros.h"
@@ -84,42 +83,32 @@ LiteRtStatus LrtGetOpaqueCpuOptionsData(const LrtCpuOptions* options,
 
   std::string toml_data;
   if (options->kernel_mode.has_value()) {
-    absl::StrAppend(
-        &toml_data,
-        absl::StrFormat("kernel_mode = \"%s\"\n",
-                        CpuKernelModeToString(*options->kernel_mode)));
+    absl::StrAppend(&toml_data, "kernel_mode = \"",
+                    CpuKernelModeToString(*options->kernel_mode), "\"\n");
   }
   if (options->enable_ynnpack.has_value()) {
-    absl::StrAppend(
-        &toml_data,
-        absl::StrFormat("enable_ynnpack = %s\n",
-                        *options->enable_ynnpack ? "true" : "false"));
+    absl::StrAppend(&toml_data, "enable_ynnpack = ",
+                    *options->enable_ynnpack ? "true" : "false", "\n");
   }
   if (options->num_threads.has_value()) {
-    absl::StrAppend(&toml_data, absl::StrFormat("num_threads = %d\n",
-                                                *options->num_threads));
+    absl::StrAppend(&toml_data, "num_threads = ", *options->num_threads, "\n");
   }
   if (options->flags.has_value()) {
-    absl::StrAppend(&toml_data,
-                    absl::StrFormat("flags = %u\n", *options->flags));
+    absl::StrAppend(&toml_data, "flags = ", *options->flags, "\n");
   }
   if (options->hint_fully_delegated_to_single_delegate.has_value()) {
     absl::StrAppend(
-        &toml_data,
-        absl::StrFormat("hint_fully_delegated_to_single_delegate = %s\n",
-                        *options->hint_fully_delegated_to_single_delegate
-                            ? "true"
-                            : "false"));
+        &toml_data, "hint_fully_delegated_to_single_delegate = ",
+        *options->hint_fully_delegated_to_single_delegate ? "true" : "false",
+        "\n");
   }
   if (options->weight_cache_file_path.has_value()) {
-    absl::StrAppend(&toml_data,
-                    absl::StrFormat("weight_cache_file_path = \"%s\"\n",
-                                    *options->weight_cache_file_path));
+    absl::StrAppend(&toml_data, "weight_cache_file_path = \"",
+                    *options->weight_cache_file_path, "\"\n");
   }
   if (options->weight_cache_file_descriptor.has_value()) {
-    absl::StrAppend(&toml_data,
-                    absl::StrFormat("weight_cache_file_descriptor = %d\n",
-                                    *options->weight_cache_file_descriptor));
+    absl::StrAppend(&toml_data, "weight_cache_file_descriptor = ",
+                    *options->weight_cache_file_descriptor, "\n");
   }
 
   *identifier = LrtGetCpuOptionsIdentifier();

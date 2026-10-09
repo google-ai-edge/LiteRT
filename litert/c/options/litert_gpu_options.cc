@@ -18,10 +18,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <vector>
 
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
@@ -198,171 +198,198 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
   if (!options || !identifier || !payload || !payload_deleter) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  std::stringstream ss;
+  std::string toml_str;
   if (options->enable_constant_tensors_sharing.has_value()) {
-    ss << "enable_constant_tensors_sharing = "
-       << (options->enable_constant_tensors_sharing.value() ? "true" : "false")
-       << "\n";
+    absl::StrAppend(
+        &toml_str, "enable_constant_tensors_sharing = ",
+        options->enable_constant_tensors_sharing.value() ? "true" : "false",
+        "\n");
   }
   if (options->enable_infinite_float_capping.has_value()) {
-    ss << "enable_infinite_float_capping = "
-       << (options->enable_infinite_float_capping.value() ? "true" : "false")
-       << "\n";
+    absl::StrAppend(
+        &toml_str, "enable_infinite_float_capping = ",
+        options->enable_infinite_float_capping.value() ? "true" : "false",
+        "\n");
   }
   if (options->benchmark_mode.has_value()) {
-    ss << "benchmark_mode = "
-       << (options->benchmark_mode.value() ? "true" : "false") << "\n";
+    absl::StrAppend(&toml_str, "benchmark_mode = ",
+                    options->benchmark_mode.value() ? "true" : "false", "\n");
   }
   if (options->allow_src_quantized_fc_conv_ops.has_value()) {
-    ss << "allow_src_quantized_fc_conv_ops = "
-       << (options->allow_src_quantized_fc_conv_ops.value() ? "true" : "false")
-       << "\n";
+    absl::StrAppend(
+        &toml_str, "allow_src_quantized_fc_conv_ops = ",
+        options->allow_src_quantized_fc_conv_ops.value() ? "true" : "false",
+        "\n");
   }
   if (options->hint_waiting_for_completion.has_value()) {
-    ss << "hint_waiting_for_completion = "
-       << (options->hint_waiting_for_completion.value() ? "true" : "false")
-       << "\n";
+    absl::StrAppend(
+        &toml_str, "hint_waiting_for_completion = ",
+        options->hint_waiting_for_completion.value() ? "true" : "false", "\n");
   }
   if (options->kernel_batch_size.has_value()) {
-    ss << "kernel_batch_size = " << options->kernel_batch_size.value() << "\n";
+    absl::StrAppend(&toml_str,
+                    "kernel_batch_size = ", options->kernel_batch_size.value(),
+                    "\n");
   }
   if (options->shared_tensor_maps.has_value() &&
       *(options->shared_tensor_maps) != nullptr) {
-    ss << "shared_tensor_maps = "
-       << reinterpret_cast<int64_t>(*(options->shared_tensor_maps)) << "\n";
+    absl::StrAppend(&toml_str, "shared_tensor_maps = ",
+                    reinterpret_cast<int64_t>(*(options->shared_tensor_maps)),
+                    "\n");
   }
   if (options->precision.has_value()) {
-    ss << "precision = " << static_cast<int>(options->precision.value())
-       << "\n";
+    absl::StrAppend(&toml_str, "precision = ",
+                    static_cast<int>(options->precision.value()), "\n");
   }
   if (options->buffer_storage_type.has_value()) {
-    ss << "buffer_storage_type = "
-       << static_cast<int>(options->buffer_storage_type.value()) << "\n";
+    absl::StrAppend(&toml_str, "buffer_storage_type = ",
+                    static_cast<int>(options->buffer_storage_type.value()),
+                    "\n");
   }
   if (options->prefer_texture_weights.has_value()) {
-    ss << "prefer_texture_weights = "
-       << (options->prefer_texture_weights.value() ? "true" : "false") << "\n";
+    absl::StrAppend(&toml_str, "prefer_texture_weights = ",
+                    options->prefer_texture_weights.value() ? "true" : "false",
+                    "\n");
   }
   if (options->serialization_dir.has_value()) {
-    ss << "serialization_dir = \"" << options->serialization_dir.value()
-       << "\"\n";
+    absl::StrAppend(&toml_str, "serialization_dir = \"",
+                    options->serialization_dir.value(), "\"\n");
   }
   if (options->model_cache_key.has_value()) {
-    ss << "model_cache_key = \"" << options->model_cache_key.value() << "\"\n";
+    absl::StrAppend(&toml_str, "model_cache_key = \"",
+                    options->model_cache_key.value(), "\"\n");
   }
   if (options->serialize_program_cache.has_value()) {
-    ss << "serialize_program_cache = "
-       << (options->serialize_program_cache.value() ? "true" : "false") << "\n";
+    absl::StrAppend(&toml_str, "serialize_program_cache = ",
+                    options->serialize_program_cache.value() ? "true" : "false",
+                    "\n");
   }
   if (options->serialize_external_tensors.has_value()) {
-    ss << "serialize_external_tensors = "
-       << (options->serialize_external_tensors.value() ? "true" : "false")
-       << "\n";
+    absl::StrAppend(
+        &toml_str, "serialize_external_tensors = ",
+        options->serialize_external_tensors.value() ? "true" : "false", "\n");
   }
   if (options->external_tensors_mode.has_value()) {
-    ss << "external_tensors_mode = "
-       << (options->external_tensors_mode.value() ? "true" : "false") << "\n";
+    absl::StrAppend(&toml_str, "external_tensors_mode = ",
+                    options->external_tensors_mode.value() ? "true" : "false",
+                    "\n");
   }
   if (!options->external_tensor_patterns.empty()) {
-    ss << "external_tensor_patterns = [";
+    absl::StrAppend(&toml_str, "external_tensor_patterns = [");
     for (size_t i = 0; i < options->external_tensor_patterns.size(); ++i) {
-      ss << "\"" << options->external_tensor_patterns[i] << "\"";
-      if (i != options->external_tensor_patterns.size() - 1) ss << ", ";
+      absl::StrAppend(&toml_str, "\"", options->external_tensor_patterns[i],
+                      "\"");
+      if (i != options->external_tensor_patterns.size() - 1) {
+        absl::StrAppend(&toml_str, ", ");
+      }
     }
-    ss << "]\n";
+    absl::StrAppend(&toml_str, "]\n");
   }
   if (options->backend.has_value()) {
-    ss << "backend = " << static_cast<int>(options->backend.value()) << "\n";
+    absl::StrAppend(&toml_str,
+                    "backend = ", static_cast<int>(options->backend.value()),
+                    "\n");
   }
   if (options->priority.has_value()) {
-    ss << "priority = " << static_cast<int>(options->priority.value()) << "\n";
+    absl::StrAppend(&toml_str,
+                    "priority = ", static_cast<int>(options->priority.value()),
+                    "\n");
   }
   if (options->madvise_original_shared_tensors.has_value()) {
-    ss << "madvise_original_shared_tensors = "
-       << (options->madvise_original_shared_tensors.value() ? "true" : "false")
-       << "\n";
+    absl::StrAppend(
+        &toml_str, "madvise_original_shared_tensors = ",
+        options->madvise_original_shared_tensors.value() ? "true" : "false",
+        "\n");
   }
   if (options->num_steps_of_command_buffer_preparations.has_value()) {
-    ss << "num_steps_of_command_buffer_preparations = "
-       << static_cast<int>(
-              options->num_steps_of_command_buffer_preparations.value())
-       << "\n";
+    absl::StrAppend(
+        &toml_str, "num_steps_of_command_buffer_preparations = ",
+        static_cast<int>(
+            options->num_steps_of_command_buffer_preparations.value()),
+        "\n");
   }
   if (options->use_metal_argument_buffers.has_value()) {
-    ss << "use_metal_argument_buffers = "
-       << (options->use_metal_argument_buffers.value() ? "true" : "false")
-       << "\n";
+    absl::StrAppend(
+        &toml_str, "use_metal_argument_buffers = ",
+        options->use_metal_argument_buffers.value() ? "true" : "false", "\n");
   }
   if (options->enable_metal_residency_set.has_value()) {
-    ss << "enable_metal_residency_set = "
-       << (options->enable_metal_residency_set.value() ? "true" : "false")
-       << "\n";
+    absl::StrAppend(
+        &toml_str, "enable_metal_residency_set = ",
+        options->enable_metal_residency_set.value() ? "true" : "false", "\n");
   }
   if (options->wait_type.has_value()) {
-    ss << "wait_type = " << static_cast<int>(options->wait_type.value())
-       << "\n";
+    absl::StrAppend(&toml_str, "wait_type = ",
+                    static_cast<int>(options->wait_type.value()), "\n");
   }
   if (options->preferred_device_substr.has_value()) {
-    ss << "preferred_device_substr = \""
-       << options->preferred_device_substr.value() << "\"\n";
+    absl::StrAppend(&toml_str, "preferred_device_substr = \"",
+                    options->preferred_device_substr.value(), "\"\n");
   }
   if (options->hint_fully_delegated_to_single_delegate.has_value()) {
-    ss << "hint_fully_delegated_to_single_delegate = "
-       << (options->hint_fully_delegated_to_single_delegate.value() ? "true"
-                                                                    : "false")
-       << "\n";
+    absl::StrAppend(&toml_str, "hint_fully_delegated_to_single_delegate = ",
+                    options->hint_fully_delegated_to_single_delegate.value()
+                        ? "true"
+                        : "false",
+                    "\n");
   }
   if (options->num_threads_to_upload.has_value()) {
-    ss << "num_threads_to_upload = "
-       << static_cast<int>(options->num_threads_to_upload.value()) << "\n";
+    absl::StrAppend(&toml_str, "num_threads_to_upload = ",
+                    static_cast<int>(options->num_threads_to_upload.value()),
+                    "\n");
   }
   if (options->num_threads_to_compile.has_value()) {
-    ss << "num_threads_to_compile = "
-       << static_cast<int>(options->num_threads_to_compile.value()) << "\n";
+    absl::StrAppend(&toml_str, "num_threads_to_compile = ",
+                    static_cast<int>(options->num_threads_to_compile.value()),
+                    "\n");
   }
   if (options->convert_weights_on_gpu.has_value()) {
-    ss << "convert_weights_on_gpu = "
-       << (options->convert_weights_on_gpu.value() ? "true" : "false") << "\n";
+    absl::StrAppend(&toml_str, "convert_weights_on_gpu = ",
+                    options->convert_weights_on_gpu.value() ? "true" : "false",
+                    "\n");
   }
   if (options->wait_for_weights_conversion_complete.has_value()) {
-    ss << "wait_for_weights_conversion_complete = "
-       << (options->wait_for_weights_conversion_complete.value() ? "true"
-                                                                 : "false")
-       << "\n";
+    absl::StrAppend(&toml_str, "wait_for_weights_conversion_complete = ",
+                    options->wait_for_weights_conversion_complete.value()
+                        ? "true"
+                        : "false",
+                    "\n");
   }
   if (options->disable_shader_optimization.has_value()) {
-    ss << "disable_shader_optimization = "
-       << (options->disable_shader_optimization.value() ? "true" : "false")
-       << "\n";
+    absl::StrAppend(
+        &toml_str, "disable_shader_optimization = ",
+        options->disable_shader_optimization.value() ? "true" : "false", "\n");
   }
   if (options->program_cache_fd.has_value()) {
-    ss << "program_cache_fd = "
-       << static_cast<int>(options->program_cache_fd.value()) << "\n";
+    absl::StrAppend(&toml_str, "program_cache_fd = ",
+                    static_cast<int>(options->program_cache_fd.value()), "\n");
   }
   if (options->weight_cache_fd.has_value()) {
-    ss << "weight_cache_fd = "
-       << static_cast<int>(options->weight_cache_fd.value()) << "\n";
+    absl::StrAppend(&toml_str, "weight_cache_fd = ",
+                    static_cast<int>(options->weight_cache_fd.value()), "\n");
   }
   if (options->cache_only_compiled_programs.has_value()) {
-    ss << "cache_only_compiled_programs = "
-       << (options->cache_only_compiled_programs.value() ? "true" : "false")
-       << "\n";
+    absl::StrAppend(
+        &toml_str, "cache_only_compiled_programs = ",
+        options->cache_only_compiled_programs.value() ? "true" : "false", "\n");
   }
   if (!options->buffer_storage_tensor_patterns.empty()) {
-    ss << "buffer_storage_tensor_patterns = [";
+    absl::StrAppend(&toml_str, "buffer_storage_tensor_patterns = [");
     for (size_t i = 0; i < options->buffer_storage_tensor_patterns.size();
          ++i) {
-      ss << "\"" << options->buffer_storage_tensor_patterns[i] << "\"";
-      if (i != options->buffer_storage_tensor_patterns.size() - 1) ss << ", ";
+      absl::StrAppend(&toml_str, "\"",
+                      options->buffer_storage_tensor_patterns[i], "\"");
+      if (i != options->buffer_storage_tensor_patterns.size() - 1) {
+        absl::StrAppend(&toml_str, ", ");
+      }
     }
-    ss << "]\n";
+    absl::StrAppend(&toml_str, "]\n");
   }
   if (options->use_ir_model.has_value()) {
-    ss << "use_ir_model = "
-       << (options->use_ir_model.value() ? "true" : "false") << "\n";
+    absl::StrAppend(&toml_str, "use_ir_model = ",
+                    options->use_ir_model.value() ? "true" : "false", "\n");
   }
   *identifier = LrtGetGpuOptionsIdentifier();
-  std::string toml_str = ss.str();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
   return kLiteRtStatusOk;
 }
