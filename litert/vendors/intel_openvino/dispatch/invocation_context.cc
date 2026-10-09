@@ -222,7 +222,6 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::ImportLocked() {
   std::optional<litert::openvino::OpenVinoGlobalGraph> global_graph;
   std::map<std::string, uint32_t> selected_const_map;
   std::optional<LiteRtIntelOpenVinoGraphBackend> selected_device;
-  std::vector<uint8_t> selected_payload;
   // Zero-copy view of the contiguous weight pool (aliases exec_bytecode_buffer,
   // which outlives this function). Used by the NPU arm to stage the pool.
   const uint8_t* pool_ptr = nullptr;
@@ -271,12 +270,11 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::ImportLocked() {
     selected_const_map = selected->const_map;
     selected_device =
         static_cast<LiteRtIntelOpenVinoGraphBackend>(selected->device);
-    // Copy the selected (weightless-on-NPU / Parameters-on-GPU) payload into an
-    // owned buffer; we import from it below. This is small -- the large pool is
-    // NOT copied here.
-    selected_payload.assign(selected->payload.begin(), selected->payload.end());
-    exec_bytecode_ptr = selected_payload.data();
-    exec_bytecode_size = selected_payload.size();
+    // Import straight from the selected (weightless-on-NPU /
+    // Parameters-on-GPU) payload: it aliases exec_bytecode_buffer, which
+    // outlives this function, so no copy is needed.
+    exec_bytecode_ptr = selected->payload.data();
+    exec_bytecode_size = selected->payload.size();
   }
 
   // If the compiler embedded a self-describing header, honor the device
