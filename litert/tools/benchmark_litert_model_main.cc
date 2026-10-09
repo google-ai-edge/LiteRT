@@ -48,7 +48,8 @@ int Main(int argc, char** argv) {
       size_t eq_pos = arg.find('=');
       absl::string_view flag_name =
           (eq_pos == absl::string_view::npos) ? arg : arg.substr(0, eq_pos);
-      if (absl::StartsWith(flag_name, "qualcomm_") ||
+      if (
+          absl::StartsWith(flag_name, "qualcomm_") ||
           absl::StartsWith(flag_name, "mediatek_") ||
           absl::StartsWith(flag_name, "google_tensor_") ||
           absl::StartsWith(flag_name, "intel_openvino_") ||
