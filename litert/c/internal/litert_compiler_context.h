@@ -520,6 +520,28 @@ typedef struct LiteRtCompilerContext {
                                                                 float* alpha);
   LiteRtStatus (*get_local_response_normalization_beta_option)(LiteRtOp op,
                                                                float* beta);
+  // Added in version 1.5.0
+  LiteRtStatus (*get_conv_3d_transpose_padding_option)(LiteRtOp op,
+                                                       uint32_t* padding);
+  LiteRtStatus (*get_conv_3d_transpose_stride_d_option)(LiteRtOp op,
+                                                        int32_t* stride_d);
+  LiteRtStatus (*get_conv_3d_transpose_stride_w_option)(LiteRtOp op,
+                                                        int32_t* stride_w);
+  LiteRtStatus (*get_conv_3d_transpose_stride_h_option)(LiteRtOp op,
+                                                        int32_t* stride_h);
+  LiteRtStatus (*get_conv_3d_transpose_fused_activation_option)(
+      LiteRtOp op, uint32_t* fused_activation_function);
+  LiteRtStatus (*get_conv_3d_transpose_dilation_d_option)(
+      LiteRtOp op, int32_t* dilation_d_factor);
+  LiteRtStatus (*get_conv_3d_transpose_dilation_w_option)(
+      LiteRtOp op, int32_t* dilation_w_factor);
+  LiteRtStatus (*get_conv_3d_transpose_dilation_h_option)(
+      LiteRtOp op, int32_t* dilation_h_factor);
+  LiteRtStatus (*build_conv_3d_transpose_op_option)(
+      LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
+      int32_t* stride_h, int32_t* stride_d, int32_t* dilation_w_factor,
+      int32_t* dilation_h_factor, int32_t* dilation_d_factor,
+      uint32_t* fused_activation_function);
 } LiteRtCompilerContext;
 // LINT.ThenChange(./litert_compiler_context.cc:compiler_context_version)
 
@@ -529,7 +551,7 @@ typedef struct LiteRtCompilerContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtCompilerContext) == 1440,
+static_assert(sizeof(LiteRtCompilerContext) == 1512,
               "LiteRtCompilerContext size mismatch");
 static_assert(offsetof(LiteRtCompilerContext, abi_header) == 0,
               "LiteRtCompilerContext abi_header offset mismatch");
@@ -1171,6 +1193,50 @@ static_assert(
              get_local_response_normalization_beta_option) == 1432,
     "LiteRtCompilerContext get_local_response_normalization_beta_option "
     "offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_conv_3d_transpose_padding_option) ==
+        1440,
+    "LiteRtCompilerContext get_conv_3d_transpose_padding_option offset "
+    "mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_conv_3d_transpose_stride_d_option) ==
+        1448,
+    "LiteRtCompilerContext get_conv_3d_transpose_stride_d_option offset "
+    "mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_conv_3d_transpose_stride_w_option) ==
+        1456,
+    "LiteRtCompilerContext get_conv_3d_transpose_stride_w_option offset "
+    "mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_conv_3d_transpose_stride_h_option) ==
+        1464,
+    "LiteRtCompilerContext get_conv_3d_transpose_stride_h_option offset "
+    "mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext,
+             get_conv_3d_transpose_fused_activation_option) == 1472,
+    "LiteRtCompilerContext get_conv_3d_transpose_fused_activation_option "
+    "offset mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_conv_3d_transpose_dilation_d_option) ==
+        1480,
+    "LiteRtCompilerContext get_conv_3d_transpose_dilation_d_option offset "
+    "mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_conv_3d_transpose_dilation_w_option) ==
+        1488,
+    "LiteRtCompilerContext get_conv_3d_transpose_dilation_w_option offset "
+    "mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, get_conv_3d_transpose_dilation_h_option) ==
+        1496,
+    "LiteRtCompilerContext get_conv_3d_transpose_dilation_h_option offset "
+    "mismatch");
+static_assert(
+    offsetof(LiteRtCompilerContext, build_conv_3d_transpose_op_option) ==
+        1504,
+    "LiteRtCompilerContext build_conv_3d_transpose_op_option offset mismatch");
 #endif  // __cplusplus
 
 LiteRtCompilerContext* LrtGetCompilerContext();
