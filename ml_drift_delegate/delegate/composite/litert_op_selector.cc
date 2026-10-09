@@ -35,6 +35,8 @@
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_kernel.h"
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
+#include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_kernel.h"
+#include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/gated_delta_update_kernel.h"
 #include "ml_drift_delegate/delegate/composite/gated_delta_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/glu_kernel.h"
@@ -169,6 +171,10 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
   if (node.operation.type == kGatedDeltaUpdateType) {
     return CreateGatedDeltaUpdateFromNode(op_def, inputs, outputs, node,
                                           &gpu_info_, model_builder);
+  }
+  if (node.operation.type == kFusedSdpaCacheUpdateType) {
+    return CreateFusedSdpaCacheUpdateFromNode(inputs, outputs, node,
+                                              model_builder);
   }
   if (node.operation.type == kRuntimeBatchedMatMulType) {
     std::vector<::ml_drift::Value*> bmm_inputs = inputs;

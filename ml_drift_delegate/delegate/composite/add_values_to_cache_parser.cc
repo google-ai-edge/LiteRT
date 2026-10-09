@@ -29,6 +29,33 @@
 
 namespace litert::ml_drift {
 
+absl::Status ReadAddValuesToCacheLayout(const flexbuffers::Map& attributes,
+                                        AddValuesToCacheAttributes& attr) {
+  const auto read = [&attributes](const char* name, int& value) {
+    if (!attributes[name].IsNull()) {
+      value = attributes[name].AsInt32();
+    }
+  };
+  read("k_cache_ts_idx", attr.k_cache_ts_idx);
+  read("v_cache_ts_idx", attr.v_cache_ts_idx);
+  read("k_update_ts_idx", attr.k_update_ts_idx);
+  read("v_update_ts_idx", attr.v_update_ts_idx);
+  // The caches are bound to packed weight layouts that downstream matmuls
+  // read, so only the historical cache layouts are implemented. Each update
+  // may be [B, H, T, D] (ts_idx 2) or [B, H, D, T] (ts_idx 3).
+  const auto valid_update = [](int ts_idx) {
+    return ts_idx == 2 || ts_idx == 3;
+  };
+  if (attr.k_cache_ts_idx != 2 || attr.v_cache_ts_idx != 3 ||
+      !valid_update(attr.k_update_ts_idx) ||
+      !valid_update(attr.v_update_ts_idx)) {
+    return absl::UnavailableError(
+        "odml.cache_update: unsupported layout (k_cache_ts_idx, "
+        "v_cache_ts_idx, k_update_ts_idx, v_update_ts_idx).");
+  }
+  return absl::OkStatus();
+}
+
 absl::Status AddValuesToCacheOperationParser::IsSupported(
     const TfLiteContext* context, const TfLiteNode* tflite_node,
     const TfLiteRegistration*) {
@@ -63,6 +90,8 @@ absl::Status AddValuesToCacheOperationParser::IsSupported(
       return absl::InvalidArgumentError(
           "odml.cache_update is missing head_size.");
     }
+    AddValuesToCacheAttributes layout;
+    ABSL_RETURN_IF_ERROR(ReadAddValuesToCacheLayout(flexbuffer_map, layout));
   }
 
   return absl::OkStatus();
@@ -136,6 +165,8 @@ void AddValuesToCacheOperationParser::Parse(const TfLiteNode* tflite_node,
   if (!flexbuffer_map["is_ring_buffer"].IsNull()) {
     attr.is_ring_buffer = flexbuffer_map["is_ring_buffer"].AsBool();
   }
+  // IsSupported() has already rejected unsupported layouts.
+  ReadAddValuesToCacheLayout(flexbuffer_map, attr).IgnoreError();
   node->operation.attributes = std::move(attr);
 }
 

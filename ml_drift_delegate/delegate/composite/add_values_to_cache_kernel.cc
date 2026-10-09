@@ -66,8 +66,13 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateAddValuesToCache(
   AddValuesToCacheOp custom_op;
   custom_op.AllowFuseInputReorder(true);
 
-  int num_heads = attr.head_size > 0 ? (src_shape.c / attr.head_size) : 1;
-  custom_op.update_width_ = src_shape.w;
+  // K update [B, H, T, D] maps to (w = T, c = D); [B, H, D, T] maps to
+  // (w = D, c = T).
+  const bool k_update_transposed = attr.k_update_ts_idx == 3;
+  const int k_tokens = k_update_transposed ? src_shape.c : src_shape.w;
+  const int k_head_dim = k_update_transposed ? src_shape.w : src_shape.c;
+  int num_heads = attr.head_size > 0 ? (k_head_dim / attr.head_size) : 1;
+  custom_op.update_width_ = k_tokens;
   custom_op.batch_size_ = attr.kv_cache_batch_size * std::max(1, num_heads);
   custom_op.slices_ = (attr.head_size + 3) / 4;
 
@@ -144,9 +149,36 @@ MAIN_FUNCTION($0) {
 
   op_code += R"(
   int src_y = Y % args.src_height;  // broadcast Height dim used as Batch
-  args.src_k::type value_k = args.src_k.Read(X, src_y, S);
-  args.src_v::type value_v = args.src_v.Read(X, src_y, S);
   )";
+  // Emits the read of one head-dim slice of token X from `name`.
+  auto emit_read = [&op_code](const std::string& name, int update_ts_idx) {
+    if (update_ts_idx == 3) {
+      // Update [B, H, D, T]: width is the head dim and channels are tokens,
+      // so gather the 4 head-dim values of token X.
+      for (int i = 0; i < 4; ++i) {
+        op_code += absl::Substitute(R"(
+  float $0_$1 = 0.0f;
+  if (S * 4 + $1 < args.head_size) {
+    args.src_$0.ReadPerChannel<float>($0_$1, S * 4 + $1, src_y, X);
+  }
+  )",
+                                    name, i);
+      }
+      op_code += absl::Substitute(R"(
+  args.src_$0::type value_$0 = ucl::Convert<args.src_$0::type>(
+      ucl::Init<float4>($0_0, $0_1, $0_2, $0_3));
+  )",
+                                  name);
+    } else {
+      // Update [B, H, T, D], the historical layout.
+      op_code += absl::Substitute(R"(
+  args.src_$0::type value_$0 = args.src_$0.Read(X, src_y, S);
+  )",
+                                  name);
+    }
+  };
+  emit_read("k", attr.k_update_ts_idx);
+  emit_read("v", attr.v_update_ts_idx);
 
   if (quantized_cache) {
     const std::string src_k_type = ToUclDataType(src_k.GetDataType(), 4);

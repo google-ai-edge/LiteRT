@@ -675,6 +675,69 @@ cc_library(
 )
 
 cc_library(
+    name = "fused_sdpa_cache_update_parser",
+    srcs = ["fused_sdpa_cache_update_parser.cc"],
+    hdrs = ["fused_sdpa_cache_update_parser.h"],
+    deps = [
+        "//ml_drift_delegate/tflite:model_builder_helper",
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:model",
+    ],
+)
+
+cc_library(
+    name = "fused_sdpa_cache_update_kernel",
+    srcs = ["fused_sdpa_cache_update_kernel.cc"],
+    hdrs = ["fused_sdpa_cache_update_kernel.h"],
+    deps = [
+        ":fused_sdpa_cache_update_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:kernel_info",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:tuning_type",
+        "@ml_drift//ml_drift/common/task:weights_layout",
+    ],
+)
+
+mld_kernel_test(
+    name = "fused_sdpa_cache_update_kernel_test",
+    srcs = ["fused_sdpa_cache_update_kernel_test.cc"],
+    platforms = ["opencl"],
+    deps = [
+        ":fused_sdpa_cache_update_kernel",
+        ":fused_sdpa_cache_update_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+    ],
+)
+
+cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
     hdrs = [
@@ -683,6 +746,7 @@ cc_library(
     ],
     deps = [
         ":add_values_to_cache_parser",
+        ":fused_sdpa_cache_update_parser",
         ":gated_delta_update_parser",
         ":glu_parser",
         ":moe_experts_parser",
@@ -801,6 +865,8 @@ cc_library(
     deps = [
         ":add_values_to_cache_kernel",
         ":add_values_to_cache_parser",
+        ":fused_sdpa_cache_update_kernel",
+        ":fused_sdpa_cache_update_parser",
         ":gated_delta_update_kernel",
         ":gated_delta_update_parser",
         ":glu_kernel",
