@@ -14,6 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//litert/build_common:litert_build_defs.bzl", "litert_cc_test")
 load("//tflite:build_def.bzl", "gen_selected_ops")
 
 package(
@@ -52,6 +53,42 @@ cc_test(
     ],
     data = [
         "//litert/test:testdata/simple_model.tflite",
+    ],
+    deps = [
+        ":op_resolver",
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_cpu_options",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:simple_model",
+        "//tflite:framework",
+        "//tflite:mutable_op_resolver",
+        "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+litert_cc_test(
+    name = "op_resolver_selective_test",
+    srcs = [
+        "op_resolver_test.cc",
+        ":simple_model_selected_ops",
+    ],
+    build_include = "cpu_only",
+    cpu_backend = "selective",
+    data = [
+        "//litert/test:testdata/simple_model.tflite",
+    ],
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
     ],
     deps = [
         ":op_resolver",

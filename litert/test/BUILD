@@ -17,10 +17,10 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//litert/build_common:litert_build_defs.bzl", "litert_cc_binary", "litert_configured_target")
 load("//litert/build_common:special_rule.bzl", "litert_linkopts", "litert_linkopts_unstripped")
 load("//litert/build_common:symlink_files.bzl", "symlink_files")  # @unused
 load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")  # @unused
-load("//litert/test:cpu_only_data.bzl", "cpu_only_target")
 load("//tflite:build_def.bzl", "gen_selected_ops")
 
 package(
@@ -435,10 +435,12 @@ cc_binary(
 )
 
 # Unstripped variant of minimal_compiled_model used for symbol leak testing.
-cc_binary(
-    name = "minimal_compiled_model_for_symbol_test",
+litert_cc_binary(
+    name = "minimal_compiled_model_cpu_only",
     testonly = True,
     srcs = ["minimal_compiled_model.cc"],
+    build_include = "cpu_only",
+    cpu_backend = "selective",
     linkopts = litert_linkopts_unstripped(),
     linkstatic = 1,
     # copybara:uncomment malloc = "//base:system_malloc",
@@ -450,10 +452,12 @@ cc_binary(
     ],
 )
 
-cpu_only_target(
-    name = "minimal_compiled_model_cpu_only",
+litert_configured_target(
+    name = "minimal_compiled_model_selective",
     testonly = True,
-    target = ":minimal_compiled_model_for_symbol_test",
+    build_include = "cpu_only",
+    cpu_backend = "selective",
+    target = ":minimal_compiled_model",
 )
 
 sh_test(
@@ -466,6 +470,24 @@ sh_test(
     data = [
         "testdata/transformer.tflite",
         ":minimal_compiled_model",
+    ],
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+)
+
+sh_test(
+    name = "minimal_compiled_model_selective_test",
+    srcs = ["minimal_compiled_model_test.sh"],
+    args = [
+        "$(rootpath :minimal_compiled_model_selective)",
+        "$(rootpath testdata/transformer.tflite)",
+    ],
+    data = [
+        "testdata/transformer.tflite",
+        ":minimal_compiled_model_selective",
     ],
     tags = [
         "noios",

@@ -175,6 +175,94 @@ bazel build -c opt \
     built-in (or custom) kernel.
 *   **When to use:** Fixed-model deployments where binary size is critical.
 
+## Per-Target Build Configuration (Without Command-Line Flags)
+
+Instead of passing `--build_include` and `--cpu_backend` on the command line,
+you can configure them per target in your `BUILD` file using the rules and
+macros in `//litert/build_common:litert_build_defs.bzl`:
+
+| Rule / Macro                 | Use Case                                     |
+| ---------------------------- | -------------------------------------------- |
+| `litert_cc_binary`           | Drop-in wrapper around `cc_binary` that      |
+:                              : transitions the binary and its dependencies  :
+:                              : to `build_include` and `cpu_backend`.        :
+| `litert_cc_test`             | Drop-in wrapper around `cc_test` that        |
+:                              : transitions the test and its dependencies to :
+:                              : `build_include` and `cpu_backend`.           :
+| `litert_configured_target` / | Transitions an existing executable or test   |
+: `litert_configured_test`     : `target` to `build_include` and              :
+:                              : `cpu_backend`.                               :
+| `litert_cc_library`           | Defines a `cc_library` or transitions a list |
+:                              : of `deps` (`CcInfo`) to `build_include` and  :
+:                              : `cpu_backend`. Use for static-link targets   :
+:                              : such as WebAssembly (`wasm_js_library`).     :
+
+### Example: `litert_cc_binary` / `litert_cc_test`
+
+```python
+load(
+    "//litert/build_common:litert_build_defs.bzl",
+    "litert_cc_binary",
+    "litert_cc_test",
+)
+load("//litert/build_common:special_rule.bzl", "litert_linkopts")
+
+litert_cc_binary(
+    name = "my_app",
+    srcs = [
+        "my_app.cc",
+        ":my_model_selected_ops",
+    ],
+    build_include = "cpu_only",
+    cpu_backend = "selective",
+    linkopts = litert_linkopts(),
+    linkstatic = 1,
+    deps = [
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_options",
+        "//litert/tflite_support/op_resolver",
+        "//third_party/tensorflow/lite:framework",
+        "//third_party/tensorflow/lite:mutable_op_resolver",
+        "//third_party/tensorflow/lite/kernels:builtin_ops",
+    ],
+)
+
+litert_cc_test(
+    name = "my_app_test",
+    srcs = ["my_app_test.cc"],
+    build_include = "cpu_only",
+    cpu_backend = "selective",
+    deps = [":my_app_lib"],
+)
+```
+
+### Example: `litert_cc_library` (for WebAssembly / `wasm_js_library`)
+
+```python
+load(
+    "//litert/build_common:litert_build_defs.bzl",
+    "litert_cc_library",
+)
+
+litert_cc_library(
+    name = "my_model_runner_cpu_only",
+    build_include = "cpu_only",
+    cpu_backend = "selective",
+    deps = [":my_model_runner"],
+)
+
+cc_library(
+    name = "my_wasm_bindings",
+    srcs = ["my_wasm_bindings.cc"],
+    deps = [
+        ":my_model_runner_cpu_only",
+        "//third_party/emscripten:embind",
+    ],
+    alwayslink = 1,
+)
+```
+
 ## Runtime `kernel_mode` vs. Build Flags
 
 `CpuOptions::SetKernelMode()` chooses at runtime which of the **already
