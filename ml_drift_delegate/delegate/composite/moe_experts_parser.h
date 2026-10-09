@@ -44,6 +44,12 @@ struct MoeExpertsAttributes {
   int model_dim = 0;
   int hidden_dim = 0;
   WeightType weight_type = WeightType::kFp32;
+  // Per-expert (blockwise) weight scales, shaped
+  // [out_channels, experts, 1, blocks_per_row]. When a scale tensor is shared
+  // across subgraphs it is converted to the GPU scale layout once by
+  // SharedMemoryManager and consumed through the node's scale input; the
+  // attribute then only carries the shape (`empty()` is true). Otherwise the
+  // attribute holds the data and the kernel uploads it per subgraph.
   std::optional<MoeScaleTensor> ff_gate_scale;
   std::optional<MoeScaleTensor> ff1_scale;
   std::optional<MoeScaleTensor> linear_scale;

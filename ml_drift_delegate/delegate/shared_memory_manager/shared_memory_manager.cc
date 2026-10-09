@@ -185,6 +185,15 @@ bool IsMoeExpertsWeights(const GraphAdapter& graph_adapter,
          graph_adapter.GetOpTypeName(consumers[0]) == kMoeExpertsOpType;
 }
 
+// Returns true if `tensor` is a float block-scale input of a moe_experts op
+// ([out_channels, experts, 1, blocks_per_row]). The op parser only shares the
+// scale inputs, so a shared float tensor consumed by moe_experts is a scale.
+bool IsMoeExpertsBlockScales(const GraphAdapter& graph_adapter,
+                             uint32_t value_id, const TfLiteTensor& tensor) {
+  return (tensor.type == kTfLiteFloat32 || tensor.type == kTfLiteFloat16) &&
+         IsMoeExpertsWeights(graph_adapter, value_id);
+}
+
 }  // namespace
 
 void MadviseData(void* ptr, size_t space) {
@@ -1188,7 +1197,9 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
   }
   uint32_t fc_op_id = weight_consumers[0];
   if (graph_adapter_->GetOpTypeName(fc_op_id) == kMoeExpertsOpType) {
-    if (weights_manager_) {
+    if (weights_manager_ &&
+        !IsMoeExpertsBlockScales(*graph_adapter_, shared_tensor_id,
+                                 tflite_tensor)) {
       OHWI shape(shared_const_shape.b, shared_const_shape.h,
                  shared_const_shape.w, shared_const_shape.c);
       WeightsDescription weights_desc =
@@ -1440,6 +1451,11 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
   TfLiteTensor& tensor =
       context_->tensors[shared_tflite_tensor.tflite_tensor_id];
   ABSL_RETURN_IF_ERROR(MaybeBindTensorData(shared_tflite_tensor, tensor));
+  if (IsMoeExpertsBlockScales(*graph_adapter_, shared_tensor_id, tensor) &&
+      !shared_tflite_tensor.dequant_forced) {
+    return CreateMoeExpertsBlockScaleTensor(shared_tensor_id, tensor,
+                                            gpu_spatial_tensor);
+  }
   if ((tensor.quantization.type ==
            TfLiteQuantizationType::kTfLiteAffineQuantization ||
        tensor.quantization.type ==
@@ -1498,6 +1514,64 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
   }
 
   graph_adapter_->UploadTensorData(tensor, weights_data_ptr, tensor_desc);
+  return create_tensor_func_(tensor_desc, /*page_adjusted_offset=*/0,
+                             /*release_data_callback=*/nullptr,
+                             gpu_spatial_tensor);
+}
+
+absl::Status SharedMemoryManager::CreateMoeExpertsBlockScaleTensor(
+    const ValueId& shared_tensor_id, const TfLiteTensor& tensor,
+    std::unique_ptr<GpuSpatialTensor>& gpu_spatial_tensor) {
+  // The scale tensor is [out_channels, experts, 1, blocks_per_row]; it is
+  // converted to the same GPU layout the moe_experts kernel builds for
+  // per-subgraph scales (ScaleOrZeroPointToTensorDesc), but only once here, so
+  // every subgraph reads the same GPU tensor and no host copy is kept.
+  if (tensor.dims == nullptr || tensor.dims->size != 4) {
+    return absl::InvalidArgumentError(
+        "moe_experts block scales must be 4-D [out_channels, experts, 1, "
+        "blocks].");
+  }
+  Tensor<OHWI, DataType::kFloat32> scales;
+  scales.shape = OHWI(tensor.dims->data[0], tensor.dims->data[1],
+                      tensor.dims->data[2], tensor.dims->data[3]);
+  const int64_t num_elements = tflite::NumElements(&tensor);
+  if (num_elements != scales.shape.DimensionsProduct()) {
+    return absl::InternalError("moe_experts block scale size mismatch.");
+  }
+  scales.data.resize(num_elements);
+  if (tensor.type == kTfLiteFloat32) {
+    std::copy(tensor.data.f, tensor.data.f + num_elements, scales.data.begin());
+  } else if (tensor.type == kTfLiteFloat16) {
+    const auto* scale_f16 = reinterpret_cast<TfLiteFloat16*>(tensor.data.f16);
+    for (int64_t i = 0; i < num_elements; ++i) {
+      scales.data[i] = fp16_ieee_to_fp32_value(scale_f16[i].data);
+    }
+  } else {
+    return absl::UnimplementedError(
+        absl::StrCat("Unimplemented moe_experts scale dtype: ", tensor.type));
+  }
+  RewriteDenormalScales(gpu_info_, create_info_, scales.data.data(),
+                        num_elements);
+
+  // Match the data type the kernel uses for a per-subgraph scale tensor: the
+  // inference precision (f16 scales under F16 precision), refined by the op's
+  // activation type only under F32 precision, as for the other shared weights.
+  DataType data_type = data_type_;
+  if (data_type_ == DataType::kFloat32) {
+    const std::vector<uint32_t> consumers =
+        graph_adapter_->FindConsumerOps(shared_tensor_id);
+    if (!consumers.empty() && graph_adapter_->OpHasInputs(consumers[0])) {
+      const DataType input_type =
+          graph_adapter_->GetOpFirstInputType(consumers[0]);
+      if (IsFloatType(input_type)) {
+        data_type = input_type;
+      }
+    }
+  }
+  TensorDescriptor tensor_desc =
+      ScaleOrZeroPointToTensorDesc(gpu_info_, scales, data_type);
+  graph_adapter_->SetValueShapeAndType(
+      shared_tensor_id, tensor_desc.GetBHWCShape(), tensor_desc.GetDataType());
   return create_tensor_func_(tensor_desc, /*page_adjusted_offset=*/0,
                              /*release_data_callback=*/nullptr,
                              gpu_spatial_tensor);

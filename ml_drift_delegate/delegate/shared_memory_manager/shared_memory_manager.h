@@ -245,6 +245,14 @@ class SharedMemoryManager {
       std::unique_ptr<GpuSpatialTensor>& gpu_spatial_tensor,
       absl::flat_hash_map<ValueId, GlobalId>* external_tensors);
 
+  // Creates the GPU tensor for a moe_experts block-scale input
+  // ([out_channels, experts, 1, blocks_per_row], float) that is shared across
+  // subgraphs: the scales are converted once to the layout the moe_experts
+  // kernel expects and the graph value is updated to that shape/type.
+  absl::Status CreateMoeExpertsBlockScaleTensor(
+      const ValueId& shared_tensor_id, const TfLiteTensor& tensor,
+      std::unique_ptr<GpuSpatialTensor>& gpu_spatial_tensor);
+
   // Tries to create a GpuSpatialTensor from a device buffer. This is only
   // supported on OpenCL and when the device buffer is already registered with
   // the OpenCL context.

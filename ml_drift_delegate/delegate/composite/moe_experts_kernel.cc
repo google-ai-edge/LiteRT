@@ -160,8 +160,10 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> ScaleWithBatchIds(
     ::ml_drift::GpuModelBuilder* model_builder,
     const ::ml_drift::GpuModelBuilder::TensorHandle& src,
     const ::ml_drift::GpuModelBuilder::TensorHandle& weights,
-    const MoeScaleTensor* weight_scale, int input_channels, int output_channels,
-    int num_experts, MoeExpertsAttributes::WeightType weight_type) {
+    const MoeScaleTensor* weight_scale,
+    const ::ml_drift::GpuModelBuilder::TensorHandle* shared_weight_scale,
+    int input_channels, int output_channels, int num_experts,
+    MoeExpertsAttributes::WeightType weight_type) {
   const ::ml_drift::OHWI weights_shape(output_channels, num_experts, 1,
                                        input_channels);
   ::ml_drift::WeightsDescription weights_desc =
@@ -174,7 +176,13 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> ScaleWithBatchIds(
 
   ::ml_drift::GpuModelBuilder::TensorHandle scale_handle;
   ::ml_drift::GpuModelBuilder::TensorHandle* scale_handle_ptr = nullptr;
-  if (weight_scale != nullptr) {
+  if (shared_weight_scale != nullptr) {
+    // The scale tensor is shared across subgraphs: SharedMemoryManager already
+    // converted it to the GPU scale layout, so it is used as is instead of
+    // uploading a private copy per subgraph.
+    scale_handle = *shared_weight_scale;
+    scale_handle_ptr = &scale_handle;
+  } else if (weight_scale != nullptr && !weight_scale->empty()) {
     auto scale_desc = ::ml_drift::ScaleOrZeroPointToTensorDesc(
         model_builder->gpu_info(), *weight_scale,
         src.tensor_desc.GetDataType());
@@ -206,6 +214,9 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> ScaleWithBatchIds(
   return result;
 }
 
+// `*_shared_scale` point at the block-scale tensors shared across subgraphs
+// (already in the GPU scale layout) and are null when the scales come from the
+// op attributes instead.
 absl::Status BuildMoeExpertsGpuGraph(
     ::ml_drift::GpuModelBuilder* model_builder,
     const ::ml_drift::GpuModelBuilder::TensorHandle& src,
@@ -216,8 +227,11 @@ absl::Status BuildMoeExpertsGpuGraph(
     const ::ml_drift::GpuModelBuilder::TensorHandle& linear_weight,
     const ::ml_drift::GpuModelBuilder::TensorHandle& per_expert_scale,
     const MoeScaleTensor* gate_scale_ptr, const MoeScaleTensor* ff1_scale_ptr,
-    const MoeScaleTensor* linear_scale_ptr, int model_dim, int hidden_dim,
-    int num_experts, int num_active_experts,
+    const MoeScaleTensor* linear_scale_ptr,
+    const ::ml_drift::GpuModelBuilder::TensorHandle* gate_shared_scale,
+    const ::ml_drift::GpuModelBuilder::TensorHandle* ff1_shared_scale,
+    const ::ml_drift::GpuModelBuilder::TensorHandle* linear_shared_scale,
+    int model_dim, int hidden_dim, int num_experts, int num_active_experts,
     MoeExpertsAttributes::WeightType weight_type, ::ml_drift::ValueId output_id,
     const ::ml_drift::BHWC& output_shape) {
   const ::ml_drift::BHWC src_shape = src.tensor_desc.GetBHWCShape();
@@ -258,11 +272,13 @@ absl::Status BuildMoeExpertsGpuGraph(
   auto run_expert_projection =
       [&](const ::ml_drift::GpuModelBuilder::TensorHandle& input,
           const ::ml_drift::GpuModelBuilder::TensorHandle& weights_handle,
-          const MoeScaleTensor* scale_ptr, int in_channels, int out_channels)
+          const MoeScaleTensor* scale_ptr,
+          const ::ml_drift::GpuModelBuilder::TensorHandle* shared_scale,
+          int in_channels, int out_channels)
       -> absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> {
-    auto w =
-        BuildExpertWeights(model_builder, input, weights_handle, scale_ptr,
-                           in_channels, out_channels, num_experts, weight_type);
+    auto w = BuildExpertWeights(model_builder, input, weights_handle, scale_ptr,
+                                shared_scale, in_channels, out_channels,
+                                num_experts, weight_type);
     if (use_packed_groups) {
       return ::ml_drift::MakeConvWithPackedGroups(
           *model_builder, input, expert_params, w, num_active_experts);
@@ -273,19 +289,20 @@ absl::Status BuildMoeExpertsGpuGraph(
   };
 
   ABSL_ASSIGN_OR_RETURN(
-      auto gate, run_expert_projection(expert_src, gate_weight, gate_scale_ptr,
-                                       model_dim, hidden_dim));
+      auto gate,
+      run_expert_projection(expert_src, gate_weight, gate_scale_ptr,
+                            gate_shared_scale, model_dim, hidden_dim));
   gate = model_builder->MakeGeluTanh(gate);
 
   ABSL_ASSIGN_OR_RETURN(
       auto ff1, run_expert_projection(expert_src, ff1_weight, ff1_scale_ptr,
-                                      model_dim, hidden_dim));
+                                      ff1_shared_scale, model_dim, hidden_dim));
   auto hidden = model_builder->Multiplication(ff1, gate);
 
   ABSL_ASSIGN_OR_RETURN(
       auto expert_outputs,
-      run_expert_projection(hidden, linear_weight, linear_scale_ptr, hidden_dim,
-                            model_dim));
+      run_expert_projection(hidden, linear_weight, linear_scale_ptr,
+                            linear_shared_scale, hidden_dim, model_dim));
 
   if (use_packed_groups) {
     expert_outputs =
@@ -345,6 +362,15 @@ absl::Status CreateMoeExpertsFromNode(
   const MoeScaleTensor* gate_scale_ptr = nullptr;
   const MoeScaleTensor* ff1_scale_ptr = nullptr;
   const MoeScaleTensor* linear_scale_ptr = nullptr;
+  ::ml_drift::GpuModelBuilder::TensorHandle gate_shared_scale;
+  ::ml_drift::GpuModelBuilder::TensorHandle ff1_shared_scale;
+  ::ml_drift::GpuModelBuilder::TensorHandle linear_shared_scale;
+  const ::ml_drift::GpuModelBuilder::TensorHandle* gate_shared_scale_ptr =
+      nullptr;
+  const ::ml_drift::GpuModelBuilder::TensorHandle* ff1_shared_scale_ptr =
+      nullptr;
+  const ::ml_drift::GpuModelBuilder::TensorHandle* linear_shared_scale_ptr =
+      nullptr;
 
   if (attr.weight_type == MoeExpertsAttributes::WeightType::kFp32) {
     ABSL_ASSIGN_OR_RETURN(gate_weight, model_builder->GetTensor(inputs[3]->id));
@@ -368,14 +394,33 @@ absl::Status CreateMoeExpertsFromNode(
     gate_scale_ptr = &attr.ff_gate_scale.value();
     ff1_scale_ptr = &attr.ff1_scale.value();
     linear_scale_ptr = &attr.linear_scale.value();
+    // A shape-only attribute means the parser registered the scale tensor as
+    // a shared constant: SharedMemoryManager converted it to the GPU scale
+    // layout once and exposes it on the corresponding scale input.
+    if (gate_scale_ptr->empty()) {
+      ABSL_ASSIGN_OR_RETURN(gate_shared_scale,
+                            model_builder->GetTensor(inputs[4]->id));
+      gate_shared_scale_ptr = &gate_shared_scale;
+    }
+    if (ff1_scale_ptr->empty()) {
+      ABSL_ASSIGN_OR_RETURN(ff1_shared_scale,
+                            model_builder->GetTensor(inputs[6]->id));
+      ff1_shared_scale_ptr = &ff1_shared_scale;
+    }
+    if (linear_scale_ptr->empty()) {
+      ABSL_ASSIGN_OR_RETURN(linear_shared_scale,
+                            model_builder->GetTensor(inputs[8]->id));
+      linear_shared_scale_ptr = &linear_shared_scale;
+    }
   }
 
   return BuildMoeExpertsGpuGraph(
       model_builder, src, top_weights, top_indices, gate_weight, ff1_weight,
       linear_weight, per_expert_scale, gate_scale_ptr, ff1_scale_ptr,
-      linear_scale_ptr, attr.model_dim, attr.hidden_dim, attr.num_experts,
-      attr.num_active_experts, attr.weight_type, outputs[0]->id,
-      outputs[0]->tensor.shape);
+      linear_scale_ptr, gate_shared_scale_ptr, ff1_shared_scale_ptr,
+      linear_shared_scale_ptr, attr.model_dim, attr.hidden_dim,
+      attr.num_experts, attr.num_active_experts, attr.weight_type,
+      outputs[0]->id, outputs[0]->tensor.shape);
 }
 
 absl::Status CreateMoeExpertsFromIrOp(
@@ -433,7 +478,9 @@ absl::Status CreateMoeExpertsFromIrOp(
   return BuildMoeExpertsGpuGraph(
       model_builder, src, top_weights, top_indices, gate_weight, ff1_weight,
       linear_weight, per_expert_scale, gate_scale_ptr, ff1_scale_ptr,
-      linear_scale_ptr, attr.model_dim, attr.hidden_dim, attr.num_experts,
+      linear_scale_ptr, /*gate_shared_scale=*/nullptr,
+      /*ff1_shared_scale=*/nullptr, /*linear_shared_scale=*/nullptr,
+      attr.model_dim, attr.hidden_dim, attr.num_experts,
       attr.num_active_experts, legacy_weight_type, outputs[0]->id,
       outputs[0]->desc.GetBHWCShape());
 }
