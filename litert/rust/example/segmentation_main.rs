@@ -16,10 +16,11 @@
 ///
 /// This example shows how to use LiteRT Rust bindings to run a segmentation model.
 ///
-/// Example usage:
-/// cargo run \
-///  --model-path=third_party/odml/litert/litert/samples/async_segmentation/models/selfie_multiclass_256x256.tflite \
-///  --input-image-path=third_party/odml/litert/litert/samples/async_segmentation/test_images/image.jpeg \
+/// Example usage (run from litert/rust/example; see README.md for the runtime
+/// library path setup):
+/// cargo run --bin segmentation -- \
+///  --model-path=../../../tensor/examples/segmentation/selfie_multiclass_256x256.tflite \
+///  --input-image-path=../../../tensor/examples/segmentation/image.jpeg \
 ///  --output-image-path=/tmp/out.png
 use clap::Parser;
 use image::{imageops, ImageBuffer, ImageReader};
