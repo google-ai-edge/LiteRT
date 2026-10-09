@@ -431,6 +431,9 @@ Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
       subgraph_modified = false;
       LITERT_LOG(LITERT_DEBUG, "Iteration %d", iterations);
       if (iterations++ >= max_transformation_iterations_) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Hit max transformation iterations limit (%zu)",
+                   max_transformation_iterations_);
         break;
       }
       std::queue<LiteRtOp> worklist;

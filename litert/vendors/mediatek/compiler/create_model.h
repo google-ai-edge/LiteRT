@@ -17,7 +17,7 @@
 
 #include <string>
 
-#include "litert/c/litert_common.h"
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
@@ -31,7 +31,7 @@ Expected<void> CreateModel(
     const NeuronAdapterApi& neuron_adapter_api,
     const litert::compiler::Subgraph& partition, const std::string& model_name,
     NeuronModel* model, OperandMap* operand_map,
-    std::unordered_set<int>* unknown_op_indices = nullptr);
+    absl::flat_hash_set<int>* unknown_op_indices = nullptr);
 
 }  // namespace litert::mediatek
 
