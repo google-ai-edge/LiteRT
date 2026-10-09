@@ -9,6 +9,7 @@ add_library(qnn_transformation STATIC)
 target_sources(qnn_transformation
     PRIVATE
         graph_to_graph.cc
+        deq_q.cc
         matmul_convert.cc
         embedding_gemma.cc
         mask.cc
