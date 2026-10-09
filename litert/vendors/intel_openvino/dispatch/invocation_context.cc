@@ -55,6 +55,7 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/bytecode_header.h"
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
+#include "litert/vendors/intel_openvino/dispatch/mapped_pages.h"
 #include "litert/vendors/intel_openvino/dispatch/weight_bank_runtime.h"
 
 namespace {
@@ -426,6 +427,9 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::ImportLocked() {
   } catch (const std::exception& e) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure, e.what());
   }
+  // The payload has been consumed; its pages need not stay resident.
+  litert::openvino::ReleaseMappedPagesFromWorkingSet(exec_bytecode_ptr,
+                                                     exec_bytecode_size);
 
   infer_request_ = compiled_model.create_infer_request();
 
