@@ -140,6 +140,7 @@ std::string OpenVinoGlobalGraph::Serialize() const {
     PutU32(out, static_cast<uint32_t>(subgraph.name.size()));
     out.append(subgraph.name);
     out.push_back(static_cast<char>(subgraph.device));
+    PutU64(out, static_cast<uint64_t>(subgraph.kv_tier));
     PutU32(out, static_cast<uint32_t>(subgraph.const_map.size()));
     for (const auto& [const_name, buffer_id] : subgraph.const_map) {
       PutU32(out, static_cast<uint32_t>(const_name.size()));
@@ -163,7 +164,7 @@ litert::Expected<OpenVinoGlobalGraph> OpenVinoGlobalGraph::Parse(
   OpenVinoGlobalGraph graph;
 
   const uint16_t version = reader.U16();
-  if (!reader.ok || version != kVersion) {
+  if (!reader.ok || version < 2 || version > kVersion) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "OpenVinoGlobalGraph: unsupported container version");
   }
@@ -223,6 +224,7 @@ litert::Expected<OpenVinoGlobalGraph> OpenVinoGlobalGraph::Parse(
     uint8_t dev = 0;
     reader.Bytes(&dev, 1);
     subgraph.device = dev;
+    if (version >= 3) subgraph.kv_tier = static_cast<int64_t>(reader.U64());
     const uint32_t cm_len = reader.U32();
     for (uint32_t j = 0; j < cm_len && reader.ok; ++j) {
       const uint32_t const_name_len = reader.U32();
