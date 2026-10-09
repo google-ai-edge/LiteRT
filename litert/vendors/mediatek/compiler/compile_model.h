@@ -24,10 +24,14 @@
 
 namespace litert::mediatek {
 
+// Compiles `model`. If `extract_static_data_path` is set and
+// `get_supported_mode` is false, the static weights of the compiled network are
+// extracted to that file; see `ParseExtractedStaticWeights`.
 Expected<NeuronCompilationPtr> CompileModel(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
     std::optional<std::string> soc_model, LrtMediatekOptions* mediatek_opts,
-    int subgraph_index, bool get_supported_mode = false);
+    int subgraph_index, bool get_supported_mode = false,
+    std::optional<std::string> extract_static_data_path = std::nullopt);
 
 Expected<void> GetSupportedOperations(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,

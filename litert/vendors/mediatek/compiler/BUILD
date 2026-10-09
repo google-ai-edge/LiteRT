@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_test", "make_rpaths")
 
@@ -41,12 +42,14 @@ litert_dynamic_lib(
     deps = [
         ":compile_model",
         ":create_model",
+        ":extracted_static_weights",
         "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_compiler_context",
         "//litert/c/options:litert_mediatek_options",
+        "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_context_wrapper",
@@ -54,6 +57,7 @@ litert_dynamic_lib(
         "//litert/cc/internal:litert_opaque_options_wrapper",
         "//litert/cc/internal:litert_options_wrapper",
         "//litert/compiler/cc:litert_model",
+        "//litert/core:filesystem",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "//litert/vendors/mediatek/compiler/legalizations:common_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:operand_map",
@@ -111,6 +115,38 @@ cc_library(
 )
 
 cc_library(
+    name = "extracted_static_weights",
+    srcs = ["extracted_static_weights.cc"],
+    hdrs = ["extracted_static_weights.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "extracted_static_weights_test",
+    srcs = ["extracted_static_weights_test.cc"],
+    # Uses POSIX setenv and mkstemp.
+    target_compatible_with = select({
+        "//litert:android": [],
+        "//litert:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":extracted_static_weights",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "compile_model",
     srcs = ["compile_model.cc"],
     hdrs = ["compile_model.h"],
@@ -120,6 +156,7 @@ cc_library(
         "//conditions:default": [],
     }),
     deps = [
+        ":extracted_static_weights",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_mediatek_options",
@@ -170,9 +207,12 @@ litert_test(
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
         "//litert/cc/internal:litert_model_predicates",
+        "//litert/cc/options:litert_mediatek_options",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
         "//litert/test:load_test_model",
@@ -180,6 +220,8 @@ litert_test(
         "//litert/test:test_models",
         "//litert/vendors/cc:litert_compiler_plugin",
         "//litert/vendors/mediatek:neuron_adapter_api",
+        "//litert/vendors/mediatek/schema:mediatek_litert_schema",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
     ],

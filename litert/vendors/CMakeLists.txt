@@ -221,7 +221,10 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
       COMMENT "Generating MediaTek neuron_schema_generated.h with flatc"
       VERBATIM)
     add_custom_target(mediatek_schema_gen DEPENDS "${_mtk_gen_hdr}")
-    list(APPEND DISPATCH_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/mediatek/neuron_adapter_api.cc")
+    list(APPEND DISPATCH_SRCS
+      "${CMAKE_CURRENT_SOURCE_DIR}/mediatek/neuron_adapter_api.cc"
+      "${SRC_DIR}/file_backed_pages.cc"
+    )
   endif()
 
   if(VENDOR STREQUAL "Qualcomm")

@@ -15,9 +15,13 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_MEDIATEK_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_MEDIATEK_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 
+#include <cstddef>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include "neuron/api/NeuronAdapter.h"
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
@@ -57,6 +61,20 @@ class LiteRtDispatchDeviceContextT {
     }
   }
 
+  // Returns device memory holding a copy of the `weight_size` bytes at
+  // `weight_data`, zero-padded to `padded_size` bytes if that is larger. The
+  // memory is allocated and filled on the first request for a given
+  // `(weight_data, padded_size)` and reused afterwards, so subgraphs that share
+  // a weight buffer also share its device copy. `weight_data` must stay valid
+  // for the lifetime of this device context.
+  //
+  // `fd` is the descriptor of the file mapping that holds `weight_data`, or a
+  // negative value if it is not file-backed. When it is file-backed, the
+  // source pages are released while they are copied; see
+  // `litert::mediatek::CopyAndReleaseFileBackedPages`.
+  litert::Expected<NeuronMemoryInfo> GetOrCreateSharedWeightMemory(
+      int fd, const void* weight_data, size_t weight_size, size_t padded_size);
+
   const LiteRtRuntimeContext* runtime_context() const {
     return runtime_context_;
   }
@@ -80,6 +98,12 @@ class LiteRtDispatchDeviceContextT {
     std::vector<NeuronMemoryInfo> records_;
   };
 
+  // A device copy of a shared weight buffer that this context owns.
+  struct SharedWeight {
+    LiteRtTensorBuffer tensor_buffer;
+    LiteRtTensorBufferHandle handle;
+  };
+
   explicit LiteRtDispatchDeviceContextT(
       const LiteRtRuntimeContext* runtime_context,
       const litert::mediatek::NeuronAdapterApi& neuron_adapter_api)
@@ -90,6 +114,9 @@ class LiteRtDispatchDeviceContextT {
   const LiteRtRuntimeContext* runtime_context_;
   const litert::mediatek::NeuronAdapterApi& neuron_adapter_api_;
   NeuronMemoryRegistry neuron_memory_registry_;
+  // Keyed by the host address of the weights and the allocated size.
+  absl::flat_hash_map<std::pair<const void*, size_t>, SharedWeight>
+      shared_weights_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_MEDIATEK_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_

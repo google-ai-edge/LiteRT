@@ -208,6 +208,19 @@ LiteRtStatus LrtSetMediatekOptionsAotCompilationOptions(
 LiteRtStatus LrtGetMediatekOptionsAotCompilationOptions(
     const LrtMediatekOptions* options, const char** aot_compilation_options);
 
+// enable_weight_sharing ----------------------------------------------
+// When true, the compiler plugin extracts the static weights of each compiled
+// network into separate bytecode buffers, stored once even if several
+// subgraphs use identical weights. At runtime, the dispatch library copies
+// them into device (DMA-BUF) memory instead of the Neuron adapter keeping a
+// heap copy, which lowers process RSS at the cost of slower inference on some
+// models. Defaults to false.
+LiteRtStatus LrtSetMediatekOptionsEnableWeightSharing(
+    LrtMediatekOptions* options, bool enable_weight_sharing);
+
+LiteRtStatus LrtGetMediatekOptionsEnableWeightSharing(
+    const LrtMediatekOptions* options, bool* enable_weight_sharing);
+
 #ifdef __cplusplus
 
 }  // extern "C"
