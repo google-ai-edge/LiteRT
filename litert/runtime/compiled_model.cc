@@ -114,7 +114,6 @@
 #include "tflite/converter/allocation.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/core/api/profiler.h"
-#include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/interpreter_builder.h"
 #include "tflite/interpreter.h"
 #include "tflite/interpreter_options.h"
@@ -917,33 +916,6 @@ class ScopedCompilationOptionsModifier {
   int num_appended_options_ = 0;
 };
 
-// Marks the decomposition subgraphs of any `kTfLiteBuiltinStablehloComposite`
-// nodes that were replaced by a delegate in `subgraph` as delegation-skippable.
-// Doing this inside `compiled_model.cc` avoids requiring external accelerator
-// DSOs to dereference `tflite::Subgraph` across a potential C++ standard
-// library ABI boundary (e.g. `libc++` vs `libstdc++`).
-void MarkDelegatedCompositeSubgraphsSkippable(tflite::Subgraph* subgraph) {
-  if (subgraph == nullptr || subgraph->IsDelegationSkippable()) {
-    return;
-  }
-  const auto& execution_plan = subgraph->execution_plan();
-  absl::flat_hash_set<int> remaining_nodes(execution_plan.begin(),
-                                           execution_plan.end());
-  const auto& nodes_and_registration = subgraph->nodes_and_registration();
-  for (size_t node_index = 0; node_index < nodes_and_registration.size();
-       ++node_index) {
-    const auto& [node, reg] = nodes_and_registration[node_index];
-    if (reg.builtin_code == kTfLiteBuiltinStablehloComposite &&
-        !remaining_nodes.contains(static_cast<int>(node_index))) {
-      const auto* params =
-          static_cast<const TfLiteStablehloCompositeParams*>(node.builtin_data);
-      if (params != nullptr && params->subgraph_index > 0) {
-        subgraph->MarkSubgraphAsDelegationSkippable(params->subgraph_index);
-      }
-    }
-  }
-}
-
 }  // namespace
 
 LITERT_NO_CFI_CHECK Expected<LiteRtCompiledModelT::Ptr>
@@ -1143,23 +1115,11 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
         }
       }
 
-      if (compiled_model->active_subgraph_indices_.empty()) {
-        if (compiled_model->interp_->ModifyGraphWithDelegate(
-                delegate_ptr, compiled_model->active_subgraph_indices_) !=
-            kTfLiteOk) {
-          return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                            "Failed to modify graph with delegate");
-        }
-      } else {
-        for (int subgraph_index : compiled_model->active_subgraph_indices_) {
-          if (compiled_model->interp_->ModifyGraphWithDelegate(
-                  delegate_ptr, {subgraph_index}) != kTfLiteOk) {
-            return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                              "Failed to modify graph with delegate");
-          }
-          MarkDelegatedCompositeSubgraphsSkippable(
-              compiled_model->interp_->subgraph(subgraph_index));
-        }
+      if (compiled_model->interp_->ModifyGraphWithDelegate(
+              delegate_ptr, compiled_model->active_subgraph_indices_) !=
+          kTfLiteOk) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Failed to modify graph with delegate");
       }
 
       GraphCounts counts = compiled_model->GetGraphCounts();
@@ -2740,9 +2700,6 @@ Expected<void> LiteRtCompiledModelT::MarkSignatureNeedsAllocation(
 Expected<void> LiteRtCompiledModelT::MarkSignatureAllocationUpToDate(
     const tflite::SignatureRunner* runner) {
   signature_needs_allocation_[runner] = false;
-  for (int subgraph_index : active_subgraph_indices_) {
-    MarkDelegatedCompositeSubgraphsSkippable(interp_->subgraph(subgraph_index));
-  }
   return {};
 }
 

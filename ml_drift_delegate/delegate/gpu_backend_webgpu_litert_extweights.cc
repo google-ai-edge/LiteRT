@@ -17,6 +17,7 @@
 
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
+#include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/delegate_utils.h"
 // clang-format off
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
@@ -28,6 +29,7 @@
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_webgpu_litert.h"
 #include "tflite/c/common.h"
+#include "tflite/core/subgraph.h"
 
 namespace litert::ml_drift {
 
@@ -42,8 +44,16 @@ GpuBackendWebGpuLitert::CreateSharedMemoryManager(
       "GpuBackendWebGpuLitert::CreateSharedMemoryManager: weight_loader=%p",
       delegate_data.weight_loader);
 
+  // Get the external buffer ID map from the TFLite Subgraph. This map is
+  // populated by TFLite interpreter_builder when loading models with external
+  // weights (Tensor.external_buffer field set in the FlatBuffer).
+  // The map is used by maybe_bind_data to look up external weights by tensor
+  // ID.
+  // This reinterpret_cast assumes that context->impl_ is a tflite::Subgraph,
+  // which is true in the current TFLite implementation.
   const ::ml_drift::TensorIndexToExternalBufferIdMap* external_buffer_id_map =
-      &GetExternalTensorBufferIdentifiers(context, delegate_data);
+      &(reinterpret_cast<const tflite::Subgraph*>(context->impl_)
+            ->GetExternalTensorBufferIdentifiers());
 
   return ::ml_drift::MakeSharedMemoryManagerWebgpuLitert(
       wgpu_env(), delegate_data.options->runtime_context, create_info,

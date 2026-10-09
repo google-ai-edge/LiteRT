@@ -41,6 +41,7 @@
 #include "ml_drift_delegate/delegate/gpu_backend_metal.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_metal.h"
+#include "tflite/core/subgraph.h"
 
 namespace litert::ml_drift {
 
@@ -162,7 +163,8 @@ GpuBackendMetalLitert::CreateSharedMemoryManager(
     std::unique_ptr<::ml_drift::GraphAdapter> graph_adapter, TfLiteContext* context,
     MlDriftDelegateData& delegate_data, ::ml_drift::SerializationWeightCache* serialization_cache) {
   const std::unordered_map<size_t, size_t>* external_buffer_id_map =
-      &GetExternalTensorBufferIdentifiers(context, delegate_data);
+      &(reinterpret_cast<const tflite::Subgraph*>(context->impl_)
+            ->GetExternalTensorBufferIdentifiers());
   return ::ml_drift::MakeSharedMemoryManagerMetal(
       metal_device(), create_info, std::move(graph_adapter), context,
       GetBufferIdToSpatialTensorMap(delegate_data),

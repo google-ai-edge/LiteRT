@@ -68,30 +68,27 @@ struct LiteRtOptionsT {
   LiteRtApiVersion version = {.major = 1, .minor = 0, .patch = 0};
   LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
   LiteRtOpaqueOptions options = nullptr;
+  std::vector<CustomOpOption> custom_op_options;
+  std::vector<const TfLiteRegistration*> custom_tflite_op_registrations;
+  std::vector<const TfLiteOperator*> custom_tflite_op_operators;
   // Optional non-owning pointer to an application-provided TFLite
   // MutableOpResolver. When set, CompiledModel copies its registrations into
   // the runtime's op resolver instead of creating the default builtin op
   // resolver.
   const tflite::MutableOpResolver* op_resolver = nullptr;
+  std::vector<LiteRtExternalTensorBinding> external_tensor_bindings;
   // Non-owning pointer used to expose the runtime's WeightLoader to delegates.
   // It may be set by compiled model when scoped_weight_source is set, or by the
   // client if they want to load weights from their own sources.
   weight_loader::WeightLoader* weight_loader = nullptr;
+  // Optional scoped weight source when external weights are packed into a
+  // single file with group sections.
+  std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source;
   // Optional in-memory weight map for heap weight loading.
   // This points to a weight_loader::WeightInMemoryMap. Keep it type-erased so
   // the public no-Abseil C++ headers do not need Abseil merely to describe the
   // otherwise opaque runtime options object.
   const void* weight_in_memory_map = nullptr;
-  // Keep fixed-layout pointer fields above any C++ standard library types
-  // (e.g. std::vector, std::unique_ptr) so their offsets remain invariant
-  // across DSOs built with different C++ standard library ABIs.
-  std::vector<CustomOpOption> custom_op_options;
-  std::vector<const TfLiteRegistration*> custom_tflite_op_registrations;
-  std::vector<const TfLiteOperator*> custom_tflite_op_operators;
-  std::vector<LiteRtExternalTensorBinding> external_tensor_bindings;
-  // Optional scoped weight source when external weights are packed into a
-  // single file with group sections.
-  std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source;
   // When non-empty, only the subgraphs directly referenced by these signatures
   // are active for runtime delegation. An empty container means no selection.
   // The initial implementation does not expand the active set to transitively

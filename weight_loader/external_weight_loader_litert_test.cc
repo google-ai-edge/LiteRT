@@ -755,32 +755,5 @@ TEST(WeightLoaderAbiTest, ReportsErrorsAsLiteRtStatusThroughInterface) {
             kLiteRtStatusOk);
 }
 
-TEST(ExternalWeightLoaderTest,
-     WeightInfoAndWeightAccessHaveAbiStableLayoutAndIndices) {
-  static_assert(offsetof(WeightInfo, external_buffer_id) == 0);
-  static_assert(offsetof(WeightInfo, subgraph_index) == 4);
-  static_assert(offsetof(WeightInfo, tensor_index) == 6);
-  static_assert(offsetof(WeightInfo, packing) == 8);
-  static_assert(sizeof(WeightInfo) == 8 + sizeof(const char*));
-  static_assert(sizeof(WeightAccess) == 4 * sizeof(void*));
-
-  constexpr absl::string_view kGroupName = "deduped_weights.bin";
-  auto model = BuildModelWithDuplicateExternalBuffers(kGroupName);
-  auto loader = CreateLiteRtWeightLoader(
-      LrtGetRuntimeContext(), model.model(),
-      /*model_directory=*/std::string(::testing::TempDir()),
-      /*scoped_weight_source=*/nullptr);
-  ASSERT_NE(loader, nullptr);
-
-  const auto infos = loader->GetWeightInfo();
-  ASSERT_EQ(infos.size(), 2);
-  EXPECT_EQ(infos[0].external_buffer_id, kExternalBufferId);
-  EXPECT_EQ(infos[0].subgraph_index, 0);
-  EXPECT_EQ(infos[0].tensor_index, 0);
-  EXPECT_EQ(infos[1].external_buffer_id, kDuplicateExternalBufferId);
-  EXPECT_EQ(infos[1].subgraph_index, 0);
-  EXPECT_EQ(infos[1].tensor_index, 1);
-}
-
 }  // namespace
 }  // namespace weight_loader

@@ -34,7 +34,6 @@
 #include <cstring>
 #include <fstream>
 #include <ios>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -60,54 +59,21 @@
 namespace weight_loader {
 
 WeightAccess::WeightAccess() = default;
-
-WeightAccess::WeightAccess(WeightAccess&& other) noexcept
-    : host_tensor_buffer_(std::exchange(other.host_tensor_buffer_, nullptr)),
-      host_deleter_(std::exchange(other.host_deleter_, {})),
-      device_tensor_buffer_(
-          std::exchange(other.device_tensor_buffer_, nullptr)),
-      device_deleter_(std::exchange(other.device_deleter_, {})) {}
-
-WeightAccess& WeightAccess::operator=(WeightAccess&& other) noexcept {
-  if (this != &other) {
-    Reset();
-    host_tensor_buffer_ = std::exchange(other.host_tensor_buffer_, nullptr);
-    host_deleter_ = std::exchange(other.host_deleter_, {});
-    device_tensor_buffer_ = std::exchange(other.device_tensor_buffer_, nullptr);
-    device_deleter_ = std::exchange(other.device_deleter_, {});
-  }
-  return *this;
-}
-
-WeightAccess::~WeightAccess() { Reset(); }
+WeightAccess::WeightAccess(WeightAccess&&) noexcept = default;
+WeightAccess& WeightAccess::operator=(WeightAccess&&) noexcept = default;
+WeightAccess::~WeightAccess() = default;
 
 void WeightAccess::Reset() {
-  if (host_tensor_buffer_ != nullptr) {
-    host_deleter_(host_tensor_buffer_);
-    host_tensor_buffer_ = nullptr;
-  }
-  host_deleter_ = {};
-  if (device_tensor_buffer_ != nullptr) {
-    device_deleter_(device_tensor_buffer_);
-    device_tensor_buffer_ = nullptr;
-  }
-  device_deleter_ = {};
+  host_tensor_buffer = nullptr;
+  device_tensor_buffer = nullptr;
 }
 
 void WeightAccess::SetHostBuffer(LiteRtTensorBufferPtr buffer) {
-  if (host_tensor_buffer_ != nullptr) {
-    host_deleter_(host_tensor_buffer_);
-  }
-  host_deleter_ = buffer.get_deleter();
-  host_tensor_buffer_ = buffer.release();
+  host_tensor_buffer = std::move(buffer);
 }
 
 void WeightAccess::SetDeviceBuffer(LiteRtTensorBufferPtr buffer) {
-  if (device_tensor_buffer_ != nullptr) {
-    device_deleter_(device_tensor_buffer_);
-  }
-  device_deleter_ = buffer.get_deleter();
-  device_tensor_buffer_ = buffer.release();
+  device_tensor_buffer = std::move(buffer);
 }
 
 namespace {
@@ -118,6 +84,10 @@ WebWeightUploadCallback g_web_weight_upload_callback = nullptr;
 
 // Information about a single external weight tensor.
 struct LiteRtWeightInfo : public WeightInfo {
+  // The index of the subgraph that contains the tensor.
+  uint32_t subgraph_index;
+  // The index of the tensor in the subgraph.
+  uint32_t tensor_index;
   // The ID of the group that the tensor belongs to. Tensors in the same group
   // are typically stored together in the same external file.
   uint32_t group_id;
@@ -762,14 +732,6 @@ void ParseFlatBuffer(const tflite::Model& model,
       if (buffer_it == buffer_lookup.end()) continue;
       const BufferPtr buffer = buffer_it->second;
 
-      if (sg < 0 || sg > std::numeric_limits<uint16_t>::max() || t < 0 ||
-          t > std::numeric_limits<uint16_t>::max()) {
-        LITERT_LOG(LITERT_ERROR,
-                   "Subgraph index %d or tensor index %d exceeds uint16_t "
-                   "range; skipping external weight.",
-                   sg, t);
-        continue;
-      }
       LiteRtWeightInfo info;
       info.subgraph_index = static_cast<uint16_t>(sg);
       info.tensor_index = static_cast<uint16_t>(t);
@@ -797,7 +759,7 @@ void ParseFlatBuffer(const tflite::Model& model,
       slice_key.group_id = info.group_id;
       slice_key.offset = info.offset;
       slice_key.length = info.length;
-      slice_key.packing = info.packing;
+      slice_key.packing = std::string(info.packing);
       auto [canonical_it, _] = canonical_slice_ids.emplace(
           std::move(slice_key), info.external_buffer_id);
       canonical_ids.emplace(info.external_buffer_id, canonical_it->second);

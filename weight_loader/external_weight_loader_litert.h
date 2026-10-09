@@ -88,11 +88,7 @@ using LiteRtTensorBufferPtr =
 
 struct WeightInfo {
   // The ID of the external buffer that contains the tensor data.
-  uint32_t external_buffer_id = 0;
-  // The index of the subgraph that contains the tensor.
-  uint16_t subgraph_index = 0;
-  // The index of the tensor in the subgraph.
-  uint16_t tensor_index = 0;
+  uint32_t external_buffer_id;
   // The packing format of the tensor data as a NULL-terminated string for ABI
   // stability. Never null. An empty string means no packing was specified.
   // Points into the model flatbuffer (or static storage), so it remains valid
@@ -195,19 +191,16 @@ struct WeightAccess {
   void SetDeviceBuffer(LiteRtTensorBufferPtr buffer);
 
   // Returns the host buffer for the tensor data.
-  LiteRtTensorBuffer GetHostBuffer() const { return host_tensor_buffer_; }
+  LiteRtTensorBuffer GetHostBuffer() const { return host_tensor_buffer.get(); }
   // Returns the device buffer for the tensor data.
-  LiteRtTensorBuffer GetDeviceBuffer() const { return device_tensor_buffer_; }
+  LiteRtTensorBuffer GetDeviceBuffer() const {
+    return device_tensor_buffer.get();
+  }
 
  private:
-  // Stored as explicit pointer + deleter pairs rather than std::unique_ptr with
-  // a stateful deleter, because libc++ and libstdc++ order {ptr, deleter}
-  // differently inside std::unique_ptr.
   // TODO(b/456581477): Use a single tensor buffer for both host and device.
-  LiteRtTensorBuffer host_tensor_buffer_ = nullptr;
-  LiteRtTensorBufferDeleter host_deleter_{};
-  LiteRtTensorBuffer device_tensor_buffer_ = nullptr;
-  LiteRtTensorBufferDeleter device_deleter_{};
+  LiteRtTensorBufferPtr host_tensor_buffer;
+  LiteRtTensorBufferPtr device_tensor_buffer;
 };
 
 // Map from group ID (string) to weight data in host memory.
