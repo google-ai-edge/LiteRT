@@ -13,10 +13,11 @@
 # limitations under the License.
 # ==============================================================================
 
-# NOTE: The Git LFS rules for the prebuilt binaries live in
-# litert/prebuilt/.gitattributes. Do not add `filter=lfs` rules to this root
-# file: Swift Package Manager 6.4+ only checks the root .gitattributes, and if
-# it finds `filter=lfs` there it requires git-lfs and runs `git lfs pull` after
-# every package checkout. That pull resolves LFS objects against SwiftPM's local
-# mirror of this repository, which only has the default branch's LFS objects,
-# so it can fail for other branches and tags. See also .lfsconfig.
+# Prebuilt binaries are stored in Git LFS. Patterns are relative to this
+# directory (litert/prebuilt/). Keep these rules here instead of in the root
+# .gitattributes; see the note there.
+
+*/*.so filter=lfs diff=lfs merge=lfs -text
+*/*.dylib filter=lfs diff=lfs merge=lfs -text
+*/*.dll filter=lfs diff=lfs merge=lfs -text
+*/*.lib filter=lfs diff=lfs merge=lfs -text
