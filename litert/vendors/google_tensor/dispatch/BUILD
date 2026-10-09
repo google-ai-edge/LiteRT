@@ -239,7 +239,6 @@ cc_library(
 #     ],
 #     deps = [
 #         ":dispatch_api_test_fixtures",
-#         "//platforms/darwinn/tachyon/core/fence",
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/cleanup",
 #         "@com_google_absl//absl/strings:str_format",
@@ -270,7 +269,6 @@ cc_library(
 #     ],
 #     deps = [
 #         ":dispatch_api_test_fixtures",
-#         "//platforms/darwinn/tachyon/core/fence",
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/cleanup",
 #         "@com_google_absl//absl/strings:str_format",
