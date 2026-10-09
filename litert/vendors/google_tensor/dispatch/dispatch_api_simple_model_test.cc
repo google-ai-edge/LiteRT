@@ -15,7 +15,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <optional>
@@ -36,11 +38,14 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
+#include "litert/c/litert_event_type.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -731,6 +736,251 @@ TEST_F(SimpleModelTest, DuplicateGraphInputOutputConnectionFails) {
             kLiteRtStatusErrorInvalidArgument);
 
   LITERT_ASSERT_OK(LiteRtDispatchGraphDestroy(graph));
+}
+
+namespace {
+
+class TestVendorPreferredCustomEvent : public LiteRtCustomEventT {
+ public:
+  explicit TestVendorPreferredCustomEvent(int fd) : fd_(fd) {
+    Retain = [](LiteRtCustomEvent event) {
+      static_cast<TestVendorPreferredCustomEvent*>(event)->ref_count_.fetch_add(
+          1);
+    };
+    Release = [](LiteRtCustomEvent event) {
+      auto* self = static_cast<TestVendorPreferredCustomEvent*>(event);
+      if (self->ref_count_.fetch_sub(1) == 1) {
+        delete self;
+      }
+    };
+    Wait = [](LiteRtCustomEvent, int64_t) {};
+    IsSignaled = [](LiteRtCustomEvent) -> int { return 0; };
+    GetNative = [](LiteRtCustomEvent event) -> void* {
+      auto* self = static_cast<TestVendorPreferredCustomEvent*>(event);
+      return &self->fd_;
+    };
+  }
+
+ private:
+  std::atomic<int> ref_count_{1};
+  int fd_ = -1;
+};
+
+}  // namespace
+
+TEST_F(SimpleModelTest, VendorPreferredCustomOutputEventEndToEnd) {
+  int capabilities;
+  LITERT_ASSERT_OK(LiteRtDispatchGetCapabilities(&capabilities));
+  if ((capabilities & kLiteRtDispatchCapabilitiesAsync) == 0) {
+    GTEST_SKIP() << "Async API is not supported";
+  }
+
+  // Enable vendor-preferred fence via device context options.
+  LrtGoogleTensorOptions gt_options = nullptr;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&gt_options));
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsSetUseVendorPreferredFence(gt_options, true));
+  const char* identifier = nullptr;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_ASSERT_OK(LrtGetOpaqueGoogleTensorOptionsData(
+      gt_options, &identifier, &payload, &payload_deleter));
+  LrtDestroyGoogleTensorOptions(gt_options);
+
+  LiteRtOpaqueOptions opaque_options = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(identifier, payload,
+                                             payload_deleter, &opaque_options));
+  LiteRtOptions options = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateOptions(&options));
+  LITERT_ASSERT_OK(LiteRtAddOpaqueOptions(options, opaque_options));
+
+  LiteRtDispatchDeviceContext custom_device_context = nullptr;
+  LITERT_ASSERT_OK(LiteRtDispatchDeviceContextCreate(
+      LrtGetRuntimeContext(), options, &custom_device_context));
+  LiteRtDestroyOptions(options);
+
+  LiteRtDispatchInvocationContext invocation_context;
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextCreate(
+      LrtGetRuntimeContext(), custom_device_context,
+      kLiteRtDispatchExecutableTypeMlModel, &model_bytecode(),
+      /*function_name=*/nullptr,
+      /*num_inputs=*/2, /*num_outputs=*/1, &invocation_context));
+
+  LiteRtTensorBufferRequirements input_0_requirements;
+  LITERT_ASSERT_OK(LiteRtDispatchGetInputRequirements(
+      invocation_context, /*input_index=*/0, &kInput0TensorType,
+      &input_0_requirements));
+  LiteRtTensorBufferType input_0_type;
+  LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
+      input_0_requirements, /*type_index=*/0, &input_0_type));
+  size_t input_0_size;
+  LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsBufferSize(
+      input_0_requirements, &input_0_size));
+  LiteRtDestroyTensorBufferRequirements(input_0_requirements);
+
+  LiteRtTensorBufferRequirements input_1_requirements;
+  LITERT_ASSERT_OK(LiteRtDispatchGetInputRequirements(
+      invocation_context, /*input_index=*/1, &kInput1TensorType,
+      &input_1_requirements));
+  LiteRtTensorBufferType input_1_type;
+  LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
+      input_1_requirements, /*type_index=*/0, &input_1_type));
+  size_t input_1_size;
+  LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsBufferSize(
+      input_1_requirements, &input_1_size));
+  LiteRtDestroyTensorBufferRequirements(input_1_requirements);
+
+  LiteRtTensorBufferRequirements output_requirements;
+  LITERT_ASSERT_OK(LiteRtDispatchGetOutputRequirements(
+      invocation_context, /*output_index=*/0, &kOutputTensorType,
+      &output_requirements));
+  LiteRtTensorBufferType output_type;
+  LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
+      output_requirements, /*type_index=*/0, &output_type));
+  size_t output_size;
+  LITERT_ASSERT_OK(LiteRtGetTensorBufferRequirementsBufferSize(
+      output_requirements, &output_size));
+  LiteRtDestroyTensorBufferRequirements(output_requirements);
+
+  LiteRtTensorBuffer input_0_tensor_buffer;
+  LITERT_ASSERT_OK(
+      LiteRtCreateManagedTensorBuffer(env(), input_0_type, &kInput0TensorType,
+                                      input_0_size, &input_0_tensor_buffer));
+  LiteRtTensorBuffer input_1_tensor_buffer;
+  LITERT_ASSERT_OK(
+      LiteRtCreateManagedTensorBuffer(env(), input_1_type, &kInput1TensorType,
+                                      input_1_size, &input_1_tensor_buffer));
+  LiteRtTensorBuffer output_tensor_buffer;
+  LITERT_ASSERT_OK(
+      LiteRtCreateManagedTensorBuffer(env(), output_type, &kOutputTensorType,
+                                      output_size, &output_tensor_buffer));
+
+  LiteRtTensorBufferHandle input_0_handle;
+  LITERT_ASSERT_OK(LiteRtDispatchRegisterTensorBuffer(
+      custom_device_context, input_0_tensor_buffer, &input_0_handle));
+  LiteRtTensorBufferHandle input_1_handle;
+  LITERT_ASSERT_OK(LiteRtDispatchRegisterTensorBuffer(
+      custom_device_context, input_1_tensor_buffer, &input_1_handle));
+  LiteRtTensorBufferHandle output_handle;
+  LITERT_ASSERT_OK(LiteRtDispatchRegisterTensorBuffer(
+      custom_device_context, output_tensor_buffer, &output_handle));
+
+  LITERT_ASSERT_OK(LiteRtDispatchAttachInput(
+      invocation_context, /*graph_input_index=*/0, input_0_handle));
+  LITERT_ASSERT_OK(LiteRtDispatchAttachInput(
+      invocation_context, /*graph_input_index=*/1, input_1_handle));
+  LITERT_ASSERT_OK(LiteRtDispatchAttachOutput(
+      invocation_context, /*graph_output_index=*/0, output_handle));
+
+  {
+    void* host_mem_addr;
+    LITERT_ASSERT_OK(LiteRtLockTensorBuffer(input_0_tensor_buffer,
+                                            &host_mem_addr,
+                                            kLiteRtTensorBufferLockModeWrite));
+    std::memcpy(host_mem_addr, kTestInput0Tensor, sizeof(kTestInput0Tensor));
+    LITERT_ASSERT_OK(LiteRtUnlockTensorBuffer(input_0_tensor_buffer));
+
+    LITERT_ASSERT_OK(LiteRtLockTensorBuffer(input_1_tensor_buffer,
+                                            &host_mem_addr,
+                                            kLiteRtTensorBufferLockModeWrite));
+    std::memcpy(host_mem_addr, kTestInput1Tensor, sizeof(kTestInput1Tensor));
+    LITERT_ASSERT_OK(LiteRtUnlockTensorBuffer(input_1_tensor_buffer));
+  }
+
+  LiteRtEvent output_event = nullptr;
+  LITERT_ASSERT_OK(LiteRtDispatchInvokeAsync(
+      invocation_context, /*num_output_events=*/1, &output_event));
+  ASSERT_NE(output_event, nullptr);
+
+  LiteRtEventType output_event_type = LiteRtEventTypeUnknown;
+  LITERT_ASSERT_OK(LiteRtGetEventEventType(output_event, &output_event_type));
+  EXPECT_EQ(output_event_type, LiteRtEventTypeCustom);
+
+  LiteRtCustomEvent custom_output_event = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetCustomEvent(output_event, &custom_output_event));
+  ASSERT_NE(custom_output_event, nullptr);
+  ASSERT_NE(custom_output_event->GetNative, nullptr);
+  void* native_fd_ptr = custom_output_event->GetNative(custom_output_event);
+  ASSERT_NE(native_fd_ptr, nullptr);
+  EXPECT_GE(*static_cast<const int*>(native_fd_ptr), 0);
+
+  LITERT_ASSERT_OK(
+      LiteRtSetTensorBufferEvent(output_tensor_buffer, output_event));
+
+  {
+    void* host_mem_addr;
+    LITERT_ASSERT_OK(LiteRtLockTensorBuffer(
+        output_tensor_buffer, &host_mem_addr, kLiteRtTensorBufferLockModeRead));
+    auto output = absl::MakeConstSpan(static_cast<float*>(host_mem_addr),
+                                      kTestOutputSize);
+    EXPECT_THAT(output, Pointwise(testing::FloatNear(1e-3), kTestOutputTensor));
+    LITERT_ASSERT_OK(LiteRtUnlockTensorBuffer(output_tensor_buffer));
+  }
+
+  LITERT_ASSERT_OK(LiteRtDispatchDetachInput(
+      invocation_context, /*graph_input_index=*/0, input_0_handle));
+  LITERT_ASSERT_OK(LiteRtDispatchDetachInput(
+      invocation_context, /*graph_input_index=*/1, input_1_handle));
+  LITERT_ASSERT_OK(LiteRtDispatchDetachOutput(
+      invocation_context, /*graph_output_index=*/0, output_handle));
+
+  LITERT_ASSERT_OK(LiteRtDispatchUnregisterTensorBuffer(custom_device_context,
+                                                        output_handle));
+  LITERT_ASSERT_OK(LiteRtDispatchUnregisterTensorBuffer(custom_device_context,
+                                                        input_1_handle));
+  LITERT_ASSERT_OK(LiteRtDispatchUnregisterTensorBuffer(custom_device_context,
+                                                        input_0_handle));
+
+  LiteRtDestroyTensorBuffer(output_tensor_buffer);
+  LiteRtDestroyTensorBuffer(input_1_tensor_buffer);
+  LiteRtDestroyTensorBuffer(input_0_tensor_buffer);
+
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextDestroy(invocation_context));
+  LITERT_ASSERT_OK(
+      LiteRtDispatchDeviceContextDestroy(custom_device_context));
+}
+
+TEST_F(SimpleModelTest, AttachCustomInputEvent) {
+  int capabilities;
+  LITERT_ASSERT_OK(LiteRtDispatchGetCapabilities(&capabilities));
+  if ((capabilities & kLiteRtDispatchCapabilitiesAsync) == 0) {
+    GTEST_SKIP() << "Async API is not supported";
+  }
+
+  LiteRtDispatchInvocationContext invocation_context;
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextCreate(
+      LrtGetRuntimeContext(), device_context(),
+      kLiteRtDispatchExecutableTypeMlModel, &model_bytecode(),
+      /*function_name=*/nullptr,
+      /*num_inputs=*/2, /*num_outputs=*/1, &invocation_context));
+
+  std::shared_ptr<tachyon::Fence> input_fence = fence_util::CreateFence();
+  LiteRtEvent valid_input_event = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateManagedEvent(env(), LiteRtEventTypeCustom,
+                                            &valid_input_event));
+  auto* custom_in = new TestVendorPreferredCustomEvent(input_fence->GetFd());
+  LITERT_ASSERT_OK(LiteRtSetCustomEvent(valid_input_event, custom_in));
+  custom_in->Release(custom_in);
+
+  LITERT_ASSERT_OK(LiteRtDispatchAttachInputEvent(
+      invocation_context, /*graph_input_index=*/0, valid_input_event));
+
+  // Attaching a custom event with an invalid (< 0) fd must fail.
+  LiteRtEvent invalid_fd_event = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateManagedEvent(env(), LiteRtEventTypeCustom,
+                                            &invalid_fd_event));
+  auto* invalid_custom_in = new TestVendorPreferredCustomEvent(/*fd=*/-1);
+  LITERT_ASSERT_OK(LiteRtSetCustomEvent(invalid_fd_event, invalid_custom_in));
+  invalid_custom_in->Release(invalid_custom_in);
+
+  EXPECT_EQ(LiteRtDispatchAttachInputEvent(
+                invocation_context, /*graph_input_index=*/1, invalid_fd_event),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtDestroyEvent(invalid_fd_event);
+  LiteRtDestroyEvent(valid_input_event);
+
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextDestroy(invocation_context));
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInterfaces, SimpleModelEndToEndTest,
