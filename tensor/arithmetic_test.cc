@@ -592,6 +592,14 @@ TEST(ArithmeticTest, LessWorks) {
   EXPECT_THAT(c_info.shape, ElementsAre(2, 4));
 }
 
+TEST(ArithmeticTest, LessEqualWorks) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor c = LessEqual(a, b);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const auto& c_info, GetInfo(c));
+  EXPECT_THAT(c_info.shape, ElementsAre(2, 4));
+}
+
 TEST(ArithmeticTest, GreaterWorks) {
   Tensor a({.type = Type::kFP32, .shape = {2, 4}});
   Tensor b({.type = Type::kFP32, .shape = {2, 4}});
@@ -1498,6 +1506,12 @@ TEST(OperationCastTest, Less) {
   Tensor a({.type = Type::kFP32, .shape = {2, 4}});
   Tensor b({.type = Type::kFP32, .shape = {2, 4}});
   VerifyOperationRTTI<graph::LessOperation>(Less(a, b));
+}
+
+TEST(OperationCastTest, LessEqual) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor b({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::LessEqualOperation>(LessEqual(a, b));
 }
 
 TEST(OperationCastTest, Greater) {

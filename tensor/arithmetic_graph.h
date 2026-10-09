@@ -470,6 +470,11 @@ struct LessOperation : Operation {
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
+struct LessEqualOperation : Operation {
+  absl::string_view GetName() const override { return "LessEqual"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
+};
+
 struct GreaterOperation : Operation {
   absl::string_view GetName() const override { return "Greater"; }
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION

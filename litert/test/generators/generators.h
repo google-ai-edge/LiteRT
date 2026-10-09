@@ -40,6 +40,7 @@
 #include "litert/test/generators/sdpa.h"  // IWYU pragma: export
 #include "litert/test/generators/swiglu.h"  // IWYU pragma: export
 #include "litert/test/generators/qkv_norm_rope.h"  // IWYU pragma: export
+#include "litert/test/generators/comparison.h"  // IWYU pragma: export
 #include "litert/test/generators/rms_norm.h"  // IWYU pragma: export
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_

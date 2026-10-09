@@ -399,6 +399,19 @@ Tensor<Mixins...> Less(
     absl::SourceLocation loc = absl::SourceLocation::current()) {
   Tensor<Mixins...> output =
       ElementwiseOp<graph::LessOperation, Mixins...>(loc, a, b);
+  graph::TensorInformation& o_info = *GetInfo(output.GetRaw());
+  o_info.type = Type::kBOOL;
+  return output;
+}
+
+template <class... Mixins>
+Tensor<Mixins...> LessEqual(
+    Tensor<Mixins...> a, Tensor<Mixins...> b,
+    absl::SourceLocation loc = absl::SourceLocation::current()) {
+  Tensor<Mixins...> output =
+      ElementwiseOp<graph::LessEqualOperation, Mixins...>(loc, a, b);
+  graph::TensorInformation& o_info = *GetInfo(output.GetRaw());
+  o_info.type = Type::kBOOL;
   return output;
 }
 
@@ -408,6 +421,8 @@ Tensor<Mixins...> Greater(
     absl::SourceLocation loc = absl::SourceLocation::current()) {
   Tensor<Mixins...> output =
       ElementwiseOp<graph::GreaterOperation, Mixins...>(loc, a, b);
+  graph::TensorInformation& o_info = *GetInfo(output.GetRaw());
+  o_info.type = Type::kBOOL;
   return output;
 }
 
@@ -417,6 +432,8 @@ Tensor<Mixins...> GreaterEqual(
     absl::SourceLocation loc = absl::SourceLocation::current()) {
   Tensor<Mixins...> output =
       ElementwiseOp<graph::GreaterEqualOperation, Mixins...>(loc, a, b);
+  graph::TensorInformation& o_info = *GetInfo(output.GetRaw());
+  o_info.type = Type::kBOOL;
   return output;
 }
 

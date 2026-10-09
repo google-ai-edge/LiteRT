@@ -1656,6 +1656,28 @@ TEST(SerializationTest, CanSerializeLess) {
   EXPECT_EQ(node_and_reg->second.builtin_code, tflite::BuiltinOperator_LESS);
 }
 
+TEST(SerializationTest, CanSerializeLessEqual) {
+  const std::string model_path = testing::TempDir() + "/less_equal.tflite";
+  TensorTf a({.type = Type::kFP32, .shape = {2, 5}});
+  TensorTf b({.type = Type::kFP32, .shape = {2, 5}});
+  TensorTf c = LessEqual(a, b);
+  ASSERT_THAT(Save({c}, model_path), IsOk());
+
+  auto model = tflite::FlatBufferModel::BuildFromFile(model_path.c_str());
+  ASSERT_NE(model, nullptr);
+  std::unique_ptr<tflite::Interpreter> interpreter;
+  tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
+  ASSERT_EQ(tflite::InterpreterBuilder(*model, resolver)(&interpreter),
+            kTfLiteOk);
+  ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
+
+  ASSERT_EQ(interpreter->nodes_size(), 1);
+  const auto* node_and_reg = interpreter->node_and_registration(0);
+  ASSERT_NE(node_and_reg, nullptr);
+  EXPECT_EQ(node_and_reg->second.builtin_code,
+            tflite::BuiltinOperator_LESS_EQUAL);
+}
+
 TEST(SerializationTest, CanSerializeGreater) {
   const std::string model_path = testing::TempDir() + "/greater.tflite";
   TensorTf a({.type = Type::kFP32, .shape = {2, 5}});

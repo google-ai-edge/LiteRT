@@ -642,6 +642,47 @@ void ReferenceEvaluator::RegisterStandardOps() {
   };
   RegisterOp(kLiteRtOpCodeTflSelect, select_handler);
   RegisterOp(kLiteRtOpCodeTflSelectV2, std::move(select_handler));
+
+  auto register_comparison_op = [this](LiteRtOpCode op_code, auto ref_fn) {
+    RegisterOp(op_code,
+               [ref_fn](const LiteRtOpT& op, const TensorEnv& env,
+                        TensorData& out) -> Expected<void> {
+                 const auto& in1 = env.at(op.Inputs()[0]);
+                 const auto& in2 = env.at(op.Inputs()[1]);
+                 if (!in1.f32_data.empty()) {
+                   ref_fn(in1.f32_data.data(), in1.dimensions.data(),
+                          in1.dimensions.size(), in2.f32_data.data(),
+                          in2.dimensions.data(), in2.dimensions.size(),
+                          out.i32_data.data(), out.dimensions.data(),
+                          out.dimensions.size());
+                 } else if (!in1.i32_data.empty()) {
+                   ref_fn(in1.i32_data.data(), in1.dimensions.data(),
+                          in1.dimensions.size(), in2.i32_data.data(),
+                          in2.dimensions.data(), in2.dimensions.size(),
+                          out.i32_data.data(), out.dimensions.data(),
+                          out.dimensions.size());
+                 }
+                 return {};
+               });
+  };
+  register_comparison_op(
+      kLiteRtOpCodeTflEqual,
+      [](auto... args) { litert::internal::ReferenceEqual(args...); });
+  register_comparison_op(
+      kLiteRtOpCodeTflNotEqual,
+      [](auto... args) { litert::internal::ReferenceNotEqual(args...); });
+  register_comparison_op(
+      kLiteRtOpCodeTflGreater,
+      [](auto... args) { litert::internal::ReferenceGreater(args...); });
+  register_comparison_op(
+      kLiteRtOpCodeTflGreaterEqual,
+      [](auto... args) { litert::internal::ReferenceGreaterEqual(args...); });
+  register_comparison_op(
+      kLiteRtOpCodeTflLess,
+      [](auto... args) { litert::internal::ReferenceLess(args...); });
+  register_comparison_op(
+      kLiteRtOpCodeTflLessEqual,
+      [](auto... args) { litert::internal::ReferenceLessEqual(args...); });
 }
 
 Expected<void> ReferenceEvaluator::ExecuteOp(const LiteRtOpT& op,

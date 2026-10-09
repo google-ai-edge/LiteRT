@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_CORE_MODEL_OPS_SIMPLE_BINARY_H_
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -113,15 +114,30 @@ inline void ComputeBroadcastStrides(const int32_t* dims, int input_rank,
   }
 }
 
-template <typename T, typename BinaryOp>
-void RunBinaryOp(const T* a, const T* b, T* output, const size_t* a_stride,
-                 const size_t* b_stride, const size_t* output_stride,
-                 const size_t* output_shape, int rank, BinaryOp op) {
+template <typename InT, typename OutT, typename BinaryOp>
+void RunBinaryOp(const InT* a, const InT* b, OutT* output,
+                 const size_t* a_stride, const size_t* b_stride,
+                 const size_t* output_stride, const size_t* output_shape,
+                 int rank, BinaryOp op) {
   if (rank <= 0) {
     *output = op(*a, *b);
   } else if (rank == 1) {
-    for (size_t i = 0; i < output_shape[0]; ++i) {
-      output[i * output_stride[0]] = op(a[i * a_stride[0]], b[i * b_stride[0]]);
+    assert(output_stride[0] == 1);
+    if (a_stride[0] == 0) {
+      const InT a_val = *a;
+      for (size_t i = 0; i < output_shape[0]; ++i) {
+        output[i] = op(a_val, b[i * b_stride[0]]);
+      }
+    } else if (b_stride[0] == 0) {
+      const InT b_val = *b;
+      for (size_t i = 0; i < output_shape[0]; ++i) {
+        output[i] = op(a[i], b_val);
+      }
+    } else {
+      assert(a_stride[0] == 1 && b_stride[0] == 1);
+      for (size_t i = 0; i < output_shape[0]; ++i) {
+        output[i] = op(a[i], b[i]);
+      }
     }
   } else {
     for (size_t i = 0; i < output_shape[0]; ++i) {
@@ -132,14 +148,16 @@ void RunBinaryOp(const T* a, const T* b, T* output, const size_t* a_stride,
   }
 }
 
-template <typename T, typename BinaryOp>
-inline void ReferenceBinaryGeneric(const T* input1_data,
+template <typename InT, typename OutT, typename BinaryOp>
+inline void ReferenceBinaryGeneric(const InT* input1_data,
                                    const int32_t* input1_dims, int input1_rank,
-                                   const T* input2_data,
+                                   const InT* input2_data,
                                    const int32_t* input2_dims, int input2_rank,
-                                   T* output_data, const int32_t* output_dims,
-                                   int rank, BinaryOp op) {
+                                   OutT* output_data,
+                                   const int32_t* output_dims, int rank,
+                                   BinaryOp op) {
   constexpr int kMaxRank = tflite::RuntimeShape::kMaxSmallSize;
+  assert(rank <= kMaxRank);
   size_t a_stride[kMaxRank];
   size_t b_stride[kMaxRank];
   size_t o_stride[kMaxRank];
@@ -240,6 +258,65 @@ inline void ReferencePow(const float* a_data, const int32_t* a_dims, int a_rank,
   ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
                          output_data, output_dims, rank,
                          [](float a, float b) { return std::pow(a, b); });
+}
+
+template <typename T, typename OutT = bool>
+inline void ReferenceEqual(const T* a_data, const int32_t* a_dims, int a_rank,
+                           const T* b_data, const int32_t* b_dims, int b_rank,
+                           OutT* output_data, const int32_t* output_dims,
+                           int rank) {
+  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                         output_data, output_dims, rank, std::equal_to<T>());
+}
+
+template <typename T, typename OutT = bool>
+inline void ReferenceNotEqual(const T* a_data, const int32_t* a_dims,
+                              int a_rank, const T* b_data,
+                              const int32_t* b_dims, int b_rank,
+                              OutT* output_data, const int32_t* output_dims,
+                              int rank) {
+  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                         output_data, output_dims, rank,
+                         std::not_equal_to<T>());
+}
+
+template <typename T, typename OutT = bool>
+inline void ReferenceGreater(const T* a_data, const int32_t* a_dims, int a_rank,
+                             const T* b_data, const int32_t* b_dims, int b_rank,
+                             OutT* output_data, const int32_t* output_dims,
+                             int rank) {
+  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                         output_data, output_dims, rank, std::greater<T>());
+}
+
+template <typename T, typename OutT = bool>
+inline void ReferenceGreaterEqual(const T* a_data, const int32_t* a_dims,
+                                  int a_rank, const T* b_data,
+                                  const int32_t* b_dims, int b_rank,
+                                  OutT* output_data, const int32_t* output_dims,
+                                  int rank) {
+  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                         output_data, output_dims, rank,
+                         std::greater_equal<T>());
+}
+
+template <typename T, typename OutT = bool>
+inline void ReferenceLess(const T* a_data, const int32_t* a_dims, int a_rank,
+                          const T* b_data, const int32_t* b_dims, int b_rank,
+                          OutT* output_data, const int32_t* output_dims,
+                          int rank) {
+  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                         output_data, output_dims, rank, std::less<T>());
+}
+
+template <typename T, typename OutT = bool>
+inline void ReferenceLessEqual(const T* a_data, const int32_t* a_dims,
+                               int a_rank, const T* b_data,
+                               const int32_t* b_dims, int b_rank,
+                               OutT* output_data, const int32_t* output_dims,
+                               int rank) {
+  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                         output_data, output_dims, rank, std::less_equal<T>());
 }
 
 }  // namespace litert::internal

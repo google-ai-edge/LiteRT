@@ -394,6 +394,12 @@ absl::StatusOr<TfLiteOpBuildInfo> OpMixin<
 }
 
 absl::StatusOr<TfLiteOpBuildInfo>
+OpMixin<LessEqualOperation, TfLiteMixinTag>::ToTfLite(
+    const graph::Operation& op) const {
+  return TfLiteOpBuildInfo(::tflite::BuiltinOperator_LESS_EQUAL);
+}
+
+absl::StatusOr<TfLiteOpBuildInfo>
 OpMixin<GreaterOperation, TfLiteMixinTag>::ToTfLite(
     const graph::Operation& op) const {
   return TfLiteOpBuildInfo(::tflite::BuiltinOperator_GREATER);

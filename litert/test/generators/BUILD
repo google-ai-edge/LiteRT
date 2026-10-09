@@ -834,6 +834,30 @@ cc_library(
 )
 
 cc_library(
+    name = "comparison",
+    testonly = True,
+    hdrs = ["comparison.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_rng",
+        "//litert/core/model",
+        "//litert/core/model:ops_simple_binary",
+        "//litert/test:simple_buffer",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:datatypes",
+        "//tensor/backends/tflite:arithmetic_tflite",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
     name = "generators",
     testonly = True,
     hdrs = ["generators.h"],
@@ -842,6 +866,7 @@ cc_library(
         ":binary_broadcast",
         ":binary_no_bcast",
         ":common",
+        ":comparison",
         ":concatenation",
         ":conv_2d",
         ":depthwise_conv_2d",

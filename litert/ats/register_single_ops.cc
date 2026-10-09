@@ -22,6 +22,7 @@
 #include "litert/ats/register_batch_matmul.h"
 #include "litert/ats/register_binary_broadcast.h"
 #include "litert/ats/register_binary_no_bcast.h"
+#include "litert/ats/register_comparison.h"
 #include "litert/ats/register_concatenation.h"
 #include "litert/ats/register_conv_2d.h"
 #include "litert/ats/register_depthwise_conv_2d.h"
@@ -46,6 +47,7 @@ void RegisterSingleOpsImpl(const AtsConf& options, size_t& test_id,
                            typename Fixture::Capture& cap) {
   RegisterBinaryNoBroadcast(options, test_id, /*iters=*/10, cap);
   RegisterBinaryBroadcast(options, test_id, /*iters=*/10, cap);
+  RegisterComparison(options, test_id, /*iters=*/10, cap);
   RegisterUnary(options, test_id, /*iters=*/10, cap);
   RegisterConv2d(options, test_id, /*iters=*/10, cap);
   RegisterDepthwiseConv2d(options, test_id, /*iters=*/10, cap);
