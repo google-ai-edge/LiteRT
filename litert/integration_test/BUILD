@@ -425,7 +425,7 @@ litert_integration_test(
 #     name = "litert_guitar_device_integration_tests_kotlin",
 #     auto_deps = [
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test",
-#         "//litert/kotlin/src/tests/google:litert_kotlin_api_gpu_mh_test",
+#         "//litert/kotlin/src/tests/google:litert_kotlin_api_gpu_supported_mh_test",
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_qualcomm",
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_jit_mh_test_qualcomm",
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor",
@@ -439,7 +439,7 @@ litert_integration_test(
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test"],
 #             ),
 #             litert_mh_guitar_test(
-#                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_gpu_mh_test"],
+#                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_gpu_supported_mh_test"],
 #             ),
 #             litert_qualcomm_mh_guitar_test(
 #                 is_instrumentation_test = True,
