@@ -48,6 +48,9 @@ enum Padding {
   kPaddingValid,
 };
 
+// Placeholder extent for dimensions that should be inferred.
+inline constexpr int kInferredDim = -1;
+
 }  // namespace litert::tensor
 
 namespace litert::tensor::graph {

@@ -21,6 +21,7 @@ limitations under the License.
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -1836,6 +1837,45 @@ TEST(SerializationTest, CanSerializeReshape) {
   int32_t serialized_shape = 0;
   std::memcpy(&serialized_shape, shape_buffer->data()->data(), sizeof(int32_t));
   EXPECT_EQ(serialized_shape, 5);
+}
+
+TEST(SerializationTest, InferredReshapeSurvivesSerializationAndResize) {
+  const std::string path = testing::TempDir() + "/inferred_reshape.tflite";
+  TensorTf input({.name = "input", .type = Type::kFP32, .shape = {1, 3, 4}});
+  TensorTf output = Reshape(input, {1, kInferredDim, 2});
+  ASSERT_THAT(Save({output}, path), IsOk());
+  EXPECT_THAT(output.GetShape(), ElementsAre(1, 6, 2));
+  std::unique_ptr<tflite::FlatBufferModel> model =
+      tflite::FlatBufferModel::BuildFromFile(path.c_str());
+  ASSERT_NE(model, nullptr);
+  std::unique_ptr<tflite::Interpreter> interpreter;
+  tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
+  ASSERT_EQ(tflite::InterpreterBuilder(*model, resolver)(&interpreter),
+            kTfLiteOk);
+  for (int rows : {3, 1, 7, 2, 0, 5}) {
+    ASSERT_EQ(
+        interpreter->ResizeInputTensor(interpreter->inputs()[0], {1, rows, 4}),
+        kTfLiteOk);
+    ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
+    const std::pair<TfLiteNode, TfLiteRegistration>* reshape =
+        interpreter->node_and_registration(0);
+    const auto* options = reinterpret_cast<const TfLiteReshapeParams*>(
+        reshape->first.builtin_data);
+    EXPECT_EQ(options->shape[1], -1);
+    const TfLiteTensor* shape =
+        interpreter->tensor(reshape->first.inputs->data[1]);
+    EXPECT_EQ(shape->data.i32[1], -1);
+    for (int i = 0; i < rows * 4; ++i) {
+      interpreter->typed_input_tensor<float>(0)[i] =
+          static_cast<float>(i + rows);
+    }
+    ASSERT_EQ(interpreter->Invoke(), kTfLiteOk);
+    const TfLiteTensor* result = interpreter->output_tensor(0);
+    EXPECT_EQ(result->dims->data[1], rows * 2);
+    for (int i = 0; i < rows * 4; ++i) {
+      EXPECT_EQ(result->data.f[i], static_cast<float>(i + rows));
+    }
+  }
 }
 
 TEST(SerializationTest, CanSerializeExpandDims) {
