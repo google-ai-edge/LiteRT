@@ -409,10 +409,11 @@ class LiteRtCompiledModelT {
   // Returns the buffer to bind to an input tensor for which the caller passed
   // nullptr in Run(). Since signature I/O tensors are not allocated by TFLite's
   // ArenaPlanner (see MarkSignatureIoTensorsNonCpu), such tensors would
-  // otherwise have no backing memory, so the runtime binds a zero-filled host
-  // buffer it owns, exactly as if the caller had provided one. Returns nullptr
-  // if the tensor already has backing memory (e.g. an external tensor binding)
-  // and must be left untouched.
+  // otherwise have no backing memory if consumed by CPU ops, so the runtime
+  // binds a zero-filled host buffer it owns, exactly as if the caller had
+  // provided one. Returns nullptr if the tensor is not consumed by CPU ops
+  // (accelerator nodes manage their own buffers) or already has backing memory
+  // (e.g. an external tensor binding) and must be left untouched.
   litert::Expected<LiteRtTensorBuffer> GetBufferForUnboundInput(
       TfLiteTensor* tensor);
 

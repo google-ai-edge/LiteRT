@@ -44,10 +44,12 @@
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_gpu_options.h"
+#include "litert/runtime/compiled_model.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include <CL/cl.h>
+#include "tflite/interpreter.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
 #include "tflite/delegates/gpu/cl/cl_device.h"
@@ -1252,6 +1254,82 @@ TEST(CompiledModelGpuTest, UseCpuBuffer) {
                      << kTestOutputTensor_2[i];
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor_2));
+  }
+}
+
+TEST(CompiledModelGpuTest, UnboundInputBufferAllocationCpuVsGpu) {
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+
+  // 1. CPU: Unbound input should receive a runtime fallback host buffer
+  // (tensor->data.raw != nullptr) because it is consumed by CPU nodes.
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto cpu_options, Options::Create());
+    cpu_options.SetHardwareAccelerators(HwAccelerators::kCpu);
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto compiled_model,
+        CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
+                              cpu_options));
+    LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter* interpreter,
+                                GetInterpreter(compiled_model.Get()));
+    ASSERT_NE(interpreter, nullptr);
+
+    auto* input_tensor1 = interpreter->tensor(interpreter->inputs()[1]);
+    EXPECT_EQ(input_tensor1->data.raw, nullptr);
+
+    LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                                compiled_model.CreateInputBuffers());
+    LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                                compiled_model.CreateOutputBuffers());
+
+    ASSERT_TRUE(input_buffers[0].Write<float>(
+        absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+
+    // Leave the second input unbound (null TensorBuffer).
+    std::vector<TensorBuffer> run_inputs;
+    run_inputs.push_back(std::move(input_buffers[0]));
+    run_inputs.emplace_back();
+    LITERT_ASSERT_OK(compiled_model.Run(run_inputs, output_buffers));
+
+    // Input 1 is consumed by CPU op, so runtime fallback buffer was registered.
+    EXPECT_NE(input_tensor1->data.raw, nullptr);
+  }
+
+  // 2. GPU: Unbound input should NOT allocate host fallback buffer
+  // (tensor->data.raw remains nullptr) because GPU delegate manages its own
+  // memory.
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto gpu_options, CreateGpuOptions(/*external_tensors_mode=*/false));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto compiled_model,
+        CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
+                              gpu_options));
+    LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter* interpreter,
+                                GetInterpreter(compiled_model.Get()));
+    ASSERT_NE(interpreter, nullptr);
+
+    auto* input_tensor1 = interpreter->tensor(interpreter->inputs()[1]);
+    EXPECT_EQ(input_tensor1->data.raw, nullptr);
+
+    LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                                compiled_model.CreateInputBuffers());
+    LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                                compiled_model.CreateOutputBuffers());
+
+    ASSERT_TRUE(input_buffers[0].Write<float>(
+        absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+
+    // Leave the second input unbound (null TensorBuffer).
+    std::vector<TensorBuffer> run_inputs;
+    run_inputs.push_back(std::move(input_buffers[0]));
+    run_inputs.emplace_back();
+    auto run_status = compiled_model.Run(run_inputs, output_buffers);
+    (void)run_status;
+
+    // Input 1 is delegated to GPU and not consumed by CPU op; no host buffer
+    // must be allocated or registered.
+    EXPECT_EQ(input_tensor1->data.raw, nullptr);
   }
 }
 

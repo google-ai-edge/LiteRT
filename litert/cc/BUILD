@@ -420,10 +420,12 @@ litert_device_test(
 #         "//litert/c:litert_tensor_buffer_types",
 #         "//litert/cc/internal:litert_platform_support",
 #         "//litert/cc/options:litert_gpu_options",
+#         "//litert/runtime:compiled_model",
 #         "//litert/test:common",
 #         "//litert/test:matchers",
 #         "//litert/test:simple_model",
 #         "@opencl_headers",
+#         "//tflite:framework",
 #     ] + select({
 #         "//litert:android": [
 #             "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator",  # buildcleaner: keep

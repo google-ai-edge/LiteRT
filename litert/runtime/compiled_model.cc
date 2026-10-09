@@ -1274,6 +1274,15 @@ Expected<LiteRtTensorBuffer> LiteRtCompiledModelT::GetBufferForUnboundInput(
   LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
                           GetTensorIdentifier(*interp_, tensor));
 
+  // Only unbound inputs consumed by CPU nodes require runtime-allocated backing
+  // memory. Accelerator nodes (GPU, NPU) manage their own tensor buffers and
+  // do not require CPU host memory for unbound inputs. Allocating host buffers
+  // for them would unnecessarily allocate and touch large blocks of host RAM
+  // (e.g. LLM weights).
+  if (!cpu_tensors_.contains(tensor_id)) {
+    return nullptr;
+  }
+
   auto it = unbound_input_buffers_.find(tensor_id);
   if (it == unbound_input_buffers_.end()) {
     // Never bound by the runtime: leave tensors that already have backing
