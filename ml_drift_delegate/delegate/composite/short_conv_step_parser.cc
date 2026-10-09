@@ -16,7 +16,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <utility>
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
@@ -30,18 +29,55 @@
 
 namespace litert::ml_drift {
 
+ShortConvStepAttributes ParseShortConvStepAttributes(
+    const TfLiteNode& tflite_node) {
+  ShortConvStepAttributes attr;
+  const uint8_t* buffer_t = nullptr;
+  size_t length = 0;
+  if (tflite_node.custom_initial_data &&
+      tflite_node.custom_initial_data_size > 0) {
+    buffer_t =
+        reinterpret_cast<const uint8_t*>(tflite_node.custom_initial_data);
+    length = tflite_node.custom_initial_data_size;
+  } else if (tflite_node.builtin_data) {
+    const auto* composite_params =
+        static_cast<const TfLiteStablehloCompositeParams*>(
+            tflite_node.builtin_data);
+    if (composite_params && composite_params->attributes &&
+        composite_params->attributes_size > 0) {
+      buffer_t = reinterpret_cast<const uint8_t*>(composite_params->attributes);
+      length = composite_params->attributes_size;
+    }
+  }
+  if (buffer_t && length > 0) {
+    const flexbuffers::Map flexbuffer_map =
+        flexbuffers::GetRoot(buffer_t, length).AsMap();
+    if (!flexbuffer_map["conv_L_cache"].IsNull()) {
+      attr.conv_L_cache = flexbuffer_map["conv_L_cache"].AsInt32();
+    }
+  }
+  return attr;
+}
+
 absl::Status ShortConvStepOperationParser::IsSupported(
     const TfLiteContext* context, const TfLiteNode* tflite_node,
     const TfLiteRegistration*) {
-  if (tflite_node->inputs->size != 3 && tflite_node->inputs->size != 4) {
+  if (tflite_node->inputs->size < 3 || tflite_node->inputs->size > 5) {
     return absl::InvalidArgumentError(
-        absl::StrCat("ShortConvStep expects 3 or 4 inputs, but got ",
+        absl::StrCat("ShortConvStep expects 3 to 5 inputs, but got ",
                      tflite_node->inputs->size));
   }
   if (tflite_node->outputs->size != 2) {
     return absl::InvalidArgumentError(
         absl::StrCat("ShortConvStep expects 2 outputs, but got ",
                      tflite_node->outputs->size));
+  }
+  const ShortConvStepAttributes attr =
+      ParseShortConvStepAttributes(*tflite_node);
+  if (attr.conv_L_cache < 2 || attr.conv_L_cache > 4) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("ShortConvStep supports conv_L_cache in [2, 4], but got ",
+                     attr.conv_L_cache));
   }
   for (int i = 0; i < tflite_node->inputs->size; ++i) {
     ABSL_RETURN_IF_ERROR(
@@ -66,34 +102,7 @@ void ShortConvStepOperationParser::Parse(const TfLiteNode* tflite_node,
     }
   }
   reader->AddOutputs(node);
-
-  ShortConvStepAttributes attr;
-  const uint8_t* buffer_t = nullptr;
-  size_t length = 0;
-  if (tflite_node->custom_initial_data &&
-      tflite_node->custom_initial_data_size > 0) {
-    buffer_t =
-        reinterpret_cast<const uint8_t*>(tflite_node->custom_initial_data);
-    length = tflite_node->custom_initial_data_size;
-  } else if (tflite_node->builtin_data) {
-    const auto* composite_params =
-        static_cast<const TfLiteStablehloCompositeParams*>(
-            tflite_node->builtin_data);
-    if (composite_params && composite_params->attributes &&
-        composite_params->attributes_size > 0) {
-      buffer_t =
-          reinterpret_cast<const uint8_t*>(composite_params->attributes);
-      length = composite_params->attributes_size;
-    }
-  }
-  if (buffer_t && length > 0) {
-    const flexbuffers::Map flexbuffer_map =
-        flexbuffers::GetRoot(buffer_t, length).AsMap();
-    if (!flexbuffer_map["conv_L_cache"].IsNull()) {
-      attr.conv_L_cache = flexbuffer_map["conv_L_cache"].AsInt32();
-    }
-  }
-  node->operation.attributes = std::move(attr);
+  node->operation.attributes = ParseShortConvStepAttributes(*tflite_node);
 }
 
 }  // namespace litert::ml_drift
