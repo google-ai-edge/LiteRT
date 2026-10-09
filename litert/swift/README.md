@@ -62,6 +62,8 @@ running in the Simulator requires an Apple silicon Mac.
 4.  Add your `.tflite` model to the app target, so that it is copied into the
     app bundle, and `import LiteRT` in your Swift code.
 
+If Xcode fails to add the package, see [Troubleshooting](#troubleshooting).
+
 ### Key Types
 
 -   **`Environment`**: Holds runtime environment options (such as compiler or
@@ -196,6 +198,52 @@ development team to sign the app with.
 5.  Connect a physical iPhone, select it as the run destination, and build and
     run the app (**Product > Run**). Check that segmentation works with both
     the CPU and the GPU backend.
+
+### Troubleshooting
+
+#### `git-lfs: command not found`
+
+Adding or updating the package in Xcode fails with an error like this one:
+
+```
+Couldn’t check out revision ‘<commit>’:
+    git-lfs filter-process: git-lfs: command not found
+    fatal: the remote end hung up unexpectedly
+```
+
+When you add the package, Xcode might only report "unexpectedly did not find
+the new dependency in the package graph" instead.
+
+The repository stores the prebuilt libraries in `litert/prebuilt/` with
+[Git LFS](https://git-lfs.com). The Swift package doesn't use them, but if Git
+LFS is set up in your Git configuration, for example by `git lfs install`, Git
+runs `git-lfs` for these files when Xcode checks out the package. Apps that you
+open from the Dock or Finder don't get the `PATH` that your shell sets, so when
+Xcode runs Git, Git might not find `git-lfs`, for example if you installed it
+with Homebrew.
+
+To fix this, remove the Git LFS setup from your global Git configuration:
+
+1.  In Terminal, outside any Git repository, run:
+
+    ```shell
+    git lfs uninstall
+    ```
+
+2.  Check that Git LFS is no longer set up for the Git that Xcode uses. The
+    following command should print nothing. If it prints any settings, remove
+    them from the file it names.
+
+    ```shell
+    xcrun git config --show-origin --get-regexp '^filter\.lfs\.'
+    ```
+
+3.  In Xcode, add the package again. If your project already lists it, choose
+    **File > Packages > Reset Package Caches** instead.
+
+After this, Git LFS works only in repositories where you run
+`git lfs install --local`. Running plain `git lfs install` turns it back on
+for all repositories and brings back the error above.
 
 ## LiteRT Developer Guide
 
