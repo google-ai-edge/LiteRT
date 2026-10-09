@@ -42,6 +42,57 @@ cc_library(
 )
 
 cc_library(
+    name = "graph",
+    hdrs = [
+        "active_graph_context.h",
+        "attention.h",
+        "bundle_matched_ops.h",
+        "feed_forward_network.h",
+        "gemma4_graph.h",
+        "mobile_fully_connected.h",
+        "rope.h",
+        "transformer.h",
+    ],
+    deps = [
+        ":bundle_loader",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/examples/gemma4:gemma4_config",
+        "//tensor/examples/ops/transformer:transformer_ops",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "model_builder",
+    srcs = ["model_builder.cc"],
+    hdrs = ["model_builder.h"],
+    copts = ["-ffp-contract=off"],
+    deps = [
+        ":bundle_loader",
+        ":graph",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/backends/tflite:arithmetic_tflite",
+        "//tensor/backends/tflite:tflite_flatbuffer_conversion",
+        "//tensor/examples/gemma4:gemma4_config",
+        "//tensor/utils:macros",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_library(
     name = "runner_lib",
     hdrs = [
         "host_buffer.h",
