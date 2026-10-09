@@ -163,7 +163,6 @@ YNNPACK_MODELS_DONT_REGISTER = [
     "torchvision_deeplabv3_resnet50",
     "torchvision_fcn_resnet50",
     "torchvision_lraspp_mobilenet_v3_large",
-    "torchvision_resnet18",
     "torchvision_swin_tiny",
     "torchvision_video_resnet2plus1d_18",
     "torchvision_video_resnet3d_18",
