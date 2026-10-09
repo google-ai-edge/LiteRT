@@ -45,6 +45,7 @@
 #include "openvino/op/gather.hpp"
 #include "openvino/op/gelu.hpp"
 #include "openvino/op/matmul.hpp"
+#include "openvino/op/maximum.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/pad.hpp"
 #include "openvino/op/reduce_sum.hpp"
@@ -76,13 +77,116 @@ namespace {
 // to be a multiple of this alignment.
 constexpr int64_t kSdpaKvSeqAlignment = 16;
 
-// Additive-mask sentinel used for padded key positions. Value taken from
-// Gemma models.
-constexpr float kSdpaPadMaskBias = -100.0f;
+// Lower bound applied to the attention mask before it reaches the fused SDPA,
+// and the additive bias written into padded key positions.
+//
+// The NPU executes SDPA as flash attention: it walks the key axis in tiles and
+// rescales each partial result by exp(m_tile - m_running), where m_tile is the
+// tile's maximum score. A tile in which *every* position is masked has
+// m_tile = -inf, so the inner term becomes exp(-inf - (-inf)) = NaN, and that
+// NaN contaminates the entire output row. This is not a corner case here: the
+// decode graph attends over a KV span of up to 4096 while only a handful of
+// positions are valid, so nearly every tile is fully masked.
+//
+// Clamping the mask to a large but *finite* negative keeps every tile's
+// maximum finite. -3e4 is chosen so that exp(-3e4) still underflows to zero —
+// masked positions contribute nothing — while staying inside the +/-65504
+// range of fp16, which is the precision the NPU runs at. A smaller magnitude
+// (the previous -100) is also finite, but it does not protect against a model
+// whose own mask uses -inf, and it is the model's mask, not the padding, that
+// dominates here.
+constexpr float kSdpaMaskFloor = -3e4f;
+constexpr float kSdpaPadMaskBias = kSdpaMaskFloor;
+
 
 // Returns true if |output| feeds exactly one consumer input.
 bool HasSingleConsumer(const ov::Output<ov::Node>& output) {
   return output.get_target_inputs().size() == 1;
+}
+
+// Returns the compile-time start offset of |node| along the last axis of its
+// data input, for v8::Slice and v1::StridedSlice. Returns nullopt when |node|
+// is neither of those or when the offset is not a foldable constant.
+//
+// This exists so the SDPA fusion can tell which of two sibling slices reads
+// the *low* part of an axis and which reads the *high* part. Both slice types
+// spell that offset differently, hence the two branches.
+std::optional<int64_t> LastAxisSliceStart(
+    const std::shared_ptr<ov::Node>& node) {
+  if (node == nullptr) {
+    return std::nullopt;
+  }
+  const auto& data_ps = node->get_input_partial_shape(0);
+  if (data_ps.rank().is_dynamic()) {
+    return std::nullopt;
+  }
+  const int64_t rank = data_ps.rank().get_length();
+  const int64_t last_axis = rank - 1;
+
+  // v8::Slice: inputs are (data, start, stop, step[, axes]). When the optional
+  // axes input is present, the i-th entry of |start| applies to axes[i];
+  // otherwise the i-th entry applies to axis i.
+  if (auto slice = std::dynamic_pointer_cast<ov::op::v8::Slice>(node)) {
+    auto start_const = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+        slice->input_value(1).get_node_shared_ptr());
+    if (!start_const) {
+      return std::nullopt;
+    }
+    const std::vector<int64_t> starts = start_const->cast_vector<int64_t>();
+    int64_t entry = -1;
+    if (slice->get_input_size() >= 5) {
+      auto axes_const = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+          slice->input_value(4).get_node_shared_ptr());
+      if (!axes_const) {
+        return std::nullopt;
+      }
+      const std::vector<int64_t> axes = axes_const->cast_vector<int64_t>();
+      for (size_t i = 0; i < axes.size(); ++i) {
+        const int64_t axis = axes[i] < 0 ? axes[i] + rank : axes[i];
+        if (axis == last_axis) {
+          entry = static_cast<int64_t>(i);
+          break;
+        }
+      }
+      // An axis absent from |axes| is passed through whole, i.e. starts at 0.
+      if (entry < 0) {
+        return 0;
+      }
+    } else {
+      // Fewer start entries than the rank means the last axis is untouched.
+      if (static_cast<int64_t>(starts.size()) <= last_axis) {
+        return 0;
+      }
+      entry = last_axis;
+    }
+    if (entry >= static_cast<int64_t>(starts.size())) {
+      return std::nullopt;
+    }
+    return starts[entry];
+  }
+
+  // v1::StridedSlice: |begin| is indexed by axis directly, but a set bit in
+  // begin_mask means "ignore begin[axis]" and start from 0.
+  if (auto strided =
+          std::dynamic_pointer_cast<ov::op::v1::StridedSlice>(node)) {
+    auto begin_const = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+        strided->input_value(1).get_node_shared_ptr());
+    if (!begin_const) {
+      return std::nullopt;
+    }
+    const std::vector<int64_t> begins = begin_const->cast_vector<int64_t>();
+    if (static_cast<int64_t>(begins.size()) <= last_axis) {
+      return std::nullopt;
+    }
+    const auto& begin_mask = strided->get_begin_mask();
+    if (static_cast<int64_t>(begin_mask.size()) > last_axis &&
+        begin_mask[last_axis] == 1) {
+      return 0;
+    }
+    return begins[last_axis];
+  }
+
+  return std::nullopt;
 }
 
 // Pads |input| at the end of the (possibly negative) |axis| by |pad_amount|
@@ -312,12 +416,97 @@ FuseSplitAttentionToSDPA::FuseSplitAttentionToSDPA(bool pad_kv_to_alignment) {
       return false;
     }
 
+    // Establish which V branch is which.
+    //
+    // The K side is unambiguous: the score Concat explicitly lists
+    // [QK_cache, QK_new], so input 0 is the cache and input 1 is the new
+    // token(s). The V side has no such guarantee — we reached it through
+    // `Add(attn_cache, attn_new)`, and an Add's operands carry no ordering.
+    // Both operands are MatMuls, so the casts above succeed either way and the
+    // mismatch is completely silent. If the Add happened to be emitted with
+    // its operands reversed, we would build SDPA with K ordered
+    // [cache, new] but V ordered [new, cache]: every attention weight would be
+    // applied to the wrong value vector. The model still compiles and still
+    // runs; it just produces garbage, which for a small instruction-tuned LLM
+    // shows up as EOS on the very first decoded token.
+    //
+    // Recover the true order from the slices that split the shared Softmax:
+    // the cache branch reads the low end of the score axis, the new-token
+    // branch reads the high end.
+    std::optional<int64_t> cache_branch_start =
+        LastAxisSliceStart(cache_src_node);
+    std::optional<int64_t> new_branch_start = LastAxisSliceStart(new_src_node);
+    if (!cache_branch_start.has_value() || !new_branch_start.has_value()) {
+      LITERT_LOG(LITERT_DEBUG,
+                 "FuseSplitAttentionToSDPA[%s]: reject: cannot read constant "
+                 "slice offsets for the V branches, so their order cannot be "
+                 "established",
+                 root_name.c_str());
+      return false;
+    }
+    if (*cache_branch_start > *new_branch_start) {
+      std::swap(v_matmul_cache, v_matmul_new);
+      std::swap(cache_src_node, new_src_node);
+      std::swap(cache_branch_start, new_branch_start);
+      LITERT_LOG(LITERT_INFO,
+                 "FuseSplitAttentionToSDPA[%s]: Add operands were reversed "
+                 "relative to the score Concat; swapped the V branches to keep "
+                 "K and V in the same [cache, new] order",
+                 root_name.c_str());
+    }
+
+    // Cross-check the recovered order against the Concat: the cache branch
+    // must cover [0, split) and the new branch must start exactly at |split|,
+    // where |split| is the cache-side score width. Anything else means the
+    // graph splits the Softmax differently than this fusion assumes, and
+    // concatenating K/V in this order would misalign them.
+    const auto& qk_cache_ps = concat_node->get_input_partial_shape(0);
+    if (qk_cache_ps.rank().is_dynamic()) {
+      LITERT_LOG(LITERT_DEBUG,
+                 "FuseSplitAttentionToSDPA[%s]: reject: score Concat input has "
+                 "dynamic rank",
+                 root_name.c_str());
+      return false;
+    }
+    const int64_t score_last_axis = qk_cache_ps.rank().get_length() - 1;
+    if (qk_cache_ps[score_last_axis].is_static()) {
+      const int64_t split = qk_cache_ps[score_last_axis].get_length();
+      if (*cache_branch_start != 0 || *new_branch_start != split) {
+        LITERT_LOG(LITERT_DEBUG,
+                   "FuseSplitAttentionToSDPA[%s]: reject: V-branch slice "
+                   "offsets (cache=%lld, new=%lld) do not match the score "
+                   "Concat split point %lld",
+                   root_name.c_str(),
+                   static_cast<long long>(*cache_branch_start),
+                   static_cast<long long>(*new_branch_start),
+                   static_cast<long long>(split));
+        return false;
+      }
+    }
+
     auto q = qk_cache_node->input_value(0);
     auto k_cache = qk_cache_node->input_value(1);
     auto k_new = qk_new_node->input_value(1);
     auto v_cache = v_matmul_cache->input_value(1);
     auto v_new = v_matmul_new->input_value(1);
     auto mask_value = mask_add_node->input_value(1);
+
+    // Report the shapes this fusion is about to reason about. The mask's last
+    // dimension in particular decides whether the mask carries per-key-position
+    // information at all: if it is 1 it is a broadcast scalar and the real
+    // masking lives elsewhere, in which case slicing and padding it is
+    // meaningless and SDPA would attend over every cache slot, including the
+    // unwritten ones.
+    LITERT_LOG(LITERT_DEBUG,
+               "FuseSplitAttentionToSDPA[%s]: shapes Q=%s K_cache=%s K_new=%s "
+               "V_cache=%s V_new=%s mask=%s",
+               root_name.c_str(),
+               q.get_partial_shape().to_string().c_str(),
+               k_cache.get_partial_shape().to_string().c_str(),
+               k_new.get_partial_shape().to_string().c_str(),
+               v_cache.get_partial_shape().to_string().c_str(),
+               v_new.get_partial_shape().to_string().c_str(),
+               mask_value.get_partial_shape().to_string().c_str());
 
     // KV-cache sharing guard: K_cache / V_cache must each feed exactly one
     // consumer (the QK / attn*V MatMul we are about to fuse). If the same KV
@@ -428,17 +617,32 @@ FuseSplitAttentionToSDPA::FuseSplitAttentionToSDPA(bool pad_kv_to_alignment) {
       new_nodes.push_back(val_out.get_node_shared_ptr());
     }
 
-    // Mask. Its KV axis (-1) must match the (possibly padded) KV length, so
-    // pad it by the same amount with a large finite negative bias to mask
-    // the padded positions in softmax (kSdpaPadMaskBias is -3e4: small enough
-    // that exp underflows, large enough that fp16 stays finite, avoiding
-    // NaN in flash-attention tile rescaling).
+    // Mask, in two steps.
+    //
+    // First clamp it. The graph we matched fed this mask into an ordinary
+    // Softmax, which tolerates -inf as long as some entry in the row is
+    // finite. Flash attention does not: it reduces per tile, and a tile whose
+    // entries are all -inf produces NaN (see kSdpaMaskFloor). Raising the mask
+    // to a finite floor is a no-op for any mask that is already finite, so
+    // this is safe to apply unconditionally.
+    //
+    // Then pad it. The mask's KV axis (-1) must match the possibly-padded KV
+    // length, and the padded positions get the same finite bias so that they
+    // contribute nothing to the softmax.
     const int64_t mask_rank =
         mask_value.get_partial_shape().rank().is_static()
             ? mask_value.get_partial_shape().rank().get_length()
             : 4;
-    ov::Output<ov::Node> attn_mask = PadEndOfAxis(
-        mask_value, mask_rank, /*axis=*/-1, kv_pad, kSdpaPadMaskBias);
+    auto mask_floor = ov::op::v0::Constant::create(
+        mask_value.get_element_type(), ov::Shape{},
+        std::vector<float>{kSdpaMaskFloor});
+    auto clamped_mask =
+        std::make_shared<ov::op::v1::Maximum>(mask_value, mask_floor);
+    new_nodes.push_back(mask_floor);
+    new_nodes.push_back(clamped_mask);
+    ov::Output<ov::Node> attn_mask =
+        PadEndOfAxis(clamped_mask->output(0), mask_rank, /*axis=*/-1, kv_pad,
+                     kSdpaPadMaskBias);
     if (kv_pad > 0) {
       new_nodes.push_back(attn_mask.get_node_shared_ptr());
     }
