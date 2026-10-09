@@ -1,0 +1,20 @@
+# Helpful YAML parser to clarify YAML syntax:
+# https://yaml-online-parser.appspot.com/
+
+name: LiteRT Quantizer Unit Tests (nightly)
+
+on:
+  schedule:
+    - cron: "0 10 * * *" # 10am UTC (3am PST)
+
+  workflow_dispatch:  # Allow manual triggers
+
+permissions:
+  contents: read
+
+jobs:
+  run-unittests-nightly:
+    name: Run Unit Tests Python Nightly
+    uses: ./.github/workflows/litert_quantizer_unittests_python.yml
+    with:
+      trigger-sha: ${{ github.sha }}

@@ -34,9 +34,9 @@ with INT8/INT4 weights, required for mobile hardware.
 
 Build Type         |    Status     |
 -----------        | --------------|
-Unit Tests (Linux) | [![Unit Tests Status Badge](https://github.com/google-ai-edge/LiteRT/actions/workflows/nightly_unittests.yml/badge.svg?branch=main)](https://github.com/google-ai-edge/LiteRT/actions/workflows/nightly_unittests.yml) |
+Unit Tests (Linux) | [![Unit Tests Status Badge](https://github.com/google-ai-edge/LiteRT/actions/workflows/litert_quantizer_nightly_unittests.yml/badge.svg?branch=main)](https://github.com/google-ai-edge/LiteRT/actions/workflows/litert_quantizer_nightly_unittests.yml) |
 Nightly Release    | [![Nightly Release Status Badge](https://github.com/google-ai-edge/LiteRT/actions/workflows/litert_quantizer_nightly_release.yml/badge.svg?branch=main)](https://github.com/google-ai-edge/LiteRT/actions/workflows/litert_quantizer_nightly_release.yml) |
-Nightly Colab      | [![Nightly Colab Status Badge](https://github.com/google-ai-edge/LiteRT/actions/workflows/nightly_colabs.yml/badge.svg?branch=main)](https://github.com/google-ai-edge/LiteRT/actions/workflows/nightly_colabs.yml) |
+Nightly Colab      | [![Nightly Colab Status Badge](https://github.com/google-ai-edge/LiteRT/actions/workflows/litert_quantizer_nightly_colabs.yml/badge.svg?branch=main)](https://github.com/google-ai-edge/LiteRT/actions/workflows/litert_quantizer_nightly_colabs.yml) |
 
 ## Installation
 
