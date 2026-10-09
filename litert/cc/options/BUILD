@@ -282,6 +282,39 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "litert_dispatch_delegate_vendor_options",
+    srcs = ["litert_dispatch_delegate_vendor_options.cc"],
+    hdrs = ["litert_dispatch_delegate_vendor_options.h"],
+    deps = [
+        ":litert_concrete_options_base",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "litert_dispatch_delegate_vendor_options_test",
+    srcs = ["litert_dispatch_delegate_vendor_options_test.cc"],
+    deps = [
+        ":litert_dispatch_delegate_vendor_options",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_opaque_options",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 exports_files(glob([
     "*.h",
     "*.cc",
