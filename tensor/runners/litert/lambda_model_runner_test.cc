@@ -15,60 +15,71 @@ limitations under the License.
 
 #include "tensor/runners/litert/lambda_model_runner.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_common.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
+#include "litert/cc/litert_tensor_buffer.h"
 #include "tensor/arithmetic.h"
 #include "tensor/backends/tflite/arithmetic_tflite.h"
 #include "tensor/backends/tflite/tflite_flatbuffer_conversion.h"
+#include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/runners/litert/feedback_loop_config.h"
 #include "tensor/runners/litert/litert_dynamic_runner.h"
 #include "tensor/tensor.h"
+#include "tensor/utils/matchers.h"
 
 namespace litert::tensor {
 namespace {
 
+using ::absl_testing::StatusIs;
+using ::litert::tensor::IsOk;
+using ::testing::ElementsAre;
+using ::testing::ElementsAreArray;
+using ::testing::Not;
+
 TEST(LambdaModelRunnerTest, SimpleLambda) {
-  LITERT_ASSIGN_OR_ABORT(auto env, Environment::Create({}));
-  LITERT_ASSIGN_OR_ABORT(auto options, Options::Create());
+  LITERT_ASSIGN_OR_ABORT(Environment env, Environment::Create({}));
+  LITERT_ASSIGN_OR_ABORT(Options options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
   auto runner = CreateLambdaRunner(
       env, options,
       {{"x", Tensor<TfLiteMixinTag>(
                  {.name = "x", .type = Type::kFP32, .shape = {1}})}},
-      [](const auto& inputs) {
+      [](const TensorsMap& inputs) {
         Tensor y = Add(inputs.at("x"), 1.0f);
         return TensorsMap{{"y", y}};
       });
 
   std::vector<float> input_data = {2.0f};
-  auto x_tensor = Create("x", Type::kFP32, {1}, std::move(input_data));
-  EXPECT_TRUE(runner.SetInput("x", x_tensor).ok());
-  EXPECT_TRUE(runner.Run().ok());
+  TensorHandle x_tensor = Create("x", Type::kFP32, {1}, std::move(input_data));
+  EXPECT_THAT(runner.SetInput("x", x_tensor), IsOk());
+  EXPECT_THAT(runner.Run(), IsOk());
 
-  auto y_or = runner.GetOutput("y");
-  ASSERT_TRUE(y_or.ok());
-  auto y_tensor = std::move(*y_or);
-
-  auto buffer_or = y_tensor.GetBuffer();
-  ASSERT_TRUE(buffer_or.ok());
-  auto locked_span = buffer_or->Lock();
-  const float* data = reinterpret_cast<const float*>(locked_span.data());
-  EXPECT_EQ(data[0], 3.0f);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle y_tensor, runner.GetOutput("y"));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, y_tensor.GetBuffer());
+  EXPECT_THAT(buffer.Lock().As<const float>(), ElementsAre(3.0f));
 }
 
 TEST(LambdaModelRunnerTest, StaticRunner) {
-  LITERT_ASSIGN_OR_ABORT(auto env, Environment::Create({}));
-  LITERT_ASSIGN_OR_ABORT(auto options, Options::Create());
+  LITERT_ASSIGN_OR_ABORT(Environment env, Environment::Create({}));
+  LITERT_ASSIGN_OR_ABORT(Options options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
   Tensor<TfLiteMixinTag> x({.name = "x", .type = Type::kFP32, .shape = {1}});
@@ -81,24 +92,18 @@ TEST(LambdaModelRunnerTest, StaticRunner) {
   auto runner = CreateStaticRunner(env, options, inputs, outputs);
 
   std::vector<float> input_data = {2.0f};
-  auto x_tensor = Create("x", Type::kFP32, {1}, std::move(input_data));
-  EXPECT_TRUE(runner.SetInput("x", x_tensor).ok());
-  EXPECT_TRUE(runner.Run().ok());
+  TensorHandle x_tensor = Create("x", Type::kFP32, {1}, std::move(input_data));
+  EXPECT_THAT(runner.SetInput("x", x_tensor), IsOk());
+  EXPECT_THAT(runner.Run(), IsOk());
 
-  auto y_or = runner.GetOutput("y");
-  ASSERT_TRUE(y_or.ok());
-  auto y_tensor = std::move(*y_or);
-
-  auto buffer_or = y_tensor.GetBuffer();
-  ASSERT_TRUE(buffer_or.ok());
-  auto locked_span = buffer_or->Lock();
-  const float* data = reinterpret_cast<const float*>(locked_span.data());
-  EXPECT_EQ(data[0], 3.0f);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle y_tensor, runner.GetOutput("y"));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, y_tensor.GetBuffer());
+  EXPECT_THAT(buffer.Lock().As<const float>(), ElementsAre(3.0f));
 }
 
 TEST(LitertDynamicRunnerTest, CreateFromBufferAndBinaryInput) {
-  LITERT_ASSIGN_OR_ABORT(auto env, Environment::Create({}));
-  LITERT_ASSIGN_OR_ABORT(auto options, Options::Create());
+  LITERT_ASSIGN_OR_ABORT(Environment env, Environment::Create({}));
+  LITERT_ASSIGN_OR_ABORT(Options options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
   Tensor<TfLiteMixinTag> x({.name = "x", .type = Type::kFP32, .shape = {1}});
@@ -106,38 +111,174 @@ TEST(LitertDynamicRunnerTest, CreateFromBufferAndBinaryInput) {
   y.SetName("y");
 
   std::vector<char> model_buffer;
-  ASSERT_TRUE(Save(std::vector<Tensor<TfLiteMixinTag>>{y}, model_buffer).ok());
+  ASSERT_THAT(Save(std::vector<Tensor<TfLiteMixinTag>>{y}, model_buffer),
+              IsOk());
 
   absl::Span<const uint8_t> buffer_span(
       reinterpret_cast<const uint8_t*>(model_buffer.data()),
       model_buffer.size());
 
-  auto runner_or = LitertDynamicRunner::Create(env, buffer_span, options);
-  ASSERT_TRUE(runner_or.ok());
-  auto runner = std::move(*runner_or);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      LitertDynamicRunner runner,
+      LitertDynamicRunner::Create(env, buffer_span, options));
 
   std::vector<float> input_data = {2.0f};
   absl::Span<const uint8_t> input_span(
       reinterpret_cast<const uint8_t*>(input_data.data()),
       input_data.size() * sizeof(float));
 
-  EXPECT_TRUE(runner.SetInput("x", input_span).ok());
-  EXPECT_TRUE(runner.Run().ok());
+  EXPECT_THAT(runner.SetInput("x", input_span), IsOk());
+  EXPECT_THAT(runner.Run(), IsOk());
 
-  auto y_or = runner.GetOutput("y");
-  ASSERT_TRUE(y_or.ok());
-  auto y_tensor = std::move(*y_or);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle y_tensor, runner.GetOutput("y"));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, y_tensor.GetBuffer());
+  EXPECT_THAT(buffer.Lock().As<const float>(), ElementsAre(3.0f));
+}
 
-  auto buffer_or = y_tensor.GetBuffer();
-  ASSERT_TRUE(buffer_or.ok());
-  auto locked_span = buffer_or->Lock();
-  const float* data = reinterpret_cast<const float*>(locked_span.data());
-  EXPECT_EQ(data[0], 3.0f);
+using LitertDynamicRunnerResizeTest = ::testing::TestWithParam<ResizeMode>;
+
+// Concatenation exercises the same empty/growing/shrinking history boundary
+// as chunked attention, with an output whose size really changes after resize.
+TEST_P(LitertDynamicRunnerResizeTest, ActiveHistoryAcrossSignatures) {
+  ResizeMode mode = GetParam();
+  LITERT_ASSIGN_OR_ABORT(Environment env, Environment::Create({}));
+  LITERT_ASSIGN_OR_ABORT(Options options, Options::Create());
+  ASSERT_TRUE(options.SetHardwareAccelerators(HwAccelerators::kCpu));
+  ModelFactory factory;
+  for (const auto& [name, rows] : std::vector<std::pair<std::string, int>>{
+           {"prefill", 4}, {"decode", 1}}) {
+    Tensor<TfLiteMixinTag> past(
+        {.name = "past", .type = Type::kFP32, .shape = {1, 1}});
+    Tensor<TfLiteMixinTag> chunk(
+        {.name = "chunk", .type = Type::kFP32, .shape = {rows, 1}});
+    Tensor<TfLiteMixinTag> result = Concatenation({past, chunk}, 0);
+    result.SetName("result");
+    if (mode == ResizeMode::kStrict) {
+      ASSERT_THAT(factory.SetShapeSignature(past, {-1, 1}), IsOk());
+      ASSERT_THAT(factory.SetShapeSignature(result, {-1, 1}), IsOk());
+    }
+    ASSERT_THAT(factory.AddSignature({result}, name), IsOk());
+  }
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::vector<char> model,
+                                  factory.CreateFlatbuffer());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      LitertDynamicRunner runner,
+      LitertDynamicRunner::Create(
+          env,
+          absl::Span<const uint8_t>(
+              reinterpret_cast<const uint8_t*>(model.data()), model.size()),
+          options));
+  alignas(64) float history[128] = {};
+  for (int i = 0; i < 128; ++i) {
+    history[i] = static_cast<float>(i);
+  }
+  for (int length : {0, 3, 32, 1, 0}) {
+    for (const auto& [name, rows] : std::vector<std::pair<std::string, int>>{
+             {"prefill", 4}, {"decode", 1}}) {
+      const std::vector<int> shape{length, 1};
+      ASSERT_THAT(runner.ResizeInput(name, "past", shape, mode), IsOk());
+      ASSERT_THAT(runner.GetInput(name, "past"), IsOk());
+      EXPECT_THAT(runner.Run(name),
+                  StatusIs(absl::StatusCode::kFailedPrecondition));
+      RankedTensorType type(ElementType::Float32,
+                            Layout(Dimensions(shape.begin(), shape.end())));
+      LITERT_ASSIGN_OR_ABORT(TensorBuffer input,
+                             TensorBuffer::CreateFromHostMemory(
+                                 env, type, history, sizeof(history)));
+      ASSERT_THAT(runner.SetInputBuffer(name, "past", std::move(input)),
+                  IsOk());
+      LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle handle,
+                                      runner.GetInput(name, "past"));
+      EXPECT_EQ(handle.GetShape(), shape);
+      EXPECT_THAT(handle.GetBufferPtr()->Lock().As<const float>(),
+                  ElementsAreArray(history, length));
+      std::vector<float> chunk(rows, 100.0f);
+      ASSERT_THAT(
+          runner.SetInput(name, "chunk",
+                          absl::Span<const uint8_t>(
+                              reinterpret_cast<const uint8_t*>(chunk.data()),
+                              chunk.size() * sizeof(float))),
+          IsOk());
+      ASSERT_THAT(runner.Run(name), IsOk());
+      LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle result,
+                                      runner.GetOutput(name, "result"));
+      EXPECT_EQ(result.GetShape(), (Shape{length + rows, 1}));
+      LockedBufferSpan<const float> data =
+          result.GetBufferPtr()->Lock().As<const float>();
+      ASSERT_EQ(data.size(), length + rows);
+      for (int i = 0; i < length; ++i) {
+        EXPECT_EQ(data.data()[i], history[i]);
+      }
+      for (int i = 0; i < rows; ++i) {
+        EXPECT_EQ(data.data()[length + i], 100.0f);
+      }
+    }
+  }
+  EXPECT_THAT(runner.ResizeInput("prefill", "past", {-1, 1}, mode),
+              Not(IsOk()));
+  if (mode == ResizeMode::kStrict) {
+    EXPECT_THAT(runner.ResizeInput("prefill", "past", {2, 2}), Not(IsOk()));
+    EXPECT_THAT(runner.ResizeInput("prefill", "past", {2}), Not(IsOk()));
+    EXPECT_THAT(runner.ResizeInput("decode", "chunk", {2, 1}), Not(IsOk()));
+  }
+  EXPECT_THAT(
+      runner.ResizeInput("missing", "past", {2, 1}, ResizeMode::kNonStrict),
+      StatusIs(absl::StatusCode::kNotFound));
+  EXPECT_THAT(runner.ResizeInput("prefill", size_t{999}, {2, 1},
+                                 ResizeMode::kNonStrict),
+              Not(IsOk()));
+  // A rejected resize leaves the last successful binding usable.
+  EXPECT_THAT(runner.Run("prefill"), IsOk());
+}
+
+INSTANTIATE_TEST_SUITE_P(LitertDynamicRunnerResizeTests,
+                         LitertDynamicRunnerResizeTest,
+                         ::testing::Values(ResizeMode::kNonStrict,
+                                           ResizeMode::kStrict));
+
+TEST(LitertDynamicRunnerTest, ResizeCopyInputAndValidateBorrowedShape) {
+  LITERT_ASSIGN_OR_ABORT(Environment env, Environment::Create({}));
+  LITERT_ASSIGN_OR_ABORT(Options options, Options::Create());
+  ASSERT_TRUE(options.SetHardwareAccelerators(HwAccelerators::kCpu));
+  Tensor<TfLiteMixinTag> x({.name = "x", .type = Type::kFP32, .shape = {1}});
+  Tensor<TfLiteMixinTag> y = Add(x, 1.0f);
+  y.SetName("y");
+  std::vector<char> model;
+  ASSERT_THAT(Save(std::vector<Tensor<TfLiteMixinTag>>{y}, model), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      LitertDynamicRunner runner,
+      LitertDynamicRunner::Create(
+          env,
+          absl::Span<const uint8_t>(
+              reinterpret_cast<const uint8_t*>(model.data()), model.size()),
+          options));
+  EXPECT_THAT(runner.ResizeInput("x", {3}), Not(IsOk()));  // Static signature.
+  ASSERT_THAT(runner.ResizeInput("x", {3}, ResizeMode::kNonStrict), IsOk());
+  alignas(64) float data[32] = {1, 2, 3};
+  LITERT_ASSIGN_OR_ABORT(
+      TensorBuffer wrong,
+      TensorBuffer::CreateFromHostMemory(
+          env, RankedTensorType(ElementType::Float32, Layout(Dimensions{1})),
+          data, sizeof(data)));
+  EXPECT_THAT(runner.SetInputBuffer("x", std::move(wrong)),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  ASSERT_THAT(runner.SetInput("x", absl::Span<const uint8_t>(
+                                       reinterpret_cast<const uint8_t*>(data),
+                                       3 * sizeof(float))),
+              IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle result, runner.GetOutput("y"));
+  EXPECT_EQ(result.GetShape(), (Shape{3}));
+  EXPECT_THAT(result.GetBufferPtr()->Lock().As<const float>(),
+              ElementsAre(2.0f, 3.0f, 4.0f));
+  ASSERT_THAT(runner.RegisterFeedbackLoop("x", "y"), IsOk());
+  EXPECT_THAT(runner.ResizeInput("x", {2}, ResizeMode::kNonStrict),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
 TEST(LitertDynamicRunnerTest, FeedbackLoopTest) {
-  LITERT_ASSIGN_OR_ABORT(auto env, Environment::Create({}));
-  LITERT_ASSIGN_OR_ABORT(auto options, Options::Create());
+  LITERT_ASSIGN_OR_ABORT(Environment env, Environment::Create({}));
+  LITERT_ASSIGN_OR_ABORT(Options options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
   Tensor<TfLiteMixinTag> x({.name = "x", .type = Type::kFP32, .shape = {1}});
@@ -145,7 +286,8 @@ TEST(LitertDynamicRunnerTest, FeedbackLoopTest) {
   y.SetName("y");
 
   std::vector<char> model_buffer;
-  ASSERT_TRUE(Save(std::vector<Tensor<TfLiteMixinTag>>{y}, model_buffer).ok());
+  ASSERT_THAT(Save(std::vector<Tensor<TfLiteMixinTag>>{y}, model_buffer),
+              IsOk());
 
   absl::Span<const uint8_t> buffer_span(
       reinterpret_cast<const uint8_t*>(model_buffer.data()),
@@ -154,10 +296,9 @@ TEST(LitertDynamicRunnerTest, FeedbackLoopTest) {
   std::vector<FeedbackLoopConfig> feedback_loops = {
       {.input_name = "x", .output_name = "y"}};
 
-  auto runner_or =
-      LitertDynamicRunner::Create(env, buffer_span, options, feedback_loops);
-  ASSERT_TRUE(runner_or.ok());
-  auto runner = std::move(*runner_or);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      LitertDynamicRunner runner,
+      LitertDynamicRunner::Create(env, buffer_span, options, feedback_loops));
 
   // Initial input
   std::vector<float> input_data = {0.0f};
@@ -165,85 +306,71 @@ TEST(LitertDynamicRunnerTest, FeedbackLoopTest) {
       reinterpret_cast<const uint8_t*>(input_data.data()),
       input_data.size() * sizeof(float));
 
-  EXPECT_TRUE(runner.SetInput("x", input_span).ok());
+  EXPECT_THAT(runner.SetInput("x", input_span), IsOk());
 
   // Run 1: y = 0 + 1 = 1
   const void* y_ptr_1 = nullptr;
-  EXPECT_TRUE(runner.Run().ok());
+  EXPECT_THAT(runner.Run(), IsOk());
   {
-    auto y_or = runner.GetOutput("y");
-    ASSERT_TRUE(y_or.ok());
-    auto y_tensor = std::move(*y_or);
-    auto buffer_or = y_tensor.GetBuffer();
-    ASSERT_TRUE(buffer_or.ok());
-    auto locked_span = buffer_or->Lock();
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle y_tensor,
+                                    runner.GetOutput("y"));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, y_tensor.GetBuffer());
+    LockedBufferSpan<const std::byte> locked_span = buffer.Lock();
     y_ptr_1 = locked_span.data();
     const float* data = reinterpret_cast<const float*>(y_ptr_1);
     EXPECT_EQ(data[0], 1.0f);
   }
 
   // Run 2: y = 1 + 1 = 2
-  EXPECT_TRUE(runner.Run().ok());
+  EXPECT_THAT(runner.Run(), IsOk());
   {
-    auto y_or = runner.GetOutput("y");
-    ASSERT_TRUE(y_or.ok());
-    auto y_tensor = std::move(*y_or);
-    auto buffer_or = y_tensor.GetBuffer();
-    ASSERT_TRUE(buffer_or.ok());
-    auto locked_span = buffer_or->Lock();
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle y_tensor,
+                                    runner.GetOutput("y"));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, y_tensor.GetBuffer());
+    LockedBufferSpan<const std::byte> locked_span = buffer.Lock();
     const float* data = reinterpret_cast<const float*>(locked_span.data());
     EXPECT_EQ(data[0], 2.0f);
 
     // Verify zero-copy: input of Run 2 is the same buffer as output of Run 1
-    auto x_or = runner.GetInput("x");
-    ASSERT_TRUE(x_or.ok());
-    auto x_tensor = std::move(*x_or);
-    auto x_buffer_or = x_tensor.GetBuffer();
-    ASSERT_TRUE(x_buffer_or.ok());
-    auto x_locked_span = x_buffer_or->Lock();
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle x_tensor,
+                                    runner.GetInput("x"));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & x_buffer, x_tensor.GetBuffer());
+    LockedBufferSpan<const std::byte> x_locked_span = x_buffer.Lock();
     const void* x_ptr_2 = x_locked_span.data();
     EXPECT_EQ(x_ptr_2, y_ptr_1);
   }
 
   // Run 3: y = 2 + 1 = 3
-  EXPECT_TRUE(runner.Run().ok());
+  EXPECT_THAT(runner.Run(), IsOk());
   {
-    auto y_or = runner.GetOutput("y");
-    ASSERT_TRUE(y_or.ok());
-    auto y_tensor = std::move(*y_or);
-    auto buffer_or = y_tensor.GetBuffer();
-    ASSERT_TRUE(buffer_or.ok());
-    auto locked_span = buffer_or->Lock();
-    const float* data = reinterpret_cast<const float*>(locked_span.data());
-    EXPECT_EQ(data[0], 3.0f);
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle y_tensor,
+                                    runner.GetOutput("y"));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, y_tensor.GetBuffer());
+    EXPECT_THAT(buffer.Lock().As<const float>(), ElementsAre(3.0f));
   }
 
   // Reset and verify we can start again with new input
-  EXPECT_TRUE(runner.Reset().ok());
+  EXPECT_THAT(runner.Reset(), IsOk());
 
   std::vector<float> input_data2 = {10.0f};
   absl::Span<const uint8_t> input_span2(
       reinterpret_cast<const uint8_t*>(input_data2.data()),
       input_data2.size() * sizeof(float));
-  EXPECT_TRUE(runner.SetInput("x", input_span2).ok());
+  EXPECT_THAT(runner.SetInput("x", input_span2), IsOk());
 
   // Run 1 after reset: y = 10 + 1 = 11
-  EXPECT_TRUE(runner.Run().ok());
+  EXPECT_THAT(runner.Run(), IsOk());
   {
-    auto y_or = runner.GetOutput("y");
-    ASSERT_TRUE(y_or.ok());
-    auto y_tensor = std::move(*y_or);
-    auto buffer_or = y_tensor.GetBuffer();
-    ASSERT_TRUE(buffer_or.ok());
-    auto locked_span = buffer_or->Lock();
-    const float* data = reinterpret_cast<const float*>(locked_span.data());
-    EXPECT_EQ(data[0], 11.0f);
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle y_tensor,
+                                    runner.GetOutput("y"));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, y_tensor.GetBuffer());
+    EXPECT_THAT(buffer.Lock().As<const float>(), ElementsAre(11.0f));
   }
 }
 
 TEST(LambdaModelRunnerTest, FeedbackLoopTest) {
-  LITERT_ASSIGN_OR_ABORT(auto env, Environment::Create({}));
-  LITERT_ASSIGN_OR_ABORT(auto options, Options::Create());
+  LITERT_ASSIGN_OR_ABORT(Environment env, Environment::Create({}));
+  LITERT_ASSIGN_OR_ABORT(Options options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
   std::vector<FeedbackLoopConfig> feedback_loops = {
@@ -253,7 +380,7 @@ TEST(LambdaModelRunnerTest, FeedbackLoopTest) {
       env, options,
       TensorsMap{{"x", Tensor<TfLiteMixinTag>(
                            {.name = "x", .type = Type::kFP32, .shape = {1}})}},
-      [](const auto& inputs) {
+      [](const TensorsMap& inputs) {
         Tensor y = Add(inputs.at("x"), 1.0f);
         return TensorsMap{{"y", y}};
       },
@@ -261,65 +388,55 @@ TEST(LambdaModelRunnerTest, FeedbackLoopTest) {
 
   // Initial input
   std::vector<float> input_data = {0.0f};
-  auto x_tensor = Create("x", Type::kFP32, {1}, std::move(input_data));
-  EXPECT_TRUE(runner.SetInput("x", x_tensor).ok());
+  TensorHandle x_tensor = Create("x", Type::kFP32, {1}, std::move(input_data));
+  EXPECT_THAT(runner.SetInput("x", x_tensor), IsOk());
 
   // Run 1: y = 0 + 1 = 1
   const void* y_ptr_1 = nullptr;
-  EXPECT_TRUE(runner.Run().ok());
+  EXPECT_THAT(runner.Run(), IsOk());
   {
-    auto y_or = runner.GetOutput("y");
-    ASSERT_TRUE(y_or.ok());
-    auto y_tensor = std::move(*y_or);
-    auto buffer_or = y_tensor.GetBuffer();
-    ASSERT_TRUE(buffer_or.ok());
-    auto locked_span = buffer_or->Lock();
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle y_tensor,
+                                    runner.GetOutput("y"));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, y_tensor.GetBuffer());
+    LockedBufferSpan<const std::byte> locked_span = buffer.Lock();
     y_ptr_1 = locked_span.data();
     const float* data = reinterpret_cast<const float*>(y_ptr_1);
     EXPECT_EQ(data[0], 1.0f);
   }
 
   // Run 2: y = 1 + 1 = 2
-  EXPECT_TRUE(runner.Run().ok());
+  EXPECT_THAT(runner.Run(), IsOk());
   {
-    auto y_or = runner.GetOutput("y");
-    ASSERT_TRUE(y_or.ok());
-    auto y_tensor = std::move(*y_or);
-    auto buffer_or = y_tensor.GetBuffer();
-    ASSERT_TRUE(buffer_or.ok());
-    auto locked_span = buffer_or->Lock();
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle y_tensor,
+                                    runner.GetOutput("y"));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, y_tensor.GetBuffer());
+    LockedBufferSpan<const std::byte> locked_span = buffer.Lock();
     const float* data = reinterpret_cast<const float*>(locked_span.data());
     EXPECT_EQ(data[0], 2.0f);
 
     // Verify zero-copy: input of Run 2 is the same buffer as output of Run 1
-    auto x_or = runner.GetInput("x");
-    ASSERT_TRUE(x_or.ok());
-    auto x_tensor = std::move(*x_or);
-    auto x_buffer_or = x_tensor.GetBuffer();
-    ASSERT_TRUE(x_buffer_or.ok());
-    auto x_locked_span = x_buffer_or->Lock();
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle x_input, runner.GetInput("x"));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & x_buffer, x_input.GetBuffer());
+    LockedBufferSpan<const std::byte> x_locked_span = x_buffer.Lock();
     const void* x_ptr_2 = x_locked_span.data();
     EXPECT_EQ(x_ptr_2, y_ptr_1);
   }
 
   // Reset and verify we can start again with new input
-  EXPECT_TRUE(runner.Reset().ok());
+  EXPECT_THAT(runner.Reset(), IsOk());
 
   std::vector<float> input_data2 = {10.0f};
-  auto x_tensor2 = Create("x", Type::kFP32, {1}, std::move(input_data2));
-  EXPECT_TRUE(runner.SetInput("x", x_tensor2).ok());
+  TensorHandle x_tensor2 =
+      Create("x", Type::kFP32, {1}, std::move(input_data2));
+  EXPECT_THAT(runner.SetInput("x", x_tensor2), IsOk());
 
   // Run 1 after reset: y = 10 + 1 = 11
-  EXPECT_TRUE(runner.Run().ok());
+  EXPECT_THAT(runner.Run(), IsOk());
   {
-    auto y_or = runner.GetOutput("y");
-    ASSERT_TRUE(y_or.ok());
-    auto y_tensor = std::move(*y_or);
-    auto buffer_or = y_tensor.GetBuffer();
-    ASSERT_TRUE(buffer_or.ok());
-    auto locked_span = buffer_or->Lock();
-    const float* data = reinterpret_cast<const float*>(locked_span.data());
-    EXPECT_EQ(data[0], 11.0f);
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle y_tensor,
+                                    runner.GetOutput("y"));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, y_tensor.GetBuffer());
+    EXPECT_THAT(buffer.Lock().As<const float>(), ElementsAre(11.0f));
   }
 }
 
