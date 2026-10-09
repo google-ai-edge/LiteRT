@@ -117,9 +117,10 @@ std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
         return {};
       }
     }
-    pad_op.AddScalarParam<std::int32_t>(QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE,
-                                        pad_const_value);
-
+    if (pad_const_value != 0) {
+      pad_op.AddScalarParam<std::int32_t>(QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE,
+                                          pad_const_value);
+    }
   } else if (input_tensor.IsF16() || input_tensor.IsF32()) {
     float pad_const_value = 0;
     if (inputs.size() >= kPadConstValueIndex + 1) {
