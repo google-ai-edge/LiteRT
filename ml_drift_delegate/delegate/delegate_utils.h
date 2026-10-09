@@ -15,8 +15,11 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_UTILS_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_UTILS_H_
 
+#include <cstddef>
 #include <memory>
+#include <unordered_map>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_context.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
@@ -57,6 +60,33 @@ inline ::ml_drift::ValueIdToSharedTensorMap& GetQuantParamIdToSpatialTensorMap(
   }
   return delegate_data.quant_param_id_to_spatial_tensor;
 }
+
+inline absl::flat_hash_map<const void*, size_t>& GetHostPtrToBufferIdMap(
+    MlDriftDelegateData& delegate_data) {
+  if (delegate_data.options->shared_tensor_maps_from_client) {
+    auto* shared_tensor_maps = reinterpret_cast<SharedTensorMaps*>(
+        delegate_data.options->shared_tensor_maps_from_client);
+    return shared_tensor_maps->host_ptr_to_buffer_id;
+  }
+  return delegate_data.host_ptr_to_buffer_id;
+}
+
+// Returns the tensor-index-to-buffer-id map for `context` without relying on
+// tflite::Subgraph's C++ standard library ABI layout when invoked from LiteRT.
+// The returned reference remains valid for the lifetime of `delegate_data`
+// across insertions for other contexts (backed by absl::node_hash_map).
+// NOLINTNEXTLINE(*-runtime-unneeded-pointer-stability-check)
+const std::unordered_map<size_t, size_t>& GetTensorBufferIdentifiers(
+    TfLiteContext* context, MlDriftDelegateData& delegate_data);
+
+// Returns the tensor-index-to-external-buffer-id map for `context` without
+// relying on tflite::Subgraph's C++ standard library ABI layout when invoked
+// from LiteRT. The returned reference remains valid for the lifetime of
+// `delegate_data` across insertions for other contexts (backed by
+// absl::node_hash_map).
+// NOLINTNEXTLINE(*-runtime-unneeded-pointer-stability-check)
+const std::unordered_map<size_t, size_t>& GetExternalTensorBufferIdentifiers(
+    TfLiteContext* context, MlDriftDelegateData& delegate_data);
 
 }  // namespace litert::ml_drift
 

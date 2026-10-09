@@ -86,7 +86,6 @@
 #include "weight_loader/external_weight_loader_litert.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/core/c/common.h"
-#include "tflite/core/subgraph.h"
 #include "tflite/delegates/serialization.h"
 #include "tflite/kernels/kernel_util.h"
 #include "tflite/profiling/memory_latency_logger.h"  // IWYU pragma: keep
@@ -234,11 +233,9 @@ absl::Status DelegateKernel::InitializeGraphFloat32(
   if (delegate_data_->options->enable_constant_tensors_sharing) {
     shared_tensors_ptr = &shared_tensors;
     tensor_to_buffer_id_map =
-        &(reinterpret_cast<const tflite::Subgraph*>(context->impl_)
-              ->GetTensorBufferIdentifiers());
+        &GetTensorBufferIdentifiers(context, *delegate_data_);
     const auto& external_buffer_id_map =
-        reinterpret_cast<const tflite::Subgraph*>(context->impl_)
-            ->GetExternalTensorBufferIdentifiers();
+        GetExternalTensorBufferIdentifiers(context, *delegate_data_);
     tensor_to_external_buffer_id_map = &external_buffer_id_map;
     if (delegate_data_->weight_loader != nullptr &&
         !external_buffer_id_map.empty()) {
@@ -1161,11 +1158,9 @@ absl::Status DelegateKernel::InitializeIrModel(
   if (delegate_data_->options->enable_constant_tensors_sharing) {
     shared_tensors_ptr = &shared_tensors;
     tensor_to_buffer_id_map =
-        &(reinterpret_cast<const tflite::Subgraph*>(context->impl_)
-              ->GetTensorBufferIdentifiers());
+        &GetTensorBufferIdentifiers(context, *delegate_data_);
     const auto& external_buffer_id_map =
-        reinterpret_cast<const tflite::Subgraph*>(context->impl_)
-            ->GetExternalTensorBufferIdentifiers();
+        GetExternalTensorBufferIdentifiers(context, *delegate_data_);
     tensor_to_external_buffer_id_map = &external_buffer_id_map;
     if (delegate_data_->weight_loader != nullptr &&
         !external_buffer_id_map.empty()) {

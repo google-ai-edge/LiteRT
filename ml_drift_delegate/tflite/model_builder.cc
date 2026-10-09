@@ -7604,16 +7604,26 @@ absl::Status BuildModelEnforceIO(
     // flatbuffer, so the default subgraph should be marked as skippable to
     // avoid the waste of being delegated to ML Drift Delegate by the Runtime.
     if (registration->builtin_code == kTfLiteBuiltinStablehloComposite) {
-      auto* current_subgraph = static_cast<::tflite::Subgraph*>(context->impl_);
       const auto* params = static_cast<const TfLiteStablehloCompositeParams*>(
           tflite_node->builtin_data);
       if (!params) {
         return absl::InternalError("Missing StableHLO composite op params.");
       }
-      if (current_subgraph->MarkSubgraphAsDelegationSkippable(
-              params->subgraph_index) != kTfLiteOk) {
-        return absl::InternalError(
-            "Failed to mark subgraph as delegation skippable.");
+      // Under LiteRT CompiledModel (`kTfLiteLiteRtBufferContext` present),
+      // `compiled_model.cc` marks delegated composite decomposition subgraphs
+      // as delegation-skippable in its own C++ ABI so accelerator DSOs do not
+      // dereference `tflite::Subgraph` across a potential libc++/libstdc++
+      // boundary.
+      if (context->GetExternalContext == nullptr ||
+          context->GetExternalContext(context, kTfLiteLiteRtBufferContext) ==
+              nullptr) {
+        auto* current_subgraph =
+            static_cast<::tflite::Subgraph*>(context->impl_);
+        if (current_subgraph->MarkSubgraphAsDelegationSkippable(
+                params->subgraph_index) != kTfLiteOk) {
+          return absl::InternalError(
+              "Failed to mark subgraph as delegation skippable.");
+        }
       }
     }
     operations.push_back(std::move(op_parser));

@@ -189,11 +189,15 @@ void ConvertComposite(
     ABSL_LOG(FATAL) << "Missing StableHLO composite params.";
   }
 
-  auto* current_subgraph = static_cast<::tflite::Subgraph*>(context.impl_);
   if (params->subgraph_index > 0 &&
-      current_subgraph->MarkSubgraphAsDelegationSkippable(
-          params->subgraph_index) != kTfLiteOk) {
-    ABSL_LOG(FATAL) << "Failed to mark subgraph as delegation skippable.";
+      (context.GetExternalContext == nullptr ||
+       context.GetExternalContext(const_cast<TfLiteContext*>(&context),
+                                  kTfLiteLiteRtBufferContext) == nullptr)) {
+    auto* current_subgraph = static_cast<::tflite::Subgraph*>(context.impl_);
+    if (current_subgraph->MarkSubgraphAsDelegationSkippable(
+            params->subgraph_index) != kTfLiteOk) {
+      ABSL_LOG(FATAL) << "Failed to mark subgraph as delegation skippable.";
+    }
   }
 
   const absl::string_view composite_name = params->name;

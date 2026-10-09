@@ -15,6 +15,9 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_SHARED_TENSOR_MAPS_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_SHARED_TENSOR_MAPS_H_
 
+#include <cstddef>
+
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 
 namespace litert::ml_drift {
@@ -26,6 +29,9 @@ struct SharedTensorMaps {
   ::ml_drift::ValueIdToSharedTensorMap buffer_id_to_spatial_tensor;
   // See MlDriftDelegateData::quant_param_id_to_spatial_tensor for more details.
   ::ml_drift::ValueIdToSharedTensorMap quant_param_id_to_spatial_tensor;
+  // Maps constant tensor host data pointers to deterministic model-wide buffer
+  // IDs without relying on tflite::Subgraph's C++ ABI layout across DSOs.
+  absl::flat_hash_map<const void*, size_t> host_ptr_to_buffer_id;
 };
 
 }  // namespace litert::ml_drift

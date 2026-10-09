@@ -744,6 +744,7 @@ cc_library(
         "//tflite/converter:allocation",
         "//tflite/core:private_cc_api_stable",
         "//tflite/core/api",
+        "//tflite/core/c:private_common",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",

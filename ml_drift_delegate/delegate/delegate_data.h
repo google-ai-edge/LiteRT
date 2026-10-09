@@ -15,10 +15,14 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_DATA_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_DATA_H_
 
+#include <cstddef>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/node_hash_map.h"  // from @com_google_absl
 #include "ml_drift/common/executor.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
@@ -27,6 +31,7 @@
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
+#include "tflite/core/c/common.h"
 
 namespace weight_loader {
 class WeightLoader;
@@ -98,6 +103,22 @@ struct MlDriftDelegateData {
 
   // Shared weight cache for all subgraphs of the model.
   std::unique_ptr<::ml_drift::SerializationWeightCache> serialization_cache;
+
+  // Maps constant tensor host data pointers to deterministic model-wide buffer
+  // IDs without relying on tflite::Subgraph's C++ ABI layout across DSOs.
+  absl::flat_hash_map<const void*, size_t> host_ptr_to_buffer_id;
+
+  // Per-subgraph cached maps from TFLite tensor index to internal/external
+  // buffer IDs. Outer map uses absl::node_hash_map for reference stability of
+  // the inner maps across insertions for new subgraphs. Inner map uses
+  // std::unordered_map to match tflite::Subgraph and BuildFromFlatBuffer
+  // signatures.
+  // NOLINTNEXTLINE(*-runtime-unneeded-pointer-stability-check)
+  absl::node_hash_map<const TfLiteContext*, std::unordered_map<size_t, size_t>>
+      context_to_buffer_id_map;
+  // NOLINTNEXTLINE(*-runtime-unneeded-pointer-stability-check)
+  absl::node_hash_map<const TfLiteContext*, std::unordered_map<size_t, size_t>>
+      context_to_external_buffer_id_map;
 };
 
 }  // namespace litert::ml_drift

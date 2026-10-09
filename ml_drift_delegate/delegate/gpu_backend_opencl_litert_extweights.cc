@@ -17,7 +17,6 @@
 
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
-#include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend_opencl_litert.h"
@@ -26,7 +25,6 @@
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_cl_litert.h"
 #include "tflite/c/common.h"
-#include "tflite/core/subgraph.h"
 
 namespace litert::ml_drift {
 
@@ -37,8 +35,7 @@ GpuBackendOpenClLitert::CreateSharedMemoryManager(
     TfLiteContext* context, MlDriftDelegateData& delegate_data,
     ::ml_drift::SerializationWeightCache* serialization_cache) {
   const ::ml_drift::TensorIndexToExternalBufferIdMap* external_buffer_id_map =
-      &(reinterpret_cast<const tflite::Subgraph*>(context->impl_)
-            ->GetExternalTensorBufferIdentifiers());
+      &GetExternalTensorBufferIdentifiers(context, delegate_data);
   return ::ml_drift::MakeSharedMemoryManagerClLitert(
       *cl_env(), delegate_data.options->runtime_context, create_info,
       std::move(graph_adapter), context,

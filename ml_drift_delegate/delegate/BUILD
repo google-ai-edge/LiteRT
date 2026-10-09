@@ -246,7 +246,6 @@ cc_library(
         "@com_google_absl//absl/types:span",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model",
-        "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/webgpu:buffer",
         "@ml_drift//ml_drift/webgpu:execution_environment",
@@ -489,6 +488,9 @@ cc_library(
         "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/delegate/shared_memory_manager",
         "//ml_drift_delegate/tflite:shared_const_tensor_map",
+        "//tflite/core/c:private_common",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:node_hash_map",
         "@ml_drift//ml_drift/common:executor",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common/task:gpu_tensor",
@@ -499,7 +501,10 @@ cc_library(
     name = "shared_tensor_maps",
     hdrs = ["shared_tensor_maps.h"],
     visibility = ["//visibility:public"],
-    deps = ["//ml_drift_delegate/delegate/shared_memory_manager"],
+    deps = [
+        "//ml_drift_delegate/delegate/shared_memory_manager",
+        "@com_google_absl//absl/container:flat_hash_map",
+    ],
 )
 
 cc_library(
@@ -695,12 +700,19 @@ cc_library(
     deps = [
         ":delegate_data",
         ":shared_tensor_maps",
+        "//litert/c:litert_common",
         "//litert/c/internal:litert_runtime_context_header",
         "//ml_drift_delegate/delegate/composite/ir:custom_parsers",
         "//ml_drift_delegate/delegate/shared_memory_manager",
         "//ml_drift_delegate/tflite:ir_model_builder_helper",
         "//ml_drift_delegate/tflite/support",
+        "//tflite:framework",
         "//tflite/core/c:private_common",
+        "//weight_loader:external_weight_loader",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/container:node_hash_map",
+        "@com_google_absl//absl/types:span",
         "@ml_drift//ml_drift/common:precision",
     ],
 )
