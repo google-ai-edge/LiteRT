@@ -30,6 +30,8 @@ import flatbuffers
 
 from litert.python import schema_py_generated as schema  # pylint:disable=g-direct-tensorflow-import
 
+np = flatbuffers.compat.import_numpy()
+
 _LITERT_HOST_MEMORY_BUFFER_ALIGNMENT = 64
 _TFLITE_BUFFER_ALIGNMENT = 16
 # If the buffers left inline would exceed this size, the buffers that were
@@ -79,15 +81,37 @@ def _buffer_bytes(buffer) -> memoryview | None:
 
 
 def _materialize_appended_buffer_data(model, input_bytes: bytes) -> set[int]:
-  """Moves TFLite appended buffer payloads into the in-memory object model."""
-  input_view = memoryview(input_bytes)
+  """Moves TFLite appended buffer payloads into the in-memory object model.
+
+  The payloads are zero-copy uint8 numpy views of `input_bytes`. The generated
+  `BufferT.Pack` only uses its fast `CreateNumpyVector` path when the data is
+  exactly an `np.ndarray`; any other sequence is serialized one byte at a time.
+  Both paths produce the same bytes.
+
+  Args:
+    model: The unpacked `ModelT` whose buffers may reference appended data.
+    input_bytes: The serialized model file, including appended buffer data.
+
+  Returns:
+    Indices of buffers whose non-empty payloads were appended in the input file.
+  """
+  input_size = len(input_bytes)
   appended_buffers: set[int] = set()
   for buffer_index, buffer in enumerate(model.buffers or []):
     offset = int(buffer.offset)
     size = int(buffer.size)
     if offset == 0 and size == 0:
       continue
-    if offset <= 0 or size <= 0:
+    if size == 0:
+      # Zero-length appended payload. TFLite's reader treats `offset > 1` with
+      # `size == 0` as a non-null, zero-byte constant, which is what an empty
+      # inline vector encodes; offsets 0 and 1 are "no appended data".
+      if buffer.data is None and offset > 1:
+        buffer.data = np.empty(0, dtype=np.uint8) if np is not None else b""
+      buffer.offset = 0
+      buffer.size = 0
+      continue
+    if offset <= 1 or size < 0:
       raise ValueError(
           f"TFLite buffer {buffer_index} has invalid external range: "
           f"offset={offset}, size={size}"
@@ -97,12 +121,17 @@ def _materialize_appended_buffer_data(model, input_bytes: bytes) -> set[int]:
           f"TFLite buffer {buffer_index} has both inline and appended data"
       )
     end = offset + size
-    if end > len(input_view):
+    if end > input_size:
       raise ValueError(
           f"TFLite buffer {buffer_index} range exceeds the model file: "
-          f"offset={offset}, size={size}, file_size={len(input_view)}"
+          f"offset={offset}, size={size}, file_size={input_size}"
       )
-    buffer.data = input_view[offset:end]
+    if np is not None:
+      buffer.data = np.frombuffer(
+          input_bytes, dtype=np.uint8, count=size, offset=offset
+      )
+    else:
+      buffer.data = memoryview(input_bytes)[offset:end]
     buffer.offset = 0
     buffer.size = 0
     appended_buffers.add(buffer_index)
@@ -299,47 +328,52 @@ def externalize(
       model.buffers[buffer_idx].size = 0
       cleared_buffers += 1
 
-  remaining_inline_bytes = sum(
-      len(b.data) for b in model.buffers or [] if b.data is not None
-  )
-  reappend_payloads: list[tuple[int, memoryview[int]]] = []
-  if remaining_inline_bytes >= _MAX_INLINE_BUFFER_BYTES:
-    for buf_idx in sorted(appended_buffers):
-      buf = model.buffers[buf_idx]
-      data = _buffer_bytes(buf)
-      if data is not None:
-        reappend_payloads.append((buf_idx, data))
-        buf.data = None
-        buf.offset = 1
-        buf.size = len(data)
-
-  def _pack_flatbuffer() -> bytes:
-    builder = flatbuffers.Builder(1024)
-    root = model.Pack(builder)
-    builder.Finish(root, file_identifier=b"TFL3")
-    return bytes(builder.Output())
-
-  packed_fb = _pack_flatbuffer()
-  if reappend_payloads:
-    cursor = len(packed_fb)
-    for buf_idx, data in reappend_payloads:
-      cursor = (
-          (cursor + _TFLITE_BUFFER_ALIGNMENT - 1)
-          // _TFLITE_BUFFER_ALIGNMENT
-          * _TFLITE_BUFFER_ALIGNMENT
-      )
-      model.buffers[buf_idx].offset = cursor
-      cursor += len(data)
-    packed_fb = _pack_flatbuffer()
-    with output_model.open("wb") as out_f:
-      out_f.write(packed_fb)
-      for buf_idx, data in reappend_payloads:
-        pad = model.buffers[buf_idx].offset - out_f.tell()
-        if pad > 0:
-          out_f.write(b"\0" * pad)
-        out_f.write(data)
+  if not externalized_tensors:
+    # Nothing changed, so keep the input model (including any appended buffer
+    # data) byte-for-byte instead of repacking it.
+    output_model.write_bytes(input_bytes)
   else:
-    output_model.write_bytes(packed_fb)
+    remaining_inline_bytes = sum(
+        len(b.data) for b in model.buffers or [] if b.data is not None
+    )
+    reappend_payloads: list[tuple[int, memoryview[int]]] = []
+    if remaining_inline_bytes >= _MAX_INLINE_BUFFER_BYTES:
+      for buf_idx in sorted(appended_buffers):
+        buf = model.buffers[buf_idx]
+        data = _buffer_bytes(buf)
+        if data is not None:
+          reappend_payloads.append((buf_idx, data))
+          buf.data = None
+          buf.offset = 1
+          buf.size = len(data)
+
+    def _pack_flatbuffer() -> bytes:
+      builder = flatbuffers.Builder(1024)
+      root = model.Pack(builder)
+      builder.Finish(root, file_identifier=b"TFL3")
+      return bytes(builder.Output())
+
+    packed_fb = _pack_flatbuffer()
+    if reappend_payloads:
+      cursor = len(packed_fb)
+      for buf_idx, data in reappend_payloads:
+        cursor = (
+            (cursor + _TFLITE_BUFFER_ALIGNMENT - 1)
+            // _TFLITE_BUFFER_ALIGNMENT
+            * _TFLITE_BUFFER_ALIGNMENT
+        )
+        model.buffers[buf_idx].offset = cursor
+        cursor += len(data)
+      packed_fb = _pack_flatbuffer()
+      with output_model.open("wb") as out_f:
+        out_f.write(packed_fb)
+        for buf_idx, data in reappend_payloads:
+          pad = model.buffers[buf_idx].offset - out_f.tell()
+          if pad > 0:
+            out_f.write(b"\0" * pad)
+          out_f.write(data)
+    else:
+      output_model.write_bytes(packed_fb)
 
   print(f"Reading model from {input_model}")
   print(f"Writing model to {output_model}")

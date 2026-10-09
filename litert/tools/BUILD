@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# copybara:uncomment load("//litert/python:pytype.bzl", "pytype_strict_binary", "pytype_strict_library")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
-# copybara:uncomment load("@rules_python//python:py_binary.bzl", "py_binary")
 # copybara:uncomment load("@rules_python//python:py_library.bzl", "py_library")
 # copybara:uncomment load("@rules_python//python:py_test.bzl", "py_test")
 load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps", "litert_bin")
@@ -42,22 +42,32 @@ exports_files([
 ])
 
 # copybara:uncomment_begin(google-only)
-# py_binary(
+# pytype_strict_binary(
 #     name = "externalize_tflite_flatbuffer",
 #     srcs = ["externalize_tflite_flatbuffer.py"],
 #     deps = [
 #         "//third_party/py/flatbuffers",
 #         "//tflite/python:schema_py",
-#     ],
+#     ] + select({
+#         "@platforms//os:macos": [],
+#         "//conditions:default": [
+#             "//third_party/py/numpy",
+#         ],
+#     }),
 # )
 #
-# py_library(
+# pytype_strict_library(
 #     name = "externalize_tflite_flatbuffer_lib",
 #     srcs = ["externalize_tflite_flatbuffer.py"],
 #     deps = [
 #         "//third_party/py/flatbuffers",
 #         "//tflite/python:schema_py",
-#     ],
+#     ] + select({
+#         "@platforms//os:macos": [],
+#         "//conditions:default": [
+#             "//third_party/py/numpy",
+#         ],
+#     }),
 # )
 #
 # py_test(
@@ -67,6 +77,7 @@ exports_files([
 #         ":externalize_tflite_flatbuffer_lib",
 #         "@absl_py//absl/testing:absltest",
 #         "//third_party/py/flatbuffers",
+#         "//third_party/py/numpy",
 #         "//tflite/python:schema_py",
 #     ],
 # )
