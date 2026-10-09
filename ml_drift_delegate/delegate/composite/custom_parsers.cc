@@ -68,8 +68,8 @@ bool CustomOperationParserFactory::SupportsIntegerTypes(
   bool res = op_name == "odml.cache_update" || op_name == "odml.runtime_bmm" ||
              op_name == "moe" || op_name == "odml.rope" ||
              op_name == "odml.sdpa_transposed" || op_name == "odml.swiglu" ||
-             op_name == "gated_delta_update" ||
-             op_name == kQkvNormRopeType || op_name == kShortConvStepType;
+             op_name == "gated_delta_update" || op_name == kQkvNormRopeType ||
+             op_name == kShortConvStepType;
   return res;
 }
 

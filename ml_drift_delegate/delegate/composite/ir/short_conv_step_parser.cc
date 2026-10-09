@@ -14,28 +14,24 @@
 
 #include "ml_drift_delegate/delegate/composite/ir/short_conv_step_parser.h"
 
-#include <cstdint>
-
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/short_conv_step_parser.h"
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
-#include "tflite/c/builtin_op_data.h"
 #include "tflite/c/common.h"
 
 namespace litert::ml_drift::ir {
 namespace {
 
 absl::Status ShortConvStepIsSupported(
-    const TfLiteContext* context, const TfLiteNode* tflite_node,
+    const TfLiteContext* /*context*/, const TfLiteNode* tflite_node,
     const TfLiteRegistration* /*registration*/) {
-  if (tflite_node->inputs->size != 3 && tflite_node->inputs->size != 4) {
+  if (tflite_node->inputs->size < 3 || tflite_node->inputs->size > 5) {
     return absl::InvalidArgumentError(
-        absl::StrCat("ShortConvStep expects 3 or 4 inputs, but got ",
+        absl::StrCat("ShortConvStep expects 3 to 5 inputs, but got ",
                      tflite_node->inputs->size));
   }
 
@@ -43,6 +39,14 @@ absl::Status ShortConvStepIsSupported(
     return absl::InvalidArgumentError(
         absl::StrCat("ShortConvStep expects 2 outputs, but got ",
                      tflite_node->outputs->size));
+  }
+
+  const ::litert::ml_drift::ShortConvStepAttributes attr =
+      ::litert::ml_drift::ParseShortConvStepAttributes(*tflite_node);
+  if (attr.conv_L_cache < 2 || attr.conv_L_cache > 4) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("ShortConvStep supports conv_L_cache in [2, 4], but got ",
+                     attr.conv_L_cache));
   }
 
   return absl::OkStatus();
@@ -65,31 +69,7 @@ void ShortConvStepConvert(
   for (int i = 0; i < tflite_node.outputs->size; ++i) {
     ir_model.SetProducer(tensor_map[tflite_node.outputs->data[i]], op->id);
   }
-
-  const auto* params = static_cast<const TfLiteStablehloCompositeParams*>(
-      tflite_node.builtin_data);
-  ::litert::ml_drift::ShortConvStepAttributes attr;
-  if (params && params->attributes && params->attributes_size > 0) {
-    const flexbuffers::Map flexbuffer_map =
-        flexbuffers::GetRoot(
-            reinterpret_cast<const uint8_t*>(params->attributes),
-            params->attributes_size)
-            .AsMap();
-    if (!flexbuffer_map["conv_L_cache"].IsNull()) {
-      attr.conv_L_cache = flexbuffer_map["conv_L_cache"].AsInt32();
-    }
-  } else if (tflite_node.custom_initial_data &&
-             tflite_node.custom_initial_data_size > 0) {
-    const flexbuffers::Map flexbuffer_map =
-        flexbuffers::GetRoot(
-            reinterpret_cast<const uint8_t*>(tflite_node.custom_initial_data),
-            tflite_node.custom_initial_data_size)
-            .AsMap();
-    if (!flexbuffer_map["conv_L_cache"].IsNull()) {
-      attr.conv_L_cache = flexbuffer_map["conv_L_cache"].AsInt32();
-    }
-  }
-  op->attr = attr;
+  op->attr = ::litert::ml_drift::ParseShortConvStepAttributes(tflite_node);
 }
 
 }  // namespace

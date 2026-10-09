@@ -388,6 +388,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model_builder",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:model",
