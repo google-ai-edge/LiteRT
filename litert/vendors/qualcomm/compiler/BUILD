@@ -16,14 +16,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load(
-    "//litert/build_common:litert_build_defs.bzl",
-    "gtest_main_no_heapcheck_deps",
-    "litert_bin",
-    "litert_dynamic_lib",
-    "litert_lib",
-    "litert_test",
-)
+load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
@@ -178,6 +171,14 @@ litert_test(
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
+    linkopts = select({
+        "//litert:android": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:litert_runtime_c_api_so",
+            ]),
+        ],
+    }),
     linkstatic = True,
     no_main = True,
     tags = [
@@ -189,7 +190,7 @@ litert_test(
     # This test can be run only on Android and Linux.
     target_compatible_with = select({
         "//litert:android": [],
-        "//litert:linux_x86_64": [],
+        "//litert:linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,
@@ -203,18 +204,18 @@ litert_test(
         "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_qualcomm_options",
-        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_options",
-        "//litert/cc/internal:litert_extended_model",
-        "//litert/cc/internal:litert_model_predicates",
+        "//litert/cc/dynamic_runtime:litert_environment",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
+        "//litert/cc/dynamic_runtime:litert_model_predicates",
+        "//litert/cc/dynamic_runtime:litert_options",
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/compiler/cc:litert_model",
         "//litert/core:environment_options",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
-        "//litert/test:load_test_model",
+        "//litert/test:load_test_model_runtimecapi",
         "//litert/test:matchers",
         "//litert/test:test_models",
         "//litert/vendors/cc:litert_compiler_plugin",
