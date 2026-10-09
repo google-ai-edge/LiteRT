@@ -259,6 +259,12 @@ void RequestSupportedExtensions(ml_drift::webgpu::ExecutionEnvironment& env,
   if (device.HasFeature(wgpu::FeatureName::Subgroups)) {
     env.RequestExtension("subgroups");
   }
+#ifndef __EMSCRIPTEN__
+  if (device.HasFeature(
+          wgpu::FeatureName::ChromiumExperimentalSubgroupMatrix)) {
+    env.RequestExtension("subgroup_matrix");
+  }
+#endif  // !__EMSCRIPTEN__
   // LINT.ThenChange()
 }
 
