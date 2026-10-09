@@ -187,7 +187,16 @@ export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/21.4.7075529
 # Build for ARM64
 bazel build --config=android_arm64 \
   //litert/some_target
+
+# Build Android GPU Accelerator (libLiteRtClGlAccelerator.so)
+bazel build -c opt --config=android_arm64 \
+  --action_env=ANDROID_NDK_HOME=$ANDROID_NDK_HOME \
+  //litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_so
 ```
+
+For detailed instructions on building GPU accelerators (including building with
+a local [ML Drift](https://github.com/google-ai-edge/ml-drift) checkout), see
+[GPU Accelerator Build Instructions](GPU_BUILD_INSTRUCTIONS.md).
 
 ### Step 3: Test Accelerator Support for Android
 

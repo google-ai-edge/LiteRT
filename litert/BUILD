@@ -362,18 +362,21 @@ config_setting(
 config_setting(
     name = "litert_runtime_link_mode_dynamic",
     values = {"define": "litert_runtime_link_mode=dynamic"},
+    visibility = ["//visibility:public"],
 )
 
 # LiteRT runtime will be linked statically. (This is the default behavior.)
 config_setting(
     name = "litert_runtime_link_mode_static",
     values = {"define": "litert_runtime_link_mode=static"},
+    visibility = ["//visibility:public"],
 )
 
 # LiteRT runtime will not be linked in the binary.
 config_setting(
     name = "litert_runtime_link_mode_none",
     values = {"define": "litert_runtime_link_mode=none"},
+    visibility = ["//visibility:public"],
 )
 
 # Configuration for building with built-in kernels (default)
