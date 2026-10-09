@@ -185,11 +185,8 @@ cc_library(
     # copybara:uncomment defines = ["LITERT_GOOGLE_TENSOR_HAS_HOOKS=1"],
     deps = [
         ":dispatch_api_headers",
-        "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_metrics_header",
         "//litert/c:litert_profiler_types",
-        "//litert/c/internal:litert_logging",
         "//litert/vendors/c:litert_dispatch_c_api",
         # copybara:uncomment "//litert/vendors/google_tensor/hooks",
     ],
