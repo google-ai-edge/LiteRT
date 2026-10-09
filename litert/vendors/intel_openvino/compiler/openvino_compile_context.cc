@@ -169,17 +169,24 @@ LiteRtStatus OpenVinoCompileContext::ConfigureForSoc(const char* soc_model) {
   return kLiteRtStatusOk;
 }
 
-void OpenVinoCompileContext::ConfigureForNpuWeightSharing() {
+void OpenVinoCompileContext::ConfigureForNpuWeightSharing(
+    const std::string& weights_bank_name) {
   if (device_ != "NPU") return;
   // NPUW private properties, set by literal key because
   // npuw_private_properties.hpp is not shipped in the runtime SDK.
   configs_map_["NPU_USE_NPUW"] = "YES";
   configs_map_["NPUW_DEVICES"] = "NPU";
-  configs_map_["NPUW_WEIGHTS_BANK"] = "shared";
+  // Bank name must be unique per distinct weight pool (see header). Fall back
+  // to the legacy fixed name only if the caller could not derive one,
+  // preserving old behaviour rather than silently breaking dedup.
+  configs_map_["NPUW_WEIGHTS_BANK"] =
+      weights_bank_name.empty() ? std::string("shared") : weights_bank_name;
   configs_map_["NPUW_CWAI"] = "YES";
   configs_map_["NPUW_FUNCALL_FOR_ALL"] = "YES";
   LITERT_LOG(LITERT_INFO,
-             "NPU weight sharing: enabled NPUW/CWAI weightless compile knobs");
+             "NPU weight sharing: enabled NPUW/CWAI weightless compile knobs "
+             "(bank '%s')",
+             configs_map_["NPUW_WEIGHTS_BANK"].as<std::string>().c_str());
 }
 
 void OpenVinoCompileContext::OptimizeModel(
