@@ -187,27 +187,29 @@ void RegisterCombinations(size_t iters, size_t& test_id, const AtsConf& options,
 template <typename Fixture>
 void RegisterExtraModels(size_t& test_id, const AtsConf& options,
                          typename Fixture::Capture& cap) {
-  DefaultDevice device(options.GetSeedForParams(ExtraModel::Name()));
   const auto extra_models = options.ExtraModels();
   LITERT_LOG(LITERT_INFO, "Registering %zu extra models", extra_models.size());
   for (const auto& file : extra_models) {
     if (options.AtLimit(test_id)) {
       return;
     }
-    auto model = ExtraModel::Create(file);
-    if (!model) {
-      LITERT_LOG(LITERT_WARNING, "Failed to create extra model %s: %s",
-                 file.c_str(), model.Error().Message().c_str());
+    auto test_name = internal::Filename(file);
+    if (!test_name || !internal::Exists(file) ||
+        !EndsWith(*test_name, ".tflite")) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Skipping invalid or non-tflite extra model %s",
+                 file.c_str());
       continue;
     }
-    auto test_name = internal::Filename(file);
     auto names =
         NamesForNextTest(test_id, options, Fixture::Name(), ExtraModel::Name(),
                          *test_name, file, "user provided tflite");
     if (!names) {
       continue;
     }
-    Fixture::Register(std::move(*model), options, std::move(*names),
+    // Defer loading the .tflite model until SetUp() so all registered models
+    // are not held in memory simultaneously.
+    Fixture::Register(ExtraModel::CreateLazy(file), options, std::move(*names),
                       cap.NewEntry());
   }
 }

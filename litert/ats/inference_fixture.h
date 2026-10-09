@@ -98,10 +98,12 @@ class AtsInferenceTest : public RngTest {
   }
 
   void SetUp() override {
-    cap_.model.SetFields(names_, Graph());
     if (names_.should_skip) {
+      cap_.model.SetFields(names_);
       return;
     }
+    LITERT_ASSERT_OK(graph_->EnsureLoaded());
+    cap_.model.SetFields(names_, Graph());
     ASSERT_GE(Graph().NumSubgraphs(), 1);
     LITERT_LOG(LITERT_INFO, "Setting up test for %s",
                absl::StrFormat("%v", conf_.Backend()).c_str());
@@ -136,7 +138,8 @@ class AtsInferenceTest : public RngTest {
       }
     }
 
-    if (conf_.IsNpu() && !cap_.accelerator.soc_man.empty()) {
+    if (conf_.IsNpu() && !cap_.accelerator.soc_man.empty() &&
+        graph_->IsLoaded()) {
       auto stamp = GetBuildStamp(Graph());
       if (stamp) {
         cap_.accelerator.soc_man = std::string(stamp->soc_manufacturer);
@@ -205,7 +208,7 @@ class AtsInferenceTest : public RngTest {
     return exec->Run(inputs, cap_.latency);
   }
 
-  Expected<VarBuffers> Reference(const VarBuffers& inputs) const {
+  Expected<VarBuffers> Reference(const VarBuffers& inputs) {
     return graph_->HasReference() ? CustomReference(inputs)
                                   : CpuReference(inputs);
   }
@@ -216,11 +219,16 @@ class AtsInferenceTest : public RngTest {
     return outputs;
   }
 
-  Expected<VarBuffers> CpuReference(const VarBuffers& inputs) const {
-    LITERT_ASSIGN_OR_RETURN(auto exec, CpuCompiledModelExecutor::Create(
-                                           Graph(), conf_.ReferenceOptions(),
+  Expected<VarBuffers> CpuReference(const VarBuffers& inputs) {
+    if (!cpu_ref_exec_) {
+      LITERT_ASSIGN_OR_RETURN(
+          auto exec,
+          CpuCompiledModelExecutor::Create(Graph(), conf_.ReferenceOptions(),
                                            conf_.GetEnvironment()));
-    return exec.Run(inputs);
+      cpu_ref_exec_ =
+          std::make_unique<CpuCompiledModelExecutor>(std::move(exec));
+    }
+    return cpu_ref_exec_->Run(inputs);
   }
 
   Expected<VarBuffers> MakeOutputs() const {
@@ -487,6 +495,7 @@ class AtsInferenceTest : public RngTest {
   TestNames names_;
   Capture::Entry& cap_;
   CompiledModelExecutor::Ptr exec_ = nullptr;
+  CompiledModelExecutor::Ptr cpu_ref_exec_ = nullptr;
   bool has_failure_ = false;
 };
 

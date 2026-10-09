@@ -59,8 +59,13 @@ class AtsCompileTest : public ::testing::Test {
   }
 
   void SetUp() override {
-    cap_.model.SetFields(names_, graph_->Graph());
     cap_.accelerator.SetFields(conf_);
+    if (names_.should_skip) {
+      cap_.model.SetFields(names_);
+      return;
+    }
+    LITERT_ASSERT_OK(graph_->EnsureLoaded());
+    cap_.model.SetFields(names_, graph_->Graph());
   }
 
   void TestBody() override {

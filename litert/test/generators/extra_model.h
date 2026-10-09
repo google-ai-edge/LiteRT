@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_EXTRA_MODEL_H_
 
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -45,6 +46,21 @@ class ExtraModel : public TestGraph {
     return std::make_unique<ExtraModel>(std::move(model));
   }
 
+  // Defers loading the .tflite file from disk until `EnsureLoaded()` is called
+  // during test SetUp(), avoiding OOMs from keeping all registered models in
+  // memory simultaneously.
+  static ExtraModel::Ptr CreateLazy(absl::string_view model_path) {
+    return std::make_unique<ExtraModel>(model_path);
+  }
+
+  Expected<void> EnsureLoaded() override {
+    if (model_ != nullptr) {
+      return {};
+    }
+    LITERT_ASSIGN_OR_RETURN(model_, internal::LoadModelFromFile(model_path_));
+    return {};
+  }
+
   Expected<VarBuffers> MakeInputs(
       DefaultDevice& device,
       const RandomTensorDataBuilder& data_builder) const override {
@@ -65,6 +81,11 @@ class ExtraModel : public TestGraph {
   }
 
   explicit ExtraModel(LiteRtModelT::Ptr model) : TestGraph(std::move(model)) {}
+  explicit ExtraModel(absl::string_view model_path)
+      : model_path_(model_path) {}
+
+ private:
+  std::string model_path_;
 };
 
 }  // namespace litert::testing

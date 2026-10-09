@@ -18,7 +18,14 @@ Macros to define pre-configured ATS test suites and run through the litert_devic
 
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "dispatch_device_rlocation", "host_rlocation", "is_gpu_backend", "is_npu_backend", "plugin_device_rlocation", "version_target_suffix")
-load("//litert/integration_test:litert_device_script.bzl", "litert_device_script")
+load(
+    "//litert/integration_test:litert_device_script.bzl",
+    "litert_device_script",
+    # copybara:uncomment_begin(google-only)
+    # "make_cns_pull_model_provider",
+    # copybara:uncomment_end
+    "make_download_model_provider",
+)
 
 def _make_ats_args(init = [], **kwargs):
     def _fmt_re(re):
@@ -59,6 +66,72 @@ def _make_ats_args(init = [], **kwargs):
         )
     return exec_args
 
+def _resolve_extra_models(name, extra_models):
+    """Resolves `extra_models` into data deps, model providers, and runtime paths."""
+    model_providers = []
+    data = []
+    cns_models = []
+
+    # Resolved runtime filesystem paths passed via `--extra_models=...` to the `ats`
+    # binary on the target device (JIT) or host workstation (AOT), whereas `extra_models`
+    # holds the input Bazel labels, CNS source paths, or `.tar.gz` download URLs.
+    device_paths = []
+    host_paths = []
+
+    if extra_models:
+        cns_models = [m for m in extra_models if m.startswith("/") and not m.startswith("//")]
+        url_models = [m for m in extra_models if m.startswith("http://") or m.startswith("https://")]
+        label_models = [m for m in extra_models if m not in cns_models and m not in url_models]
+
+        num_source_types = (1 if cns_models else 0) + (1 if url_models else 0) + (1 if label_models else 0)
+        if num_source_types > 1:
+            fail("extra_models cannot mix CNS paths, download URLs (http(s)://...), and Bazel labels in the same target.")
+
+        # Resolve Bazel target labels (e.g. `//path/to:model.tflite` or filegroups) to their
+        # staged runfiles paths on the device and host (using the exact file path for
+        # `.tflite` targets and the parent directory for filegroups), deduplicating paths.
+        if label_models:
+            data = label_models
+            for m in label_models:
+                get_parent = not m.endswith(".tflite")
+                dev_loc = device_rlocation(m, get_parent = get_parent)
+                if dev_loc not in device_paths:
+                    device_paths.append(dev_loc)
+                host_loc = host_rlocation(m, get_parent = get_parent)
+                if host_loc not in host_paths:
+                    host_paths.append(host_loc)
+
+        for i, url in enumerate(url_models):
+            url_provider_name = "{}_download_models_provider_{}".format(name, i)
+            make_download_model_provider(
+                name = url_provider_name,
+                url = url,
+            )
+            model_providers.append(":" + url_provider_name)
+
+        if cns_models:
+            cns_provider_name = name + "_cns_models_provider"
+
+            # copybara:uncomment make_cns_pull_model_provider(name = cns_provider_name, cns_paths = cns_models)
+            model_providers.append(":" + cns_provider_name)
+            for m in cns_models:
+                if not m.endswith(".tflite"):
+                    cns_dir_name = m.rstrip("/").rsplit("/", 1)[-1]
+                    dev_dir = "/data/local/tmp/runfiles/user/tmp/litert_extras/" + cns_dir_name
+                    if dev_dir not in device_paths:
+                        device_paths.append(dev_dir)
+
+    if model_providers:
+        device_paths.append("/data/local/tmp/runfiles/user/tmp/litert_extras")
+
+    return struct(
+        data = data,
+        model_providers = model_providers,
+        cns_models = cns_models,
+        device_paths = device_paths,
+        host_paths = host_paths,
+    )
+
 def litert_define_ats(
         backend,
         name,
@@ -69,7 +142,7 @@ def litert_define_ats(
         do_register = [],
         param_seeds = {},
         extra_flags = [],
-        models = None,
+        extra_models = [],
         platform = "android"):
     """Defines a pre-configured ATS test suite.
 
@@ -85,10 +158,9 @@ def litert_define_ats(
           (non-matching tests are omitted from registration entirely).
       param_seeds: A dictionary of parameter seeds for the test suite.
       extra_flags: A list of extra flags to pass to the test suite.
-      models: A list of labels or a single label to directories or files containing models.
-          If provided, the default model provider is disabled and the specified models are used.
-          This overrides any models provided via the `--models` flag at runtime if both are used
-          (though typically one would use one or the other).
+      extra_models: A list of labels to directories or files containing .tflite models,
+          CNS paths to .tflite models, or .tar.gz URLs (https://...) to
+          download .tflite models from. Cannot mix source types.
       platform: Target OS platform ("android" or "macos").
     """
     if "append" not in dir(backend):
@@ -97,32 +169,15 @@ def litert_define_ats(
     if compile_aot_and_run_suffix:
         fail("Compile aot and run on device is not supported yet.")
 
-    model_providers = ["//litert/integration_test:ats_models_provider"]
-    data = []
-
-    extra_models_device = ["/data/local/tmp/runfiles/user/tmp/litert_extras"]
-    extra_models_host = []
-
-    if models:
-        model_providers = []
-        if type(models) != "list":
-            models = [models]
-        data = models
-
-        extra_models_device = [device_rlocation(m, get_parent = True) for m in models]
-        extra_models_host = [host_rlocation(m, get_parent = True) for m in models]
-
-        if "ExtraModel" not in do_register:
-            do_register = do_register + ["ExtraModel"]
+    resolved_models = _resolve_extra_models(name, extra_models)
 
     for b in backend:
         # TODO: Unify local workdir paths for scripting.
         version_suffix = "_" + version_target_suffix(b) if version_target_suffix(b) else ""
 
         init_run_args = []
-        if platform != "macos" or models:
-            for m in extra_models_device:
-                init_run_args.append("--extra_models={}".format(m))
+        if platform != "macos" and resolved_models.device_paths:
+            init_run_args.append("--extra_models={}".format(",".join(resolved_models.device_paths)))
 
         if is_npu_backend(b):
             init_run_args += [
@@ -148,13 +203,14 @@ def litert_define_ats(
                 exec_args = run_args,
                 backend_id = b,
                 platform = platform,
-                model_providers = model_providers,
-                data = data,
+                model_providers = resolved_models.model_providers,
+                extra_models = resolved_models.cns_models,
+                data = resolved_models.data,
             )
 
         init_compile_args = ["--compile_mode=true"]
-        for m in extra_models_host:
-            init_compile_args.append("--extra_models={}".format(m))
+        if resolved_models.host_paths:
+            init_compile_args.append("--extra_models={}".format(",".join(resolved_models.host_paths)))
 
         compile_args = _make_ats_args(
             init = init_compile_args,
@@ -174,6 +230,6 @@ def litert_define_ats(
                 exec_args = compile_args,
                 build_for_host = True,
                 build_for_device = False,
-                model_providers = model_providers,
-                data = data,
+                model_providers = resolved_models.model_providers,
+                data = resolved_models.data,
             )

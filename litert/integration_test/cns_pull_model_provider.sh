@@ -21,25 +21,31 @@ readonly work_dir="/tmp/litert_extras"
 rm -rf "${work_dir}"
 mkdir -p "${work_dir}"
 
-readonly cns_path=@@cns_path@@
+readonly cns_paths="@@cns_paths@@"
 
-if [[ "$cns_path" == "@@"*"@@" ]]; then
-  fatal "No cns_path templated into the script."
-elif [[ -z "${cns_path}" ]]; then
-  fatal "cns_path is empty."
+if [[ "${cns_paths}" == "@@"*"@@" ]]; then
+  fatal "No cns_paths templated into the script."
+elif [[ -z "${cns_paths}" ]]; then
+  fatal "cns_paths is empty."
 fi
 
-if fileutil test -d "${cns_path}"; then
-  # Path is a directory. Copy all files in the directory.
-  fileutil cp "${cns_path}/*.tflite" "${work_dir}/"
+sources=()
+for path in ${cns_paths}; do
+  if [[ "${path}" == *.tflite ]]; then
+    sources+=("${path}")
+  elif fileutil test -d "${path}"; then
+    # Path is a directory. Copy all files in the directory.
+    sources+=("${path}/*.tflite")
+  elif fileutil test -f "${path}"; then
+    # Path is a file. Copy the file.
+    sources+=("${path}")
+  else
+    fatal "The specified CNS path '${path}' is not a valid file or directory, or it does not exist."
+  fi
+done
 
-elif fileutil test -f "${cns_path}"; then
-  # Path is a file. Copy the file.
-  fileutil cp "${cns_path}" "${work_dir}/"
-
-else
-  fatal "The specified cns_path '${cns_path}' is not a valid file or directory, or it does not exist."
-fi
+fileutil cp -parallelism 16 "${sources[@]}" "${work_dir}/" || \
+  fatal "Failed to copy models from CNS."
 
 for model_file in ${work_dir}/*; do
   if [[ -f "${model_file}" ]]; then

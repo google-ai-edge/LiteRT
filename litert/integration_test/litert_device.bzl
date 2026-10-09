@@ -60,7 +60,8 @@ def hidden_test_tags():
 #         exec_args = [],
 #         exec_env_vars = [],
 #         dimensions = {},
-#         platform = "android"):
+#         platform = "android",
+#         extra_models = []):
 #     """Wraps the mobile harness "mobile_test" macro"""
 #
 #     if platform == "macos":
@@ -75,8 +76,16 @@ def hidden_test_tags():
 #         mac_files = {
 #             "mac_bin": [":" + mac_bin_name],
 #         }
+#         mac_exec_args = list(exec_args)
+#         mac_extra_model_tags = []
+#         for i, m in enumerate(data + extra_models):
+#             tag = "extra_model_{}".format(i)
+#             mac_files[tag] = [m]
+#             mac_extra_model_tags.append("$$({})".format(tag))
+#         if mac_extra_model_tags:
+#             mac_exec_args.append("--extra_models={}".format(",".join(mac_extra_model_tags)))
 #         mac_params = {
-#             "options": " ".join(exec_args).replace("\\'", "'"),
+#             "options": " ".join(mac_exec_args).replace("\\'", "'"),
 #         }
 #         if libs:
 #             mac_files["accelerator_dylib"] = [libs[0]]
@@ -108,6 +117,10 @@ def hidden_test_tags():
 #     }
 #
 #     push_files_list = []
+#
+#     if extra_models:
+#         files["extra_models"] = extra_models
+#         push_files_list.append("extra_models:/data/local/tmp/runfiles/user/tmp/litert_extras/")
 #
 #     for lib_target in libs:
 #         lib_target_split = lib_target.split(":")
@@ -197,6 +210,7 @@ def litert_device_exec(
         remote_suffix = "",
         local_suffix = "_adb",
         model_providers = [],
+        extra_models = [],
         testonly = True,
         tags = []):
     """
@@ -215,6 +229,7 @@ def litert_device_exec(
         remote_suffix: Suffix for the target runnin on device cloud if enabled.
         local_suffix: Suffix for the target that runs locally on physical device through adb.
         model_providers: A list of tools dependencies that return tflite models when called.
+        extra_models: A list of extra .tflite model paths or targets to push to the device.
         testonly: Whether the target is testonly.
         tags: List of tags to apply to the generated targets.
     """
@@ -270,6 +285,7 @@ def litert_device_exec(
             exec_env_vars = backend.env_paths,
             dimensions = backend.default_mh_device,
             platform = platform,
+            extra_models = extra_models,
         )
 
 def litert_device_test(

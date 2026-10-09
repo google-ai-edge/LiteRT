@@ -43,6 +43,12 @@ struct ModelDetail : Printable<std::string, std::string, bool> {
     precompiled = GetBuildStamp(model).has_value();
   }
 
+  void SetFields(const TestNames& names) {
+    name = names.report_id;
+    desc = names.desc;
+    precompiled = false;
+  }
+
   ModelDetail() : Printable("ModelDetail", "name", "desc", "precompiled") {}
 
  private:

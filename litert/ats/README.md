@@ -18,17 +18,26 @@ The `BUILD` file defines several suites for different backends targeting
 connected local devices:
 
 ```bash
-# Run CPU tests
+# Run CPU (XNNPACK) op tests
 bazel run //litert/ats:cpu_ats -- [flags]
 
-# Run CPU tests on the TFLite built-in kernels (no delegate)
+# Run CPU (YNNPACK) op tests
+bazel run //litert/ats:ynnpack_cpu_ats -- [flags]
+
+# Run CPU (TFLite built-in kernels, no delegate) op tests
 bazel run //litert/ats:builtin_cpu_ats -- [flags]
 
-# Run GPU tests
+# Run GPU op tests
 bazel run //litert/ats:gpu_ats -- [flags]
 
-# Run Qualcomm NPU tests
+# Run Qualcomm NPU op tests
 bazel run //litert/ats:qualcomm_ats -- [flags]
+
+# Run ExtraModel (.tflite) suites on device
+bazel run //litert/ats:cpu_models_ats -- [flags]
+bazel run //litert/ats:ynnpack_cpu_models_ats -- [flags]
+bazel run //litert/ats:builtin_cpu_models_ats -- [flags]
+bazel run //litert/ats:gpu_models_ats -- [flags]
 ```
 
 ### Running ATS on Host Directly

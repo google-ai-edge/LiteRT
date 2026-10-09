@@ -16,9 +16,10 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/ats:ats.bzl", "litert_define_ats")
+
+# copybara:uncomment load("//litert/ats:models.bzl", "CLASSICAL_ALL_MODELS")
 load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "if_oss", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
-load("//litert/integration_test:litert_device_script.bzl", "make_download_model_provider")
 # copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_macos_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
 
 package(
@@ -32,6 +33,69 @@ package(
 
 # Note: The `litert_define_ats` targets below define test suites that execute tests on-device
 # using the underlying base `ats` binary compiled further down in this file.
+
+XNNPACK_MODELS_DONT_REGISTER = [
+    "simple_add_dynamic_shape",
+    "depth_anything_v2",
+    "hf_all_minilm_l6_v2",
+    "hf_deberta_large_mnli",
+    "hf_detr_resnet50_dc5",
+    "hf_distil_whisper_small_no_cache",
+    "hf_distil_whisper_small_with_cache_init",
+    "hf_distilbert",
+    "hf_dpt_large",
+    "hf_emotion_english_distilroberta_base",
+    "hf_mbart_large_50",
+    "hf_mobilebert",
+    "hf_mobilevit_small_e2e",
+    "hf_pyannote_segmentation_3_0",
+    "hf_segformer_512",
+    "hf_splade_v2_distil",
+    "hf_tinyclip_vit_8m_16_text_3m_yfcc15m",
+    "hf_tinyroberta_squad2",
+    "hf_tinyroberta_squad2_dynamic_batch",
+    "hf_wav2vec2_base_960h",
+    "hf_wav2vec2_base_960h_dynamic",
+    "hf_yolos_tiny",
+    "qai_hub_hf_wavlm_base_plus",
+    "qai_hub_hf_whisper_base_decoder",
+    "qai_hub_hf_whisper_base_encoder",
+    "qai_hub_inception_v3",
+    "qai_hub_openai_clip",
+    "qai_hub_real_esrgan_x4plus",
+    "qai_hub_resnet101",
+    "qai_hub_xlsr",
+    "snapml_StyleTransferNet",
+    "timm_efficientformerv2_s0",
+    "timm_pvt_v2_b1",
+    "timm_pvt_v2_b3",
+    "timm_resnest14d",
+    "torchaudio_conformer",
+    "torchaudio_deepspeech",
+    "torchaudio_wav2vec2_base",
+    "torchvision_convnext_tiny",
+    "torchvision_deeplabv3_resnet101",
+    "torchvision_deeplabv3_resnet50",
+    "torchvision_densenet121",
+    "torchvision_fcn_resnet50",
+    "torchvision_inception_v3",
+    "torchvision_resnet152",
+    "torchvision_resnet18",
+    "torchvision_resnet50",
+    "torchvision_shufflenet_v2",
+    "torchvision_swin_tiny",
+    "torchvision_video_resnet2plus1d_18",
+    "torchvision_video_resnet3d_18",
+    "torchvision_video_resnetmc3_18",
+    "torchvision_video_swin3d_tiny",
+    "torchvision_wide_resnet101_2",
+    "torchvision_wide_resnet50_2",
+    "u2net_full",
+    "u2net_lite",
+    "whisper_tiny_decoder",
+    "yolo11n",
+    "yolox_tiny",
+]
 
 XNNPACK_DONT_REGISTER = [
     "(_i32<[^>]+>(?!_cst)|->[(][^)]*_i32)",  # XNNPACK does not support dynamic int32 math (allows int32 static constants)
@@ -58,12 +122,59 @@ XNNPACK_DONT_REGISTER = [
     "FullyConnected.*,2d_f32<[^>]+>(?!_cst)",
     "FullyConnected.*,1d_f32<[^>]+>(?!_cst)",
     "Transpose.*([(][78]d|[(][1-8]d_(i1|i4|i16|u16|i32|u32|i64|u64)<)",  # XNNPACK Transpose supports FP32, FP16, INT8, and UINT8 types up to rank 6
-    # Explicit ExtraModel exclusions (unsupported by XNNPACK):
+]
+
+YNNPACK_MODELS_DONT_REGISTER = [
     "simple_add_dynamic_shape",
+    "depth_anything_v2",
     "hf_all_minilm_l6_v2",
+    "hf_deberta_large_mnli",
+    "hf_detr_resnet50_dc5",
+    "hf_distil_whisper_small_no_cache",
+    "hf_distil_whisper_small_with_cache_init",
+    "hf_distilbert",
+    "hf_dpt_large",
+    "hf_emotion_english_distilroberta_base",
+    "hf_mbart_large_50",
+    "hf_mobilebert",
+    "hf_mobilevit_small",
+    "hf_pyannote_segmentation_3_0",
+    "hf_segformer_512",
+    "hf_splade_v2_distil",
+    "hf_tinyclip_vit_8m_16_text_3m_yfcc15m",
+    "hf_tinyroberta_squad2",
+    "hf_tinyroberta_squad2_dynamic_batch",
+    "hf_yolos_tiny",
+    "isnet",
+    "qai_hub_hf_wavlm_base_plus",
+    "qai_hub_hf_whisper_base_decoder",
+    "qai_hub_hf_whisper_base_encoder",
+    "qai_hub_midas",
+    "qai_hub_openai_clip",
+    "qai_hub_real_esrgan_x4plus",
+    "snapml_StyleTransferNet",
+    "timm_efficientformerv2_s0",
+    "torchaudio_conformer",
+    "torchaudio_deepspeech",
+    "torchaudio_wav2letter",
+    "torchvision_deeplabv3_mobilenet_v3_large",
+    "torchvision_deeplabv3_resnet101",
+    "torchvision_deeplabv3_resnet50",
+    "torchvision_fcn_resnet50",
+    "torchvision_lraspp_mobilenet_v3_large",
+    "torchvision_resnet18",
+    "torchvision_swin_tiny",
+    "torchvision_video_resnet2plus1d_18",
+    "torchvision_video_resnet3d_18",
+    "torchvision_video_resnetmc3_18",
+    "torchvision_video_swin3d_tiny",
+    "u2net_full",
     "u2net_lite",
     "whisper_tiny_decoder",
+    "whisper_tiny_encoder",
+    "yamnet",
     "yolo11n",
+    "yolox_tiny",
 ]
 
 YNNPACK_DONT_REGISTER = [
@@ -79,17 +190,90 @@ YNNPACK_DONT_REGISTER = [
     "SdpaTransposed",  # SdpaTransposed generator does not yet set logit_cap attribute for YNNPACK
     "FullyConnected.*(i4|u8)",  # YNNPACK delegate requires even output dims for INT4 weights and does not support UINT8 FullyConnected
     "Transpose.*[(][1-8]d_(i1|i16|u16|u32|i64|u64)<",  # YNNPACK Transpose supports FP32, FP16, INT4, INT8, UINT8, and INT32 types
-    # Explicit ExtraModel exclusions (unsupported by YNNPACK):
+]
+
+BUILTIN_MODELS_DONT_REGISTER = [
     "simple_add_dynamic_shape",
     "hf_all_minilm_l6_v2",
-    "hf_mobilevit_small",
-    "qai_hub_midas",
-    "qai_hub_real_esrgan_x4plus",
-    "torchvision_resnet18",
-    "u2net_lite",
+    "hf_deberta_large_mnli",
+    "hf_distil_whisper_small_no_cache",
+    "hf_distil_whisper_small_with_cache_init",
+    "hf_distilbert",
+    "hf_emotion_english_distilroberta_base",
+    "hf_mbart_large_50",
+    "hf_mobilebert",
+    "hf_splade_v2_distil",
+    "hf_tinyclip_vit_8m_16_text_3m_yfcc15m",
+    "hf_tinyroberta_squad2",
+    "hf_tinyroberta_squad2_dynamic_batch",
+    "qai_hub_hf_whisper_base_decoder",
+    "torchaudio_conformer",
     "whisper_tiny_decoder",
-    "yamnet",
-    "yolo11n",
+]
+
+GPU_MODELS_DONT_REGISTER = [
+    "simple_add_dynamic_shape",
+    "depth_anything_v2",
+    "hf_all_minilm_l6_v2",
+    "hf_deberta_large_mnli",
+    "hf_detr_resnet50_dc5",
+    "hf_distil_whisper_small_no_cache",
+    "hf_distil_whisper_small_with_cache_init",
+    "hf_distilbert",
+    "hf_dpt_large",
+    "hf_emotion_english_distilroberta_base",
+    "hf_mbart_large_50",
+    "hf_mobilebert",
+    "hf_splade_v2_distil",
+    "hf_tinyclip_vit_8m_16_text_3m_yfcc15m",
+    "hf_tinyroberta_squad2",
+    "hf_tinyroberta_squad2_dynamic_batch",
+    "hf_wav2vec2_base_960h",
+    "hf_wav2vec2_base_960h_dynamic",
+    "hf_yolos_tiny",
+    "qai_hub_hf_wavlm_base_plus",
+    "qai_hub_hf_whisper_base_decoder",
+    "qai_hub_openai_clip",
+    "qai_hub_real_esrgan_x4plus",
+    "qai_hub_resnet101",
+    "qai_hub_xlsr",
+    "snapml_StyleTransferNet",
+    "timm_pvt_v2_b1",
+    "timm_pvt_v2_b3",
+    "timm_resnest14d",
+    "timm_vit_small_path16_224",
+    "torchaudio_conformer",
+    "torchaudio_wav2vec2_base",
+    "torchvision_convnext_tiny",
+    "torchvision_deeplabv3_resnet101",
+    "torchvision_deeplabv3_resnet50",
+    "torchvision_densenet121",
+    "torchvision_fcn_resnet50",
+    "torchvision_maxvit_t",
+    "torchvision_resnet152",
+    "torchvision_resnet18",
+    "torchvision_resnet50",
+    "torchvision_shufflenet_v2",
+    "torchvision_swin_tiny",
+    "torchvision_video_resnet2plus1d_18",
+    "torchvision_video_resnet3d_18",
+    "torchvision_video_resnetmc3_18",
+    "torchvision_video_swin3d_tiny",
+    "torchvision_vit_base_patch16",
+    "torchvision_wide_resnet101_2",
+    "torchvision_wide_resnet50_2",
+    "whisper_tiny_decoder",
+    "yolox_tiny",
+    # FP16 precision overflow (NaN) on OpenCL GPU:
+    "hf_hubert_large_ls960_ft",
+    "timm_efficientnet",
+    "torchvision_efficientnet_b0",
+    "torchvision_efficientnet_b1",
+    "torchvision_efficientnet_b3",
+    "torchvision_efficientnet_b4",
+    "torchvision_efficientnet_b5",
+    "torchvision_efficientnet_b6",
+    "torchvision_efficientnet_b7",
 ]
 
 BUILTIN_DONT_REGISTER = [
@@ -129,6 +313,60 @@ litert_define_ats(
     compile_only_suffix = None,
     dont_register = BUILTIN_DONT_REGISTER,
     extra_flags = BUILTIN_EXTRA_FLAGS,
+    jit_suffix = "",
+)
+
+litert_define_ats(
+    name = "cpu_models_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    do_register = ["ExtraModel"],
+    dont_register = XNNPACK_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--iters_per_test=1",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    jit_suffix = "",
+)
+
+litert_define_ats(
+    name = "ynnpack_cpu_models_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    do_register = ["ExtraModel"],
+    dont_register = YNNPACK_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--enable_ynnpack=true",
+        "--iters_per_test=1",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    jit_suffix = "",
+)
+
+litert_define_ats(
+    name = "builtin_cpu_models_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    do_register = ["ExtraModel"],
+    dont_register = BUILTIN_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--cpu_kernel_mode=builtin",
+        "--iters_per_test=1",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    jit_suffix = "",
+)
+
+litert_define_ats(
+    name = "gpu_models_ats",
+    backend = "gpu",
+    compile_only_suffix = None,
+    do_register = ["ExtraModel"],
+    dont_register = GPU_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--iters_per_test=1",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
 )
 
@@ -440,6 +678,78 @@ litert_define_ats(
     extra_flags = [
         "--data_seed=42",
     ],
+    jit_suffix = "",
+    platform = "macos",
+)
+
+litert_define_ats(
+    name = "cpu_macos_models_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    do_register = ["ExtraModel"],
+    dont_register = XNNPACK_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--iters_per_test=1",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    jit_suffix = "",
+    platform = "macos",
+)
+
+litert_define_ats(
+    name = "ynnpack_cpu_macos_models_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    do_register = ["ExtraModel"],
+    dont_register = YNNPACK_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--enable_ynnpack=true",
+        "--iters_per_test=1",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    jit_suffix = "",
+    platform = "macos",
+)
+
+litert_define_ats(
+    name = "builtin_cpu_macos_models_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    do_register = ["ExtraModel"],
+    dont_register = BUILTIN_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--cpu_kernel_mode=builtin",
+        "--iters_per_test=1",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    jit_suffix = "",
+    platform = "macos",
+)
+
+litert_define_ats(
+    name = "metal_macos_models_ats",
+    backend = "metal",
+    compile_only_suffix = None,
+    do_register = ["ExtraModel"],
+    dont_register = GPU_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--iters_per_test=1",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    jit_suffix = "",
+    platform = "macos",
+)
+
+litert_define_ats(
+    name = "webgpu_macos_models_ats",
+    backend = "webgpu",
+    compile_only_suffix = None,
+    do_register = ["ExtraModel"],
+    dont_register = GPU_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--iters_per_test=1",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
     platform = "macos",
 )
@@ -1385,11 +1695,6 @@ cc_library(
     ],
 )
 
-make_download_model_provider(
-    name = "ats_models_provider",
-    url = "https://storage.googleapis.com/litert/ats_models.tar.gz",
-)
-
 # copybara:uncomment_begin(google-only)
 # # GUITAR WORKFLOWS #################################################################################
 #
@@ -1487,6 +1792,112 @@ make_download_model_provider(
 #         tests = [
 #             litert_macos_mh_guitar_test(
 #                 targets = MACOS_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# PIXEL_9_ATS_MODELS_GUITAR_TARGETS = [
+#     ":gpu_models_ats_remote",
+#     ":cpu_models_ats_remote",
+#     ":ynnpack_cpu_models_ats_remote",
+#     ":builtin_cpu_models_ats_remote",
+# ]
+#
+# guitar_workflow_test(
+#     name = "litert_ats_models_guitar_pixel_9",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_pixel_9_mh_guitar_test(
+#                 targets = PIXEL_9_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# QUALCOMM_S24_ATS_MODELS_GUITAR_TARGETS = [
+#     ":gpu_models_ats_remote",
+#     ":cpu_models_ats_remote",
+#     ":ynnpack_cpu_models_ats_remote",
+#     ":builtin_cpu_models_ats_remote",
+# ]
+#
+# guitar_workflow_test(
+#     name = "litert_ats_models_guitar_qualcomm_s24",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_qualcomm_mh_guitar_test(
+#                 targets = QUALCOMM_S24_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# MEDIATEK_MT6989_ATS_MODELS_GUITAR_TARGETS = [
+#     ":gpu_models_ats_remote",
+#     ":cpu_models_ats_remote",
+#     ":ynnpack_cpu_models_ats_remote",
+#     ":builtin_cpu_models_ats_remote",
+# ]
+#
+# guitar_workflow_test(
+#     name = "litert_ats_models_guitar_mediatek_mt6989",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_mediatek_mh_guitar_test(
+#                 dimension_hardware = "mt6989",
+#                 targets = MEDIATEK_MT6989_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# MACOS_ATS_MODELS_GUITAR_TARGETS = [
+#     ":metal_macos_models_ats_remote",
+#     ":webgpu_macos_models_ats_remote",
+#     ":cpu_macos_models_ats_remote",
+#     ":ynnpack_cpu_macos_models_ats_remote",
+#     ":builtin_cpu_macos_models_ats_remote",
+# ]
+#
+# guitar_workflow_test(
+#     name = "litert_ats_models_guitar_macos",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_macos_mh_guitar_test(
+#                 targets = MACOS_ATS_MODELS_GUITAR_TARGETS,
 #             ),
 #         ],
 #     ),
