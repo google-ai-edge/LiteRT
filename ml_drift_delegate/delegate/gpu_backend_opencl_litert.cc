@@ -300,21 +300,32 @@ GpuBackendOpenClLitert::GetGpuBufferRequirements(
 
 absl::StatusOr<GpuBackend::GpuBufferRequirements>
 GpuBackendOpenClLitert::GetGpuBufferRequirementsForNonExternalTensors() {
-#if LITERT_HAS_OPENGL_SUPPORT
-  if (gl_interop_fabric_) {
-    return GpuBufferRequirements{
-        .buffer_types = {kLiteRtTensorBufferTypeOpenClBufferPacked,
-                         kLiteRtTensorBufferTypeGlBuffer},
-        // No strides for packed buffer.
-        .strides = {0, 0},
-    };
-  }
-#endif
-  return GpuBufferRequirements{
+  GpuBufferRequirements requirements{
       .buffer_types = {kLiteRtTensorBufferTypeOpenClBufferPacked},
       // No strides for packed buffer.
       .strides = {0},
   };
+#if LITERT_HAS_OPENGL_SUPPORT
+  if (gl_interop_fabric_) {
+    requirements.buffer_types.push_back(kLiteRtTensorBufferTypeGlBuffer);
+    requirements.strides.push_back(0);
+  }
+#endif
+#if LITERT_HAS_AHWB_SUPPORT
+  // `cl_arm_import_memory` alone only guarantees the base import API (e.g.
+  // host / dma_buf import types). Importing with
+  // CL_IMPORT_TYPE_ANDROID_HARDWARE_BUFFER_ARM additionally requires
+  // `cl_arm_import_memory_android_hardware_buffer`; drivers such as PowerVR
+  // DXT on Pixel 10 advertise the former but not the latter, and fail
+  // clImportMemoryARM with CL_INVALID_PROPERTY.
+  if (cl_env()->device().GetInfo().SupportsExtension(
+          "cl_arm_import_memory_android_hardware_buffer") &&
+      ::ml_drift::cl::clImportMemoryARM != nullptr) {
+    requirements.buffer_types.push_back(kLiteRtTensorBufferTypeAhwb);
+    requirements.strides.push_back(0);
+  }
+#endif
+  return requirements;
 }
 
 absl::StatusOr<std::unique_ptr<GpuInferenceContext>>
