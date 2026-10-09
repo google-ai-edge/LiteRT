@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -34,6 +35,15 @@
 #endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
+namespace litert::google_tensor {
+
+// Maps (signature_name, tensor_name) to coherency preference
+// (true for coherent).
+using TensorCoherencyMap =
+    absl::flat_hash_map<std::pair<std::string, std::string>, bool>;
+
+}  // namespace litert::google_tensor
+
 // This class is thread-compatible.
 class LiteRtDispatchDeviceContextT {
  public:
@@ -41,6 +51,10 @@ class LiteRtDispatchDeviceContextT {
   struct GoogleTensorOptionsData {
     std::optional<LiteRtGoogleTensorOptionsPerformanceMode> performance_mode =
         std::nullopt;
+    // Map from (signature_name, tensor_name) to coherency preference.
+    litert::google_tensor::TensorCoherencyMap input_coherency_map;
+    // Map from (signature_name, tensor_name) to coherency preference.
+    litert::google_tensor::TensorCoherencyMap output_coherency_map;
   };
 
   static LiteRtStatus Create(const LiteRtRuntimeContext* runtime_context,
