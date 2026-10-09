@@ -29,10 +29,11 @@ struct GoogleTensorHookContext {
                          DestroyTpuTileTimeContext) {}
 };
 
-// Vendor hook callback function for Google Tensor profiling.
+// Dispatches vendor hook events for Google Tensor profiling.
 void LiteRtVendorHook(LiteRtHookType type, const void* data, size_t size,
                       void* user_data) {
-  auto* context = static_cast<GoogleTensorHookContext*>(user_data);
+  GoogleTensorHookContext* context =
+      static_cast<GoogleTensorHookContext*>(user_data);
   if (!context) return;
 
   LiteRtDispatchInvocationContext icontext = nullptr;
@@ -42,6 +43,7 @@ void LiteRtVendorHook(LiteRtHookType type, const void* data, size_t size,
       icontext =
           *reinterpret_cast<const LiteRtDispatchInvocationContext*>(data);
     }
+    if (!icontext) return;
   }
 
   switch (type) {
