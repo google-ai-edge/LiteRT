@@ -59,6 +59,7 @@
 #include "openvino/core/except.hpp"
 #include "openvino/frontend/tensorflow_lite/frontend.hpp"
 #include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
+#include "openvino/op/parameter.hpp"
 #include "openvino/openvino.hpp"  // NOLINT
 #include "openvino/runtime/core.hpp"
 
@@ -680,6 +681,29 @@ LiteRtStatus LiteRtCompilerPluginCompile(
           }
         }
 
+        // KV tier: the largest static extent over this partition's
+        // "kv_cache" inputs, i.e. the context length it was compiled for.
+        // Recorded in the GlobalGraph so the dispatch can tell a multi-context
+        // model's tiers apart without guessing from port shapes.
+        auto pname = [](const std::shared_ptr<ov::op::v0::Parameter>& p) {
+          const auto& names = p->get_output_tensor(0).get_names();
+          return names.empty() ? p->get_friendly_name() : *names.begin();
+        };
+        auto extent = [](const std::shared_ptr<ov::op::v0::Parameter>& p) {
+          int64_t m = 0;
+          const auto& ps = p->get_partial_shape();
+          if (ps.rank().is_dynamic()) return m;
+          for (const auto& d : ps) {
+            if (d.is_static()) m = std::max<int64_t>(m, d.get_length());
+          }
+          return m;
+        };
+        int64_t kv_tier = 0;
+        for (const auto& p : ov_model->get_parameters()) {
+          if (pname(p).find("kv_cache") == std::string::npos) continue;
+          kv_tier = std::max(kv_tier, extent(p));
+        }
+
         // Compile using the per-partition device and properties.
         litert::openvino::LogOpenVINOVersionInfoOnce(
             "OpenVINO Compiler", context.Device().c_str());
@@ -721,6 +745,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
           litert::openvino::OpenVinoGlobalGraph::Subgraph subgraph;
           subgraph.name = graph_name;
           subgraph.device = static_cast<uint8_t>(graph_backend_enum);
+          subgraph.kv_tier = kv_tier;
           subgraph.const_map = std::move(const_map);
           subgraph.payload = absl::MakeConstSpan(
               reinterpret_cast<const uint8_t*>(held.data()), held.size());
