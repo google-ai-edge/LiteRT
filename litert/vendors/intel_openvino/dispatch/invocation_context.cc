@@ -34,6 +34,7 @@
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/tensor.hpp"
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #if defined(__ANDROID__)
 #include <unistd.h>
 #include "litert/vendors/intel_openvino/dispatch/npu_hal_wrapper.h"
@@ -146,6 +147,57 @@ LiteRtDispatchInvocationContextT::Create(
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
     int num_inputs, int num_outputs,
     const IntelOpenVinoOptions* intel_openvino_opts) {
+  // Create() records WHAT to import and returns; the import itself happens in
+  // EnsureImported() on first real use. A multi-context bundle delegates every
+  // tier's signatures, and a session that never leaves its first tier must
+  // never pay for the others' blobs.
+  //
+  // Nothing import-related is pre-resolved here: holding derived state between
+  // Create() and the import is what makes a deferred object complicated. The
+  // whole job, container parse included, runs in one piece at import time.
+  // Consequence to be aware of: a bad container, an absent device or an
+  // out-of-bounds pool span is now reported on first use rather than at model
+  // load.
+  if (exec_bytecode_buffer == nullptr) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Null bytecode buffer");
+  }
+  LITERT_LOG(LITERT_INFO,
+             "Openvino InvocationContext created, import deferred ('%s')",
+             (function_name != nullptr && function_name[0] != '\0')
+                 ? function_name
+                 : "<unnamed>");
+  Ptr context(new LiteRtDispatchInvocationContextT(
+      device_context, *exec_bytecode_buffer,
+      function_name != nullptr ? std::string(function_name) : std::string(),
+      num_inputs, num_outputs));
+  return context;
+}
+
+litert::Expected<void> LiteRtDispatchInvocationContextT::EnsureImported() {
+  {
+    absl::MutexLock lock(&import_mutex_);
+    if (imported_) return {};
+    LITERT_RETURN_IF_ERROR(ImportLocked());
+    imported_ = true;
+
+    // Re-bind this node's buffers from our record. Needed after a release: the
+    // kernel attaches a node's buffers only on its first run and will not
+    // attach them again for the re-import.
+    for (const auto& [index, handle] : attached_inputs_) {
+      LITERT_RETURN_IF_ERROR(BindInput(index, handle));
+    }
+    for (const auto& [index, handle] : attached_outputs_) {
+      LITERT_RETURN_IF_ERROR(BindOutput(index, handle));
+    }
+  }
+  return {};
+}
+
+litert::Expected<void> LiteRtDispatchInvocationContextT::ImportLocked() {
+  const LiteRtMemBuffer* exec_bytecode_buffer = &exec_bytecode_buffer_;
+  const char* function_name =
+      function_name_.empty() ? nullptr : function_name_.c_str();
   const void* exec_bytecode_ptr =
       static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
       exec_bytecode_buffer->offset;
@@ -259,7 +311,7 @@ LiteRtDispatchInvocationContextT::Create(
 
   // Validate that the requested device is actually available on this system
   // before setting the device.
-  auto core = device_context.getCore();
+  auto core = device_context_.getCore();
   if (!core) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to get OpenVINO core from device context");
@@ -303,14 +355,6 @@ LiteRtDispatchInvocationContextT::Create(
                          "Empty bytecode buffer");
   }
 
-  SharedStreamBuffer membuf(static_cast<const char*>(exec_bytecode_ptr),
-                            exec_bytecode_size);
-  std::istream model_stream(&membuf);
-  if (!model_stream) {
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "Failed to open model bytecode stream");
-  }
-
   // Resolve a GlobalGraph subgraph's weights against the shared pool. Two
   // consumption strategies over one container format:
   //   - GPU: weights are Parameters imported plainly, then bound to views into
@@ -346,6 +390,14 @@ LiteRtDispatchInvocationContextT::Create(
     }
   }
 
+  SharedStreamBuffer membuf(static_cast<const char*>(exec_bytecode_ptr),
+                            exec_bytecode_size);
+  std::istream model_stream(&membuf);
+  if (!model_stream) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Failed to open model bytecode stream");
+  }
+
   ov::CompiledModel compiled_model;
   try {
     litert::openvino::LogOpenVINOVersionInfoOnce("OpenVINO Dispatch",
@@ -353,12 +405,14 @@ LiteRtDispatchInvocationContextT::Create(
     if (npu_shared) {
       // Stage the deduplicated pool to a temp file once per model, then hand it
       // to NPUW. The temp file is a byte-for-byte copy of the contiguous pool
-      // span, starting at byte 0, so bin_offset resolves directly. When the
-      // model is file-backed (fd >= 0) the bank reads the pool through
-      // short-lived per-chunk mappings of the model file at the pool's absolute
-      // file offset, so the pool is never faulted into the model's long-lived
-      // mapping; otherwise it writes from the in-memory view (logged by the
-      // bank).
+      // span, starting at byte 0, so bin_offset resolves directly. The bank is
+      // owned by this device context, i.e. by the CompiledModel, and shared by
+      // all of its partitions: one CompiledModel per model stages it once.
+      // When the model is file-backed (fd >= 0) the bank reads the pool
+      // through short-lived per-chunk mappings of the model file at the pool's
+      // absolute file offset, so the pool is never faulted into the model's
+      // long-lived mapping; otherwise it writes from the in-memory view (logged
+      // by the bank).
       litert::openvino::PoolSource pool_source;
       pool_source.data = pool_ptr;
       pool_source.size = pool_size;
@@ -372,7 +426,7 @@ LiteRtDispatchInvocationContextT::Create(
             static_cast<uint64_t>(pool_ptr - buf_base);
       }
       const std::string bank_path =
-          device_context.NpuBank().EnsureOnDisk(pool_source);
+          device_context_.NpuBank().EnsureOnDisk(pool_source);
       if (bank_path.empty()) {
         return litert::Error(
             kLiteRtStatusErrorRuntimeFailure,
@@ -398,35 +452,36 @@ LiteRtDispatchInvocationContextT::Create(
     return litert::Error(kLiteRtStatusErrorRuntimeFailure, e.what());
   }
 
-  auto infer_request = compiled_model.create_infer_request();
+  infer_request_ = compiled_model.create_infer_request();
 
   // Bind the shared weights onto the infer request and hold the views for its
   // lifetime (set_input_tensor does not take ownership). GPU only: NPU weights
   // are resolved inside NPUW from the mmapped temp file, so nothing to bind.
-  std::vector<ov::Tensor> bound_weights;
+  bound_weights_.clear();
   if (gpu_shared) {
     // Reuse the graph parsed above (its buffer spans alias
-    // exec_bytecode_buffer, which outlives this function) -- no second parse,
+    // exec_bytecode_buffer, which outlives this context) -- no second parse,
     // no pool copy. The GPU bank resolves each const_map buffer_id to its pool
     // bytes via the graph's ascending-id BufferEntry list.
     LITERT_ASSIGN_OR_RETURN(
         std::vector<litert::openvino::BoundWeight> bound,
-        device_context.GpuBank().Bind(*core, *global_graph, compiled_model,
-                                      selected_const_map));
-    bound_weights.reserve(bound.size());
+        device_context_.GpuBank().Bind(*core, *global_graph,
+                                       compiled_model, selected_const_map));
+    bound_weights_.reserve(bound.size());
     for (auto& b : bound) {
-      infer_request.set_input_tensor(b.input_index, b.view);
-      bound_weights.push_back(std::move(b.view));
+      infer_request_.set_input_tensor(b.input_index, b.view);
+      bound_weights_.push_back(std::move(b.view));
     }
     LITERT_LOG(LITERT_INFO, "GlobalGraph: bound %zu shared weights on GPU",
-               bound_weights.size());
+               bound_weights_.size());
   }
 
-  LITERT_LOG(LITERT_INFO, "Openvino InvocationContext Initialize SUCCESS");
+  LITERT_LOG(LITERT_INFO, "Openvino InvocationContext import SUCCESS ('%s')",
+             (function_name != nullptr && function_name[0] != '\0')
+                 ? function_name
+                 : "<unnamed>");
   // TODO: add support for loading cached model
-  return Ptr(new LiteRtDispatchInvocationContextT(infer_request, device_context,
-                                                  num_inputs, num_outputs,
-                                                  std::move(bound_weights)));
+  return {};
 }
 
 litert::Expected<LiteRtTensorBufferRequirements>
@@ -474,6 +529,16 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  // AttachInput/AttachOutput fire in the same Eval as the first Invoke, so
+  // this is the natural materialization point: a signature that is never run
+  // is never attached either, and so never imports.
+  LITERT_RETURN_IF_ERROR(EnsureImported());
+  attached_inputs_.emplace_back(graph_input_index, tensor_buffer_handle);
+  return BindInput(graph_input_index, tensor_buffer_handle);
+}
+
+litert::Expected<void> LiteRtDispatchInvocationContextT::BindInput(
+    int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
                           device_context_.getOVTensor(tensor_buffer_handle));
   // TODO: visit this if need to maintain graph indices for inputs and outputs
@@ -483,6 +548,13 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
 }
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
+    int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  LITERT_RETURN_IF_ERROR(EnsureImported());
+  attached_outputs_.emplace_back(graph_output_index, tensor_buffer_handle);
+  return BindOutput(graph_output_index, tensor_buffer_handle);
+}
+
+litert::Expected<void> LiteRtDispatchInvocationContextT::BindOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
                           device_context_.getOVTensor(tensor_buffer_handle));
@@ -497,6 +569,9 @@ struct ov_infer_request_wrapper {
 };
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
+  // Normally a no-op: AttachInput/AttachOutput already imported. Kept so a
+  // graph with no attachable I/O still works.
+  LITERT_RETURN_IF_ERROR(EnsureImported());
 #if defined(__ANDROID__)
   const LiteRtSchedulingInfo* scheduling_info = GetSchedulingInfo();
   const bool has_job_priority =

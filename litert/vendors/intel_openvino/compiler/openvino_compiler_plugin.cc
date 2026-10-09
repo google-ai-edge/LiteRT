@@ -649,6 +649,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         auto input_model = tflite_fe->load(graph_delegate);
         LITERT_LOG(LITERT_INFO, "Model loaded");
         auto ov_model = tflite_fe->convert(input_model);
+        input_model.reset();  // frontend model + its tflite weights unused after convert
 
         // Run NPU-specific optimization passes.
         const auto optimize_result = context.OptimizeModel(ov_model);
@@ -686,6 +687,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                    partition_idx, context.Device().c_str());
         auto compiled_model =
             core.compile_model(ov_model, context.Device(), configs);
+        ov_model.reset();  // graph unused after compile; free before export + aggregation
 
         CustomOStreamBuf obuf;
         std::ostream oss(&obuf);
