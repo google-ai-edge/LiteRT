@@ -15,6 +15,7 @@
 #include "ml_drift_delegate/tflite/convert/convert_aux.h"
 
 #include <any>
+#include <array>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -24,6 +25,7 @@
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
@@ -32,9 +34,12 @@
 #include "ml_drift/common/types.h"  // from @ml_drift
 #include "tflite/c/builtin_op_data.h"
 #include "tflite/c/common.h"
+#include "tflite/testing/matchers.h"
 
 namespace litert::ml_drift::ir {
 namespace {
+
+using ::testing::tflite::SimpleConstTensor;
 
 TEST(ConvertAuxTest, HandleFusedActivationNone) {
   ::ml_drift::ir::IrModel model;
@@ -328,6 +333,71 @@ TEST(ConvertAuxTest, AddConstInput) {
   EXPECT_THAT(t->data, testing::ElementsAre(1.0f, 2.0f, 3.0f, 4.0f));
 
   TfLiteIntArrayFree(tfl_tensor.dims);
+}
+
+TEST(ConvertAuxTest, AddConstInputFloat16) {
+  std::array<::ml_drift::half, 4> tensor_data = {
+      ::ml_drift::half(1.0f), ::ml_drift::half(2.0f), ::ml_drift::half(3.0f),
+      ::ml_drift::half(4.0f)};
+  SimpleConstTensor tfl_tensor(kTfLiteFloat16, {1, 2, 1, 2},
+                               absl::MakeSpan(tensor_data));
+
+  TfLiteContext context{};
+  context.tensors = &tfl_tensor;
+
+  ::ml_drift::ir::IrModel model;
+  SizedLayout layout;
+  ::ml_drift::ir::IrTensor* tensor = AddConstInput(context, 0, model, layout);
+
+  ASSERT_NE(tensor, nullptr);
+  EXPECT_EQ(tensor->desc.GetDataType(), ::ml_drift::DataType::kFloat16);
+  EXPECT_EQ(tensor->desc.GetBHWCShape(), ::ml_drift::BHWC(1, 2, 1, 2));
+
+  ASSERT_EQ(model.ops().size(), 1);
+  const ::ml_drift::ir::IrOp* op = model.op(0);
+  EXPECT_EQ(op->name, "const");
+  EXPECT_EQ(op->outputs[0], tensor->id);
+  EXPECT_EQ(tensor->producer, op->id);
+
+  const ::ml_drift::ConstTensorAttributes* attr =
+      std::any_cast<::ml_drift::ConstTensorAttributes>(&op->attr);
+  ASSERT_TRUE(attr);
+  const auto* t = std::get_if<::ml_drift::TensorFloat16>(&attr->tensor);
+  ASSERT_TRUE(t);
+  EXPECT_THAT(t->data, testing::ElementsAreArray(tensor_data));
+}
+
+TEST(ConvertAuxTest, AddFloat16ConstAsFloat32Input) {
+  std::array<::ml_drift::half, 4> tensor_data = {
+      ::ml_drift::half(1.0f), ::ml_drift::half(2.0f), ::ml_drift::half(3.0f),
+      ::ml_drift::half(4.0f)};
+  SimpleConstTensor tfl_tensor(kTfLiteFloat16, {1, 2, 1, 2},
+                               absl::MakeSpan(tensor_data));
+
+  TfLiteContext context{};
+  context.tensors = &tfl_tensor;
+
+  ::ml_drift::ir::IrModel model;
+  SizedLayout layout;
+  ::ml_drift::ir::IrTensor* tensor =
+      AddFloat16ConstAsFloat32Input(context, 0, model, layout);
+
+  ASSERT_NE(tensor, nullptr);
+  EXPECT_EQ(tensor->desc.GetDataType(), ::ml_drift::DataType::kFloat32);
+  EXPECT_EQ(tensor->desc.GetBHWCShape(), ::ml_drift::BHWC(1, 2, 1, 2));
+
+  ASSERT_EQ(model.ops().size(), 1);
+  const ::ml_drift::ir::IrOp* op = model.op(0);
+  EXPECT_EQ(op->name, "const");
+  EXPECT_EQ(op->outputs[0], tensor->id);
+  EXPECT_EQ(tensor->producer, op->id);
+
+  const ::ml_drift::ConstTensorAttributes* attr =
+      std::any_cast<::ml_drift::ConstTensorAttributes>(&op->attr);
+  ASSERT_TRUE(attr);
+  const auto* t = std::get_if<::ml_drift::TensorFloat32>(&attr->tensor);
+  ASSERT_TRUE(t);
+  EXPECT_THAT(t->data, testing::ElementsAre(1.0f, 2.0f, 3.0f, 4.0f));
 }
 
 TEST(ConvertAuxTest, AddConstInputInt32) {

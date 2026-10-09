@@ -822,7 +822,9 @@ cc_test(
     deps = [
         ":convert_aux",
         "//tflite/c:common",
+        "//tflite/testing:matchers",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
@@ -887,15 +889,18 @@ cc_test(
     deps = [
         ":convert_testing_utils",
         ":stub_delegate",
+        "//ml_drift_delegate/tflite:ir_model_builder_helper",
         "//tflite:builtin_ops",
         "//tflite:framework",
         "//tflite/c:c_api",
         "//tflite/c:common",
         "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common:types",
     ],
 )
 
