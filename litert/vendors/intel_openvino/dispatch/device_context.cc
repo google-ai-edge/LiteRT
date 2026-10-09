@@ -24,10 +24,14 @@
 
 #include <string.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <vector>
 
 #include "litert/c/litert_layout.h"
+#include "litert/vendors/intel_openvino/dispatch/invocation_context.h"
+#include "litert/vendors/intel_openvino/dispatch/npu_kv_cache_policy.h"
 
 #if LITERT_HAS_AHWB_SUPPORT
 #include <sys/socket.h>
@@ -363,4 +367,46 @@ litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
   }
 
   return {};
+}
+
+// --- Deferred-import eviction ---------------------------------------------
+
+void LiteRtDispatchDeviceContextT::RegisterInvocationContext(
+    LiteRtDispatchInvocationContextT* context) {
+  absl::MutexLock lock(&invocation_contexts_mutex_);
+  invocation_contexts_.push_back(context);
+}
+
+void LiteRtDispatchDeviceContextT::UnregisterInvocationContext(
+    LiteRtDispatchInvocationContextT* context) {
+  absl::MutexLock lock(&invocation_contexts_mutex_);
+  invocation_contexts_.erase(
+      std::remove(invocation_contexts_.begin(), invocation_contexts_.end(),
+                  context),
+      invocation_contexts_.end());
+}
+
+void LiteRtDispatchDeviceContextT::ReleaseOthersForImport(
+    LiteRtDispatchInvocationContextT* incoming) {
+  const int64_t incoming_tier = incoming != nullptr ? incoming->KvTier() : 0;
+  if (incoming_tier <= 0) return;
+  // Released under the registry lock, so no context can be destroyed
+  // mid-release. That is safe only because TryReleaseImported never waits.
+  absl::MutexLock lock(&invocation_contexts_mutex_);
+  for (auto* ctx : invocation_contexts_) {
+    if (ctx == incoming || ctx == nullptr) continue;
+    if (!ctx->IsImported()) continue;
+    const int64_t tier = ctx->KvTier();
+    if (!litert::openvino::npu_kv_cache::ShouldRelease(incoming_tier, tier)) continue;
+    const bool released = ctx->TryReleaseImported();
+    LITERT_LOG(LITERT_INFO,
+               "EVICT '%s' (tier %lld) %s for '%s' (tier %lld)",
+               ctx->FunctionName().empty() ? "<unnamed>"
+                                           : ctx->FunctionName().c_str(),
+               static_cast<long long>(tier),
+               released ? "released to make room" : "busy, kept",
+               incoming->FunctionName().empty() ? "<unnamed>"
+                                                : incoming->FunctionName().c_str(),
+               static_cast<long long>(incoming_tier));
+  }
 }

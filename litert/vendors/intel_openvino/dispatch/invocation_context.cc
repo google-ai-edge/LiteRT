@@ -168,14 +168,71 @@ LiteRtDispatchInvocationContextT::Create(
              (function_name != nullptr && function_name[0] != '\0')
                  ? function_name
                  : "<unnamed>");
+  // The one thing read here: the node's KV tier, an immutable field of its
+  // subgraph record that release and prefetch need before any import.
+  int64_t kv_tier = 0;
+  const auto* bytes = static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
+                      exec_bytecode_buffer->offset;
+  if (function_name != nullptr &&
+      litert::openvino::OpenVinoGlobalGraph::HasMagic(
+          bytes, exec_bytecode_buffer->size)) {
+    // A parse error is left for the import to report.
+    if (auto graph = litert::openvino::OpenVinoGlobalGraph::Parse(
+            bytes, exec_bytecode_buffer->size)) {
+      auto it = graph->subgraphs.find(function_name);
+      if (it != graph->subgraphs.end()) kv_tier = it->second.kv_tier;
+    }
+  }
   Ptr context(new LiteRtDispatchInvocationContextT(
       device_context, *exec_bytecode_buffer,
       function_name != nullptr ? std::string(function_name) : std::string(),
+      kv_tier,
       num_inputs, num_outputs));
+  device_context.RegisterInvocationContext(context.get());
   return context;
 }
 
+LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
+  device_context_.UnregisterInvocationContext(this);
+}
+
+bool LiteRtDispatchInvocationContextT::TryReleaseImported() {
+  if (!use_mutex_.TryLock()) return false;
+  const bool locked = import_mutex_.TryLock();
+  if (locked) {
+    ReleaseImportedLocked();
+    import_mutex_.Unlock();
+  }
+  use_mutex_.Unlock();
+  return locked;
+}
+
+void LiteRtDispatchInvocationContextT::ReleaseImportedLocked() {
+  if (!imported_) return;
+  // Dropping the infer request drops the last reference to this node's
+  // ov::CompiledModel. bound_weights_ are views the request borrowed, so they
+  // go with it. attached_inputs_/attached_outputs_ are kept on purpose.
+  infer_request_ = {};
+  bound_weights_.clear();
+  imported_ = false;
+  LITERT_LOG(LITERT_INFO,
+             "EVICT released imported model for '%s' (%zu byte payload); it "
+             "will re-import on next use",
+             function_name_.empty() ? "<unnamed>" : function_name_.c_str(),
+             imported_bytes_);
+  imported_bytes_ = 0;
+}
+
 litert::Expected<void> LiteRtDispatchInvocationContextT::EnsureImported() {
+  // Make room BEFORE importing, not after. The host peak is set at the moment
+  // a tier crossing holds the old tier's blob and the new one at once, so an
+  // eviction that runs afterwards -- however correct -- cannot lower it.
+  // Outside the import lock, so a node never holds its own while trying
+  // others'.
+  if (!imported_.load(std::memory_order_relaxed)) {
+    device_context_.ReleaseOthersForImport(this);
+  }
+
   {
     absl::MutexLock lock(&import_mutex_);
     if (imported_) return {};
@@ -478,6 +535,8 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::ImportLocked() {
                bound_weights_.size());
   }
 
+  imported_bytes_ = exec_bytecode_size;
+
   LITERT_LOG(LITERT_INFO, "Openvino InvocationContext import SUCCESS ('%s')",
              (function_name != nullptr && function_name[0] != '\0')
                  ? function_name
@@ -534,6 +593,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
   // AttachInput/AttachOutput fire in the same Eval as the first Invoke, so
   // this is the natural materialization point: a signature that is never run
   // is never attached either, and so never imports.
+  absl::ReaderMutexLock use(&use_mutex_);
   LITERT_RETURN_IF_ERROR(EnsureImported());
   attached_inputs_.emplace_back(graph_input_index, tensor_buffer_handle);
   return BindInput(graph_input_index, tensor_buffer_handle);
@@ -551,6 +611,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::BindInput(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  absl::ReaderMutexLock use(&use_mutex_);
   LITERT_RETURN_IF_ERROR(EnsureImported());
   attached_outputs_.emplace_back(graph_output_index, tensor_buffer_handle);
   return BindOutput(graph_output_index, tensor_buffer_handle);
@@ -573,6 +634,7 @@ struct ov_infer_request_wrapper {
 litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
   // Normally a no-op: AttachInput/AttachOutput already imported. Kept so a
   // graph with no attachable I/O still works.
+  absl::ReaderMutexLock use(&use_mutex_);
   LITERT_RETURN_IF_ERROR(EnsureImported());
 #if defined(__ANDROID__)
   const LiteRtSchedulingInfo* scheduling_info = GetSchedulingInfo();

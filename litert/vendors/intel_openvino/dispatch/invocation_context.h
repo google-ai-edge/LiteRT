@@ -18,6 +18,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <utility>
@@ -42,7 +43,7 @@ class LiteRtDispatchInvocationContextT {
   using Ptr = std::unique_ptr<LiteRtDispatchInvocationContextT>;
   using IntelOpenVinoOptions = ::litert::intel_openvino::IntelOpenVinoOptions;
 
-  ~LiteRtDispatchInvocationContextT() = default;
+  ~LiteRtDispatchInvocationContextT();
 
   static litert::Expected<Ptr> Create(
       LiteRtDispatchDeviceContextT& device_context,
@@ -89,6 +90,28 @@ class LiteRtDispatchInvocationContextT {
   // first tier must never pay for the other tiers' blob imports.
   litert::Expected<void> EnsureImported();
 
+  // Drops the imported model: the infer request holds the only reference to
+  // this node's ov::CompiledModel, so releasing it frees the imported blob and
+  // its device-side state. The recorded buffer attachments are deliberately
+  // KEPT -- the next EnsureImported() replays them onto the new infer request,
+  // which is what makes a release transparent to the caller.
+  //
+  // The shared weights bank is unaffected: it is a per-model file mapping
+  // owned by the device context, not by any one node.
+  //
+  // Never waits: returns false, and leaves the node imported, if it is busy --
+  // in AttachInput/AttachOutput/Invoke on another thread (use_mutex_), or
+  // mid-import (import_mutex_). Returns true if the node is not imported
+  // afterwards, including when it never was.
+  bool TryReleaseImported();
+
+  bool IsImported() const { return imported_; }
+  const std::string& FunctionName() const { return function_name_; }
+  // KV sequence length this node was compiled for (its context tier), as
+  // recorded by the compiler in the GlobalGraph. 0 if none (no KV inputs, or
+  // not a GlobalGraph container).
+  int64_t KvTier() const { return kv_tier_; }
+
   void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info) {
     if (scheduling_info == nullptr) {
       scheduling_info_ = std::nullopt;
@@ -105,14 +128,17 @@ class LiteRtDispatchInvocationContextT {
   LiteRtDispatchInvocationContextT(LiteRtDispatchDeviceContextT& device_context,
                                    const LiteRtMemBuffer& exec_bytecode_buffer,
                                    std::string function_name,
+                                   int64_t kv_tier,
                                    int num_inputs, int num_outputs)
       : device_context_(device_context),
+        kv_tier_(kv_tier),
         exec_bytecode_buffer_(exec_bytecode_buffer),
         function_name_(std::move(function_name)) {}
 
   // Must be called with |import_mutex_| held.
   litert::Expected<void> ImportLocked()
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(import_mutex_);
+  void ReleaseImportedLocked() ABSL_EXCLUSIVE_LOCKS_REQUIRED(import_mutex_);
 
   // Bind one already-resolved buffer handle onto the live infer request.
   // Requires the import to have happened; takes no lock.
@@ -122,6 +148,8 @@ class LiteRtDispatchInvocationContextT {
       int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle);
 
   LiteRtDispatchDeviceContextT& device_context_;
+  // See KvTier(); fixed at Create().
+  const int64_t kv_tier_;
   ov::InferRequest infer_request_;
   // Views into the shared usm-host weight buffer bound to weight-Parameter
   // inputs; held for the infer request's lifetime (set_input_tensor does not
@@ -145,7 +173,11 @@ class LiteRtDispatchInvocationContextT {
   std::string function_name_;
   // Written under import_mutex_; also read without it, as a cheap hint.
   std::atomic<bool> imported_{false};
+  size_t imported_bytes_ ABSL_GUARDED_BY(import_mutex_) = 0;
   absl::Mutex import_mutex_;
+  // Held shared while the infer request is in use (AttachInput, AttachOutput,
+  // Invoke), so another thread's tier crossing cannot release it mid-use.
+  absl::Mutex use_mutex_;
   // Every buffer the kernel attached to this node. LiteRT's
   // DispatchDelegateKernel attaches a node's buffers only once, on the node's
   // first run. If the node is later released to free memory and imported
