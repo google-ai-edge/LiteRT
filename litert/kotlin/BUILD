@@ -375,8 +375,6 @@ LITERT_AI_PACK_SRCS = [
     "src/main/kotlin/com/google/ai/edge/litert/deployment/AiPackModelProvider.kt",
 ]
 
-LITERT_KOTLIN_SRCS_ALL = LITERT_AI_PACK_SRCS + LITERT_KOTLIN_SRCS_NO_AIPACK
-
 TFLITE_JAVA_DEPS = [
     "@litert_maven//:com_google_guava_guava",
     "@litert_maven//:androidx_lifecycle_lifecycle_common",
@@ -388,10 +386,12 @@ LITERT_KOTLIN_DEPS_NO_AIPACK = TFLITE_JAVA_DEPS + [
     "@litert_maven//:org_jetbrains_kotlinx_kotlinx_coroutines_guava",
 ]
 
-LITERT_KOTLIN_DEPS_ALL = LITERT_KOTLIN_DEPS_NO_AIPACK + [
+LITERT_KOTLIN_AI_PACK_DEPS = [
     "@litert_maven//:com_google_android_play_ai_delivery",
     "@litert_maven//:org_jetbrains_kotlinx_kotlinx_coroutines_play_services",
 ]
+
+LITERT_KOTLIN_DEPS_ALL = LITERT_KOTLIN_DEPS_NO_AIPACK + LITERT_KOTLIN_AI_PACK_DEPS
 
 LITERT_API_SRCS_NO_AIPACK = LITERT_KOTLIN_SRCS_NO_AIPACK + TFLITE_JAVA_SRCS_API
 
@@ -406,7 +406,7 @@ JAVACOPTS = select({
 # runtime), Compiled Model API only.
 kt_android_library(
     name = "litert_compiled_model_api_no_jni",
-    srcs = LITERT_KOTLIN_SRCS_ALL,
+    srcs = LITERT_AI_PACK_SRCS,
     exports_manifest = 1,
     javacopts = JAVACOPTS,
     manifest = "src/main/AndroidManifest.xml",
@@ -414,7 +414,27 @@ kt_android_library(
     visibility = litert_jni_friends() + [
         "//litert/kotlin/src/tests:__pkg__",
     ],
-    deps = LITERT_KOTLIN_DEPS_ALL,
+    exports = [
+        ":litert_compiled_model_api_no_jni_no_aipack",
+    ],
+    deps = LITERT_KOTLIN_AI_PACK_DEPS + [
+        ":litert_compiled_model_api_no_jni_no_aipack",
+    ],
+)
+
+# Pure Java/Kotlin API library (no native deps at build time, ":litert_api_jni" is needed at
+# runtime), Compiled Model API only, without support for Google Play AI Pack.
+kt_android_library(
+    name = "litert_compiled_model_api_no_jni_no_aipack",
+    srcs = LITERT_KOTLIN_SRCS_NO_AIPACK,
+    exports_manifest = 1,
+    javacopts = JAVACOPTS,
+    manifest = "src/main/AndroidManifest.xml",
+    proguard_specs = ["//tflite/java:proguard.flags"],
+    visibility = litert_jni_friends() + [
+        "//litert/kotlin/src/tests:__pkg__",
+    ],
+    deps = LITERT_KOTLIN_DEPS_NO_AIPACK,
 )
 
 # Android library for the litert package, CompiledModel API only.
@@ -479,7 +499,7 @@ kt_android_library(
 # Pure Java/Kotlin API library (no native deps at build time, ":litert_api_jni" is needed at
 # runtime), with both the Compiled Model API and also the older TFLite Interpreter API, but
 # without support for Google Play AI Pack.
-android_library(
+kt_android_library(
     name = "litert_api_no_jni_no_aipack",
     srcs = LITERT_API_SRCS_NO_AIPACK,
     exports_manifest = 1,
