@@ -76,6 +76,9 @@ Expected<BufferRef<uint8_t>> CompiledResult::ByteCode(
 }
 
 Expected<LiteRtParamIndex> CompiledResult::NumByteCodeModules() const {
+  if (compiled_result_handle_ == nullptr) {
+    return 0;
+  }
   LiteRtParamIndex byte_code_idx;
   LITERT_RETURN_IF_ERROR(parent_.get_compiled_result_num_byte_code(
       compiled_result_handle_, &byte_code_idx));
@@ -83,6 +86,9 @@ Expected<LiteRtParamIndex> CompiledResult::NumByteCodeModules() const {
 }
 
 Expected<LiteRtParamIndex> CompiledResult::NumCalls() const {
+  if (compiled_result_handle_ == nullptr) {
+    return 0;
+  }
   LiteRtParamIndex num_calls;
   LITERT_RETURN_IF_ERROR(parent_.get_compiled_result_num_calls(
       compiled_result_handle_, &num_calls));
@@ -391,6 +397,9 @@ Expected<std::string> CompilerPlugin::SdkVersion() const {
 }
 
 Expected<void> CompilerPlugin::RegisterAllTransformations() {
+  // Clear previously registered transformations in case this CompilerPlugin
+  // instance is reused across multiple models (e.g. in ATS test suites).
+  transformations_.clear();
   LiteRtParamIndex num_patterns;
   LiteRtTransformation* transformations;
 

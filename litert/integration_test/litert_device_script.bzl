@@ -16,6 +16,7 @@
 
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_library.bzl", "sh_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/integration_test:litert_device_common.bzl", "get_spec", "split_dep_platform")
 
 def _extract_binary(target):
@@ -52,7 +53,7 @@ def _device_script_lib_impl(ctx):
         if len(files) != 1:
             fail("Should be only one output for single host_bin target built with platform data.")
         binary = _extract_binary(ctx.attr.host_bin)
-        forwarded_runfiles.append(files[0])
+        forwarded_runfiles.extend(ctx.attr.host_bin.files.to_list())
         subs.add("@@host_bin@@", "\"{}\"".format(binary))
 
     if ctx.attr.device_bin:
@@ -65,7 +66,7 @@ def _device_script_lib_impl(ctx):
 
     host_libs = []
     for v in ctx.attr.host_libs:
-        files = [f for f in v.files.to_list() if "for_host" in f.short_path]
+        files = [f for f in v.files.to_list() if "for_host" not in f.short_path]
         if len(files) != 1:
             fail("Should be only one output for single host_lib target built with platform data.")
         forwarded_runfiles.extend(files)
@@ -105,6 +106,14 @@ def _device_script_lib_impl(ctx):
     subs.add("@@exec_env_vars@@", "\"{}\"".format(" ".join(ctx.attr.exec_env_vars)))
 
     runfiles = ctx.runfiles(files = forwarded_runfiles)
+    for target in (
+        ([ctx.attr.host_bin] if ctx.attr.host_bin else []) +
+        ctx.attr.host_libs +
+        ctx.attr.extra_host_libs +
+        ctx.attr.data +
+        ctx.attr.model_providers
+    ):
+        runfiles = runfiles.merge(target[DefaultInfo].default_runfiles)
 
     ctx.actions.expand_template(
         template = ctx.file.template,
@@ -219,6 +228,8 @@ def litert_device_script(
         backend_id = "cpu",
         build_for_host = False,
         build_for_device = True,
+        is_test = False,
+        shard_count = None,
         tags = []):
     """Generates a shell script and runfiles for executing a binary on a device.
 
@@ -228,18 +239,21 @@ def litert_device_script(
     the provided `backend_id`.
 
     Args:
-      name: The name of the generated sh_binary target.
+      name: The name of the generated sh_binary/sh_test target.
       script: The main shell script file to be executed.
       bin: The label of the binary target to be run. This binary will be built for both the host
            and the device platforms.
       model_providers: A list of tools dependencies that return tflite models when called.
       data: A list of additional data dependencies required by the script or binary.
       testonly: If True, the generated targets are marked as testonly.
-      exec_args: A list of arguments to be passed to the final sh_binary.
+      exec_args: A list of arguments to be passed to the final sh_binary/sh_test.
       backend_id: The identifier for the backend configuration (e.g., "cpu", "gpu").
                   Used to fetch backend-specific libraries and environment variables.
       build_for_host: If True, build the packaged deps for the host platform.
       build_for_device: If True, build the packaged deps for the device platform.
+      is_test: If True, emit a sh_test instead of sh_binary.
+      shard_count: Optional shard_count passed to sh_test when is_test is True.
+      tags: Additional Bazel tags for the generated rules.
     """
 
     if build_for_host and build_for_device:
@@ -299,13 +313,18 @@ def litert_device_script(
         tags = tags,
     )
 
-    sh_binary(
+    script_rule = sh_test if is_test else sh_binary
+    script_kwargs = {}
+    if is_test and shard_count != None:
+        script_kwargs["shard_count"] = shard_count
+    script_rule(
         name = name,
         srcs = [script],
         deps = [":" + name + "_lib"],
         testonly = testonly,
         args = exec_args,
         tags = tags,
+        **script_kwargs
     )
 
 def make_download_model_provider(name, url, testonly = True):

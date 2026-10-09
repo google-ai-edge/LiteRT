@@ -261,7 +261,16 @@ def _MediatekSpec():
             }],
             dispatch = "libLiteRtDispatch_MediaTek.so",
             plugin = "libLiteRtCompilerPlugin_MediaTek.so",
-            host_libs = ["@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so"],
+            # Prebuilt libneuron_adapter.so dynamically links against C++/GCC
+            # runtime libraries not present in the hermetic GRTE sysroot on
+            # remote test runners; bundle them from neuro_pilot for hermeticity.
+            host_libs = [
+                "@neuro_pilot//:neuron_sdk/host/lib/libatomic.so.1",
+                "@neuro_pilot//:neuron_sdk/host/lib/libc++abi.so.1",
+                "@neuro_pilot//:neuron_sdk/host/lib/libgcc_s.so.1",
+                "@neuro_pilot//:v8_latest/host/lib/libc++.so.1",
+                "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
+            ],
         ),
     }
 

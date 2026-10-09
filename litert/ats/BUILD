@@ -20,7 +20,7 @@ load("//litert/ats:ats.bzl", "litert_define_ats")
 # copybara:uncomment load("//litert/ats:models.bzl", "CLASSICAL_ALL_MODELS")
 load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "if_oss", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
-# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_macos_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
+# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_macos_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_npu_aot_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -377,17 +377,21 @@ litert_define_ats(
     backend = "example",
     compile_only_suffix = "_aot",
     do_register = [
-        "sub.*f32",
-        "mul.*f32",
+        "tfl[.]sub.*f32",
+        "tfl[.]mul.*f32",
     ],
     dont_register = [
-        "ExtraModel",
     ],
     jit_suffix = "",
 )
 
 litert_define_ats(
     name = "qualcomm_ats",
+    aot_shard_count = 32,
+    aot_tags = [
+        "manual",
+        "notap",
+    ],
     backend = "qualcomm",
     compile_only_suffix = "_aot",
     dont_register = [
@@ -429,6 +433,7 @@ litert_define_ats(
 # copybara:uncomment_begin(google-only)
 # litert_define_ats(
 #     name = "google_tensor_ats",
+#     aot_shard_count = 48,
 #     backend = "google_tensor",
 #     compile_only_suffix = "_aot",
 #     dont_register = [
@@ -438,6 +443,19 @@ litert_define_ats(
 #         "whisper_tiny_decoder",
 #         "5d",
 #         "6d",
+#         "7d",
+#         "8d",
+#         "OneHot",  # Google Tensor compiler does not support OneHot
+#         "tfl[.]prelu",  # Google Tensor compiler requires PRelu alpha to be statically allocated
+#         "tfl[.]reduce_prod",  # Google Tensor compiler does not support ReduceProd
+#         "Conv2d.*f16",  # Google Tensor compiler does not support FP16 Conv2d/DepthwiseConv2d
+#         "FullyConnected.*(f16|i4|u8|SHUFFLED)",  # Google Tensor compiler does not support FP16, INT4, UINT8, or SHUFFLED FullyConnected
+#         "FullyConnected.*,2d_f32<[^>]+>(?!_cst)",  # Google Tensor compiler does not support dynamic weights for FP32 FullyConnected
+#         "FullyConnected.*,1d_f32<[^>]+>(?!_cst)",  # Google Tensor compiler does not support dynamic bias for FP32 FullyConnected
+#         "LogSoftmax.*f16",  # Google Tensor compiler does not support FP16 LogSoftmax
+#         "Pad.*f16",  # Google Tensor compiler does not support FP16 Pad
+#         "average_pool_2d.*fa=RELU",  # Google Tensor compiler does not support fused RELU on AveragePool2d
+#         "Transpose.*[(][1-8]d_(i1|i4|i64|u64)<",  # Google Tensor Transpose does not support i1, i4, i64, or u64 types
 #     ],
 #     extra_flags = ["--soc_model=Tensor_G5"],
 #     jit_suffix = "",
@@ -446,6 +464,11 @@ litert_define_ats(
 
 litert_define_ats(
     name = "mediatek_ats",
+    aot_shard_count = 32,
+    aot_tags = [
+        "manual",
+        "notap",
+    ],
     backend = "mediatek",
     compile_only_suffix = "_aot",
     dont_register = [
@@ -453,6 +476,28 @@ litert_define_ats(
         "Transformer",
         "5d",
         "6d",
+        "7d",
+        "8d",
+        "Binary.*i32",  # MediaTek NeuroPilot does not support int32 binary arithmetic
+        "BinaryBroadcast.*[234]d_",  # MediaTek NeuroPilot rejects ATS bidirectional/rank-mismatched broadcasts
+        "BatchMatmul.*[34]d",  # MediaTek NeuroPilot rejects ATS 1xB batch broadcasts on 3D/4D BatchMatmul
+        "Comparison",  # MediaTek NeuroPilot does not support Comparison ops
+        "OneHot",  # MediaTek NeuroPilot does not support OneHot
+        "SelectV2",  # MediaTek NeuroPilot does not support SelectV2
+        "LogSoftmax",  # MediaTek NeuroPilot does not support LogSoftmax
+        "tfl[.]floor_div",  # MediaTek NeuroPilot does not support FloorDiv
+        "tfl[.]pow",  # MediaTek NeuroPilot does not support Pow
+        "tfl[.]prelu",  # MediaTek NeuroPilot requires static PRelu alpha
+        "tfl[.]reduce_min",  # MediaTek NeuroPilot does not support ReduceMin
+        "tfl[.]reduce_prod",  # MediaTek NeuroPilot does not support ReduceProd
+        "tfl[.](cos|sin|ceil|elu|exp|floor|log|neg|relu6|relu_0_to_1|relu_n1_to_1|round|sign|square|zeros_like)[{]",  # Unsupported Unary ops in MediaTek plugin
+        "FullyConnected.*,1d_f32(?:<[^>]+>)?(?!_cst)",  # MediaTek NeuroPilot does not support dynamic bias for FP32 FullyConnected
+        "FullyConnected.*f32(?:<[^>]+>)?,2d_i[48]",  # MediaTek NeuroPilot does not support hybrid FP32 activation with INT4/INT8 weights
+        "FullyConnected.*2d_f16(?:<[^>]+>)?_cst[)]",  # MediaTek NeuroPilot requires bias tensor for FP16 FullyConnected
+        "Slice.*4d_i32",  # MediaTek NeuroPilot does not support 4D INT32 Slice
+        "Transpose.*[(][1-8]d_(i1|i4|i32|u32|i64|u64)",  # MediaTek NeuroPilot Transpose does not support i1, i4, 32-bit, or 64-bit integer tensors
+        "Pooling.*(filter_width=(10|14)|filter_height=(12|14)|stride_h=3,filter_width=2)",  # MediaTek NeuroPilot pooling kernel size/stride hardware limits
+        "average_pool_2d.*(filter_width=12|fa=RELU,padding=SAME,stride_w=3,stride_h=2)",  # MediaTek NeuroPilot AveragePool2d kernel size/fused activation limits
         "whisper_tiny_decoder",
         "whisper_tiny_encoder",
         "hf_all_minilm_l6_v2",
@@ -460,7 +505,7 @@ litert_define_ats(
     ],
     extra_flags = [
         "--data_seed=42",
-        "--mediatek_enable_gemma_compiler_optimizations=true",
+        "--soc_model=mt6989",
         "--mediatek_performance_mode_type=turbo_boost",
         "--mediatek_optimization_hint=low_latency",
         "--mediatek_enable_l1_cache_optimizations=true",
@@ -471,7 +516,7 @@ litert_define_ats(
 litert_define_ats(
     name = "gpu_ats",
     backend = "gpu",
-    compile_only_suffix = "_aot",
+    compile_only_suffix = None,
     dont_register = [
         "Transformer",
         "scaled_dot_product_attention",
@@ -531,6 +576,11 @@ litert_define_ats(
 
 litert_define_ats(
     name = "samsung_ats",
+    aot_shard_count = 32,
+    aot_tags = [
+        "manual",
+        "notap",
+    ],
     backend = "samsung",
     compile_only_suffix = "_aot",
     do_register = [
@@ -1921,6 +1971,30 @@ cc_library(
 #         tests = [
 #             litert_macos_mh_guitar_test(
 #                 targets = MACOS_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# NPU_AOT_ATS_GUITAR_TARGETS = [
+#     ":google_tensor_ats_aot",
+#     ":example_ats_aot",
+# ]
+#
+# guitar_workflow_test(
+#     name = "litert_ats_guitar_npu_aot",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_npu_aot_guitar_test(
+#                 targets = NPU_AOT_ATS_GUITAR_TARGETS,
 #             ),
 #         ],
 #     ),

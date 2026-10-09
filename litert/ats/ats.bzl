@@ -143,7 +143,9 @@ def litert_define_ats(
         param_seeds = {},
         extra_flags = [],
         extra_models = [],
-        platform = "android"):
+        platform = "android",
+        aot_shard_count = None,
+        aot_tags = []):
     """Defines a pre-configured ATS test suite.
 
     Args:
@@ -162,6 +164,8 @@ def litert_define_ats(
           CNS paths to .tflite models, or .tar.gz URLs (https://...) to
           download .tflite models from. Cannot mix source types.
       platform: Target OS platform ("android" or "macos").
+      aot_shard_count: Optional shard_count for the host compile-only sh_test target.
+      aot_tags: Additional tags for the host compile-only sh_test target.
     """
     if "append" not in dir(backend):
         backend = [backend]
@@ -232,4 +236,12 @@ def litert_define_ats(
                 build_for_device = False,
                 model_providers = resolved_models.model_providers,
                 data = resolved_models.data,
+                is_test = True,
+                shard_count = aot_shard_count,
+                tags = [
+                    "noasan",
+                    "nomsan",
+                    "nosan",
+                    "notsan",
+                ] + aot_tags,
             )
