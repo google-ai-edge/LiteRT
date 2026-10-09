@@ -134,15 +134,14 @@ def litert_metal_opts():
     })
 
 def litert_metal_linkopts():
-    """This is a no-op outside of Google."""
-    return []
-
-def litert_metal_deps_without_gpu_environment():
     return select({
-        "//litert:ios": ["//tflite/delegates/gpu/metal:metal_device"],
-        "//litert:macos": ["//tflite/delegates/gpu/metal:metal_device"],
+        "//litert:ios": ["-framework Metal"],
+        "//litert:macos": ["-framework Metal"],
         "//conditions:default": [],
     })
+
+def litert_metal_deps_without_gpu_environment():
+    return []
 
 def litert_metal_deps():
     return litert_metal_deps_without_gpu_environment() + select({

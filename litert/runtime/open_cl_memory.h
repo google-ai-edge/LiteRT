@@ -25,10 +25,8 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/ahwb_buffer.h"
 #include "litert/runtime/gl_buffer.h"
-#include "litert/runtime/gpu_environment.h"
 #include "litert/runtime/tensor_buffer_lockstate.h"
 #include <CL/cl.h>
-#include "tflite/delegates/gpu/cl/buffer.h"
 
 namespace litert::internal {
 
@@ -43,51 +41,37 @@ class OpenClMemory {
         tensor_type_(other.tensor_type_),
         buffer_type_(other.buffer_type_),
         data_(other.data_),
-        buffer_(std::move(other.buffer_)),
+        cl_buffer_(other.cl_buffer_),
+        owns_cl_buffer_(other.owns_cl_buffer_),
+        deallocator_(other.deallocator_),
         size_(other.size_),
-        ahwb_(other.ahwb_) {
+        cpu_buffer_size_(other.cpu_buffer_size_),
+        ahwb_(other.ahwb_),
+        lock_state_(other.lock_state_) {
     other.data_ = nullptr;
+    other.cl_buffer_ = nullptr;
+    other.owns_cl_buffer_ = false;
+    other.deallocator_ = nullptr;
     other.size_ = 0;
+    other.cpu_buffer_size_ = 0;
     other.ahwb_ = nullptr;
+    other.lock_state_ = LockState::kUnlocked;
   }
-
-  explicit OpenClMemory(GpuEnvironment* gpu_env,
-                        const LiteRtRankedTensorType& tensor_type,
-                        LiteRtTensorBufferType buffer_type,
-                        tflite::gpu::cl::Buffer buffer,
-                        AHardwareBuffer* ahwb = nullptr)
-      : gpu_env_(gpu_env),
-        tensor_type_(tensor_type),
-        buffer_type_(buffer_type),
-        buffer_(std::move(buffer)),
-        size_(buffer_.GetMemorySizeInBytes()),
-        ahwb_(ahwb) {}
 
   OpenClMemory(GpuEnvironment* gpu_env,
                const LiteRtRankedTensorType& tensor_type,
                LiteRtTensorBufferType buffer_type, cl_mem buffer, size_t size,
-               LiteRtOpenClDeallocator deallocator)
-      : gpu_env_(gpu_env),
-        tensor_type_(tensor_type),
-        buffer_type_(buffer_type),
-        deallocator_(deallocator),
-        size_(size) {
-    // CreateBufferShared creates a buffer that is not owned by
-    // tflite::gpu::cl::Buffer (OpenClMemory determines ownership). Null
-    // deallocator means that the buffer is not owned by OpenClMemory.
-    buffer_ = tflite::gpu::cl::CreateBufferShared(buffer);
-  }
+               bool owns_cl_buffer, AHardwareBuffer* ahwb = nullptr);
 
-  ~OpenClMemory() {
-    if (deallocator_ != nullptr) {
-      deallocator_(buffer_.GetMemoryPtr());
-    }
-    if (data_ != nullptr) {
-      litert_aligned_free(data_);
-    };
-  }
+  OpenClMemory(GpuEnvironment* gpu_env,
+               const LiteRtRankedTensorType& tensor_type,
+               LiteRtTensorBufferType buffer_type, cl_mem buffer, size_t size,
+               LiteRtOpenClDeallocator deallocator);
 
-  cl_mem GetMemoryPtr() { return buffer_.GetMemoryPtr(); }
+  ~OpenClMemory();
+
+  cl_mem GetMemoryPtr() const { return cl_buffer_; }
+
   // Allocates a CPU memory and conducts a copy from the OpenCL buffer to the
   // CPU memory.
   template <typename T>
@@ -122,7 +106,8 @@ class OpenClMemory {
   absl::Mutex mutex_;
   // The cpu memory buffer pointer.
   void* data_ = nullptr;
-  tflite::gpu::cl::Buffer buffer_;
+  cl_mem cl_buffer_ = nullptr;
+  bool owns_cl_buffer_ = false;
   LiteRtOpenClDeallocator deallocator_ = nullptr;
   // The size of the buffer in bytes.
   size_t size_ = 0;

@@ -17,12 +17,11 @@
 #include <stdlib.h>
 
 #include <cstddef>
+#include <cstring>
 #include <memory>
 #include <utility>
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/synchronization/mutex.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_gl_types.h"
@@ -36,9 +35,13 @@
 #include <EGL/eglext.h>
 #include <GLES3/gl31.h>
 #include <GLES3/gl32.h>
+#include <vector>
 
-#include "tflite/delegates/gpu/gl/egl_environment.h"
-#include "tflite/delegates/gpu/gl/gl_buffer.h"
+#include "absl/status/status.h"  // from @com_google_absl
+#include "ml_drift/gl/egl_environment.h"  // from @ml_drift
+#include "ml_drift/gl/gl_call.h"  // from @ml_drift
+#include "ml_drift/gl/gl_errors.h"  // from @ml_drift
+#include "ml_drift/gl/portable_gl31.h"  // from @ml_drift
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace litert {
@@ -104,7 +107,7 @@ Expected<GlBuffer> GlBuffer::AllocFromAhwbBuffer(GpuEnvironment* gpu_env,
       GL_MAP_READ_BIT | GL_MAP_WRITE_BIT | GL_MAP_COHERENT_BIT_EXT |
           GL_MAP_PERSISTENT_BIT_EXT);
   // Check for OpenGL errors.
-  absl::Status status = tflite::gpu::gl::GetOpenGlErrors();
+  absl::Status status = ::ml_drift::gl::GetOpenGlErrors();
   if (!status.ok()) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       absl::StrCat("glBufferStorageExternalEXT: Failed to "
@@ -116,10 +119,8 @@ Expected<GlBuffer> GlBuffer::AllocFromAhwbBuffer(GpuEnvironment* gpu_env,
 
   // Create GL buffer object. We assume ownership of the GL buffer id so that it
   // will be automatically deallocated when the internal::GlBuffer is destroyed.
-  tflite::gpu::gl::GlBuffer tflite_gl_buffer(GL_SHADER_STORAGE_BUFFER, gl_id,
-                                             size_bytes, /*offset=*/0,
-                                             /*has_ownership=*/true);
-  return GlBuffer(std::move(tflite_gl_buffer), ahwb_buffer.ahwb);
+  return GlBuffer(gpu_env, GL_SHADER_STORAGE_BUFFER, gl_id, size_bytes,
+                  /*offset=*/0, /*has_ownership=*/true, ahwb_buffer.ahwb);
 #else
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                     "AHardwareBuffer to GL interop is not supported.");
@@ -131,12 +132,13 @@ GlBuffer::GlBuffer(GpuEnvironment* gpu_env, LiteRtGLenum target,
                    LiteRtGlBufferDeallocator deallocator) {
   gpu_env_ = gpu_env;
 #if LITERT_HAS_OPENGL_SUPPORT
+  target_ = target;
+  id_ = id;
   size_bytes_ = size_bytes;
-
-  // has_ownership is set to false since buffer deletion is determined by the
+  offset_ = offset;
+  // has_ownership_ is set to false since buffer deletion is determined by the
   // deallocator in this case.
-  tflite_gl_buffer_ = tflite::gpu::gl::GlBuffer(target, id, size_bytes, offset,
-                                                /*has_ownership=*/false);
+  has_ownership_ = false;
   deallocator_ = deallocator;
 #else
   LITERT_LOG(LITERT_ERROR, "GlBuffer::GlBuffer() is not supported");
@@ -146,17 +148,24 @@ GlBuffer::GlBuffer(GpuEnvironment* gpu_env, LiteRtGLenum target,
 GlBuffer::GlBuffer(GlBuffer&& other) {
   gpu_env_ = other.gpu_env_;
 #if LITERT_HAS_OPENGL_SUPPORT
-  tflite_gl_buffer_ = std::move(other.tflite_gl_buffer_);
+  target_ = other.target_;
+  id_ = other.id_;
+  size_bytes_ = other.size_bytes_;
+  offset_ = other.offset_;
+  has_ownership_ = other.has_ownership_;
   deallocator_ = std::move(other.deallocator_);
   data_ = other.data_;
-  size_bytes_ = other.size_bytes_;
 #if LITERT_HAS_AHWB_SUPPORT
   ahwb_ = other.ahwb_;
 #endif  // LITERT_HAS_AHWB_SUPPORT
   // Reset the other GlBuffer to a default state.
+  other.target_ = GL_INVALID_ENUM;
+  other.id_ = GL_INVALID_INDEX;
+  other.size_bytes_ = 0;
+  other.offset_ = 0;
+  other.has_ownership_ = false;
   other.deallocator_ = nullptr;
   other.data_ = nullptr;
-  other.size_bytes_ = 0;
 #if LITERT_HAS_AHWB_SUPPORT
   other.ahwb_ = nullptr;
 #endif  // LITERT_HAS_AHWB_SUPPORT
@@ -167,8 +176,12 @@ GlBuffer::GlBuffer(GlBuffer&& other) {
 
 GlBuffer::~GlBuffer() {
 #if LITERT_HAS_OPENGL_SUPPORT
-  if (deallocator_ != nullptr) {
-    deallocator_(reinterpret_cast<void*>(tflite_gl_buffer_.id()));
+  if (id_ != GL_INVALID_INDEX) {
+    if (deallocator_ != nullptr) {
+      deallocator_(reinterpret_cast<void*>(id_));
+    } else if (has_ownership_) {
+      ML_DRIFT_CALL_GL(glDeleteBuffers, 1, &id_).IgnoreError();
+    }
   }
   if (data_ != nullptr) {
     litert_aligned_free(data_);
@@ -180,7 +193,7 @@ GlBuffer::~GlBuffer() {
 
 LiteRtGLenum GlBuffer::target() const {
 #if LITERT_HAS_OPENGL_SUPPORT
-  return tflite_gl_buffer_.target();
+  return target_;
 #else
   LITERT_LOG(LITERT_ERROR, "GlBuffer::target() is not supported");
   return 0;
@@ -188,7 +201,7 @@ LiteRtGLenum GlBuffer::target() const {
 }
 LiteRtGLuint GlBuffer::id() const {
 #if LITERT_HAS_OPENGL_SUPPORT
-  return tflite_gl_buffer_.id();
+  return id_;
 #else
   LITERT_LOG(LITERT_ERROR, "GlBuffer::id() is not supported");
   return 0;
@@ -196,7 +209,7 @@ LiteRtGLuint GlBuffer::id() const {
 }
 size_t GlBuffer::size_bytes() const {
 #if LITERT_HAS_OPENGL_SUPPORT
-  return tflite_gl_buffer_.bytes_size();
+  return size_bytes_;
 #else
   LITERT_LOG(LITERT_ERROR, "GlBuffer::size_bytes() is not supported");
   return 0;
@@ -204,7 +217,7 @@ size_t GlBuffer::size_bytes() const {
 }
 size_t GlBuffer::offset() const {
 #if LITERT_HAS_OPENGL_SUPPORT
-  return tflite_gl_buffer_.offset();
+  return offset_;
 #else
   LITERT_LOG(LITERT_ERROR, "GlBuffer::offset() is not supported");
   return 0;
@@ -216,16 +229,25 @@ Expected<GlBuffer> GlBuffer::Alloc(GpuEnvironment* gpu_env, size_t size_bytes) {
   LITERT_RETURN_IF_ERROR(gpu_env->GetEglDisplay() != EGL_NO_DISPLAY,
                          litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                             "Failed to get EGL display"));
-  tflite::gpu::gl::GlBuffer tflite_gl_buffer;
-
-  if (!tflite::gpu::gl::CreateReadWriteShaderStorageBuffer<std::byte>(
-           size_bytes, &tflite_gl_buffer)
-           .ok()) {
+  GLuint id = GL_INVALID_INDEX;
+  if (!ML_DRIFT_CALL_GL(glGenBuffers, 1, &id).ok()) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to allocate GL buffer");
+  }
+  ML_DRIFT_CALL_GL(glBindBuffer, GL_SHADER_STORAGE_BUFFER, id).IgnoreError();
+  std::vector<std::byte> zeros(size_bytes);
+  absl::Status status =
+      ML_DRIFT_CALL_GL(glBufferData, GL_SHADER_STORAGE_BUFFER, size_bytes,
+                       zeros.data(), GL_STREAM_COPY);
+  ML_DRIFT_CALL_GL(glBindBuffer, GL_SHADER_STORAGE_BUFFER, 0).IgnoreError();
+  if (!status.ok()) {
+    ML_DRIFT_CALL_GL(glDeleteBuffers, 1, &id).IgnoreError();
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to allocate GL buffer");
   }
 
-  return GlBuffer(std::move(tflite_gl_buffer));
+  return GlBuffer(gpu_env, GL_SHADER_STORAGE_BUFFER, id, size_bytes,
+                  /*offset=*/0, /*has_ownership=*/true);
 #else
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                     "OpenGL buffers are not supported");
@@ -260,13 +282,23 @@ Expected<T*> GlBuffer::Lock(LiteRtTensorBufferLockMode mode) {
     }
   }
   if (mode != kLiteRtTensorBufferLockModeWrite) {
-    if (auto status = tflite_gl_buffer_.Read(
-            absl::MakeSpan(static_cast<T*>(data_), size_bytes_ / sizeof(T)));
-        !status.ok()) {
+    if (size_bytes_ % sizeof(T) != 0) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Failed to read GL buffer: Buffer is not aligned");
+    }
+    ML_DRIFT_CALL_GL(glBindBuffer, target_, id_).IgnoreError();
+    void* mapped =
+        glMapBufferRange(target_, offset_, size_bytes_, GL_MAP_READ_BIT);
+    if (mapped == nullptr) {
+      absl::Status status = ::ml_drift::gl::GetOpenGlErrors();
+      ML_DRIFT_CALL_GL(glBindBuffer, target_, 0).IgnoreError();
       return Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
           absl::StrCat("Failed to read GL buffer: ", status.message()));
     }
+    std::memcpy(data_, mapped, size_bytes_);
+    ML_DRIFT_CALL_GL(glUnmapBuffer, target_).IgnoreError();
+    ML_DRIFT_CALL_GL(glBindBuffer, target_, 0).IgnoreError();
   }
   return Expected<T*>(static_cast<T*>(data_));
 #else
@@ -290,9 +322,11 @@ Expected<void> GlBuffer::Unlock() {
         "Cannot unlock a buffer that wasn't locked in the first place");
   }
   if (lock_mode_ != kLiteRtTensorBufferLockModeRead) {
-    if (auto status = tflite_gl_buffer_.Write(absl::MakeSpan(
-            static_cast<const T*>(data_), size_bytes_ / sizeof(T)));
-        !status.ok()) {
+    ML_DRIFT_CALL_GL(glBindBuffer, target_, id_).IgnoreError();
+    absl::Status status =
+        ML_DRIFT_CALL_GL(glBufferSubData, target_, offset_, size_bytes_, data_);
+    ML_DRIFT_CALL_GL(glBindBuffer, target_, 0).IgnoreError();
+    if (!status.ok()) {
       return Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
           absl::StrCat("Failed to write GL buffer: ", status.message()));

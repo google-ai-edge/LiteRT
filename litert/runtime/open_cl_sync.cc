@@ -26,31 +26,32 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/gpu_environment.h"
-#include "litert/runtime/litert_gpu_util.h"
 #include <CL/cl.h>
-#include "tflite/delegates/gpu/cl/cl_command_queue.h"
-#include "tflite/delegates/gpu/cl/cl_memory.h"
-#include "tflite/delegates/gpu/cl/tensor.h"
-#include "tflite/delegates/gpu/common/data_type.h"
-#include "tflite/delegates/gpu/common/shape.h"
-#include "tflite/delegates/gpu/common/task/tensor_desc.h"
-#include "tflite/delegates/gpu/common/tensor.h"
-#include "tflite/delegates/gpu/common/types.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
 
-using tflite::gpu::BHWC;
-using tflite::gpu::CreateBhwcTensorDescriptor;
-using tflite::gpu::CreateHwcTensorDescriptor;
-using tflite::gpu::DataType;
-using tflite::gpu::HWC;
-using tflite::gpu::TensorDescriptor;
-using tflite::gpu::TensorStorageType;
-using TensorBool = tflite::gpu::Tensor<BHWC, DataType::BOOL>;
-using TensorFloat16 = tflite::gpu::Tensor<BHWC, DataType::FLOAT16>;
-using TensorFloat32 = tflite::gpu::Tensor<BHWC, DataType::FLOAT32>;
-using TensorInt32 = tflite::gpu::Tensor<BHWC, DataType::INT32>;
-using TensorInt8 = tflite::gpu::Tensor<BHWC, DataType::INT8>;
+#include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
+#include "ml_drift/cl/cl_memory.h"  // from @ml_drift
+#include "ml_drift/cl/tensor.h"  // from @ml_drift
+#include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/tensor.h"  // from @ml_drift
+#include "ml_drift/common/types.h"  // from @ml_drift
+#include "litert/runtime/litert_gpu_util.h"
+
+using ::ml_drift::BHWC;
+using ::ml_drift::CreateBhwcTensorDescriptor;
+using ::ml_drift::CreateHwcTensorDescriptor;
+using ::ml_drift::DataType;
+using ::ml_drift::HWC;
+using ::ml_drift::TensorDescriptor;
+using ::ml_drift::TensorStorageType;
+using TensorBool = ::ml_drift::Tensor<BHWC, DataType::kBool>;
+using TensorFloat16 = ::ml_drift::Tensor<BHWC, DataType::kFloat16>;
+using TensorFloat32 = ::ml_drift::Tensor<BHWC, DataType::kFloat32>;
+using TensorInt32 = ::ml_drift::Tensor<BHWC, DataType::kInt32>;
+using TensorInt8 = ::ml_drift::Tensor<BHWC, DataType::kInt8>;
 
 namespace litert::internal {
 // TODO(b/431308296): Clean up the GPU memory sync logic to make it generic for
@@ -65,21 +66,21 @@ absl::StatusOr<TensorDescriptor> CreateTensorDescriptor(
   DataType data_type;
   LITERT_RETURN_IF_ERROR(
       ConvertLiteRtDataTypeToGpuDataType(tensor_type, &data_type, buffer_type)
-          .ok());
+           .ok());
 
   TensorStorageType storage_type;
   switch (buffer_type) {
     case kLiteRtTensorBufferTypeOpenClBuffer:
     case kLiteRtTensorBufferTypeOpenClBufferFp16:
-      storage_type = TensorStorageType::BUFFER;
+      storage_type = TensorStorageType::kBuffer;
       break;
     case kLiteRtTensorBufferTypeOpenClTexture:
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
-      storage_type = TensorStorageType::TEXTURE_2D;
+      storage_type = TensorStorageType::kTexture2D;
       break;
     case kLiteRtTensorBufferTypeOpenClImageBuffer:
     case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
-      storage_type = TensorStorageType::IMAGE_BUFFER;
+      storage_type = TensorStorageType::kImageBuffer;
       break;
     default:
       return absl::InvalidArgumentError("Unsupported buffer type.");
@@ -98,14 +99,17 @@ LiteRtStatus LiteRtGpuMemoryCreate(GpuEnvironment* gpu_env,
                                    LiteRtTensorBufferType buffer_type,
                                    size_t bytes, cl_mem* cl_memory) {
   auto tensor_desc = CreateTensorDescriptor(tensor_type, buffer_type);
-  LITERT_RETURN_IF_ERROR(tensor_desc.status().ok(),
-                         kLiteRtStatusErrorUnsupported);
+  if (!tensor_desc.ok()) {
+    LITERT_LOG(LITERT_ERROR, "Failed to create tensor descriptor: %s",
+               tensor_desc.status().message().data());
+    return kLiteRtStatusErrorUnsupported;
+  }
 
-  tflite::gpu::cl::CLMemory tensor_memory;
+  ::ml_drift::cl::CLMemory tensor_memory;
 
   LITERT_RETURN_IF_ERROR(
-      tflite::gpu::cl::AllocateTensorMemory(*gpu_env->GetContext(),
-                                            *tensor_desc, &tensor_memory)
+      ::ml_drift::cl::AllocateTensorMemory(*gpu_env->GetContext(),
+                                           *tensor_desc, &tensor_memory)
           .ok(),
       kLiteRtStatusErrorRuntimeFailure);
 
@@ -115,9 +119,9 @@ LiteRtStatus LiteRtGpuMemoryCreate(GpuEnvironment* gpu_env,
 }
 
 template <typename TensorT, typename DataTypeT>
-LiteRtStatus LiteRtGpuMemoryUploadImpl(tflite::gpu::cl::Tensor& cl_tensor,
+LiteRtStatus LiteRtGpuMemoryUploadImpl(::ml_drift::cl::Tensor& cl_tensor,
                                        size_t bytes, const void* ptr,
-                                       tflite::gpu::cl::CLCommandQueue* queue) {
+                                       ::ml_drift::cl::CLCommandQueue* queue) {
   TensorT src_tensor;
   src_tensor.shape = BHWC(cl_tensor.Batch(), cl_tensor.Height(),
                           cl_tensor.Width(), cl_tensor.Channels());
@@ -145,28 +149,31 @@ LiteRtStatus LiteRtGpuMemoryUpload(GpuEnvironment* gpu_env,
                                    size_t bytes, const void* ptr,
                                    cl_mem cl_memory) {
   auto tensor_desc = CreateTensorDescriptor(tensor_type, buffer_type);
-  LITERT_RETURN_IF_ERROR(tensor_desc.status().ok(),
-                         kLiteRtStatusErrorUnsupported);
+  if (!tensor_desc.ok()) {
+    LITERT_LOG(LITERT_ERROR, "Failed to create tensor descriptor: %s",
+               tensor_desc.status().message().data());
+    return kLiteRtStatusErrorUnsupported;
+  }
 
-  auto cl_tensor = std::make_unique<tflite::gpu::cl::Tensor>();
+  auto cl_tensor = std::make_unique<::ml_drift::cl::Tensor>();
   LITERT_RETURN_IF_ERROR(
-      tflite::gpu::cl::CreateTensorShared(*gpu_env->GetContext(), cl_memory,
-                                          *tensor_desc, cl_tensor.get())
+      ::ml_drift::cl::CreateTensorShared(*gpu_env->GetContext(), cl_memory,
+                                         *tensor_desc, cl_tensor.get())
           .ok(),
       kLiteRtStatusErrorRuntimeFailure);
 
-  if (tensor_desc->GetDataType() == DataType::BOOL) {
+  if (tensor_desc->GetDataType() == DataType::kBool) {
     return LiteRtGpuMemoryUploadImpl<TensorBool, bool>(
         *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
-  } else if (tensor_desc->GetDataType() == DataType::INT32) {
+  } else if (tensor_desc->GetDataType() == DataType::kInt32) {
     return LiteRtGpuMemoryUploadImpl<TensorInt32, int32_t>(
         *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
-  } else if (tensor_desc->GetDataType() == DataType::FLOAT16) {
+  } else if (tensor_desc->GetDataType() == DataType::kFloat16) {
     if (tensor_type->element_type == kLiteRtElementTypeFloat32) {
       return LiteRtGpuMemoryUploadImpl<TensorFloat32, float>(
           *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
     }
-    return LiteRtGpuMemoryUploadImpl<TensorFloat16, tflite::gpu::half>(
+    return LiteRtGpuMemoryUploadImpl<TensorFloat16, ::ml_drift::half>(
         *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
   } else if (tensor_type->element_type == kLiteRtElementTypeInt8) {
     return LiteRtGpuMemoryUploadImpl<TensorInt8, int8_t>(
@@ -181,8 +188,8 @@ LiteRtStatus LiteRtGpuMemoryUpload(GpuEnvironment* gpu_env,
 
 template <typename TensorT, typename DataTypeT>
 LiteRtStatus LiteRtGpuMemoryDownloadImpl(
-    tflite::gpu::cl::Tensor& cl_tensor, size_t bytes, void* ptr,
-    tflite::gpu::cl::CLCommandQueue* queue) {
+    ::ml_drift::cl::Tensor& cl_tensor, size_t bytes, void* ptr,
+    ::ml_drift::cl::CLCommandQueue* queue) {
   TensorT dst_tensor;
   const BHWC shape = BHWC(cl_tensor.Batch(), cl_tensor.Height(),
                           cl_tensor.Width(), cl_tensor.Channels());
@@ -191,7 +198,7 @@ LiteRtStatus LiteRtGpuMemoryDownloadImpl(
   TensorDescriptor desc;
   LITERT_RETURN_IF_ERROR(cl_tensor.ToDescriptor(&desc, queue).ok(),
                          kLiteRtStatusErrorRuntimeFailure);
-  desc.DownloadData(&dst_tensor);
+  desc.DownloadData(dst_tensor.data.data());
   if (dst_tensor.data.size() * sizeof(DataTypeT) != bytes) {
     LITERT_LOG(LITERT_ERROR,
                "Download buffer size mismatch: required: %zu vs given: %zu",
@@ -214,25 +221,25 @@ LiteRtStatus LiteRtGpuMemoryDownload(GpuEnvironment* gpu_env,
     return kLiteRtStatusErrorUnsupported;
   }
 
-  auto cl_tensor = std::make_unique<tflite::gpu::cl::Tensor>();
+  auto cl_tensor = std::make_unique<::ml_drift::cl::Tensor>();
   LITERT_RETURN_IF_ERROR(
-      tflite::gpu::cl::CreateTensorShared(*gpu_env->GetContext(), cl_memory,
-                                          *tensor_desc, cl_tensor.get())
+      ::ml_drift::cl::CreateTensorShared(*gpu_env->GetContext(), cl_memory,
+                                         *tensor_desc, cl_tensor.get())
           .ok(),
       kLiteRtStatusErrorRuntimeFailure);
 
-  if (tensor_desc->GetDataType() == DataType::BOOL) {
+  if (tensor_desc->GetDataType() == DataType::kBool) {
     return LiteRtGpuMemoryDownloadImpl<TensorBool, bool>(
         *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
-  } else if (tensor_desc->GetDataType() == DataType::INT32) {
+  } else if (tensor_desc->GetDataType() == DataType::kInt32) {
     return LiteRtGpuMemoryDownloadImpl<TensorInt32, int32_t>(
         *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
-  } else if (tensor_desc->GetDataType() == DataType::FLOAT16) {
+  } else if (tensor_desc->GetDataType() == DataType::kFloat16) {
     if (tensor_type->element_type == kLiteRtElementTypeFloat32) {
       return LiteRtGpuMemoryDownloadImpl<TensorFloat32, float>(
           *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
     }
-    return LiteRtGpuMemoryDownloadImpl<TensorFloat16, tflite::gpu::half>(
+    return LiteRtGpuMemoryDownloadImpl<TensorFloat16, ::ml_drift::half>(
         *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
   } else if (tensor_type->element_type == kLiteRtElementTypeInt8) {
     return LiteRtGpuMemoryDownloadImpl<TensorInt8, int8_t>(
@@ -242,6 +249,35 @@ LiteRtStatus LiteRtGpuMemoryDownload(GpuEnvironment* gpu_env,
         *cl_tensor, bytes, ptr, gpu_env->GetCommandQueue());
   }
   return kLiteRtStatusOk;
+}
+
+}  // namespace litert::internal
+
+#else
+
+namespace litert::internal {
+
+LiteRtStatus LiteRtGpuMemoryCreate(GpuEnvironment* gpu_env,
+                                   const LiteRtRankedTensorType* tensor_type,
+                                   LiteRtTensorBufferType buffer_type,
+                                   size_t bytes, cl_mem* cl_memory) {
+  return kLiteRtStatusErrorUnsupported;
+}
+
+LiteRtStatus LiteRtGpuMemoryUpload(GpuEnvironment* gpu_env,
+                                   const LiteRtRankedTensorType* tensor_type,
+                                   LiteRtTensorBufferType buffer_type,
+                                   size_t bytes, const void* ptr,
+                                   cl_mem cl_memory) {
+  return kLiteRtStatusErrorUnsupported;
+}
+
+LiteRtStatus LiteRtGpuMemoryDownload(GpuEnvironment* gpu_env,
+                                     const LiteRtRankedTensorType* tensor_type,
+                                     LiteRtTensorBufferType buffer_type,
+                                     size_t bytes, cl_mem cl_memory,
+                                     void* ptr) {
+  return kLiteRtStatusErrorUnsupported;
 }
 
 }  // namespace litert::internal

@@ -357,7 +357,7 @@ litert_c_api_library(
         "//litert/runtime:event",
     ] + select({
         "//litert/build_common:build_include_gpu_enabled": [
-            "//tflite/delegates/gpu/cl:opencl_wrapper",
+            "@ml_drift//ml_drift/cl:opencl_wrapper",
         ],
         "//conditions:default": [],
     }),

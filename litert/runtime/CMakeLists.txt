@@ -77,6 +77,10 @@ if(APPLE)
 endif()
 target_sources(litert_runtime PRIVATE open_cl_memory.cc open_cl_sync.cc)
 
+if(TARGET mldrift_serialization_gen)
+  add_dependencies(litert_runtime mldrift_serialization_gen)
+endif()
+
 # Link Apple frameworks for Metal and OpenGL interop
 if(APPLE)
   set_source_files_properties(metal_info.cc PROPERTIES
@@ -95,6 +99,7 @@ target_include_directories(litert_runtime
         $<BUILD_INTERFACE:${LITERT_XNNPACK_INCLUDE_DIR}>
         $<BUILD_INTERFACE:${LITERT_PTHREADPOOL_INCLUDE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opencl_headers>
+        $<BUILD_INTERFACE:${ml_drift_SOURCE_DIR}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )

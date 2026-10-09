@@ -37,6 +37,7 @@ target_include_directories(litert_core
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opencl_headers>
+        $<BUILD_INTERFACE:${ml_drift_SOURCE_DIR}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -59,6 +60,10 @@ target_link_libraries(litert_core
 if(NOT WIN32)
     # Exclude Windows-specific source
     set_source_files_properties(dynamic_loading_windows.cc PROPERTIES HEADER_FILE_ONLY TRUE)
+endif()
+
+if(TARGET mldrift_serialization_gen)
+  add_dependencies(litert_core mldrift_serialization_gen)
 endif()
 
 # Add model subdirectory
