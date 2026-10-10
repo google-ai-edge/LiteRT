@@ -23,11 +23,14 @@
 #include <unistd.h>
 #endif
 
+#include <algorithm>
 #include <array>
+#include <cerrno>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>  // NOLINT(build/c++11)
 #include <utility>
 #include <vector>
 
@@ -665,6 +668,9 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
   QnnHtpContext_CustomConfig_t htp_read_budget_custom_config =
       QNN_HTP_CONTEXT_CUSTOM_CONFIG_INIT;
   QnnContext_Config_t htp_read_budget_config = QNN_CONTEXT_CONFIG_INIT;
+  QnnHtpContext_CustomConfig_t htp_init_accel_custom_config =
+      QNN_HTP_CONTEXT_CUSTOM_CONFIG_INIT;
+  QnnContext_Config_t htp_init_accel_config = QNN_CONTEXT_CONFIG_INIT;
   if (options_.GetBackendType() == ::qnn::BackendType::kHtpBackend) {
     constexpr uint64_t kDefaultFileReadMemoryBudgetInMb = 16;
     htp_read_budget_custom_config.option =
@@ -674,6 +680,24 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     htp_read_budget_config.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
     htp_read_budget_config.customConfig = &htp_read_budget_custom_config;
     effective_configs.push_back(&htp_read_budget_config);
+
+    // Let the DSP use all of its hardware threads to deserialize the context
+    // binary. Deserialization is the longest single phase of
+    // contextCreateFromBinary for large AOT contexts (the loading thread is
+    // asleep waiting on the DSP for most of the call), and no graph of this
+    // context can execute concurrently with its own creation, so the
+    // documented caveat about degrading concurrent graph execution does not
+    // apply here. LITERT_QNN_INIT_ACCELERATION=0 disables it (for A/B
+    // measurements).
+    const char* init_accel_env = getenv("LITERT_QNN_INIT_ACCELERATION");
+    if (init_accel_env == nullptr || absl::string_view(init_accel_env) != "0") {
+      htp_init_accel_custom_config.option =
+          QNN_HTP_CONTEXT_CONFIG_OPTION_INIT_ACCELERATION;
+      htp_init_accel_custom_config.initAcceleration = true;
+      htp_init_accel_config.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
+      htp_init_accel_config.customConfig = &htp_init_accel_custom_config;
+      effective_configs.push_back(&htp_init_accel_config);
+    }
   }
   effective_configs.push_back(nullptr);
 
@@ -696,15 +720,71 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     }
 #endif
   }
+
+  // Read the context binary ahead of libQnnHtp's 16 MB copy loop. The
+  // bytecode is a file-backed mapping; uncached chunks stall the loading
+  // thread on synchronous storage reads. A helper thread populates one 8 MiB
+  // window at a time with the synchronous MADV_POPULATE_READ (one prefetch
+  // stream in flight; an unpaced WILLNEED sweep floods the UFS queue and
+  // slows the consumer) and drops the window's PTEs with MADV_DONTNEED so the
+  // pages stay in the page cache without growing this process's RSS by more
+  // than one window. Kernels without MADV_POPULATE_READ fall back to a
+  // best-effort MADV_WILLNEED per window. LITERT_QNN_CONTEXT_PREFETCH=0
+  // disables it. The helper is joined before returning.
+  std::thread prefetch_thread;
+  const char* prefetch_env = getenv("LITERT_QNN_CONTEXT_PREFETCH");
+  const bool prefetch_enabled =
+      prefetch_env == nullptr || absl::string_view(prefetch_env) != "0";
+  if (prefetch_enabled && aligned_end > aligned_start) {
+    prefetch_thread = std::thread([aligned_start, aligned_end] {
+      constexpr uintptr_t kPrefetchWindow = 8 * 1024 * 1024;
+#if defined(MADV_POPULATE_READ)
+      bool populate_supported = true;
+#else
+      bool populate_supported = false;
+      constexpr int MADV_POPULATE_READ = 22;  // Linux 5.14+.
+#endif
+      for (uintptr_t cursor = aligned_start; cursor < aligned_end;
+           cursor += kPrefetchWindow) {
+        void* window = reinterpret_cast<void*>(cursor);
+        const size_t len = static_cast<size_t>(
+            std::min(kPrefetchWindow, aligned_end - cursor));
+        if (populate_supported) {
+          if (madvise(window, len, MADV_POPULATE_READ) == 0) {
+            // Pages are now cached; release our mapping of them so the
+            // prefetch does not inflate this process's resident set.
+            madvise(window, len, MADV_DONTNEED);
+            continue;
+          }
+          // EINVAL: kernel predates MADV_POPULATE_READ. Anything else (e.g.
+          // the mapping is being torn down) also ends the prefetch.
+          if (errno != EINVAL) {
+            break;
+          }
+          populate_supported = false;
+        }
+        if (madvise(window, len, MADV_WILLNEED) != 0) {
+          break;  // Advisory only; no prefetch, not a broken load.
+        }
+      }
+    });
+  }
 #endif
 
   Qnn_ContextHandle_t context_handle;
-  if (auto status = Api()->contextCreateFromBinary(
-          qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
-          effective_configs.data(), bytecode.data(), bytecode.size(),
-          &context_handle, profile_handle);
-      status != QNN_SUCCESS) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create QNN context: %d", status);
+  const Qnn_ErrorHandle_t create_status = Api()->contextCreateFromBinary(
+      qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
+      effective_configs.data(), bytecode.data(), bytecode.size(),
+      &context_handle, profile_handle);
+
+#if !defined(_WIN32)
+  if (prefetch_thread.joinable()) {
+    prefetch_thread.join();
+  }
+#endif
+
+  if (create_status != QNN_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR, "Failed to create QNN context: %d", create_status);
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to create QNN context");
   }
