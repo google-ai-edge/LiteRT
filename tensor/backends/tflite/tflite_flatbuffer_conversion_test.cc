@@ -1820,6 +1820,35 @@ TEST(SerializationTest, CanSerializeCast) {
   EXPECT_EQ(node_and_reg->second.builtin_code, tflite::BuiltinOperator_CAST);
 }
 
+TEST(SerializationTest, QuantizedCastRoundTripUsesScales) {
+  const auto path = testing::TempDir() + "/quantized_cast.tflite";
+  TensorTf input({.name = "input", .type = Type::kFP32, .shape = {4}});
+  auto codes = Cast(input, Type::kI8);
+  codes.SetQuantization(std::make_shared<PerChannelAffineQuantization>(
+      std::vector<float>{0.5f}, std::vector<int64_t>{0}));
+  auto output = Cast(codes, Type::kFP32);
+  ASSERT_THAT(Save({output}, path), IsOk());
+  auto model = tflite::FlatBufferModel::BuildFromFile(path.c_str());
+  ASSERT_NE(model, nullptr);
+  std::unique_ptr<tflite::Interpreter> interpreter;
+  tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
+  ASSERT_EQ(tflite::InterpreterBuilder(*model, resolver)(&interpreter),
+            kTfLiteOk);
+  ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
+  const std::vector<float> values{-1.0f, 0.0f, 0.5f, 2.5f};
+  for (size_t i = 0; i < values.size(); ++i) {
+    interpreter->typed_input_tensor<float>(0)[i] = values[i];
+  }
+  ASSERT_EQ(interpreter->Invoke(), kTfLiteOk);
+  for (int i = 0; i < values.size(); ++i) {
+    EXPECT_EQ(interpreter->typed_output_tensor<float>(0)[i], values[i]);
+  }
+  EXPECT_EQ(interpreter->node_and_registration(0)->second.builtin_code,
+            tflite::BuiltinOperator_QUANTIZE);
+  EXPECT_EQ(interpreter->node_and_registration(1)->second.builtin_code,
+            tflite::BuiltinOperator_DEQUANTIZE);
+}
+
 TEST(SerializationTest, CanSerializeReshape) {
   const std::string model_path = testing::TempDir() + "/reshape.tflite";
   TensorTf a({.type = Type::kFP32, .shape = {1, 5, 1}});
