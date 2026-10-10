@@ -58,6 +58,10 @@ limitations under the License.
 #include <stdint.h>
 #include <stdio.h>
 
+#if defined(__OHOS__)
+#include <hilog/log.h>
+#endif  // defined(__OHOS__)
+
 #include "tflite/core/c/c_api_types.h"  // IWYU pragma: export
 
 #ifdef __cplusplus
@@ -196,9 +200,26 @@ void TfLiteFloatArrayFree(TfLiteFloatArray* a);
 // calling the context->ReportError function directly, so that message strings
 // can be stripped out if the binary size needs to be severely optimized.
 #ifndef TF_LITE_STRIP_ERROR_STRINGS
+// The reasons below are dropped when the caller passes a null context, which is
+// what the XNNPACK delegate does while deciding whether a node is delegatable.
+#if defined(__OHOS__)
+#define TF_LITE_OHOS_LOG(...)                                         \
+  do {                                                                \
+    char tflite_ohos_buf_[2048];                                      \
+    snprintf(tflite_ohos_buf_, sizeof(tflite_ohos_buf_), __VA_ARGS__); \
+    OH_LOG_Print(LOG_APP, LOG_ERROR, 0xFF02, "tflite",                \
+                 "%{public}s", tflite_ohos_buf_);                     \
+  } while (false)
+#else
+#define TF_LITE_OHOS_LOG(...) \
+  do {                        \
+  } while (false)
+#endif
+
 #define TF_LITE_KERNEL_LOG(context, ...)            \
   do {                                              \
     (context)->ReportError((context), __VA_ARGS__); \
+    TF_LITE_OHOS_LOG(__VA_ARGS__);                  \
   } while (false)
 
 #define TF_LITE_MAYBE_KERNEL_LOG(context, ...)        \
@@ -206,6 +227,7 @@ void TfLiteFloatArrayFree(TfLiteFloatArray* a);
     if ((context) != nullptr) {                       \
       (context)->ReportError((context), __VA_ARGS__); \
     }                                                 \
+    TF_LITE_OHOS_LOG(__VA_ARGS__);                    \
   } while (false)
 #else  // TF_LITE_STRIP_ERROR_STRINGS
 #define ARGS_UNUSED(...) (void)sizeof(#__VA_ARGS__)
