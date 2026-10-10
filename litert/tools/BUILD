@@ -95,6 +95,30 @@ exports_files([
 #     ],
 # )
 #
+# pytype_strict_library(
+#     name = "litert_lint_rules_lib",
+#     srcs = ["litert_lint_rules.py"],
+#     deps = ["//tflite/python:schema_py"],
+# )
+#
+# pytype_strict_binary(
+#     name = "litert_lint_rules",
+#     main = "litert_lint_rules.py",
+#     deps = [":litert_lint_rules_lib"],
+# )
+#
+# py_test(
+#     name = "litert_lint_rules_test",
+#     srcs = ["litert_lint_rules_test.py"],
+#     deps = [
+#         ":litert_lint_rules_lib",
+#         "@absl_py//absl/testing:absltest",
+#         "@absl_py//absl/testing:parameterized",
+#         "//third_party/py/flatbuffers",
+#         "//tflite/python:schema_py",
+#     ],
+# )
+#
 # copybara:uncomment_end
 
 # This user library should depend on libLiteRt.so to allow
