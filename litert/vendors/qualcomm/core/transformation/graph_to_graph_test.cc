@@ -1900,5 +1900,134 @@ TEST(RotQuant, ConvertFcToHadamardTransform_WithBias_NoOp) {
   ASSERT_EQ(op_wrappers.size(), 1u);
   EXPECT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kFullyConnected));
 }
+TEST(FuseMinMaxOpsToReLUMinMaxTest, HappyPath) {
+  // G2G Test case:
+  //
+  // ----- Before -----
+  //    Input  MaxConst
+  //       \   /
+  //       Max
+  //        |   MinConst
+  //        |   /
+  //       Min
+  //        |
+  //      Output
+  //
+  // ----- After -----
+  //    Input
+  //      |
+  //  ReLUMinMax (min=max_const, max=min_const)
+  //      |
+  //    Output
+  //
+  TensorPool tensor_pool;
+  std::vector<OpWrapper> op_wrappers;
+
+  auto& input = tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_32, {},
+                                               {1, 128});
+  auto& max_output = tensor_pool.CloneNativeTensorFrom(input);
+  auto& output = tensor_pool.CloneNativeTensorFrom(input);
+
+  static constexpr float kMaxConst = 0.0f;
+  auto& max_const = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_FLOAT_32, {}, {1u}, sizeof(kMaxConst), &kMaxConst);
+
+  static constexpr float kMinConst = 6.0f;
+  auto& min_const = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_FLOAT_32, {}, {1u}, sizeof(kMinConst), &kMinConst);
+
+  for (auto& op : BuildElementwiseMaximumOp(tensor_pool, {input, max_const},
+                                            {max_output})) {
+    op_wrappers.emplace_back(std::move(op));
+  }
+  for (auto& op :
+       BuildElementwiseMinimumOp(tensor_pool, {max_output, min_const},
+                                 {output})) {
+    op_wrappers.emplace_back(std::move(op));
+  }
+  ASSERT_EQ(op_wrappers.size(), 2u);
+
+  GraphToGraphTransform(::qnn::G2GConfig::kMHAOpt, op_wrappers, tensor_pool,
+                        [](OpWrapper& op) { return true; });
+
+  ASSERT_EQ(op_wrappers.size(), 1u);
+  EXPECT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kElementWiseNeuron));
+}
+
+TEST(FuseMinMaxOpsToReLUMinMaxTest, SkipWhenNotConnected) {
+  // Max and Min do not share a tensor — transform must be a no-op.
+  TensorPool tensor_pool;
+  std::vector<OpWrapper> op_wrappers;
+
+  auto& input0 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_32, {},
+                                                {1, 128});
+  auto& input1 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_32, {},
+                                                {1, 128});
+  auto& max_output = tensor_pool.CloneNativeTensorFrom(input0);
+  auto& min_output = tensor_pool.CloneNativeTensorFrom(input1);
+
+  static constexpr float kMaxConst = 0.0f;
+  auto& max_const = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_FLOAT_32, {}, {1u}, sizeof(kMaxConst), &kMaxConst);
+
+  static constexpr float kMinConst = 6.0f;
+  auto& min_const = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_FLOAT_32, {}, {1u}, sizeof(kMinConst), &kMinConst);
+
+  for (auto& op : BuildElementwiseMaximumOp(tensor_pool, {input0, max_const},
+                                            {max_output})) {
+    op_wrappers.emplace_back(std::move(op));
+  }
+  for (auto& op :
+       BuildElementwiseMinimumOp(tensor_pool, {input1, min_const},
+                                 {min_output})) {
+    op_wrappers.emplace_back(std::move(op));
+  }
+  ASSERT_EQ(op_wrappers.size(), 2u);
+
+  GraphToGraphTransform(::qnn::G2GConfig::kMHAOpt, op_wrappers, tensor_pool,
+                        [](OpWrapper& op) { return true; });
+
+  ASSERT_EQ(op_wrappers.size(), 2u);
+  EXPECT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kElementWiseMaximum));
+  EXPECT_TRUE(op_wrappers[1].IsOpCode(QnnOpCode::kElementWiseMinimum));
+}
+
+TEST(FuseMinMaxOpsToReLUMinMaxTest, SkipWhenValidationFails) {
+  // Pattern matches but validate_op_config rejects the ReLUMinMax op.
+  TensorPool tensor_pool;
+  std::vector<OpWrapper> op_wrappers;
+
+  auto& input = tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_32, {},
+                                               {1, 128});
+  auto& max_output = tensor_pool.CloneNativeTensorFrom(input);
+  auto& output = tensor_pool.CloneNativeTensorFrom(input);
+
+  static constexpr float kMaxConst = 0.0f;
+  auto& max_const = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_FLOAT_32, {}, {1u}, sizeof(kMaxConst), &kMaxConst);
+
+  static constexpr float kMinConst = 6.0f;
+  auto& min_const = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_FLOAT_32, {}, {1u}, sizeof(kMinConst), &kMinConst);
+
+  for (auto& op : BuildElementwiseMaximumOp(tensor_pool, {input, max_const},
+                                            {max_output})) {
+    op_wrappers.emplace_back(std::move(op));
+  }
+  for (auto& op :
+       BuildElementwiseMinimumOp(tensor_pool, {max_output, min_const},
+                                 {output})) {
+    op_wrappers.emplace_back(std::move(op));
+  }
+  ASSERT_EQ(op_wrappers.size(), 2u);
+
+  GraphToGraphTransform(::qnn::G2GConfig::kMHAOpt, op_wrappers, tensor_pool,
+                        [](OpWrapper& op) { return false; });
+
+  ASSERT_EQ(op_wrappers.size(), 2u);
+  EXPECT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kElementWiseMaximum));
+  EXPECT_TRUE(op_wrappers[1].IsOpCode(QnnOpCode::kElementWiseMinimum));
+}
 }  // namespace
 }  // namespace qnn
