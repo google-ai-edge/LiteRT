@@ -35,7 +35,7 @@ limitations under the License.
 
 namespace litert::tensor {
 
-absl::Status XnnpackRunner::CreateRuntime(size_t num_threads) {
+absl::Status XnnpackRunner::CreateRuntime() {
   xnn_subgraph_t sg = static_cast<XnnpackGraph&>(*graph_).GetSubgraph();
   xnn_runtime* raw_runtime = nullptr;
   LRT_TENSOR_RETURN_IF_ERROR(

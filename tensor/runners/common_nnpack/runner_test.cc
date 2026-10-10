@@ -120,7 +120,7 @@ class TestRunner : public NnpackRunner {
   uint32_t FlagExternalInput() const override { return kExternalInput; }
   uint32_t FlagExternalOutput() const override { return kExternalOutput; }
 
-  absl::Status CreateRuntime(size_t num_threads) override {
+  absl::Status CreateRuntime() override {
     return StatusOf(Hook::kCreateRuntime);
   }
 

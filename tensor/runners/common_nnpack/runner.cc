@@ -195,7 +195,7 @@ absl::Status NnpackRunner::WriteInput(const TensorHandle& tensor,
 
 absl::Status NnpackRunner::PrepareRuntime() {
   if (!runtime_prepared_) {
-    LRT_TENSOR_RETURN_IF_ERROR(CreateRuntime(num_threads_));
+    LRT_TENSOR_RETURN_IF_ERROR(CreateRuntime());
     runtime_prepared_ = true;
   }
   return absl::OkStatus();

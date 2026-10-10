@@ -114,7 +114,7 @@ class XnnpackRunner : public NnpackRunner {
     return XNN_VALUE_FLAG_EXTERNAL_OUTPUT;
   }
 
-  absl::Status CreateRuntime(size_t num_threads) override;
+  absl::Status CreateRuntime() override;
   absl::Status SetExternalValueShape(uint32_t id,
                                      absl::Span<const size_t> dims) override;
   absl::Status ReshapeRuntime() override;

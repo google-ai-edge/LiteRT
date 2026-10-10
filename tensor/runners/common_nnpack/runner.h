@@ -230,7 +230,7 @@ class NnpackRunner {
   virtual uint32_t FlagExternalInput() const = 0;
   virtual uint32_t FlagExternalOutput() const = 0;
 
-  virtual absl::Status CreateRuntime(size_t num_threads) = 0;
+  virtual absl::Status CreateRuntime() = 0;
   virtual absl::Status SetExternalValueShape(uint32_t id,
                                              absl::Span<const size_t> dims) = 0;
   virtual absl::Status ReshapeRuntime() = 0;
