@@ -39,6 +39,7 @@
 #include "openvino/op/reduce_sum.hpp"
 #include "openvino/op/result.hpp"
 #include "openvino/op/scaled_dot_product_attention.hpp"
+#include "openvino/op/select.hpp"
 #include "openvino/op/slice.hpp"
 #include "openvino/op/softmax.hpp"
 #include "openvino/op/topk.hpp"
@@ -258,6 +259,50 @@ TEST(FuseSplitAttentionToSDPATest, NumericallyMatchesSplitCache) {
   }
   EXPECT_LT(max_abs_diff, 1e-4f)
       << "fused output diverges from split-cache reference";
+}
+
+// DecomposeBooleanConstant rewrites sizable boolean Constants into
+// Constant(u8) -> Convert(boolean) and leaves tiny ones alone.
+TEST(DecomposeBooleanConstantTest, RewritesOnlySizableBooleanConstants) {
+  const auto f = ov::element::f32;
+  auto data_big = std::make_shared<ov::op::v0::Parameter>(f, ov::Shape{32});
+  auto data_small = std::make_shared<ov::op::v0::Parameter>(f, ov::Shape{4});
+  std::vector<char> big_bits(32);
+  for (size_t i = 0; i < big_bits.size(); ++i) big_bits[i] = (i % 3 == 0);
+  auto big_cond = ov::op::v0::Constant::create(ov::element::boolean,
+                                               ov::Shape{32}, big_bits);
+  auto small_cond = ov::op::v0::Constant::create(
+      ov::element::boolean, ov::Shape{4}, std::vector<char>{1, 0, 1, 0});
+  auto zero = ov::op::v0::Constant::create(f, ov::Shape{}, {0.0f});
+  auto select_big =
+      std::make_shared<ov::op::v1::Select>(big_cond, data_big, zero);
+  auto select_small =
+      std::make_shared<ov::op::v1::Select>(small_cond, data_small, zero);
+  auto model = std::make_shared<ov::Model>(
+      ov::ResultVector{std::make_shared<ov::op::v0::Result>(select_big),
+                       std::make_shared<ov::op::v0::Result>(select_small)},
+      ov::ParameterVector{data_big, data_small}, "boolean_constants");
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetDecomposeBooleanConstants(true)
+      .Run(model);
+
+  size_t large_boolean_constants = 0;
+  size_t small_boolean_constants = 0;
+  for (const auto& node : model->get_ops()) {
+    auto c = std::dynamic_pointer_cast<ov::op::v0::Constant>(node);
+    if (c && c->get_element_type() == ov::element::boolean) {
+      if (c->get_byte_size() >= 16) {
+        ++large_boolean_constants;
+      } else {
+        ++small_boolean_constants;
+      }
+    }
+  }
+  EXPECT_EQ(large_boolean_constants, 0u);
+  EXPECT_EQ(small_boolean_constants, 1u);
+  EXPECT_EQ(CountOps<ov::op::v0::Convert>(model), 1u);
 }
 
 // Fixed per-expert weight shapes used by BuildDenseMoeGraph: a fused gate+up
