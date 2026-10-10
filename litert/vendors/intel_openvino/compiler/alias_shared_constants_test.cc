@@ -15,22 +15,28 @@
 
 #include "litert/vendors/intel_openvino/compiler/alias_shared_constants.h"
 
+#include <gtest/gtest.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <string>
+#include <unordered_set>
+#include <vector>
 
-#include "openvino/core/model.hpp"
-#include "openvino/frontend/tensorflow_lite/frontend.hpp"
-#include "openvino/op/constant.hpp"
-#include <gtest/gtest.h>
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/test/load_test_model.h"
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
 #include "litert/vendors/intel_openvino/compiler/weight_bank.h"
+#include "litert/vendors/intel_openvino/compiler/weight_bank_attributes.h"
 #include "litert/vendors/intel_openvino/compiler/weightless_caching_attributes.hpp"
+#include "openvino/core/model.hpp"
+#include "openvino/frontend/tensorflow_lite/frontend.hpp"
+#include "openvino/op/constant.hpp"
+#include "openvino/op/result.hpp"
 
 namespace litert {
 namespace openvino {
@@ -134,9 +140,133 @@ TEST(AliasSharedConstantsTest, TaggedConstantsCarryPoolOffsets) {
         << cnst->get_friendly_name();
   }
 
-  // Every aliased Constant is tagged; left-baked (byte-mismatched) ones may be
-  // tagged too, so tagged >= aliased.
+  // Every aliased constant is tagged; byte-mismatched ones are tagged in place
+  // without being aliased, so tagged >= aliased.
   EXPECT_GE(tagged, aliased);
+}
+
+// Builds a one-Constant model (Constant -> Result), tagging the Constant as
+// LiteRt-generated with |source_key| if non-empty.
+std::shared_ptr<ov::Model> BuildSingleConstantModel(
+    const std::string& friendly_name, const std::vector<uint8_t>& bytes,
+    const std::string& source_key = "") {
+  auto cnst = ov::op::v0::Constant::create(ov::element::u8,
+                                           ov::Shape{bytes.size()}, bytes);
+  cnst->set_friendly_name(friendly_name);
+  if (!source_key.empty()) {
+    cnst->get_rt_info()
+        [LiteRtGeneratedConstantAttribute::get_type_info_static()] =
+        LiteRtGeneratedConstantAttribute(source_key);
+  }
+  auto result = std::make_shared<ov::op::v0::Result>(cnst);
+  return std::make_shared<ov::Model>(ov::ResultVector{result},
+                                     ov::ParameterVector{}, "single_constant");
+}
+
+TEST(HarvestSharedConstantsTest, RegistersGeneratedConstantByKey) {
+  auto model = BuildSingleConstantModel(
+      /*friendly_name=*/"stacked_gate_up", /*bytes=*/{1, 2, 3, 4},
+      /*source_key=*/"stacked_gate_up");
+
+  WeightBank bank;
+  HarvestSharedConstants(model, bank);
+  bank.FinalizeDerivedBuffers();
+
+  const auto id = bank.BufferIdOfName("stacked_gate_up");
+  ASSERT_TRUE(id.has_value());
+  const auto bytes = bank.Buffers().at(*id);
+  ASSERT_EQ(bytes.size(), 4u);
+  EXPECT_EQ(bytes[0], 1);
+}
+
+// A generated constant whose friendly_name doesn't match its source_key can't
+// be resolved back by name later, so HarvestSharedConstants must skip it
+// rather than registering it under a name nothing will ever look up.
+TEST(HarvestSharedConstantsTest, SkipsNameKeyMismatch) {
+  auto model = BuildSingleConstantModel(
+      /*friendly_name=*/"renamed_after_rewrite", /*bytes=*/{5, 6, 7},
+      /*source_key=*/"original_key");
+
+  WeightBank bank;
+  HarvestSharedConstants(model, bank);
+  bank.FinalizeDerivedBuffers();
+
+  EXPECT_EQ(bank.BufferIdOfName("original_key"), std::nullopt);
+  EXPECT_EQ(bank.BufferIdOfName("renamed_after_rewrite"), std::nullopt);
+}
+
+// A Constant with no LiteRtGeneratedConstantAttribute at all (a plain, already
+// by-name-resolved or ordinary baked weight) must not be registered.
+TEST(HarvestSharedConstantsTest, SkipsConstantWithoutAttribute) {
+  auto model =
+      BuildSingleConstantModel(/*friendly_name=*/"plain", /*bytes=*/{9});
+
+  WeightBank bank;
+  HarvestSharedConstants(model, bank);
+  bank.FinalizeDerivedBuffers();
+
+  EXPECT_EQ(bank.BufferIdOfName("plain"), std::nullopt);
+}
+
+// BuildPool with prune_dead=true must drop a registered buffer that no
+// partition's Constants reference anymore (superseded by a stacked
+// constant), keeping only buffers whose name was collected as live.
+TEST(BuildPoolTest, PrunesBufferNotReferencedByAnyModel) {
+  WeightBank bank;
+  bank.RegisterGeneratedConstant("live", {1, 2});
+  bank.RegisterGeneratedConstant("dead", {3, 4, 5});
+  auto model =
+      BuildSingleConstantModel(/*friendly_name=*/"live", /*bytes=*/{1, 2});
+
+  std::unordered_set<std::string> live_names;
+  CollectLiveConstantNames(model, live_names);
+  const auto layout = BuildPool(live_names, bank, /*prune_dead=*/true);
+
+  const auto live_id = bank.BufferIdOfName("live");
+  const auto dead_id = bank.BufferIdOfName("dead");
+  ASSERT_TRUE(live_id.has_value());
+  ASSERT_TRUE(dead_id.has_value());
+  const auto offsets = layout.OffsetMap();
+  EXPECT_EQ(offsets.count(*live_id), 1u);
+  EXPECT_EQ(offsets.count(*dead_id), 0u);
+  ASSERT_EQ(layout.buffers.size(), 1u);
+  EXPECT_EQ(layout.buffers[0].buffer_id, *live_id);
+}
+
+// Derived BufferIds must be assigned in ascending key order, so the pool
+// layout (and every WLCA bin_offset derived from it) is reproducible.
+TEST(BuildPoolTest, DerivedBufferIdsFollowAscendingKeyOrder) {
+  WeightBank bank;
+  // Registered out of order on purpose.
+  bank.RegisterGeneratedConstant("zebra", {1});
+  bank.RegisterGeneratedConstant("alpha", {2});
+  bank.RegisterGeneratedConstant("middle", {3});
+
+  BuildPool(/*live_names=*/{}, bank, /*prune_dead=*/false);
+
+  const auto alpha = bank.BufferIdOfName("alpha");
+  const auto middle = bank.BufferIdOfName("middle");
+  const auto zebra = bank.BufferIdOfName("zebra");
+  ASSERT_TRUE(alpha.has_value());
+  ASSERT_TRUE(middle.has_value());
+  ASSERT_TRUE(zebra.has_value());
+  EXPECT_LT(*alpha, *middle);
+  EXPECT_LT(*middle, *zebra);
+}
+
+// BuildPool with prune_dead=false (the GPU path) must keep every buffer
+// regardless of whether any model still references it by name.
+TEST(BuildPoolTest, KeepsEveryBufferWhenNotPruning) {
+  WeightBank bank;
+  bank.RegisterGeneratedConstant("a", {1});
+  bank.RegisterGeneratedConstant("b", {2, 3});
+  auto model = BuildSingleConstantModel(/*friendly_name=*/"a", /*bytes=*/{1});
+
+  std::unordered_set<std::string> live_names;
+  CollectLiveConstantNames(model, live_names);
+  const auto layout = BuildPool(live_names, bank, /*prune_dead=*/false);
+
+  EXPECT_EQ(layout.buffers.size(), 2u);
 }
 
 }  // namespace

@@ -14,12 +14,18 @@
 
 #include "litert/vendors/intel_openvino/compiler/weight_bank.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
+#include "absl/types/span.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/compiler/cc/litert_model.h"
 
 namespace litert::openvino {
@@ -56,6 +62,74 @@ size_t WeightBank::TotalBytes() const {
     total += bytes.size();
   }
   return total;
+}
+
+void WeightBank::RegisterGeneratedConstant(std::string_view key,
+                                           std::vector<uint8_t> bytes) {
+  const std::string key_str(key);
+  if (derived_finalized_) {
+    // Ids are assigned and the pool laid out, so this key could never resolve.
+    // Drop it to keep the bank consistent with the pool already built.
+    LITERT_LOG(LITERT_ERROR,
+               "WeightBank: generated constant key '%s' registered after "
+               "FinalizeDerivedBuffers(); dropping it. Harvest every "
+               "partition before finalizing",
+               key_str.c_str());
+    return;
+  }
+  auto it = derived_bytes_.find(key_str);
+  if (it == derived_bytes_.end()) {
+    derived_bytes_.emplace(key_str, std::move(bytes));
+    return;
+  }
+
+  // The first registration wins either way, but a disagreement means two
+  // partitions synthesized different data under one identity -- the pool then
+  // can't match one of them.
+  if (it->second.size() != bytes.size()) {
+    LITERT_LOG(LITERT_ERROR,
+               "WeightBank: generated constant key '%s' re-registered with a "
+               "different size (%zu vs %zu bytes); keeping the first "
+               "registration",
+               key_str.c_str(), it->second.size(), bytes.size());
+  } else if (!bytes.empty() &&
+             std::memcmp(it->second.data(), bytes.data(), bytes.size()) != 0) {
+    LITERT_LOG(LITERT_ERROR,
+               "WeightBank: generated constant key '%s' re-registered with "
+               "different contents (same size, %zu bytes); keeping the first "
+               "registration",
+               key_str.c_str(), bytes.size());
+  }
+}
+
+void WeightBank::FinalizeDerivedBuffers() {
+  if (derived_finalized_) {
+    LITERT_LOG(LITERT_ERROR,
+               "WeightBank::FinalizeDerivedBuffers called more than once; "
+               "ignoring the extra call");
+    return;
+  }
+  derived_finalized_ = true;
+
+  // Safe only because every real BufferId (from AddSubgraph) is already
+  // known: this must run after every partition's AddSubgraph has completed.
+  int32_t next_id = 0;
+  for (const auto& [id, bytes] : buffer_bytes_) {
+    next_id = std::max(next_id, id + 1);
+  }
+  // Ascending key order (std::map), so the id -> pool offset -> WLCA
+  // bin_offset chain is identical on every run. derived_bytes_ keeps owning
+  // the bytes; being node-based, the spans below stay valid.
+  const size_t num_derived = derived_bytes_.size();
+  for (const auto& [key, bytes] : derived_bytes_) {
+    const int32_t buffer_id = next_id++;
+    buffer_bytes_[buffer_id] = absl::MakeConstSpan(bytes);
+    name_to_buffer_id_[key] = buffer_id;
+  }
+  LITERT_LOG(LITERT_INFO,
+             "WeightBank::FinalizeDerivedBuffers: assigned %zu derived "
+             "buffer id(s)",
+             num_derived);
 }
 
 std::optional<int32_t> WeightBank::BufferIdOfName(

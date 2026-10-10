@@ -20,11 +20,58 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <string>
+#include <unordered_set>
+#include <vector>
 
-#include "openvino/core/model.hpp"
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/intel_openvino/compiler/weight_bank.h"
+#include "openvino/core/model.hpp"
 
 namespace litert::openvino {
+
+// One buffer's placement in the assembled cross-partition pool.
+struct PoolEntry {
+  int32_t buffer_id = 0;
+  size_t pool_offset = 0;  // byte offset within the contiguous pool
+  absl::Span<const uint8_t> bytes;
+};
+
+// The assembled pool, in ascending-BufferId order (the layout
+// OpenVinoGlobalGraph::Serialize() lays down).
+struct PoolLayout {
+  std::vector<PoolEntry> buffers;
+
+  // BufferId -> pool offset, for AliasAndTagSharedConstants. Derived from
+  // |buffers| on demand, so an entry's offset has one source of truth.
+  std::map<int32_t, size_t> OffsetMap() const;
+};
+
+// Accumulates the friendly_name of every Constant still present in
+// |ov_model| into |live_names|. Call once per partition (right after
+// HarvestSharedConstants) so BuildPool's pruning doesn't need every
+// partition's ov::Model held alive simultaneously. Names, not BufferIds,
+// because derived/generated BufferIds don't exist yet -- they're only
+// assigned by BuildPool's FinalizeDerivedBuffers() call, once every
+// partition has been harvested.
+void CollectLiveConstantNames(const std::shared_ptr<ov::Model>& ov_model,
+                              std::unordered_set<std::string>& live_names);
+
+// Assembles the shared buffer pool. Finalizes (assigns and stamps) derived/
+// generated buffer ids as its first step -- see
+// WeightBank::FinalizeDerivedBuffers -- so must be called exactly once, after
+// every partition's AddSubgraph/HarvestSharedConstants/CollectLiveConstantNames
+// has completed. |live_names| is resolved to BufferIds here (only now that
+// derived ids are finalized) and is ignored unless |prune_dead|.
+PoolLayout BuildPool(const std::unordered_set<std::string>& live_names,
+                     WeightBank& weight_bank, bool prune_dead);
+
+// Registers |ov_model|'s LiteRtGeneratedConstantAttribute Constants (e.g. MoE
+// stacked expert weights) with |weight_bank|. Call once per partition, after
+// OptimizeModel. Their friendly_name MUST equal the attribute's |source_key|
+// (what BufferIdOfName resolves against); violations are logged and skipped.
+void HarvestSharedConstants(const std::shared_ptr<ov::Model>& ov_model,
+                            WeightBank& weight_bank);
 
 // NPU cross-partition weight-sharing transform (counterpart to the GPU
 // ConvertWeightsToParameters).

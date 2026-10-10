@@ -20,19 +20,126 @@
 #include <cstring>
 #include <map>
 #include <memory>
+#include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include "openvino/core/graph_util.hpp"
-#include "openvino/core/model.hpp"
-#include "openvino/op/constant.hpp"
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/vendors/intel_openvino/compiler/weight_bank.h"
+#include "litert/vendors/intel_openvino/compiler/weight_bank_attributes.h"
 #include "litert/vendors/intel_openvino/compiler/weightless_caching_attributes.hpp"
+#include "openvino/core/graph_util.hpp"
+#include "openvino/core/model.hpp"
 #include "openvino/core/type.hpp"
+#include "openvino/op/constant.hpp"
 
 namespace litert::openvino {
+
+std::map<int32_t, size_t> PoolLayout::OffsetMap() const {
+  std::map<int32_t, size_t> offsets;
+  for (const auto& entry : buffers) {
+    offsets.emplace(entry.buffer_id, entry.pool_offset);
+  }
+  return offsets;
+}
+
+void HarvestSharedConstants(const std::shared_ptr<ov::Model>& ov_model,
+                            WeightBank& weight_bank) {
+  size_t num_registered = 0;
+  for (const auto& node : ov_model->get_ordered_ops()) {
+    auto cnst = ov::as_type_ptr<ov::op::v0::Constant>(node);
+    if (!cnst) continue;
+
+    const std::string& name = cnst->get_friendly_name();
+    // By-name constants need no registration: WeightBank::AddSubgraph already
+    // knows their BufferId.
+    if (weight_bank.BufferIdOfName(name)) continue;
+
+    const auto& rt = cnst->get_rt_info();
+    if (const auto generated_it =
+            rt.find(LiteRtGeneratedConstantAttribute::get_type_info_static());
+        generated_it != rt.end()) {
+      const auto& key =
+          generated_it->second.as<LiteRtGeneratedConstantAttribute>()
+              .source_key;
+      if (key.empty()) continue;
+      if (name != key) {
+        // Required so BufferIdOfName(name) can resolve derived buffers too.
+        LITERT_LOG(LITERT_ERROR,
+                   "HarvestSharedConstants: generated constant's "
+                   "friendly_name '%s' != source_key '%s'; skipping",
+                   name.c_str(), key.c_str());
+        continue;
+      }
+      std::vector<uint8_t> bytes(cnst->get_byte_size());
+      std::memcpy(bytes.data(), cnst->get_data_ptr(), bytes.size());
+      weight_bank.RegisterGeneratedConstant(key, std::move(bytes));
+      ++num_registered;
+    }
+  }
+  LITERT_LOG(LITERT_INFO,
+             "HarvestSharedConstants: registered %zu generated/derived "
+             "constants",
+             num_registered);
+}
+
+void CollectLiveConstantNames(const std::shared_ptr<ov::Model>& ov_model,
+                              std::unordered_set<std::string>& live_names) {
+  for (const auto& node : ov_model->get_ordered_ops()) {
+    auto cnst = ov::as_type_ptr<ov::op::v0::Constant>(node);
+    if (!cnst) continue;
+    live_names.insert(cnst->get_friendly_name());
+  }
+}
+
+PoolLayout BuildPool(const std::unordered_set<std::string>& live_names,
+                     WeightBank& weight_bank, bool prune_dead) {
+  // Only safe once every partition's AddSubgraph/HarvestSharedConstants has
+  // run: see WeightBank::FinalizeDerivedBuffers.
+  weight_bank.FinalizeDerivedBuffers();
+  LITERT_LOG(LITERT_INFO, "Weight sharing: %zu buffers, %zu bytes",
+             weight_bank.NumBuffers(), weight_bank.TotalBytes());
+
+  // Resolved here, not by the per-partition callers, because derived/
+  // generated BufferIds only exist after FinalizeDerivedBuffers() above.
+  std::unordered_set<int32_t> live_buffer_ids;
+  if (prune_dead) {
+    for (const auto& name : live_names) {
+      const auto bid = weight_bank.BufferIdOfName(name);
+      if (!bid || *bid < 0) continue;
+      live_buffer_ids.insert(*bid);
+    }
+  }
+
+  // Ordered map keyed by BufferId so the pool is laid out in ascending id
+  // order (matching OpenVinoGlobalGraph::Serialize()).
+  std::map<uint32_t, absl::Span<const uint8_t>> ordered(
+      weight_bank.Buffers().begin(), weight_bank.Buffers().end());
+  PoolLayout layout;
+  size_t running_offset = 0;
+  size_t pruned = 0, pruned_bytes = 0;
+  for (const auto& [buffer_id, bytes] : ordered) {
+    if (prune_dead && !live_buffer_ids.count(static_cast<int32_t>(buffer_id))) {
+      ++pruned;
+      pruned_bytes += bytes.size();
+      continue;
+    }
+    layout.buffers.push_back(
+        {static_cast<int32_t>(buffer_id), running_offset, bytes});
+    running_offset += bytes.size();
+  }
+  if (pruned > 0) {
+    LITERT_LOG(LITERT_INFO,
+               "Weight sharing: pruned %zu buffer(s) (%zu bytes) superseded "
+               "by a stacked/derived constant in every partition that "
+               "referenced them",
+               pruned, pruned_bytes);
+  }
+
+  return layout;
+}
 
 size_t AliasAndTagSharedConstants(
     const std::shared_ptr<ov::Model>& ov_model, const WeightBank& weight_bank,

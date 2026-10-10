@@ -17,8 +17,6 @@
 #include <memory>
 #include <string>
 
-#include "openvino/core/model.hpp"
-#include "openvino/runtime/properties.hpp"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
@@ -26,6 +24,8 @@
 #include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/vendors/intel_openvino/compiler/npu_optimizer.h"
 #include "litert/vendors/intel_openvino/compiler/openvino_soc_config.h"
+#include "openvino/core/model.hpp"
+#include "openvino/runtime/properties.hpp"
 
 namespace litert {
 namespace openvino {
@@ -108,6 +108,12 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
         context.enable_moe_gather_ = (value == "true");
         continue;
       }
+      if (key == "split_shared_constants") {
+        LITERT_LOG(LITERT_INFO, "Custom config: split_shared_constants = %s",
+                   value.c_str());
+        context.split_shared_constants_ = (value == "true");
+        continue;
+      }
       context.configs_map_[key] = value;
       LITERT_LOG(LITERT_INFO, "Custom config: %s = %s", key.c_str(),
                  value.c_str());
@@ -152,6 +158,22 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
         context.eliminate_fq_after_matmul_ = (value == "true");
         continue;
       }
+      if (key == "fuse_split_attention_to_sdpa") {
+        context.fuse_split_attention_to_sdpa_ = (value == "true");
+        continue;
+      }
+      if (key == "sdpa_pad_kv_to_alignment") {
+        context.sdpa_pad_kv_to_alignment_ = (value == "true");
+        continue;
+      }
+      if (key == "enable_moe_gather") {
+        context.enable_moe_gather_ = (value == "true");
+        continue;
+      }
+      if (key == "split_shared_constants") {
+        context.split_shared_constants_ = (value == "true");
+        continue;
+      }
       context.configs_map_[key] = value;
       LITERT_LOG(LITERT_INFO, "Graph %d custom config: %s = %s", graph_index,
                  key.c_str(), value.c_str());
@@ -169,30 +191,49 @@ LiteRtStatus OpenVinoCompileContext::ConfigureForSoc(const char* soc_model) {
   return kLiteRtStatusOk;
 }
 
-void OpenVinoCompileContext::ConfigureForNpuWeightSharing() {
+void OpenVinoCompileContext::ConfigureForNpuWeightSharing(
+    bool moe_multi_token_chunk) {
   if (device_ != "NPU") return;
   // NPUW private properties, set by literal key because
   // npuw_private_properties.hpp is not shipped in the runtime SDK.
   configs_map_["NPU_USE_NPUW"] = "YES";
   configs_map_["NPUW_DEVICES"] = "NPU";
   configs_map_["NPUW_WEIGHTS_BANK"] = "shared";
-  configs_map_["NPUW_CWAI"] = "YES";
   configs_map_["NPUW_FUNCALL_FOR_ALL"] = "YES";
+
+  if (moe_multi_token_chunk) {
+    configs_map_["NPUW_ONLINE_PIPELINE"] = "REP";
+    configs_map_["NPUW_UNFOLD_IREQS"] = "NO";
+    configs_map_["NPUW_ONLINE_ISOLATE"] = "ATTN,MOE";
+    configs_map_["NPUW_MOE_TOKEN_CHUNK_SIZE"] = "0";
+    configs_map_["NPUW_ONLINE_KEEP_BLOCK_SIZE"] = "4";
+    configs_map_["NPUW_FOLD"] = "YES";
+    configs_map_["NPUW_ONLINE_KEEP_BLOCKS"] = "3";
+  } else {
+    configs_map_["NPUW_ONLINE_PIPELINE"] = "NONE";
+    configs_map_["NPUW_CWAI"] = "YES";
+  }
+
   LITERT_LOG(LITERT_INFO,
-             "NPU weight sharing: enabled NPUW/CWAI weightless compile knobs");
+             "NPU weight sharing: enabled NPUW weightless compile knobs (%s "
+             "chunk pipeline)",
+             moe_multi_token_chunk ? "multi-token" : "single-token");
 }
 
-void OpenVinoCompileContext::OptimizeModel(
+OpenVinoCompileContext::OptimizeModelResult
+OpenVinoCompileContext::OptimizeModel(
     const std::shared_ptr<ov::Model>& model) const {
-  if (device_ == "NPU") {
-    NpuOptimizer()
-        .SetConstantFold(true)
-        .SetEliminateMatMulFakeQuantize(eliminate_fq_after_matmul_)
-        .SetFuseSplitAttentionToSDPA(fuse_split_attention_to_sdpa_)
-        .SetSdpaPadKvToAlignment(sdpa_pad_kv_to_alignment_)
-        .SetEnableMoeGather(enable_moe_gather_)
-        .Run(model);
-  }
+  if (device_ != "NPU") return {};
+  const NpuOptimizer::Result result =
+      NpuOptimizer()
+          .SetConstantFold(true)
+          .SetEliminateMatMulFakeQuantize(eliminate_fq_after_matmul_)
+          .SetFuseSplitAttentionToSDPA(fuse_split_attention_to_sdpa_)
+          .SetSdpaPadKvToAlignment(sdpa_pad_kv_to_alignment_)
+          .SetEnableMoeGather(enable_moe_gather_)
+          .SetSplitSharedConstants(split_shared_constants_)
+          .Run(model);
+  return {.moe_is_multi_token_chunk = result.moe_is_multi_token_chunk};
 }
 
 }  // namespace openvino
