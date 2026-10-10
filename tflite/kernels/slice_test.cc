@@ -458,6 +458,25 @@ TEST(SliceOpTest, IndexVectorShorterThanInputRank) {
   EXPECT_NE(m.Invoke(), kTfLiteOk);
 }
 
+// The exact repro from tensorflow/tensorflow#126281: a rank-4 input with
+// length-1 `begin`/`size` vectors must fail instead of reading out of bounds.
+TEST(SliceOpTest, IndexVectorShorterThanRank4Input) {
+  SliceOpModel<float, int32_t> m({4, 1, 1, 1}, {1}, {0}, {1}, {1},
+                                 TensorType_INT32, TensorType_FLOAT32,
+                                 TestType::kDynamic, {1});
+  m.SetInput({1, 2, 3, 4});
+  EXPECT_NE(m.Invoke(), kTfLiteOk);
+}
+
+// The same case with int64 indices, so both supported index widths are covered.
+TEST(SliceOpTest, IndexVectorShorterThanRank4InputInt64) {
+  SliceOpModel<float, int64_t> m({4, 1, 1, 1}, {1}, {0}, {1}, {1},
+                                 TensorType_INT64, TensorType_FLOAT32,
+                                 TestType::kDynamic, {1});
+  m.SetInput({1, 2, 3, 4});
+  EXPECT_NE(m.Invoke(), kTfLiteOk);
+}
+
 // A valid window whose computed shape disagrees with the declared static output
 // must fail cleanly rather than write into a mismatched buffer.
 TEST(SliceOpTest, ComputedShapeMustMatchDeclaredStaticOutput) {
