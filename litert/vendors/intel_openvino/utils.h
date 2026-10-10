@@ -3,11 +3,22 @@
 
 #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_UTILS_H_
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_UTILS_H_
+
+#include <string_view>
+
 #include "openvino/core/type/element_type.hpp"
+#include "openvino/runtime/properties.hpp"
 #include "litert/c/litert_model_types.h"
 
 namespace litert {
 namespace openvino {
+
+// Predicate to validate whether a configuration option is a supported runtime
+// property for dispatch execution.
+inline bool IsSupportedRuntimeOption(std::string_view key) {
+  return key == "NPU_TURBO" || key == ov::hint::performance_mode.name() ||
+         key == "PERFORMANCE_HINT";
+}
 
 static const ov::element::Type MapLiteTypeToOV(
     const LiteRtElementType element_type) {

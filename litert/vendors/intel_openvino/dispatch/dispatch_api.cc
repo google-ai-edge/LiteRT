@@ -49,6 +49,28 @@ namespace {
 // Optional intel openvino specific options provided by the application.
 IntelOpenVinoOptions* intel_openvino_opts = nullptr;
 
+void ParseAndSetIntelOpenVinoOptions(
+    const LiteRtRuntimeContext* runtime_context, LiteRtOptions options) {
+  if (!options) return;
+  litert::internal::OptionsWrapper internal_options(
+      litert::internal::ContextWrapper(runtime_context), options);
+  auto opaque_options_result = internal_options.GetOpaqueOptions();
+  if (opaque_options_result) {
+    auto payload_data_result = opaque_options_result->FindOpaqueOptions(
+        LrtGetIntelOpenVinoOptionsIdentifier());
+    if (payload_data_result && payload_data_result.Value() != nullptr) {
+      LrtIntelOpenVinoOptions raw_options = nullptr;
+      if (LrtCreateIntelOpenVinoOptionsFromToml(
+              static_cast<const char*>(payload_data_result.Value()),
+              &raw_options) == kLiteRtStatusOk) {
+        delete intel_openvino_opts;
+        intel_openvino_opts = new IntelOpenVinoOptions(
+            IntelOpenVinoOptions::CreateFromOwnedHandle(raw_options));
+      }
+    }
+  }
+}
+
 }  // namespace
 
 LiteRtStatus CreateOpenVinoTensorBuffer(
@@ -117,25 +139,7 @@ LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
     LITERT_LOG(LITERT_INFO, "[Openvino]Found device plugin for: %s",
                device.c_str());
 
-  if (options) {
-    litert::internal::OptionsWrapper internal_options(
-        litert::internal::ContextWrapper(runtime_context), options);
-    auto opaque_options_result = internal_options.GetOpaqueOptions();
-    if (opaque_options_result) {
-      auto payload_data_result = opaque_options_result->FindOpaqueOptions(
-          LrtGetIntelOpenVinoOptionsIdentifier());
-      if (payload_data_result && payload_data_result.Value() != nullptr) {
-        LrtIntelOpenVinoOptions raw_options = nullptr;
-        if (LrtCreateIntelOpenVinoOptionsFromToml(
-                static_cast<const char*>(payload_data_result.Value()),
-                &raw_options) == kLiteRtStatusOk) {
-          delete intel_openvino_opts;
-          intel_openvino_opts = new IntelOpenVinoOptions(
-              IntelOpenVinoOptions::CreateFromOwnedHandle(raw_options));
-        }
-      }
-    }
-  }
+  ParseAndSetIntelOpenVinoOptions(runtime_context, options);
 
   return kLiteRtStatusOk;
 }
@@ -173,6 +177,7 @@ LiteRtStatus DispatchDeviceContextCreate(
     const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
     LiteRtDispatchDeviceContext* device_context) {
   try {
+    ParseAndSetIntelOpenVinoOptions(runtime_context, options);
     if (auto context = LiteRtDispatchDeviceContextT::Create(runtime_context);
         context) {
       *device_context = context->release();

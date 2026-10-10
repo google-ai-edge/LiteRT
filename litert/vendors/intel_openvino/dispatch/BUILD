@@ -239,6 +239,7 @@ cc_test(
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_options",
+        "//litert/cc/options:litert_intel_openvino_options",
         "//litert/core:filesystem_testonly",
         "//litert/test:common",
         "//litert/test:matchers",
