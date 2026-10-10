@@ -230,6 +230,7 @@ def litert_device_script(
         build_for_device = True,
         is_test = False,
         shard_count = None,
+        size = None,
         tags = []):
     """Generates a shell script and runfiles for executing a binary on a device.
 
@@ -253,6 +254,7 @@ def litert_device_script(
       build_for_device: If True, build the packaged deps for the device platform.
       is_test: If True, emit a sh_test instead of sh_binary.
       shard_count: Optional shard_count passed to sh_test when is_test is True.
+      size: Optional test size (e.g. "large") passed to sh_test when is_test is True.
       tags: Additional Bazel tags for the generated rules.
     """
 
@@ -317,6 +319,8 @@ def litert_device_script(
     script_kwargs = {}
     if is_test and shard_count != None:
         script_kwargs["shard_count"] = shard_count
+    if is_test and size != None:
+        script_kwargs["size"] = size
     script_rule(
         name = name,
         srcs = [script],

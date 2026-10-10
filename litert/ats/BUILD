@@ -433,7 +433,7 @@ litert_define_ats(
 # copybara:uncomment_begin(google-only)
 # litert_define_ats(
 #     name = "google_tensor_ats",
-#     aot_shard_count = 48,
+#     aot_shard_count = 50,
 #     backend = "google_tensor",
 #     compile_only_suffix = "_aot",
 #     dont_register = [
