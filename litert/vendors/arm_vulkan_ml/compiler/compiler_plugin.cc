@@ -13,12 +13,13 @@
 // limitations under the License.
 //
 // SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
-// <open-source-office@arm.com> SPDX-License-Identifier: Apache-2.0
-//
+// <open-source-office@arm.com>
+// SPDX-License-Identifier: Apache-2.0
 
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "litert/c/internal/litert_logging.h"
@@ -34,6 +35,8 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_arm_vulkan_ml_options.h"
 #include "litert/vendors/arm_vulkan_ml/capabilities.h"
+#include "litert/vendors/arm_vulkan_ml/common/graph_desc.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/jit/jit_compiler.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 
 namespace {
@@ -103,7 +106,10 @@ class LiteRtCompilerPluginT {
 
 struct LiteRtCompiledResultT {
   std::vector<std::vector<char>> byte_codes;
+  std::vector<std::unique_ptr<litert::arm_vulkan_ml::GraphDesc>>
+      jit_executables;
   std::vector<std::string> call_infos;
+  std::vector<size_t> call_executable_indices;
 };
 
 namespace {
@@ -206,27 +212,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   }
   LITERT_RETURN_IF_ERROR(EnsureJitMode(compiler_plugin));
 
-  litert::Subgraph graph(subgraph);
-  for (const auto& op : graph.Ops()) {
-    if (!litert::arm_vulkan_ml::IsSupportedOpCode(op.Code())) {
-      continue;
-    }
-
-    bool is_supported = true;
-    for (const auto& input : op.Inputs()) {
-      is_supported &=
-          litert::arm_vulkan_ml::IsSupportedType(input.ElementType());
-    }
-    for (const auto& output : op.Outputs()) {
-      is_supported &=
-          litert::arm_vulkan_ml::IsSupportedType(output.ElementType());
-    }
-
-    if (is_supported) {
-      LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
-    }
-  }
-  return kLiteRtStatusOk;
+  return litert::arm_vulkan_ml::jit::PartitionForJit(subgraph, selected_ops);
 }
 
 LiteRtStatus LiteRtCompilerPluginCompile(
@@ -238,7 +224,21 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   }
   LITERT_RETURN_IF_ERROR(EnsureJitMode(compiler_plugin));
 
+  LITERT_ASSIGN_OR_RETURN(auto compiled,
+                          litert::arm_vulkan_ml::jit::CompileJit(partitions));
+  if (compiled.call_infos.size() != compiled.call_executable_indices.size()) {
+    return kLiteRtStatusErrorCompilation;
+  }
+  for (size_t index : compiled.call_executable_indices) {
+    if (index >= compiled.jit_executables.size()) {
+      return kLiteRtStatusErrorCompilation;
+    }
+  }
   auto result = std::make_unique<LiteRtCompiledResultT>();
+  result->byte_codes = std::move(compiled.byte_codes);
+  result->jit_executables = std::move(compiled.jit_executables);
+  result->call_infos = std::move(compiled.call_infos);
+  result->call_executable_indices = std::move(compiled.call_executable_indices);
   *compiled_result = result.release();
   return kLiteRtStatusOk;
 }
@@ -280,7 +280,17 @@ LiteRtStatus LiteRtGetCompiledResultHandle(LiteRtCompiledResult compiled_result,
       static_cast<size_t>(call_idx) >= compiled_result->call_infos.size()) {
     return kLiteRtStatusErrorIndexOOB;
   }
-  *handle = nullptr;
+  if (static_cast<size_t>(call_idx) >=
+      compiled_result->call_executable_indices.size()) {
+    return kLiteRtStatusErrorIndexOOB;
+  }
+  const size_t index = compiled_result->call_executable_indices[call_idx];
+  if (index >= compiled_result->jit_executables.size() ||
+      compiled_result->jit_executables[index] == nullptr) {
+    return kLiteRtStatusErrorIndexOOB;
+  }
+  *handle = reinterpret_cast<LiteRtJitExecutable>(
+      compiled_result->jit_executables[index].get());
   return kLiteRtStatusOk;
 }
 
@@ -298,7 +308,11 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
   }
   *call_info = compiled_result->call_infos[call_idx].data();
   *call_info_size = compiled_result->call_infos[call_idx].size();
-  *byte_code_idx = 0;
+  if (static_cast<size_t>(call_idx) >=
+      compiled_result->call_executable_indices.size()) {
+    return kLiteRtStatusErrorIndexOOB;
+  }
+  *byte_code_idx = compiled_result->call_executable_indices[call_idx];
   return kLiteRtStatusOk;
 }
 

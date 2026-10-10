@@ -1,0 +1,187 @@
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+# <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+#
+# Native Bazel integration for Model Converter v0.11.0. Its VGF functions use
+# the existing LLVM FunctionOpInterface symbol support on LiteRT's LLVM pin.
+
+diff --git a/BUILD.bazel b/BUILD.bazel
+new file mode 100644
+index 0000000..d2f2d2a
+--- /dev/null
++++ b/BUILD.bazel
+@@ -0,0 +1,160 @@
++load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
++load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
++load("@rules_cc//cc:cc_library.bzl", "cc_library")
++
++package(default_visibility = ["//visibility:public"])
++
++exports_files(["patches/llvm.patch"])
++
++td_library(
++    name = "model_converter_pass_td_files",
++    srcs = ["src/include/passes.td"],
++    deps = ["@llvm-project//mlir:PassBaseTdFiles"],
++)
++
++gentbl_cc_library(
++    name = "model_converter_pass_inc_gen",
++    tbl_outs = {"passes.hpp.inc": ["-gen-pass-decls"]},
++    tblgen = "@llvm-project//mlir:mlir-tblgen",
++    td_file = "src/include/passes.td",
++    deps = [":model_converter_pass_td_files"],
++)
++
++td_library(
++    name = "vgf_td_files",
++    srcs = [
++        "src/vgf-dialect/VGFDialect.td",
++        "src/vgf-dialect/VGFEnums.td",
++        "src/vgf-dialect/VGFOps.td",
++    ],
++    includes = ["."],
++    deps = [
++        "@llvm-project//mlir:FunctionInterfacesTdFiles",
++        "@llvm-project//mlir:OpBaseTdFiles",
++        "@llvm-project//mlir:SideEffectInterfacesTdFiles",
++    ],
++)
++
++gentbl_cc_library(
++    name = "vgf_dialect_inc_gen",
++    tbl_outs = {
++        "VGFDialect.cpp.inc": ["-gen-dialect-defs", "--dialect=vgf"],
++        "VGFDialect.h.inc": ["-gen-dialect-decls", "--dialect=vgf"],
++    },
++    tblgen = "@llvm-project//mlir:mlir-tblgen",
++    td_file = "src/vgf-dialect/VGFDialect.td",
++    deps = [":vgf_td_files"],
++)
++
++gentbl_cc_library(
++    name = "vgf_ops_inc_gen",
++    tbl_outs = {
++        "VGFOps.cpp.inc": ["-gen-op-defs"],
++        "VGFOps.h.inc": ["-gen-op-decls"],
++    },
++    tblgen = "@llvm-project//mlir:mlir-tblgen",
++    td_file = "src/vgf-dialect/VGFOps.td",
++    deps = [":vgf_td_files"],
++)
++
++gentbl_cc_library(
++    name = "vgf_attributes_inc_gen",
++    tbl_outs = {
++        "VGFAttrs.cpp.inc": ["-gen-attrdef-defs", "-attrdefs-dialect=vgf"],
++        "VGFAttrs.h.inc": ["-gen-attrdef-decls", "-attrdefs-dialect=vgf"],
++        "VGFEnums.cpp.inc": ["-gen-enum-defs"],
++        "VGFEnums.h.inc": ["-gen-enum-decls"],
++    },
++    tblgen = "@llvm-project//mlir:mlir-tblgen",
++    td_file = "src/vgf-dialect/VGFEnums.td",
++    deps = [":vgf_td_files"],
++)
++
++cc_library(
++    name = "model_converter_passes",
++    srcs = [
++        "src/conversion/assign_grapharm_interface_var_abi.cpp",
++        "src/conversion/check_sparsity.cpp",
++        "src/conversion/dense_resource_inliner.cpp",
++        "src/conversion/model_partition_common.cpp",
++        "src/conversion/model_partition_marking.cpp",
++        "src/conversion/model_partitioning.cpp",
++        "src/conversion/resource_planner.cpp",
++        "src/conversion/serialize_vgf.cpp",
++        "src/conversion/signless_integer_marking.cpp",
++        "src/conversion/verify_shaped_tensors.cpp",
++        "src/conversion/vgf_constants.cpp",
++        "src/utils.cpp",
++        "src/vgf-dialect/VGFDialect.cpp",
++    ],
++    hdrs = glob(["src/**/*.hpp", "src/**/*.h"]),
++    defines = ["MODEL_CONVERTER_C_API"],
++    includes = ["src"],
++    deps = [
++        ":model_converter_pass_inc_gen",
++        ":vgf_attributes_inc_gen",
++        ":vgf_dialect_inc_gen",
++        ":vgf_ops_inc_gen",
++        "@ai_ml_sdk_vgf_library//:vgf",
++        "@flatbuffers//:runtime_cc",
++        "@llvm-project//llvm:Support",
++        "@llvm-project//mlir:ArithDialect",
++        "@llvm-project//mlir:FuncDialect",
++        "@llvm-project//mlir:FunctionInterfaces",
++        "@llvm-project//mlir:IR",
++        "@llvm-project//mlir:Pass",
++        "@llvm-project//mlir:SPIRVDialect",
++        "@llvm-project//mlir:SPIRVSerialization",
++        "@llvm-project//mlir:Support",
++        "@llvm-project//mlir:TensorDialect",
++        "@llvm-project//mlir:TosaDialect",
++        "@llvm-project//mlir:TosaToSPIRVTosa",
++        "@llvm-project//mlir:TransformUtils",
++        "@llvm-project//mlir:Transforms",
++    ],
++)
++
++cc_library(
++    name = "model_converter_driver",
++    srcs = ["src/compiler.cpp"],
++    hdrs = ["src/compiler.hpp"],
++    defines = ["MODEL_CONVERTER_C_API"],
++    includes = ["src"],
++    deps = [
++        ":model_converter_passes",
++        "@llvm-project//llvm:Support",
++        "@llvm-project//mlir:FuncDialect",
++        "@llvm-project//mlir:IR",
++        "@llvm-project//mlir:Parser",
++        "@llvm-project//mlir:Pass",
++        "@llvm-project//mlir:SPIRVDialect",
++        "@llvm-project//mlir:SPIRVTransforms",
++        "@llvm-project//mlir:TosaDialect",
++        "@llvm-project//mlir:Transforms",
++    ],
++)
++
++cc_library(
++    name = "model_converter_c_api_headers",
++    hdrs = ["include/model_converter/model_converter.h"],
++    includes = ["include"],
++)
++
++cc_binary(
++    name = "libmodel_converter.so",
++    srcs = ["src/model_converter_c_api.cpp"],
++    additional_linker_inputs = ["src/model_converter_c_api.lds"],
++    linkopts = [
++        "-Wl,-soname,libmodel_converter.so",
++        "-Wl,--version-script=$(location src/model_converter_c_api.lds)",
++        "-Wl,-Bsymbolic",
++        "-Wl,--no-undefined",
++        "-Wl,--strip-all",
++    ],
++    linkshared = True,
++    linkstatic = True,
++    deps = [
++        ":model_converter_c_api_headers",
++        ":model_converter_driver",
++    ],
++)
+diff --git a/src/compiler.cpp b/src/compiler.cpp
+index 2f89f71..9abece9 100644
+--- a/src/compiler.cpp
++++ b/src/compiler.cpp
+@@ -66,7 +66,8 @@ std::unique_ptr<Pass> createConfiguredTosaSerializeJSONPass(const std::string &f
+ #endif
+ std::unique_ptr<Pass> createConfiguredTosaToSPIRVTosaPass(bool analysis,
+                                                           const std::vector<std::string> &customOpDomainToOpcode) {
+-    auto pass = mlir::tosa::createTosaToSPIRVTosa(analysis);
++    (void)analysis;
++    auto pass = mlir::tosa::createTosaToSPIRVTosa();
+     if (customOpDomainToOpcode.empty()) {
+         return pass;
+     }

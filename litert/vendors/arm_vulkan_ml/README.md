@@ -154,14 +154,16 @@ Bazel downloads the integration's pinned source dependencies on demand. These
 archives are upstream releases; it is their use by the integration
 that is still under development.
 
-- [AI/ML SDK VGF Library v0.9.0](https://github.com/arm/ai-ml-sdk-vgf-library/tree/v0.9.0)
+- [AI/ML SDK VGF Library v0.11.0](https://github.com/arm/ai-ml-sdk-vgf-library/tree/v0.11.0)
   provides VGF decoding and parsing.
-- [TOSA for SPIR-V™ Codegen v2.0.0](https://github.com/arm/tosa-for-spirv-codegen/tree/v2.0.0)
-  provides TOSA to SPIR-V™ code generation.
-- [Khronos® Vulkan® Headers v1.4.349](https://github.com/KhronosGroup/Vulkan-Headers/tree/v1.4.349)
-  provides the required Vulkan® definitions.
-- [Khronos® SPIR-V™ Headers from Vulkan® SDK 1.4.328.0](https://github.com/KhronosGroup/SPIRV-Headers/tree/vulkan-sdk-1.4.328.0)
-  provides the required SPIR-V™ definitions.
+- [TOSA Converter for TFLite](https://gitlab.arm.com/tosa/tosa-converter-for-tflite)
+  lowers graph partitions to TOSA MLIR. The exact revision is pinned in the
+  Bazel workspace configuration.
+- [AI/ML SDK Model Converter](https://github.com/arm/ai-ml-sdk-model-converter)
+  converts TOSA MLIR into VGF. The exact revision is pinned in the Bazel
+  workspace configuration.
+- [Khronos&reg; Vulkan&reg; Headers v1.4.349](https://github.com/KhronosGroup/Vulkan-Headers/tree/v1.4.349)
+  provides the required Vulkan&reg; definitions.
 
 <!-- disableFinding(LINK_RELATIVE_G3DOC) -->
 The dependency declarations and checksums are in
