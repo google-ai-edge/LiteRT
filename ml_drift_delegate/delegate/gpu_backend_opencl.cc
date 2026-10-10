@@ -28,11 +28,11 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/cl/buffer.h"  // from @ml_drift
-#include "ml_drift/cl/cl_operation.h"  // from @ml_drift
 #include "ml_drift/cl/converter.h"  // from @ml_drift
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/inference_context.h"  // from @ml_drift
 #include "ml_drift/cl/memory_manager.h"  // from @ml_drift
+#include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #include "ml_drift/cl/tensor.h"  // from @ml_drift
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
@@ -43,6 +43,7 @@
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/profiling_info.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include <CL/cl.h>
 #ifdef ML_DRIFT_MEM_STATS
 #include "third_party/odml/infra/ml_drift_delegate/ml_drift_cl_benchmark_util.h"  // IWYU pragma: keep
 #endif
@@ -54,7 +55,6 @@
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_cl.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
-#include <CL/cl.h>
 #include "tflite/c/common.h"
 
 namespace litert::ml_drift {
@@ -233,8 +233,23 @@ absl::StatusOr<std::unique_ptr<GpuIOBuffer>>
 GpuBackendOpenCl::CreateIOBufferWithSize(::ml_drift::DataType data_type,
                                          size_t size, bool input) {
   ::ml_drift::cl::Buffer cl_buffer;
-  ABSL_RETURN_IF_ERROR(::ml_drift::cl::CreateReadWriteBuffer(
-      size, &env_->context(), &cl_buffer));
+  // PowerVR on Pixel 10 (b/376383693):
+  // Force CPU-cached allocation on output readback buffers to avoid 15.3ms
+  // stall.
+  if (!input && env_->GetDevicePtr()->GetInfo().IsPowerVR()) {
+    cl_int err = CL_SUCCESS;
+    cl_mem mem = ::ml_drift::cl::clCreateBuffer(
+        env_->context().context(), CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
+        size, nullptr, &err);
+    if (err != CL_SUCCESS) {
+      return absl::UnknownError(absl::StrCat(
+          "Failed to allocate device memory with clCreateBuffer: ", err));
+    }
+    cl_buffer = ::ml_drift::cl::Buffer(mem, size);  // takes ownership
+  } else {
+    ABSL_RETURN_IF_ERROR(::ml_drift::cl::CreateReadWriteBuffer(
+        size, &env_->context(), &cl_buffer));
+  }
   return std::make_unique<GpuIOBufferOpenCl>(env_, std::move(cl_buffer));
 }
 

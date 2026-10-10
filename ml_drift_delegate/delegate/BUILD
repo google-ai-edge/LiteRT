@@ -62,6 +62,7 @@ cc_library(
         "@ml_drift//ml_drift/cl:environment",
         "@ml_drift//ml_drift/cl:inference_context",
         "@ml_drift//ml_drift/cl:memory_manager",
+        "@ml_drift//ml_drift/cl:opencl_wrapper",
         "@ml_drift//ml_drift/cl:tensor",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_info",
