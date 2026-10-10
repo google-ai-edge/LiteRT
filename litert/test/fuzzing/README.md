@@ -240,44 +240,49 @@ and always reject `kHarnessFailure`.
 
 An **empty tensor** is a tensor with one or more dimensions where at least one
 dimension is zero (resulting in zero total elements). Handling of empty tensors
-differs fundamentally between hardware/graph delegates and built-in CPU kernels:
+across backends follows these rules:
 
-- **All delegates should reject empty tensors:** All TFLite delegates (such as
-  XNNPACK, GPU, or MLDrift) should reject graphs containing empty tensor shapes
-  that are statically known in the graph during delegate partitioning /
-  `Prepare`. Hardware runtimes, device drivers, and microkernels frequently
-  assume non-zero allocations, valid strides, or non-zero divisor dimensions;
-  delegating zero-element operations risks division-by-zero, invalid hardware
-  buffer bindings, or unrecoverable driver errors.
-- **Built-in CPU kernels may provide compatibility support:** Built-in CPU
-  reference and optimized kernels may provide partial or full support for empty
-  tensors where existing applications and production models rely on it. For
-  example, the batch size dimension of a Conv2D input tensor could be zero in
-  dynamic-batching or filtering pipelines. If a CPU kernel was already written
-  to handle such shapes gracefully, we should continue having that support to
-  avoid breaking compatibility with existing applications.
+- **Built-in CPU and XNNPACK backends allow empty tensor shapes:** The LiteRT
+  core runtime, built-in CPU kernels (reference and optimized), and the XNNPACK
+  delegate allow empty tensor shapes (`dims[i] == 0`) when the operator contract
+  supports them. For example, the batch size dimension of a `CONV_2D` input
+  tensor may be zero in dynamic-batching or filtering pipelines, or an initial
+  past-KV cache input to `CONCATENATION` may have a zero sequence dimension
+  during batched prefill. The XNNPACK delegate binds a dummy non-null pointer
+  (`&dummy_data_`) for zero-byte external values and skips zero-element operator
+  executions at runtime. However, support can still depend on the specific
+  operand and dimension (for example, `CONV_2D` allows an empty input tensor
+  batch dimension while still requiring a non-empty filter tensor and non-zero
+  channel counts).
+- **Other hardware delegates (e.g., GPU / MLDrift) may reject empty tensors:**
+  Hardware runtimes, device drivers, and shader microkernels frequently assume
+  non-zero buffer allocations, valid strides, or non-zero divisor dimensions;
+  such delegates should cleanly reject graphs containing unsupported empty
+  tensor shapes during delegate partitioning, `Prepare`, or `Invoke`.
 
 ### Implications for fuzzing tests
 
 Fuzz testing in this directory must be constructed according to these rules:
 
-1. **Delegate fuzz properties must expect rejection:** When testing
-   delegate-enabled targets (e.g., `*_xnnpack_fuzz_test`), any static graph
-   containing an empty tensor shape must be treated as an unsupported/malformed
-   configuration and verified to cleanly yield `RunResult::kRejected`.
-2. **Built-in CPU fuzz properties must test compatibility without regressions:**
-   - Where an operator contract or existing CPU implementation supports empty
-     tensors (e.g., a batch dimension of zero), valid fuzz domains should
-     include zero dimensions to verify that execution succeeds
+1. **Built-in CPU and XNNPACK fuzz properties must test empty-shape support and
+   rejection boundaries:**
+   - Where an operator contract supports empty tensors (e.g., a batch or data
+     dimension of zero), valid fuzz domains for built-in CPU and XNNPACK targets
+     should include zero dimensions to verify that execution succeeds
      (`RunResult::kSuccess`), allocates without memory leaks, and completes
      cleanly.
-   - If an operator does not support empty tensors along specific non-batch
-     dimensions (e.g., filter spatial dimensions or channel counts of zero),
-     the kernel must reject them cleanly (`RunResult::kRejected`) during
-     `Prepare` or `Invoke`.
-   - In all cases, zero-element tensors must **never** cause undefined
-     behavior, integer division by zero in stride/offset calculations,
-     undersized buffer allocations, memory safety violations, or crashes.
+   - If an operator does not support empty tensors along specific operands or
+     dimensions (e.g., filter spatial dimensions, divisor dimensions, or channel
+     counts of zero), the verifier, delegate, or kernel must reject them cleanly
+     (`RunResult::kRejected`).
+2. **Other hardware delegates (e.g., MLDrift) that do not support empty
+   tensors must reject them cleanly:** Any unsupported empty tensor shape must
+   cleanly yield `RunResult::kRejected`.
+3. **No memory-safety or arithmetic failures on zero-element tensors:** In all
+   backends, zero-element tensors must **never** cause undefined behavior,
+   integer division by zero in stride/offset calculations, null-pointer
+   dereferences, undersized buffer allocations, memory safety violations, or
+   crashes.
 
 ## Designing a per-operator fuzzer
 
@@ -507,8 +512,9 @@ Before submitting a new per-op fuzzer, verify that:
 - 32-bit overflow and checked-narrowing boundaries are represented;
 - model, constant, and runtime buffers satisfy alignment and representation
   requirements;
-- empty tensor (zero-element) handling conforms to the delegate-rejection and
-  CPU backward-compatibility contracts;
+- empty tensor (zero-element) handling conforms to the CPU and XNNPACK support
+  and per-operand rejection contracts (and hardware-delegate rejection where
+  applicable);
 - relevant reference, optimized, multithreaded, and delegate (e.g.,
   XNNPACK, MLDrift) paths are observable and covered;
 - smoke tests prove that intended deep paths are reached;

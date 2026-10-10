@@ -42,12 +42,12 @@ mitigations worked.
 This threat model applies to TFLite CPU runtime code that WebNN can reach
 through LiteRT's
 [CompiledModel API](https://developers.google.com/edge/litert/next/cpp). WebNN
-builds a TFLite FlatBuffer for the requested graph, runs TFLite’s model
-verifier, then passes that buffer to `litert::CompiledModel::Create(...)`. Once
-a model has passed the verifier, it should not cause any crash or undefined
-behavior later. TFLite converter, developer tools(such as benchmark tool,
-numeric debugger, etc), samples and demos are not in scope of this security
-document.
+builds a TFLite FlatBuffer for the requested graph, runs the LiteRT model
+verifier (`litert::Verify(...)`), then passes that buffer to
+`litert::CompiledModel::Create(...)`. Once a model has passed the verifier, it
+should not cause any crash or undefined behavior later. TFLite converter,
+developer tools(such as benchmark tool, numeric debugger, etc), samples and
+demos are not in scope of this security document.
 
 The WebNN graph builder is the source of the reachable operator, data type,
 layout, and CPU execution surface. The TFLite/LiteRT security-relevant runtime
@@ -59,8 +59,13 @@ For this WebNN path, relevant code includes:
     Options&)` in `litert/cc/litert_compiled_model.h`;
 *   the runtime model loading and compilation called from that API, including
     `CreateModelFromBuffer` and `CreateCompiledModel`;
-*   TFLite FlatBuffer and model verification through `tflite::Verify(...)`,
-    implemented by `tflite/core/tools/verifier.cc`;
+*   LiteRT model verification through `litert::Verify(...)` and
+    `litert::LiteRtVerifier` in `litert/core/model/verifier.h` and
+    `litert/core/model/verifier.cc`, which combines TFLite FlatBuffer
+    verification (`tflite::Verify(...)` in `tflite/core/tools/verifier.cc`) with
+    tensor rank/dimension validation and per-op shape and type inference
+    validation (`ShapeInferenceEngine` in
+    `litert/core/model/shape_inference.h`);
 *   TFLite interpreter, subgraph, tensor allocation, and tensor resizing code
     that is reachable while preparing or invoking WebNN-supported operators;
 *   WebNN-reachable TFLite operator kernels in `tflite/kernels/`;
@@ -87,7 +92,8 @@ vulnerabilities should be addressed at a higher level with a sandbox mechanism
 such as chroot, docker container or SELinux.
 
 Any application that needs to load models from an untrusted source should use
-the TFLite verifier, or implement the equivalent checks on their own.
+the LiteRT verifier (`litert::Verify(...)`), or implement the equivalent checks
+on their own.
 
 ### System model and data flow
 
@@ -102,7 +108,7 @@ flowchart TD
     %% Node Definitions
     WinML["WinML"]
     CoreML["CoreML"]
-    LiteRT_VERIFIER["Model Verifier"]
+    LiteRT_VERIFIER["LiteRT Model Verifier"]
     LiteRT["LiteRT"]
 
     LiteRT_CPU["CPU"]
@@ -132,7 +138,7 @@ flowchart TD
 N_WebContent["Less-trusted web content"]
 N_GraphConstruction["WebNN graph construction and validation"]
 N_Lowering["WebNN-to-TFLite lowering"]
-N_Verification["TFLite FlatBuffer verification / global ingress checks"]
+N_Verification["LiteRT model verification / shape inference / global ingress checks"]
 N_CreateModel["litert::CompiledModel::Create#40;...#41;"]
 N_InterpreterPrep["Interpreter preparation / tensor allocation / XNNPACK delegate setup"]
 N_RunModel["CompiledModel::Run#40;...#41; with validated TensorBuffers"]
@@ -152,13 +158,20 @@ including any required helper operators, layout conversions, activation fusions,
 quantization fusions, and external weight sections. Security checks are
 performed in various places at different layers. For example, the WebNN to
 TFLite lowering checks if the tensor dimensions and ranks are too large. The
-TFLite model verifier does global verifications that are backend independent
-based on the TFLite IR. For example, the requested output shape for a Reshape
-operator may contain at most one \-1 dimension(every other dimension must be
-non-negative). Then, in each TFLite delegate the op kernels still need to have
-their security checks that cannot be covered by the upper layers. For example,
-if the requested shape for a Reshape operator is a dynamic tensor which cannot
-be checked at model loading time, then the op kernel needs to handle this.
+LiteRT model verifier (`litert::Verify`) does global and per-op verifications
+that are backend independent based on the TFLite and LiteRT IR, including
+FlatBuffer verification and static shape inference (`ShapeInferenceEngine`). For
+example, the requested output shape for a `Reshape` operator may contain at most
+one \-1 dimension(every other dimension must be non-negative), and a `SLICE`
+operator's `begin` and `size` index tensors must have matching types and valid
+bounds. If a sanitization check can be done in the graph verifier(including
+shape inference), it should be done there instead of in each TFLite delegate or
+kernel. Then, in each TFLite delegate and op kernel, we only need to keep the
+security checks that cannot be covered by the upper layers(such as checks on
+dynamic shapes or runtime tensor values, or backend-specific limits). For
+example, if the requested shape for a `Reshape` operator is a dynamic tensor
+which cannot be checked at model loading time, then the op kernel or delegate
+runtime needs to handle this.
 
 Additionally, with all the security checks in place, Chrome(and all Chromium
 based browsers) still need to put the LiteRT engine in a sandbox. For example,
@@ -176,7 +189,8 @@ can affect shape, allocation, indexing, offsets, loop bounds, or control flow.
 The main entry points are:
 
 *   WebNN graph validation and lowering into a TFLite FlatBuffer;
-*   TFLite FlatBuffer verification and model loading;
+*   LiteRT model verification (`litert::Verify(...)`, including FlatBuffer
+    verification and shape inference) and model loading;
 *   LiteRT `CompiledModel` creation and interpreter preparation;
 *   tensor binding before `CompiledModel::Run(...)`;
 *   CPU kernel execution through reference kernels, optimized kernels, and the
@@ -211,8 +225,8 @@ In the default trusted-model deployment model, that generator is part of the
 trusted computing base and is expected to produce a well-formed TFLite model.
 When it is not the case, the model generator is responsible for ensuring that
 every TFLite model passes an explicit ingress validation step immediately before
-litert::CompiledModel::Create(...). After validation, the LiteRT runtime and its
-delegates should keep the model metadata and external data immutable for the
+`litert::CompiledModel::Create(...)`. After validation, the LiteRT runtime and
+its delegates should keep the model metadata and external data immutable for the
 lifetime in which the verifier's result is relied upon, or it should keep
 validating the invariants. For example, XNNPack may do graph transformations
 during model loading, it would be XNNPack’s responsibility to ensure that these
@@ -220,59 +234,77 @@ transformations are safe when the input graph is safe.
 
 The required invariants include:
 
-*   the FlatBuffer and model checks covered by `tflite::Verify(const void* buf,
-    size_t len, ErrorReporter* error_reporter)`, implemented in
-    `tflite/core/tools/verifier.cc`;
-*   Application specific operator type inference and compatibility checks;
+*   the FlatBuffer, model, tensor rank/dimension, and per-op shape/type
+    inference checks covered by `litert::Verify(const void* buf, size_t len,
+    tflite::ErrorReporter* reporter, const litert::VerifyOptions& options)`,
+    implemented in `litert/core/model/verifier.cc` (which wraps
+    `tflite::Verify(...)` in `tflite/core/tools/verifier.cc` and
+    `ShapeInferenceEngine` in `litert/core/model/shape_inference.cc`);
+*   Application specific operator type inference and compatibility checks not
+    already enforced by `litert::Verify`;
 *   Application specific rank, layout, data type, quantization, constant-buffer,
     external-weight, and helper-operator constraints. For example, the rank of
-    each tensor shape is \<=6.
+    each tensor shape is \<=6, which can be configured via
+    `litert::VerifyOptions::max_rank`.
 
-The tflite::Verify() function should do overflow-safe validation of every model
-field that identifies data stored outside the FlatBuffer. In particular, the
-verifier must reject a Buffer.offset and Buffer.size range, or a
-large\_custom\_options\_offset and large\_custom\_options\_size range, unless
-the entire range is contained in the model allocation. Since these validations
-are not needed for most TFLite use cases that only load trusted models, the
-validations should be done in the TFLite model verifier instead of the core
-CompiledModel API and Interpreter API.
+The `litert::Verify()` function (via `tflite::Verify()`) should do overflow-safe
+validation of every model field that identifies data stored outside the
+FlatBuffer. In particular, the verifier must reject a `Buffer.offset` and
+`Buffer.size` range, or a `large_custom_options_offset` and
+`large_custom_options_size` range, unless the entire range is contained in the
+model allocation. Since these validations are not needed for most TFLite use
+cases that only load trusted models, the validations should be done in the
+model verifier instead of the core `CompiledModel` API and `Interpreter` API.
 
-We assume the output tensor types of each TFLite node in a model graph are
-valid. Today tflite::Verify() does not do type inference check, which is
-expected to be done during WebNN to TFLite lowering.
-
-We assume that the ranks of all tensor shapes are known at model loading time.
-Currently tflite::Verify() does not do tensor rank check. Since LiteRT’s GPU
-backend only supports rank \<=5, it is recommended to carry out this validation
-during the WebNN to TFLite lowering process.
+`litert::Verify()` also validates that all tensor shape ranks are known at model
+loading time (`VerifyOptions::require_all_tensor_shape_ranks_known = true` by
+default), enforces a configurable maximum tensor rank
+(`VerifyOptions::max_rank`, defaulting to `LITERT_TENSOR_MAX_RANK`), and runs
+`ShapeInferenceEngine` per-op validation across all subgraphs. Untrusted-model
+integrations such as WebNN should also require all operators in the graph to
+have registered shape inferrers
+(`VerifyOptions::require_supported_op_shape_inferrers = true`) so that
+unimplemented shape inferrers cannot silently downgrade downstream static graph
+verification into dynamic shapes. For backends with stricter rank limits (for
+example, LiteRT’s GPU backend only supports rank \<=5), callers can configure
+`VerifyOptions::max_rank` or validate the rank limit during the WebNN to TFLite
+lowering process. Any operator type constraints not yet checked by
+`ShapeInferenceEngine` are also expected to be validated during WebNN to TFLite
+lowering or added to the verifier's per-op shape inferrers.
 
 Therefore, The security responsibility is divided by where an invariant can be
 established:
 
 *   The WebNN integration must invoke the required ingress validation and
     prevent the model allocation from being modified afterward.
-*   tflite::Verify(...) must validate FlatBuffer integrity, schema version,
-    basic graph consistency, tensor validity, and every static model-wide
-    invariant that can be established from the serialized model and the complete
-    allocation size. This includes all external-data ranges. It should also
-    cover op-specific checks that are not backend specific. For example, in a
-    grouped convolution, both the number of input channels and the number of
-    output channels must be exactly divisible by the number of groups.
-    tflite::Verify(...) should do this check if the tensor shapes are statically
-    known.
-*   Framework and kernel code must validate op-specific relationships, derived
-    shapes and allocation sizes, dynamic shapes, runtime parameter values, and
-    other invariants that cannot be established by the global verifier.
+*   `litert::Verify(...)` must validate FlatBuffer integrity, schema version,
+    basic graph consistency, tensor rank and dimension validity, external-data
+    ranges, and every static model-wide or per-op invariant that can be
+    established from the serialized model, its shape inference pass, and the
+    complete allocation size. It should cover op-specific checks that are not
+    backend specific. For example, in a grouped convolution, both the number of
+    input channels and the number of output channels must be exactly divisible
+    by the number of groups; `litert::Verify(...)` should do this check during
+    shape inference if the tensor shapes are statically known. In general, if a
+    sanitization check can be done in the graph verifier(including shape
+    inference), it should be done there instead of in each TFLite delegate.
+*   Framework, delegate, and kernel code must validate dynamic shapes, runtime
+    parameter values, derived workspace and allocation sizes, and
+    backend-specific invariants that cannot be established by the graph
+    verifier.
 
 Code consuming a successfully verified, immutable model may rely on the static
-model-wide invariants guaranteed by the verifier and does not need to duplicate
-those checks at each point of use. An API that constructs an interpreter from an
-unverified model is outside the untrusted-model security boundary unless it
-performs equivalent ingress validation itself.
+model-wide and per-op invariants guaranteed by the verifier and does not need to
+duplicate those checks at each point of use or in each TFLite delegate. An API
+that constructs an interpreter from an unverified model is outside the
+untrusted-model security boundary unless it performs equivalent ingress
+validation itself.
 
-The WebNN-specific type-inference check is part of the intended design, but it
-may not be fully implemented yet. For example, the intended ingress validation
-should reject a TFLite CUMSUM node configured with input type \==
+While `litert::Verify(...)` already enforces per-op shape and parameter type
+constraints in supported shape inferrers (such as rejecting mismatched `begin`
+and `size` index types in `SLICE`), complete type-inference checks across all
+operators may not be fully implemented yet. For example, the intended ingress
+validation should reject a TFLite CUMSUM node configured with input type \==
 TENSORTYPE\_INT64 and output type \== TENSORTYPE\_INT8. The detailed type
 constraint rules should be specified in TFLite’s MLIR document(in the
 tfl\_ops.td file).
@@ -297,19 +329,25 @@ establish:
     tensor counts. The current Chromium TFLite WebNN integration limits
     untrusted WebNN-originated tensors to rank 8 or lower, with many operators
     imposing stricter per-op rank limits;
-*   per-operator zero-dimension constraints. Zero-size tensors are allowed when
-    the corresponding TFLite operator contract supports them, but support can
-    differ by operand. For example, `CONV_2D` may allow an empty input tensor
-    while still requiring a non-empty filter tensor. Unsupported zero-size
-    operands must be rejected before loading or execution. The official TFLite
-    MLIR op definitions should document which operands may be empty or optional;
+*   per-operator zero-dimension constraints. Empty shapes (tensor shapes where
+    at least one dimension is zero, yielding zero elements) are allowed in the
+    LiteRT core runtime, the built-in CPU backend, and the XNNPACK backend when
+    the corresponding operator contract supports them, but support can differ by
+    operand and dimension. For example, `CONCATENATION` (such as concatenating
+    an empty initial past-KV tensor with a non-empty new-KV tensor during
+    batched prefill) or `CONV_2D` on an empty batch/input tensor may allow an
+    empty input tensor while `CONV_2D` still requires a non-empty filter tensor.
+    Unsupported zero-size operands must be rejected before loading or execution.
+    The official TFLite MLIR op definitions should document which operands may
+    be empty or optional;
 *   valid constant buffers, external weight sections, quantization metadata, and
     helper operators used by WebNN lowering;
 *   immutability and lifetime guarantees for data treated as constant by LiteRT
     or XNNPACK. Constants must be copied, transferred, snapshotted, or otherwise
     made stable for the compiled graph lifetime;
-*   TFLite structural invariants at least as strong as `tflite::Verify(...)`, or
-    an explicit verifier call before loading.
+*   LiteRT structural and per-op shape/type invariants at least as strong as
+    `litert::Verify(...)`, or an explicit `litert::Verify(...)` call before
+    loading.
 
 During WebNN dispatch, before calling `CompiledModel::Run(...)`, the WebNN
 integration must validate the actual tensor bindings against the graph
@@ -333,8 +371,8 @@ accountable for validating op-specific, derived, dynamic, and execution-time
 invariants that cannot be established during ingress validation. Invariants
 provided during WebNN build and dispatch do not allow kernel code to execute
 unchecked arithmetic on these parameters. On the other hand, for immutable
-models, the runtime can depend on the static, serialized invariants already
-verified by the mandatory verifier.
+models, the runtime and delegates can depend on the static, serialized, and
+shape-inferred invariants already verified by the mandatory LiteRT verifier.
 
 ### Out of scope
 
@@ -465,18 +503,20 @@ TFLITE\_NO\_SANITIZE\_INTEGER\_OVERFLOW). A sanitizer finding in tensor-value
 arithmetic should be triaged as correctness or sanitizer-noise unless the value
 can influence memory access, allocation, loop bounds, or control flow.
 
-For statically shaped graphs, the global verifier can check tensor ranks,
-dimensions, element counts, and byte lengths once at model ingress. Per-op
-kernels should not duplicate those exact checks when they consume
-already-validated tensor metadata. Add a duplicate per-op check only when a
-fuzzing test or unit test demonstrates that the global verifier does not cover
-that path. Per-op or shared runtime checks are still required for dynamic
-shapes, shape tensors, output shapes computed by an op, and any intermediate
+For statically shaped graphs, the global LiteRT verifier (`litert::Verify`,
+including `ShapeInferenceEngine`) can check tensor ranks, dimensions, element
+counts, byte lengths, and per-op shape and constant-parameter constraints once
+at model ingress. If a sanitization check can be performed in the graph verifier
+(including shape inference), it must be done there instead of being duplicated
+across individual TFLite delegates or per-op kernels. Add a duplicate per-op or
+delegate check only when a fuzzing test or unit test demonstrates that the
+global verifier cannot cover that path (for example, dynamic shapes, runtime
+shape/parameter tensors, backend-specific capability limits, or intermediate
 arithmetic that transforms validated metadata into new allocation, indexing, or
-loop-bound values.
+loop-bound values).
 
 Fuzzers that test this boundary may generate TFLite models directly and use
-`tflite::Verify(...)` as the reference implementation for the model-level global
+`litert::Verify(...)` as the reference implementation for the model-level global
 checks; they do not need to go through the converter or WebNN lowering path.
 
 ## What can go wrong?
@@ -729,11 +769,15 @@ receive pointers and bounds.
 
 #### Zero-element tensors and null data pointers
 
-TFLite permits tensors with a zero dimension. Their total byte count is zero,
-and a zero-sized arena allocation may resolve to a null data pointer. This is
-valid as long as no element is read or written. Rejecting every null pointer
-would therefore reject valid zero-element graphs, while dereferencing every
-tensor pointer unconditionally would be unsafe.
+LiteRT, the built-in CPU backend, and the XNNPACK backend permit empty tensor
+shapes (shapes where at least one dimension is `0`, such as an empty past-KV
+cache tensor in `CONCATENATION` during batched prefill). Their total byte count
+is zero; a zero-sized arena allocation may resolve to a null data pointer, and
+the XNNPACK delegate binds a dummy non-null pointer (`&dummy_data_`) for
+zero-byte external values while skipping zero-element runtime executions. This
+is valid as long as no element is read or written. Rejecting every empty shape
+or null pointer would therefore reject valid zero-element graphs, while
+dereferencing every tensor pointer unconditionally would be unsafe.
 
 Padding makes the distinction especially important. An empty one-dimensional
 input can receive positive padding on both sides and produce a non-empty output
@@ -799,7 +843,11 @@ Kernel hardening changes should follow these rules:
 
 *   Validate ranks, dimensions, axes, quantization parameters, and data pointer
     availability before loops that consume them, unless these invariants can be
-    assured by TFLite model verifier at model loading time.
+    assured by the LiteRT model verifier (`litert::Verify`, including
+    `ShapeInferenceEngine`) at model loading time.
+*   If a sanitization check can be performed in the graph verifier (including
+    shape inference), implement it there instead of duplicating it in each
+    TFLite delegate or kernel.
 *   Use existing checked helpers before adding new helpers. Prefer
     `CheckedNumElements`, `CheckedInt`, and safe integer helpers from
     `kernel_util.h` where they fit the operation.
@@ -812,11 +860,13 @@ Kernel hardening changes should follow these rules:
     `int`, then use checked narrowing only at APIs that require `int`.
 *   Use checked arithmetic for every product or sum that contributes to shape,
     allocation, index, offset, stride, or loop-bound values.
-*   Keep zero-element tensors explicit. A null data pointer is acceptable only
-    when no element is accessed.
+*   Keep zero-element tensors explicit across both the built-in CPU backend and
+    the XNNPACK backend. A null data pointer is acceptable only when no element
+    is accessed.
 *   Keep 32-bit behavior explicit. Avoid disabling a test for 32-bit only.
 *   Avoid divergent validation between reference, optimized, and XNNPACK CPU
-    paths. Shared validation belongs in shared helpers when possible.
+    paths. Shared static validation belongs in the LiteRT graph verifier, and
+    shared runtime validation belongs in shared helpers when possible.
 
 ### Unit test requirements
 

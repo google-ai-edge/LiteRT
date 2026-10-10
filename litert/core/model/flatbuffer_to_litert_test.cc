@@ -172,5 +172,34 @@ TEST(FlatbufferToLiteRtTest, MapPerChannelQuantization) {
   EXPECT_EQ(q->second.per_channel.num_channels, kRank);
 }
 
+TEST(FlatbufferToLiteRtTest,
+     MapQuantizationRejectsMissingOrMismatchedZeroPoint) {
+  // Single scale with missing zero_point must not crash in per-tensor branch.
+  {
+    flatbuffers::FlatBufferBuilder fbb;
+    auto scales_fb = fbb.CreateVector(std::vector<float>{1.0f});
+    tflite::QuantizationParametersBuilder qpb(fbb);
+    qpb.add_scale(scales_fb);
+    fbb.Finish(qpb.Finish());
+    const auto* tfl_q = flatbuffers::GetRoot<tflite::QuantizationParameters>(
+        fbb.GetBufferPointer());
+    EXPECT_FALSE(MapQuantization(tfl_q));
+  }
+
+  // Single scale with empty zero_point vector must be rejected.
+  {
+    flatbuffers::FlatBufferBuilder fbb;
+    auto scales_fb = fbb.CreateVector(std::vector<float>{1.0f});
+    auto zero_points_fb = fbb.CreateVector(std::vector<int64_t>{});
+    tflite::QuantizationParametersBuilder qpb(fbb);
+    qpb.add_scale(scales_fb);
+    qpb.add_zero_point(zero_points_fb);
+    fbb.Finish(qpb.Finish());
+    const auto* tfl_q = flatbuffers::GetRoot<tflite::QuantizationParameters>(
+        fbb.GetBufferPointer());
+    EXPECT_FALSE(MapQuantization(tfl_q));
+  }
+}
+
 }  // namespace
 }  // namespace litert::internal
