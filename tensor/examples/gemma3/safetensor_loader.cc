@@ -478,6 +478,13 @@ absl::StatusOr<SafetensorTensorInfo> SafetensorLoader::GetTensorInfo(
 
 absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
     const std::string& name, QuantizedLoadMode quantized_load_mode) const {
+  return LoadTensor(name, quantized_load_mode,
+                    LayerNormWeightMode::kZeroCentered);
+}
+
+absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
+    const std::string& name, QuantizedLoadMode quantized_load_mode,
+    LayerNormWeightMode layer_norm_weight_mode) const {
   ABSL_LOG(INFO) << "Loading tensor " << name;
   LRT_TENSOR_ASSIGN_OR_RETURN(SafetensorTensorInfo info, GetTensorInfo(name));
   LRT_TENSOR_ASSIGN_OR_RETURN(Type type, DtypeToType(info.dtype));
@@ -502,8 +509,10 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
         tensor_info_it->second, tensor_info_it->second.storage->data_base);
   };
 
-  const bool is_layernorm = absl::StrContains(name, "layernorm") ||
-                            absl::EndsWith(name, "norm.weight");
+  const bool is_layernorm =
+      layer_norm_weight_mode == LayerNormWeightMode::kZeroCentered &&
+      (absl::StrContains(name, "layernorm") ||
+       absl::EndsWith(name, "norm.weight"));
 
   const std::byte* data_ptr = storage.data_base + info.data_start;
   size_t data_size = info.data_end - info.data_start;
