@@ -57,6 +57,7 @@ package(
     default_visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_c_users",
+        # "//third_party/ai_edge_gallery:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
