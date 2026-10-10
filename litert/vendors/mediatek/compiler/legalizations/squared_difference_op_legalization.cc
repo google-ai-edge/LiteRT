@@ -41,7 +41,7 @@ Expected<void> LegalizeSquaredDifferenceOp(
   }
 
   const char* custom_name = "MTKEXT_SQUARED_DIFFERENCE";
-  NeuronOperationType nn_op_type;
+  int32_t nn_op_type = 0;
   auto custom_name_operand_index =
       operand_map.AddOemExtensionOperand(custom_name, &nn_op_type);
   if (!custom_name_operand_index) {

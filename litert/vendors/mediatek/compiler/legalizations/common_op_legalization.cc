@@ -80,7 +80,7 @@ bool VerifyCommonOp(const litert::compiler::Op& op, LiteRtOpCode op_code,
 Expected<void> LegalizeCommonOp(const NeuronAdapterApi& neuron_adapter_api,
                                 NeuronModel* model, OperandMap& operand_map,
                                 const litert::compiler::Op& op,
-                                NeuronOperationType mtk_operation_type) {
+                                int32_t mtk_operation_type) {
   LITERT_LOG(LITERT_INFO, "Legalize Op: %d", mtk_operation_type);
   std::vector<uint32_t> input_indices;
   int32_t tensor_flags = 0;

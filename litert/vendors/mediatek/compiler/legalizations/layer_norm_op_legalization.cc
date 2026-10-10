@@ -119,8 +119,8 @@ Expected<void> LegalizeLayerNormOp(const NeuronAdapterApi& neuron_adapter_api,
 
   const char* custom_name = "MTKEXT_LAYER_NORMALIZATION";
   int32_t raw_op_type = 0;
-  auto custom_name_operand_index = operand_map.AddOemExtensionOperand(
-      custom_name, reinterpret_cast<NeuronOperationType*>(&raw_op_type));
+  auto custom_name_operand_index =
+      operand_map.AddOemExtensionOperand(custom_name, &raw_op_type);
   if (!custom_name_operand_index) {
     return custom_name_operand_index.Error();
   }
