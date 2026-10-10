@@ -334,7 +334,7 @@ LiteRtStatus ConvertTensor(const litert::compiler::Tensor& litert_tensor,
         SanitizeName(litert_tensor.Name()), qnn_data_type, quantize_params,
         dimensions);
     tensor_wrapper = &res;
-  } else if (litert_tensor.Uses().empty() || is_tensor_output) {
+  } else if (is_tensor_output) {
     auto& res = tensor_pool.CreateOutputTensorWithName(
         SanitizeName(litert_tensor.Name()), qnn_data_type, quantize_params,
         dimensions);
