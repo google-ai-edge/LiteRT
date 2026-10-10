@@ -1368,6 +1368,7 @@ cc_test(
         "//litert/experimental/custom_ops/gated_delta_net:gated_delta_update_tflite_op",
         "//tflite/c:common",
         "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ] + litert_gpu_accelerator_deps(),
 )

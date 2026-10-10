@@ -67,7 +67,7 @@ TfLiteRegistration* GetTrilInvRegistration() {
 // ============================================================================
 
 TfLiteStatus PrepareGatedDeltaUpdate(TfLiteContext* context, TfLiteNode* node) {
-  TF_LITE_ENSURE_EQ(context, node->inputs->size, 6);
+  TF_LITE_ENSURE(context, node->inputs->size == 6 || node->inputs->size == 7);
   TF_LITE_ENSURE_EQ(context, node->outputs->size, 2);
   const TfLiteTensor* q_t = tflite::GetInput(context, node, 0);
   const TfLiteTensor* k_t = tflite::GetInput(context, node, 1);
@@ -80,6 +80,11 @@ TfLiteStatus PrepareGatedDeltaUpdate(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_EQ(context, k_t->type, kTfLiteFloat32);
   TF_LITE_ENSURE_EQ(context, v_t->type, kTfLiteFloat32);
   TF_LITE_ENSURE_EQ(context, rec_state->type, kTfLiteFloat32);
+  if (node->inputs->size == 7) {
+    const TfLiteTensor* valid_len = tflite::GetInput(context, node, 6);
+    TF_LITE_ENSURE(context, valid_len->type == kTfLiteInt32 ||
+                                valid_len->type == kTfLiteFloat32);
+  }
 
   TfLiteIntArray* out_shape0 = TfLiteIntArrayCopy(v_t->dims);
   TF_LITE_ENSURE_OK(context,
@@ -110,11 +115,27 @@ TfLiteStatus EvalGatedDeltaUpdate(TfLiteContext* context, TfLiteNode* node) {
   const int D_k = q_t->dims->data[3];
   const int D_v = v_t->dims->data[3];
 
+  std::vector<int> valid_len_vec;
+  const int* valid_len_ptr = nullptr;
+  if (node->inputs->size == 7) {
+    const TfLiteTensor* valid_len_tensor = tflite::GetInput(context, node, 6);
+    const int num_elems = tflite::GetTensorShape(valid_len_tensor).FlatSize();
+    TF_LITE_ENSURE(context, num_elems == 1 || num_elems >= B);
+    valid_len_vec.resize(B);
+    for (int b = 0; b < B; ++b) {
+      const int idx = (num_elems == 1) ? 0 : b;
+      valid_len_vec[b] = (valid_len_tensor->type == kTfLiteInt32)
+                             ? valid_len_tensor->data.i32[idx]
+                             : static_cast<int>(valid_len_tensor->data.f[idx]);
+    }
+    valid_len_ptr = valid_len_vec.data();
+  }
+
   // Dispatch to only recurrent implementation for now
   ::litert::gated_delta_net::ComputeGatedDeltaUpdateRecurrent(
       q_t->data.f, k_t->data.f, v_t->data.f, beta_t->data.f, g_t->data.f,
       rec_state->data.f, core_out->data.f, new_rec->data.f, B, H, N, D_k, D_v,
-      H_k);
+      H_k, valid_len_ptr);
   return kTfLiteOk;
 }
 
