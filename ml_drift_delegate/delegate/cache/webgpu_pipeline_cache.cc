@@ -126,8 +126,7 @@ bool WebGpuPipelineCache::Store(uint64_t key, absl::Span<const uint8_t> data) {
   }
 
   old_cache_.erase(key);
-  new_cache_[key] =
-      std::vector<uint8_t>(data.data(), data.data() + data.size());
+  new_cache_[key] = std::vector<uint8_t>(data.begin(), data.end());
   return true;
 }
 
