@@ -403,6 +403,22 @@ Expected<void> FillInputBuffersWithCustomData(
     std::vector<TensorBuffer>& input_buffers, absl::string_view input_dir,
     bool quantize_inputs = false);
 
+// Fills one input buffer from a raw file.
+Expected<void> FillSingleInputBufferFromFile(
+    const CompiledModel& compiled_model, size_t signature_index,
+    absl::string_view input_name, TensorBuffer& input_buffer,
+    absl::string_view file_path, bool quantize_inputs = false);
+
+// Parses one whitespace-separated sample per line.
+Expected<std::vector<std::vector<std::string>>> ParseInputListFile(
+    absl::string_view input_list_path);
+
+// Fills input buffers from one parsed sample.
+Expected<void> FillInputBuffersFromFileList(
+    const CompiledModel& compiled_model, size_t signature_index,
+    std::vector<TensorBuffer>& input_buffers,
+    absl::Span<const std::string> file_paths, bool quantize_inputs = false);
+
 // Writes output buffers to .raw files in the given directory, using the model's
 // output signature names as filenames.
 Expected<void> WriteOutputBuffersToFiles(

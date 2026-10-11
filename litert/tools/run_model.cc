@@ -17,8 +17,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <numeric>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -41,6 +43,7 @@
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/random/random.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -99,6 +102,12 @@ ABSL_FLAG(bool, enable_ynnpack, false,
 ABSL_FLAG(std::string, input_dir, "",
           "An input folder containing .raw files with model input signatures "
           "as their file names.");
+ABSL_FLAG(std::string, input_list, "",
+          "Path to an input_list.txt manifest: one line per inference, each "
+          "a whitespace-separated list of input file paths. An entry may "
+          "optionally use name:=path notation. Runs all lines in a single "
+          "process invocation. Mutually exclusive with --input_dir; ignores "
+          "--iterations.");
 ABSL_FLAG(bool, quantize_inputs, false,
           "Automatically quantize unquantized (FP32) input data when model "
           "inputs are quantized.");
@@ -566,10 +575,109 @@ Expected<void> PrintTensorBuffer(TensorBuffer& buffer,
   return {};
 }
 
+void LogTimingStats(absl::Span<const uint64_t> timers) {
+  ABSL_LOG(INFO) << "First run took " << timers[0] << " microseconds";
+  ABSL_LOG(INFO) << "Slowest run took "
+                 << *std::max_element(timers.begin(), timers.end())
+                 << " microseconds";
+  ABSL_LOG(INFO) << "Fastest run took "
+                 << *std::min_element(timers.begin(), timers.end())
+                 << " microseconds";
+  ABSL_LOG(INFO) << "All runs took average "
+                 << std::accumulate(timers.begin(), timers.end(), uint64_t{0}) /
+                        timers.size()
+                 << " microseconds";
+}
+
+Expected<uint64_t> RunOnceAndMaybeWriteOutputs(
+    CompiledModel& compiled_model, size_t signature_index,
+    std::vector<TensorBuffer>& input_buffers,
+    std::vector<TensorBuffer>& output_buffers,
+    const std::string& result_output_dir) {
+  uint64_t start = tflite::profiling::time::NowMicros();
+  LITERT_RETURN_IF_ERROR(
+      compiled_model.Run(signature_index, input_buffers, output_buffers));
+  uint64_t end = tflite::profiling::time::NowMicros();
+
+  if (absl::GetFlag(FLAGS_print_tensors)) {
+    for (size_t i = 0; i < output_buffers.size(); ++i) {
+      LITERT_RETURN_IF_ERROR(
+          PrintTensorBuffer(output_buffers[i], "Output", i));
+    }
+  }
+  if (!result_output_dir.empty()) {
+    std::error_code ec;
+    std::filesystem::create_directories(result_output_dir, ec);
+    if (ec) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   absl::StrFormat("Failed to create output directory %s: %s",
+                                   result_output_dir, ec.message()));
+    }
+    LITERT_RETURN_IF_ERROR(tensor_utils::WriteOutputBuffersToFiles(
+        compiled_model, signature_index, output_buffers, result_output_dir));
+  }
+  return end - start;
+}
+
+Expected<void> RunModelWithInputList(
+    CompiledModel& compiled_model, size_t signature_index,
+    std::vector<TensorBuffer>& input_buffers,
+    std::vector<TensorBuffer>& output_buffers,
+    const std::string& input_list_path) {
+  if (absl::GetFlag(FLAGS_iterations) != 1) {
+    ABSL_LOG(WARNING) << "--iterations is ignored when --input_list is set; "
+                          "the number of inferences is taken from the "
+                          "number of lines in the input list.";
+  }
+  LITERT_ASSIGN_OR_RETURN(auto sample_file_lists,
+                          tensor_utils::ParseInputListFile(input_list_path));
+
+  const std::string output_dir = absl::GetFlag(FLAGS_output_dir);
+  std::vector<uint64_t> timers;
+  timers.reserve(sample_file_lists.size());
+  for (size_t sample_index = 0; sample_index < sample_file_lists.size();
+       ++sample_index) {
+    LITERT_RETURN_IF_ERROR(tensor_utils::FillInputBuffersFromFileList(
+        compiled_model, signature_index, input_buffers,
+        absl::MakeConstSpan(sample_file_lists[sample_index]),
+        absl::GetFlag(FLAGS_quantize_inputs)));
+
+    if (absl::GetFlag(FLAGS_print_tensors)) {
+      for (size_t i = 0; i < input_buffers.size(); ++i) {
+        LITERT_RETURN_IF_ERROR(
+            PrintTensorBuffer(input_buffers[i], "Input", i));
+      }
+    }
+
+    const std::string result_output_dir =
+        output_dir.empty() ? ""
+                           : (std::filesystem::path(output_dir) /
+                              absl::StrFormat("Result_%d", sample_index))
+                                 .string();
+    LITERT_ASSIGN_OR_RETURN(
+        uint64_t elapsed,
+        RunOnceAndMaybeWriteOutputs(compiled_model, signature_index,
+                                    input_buffers, output_buffers,
+                                    result_output_dir));
+    timers.push_back(elapsed);
+  }
+
+  ABSL_LOG(INFO) << "Ran " << timers.size() << " samples from "
+                 << input_list_path;
+  LogTimingStats(absl::MakeConstSpan(timers));
+  return {};
+}
+
 Expected<void> RunModel() {
   if (absl::GetFlag(FLAGS_graph).empty()) {
     return Error(kLiteRtStatusErrorInvalidArgument,
                  "Model filename is empty. Use --graph to provide it.");
+  }
+  const std::string input_dir = absl::GetFlag(FLAGS_input_dir);
+  const std::string input_list = absl::GetFlag(FLAGS_input_list);
+  if (!input_dir.empty() && !input_list.empty()) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "--input_dir and --input_list are mutually exclusive.");
   }
 
   LITERT_ASSIGN_OR_RETURN(auto env, GetEnvironment());
@@ -588,7 +696,19 @@ Expected<void> RunModel() {
   LITERT_ASSIGN_OR_RETURN(auto input_buffers,
                           compiled_model.CreateInputBuffers(signature_index));
 
-  std::string input_dir = absl::GetFlag(FLAGS_input_dir);
+  ABSL_LOG(INFO) << "Prepare output buffers";
+
+  LITERT_ASSIGN_OR_RETURN(auto output_buffers,
+                          compiled_model.CreateOutputBuffers(signature_index));
+
+  if (!input_list.empty()) {
+    LITERT_RETURN_IF_ERROR(RunModelWithInputList(
+        compiled_model, signature_index, input_buffers, output_buffers,
+        input_list));
+    ABSL_LOG(INFO) << "Model run completed";
+    return {};
+  }
+
   if (!input_dir.empty()) {
     // Use the inputs given by the user.
     LITERT_RETURN_IF_ERROR(tensor_utils::FillInputBuffersWithCustomData(
@@ -619,11 +739,6 @@ Expected<void> RunModel() {
     }
   }
 
-  ABSL_LOG(INFO) << "Prepare output buffers";
-
-  LITERT_ASSIGN_OR_RETURN(auto output_buffers,
-                          compiled_model.CreateOutputBuffers(signature_index));
-
   const size_t iterations = absl::GetFlag(FLAGS_iterations);
   if (iterations <= 0) {
     return Error(kLiteRtStatusErrorInvalidArgument,
@@ -639,17 +754,7 @@ Expected<void> RunModel() {
     uint64_t end = tflite::profiling::time::NowMicros();
     timer = end - start;
   }
-  ABSL_LOG(INFO) << "First run took " << timers[0] << " microseconds";
-  ABSL_LOG(INFO) << "Slowest run took "
-                 << *std::max_element(timers.begin(), timers.end())
-                 << " microseconds";
-  ABSL_LOG(INFO) << "Fastest run took "
-                 << *std::min_element(timers.begin(), timers.end())
-                 << " microseconds";
-  ABSL_LOG(INFO) << "All runs took average "
-                 << std::accumulate(timers.begin(), timers.end(), uint64_t{0}) /
-                        timers.size()
-                 << " microseconds";
+  LogTimingStats(absl::MakeConstSpan(timers));
 
   // Print output tensor information and values if requested
   if (absl::GetFlag(FLAGS_print_tensors)) {
