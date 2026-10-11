@@ -414,6 +414,63 @@ TEST(MediatekOptionsTest, CppWrapper) {
   EXPECT_EQ(options.GetOptionBundleDecode(), "decode-bundle");
   options.SetOptionBundlePrefill("prefill-bundle");
   EXPECT_EQ(options.GetOptionBundlePrefill(), "prefill-bundle");
+
+  EXPECT_EQ(options.GetExecutionNpuBoostHint(), 100);
+  EXPECT_EQ(options.GetExecutionCpuBoostHint(), -1);
+  EXPECT_EQ(options.GetExecutionDdrBoostHint(), -1);
+
+  options.SetExecutionNpuBoostHint(75);
+  options.SetExecutionCpuBoostHint(40);
+  options.SetExecutionDdrBoostHint(25);
+  EXPECT_EQ(options.GetExecutionNpuBoostHint(), 75);
+  EXPECT_EQ(options.GetExecutionCpuBoostHint(), 40);
+  EXPECT_EQ(options.GetExecutionDdrBoostHint(), 25);
+}
+
+TEST(LrtMediatekOptionsTest, ExecutionBoostHints) {
+  LrtMediatekOptions* options;
+  LITERT_ASSERT_OK(LrtCreateMediatekOptions(&options));
+
+  int32_t npu_boost_hint = 0;
+  int32_t cpu_boost_hint = 0;
+  int32_t ddr_boost_hint = 0;
+  LITERT_ASSERT_OK(
+      LrtGetMediatekOptionsExecutionNpuBoostHint(options, &npu_boost_hint));
+  LITERT_ASSERT_OK(
+      LrtGetMediatekOptionsExecutionCpuBoostHint(options, &cpu_boost_hint));
+  LITERT_ASSERT_OK(
+      LrtGetMediatekOptionsExecutionDdrBoostHint(options, &ddr_boost_hint));
+  EXPECT_EQ(npu_boost_hint, 100);
+  EXPECT_EQ(cpu_boost_hint, -1);
+  EXPECT_EQ(ddr_boost_hint, -1);
+
+  EXPECT_EQ(LrtSetMediatekOptionsExecutionNpuBoostHint(options, -1),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtSetMediatekOptionsExecutionNpuBoostHint(options, 101),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtSetMediatekOptionsExecutionCpuBoostHint(options, -1),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtSetMediatekOptionsExecutionDdrBoostHint(options, 101),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LITERT_ASSERT_OK(LrtSetMediatekOptionsExecutionNpuBoostHint(options, 75));
+  LITERT_ASSERT_OK(LrtSetMediatekOptionsExecutionCpuBoostHint(options, 40));
+  LITERT_ASSERT_OK(LrtSetMediatekOptionsExecutionDdrBoostHint(options, 25));
+
+  LrtMediatekOptions* parsed;
+  SerializeAndParse(options, &parsed);
+  LITERT_ASSERT_OK(
+      LrtGetMediatekOptionsExecutionNpuBoostHint(parsed, &npu_boost_hint));
+  LITERT_ASSERT_OK(
+      LrtGetMediatekOptionsExecutionCpuBoostHint(parsed, &cpu_boost_hint));
+  LITERT_ASSERT_OK(
+      LrtGetMediatekOptionsExecutionDdrBoostHint(parsed, &ddr_boost_hint));
+  EXPECT_EQ(npu_boost_hint, 75);
+  EXPECT_EQ(cpu_boost_hint, 40);
+  EXPECT_EQ(ddr_boost_hint, 25);
+
+  LrtDestroyMediatekOptions(parsed);
+  LrtDestroyMediatekOptions(options);
 }
 
 }  // namespace

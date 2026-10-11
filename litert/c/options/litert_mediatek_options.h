@@ -14,6 +14,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_MEDIATEK_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_MEDIATEK_OPTIONS_H_
 
+#include <stdint.h>
+
 #include "litert/c/litert_common.h"
 
 #ifdef __cplusplus
@@ -207,6 +209,41 @@ LiteRtStatus LrtSetMediatekOptionsAotCompilationOptions(
 
 LiteRtStatus LrtGetMediatekOptionsAotCompilationOptions(
     const LrtMediatekOptions* options, const char** aot_compilation_options);
+
+// DISPATCH OPTIONS ////////////////////////////////////////////////////////////
+
+// execution_npu_boost_hint ----------------------------------------------------
+
+// Configures the per-invocation NPU execution boost value hint in the range
+// [0, 100] passed to `NeuronExecution_setBoostHint`. Higher values request
+// more aggressive NPU clock frequencies during inference. Defaults to 100.
+LiteRtStatus LrtSetMediatekOptionsExecutionNpuBoostHint(
+    LrtMediatekOptions* options, int32_t execution_npu_boost_hint);
+
+LiteRtStatus LrtGetMediatekOptionsExecutionNpuBoostHint(
+    const LrtMediatekOptions* options, int32_t* execution_npu_boost_hint);
+
+// execution_cpu_boost_hint ----------------------------------------------------
+
+// Configures the per-invocation system CPU boost level in the range [0, 100]
+// passed to `NeuronExecution_setQosByKind(NEURON_QOS_KIND_SYSTEM_CPU_BOOST)`
+// on Neuron SDK >= 9.2.0 (AISTE). Returns -1 when unset.
+LiteRtStatus LrtSetMediatekOptionsExecutionCpuBoostHint(
+    LrtMediatekOptions* options, int32_t execution_cpu_boost_hint);
+
+LiteRtStatus LrtGetMediatekOptionsExecutionCpuBoostHint(
+    const LrtMediatekOptions* options, int32_t* execution_cpu_boost_hint);
+
+// execution_ddr_boost_hint ----------------------------------------------------
+
+// Configures the per-invocation system DDR boost level in the range [0, 100]
+// passed to `NeuronExecution_setQosByKind(NEURON_QOS_KIND_SYSTEM_DDR_BOOST)`
+// on Neuron SDK >= 9.2.0 (AISTE). Returns -1 when unset.
+LiteRtStatus LrtSetMediatekOptionsExecutionDdrBoostHint(
+    LrtMediatekOptions* options, int32_t execution_ddr_boost_hint);
+
+LiteRtStatus LrtGetMediatekOptionsExecutionDdrBoostHint(
+    const LrtMediatekOptions* options, int32_t* execution_ddr_boost_hint);
 
 #ifdef __cplusplus
 

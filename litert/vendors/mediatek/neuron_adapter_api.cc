@@ -184,6 +184,7 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
   LOAD_SYMB(NeuronCompilation_storeCompiledNetwork,
             api_->compilation_store_compiled_network);
   LOAD_SYMB(NeuronExecution_setConfig, api_->execution_set_config);
+  LOAD_SYMB(NeuronExecution_setQosByKind, api_->execution_set_qos_by_kind);
   LOAD_SYMB(NeuronExecution_setBoostHint, api_->execution_set_boost_hint);
   LOAD_SYMB(NeuronExecution_setInputFromMemory,
             api_->execution_set_input_from_memory);
