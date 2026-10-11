@@ -376,3 +376,20 @@ cc_test(
         "@flatbuffers",
     ],
 )
+
+cc_test(
+    name = "embedding_lookup_fuzz_test",
+    srcs = ["embedding_lookup_fuzz_test.cc"],
+    deps = [
+        ":fuzzing_support",
+        "//tflite:framework",
+        "//tflite:util",
+        "//tflite/c:common",
+        "//tflite/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
+        "@com_google_fuzztest//fuzztest",
+        "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
+        "@com_google_googletest//:gtest",
+        "@flatbuffers",
+    ],
+)
