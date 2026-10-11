@@ -236,5 +236,58 @@ TEST_F(VariableOpsTest, TestAssignVariableTypeCollision) {
   EXPECT_EQ(interpreter_->Invoke(), kTfLiteError);
 }
 
+TEST_F(VariableOpsTest, TestReadRejectsMissingResourceIdData) {
+  interpreter_ = std::make_unique<Interpreter>();
+  int first_new_tensor_index;
+  ASSERT_EQ(interpreter_->AddTensors(2, &first_new_tensor_index), kTfLiteOk);
+  ASSERT_EQ(interpreter_->SetInputs({0}), kTfLiteOk);
+  ASSERT_EQ(interpreter_->SetOutputs({1}), kTfLiteOk);
+  ASSERT_EQ(interpreter_->SetTensorParametersReadWrite(
+                0, kTfLiteResource, "", {1}, TfLiteQuantization()),
+            kTfLiteOk);
+  ASSERT_EQ(interpreter_->SetTensorParametersReadWrite(
+                1, kTfLiteFloat32, "", {}, TfLiteQuantization()),
+            kTfLiteOk);
+  int node_index;
+  ASSERT_EQ(interpreter_->AddNodeWithParameters(
+                {0}, {1}, nullptr, 0, nullptr, read_registration_, &node_index),
+            kTfLiteOk);
+  ASSERT_EQ(interpreter_->AllocateTensors(), kTfLiteOk);
+
+  TfLiteTensor* resource_id = interpreter_->tensor(0);
+  int32_t* saved_data = resource_id->data.i32;
+  ASSERT_NE(saved_data, nullptr);
+  resource_id->data.i32 = nullptr;
+  EXPECT_EQ(interpreter_->Invoke(), kTfLiteError);
+  resource_id->data.i32 = saved_data;
+}
+
+TEST_F(VariableOpsTest, TestAssignRejectsMissingResourceIdData) {
+  interpreter_ = std::make_unique<Interpreter>();
+  int first_new_tensor_index;
+  ASSERT_EQ(interpreter_->AddTensors(2, &first_new_tensor_index), kTfLiteOk);
+  ASSERT_EQ(interpreter_->SetInputs({0, 1}), kTfLiteOk);
+  ASSERT_EQ(interpreter_->SetOutputs({}), kTfLiteOk);
+  ASSERT_EQ(interpreter_->SetTensorParametersReadWrite(
+                0, kTfLiteResource, "", {1}, TfLiteQuantization()),
+            kTfLiteOk);
+  ASSERT_EQ(interpreter_->SetTensorParametersReadWrite(
+                1, kTfLiteFloat32, "", {}, TfLiteQuantization()),
+            kTfLiteOk);
+  int node_index;
+  ASSERT_EQ(interpreter_->AddNodeWithParameters(
+                {0, 1}, {}, nullptr, 0, nullptr, assign_registration_,
+                &node_index),
+            kTfLiteOk);
+  ASSERT_EQ(interpreter_->AllocateTensors(), kTfLiteOk);
+
+  TfLiteTensor* resource_id = interpreter_->tensor(0);
+  int32_t* saved_data = resource_id->data.i32;
+  ASSERT_NE(saved_data, nullptr);
+  resource_id->data.i32 = nullptr;
+  EXPECT_EQ(interpreter_->Invoke(), kTfLiteError);
+  resource_id->data.i32 = saved_data;
+}
+
 }  // namespace
 }  // namespace tflite

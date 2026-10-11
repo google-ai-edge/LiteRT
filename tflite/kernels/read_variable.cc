@@ -61,6 +61,8 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   const TfLiteTensor* input_resource_id_tensor;
   TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, kInputVariableId,
                                           &input_resource_id_tensor));
+  TF_LITE_ENSURE(context, input_resource_id_tensor->data.i32 != nullptr);
+  TF_LITE_ENSURE(context, NumElements(input_resource_id_tensor) >= 1);
   int resource_id = input_resource_id_tensor->data.i32[0];
   auto& resources = subgraph->resources();
   auto* variable = resource::GetResourceVariable(&resources, resource_id);
