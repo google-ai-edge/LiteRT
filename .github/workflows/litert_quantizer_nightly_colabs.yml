@@ -14,6 +14,16 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # One job per notebook, so each notebook starts from a fresh environment,
+    # like a new Colab runtime. The notebooks pip install their own packages,
+    # which in a shared environment can break papermill for the next notebook.
+    strategy:
+      fail-fast: false
+      matrix:
+        notebook:
+          - torch_convert_and_quantize
+          - getting_started
+          - selective_quantization_isnet
     defaults:
       run:
         working-directory: litert_quantizer
@@ -47,9 +57,7 @@ jobs:
             matplotlib \
             scikit-image
 
-      - name: Run Colab notebooks
+      - name: Run Colab notebook
         run: |
           source colabs_env/bin/activate
-          papermill colabs/torch_convert_and_quantize.ipynb /tmp/out -k python3 -p visualize_model 0
-          papermill colabs/getting_started.ipynb /tmp/out -k python3 -p visualize_model 0
-          papermill colabs/selective_quantization_isnet.ipynb /tmp/out -k python3 -p visualize_model 0
+          papermill colabs/${{ matrix.notebook }}.ipynb /tmp/out -k python3 -p visualize_model 0
