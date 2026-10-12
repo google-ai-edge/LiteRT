@@ -2490,7 +2490,7 @@ Tensor<Mixins...> Quantize(
   out_group->producer = std::move(op);
   auto& out_info = out_group->tensor_infos[0];
   auto& a_info = graph::GetInfo(a.GetRaw()).value();
-  out_info = a_info;
+  out_info.shape = a_info.shape;
   out_info.type = type;
   auto quantization = std::make_shared<graph::PerChannelAffineQuantization>();
   quantization->scales = scale;
@@ -2521,7 +2521,7 @@ Tensor<Mixins...> Dequantize(
   out_group->producer = std::move(op);
   auto& out_info = out_group->tensor_infos[0];
   auto& a_info = graph::GetInfo(a.GetRaw()).value();
-  out_info = a_info;
+  out_info.shape = a_info.shape;
   out_info.type = Type::kFP32;
   out_info.quantization = nullptr;
 

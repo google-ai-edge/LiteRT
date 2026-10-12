@@ -1632,6 +1632,44 @@ TEST(OperationCastTest, Dequantize) {
   VerifyOperationRTTI<graph::DequantizeOperation>(Dequantize(a));
 }
 
+// The output of Quantize is computed: it gets neither the buffer nor the
+// consumers of its input.
+TEST(QuantizeTest, OutputOfConstantIsNotConstant) {
+  Tensor a({.type = Type::kFP32,
+            .shape = {2, 4},
+            .buffer = std::vector<float>(8, 1.0f)});
+  Tensor first = Quantize(a, Type::kI8, {0.5f}, {0});
+  Tensor second = Quantize(a, Type::kI8, {0.5f}, {0});
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const graph::TensorInformation& info,
+                                  graph::GetInfo(second.GetRaw()));
+  EXPECT_EQ(info.type, Type::kI8);
+  EXPECT_THAT(info.shape, ElementsAre(2, 4));
+  EXPECT_EQ(info.buffer, nullptr);
+  EXPECT_TRUE(info.consumers.empty());
+}
+
+// The output of Dequantize is computed: it gets neither the buffer nor the
+// consumers of its input.
+TEST(DequantizeTest, OutputOfConstantIsNotConstant) {
+  Tensor a({.type = Type::kI8,
+            .shape = {2, 4},
+            .buffer = std::vector<int8_t>(8, 1),
+            .quantization = std::make_shared<PerChannelAffineQuantization>(
+                std::vector<float>{0.5f}, std::vector<int64_t>{0},
+                /*quantized_dimension=*/0)});
+  Tensor first = Dequantize(a);
+  Tensor second = Dequantize(a);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const graph::TensorInformation& info,
+                                  graph::GetInfo(second.GetRaw()));
+  EXPECT_EQ(info.type, Type::kFP32);
+  EXPECT_THAT(info.shape, ElementsAre(2, 4));
+  EXPECT_EQ(info.buffer, nullptr);
+  EXPECT_EQ(info.quantization, nullptr);
+  EXPECT_TRUE(info.consumers.empty());
+}
+
 TEST(OperationCastTest, GatherNd) {
   Tensor a({.type = Type::kFP32, .shape = {2, 4}});
   Tensor b({.type = Type::kI32, .shape = {2, 2}});
