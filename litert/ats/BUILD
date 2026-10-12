@@ -522,6 +522,7 @@ litert_define_ats(
         "Transformer",
         "scaled_dot_product_attention",
         "Binary.*i32",  # OpenCL delegate does not support int32 binary arithmetic
+        "Comparison.*f32",  # OpenCL executes f32 graphs in FP16 precision, rounding close f32 inputs to equal under kExact
         "OneHot",  # OpenCL delegate does not support OneHot
         "LogSoftmax",  # OpenCL delegate does not support LogSoftmax
         "tfl[.]prelu",  # OpenCL delegate requires PRelu alpha to be statically allocated
@@ -669,6 +670,7 @@ litert_define_ats(
     compile_only_suffix = None,
     dont_register = [
         "Binary.*i32",
+        "Comparison.*f32",  # Metal executes f32 graphs in FP16 precision, rounding close f32 inputs to equal under kExact
         "OneHot",
         "LogSoftmax",
         "Transpose.*[(]1d_",
@@ -706,6 +708,7 @@ litert_define_ats(
     compile_only_suffix = None,
     dont_register = [
         "Binary.*i32",
+        "Comparison.*f32",  # WebGPU executes f32 graphs in FP16 precision, rounding close f32 inputs to equal under kExact
         "OneHot",
         "LogSoftmax",
         "Transpose.*[(]1d_",
