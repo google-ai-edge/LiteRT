@@ -422,6 +422,11 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
                                           context, *delegate_data_,
                                           shared_memory_serialization_cache));
 
+#ifdef __EMSCRIPTEN__
+  if (delegate_data_->weight_loader == nullptr) {
+    delegate_data_->options->convert_weights_on_gpu = false;
+  }
+#endif  // __EMSCRIPTEN__
   if (delegate_data_->options->convert_weights_on_gpu &&
       delegate_data_->options->enable_constant_tensors_sharing) {
     ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());

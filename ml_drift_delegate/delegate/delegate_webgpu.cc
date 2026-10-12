@@ -336,6 +336,7 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
     auto device = wgpu::Device::Acquire(ems_device);
     wgpu::AdapterInfo adapter_info;
     device.GetAdapterInfo(&adapter_info);
+    RequestSupportedExtensions(*webgpu_env, device);
     webgpu_init_status = webgpu_env->Initialize(device, adapter_info);
     success_message =
         "Created a WebGPU environment with emscripten_webgpu_get_device().";
