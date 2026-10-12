@@ -280,5 +280,7 @@ extern "C" LITERT_CAPI_EXPORT const LiteRtRuntimeCApiStruct
             LiteRtGetAcceleratorDelegationMetricsDelegatedNodeCount,
         .litert_get_accelerator_delegation_metrics_partition_count =
             LiteRtGetAcceleratorDelegationMetricsPartitionCount,
+        .litert_create_tensor_buffer_from_custom_handle =
+            LiteRtCreateTensorBufferFromCustomHandle,
         // Google-internal LINT.ThenChange()
     };

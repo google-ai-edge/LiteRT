@@ -58,6 +58,36 @@ litert::Expected<void> OpenVinoTensorBuffer::Alloc(
   return {};
 }
 
+litert::Expected<void> OpenVinoTensorBuffer::Wrap(
+    const LiteRtRankedTensorType& tensor_type, void* host_memory, size_t size) {
+  if (allocated_) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "The OpenVino tensor has been allocated.");
+  }
+  if (host_memory == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Cannot wrap null host memory.");
+  }
+
+  ov::element::Type ov_element_type =
+      litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
+  std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
+  for (size_t i = 0; i < ov_shape_vec.size(); i++)
+    ov_shape_vec[i] = tensor_type.layout.dimensions[i];
+  ov::Shape ov_shape{ov_shape_vec.begin(), ov_shape_vec.end()};
+
+  // ov::Tensor over an external pointer never frees it, so destroying this
+  // wrapper leaves the owner's memory intact.
+  ov_tensor_ = ov::Tensor(ov_element_type, ov_shape, host_memory);
+  if (ov_tensor_.get_byte_size() > size) {
+    ov_tensor_ = ov::Tensor();
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Wrapped memory is smaller than the tensor.");
+  }
+  allocated_ = true;
+  return {};
+}
+
 litert::Expected<void*> OpenVinoTensorBuffer::GetTensorData() {
   if (!allocated_) {
     return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,

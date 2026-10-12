@@ -877,6 +877,15 @@ class RuntimeProxy {
                                opencl_buffer_size, deallocator, buffer);
   }
 
+  LiteRtStatus CreateTensorBufferFromCustomHandle(
+      LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+      LiteRtTensorBufferType buffer_type, HwMemoryHandle handle,
+      size_t buffer_size, LiteRtTensorBuffer* buffer) {
+    LITERT_PROXY_METHOD_STATUS(litert_create_tensor_buffer_from_custom_handle,
+                               env, tensor_type, buffer_type, handle,
+                               buffer_size, buffer);
+  }
+
   LiteRtStatus GetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
                                            LiteRtClMem* cl_mem_addr) {
     LITERT_PROXY_METHOD_STATUS(litert_get_tensor_buffer_opencl_memory,

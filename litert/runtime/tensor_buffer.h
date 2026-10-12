@@ -112,6 +112,13 @@ class LiteRtTensorBufferT {
       const LiteRtRankedTensorType& tensor_type, size_t buffer_size,
       size_t alignment);
 
+  // Wraps an existing handle as a custom tensor buffer of `buffer_type`, via
+  // that type's registered import_func. The buffer does not own the handle.
+  static litert::Expected<Ptr> CreateFromCustomHandle(
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, HwMemoryHandle handle,
+      size_t buffer_size);
+
 #if LITERT_HAS_OPENCL_SUPPORT
   static litert::Expected<Ptr> CreateFromOpenClMemory(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,

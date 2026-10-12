@@ -34,6 +34,13 @@ class OpenVinoTensorBuffer {
   litert::Expected<void> Alloc(const LiteRtRankedTensorType& tensor_type,
                                size_t size);
 
+  // Wraps existing host memory (e.g. the start of another OpenVinoTensorBuffer's
+  // data) as an ov::Tensor of `tensor_type`, without taking ownership. Used to
+  // alias a smaller KV-cache tensor onto the largest context's KV-cache buffer
+  // for multi-signature NPU models.
+  litert::Expected<void> Wrap(const LiteRtRankedTensorType& tensor_type,
+                              void* host_memory, size_t size);
+
   litert::Expected<void*> GetTensorData();
 
   litert::Expected<ov::Tensor> GetOVTensor();

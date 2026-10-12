@@ -799,6 +799,12 @@ typedef struct LiteRtRuntimeCApiStruct {
   // This API was added in version 1.2.0.
   LiteRtStatus (*litert_get_accelerator_delegation_metrics_partition_count)(
       LiteRtAcceleratorDelegationMetricsConst metrics, int* partition_count);
+  // litert_tensor_buffer.h: LiteRtCreateTensorBufferFromCustomHandle
+  // Local addition (appended to keep earlier entries' offsets stable).
+  LiteRtStatus (*litert_create_tensor_buffer_from_custom_handle)(
+      LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+      LiteRtTensorBufferType buffer_type, HwMemoryHandle handle,
+      size_t buffer_size, LiteRtTensorBuffer* buffer);
 } LiteRtRuntimeCApiStruct;
 
 // LINT.ThenChange(:version_number)
