@@ -886,6 +886,7 @@ cc_test(
         ":test_main",
         ":variable_op_kernels",  # buildcleaner: keep
         "//tflite:framework_stable",
+        "//tflite:version",
         "//tflite/core:cc_api_experimental",
         "//tflite/core:framework_stable",
         "//tflite/core/c:common",
@@ -893,6 +894,7 @@ cc_test(
         "//tflite/experimental/resource",
         "//tflite/experimental/resource:mock_resource",
         "//tflite/kernels/internal:tensor",
+        "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
     ],

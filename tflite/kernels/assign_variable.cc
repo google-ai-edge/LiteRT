@@ -52,6 +52,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   TF_LITE_ENSURE(context, input_resource_id_tensor->data.i32 != nullptr);
   TF_LITE_ENSURE(context, NumElements(input_resource_id_tensor) >= 1);
+  TF_LITE_ENSURE(context, input_resource_id_tensor->bytes >= sizeof(int32_t));
   int resource_id = input_resource_id_tensor->data.i32[0];
   auto& resources = subgraph->resources();
   TF_LITE_ENSURE_OK(context, resource::CreateResourceVariableIfNotAvailable(

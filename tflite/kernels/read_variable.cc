@@ -63,12 +63,14 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
                                           &input_resource_id_tensor));
   TF_LITE_ENSURE(context, input_resource_id_tensor->data.i32 != nullptr);
   TF_LITE_ENSURE(context, NumElements(input_resource_id_tensor) >= 1);
+  TF_LITE_ENSURE(context, input_resource_id_tensor->bytes >= sizeof(int32_t));
   int resource_id = input_resource_id_tensor->data.i32[0];
   auto& resources = subgraph->resources();
   auto* variable = resource::GetResourceVariable(&resources, resource_id);
   TF_LITE_ENSURE(context, variable != nullptr);
 
   TfLiteTensor* variable_tensor = variable->GetTensor();
+  TF_LITE_ENSURE(context, variable_tensor != nullptr);
   TfLiteTensor* output;
   TF_LITE_ENSURE_OK(context,
                     GetOutputSafe(context, node, kOutputValue, &output));
@@ -80,6 +82,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
                                    context, output,
                                    TfLiteIntArrayCopy(variable_tensor->dims)));
   }
+  TF_LITE_ENSURE(context, variable_tensor->bytes >= output->bytes);
   memcpy(output->data.raw, variable_tensor->data.raw, output->bytes);
 
   return kTfLiteOk;
