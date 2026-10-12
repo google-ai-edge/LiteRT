@@ -1077,7 +1077,7 @@ TYPED_TEST_P(NumericalTestSuite, FullyConnectedQuantizedOp) {
        .input_shape = {1, 4},
        .input_data = {1.0f, 2.0f, 1.0f, 2.0f},
        .weights_shape = {2, 4},
-       .weights_data = {0x01, 0x00, 0x10, 0x00},
+       .weights_data = {1, 0, 0, 0, 0, 1, 0, 0},
        .quantization = std::make_shared<PerChannelAffineQuantization>(
            PerChannelAffineQuantization{/*scales=*/{0.1f, 0.01f},
                                         /*zero_points=*/{0, 0}}),
