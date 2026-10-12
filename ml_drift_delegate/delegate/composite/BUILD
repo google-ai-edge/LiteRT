@@ -180,6 +180,7 @@ cc_library(
     srcs = ["rope_parser.cc"],
     hdrs = ["rope_parser.h"],
     deps = [
+        "//ml_drift_delegate/tflite:model_builder_helper",
         "//ml_drift_delegate/tflite:object_reader",
         "//ml_drift_delegate/tflite:operation_parser",
         "//tflite/c:c_api_types",
@@ -190,6 +191,7 @@ cc_library(
         "@flatbuffers",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
     ],
 )
 

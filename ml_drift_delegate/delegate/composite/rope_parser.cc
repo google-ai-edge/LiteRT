@@ -24,6 +24,8 @@
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift_delegate/tflite/model_builder_helper.h"
 #include "ml_drift_delegate/tflite/object_reader.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
 #include "tflite/c/builtin_op_data.h"
@@ -50,6 +52,41 @@ absl::Status RopeOperationParser::IsSupported(
     return absl::InvalidArgumentError(
         absl::StrCat("Invalid number of inputs: ", tflite_node->inputs->size,
                      ", while expected 2 or 3."));
+  }
+
+  const int pos_tensor_idx = tflite_node->inputs->size == 2 ? 1 : 2;
+  const TfLiteTensor* src = nullptr;
+  ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &src));
+  const ::ml_drift::BHWC src_sh = ExtractTensorShape(src);
+  const TfLiteTensor* pos = nullptr;
+  ABSL_RETURN_IF_ERROR(
+      PreGetInputTensor(context, tflite_node, pos_tensor_idx, &pos));
+  const ::ml_drift::BHWC pos_sh = ExtractTensorShape(pos);
+  if (src_sh.b != pos_sh.b) {
+    return absl::InvalidArgumentError(
+        "src and pos must have the same batch size for PositionalEmbedding.");
+  }
+  int pos_seq_len = 0;
+  switch (pos->dims->size) {
+    case 2:
+      // 2D pos: [B, T] -> BHWC(B, 1, 1, T)
+      pos_seq_len = pos_sh.c;
+      break;
+    case 3:
+    case 4:
+      // 3D pos: [B, T, 1] -> BHWC(B, 1, T, 1)
+      // 4D pos: [B, 1, T, 1] -> BHWC(B, 1, T, 1)
+      pos_seq_len = pos_sh.w;
+      break;
+    default:
+      return absl::InvalidArgumentError(
+          absl::StrCat("Unsupported pos tensor rank for PositionalEmbedding: ",
+                       pos->dims->size, ". Expected rank 2, 3, or 4."));
+  }
+  if (src_sh.w != pos_seq_len) {
+    return absl::InvalidArgumentError(
+        "src and pos must have the same sequence length for "
+        "PositionalEmbedding.");
   }
 
   ABSL_RETURN_IF_ERROR(

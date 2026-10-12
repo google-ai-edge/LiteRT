@@ -6357,9 +6357,31 @@ class RoPEParser : public TFLiteOperationParser {
     ABSL_RETURN_IF_ERROR(
         PreGetInputTensor(context, tflite_node, pos_tensor_idx, &pos));
     const ::ml_drift::BHWC pos_sh = ExtractTensorShape(pos);
-    if (src_sh.w != pos_sh.w) {
+    if (src_sh.b != pos_sh.b) {
       return absl::InvalidArgumentError(
-          "src and pos must have the same width for PositionalEmbedding.");
+          "src and pos must have the same batch size for PositionalEmbedding.");
+    }
+    int pos_seq_len = 0;
+    switch (pos->dims->size) {
+      case 2:
+        // 2D pos: [B, T] -> BHWC(B, 1, 1, T)
+        pos_seq_len = pos_sh.c;
+        break;
+      case 3:
+      case 4:
+        // 3D pos: [B, T, 1] -> BHWC(B, 1, T, 1)
+        // 4D pos: [B, 1, T, 1] -> BHWC(B, 1, T, 1)
+        pos_seq_len = pos_sh.w;
+        break;
+      default:
+        return absl::InvalidArgumentError(absl::StrCat(
+            "Unsupported pos tensor rank for PositionalEmbedding: ",
+            pos->dims->size, ". Expected rank 2, 3, or 4."));
+    }
+    if (src_sh.w != pos_seq_len) {
+      return absl::InvalidArgumentError(
+          "src and pos must have the same sequence length for "
+          "PositionalEmbedding.");
     }
     ABSL_RETURN_IF_ERROR(
         PreCheckRuntimeOrConstantInput(context, tflite_node, 0));

@@ -94,7 +94,7 @@ class ConvertRopeTest : public ::testing::Test {
 TEST_F(ConvertRopeTest, SingleTensorFp32) {
   SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
   builder.AddInput(kTfLiteFloat32, {1, 8, 4, 64});   // input
-  builder.AddInput(kTfLiteInt32, {1, 1, 1, 4});      // positions
+  builder.AddInput(kTfLiteInt32, {1, 1, 4, 1});      // positions
   builder.AddOutput(kTfLiteFloat32, {1, 8, 4, 64});  // rotated input
 
   builder.SetParameters(CreateRopeParams(/*max_timescale=*/10000.0f));
@@ -124,7 +124,7 @@ TEST_F(ConvertRopeTest, QueryAndKeyFp16) {
   SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
   builder.AddInput(kTfLiteFloat16, {1, 8, 4, 64});   // query
   builder.AddInput(kTfLiteFloat16, {1, 2, 4, 64});   // key
-  builder.AddInput(kTfLiteInt32, {1, 1, 1, 4});      // positions
+  builder.AddInput(kTfLiteInt32, {1, 1, 4, 1});      // positions
   builder.AddOutput(kTfLiteFloat16, {1, 8, 4, 64});  // rotated query
   builder.AddOutput(kTfLiteFloat16, {1, 2, 4, 64});  // rotated key
 
@@ -149,7 +149,7 @@ TEST_F(ConvertRopeTest, QueryAndKeyFp16) {
 TEST_F(ConvertRopeTest, RopeThetaAliasSetsMaxTimescale) {
   SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
   builder.AddInput(kTfLiteFloat32, {1, 8, 4, 64});
-  builder.AddInput(kTfLiteInt32, {1, 1, 1, 4});
+  builder.AddInput(kTfLiteInt32, {1, 1, 4, 1});
   builder.AddOutput(kTfLiteFloat32, {1, 8, 4, 64});
 
   builder.SetParameters(CreateRopeParams(/*max_timescale=*/1000000.0f,
@@ -172,7 +172,7 @@ TEST_F(ConvertRopeTest, RopeThetaAliasSetsMaxTimescale) {
 TEST_F(ConvertRopeTest, PartialRotaryFactorAliasAndKernelType) {
   SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
   builder.AddInput(kTfLiteFloat32, {1, 8, 4, 64});
-  builder.AddInput(kTfLiteInt32, {1, 1, 1, 4});
+  builder.AddInput(kTfLiteInt32, {1, 1, 4, 1});
   builder.AddOutput(kTfLiteFloat32, {1, 8, 4, 64});
 
   builder.SetParameters(CreateRopeParams(
@@ -197,6 +197,40 @@ TEST_F(ConvertRopeTest, PartialRotaryFactorAliasAndKernelType) {
   // Defaults are preserved for anything the flexbuffer does not carry.
   EXPECT_THAT(attr->max_timescale, FloatEq(10000.0f));
   EXPECT_THAT(attr->min_timescale, FloatEq(1.0f));
+}
+
+TEST_F(ConvertRopeTest, Supports2DPositions) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 8, 4, 64});   // input
+  builder.AddInput(kTfLiteInt32, {1, 4});            // 2D positions [B, T]
+  builder.AddOutput(kTfLiteFloat32, {1, 8, 4, 64});  // rotated input
+
+  builder.SetParameters(CreateRopeParams());
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  EXPECT_THAT(ir_model->ops()[0]->name, Eq("rope"));
+}
+
+TEST_F(ConvertRopeTest, Rejects1DPositionsMismatchedBatch) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 8, 4, 64});   // input (b=1, w=4)
+  builder.AddInput(kTfLiteInt32, {4});               // 1D positions (b=4, w=1)
+  builder.AddOutput(kTfLiteFloat32, {1, 8, 4, 64});  // rotated input
+
+  builder.SetParameters(CreateRopeParams());
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  EXPECT_EQ(ir_model, nullptr);
 }
 
 }  // namespace

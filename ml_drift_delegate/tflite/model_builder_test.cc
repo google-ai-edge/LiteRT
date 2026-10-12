@@ -3868,8 +3868,22 @@ TEST(RoPEParserTest, TestIsSupported) {
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
-  // Valid
-  input_shapes[1].w = 8;
+  // Valid (2D pos [B, T] -> BHWC(B, 1, 1, T))
+  context->ChangeTensorShape(2, {1, 8});
+  parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  // Invalid: 1D pos [T] -> BHWC(T, 1, 1, 1) has mismatched batch
+  context->ChangeTensorShape(2, {8});
+  parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  // Valid (4D pos has seq_len in w)
+  input_shapes[1] = ::ml_drift::BHWC(1, 1, 8, 256);
   context = std::make_unique<StubTfLiteContext>(kTfLiteBuiltinCustom,
                                                 /*op_version=*/1,
                                                 /*num_inputs=*/2, input_shapes);

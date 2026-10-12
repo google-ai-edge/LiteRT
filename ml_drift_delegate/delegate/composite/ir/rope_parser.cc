@@ -16,15 +16,16 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
+#include "ml_drift_delegate/tflite/support/support_rotary_positional_embedding.h"
 #include "tflite/c/builtin_op_data.h"
 #include "tflite/c/common.h"
 
@@ -34,24 +35,13 @@ namespace {
 // RoPE is applied either to a single tensor (input, positions) or to the query
 // and key tensors together (query, key, positions), producing one output per
 // rotated tensor.
-absl::Status RopeIsSupported(const TfLiteContext* /*context*/,
+absl::Status RopeIsSupported(const TfLiteContext* context,
                              const TfLiteNode* tflite_node,
-                             const TfLiteRegistration* /*registration*/) {
-  if (tflite_node->inputs->size == 2) {
-    if (tflite_node->outputs->size != 1) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("RoPE with 2 inputs expects 1 output, but got ",
-                       tflite_node->outputs->size));
-    }
-  } else if (tflite_node->inputs->size == 3) {
-    if (tflite_node->outputs->size != 2) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("RoPE with 3 inputs expects 2 outputs, but got ",
-                       tflite_node->outputs->size));
-    }
-  } else {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "RoPE expects 2 or 3 inputs, but got ", tflite_node->inputs->size));
+                             const TfLiteRegistration* registration) {
+  std::string error;
+  if (!IsRotaryPositionalEmbeddingSupported(context, tflite_node, registration,
+                                            &error)) {
+    return absl::InvalidArgumentError(error);
   }
   return absl::OkStatus();
 }

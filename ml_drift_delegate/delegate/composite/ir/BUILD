@@ -171,10 +171,10 @@ cc_library(
     deps = [
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//ml_drift_delegate/tflite:ir_model_builder_helper",
+        "//ml_drift_delegate/tflite/support:support_rotary_positional_embedding",
         "//tflite/c:common",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings",
         "@flatbuffers",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:operations",

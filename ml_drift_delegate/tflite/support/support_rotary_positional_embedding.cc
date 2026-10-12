@@ -101,13 +101,38 @@ bool IsRotaryPositionalEmbeddingSupported(
   const TfLiteTensor* src = context->tensors + inputs->data[0];
   const TfLiteTensor* pos = context->tensors + inputs->data[pos_tensor_idx];
 
-  auto get_width = [](const TfLiteTensor* t) {
-    return t->dims->size == 4 ? t->dims->data[2] :
-           t->dims->size == 3 ? t->dims->data[1] : 1;
-  };
+  const int src_batch = src->dims->size >= 1 ? src->dims->data[0] : 1;
+  const int pos_batch = pos->dims->size >= 1 ? pos->dims->data[0] : 1;
+  if (src_batch != pos_batch) {
+    *error = "src and pos must have the same batch size for RoPE.";
+    return false;
+  }
 
-  if (get_width(src) != get_width(pos)) {
-    *error = "src and pos must have the same width for RoPE.";
+  const int src_seq_len = src->dims->size == 4   ? src->dims->data[2]
+                          : src->dims->size == 3 ? src->dims->data[1]
+                                                 : 1;
+  int pos_seq_len = 0;
+  switch (pos->dims->size) {
+    case 2:
+      // 2D pos: [B, T]
+      pos_seq_len = pos->dims->data[1];
+      break;
+    case 3:
+      // 3D pos: [B, T, 1]
+      pos_seq_len = pos->dims->data[1];
+      break;
+    case 4:
+      // 4D pos: [B, 1, T, 1]
+      pos_seq_len = pos->dims->data[2];
+      break;
+    default:
+      *error = absl::StrCat("Unsupported pos tensor rank for RoPE: ",
+                            pos->dims->size, ". Expected rank 2, 3, or 4.");
+      return false;
+  }
+
+  if (src_seq_len != pos_seq_len) {
+    *error = "src and pos must have the same sequence length for RoPE.";
     return false;
   }
 
