@@ -106,6 +106,17 @@ def litert_linkopts():
         ],
     })
 
+def litert_jni_copts():
+    return select({
+        "//litert:android": [
+            "-fno-exceptions",
+            "-fno-rtti",
+            "-fno-unwind-tables",
+            "-fno-asynchronous-unwind-tables",
+        ],
+        "//conditions:default": [],
+    })
+
 def litert_jni_linkopts():
     return select({
         "//litert:android": [
@@ -113,6 +124,9 @@ def litert_jni_linkopts():
             "-latomic",
             "-Wl,--gc-sections",
             "-Wl,--as-needed",
+            "-Wl,--icf=all",
+            "-Wl,--exclude-libs,ALL",
+            "-Wl,--no-eh-frame-hdr",
             "-Wl,-z,max-page-size=16384",
         ],
         "//conditions:default": [
