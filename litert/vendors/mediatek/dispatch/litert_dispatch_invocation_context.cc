@@ -29,6 +29,7 @@
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/mediatek/dispatch/file_backed_pages.h"
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 #include "litert/vendors/mediatek/schema/schema_resolver.h"
@@ -302,6 +303,14 @@ LiteRtDispatchInvocationContextT::Create(
     std::tie(exec_bytecode_ptr, exec_bytecode_size) = compile_graph.Value();
   }
 
+  // `NeuronModel_restoreFromCompiledNetwork` copies the compiled network into
+  // the adapter's own memory and never reads `exec_bytecode_ptr` again. When
+  // the bytecode lives in an mmapped model file, its pages are released below
+  // once loading succeeds so they no longer count towards this process's RSS.
+  const int bytecode_fd = exec_bytecode_buffer->fd;
+  litert::mediatek::AdviseNoHugePages(bytecode_fd, exec_bytecode_ptr,
+                                      exec_bytecode_size);
+
   auto model_and_compilation =
       LoadModelAndCompilation(neuron_adapter_api, exec_bytecode_ptr,
                               exec_bytecode_size, num_inputs, num_outputs);
@@ -321,6 +330,13 @@ LiteRtDispatchInvocationContextT::Create(
           execution->get(), 100) != NEURON_NO_ERROR) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to set execution boost hint");
+  }
+
+  if (litert::mediatek::ReleaseFileBackedPages(bytecode_fd, exec_bytecode_ptr,
+                                               exec_bytecode_size)) {
+    LITERT_LOG(LITERT_INFO,
+               "Released file-backed pages of %zu bytes of MediaTek bytecode",
+               exec_bytecode_size);
   }
 
   return Ptr(new LiteRtDispatchInvocationContextT(
