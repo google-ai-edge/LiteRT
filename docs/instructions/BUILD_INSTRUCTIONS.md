@@ -89,7 +89,7 @@ xcode-select --install
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 # Install required packages
-brew install python@3.11
+brew install python@3.12
 ```
 
 ### Step 2: Build for macOS

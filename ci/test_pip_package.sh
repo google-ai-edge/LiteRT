@@ -19,7 +19,7 @@ set -ex
 # Run this script under the root directory.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON_VERSION="${PYTHON_VERSION:-3.11}"
+PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
 INSTALL_APT_DEPS="${INSTALL_APT_DEPS:-true}"
 
 echo "Testing on Python version ${PYTHON_VERSION}"

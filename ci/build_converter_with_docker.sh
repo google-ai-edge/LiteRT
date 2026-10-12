@@ -15,7 +15,7 @@
 # ==============================================================================
 set -ex
 
-DOCKER_PYTHON_VERSION="${DOCKER_PYTHON_VERSION:-3.11}"
+DOCKER_PYTHON_VERSION="${DOCKER_PYTHON_VERSION:-3.12}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="${SCRIPT_DIR}/.."
 

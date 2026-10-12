@@ -188,7 +188,7 @@ BUILD_FLAGS=("-c" "opt" \
     "--fat_apk_cpu=${FAT_APK_CPU}" \
     "--define=android_dexmerger_tool=d8_dexmerger" \
     "--define=android_incremental_dexing_tool=d8_dexbuilder" \
-    "--repo_env=HERMETIC_PYTHON_VERSION=3.11" \
+    "--repo_env=HERMETIC_PYTHON_VERSION=3.12" \
     "--show_timestamps")
 
 # Merge extra config flags from the environment
