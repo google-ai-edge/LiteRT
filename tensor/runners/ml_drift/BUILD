@@ -161,9 +161,11 @@ cc_library(
     name = "compiled_ml_drift_model_runner",
     hdrs = ["compiled_ml_drift_model_runner.h"],
     deps = [
+        ":ml_drift_dummy_weight_creator",
         "//tensor",
         "//tensor:buffer",
         "//tensor:datatypes",
+        "//tensor/backends/ml_drift:arithmetic_ml_drift",
         "//tensor/backends/ml_drift:ml_drift_conversion",
         "//tensor/backends/ml_drift:ml_drift_helpers",
         "//tensor/internal:graph",
@@ -205,10 +207,14 @@ cc_test(
         ":ml_drift_cl_model_runner",
         "//tensor",
         "//tensor:arithmetic",
+        "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/backends/ml_drift:arithmetic_ml_drift",
         "//tensor/internal:compile",
+        "//tensor/utils:matchers",
+        "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:precision",
     ],
 )
 
