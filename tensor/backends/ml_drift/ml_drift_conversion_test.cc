@@ -66,7 +66,7 @@ ml_drift::TensorDescriptor CreateDummyFCWeight(
     ml_drift::GpuModelBuilder& model_builder, TensorHandle& t,
     ml_drift::DataType mld_float_data_type) {
   LRT_TENSOR_ASSIGN_OR_ABORT(const graph::TensorInformation& info,
-                       graph::GetInfo(t.GetRaw()));
+                             graph::GetInfo(t.GetRaw()));
   auto t_shape = info.shape;
   auto desc = model_builder.GetFullyConnectedWeightsDesc(
       mld_float_data_type, ml_drift::OHWI(t_shape[0], 1, 1, t_shape[1]));
@@ -301,8 +301,8 @@ TEST_F(MlDriftConversionTest, HardSwishOp) {
 
 TEST_F(MlDriftConversionTest, PReluOp) {
   TensorMLD input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
-  TensorMLD alpha({.type = Type::kFP32, .shape = {1},
-                   .buffer = std::vector<float>{0.2f}});
+  TensorMLD alpha(
+      {.type = Type::kFP32, .shape = {1}, .buffer = std::vector<float>{0.2f}});
   TensorMLD output = PRelu(input, alpha);
 
   auto tensor_to_handle_or = AppendGpuModelBuilder(context_, {output});
@@ -1880,8 +1880,7 @@ TEST_F(MlDriftConversionTest, GetTensorHandleWithMlDriftBuffer) {
                                                     &gpu_model));
 
   ml_drift::cl::InferenceContext inference_context;
-  ASSERT_OK(
-      inference_context.InitFromGpuModel(create_info, &gpu_model, &env_));
+  ASSERT_OK(inference_context.InitFromGpuModel(create_info, &gpu_model, &env_));
 
   Tensor<MlDriftMixinTag> tensor_with_buffer(
       {.name = "foo", .type = Type::kFP32, .shape = {1, 2, 3, 4}});
@@ -1889,19 +1888,41 @@ TEST_F(MlDriftConversionTest, GetTensorHandleWithMlDriftBuffer) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       const graph::TensorInformation& const_tensor_info,
       graph::GetInfo(tensor_with_buffer.GetRaw()));
-  auto* tensor_info =
-      const_cast<graph::TensorInformation*>(&const_tensor_info);
+  auto* tensor_info = const_cast<graph::TensorInformation*>(&const_tensor_info);
 
   size_t buffer_size = 1 * 2 * 3 * 4 * sizeof(float);
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      tensor_info->buffer,
-      MlDriftBuffer::Create(handle.id, inference_context, *env_.queue(),
-                            buffer_size));
+      tensor_info->buffer, MlDriftBuffer::Create(handle.id, inference_context,
+                                                 *env_.queue(), buffer_size));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
       auto tensor_handle,
       GetTensorHandle(context_, tensor_with_buffer.GetRaw()));
   EXPECT_EQ(tensor_handle.id, handle.id);
+}
+
+TEST_F(MlDriftConversionTest, BatchMatMulRejectsBroadcastBatchDimensions) {
+  // Mismatched head/batch dimension: [1, 4, 3, 8] x [1, 1, 8, 5].
+  {
+    TensorMLD lhs({.type = Type::kFP32, .shape = {1, 4, 3, 8}});
+    TensorMLD rhs({.type = Type::kFP32, .shape = {1, 1, 8, 5}});
+    TensorMLD out = BatchMatMul(lhs, rhs);
+    auto status_or = AppendGpuModelBuilder(context_, {out});
+    EXPECT_THAT(status_or.status(),
+                absl_testing::StatusIs(absl::StatusCode::kUnimplemented,
+                                       testing::HasSubstr("broadcast")));
+  }
+  // Mismatched batch rank with implicit leading broadcast: [2, 4, 3, 8] x
+  // [4, 8, 5].
+  {
+    TensorMLD lhs({.type = Type::kFP32, .shape = {2, 4, 3, 8}});
+    TensorMLD rhs({.type = Type::kFP32, .shape = {4, 8, 5}});
+    TensorMLD out = BatchMatMul(lhs, rhs);
+    auto status_or = AppendGpuModelBuilder(context_, {out});
+    EXPECT_THAT(status_or.status(),
+                absl_testing::StatusIs(absl::StatusCode::kUnimplemented,
+                                       testing::HasSubstr("broadcast")));
+  }
 }
 
 }  // namespace litert::tensor
