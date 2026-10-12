@@ -185,6 +185,7 @@ cc_library(
         "//litert/core/util:flatbuffer_tools",
         "//tflite/schema:schema_fbs_with_mutable",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
     ],
 )
 

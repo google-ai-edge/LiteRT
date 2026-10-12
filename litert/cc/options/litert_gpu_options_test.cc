@@ -41,11 +41,11 @@ TEST(GpuOptions, EnableConstantTensorSharingWorks) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
 
-  // Check the default value.
+  // An unset option returns kLiteRtStatusErrorNotFound.
   bool constant_tensor_sharing = true;
-  LITERT_ASSERT_OK(LrtGetGpuOptionsConstantTensorsSharing(
-      &constant_tensor_sharing, payload));
-  EXPECT_THAT(constant_tensor_sharing, Eq(false));
+  EXPECT_THAT(
+      LrtGetGpuOptionsConstantTensorsSharing(&constant_tensor_sharing, payload),
+      ::testing::litert::IsError(kLiteRtStatusErrorNotFound));
 
   options.EnableConstantTensorSharing(true);
 
@@ -64,11 +64,11 @@ TEST(GpuOptions, EnableInfiniteFloatCappingWorks) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
 
-  // Check the default value.
+  // An unset option returns kLiteRtStatusErrorNotFound.
   bool infinite_float_capping = true;
-  LITERT_ASSERT_OK(
-      LrtGetGpuOptionsInfiniteFloatCapping(&infinite_float_capping, payload));
-  EXPECT_THAT(infinite_float_capping, Eq(false));
+  EXPECT_THAT(
+      LrtGetGpuOptionsInfiniteFloatCapping(&infinite_float_capping, payload),
+      ::testing::litert::IsError(kLiteRtStatusErrorNotFound));
 
   options.EnableInfiniteFloatCapping(true);
 
@@ -87,10 +87,10 @@ TEST(GpuOptions, EnableBenchmarkModeWorks) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
 
-  // Check the default value.
+  // An unset option returns kLiteRtStatusErrorNotFound.
   bool benchmark_mode = true;
-  LITERT_ASSERT_OK(LrtGetGpuOptionsBenchmarkMode(&benchmark_mode, payload));
-  EXPECT_THAT(benchmark_mode, Eq(false));
+  EXPECT_THAT(LrtGetGpuOptionsBenchmarkMode(&benchmark_mode, payload),
+              ::testing::litert::IsError(kLiteRtStatusErrorNotFound));
 
   options.EnableBenchmarkMode(true);
 
@@ -122,13 +122,12 @@ TEST(GpuAcceleratorCompilationOptions,
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
 
-  // Check the default value.
+  // Check the unset option returns kLiteRtStatusErrorNotFound.
   bool allow_src_quantized_fc_conv_ops = true;
 
-  LITERT_ASSERT_OK(
-      LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
-          &allow_src_quantized_fc_conv_ops, payload));
-  EXPECT_THAT(allow_src_quantized_fc_conv_ops, Eq(false));
+  EXPECT_THAT(LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
+                  &allow_src_quantized_fc_conv_ops, payload),
+              ::testing::litert::IsError(kLiteRtStatusErrorNotFound));
 }
 
 TEST(GpuAcceleratorCompilationOptions,
@@ -151,11 +150,11 @@ TEST(GpuAcceleratorCompilationOptions, CheckDelegatePrecisionDefaultPrecision) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
 
-  // Check the default value.
+  // An unset option returns kLiteRtStatusErrorNotFound.
   LiteRtDelegatePrecision precision = kLiteRtDelegatePrecisionFp16;
-  LITERT_ASSERT_OK(
-      LrtGetGpuAcceleratorCompilationOptionsPrecision(&precision, payload));
-  EXPECT_THAT(precision, Eq(kLiteRtDelegatePrecisionDefault));
+  EXPECT_THAT(
+      LrtGetGpuAcceleratorCompilationOptionsPrecision(&precision, payload),
+      ::testing::litert::IsError(kLiteRtStatusErrorNotFound));
 }
 
 TEST(GpuAcceleratorCompilationOptions, SetDelegatePrecisionFp16Precision) {
@@ -174,7 +173,6 @@ TEST(GpuAcceleratorCompilationOptions, SetDelegatePrecisionFp32Precision) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
 
-  // Check the default value.
   LiteRtDelegatePrecision precision = kLiteRtDelegatePrecisionDefault;
 
   options.SetPrecision(GpuOptions::Precision::kFp32);
@@ -187,11 +185,11 @@ TEST(GpuAcceleratorCompilationOptions, SetDelegatePrecisionFp32Precision) {
 TEST(GpuAcceleratorCompilationOptions, SetSerializationDir) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
-  // Check the default value.
+  // An unset option returns kLiteRtStatusErrorNotFound.
   const char* serialization_dir = nullptr;
-  LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsSerializationDir(
-      &serialization_dir, payload));
-  EXPECT_EQ(serialization_dir, nullptr);
+  EXPECT_THAT(LrtGetGpuAcceleratorCompilationOptionsSerializationDir(
+                  &serialization_dir, payload),
+              ::testing::litert::IsError(kLiteRtStatusErrorNotFound));
 
   options.SetSerializationDir("/data/local/tmp");
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsSerializationDir(
@@ -202,11 +200,11 @@ TEST(GpuAcceleratorCompilationOptions, SetSerializationDir) {
 TEST(GpuAcceleratorCompilationOptions, SetModelCacheKey) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
-  // Check the default value.
+  // An unset option returns kLiteRtStatusErrorNotFound.
   const char* model_cache_key = nullptr;
-  LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsModelCacheKey(
-      &model_cache_key, payload));
-  EXPECT_EQ(model_cache_key, nullptr);
+  EXPECT_THAT(LrtGetGpuAcceleratorCompilationOptionsModelCacheKey(
+                  &model_cache_key, payload),
+              ::testing::litert::IsError(kLiteRtStatusErrorNotFound));
 
   options.SetModelCacheKey("model_cache");
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsModelCacheKey(
@@ -217,11 +215,11 @@ TEST(GpuAcceleratorCompilationOptions, SetModelCacheKey) {
 TEST(GpuAcceleratorCompilationOptions, SetProgramCacheFd) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
-  // Check the default value.
+  // An unset option returns kLiteRtStatusErrorNotFound.
   int program_cache_fd = -1;
-  LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
-      &program_cache_fd, payload));
-  EXPECT_EQ(program_cache_fd, -1);
+  EXPECT_THAT(LrtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
+                  &program_cache_fd, payload),
+              ::testing::litert::IsError(kLiteRtStatusErrorNotFound));
 
   options.SetProgramCacheFd(123);
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
@@ -232,11 +230,11 @@ TEST(GpuAcceleratorCompilationOptions, SetProgramCacheFd) {
 TEST(GpuAcceleratorCompilationOptions, SetSerializeProgramCache) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
-  // Check the default value.
+  // An unset option returns kLiteRtStatusErrorNotFound.
   bool serialize_program_cache = false;
-  LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
-      &serialize_program_cache, payload));
-  EXPECT_EQ(serialize_program_cache, true);
+  EXPECT_THAT(LrtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
+                  &serialize_program_cache, payload),
+              ::testing::litert::IsError(kLiteRtStatusErrorNotFound));
 
   options.SetSerializeProgramCache(false);
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
@@ -247,12 +245,11 @@ TEST(GpuAcceleratorCompilationOptions, SetSerializeProgramCache) {
 TEST(GpuAcceleratorCompilationOptions, SetSerializeExternalTensors) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
-  // Check the default value.
+  // Check the unset option returns kLiteRtStatusErrorNotFound.
   bool serialize_external_tensors = false;
-  LITERT_ASSERT_OK(
-      LrtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
-          &serialize_external_tensors, payload));
-  EXPECT_EQ(serialize_external_tensors, false);
+  EXPECT_THAT(LrtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
+                  &serialize_external_tensors, payload),
+              ::testing::litert::IsError(kLiteRtStatusErrorNotFound));
 
   options.SetSerializeExternalTensors(true);
   LITERT_ASSERT_OK(
@@ -264,11 +261,11 @@ TEST(GpuAcceleratorCompilationOptions, SetSerializeExternalTensors) {
 TEST(GpuAcceleratorCompilationOptions, SetPreferTextureWeights) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
-  // Check the default value.
+  // Check the unset option returns kLiteRtStatusErrorNotFound.
   bool prefer_texture_weights = false;
-  LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
-      &prefer_texture_weights, payload));
-  EXPECT_EQ(prefer_texture_weights, false);
+  EXPECT_THAT(LrtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
+                  &prefer_texture_weights, payload),
+              ::testing::litert::IsError(kLiteRtStatusErrorNotFound));
 
   options.SetPreferTextureWeights(true);
   LITERT_ASSERT_OK(LrtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
@@ -281,22 +278,22 @@ TEST(GpuOptions, SetUseMetalArgumentBuffersWorks) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
 
-  // Check the default value.
+  // Check the unset option returns kLiteRtStatusErrorNotFound.
   bool use_metal_argument_buffers = true;
-  LITERT_ASSERT_OK(LrtGetGpuOptionsUseMetalArgumentBuffers(
-      payload, &use_metal_argument_buffers));
-  EXPECT_THAT(use_metal_argument_buffers, Eq(false));
+  EXPECT_THAT(LrtGetGpuOptionsUseMetalArgumentBuffers(
+                  &use_metal_argument_buffers, payload),
+              ::testing::litert::IsError(kLiteRtStatusErrorNotFound));
 
   options.SetUseMetalArgumentBuffers(true);
 
   LITERT_ASSERT_OK(LrtGetGpuOptionsUseMetalArgumentBuffers(
-      payload, &use_metal_argument_buffers));
+      &use_metal_argument_buffers, payload));
   EXPECT_THAT(use_metal_argument_buffers, Eq(true));
 
   options.SetUseMetalArgumentBuffers(false);
 
   LITERT_ASSERT_OK(LrtGetGpuOptionsUseMetalArgumentBuffers(
-      payload, &use_metal_argument_buffers));
+      &use_metal_argument_buffers, payload));
   EXPECT_THAT(use_metal_argument_buffers, Eq(false));
 }
 #endif  // __APPLE__
@@ -304,11 +301,11 @@ TEST(GpuOptions, SetUseMetalArgumentBuffersWorks) {
 TEST(GpuAcceleratorCompilationOptions, SetHintFullyDelegatedToSingleDelegate) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
-  // Check the default value.
+  // Check the unset option returns kLiteRtStatusErrorNotFound.
   bool hint_fully_delegated_to_single_delegate = false;
-  LITERT_ASSERT_OK(LrtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
-      &hint_fully_delegated_to_single_delegate, payload));
-  EXPECT_EQ(hint_fully_delegated_to_single_delegate, false);
+  EXPECT_THAT(LrtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
+                  &hint_fully_delegated_to_single_delegate, payload),
+              ::testing::litert::IsError(kLiteRtStatusErrorNotFound));
 
   options.SetHintFullyDelegatedToSingleDelegate(true);
   LITERT_ASSERT_OK(LrtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
@@ -320,11 +317,11 @@ TEST(GpuOptions, SetKernelBatchSizeWorks) {
   LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
   LrtGpuOptions* payload = options.Get();
 
-  // Check the default value.
+  // An unset option returns kLiteRtStatusErrorNotFound.
   int kernel_batch_size = 0;
-  LITERT_ASSERT_OK(LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
-      &kernel_batch_size, payload));
-  EXPECT_THAT(kernel_batch_size, Eq(-1));
+  EXPECT_THAT(LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
+                  &kernel_batch_size, payload),
+              ::testing::litert::IsError(kLiteRtStatusErrorNotFound));
 
   options.SetKernelBatchSize(10);
 
