@@ -590,7 +590,11 @@ cc_test(
     defines = ["BENCHMARK_MODEL_NO_MAIN"],
     deps = [
         ":benchmark_litert_model",
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_gpu_options",
+        "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/options:litert_gpu_options",
         "//litert/cc/options:litert_mediatek_options",
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/tools/flags/vendors:google_tensor_flags",

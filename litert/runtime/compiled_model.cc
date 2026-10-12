@@ -627,6 +627,79 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
 }
 
 #if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
+Expected<void> LiteRtCompiledModelT::ResolveExternalWeightsForCompilation(
+    LiteRtModelT& model, LiteRtOptions jit_compilation_options,
+    LiteRtEnvironmentT& env) {
+  auto* buffers = model.Buffers();
+  std::vector<LiteRtModelT::BufferId> external_ids;
+  for (LiteRtModelT::BufferId id = 1; id < buffers->NumBuffers(); ++id) {
+    auto context = buffers->GetContext(id);
+    if (context && context->get().external.has_value()) {
+      external_ids.push_back(id);
+    }
+  }
+  if (external_ids.empty()) {
+    return {};
+  }
+
+  const auto& tfl_wrapper = litert::internal::GetTflFlatbuffer(model);
+  if (tfl_wrapper.PackedModel() == nullptr) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        "External weights need the model's original flatbuffer");
+  }
+  if (jit_compilation_options->weight_loader != nullptr) {
+    weight_loader_ = jit_compilation_options->weight_loader;
+  } else {
+    weight_loader_owned_ = weight_loader::CreateLiteRtWeightLoader(
+        LrtGetRuntimeContext(), tfl_wrapper.PackedModel(), model_directory_,
+        std::move(jit_compilation_options->scoped_weight_source),
+        static_cast<const weight_loader::WeightInMemoryMap*>(
+            jit_compilation_options->weight_in_memory_map));
+    weight_loader_ = weight_loader_owned_.get();
+  }
+  weight_loader::WeightAccessRequest request;
+  request.cpu = true;
+  request.opencl = false;
+  if (LiteRtStatus status = weight_loader_->PrepareAccess(request, &env);
+      status != kLiteRtStatusOk) {
+    return litert::Unexpected(
+        status,
+        "External weight loader: failed to map the external weights for "
+        "compilation");
+  }
+
+  for (const auto id : external_ids) {
+    auto context = buffers->GetContext(id);
+    const auto& external = context->get().external;
+    const weight_loader::WeightAccess* access =
+        weight_loader_->GetExternalWeightByBuffer(external->id);
+    LiteRtTensorBuffer host_buffer =
+        access != nullptr ? access->GetHostBuffer() : nullptr;
+    void* host_memory = nullptr;
+    if (host_buffer == nullptr ||
+        LiteRtGetTensorBufferHostMemory(host_buffer, &host_memory) !=
+            kLiteRtStatusOk ||
+        host_memory == nullptr) {
+      return litert::Unexpected(
+          kLiteRtStatusErrorRuntimeFailure,
+          absl::StrCat("External weight loader: no host mapping for external "
+                       "buffer id ",
+                       external->id));
+    }
+    LITERT_RETURN_IF_ERROR(buffers->SetNonOwnedBuffer(
+        id, litert::BufferRef<uint8_t>(host_memory, external->length)));
+  }
+  // The runtime initialization keeps using this loader: the serialized model
+  // refers to the same external buffer ids.
+  jit_compilation_options->weight_loader = weight_loader_;
+  LITERT_LOG(LITERT_INFO,
+             "External weight loader: %zu external constants mapped for "
+             "compilation",
+             external_ids.size());
+  return {};
+}
+
 Expected<void> LiteRtCompiledModelT::RestoreExternalWeightsForCpu() {
   if (!weight_loader_) {
     return {};
@@ -840,6 +913,12 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     // Fall through to the next step if it's pre-compiled, else try to apply
     // plugins to the model.
     if (!IsCompiled(model)) {
+#if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
+      if (hw_accelerators & kLiteRtHwAcceleratorNpu) {
+        LITERT_RETURN_IF_ERROR(
+            ResolveExternalWeightsForCompilation(model, options, env));
+      }
+#endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
       Expected<bool> maybe_initialized_model =
           ApplyPluginsWithCaching(model, hw_accelerators, *options, env);
       if (maybe_initialized_model.HasValue() &&

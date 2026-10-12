@@ -1116,6 +1116,18 @@ class LiteRtModelT {
 
   const std::optional<std::string>& SourcePath() const { return source_path_; }
 
+  // EXTERNAL BUFFER GROUPS
+
+  // The names of the external buffer groups (tflite ExternalBufferGroup) that
+  // the external constants of this model refer to by index, in model order.
+  const std::vector<std::string>& ExternalBufferGroups() const {
+    return external_buffer_groups_;
+  }
+
+  void SetExternalBufferGroups(std::vector<std::string> groups) {
+    external_buffer_groups_ = std::move(groups);
+  }
+
   // Attach an asset to the given op. An asset is a non-tensor buffer
   // that is used by the op. Assets may be referenced by multiple ops.
   // Each edge from an op to an asset is identified by a name. All buffers
@@ -1193,6 +1205,7 @@ class LiteRtModelT {
   TflOpCodes tfl_operator_codes_;
   TflFlatbuffer tfl_flatbuffer_;
   std::optional<std::string> source_path_;
+  std::vector<std::string> external_buffer_groups_;
 };
 
 // Get the build stamp from the model if it exists.

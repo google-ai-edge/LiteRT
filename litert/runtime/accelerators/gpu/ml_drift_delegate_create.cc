@@ -110,11 +110,8 @@ LiteRtStatus CreateDelegate(
         &gpu_delegate_options->litert_external_tensors_mode,
         gpu_options_payload);
 
-    bool use_ir_model;
-    if (LrtGetGpuOptionsUseIrModel(&use_ir_model, gpu_options_payload) ==
-        kLiteRtStatusOk) {
-      gpu_delegate_options->use_ir_model = use_ir_model;
-    }
+    LrtGetGpuOptionsUseIrModel(&gpu_delegate_options->use_ir_model,
+                               gpu_options_payload);
 
     LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
         &gpu_delegate_options->allow_src_quantized_fc_conv_ops,
@@ -185,8 +182,7 @@ LiteRtStatus CreateDelegate(
         &gpu_delegate_options->num_threads_to_compile, gpu_options_payload);
 
     LrtGetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
-        &gpu_delegate_options->convert_weights_on_gpu,
-        gpu_options_payload);
+        &gpu_delegate_options->convert_weights_on_gpu, gpu_options_payload);
 
     LrtGetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
         &gpu_delegate_options->wait_for_weights_conversion_complete,
@@ -198,7 +194,7 @@ LiteRtStatus CreateDelegate(
 
 #ifdef __APPLE__
     LrtGetGpuOptionsUseMetalArgumentBuffers(
-        gpu_options_payload, &gpu_delegate_options->use_metal_argument_buffers);
+        &gpu_delegate_options->use_metal_argument_buffers, gpu_options_payload);
 #endif  // __APPLE__
 
     int num_patterns;
@@ -235,7 +231,7 @@ LiteRtStatus CreateDelegate(
       }
     }
 
-    LiteRtGpuPriority gpu_priority;
+    LiteRtGpuPriority gpu_priority = kLiteRtGpuPriorityDefault;
     LrtGetGpuOptionsGpuPriority(&gpu_priority, gpu_options_payload);
     if (gpu_priority == kLiteRtGpuPriorityLow) {
       gpu_delegate_options->gpu_priority = kGpuLowPriority;
@@ -257,7 +253,7 @@ LiteRtStatus CreateDelegate(
         &gpu_delegate_options->num_steps_of_command_buffer_preparations,
         gpu_options_payload);
 
-    LiteRtGpuWaitType wait_type;
+    LiteRtGpuWaitType wait_type = kLiteRtGpuWaitTypeDefault;
     LrtGetGpuAcceleratorRuntimeOptionsWaitType(&wait_type, gpu_options_payload);
     switch (wait_type) {
       case kLiteRtGpuWaitTypeDefault:
@@ -277,18 +273,15 @@ LiteRtStatus CreateDelegate(
         break;
     }
 
-    const char* preferred_device_substr;
+    const char* preferred_device_substr = "";
     LrtGetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
         &preferred_device_substr, gpu_options_payload);
     gpu_delegate_options->preferred_device_substr = preferred_device_substr;
   } else if (gpu_delegate_options != nullptr) {
     LrtGpuOptions* default_gpu_options = nullptr;
     if (LrtCreateGpuOptions(&default_gpu_options) == kLiteRtStatusOk) {
-      bool use_ir_model;
-      if (LrtGetGpuOptionsUseIrModel(&use_ir_model, default_gpu_options) ==
-          kLiteRtStatusOk) {
-        gpu_delegate_options->use_ir_model = use_ir_model;
-      }
+      LrtGetGpuOptionsUseIrModel(&gpu_delegate_options->use_ir_model,
+                                 default_gpu_options);
       LrtDestroyGpuOptions(default_gpu_options);
     }
   }

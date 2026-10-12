@@ -19,8 +19,8 @@
 //
 // The Edge-LLM kernel is derived from MIT-HAN Lab's LLM-AWQ GEMV. This
 // adaptation retains its CUDA C++ small-M design and activation reuse across
-// output rows, while consuming LiteRT's raw signed INT2/INT4 row-major weights,
-// BF16 activations, and per-channel BF16 scales.
+// output rows, while consuming LiteRT's raw signed INT2/INT4/INT8 row-major
+// weights, BF16 activations, and per-channel BF16 scales.
 //
 // Copyright (c) 2023 MIT-HAN Lab
 //
@@ -219,7 +219,7 @@ bool InvalidArguments(const void* activation, const uint8_t* packed_weights,
          scales == nullptr || output == nullptr || input_size <= 0 ||
          input_size % 16 != 0 || output_size <= 0 || rows <= 0 ||
          rows > kLiteRtNvidiaSubbyteGemvMaxRows ||
-         (bit_width != 2 && bit_width != 4);
+         (bit_width != 2 && bit_width != 4 && bit_width != 8);
 }
 
 }  // namespace
@@ -255,19 +255,33 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16SubbytePerChannelGemvRows(
   const auto* typed_scales = static_cast<const __nv_bfloat16*>(scales);
   auto* typed_output = static_cast<__nv_bfloat16*>(output);
   if (input_size >= kLongInputThreshold) {
-    return bit_width == 2
-               ? LaunchRows<2, 256>(typed_activation, packed_weights,
-                                    typed_scales, typed_output, rows,
-                                    input_size, output_size, stream)
-               : LaunchRows<4, 256>(typed_activation, packed_weights,
-                                    typed_scales, typed_output, rows,
-                                    input_size, output_size, stream);
-  }
-  return bit_width == 2
-             ? LaunchRows<2, 128>(typed_activation, packed_weights,
-                                  typed_scales, typed_output, rows, input_size,
-                                  output_size, stream)
-             : LaunchRows<4, 128>(typed_activation, packed_weights,
+    switch (bit_width) {
+      case 2:
+        return LaunchRows<2, 256>(typed_activation, packed_weights,
                                   typed_scales, typed_output, rows, input_size,
                                   output_size, stream);
+      case 4:
+        return LaunchRows<4, 256>(typed_activation, packed_weights,
+                                  typed_scales, typed_output, rows, input_size,
+                                  output_size, stream);
+      default:
+        return LaunchRows<8, 256>(typed_activation, packed_weights,
+                                  typed_scales, typed_output, rows, input_size,
+                                  output_size, stream);
+    }
+  }
+  switch (bit_width) {
+    case 2:
+      return LaunchRows<2, 128>(typed_activation, packed_weights, typed_scales,
+                                typed_output, rows, input_size, output_size,
+                                stream);
+    case 4:
+      return LaunchRows<4, 128>(typed_activation, packed_weights, typed_scales,
+                                typed_output, rows, input_size, output_size,
+                                stream);
+    default:
+      return LaunchRows<8, 128>(typed_activation, packed_weights, typed_scales,
+                                typed_output, rows, input_size, output_size,
+                                stream);
+  }
 }

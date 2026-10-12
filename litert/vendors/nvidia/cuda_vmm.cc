@@ -20,7 +20,7 @@
 #include <memory>
 #include <string>
 
-#include "third_party/gpus/cuda/include/cuda.h"
+#include <cuda.h>
 #include "cuda_runtime_api.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
