@@ -421,7 +421,7 @@ class RuntimeProxy {
   }
 
   LiteRtStatus GetCompiledModelInputBufferRequirements(
-      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      LiteRtCompiledModelConst compiled_model, LiteRtParamIndex signature_index,
       LiteRtParamIndex input_index,
       LiteRtTensorBufferRequirements* buffer_requirements) {
     LITERT_PROXY_METHOD_STATUS(
@@ -430,7 +430,7 @@ class RuntimeProxy {
   }
 
   LiteRtStatus GetCompiledModelOutputBufferRequirements(
-      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      LiteRtCompiledModelConst compiled_model, LiteRtParamIndex signature_index,
       LiteRtParamIndex output_index,
       LiteRtTensorBufferRequirements* buffer_requirements) {
     LITERT_PROXY_METHOD_STATUS(
@@ -681,8 +681,8 @@ class RuntimeProxy {
                                compiled_model);
   }
 
-  LiteRtStatus CompiledModelGetErrorMessages(LiteRtCompiledModel compiled_model,
-                                             char** error_messages) {
+  LiteRtStatus CompiledModelGetErrorMessages(
+      LiteRtCompiledModelConst compiled_model, char** error_messages) {
     LITERT_PROXY_METHOD_STATUS(litert_compiled_model_get_error_messages,
                                compiled_model, error_messages);
   }
