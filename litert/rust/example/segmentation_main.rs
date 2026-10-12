@@ -17,10 +17,10 @@
 /// This example shows how to use LiteRT Rust bindings to run a segmentation model.
 ///
 /// Example usage:
-/// cargo run \
-///  --model-path=third_party/odml/litert/litert/samples/async_segmentation/models/
-/// selfie_multiclass_256x256.tflite \  --input-image-path=third_party/odml/litert/litert/
-/// samples/async_segmentation/test_images/image.jpeg \  --output-image-path=/tmp/out.png
+/// cargo run --bin segmentation \
+/// --model-path=models/selfie_multiclass_256x256.tflite \
+/// --input-image-path=image.jpeg \
+/// --output-image-path=/tmp/out.png
 use clap::Parser;
 use image::{imageops, ImageBuffer, ImageReader};
 
@@ -40,35 +40,31 @@ struct Args {
     output_image_path: String,
 }
 
-struct SegmentationModel {
-    model: litert::Model,
-    env: litert::Environment,
-    compiled_model: litert::CompiledModel,
+struct SegmentationModel<'a> {
+    compiled_model: litert::CompiledModel<'a>,
 }
 
-impl SegmentationModel {
-    fn initialize(model_path: &str) -> Result<SegmentationModel, litert::Error> {
-        let env = litert::EnvironmentBuilder::build_default()?;
-        let accelerators = env.get_available_accelerators()?;
-        println!("Available accelerators: {:?}", accelerators);
-        let m = litert::Model::create_model_from_file(&env, model_path)?;
+impl<'a> SegmentationModel<'a> {
+    fn initialize(
+        env: &'a litert::Environment,
+        m: &'a litert::Model,
+    ) -> Result<SegmentationModel<'a>, litert::Error> {
         let options = litert::Options::create_with_accelerator(litert::LiteRtHwAccelerator::Cpu)?;
-        let cm = litert::CompiledModel::create(&env, &m, &options)?;
-        Ok(SegmentationModel { model: m, env: env, compiled_model: cm })
+        let cm = litert::CompiledModel::create(env, m, &options)?;
+        Ok(SegmentationModel { compiled_model: cm })
     }
     fn run(&self, input: &[f32], output: &mut [f32]) -> Result<(), litert::Error> {
-        let sig_index = litert::SignatureIndex::from(0);
         let inputs =
-            self.compiled_model.create_input_tensor_buffers(&self.env, &self.model, sig_index)?;
-        println!("Input type: {:?}", inputs[0].element_type());
-        println!("Input dimensions: {:?}", inputs[0].dimensions());
-        inputs[0].write(input)?;
-        let outputs =
-            self.compiled_model.create_output_tensor_buffers(&self.env, &self.model, sig_index)?;
-        println!("Output type: {:?}", outputs[0].element_type());
-        println!("Output dimensions: {:?}", outputs[0].dimensions());
-        self.compiled_model.run(sig_index, &inputs, &outputs)?;
-        outputs[0].read(output)?;
+            self.compiled_model.create_input_tensors_builder(litert::SignatureIndex::DEFAULT)?;
+        let input_buffer = inputs.get_by_index(0)?;
+        println!("Input type: {:?}", input_buffer.element_type());
+        println!("Input dimensions: {:?}", input_buffer.dimensions());
+        inputs.from_user_buffer_by_index(0, input)?;
+        let outputs = self.compiled_model.run_with_inputs(&inputs)?;
+        let output_buffer = outputs.get_by_index(0)?;
+        println!("Output type: {:?}", output_buffer.element_type());
+        println!("Output dimensions: {:?}", output_buffer.dimensions());
+        output_buffer.read(output)?;
         Ok(())
     }
 }
@@ -138,13 +134,20 @@ fn save_image(tensor: &Vec<f32>, path: &str) {
 
 fn main() {
     let args = Args::parse();
-    let model = SegmentationModel::initialize(args.model_path.as_str())
-        .expect("Failed to initialize model");
+    let env = litert::EnvironmentBuilder::build_default().expect("Failed to create environment");
+
+    let accelerators =
+        env.get_available_accelerators().expect("Failed to get available accelerators");
+    println!("Available accelerators: {:?}", accelerators);
+
+    let m = litert::Model::create_model_from_file(&env, args.model_path.as_str())
+        .expect("Failed to load model");
+    let model = SegmentationModel::initialize(&env, &m).expect("Failed to initialize model");
     println!("Model initialized successfully!");
     let input_image = load_image(args.input_image_path.as_str());
     println!("Input image loaded successfully!");
     let input_tensor = image_to_tensor(&input_image);
-    for s in model.model.signatures().expect("Failed to get signature iterator") {
+    for s in m.signatures().expect("Failed to get signature iterator") {
         let signature = s.expect("Failed to get signature");
         println!("Signature key: {:?}", signature.key());
         for input_name in signature.input_names().expect("Failed to get input names") {
