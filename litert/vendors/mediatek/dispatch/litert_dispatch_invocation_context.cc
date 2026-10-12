@@ -29,6 +29,7 @@
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/mediatek/dispatch/file_backed_pages.h"
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 #include "litert/vendors/mediatek/schema/schema_resolver.h"
@@ -282,6 +283,7 @@ LiteRtDispatchInvocationContextT::Create(
       static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
       exec_bytecode_buffer->offset;
   auto exec_bytecode_size = exec_bytecode_buffer->size;
+  std::vector<std::pair<const void*, size_t>> weight_share_buffers;
   auto res = resolver.Initialize((const uint8_t*)exec_bytecode_ptr,
                                  exec_bytecode_size);
   if (res.HasValue() && res.Value()) {
@@ -300,11 +302,29 @@ LiteRtDispatchInvocationContextT::Create(
       return compile_graph.Error();
     }
     std::tie(exec_bytecode_ptr, exec_bytecode_size) = compile_graph.Value();
+
+    auto weight_buffers = graph.value().GetWeightShareBuffers();
+    if (!weight_buffers) {
+      return weight_buffers.Error();
+    }
+    weight_share_buffers = std::move(*weight_buffers);
   }
 
-  auto model_and_compilation =
-      LoadModelAndCompilation(neuron_adapter_api, exec_bytecode_ptr,
-                              exec_bytecode_size, num_inputs, num_outputs);
+  // `NeuronModel_restoreFromCompiledNetwork` copies the compiled network into
+  // the adapter's own memory and never reads `exec_bytecode_ptr` again. When
+  // the bytecode lives in an mmapped model file, its pages are released below
+  // once loading succeeds so they no longer count towards this process's RSS.
+  const int bytecode_fd = exec_bytecode_buffer->fd;
+  litert::mediatek::AdviseNoHugePages(bytecode_fd, exec_bytecode_ptr,
+                                      exec_bytecode_size);
+
+  // A network compiled with externalized static weights takes each weight
+  // buffer as an extra input after the regular inputs.
+  const int total_num_inputs =
+      num_inputs + static_cast<int>(weight_share_buffers.size());
+  auto model_and_compilation = LoadModelAndCompilation(
+      neuron_adapter_api, exec_bytecode_ptr, exec_bytecode_size,
+      total_num_inputs, num_outputs);
   if (!model_and_compilation) {
     return model_and_compilation.Error();
   }
@@ -321,6 +341,41 @@ LiteRtDispatchInvocationContextT::Create(
           execution->get(), 100) != NEURON_NO_ERROR) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to set execution boost hint");
+  }
+
+  if (litert::mediatek::ReleaseFileBackedPages(bytecode_fd, exec_bytecode_ptr,
+                                               exec_bytecode_size)) {
+    LITERT_LOG(LITERT_INFO,
+               "Released file-backed pages of %zu bytes of MediaTek bytecode",
+               exec_bytecode_size);
+  }
+
+  for (size_t i = 0; i < weight_share_buffers.size(); ++i) {
+    const int weight_input_index = num_inputs + static_cast<int>(i);
+    const auto& [weight_ptr, weight_size] = weight_share_buffers[i];
+    size_t padded_size = weight_size;
+    if (neuron_adapter_api.api().compilation_get_input_padded_size != nullptr) {
+      size_t queried_padded_size = 0;
+      if (neuron_adapter_api.api().compilation_get_input_padded_size(
+              compilation.get(), weight_input_index, &queried_padded_size) ==
+              NEURON_NO_ERROR &&
+          queried_padded_size > padded_size) {
+        padded_size = queried_padded_size;
+      }
+    }
+
+    auto weight_mem_info = device_context->GetOrCreateSharedWeightMemory(
+        bytecode_fd, weight_ptr, weight_size, padded_size);
+    if (!weight_mem_info) {
+      return weight_mem_info.Error();
+    }
+    if (neuron_adapter_api.api().execution_set_input_from_memory(
+            execution->get(), weight_input_index, nullptr,
+            weight_mem_info->neuron_memory, weight_mem_info->offset,
+            padded_size) != NEURON_NO_ERROR) {
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "Failed to set shared weight input from memory");
+    }
   }
 
   return Ptr(new LiteRtDispatchInvocationContextT(

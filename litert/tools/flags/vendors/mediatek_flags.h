@@ -51,6 +51,8 @@ ABSL_DECLARE_FLAG(std::string, mediatek_dla_dir);
 
 ABSL_DECLARE_FLAG(std::string, mediatek_aot_compilation_options);
 
+ABSL_DECLARE_FLAG(bool, mediatek_enable_weight_sharing);
+
 namespace litert::mediatek {
 
 bool AbslParseFlag(absl::string_view text,

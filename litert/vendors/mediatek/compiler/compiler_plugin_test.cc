@@ -12,29 +12,45 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cstddef>
-#include <cstdlib>
-#include <string>
+#include <unistd.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
 #include "litert/test/load_test_model.h"
 #include "litert/test/test_models.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
+#include "litert/vendors/mediatek/schema/schema_resolver.h"
 
 namespace litert {
 namespace {
 
+using ::testing::Each;
+using ::testing::Gt;
+using ::testing::IsEmpty;
+using ::testing::Not;
 using ::testing::Values;
 
 // clang-format off
@@ -164,6 +180,130 @@ TEST(TestMediatekPlugin, DlaDirectory) {
   char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
   EXPECT_NE(dla_directory_name, nullptr);
 #endif
+}
+
+// Compiles `model_file` for mt6991 with the given `enable_weight_sharing`
+// option and returns the sizes of the static weight buffers of its only
+// partition.
+void CompileAndGetWeightShareSizes(absl::string_view model_file,
+                                   bool enable_weight_sharing,
+                                   std::vector<size_t>* weight_sizes) {
+  auto options = Options::Create();
+  ASSERT_TRUE(options);
+  auto mediatek_options = options->GetOptions<mediatek::MediatekOptions>();
+  ASSERT_TRUE(mediatek_options);
+  mediatek_options->SetEnableWeightSharing(enable_weight_sharing);
+  auto env = Environment::Create({});
+  ASSERT_TRUE(env);
+  auto litert_options =
+      internal::LiteRtOptionsPtrBuilder::Build(*options, env->GetHolder());
+  ASSERT_TRUE(litert_options);
+  auto plugin = CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr,
+                             litert_options->get());
+  auto model = testing::LoadTestFileModel(model_file);
+
+  LiteRtCompiledResult compiled;
+  ASSERT_EQ(LiteRtCompilerPluginCompile(plugin.get(), /*soc_model=*/"mt6991",
+                                        model.Get(), &compiled),
+            kLiteRtStatusOk);
+  absl::Cleanup destroy_compiled = [compiled] {
+    LiteRtDestroyCompiledResult(compiled);
+  };
+  const void* byte_code = nullptr;
+  size_t byte_code_size = 0;
+  ASSERT_EQ(LiteRtGetCompiledResultByteCode(compiled, /*byte_code_idx=*/0,
+                                            &byte_code, &byte_code_size),
+            kLiteRtStatusOk);
+
+  neuron::SchemaResolver resolver;
+  auto initialized = resolver.Initialize(static_cast<const uint8_t*>(byte_code),
+                                         byte_code_size);
+  ASSERT_TRUE(initialized.HasValue());
+  ASSERT_TRUE(initialized.Value());
+  auto graph = resolver.GetCompiledGraph("Partition_0");
+  ASSERT_TRUE(graph.has_value());
+  auto network = graph->GetCompiledNetwork();
+  ASSERT_TRUE(network.HasValue());
+  EXPECT_GT(network->second, 0);
+  auto weight_buffers = graph->GetWeightShareBuffers();
+  ASSERT_TRUE(weight_buffers.HasValue());
+  weight_sizes->clear();
+  for (const auto& [data, size] : *weight_buffers) {
+    EXPECT_NE(data, nullptr);
+    weight_sizes->push_back(size);
+  }
+}
+
+// A model with enough constant data for the compiler to extract.
+constexpr absl::string_view kModelWithWeights = "mobilenet_v2_1.0_224.tflite";
+
+TEST(TestMediatekPlugin, CompileEmbedsWeightsByDefault) {
+  std::vector<size_t> weight_sizes;
+  ASSERT_NO_FATAL_FAILURE(CompileAndGetWeightShareSizes(
+      kModelWithWeights, /*enable_weight_sharing=*/false, &weight_sizes));
+  EXPECT_THAT(weight_sizes, IsEmpty());
+}
+
+TEST(TestMediatekPlugin, CompileWithWeightSharingExtractsWeights) {
+  std::vector<size_t> weight_sizes;
+  ASSERT_NO_FATAL_FAILURE(CompileAndGetWeightShareSizes(
+      kModelWithWeights, /*enable_weight_sharing=*/true, &weight_sizes));
+  EXPECT_THAT(weight_sizes, Not(IsEmpty()));
+  EXPECT_THAT(weight_sizes, Each(Gt(0)));
+}
+
+// Sets an environment variable for the lifetime of this object and then
+// restores its previous value.
+class ScopedEnv {
+ public:
+  ScopedEnv(const char* name, const std::string& value) : name_(name) {
+    if (const char* old_value = std::getenv(name); old_value != nullptr) {
+      old_value_ = old_value;
+    }
+    setenv(name, value.c_str(), /*overwrite=*/1);
+  }
+  ~ScopedEnv() {
+    if (old_value_.has_value()) {
+      setenv(name_, old_value_->c_str(), /*overwrite=*/1);
+    } else {
+      unsetenv(name_);
+    }
+  }
+
+ private:
+  const char* name_;
+  std::optional<std::string> old_value_;
+};
+
+TEST(TestMediatekPlugin, CompileWithWeightSharingFallsBackIfExtractionFails) {
+  // Compiler options are whitespace-separated, so the compiler cannot extract
+  // weights into a directory whose path contains a space. The plugin then
+  // compiles the partition again with embedded weights.
+  ScopedEnv dla_dir("MTKNN_ADAPTER_DLA_DIR",
+                    ::testing::TempDir() + "/dla dir with spaces");
+  std::vector<size_t> weight_sizes;
+  ASSERT_NO_FATAL_FAILURE(CompileAndGetWeightShareSizes(
+      kModelWithWeights, /*enable_weight_sharing=*/true, &weight_sizes));
+  EXPECT_THAT(weight_sizes, IsEmpty());
+}
+
+TEST(TestMediatekPlugin, CompileWithWeightSharingEmbedsWeightsIfNoWeightsFile) {
+  if (geteuid() == 0) {
+    GTEST_SKIP() << "Directory permissions do not apply to root.";
+  }
+  // The plugin deletes the DLA directory before compiling, and the weights
+  // file cannot be created if the directory cannot be recreated, so the plugin
+  // then compiles the partition with embedded weights.
+  const std::string read_only_dir = ::testing::TempDir() + "/dla_read_only";
+  std::filesystem::create_directories(read_only_dir);
+  std::filesystem::permissions(
+      read_only_dir,
+      std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec);
+  ScopedEnv dla_dir("MTKNN_ADAPTER_DLA_DIR", read_only_dir + "/dla");
+  std::vector<size_t> weight_sizes;
+  ASSERT_NO_FATAL_FAILURE(CompileAndGetWeightShareSizes(
+      kModelWithWeights, /*enable_weight_sharing=*/true, &weight_sizes));
+  EXPECT_THAT(weight_sizes, IsEmpty());
 }
 
 // /////////////////////////////////////////////////////////////////////////////

@@ -293,6 +293,73 @@ TEST(LrtMediatekOptionsTest, AotCompilationOptions) {
   LrtDestroyMediatekOptions(options);
 }
 
+TEST(LrtMediatekOptionsTest, EnableWeightSharing) {
+  LrtMediatekOptions* options;
+  LITERT_ASSERT_OK(LrtCreateMediatekOptions(&options));
+
+  bool enable_weight_sharing;
+  LITERT_ASSERT_OK(LrtGetMediatekOptionsEnableWeightSharing(
+      options, &enable_weight_sharing));
+  EXPECT_FALSE(enable_weight_sharing);
+
+  LITERT_ASSERT_OK(LrtSetMediatekOptionsEnableWeightSharing(options, true));
+  LITERT_ASSERT_OK(LrtGetMediatekOptionsEnableWeightSharing(
+      options, &enable_weight_sharing));
+  EXPECT_TRUE(enable_weight_sharing);
+
+  LrtMediatekOptions* parsed;
+  SerializeAndParse(options, &parsed);
+  bool parsed_enable_weight_sharing = false;
+  LITERT_ASSERT_OK(LrtGetMediatekOptionsEnableWeightSharing(
+      parsed, &parsed_enable_weight_sharing));
+  EXPECT_TRUE(parsed_enable_weight_sharing);
+  LrtDestroyMediatekOptions(parsed);
+
+  // An explicit `false` is serialized too.
+  LITERT_ASSERT_OK(LrtSetMediatekOptionsEnableWeightSharing(options, false));
+  SerializeAndParse(options, &parsed);
+  LITERT_ASSERT_OK(LrtGetMediatekOptionsEnableWeightSharing(
+      parsed, &parsed_enable_weight_sharing));
+  EXPECT_FALSE(parsed_enable_weight_sharing);
+  LrtDestroyMediatekOptions(parsed);
+
+  LrtDestroyMediatekOptions(options);
+}
+
+TEST(LrtMediatekOptionsTest, EnableWeightSharingRejectsNull) {
+  LrtMediatekOptions* options;
+  LITERT_ASSERT_OK(LrtCreateMediatekOptions(&options));
+  bool enable_weight_sharing;
+  EXPECT_EQ(LrtSetMediatekOptionsEnableWeightSharing(nullptr, true),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(
+      LrtGetMediatekOptionsEnableWeightSharing(nullptr, &enable_weight_sharing),
+      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtGetMediatekOptionsEnableWeightSharing(options, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  LrtDestroyMediatekOptions(options);
+}
+
+TEST(LrtMediatekOptionsTest, EnableWeightSharingDefaultsToFalseInOldPayloads) {
+  // Payloads serialized before `enable_weight_sharing` existed lack the key.
+  LrtMediatekOptions* parsed = nullptr;
+  LITERT_ASSERT_OK(LrtCreateMediatekOptionsFromToml(
+      "l1_cache_optimizations = true", &parsed));
+  bool enable_weight_sharing = true;
+  LITERT_ASSERT_OK(
+      LrtGetMediatekOptionsEnableWeightSharing(parsed, &enable_weight_sharing));
+  EXPECT_FALSE(enable_weight_sharing);
+  LrtDestroyMediatekOptions(parsed);
+}
+
+TEST(LrtMediatekOptionsTest, EnableWeightSharingRejectsInvalidTomlValue) {
+  LrtMediatekOptions* parsed = nullptr;
+  EXPECT_EQ(
+      LrtCreateMediatekOptionsFromToml("enable_weight_sharing = 1", &parsed),
+      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(parsed, nullptr);
+}
+
 TEST(LrtMediatekOptionsTest, OptionBundleDefaults) {
   LrtMediatekOptions* options;
   LITERT_ASSERT_OK(LrtCreateMediatekOptions(&options));
@@ -414,6 +481,10 @@ TEST(MediatekOptionsTest, CppWrapper) {
   EXPECT_EQ(options.GetOptionBundleDecode(), "decode-bundle");
   options.SetOptionBundlePrefill("prefill-bundle");
   EXPECT_EQ(options.GetOptionBundlePrefill(), "prefill-bundle");
+
+  EXPECT_FALSE(options.GetEnableWeightSharing());
+  options.SetEnableWeightSharing(true);
+  EXPECT_TRUE(options.GetEnableWeightSharing());
 }
 
 }  // namespace

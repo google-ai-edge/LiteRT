@@ -39,12 +39,15 @@
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_opaque_options_wrapper.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/compiler/cc/litert_model.h"
+#include "litert/core/filesystem.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/mediatek/compiler/compile_model.h"
 #include "litert/vendors/mediatek/compiler/create_model.h"
+#include "litert/vendors/mediatek/compiler/extracted_static_weights.h"
 #include "litert/vendors/mediatek/compiler/legalizations/common_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/compiler/transformations/rms_norm_quant_transformation.h"
@@ -58,10 +61,14 @@
 
 using litert::Error;
 using litert::Expected;
+using litert::OwningBufferRef;
+using litert::internal::LoadBinaryFile;
+using litert::mediatek::CreateExtractedStaticWeightsFile;
 using litert::mediatek::NeuronAdapterApi;
 using litert::mediatek::NeuronCompilationPtr;
 using litert::mediatek::NeuronModelPtr;
 using litert::mediatek::OperandMap;
+using litert::mediatek::ParseExtractedStaticWeights;
 
 namespace {
 
@@ -558,7 +565,14 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
 namespace {
 
-Expected<std::vector<uint8_t>> CompilePartition(
+struct CompiledPartition {
+  std::vector<uint8_t> bytecode;
+  // Contents of the file that the static weights of `bytecode` were extracted
+  // to; see `ParseExtractedStaticWeights`. Empty if none were extracted.
+  OwningBufferRef<uint8_t> extracted_weights;
+};
+
+Expected<CompiledPartition> CompilePartition(
     const LiteRtCompilerContext* ctx, NeuronAdapterApi& neuron_adapter_api,
     const litert::compiler::Subgraph& partition, const std::string& graph_name,
     std::optional<std::string> soc_model, LrtMediatekOptions* mediatek_opts,
@@ -568,8 +582,44 @@ Expected<std::vector<uint8_t>> CompilePartition(
   LITERT_RETURN_IF_ERROR(CreateModel(ctx, neuron_adapter_api, partition,
                                      graph_name, model.get(), &operand_map));
 
-  auto compilation = CompileModel(neuron_adapter_api, model.get(), soc_model,
-                                  mediatek_opts, subgraph_index);
+  bool enable_weight_sharing = false;
+  LrtGetMediatekOptionsEnableWeightSharing(mediatek_opts,
+                                           &enable_weight_sharing);
+  std::optional<std::string> weights_path;
+  if (enable_weight_sharing) {
+    if (auto path = CreateExtractedStaticWeightsFile(graph_name); path) {
+      weights_path = std::move(*path);
+    } else {
+      LITERT_LOG(LITERT_WARNING, "%s; not extracting static weights of %s",
+                 path.Error().Message().c_str(), graph_name.c_str());
+    }
+  }
+  absl::Cleanup weights_file_cleanup = [&weights_path] {
+    if (weights_path.has_value()) {
+      std::remove(weights_path->c_str());
+    }
+  };
+
+  auto compilation =
+      CompileModel(neuron_adapter_api, model.get(), soc_model, mediatek_opts,
+                   subgraph_index, /*get_supported_mode=*/false, weights_path);
+  if (!compilation && weights_path.has_value()) {
+    // Some Neuron SDK versions do not support static weight extraction.
+    LITERT_LOG(LITERT_WARNING,
+               "Compiling %s with static weight extraction failed (%s); "
+               "retrying without it",
+               graph_name.c_str(), compilation.Error().Message().c_str());
+    std::remove(weights_path->c_str());
+    weights_path.reset();
+    // The failed compilation may have modified `model`, so build a new one.
+    LITERT_ASSIGN_OR_RETURN(model, neuron_adapter_api.CreateModel());
+    OperandMap fallback_operand_map(neuron_adapter_api, model.get());
+    LITERT_RETURN_IF_ERROR(CreateModel(ctx, neuron_adapter_api, partition,
+                                       graph_name, model.get(),
+                                       &fallback_operand_map));
+    compilation = CompileModel(neuron_adapter_api, model.get(), soc_model,
+                               mediatek_opts, subgraph_index);
+  }
   if (!compilation) {
     return compilation.Error();
   }
@@ -581,15 +631,20 @@ Expected<std::vector<uint8_t>> CompilePartition(
                  "Failed to get compiled network size");
   }
 
-  std::vector<uint8_t> bytecode(bytecode_size);
+  CompiledPartition compiled_partition;
+  compiled_partition.bytecode.resize(bytecode_size);
   if (neuron_adapter_api.api().compilation_store_compiled_network(
-          compilation->get(), bytecode.data(), bytecode.size()) !=
-      NEURON_NO_ERROR) {
+          compilation->get(), compiled_partition.bytecode.data(),
+          compiled_partition.bytecode.size()) != NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to get compiled network");
   }
 
-  return bytecode;
+  if (weights_path.has_value()) {
+    LITERT_ASSIGN_OR_RETURN(compiled_partition.extracted_weights,
+                            LoadBinaryFile(*weights_path));
+  }
+  return compiled_partition;
 }
 
 }  // namespace
@@ -641,18 +696,36 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
     // TODO(b/424234937): Remove this once the bug is fixed.
     compiler_plugin->SetSubgraphIndex(i);
-    auto bytecode =
+    auto compiled_partition =
         CompilePartition(compiler_plugin->ctx(), *api, subgraph, graph_name,
                          opt_soc_model, compiler_plugin->GetMediatekOptions(),
                          compiler_plugin->GetSubgraphIndex());
-    if (!bytecode) {
-      LITERT_LOG(LITERT_INFO, "%s", bytecode.Error().Message().c_str());
-      return bytecode.Error().Status();
+    if (!compiled_partition) {
+      LITERT_LOG(LITERT_INFO, "%s",
+                 compiled_partition.Error().Message().c_str());
+      return compiled_partition.Error().Status();
     }
     auto bufferIdx = result->bytebuilder.AddBuffer(
-        graph_name, (int8_t*)bytecode->data(), bytecode->size());
+        graph_name,
+        reinterpret_cast<const int8_t*>(compiled_partition->bytecode.data()),
+        compiled_partition->bytecode.size());
+    LITERT_ASSIGN_OR_RETURN(
+        auto weight_share_buffers,
+        ParseExtractedStaticWeights(
+            compiled_partition->extracted_weights.StrView()));
+    std::vector<int32_t> weight_share_indices;
+    weight_share_indices.reserve(weight_share_buffers.size());
+    for (size_t w_idx = 0; w_idx < weight_share_buffers.size(); ++w_idx) {
+      auto weight_name = absl::StrFormat("%s_weight_%zu", graph_name, w_idx);
+      const absl::string_view weight_buf = weight_share_buffers[w_idx];
+      int32_t weight_buffer_idx = result->bytebuilder.AddSharedWeightBuffer(
+          weight_name, reinterpret_cast<const int8_t*>(weight_buf.data()),
+          weight_buf.size());
+      weight_share_indices.push_back(weight_buffer_idx);
+    }
     result->bytebuilder.AddCompiledNetwork(
-        graph_name, NeuronSchema::CompiledType_AdapterCache, bufferIdx);
+        graph_name, NeuronSchema::CompiledType_AdapterCache, bufferIdx,
+        weight_share_indices);
     result->graph_names.emplace_back(graph_name);
   }
 

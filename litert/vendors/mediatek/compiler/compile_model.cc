@@ -25,6 +25,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/vendors/mediatek/compiler/extracted_static_weights.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
 namespace litert::mediatek {
@@ -64,7 +65,8 @@ absl::string_view ResolveOptionBundle(LrtMediatekOptions* mediatek_opts,
 Expected<NeuronCompilationPtr> CompileModel(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
     std::optional<std::string> soc_model, LrtMediatekOptions* mediatek_opts,
-    const int subgraph_index, bool get_supported_mode) {
+    const int subgraph_index, bool get_supported_mode,
+    std::optional<std::string> extract_static_data_path) {
   // LITERT_USE_JIT is automatically defined based on the build target.
   // It is defined on devices with MediaTek hardwares.
 #if LITERT_USE_JIT
@@ -99,6 +101,15 @@ Expected<NeuronCompilationPtr> CompileModel(
     if (!option_bundle.empty()) {
       compile_options = absl::StrCat(" --option-bundle=", option_bundle);
     }
+  }
+
+  if (!get_supported_mode && extract_static_data_path.has_value()) {
+    auto extraction_options =
+        StaticWeightExtractionOptions(*extract_static_data_path);
+    if (!extraction_options) {
+      return extraction_options.Error();
+    }
+    absl::StrAppend(&compile_options, *extraction_options);
   }
 
   // This is needed in order to support FP32 acativations since TFLite doesn't
