@@ -17,7 +17,9 @@ limitations under the License.
 #define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_OPS_TRANSFORMER_TRANSFORMER_OPS_H_
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -26,6 +28,7 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/source_location.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/ops/transformer/transformer_ops_graph.h"
@@ -645,6 +648,69 @@ Tensor<Mixins...> SoftmaxWithRuntimeCheck(
   output_info.type = input_info.type;
   graph::OpDebugger::DebugOp(*op);
   return output;
+}
+
+// Numerically stable softplus: max(x, 0) + log(1 + exp(-|x|)).
+template <class... Mixins>
+Tensor<Mixins...> Softplus(const Tensor<Mixins...>& x) {
+  graph::ScopeGuard scope("softplus");
+  scope.Bind("input", x);
+  Tensor<Mixins...> one({.type = Type::kFP32, .shape = {1}, .buffer = 1.0f});
+  Tensor out = Add(Relu(x), Log(Add(Exp(Neg(Abs(x))), one)));
+  scope.Bind("output", out);
+  return out;
+}
+
+// FLA-style l2norm, `x * rsqrt(sum(x^2) + eps)`, times `scale`, over the last
+// axis of size `dim`. Expressed as an RmsNorm:
+//   rsqrt(sum(x^2) + eps) = rsqrt(dim) * rsqrt(mean(x^2) + eps / dim).
+template <class... Mixins>
+Tensor<Mixins...> ScaledL2Norm(const Tensor<Mixins...>& x, int dim, float eps,
+                               float scale) {
+  graph::ScopeGuard scope("scaled_l2_norm");
+  scope.Attr("dim", static_cast<int64_t>(dim))
+      .Attr("eps", eps)
+      .Attr("scale", scale)
+      .Bind("input", x);
+  Tensor<Mixins...> weight(
+      {.type = Type::kFP32,
+       .shape = {dim},
+       .buffer = std::vector<float>(
+           dim, scale / std::sqrt(static_cast<float>(dim)))});
+  Tensor<Mixins...> norm_eps(
+      {.type = Type::kFP32, .shape = {1}, .buffer = eps / dim});
+  Tensor out = RmsNorm(x, weight, norm_eps);
+  scope.Bind("output", out);
+  return out;
+}
+
+// Concatenates any number of tensors along `axis` as a tree of
+// `Concatenation` ops with at most `kMaxConcatInputs` inputs each (XNNPACK's
+// concatenate takes at most 5 inputs).
+inline constexpr int kMaxConcatInputs = 4;
+
+template <class... Mixins>
+Tensor<Mixins...> ConcatenateMany(std::vector<Tensor<Mixins...>> parts,
+                                  int axis) {
+  if (parts.empty()) {
+    return TensorHandle(
+        absl::InvalidArgumentError("ConcatenateMany requires >= 1 tensor."));
+  }
+  while (parts.size() > 1) {
+    std::vector<Tensor<Mixins...>> merged;
+    merged.reserve((parts.size() + kMaxConcatInputs - 1) / kMaxConcatInputs);
+    for (size_t begin = 0; begin < parts.size(); begin += kMaxConcatInputs) {
+      const size_t end = std::min(parts.size(), begin + kMaxConcatInputs);
+      if (end - begin == 1) {
+        merged.push_back(parts[begin]);
+      } else {
+        merged.push_back(Concatenation(
+            absl::MakeSpan(parts).subspan(begin, end - begin), axis));
+      }
+    }
+    parts = std::move(merged);
+  }
+  return parts[0];
 }
 
 }  // namespace litert::tensor
