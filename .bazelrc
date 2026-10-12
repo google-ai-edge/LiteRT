@@ -584,13 +584,13 @@ build:rbe_linux_cpu_clang_local --extra_toolchains="@local_config_cuda//crosstoo
 build:rbe_linux_cpu_clang_local --repo_env=CC="/usr/lib/llvm-18/bin/clang"
 
 # Filters used when building in bulk in cpu.
-build:bulk_build_cpu --build_tag_filters=-no_oss,-oss_serial,-gpu,-tpu,-v1only
+build:bulk_build_cpu --build_tag_filters=-no_oss,-oss_serial,-gpu,-requires-gpu-sm90,-requires-gpu-sm90-full,-tpu,-v1only
 build:bulk_test_cpu --show_timestamps
 build:bulk_test_cpu --experimental_ui_max_stdouterr_bytes=3145728
 
 # Filters used when testing in bulk in cpu.
 test:bulk_test_cpu --config=bulk_build_cpu
-test:bulk_test_cpu --test_tag_filters=-no_oss,-oss_serial,-gpu,-tpu,-v1only,-benchmark-test
+test:bulk_test_cpu --test_tag_filters=-no_oss,-oss_serial,-gpu,-requires-gpu-sm90,-requires-gpu-sm90-full,-tpu,-v1only,-benchmark-test
 test:bulk_test_cpu --test_summary=short
 test:bulk_test_cpu --test_output=errors
 test:bulk_test_cpu --verbose_failures=true
