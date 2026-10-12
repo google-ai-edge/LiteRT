@@ -7,6 +7,10 @@ quantization (PTQ) toolkit designed for
 to optimize resource-intensive models (vision models, LLMs, and GenAI
 pipelines) for edge deployment on mobile CPUs, GPUs, and NPUs.
 
+> **Note:** LiteRT Quantizer was previously released as AI Edge Quantizer
+> (`ai-edge-quantizer`). See
+> [Migrating from AI Edge Quantizer](#migrating-from-ai-edge-quantizer).
+
 ## Key Features
 
 * **Selective Quantization**: Target specific operations or layer subgraphs
@@ -44,14 +48,44 @@ Nightly Colab      | [![Nightly Colab Status Badge](https://github.com/google-ai
 
  * Python versions: 3.10, 3.11, 3.12, 3.13
  * Operating system: Linux, MacOS
- * LiteRT: `ai-edge-litert-nightly`
+ * LiteRT: `ai-edge-litert` (stable) or `ai-edge-litert-nightly` (nightly)
 
 ### Install
+
+Stable PyPi package:
+
+```bash
+pip install litert-quantizer
+```
 
 Nightly PyPi package:
 
 ```bash
 pip install litert-quantizer-nightly
+```
+
+### Migrating from AI Edge Quantizer
+
+Apart from the names below, the API is unchanged:
+
+| | AI Edge Quantizer | LiteRT Quantizer |
+| :--- | :--- | :--- |
+| PyPI package | `ai-edge-quantizer` | `litert-quantizer` |
+| Nightly package | `ai-edge-quantizer-nightly` | `litert-quantizer-nightly` |
+| Python import | `ai_edge_quantizer` | `litert_quantizer` |
+| Command line | `aeq` | `litert-quantizer` |
+| Source code | [ai-edge-quantizer](https://github.com/google-ai-edge/ai-edge-quantizer) | [LiteRT/litert_quantizer](https://github.com/google-ai-edge/LiteRT/tree/main/litert_quantizer) |
+
+```bash
+pip uninstall ai-edge-quantizer
+pip install litert-quantizer
+```
+
+```python
+# Before
+from ai_edge_quantizer import quantizer, recipe
+# After
+from litert_quantizer import quantizer, recipe
 ```
 
 ## Quick Start
