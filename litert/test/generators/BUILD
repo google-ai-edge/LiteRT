@@ -858,6 +858,29 @@ cc_library(
 )
 
 cc_library(
+    name = "group_norm",
+    testonly = True,
+    hdrs = ["group_norm.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        ":reference_evaluator",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_rng",
+        "//litert/core/model",
+        "//litert/test:simple_buffer",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:datatypes",
+        "//tensor/backends/tflite:arithmetic_tflite",
+        "@com_google_absl//absl/strings:string_view",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_library(
     name = "generators",
     testonly = True,
     hdrs = ["generators.h"],
@@ -872,6 +895,7 @@ cc_library(
         ":depthwise_conv_2d",
         ":extra_model",
         ":fully_connected",
+        ":group_norm",
         ":mean",
         ":pad",
         ":pooling",
