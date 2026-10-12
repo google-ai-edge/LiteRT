@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_ABI_HEADER_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_ABI_HEADER_H_
 
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -25,7 +26,7 @@ extern "C" {
 /**
  * @brief Header containing ABI version and size metadata.
  *
- * Must be the first member of any ABI-stable struct.
+ * Must be the first member of any ABI-stable struct (offset 0).
  * Size: 8 bytes. Padding: 0 bytes (on 64-bit systems).
  */
 typedef struct LiteRtAbiHeader {
@@ -43,6 +44,8 @@ typedef struct LiteRtAbiHeader {
   uint16_t reserved;
 } LiteRtAbiHeader;
 
+static_assert(sizeof(LiteRtAbiHeader) == 8, "LiteRtAbiHeader size mismatch");
+
 /**
  * @brief Checks if the provider's ABI version is compatible with the consumer's
  * requirements.
@@ -53,8 +56,24 @@ typedef struct LiteRtAbiHeader {
  * @param req_minor The minimum minor version required by the consumer.
  */
 #define LITERT_ABI_IS_COMPATIBLE(instance_ptr, req_major, req_minor) \
-  ((instance_ptr)->abi_header.major_version == (req_major) &&        \
+  ((instance_ptr) != NULL &&                                         \
+   (instance_ptr)->abi_header.major_version == (req_major) &&        \
    (instance_ptr)->abi_header.minor_version >= (req_minor))
+
+/**
+ * @brief Safely verifies that a struct member is version-compatible and
+ * physically present within the allocated struct size.
+ *
+ * @param instance_ptr Pointer to the ABI-versioned struct instance.
+ * @param req_major The expected major version of the struct layout.
+ * @param member The name of the member to check.
+ */
+#define LITERT_ABI_HAS_MEMBER(instance_ptr, req_major, member) \
+  ((instance_ptr) != NULL &&                                   \
+   (instance_ptr)->abi_header.major_version == (req_major) &&  \
+   (instance_ptr)->abi_header.struct_size >=                   \
+       ((const char*)(&(instance_ptr)->member) +               \
+        sizeof((instance_ptr)->member) - (const char*)(instance_ptr)))
 
 /**
  * @brief Safely verifies that an API member is version-compatible, physically
@@ -64,13 +83,9 @@ typedef struct LiteRtAbiHeader {
  * @param req_major The expected major version of the struct layout.
  * @param api_member The name of the function pointer / member to check.
  */
-#define LITERT_ABI_HAS_API(instance_ptr, req_major, api_member)              \
-  ((instance_ptr) != nullptr &&                                              \
-   (instance_ptr)->abi_header.major_version == (req_major) &&                \
-   (instance_ptr)->abi_header.struct_size >=                                 \
-       ((const char*)(&(instance_ptr)->api_member) +                         \
-        sizeof((instance_ptr)->api_member) - (const char*)(instance_ptr)) && \
-   (instance_ptr)->api_member != nullptr)
+#define LITERT_ABI_HAS_API(instance_ptr, req_major, api_member)  \
+  (LITERT_ABI_HAS_MEMBER(instance_ptr, req_major, api_member) && \
+   (instance_ptr)->api_member != NULL)
 
 #ifdef __cplusplus
 }

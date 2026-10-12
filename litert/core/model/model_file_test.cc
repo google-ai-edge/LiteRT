@@ -1496,5 +1496,92 @@ TEST(ModelSerializeTest, SerializeWithExistingDispatchOpCodeNotAtEnd) {
   EXPECT_EQ(code->custom_code, "DISPATCH_OP");
 }
 
+TEST(ModelLoadTest, ExternalBufferKeepsReferenceAndSerializesIt) {
+  static constexpr uint32_t kExternalBufferId = 0x80000001;
+  static constexpr uint64_t kOffset = 64;
+  static constexpr absl::string_view kGroupName = "tflite_weights";
+  static constexpr absl::string_view kBytes = "0123456789abcdef";
+
+  auto flatbuffer =
+      FlatbufferWrapper::CreateFromTflFile(GetTestFilePath(kAddSimple));
+  auto tfl_model = flatbuffer->get()->Unpack();
+  auto& tfl_tensor = *tfl_model->subgraphs[0]->tensors[0];
+  tfl_tensor.buffer = 0;
+  tfl_tensor.external_buffer = kExternalBufferId;
+  {
+    auto& external = *tfl_model->external_buffers.emplace_back(
+        std::make_unique<tflite::ExternalBufferT>());
+    external.id = kExternalBufferId;
+    external.group = 0;
+    external.offset = kOffset;
+    external.length = kBytes.size();
+    external.packing = "unpacked";
+    auto& group = *tfl_model->external_buffer_groups.emplace_back(
+        std::make_unique<tflite::ExternalBufferGroupT>());
+    group.name = std::string(kGroupName);
+  }
+  auto model_buf = SerializeFlatbuffer(*tfl_model);
+
+  auto litert_model = LoadModelFromBuffer(model_buf);
+  ASSERT_TRUE(litert_model);
+  auto& model = **litert_model;
+  ASSERT_THAT(model.ExternalBufferGroups(),
+              ElementsAreArray({std::string(kGroupName)}));
+
+  // Loaded without bytes, with the reference in the buffer context.
+  auto& weights = model.Subgraph(0).Tensor(0).Weights();
+  EXPECT_EQ(weights.Buffer().Size(), 0);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto context,
+      weights.GetBufferManager()->GetContext(weights.GetBufferId()));
+  ASSERT_TRUE(context.get().external.has_value());
+  EXPECT_EQ(context.get().external->id, kExternalBufferId);
+  EXPECT_EQ(context.get().external->group, 0);
+  EXPECT_EQ(context.get().external->offset, kOffset);
+  EXPECT_EQ(context.get().external->length, kBytes.size());
+  EXPECT_EQ(context.get().external->packing, "unpacked");
+
+  // A runtime that mapped the slice can give the constant its bytes.
+  LITERT_ASSERT_OK(weights.GetBufferManager()->SetNonOwnedBuffer(
+      weights.GetBufferId(), BufferRef<uint8_t>(kBytes.data(), kBytes.size())));
+  EXPECT_EQ(weights.Buffer().StrView(), kBytes);
+
+  // Serialization re-emits the reference, never the bytes.
+  auto serialized = SerializeModel(std::move(model));
+  ASSERT_TRUE(serialized);
+  auto fb = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(fb);
+  auto tfl = fb->get()->Unpack();
+  const auto& out_tensor = *tfl->subgraphs[0]->tensors[0];
+  EXPECT_EQ(out_tensor.external_buffer, kExternalBufferId);
+  EXPECT_EQ(out_tensor.buffer, 0);
+  ASSERT_EQ(tfl->external_buffers.size(), 1);
+  EXPECT_EQ(tfl->external_buffers[0]->id, kExternalBufferId);
+  EXPECT_EQ(tfl->external_buffers[0]->group, 0);
+  EXPECT_EQ(tfl->external_buffers[0]->offset, kOffset);
+  EXPECT_EQ(tfl->external_buffers[0]->length, kBytes.size());
+  EXPECT_EQ(tfl->external_buffers[0]->packing, "unpacked");
+  ASSERT_EQ(tfl->external_buffer_groups.size(), 1);
+  EXPECT_EQ(tfl->external_buffer_groups[0]->name, kGroupName);
+  for (const auto& buffer : tfl->buffers) {
+    EXPECT_NE(
+        absl::string_view(reinterpret_cast<const char*>(buffer->data.data()),
+                          buffer->data.size()),
+        kBytes);
+  }
+  EXPECT_EQ(serialized->StrView().find(kBytes), absl::string_view::npos);
+
+  // The round trip loads back as an external constant.
+  auto reloaded = LoadModelFromBuffer(*serialized);
+  ASSERT_TRUE(reloaded);
+  auto& reloaded_weights = (*reloaded)->Subgraph(0).Tensor(0).Weights();
+  EXPECT_EQ(reloaded_weights.Buffer().Size(), 0);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto reloaded_context,
+                              reloaded_weights.GetBufferManager()->GetContext(
+                                  reloaded_weights.GetBufferId()));
+  ASSERT_TRUE(reloaded_context.get().external.has_value());
+  EXPECT_EQ(reloaded_context.get().external->id, kExternalBufferId);
+}
+
 }  // namespace
 }  // namespace litert::internal

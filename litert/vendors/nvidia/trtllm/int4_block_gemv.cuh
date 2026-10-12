@@ -26,8 +26,8 @@
 // its eight nibbles per word while they are converted and the products are
 // accumulated in FP32 straight into the row accumulators.
 
-#include "third_party/gpus/cuda/include/cuda_bf16.h"
-#include "third_party/gpus/cuda/include/cuda_fp16.h"
+#include <cuda_bf16.h>
+#include <cuda_fp16.h>
 
 #include <cstddef>
 #include <cstdint>

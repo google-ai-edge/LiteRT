@@ -117,6 +117,15 @@ class GpuBackendOpenCl : public GpuBackend {
       GpuMemoryHandle gpu_memory) override;
   absl::StatusOr<std::unique_ptr<GpuIOBuffer>> CreateIOBufferWithSize(
       ::ml_drift::DataType data_type, size_t size, bool input) override;
+  bool SupportsHostPtrIOBuffer(bool input) const override;
+  size_t GetHostPtrAlignment() const override;
+  // Overrides GPU architecture capability check to force host pointer I/O
+  // buffer allocation. Useful for unit tests running on non-PowerVR devices.
+  void SetForceHostPtrIOBuffer(bool force) override {
+    force_host_ptr_io_buffer_ = force;
+  }
+  absl::StatusOr<std::unique_ptr<GpuIOBuffer>> CreateHostIOBuffer(
+      ::ml_drift::DataType data_type, size_t size, bool input) override;
   absl::StatusOr<std::unique_ptr<Tensor2BufferConverter>>
   CreateTensor2BufferConverter(
       const ::ml_drift::TensorDescriptor& src_desc,
@@ -143,6 +152,7 @@ class GpuBackendOpenCl : public GpuBackend {
   std::unique_ptr<::ml_drift::cl::Environment> env_owned_;
   ::ml_drift::cl::Environment* const env_;
   ::ml_drift::cl::MemoryManager memory_manager_;
+  bool force_host_ptr_io_buffer_ = false;
 };
 
 class GpuInferenceContextOpenCl : public GpuInferenceContext {
@@ -219,11 +229,24 @@ class GpuTensorWrapperOpenCl : public GpuTensorWrapper {
   ::ml_drift::cl::Tensor tensor_;
 };
 
+// OpenCL implementation of GpuIOBuffer.
+// Wraps either a pure device cl_mem buffer or an internally allocated
+// page-aligned host memory buffer via CL_MEM_USE_HOST_PTR.
 class GpuIOBufferOpenCl : public GpuIOBuffer {
  public:
+  // Constructs a GpuIOBufferOpenCl.
+  //
+  // Arguments:
+  // - env: OpenCL environment containing context, queue, and device info.
+  // - buffer: Wrapped OpenCL buffer handle.
+  // - is_host_ptr: True if created with CL_MEM_USE_HOST_PTR.
+  // - host_ptr: CPU virtual address of the host memory passed to
+  //   clCreateBuffer. Owned and deallocated with free() in the destructor.
   explicit GpuIOBufferOpenCl(::ml_drift::cl::Environment* env,
-                             ::ml_drift::cl::Buffer&& buffer);
-  ~GpuIOBufferOpenCl() override = default;
+                             ::ml_drift::cl::Buffer&& buffer,
+                             bool is_host_ptr = false,
+                             void* host_ptr = nullptr);
+  ~GpuIOBufferOpenCl() override;
 
   // Implementation of GpuIOBuffer.
   absl::Status Read(absl::Span<uint8_t> data) override;
@@ -234,9 +257,21 @@ class GpuIOBufferOpenCl : public GpuIOBuffer {
   // Underlying mutable OpenCL buffer.
   ::ml_drift::cl::Buffer& cl_buffer() { return buffer_; }
 
+  bool IsHostPtr() const override { return is_host_ptr_; }
+  void* GetHostPtr() const override { return host_ptr_; }
+  absl::Status SyncToDevice() override;
+  absl::Status SyncToHost() override;
+
  private:
   ::ml_drift::cl::Environment* const env_;
   ::ml_drift::cl::Buffer buffer_;
+
+  // True if this buffer was created via CL_MEM_USE_HOST_PTR.
+  const bool is_host_ptr_ = false;
+
+  // The CPU virtual address of the host memory. Non-null iff is_host_ptr_ is
+  // true.
+  void* const host_ptr_ = nullptr;
 };
 
 class Tensor2BufferConverterOpenCl : public Tensor2BufferConverter {

@@ -520,8 +520,12 @@ nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(
     int32_t bit_width, int32_t rows, int32_t columns, int32_t gate, bool gemm,
     int64_t weight_offset, int64_t holder_granule, int32_t scale_block,
     int64_t scale_offset, float norm_eps, float norm_multiplier) noexcept {
-  if ((bit_width != 2 && bit_width != 4) || rows <= 0 || columns <= 0 ||
-      columns % 16 != 0) {
+  if ((bit_width != 2 && bit_width != 4 && bit_width != 8) || rows <= 0 ||
+      columns <= 0 || columns % 16 != 0) {
+    return nullptr;
+  }
+  // INT8 weights run on the batched GEMV only (decode and verify rows).
+  if (bit_width == 8 && (gemm || gate != 0 || scale_block != 0)) {
     return nullptr;
   }
   // A fused norm needs the blockwise kernels and a finite multiplier.

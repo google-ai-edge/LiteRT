@@ -202,6 +202,9 @@ Options BenchmarkLiteRtModel::CreateCompiledModelOptions(
     if (!gpu_model_cache_key.empty()) {
       gpu_options.SetModelCacheKey(gpu_model_cache_key.c_str());
     }
+    if (!gpu_serialization_dir.empty() && !gpu_model_cache_key.empty()) {
+      gpu_options.SetSerializeProgramCache(true);
+    }
     if (gpu_serialize_external_tensors) {
       gpu_options.SetSerializeExternalTensors(true);
     }

@@ -34,6 +34,7 @@
 #endif
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
@@ -110,6 +111,24 @@ class SerializationContext {
       return litert_buf.Error().Status();
     }
 
+    if (const auto& external = litert_buf_ctx->get().external;
+        external.has_value()) {
+      // An external constant keeps its reference; its bytes, resolved or not,
+      // live outside the flatbuffer.
+      tfl_tensor.buffer = 0;
+      tfl_tensor.external_buffer = external->id;
+      if (emitted_external_buffer_ids_.insert(external->id).second) {
+        auto& tfl_external = *tfl_model_->external_buffers.emplace_back(
+            std::make_unique<::tflite::ExternalBufferT>());
+        tfl_external.id = external->id;
+        tfl_external.group = external->group;
+        tfl_external.offset = external->offset;
+        tfl_external.length = external->length;
+        tfl_external.packing = external->packing;
+      }
+      return kLiteRtStatusOk;
+    }
+
     TflBufferInd tfl_buffer_ind;
     if (buffer_id_map_.contains(litert_buf_id)) {
       tfl_buffer_ind = buffer_id_map_.at(litert_buf_id);
@@ -175,6 +194,7 @@ class SerializationContext {
   TflOpAssetMap op_asset_map_;
   TflOffsetTensorMap offset_tensor_map_;
   TflBufferIdMap buffer_id_map_;
+  absl::flat_hash_set<uint32_t> emitted_external_buffer_ids_;
   size_t bytecode_alignment_ = 0;
 };
 
@@ -353,6 +373,16 @@ Expected<TflModelPtr> PackAsTflite(SerializationContext& builder) {
       return buf.Error();
     }
     builder.PushMetadata(key, *buf);
+  }
+
+  // The external buffer groups, kept whole so the group indices of the
+  // external buffers emitted above stay valid.
+  if (!builder.Model().external_buffers.empty()) {
+    for (const auto& name : litert_model.ExternalBufferGroups()) {
+      auto& group = *builder.Model().external_buffer_groups.emplace_back(
+          std::make_unique<::tflite::ExternalBufferGroupT>());
+      group.name = name;
+    }
   }
 
   builder.Model().version = 3;

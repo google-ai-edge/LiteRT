@@ -20,6 +20,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -30,6 +31,18 @@
 
 namespace litert::internal {
 
+// A constant stored outside the flatbuffer (tflite ExternalBuffer): a slice of
+// the external buffer group the model names, keyed by the id that tensors
+// refer to through Tensor.external_buffer.
+struct ExternalBufferRef {
+  uint32_t id = 0;
+  // Index into the model's external buffer groups.
+  uint32_t group = 0;
+  uint64_t offset = 0;
+  uint64_t length = 0;
+  std::string packing;
+};
+
 // Extra info about how the buffer is handled during load or serialization.
 struct BufferContext {
   using Ref = std::reference_wrapper<BufferContext>;
@@ -37,6 +50,11 @@ struct BufferContext {
   // Whether the buffer should be appended to the flatbuffer during
   // serialization.
   bool should_append = false;
+
+  // Set when the buffer is an external constant. Its bytes are empty until a
+  // runtime resolves the slice; either way serialization re-emits the
+  // reference, never the bytes.
+  std::optional<ExternalBufferRef> external;
 };
 
 // Container type for efficiently holding data buffers used by the model. These
@@ -94,6 +112,17 @@ class BufferManager {
       return Error(kLiteRtStatusErrorIndexOOB);
     }
     return std::ref(buffers_[id].second);
+  }
+
+  // Replace the bytes of a registered buffer with a view the caller keeps
+  // alive, keeping its context. Used to give an external constant its bytes
+  // once the slice has been mapped.
+  Expected<void> SetNonOwnedBuffer(BufferId id, BufferRef<uint8_t> buffer) {
+    if (id == kEmptyBufferId || id >= buffers_.size()) {
+      return Error(kLiteRtStatusErrorIndexOOB);
+    }
+    buffers_[id].first = buffer;
+    return {};
   }
 
   // Number of buffers. Ids will be 0 <-> num - 1.
