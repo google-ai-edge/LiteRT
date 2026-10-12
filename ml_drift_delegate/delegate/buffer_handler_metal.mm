@@ -303,14 +303,21 @@ LiteRtStatus LiteRtUnlockMetalMemory(HwMemoryInfoPtr hw_memory_info) {
   LITERT_RETURN_IF_ERROR(memory_info->lock_state != LockState::kUnlocked,
                          litert::ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure)
                              << "The Metal memory is already unlocked.");
-  absl::Cleanup unlock = [&memory_info] { memory_info->lock_state = LockState::kUnlocked; };
+  absl::Cleanup unlock = [&memory_info] {
+    if (memory_info->host_memory != nullptr) {
+      litert_aligned_free(memory_info->host_memory);
+      memory_info->host_memory = nullptr;
+    }
+    memory_info->lock_state = LockState::kUnlocked;
+  };
 
   // Don't upload data if read only.
   if (memory_info->lock_state == LockState::kReadLocked) {
     return kLiteRtStatusOk;
   }
 
-  id<MTLDevice> metal_device = memory_info->metal_device;
+  // `command_queue` is never nil: LiteRtCreateMetalMemory() and
+  // LiteRtImportMetalMemory() both reject a null `queue_id`.
   id<MTLCommandQueue> command_queue = memory_info->command_queue;
   ::ml_drift::metal::MetalSpatialTensor& gpu_tensor = memory_info->metal_tensor;
 
@@ -337,7 +344,9 @@ LiteRtStatus LiteRtUnlockMetalMemory(HwMemoryInfoPtr hw_memory_info) {
       std::memcpy(gpu_tensor.GetBufferPointer(), data.data(),
                   std::min<size_t>(data.size(), gpu_tensor.GetMemorySizeInBytes()));
     } else {
-      absl_status = gpu_tensor.UploadDescriptorData(desc_with_data, metal_device);
+      // Reuse the buffer's command queue instead of creating a new one per upload.
+      absl_status = gpu_tensor.UploadDescriptorData(desc_with_data, command_queue,
+                                                    /*wait_for_completion=*/true);
     }
   }
   LITERT_RETURN_IF_ERROR(absl_status);
