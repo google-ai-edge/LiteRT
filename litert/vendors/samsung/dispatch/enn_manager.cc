@@ -103,6 +103,8 @@ LiteRtStatus EnnManager::LoadEnnRuntimeLibrary(absl::string_view path) {
   ENN_LOAD_API(enn_runtime_lib_, EnnAllocateAllBuffers);
   ENN_LOAD_API(enn_runtime_lib_, EnnSetPreferencePerfMode);
   ENN_LOAD_API(enn_runtime_lib_, EnnSetPreferencePerfConfigId);
+  ENN_LOAD_API_OPTIONAL(enn_runtime_lib_, EnnActivateSpotPref);
+  ENN_LOAD_API_OPTIONAL(enn_runtime_lib_, EnnDeactivateSpotPref);
 
   if (api_->EnnInitialize() != ENN_RET_SUCCESS) {
     return kLiteRtStatusErrorRuntimeFailure;
