@@ -39,15 +39,32 @@ using Quantization = graph::Quantization;
 using PerChannelAffineQuantization = graph::PerChannelAffineQuantization;
 using BlockwiseQuantization = graph::BlockwiseQuantization;
 
+// Helps initializing TensorHandle objects.
+//
+// Unless specified otherwise, the fields in this structure are not mandatory to
+// set. They may influence each other.
 struct TensorInit {
+  // The name of the tensor, as would be set by `SetName()`.
   std::string name;
+  // The type of the data stored in the tensor buffer.
+  //
+  // If left unknown and a typed buffer is given, this will be deduced.
   Type type = Type::kUnknown;
+  // The shape of the tensor.
   Shape shape;
+  // When creating a tensor, this field is probed to set its buffer, as would be
+  // set by `SetBuffer()`.
+  //
+  // - `shared_ptr<Buffer>` is forwarded transparently.
+  // - `vector`s and scalars are **copied** into a new buffer of the given
+  //   `type`. The copy will do a conversion if the types don't match.
+  // - scalars are broadcast to the `shape` if it's set.
   std::variant<std::shared_ptr<Buffer>, std::vector<float>, std::vector<fp16_t>,
                std::vector<bf16_t>, std::vector<int32_t>, std::vector<int8_t>,
                std::vector<int4_t>, std::vector<int2_t>, float, double, int8_t,
                int32_t, int64_t>
       buffer;
+  // Quantization scheme that has been applied to the tensor data.
   std::shared_ptr<Quantization> quantization;
 };
 
