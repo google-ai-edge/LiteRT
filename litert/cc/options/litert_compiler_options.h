@@ -16,8 +16,12 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <string>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/litert_expected.h"
@@ -82,6 +86,69 @@ class CompilerOptions : public ConcreteOptionsBase {
         LrtGetCompilerOptionsMaxPartitions(options_.get(), &max_partitions));
     return max_partitions;
   }
+
+  /// @name Input shape refinement
+  /// Each override targets the subgraph of `signature_key`. An empty
+  /// `signature_key` targets the default (first) signature, or the main
+  /// subgraph if the model has no signatures. Use `-1` for dimensions that
+  /// should remain dynamic. For a given signature, use exactly one addressing
+  /// mode (positional, tensor name, or signature input name).
+  /// @{
+
+  /// @brief Appends a positional input shape override for the default
+  /// signature.
+  Expected<void> AddPositionalInputShape(absl::Span<const int32_t> dims) {
+    return AddPositionalInputShape(/*signature_key=*/"", dims);
+  }
+
+  /// @brief Appends a positional input shape override for `signature_key`.
+  Expected<void> AddPositionalInputShape(absl::string_view signature_key,
+                                         absl::Span<const int32_t> dims) {
+    const std::string sig(signature_key);
+    LITERT_RETURN_IF_ERROR(LrtAddCompilerOptionsPositionalInputShape(
+        options_.get(), sig.c_str(), dims.data(), dims.size()));
+    return {};
+  }
+
+  /// @brief Appends an input shape override addressed by internal tensor name
+  /// in the default signature.
+  Expected<void> AddTensorInputShape(absl::string_view tensor_name,
+                                     absl::Span<const int32_t> dims) {
+    return AddTensorInputShape(/*signature_key=*/"", tensor_name, dims);
+  }
+
+  /// @brief Appends an input shape override addressed by internal tensor name
+  /// in `signature_key`'s subgraph.
+  Expected<void> AddTensorInputShape(absl::string_view signature_key,
+                                     absl::string_view tensor_name,
+                                     absl::Span<const int32_t> dims) {
+    const std::string sig(signature_key);
+    const std::string name(tensor_name);
+    LITERT_RETURN_IF_ERROR(LrtAddCompilerOptionsTensorInputShape(
+        options_.get(), sig.c_str(), name.c_str(), dims.data(), dims.size()));
+    return {};
+  }
+
+  /// @brief Appends an input shape override addressed by signature input name
+  /// in the default signature.
+  Expected<void> AddSignatureInputShape(absl::string_view input_name,
+                                        absl::Span<const int32_t> dims) {
+    return AddSignatureInputShape(/*signature_key=*/"", input_name, dims);
+  }
+
+  /// @brief Appends an input shape override addressed by signature input name
+  /// in `signature_key`. Call once per signature to refine several signatures
+  /// (e.g. "prefill" and "decode") in a single compilation.
+  Expected<void> AddSignatureInputShape(absl::string_view signature_key,
+                                        absl::string_view input_name,
+                                        absl::Span<const int32_t> dims) {
+    const std::string sig(signature_key);
+    const std::string name(input_name);
+    LITERT_RETURN_IF_ERROR(LrtAddCompilerOptionsSignatureInputShape(
+        options_.get(), sig.c_str(), name.c_str(), dims.data(), dims.size()));
+    return {};
+  }
+  /// @}
 
   /// @brief Returns the underlying C handle.
   LrtCompilerOptions* Get() { return options_.get(); }

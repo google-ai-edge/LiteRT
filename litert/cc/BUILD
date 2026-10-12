@@ -742,6 +742,7 @@ cc_test(
         "//litert/c/internal:litert_scheduling_info",
         "//litert/c/options:litert_runtime_options",
         "//litert/cc/internal:litert_consts",
+        "//litert/cc/options:litert_compiler_options",
         "//litert/cc/options:litert_runtime_options",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core:environment",

@@ -243,6 +243,7 @@ cc_library(
         "//litert/c/options:litert_compiler_options",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

@@ -37,6 +37,7 @@
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_compiler_options.h"
 #include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/litert_api_types.h"
@@ -53,6 +54,7 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
+#include "litert/cc/options/litert_compiler_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/cache/compilation_cache.h"
@@ -871,8 +873,7 @@ TEST(CompiledModelTest, SignatureAccessorsInvalidContext) {
   EXPECT_THAT(input_type_bad_sig.Error().Message(),
               ::testing::HasSubstr("Signature not found: invalid_key_sig"));
 
-  auto input_type =
-      compiled_model.GetInputTensorType("invalid_input_type");
+  auto input_type = compiled_model.GetInputTensorType("invalid_input_type");
   ASSERT_FALSE(input_type.HasValue());
   EXPECT_THAT(
       input_type.Error().Message(),
@@ -884,8 +885,7 @@ TEST(CompiledModelTest, SignatureAccessorsInvalidContext) {
   EXPECT_THAT(output_type_bad_sig.Error().Message(),
               ::testing::HasSubstr("Signature not found: invalid_key_sig"));
 
-  auto output_type =
-      compiled_model.GetOutputTensorType("invalid_output_type");
+  auto output_type = compiled_model.GetOutputTensorType("invalid_output_type");
   ASSERT_FALSE(output_type.HasValue());
   EXPECT_THAT(
       output_type.Error().Message(),
@@ -1950,6 +1950,138 @@ TEST(CompiledModelTest, CreateWithConstEnvironment) {
   ASSERT_TRUE(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
   LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+}
+
+TEST(CompiledModelTest, RefinesInputAndOutputShapesOnModelLoad) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK(options.SetHardwareAccelerators(HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& compiler_options,
+                              options.GetCompilerOptions());
+  const int32_t refined_shape[] = {3, 4};
+  LITERT_ASSERT_OK(compiler_options.AddPositionalInputShape(refined_shape));
+  LITERT_ASSERT_OK(compiler_options.AddPositionalInputShape(refined_shape));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(
+          env, testing::GetTestFilePath("simple_add_dynamic_shape.tflite"),
+          options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      RankedTensorType in0_type,
+      compiled_model.GetInputTensorType(/*signature_index=*/0,
+                                        /*input_index=*/0));
+  EXPECT_THAT(in0_type.Layout().Dimensions(), ElementsAre(3, 4));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      RankedTensorType in1_type,
+      compiled_model.GetInputTensorType(/*signature_index=*/0,
+                                        /*input_index=*/1));
+  EXPECT_THAT(in1_type.Layout().Dimensions(), ElementsAre(3, 4));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      RankedTensorType out_type,
+      compiled_model.GetOutputTensorType(/*signature_index=*/0,
+                                         /*output_index=*/0));
+  EXPECT_THAT(out_type.Layout().Dimensions(), ElementsAre(3, 4));
+}
+
+TEST(CompiledModelTest, RefinesShapesBeforeNpuPluginCompilation) {
+  const std::string plugin_dir = testing::GetLiteRtPath("vendors/examples/");
+  const LiteRtEnvOption env_options[] = {
+      {kLiteRtEnvOptionTagCompilerPluginLibraryDir,
+       LiteRtAny{.type = kLiteRtAnyTypeString,
+                 .str_value = plugin_dir.c_str()}},
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto env, LiteRtEnvironmentT::CreateWithOptions(env_options));
+
+  LiteRtModel raw_model = nullptr;
+  ASSERT_EQ(
+      LiteRtCreateModelFromFile(
+          env.get(), testing::GetTestFilePath("simple_mul_op.tflite").c_str(),
+          &raw_model),
+      kLiteRtStatusOk);
+  std::unique_ptr<LiteRtModelT> model(raw_model);
+
+  LiteRtOptions raw_options = nullptr;
+  ASSERT_EQ(LiteRtCreateOptions(&raw_options), kLiteRtStatusOk);
+  std::unique_ptr<LiteRtOptionsT, decltype(&LiteRtDestroyOptions)> options(
+      raw_options, LiteRtDestroyOptions);
+  ASSERT_EQ(
+      LiteRtSetOptionsHardwareAccelerators(
+          options.get(), kLiteRtHwAcceleratorCpu | kLiteRtHwAcceleratorNpu),
+      kLiteRtStatusOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiler_options, CompilerOptions::Create());
+  const int32_t refined_shape[] = {4, 4};
+  LITERT_ASSERT_OK(compiler_options.AddPositionalInputShape(refined_shape));
+  LITERT_ASSERT_OK(compiler_options.AddPositionalInputShape(refined_shape));
+
+  const char* identifier = nullptr;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueCompilerOptionsData(compiler_options.Get(), &identifier,
+                                            &payload, &payload_deleter),
+            kLiteRtStatusOk);
+  LiteRtOpaqueOptions opaque_options = nullptr;
+  ASSERT_EQ(LiteRtCreateOpaqueOptions(identifier, payload, payload_deleter,
+                                      &opaque_options),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtAddOpaqueOptions(options.get(), opaque_options),
+            kLiteRtStatusOk);
+
+  // Even without the example NPU dispatch library loaded, InitializeModel
+  // refines the LiteRtModel shapes and runs the NPU compiler plugin on the
+  // refined model before NPU dispatch registration runs.
+  auto compiled =
+      LiteRtCompiledModelT::Create(env.get(), model.get(), options.get());
+  (void)compiled;
+
+  auto* subgraph = model->MainSubgraph();
+  ASSERT_NE(subgraph, nullptr);
+  ASSERT_EQ(subgraph->Inputs().size(), 2);
+  ASSERT_EQ(subgraph->Outputs().size(), 1);
+  EXPECT_THAT(
+      absl::MakeConstSpan(
+          subgraph->Input(0).Type().second.ranked_tensor_type.layout.dimensions,
+          subgraph->Input(0).Type().second.ranked_tensor_type.layout.rank),
+      ElementsAre(4, 4));
+  EXPECT_THAT(
+      absl::MakeConstSpan(
+          subgraph->Output(0)
+              .Type()
+              .second.ranked_tensor_type.layout.dimensions,
+          subgraph->Output(0).Type().second.ranked_tensor_type.layout.rank),
+      ElementsAre(4, 4));
+
+  ASSERT_EQ(subgraph->Ops().size(), 1);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto asset,
+                              model->FindOpAsset(subgraph->Ops().front()));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto byte_code,
+                              model->Buffers()->GetBuffer(asset.first));
+  EXPECT_THAT(byte_code.StrView(),
+              ::testing::HasSubstr("inputs:0,1\noutputs:2\nconst_map:\ntensors:"
+                                   "[4x4],[4x4],[4x4]\nops:mul(0,1)(2)"));
+}
+
+TEST(CompiledModelTest, FailsWhenInputShapeRefinementIsInvalid) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK(options.SetHardwareAccelerators(HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& compiler_options,
+                              options.GetCompilerOptions());
+  const int32_t refined_shape[] = {3, 4};
+  LITERT_ASSERT_OK(compiler_options.AddTensorInputShape(
+      "", "nonexistent_tensor", refined_shape));
+
+  auto compiled_model = CompiledModel::Create(
+      env, testing::GetTestFilePath("simple_add_dynamic_shape.tflite"),
+      options);
+  EXPECT_FALSE(compiled_model.HasValue());
 }
 
 }  // namespace
