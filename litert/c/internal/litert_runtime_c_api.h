@@ -46,7 +46,7 @@ extern "C" {
 // LiteRT CompiledModels ABI version number, in semver 2 format
 // (see https://semver.org).  This is the ABI version number for
 // the methods in LiteRtRuntimeCApiStruct, which is defined below.
-#define LITERT_RUNTIME_ABI_VERSION "1.2.0"
+#define LITERT_RUNTIME_ABI_VERSION "1.3.0"
 // TODO(b/493650900): declare that as an extern const (and
 // initialize it in a .cc file) rather than using a macro.
 
@@ -799,6 +799,12 @@ typedef struct LiteRtRuntimeCApiStruct {
   // This API was added in version 1.2.0.
   LiteRtStatus (*litert_get_accelerator_delegation_metrics_partition_count)(
       LiteRtAcceleratorDelegationMetricsConst metrics, int* partition_count);
+  // litert_tensor_buffer.h: LiteRtCreateTensorBufferFromCustomHandle
+  // This API was added in version 1.3.0.
+  LiteRtStatus (*litert_create_tensor_buffer_from_custom_handle)(
+      LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+      LiteRtTensorBufferType buffer_type, HwMemoryHandle handle,
+      size_t buffer_size, LiteRtTensorBuffer* buffer);
 } LiteRtRuntimeCApiStruct;
 
 // LINT.ThenChange(:version_number)

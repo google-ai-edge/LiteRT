@@ -103,6 +103,7 @@ EXPORTS
   LiteRtCreateOptions
   LiteRtCreateProfiler
   LiteRtCreateTensorBufferFromAhwb
+  LiteRtCreateTensorBufferFromCustomHandle
   LiteRtCreateTensorBufferFromDmaBufBuffer
   LiteRtCreateTensorBufferFromFastRpcBuffer
   LiteRtCreateTensorBufferFromGlBuffer
