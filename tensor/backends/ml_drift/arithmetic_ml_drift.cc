@@ -31,12 +31,12 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/kernels/elementwise.h"  // from @ml_drift
 #include "ml_drift/common/kernels/embedding_lookup.h"  // from @ml_drift
-#include "ml_drift/common/kernels/fully_connected.h"  // from @ml_drift
 #include "ml_drift/common/kernels/one_hot.h"  // from @ml_drift
 #include "ml_drift/common/kernels/prelu.h"  // from @ml_drift
 #include "ml_drift/common/kernels/reduce.h"  // from @ml_drift
@@ -1021,6 +1021,33 @@ absl::Status OpMixin<BatchMatMulOperation, MlDriftMixinTag>::ToMlDrift(
   if (rhs_info.shape.size() < 2) {
     return absl::UnimplementedError(
         "BatchMatMul with rank < 2 rhs is not supported.");
+  }
+  // ML Drift's BatchedMatMul indexes the rhs by the lhs batch position and
+  // does not broadcast leading dimensions: batches beyond the rhs extent are
+  // silently computed as zeros. Reject such graphs here; callers materialize
+  // the broadcast (e.g. Tile / RepeatKVHeads for GQA) instead.
+  if (rhs_info.shape.size() > 2) {
+    const auto& lhs_shape = lhs_info.shape;
+    const auto& rhs_shape = rhs_info.shape;
+    const int lhs_batch_rank = static_cast<int>(lhs_shape.size()) - 2;
+    const int rhs_batch_rank = static_cast<int>(rhs_shape.size()) - 2;
+    const int batch_rank = std::max(lhs_batch_rank, rhs_batch_rank);
+    for (int i = 0; i < batch_rank; ++i) {
+      const int lhs_dim = i < batch_rank - lhs_batch_rank
+                              ? 1
+                              : lhs_shape[i - (batch_rank - lhs_batch_rank)];
+      const int rhs_dim = i < batch_rank - rhs_batch_rank
+                              ? 1
+                              : rhs_shape[i - (batch_rank - rhs_batch_rank)];
+      if (lhs_dim != rhs_dim) {
+        return absl::UnimplementedError(absl::StrCat(
+            "BatchMatMul with broadcast batch dimensions is not supported on "
+            "ML Drift (lhs shape [",
+            absl::StrJoin(lhs_shape, ", "), "], rhs shape [",
+            absl::StrJoin(rhs_shape, ", "),
+            "]). Materialize the broadcast with Tile / RepeatKVHeads."));
+      }
+    }
   }
   LRT_TENSOR_ASSIGN_OR_RETURN(const BatchMatMulOperation& data,
                               op.As<BatchMatMulOperation>());
