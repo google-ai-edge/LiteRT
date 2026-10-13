@@ -693,7 +693,7 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithInputValidator) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
   LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
-                              options.GetGoogleTensorOptions());
+                              options.GetOptions<GoogleTensorOptions>());
 
   google_tensor_options.SetExperimentalEnableInputValidator(true);
 
