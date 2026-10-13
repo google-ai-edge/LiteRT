@@ -635,7 +635,7 @@ absl::Status GpuInferenceContextWebGpu::PostConvert(bool input) {
 
 absl::Status GpuInferenceContextWebGpu::Profile(
     ::ml_drift::ProfilingInfo& profiling_info) {
-  return absl::UnimplementedError("Profile is not implemented.");
+  return ctx_->Profile(backend_->wgpu_env(), &profiling_info);
 }
 
 absl::StatusOr<size_t>
