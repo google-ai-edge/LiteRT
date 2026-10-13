@@ -122,6 +122,13 @@ properties. Internal keys (all default `false`):
     Gather just the top-K expert weights, multi-token chunks compute all
     experts densely and combine them via a scattered per-token routing-weight
     matrix. Defaults to `false`.
+-   `unfold_gqa_sequence_fold` — only meaningful with
+    `fuse_split_attention_to_sdpa=true`, since it matches the fused SDPA. The
+    generative export covers all `Hq` query heads with one `Hkv`-head SDPA by
+    folding the GQA group ratio `r = Hq / Hkv` into the sequence axis, which
+    forces the attention mask to be tiled `r` times. This rewrites that back
+    into head-parallel attention: Q keeps its `[1,Hq,S,D]` shape, K/V are
+    broadcast over the query heads, and the mask is left untiled.
 
 ## Usage Example
 

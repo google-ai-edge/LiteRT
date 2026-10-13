@@ -27,6 +27,7 @@
 #include "openvino/core/model.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/op/add.hpp"
+#include "openvino/op/broadcast.hpp"
 #include "openvino/op/concat.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/convert.hpp"
@@ -38,6 +39,7 @@
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/reduce_sum.hpp"
+#include "openvino/op/reshape.hpp"
 #include "openvino/op/result.hpp"
 #include "openvino/op/scaled_dot_product_attention.hpp"
 #include "openvino/op/slice.hpp"
@@ -772,6 +774,166 @@ TEST(SplitSharedConstantsTest, LeavesSingleConsumerConstantAlone) {
       .Run(model);
 
   EXPECT_EQ(CountOps<ov::op::v0::Constant>(model), 1u);
+}
+
+// Builds the "GQA ratio folded into the sequence axis" attention the LiteRT
+// generative export emits for a |hkv|-KV-head / |hkv * r|-query-head layer:
+// Q is reshaped so the r query-head groups stack along the sequence axis, and
+// the head-invariant additive mask is Concat-replicated r times to line back
+// up with it. This is what UnfoldGqaSequenceFold matches.
+std::shared_ptr<ov::Model> BuildGqaSequenceFoldAttention(int64_t hkv, int64_t r,
+                                                         int64_t s,
+                                                         int64_t kv_len,
+                                                         int64_t head_dim) {
+  using ov::op::v0::Constant;
+  using ov::op::v0::Parameter;
+  const int64_t hq = hkv * r;
+  const auto f = ov::element::f32;
+  auto dim = [](int64_t v) { return static_cast<size_t>(v); };
+
+  auto q = std::make_shared<Parameter>(
+      f, ov::Shape{1, dim(hq), dim(s), dim(head_dim)});
+  auto k = std::make_shared<Parameter>(
+      f, ov::Shape{1, dim(hkv), dim(kv_len), dim(head_dim)});
+  auto v = std::make_shared<Parameter>(
+      f, ov::Shape{1, dim(hkv), dim(kv_len), dim(head_dim)});
+  auto mask =
+      std::make_shared<Parameter>(f, ov::Shape{1, 1, dim(s), dim(kv_len)});
+
+  auto fold_shape =
+      Constant::create(ov::element::i64, ov::Shape{4},
+                       std::vector<int64_t>{1, hkv, s * r, head_dim});
+  auto q_folded = std::make_shared<ov::op::v1::Reshape>(q, fold_shape,
+                                                        /*special_zero=*/false);
+
+  ov::OutputVector mask_copies(static_cast<size_t>(r), mask->output(0));
+  auto mask_tiled =
+      std::make_shared<ov::op::v0::Concat>(mask_copies, /*axis=*/2);
+
+  auto scale = Constant::create(f, ov::Shape{}, std::vector<float>{1.0f});
+  auto sdpa = std::make_shared<ov::op::v13::ScaledDotProductAttention>(
+      ov::OutputVector{q_folded, k, v, mask_tiled, scale}, /*causal=*/false);
+
+  auto unfold_shape = Constant::create(
+      ov::element::i64, ov::Shape{4}, std::vector<int64_t>{1, hq, s, head_dim});
+  auto unfolded = std::make_shared<ov::op::v1::Reshape>(sdpa, unfold_shape,
+                                                        /*special_zero=*/false);
+
+  return std::make_shared<ov::Model>(ov::OutputVector{unfolded->output(0)},
+                                     ov::ParameterVector{q, k, v, mask},
+                                     "gqa_sequence_fold");
+}
+
+// The rewrite is only worth anything if it is numerically a no-op. Both forms
+// must map query head h to KV head h / r; this pins that down end to end,
+// along with the head-parallel shapes the rewrite is supposed to produce.
+TEST(UnfoldGqaSequenceFoldTest, NumericallyMatchesSequenceFoldedForm) {
+  for (const int64_t r : {2, 4}) {
+    auto reference = BuildGqaSequenceFoldAttention(/*hkv=*/2, r, /*s=*/3,
+                                                   /*kv_len=*/6,
+                                                   /*head_dim=*/4);
+    auto rewritten = reference->clone();
+
+    NpuOptimizer()
+        .SetCastIntegerSignToFloat(false)
+        .SetUnfoldGqaSequenceFold(true)
+        .Run(rewritten);
+    ASSERT_EQ(CountOps<ov::op::v3::Broadcast>(rewritten), 2u)
+        << "rewrite did not fire for r=" << r;
+
+    // The mask tile is gone and SDPA now runs head-parallel: Q keeps all
+    // hq = hkv * r heads at the original sequence length, K/V are broadcast
+    // up to match, and the mask is back to its untiled length.
+    EXPECT_EQ(CountOps<ov::op::v0::Concat>(rewritten), 0u);
+    const size_t hq = 2 * static_cast<size_t>(r);
+    auto sdpa = FindSdpa(rewritten);
+    ASSERT_NE(sdpa, nullptr);
+    EXPECT_EQ(sdpa->get_input_shape(0), (ov::Shape{1, hq, 3, 4}));
+    EXPECT_EQ(sdpa->get_input_shape(1), (ov::Shape{1, hq, 6, 4}));
+    EXPECT_EQ(sdpa->get_input_shape(2), (ov::Shape{1, hq, 6, 4}));
+    EXPECT_EQ(sdpa->get_input_shape(3), (ov::Shape{1, 1, 3, 6}));
+
+    ov::Core core;
+    auto ref_compiled = core.compile_model(reference, "CPU");
+    auto new_compiled = core.compile_model(rewritten, "CPU");
+    auto ref_req = ref_compiled.create_infer_request();
+    auto new_req = new_compiled.create_infer_request();
+
+    // Inputs are ordered as constructed: {q, k, v, mask}.
+    const size_t num_inputs = reference->inputs().size();
+    ASSERT_EQ(num_inputs, rewritten->inputs().size());
+    for (size_t i = 0; i < num_inputs; ++i) {
+      const auto& port = reference->input(i);
+      ov::Tensor t(port.get_element_type(), port.get_shape());
+      FillRandom(t, static_cast<uint32_t>(i + 1));
+      ref_req.set_input_tensor(i, t);
+      new_req.set_input_tensor(i, t);
+    }
+
+    ref_req.infer();
+    new_req.infer();
+
+    auto ref_out = ref_req.get_output_tensor(0);
+    auto new_out = new_req.get_output_tensor(0);
+    ASSERT_EQ(ref_out.get_shape(), new_out.get_shape());
+    const auto* ref_data = ref_out.data<float>();
+    const auto* new_data = new_out.data<float>();
+    for (size_t i = 0; i < ref_out.get_size(); ++i) {
+      EXPECT_NEAR(new_data[i], ref_data[i],
+                  std::abs(ref_data[i]) * 1e-5f + 1e-6f)
+          << "output[" << i << "] diverges for r=" << r
+          << " -- the two forms disagree on which KV head a query head reads";
+    }
+  }
+}
+
+// Disabled by default: without the opt-in the graph must be left alone.
+TEST(UnfoldGqaSequenceFoldTest, DoesNothingWhenDisabled) {
+  auto model = BuildGqaSequenceFoldAttention(/*hkv=*/2, /*r=*/4, /*s=*/3,
+                                             /*kv_len=*/6, /*head_dim=*/4);
+
+  NpuOptimizer().SetCastIntegerSignToFloat(false).Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::v0::Concat>(model), 1u);
+  EXPECT_EQ(CountOps<ov::op::v3::Broadcast>(model), 0u);
+}
+
+// A mask built from genuinely different per-group slices is NOT a replicated
+// head-invariant mask, so folding it back would change the math. Leave it.
+TEST(UnfoldGqaSequenceFoldTest, LeavesNonReplicatedMaskAlone) {
+  using ov::op::v0::Constant;
+  using ov::op::v0::Parameter;
+  const auto f = ov::element::f32;
+  auto q = std::make_shared<Parameter>(f, ov::Shape{1, 4, 3, 4});
+  auto k = std::make_shared<Parameter>(f, ov::Shape{1, 2, 6, 4});
+  auto v = std::make_shared<Parameter>(f, ov::Shape{1, 2, 6, 4});
+  // Two independent mask halves rather than one tensor repeated twice.
+  auto mask_a = std::make_shared<Parameter>(f, ov::Shape{1, 1, 3, 6});
+  auto mask_b = std::make_shared<Parameter>(f, ov::Shape{1, 1, 3, 6});
+
+  auto fold_shape = Constant::create(ov::element::i64, ov::Shape{4},
+                                     std::vector<int64_t>{1, 2, 6, 4});
+  auto q_folded = std::make_shared<ov::op::v1::Reshape>(q, fold_shape, false);
+  auto mask = std::make_shared<ov::op::v0::Concat>(
+      ov::OutputVector{mask_a, mask_b}, /*axis=*/2);
+  auto scale = Constant::create(f, ov::Shape{}, std::vector<float>{1.0f});
+  auto sdpa = std::make_shared<ov::op::v13::ScaledDotProductAttention>(
+      ov::OutputVector{q_folded, k, v, mask, scale}, false);
+  auto unfold_shape = Constant::create(ov::element::i64, ov::Shape{4},
+                                       std::vector<int64_t>{1, 4, 3, 4});
+  auto unfolded =
+      std::make_shared<ov::op::v1::Reshape>(sdpa, unfold_shape, false);
+  auto model = std::make_shared<ov::Model>(
+      ov::OutputVector{unfolded->output(0)},
+      ov::ParameterVector{q, k, v, mask_a, mask_b}, "distinct_mask_halves");
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetUnfoldGqaSequenceFold(true)
+      .Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::v0::Concat>(model), 1u);
+  EXPECT_EQ(CountOps<ov::op::v3::Broadcast>(model), 0u);
 }
 
 }  // namespace

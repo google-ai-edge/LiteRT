@@ -114,6 +114,12 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
         context.split_shared_constants_ = (value == "true");
         continue;
       }
+      if (key == "unfold_gqa_sequence_fold") {
+        LITERT_LOG(LITERT_INFO, "Custom config: unfold_gqa_sequence_fold = %s",
+                   value.c_str());
+        context.unfold_gqa_sequence_fold_ = (value == "true");
+        continue;
+      }
       context.configs_map_[key] = value;
       LITERT_LOG(LITERT_INFO, "Custom config: %s = %s", key.c_str(),
                  value.c_str());
@@ -174,6 +180,10 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
         context.split_shared_constants_ = (value == "true");
         continue;
       }
+      if (key == "unfold_gqa_sequence_fold") {
+        context.unfold_gqa_sequence_fold_ = (value == "true");
+        continue;
+      }
       context.configs_map_[key] = value;
       LITERT_LOG(LITERT_INFO, "Graph %d custom config: %s = %s", graph_index,
                  key.c_str(), value.c_str());
@@ -232,6 +242,7 @@ OpenVinoCompileContext::OptimizeModel(
           .SetSdpaPadKvToAlignment(sdpa_pad_kv_to_alignment_)
           .SetEnableMoeGather(enable_moe_gather_)
           .SetSplitSharedConstants(split_shared_constants_)
+          .SetUnfoldGqaSequenceFold(unfold_gqa_sequence_fold_)
           .Run(model);
   return {.moe_is_multi_token_chunk = result.moe_is_multi_token_chunk};
 }
