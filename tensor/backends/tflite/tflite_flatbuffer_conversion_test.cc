@@ -823,6 +823,63 @@ TEST(SerializationTest, UnnamedInputsAndOutputsAreGivenAName) {
   ASSERT_THAT(GetOutputName(1), StrEq("unnamed_output_1"));
 }
 
+TEST(SerializationTest, ScopedGraphPersistsHierarchicalTensorNamesAndMetadata) {
+  std::vector<char> model_data;
+  {
+    TensorTf x({.name = "x", .type = Type::kFP32, .shape = {2, 4}});
+    TensorTf w({.name = "w",
+                .type = Type::kFP32,
+                .shape = {4, 4},
+                .buffer = std::vector<float>(16, 0.25f)});
+    TensorTf out;
+    {
+      graph::ScopeGuard layer_scope("transformer_layer", "layer_0");
+      layer_scope.Attr("layer_idx", 0).Bind("input", x);
+      {
+        graph::ScopeGuard swish_scope("swish");
+        swish_scope.Bind("input", x);
+        TensorTf sig = Logistic(x);
+        TensorTf swish_out = Mul(x, sig);
+        swish_scope.Bind("output", swish_out);
+        out = FullyConnected(swish_out, w).SetName("out");
+      }
+      layer_scope.Bind("output", out);
+    }
+
+    ModelFactory model_builder;
+    ASSERT_THAT(model_builder.AddSubgraph({out}), IsOk());
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(model_data,
+                                    model_builder.CreateFlatbuffer());
+  }
+
+  auto model = tflite::FlatBufferModel::BuildFromBuffer(model_data.data(),
+                                                        model_data.size());
+  ASSERT_NE(model, nullptr);
+  const tflite::Model* model_fb = model->GetModel();
+  ASSERT_NE(model_fb->metadata(), nullptr);
+  bool found_scopes_meta = false;
+  for (int i = 0; i < model_fb->metadata()->size(); ++i) {
+    const tflite::Metadata* m = model_fb->metadata()->Get(i);
+    if (m && m->name() &&
+        m->name()->string_view() == kLiteRtGraphScopesMetadataKey) {
+      found_scopes_meta = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_scopes_meta);
+
+  const tflite::SubGraph* sg = model_fb->subgraphs()->Get(0);
+  std::vector<std::string> tensor_names;
+  for (int i = 0; i < sg->tensors()->size(); ++i) {
+    const tflite::Tensor* t = sg->tensors()->Get(i);
+    if (t && t->name()) {
+      tensor_names.push_back(t->name()->str());
+    }
+  }
+  EXPECT_THAT(tensor_names, Contains(StrEq("layer_0/swish/Logistic_0:0")));
+  EXPECT_THAT(tensor_names, Contains(StrEq("layer_0/swish/output")));
+}
+
 TEST(SerializationTest, CanSerializeAdd) {
   const std::string model_path = testing::TempDir() + "/add.tflite";
   TensorTf a({.type = Type::kFP32, .shape = {2, 5}});
