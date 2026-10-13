@@ -15,9 +15,11 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -32,17 +34,21 @@
 #include "litert/ats/inference_fixture.h"
 #include "litert/ats/register.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
+#include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/common.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/generators.h"
 #include "litert/test/simple_buffer.h"
+#include "tflite/schema/schema_generated.h"
 
 // Simple validating logic for the registration of ATS tests. We cannot use
 // gtest constructs for this.
@@ -76,7 +82,77 @@ Expected<AtsConf> CompileOptions(absl::string_view models_out) {
   return AtsConf::ParseFlagsAndDoSetup();
 }
 
+Expected<void> CheckExtraModelBoundedInputs() {
+  auto model = std::make_unique<LiteRtModelT>();
+  auto& sg = model->EmplaceSubgraph();
+  auto add_tensor = [&](LiteRtElementType type,
+                        std::initializer_list<int32_t> dims) -> LiteRtTensorT& {
+    auto& t = sg.EmplaceTensor();
+    t.SetType(MakeRankedTensorType(type, dims));
+    return t;
+  };
+  auto add_op = [&](LiteRtOpCode code,
+                    std::initializer_list<LiteRtTensorT*> ins,
+                    LiteRtTensorT& out) -> LiteRtOpT& {
+    auto& op = sg.EmplaceOp();
+    op.SetOpCode(code);
+    for (auto* in : ins) internal::AttachInput(in, op);
+    internal::AttachOutput(&out, op);
+    return op;
+  };
+
+  // Input 0: INT32 token_ids -> EmbeddingLookup (vocab_size=17).
+  auto& token_ids = add_tensor(kLiteRtElementTypeInt32, {64});
+  auto& emb_out = add_tensor(kLiteRtElementTypeFloat32, {64, 16});
+  add_op(kLiteRtOpCodeTflEmbeddingLookup,
+         {&token_ids, &add_tensor(kLiteRtElementTypeFloat32, {17, 16})},
+         emb_out);
+
+  // Input 1: INT64 gather_ids -> Cast -> Reshape -> Gather (axis=1, dim=23).
+  auto& gather_ids = add_tensor(kLiteRtElementTypeInt64, {8, 8});
+  auto& cast_out = add_tensor(kLiteRtElementTypeInt32, {8, 8});
+  auto& reshape_out = add_tensor(kLiteRtElementTypeInt32, {64});
+  auto& gather_out = add_tensor(kLiteRtElementTypeFloat32, {5, 64, 16});
+  add_op(kLiteRtOpCodeTflCast, {&gather_ids}, cast_out);
+  add_op(kLiteRtOpCodeTflReshape, {&cast_out}, reshape_out);
+  auto& gather_op = add_op(
+      kLiteRtOpCodeTflGather,
+      {&add_tensor(kLiteRtElementTypeFloat32, {5, 23, 16}), &reshape_out},
+      gather_out);
+  internal::TflOptions gather_opts;
+  gather_opts.type = tflite::BuiltinOptions_GatherOptions;
+  gather_opts.Set(tflite::GatherOptionsT{{}, /*axis=*/1});
+  internal::SetTflOptions(gather_op, std::move(gather_opts));
+
+  // Input 2: INT64 attention_mask -> Cast(FLOAT32) (fallback to [0, 2)).
+  auto& attention_mask = add_tensor(kLiteRtElementTypeInt64, {64});
+  auto& mask_out = add_tensor(kLiteRtElementTypeFloat32, {64});
+  add_op(kLiteRtOpCodeTflCast, {&attention_mask}, mask_out);
+
+  sg.Inputs() = {&token_ids, &gather_ids, &attention_mask};
+  sg.Outputs() = {&emb_out, &gather_out, &mask_out};
+
+  ExtraModel extra_model(std::move(model));
+  DefaultDevice device(42);
+  RandomTensorDataBuilder data_builder;
+  LITERT_ASSIGN_OR_RETURN(auto inputs,
+                          extra_model.MakeInputs(device, data_builder));
+  auto in_bounds = [](auto span, int64_t upper) {
+    return std::all_of(span.begin(), span.end(),
+                       [upper](auto v) { return v >= 0 && v < upper; });
+  };
+  LITERT_ENSURE(inputs.size() == 3 &&
+                    in_bounds(inputs[0].Span<int32_t>(), 17) &&
+                    in_bounds(inputs[1].Span<int64_t>(), 23) &&
+                    in_bounds(inputs[2].Span<int64_t>(), 2),
+                Error(kLiteRtStatusErrorRuntimeFailure),
+                "Out-of-bounds generated integer input.");
+  return {};
+}
+
 Expected<void> CheckAts() {
+  LITERT_RETURN_IF_ERROR(CheckExtraModelBoundedInputs());
+
   absl::SetFlag(&FLAGS_extra_models, {GetLiteRtPath("test/testdata/")});
 
   LITERT_ASSIGN_OR_RETURN(auto dir, UniqueTestDirectory::Create());

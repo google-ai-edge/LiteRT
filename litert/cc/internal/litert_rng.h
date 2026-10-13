@@ -613,6 +613,16 @@ class RandomTensorDataBuilder {
     return *this;
   }
 
+  RandomTensorDataBuilder& SetInt64Range(int64_t min, int64_t max) {
+    int64_config_ = std::make_pair(min, max);
+    return *this;
+  }
+
+  RandomTensorDataBuilder& SetInt64Dummy() {
+    int64_config_ = Dummy();
+    return *this;
+  }
+
   RandomTensorDataBuilder& SetFloatRange(float min, float max) {
     float_config_ = std::make_pair(min, max);
     return *this;
@@ -631,6 +641,12 @@ class RandomTensorDataBuilder {
   RandomTensorDataBuilder& SetSin() {
     float_config_ = Sin();
     return *this;
+  }
+
+  bool IsIntDummy() const { return std::holds_alternative<Dummy>(int_config_); }
+
+  bool IsInt64Dummy() const {
+    return std::holds_alternative<Dummy>(int64_config_);
   }
 
   bool IsFloatDummy() const {
