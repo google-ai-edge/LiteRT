@@ -202,6 +202,19 @@ bool SupportsAhwbGlInteropHelper() {
 }  // namespace
 
 GpuEnvironment::~GpuEnvironment() {
+#if LITERT_HAS_OPENCL_SUPPORT
+  if (command_queue_.queue() != nullptr) {
+    command_queue_.WaitForCompletion().IgnoreError();
+  }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+#if LITERT_HAS_OPENGL_SUPPORT
+  // If `egl_env_` wraps an EGLContext owned by `callback_on_destroy` (e.g.
+  // DelegateEnvironment), destroy `egl_env_` first so its GL framebuffer and
+  // texture are deleted while the underlying EGLContext is still alive.
+  if (egl_env_ != nullptr && !egl_env_->context().has_ownership()) {
+    egl_env_.reset();
+  }
+#endif  // LITERT_HAS_OPENGL_SUPPORT
   if (options_.callback_on_destroy) {
     options_.callback_on_destroy(options_.callback_user_data_on_destroy);
   }

@@ -104,7 +104,18 @@ constexpr char kEnvDebugExcludeNodes[] = "LITERT_GPU_DEBUG_EXCLUDE_NODES";
 #endif  // NDEBUG
 
 void DestroyDelegateEnvironment(void* user_data) {
-  delete reinterpret_cast<DelegateEnvironment*>(user_data);
+  auto* env = reinterpret_cast<DelegateEnvironment*>(user_data);
+  if (env != nullptr && env->cl_env != nullptr) {
+    // Drain OpenCL work and release the CL-GL context before `env->egl_env`
+    // destroys the shared EGLContext, preventing background OpenCL driver
+    // threads (e.g. Qualcomm Adreno libCB.so) from accessing a freed
+    // EGLContext.
+    if (env->cl_env->queue() != nullptr) {
+      env->cl_env->queue()->WaitForCompletion().IgnoreError();
+    }
+    env->cl_env.reset();
+  }
+  delete env;
   LITERT_LOG(LITERT_DEBUG, "Destroyed delegate environment.");
 }
 
