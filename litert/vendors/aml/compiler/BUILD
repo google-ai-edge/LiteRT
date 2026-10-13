@@ -1,18 +1,6 @@
-# Copyright (C) 2023 Amlogic, Inc. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Copyright (C) 2026 Amlogic, Inc. All rights reserved.
 
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "make_rpaths")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 
 package(
@@ -22,25 +10,8 @@ package(
     ],
 )
 
-# Packager / runtime bytecode format (AML_Dispatch_Info).
-# Leaf library: no ADLA / compiler_adla dependency.
-cc_library(
-    name = "aml_dispatch_info",
-    srcs = [
-        "aml_dispatch_info.cc",
-    ],
-    hdrs = [
-        "aml_dispatch_info.h",
-    ],
-    visibility = [
-        "//ci/tools/python/wheel:__subpackages__",
-        "//litert:__subpackages__",
-    ],
-)
-
-# LiteRT frontend: map LiteRT graph -> Context API, AmlContextCompile, pack
-# DispatchInfo. compiler_core_*.h and libaml_compiler_core.so come from the
-# external AML SDK (AML_SDK_ROOT). Does NOT link libcompiler_adla.so.
+# LiteRT-only frontend: map LiteRT graph -> Context API, AmlContextCompile, pack DispatchInfo.
+# Links external @aml_npu//compiler_core; does NOT link libcompiler_adla.so.
 litert_dynamic_lib(
     name = "aml_compiler_plugin",
     srcs = [
@@ -49,7 +20,6 @@ litert_dynamic_lib(
     ],
     hdrs = [
         "//litert/vendors/c:litert_compiler_plugin.h",
-        "aml_dispatch_info.h",
         "node_binary_info.h",
     ],
     # Keep RTTI on for NodeBuilder::SetParameter dynamic_cast across
@@ -58,12 +28,22 @@ litert_dynamic_lib(
         "-frtti",
     ],
     # Do NOT use export_litert_only: that hides adla typeinfo and breaks
-    # cross-DSO dynamic_cast. Use curated aml version-script instead:
-    # export LiteRt* + RTTI (_ZTI*/_ZTS*/_ZTV*), hide std::filesystem etc.
+    # cross-DSO dynamic_cast. Pass the curated version script as linkopts
+    # (cc_library accepts these; litert_dynamic_lib has no version_script attr).
     export_litert_only = False,
-    version_script = ":export_aml_compiler_plugin_linux.lds",
-    linkopts = litert_android_linkopts() + [
+    additional_linker_inputs = [":export_aml_compiler_plugin_linux.lds"],
+    linkopts = litert_android_linkopts() + select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [
+            make_rpaths([
+                "external/aml_npu/compiler_core/libs/linux/x86_64",
+                "external/aml_npu/runtime_lib/libs/linux/x86_64",
+            ]),
+        ],
+        "//conditions:default": [],
+    }) + [
+        "-Wl,--version-script=$(location :export_aml_compiler_plugin_linux.lds)",
         "-Wl,-soname=libLiteRtCompilerPlugin_Aml.so",
+        # Wheel package places the shared library in the root directory.
         "-Wl,-rpath,$$ORIGIN",
         "-ldl",
     ],
@@ -75,9 +55,11 @@ litert_dynamic_lib(
         "//litert:__subpackages__",
     ],
     deps = [
-        ":aml_dispatch_info",
+        "//litert/vendors/aml/core:aml_dispatch_info",
+        "@aml_npu//compiler_core:aml_compiler_core_lib",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_logging_helper_with_compiler_context",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/c:litert_opaque_options",
@@ -89,7 +71,7 @@ litert_dynamic_lib(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/cc:litert_model_types",
-        "//litert/cc/internal:litert_extended_model",
+        "//litert/compiler/cc:litert_model",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_op_options",
         "@com_google_absl//absl/container:flat_hash_map",

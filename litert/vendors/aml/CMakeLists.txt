@@ -1,4 +1,4 @@
-# Copyright (C) 2023 Amlogic, Inc. All rights reserved.
+# Copyright 2025 Google LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,112 +20,51 @@ set(AML_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(AML_CORE_DIR "${AML_ROOT}/core")
 set(AML_DISPATCH_DIR "${AML_ROOT}/dispatch")
 set(AML_COMPILER_DIR "${AML_ROOT}/compiler")
+get_filename_component(AML_REPO_ROOT "${AML_ROOT}/../../.." ABSOLUTE)
 
-# SDK public headers (compiler_core_*.h, nnsdk2.h / nnsdk.h) are NOT vendored.
-# They are consumed as an external library via AML_SDK_ROOT / AML_INCLUDE_DIR.
-# Prebuilt .so files also stay in the external AML SDK:
-#   ${AML_SDK_ROOT}/android/lib64|lib32/libaml_compiler_core.so
-#   ${AML_SDK_ROOT}/linux/buildroot_64|x86/libaml_compiler_core.so
-set(AML_SDK_ROOT "" CACHE PATH
-  "Root of the external AML SDK (headers + prebuilt .so)")
-set(AML_LIB_DIR "" CACHE PATH
-  "Directory containing libaml_compiler_core.so")
-set(AML_INCLUDE_DIR "" CACHE PATH
-  "Directory containing compiler_core_context.h")
-set(AML_NNSDK_INCLUDE_DIR "" CACHE PATH
-  "Directory containing nnsdk2.h")
-
-if(NOT AML_LIB_DIR AND AML_SDK_ROOT)
-  if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-    if(DEFINED ANDROID_ABI AND ANDROID_ABI STREQUAL "armeabi-v7a")
-      set(AML_LIB_DIR "${AML_SDK_ROOT}/android/lib32")
-    else()
-      set(AML_LIB_DIR "${AML_SDK_ROOT}/android/lib64")
-    endif()
-  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i.86")
-    set(AML_LIB_DIR "${AML_SDK_ROOT}/linux/x86")
+# Prebuilt libaml_compiler_core.so + nnsdk headers live in the external
+# aml_npu repo (not inside this LiteRT tree).
+# Default: <01_LiteRT>/aml_npu, sibling of this LiteRT checkout.
+if(NOT AML_NPU_ROOT)
+  if(DEFINED ENV{AML_NPU_ROOT} AND NOT "$ENV{AML_NPU_ROOT}" STREQUAL "")
+    set(AML_NPU_ROOT "$ENV{AML_NPU_ROOT}")
   else()
-    set(AML_LIB_DIR "${AML_SDK_ROOT}/linux/buildroot_64")
+    get_filename_component(AML_NPU_ROOT "${AML_REPO_ROOT}/../aml_npu" ABSOLUTE)
   endif()
 endif()
-
-macro(_aml_locate_header OUT_DIR HEADER)
-  if(NOT ${OUT_DIR} AND AML_SDK_ROOT)
-    if(EXISTS "${AML_SDK_ROOT}/${HEADER}")
-      set(${OUT_DIR} "${AML_SDK_ROOT}")
-    elseif(EXISTS "${AML_SDK_ROOT}/include/${HEADER}")
-      set(${OUT_DIR} "${AML_SDK_ROOT}/include")
-    else()
-      file(GLOB_RECURSE _aml_hits "${AML_SDK_ROOT}/*/${HEADER}")
-      if(_aml_hits)
-        list(GET _aml_hits 0 _aml_first)
-        get_filename_component(${OUT_DIR} "${_aml_first}" DIRECTORY)
-      endif()
-    endif()
-  endif()
-endmacro()
-
-_aml_locate_header(AML_INCLUDE_DIR compiler_core_context.h)
-_aml_locate_header(AML_NNSDK_INCLUDE_DIR nnsdk2.h)
-
-if(NOT AML_INCLUDE_DIR)
-  message(WARNING
-    "compiler_core_context.h not found. Set -DAML_SDK_ROOT or -DAML_INCLUDE_DIR. "
-    "LiteRT does not vendor AML compiler_core headers.")
+set(AML_NPU_ROOT "${AML_NPU_ROOT}" CACHE PATH
+  "External aml_npu repository (compiler_core + runtime_lib)" FORCE)
+if(NOT EXISTS "${AML_NPU_ROOT}/compiler_core/cmake/AmlCompilerCorePrebuilt.cmake")
+  message(FATAL_ERROR
+    "External aml_npu not found at: ${AML_NPU_ROOT}\n"
+    "  Pass -DAML_NPU_ROOT=/path/to/aml_npu")
 endif()
-if(NOT AML_NNSDK_INCLUDE_DIR)
-  message(WARNING
-    "nnsdk2.h not found. Set -DAML_SDK_ROOT or -DAML_NNSDK_INCLUDE_DIR. "
-    "LiteRT does not vendor NNSDK headers.")
-endif()
+include("${AML_NPU_ROOT}/compiler_core/cmake/AmlCompilerCorePrebuilt.cmake")
+include("${AML_NPU_ROOT}/runtime_lib/cmake/AmlNpuRuntime.cmake")
 
-set(_AML_COMPILER_CORE_SO "")
-if(AML_LIB_DIR AND EXISTS "${AML_LIB_DIR}/libaml_compiler_core.so")
-  set(_AML_COMPILER_CORE_SO "${AML_LIB_DIR}/libaml_compiler_core.so")
-endif()
+set(AML_LINUX_LIB_DIR "${AML_NPU_RUNTIME_LIB_DIR}" CACHE PATH
+  "Directory with Linux ARM prebuilt libs (libcompiler_adla.so, libnnsdk.so)")
 
-if(NOT _AML_COMPILER_CORE_SO)
-  message(WARNING
-    "libaml_compiler_core.so not found. Set -DAML_SDK_ROOT or -DAML_LIB_DIR. "
-    "LiteRT does not vendor this library.")
-endif()
-
-set(_AML_SDK_INCLUDES "")
-if(AML_INCLUDE_DIR)
-  list(APPEND _AML_SDK_INCLUDES "${AML_INCLUDE_DIR}")
-endif()
-if(AML_NNSDK_INCLUDE_DIR AND NOT AML_NNSDK_INCLUDE_DIR STREQUAL AML_INCLUDE_DIR)
-  list(APPEND _AML_SDK_INCLUDES "${AML_NNSDK_INCLUDE_DIR}")
-endif()
-
-if(_AML_COMPILER_CORE_SO)
-  add_library(aml_compiler_core_lib SHARED IMPORTED GLOBAL)
-  set_target_properties(aml_compiler_core_lib PROPERTIES
-    IMPORTED_LOCATION "${_AML_COMPILER_CORE_SO}"
-    INTERFACE_INCLUDE_DIRECTORIES "${_AML_SDK_INCLUDES}")
-else()
-  add_library(aml_compiler_core_lib INTERFACE)
-  if(_AML_SDK_INCLUDES)
-    target_include_directories(aml_compiler_core_lib INTERFACE ${_AML_SDK_INCLUDES})
-  endif()
-endif()
-
+# TFLite FlatBuffers v25 must precede vendor FlatBuffers if any leftover path leaks.
 set(AML_COMMON_INCLUDES
   ${TFLITE_BUILD_DIR}/flatbuffers/include
+  ${AML_COMPILER_CORE_INCLUDE_DIR}
   ${AML_CORE_DIR}
-  ${_AML_SDK_INCLUDES}
+  ${AML_NNSDK_INCLUDE_DIRS}
   ${CMAKE_SOURCE_DIR}
   ${CMAKE_SOURCE_DIR}/..
   ${TENSORFLOW_SOURCE_DIR}
   ${TFLITE_SOURCE_DIR}
 )
 
+# Packager format shared by compiler plugin + dispatch (no ADLA).
+# Lives in vendors/aml/core (same as Bazel //litert/vendors/aml/core:aml_dispatch_info).
 add_library(aml_dispatch_info STATIC
-  ${AML_COMPILER_DIR}/aml_dispatch_info.cc
+  ${AML_CORE_DIR}/aml_dispatch_info.cc
 )
 target_include_directories(aml_dispatch_info PUBLIC
   ${AML_COMMON_INCLUDES}
-  ${AML_COMPILER_DIR}
+  ${AML_CORE_DIR}
 )
 
 # Runtime-only (LiteRtDispatch_Aml). Must NOT link libcompiler_adla.so.
@@ -151,6 +90,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Android")
   target_link_libraries(aml_runtime PUBLIC dl)
 endif()
 
+# Compiler core is prebuilt (aml_compiler_core / aml_compiler_core_lib /
+# aml_compiler_core_so aliases from AmlCompilerCorePrebuilt.cmake).
+# LiteRT links that .so; it does not compile compiler_core sources and does
+# not link libcompiler_adla.so.
+
+# Backward-compatible name: historical aml_core mixed runtime+compiler.
+# Prefer aml_runtime / aml_compiler_core_lib for new targets.
 add_library(aml_core INTERFACE)
 target_link_libraries(aml_core INTERFACE
   aml_runtime
@@ -221,6 +167,7 @@ target_include_directories(aml_compiler_plugin_so
 # RTTI required for NodeBuilder::SetParameter(dynamic_cast) against
 # objects created inside prebuilt libcompiler_adla.so.
 target_compile_options(aml_compiler_plugin_so PRIVATE -frtti)
+# Keep default visibility so typeinfo can merge across DSO with ADLA.
 set_target_properties(aml_compiler_plugin_so PROPERTIES
   CXX_VISIBILITY_PRESET default
   VISIBILITY_INLINES_HIDDEN OFF
@@ -246,6 +193,8 @@ set_target_properties(aml_compiler_plugin_so PROPERTIES
 if(UNIX AND NOT APPLE)
   target_link_options(aml_compiler_plugin_so PRIVATE
     "-Wl,-soname=libLiteRtCompilerPlugin_Aml.so"
+    # Export LiteRt* + RTTI; hide std::filesystem etc so they resolve from
+    # system C++ runtime (avoids hijacking libcompiler_adla.so Compile()).
     "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/compiler/export_aml_compiler_plugin_linux.lds"
     "LINKER:-rpath,$ORIGIN"
     "LINKER:--disable-new-dtags"
@@ -263,7 +212,7 @@ if(UNIX AND NOT APPLE)
   )
 endif()
 
-# Install only LiteRT-produced artifacts. AML SDK .so files stay external.
+# Convenience install for board / buildroot rootfs packaging.
 install(TARGETS
   litert_runtime_c_api_shared_lib
   aml_dispatch_so
@@ -272,3 +221,16 @@ install(TARGETS
   RUNTIME DESTINATION bin
   ARCHIVE DESTINATION lib
 )
+
+install(FILES
+  "${AML_COMPILER_CORE_LIB}"
+  DESTINATION lib
+)
+install(FILES
+  "${AML_COMPILER_CORE_INCLUDE_DIR}/aml_npu/compiler_core/compiler_core_api.h"
+  "${AML_COMPILER_CORE_INCLUDE_DIR}/aml_npu/compiler_core/compiler_core_context.h"
+  DESTINATION include/aml_npu/compiler_core
+)
+if(AML_COMPILER_ADLA_LIB)
+  install(FILES "${AML_COMPILER_ADLA_LIB}" DESTINATION lib)
+endif()

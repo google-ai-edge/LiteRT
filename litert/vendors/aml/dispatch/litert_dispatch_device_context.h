@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Amlogic, Inc. All rights reserved.
+// Copyright 2024 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -123,7 +123,7 @@ public:
    * @param aml_nn    NNSDK2 function table used for amlnn_destroy.
    */
   void ReleaseSharedAdlaModel(const std::string& model_key,
-                              tflite::AML_NN* aml_nn);
+                              aml_nnsdk::AML_NN* aml_nn);
 
   /**
    * @brief Build process-global shared-model key.

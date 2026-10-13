@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Amlogic, Inc. All rights reserved.
+// Copyright 2026 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,109 +12,93 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_AML_OPTIONS_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_AML_OPTIONS_H_
-
-#include <stdint.h>
+#ifndef ODML_LITERT_LITERT_C_OPTIONS_LITERT_AML_OPTIONS_H_
+#define ODML_LITERT_LITERT_C_OPTIONS_LITERT_AML_OPTIONS_H_
 
 #include "litert/c/litert_common.h"
 
+// User-facing options for Amlogic. Do not include vendor SDK headers.
 #ifdef __cplusplus
-extern "C"
-{
-#endif // __cplusplus
+extern "C" {
+#endif  // __cplusplus
 
-    // ========== HANDLE 定义 ==========
-    LITERT_DEFINE_HANDLE(LiteRtAmlOptions);
+LITERT_DEFINE_HANDLE(LrtAmlOptions);
 
-    // Create an Aml options object that is type erased.
-    LiteRtStatus LiteRtAmlOptionsCreate(LiteRtOpaqueOptions *options);
+const char* LrtAmlOptionsGetIdentifier();
 
-    // Identifier string for AML options in type-erased options.
-    const char *LiteRtAmlOptionsGetIdentifier();
-
-    // Attempt to retrieve AML options from the opaque options.
-    LiteRtStatus LiteRtAmlOptionsGet(LiteRtOpaqueOptions options,
-                                     LiteRtAmlOptions *options_data);
-
-    // ========== GENERAL SDK SETTINGS ==========
-
-    // log_level
-    typedef enum LiteRtAmlOptionsLogLevel
-    {
-        kLiteRtAmlLogOff = 0,
-        kLiteRtAmlLogLevelError = 1,
-        kLiteRtAmlLogLevelWarn = 2,
-        kLiteRtAmlLogLevelInfo = 3,
-        kLiteRtAmlLogLevelVerbose = 4,
-        kLiteRtAmlLogLevelDebug = 5,
-    } LiteRtAmlOptionsLogLevel;
-
-    LiteRtStatus LiteRtAmlOptionsSetLogLevel(
-        LiteRtAmlOptions options, LiteRtAmlOptionsLogLevel log_level);
-
-    LiteRtStatus LiteRtAmlOptionsGetLogLevel(
-        LiteRtAmlOptions options, LiteRtAmlOptionsLogLevel *log_level);
-
-    // ========== EXECUTION / DISPATCH OPTIONS ==========
-
-    // performance mode (针对 Amlogic NPU 运行模式)
-    typedef enum LiteRtAmlOptionsPerfMode
-    {
-        kLiteRtAmlPerfDefault = 0,
-        kLiteRtAmlPerfHighPerformance,
-        kLiteRtAmlPerfBalanced,
-        kLiteRtAmlPerfPowerSaver,
-    } LiteRtAmlOptionsPerfMode;
-
-    LiteRtStatus LiteRtAmlOptionsSetPerfMode(
-        LiteRtAmlOptions options, LiteRtAmlOptionsPerfMode mode);
-
-    LiteRtStatus LiteRtAmlOptionsGetPerfMode(
-        LiteRtAmlOptions options, LiteRtAmlOptionsPerfMode *mode);
-
-    // profiling
-    typedef enum LiteRtAmlOptionsProfiling
-    {
-        kLiteRtAmlProfilingOff = 0,
-        kLiteRtAmlProfilingBasic,
-        kLiteRtAmlProfilingDetailed,
-    } LiteRtAmlOptionsProfiling;
-
-    LiteRtStatus LiteRtAmlOptionsSetProfiling(
-        LiteRtAmlOptions options, LiteRtAmlOptionsProfiling profiling);
-
-    LiteRtStatus LiteRtAmlOptionsGetProfiling(
-        LiteRtAmlOptions options, LiteRtAmlOptionsProfiling *profiling);
-
-    typedef enum LiteRtAmlOptionsMemoryPolicy
-    {
-        kLiteRtAmlMemoryDefault = 0,
-        kLiteRtAmlMemoryIOMMU,
-        kLiteRtAmlMemoryDMA,
-    } LiteRtAmlOptionsMemoryPolicy;
-
-    LiteRtStatus LiteRtAmlOptionsSetMemoryPolicy(
-        LiteRtAmlOptions options, LiteRtAmlOptionsMemoryPolicy policy);
-
-    LiteRtStatus LiteRtAmlOptionsGetMemoryPolicy(
-        LiteRtAmlOptions options, LiteRtAmlOptionsMemoryPolicy *policy);
-
-    // model path/name
-    LiteRtStatus LiteRtAmlOptionsSetModelPath(
-        LiteRtAmlOptions options, const char *model_path);
-
-    LiteRtStatus LiteRtAmlOptionsGetModelPath(
-        LiteRtAmlOptions options, const char **model_path);
-
-    LiteRtStatus LiteRtAmlOptionsSetModelName(
-        LiteRtAmlOptions options, const char *model_name);
-
-    LiteRtStatus LiteRtAmlOptionsGetModelName(
-        LiteRtAmlOptions options, const char **model_name);
+LiteRtStatus LrtCreateAmlOptions(LrtAmlOptions* options);
 
 #ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
+LiteRtStatus LrtCreateAmlOptionsFromToml(const char* toml_payload,
+                                         LrtAmlOptions* options);
+#endif  // __cplusplus
 
-#endif // THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_AML_OPTIONS_H_
+void LrtDestroyAmlOptions(LrtAmlOptions options);
+
+LiteRtStatus LrtGetOpaqueAmlOptionsData(LrtAmlOptions options,
+                                        const char** identifier, void** payload,
+                                        void (**payload_deleter)(void*));
+
+typedef enum LrtAmlOptionsLogLevel {
+  kLrtAmlLogOff = 0,
+  kLrtAmlLogLevelError = 1,
+  kLrtAmlLogLevelWarn = 2,
+  kLrtAmlLogLevelInfo = 3,
+  kLrtAmlLogLevelVerbose = 4,
+  kLrtAmlLogLevelDebug = 5,
+} LrtAmlOptionsLogLevel;
+
+LiteRtStatus LrtAmlOptionsSetLogLevel(LrtAmlOptions options,
+                                      LrtAmlOptionsLogLevel log_level);
+LiteRtStatus LrtAmlOptionsGetLogLevel(LrtAmlOptions options,
+                                      LrtAmlOptionsLogLevel* log_level);
+
+typedef enum LrtAmlOptionsPerfMode {
+  kLrtAmlPerfDefault = 0,
+  kLrtAmlPerfHighPerformance,
+  kLrtAmlPerfBalanced,
+  kLrtAmlPerfPowerSaver,
+} LrtAmlOptionsPerfMode;
+
+LiteRtStatus LrtAmlOptionsSetPerfMode(LrtAmlOptions options,
+                                      LrtAmlOptionsPerfMode mode);
+LiteRtStatus LrtAmlOptionsGetPerfMode(LrtAmlOptions options,
+                                      LrtAmlOptionsPerfMode* mode);
+
+typedef enum LrtAmlOptionsProfiling {
+  kLrtAmlProfilingOff = 0,
+  kLrtAmlProfilingBasic,
+  kLrtAmlProfilingDetailed,
+} LrtAmlOptionsProfiling;
+
+LiteRtStatus LrtAmlOptionsSetProfiling(LrtAmlOptions options,
+                                       LrtAmlOptionsProfiling profiling);
+LiteRtStatus LrtAmlOptionsGetProfiling(LrtAmlOptions options,
+                                       LrtAmlOptionsProfiling* profiling);
+
+typedef enum LrtAmlOptionsMemoryPolicy {
+  kLrtAmlMemoryDefault = 0,
+  kLrtAmlMemoryIOMMU,
+  kLrtAmlMemoryDMA,
+} LrtAmlOptionsMemoryPolicy;
+
+LiteRtStatus LrtAmlOptionsSetMemoryPolicy(LrtAmlOptions options,
+                                          LrtAmlOptionsMemoryPolicy policy);
+LiteRtStatus LrtAmlOptionsGetMemoryPolicy(LrtAmlOptions options,
+                                          LrtAmlOptionsMemoryPolicy* policy);
+
+LiteRtStatus LrtAmlOptionsSetModelPath(LrtAmlOptions options,
+                                       const char* model_path);
+LiteRtStatus LrtAmlOptionsGetModelPath(LrtAmlOptions options,
+                                       const char** model_path);
+
+LiteRtStatus LrtAmlOptionsSetModelName(LrtAmlOptions options,
+                                       const char* model_name);
+LiteRtStatus LrtAmlOptionsGetModelName(LrtAmlOptions options,
+                                       const char** model_name);
+
+#ifdef __cplusplus
+}
+#endif  // __cplusplus
+
+#endif  // ODML_LITERT_LITERT_C_OPTIONS_LITERT_AML_OPTIONS_H_

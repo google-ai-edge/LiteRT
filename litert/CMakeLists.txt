@@ -256,7 +256,19 @@ add_subdirectory(cc)
 add_subdirectory(core)
 add_subdirectory(runtime)
 add_subdirectory(compiler)
-add_subdirectory(vendors)
+# vendors/ downloads the vendor SDKs (e.g. the multi-GB Qualcomm QAIRT SDK) at
+# configure time, so only add it when NPU support is enabled.
+# AML buildroot/Yocto can be enabled alone (-DLITERT_ENABLE_AML=ON) and then
+# only vendors/aml is added, without pulling the other vendor SDK downloads.
+option(LITERT_ENABLE_AML "Enable AML dispatch/compiler build (buildroot/Yocto)" OFF)
+if(LITERT_ENABLE_NPU)
+  add_subdirectory(vendors)
+elseif(LITERT_ENABLE_AML)
+  message(STATUS "AML buildroot: adding vendors/aml without other NPU SDKs")
+  add_subdirectory(vendors/aml)
+else()
+  message(STATUS "Skipping NPU vendor dispatch libraries: LITERT_ENABLE_NPU is OFF")
+endif()
 add_subdirectory(tools)
 add_subdirectory(experimental/custom_ops/gated_delta_net)
 

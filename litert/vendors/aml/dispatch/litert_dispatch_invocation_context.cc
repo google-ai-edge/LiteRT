@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Amlogic, Inc. All rights reserved.
+// Copyright 2024 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -42,10 +42,10 @@
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/core/util/tensor_type_util.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "adla_log.h"
-#include "litert/vendors/aml/compiler/aml_dispatch_info.h"
+#include "litert/vendors/aml/core/aml_dispatch_info.h"
 #include "litert/vendors/aml/core/nnsdk_func.h"
 
 using litert::Expected;
@@ -136,12 +136,13 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
   int err = 0;
   InitAdlaLogLevel();
   ADLA_LOGI("[AML_DELEGATE_Kernel] Start to open libnnsdk.so");
-  aml_nn_ = tflite::AML_NNImplementation();
-  if (aml_nn_ != nullptr)
+  aml_nn_ = aml_nnsdk::AML_NNImplementation();
+  if (aml_nn_ == nullptr)
   {
-    ADLA_LOGI("[AML_DELEGATE_Kernel] aml_nn create success");
+    ADLA_LOGE("[AML_DELEGATE_Kernel] aml_nn create failed");
+    return;
   }
-  aml_nn_->qcontext = NULL;
+  ADLA_LOGI("[AML_DELEGATE_Kernel] aml_nn create success");
 }
 
 LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT()
@@ -199,7 +200,7 @@ LiteRtDispatchInvocationContextT::Create(
              dispatch_info->adla_bin_size, dispatch_info->adla_bin.size());
 
   ptr->subgraph_idx_ = dispatch_info->subgraph_idx;
-  if (!tflite::IsNnsdk2Available(ptr->aml_nn_))
+  if (!aml_nnsdk::IsNnsdk2Available(ptr->aml_nn_))
   {
     LITERT_LOG(LITERT_ERROR, "NNSDK2 symbols not available");
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -315,21 +316,14 @@ namespace
     if (tensor_type.layout.has_strides)
     {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "Tensor strides are not supported by QNN");
+                        "Tensor strides are not supported");
     }
 
     std::vector<LiteRtTensorBufferType> supported_tensor_buffer_types = {
-        // Prefer host memory for broader compatibility across builds/devices.
         kLiteRtTensorBufferTypeHostMemory,
     };
-#if LITERT_HAS_FASTRPC_SUPPORT
-    supported_tensor_buffer_types.push_back(kLiteRtTensorBufferTypeFastRpc);
-#endif
-#if LITERT_HAS_DMABUF_SUPPORT
-    supported_tensor_buffer_types.push_back(kLiteRtTensorBufferTypeDmaBuf);
-#endif
 
-    auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
+    auto buffer_size = litert::RankedTensorType(tensor_type).Bytes();
     if (!buffer_size)
     {
       return Unexpected(buffer_size.Error());
@@ -395,7 +389,7 @@ Expected<void> LiteRtDispatchInvocationContextT::CreateModel(int subgraph_idx)
 
   // Match NNSDK sample: query AMLNN_QUERY_SUBGRAPH_NUM after amlnn_init.
   subgraph_num_ = 1;
-  if (tflite::Nnsdk2QuerySubgraphNum(aml_nn_, ctx, &subgraph_num_) < 0)
+  if (aml_nnsdk::Nnsdk2QuerySubgraphNum(aml_nn_, ctx, &subgraph_num_) < 0)
   {
     ADLA_LOGE("[AML Dispatch] query subgraph num fail");
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -418,7 +412,7 @@ Expected<void> LiteRtDispatchInvocationContextT::BindSubgraph(int subgraph_idx)
   void* ctx = aml_nn_->qcontext;
 
   // Match NNSDK sample: amlnn_select_subgraph then query IO for that subgraph.
-  if (tflite::Nnsdk2SelectSubgraphIfNeeded(aml_nn_, ctx, subgraph_idx_,
+  if (aml_nnsdk::Nnsdk2SelectSubgraphIfNeeded(aml_nn_, ctx, subgraph_idx_,
                                            subgraph_num_) < 0)
   {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -493,7 +487,8 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle)
 {
   // std::cout << "LiteRtDispatchInvocationContextT::AttachInput *****" << std::endl;
-  if (graph_input_index < 0)
+  if (graph_input_index < 0 ||
+      static_cast<size_t>(graph_input_index) >= input_buffer_handles_.size())
   {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Invalid graph_input_index");
@@ -510,7 +505,8 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle)
 {
   // std::cout << "LiteRtDispatchInvocationContextT::AttachOutput *****" << std::endl;
-  if (graph_output_index < 0)
+  if (graph_output_index < 0 ||
+      static_cast<size_t>(graph_output_index) >= output_buffer_handles_.size())
   {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Invalid graph_output_index");
@@ -526,7 +522,9 @@ Expected<void> LiteRtDispatchInvocationContextT::DetachInput(
 {
   (void)tensor_buffer_handle;
   if (graph_input_index < 0 ||
-      static_cast<size_t>(graph_input_index) >= input_buffer_ptr_.size())
+      static_cast<size_t>(graph_input_index) >= input_buffer_handles_.size() ||
+      static_cast<size_t>(graph_input_index) >= input_buffer_ptr_.size() ||
+      static_cast<size_t>(graph_input_index) >= input_buffer_sizes_.size())
   {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Invalid graph_input_index in DetachInput");
@@ -542,7 +540,9 @@ Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
 {
   (void)tensor_buffer_handle;
   if (graph_output_index < 0 ||
-      static_cast<size_t>(graph_output_index) >= output_buffer_ptr.size())
+      static_cast<size_t>(graph_output_index) >= output_buffer_handles_.size() ||
+      static_cast<size_t>(graph_output_index) >= output_buffer_ptr.size() ||
+      static_cast<size_t>(graph_output_index) >= output_buffer_sizes_.size())
   {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Invalid graph_output_index in DetachOutput");
@@ -597,16 +597,6 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachInputBuffer(
   {
     return Unexpected(status, "Failed to get tensor buffer size");
   }
-  // std::cout << "AttachInputBuffer buffer size = " << tensor_buffer_size << std::endl;
-
-  size_t tensor_buffer_offset;
-  if (auto status =
-          LiteRtGetTensorBufferOffset(*tensor_buffer, &tensor_buffer_offset);
-      status != kLiteRtStatusOk)
-  {
-    return Unexpected(status, "Failed to get tensor buffer offset");
-  }
-
   LiteRtRankedTensorType tensor_type;
   if (auto status =
           LiteRtGetTensorBufferTensorType(*tensor_buffer, &tensor_type);
@@ -615,22 +605,13 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachInputBuffer(
     return Unexpected(status, "Failed to get tensor buffer's type");
   }
 
-  auto element_type =
-      static_cast<enum litert::ElementType>(tensor_type.element_type);
-
-  // std::cout << "AttachInputBuffer element_type = " << static_cast<int>(element_type) << std::endl;
-
-  uint32_t tensor_rank = tensor_type.layout.rank;
-  uint32_t *tensor_dimensions = reinterpret_cast<uint32_t *>(
-      const_cast<int32_t *>(tensor_type.layout.dimensions));
   if (tensor_type.layout.has_strides)
   {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Tensor strides are not supported by QNN");
+                      "Tensor strides are not supported");
   }
 
   void *buffer_host_addr;
-  int buffer_fd;
   (void)buffer_host_addr;
 
   switch (tensor_buffer_type)
@@ -645,32 +626,12 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachInputBuffer(
     break;
 
   case kLiteRtTensorBufferTypeFastRpc:
-#if LITERT_HAS_FASTRPC_SUPPORT
-    if (auto status = LiteRtGetTensorBufferFastRpcBuffer(
-            *tensor_buffer, &buffer_host_addr, &buffer_fd);
-        status != kLiteRtStatusOk)
-    {
-      return Unexpected(status, "Failed to get FastRPC buffer");
-    }
-#else
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "FastRPC support is missing on this platform");
-#endif // LRT_HAS_FASTRPC_SUPPORT
-    break;
+                      "FastRPC tensor buffers are not supported by AML");
 
   case kLiteRtTensorBufferTypeDmaBuf:
-#if LITERT_HAS_DMABUF_SUPPORT
-    if (auto status = LiteRtGetTensorBufferDmaBufBuffer(
-            *tensor_buffer, &buffer_host_addr, &buffer_fd);
-        status != kLiteRtStatusOk)
-    {
-      return Unexpected(status, "Failed to get DMA-BUF buffer");
-    }
-#else
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "DmaBuf support is missing on this platform");
-#endif // LRT_HAS_DMABUF_SUPPORT
-    break;
+                      "DMA-BUF tensor buffers are not supported by AML");
 
   default:
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -722,16 +683,6 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachOutputBuffer(
   {
     return Unexpected(status, "Failed to get tensor buffer size");
   }
-  // std::cout << "AttachOutputBuffer buffer size = " << tensor_buffer_size << std::endl;
-
-  size_t tensor_buffer_offset;
-  if (auto status =
-          LiteRtGetTensorBufferOffset(*tensor_buffer, &tensor_buffer_offset);
-      status != kLiteRtStatusOk)
-  {
-    return Unexpected(status, "Failed to get tensor buffer offset");
-  }
-
   LiteRtRankedTensorType tensor_type;
   if (auto status =
           LiteRtGetTensorBufferTensorType(*tensor_buffer, &tensor_type);
@@ -740,22 +691,13 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachOutputBuffer(
     return Unexpected(status, "Failed to get tensor buffer's type");
   }
 
-  auto element_type =
-      static_cast<enum litert::ElementType>(tensor_type.element_type);
-
-  // std::cout << "AttachOutputBuffer element_type = " << static_cast<int>(element_type) << std::endl;
-
-  uint32_t tensor_rank = tensor_type.layout.rank;
-  uint32_t *tensor_dimensions = reinterpret_cast<uint32_t *>(
-      const_cast<int32_t *>(tensor_type.layout.dimensions));
   if (tensor_type.layout.has_strides)
   {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Tensor strides are not supported by QNN");
+                      "Tensor strides are not supported");
   }
 
   void *buffer_host_addr;
-  int buffer_fd;
   (void)buffer_host_addr;
 
   switch (tensor_buffer_type)
@@ -770,40 +712,17 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachOutputBuffer(
     break;
 
   case kLiteRtTensorBufferTypeFastRpc:
-#if LITERT_HAS_FASTRPC_SUPPORT
-    if (auto status = LiteRtGetTensorBufferFastRpcBuffer(
-            *tensor_buffer, &buffer_host_addr, &buffer_fd);
-        status != kLiteRtStatusOk)
-    {
-      return Unexpected(status, "Failed to get FastRPC buffer");
-    }
-#else
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "FastRPC support is missing on this platform");
-#endif // LRT_HAS_FASTRPC_SUPPORT
-    break;
+                      "FastRPC tensor buffers are not supported by AML");
 
   case kLiteRtTensorBufferTypeDmaBuf:
-#if LITERT_HAS_DMABUF_SUPPORT
-    if (auto status = LiteRtGetTensorBufferDmaBufBuffer(
-            *tensor_buffer, &buffer_host_addr, &buffer_fd);
-        status != kLiteRtStatusOk)
-    {
-      return Unexpected(status, "Failed to get DMA-BUF buffer");
-    }
-#else
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "DmaBuf support is missing on this platform");
-#endif // LRT_HAS_DMABUF_SUPPORT
-    break;
+                      "DMA-BUF tensor buffers are not supported by AML");
 
   default:
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Unsupported tensor buffer type");
   }
-
-  // std::cout << "AttachOutputBuffer buffer_host_addr = " << buffer_host_addr << std::endl;
-  // std::cout << "AttachOutputBuffer buffer_fd = " << buffer_fd << std::endl;
 
   if (graph_index < 0 ||
       static_cast<size_t>(graph_index) >= output_buffer_ptr.size())
@@ -827,7 +746,7 @@ Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
 Expected<void> LiteRtDispatchInvocationContextT::ExecuteModel()
 {
   // Ensure the active subgraph matches this partition before set/run/get.
-  if (tflite::Nnsdk2SelectSubgraphIfNeeded(aml_nn_, aml_nn_->qcontext,
+  if (aml_nnsdk::Nnsdk2SelectSubgraphIfNeeded(aml_nn_, aml_nn_->qcontext,
                                            subgraph_idx_, subgraph_num_) < 0)
   {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -875,10 +794,10 @@ Expected<void> LiteRtDispatchInvocationContextT::ExecuteModel()
 
   for (size_t i = 0; i < output_buffer_ptr.size(); ++i)
   {
-    if (outputs[i].buf == nullptr)
+    if (outputs[i].buf == nullptr || output_buffer_ptr[i] == nullptr)
     {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "NNSDK2 output buffer is null");
+                        "NNSDK2 or LiteRT output buffer is null");
     }
     const size_t npu_bytes = static_cast<size_t>(outputs[i].size);
     const size_t copy_bytes = std::min(output_buffer_sizes_[i], npu_bytes);
@@ -925,16 +844,13 @@ Expected<void> LiteRtDispatchInvocationContextT::ConvertToUint16(
   {
     return Unexpected(status, "Failed to lock the tensor buffer");
   }
-  auto int16_data = absl::MakeSpan(static_cast<const std::int16_t *>(mem_addr),
-                                   bytes / sizeof(std::int16_t));
-  std::vector<std::uint16_t> uint16_data;
-  // qnn::ConvertDataFromInt16toUInt16(int16_data, uint16_data);
-  // std::memcpy(mem_addr, uint16_data.data(), bytes);
-  // if (auto status = LiteRtUnlockTensorBuffer(*tensor_buffer);
-  //     status != kLiteRtStatusOk)
-  // {
-  //   return Unexpected(status, "Failed to unlock the tensor buffer");
-  // }
+  (void)mem_addr;
+  (void)bytes;
+  if (auto status = LiteRtUnlockTensorBuffer(*tensor_buffer);
+      status != kLiteRtStatusOk)
+  {
+    return Unexpected(status, "Failed to unlock the tensor buffer");
+  }
   return {};
 }
 
@@ -953,16 +869,13 @@ Expected<void> LiteRtDispatchInvocationContextT::ConvertToInt16(
   {
     return Unexpected(status, "Failed to lock the tensor buffer");
   }
-  auto uint16_data = absl::MakeSpan(static_cast<const std::uint16_t *>(mem_addr),
-                                    bytes / sizeof(std::uint16_t));
-  std::vector<std::int16_t> int16_data;
-  // qnn::ConvertDataFromUInt16toInt16(uint16_data, int16_data);
-  // std::memcpy(mem_addr, int16_data.data(), bytes);
-  // if (auto status = LiteRtUnlockTensorBuffer(*tensor_buffer);
-  //     status != kLiteRtStatusOk)
-  // {
-  //   return Unexpected(status, "Failed to unlock the tensor buffer");
-  // }
+  (void)mem_addr;
+  (void)bytes;
+  if (auto status = LiteRtUnlockTensorBuffer(*tensor_buffer);
+      status != kLiteRtStatusOk)
+  {
+    return Unexpected(status, "Failed to unlock the tensor buffer");
+  }
   return {};
 }
 
@@ -981,34 +894,7 @@ Expected<void> LiteRtDispatchInvocationContextT::Profile()
 Expected<void> LiteRtDispatchInvocationContextT::WriteTensorTo(
     const std::filesystem::path &output_folder, int tensor_index)
 {
-  // qnn::CreateDirectoryRecursive(output_folder);
-  // std::filesystem::path output_path =
-  //     output_folder / (tensor.GetName() + ".raw");
-  // std::ofstream fout(output_path, std::ios::binary);
-  // if (fout.fail())
-  // {
-  //   LITERT_LOG(LITERT_ERROR, "Failed to write dumped tensor");
-  //   return Unexpected(kLiteRtStatusErrorRuntimeFailure);
-  // }
-  // fout.write(static_cast<const char *>(tensor.GetQnnTensor().v2.clientBuf.data),
-  //            tensor.GetQnnTensor().v2.clientBuf.dataSize);
-  // std::filesystem::path quant_param_path =
-  //     output_folder / (tensor.GetName() + ".csv");
-  // std::ofstream quant_file(quant_param_path);
-  // float scale = 1;
-  // int32_t zero_point = 0;
-  // auto quant_param = tensor.GetQuantParams();
-  // if (std::holds_alternative<qnn::ScaleOffsetQuantizeParamsWrapper>(
-  //         quant_param))
-  // {
-  //   scale =
-  //       std::get<qnn::ScaleOffsetQuantizeParamsWrapper>(quant_param).GetScale();
-  //   zero_point = std::get<qnn::ScaleOffsetQuantizeParamsWrapper>(quant_param)
-  //                    .GetZeroPoint();
-  // }
-  // std::stringstream quant_ss;
-  // quant_ss << scale << "," << zero_point << "\n";
-  // quant_file << quant_ss.str();
-  // quant_file.close();
+  (void)output_folder;
+  (void)tensor_index;
   return {};
 }

@@ -1,17 +1,18 @@
+// Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 /*******************************************************************************
- * Copyright (C) 2023 Amlogic, Inc. All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright (C) 2026 Amlogic, Inc. All rights reserved.
  ******************************************************************************/
 
 #include "litert/vendors/aml/dispatch/litert_dispatch_device_context.h"
@@ -133,7 +134,7 @@ LiteRtDispatchDeviceContextT::AcquireSharedAdlaModel(
 }
 
 void LiteRtDispatchDeviceContextT::ReleaseSharedAdlaModel(
-    const std::string& model_key, tflite::AML_NN* aml_nn)
+    const std::string& model_key, aml_nnsdk::AML_NN* aml_nn)
 {
   auto& models = GlobalSharedAdlaModels();
   auto it = models.find(model_key);
@@ -207,25 +208,6 @@ Expected<LiteRtTensorBufferHandle> LiteRtDispatchDeviceContextT::RegisterTensorB
   {
     return Unexpected(status, "Failed to get tensor buffer type");
   }
-  // std::cout << "LiteRtDispatchDeviceContextT::RegisterTensorBuffer buffer type = " << tensor_buffer_type << std::endl;
-
-  size_t tensor_buffer_size;
-  if (auto status =
-          LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size);
-      status != kLiteRtStatusOk)
-  {
-    return Unexpected(status, "Failed to get tensor buffer size");
-  }
-  // std::cout << "LiteRtDispatchDeviceContextT::RegisterTensorBuffer buffer size = " << tensor_buffer_size << std::endl;
-
-  size_t tensor_buffer_offset;
-  if (auto status =
-          LiteRtGetTensorBufferOffset(tensor_buffer, &tensor_buffer_offset);
-      status != kLiteRtStatusOk)
-  {
-    return Unexpected(status, "Failed to get tensor buffer offset");
-  }
-
   LiteRtRankedTensorType tensor_type;
   if (auto status =
           LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type);
@@ -234,22 +216,13 @@ Expected<LiteRtTensorBufferHandle> LiteRtDispatchDeviceContextT::RegisterTensorB
     return Unexpected(status, "Failed to get tensor buffer's type");
   }
 
-  auto element_type =
-      static_cast<enum litert::ElementType>(tensor_type.element_type);
-
-  // std::cout << "LiteRtDispatchDeviceContextT::RegisterTensorBuffer element_type = " << static_cast<int>(element_type) << std::endl;
-
-  uint32_t tensor_rank = tensor_type.layout.rank;
-  uint32_t *tensor_dimensions = reinterpret_cast<uint32_t *>(
-      const_cast<int32_t *>(tensor_type.layout.dimensions));
   if (tensor_type.layout.has_strides)
   {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Tensor strides are not supported by QNN");
+                      "Tensor strides are not supported");
   }
 
   void *buffer_host_addr;
-  int buffer_fd;
   (void)buffer_host_addr;
 
   switch (tensor_buffer_type)
@@ -264,32 +237,12 @@ Expected<LiteRtTensorBufferHandle> LiteRtDispatchDeviceContextT::RegisterTensorB
     break;
 
   case kLiteRtTensorBufferTypeFastRpc:
-#if LITERT_HAS_FASTRPC_SUPPORT
-    if (auto status = LiteRtGetTensorBufferFastRpcBuffer(
-            tensor_buffer, &buffer_host_addr, &buffer_fd);
-        status != kLiteRtStatusOk)
-    {
-      return Unexpected(status, "Failed to get FastRPC buffer");
-    }
-#else
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "FastRPC support is missing on this platform");
-#endif // LRT_HAS_FASTRPC_SUPPORT
-    break;
+                      "FastRPC tensor buffers are not supported by AML");
 
   case kLiteRtTensorBufferTypeDmaBuf:
-#if LITERT_HAS_DMABUF_SUPPORT
-    if (auto status = LiteRtGetTensorBufferDmaBufBuffer(
-            tensor_buffer, &buffer_host_addr, &buffer_fd);
-        status != kLiteRtStatusOk)
-    {
-      return Unexpected(status, "Failed to get DMA-BUF buffer");
-    }
-#else
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "DmaBuf support is missing on this platform");
-#endif // LRT_HAS_DMABUF_SUPPORT
-    break;
+                      "DMA-BUF tensor buffers are not supported by AML");
 
   default:
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,

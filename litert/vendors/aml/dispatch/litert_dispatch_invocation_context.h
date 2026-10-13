@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Amlogic, Inc. All rights reserved.
+// Copyright 2024 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -117,7 +117,7 @@ private:
     Aml_GraphHandle_t graph_handle_;
     int graph_index_;
 
-    tflite::AML_NN *aml_nn_ = nullptr;
+    aml_nnsdk::AML_NN *aml_nn_ = nullptr;
     bool use_adla_memory_ = false;          /**< Load ADLA from memory vs file. */
     std::string model_file_path_;           /**< Fallback .adla path for path load. */
     std::string shared_model_key_;          /**< MakeAdlaModelKey(path, names). */

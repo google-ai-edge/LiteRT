@@ -348,8 +348,9 @@ if(LITERT_ENABLE_QUALCOMM)
   add_subdirectory(qualcomm)
 endif()
 
-# aml
-option(LITERT_ENABLE_AML "Enable AML dispatch/compiler build" OFF)
+# Amlogic. External repo @aml_npu (see -DAML_NPU_ROOT). Buildroot/Yocto
+# selects libs/yocto/aarch64 from that tree.
+option(LITERT_ENABLE_AML "Enable AML dispatch/compiler build (buildroot/Yocto)" OFF)
 if(LITERT_ENABLE_AML)
   add_subdirectory(aml)
 endif()

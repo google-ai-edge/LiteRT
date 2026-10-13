@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Amlogic, Inc. All rights reserved.
+// Copyright 2024 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -46,8 +46,10 @@ namespace
   // Basic Execution API
   // /////////////////////////////////////////////////////////////////////////////
 
-  LiteRtStatus Initialize(LiteRtEnvironment environment, LiteRtOptions options)
+  LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
+                          LiteRtEnvironment environment, LiteRtOptions options)
   {
+    (void)runtime_context;
     LITERT_LOG(LITERT_DEBUG, "[AML] LiteRtDispatchInitialize enter");
     LiteRtEnvironmentOptions environment_options = nullptr;
     if (environment != nullptr)
@@ -99,8 +101,12 @@ namespace
     return kLiteRtStatusOk;
   }
 
-  LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext *device_context)
+  LiteRtStatus DeviceContextCreate(const LiteRtRuntimeContext* runtime_context,
+                                    LiteRtOptions options,
+                                    LiteRtDispatchDeviceContext *device_context)
   {
+    (void)runtime_context;
+    (void)options;
     LITERT_LOG(LITERT_DEBUG, "[AML] DeviceContextCreate Enter");
     if (auto context = LiteRtDispatchDeviceContextT::Create(); context)
     {
@@ -197,12 +203,14 @@ namespace
   }
 
   LiteRtStatus InvocationContextCreate(
+      const LiteRtRuntimeContext* runtime_context,
       LiteRtDispatchDeviceContext device_context,
       LiteRtDispatchExecutableType exec_type,
       const LiteRtMemBuffer *exec_bytecode_buffer, const char *function_name,
       int num_inputs, int num_outputs,
       LiteRtDispatchInvocationContext *invocation_context)
   {
+    (void)runtime_context;
     (void)exec_type;
     LITERT_LOG(LITERT_DEBUG,
                "[AML] InvocationContextCreate num_inputs=%d num_outputs=%d",
@@ -379,15 +387,24 @@ namespace
       /*.destroy_metrics=*/DestroyMetrics,
       /*.check_runtime_compatibility=*/CheckRuntimeCompatibility,
       /*.invocation_context_set_options=*/InvocationContextSetOptions,
+      /*.get_hooks=*/nullptr,
   };
 
   LiteRtDispatchApi TheApi = {
+      /*.abi_header=*/
+      {
+          /*.struct_size=*/sizeof(LiteRtDispatchApi),
+          /*.major_version=*/1,
+          /*.minor_version=*/0,
+          /*.reserved=*/0,
+      },
       /*.version=*/{/*.major=*/LITERT_API_VERSION_MAJOR,
                     /*.minor=*/LITERT_API_VERSION_MINOR,
                     /*.patch=*/LITERT_API_VERSION_PATCH},
       /*.interface=*/&TheInterface,
       /*.async_interface=*/nullptr,
       /*.graph_interface=*/nullptr,
+      /*.tensor_buffer_handlers_def=*/nullptr,
   };
 
 } // namespace

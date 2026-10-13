@@ -232,6 +232,67 @@ litert_bin(
 )
 
 litert_bin(
+    name = "apply_plugin_main_for_aml",
+    srcs = ["apply_plugin_main.cc"],
+    data = select({
+        "//litert:windows": [],
+        "//conditions:default": [
+            "//litert/vendors/aml/compiler:aml_compiler_plugin_so",
+            "@aml_npu//runtime_lib:compiler_adla_so_x86",
+            "@aml_npu//compiler_core:aml_compiler_core_so_x86",
+        ],
+    }),
+    export_litert_only = 1,
+    features = select({
+        "//litert:windows": ["-static_link_msvcrt"],
+        "//conditions:default": [],
+    }),
+    linkstatic = 1,
+    tags = [
+        "noasan",
+        "nomsan",
+        "nosan",
+    ],
+    target_compatible_with = select({
+        "//litert:linux": [],
+        "//litert:windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    ungrte = True,
+    visibility = ["//litert:litert_public"],
+    deps = [
+        ":apply_plugin_runtimecapi",
+        ":outstream",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_options",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "//litert/core:build_stamp",
+        "//litert/tools/flags:apply_plugin_flags",
+        "//litert/tools/flags:common_flags",
+        "//litert/tools/flags:flag_types",
+        "//litert/tools/flags/vendors:intel_openvino_flags",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/functional:function_ref",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ] + select({
+        "//litert:windows": [],
+        "//conditions:default": [
+            "//litert/cc/options:litert_google_tensor_options",
+            "//litert/cc/options:litert_mediatek_options",
+            "//litert/cc/options:litert_qualcomm_options",
+            "//litert/cc/options:litert_samsung_options",
+            "//litert/tools/flags/vendors:google_tensor_flags",
+            "//litert/tools/flags/vendors:mediatek_flags",
+            "//litert/tools/flags/vendors:qualcomm_flags",
+            "//litert/tools/flags/vendors:samsung_flags",
+        ],
+    }),
+)
+
+litert_bin(
     name = "apply_plugin_main_mtk",
     srcs = ["apply_plugin_main.cc"],
     data = select({

@@ -10,6 +10,15 @@ workspace(name = "litert")
 # buildifier: disable=load-on-top
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("@bazel_tools//tools/build_defs/repo:local.bzl", "local_repository")
+
+# AML prebuilt delivery (libaml_compiler_core.so, nnsdk headers, runtime .so).
+# Temporary: local_repository points at a sibling checkout (<01_LiteRT>/aml_npu).
+# This will be replaced by a GitHub external repository download.
+local_repository(
+    name = "aml_npu",
+    path = "../aml_npu",
+)
 
 # Darts Clone. Declare this before TensorFlow's workspace macros so they do not
 # install their own incompatible BUILD overlay.
