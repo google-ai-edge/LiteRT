@@ -181,6 +181,11 @@ TEST(CompiledModelGpuTest, DoubleEnvironmentWithInterleavedDestruction) {
     ASSERT_TRUE(input_buffers[1].Write<float>(
         absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
     compiled_model1.Run(input_buffers, output_buffers);
+    {
+      auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+          output_buffers[0], TensorBuffer::LockMode::kRead);
+      ASSERT_TRUE(lock_and_addr);
+    }
 
     // Create the second environment and model.
     LITERT_ASSERT_OK_AND_ASSIGN(
@@ -1468,6 +1473,10 @@ TEST(CompiledModelGpuTest, UnboundInputBufferAllocationCpuVsGpu) {
     // Input 1 is delegated to GPU and not consumed by CPU op; no host buffer
     // must be allocated or registered.
     EXPECT_EQ(input_tensor1->data.raw, nullptr);
+
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
   }
 }
 

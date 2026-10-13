@@ -166,6 +166,7 @@ def hidden_test_tags():
 #
 #     args = [
 #         "--run_as={}".format(run_as),
+#         "--allocation_exit_strategy=FAIL_FAST_NO_MATCH",
 #         "--test_timeout_sec=3600",
 #         "--job_timeout_sec=3600",
 #     ]
@@ -211,6 +212,7 @@ def litert_device_exec(
         local_suffix = "_adb",
         model_providers = [],
         extra_models = [],
+        dimensions = None,
         testonly = True,
         tags = []):
     """
@@ -230,6 +232,7 @@ def litert_device_exec(
         local_suffix: Suffix for the target that runs locally on physical device through adb.
         model_providers: A list of tools dependencies that return tflite models when called.
         extra_models: A list of extra .tflite model paths or targets to push to the device.
+        dimensions: Optional Mobile Harness device dimensions dict overriding backend default.
         testonly: Whether the target is testonly.
         tags: List of tags to apply to the generated targets.
     """
@@ -283,7 +286,7 @@ def litert_device_exec(
             libs = backend.libs,
             exec_args = exec_args,
             exec_env_vars = backend.env_paths,
-            dimensions = backend.default_mh_device,
+            dimensions = dimensions if dimensions != None else backend.default_mh_device,
             platform = platform,
             extra_models = extra_models,
         )
