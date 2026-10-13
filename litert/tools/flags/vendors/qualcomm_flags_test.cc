@@ -763,6 +763,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_FALSE(options.Value().GetEnableWeightSharing());
   EXPECT_TRUE(options.Value().GetUseConvHMX());
   EXPECT_TRUE(options.Value().GetUseFoldReLU());
+  EXPECT_FALSE(options.Value().GetUseShortOpNames());
   EXPECT_FALSE(options.Value().GetHtpDlbc());
   EXPECT_FALSE(options.Value().GetHtpDlbcWeights());
   EXPECT_EQ(options.Value().GetHtpPPoint(), 0);

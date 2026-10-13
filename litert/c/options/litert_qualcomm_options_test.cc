@@ -154,6 +154,19 @@ TEST(LiteRtQualcommOptionsTest, UseFoldReLU) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, UseShortOpNames) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsSetUseShortOpNames(qualcomm_options, true));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_TRUE(parsed.GetUseShortOpNames());
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, HtpWeightSharingChannelTileSize) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -644,6 +657,10 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_TRUE(options->GetUseFoldReLU());
   options->SetUseFoldReLU(false);
   EXPECT_FALSE(options->GetUseFoldReLU());
+
+  EXPECT_FALSE(options->GetUseShortOpNames());
+  options->SetUseShortOpNames(true);
+  EXPECT_TRUE(options->GetUseShortOpNames());
 
   EXPECT_EQ(options->GetHtpWeightSharingChannelTileSize(), 0);
   options->SetHtpWeightSharingChannelTileSize(64);
