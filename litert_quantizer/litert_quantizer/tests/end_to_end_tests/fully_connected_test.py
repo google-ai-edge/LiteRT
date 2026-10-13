@@ -468,6 +468,34 @@ class FullyConnectedTest(test_utils.BaseOpTestCase):
         output_tolerance,
     )
 
+  @parameterized.parameters('min_compute', 'max_power_of_two')
+  def test_decomposed_kronecker_q_init_modes_accuracy(self, sizing_mode):
+    model_path = test_utils.get_path_to_datafile(
+        '../models/conv_fc_mnist.tflite'
+    )
+    op_config = _OpQuantConfig(
+        weight_tensor_config=_TensorQuantConfig(
+            num_bits=8,
+            symmetric=True,
+            granularity=qtyping.QuantGranularity.CHANNELWISE,
+            algorithm_params={
+                'q_init_mode': 'auto',
+                'sizing_mode': sizing_mode,
+            },
+        ),
+        compute_precision=_ComputePrecision.INTEGER,
+        explicit_dequantize=False,
+    )
+    self.assert_quantization_accuracy_and_size(
+        _AlgorithmName.DECOMPOSED_HADAMARD_ROTATION,
+        model_path,
+        self._op_name,
+        op_config,
+        expected_model_size_reduction=50,
+        weight_tolerance=1,
+        output_tolerance=2e-2,
+    )
+
 
 if __name__ == '__main__':
   absltest.main()

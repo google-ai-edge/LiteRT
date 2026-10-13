@@ -169,12 +169,18 @@ class Quantizer:
         else float_model
     )
     if previous_quantized_model is not None:
+      self._previous_quantized_model_path = (
+          previous_quantized_model
+          if isinstance(previous_quantized_model, (str, pathlib.Path))
+          else None
+      )
       self.previous_quantized_model_buffer = memoryview(
           tfl_flatbuffer_utils.get_model_content(previous_quantized_model)
           if isinstance(previous_quantized_model, (str, pathlib.Path))
           else previous_quantized_model
       )
     else:
+      self._previous_quantized_model_path = None
       self.previous_quantized_model_buffer = None
 
     # Extract the `float_model` from the buffer. Note that this will not
@@ -553,12 +559,15 @@ class Quantizer:
     if self._quantize_called:
       quantized_model = self._result.quantized_model
     else:
-      quantized_model = self.previous_quantized_model_buffer
+      quantized_model = (
+          self._previous_quantized_model_path
+          or self.previous_quantized_model_buffer
+      )
 
     if quantized_model is None:
       raise ValueError('No quantized model available to validate.')
     results = model_validator.compare_model(
-        self._float_model_buffer,  # pyrefly: ignore[bad-argument-type]
+        self._model_name or self._float_model_buffer,  # pyrefly: ignore[bad-argument-type]
         quantized_model,  # pyrefly: ignore[bad-argument-type]
         test_data,  # pyrefly: ignore[bad-argument-type]
         error_metrics,

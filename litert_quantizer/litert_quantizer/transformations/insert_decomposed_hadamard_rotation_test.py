@@ -237,6 +237,111 @@ class InsertDecomposedHadamardRotationEmbeddingLookupTest(absltest.TestCase):
     self.assertIn(8, subgraph.outputs)
     self.assertNotIn(2, subgraph.outputs)
 
+  def test_insert_kronecker_ops_fc_and_embedding_equivalence(self):
+    # Verify 6-op structure and exact numerical cancellation for asymmetric Q_1
+    # (`Q_1.T != Q_1`) on both FULLY_CONNECTED (`x @ W^T`) and
+    # EMBEDDING_LOOKUP (`W[idx]`).
+    rng = np.random.default_rng(99)
+    # 2x2 skew-symmetric Cayley rotation (`Q_1.T != Q_1`).
+    skew = np.array([[0.0, 0.5], [-0.5, 0.0]], dtype=np.float64)
+    q1 = np.linalg.solve(np.eye(2) + skew.T, np.eye(2) - skew.T).T.astype(
+        np.float32
+    )
+    self.assertFalse(np.allclose(q1, q1.T))
+
+    d = 2
+    signs = np.array([-1, 1], dtype=np.int8)
+    h2 = insert_decomposed_hadamard_rotation._make_hadamard_matrix(
+        d, signs
+    ).astype(np.float32)
+    self.assertFalse(np.allclose(h2, h2.T))
+    kron_rot = np.kron(q1, h2)
+
+    # Verify 6-op graph insertion on FC subgraph (m=2, d=2).
+    fc_model_path = str(
+        pathlib.Path(_TEST_DATA_PREFIX_PATH)
+        / 'tests/models/single_fc_bias.tflite'
+    )
+    fc_model = tfl_flatbuffer_utils.read_model(fc_model_path)
+    # Input tensor 0 in `single_fc_bias.tflite` has shape [1, 3]; set to [2, 4]
+    # and weight tensor 1 to [3, 4] to verify exact end-to-end FC equivalence.
+    x_val = rng.standard_normal((2, 4)).astype(np.float32)
+    w_val = rng.standard_normal((3, 4)).astype(np.float32)
+    expected_fc_out = x_val @ w_val.T
+
+    # Offline weight rotation: `W_rot = reshape(Q_1 @ (W_3d @ H_2), W.shape)`.
+    w_rot = np.matmul(q1, np.matmul(w_val.reshape(-1, 2, 2), h2)).reshape(
+        w_val.shape
+    )
+    fc_model.subgraphs[0].tensors[0].shape = [2, 4]
+
+    kron_params = qtyping.UniformQuantParams(
+        num_bits=8,
+        quantized_dimension=None,
+        scale=np.ones(1),
+        zero_point=np.zeros(1),
+        hadamard=qtyping.UniformQuantParams.HadamardRotationParams(
+            random_binary_vector=signs,
+            hadamard_size=2,
+            cross_block_matrix=q1,
+        ),
+    )
+    info = (
+        insert_decomposed_hadamard_rotation.insert_decomposed_hadamard_rotation(
+            transformation_utils.TransformationInput(
+                tensor_id=0,
+                model=fc_model,
+                subgraph=fc_model.subgraphs[0],
+                producer=-1,
+                consumers=[0],
+                quant_params=kron_params,
+            )
+        )
+    )
+    self.assertEqual(info.num_ops_added, 6)
+    inserted_opcodes = [
+        fc_model.operatorCodes[op.opcodeIndex].builtinCode
+        for op in fc_model.subgraphs[0].operators[:6]
+    ]
+    self.assertEqual(
+        inserted_opcodes,
+        [
+            qtyping.BuiltinOperator.RESHAPE,
+            qtyping.BuiltinOperator.FULLY_CONNECTED,
+            qtyping.BuiltinOperator.TRANSPOSE,
+            qtyping.BuiltinOperator.FULLY_CONNECTED,
+            qtyping.BuiltinOperator.TRANSPOSE,
+            qtyping.BuiltinOperator.RESHAPE,
+        ],
+    )
+
+    # Numerically evaluate the exact 6-op TFLite sequence for both FC (`Q_1`)
+    # and Embedding Lookup (`Q_1.T`):
+    def _eval_online_ops(inp: np.ndarray, is_embed: bool) -> np.ndarray:
+      h_weight = h2 if is_embed else h2.T
+      cross = q1.T if is_embed else q1
+      # Op 0: RESHAPE -> [B, m, d]
+      t = inp.reshape(-1, 2, 2)
+      # Op 1: FULLY_CONNECTED(h_weight) -> `t @ h_weight.T`
+      t = t @ h_weight.T
+      # Op 2: TRANSPOSE([0, 2, 1]) -> [B, d, m]
+      t = np.transpose(t, (0, 2, 1))
+      # Op 3: FULLY_CONNECTED(cross) -> `t @ cross.T`
+      t = t @ cross.T
+      # Op 4: TRANSPOSE([0, 2, 1]) -> [B, m, d]
+      t = np.transpose(t, (0, 2, 1))
+      # Op 5: RESHAPE -> inp.shape
+      return t.reshape(inp.shape)
+
+    # FC consumer (`x_rot @ w_rot.T == x @ w.T`):
+    x_rot = _eval_online_ops(x_val, is_embed=False)
+    np.testing.assert_allclose(x_rot @ w_rot.T, expected_fc_out, atol=1e-5)
+
+    # Embedding Lookup producer (`unrotate(w_rot[idx]) == w[idx]`):
+    unrotated_rows = _eval_online_ops(w_rot, is_embed=True)
+    np.testing.assert_allclose(unrotated_rows, w_val, atol=1e-5)
+    self.assertEqual(kron_rot.shape, (4, 4))
+
 
 if __name__ == '__main__':
   absltest.main()

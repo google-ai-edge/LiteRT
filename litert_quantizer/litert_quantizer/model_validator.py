@@ -177,8 +177,18 @@ class ComparisonResult:
 
   def get_model_size_reduction(self) -> tuple[int, float]:
     """Get the model size reduction in bytes and percentage."""
-    reduced_model_size = len(self._reference_model) - len(self._target_model)
-    reduction_perc = reduced_model_size / len(self._reference_model) * 100
+    ref_size = (
+        pathlib.Path(self._reference_model).stat().st_size
+        if isinstance(self._reference_model, (str, pathlib.Path))
+        else len(self._reference_model)
+    )
+    targ_size = (
+        pathlib.Path(self._target_model).stat().st_size
+        if isinstance(self._target_model, (str, pathlib.Path))
+        else len(self._target_model)
+    )
+    reduced_model_size = ref_size - targ_size
+    reduction_perc = reduced_model_size / ref_size * 100
     return reduced_model_size, reduction_perc
 
   def save(self, save_folder: str, model_name: str) -> None:

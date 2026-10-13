@@ -383,6 +383,158 @@ class HadamardRotationFullyConnectedTest(parameterized.TestCase):
           self._tensor_name_to_qsv,
       )
 
+  @parameterized.parameters(
+      (32, 8, 4),
+      (24, 4, 6),
+      (98, 2, 49),
+  )
+  def test_kronecker_auto_initializer_orthogonal_and_weight_rotation(
+      self, dim, expected_d, expected_m
+  ):
+    rng = np.random.default_rng(123)
+    weight = rng.standard_normal((8, dim)).astype(np.float32)
+    qconfig = _TensorQuantConfig(
+        num_bits=8,
+        symmetric=True,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={"q_init_mode": "auto", "q_seed": 7},
+    )
+    qparams = hadamard_rotation.get_tensor_quant_params(
+        self._op_info, qconfig, weight, None
+    )
+    self.assertIsNotNone(qparams.hadamard)
+    self.assertEqual(qparams.hadamard.hadamard_size, expected_d)
+    q1 = qparams.hadamard.cross_block_matrix
+    self.assertIsNotNone(q1)
+    self.assertEqual(q1.shape, (expected_m, expected_m))
+    np.testing.assert_allclose(
+        q1.T @ q1, np.eye(expected_m, dtype=np.float32), atol=1e-5
+    )
+
+    # Verify exact Kronecker weight rotation `W @ (Q_1 (x) H_d)^T`.
+    w_rot, d, rand_vec, q1_rot = (
+        hadamard_rotation._rotate_with_diagonal_hadamard(
+            weight, axis=1, q_init_mode="auto", q_seed=7, randomize=True
+        )
+    )
+    self.assertTrue(np.all(np.isin(rand_vec, [-1, 1])))
+    self.assertFalse(np.all(rand_vec == 1))
+    h_d = rand_vec.astype(np.float32)[
+        :, np.newaxis
+    ] * hadamard_rotation._make_hadamard_matrix(d)
+    expected_rot = weight @ np.kron(q1_rot, h_d.T).T
+    np.testing.assert_allclose(w_rot, expected_rot, atol=1e-5)
+
+  def test_auto_selects_hadamard_rademacher_or_polar_svd_by_m(self):
+    # Power-of-2 m=8 resolves to exact Sylvester Hadamard H_8.
+    q_pow2 = hadamard_rotation._make_cross_block_matrix(8, "auto", seed=11)
+    np.testing.assert_array_equal(
+        q_pow2, hadamard_rotation._make_hadamard_matrix(8).astype(np.float32)
+    )
+
+    # Non-power-of-2 m=48 (`<= 48`) resolves to Rademacher Cayley.
+    q_small = hadamard_rotation._make_cross_block_matrix(48, "auto", seed=11)
+    q_rad = hadamard_rotation._make_rademacher_cayley_matrix(
+        48, np.random.default_rng(11)
+    )
+    np.testing.assert_array_equal(q_small, q_rad)
+
+    # Non-power-of-2 m=50 (`> 48`) resolves to Polar SVD.
+    q_large = hadamard_rotation._make_cross_block_matrix(50, "auto", seed=11)
+    q_svd = hadamard_rotation._make_polar_svd_matrix(
+        50, np.random.default_rng(11)
+    )
+    np.testing.assert_array_equal(q_large, q_svd)
+
+  def test_invalid_q_init_mode_raises(self):
+    with self.assertRaisesRegex(ValueError, "Unsupported q_init_mode"):
+      hadamard_rotation._make_cross_block_matrix(8, "invalid_mode")
+
+  def test_kronecker_max_power_of_two_sizing_mode(self):
+    rng = np.random.default_rng(42)
+    weight = rng.standard_normal((4, 1280)).astype(np.float32)
+    qconfig = _TensorQuantConfig(
+        num_bits=4,
+        symmetric=True,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={
+            "q_init_mode": "auto",
+            "max_hadamard_size": 256,
+            "sizing_mode": "max_power_of_two",
+            "q_seed": 0,
+        },
+    )
+    qparams = hadamard_rotation.get_tensor_quant_params(
+        self._op_info, qconfig, weight, None, is_decomposed=True
+    )
+    self.assertIsNotNone(qparams.hadamard)
+    self.assertEqual(qparams.hadamard.hadamard_size, 256)
+    q1 = qparams.hadamard.cross_block_matrix
+    self.assertIsNotNone(q1)
+    self.assertEqual(q1.shape, (5, 5))
+    np.testing.assert_allclose(
+        q1.T @ q1, np.eye(5, dtype=np.float32), atol=1e-5
+    )
+
+  def test_invalid_sizing_mode_raises(self):
+    with self.assertRaisesRegex(ValueError, "Unsupported sizing_mode"):
+      hadamard_rotation._select_kronecker_hadamard_size(
+          1280, max_size=256, sizing_mode="invalid_sizing"
+      )
+
+  def test_scale_refinement_reduces_or_matches_weight_mse(self):
+    rng = np.random.default_rng(2026)
+    weight = rng.standard_normal((16, 64)).astype(np.float32)
+    base_cfg = _TensorQuantConfig(
+        num_bits=4,
+        symmetric=True,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={"max_hadamard_size": 64, "randomize": False},
+    )
+    ref_cfg = _TensorQuantConfig(
+        num_bits=4,
+        symmetric=True,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={
+            "max_hadamard_size": 64,
+            "randomize": False,
+            "scale_refinement": "mse_grid",
+        },
+    )
+    qp_base = hadamard_rotation.get_tensor_quant_params(
+        self._op_info, base_cfg, weight, None, is_decomposed=True
+    )
+    qp_ref = hadamard_rotation.get_tensor_quant_params(
+        self._op_info, ref_cfg, weight, None, is_decomposed=True
+    )
+    w_rot, _, _, _ = hadamard_rotation._rotate_with_diagonal_hadamard(
+        weight, axis=1, max_size=64, randomize=False
+    )
+    assert qp_base.quantized_data is not None
+    assert qp_ref.quantized_data is not None
+    deq_base = qp_base.quantized_data.astype(
+        np.float32
+    ) * qp_base.scale.reshape(-1, 1)
+    deq_ref = qp_ref.quantized_data.astype(np.float32) * qp_ref.scale.reshape(
+        -1, 1
+    )
+    mse_base = float(np.mean((w_rot - deq_base) ** 2))
+    mse_ref = float(np.mean((w_rot - deq_ref) ** 2))
+    self.assertLessEqual(mse_ref, mse_base)
+
+  def test_invalid_scale_refinement_raises(self):
+    weight = np.ones((4, 8), dtype=np.float32)
+    qconfig = _TensorQuantConfig(
+        num_bits=4,
+        symmetric=True,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={"scale_refinement": "invalid_refinement"},
+    )
+    with self.assertRaisesRegex(ValueError, "Unsupported scale_refinement"):
+      hadamard_rotation.get_tensor_quant_params(
+          self._op_info, qconfig, weight, None
+      )
+
 
 class HadamardRotationEmbeddingLookupTest(parameterized.TestCase):
 
