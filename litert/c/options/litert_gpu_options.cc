@@ -368,6 +368,10 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
     absl::StrAppend(&toml_str, "weight_cache_fd = ",
                     static_cast<int>(options->weight_cache_fd.value()), "\n");
   }
+  if (options->weight_cache_fd.has_value()) {
+    ss << "weight_cache_fd = "
+       << static_cast<int>(options->weight_cache_fd.value()) << "\n";
+  }
   if (options->cache_only_compiled_programs.has_value()) {
     absl::StrAppend(
         &toml_str, "cache_only_compiled_programs = ",
