@@ -37,9 +37,9 @@ def _litert_with_mtk_base(
         litert_rule_kwargs,
         data = select({
             "//litert:linux_x86_64": [
-                "@neuro_pilot//:v9_latest/host/lib/libneuron_adapter.so",
-                "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
-                "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
+                "@neuro_pilot//:v9_libneuron_adapter_so",
+                "@neuro_pilot//:v8_libneuron_adapter_so",
+                "@neuro_pilot//:v7_libneuron_adapter_so",
             ],
             "//conditions:default": [],
         }),
