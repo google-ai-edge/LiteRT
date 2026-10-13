@@ -243,6 +243,7 @@ cc_library(
         ":flexbuffers_util",
         ":moe_delegate_kernel",
         ":quantization_util",
+        ":sdpa_delegate_kernel",
         ":tflite_with_xnnpack_dynamic_fully_connected",  # buildcleaner: keep
         ":tflite_with_xnnpack_logging",  # buildcleaner: keep
         ":tflite_with_xnnpack_qs8",  # buildcleaner: keep
@@ -295,6 +296,7 @@ cc_library(
         ":flexbuffers_util",
         ":moe_delegate_kernel",
         ":quantization_util",
+        ":sdpa_delegate_kernel",
         ":weight_cache",
         "//tflite:array",
         "//tflite:kernel_api",
@@ -1389,6 +1391,66 @@ cc_test(
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "@com_google_googletest//:gtest",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_library(
+    name = "sdpa_delegate_kernel",
+    srcs = ["sdpa_delegate_kernel.cc"],
+    hdrs = ["sdpa_delegate_kernel.h"],
+    compatible_with = get_compatible_with_portable(),
+    copts = tflite_copts() + ["-DFLATBUFFERS_LOCALE_INDEPENDENT=0"],
+    deps = [
+        "//tflite:builtin_ops",
+        "//tflite/c:common",
+        "//tflite/core/c:common",
+        "//tflite/kernels:kernel_util",
+        "//tflite/kernels/internal:tensor_ctypes",
+        "@XNNPACK",
+        "@flatbuffers//:runtime_cc",
+        "@pthreadpool",
+    ],
+)
+
+cc_test(
+    name = "sdpa_delegate_kernel_test",
+    srcs = ["sdpa_delegate_kernel_test.cc"],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:emscripten": EMSCRIPTEN_LINKOPTS,
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":sdpa_delegate_kernel",
+        ":test_main",
+        ":xnnpack_delegate",
+        "//tflite:builtin_ops",
+        "//tflite:framework_stable",
+        "//tflite:interpreter_options_header",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/core:subgraph",
+        "//tflite/core/c:common",
+        "//tflite/kernels:builtin_ops_gms",
+        "//tflite/kernels:test_util",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_test(
+    name = "sdpa_delegate_kernel_bench",
+    srcs = ["sdpa_delegate_kernel_bench.cc"],
+    tags = ["manual"],
+    deps = [
+        ":xnnpack_delegate",
+        "//tflite:framework",
+        "//tflite/c:common",
+        "//tflite/kernels:test_util",
+        "//tflite/schema:schema_fbs",
+        "@com_google_benchmark//:benchmark",
+        "@com_google_benchmark//:benchmark_main",
         "@flatbuffers//:runtime_cc",
     ],
 )
