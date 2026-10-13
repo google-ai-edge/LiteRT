@@ -1,17 +1,5 @@
 /*******************************************************************************
- * Copyright (C) 2023 Amlogic, Inc. All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright (C) 2026 Amlogic, Inc. All rights reserved.
  ******************************************************************************/
 
 #include "node_binary_info.h"
@@ -45,12 +33,8 @@ LiteRtStatus ParseOpParams(AmlNode node, int op_code, LiteRtOp c_op) {
       if (st != kLiteRtStatusOk) {
         return st;
       }
-      bool pot_scale_int16 = false;
-      if (LiteRtGetAddPotScaleInt16Option(c_op, &pot_scale_int16) !=
-          kLiteRtStatusOk) {
-        pot_scale_int16 = false;
-      }
-      return SetI(node, "pot_scale_int16", static_cast<int>(pot_scale_int16));
+      // Public op-options API no longer exposes PotScaleInt16.
+      return SetI(node, "pot_scale_int16", 0);
     }
 
     case kLiteRtOpCodeTflConcatenation: {
@@ -130,12 +114,8 @@ LiteRtStatus ParseOpParams(AmlNode node, int op_code, LiteRtOp c_op) {
           kLiteRtStatusOk) {
         return kLiteRtStatusErrorRuntimeFailure;
       }
-      bool pot_scale_int16 = false;
-      if (LiteRtGetSubPotScaleInt16Option(c_op, &pot_scale_int16) !=
-          kLiteRtStatusOk) {
-        pot_scale_int16 = false;
-      }
-      return SetI(node, "pot_scale_int16", static_cast<int>(pot_scale_int16));
+      // Public op-options API no longer exposes PotScaleInt16.
+      return SetI(node, "pot_scale_int16", 0);
     }
 
     case kLiteRtOpCodeTflSum: {

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Amlogic, Inc. All rights reserved.
+// Copyright 2026 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,63 +12,113 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_AML_OPTIONS_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_AML_OPTIONS_H_
+#ifndef ODML_LITERT_LITERT_CC_OPTIONS_LITERT_AML_OPTIONS_H_
+#define ODML_LITERT_LITERT_CC_OPTIONS_LITERT_AML_OPTIONS_H_
 
-#include <cstdint>
+#include <memory>
 #include <string>
-#include <vector>
 
-#include "absl/strings/string_view.h" // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/c/options/litert_aml_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_concrete_options_base.h"
 
-namespace litert::aml
-{
+namespace litert::aml {
 
-  // Wraps a LiteRtAmlOptions object for convenience.
-  class AmlOptions : public OpaqueOptions
-  {
-  public:
-    using OpaqueOptions::OpaqueOptions;
+class AmlOptions : public ConcreteOptionsBase {
+ public:
+  AmlOptions() = delete;
+  explicit AmlOptions(LrtAmlOptions options)
+      : options_(options, LrtDestroyAmlOptions) {}
 
-    static const char *Discriminator()
-    {
-      return LiteRtAmlOptionsGetIdentifier();
-    }
+  AmlOptions(const AmlOptions&) = delete;
+  AmlOptions& operator=(const AmlOptions&) = delete;
+  AmlOptions(AmlOptions&&) = default;
+  AmlOptions& operator=(AmlOptions&&) = default;
+  ~AmlOptions() override = default;
 
-    static Expected<AmlOptions> Create(OpaqueOptions &options);
+  static const char* Discriminator() { return LrtAmlOptionsGetIdentifier(); }
 
-    static Expected<AmlOptions> Create();
+  static Expected<AmlOptions> Create() {
+    LrtAmlOptions options = nullptr;
+    LITERT_RETURN_IF_ERROR(LrtCreateAmlOptions(&options));
+    return AmlOptions(options);
+  }
 
-    void SetLogLevel(LiteRtAmlOptionsLogLevel log_level);
-    LiteRtAmlOptionsLogLevel GetLogLevel() const;
+  LrtAmlOptions Get() const { return options_.get(); }
 
-    void SetPerformanceMode(LiteRtAmlOptionsPerfMode perf_mode);
-    LiteRtAmlOptionsPerfMode GetPerformanceMode() const;
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** identifier, void** payload,
+      void (**payload_deleter)(void*)) const override {
+    return LrtGetOpaqueAmlOptionsData(Get(), identifier, payload,
+                                      payload_deleter);
+  }
 
-    void SetMemoryPolicy(LiteRtAmlOptionsMemoryPolicy policy);
-    LiteRtAmlOptionsMemoryPolicy GetMemoryPolicy() const;
+  Expected<void> SetLogLevel(LrtAmlOptionsLogLevel log_level) {
+    LITERT_RETURN_IF_ERROR(LrtAmlOptionsSetLogLevel(Get(), log_level));
+    return {};
+  }
+  Expected<LrtAmlOptionsLogLevel> GetLogLevel() const {
+    LrtAmlOptionsLogLevel log_level;
+    LITERT_RETURN_IF_ERROR(LrtAmlOptionsGetLogLevel(Get(), &log_level));
+    return log_level;
+  }
 
-    void SetModelPath(const std::string &model_path);
-    std::string GetModelPath() const;
+  Expected<void> SetPerformanceMode(LrtAmlOptionsPerfMode perf_mode) {
+    LITERT_RETURN_IF_ERROR(LrtAmlOptionsSetPerfMode(Get(), perf_mode));
+    return {};
+  }
+  Expected<LrtAmlOptionsPerfMode> GetPerformanceMode() const {
+    LrtAmlOptionsPerfMode perf_mode;
+    LITERT_RETURN_IF_ERROR(LrtAmlOptionsGetPerfMode(Get(), &perf_mode));
+    return perf_mode;
+  }
 
-    void SetModelName(const std::string &model_name);
-    std::string GetModelName() const;
+  Expected<void> SetMemoryPolicy(LrtAmlOptionsMemoryPolicy policy) {
+    LITERT_RETURN_IF_ERROR(LrtAmlOptionsSetMemoryPolicy(Get(), policy));
+    return {};
+  }
+  Expected<LrtAmlOptionsMemoryPolicy> GetMemoryPolicy() const {
+    LrtAmlOptionsMemoryPolicy policy;
+    LITERT_RETURN_IF_ERROR(LrtAmlOptionsGetMemoryPolicy(Get(), &policy));
+    return policy;
+  }
 
-    void SetProfiling(LiteRtAmlOptionsProfiling profiling);
-    LiteRtAmlOptionsProfiling GetProfiling() const;
+  Expected<void> SetModelPath(const std::string& model_path) {
+    LITERT_RETURN_IF_ERROR(LrtAmlOptionsSetModelPath(Get(), model_path.c_str()));
+    return {};
+  }
+  Expected<const char*> GetModelPath() const {
+    const char* model_path = nullptr;
+    LITERT_RETURN_IF_ERROR(LrtAmlOptionsGetModelPath(Get(), &model_path));
+    return model_path;
+  }
 
-    // void SetDumpTensorIds(const std::vector<std::int32_t> &ids);
-    // std::vector<std::int32_t> GetDumpTensorIds();
+  Expected<void> SetModelName(const std::string& model_name) {
+    LITERT_RETURN_IF_ERROR(LrtAmlOptionsSetModelName(Get(), model_name.c_str()));
+    return {};
+  }
+  Expected<const char*> GetModelName() const {
+    const char* model_name = nullptr;
+    LITERT_RETURN_IF_ERROR(LrtAmlOptionsGetModelName(Get(), &model_name));
+    return model_name;
+  }
 
-    // void SetIrJsonDir(const std::string &ir_json_dir);
-    // absl::string_view GetIrJsonDir();
+  Expected<void> SetProfiling(LrtAmlOptionsProfiling profiling) {
+    LITERT_RETURN_IF_ERROR(LrtAmlOptionsSetProfiling(Get(), profiling));
+    return {};
+  }
+  Expected<LrtAmlOptionsProfiling> GetProfiling() const {
+    LrtAmlOptionsProfiling profiling;
+    LITERT_RETURN_IF_ERROR(LrtAmlOptionsGetProfiling(Get(), &profiling));
+    return profiling;
+  }
 
-  private:
-    LiteRtAmlOptions Data() const;
-  };
+ private:
+  std::unique_ptr<LrtAmlOptionsT, void (*)(LrtAmlOptions)> options_;
+};
 
-} // namespace litert::aml
-#endif // THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_AML_OPTIONS_H_
+}  // namespace litert::aml
+
+#endif  // ODML_LITERT_LITERT_CC_OPTIONS_LITERT_AML_OPTIONS_H_

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Amlogic, Inc. All rights reserved.
+// Copyright 2024 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -27,7 +28,9 @@
 #include "absl/container/flat_hash_set.h" // from @com_google_absl
 #include "absl/strings/str_format.h"      // from @com_google_absl
 #include "absl/strings/string_view.h"     // from @com_google_absl
+#include "aml_npu/compiler_core/compiler_core_context.h" // from @aml_npu
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
@@ -35,17 +38,15 @@
 #include "litert/c/litert_op_options.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/options/litert_aml_options.h"  // IWYU pragma: keep
-#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/compiler/cc/litert_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/core/model/model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
-#include "litert/vendors/aml/compiler/aml_dispatch_info.h"
+#include "litert/vendors/aml/core/aml_dispatch_info.h"
 #include "litert/vendors/aml/compiler/node_binary_info.h"
-#include "compiler_core_context.h"
 
 using LiteRtBufferId = uint32_t;
 using LiteRtContextHandleIdx = uint32_t;
@@ -118,29 +119,6 @@ namespace
     default:
       return kLiteRtStatusErrorRuntimeFailure;
     }
-  }
-
-  // Ordinary composite name so PartitionModel takes the Google 2.2 inline path.
-  // odml.npu_call is never inlined; strip that tag and do not PushOp.
-  constexpr char kAmlInlineCompositeName[] = "odml.regular_composite";
-
-  void RetagCompositeToForceInline(LiteRtOp op)
-  {
-    auto &&opts = litert::internal::TakeTflOptions2(*op);
-    auto *composite_opts = opts.AsStableHLOCompositeOptions();
-    if (composite_opts == nullptr)
-    {
-      return;
-    }
-    if (composite_opts->name != litert::CompositeOptions::kNpuCall)
-    {
-      return;
-    }
-    LITERT_LOG(LITERT_INFO,
-               "AML retag composite '%s' as %s to force inline (decomp subgraph=%d)",
-               composite_opts->name.c_str(), kAmlInlineCompositeName,
-               composite_opts->decomposition_subgraph_index);
-    composite_opts->name = kAmlInlineCompositeName;
   }
 
   // Reasons AML Partition will not select an op for NPU.
@@ -317,7 +295,7 @@ namespace
 
   // True if the tensor is unranked or has a dynamic dimension (typically -1).
   // Rank-0 scalars have an empty dim list and are not treated as dynamic.
-  bool TensorHasDynamicDims(const litert::Tensor &tensor) {
+  bool TensorHasDynamicDims(const litert::compiler::Tensor &tensor) {
     if (tensor.TypeId() != kLiteRtRankedTensorType) {
       return true;
     }
@@ -345,7 +323,7 @@ namespace
 
   // TFLite CONV_2D inputs: [0]=activation, [1]=filter, [2]=bias (optional).
   // AML only supports constant filter/bias (folded weights), not runtime tensors.
-  bool Conv2dHasNonConstWeightOrBias(const litert::Op &op) {
+  bool Conv2dHasNonConstWeightOrBias(const litert::compiler::Op &op) {
     if (!op.Is(kLiteRtOpCodeTflConv2d)) {
       return false;
     }
@@ -365,7 +343,7 @@ namespace
   // Extension window for NPU-unsupported ops. First match wins; do not PushOp.
   // Opcode support: denylist first, then ADLA allowlist. Unknown opcodes log
   // and stay on CPU.
-  AmlPartitionRejectReason GetAmlPartitionRejectReason(const litert::Op &op) {
+  AmlPartitionRejectReason GetAmlPartitionRejectReason(const litert::compiler::Op &op) {
     const LiteRtOpCode opcode = op.Code();
     if (IsAmlRejectedOpcode(opcode)) {
       return AmlPartitionRejectReason::kUnsupportedOpcode;
@@ -415,7 +393,7 @@ namespace
 
   using AmlTensorMap = absl::flat_hash_map<LiteRtTensor, AmlTensor>;
 
-  LiteRtStatus FillAmlTensor(AmlTensor t, const litert::Tensor &tensor,
+  LiteRtStatus FillAmlTensor(AmlTensor t, const litert::compiler::Tensor &tensor,
                              bool copy_const_weights, int aml_index)
   {
     LiteRtStatus st =
@@ -499,7 +477,7 @@ namespace
   }
 
   LiteRtStatus EnsureTensor(AmlGraph graph, AmlTensorMap *tensors,
-                            const litert::Tensor &tensor,
+                            const litert::compiler::Tensor &tensor,
                             bool copy_const_weights, AmlTensor *out)
   {
     LiteRtTensor key = tensor.Get();
@@ -538,7 +516,7 @@ namespace
     return kLiteRtStatusOk;
   }
 
-  LiteRtStatus FillAmlGraphIo(const litert::Subgraph &subgraph, AmlGraph graph,
+  LiteRtStatus FillAmlGraphIo(const litert::compiler::Subgraph &subgraph, AmlGraph graph,
                               AmlTensorMap *tensors)
   {
     for (const auto &tensor : subgraph.Inputs())
@@ -574,7 +552,7 @@ namespace
     return kLiteRtStatusOk;
   }
 
-  LiteRtStatus ConvertOpToAmlNode(const litert::Op &op, int node_index,
+  LiteRtStatus ConvertOpToAmlNode(const litert::compiler::Op &op, int node_index,
                                   AmlGraph graph, AmlTensorMap *tensors)
   {
     AmlNode node = nullptr;
@@ -629,7 +607,7 @@ namespace
     return kLiteRtStatusOk;
   }
 
-  LiteRtStatus FillAmlGraphNodes(const litert::Subgraph &subgraph, AmlGraph graph,
+  LiteRtStatus FillAmlGraphNodes(const litert::compiler::Subgraph &subgraph, AmlGraph graph,
                                  AmlTensorMap *tensors)
   {
     int node_index = 0;
@@ -655,7 +633,7 @@ namespace
    * @return AML_Dispatch_Info (adla_bin filled later for partition 0 only).
    * @note Does not embed ADLA here; packing after compile assigns adla_bin.
    */
-  AML_Dispatch_Info MakeDispatchInfo(const litert::Subgraph &subgraph,
+  AML_Dispatch_Info MakeDispatchInfo(const litert::compiler::Subgraph &subgraph,
                                      int partition_idx,
                                      const std::string &model_name,
                                      const std::string &model_path,
@@ -696,9 +674,12 @@ struct LiteRtCompiledResultT
 //
 class LiteRtCompilerPluginT {
  public:
-  LiteRtCompilerPluginT(LiteRtEnvironmentOptions env_options,
-                        LiteRtOptions litert_options) {
+  LiteRtCompilerPluginT(const LiteRtCompilerContext* compiler_context,
+                        LiteRtEnvironmentOptions env_options,
+                        LiteRtOptions litert_options)
+      : compiler_context_(compiler_context) {
     (void)env_options;
+    (void)compiler_context_;
     LITERT_LOG(LITERT_DEBUG, "[AML] LiteRtCompilerPluginT init");
 
     if (!litert_options) {
@@ -711,22 +692,33 @@ class LiteRtCompilerPluginT {
       return;
     }
 
-    if (LiteRtAmlOptionsGet(opaque_options, &aml_options_) != kLiteRtStatusOk) {
+    void* payload = nullptr;
+    if (LiteRtFindOpaqueOptionsData(opaque_options, LrtAmlOptionsGetIdentifier(),
+                                    &payload) != kLiteRtStatusOk ||
+        payload == nullptr) {
+      return;
+    }
+    if (LrtCreateAmlOptionsFromToml(static_cast<const char*>(payload),
+                                    &aml_options_) != kLiteRtStatusOk) {
       aml_options_ = nullptr;
     }
   }
 
+  ~LiteRtCompilerPluginT() { LrtDestroyAmlOptions(aml_options_); }
+
   std::string GetModelNameOrDefault() const {
-    if (aml_options_ == nullptr) {
-      return "test";
+    if (aml_options_ != nullptr) {
+      const char* model_name = nullptr;
+      if (LrtAmlOptionsGetModelName(aml_options_, &model_name) ==
+              kLiteRtStatusOk &&
+          model_name != nullptr && model_name[0] != '\0') {
+        return model_name;
+      }
     }
-    const char* model_name = nullptr;
-    if (LiteRtAmlOptionsGetModelName(aml_options_, &model_name) !=
-            kLiteRtStatusOk ||
-        model_name == nullptr || model_name[0] == '\0') {
-      return "test";
-    }
-    return model_name;
+    // Unnamed models must not share one default, or later compiles overwrite
+    // earlier ADLA files.
+    static std::atomic<int> next_id{0};
+    return absl::StrFormat("aml_model_%d", next_id.fetch_add(1));
   }
 
   std::string GetModelPathOrEmpty() const {
@@ -734,7 +726,7 @@ class LiteRtCompilerPluginT {
       return "";
     }
     const char* model_path = nullptr;
-    if (LiteRtAmlOptionsGetModelPath(aml_options_, &model_path) !=
+    if (LrtAmlOptionsGetModelPath(aml_options_, &model_path) !=
             kLiteRtStatusOk ||
         model_path == nullptr) {
       return "";
@@ -750,8 +742,11 @@ class LiteRtCompilerPluginT {
 
   int GetPartitionSubgraphCount() const { return partition_subgraph_count_; }
 
+  const LiteRtCompilerContext* ctx() const { return compiler_context_; }
+
  private:
-  LiteRtAmlOptions aml_options_ = nullptr;
+  const LiteRtCompilerContext* compiler_context_ = nullptr;
+  LrtAmlOptions aml_options_ = nullptr;
   absl::flat_hash_set<LiteRtSubgraph> partitioned_subgraphs_;
   int partition_subgraph_count_ = 0;
 };
@@ -891,14 +886,16 @@ extern "C" LiteRtStatus LiteRtCompiledResultNumByteCodeModules(
 }
 
 extern "C" LiteRtStatus LiteRtCreateCompilerPlugin(
+    const LiteRtCompilerContext* compiler_context,
     LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
     LiteRtOptions options) {
+  LiteRtPropagateMinLoggerSeverityWithCompilerContext(compiler_context, env);
   if (options == nullptr || env == nullptr) {
     LITERT_LOG(LITERT_WARNING,
                "AML compiler plugin created with null options, these will be "
                "defaulted.");
   }
-  *compiler_plugin = new LiteRtCompilerPluginT(env, options);
+  *compiler_plugin = new LiteRtCompilerPluginT(compiler_context, env, options);
   return kLiteRtStatusOk;
 }
 
@@ -912,18 +909,20 @@ extern "C" LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compi
                                                       LiteRtSubgraph subgraph,
                                                       LiteRtOpList selected_ops)
 {
-  if (compiler_plugin != nullptr) {
-    compiler_plugin->RecordPartitionSubgraph(subgraph);
+  if (compiler_plugin == nullptr || compiler_plugin->ctx() == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
   }
+  compiler_plugin->RecordPartitionSubgraph(subgraph);
 
-  ::litert::Subgraph graph(subgraph);
+  litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
 
   LITERT_LOG(LITERT_INFO, "Starting AML Partitioning");
 
   for (const auto &op : graph.Ops())
   {
+    // odml.npu_call is owned by PartitionModel. Vendor code cannot rename it
+    // without LiteRT Core, so leave every composite on the framework path.
     if (op.Is(kLiteRtOpCodeShloComposite)) {
-      RetagCompositeToForceInline(op.Get());
       continue;
     }
     const AmlPartitionRejectReason reject = GetAmlPartitionRejectReason(op);
@@ -945,12 +944,16 @@ extern "C" LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtModel partitions, LiteRtCompiledResult *compiled_result)
 {
   auto *plugin = compiler_plugin;
-  const std::string model_name = plugin ? plugin->GetModelNameOrDefault() : "test";
+  if (plugin == nullptr || plugin->ctx() == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const std::string model_name =
+      plugin ? plugin->GetModelNameOrDefault() : std::string("aml_model_0");
   const std::string model_path = plugin ? plugin->GetModelPathOrEmpty() : "";
   LITERT_LOG(LITERT_DEBUG, "model_name: %s", model_name.c_str());
   LITERT_LOG(LITERT_DEBUG, "model_path: %s", model_path.c_str());
 
-  auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
+  litert::compiler::Model model(plugin->ctx(), partitions);
   const auto num_partitions = model.NumSubgraphs();
   const int compile_subgraphs =
       (kTestSubgraphCompileLimit > 0)
@@ -1004,8 +1007,7 @@ extern "C" LiteRtStatus LiteRtCompilerPluginCompile(
 
   for (int partition_idx = 0; partition_idx < num_partitions; ++partition_idx)
   {
-    auto subgraph_or = model.Subgraph(partition_idx); // 得到 Expected<Subgraph>
-    auto &subgraph = *subgraph_or;
+    LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(partition_idx));
     LITERT_LOG(LITERT_DEBUG, "==============================");
     LITERT_LOG(LITERT_DEBUG, "Subgraph index: %d", partition_idx);
     std::string &entry_point_name = result->graph_names.emplace_back();
@@ -1157,5 +1159,20 @@ extern "C" LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
     LITERT_LOG(LITERT_ERROR, "Unsupported AML soc_model: %s", soc_model_name);
     return kLiteRtStatusErrorInvalidArgument;
   }
+  (void)compiler_plugin;
+  (void)env;
+  (void)options;
   return kLiteRtStatusOk;
+}
+
+extern "C" LiteRtStatus LiteRtGetCompiledResultHandle(
+    LiteRtCompiledResult compiled_result, LiteRtParamIndex call_idx,
+    LiteRtJitExecutable* handle) {
+  (void)compiled_result;
+  (void)call_idx;
+  if (handle == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *handle = nullptr;
+  return kLiteRtStatusErrorUnsupported;
 }

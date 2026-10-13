@@ -1,17 +1,5 @@
 /*******************************************************************************
- * Copyright (C) 2023 Amlogic, Inc. All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright (C) 2026 Amlogic, Inc. All rights reserved.
  *
  * @file    aml_dispatch_info.h
  * @module  aml_compiler_plugin / aml_dispatch
@@ -20,8 +8,8 @@
  *          deserializes from LiteRT context_bin.
  ******************************************************************************/
 
-#ifndef ODML_LITERT_LITERT_VENDORS_AML_COMPILER_AML_DISPATCH_INFO_H_
-#define ODML_LITERT_LITERT_VENDORS_AML_COMPILER_AML_DISPATCH_INFO_H_
+#ifndef ODML_LITERT_LITERT_VENDORS_AML_CORE_AML_DISPATCH_INFO_H_
+#define ODML_LITERT_LITERT_VENDORS_AML_CORE_AML_DISPATCH_INFO_H_
 
 #include <cstdint>
 #include <string>
@@ -68,4 +56,4 @@ std::string SerializeDispatchInfo(const AML_Dispatch_Info& dispatch_info);
  */
 AML_Dispatch_Info DeserializeDispatchInfo(const std::string& buffer);
 
-#endif  // ODML_LITERT_LITERT_VENDORS_AML_COMPILER_AML_DISPATCH_INFO_H_
+#endif  // ODML_LITERT_LITERT_VENDORS_AML_CORE_AML_DISPATCH_INFO_H_

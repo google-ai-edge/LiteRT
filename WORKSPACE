@@ -10,6 +10,15 @@ workspace(name = "litert")
 # buildifier: disable=load-on-top
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("@bazel_tools//tools/build_defs/repo:local.bzl", "local_repository")
+
+# AML prebuilt delivery (libaml_compiler_core.so, nnsdk headers, runtime .so).
+# Temporary: local_repository points at a sibling checkout (<01_LiteRT>/aml_npu).
+# This will be replaced by a GitHub external repository download.
+local_repository(
+    name = "aml_npu",
+    path = "../aml_npu",
+)
 
 # By default, `@org_tensorflow` and `@xla` provide only the Starlark macros and
 # the few header-only targets that the exported tflite/ BUILD files use. They
