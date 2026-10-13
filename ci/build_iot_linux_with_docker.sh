@@ -36,7 +36,7 @@ run_build_and_stage() {
   local bdir="${BDIR:-cmake_build_linux_aarch64_oe_gcc11_2}"
   local jobs="${JOBS:-$(nproc)}"
 
-  trap 'if [[ -n "${HOST_UID:-}" && -n "${HOST_GID:-}" ]]; then chown -R "${HOST_UID}:${HOST_GID}" "${OUTPUT_DIR}" "${LITERT_DIR}/litert/${bdir}" 2>/dev/null || true; fi' EXIT
+  trap 'if [[ -n "${HOST_UID:-}" && -n "${HOST_GID:-}" ]]; then chown -R "${HOST_UID}:${HOST_GID}" "${OUTPUT_DIR}" "${LITERT_DIR}" 2>/dev/null || true; fi' EXIT
 
   pushd "${LITERT_DIR}/litert" > /dev/null
   echo "=== Building LiteRT for ${platform} (${preset}) ==="

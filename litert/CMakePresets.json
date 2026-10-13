@@ -65,6 +65,8 @@
         "CMAKE_BUILD_TYPE": "Release",
         "LITERT_ENABLE_GPU": "OFF",
         "TFLITE_ENABLE_GPU": "OFF",
+        "LITERT_ENABLE_ALL_VENDORS": "OFF",
+        "LITERT_ENABLE_QUALCOMM": "ON",
         "LITERT_AUTO_BUILD_TFLITE": "ON",
         "LITERT_HOST_C_COMPILER": "/usr/bin/gcc",
         "LITERT_HOST_CXX_COMPILER": "/usr/bin/g++"
