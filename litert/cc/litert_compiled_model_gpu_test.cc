@@ -21,6 +21,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -543,6 +544,31 @@ Expected<std::vector<TensorBuffer>> CreateGlOutputBuffers(
   return output_buffers;
 }
 
+// TODO(b/383176413): Add API to CompiledModel to create buffers of custom
+// buffer type.
+Expected<std::vector<TensorBuffer>> CreateOutputBuffersInGivenType(
+    Environment& env, CompiledModel& compiled_model, size_t signature_index,
+    std::vector<absl::string_view> output_names, TensorBufferType buffer_type) {
+  std::vector<TensorBuffer> output_buffers;
+  output_buffers.reserve(output_names.size());
+  for (auto& output_name : output_names) {
+    LITERT_ASSIGN_OR_RETURN(TensorBufferRequirements output_buffer_requirements,
+                            compiled_model.GetOutputBufferRequirements(
+                                signature_index, output_name));
+    LITERT_ASSIGN_OR_RETURN(
+        RankedTensorType ranked_tensor_type,
+        compiled_model.GetOutputTensorType(signature_index, output_name));
+    LITERT_ASSIGN_OR_RETURN(size_t buffer_size,
+                            output_buffer_requirements.BufferSize());
+    LITERT_ASSIGN_OR_RETURN(
+        auto output_buffer,
+        TensorBuffer::CreateManaged(env, buffer_type, ranked_tensor_type,
+                                    buffer_size));
+    output_buffers.push_back(std::move(output_buffer));
+  }
+  return output_buffers;
+}
+
 bool IsGlClInteropSupported() {
   if (!HasOpenGlSupport() || !HasOpenClSupport()) {
     return false;
@@ -703,6 +729,118 @@ TEST(CompiledModelGpuTest, SyncWithGlClInteropMultiIteration) {
       ASSERT_TRUE(lock_and_addr);
       auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
       EXPECT_THAT(output, Pointwise(FloatNear(1e-5), expected_output));
+    }
+  }
+}
+
+// Runs the model synchronously on OpenCL with AHardwareBuffer inputs and
+// outputs, as MediaPipe's InferenceRunnerLiteRt does on devices whose OpenCL
+// driver can import AHardwareBuffers (Mali GPUs). AHardwareBuffers are read and
+// written with AHardwareBuffer_lock(), which is not ordered after the GPU work,
+// so the GPU must be done with all of them by the time Run() returns.
+TEST(CompiledModelGpuTest, SyncWithAhwbIsCompleteWhenRunReturns) {
+  if (!HasOpenClSupport() || !HasAhwbSupport()) {
+    GTEST_SKIP() << "OpenCL or AHardwareBuffer is not supported";
+  }
+
+  // Pass an EGL context like MediaPipe does, so that LiteRT sets up its GPU
+  // environment, including AHardwareBuffer import into OpenCL, when the
+  // environment is created.
+  std::vector<litert::Environment::Option> env_options;
+#if LITERT_HAS_OPENGL_SUPPORT
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+  ASSERT_TRUE(
+      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+  env_options.push_back(
+      {litert::Environment::OptionTag::EglContext,
+       reinterpret_cast<int64_t>(egl_env->context().context())});
+  env_options.push_back({litert::Environment::OptionTag::EglDisplay,
+                         reinterpret_cast<int64_t>(egl_env->display())});
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env,
+                              litert::Environment::Create(env_options));
+  if (!env.SupportsAhwbClInterop()) {
+    GTEST_SKIP() << "AHardwareBuffer import into OpenCL is not supported";
+  }
+
+  // AHardwareBuffers are only offered when external tensors mode is disabled.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options, CreateGpuOptions(/*external_tensors_mode=*/false));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            options));
+
+  size_t signature_index = 0;
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_buffer_requirements,
+      compiled_model.GetOutputBufferRequirements(signature_index,
+                                                 /*output_index=*/0));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto supported_types,
+                              output_buffer_requirements.SupportedTypes());
+  if (!absl::c_linear_search(supported_types, TensorBufferType::kAhwb)) {
+    GTEST_SKIP() << "The GPU accelerator doesn't support AHardwareBuffer "
+                    "outputs on this device";
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_names, compiled_model.GetSignatureInputNames(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_buffers,
+      CreateInputBuffersInGivenType(env, compiled_model, signature_index,
+                                    input_names, TensorBufferType::kAhwb));
+  ASSERT_EQ(input_buffers.size(), 2);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_names,
+      compiled_model.GetSignatureOutputNames(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_buffers,
+      CreateOutputBuffersInGivenType(env, compiled_model, signature_index,
+                                     output_names, TensorBufferType::kAhwb));
+  ASSERT_EQ(output_buffers.size(), 1);
+
+  const std::vector<float> overwritten_input0(kTestInput0Size, 1000.0f);
+  const std::vector<float> overwritten_input1(kTestInput1Size, 1000.0f);
+
+  // The inputs change in every iteration so that reading the output of the
+  // previous iteration is detected too.
+  for (int iter = 0; iter < 20; ++iter) {
+    float input_factor = static_cast<float>(iter + 1);
+
+    std::vector<float> input0(kTestInput0Size);
+    std::vector<float> input1(kTestInput1Size);
+    std::vector<float> expected_output(kTestOutputSize);
+
+    for (size_t i = 0; i < kTestInput0Size; ++i) {
+      input0[i] = kTestInput0Tensor[i] * input_factor;
+    }
+    for (size_t i = 0; i < kTestInput1Size; ++i) {
+      input1[i] = kTestInput1Tensor[i] * input_factor;
+    }
+    for (size_t i = 0; i < kTestOutputSize; ++i) {
+      expected_output[i] = kTestOutputTensor[i] * input_factor;
+    }
+
+    ASSERT_TRUE(input_buffers[0].Write<float>(absl::MakeConstSpan(input0)));
+    ASSERT_TRUE(input_buffers[1].Write<float>(absl::MakeConstSpan(input1)));
+
+    LITERT_ASSERT_OK(
+        compiled_model.Run(signature_index, input_buffers, output_buffers));
+
+    // Overwrite the inputs and read the output right away, without waiting for
+    // anything else.
+    ASSERT_TRUE(
+        input_buffers[0].Write<float>(absl::MakeConstSpan(overwritten_input0)));
+    ASSERT_TRUE(
+        input_buffers[1].Write<float>(absl::MakeConstSpan(overwritten_input1)));
+    {
+      auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+          output_buffers[0], TensorBuffer::LockMode::kRead);
+      ASSERT_TRUE(lock_and_addr);
+      auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
+      EXPECT_THAT(output, Pointwise(FloatNear(1e-5), expected_output))
+          << "iteration " << iter;
     }
   }
 }

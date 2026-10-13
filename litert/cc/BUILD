@@ -410,6 +410,7 @@ litert_device_test(
 #         ":litert_tensor_buffer_requirements",
 #         ":litert_tensor_buffer_types",
 #         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/algorithm:container",
 #         "@com_google_absl//absl/container:flat_hash_map",
 #         "@com_google_absl//absl/log:absl_log",
 #         "@com_google_absl//absl/strings:string_view",
