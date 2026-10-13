@@ -17,6 +17,7 @@
 #include <optional>
 #include <string>
 
+#include "HTP/QnnHtpContext.h"  // from @qairt
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
@@ -262,6 +263,50 @@ TEST(InitQnnOptionsTest, PropagatesWeightSharingChannelTileSize) {
             kLiteRtStatusOk);
 
   EXPECT_EQ(qnn_options.GetHtpWeightSharingChannelTileSize(), 64);
+}
+
+TEST(InitQnnOptionsTest, PropagatesHtpContextInitAcceleration) {
+  auto qualcomm_options = litert::qualcomm::QualcommOptions::Create();
+  ASSERT_TRUE(qualcomm_options.HasValue());
+  qualcomm_options->SetHtpContextInitAcceleration(true);
+
+  ::qnn::Options qnn_options;
+  EXPECT_EQ(InitQnnOptions(qnn_options, qualcomm_options.Value()),
+            kLiteRtStatusOk);
+  EXPECT_TRUE(qnn_options.GetHtpContextInitAcceleration());
+}
+
+TEST(QnnManagerTest, BuildHtpContextConfigs) {
+  ::qnn::Options options;
+  options.SetGraphPriority(::qnn::GraphPriority::kHigh);
+  options.SetHtpFileReadMemoryBudgetMB(16);
+  options.SetHtpContextInitAcceleration(true);
+
+  litert::qnn::HtpContextConfigs storage;
+  const auto configs = QnnManager::BuildHtpContextConfigs(
+      options, QnnManager::DefaultContextConfigs(), storage);
+
+  ASSERT_EQ(configs.size(), 4);
+  EXPECT_EQ(configs[0]->option, QNN_CONTEXT_CONFIG_OPTION_PRIORITY);
+  EXPECT_EQ(configs[0]->priority, QNN_PRIORITY_HIGH);
+  EXPECT_EQ(configs[1]->option, QNN_CONTEXT_CONFIG_OPTION_CUSTOM);
+  EXPECT_EQ(configs[2]->option, QNN_CONTEXT_CONFIG_OPTION_CUSTOM);
+  EXPECT_EQ(configs[3], nullptr);
+
+  const auto* budget = static_cast<const QnnHtpContext_CustomConfig_t*>(
+      configs[1]->customConfig);
+  ASSERT_NE(budget, nullptr);
+  EXPECT_EQ(budget->option,
+            QNN_HTP_CONTEXT_CONFIG_OPTION_FILE_READ_MEMORY_BUDGET);
+  EXPECT_EQ(budget->fileReadMemoryBudgetInMb, 16);
+
+  const auto* init_acceleration =
+      static_cast<const QnnHtpContext_CustomConfig_t*>(
+          configs[2]->customConfig);
+  ASSERT_NE(init_acceleration, nullptr);
+  EXPECT_EQ(init_acceleration->option,
+            QNN_HTP_CONTEXT_CONFIG_OPTION_INIT_ACCELERATION);
+  EXPECT_TRUE(init_acceleration->initAcceleration);
 }
 
 TEST(QnnManagerTest, AdspLibraryPathPrecedence) {
