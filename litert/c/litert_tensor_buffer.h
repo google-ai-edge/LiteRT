@@ -63,8 +63,9 @@ LiteRtStatus LiteRtGetTensorBufferHostMemory(LiteRtTensorBuffer tensor_buffer,
 //
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
 // calling LiteRtDestroyTensorBuffer() to release the object.
-// NULL deallocator means that the AHardwareBuffer is not managed by the tensor
-// buffer and therefore must be released separately by the caller.
+// If deallocator is NULL, the tensor buffer acquires its own reference to the
+// AHardwareBuffer and releases it on destruction; the caller is still
+// responsible for releasing its own reference.
 //
 // @warning kLiteRtStatusErrorUnsupported is returned if AHWB is not supported.
 LiteRtStatus LiteRtCreateTensorBufferFromAhwb(
