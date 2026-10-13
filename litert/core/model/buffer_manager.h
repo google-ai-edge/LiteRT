@@ -68,6 +68,26 @@ class BufferManager {
     return buffers_.size() - 1;
   }
 
+  // Update the buffer at the given id with an unowned buffer view, preserving
+  // its BufferContext.
+  LiteRtStatus SetNonOwnedBuffer(BufferId id, BufferRef<uint8_t> buffer) {
+    if (id == kEmptyBufferId || id >= buffers_.size()) {
+      return kLiteRtStatusErrorIndexOOB;
+    }
+    buffers_[id].first = buffer;
+    return kLiteRtStatusOk;
+  }
+
+  // Update the buffer at the given id with an owned buffer, preserving its
+  // BufferContext.
+  LiteRtStatus SetOwnedBuffer(BufferId id, OwningBufferRef<uint8_t>&& buffer) {
+    if (id == kEmptyBufferId || id >= buffers_.size()) {
+      return kLiteRtStatusErrorIndexOOB;
+    }
+    buffers_[id].first = std::move(buffer);
+    return kLiteRtStatusOk;
+  }
+
   // Get a view of the buffer at the given id.
   Expected<BufferRef<uint8_t>> GetBuffer(BufferId id) {
     if (id >= buffers_.size()) {

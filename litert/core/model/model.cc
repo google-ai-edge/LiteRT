@@ -527,6 +527,22 @@ std::vector<TflOpCodePtr>&& TakeTflOpCodes(LiteRtModelT& litert_model) {
   return std::move(litert_model.tfl_operator_codes_);
 }
 
+const ::tflite::ExternalBuffer* GetTflExternalBuffer(
+    const LiteRtModelT& litert_model, uint32_t litert_buf_id) {
+  if (litert_buf_id == 0) {
+    return nullptr;
+  }
+  const auto* packed_model = GetTflFlatbuffer(litert_model).PackedModel();
+  if (packed_model == nullptr || packed_model->external_buffers() == nullptr) {
+    return nullptr;
+  }
+  const auto* ext_buffers = packed_model->external_buffers();
+  if (litert_buf_id > ext_buffers->size()) {
+    return nullptr;
+  }
+  return ext_buffers->Get(litert_buf_id - 1);
+}
+
 // new stuff start
 void SetTflFlatbuffer(LiteRtModelT& litert_model,
                       LiteRtModelT::TflFlatbuffer&& tfl_flatbuffer) {

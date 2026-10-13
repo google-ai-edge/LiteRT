@@ -117,8 +117,10 @@ cc_library(
         "//litert/core/util:flatbuffer_tools",
         "//tflite/converter:allocation",
         "//tflite/converter/core:model_builder_base",
+        "//tflite/core/api",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
         "//litert:without_builtin_ops": [],

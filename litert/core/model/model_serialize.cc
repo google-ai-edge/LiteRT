@@ -104,6 +104,16 @@ class SerializationContext {
       return litert_buf_ctx.Error().Status();
     }
 
+    if (const auto* ext_buf =
+            GetTflExternalBuffer(litert_model_, litert_buf_id);
+        ext_buf != nullptr) {
+      const uint32_t ext_buf_id = ext_buf->id();
+      tfl_tensor.external_buffer = ext_buf_id;
+      tfl_tensor.buffer = 0;
+      referenced_external_buffer_ids_.push_back(ext_buf_id);
+      return kLiteRtStatusOk;
+    }
+
     auto litert_buf = buffer_manager->GetBuffer(litert_buf_id);
     if (!litert_buf) {
       LITERT_LOG(LITERT_ERROR, "Failed to get buffer");
@@ -162,6 +172,10 @@ class SerializationContext {
     return offset_tensor_map_;
   }
 
+  const std::vector<uint32_t>& ReferencedExternalBufferIds() const {
+    return referenced_external_buffer_ids_;
+  }
+
   // Get the index in the tfl op codes for the dispatch custom code.
   // This should be the only new custom code added after loading the initial
   // tfl.
@@ -175,6 +189,7 @@ class SerializationContext {
   TflOpAssetMap op_asset_map_;
   TflOffsetTensorMap offset_tensor_map_;
   TflBufferIdMap buffer_id_map_;
+  std::vector<uint32_t> referenced_external_buffer_ids_;
   size_t bytecode_alignment_ = 0;
 };
 
@@ -306,6 +321,33 @@ Expected<TflModelPtr> PackAsTflite(SerializationContext& builder) {
         std::make_unique<TflSubgraph>());
     LITERT_RETURN_IF_ERROR(
         PackSubgraph(builder, litert_subgraph, tfl_subgraph, tensor_map, i));
+  }
+
+  if (!builder.ReferencedExternalBufferIds().empty()) {
+    const auto* packed_model = GetTflFlatbuffer(litert_model).PackedModel();
+    if (packed_model != nullptr) {
+      if (const auto* ext_buffers = packed_model->external_buffers()) {
+        for (const auto* ext_buf : *ext_buffers) {
+          if (ext_buf == nullptr) {
+            continue;
+          }
+          for (const uint32_t ref_id : builder.ReferencedExternalBufferIds()) {
+            if (ref_id == ext_buf->id()) {
+              builder.Model().external_buffers.emplace_back(ext_buf->UnPack());
+              break;
+            }
+          }
+        }
+      }
+      if (const auto* ext_groups = packed_model->external_buffer_groups()) {
+        for (const auto* group : *ext_groups) {
+          if (group != nullptr) {
+            builder.Model().external_buffer_groups.emplace_back(
+                group->UnPack());
+          }
+        }
+      }
+    }
   }
 
   // Serialize the signatures using saved tensor mapping.
