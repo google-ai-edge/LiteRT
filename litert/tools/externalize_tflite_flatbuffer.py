@@ -31,6 +31,13 @@ import flatbuffers
 from litert.python import schema_py_generated as schema  # pylint:disable=g-direct-tensorflow-import
 
 _LITERT_HOST_MEMORY_BUFFER_ALIGNMENT = 64
+_TFLITE_BUFFER_ALIGNMENT = 16
+# If the buffers left inline would exceed this size, the buffers that were
+# appended in the input model are appended to the output model again instead
+# of being packed into the FlatBuffer. This keeps the FlatBuffer below its
+# 2 GiB limit and avoids the slow element-wise Python packing of large
+# payloads.
+_MAX_INLINE_BUFFER_BYTES = 1 << 30
 
 
 def _enum_value(enum_obj, name: str) -> int:
@@ -71,9 +78,10 @@ def _buffer_bytes(buffer) -> memoryview | None:
   return data
 
 
-def _materialize_appended_buffer_data(model, input_bytes: bytes) -> None:
+def _materialize_appended_buffer_data(model, input_bytes: bytes) -> set[int]:
   """Moves TFLite appended buffer payloads into the in-memory object model."""
   input_view = memoryview(input_bytes)
+  appended_buffers: set[int] = set()
   for buffer_index, buffer in enumerate(model.buffers or []):
     offset = int(buffer.offset)
     size = int(buffer.size)
@@ -97,6 +105,8 @@ def _materialize_appended_buffer_data(model, input_bytes: bytes) -> None:
     buffer.data = input_view[offset:end]
     buffer.offset = 0
     buffer.size = 0
+    appended_buffers.add(buffer_index)
+  return appended_buffers
 
 
 def _bias_tensor_indices(model) -> set[tuple[int, int]]:
@@ -207,7 +217,7 @@ def externalize(
 
   input_bytes = input_model.read_bytes()
   model = schema.ModelT.InitFromPackedBuf(input_bytes, 0)
-  _materialize_appended_buffer_data(model, input_bytes)
+  appended_buffers = _materialize_appended_buffer_data(model, input_bytes)
   if model.externalBuffers is None:
     model.externalBuffers = []
 
@@ -289,10 +299,47 @@ def externalize(
       model.buffers[buffer_idx].size = 0
       cleared_buffers += 1
 
-  builder = flatbuffers.Builder(1024)
-  root = model.Pack(builder)
-  builder.Finish(root, file_identifier=b"TFL3")
-  output_model.write_bytes(bytes(builder.Output()))
+  remaining_inline_bytes = sum(
+      len(b.data) for b in model.buffers or [] if b.data is not None
+  )
+  reappend_payloads: list[tuple[int, memoryview[int]]] = []
+  if remaining_inline_bytes >= _MAX_INLINE_BUFFER_BYTES:
+    for buf_idx in sorted(appended_buffers):
+      buf = model.buffers[buf_idx]
+      data = _buffer_bytes(buf)
+      if data is not None:
+        reappend_payloads.append((buf_idx, data))
+        buf.data = None
+        buf.offset = 1
+        buf.size = len(data)
+
+  def _pack_flatbuffer() -> bytes:
+    builder = flatbuffers.Builder(1024)
+    root = model.Pack(builder)
+    builder.Finish(root, file_identifier=b"TFL3")
+    return bytes(builder.Output())
+
+  packed_fb = _pack_flatbuffer()
+  if reappend_payloads:
+    cursor = len(packed_fb)
+    for buf_idx, data in reappend_payloads:
+      cursor = (
+          (cursor + _TFLITE_BUFFER_ALIGNMENT - 1)
+          // _TFLITE_BUFFER_ALIGNMENT
+          * _TFLITE_BUFFER_ALIGNMENT
+      )
+      model.buffers[buf_idx].offset = cursor
+      cursor += len(data)
+    packed_fb = _pack_flatbuffer()
+    with output_model.open("wb") as out_f:
+      out_f.write(packed_fb)
+      for buf_idx, data in reappend_payloads:
+        pad = model.buffers[buf_idx].offset - out_f.tell()
+        if pad > 0:
+          out_f.write(b"\0" * pad)
+        out_f.write(data)
+  else:
+    output_model.write_bytes(packed_fb)
 
   print(f"Reading model from {input_model}")
   print(f"Writing model to {output_model}")

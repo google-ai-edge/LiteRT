@@ -13,12 +13,24 @@
 # limitations under the License.
 
 import pathlib
+from unittest import mock
 
 import flatbuffers
 
 from absl.testing import absltest as googletest
 from litert.tools import externalize_tflite_flatbuffer
 from litert.python import schema_py_generated as schema  # pylint:disable=g-direct-tensorflow-import
+
+
+def _make_float32_tensor(shape: list[int], buffer_index: int) -> schema.TensorT:
+  """Returns a FLOAT32 tensor with `shape` backed by `buffer_index`."""
+  tensor = schema.TensorT()
+  tensor.shape = shape
+  tensor.type = externalize_tflite_flatbuffer._enum_value(
+      schema.TensorType, "FLOAT32"
+  )
+  tensor.buffer = buffer_index
+  return tensor
 
 
 class ExternalizeTfliteFlatbufferTest(googletest.TestCase):
@@ -220,6 +232,100 @@ class ExternalizeTfliteFlatbufferTest(googletest.TestCase):
     self.assertEqual(bytes(processed_bias.data), bias_data)
     self.assertEqual(processed_bias.offset, 0)
     self.assertEqual(processed_bias.size, 0)
+
+  def test_reappends_large_unexternalized_buffers_when_exceeding_inline_limit(
+      self,
+  ):
+    root = pathlib.Path(self.create_tempdir().full_path)
+    input_model = root / "input.tflite"
+    fc_weight_data = bytes(range(64))
+    unexternalized_data = b"moe_expert_weights!" * 8
+
+    model = schema.ModelT()
+    model.version = 3
+    fc_code = schema.OperatorCodeT()
+    fc_code.builtinCode = externalize_tflite_flatbuffer._enum_value(
+        schema.BuiltinOperator, "FULLY_CONNECTED"
+    )
+    fc_code.deprecatedBuiltinCode = fc_code.builtinCode
+    custom_code = schema.OperatorCodeT()
+    custom_code.builtinCode = externalize_tflite_flatbuffer._enum_value(
+        schema.BuiltinOperator, "CUSTOM"
+    )
+    custom_code.deprecatedBuiltinCode = custom_code.builtinCode
+    custom_code.customCode = "custom:moe"
+    model.operatorCodes = [fc_code, custom_code]
+
+    fc_op = schema.OperatorT()
+    fc_op.opcodeIndex = 0
+    fc_op.inputs = [0, 1]
+    fc_op.outputs = [3]
+    custom_op = schema.OperatorT()
+    custom_op.opcodeIndex = 1
+    custom_op.inputs = [3, 2]
+    custom_op.outputs = [4]
+
+    subgraph = schema.SubGraphT()
+    subgraph.tensors = [
+        _make_float32_tensor([1, 4], 0),
+        _make_float32_tensor([4, 4], 1),
+        _make_float32_tensor([4, 4], 2),
+        _make_float32_tensor([1, 4], 0),
+        _make_float32_tensor([1, 4], 0),
+    ]
+    subgraph.inputs = [0]
+    subgraph.outputs = [4]
+    subgraph.operators = [fc_op, custom_op]
+    model.subgraphs = [subgraph]
+    model.buffers = [schema.BufferT(), schema.BufferT(), schema.BufferT()]
+    model.buffers[1].offset = 1
+    model.buffers[1].size = len(fc_weight_data)
+    model.buffers[2].offset = 1
+    model.buffers[2].size = len(unexternalized_data)
+
+    def pack_model():
+      builder = flatbuffers.Builder(1024)
+      builder.Finish(model.Pack(builder), file_identifier=b"TFL3")
+      return bytes(builder.Output())
+
+    placeholder = pack_model()
+    fc_offset = (len(placeholder) + 15) // 16 * 16
+    moe_offset = (fc_offset + len(fc_weight_data) + 15) // 16 * 16
+    model.buffers[1].offset = fc_offset
+    model.buffers[2].offset = moe_offset
+    packed_model = pack_model()
+    input_bytes = bytearray(packed_model)
+    input_bytes.extend(b"\0" * (fc_offset - len(input_bytes)))
+    input_bytes.extend(fc_weight_data)
+    input_bytes.extend(b"\0" * (moe_offset - len(input_bytes)))
+    input_bytes.extend(unexternalized_data)
+    input_model.write_bytes(input_bytes)
+
+    output_dir = root / "output"
+    with mock.patch.object(
+        externalize_tflite_flatbuffer, "_MAX_INLINE_BUFFER_BYTES", 32
+    ):
+      externalize_tflite_flatbuffer.externalize(
+          input_model=input_model,
+          output_dir=output_dir,
+          group_name="tflite_weights",
+          num_elements_threshold=4,
+      )
+
+    self.assertEqual(
+        (output_dir / "tflite_weights").read_bytes(), fc_weight_data
+    )
+    output_bytes = (output_dir / "model.tflite").read_bytes()
+    processed_model = schema.ModelT.InitFromPackedBuf(output_bytes, 0)
+    moe_buf = processed_model.buffers[2]
+    self.assertIsNone(moe_buf.data)
+    self.assertGreater(moe_buf.offset, 0)
+    self.assertLen(unexternalized_data, moe_buf.size)
+    self.assertEqual(moe_buf.offset % 16, 0)
+    self.assertEqual(
+        output_bytes[moe_buf.offset : moe_buf.offset + moe_buf.size],
+        unexternalized_data,
+    )
 
 
 if __name__ == "__main__":
