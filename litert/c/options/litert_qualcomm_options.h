@@ -394,6 +394,12 @@ LiteRtStatus LrtQualcommOptionsSetHtpDeviceId(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetHtpDeviceId(LrtQualcommOptions options,
                                               uint32_t* htp_device_id);
 
+LiteRtStatus LrtQualcommOptionsSetHtpContextInitAcceleration(
+    LrtQualcommOptions options, bool htp_context_init_acceleration);
+
+LiteRtStatus LrtQualcommOptionsGetHtpContextInitAcceleration(
+    LrtQualcommOptions options, bool* htp_context_init_acceleration);
+
 LiteRtStatus LrtQualcommOptionsSetNumHvxThreads(LrtQualcommOptions options,
                                                 uint32_t num_hvx_threads);
 

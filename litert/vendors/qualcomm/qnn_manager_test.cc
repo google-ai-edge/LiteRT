@@ -264,6 +264,17 @@ TEST(InitQnnOptionsTest, PropagatesWeightSharingChannelTileSize) {
   EXPECT_EQ(qnn_options.GetHtpWeightSharingChannelTileSize(), 64);
 }
 
+TEST(InitQnnOptionsTest, PropagatesHtpContextInitAcceleration) {
+  auto qualcomm_options = litert::qualcomm::QualcommOptions::Create();
+  ASSERT_TRUE(qualcomm_options.HasValue());
+  qualcomm_options->SetHtpContextInitAcceleration(true);
+
+  ::qnn::Options qnn_options;
+  EXPECT_EQ(InitQnnOptions(qnn_options, qualcomm_options.Value()),
+            kLiteRtStatusOk);
+  EXPECT_TRUE(qnn_options.GetHtpContextInitAcceleration());
+}
+
 TEST(QnnManagerTest, AdspLibraryPathPrecedence) {
   static constexpr char kAdsp[] = "ADSP_LIBRARY_PATH";
   const char* original_adsp_ptr = getenv(kAdsp);

@@ -390,6 +390,23 @@ TEST(LiteRtQualcommOptionsTest, HtpDeviceId) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, HtpContextInitAcceleration) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  bool enabled = true;
+  LITERT_ASSERT_OK(LrtQualcommOptionsGetHtpContextInitAcceleration(
+      qualcomm_options, &enabled));
+  EXPECT_FALSE(enabled);
+
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsSetHtpContextInitAcceleration(qualcomm_options, true));
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_TRUE(parsed.GetHtpContextInitAcceleration());
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, NumHvxThreads) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -620,6 +637,10 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetHtpDeviceId(), 0);
   options->SetHtpDeviceId(1);
   EXPECT_EQ(options->GetHtpDeviceId(), 1);
+
+  EXPECT_FALSE(options->GetHtpContextInitAcceleration());
+  options->SetHtpContextInitAcceleration(true);
+  EXPECT_TRUE(options->GetHtpContextInitAcceleration());
 
   EXPECT_EQ(options->GetNumHvxThreads(), 0);
   options->SetNumHvxThreads(4);

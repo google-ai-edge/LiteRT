@@ -236,6 +236,9 @@ class Options {
   std::uint32_t GetHtpDeviceId() const;
   void SetHtpDeviceId(std::uint32_t htp_device_id);
 
+  void SetHtpContextInitAcceleration(bool enabled);
+  bool GetHtpContextInitAcceleration() const;
+
   std::uint32_t GetNumHvxThreads() const;
   void SetNumHvxThreads(std::uint32_t num_hvx_threads);
 
@@ -324,6 +327,7 @@ class Options {
   std::string graph_transform_;
   std::uint32_t vtcm_size_ = 0;
   std::uint32_t htp_device_id_ = 0;
+  bool htp_context_init_acceleration_ = false;
   std::uint32_t num_hvx_threads_ = 0;
   OptimizationLevel optimization_level_ =
       OptimizationLevel::kHtpOptimizeForInferenceO3;
