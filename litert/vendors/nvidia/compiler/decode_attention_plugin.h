@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_COMPILER_DECODE_ATTENTION_PLUGIN_H_
 
 #include "NvInferRuntime.h"
+#include "litert/vendors/nvidia/trtllm/decode_attention.h"
 
 namespace litert::nvidia {
 
@@ -38,8 +39,12 @@ namespace litert::nvidia {
 //           k_new [1, H, n, D] FP16, v_new [1, H, n, D] FP16
 // for the shapes of trtllm/tiled_attention.h (D 256 or 512, rows and
 // mask_rows in multiples of 32768 / D, S a multiple of 16).
+// With `int8_cache`, the key and value caches are per-tensor quantized INT8
+// (Gemma 4 E4B) and the plugin dequantizes them; `new_keys` is then
+// unsupported.
 nvinfer1::IPluginV3* CreateDecodeAttentionPlugin(
-    float fill, bool new_keys = false) noexcept;
+    float fill, bool new_keys = false,
+    const LiteRtNvidiaInt8CacheParams* int8_cache = nullptr) noexcept;
 
 // Referenced by the dispatch library so the creator's registration object is
 // retained when linking the shared library used for engine deserialization.

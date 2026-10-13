@@ -115,6 +115,48 @@ TEST_F(DecodeAttentionPluginTest, RejectsUnsupportedSingleHeadShapes) {
   EXPECT_NE(ShapeStatus(), 0);
 }
 
+TEST_F(DecodeAttentionPluginTest, AcceptsInt8CachesWithColumnValues) {
+  // Gemma 4 E4B: INT8 per-tensor caches, two KV heads of depth 256, four
+  // query rows per head, the value cache stored [1, H, D, S].
+  const LiteRtNvidiaInt8CacheParams int8 = {0.01f, -3, 0.02f, 4,
+                                            /*value_columns=*/true};
+  plugin_.reset(
+      CreateDecodeAttentionPlugin(-1.0e9f, /*new_keys=*/false, &int8));
+  ASSERT_NE(plugin_, nullptr);
+  runtime_ = static_cast<nvinfer1::IPluginV3OneRuntime*>(
+      plugin_->getCapabilityInterface(
+          nvinfer1::PluginCapabilityType::kRUNTIME));
+  ASSERT_NE(runtime_, nullptr);
+  inputs_[0].dims = nvinfer1::Dims4{1, 2, 4, 256};
+  inputs_[1].dims = nvinfer1::Dims4{1, 2, 2048, 256};
+  inputs_[1].type = nvinfer1::DataType::kINT8;
+  inputs_[2].dims = nvinfer1::Dims4{1, 2, 256, 2048};
+  inputs_[2].type = nvinfer1::DataType::kINT8;
+  inputs_[3].dims = nvinfer1::Dims4{1, 1, 4, 2048};
+  output_ = inputs_[0];
+  EXPECT_EQ(ShapeStatus(), 0);
+  inputs_[3].dims.d[2] = 1;
+  EXPECT_EQ(ShapeStatus(), 0);
+  // FP16 caches, a row-layout value cache and other depths are rejected.
+  inputs_[1].type = nvinfer1::DataType::kHALF;
+  EXPECT_NE(ShapeStatus(), 0);
+  inputs_[1].type = nvinfer1::DataType::kINT8;
+  inputs_[2].dims = inputs_[1].dims;
+  EXPECT_NE(ShapeStatus(), 0);
+  inputs_[2].dims = nvinfer1::Dims4{1, 2, 256, 2048};
+  inputs_[0].dims.d[3] = 128;
+  inputs_[1].dims.d[3] = 128;
+  inputs_[2].dims.d[2] = 128;
+  output_ = inputs_[0];
+  EXPECT_NE(ShapeStatus(), 0);
+  // The INT8 plugin takes no fresh keys and no non-positive scale.
+  EXPECT_EQ(CreateDecodeAttentionPlugin(-1.0e9f, /*new_keys=*/true, &int8),
+            nullptr);
+  LiteRtNvidiaInt8CacheParams bad = int8;
+  bad.v_scale = 0.0f;
+  EXPECT_EQ(CreateDecodeAttentionPlugin(-1.0e9f, false, &bad), nullptr);
+}
+
 TEST_F(DecodeAttentionPluginTest, RejectsInvalidShapeArguments) {
   EXPECT_NE(runtime_->onShapeChange(nullptr, 4, &output_, 1), 0);
   EXPECT_NE(runtime_->onShapeChange(inputs_.data(), 4, nullptr, 1), 0);

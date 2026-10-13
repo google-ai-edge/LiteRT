@@ -19,6 +19,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <type_traits>
 
 namespace {
 
@@ -56,6 +57,39 @@ __device__ __forceinline__ float WarpSum(float v) {
 
 // Threads per block: 256 when every thread can own at least one value
 // element, 128 for depth 128.
+// How a kernel reads its key and value caches. FP16 caches hold rows of
+// kDepth halves for keys and values alike (the in-place caches of the FP16
+// models). INT8 caches (Gemma 4 E4B) hold per-tensor quantized bytes,
+// dequantized as (value - zero_point) * scale; their value cache is either
+// rows [S, D] or, as the model stores it, columns [D, S], which the kernel
+// stages per chunk through shared memory so the reads stay coalesced.
+struct Fp16Cache {
+  using Element = __half;
+  static constexpr bool kValueColumns = false;
+  float k_scale = 1.0f, v_scale = 1.0f;
+  int k_zero = 0, v_zero = 0;
+  __device__ __forceinline__ float Key(__half v) const {
+    return __half2float(v);
+  }
+  __device__ __forceinline__ float Value(__half v) const {
+    return __half2float(v);
+  }
+};
+
+template <bool kColumns>
+struct Int8Cache {
+  using Element = int8_t;
+  static constexpr bool kValueColumns = kColumns;
+  float k_scale, v_scale;
+  int k_zero, v_zero;
+  __device__ __forceinline__ float Key(int8_t v) const {
+    return (static_cast<float>(v) - static_cast<float>(k_zero)) * k_scale;
+  }
+  __device__ __forceinline__ float Value(int8_t v) const {
+    return (static_cast<float>(v) - static_cast<float>(v_zero)) * v_scale;
+  }
+};
+
 template <int kDepth>
 __host__ __device__ constexpr int ThreadsFor() {
   return kDepth >= 256 ? 256 : 128;
@@ -68,14 +102,21 @@ __host__ __device__ constexpr int RowsPadFor() {
   return kRowsCap == 16 ? 20 : 4;
 }
 
-template <int kDepth, int kRowsCap>
+// Pitch of a staged value tile row: kDepth bytes plus a pad that spreads the
+// transposed stores over the shared memory banks.
+constexpr int kValueTilePad = 4;
+
+template <int kDepth, int kRowsCap, bool kValueColumns>
 __host__ __device__ constexpr size_t SharedBytesFor() {
   // q as fp32 [rows][E][32], scores/probabilities [kChunk][kRowsPad] fp32,
-  // row max and sum, mask bytes [rows][kChunk].
+  // row max and sum, mask bytes [rows][kChunk], and for column value caches
+  // the chunk's values [kChunk][kDepth + pad] bytes.
   return static_cast<size_t>(kRowsCap) * kDepth * sizeof(float) +
          static_cast<size_t>(kChunk) * RowsPadFor<kRowsCap>() * sizeof(float) +
          3 * kRowsCap * sizeof(float) +
-         static_cast<size_t>(kRowsCap) * kChunk * sizeof(bool);
+         static_cast<size_t>(kRowsCap) * kChunk * sizeof(bool) +
+         (kValueColumns ? static_cast<size_t>(kChunk) * (kDepth + kValueTilePad)
+                        : 0);
 }
 
 // Clang may retain loops despite the kernel's best-effort unroll hints, and
@@ -88,19 +129,22 @@ __host__ __device__ constexpr size_t SharedBytesFor() {
 // sum, then the chunk's mask. Partial results go to the workspace:
 // acc [heads][splits][rows][depth], then m [heads][splits][rows], then
 // l [heads][splits][rows].
-template <typename T, int kDepth, int kRowsCap>
+template <typename T, int kDepth, int kRowsCap, typename Cache>
 __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
-    DecodeAttentionPartial(const T* __restrict__ q, const __half* __restrict__ k,
-                           const __half* __restrict__ v,
-                           const bool* __restrict__ mask, int mask_rows,
-                           int rows, int seq, float fill, int splits,
-                           float* __restrict__ ws_acc, float* __restrict__ ws_m,
-                           float* __restrict__ ws_l) {
+    DecodeAttentionPartial(const T* __restrict__ q,
+                           const typename Cache::Element* __restrict__ k,
+                           const typename Cache::Element* __restrict__ v,
+                           Cache cache, const bool* __restrict__ mask,
+                           int mask_rows, int rows, int seq, float fill,
+                           int splits, float* __restrict__ ws_acc,
+                           float* __restrict__ ws_m, float* __restrict__ ws_l) {
+  using Element = typename Cache::Element;
   constexpr int kThreads = ThreadsFor<kDepth>();
   constexpr int kWarps = kThreads / 32;
   constexpr int kLaneElems = kDepth / 32;     // key elements per lane (QK)
   constexpr int kThreadElems = kDepth / kThreads;  // value elements per thread
   constexpr int kRowsPad = RowsPadFor<kRowsCap>();
+  constexpr int kTilePitch = kDepth + kValueTilePad;
   extern __shared__ float smem[];
   float* q_s = smem;                                   // rows * depth
   float* p_s = q_s + kRowsCap * kDepth;                // kChunk * kRowsPad
@@ -108,6 +152,8 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   float* l_s = m_s + kRowsCap;                         // rows
   float* scale_s = l_s + kRowsCap;                     // rows
   bool* mask_s = reinterpret_cast<bool*>(scale_s + kRowsCap);  // rows*kChunk
+  // Column value caches: the chunk's values as rows [kChunk, kTilePitch].
+  Element* v_tile = reinterpret_cast<Element*>(mask_s + kRowsCap * kChunk);
 
   const int split = blockIdx.x;
   const int head = blockIdx.y;
@@ -150,11 +196,21 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
     l_s[tid] = 0.0f;
   }
   __syncthreads();
-  const __half* k_head = k + static_cast<size_t>(head) * seq * kDepth;
-  const __half* v_head = v + static_cast<size_t>(head) * seq * kDepth;
+  const Element* k_head = k + static_cast<size_t>(head) * seq * kDepth;
+  const Element* v_head = v + static_cast<size_t>(head) * seq * kDepth;
   for (int c = split; c < num_chunks; c += gridDim.x) {
   const int j0 = c * kChunk;
   const int chunk = min(kChunk, seq - j0);
+  if constexpr (Cache::kValueColumns) {
+    // v_head is [kDepth, seq]: read each depth row's chunk contiguously and
+    // store it transposed, so the value pass below reads rows of the tile.
+    for (int i = tid; i < kDepth * chunk; i += kThreads) {
+      const int d = i / chunk;
+      const int jj = i - d * chunk;
+      v_tile[jj * kTilePitch + d] =
+          v_head[static_cast<size_t>(d) * seq + j0 + jj];
+    }
+  }
   // The chunk's mask bytes, loaded once instead of per key.
   if (tid < kChunk) {
 #pragma unroll
@@ -175,14 +231,18 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   // Scores: each warp takes every kWarps-th key of the chunk, kKeyBatch keys
   // per iteration so their loads are in flight together (the loop is
   // latency-bound otherwise). Keys past the chunk are computed and dropped.
-  constexpr int kVecs = kLaneElems / 8;  // 16-byte loads per lane (0 for 4)
+  // A lane's slice of a key is kLaneElems * sizeof(Element) bytes: 16-byte
+  // loads where it is at least 16 bytes, one 8- or 4-byte load otherwise.
+  constexpr int kLaneBytes = kLaneElems * static_cast<int>(sizeof(Element));
+  constexpr int kVecs = kLaneBytes / 16;
+  using Narrow = typename std::conditional<kLaneBytes == 8, int2, int>::type;
   for (int jb = warp; jb < chunk; jb += kWarps * kKeyBatch) {
     int4 k_vec[kKeyBatch][kVecs > 0 ? kVecs : 1];
-    int2 k_half[kKeyBatch];
+    Narrow k_narrow[kKeyBatch];
 #pragma unroll
     for (int b = 0; b < kKeyBatch; ++b) {
       const int jj = min(jb + b * kWarps, chunk - 1);
-      const __half* k_row =
+      const Element* k_row =
           k_head + static_cast<size_t>(j0 + jj) * kDepth + lane * kLaneElems;
       if (kVecs > 0) {
 #pragma unroll
@@ -190,7 +250,7 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
           k_vec[b][c] = reinterpret_cast<const int4*>(k_row)[c];
         }
       } else {
-        k_half[b] = reinterpret_cast<const int2*>(k_row)[0];
+        k_narrow[b] = reinterpret_cast<const Narrow*>(k_row)[0];
       }
     }
     // Convert the batch once, then walk the rows with each query slice read
@@ -199,19 +259,20 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
 #pragma unroll
     for (int b = 0; b < kKeyBatch; ++b) {
       if (kVecs > 0) {
+        constexpr int kPerVec = 16 / static_cast<int>(sizeof(Element));
 #pragma unroll
         for (int c = 0; c < kVecs; ++c) {
-          const __half* h = reinterpret_cast<const __half*>(&k_vec[b][c]);
+          const Element* h = reinterpret_cast<const Element*>(&k_vec[b][c]);
 #pragma unroll
-          for (int e = 0; e < 8; ++e) {
-            k_reg[b][c * 8 + e] = ToFloat(h[e]);
+          for (int e = 0; e < kPerVec; ++e) {
+            k_reg[b][c * kPerVec + e] = cache.Key(h[e]);
           }
         }
       } else {
-        const __half* h = reinterpret_cast<const __half*>(&k_half[b]);
+        const Element* h = reinterpret_cast<const Element*>(&k_narrow[b]);
 #pragma unroll
         for (int e = 0; e < kLaneElems; ++e) {
-          k_reg[b][e] = ToFloat(h[e]);
+          k_reg[b][e] = cache.Key(h[e]);
         }
       }
     }
@@ -294,12 +355,15 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   // Row loops are unrolled to the compile-time cap so `acc` stays in
   // registers (a runtime-indexed register array is demoted to local memory).
   for (int jb = 0; jb < chunk; jb += kValueBatch) {
-    __half v_reg[kValueBatch][kThreadElems];
+    Element v_reg[kValueBatch][kThreadElems];
 #pragma unroll
     for (int b = 0; b < kValueBatch; ++b) {
       const int jj = min(jb + b, chunk - 1);
-      const __half* v_row =
-          v_head + static_cast<size_t>(j0 + jj) * kDepth + tid * kThreadElems;
+      const Element* v_row =
+          Cache::kValueColumns
+              ? v_tile + jj * kTilePitch + tid * kThreadElems
+              : v_head + static_cast<size_t>(j0 + jj) * kDepth +
+                    tid * kThreadElems;
 #pragma unroll
       for (int e = 0; e < kThreadElems; ++e) {
         v_reg[b][e] = v_row[e];
@@ -314,7 +378,7 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
       float v_f[kThreadElems];
 #pragma unroll
       for (int e = 0; e < kThreadElems; ++e) {
-        v_f[e] = ToFloat(v_reg[b][e]);
+        v_f[e] = cache.Value(v_reg[b][e]);
       }
       // The key's probabilities, four rows per 16-byte load.
       float p_reg[kRowsCap];
@@ -338,7 +402,7 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
       }
     }
   }
-  __syncthreads();  // p_s and mask_s are rewritten by the next chunk
+  __syncthreads();  // p_s, mask_s and v_tile are rewritten by the next chunk
   }
   const size_t part = (static_cast<size_t>(head) * splits + split) * rows;
 #pragma unroll
@@ -447,8 +511,9 @@ int SplitCount(int seq) {
 }
 
 
-template <typename T, int kDepth, int kRowsCap>
-cudaError_t Launch(const T* q, const __half* k, const __half* v,
+template <typename T, int kDepth, int kRowsCap, typename Cache>
+cudaError_t Launch(const T* q, const typename Cache::Element* k,
+                   const typename Cache::Element* v, const Cache& cache,
                    const bool* mask, int mask_rows, int heads, int rows,
                    int seq, float fill, T* out, void* workspace,
                    cudaStream_t stream) {
@@ -456,29 +521,29 @@ cudaError_t Launch(const T* q, const __half* k, const __half* v,
   float* ws_acc = static_cast<float*>(workspace);
   float* ws_m = ws_acc + static_cast<size_t>(heads) * splits * rows * kDepth;
   float* ws_l = ws_m + static_cast<size_t>(heads) * splits * rows;
-  constexpr size_t kSharedBytes = SharedBytesFor<kDepth, kRowsCap>();
+  constexpr size_t kSharedBytes =
+      SharedBytesFor<kDepth, kRowsCap, Cache::kValueColumns>();
   static bool attribute_set = false;  // per instantiation
   if (!attribute_set) {
     cudaError_t status = cudaFuncSetAttribute(
-        DecodeAttentionPartial<T, kDepth, kRowsCap>,
+        DecodeAttentionPartial<T, kDepth, kRowsCap, Cache>,
         cudaFuncAttributeMaxDynamicSharedMemorySize,
         static_cast<int>(kSharedBytes));
     if (status != cudaSuccess) {
       return status;
     }
-    // Several blocks per SM hide the per-block latency chains.
     status = cudaFuncSetAttribute(
-        DecodeAttentionPartial<T, kDepth, kRowsCap>,
+        DecodeAttentionPartial<T, kDepth, kRowsCap, Cache>,
         cudaFuncAttributePreferredSharedMemoryCarveout, 100);
     if (status != cudaSuccess) {
       return status;
     }
     attribute_set = true;
   }
-  DecodeAttentionPartial<T, kDepth, kRowsCap>
+  DecodeAttentionPartial<T, kDepth, kRowsCap, Cache>
       <<<dim3(splits, heads), ThreadsFor<kDepth>(), kSharedBytes, stream>>>(
-          q, k, v, mask, mask_rows, rows, seq, fill, splits, ws_acc, ws_m,
-          ws_l);
+          q, k, v, cache, mask, mask_rows, rows, seq, fill, splits, ws_acc,
+          ws_m, ws_l);
   cudaError_t status = cudaGetLastError();
   if (status != cudaSuccess) {
     return status;
@@ -489,17 +554,19 @@ cudaError_t Launch(const T* q, const __half* k, const __half* v,
   return cudaGetLastError();
 }
 
-template <typename T, int kDepth>
-cudaError_t LaunchRows(const T* q, const __half* k, const __half* v,
+template <typename T, int kDepth, typename Cache>
+cudaError_t LaunchRows(const T* q, const typename Cache::Element* k,
+                       const typename Cache::Element* v, const Cache& cache,
                        const bool* mask, int mask_rows, int heads, int rows,
                        int seq, float fill, T* out, void* workspace,
                        cudaStream_t stream) {
   if (rows <= 4) {
-    return Launch<T, kDepth, 4>(q, k, v, mask, mask_rows, heads, rows, seq,
-                                fill, out, workspace, stream);
+    return Launch<T, kDepth, 4, Cache>(q, k, v, cache, mask, mask_rows, heads,
+                                       rows, seq, fill, out, workspace, stream);
   }
-  return Launch<T, kDepth, kMaxRows>(q, k, v, mask, mask_rows, heads, rows,
-                                     seq, fill, out, workspace, stream);
+  return Launch<T, kDepth, kMaxRows, Cache>(q, k, v, cache, mask, mask_rows,
+                                            heads, rows, seq, fill, out,
+                                            workspace, stream);
 }
 
 template <typename T>
@@ -507,19 +574,42 @@ cudaError_t LaunchDepth(const T* q, const __half* k, const __half* v,
                         const bool* mask, int mask_rows, int heads, int rows,
                         int seq, int depth, float fill, T* out,
                         void* workspace, cudaStream_t stream) {
+  const Fp16Cache cache;
   switch (depth) {
     case 128:
-      return LaunchRows<T, 128>(q, k, v, mask, mask_rows, heads, rows, seq,
-                                fill, out, workspace, stream);
+      return LaunchRows<T, 128>(q, k, v, cache, mask, mask_rows, heads, rows,
+                                seq, fill, out, workspace, stream);
     case 256:
-      return LaunchRows<T, 256>(q, k, v, mask, mask_rows, heads, rows, seq,
-                                fill, out, workspace, stream);
+      return LaunchRows<T, 256>(q, k, v, cache, mask, mask_rows, heads, rows,
+                                seq, fill, out, workspace, stream);
     case 512:
-      return LaunchRows<T, 512>(q, k, v, mask, mask_rows, heads, rows, seq,
-                                fill, out, workspace, stream);
+      return LaunchRows<T, 512>(q, k, v, cache, mask, mask_rows, heads, rows,
+                                seq, fill, out, workspace, stream);
     default:
       return cudaErrorInvalidValue;
   }
+}
+
+// INT8 caches: depth 256 (Gemma 4 E4B), value rows or columns.
+template <typename T>
+cudaError_t LaunchInt8(const T* q, const int8_t* k, const int8_t* v,
+                       const LiteRtNvidiaInt8CacheParams& params,
+                       const bool* mask, int mask_rows, int heads, int rows,
+                       int seq, int depth, float fill, T* out,
+                       void* workspace, cudaStream_t stream) {
+  if (depth != 256) {
+    return cudaErrorInvalidValue;
+  }
+  if (params.value_columns) {
+    const Int8Cache<true> cache{params.k_scale, params.v_scale,
+                                params.k_zero_point, params.v_zero_point};
+    return LaunchRows<T, 256>(q, k, v, cache, mask, mask_rows, heads, rows,
+                              seq, fill, out, workspace, stream);
+  }
+  const Int8Cache<false> cache{params.k_scale, params.v_scale,
+                               params.k_zero_point, params.v_zero_point};
+  return LaunchRows<T, 256>(q, k, v, cache, mask, mask_rows, heads, rows, seq,
+                            fill, out, workspace, stream);
 }
 
 }  // namespace
@@ -554,4 +644,35 @@ extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttention(
                      static_cast<const __half*>(v), mask, mask_rows, heads,
                      rows, seq, depth, fill, static_cast<__half*>(out),
                      workspace, stream);
+}
+
+extern "C" bool LiteRtNvidiaDecodeAttentionInt8Supports(int32_t depth) {
+  return depth == 256;
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttentionInt8(
+    const void* q, bool q_bf16, const void* k, const void* v,
+    const LiteRtNvidiaInt8CacheParams* params, const bool* mask,
+    int32_t mask_rows, int32_t heads, int32_t rows, int32_t seq, int32_t depth,
+    float fill, void* out, void* workspace, cudaStream_t stream) {
+  if (q == nullptr || k == nullptr || v == nullptr || params == nullptr ||
+      out == nullptr || workspace == nullptr || heads <= 0 || rows <= 0 ||
+      rows > kMaxRows || seq <= 0 ||
+      (mask != nullptr && mask_rows != 1 && mask_rows != rows) ||
+      !LiteRtNvidiaDecodeAttentionInt8Supports(depth) ||
+      !std::isfinite(params->k_scale) || !std::isfinite(params->v_scale)) {
+    return cudaErrorInvalidValue;
+  }
+  if (q_bf16) {
+    return LaunchInt8(static_cast<const __nv_bfloat16*>(q),
+                      static_cast<const int8_t*>(k),
+                      static_cast<const int8_t*>(v), *params, mask, mask_rows,
+                      heads, rows, seq, depth, fill,
+                      static_cast<__nv_bfloat16*>(out), workspace, stream);
+  }
+  return LaunchInt8(static_cast<const __half*>(q),
+                    static_cast<const int8_t*>(k),
+                    static_cast<const int8_t*>(v), *params, mask, mask_rows,
+                    heads, rows, seq, depth, fill, static_cast<__half*>(out),
+                    workspace, stream);
 }
