@@ -377,12 +377,12 @@ class GpuOptions : public ConcreteOptionsBase {
                                                              kernel_batch_size);
   }
 
- private:
   /// @brief Sets whether to use IrModel instead of legacy GraphFloat32.
   LiteRtStatus SetUseIrModel(bool use_ir_model) {
     return LrtSetGpuOptionsUseIrModel(options_, use_ir_model);
   }
 
+ private:
   LrtGpuOptions* options_;
 };
 
