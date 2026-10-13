@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
@@ -159,6 +160,20 @@ inline Expected<LiteRtModelT::Ptr> SaveTensorGraph(
     std::vector<litert::tensor::TensorHandle> outputs) {
   std::vector<char> fb_buffer;
   LITERT_RETURN_IF_ERROR(litert::tensor::Save(std::move(outputs), fb_buffer));
+  return LoadModelFromBuffer(::litert::OwningBufferRef<uint8_t>(
+      reinterpret_cast<const uint8_t*>(fb_buffer.data()), fb_buffer.size()));
+}
+
+// Saves a litert::tensor tracing graph with explicitly ordered subgraph inputs
+// into an expected LiteRtModelT pointer, ensuring it is safely backed by heap
+// memory.
+inline Expected<LiteRtModelT::Ptr> SaveTensorGraph(
+    std::vector<litert::tensor::TensorHandle> inputs,
+    std::vector<litert::tensor::TensorHandle> outputs) {
+  litert::tensor::ModelFactory factory;
+  LITERT_RETURN_IF_ERROR(
+      factory.AddSubgraph(std::move(inputs), std::move(outputs)));
+  LITERT_ASSIGN_OR_RETURN(auto fb_buffer, factory.CreateFlatbuffer());
   return LoadModelFromBuffer(::litert::OwningBufferRef<uint8_t>(
       reinterpret_cast<const uint8_t*>(fb_buffer.data()), fb_buffer.size()));
 }

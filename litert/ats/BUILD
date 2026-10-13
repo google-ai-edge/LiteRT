@@ -539,6 +539,7 @@ litert_define_ats(
         "QkvNormRope.*4d_f(16|32)<(?!1x)",  # GPU accelerator does not support QkvNormRope with batch > 1
         "SelectV2",  # OpenCL SelectV2 rejects multidimensional if/else broadcasting and uses kExact on FP16-rounded f32
         "Slice",  # OpenCL Slice uses kExact byte comparison on FP16-rounded f32 buffers
+        "CacheUpdateSdpaTransposed",  # Requires intermediate odml.cache_update output buffer storage promotion
         "simple_add_dynamic_shape",
         "hf_all_minilm_l6_v2",
         "whisper_tiny_decoder",
@@ -957,6 +958,7 @@ cc_library(
         ":compile_fixture",
         ":configure",
         ":inference_fixture",
+        ":register_cache_update_sdpa_transposed",
         ":register_group_norm",
         ":register_qkv_norm_rope",
         ":register_rms_norm",
@@ -1311,6 +1313,23 @@ cc_library(
         ":register",
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators:sdpa_transposed",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_cache_update_sdpa_transposed",
+    testonly = True,
+    srcs = ["register_cache_update_sdpa_transposed.cc"],
+    hdrs = ["register_cache_update_sdpa_transposed.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:cache_update_sdpa_transposed",
         "//tflite/types:half",
     ],
 )

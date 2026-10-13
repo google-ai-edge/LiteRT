@@ -183,6 +183,7 @@ cc_library(
     deps = [
         ":common",
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
@@ -764,6 +765,27 @@ cc_library(
 )
 
 cc_library(
+    name = "cache_update_sdpa_transposed",
+    testonly = True,
+    hdrs = ["cache_update_sdpa_transposed.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        ":reference_evaluator",
+        ":sdpa_transposed",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_rng",
+        "//litert/core/model",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:datatypes",
+        "@com_google_absl//absl/strings:string_view",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_library(
     name = "qkv_norm_rope",
     testonly = True,
     hdrs = ["qkv_norm_rope.h"],
@@ -891,6 +913,7 @@ cc_library(
         ":batch_matmul",
         ":binary_broadcast",
         ":binary_no_bcast",
+        ":cache_update_sdpa_transposed",
         ":common",
         ":comparison",
         ":concatenation",
