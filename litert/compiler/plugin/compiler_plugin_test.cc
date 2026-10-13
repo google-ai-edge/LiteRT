@@ -15,6 +15,11 @@
 #include "litert/compiler/plugin/compiler_plugin.h"
 
 #include <array>
+#include <cstdint>
+#include <filesystem>  // NOLINT
+#include <fstream>
+#include <ios>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -39,6 +44,8 @@
 #include "litert/core/build_stamp.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/model_load.h"
+#include "litert/core/model/model_serialize.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/common.h"
 #include "litert/test/load_test_model.h"
@@ -801,6 +808,551 @@ TEST(ApplyTest, ApplyLoadedPlugins) {
   EXPECT_TRUE(model.FindOpAsset(op));
 
   EXPECT_TRUE(model.FindMetadata(kLiteRtBuildStampKey));
+}
+
+TEST(ApplyTest, ExternalWeightsFullyCompiledAndStrippedOnSerialize) {
+  auto flatbuffer = FlatbufferWrapper::CreateFromTflFile(
+      testing::GetTestFilePath("add_cst.tflite"));
+  ASSERT_TRUE(flatbuffer);
+  auto tfl_model = flatbuffer->get()->Unpack();
+
+  // Change add -> mul so example_plugin compiles it, and move its constant
+  // weight to an external buffer.
+  tfl_model->operator_codes[0]->builtin_code = ::tflite::BuiltinOperator_MUL;
+  const int32_t cst_tensor_idx =
+      tfl_model->subgraphs[0]->operators[0]->inputs[1];
+  auto& tfl_cst_tensor = *tfl_model->subgraphs[0]->tensors[cst_tensor_idx];
+  tfl_model->buffers[tfl_cst_tensor.buffer]->data.clear();
+  tfl_cst_tensor.buffer = 0;
+  tfl_cst_tensor.external_buffer = 1;
+
+  auto group0 = std::make_unique<tflite::ExternalBufferGroupT>();
+  group0->name = "";
+  auto group1 = std::make_unique<tflite::ExternalBufferGroupT>();
+  group1->name = "ext_weights.bin";
+  tfl_model->external_buffer_groups.push_back(std::move(group0));
+  tfl_model->external_buffer_groups.push_back(std::move(group1));
+
+  constexpr std::array<float, 4> kExternalWeights = {3.0f, 4.0f, 5.0f, 6.0f};
+  auto ext_buf = std::make_unique<tflite::ExternalBufferT>();
+  ext_buf->id = 1;
+  ext_buf->group = 1;
+  ext_buf->offset = 0;
+  ext_buf->length = sizeof(kExternalWeights);
+  tfl_model->external_buffers.push_back(std::move(ext_buf));
+
+  auto initial_serialized = SerializeFlatbuffer(*tfl_model);
+  auto temp_dir = UniqueTestDirectory::Create();
+  ASSERT_TRUE(temp_dir);
+
+  std::filesystem::path temp_path(std::string(temp_dir->Str()));
+  std::filesystem::path model_path = temp_path / "ext_mul_cst.tflite";
+  {
+    std::ofstream model_file(model_path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(model_file.is_open());
+    model_file.write(initial_serialized.StrData(), initial_serialized.Size());
+  }
+  std::filesystem::path weights_path = temp_path / "ext_weights.bin";
+  {
+    std::ofstream weights_file(weights_path,
+                               std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(weights_file.is_open());
+    weights_file.write(reinterpret_cast<const char*>(kExternalWeights.data()),
+                       sizeof(kExternalWeights));
+  }
+
+  auto loaded_model = LoadModelFromFile(model_path.string());
+  ASSERT_TRUE(loaded_model);
+  auto& model = **loaded_model;
+  EXPECT_TRUE(IsConstant(model.MainSubgraph()->Op(0).Input(1)));
+
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_TRUE(plugins);
+  ASSERT_EQ(plugins->size(), 1);
+
+  ApplyPluginsResult apply_result;
+  ASSERT_TRUE(ApplyPlugin(plugins->front(), model, "", {}, apply_result));
+
+  auto& subgraph = *model.MainSubgraph();
+  ASSERT_EQ(subgraph.Ops().size(), 1);
+  auto* dispatch_op = subgraph.Ops().front();
+  EXPECT_EQ(dispatch_op->OpCode(), kLiteRtOpCodeTflCustom);
+  // The external constant weight was recognized as IsConstant and absorbed into
+  // the NPU partition subgraph, so the dispatch op only takes 1 runtime input.
+  EXPECT_EQ(dispatch_op->Inputs().size(), 1u);
+
+  auto op_asset = model.FindOpAsset(dispatch_op);
+  ASSERT_TRUE(op_asset);
+  auto asset_buf = model.Buffers()->GetBuffer(op_asset->first);
+  ASSERT_TRUE(asset_buf);
+  EXPECT_THAT(asset_buf->StrView(), ::testing::HasSubstr("DATA:3,4,5,6"));
+
+  // Serializing the compiled model should omit external_buffers since no
+  // uncompiled tensor references them anymore.
+  auto compiled_serialized = SerializeModel(std::move(model));
+  ASSERT_TRUE(compiled_serialized);
+  auto compiled_fb = FlatbufferWrapper::CreateFromBuffer(*compiled_serialized);
+  ASSERT_TRUE(compiled_fb);
+  auto unpacked = compiled_fb->get()->Unpack();
+  EXPECT_TRUE(unpacked->external_buffers.empty());
+  EXPECT_TRUE(unpacked->external_buffer_groups.empty());
+}
+
+TEST(ApplyTest,
+     ExternalWeightsPartiallyCompiledRetainsUncompiledExternalBuffers) {
+  auto flatbuffer = FlatbufferWrapper::CreateFromTflFile(
+      testing::GetTestFilePath("add_cst.tflite"));
+  ASSERT_TRUE(flatbuffer);
+  auto tfl_model = flatbuffer->get()->Unpack();
+
+  // Build a 2-op graph:
+  //   op 0: tmp = mul(input0, ext_cst_1) [compiled by example_plugin]
+  //   op 1: out = add(tmp, ext_cst_2)    [remains on CPU]
+  auto mul_opcode = std::make_unique<TflOpCode>();
+  mul_opcode->builtin_code = ::tflite::BuiltinOperator_MUL;
+  tfl_model->operator_codes.push_back(std::move(mul_opcode));
+  const uint32_t mul_opcode_idx = tfl_model->operator_codes.size() - 1;
+
+  auto& sg = *tfl_model->subgraphs[0];
+  const int32_t orig_input_idx = sg.operators[0]->inputs[0];
+  const int32_t cst1_idx = sg.operators[0]->inputs[1];
+  const int32_t orig_output_idx = sg.operators[0]->outputs[0];
+
+  tfl_model->buffers[sg.tensors[cst1_idx]->buffer]->data.clear();
+  sg.tensors[cst1_idx]->buffer = 0;
+  sg.tensors[cst1_idx]->external_buffer = 1;
+
+  auto tmp_tensor = std::make_unique<TflTensor>(*sg.tensors[orig_output_idx]);
+  tmp_tensor->name = "mul_out";
+  tmp_tensor->buffer = 0;
+  tmp_tensor->external_buffer = 0;
+  sg.tensors.push_back(std::move(tmp_tensor));
+  const int32_t tmp_tensor_idx = sg.tensors.size() - 1;
+
+  auto cst2_tensor = std::make_unique<TflTensor>(*sg.tensors[cst1_idx]);
+  cst2_tensor->name = "ext_cst_2";
+  cst2_tensor->buffer = 0;
+  cst2_tensor->external_buffer = 2;
+  sg.tensors.push_back(std::move(cst2_tensor));
+  const int32_t cst2_idx = sg.tensors.size() - 1;
+
+  // Op 0 becomes mul(input0, cst1) -> tmp
+  sg.operators[0]->opcode_index = mul_opcode_idx;
+  sg.operators[0]->inputs = {orig_input_idx, cst1_idx};
+  sg.operators[0]->outputs = {tmp_tensor_idx};
+
+  // Op 1 is add(tmp, cst2) -> orig_output
+  auto add_op = std::make_unique<TflOp>();
+  add_op->opcode_index = 0;  // ADD
+  add_op->inputs = {tmp_tensor_idx, cst2_idx};
+  add_op->outputs = {orig_output_idx};
+  sg.operators.push_back(std::move(add_op));
+
+  auto group0 = std::make_unique<tflite::ExternalBufferGroupT>();
+  group0->name = "";
+  auto group1 = std::make_unique<tflite::ExternalBufferGroupT>();
+  group1->name = "ext_weights.bin";
+  tfl_model->external_buffer_groups.push_back(std::move(group0));
+  tfl_model->external_buffer_groups.push_back(std::move(group1));
+
+  constexpr std::array<float, 8> kExternalWeights = {
+      2.0f,  3.0f,  4.0f,  5.0f,  // ext_buffer 1 (for mul)
+      10.0f, 20.0f, 30.0f, 40.0f  // ext_buffer 2 (for add)
+  };
+  auto ext_buf1 = std::make_unique<tflite::ExternalBufferT>();
+  ext_buf1->id = 1;
+  ext_buf1->group = 1;
+  ext_buf1->offset = 0;
+  ext_buf1->length = 4 * sizeof(float);
+  auto ext_buf2 = std::make_unique<tflite::ExternalBufferT>();
+  ext_buf2->id = 2;
+  ext_buf2->group = 1;
+  ext_buf2->offset = 4 * sizeof(float);
+  ext_buf2->length = 4 * sizeof(float);
+  tfl_model->external_buffers.push_back(std::move(ext_buf1));
+  tfl_model->external_buffers.push_back(std::move(ext_buf2));
+
+  auto initial_serialized = SerializeFlatbuffer(*tfl_model);
+  auto temp_dir = UniqueTestDirectory::Create();
+  ASSERT_TRUE(temp_dir);
+
+  std::filesystem::path temp_path(std::string(temp_dir->Str()));
+  std::filesystem::path model_path = temp_path / "ext_mul_add.tflite";
+  {
+    std::ofstream model_file(model_path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(model_file.is_open());
+    model_file.write(initial_serialized.StrData(), initial_serialized.Size());
+  }
+  std::filesystem::path weights_path = temp_path / "ext_weights.bin";
+  {
+    std::ofstream weights_file(weights_path,
+                               std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(weights_file.is_open());
+    weights_file.write(reinterpret_cast<const char*>(kExternalWeights.data()),
+                       sizeof(kExternalWeights));
+  }
+
+  auto loaded_model = LoadModelFromFile(model_path.string());
+  ASSERT_TRUE(loaded_model);
+  auto& model = **loaded_model;
+
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_TRUE(plugins);
+  ASSERT_EQ(plugins->size(), 1);
+
+  ApplyPluginsResult apply_result;
+  ASSERT_TRUE(ApplyPlugin(plugins->front(), model, "", {}, apply_result));
+
+  auto& main_sg = *model.MainSubgraph();
+  ASSERT_EQ(main_sg.Ops().size(), 2u);
+  EXPECT_EQ(main_sg.Op(0).OpCode(), kLiteRtOpCodeTflCustom);
+  EXPECT_EQ(main_sg.Op(1).OpCode(), kLiteRtOpCodeTflAdd);
+
+  auto compiled_serialized = SerializeModel(std::move(model));
+  ASSERT_TRUE(compiled_serialized);
+  auto compiled_fb = FlatbufferWrapper::CreateFromBuffer(*compiled_serialized);
+  ASSERT_TRUE(compiled_fb);
+  auto unpacked = compiled_fb->get()->Unpack();
+
+  // External buffer 1 (used by mul) was consumed by the NPU partition, while
+  // external buffer 2 (used by CPU add) remains in external_buffers without
+  // being inlined into buffers.
+  ASSERT_EQ(unpacked->external_buffers.size(), 1u);
+  EXPECT_EQ(unpacked->external_buffers[0]->id, 2u);
+  EXPECT_EQ(unpacked->external_buffers[0]->offset, 4 * sizeof(float));
+  EXPECT_EQ(unpacked->external_buffers[0]->length, 4 * sizeof(float));
+  ASSERT_EQ(unpacked->external_buffer_groups.size(), 2u);
+  EXPECT_EQ(unpacked->external_buffer_groups[1]->name, "ext_weights.bin");
+
+  const int32_t add_cst_idx = unpacked->subgraphs[0]->operators[1]->inputs[1];
+  EXPECT_EQ(unpacked->subgraphs[0]->tensors[add_cst_idx]->external_buffer, 2u);
+  EXPECT_EQ(unpacked->subgraphs[0]->tensors[add_cst_idx]->buffer, 0u);
+}
+
+TEST(ApplyTest, SharedExternalWeightBetweenNpuAndCpuOpsRetainsExternalBuffer) {
+  auto flatbuffer = FlatbufferWrapper::CreateFromTflFile(
+      testing::GetTestFilePath("add_cst.tflite"));
+  ASSERT_TRUE(flatbuffer);
+  auto tfl_model = flatbuffer->get()->Unpack();
+
+  // Build a 2-op graph where both NPU mul and CPU add share the SAME external
+  // constant tensor (external_buffer = 1):
+  //   op 0: tmp = mul(input0, shared_ext_cst) [compiled onto NPU]
+  //   op 1: out = add(tmp, shared_ext_cst)    [remains on CPU]
+  auto mul_opcode = std::make_unique<TflOpCode>();
+  mul_opcode->builtin_code = ::tflite::BuiltinOperator_MUL;
+  tfl_model->operator_codes.push_back(std::move(mul_opcode));
+  const uint32_t mul_opcode_idx = tfl_model->operator_codes.size() - 1;
+
+  auto& sg = *tfl_model->subgraphs[0];
+  const int32_t orig_input_idx = sg.operators[0]->inputs[0];
+  const int32_t shared_cst_idx = sg.operators[0]->inputs[1];
+  const int32_t orig_output_idx = sg.operators[0]->outputs[0];
+
+  tfl_model->buffers[sg.tensors[shared_cst_idx]->buffer]->data.clear();
+  sg.tensors[shared_cst_idx]->buffer = 0;
+  sg.tensors[shared_cst_idx]->external_buffer = 1;
+
+  auto tmp_tensor = std::make_unique<TflTensor>(*sg.tensors[orig_output_idx]);
+  tmp_tensor->name = "mul_out";
+  tmp_tensor->buffer = 0;
+  tmp_tensor->external_buffer = 0;
+  sg.tensors.push_back(std::move(tmp_tensor));
+  const int32_t tmp_tensor_idx = sg.tensors.size() - 1;
+
+  sg.operators[0]->opcode_index = mul_opcode_idx;
+  sg.operators[0]->inputs = {orig_input_idx, shared_cst_idx};
+  sg.operators[0]->outputs = {tmp_tensor_idx};
+
+  auto add_op = std::make_unique<TflOp>();
+  add_op->opcode_index = 0;  // ADD
+  add_op->inputs = {tmp_tensor_idx, shared_cst_idx};
+  add_op->outputs = {orig_output_idx};
+  sg.operators.push_back(std::move(add_op));
+
+  auto group0 = std::make_unique<tflite::ExternalBufferGroupT>();
+  group0->name = "";
+  auto group1 = std::make_unique<tflite::ExternalBufferGroupT>();
+  group1->name = "ext_weights.bin";
+  tfl_model->external_buffer_groups.push_back(std::move(group0));
+  tfl_model->external_buffer_groups.push_back(std::move(group1));
+
+  constexpr std::array<float, 4> kSharedWeights = {2.0f, 3.0f, 4.0f, 5.0f};
+  auto ext_buf = std::make_unique<tflite::ExternalBufferT>();
+  ext_buf->id = 1;
+  ext_buf->group = 1;
+  ext_buf->offset = 0;
+  ext_buf->length = sizeof(kSharedWeights);
+  tfl_model->external_buffers.push_back(std::move(ext_buf));
+
+  auto initial_serialized = SerializeFlatbuffer(*tfl_model);
+  auto temp_dir = UniqueTestDirectory::Create();
+  ASSERT_TRUE(temp_dir);
+  std::filesystem::path temp_path(std::string(temp_dir->Str()));
+
+  std::filesystem::path model_path = temp_path / "shared_npu_cpu.tflite";
+  {
+    std::ofstream model_file(model_path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(model_file.is_open());
+    model_file.write(initial_serialized.StrData(), initial_serialized.Size());
+  }
+  {
+    std::ofstream weights_file(temp_path / "ext_weights.bin",
+                               std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(weights_file.is_open());
+    weights_file.write(reinterpret_cast<const char*>(kSharedWeights.data()),
+                       sizeof(kSharedWeights));
+  }
+
+  auto loaded_model = LoadModelFromFile(model_path.string());
+  ASSERT_TRUE(loaded_model);
+  auto& model = **loaded_model;
+
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_TRUE(plugins);
+  ASSERT_EQ(plugins->size(), 1);
+
+  ApplyPluginsResult apply_result;
+  ASSERT_TRUE(ApplyPlugin(plugins->front(), model, "", {}, apply_result));
+
+  auto& main_sg = *model.MainSubgraph();
+  ASSERT_EQ(main_sg.Ops().size(), 2u);
+  auto* dispatch_op = &main_sg.Op(0);
+  EXPECT_EQ(dispatch_op->OpCode(), kLiteRtOpCodeTflCustom);
+  EXPECT_EQ(dispatch_op->Inputs().size(), 1u);
+
+  auto op_asset = model.FindOpAsset(dispatch_op);
+  ASSERT_TRUE(op_asset);
+  auto asset_buf = model.Buffers()->GetBuffer(op_asset->first);
+  ASSERT_TRUE(asset_buf);
+  EXPECT_THAT(asset_buf->StrView(), ::testing::HasSubstr("DATA:2,3,4,5"));
+
+  // Because CPU add still uses the shared external constant tensor,
+  // SerializeModel must retain external_buffer = 1 in external_buffers.
+  auto compiled_serialized = SerializeModel(std::move(model));
+  ASSERT_TRUE(compiled_serialized);
+  auto compiled_fb = FlatbufferWrapper::CreateFromBuffer(*compiled_serialized);
+  ASSERT_TRUE(compiled_fb);
+  auto unpacked = compiled_fb->get()->Unpack();
+
+  ASSERT_EQ(unpacked->external_buffers.size(), 1u);
+  EXPECT_EQ(unpacked->external_buffers[0]->id, 1u);
+  ASSERT_EQ(unpacked->external_buffer_groups.size(), 2u);
+  const int32_t add_cst_idx = unpacked->subgraphs[0]->operators[1]->inputs[1];
+  EXPECT_EQ(unpacked->subgraphs[0]->tensors[add_cst_idx]->external_buffer, 1u);
+  EXPECT_EQ(unpacked->subgraphs[0]->tensors[add_cst_idx]->buffer, 0u);
+}
+
+TEST(PartitionModelTest, ExternalWeightSharedAcrossMultipleNpuPartitions) {
+  auto flatbuffer = FlatbufferWrapper::CreateFromTflFile(
+      testing::GetTestFilePath("multi_use_cst.tflite"));
+  ASSERT_TRUE(flatbuffer);
+  auto tfl_model = flatbuffer->get()->Unpack();
+
+  // multi_use_cst.tflite has 3 ops sharing a constant tensor. Convert that
+  // constant tensor to an external buffer and make ops 0 and 2 MUL (compiled by
+  // example_plugin) and op 1 ADD (stays on CPU, splitting into 2 partitions).
+  auto mul_opcode = std::make_unique<TflOpCode>();
+  mul_opcode->builtin_code = ::tflite::BuiltinOperator_MUL;
+  tfl_model->operator_codes.push_back(std::move(mul_opcode));
+  const uint32_t mul_opcode_idx = tfl_model->operator_codes.size() - 1;
+
+  auto& sg = *tfl_model->subgraphs[0];
+  ASSERT_EQ(sg.operators.size(), 3u);
+  sg.operators[0]->opcode_index = mul_opcode_idx;
+  sg.operators[2]->opcode_index = mul_opcode_idx;
+
+  const int32_t cst_idx = sg.operators[0]->inputs[1];
+  tfl_model->buffers[sg.tensors[cst_idx]->buffer]->data.clear();
+  sg.tensors[cst_idx]->buffer = 0;
+  sg.tensors[cst_idx]->external_buffer = 1;
+
+  // Give op 1 (ADD) a non-constant second input (its own first input) so the
+  // shared external constant is ONLY used by the two NPU MUL partitions.
+  sg.operators[1]->inputs[1] = sg.operators[1]->inputs[0];
+
+  auto group0 = std::make_unique<tflite::ExternalBufferGroupT>();
+  group0->name = "";
+  auto group1 = std::make_unique<tflite::ExternalBufferGroupT>();
+  group1->name = "ext_weights.bin";
+  tfl_model->external_buffer_groups.push_back(std::move(group0));
+  tfl_model->external_buffer_groups.push_back(std::move(group1));
+
+  constexpr std::array<float, 4> kExternalWeights = {6.0f, 7.0f, 8.0f, 9.0f};
+  auto ext_buf = std::make_unique<tflite::ExternalBufferT>();
+  ext_buf->id = 1;
+  ext_buf->group = 1;
+  ext_buf->offset = 0;
+  ext_buf->length = sizeof(kExternalWeights);
+  tfl_model->external_buffers.push_back(std::move(ext_buf));
+
+  auto initial_serialized = SerializeFlatbuffer(*tfl_model);
+  auto temp_dir = UniqueTestDirectory::Create();
+  ASSERT_TRUE(temp_dir);
+  std::filesystem::path temp_path(std::string(temp_dir->Str()));
+
+  std::filesystem::path model_path = temp_path / "multi_partition_ext.tflite";
+  {
+    std::ofstream model_file(model_path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(model_file.is_open());
+    model_file.write(initial_serialized.StrData(), initial_serialized.Size());
+  }
+  {
+    std::ofstream weights_file(temp_path / "ext_weights.bin",
+                               std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(weights_file.is_open());
+    weights_file.write(reinterpret_cast<const char*>(kExternalWeights.data()),
+                       sizeof(kExternalWeights));
+  }
+
+  auto loaded_model = LoadModelFromFile(model_path.string());
+  ASSERT_TRUE(loaded_model);
+  auto& model = **loaded_model;
+
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_TRUE(plugins);
+  ASSERT_EQ(plugins->size(), 1);
+  auto& plugin = plugins->front();
+
+  auto partition_result = PartitionModel(plugin, model);
+  ASSERT_TRUE(partition_result);
+
+  const auto& [ops, new_model] = *partition_result;
+  ASSERT_EQ(ops.size(), 2u);
+  ASSERT_EQ(new_model.NumSubgraphs(), 2u);
+
+  // Both sliced subgraphs must have cloned the external constant tensor rather
+  // than treating it as a subgraph input.
+  EXPECT_EQ(new_model.Subgraphs()[0]->Inputs().size(), 1u);
+  EXPECT_EQ(new_model.Subgraphs()[1]->Inputs().size(), 1u);
+
+  const auto& cst_1 = new_model.Subgraphs()[0]->Op(0).Input(1).Weights();
+  const auto& cst_2 = new_model.Subgraphs()[1]->Op(0).Input(1).Weights();
+  EXPECT_EQ(cst_1.GetBufferManager(), model.Buffers());
+  EXPECT_EQ(cst_2.GetBufferManager(), model.Buffers());
+  EXPECT_EQ(cst_1.GetBufferId(), cst_2.GetBufferId());
+  EXPECT_EQ(cst_1.Buffer().Data(), cst_2.Buffer().Data());
+  EXPECT_EQ(cst_1.Buffer().Size(), sizeof(kExternalWeights));
+
+  ApplyPluginsResult apply_result;
+  ASSERT_TRUE(ApplyPluginWithPartition(
+      plugin, model, std::move(*partition_result), "", apply_result));
+
+  for (auto* dispatch_op : ops) {
+    auto op_asset = model.FindOpAsset(dispatch_op);
+    ASSERT_TRUE(op_asset);
+    auto asset_buf = model.Buffers()->GetBuffer(op_asset->first);
+    ASSERT_TRUE(asset_buf);
+    EXPECT_THAT(asset_buf->StrView(), ::testing::HasSubstr("DATA:6,7,8,9"));
+  }
+
+  // Since both users of external_buffer 1 were absorbed into NPU partitions,
+  // SerializeModel should strip external_buffers completely.
+  auto compiled_serialized = SerializeModel(std::move(model));
+  ASSERT_TRUE(compiled_serialized);
+  auto compiled_fb = FlatbufferWrapper::CreateFromBuffer(*compiled_serialized);
+  ASSERT_TRUE(compiled_fb);
+  auto unpacked = compiled_fb->get()->Unpack();
+  EXPECT_TRUE(unpacked->external_buffers.empty());
+  EXPECT_TRUE(unpacked->external_buffer_groups.empty());
+}
+
+TEST(ApplyTest, MultiSubgraphExternalWeightsMixedCompilation) {
+  auto flatbuffer = FlatbufferWrapper::CreateFromTflFile(
+      testing::GetTestFilePath("cst_multi_subgraph.tflite"));
+  ASSERT_TRUE(flatbuffer);
+  auto tfl_model = flatbuffer->get()->Unpack();
+  ASSERT_EQ(tfl_model->subgraphs.size(), 2u);
+
+  // cst_multi_subgraph.tflite has MUL in both subgraphs. Keep subgraph 0's op
+  // MUL (compiled onto NPU) with external_buffer 1, and change subgraph 1's op
+  // to ADD (remains on CPU) with external_buffer 2.
+  auto add_opcode = std::make_unique<TflOpCode>();
+  add_opcode->builtin_code = ::tflite::BuiltinOperator_ADD;
+  tfl_model->operator_codes.push_back(std::move(add_opcode));
+  const uint32_t add_opcode_idx = tfl_model->operator_codes.size() - 1;
+
+  tfl_model->subgraphs[1]->operators[0]->opcode_index = add_opcode_idx;
+  const int32_t sg0_cst_idx = tfl_model->subgraphs[0]->operators[0]->inputs[1];
+  const int32_t sg1_cst_idx = tfl_model->subgraphs[1]->operators[0]->inputs[1];
+  tfl_model->buffers[tfl_model->subgraphs[0]->tensors[sg0_cst_idx]->buffer]
+      ->data.clear();
+  tfl_model->subgraphs[0]->tensors[sg0_cst_idx]->buffer = 0;
+  tfl_model->subgraphs[0]->tensors[sg0_cst_idx]->external_buffer = 1;
+  tfl_model->subgraphs[1]->tensors[sg1_cst_idx]->buffer = 0;
+  tfl_model->subgraphs[1]->tensors[sg1_cst_idx]->external_buffer = 2;
+
+  auto group0 = std::make_unique<tflite::ExternalBufferGroupT>();
+  group0->name = "";
+  auto group1 = std::make_unique<tflite::ExternalBufferGroupT>();
+  group1->name = "ext_weights.bin";
+  tfl_model->external_buffer_groups.push_back(std::move(group0));
+  tfl_model->external_buffer_groups.push_back(std::move(group1));
+
+  constexpr std::array<float, 8> kExternalWeights = {
+      1.0f, 2.0f, 3.0f, 4.0f,  // ext_buf 1 (subgraph 0 MUL)
+      5.0f, 6.0f, 7.0f, 8.0f   // ext_buf 2 (subgraph 1 ADD)
+  };
+  auto ext_buf1 = std::make_unique<tflite::ExternalBufferT>();
+  ext_buf1->id = 1;
+  ext_buf1->group = 1;
+  ext_buf1->offset = 0;
+  ext_buf1->length = 4 * sizeof(float);
+  auto ext_buf2 = std::make_unique<tflite::ExternalBufferT>();
+  ext_buf2->id = 2;
+  ext_buf2->group = 1;
+  ext_buf2->offset = 4 * sizeof(float);
+  ext_buf2->length = 4 * sizeof(float);
+  tfl_model->external_buffers.push_back(std::move(ext_buf1));
+  tfl_model->external_buffers.push_back(std::move(ext_buf2));
+
+  auto initial_serialized = SerializeFlatbuffer(*tfl_model);
+  auto temp_dir = UniqueTestDirectory::Create();
+  ASSERT_TRUE(temp_dir);
+  std::filesystem::path temp_path(std::string(temp_dir->Str()));
+
+  std::filesystem::path model_path = temp_path / "multi_sg_ext.tflite";
+  {
+    std::ofstream model_file(model_path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(model_file.is_open());
+    model_file.write(initial_serialized.StrData(), initial_serialized.Size());
+  }
+  {
+    std::ofstream weights_file(temp_path / "ext_weights.bin",
+                               std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(weights_file.is_open());
+    weights_file.write(reinterpret_cast<const char*>(kExternalWeights.data()),
+                       sizeof(kExternalWeights));
+  }
+
+  auto loaded_model = LoadModelFromFile(model_path.string());
+  ASSERT_TRUE(loaded_model);
+  auto& model = **loaded_model;
+
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_TRUE(plugins);
+  ASSERT_EQ(plugins->size(), 1);
+
+  ApplyPluginsResult apply_result;
+  ASSERT_TRUE(ApplyPlugin(plugins->front(), model, "", {}, apply_result));
+  ASSERT_EQ(model.NumSubgraphs(), 2u);
+  EXPECT_EQ(model.Subgraph(0).Op(0).OpCode(), kLiteRtOpCodeTflCustom);
+  EXPECT_EQ(model.Subgraph(1).Op(0).OpCode(), kLiteRtOpCodeTflAdd);
+
+  auto compiled_serialized = SerializeModel(std::move(model));
+  ASSERT_TRUE(compiled_serialized);
+  auto compiled_fb = FlatbufferWrapper::CreateFromBuffer(*compiled_serialized);
+  ASSERT_TRUE(compiled_fb);
+  auto unpacked = compiled_fb->get()->Unpack();
+
+  // Subgraph 0's ext_buf 1 is stripped; subgraph 1's ext_buf 2 is retained.
+  ASSERT_EQ(unpacked->external_buffers.size(), 1u);
+  EXPECT_EQ(unpacked->external_buffers[0]->id, 2u);
 }
 
 TEST(PartitionTest, MappedCompositeOp) {

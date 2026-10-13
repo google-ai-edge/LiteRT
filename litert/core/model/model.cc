@@ -689,7 +689,14 @@ bool IsConstant(const LiteRtTensorT& tensor) {
       is_zero_sized = true;
     }
   }
-  const auto is_const = tensor.Weights().Buffer().Size() > 0 || is_zero_sized;
+  bool is_external = false;
+  if (auto ctx = tensor.Weights().GetBufferManager()->GetContext(
+          tensor.Weights().GetBufferId());
+      ctx && ctx->get().external.has_value()) {
+    is_external = true;
+  }
+  const auto is_const =
+      tensor.Weights().Buffer().Size() > 0 || is_zero_sized || is_external;
   ABSL_DCHECK(!is_const || tensor.DefiningOp() == nullptr)
       << "Constant tensors should not be defined by an op";
   return is_const;
