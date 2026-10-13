@@ -84,6 +84,34 @@ class FuseSplitAttentionToSDPA : public ov::pass::MatcherPass {
   explicit FuseSplitAttentionToSDPA(bool pad_kv_to_alignment);
 };
 
+// Rewrites the "GQA ratio folded into the sequence axis" form of attention
+// into the conventional "broadcast K/V over the query heads" form.
+//
+// The LiteRT generative export covers all `Hq` query heads with a single
+// `Hkv`-head SDPA call by folding the GQA group ratio `r = Hq / Hkv` into the
+// sequence axis:
+//
+//   Q    [1,Hq,S,D] -Reshape-> [1,Hkv,S*r,D] -----,
+//   K/V            [1,Hkv,KV,D] ------------------+-> SDPA -> [1,Hkv,S*r,D]
+//   mask [1,1,S,KV] -Concat(r identical copies)->  |     -Reshape-> [1,Hq,S,D]
+//                   [1,1,S*r,KV] -----------------'
+//
+// This pass rewrites that sandwich into:
+//
+//   Q    [1,Hq,S,D] -------------------------------,
+//   K/V  [1,Hkv,KV,D] -Unsqueeze(2)-> [1,Hkv,1,KV,D] +-> SDPA -> [1,Hq,S,D]
+//                     -Broadcast->    [1,Hkv,r,KV,D] |
+//                     -Reshape->      [1,Hq,KV,D] ---'
+//   mask [1,1,S,KV]  (left untiled; SDPA broadcasts it over the head axis)
+//
+// Matches the fused-SDPA form only, so it does nothing unless
+// SetFuseSplitAttentionToSDPA(true) is also set.
+class UnfoldGqaSequenceFold : public ov::pass::ModelPass {
+ public:
+  OPENVINO_RTTI("UnfoldGqaSequenceFold");
+  bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
+};
+
 // Rewrites Gemma4's dense Mixture-of-Experts block — where all N experts are
 // computed and non-selected ones are masked to zero — into selective
 // computation of only the K experts chosen by the router's TopK.
@@ -156,6 +184,14 @@ class NpuOptimizer {
     return *this;
   }
 
+  // Toggles the UnfoldGqaSequenceFold pass. Disabled by default; enable via
+  // config key "unfold_gqa_sequence_fold" = "true". Only has an effect when
+  // the SDPA fusion is also enabled, since it matches the fused form.
+  NpuOptimizer& SetUnfoldGqaSequenceFold(bool enable) {
+    unfold_gqa_sequence_fold_ = enable;
+    return *this;
+  }
+
   // Runs all currently-enabled passes on |model|.
   void Run(const std::shared_ptr<ov::Model>& model) const;
 
@@ -166,6 +202,7 @@ class NpuOptimizer {
   bool fuse_split_attention_to_sdpa_ = false;
   bool sdpa_pad_kv_to_alignment_ = true;
   bool enable_moe_gather_ = false;
+  bool unfold_gqa_sequence_fold_ = false;
 };
 
 }  // namespace openvino

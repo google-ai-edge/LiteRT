@@ -37,6 +37,7 @@
 #include "openvino/core/type.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/op/add.hpp"
+#include "openvino/op/broadcast.hpp"
 #include "openvino/op/concat.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/convert.hpp"
@@ -1116,7 +1117,209 @@ std::vector<MoELayer> FindMoeLayers(const std::shared_ptr<ov::Model>& model) {
   return layers;
 }
 
+// Reads |node|'s output shape as a fully-static 4-D shape, or nullopt.
+std::optional<ov::Shape> StaticShape4D(const ov::Output<ov::Node>& out) {
+  const auto& ps = out.get_partial_shape();
+  if (ps.rank().is_dynamic() || ps.rank().get_length() != 4 ||
+      ps.is_dynamic()) {
+    return std::nullopt;
+  }
+  return ps.to_shape();
+}
+
+// Matches the Reshape that folds the GQA group ratio into the sequence axis:
+// [1,Hq,S,D] -> [1,Hkv,S*r,D] with Hq == Hkv*r and r > 1. Returns r, or
+// nullopt when |node| is not such a Reshape.
+std::optional<int64_t> MatchGqaFoldReshape(
+    const std::shared_ptr<ov::Node>& node) {
+  auto reshape = std::dynamic_pointer_cast<ov::op::v1::Reshape>(node);
+  if (!reshape) return std::nullopt;
+  const auto in_shape = StaticShape4D(reshape->input_value(0));
+  const auto out_shape = StaticShape4D(reshape->output(0));
+  if (!in_shape || !out_shape) return std::nullopt;
+  const ov::Shape& in = *in_shape;
+  const ov::Shape& out = *out_shape;
+
+  // Batch and head_dim must be untouched; only heads <-> sequence may move.
+  if (in[0] != 1 || out[0] != 1 || in[3] != out[3]) return std::nullopt;
+
+  const size_t hq = in[1];
+  const size_t s = in[2];
+  const size_t hkv = out[1];
+  const size_t folded = out[2];
+  if (hkv == 0 || s == 0 || hq <= hkv || hq % hkv != 0) return std::nullopt;
+  const size_t r = hq / hkv;
+  if (r < 2 || folded != s * r) return std::nullopt;
+  return static_cast<int64_t>(r);
+}
+
+// Matches the mask tile: a Concat along axis 2 of exactly |r| inputs that are
+// all the same (node, port). Returns the single untiled source, or nullopt.
+std::optional<ov::Output<ov::Node>> MatchTiledMask(
+    const ov::Output<ov::Node>& mask, int64_t r) {
+  auto concat =
+      std::dynamic_pointer_cast<ov::op::v0::Concat>(mask.get_node_shared_ptr());
+  if (!concat || static_cast<int64_t>(concat->get_input_size()) != r) {
+    return std::nullopt;
+  }
+  const auto out_rank = concat->get_output_partial_shape(0).rank();
+  if (out_rank.is_dynamic()) return std::nullopt;
+  int64_t axis = concat->get_axis();
+  if (axis < 0) axis += out_rank.get_length();
+  if (axis != 2) return std::nullopt;
+  const ov::Output<ov::Node> src = concat->input_value(0);
+  for (size_t i = 1; i < concat->get_input_size(); ++i) {
+    if (concat->input_value(i) != src) return std::nullopt;
+  }
+  return src;
+}
+
+// Builds Unsqueeze(axis=2) -> Broadcast -> Reshape expanding |kv| from
+// [1,Hkv,KV,D] to [1,Hkv*r,KV,D], replicating each KV head |r| times so that
+// expanded head h maps to source head h / r -- the same `h = kv*r + g`
+// ordering the folded-sequence form uses. |shape| is |kv|'s static shape,
+// already resolved by the caller. Every node built is appended to |created|
+// (must be non-null) so the caller can stamp runtime info on all of them.
+ov::Output<ov::Node> BroadcastKvOverHeads(const ov::Output<ov::Node>& kv,
+                                          const ov::Shape& shape, int64_t r,
+                                          ov::NodeVector* created) {
+  const int64_t hkv = static_cast<int64_t>(shape[1]);
+  const int64_t kv_len = static_cast<int64_t>(shape[2]);
+  const int64_t dim = static_cast<int64_t>(shape[3]);
+
+  auto axis = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {2});
+  auto unsqueezed = std::make_shared<ov::op::v0::Unsqueeze>(kv, axis);
+
+  auto target = ov::op::v0::Constant::create(
+      ov::element::i64, ov::Shape{5},
+      std::vector<int64_t>{1, hkv, r, kv_len, dim});
+  auto broadcast = std::make_shared<ov::op::v3::Broadcast>(unsqueezed, target);
+
+  auto flat = ov::op::v0::Constant::create(
+      ov::element::i64, ov::Shape{4},
+      std::vector<int64_t>{1, hkv * r, kv_len, dim});
+  auto reshaped =
+      std::make_shared<ov::op::v1::Reshape>(broadcast, flat, /*zero=*/false);
+
+  created->insert(created->end(),
+                  {axis, unsqueezed, target, broadcast, flat, reshaped});
+  return reshaped->output(0);
+}
+
 }  // namespace
+
+bool UnfoldGqaSequenceFold::run_on_model(
+    const std::shared_ptr<ov::Model>& model) {
+  bool changed = false;
+  size_t rewritten = 0;
+  // Collect first: the rewrite replaces nodes, which would invalidate an
+  // iteration over the live op list.
+  std::vector<std::shared_ptr<ov::op::v13::ScaledDotProductAttention>> sdpas;
+  for (const auto& node : model->get_ops()) {
+    if (auto sdpa =
+            std::dynamic_pointer_cast<ov::op::v13::ScaledDotProductAttention>(
+                node)) {
+      sdpas.push_back(sdpa);
+    }
+  }
+
+  for (const auto& sdpa : sdpas) {
+    const std::string name = sdpa->get_friendly_name();
+    // Q, K, V, attn_mask [, scale]. The 4-input form carries no mask, so
+    // there is nothing to un-tile and nothing to gain.
+    if (sdpa->get_input_size() < 4 || sdpa->get_input_size() > 5) continue;
+
+    auto fold = sdpa->input_value(0).get_node_shared_ptr();
+    const auto ratio = MatchGqaFoldReshape(fold);
+    if (!ratio) continue;
+    const int64_t r = *ratio;
+
+    // The folded Q reshape must feed only this SDPA; otherwise removing it
+    // would change what the other consumer sees.
+    if (!HasSingleConsumer(fold->output(0))) {
+      LITERT_LOG(LITERT_DEBUG,
+                 "UnfoldGqaSequenceFold[%s]: reject: folded Q reshape is "
+                 "shared with %zu consumers",
+                 name.c_str(), fold->output(0).get_target_inputs().size());
+      continue;
+    }
+
+    const auto untiled_mask = MatchTiledMask(sdpa->input_value(3), r);
+    if (!untiled_mask) {
+      LITERT_LOG(LITERT_DEBUG,
+                 "UnfoldGqaSequenceFold[%s]: reject: mask is not a %lld-way "
+                 "self-tiled Concat on axis 2",
+                 name.c_str(), static_cast<long long>(r));
+      continue;
+    }
+
+    const auto k_shape = StaticShape4D(sdpa->input_value(1));
+    const auto v_shape = StaticShape4D(sdpa->input_value(2));
+    const auto q_shape = StaticShape4D(fold->input_value(0));
+    if (!k_shape || !v_shape || !q_shape) continue;
+    // K/V must still carry the un-expanded Hkv head count, and agree with
+    // each other on layout -- SDPA requires [B,H,S_kv,D] for both.
+    const size_t hkv = (*q_shape)[1] / static_cast<size_t>(r);
+    if ((*k_shape)[1] != hkv || (*v_shape)[1] != hkv ||
+        (*k_shape)[2] != (*v_shape)[2]) {
+      LITERT_LOG(LITERT_DEBUG,
+                 "UnfoldGqaSequenceFold[%s]: reject: K/V head counts do not "
+                 "match the expected Hkv=%zu",
+                 name.c_str(), hkv);
+      continue;
+    }
+
+    // The SDPA output must be folded straight back to [1,Hq,S,D]; that
+    // Reshape is what the new SDPA replaces.
+    if (!HasSingleConsumer(sdpa->output(0))) continue;
+    auto unfold = sdpa->output(0)
+                      .get_target_inputs()
+                      .begin()
+                      ->get_node()
+                      ->shared_from_this();
+    auto unfold_reshape =
+        std::dynamic_pointer_cast<ov::op::v1::Reshape>(unfold);
+    if (!unfold_reshape) continue;
+    const auto unfold_out = StaticShape4D(unfold_reshape->output(0));
+    if (!unfold_out || *unfold_out != *q_shape) {
+      LITERT_LOG(LITERT_DEBUG,
+                 "UnfoldGqaSequenceFold[%s]: reject: SDPA output is not "
+                 "reshaped back to the original [1,Hq,S,D]",
+                 name.c_str());
+      continue;
+    }
+
+    ov::NodeVector created;
+    ov::OutputVector args{
+        fold->input_value(0),
+        BroadcastKvOverHeads(sdpa->input_value(1), *k_shape, r, &created),
+        BroadcastKvOverHeads(sdpa->input_value(2), *v_shape, r, &created),
+        *untiled_mask};
+    if (sdpa->get_input_size() == 5) args.push_back(sdpa->input_value(4));
+
+    auto new_sdpa = std::make_shared<ov::op::v13::ScaledDotProductAttention>(
+        args, sdpa->get_causal());
+    created.push_back(new_sdpa);
+
+    new_sdpa->set_friendly_name(unfold_reshape->get_friendly_name());
+    ov::copy_runtime_info({fold, sdpa, unfold_reshape}, created);
+    ov::replace_node(unfold_reshape, new_sdpa);
+
+    LITERT_LOG(LITERT_DEBUG,
+               "UnfoldGqaSequenceFold: rewrote '%s' (ratio=%lld, Hkv=%zu): Q "
+               "stays [1,%zu,%zu,%zu], K/V broadcast over heads, mask untiled",
+               name.c_str(), static_cast<long long>(r), hkv, (*q_shape)[1],
+               (*q_shape)[2], (*q_shape)[3]);
+    ++rewritten;
+    changed = true;
+  }
+
+  LITERT_LOG(LITERT_INFO,
+             "UnfoldGqaSequenceFold: rewrote %zu of %zu SDPA op(s) back to "
+             "head-parallel form",
+             rewritten, sdpas.size());
+  return changed;
+}
 
 bool MoEGatherRewrite::run_on_model(const std::shared_ptr<ov::Model>& model) {
   // 1. Find all TopK nodes that look like MoE routers.
@@ -1147,6 +1350,10 @@ void NpuOptimizer::Run(const std::shared_ptr<ov::Model>& model) const {
   if (fuse_split_attention_to_sdpa_) {
     pass_manager.register_pass<FuseSplitAttentionToSDPA>(
         sdpa_pad_kv_to_alignment_);
+  }
+  // Must follow the fusion: it rewrites around the fused SDPA node.
+  if (unfold_gqa_sequence_fold_) {
+    pass_manager.register_pass<UnfoldGqaSequenceFold>();
   }
   if (eliminate_matmul_fq_) {
     pass_manager.register_pass<EliminateMatMulFakeQuantize>();
