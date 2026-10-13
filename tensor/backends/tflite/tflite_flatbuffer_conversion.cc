@@ -346,6 +346,10 @@ absl::Status ModelFactory::Build() {
         t.quantization = std::make_unique<tflite::QuantizationParametersT>();
         t.quantization->scale = pcq->scales;
         t.quantization->zero_point = pcq->zero_points;
+        if (pcq->zero_points.size() == 1 && pcq->scales.size() > 1) {
+          t.quantization->zero_point.resize(pcq->scales.size(),
+                                            pcq->zero_points.front());
+        }
         t.quantization->quantized_dimension = pcq->quantized_dimension;
       } else if (auto bwq = tensor_info.quantization
                                 ->As<const BlockwiseQuantization>();
