@@ -324,9 +324,6 @@ litert_define_ats(
     compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = XNNPACK_MODELS_DONT_REGISTER,
-    extra_flags = [
-        "--iters_per_test=1",
-    ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
 )
@@ -339,7 +336,20 @@ litert_define_ats(
     dont_register = YNNPACK_MODELS_DONT_REGISTER,
     extra_flags = [
         "--enable_ynnpack=true",
-        "--iters_per_test=1",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    jit_suffix = "",
+)
+
+litert_define_ats(
+    name = "ynnpack_fallback_cpu_models_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    do_register = ["ExtraModel"],
+    dont_register = BUILTIN_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--enable_ynnpack=true",
+        "--cpu_hint_fully_delegated=false",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
@@ -353,7 +363,6 @@ litert_define_ats(
     dont_register = BUILTIN_MODELS_DONT_REGISTER,
     extra_flags = [
         "--cpu_kernel_mode=builtin",
-        "--iters_per_test=1",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
@@ -365,9 +374,6 @@ litert_define_ats(
     compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = GPU_MODELS_DONT_REGISTER,
-    extra_flags = [
-        "--iters_per_test=1",
-    ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
 )
@@ -745,9 +751,6 @@ litert_define_ats(
     compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = XNNPACK_MODELS_DONT_REGISTER,
-    extra_flags = [
-        "--iters_per_test=1",
-    ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
     platform = "macos",
@@ -761,7 +764,21 @@ litert_define_ats(
     dont_register = YNNPACK_MODELS_DONT_REGISTER,
     extra_flags = [
         "--enable_ynnpack=true",
-        "--iters_per_test=1",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    jit_suffix = "",
+    platform = "macos",
+)
+
+litert_define_ats(
+    name = "ynnpack_fallback_cpu_macos_models_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    do_register = ["ExtraModel"],
+    dont_register = BUILTIN_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--enable_ynnpack=true",
+        "--cpu_hint_fully_delegated=false",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
@@ -776,7 +793,6 @@ litert_define_ats(
     dont_register = BUILTIN_MODELS_DONT_REGISTER,
     extra_flags = [
         "--cpu_kernel_mode=builtin",
-        "--iters_per_test=1",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
@@ -789,9 +805,6 @@ litert_define_ats(
     compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = GPU_MODELS_DONT_REGISTER,
-    extra_flags = [
-        "--iters_per_test=1",
-    ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
     platform = "macos",
@@ -803,9 +816,6 @@ litert_define_ats(
     compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = GPU_MODELS_DONT_REGISTER,
-    extra_flags = [
-        "--iters_per_test=1",
-    ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
     platform = "macos",
@@ -1902,6 +1912,7 @@ cc_library(
 #     ":gpu_models_ats_remote",
 #     ":cpu_models_ats_remote",
 #     ":ynnpack_cpu_models_ats_remote",
+#     ":ynnpack_fallback_cpu_models_ats_remote",
 #     ":builtin_cpu_models_ats_remote",
 # ]
 #
@@ -1928,6 +1939,7 @@ cc_library(
 #     ":gpu_models_ats_remote",
 #     ":cpu_models_ats_remote",
 #     ":ynnpack_cpu_models_ats_remote",
+#     ":ynnpack_fallback_cpu_models_ats_remote",
 #     ":builtin_cpu_models_ats_remote",
 # ]
 #
@@ -1954,6 +1966,7 @@ cc_library(
 #     ":gpu_models_ats_remote",
 #     ":cpu_models_ats_remote",
 #     ":ynnpack_cpu_models_ats_remote",
+#     ":ynnpack_fallback_cpu_models_ats_remote",
 #     ":builtin_cpu_models_ats_remote",
 # ]
 #
@@ -1982,6 +1995,7 @@ cc_library(
 #     ":webgpu_macos_models_ats_remote",
 #     ":cpu_macos_models_ats_remote",
 #     ":ynnpack_cpu_macos_models_ats_remote",
+#     ":ynnpack_fallback_cpu_macos_models_ats_remote",
 #     ":builtin_cpu_macos_models_ats_remote",
 # ]
 #

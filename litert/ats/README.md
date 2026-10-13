@@ -36,6 +36,7 @@ bazel run //litert/ats:qualcomm_ats -- [flags]
 # Run ExtraModel (.tflite) suites on device
 bazel run //litert/ats:cpu_models_ats -- [flags]
 bazel run //litert/ats:ynnpack_cpu_models_ats -- [flags]
+bazel run //litert/ats:ynnpack_fallback_cpu_models_ats -- [flags]
 bazel run //litert/ats:builtin_cpu_models_ats -- [flags]
 bazel run //litert/ats:gpu_models_ats -- [flags]
 ```
@@ -75,6 +76,10 @@ bazel test //litert/ats:webgpu_macos_ats \
 
 *   `--backend=<backend>`: Specify the execution backend (e.g., `cpu`, `gpu`,
     `npu`).
+*   `--enable_ynnpack`: Enable the YNNPACK delegate when `--backend=cpu`.
+*   `--cpu_hint_fully_delegated`: Hint that the CPU graph is fully delegated to
+    a single delegate (`true` by default; set to `false` to test multi-delegate
+    / built-in kernel fallback).
 *   `--soc_manufacturer=<manufacturer>`: Optional. Specify the NPU
     manufacturer when `--backend=npu` (e.g., `qualcomm`, `mediatek`).
 *   `--cpu_kernel_mode=<mode>`: Optional. CPU kernels to test when
