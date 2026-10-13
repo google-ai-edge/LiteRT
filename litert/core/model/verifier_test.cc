@@ -941,5 +941,89 @@ TEST(VerifierTest, RejectsTensorWithElementCountExceedingInt32Max) {
   }
 }
 
+void BuildModelWithSignatureDef(flatbuffers::FlatBufferBuilder& builder,
+                                uint32_t subgraph_index,
+                                uint32_t input_tensor_index,
+                                uint32_t output_tensor_index) {
+  std::vector<flatbuffers::Offset<tflite::Buffer>> buffers = {
+      tflite::CreateBuffer(builder),
+      tflite::CreateBuffer(builder),
+  };
+  std::vector<flatbuffers::Offset<tflite::Tensor>> tensors = {
+      tflite::CreateTensor(
+          builder, builder.CreateVector(std::vector<int32_t>{2, 4}),
+          tflite::TensorType_FLOAT32, /*buffer=*/0, builder.CreateString("in")),
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{2, 4}),
+                           tflite::TensorType_FLOAT32, /*buffer=*/1,
+                           builder.CreateString("out")),
+  };
+  auto opcode =
+      tflite::CreateOperatorCode(builder, tflite::BuiltinOperator_RELU);
+  std::vector<int32_t> op_inputs = {0};
+  std::vector<int32_t> op_outputs = {1};
+  auto op = tflite::CreateOperator(builder, /*opcode_index=*/0,
+                                   builder.CreateVector(op_inputs),
+                                   builder.CreateVector(op_outputs));
+  std::vector<int32_t> model_inputs = {0};
+  std::vector<int32_t> model_outputs = {1};
+  auto subgraph = tflite::CreateSubGraph(builder, builder.CreateVector(tensors),
+                                         builder.CreateVector(model_inputs),
+                                         builder.CreateVector(model_outputs),
+                                         builder.CreateVector(&op, 1));
+  auto sig_input = tflite::CreateTensorMap(builder, builder.CreateString("x"),
+                                           input_tensor_index);
+  auto sig_output = tflite::CreateTensorMap(builder, builder.CreateString("y"),
+                                            output_tensor_index);
+  auto sig_def = tflite::CreateSignatureDef(
+      builder, builder.CreateVector(&sig_input, 1),
+      builder.CreateVector(&sig_output, 1),
+      builder.CreateString("serving_default"), subgraph_index);
+  auto model = tflite::CreateModel(
+      builder, TFLITE_SCHEMA_VERSION, builder.CreateVector(&opcode, 1),
+      builder.CreateVector(&subgraph, 1), builder.CreateString("sig_test"),
+      builder.CreateVector(buffers), /*metadata_buffer=*/0, /*metadata=*/0,
+      builder.CreateVector(&sig_def, 1));
+  tflite::FinishModelBuffer(builder, model);
+}
+
+TEST(VerifierTest, RejectsSignatureDefWithOutOfBoundsSubgraphOrTensorIndex) {
+  // Valid SignatureDef passes.
+  {
+    flatbuffers::FlatBufferBuilder builder;
+    BuildModelWithSignatureDef(builder, /*subgraph_index=*/0,
+                               /*input_tensor_index=*/0,
+                               /*output_tensor_index=*/1);
+    EXPECT_TRUE(Verify(builder.GetBufferPointer(), builder.GetSize()));
+  }
+
+  // Out-of-bounds subgraph_index (1 when model has 1 subgraph).
+  {
+    flatbuffers::FlatBufferBuilder builder;
+    BuildModelWithSignatureDef(builder, /*subgraph_index=*/1,
+                               /*input_tensor_index=*/0,
+                               /*output_tensor_index=*/1);
+    EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
+  }
+
+  // Out-of-bounds input tensor_index (99).
+  {
+    flatbuffers::FlatBufferBuilder builder;
+    BuildModelWithSignatureDef(builder, /*subgraph_index=*/0,
+                               /*input_tensor_index=*/99,
+                               /*output_tensor_index=*/1);
+    EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
+  }
+
+  // Out-of-bounds output tensor_index (99).
+  {
+    flatbuffers::FlatBufferBuilder builder;
+    BuildModelWithSignatureDef(builder, /*subgraph_index=*/0,
+                               /*input_tensor_index=*/0,
+                               /*output_tensor_index=*/99);
+    EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
+  }
+}
+
 }  // namespace
 }  // namespace litert
