@@ -268,8 +268,8 @@ def _MediatekSpec():
                 "@neuro_pilot//:neuron_sdk/host/lib/libatomic.so.1",
                 "@neuro_pilot//:neuron_sdk/host/lib/libc++abi.so.1",
                 "@neuro_pilot//:neuron_sdk/host/lib/libgcc_s.so.1",
-                "@neuro_pilot//:v8_latest/host/lib/libc++.so.1",
-                "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
+                "@neuro_pilot//:libc++.so.1",
+                "@neuro_pilot//:libneuron_adapter.so",
             ],
         ),
     }

@@ -32,6 +32,21 @@
 #include "litert/cc/litert_macros.h"
 #include "neuron/api/NeuronAdapter.h"
 
+#ifndef LITERT_NEURO_PILOT_V7_HOST_LIB_DIR
+#define LITERT_NEURO_PILOT_V7_HOST_LIB_DIR \
+  "third_party/neuro_pilot/v7_latest/host/lib"
+#endif
+
+#ifndef LITERT_NEURO_PILOT_V8_HOST_LIB_DIR
+#define LITERT_NEURO_PILOT_V8_HOST_LIB_DIR \
+  "third_party/neuro_pilot/v8_latest/host/lib"
+#endif
+
+#ifndef LITERT_NEURO_PILOT_V9_HOST_LIB_DIR
+#define LITERT_NEURO_PILOT_V9_HOST_LIB_DIR \
+  "third_party/neuro_pilot/v9_latest/host/lib"
+#endif
+
 #define LOAD_SYMB(S, H)                                                   \
   if (auto maybe_H = dlib_.LookupSymbol<void*>(#S); maybe_H.HasValue()) { \
     H = reinterpret_cast<decltype(&S)>(std::move(maybe_H.Value()));       \
@@ -77,8 +92,7 @@ litert::Expected<NeuronAdapterApi::Ptr> NeuronAdapterApi::Create(
   }
 
   if (aot_compilation_options && aot_compilation_options[0] != '\0') {
-    neuron_adapter_api->aot_compilation_options_ =
-        std::string(aot_compilation_options);
+    neuron_adapter_api->aot_compilation_options_ = aot_compilation_options;
   } else {
     neuron_adapter_api->aot_compilation_options_ =
         kDefaultAotCompilationOptions;
@@ -126,13 +140,13 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
   std::string sdk_path;
   switch (sdk_version) {
     case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7:
-      sdk_path = "third_party/neuro_pilot/v7_latest/host/lib";
+      sdk_path = LITERT_NEURO_PILOT_V7_HOST_LIB_DIR;
       break;
     case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8:
-      sdk_path = "third_party/neuro_pilot/v8_latest/host/lib";
+      sdk_path = LITERT_NEURO_PILOT_V8_HOST_LIB_DIR;
       break;
     case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9:
-      sdk_path = "third_party/neuro_pilot/v9_latest/host/lib";
+      sdk_path = LITERT_NEURO_PILOT_V9_HOST_LIB_DIR;
       break;
     default:
       return litert::Error(kLiteRtStatusErrorInvalidArgument,
