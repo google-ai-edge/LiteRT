@@ -338,7 +338,6 @@ cc_library(
     deps = [
         ":tflite_half_traits",
         "//litert/c:litert_common",
-        "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_element_type",
@@ -365,7 +364,7 @@ cc_test(
         ":rng_fixture",
         ":simple_buffer",
         "//litert/cc:litert_element_type",
-        "//litert/cc:litert_model",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_rng",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
