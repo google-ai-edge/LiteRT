@@ -177,6 +177,30 @@ TEST(LiteRtQualcommOptionsTest, HtpWeightSharingChannelTileSize) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, HtpDlbc) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetHtpDlbc(qualcomm_options, true));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_TRUE(parsed.GetHtpDlbc());
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, HtpDlbcWeights) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetHtpDlbcWeights(qualcomm_options, true));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_TRUE(parsed.GetHtpDlbcWeights());
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, HtpPerformanceMode) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -626,6 +650,18 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetHtpWeightSharingChannelTileSize(), 64);
   options->SetHtpWeightSharingChannelTileSize(0);
   EXPECT_EQ(options->GetHtpWeightSharingChannelTileSize(), 0);
+
+  EXPECT_FALSE(options->GetHtpDlbc());
+  options->SetHtpDlbc(true);
+  EXPECT_TRUE(options->GetHtpDlbc());
+  options->SetHtpDlbc(false);
+  EXPECT_FALSE(options->GetHtpDlbc());
+
+  EXPECT_FALSE(options->GetHtpDlbcWeights());
+  options->SetHtpDlbcWeights(true);
+  EXPECT_TRUE(options->GetHtpDlbcWeights());
+  options->SetHtpDlbcWeights(false);
+  EXPECT_FALSE(options->GetHtpDlbcWeights());
 
   EXPECT_EQ(options->GetBackend(), QualcommOptions::Backend::kHtp);
   options->SetBackend(QualcommOptions::Backend::kDsp);

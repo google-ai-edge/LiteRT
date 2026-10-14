@@ -1039,10 +1039,12 @@ TEST_F(HtpBackendDefaultGraphConfigTest,
   EXPECT_EQ(tile_size_config->finalizeConfig.value.int32Value, 64);
 }
 
-TEST_F(HtpBackendDefaultGraphConfigTest, DlbcOptionsAppendOptimizationConfigs) {
+TEST_F(HtpBackendDefaultGraphConfigTest,
+       DlbcOptionsAppendOptimizationConfigsWithWeightSharing) {
   Options options;
+  options.SetEnableWeightSharing(true);
   options.SetHtpDlbc(true);
-  options.SetHtpDlbcWeights(true);  // weight sharing off by default, so kept.
+  options.SetHtpDlbcWeights(true);
   auto config_builder = backend_.BuildGraphConfigs(options, "graph");
   auto configs = config_builder.GetNullTerminatedConfigs();
 

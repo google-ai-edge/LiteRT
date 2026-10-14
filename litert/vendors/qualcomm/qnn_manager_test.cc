@@ -155,10 +155,6 @@ TEST(QnnManagerTest, AdspLibraryPathNoDuplicate) {
   }
 }
 
-// Tests that ::qnn::Options correctly enforces the DLBC weights vs.
-// weight_sharing mutual exclusivity rule (QAIRT 2.36+ requirement). The
-// mutual exclusion is now enforced inside SetHtpDlbcWeights at the internal
-// layer.
 TEST(InitQnnOptionsDlbcTest, HtpDlbcWeightsAlonePropagates) {
   ::qnn::Options qnn_options;
   qnn_options.SetEnableWeightSharing(false);
@@ -173,24 +169,73 @@ TEST(InitQnnOptionsDlbcTest, WeightSharingAloneLeavesHtpDlbcDefault) {
   EXPECT_FALSE(qnn_options.GetHtpDlbcWeights());
 }
 
-TEST(InitQnnOptionsDlbcTest, BothEnabledForcesHtpDlbcWeightsOff) {
-  ::qnn::Options qnn_options;
-  qnn_options.SetEnableWeightSharing(true);
-  qnn_options.SetHtpDlbcWeights(true);
-  EXPECT_TRUE(qnn_options.GetEnableWeightSharing());
-  // SetHtpDlbcWeights silently force-offs to match QAIRT 2.36+ behavior.
-  EXPECT_FALSE(qnn_options.GetHtpDlbcWeights());
+TEST(InitQnnOptionsDlbcTest,
+     WeightSharingDoesNotChangeDlbcOptionsRegardlessOfOrder) {
+  ::qnn::Options dlbc_first;
+  dlbc_first.SetHtpDlbc(true);
+  dlbc_first.SetHtpDlbcWeights(true);
+  dlbc_first.SetEnableWeightSharing(true);
+  EXPECT_TRUE(dlbc_first.GetHtpDlbc());
+  EXPECT_TRUE(dlbc_first.GetHtpDlbcWeights());
+
+  ::qnn::Options weight_sharing_first;
+  weight_sharing_first.SetEnableWeightSharing(true);
+  weight_sharing_first.SetHtpDlbc(true);
+  weight_sharing_first.SetHtpDlbcWeights(true);
+  EXPECT_TRUE(weight_sharing_first.GetHtpDlbc());
+  EXPECT_TRUE(weight_sharing_first.GetHtpDlbcWeights());
 }
 
-// DLBC (activations) is independent of weight_sharing — no mutex enforcement
-// needed there. Sanity-check that it propagates regardless and does not bleed
-// into htp_dlbc_weights.
-TEST(InitQnnOptionsDlbcTest, HtpDlbcUnaffectedByWeightSharing) {
+TEST(InitQnnOptionsDlbcTest, PublicHtpDlbcPropagates) {
+  auto qualcomm_options = litert::qualcomm::QualcommOptions::Create();
+  ASSERT_TRUE(qualcomm_options.HasValue());
+  qualcomm_options->SetHtpDlbc(true);
+
   ::qnn::Options qnn_options;
-  qnn_options.SetEnableWeightSharing(true);
-  qnn_options.SetHtpDlbc(true);
+  EXPECT_EQ(InitQnnOptions(qnn_options, qualcomm_options.Value()),
+            kLiteRtStatusOk);
+
   EXPECT_TRUE(qnn_options.GetHtpDlbc());
-  EXPECT_FALSE(qnn_options.GetHtpDlbcWeights());
+}
+
+TEST(InitQnnOptionsDlbcTest, PublicHtpDlbcWeightsPropagates) {
+  auto qualcomm_options = litert::qualcomm::QualcommOptions::Create();
+  ASSERT_TRUE(qualcomm_options.HasValue());
+  qualcomm_options->SetHtpDlbcWeights(true);
+
+  ::qnn::Options qnn_options;
+  EXPECT_EQ(InitQnnOptions(qnn_options, qualcomm_options.Value()),
+            kLiteRtStatusOk);
+
+  EXPECT_TRUE(qnn_options.GetHtpDlbcWeights());
+}
+
+TEST(InitQnnOptionsDlbcTest, PublicWeightSharingPreservesHtpDlbcWeights) {
+  auto qualcomm_options = litert::qualcomm::QualcommOptions::Create();
+  ASSERT_TRUE(qualcomm_options.HasValue());
+  qualcomm_options->SetEnableWeightSharing(true);
+  qualcomm_options->SetHtpDlbcWeights(true);
+
+  ::qnn::Options qnn_options;
+  EXPECT_EQ(InitQnnOptions(qnn_options, qualcomm_options.Value()),
+            kLiteRtStatusOk);
+
+  EXPECT_TRUE(qnn_options.GetEnableWeightSharing());
+  EXPECT_TRUE(qnn_options.GetHtpDlbcWeights());
+}
+
+TEST(InitQnnOptionsDlbcTest, PublicWeightSharingPreservesHtpDlbc) {
+  auto qualcomm_options = litert::qualcomm::QualcommOptions::Create();
+  ASSERT_TRUE(qualcomm_options.HasValue());
+  qualcomm_options->SetEnableWeightSharing(true);
+  qualcomm_options->SetHtpDlbc(true);
+
+  ::qnn::Options qnn_options;
+  EXPECT_EQ(InitQnnOptions(qnn_options, qualcomm_options.Value()),
+            kLiteRtStatusOk);
+
+  EXPECT_TRUE(qnn_options.GetEnableWeightSharing());
+  EXPECT_TRUE(qnn_options.GetHtpDlbc());
 }
 
 TEST(InitQnnOptionsTest, PropagatesQnnLibDirAndDspSkelDir) {

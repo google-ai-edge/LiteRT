@@ -366,6 +366,32 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  /// @brief Enables HTP DLBC input compression.
+  void SetHtpDlbc(bool htp_dlbc) {
+    LrtQualcommOptionsSetHtpDlbc(options_, htp_dlbc);
+  }
+  bool GetHtpDlbc() {
+    bool val;
+    auto status = LrtQualcommOptionsGetHtpDlbc(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
+
+  /// @brief Enables HTP DLBC weight compression.
+  void SetHtpDlbcWeights(bool htp_dlbc_weights) {
+    LrtQualcommOptionsSetHtpDlbcWeights(options_, htp_dlbc_weights);
+  }
+  bool GetHtpDlbcWeights() {
+    bool val;
+    auto status = LrtQualcommOptionsGetHtpDlbcWeights(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
+
   /// @brief This option controls P point to change compiler configurations.
   ///
   /// P points are experimental (HTP backend with O3 only) and map to predefined

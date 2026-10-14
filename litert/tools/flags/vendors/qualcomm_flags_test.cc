@@ -763,6 +763,8 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_FALSE(options.Value().GetEnableWeightSharing());
   EXPECT_TRUE(options.Value().GetUseConvHMX());
   EXPECT_TRUE(options.Value().GetUseFoldReLU());
+  EXPECT_FALSE(options.Value().GetHtpDlbc());
+  EXPECT_FALSE(options.Value().GetHtpDlbcWeights());
   EXPECT_EQ(options.Value().GetHtpPPoint(), 0);
   EXPECT_EQ(options.Value().GetHtpWeightSharingChannelTileSize(), 0);
   EXPECT_EQ(options.Value().GetHtpPerformanceMode(),
@@ -833,6 +835,20 @@ TEST(QualcommOptionsFromFlagsTest, HtpWeightSharingChannelTileSize) {
   ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetHtpWeightSharingChannelTileSize(), 64);
   absl::SetFlag(&FLAGS_qualcomm_htp_weight_sharing_channel_tile_size, 0);
+}
+
+TEST(QualcommOptionsFromFlagsTest, DlbcFlags) {
+  absl::SetFlag(&FLAGS_qualcomm_htp_dlbc, true);
+  absl::SetFlag(&FLAGS_qualcomm_htp_dlbc_weights, true);
+
+  Expected<QualcommOptions> options = QualcommOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_TRUE(options.Value().GetHtpDlbc());
+  EXPECT_TRUE(options.Value().GetHtpDlbcWeights());
+
+  absl::SetFlag(&FLAGS_qualcomm_htp_dlbc, false);
+  absl::SetFlag(&FLAGS_qualcomm_htp_dlbc_weights, false);
 }
 
 }  // namespace
