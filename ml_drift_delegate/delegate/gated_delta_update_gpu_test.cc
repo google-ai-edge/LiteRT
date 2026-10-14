@@ -155,11 +155,13 @@ void ComputeGoldenRecurrentGatedDelta(const float* q, const float* k,
 Expected<litert::Options> CreateGpuOptions(bool use_fp32 = false) {
   LITERT_ASSIGN_OR_RETURN(litert::Options options, litert::Options::Create());
   options.SetHardwareAccelerators(litert::HwAccelerators::kGpu);
+  LITERT_ASSIGN_OR_RETURN(auto& gpu_options,
+                          options.GetOptions<litert::GpuOptions>());
   if (use_fp32) {
-    LITERT_ASSIGN_OR_RETURN(auto& gpu_options,
-                            options.GetOptions<litert::GpuOptions>());
     gpu_options.SetPrecision(litert::GpuOptions::Precision::kFp32);
   }
+  gpu_options.AddExternalTensorPattern("final_state");
+  gpu_options.AddBufferStorageTensorPattern("final_state");
 
   static TfLiteRegistration reg =
       *litert_torch::gdn_kernels::GetGatedDeltaUpdateRegistration();
@@ -218,8 +220,10 @@ void RunGatedDeltaUpdateTest(int B, int H, int N, int D_k, int D_v,
   ASSERT_TRUE((*input_buffers)[2].Write<float>(absl::MakeConstSpan(v_data)));
   ASSERT_TRUE((*input_buffers)[3].Write<float>(absl::MakeConstSpan(beta_data)));
   ASSERT_TRUE((*input_buffers)[4].Write<float>(absl::MakeConstSpan(g_data)));
+  // The GPU kernel updates output_buffers[1] (final_state) in-place, so write
+  // initial recurrent state into output_buffers[1].
   ASSERT_TRUE(
-      (*input_buffers)[5].Write<float>(absl::MakeConstSpan(state_data)));
+      (*output_buffers)[1].Write<float>(absl::MakeConstSpan(state_data)));
 
   // Golden reference computation.
   std::vector<float> golden_out(B * H * N * D_v);

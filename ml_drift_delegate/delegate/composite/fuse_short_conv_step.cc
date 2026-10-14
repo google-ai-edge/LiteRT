@@ -446,9 +446,9 @@ absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph) {
     attr.conv_L_cache = match.conv_l_cache;
     fused_node->operation.attributes = std::move(attr);
 
-    // Inputs: in_proj, conv_state, conv_weight, (conv_bias)
+    // Inputs: in_proj, conv_weight, (conv_bias).
+    // conv_state is omitted so the GPU kernel updates next_state in-place.
     graph->AddConsumer(fused_node->id, match.in_proj_val->id);
-    graph->AddConsumer(fused_node->id, match.conv_state_val->id);
     graph->AddConsumer(fused_node->id, conv_weight_val->id);
     if (match.conv_bias_val) {
       graph->AddConsumer(fused_node->id, match.conv_bias_val->id);
@@ -891,7 +891,6 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
     fused_op->attr = std::move(attr);
 
     model->AddConsumer(match.in_proj_id, fused_op->id);
-    model->AddConsumer(match.conv_state_id, fused_op->id);
     model->AddConsumer(conv_weight_tid, fused_op->id);
     if (match.conv_bias_id.has_value()) {
       model->AddConsumer(*match.conv_bias_id, fused_op->id);
