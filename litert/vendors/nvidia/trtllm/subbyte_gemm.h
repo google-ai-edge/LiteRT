@@ -52,9 +52,14 @@ struct LiteRtNvidiaGemmShape {
   int32_t input_size;
   int32_t output_size;
   int32_t gate;  // LiteRtNvidiaGemmGate
+  // 0: one BF16 scale per channel ([channels]). 32: TFLite blockwise
+  // quantization, one FP16 scale per block of 32 input dims ([channels,
+  // input_size / 32]), applied to the weights as they are converted.
+  int32_t scale_block;
 };
 
-// rows a multiple of 128, input_size a multiple of 128, an even output_size.
+// rows a multiple of 128, input_size a multiple of 64, an even output_size,
+// scale_block 0 or 32.
 extern "C" bool LiteRtNvidiaSubbyteGemmSupports(
     const LiteRtNvidiaGemmShape* shape);
 

@@ -172,13 +172,18 @@ __global__ void __launch_bounds__(kThreads)
 // activations of the next and the packed weights of the one after are
 // copied into shared memory, and every thread converts the packed weights
 // of the next chunk, one word of eight weights per k-slice.
+// kBlockwise: `scales` are FP16 per block of 32 input dims ([channels,
+// input_size / 32]) and multiply the weights as they are converted; otherwise
+// they are BF16 per channel and multiply the sums.
+template <bool kBlockwise>
 __global__ void __launch_bounds__(kThreads, 1)
     Int4GemmKernel(const __half* __restrict__ activation,
                    const uint8_t* __restrict__ weights,
-                   const __nv_bfloat16* __restrict__ scales,
+                   const void* __restrict__ scales_raw,
                    const float* __restrict__ row_scale, int input_size,
                    int output_size, int gate,
                    __nv_bfloat16* __restrict__ output) {
+  const auto* scales = static_cast<const __nv_bfloat16*>(scales_raw);
   extern __shared__ __align__(16) unsigned char smem[];
   unsigned char* activation_s = smem;
   unsigned char* weight_s = smem + 2 * kActivationBytes;
@@ -225,6 +230,21 @@ __global__ void __launch_bounds__(kThreads, 1)
   unsigned char* packed_thread = packed_s + tid * 16;
   unsigned char* weight_thread =
       weight_s + w_row * kRowBytes + (tid % 2) * 64;
+  // The thread's 32 weights of a chunk are one block: its scale, for chunk c,
+  // is block 2 c + (tid % 2) of the thread's channel.
+  const __half* block_scales =
+      static_cast<const __half*>(scales_raw) +
+      (static_cast<size_t>(w_row / block_channels) * output_size +
+       w_channel) *
+          (input_size / 32) +
+      (tid % 2);
+  auto scale_of = [&](int chunk) -> __half2 {
+    if constexpr (kBlockwise) {
+      return __half2half2(block_scales[2 * chunk]);
+    } else {
+      return __half2half2(__float2half(1.0f));
+    }
+  };
 
   // `buffer` is the parity of the chunk.
   auto copy_activation = [&](int chunk, int buffer) {
@@ -245,10 +265,24 @@ __global__ void __launch_bounds__(kThreads, 1)
     return *reinterpret_cast<const int4*>(packed_thread +
                                           buffer * kTileChunkBytes);
   };
-  // Four bytes are eight weights: one 16-byte vector of FP16.
-  auto convert = [&](uint32_t word) {
-    return make_int4(table_s[word & 0xff], table_s[(word >> 8) & 0xff],
-                     table_s[(word >> 16) & 0xff], table_s[word >> 24]);
+  // Four bytes are eight weights: one 16-byte vector of FP16, times the
+  // block's scale when the scales are blockwise.
+  auto convert = [&](uint32_t word, __half2 scale) {
+    int4 values =
+        make_int4(table_s[word & 0xff], table_s[(word >> 8) & 0xff],
+                  table_s[(word >> 16) & 0xff], table_s[word >> 24]);
+    if constexpr (kBlockwise) {
+      auto scaled = [&](int value) {
+        __half2 pair = *reinterpret_cast<const __half2*>(&value);
+        pair = __hmul2(pair, scale);
+        return *reinterpret_cast<const int*>(&pair);
+      };
+      values.x = scaled(values.x);
+      values.y = scaled(values.y);
+      values.z = scaled(values.z);
+      values.w = scaled(values.w);
+    }
+    return values;
   };
   auto store = [&](int buffer, int index, int4 vector) {
     *reinterpret_cast<int4*>(weight_thread + buffer * kWeightBytes +
@@ -311,10 +345,11 @@ __global__ void __launch_bounds__(kThreads, 1)
   __syncthreads();  // the table too
   {
     const int4 words = packed(0);
-    store(0, 0, convert(words.x));
-    store(0, 1, convert(words.y));
-    store(0, 2, convert(words.z));
-    store(0, 3, convert(words.w));
+    const __half2 scale = scale_of(0);
+    store(0, 0, convert(words.x, scale));
+    store(0, 1, convert(words.y, scale));
+    store(0, 2, convert(words.z, scale));
+    store(0, 3, convert(words.w, scale));
   }
   __syncthreads();
 
@@ -340,13 +375,16 @@ __global__ void __launch_bounds__(kThreads, 1)
       const uint32_t next_words[4] = {
           static_cast<uint32_t>(words.x), static_cast<uint32_t>(words.y),
           static_cast<uint32_t>(words.z), static_cast<uint32_t>(words.w)};
+      const __half2 next_scale = scale_of(more ? current + 1 : current);
+      // With an odd number of chunks the last buffer holds no chunk.
+      if (current < chunks) {
 #pragma unroll
       for (int slice = 0; slice < kSlices; ++slice) {
         Operands next;
         if (slice + 1 < kSlices) {
           load_operands(buffer, slice + 1, next);
         }
-        const int4 converted = convert(next_words[slice]);
+        const int4 converted = convert(next_words[slice], next_scale);
 #pragma unroll
         for (int pair = 0; pair < kWarpColGroups / 2; ++pair) {
 #pragma unroll
@@ -365,6 +403,7 @@ __global__ void __launch_bounds__(kThreads, 1)
         if (slice + 1 < kSlices) {
           operands = next;
         }
+      }
       }
       if (buffer == 1) {
         // The fp16 sums cover two chunks: 128 products.
@@ -433,16 +472,21 @@ __global__ void __launch_bounds__(kThreads, 1)
       if (n >= output_size) continue;
       float2 lo = make_float2(acc[rg][cg][0], acc[rg][cg][1]);
       float2 hi = make_float2(acc[rg][cg][2], acc[rg][cg][3]);
-      const float2 scale = __bfloat1622float2(
-          *reinterpret_cast<const __nv_bfloat162*>(
-              scales + (gate != 0 ? output_size : 0) + n));
+      float2 scale = make_float2(1.0f, 1.0f);
+      float2 gate_scale = make_float2(1.0f, 1.0f);
+      if constexpr (!kBlockwise) {
+        scale = __bfloat1622float2(*reinterpret_cast<const __nv_bfloat162*>(
+            scales + (gate != 0 ? output_size : 0) + n));
+        if (gate != 0) {
+          gate_scale = __bfloat1622float2(
+              *reinterpret_cast<const __nv_bfloat162*>(scales + n));
+        }
+      }
       lo.x *= scale.x * unscale_lo;
       lo.y *= scale.y * unscale_lo;
       hi.x *= scale.x * unscale_hi;
       hi.y *= scale.y * unscale_hi;
       if (gate != 0) {
-        const float2 gate_scale = __bfloat1622float2(
-            *reinterpret_cast<const __nv_bfloat162*>(scales + n));
         const float2 gate_lo = *reinterpret_cast<const float2*>(
             gate_s + row * block_channels + column);
         const float2 gate_hi = *reinterpret_cast<const float2*>(
@@ -478,10 +522,11 @@ extern "C" bool LiteRtNvidiaSubbyteGemmSupports(
     const LiteRtNvidiaGemmShape* shape) {
   return shape != nullptr && shape->rows > 0 &&
          shape->rows % kBlockRows == 0 && shape->input_size > 0 &&
-         shape->input_size % (2 * kChunk) == 0 && shape->output_size > 0 &&
+         shape->input_size % kChunk == 0 && shape->output_size > 0 &&
          shape->output_size % 2 == 0 &&
          shape->gate >= kLiteRtNvidiaGemmGateNone &&
-         shape->gate <= kLiteRtNvidiaGemmGateGeluErf;
+         shape->gate <= kLiteRtNvidiaGemmGateGeluErf &&
+         (shape->scale_block == 0 || shape->scale_block == 32);
 }
 
 extern "C" bool LiteRtNvidiaSubbyteGemmAvailable() {
@@ -545,13 +590,15 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4Gemm(
       workspace == nullptr) {
     return cudaErrorInvalidValue;
   }
-  static bool attribute_set = false;
-  if (!attribute_set) {
+  const bool blockwise = shape->scale_block == 32;
+  static bool attribute_set[2] = {false, false};
+  if (!attribute_set[blockwise]) {
     const cudaError_t status = cudaFuncSetAttribute(
-        Int4GemmKernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
+        blockwise ? Int4GemmKernel<true> : Int4GemmKernel<false>,
+        cudaFuncAttributeMaxDynamicSharedMemorySize,
         static_cast<int>(kSharedBytes));
     if (status != cudaSuccess) return status;
-    attribute_set = true;
+    attribute_set[blockwise] = true;
   }
   float* row_scale = static_cast<float*>(workspace);
   __half* scaled = reinterpret_cast<__half*>(static_cast<char*>(workspace) +
@@ -561,10 +608,15 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4Gemm(
       row_scale, scaled);
   cudaError_t status = cudaGetLastError();
   if (status != cudaSuccess) return status;
-  Int4GemmKernel<<<dim3(shape->rows / kBlockRows, ColumnTiles(*shape)),
-                   kThreads, kSharedBytes, stream>>>(
-      scaled, weights, static_cast<const __nv_bfloat16*>(scales),
-      row_scale, shape->input_size, shape->output_size, shape->gate,
-      static_cast<__nv_bfloat16*>(output));
+  const dim3 grid(shape->rows / kBlockRows, ColumnTiles(*shape));
+  if (blockwise) {
+    Int4GemmKernel<true><<<grid, kThreads, kSharedBytes, stream>>>(
+        scaled, weights, scales, row_scale, shape->input_size,
+        shape->output_size, shape->gate, static_cast<__nv_bfloat16*>(output));
+  } else {
+    Int4GemmKernel<false><<<grid, kThreads, kSharedBytes, stream>>>(
+        scaled, weights, scales, row_scale, shape->input_size,
+        shape->output_size, shape->gate, static_cast<__nv_bfloat16*>(output));
+  }
   return cudaGetLastError();
 }

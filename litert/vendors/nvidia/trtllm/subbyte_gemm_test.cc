@@ -69,6 +69,35 @@ float Bf16BitsToFloat(uint16_t value) {
   return result;
 }
 
+// Round-to-nearest-even FP32 -> FP16 for normal values.
+uint16_t FloatToHalfBits(float value) {
+  uint32_t bits = 0;
+  std::memcpy(&bits, &value, sizeof(bits));
+  const uint32_t sign = (bits >> 16) & 0x8000u;
+  const int32_t exponent = static_cast<int32_t>((bits >> 23) & 0xff) - 112;
+  const uint32_t mantissa = bits & 0x7fffffu;
+  if (exponent <= 0 || exponent >= 31) {
+    ADD_FAILURE() << "FP16 test value out of the normal range: " << value;
+    return static_cast<uint16_t>(sign);
+  }
+  uint32_t half = (static_cast<uint32_t>(exponent) << 10) | (mantissa >> 13);
+  const uint32_t remainder = mantissa & 0x1fffu;
+  if (remainder > 0x1000u || (remainder == 0x1000u && (half & 1u))) {
+    ++half;
+  }
+  return static_cast<uint16_t>(sign | half);
+}
+
+float HalfBitsToFloat(uint16_t value) {
+  const uint32_t exponent = (value >> 10) & 0x1fu;
+  const uint32_t mantissa = value & 0x3ffu;
+  const uint32_t bits = (static_cast<uint32_t>(value & 0x8000u) << 16) |
+                        ((exponent + 112) << 23) | (mantissa << 13);
+  float result = 0.0f;
+  std::memcpy(&result, &bits, sizeof(result));
+  return exponent == 0 ? 0.0f : result;
+}
+
 double Gelu(double x, int gate) {
   if (gate == kLiteRtNvidiaGemmGateGeluTanh) {
     return 0.5 * x *
@@ -124,9 +153,13 @@ void RunCase(const Case& test_case) {
     state = state * 1664525u + 1013904223u;
     byte = static_cast<uint8_t>(state >> 24);
   }
-  std::vector<uint16_t> scales(channels);
+  // Per-channel BF16 scales, or FP16 scales per block of 32 input dims.
+  const bool blockwise = shape.scale_block == 32;
+  const int blocks = blockwise ? input / 32 : 1;
+  std::vector<uint16_t> scales(static_cast<size_t>(channels) * blocks);
   for (auto& scale : scales) {
-    scale = FloatToBf16Bits(0.002f + 0.004f * std::fabs(next()));
+    const float value = 0.002f + 0.004f * std::fabs(next());
+    scale = blockwise ? FloatToHalfBits(value) : FloatToBf16Bits(value);
   }
 
   ASSERT_EQ(LiteRtNvidiaSubbyteGemmWeightBytes(&shape), weights.size());
@@ -166,13 +199,20 @@ void RunCase(const Case& test_case) {
       const uint8_t* packed =
           weights.data() + static_cast<size_t>(channel) * input / 2;
       double sum = 0.0;
+      double block_sum = 0.0;
       for (int k = 0; k < input; ++k) {
         const int nibble = (packed[k / 2] >> ((k & 1) * 4)) & 15;
-        sum += static_cast<double>(Bf16BitsToFloat(
-                   activation[static_cast<size_t>(row) * input + k])) *
-               ((nibble ^ 8) - 8);
+        block_sum += static_cast<double>(Bf16BitsToFloat(
+                         activation[static_cast<size_t>(row) * input + k])) *
+                     ((nibble ^ 8) - 8);
+        if (blockwise && (k + 1) % 32 == 0) {
+          sum += block_sum *
+                 HalfBitsToFloat(
+                     scales[static_cast<size_t>(channel) * blocks + k / 32]);
+          block_sum = 0.0;
+        }
       }
-      return sum * Bf16BitsToFloat(scales[channel]);
+      return blockwise ? sum : block_sum * Bf16BitsToFloat(scales[channel]);
     };
     // The error of a row against the rounding error BF16 results have anyway:
     // the FP16 sums over 128 input dims add less than that.
@@ -216,6 +256,12 @@ TEST(SubbyteGemmTest, SupportsRowsAndInputsInMultiplesOf128) {
   EXPECT_FALSE(supports({128, 3840, 15361, kLiteRtNvidiaGemmGateNone}));
   EXPECT_FALSE(supports({128, 3840, 0, kLiteRtNvidiaGemmGateNone}));
   EXPECT_FALSE(supports({128, 3840, 15360, 3}));
+  // Gemma 4 26B-A4B: input sizes of an odd number of 64-dim chunks, and
+  // scales per block of 32.
+  EXPECT_TRUE(supports({128, 704, 2816, kLiteRtNvidiaGemmGateNone}));
+  EXPECT_TRUE(supports({128, 2112, 2816, kLiteRtNvidiaGemmGateNone, 32}));
+  EXPECT_TRUE(supports({1024, 2816, 704, kLiteRtNvidiaGemmGateGeluTanh, 32}));
+  EXPECT_FALSE(supports({128, 2816, 704, kLiteRtNvidiaGemmGateNone, 16}));
   EXPECT_FALSE(LiteRtNvidiaSubbyteGemmSupports(nullptr));
   LiteRtNvidiaGemmShape unsupported = {100, 3840, 15360, 0};
   EXPECT_EQ(LiteRtNvidiaSubbyteGemmWorkspaceBytes(&unsupported), 0u);
@@ -315,6 +361,44 @@ TEST(SubbyteGemmTest, ScalesRowsOfAnyMagnitude) {
   RunCase(
       {{128, 1024, 256, kLiteRtNvidiaGemmGateNone}, Rows::kUniform, 1.0e-9f});
   RunCase({{256, 1024, 256, kLiteRtNvidiaGemmGateNone}, Rows::kSparse, 2.0f});
+}
+
+TEST(SubbyteGemmTest, OddChunkCountsMatchReference) {
+  if (!LiteRtNvidiaSubbyteGemmAvailable()) {
+    GTEST_SKIP() << "Requires compute capability 8.0 or newer and 81 KB of "
+                    "shared memory per block.";
+  }
+  // 704 and 2112 input dims are 11 and 33 chunks of 64: the last buffer of
+  // the pair holds no chunk.
+  RunCase({{128, 704, 256, kLiteRtNvidiaGemmGateNone}, Rows::kUniform, 1.0f});
+  RunCase(
+      {{256, 2112, 2816, kLiteRtNvidiaGemmGateNone}, Rows::kOutliers, 1.0f});
+  RunCase(
+      {{128, 192, 64, kLiteRtNvidiaGemmGateGeluTanh}, Rows::kUniform, 1.0f});
+}
+
+TEST(SubbyteGemmTest, BlockwiseScalesMatchReference) {
+  if (!LiteRtNvidiaSubbyteGemmAvailable()) {
+    GTEST_SKIP() << "Requires compute capability 8.0 or newer and 81 KB of "
+                    "shared memory per block.";
+  }
+  // Gemma 4 26B-A4B's dense and expert projections with FP16 scales per
+  // block of 32 input dims.
+  RunCase(
+      {{128, 2816, 704, kLiteRtNvidiaGemmGateNone, 32}, Rows::kUniform, 1.0f});
+  RunCase(
+      {{256, 704, 2816, kLiteRtNvidiaGemmGateNone, 32}, Rows::kOutliers, 1.0f});
+  RunCase(
+      {{128, 2112, 2816, kLiteRtNvidiaGemmGateNone, 32}, Rows::kSparse, 2.0f});
+  RunCase({{1024, 2816, 8192, kLiteRtNvidiaGemmGateNone, 32},
+           Rows::kOutliers,
+           1.0f});
+  RunCase({{128, 2816, 704, kLiteRtNvidiaGemmGateGeluTanh, 32},
+           Rows::kUniform,
+           1.0f});
+  RunCase({{256, 2816, 2112, kLiteRtNvidiaGemmGateGeluErf, 32},
+           Rows::kOutliers,
+           1.0f});
 }
 
 TEST(SubbyteGemmTest, GatedProjectionsMatchReference) {
