@@ -163,6 +163,20 @@ bool DecodeAttentionPluginEnabled() {
 // which takes 180 us per layer on the RTX 5080 where the plugin takes about
 // 25 us. Set LITERT_NVIDIA_TENSORRT_INT8_CACHE_ATTENTION_PLUGIN=0 to keep
 // Myelin's lowering.
+// Longest cache at which single-KV-head attention stays on TensorRT's own
+// lowering (see MatchInt8CacheAttentionBlock): its cost grows about 2 us per
+// 1k keys per layer on E2B, the plugin's floor is about 24 us, so the plugin
+// wins from the 16k preset on (E2B at the 8k preset: 270 steps/s on TensorRT,
+// 255 on the plugin).
+constexpr int64_t kSingleHeadNativeCacheLimit = 16384;
+
+// Sliding-window attention blocks read only the keys their window can reach
+// (see FindWindowedCacheReads).
+bool WindowedCacheReadsEnabled() {
+  return EnvEnabled("LITERT_NVIDIA_TENSORRT_WINDOWED_CACHE_READS",
+                    /*default_value=*/true);
+}
+
 bool Int8CacheAttentionPluginEnabled() {
   return EnvEnabled("LITERT_NVIDIA_TENSORRT_INT8_CACHE_ATTENTION_PLUGIN",
                     /*default_value=*/true);
@@ -2031,6 +2045,7 @@ class TensorRtGraphBuilder {
 
     LITERT_RETURN_IF_ERROR(FindInPlaceCacheUpdates(subgraph));
     LITERT_RETURN_IF_ERROR(FindDecodeAttentionBlocks(subgraph));
+    LITERT_RETURN_IF_ERROR(FindWindowedCacheReads(subgraph));
     LITERT_RETURN_IF_ERROR(FindInt8CacheAttentionBlocks(subgraph));
     LITERT_RETURN_IF_ERROR(AddInputs(subgraph));
     const size_t num_ops_to_lower =
@@ -4696,8 +4711,352 @@ class TensorRtGraphBuilder {
     // Set for INT8 per-tensor caches: the plugin reads the raw INT8 caches
     // (the value cache in the model's [1, H, D, S] layout).
     std::optional<LiteRtNvidiaInt8CacheParams> int8_cache;
+    // Set when the block is a sliding-window read (windowed_reads_): the
+    // plugin takes the window's slices of the caches and the mask.
+    std::optional<size_t> window;
     bool emitted = false;
   };
+
+  // A sliding-window attention block over a full-length cache. Gemma 4's
+  // E-models keep every cache at the context length and build a local
+  // layer's mask in-graph from the key positions, pos >= A[j] && pos < B[j]
+  // with A[j] = j and B[j] = j + W, so the window W is in the constants.
+  // Such a block sees at most W + tokens - 1 keys ending at the chunk's last
+  // position; reading that span instead of the whole cache makes the layer
+  // cost its window, not the context, in prefill as in decode.
+  struct WindowedCacheRead {
+    LiteRtTensor k_out = nullptr;
+    LiteRtTensor v_out = nullptr;
+    std::optional<Tensor> mask;
+    std::optional<Tensor> start_indices;  // the update's K start [4]
+    LiteRtOp scores = nullptr;
+    LiteRtOp select = nullptr;
+    LiteRtOp values = nullptr;
+    int32_t seq = 0;
+    int32_t tokens = 0;  // keys the update writes (1 decode, chunk prefill)
+    int32_t window = 0;
+    int32_t length = 0;  // keys read: window + tokens - 1 rounded up to 64
+    nvinfer1::ITensor* indices = nullptr;  // [length] = s0 + iota
+    nvinfer1::ITensor* k_slice = nullptr;
+    nvinfer1::ITensor* v_slice = nullptr;
+    nvinfer1::ITensor* mask_slice = nullptr;
+  };
+
+  // The window of a mask built as reshape(not_equal(concatenation(pieces),
+  // 0)) with every piece cast([reshape](logical_and(greater_equal(pos, A),
+  // less(pos, B)))), A[j] = j and B[j] - A[j] constant; nullopt otherwise
+  // (a global layer's mask is a subgraph input).
+  static std::optional<int32_t> WindowFromMask(const Tensor& mask,
+                                               int32_t seq) {
+    Tensor tensor = mask;
+    auto op = tensor.GetDefiningOp();
+    while (op && op->Code() == kLiteRtOpCodeTflReshape &&
+           !op->Inputs().empty()) {
+      tensor = op->Inputs()[0];
+      op = tensor.GetDefiningOp();
+    }
+    if (!op || op->Code() != kLiteRtOpCodeTflNotEqual ||
+        op->Inputs().size() != 2) {
+      return std::nullopt;
+    }
+    tensor = op->Inputs()[0];
+    op = tensor.GetDefiningOp();
+    if (!op) {
+      return std::nullopt;
+    }
+    std::vector<Tensor> pieces;
+    if (op->Code() == kLiteRtOpCodeTflConcatenation) {
+      for (const auto& piece : op->Inputs()) pieces.push_back(piece);
+    } else {
+      pieces.push_back(tensor);
+    }
+    std::optional<int32_t> window;
+    for (Tensor piece : pieces) {
+      auto producer = piece.GetDefiningOp();
+      if (producer && producer->Code() == kLiteRtOpCodeTflCast &&
+          !producer->Inputs().empty()) {
+        piece = producer->Inputs()[0];
+        producer = piece.GetDefiningOp();
+      }
+      while (producer && producer->Code() == kLiteRtOpCodeTflReshape &&
+             !producer->Inputs().empty()) {
+        piece = producer->Inputs()[0];
+        producer = piece.GetDefiningOp();
+      }
+      if (!producer || producer->Code() != kLiteRtOpCodeTflLogicalAnd ||
+          producer->Inputs().size() != 2) {
+        return std::nullopt;
+      }
+      std::optional<std::vector<int32_t>> lower, upper;
+      for (const auto& operand : producer->Inputs()) {
+        auto compare = operand.GetDefiningOp();
+        if (!compare || compare->Inputs().size() != 2) {
+          return std::nullopt;
+        }
+        auto bound = ReadInt32Constant(compare->Inputs()[1]);
+        if (!bound || bound->size() != static_cast<size_t>(seq)) {
+          return std::nullopt;
+        }
+        if (compare->Code() == kLiteRtOpCodeTflGreaterEqual) {
+          lower = std::move(*bound);
+        } else if (compare->Code() == kLiteRtOpCodeTflLess) {
+          upper = std::move(*bound);
+        } else {
+          return std::nullopt;
+        }
+      }
+      if (!lower || !upper) {
+        return std::nullopt;
+      }
+      const int32_t w = (*upper)[0] - (*lower)[0];
+      for (int32_t j = 0; j < seq; ++j) {
+        if ((*lower)[j] != j || (*upper)[j] - (*lower)[j] != w) {
+          return std::nullopt;
+        }
+      }
+      if (w <= 0 || w >= seq || (window.has_value() && *window != w)) {
+        return std::nullopt;
+      }
+      window = w;
+    }
+    return window;
+  }
+
+  // Records the sliding-window attention blocks over INT8 per-tensor caches
+  // (the structure MatchInt8CacheAttentionBlock accepts) whose mask carries
+  // a window. The lowering of the score product, the select and the value
+  // product, or the attention plugin, then read the window's slices.
+  Expected<void> FindWindowedCacheReads(const Subgraph& subgraph) {
+    if (!WindowedCacheReadsEnabled() || !Fp16ActivationsEnabled() ||
+        RuntimeBmmContextLimit() != 0) {
+      return {};
+    }
+    size_t num_reads = 0;
+    int32_t window = 0, length = 0, tokens = 0, seq = 0;
+    for (const auto& update : subgraph.Ops()) {
+      if (update.Code() != kLiteRtOpCodeShloComposite ||
+          CompositeOpName(update) != "odml.cache_update" ||
+          update.Inputs().size() != 7 || update.Outputs().size() != 2) {
+        continue;
+      }
+      const Tensor k_out = update.Outputs()[0];
+      const Tensor v_out = update.Outputs()[1];
+      if (!Int8CacheQuantization(k_out) || !Int8CacheQuantization(v_out)) {
+        continue;
+      }
+      auto k_type = k_out.RankedTensorType();
+      auto update_type = update.Inputs()[0].RankedTensorType();
+      if (!k_type || !update_type || k_type->Layout().Rank() != 4 ||
+          update_type->Layout().Rank() != 4) {
+        continue;
+      }
+      const auto k_dims = k_type->Layout().Dimensions();
+      const int32_t cache_len = static_cast<int32_t>(k_dims[2]);
+      const int32_t chunk =
+          static_cast<int32_t>(update_type->Layout().Dimensions()[2]);
+      for (const auto& use : k_out.Uses()) {
+        const Op scores_op = use.user;
+        if (use.user_arg_ind != 1 || !IsRuntimeBmm(scores_op)) {
+          continue;
+        }
+        const auto select_op = SingleUser(scores_op.Outputs()[0], 1);
+        if (!select_op || select_op->Code() != kLiteRtOpCodeTflSelectV2 ||
+            select_op->Inputs().size() != 3) {
+          continue;
+        }
+        const auto softmax_op = SingleUser(select_op->Outputs()[0], 0);
+        if (!softmax_op || softmax_op->Code() != kLiteRtOpCodeTflSoftmax) {
+          continue;
+        }
+        const auto values_op = SingleUser(softmax_op->Outputs()[0], 0);
+        if (!values_op || !IsRuntimeBmm(*values_op) ||
+            values_op->Inputs()[1].Get() != v_out.Get()) {
+          continue;
+        }
+        const Tensor mask = select_op->Inputs()[0];
+        auto mask_type = mask.RankedTensorType();
+        if (!mask_type || mask_type->Layout().Rank() != 4 ||
+            mask_type->Layout().Dimensions()[3] != cache_len) {
+          continue;
+        }
+        const auto w = WindowFromMask(mask, cache_len);
+        if (!w.has_value()) {
+          continue;
+        }
+        const int32_t span = ((*w + chunk - 1 + 63) / 64) * 64;
+        if (span >= cache_len) {
+          continue;
+        }
+        WindowedCacheRead read;
+        read.k_out = k_out.Get();
+        read.v_out = v_out.Get();
+        read.mask = mask;
+        read.start_indices = update.Inputs()[5];
+        read.scores = scores_op.Get();
+        read.select = select_op->Get();
+        read.values = values_op->Get();
+        read.seq = cache_len;
+        read.tokens = chunk;
+        read.window = *w;
+        read.length = span;
+        const size_t index = windowed_reads_.size();
+        windowed_reads_.push_back(read);
+        windowed_by_scores_[scores_op.Get()] = index;
+        windowed_by_select_[select_op->Get()] = index;
+        windowed_by_values_[values_op->Get()] = index;
+        ++num_reads;
+        window = *w;
+        length = span;
+        tokens = chunk;
+        seq = cache_len;
+      }
+    }
+    if (num_reads != 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX windowing %zu attention blocks to %d of "
+                 "%d keys (window %d, %d new tokens)",
+                 num_reads, length, seq, window, tokens);
+    }
+    return {};
+  }
+
+  // s0 = clamp(pos - (length - tokens), 0, seq - length): the span
+  // [s0, s0 + length) holds every key a row of the chunk can see. The keys
+  // are gathered with execution-tensor indices s0 + iota (a slice with a
+  // start tensor would make the position a shape input).
+  Expected<void> EnsureWindowIndices(WindowedCacheRead& read) {
+    if (read.indices != nullptr) {
+      return {};
+    }
+    LITERT_ASSIGN_OR_RETURN(auto* start_indices,
+                            GetTensor(*read.start_indices));
+    LITERT_ASSIGN_OR_RETURN(auto* pos,
+                            SliceTensor1d(start_indices, /*start_index=*/2,
+                                          /*size=*/1));
+    const nvinfer1::Dims one{1, {1}};
+    const int32_t back = read.length - read.tokens;
+    const int32_t zero = 0;
+    const int32_t last = read.seq - read.length;
+    LITERT_ASSIGN_OR_RETURN(
+        auto* back_tensor,
+        AddInt32Constant(absl::MakeConstSpan(&back, 1), one, "window_back"));
+    LITERT_ASSIGN_OR_RETURN(
+        auto* zero_tensor,
+        AddInt32Constant(absl::MakeConstSpan(&zero, 1), one, "window_zero"));
+    LITERT_ASSIGN_OR_RETURN(
+        auto* last_tensor,
+        AddInt32Constant(absl::MakeConstSpan(&last, 1), one, "window_last"));
+    auto* shifted = network_->addElementWise(
+        *pos, *back_tensor, nvinfer1::ElementWiseOperation::kSUB);
+    if (shifted == nullptr || shifted->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add window start shift");
+    }
+    auto* lower =
+        network_->addElementWise(*shifted->getOutput(0), *zero_tensor,
+                                 nvinfer1::ElementWiseOperation::kMAX);
+    if (lower == nullptr || lower->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to clamp window start lower bound");
+    }
+    auto* clamped =
+        network_->addElementWise(*lower->getOutput(0), *last_tensor,
+                                 nvinfer1::ElementWiseOperation::kMIN);
+    if (clamped == nullptr || clamped->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to clamp window start upper bound");
+    }
+    std::vector<int32_t> iota(read.length);
+    for (int32_t i = 0; i < read.length; ++i) {
+      iota[i] = i;
+    }
+    nvinfer1::Dims iota_dims{};
+    iota_dims.nbDims = 1;
+    iota_dims.d[0] = read.length;
+    LITERT_ASSIGN_OR_RETURN(auto* iota_tensor,
+                            AddInt32Constant(iota, iota_dims, "window_iota"));
+    auto* indices =
+        network_->addElementWise(*iota_tensor, *clamped->getOutput(0),
+                                 nvinfer1::ElementWiseOperation::kSUM);
+    if (indices == nullptr || indices->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add window index layer");
+    }
+    read.indices = indices->getOutput(0);
+    return {};
+  }
+
+  // input[..., s0:s0 + length, ...] along `axis`. Bool tensors (the mask)
+  // take an int32 round trip through the gather.
+  Expected<nvinfer1::ITensor*> WindowGather(nvinfer1::ITensor* input,
+                                            nvinfer1::ITensor* indices,
+                                            int axis, const char* name) {
+    const bool boolean = input->getType() == nvinfer1::DataType::kBOOL;
+    if (boolean) {
+      LITERT_ASSIGN_OR_RETURN(input,
+                              AddCastTensor(input, nvinfer1::DataType::kINT32));
+    }
+    auto* layer = network_->addGather(*input, *indices, axis);
+    if (layer == nullptr || layer->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add window gather layer");
+    }
+    layer->setName(KeepName(UniqueName(name)));
+    nvinfer1::ITensor* out = layer->getOutput(0);
+    if (boolean) {
+      LITERT_ASSIGN_OR_RETURN(out,
+                              AddCastTensor(out, nvinfer1::DataType::kBOOL));
+    }
+    return out;
+  }
+
+  Expected<nvinfer1::ITensor*> WindowKeySlice(WindowedCacheRead& read) {
+    if (read.k_slice != nullptr) {
+      return read.k_slice;
+    }
+    LITERT_RETURN_IF_ERROR(EnsureWindowIndices(read));
+    const auto raw = raw_output_map_.find(read.k_out);
+    if (raw == raw_output_map_.end() ||
+        raw->second->getType() != nvinfer1::DataType::kINT8) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Windowed cache read has no raw INT8 key cache");
+    }
+    nvinfer1::ITensor* source = raw->second;
+    LITERT_ASSIGN_OR_RETURN(
+        read.k_slice,
+        WindowGather(source, read.indices, /*axis=*/2, "window_keys"));
+    return read.k_slice;
+  }
+
+  Expected<nvinfer1::ITensor*> WindowValueSlice(WindowedCacheRead& read) {
+    if (read.v_slice != nullptr) {
+      return read.v_slice;
+    }
+    LITERT_RETURN_IF_ERROR(EnsureWindowIndices(read));
+    const auto raw = raw_output_map_.find(read.v_out);
+    if (raw == raw_output_map_.end() ||
+        raw->second->getType() != nvinfer1::DataType::kINT8) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Windowed cache read has no raw INT8 value cache");
+    }
+    nvinfer1::ITensor* source = raw->second;
+    LITERT_ASSIGN_OR_RETURN(
+        read.v_slice,
+        WindowGather(source, read.indices, /*axis=*/3, "window_values"));
+    return read.v_slice;
+  }
+
+  Expected<nvinfer1::ITensor*> WindowMaskSlice(WindowedCacheRead& read) {
+    if (read.mask_slice != nullptr) {
+      return read.mask_slice;
+    }
+    LITERT_RETURN_IF_ERROR(EnsureWindowIndices(read));
+    LITERT_ASSIGN_OR_RETURN(auto* mask, GetTensor(*read.mask));
+    LITERT_ASSIGN_OR_RETURN(
+        read.mask_slice,
+        WindowGather(mask, read.indices, /*axis=*/3, "window_mask"));
+    return read.mask_slice;
+  }
 
   // A mask [1, 1, n, S] tiled over the query heads, as the model builds it:
   // reshape(concatenation(mask, ..., mask; axis 1)) = [1, 1, heads * n, S],
@@ -5296,14 +5655,21 @@ class TensorRtGraphBuilder {
     const auto rows = q_dims[2];
     const auto depth = q_dims[3];
     const auto seq = k_dims[2];
-    // A single KV head (Gemma 4 E2B: one head, eight query rows) is an
-    // ordinary matmul chain that TensorRT lowers to its FC and softmax
-    // kernels in a few microseconds; the plugin's one block per head and
-    // chunk cannot match that (measured 282-290 against 317 steps/s on E2B).
-    // Several KV heads (E4B: two heads, four rows) go to Myelin's fused
-    // decode MHA kernel, which costs 180 us per layer, and there the plugin
-    // doubles the decode rate.
-    if (heads < 2) {
+    // A single KV head (Gemma 4 E2B: one head, eight query rows) over a short
+    // cache is an ordinary matmul chain that TensorRT lowers to its FC and
+    // softmax kernels in a few microseconds; the plugin's one block per head
+    // and chunk cannot match that (282-290 against 317 steps/s on E2B at a
+    // 2,048-token capacity, 255 against 270 at 9,216). Several KV heads (E4B:
+    // two heads, four rows) go to Myelin's fused decode MHA kernel, 180 us per
+    // layer, where the plugin doubles the decode rate; and over a long cache
+    // TensorRT's lowering reads every key at a fraction of the bandwidth (0.4-1
+    // ms per layer at 30k) while the plugin skips the chunks a sliding window
+    // hides.
+    const auto windowed = windowed_by_scores_.find(scores_op.Get());
+    const int64_t keys_read = windowed != windowed_by_scores_.end()
+                                  ? windowed_reads_[windowed->second].length
+                                  : seq;
+    if (heads < 2 && keys_read <= kSingleHeadNativeCacheLimit) {
       return false;
     }
     if (q_dims[0] != 1 || rows < 1 || rows > 16 || k_dims[0] != 1 ||
@@ -5331,6 +5697,9 @@ class TensorRtGraphBuilder {
     block.int8_cache = LiteRtNvidiaInt8CacheParams{
         k_quant.first, k_quant.second, v_quant.first, v_quant.second,
         /*value_columns=*/true};
+    if (windowed != windowed_by_scores_.end()) {
+      block.window = windowed->second;
+    }
     const size_t index = attention_blocks_.size();
     attention_blocks_.push_back(block);
     for (LiteRtOp member : {scores_op.Get(), select_op->Get(),
@@ -5372,6 +5741,13 @@ class TensorRtGraphBuilder {
       k_cache = raw_k->second;
       v_cache = raw_v->second;
     }
+    nvinfer1::ITensor* mask = tensor_map_[block.mask];
+    if (block.window.has_value()) {
+      auto& read = windowed_reads_[*block.window];
+      LITERT_ASSIGN_OR_RETURN(k_cache, WindowKeySlice(read));
+      LITERT_ASSIGN_OR_RETURN(v_cache, WindowValueSlice(read));
+      LITERT_ASSIGN_OR_RETURN(mask, WindowMaskSlice(read));
+    }
     TrtPtr<nvinfer1::IPluginV3> plugin(CreateDecodeAttentionPlugin(
         block.fill, new_keys,
         block.int8_cache.has_value() ? &*block.int8_cache : nullptr));
@@ -5379,8 +5755,7 @@ class TensorRtGraphBuilder {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to create CUDA decode attention plugin");
     }
-    std::vector<nvinfer1::ITensor*> inputs = {q, k_cache, v_cache,
-                                              tensor_map_[block.mask]};
+    std::vector<nvinfer1::ITensor*> inputs = {q, k_cache, v_cache, mask};
     if (new_keys) {
       for (LiteRtTensor fresh : {block.k_new, block.v_new}) {
         LITERT_ASSIGN_OR_RETURN(
@@ -5922,7 +6297,14 @@ class TensorRtGraphBuilder {
   }
 
   Expected<void> LowerSelectV2(const Op& op) {
-    LITERT_ASSIGN_OR_RETURN(auto* condition, GetTensor(op.Inputs()[0]));
+    nvinfer1::ITensor* condition = nullptr;
+    if (const auto select = windowed_by_select_.find(op.Get());
+        select != windowed_by_select_.end()) {
+      LITERT_ASSIGN_OR_RETURN(condition,
+                              WindowMaskSlice(windowed_reads_[select->second]));
+    } else {
+      LITERT_ASSIGN_OR_RETURN(condition, GetTensor(op.Inputs()[0]));
+    }
     LITERT_ASSIGN_OR_RETURN(auto* then_tensor, GetTensor(op.Inputs()[1]));
     LITERT_ASSIGN_OR_RETURN(auto* else_tensor, GetTensor(op.Inputs()[2]));
     const int target_rank = std::max({condition->getDimensions().nbDims,
@@ -6420,7 +6802,18 @@ class TensorRtGraphBuilder {
   // full context (window-equivalent; see IsCompositeSupported).
   Expected<void> LowerCompositeRuntimeBmm(const Op& op) {
     LITERT_ASSIGN_OR_RETURN(auto* a, GetTensor(op.Inputs()[0]));
-    LITERT_ASSIGN_OR_RETURN(auto* cache, GetTensor(op.Inputs()[1]));
+    nvinfer1::ITensor* cache = nullptr;
+    if (const auto scores = windowed_by_scores_.find(op.Get());
+        scores != windowed_by_scores_.end()) {
+      LITERT_ASSIGN_OR_RETURN(cache,
+                              WindowKeySlice(windowed_reads_[scores->second]));
+    } else if (const auto values = windowed_by_values_.find(op.Get());
+               values != windowed_by_values_.end()) {
+      LITERT_ASSIGN_OR_RETURN(
+          cache, WindowValueSlice(windowed_reads_[values->second]));
+    } else {
+      LITERT_ASSIGN_OR_RETURN(cache, GetTensor(op.Inputs()[1]));
+    }
     LITERT_ASSIGN_OR_RETURN(auto output_type,
                             op.Outputs()[0].RankedTensorType());
     LITERT_ASSIGN_OR_RETURN(auto output_dims, ConvertDims(output_type));
@@ -6743,6 +7136,10 @@ class TensorRtGraphBuilder {
   // Attention blocks fused into the CUDA plugin, by member op, and the mask
   // tilings that only fed them.
   std::vector<DecodeAttentionBlock> attention_blocks_;
+  std::vector<WindowedCacheRead> windowed_reads_;
+  std::unordered_map<LiteRtOp, size_t> windowed_by_scores_;
+  std::unordered_map<LiteRtOp, size_t> windowed_by_select_;
+  std::unordered_map<LiteRtOp, size_t> windowed_by_values_;
   // heads, rows, depth, seq of the last INT8-cache block matched (log).
   std::array<int, 4> int8_attention_geometry_ = {0, 0, 0, 0};
   std::unordered_map<LiteRtOp, size_t> fused_attention_ops_;

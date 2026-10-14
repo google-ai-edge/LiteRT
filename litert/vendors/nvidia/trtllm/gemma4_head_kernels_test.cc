@@ -425,7 +425,7 @@ TEST(Gemma4HeadKernelsTest, Int8CacheDecodeAttentionMatchesReference) {
   LiteRtNvidiaInt8CacheParams params = params_rows;
   EXPECT_EQ(LiteRtNvidiaLaunchDecodeAttentionInt8(
                 device_q.get(), true, device_k.get(), device_v_rows.get(),
-                &params, nullptr, 1, kHeads, kRows, kSeq, /*depth=*/128, kFill,
+                &params, nullptr, 1, kHeads, kRows, kSeq, /*depth=*/64, kFill,
                 device_out.get(), device_workspace.get(), nullptr),
             cudaErrorInvalidValue);
   params.k_scale = NAN;
@@ -434,6 +434,147 @@ TEST(Gemma4HeadKernelsTest, Int8CacheDecodeAttentionMatchesReference) {
                 &params, nullptr, 1, kHeads, kRows, kSeq, kDepth, kFill,
                 device_out.get(), device_workspace.get(), nullptr),
             cudaErrorInvalidValue);
+}
+
+// Gemma 4 E-model geometries with sliding-window masks: a local layer (two
+// heads, four rows, depth 256) and E2B's global layers (one head, eight rows,
+// depth 512), column value caches. Most chunks are hidden, and the kernel
+// must still match the reference, including rows whose window starts and
+// ends inside a chunk.
+TEST(Gemma4HeadKernelsTest, Int8CacheDecodeAttentionWindowedMasks) {
+  if (!litert::nvidia::IsInt2GemvComputeCapabilitySupported(
+          CurrentComputeCapability())) {
+    GTEST_SKIP() << "A CUDA GPU with compute capability 8.0 is unavailable";
+  }
+  struct Case {
+    int heads, rows, depth, seq, window_begin, window;
+  };
+  const Case cases[] = {{2, 4, 256, 1024, 300, 512},
+                        {1, 8, 512, 1024, 70, 512},
+                        {1, 8, 512, 200, 0, 200},
+                        {2, 3, 128, 320, 100, 64}};
+  constexpr float kFill = -1.0e9f;
+  const LiteRtNvidiaInt8CacheParams params = {0.0125f, -3, 0.02f, 5,
+                                              /*value_columns=*/true};
+  uint32_t state = 777u;
+  const auto next = [&]() {
+    state = state * 1664525u + 1013904223u;
+    return state >> 8;
+  };
+  for (const Case& c : cases) {
+    SCOPED_TRACE(::testing::Message()
+                 << "heads=" << c.heads << " rows=" << c.rows
+                 << " depth=" << c.depth << " seq=" << c.seq);
+    ASSERT_TRUE(LiteRtNvidiaDecodeAttentionInt8Supports(c.depth));
+    const size_t q_count = static_cast<size_t>(c.heads) * c.rows * c.depth;
+    const size_t cache_count = static_cast<size_t>(c.heads) * c.seq * c.depth;
+    std::vector<uint16_t> q(q_count);
+    for (auto& value : q) {
+      value =
+          FloatToBf16Bits(static_cast<float>(next() % 2048) / 1024.0f - 1.0f);
+    }
+    std::vector<int8_t> k(cache_count), v_rows(cache_count),
+        v_columns(cache_count);
+    for (auto& value : k) value = static_cast<int8_t>(next() % 256) - 128;
+    for (auto& value : v_rows) value = static_cast<int8_t>(next() % 256) - 128;
+    for (int h = 0; h < c.heads; ++h) {
+      for (int j = 0; j < c.seq; ++j) {
+        for (int d = 0; d < c.depth; ++d) {
+          v_columns[(static_cast<size_t>(h) * c.depth + d) * c.seq + j] =
+              v_rows[(static_cast<size_t>(h) * c.seq + j) * c.depth + d];
+        }
+      }
+    }
+    // Row r sees keys [window_begin + r, window_begin + r + window).
+    std::vector<uint8_t> mask(static_cast<size_t>(c.rows) * c.seq, 0);
+    for (int r = 0; r < c.rows; ++r) {
+      for (int j = c.window_begin + r;
+           j < std::min(c.seq, c.window_begin + r + c.window); ++j) {
+        mask[static_cast<size_t>(r) * c.seq + j] = 1;
+      }
+    }
+    std::vector<float> expected(q_count);
+    for (int h = 0; h < c.heads; ++h) {
+      for (int r = 0; r < c.rows; ++r) {
+        std::vector<float> scores(c.seq);
+        float max_score = -INFINITY;
+        for (int j = 0; j < c.seq; ++j) {
+          float dot = 0.0f;
+          for (int d = 0; d < c.depth; ++d) {
+            const float key =
+                (static_cast<float>(
+                     k[(static_cast<size_t>(h) * c.seq + j) * c.depth + d]) -
+                 params.k_zero_point) *
+                params.k_scale;
+            dot += Bf16BitsToFloat(
+                       q[(static_cast<size_t>(h) * c.rows + r) * c.depth + d]) *
+                   key;
+          }
+          scores[j] = mask[static_cast<size_t>(r) * c.seq + j] ? dot : kFill;
+          max_score = std::max(max_score, scores[j]);
+        }
+        float sum = 0.0f;
+        for (int j = 0; j < c.seq; ++j) {
+          scores[j] = std::exp(scores[j] - max_score);
+          sum += scores[j];
+        }
+        for (int d = 0; d < c.depth; ++d) {
+          float acc = 0.0f;
+          for (int j = 0; j < c.seq; ++j) {
+            const float value =
+                (static_cast<float>(
+                     v_rows[(static_cast<size_t>(h) * c.seq + j) * c.depth +
+                            d]) -
+                 params.v_zero_point) *
+                params.v_scale;
+            acc += scores[j] / sum * value;
+          }
+          expected[(static_cast<size_t>(h) * c.rows + r) * c.depth + d] = acc;
+        }
+      }
+    }
+    const size_t workspace_bytes = LiteRtNvidiaDecodeAttentionWorkspaceBytes(
+        c.heads, c.rows, c.seq, c.depth);
+    auto device_q = AllocateCuda(q.size() * sizeof(uint16_t));
+    auto device_k = AllocateCuda(k.size());
+    auto device_v = AllocateCuda(v_columns.size());
+    auto device_mask = AllocateCuda(mask.size());
+    auto device_out = AllocateCuda(q.size() * sizeof(uint16_t));
+    auto device_workspace = AllocateCuda(workspace_bytes);
+    ASSERT_TRUE(device_q && device_k && device_v && device_mask && device_out &&
+                device_workspace);
+    ASSERT_EQ(cudaMemcpy(device_q.get(), q.data(), q.size() * sizeof(uint16_t),
+                         cudaMemcpyHostToDevice),
+              cudaSuccess);
+    ASSERT_EQ(
+        cudaMemcpy(device_k.get(), k.data(), k.size(), cudaMemcpyHostToDevice),
+        cudaSuccess);
+    ASSERT_EQ(cudaMemcpy(device_v.get(), v_columns.data(), v_columns.size(),
+                         cudaMemcpyHostToDevice),
+              cudaSuccess);
+    ASSERT_EQ(cudaMemcpy(device_mask.get(), mask.data(), mask.size(),
+                         cudaMemcpyHostToDevice),
+              cudaSuccess);
+    ASSERT_EQ(
+        LiteRtNvidiaLaunchDecodeAttentionInt8(
+            device_q.get(), /*q_bf16=*/true, device_k.get(), device_v.get(),
+            &params, static_cast<const bool*>(device_mask.get()),
+            /*mask_rows=*/c.rows, c.heads, c.rows, c.seq, c.depth, kFill,
+            device_out.get(), device_workspace.get(),
+            /*stream=*/nullptr),
+        cudaSuccess);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    std::vector<uint16_t> actual(q.size());
+    ASSERT_EQ(
+        cudaMemcpy(actual.data(), device_out.get(),
+                   actual.size() * sizeof(uint16_t), cudaMemcpyDeviceToHost),
+        cudaSuccess);
+    for (size_t i = 0; i < actual.size(); ++i) {
+      ASSERT_NEAR(Bf16BitsToFloat(actual[i]), expected[i],
+                  1e-2f * std::fabs(expected[i]) + 2e-2f)
+          << "i=" << i;
+    }
+  }
 }
 
 TEST(Gemma4HeadKernelsTest, BatchedRowsRejectInvalidArguments) {

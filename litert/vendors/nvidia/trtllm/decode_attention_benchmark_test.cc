@@ -1,5 +1,6 @@
 // Timing of the decode attention kernels at Gemma 4 decode geometries (not a
 // correctness test). Prints microseconds per launch pair.
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -29,6 +30,7 @@ struct Config {
   bool int8;
   bool columns;
   int heads, rows, depth, seq;
+  int window = 0;  // 0: every key visible; else the last `window` keys
 };
 
 void Time(const Config& c) {
@@ -39,7 +41,18 @@ void Time(const Config& c) {
   auto k = AllocateCuda(cache_bytes);
   auto v = AllocateCuda(cache_bytes);
   auto mask = AllocateCuda(static_cast<size_t>(c.rows) * c.seq);
-  cudaMemset(mask.get(), 1, static_cast<size_t>(c.rows) * c.seq);
+  {
+    std::vector<uint8_t> host_mask(static_cast<size_t>(c.rows) * c.seq, 1);
+    if (c.window > 0 && c.window < c.seq) {
+      std::fill(host_mask.begin(), host_mask.end(), 0);
+      for (int r = 0; r < c.rows; ++r) {
+        for (int j = c.seq - c.window; j < c.seq; ++j)
+          host_mask[r * c.seq + j] = 1;
+      }
+    }
+    cudaMemcpy(mask.get(), host_mask.data(), host_mask.size(),
+               cudaMemcpyHostToDevice);
+  }
   auto out = AllocateCuda(q_bytes);
   const size_t ws_bytes = LiteRtNvidiaDecodeAttentionWorkspaceBytes(
       c.heads, c.rows, c.seq, c.depth);
@@ -106,9 +119,9 @@ void Time(const Config& c) {
   cudaEventElapsedTime(&graph_ms, start, stop);
   ASSERT_EQ(cudaGetLastError(), cudaSuccess);
   std::printf(
-      "ATTN %-28s heads=%d rows=%d depth=%d seq=%5d  stream %7.2f us/call  "
-      "graph %7.2f us/call (workspace %zu KB)\n",
-      c.name, c.heads, c.rows, c.depth, c.seq, ms * 1000.0f / kIters,
+      "ATTN %-28s heads=%d rows=%d depth=%d seq=%5d window=%d  stream %7.2f "
+      "us/call  graph %7.2f us/call (workspace %zu KB)\n",
+      c.name, c.heads, c.rows, c.depth, c.seq, c.window, ms * 1000.0f / kIters,
       graph_ms * 1000.0f / (kGraphIters * kGraphCalls), ws_bytes / 1024);
   cudaGraphExecDestroy(exec);
   cudaGraphDestroy(graph);
@@ -172,6 +185,16 @@ TEST(DecodeAttentionBenchmark, Geometries) {
       {"int8-columns (E2B local)", true, true, 1, 8, 256, 512},
       {"int8-columns (E2B global 2k)", true, true, 1, 8, 256, 2048},
       {"int8-rows", true, false, 2, 4, 256, 2048},
+      {"int8-rows (E4B 32k)", true, false, 2, 4, 256, 32768},
+      {"int8-columns (E2B 8k)", true, true, 1, 8, 256, 8192},
+      {"int8-columns (E2B 30k)", true, true, 1, 8, 256, 30720},
+      {"int8-rows (E2B 30k)", true, false, 1, 8, 256, 30720},
+      {"int8-columns (E4B 16k)", true, true, 2, 4, 256, 16384},
+      {"E4B local 30k, 512 window", true, true, 2, 4, 256, 30720, 512},
+      {"E4B global 30k, depth 512", true, true, 2, 4, 512, 30720},
+      {"E2B local 30k, 512 window", true, true, 1, 8, 256, 30720, 512},
+      {"E2B global 30k, depth 512", true, true, 1, 8, 512, 30720},
+      {"E2B global 2k, depth 512", true, true, 1, 8, 512, 2048},
       {"fp16-rows same geometry", false, false, 2, 4, 256, 2048},
       {"fp16-rows (12B-like)", false, false, 8, 2, 256, 2048},
       {"fp16-rows (12B-like 32k)", false, false, 8, 2, 256, 32768},

@@ -99,7 +99,7 @@ __host__ __device__ constexpr int ThreadsFor() {
 // reads a key's rows with 16-byte loads; the pad keeps rows 16-byte aligned.
 template <int kRowsCap>
 __host__ __device__ constexpr int RowsPadFor() {
-  return kRowsCap == 16 ? 20 : 4;
+  return kRowsCap == 16 ? 20 : kRowsCap == 8 ? 8 : 4;
 }
 
 template <int kDepth, int kRowsCap, bool kValueColumns>
@@ -159,8 +159,8 @@ __device__ __forceinline__ void LoadColumnValues(
 //
 // At decode sizes the kernel is latency-bound (a 2 MB cache is microseconds
 // of bandwidth, each dependent memory round trip about one), so a block
-// issues every load of a chunk as early as it can: the values before the
-// query and the mask, and all of its keys in one batch.
+// reads a chunk in two round trips: the mask, then (if any row sees the
+// chunk) all of its values and keys at once.
 template <typename T, int kDepth, int kRowsCap, typename Cache>
 __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
     DecodeAttentionPartial(const T* __restrict__ q,
@@ -205,16 +205,7 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   const bool value_vectors =
       Cache::kValueColumns &&
       (static_cast<size_t>(seq) * sizeof(Element)) % 16 == 0;
-
-  // The block's first chunk, and its values on the way before anything else.
-  int c = split;
-  int j0 = c * kChunk;
-  int chunk = min(kChunk, seq - j0);
   int4 v_vec[kValueRows][kValueCols];
-  if constexpr (Cache::kValueColumns) {
-    LoadColumnValues<Cache, kThreadElems, kValueVecs, kVecKeys>(
-        v_head, seq, j0, chunk, tid, value_vectors, v_vec);
-  }
 
   // q[h][r][d] -> q_s[r][ (d / kLaneElems) + 32 * (d % kLaneElems) ]: lane
   // (d / kLaneElems) owns element (d % kLaneElems) of its slice.
@@ -250,8 +241,14 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
     l_s[tid] = 0.0f;
   }
   __syncthreads();
-  while (c < num_chunks) {
-  // The chunk's mask bytes, loaded once instead of per key.
+  for (int c = split; c < num_chunks; c += gridDim.x) {
+  const int j0 = c * kChunk;
+  const int chunk = min(kChunk, seq - j0);
+  // The chunk's mask bytes, loaded once instead of per key. A chunk that no
+  // row can see (a sliding window hides most of a long cache) is skipped
+  // before any key or value is read, so such layers cost the window, not the
+  // context.
+  bool visible = mask == nullptr;
   if (tid < kChunk) {
 #pragma unroll
     for (int r = 0; r < kRowsCap; ++r) {
@@ -261,12 +258,19 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
         if (mask != nullptr && jj < chunk) {
           keep = mask[static_cast<size_t>(mask_rows == 1 ? 0 : r) * seq + j0 +
                       jj];
+          visible |= keep;
         }
         mask_s[r * kChunk + jj] = keep;
       }
     }
   }
-  __syncthreads();
+  if (!__syncthreads_or(visible ? 1 : 0)) {
+    continue;
+  }
+  if constexpr (Cache::kValueColumns) {
+    LoadColumnValues<Cache, kThreadElems, kValueVecs, kVecKeys>(
+        v_head, seq, j0, chunk, tid, value_vectors, v_vec);
+  }
 
   // Scores: each warp takes keys warp, warp + kWarps, ... of the chunk,
   // kBatch of them loaded together; keys past the chunk are computed and
@@ -460,15 +464,6 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
     }
   }
   __syncthreads();  // p_s and mask_s are rewritten by the next chunk
-  c += gridDim.x;
-  if (c < num_chunks) {
-    j0 = c * kChunk;
-    chunk = min(kChunk, seq - j0);
-    if constexpr (Cache::kValueColumns) {
-      LoadColumnValues<Cache, kThreadElems, kValueVecs, kVecKeys>(
-          v_head, seq, j0, chunk, tid, value_vectors, v_vec);
-    }
-  }
   }
   const size_t part = (static_cast<size_t>(head) * splits + split) * rows;
 #pragma unroll
@@ -569,7 +564,9 @@ __global__ void __launch_bounds__(kCombineThreads)
 }
 
 // Blocks per head: one per chunk up to kMaxSplits; beyond that the blocks
-// loop over chunks, which keeps the partial workspace and the combine small.
+// loop over chunks, which keeps the partial workspace and the combine small
+// (336 measured slower at 30k keys: the blocks are instruction-bound and the
+// combine grows with the splits).
 constexpr int kMaxSplits = 168;
 int SplitCount(int seq) {
   const int chunks = (seq + kChunk - 1) / kChunk;
@@ -630,6 +627,10 @@ cudaError_t LaunchRows(const T* q, const typename Cache::Element* k,
     return Launch<T, kDepth, 4, Cache>(q, k, v, cache, mask, mask_rows, heads,
                                        rows, seq, fill, out, workspace, stream);
   }
+  if (rows <= 8) {
+    return Launch<T, kDepth, 8, Cache>(q, k, v, cache, mask, mask_rows, heads,
+                                       rows, seq, fill, out, workspace, stream);
+  }
   return Launch<T, kDepth, kMaxRows, Cache>(q, k, v, cache, mask, mask_rows,
                                             heads, rows, seq, fill, out,
                                             workspace, stream);
@@ -656,26 +657,45 @@ cudaError_t LaunchDepth(const T* q, const __half* k, const __half* v,
   }
 }
 
-// INT8 caches: depth 256 (Gemma 4 E4B), value rows or columns.
+template <typename T, typename Cache>
+cudaError_t LaunchInt8Depth(const T* q, const int8_t* k, const int8_t* v,
+                            const Cache& cache, const bool* mask,
+                            int mask_rows, int heads, int rows, int seq,
+                            int depth, float fill, T* out, void* workspace,
+                            cudaStream_t stream) {
+  switch (depth) {
+    case 128:
+      return LaunchRows<T, 128>(q, k, v, cache, mask, mask_rows, heads, rows,
+                                seq, fill, out, workspace, stream);
+    case 256:
+      return LaunchRows<T, 256>(q, k, v, cache, mask, mask_rows, heads, rows,
+                                seq, fill, out, workspace, stream);
+    case 512:
+      return LaunchRows<T, 512>(q, k, v, cache, mask, mask_rows, heads, rows,
+                                seq, fill, out, workspace, stream);
+    default:
+      return cudaErrorInvalidValue;
+  }
+}
+
+// INT8 caches: depths 128, 256 (Gemma 4 E-model local layers) and 512 (their
+// global layers), value rows or columns.
 template <typename T>
 cudaError_t LaunchInt8(const T* q, const int8_t* k, const int8_t* v,
                        const LiteRtNvidiaInt8CacheParams& params,
                        const bool* mask, int mask_rows, int heads, int rows,
                        int seq, int depth, float fill, T* out,
                        void* workspace, cudaStream_t stream) {
-  if (depth != 256) {
-    return cudaErrorInvalidValue;
-  }
   if (params.value_columns) {
     const Int8Cache<true> cache{params.k_scale, params.v_scale,
                                 params.k_zero_point, params.v_zero_point};
-    return LaunchRows<T, 256>(q, k, v, cache, mask, mask_rows, heads, rows,
-                              seq, fill, out, workspace, stream);
+    return LaunchInt8Depth(q, k, v, cache, mask, mask_rows, heads, rows, seq,
+                           depth, fill, out, workspace, stream);
   }
   const Int8Cache<false> cache{params.k_scale, params.v_scale,
                                params.k_zero_point, params.v_zero_point};
-  return LaunchRows<T, 256>(q, k, v, cache, mask, mask_rows, heads, rows, seq,
-                            fill, out, workspace, stream);
+  return LaunchInt8Depth(q, k, v, cache, mask, mask_rows, heads, rows, seq,
+                         depth, fill, out, workspace, stream);
 }
 
 }  // namespace
@@ -713,7 +733,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttention(
 }
 
 extern "C" bool LiteRtNvidiaDecodeAttentionInt8Supports(int32_t depth) {
-  return depth == 256;
+  return depth == 128 || depth == 256 || depth == 512;
 }
 
 extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttentionInt8(

@@ -144,9 +144,9 @@ TEST_F(DecodeAttentionPluginTest, AcceptsInt8CachesWithColumnValues) {
   inputs_[2].dims = inputs_[1].dims;
   EXPECT_NE(ShapeStatus(), 0);
   inputs_[2].dims = nvinfer1::Dims4{1, 2, 256, 2048};
-  inputs_[0].dims.d[3] = 128;
-  inputs_[1].dims.d[3] = 128;
-  inputs_[2].dims.d[2] = 128;
+  inputs_[0].dims.d[3] = 64;
+  inputs_[1].dims.d[3] = 64;
+  inputs_[2].dims.d[2] = 64;
   output_ = inputs_[0];
   EXPECT_NE(ShapeStatus(), 0);
   // The INT8 plugin takes no fresh keys and no non-positive scale.
