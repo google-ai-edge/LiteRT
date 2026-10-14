@@ -5232,8 +5232,11 @@ class TensorRtGraphBuilder {
     if (num_blocks != 0) {
       LITERT_LOG(LITERT_INFO,
                  "NVIDIA TensorRT-RTX fusing %zu attention blocks over INT8 "
-                 "caches into the CUDA attention plugin",
-                 num_blocks);
+                 "caches into the CUDA attention plugin (last block: heads=%d "
+                 "rows=%d depth=%d seq=%d)",
+                 num_blocks, int8_attention_geometry_[0],
+                 int8_attention_geometry_[1], int8_attention_geometry_[2],
+                 int8_attention_geometry_[3]);
     }
     return {};
   }
@@ -5293,6 +5296,16 @@ class TensorRtGraphBuilder {
     const auto rows = q_dims[2];
     const auto depth = q_dims[3];
     const auto seq = k_dims[2];
+    // A single KV head (Gemma 4 E2B: one head, eight query rows) is an
+    // ordinary matmul chain that TensorRT lowers to its FC and softmax
+    // kernels in a few microseconds; the plugin's one block per head and
+    // chunk cannot match that (measured 282-290 against 317 steps/s on E2B).
+    // Several KV heads (E4B: two heads, four rows) go to Myelin's fused
+    // decode MHA kernel, which costs 180 us per layer, and there the plugin
+    // doubles the decode rate.
+    if (heads < 2) {
+      return false;
+    }
     if (q_dims[0] != 1 || rows < 1 || rows > 16 || k_dims[0] != 1 ||
         k_dims[1] != heads || k_dims[3] != depth || v_dims[0] != 1 ||
         v_dims[1] != heads || v_dims[2] != depth || v_dims[3] != seq ||
@@ -5306,6 +5319,8 @@ class TensorRtGraphBuilder {
         !LiteRtNvidiaDecodeAttentionInt8Supports(static_cast<int32_t>(depth))) {
       return false;
     }
+    int8_attention_geometry_ = {static_cast<int>(heads), static_cast<int>(rows),
+                                static_cast<int>(depth), static_cast<int>(seq)};
     DecodeAttentionBlock block;
     block.q = q.Get();
     block.k_out = k_out.Get();
@@ -6728,6 +6743,8 @@ class TensorRtGraphBuilder {
   // Attention blocks fused into the CUDA plugin, by member op, and the mask
   // tilings that only fed them.
   std::vector<DecodeAttentionBlock> attention_blocks_;
+  // heads, rows, depth, seq of the last INT8-cache block matched (log).
+  std::array<int, 4> int8_attention_geometry_ = {0, 0, 0, 0};
   std::unordered_map<LiteRtOp, size_t> fused_attention_ops_;
   std::unordered_set<LiteRtOp> unlowered_ops_;
 };

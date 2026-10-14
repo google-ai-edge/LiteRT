@@ -462,7 +462,7 @@ usage() {
   cat <<'HELP'
 Usage:
   run_head.sh report [--profile e2b|e4b|12b] [--model-file PATH]
-    [--workload short|32k|128k] [--prefill 128|1024] [--mtp] [--signatures LIST]
+    [--workload short|8k|16k|30k|32k|128k] [--prefill 128|1024] [--mtp] [--signatures LIST]
     [--residency auto|lazy|resident] [--metrics verify,latency,memory|all]
     [--cache-state warm|runtime-cold|cold|all] [--weights shared|private|embedded]
   run_head.sh cache list [--profile e2b|e4b|12b] [--kind build|aot|runtime|compiler|cpu]
@@ -527,15 +527,15 @@ if [[ $action == cache ]]; then
   [[ $all == no || ( -z $profile_filter && -z $kind ) ]] || die 'Use --all by itself, or intersect --profile and --kind'
 else
   [[ ${LITERT_BENCH_ALLOW_BACKGROUND_ACTIVITY-1} =~ ^[01]$ ]] || die 'LITERT_BENCH_ALLOW_BACKGROUND_ACTIVITY must be 0 or 1'
-  [[ $workload =~ ^(short|32k|128k)$ ]] || die 'Invalid workload'
+  [[ $workload =~ ^(short|8k|16k|30k|32k|128k)$ ]] || die 'Invalid workload'
   [[ $residency =~ ^(auto|lazy|resident)$ ]] || die 'Invalid residency'
   [[ $cache_state =~ ^(warm|runtime-cold|cold|all)$ ]] || die 'Invalid cache state'
   [[ $weights =~ ^(shared|private|embedded)$ ]] || die 'Invalid weights'
   [[ $metrics == all || $metrics =~ ^(verify|latency|memory)(,(verify|latency|memory))*$ ]] || die 'Metrics must be a nonempty subset of verify,latency,memory'
-  [[ ( $profile != e2b && $profile != e4b ) || $workload == short ]] || die 'E2B and E4B support the short preset only'
+  [[ ( $profile != e2b && $profile != e4b ) || $workload =~ ^(short|8k|16k|30k)$ ]] || die 'E2B and E4B (32K-token models) support short, 8k, 16k and 30k'
   [[ -z $signatures || $signatures =~ ^[a-z_0-9]+(,[a-z_0-9]+)*$ ]] || die '--signatures takes a comma-separated list of signature names'
   [[ -z $signatures || $mtp == false || ,$signatures, == *,verify,* ]] || die '--mtp needs verify among --signatures'
-  prefill=${prefill:-$([[ $workload == short ]] && echo 1024 || echo 128)}
+  prefill=${prefill:-$([[ $workload =~ ^(32k|128k)$ ]] && echo 128 || echo 1024)}
   [[ $prefill == 128 || $prefill == 1024 ]] || die 'Prefill must be 128 or 1024'
 fi
 
@@ -584,6 +584,9 @@ fi
 export NB_PROFILE=$profile NB_WORKLOAD=$workload NB_PREFILL=$prefill NB_MTP=$mtp NB_METRICS=$metrics NB_STATE=$cache_state NB_WEIGHTS=$weights NB_SIGNATURES=$signatures
 case "$workload:$prefill" in
   short:*) NB_INPUT=1024; NB_OUTPUT=256; NB_CONTEXT=2048; iterations=8; warmups=2; processes=1 ;;
+  8k:*) NB_INPUT=8192; NB_OUTPUT=256; NB_CONTEXT=9216; iterations=4; warmups=1; processes=2 ;;
+  16k:*) NB_INPUT=16384; NB_OUTPUT=256; NB_CONTEXT=17408; iterations=4; warmups=1; processes=2 ;;
+  30k:*) NB_INPUT=30720; NB_OUTPUT=256; NB_CONTEXT=31744; iterations=4; warmups=1; processes=2 ;;
   32k:128) NB_INPUT=32768; NB_OUTPUT=256; NB_CONTEXT=34818; iterations=4; warmups=1; processes=2 ;;
   32k:1024) NB_INPUT=32768; NB_OUTPUT=256; NB_CONTEXT=33792; iterations=4; warmups=1; processes=2 ;;
   128k:128) NB_INPUT=128001; NB_OUTPUT=128; NB_CONTEXT=130816; iterations=4; warmups=1; processes=1 ;;

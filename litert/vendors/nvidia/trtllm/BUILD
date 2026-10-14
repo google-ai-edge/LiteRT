@@ -102,6 +102,27 @@ cc_test(
 )
 
 cc_test(
+    name = "decode_attention_benchmark_test",
+    srcs = ["decode_attention_benchmark_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
     name = "global_attention_test",
     srcs = ["global_attention_test.cc"],
     tags = [

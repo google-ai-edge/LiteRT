@@ -102,21 +102,48 @@ __host__ __device__ constexpr int RowsPadFor() {
   return kRowsCap == 16 ? 20 : 4;
 }
 
-// Pitch of a staged value tile row: kDepth bytes plus a pad that spreads the
-// transposed stores over the shared memory banks.
-constexpr int kValueTilePad = 4;
-
 template <int kDepth, int kRowsCap, bool kValueColumns>
 __host__ __device__ constexpr size_t SharedBytesFor() {
   // q as fp32 [rows][E][32], scores/probabilities [kChunk][kRowsPad] fp32,
-  // row max and sum, mask bytes [rows][kChunk], and for column value caches
-  // the chunk's values [kChunk][kDepth + pad] bytes.
+  // row max and sum, and mask bytes [rows][kChunk]. Column value caches are
+  // read straight into registers (below), so no staging tile.
   return static_cast<size_t>(kRowsCap) * kDepth * sizeof(float) +
          static_cast<size_t>(kChunk) * RowsPadFor<kRowsCap>() * sizeof(float) +
          3 * kRowsCap * sizeof(float) +
-         static_cast<size_t>(kRowsCap) * kChunk * sizeof(bool) +
-         (kValueColumns ? static_cast<size_t>(kChunk) * (kDepth + kValueTilePad)
-                        : 0);
+         static_cast<size_t>(kRowsCap) * kChunk * sizeof(bool);
+}
+
+// Column value caches ([depth][seq]): a thread's depth elements of a chunk
+// are contiguous along the sequence, so it fetches them as 16-byte vectors,
+// all issued together. A chunk tail or a sequence whose rows are not 16-byte
+// aligned falls back to element loads.
+template <typename Cache, int kThreadElems, int kValueVecs, int kVecKeys>
+__device__ __forceinline__ void LoadColumnValues(
+    const typename Cache::Element* __restrict__ v_head, int seq, int j0,
+    int chunk, int tid, bool vectors,
+    int4 (&v_vec)[kThreadElems][kValueVecs]) {
+  using Element = typename Cache::Element;
+#pragma unroll
+  for (int e = 0; e < kThreadElems; ++e) {
+    const Element* v_row =
+        v_head + static_cast<size_t>(tid * kThreadElems + e) * seq + j0;
+#pragma unroll
+    for (int c = 0; c < kValueVecs; ++c) {
+      const int jv = c * kVecKeys;
+      if (vectors && jv + kVecKeys <= chunk) {
+        v_vec[e][c] = reinterpret_cast<const int4*>(v_row)[c];
+      } else {
+        v_vec[e][c] = make_int4(0, 0, 0, 0);
+        Element* tail = reinterpret_cast<Element*>(&v_vec[e][c]);
+#pragma unroll
+        for (int i = 0; i < kVecKeys; ++i) {
+          if (jv + i < chunk) {
+            tail[i] = v_row[jv + i];
+          }
+        }
+      }
+    }
+  }
 }
 
 // Clang may retain loops despite the kernel's best-effort unroll hints, and
@@ -129,6 +156,11 @@ __host__ __device__ constexpr size_t SharedBytesFor() {
 // sum, then the chunk's mask. Partial results go to the workspace:
 // acc [heads][splits][rows][depth], then m [heads][splits][rows], then
 // l [heads][splits][rows].
+//
+// At decode sizes the kernel is latency-bound (a 2 MB cache is microseconds
+// of bandwidth, each dependent memory round trip about one), so a block
+// issues every load of a chunk as early as it can: the values before the
+// query and the mask, and all of its keys in one batch.
 template <typename T, int kDepth, int kRowsCap, typename Cache>
 __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
     DecodeAttentionPartial(const T* __restrict__ q,
@@ -144,7 +176,16 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   constexpr int kLaneElems = kDepth / 32;     // key elements per lane (QK)
   constexpr int kThreadElems = kDepth / kThreads;  // value elements per thread
   constexpr int kRowsPad = RowsPadFor<kRowsCap>();
-  constexpr int kTilePitch = kDepth + kValueTilePad;
+  // Keys a warp loads together: a column cache's whole chunk share for a few
+  // rows (its values are already in flight, so the keys are the one remaining
+  // round trip); row caches keep the smaller batch, which measured faster.
+  constexpr int kBatch =
+      Cache::kValueColumns && kRowsCap <= 4 ? kChunk / kWarps : kKeyBatch;
+  // Column values: keys per 16-byte vector and vectors per chunk row.
+  constexpr int kVecKeys = 16 / static_cast<int>(sizeof(Element));
+  constexpr int kValueVecs = kChunk / kVecKeys;
+  constexpr int kValueRows = Cache::kValueColumns ? kThreadElems : 1;
+  constexpr int kValueCols = Cache::kValueColumns ? kValueVecs : 1;
   extern __shared__ float smem[];
   float* q_s = smem;                                   // rows * depth
   float* p_s = q_s + kRowsCap * kDepth;                // kChunk * kRowsPad
@@ -152,8 +193,6 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   float* l_s = m_s + kRowsCap;                         // rows
   float* scale_s = l_s + kRowsCap;                     // rows
   bool* mask_s = reinterpret_cast<bool*>(scale_s + kRowsCap);  // rows*kChunk
-  // Column value caches: the chunk's values as rows [kChunk, kTilePitch].
-  Element* v_tile = reinterpret_cast<Element*>(mask_s + kRowsCap * kChunk);
 
   const int split = blockIdx.x;
   const int head = blockIdx.y;
@@ -161,6 +200,21 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   const int warp = tid / 32;
   const int lane = tid % 32;
   const int num_chunks = (seq + kChunk - 1) / kChunk;
+  const Element* k_head = k + static_cast<size_t>(head) * seq * kDepth;
+  const Element* v_head = v + static_cast<size_t>(head) * seq * kDepth;
+  const bool value_vectors =
+      Cache::kValueColumns &&
+      (static_cast<size_t>(seq) * sizeof(Element)) % 16 == 0;
+
+  // The block's first chunk, and its values on the way before anything else.
+  int c = split;
+  int j0 = c * kChunk;
+  int chunk = min(kChunk, seq - j0);
+  int4 v_vec[kValueRows][kValueCols];
+  if constexpr (Cache::kValueColumns) {
+    LoadColumnValues<Cache, kThreadElems, kValueVecs, kVecKeys>(
+        v_head, seq, j0, chunk, tid, value_vectors, v_vec);
+  }
 
   // q[h][r][d] -> q_s[r][ (d / kLaneElems) + 32 * (d % kLaneElems) ]: lane
   // (d / kLaneElems) owns element (d % kLaneElems) of its slice.
@@ -196,21 +250,7 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
     l_s[tid] = 0.0f;
   }
   __syncthreads();
-  const Element* k_head = k + static_cast<size_t>(head) * seq * kDepth;
-  const Element* v_head = v + static_cast<size_t>(head) * seq * kDepth;
-  for (int c = split; c < num_chunks; c += gridDim.x) {
-  const int j0 = c * kChunk;
-  const int chunk = min(kChunk, seq - j0);
-  if constexpr (Cache::kValueColumns) {
-    // v_head is [kDepth, seq]: read each depth row's chunk contiguously and
-    // store it transposed, so the value pass below reads rows of the tile.
-    for (int i = tid; i < kDepth * chunk; i += kThreads) {
-      const int d = i / chunk;
-      const int jj = i - d * chunk;
-      v_tile[jj * kTilePitch + d] =
-          v_head[static_cast<size_t>(d) * seq + j0 + jj];
-    }
-  }
+  while (c < num_chunks) {
   // The chunk's mask bytes, loaded once instead of per key.
   if (tid < kChunk) {
 #pragma unroll
@@ -228,82 +268,69 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   }
   __syncthreads();
 
-  // Scores: each warp takes every kWarps-th key of the chunk, kKeyBatch keys
-  // per iteration so their loads are in flight together (the loop is
-  // latency-bound otherwise). Keys past the chunk are computed and dropped.
-  // A lane's slice of a key is kLaneElems * sizeof(Element) bytes: 16-byte
-  // loads where it is at least 16 bytes, one 8- or 4-byte load otherwise.
+  // Scores: each warp takes keys warp, warp + kWarps, ... of the chunk,
+  // kBatch of them loaded together; keys past the chunk are computed and
+  // dropped. A lane's slice of a key is kLaneElems * sizeof(Element) bytes:
+  // 16-byte loads where it is at least 16 bytes, one 8- or 4-byte load
+  // otherwise. The keys stay packed in registers and are converted per row,
+  // which keeps the register count under the launch bound.
   constexpr int kLaneBytes = kLaneElems * static_cast<int>(sizeof(Element));
   constexpr int kVecs = kLaneBytes / 16;
   using Narrow = typename std::conditional<kLaneBytes == 8, int2, int>::type;
-  for (int jb = warp; jb < chunk; jb += kWarps * kKeyBatch) {
-    int4 k_vec[kKeyBatch][kVecs > 0 ? kVecs : 1];
-    Narrow k_narrow[kKeyBatch];
+  for (int jb = warp; jb < chunk; jb += kWarps * kBatch) {
+    int4 k_vec[kBatch][kVecs > 0 ? kVecs : 1];
+    Narrow k_narrow[kBatch];
 #pragma unroll
-    for (int b = 0; b < kKeyBatch; ++b) {
+    for (int b = 0; b < kBatch; ++b) {
       const int jj = min(jb + b * kWarps, chunk - 1);
       const Element* k_row =
           k_head + static_cast<size_t>(j0 + jj) * kDepth + lane * kLaneElems;
       if (kVecs > 0) {
 #pragma unroll
-        for (int c = 0; c < kVecs; ++c) {
-          k_vec[b][c] = reinterpret_cast<const int4*>(k_row)[c];
+        for (int c2 = 0; c2 < kVecs; ++c2) {
+          k_vec[b][c2] = reinterpret_cast<const int4*>(k_row)[c2];
         }
       } else {
         k_narrow[b] = reinterpret_cast<const Narrow*>(k_row)[0];
       }
     }
-    // Convert the batch once, then walk the rows with each query slice read
-    // from shared memory once per batch (not once per key).
-    float k_reg[kKeyBatch][kLaneElems];
+    float partial[kBatch][kRowsCap];
 #pragma unroll
-    for (int b = 0; b < kKeyBatch; ++b) {
-      if (kVecs > 0) {
-        constexpr int kPerVec = 16 / static_cast<int>(sizeof(Element));
-#pragma unroll
-        for (int c = 0; c < kVecs; ++c) {
-          const Element* h = reinterpret_cast<const Element*>(&k_vec[b][c]);
-#pragma unroll
-          for (int e = 0; e < kPerVec; ++e) {
-            k_reg[b][c * kPerVec + e] = cache.Key(h[e]);
-          }
-        }
-      } else {
-        const Element* h = reinterpret_cast<const Element*>(&k_narrow[b]);
+    for (int r = 0; r < kRowsCap; ++r) {
+      float q_reg[kLaneElems];
+      if (r < rows) {
+        const float* q_row = q_s + r * kDepth + lane;
 #pragma unroll
         for (int e = 0; e < kLaneElems; ++e) {
-          k_reg[b][e] = cache.Key(h[e]);
+          q_reg[e] = q_row[32 * e];
         }
+      }
+#pragma unroll
+      for (int b = 0; b < kBatch; ++b) {
+        float dot = 0.0f;
+        if (r < rows) {
+          const Element* h =
+              kVecs > 0 ? reinterpret_cast<const Element*>(k_vec[b])
+                        : reinterpret_cast<const Element*>(&k_narrow[b]);
+#pragma unroll
+          for (int e = 0; e < kLaneElems; ++e) {
+            dot = fmaf(q_reg[e], cache.Key(h[e]), dot);
+          }
+        }
+        partial[b][r] = dot;
       }
     }
 #pragma unroll
-    for (int r = 0; r < kRowsCap; ++r) {
-      if (r >= rows) {
-        break;
-      }
-      const float* q_row = q_s + r * kDepth + lane;
-      float q_reg[kLaneElems];
+    for (int b = 0; b < kBatch; ++b) {
 #pragma unroll
-      for (int e = 0; e < kLaneElems; ++e) {
-        q_reg[e] = q_row[32 * e];
-      }
-      float partial[kKeyBatch];
-#pragma unroll
-      for (int b = 0; b < kKeyBatch; ++b) {
-        partial[b] = 0.0f;
-#pragma unroll
-        for (int e = 0; e < kLaneElems; ++e) {
-          partial[b] = fmaf(q_reg[e], k_reg[b][e], partial[b]);
-        }
-        partial[b] = WarpSum(partial[b]);
-      }
-      if (lane == 0) {
-#pragma unroll
-        for (int b = 0; b < kKeyBatch; ++b) {
-          const int jj = jb + b * kWarps;
-          if (jj < chunk) {
-            p_s[jj * kRowsPad + r] =
-                mask_s[r * kChunk + jj] ? partial[b] : fill;
+      for (int r = 0; r < kRowsCap; ++r) {
+        if (r < rows) {
+          const float score = WarpSum(partial[b][r]);
+          if (lane == 0) {
+            const int jj = jb + b * kWarps;
+            if (jj < chunk) {
+              p_s[jj * kRowsPad + r] = mask_s[r * kChunk + jj] ? score : fill;
+            }
           }
         }
       }
@@ -354,33 +381,14 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   // Weighted values: thread t owns depth slice [t * kThreadElems, +kThreadElems).
   // Row loops are unrolled to the compile-time cap so `acc` stays in
   // registers (a runtime-indexed register array is demoted to local memory).
-  for (int jb = 0; jb < chunk; jb += kValueBatch) {
-    Element v_reg[kValueBatch][kThreadElems];
+  if constexpr (Cache::kValueColumns) {
+    // The chunk's values are in registers; a key's probabilities come from
+    // one broadcast 16-byte shared-memory read per four rows.
 #pragma unroll
-    for (int b = 0; b < kValueBatch; ++b) {
-      const int jj = min(jb + b, chunk - 1);
-      const Element* v_row =
-          Cache::kValueColumns
-              ? v_tile + jj * kTilePitch + tid * kThreadElems
-              : v_head + static_cast<size_t>(j0 + jj) * kDepth +
-                    tid * kThreadElems;
-#pragma unroll
-      for (int e = 0; e < kThreadElems; ++e) {
-        v_reg[b][e] = v_row[e];
-      }
-    }
-#pragma unroll
-    for (int b = 0; b < kValueBatch; ++b) {
-      const int jj = jb + b;
+    for (int jj = 0; jj < kChunk; ++jj) {
       if (jj >= chunk) {
         break;
       }
-      float v_f[kThreadElems];
-#pragma unroll
-      for (int e = 0; e < kThreadElems; ++e) {
-        v_f[e] = cache.Value(v_reg[b][e]);
-      }
-      // The key's probabilities, four rows per 16-byte load.
       float p_reg[kRowsCap];
 #pragma unroll
       for (int r4 = 0; r4 < kRowsCap / 4; ++r4) {
@@ -392,17 +400,75 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
         p_reg[r4 * 4 + 3] = packed.w;
       }
 #pragma unroll
-      for (int r = 0; r < kRowsCap; ++r) {
-        if (r < rows) {
+      for (int e = 0; e < kThreadElems; ++e) {
+        const Element* vals =
+            reinterpret_cast<const Element*>(&v_vec[e][jj / kVecKeys]);
+        const float v_f = cache.Value(vals[jj % kVecKeys]);
 #pragma unroll
-          for (int e = 0; e < kThreadElems; ++e) {
-            acc[r][e] = fmaf(p_reg[r], v_f[e], acc[r][e]);
+        for (int r = 0; r < kRowsCap; ++r) {
+          if (r < rows) {
+            acc[r][e] = fmaf(p_reg[r], v_f, acc[r][e]);
+          }
+        }
+      }
+    }
+  } else {
+    for (int jb = 0; jb < chunk; jb += kValueBatch) {
+      Element v_reg[kValueBatch][kThreadElems];
+#pragma unroll
+      for (int b = 0; b < kValueBatch; ++b) {
+        const int jj = min(jb + b, chunk - 1);
+        const Element* v_row =
+            v_head + static_cast<size_t>(j0 + jj) * kDepth + tid * kThreadElems;
+#pragma unroll
+        for (int e = 0; e < kThreadElems; ++e) {
+          v_reg[b][e] = v_row[e];
+        }
+      }
+#pragma unroll
+      for (int b = 0; b < kValueBatch; ++b) {
+        const int jj = jb + b;
+        if (jj >= chunk) {
+          break;
+        }
+        float v_f[kThreadElems];
+#pragma unroll
+        for (int e = 0; e < kThreadElems; ++e) {
+          v_f[e] = cache.Value(v_reg[b][e]);
+        }
+        // The key's probabilities, four rows per 16-byte load.
+        float p_reg[kRowsCap];
+#pragma unroll
+        for (int r4 = 0; r4 < kRowsCap / 4; ++r4) {
+          const float4 packed =
+              reinterpret_cast<const float4*>(p_s + jj * kRowsPad)[r4];
+          p_reg[r4 * 4] = packed.x;
+          p_reg[r4 * 4 + 1] = packed.y;
+          p_reg[r4 * 4 + 2] = packed.z;
+          p_reg[r4 * 4 + 3] = packed.w;
+        }
+#pragma unroll
+        for (int r = 0; r < kRowsCap; ++r) {
+          if (r < rows) {
+#pragma unroll
+            for (int e = 0; e < kThreadElems; ++e) {
+              acc[r][e] = fmaf(p_reg[r], v_f[e], acc[r][e]);
+            }
           }
         }
       }
     }
   }
-  __syncthreads();  // p_s, mask_s and v_tile are rewritten by the next chunk
+  __syncthreads();  // p_s and mask_s are rewritten by the next chunk
+  c += gridDim.x;
+  if (c < num_chunks) {
+    j0 = c * kChunk;
+    chunk = min(kChunk, seq - j0);
+    if constexpr (Cache::kValueColumns) {
+      LoadColumnValues<Cache, kThreadElems, kValueVecs, kVecKeys>(
+          v_head, seq, j0, chunk, tid, value_vectors, v_vec);
+    }
+  }
   }
   const size_t part = (static_cast<size_t>(head) * splits + split) * rows;
 #pragma unroll
