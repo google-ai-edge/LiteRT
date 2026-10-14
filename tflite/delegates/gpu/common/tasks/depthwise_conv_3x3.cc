@@ -17,6 +17,7 @@ limitations under the License.
 
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/strings/match.h"
 #include "tflite/delegates/gpu/common/status.h"
