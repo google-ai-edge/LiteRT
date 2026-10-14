@@ -25,12 +25,12 @@
 
 #include "openvino/core/graph_util.hpp"
 #include "openvino/core/model.hpp"
+#include "openvino/core/type.hpp"
 #include "openvino/op/constant.hpp"
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/vendors/intel_openvino/compiler/weight_bank.h"
 #include "litert/vendors/intel_openvino/compiler/weightless_caching_attributes.hpp"
-#include "openvino/core/type.hpp"
 
 namespace litert::openvino {
 
@@ -45,7 +45,9 @@ size_t AliasAndTagSharedConstants(
     if (!cnst) continue;
     const size_t elem_size = cnst->get_element_type().size();
     // Skip tiny/shape/scalar constants (fewer than 16 elements) and any type
-    // with unknown element size.
+    // with unknown element size. Large boolean constants never reach this
+    // point: DecomposeBooleanConstant (run by OptimizeModel before aliasing)
+    // has already rewritten them to u8.
     if (elem_size == 0 || cnst->get_byte_size() / elem_size < 16) continue;
     candidates.push_back(cnst);
   }
