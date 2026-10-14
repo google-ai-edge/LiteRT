@@ -43,6 +43,7 @@ DRQ_OR_WEIGHT_ONLY_OPS = frozenset([
 _SUPPORTED_SUBCHANNEL_OPS = frozenset([
     _TFLOpName.FULLY_CONNECTED,
     _TFLOpName.EMBEDDING_LOOKUP,
+    _TFLOpName.CUSTOM_OP,
 ])
 
 # Config checks only see the op name from the recipe, not the custom op's code,
@@ -121,10 +122,13 @@ def check_multi_axis_config(
         "Multi-axis quantization does not support asymmetric weight"
         " quantization."
     )
-  if weight_config.granularity != qtyping.QuantGranularity.CHANNELWISE:
+  if (
+      weight_config.granularity != qtyping.QuantGranularity.CHANNELWISE
+      and not uniform_quantize_tensor.is_blockwise(weight_config.granularity)
+  ):
     raise ValueError(
         "quantized_dimensions can only be set when granularity is"
-        f" CHANNELWISE. Got {weight_config.granularity}."
+        f" CHANNELWISE or BLOCKWISE. Got {weight_config.granularity}."
     )
   if op_name not in _SUPPORTED_MULTI_AXIS_OPS:
     supported_ops = ", ".join(sorted(_SUPPORTED_MULTI_AXIS_OPS))

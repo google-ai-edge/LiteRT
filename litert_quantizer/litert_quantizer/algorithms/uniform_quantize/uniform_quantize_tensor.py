@@ -199,6 +199,7 @@ def reshape_data_for_blockwise(
     tensor_data: np.ndarray,
     op_name: qtyping.TFLOperationName,
     granularity: qtyping.QuantGranularity,
+    quantized_dim: int | None = None,
 ) -> tuple[np.ndarray, int]:
   """Reshapes data for blockwise quantization.
 
@@ -206,13 +207,16 @@ def reshape_data_for_blockwise(
     tensor_data: The original tensor data.
     op_name: The name of the TFL op.
     granularity: The quantization granularity for the tensor.
+    quantized_dim: Optional dimension to be quantized blockwise. If None, uses
+      the default blockwise quantized dimension for `op_name`.
 
   Returns:
     A tuple containing the reshaped tensor data and the new reduce dimension.
   """
-  quantized_dim = tfl_flatbuffer_utils.TFL_OP_TO_BLOCKWISE_WEIGHT_QUANTIZED_DIM[
-      op_name
-  ]
+  if quantized_dim is None:
+    quantized_dim = tfl_flatbuffer_utils.TFL_OP_TO_BLOCKWISE_WEIGHT_QUANTIZED_DIM[
+        op_name
+    ]
   block_size = extract_block_size_from_granularity(granularity)
   new_shape = _get_tensor_shape_for_blockwise(
       tensor_data.shape, quantized_dim, block_size
@@ -228,19 +232,27 @@ def _broadcast_scale_zp_for_blockwise(
 
   Args:
     tensor_content: The original tensor data.
-    quant_params: The quantization parameters.
-      `quant_params.quantized_dimension` must be specified.
-      `quant_params.block_size` must be specified and positive.
+    quant_params: The quantization parameters. For multi-axis
+      `quant_params.quantized_dimensions`, blockwise quantization happens along
+      the last dimension.
 
   Returns:
     The updated quantization parameters with broadcasted scale and zp for
     correct constant quantization.
+
+  Raises:
+    ValueError: If `quant_params.block_size` is not specified or not positive,
+      or if neither `quant_params.quantized_dimension` nor
+      `quant_params.quantized_dimensions` is specified.
   """
-  if quant_params.quantized_dimension is None:
-    raise ValueError("Quantized dimension must be specified.")
   if quant_params.block_size is None or quant_params.block_size <= 0:
     raise ValueError("Block size must be specified and positive.")
-  quantized_dim = quant_params.quantized_dimension
+  if quant_params.quantized_dimensions is not None:
+    quantized_dim = tensor_content.ndim - 1
+  elif quant_params.quantized_dimension is not None:
+    quantized_dim = quant_params.quantized_dimension
+  else:
+    raise ValueError("Quantized dimension must be specified.")
   expanded_tensor_shape = _get_tensor_shape_for_blockwise(
       tensor_content.shape, quantized_dim, quant_params.block_size
   )
@@ -266,7 +278,8 @@ def _broadcast_scale_zp_for_blockwise(
       zero_point=expanded_zp,
       num_bits=quant_params.num_bits,
       symmetric=quant_params.symmetric,
-      quantized_dimension=quantized_dim,
+      quantized_dimension=quant_params.quantized_dimension,
+      quantized_dimensions=quant_params.quantized_dimensions,
       block_size=quant_params.block_size,
       signed=quant_params.signed,
   )
@@ -604,6 +617,9 @@ def _is_valid_quantization_params(
     scalar.
     2. scale and zero point have the same rank as the tensor content (avoid
     ambiguous broadcasting).
+    3. If `block_size` is non-zero, the blockwise dimension
+    (`quantized_dimension`, or the last dimension for multi-axis
+    `quantized_dimensions`) is divisible by `block_size`.
 
   Args:
     tensor_data: The tensor to be quantized.
@@ -631,15 +647,19 @@ def _is_valid_quantization_params(
         f" ({zero_point_rank}) must be the same as the tensor rank"
         f" ({tensor_rank})."
     )
-  if (
-      quantization_params.block_size != 0
-      and tensor_data.shape[quantization_params.quantized_dimension]  # pyrefly: ignore[bad-index]
-      % quantization_params.block_size
-      != 0
-  ):
-    raise ValueError(
-        # pyrefly: ignore[bad-index]
-        "Tensor dimension must be divisible by block size. Got dimension:"
-        f" {tensor_data.shape[quantization_params.quantized_dimension]} and"
-        f" block size: {quantization_params.block_size}"
-    )
+  if quantization_params.block_size != 0:
+    if quantization_params.quantized_dimensions is not None:
+      blockwise_dim = tensor_data.ndim - 1
+    else:
+      blockwise_dim = quantization_params.quantized_dimension
+    if (
+        tensor_data.shape[blockwise_dim]  # pyrefly: ignore[bad-index]
+        % quantization_params.block_size
+        != 0
+    ):
+      raise ValueError(
+          # pyrefly: ignore[bad-index]
+          "Tensor dimension must be divisible by block size. Got dimension:"
+          f" {tensor_data.shape[blockwise_dim]} and"
+          f" block size: {quantization_params.block_size}"
+      )
