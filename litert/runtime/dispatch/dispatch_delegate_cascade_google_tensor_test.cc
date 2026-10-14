@@ -19,10 +19,6 @@
 
 #include "litert/cc/litert_tensor_buffer_types.h"
 
-#if defined(__ANDROID__)
-#include "platforms/darwinn/tachyon/core/fence/fence.h"
-#endif
-
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/log/absl_log.h"  // from @com_google_absl
@@ -58,7 +54,7 @@ using testing::Pointwise;
 namespace litert {
 namespace {
 
-using Fence = std::shared_ptr<platforms::darwinn::tachyon::Fence>;
+using Fence = std::shared_ptr<platforms::darwinn::fence_util::TestKernelFence>;
 
 constexpr absl::string_view kDispatchLibraryDir = "/data/local/tmp";
 constexpr absl::string_view kNpuBytecodeFileName =
