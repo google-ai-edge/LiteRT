@@ -16,7 +16,7 @@
 """Type hinting support for LiteRT Quantizer."""
 
 import collections
-from collections.abc import MutableMapping
+from collections.abc import MutableMapping, Sequence
 import copy
 import dataclasses
 import enum
@@ -224,6 +224,10 @@ class UniformQuantParams:
     custom_algorithm_param: Custom algorithm-specific parameters (e.g. for
       experimental algorithms like OSCAR).
     signed: Whether the quantization is signed.
+    quantized_dimensions: Dimensions with one scale per index, for multi-axis
+      quantization, e.g. `(0, 1)` for per-expert, per-channel MoE weights.
+      Used instead of `quantized_dimension`. For blockwise quantization, blocks
+      run along the last dimension.
   """
 
   class HadamardRotationParams:
@@ -262,6 +266,14 @@ class UniformQuantParams:
   hadamard: Optional[HadamardRotationParams] = None
   custom_algorithm_param: Optional[dict[str, Any]] = None
   signed: bool = True
+  quantized_dimensions: Sequence[int] | None = None
+
+  def __post_init__(self):
+    # Store a tuple so that `__eq__` doesn't depend on list vs. tuple.
+    if self.quantized_dimensions is not None:
+      object.__setattr__(
+          self, 'quantized_dimensions', tuple(self.quantized_dimensions)
+      )
 
   @classmethod
   def from_tfl_tensor_details(cls, tensor_detail) -> 'UniformQuantParams':
@@ -299,6 +311,7 @@ class UniformQuantParams:
     return id(self) == id(other) or (
         self.num_bits == other.num_bits
         and self.quantized_dimension == other.quantized_dimension
+        and self.quantized_dimensions == other.quantized_dimensions
         and _compare_array_or_none(self.scale, other.scale)
         and _compare_array_or_none(self.zero_point, other.zero_point)
         and self.symmetric == other.symmetric
@@ -393,6 +406,10 @@ class TensorQuantizationConfig:
     dtype: The data type of the tensor.
     algorithm_key: The algorithm key to use for quantization.
     algorithm_params: Additional parameters for the quantization algorithm.
+    quantized_dimensions: Dimensions with one scale per index, for multi-axis
+      quantization, e.g. `(0, 1)` for per-expert, per-channel MoE weights.
+      Requires CHANNELWISE or BLOCKWISE_* granularity. With BLOCKWISE_*, the
+      last dimension is also split into blocks.
   """
 
   num_bits: int
@@ -402,6 +419,7 @@ class TensorQuantizationConfig:
   algorithm_params: Mapping[str, Any] = dataclasses.field(
       default_factory=immutabledict.immutabledict
   )
+  quantized_dimensions: Sequence[int] | None = None
 
   def __post_init__(self):
     if not isinstance(self.algorithm_params, immutabledict.immutabledict):
@@ -409,6 +427,11 @@ class TensorQuantizationConfig:
           self,
           'algorithm_params',
           immutabledict.immutabledict(self.algorithm_params),
+      )
+    # Recipes from JSON give a list. Store a tuple to keep the config hashable.
+    if self.quantized_dimensions is not None:
+      object.__setattr__(
+          self, 'quantized_dimensions', tuple(self.quantized_dimensions)
       )
 
   def to_dict(self) -> dict[str, Any]:
