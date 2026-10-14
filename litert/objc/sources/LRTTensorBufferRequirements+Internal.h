@@ -18,13 +18,13 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface LRTTensorBufferRequirements (Internal)
+@interface LRTTensorBufferRequirements ()
 
 /**
  * Creates an Objective-C @c LRTTensorBufferRequirements instance from a C++
  * @c litert::TensorBufferRequirements object.
  */
-+ (nullable instancetype)requirementsWithCppRequirements:
++ (nullable instancetype)requirementsWithCPPRequirements:
                              (const litert::TensorBufferRequirements &)cppRequirements
                                                    error:(NSError **)error;
 

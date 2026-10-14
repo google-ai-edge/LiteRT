@@ -37,6 +37,7 @@ objc_library(
     deps = [
         # Dependency placeholder: apple_frameworks Foundation,
         # Dependency placeholder: apple_frameworks Metal,
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",

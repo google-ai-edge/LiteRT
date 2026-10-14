@@ -114,7 +114,7 @@ id GetBridgedObjectForOption(const litert::Environment &environment,
 
   auto environmentResult = litert::Environment::Create(litert::EnvironmentOptions(cppOptions));
   if (!environmentResult.HasValue()) {
-    LRTSetErrorFromCppError(error, environmentResult.Error());
+    LRTSetErrorFromCPPError(error, environmentResult.Error());
     return nil;
   }
 
