@@ -85,6 +85,91 @@ bool HasSingleConsumer(const ov::Output<ov::Node>& output) {
   return output.get_target_inputs().size() == 1;
 }
 
+// Returns the compile-time start offset of |node| along the last axis of its
+// data input, for v8::Slice and v1::StridedSlice. Returns nullopt when |node|
+// is neither of those or when the offset is not a foldable constant.
+//
+// This exists so the SDPA fusion can tell which of two sibling slices reads
+// the *low* part of an axis and which reads the *high* part. Both slice types
+// spell that offset differently, hence the two branches.
+std::optional<int64_t> LastAxisSliceStart(
+    const std::shared_ptr<ov::Node>& node) {
+  if (node == nullptr) {
+    return std::nullopt;
+  }
+  const auto& data_ps = node->get_input_partial_shape(0);
+  if (data_ps.rank().is_dynamic()) {
+    return std::nullopt;
+  }
+  const int64_t rank = data_ps.rank().get_length();
+  const int64_t last_axis = rank - 1;
+
+  // v8::Slice: inputs are (data, start, stop, step[, axes]). When the optional
+  // axes input is present, the i-th entry of |start| applies to axes[i];
+  // otherwise the i-th entry applies to axis i.
+  if (auto slice = std::dynamic_pointer_cast<ov::op::v8::Slice>(node)) {
+    auto start_const = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+        slice->input_value(1).get_node_shared_ptr());
+    if (!start_const) {
+      return std::nullopt;
+    }
+    const std::vector<int64_t> starts = start_const->cast_vector<int64_t>();
+    int64_t entry = -1;
+    if (slice->get_input_size() >= 5) {
+      auto axes_const = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+          slice->input_value(4).get_node_shared_ptr());
+      if (!axes_const) {
+        return std::nullopt;
+      }
+      const std::vector<int64_t> axes = axes_const->cast_vector<int64_t>();
+      for (size_t i = 0; i < axes.size(); ++i) {
+        const int64_t axis = axes[i] < 0 ? axes[i] + rank : axes[i];
+        if (axis == last_axis) {
+          entry = static_cast<int64_t>(i);
+          break;
+        }
+      }
+      // An axis absent from |axes| is passed through whole, i.e. starts at 0.
+      if (entry < 0) {
+        return 0;
+      }
+    } else {
+      // Fewer start entries than the rank means the last axis is untouched.
+      if (static_cast<int64_t>(starts.size()) <= last_axis) {
+        return 0;
+      }
+      entry = last_axis;
+    }
+    if (entry >= static_cast<int64_t>(starts.size())) {
+      return std::nullopt;
+    }
+    return starts[entry];
+  }
+
+  // v1::StridedSlice: |begin| is indexed by axis directly, but a set bit in
+  // begin_mask means "ignore begin[axis]" and start from 0.
+  if (auto strided =
+          std::dynamic_pointer_cast<ov::op::v1::StridedSlice>(node)) {
+    auto begin_const = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+        strided->input_value(1).get_node_shared_ptr());
+    if (!begin_const) {
+      return std::nullopt;
+    }
+    const std::vector<int64_t> begins = begin_const->cast_vector<int64_t>();
+    if (static_cast<int64_t>(begins.size()) <= last_axis) {
+      return std::nullopt;
+    }
+    const auto& begin_mask = strided->get_begin_mask();
+    if (static_cast<int64_t>(begin_mask.size()) > last_axis &&
+        begin_mask[last_axis] == 1) {
+      return 0;
+    }
+    return begins[last_axis];
+  }
+
+  return std::nullopt;
+}
+
 // Pads |input| at the end of the (possibly negative) |axis| by |pad_amount|
 // elements, filling with |pad_value|. |rank| is the static rank of |input|.
 // Returns the original output unchanged when |pad_amount| is zero.
@@ -310,6 +395,74 @@ FuseSplitAttentionToSDPA::FuseSplitAttentionToSDPA(bool pad_kv_to_alignment) {
                  root_name.c_str(), v_matmul_cache->get_transpose_b(),
                  v_matmul_new->get_transpose_b());
       return false;
+    }
+
+    // Establish which V branch is which.
+    //
+    // The K side is unambiguous: the score Concat explicitly lists
+    // [QK_cache, QK_new], so input 0 is the cache and input 1 is the new
+    // token(s). The V side has no such guarantee — we reached it through
+    // `Add(attn_cache, attn_new)`, and an Add's operands carry no ordering.
+    // Both operands are MatMuls, so the casts above succeed either way and the
+    // mismatch is completely silent. If the Add happened to be emitted with
+    // its operands reversed, we would build SDPA with K ordered
+    // [cache, new] but V ordered [new, cache]: every attention weight would be
+    // applied to the wrong value vector. The model still compiles and still
+    // runs; it just produces garbage, which for a small instruction-tuned LLM
+    // shows up as EOS on the very first decoded token.
+    //
+    // Recover the true order from the slices that split the shared Softmax:
+    // the cache branch reads the low end of the score axis, the new-token
+    // branch reads the high end.
+    std::optional<int64_t> cache_branch_start =
+        LastAxisSliceStart(cache_src_node);
+    std::optional<int64_t> new_branch_start = LastAxisSliceStart(new_src_node);
+    if (!cache_branch_start.has_value() || !new_branch_start.has_value()) {
+      LITERT_LOG(LITERT_DEBUG,
+                 "FuseSplitAttentionToSDPA[%s]: reject: cannot read constant "
+                 "slice offsets for the V branches, so their order cannot be "
+                 "established",
+                 root_name.c_str());
+      return false;
+    }
+    if (*cache_branch_start > *new_branch_start) {
+      std::swap(v_matmul_cache, v_matmul_new);
+      std::swap(cache_src_node, new_src_node);
+      std::swap(cache_branch_start, new_branch_start);
+      LITERT_LOG(LITERT_INFO,
+                 "FuseSplitAttentionToSDPA[%s]: Add operands were reversed "
+                 "relative to the score Concat; swapped the V branches to keep "
+                 "K and V in the same [cache, new] order",
+                 root_name.c_str());
+    }
+
+    // Cross-check the recovered order against the Concat: the cache branch
+    // must cover [0, split) and the new branch must start exactly at |split|,
+    // where |split| is the cache-side score width. Anything else means the
+    // graph splits the Softmax differently than this fusion assumes, and
+    // concatenating K/V in this order would misalign them.
+    const auto& qk_cache_ps = concat_node->get_input_partial_shape(0);
+    if (qk_cache_ps.rank().is_dynamic()) {
+      LITERT_LOG(LITERT_DEBUG,
+                 "FuseSplitAttentionToSDPA[%s]: reject: score Concat input has "
+                 "dynamic rank",
+                 root_name.c_str());
+      return false;
+    }
+    const int64_t score_last_axis = qk_cache_ps.rank().get_length() - 1;
+    if (qk_cache_ps[score_last_axis].is_static()) {
+      const int64_t split = qk_cache_ps[score_last_axis].get_length();
+      if (*cache_branch_start != 0 || *new_branch_start != split) {
+        LITERT_LOG(LITERT_DEBUG,
+                   "FuseSplitAttentionToSDPA[%s]: reject: V-branch slice "
+                   "offsets (cache=%lld, new=%lld) do not match the score "
+                   "Concat split point %lld",
+                   root_name.c_str(),
+                   static_cast<long long>(*cache_branch_start),
+                   static_cast<long long>(*new_branch_start),
+                   static_cast<long long>(split));
+        return false;
+      }
     }
 
     auto q = qk_cache_node->input_value(0);
