@@ -59,6 +59,7 @@
 #include "litert/vendors/nvidia/memory_profile.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
+#include "litert/vendors/nvidia/trtllm/decode_attention.h"
 #include "litert/vendors/nvidia/trtllm/global_attention.h"
 #include "litert/vendors/nvidia/trtllm/int2_gemv.h"
 #include "litert/vendors/nvidia/trtllm/subbyte_gemm.h"
@@ -153,6 +154,18 @@ bool NativeKvCacheUpdateEnabled() {
 bool DecodeAttentionPluginEnabled() {
   return EnvEnabled("LITERT_NVIDIA_TENSORRT_DECODE_ATTENTION_PLUGIN",
                     /*default_value=*/false);
+}
+
+// Decode attention over INT8 per-tensor KV caches (Gemma 4 E4B) runs on the
+// same CUDA plugin, which dequantizes the caches as it reads them. On by
+// default: Myelin fuses the dequantize, both products (M = the query heads
+// of a KV head, a GEMM) and the softmax into its `_gemm_mha_v2` kernel,
+// which takes 180 us per layer on the RTX 5080 where the plugin takes about
+// 25 us. Set LITERT_NVIDIA_TENSORRT_INT8_CACHE_ATTENTION_PLUGIN=0 to keep
+// Myelin's lowering.
+bool Int8CacheAttentionPluginEnabled() {
+  return EnvEnabled("LITERT_NVIDIA_TENSORRT_INT8_CACHE_ATTENTION_PLUGIN",
+                    /*default_value=*/true);
 }
 
 // Attention over a single-head cache of depth 512 (Gemma 4 global layers, in
@@ -2018,6 +2031,7 @@ class TensorRtGraphBuilder {
 
     LITERT_RETURN_IF_ERROR(FindInPlaceCacheUpdates(subgraph));
     LITERT_RETURN_IF_ERROR(FindDecodeAttentionBlocks(subgraph));
+    LITERT_RETURN_IF_ERROR(FindInt8CacheAttentionBlocks(subgraph));
     LITERT_RETURN_IF_ERROR(AddInputs(subgraph));
     const size_t num_ops_to_lower =
         ops.size() - (trtllm_head.has_value() ? 4 : 0);
@@ -4679,6 +4693,9 @@ class TensorRtGraphBuilder {
     LiteRtTensor v_new = nullptr;
     std::optional<Tensor> output;
     float fill = 0.0f;
+    // Set for INT8 per-tensor caches: the plugin reads the raw INT8 caches
+    // (the value cache in the model's [1, H, D, S] layout).
+    std::optional<LiteRtNvidiaInt8CacheParams> int8_cache;
     bool emitted = false;
   };
 
@@ -5156,6 +5173,158 @@ class TensorRtGraphBuilder {
   // Emits the plugin for a block once all of its inputs are lowered (the
   // mask is usually computed after the score matmul in op order); later
   // members of the same block are no-ops.
+  // Per-tensor INT8 quantization of a cache tensor, if it has one.
+  static std::optional<std::pair<float, int32_t>> Int8CacheQuantization(
+      const Tensor& tensor) {
+    if (tensor.ElementType() != litert::ElementType::Int8 ||
+        tensor.QTypeId() != kLiteRtQuantizationPerTensor) {
+      return std::nullopt;
+    }
+    const auto q = tensor.PerTensorQuantization();
+    if (!std::isfinite(q.scale) || q.scale <= 0.0f || q.zero_point < -128 ||
+        q.zero_point > 127) {
+      return std::nullopt;
+    }
+    return std::make_pair(q.scale, static_cast<int32_t>(q.zero_point));
+  }
+
+  // Decode attention blocks over INT8 per-tensor KV caches (Gemma 4 E4B):
+  //   k_out, v_out = odml.cache_update(k, v, positions, k_cache, v_cache, ...)
+  //   scores = runtime_bmm(q [1,H,n,D], k_out [1,H,S,D])
+  //   probs  = softmax(select(mask [1,1,n|1,S], scores, fill))
+  //   out    = runtime_bmm(probs, v_out [1,H,D,S])
+  // The caches are updated by the quantized scatter lowering (not in place);
+  // the plugin reads the raw INT8 results and dequantizes them, which spares
+  // Myelin's whole-cache dequantize and its fused attention kernel.
+  Expected<void> FindInt8CacheAttentionBlocks(const Subgraph& subgraph) {
+    if (!Int8CacheAttentionPluginEnabled() || !Fp16ActivationsEnabled() ||
+        RuntimeBmmContextLimit() != 0) {
+      return {};
+    }
+    size_t num_blocks = 0;
+    for (const auto& update : subgraph.Ops()) {
+      if (update.Code() != kLiteRtOpCodeShloComposite ||
+          CompositeOpName(update) != "odml.cache_update" ||
+          update.Inputs().size() != 7 || update.Outputs().size() != 2) {
+        continue;
+      }
+      const Tensor k_out = update.Outputs()[0];
+      const Tensor v_out = update.Outputs()[1];
+      const auto k_quant = Int8CacheQuantization(k_out);
+      const auto v_quant = Int8CacheQuantization(v_out);
+      if (!k_quant || !v_quant) {
+        continue;
+      }
+      // Every layer that attends over this cache: the layer that wrote it and
+      // the layers that share its KV cache.
+      for (const auto& use : k_out.Uses()) {
+        const Op scores_op = use.user;
+        if (use.user_arg_ind != 1 || !IsRuntimeBmm(scores_op)) {
+          continue;
+        }
+        LITERT_ASSIGN_OR_RETURN(
+            const bool matched,
+            MatchInt8CacheAttentionBlock(scores_op, k_out, v_out, *k_quant,
+                                         *v_quant));
+        num_blocks += matched ? 1 : 0;
+      }
+    }
+    if (num_blocks != 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX fusing %zu attention blocks over INT8 "
+                 "caches into the CUDA attention plugin",
+                 num_blocks);
+    }
+    return {};
+  }
+
+  // One block of FindInt8CacheAttentionBlocks, starting at its score product.
+  Expected<bool> MatchInt8CacheAttentionBlock(
+      const Op& scores_op, const Tensor& k_out, const Tensor& v_out,
+      std::pair<float, int32_t> k_quant, std::pair<float, int32_t> v_quant) {
+    const Tensor q = scores_op.Inputs()[0];
+    const Tensor scores = scores_op.Outputs()[0];
+    const auto select_op = SingleUser(scores, 1);
+    if (!select_op || select_op->Code() != kLiteRtOpCodeTflSelectV2 ||
+        select_op->Inputs().size() != 3) {
+      return false;
+    }
+    const Tensor mask = select_op->Inputs()[0];
+    const auto fill = ReadFloatScalar(select_op->Inputs()[2]);
+    if (!fill || mask.ElementType() != litert::ElementType::Bool) {
+      return false;
+    }
+    const auto softmax_op = SingleUser(select_op->Outputs()[0], 0);
+    float beta = 1.0f;
+    if (!softmax_op || softmax_op->Code() != kLiteRtOpCodeTflSoftmax ||
+        LiteRtGetSoftmaxBetaOption(softmax_op->Get(), &beta) !=
+            kLiteRtStatusOk ||
+        beta != 1.0f) {
+      return false;
+    }
+    const auto values_op = SingleUser(softmax_op->Outputs()[0], 0);
+    if (!values_op || !IsRuntimeBmm(*values_op) ||
+        values_op->Inputs()[1].Get() != v_out.Get()) {
+      return false;
+    }
+    const Tensor output = values_op->Outputs()[0];
+    auto q_type = q.RankedTensorType();
+    auto k_type = k_out.RankedTensorType();
+    auto v_type = v_out.RankedTensorType();
+    auto scores_type = scores.RankedTensorType();
+    auto output_type = output.RankedTensorType();
+    auto mask_type = mask.RankedTensorType();
+    if (!q_type || !k_type || !v_type || !scores_type || !output_type ||
+        !mask_type) {
+      return false;
+    }
+    const auto q_dims = q_type->Layout().Dimensions();
+    const auto k_dims = k_type->Layout().Dimensions();
+    const auto v_dims = v_type->Layout().Dimensions();
+    const auto scores_dims = scores_type->Layout().Dimensions();
+    const auto output_dims = output_type->Layout().Dimensions();
+    const auto mask_dims = mask_type->Layout().Dimensions();
+    if (q_dims.size() != 4 || k_dims.size() != 4 || v_dims.size() != 4 ||
+        scores_dims.size() != 4 || output_dims.size() != 4 ||
+        mask_dims.size() != 4) {
+      return false;
+    }
+    const auto heads = q_dims[1];
+    const auto rows = q_dims[2];
+    const auto depth = q_dims[3];
+    const auto seq = k_dims[2];
+    if (q_dims[0] != 1 || rows < 1 || rows > 16 || k_dims[0] != 1 ||
+        k_dims[1] != heads || k_dims[3] != depth || v_dims[0] != 1 ||
+        v_dims[1] != heads || v_dims[2] != depth || v_dims[3] != seq ||
+        scores_dims[0] != 1 || scores_dims[1] != heads ||
+        scores_dims[2] != rows || scores_dims[3] != seq ||
+        output_dims[0] != 1 || output_dims[1] != heads ||
+        output_dims[2] != rows || output_dims[3] != depth ||
+        mask_dims[0] != 1 || mask_dims[1] != 1 ||
+        (mask_dims[2] != 1 && mask_dims[2] != rows) || mask_dims[3] != seq ||
+        !TensorHasShape(select_op->Outputs()[0], {1, heads, rows, seq}) ||
+        !LiteRtNvidiaDecodeAttentionInt8Supports(static_cast<int32_t>(depth))) {
+      return false;
+    }
+    DecodeAttentionBlock block;
+    block.q = q.Get();
+    block.k_out = k_out.Get();
+    block.v_out = v_out.Get();
+    block.mask = mask.Get();
+    block.output = output;
+    block.fill = *fill;
+    block.int8_cache = LiteRtNvidiaInt8CacheParams{
+        k_quant.first, k_quant.second, v_quant.first, v_quant.second,
+        /*value_columns=*/true};
+    const size_t index = attention_blocks_.size();
+    attention_blocks_.push_back(block);
+    for (LiteRtOp member : {scores_op.Get(), select_op->Get(),
+                            softmax_op->Get(), values_op->Get()}) {
+      fused_attention_ops_[member] = index;
+    }
+    return true;
+  }
+
   Expected<void> LowerDecodeAttentionMember(size_t index) {
     auto& block = attention_blocks_[index];
     if (block.emitted) {
@@ -5173,14 +5342,29 @@ class TensorRtGraphBuilder {
         q->getType() != nvinfer1::DataType::kBF16) {
       LITERT_ASSIGN_OR_RETURN(q, AddCastTensor(q, ModeFloatType()));
     }
-    TrtPtr<nvinfer1::IPluginV3> plugin(
-        CreateDecodeAttentionPlugin(block.fill, new_keys));
+    nvinfer1::ITensor* k_cache = tensor_map_[block.k_out];
+    nvinfer1::ITensor* v_cache = tensor_map_[block.v_out];
+    if (block.int8_cache.has_value()) {
+      // The quantized scatter lowering records the raw INT8 caches.
+      const auto raw_k = raw_output_map_.find(block.k_out);
+      const auto raw_v = raw_output_map_.find(block.v_out);
+      if (raw_k == raw_output_map_.end() || raw_v == raw_output_map_.end() ||
+          raw_k->second->getType() != nvinfer1::DataType::kINT8 ||
+          raw_v->second->getType() != nvinfer1::DataType::kINT8) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "INT8 cache attention block has no raw INT8 caches");
+      }
+      k_cache = raw_k->second;
+      v_cache = raw_v->second;
+    }
+    TrtPtr<nvinfer1::IPluginV3> plugin(CreateDecodeAttentionPlugin(
+        block.fill, new_keys,
+        block.int8_cache.has_value() ? &*block.int8_cache : nullptr));
     if (!plugin) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to create CUDA decode attention plugin");
     }
-    std::vector<nvinfer1::ITensor*> inputs = {q, tensor_map_[block.k_out],
-                                              tensor_map_[block.v_out],
+    std::vector<nvinfer1::ITensor*> inputs = {q, k_cache, v_cache,
                                               tensor_map_[block.mask]};
     if (new_keys) {
       for (LiteRtTensor fresh : {block.k_new, block.v_new}) {
