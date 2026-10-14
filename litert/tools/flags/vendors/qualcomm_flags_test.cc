@@ -767,6 +767,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_FALSE(options.Value().GetHtpDlbcWeights());
   EXPECT_EQ(options.Value().GetHtpPPoint(), 0);
   EXPECT_EQ(options.Value().GetHtpWeightSharingChannelTileSize(), 0);
+  EXPECT_FALSE(options.Value().GetEnableHeuristicPPointOptimizations());
   EXPECT_EQ(options.Value().GetHtpPerformanceMode(),
             QualcommOptions::HtpPerformanceMode::kDefault);
   EXPECT_EQ(options.Value().GetDspPerformanceMode(),
@@ -849,6 +850,15 @@ TEST(QualcommOptionsFromFlagsTest, DlbcFlags) {
 
   absl::SetFlag(&FLAGS_qualcomm_htp_dlbc, false);
   absl::SetFlag(&FLAGS_qualcomm_htp_dlbc_weights, false);
+}
+
+TEST(QualcommOptionsFromFlagsTest, EnableHeuristicPPointOptimizations) {
+  absl::SetFlag(&FLAGS_qualcomm_enable_heuristic_p_point_optimizations, true);
+  Expected<QualcommOptions> options = QualcommOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_TRUE(options.Value().GetEnableHeuristicPPointOptimizations());
+  absl::SetFlag(&FLAGS_qualcomm_enable_heuristic_p_point_optimizations, false);
 }
 
 }  // namespace

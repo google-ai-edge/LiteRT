@@ -366,6 +366,23 @@ TEST(LiteRtQualcommOptionsTest, GraphTransform) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, EnableHeuristicPPointOptimizations) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  bool value = true;
+  LITERT_ASSERT_OK(LrtQualcommOptionsGetEnableHeuristicPPointOptimizations(
+      qualcomm_options, &value));
+  EXPECT_FALSE(value);
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetEnableHeuristicPPointOptimizations(
+      qualcomm_options, true));
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_TRUE(parsed.GetEnableHeuristicPPointOptimizations());
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, VtcmSize) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -663,6 +680,9 @@ TEST(QualcommOptionsTest, CppWrapper) {
   options->SetHtpDlbcWeights(false);
   EXPECT_FALSE(options->GetHtpDlbcWeights());
 
+  EXPECT_FALSE(options->GetEnableHeuristicPPointOptimizations());
+  options->SetEnableHeuristicPPointOptimizations(true);
+  EXPECT_TRUE(options->GetEnableHeuristicPPointOptimizations());
   EXPECT_EQ(options->GetBackend(), QualcommOptions::Backend::kHtp);
   options->SetBackend(QualcommOptions::Backend::kDsp);
   EXPECT_EQ(options->GetBackend(), QualcommOptions::Backend::kDsp);

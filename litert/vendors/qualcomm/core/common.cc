@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #include "QnnLog.h"  // from @qairt
@@ -527,6 +528,16 @@ std::int32_t Options::GetHtpWeightSharingChannelTileSize() const {
   return htp_weight_sharing_channel_tile_size_;
 }
 
+void Options::SetEnableHeuristicPPointOptimizations(
+    bool enable_heuristic_p_point_optimizations) {
+  enable_heuristic_p_point_optimizations_ =
+      enable_heuristic_p_point_optimizations;
+}
+
+bool Options::GetEnableHeuristicPPointOptimizations() const {
+  return enable_heuristic_p_point_optimizations_;
+}
+
 void Options::SetHtpDlbc(bool htp_dlbc) { htp_dlbc_ = htp_dlbc; }
 
 bool Options::GetHtpDlbc() const { return htp_dlbc_; }
@@ -795,6 +806,8 @@ std::string Options::Dump() const {
   field(2, "HtpPPoint", htp_p_point_);
   field(2, "HtpWeightSharingChannelTileSize",
         htp_weight_sharing_channel_tile_size_);
+  field(2, "EnableHeuristicPPointOptimizations",
+        enable_heuristic_p_point_optimizations_);
   field(2, "HtpPerformanceMode", htp_performance_mode_);
   field(2, "HtpPerfCtrlMode", htp_perf_ctrl_mode_);
   field(2, "HtpPdSession", htp_pd_session_);

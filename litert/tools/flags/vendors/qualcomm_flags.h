@@ -139,6 +139,8 @@ ABSL_DECLARE_FLAG(int32_t, qualcomm_htp_p_point);
 
 ABSL_DECLARE_FLAG(int32_t, qualcomm_htp_weight_sharing_channel_tile_size);
 
+ABSL_DECLARE_FLAG(bool, qualcomm_enable_heuristic_p_point_optimizations);
+
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::HtpPerformanceMode,
