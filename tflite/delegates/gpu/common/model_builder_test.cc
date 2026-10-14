@@ -26,6 +26,7 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/types/span.h"
@@ -34,6 +35,7 @@ limitations under the License.
 #include "tflite/core/subgraph.h"
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/model_builder_internal.h"
+#include "tflite/delegates/gpu/common/object_reader.h"
 #include "tflite/delegates/gpu/common/shape.h"
 #include "tflite/delegates/gpu/common/tensor.h"
 #include "tflite/interpreter.h"
@@ -1453,6 +1455,14 @@ class StubTfLiteContext : public TfLiteContext {
     return &registrations_[reg_index];
   }
   TfLiteTensor* tensor(int tensor_index) { return &tensors_[tensor_index]; }
+  void SetTensorShape(int tensor_index, const std::vector<int>& dimensions) {
+    TfLiteTensor* target = tensor(tensor_index);
+    TfLiteIntArrayFree(target->dims);
+    target->dims = TfLiteIntArrayCreate(dimensions.size());
+    for (int i = 0; i < dimensions.size(); ++i) {
+      target->dims->data[i] = dimensions[i];
+    }
+  }
 
  private:
   static TfLiteStatus StubGetExecutionPlan(TfLiteContext* context,
@@ -1495,6 +1505,34 @@ TEST(AddOperationParserTest, TestIsSupported) {
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
+}
+
+TEST(AddOperationParserTest, RightAlignsLowerRankRuntimeInputForBroadcast) {
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinAdd, /*op_version=*/2, /*num_inputs=*/2);
+  context->SetTensorShape(/*tensor_index=*/1, {2, 3, 4});
+  context->SetTensorShape(/*tensor_index=*/2, {1, 1, 3, 4});
+  context->SetTensorShape(/*tensor_index=*/3, {1, 2, 3, 4});
+
+  GraphFloat32 graph;
+  absl::flat_hash_map<int, Value*> tensor_to_value;
+  ObjectReader reader(&graph, context.get(), context->node(),
+                      &tensor_to_value);
+  auto parser = NewOperationParser(context->registration());
+  const absl::Status status =
+      parser->Parse(context->node(), context->registration(), &graph, &reader);
+
+  ASSERT_TRUE(status.ok()) << status.message();
+  ASSERT_EQ(graph.nodes().size(), 2);
+  EXPECT_EQ(graph.nodes()[0]->operation.type,
+            ToString(OperationType::RESHAPE));
+  EXPECT_EQ(graph.nodes()[1]->operation.type, ToString(OperationType::ADD));
+
+  const std::vector<Value*> add_inputs =
+      graph.FindInputs(graph.nodes()[1]->id);
+  ASSERT_EQ(add_inputs.size(), 2);
+  EXPECT_EQ(add_inputs[0]->tensor.shape, BHWC(1, 2, 3, 4));
+  EXPECT_EQ(add_inputs[1]->tensor.shape, BHWC(1, 1, 3, 4));
 }
 
 TEST(BatchMatMulOperationParserTest, TestIsSupported) {
