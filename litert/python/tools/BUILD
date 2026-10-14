@@ -44,6 +44,14 @@ py_test(
     ],
 )
 
+py_strict_test(
+    name = "flatbuffer_utils_overflow_test",
+    srcs = ["flatbuffer_utils_overflow_test.py"],
+    deps = [
+        ":flatbuffer_utils",
+    ],
+)
+
 pytype_strict_library(
     name = "mmap_utils",
     srcs = ["mmap_utils.py"],
