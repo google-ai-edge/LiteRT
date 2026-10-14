@@ -16,6 +16,7 @@ limitations under the License.
 package com.google.ai.edge.litert.support.common;
 
 import com.google.ai.edge.litert.support.tensorbuffer.TensorBuffer;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 
 /**
  * TensorProcessor is a helper class for preprocessing and postprocessing tensors. It could
@@ -54,6 +55,7 @@ public class TensorProcessor extends SequentialProcessor<TensorBuffer> {
      *
      * @param op the Operator instance to be executed then.
      */
+    @CanIgnoreReturnValue
     public TensorProcessor.Builder add(TensorOperator op) {
       super.add(op);
       return this;
