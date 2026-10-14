@@ -8508,6 +8508,218 @@ class TensorRtGraphBuilder {
     return routing;
   }
 
+  // The one op reading `tensor`, through reshapes (collected in `through`);
+  // nullopt when anything else reads it or it is a graph output.
+  std::optional<Op> SoleUser(Tensor tensor, std::vector<LiteRtOp>* through) {
+    for (int hops = 0; hops < 4; ++hops) {
+      if (graph_outputs_.count(tensor.Get()) != 0) return std::nullopt;
+      const auto uses = tensor.Uses();
+      if (uses.size() != 1) return std::nullopt;
+      Op user = uses[0].user;
+      if (user.Code() != kLiteRtOpCodeTflReshape) return user;
+      if (user.Outputs().size() != 1) return std::nullopt;
+      through->push_back(user.Get());
+      tensor = user.Outputs()[0];
+    }
+    return std::nullopt;
+  }
+
+  bool ReadOnce(const Tensor& tensor) const {
+    return graph_outputs_.count(tensor.Get()) == 0 && tensor.Uses().size() == 1;
+  }
+
+  // The rest of a layer's feed-forward block around a routed moe op, as
+  // Gemma 4 lays it out (X the residual the router reads):
+  //   N = rms_norm(X, w_d); dense = down(gelu(gate(N)) * up(N))
+  //   ADD(rms_norm(dense, w_dp), rms_norm(moe, w_mp)) -> rms_norm(w_sp)
+  //   ADD(X, that) [-> MUL scalar] = the next residual stream.
+  // Every intermediate has that one reader; the dense chain has no reshapes.
+  struct MoeBlockFusion {
+    Tensor dense_norm;    // the dense input norm's scale
+    Tensor dense_gate_w;  // [dense_hidden, model_dim], blockwise INT4
+    Tensor dense_up_w;
+    Tensor dense_down_w;  // [model_dim, dense_hidden]
+    Tensor dense_post;    // the dense output norm's scale
+    Tensor moe_post;      // the experts' output norm's scale
+    Tensor sum_post;      // the sum's norm's scale
+    Tensor output;        // the next residual stream
+    int32_t dense_hidden = 0;
+    int32_t gate_mode = 0;
+    float multiplier = 1.0f;
+    std::vector<LiteRtOp> absorbed;
+  };
+
+  std::optional<MoeBlockFusion> FindMoeBlock(const Op& op,
+                                             const MoeCustomOp& moe,
+                                             const MoeRouting& routing) {
+    if (!EnvEnabled("LITERT_NVIDIA_TENSORRT_FUSE_MOE_BLOCK",
+                    /*default_value=*/true)) {
+      return std::nullopt;
+    }
+    MoeBlockFusion block;
+    auto is_norm = [](const Op& candidate) {
+      return candidate.Code() == kLiteRtOpCodeShloComposite &&
+             CompositeOpName(candidate) == "odml.rms_norm" &&
+             candidate.Inputs().size() == 2 && candidate.Outputs().size() == 1;
+    };
+    auto is_fc = [](const Op& candidate) {
+      return candidate.Code() == kLiteRtOpCodeTflFullyConnected &&
+             candidate.Inputs().size() == 2 &&
+             HasNoFusedActivation(candidate) &&
+             IsBlockwiseInt4Weights(candidate.Inputs()[1]);
+    };
+    auto is_add = [](const Op& candidate) {
+      return candidate.Code() == kLiteRtOpCodeTflAdd &&
+             candidate.Inputs().size() == 2 &&
+             HasNoFusedActivation(candidate) && candidate.Outputs().size() == 1;
+    };
+    const LiteRtTensor residual = StripReshapes(routing.residual).Get();
+    // moe -> rms_norm(w_mp) -> ADD1
+    const auto moe_norm = SoleUser(op.Outputs()[0], &block.absorbed);
+    if (!moe_norm || !is_norm(*moe_norm)) return std::nullopt;
+    block.moe_post = moe_norm->Inputs()[1];
+    block.absorbed.push_back(moe_norm->Get());
+    const auto add1 = SoleUser(moe_norm->Outputs()[0], &block.absorbed);
+    if (!add1 || !is_add(*add1)) return std::nullopt;
+    block.absorbed.push_back(add1->Get());
+    const int moe_side =
+        StripReshapes(add1->Inputs()[0]).Get() == moe_norm->Outputs()[0].Get()
+            ? 0
+            : 1;
+    if (StripReshapes(add1->Inputs()[moe_side]).Get() !=
+        moe_norm->Outputs()[0].Get()) {
+      return std::nullopt;
+    }
+    // The dense side, back from ADD1's other input.
+    const Tensor dense_normed = add1->Inputs()[1 - moe_side];
+    if (!ReadOnce(dense_normed)) return std::nullopt;
+    const auto dense_norm = dense_normed.GetDefiningOp();
+    if (!dense_norm || !is_norm(*dense_norm) ||
+        !ReadOnce(dense_norm->Inputs()[0])) {
+      return std::nullopt;
+    }
+    block.dense_post = dense_norm->Inputs()[1];
+    block.absorbed.push_back(dense_norm->Get());
+    const auto down = dense_norm->Inputs()[0].GetDefiningOp();
+    if (!down || !is_fc(*down) || !ReadOnce(down->Inputs()[0])) {
+      return std::nullopt;
+    }
+    block.dense_down_w = down->Inputs()[1];
+    block.absorbed.push_back(down->Get());
+    const auto mul = down->Inputs()[0].GetDefiningOp();
+    if (!mul || mul->Code() != kLiteRtOpCodeTflMul ||
+        mul->Inputs().size() != 2 || !HasNoFusedActivation(*mul)) {
+      return std::nullopt;
+    }
+    block.absorbed.push_back(mul->Get());
+    std::optional<Op> gelu;
+    std::optional<Op> up;
+    for (int i = 0; i < 2; ++i) {
+      if (!ReadOnce(mul->Inputs()[i])) return std::nullopt;
+      const auto producer = mul->Inputs()[i].GetDefiningOp();
+      if (!producer) return std::nullopt;
+      if (producer->Code() == kLiteRtOpCodeTflGelu) {
+        gelu = *producer;
+      } else if (producer->Code() == kLiteRtOpCodeTflFullyConnected) {
+        up = *producer;
+      }
+    }
+    if (!gelu || !up || gelu->Inputs().size() != 1 || !is_fc(*up) ||
+        !ReadOnce(gelu->Inputs()[0])) {
+      return std::nullopt;
+    }
+    bool approximate = false;
+    if (LiteRtGetGeluApproximateOption(gelu->Get(), &approximate) !=
+        kLiteRtStatusOk) {
+      return std::nullopt;
+    }
+    block.gate_mode = approximate ? 1 : 2;
+    block.absorbed.push_back(gelu->Get());
+    block.absorbed.push_back(up->Get());
+    const auto gate = gelu->Inputs()[0].GetDefiningOp();
+    if (!gate || !is_fc(*gate) ||
+        gate->Inputs()[0].Get() != up->Inputs()[0].Get()) {
+      return std::nullopt;
+    }
+    block.absorbed.push_back(gate->Get());
+    block.dense_gate_w = gate->Inputs()[1];
+    block.dense_up_w = up->Inputs()[1];
+    const Tensor dense_in = gate->Inputs()[0];
+    if (graph_outputs_.count(dense_in.Get()) != 0 ||
+        dense_in.Uses().size() != 2) {
+      return std::nullopt;
+    }
+    const auto dense_in_norm = dense_in.GetDefiningOp();
+    if (!dense_in_norm || !is_norm(*dense_in_norm) ||
+        StripReshapes(dense_in_norm->Inputs()[0]).Get() != residual) {
+      return std::nullopt;
+    }
+    block.dense_norm = dense_in_norm->Inputs()[1];
+    block.absorbed.push_back(dense_in_norm->Get());
+    // The dense dims.
+    auto gate_type = block.dense_gate_w.RankedTensorType();
+    auto up_type = block.dense_up_w.RankedTensorType();
+    auto down_type = block.dense_down_w.RankedTensorType();
+    if (!gate_type || !up_type || !down_type) return std::nullopt;
+    const auto gd = gate_type->Layout().Dimensions();
+    const auto ud = up_type->Layout().Dimensions();
+    const auto dd = down_type->Layout().Dimensions();
+    if (gd.size() != 2 || ud.size() != 2 || dd.size() != 2 ||
+        gd[1] != moe.model_dim || ud[1] != moe.model_dim || ud[0] != gd[0] ||
+        dd[0] != moe.model_dim || dd[1] != gd[0] || gd[0] < 32 ||
+        gd[0] % 32 != 0) {
+      return std::nullopt;
+    }
+    block.dense_hidden = gd[0];
+    // ADD1 -> rms_norm(w_sp) -> ADD2(X, .) [-> MUL scalar]
+    const auto sum_norm = SoleUser(add1->Outputs()[0], &block.absorbed);
+    if (!sum_norm || !is_norm(*sum_norm)) return std::nullopt;
+    block.sum_post = sum_norm->Inputs()[1];
+    block.absorbed.push_back(sum_norm->Get());
+    const auto add2 = SoleUser(sum_norm->Outputs()[0], &block.absorbed);
+    if (!add2 || !is_add(*add2)) return std::nullopt;
+    const int sum_side =
+        StripReshapes(add2->Inputs()[0]).Get() == sum_norm->Outputs()[0].Get()
+            ? 0
+            : 1;
+    if (StripReshapes(add2->Inputs()[sum_side]).Get() !=
+            sum_norm->Outputs()[0].Get() ||
+        StripReshapes(add2->Inputs()[1 - sum_side]).Get() != residual) {
+      return std::nullopt;
+    }
+    block.absorbed.push_back(add2->Get());
+    block.output = add2->Outputs()[0];
+    std::vector<LiteRtOp> through;
+    const auto scaled = SoleUser(add2->Outputs()[0], &through);
+    if (scaled && scaled->Code() == kLiteRtOpCodeTflMul &&
+        scaled->Inputs().size() == 2 && HasNoFusedActivation(*scaled) &&
+        scaled->Outputs().size() == 1) {
+      std::optional<float> scalar;
+      for (int i = 0; i < 2; ++i) {
+        if (auto constant = ReadFloatScalar(scaled->Inputs()[i])) {
+          scalar = *constant;
+        }
+      }
+      if (scalar.has_value()) {
+        block.multiplier = *scalar;
+        block.absorbed.insert(block.absorbed.end(), through.begin(),
+                              through.end());
+        block.absorbed.push_back(scaled->Get());
+        block.output = scaled->Outputs()[0];
+      }
+    }
+    for (const Tensor* w : {&block.dense_norm, &block.dense_post,
+                            &block.moe_post, &block.sum_post}) {
+      if (w->ElementType() != litert::ElementType::Float32 ||
+          !w->HasWeights() ||
+          w->Weights().Bytes().size() !=
+              static_cast<size_t>(moe.model_dim) * sizeof(float)) {
+        return std::nullopt;
+      }
+    }
+    return block;
+  }
+
   Expected<nvinfer1::ITensor*> AddNormScaleConstant(const Tensor& w,
                                                     int32_t columns,
                                                     const std::string& name) {
@@ -8591,6 +8803,55 @@ class TensorRtGraphBuilder {
         routing.reset();
       }
     }
+    // The rest of the layer's feed-forward block: its dense pieces join the
+    // arena too.
+    std::optional<MoeBlockFusion> block;
+    if (routing.has_value()) {
+      block = FindMoeBlock(op, *moe, *routing);
+    }
+    if (block.has_value()) {
+      const Tensor* dense_weights[3] = {
+          &block->dense_gate_w, &block->dense_up_w, &block->dense_down_w};
+      const int weight_pieces[3] = {8, 9, 12};
+      const int scale_pieces[3] = {10, 11, 13};
+      int scale_type = -1;
+      bool in_file = true;
+      for (int i = 0; i < 3 && in_file; ++i) {
+        const Tensor scales(dense_weights[i]->Context(),
+                            dense_weights[i]->BlockWiseQuantization().scales);
+        const auto bytes = dense_weights[i]->Weights().Bytes();
+        const auto scale_bytes = scales.Weights().Bytes();
+        const auto offset = weight_store_->SourceOffset(bytes);
+        const auto scale_offset = weight_store_->SourceOffset(scale_bytes);
+        const int type =
+            scales.ElementType() == litert::ElementType::Float32 ? 0 : 1;
+        if (!offset || !scale_offset ||
+            (scale_type >= 0 && type != scale_type)) {
+          in_file = false;
+          break;
+        }
+        scale_type = type;
+        source.offsets[weight_pieces[i]] = *offset;
+        source.sizes[weight_pieces[i]] = bytes.size();
+        source.offsets[scale_pieces[i]] = *scale_offset;
+        source.sizes[scale_pieces[i]] = scale_bytes.size();
+      }
+      if (in_file) {
+        source.dense_scale_type = scale_type;
+        source.dense_hidden = block->dense_hidden;
+      } else {
+        LITERT_LOG(LITERT_INFO,
+                   "NVIDIA TensorRT-RTX: the dense feed-forward beside the moe "
+                   "op at tensor %u is not a view of the model file; the block "
+                   "stays in the graph",
+                   op.Inputs()[3].TensorIndex());
+        for (int piece = 8; piece < 14; ++piece) {
+          source.offsets[piece] = 0;
+          source.sizes[piece] = 0;
+        }
+        block.reset();
+      }
+    }
     std::vector<nvinfer1::ITensor*> inputs;
     TrtPtr<nvinfer1::IPluginV3> plugin;
     if (routing.has_value()) {
@@ -8604,11 +8865,24 @@ class TensorRtGraphBuilder {
           auto* expert_norm,
           AddNormScaleConstant(routing->expert_norm, moe->model_dim,
                                "moe_expert_norm_"));
-      plugin.reset(CreateMoePlugin(moe->experts, moe->top_k, moe->model_dim,
-                                   moe->hidden_dim, moe->gate, source,
-                                   /*routed=*/true, routing->eps,
-                                   routing->multiplier));
       inputs = {x, expert_scale, router_norm, expert_norm};
+      if (block.has_value()) {
+        const Tensor* scales[4] = {&block->dense_norm, &block->dense_post,
+                                   &block->moe_post, &block->sum_post};
+        const char* names[4] = {"moe_dense_norm_", "moe_dense_post_",
+                                "moe_post_", "moe_sum_post_"};
+        for (int i = 0; i < 4; ++i) {
+          LITERT_ASSIGN_OR_RETURN(
+              auto* constant,
+              AddNormScaleConstant(*scales[i], moe->model_dim, names[i]));
+          inputs.push_back(constant);
+        }
+      }
+      plugin.reset(CreateMoePlugin(
+          moe->experts, moe->top_k, moe->model_dim, moe->hidden_dim, moe->gate,
+          source, /*routed=*/true, routing->eps, routing->multiplier,
+          block.has_value(), block.has_value() ? block->gate_mode : 0,
+          block.has_value() ? block->multiplier : 1.0f));
     } else {
       LITERT_ASSIGN_OR_RETURN(auto* x, GetTensor(op.Inputs()[0]));
       LITERT_ASSIGN_OR_RETURN(x, AddCastTensor(x, nvinfer1::DataType::kBF16));
@@ -8644,7 +8918,22 @@ class TensorRtGraphBuilder {
                "top_k=%d model_dim=%d hidden_dim=%d rows=%d weights at %llu%s",
                moe->experts, moe->top_k, moe->model_dim, moe->hidden_dim,
                moe->rows, static_cast<unsigned long long>(source.offsets[0]),
-               routing.has_value() ? " (router fused)" : "");
+               block.has_value()     ? " (the layer's whole block)"
+               : routing.has_value() ? " (router fused)"
+                                     : "");
+    if (block.has_value()) {
+      // The ops the block replaced never lower; its output is the next
+      // residual stream, in that tensor's shape (the plugin's output has the
+      // residual input's, which the graph may reshape between the two).
+      for (LiteRtOp absorbed : block->absorbed) {
+        unlowered_ops_.insert(absorbed);
+      }
+      LITERT_ASSIGN_OR_RETURN(auto out_type, block->output.RankedTensorType());
+      LITERT_ASSIGN_OR_RETURN(auto out_dims, ConvertDims(out_type));
+      LITERT_ASSIGN_OR_RETURN(auto* result,
+                              ReshapeTensor(layer->getOutput(0), out_dims));
+      return SetOutputTensor(block->output, result);
+    }
     return SetOutputTensor(op.Outputs()[0], layer->getOutput(0));
   }
 

@@ -76,6 +76,14 @@ struct LiteRtNvidiaMoeArena {
   // (the fused launch only; null otherwise).
   const uint8_t* router;
   const void* router_scales;
+  // The layer's dense feed-forward (the layer-block launch only; null
+  // otherwise): its gate and up INT4 rows stacked [2 * dense_hidden,
+  // model_dim] with FP16 scales, and its down rows [model_dim, dense_hidden]
+  // with theirs.
+  const uint8_t* dense_gate_up;
+  const void* dense_gate_up_scales;
+  const uint8_t* dense_down;
+  const void* dense_down_scales;
 };
 
 struct LiteRtNvidiaMoeShape {
@@ -116,5 +124,39 @@ extern "C" cudaError_t LiteRtNvidiaLaunchMoeInt4BlockFused(
     const float* router_norm_scale, float router_multiplier,
     const float* expert_norm_scale, float norm_eps, int renormalize,
     void* workspace, void* output, cudaStream_t stream);
+
+// The rest of a layer's feed-forward block around the experts.
+struct LiteRtNvidiaMoeBlockParams {
+  int32_t dense_hidden;           // the dense feed-forward's hidden size
+  int32_t dense_gate;             // its GELU: 1 tanh approximation, 2 erf
+  float residual_multiplier;      // scales the block's output
+  const float* dense_norm_scale;  // [model_dim] the dense input norm
+  const float* dense_post_scale;  // [model_dim] the dense output norm
+  const float* moe_post_scale;    // [model_dim] the experts' output norm
+  const float* sum_post_scale;    // [model_dim] the norm of their sum
+  cudaStream_t side_stream;       // the dense feed-forward runs here
+  cudaEvent_t fork;               // the events that fork and join it
+  cudaEvent_t join;
+};
+
+// The scratch bytes LiteRtNvidiaLaunchMoeLayerBlock needs.
+extern "C" size_t LiteRtNvidiaMoeBlockWorkspaceBytes(
+    const LiteRtNvidiaMoeShape* shape, int32_t dense_hidden,
+    int32_t dense_gate);
+
+// LiteRtNvidiaLaunchMoeInt4BlockFused and the rest of the layer's
+// feed-forward block, Gemma 4's:
+//   dense = down(gelu(gate(n_d(x))) * up(n_d(x)))      (the arena's dense rows)
+//   output = (x + n_s(n_dp(dense) + n_mp(moe))) * residual_multiplier
+// where every n is an RMS norm (norm_eps) scaled by its vector. The dense
+// feed-forward runs on block->side_stream, forked from `stream` through
+// block->fork and joined back through block->join before the epilogue.
+extern "C" cudaError_t LiteRtNvidiaLaunchMoeLayerBlock(
+    const LiteRtNvidiaMoeShape* shape, const LiteRtNvidiaMoeArena* arena,
+    const void* activation, const float* per_expert_scale,
+    const float* router_norm_scale, float router_multiplier,
+    const float* expert_norm_scale, float norm_eps, int renormalize,
+    const LiteRtNvidiaMoeBlockParams* block, void* workspace, void* output,
+    cudaStream_t stream);
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_TRTLLM_INT4_BLOCK_GEMV_H_

@@ -17,6 +17,7 @@
 #include "third_party/gpus/cuda/include/cuda_bf16.h"
 #include "third_party/gpus/cuda/include/cuda_fp16.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -387,6 +388,134 @@ __global__ void __launch_bounds__(Threads)
   }
 }
 
+// The layer block's epilogue, one block per row (model_dim <= kBlockMaxDim):
+//   dense' = rms(dense) * dense_post, moe' = rms(moe) * moe_post,
+//   out = (x + rms(dense' + moe') * sum_post) * multiplier,
+// moe being the row's expert partials summed (decode) or its gathered down
+// rows times their weights (prefill, kGather).
+constexpr int kBlockThreads = 1024;
+constexpr int kBlockMaxDim = 4096;
+
+__device__ __forceinline__ float BlockSum(float value, float* scratch) {
+#pragma unroll
+  for (int offset = 16; offset > 0; offset /= 2) {
+    value += __shfl_xor_sync(kFullWarpMask, value, offset);
+  }
+  const int warp = threadIdx.x / kWarpSize;
+  const int lane = threadIdx.x % kWarpSize;
+  __syncthreads();  // the previous sum's reads of scratch are done
+  if (lane == 0) scratch[warp] = value;
+  __syncthreads();
+  float total = lane < kBlockThreads / kWarpSize ? scratch[lane] : 0.0f;
+#pragma unroll
+  for (int offset = 16; offset > 0; offset /= 2) {
+    total += __shfl_xor_sync(kFullWarpMask, total, offset);
+  }
+  return total;
+}
+
+template <bool kGather>
+__global__ void __launch_bounds__(kBlockThreads)
+    MoeBlockCombineKernel(const __nv_bfloat16* __restrict__ x,
+                          const float* __restrict__ partial,
+                          const __nv_bfloat16* __restrict__ down,
+                          const int32_t* __restrict__ pair_row,
+                          const int32_t* __restrict__ top_indices,
+                          const float* __restrict__ top_weights,
+                          const float* __restrict__ per_expert_scale,
+                          const __nv_bfloat16* __restrict__ dense,
+                          const float* __restrict__ dense_post,
+                          const float* __restrict__ moe_post,
+                          const float* __restrict__ sum_post, float eps,
+                          float multiplier, int top_k, int experts,
+                          int model_dim, __nv_bfloat16* __restrict__ output) {
+  constexpr int kPerThread = kBlockMaxDim / kBlockThreads;
+  __shared__ float scratch[kWarpSize];
+  const int row = blockIdx.x;
+  const size_t base = static_cast<size_t>(row) * model_dim;
+  float xv[kPerThread], dv[kPerThread], mv[kPerThread];
+  float dense_sq = 0.0f;
+  float moe_sq = 0.0f;
+#pragma unroll
+  for (int i = 0; i < kPerThread; ++i) {
+    const int o = threadIdx.x + i * kBlockThreads;
+    xv[i] = dv[i] = mv[i] = 0.0f;
+    if (o >= model_dim) continue;
+    xv[i] = __bfloat162float(x[base + o]);
+    dv[i] = __bfloat162float(dense[base + o]);
+    float m = 0.0f;
+    for (int j = 0; j < top_k; ++j) {
+      const int pair = row * top_k + j;
+      if constexpr (kGather) {
+        const int expert = top_indices[pair];
+        if (expert < 0 || expert >= experts) continue;
+        m = fmaf(top_weights[pair] * per_expert_scale[expert],
+                 __bfloat162float(
+                     down[static_cast<size_t>(pair_row[pair]) * model_dim + o]),
+                 m);
+      } else {
+        m += partial[static_cast<size_t>(pair) * model_dim + o];
+      }
+    }
+    mv[i] = m;
+    dense_sq = fmaf(dv[i], dv[i], dense_sq);
+    moe_sq = fmaf(mv[i], mv[i], moe_sq);
+  }
+  const float inv_dim = 1.0f / static_cast<float>(model_dim);
+  const float dense_factor =
+      rsqrtf(BlockSum(dense_sq, scratch) * inv_dim + eps);
+  const float moe_factor = rsqrtf(BlockSum(moe_sq, scratch) * inv_dim + eps);
+  float cv[kPerThread];
+  float sum_sq = 0.0f;
+#pragma unroll
+  for (int i = 0; i < kPerThread; ++i) {
+    const int o = threadIdx.x + i * kBlockThreads;
+    cv[i] = 0.0f;
+    if (o >= model_dim) continue;
+    cv[i] = dv[i] * dense_factor * dense_post[o] +
+            mv[i] * moe_factor * moe_post[o];
+    sum_sq = fmaf(cv[i], cv[i], sum_sq);
+  }
+  const float sum_factor = rsqrtf(BlockSum(sum_sq, scratch) * inv_dim + eps);
+#pragma unroll
+  for (int i = 0; i < kPerThread; ++i) {
+    const int o = threadIdx.x + i * kBlockThreads;
+    if (o >= model_dim) continue;
+    output[base + o] = __float2bfloat16_rn(
+        (xv[i] + cv[i] * sum_factor * sum_post[o]) * multiplier);
+  }
+}
+
+// What LaunchMoe needs to end a layer block instead of a plain combine.
+struct BlockEpilogue {
+  const LiteRtNvidiaMoeBlockParams* params;
+  const __nv_bfloat16* x;
+  const __nv_bfloat16* dense_out;
+  float eps;
+};
+
+template <bool kGather>
+cudaError_t LaunchBlockEpilogue(const LiteRtNvidiaMoeShape& shape,
+                                const BlockEpilogue& block,
+                                const float* partial,
+                                const __nv_bfloat16* down,
+                                const int32_t* pair_row,
+                                const int32_t* top_indices,
+                                const float* top_weights,
+                                const float* per_expert_scale,
+                                __nv_bfloat16* output, cudaStream_t stream) {
+  // The dense side has to be in before the epilogue reads it.
+  cudaError_t status = cudaStreamWaitEvent(stream, block.params->join, 0);
+  if (status != cudaSuccess) return status;
+  MoeBlockCombineKernel<kGather><<<shape.rows, kBlockThreads, 0, stream>>>(
+      block.x, partial, down, pair_row, top_indices, top_weights,
+      per_expert_scale, block.dense_out, block.params->dense_post_scale,
+      block.params->moe_post_scale, block.params->sum_post_scale, block.eps,
+      block.params->residual_multiplier, shape.top_k, shape.experts,
+      shape.model_dim, output);
+  return cudaPeekAtLastError();
+}
+
 // Decode: out[r][o] = sum_j partial[r * top_k + j][o], as BF16.
 __global__ void MoeCombineKernel(const float* __restrict__ partial, int top_k,
                                  int model_dim,
@@ -587,16 +716,47 @@ struct MoeWorkspace {
   size_t scaled_x = 0;      // f16 [P, model_dim]; later bf16 down [P, model_dim]
   size_t gemm_hidden = 0;   // bf16 [P, hidden_dim]
   size_t scaled_hidden = 0; // f16 [P, hidden_dim]
+  // A layer block's dense feed-forward (dense_hidden > 0).
+  size_t dense_hidden = 0;  // bf16 [rows, dense_hidden]
+  size_t dense_out = 0;     // bf16 [rows, model_dim]
+  size_t dense_gemm = 0;    // the dense GEMMs' workspace (prefill)
   size_t total = 0;
 };
 
+// The expert pieces first, in the same places with or without the dense
+// feed-forward's, which follow.
+MoeWorkspace LayoutWorkspace(const LiteRtNvidiaMoeShape& shape,
+                             int dense_hidden, int dense_gate);
+
 MoeWorkspace LayoutWorkspace(const LiteRtNvidiaMoeShape& shape) {
+  return LayoutWorkspace(shape, 0, 0);
+}
+
+MoeWorkspace LayoutWorkspace(const LiteRtNvidiaMoeShape& shape,
+                             int dense_hidden, int dense_gate) {
   MoeWorkspace w;
   const size_t pairs = static_cast<size_t>(shape.rows) * shape.top_k;
   auto take = [&w](size_t bytes) {
     const size_t at = w.total;
     w.total += RoundUp256(bytes);
     return at;
+  };
+  auto take_dense = [&] {
+    if (dense_hidden <= 0) return;
+    w.dense_hidden = take(static_cast<size_t>(shape.rows) * dense_hidden *
+                          sizeof(uint16_t));
+    w.dense_out = take(static_cast<size_t>(shape.rows) * shape.model_dim *
+                       sizeof(uint16_t));
+    if (shape.rows > kLiteRtNvidiaInt4BlockGemvMaxRows) {
+      const LiteRtNvidiaGemmShape gate_shape = {
+          shape.rows, shape.model_dim, dense_hidden, dense_gate, 32};
+      const LiteRtNvidiaGemmShape down_shape = {
+          shape.rows, dense_hidden, shape.model_dim,
+          kLiteRtNvidiaGemmGateNone, 32};
+      w.dense_gemm =
+          take(std::max(LiteRtNvidiaSubbyteGemmWorkspaceBytes(&gate_shape),
+                        LiteRtNvidiaSubbyteGemmWorkspaceBytes(&down_shape)));
+    }
   };
   w.top_indices = take(pairs * sizeof(int32_t));
   w.top_weights = take(pairs * sizeof(float));
@@ -610,6 +770,7 @@ MoeWorkspace LayoutWorkspace(const LiteRtNvidiaMoeShape& shape) {
   if (shape.rows <= kLiteRtNvidiaInt4BlockGemvMaxRows) {
     w.hidden = take(pairs * shape.hidden_dim * sizeof(float));
     w.partial = take(pairs * shape.model_dim * sizeof(float));
+    take_dense();
     return w;
   }
   const size_t padded = static_cast<size_t>(MaxPaddedRows(shape));
@@ -626,6 +787,7 @@ MoeWorkspace LayoutWorkspace(const LiteRtNvidiaMoeShape& shape) {
   w.scaled_x = take(padded * shape.model_dim * sizeof(uint16_t));
   w.gemm_hidden = take(padded * shape.hidden_dim * sizeof(uint16_t));
   w.scaled_hidden = take(padded * shape.hidden_dim * sizeof(uint16_t));
+  take_dense();
   return w;
 }
 
@@ -636,7 +798,8 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
                       const int32_t* top_indices, const float* top_weights,
                       const float* per_expert_scale, const float* norm_scale,
                       float norm_eps, char* workspace, __nv_bfloat16* output,
-                      cudaStream_t stream) {
+                      cudaStream_t stream,
+                      const BlockEpilogue* block = nullptr) {
   const MoeWorkspace w = LayoutWorkspace(shape);
   float* hidden = reinterpret_cast<float*>(workspace + w.hidden);
   const int hidden_tiles = (shape.hidden_dim + kTileRows - 1) / kTileRows;
@@ -657,6 +820,11 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
                      shape, partial);
     status = cudaPeekAtLastError();
     if (status != cudaSuccess) return status;
+    if (block != nullptr) {
+      return LaunchBlockEpilogue<false>(shape, *block, partial, nullptr,
+                                        nullptr, top_indices, top_weights,
+                                        per_expert_scale, output, stream);
+    }
     constexpr int kCombineThreads = 256;
     MoeCombineKernel<<<dim3((shape.model_dim + kCombineThreads - 1) /
                                 kCombineThreads,
@@ -745,6 +913,11 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
   status = LiteRtNvidiaLaunchBf16Int4GroupedGemm(
       &down_shape, &down_weights, scaled_hidden, row_scale, down, stream);
   if (status != cudaSuccess) return status;
+  if (block != nullptr) {
+    return LaunchBlockEpilogue<true>(shape, *block, nullptr, down, pair_row,
+                                     top_indices, top_weights,
+                                     per_expert_scale, output, stream);
+  }
   constexpr int kCombineThreads = 256;
   MoeGatherCombineKernel<<<dim3((shape.model_dim + kCombineThreads - 1) /
                                     kCombineThreads,
@@ -791,6 +964,29 @@ extern "C" size_t LiteRtNvidiaMoeWorkspaceBytes(
   return litert::nvidia::int4_block::LayoutWorkspace(*shape).total;
 }
 
+extern "C" size_t LiteRtNvidiaMoeBlockWorkspaceBytes(
+    const LiteRtNvidiaMoeShape* shape, int32_t dense_hidden,
+    int32_t dense_gate) {
+  using namespace litert::nvidia::int4_block;
+  if (!LiteRtNvidiaMoeSupports(shape) || dense_hidden < kBlock ||
+      dense_hidden % kBlock != 0 || (dense_gate != 1 && dense_gate != 2) ||
+      shape->model_dim > kBlockMaxDim) {
+    return 0;
+  }
+  if (shape->rows > kLiteRtNvidiaInt4BlockGemvMaxRows) {
+    const LiteRtNvidiaGemmShape gate_shape = {
+        shape->rows, shape->model_dim, dense_hidden, dense_gate, 32};
+    const LiteRtNvidiaGemmShape down_shape = {
+        shape->rows, dense_hidden, shape->model_dim,
+        kLiteRtNvidiaGemmGateNone, 32};
+    if (!LiteRtNvidiaSubbyteGemmSupports(&gate_shape) ||
+        !LiteRtNvidiaSubbyteGemmSupports(&down_shape)) {
+      return 0;
+    }
+  }
+  return LayoutWorkspace(*shape, dense_hidden, dense_gate).total;
+}
+
 namespace {
 
 cudaError_t LaunchMoeChecked(const LiteRtNvidiaMoeShape* shape,
@@ -801,7 +997,9 @@ cudaError_t LaunchMoeChecked(const LiteRtNvidiaMoeShape* shape,
                              const float* per_expert_scale,
                              const float* norm_scale, float norm_eps,
                              void* workspace, void* output,
-                             cudaStream_t stream) {
+                             cudaStream_t stream,
+                             const litert::nvidia::int4_block::BlockEpilogue*
+                                 block = nullptr) {
   using namespace litert::nvidia::int4_block;
   if (!LiteRtNvidiaMoeSupports(shape) || arena == nullptr ||
       arena->gate == nullptr || arena->up == nullptr ||
@@ -818,11 +1016,13 @@ cudaError_t LaunchMoeChecked(const LiteRtNvidiaMoeShape* shape,
   if (shape->model_dim / kBlock <= kWarpSize) {
     return LaunchMoe<32>(*shape, *arena, typed_activation, top_indices,
                          top_weights, per_expert_scale, norm_scale, norm_eps,
-                         static_cast<char*>(workspace), typed_output, stream);
+                         static_cast<char*>(workspace), typed_output, stream,
+                         block);
   }
   return LaunchMoe<128>(*shape, *arena, typed_activation, top_indices,
                         top_weights, per_expert_scale, norm_scale, norm_eps,
-                        static_cast<char*>(workspace), typed_output, stream);
+                        static_cast<char*>(workspace), typed_output, stream,
+                        block);
 }
 
 }  // namespace
@@ -837,20 +1037,18 @@ extern "C" cudaError_t LiteRtNvidiaLaunchMoeInt4Block(
                           stream);
 }
 
-extern "C" cudaError_t LiteRtNvidiaLaunchMoeInt4BlockFused(
-    const LiteRtNvidiaMoeShape* shape, const LiteRtNvidiaMoeArena* arena,
-    const void* activation, const float* per_expert_scale,
-    const float* router_norm_scale, float router_multiplier,
-    const float* expert_norm_scale, float norm_eps, int renormalize,
-    void* workspace, void* output, cudaStream_t stream) {
+namespace {
+
+// The routing of the fused launches: the router's logits into the
+// workspace, then top_indices/top_weights at its front.
+cudaError_t LaunchFusedRouting(const LiteRtNvidiaMoeShape* shape,
+                               const LiteRtNvidiaMoeArena* arena,
+                               const void* activation,
+                               const float* router_norm_scale,
+                               float router_multiplier, float norm_eps,
+                               int renormalize, void* workspace,
+                               cudaStream_t stream) {
   using namespace litert::nvidia::int4_block;
-  if (!LiteRtNvidiaMoeSupports(shape) || arena == nullptr ||
-      arena->router == nullptr || arena->router_scales == nullptr ||
-      activation == nullptr || router_norm_scale == nullptr ||
-      expert_norm_scale == nullptr || norm_eps < 0.0f || workspace == nullptr ||
-      shape->model_dim > kMaxRouteDim || shape->experts % 2 != 0) {
-    return cudaErrorInvalidValue;
-  }
   const MoeWorkspace w = LayoutWorkspace(*shape);
   auto* bytes = static_cast<char*>(workspace);
   auto* top_indices = reinterpret_cast<int32_t*>(bytes + w.top_indices);
@@ -890,10 +1088,127 @@ extern "C" cudaError_t LiteRtNvidiaLaunchMoeInt4BlockFused(
             top_indices, top_weights);
   }
   status = cudaPeekAtLastError();
+  return cudaPeekAtLastError();
+}
+
+bool FusedArgumentsValid(const LiteRtNvidiaMoeShape* shape,
+                         const LiteRtNvidiaMoeArena* arena,
+                         const void* activation,
+                         const float* router_norm_scale,
+                         const float* expert_norm_scale, float norm_eps,
+                         void* workspace) {
+  using namespace litert::nvidia::int4_block;
+  return LiteRtNvidiaMoeSupports(shape) && arena != nullptr &&
+         arena->router != nullptr && arena->router_scales != nullptr &&
+         activation != nullptr && router_norm_scale != nullptr &&
+         expert_norm_scale != nullptr && norm_eps >= 0.0f &&
+         workspace != nullptr && shape->model_dim <= kMaxRouteDim &&
+         shape->experts % 2 == 0;
+}
+
+}  // namespace
+
+extern "C" cudaError_t LiteRtNvidiaLaunchMoeInt4BlockFused(
+    const LiteRtNvidiaMoeShape* shape, const LiteRtNvidiaMoeArena* arena,
+    const void* activation, const float* per_expert_scale,
+    const float* router_norm_scale, float router_multiplier,
+    const float* expert_norm_scale, float norm_eps, int renormalize,
+    void* workspace, void* output, cudaStream_t stream) {
+  using namespace litert::nvidia::int4_block;
+  if (!FusedArgumentsValid(shape, arena, activation, router_norm_scale,
+                           expert_norm_scale, norm_eps, workspace)) {
+    return cudaErrorInvalidValue;
+  }
+  const cudaError_t status = LaunchFusedRouting(
+      shape, arena, activation, router_norm_scale, router_multiplier,
+      norm_eps, renormalize, workspace, stream);
   if (status != cudaSuccess) return status;
-  return LaunchMoeChecked(shape, arena, activation, top_indices, top_weights,
-                          per_expert_scale, expert_norm_scale, norm_eps,
-                          workspace, output, stream);
+  const MoeWorkspace w = LayoutWorkspace(*shape);
+  auto* bytes = static_cast<char*>(workspace);
+  return LaunchMoeChecked(
+      shape, arena, activation,
+      reinterpret_cast<const int32_t*>(bytes + w.top_indices),
+      reinterpret_cast<const float*>(bytes + w.top_weights), per_expert_scale,
+      expert_norm_scale, norm_eps, workspace, output, stream);
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchMoeLayerBlock(
+    const LiteRtNvidiaMoeShape* shape, const LiteRtNvidiaMoeArena* arena,
+    const void* activation, const float* per_expert_scale,
+    const float* router_norm_scale, float router_multiplier,
+    const float* expert_norm_scale, float norm_eps, int renormalize,
+    const LiteRtNvidiaMoeBlockParams* block, void* workspace, void* output,
+    cudaStream_t stream) {
+  using namespace litert::nvidia::int4_block;
+  if (!FusedArgumentsValid(shape, arena, activation, router_norm_scale,
+                           expert_norm_scale, norm_eps, workspace) ||
+      block == nullptr || block->dense_norm_scale == nullptr ||
+      block->dense_post_scale == nullptr || block->moe_post_scale == nullptr ||
+      block->sum_post_scale == nullptr || block->side_stream == nullptr ||
+      block->fork == nullptr || block->join == nullptr ||
+      arena->dense_gate_up == nullptr ||
+      arena->dense_gate_up_scales == nullptr ||
+      arena->dense_down == nullptr || arena->dense_down_scales == nullptr ||
+      LiteRtNvidiaMoeBlockWorkspaceBytes(shape, block->dense_hidden,
+                                         block->dense_gate) == 0) {
+    return cudaErrorInvalidValue;
+  }
+  const MoeWorkspace w =
+      LayoutWorkspace(*shape, block->dense_hidden, block->dense_gate);
+  auto* bytes = static_cast<char*>(workspace);
+  auto* dense_hidden = reinterpret_cast<__nv_bfloat16*>(bytes + w.dense_hidden);
+  auto* dense_out = reinterpret_cast<__nv_bfloat16*>(bytes + w.dense_out);
+  // The dense feed-forward on the side stream, from the fork.
+  cudaError_t status = cudaEventRecord(block->fork, stream);
+  if (status != cudaSuccess) return status;
+  status = cudaStreamWaitEvent(block->side_stream, block->fork, 0);
+  if (status != cudaSuccess) return status;
+  if (shape->rows <= kLiteRtNvidiaInt4BlockGemvMaxRows) {
+    status = LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(
+        activation, arena->dense_gate_up, arena->dense_gate_up_scales,
+        block->dense_norm_scale, norm_eps, 1.0f, dense_hidden, shape->rows,
+        shape->model_dim, block->dense_hidden, block->dense_gate,
+        block->side_stream);
+    if (status == cudaSuccess) {
+      status = LiteRtNvidiaLaunchBf16Int4BlockGemvRows(
+          dense_hidden, arena->dense_down, arena->dense_down_scales, dense_out,
+          shape->rows, block->dense_hidden, shape->model_dim, 0,
+          block->side_stream);
+    }
+  } else {
+    const LiteRtNvidiaGemmShape gate_shape = {
+        shape->rows, shape->model_dim, block->dense_hidden, block->dense_gate,
+        32};
+    const LiteRtNvidiaGemmShape down_shape = {
+        shape->rows, block->dense_hidden, shape->model_dim,
+        kLiteRtNvidiaGemmGateNone, 32};
+    status = LiteRtNvidiaLaunchBf16Int4GemmNormed(
+        &gate_shape, activation, block->dense_norm_scale, norm_eps, 1.0f,
+        arena->dense_gate_up, arena->dense_gate_up_scales, dense_hidden,
+        bytes + w.dense_gemm, block->side_stream);
+    if (status == cudaSuccess) {
+      status = LiteRtNvidiaLaunchBf16Int4Gemm(
+          &down_shape, dense_hidden, arena->dense_down,
+          arena->dense_down_scales, dense_out, bytes + w.dense_gemm,
+          block->side_stream);
+    }
+  }
+  if (status != cudaSuccess) return status;
+  status = cudaEventRecord(block->join, block->side_stream);
+  if (status != cudaSuccess) return status;
+  // The routing and the experts here; the epilogue waits for the join.
+  status = LaunchFusedRouting(shape, arena, activation, router_norm_scale,
+                              router_multiplier, norm_eps, renormalize,
+                              workspace, stream);
+  if (status != cudaSuccess) return status;
+  const BlockEpilogue epilogue{
+      block, static_cast<const __nv_bfloat16*>(activation), dense_out,
+      norm_eps};
+  return LaunchMoeChecked(
+      shape, arena, activation,
+      reinterpret_cast<const int32_t*>(bytes + w.top_indices),
+      reinterpret_cast<const float*>(bytes + w.top_weights), per_expert_scale,
+      expert_norm_scale, norm_eps, workspace, output, stream, &epilogue);
 }
 
 extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRows(

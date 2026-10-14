@@ -78,8 +78,13 @@ constexpr char kRouterScaleTypeField[] = "router_scale_type";
 constexpr char kRoutedField[] = "routed";
 constexpr char kNormEpsField[] = "norm_eps";
 constexpr char kRouterMultiplierField[] = "router_multiplier";
-constexpr int kFields = 14;
-constexpr int kPieces = 8;
+constexpr char kDenseScaleTypeField[] = "dense_scale_type";
+constexpr char kDenseHiddenField[] = "dense_hidden";
+constexpr char kBlockField[] = "block";
+constexpr char kDenseGateField[] = "dense_gate";
+constexpr char kResidualMultiplierField[] = "residual_multiplier";
+constexpr int kFields = 19;
+constexpr int kPieces = 14;
 constexpr size_t kArenaAlignment = 256;
 constexpr size_t kStagingBytes = 32u << 20;
 
@@ -167,6 +172,10 @@ std::string ArenaKey(const MoeExpertSource& source) {
   key += std::to_string(source.model_size);
   key += ':';
   key += std::to_string(source.router_scale_type);
+  key += ':';
+  key += std::to_string(source.dense_scale_type);
+  key += ':';
+  key += std::to_string(source.dense_hidden);
   for (int i = 0; i < kPieces; ++i) {
     key += ':';
     key += std::to_string(source.offsets[i]);
@@ -189,6 +198,7 @@ struct ArenaLayout {
 bool ConvertsPiece(const MoeExpertSource& source, int i) {
   if (i >= 3 && i < 6) return source.scale_type == 0;
   if (i == 7) return source.router_scale_type == 0;
+  if (i == 10 || i == 11 || i == 13) return source.dense_scale_type == 0;
   return false;
 }
 
@@ -199,6 +209,10 @@ bool LayoutArena(const MoeExpertSource& source, int32_t experts,
   const size_t scale_in = source.scale_type == 0 ? 4 : 2;
   const bool routed = source.router_scale_type >= 0;
   const size_t router_scale_in = source.router_scale_type == 0 ? 4 : 2;
+  const bool dense = source.dense_scale_type >= 0;
+  const size_t dense_rows =
+      dense ? static_cast<size_t>(source.dense_hidden) : 0;
+  const size_t dense_scale_in = source.dense_scale_type == 0 ? 4 : 2;
   const std::array<size_t, kPieces> expected = {
       gate_rows * model_dim / 2,
       gate_rows * model_dim / 2,
@@ -209,6 +223,14 @@ bool LayoutArena(const MoeExpertSource& source, int32_t experts,
       routed ? static_cast<size_t>(experts) * model_dim / 2 : 0,
       routed ? static_cast<size_t>(experts) * (model_dim / 32) * router_scale_in
              : 0,
+      dense_rows * model_dim / 2,
+      dense_rows * model_dim / 2,
+      dense_rows * (model_dim / 32) * dense_scale_in,
+      dense_rows * (model_dim / 32) * dense_scale_in,
+      dense ? static_cast<size_t>(model_dim) * dense_rows / 2 : 0,
+      dense
+          ? static_cast<size_t>(model_dim) * (dense_rows / 32) * dense_scale_in
+          : 0,
   };
   size_t total = 0;
   for (int i = 0; i < kPieces; ++i) {
@@ -217,10 +239,18 @@ bool LayoutArena(const MoeExpertSource& source, int32_t experts,
     }
     // Scales land as FP16.
     layout->bytes[i] = ConvertsPiece(source, i) ? expected[i] / 2 : expected[i];
-    layout->offsets[i] = total;
-    total += RoundUp(layout->bytes[i], kArenaAlignment);
+    if (i == 9 || i == 11) {
+      // The dense up rows follow the gate rows without a gap, and their
+      // scales the gate scales: the gated GEMV and GEMM read them stacked.
+      layout->offsets[i] = layout->offsets[i - 1] + layout->bytes[i - 1];
+      total = layout->offsets[i] + layout->bytes[i];
+    } else {
+      total = RoundUp(total, kArenaAlignment);
+      layout->offsets[i] = total;
+      total += layout->bytes[i];
+    }
   }
-  layout->total = total;
+  layout->total = RoundUp(total, kArenaAlignment);
   return true;
 }
 
@@ -371,6 +401,7 @@ std::shared_ptr<Arena> LoadArena(const MoeExpertSource& source, int32_t experts,
   }
   auto* device_bytes = static_cast<uint8_t*>(device_base);
   const bool routed = source.router_scale_type >= 0;
+  const bool dense = source.dense_scale_type >= 0;
   arena->pointers = {device_bytes + layout.offsets[0],
                      device_bytes + layout.offsets[1],
                      device_bytes + layout.offsets[2],
@@ -378,7 +409,11 @@ std::shared_ptr<Arena> LoadArena(const MoeExpertSource& source, int32_t experts,
                      device_bytes + layout.offsets[4],
                      device_bytes + layout.offsets[5],
                      routed ? device_bytes + layout.offsets[6] : nullptr,
-                     routed ? device_bytes + layout.offsets[7] : nullptr};
+                     routed ? device_bytes + layout.offsets[7] : nullptr,
+                     dense ? device_bytes + layout.offsets[8] : nullptr,
+                     dense ? device_bytes + layout.offsets[10] : nullptr,
+                     dense ? device_bytes + layout.offsets[12] : nullptr,
+                     dense ? device_bytes + layout.offsets[13] : nullptr};
   return arena;
 }
 
@@ -441,7 +476,9 @@ class MoePlugin final : public nvinfer1::IPluginV3,
  public:
   MoePlugin(int32_t experts, int32_t top_k, int32_t model_dim,
             int32_t hidden_dim, int32_t gate, MoeExpertSource source,
-            int32_t routed, float norm_eps, float router_multiplier) noexcept
+            int32_t routed, float norm_eps, float router_multiplier,
+            int32_t block, int32_t dense_gate,
+            float residual_multiplier) noexcept
       : experts_(experts),
         top_k_(top_k),
         model_dim_(model_dim),
@@ -451,6 +488,9 @@ class MoePlugin final : public nvinfer1::IPluginV3,
         routed_(routed),
         norm_eps_(norm_eps),
         router_multiplier_(router_multiplier),
+        block_(block),
+        dense_gate_(dense_gate),
+        residual_multiplier_(residual_multiplier),
         model_size_(static_cast<int64_t>(source_.model_size)) {
     for (int i = 0; i < kPieces; ++i) {
       offsets_[i] = static_cast<int64_t>(source_.offsets[i]);
@@ -478,6 +518,14 @@ class MoePlugin final : public nvinfer1::IPluginV3,
         {kNormEpsField, &norm_eps_, nvinfer1::PluginFieldType::kFLOAT32, 1},
         {kRouterMultiplierField, &router_multiplier_,
          nvinfer1::PluginFieldType::kFLOAT32, 1},
+        {kDenseScaleTypeField, &source_.dense_scale_type,
+         nvinfer1::PluginFieldType::kINT32, 1},
+        {kDenseHiddenField, &source_.dense_hidden,
+         nvinfer1::PluginFieldType::kINT32, 1},
+        {kBlockField, &block_, nvinfer1::PluginFieldType::kINT32, 1},
+        {kDenseGateField, &dense_gate_, nvinfer1::PluginFieldType::kINT32, 1},
+        {kResidualMultiplierField, &residual_multiplier_,
+         nvinfer1::PluginFieldType::kFLOAT32, 1},
     }};
     field_collection_ = {static_cast<int32_t>(fields_.size()), fields_.data()};
   }
@@ -498,7 +546,8 @@ class MoePlugin final : public nvinfer1::IPluginV3,
   nvinfer1::IPluginV3* clone() noexcept override {
     auto* copy = new (std::nothrow)
         MoePlugin(experts_, top_k_, model_dim_, hidden_dim_, gate_, source_,
-                  routed_, norm_eps_, router_multiplier_);
+                  routed_, norm_eps_, router_multiplier_, block_, dense_gate_,
+                  residual_multiplier_);
     if (copy != nullptr) {
       copy->arena_ = arena_;
     }
@@ -519,11 +568,11 @@ class MoePlugin final : public nvinfer1::IPluginV3,
                              int32_t num_outputs,
                              const nvinfer1::DataType* input_types,
                              int32_t num_inputs) const noexcept override {
-    if (output_types == nullptr || input_types == nullptr || num_inputs != 4 ||
-        num_outputs != 1) {
+    if (output_types == nullptr || input_types == nullptr ||
+        num_inputs != InputCount() || num_outputs != 1) {
       return 1;
     }
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < InputCount(); ++i) {
       if (input_types[i] != InputType(i)) return 1;
     }
     output_types[0] = nvinfer1::DataType::kBF16;
@@ -533,12 +582,13 @@ class MoePlugin final : public nvinfer1::IPluginV3,
   bool supportsFormatCombination(
       int32_t position, const nvinfer1::DynamicPluginTensorDesc* in_out,
       int32_t num_inputs, int32_t num_outputs) noexcept override {
-    if (in_out == nullptr || num_inputs != 4 || num_outputs != 1 ||
-        position < 0 || position > 4) {
+    if (in_out == nullptr || num_inputs != InputCount() || num_outputs != 1 ||
+        position < 0 || position > InputCount()) {
       return false;
     }
-    const nvinfer1::DataType type =
-        position < 4 ? InputType(position) : nvinfer1::DataType::kBF16;
+    const nvinfer1::DataType type = position < InputCount()
+                                        ? InputType(position)
+                                        : nvinfer1::DataType::kBF16;
     return in_out[position].desc.type == type &&
            in_out[position].desc.format == nvinfer1::TensorFormat::kLINEAR;
   }
@@ -550,7 +600,7 @@ class MoePlugin final : public nvinfer1::IPluginV3,
       nvinfer1::IExprBuilder& expr_builder) noexcept override {
     static_cast<void>(shape_inputs);
     static_cast<void>(expr_builder);
-    if (inputs == nullptr || outputs == nullptr || num_inputs != 4 ||
+    if (inputs == nullptr || outputs == nullptr || num_inputs != InputCount() ||
         num_shape_inputs != 0 || num_outputs != 1 || inputs[0].nbDims < 1) {
       return 1;
     }
@@ -562,8 +612,9 @@ class MoePlugin final : public nvinfer1::IPluginV3,
                           int32_t num_inputs,
                           const nvinfer1::DynamicPluginTensorDesc* outputs,
                           int32_t num_outputs) noexcept override {
-    return inputs != nullptr && outputs != nullptr && num_inputs == 4 &&
-                   num_outputs == 1
+    return inputs != nullptr && outputs != nullptr &&
+                   num_inputs == InputCount() && num_outputs == 1 &&
+                   (block_ == 0 || EnsureSideResources())
                ? 0
                : 1;
   }
@@ -572,8 +623,8 @@ class MoePlugin final : public nvinfer1::IPluginV3,
                         int32_t num_inputs,
                         const nvinfer1::PluginTensorDesc* outputs,
                         int32_t num_outputs) noexcept override {
-    return inputs != nullptr && outputs != nullptr && num_inputs == 4 &&
-                   num_outputs == 1
+    return inputs != nullptr && outputs != nullptr &&
+                   num_inputs == InputCount() && num_outputs == 1
                ? 0
                : 1;
   }
@@ -583,12 +634,14 @@ class MoePlugin final : public nvinfer1::IPluginV3,
                           const nvinfer1::DynamicPluginTensorDesc* outputs,
                           int32_t num_outputs) const noexcept override {
     static_cast<void>(outputs);
-    if (inputs == nullptr || num_inputs != 4 || num_outputs != 1) {
+    if (inputs == nullptr || num_inputs != InputCount() || num_outputs != 1) {
       return 0;
     }
     const LiteRtNvidiaMoeShape shape =
         Shape(ActivationRows(inputs[0].max, model_dim_));
-    return LiteRtNvidiaMoeWorkspaceBytes(&shape);
+    return block_ != 0 ? LiteRtNvidiaMoeBlockWorkspaceBytes(
+                             &shape, source_.dense_hidden, dense_gate_)
+                       : LiteRtNvidiaMoeWorkspaceBytes(&shape);
   }
 
   int32_t enqueue(const nvinfer1::PluginTensorDesc* input_desc,
@@ -615,20 +668,40 @@ class MoePlugin final : public nvinfer1::IPluginV3,
     if (rows < 1 || !LiteRtNvidiaMoeSupports(&shape) || workspace == nullptr) {
       return 1;
     }
-    const cudaError_t status =
-        routed_ != 0
-            ? LiteRtNvidiaLaunchMoeInt4BlockFused(
-                  &shape, &arena_->pointers, inputs[0],
-                  static_cast<const float*>(inputs[1]),
-                  static_cast<const float*>(inputs[2]), router_multiplier_,
-                  static_cast<const float*>(inputs[3]), norm_eps_,
-                  /*renormalize=*/1, workspace, outputs[0], stream)
-            : LiteRtNvidiaLaunchMoeInt4Block(
-                  &shape, &arena_->pointers, inputs[0],
-                  static_cast<const int32_t*>(inputs[2]),
-                  static_cast<const float*>(inputs[1]),
-                  static_cast<const float*>(inputs[3]), workspace, outputs[0],
-                  stream);
+    cudaError_t status;
+    if (block_ != 0) {
+      if (!EnsureSideResources()) return 1;
+      const LiteRtNvidiaMoeBlockParams block = {
+          source_.dense_hidden,
+          dense_gate_,
+          residual_multiplier_,
+          static_cast<const float*>(inputs[4]),
+          static_cast<const float*>(inputs[5]),
+          static_cast<const float*>(inputs[6]),
+          static_cast<const float*>(inputs[7]),
+          side_stream_,
+          fork_,
+          join_};
+      status = LiteRtNvidiaLaunchMoeLayerBlock(
+          &shape, &arena_->pointers, inputs[0],
+          static_cast<const float*>(inputs[1]),
+          static_cast<const float*>(inputs[2]), router_multiplier_,
+          static_cast<const float*>(inputs[3]), norm_eps_, /*renormalize=*/1,
+          &block, workspace, outputs[0], stream);
+    } else if (routed_ != 0) {
+      status = LiteRtNvidiaLaunchMoeInt4BlockFused(
+          &shape, &arena_->pointers, inputs[0],
+          static_cast<const float*>(inputs[1]),
+          static_cast<const float*>(inputs[2]), router_multiplier_,
+          static_cast<const float*>(inputs[3]), norm_eps_, /*renormalize=*/1,
+          workspace, outputs[0], stream);
+    } else {
+      status = LiteRtNvidiaLaunchMoeInt4Block(
+          &shape, &arena_->pointers, inputs[0],
+          static_cast<const int32_t*>(inputs[2]),
+          static_cast<const float*>(inputs[1]),
+          static_cast<const float*>(inputs[3]), workspace, outputs[0], stream);
+    }
     if (status != cudaSuccess) {
       std::fprintf(stderr,
                    "[LiteRtNvidiaMoe] CUDA launch failed: %s (%d): %s\n",
@@ -648,8 +721,14 @@ class MoePlugin final : public nvinfer1::IPluginV3,
       copy->arena_ = AcquireArena(source_, experts_, model_dim_, hidden_dim_);
       arena_ = copy->arena_;
     }
+    if (copy != nullptr && block_ != 0) {
+      // Made here, outside any graph capture of the context's stream.
+      copy->EnsureSideResources();
+    }
     return copy;
   }
+
+  ~MoePlugin() override { ReleaseSideResources(); }
 
   const nvinfer1::PluginFieldCollection* getFieldsToSerialize() noexcept
       override {
@@ -658,11 +737,40 @@ class MoePlugin final : public nvinfer1::IPluginV3,
 
  private:
   // Plain: x, top_weights, top_indices, per_expert_scale. Routed: x,
-  // per_expert_scale, router norm scale, expert norm scale.
+  // per_expert_scale, router norm scale, expert norm scale; a layer block
+  // adds the dense input norm's, dense output norm's, experts' output
+  // norm's and the sum's norm's scales.
+  int32_t InputCount() const noexcept { return block_ != 0 ? 8 : 4; }
+
   nvinfer1::DataType InputType(int position) const noexcept {
     if (position == 0) return nvinfer1::DataType::kBF16;
     if (position == 2 && routed_ == 0) return nvinfer1::DataType::kINT32;
     return nvinfer1::DataType::kFLOAT;
+  }
+
+  // The side stream and events of a layer block's dense feed-forward.
+  bool EnsureSideResources() noexcept {
+    if (side_stream_ != nullptr) return true;
+    if (cudaStreamCreateWithFlags(&side_stream_, cudaStreamNonBlocking) !=
+            cudaSuccess ||
+        cudaEventCreateWithFlags(&fork_, cudaEventDisableTiming) !=
+            cudaSuccess ||
+        cudaEventCreateWithFlags(&join_, cudaEventDisableTiming) !=
+            cudaSuccess) {
+      static_cast<void>(cudaGetLastError());
+      ReleaseSideResources();
+      return false;
+    }
+    return true;
+  }
+
+  void ReleaseSideResources() noexcept {
+    if (join_ != nullptr) cudaEventDestroy(join_);
+    if (fork_ != nullptr) cudaEventDestroy(fork_);
+    if (side_stream_ != nullptr) cudaStreamDestroy(side_stream_);
+    join_ = nullptr;
+    fork_ = nullptr;
+    side_stream_ = nullptr;
   }
 
   LiteRtNvidiaMoeShape Shape(int64_t rows) const noexcept {
@@ -684,6 +792,12 @@ class MoePlugin final : public nvinfer1::IPluginV3,
   int32_t routed_;
   float norm_eps_;
   float router_multiplier_;
+  int32_t block_;
+  int32_t dense_gate_;
+  float residual_multiplier_;
+  cudaStream_t side_stream_ = nullptr;
+  cudaEvent_t fork_ = nullptr;
+  cudaEvent_t join_ = nullptr;
   int64_t model_size_;
   std::array<int64_t, kPieces> offsets_{};
   std::array<int64_t, kPieces> sizes_{};
@@ -713,6 +827,13 @@ class MoePluginCreator final : public nvinfer1::IPluginCreatorV3One {
             {kNormEpsField, nullptr, nvinfer1::PluginFieldType::kFLOAT32, 1},
             {kRouterMultiplierField, nullptr,
              nvinfer1::PluginFieldType::kFLOAT32, 1},
+            {kDenseScaleTypeField, nullptr, nvinfer1::PluginFieldType::kINT32,
+             1},
+            {kDenseHiddenField, nullptr, nvinfer1::PluginFieldType::kINT32, 1},
+            {kBlockField, nullptr, nvinfer1::PluginFieldType::kINT32, 1},
+            {kDenseGateField, nullptr, nvinfer1::PluginFieldType::kINT32, 1},
+            {kResidualMultiplierField, nullptr,
+             nvinfer1::PluginFieldType::kFLOAT32, 1},
         }},
         field_collection_{static_cast<int32_t>(fields_.size()),
                           fields_.data()} {}
@@ -733,6 +854,9 @@ class MoePluginCreator final : public nvinfer1::IPluginCreatorV3One {
     int32_t routed = 0;
     float norm_eps = -1.0f;
     float router_multiplier = 1.0f;
+    int32_t block = 0;
+    int32_t dense_gate = 0;
+    float residual_multiplier = 1.0f;
     MoeExpertSource source;
     for (int32_t i = 0; i < fields->nbFields; ++i) {
       const auto& field = fields->fields[i];
@@ -746,6 +870,8 @@ class MoePluginCreator final : public nvinfer1::IPluginCreatorV3One {
           norm_eps = value;
         } else if (std::strcmp(field.name, kRouterMultiplierField) == 0) {
           router_multiplier = value;
+        } else if (std::strcmp(field.name, kResidualMultiplierField) == 0) {
+          residual_multiplier = value;
         }
         continue;
       }
@@ -795,10 +921,19 @@ class MoePluginCreator final : public nvinfer1::IPluginCreatorV3One {
         source.router_scale_type = value;
       } else if (std::strcmp(field.name, kRoutedField) == 0) {
         routed = value;
+      } else if (std::strcmp(field.name, kDenseScaleTypeField) == 0) {
+        source.dense_scale_type = value;
+      } else if (std::strcmp(field.name, kDenseHiddenField) == 0) {
+        source.dense_hidden = value;
+      } else if (std::strcmp(field.name, kBlockField) == 0) {
+        block = value;
+      } else if (std::strcmp(field.name, kDenseGateField) == 0) {
+        dense_gate = value;
       }
     }
     return CreateMoePlugin(experts, top_k, model_dim, hidden_dim, gate, source,
-                           routed != 0, norm_eps, router_multiplier);
+                           routed != 0, norm_eps, router_multiplier, block != 0,
+                           dense_gate, residual_multiplier);
   }
 
   const nvinfer1::PluginFieldCollection* getFieldNames() noexcept override {
@@ -823,8 +958,9 @@ nvinfer1::IPluginV3* CreateMoePlugin(int32_t experts, int32_t top_k,
                                      int32_t model_dim, int32_t hidden_dim,
                                      int32_t gate,
                                      const MoeExpertSource& source, bool routed,
-                                     float norm_eps,
-                                     float router_multiplier) noexcept {
+                                     float norm_eps, float router_multiplier,
+                                     bool block, int32_t dense_gate,
+                                     float residual_multiplier) noexcept {
   const LiteRtNvidiaMoeShape shape = {1,         top_k,      experts,
                                       model_dim, hidden_dim, gate};
   if (!LiteRtNvidiaMoeSupports(&shape) || source.model_path.empty() ||
@@ -833,7 +969,15 @@ nvinfer1::IPluginV3* CreateMoePlugin(int32_t experts, int32_t top_k,
       source.router_scale_type < -1 || source.router_scale_type > 1 ||
       routed != (source.router_scale_type >= 0) ||
       (routed && (norm_eps < 0.0f || model_dim > 4096 ||
-                  !(router_multiplier == router_multiplier)))) {
+                  !(router_multiplier == router_multiplier))) ||
+      source.dense_scale_type < -1 || source.dense_scale_type > 1 ||
+      block != (source.dense_scale_type >= 0) ||
+      (block &&
+       (!routed || source.dense_hidden < 32 || source.dense_hidden % 32 != 0 ||
+        (dense_gate != 1 && dense_gate != 2) ||
+        !(residual_multiplier == residual_multiplier) ||
+        LiteRtNvidiaMoeBlockWorkspaceBytes(&shape, source.dense_hidden,
+                                           dense_gate) == 0))) {
     return nullptr;
   }
   ArenaLayout layout;
@@ -848,7 +992,8 @@ nvinfer1::IPluginV3* CreateMoePlugin(int32_t experts, int32_t top_k,
   }
   return new (std::nothrow)
       MoePlugin(experts, top_k, model_dim, hidden_dim, gate, source,
-                routed ? 1 : 0, norm_eps, router_multiplier);
+                routed ? 1 : 0, norm_eps, router_multiplier, block ? 1 : 0,
+                dense_gate, residual_multiplier);
 }
 
 void EnsureMoePluginRegistered() noexcept {}

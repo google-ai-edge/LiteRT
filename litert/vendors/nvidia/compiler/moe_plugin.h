@@ -43,13 +43,18 @@ struct MoeExpertSource {
   uint64_t model_size = 0;
   // The gate, up and down INT4 weights and their scales, in that order,
   // then (a fused router only) the router's INT4 rows [experts, model_dim]
-  // and their scales: bytes [offset, offset + size) of the file. FP32
-  // scales (scale_type 0) are converted to FP16 on the way in; FP16 scales
-  // (1) are copied. router_scale_type likewise; -1 without a router.
-  uint64_t offsets[8] = {};
-  uint64_t sizes[8] = {};
+  // and their scales, then (a layer block only) the dense feed-forward's
+  // gate rows [dense_hidden, model_dim], up rows, gate scales, up scales,
+  // down rows [model_dim, dense_hidden] and down scales: bytes [offset,
+  // offset + size) of the file. FP32 scales (scale_type 0) are converted to
+  // FP16 on the way in; FP16 scales (1) are copied. router_scale_type and
+  // dense_scale_type likewise; -1 without a router / dense feed-forward.
+  uint64_t offsets[14] = {};
+  uint64_t sizes[14] = {};
   int32_t scale_type = 0;
   int32_t router_scale_type = -1;
+  int32_t dense_scale_type = -1;
+  int32_t dense_hidden = 0;
 };
 
 // `routed`: the plugin computes the routing itself from the residual stream
@@ -58,10 +63,18 @@ struct MoeExpertSource {
 // and the expert norm's scale FP32 [model_dim]; norm_eps is both norms'
 // epsilon and router_multiplier the scalar between the router norm and its
 // projection; the top weights are renormalized.
+// `block` (routed only): the plugin is the layer's whole feed-forward block
+// (LiteRtNvidiaLaunchMoeLayerBlock): the dense feed-forward (source's dense
+// pieces, dense_hidden wide, GELU dense_gate: 1 tanh, 2 erf) beside the
+// experts, the output norms and the residual update, times
+// residual_multiplier. Four more FP32 [model_dim] inputs follow: the dense
+// input norm's scale, the dense output norm's, the experts' output norm's
+// and the sum's norm's. The output is the next residual stream.
 nvinfer1::IPluginV3* CreateMoePlugin(
     int32_t experts, int32_t top_k, int32_t model_dim, int32_t hidden_dim,
     int32_t gate, const MoeExpertSource& source, bool routed = false,
-    float norm_eps = -1.0f, float router_multiplier = 1.0f) noexcept;
+    float norm_eps = -1.0f, float router_multiplier = 1.0f, bool block = false,
+    int32_t dense_gate = 0, float residual_multiplier = 1.0f) noexcept;
 
 // Referenced by the dispatch library so the creator's registration object is
 // retained when linking the shared library used for engine deserialization.

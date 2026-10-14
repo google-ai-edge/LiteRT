@@ -949,4 +949,220 @@ TEST(Int4BlockGemvTest, RejectsInvalidArguments) {
             cudaErrorInvalidValue);
 }
 
+// The layer block against its parts: the fused expert launch for the experts'
+// output, the GEMV entries (8 rows at a time) for the dense feed-forward, and
+// the three norms and the residual update on the host. Both the decode path
+// (3 rows) and the prefill path (128 rows: grouped GEMMs, the gathering
+// epilogue) run.
+TEST(Int4BlockGemvTest, MoeLayerBlockMatchesItsParts) {
+  for (const int rows : {3, 128}) {
+    const LiteRtNvidiaMoeShape shape = {rows, 8, 128, 2816, 704, 1};
+    const int experts = shape.experts, dim = shape.model_dim,
+              hidden = shape.hidden_dim;
+    const int dense_hidden = 2112;
+    const std::vector<uint8_t> gate_w =
+        MakeInt4Weights(hidden * experts, dim, 5);
+    const std::vector<uint8_t> up_w = MakeInt4Weights(hidden * experts, dim, 9);
+    const std::vector<uint8_t> down_w =
+        MakeInt4Weights(dim * experts, hidden, 13);
+    const std::vector<uint16_t> gate_s = MakeScales(hidden * experts, dim, 5);
+    const std::vector<uint16_t> up_s = MakeScales(hidden * experts, dim, 9);
+    const std::vector<uint16_t> down_s = MakeScales(dim * experts, hidden, 13);
+    const std::vector<uint8_t> router_w = MakeInt4Weights(experts, dim, 21);
+    const std::vector<uint16_t> router_s = MakeScales(experts, dim, 21);
+    const std::vector<uint8_t> dense_gu_w =
+        MakeInt4Weights(2 * dense_hidden, dim, 33);
+    const std::vector<uint16_t> dense_gu_s =
+        MakeScales(2 * dense_hidden, dim, 33);
+    const std::vector<uint8_t> dense_down_w =
+        MakeInt4Weights(dim, dense_hidden, 37);
+    const std::vector<uint16_t> dense_down_s =
+        MakeScales(dim, dense_hidden, 37);
+    std::vector<uint16_t> x(static_cast<size_t>(rows) * dim);
+    for (int r = 0; r < rows; ++r) {
+      for (int i = 0; i < dim; ++i) {
+        x[static_cast<size_t>(r) * dim + i] = FloatToBf16Bits(
+            static_cast<float>((i * 31 + r * 17) % 103 - 51) / 7.0f);
+      }
+    }
+    std::vector<float> router_norm(dim), expert_norm(dim), dense_norm(dim),
+        dense_post(dim), moe_post(dim), sum_post(dim), expert_scale(experts);
+    for (int i = 0; i < dim; ++i) {
+      router_norm[i] = 0.7f + 0.0005f * (i % 61);
+      expert_norm[i] = 1.1f - 0.0004f * (i % 53);
+      dense_norm[i] = 0.9f + 0.0003f * (i % 47);
+      dense_post[i] = 1.2f - 0.0006f * (i % 43);
+      moe_post[i] = 0.8f + 0.0004f * (i % 41);
+      sum_post[i] = 1.05f - 0.0002f * (i % 37);
+    }
+    for (int e = 0; e < experts; ++e) expert_scale[e] = 0.98f + 0.0003f * e;
+    const float eps = 1e-6f, router_multiplier = 0.6f,
+                residual_multiplier = 1.25f;
+    const auto upload = [](const void* data, size_t bytes) {
+      auto device = AllocateCuda(bytes);
+      cudaMemcpy(device.get(), data, bytes, cudaMemcpyHostToDevice);
+      return device;
+    };
+    auto d_gate = upload(gate_w.data(), gate_w.size());
+    auto d_up = upload(up_w.data(), up_w.size());
+    auto d_down = upload(down_w.data(), down_w.size());
+    auto d_gate_s = upload(gate_s.data(), gate_s.size() * 2);
+    auto d_up_s = upload(up_s.data(), up_s.size() * 2);
+    auto d_down_s = upload(down_s.data(), down_s.size() * 2);
+    auto d_router = upload(router_w.data(), router_w.size());
+    auto d_router_s = upload(router_s.data(), router_s.size() * 2);
+    auto d_dense_gu = upload(dense_gu_w.data(), dense_gu_w.size());
+    auto d_dense_gu_s = upload(dense_gu_s.data(), dense_gu_s.size() * 2);
+    auto d_dense_down = upload(dense_down_w.data(), dense_down_w.size());
+    auto d_dense_down_s = upload(dense_down_s.data(), dense_down_s.size() * 2);
+    auto d_x = upload(x.data(), x.size() * 2);
+    auto d_es = upload(expert_scale.data(), expert_scale.size() * 4);
+    auto d_rn = upload(router_norm.data(), router_norm.size() * 4);
+    auto d_en = upload(expert_norm.data(), expert_norm.size() * 4);
+    auto d_dn = upload(dense_norm.data(), dense_norm.size() * 4);
+    auto d_dp = upload(dense_post.data(), dense_post.size() * 4);
+    auto d_mp = upload(moe_post.data(), moe_post.size() * 4);
+    auto d_sp = upload(sum_post.data(), sum_post.size() * 4);
+    const LiteRtNvidiaMoeArena arena = {
+        static_cast<const uint8_t*>(d_gate.get()),
+        static_cast<const uint8_t*>(d_up.get()),
+        static_cast<const uint8_t*>(d_down.get()),
+        d_gate_s.get(),
+        d_up_s.get(),
+        d_down_s.get(),
+        static_cast<const uint8_t*>(d_router.get()),
+        d_router_s.get(),
+        static_cast<const uint8_t*>(d_dense_gu.get()),
+        d_dense_gu_s.get(),
+        static_cast<const uint8_t*>(d_dense_down.get()),
+        d_dense_down_s.get()};
+    const size_t out_bytes = static_cast<size_t>(rows) * dim * 2;
+    // The experts on their own.
+    auto d_ws_plain = AllocateCuda(LiteRtNvidiaMoeWorkspaceBytes(&shape));
+    auto d_moe = AllocateCuda(out_bytes);
+    ASSERT_EQ(
+        LiteRtNvidiaLaunchMoeInt4BlockFused(
+            &shape, &arena, d_x.get(), static_cast<const float*>(d_es.get()),
+            static_cast<const float*>(d_rn.get()), router_multiplier,
+            static_cast<const float*>(d_en.get()), eps, /*renormalize=*/1,
+            d_ws_plain.get(), d_moe.get(), nullptr),
+        cudaSuccess);
+    // The dense feed-forward on its own, through the GEMV entries.
+    auto d_dense_hidden =
+        AllocateCuda(static_cast<size_t>(rows) * dense_hidden * 2);
+    auto d_dense = AllocateCuda(out_bytes);
+    for (int r0 = 0; r0 < rows; r0 += kLiteRtNvidiaInt4BlockGemvMaxRows) {
+      const int n = std::min(kLiteRtNvidiaInt4BlockGemvMaxRows, rows - r0);
+      ASSERT_EQ(LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(
+                    static_cast<const char*>(d_x.get()) +
+                        static_cast<size_t>(r0) * dim * 2,
+                    arena.dense_gate_up, arena.dense_gate_up_scales,
+                    static_cast<const float*>(d_dn.get()), eps, 1.0f,
+                    static_cast<char*>(d_dense_hidden.get()) +
+                        static_cast<size_t>(r0) * dense_hidden * 2,
+                    n, dim, dense_hidden, /*gate=*/1, nullptr),
+                cudaSuccess);
+      ASSERT_EQ(LiteRtNvidiaLaunchBf16Int4BlockGemvRows(
+                    static_cast<const char*>(d_dense_hidden.get()) +
+                        static_cast<size_t>(r0) * dense_hidden * 2,
+                    arena.dense_down, arena.dense_down_scales,
+                    static_cast<char*>(d_dense.get()) +
+                        static_cast<size_t>(r0) * dim * 2,
+                    n, dense_hidden, dim, /*gate=*/0, nullptr),
+                cudaSuccess);
+    }
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    // The block, on streams of its own like the plugin's.
+    cudaStream_t main_stream = nullptr, side_stream = nullptr;
+    cudaEvent_t fork = nullptr, join = nullptr;
+    ASSERT_EQ(cudaStreamCreateWithFlags(&main_stream, cudaStreamNonBlocking),
+              cudaSuccess);
+    ASSERT_EQ(cudaStreamCreateWithFlags(&side_stream, cudaStreamNonBlocking),
+              cudaSuccess);
+    ASSERT_EQ(cudaEventCreateWithFlags(&fork, cudaEventDisableTiming),
+              cudaSuccess);
+    ASSERT_EQ(cudaEventCreateWithFlags(&join, cudaEventDisableTiming),
+              cudaSuccess);
+    const LiteRtNvidiaMoeBlockParams params = {
+        dense_hidden,
+        /*dense_gate=*/1,
+        residual_multiplier,
+        static_cast<const float*>(d_dn.get()),
+        static_cast<const float*>(d_dp.get()),
+        static_cast<const float*>(d_mp.get()),
+        static_cast<const float*>(d_sp.get()),
+        side_stream,
+        fork,
+        join};
+    const size_t block_bytes =
+        LiteRtNvidiaMoeBlockWorkspaceBytes(&shape, dense_hidden, 1);
+    ASSERT_GT(block_bytes, LiteRtNvidiaMoeWorkspaceBytes(&shape));
+    auto d_ws_block = AllocateCuda(block_bytes);
+    auto d_y = AllocateCuda(out_bytes);
+    ASSERT_EQ(
+        LiteRtNvidiaLaunchMoeLayerBlock(
+            &shape, &arena, d_x.get(), static_cast<const float*>(d_es.get()),
+            static_cast<const float*>(d_rn.get()), router_multiplier,
+            static_cast<const float*>(d_en.get()), eps, /*renormalize=*/1,
+            &params, d_ws_block.get(), d_y.get(), main_stream),
+        cudaSuccess);
+    ASSERT_EQ(cudaStreamSynchronize(main_stream), cudaSuccess);
+    std::vector<uint16_t> moe(x.size()), dense(x.size()), y(x.size());
+    ASSERT_EQ(
+        cudaMemcpy(moe.data(), d_moe.get(), out_bytes, cudaMemcpyDeviceToHost),
+        cudaSuccess);
+    ASSERT_EQ(cudaMemcpy(dense.data(), d_dense.get(), out_bytes,
+                         cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    ASSERT_EQ(
+        cudaMemcpy(y.data(), d_y.get(), out_bytes, cudaMemcpyDeviceToHost),
+        cudaSuccess);
+    cudaEventDestroy(join);
+    cudaEventDestroy(fork);
+    cudaStreamDestroy(side_stream);
+    cudaStreamDestroy(main_stream);
+    // The norms and the residual update on the host. The prefill path's
+    // dense feed-forward comes from the GEMM (FP16 partial sums) while the
+    // reference's comes from the GEMV (FP32), so its tails are wider; the
+    // RMS error over everything stays small either way.
+    const double tail =
+        rows > kLiteRtNvidiaInt4BlockGemvMaxRows ? 6e-2 : 2.5e-2;
+    int mismatches = 0;
+    double worst = 0.0;
+    double squared = 0.0;
+    for (int r = 0; r < rows; ++r) {
+      const size_t base = static_cast<size_t>(r) * dim;
+      double dense_sq = 0.0, moe_sq = 0.0;
+      for (int o = 0; o < dim; ++o) {
+        const double d = Bf16BitsToFloat(dense[base + o]);
+        const double m = Bf16BitsToFloat(moe[base + o]);
+        dense_sq += d * d;
+        moe_sq += m * m;
+      }
+      const double dense_factor = 1.0 / std::sqrt(dense_sq / dim + eps);
+      const double moe_factor = 1.0 / std::sqrt(moe_sq / dim + eps);
+      std::vector<double> c(dim);
+      double sum_sq = 0.0;
+      for (int o = 0; o < dim; ++o) {
+        c[o] = Bf16BitsToFloat(dense[base + o]) * dense_factor * dense_post[o] +
+               Bf16BitsToFloat(moe[base + o]) * moe_factor * moe_post[o];
+        sum_sq += c[o] * c[o];
+      }
+      const double sum_factor = 1.0 / std::sqrt(sum_sq / dim + eps);
+      for (int o = 0; o < dim; ++o) {
+        const double expected =
+            (Bf16BitsToFloat(x[base + o]) + c[o] * sum_factor * sum_post[o]) *
+            residual_multiplier;
+        const double got = Bf16BitsToFloat(y[base + o]);
+        const double error = std::fabs(got - expected);
+        worst = std::max(worst, error);
+        squared += error * error;
+        if (error > tail + 1.5e-2 * std::fabs(expected)) ++mismatches;
+      }
+    }
+    EXPECT_EQ(mismatches, 0) << "rows " << rows << " worst error " << worst;
+    EXPECT_LT(std::sqrt(squared / x.size()), 1.5e-2) << "rows " << rows;
+  }
+}
+
 }  // namespace
