@@ -26,12 +26,14 @@
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/google_tensor/adapter.h"
+#include "litert/vendors/google_tensor/compiler/google_tensor_options.pb.h"
 #include "litert/vendors/google_tensor/edgetpu_compiler_api.h"
 #include "litert/vendors/google_tensor/edgetpu_compiler_options.pb.h"
 
@@ -39,6 +41,14 @@
   LITERT_ASSIGN_OR_RETURN(H, dlib_.LookupSymbol<decltype(&S)>(#S));
 
 namespace litert::google_tensor {
+namespace {
+
+using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
+    GoogleTensorOptions;
+
+constexpr absl::string_view kDefaultLiteRtVersion = "2.3.0";
+
+}  // namespace
 
 // EdgeTPU LiteRT shared library path.
 constexpr const char* kLiteRtLibPath = "/vendor/lib64/libedgetpu_litert.so";
@@ -89,6 +99,17 @@ Expected<EdgeTpuCompilerOptions> CreateEdgeTpuCompilerOptions(
     const char* options, size_t options_size) {
   EdgeTpuCompilerOptions edgetpu_compiler_options;
   // TODO: b/467884692 - Parse options from the opaque options.
+  std::string litert_version;
+  if (options != nullptr && options_size > 0) {
+    GoogleTensorOptions google_tensor_options;
+    if (!google_tensor_options.ParseFromArray(options, options_size)) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Failed to parse GoogleTensorOptions");
+    }
+    litert_version = google_tensor_options.compiler_config().litert_version();
+  }
+  edgetpu_compiler_options.set_litert_version(
+      litert_version.empty() ? kDefaultLiteRtVersion : litert_version);
   return edgetpu_compiler_options;
 }
 

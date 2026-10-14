@@ -85,6 +85,16 @@ TEST(TestGoogleTensorPlugin, GetConfigInfo) {
                            ));
 }
 
+TEST(TestGoogleTensorPlugin, CheckCompilerCompatibility) {
+  PluginPtr plugin = CreatePlugin(LrtGetCompilerContext());
+  const LiteRtApiVersion api_version = {LITERT_API_VERSION_MAJOR,
+                                        LITERT_API_VERSION_MINOR,
+                                        LITERT_API_VERSION_PATCH};
+  LITERT_EXPECT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      api_version, plugin.get(), /*env=*/nullptr, /*options=*/nullptr,
+      /*soc_model_name=*/"Tensor_G5"));
+}
+
 TEST(TestCallGoogleTensorPlugin, PartitionSimpleMultiAdd) {
   PluginPtr plugin = CreatePlugin(LrtGetCompilerContext());
   ExtendedModel model = testing::LoadTestFileModel("simple_multi_op.tflite");

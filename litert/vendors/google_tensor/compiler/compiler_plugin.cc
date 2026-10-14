@@ -508,7 +508,6 @@ class LiteRtCompilerPluginT {
   GetOpaqueOptions() {
     return opq_;
   }
-  void SetLiteRtVersion(LiteRtApiVersion v) { litert_version_ = v; }
   LiteRtApiVersion GetLiteRtVersion() const { return litert_version_; }
   const LiteRtCompilerContext* ctx() const { return ctx_; }
 
@@ -560,9 +559,7 @@ class LiteRtCompilerPluginT {
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
   litert::Expected<litert::internal::OpaqueOptionsWrapper> opq_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null opaque options");
-  LiteRtApiVersion litert_version_{LITERT_API_VERSION_MAJOR,
-                                   LITERT_API_VERSION_MINOR,
-                                   LITERT_API_VERSION_PATCH};
+  LiteRtApiVersion litert_version_{2, 3, 0};
   litert::Expected<litert::google_tensor::Adapter::Ptr> adapter_or_;
 };
 
@@ -1381,6 +1378,5 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
     LiteRtApiVersion api_version, LiteRtCompilerPlugin compiler_plugin,
     LiteRtEnvironmentOptions env, LiteRtOptions options,
     const char* soc_model_name) {
-  compiler_plugin->SetLiteRtVersion(api_version);
   return kLiteRtStatusOk;
 }
