@@ -539,7 +539,8 @@ absl::Status ReadScopedFileSlice(const LiteRtWeightInfo& info,
 absl::StatusOr<CpuMapping> MapWeightSlice(const LiteRtWeightInfo& info,
                                           const WeightSource& source) {
   if (source.kind == WeightSource::Kind::kHostMemory) {
-    if (info.offset + info.length > source.host_memory.size()) {
+    if (info.offset > source.host_memory.size() ||
+        info.length > source.host_memory.size() - info.offset) {
       return absl::OutOfRangeError(
           "Weight slice out of range for host memory group");
     }
@@ -557,7 +558,8 @@ absl::StatusOr<CpuMapping> MapWeightSlice(const LiteRtWeightInfo& info,
 absl::Status ReadWeightSlice(const LiteRtWeightInfo& info,
                              const WeightSource& source, void* output) {
   if (source.kind == WeightSource::Kind::kHostMemory) {
-    if (info.offset + info.length > source.host_memory.size()) {
+    if (info.offset > source.host_memory.size() ||
+        info.length > source.host_memory.size() - info.offset) {
       return absl::OutOfRangeError(
           "Weight slice out of range for host memory group");
     }
@@ -947,24 +949,57 @@ class LiteRtWeightLoader : public WeightLoader {
   absl::Status UploadWeightsOnWebImpl(
       const wgpu::Queue& queue,
       const absl::flat_hash_map<int, wgpu::Buffer>& tfl_id_to_wgpu_buffer) {
-    if (g_web_weight_upload_callback == nullptr) {
-      return absl::FailedPreconditionError(
-          "Web weight upload callback is not registered.");
-    }
     std::vector<WebWeightUploadRequest> requests;
     requests.reserve(tfl_id_to_wgpu_buffer.size());
     for (const auto& [id, buffer] : tfl_id_to_wgpu_buffer) {
-      auto entry_it = entries_.find(static_cast<uint32_t>(id));
+      auto entry_it = entries_.find(
+          GetCanonicalExternalBufferId(static_cast<uint32_t>(id)));
       if (entry_it == entries_.end()) {
         return absl::InternalError("Could not find WeightInfo for buffer ID.");
       }
-      const auto& info = infos_[entry_it->second.info_index];
+      Entry& entry = entry_it->second;
+      const auto& info = infos_[entry.info_index];
+      if (!entry.cpu_mapping.has_value() && weight_in_memory_map_ != nullptr) {
+        if (auto path_it = group_paths_.find(info.group_id);
+            path_it != group_paths_.end()) {
+          if (auto mem_it = weight_in_memory_map_->find(path_it->second);
+              mem_it != weight_in_memory_map_->end()) {
+            LITERT_ASSIGN_OR_RETURN(
+                entry.cpu_mapping,
+                MapWeightSlice(
+                    info, WeightSource{.kind = WeightSource::Kind::kHostMemory,
+                                       .host_memory = mem_it->second}));
+          }
+        }
+      }
+      if (entry.cpu_mapping.has_value()) {
+        absl::Span<const std::byte> data = entry.cpu_mapping->data;
+        // WebGPU writeBuffer requires data size to be a multiple of 4 bytes.
+        const size_t aligned_prefix = data.size() & ~static_cast<size_t>(3);
+        if (aligned_prefix > 0) {
+          queue.WriteBuffer(buffer, 0, data.data(), aligned_prefix);
+        }
+        if (aligned_prefix < data.size()) {
+          uint8_t tail[4] = {0};
+          std::memcpy(tail, data.data() + aligned_prefix,
+                      data.size() - aligned_prefix);
+          queue.WriteBuffer(buffer, aligned_prefix, tail, sizeof(tail));
+        }
+        continue;
+      }
       requests.push_back(WebWeightUploadRequest{
           .tfl_id = id,
           .buffer = buffer,
           .offset = info.offset,
           .length = info.length,
       });
+    }
+    if (requests.empty()) {
+      return absl::OkStatus();
+    }
+    if (g_web_weight_upload_callback == nullptr) {
+      return absl::FailedPreconditionError(
+          "Web weight upload callback is not registered.");
     }
     return g_web_weight_upload_callback(queue, requests);
   }
