@@ -22,7 +22,6 @@
 
 namespace {
 
-constexpr int kChunk = 64;         // keys per block
 constexpr int kKeyBatch = 4;       // keys loaded together per warp (QK)
 constexpr int kValueBatch = 8;     // keys loaded together per thread (PV)
 constexpr int kMaxRows = 16;
@@ -54,10 +53,13 @@ __device__ __forceinline__ float WarpSum(float v) {
   return v;
 }
 
-// Threads per block: 256 when every thread can own at least one value
-// element, 128 for depth 128.
-template <int kDepth>
+// Small decode groups use fewer threads and keys per block to shorten latency
+// chains and expose more independent blocks. Larger groups keep their geometry.
+template <int kDepth, int kRowsCap>
 __host__ __device__ constexpr int ThreadsFor() {
+  if (kDepth == 256 && kRowsCap == 4) {
+    return 32;
+  }
   return kDepth >= 256 ? 256 : 128;
 }
 
@@ -70,6 +72,7 @@ __host__ __device__ constexpr int RowsPadFor() {
 
 template <int kDepth, int kRowsCap>
 __host__ __device__ constexpr size_t SharedBytesFor() {
+  constexpr int kChunk = kDepth == 256 && kRowsCap == 4 ? 16 : 64;
   // q as fp32 [rows][E][32], scores/probabilities [kChunk][kRowsPad] fp32,
   // row max and sum, mask bytes [rows][kChunk].
   return static_cast<size_t>(kRowsCap) * kDepth * sizeof(float) +
@@ -89,14 +92,15 @@ __host__ __device__ constexpr size_t SharedBytesFor() {
 // acc [heads][splits][rows][depth], then m [heads][splits][rows], then
 // l [heads][splits][rows].
 template <typename T, int kDepth, int kRowsCap>
-__global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
+__global__ void __launch_bounds__(ThreadsFor<kDepth, kRowsCap>(), 2)
     DecodeAttentionPartial(const T* __restrict__ q, const __half* __restrict__ k,
                            const __half* __restrict__ v,
                            const bool* __restrict__ mask, int mask_rows,
                            int rows, int seq, float fill, int splits,
                            float* __restrict__ ws_acc, float* __restrict__ ws_m,
                            float* __restrict__ ws_l) {
-  constexpr int kThreads = ThreadsFor<kDepth>();
+  constexpr int kChunk = kDepth == 256 && kRowsCap == 4 ? 16 : 64;
+  constexpr int kThreads = ThreadsFor<kDepth, kRowsCap>();
   constexpr int kWarps = kThreads / 32;
   constexpr int kLaneElems = kDepth / 32;     // key elements per lane (QK)
   constexpr int kThreadElems = kDepth / kThreads;  // value elements per thread
@@ -270,6 +274,9 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
       l += p;
     }
     l = WarpSum(l);
+    // All lanes must finish reading the old shared maximum before lane 0
+    // overwrites it; shuffle synchronization does not order shared memory.
+    __syncwarp();
     if (lane == 0) {
       const float scale =
           m_old == -INFINITY ? 0.0f : __expf(m_old - m_new);
@@ -364,16 +371,18 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
 constexpr int kCombineThreads = 256;
 constexpr int kCombineWarps = kCombineThreads / 32;
 
-template <typename T, int kDepth>
+template <typename T, int kDepth, int kSlices>
 __global__ void __launch_bounds__(kCombineThreads)
     DecodeAttentionCombine(const float* __restrict__ ws_acc,
                            const float* __restrict__ ws_m,
                            const float* __restrict__ ws_l, int rows,
                            int splits, T* __restrict__ out) {
-  constexpr int kLaneElems = kDepth / 32;
+  constexpr int kSlice = kDepth / kSlices;
+  constexpr int kLaneElems = kSlice / 32;
+  const int offset = blockIdx.z * kSlice;
   __shared__ float max_s[kCombineWarps];
   __shared__ float sum_s[kCombineWarps];
-  __shared__ float acc_s[kCombineWarps][kDepth];
+  __shared__ float acc_s[kCombineWarps][kSlice];
   const int r = blockIdx.x;
   const int head = blockIdx.y;
   const int tid = threadIdx.x;
@@ -407,7 +416,7 @@ __global__ void __launch_bounds__(kCombineThreads)
     const float ms = ws_m[idx];
     const float w = ms == -INFINITY ? 0.0f : __expf(ms - m);
     l = fmaf(w, ws_l[idx], l);
-    const float* part = ws_acc + idx * kDepth + lane * kLaneElems;
+    const float* part = ws_acc + idx * kDepth + offset + lane * kLaneElems;
 #pragma unroll
     for (int e = 0; e < kLaneElems; ++e) {
       acc[e] = fmaf(w, part[e], acc[e]);
@@ -427,8 +436,8 @@ __global__ void __launch_bounds__(kCombineThreads)
     l += sum_s[w];
   }
   const float inv = l > 0.0f ? 1.0f / l : 0.0f;
-  T* out_row = out + (static_cast<size_t>(head) * rows + r) * kDepth;
-  for (int d = tid; d < kDepth; d += kCombineThreads) {
+  T* out_row = out + (static_cast<size_t>(head) * rows + r) * kDepth + offset;
+  for (int d = tid; d < kSlice; d += kCombineThreads) {
     float total = 0.0f;
 #pragma unroll
     for (int w = 0; w < kCombineWarps; ++w) {
@@ -441,7 +450,8 @@ __global__ void __launch_bounds__(kCombineThreads)
 // Blocks per head: one per chunk up to kMaxSplits; beyond that the blocks
 // loop over chunks, which keeps the partial workspace and the combine small.
 constexpr int kMaxSplits = 168;
-int SplitCount(int seq) {
+int SplitCount(int seq, int depth, int rows) {
+  const int kChunk = depth == 256 && rows <= 4 ? 16 : 64;
   const int chunks = (seq + kChunk - 1) / kChunk;
   return chunks < kMaxSplits ? chunks : kMaxSplits;
 }
@@ -452,7 +462,7 @@ cudaError_t Launch(const T* q, const __half* k, const __half* v,
                    const bool* mask, int mask_rows, int heads, int rows,
                    int seq, float fill, T* out, void* workspace,
                    cudaStream_t stream) {
-  const int splits = SplitCount(seq);
+  const int splits = SplitCount(seq, kDepth, rows);
   float* ws_acc = static_cast<float*>(workspace);
   float* ws_m = ws_acc + static_cast<size_t>(heads) * splits * rows * kDepth;
   float* ws_l = ws_m + static_cast<size_t>(heads) * splits * rows;
@@ -476,15 +486,16 @@ cudaError_t Launch(const T* q, const __half* k, const __half* v,
     attribute_set = true;
   }
   DecodeAttentionPartial<T, kDepth, kRowsCap>
-      <<<dim3(splits, heads), ThreadsFor<kDepth>(), kSharedBytes, stream>>>(
+      <<<dim3(splits, heads), ThreadsFor<kDepth, kRowsCap>(), kSharedBytes, stream>>>(
           q, k, v, mask, mask_rows, rows, seq, fill, splits, ws_acc, ws_m,
           ws_l);
   cudaError_t status = cudaGetLastError();
   if (status != cudaSuccess) {
     return status;
   }
-  DecodeAttentionCombine<T, kDepth>
-      <<<dim3(rows, heads), kCombineThreads, 0, stream>>>(ws_acc, ws_m, ws_l,
+  constexpr int kSlices = kDepth == 256 && kRowsCap == 4 ? 4 : 1;
+  DecodeAttentionCombine<T, kDepth, kSlices>
+      <<<dim3(rows, heads, kSlices), kCombineThreads, 0, stream>>>(ws_acc, ws_m, ws_l,
                                                           rows, splits, out);
   return cudaGetLastError();
 }
@@ -528,7 +539,8 @@ extern "C" size_t LiteRtNvidiaDecodeAttentionWorkspaceBytes(int32_t heads,
                                                             int32_t rows,
                                                             int32_t seq,
                                                             int32_t depth) {
-  const size_t parts = static_cast<size_t>(heads) * SplitCount(seq) * rows;
+  const size_t parts =
+      static_cast<size_t>(heads) * SplitCount(seq, depth, rows) * rows;
   return parts * (static_cast<size_t>(depth) + 2) * sizeof(float);
 }
 
