@@ -17,6 +17,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <new>
@@ -28,6 +29,24 @@
 
 namespace litert::nvidia {
 namespace {
+
+// Debug: LITERT_NVIDIA_PLUGIN_SKIP, a comma list of plugin families whose
+// launches are skipped (the outputs are garbage): measures what each family
+// costs a step. Read once per library.
+bool SkipPluginFamily(const char* family) {
+  static const char* const value = std::getenv("LITERT_NVIDIA_PLUGIN_SKIP");
+  if (value == nullptr || value[0] == '\0') return false;
+  const char* at = value;
+  const size_t length = std::strlen(family);
+  while (*at != '\0') {
+    const char* end = std::strchr(at, ',');
+    const size_t item = end == nullptr ? std::strlen(at) : end - at;
+    if (item == length && std::strncmp(at, family, length) == 0) return true;
+    if (end == nullptr) break;
+    at = end + 1;
+  }
+  return false;
+}
 
 constexpr char kPluginName[] = "LiteRtNvidiaQkvNormRope";
 constexpr char kPluginVersion[] = "1";
@@ -206,6 +225,7 @@ class QkvNormRopePlugin final : public nvinfer1::IPluginV3,
     }
     const int64_t tokens = Tokens(input_desc[0].dims, Width());
     if (tokens < 1) return 1;
+    if (SkipPluginFamily("qkv_norm_rope")) return 0;
     const LiteRtNvidiaQkvNormRopeParams params = {static_cast<int32_t>(tokens),
                                                   heads_,
                                                   kv_heads_,

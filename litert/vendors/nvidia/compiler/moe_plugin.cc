@@ -43,6 +43,24 @@
 namespace litert::nvidia {
 namespace {
 
+// Debug: LITERT_NVIDIA_PLUGIN_SKIP, a comma list of plugin families whose
+// launches are skipped (the outputs are garbage): measures what each family
+// costs a step. Read once per library.
+bool SkipPluginFamily(const char* family) {
+  static const char* const value = std::getenv("LITERT_NVIDIA_PLUGIN_SKIP");
+  if (value == nullptr || value[0] == '\0') return false;
+  const char* at = value;
+  const size_t length = std::strlen(family);
+  while (*at != '\0') {
+    const char* end = std::strchr(at, ',');
+    const size_t item = end == nullptr ? std::strlen(at) : end - at;
+    if (item == length && std::strncmp(at, family, length) == 0) return true;
+    if (end == nullptr) break;
+    at = end + 1;
+  }
+  return false;
+}
+
 constexpr char kPluginName[] = "LiteRtNvidiaMoe";
 constexpr char kPluginVersion[] = "1";
 constexpr char kPluginNamespace[] = "";
@@ -581,6 +599,7 @@ class MoePlugin final : public nvinfer1::IPluginV3,
     if (input_desc == nullptr || inputs == nullptr || outputs == nullptr) {
       return 1;
     }
+    if (SkipPluginFamily("moe")) return 0;
     if (arena_ == nullptr) {
       if (!MoeArenaLoadingEnabled()) {
         // An engine build times the plugin without experts: nothing to do.

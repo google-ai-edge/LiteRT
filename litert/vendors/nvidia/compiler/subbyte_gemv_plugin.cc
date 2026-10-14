@@ -17,6 +17,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <new>
@@ -30,6 +31,24 @@
 
 namespace litert::nvidia {
 namespace {
+
+// Debug: LITERT_NVIDIA_PLUGIN_SKIP, a comma list of plugin families whose
+// launches are skipped (the outputs are garbage): measures what each family
+// costs a step. Read once per library.
+bool SkipPluginFamily(const char* family) {
+  static const char* const value = std::getenv("LITERT_NVIDIA_PLUGIN_SKIP");
+  if (value == nullptr || value[0] == '\0') return false;
+  const char* at = value;
+  const size_t length = std::strlen(family);
+  while (*at != '\0') {
+    const char* end = std::strchr(at, ',');
+    const size_t item = end == nullptr ? std::strlen(at) : end - at;
+    if (item == length && std::strncmp(at, family, length) == 0) return true;
+    if (end == nullptr) break;
+    at = end + 1;
+  }
+  return false;
+}
 
 constexpr char kPluginName[] = "LiteRtNvidiaSubbyteGemv";
 constexpr char kPluginVersion[] = "1";
@@ -227,6 +246,7 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
     if (input_desc == nullptr || inputs == nullptr || outputs == nullptr) {
       return 1;
     }
+    if (SkipPluginFamily("gemv")) return 0;
     // One activation row (decode) or a few (a verify step) are a batched
     // GEMV; many rows (prefill) are a GEMM on the tensor cores. Both read the
     // row-major weights.
