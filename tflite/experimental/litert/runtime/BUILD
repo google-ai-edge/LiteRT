@@ -1,0 +1,153 @@
+# Copyright 2024 Google LLC.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+package(
+    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    default_visibility = ["//tflite/experimental/litert:__subpackages__"],
+)
+
+cc_library(
+    name = "tensor_buffer",
+    srcs = [
+        "ahwb_buffer.cc",
+        "dmabuf_buffer.cc",
+        "event.cc",
+        "fastrpc_buffer.cc",
+        "ion_buffer.cc",
+        "tensor_buffer.cc",
+    ],
+    hdrs = [
+        "ahwb_buffer.h",
+        "dmabuf_buffer.h",
+        "event.h",
+        "fastrpc_buffer.h",
+        "ion_buffer.h",
+        "tensor_buffer.h",
+        "//tflite/experimental/litert/c:litert_event.h",
+        "//tflite/experimental/litert/c:litert_tensor_buffer.h",
+        "//tflite/experimental/litert/c:litert_tensor_buffer_requirements.h",
+    ],
+    deps = [
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_logging",
+        "//tflite/experimental/litert/c:litert_model",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/core/util:tensor_type_util",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/container:node_hash_map",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "tfl_utils",
+    srcs = [
+        "tfl_utils.cc",
+    ],
+    hdrs = [
+        "tfl_utils.h",
+    ],
+    deps = [
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/cc:litert_detail",
+        "//tflite/experimental/litert/cc:litert_element_type",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_model",
+    ],
+)
+
+cc_library(
+    name = "external_litert_buffer_context",
+    srcs = ["external_litert_buffer_context.cc"],
+    hdrs = ["external_litert_buffer_context.h"],
+    deps = [
+        ":tfl_utils",
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_logging",
+        "//tflite/experimental/litert/c:litert_model",
+        "//tflite/experimental/litert/c:litert_tensor_buffer",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_tensor_buffer",
+        "//tflite/experimental/litert/cc:litert_tensor_buffer_requirements",
+        "@com_google_absl//absl/container:flat_hash_map",
+    ],
+)
+
+cc_library(
+    name = "compiled_model",
+    srcs = ["compiled_model.cc"],
+    hdrs = ["compiled_model.h"],
+    deps = [
+        ":external_litert_buffer_context",
+        ":tensor_buffer",
+        "//tflite:framework",
+        "//tflite:model_builder",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:common",
+        "//tflite/core:cc_api_stable",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_compiled_model_options",
+        "//tflite/experimental/litert/c:litert_dispatch_delegate",
+        "//tflite/experimental/litert/c:litert_model",
+        "//tflite/experimental/litert/c:litert_tensor_buffer",
+        "//tflite/experimental/litert/cc:litert_buffer_ref",
+        "//tflite/experimental/litert/cc:litert_detail",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_tensor_buffer",
+        "//tflite/experimental/litert/cc:litert_tensor_buffer_requirements",
+        "//tflite/experimental/litert/core/model",
+        "//tflite/experimental/litert/core/model:model_serialize",
+        "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:string_view",
+        "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
+    ],
+)
+
+cc_test(
+    name = "compiled_model_test",
+    srcs = ["compiled_model_test.cc"],
+    data = [
+        "//tflite/experimental/litert/test:testdata/simple_model.tflite",
+    ],
+    deps = [
+        ":compiled_model",
+        "//tflite:framework",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:common",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_compiled_model_options",
+        "//tflite/experimental/litert/c:litert_model",
+        "//tflite/experimental/litert/c:litert_tensor_buffer",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_tensor_buffer",
+        "//tflite/experimental/litert/core/model",
+        "//tflite/experimental/litert/test:common",
+        "//tflite/experimental/litert/test:simple_model",
+        "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
