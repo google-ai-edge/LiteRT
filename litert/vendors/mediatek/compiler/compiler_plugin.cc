@@ -17,10 +17,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <filesystem>
+#include <filesystem>  // NOLINT
 #include <memory>
 #include <optional>
 #include <string>
+#include <system_error>  // NOLINT
 #include <tuple>
 #include <unordered_set>
 #include <utility>
@@ -402,9 +403,9 @@ LiteRtStatus SetNeuronEnvironment(const char* soc_model) {
   // debugging.
 #ifndef __ANDROID__
   char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
+  char dla_directory_template[] = "/tmp/tempdir_dla.XXXXXXX";
 
   if (dla_directory_name == nullptr) {
-    char dla_directory_template[] = "/tmp/tempdir_dla.XXXXXXX";
     dla_directory_name = mkdtemp(dla_directory_template);
     if (dla_directory_name == nullptr) {
       int error_code = errno;
@@ -414,6 +415,9 @@ LiteRtStatus SetNeuronEnvironment(const char* soc_model) {
       return kLiteRtStatusErrorFileIO;
     }
     setenv("MTKNN_ADAPTER_DLA_DIR", dla_directory_name, /*overwrite=*/1);
+  } else {
+    std::error_code ec;
+    fs::create_directories(dla_directory_name, ec);
   }
 
   LITERT_LOG(LITERT_INFO, "DLA dump directory path: %s", dla_directory_name);
@@ -479,14 +483,14 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   bool disable_dla_dir_removal = false;
   LrtGetMediatekOptionsDisableDlaDirRemoval(mtk_options,
                                             &disable_dla_dir_removal);
-  if (!disable_dla_dir_removal) {
-    absl::Cleanup dla_directory_cleanup = [] {
+  absl::Cleanup dla_directory_cleanup = [disable_dla_dir_removal] {
+    if (!disable_dla_dir_removal) {
       const char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
       if (dla_directory_name) {
         remove_directory(dla_directory_name);
       }
-    };
-  }
+    }
+  };
 
   auto& [opt_soc_model, neuron_adapter_api] = soc_and_api.Value();
 
@@ -608,14 +612,14 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   bool disable_dla_dir_removal = false;
   LrtGetMediatekOptionsDisableDlaDirRemoval(mtk_options,
                                             &disable_dla_dir_removal);
-  if (!disable_dla_dir_removal) {
-    absl::Cleanup dla_directory_cleanup = [] {
+  absl::Cleanup dla_directory_cleanup = [disable_dla_dir_removal] {
+    if (!disable_dla_dir_removal) {
       const char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
       if (dla_directory_name) {
         remove_directory(dla_directory_name);
       }
-    };
-  }
+    }
+  };
 
   litert::compiler::Model model(compiler_plugin->ctx(), partitions);
   const auto num_partitions = model.NumSubgraphs();

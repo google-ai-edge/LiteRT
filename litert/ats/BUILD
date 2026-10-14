@@ -459,10 +459,6 @@ litert_define_ats(
 litert_define_ats(
     name = "mediatek_ats",
     aot_shard_count = 32,
-    aot_tags = [
-        "manual",
-        "notap",
-    ],
     backend = "mediatek",
     compile_only_suffix = "_aot",
     dont_register = [
@@ -2051,6 +2047,7 @@ cc_library(
 #
 # NPU_AOT_ATS_GUITAR_TARGETS = [
 #     ":google_tensor_ats_aot",
+#     ":mediatek_ats_aot",
 #     ":example_ats_aot",
 # ]
 #
