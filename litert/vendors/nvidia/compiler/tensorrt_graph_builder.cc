@@ -5112,7 +5112,9 @@ class TensorRtGraphBuilder {
       return read.mask_slice;
     }
     LITERT_RETURN_IF_ERROR(EnsureWindowIndices(read));
-    const nvinfer1::Dims one{1, {1}};
+    // Rank 3 like the gathered bounds [1, 1, length]: TensorRT's elementwise
+    // layers broadcast only between tensors of equal rank.
+    const nvinfer1::Dims one{3, {1, 1, 1}};
     const int32_t one_value = 1;
     LITERT_ASSIGN_OR_RETURN(auto* one_tensor,
                             AddInt32Constant(absl::MakeConstSpan(&one_value, 1),
