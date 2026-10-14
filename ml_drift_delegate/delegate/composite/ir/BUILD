@@ -96,6 +96,7 @@ cc_library(
     hdrs = ["sdpa_transposed_parser.h"],
     deps = [
         "//ml_drift_delegate/delegate/composite:sdpa_transposed_parser",
+        "//ml_drift_delegate/delegate/composite:sdpa_transposed_support",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//ml_drift_delegate/tflite:ir_model_builder_helper",
         "//tflite/c:common",

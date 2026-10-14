@@ -196,12 +196,23 @@ cc_library(
 )
 
 cc_library(
+    name = "sdpa_transposed_support",
+    srcs = ["sdpa_transposed_support.cc"],
+    hdrs = ["sdpa_transposed_support.h"],
+    deps = [
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:shape",
+    ],
+)
+
+cc_library(
     name = "sdpa_transposed_parser",
     srcs = ["sdpa_transposed_parser.cc"],
     hdrs = ["sdpa_transposed_parser.h"],
     deps = [
         ":add_values_to_cache_parser",
         ":runtime_batched_matmul_parser",
+        ":sdpa_transposed_support",
         "//ml_drift_delegate/tflite:model_builder_helper",
         "//ml_drift_delegate/tflite:object_reader",
         "//ml_drift_delegate/tflite:operation_parser",
@@ -225,6 +236,7 @@ cc_library(
     hdrs = ["sdpa_transposed_kernel.h"],
     deps = [
         ":sdpa_transposed_parser",
+        ":sdpa_transposed_support",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
