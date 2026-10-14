@@ -287,6 +287,24 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
 #endif
   }
 
+  /// @brief Wraps an existing handle as a tensor buffer of a custom
+  /// `buffer_type` (e.g. kLiteRtTensorBufferTypeOpenVINOTensorBuffer), via that
+  /// type's registered import handler. The returned buffer does not own the
+  /// handle; the caller keeps the underlying memory alive.
+  static Expected<TensorBuffer> CreateFromCustomHandle(
+      const Environment& env, const RankedTensorType& tensor_type,
+      TensorBufferType buffer_type, HwMemoryHandle handle, size_t size_bytes) {
+    LiteRtTensorBuffer tensor_buffer;
+    auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
+    auto env_holder = env.GetHolder();
+    LITERT_RETURN_IF_ERROR(
+        env_holder.runtime->CreateTensorBufferFromCustomHandle(
+            env_holder.handle, &litert_tensor_type,
+            static_cast<LiteRtTensorBufferType>(buffer_type), handle,
+            size_bytes, &tensor_buffer));
+    return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
+  }
+
   static Expected<TensorBuffer> CreateFromClBuffer(
       const Environment& env, const RankedTensorType& tensor_type,
       TensorBufferType buffer_type, LiteRtClMem cl_memory, size_t size_bytes) {

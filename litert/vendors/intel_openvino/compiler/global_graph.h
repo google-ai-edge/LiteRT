@@ -48,10 +48,14 @@ namespace litert::openvino {
 //   [pool_size bytes]                       (CONTIGUOUS deduplicated pool)
 //   uint32 num_subgraphs
 //     repeat: uint32 name_len, [name], uint8 device_enum,
+//             int64 kv_tier                                  (v3+)
 //             uint32 const_map_len,
 //               repeat: uint32 name_len, [name], uint32 buffer_id  (const_map)
 //             uint64 payload_len, [payload bytes]             (OV exported
 //             blob)
+//
+// v3 over v2: each subgraph records its KV tier (see Subgraph::kv_tier).
+// Parse() still reads v2 blobs, with kv_tier = 0.
 //
 // v2 over v1: the pool is stored CONTIGUOUSLY (directory of {id, pool_offset,
 // size} then all bytes back-to-back) rather than interleaved {id, size, bytes},
@@ -71,8 +75,8 @@ class OpenVinoGlobalGraph {
  public:
   // Container format version, written right after the magic. Bump on any
   // layout change so Parse() can reject blobs it does not understand rather
-  // than misparsing. v2 = contiguous pool + directory (see layout above).
-  static constexpr uint16_t kVersion = 2;
+  // than misparsing. v3 = v2 + per-subgraph kv_tier (see layout above).
+  static constexpr uint16_t kVersion = 3;
 
   // One deduplicated weight buffer in the contiguous pool. |bytes| aliases the
   // pool source (the container blob at dispatch, or WeightBank at compile).
@@ -87,6 +91,10 @@ class OpenVinoGlobalGraph {
   struct Subgraph {
     std::string name;    // e.g. "Partition_0"
     uint8_t device = 0;  // LiteRtIntelOpenVinoGraphBackend
+    // KV sequence length the partition was compiled for (its context tier in
+    // a multi-context model): the largest static extent over its "kv_cache"
+    // inputs. 0 = no KV inputs.
+    int64_t kv_tier = 0;
     std::map<std::string, uint32_t> const_map;  // friendly_name -> buffer_id
     absl::Span<const uint8_t> payload;          // OV exported blob (aliased)
   };

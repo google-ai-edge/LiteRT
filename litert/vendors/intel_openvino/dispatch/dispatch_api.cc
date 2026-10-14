@@ -70,17 +70,48 @@ LiteRtStatus CreateOpenVinoTensorBuffer(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus DestroyOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
-  OpenVinoTensorBuffer* custom_tensor_buffer =
-      reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_info->memory_handle);
-  if (custom_tensor_buffer->GetTensorData()) {
-    delete custom_tensor_buffer;
+// import_func: `hw_buffer_handle` is a host pointer (e.g. the Lock()ed data of
+// another OpenVINO tensor buffer). The result is a non-owning ov::Tensor view.
+LiteRtStatus ImportOpenVinoTensorBuffer(
+    LiteRtGpuDeviceId device_id, LiteRtGpuQueueId queue_id,
+    const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, HwMemoryHandle hw_buffer_handle,
+    size_t bytes, size_t packed_bytes, HwMemoryInfoPtr* hw_memory_info) {
+  auto memory_info = std::make_unique<HwMemoryInfo>();
+  auto custom_tensor_buffer = std::make_unique<OpenVinoTensorBuffer>();
+  litert::Expected<void> result =
+      custom_tensor_buffer->Wrap(*tensor_type, hw_buffer_handle, bytes);
+  if (!result) {
+    LITERT_LOG(LITERT_ERROR, "Failed to wrap OpenVino tensor buffer: %s",
+               result.Error().Message().c_str());
+    return kLiteRtStatusErrorInvalidArgument;
   }
+  memory_info->memory_handle = custom_tensor_buffer.release();
+  *hw_memory_info = memory_info.release();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus DestroyOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  // Always delete: the buffer may never have been touched (see
+  // OpenVinoTensorBuffer), and asking for its data here would create it.
+  delete reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_info->memory_handle);
   delete hw_memory_info;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus UnlockOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus ClearOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  auto result = reinterpret_cast<OpenVinoTensorBuffer*>(
+                    hw_memory_info->memory_handle)
+                    ->Clear();
+  if (!result) {
+    LITERT_LOG(LITERT_ERROR, "Failed to clear tensor buffer: %s",
+               result.Error().Message().c_str());
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
   return kLiteRtStatusOk;
 }
 
@@ -456,8 +487,8 @@ LiteRtCustomTensorBufferHandlersDef TheTensorBufferHandlers = {
     .destroy_func = litert::openvino::DestroyOpenVinoTensorBuffer,
     .lock_func = litert::openvino::LockOpenVinoTensorBuffer,
     .unlock_func = litert::openvino::UnlockOpenVinoTensorBuffer,
-    .clear_func = nullptr,
-    .import_func = nullptr,
+    .clear_func = litert::openvino::ClearOpenVinoTensorBuffer,
+    .import_func = litert::openvino::ImportOpenVinoTensorBuffer,
     .device_tag = kLiteRtEnvOptionTagNull,
     .queue_tag = kLiteRtEnvOptionTagNull,
     .num_supported_buffer_types = 1,
