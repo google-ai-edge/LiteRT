@@ -41,11 +41,14 @@ limitations under the License.
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/inlined_vector.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -194,6 +197,109 @@ class BackendExtension {
   virtual internal::TypeId GetTypeId() const = 0;
 };
 
+using ScopeAttrValue = std::variant<int64_t, double, std::string>;
+
+// Represents a hierarchical layer or composite function scope in the graph.
+//
+// Layer and composite functions (e.g. `RoPE`, `ScaledDotProductAttention`,
+// `FeedForward`, `GatedAttention`, `GatedDeltaNet`, `transformer_layer`)
+// create a `Scope` via `ScopeGuard` so that hierarchical structure and fusion
+// boundaries (boundary inputs, weights, states, outputs, and attributes) are
+// preserved on the serialized `Operation` DAG.
+//
+// Ownership is strictly acyclic:
+// - `Operation` holds `std::shared_ptr<Scope> scope` and `Scope` holds
+//   `std::shared_ptr<Scope> parent`.
+// - `Scope::children` holds `std::weak_ptr<Scope>`.
+// - `Scope::boundary_tensors` holds a strong `TensorGroup` reference only for
+//   leaf tensors (`producer == nullptr`, e.g. constant weights / graph inputs)
+//   and a weak `TensorGroup` reference for operation outputs (`producer !=
+//   nullptr`).
+struct Scope : public std::enable_shared_from_this<Scope> {
+  struct BoundaryEntry {
+    std::shared_ptr<TensorGroup> strong_group;
+    std::weak_ptr<TensorGroup> weak_group;
+    size_t index = 0;
+
+    std::optional<Tensor> Lock() const {
+      if (strong_group != nullptr) {
+        return Tensor{strong_group, index};
+      }
+      if (auto locked = weak_group.lock()) {
+        return Tensor{std::move(locked), index};
+      }
+      return std::nullopt;
+    }
+  };
+
+  std::string kind;
+  std::string name;
+  std::shared_ptr<Scope> parent;
+  std::vector<std::weak_ptr<Scope>> children;
+  absl::flat_hash_map<std::string, ScopeAttrValue> attrs;
+  absl::flat_hash_map<std::string, BoundaryEntry> boundary_tensors;
+
+  // Returns the slash-separated path from the root scope to `this`, e.g.
+  // "layer_0/gated_attention/sdpa".
+  std::string FullPath() const;
+
+  // Finds the nearest scope in the parent chain (inclusive of `this`) whose
+  // `kind` equals `target_kind`, or nullptr if none matches.
+  const Scope* FindAncestor(absl::string_view target_kind) const;
+  std::shared_ptr<Scope> FindAncestorShared(absl::string_view target_kind);
+
+  void SetAttr(absl::string_view key, ScopeAttrValue value);
+  std::optional<int64_t> GetIntAttr(absl::string_view key) const;
+  std::optional<double> GetFloatAttr(absl::string_view key) const;
+  std::optional<absl::string_view> GetStringAttr(absl::string_view key) const;
+
+  void BindTensor(absl::string_view role, const Tensor& tensor);
+  template <class T, class = decltype(std::declval<const T&>().GetRaw())>
+  void BindTensor(absl::string_view role, const T& tensor) {
+    BindTensor(role, tensor.GetRaw());
+  }
+  std::optional<Tensor> GetBoundaryTensor(absl::string_view role) const;
+};
+
+// Returns the currently active Scope on the calling thread, or nullptr.
+std::shared_ptr<Scope> CurrentScope();
+
+// RAII guard that pushes a new hierarchical `Scope` onto the thread-local
+// scope stack. All `Operation`s constructed while the guard is active
+// automatically capture `op->scope = CurrentScope()`.
+class ScopeGuard {
+ public:
+  explicit ScopeGuard(absl::string_view kind, absl::string_view name = "");
+  ~ScopeGuard();
+
+  ScopeGuard(const ScopeGuard&) = delete;
+  ScopeGuard& operator=(const ScopeGuard&) = delete;
+
+  ScopeGuard& Attr(absl::string_view key, int64_t value);
+  ScopeGuard& Attr(absl::string_view key, int value) {
+    return Attr(key, static_cast<int64_t>(value));
+  }
+  ScopeGuard& Attr(absl::string_view key, bool value) {
+    return Attr(key, static_cast<int64_t>(value ? 1 : 0));
+  }
+  ScopeGuard& Attr(absl::string_view key, double value);
+  ScopeGuard& Attr(absl::string_view key, absl::string_view value);
+  ScopeGuard& Attr(absl::string_view key, const char* value) {
+    return Attr(key, absl::string_view(value));
+  }
+  ScopeGuard& Bind(absl::string_view role, const Tensor& tensor);
+  template <class T, class = decltype(std::declval<const T&>().GetRaw())>
+  ScopeGuard& Bind(absl::string_view role, const T& tensor) {
+    return Bind(role, tensor.GetRaw());
+  }
+
+  const std::shared_ptr<Scope>& scope() const { return scope_; }
+
+ private:
+  std::shared_ptr<Scope> prev_scope_;
+  std::shared_ptr<Scope> scope_;
+};
+
 #define LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION                        \
   internal::TypeId GetTypeId() const override {                                \
     return internal::TypeId::Get<                                              \
@@ -244,6 +350,9 @@ struct Operation {
 
   std::vector<Tensor> inputs;
   std::weak_ptr<TensorGroup> outputs_group;
+
+  // Hierarchical layer/composite scope active when this operation was created.
+  std::shared_ptr<Scope> scope = CurrentScope();
 
   // For testing and debugging purposes only.
   virtual absl::string_view GetName() const = 0;

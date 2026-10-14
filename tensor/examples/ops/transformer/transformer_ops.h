@@ -42,6 +42,11 @@ namespace litert::tensor {
 template <class... Mixins>
 Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x, const Tensor<Mixins...>& cos,
                        const Tensor<Mixins...>& sin) {
+  graph::ScopeGuard scope("rope");
+  scope.Bind("input", x.GetRaw())
+      .Bind("cos", cos.GetRaw())
+      .Bind("sin", sin.GetRaw());
+
   // We assume a shape of [batch, ..., head_dim].
   const Shape& x_shape = x.GetShape();
   const int last_axis = static_cast<int>(x_shape.size()) - 1;
@@ -63,13 +68,19 @@ Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x, const Tensor<Mixins...>& cos,
 
   Tensor x_cos = Mul(x, cos);
   Tensor rotated_sin = Mul(rotated, sin);
-  return Add(x_cos, rotated_sin);
+  Tensor out = Add(x_cos, rotated_sin);
+  scope.Bind("output", out.GetRaw());
+  return out;
 }
 
 // Computes the Swish (SiLU) activation function: x * sigmoid(x).
 template <class... Mixins>
 Tensor<Mixins...> Swish(Tensor<Mixins...> x) {
-  return Mul(x, Logistic(x));
+  graph::ScopeGuard scope("swish");
+  scope.Bind("input", x.GetRaw());
+  Tensor out = Mul(x, Logistic(x));
+  scope.Bind("output", out.GetRaw());
+  return out;
 }
 
 enum class FFNActivation {
@@ -92,13 +103,23 @@ Tensor<Mixins...> FeedForward(Tensor<Mixins...> x,
                               Tensor<Mixins...> up_weight,
                               Tensor<Mixins...> down_weight,
                               FFNActivation activation) {
+  graph::ScopeGuard scope("feed_forward");
+  scope.Bind("input", x.GetRaw())
+      .Bind("gate_weight", gate_weight.GetRaw())
+      .Bind("up_weight", up_weight.GetRaw())
+      .Bind("down_weight", down_weight.GetRaw())
+      .Attr("activation", activation == FFNActivation::kGeluApproximate
+                              ? "gelu_approximate"
+                              : "swish");
   Tensor gate = FullyConnected(x, gate_weight);
   Tensor up = FullyConnected(x, up_weight);
   Tensor activated_gate = activation == FFNActivation::kGeluApproximate
                               ? Gelu(gate, /*approximate=*/true)
                               : Swish(gate);
   Tensor intermediate = Mul(activated_gate, up);
-  return FullyConnected(intermediate, down_weight, kActNone, true);
+  Tensor out = FullyConnected(intermediate, down_weight, kActNone, true);
+  scope.Bind("output", out.GetRaw());
+  return out;
 }
 
 // Repeats each KV head for Grouped-Query Attention (GQA), keeping the copies
@@ -126,19 +147,25 @@ Tensor<Mixins...> RepeatKVHeads(const Tensor<Mixins...>& x, int num_groups) {
   if (num_groups <= 1) {
     return x;
   }
+  graph::ScopeGuard scope("repeat_kv_heads");
+  scope.Bind("input", x.GetRaw()).Attr("num_groups", num_groups);
   const int batch_size = shape[0];
   const int num_kv_heads = shape[1];
   const int head_dim = shape[3];
 
   if (num_kv_heads == 1) {
-    return Tile(x, {1, num_groups, 1, 1});
+    Tensor out = Tile(x, {1, num_groups, 1, 1});
+    scope.Bind("output", out.GetRaw());
+    return out;
   }
 
   Tensor reshaped =
       Reshape(x, {batch_size * num_kv_heads, 1, kInferredDim, head_dim});
   Tensor tiled = Tile(reshaped, {1, num_groups, 1, 1});
-  return Reshape(
+  Tensor out = Reshape(
       tiled, {batch_size, num_kv_heads * num_groups, kInferredDim, head_dim});
+  scope.Bind("output", out.GetRaw());
+  return out;
 }
 
 // Computes scaled dot-product attention:
@@ -171,6 +198,18 @@ Tensor<Mixins...> ScaledDotProductAttention(
     std::optional<float> scale = std::nullopt,
     std::optional<float> soft_cap = std::nullopt,
     Type datatype = Type::kUnknown) {
+  graph::ScopeGuard scope("sdpa");
+  scope.Bind("q", q.GetRaw()).Bind("k", k.GetRaw()).Bind("v", v.GetRaw());
+  if (attention_mask.GetStatus().ok()) {
+    scope.Bind("attention_mask", attention_mask.GetRaw());
+  }
+  if (scale.has_value()) {
+    scope.Attr("scale", static_cast<double>(*scale));
+  }
+  if (soft_cap.has_value()) {
+    scope.Attr("soft_cap", static_cast<double>(*soft_cap));
+  }
+
   Tensor scores = BatchMatMul(q, k, /*adj_x=*/false, /*adj_y=*/true);
 
   const bool scale_constant_needed = scale.has_value() && *scale != 1.0f;
@@ -211,7 +250,9 @@ Tensor<Mixins...> ScaledDotProductAttention(
   }
 
   Tensor attention_weights = Softmax(scores);
-  return BatchMatMul(attention_weights, v);
+  Tensor out = BatchMatMul(attention_weights, v);
+  scope.Bind("output", out.GetRaw());
+  return out;
 }
 
 template <class... Mixins>

@@ -18,6 +18,7 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/source_location.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
@@ -121,6 +122,71 @@ TEST(QuantizationTest, As) {
       const_quant_ref.As<PerChannelAffineQuantization>());
   EXPECT_EQ(&const_quant_as, &quant);
   EXPECT_THAT(const_quant_ref.As<DummyQuantization>(), Not(IsOk()));
+}
+
+struct DummyOp : Operation {
+  absl::string_view GetName() const override { return "DummyOp"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
+};
+
+TEST(ScopeTest, NestedScopeHierarchyAndAttributesAndBoundaries) {
+  EXPECT_EQ(CurrentScope(), nullptr);
+
+  Tensor leaf_input = NewTensor(absl::SourceLocation::current());
+  Tensor leaf_weight = NewTensor(absl::SourceLocation::current());
+
+  std::shared_ptr<DummyOp> inner_op;
+  Tensor inner_output;
+  {
+    ScopeGuard layer_scope("transformer_layer", "layer_3");
+    layer_scope.Attr("layer_idx", 3).Bind("input", leaf_input);
+
+    {
+      ScopeGuard attn_scope("gated_attention", "attn");
+      attn_scope.Attr("num_heads", 8)
+          .Attr("scale", 0.0625)
+          .Attr("mode", "gqa")
+          .Bind("input", leaf_input)
+          .Bind("q_weight", leaf_weight);
+
+      inner_op = std::make_shared<DummyOp>();
+      auto group = NewTensorGroup(1, absl::SourceLocation::current());
+      inner_op->outputs_group = group;
+      group->producer = inner_op;
+      inner_output = GetTensor(0, group);
+      attn_scope.Bind("output", inner_output);
+    }
+
+    EXPECT_EQ(CurrentScope(), layer_scope.scope());
+  }
+  EXPECT_EQ(CurrentScope(), nullptr);
+
+  ASSERT_NE(inner_op->scope, nullptr);
+  EXPECT_EQ(inner_op->scope->kind, "gated_attention");
+  EXPECT_EQ(inner_op->scope->name, "attn");
+  EXPECT_EQ(inner_op->scope->FullPath(), "layer_3/attn");
+  EXPECT_EQ(inner_op->scope->GetIntAttr("num_heads"), 8);
+  EXPECT_DOUBLE_EQ(*inner_op->scope->GetFloatAttr("scale"), 0.0625);
+  EXPECT_EQ(inner_op->scope->GetStringAttr("mode"), "gqa");
+
+  ASSERT_NE(inner_op->scope->parent, nullptr);
+  EXPECT_EQ(inner_op->scope->parent->kind, "transformer_layer");
+  EXPECT_EQ(inner_op->scope->parent->name, "layer_3");
+  EXPECT_EQ(inner_op->scope->parent->GetIntAttr("layer_idx"), 3);
+  EXPECT_EQ(inner_op->scope->FindAncestor("transformer_layer"),
+            inner_op->scope->parent.get());
+
+  auto bound_in = inner_op->scope->GetBoundaryTensor("input");
+  ASSERT_TRUE(bound_in.has_value());
+  EXPECT_EQ(*bound_in, leaf_input);
+
+  auto bound_w = inner_op->scope->GetBoundaryTensor("q_weight");
+  ASSERT_TRUE(bound_w.has_value());
+  EXPECT_EQ(*bound_w, leaf_weight);
+
+  auto bound_out = inner_op->scope->GetBoundaryTensor("output");
+  ASSERT_TRUE(bound_out.has_value());
+  EXPECT_EQ(*bound_out, inner_output);
 }
 
 }  // namespace
