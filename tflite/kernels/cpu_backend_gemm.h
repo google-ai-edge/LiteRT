@@ -25,8 +25,6 @@ limitations under the License.
 #include "tflite/kernels/cpu_backend_gemm_ruy.h"
 
 #ifndef TFLITE_WITH_RUY
-#include "tflite/kernels/cpu_backend_gemm_eigen.h"
-#include "tflite/kernels/cpu_backend_gemm_gemmlowp.h"
 #include "tflite/kernels/cpu_backend_gemm_x86.h"
 #endif
 
