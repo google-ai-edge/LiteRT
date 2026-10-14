@@ -43,4 +43,50 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRows(
     void* output, int rows, int input_size, int output_size, int gate,
     cudaStream_t stream);
 
+// Mixture-of-experts feed-forward over blockwise INT4 experts (the "moe"
+// custom op of Gemma 4 26B-A4B): for every activation row r and each of its
+// top_k routed experts e = top_indices[r][j],
+//   hidden = gelu(x_r . gate_e) * (x_r . up_e)          [hidden_dim]
+//   out_r += top_weights[r][j] * per_expert_scale[e] * (hidden . down_e)
+// The expert weights keep the model's layout, which interleaves the experts
+// within the output dimension: row o of expert e of the gate and up
+// projections is row o * experts + e of a [hidden_dim * experts,
+// model_dim] INT4 matrix, and of the down projection row o * experts + e of
+// [model_dim * experts, hidden_dim]; the scales are FP16 per block of 32
+// input dims in the same row order. Activations and outputs are BF16.
+struct LiteRtNvidiaMoeArena {
+  const uint8_t* gate;
+  const uint8_t* up;
+  const uint8_t* down;
+  const void* gate_scales;
+  const void* up_scales;
+  const void* down_scales;
+};
+
+struct LiteRtNvidiaMoeShape {
+  int32_t rows;
+  int32_t top_k;
+  int32_t experts;
+  int32_t model_dim;   // a multiple of 32
+  int32_t hidden_dim;  // a multiple of 32
+  int32_t gate;        // 1: tanh GELU, 2: erf GELU
+};
+
+// Whether the launch takes the shape: rows >= 1, top_k in [1, 32], experts
+// in [1, 1024], the dims multiples of 32.
+extern "C" bool LiteRtNvidiaMoeSupports(const LiteRtNvidiaMoeShape* shape);
+
+// The scratch bytes a launch of the shape needs.
+extern "C" size_t LiteRtNvidiaMoeWorkspaceBytes(
+    const LiteRtNvidiaMoeShape* shape);
+
+// A few rows (decode, a verify step: rows <= kLiteRtNvidiaInt4BlockGemvMaxRows)
+// run one GEMV per routed expert; more rows (prefill) are grouped by expert
+// so that an expert's weights are read once per tile of tokens.
+extern "C" cudaError_t LiteRtNvidiaLaunchMoeInt4Block(
+    const LiteRtNvidiaMoeShape* shape, const LiteRtNvidiaMoeArena* arena,
+    const void* activation, const int32_t* top_indices,
+    const float* top_weights, const float* per_expert_scale, void* workspace,
+    void* output, cudaStream_t stream);
+
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_TRTLLM_INT4_BLOCK_GEMV_H_

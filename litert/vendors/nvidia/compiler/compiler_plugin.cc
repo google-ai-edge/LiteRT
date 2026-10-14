@@ -299,9 +299,13 @@ bool IsValidatedGemma4TensorRtOp(const litert::compiler::Op& op) {
     case kLiteRtOpCodeTflCast:
     case kLiteRtOpCodeTflConcatenation:
     case kLiteRtOpCodeTflCos:
+    // Gemma 4 26B-A4B: the mixture-of-experts op, its router's top-k, the
+    // masks' Equal and the inlined attention composites' Mean.
+    case kLiteRtOpCodeTflCustom:
     case kLiteRtOpCodeTflDequantize:
     case kLiteRtOpCodeTflDiv:
     case kLiteRtOpCodeTflDynamicUpdateSlice:
+    case kLiteRtOpCodeTflEqual:
     case kLiteRtOpCodeTflFill:
     case kLiteRtOpCodeTflFloorMod:
     case kLiteRtOpCodeTflFullyConnected:
@@ -310,6 +314,7 @@ bool IsValidatedGemma4TensorRtOp(const litert::compiler::Op& op) {
     case kLiteRtOpCodeTflLess:
     case kLiteRtOpCodeTflLogicalAnd:
     case kLiteRtOpCodeTflMaximum:
+    case kLiteRtOpCodeTflMean:
     case kLiteRtOpCodeTflMinimum:
     case kLiteRtOpCodeTflMul:
     case kLiteRtOpCodeTflNotEqual:
@@ -326,6 +331,7 @@ bool IsValidatedGemma4TensorRtOp(const litert::compiler::Op& op) {
     case kLiteRtOpCodeTflSub:
     case kLiteRtOpCodeTflSum:
     case kLiteRtOpCodeTflTanh:
+    case kLiteRtOpCodeTflTopkV2:
     case kLiteRtOpCodeTflTranspose:
     case kLiteRtOpCodeTflUnpack:
       return true;

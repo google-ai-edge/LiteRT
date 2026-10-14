@@ -194,6 +194,19 @@ cc_library(
 )
 
 cc_library(
+    name = "moe_plugin",
+    srcs = ["moe_plugin.cc"],
+    hdrs = ["moe_plugin.h"],
+    tags = ["manual"],
+    deps = [
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+)
+
+cc_library(
     name = "decode_attention_plugin",
     srcs = ["decode_attention_plugin.cc"],
     hdrs = ["decode_attention_plugin.h"],
@@ -289,6 +302,7 @@ cc_library(
         ":cache_update_plugin",
         ":decode_attention_plugin",
         ":int8_cache_write_plugin",
+        ":moe_plugin",
         ":subbyte_gemv_plugin",
         ":weight_store_builder",
         "//litert/c:litert_common",
