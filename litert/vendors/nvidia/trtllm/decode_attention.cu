@@ -19,11 +19,51 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <type_traits>
 
 namespace {
 
-constexpr int kChunk = 64;         // keys per block
+// Blocks per head: one per chunk up to kMaxSplits; beyond that the blocks
+// loop over chunks, which keeps the partial workspace and the combine small
+// (336 measured slower at 30k keys: the blocks are instruction-bound and the
+// combine grows with the splits).
+constexpr int kMaxSplits = 168;
+
+// Keys per block, 32 or 64. Short sequences have few blocks and each
+// block's serial chain (key loads, scores, softmax, values) is what the
+// kernel waits for, so shorter blocks finish sooner: 32 keys measured best
+// up to 2.7k keys for column caches and for many rows (E4B's 1k local
+// layer 10.2 to 7.2 us, the 26B's 8-row global layer at 1k 26.6 to 18.5),
+// while a row cache with few rows reads its values a warp per key batch
+// and prefers the longer batch (the 26B's local layer: 10.8 us at 64,
+// 14.9 at 32). Beyond kMaxSplits chunks the blocks loop over chunks and 64
+// wins everywhere.
+constexpr int DefaultChunkFor(int seq, bool few_rows_row_cache) {
+  return seq > 16 * kMaxSplits || few_rows_row_cache ? 64 : 32;
+}
+
+// A small non-negative decimal from an environment value, -1 otherwise (no
+// strtol: the CUDA objects would bind the host glibc's newer symbol).
+inline int EnvDecimal(const char* name) {
+  const char* value = std::getenv(name);
+  if (value == nullptr || value[0] == '\0') return -1;
+  int number = 0;
+  for (const char* c = value; *c != '\0'; ++c) {
+    if (*c < '0' || *c > '9' || number > 100000) return -1;
+    number = number * 10 + (*c - '0');
+  }
+  return number;
+}
+
+// LITERT_NVIDIA_ATTENTION_CHUNK=32|64 pins the chunk (measurements).
+inline int ChunkFor(int seq, bool few_rows_row_cache) {
+  static const int pinned = [] {
+    const int chunk = EnvDecimal("LITERT_NVIDIA_ATTENTION_CHUNK");
+    return chunk == 32 || chunk == 64 ? chunk : 0;
+  }();
+  return pinned != 0 ? pinned : DefaultChunkFor(seq, few_rows_row_cache);
+}
 constexpr int kKeyBatch = 4;       // keys loaded together per warp (QK)
 constexpr int kValueBatch = 8;     // keys loaded together per thread (PV)
 constexpr int kMaxRows = 16;
@@ -102,15 +142,20 @@ __host__ __device__ constexpr int RowsPadFor() {
   return kRowsCap == 16 ? 20 : kRowsCap == 8 ? 8 : 4;
 }
 
-template <int kDepth, int kRowsCap, bool kValueColumns>
+template <int kDepth, int kRowsCap, bool kValueColumns, int kChunk>
 __host__ __device__ constexpr size_t SharedBytesFor() {
   // q as fp32 [rows][E][32], scores/probabilities [kChunk][kRowsPad] fp32,
   // row max and sum, and mask bytes [rows][kChunk]. Column value caches are
   // read straight into registers (below), so no staging tile.
+  // Row value caches with few rows also merge the warps' value sums through
+  // shared memory ([rows][depth] fp32) at the end.
   return static_cast<size_t>(kRowsCap) * kDepth * sizeof(float) +
          static_cast<size_t>(kChunk) * RowsPadFor<kRowsCap>() * sizeof(float) +
          3 * kRowsCap * sizeof(float) +
-         static_cast<size_t>(kRowsCap) * kChunk * sizeof(bool);
+         static_cast<size_t>(kRowsCap) * kChunk * sizeof(bool) +
+         (!kValueColumns && kRowsCap <= 4
+              ? static_cast<size_t>(kRowsCap) * kDepth * sizeof(float)
+              : 0);
 }
 
 // Column value caches ([depth][seq]): a thread's depth elements of a chunk
@@ -161,7 +206,7 @@ __device__ __forceinline__ void LoadColumnValues(
 // of bandwidth, each dependent memory round trip about one), so a block
 // reads a chunk in two round trips: the mask, then (if any row sees the
 // chunk) all of its values and keys at once.
-template <typename T, int kDepth, int kRowsCap, typename Cache>
+template <typename T, int kDepth, int kRowsCap, typename Cache, int kChunk>
 __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
     DecodeAttentionPartial(const T* __restrict__ q,
                            const typename Cache::Element* __restrict__ k,
@@ -189,6 +234,15 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   constexpr int kValueVecs = kChunk / kVecKeys;
   constexpr int kValueRows = Cache::kValueColumns ? kThreadElems : 1;
   constexpr int kValueCols = Cache::kValueColumns ? kValueVecs : 1;
+  // Row value caches with few rows: a lane owns kLaneVals depth elements (a
+  // 16-byte vector of a key's row) and the warps split the chunk's keys,
+  // kVBatch each, loaded together, so a chunk's values take one round trip
+  // instead of kChunk / kValueBatch dependent ones; the warps' sums merge
+  // through shared memory at the end. Column caches and many rows keep a
+  // thread per depth slice over every key.
+  constexpr bool kWarpValues = !Cache::kValueColumns && kRowsCap <= 4;
+  constexpr int kLaneVals = kWarpValues ? kDepth / 32 : kThreadElems;
+  constexpr int kVBatch = kWarpValues ? kChunk / kWarps : kValueBatch;
   extern __shared__ float smem[];
   float* q_s = smem;                                   // rows * depth
   float* p_s = q_s + kRowsCap * kDepth;                // kChunk * kRowsPad
@@ -196,6 +250,8 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   float* l_s = m_s + kRowsCap;                         // rows
   float* scale_s = l_s + kRowsCap;                     // rows
   bool* mask_s = reinterpret_cast<bool*>(scale_s + kRowsCap);  // rows*kChunk
+  float* merge_s =
+      reinterpret_cast<float*>(mask_s + kRowsCap * kChunk);  // rows * depth
 
   const int split = blockIdx.x;
   const int head = blockIdx.y;
@@ -237,11 +293,11 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   }
   // Running softmax state: row max/sum in shared memory, weighted values in
   // registers (thread t owns depth slice [t * kThreadElems, +kThreadElems)).
-  float acc[kRowsCap][kThreadElems];
+  float acc[kRowsCap][kLaneVals];
 #pragma unroll
   for (int r = 0; r < kRowsCap; ++r) {
 #pragma unroll
-    for (int e = 0; e < kThreadElems; ++e) {
+    for (int e = 0; e < kLaneVals; ++e) {
       acc[r][e] = 0.0f;
     }
   }
@@ -385,7 +441,7 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
     if (r < rows) {
       const float scale = scale_s[r];
 #pragma unroll
-      for (int e = 0; e < kThreadElems; ++e) {
+      for (int e = 0; e < kLaneVals; ++e) {
         acc[r][e] *= scale;
       }
     }
@@ -421,6 +477,59 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
         for (int r = 0; r < kRowsCap; ++r) {
           if (r < rows) {
             acc[r][e] = fmaf(p_reg[r], v_f, acc[r][e]);
+          }
+        }
+      }
+    }
+  } else if constexpr (kWarpValues) {
+    constexpr int kLaneValBytes = kLaneVals * static_cast<int>(sizeof(Element));
+    constexpr int kValVecs = kLaneValBytes / 16;
+    using NarrowV =
+        typename std::conditional<kLaneValBytes == 8, int2, int>::type;
+    for (int jb = warp; jb < chunk; jb += kWarps * kVBatch) {
+      int4 v_wide[kVBatch][kValVecs > 0 ? kValVecs : 1];
+      NarrowV v_short[kVBatch];
+#pragma unroll
+      for (int b = 0; b < kVBatch; ++b) {
+        const int jj = min(jb + b * kWarps, chunk - 1);
+        const Element* v_row =
+            v_head + static_cast<size_t>(j0 + jj) * kDepth + lane * kLaneVals;
+        if (kValVecs > 0) {
+#pragma unroll
+          for (int c2 = 0; c2 < kValVecs; ++c2) {
+            v_wide[b][c2] = reinterpret_cast<const int4*>(v_row)[c2];
+          }
+        } else {
+          v_short[b] = reinterpret_cast<const NarrowV*>(v_row)[0];
+        }
+      }
+#pragma unroll
+      for (int b = 0; b < kVBatch; ++b) {
+        const int jj = jb + b * kWarps;
+        if (jj >= chunk) {
+          break;
+        }
+        float p_reg[kRowsCap];
+#pragma unroll
+        for (int r4 = 0; r4 < kRowsCap / 4; ++r4) {
+          const float4 packed =
+              reinterpret_cast<const float4*>(p_s + jj * kRowsPad)[r4];
+          p_reg[r4 * 4] = packed.x;
+          p_reg[r4 * 4 + 1] = packed.y;
+          p_reg[r4 * 4 + 2] = packed.z;
+          p_reg[r4 * 4 + 3] = packed.w;
+        }
+        const Element* vals =
+            kValVecs > 0 ? reinterpret_cast<const Element*>(v_wide[b])
+                         : reinterpret_cast<const Element*>(&v_short[b]);
+#pragma unroll
+        for (int e = 0; e < kLaneVals; ++e) {
+          const float v_f = cache.Value(vals[e]);
+#pragma unroll
+          for (int r = 0; r < kRowsCap; ++r) {
+            if (r < rows) {
+              acc[r][e] = fmaf(p_reg[r], v_f, acc[r][e]);
+            }
           }
         }
       }
@@ -475,13 +584,34 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   __syncthreads();  // p_s and mask_s are rewritten by the next chunk
   }
   const size_t part = (static_cast<size_t>(head) * splits + split) * rows;
+  if constexpr (kWarpValues) {
+    // The warps' value sums, merged through shared memory.
+    for (int i = tid; i < rows * kDepth; i += kThreads) {
+      merge_s[i] = 0.0f;
+    }
+    __syncthreads();
 #pragma unroll
-  for (int r = 0; r < kRowsCap; ++r) {
-    if (r < rows) {
-      float* out_row = ws_acc + (part + r) * kDepth + tid * kThreadElems;
+    for (int r = 0; r < kRowsCap; ++r) {
+      if (r < rows) {
 #pragma unroll
-      for (int e = 0; e < kThreadElems; ++e) {
-        out_row[e] = acc[r][e];
+        for (int e = 0; e < kLaneVals; ++e) {
+          atomicAdd(merge_s + r * kDepth + lane * kLaneVals + e, acc[r][e]);
+        }
+      }
+    }
+    __syncthreads();
+    for (int i = tid; i < rows * kDepth; i += kThreads) {
+      ws_acc[part * kDepth + i] = merge_s[i];
+    }
+  } else {
+#pragma unroll
+    for (int r = 0; r < kRowsCap; ++r) {
+      if (r < rows) {
+        float* out_row = ws_acc + (part + r) * kDepth + tid * kThreadElems;
+#pragma unroll
+        for (int e = 0; e < kThreadElems; ++e) {
+          out_row[e] = acc[r][e];
+        }
       }
     }
   }
@@ -572,47 +702,58 @@ __global__ void __launch_bounds__(kCombineThreads)
   }
 }
 
-// Blocks per head: one per chunk up to kMaxSplits; beyond that the blocks
-// loop over chunks, which keeps the partial workspace and the combine small
-// (336 measured slower at 30k keys: the blocks are instruction-bound and the
-// combine grows with the splits).
-constexpr int kMaxSplits = 168;
-int SplitCount(int seq) {
-  const int chunks = (seq + kChunk - 1) / kChunk;
+int SplitCount(int seq, int chunk) {
+  const int chunks = (seq + chunk - 1) / chunk;
   return chunks < kMaxSplits ? chunks : kMaxSplits;
 }
 
+// At least SplitCount of every sequence up to `seq` at either chunk:
+// workspaces are sized for the longest sequence and reused for shorter ones.
+int MaxSplitCount(int seq) {
+  const int chunks = (seq + 31) / 32;
+  return chunks < kMaxSplits ? chunks : kMaxSplits;
+}
 
-template <typename T, int kDepth, int kRowsCap, typename Cache>
-cudaError_t Launch(const T* q, const typename Cache::Element* k,
-                   const typename Cache::Element* v, const Cache& cache,
-                   const bool* mask, int mask_rows, int heads, int rows,
-                   int seq, int cache_len, const int32_t* window_start,
-                   float fill, T* out, void* workspace, cudaStream_t stream) {
-  const int splits = SplitCount(seq);
+template <typename T, int kDepth, int kRowsCap, typename Cache, int kChunk>
+cudaError_t LaunchChunk(const T* q, const typename Cache::Element* k,
+                        const typename Cache::Element* v, const Cache& cache,
+                        const bool* mask, int mask_rows, int heads, int rows,
+                        int seq, int cache_len, const int32_t* window_start,
+                        float fill, T* out, void* workspace,
+                        cudaStream_t stream) {
+  const int splits = SplitCount(seq, kChunk);
   float* ws_acc = static_cast<float*>(workspace);
   float* ws_m = ws_acc + static_cast<size_t>(heads) * splits * rows * kDepth;
   float* ws_l = ws_m + static_cast<size_t>(heads) * splits * rows;
   constexpr size_t kSharedBytes =
-      SharedBytesFor<kDepth, kRowsCap, Cache::kValueColumns>();
+      SharedBytesFor<kDepth, kRowsCap, Cache::kValueColumns, kChunk>();
   static bool attribute_set = false;  // per instantiation
   if (!attribute_set) {
     cudaError_t status = cudaFuncSetAttribute(
-        DecodeAttentionPartial<T, kDepth, kRowsCap, Cache>,
+        DecodeAttentionPartial<T, kDepth, kRowsCap, Cache, kChunk>,
         cudaFuncAttributeMaxDynamicSharedMemorySize,
         static_cast<int>(kSharedBytes));
     if (status != cudaSuccess) {
       return status;
     }
-    status = cudaFuncSetAttribute(
-        DecodeAttentionPartial<T, kDepth, kRowsCap, Cache>,
-        cudaFuncAttributePreferredSharedMemoryCarveout, 100);
-    if (status != cudaSuccess) {
-      return status;
+    // The carveout preference, 100 unless LITERT_NVIDIA_ATTENTION_CARVEOUT
+    // says otherwise (0 leaves it alone; neither measured different in the
+    // 26B's decode step).
+    static const int carveout = [] {
+      const int value = EnvDecimal("LITERT_NVIDIA_ATTENTION_CARVEOUT");
+      return value >= 0 && value <= 100 ? value : 100;
+    }();
+    if (carveout >= 0) {
+      status = cudaFuncSetAttribute(
+          DecodeAttentionPartial<T, kDepth, kRowsCap, Cache, kChunk>,
+          cudaFuncAttributePreferredSharedMemoryCarveout, carveout);
+      if (status != cudaSuccess) {
+        return status;
+      }
     }
     attribute_set = true;
   }
-  DecodeAttentionPartial<T, kDepth, kRowsCap, Cache>
+  DecodeAttentionPartial<T, kDepth, kRowsCap, Cache, kChunk>
       <<<dim3(splits, heads), ThreadsFor<kDepth>(), kSharedBytes, stream>>>(
           q, k, v, cache, mask, mask_rows, rows, seq, cache_len, window_start,
           fill, splits, ws_acc, ws_m, ws_l);
@@ -624,6 +765,24 @@ cudaError_t Launch(const T* q, const typename Cache::Element* k,
       <<<dim3(rows, heads), kCombineThreads, 0, stream>>>(ws_acc, ws_m, ws_l,
                                                           rows, splits, out);
   return cudaGetLastError();
+}
+
+template <typename T, int kDepth, int kRowsCap, typename Cache>
+cudaError_t Launch(const T* q, const typename Cache::Element* k,
+                   const typename Cache::Element* v, const Cache& cache,
+                   const bool* mask, int mask_rows, int heads, int rows,
+                   int seq, int cache_len, const int32_t* window_start,
+                   float fill, T* out, void* workspace, cudaStream_t stream) {
+  switch (ChunkFor(seq, !Cache::kValueColumns && kRowsCap <= 4)) {
+    case 32:
+      return LaunchChunk<T, kDepth, kRowsCap, Cache, 32>(
+          q, k, v, cache, mask, mask_rows, heads, rows, seq, cache_len,
+          window_start, fill, out, workspace, stream);
+    default:
+      return LaunchChunk<T, kDepth, kRowsCap, Cache, 64>(
+          q, k, v, cache, mask, mask_rows, heads, rows, seq, cache_len,
+          window_start, fill, out, workspace, stream);
+  }
 }
 
 template <typename T, int kDepth, typename Cache>
@@ -729,7 +888,8 @@ extern "C" size_t LiteRtNvidiaDecodeAttentionWorkspaceBytes(int32_t heads,
                                                             int32_t rows,
                                                             int32_t seq,
                                                             int32_t depth) {
-  const size_t parts = static_cast<size_t>(heads) * SplitCount(seq) * rows;
+  const size_t parts =
+      static_cast<size_t>(heads) * MaxSplitCount(seq) * rows;
   return parts * (static_cast<size_t>(depth) + 2) * sizeof(float);
 }
 

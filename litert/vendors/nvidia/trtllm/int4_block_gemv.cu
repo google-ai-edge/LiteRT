@@ -219,12 +219,15 @@ __device__ __forceinline__ WeightTile ExpertTile(const uint8_t* weights,
 // index) and, with `renormalize`, divides their probabilities by their sum.
 constexpr int kMaxRouteDim = 4096;
 
+// kPerLane: logits per lane, 4 for up to 128 experts (the per-lane scans of
+// the top-k rounds are the kernel's serial work).
+template <int kPerLane>
 __global__ void MoeRouteKernel(const __nv_bfloat16* __restrict__ logits,
                                int rows, int experts, int top_k,
                                int renormalize,
                                int32_t* __restrict__ top_indices,
                                float* __restrict__ top_weights) {
-  constexpr int kMaxPerLane = kMaxExperts / kWarpSize;  // 32
+  constexpr int kMaxPerLane = kPerLane;
   const int row = blockIdx.x * (blockDim.x / kWarpSize) + threadIdx.x / kWarpSize;
   const int lane = threadIdx.x % kWarpSize;
   if (row >= rows) return;
@@ -876,9 +879,16 @@ extern "C" cudaError_t LiteRtNvidiaLaunchMoeInt4BlockFused(
   if (status != cudaSuccess) return status;
   constexpr int kRouteWarps = 4;
   const int route_blocks = (shape->rows + kRouteWarps - 1) / kRouteWarps;
-  MoeRouteKernel<<<route_blocks, kRouteWarps * kWarpSize, 0, stream>>>(
-      logits, shape->rows, shape->experts, shape->top_k, renormalize,
-      top_indices, top_weights);
+  if (shape->experts <= 4 * kWarpSize) {
+    MoeRouteKernel<4><<<route_blocks, kRouteWarps * kWarpSize, 0, stream>>>(
+        logits, shape->rows, shape->experts, shape->top_k, renormalize,
+        top_indices, top_weights);
+  } else {
+    MoeRouteKernel<kMaxExperts / kWarpSize>
+        <<<route_blocks, kRouteWarps * kWarpSize, 0, stream>>>(
+            logits, shape->rows, shape->experts, shape->top_k, renormalize,
+            top_indices, top_weights);
+  }
   status = cudaPeekAtLastError();
   if (status != cudaSuccess) return status;
   return LaunchMoeChecked(shape, arena, activation, top_indices, top_weights,
