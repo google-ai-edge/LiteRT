@@ -139,9 +139,11 @@ class GatherOpModel : public SingleOpModel {
 
 class PrepareOnlyGatherOpModel : public SingleOpModel {
  public:
-  PrepareOnlyGatherOpModel(int axis, int batch_dims) {
-    input_ = AddInput({TensorType_FLOAT32, {1}});
-    positions_ = AddInput({TensorType_INT32, {1}});
+  PrepareOnlyGatherOpModel(int axis, int batch_dims,
+                           const std::vector<int>& input_shape = {1},
+                           const std::vector<int>& positions_shape = {1}) {
+    input_ = AddInput({TensorType_FLOAT32, input_shape});
+    positions_ = AddInput({TensorType_INT32, positions_shape});
     output_ = AddOutput(TensorType_FLOAT32);
     SetBuiltinOp(BuiltinOperator_GATHER, BuiltinOptions_GatherOptions,
                  CreateGatherOptions(builder_, axis, batch_dims).Union());
@@ -151,6 +153,8 @@ class PrepareOnlyGatherOpModel : public SingleOpModel {
                      /*apply_delegate=*/false,
                      /*allocate_and_delegate=*/false);
   }
+
+  std::vector<int> GetOutputShape() { return GetTensorShape(output_); }
 
  private:
   int input_;
@@ -176,6 +180,52 @@ TEST(GatherPrepareTest, RejectsBatchDimsOutsideInt16Range) {
   PrepareOnlyGatherOpModel too_small(
       /*axis=*/0, std::numeric_limits<int16_t>::min() - 1);
   EXPECT_EQ(too_small.AllocateTensors(), kTfLiteError);
+}
+
+// The tensors in the tests below have no elements, so nothing is allocated,
+// but one of the products that Gather computes with int arithmetic is 2^31.
+// That is one more than INT_MAX and still fits in a 32-bit size_t.
+TEST(GatherPrepareTest, RejectsInnerSizeOverflowWithZeroElements) {
+  PrepareOnlyGatherOpModel model(/*axis=*/0, /*batch_dims=*/0,
+                                 /*input_shape=*/{0, 65536, 32768},
+                                 /*positions_shape=*/{0});
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+}
+
+TEST(GatherPrepareTest, RejectsOuterSizeOverflowWithZeroElements) {
+  PrepareOnlyGatherOpModel model(/*axis=*/2, /*batch_dims=*/0,
+                                 /*input_shape=*/{65536, 32768, 0},
+                                 /*positions_shape=*/{0});
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+}
+
+TEST(GatherPrepareTest, RejectsPositionsSizeOverflowWithZeroElements) {
+  // The output shape is {0, 65536, 32768, 0}, so only the positions product
+  // overflows.
+  PrepareOnlyGatherOpModel model(/*axis=*/1, /*batch_dims=*/0,
+                                 /*input_shape=*/{0, 2},
+                                 /*positions_shape=*/{65536, 32768, 0});
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+}
+
+TEST(GatherPrepareTest, RejectsOutputSizeOverflowWithZeroElements) {
+  // Every input and positions product fits in int, but the output shape is
+  // {65536, 32768, 0}.
+  PrepareOnlyGatherOpModel model(/*axis=*/1, /*batch_dims=*/0,
+                                 /*input_shape=*/{65536, 0},
+                                 /*positions_shape=*/{32768, 0});
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+}
+
+TEST(GatherPrepareTest, ZeroElementsWithLargeDimensionStillWork) {
+  PrepareOnlyGatherOpModel model(
+      /*axis=*/0, /*batch_dims=*/0,
+      /*input_shape=*/{0, std::numeric_limits<int>::max()},
+      /*positions_shape=*/{0});
+  ASSERT_EQ(model.AllocateTensors(), kTfLiteOk);
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+  EXPECT_THAT(model.GetOutputShape(),
+              ElementsAreArray({0, std::numeric_limits<int>::max()}));
 }
 
 struct GatherOpTest : public testing::TestWithParam<bool> {};

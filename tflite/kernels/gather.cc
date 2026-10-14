@@ -16,6 +16,7 @@ limitations under the License.
 
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/common.h"
+#include "tflite/kernels/internal/kernel_utils.h"
 #include "tflite/kernels/internal/optimized/optimized_ops.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/internal/types.h"
@@ -45,6 +46,37 @@ void Free(TfLiteContext* context, void* buffer) {
 }
 
 TfLiteStatus EvalImpl(TfLiteContext* context, TfLiteNode* node);
+
+// reference_ops::Gather views `input` as [batch, outer, axis, inner] and
+// `positions` as [batch, coord], and computes those sizes, the flat input and
+// output sizes, and every copy offset with int arithmetic. Check the input and
+// positions products here. The flat output size is checked after the output is
+// resized. The checks keep detecting overflow after a zero dimension, so a
+// tensor with zero elements cannot hide an oversized product.
+TfLiteStatus ValidateGatherFlattenedShapes(TfLiteContext* context,
+                                           const TfLiteTensor& input,
+                                           const TfLiteTensor& positions,
+                                           int axis, int batch_dims) {
+  int batch_size = 0;
+  TF_LITE_ENSURE_OK(context, kernel_utils::CheckedDimensionProduct(
+                                 context, input, 0, batch_dims, batch_size));
+  int outer_size = 0;
+  TF_LITE_ENSURE_OK(context, kernel_utils::CheckedDimensionProduct(
+                                 context, input, batch_dims, axis, outer_size));
+  int inner_size = 0;
+  TF_LITE_ENSURE_OK(context, kernel_utils::CheckedDimensionProduct(
+                                 context, input, axis + 1,
+                                 NumDimensions(&input), inner_size));
+  int input_size = 0;
+  TF_LITE_ENSURE_OK(context,
+                    kernel_utils::CheckedDimensionProduct(
+                        context, input, 0, NumDimensions(&input), input_size));
+  int coord_size = 0;
+  TF_LITE_ENSURE_OK(context, kernel_utils::CheckedDimensionProduct(
+                                 context, positions, batch_dims,
+                                 NumDimensions(&positions), coord_size));
+  return kTfLiteOk;
+}
 
 TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   OpData* data = reinterpret_cast<OpData*>(node->user_data);
@@ -124,6 +156,9 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   for (int i = 0; i < batch_dims; ++i) {
     TF_LITE_ENSURE_EQ(context, input->dims->data[i], positions->dims->data[i]);
   }
+  TF_LITE_ENSURE_OK(
+      context, ValidateGatherFlattenedShapes(context, *input, *positions, axis,
+                                             batch_dims));
 
   const int num_dimensions =
       NumDimensions(input) + NumDimensions(positions) - 1 - batch_dims;
@@ -142,12 +177,15 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
                IsConstantOrPersistentTensor(positions);
   if (data->noop) {
     SetTensorToPersistentRo(output);
-    TF_LITE_ENSURE_OK(context,
-                      context->ResizeTensor(context, output, output_shape));
-    return EvalImpl(context, node);
-  } else {
-    return context->ResizeTensor(context, output, output_shape);
   }
+  TF_LITE_ENSURE_OK(context,
+                    context->ResizeTensor(context, output, output_shape));
+  // The flat output size is also computed with int arithmetic in Eval.
+  int output_size = 0;
+  TF_LITE_ENSURE_OK(
+      context, kernel_utils::CheckedDimensionProduct(
+                   context, *output, 0, NumDimensions(output), output_size));
+  return data->noop ? EvalImpl(context, node) : kTfLiteOk;
 }
 
 template <typename InputT, typename PositionsT>
