@@ -433,8 +433,8 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
                     *options->use_fold_relu ? "true" : "false", "\n");
   }
   if (options->use_short_op_names.has_value()) {
-    toml << "use_short_op_names = "
-         << (*options->use_short_op_names ? "true" : "false") << "\n";
+    absl::StrAppend(&toml_str, "use_short_op_names = ",
+                    *options->use_short_op_names ? "true" : "false", "\n");
   }
   if (options->htp_dlbc.has_value()) {
     absl::StrAppend(&toml_str, "htp_dlbc = ",

@@ -375,6 +375,11 @@ class QualcommOptions : public ConcreteOptionsBase {
   bool GetUseShortOpNames() {
     bool val;
     auto status = LrtQualcommOptionsGetUseShortOpNames(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
 
   /// @brief Enables HTP DLBC input compression.
   void SetHtpDlbc(bool htp_dlbc) {
