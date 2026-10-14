@@ -3470,6 +3470,98 @@ class TensorRtGraphBuilder {
     return {};
   }
 
+  // An RMS norm fused into a GEMV plugin: the activation the plugin reads is
+  // the norm's input, and the kernel applies rsqrt(mean(x^2) + eps) * scale
+  // * multiplier (the scalar multiplies between the norm and the projection,
+  // Gemma 4 26B-A4B's router scale) itself.
+  struct NormFusion {
+    nvinfer1::ITensor* input = nullptr;  // the norm's input, BF16
+    nvinfer1::ITensor* scale = nullptr;  // FP32 [columns]
+    float eps = 1e-6f;
+    float multiplier = 1.0f;
+  };
+
+  // rms_norm(x, w) -> mul(c1) -> ... -> `tensor` with constant scalars c_i:
+  // the fusion the projection reading `tensor` can take, if its weights are
+  // blockwise (the fused kernels) and x has `columns` dims.
+  Expected<std::optional<NormFusion>> FindNormFusion(const Tensor& tensor,
+                                                     int32_t columns) {
+    if (!EnvEnabled("LITERT_NVIDIA_TENSORRT_FUSE_NORM_GEMV",
+                    /*default_value=*/true)) {
+      return std::optional<NormFusion>();
+    }
+    float multiplier = 1.0f;
+    Tensor value = tensor;
+    for (int hops = 0; hops < 4; ++hops) {
+      auto producer = value.GetDefiningOp();
+      if (!producer) return std::optional<NormFusion>();
+      if (producer->Code() == kLiteRtOpCodeTflMul &&
+          producer->Inputs().size() == 2 && HasNoFusedActivation(*producer)) {
+        std::optional<float> scalar;
+        int other = -1;
+        for (int i = 0; i < 2; ++i) {
+          auto constant = ReadFloatScalar(producer->Inputs()[i]);
+          if (constant) {
+            scalar = *constant;
+            other = 1 - i;
+          }
+        }
+        if (!scalar.has_value()) return std::optional<NormFusion>();
+        multiplier *= *scalar;
+        value = producer->Inputs()[other];
+        continue;
+      }
+      if (producer->Code() == kLiteRtOpCodeTflReshape &&
+          producer->Inputs().size() >= 1) {
+        value = producer->Inputs()[0];
+        continue;
+      }
+      if (producer->Code() != kLiteRtOpCodeShloComposite ||
+          CompositeOpName(*producer) != "odml.rms_norm" ||
+          producer->Inputs().size() != 2 || producer->Outputs().size() != 1) {
+        return std::optional<NormFusion>();
+      }
+      const Tensor x = producer->Inputs()[0];
+      const Tensor w = producer->Inputs()[1];
+      auto x_type = x.RankedTensorType();
+      if (!x_type || x_type->Layout().Rank() < 1 ||
+          x_type->Layout().Dimensions().back() != columns ||
+          !IsFloatLike(x.ElementType()) || x.HasWeights() ||
+          w.ElementType() != litert::ElementType::Float32 || !w.HasWeights() ||
+          w.Weights().Bytes().size() != static_cast<size_t>(columns) * 4) {
+        return std::optional<NormFusion>();
+      }
+      CompositeOptions options;
+      float eps = 1e-6f;
+      if (options.InitFromOp(producer->Get()) == kLiteRtStatusOk &&
+          options.attributes_map.has_value() &&
+          !options.attributes_map.value()["epsilon"].IsNull()) {
+        eps = options.attributes_map.value()["epsilon"].AsFloat();
+      }
+      NormFusion fusion;
+      LITERT_ASSIGN_OR_RETURN(fusion.input, GetTensor(x));
+      LITERT_ASSIGN_OR_RETURN(fusion.input,
+                              AddCastTensor(fusion.input, ModeFloatType()));
+      // The norm output keeps its own TensorRT lowering for other readers;
+      // TensorRT drops it when nothing reads it.
+      std::vector<float> values(columns);
+      std::memcpy(values.data(), w.Weights().Bytes().data(),
+                  values.size() * sizeof(float));
+      nvinfer1::Dims dims{};
+      dims.nbDims = 1;
+      dims.d[0] = columns;
+      LITERT_ASSIGN_OR_RETURN(
+          fusion.scale, AddFloatConstant(values, dims,
+                                         "fused_norm_scale_" +
+                                             std::to_string(w.TensorIndex()),
+                                         nvinfer1::DataType::kFLOAT));
+      fusion.eps = eps;
+      fusion.multiplier = multiplier;
+      return std::optional<NormFusion>(fusion);
+    }
+    return std::optional<NormFusion>();
+  }
+
   // The scales of a GEMV member: per-channel floats, or the FP16 bytes of
   // blockwise scales (FP32 scales are converted into owned storage).
   Expected<void> AppendGemvScales(
@@ -3563,10 +3655,17 @@ class TensorRtGraphBuilder {
       absl::Span<const absl::Span<const uint8_t>> members,
       absl::Span<const float> scales, const std::string& suffix,
       const std::string& output_name, int32_t gate = 0,
-      absl::Span<const absl::Span<const uint8_t>> block_scales = {}) {
+      absl::Span<const absl::Span<const uint8_t>> block_scales = {},
+      const NormFusion* norm = nullptr) {
     const int64_t activation_rows = GemmRows(activation);
-    const bool gemm = !BatchedGemvTakes(activation_rows) || gate != 0;
     const bool blockwise = info.scale_block != 0;
+    // The blockwise GEMV has a gate mode; the per-channel one needs the GEMM.
+    const bool gemm =
+        !BatchedGemvTakes(activation_rows) || (gate != 0 && !blockwise);
+    if (norm != nullptr && !blockwise) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "A fused norm needs blockwise weights");
+    }
     size_t packed_bytes = 0;
     for (const auto& member : members) {
       packed_bytes += member.size();
@@ -3713,14 +3812,19 @@ class TensorRtGraphBuilder {
         location.has_value() ? static_cast<int64_t>(location->offset) : 0,
         location.has_value() ? static_cast<int64_t>(weight_store_->granule())
                              : 0,
-        info.scale_block, scale_offset));
+        info.scale_block, scale_offset, norm != nullptr ? norm->eps : -1.0f,
+        norm != nullptr ? norm->multiplier : 1.0f));
     if (!plugin) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to create CUDA subbyte GEMV plugin");
     }
-    nvinfer1::ITensor* inputs[] = {activation, packed_tensor, scale_tensor};
-    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
-        *network_, inputs, std::size(inputs), *plugin);
+    std::vector<nvinfer1::ITensor*> inputs = {activation, packed_tensor,
+                                              scale_tensor};
+    if (norm != nullptr) {
+      inputs.push_back(norm->scale);
+    }
+    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(*network_, inputs.data(),
+                                                     inputs.size(), *plugin);
     if (layer == nullptr || layer->getOutput(0) == nullptr) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add CUDA subbyte GEMV plugin layer");
@@ -3900,7 +4004,8 @@ class TensorRtGraphBuilder {
   Expected<void> AddGatedFeedForward(const Op& gate_op,
                                      const GatedFeedForward& pair,
                                      nvinfer1::ITensor* activation,
-                                     nvinfer1::DataType compute_type) {
+                                     nvinfer1::DataType compute_type,
+                                     const NormFusion* norm = nullptr) {
     LITERT_ASSIGN_OR_RETURN(auto info,
                             InspectSubbyteGemvWeights(gate_op.Inputs()[1]));
     LITERT_RETURN_IF_ERROR(
@@ -3925,7 +4030,7 @@ class TensorRtGraphBuilder {
         AddSubbyteGemvPlugin(activation, gated_info, members,
                              absl::MakeConstSpan(scales), suffix,
                              "cuda_subbyte_gated_gemm" + suffix, pair.gate,
-                             absl::MakeConstSpan(block_scales)));
+                             absl::MakeConstSpan(block_scales), norm));
     LITERT_ASSIGN_OR_RETURN(auto out_type,
                             pair.multiply->Outputs()[0].RankedTensorType());
     LITERT_ASSIGN_OR_RETURN(auto out_dims, ConvertDims(out_type));
@@ -3948,9 +4053,9 @@ class TensorRtGraphBuilder {
   // fused output from fused_gemv_outputs_ when the lowering reaches them.
   Expected<nvinfer1::ITensor*> AddCudaSubbyteGemvGroup(
       const Op& op, nvinfer1::ITensor* activation,
-      nvinfer1::DataType compute_type) {
+      nvinfer1::DataType compute_type, const NormFusion* norm = nullptr) {
     if (!FuseGemvGroupsEnabled()) {
-      return AddCudaSubbyteGemv(op.Inputs()[1], activation, compute_type);
+      return AddCudaSubbyteGemv(op.Inputs()[1], activation, compute_type, norm);
     }
     LITERT_ASSIGN_OR_RETURN(auto first,
                             InspectSubbyteGemvWeights(op.Inputs()[1]));
@@ -3995,7 +4100,7 @@ class TensorRtGraphBuilder {
       group.push_back(user);
     }
     if (group.size() <= 1) {
-      return AddCudaSubbyteGemv(op.Inputs()[1], activation, compute_type);
+      return AddCudaSubbyteGemv(op.Inputs()[1], activation, compute_type, norm);
     }
     std::sort(group.begin(), group.end(), [&](const Op& a, const Op& b) {
       return op_order_[a.Get()] < op_order_[b.Get()];
@@ -4037,7 +4142,7 @@ class TensorRtGraphBuilder {
         AddSubbyteGemvPlugin(activation, group_info, members,
                              absl::MakeConstSpan(scales), suffix,
                              "cuda_subbyte_gemv_group" + suffix, /*gate=*/0,
-                             absl::MakeConstSpan(block_scales)));
+                             absl::MakeConstSpan(block_scales), norm));
 
     const int axis = activation_dims.nbDims - 1;
     nvinfer1::ITensor* first_output = nullptr;
@@ -4078,7 +4183,7 @@ class TensorRtGraphBuilder {
 
   Expected<nvinfer1::ITensor*> AddCudaSubbyteGemv(
       const Tensor& tensor, nvinfer1::ITensor* activation,
-      nvinfer1::DataType compute_type) {
+      nvinfer1::DataType compute_type, const NormFusion* norm = nullptr) {
     LITERT_ASSIGN_OR_RETURN(auto info, InspectSubbyteGemvWeights(tensor));
     LITERT_RETURN_IF_ERROR(
         ValidateSubbyteGemvActivation(activation, compute_type, info.columns,
@@ -4094,7 +4199,7 @@ class TensorRtGraphBuilder {
         AddSubbyteGemvPlugin(activation, info, members,
                              absl::MakeConstSpan(scales), suffix,
                              "cuda_subbyte_gemv" + suffix, /*gate=*/0,
-                             absl::MakeConstSpan(block_scales)));
+                             absl::MakeConstSpan(block_scales), norm));
     LITERT_LOG(LITERT_INFO,
                "NVIDIA TensorRT-RTX CUDA subbyte GEMV: tensor=%u bits=%d "
                "N=%lld K=%lld",
@@ -7250,13 +7355,27 @@ class TensorRtGraphBuilder {
     // The few rows of a verify step run on the batched GEMV like decode.
     const bool cuda_batched_gemv =
         !static_m_is_one && rows > 1 && BatchedGemvTakes(rows);
+    // Blockwise projections read their RMS norm's input and apply the norm
+    // in the kernel (FindNormFusion).
+    std::optional<NormFusion> norm;
+    if (blockwise && Fp16ActivationsEnabled() &&
+        predequant_mode == PredequantMode::kCudaGemv) {
+      const auto in_dims = input->getDimensions();
+      LITERT_ASSIGN_OR_RETURN(
+          norm, FindNormFusion(op.Inputs()[0], in_dims.d[in_dims.nbDims - 1]));
+    }
+    const NormFusion* norm_ptr = norm.has_value() ? &*norm : nullptr;
+    nvinfer1::ITensor* gemv_input = norm.has_value() ? norm->input : input;
+    // A gated pair runs as one launch: the GEMM over many rows, the
+    // blockwise GEMV's gate mode over a few.
     if (Fp16ActivationsEnabled() &&
         predequant_mode == PredequantMode::kCudaGemv && sub_byte_weights &&
-        cuda_gemm) {
+        (cuda_gemm || (blockwise && (static_m_is_one || cuda_batched_gemv)))) {
       if (const auto pair = FindGatedFeedForward(op); pair.has_value()) {
         LITERT_ASSIGN_OR_RETURN(auto* activation,
-                                AddCastTensor(input, compute_type));
-        auto gated = AddGatedFeedForward(op, *pair, activation, compute_type);
+                                AddCastTensor(gemv_input, compute_type));
+        auto gated =
+            AddGatedFeedForward(op, *pair, activation, compute_type, norm_ptr);
         if (gated.HasValue()) {
           return {};
         }
@@ -7271,8 +7390,8 @@ class TensorRtGraphBuilder {
         (static_m_is_one || cuda_batched_gemv ||
          (cuda_gemm &&
           (GetCudaGemmMode() == CudaGemmMode::kAll || blockwise)))) {
-      LITERT_ASSIGN_OR_RETURN(input, AddCastTensor(input, compute_type));
-      auto fused = AddCudaSubbyteGemvGroup(op, input, compute_type);
+      LITERT_ASSIGN_OR_RETURN(input, AddCastTensor(gemv_input, compute_type));
+      auto fused = AddCudaSubbyteGemvGroup(op, input, compute_type, norm_ptr);
       if (fused.HasValue()) {
         return FinishFullyConnected(op, *fused, compute_type);
       }
@@ -8252,9 +8371,162 @@ class TensorRtGraphBuilder {
     return SetOutputTensor(op.Outputs()[0], out);
   }
 
+  // The router of a mixture-of-experts block as the graph expresses it,
+  // starting from the moe op's inputs:
+  //   top_indices  <- [reshape] <- topk(softmax(fc(router_in, W_router))).1
+  //   top_weights  <- [reshape] <- div(topk.0, sum(topk.0)) | topk.0
+  //   router_in    <- [mul c]* <- [reshape] <- rms_norm(X, w_router)
+  //   x            <- [reshape] <- rms_norm(X, w_experts)
+  // with one residual X. The fused plugin takes X and does all of it.
+  struct MoeRouting {
+    Tensor residual;
+    Tensor router_norm;
+    Tensor router_weights;
+    Tensor expert_norm;
+    float multiplier = 1.0f;
+    float eps = 1e-6f;
+  };
+
+  static Tensor StripReshapes(Tensor tensor) {
+    for (int hops = 0; hops < 4; ++hops) {
+      auto producer = tensor.GetDefiningOp();
+      if (!producer || producer->Code() != kLiteRtOpCodeTflReshape ||
+          producer->Inputs().empty()) {
+        break;
+      }
+      tensor = producer->Inputs()[0];
+    }
+    return tensor;
+  }
+
+  static std::optional<Op> NormOf(const Tensor& tensor) {
+    auto producer = StripReshapes(tensor).GetDefiningOp();
+    if (!producer || producer->Code() != kLiteRtOpCodeShloComposite ||
+        CompositeOpName(*producer) != "odml.rms_norm" ||
+        producer->Inputs().size() != 2 || producer->Outputs().size() != 1) {
+      return std::nullopt;
+    }
+    return *producer;
+  }
+
+  std::optional<MoeRouting> FindMoeRouting(const Op& op,
+                                           const MoeCustomOp& moe) {
+    if (!EnvEnabled("LITERT_NVIDIA_TENSORRT_FUSE_MOE_ROUTER",
+                    /*default_value=*/true)) {
+      return std::nullopt;
+    }
+    MoeRouting routing;
+    // The expert norm.
+    const auto expert_norm = NormOf(op.Inputs()[0]);
+    if (!expert_norm.has_value()) return std::nullopt;
+    routing.residual = expert_norm->Inputs()[0];
+    routing.expert_norm = expert_norm->Inputs()[1];
+    CompositeOptions options;
+    if (options.InitFromOp(expert_norm->Get()) == kLiteRtStatusOk &&
+        options.attributes_map.has_value() &&
+        !options.attributes_map.value()["epsilon"].IsNull()) {
+      routing.eps = options.attributes_map.value()["epsilon"].AsFloat();
+    }
+    // The top-k whose indices the op takes.
+    const Tensor indices = StripReshapes(op.Inputs()[2]);
+    auto topk = indices.GetDefiningOp();
+    if (!topk || topk->Code() != kLiteRtOpCodeTflTopkV2 ||
+        topk->Inputs().size() != 2 || topk->Outputs().size() != 2 ||
+        topk->Outputs()[1].Get() != indices.Get()) {
+      return std::nullopt;
+    }
+    const auto k = ReadInt32Constant(topk->Inputs()[1]);
+    if (!k || k->size() != 1 || (*k)[0] != moe.top_k) return std::nullopt;
+    // Its values, renormalized by their sum.
+    const Tensor weights = StripReshapes(op.Inputs()[1]);
+    auto div = weights.GetDefiningOp();
+    if (!div || div->Code() != kLiteRtOpCodeTflDiv ||
+        div->Inputs().size() != 2 || !HasNoFusedActivation(*div) ||
+        StripReshapes(div->Inputs()[0]).Get() != topk->Outputs()[0].Get()) {
+      return std::nullopt;
+    }
+    auto sum = StripReshapes(div->Inputs()[1]).GetDefiningOp();
+    if (!sum || sum->Code() != kLiteRtOpCodeTflSum || sum->Inputs().empty() ||
+        StripReshapes(sum->Inputs()[0]).Get() != topk->Outputs()[0].Get()) {
+      return std::nullopt;
+    }
+    // softmax(fc(router_in, W)) with a plain softmax.
+    auto softmax = StripReshapes(topk->Inputs()[0]).GetDefiningOp();
+    float beta = 1.0f;
+    if (!softmax || softmax->Code() != kLiteRtOpCodeTflSoftmax ||
+        LiteRtGetSoftmaxBetaOption(softmax->Get(), &beta) != kLiteRtStatusOk ||
+        beta != 1.0f) {
+      return std::nullopt;
+    }
+    auto fc = StripReshapes(softmax->Inputs()[0]).GetDefiningOp();
+    if (!fc || fc->Code() != kLiteRtOpCodeTflFullyConnected ||
+        fc->Inputs().size() != 2 || !HasNoFusedActivation(*fc) ||
+        !IsBlockwiseInt4Weights(fc->Inputs()[1])) {
+      return std::nullopt;
+    }
+    auto w_type = fc->Inputs()[1].RankedTensorType();
+    if (!w_type || w_type->Layout().Dimensions()[0] != moe.experts ||
+        w_type->Layout().Dimensions()[1] != moe.model_dim) {
+      return std::nullopt;
+    }
+    routing.router_weights = fc->Inputs()[1];
+    // The router norm behind the scalar multiplies.
+    Tensor value = fc->Inputs()[0];
+    for (int hops = 0; hops < 4; ++hops) {
+      value = StripReshapes(value);
+      auto producer = value.GetDefiningOp();
+      if (!producer || producer->Code() != kLiteRtOpCodeTflMul ||
+          producer->Inputs().size() != 2 || !HasNoFusedActivation(*producer)) {
+        break;
+      }
+      std::optional<float> scalar;
+      int other = -1;
+      for (int i = 0; i < 2; ++i) {
+        if (auto constant = ReadFloatScalar(producer->Inputs()[i])) {
+          scalar = *constant;
+          other = 1 - i;
+        }
+      }
+      if (!scalar.has_value()) return std::nullopt;
+      routing.multiplier *= *scalar;
+      value = producer->Inputs()[other];
+    }
+    const auto router_norm = NormOf(value);
+    if (!router_norm.has_value() ||
+        router_norm->Inputs()[0].Get() != routing.residual.Get()) {
+      return std::nullopt;
+    }
+    routing.router_norm = router_norm->Inputs()[1];
+    for (const Tensor* w : {&routing.router_norm, &routing.expert_norm}) {
+      if (w->ElementType() != litert::ElementType::Float32 ||
+          !w->HasWeights() ||
+          w->Weights().Bytes().size() !=
+              static_cast<size_t>(moe.model_dim) * sizeof(float)) {
+        return std::nullopt;
+      }
+    }
+    return routing;
+  }
+
+  Expected<nvinfer1::ITensor*> AddNormScaleConstant(const Tensor& w,
+                                                    int32_t columns,
+                                                    const std::string& name) {
+    std::vector<float> values(columns);
+    std::memcpy(values.data(), w.Weights().Bytes().data(),
+                values.size() * sizeof(float));
+    nvinfer1::Dims dims{};
+    dims.nbDims = 1;
+    dims.d[0] = columns;
+    return AddFloatConstant(values, dims,
+                            name + std::to_string(w.TensorIndex()),
+                            nvinfer1::DataType::kFLOAT);
+  }
+
   // The moe custom op as the CUDA mixture-of-experts plugin. The experts'
   // bytes are located in the model file through the weight store's mapping;
-  // the plugin loads them when an execution context attaches.
+  // the plugin loads them when an execution context attaches. With the
+  // router chain recognized (FindMoeRouting) the plugin takes the residual
+  // stream and routes itself.
   Expected<void> LowerCustomOp(const Op& op) {
     const auto moe = ParseMoeCustomOp(op);
     if (!moe.has_value()) {
@@ -8280,16 +8552,6 @@ class TensorRtGraphBuilder {
                               weight_store_->SourceOffset(bytes));
       source.sizes[i] = bytes.size();
     }
-    LITERT_ASSIGN_OR_RETURN(auto* x, GetTensor(op.Inputs()[0]));
-    LITERT_ASSIGN_OR_RETURN(x, AddCastTensor(x, nvinfer1::DataType::kBF16));
-    LITERT_ASSIGN_OR_RETURN(auto* top_weights, GetTensor(op.Inputs()[1]));
-    LITERT_ASSIGN_OR_RETURN(
-        top_weights, AddCastTensor(top_weights, nvinfer1::DataType::kFLOAT));
-    LITERT_ASSIGN_OR_RETURN(auto* top_indices, GetTensor(op.Inputs()[2]));
-    if (top_indices->getType() != nvinfer1::DataType::kINT32) {
-      return Error(kLiteRtStatusErrorUnsupported,
-                   "The moe op's expert indices must be int32");
-    }
     const auto scale_bytes = op.Inputs()[9].Weights().Bytes();
     std::vector<float> expert_scales(moe->experts);
     std::memcpy(expert_scales.data(), scale_bytes.data(),
@@ -8303,16 +8565,71 @@ class TensorRtGraphBuilder {
             expert_scales, scale_dims,
             "moe_expert_scale_" + std::to_string(op.Inputs()[9].TensorIndex()),
             nvinfer1::DataType::kFLOAT));
-    TrtPtr<nvinfer1::IPluginV3> plugin(
-        CreateMoePlugin(moe->experts, moe->top_k, moe->model_dim,
-                        moe->hidden_dim, moe->gate, source));
+    std::optional<MoeRouting> routing = FindMoeRouting(op, *moe);
+    if (routing.has_value()) {
+      // The router's rows and scales join the arena.
+      const Tensor& router = routing->router_weights;
+      const Tensor router_scales(router.Context(),
+                                 router.BlockWiseQuantization().scales);
+      const auto router_bytes = router.Weights().Bytes();
+      const auto router_scale_bytes = router_scales.Weights().Bytes();
+      auto offset = weight_store_->SourceOffset(router_bytes);
+      auto scale_offset = weight_store_->SourceOffset(router_scale_bytes);
+      if (offset && scale_offset) {
+        source.offsets[6] = *offset;
+        source.sizes[6] = router_bytes.size();
+        source.offsets[7] = *scale_offset;
+        source.sizes[7] = router_scale_bytes.size();
+        source.router_scale_type =
+            router_scales.ElementType() == litert::ElementType::Float32 ? 0 : 1;
+      } else {
+        LITERT_LOG(
+            LITERT_INFO,
+            "NVIDIA TensorRT-RTX: the router of the moe op at tensor %u "
+            "is not a view of the model file; routing stays in the graph",
+            op.Inputs()[3].TensorIndex());
+        routing.reset();
+      }
+    }
+    std::vector<nvinfer1::ITensor*> inputs;
+    TrtPtr<nvinfer1::IPluginV3> plugin;
+    if (routing.has_value()) {
+      LITERT_ASSIGN_OR_RETURN(auto* x, GetTensor(routing->residual));
+      LITERT_ASSIGN_OR_RETURN(x, AddCastTensor(x, nvinfer1::DataType::kBF16));
+      LITERT_ASSIGN_OR_RETURN(
+          auto* router_norm,
+          AddNormScaleConstant(routing->router_norm, moe->model_dim,
+                               "moe_router_norm_"));
+      LITERT_ASSIGN_OR_RETURN(
+          auto* expert_norm,
+          AddNormScaleConstant(routing->expert_norm, moe->model_dim,
+                               "moe_expert_norm_"));
+      plugin.reset(CreateMoePlugin(moe->experts, moe->top_k, moe->model_dim,
+                                   moe->hidden_dim, moe->gate, source,
+                                   /*routed=*/true, routing->eps,
+                                   routing->multiplier));
+      inputs = {x, expert_scale, router_norm, expert_norm};
+    } else {
+      LITERT_ASSIGN_OR_RETURN(auto* x, GetTensor(op.Inputs()[0]));
+      LITERT_ASSIGN_OR_RETURN(x, AddCastTensor(x, nvinfer1::DataType::kBF16));
+      LITERT_ASSIGN_OR_RETURN(auto* top_weights, GetTensor(op.Inputs()[1]));
+      LITERT_ASSIGN_OR_RETURN(
+          top_weights, AddCastTensor(top_weights, nvinfer1::DataType::kFLOAT));
+      LITERT_ASSIGN_OR_RETURN(auto* top_indices, GetTensor(op.Inputs()[2]));
+      if (top_indices->getType() != nvinfer1::DataType::kINT32) {
+        return Error(kLiteRtStatusErrorUnsupported,
+                     "The moe op's expert indices must be int32");
+      }
+      plugin.reset(CreateMoePlugin(moe->experts, moe->top_k, moe->model_dim,
+                                   moe->hidden_dim, moe->gate, source));
+      inputs = {x, top_weights, top_indices, expert_scale};
+    }
     if (!plugin) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to create the CUDA mixture-of-experts plugin");
     }
-    nvinfer1::ITensor* inputs[] = {x, top_weights, top_indices, expert_scale};
-    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
-        *network_, inputs, std::size(inputs), *plugin);
+    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(*network_, inputs.data(),
+                                                     inputs.size(), *plugin);
     if (layer == nullptr || layer->getOutput(0) == nullptr) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add the CUDA mixture-of-experts plugin layer");
@@ -8324,9 +8641,10 @@ class TensorRtGraphBuilder {
     owned_plugins_.push_back(std::move(plugin));
     LITERT_LOG(LITERT_INFO,
                "NVIDIA TensorRT-RTX CUDA mixture of experts: experts=%d "
-               "top_k=%d model_dim=%d hidden_dim=%d rows=%d weights at %llu",
+               "top_k=%d model_dim=%d hidden_dim=%d rows=%d weights at %llu%s",
                moe->experts, moe->top_k, moe->model_dim, moe->hidden_dim,
-               moe->rows, static_cast<unsigned long long>(source.offsets[0]));
+               moe->rows, static_cast<unsigned long long>(source.offsets[0]),
+               routing.has_value() ? " (router fused)" : "");
     return SetOutputTensor(op.Outputs()[0], layer->getOutput(0));
   }
 

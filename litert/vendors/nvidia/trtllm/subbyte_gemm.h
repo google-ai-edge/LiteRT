@@ -118,6 +118,13 @@ extern "C" cudaError_t LiteRtNvidiaLaunchGemmScaleRows(
     const void* activation, const int32_t* row_indices, int32_t rows,
     int32_t input_size, float* row_scale, void* scaled, cudaStream_t stream);
 
+// The pre-pass with an RMS norm of each gathered row (see
+// LiteRtNvidiaLaunchBf16Int4GemmNormed).
+extern "C" cudaError_t LiteRtNvidiaLaunchGemmScaleRowsNormed(
+    const void* activation, const int32_t* row_indices, int32_t rows,
+    int32_t input_size, const float* norm_scale, float norm_eps,
+    float norm_multiplier, float* row_scale, void* scaled, cudaStream_t stream);
+
 // The GEMM over pre-scaled activations (LiteRtNvidiaLaunchGemmScaleRows) and
 // grouped weights. `shape.rows` is the padded row count, a multiple of 128.
 extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GroupedGemm(
@@ -127,6 +134,16 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GroupedGemm(
 
 extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4Gemm(
     const LiteRtNvidiaGemmShape* shape, const void* activation,
+    const uint8_t* weights, const void* scales, void* output, void* workspace,
+    cudaStream_t stream);
+
+// The same with an RMS norm of the activation rows fused into the pre-pass:
+// row x becomes x * rsqrt(mean(x^2) + norm_eps) * norm_scale[k] *
+// norm_multiplier (norm_scale an FP32 vector of input_size values; null is
+// the plain product).
+extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GemmNormed(
+    const LiteRtNvidiaGemmShape* shape, const void* activation,
+    const float* norm_scale, float norm_eps, float norm_multiplier,
     const uint8_t* weights, const void* scales, void* output, void* workspace,
     cudaStream_t stream);
 

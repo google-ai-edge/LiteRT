@@ -17,9 +17,11 @@
 #include "third_party/gpus/cuda/include/cuda_bf16.h"
 #include "third_party/gpus/cuda/include/cuda_fp16.h"
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <type_traits>
 
 #include "litert/vendors/nvidia/trtllm/int4_block_gemv.cuh"
 #include "litert/vendors/nvidia/trtllm/subbyte_gemm.h"
@@ -29,51 +31,75 @@ namespace {
 
 // One CTA computes kTileRows output channels of every activation row (and
 // with a gate, the gate and the up rows of those channels).
-template <int Rows, int Threads, int Gate>
+// With `norm_scale` the product includes an RMS norm of the activation
+// row: y = (x * rsqrt(mean(x^2) + norm_eps) * norm_scale * norm_multiplier)
+// . w.
+// TileRows output channels per CTA: eight for wide projections, fewer for
+// narrow ones so that enough CTAs are in flight to cover memory latency.
+template <int Rows, int Threads, int Gate, int TileRows>
 __global__ void __launch_bounds__(Threads)
     DenseKernel(const __nv_bfloat16* __restrict__ activation,
                 const uint8_t* __restrict__ weights,
                 const __half* __restrict__ scales,
-                __nv_bfloat16* __restrict__ output, int input_size,
-                int output_size) {
+                const float* __restrict__ norm_scale, float norm_eps,
+                float norm_multiplier, __nv_bfloat16* __restrict__ output,
+                int input_size, int output_size) {
   constexpr int kWarps = Threads / kWarpSize;
-  __shared__ float warp_sums[Rows * kTileRows * kWarps];
-  const int n0 = blockIdx.x * kTileRows;
+  __shared__ float warp_sums[Rows * TileRows * kWarps];
+  const int n0 = blockIdx.x * TileRows;
   if (n0 >= output_size) {
     return;
   }
   const int blocks = input_size / kBlock;
   const size_t row_bytes = static_cast<size_t>(input_size) / 2;
-  const int valid = min(kTileRows, output_size - n0);
+  const int valid = min(TileRows, output_size - n0);
   const ActivationRows<__nv_bfloat16> act{activation,
                                           static_cast<size_t>(input_size),
                                           nullptr};
-  float acc[Rows][kTileRows] = {};
+  float acc[Rows][TileRows] = {};
+  float squares[Rows] = {};
   const WeightTile tile{weights + n0 * row_bytes, row_bytes,
                         scales + static_cast<size_t>(n0) * blocks,
                         static_cast<size_t>(blocks), valid};
-  AccumulateTile<__nv_bfloat16, Rows, Threads>(tile, act, input_size, acc);
-  ReduceTile<Rows, Threads>(acc, warp_sums);
-  float up[Rows][kTileRows] = {};
+  AccumulateTile<__nv_bfloat16, Rows, Threads, TileRows>(
+      tile, act, input_size, acc, norm_scale, squares);
+  ReduceTile<Rows, Threads, TileRows>(acc, warp_sums);
+  float up[Rows][TileRows] = {};
   if constexpr (Gate != 0) {
     const size_t up_row = static_cast<size_t>(output_size) + n0;
     const WeightTile up_tile{weights + up_row * row_bytes, row_bytes,
                              scales + up_row * blocks,
                              static_cast<size_t>(blocks), valid};
     __syncthreads();  // warp_sums is reused
-    AccumulateTile<__nv_bfloat16, Rows, Threads>(up_tile, act, input_size,
-                                                 up);
-    ReduceTile<Rows, Threads>(up, warp_sums);
+    // The up projection reads the same normalized activations; its sums of
+    // squares are the gate's over again and are dropped.
+    float up_squares[Rows] = {};
+    AccumulateTile<__nv_bfloat16, Rows, Threads, TileRows>(
+        up_tile, act, input_size, up, norm_scale, up_squares);
+    ReduceTile<Rows, Threads, TileRows>(up, warp_sums);
+  }
+  float row_factor[Rows];
+#pragma unroll
+  for (int r = 0; r < Rows; ++r) row_factor[r] = 1.0f;
+  if (norm_scale != nullptr) {
+    if constexpr (kWarps > 1) __syncthreads();  // warp_sums is reused
+    ReduceRows<Rows, Threads>(squares, warp_sums);
+#pragma unroll
+    for (int r = 0; r < Rows; ++r) {
+      row_factor[r] =
+          rsqrtf(squares[r] / static_cast<float>(input_size) + norm_eps) *
+          norm_multiplier;
+    }
   }
   if (threadIdx.x == 0) {
 #pragma unroll
     for (int r = 0; r < Rows; ++r) {
 #pragma unroll
-      for (int i = 0; i < kTileRows; ++i) {
+      for (int i = 0; i < TileRows; ++i) {
         if (i < valid) {
-          float value = acc[r][i];
+          float value = acc[r][i] * row_factor[r];
           if constexpr (Gate != 0) {
-            value = Gelu(value, Gate) * up[r][i];
+            value = Gelu(value, Gate) * up[r][i] * row_factor[r];
           }
           output[static_cast<size_t>(r) * output_size + n0 + i] =
               __float2bfloat16_rn(value);
@@ -83,32 +109,56 @@ __global__ void __launch_bounds__(Threads)
   }
 }
 
+struct DenseNorm {
+  const float* scale = nullptr;
+  float eps = 0.0f;
+  float multiplier = 1.0f;
+};
+
+// Enough CTAs to keep the device's memory system busy.
+constexpr int kDenseMinCtas = 1024;
+
 template <int Rows, int Threads, int Gate>
 cudaError_t LaunchDense(const __nv_bfloat16* activation,
                         const uint8_t* weights, const __half* scales,
-                        __nv_bfloat16* output, int input_size,
-                        int output_size, cudaStream_t stream) {
-  const int grid = (output_size + kTileRows - 1) / kTileRows;
-  DenseKernel<Rows, Threads, Gate><<<grid, Threads, 0, stream>>>(
-      activation, weights, scales, output, input_size, output_size);
-  return cudaPeekAtLastError();
+                        const DenseNorm& norm, __nv_bfloat16* output,
+                        int input_size, int output_size, cudaStream_t stream) {
+  const auto launch = [&](auto tile_rows) {
+    constexpr int kRows = decltype(tile_rows)::value;
+    const int grid = (output_size + kRows - 1) / kRows;
+    DenseKernel<Rows, Threads, Gate, kRows><<<grid, Threads, 0, stream>>>(
+        activation, weights, scales, norm.scale, norm.eps, norm.multiplier,
+        output, input_size, output_size);
+    return cudaPeekAtLastError();
+  };
+  if (output_size >= kDenseMinCtas * kTileRows) {
+    return launch(std::integral_constant<int, kTileRows>());
+  }
+  if (output_size >= kDenseMinCtas * 4) {
+    return launch(std::integral_constant<int, 4>());
+  }
+  return launch(std::integral_constant<int, 2>());
 }
 
 template <int Rows, int Threads>
 cudaError_t LaunchDenseGate(const __nv_bfloat16* activation,
                             const uint8_t* weights, const __half* scales,
-                            __nv_bfloat16* output, int input_size,
-                            int output_size, int gate, cudaStream_t stream) {
+                            const DenseNorm& norm, __nv_bfloat16* output,
+                            int input_size, int output_size, int gate,
+                            cudaStream_t stream) {
   switch (gate) {
     case 0:
-      return LaunchDense<Rows, Threads, 0>(activation, weights, scales, output,
-                                           input_size, output_size, stream);
+      return LaunchDense<Rows, Threads, 0>(activation, weights, scales, norm,
+                                           output, input_size, output_size,
+                                           stream);
     case 1:
-      return LaunchDense<Rows, Threads, 1>(activation, weights, scales, output,
-                                           input_size, output_size, stream);
+      return LaunchDense<Rows, Threads, 1>(activation, weights, scales, norm,
+                                           output, input_size, output_size,
+                                           stream);
     case 2:
-      return LaunchDense<Rows, Threads, 2>(activation, weights, scales, output,
-                                           input_size, output_size, stream);
+      return LaunchDense<Rows, Threads, 2>(activation, weights, scales, norm,
+                                           output, input_size, output_size,
+                                           stream);
     default:
       return cudaErrorInvalidValue;
   }
@@ -117,13 +167,14 @@ cudaError_t LaunchDenseGate(const __nv_bfloat16* activation,
 template <int Threads>
 cudaError_t LaunchDenseRows(const __nv_bfloat16* activation,
                             const uint8_t* weights, const __half* scales,
-                            __nv_bfloat16* output, int rows, int input_size,
-                            int output_size, int gate, cudaStream_t stream) {
+                            const DenseNorm& norm, __nv_bfloat16* output,
+                            int rows, int input_size, int output_size,
+                            int gate, cudaStream_t stream) {
   switch (rows) {
-#define LITERT_NVIDIA_INT4_BLOCK_ROWS_CASE(n)                             \
-  case n:                                                                 \
-    return LaunchDenseGate<n, Threads>(activation, weights, scales, output, \
-                                       input_size, output_size, gate,     \
+#define LITERT_NVIDIA_INT4_BLOCK_ROWS_CASE(n)                                \
+  case n:                                                                    \
+    return LaunchDenseGate<n, Threads>(activation, weights, scales, norm,     \
+                                       output, input_size, output_size, gate, \
                                        stream);
     LITERT_NVIDIA_INT4_BLOCK_ROWS_CASE(1)
     LITERT_NVIDIA_INT4_BLOCK_ROWS_CASE(2)
@@ -162,12 +213,90 @@ __device__ __forceinline__ WeightTile ExpertTile(const uint8_t* weights,
                     min(kTileRows, out_rows - o0)};
 }
 
+// Routing from the router's logits (BF16 [rows, experts], one launch of the
+// normed GEMV or GEMM over the arena's router rows): one warp per row takes
+// the softmax, the top_k largest by repeated argmax (ties to the lower
+// index) and, with `renormalize`, divides their probabilities by their sum.
+constexpr int kMaxRouteDim = 4096;
+
+__global__ void MoeRouteKernel(const __nv_bfloat16* __restrict__ logits,
+                               int rows, int experts, int top_k,
+                               int renormalize,
+                               int32_t* __restrict__ top_indices,
+                               float* __restrict__ top_weights) {
+  constexpr int kMaxPerLane = kMaxExperts / kWarpSize;  // 32
+  const int row = blockIdx.x * (blockDim.x / kWarpSize) + threadIdx.x / kWarpSize;
+  const int lane = threadIdx.x % kWarpSize;
+  if (row >= rows) return;
+  const __nv_bfloat16* src = logits + static_cast<size_t>(row) * experts;
+  float values[kMaxPerLane];
+  float largest = -INFINITY;
+#pragma unroll
+  for (int i = 0; i < kMaxPerLane; ++i) {
+    const int e = lane + i * kWarpSize;
+    values[i] = e < experts ? __bfloat162float(src[e]) : -INFINITY;
+    largest = fmaxf(largest, values[i]);
+  }
+#pragma unroll
+  for (int offset = 16; offset > 0; offset /= 2) {
+    largest = fmaxf(largest, __shfl_xor_sync(kFullWarpMask, largest, offset));
+  }
+  float sum = 0.0f;
+#pragma unroll
+  for (int i = 0; i < kMaxPerLane; ++i) {
+    values[i] = lane + i * kWarpSize < experts ? expf(values[i] - largest) : 0.0f;
+    sum += values[i];
+  }
+#pragma unroll
+  for (int offset = 16; offset > 0; offset /= 2) {
+    sum += __shfl_xor_sync(kFullWarpMask, sum, offset);
+  }
+  const float inv_sum = 1.0f / sum;
+  float chosen_sum = 0.0f;
+  for (int j = 0; j < top_k; ++j) {
+    // The lane's best remaining expert, then the warp's (ties: lowest index).
+    float best = -1.0f;
+    int best_e = experts;
+#pragma unroll
+    for (int i = 0; i < kMaxPerLane; ++i) {
+      const int e = lane + i * kWarpSize;
+      if (e < experts && (values[i] > best || (values[i] == best && e < best_e))) {
+        best = values[i];
+        best_e = e;
+      }
+    }
+#pragma unroll
+    for (int offset = 16; offset > 0; offset /= 2) {
+      const float other = __shfl_xor_sync(kFullWarpMask, best, offset);
+      const int other_e = __shfl_xor_sync(kFullWarpMask, best_e, offset);
+      if (other > best || (other == best && other_e < best_e)) {
+        best = other;
+        best_e = other_e;
+      }
+    }
+    const float probability = best * inv_sum;
+    chosen_sum += probability;
+    if (lane == 0) {
+      top_indices[row * top_k + j] = best_e;
+      top_weights[row * top_k + j] = probability;
+    }
+    // Remove it from the lane that holds it.
+    if (best_e % kWarpSize == lane) values[best_e / kWarpSize] = -1.0f;
+  }
+  if (renormalize && lane == 0) {
+    const float inv = chosen_sum > 0.0f ? 1.0f / chosen_sum : 0.0f;
+    for (int j = 0; j < top_k; ++j) top_weights[row * top_k + j] *= inv;
+  }
+}
+
 // Decode: grid (hidden_dim / kTileRows, rows * top_k). hidden[pair][o] =
-// gelu(x . gate_e) * (x . up_e) for the pair's row and expert.
+// gelu(x . gate_e) * (x . up_e) for the pair's row and expert. With
+// `norm_scale` the row is RMS-normalized on the way in (the pre-expert norm).
 template <int Threads>
 __global__ void __launch_bounds__(Threads)
     MoeHiddenKernel(const __nv_bfloat16* __restrict__ activation,
                     const int32_t* __restrict__ top_indices,
+                    const float* __restrict__ norm_scale, float norm_eps,
                     LiteRtNvidiaMoeArena arena, LiteRtNvidiaMoeShape shape,
                     float* __restrict__ hidden) {
   constexpr int kWarps = Threads / kWarpSize;
@@ -182,23 +311,33 @@ __global__ void __launch_bounds__(Threads)
       static_cast<size_t>(shape.model_dim), nullptr};
   float gate[1][kTileRows] = {};
   float up[1][kTileRows] = {};
+  float squares[1] = {};
+  float up_squares[1] = {};
   AccumulateTile<__nv_bfloat16, 1, Threads>(
       ExpertTile(arena.gate, static_cast<const __half*>(arena.gate_scales),
                  shape.experts, expert, o0, shape.hidden_dim, shape.model_dim),
-      act, shape.model_dim, gate);
+      act, shape.model_dim, gate, norm_scale, squares);
   ReduceTile<1, Threads>(gate, warp_sums);
   __syncthreads();
   AccumulateTile<__nv_bfloat16, 1, Threads>(
       ExpertTile(arena.up, static_cast<const __half*>(arena.up_scales),
                  shape.experts, expert, o0, shape.hidden_dim, shape.model_dim),
-      act, shape.model_dim, up);
+      act, shape.model_dim, up, norm_scale, up_squares);
   ReduceTile<1, Threads>(up, warp_sums);
+  float factor = 1.0f;
+  if (norm_scale != nullptr) {
+    if constexpr (kWarps > 1) __syncthreads();
+    ReduceRows<1, Threads>(squares, warp_sums);
+    factor = rsqrtf(squares[0] / static_cast<float>(shape.model_dim) + norm_eps);
+  }
   if (threadIdx.x == 0) {
     float* out = hidden + static_cast<size_t>(pair) * shape.hidden_dim + o0;
     const int valid = min(kTileRows, shape.hidden_dim - o0);
 #pragma unroll
     for (int i = 0; i < kTileRows; ++i) {
-      if (i < valid) out[i] = Gelu(gate[0][i], shape.gate) * up[0][i];
+      if (i < valid) {
+        out[i] = Gelu(gate[0][i] * factor, shape.gate) * up[0][i] * factor;
+      }
     }
   }
 }
@@ -422,6 +561,11 @@ int MaxPaddedRows(const LiteRtNvidiaMoeShape& shape) {
 size_t RoundUp256(size_t bytes) { return (bytes + 255) / 256 * 256; }
 
 struct MoeWorkspace {
+  // Routing done in the launch (LiteRtNvidiaLaunchMoeInt4BlockFused).
+  size_t top_indices = 0;  // i32 [rows * top_k]
+  size_t top_weights = 0;  // f32 [rows * top_k]
+  size_t logits = 0;       // bf16 [rows, experts]
+  size_t router_gemm = 0;  // the router GEMM's workspace (prefill)
   // Decode.
   size_t hidden = 0;   // f32 [rows * top_k, hidden_dim]
   size_t partial = 0;  // f32 [rows * top_k, model_dim]
@@ -451,6 +595,15 @@ MoeWorkspace LayoutWorkspace(const LiteRtNvidiaMoeShape& shape) {
     w.total += RoundUp256(bytes);
     return at;
   };
+  w.top_indices = take(pairs * sizeof(int32_t));
+  w.top_weights = take(pairs * sizeof(float));
+  w.logits = take(static_cast<size_t>(shape.rows) * shape.experts * sizeof(uint16_t));
+  if (shape.rows > kLiteRtNvidiaInt4BlockGemvMaxRows) {
+    const LiteRtNvidiaGemmShape router = {shape.rows, shape.model_dim,
+                                          shape.experts,
+                                          kLiteRtNvidiaGemmGateNone, 32};
+    w.router_gemm = take(LiteRtNvidiaSubbyteGemmWorkspaceBytes(&router));
+  }
   if (shape.rows <= kLiteRtNvidiaInt4BlockGemvMaxRows) {
     w.hidden = take(pairs * shape.hidden_dim * sizeof(float));
     w.partial = take(pairs * shape.model_dim * sizeof(float));
@@ -478,8 +631,9 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
                       const LiteRtNvidiaMoeArena& arena,
                       const __nv_bfloat16* activation,
                       const int32_t* top_indices, const float* top_weights,
-                      const float* per_expert_scale, char* workspace,
-                      __nv_bfloat16* output, cudaStream_t stream) {
+                      const float* per_expert_scale, const float* norm_scale,
+                      float norm_eps, char* workspace, __nv_bfloat16* output,
+                      cudaStream_t stream) {
   const MoeWorkspace w = LayoutWorkspace(shape);
   float* hidden = reinterpret_cast<float*>(workspace + w.hidden);
   const int hidden_tiles = (shape.hidden_dim + kTileRows - 1) / kTileRows;
@@ -490,7 +644,8 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
     float* partial = reinterpret_cast<float*>(workspace + w.partial);
     MoeHiddenKernel<Threads>
         <<<dim3(hidden_tiles, shape.rows * shape.top_k), Threads, 0, stream>>>(
-            activation, top_indices, arena, shape, hidden);
+            activation, top_indices, norm_scale, norm_eps, arena, shape,
+            hidden);
     cudaError_t status = cudaPeekAtLastError();
     if (status != cudaSuccess) return status;
     MoeDownKernel<kDownThreads>
@@ -542,10 +697,11 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
       max_tiles, tile_experts, row_source, row_self, pair_row);
   status = cudaPeekAtLastError();
   if (status != cudaSuccess) return status;
-  // Gate and up as one gated GEMM over the gathered, scaled rows.
-  status = LiteRtNvidiaLaunchGemmScaleRows(activation, row_source, padded,
-                                           shape.model_dim, row_scale,
-                                           scaled_x, stream);
+  // Gate and up as one gated GEMM over the gathered, scaled (and normed)
+  // rows.
+  status = LiteRtNvidiaLaunchGemmScaleRowsNormed(
+      activation, row_source, padded, shape.model_dim, norm_scale, norm_eps,
+      1.0f, row_scale, scaled_x, stream);
   if (status != cudaSuccess) return status;
   const uint64_t model_row_bytes = static_cast<uint64_t>(shape.model_dim) / 2;
   const uint64_t model_scales = static_cast<uint64_t>(shape.model_dim) / kBlock;
@@ -632,11 +788,17 @@ extern "C" size_t LiteRtNvidiaMoeWorkspaceBytes(
   return litert::nvidia::int4_block::LayoutWorkspace(*shape).total;
 }
 
-extern "C" cudaError_t LiteRtNvidiaLaunchMoeInt4Block(
-    const LiteRtNvidiaMoeShape* shape, const LiteRtNvidiaMoeArena* arena,
-    const void* activation, const int32_t* top_indices,
-    const float* top_weights, const float* per_expert_scale, void* workspace,
-    void* output, cudaStream_t stream) {
+namespace {
+
+cudaError_t LaunchMoeChecked(const LiteRtNvidiaMoeShape* shape,
+                             const LiteRtNvidiaMoeArena* arena,
+                             const void* activation,
+                             const int32_t* top_indices,
+                             const float* top_weights,
+                             const float* per_expert_scale,
+                             const float* norm_scale, float norm_eps,
+                             void* workspace, void* output,
+                             cudaStream_t stream) {
   using namespace litert::nvidia::int4_block;
   if (!LiteRtNvidiaMoeSupports(shape) || arena == nullptr ||
       arena->gate == nullptr || arena->up == nullptr ||
@@ -644,43 +806,132 @@ extern "C" cudaError_t LiteRtNvidiaLaunchMoeInt4Block(
       arena->up_scales == nullptr || arena->down_scales == nullptr ||
       activation == nullptr || top_indices == nullptr ||
       top_weights == nullptr || per_expert_scale == nullptr ||
-      workspace == nullptr || output == nullptr) {
+      workspace == nullptr || output == nullptr ||
+      (norm_scale != nullptr && norm_eps < 0.0f)) {
     return cudaErrorInvalidValue;
   }
   const auto* typed_activation = static_cast<const __nv_bfloat16*>(activation);
   auto* typed_output = static_cast<__nv_bfloat16*>(output);
   if (shape->model_dim / kBlock <= kWarpSize) {
     return LaunchMoe<32>(*shape, *arena, typed_activation, top_indices,
-                         top_weights, per_expert_scale,
+                         top_weights, per_expert_scale, norm_scale, norm_eps,
                          static_cast<char*>(workspace), typed_output, stream);
   }
   return LaunchMoe<128>(*shape, *arena, typed_activation, top_indices,
-                        top_weights, per_expert_scale,
+                        top_weights, per_expert_scale, norm_scale, norm_eps,
                         static_cast<char*>(workspace), typed_output, stream);
+}
+
+}  // namespace
+
+extern "C" cudaError_t LiteRtNvidiaLaunchMoeInt4Block(
+    const LiteRtNvidiaMoeShape* shape, const LiteRtNvidiaMoeArena* arena,
+    const void* activation, const int32_t* top_indices,
+    const float* top_weights, const float* per_expert_scale, void* workspace,
+    void* output, cudaStream_t stream) {
+  return LaunchMoeChecked(shape, arena, activation, top_indices, top_weights,
+                          per_expert_scale, nullptr, 0.0f, workspace, output,
+                          stream);
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchMoeInt4BlockFused(
+    const LiteRtNvidiaMoeShape* shape, const LiteRtNvidiaMoeArena* arena,
+    const void* activation, const float* per_expert_scale,
+    const float* router_norm_scale, float router_multiplier,
+    const float* expert_norm_scale, float norm_eps, int renormalize,
+    void* workspace, void* output, cudaStream_t stream) {
+  using namespace litert::nvidia::int4_block;
+  if (!LiteRtNvidiaMoeSupports(shape) || arena == nullptr ||
+      arena->router == nullptr || arena->router_scales == nullptr ||
+      activation == nullptr || router_norm_scale == nullptr ||
+      expert_norm_scale == nullptr || norm_eps < 0.0f || workspace == nullptr ||
+      shape->model_dim > kMaxRouteDim || shape->experts % 2 != 0) {
+    return cudaErrorInvalidValue;
+  }
+  const MoeWorkspace w = LayoutWorkspace(*shape);
+  auto* bytes = static_cast<char*>(workspace);
+  auto* top_indices = reinterpret_cast<int32_t*>(bytes + w.top_indices);
+  auto* top_weights = reinterpret_cast<float*>(bytes + w.top_weights);
+  auto* logits = reinterpret_cast<__nv_bfloat16*>(bytes + w.logits);
+  // The router's logits: the normed GEMV over a few rows, the normed GEMM
+  // over many (prefill rows are a multiple of 128).
+  cudaError_t status;
+  if (shape->rows <= kLiteRtNvidiaInt4BlockGemvMaxRows) {
+    status = LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(
+        activation, arena->router, arena->router_scales, router_norm_scale,
+        norm_eps, router_multiplier, logits, shape->rows, shape->model_dim,
+        shape->experts, /*gate=*/0, stream);
+  } else {
+    const LiteRtNvidiaGemmShape router = {shape->rows, shape->model_dim,
+                                          shape->experts,
+                                          kLiteRtNvidiaGemmGateNone, 32};
+    if (!LiteRtNvidiaSubbyteGemmSupports(&router)) {
+      return cudaErrorInvalidValue;
+    }
+    status = LiteRtNvidiaLaunchBf16Int4GemmNormed(
+        &router, activation, router_norm_scale, norm_eps, router_multiplier,
+        arena->router, arena->router_scales, logits, bytes + w.router_gemm,
+        stream);
+  }
+  if (status != cudaSuccess) return status;
+  constexpr int kRouteWarps = 4;
+  const int route_blocks = (shape->rows + kRouteWarps - 1) / kRouteWarps;
+  MoeRouteKernel<<<route_blocks, kRouteWarps * kWarpSize, 0, stream>>>(
+      logits, shape->rows, shape->experts, shape->top_k, renormalize,
+      top_indices, top_weights);
+  status = cudaPeekAtLastError();
+  if (status != cudaSuccess) return status;
+  return LaunchMoeChecked(shape, arena, activation, top_indices, top_weights,
+                          per_expert_scale, expert_norm_scale, norm_eps,
+                          workspace, output, stream);
 }
 
 extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRows(
     const void* activation, const uint8_t* packed_weights, const void* scales,
     void* output, int rows, int input_size, int output_size, int gate,
     cudaStream_t stream) {
+  return LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(
+      activation, packed_weights, scales, nullptr, 0.0f, 1.0f, output, rows,
+      input_size, output_size, gate, stream);
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(
+    const void* activation, const uint8_t* packed_weights, const void* scales,
+    const float* norm_scale, float norm_eps, float norm_multiplier,
+    void* output, int rows, int input_size, int output_size, int gate,
+    cudaStream_t stream) {
   using namespace litert::nvidia::int4_block;
   if (activation == nullptr || packed_weights == nullptr ||
       scales == nullptr || output == nullptr || rows <= 0 ||
       rows > kLiteRtNvidiaInt4BlockGemvMaxRows || input_size <= 0 ||
-      input_size % kBlock != 0 || output_size <= 0 || gate < 0 || gate > 2) {
+      input_size % kBlock != 0 || output_size <= 0 || gate < 0 || gate > 2 ||
+      (norm_scale != nullptr && norm_eps < 0.0f)) {
     return cudaErrorInvalidValue;
   }
   const auto* typed_activation = static_cast<const __nv_bfloat16*>(activation);
   const auto* typed_scales = static_cast<const __half*>(scales);
   auto* typed_output = static_cast<__nv_bfloat16*>(output);
-  // Short inputs (the down projection of an expert: 22 blocks) keep a warp
-  // busy; longer ones four.
-  if (input_size / kBlock <= kWarpSize) {
+  const DenseNorm norm = {norm_scale, norm_eps, norm_multiplier};
+  // As many warps as the input blocks fill, up to four: 22 blocks (an
+  // expert's down projection) one warp, 66 (the dense down projection)
+  // three, 88 and more four.
+  const int blocks = input_size / kBlock;
+  if (blocks <= 32) {
     return LaunchDenseRows<32>(typed_activation, packed_weights, typed_scales,
-                               typed_output, rows, input_size, output_size,
-                               gate, stream);
+                               norm, typed_output, rows, input_size,
+                               output_size, gate, stream);
+  }
+  if (blocks <= 64) {
+    return LaunchDenseRows<64>(typed_activation, packed_weights, typed_scales,
+                               norm, typed_output, rows, input_size,
+                               output_size, gate, stream);
+  }
+  if (blocks <= 96) {
+    return LaunchDenseRows<96>(typed_activation, packed_weights, typed_scales,
+                               norm, typed_output, rows, input_size,
+                               output_size, gate, stream);
   }
   return LaunchDenseRows<128>(typed_activation, packed_weights, typed_scales,
-                              typed_output, rows, input_size, output_size,
-                              gate, stream);
+                              norm, typed_output, rows, input_size,
+                              output_size, gate, stream);
 }

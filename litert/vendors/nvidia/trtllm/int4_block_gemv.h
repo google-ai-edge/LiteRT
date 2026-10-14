@@ -43,6 +43,17 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRows(
     void* output, int rows, int input_size, int output_size, int gate,
     cudaStream_t stream);
 
+// The same product with an RMS norm of the activation rows fused in front
+// of it (Gemma's rms_norm composite feeding a projection): each row x is
+// replaced by x * rsqrt(mean(x^2) + norm_eps) * norm_scale[k] *
+// norm_multiplier, with `norm_scale` an FP32 vector of input_size values.
+// A null norm_scale is the plain product.
+extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(
+    const void* activation, const uint8_t* packed_weights, const void* scales,
+    const float* norm_scale, float norm_eps, float norm_multiplier,
+    void* output, int rows, int input_size, int output_size, int gate,
+    cudaStream_t stream);
+
 // Mixture-of-experts feed-forward over blockwise INT4 experts (the "moe"
 // custom op of Gemma 4 26B-A4B): for every activation row r and each of its
 // top_k routed experts e = top_indices[r][j],
@@ -61,6 +72,10 @@ struct LiteRtNvidiaMoeArena {
   const void* gate_scales;
   const void* up_scales;
   const void* down_scales;
+  // The router's INT4 blockwise rows [experts, model_dim] and FP16 scales
+  // (the fused launch only; null otherwise).
+  const uint8_t* router;
+  const void* router_scales;
 };
 
 struct LiteRtNvidiaMoeShape {
@@ -88,5 +103,18 @@ extern "C" cudaError_t LiteRtNvidiaLaunchMoeInt4Block(
     const void* activation, const int32_t* top_indices,
     const float* top_weights, const float* per_expert_scale, void* workspace,
     void* output, cudaStream_t stream);
+
+// The whole mixture-of-experts block of a layer from the residual stream
+// `activation` [rows, model_dim]: the router's RMS norm (router_norm_scale,
+// times router_multiplier), the router's logits from the arena's router
+// rows, a softmax, the top_k experts (renormalized to a sum of one with
+// `renormalize`), and the experts over the row normalized with
+// expert_norm_scale; both norms share norm_eps. rows <= model_dim <= 4096.
+extern "C" cudaError_t LiteRtNvidiaLaunchMoeInt4BlockFused(
+    const LiteRtNvidiaMoeShape* shape, const LiteRtNvidiaMoeArena* arena,
+    const void* activation, const float* per_expert_scale,
+    const float* router_norm_scale, float router_multiplier,
+    const float* expert_norm_scale, float norm_eps, int renormalize,
+    void* workspace, void* output, cudaStream_t stream);
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_TRTLLM_INT4_BLOCK_GEMV_H_

@@ -43,7 +43,9 @@ constexpr char kWeightOffsetField[] = "weight_offset";
 constexpr char kHolderGranuleField[] = "holder_granule";
 constexpr char kScaleBlockField[] = "scale_block";
 constexpr char kScaleOffsetField[] = "scale_offset";
-constexpr int kFields = 9;
+constexpr char kNormEpsField[] = "norm_eps";
+constexpr char kNormMultiplierField[] = "norm_multiplier";
+constexpr int kFields = 11;
 
 // The activation rows [..., columns] of a descriptor, or 0.
 int64_t ActivationRows(const nvinfer1::Dims& dims, int32_t columns) {
@@ -69,7 +71,8 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
   SubbyteGemvPlugin(int32_t bit_width, int32_t rows, int32_t columns,
                     int32_t gate, int32_t gemm, int64_t weight_offset,
                     int64_t holder_granule, int32_t scale_block,
-                    int64_t scale_offset) noexcept
+                    int64_t scale_offset, float norm_eps,
+                    float norm_multiplier) noexcept
       : bit_width_(bit_width),
         rows_(rows),
         columns_(columns),
@@ -79,6 +82,8 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
         holder_granule_(holder_granule),
         scale_block_(scale_block),
         scale_offset_(scale_offset),
+        norm_eps_(norm_eps),
+        norm_multiplier_(norm_multiplier),
         fields_{
             {{kBitWidthField, &bit_width_, nvinfer1::PluginFieldType::kINT32,
               1},
@@ -93,7 +98,11 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
              {kScaleBlockField, &scale_block_,
               nvinfer1::PluginFieldType::kINT32, 1},
              {kScaleOffsetField, &scale_offset_,
-              nvinfer1::PluginFieldType::kINT64, 1}}},
+              nvinfer1::PluginFieldType::kINT64, 1},
+             {kNormEpsField, &norm_eps_, nvinfer1::PluginFieldType::kFLOAT32,
+              1},
+             {kNormMultiplierField, &norm_multiplier_,
+              nvinfer1::PluginFieldType::kFLOAT32, 1}}},
         field_collection_{static_cast<int32_t>(fields_.size()),
                           fields_.data()} {}
 
@@ -111,9 +120,10 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
   }
 
   nvinfer1::IPluginV3* clone() noexcept override {
-    return new (std::nothrow) SubbyteGemvPlugin(
-        bit_width_, rows_, columns_, gate_, gemm_, weight_offset_,
-        holder_granule_, scale_block_, scale_offset_);
+    return new (std::nothrow)
+        SubbyteGemvPlugin(bit_width_, rows_, columns_, gate_, gemm_,
+                          weight_offset_, holder_granule_, scale_block_,
+                          scale_offset_, norm_eps_, norm_multiplier_);
   }
 
   const char* getPluginName() const noexcept override { return kPluginName; }
@@ -130,9 +140,11 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
                              int32_t num_outputs,
                              const nvinfer1::DataType* input_types,
                              int32_t num_inputs) const noexcept override {
-    if (output_types == nullptr || input_types == nullptr || num_inputs != 3 ||
-        num_outputs != 1 || input_types[0] != nvinfer1::DataType::kBF16 ||
-        input_types[1] != WeightsType() || input_types[2] != ScalesType()) {
+    if (output_types == nullptr || input_types == nullptr ||
+        num_inputs != InputCount() || num_outputs != 1 ||
+        input_types[0] != nvinfer1::DataType::kBF16 ||
+        input_types[1] != WeightsType() || input_types[2] != ScalesType() ||
+        (num_inputs == 4 && input_types[3] != nvinfer1::DataType::kFLOAT)) {
       return 1;
     }
     output_types[0] = nvinfer1::DataType::kBF16;
@@ -142,12 +154,14 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
   bool supportsFormatCombination(
       int32_t position, const nvinfer1::DynamicPluginTensorDesc* in_out,
       int32_t num_inputs, int32_t num_outputs) noexcept override {
-    if (in_out == nullptr || num_inputs != 3 || num_outputs != 1 ||
-        position < 0 || position >= 4) {
+    if (in_out == nullptr || num_inputs != InputCount() || num_outputs != 1 ||
+        position < 0 || position > num_inputs) {
       return false;
     }
-    const std::array<nvinfer1::DataType, 4> kTypes = {
+    const std::array<nvinfer1::DataType, 5> kTypes = {
         nvinfer1::DataType::kBF16, WeightsType(), ScalesType(),
+        num_inputs == 4 ? nvinfer1::DataType::kFLOAT
+                        : nvinfer1::DataType::kBF16,
         nvinfer1::DataType::kBF16};
     return in_out[position].desc.type == kTypes[position] &&
            in_out[position].desc.format == nvinfer1::TensorFormat::kLINEAR;
@@ -159,7 +173,7 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
       nvinfer1::DimsExprs* outputs, int32_t num_outputs,
       nvinfer1::IExprBuilder& expr_builder) noexcept override {
     static_cast<void>(shape_inputs);
-    if (inputs == nullptr || outputs == nullptr || num_inputs != 3 ||
+    if (inputs == nullptr || outputs == nullptr || num_inputs != InputCount() ||
         num_shape_inputs != 0 || num_outputs != 1 || inputs[0].nbDims < 1) {
       return 1;
     }
@@ -173,8 +187,8 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
                           int32_t num_inputs,
                           const nvinfer1::DynamicPluginTensorDesc* outputs,
                           int32_t num_outputs) noexcept override {
-    return inputs != nullptr && outputs != nullptr && num_inputs == 3 &&
-                   num_outputs == 1
+    return inputs != nullptr && outputs != nullptr &&
+                   num_inputs == InputCount() && num_outputs == 1
                ? 0
                : 1;
   }
@@ -183,8 +197,8 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
                         int32_t num_inputs,
                         const nvinfer1::PluginTensorDesc* outputs,
                         int32_t num_outputs) noexcept override {
-    return inputs != nullptr && outputs != nullptr && num_inputs == 3 &&
-                   num_outputs == 1
+    return inputs != nullptr && outputs != nullptr &&
+                   num_inputs == InputCount() && num_outputs == 1
                ? 0
                : 1;
   }
@@ -194,7 +208,7 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
                           const nvinfer1::DynamicPluginTensorDesc* outputs,
                           int32_t num_outputs) const noexcept override {
     static_cast<void>(outputs);
-    if (inputs == nullptr || num_inputs != 3 || num_outputs != 1) {
+    if (inputs == nullptr || num_inputs != InputCount() || num_outputs != 1) {
       return 0;
     }
     if (gemm_ == 0) {
@@ -220,14 +234,18 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
     cudaError_t status = cudaErrorInvalidValue;
     const uint8_t* weights = Weights(input_desc[1].dims, inputs[1]);
     const void* scales = Scales(input_desc[2].dims, inputs[2]);
-    if (weights == nullptr || scales == nullptr) {
+    const float* norm_scale =
+        norm_eps_ >= 0.0f ? static_cast<const float*>(inputs[3]) : nullptr;
+    if (weights == nullptr || scales == nullptr ||
+        (norm_eps_ >= 0.0f && norm_scale == nullptr)) {
       // The weights or scales input does not hold this plugin's.
     } else if (gemm_ == 0) {
       if (rows < 1 || rows > kLiteRtNvidiaSubbyteGemvMaxRows) {
       } else if (scale_block_ != 0) {
-        status = LiteRtNvidiaLaunchBf16Int4BlockGemvRows(
-            inputs[0], weights, scales, outputs[0], static_cast<int>(rows),
-            columns_, OutputChannels(), gate_, stream);
+        status = LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(
+            inputs[0], weights, scales, norm_scale, norm_eps_, norm_multiplier_,
+            outputs[0], static_cast<int>(rows), columns_, OutputChannels(),
+            gate_, stream);
       } else {
         status = LiteRtNvidiaLaunchBf16SubbytePerChannelGemvRows(
             inputs[0], weights, scales, outputs[0], bit_width_,
@@ -236,8 +254,9 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
     } else {
       const LiteRtNvidiaGemmShape shape = GemmShape(rows);
       if (LiteRtNvidiaSubbyteGemmWeightBytes(&shape) == WeightBytes()) {
-        status = LiteRtNvidiaLaunchBf16Int4Gemm(
-            &shape, inputs[0], weights, scales, outputs[0], workspace, stream);
+        status = LiteRtNvidiaLaunchBf16Int4GemmNormed(
+            &shape, inputs[0], norm_scale, norm_eps_, norm_multiplier_, weights,
+            scales, outputs[0], workspace, stream);
       }
     }
     if (status != cudaSuccess) {
@@ -277,6 +296,10 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
     return holder_granule_ != 0 ? nvinfer1::DataType::kINT64
                                 : nvinfer1::DataType::kINT8;
   }
+
+  // A fused RMS norm (norm_eps >= 0) adds its FP32 scale vector as a
+  // fourth input.
+  int32_t InputCount() const noexcept { return norm_eps_ >= 0.0f ? 4 : 3; }
 
   // Per-channel scales are a BF16 input, blockwise scales an FP16 input or
   // the holder.
@@ -357,6 +380,8 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
   int64_t holder_granule_;
   int32_t scale_block_;
   int64_t scale_offset_;
+  float norm_eps_;  // < 0: no fused norm
+  float norm_multiplier_;
   std::array<nvinfer1::PluginField, kFields> fields_;
   nvinfer1::PluginFieldCollection field_collection_;
 };
@@ -375,8 +400,10 @@ class SubbyteGemvPluginCreator final : public nvinfer1::IPluginCreatorV3One {
              {kHolderGranuleField, nullptr, nvinfer1::PluginFieldType::kINT64,
               1},
              {kScaleBlockField, nullptr, nvinfer1::PluginFieldType::kINT32, 1},
-             {kScaleOffsetField, nullptr, nvinfer1::PluginFieldType::kINT64,
-              1}}},
+             {kScaleOffsetField, nullptr, nvinfer1::PluginFieldType::kINT64, 1},
+             {kNormEpsField, nullptr, nvinfer1::PluginFieldType::kFLOAT32, 1},
+             {kNormMultiplierField, nullptr,
+              nvinfer1::PluginFieldType::kFLOAT32, 1}}},
         field_collection_{static_cast<int32_t>(fields_.size()),
                           fields_.data()} {}
 
@@ -397,10 +424,21 @@ class SubbyteGemvPluginCreator final : public nvinfer1::IPluginCreatorV3One {
     int64_t holder_granule = 0;
     int32_t scale_block = 0;
     int64_t scale_offset = -1;
+    float norm_eps = -1.0f;
+    float norm_multiplier = 1.0f;
     for (int32_t i = 0; i < fields->nbFields; ++i) {
       const auto& field = fields->fields[i];
       if (field.name == nullptr || field.data == nullptr ||
           field.length != 1) {
+        continue;
+      }
+      if (field.type == nvinfer1::PluginFieldType::kFLOAT32) {
+        const float value = *static_cast<const float*>(field.data);
+        if (std::strcmp(field.name, kNormEpsField) == 0) {
+          norm_eps = value;
+        } else if (std::strcmp(field.name, kNormMultiplierField) == 0) {
+          norm_multiplier = value;
+        }
         continue;
       }
       if (field.type == nvinfer1::PluginFieldType::kINT64) {
@@ -437,7 +475,7 @@ class SubbyteGemvPluginCreator final : public nvinfer1::IPluginCreatorV3One {
     }
     return CreateSubbyteGemvPlugin(bit_width, rows, columns, gate, gemm != 0,
                                    weight_offset, holder_granule, scale_block,
-                                   scale_offset);
+                                   scale_offset, norm_eps, norm_multiplier);
   }
 
   const nvinfer1::PluginFieldCollection* getFieldNames() noexcept override {
@@ -458,14 +496,17 @@ class SubbyteGemvPluginCreator final : public nvinfer1::IPluginCreatorV3One {
 
 }  // namespace
 
-nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(int32_t bit_width, int32_t rows,
-                                             int32_t columns, int32_t gate,
-                                             bool gemm, int64_t weight_offset,
-                                             int64_t holder_granule,
-                                             int32_t scale_block,
-                                             int64_t scale_offset) noexcept {
+nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(
+    int32_t bit_width, int32_t rows, int32_t columns, int32_t gate, bool gemm,
+    int64_t weight_offset, int64_t holder_granule, int32_t scale_block,
+    int64_t scale_offset, float norm_eps, float norm_multiplier) noexcept {
   if ((bit_width != 2 && bit_width != 4) || rows <= 0 || columns <= 0 ||
       columns % 16 != 0) {
+    return nullptr;
+  }
+  // A fused norm needs the blockwise kernels and a finite multiplier.
+  if (norm_eps >= 0.0f &&
+      (scale_block == 0 || !(norm_multiplier == norm_multiplier))) {
     return nullptr;
   }
   // Blockwise scales: INT4 weights, whole blocks, and scales in the holder
@@ -487,7 +528,8 @@ nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(int32_t bit_width, int32_t rows,
                              weight_offset < 0 || weight_offset % 16 != 0)) {
     return nullptr;
   }
-  if (gate != 0 && (!gemm || rows % 2 != 0 ||
+  // A gate needs the GEMM or the blockwise GEMV, which has a gate mode.
+  if (gate != 0 && ((!gemm && scale_block == 0) || rows % 2 != 0 ||
                     (gate != kLiteRtNvidiaGemmGateGeluTanh &&
                      gate != kLiteRtNvidiaGemmGateGeluErf))) {
     return nullptr;
@@ -502,7 +544,7 @@ nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(int32_t bit_width, int32_t rows,
   }
   return new (std::nothrow) SubbyteGemvPlugin(
       bit_width, rows, columns, gate, gemm ? 1 : 0, weight_offset,
-      holder_granule, scale_block, scale_offset);
+      holder_granule, scale_block, scale_offset, norm_eps, norm_multiplier);
 }
 
 void EnsureSubbyteGemvPluginRegistered() noexcept {}

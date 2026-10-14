@@ -365,6 +365,90 @@ TEST(SubbyteGemmTest, ScalesRowsOfAnyMagnitude) {
   RunCase({{256, 1024, 256, kLiteRtNvidiaGemmGateNone}, Rows::kSparse, 2.0f});
 }
 
+// The RMS norm fused into the activation pre-pass: the normed launch over
+// raw rows equals the plain launch over rows normalized on the host.
+TEST(SubbyteGemmTest, FusedNormMatchesPlainLaunchOnNormalizedRows) {
+  if (!LiteRtNvidiaSubbyteGemmAvailable()) {
+    GTEST_SKIP() << "Requires compute capability 8.0 or newer.";
+  }
+  const LiteRtNvidiaGemmShape shape = {128, 2816, 704,
+                                       kLiteRtNvidiaGemmGateGeluTanh, 32};
+  const int channels = 2 * shape.output_size;
+  const int input = shape.input_size;
+  std::vector<uint16_t> raw(static_cast<size_t>(shape.rows) * input);
+  std::vector<uint16_t> normed(raw.size());
+  std::vector<float> norm_scale(input);
+  for (int i = 0; i < input; ++i) norm_scale[i] = 0.9f + 0.002f * (i % 40);
+  const float eps = 1e-6f;
+  const float multiplier = 1.7f;
+  for (int r = 0; r < shape.rows; ++r) {
+    double squares = 0.0;
+    for (int i = 0; i < input; ++i) {
+      const float x = static_cast<float>((i * 13 + r * 7) % 101 - 50) / 23.0f;
+      raw[static_cast<size_t>(r) * input + i] = FloatToBf16Bits(x);
+      const float rounded =
+          Bf16BitsToFloat(raw[static_cast<size_t>(r) * input + i]);
+      squares += static_cast<double>(rounded) * rounded;
+    }
+    const float factor =
+        static_cast<float>(1.0 / std::sqrt(squares / input + eps) * multiplier);
+    for (int i = 0; i < input; ++i) {
+      normed[static_cast<size_t>(r) * input + i] = FloatToBf16Bits(
+          Bf16BitsToFloat(raw[static_cast<size_t>(r) * input + i]) * factor *
+          norm_scale[i]);
+    }
+  }
+  std::vector<uint8_t> weights(static_cast<size_t>(channels) * input / 2);
+  uint32_t state = 12345u;
+  for (auto& byte : weights) {
+    state = state * 1664525u + 1013904223u;
+    byte = static_cast<uint8_t>(state >> 24);
+  }
+  std::vector<uint16_t> scales(static_cast<size_t>(channels) * (input / 32),
+                               FloatToHalfBits(0.01f));
+  auto raw_device = Upload(raw);
+  auto normed_device = Upload(normed);
+  auto weights_device = Upload(weights);
+  auto scales_device = Upload(scales);
+  auto norm_scale_device = Upload(norm_scale);
+  const size_t output_bytes =
+      static_cast<size_t>(shape.rows) * shape.output_size * 2;
+  auto out_normed = AllocateCuda(output_bytes);
+  auto out_plain = AllocateCuda(output_bytes);
+  auto workspace = AllocateCuda(LiteRtNvidiaSubbyteGemmWorkspaceBytes(&shape));
+  ASSERT_EQ(
+      LiteRtNvidiaLaunchBf16Int4GemmNormed(
+          &shape, raw_device.get(),
+          static_cast<const float*>(norm_scale_device.get()), eps, multiplier,
+          static_cast<const uint8_t*>(weights_device.get()),
+          scales_device.get(), out_normed.get(), workspace.get(), nullptr),
+      cudaSuccess);
+  ASSERT_EQ(LiteRtNvidiaLaunchBf16Int4Gemm(
+                &shape, normed_device.get(),
+                static_cast<const uint8_t*>(weights_device.get()),
+                scales_device.get(), out_plain.get(), workspace.get(), nullptr),
+            cudaSuccess);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  std::vector<uint16_t> a(output_bytes / 2), b(output_bytes / 2);
+  ASSERT_EQ(cudaMemcpy(a.data(), out_normed.get(), output_bytes,
+                       cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(b.data(), out_plain.get(), output_bytes,
+                       cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  double error = 0.0, norm = 0.0;
+  for (size_t i = 0; i < a.size(); ++i) {
+    const double x = Bf16BitsToFloat(a[i]);
+    const double y = Bf16BitsToFloat(b[i]);
+    error += (x - y) * (x - y);
+    norm += y * y;
+  }
+  // The host rounds the normalized rows to BF16 before the GEMM; the fused
+  // pass keeps them in FP32 until the FP16 tiles.
+  EXPECT_LE(std::sqrt(error), 1e-2 * std::sqrt(norm) + 1e-6)
+      << "relative " << std::sqrt(error / norm);
+}
+
 TEST(SubbyteGemmTest, OddChunkCountsMatchReference) {
   if (!LiteRtNvidiaSubbyteGemmAvailable()) {
     GTEST_SKIP() << "Requires compute capability 8.0 or newer and 81 KB of "

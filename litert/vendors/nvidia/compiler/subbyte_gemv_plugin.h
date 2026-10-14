@@ -53,10 +53,17 @@ namespace litert::nvidia {
 // `scale_offset` >= 0, the holder again: the scales are `scale_offset` bytes
 // into its segment. The GEMV is trtllm/int4_block_gemv.h and the GEMM takes
 // the scales per block.
+//
+// `norm_eps` >= 0 fuses an RMS norm of the activation rows in front of the
+// product (blockwise weights only): a fourth input, the norm's FP32 scale
+// vector [columns], and x * rsqrt(mean(x^2) + norm_eps) * scale *
+// norm_multiplier replaces x. With a gate the blockwise GEMV also takes a
+// few rows (gemm false): gelu(gate) * up in one launch.
 nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(
     int32_t bit_width, int32_t rows, int32_t columns, int32_t gate = 0,
     bool gemm = false, int64_t weight_offset = 0, int64_t holder_granule = 0,
-    int32_t scale_block = 0, int64_t scale_offset = -1) noexcept;
+    int32_t scale_block = 0, int64_t scale_offset = -1, float norm_eps = -1.0f,
+    float norm_multiplier = 1.0f) noexcept;
 
 // Referenced by the dispatch library so the creator's registration object is
 // retained when linking the shared library used for engine deserialization.

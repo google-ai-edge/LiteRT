@@ -35,7 +35,7 @@
 namespace litert::nvidia::int4_block {
 
 constexpr int kBlock = 32;     // input dims per scale
-constexpr int kTileRows = 8;   // weight rows per CTA tile
+constexpr int kTileRows = 8;   // weight rows per CTA tile (the largest)
 constexpr int kWarpSize = 32;
 constexpr unsigned kFullWarpMask = 0xffffffffu;
 
@@ -98,12 +98,18 @@ __device__ __forceinline__ float Nibble(uint32_t word, int index) {
 
 // Accumulates, for every activation row r and tile row i, the dot products
 // over the input blocks this thread owns (blockIdx-independent: block b for
-// b = threadIdx.x, threadIdx.x + Threads, ...) into acc[r][i].
-template <typename T, int Rows, int Threads>
+// b = threadIdx.x, threadIdx.x + Threads, ...) into acc[r][i]. With
+// `norm_scale` (an RMS norm fused into the product), activation k is
+// multiplied by norm_scale[k] and the thread's sum of squares of the raw
+// activations of each row goes to squares[r]; the caller divides by the
+// row's RMS after the reduction.
+template <typename T, int Rows, int Threads, int TileRows = kTileRows>
 __device__ __forceinline__ void AccumulateTile(const WeightTile& tile,
                                                const ActivationRows<T>& act,
                                                int input_size,
-                                               float acc[Rows][kTileRows]) {
+                                               float acc[Rows][TileRows],
+                                               const float* norm_scale = nullptr,
+                                               float* squares = nullptr) {
   const int blocks = input_size / kBlock;
   const T* rows[Rows];
 #pragma unroll
@@ -111,10 +117,10 @@ __device__ __forceinline__ void AccumulateTile(const WeightTile& tile,
     rows[r] = act.Row(r);
   }
   for (int b = threadIdx.x; b < blocks; b += Threads) {
-    uint4 words[kTileRows];
-    float scales[kTileRows];
+    uint4 words[TileRows];
+    float scales[TileRows];
 #pragma unroll
-    for (int i = 0; i < kTileRows; ++i) {
+    for (int i = 0; i < TileRows; ++i) {
       if (i < tile.valid_rows) {
         words[i] = __ldg(reinterpret_cast<const uint4*>(
             tile.weights + i * tile.weight_stride + b * (kBlock / 2)));
@@ -131,8 +137,22 @@ __device__ __forceinline__ void AccumulateTile(const WeightTile& tile,
       for (int r = 0; r < Rows; ++r) {
         LoadPairs<T>(rows[r] + b * kBlock + w * 8, pairs[r]);
       }
+      if (norm_scale != nullptr) {
+        float2 scales2[4];
+        LoadPairs<float>(norm_scale + b * kBlock + w * 8, scales2);
 #pragma unroll
-      for (int i = 0; i < kTileRows; ++i) {
+        for (int r = 0; r < Rows; ++r) {
+#pragma unroll
+          for (int n = 0; n < 4; ++n) {
+            squares[r] = fmaf(pairs[r][n].x, pairs[r][n].x, squares[r]);
+            squares[r] = fmaf(pairs[r][n].y, pairs[r][n].y, squares[r]);
+            pairs[r][n].x *= scales2[n].x;
+            pairs[r][n].y *= scales2[n].y;
+          }
+        }
+      }
+#pragma unroll
+      for (int i = 0; i < TileRows; ++i) {
         const uint32_t word = w == 0   ? words[i].x
                               : w == 1 ? words[i].y
                               : w == 2 ? words[i].z
@@ -156,8 +176,8 @@ __device__ __forceinline__ void AccumulateTile(const WeightTile& tile,
 // Reduces acc over the CTA: afterwards thread 0 holds the tile sums in
 // acc[r][i] (other threads: unspecified). `warp_sums` is shared memory of
 // Rows * kTileRows * (Threads / 32) floats, unused by a single warp.
-template <int Rows, int Threads>
-__device__ __forceinline__ void ReduceTile(float acc[Rows][kTileRows],
+template <int Rows, int Threads, int TileRows = kTileRows>
+__device__ __forceinline__ void ReduceTile(float acc[Rows][TileRows],
                                            float* warp_sums) {
   constexpr int kWarps = Threads / kWarpSize;
   const int lane = threadIdx.x % kWarpSize;
@@ -167,7 +187,7 @@ __device__ __forceinline__ void ReduceTile(float acc[Rows][kTileRows],
 #pragma unroll
     for (int r = 0; r < Rows; ++r) {
 #pragma unroll
-      for (int i = 0; i < kTileRows; ++i) {
+      for (int i = 0; i < TileRows; ++i) {
         acc[r][i] += __shfl_down_sync(kFullWarpMask, acc[r][i], offset);
       }
     }
@@ -177,8 +197,8 @@ __device__ __forceinline__ void ReduceTile(float acc[Rows][kTileRows],
 #pragma unroll
       for (int r = 0; r < Rows; ++r) {
 #pragma unroll
-        for (int i = 0; i < kTileRows; ++i) {
-          warp_sums[(r * kTileRows + i) * kWarps + warp] = acc[r][i];
+        for (int i = 0; i < TileRows; ++i) {
+          warp_sums[(r * TileRows + i) * kWarps + warp] = acc[r][i];
         }
       }
     }
@@ -187,14 +207,48 @@ __device__ __forceinline__ void ReduceTile(float acc[Rows][kTileRows],
 #pragma unroll
       for (int r = 0; r < Rows; ++r) {
 #pragma unroll
-        for (int i = 0; i < kTileRows; ++i) {
+        for (int i = 0; i < TileRows; ++i) {
           float sum = 0.0f;
 #pragma unroll
           for (int source = 0; source < kWarps; ++source) {
-            sum += warp_sums[(r * kTileRows + i) * kWarps + source];
+            sum += warp_sums[(r * TileRows + i) * kWarps + source];
           }
           acc[r][i] = sum;
         }
+      }
+    }
+  }
+}
+
+// Sums `Rows` per-thread values over the CTA into thread 0's `values`.
+// `scratch` is shared memory of Rows * (Threads / 32) floats.
+template <int Rows, int Threads>
+__device__ __forceinline__ void ReduceRows(float values[Rows], float* scratch) {
+  constexpr int kWarps = Threads / kWarpSize;
+  const int lane = threadIdx.x % kWarpSize;
+  const int warp = threadIdx.x / kWarpSize;
+#pragma unroll
+  for (int offset = kWarpSize / 2; offset > 0; offset /= 2) {
+#pragma unroll
+    for (int r = 0; r < Rows; ++r) {
+      values[r] += __shfl_down_sync(kFullWarpMask, values[r], offset);
+    }
+  }
+  if constexpr (kWarps > 1) {
+    if (lane == 0) {
+#pragma unroll
+      for (int r = 0; r < Rows; ++r) scratch[r * kWarps + warp] = values[r];
+    }
+    __syncthreads();
+    if (threadIdx.x == 0) {
+#pragma unroll
+      for (int r = 0; r < Rows; ++r) {
+        float sum = 0.0f;
+#pragma unroll
+        for (int source = 0; source < kWarps; ++source) {
+          sum += scratch[r * kWarps + source];
+        }
+        values[r] = sum;
       }
     }
   }

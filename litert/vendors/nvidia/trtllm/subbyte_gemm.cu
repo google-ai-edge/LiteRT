@@ -112,12 +112,16 @@ __device__ __forceinline__ float Gelu(float x, int gate) {
 // the largest magnitude of the row into [0.5, 1). The rows times it, in FP16,
 // are laid out as scaled[row tile][chunk][row of the tile][kChunk], so that
 // a block of the GEMM reads one contiguous tile per chunk.
+// With `norm_scale`, the row is first RMS-normalized: x * rsqrt(mean(x^2) +
+// norm_eps) * norm_scale[k] * norm_multiplier.
 __global__ void __launch_bounds__(kThreads)
     ScaleRowsKernel(const __nv_bfloat16* __restrict__ activation,
                     const int32_t* __restrict__ row_indices, int input_size,
-                    float* __restrict__ row_scale,
+                    const float* __restrict__ norm_scale, float norm_eps,
+                    float norm_multiplier, float* __restrict__ row_scale,
                     __half* __restrict__ scaled) {
   __shared__ float max_s[kWarps];
+  __shared__ float squares_s[kWarps];
   // A gathered row, a zero row for index -1, or nothing for an index below
   // -1 (a row of an unused tile).
   const int source =
@@ -127,9 +131,40 @@ __global__ void __launch_bounds__(kThreads)
       source < 0 ? nullptr
                  : reinterpret_cast<const __nv_bfloat162*>(
                        activation + static_cast<size_t>(source) * input_size);
+  // The norm factor of the row, if any, then the largest magnitude after it.
+  float norm_factor = 1.0f;
+  if (norm_scale != nullptr && row != nullptr) {
+    float squares = 0.0f;
+    for (int i = threadIdx.x; i < input_size / 2; i += kThreads) {
+      const float2 values = __bfloat1622float2(row[i]);
+      squares = fmaf(values.x, values.x, squares);
+      squares = fmaf(values.y, values.y, squares);
+    }
+#pragma unroll
+    for (int offset = 16; offset > 0; offset >>= 1) {
+      squares += __shfl_xor_sync(0xffffffffu, squares, offset);
+    }
+    if (threadIdx.x % 32 == 0) squares_s[threadIdx.x / 32] = squares;
+    __syncthreads();
+    squares = 0.0f;
+#pragma unroll
+    for (int w = 0; w < kWarps; ++w) squares += squares_s[w];
+    norm_factor =
+        rsqrtf(squares / static_cast<float>(input_size) + norm_eps) *
+        norm_multiplier;
+  }
+  auto value_at = [&](int i) -> float2 {
+    float2 values = __bfloat1622float2(row[i]);
+    if (norm_scale != nullptr) {
+      const float2 scales = reinterpret_cast<const float2*>(norm_scale)[i];
+      values.x *= norm_factor * scales.x;
+      values.y *= norm_factor * scales.y;
+    }
+    return values;
+  };
   float largest = 0.0f;
   for (int i = threadIdx.x; row != nullptr && i < input_size / 2; i += kThreads) {
-    const float2 values = __bfloat1622float2(row[i]);
+    const float2 values = value_at(i);
     largest = fmaxf(largest, fmaxf(fabsf(values.x), fabsf(values.y)));
   }
 #pragma unroll
@@ -159,7 +194,7 @@ __global__ void __launch_bounds__(kThreads)
       scaled + tile * kBlockRows * input_size + tile_row * kChunk);
   for (int i = threadIdx.x; i < input_size / 2; i += kThreads) {
     const float2 values =
-        row == nullptr ? make_float2(0.0f, 0.0f) : __bfloat1622float2(row[i]);
+        row == nullptr ? make_float2(0.0f, 0.0f) : value_at(i);
     out[static_cast<size_t>(i / (kChunk / 2)) * (kBlockRows * kChunk / 2) +
         i % (kChunk / 2)] =
         __floats2half2_rn(values.x * scale, values.y * scale);
@@ -616,9 +651,19 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4Gemm(
     const LiteRtNvidiaGemmShape* shape, const void* activation,
     const uint8_t* weights, const void* scales, void* output, void* workspace,
     cudaStream_t stream) {
+  return LiteRtNvidiaLaunchBf16Int4GemmNormed(shape, activation, nullptr, 0.0f,
+                                              1.0f, weights, scales, output,
+                                              workspace, stream);
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GemmNormed(
+    const LiteRtNvidiaGemmShape* shape, const void* activation,
+    const float* norm_scale, float norm_eps, float norm_multiplier,
+    const uint8_t* weights, const void* scales, void* output, void* workspace,
+    cudaStream_t stream) {
   if (!LiteRtNvidiaSubbyteGemmSupports(shape) || activation == nullptr ||
       weights == nullptr || scales == nullptr || output == nullptr ||
-      workspace == nullptr) {
+      workspace == nullptr || (norm_scale != nullptr && norm_eps < 0.0f)) {
     return cudaErrorInvalidValue;
   }
   const bool blockwise = shape->scale_block == 32;
@@ -636,7 +681,8 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4Gemm(
                                              ScaleBytes(shape->rows));
   ScaleRowsKernel<<<shape->rows, kThreads, 0, stream>>>(
       static_cast<const __nv_bfloat16*>(activation), nullptr,
-      shape->input_size, row_scale, scaled);
+      shape->input_size, norm_scale, norm_eps, norm_multiplier, row_scale,
+      scaled);
   cudaError_t status = cudaGetLastError();
   if (status != cudaSuccess) return status;
   // Dense row-major weights: the up projection's channels follow the gate's.
@@ -670,14 +716,25 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4Gemm(
 extern "C" cudaError_t LiteRtNvidiaLaunchGemmScaleRows(
     const void* activation, const int32_t* row_indices, int32_t rows,
     int32_t input_size, float* row_scale, void* scaled, cudaStream_t stream) {
+  return LiteRtNvidiaLaunchGemmScaleRowsNormed(activation, row_indices, rows,
+                                               input_size, nullptr, 0.0f, 1.0f,
+                                               row_scale, scaled, stream);
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchGemmScaleRowsNormed(
+    const void* activation, const int32_t* row_indices, int32_t rows,
+    int32_t input_size, const float* norm_scale, float norm_eps,
+    float norm_multiplier, float* row_scale, void* scaled,
+    cudaStream_t stream) {
   if (activation == nullptr || rows <= 0 || rows % kBlockRows != 0 ||
       input_size <= 0 || input_size % kChunk != 0 || row_scale == nullptr ||
-      scaled == nullptr) {
+      scaled == nullptr || (norm_scale != nullptr && norm_eps < 0.0f)) {
     return cudaErrorInvalidValue;
   }
   ScaleRowsKernel<<<rows, kThreads, 0, stream>>>(
       static_cast<const __nv_bfloat16*>(activation), row_indices, input_size,
-      row_scale, static_cast<__half*>(scaled));
+      norm_scale, norm_eps, norm_multiplier, row_scale,
+      static_cast<__half*>(scaled));
   return cudaGetLastError();
 }
 
