@@ -52,6 +52,24 @@ cc_library(
 )
 
 cc_library(
+    name = "openvino_version_info",
+    srcs = ["openvino_version_info.cc"],
+    hdrs = ["openvino_version_info.h"],
+    copts = select({
+        "//litert/runtime/dispatch:windows_msvc": ["/EHsc"],
+        "//conditions:default": ["-fexceptions"],
+    }),
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/synchronization",
+        "@intel_openvino//:openvino",
+    ],
+)
+
+cc_library(
     name = "bytecode_header",
     hdrs = ["bytecode_header.h"],
     deps = [

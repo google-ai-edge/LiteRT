@@ -16,10 +16,10 @@
 #include <cstddef>
 #include <memory>
 #include <string>
-#include <vector>
+#include <vector>  // NOLINT
 
 #include "openvino/core/except.hpp"
-#include "openvino/runtime/core.hpp"
+#include "openvino/runtime/core.hpp"  // NOLINT
 #include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
@@ -38,7 +38,9 @@
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
 #include "litert/vendors/intel_openvino/dispatch/invocation_context.h"
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h"
+#include "litert/vendors/intel_openvino/openvino_version_info.h"
 
 namespace litert {
 namespace openvino {
@@ -111,11 +113,6 @@ LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
                                                        environment_options);
   }
 
-  ov::Core core;
-  std::vector<std::string> availableDevices = core.get_available_devices();
-  for (auto&& device : availableDevices)
-    LITERT_LOG(LITERT_INFO, "[Openvino]Found device plugin for: %s",
-               device.c_str());
 
   if (options) {
     litert::internal::OptionsWrapper internal_options(
@@ -152,7 +149,17 @@ LiteRtStatus DispatchGetVendorId(const char** vendor_id) {
 // This function returns a pointer to a statically allocated string that is the
 // ID of the Dispatch API runtime build.
 LiteRtStatus DispatchGetBuildId(const char** build_id) {
-  *build_id = "1.0";
+  if (build_id == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  static const auto* const build_id_str = new std::string([] {
+    const std::string openvino_ver_str =
+        litert::openvino::GetOpenVINOVersionString();
+    return absl::StrFormat("Intel OpenVINO Dispatch API version %d.%d.%d, %s",
+                           LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
+                           LITERT_API_VERSION_PATCH, openvino_ver_str);
+  }());
+  *build_id = build_id_str->c_str();
   return kLiteRtStatusOk;
 }
 

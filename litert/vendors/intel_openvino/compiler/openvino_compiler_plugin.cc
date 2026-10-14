@@ -30,15 +30,16 @@
 #include "openvino/core/except.hpp"
 #include "openvino/frontend/tensorflow_lite/frontend.hpp"
 #include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
-#include "openvino/openvino.hpp"
+#include "openvino/openvino.hpp"  // NOLINT
 #include "openvino/runtime/core.hpp"
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl  // NOLINT
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/litert_op_options.h"
+#include "litert/c/litert_op_options.h"  // NOLINT
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -51,6 +52,7 @@
 #include "litert/compiler/cc/litert_op_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/intel_openvino/bytecode_header.h"
+#include "litert/vendors/intel_openvino/openvino_version_info.h"
 #include "litert/vendors/intel_openvino/compiler/alias_shared_constants.h"
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
@@ -297,9 +299,9 @@ LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
   if (compiler_plugin == nullptr || sdk_version == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  // No-op implementation for Intel OpenVINO plugin.
-  // TODO: Add the SDK version to the plugin.
-  *sdk_version = "";
+  static const auto* const openvino_version_str =
+      new std::string(litert::openvino::GetOpenVINOVersionString());
+  *sdk_version = openvino_version_str->c_str();
   return kLiteRtStatusOk;
 }
 
@@ -602,7 +604,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         context.ConfigureForNpuWeightSharing();
       }
 
-      auto graph_name = absl::StrFormat("Partition_%d", partition_idx);
+      auto graph_name = absl::StrCat("Partition_", partition_idx);
       litert::Expected<litert::compiler::Subgraph> expected_subgraph =
           model.Subgraph(partition_idx);
       if (expected_subgraph.HasValue()) {
@@ -639,6 +641,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         }
 
         // Compile using the per-partition device and properties.
+        litert::openvino::LogOpenVINOVersionInfoOnce(
+            "OpenVINO Compiler", context.Device().c_str());
         LITERT_LOG(LITERT_INFO, "Compiling partition %d for device %s",
                    partition_idx, context.Device().c_str());
         auto compiled_model =
