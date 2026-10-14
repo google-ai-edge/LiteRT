@@ -329,7 +329,7 @@ __global__ void MoeRouteKernel(const __nv_bfloat16* __restrict__ logits,
 // Decode: grid (hidden_dim / kTileRows, rows * top_k). hidden[pair][o] =
 // gelu(x . gate_e) * (x . up_e) for the pair's row and expert. With
 // `norm_scale` the row is RMS-normalized on the way in (the pre-expert norm).
-template <int Threads>
+template <int Threads, bool kCompact>
 __global__ void __launch_bounds__(Threads)
     MoeHiddenKernel(const __nv_bfloat16* __restrict__ activation,
                     const int32_t* __restrict__ top_indices,
@@ -379,14 +379,14 @@ __global__ void __launch_bounds__(Threads)
   float up[1][kTileRows] = {};
   float squares[1] = {};
   float up_squares[1] = {};
-  AccumulateTile<__nv_bfloat16, 1, Threads>(
+  AccumulateTile<__nv_bfloat16, 1, Threads, kTileRows, kCompact>(
       ExpertTile(arena.gate, arena.gate_scales, arena.gate_scale_max,
                  arena.compact_scales, shape.experts, expert, o0,
                  shape.hidden_dim, shape.model_dim),
       act, shape.model_dim, gate, norm_scale, squares);
   ReduceTile<1, Threads>(gate, warp_sums);
   __syncthreads();
-  AccumulateTile<__nv_bfloat16, 1, Threads>(
+  AccumulateTile<__nv_bfloat16, 1, Threads, kTileRows, kCompact>(
       ExpertTile(arena.up, arena.up_scales, arena.up_scale_max,
                  arena.compact_scales, shape.experts, expert, o0,
                  shape.hidden_dim, shape.model_dim),
@@ -413,7 +413,7 @@ __global__ void __launch_bounds__(Threads)
 // Decode: grid (model_dim / kTileRows, rows * top_k). partial[pair][o] =
 // w_pair * (hidden[pair] . down_e[o]) for the pair's expert e, so every
 // routed expert's tiles run in parallel; MoeCombineKernel sums the pairs.
-template <int Threads>
+template <int Threads, bool kCompact>
 __global__ void __launch_bounds__(Threads)
     MoeDownKernel(const float* __restrict__ hidden,
                   const int32_t* __restrict__ top_indices,
@@ -438,7 +438,7 @@ __global__ void __launch_bounds__(Threads)
       hidden + static_cast<size_t>(pair) * shape.hidden_dim,
       static_cast<size_t>(shape.hidden_dim), nullptr};
   float acc[1][kTileRows] = {};
-  AccumulateTile<float, 1, Threads>(
+  AccumulateTile<float, 1, Threads, kTileRows, kCompact>(
       ExpertTile(arena.down, arena.down_scales, arena.down_scale_max,
                  arena.compact_scales, shape.experts, expert, o0,
                  shape.model_dim, shape.hidden_dim),
@@ -875,18 +875,32 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
   constexpr int kDownThreads = 32;
   if (shape.rows <= kLiteRtNvidiaInt4BlockGemvMaxRows) {
     float* partial = reinterpret_cast<float*>(workspace + w.partial);
-    MoeHiddenKernel<Threads>
-        <<<dim3(hidden_tiles, shape.rows * shape.top_k), Threads, 0, stream>>>(
-            activation, top_indices, logits, renormalize,
-            reinterpret_cast<int32_t*>(workspace + w.top_indices),
-            reinterpret_cast<float*>(workspace + w.top_weights), norm_scale,
-            norm_eps, arena, shape, hidden);
+    const dim3 hidden_grid(hidden_tiles, shape.rows * shape.top_k);
+    const dim3 down_grid(model_tiles, shape.rows * shape.top_k);
+    auto* route_indices = reinterpret_cast<int32_t*>(workspace + w.top_indices);
+    auto* route_weights = reinterpret_cast<float*>(workspace + w.top_weights);
+    if (arena.compact_scales != 0) {
+      MoeHiddenKernel<Threads, true><<<hidden_grid, Threads, 0, stream>>>(
+          activation, top_indices, logits, renormalize, route_indices,
+          route_weights, norm_scale, norm_eps, arena, shape, hidden);
+    } else {
+      MoeHiddenKernel<Threads, false><<<hidden_grid, Threads, 0, stream>>>(
+          activation, top_indices, logits, renormalize, route_indices,
+          route_weights, norm_scale, norm_eps, arena, shape, hidden);
+    }
     cudaError_t status = cudaPeekAtLastError();
     if (status != cudaSuccess) return status;
-    MoeDownKernel<kDownThreads>
-        <<<dim3(model_tiles, shape.rows * shape.top_k), kDownThreads, 0,
-           stream>>>(hidden, top_indices, top_weights, per_expert_scale, arena,
-                     shape, partial);
+    if (arena.compact_scales != 0) {
+      MoeDownKernel<kDownThreads, true>
+          <<<down_grid, kDownThreads, 0, stream>>>(hidden, top_indices,
+                                                   top_weights, per_expert_scale,
+                                                   arena, shape, partial);
+    } else {
+      MoeDownKernel<kDownThreads, false>
+          <<<down_grid, kDownThreads, 0, stream>>>(hidden, top_indices,
+                                                   top_weights, per_expert_scale,
+                                                   arena, shape, partial);
+    }
     status = cudaPeekAtLastError();
     if (status != cudaSuccess) return status;
     if (block != nullptr) {

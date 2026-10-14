@@ -109,7 +109,8 @@ __device__ __forceinline__ float Nibble(uint32_t word, int index) {
 // multiplied by norm_scale[k] and the thread's sum of squares of the raw
 // activations of each row goes to squares[r]; the caller divides by the
 // row's RMS after the reduction.
-template <typename T, int Rows, int Threads, int TileRows = kTileRows>
+template <typename T, int Rows, int Threads, int TileRows = kTileRows,
+          bool kCompact = false>
 __device__ __forceinline__ void AccumulateTile(const WeightTile& tile,
                                                const ActivationRows<T>& act,
                                                int input_size,
@@ -122,15 +123,16 @@ __device__ __forceinline__ void AccumulateTile(const WeightTile& tile,
   for (int r = 0; r < Rows; ++r) {
     rows[r] = act.Row(r);
   }
-  // Compact scales: the rows' maxima, loaded once; converted where they are
-  // first used so the loads overlap the first weight loads instead of
-  // standing before them.
+  // Compact scales (kCompact): the rows' maxima, loaded once; converted
+  // where first used so the loads overlap the first weight loads.
   __half row_max[TileRows];
+  if constexpr (kCompact) {
 #pragma unroll
-  for (int i = 0; i < TileRows; ++i) {
-    row_max[i] = tile.fractions != nullptr && i < tile.valid_rows
-                     ? __ldg(tile.scale_max + i * tile.max_stride)
-                     : __float2half(0.0f);
+    for (int i = 0; i < TileRows; ++i) {
+      row_max[i] = i < tile.valid_rows
+                       ? __ldg(tile.scale_max + i * tile.max_stride)
+                       : __float2half(0.0f);
+    }
   }
   for (int b = threadIdx.x; b < blocks; b += Threads) {
     uint4 words[TileRows];
@@ -140,12 +142,13 @@ __device__ __forceinline__ void AccumulateTile(const WeightTile& tile,
       if (i < tile.valid_rows) {
         words[i] = __ldg(reinterpret_cast<const uint4*>(
             tile.weights + i * tile.weight_stride + b * (kBlock / 2)));
-        scales[i] =
-            tile.fractions != nullptr
-                ? __half2float(row_max[i]) * (1.0f / 255.0f) *
+        if constexpr (kCompact) {
+          scales[i] = __half2float(row_max[i]) * (1.0f / 255.0f) *
                       static_cast<float>(
-                          __ldg(tile.fractions + i * tile.scale_stride + b))
-                : __half2float(tile.scales[i * tile.scale_stride + b]);
+                          __ldg(tile.fractions + i * tile.scale_stride + b));
+        } else {
+          scales[i] = __half2float(tile.scales[i * tile.scale_stride + b]);
+        }
       } else {
         words[i] = make_uint4(0, 0, 0, 0);
         scales[i] = 0.0f;
