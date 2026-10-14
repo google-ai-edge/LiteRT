@@ -72,11 +72,14 @@ target_sources(qnn_builders
         topk_op_builder.cc
         group_norm_op_builder.cc
         custom_op_builder.cc
+        detection_postprocess_op_builder.cc
 )
 
 target_include_directories(qnn_builders
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    PRIVATE
+        ${CMAKE_BINARY_DIR}/flatbuffers/include
 )
 
 target_link_libraries(qnn_builders
