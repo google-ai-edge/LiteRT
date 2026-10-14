@@ -41,7 +41,6 @@ absl::Status CreateShortConvStepFromIrOp(
 // Exposed for testing in short_conv_step_kernel_test.
 std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
     const ::ml_drift::TensorDescriptor& in_proj_desc,
-    const ::ml_drift::TensorDescriptor& conv_state_desc,
     const ::ml_drift::TensorDescriptor& conv_weight_desc,
     const ::ml_drift::TensorDescriptor* conv_bias_desc,
     const ::ml_drift::TensorDescriptor& dst_desc,
