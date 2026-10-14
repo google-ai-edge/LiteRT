@@ -2550,6 +2550,7 @@ class LiteRtDispatchInvocationContextT {
     }
     ++own_graph_captures_;
     LogOwnGraph(captured);
+    AutopsyOwnGraph(captured);
     cudaGraphExec_t exec = nullptr;
     status = cudaGraphInstantiate(&exec, captured, 0);
     cudaGraphDestroy(captured);
@@ -2567,6 +2568,177 @@ class LiteRtDispatchInvocationContextT {
         CudaOk(cudaGraphLaunch(exec, stream_), "cudaGraphLaunch step graph"));
     ++graph->replays;
     return {};
+  }
+
+  // LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_AUTOPSY=path: every kernel node of the
+  // first captured step graph timed on its own (a clone of the graph with the
+  // other nodes removed), warm and cold (two passes of a kernel that rewrites
+  // 128 MB ahead of it flush L2; their own time is subtracted). A graph launch
+  // costs 10-16 us here, more than most kernels, so each measurement captures
+  // several launches of the node's graph into one graph and divides. One line
+  // per node: index (the DOT's ID), grid, block, cold us, warm us. The CUPTI
+  // tools do not see kernels on this host; this is the step's per-kernel
+  // profile.
+  void AutopsyOwnGraph(cudaGraph_t graph) {
+    const char* path = std::getenv("LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_AUTOPSY");
+    if (path == nullptr || path[0] == '\0' || autopsy_done_) {
+      return;
+    }
+    autopsy_done_ = true;
+    size_t count = 0;
+    if (cudaGraphGetNodes(graph, nullptr, &count) != cudaSuccess ||
+        count == 0) {
+      return;
+    }
+    std::vector<cudaGraphNode_t> nodes(count);
+    if (cudaGraphGetNodes(graph, nodes.data(), &count) != cudaSuccess) {
+      return;
+    }
+    constexpr size_t kFlushBytes = size_t{128} << 20;
+    void* flush = nullptr;
+    if (cudaMalloc(&flush, kFlushBytes) != cudaSuccess) {
+      static_cast<void>(cudaGetLastError());
+      return;
+    }
+    FILE* out = std::fopen(path, "w");
+    if (out == nullptr) {
+      cudaFree(flush);
+      return;
+    }
+    cudaEvent_t start = nullptr;
+    cudaEvent_t stop = nullptr;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    constexpr int kIters = 10;
+    auto time_graph = [&](cudaGraph_t g) -> double {
+      cudaGraphExec_t exec = nullptr;
+      if (cudaGraphInstantiate(&exec, g, 0) != cudaSuccess) {
+        static_cast<void>(cudaGetLastError());
+        return -1.0;
+      }
+      for (int i = 0; i < 2; ++i) {
+        cudaGraphLaunch(exec, stream_);
+      }
+      cudaEventRecord(start, stream_);
+      for (int i = 0; i < kIters; ++i) {
+        cudaGraphLaunch(exec, stream_);
+      }
+      cudaEventRecord(stop, stream_);
+      cudaEventSynchronize(stop);
+      float ms = 0.0f;
+      cudaEventElapsedTime(&ms, start, stop);
+      cudaGraphExecDestroy(exec);
+      return ms * 1000.0 / kIters;
+    };
+    constexpr int kRepeatWarm = 10;
+    constexpr int kRepeatCold = 4;
+    // Two passes of the flush, captured once as a graph.
+    cudaGraph_t flush_graph = nullptr;
+    if (cudaStreamBeginCapture(stream_, cudaStreamCaptureModeThreadLocal) ==
+        cudaSuccess) {
+      LiteRtNvidiaLaunchL2Flush(flush, kFlushBytes, stream_);
+      LiteRtNvidiaLaunchL2Flush(flush, kFlushBytes, stream_);
+      cudaStreamEndCapture(stream_, &flush_graph);
+    }
+    if (flush_graph == nullptr) {
+      static_cast<void>(cudaGetLastError());
+      std::fclose(out);
+      cudaEventDestroy(start);
+      cudaEventDestroy(stop);
+      cudaFree(flush);
+      return;
+    }
+    // `repeat` rounds of [flush,] node graph, chained as child graph nodes
+    // of one graph; its time per round.
+    auto time_sequence = [&](cudaGraph_t node_graph, bool with_flush,
+                             int repeat) -> double {
+      cudaGraph_t g = nullptr;
+      if (cudaGraphCreate(&g, 0) != cudaSuccess) {
+        static_cast<void>(cudaGetLastError());
+        return -1.0;
+      }
+      cudaGraphNode_t previous = nullptr;
+      bool ok = true;
+      auto append = [&](cudaGraph_t child) {
+        cudaGraphNode_t node = nullptr;
+        ok = ok && cudaGraphAddChildGraphNode(
+                       &node, g, previous == nullptr ? nullptr : &previous,
+                       previous == nullptr ? 0 : 1, child) == cudaSuccess;
+        previous = node;
+      };
+      for (int i = 0; i < repeat && ok; ++i) {
+        if (with_flush) {
+          append(flush_graph);
+        }
+        if (node_graph != nullptr) {
+          append(node_graph);
+        }
+      }
+      double us = -1.0;
+      if (ok) {
+        us = time_graph(g);
+      } else {
+        static_cast<void>(cudaGetLastError());
+      }
+      cudaGraphDestroy(g);
+      return us < 0.0 ? us : us / repeat;
+    };
+    const double flush_us = time_sequence(nullptr, true, kRepeatCold);
+    std::fprintf(out, "# flush_us %.1f\n", flush_us);
+    std::fprintf(out, "# node grid_x grid_y grid_z block_x cold_us warm_us\n");
+    size_t timed = 0;
+    for (size_t i = 0; i < count; ++i) {
+      cudaGraphNodeType type;
+      if (cudaGraphNodeGetType(nodes[i], &type) != cudaSuccess ||
+          type != cudaGraphNodeTypeKernel) {
+        continue;
+      }
+      cudaGraph_t clone = nullptr;
+      if (cudaGraphClone(&clone, graph) != cudaSuccess) {
+        static_cast<void>(cudaGetLastError());
+        break;
+      }
+      cudaGraphNode_t keep = nullptr;
+      if (cudaGraphNodeFindInClone(&keep, nodes[i], clone) != cudaSuccess) {
+        static_cast<void>(cudaGetLastError());
+        cudaGraphDestroy(clone);
+        break;
+      }
+      size_t clone_count = 0;
+      cudaGraphGetNodes(clone, nullptr, &clone_count);
+      std::vector<cudaGraphNode_t> clone_nodes(clone_count);
+      cudaGraphGetNodes(clone, clone_nodes.data(), &clone_count);
+      for (cudaGraphNode_t n : clone_nodes) {
+        if (n != keep) {
+          cudaGraphDestroyNode(n);
+        }
+      }
+      const double warm = time_sequence(clone, false, kRepeatWarm);
+      const double cold = time_sequence(clone, true, kRepeatCold) - flush_us;
+      cudaKernelNodeParams params{};
+      dim3 grid(0, 0, 0);
+      dim3 block(0, 0, 0);
+      if (cudaGraphKernelNodeGetParams(keep, &params) == cudaSuccess) {
+        grid = params.gridDim;
+        block = params.blockDim;
+      } else {
+        static_cast<void>(cudaGetLastError());
+      }
+      std::fprintf(out, "%zu %u %u %u %u %.2f %.2f\n", i, grid.x, grid.y,
+                   grid.z, block.x, cold, warm);
+      cudaGraphDestroy(clone);
+      ++timed;
+    }
+    std::fclose(out);
+    cudaGraphDestroy(flush_graph);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+    cudaFree(flush);
+    static_cast<void>(cudaGetLastError());
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA dispatch %s: autopsy of %zu kernel nodes written to %s "
+               "(flush %.1f us)",
+               bytecode_.function_name.c_str(), timed, path, flush_us);
   }
 
   // What the captured step holds; LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_DOT=dir
@@ -2885,6 +3057,7 @@ class LiteRtDispatchInvocationContextT {
   std::vector<OwnGraph> own_graphs_;
   int64_t own_graph_captures_ = 0;
   int64_t own_graph_direct_ = 0;
+  bool autopsy_done_ = false;
   std::vector<LiteRtTensorBufferHandle> input_handles_;
   std::vector<LiteRtTensorBufferHandle> output_handles_;
   std::vector<void*> bound_input_ptrs_;
