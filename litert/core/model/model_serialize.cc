@@ -167,6 +167,34 @@ class SerializationContext {
   // tfl.
   uint32_t DispatchOpCodeInd() const { return dispatch_op_code_ind_; }
 
+  // Get the index in the tfl op codes for the given builtin op, appending a
+  // new (version 1) op code if the builtin is not in the table yet. This is
+  // needed for builtin ops created after loading (e.g. by graph
+  // transformations) which remain outside of dispatch partitions.
+  uint32_t BuiltinOpCodeInd(LiteRtOpCode litert_op_code) {
+    const auto builtin_code =
+        static_cast<::tflite::BuiltinOperator>(litert_op_code);
+    auto& op_codes = tfl_model_->operator_codes;
+    for (size_t i = 0; i < op_codes.size(); ++i) {
+      const auto& op_code = *op_codes[i];
+      const auto code =
+          std::max(op_code.builtin_code,
+                   static_cast<::tflite::BuiltinOperator>(
+                       op_code.deprecated_builtin_code));
+      if (code == builtin_code && op_code.custom_code.empty()) {
+        return i;
+      }
+    }
+    auto op_code = std::make_unique<TflOpCode>();
+    op_code->builtin_code = builtin_code;
+    op_code->deprecated_builtin_code = static_cast<int8_t>(std::min<int32_t>(
+        builtin_code,
+        ::tflite::BuiltinOperator_PLACEHOLDER_FOR_GREATER_OP_CODES));
+    op_code->version = 1;
+    op_codes.push_back(std::move(op_code));
+    return op_codes.size() - 1;
+  }
+
  private:
   TflModelPtr tfl_model_;
   uint32_t dispatch_op_code_ind_;
@@ -182,11 +210,21 @@ LiteRtStatus PackOp(SerializationContext& builder, LiteRtOpT& litert_op,
                     TflOp& tfl_op, const TensorMap& tensor_map) {
   // Get index of the op code in the tfl model.
   auto tfl_op_code_ind = litert::internal::GetTflOpCodeInd(litert_op);
-  const bool is_dispatch_op =
+  const bool has_no_op_code_ind =
       tfl_op_code_ind == litert::internal::kDispatchOpCodeTflInd;
 
-  if (is_dispatch_op) {
-    tfl_op_code_ind = builder.DispatchOpCodeInd();
+  if (has_no_op_code_ind) {
+    // Ops carrying a bytecode asset are dispatch ops, even if their op code
+    // was never set explicitly.
+    const bool is_dispatch =
+        litert_op.OpCode() == kLiteRtOpCodeTflCustom ||
+        builder.LitertModel().FindOpAsset(&litert_op).HasValue();
+    if (is_dispatch) {
+      tfl_op_code_ind = builder.DispatchOpCodeInd();
+    } else {
+      // Builtin op created after loading (e.g. by a graph transformation).
+      tfl_op_code_ind = builder.BuiltinOpCodeInd(litert_op.OpCode());
+    }
   }
 
   tfl_op.opcode_index = tfl_op_code_ind;

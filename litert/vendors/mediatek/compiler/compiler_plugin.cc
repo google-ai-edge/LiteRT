@@ -17,18 +17,22 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <filesystem>
+#include <filesystem>  // NOLINT
 #include <memory>
 #include <optional>
 #include <string>
 #include <tuple>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "neuron/api/NeuronAdapter.h"
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/strings/ascii.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
@@ -39,6 +43,7 @@
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_opaque_options_wrapper.h"
 #include "litert/cc/internal/litert_options_wrapper.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/compiler/cc/litert_model.h"
@@ -47,7 +52,14 @@
 #include "litert/vendors/mediatek/compiler/create_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/common_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
+#include "litert/vendors/mediatek/compiler/transformations/attention_chunk_transformation.h"
+#include "litert/vendors/mediatek/compiler/transformations/attention_mask_transformation.h"
+#include "litert/vendors/mediatek/compiler/transformations/entry_embedding_transformation.h"
+#include "litert/vendors/mediatek/compiler/transformations/index_arith_transformation.h"
+#include "litert/vendors/mediatek/compiler/transformations/mlp_quant_transformation.h"
+#include "litert/vendors/mediatek/compiler/transformations/orphan_cleanup_transformation.h"
 #include "litert/vendors/mediatek/compiler/transformations/rms_norm_quant_transformation.h"
+#include "litert/vendors/mediatek/compiler/transformations/rope_transformation.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 #include "litert/vendors/mediatek/schema/neuron_schema_generated.h"
 #include "litert/vendors/mediatek/schema/schema_resolver.h"
@@ -462,6 +474,85 @@ bool IsOpSupported(const litert::compiler::Op& op,
   return false;
 }
 
+bool IsDataMovementOp(LiteRtOpCode code) {
+  switch (code) {
+    case kLiteRtOpCodeTflReshape:
+    case kLiteRtOpCodeTflSlice:
+    case kLiteRtOpCodeTflStridedSlice:
+    case kLiteRtOpCodeTflCast:
+    case kLiteRtOpCodeTflTranspose:
+    case kLiteRtOpCodeTflConcatenation:
+    case kLiteRtOpCodeTflSqueeze:
+    case kLiteRtOpCodeTflExpandDims:
+    case kLiteRtOpCodeTflSplit:
+    case kLiteRtOpCodeTflUnpack:
+    case kLiteRtOpCodeTflPack:
+    case kLiteRtOpCodeTflTile:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool IsFloatOrQuantized(const litert::compiler::Tensor& t) {
+  if (t.Get() == nullptr || t.IsConstant()) return false;
+  const auto type = t.ElementType();
+  return t.HasQuantization() || type == litert::ElementType::Float32 ||
+         type == litert::ElementType::Float16 ||
+         type == litert::ElementType::BFloat16;
+}
+
+// Unselects connected components of selected ops that are not worth a
+// separate NPU dispatch: components consisting solely of data movement
+// operations, or containing no floating-point/quantized compute tensors.
+void DropTrivialComponents(const std::vector<litert::compiler::Op>& ops,
+                           std::vector<bool>& selected) {
+  const char* keep = std::getenv("LITERT_MEDIATEK_KEEP_TRIVIAL_PARTITIONS");
+  if (keep != nullptr && keep[0] != '\0' && keep[0] != '0') return;
+  const int n = static_cast<int>(ops.size());
+  absl::flat_hash_map<LiteRtOp, int> index;
+  for (int i = 0; i < n; ++i) index[ops[i].Get()] = i;
+  std::vector<int> parent(n);
+  for (int i = 0; i < n; ++i) parent[i] = i;
+  auto find = [&](int x) {
+    while (parent[x] != x) x = parent[x] = parent[parent[x]];
+    return x;
+  };
+  for (int i = 0; i < n; ++i) {
+    if (!selected[i]) continue;
+    for (const auto& out : ops[i].Outputs()) {
+      for (const auto& use : out.Uses()) {
+        auto it = index.find(use.user.Get());
+        if (it != index.end() && selected[it->second]) {
+          parent[find(i)] = find(it->second);
+        }
+      }
+    }
+  }
+  absl::flat_hash_map<int, bool> all_data_movement;
+  absl::flat_hash_map<int, bool> has_float;
+  for (int i = 0; i < n; ++i) {
+    if (!selected[i]) continue;
+    const int root = find(i);
+    auto dm = all_data_movement.emplace(root, true).first;
+    dm->second = dm->second && IsDataMovementOp(ops[i].Code());
+    auto fl = has_float.emplace(root, false).first;
+    for (const auto& t : ops[i].Inputs()) {
+      fl->second = fl->second || IsFloatOrQuantized(t);
+    }
+    for (const auto& t : ops[i].Outputs()) {
+      fl->second = fl->second || IsFloatOrQuantized(t);
+    }
+  }
+  for (int i = 0; i < n; ++i) {
+    if (!selected[i]) continue;
+    const int root = find(i);
+    if (all_data_movement[root] || !has_float[root]) {
+      selected[i] = false;
+    }
+  }
+}
+
 }  // namespace
 
 LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
@@ -504,11 +595,17 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   if (!use_get_supported_operations ||
       !neuron_adapter_api->IsFeatureEnabled(
           litert::mediatek::NeuronFeatureType::NEURON_FEATURE_UNKNOWN_OP)) {
-    for (const auto& op : ops) {
-      if (!IsOpSupported(op, *neuron_adapter_api)) {
+    std::vector<bool> selected(num_ops);
+    for (int op_idx = 0; op_idx < num_ops; ++op_idx) {
+      selected[op_idx] = IsOpSupported(ops[op_idx], *neuron_adapter_api);
+    }
+    DropTrivialComponents(ops, selected);
+    for (int op_idx = 0; op_idx < num_ops; ++op_idx) {
+      if (!selected[op_idx]) {
         continue;
       }
-      LITERT_RETURN_IF_ERROR(op.ctx()->push_op(selected_ops, op.Get(), 0));
+      LITERT_RETURN_IF_ERROR(
+          ops[op_idx].ctx()->push_op(selected_ops, ops[op_idx].Get(), 0));
     }
     return kLiteRtStatusOk;
   }
@@ -516,7 +613,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
   Expected<void> status;
   // Mark un-legalized ops as unknown ops.
-  std::unordered_set<int> unknown_op_indices;
+  absl::flat_hash_set<int> unknown_op_indices;
   for (int op_idx = 0; op_idx < num_ops; ++op_idx) {
     const auto& op = ops[op_idx];
     if (!IsOpSupported(op, *neuron_adapter_api)) {
@@ -547,8 +644,13 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
     return status.Error().Status();
   }
+  std::vector<bool> selected(num_ops);
   for (int op_idx = 0; op_idx < num_ops; ++op_idx) {
-    if (support_flags[op_idx]) {
+    selected[op_idx] = support_flags[op_idx];
+  }
+  DropTrivialComponents(ops, selected);
+  for (int op_idx = 0; op_idx < num_ops; ++op_idx) {
+    if (selected[op_idx]) {
       LITERT_RETURN_IF_ERROR(
           ops[op_idx].ctx()->push_op(selected_ops, ops[op_idx].Get(), 0));
     }
@@ -663,17 +765,109 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   return kLiteRtStatusOk;
 }
 
+namespace {
+
+// Opt-out filter for graph transformations, optionally configured via the
+// LITERT_MEDIATEK_GRAPH_TRANSFORM environment variable as a comma-separated
+// list of tokens, e.g. "no_rope,no_mlp_quant" or "no_transforms".
+struct GraphTransformFilter {
+  bool rms_norm_quant = true;
+  bool attention_mask = true;
+  bool entry_embedding = true;
+  bool rope = true;
+  bool mlp_quant = true;
+  bool attention_chunk = true;
+  bool floor_div = true;
+  bool one_hot_arith = true;
+
+  static GraphTransformFilter FromEnv() {
+    GraphTransformFilter f;
+    const char* env = std::getenv("LITERT_MEDIATEK_GRAPH_TRANSFORM");
+    if (env == nullptr) {
+      return f;
+    }
+    for (absl::string_view token :
+         absl::StrSplit(env, ',', absl::SkipWhitespace())) {
+      token = absl::StripAsciiWhitespace(token);
+      if (token == "no_transforms") {
+        f = {false, false, false, false, false, false, false, false};
+      } else if (token == "no_rms_norm_quant") {
+        f.rms_norm_quant = false;
+      } else if (token == "no_attention_mask") {
+        f.attention_mask = false;
+      } else if (token == "no_entry_embedding") {
+        f.entry_embedding = false;
+      } else if (token == "no_rope") {
+        f.rope = false;
+      } else if (token == "no_mlp_quant") {
+        f.mlp_quant = false;
+      } else if (token == "no_attention_chunk") {
+        f.attention_chunk = false;
+      } else if (token == "no_floor_div") {
+        f.floor_div = false;
+      } else if (token == "no_one_hot_arith") {
+        f.one_hot_arith = false;
+      }
+    }
+    return f;
+  }
+};
+
+}  // namespace
+
 LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
     LiteRtCompilerPlugin compiler_plugin,
     LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns) {
   if (!compiler_plugin || !transformations || !num_patterns) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  compiler_plugin->Transformations().clear();
-  compiler_plugin->Transformations().push_back(
-      {&RmsNormQuantTransformation, "RmsNormQuantTransformation", 100});
-  *num_patterns = compiler_plugin->Transformations().size();
-  *transformations = compiler_plugin->Transformations().data();
+  ResetOrphanRegistry();
+  ResetRopeTransformationState();
+  ResetAttentionChunkTransformationState();
+  ResetEntryEmbeddingTransformationState();
+  const auto filter = GraphTransformFilter::FromEnv();
+  auto& list = compiler_plugin->Transformations();
+  list.clear();
+  if (filter.rms_norm_quant) {
+    list.push_back(
+        {&RmsNormQuantTransformation, "RmsNormQuantTransformation", 100});
+  }
+  if (filter.attention_mask) {
+    list.push_back(
+        {&AttentionMaskTransformation, "AttentionMaskTransformation", 100});
+  }
+  if (filter.entry_embedding) {
+    list.push_back(
+        {&EntryEmbeddingTransformation, "EntryEmbeddingTransformation", 100});
+    // Only fires on trig chains registered by EntryEmbeddingTransformation.
+    list.push_back({&EntryEmbeddingTrigFoldTransformation,
+                    "EntryEmbeddingTrigFoldTransformation", 95});
+  }
+  if (filter.mlp_quant) {
+    list.push_back(
+        {&MLPInt8QuantTransformation, "MLPInt8QuantTransformation", 100});
+  }
+  if (filter.attention_chunk) {
+    list.push_back(
+        {&AttentionChunkTransformation, "AttentionChunkTransformation", 100});
+  }
+  if (filter.rope) {
+    list.push_back({&RopeTransformation, "RopeTransformation", 90});
+  }
+  if (filter.floor_div) {
+    list.push_back({&FloorDivTransformation, "FloorDivTransformation", 90});
+  }
+  if (filter.one_hot_arith) {
+    list.push_back(
+        {&OneHotArithTransformation, "OneHotArithTransformation", 90});
+  }
+  if (filter.entry_embedding || filter.rope || filter.attention_chunk ||
+      filter.one_hot_arith) {
+    list.push_back(
+        {&OrphanCleanupTransformation, "OrphanCleanupTransformation", 80});
+  }
+  *num_patterns = list.size();
+  *transformations = list.data();
   return kLiteRtStatusOk;
 }
 
