@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_COMPILER_OPTIONS_H_
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "litert/c/litert_common.h"
 
@@ -81,12 +82,34 @@ LiteRtStatus LrtGetCompilerOptionsDummyOption(const LrtCompilerOptions* options,
 
 // Sets the maximum number of partitions allowed.
 // A value of 0 means unlimited.
-LiteRtStatus LrtSetCompilerOptionsMaxPartitions(
-    LrtCompilerOptions* options, size_t max_partitions);
+LiteRtStatus LrtSetCompilerOptionsMaxPartitions(LrtCompilerOptions* options,
+                                                size_t max_partitions);
 
 // Gets the maximum number of partitions allowed.
 LiteRtStatus LrtGetCompilerOptionsMaxPartitions(
     const LrtCompilerOptions* options, size_t* max_partitions);
+
+// Appends a positional input shape override for `signature_key`'s subgraph.
+// Pass NULL or "" for `signature_key` to target the default (first) signature
+// or main subgraph.
+LiteRtStatus LrtAddCompilerOptionsPositionalInputShape(
+    LrtCompilerOptions* options, const char* signature_key, const int32_t* dims,
+    size_t rank);
+
+// Appends an input shape override by tensor name within `signature_key`'s
+// subgraph. Pass NULL or "" for `signature_key` to target the default (first)
+// signature or main subgraph.
+LiteRtStatus LrtAddCompilerOptionsTensorInputShape(LrtCompilerOptions* options,
+                                                   const char* signature_key,
+                                                   const char* tensor_name,
+                                                   const int32_t* dims,
+                                                   size_t rank);
+
+// Appends an input shape override by signature key and signature input name.
+// Pass NULL or "" for `signature_key` to target the default (first) signature.
+LiteRtStatus LrtAddCompilerOptionsSignatureInputShape(
+    LrtCompilerOptions* options, const char* signature_key,
+    const char* input_name, const int32_t* dims, size_t rank);
 
 #ifdef __cplusplus
 }  // extern "C"

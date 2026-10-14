@@ -101,6 +101,7 @@
 #endif  // !defined(LITERT_DISABLE_CPU)
 #include "litert/runtime/litert_runtime_options.h"
 #if !defined(LITERT_NO_BUILTIN_OPS)
+#include "litert/core/model/shape_inference.h"
 #include "litert/runtime/magic_number_utils.h"
 #endif  // !defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/runtime/metrics.h"
@@ -821,9 +822,13 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
     LiteRtOptions options, LiteRtEnvironmentT& env) {
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Graph Loading");
+  bool input_shapes_applied = false;
 #if !defined(LITERT_NO_BUILTIN_OPS)
   LITERT_RETURN_IF_ERROR(
       litert::internal::ReplaceMagicNumbersIfAny(env, model));
+  LITERT_ASSIGN_OR_RETURN(
+      input_shapes_applied,
+      litert::internal::ApplyInputShapesIfAny(options, model));
 #endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
   if (auto source_path = model.SourcePath()) {
@@ -861,6 +866,13 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
       }
     }
 #endif
+  }
+
+  if (input_shapes_applied) {
+    LITERT_LOG(LITERT_WARNING,
+               "Compiler input shapes are provided, but no compiler plugin was "
+               "applied. Input shape refinement on LiteRtModel will not take "
+               "effect.");
   }
 
   const auto& tfl_wrapper = litert::internal::GetTflFlatbuffer(model);

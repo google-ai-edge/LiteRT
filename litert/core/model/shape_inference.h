@@ -15,14 +15,20 @@
 #ifndef ODML_LITERT_LITERT_CORE_MODEL_SHAPE_INFERENCE_H_
 #define ODML_LITERT_LITERT_CORE_MODEL_SHAPE_INFERENCE_H_
 
+#include <string>
+#include <utility>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/shape_inference_types.h"
+
+struct LiteRtCompilerOptionsT;
 
 namespace litert::internal {
 
@@ -71,6 +77,15 @@ class ShapeInferenceEngine {
                                   absl::Span<Dims> input_shapes,
                                   LiteRtSubgraphT** new_subgraph);
 
+  // Refines input tensor shapes on the subgraph corresponding to
+  // `signature_key` (or the first signature / main subgraph if `signature_key`
+  // is empty) and runs shape inference across that subgraph (including any
+  // nested kLiteRtOpCodeShloComposite decomposition subgraphs).
+  Expected<LiteRtSubgraph> ApplyInputShapes(
+      absl::string_view signature_key, absl::Span<const Dims> positional_inputs,
+      absl::Span<const std::pair<std::string, Dims>> tensor_inputs,
+      absl::Span<const std::pair<std::string, Dims>> signature_inputs);
+
  private:
   void RegisterStandardOps();
 
@@ -79,6 +94,19 @@ class ShapeInferenceEngine {
   TensorDataMap transient_data_;
   absl::flat_hash_set<const LiteRtSubgraphT*> active_composite_subgraphs_;
 };
+
+// Applies all input shape refinements configured in `compiler_options` to
+// `model` in deterministic signature encounter order. Returns `true` if input
+// shapes were configured and applied, or `false` if no input shapes were
+// configured.
+Expected<bool> ApplyCompilerOptionsInputShapes(
+    const LiteRtCompilerOptionsT& compiler_options, LiteRtModelT& model);
+
+// Extracts `LiteRtCompilerOptionsT` from `options` (if present) and applies any
+// configured input shape refinements to `model`. Returns `true` if input shapes
+// were present and applied, or `false` if none were configured.
+Expected<bool> ApplyInputShapesIfAny(LiteRtOptions options,
+                                     LiteRtModelT& model);
 
 }  // namespace litert::internal
 

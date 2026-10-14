@@ -780,6 +780,7 @@ cc_library(
         ],
         "//conditions:default": [
             ":magic_number_utils",
+            "//litert/core/model:shape_inference",
             "//tflite/c:c_api",
             "//tflite/c:c_api_opaque",
             "//tflite/kernels:builtin_ops",

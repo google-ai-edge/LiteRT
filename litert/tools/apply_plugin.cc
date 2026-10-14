@@ -38,6 +38,7 @@
 #include "litert/cc/litert_options.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/model/model_serialize.h"
+#include "litert/core/model/shape_inference.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/tools/dump.h"
 #include "litert/tools/tool_display.h"
@@ -228,6 +229,15 @@ Expected<Model> LoadModel(Context& ctx) {
     ctx.Dump().Labeled() << "Failed to load model from file.";
     ctx.Dump().Fail();
     return model_result;
+  }
+
+  if (auto status = litert::internal::ApplyInputShapesIfAny(
+          ctx.Options(), *model_result->Get());
+      !status.HasValue()) {
+    ctx.Dump().Labeled() << absl::StreamFormat(
+        "Failed to apply input shapes: %s\n", status.Error().Message());
+    ctx.Dump().Fail();
+    return status.Error();
   }
 
   ctx.Dump().Labeled();
