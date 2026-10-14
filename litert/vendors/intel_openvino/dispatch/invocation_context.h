@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <future>
 #include <optional>
 #include <string>
 #include <utility>
@@ -90,6 +91,10 @@ class LiteRtDispatchInvocationContextT {
   // first tier must never pay for the other tiers' blob imports.
   litert::Expected<void> EnsureImported();
 
+  // Runs EnsureImported() on a background thread (once). Used to import a
+  // tier's remaining nodes while its first node is already running.
+  void StartBackgroundImport();
+
   // Drops the imported model: the infer request holds the only reference to
   // this node's ov::CompiledModel, so releasing it frees the imported blob and
   // its device-side state. The recorded buffer attachments are deliberately
@@ -135,6 +140,11 @@ class LiteRtDispatchInvocationContextT {
         exec_bytecode_buffer_(exec_bytecode_buffer),
         function_name_(std::move(function_name)) {}
 
+  // `foreground` = called by the kernel (AttachInput/AttachOutput/Invoke),
+  // not by a background prefetch: only the foreground releases other tiers and
+  // starts prefetches.
+  litert::Expected<void> EnsureImported(bool foreground);
+
   // Must be called with |import_mutex_| held.
   litert::Expected<void> ImportLocked()
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(import_mutex_);
@@ -178,6 +188,10 @@ class LiteRtDispatchInvocationContextT {
   // Held shared while the infer request is in use (AttachInput, AttachOutput,
   // Invoke), so another thread's tier crossing cannot release it mid-use.
   absl::Mutex use_mutex_;
+  // Background import started by StartBackgroundImport(); waited on in the
+  // destructor.
+  absl::Mutex prefetch_mutex_;
+  std::future<void> prefetch_ ABSL_GUARDED_BY(prefetch_mutex_);
   // Every buffer the kernel attached to this node. LiteRT's
   // DispatchDelegateKernel attaches a node's buffers only once, on the node's
   // first run. If the node is later released to free memory and imported
