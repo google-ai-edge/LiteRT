@@ -61,8 +61,10 @@ bool SupportedDepth(int64_t depth) {
 // A single-head cache of depth 512 read by 16 query rows per token (decode)
 // or per prompt token (prefill) runs on the tensor-core kernels; mask row
 // r % mask_rows applies to query row r.
+// The tensor-core kernel takes one KV head per launch: a block of several
+// heads (Gemma 4 26B-A4B's global layers have two) launches it per head.
 bool UsesGlobalKernel(const nvinfer1::Dims& q, const nvinfer1::Dims& mask) {
-  return q.d[1] == 1 &&
+  return q.d[1] >= 1 &&
          LiteRtNvidiaGlobalAttentionSupports(static_cast<int32_t>(q.d[2]),
                                              static_cast<int32_t>(mask.d[2]),
                                              static_cast<int32_t>(q.d[3]));
@@ -400,16 +402,27 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
           window_ != 0 ? static_cast<const int32_t*>(inputs[4]) : nullptr,
           depth, fill_, outputs[0], workspace, stream);
     } else {
-      status =
-          UsesGlobalKernel(q, mask)
-              ? LiteRtNvidiaLaunchGlobalAttention(
-                    inputs[0], q_bf16, inputs[1], inputs[2],
-                    static_cast<const bool*>(inputs[3]), mask_rows, rows, seq,
-                    depth, fill_, outputs[0], workspace, stream)
-              : LiteRtNvidiaLaunchDecodeAttention(
-                    inputs[0], q_bf16, inputs[1], inputs[2],
-                    static_cast<const bool*>(inputs[3]), mask_rows, heads, rows,
-                    seq, depth, fill_, outputs[0], workspace, stream);
+      if (UsesGlobalKernel(q, mask)) {
+        // One launch per KV head over that head's rows, keys and values; the
+        // mask is shared and the launches run in order on the stream, so
+        // they share the workspace.
+        const size_t q_head = static_cast<size_t>(rows) * depth * 2;
+        const size_t kv_head = static_cast<size_t>(seq) * depth * 2;
+        for (int32_t head = 0; head < heads && status == cudaSuccess; ++head) {
+          status = LiteRtNvidiaLaunchGlobalAttention(
+              static_cast<const char*>(inputs[0]) + head * q_head, q_bf16,
+              static_cast<const char*>(inputs[1]) + head * kv_head,
+              static_cast<const char*>(inputs[2]) + head * kv_head,
+              static_cast<const bool*>(inputs[3]), mask_rows, rows, seq, depth,
+              fill_, static_cast<char*>(outputs[0]) + head * q_head, workspace,
+              stream);
+        }
+      } else {
+        status = LiteRtNvidiaLaunchDecodeAttention(
+            inputs[0], q_bf16, inputs[1], inputs[2],
+            static_cast<const bool*>(inputs[3]), mask_rows, heads, rows, seq,
+            depth, fill_, outputs[0], workspace, stream);
+      }
     }
     if (status != cudaSuccess) {
       std::fprintf(stderr,

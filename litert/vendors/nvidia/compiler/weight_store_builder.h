@@ -86,6 +86,10 @@ class TensorRtWeightStoreBuilder {
   uint64_t granule() const { return granule_; }
   const std::string& source_path() const { return source_path_; }
   uint64_t source_size() const { return source_size_; }
+
+  // The offset in the model file of `bytes`, if they are a view of it that
+  // holds what the file holds.
+  Expected<uint64_t> SourceOffset(absl::Span<const uint8_t> bytes) const;
   const TensorRtAotFileIdentity& source_identity() const {
     return source_identity_;
   }
@@ -99,9 +103,6 @@ class TensorRtWeightStoreBuilder {
 
   TensorRtWeightStoreBuilder() = default;
 
-  // The offset in the model file of `bytes`, if they are a view of it that
-  // holds what the file holds.
-  Expected<uint64_t> SourceOffset(absl::Span<const uint8_t> bytes) const;
   // Whether the file holds `bytes` at `offset`.
   bool EqualsSource(absl::Span<const uint8_t> bytes, uint64_t offset) const;
   void CloseOpenSegment();

@@ -108,10 +108,15 @@ TEST_F(DecodeAttentionPluginTest, RejectsUnsupportedSingleHeadShapes) {
   inputs_[1].dims.d[3] = 256;
   inputs_[2] = inputs_[1];
   EXPECT_NE(ShapeStatus(), 0);
-  inputs_[0].dims = nvinfer1::Dims4{1, 2, 32, 512};  // Two cache heads.
+  // Two cache heads run the tensor-core kernel once per head (Gemma 4
+  // 26B-A4B's global layers), still with rows the mask rows divide.
+  inputs_[0].dims = nvinfer1::Dims4{1, 2, 32, 512};
   output_ = inputs_[0];
   inputs_[1].dims = nvinfer1::Dims4{1, 2, 32768, 512};
   inputs_[2] = inputs_[1];
+  EXPECT_EQ(ShapeStatus(), 0);
+  inputs_[0].dims.d[2] = 24;
+  output_ = inputs_[0];
   EXPECT_NE(ShapeStatus(), 0);
 }
 
