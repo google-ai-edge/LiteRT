@@ -23,6 +23,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_builder.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
@@ -33,6 +34,7 @@
 #include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_compiler_options.h"
@@ -1072,6 +1074,10 @@ class CompilerPluginFriend : public ::testing::Test {
   void AddTransformation(CompilerPlugin& plugin, LiteRtTransformation t) {
     plugin.transformations_.push_back(t);
   }
+  static Expected<CompilerPlugin> LoadPlugin(absl::string_view lib_path) {
+    return CompilerPlugin::LoadPlugin(lib_path, /*env=*/nullptr,
+                                      /*options=*/nullptr);
+  }
 };
 
 TEST_F(CompilerPluginFriend, GreedyPatternMatchAndRewrite) {
@@ -1304,6 +1310,22 @@ TEST_F(CompilerPluginFriend, MultipleIndependentMatches) {
   ASSERT_EQ(subgraph.Ops().size(), 2);
   EXPECT_EQ(subgraph.Ops()[0]->OpCode(), kLiteRtOpCodeTflMul);
   EXPECT_EQ(subgraph.Ops()[1]->OpCode(), kLiteRtOpCodeTflMul);
+}
+
+TEST(CompilerPluginTest, LoadPlugin_NewerVersionNegotiation) {
+  // Loads example_plugin.so (V1.1), verifies runtime (V1.0) successfully
+  // negotiates V1.1 ABI via forward compatibility.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin,
+      CompilerPlugin::FindPlugin(kTestManufacturer,
+                                 {GetLiteRtPath(kTestPluginSearchPath)}));
+  EXPECT_EQ(plugin.NegotiatedVersion().major, 1);
+  EXPECT_EQ(plugin.NegotiatedVersion().minor, 1);
+  EXPECT_EQ(plugin.SocManufacturer(), kTestManufacturer);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto hw, plugin.SupportedHardware());
+  EXPECT_EQ(hw, kLiteRtHwAcceleratorNpu);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto sdk, plugin.SdkVersion());
+  EXPECT_EQ(sdk, "1.0.0-example");
 }
 
 }  // namespace litert::internal

@@ -76,7 +76,13 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
   return kLiteRtStatusOk;
 }
 
-LiteRtDispatchInterface DeviceContextTestInterface = {
+const LiteRtDispatchInterface_V1 DeviceContextTestInterface = {
+    /*.abi_header=*/{
+        .struct_size = sizeof(LiteRtDispatchInterface_V1),
+        .major_version = 1,
+        .minor_version = 0,
+        .reserved = 0,
+    },
     /*.initialize=*/Initialize,
     /*.get_vendor_id=*/GetVendorId,
     /*.get_build_id=*/GetBuildId,
@@ -104,50 +110,40 @@ LiteRtDispatchInterface DeviceContextTestInterface = {
     /*.invocation_context_set_options=*/nullptr,
 };
 
-LiteRtDispatchApi DeviceContextTestApi = {
-    /*.abi_header=*/
-    {
-        /*.struct_size=*/sizeof(LiteRtDispatchApi),
-        /*.major_version=*/1,
-        /*.minor_version=*/0,
-        /*.reserved=*/0,
-    },
-    /*.version=*/
-    {/*.major=*/LITERT_API_VERSION_MAJOR,
-     /*.minor=*/LITERT_API_VERSION_MINOR,
-     /*.patch=*/LITERT_API_VERSION_PATCH},
-    /*.interface=*/&DeviceContextTestInterface,
-    /*.async_interface=*/nullptr,
-    /*.graph_interface=*/nullptr,
-    /*.tensor_buffer_handlers_def=*/nullptr,
-};
-
-LiteRtStatus GetDeviceContextTestApi(LiteRtDispatchApi* api) {
-  *api = DeviceContextTestApi;
-  return kLiteRtStatusOk;
+LiteRtStatus DeviceContextTestQueryInterface(
+    LiteRtDispatchInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version, LiteRtInterface* out_interface) {
+  if (litert_runtime_version.major >= 1) {
+    if (interface_id == kLiteRtInterfaceBasic) {
+      *out_interface = &DeviceContextTestInterface;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
 }
 
 class StaticLinkedDispatchApiScope {
  public:
   explicit StaticLinkedDispatchApiScope(
-      LiteRtStatus (*get_api)(LiteRtDispatchApi*))
-      : previous_get_api_(LiteRtStaticLinkedDispatchGetApi) {
-    LiteRtStaticLinkedDispatchGetApi = get_api;
+      LiteRtDispatchQueryInterfaceT query_interface)
+      : previous_query_interface_(LiteRtStaticLinkedDispatchQueryInterface) {
+    LiteRtStaticLinkedDispatchQueryInterface = query_interface;
   }
 
   ~StaticLinkedDispatchApiScope() {
-    LiteRtStaticLinkedDispatchGetApi = previous_get_api_;
+    LiteRtStaticLinkedDispatchQueryInterface = previous_query_interface_;
   }
 
  private:
-  LiteRtStatus (*previous_get_api_)(LiteRtDispatchApi*);
+  LiteRtDispatchQueryInterfaceT previous_query_interface_;
 };
 
 TEST(DispatchDelegateDeviceContextTest,
      MultiSignatureModelUsesSingleDeviceContext) {
   // This test has its own binary because the dispatch API is cached
   // process-wide after initialization.
-  StaticLinkedDispatchApiScope static_dispatch_api(GetDeviceContextTestApi);
+  StaticLinkedDispatchApiScope static_dispatch_api(
+      DeviceContextTestQueryInterface);
   DeviceContextCreateCount = 0;
   DeviceContextDestroyCount = 0;
 

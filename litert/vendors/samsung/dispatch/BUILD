@@ -57,7 +57,6 @@ litert_dynamic_lib(
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
-        "//litert/c:litert_environment_header",
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_model_header",
         "//litert/c:litert_model_types",
@@ -84,8 +83,8 @@ sh_test(
     name = "samsung_dispatch_so_symbol_test",
     srcs = ["//litert/test:litert_c_api_dependency_test.sh"],
     args = [
-        "LiteRtDispatchGetApi",
-        "$(location :dispatch_api_so)",
+        "LiteRtDispatchQueryInterface",
+        "$(rootpath :dispatch_api_so)",
     ],
     data = [
         ":dispatch_api_so",
