@@ -202,16 +202,25 @@ constexpr int kPairRows = kTileRows;  // routed (row, slot) pairs per chunk
 // The weight tile of expert `expert`'s output rows [o0, o0 + kTileRows) of a
 // projection whose rows interleave the experts.
 __device__ __forceinline__ WeightTile ExpertTile(const uint8_t* weights,
-                                                 const __half* scales,
-                                                 int experts, int expert,
-                                                 int o0, int out_rows,
+                                                 const void* scales,
+                                                 const void* scale_max,
+                                                 int compact, int experts,
+                                                 int expert, int o0,
+                                                 int out_rows,
                                                  int input_size) {
   const size_t row_bytes = static_cast<size_t>(input_size) / 2;
   const size_t blocks = static_cast<size_t>(input_size) / kBlock;
   const size_t first = static_cast<size_t>(o0) * experts + expert;
-  return WeightTile{weights + first * row_bytes, row_bytes * experts,
-                    scales + first * blocks, blocks * experts,
-                    min(kTileRows, out_rows - o0)};
+  WeightTile tile{weights + first * row_bytes, row_bytes * experts, nullptr,
+                  blocks * experts, min(kTileRows, out_rows - o0)};
+  if (compact != 0) {
+    tile.fractions = static_cast<const uint8_t*>(scales) + first * blocks;
+    tile.scale_max = static_cast<const __half*>(scale_max) + first;
+    tile.max_stride = experts;
+  } else {
+    tile.scales = static_cast<const __half*>(scales) + first * blocks;
+  }
+  return tile;
 }
 
 // Routing from the router's logits (BF16 [rows, experts], one launch of the
@@ -371,14 +380,16 @@ __global__ void __launch_bounds__(Threads)
   float squares[1] = {};
   float up_squares[1] = {};
   AccumulateTile<__nv_bfloat16, 1, Threads>(
-      ExpertTile(arena.gate, static_cast<const __half*>(arena.gate_scales),
-                 shape.experts, expert, o0, shape.hidden_dim, shape.model_dim),
+      ExpertTile(arena.gate, arena.gate_scales, arena.gate_scale_max,
+                 arena.compact_scales, shape.experts, expert, o0,
+                 shape.hidden_dim, shape.model_dim),
       act, shape.model_dim, gate, norm_scale, squares);
   ReduceTile<1, Threads>(gate, warp_sums);
   __syncthreads();
   AccumulateTile<__nv_bfloat16, 1, Threads>(
-      ExpertTile(arena.up, static_cast<const __half*>(arena.up_scales),
-                 shape.experts, expert, o0, shape.hidden_dim, shape.model_dim),
+      ExpertTile(arena.up, arena.up_scales, arena.up_scale_max,
+                 arena.compact_scales, shape.experts, expert, o0,
+                 shape.hidden_dim, shape.model_dim),
       act, shape.model_dim, up, norm_scale, up_squares);
   ReduceTile<1, Threads>(up, warp_sums);
   float factor = 1.0f;
@@ -428,8 +439,9 @@ __global__ void __launch_bounds__(Threads)
       static_cast<size_t>(shape.hidden_dim), nullptr};
   float acc[1][kTileRows] = {};
   AccumulateTile<float, 1, Threads>(
-      ExpertTile(arena.down, static_cast<const __half*>(arena.down_scales),
-                 shape.experts, expert, o0, shape.model_dim, shape.hidden_dim),
+      ExpertTile(arena.down, arena.down_scales, arena.down_scale_max,
+                 arena.compact_scales, shape.experts, expert, o0,
+                 shape.model_dim, shape.hidden_dim),
       act, shape.hidden_dim, acc);
   ReduceTile<1, Threads>(acc, warp_sums);
   if (threadIdx.x == 0) {
@@ -942,7 +954,12 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
       model_scales * shape.experts,
       model_row_bytes,
       model_scales,
-      tile_experts};
+      tile_experts,
+      arena.gate_scale_max,
+      arena.up_scale_max,
+      static_cast<uint64_t>(shape.experts),
+      1,
+      arena.compact_scales};
   const LiteRtNvidiaGemmShape gate_shape = {padded, shape.model_dim,
                                             shape.hidden_dim, shape.gate, 32};
   status = LiteRtNvidiaLaunchBf16Int4GroupedGemm(
@@ -964,7 +981,12 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
       hidden_scales * shape.experts,
       hidden_row_bytes,
       hidden_scales,
-      tile_experts};
+      tile_experts,
+      arena.down_scale_max,
+      nullptr,
+      static_cast<uint64_t>(shape.experts),
+      1,
+      arena.compact_scales};
   const LiteRtNvidiaGemmShape down_shape = {
       padded, shape.hidden_dim, shape.model_dim, kLiteRtNvidiaGemmGateNone, 32};
   status = LiteRtNvidiaLaunchBf16Int4GroupedGemm(
@@ -987,6 +1009,28 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
 
 }  // namespace
 }  // namespace litert::nvidia::int4_block
+
+extern "C" void LiteRtNvidiaCompactScaleRow(const float* scales,
+                                            int32_t blocks,
+                                            uint8_t* fractions,
+                                            uint16_t* max_half) {
+  float largest = 0.0f;
+  for (int32_t b = 0; b < blocks; ++b) {
+    largest = fmaxf(largest, scales[b]);
+  }
+  // The maximum as stored (FP16), so the fractions are of the value the
+  // kernels multiply by.
+  const __half half = __float2half_rn(largest);
+  const __half_raw raw = half;
+  *max_half = raw.x;
+  const float stored = __half2float(half);
+  for (int32_t b = 0; b < blocks; ++b) {
+    const float fraction =
+        stored > 0.0f ? scales[b] / stored * 255.0f + 0.5f : 0.0f;
+    const int value = static_cast<int>(fraction);
+    fractions[b] = static_cast<uint8_t>(value < 0 ? 0 : value > 255 ? 255 : value);
+  }
+}
 
 extern "C" bool LiteRtNvidiaMoeSupports(const LiteRtNvidiaMoeShape* shape) {
   using namespace litert::nvidia::int4_block;

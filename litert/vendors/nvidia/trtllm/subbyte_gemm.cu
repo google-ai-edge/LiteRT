@@ -213,6 +213,12 @@ struct WeightAddressing {
   uint64_t expert_stride;
   uint64_t expert_scale_stride;
   const int32_t* tile_experts;
+  // Compact scales (see LiteRtNvidiaGroupedGemmWeights).
+  const void* gate_scale_max;
+  const void* up_scale_max;
+  uint64_t max_channel_stride;
+  uint64_t max_expert_stride;
+  int32_t compact_scales;
 };
 
 // grid (rows / kBlockRows, column tiles): the blocks that read the same
@@ -293,14 +299,33 @@ __global__ void __launch_bounds__(kThreads, 1)
       weight_s + w_row * kRowBytes + (tid % 2) * 64;
   // The thread's 32 weights of a chunk are one block: its scale, for chunk c,
   // is block 2 c + (tid % 2) of the thread's channel.
-  const __half* block_scales =
-      static_cast<const __half*>(up_half ? addressing.up_scales
-                                         : addressing.gate_scales) +
+  const uint64_t scale_offset =
       expert * addressing.expert_scale_stride +
       static_cast<uint64_t>(w_channel) * addressing.scale_channel_stride +
       (tid % 2);
+  const void* scale_base =
+      up_half ? addressing.up_scales : addressing.gate_scales;
+  const __half* block_scales = static_cast<const __half*>(scale_base) + scale_offset;
+  const uint8_t* block_fractions =
+      static_cast<const uint8_t*>(scale_base) + scale_offset;
+  float row_max = 0.0f;
+  if constexpr (kBlockwise) {
+    if (addressing.compact_scales != 0) {
+      const __half* maxima = static_cast<const __half*>(
+          up_half ? addressing.up_scale_max : addressing.gate_scale_max);
+      row_max = __half2float(
+                    maxima[expert * addressing.max_expert_stride +
+                           static_cast<uint64_t>(w_channel) *
+                               addressing.max_channel_stride]) *
+                (1.0f / 255.0f);
+    }
+  }
   auto scale_of = [&](int chunk) -> __half2 {
     if constexpr (kBlockwise) {
+      if (addressing.compact_scales != 0) {
+        return __half2half2(__float2half_rn(
+            row_max * static_cast<float>(block_fractions[2 * chunk])));
+      }
       return __half2half2(block_scales[2 * chunk]);
     } else {
       return __half2half2(__float2half(1.0f));
@@ -760,11 +785,13 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GroupedGemm(
     attribute_set[blockwise] = true;
   }
   const WeightAddressing addressing = {
-      weights->gate,          weights->up,
-      weights->gate_scales,   weights->up_scales,
+      weights->gate,           weights->up,
+      weights->gate_scales,    weights->up_scales,
       weights->channel_stride, weights->scale_channel_stride,
-      weights->expert_stride, weights->expert_scale_stride,
-      weights->tile_experts};
+      weights->expert_stride,  weights->expert_scale_stride,
+      weights->tile_experts,   weights->gate_scale_max,
+      weights->up_scale_max,   weights->max_channel_stride,
+      weights->max_expert_stride, weights->compact_scales};
   const dim3 grid(shape->rows / kBlockRows, ColumnTiles(*shape));
   if (blockwise) {
     Int4GemmKernel<true><<<grid, kThreads, kSharedBytes, stream>>>(

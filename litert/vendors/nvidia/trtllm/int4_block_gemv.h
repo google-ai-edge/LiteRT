@@ -84,7 +84,22 @@ struct LiteRtNvidiaMoeArena {
   const void* dense_gate_up_scales;
   const uint8_t* dense_down;
   const void* dense_down_scales;
+  // Compact expert scales (compact_scales != 0): gate_scales, up_scales and
+  // down_scales then hold one byte per block, the block's scale as a
+  // fraction (in 255ths) of its row's maximum, and these hold the rows'
+  // maxima as FP16, one per row in the piece's row order.
+  const void* gate_scale_max;
+  const void* up_scale_max;
+  const void* down_scale_max;
+  int32_t compact_scales;
 };
+
+// A row of block scales into the compact format: the row's maximum as FP16
+// bits, then each block's scale as round(255 * scale / maximum) (scales are
+// non-negative; a negative one quantizes to 0).
+extern "C" void LiteRtNvidiaCompactScaleRow(const float* scales, int32_t blocks,
+                                            uint8_t* fractions,
+                                            uint16_t* max_half);
 
 struct LiteRtNvidiaMoeShape {
   int32_t rows;

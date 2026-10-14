@@ -85,12 +85,42 @@ constexpr char kDenseGateField[] = "dense_gate";
 constexpr char kResidualMultiplierField[] = "residual_multiplier";
 constexpr int kFields = 19;
 constexpr int kPieces = 14;
+
+bool CompactScalesEnabled();
 constexpr size_t kArenaAlignment = 256;
 constexpr size_t kStagingBytes = 32u << 20;
 
 std::atomic<bool> g_loading_enabled{false};
 
 // Round-to-nearest-even FP32 -> FP16.
+float HalfBitsToFloat(uint16_t bits) {
+  const uint32_t sign = (bits & 0x8000u) << 16;
+  const uint32_t exponent = (bits >> 10) & 0x1f;
+  const uint32_t mantissa = bits & 0x3ff;
+  uint32_t word;
+  if (exponent == 0) {
+    if (mantissa == 0) {
+      word = sign;
+    } else {
+      // Subnormal: normalize.
+      int shift = 0;
+      uint32_t m = mantissa;
+      while ((m & 0x400u) == 0) {
+        m <<= 1;
+        ++shift;
+      }
+      word = sign | ((127 - 15 - shift + 1) << 23) | ((m & 0x3ffu) << 13);
+    }
+  } else if (exponent == 0x1f) {
+    word = sign | 0x7f800000u | (mantissa << 13);
+  } else {
+    word = sign | ((exponent + 127 - 15) << 23) | (mantissa << 13);
+  }
+  float value;
+  std::memcpy(&value, &word, sizeof(value));
+  return value;
+}
+
 uint16_t FloatToHalfBits(float value) {
   uint32_t bits = 0;
   std::memcpy(&bits, &value, sizeof(bits));
@@ -176,6 +206,7 @@ std::string ArenaKey(const MoeExpertSource& source) {
   key += std::to_string(source.dense_scale_type);
   key += ':';
   key += std::to_string(source.dense_hidden);
+  key += CompactScalesEnabled() ? ":c" : ":h";
   for (int i = 0; i < kPieces; ++i) {
     key += ':';
     key += std::to_string(source.offsets[i]);
@@ -190,8 +221,24 @@ std::string ArenaKey(const MoeExpertSource& source) {
 struct ArenaLayout {
   std::array<size_t, kPieces> offsets{};
   std::array<size_t, kPieces> bytes{};
+  // Compact expert scales: pieces 3-5 hold a byte per block, then the rows'
+  // FP16 maxima at max_offsets[piece - 3].
+  bool compact = false;
+  std::array<size_t, 3> max_offsets{};
   size_t total = 0;
 };
+
+// LITERT_NVIDIA_MOE_COMPACT_SCALES=0 keeps the expert scales as FP16 (two
+// bytes per block); otherwise a byte per block as the fraction of the row's
+// FP16 maximum, half the bytes (the 26B: 1.43 GB to 0.72), reproducing them
+// to 0.3% at the 99th percentile on Gemma 4 26B's rows.
+bool CompactScalesEnabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("LITERT_NVIDIA_MOE_COMPACT_SCALES");
+    return value == nullptr || value[0] == '\0' || std::strcmp(value, "0") != 0;
+  }();
+  return enabled;
+}
 
 // Whether piece i holds FP32 scales to convert; the three INT4 pieces and
 // the router's rows are copied.
@@ -232,13 +279,21 @@ bool LayoutArena(const MoeExpertSource& source, int32_t experts,
           ? static_cast<size_t>(model_dim) * (dense_rows / 32) * dense_scale_in
           : 0,
   };
+  layout->compact = CompactScalesEnabled();
   size_t total = 0;
   for (int i = 0; i < kPieces; ++i) {
     if (source.sizes[i] != expected[i]) {
       return false;
     }
-    // Scales land as FP16.
+    // Scales land as FP16, or compact for the experts' (a byte per block
+    // and the rows' maxima after).
     layout->bytes[i] = ConvertsPiece(source, i) ? expected[i] / 2 : expected[i];
+    if (layout->compact && i >= 3 && i < 6) {
+      const size_t rows = i < 5 ? gate_rows : down_rows;
+      const size_t blocks = expected[i] / scale_in / rows;
+      const size_t fractions = RoundUp(rows * blocks, kArenaAlignment);
+      layout->bytes[i] = fractions + rows * sizeof(uint16_t);
+    }
     if (i == 9 || i == 11) {
       // The dense up rows follow the gate rows without a gap, and their
       // scales the gate scales: the gated GEMV and GEMM read them stacked.
@@ -248,6 +303,11 @@ bool LayoutArena(const MoeExpertSource& source, int32_t experts,
       total = RoundUp(total, kArenaAlignment);
       layout->offsets[i] = total;
       total += layout->bytes[i];
+    }
+    if (layout->compact && i >= 3 && i < 6) {
+      const size_t rows = i < 5 ? gate_rows : down_rows;
+      layout->max_offsets[i - 3] =
+          layout->offsets[i] + layout->bytes[i] - rows * sizeof(uint16_t);
     }
   }
   layout->total = RoundUp(total, kArenaAlignment);
@@ -356,6 +416,65 @@ std::shared_ptr<Arena> LoadArena(const MoeExpertSource& source, int32_t experts,
     uint8_t* target = base + layout.offsets[i];
     const bool convert = ConvertsPiece(source, i);
     const size_t in_bytes = source.sizes[i];
+    if (layout.compact && i >= 3 && i < 6) {
+      // Row by row: the maximum as FP16, the blocks as fractions of it.
+      const size_t rows = i < 5 ? static_cast<size_t>(hidden_dim) * experts
+                                : static_cast<size_t>(model_dim) * experts;
+      const size_t scale_in = source.scale_type == 0 ? 4 : 2;
+      const size_t blocks = in_bytes / scale_in / rows;
+      const size_t row_in = blocks * scale_in;
+      const size_t rows_per_chunk = std::max<size_t>(1, kStagingBytes / row_in);
+      std::vector<uint16_t> maxima(rows);
+      std::vector<float> row(blocks);
+      std::vector<uint8_t> fractions;
+      for (size_t r0 = 0; r0 < rows; r0 += rows_per_chunk) {
+        const size_t n = std::min(rows_per_chunk, rows - r0);
+        staging.resize(n * row_in);
+        if (!file.Read(source.offsets[i] + r0 * row_in, staging.data(),
+                       n * row_in, error)) {
+          return nullptr;
+        }
+        fractions.resize(n * blocks);
+        for (size_t r = 0; r < n; ++r) {
+          for (size_t b = 0; b < blocks; ++b) {
+            if (scale_in == 4) {
+              std::memcpy(&row[b], staging.data() + (r * blocks + b) * 4, 4);
+            } else {
+              uint16_t bits = 0;
+              std::memcpy(&bits, staging.data() + (r * blocks + b) * 2, 2);
+              row[b] = HalfBitsToFloat(bits);
+            }
+          }
+          LiteRtNvidiaCompactScaleRow(row.data(), static_cast<int32_t>(blocks),
+                                      fractions.data() + r * blocks,
+                                      maxima.data() + r0 + r);
+        }
+        if (on_device) {
+          status = cudaMemcpy(target + r0 * blocks, fractions.data(),
+                              n * blocks, cudaMemcpyHostToDevice);
+          if (status != cudaSuccess) {
+            *error =
+                std::string("cudaMemcpy failed: ") + cudaGetErrorString(status);
+            return nullptr;
+          }
+        } else {
+          std::memcpy(target + r0 * blocks, fractions.data(), n * blocks);
+        }
+      }
+      uint8_t* max_target = base + layout.max_offsets[i - 3];
+      if (on_device) {
+        status = cudaMemcpy(max_target, maxima.data(), rows * sizeof(uint16_t),
+                            cudaMemcpyHostToDevice);
+        if (status != cudaSuccess) {
+          *error =
+              std::string("cudaMemcpy failed: ") + cudaGetErrorString(status);
+          return nullptr;
+        }
+      } else {
+        std::memcpy(max_target, maxima.data(), rows * sizeof(uint16_t));
+      }
+      continue;
+    }
     for (size_t done = 0; done < in_bytes;) {
       const size_t chunk = std::min(in_bytes - done, kStagingBytes);
       const uint8_t* ready = nullptr;
@@ -402,18 +521,23 @@ std::shared_ptr<Arena> LoadArena(const MoeExpertSource& source, int32_t experts,
   auto* device_bytes = static_cast<uint8_t*>(device_base);
   const bool routed = source.router_scale_type >= 0;
   const bool dense = source.dense_scale_type >= 0;
-  arena->pointers = {device_bytes + layout.offsets[0],
-                     device_bytes + layout.offsets[1],
-                     device_bytes + layout.offsets[2],
-                     device_bytes + layout.offsets[3],
-                     device_bytes + layout.offsets[4],
-                     device_bytes + layout.offsets[5],
-                     routed ? device_bytes + layout.offsets[6] : nullptr,
-                     routed ? device_bytes + layout.offsets[7] : nullptr,
-                     dense ? device_bytes + layout.offsets[8] : nullptr,
-                     dense ? device_bytes + layout.offsets[10] : nullptr,
-                     dense ? device_bytes + layout.offsets[12] : nullptr,
-                     dense ? device_bytes + layout.offsets[13] : nullptr};
+  arena->pointers = {
+      device_bytes + layout.offsets[0],
+      device_bytes + layout.offsets[1],
+      device_bytes + layout.offsets[2],
+      device_bytes + layout.offsets[3],
+      device_bytes + layout.offsets[4],
+      device_bytes + layout.offsets[5],
+      routed ? device_bytes + layout.offsets[6] : nullptr,
+      routed ? device_bytes + layout.offsets[7] : nullptr,
+      dense ? device_bytes + layout.offsets[8] : nullptr,
+      dense ? device_bytes + layout.offsets[10] : nullptr,
+      dense ? device_bytes + layout.offsets[12] : nullptr,
+      dense ? device_bytes + layout.offsets[13] : nullptr,
+      layout.compact ? device_bytes + layout.max_offsets[0] : nullptr,
+      layout.compact ? device_bytes + layout.max_offsets[1] : nullptr,
+      layout.compact ? device_bytes + layout.max_offsets[2] : nullptr,
+      layout.compact ? 1 : 0};
   return arena;
 }
 

@@ -106,6 +106,15 @@ struct LiteRtNvidiaGroupedGemmWeights {
   uint64_t expert_stride;         // bytes
   uint64_t expert_scale_stride;   // halves
   const int32_t* tile_experts;    // [rows / 128]
+  // Compact scales (compact_scales != 0): gate_scales/up_scales then hold a
+  // byte per block, the fraction (255ths) of the channel's maximum, and
+  // these the maxima as FP16, max_expert_stride and max_channel_stride
+  // halves apart per expert and channel; the strides above count bytes.
+  const void* gate_scale_max;
+  const void* up_scale_max;
+  uint64_t max_channel_stride;
+  uint64_t max_expert_stride;
+  int32_t compact_scales;
 };
 
 // The activation pre-pass of the GEMM on its own: `rows` rows of

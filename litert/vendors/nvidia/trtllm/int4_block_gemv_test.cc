@@ -1165,4 +1165,137 @@ TEST(Int4BlockGemvTest, MoeLayerBlockMatchesItsParts) {
   }
 }
 
+// The compact expert scales (a byte per block as the fraction of the row's
+// FP16 maximum) against the FP16 scales, decode and prefill paths, through
+// the fused launch.
+TEST(Int4BlockGemvTest, MoeCompactScalesMatchHalfScales) {
+  for (const int rows : {3, 128}) {
+    const LiteRtNvidiaMoeShape shape = {rows, 8, 128, 2816, 704, 1};
+    const int experts = shape.experts, dim = shape.model_dim,
+              hidden = shape.hidden_dim;
+    const std::vector<uint8_t> gate_w =
+        MakeInt4Weights(hidden * experts, dim, 5);
+    const std::vector<uint8_t> up_w = MakeInt4Weights(hidden * experts, dim, 9);
+    const std::vector<uint8_t> down_w =
+        MakeInt4Weights(dim * experts, hidden, 13);
+    const std::vector<uint16_t> gate_s = MakeScales(hidden * experts, dim, 5);
+    const std::vector<uint16_t> up_s = MakeScales(hidden * experts, dim, 9);
+    const std::vector<uint16_t> down_s = MakeScales(dim * experts, hidden, 13);
+    const std::vector<uint8_t> router_w = MakeInt4Weights(experts, dim, 21);
+    const std::vector<uint16_t> router_s = MakeScales(experts, dim, 21);
+    std::vector<uint16_t> x(static_cast<size_t>(rows) * dim);
+    for (int r = 0; r < rows; ++r) {
+      for (int i = 0; i < dim; ++i) {
+        x[static_cast<size_t>(r) * dim + i] = FloatToBf16Bits(
+            static_cast<float>((i * 29 + r * 13) % 101 - 50) / 7.0f);
+      }
+    }
+    std::vector<float> router_norm(dim), expert_norm(dim),
+        expert_scale(experts);
+    for (int i = 0; i < dim; ++i) {
+      router_norm[i] = 0.7f + 0.0005f * (i % 61);
+      expert_norm[i] = 1.1f - 0.0004f * (i % 53);
+    }
+    for (int e = 0; e < experts; ++e) expert_scale[e] = 0.98f + 0.0003f * e;
+    // The compact form of each scale piece, as the plugin's loader makes it.
+    auto compact = [](const std::vector<uint16_t>& halves, int row_blocks,
+                      std::vector<uint8_t>* fractions,
+                      std::vector<uint16_t>* maxima) {
+      const size_t n_rows = halves.size() / row_blocks;
+      fractions->resize(halves.size());
+      maxima->resize(n_rows);
+      std::vector<float> row(row_blocks);
+      for (size_t r = 0; r < n_rows; ++r) {
+        for (int b = 0; b < row_blocks; ++b)
+          row[b] = HalfBitsToFloat(halves[r * row_blocks + b]);
+        LiteRtNvidiaCompactScaleRow(row.data(), row_blocks,
+                                    fractions->data() + r * row_blocks,
+                                    maxima->data() + r);
+      }
+    };
+    std::vector<uint8_t> gate_q, up_q, down_q;
+    std::vector<uint16_t> gate_m, up_m, down_m;
+    compact(gate_s, dim / 32, &gate_q, &gate_m);
+    compact(up_s, dim / 32, &up_q, &up_m);
+    compact(down_s, hidden / 32, &down_q, &down_m);
+    const auto upload = [](const void* data, size_t bytes) {
+      auto device = AllocateCuda(bytes);
+      cudaMemcpy(device.get(), data, bytes, cudaMemcpyHostToDevice);
+      return device;
+    };
+    auto d_gate = upload(gate_w.data(), gate_w.size());
+    auto d_up = upload(up_w.data(), up_w.size());
+    auto d_down = upload(down_w.data(), down_w.size());
+    auto d_gate_s = upload(gate_s.data(), gate_s.size() * 2);
+    auto d_up_s = upload(up_s.data(), up_s.size() * 2);
+    auto d_down_s = upload(down_s.data(), down_s.size() * 2);
+    auto d_gate_q = upload(gate_q.data(), gate_q.size());
+    auto d_up_q = upload(up_q.data(), up_q.size());
+    auto d_down_q = upload(down_q.data(), down_q.size());
+    auto d_gate_m = upload(gate_m.data(), gate_m.size() * 2);
+    auto d_up_m = upload(up_m.data(), up_m.size() * 2);
+    auto d_down_m = upload(down_m.data(), down_m.size() * 2);
+    auto d_router = upload(router_w.data(), router_w.size());
+    auto d_router_s = upload(router_s.data(), router_s.size() * 2);
+    auto d_x = upload(x.data(), x.size() * 2);
+    auto d_es = upload(expert_scale.data(), expert_scale.size() * 4);
+    auto d_rn = upload(router_norm.data(), router_norm.size() * 4);
+    auto d_en = upload(expert_norm.data(), expert_norm.size() * 4);
+    LiteRtNvidiaMoeArena half_arena = {
+        static_cast<const uint8_t*>(d_gate.get()),
+        static_cast<const uint8_t*>(d_up.get()),
+        static_cast<const uint8_t*>(d_down.get()),
+        d_gate_s.get(),
+        d_up_s.get(),
+        d_down_s.get(),
+        static_cast<const uint8_t*>(d_router.get()),
+        d_router_s.get()};
+    LiteRtNvidiaMoeArena compact_arena = half_arena;
+    compact_arena.gate_scales = d_gate_q.get();
+    compact_arena.up_scales = d_up_q.get();
+    compact_arena.down_scales = d_down_q.get();
+    compact_arena.gate_scale_max = d_gate_m.get();
+    compact_arena.up_scale_max = d_up_m.get();
+    compact_arena.down_scale_max = d_down_m.get();
+    compact_arena.compact_scales = 1;
+    const size_t out_bytes = static_cast<size_t>(rows) * dim * 2;
+    auto d_ws = AllocateCuda(LiteRtNvidiaMoeWorkspaceBytes(&shape));
+    auto d_out_half = AllocateCuda(out_bytes);
+    auto d_out_compact = AllocateCuda(out_bytes);
+    for (const auto& [arena, out] :
+         {std::make_pair(&half_arena, d_out_half.get()),
+          std::make_pair(&compact_arena, d_out_compact.get())}) {
+      ASSERT_EQ(
+          LiteRtNvidiaLaunchMoeInt4BlockFused(
+              &shape, arena, d_x.get(), static_cast<const float*>(d_es.get()),
+              static_cast<const float*>(d_rn.get()), 0.6f,
+              static_cast<const float*>(d_en.get()), 1e-6f, /*renormalize=*/1,
+              d_ws.get(), out, nullptr),
+          cudaSuccess);
+      ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    }
+    std::vector<uint16_t> half_out(x.size()), compact_out(x.size());
+    ASSERT_EQ(cudaMemcpy(half_out.data(), d_out_half.get(), out_bytes,
+                         cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    ASSERT_EQ(cudaMemcpy(compact_out.data(), d_out_compact.get(), out_bytes,
+                         cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    double squared = 0.0, reference = 0.0, worst = 0.0;
+    int mismatches = 0;
+    for (size_t i = 0; i < half_out.size(); ++i) {
+      const double a = Bf16BitsToFloat(half_out[i]),
+                   b = Bf16BitsToFloat(compact_out[i]);
+      const double error = std::fabs(a - b);
+      squared += error * error;
+      reference += a * a;
+      worst = std::max(worst, error);
+      if (error > 2e-2 + 2e-2 * std::fabs(a)) ++mismatches;
+    }
+    EXPECT_EQ(mismatches, 0) << "rows " << rows << " worst " << worst;
+    EXPECT_LT(std::sqrt(squared / std::max(reference, 1e-12)), 1e-2)
+        << "rows " << rows;
+  }
+}
+
 }  // namespace

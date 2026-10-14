@@ -48,6 +48,12 @@ struct WeightTile {
   const __half* scales;
   size_t scale_stride;
   int valid_rows;
+  // Compact scales instead of `scales`: a row's blocks' fractions (bytes,
+  // scale_stride apart per row) of the row's maximum (scale_max, max_stride
+  // halves apart per row).
+  const uint8_t* fractions = nullptr;
+  const __half* scale_max = nullptr;
+  size_t max_stride = 0;
 };
 
 // The activation rows of a launch: row r is `rows[r]` (or r without a row
@@ -116,6 +122,15 @@ __device__ __forceinline__ void AccumulateTile(const WeightTile& tile,
   for (int r = 0; r < Rows; ++r) {
     rows[r] = act.Row(r);
   }
+  // Compact scales: the rows' maxima once, over 255.
+  float row_max[TileRows];
+#pragma unroll
+  for (int i = 0; i < TileRows; ++i) {
+    row_max[i] = tile.fractions != nullptr && i < tile.valid_rows
+                     ? __half2float(tile.scale_max[i * tile.max_stride]) *
+                           (1.0f / 255.0f)
+                     : 0.0f;
+  }
   for (int b = threadIdx.x; b < blocks; b += Threads) {
     uint4 words[TileRows];
     float scales[TileRows];
@@ -124,7 +139,11 @@ __device__ __forceinline__ void AccumulateTile(const WeightTile& tile,
       if (i < tile.valid_rows) {
         words[i] = __ldg(reinterpret_cast<const uint4*>(
             tile.weights + i * tile.weight_stride + b * (kBlock / 2)));
-        scales[i] = __half2float(tile.scales[i * tile.scale_stride + b]);
+        scales[i] =
+            tile.fractions != nullptr
+                ? row_max[i] * static_cast<float>(
+                                   tile.fractions[i * tile.scale_stride + b])
+                : __half2float(tile.scales[i * tile.scale_stride + b]);
       } else {
         words[i] = make_uint4(0, 0, 0, 0);
         scales[i] = 0.0f;
