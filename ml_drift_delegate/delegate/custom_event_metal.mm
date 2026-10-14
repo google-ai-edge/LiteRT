@@ -30,16 +30,25 @@ CustomEventMetal::CustomEventMetal(id<MTLDevice> device) : ref_count_(1) {
   GetNative = GetNativeStatic;
 
   metal_shared_event_ = [device newSharedEvent];
+  metal_event_ = [device newEvent];
 }
 
 void CustomEventMetal::EncodeSignal(id<MTLCommandBuffer> command_buffer) {
   ++value_to_wait_;
+  [command_buffer encodeSignalEvent:metal_event_ value:value_to_wait_];
   [command_buffer encodeSignalEvent:metal_shared_event_ value:value_to_wait_];
 }
 
-// Encodes the wait command in the command buffer.
+// Encodes the wait command in the command buffer. It waits on the GPU-only
+// MTLEvent since a GPU wait on an MTLSharedEvent takes ~100 us longer to be
+// resolved. An MTLEvent can't synchronize across devices, so a command buffer
+// of another device waits on the MTLSharedEvent.
 void CustomEventMetal::EncodeWait(id<MTLCommandBuffer> command_buffer) {
-  [command_buffer encodeWaitForEvent:metal_shared_event_ value:value_to_wait_];
+  if (command_buffer.device == metal_event_.device) {
+    [command_buffer encodeWaitForEvent:metal_event_ value:value_to_wait_];
+  } else {
+    [command_buffer encodeWaitForEvent:metal_shared_event_ value:value_to_wait_];
+  }
 }
 
 void CustomEventMetal::RetainStatic(LiteRtCustomEvent event) {
