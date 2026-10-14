@@ -215,6 +215,17 @@ LiteRtStatus LrtQualcommOptionsSetHtpPPoint(LrtQualcommOptions options,
 
 LiteRtStatus LrtQualcommOptionsGetHtpPPoint(LrtQualcommOptions options,
                                             int32_t* htp_p_point);
+// htp_weight_sharing_channel_tile_size
+//
+// Controls the channel tile size used by weight sharing during graph
+// finalization.
+
+LiteRtStatus LrtQualcommOptionsSetHtpWeightSharingChannelTileSize(
+    LrtQualcommOptions options, int32_t htp_weight_sharing_channel_tile_size);
+
+LiteRtStatus LrtQualcommOptionsGetHtpWeightSharingChannelTileSize(
+    LrtQualcommOptions options,
+    int32_t* htp_weight_sharing_channel_tile_size);
 
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
