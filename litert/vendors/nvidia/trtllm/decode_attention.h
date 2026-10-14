@@ -60,6 +60,17 @@ extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttentionInt8(
     int32_t mask_rows, int32_t heads, int32_t rows, int32_t seq, int32_t depth,
     float fill, void* out, void* workspace, cudaStream_t stream);
 
+// INT8 caches read through a window: the caches and the mask hold cache_len
+// keys per head, and `window` keys starting at window_start[0] (a device
+// int32; a multiple of 16 keeps the value loads vectorized) are attended.
+// The workspace is sized for `window` keys.
+extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttentionInt8Window(
+    const void* q, bool q_bf16, const void* k, const void* v,
+    const LiteRtNvidiaInt8CacheParams* params, const bool* mask,
+    int32_t mask_rows, int32_t heads, int32_t rows, int32_t cache_len,
+    int32_t window, const int32_t* window_start, int32_t depth, float fill,
+    void* out, void* workspace, cudaStream_t stream);
+
 extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttention(
     const void* q, bool q_bf16, const void* k, const void* v, const bool* mask,
     int32_t mask_rows, int32_t heads, int32_t rows, int32_t seq, int32_t depth,

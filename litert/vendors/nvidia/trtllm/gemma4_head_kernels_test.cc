@@ -446,13 +446,18 @@ TEST(Gemma4HeadKernelsTest, Int8CacheDecodeAttentionWindowedMasks) {
           CurrentComputeCapability())) {
     GTEST_SKIP() << "A CUDA GPU with compute capability 8.0 is unavailable";
   }
+  // With `read` > 0 the kernel is launched through the window entry point:
+  // `read` keys from `start` of the full caches (start a multiple of 64 so
+  // the visible keys [window_begin, window_begin + window) fit inside).
   struct Case {
-    int heads, rows, depth, seq, window_begin, window;
+    int heads, rows, depth, seq, window_begin, window, start, read;
   };
-  const Case cases[] = {{2, 4, 256, 1024, 300, 512},
-                        {1, 8, 512, 1024, 70, 512},
-                        {1, 8, 512, 200, 0, 200},
-                        {2, 3, 128, 320, 100, 64}};
+  const Case cases[] = {{2, 4, 256, 1024, 300, 512, 0, 0},
+                        {1, 8, 512, 1024, 70, 512, 0, 0},
+                        {1, 8, 512, 200, 0, 200, 0, 0},
+                        {2, 3, 128, 320, 100, 64, 0, 0},
+                        {2, 4, 256, 2048, 1200, 512, 1152, 576},
+                        {1, 8, 512, 1024, 300, 512, 256, 576}};
   constexpr float kFill = -1.0e9f;
   const LiteRtNvidiaInt8CacheParams params = {0.0125f, -3, 0.02f, 5,
                                               /*value_columns=*/true};
@@ -534,7 +539,7 @@ TEST(Gemma4HeadKernelsTest, Int8CacheDecodeAttentionWindowedMasks) {
       }
     }
     const size_t workspace_bytes = LiteRtNvidiaDecodeAttentionWorkspaceBytes(
-        c.heads, c.rows, c.seq, c.depth);
+        c.heads, c.rows, c.read == 0 ? c.seq : c.read, c.depth);
     auto device_q = AllocateCuda(q.size() * sizeof(uint16_t));
     auto device_k = AllocateCuda(k.size());
     auto device_v = AllocateCuda(v_columns.size());
@@ -555,14 +560,32 @@ TEST(Gemma4HeadKernelsTest, Int8CacheDecodeAttentionWindowedMasks) {
     ASSERT_EQ(cudaMemcpy(device_mask.get(), mask.data(), mask.size(),
                          cudaMemcpyHostToDevice),
               cudaSuccess);
-    ASSERT_EQ(
-        LiteRtNvidiaLaunchDecodeAttentionInt8(
-            device_q.get(), /*q_bf16=*/true, device_k.get(), device_v.get(),
-            &params, static_cast<const bool*>(device_mask.get()),
-            /*mask_rows=*/c.rows, c.heads, c.rows, c.seq, c.depth, kFill,
-            device_out.get(), device_workspace.get(),
-            /*stream=*/nullptr),
-        cudaSuccess);
+    if (c.read == 0) {
+      ASSERT_EQ(
+          LiteRtNvidiaLaunchDecodeAttentionInt8(
+              device_q.get(), /*q_bf16=*/true, device_k.get(), device_v.get(),
+              &params, static_cast<const bool*>(device_mask.get()),
+              /*mask_rows=*/c.rows, c.heads, c.rows, c.seq, c.depth, kFill,
+              device_out.get(), device_workspace.get(),
+              /*stream=*/nullptr),
+          cudaSuccess);
+    } else {
+      auto device_start = AllocateCuda(sizeof(int32_t));
+      ASSERT_TRUE(device_start);
+      ASSERT_EQ(cudaMemcpy(device_start.get(), &c.start, sizeof(int32_t),
+                           cudaMemcpyHostToDevice),
+                cudaSuccess);
+      ASSERT_EQ(
+          LiteRtNvidiaLaunchDecodeAttentionInt8Window(
+              device_q.get(), /*q_bf16=*/true, device_k.get(), device_v.get(),
+              &params, static_cast<const bool*>(device_mask.get()),
+              /*mask_rows=*/c.rows, c.heads, c.rows, c.seq, c.read,
+              static_cast<const int32_t*>(device_start.get()), c.depth, kFill,
+              device_out.get(), device_workspace.get(),
+              /*stream=*/nullptr),
+          cudaSuccess);
+      ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    }
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
     std::vector<uint16_t> actual(q.size());
     ASSERT_EQ(

@@ -42,9 +42,13 @@ namespace litert::nvidia {
 // With `int8_cache`, the key and value caches are per-tensor quantized INT8
 // (Gemma 4 E4B) and the plugin dequantizes them; `new_keys` is then
 // unsupported.
+// With `window` != 0 (INT8 caches only, a multiple of 16) the plugin takes
+// a fifth input, the window's start (int32 [1], a multiple of 16), and
+// attends over `window` keys of the full caches and mask from there.
 nvinfer1::IPluginV3* CreateDecodeAttentionPlugin(
     float fill, bool new_keys = false,
-    const LiteRtNvidiaInt8CacheParams* int8_cache = nullptr) noexcept;
+    const LiteRtNvidiaInt8CacheParams* int8_cache = nullptr,
+    int32_t window = 0) noexcept;
 
 // Referenced by the dispatch library so the creator's registration object is
 // retained when linking the shared library used for engine deserialization.

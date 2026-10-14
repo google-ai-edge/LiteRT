@@ -31,6 +31,7 @@ struct Config {
   bool columns;
   int heads, rows, depth, seq;
   int window = 0;  // 0: every key visible; else the last `window` keys
+  int read = 0;    // > 0: the window entry point reads `read` keys from the end
 };
 
 void Time(const Config& c) {
@@ -55,11 +56,22 @@ void Time(const Config& c) {
   }
   auto out = AllocateCuda(q_bytes);
   const size_t ws_bytes = LiteRtNvidiaDecodeAttentionWorkspaceBytes(
-      c.heads, c.rows, c.seq, c.depth);
+      c.heads, c.rows, c.read > 0 ? c.read : c.seq, c.depth);
   auto ws = AllocateCuda(ws_bytes);
   ASSERT_TRUE(q && k && v && mask && out && ws);
   const LiteRtNvidiaInt8CacheParams params = {0.0125f, -3, 0.02f, 5, c.columns};
+  auto window_start = AllocateCuda(sizeof(int32_t));
+  const int32_t start_value = c.read > 0 ? ((c.seq - c.read) / 64) * 64 : 0;
+  cudaMemcpy(window_start.get(), &start_value, sizeof(int32_t),
+             cudaMemcpyHostToDevice);
   auto launch = [&]() {
+    if (c.int8 && c.read > 0) {
+      return LiteRtNvidiaLaunchDecodeAttentionInt8Window(
+          q.get(), true, k.get(), v.get(), &params,
+          static_cast<const bool*>(mask.get()), c.rows, c.heads, c.rows, c.seq,
+          c.read, static_cast<const int32_t*>(window_start.get()), c.depth,
+          -1.0e9f, out.get(), ws.get(), nullptr);
+    }
     if (c.int8) {
       return LiteRtNvidiaLaunchDecodeAttentionInt8(
           q.get(), true, k.get(), v.get(), &params,
@@ -92,7 +104,13 @@ void Time(const Config& c) {
   ASSERT_EQ(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal),
             cudaSuccess);
   for (int i = 0; i < kGraphCalls; ++i) {
-    if (c.int8) {
+    if (c.int8 && c.read > 0) {
+      LiteRtNvidiaLaunchDecodeAttentionInt8Window(
+          q.get(), true, k.get(), v.get(), &params,
+          static_cast<const bool*>(mask.get()), c.rows, c.heads, c.rows, c.seq,
+          c.read, static_cast<const int32_t*>(window_start.get()), c.depth,
+          -1.0e9f, out.get(), ws.get(), stream);
+    } else if (c.int8) {
       LiteRtNvidiaLaunchDecodeAttentionInt8(
           q.get(), true, k.get(), v.get(), &params,
           static_cast<const bool*>(mask.get()), c.rows, c.heads, c.rows, c.seq,
@@ -119,10 +137,11 @@ void Time(const Config& c) {
   cudaEventElapsedTime(&graph_ms, start, stop);
   ASSERT_EQ(cudaGetLastError(), cudaSuccess);
   std::printf(
-      "ATTN %-28s heads=%d rows=%d depth=%d seq=%5d window=%d  stream %7.2f "
-      "us/call  graph %7.2f us/call (workspace %zu KB)\n",
-      c.name, c.heads, c.rows, c.depth, c.seq, c.window, ms * 1000.0f / kIters,
-      graph_ms * 1000.0f / (kGraphIters * kGraphCalls), ws_bytes / 1024);
+      "ATTN %-28s heads=%d rows=%d depth=%d seq=%5d window=%d read=%d  stream "
+      "%7.2f us/call  graph %7.2f us/call (workspace %zu KB)\n",
+      c.name, c.heads, c.rows, c.depth, c.seq, c.window, c.read,
+      ms * 1000.0f / kIters, graph_ms * 1000.0f / (kGraphIters * kGraphCalls),
+      ws_bytes / 1024);
   cudaGraphExecDestroy(exec);
   cudaGraphDestroy(graph);
   cudaStreamDestroy(stream);
@@ -191,6 +210,9 @@ TEST(DecodeAttentionBenchmark, Geometries) {
       {"int8-rows (E2B 30k)", true, false, 1, 8, 256, 30720},
       {"int8-columns (E4B 16k)", true, true, 2, 4, 256, 16384},
       {"E4B local 30k, 512 window", true, true, 2, 4, 256, 30720, 512},
+      {"E4B local 30k, window entry", true, true, 2, 4, 256, 30720, 512, 576},
+      {"E2B local 30k, window entry", true, true, 1, 8, 256, 30720, 512, 576},
+      {"E4B local 2k, window entry", true, true, 2, 4, 256, 2048, 512, 576},
       {"E4B global 30k, depth 512", true, true, 2, 4, 512, 30720},
       {"E2B local 30k, 512 window", true, true, 1, 8, 256, 30720, 512},
       {"E2B global 30k, depth 512", true, true, 1, 8, 512, 30720},

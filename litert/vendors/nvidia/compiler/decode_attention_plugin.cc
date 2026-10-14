@@ -45,11 +45,14 @@ constexpr char kKeyScaleField[] = "k_scale";
 constexpr char kKeyZeroField[] = "k_zero_point";
 constexpr char kValueScaleField[] = "v_scale";
 constexpr char kValueZeroField[] = "v_zero_point";
-constexpr int kNumFields = 7;
+constexpr char kWindowField[] = "window";
+constexpr int kNumFields = 8;
 constexpr int32_t kMaxRows = 16;
 
-// q, k, v and mask, then k_new and v_new.
-int32_t NumInputs(bool new_keys) { return new_keys ? 6 : 4; }
+// q, k, v and mask, then k_new and v_new; with a window its start instead.
+int32_t NumInputs(bool new_keys, int32_t window) {
+  return new_keys ? 6 : window != 0 ? 5 : 4;
+}
 
 bool SupportedDepth(int64_t depth) {
   return depth == 128 || depth == 256 || depth == 512;
@@ -95,15 +98,27 @@ nvinfer1::DataType CacheType(int32_t int8_cache) {
 
 bool ValidDescriptors(const nvinfer1::PluginTensorDesc* inputs,
                       const nvinfer1::PluginTensorDesc* output, bool new_keys,
-                      int32_t int8_cache) {
+                      int32_t int8_cache, int32_t window) {
   if (inputs == nullptr || output == nullptr ||
       !ValidDimensions(output->dims) ||
-      output->format != nvinfer1::TensorFormat::kLINEAR) {
+      output->format != nvinfer1::TensorFormat::kLINEAR ||
+      (window != 0 && (new_keys || int8_cache == 0))) {
     return false;
   }
-  for (int i = 0; i < NumInputs(new_keys); ++i) {
-    if (!ValidDimensions(inputs[i].dims) ||
-        inputs[i].format != nvinfer1::TensorFormat::kLINEAR) {
+  const int num_inputs = NumInputs(new_keys, window);
+  for (int i = 0; i < num_inputs; ++i) {
+    if (inputs[i].format != nvinfer1::TensorFormat::kLINEAR) {
+      return false;
+    }
+    if (window != 0 && i == 4) {
+      // The window's start: an int32 [1] device tensor.
+      if (inputs[i].type != nvinfer1::DataType::kINT32 ||
+          inputs[i].dims.nbDims != 1 || inputs[i].dims.d[0] != 1) {
+        return false;
+      }
+      continue;
+    }
+    if (!ValidDimensions(inputs[i].dims)) {
       return false;
     }
   }
@@ -144,6 +159,7 @@ bool ValidDescriptors(const nvinfer1::PluginTensorDesc* inputs,
   if (int8_cache != 0) {
     // INT8 caches run only on the decode kernel.
     return !new_keys && mask.d[3] == k.d[2] && q.d[2] <= kMaxRows &&
+           (window == 0 || (window <= k.d[2] && window % 16 == 0)) &&
            LiteRtNvidiaDecodeAttentionInt8Supports(
                static_cast<int32_t>(q.d[3])) &&
            (mask.d[2] == 1 || mask.d[2] == q.d[2]);
@@ -178,7 +194,8 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
                                     public nvinfer1::IPluginV3OneRuntime {
  public:
   DecodeAttentionPlugin(float fill, bool new_keys,
-                        const LiteRtNvidiaInt8CacheParams* int8) noexcept
+                        const LiteRtNvidiaInt8CacheParams* int8,
+                        int32_t window) noexcept
       : fill_(fill),
         new_keys_(new_keys ? 1 : 0),
         int8_cache_(int8 == nullptr       ? 0
@@ -188,6 +205,7 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
         k_zero_(int8 == nullptr ? 0 : int8->k_zero_point),
         v_scale_(int8 == nullptr ? 1.0f : int8->v_scale),
         v_zero_(int8 == nullptr ? 0 : int8->v_zero_point),
+        window_(window),
         fields_{
             {{kFillField, &fill_, nvinfer1::PluginFieldType::kFLOAT32, 1},
              {kNewKeysField, &new_keys_, nvinfer1::PluginFieldType::kINT32, 1},
@@ -198,8 +216,8 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
              {kKeyZeroField, &k_zero_, nvinfer1::PluginFieldType::kINT32, 1},
              {kValueScaleField, &v_scale_, nvinfer1::PluginFieldType::kFLOAT32,
               1},
-             {kValueZeroField, &v_zero_, nvinfer1::PluginFieldType::kINT32,
-              1}}},
+             {kValueZeroField, &v_zero_, nvinfer1::PluginFieldType::kINT32, 1},
+             {kWindowField, &window_, nvinfer1::PluginFieldType::kINT32, 1}}},
         field_collection_{static_cast<int32_t>(fields_.size()),
                           fields_.data()} {}
 
@@ -219,7 +237,7 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
   nvinfer1::IPluginV3* clone() noexcept override {
     const LiteRtNvidiaInt8CacheParams int8 = Int8Params();
     return new (std::nothrow) DecodeAttentionPlugin(
-        fill_, new_keys_ != 0, int8_cache_ != 0 ? &int8 : nullptr);
+        fill_, new_keys_ != 0, int8_cache_ != 0 ? &int8 : nullptr, window_);
   }
 
   const char* getPluginName() const noexcept override { return kPluginName; }
@@ -267,6 +285,9 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
         return desc.type == CacheType(int8_cache_);
       case 3:
         return desc.type == nvinfer1::DataType::kBOOL;
+      case 4:
+        return desc.type == (window_ != 0 ? nvinfer1::DataType::kINT32
+                                          : nvinfer1::DataType::kHALF);
       default:
         return desc.type == nvinfer1::DataType::kHALF;
     }
@@ -303,7 +324,7 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
                         int32_t num_outputs) noexcept override {
     return num_inputs == InputCount() && num_outputs == 1 &&
                    ValidDescriptors(inputs, outputs, new_keys_ != 0,
-                                    int8_cache_)
+                                    int8_cache_, window_)
                ? 0
                : 1;
   }
@@ -336,15 +357,16 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
     }
     return LiteRtNvidiaDecodeAttentionWorkspaceBytes(
         static_cast<int32_t>(q.d[1]), static_cast<int32_t>(q.d[2]),
-        static_cast<int32_t>(k.d[2]), static_cast<int32_t>(q.d[3]));
+        window_ != 0 ? window_ : static_cast<int32_t>(k.d[2]),
+        static_cast<int32_t>(q.d[3]));
   }
 
   int32_t enqueue(const nvinfer1::PluginTensorDesc* input_desc,
                   const nvinfer1::PluginTensorDesc* output_desc,
                   const void* const* inputs, void* const* outputs,
                   void* workspace, cudaStream_t stream) noexcept override {
-    if (!ValidDescriptors(input_desc, output_desc, new_keys_ != 0,
-                          int8_cache_) ||
+    if (!ValidDescriptors(input_desc, output_desc, new_keys_ != 0, int8_cache_,
+                          window_) ||
         inputs == nullptr || outputs == nullptr || outputs[0] == nullptr ||
         workspace == nullptr) {
       return 1;
@@ -371,9 +393,11 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
           stream);
     } else if (int8_cache_ != 0) {
       const LiteRtNvidiaInt8CacheParams int8 = Int8Params();
-      status = LiteRtNvidiaLaunchDecodeAttentionInt8(
+      status = LiteRtNvidiaLaunchDecodeAttentionInt8Window(
           inputs[0], q_bf16, inputs[1], inputs[2], &int8,
           static_cast<const bool*>(inputs[3]), mask_rows, heads, rows, seq,
+          window_ != 0 ? window_ : seq,
+          window_ != 0 ? static_cast<const int32_t*>(inputs[4]) : nullptr,
           depth, fill_, outputs[0], workspace, stream);
     } else {
       status =
@@ -410,7 +434,9 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
   }
 
  private:
-  int32_t InputCount() const noexcept { return NumInputs(new_keys_ != 0); }
+  int32_t InputCount() const noexcept {
+    return NumInputs(new_keys_ != 0, window_);
+  }
   LiteRtNvidiaInt8CacheParams Int8Params() const noexcept {
     return {k_scale_, k_zero_, v_scale_, v_zero_, int8_cache_ == 2};
   }
@@ -422,6 +448,7 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
   int32_t k_zero_;
   float v_scale_;
   int32_t v_zero_;
+  int32_t window_;
   std::array<nvinfer1::PluginField, kNumFields> fields_;
   nvinfer1::PluginFieldCollection field_collection_;
 };
@@ -438,7 +465,8 @@ class DecodeAttentionPluginCreator final
              {kKeyZeroField, nullptr, nvinfer1::PluginFieldType::kINT32, 1},
              {kValueScaleField, nullptr, nvinfer1::PluginFieldType::kFLOAT32,
               1},
-             {kValueZeroField, nullptr, nvinfer1::PluginFieldType::kINT32, 1}}},
+             {kValueZeroField, nullptr, nvinfer1::PluginFieldType::kINT32, 1},
+             {kWindowField, nullptr, nvinfer1::PluginFieldType::kINT32, 1}}},
         field_collection_{static_cast<int32_t>(fields_.size()),
                           fields_.data()} {}
 
@@ -453,6 +481,7 @@ class DecodeAttentionPluginCreator final
     float fill = 0.0f;
     int32_t new_keys = 0;
     int32_t int8_cache = 0;
+    int32_t window = 0;
     LiteRtNvidiaInt8CacheParams int8 = {1.0f, 0, 1.0f, 0, false};
     for (int32_t i = 0; i < fields->nbFields; ++i) {
       const auto& field = fields->fields[i];
@@ -478,6 +507,8 @@ class DecodeAttentionPluginCreator final
           int8.k_zero_point = value;
         } else if (std::strcmp(field.name, kValueZeroField) == 0) {
           int8.v_zero_point = value;
+        } else if (std::strcmp(field.name, kWindowField) == 0) {
+          window = value;
         }
       }
     }
@@ -485,8 +516,8 @@ class DecodeAttentionPluginCreator final
       return nullptr;
     }
     int8.value_columns = int8_cache == 2;
-    return CreateDecodeAttentionPlugin(fill, new_keys != 0,
-                                       int8_cache != 0 ? &int8 : nullptr);
+    return CreateDecodeAttentionPlugin(
+        fill, new_keys != 0, int8_cache != 0 ? &int8 : nullptr, window);
   }
 
   const nvinfer1::PluginFieldCollection* getFieldNames() noexcept override {
@@ -508,15 +539,19 @@ class DecodeAttentionPluginCreator final
 }  // namespace
 
 nvinfer1::IPluginV3* CreateDecodeAttentionPlugin(
-    float fill, bool new_keys,
-    const LiteRtNvidiaInt8CacheParams* int8_cache) noexcept {
+    float fill, bool new_keys, const LiteRtNvidiaInt8CacheParams* int8_cache,
+    int32_t window) noexcept {
   if (int8_cache != nullptr &&
       (new_keys || !std::isfinite(int8_cache->k_scale) ||
        !std::isfinite(int8_cache->v_scale) || int8_cache->k_scale <= 0.0f ||
        int8_cache->v_scale <= 0.0f)) {
     return nullptr;
   }
-  return new (std::nothrow) DecodeAttentionPlugin(fill, new_keys, int8_cache);
+  if (window < 0 || (window != 0 && (int8_cache == nullptr || window % 16))) {
+    return nullptr;
+  }
+  return new (std::nothrow)
+      DecodeAttentionPlugin(fill, new_keys, int8_cache, window);
 }
 
 void EnsureDecodeAttentionPluginRegistered() noexcept {}

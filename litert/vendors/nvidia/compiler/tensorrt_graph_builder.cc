@@ -4724,18 +4724,30 @@ class TensorRtGraphBuilder {
   // Such a block sees at most W + tokens - 1 keys ending at the chunk's last
   // position; reading that span instead of the whole cache makes the layer
   // cost its window, not the context, in prefill as in decode.
+  // One concatenated piece of a local mask: positions [1, R, 1] compared
+  // with the key-index constants lower [1, 1, S] and upper [1, 1, S].
+  struct WindowMaskPiece {
+    std::optional<Tensor> positions;
+    std::optional<Tensor> lower;
+    std::optional<Tensor> upper;
+    int64_t rows = 0;
+  };
+
   struct WindowedCacheRead {
     LiteRtTensor k_out = nullptr;
     LiteRtTensor v_out = nullptr;
     std::optional<Tensor> mask;
     std::optional<Tensor> start_indices;  // the update's K start [4]
+    std::vector<WindowMaskPiece> pieces;  // the mask's construction
     LiteRtOp scores = nullptr;
     LiteRtOp select = nullptr;
     LiteRtOp values = nullptr;
     int32_t seq = 0;
     int32_t tokens = 0;  // keys the update writes (1 decode, chunk prefill)
     int32_t window = 0;
-    int32_t length = 0;  // keys read: window + tokens - 1 rounded up to 64
+    int32_t length = 0;  // keys read: window + tokens + 62 rounded up to 64
+    int32_t mask_rows = 0;
+    nvinfer1::ITensor* start = nullptr;    // [1] = s0, a multiple of 64
     nvinfer1::ITensor* indices = nullptr;  // [length] = s0 + iota
     nvinfer1::ITensor* k_slice = nullptr;
     nvinfer1::ITensor* v_slice = nullptr;
@@ -4745,9 +4757,10 @@ class TensorRtGraphBuilder {
   // The window of a mask built as reshape(not_equal(concatenation(pieces),
   // 0)) with every piece cast([reshape](logical_and(greater_equal(pos, A),
   // less(pos, B)))), A[j] = j and B[j] - A[j] constant; nullopt otherwise
-  // (a global layer's mask is a subgraph input).
-  static std::optional<int32_t> WindowFromMask(const Tensor& mask,
-                                               int32_t seq) {
+  // (a global layer's mask is a subgraph input). `pieces` receives the
+  // positions and constants of each piece.
+  static std::optional<int32_t> WindowFromMask(
+      const Tensor& mask, int32_t seq, std::vector<WindowMaskPiece>* pieces) {
     Tensor tensor = mask;
     auto op = tensor.GetDefiningOp();
     while (op && op->Code() == kLiteRtOpCodeTflReshape &&
@@ -4764,14 +4777,14 @@ class TensorRtGraphBuilder {
     if (!op) {
       return std::nullopt;
     }
-    std::vector<Tensor> pieces;
+    std::vector<Tensor> parts;
     if (op->Code() == kLiteRtOpCodeTflConcatenation) {
-      for (const auto& piece : op->Inputs()) pieces.push_back(piece);
+      for (const auto& part : op->Inputs()) parts.push_back(part);
     } else {
-      pieces.push_back(tensor);
+      parts.push_back(tensor);
     }
     std::optional<int32_t> window;
-    for (Tensor piece : pieces) {
+    for (Tensor piece : parts) {
       auto producer = piece.GetDefiningOp();
       if (producer && producer->Code() == kLiteRtOpCodeTflCast &&
           !producer->Inputs().empty()) {
@@ -4788,6 +4801,7 @@ class TensorRtGraphBuilder {
         return std::nullopt;
       }
       std::optional<std::vector<int32_t>> lower, upper;
+      WindowMaskPiece recipe;
       for (const auto& operand : producer->Inputs()) {
         auto compare = operand.GetDefiningOp();
         if (!compare || compare->Inputs().size() != 2) {
@@ -4797,17 +4811,37 @@ class TensorRtGraphBuilder {
         if (!bound || bound->size() != static_cast<size_t>(seq)) {
           return std::nullopt;
         }
+        auto positions_type = compare->Inputs()[0].RankedTensorType();
+        auto bound_type = compare->Inputs()[1].RankedTensorType();
+        if (!positions_type || !bound_type ||
+            positions_type->Layout().Rank() != 3 ||
+            bound_type->Layout().Rank() != 3 ||
+            positions_type->Layout().Dimensions()[0] != 1 ||
+            positions_type->Layout().Dimensions()[2] != 1 ||
+            bound_type->Layout().Dimensions()[0] != 1 ||
+            bound_type->Layout().Dimensions()[1] != 1) {
+          return std::nullopt;
+        }
         if (compare->Code() == kLiteRtOpCodeTflGreaterEqual) {
           lower = std::move(*bound);
+          recipe.lower = compare->Inputs()[1];
         } else if (compare->Code() == kLiteRtOpCodeTflLess) {
           upper = std::move(*bound);
+          recipe.upper = compare->Inputs()[1];
         } else {
           return std::nullopt;
         }
+        if (recipe.positions.has_value() &&
+            recipe.positions->Get() != compare->Inputs()[0].Get()) {
+          return std::nullopt;
+        }
+        recipe.positions = compare->Inputs()[0];
+        recipe.rows = positions_type->Layout().Dimensions()[1];
       }
       if (!lower || !upper) {
         return std::nullopt;
       }
+      pieces->push_back(recipe);
       const int32_t w = (*upper)[0] - (*lower)[0];
       for (int32_t j = 0; j < seq; ++j) {
         if ((*lower)[j] != j || (*upper)[j] - (*lower)[j] != w) {
@@ -4879,12 +4913,18 @@ class TensorRtGraphBuilder {
             mask_type->Layout().Dimensions()[3] != cache_len) {
           continue;
         }
-        const auto w = WindowFromMask(mask, cache_len);
-        if (!w.has_value()) {
+        std::vector<WindowMaskPiece> pieces;
+        const auto w = WindowFromMask(mask, cache_len, &pieces);
+        if (!w.has_value() || pieces.empty()) {
           continue;
         }
-        const int32_t span = ((*w + chunk - 1 + 63) / 64) * 64;
-        if (span >= cache_len) {
+        // [s0, s0 + span) with s0 = pos - window + 1 rounded down to 64 holds
+        // every key a row of the chunk can see.
+        const int32_t span = ((*w + chunk + 62 + 63) / 64) * 64;
+        int64_t piece_rows = 0;
+        for (const auto& piece : pieces) piece_rows += piece.rows;
+        if (span >= cache_len ||
+            piece_rows != mask_type->Layout().Dimensions()[2]) {
           continue;
         }
         WindowedCacheRead read;
@@ -4892,6 +4932,8 @@ class TensorRtGraphBuilder {
         read.v_out = v_out.Get();
         read.mask = mask;
         read.start_indices = update.Inputs()[5];
+        read.pieces = std::move(pieces);
+        read.mask_rows = static_cast<int32_t>(piece_rows);
         read.scores = scores_op.Get();
         read.select = select_op->Get();
         read.values = values_op->Get();
@@ -4920,12 +4962,13 @@ class TensorRtGraphBuilder {
     return {};
   }
 
-  // s0 = clamp(pos - (length - tokens), 0, seq - length): the span
-  // [s0, s0 + length) holds every key a row of the chunk can see. The keys
-  // are gathered with execution-tensor indices s0 + iota (a slice with a
-  // start tensor would make the position a shape input).
-  Expected<void> EnsureWindowIndices(WindowedCacheRead& read) {
-    if (read.indices != nullptr) {
+  // s0 = clamp(floor((pos - window + 1) / 64) * 64, 0, seq - length): a
+  // multiple of 64 keeps the plugin's 16-byte value loads aligned, and the
+  // span [s0, s0 + length) holds every key a row of the chunk can see. The
+  // Myelin path gathers with execution-tensor indices s0 + iota (a slice with
+  // a start tensor would make the position a shape input).
+  Expected<void> EnsureWindowStart(WindowedCacheRead& read) {
+    if (read.start != nullptr) {
       return {};
     }
     LITERT_ASSIGN_OR_RETURN(auto* start_indices,
@@ -4934,8 +4977,9 @@ class TensorRtGraphBuilder {
                             SliceTensor1d(start_indices, /*start_index=*/2,
                                           /*size=*/1));
     const nvinfer1::Dims one{1, {1}};
-    const int32_t back = read.length - read.tokens;
+    const int32_t back = read.window - 1;
     const int32_t zero = 0;
+    const int32_t sixty_four = 64;
     const int32_t last = read.seq - read.length;
     LITERT_ASSIGN_OR_RETURN(
         auto* back_tensor,
@@ -4944,28 +4988,41 @@ class TensorRtGraphBuilder {
         auto* zero_tensor,
         AddInt32Constant(absl::MakeConstSpan(&zero, 1), one, "window_zero"));
     LITERT_ASSIGN_OR_RETURN(
+        auto* align_tensor,
+        AddInt32Constant(absl::MakeConstSpan(&sixty_four, 1), one,
+                         "window_align"));
+    LITERT_ASSIGN_OR_RETURN(
         auto* last_tensor,
         AddInt32Constant(absl::MakeConstSpan(&last, 1), one, "window_last"));
-    auto* shifted = network_->addElementWise(
-        *pos, *back_tensor, nvinfer1::ElementWiseOperation::kSUB);
-    if (shifted == nullptr || shifted->getOutput(0) == nullptr) {
-      return Error(kLiteRtStatusErrorCompilation,
-                   "Failed to add window start shift");
+    nvinfer1::ITensor* value = pos;
+    const struct {
+      nvinfer1::ITensor* operand;
+      nvinfer1::ElementWiseOperation op;
+      const char* what;
+    } steps[] = {
+        {back_tensor, nvinfer1::ElementWiseOperation::kSUB, "shift"},
+        {zero_tensor, nvinfer1::ElementWiseOperation::kMAX, "lower bound"},
+        {align_tensor, nvinfer1::ElementWiseOperation::kFLOOR_DIV, "align"},
+        {align_tensor, nvinfer1::ElementWiseOperation::kPROD, "align"},
+        {last_tensor, nvinfer1::ElementWiseOperation::kMIN, "upper bound"},
+    };
+    for (const auto& step : steps) {
+      auto* layer = network_->addElementWise(*value, *step.operand, step.op);
+      if (layer == nullptr || layer->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to add window start arithmetic");
+      }
+      value = layer->getOutput(0);
     }
-    auto* lower =
-        network_->addElementWise(*shifted->getOutput(0), *zero_tensor,
-                                 nvinfer1::ElementWiseOperation::kMAX);
-    if (lower == nullptr || lower->getOutput(0) == nullptr) {
-      return Error(kLiteRtStatusErrorCompilation,
-                   "Failed to clamp window start lower bound");
+    read.start = value;
+    return {};
+  }
+
+  Expected<void> EnsureWindowIndices(WindowedCacheRead& read) {
+    if (read.indices != nullptr) {
+      return {};
     }
-    auto* clamped =
-        network_->addElementWise(*lower->getOutput(0), *last_tensor,
-                                 nvinfer1::ElementWiseOperation::kMIN);
-    if (clamped == nullptr || clamped->getOutput(0) == nullptr) {
-      return Error(kLiteRtStatusErrorCompilation,
-                   "Failed to clamp window start upper bound");
-    }
+    LITERT_RETURN_IF_ERROR(EnsureWindowStart(read));
     std::vector<int32_t> iota(read.length);
     for (int32_t i = 0; i < read.length; ++i) {
       iota[i] = i;
@@ -4975,9 +5032,8 @@ class TensorRtGraphBuilder {
     iota_dims.d[0] = read.length;
     LITERT_ASSIGN_OR_RETURN(auto* iota_tensor,
                             AddInt32Constant(iota, iota_dims, "window_iota"));
-    auto* indices =
-        network_->addElementWise(*iota_tensor, *clamped->getOutput(0),
-                                 nvinfer1::ElementWiseOperation::kSUM);
+    auto* indices = network_->addElementWise(
+        *iota_tensor, *read.start, nvinfer1::ElementWiseOperation::kSUM);
     if (indices == nullptr || indices->getOutput(0) == nullptr) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add window index layer");
@@ -5046,15 +5102,79 @@ class TensorRtGraphBuilder {
     return read.v_slice;
   }
 
+  // The window's mask, rebuilt the way the model builds the full one but
+  // over the gathered key-index constants: for each piece
+  // (pos >= lower[s0 + j]) && (pos < upper[s0 + j]), then the pieces
+  // concatenated along axis 1 and reshaped to [1, 1, rows, length]. (A
+  // gather of the bool mask would cast the whole [rows, S] tensor first.)
   Expected<nvinfer1::ITensor*> WindowMaskSlice(WindowedCacheRead& read) {
     if (read.mask_slice != nullptr) {
       return read.mask_slice;
     }
     LITERT_RETURN_IF_ERROR(EnsureWindowIndices(read));
-    LITERT_ASSIGN_OR_RETURN(auto* mask, GetTensor(*read.mask));
+    const nvinfer1::Dims one{1, {1}};
+    const int32_t one_value = 1;
+    LITERT_ASSIGN_OR_RETURN(auto* one_tensor,
+                            AddInt32Constant(absl::MakeConstSpan(&one_value, 1),
+                                             one, "window_one"));
+    std::vector<nvinfer1::ITensor*> pieces;
+    for (const auto& piece : read.pieces) {
+      LITERT_ASSIGN_OR_RETURN(auto* positions, GetTensor(*piece.positions));
+      LITERT_ASSIGN_OR_RETURN(auto* lower, GetTensor(*piece.lower));
+      LITERT_ASSIGN_OR_RETURN(auto* upper, GetTensor(*piece.upper));
+      LITERT_ASSIGN_OR_RETURN(
+          lower, WindowGather(lower, read.indices, /*axis=*/2, "window_lower"));
+      LITERT_ASSIGN_OR_RETURN(
+          upper, WindowGather(upper, read.indices, /*axis=*/2, "window_upper"));
+      // pos >= lower  <=>  pos > lower - 1
+      auto* lower_minus = network_->addElementWise(
+          *lower, *one_tensor, nvinfer1::ElementWiseOperation::kSUB);
+      if (lower_minus == nullptr || lower_minus->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to add window mask lower bound");
+      }
+      auto* at_least =
+          network_->addElementWise(*positions, *lower_minus->getOutput(0),
+                                   nvinfer1::ElementWiseOperation::kGREATER);
+      auto* below = network_->addElementWise(
+          *positions, *upper, nvinfer1::ElementWiseOperation::kLESS);
+      if (at_least == nullptr || below == nullptr ||
+          at_least->getOutput(0) == nullptr || below->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to add window mask comparison");
+      }
+      auto* both = network_->addElementWise(
+          *at_least->getOutput(0), *below->getOutput(0),
+          nvinfer1::ElementWiseOperation::kAND);
+      if (both == nullptr || both->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to add window mask conjunction");
+      }
+      // [1, rows_i, length]: the pieces stack along axis 1 whatever their
+      // row counts.
+      LITERT_ASSIGN_OR_RETURN(
+          auto* piece_mask,
+          ReshapeTensor(both->getOutput(0),
+                        nvinfer1::Dims3{1, static_cast<int64_t>(piece.rows),
+                                        read.length}));
+      pieces.push_back(piece_mask);
+    }
+    nvinfer1::ITensor* mask = pieces[0];
+    if (pieces.size() > 1) {
+      auto* concat = network_->addConcatenation(
+          pieces.data(), static_cast<int32_t>(pieces.size()));
+      if (concat == nullptr || concat->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to add window mask concatenation");
+      }
+      concat->setAxis(1);
+      mask = concat->getOutput(0);
+    }
     LITERT_ASSIGN_OR_RETURN(
         read.mask_slice,
-        WindowGather(mask, read.indices, /*axis=*/3, "window_mask"));
+        ReshapeTensor(mask,
+                      nvinfer1::Dims4{1, 1, read.mask_rows, read.length}));
+    read.mask_slice->setName(KeepName(UniqueName("window_mask")));
     return read.mask_slice;
   }
 
@@ -5742,20 +5862,27 @@ class TensorRtGraphBuilder {
       v_cache = raw_v->second;
     }
     nvinfer1::ITensor* mask = tensor_map_[block.mask];
+    // A windowed block keeps the full caches and mask: the plugin reads
+    // `window` keys from the start it is handed as a fifth input.
+    int32_t window = 0;
+    nvinfer1::ITensor* window_start = nullptr;
     if (block.window.has_value()) {
       auto& read = windowed_reads_[*block.window];
-      LITERT_ASSIGN_OR_RETURN(k_cache, WindowKeySlice(read));
-      LITERT_ASSIGN_OR_RETURN(v_cache, WindowValueSlice(read));
-      LITERT_ASSIGN_OR_RETURN(mask, WindowMaskSlice(read));
+      LITERT_RETURN_IF_ERROR(EnsureWindowStart(read));
+      window = read.length;
+      window_start = read.start;
     }
     TrtPtr<nvinfer1::IPluginV3> plugin(CreateDecodeAttentionPlugin(
         block.fill, new_keys,
-        block.int8_cache.has_value() ? &*block.int8_cache : nullptr));
+        block.int8_cache.has_value() ? &*block.int8_cache : nullptr, window));
     if (!plugin) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to create CUDA decode attention plugin");
     }
     std::vector<nvinfer1::ITensor*> inputs = {q, k_cache, v_cache, mask};
+    if (window_start != nullptr) {
+      inputs.push_back(window_start);
+    }
     if (new_keys) {
       for (LiteRtTensor fresh : {block.k_new, block.v_new}) {
         LITERT_ASSIGN_OR_RETURN(

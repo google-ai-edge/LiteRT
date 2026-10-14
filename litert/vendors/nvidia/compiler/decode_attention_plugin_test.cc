@@ -157,6 +157,51 @@ TEST_F(DecodeAttentionPluginTest, AcceptsInt8CachesWithColumnValues) {
   EXPECT_EQ(CreateDecodeAttentionPlugin(-1.0e9f, false, &bad), nullptr);
 }
 
+TEST_F(DecodeAttentionPluginTest, WindowedInt8CachesTakeAStartInput) {
+  // Window mode: INT8 caches of the full context, a fifth int32 [1] input
+  // holding the first key read, and `window` keys read from there.
+  const LiteRtNvidiaInt8CacheParams int8 = {0.02f, 0, 0.03f, -1,
+                                            /*value_columns=*/true};
+  EXPECT_EQ(CreateDecodeAttentionPlugin(-1.0e9f, false, nullptr, 576),
+            nullptr);  // only with INT8 caches
+  EXPECT_EQ(CreateDecodeAttentionPlugin(-1.0e9f, false, &int8, 100),
+            nullptr);  // a multiple of 16
+  plugin_.reset(CreateDecodeAttentionPlugin(-1.0e9f, false, &int8, 576));
+  ASSERT_NE(plugin_, nullptr);
+  runtime_ = static_cast<nvinfer1::IPluginV3OneRuntime*>(
+      plugin_->getCapabilityInterface(
+          nvinfer1::PluginCapabilityType::kRUNTIME));
+  ASSERT_NE(runtime_, nullptr);
+  std::array<nvinfer1::PluginTensorDesc, 5> inputs{};
+  inputs[0].dims = nvinfer1::Dims4{1, 2, 4, 256};
+  inputs[0].type = nvinfer1::DataType::kBF16;
+  inputs[1].dims = nvinfer1::Dims4{1, 2, 2048, 256};
+  inputs[1].type = nvinfer1::DataType::kINT8;
+  inputs[2].dims = nvinfer1::Dims4{1, 2, 256, 2048};
+  inputs[2].type = nvinfer1::DataType::kINT8;
+  inputs[3].dims = nvinfer1::Dims4{1, 1, 4, 2048};
+  inputs[3].type = nvinfer1::DataType::kBOOL;
+  inputs[4].dims.nbDims = 1;
+  inputs[4].dims.d[0] = 1;
+  inputs[4].type = nvinfer1::DataType::kINT32;
+  for (auto& input : inputs) input.format = nvinfer1::TensorFormat::kLINEAR;
+  output_ = inputs[0];
+  auto status = [&]() {
+    return runtime_->onShapeChange(inputs.data(), inputs.size(), &output_, 1);
+  };
+  EXPECT_EQ(status(), 0);
+  // Without the start input, with a non-int32 start, or with caches shorter
+  // than the window the descriptors are rejected.
+  EXPECT_NE(runtime_->onShapeChange(inputs.data(), 4, &output_, 1), 0);
+  inputs[4].type = nvinfer1::DataType::kHALF;
+  EXPECT_NE(status(), 0);
+  inputs[4].type = nvinfer1::DataType::kINT32;
+  inputs[1].dims.d[2] = 512;
+  inputs[2].dims.d[3] = 512;
+  inputs[3].dims.d[3] = 512;
+  EXPECT_NE(status(), 0);
+}
+
 TEST_F(DecodeAttentionPluginTest, RejectsInvalidShapeArguments) {
   EXPECT_NE(runtime_->onShapeChange(nullptr, 4, &output_, 1), 0);
   EXPECT_NE(runtime_->onShapeChange(inputs_.data(), 4, nullptr, 1), 0);

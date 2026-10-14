@@ -119,14 +119,14 @@ __host__ __device__ constexpr size_t SharedBytesFor() {
 // aligned falls back to element loads.
 template <typename Cache, int kThreadElems, int kValueVecs, int kVecKeys>
 __device__ __forceinline__ void LoadColumnValues(
-    const typename Cache::Element* __restrict__ v_head, int seq, int j0,
+    const typename Cache::Element* __restrict__ v_head, int cache_len, int j0,
     int chunk, int tid, bool vectors,
     int4 (&v_vec)[kThreadElems][kValueVecs]) {
   using Element = typename Cache::Element;
 #pragma unroll
   for (int e = 0; e < kThreadElems; ++e) {
     const Element* v_row =
-        v_head + static_cast<size_t>(tid * kThreadElems + e) * seq + j0;
+        v_head + static_cast<size_t>(tid * kThreadElems + e) * cache_len + j0;
 #pragma unroll
     for (int c = 0; c < kValueVecs; ++c) {
       const int jv = c * kVecKeys;
@@ -167,9 +167,12 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
                            const typename Cache::Element* __restrict__ k,
                            const typename Cache::Element* __restrict__ v,
                            Cache cache, const bool* __restrict__ mask,
-                           int mask_rows, int rows, int seq, float fill,
+                           int mask_rows, int rows, int seq, int cache_len,
+                           const int32_t* __restrict__ window_start, float fill,
                            int splits, float* __restrict__ ws_acc,
                            float* __restrict__ ws_m, float* __restrict__ ws_l) {
+  // `seq` keys are read, starting at window_start[0] (0 without a window),
+  // out of caches and a mask that hold `cache_len` keys per head.
   using Element = typename Cache::Element;
   constexpr int kThreads = ThreadsFor<kDepth>();
   constexpr int kWarps = kThreads / 32;
@@ -200,11 +203,17 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   const int warp = tid / 32;
   const int lane = tid % 32;
   const int num_chunks = (seq + kChunk - 1) / kChunk;
-  const Element* k_head = k + static_cast<size_t>(head) * seq * kDepth;
-  const Element* v_head = v + static_cast<size_t>(head) * seq * kDepth;
+  const int s0 = window_start == nullptr ? 0 : window_start[0];
+  const Element* k_head =
+      k + (static_cast<size_t>(head) * cache_len + s0) * kDepth;
+  const Element* v_head =
+      Cache::kValueColumns
+          ? v + static_cast<size_t>(head) * kDepth * cache_len + s0
+          : v + (static_cast<size_t>(head) * cache_len + s0) * kDepth;
   const bool value_vectors =
       Cache::kValueColumns &&
-      (static_cast<size_t>(seq) * sizeof(Element)) % 16 == 0;
+      (static_cast<size_t>(cache_len) * sizeof(Element)) % 16 == 0 &&
+      (static_cast<size_t>(s0) * sizeof(Element)) % 16 == 0;
   int4 v_vec[kValueRows][kValueCols];
 
   // q[h][r][d] -> q_s[r][ (d / kLaneElems) + 32 * (d % kLaneElems) ]: lane
@@ -256,8 +265,8 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
         const int jj = tid;
         bool keep = true;
         if (mask != nullptr && jj < chunk) {
-          keep = mask[static_cast<size_t>(mask_rows == 1 ? 0 : r) * seq + j0 +
-                      jj];
+          keep = mask[static_cast<size_t>(mask_rows == 1 ? 0 : r) * cache_len +
+                      s0 + j0 + jj];
           visible |= keep;
         }
         mask_s[r * kChunk + jj] = keep;
@@ -269,7 +278,7 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   }
   if constexpr (Cache::kValueColumns) {
     LoadColumnValues<Cache, kThreadElems, kValueVecs, kVecKeys>(
-        v_head, seq, j0, chunk, tid, value_vectors, v_vec);
+        v_head, cache_len, j0, chunk, tid, value_vectors, v_vec);
   }
 
   // Scores: each warp takes keys warp, warp + kWarps, ... of the chunk,
@@ -578,8 +587,8 @@ template <typename T, int kDepth, int kRowsCap, typename Cache>
 cudaError_t Launch(const T* q, const typename Cache::Element* k,
                    const typename Cache::Element* v, const Cache& cache,
                    const bool* mask, int mask_rows, int heads, int rows,
-                   int seq, float fill, T* out, void* workspace,
-                   cudaStream_t stream) {
+                   int seq, int cache_len, const int32_t* window_start,
+                   float fill, T* out, void* workspace, cudaStream_t stream) {
   const int splits = SplitCount(seq);
   float* ws_acc = static_cast<float*>(workspace);
   float* ws_m = ws_acc + static_cast<size_t>(heads) * splits * rows * kDepth;
@@ -605,8 +614,8 @@ cudaError_t Launch(const T* q, const typename Cache::Element* k,
   }
   DecodeAttentionPartial<T, kDepth, kRowsCap, Cache>
       <<<dim3(splits, heads), ThreadsFor<kDepth>(), kSharedBytes, stream>>>(
-          q, k, v, cache, mask, mask_rows, rows, seq, fill, splits, ws_acc,
-          ws_m, ws_l);
+          q, k, v, cache, mask, mask_rows, rows, seq, cache_len, window_start,
+          fill, splits, ws_acc, ws_m, ws_l);
   cudaError_t status = cudaGetLastError();
   if (status != cudaSuccess) {
     return status;
@@ -621,19 +630,23 @@ template <typename T, int kDepth, typename Cache>
 cudaError_t LaunchRows(const T* q, const typename Cache::Element* k,
                        const typename Cache::Element* v, const Cache& cache,
                        const bool* mask, int mask_rows, int heads, int rows,
-                       int seq, float fill, T* out, void* workspace,
+                       int seq, int cache_len, const int32_t* window_start,
+                       float fill, T* out, void* workspace,
                        cudaStream_t stream) {
   if (rows <= 4) {
     return Launch<T, kDepth, 4, Cache>(q, k, v, cache, mask, mask_rows, heads,
-                                       rows, seq, fill, out, workspace, stream);
+                                       rows, seq, cache_len, window_start, fill,
+                                       out, workspace, stream);
   }
   if (rows <= 8) {
     return Launch<T, kDepth, 8, Cache>(q, k, v, cache, mask, mask_rows, heads,
-                                       rows, seq, fill, out, workspace, stream);
+                                       rows, seq, cache_len, window_start, fill,
+                                       out, workspace, stream);
   }
   return Launch<T, kDepth, kMaxRows, Cache>(q, k, v, cache, mask, mask_rows,
-                                            heads, rows, seq, fill, out,
-                                            workspace, stream);
+                                            heads, rows, seq, cache_len,
+                                            window_start, fill, out, workspace,
+                                            stream);
 }
 
 template <typename T>
@@ -642,16 +655,21 @@ cudaError_t LaunchDepth(const T* q, const __half* k, const __half* v,
                         int seq, int depth, float fill, T* out,
                         void* workspace, cudaStream_t stream) {
   const Fp16Cache cache;
+  const int cache_len = seq;
+  const int32_t* window_start = nullptr;
   switch (depth) {
     case 128:
       return LaunchRows<T, 128>(q, k, v, cache, mask, mask_rows, heads, rows,
-                                seq, fill, out, workspace, stream);
+                                seq, cache_len, window_start, fill, out,
+                                workspace, stream);
     case 256:
       return LaunchRows<T, 256>(q, k, v, cache, mask, mask_rows, heads, rows,
-                                seq, fill, out, workspace, stream);
+                                seq, cache_len, window_start, fill, out,
+                                workspace, stream);
     case 512:
       return LaunchRows<T, 512>(q, k, v, cache, mask, mask_rows, heads, rows,
-                                seq, fill, out, workspace, stream);
+                                seq, cache_len, window_start, fill, out,
+                                workspace, stream);
     default:
       return cudaErrorInvalidValue;
   }
@@ -661,18 +679,22 @@ template <typename T, typename Cache>
 cudaError_t LaunchInt8Depth(const T* q, const int8_t* k, const int8_t* v,
                             const Cache& cache, const bool* mask,
                             int mask_rows, int heads, int rows, int seq,
+                            int cache_len, const int32_t* window_start,
                             int depth, float fill, T* out, void* workspace,
                             cudaStream_t stream) {
   switch (depth) {
     case 128:
       return LaunchRows<T, 128>(q, k, v, cache, mask, mask_rows, heads, rows,
-                                seq, fill, out, workspace, stream);
+                                seq, cache_len, window_start, fill, out,
+                                workspace, stream);
     case 256:
       return LaunchRows<T, 256>(q, k, v, cache, mask, mask_rows, heads, rows,
-                                seq, fill, out, workspace, stream);
+                                seq, cache_len, window_start, fill, out,
+                                workspace, stream);
     case 512:
       return LaunchRows<T, 512>(q, k, v, cache, mask, mask_rows, heads, rows,
-                                seq, fill, out, workspace, stream);
+                                seq, cache_len, window_start, fill, out,
+                                workspace, stream);
     default:
       return cudaErrorInvalidValue;
   }
@@ -684,18 +706,21 @@ template <typename T>
 cudaError_t LaunchInt8(const T* q, const int8_t* k, const int8_t* v,
                        const LiteRtNvidiaInt8CacheParams& params,
                        const bool* mask, int mask_rows, int heads, int rows,
-                       int seq, int depth, float fill, T* out,
-                       void* workspace, cudaStream_t stream) {
+                       int seq, int cache_len, const int32_t* window_start,
+                       int depth, float fill, T* out, void* workspace,
+                       cudaStream_t stream) {
   if (params.value_columns) {
     const Int8Cache<true> cache{params.k_scale, params.v_scale,
                                 params.k_zero_point, params.v_zero_point};
     return LaunchInt8Depth(q, k, v, cache, mask, mask_rows, heads, rows, seq,
-                           depth, fill, out, workspace, stream);
+                           cache_len, window_start, depth, fill, out,
+                           workspace, stream);
   }
   const Int8Cache<false> cache{params.k_scale, params.v_scale,
                                params.k_zero_point, params.v_zero_point};
   return LaunchInt8Depth(q, k, v, cache, mask, mask_rows, heads, rows, seq,
-                         depth, fill, out, workspace, stream);
+                         cache_len, window_start, depth, fill, out, workspace,
+                         stream);
 }
 
 }  // namespace
@@ -741,9 +766,24 @@ extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttentionInt8(
     const LiteRtNvidiaInt8CacheParams* params, const bool* mask,
     int32_t mask_rows, int32_t heads, int32_t rows, int32_t seq, int32_t depth,
     float fill, void* out, void* workspace, cudaStream_t stream) {
+  if (seq <= 0) {
+    return cudaErrorInvalidValue;
+  }
+  return LiteRtNvidiaLaunchDecodeAttentionInt8Window(
+      q, q_bf16, k, v, params, mask, mask_rows, heads, rows, seq, seq, nullptr,
+      depth, fill, out, workspace, stream);
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttentionInt8Window(
+    const void* q, bool q_bf16, const void* k, const void* v,
+    const LiteRtNvidiaInt8CacheParams* params, const bool* mask,
+    int32_t mask_rows, int32_t heads, int32_t rows, int32_t cache_len,
+    int32_t window, const int32_t* window_start, int32_t depth, float fill,
+    void* out, void* workspace, cudaStream_t stream) {
   if (q == nullptr || k == nullptr || v == nullptr || params == nullptr ||
       out == nullptr || workspace == nullptr || heads <= 0 || rows <= 0 ||
-      rows > kMaxRows || seq <= 0 ||
+      rows > kMaxRows || window <= 0 || cache_len < window ||
+      (window_start == nullptr && window != cache_len) ||
       (mask != nullptr && mask_rows != 1 && mask_rows != rows) ||
       !LiteRtNvidiaDecodeAttentionInt8Supports(depth) ||
       !std::isfinite(params->k_scale) || !std::isfinite(params->v_scale)) {
@@ -753,12 +793,12 @@ extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttentionInt8(
     return LaunchInt8(static_cast<const __nv_bfloat16*>(q),
                       static_cast<const int8_t*>(k),
                       static_cast<const int8_t*>(v), *params, mask, mask_rows,
-                      heads, rows, seq, depth, fill,
+                      heads, rows, window, cache_len, window_start, depth, fill,
                       static_cast<__nv_bfloat16*>(out), workspace, stream);
   }
   return LaunchInt8(static_cast<const __half*>(q),
                     static_cast<const int8_t*>(k),
                     static_cast<const int8_t*>(v), *params, mask, mask_rows,
-                    heads, rows, seq, depth, fill, static_cast<__half*>(out),
-                    workspace, stream);
+                    heads, rows, window, cache_len, window_start, depth, fill,
+                    static_cast<__half*>(out), workspace, stream);
 }
