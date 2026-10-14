@@ -81,9 +81,10 @@ std::vector<OpWrapper> BuildFp16FullyConnectedOp(
         kWeightChannelAxis, weight_tensor.GetDimension(kWeightChannelAxis),
         weight_quant.GetScale(), weight_quant.GetZeroPoint()};
     weight_tensor.SetQuantParams(per_channel_quant);
-  } else if (!weight_tensor.IsPerChannelQuant()) {
+  } else if (!weight_tensor.IsPerChannelQuant() &&
+             !weight_tensor.IsBlockwiseQuant()) {
     QNN_LOG_ERROR(
-        "FP16 FullyConnected with int8 weight only supports per-channel "
+        "FP16 FullyConnected requires per-channel or blockwise "
         "quantized weight.");
     return {};
   }

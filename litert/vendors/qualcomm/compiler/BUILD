@@ -338,6 +338,7 @@ litert_lib(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@flatbuffers",
+        "@FP16//:fp16",
         "@qairt//:qnn_lib_headers",
     ],
 )
