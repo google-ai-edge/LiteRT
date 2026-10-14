@@ -228,7 +228,7 @@ else
 fi
 
 if [ "$LITERT_TARGETS_ONLY" == "true" ]; then
-    bazel test "${COMMON_BUILD_FLAGS[@]}" "${TEST_FLAGS[@]}" -- //litert/... "${LITERT_EXCLUDED_TARGETS[@]}"
+    bazel test "${COMMON_BUILD_FLAGS[@]}" "${TEST_FLAGS[@]}" -- //tensor/... //litert/... //weight_loader/... "${LITERT_EXCLUDED_TARGETS[@]}"
 else
     # Build core TFLite targets to populate remote cache for presubmits (e.g. tflite_bazel_cmake.yml).
     # LINT.IfChange(tflite_bazel_targets)
