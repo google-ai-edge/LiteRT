@@ -1,4 +1,5 @@
 <!-- disableFinding(LINK_RELATIVE_G3DOC) -->
+<!-- disableFinding(LINK_ID) -->
 
 # Large `.tflite` Models and Weight Storage Options
 
@@ -19,23 +20,19 @@ learning models. To address that, the framework supports two mechanisms to move
 constant payloads outside the core FlatBuffer structure, alongside traditional
 inline storage:
 
-| Storage Model     | Deployment           | References in the Model                       | Max        |
-:                   :                      :                                               : Payload    :
-:                   :                      :                                               : Size       :
-| :---------------- | :------------------- | :-------------------------------------------- | :--------- |
-| **Inline          | Standard single      | `Tensor.buffer` indexes `Model.buffers`;      | < 2 GiB    |
-: Buffers**         : `.tflite` file       : `Buffer.data` is present                      : total      :
-:                   :                      :                                               : FlatBuffer :
-| **`buffer_offset` | Single `.tflite`     | `Buffer.offset` and `Buffer.size`;            | Total file |
-: Mode**            : file with appended   : `Operator.large_custom_options_offset`/`size` : can exceed :
-:                   : constants            :                                               : 2 GiB      :
-| **External        | `.tflite` plus       | `Tensor.external_buffer`,                     | Total      |
-: Buffers**         : separate weight      : `Model.external_buffers`,                     : weights    :
-:                   : files or             : `Model.external_buffer_groups`                : can exceed :
-:                   : application-provided :                                               : 2 GiB      :
-:                   : memory               :                                               : across     :
-:                   :                      :                                               : storage    :
-:                   :                      :                                               : sources    :
+<!-- disableFinding(LINE_OVER_80) -->
+
+<!-- mdformat off(reason: standard GFM table rendering) -->
+
+| Storage Model | Deployment | References in the Model | Max Payload Size |
+| :--- | :--- | :--- | :--- |
+| **Inline Buffers** | Standard single `.tflite` file | `Tensor.buffer` indexes `Model.buffers`; `Buffer.data` is present | < 2 GiB total FlatBuffer |
+| **`buffer_offset` Mode** | Single `.tflite` file with appended constants | `Buffer.offset` and `Buffer.size`; `Operator.large_custom_options_offset`/`size` | Total file can exceed 2 GiB |
+| **External Buffers** | `.tflite` plus separate weight files or application-provided memory | `Tensor.external_buffer`, `Model.external_buffers`, `Model.external_buffer_groups` | Total weights can exceed 2 GiB across storage sources |
+
+<!-- mdformat on -->
+
+<!-- enableFinding(LINE_OVER_80) -->
 
 Both `buffer_offset` and external buffers allow the total payload to exceed the
 FlatBuffer limit. Neither removes the ~2 GiB limit on the FlatBuffer
@@ -96,11 +93,11 @@ payload locations themselves are determined by the `Buffer.offset` fields.
 -   **C++ Converter Flags**: Set `converter_flags.set_use_buffer_offset(true)`.
 -   **MLIR Translation**: Pass the command-line flag `--use-buffer-offset`.
 
-The FlatBuffer exporter(flatbuffer_export.cc) also
+The [FlatBuffer exporter](../../tflite/converter/flatbuffer_export.cc) also
 enables this mode proactively when the estimated module size exceeds the
 FlatBuffer limit minus 512 MiB. If an initial export fails due to the FlatBuffer
 size limit, it automatically retries once with offsets enabled. The
-StableHLO Python conversion pipeline(stablehlo_tfl_pipeline.cc)
+[StableHLO Python conversion pipeline](../../tflite/converter/python/stablehlo_tfl_pipeline.cc)
 explicitly enables buffer offsets even for smaller models.
 
 ### Runtime Guidance
@@ -210,8 +207,8 @@ FlatBuffer constant rather than creating a separate weight file. See
 The tool
 [`litert/tools/externalize_tflite_flatbuffer.py`](../../litert/tools/externalize_tflite_flatbuffer.py)
 extracts weights from `model.tflite` and writes a separate weight blob into an
-output directory. In a Python environment with `flatbuffers`, NumPy, and the
-generated `litert.python.schema_py_generated` module:
+output directory. In a Python environment with `flatbuffers` and the generated
+`litert.python.schema_py_generated` module:
 
 ```bash
 python3 -m litert.tools.externalize_tflite_flatbuffer \
@@ -232,21 +229,28 @@ flatc --python --gen-onefile --gen-object-api \
 **Scope and Behavior of the Tool:**
 
 -   Selects constant tensors at input 1 of `FULLY_CONNECTED`, `CONV_2D`,
-    `DEPTHWISE_CONV_2D`, or `EMBEDDING_LOOKUP` exceeding the element count
-    threshold.
--   Skips subgraph inputs, bias tensors, variables, and tensors already using
-    external buffers.
+    `DEPTHWISE_CONV_2D` (when `depth_multiplier == 1`), or `EMBEDDING_LOOKUP`
+    exceeding the element count threshold.
+-   Skips subgraph inputs, bias tensors, variables, tensors already using
+    external buffers, and `DEPTHWISE_CONV_2D` weights with `depth_multiplier !=
+    1` (kept inline even if shared with another supported operator).
 -   Deduplicates identical externalized payloads and aligns slice offsets to 64
     bytes.
 -   Resolves appended `Buffer.offset/size` payloads prior to processing;
-    unselected payloads (such as biases) are repacked inline.
+    unselected payloads (such as biases) are repacked inline when the remaining
+    buffers fit within 1 GiB, or re-appended after the FlatBuffer using
+    `Buffer.offset/size` (aligned to 16 bytes) when they exceed 1 GiB.
+-   Does not filter by data type: `FLOAT32` weights at selected operator inputs
+    are externalized alongside quantized weights, even though the WebGPU
+    streamed-loading path does not currently support streaming `FLOAT32`
+    weights.
 -   Does not stream arbitrarily large files (reads input into memory) and does
     not relocate `Operator.large_custom_options_*`.
 
-The remaining inline model must fit in a FlatBuffer. Preserve any existing
-external weight files separately: the Python `externalize(...,
-existing_weights=...)` argument can copy an existing blob, but the CLI does not
-expose that argument.
+The remaining FlatBuffer structure and inline buffers must stay below the ~2 GiB
+FlatBuffer limit. Preserve any existing external weight files separately: the
+Python `externalize(..., existing_weights=...)` argument can copy an existing
+blob, but the CLI does not expose that argument.
 
 --------------------------------------------------------------------------------
 
@@ -301,6 +305,16 @@ streamed-loading helper does not provide a weight-free dry-run mode. Validate
 the intended browser, runtime build, model, and GPU together with a known-good
 inference.
 
+> **Limitation (Streamed `FLOAT32` Weights on WebGPU):** The ML Drift WebGPU
+> streamed-loading path currently supports streaming **only quantized (`INT8`,
+> `INT4`, `INT2`) external weights**. Streamed `FLOAT32` (and `FLOAT16`)
+> external weights are not supported because float weights still require
+> CPU-side buffer access during delegate initialization, which is unavailable
+> when weights are supplied only as a stream. Models or submodels containing
+> `FLOAT32` weights (such as vision or audio encoders) must either keep
+> `FLOAT32` weights inline in `model.tflite` or load their weights into host
+> memory before compilation.
+
 --------------------------------------------------------------------------------
 
 ## Runtime Execution & Weight Resolution
@@ -353,32 +367,21 @@ corresponding `Model` factories and `LiteRtCreateModelFrom*` functions. Loading
 retains the original FlatBuffer; the compiled-model runtime resolves separate
 weights later.
 
-| API or Operation                     | Appended Tensor        | Separate Weights           |
-:                                      : Buffers                : (`Tensor.external_buffer`) :
-:                                      : (`Buffer.offset/size`) :                            :
-| :----------------------------------- | :--------------------- | :------------------------- |
-| `CreateFromFile`                     | Reads the complete     | Retains references;        |
-:                                      : file allocation        : records the model          :
-:                                      :                        : directory for later weight :
-:                                      :                        : resolution                 :
-| `CreateFromBuffer` / `CreateFromFd`  | Requires the complete  | Retains references; no     |
-:                                      : model buffer or file   : model directory, so use    :
-:                                      : region, including      : explicit storage mappings  :
-:                                      : appended bytes         : or filesystem paths valid  :
-:                                      :                        : from the working directory :
-| `CompiledModel::Create` using the    | Supplies the full      | Uses the weight loader;    |
-: original FlatBuffer                  : allocation to the      : execution support depends  :
-:                                      : TFLite interpreter     : on the requested backend   :
-| `LiteRtGetTensorWeights` followed by | Returns the appended   | Returns empty weights for  |
-: `LiteRtGetWeightsBytes`              : tensor bytes           : external constants with    :
-:                                      :                        : `Tensor.buffer = 0`; does  :
-:                                      :                        : not resolve external       :
-:                                      :                        : sources                    :
-| `LiteRtSerializeModel` /             | Re-emits appended      | Does not preserve          |
-: `LiteRtSerializeModelWithSignatures` : tensor data and        : external-buffer IDs,       :
-:                                      : recalculates offsets;  : groups, or slices          :
-:                                      : validate output        :                            :
-:                                      : alignment              :                            :
+<!-- disableFinding(LINE_OVER_80) -->
+
+<!-- mdformat off(reason: standard GFM table rendering) -->
+
+| API or Operation | Appended Tensor Buffers (`Buffer.offset/size`) | Separate Weights (`Tensor.external_buffer`) |
+| :--- | :--- | :--- |
+| `CreateFromFile` | Reads the complete file allocation | Retains references; records the model directory for later weight resolution |
+| `CreateFromBuffer` / `CreateFromFd` | Requires the complete model buffer or file region, including appended bytes | Retains references; no model directory, so use explicit storage mappings or filesystem paths valid from the working directory |
+| `CompiledModel::Create` using the original FlatBuffer | Supplies the full allocation to the TFLite interpreter | Uses the weight loader; execution support depends on the requested backend |
+| `LiteRtGetTensorWeights` followed by `LiteRtGetWeightsBytes` | Returns the appended tensor bytes | Returns empty weights for external constants with `Tensor.buffer = 0`; does not resolve external sources |
+| `LiteRtSerializeModel` / `LiteRtSerializeModelWithSignatures` | Re-emits appended tensor data and recalculates offsets; validate output alignment | Does not preserve external-buffer IDs, groups, or slices |
+
+<!-- mdformat on -->
+
+<!-- enableFinding(LINE_OVER_80) -->
 
 These differences follow from the
 [model importer](../../litert/core/model/model_load.cc),
@@ -408,11 +411,19 @@ limitations. Also, the public serialization API returns
 The built-in weight loader resolves each group in the following order of
 precedence:
 
-Priority | Resolution Source                                               | Meaning of `ExternalBuffer.offset`
-:------- | :-------------------------------------------------------------- | :---------------------------------
-**1**    | Matching entry in `Options::SetWeightInMemoryMap(...)`          | Byte offset into the group's host-memory span
-**2**    | Matching section in `Options::SetExternalWeightScopedFile(...)` | Offset within section (`section.offset + buffer.offset` in file)
-**3**    | `ExternalBufferGroup.name` as a filesystem path                 | Offset from the start of that file
+<!-- disableFinding(LINE_OVER_80) -->
+
+<!-- mdformat off(reason: standard GFM table rendering) -->
+
+| Priority | Resolution Source | Meaning of `ExternalBuffer.offset` |
+| :--- | :--- | :--- |
+| **1** | Matching entry in `Options::SetWeightInMemoryMap(...)` | Byte offset into the group's host-memory span |
+| **2** | Matching section in `Options::SetExternalWeightScopedFile(...)` | Offset within section (`section.offset + buffer.offset` in file) |
+| **3** | `ExternalBufferGroup.name` as a filesystem path | Offset from the start of that file |
+
+<!-- mdformat on -->
+
+<!-- enableFinding(LINE_OVER_80) -->
 
 -   **Filesystem fallback**: Absolute paths are loaded directly. Relative paths
     resolve against the model file's directory when loaded from a path. When
@@ -514,7 +525,9 @@ When generating, rewriting, or validating models with large weight storage:
     -   Verify tensor address alignment meets
         `LITERT_HOST_MEMORY_BUFFER_ALIGNMENT` (64 bytes).
     -   If separate-weight streaming is needed on web, use `loadModelAndWeights`
-        and ensure every slice resolves within the supplied weight stream.
+        and ensure every slice resolves within the supplied weight stream (note
+        that WebGPU streamed loading currently supports only quantized `INT8`,
+        `INT4`, and `INT2` external weights, not `FLOAT32`).
     -   Measure Wasm, JavaScript staging, and GPU memory use on the target
         device; a compact graph alone does not establish compatibility.
 -   [ ] **API and Rewrite Compatibility**:
