@@ -203,6 +203,132 @@ class QuantizeTensorTest(parameterized.TestCase):
     )
     self.assertEqual(quant_param.quantizedDimension, 3)
 
+  def _quantize_multi_axis_tensor(
+      self,
+      tensor_shape: list[int],
+      quantized_dimensions: tuple[int, ...],
+      block_size: int,
+      scale: np.ndarray,
+  ) -> qtyping.QuantizationParametersT:
+    """Quantizes tensor 4 with multi-axis params, returns its quantization."""
+    subgraph = self._model.subgraphs[0]
+    subgraph.tensors[4].shape = np.array(tensor_shape, dtype=np.int32)
+    quantize_tensor.quantize_tensor(
+        transformation_utils.TransformationInput(
+            tensor_id=4,
+            model=self._model,
+            subgraph=subgraph,
+            producer=1,
+            consumers=[3],
+            quant_params=qtyping.UniformQuantParams(
+                num_bits=8,
+                quantized_dimension=None,
+                quantized_dimensions=quantized_dimensions,
+                scale=scale,
+                zero_point=np.zeros_like(scale),
+                block_size=block_size,
+            ),
+        )
+    )
+    return subgraph.tensors[4].quantization
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="channelwise",
+          tensor_shape=[2, 3, 64],
+          quantized_dimensions=(0, 1),
+          block_size=0,
+          scale_shape=(2, 3, 1),
+          expected_block_shape=[1, 1, 64],
+          expected_block_size=64,
+      ),
+      dict(
+          testcase_name="blockwise",
+          tensor_shape=[2, 3, 64],
+          quantized_dimensions=(0, 1),
+          block_size=32,
+          scale_shape=(2, 3, 2),
+          expected_block_shape=[1, 1, 32],
+          expected_block_size=32,
+      ),
+      dict(
+          testcase_name="blocks_not_along_last_dim",
+          tensor_shape=[2, 3, 64],
+          quantized_dimensions=(0, 2),
+          block_size=0,
+          scale_shape=(2, 1, 64),
+          expected_block_shape=[1, 3, 1],
+          expected_block_size=0,
+      ),
+      dict(
+          testcase_name="channelwise_4d",
+          tensor_shape=[2, 3, 1, 64],
+          quantized_dimensions=(0, 1),
+          block_size=0,
+          scale_shape=(2, 3, 1, 1),
+          expected_block_shape=[1, 1, 1, 64],
+          expected_block_size=64,
+      ),
+      dict(
+          testcase_name="blockwise_4d",
+          tensor_shape=[2, 3, 1, 64],
+          quantized_dimensions=(0, 1),
+          block_size=32,
+          scale_shape=(2, 3, 1, 2),
+          expected_block_shape=[1, 1, 1, 32],
+          expected_block_size=32,
+      ),
+  )
+  def test_quantize_tensor_with_multi_axis_quantization_block_shape(
+      self,
+      tensor_shape,
+      quantized_dimensions,
+      block_size,
+      scale_shape,
+      expected_block_shape,
+      expected_block_size,
+  ):
+    details = self._quantize_multi_axis_tensor(
+        tensor_shape, quantized_dimensions, block_size, np.ones(scale_shape)
+    ).details
+    self.assertSequenceEqual(list(details.blockShape), expected_block_shape)
+    self.assertEqual(details.blockSize, expected_block_size)
+
+  def test_quantize_tensor_with_multi_axis_quantization_writes_scales(self):
+    scale = np.random.uniform(size=(2, 3, 2))
+    quant_param = self._quantize_multi_axis_tensor(
+        tensor_shape=[2, 3, 64],
+        quantized_dimensions=(0, 1),
+        block_size=32,
+        scale=scale,
+    )
+    self.assertEqual(
+        quant_param.detailsType,
+        qtyping.QuantizationDetails.BlockwiseQuantization,
+    )
+    self.assertEqual(quant_param.details.zeroPoints, -1)
+    scales_tensor = self._model.subgraphs[0].tensors[quant_param.details.scales]
+    self.assertEqual(scales_tensor.type, qtyping.TensorType.FLOAT32)
+    np.testing.assert_array_equal(
+        tfl_flatbuffer_utils.get_tensor_data(
+            scales_tensor, self._model.buffers
+        ),
+        scale.astype(np.float32),
+    )
+
+  def test_quantize_tensor_with_multi_axis_quantization_bad_scale_shape_fails(
+      self,
+  ):
+    with self.assertRaisesRegex(
+        ValueError, r"does not match the expected shape \(2, 3, 2\)"
+    ):
+      self._quantize_multi_axis_tensor(
+          tensor_shape=[2, 3, 64],
+          quantized_dimensions=(0, 1),
+          block_size=32,
+          scale=np.ones((2, 3, 4)),
+      )
+
   def test_quantize_tensor_with_nonlinear_quantization(self):
     """test quantizing an activation tensor with non-linear quantization."""
     subgraph = self._model.subgraphs[0]

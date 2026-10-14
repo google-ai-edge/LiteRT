@@ -15,6 +15,7 @@
 
 """quantize a given tensor."""
 
+from collections.abc import Sequence
 import logging
 from typing import Optional
 
@@ -149,6 +150,100 @@ def _perform_blockwise_quantization(
   return flatbuffer_quantization
 
 
+def _get_multi_axis_block_shape(
+    tensor_shape: Sequence[int],
+    quantized_dimensions: Sequence[int],
+    block_size: int,
+) -> list[int]:
+  """Returns `block_shape`: how many elements share one scale per dimension.
+
+  Each quantized dimension gets 1 in the block shape, and each non-quantized
+  dimension gets its original size. For blockwise quantization, the last
+  dimension gets `block_size` instead of its original size.
+
+  E.g. for an MoE weight of shape [E, N, K] with `quantized_dimensions` (0, 1),
+  this is [1, 1, K] for channelwise and [1, 1, 32] for blocks of 32.
+
+  Args:
+    tensor_shape: The shape of the quantized tensor.
+    quantized_dimensions: The dimensions with one scale per index.
+    block_size: The block size along the last dimension, or 0 if not blockwise.
+
+  Returns:
+    The block shape, with one entry per tensor dimension.
+  """
+  last_dim = len(tensor_shape) - 1
+  block_shape = []
+  for dim, dim_size in enumerate(tensor_shape):
+    if dim in quantized_dimensions:
+      block_shape.append(1)
+    elif block_size > 0 and dim == last_dim:
+      block_shape.append(block_size)
+    else:
+      block_shape.append(dim_size)
+  return block_shape
+
+
+def _perform_multi_axis_quantization(
+    transformation_input: transformation_utils.TransformationInput,
+) -> qtyping.QuantizationParametersT:
+  """Perform multi-axis quantization and fill the quantization parameters.
+
+  Multi-axis quantization is stored as `BlockwiseQuantization` with a
+  `block_shape` that gives the block extent along every dimension.
+
+  Args:
+    transformation_input: Input structure that contains all information needed
+      for the transformation.
+
+  Returns:
+    The quantization parameters.
+  """
+  quant_params = transformation_input.quant_params
+  assert isinstance(quant_params, qtyping.UniformQuantParams)
+  assert quant_params.quantized_dimensions is not None
+  tensor = transformation_input.subgraph.tensors[transformation_input.tensor_id]
+  tensor_shape = [int(dim) for dim in tensor.shape]
+  block_shape = _get_multi_axis_block_shape(
+      tensor_shape, quant_params.quantized_dimensions, quant_params.block_size
+  )
+  scale = quant_params.scale.astype(np.float32)
+  expected_scale_shape = tuple(
+      (dim + block - 1) // block
+      for dim, block in zip(tensor_shape, block_shape)
+  )
+  if scale.shape != expected_scale_shape:
+    raise ValueError(
+        f"Scale shape {scale.shape} of tensor {tensor.name.decode()} does not"
+        f" match the expected shape {expected_scale_shape} for block_shape"
+        f" {block_shape}."
+    )
+
+  flatbuffer_quantization = qtyping.QuantizationParametersT()
+  flatbuffer_quantization.detailsType = (
+      qtyping.QuantizationDetails.BlockwiseQuantization
+  )
+  blockwise_details = qtyping.BlockwiseQuantizationT()
+  blockwise_details.scales = transformation_utils.add_new_constant_tensor(
+      tensor.name + b"_scales",
+      scale,
+      qtyping.TensorType.FLOAT32,
+      transformation_input.subgraph,
+      transformation_input.model,
+  )
+  # Multi-axis quantization only supports symmetric quantization where zero
+  # points are 0, so this points to -1 (no separate zero-point tensor).
+  blockwise_details.zeroPoints = -1
+  blockwise_details.blockShape = block_shape
+  # Also set `block_size` for readers that ignore `block_shape`. It can only
+  # express blocks that run along the last dimension.
+  blockwise_details.blockSize = (
+      block_shape[-1] if all(block == 1 for block in block_shape[:-1]) else 0
+  )
+  flatbuffer_quantization.details = blockwise_details
+  return flatbuffer_quantization
+
+
 def quantize_tensor(
     transformation_input: transformation_utils.TransformationInput,
 ) -> qtyping.TransformationInfo:
@@ -202,7 +297,11 @@ def quantize_tensor(
       )
 
   if isinstance(transformation_input.quant_params, qtyping.UniformQuantParams):
-    if transformation_input.quant_params.block_size == 0:
+    if transformation_input.quant_params.quantized_dimensions is not None:
+      flatbuffer_quantization = _perform_multi_axis_quantization(
+          transformation_input
+      )
+    elif transformation_input.quant_params.block_size == 0:
       flatbuffer_quantization = _perform_channelwise_quantization(
           transformation_input
       )
