@@ -234,19 +234,20 @@ struct ArenaLayout {
   size_t total = 0;
 };
 
-// LITERT_NVIDIA_MOE_COMPACT_SCALES: 0 keeps the expert scales as FP16 (two
-// bytes per block); 1 stores a byte per block as the fraction of the row's
-// FP16 maximum, half the bytes (the 26B: 1.43 GB to 0.72, to 0.3% at the
-// 99th percentile) at a few percent of decode; auto (the default) takes the
-// compact form only when the FP16 arenas of every layer would not all fit
-// on the device beside the reserve, decided at the first arena.
+// LITERT_NVIDIA_MOE_COMPACT_SCALES: 1 (the default) stores a byte per block
+// as the fraction of the row's FP16 maximum, half the bytes of FP16 scales
+// (the 26B: 1.43 GB to 0.72, reproduced to 0.3% at the 99th percentile) at
+// the same decode speed once the format is a compile-time choice of the
+// kernels; 0 keeps FP16; auto takes the compact form only when the FP16
+// arenas of every layer would not all fit on the device beside the reserve,
+// decided at the first arena (which cannot see caches allocated later).
 int CompactScalesMode() {
   static const int mode = [] {
     const char* value = std::getenv("LITERT_NVIDIA_MOE_COMPACT_SCALES");
-    if (value == nullptr || value[0] == '\0') return 2;
+    if (value == nullptr || value[0] == '\0') return 1;
     if (std::strcmp(value, "0") == 0) return 0;
-    if (std::strcmp(value, "1") == 0) return 1;
-    return 2;
+    if (std::strcmp(value, "auto") == 0) return 2;
+    return 1;
   }();
   return mode;
 }
