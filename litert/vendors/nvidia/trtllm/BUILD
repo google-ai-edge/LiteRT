@@ -29,6 +29,7 @@ cuda_library(
         "global_attention.cu",
         "head_kernels.cu",
         "int2_gemv.cu",
+        "int4_block_gemv.cu",
         "subbyte_gemm.cu",
         "tiled_attention.cu",
     ],
@@ -37,6 +38,8 @@ cuda_library(
         "global_attention.h",
         "head_kernels.h",
         "int2_gemv.h",
+        "int4_block_gemv.cuh",
+        "int4_block_gemv.h",
         "subbyte_gemm.h",
         "tiled_attention.h",
     ],
@@ -69,6 +72,7 @@ cc_library(
         "global_attention.h",
         "head_kernels.h",
         "int2_gemv.h",
+        "int4_block_gemv.h",
         "subbyte_gemm.h",
         "tiled_attention.h",
     ],
@@ -76,6 +80,27 @@ cc_library(
     deps = [
         ":gemma4_head_kernels_archive",
         "@local_cuda//:cuda_headers",
+    ],
+)
+
+cc_test(
+    name = "int4_block_gemv_test",
+    srcs = ["int4_block_gemv_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
     ],
 )
 
