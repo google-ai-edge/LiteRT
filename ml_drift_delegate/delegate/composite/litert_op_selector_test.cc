@@ -30,6 +30,7 @@
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
+#include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_parser.h"
 
 namespace litert::ml_drift {
 namespace {
@@ -191,6 +192,97 @@ TEST(LiteRtOpSelectorTest,
     }
   }
   EXPECT_TRUE(found_cache_node);
+}
+
+TEST(LiteRtOpSelectorTest, FusedSdpaCacheUpdateConvertsParamTensorToBuffer) {
+  const GpuInfo gpu_info = GetTestGpuInfo();
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF32;
+  create_info.storage_type = TensorStorageType::kTexture2D;
+
+  GpuModelBuilderOptions options;
+  options.storage = TensorStorageType::kTexture2D;
+  GpuModelBuilder builder(gpu_info, options);
+
+  auto add_tex_tensor = [&](DataType dtype, const BHWC& shape) {
+    TensorDescriptor desc(dtype, TensorStorageType::kTexture2D, Layout::kHWC);
+    desc.SetBHWCShape(shape);
+    return builder.AddTensor(desc);
+  };
+  auto add_buf_tensor = [&](DataType dtype, const BHWC& shape) {
+    TensorDescriptor desc(dtype, TensorStorageType::kBuffer, Layout::kHWC);
+    desc.SetBHWCShape(shape);
+    return builder.AddTensor(desc);
+  };
+
+  const int Hkv = 2, G = 1, T = 4, W = 16, D = 8;
+  auto q = add_tex_tensor(DataType::kFloat32, BHWC(1, Hkv, G * T, D));
+  auto kc = add_buf_tensor(DataType::kFloat32, BHWC(1, Hkv, W, D));
+  auto vc = add_buf_tensor(DataType::kFloat32, BHWC(1, Hkv, D, W));
+  auto kn = add_tex_tensor(DataType::kFloat32, BHWC(1, Hkv, T, D));
+  auto vn = add_tex_tensor(DataType::kFloat32, BHWC(1, Hkv, D, T));
+  auto mask = add_tex_tensor(DataType::kFloat32, BHWC(1, 1, T, W + T));
+  auto param = add_tex_tensor(DataType::kInt32, BHWC(1, 1, 1, 7));
+  auto attn_out = add_tex_tensor(DataType::kFloat32, BHWC(1, Hkv, G * T, D));
+  auto kc_out = add_buf_tensor(DataType::kFloat32, BHWC(1, Hkv, W, D));
+  auto vc_out = add_buf_tensor(DataType::kFloat32, BHWC(1, Hkv, D, W));
+
+  Value v_q{q.id, {DataType::kFloat32, BHWC(1, Hkv, G * T, D)}};
+  Value v_kc{kc.id, {DataType::kFloat32, BHWC(1, Hkv, W, D)}};
+  Value v_vc{vc.id, {DataType::kFloat32, BHWC(1, Hkv, D, W)}};
+  Value v_kn{kn.id, {DataType::kFloat32, BHWC(1, Hkv, T, D)}};
+  Value v_vn{vn.id, {DataType::kFloat32, BHWC(1, Hkv, D, T)}};
+  Value v_mask{mask.id, {DataType::kFloat32, BHWC(1, 1, T, W + T)}};
+  Value v_param{param.id, {DataType::kInt32, BHWC(1, 1, 1, 7)}};
+  Value v_attn{attn_out.id, {DataType::kFloat32, BHWC(1, Hkv, G * T, D)}};
+  Value v_kc_out{kc_out.id, {DataType::kFloat32, BHWC(1, Hkv, W, D)}};
+  Value v_vc_out{vc_out.id, {DataType::kFloat32, BHWC(1, Hkv, D, W)}};
+
+  OperationDef op_def;
+  op_def.src_tensors = {q.tensor_desc,    kc.tensor_desc, vc.tensor_desc,
+                        kn.tensor_desc,   vn.tensor_desc, mask.tensor_desc,
+                        param.tensor_desc};
+  op_def.dst_tensors = {attn_out.tensor_desc, kc_out.tensor_desc,
+                        vc_out.tensor_desc};
+
+  GraphFloat32 graph;
+  Node* sdpa_node = graph.NewNode();
+  sdpa_node->operation.type = kFusedSdpaCacheUpdateType;
+  FusedSdpaCacheUpdateAttributes attr;
+  attr.update_cache = true;
+  sdpa_node->operation.attributes = attr;
+
+  LiteRtOpSelector selector(&create_info, &gpu_info);
+  ASSERT_OK(selector.GPUOperationFromNode(
+      op_def, {&v_q, &v_kc, &v_vc, &v_kn, &v_vn, &v_mask, &v_param},
+      {&v_attn, &v_kc_out, &v_vc_out}, *sdpa_node, &builder));
+
+  GpuModel gpu_model;
+  ASSERT_OK(
+      builder.GetGpuModel({q.id, kc.id, vc.id, kn.id, vn.id, mask.id, param.id},
+                          {attn_out.id, kc_out.id, vc_out.id}, &gpu_model));
+
+  // Verify that the softmax and ring-cache write ops inside
+  // fused_sdpa_cache_update receive a BUFFER-storage param tensor.
+  int checked_nodes = 0;
+  for (const auto& node : gpu_model.nodes) {
+    if (node.name == "fused_sdpa_masked_softmax") {
+      ASSERT_EQ(node.inputs.size(), 4);
+      const ValueId param_id = node.inputs[3];
+      ASSERT_TRUE(gpu_model.tensors.contains(param_id));
+      EXPECT_EQ(gpu_model.tensors.at(param_id).GetStorageType(),
+                TensorStorageType::kBuffer);
+      ++checked_nodes;
+    } else if (node.name == "fused_sdpa_ring_cache_write") {
+      ASSERT_EQ(node.inputs.size(), 4);
+      const ValueId param_id = node.inputs[2];
+      ASSERT_TRUE(gpu_model.tensors.contains(param_id));
+      EXPECT_EQ(gpu_model.tensors.at(param_id).GetStorageType(),
+                TensorStorageType::kBuffer);
+      ++checked_nodes;
+    }
+  }
+  EXPECT_EQ(checked_nodes, 2);
 }
 
 }  // namespace

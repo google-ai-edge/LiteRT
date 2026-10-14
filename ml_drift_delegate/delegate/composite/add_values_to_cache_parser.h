@@ -18,6 +18,7 @@
 #include <optional>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/object_reader.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
@@ -35,7 +36,21 @@ struct AddValuesToCacheAttributes {
   std::optional<float> scale_v;
   // Local Attention Ring buffer case
   std::optional<bool> is_ring_buffer;
+  // Index of the time axis of each 4D tensor ([B, H, *, *], so 2 or 3). The
+  // defaults are the layouts the op had before these attributes existed:
+  // K cache [B, H, S, D], V cache [B, H, D, S], and both updates [B, H, T, D].
+  int k_cache_ts_idx = 2;
+  int v_cache_ts_idx = 3;
+  int k_update_ts_idx = 2;
+  int v_update_ts_idx = 2;
 };
+
+// Reads the optional `*_ts_idx` layout attributes of `odml.cache_update` into
+// `attr` (absent attributes keep their defaults), and returns an Unavailable
+// error for layouts the kernel does not implement so that the node is left to
+// the CPU decomposition instead of being computed with the wrong layout.
+absl::Status ReadAddValuesToCacheLayout(const flexbuffers::Map& attributes,
+                                        AddValuesToCacheAttributes& attr);
 
 class AddValuesToCacheOperationParser : public TFLiteOperationParser {
  public:

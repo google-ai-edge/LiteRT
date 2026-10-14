@@ -47,7 +47,8 @@ TfLiteStablehloCompositeParams* CreateAddValuesToCacheParams(
     int kv_cache_batch_size, int cache_size, int head_size,
     std::optional<float> scale_k = std::nullopt,
     std::optional<float> scale_v = std::nullopt,
-    std::optional<bool> is_ring_buffer = std::nullopt) {
+    std::optional<bool> is_ring_buffer = std::nullopt,
+    const std::vector<std::pair<std::string, int>>& layout = {}) {
   size_t total_size = sizeof(TfLiteStablehloCompositeParams);
   std::vector<uint8_t> buffer;
 
@@ -64,6 +65,9 @@ TfLiteStablehloCompositeParams* CreateAddValuesToCacheParams(
     }
     if (is_ring_buffer.has_value()) {
       fbb.Bool("is_ring_buffer", *is_ring_buffer);
+    }
+    for (const auto& [name, value] : layout) {
+      fbb.Int(name.c_str(), value);
     }
   });
   fbb.Finish();
@@ -162,6 +166,65 @@ TEST_F(ConvertAddValuesToCacheTest, RingBuffer) {
       std::any_cast<::litert::ml_drift::AddValuesToCacheAttributes>(&op->attr);
   ASSERT_NE(attr, nullptr);
   EXPECT_TRUE(attr->is_ring_buffer);
+  // Absent layout attributes keep the historical layouts.
+  EXPECT_EQ(attr->k_cache_ts_idx, 2);
+  EXPECT_EQ(attr->v_cache_ts_idx, 3);
+  EXPECT_EQ(attr->k_update_ts_idx, 2);
+  EXPECT_EQ(attr->v_update_ts_idx, 2);
+}
+
+TEST_F(ConvertAddValuesToCacheTest, TransposedUpdates) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 1, 64, 1});   // src_k, [D, T]
+  builder.AddInput(kTfLiteFloat32, {1, 1, 64, 1});   // src_v, [D, T]
+  builder.AddInput(kTfLiteInt32, {2});               // params
+  builder.AddOutput(kTfLiteFloat32, {1, 1, 1, 64});  // cache_k
+  builder.AddOutput(kTfLiteFloat32, {1, 1, 1, 64});  // cache_v
+
+  builder.SetParameters(CreateAddValuesToCacheParams(
+      2, 128, 64, std::nullopt, std::nullopt, /*is_ring_buffer=*/true,
+      {{"k_cache_ts_idx", 2},
+       {"v_cache_ts_idx", 3},
+       {"k_update_ts_idx", 3},
+       {"v_update_ts_idx", 3}}));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::AddValuesToCacheAttributes>(
+          &ir_model->ops()[0]->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_EQ(attr->k_update_ts_idx, 3);
+  EXPECT_EQ(attr->v_update_ts_idx, 3);
+}
+
+TEST_F(ConvertAddValuesToCacheTest, UnsupportedLayoutIsNotDelegated) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 1, 1, 64});   // src_k
+  builder.AddInput(kTfLiteFloat32, {1, 1, 1, 64});   // src_v
+  builder.AddInput(kTfLiteInt32, {2});               // params
+  builder.AddOutput(kTfLiteFloat32, {1, 1, 1, 64});  // cache_k
+  builder.AddOutput(kTfLiteFloat32, {1, 1, 1, 64});  // cache_v
+
+  // A [B, H, D, S] key cache is not implemented; the op must stay on the CPU
+  // decomposition rather than be written with the wrong layout.
+  builder.SetParameters(CreateAddValuesToCacheParams(
+      2, 128, 64, std::nullopt, std::nullopt, /*is_ring_buffer=*/true,
+      {{"k_cache_ts_idx", 3}}));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  if (ir_model != nullptr) {
+    EXPECT_THAT(ir_model->ops(), SizeIs(0));
+  }
 }
 
 }  // namespace
