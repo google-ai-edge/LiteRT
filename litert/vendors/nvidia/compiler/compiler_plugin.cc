@@ -471,6 +471,8 @@ std::string BuildCompilerSdkVersion() {
       "LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH",
       "LITERT_NVIDIA_TENSORRT_DECODE_ATTENTION_PLUGIN",
       "LITERT_NVIDIA_TENSORRT_BUILDER_OPT_LEVEL",
+      "LITERT_NVIDIA_TENSORRT_CACHE_STORAGE",
+      "LITERT_NVIDIA_TENSORRT_CUDA_GEMM",
       "LITERT_NVIDIA_TENSORRT_DISABLE_FC_SHAPES",
       "LITERT_NVIDIA_TENSORRT_DISABLE_INT8_ELEMENTWISE",
       "LITERT_NVIDIA_TENSORRT_DISABLE_OPS",
@@ -959,9 +961,9 @@ Expected<void> AppendTensorStructure(std::string& key,
       break;
     }
     case kLiteRtQuantizationBlockWise: {
+      // Symmetric blockwise weights (Gemma 4 26B-A4B) have no zero points.
       const auto quantization = tensor.BlockWiseQuantization();
-      if (quantization.scales == nullptr ||
-          quantization.zero_points == nullptr) {
+      if (quantization.scales == nullptr) {
         return Error(kLiteRtStatusErrorInvalidArgument,
                      "Invalid block-wise quantization in AOT cache key");
       }
@@ -969,9 +971,14 @@ Expected<void> AppendTensorStructure(std::string& key,
       AppendCacheKeyScalar<uint32_t>(
           key, litert::compiler::Tensor(tensor.ctx(), quantization.scales)
                    .TensorIndex());
-      AppendCacheKeyScalar<uint32_t>(
-          key, litert::compiler::Tensor(tensor.ctx(), quantization.zero_points)
-                   .TensorIndex());
+      AppendCacheKeyScalar<uint8_t>(
+          key, quantization.zero_points != nullptr ? 1 : 0);
+      if (quantization.zero_points != nullptr) {
+        AppendCacheKeyScalar<uint32_t>(
+            key,
+            litert::compiler::Tensor(tensor.ctx(), quantization.zero_points)
+                .TensorIndex());
+      }
       break;
     }
     default:
@@ -1815,10 +1822,21 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   std::string aot_manifest_path;
   if (!aot_cache_dir.empty()) {
     memory_profiler.Log("aot_cache_lookup_begin", soc_model);
-    LITERT_ASSIGN_OR_RETURN(canonical_aot_cache_dir,
-                            CanonicalAotCacheDir(aot_cache_dir));
-    LITERT_ASSIGN_OR_RETURN(
-        aot_cache_key, BuildAotCacheKey(compiler_plugin->sdk_version, model));
+    auto canonical_dir = CanonicalAotCacheDir(aot_cache_dir);
+    if (!canonical_dir) {
+      LITERT_LOG(LITERT_ERROR, "NVIDIA TensorRT-RTX AOT cache dir %s: %s",
+                 aot_cache_dir.c_str(),
+                 canonical_dir.Error().Message().c_str());
+      return canonical_dir.Error().Status();
+    }
+    canonical_aot_cache_dir = std::move(*canonical_dir);
+    auto cache_key = BuildAotCacheKey(compiler_plugin->sdk_version, model);
+    if (!cache_key) {
+      LITERT_LOG(LITERT_ERROR, "NVIDIA TensorRT-RTX AOT cache key: %s",
+                 cache_key.Error().Message().c_str());
+      return cache_key.Error().Status();
+    }
+    aot_cache_key = std::move(*cache_key);
     if (aot_cache_key.has_value()) {
       aot_manifest_path =
           AotManifestPath(canonical_aot_cache_dir, *aot_cache_key);

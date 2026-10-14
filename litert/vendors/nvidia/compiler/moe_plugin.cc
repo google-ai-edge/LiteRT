@@ -762,9 +762,17 @@ void EnsureMoePluginRegistered() noexcept {}
 
 void SetMoeArenaLoadingEnabled(bool enabled) noexcept {
   g_loading_enabled.store(enabled);
+  setenv("LITERT_NVIDIA_MOE_LOAD_EXPERTS", enabled ? "1" : "0", 1);
 }
 
-bool MoeArenaLoadingEnabled() noexcept { return g_loading_enabled.load(); }
+// The plugin library is linked into both the compiler and the dispatch
+// library, and TensorRT's registry keeps whichever creator registered first,
+// so the flag is also carried in the environment, which every copy sees.
+bool MoeArenaLoadingEnabled() noexcept {
+  if (g_loading_enabled.load()) return true;
+  const char* value = std::getenv("LITERT_NVIDIA_MOE_LOAD_EXPERTS");
+  return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
+}
 
 void MoeArenaBytes(size_t* device_bytes, size_t* host_bytes) noexcept {
   Registry& registry = GetRegistry();
