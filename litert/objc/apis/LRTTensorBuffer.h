@@ -16,40 +16,9 @@
 #import <Metal/Metal.h>
 
 #import "third_party/odml/litert/litert/objc/apis/LRTEnvironment.h"
+#import "third_party/odml/litert/litert/objc/apis/LRTTensorType.h"
 
 NS_ASSUME_NONNULL_BEGIN
-
-// LINT.IfChange(element_types)
-/** Element data types supported by LiteRT tensor buffers (matching @c LiteRtElementType in
- * litert_model_types.h). */
-typedef NS_ENUM(NSInteger, LRTElementType) {
-  LRTElementTypeNone = 0,
-  LRTElementTypeUnknown = LRTElementTypeNone,
-  LRTElementTypeFloat32 = 1,
-  LRTElementTypeInt32 = 2,
-  LRTElementTypeUInt8 = 3,
-  LRTElementTypeInt64 = 4,
-  LRTElementTypeString = 5,
-  LRTElementTypeBool = 6,
-  LRTElementTypeInt16 = 7,
-  LRTElementTypeComplex64 = 8,
-  LRTElementTypeInt8 = 9,
-  LRTElementTypeFloat16 = 10,
-  LRTElementTypeFloat64 = 11,
-  LRTElementTypeComplex128 = 12,
-  LRTElementTypeUInt64 = 13,
-  LRTElementTypeResource = 14,
-  LRTElementTypeVariant = 15,
-  LRTElementTypeUInt32 = 16,
-  LRTElementTypeUInt16 = 17,
-  LRTElementTypeInt4 = 18,
-  LRTElementTypeBFloat16 = 19,
-  LRTElementTypeInt2 = 20,
-  LRTElementTypeUInt4 = 21,
-  LRTElementTypeFloat8E4M3FN = 22,
-  LRTElementTypeFloat8E5M2 = 23,
-};
-// LINT.ThenChange(../../c/litert_model_types.h)
 
 // LINT.IfChange(tensor_buffer_types)
 /** Underlying storage type of a LiteRT tensor buffer (matching @c LiteRtTensorBufferType in

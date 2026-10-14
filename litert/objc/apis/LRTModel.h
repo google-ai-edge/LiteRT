@@ -15,6 +15,7 @@
 #import <Foundation/Foundation.h>
 
 #import "third_party/odml/litert/litert/objc/apis/LRTEnvironment.h"
+#import "third_party/odml/litert/litert/objc/apis/LRTTensorType.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -99,6 +100,75 @@ NS_ASSUME_NONNULL_BEGIN
  */
 - (nullable NSArray<NSString *> *)outputNamesForSignatureKey:(NSString *)signatureKey
                                                        error:(NSError **)error;
+
+/**
+ * Returns the tensor type for the input tensor at @c inputIndex in the default signature (index 0).
+ *
+ * @param inputIndex The 0-based index of the input tensor in the default signature.
+ * @param error Out-parameter populated on failure.
+ * @return The input tensor's @c LRTTensorType, or @c nil on failure.
+ */
+- (nullable LRTTensorType *)inputTensorTypeAtIndex:(NSUInteger)inputIndex error:(NSError **)error;
+
+/**
+ * Returns the tensor type for the input tensor at @c inputIndex in @c signatureIndex.
+ *
+ * @param inputIndex The 0-based index of the input tensor in the signature.
+ * @param signatureIndex The 0-based index of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return The input tensor's @c LRTTensorType, or @c nil on failure.
+ */
+- (nullable LRTTensorType *)inputTensorTypeAtIndex:(NSUInteger)inputIndex
+                                    signatureIndex:(NSUInteger)signatureIndex
+                                             error:(NSError **)error;
+
+/**
+ * Returns the tensor type for the input tensor named @c inputName in the signature named
+ * @c signatureKey.
+ *
+ * @param inputName The name of the input tensor in the signature.
+ * @param signatureKey The key of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return The input tensor's @c LRTTensorType, or @c nil on failure.
+ */
+- (nullable LRTTensorType *)inputTensorTypeForName:(NSString *)inputName
+                                      signatureKey:(NSString *)signatureKey
+                                             error:(NSError **)error;
+
+/**
+ * Returns the tensor type for the output tensor at @c outputIndex in the default signature (index
+ * 0).
+ *
+ * @param outputIndex The 0-based index of the output tensor in the default signature.
+ * @param error Out-parameter populated on failure.
+ * @return The output tensor's @c LRTTensorType, or @c nil on failure.
+ */
+- (nullable LRTTensorType *)outputTensorTypeAtIndex:(NSUInteger)outputIndex error:(NSError **)error;
+
+/**
+ * Returns the tensor type for the output tensor at @c outputIndex in @c signatureIndex.
+ *
+ * @param outputIndex The 0-based index of the output tensor in the signature.
+ * @param signatureIndex The 0-based index of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return The output tensor's @c LRTTensorType, or @c nil on failure.
+ */
+- (nullable LRTTensorType *)outputTensorTypeAtIndex:(NSUInteger)outputIndex
+                                     signatureIndex:(NSUInteger)signatureIndex
+                                              error:(NSError **)error;
+
+/**
+ * Returns the tensor type for the output tensor named @c outputName in the signature named
+ * @c signatureKey.
+ *
+ * @param outputName The name of the output tensor in the signature.
+ * @param signatureKey The key of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return The output tensor's @c LRTTensorType, or @c nil on failure.
+ */
+- (nullable LRTTensorType *)outputTensorTypeForName:(NSString *)outputName
+                                       signatureKey:(NSString *)signatureKey
+                                              error:(NSError **)error;
 
 /**
  * Retrieves the metadata buffer associated with the given key.

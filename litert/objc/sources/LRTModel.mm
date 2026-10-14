@@ -23,10 +23,27 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #import "third_party/odml/litert/litert/objc/apis/LRTError.h"
-#import "third_party/odml/litert/litert/objc/sources/LRTError+Internal.h"
 #import "third_party/odml/litert/litert/objc/sources/LRTEnvironment+Internal.h"
+#import "third_party/odml/litert/litert/objc/sources/LRTError+Internal.h"
 #import "third_party/odml/litert/litert/objc/sources/LRTModel+Internal.h"
+#import "third_party/odml/litert/litert/objc/sources/LRTTensorType+Internal.h"
+
+namespace {
+
+/** Converts a C++ `litert::Expected<litert::RankedTensorType>` to an Objective-C `LRTTensorType`.
+ */
+LRTTensorType *CreateObjCTensorTypeFromCPPResult(
+    const litert::Expected<litert::RankedTensorType> &tensorTypeResult, NSError **error) {
+  if (!tensorTypeResult.HasValue()) {
+    LRTSetErrorFromCPPError(error, tensorTypeResult.Error());
+    return nil;
+  }
+  return [LRTTensorType tensorTypeWithCPPTensorType:tensorTypeResult.Value()];
+}
+
+}  // namespace
 
 @implementation LRTModel {
   std::unique_ptr<litert::Model> _cppModel;
@@ -107,6 +124,11 @@
   return self;
 }
 
+- (NSString *)description {
+  return [NSString stringWithFormat:@"<%@: %p, signatureKeys=%@>", NSStringFromClass([self class]),
+                                    self, self.signatureKeys];
+}
+
 #pragma mark - Properties
 
 - (NSArray<NSString *> *)signatureKeys {
@@ -124,13 +146,7 @@
 
 - (NSArray<NSString *> *)inputNamesForSignatureIndex:(NSUInteger)signatureIndex
                                                error:(NSError **)error {
-  if (!_cppModel) {
-    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Model is not initialized");
-    return nil;
-  }
-
-  if (signatureIndex >= _cppModel->GetNumSignatures()) {
-    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Signature index out of bounds");
+  if (![self validateSignatureIndex:signatureIndex error:error]) {
     return nil;
   }
 
@@ -162,13 +178,7 @@
 
 - (NSArray<NSString *> *)outputNamesForSignatureIndex:(NSUInteger)signatureIndex
                                                 error:(NSError **)error {
-  if (!_cppModel) {
-    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Model is not initialized");
-    return nil;
-  }
-
-  if (signatureIndex >= _cppModel->GetNumSignatures()) {
-    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Signature index out of bounds");
+  if (![self validateSignatureIndex:signatureIndex error:error]) {
     return nil;
   }
 
@@ -196,6 +206,70 @@
   }
 
   return LRTStringArrayFromCPPStringViews(namesResult.Value());
+}
+
+- (LRTTensorType *)inputTensorTypeAtIndex:(NSUInteger)inputIndex error:(NSError **)error {
+  return [self inputTensorTypeAtIndex:inputIndex signatureIndex:0 error:error];
+}
+
+- (LRTTensorType *)inputTensorTypeAtIndex:(NSUInteger)inputIndex
+                           signatureIndex:(NSUInteger)signatureIndex
+                                    error:(NSError **)error {
+  if (![self validateSignatureIndex:signatureIndex error:error]) {
+    return nil;
+  }
+
+  litert::Expected<litert::RankedTensorType> tensorTypeResult =
+      _cppModel->GetInputTensorType(signatureIndex, inputIndex);
+  return CreateObjCTensorTypeFromCPPResult(tensorTypeResult, error);
+}
+
+- (LRTTensorType *)inputTensorTypeForName:(NSString *)inputName
+                             signatureKey:(NSString *)signatureKey
+                                    error:(NSError **)error {
+  if (!inputName) {
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"inputName cannot be nil");
+    return nil;
+  }
+  if (![self validateSignatureKey:signatureKey error:error]) {
+    return nil;
+  }
+
+  litert::Expected<litert::RankedTensorType> tensorTypeResult = _cppModel->GetInputTensorType(
+      LRTCPPStringFromNSString(signatureKey), LRTCPPStringFromNSString(inputName));
+  return CreateObjCTensorTypeFromCPPResult(tensorTypeResult, error);
+}
+
+- (LRTTensorType *)outputTensorTypeAtIndex:(NSUInteger)outputIndex error:(NSError **)error {
+  return [self outputTensorTypeAtIndex:outputIndex signatureIndex:0 error:error];
+}
+
+- (LRTTensorType *)outputTensorTypeAtIndex:(NSUInteger)outputIndex
+                            signatureIndex:(NSUInteger)signatureIndex
+                                     error:(NSError **)error {
+  if (![self validateSignatureIndex:signatureIndex error:error]) {
+    return nil;
+  }
+
+  litert::Expected<litert::RankedTensorType> tensorTypeResult =
+      _cppModel->GetOutputTensorType(signatureIndex, outputIndex);
+  return CreateObjCTensorTypeFromCPPResult(tensorTypeResult, error);
+}
+
+- (LRTTensorType *)outputTensorTypeForName:(NSString *)outputName
+                              signatureKey:(NSString *)signatureKey
+                                     error:(NSError **)error {
+  if (!outputName) {
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"outputName cannot be nil");
+    return nil;
+  }
+  if (![self validateSignatureKey:signatureKey error:error]) {
+    return nil;
+  }
+
+  litert::Expected<litert::RankedTensorType> tensorTypeResult = _cppModel->GetOutputTensorType(
+      LRTCPPStringFromNSString(signatureKey), LRTCPPStringFromNSString(outputName));
+  return CreateObjCTensorTypeFromCPPResult(tensorTypeResult, error);
 }
 
 - (NSData *)metadataForKey:(NSString *)metadataKey error:(NSError **)error {
@@ -226,6 +300,18 @@
 }
 
 #pragma mark - Private
+
+- (BOOL)validateSignatureIndex:(NSUInteger)signatureIndex error:(NSError **)error {
+  if (!_cppModel) {
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Model is not initialized");
+    return NO;
+  }
+  if (signatureIndex >= _cppModel->GetNumSignatures()) {
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Signature index out of bounds");
+    return NO;
+  }
+  return YES;
+}
 
 - (BOOL)validateSignatureKey:(NSString *)signatureKey error:(NSError **)error {
   if (signatureKey.length == 0) {

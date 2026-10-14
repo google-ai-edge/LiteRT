@@ -20,6 +20,7 @@
 #import "third_party/odml/litert/litert/objc/apis/LRTEnvironment.h"
 #import "third_party/odml/litert/litert/objc/apis/LRTError.h"
 #import "third_party/odml/litert/litert/objc/apis/LRTModel.h"
+#import "third_party/odml/litert/litert/objc/apis/LRTTensorType.h"
 #include "litert/test/common.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 
@@ -133,6 +134,81 @@ static NSString *GetTestModelPath() {
   XCTAssertNotNil(inputNames);
   XCTAssertNil(error);
   XCTAssertEqual(inputNames.count, 2);
+}
+
+- (void)testModelTensorTypeIntrospection {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTModel *model = [LRTModel modelWithModelFilePath:GetTestModelPath()
+                                         environment:environment
+                                               error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+  XCTAssertTrue([model.description containsString:@"LRTModel"]);
+
+  LRTTensorType *inputType0 = [model inputTensorTypeAtIndex:0 error:&error];
+  XCTAssertNotNil(inputType0);
+  XCTAssertNil(error);
+  XCTAssertEqual(inputType0.elementType, LRTElementTypeFloat32);
+  XCTAssertEqualObjects(inputType0.dimensions, (@[ @2 ]));
+  XCTAssertEqual(inputType0.rank, 1U);
+  XCTAssertTrue(inputType0.hasStaticShape);
+
+  NSString *signatureKey = model.signatureKeys.firstObject;
+  NSArray<NSString *> *inputNames = [model inputNamesForSignatureIndex:0 error:&error];
+  XCTAssertEqual(inputNames.count, 2U);
+
+  LRTTensorType *namedInputType0 = [model inputTensorTypeForName:inputNames[0]
+                                                    signatureKey:signatureKey
+                                                           error:&error];
+  XCTAssertNotNil(namedInputType0);
+  XCTAssertNil(error);
+  XCTAssertEqualObjects(namedInputType0, inputType0);
+
+  LRTTensorType *outputType0 = [model outputTensorTypeAtIndex:0 error:&error];
+  XCTAssertNotNil(outputType0);
+  XCTAssertNil(error);
+  XCTAssertEqual(outputType0.elementType, LRTElementTypeFloat32);
+  XCTAssertEqualObjects(outputType0.dimensions, (@[ @2 ]));
+
+  NSArray<NSString *> *outputNames = [model outputNamesForSignatureIndex:0 error:&error];
+  XCTAssertEqual(outputNames.count, 1U);
+  LRTTensorType *namedOutputType0 = [model outputTensorTypeForName:outputNames[0]
+                                                      signatureKey:signatureKey
+                                                             error:&error];
+  XCTAssertNotNil(namedOutputType0);
+  XCTAssertNil(error);
+  XCTAssertEqualObjects(namedOutputType0, outputType0);
+}
+
+- (void)testTensorTypeValueSemantics {
+  NSMutableArray<NSNumber *> *mutableDims = [NSMutableArray arrayWithArray:@[ @1, @224, @224 ]];
+  LRTTensorType *staticType = [[LRTTensorType alloc] initWithElementType:LRTElementTypeFloat32
+                                                              dimensions:mutableDims];
+  [mutableDims addObject:@3];
+  XCTAssertEqualObjects(staticType.dimensions, (@[ @1, @224, @224 ]));
+  XCTAssertEqual(staticType.rank, 3U);
+  XCTAssertTrue(staticType.hasStaticShape);
+
+  LRTTensorType *matchingType = [[LRTTensorType alloc] initWithElementType:LRTElementTypeFloat32
+                                                                dimensions:@[ @1, @224, @224 ]];
+  LRTTensorType *permutedType = [[LRTTensorType alloc] initWithElementType:LRTElementTypeFloat32
+                                                                dimensions:@[ @224, @1, @224 ]];
+  LRTTensorType *dynamicType = [[LRTTensorType alloc] initWithElementType:LRTElementTypeFloat32
+                                                               dimensions:@[ @(-1), @224, @224 ]];
+
+  XCTAssertTrue([staticType isEqualToTensorType:matchingType]);
+  XCTAssertEqualObjects(staticType, matchingType);
+  XCTAssertEqual(staticType.hash, matchingType.hash);
+  XCTAssertNotEqualObjects(staticType, permutedType);
+  XCTAssertNotEqual(staticType.hash, permutedType.hash);
+  XCTAssertEqualObjects([staticType copy], staticType);
+  XCTAssertFalse(dynamicType.hasStaticShape);
+  XCTAssertNotEqualObjects(staticType, dynamicType);
+  XCTAssertTrue([staticType.description containsString:@"LRTTensorType"]);
 }
 
 #pragma mark - Parameter Validation Tests
@@ -285,6 +361,40 @@ static NSString *GetTestModelPath() {
 
   XCTAssertNil([model metadataForKey:@"non_existent_metadata_key" error:&error]);
   XCTAssertNotNil(error);
+}
+
+- (void)testTensorTypeLookupWithInvalidParametersFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTModel *model = [LRTModel modelWithModelFilePath:GetTestModelPath()
+                                         environment:environment
+                                               error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  XCTAssertNil([model inputTensorTypeAtIndex:99 error:&error]);
+  XCTAssertNotNil(error);
+
+  error = nil;
+  XCTAssertNil([model inputTensorTypeAtIndex:0 signatureIndex:99 error:&error]);
+  XCTAssertNotNil(error);
+
+  error = nil;
+  XCTAssertNil([model inputTensorTypeForName:nil signatureKey:@"default" error:&error]);
+  XCTAssertNotNil(error);
+  XCTAssertEqual(error.code, LRTErrorCodeInvalidArgument);
+
+  error = nil;
+  XCTAssertNil([model outputTensorTypeAtIndex:99 error:&error]);
+  XCTAssertNotNil(error);
+
+  error = nil;
+  XCTAssertNil([model outputTensorTypeForName:nil signatureKey:@"default" error:&error]);
+  XCTAssertNotNil(error);
+  XCTAssertEqual(error.code, LRTErrorCodeInvalidArgument);
 }
 
 #pragma clang diagnostic pop
