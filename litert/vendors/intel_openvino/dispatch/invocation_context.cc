@@ -193,7 +193,11 @@ LiteRtDispatchInvocationContextT::Create(
 }
 
 LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
+  // Unregister first, so no new prefetch can start; then wait for one still
+  // running, which would otherwise touch a freed context.
   device_context_.UnregisterInvocationContext(this);
+  absl::MutexLock lock(&prefetch_mutex_);
+  if (prefetch_.valid()) prefetch_.wait();
 }
 
 bool LiteRtDispatchInvocationContextT::TryReleaseImported() {
@@ -224,12 +228,18 @@ void LiteRtDispatchInvocationContextT::ReleaseImportedLocked() {
 }
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::EnsureImported() {
+  return EnsureImported(/*foreground=*/true);
+}
+
+litert::Expected<void> LiteRtDispatchInvocationContextT::EnsureImported(
+    bool foreground) {
   // Make room BEFORE importing, not after. The host peak is set at the moment
   // a tier crossing holds the old tier's blob and the new one at once, so an
   // eviction that runs afterwards -- however correct -- cannot lower it.
   // Outside the import lock, so a node never holds its own while trying
-  // others'.
-  if (!imported_.load(std::memory_order_relaxed)) {
+  // others'. Only for the foreground: a background import of a tier the
+  // foreground has already left must not evict the tier it moved to.
+  if (foreground && !imported_.load(std::memory_order_relaxed)) {
     device_context_.ReleaseOthersForImport(this);
   }
 
@@ -249,7 +259,34 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::EnsureImported() {
       LITERT_RETURN_IF_ERROR(BindOutput(index, handle));
     }
   }
+  // Outside the lock: start importing this tier's other nodes in the
+  // background, so e.g. the decode partition is ready by the time prefill
+  // ends instead of importing inside the first decode step.
+  if (foreground) device_context_.PrefetchSameTier(this);
   return {};
+}
+
+void LiteRtDispatchInvocationContextT::StartBackgroundImport() {
+  absl::MutexLock lock(&prefetch_mutex_);
+  if (prefetch_.valid() || imported_.load(std::memory_order_relaxed)) return;
+  // EnsureImported takes this node's import lock, so a foreground use that
+  // arrives mid-import waits for it instead of importing twice.
+  prefetch_ = std::async(std::launch::async, [this]() {
+    const auto t0 = std::chrono::steady_clock::now();
+    auto status = EnsureImported(/*foreground=*/false);
+    // The foreground left this tier while we were importing; its release
+    // skipped us as busy, so release now.
+    if (status && KvTier() != device_context_.ActiveTier()) {
+      TryReleaseImported();
+    }
+    LITERT_LOG(status ? LITERT_INFO : LITERT_WARNING,
+               "PREFETCH '%s' background import %s in %.1f ms",
+               function_name_.empty() ? "<unnamed>" : function_name_.c_str(),
+               status ? "done" : "FAILED",
+               std::chrono::duration<double, std::milli>(
+                   std::chrono::steady_clock::now() - t0)
+                   .count());
+  });
 }
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::ImportLocked() {

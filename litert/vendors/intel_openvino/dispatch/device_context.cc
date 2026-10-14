@@ -390,6 +390,7 @@ void LiteRtDispatchDeviceContextT::ReleaseOthersForImport(
     LiteRtDispatchInvocationContextT* incoming) {
   const int64_t incoming_tier = incoming != nullptr ? incoming->KvTier() : 0;
   if (incoming_tier <= 0) return;
+  active_tier_.store(incoming_tier);
   // Released under the registry lock, so no context can be destroyed
   // mid-release. That is safe only because TryReleaseImported never waits.
   absl::MutexLock lock(&invocation_contexts_mutex_);
@@ -408,5 +409,25 @@ void LiteRtDispatchDeviceContextT::ReleaseOthersForImport(
                incoming->FunctionName().empty() ? "<unnamed>"
                                                 : incoming->FunctionName().c_str(),
                static_cast<long long>(incoming_tier));
+  }
+}
+
+void LiteRtDispatchDeviceContextT::PrefetchSameTier(
+    LiteRtDispatchInvocationContextT* imported) {
+  if (imported == nullptr) return;
+  const int64_t tier = imported->KvTier();
+  if (tier <= 0) return;
+  // Started under the registry lock, like the release: starting one only
+  // spawns the thread, and no context can be destroyed meanwhile.
+  absl::MutexLock lock(&invocation_contexts_mutex_);
+  for (auto* ctx : invocation_contexts_) {
+    if (ctx == imported || ctx == nullptr || ctx->IsImported()) continue;
+    if (ctx->KvTier() != tier) continue;
+    LITERT_LOG(LITERT_INFO, "PREFETCH '%s' (tier %lld) after '%s' imported",
+               ctx->FunctionName().empty() ? "<unnamed>" : ctx->FunctionName().c_str(),
+               static_cast<long long>(tier),
+               imported->FunctionName().empty() ? "<unnamed>"
+                                                : imported->FunctionName().c_str());
+    ctx->StartBackgroundImport();
   }
 }

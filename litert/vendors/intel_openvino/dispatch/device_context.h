@@ -109,6 +109,15 @@ class LiteRtDispatchDeviceContextT {
   // invocation context's import lock.
   void ReleaseOthersForImport(LiteRtDispatchInvocationContextT* incoming);
 
+  // After `imported` finished importing, start background imports of the
+  // other not-yet-imported nodes of the SAME tier.
+  void PrefetchSameTier(LiteRtDispatchInvocationContextT* imported);
+
+  // The tier of the last foreground import (0 before any). A background import
+  // that finishes for another tier releases itself: the crossing that moved
+  // away from its tier skipped it while it was busy importing.
+  int64_t ActiveTier() const { return active_tier_.load(); }
+
  private:
   class CleanupAction {
    public:
@@ -176,6 +185,7 @@ class LiteRtDispatchDeviceContextT {
   // Every invocation context created against this device context, so a node
   // about to import can see the others. Raw pointers: the contexts unregister
   // themselves in their destructor.
+  std::atomic<int64_t> active_tier_{0};
   mutable absl::Mutex invocation_contexts_mutex_;
   std::vector<LiteRtDispatchInvocationContextT*> invocation_contexts_
       ABSL_GUARDED_BY(invocation_contexts_mutex_);
