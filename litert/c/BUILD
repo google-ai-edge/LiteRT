@@ -1150,6 +1150,7 @@ filegroup(
     srcs = [
         "litert_any.h",
         "litert_builder.h",
+        "litert_common.cc",
         "litert_common.h",
         "litert_compiled_model.h",
         "litert_custom_op_kernel.h",
@@ -1172,6 +1173,7 @@ filegroup(
         "litert_platform_support.h",
         "litert_profiler.h",
         "litert_profiler_event.h",
+        "litert_profiler_types.h",
         "litert_tensor_buffer.h",
         "litert_tensor_buffer_requirements.h",
         "litert_tensor_buffer_types.h",
