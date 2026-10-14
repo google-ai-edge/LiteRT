@@ -419,8 +419,13 @@ void RunMoeCase(const MoeCase& c) {
       error += static_cast<double>(got - expected[o]) * (got - expected[o]);
       norm += static_cast<double>(expected[o]) * expected[o];
     }
-    // BF16 output rounding (2^-9 relative) plus FP32 ordering.
-    EXPECT_LE(std::sqrt(error), 4e-3 * std::sqrt(norm) + 1e-4)
+    // Decode: BF16 output rounding (2^-9 relative) plus FP32 ordering.
+    // Prefill: the tensor-core path also rounds the gated hidden rows to
+    // BF16 and sums the down projection in FP16 over 128-dim slices, about
+    // 0.7% RMS against the FP32 reference.
+    const double tolerance =
+        c.rows <= kLiteRtNvidiaInt4BlockGemvMaxRows ? 4e-3 : 1.5e-2;
+    EXPECT_LE(std::sqrt(error), tolerance * std::sqrt(norm) + 1e-4)
         << "r=" << r << " relative "
         << std::sqrt(error / std::max(norm, 1e-30));
   }
@@ -434,10 +439,12 @@ TEST(Int4BlockGemvTest, MoeDecodeMatchesCpuReference) {
 }
 
 TEST(Int4BlockGemvTest, MoePrefillMatchesCpuReference) {
-  // Many rows grouped by expert, including experts no row routes to.
+  // Many rows grouped by expert into GEMM tiles, including experts no row
+  // routes to, experts with several tiles and partial last tiles.
   RunMoeCase({40, 3, 7, 256, 64, 1});
-  RunMoeCase({256, 8, 16, 704, 96, 2});
+  RunMoeCase({256, 8, 16, 704, 128, 2});
   RunMoeCase({130, 8, 128, 2816, 704, 1});
+  RunMoeCase({1024, 8, 128, 2816, 704, 1});
 }
 
 TEST(Int4BlockGemvTest, MoeRejectsInvalidShapes) {
@@ -449,6 +456,9 @@ TEST(Int4BlockGemvTest, MoeRejectsInvalidShapes) {
   EXPECT_FALSE(supports({1, 0, 128, 2816, 704, 1}));
   EXPECT_FALSE(supports({1, 8, 128, 2800, 704, 1}));
   EXPECT_FALSE(supports({1, 8, 128, 2816, 700, 1}));
+  // Prefill needs the GEMM's input sizes (multiples of 64); decode does not.
+  EXPECT_TRUE(supports({4, 8, 16, 256, 96, 1}));
+  EXPECT_FALSE(supports({64, 8, 16, 256, 96, 1}));
   EXPECT_FALSE(supports({1, 8, 128, 2816, 704, 0}));
   EXPECT_FALSE(supports({1, 8, 2048, 2816, 704, 1}));
   EXPECT_FALSE(LiteRtNvidiaMoeSupports(nullptr));

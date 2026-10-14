@@ -22,6 +22,7 @@
 #include <limits>
 
 #include "litert/vendors/nvidia/trtllm/int4_block_gemv.cuh"
+#include "litert/vendors/nvidia/trtllm/subbyte_gemm.h"
 
 namespace litert::nvidia::int4_block {
 namespace {
@@ -202,8 +203,9 @@ __global__ void __launch_bounds__(Threads)
   }
 }
 
-// Decode: grid (model_dim / kTileRows, rows). out[r][o] = sum_j w_j *
-// (hidden[r][j] . down_e_j[o]).
+// Decode: grid (model_dim / kTileRows, rows * top_k). partial[pair][o] =
+// w_pair * (hidden[pair] . down_e[o]) for the pair's expert e, so every
+// routed expert's tiles run in parallel; MoeCombineKernel sums the pairs.
 template <int Threads>
 __global__ void __launch_bounds__(Threads)
     MoeDownKernel(const float* __restrict__ hidden,
@@ -211,44 +213,51 @@ __global__ void __launch_bounds__(Threads)
                   const float* __restrict__ top_weights,
                   const float* __restrict__ per_expert_scale,
                   LiteRtNvidiaMoeArena arena, LiteRtNvidiaMoeShape shape,
-                  __nv_bfloat16* __restrict__ output) {
+                  float* __restrict__ partial) {
   constexpr int kWarps = Threads / kWarpSize;
   __shared__ float warp_sums[kTileRows * kWarps];
-  const int row = blockIdx.y;
+  const int pair = blockIdx.y;
   const int o0 = blockIdx.x * kTileRows;
-  float out[kTileRows] = {};
-  for (int j = 0; j < shape.top_k; ++j) {
-    const int pair = row * shape.top_k + j;
-    const int expert = top_indices[pair];
-    if (expert < 0 || expert >= shape.experts) continue;
-    const ActivationRows<float> act{
-        hidden + static_cast<size_t>(pair) * shape.hidden_dim,
-        static_cast<size_t>(shape.hidden_dim), nullptr};
-    float acc[1][kTileRows] = {};
-    AccumulateTile<float, 1, Threads>(
-        ExpertTile(arena.down, static_cast<const __half*>(arena.down_scales),
-                   shape.experts, expert, o0, shape.model_dim,
-                   shape.hidden_dim),
-        act, shape.hidden_dim, acc);
-    if constexpr (kWarps > 1) __syncthreads();
-    ReduceTile<1, Threads>(acc, warp_sums);
+  const int expert = top_indices[pair];
+  float* dst = partial + static_cast<size_t>(pair) * shape.model_dim + o0;
+  const int valid = min(kTileRows, shape.model_dim - o0);
+  if (expert < 0 || expert >= shape.experts) {
     if (threadIdx.x == 0) {
-      const float weight = top_weights[pair] * per_expert_scale[expert];
-#pragma unroll
-      for (int i = 0; i < kTileRows; ++i) {
-        out[i] = fmaf(weight, acc[0][i], out[i]);
-      }
+      for (int i = 0; i < valid; ++i) dst[i] = 0.0f;
     }
+    return;
   }
+  const ActivationRows<float> act{
+      hidden + static_cast<size_t>(pair) * shape.hidden_dim,
+      static_cast<size_t>(shape.hidden_dim), nullptr};
+  float acc[1][kTileRows] = {};
+  AccumulateTile<float, 1, Threads>(
+      ExpertTile(arena.down, static_cast<const __half*>(arena.down_scales),
+                 shape.experts, expert, o0, shape.model_dim, shape.hidden_dim),
+      act, shape.hidden_dim, acc);
+  ReduceTile<1, Threads>(acc, warp_sums);
   if (threadIdx.x == 0) {
-    const int valid = min(kTileRows, shape.model_dim - o0);
-    __nv_bfloat16* dst =
-        output + static_cast<size_t>(row) * shape.model_dim + o0;
+    const float weight = top_weights[pair] * per_expert_scale[expert];
 #pragma unroll
     for (int i = 0; i < kTileRows; ++i) {
-      if (i < valid) dst[i] = __float2bfloat16_rn(out[i]);
+      if (i < valid) dst[i] = weight * acc[0][i];
     }
   }
+}
+
+// Decode: out[r][o] = sum_j partial[r * top_k + j][o], as BF16.
+__global__ void MoeCombineKernel(const float* __restrict__ partial, int top_k,
+                                 int model_dim,
+                                 __nv_bfloat16* __restrict__ output) {
+  const int row = blockIdx.y;
+  const int o = blockIdx.x * blockDim.x + threadIdx.x;
+  if (o >= model_dim) return;
+  const float* src = partial + static_cast<size_t>(row) * top_k * model_dim + o;
+  float sum = 0.0f;
+  for (int j = 0; j < top_k; ++j) {
+    sum += src[static_cast<size_t>(j) * model_dim];
+  }
+  output[static_cast<size_t>(row) * model_dim + o] = __float2bfloat16_rn(sum);
 }
 
 // Prefill routing: the (row, slot) pairs grouped by expert.
@@ -297,163 +306,170 @@ __global__ void MoeFillKernel(const int32_t* __restrict__ top_indices,
   grouped[atomicAdd(cursors + expert, 1)] = pair;
 }
 
-// Prefill: grid (hidden_dim / kTileRows, experts). An expert's tile of
-// gate and up rows against its routed rows, kPairRows at a time.
-template <int Threads>
-__global__ void __launch_bounds__(Threads)
-    MoeGroupedHiddenKernel(const __nv_bfloat16* __restrict__ activation,
-                           const int32_t* __restrict__ offsets,
-                           const int32_t* __restrict__ grouped,
-                           LiteRtNvidiaMoeArena arena,
-                           LiteRtNvidiaMoeShape shape,
-                           float* __restrict__ hidden) {
-  constexpr int kWarps = Threads / kWarpSize;
-  __shared__ float warp_sums[kPairRows * kTileRows * kWarps];
-  __shared__ int32_t rows_s[kPairRows];
-  __shared__ int32_t pairs_s[kPairRows];
-  const int expert = blockIdx.y;
-  const int o0 = blockIdx.x * kTileRows;
-  const int begin = offsets[expert];
-  const int count = offsets[expert + 1] - begin;
-  if (count == 0) return;
-  const WeightTile gate_tile =
-      ExpertTile(arena.gate, static_cast<const __half*>(arena.gate_scales),
-                 shape.experts, expert, o0, shape.hidden_dim, shape.model_dim);
-  const WeightTile up_tile =
-      ExpertTile(arena.up, static_cast<const __half*>(arena.up_scales),
-                 shape.experts, expert, o0, shape.hidden_dim, shape.model_dim);
-  for (int chunk = 0; chunk < count; chunk += kPairRows) {
-    const int valid = min(kPairRows, count - chunk);
-    __syncthreads();  // rows_s and warp_sums of the previous chunk
-    if (threadIdx.x < kPairRows) {
-      const int pair = grouped[begin + chunk + min(threadIdx.x, valid - 1)];
-      pairs_s[threadIdx.x] = pair;
-      rows_s[threadIdx.x] = pair / shape.top_k;
-    }
+// Prefill groups the routed pairs by expert into tiles of kGemmTile rows for
+// the tensor-core GEMM (subbyte_gemm.h): expert e owns ceil(count_e /
+// kGemmTile) tiles, its pairs' rows first and zero rows after. Tiles past
+// the last expert's are unused. Device-side counts decide the tiling, so the
+// launches cover the largest possible tiling (MaxPaddedRows) and the unused
+// tiles exit at once.
+constexpr int kGemmTile = 128;
+
+__device__ __forceinline__ int TilesOf(int count) {
+  return (count + kGemmTile - 1) / kGemmTile;
+}
+
+// tile_offsets[e] = tiles of the experts before e; tile_offsets[experts] =
+// the tiles in use.
+__global__ void __launch_bounds__(kMaxExperts)
+    MoeTileScanKernel(const int32_t* __restrict__ counts, int experts,
+                      int32_t* __restrict__ tile_offsets) {
+  __shared__ int32_t partial[kMaxExperts];
+  const int e = threadIdx.x;
+  partial[e] = e < experts ? TilesOf(counts[e]) : 0;
+  __syncthreads();
+  for (int stride = 1; stride < kMaxExperts; stride *= 2) {
+    const int32_t add = e >= stride ? partial[e - stride] : 0;
     __syncthreads();
-    const ActivationRows<__nv_bfloat16> act{
-        activation, static_cast<size_t>(shape.model_dim), rows_s};
-    float gate[kPairRows][kTileRows] = {};
-    AccumulateTile<__nv_bfloat16, kPairRows, Threads>(gate_tile, act,
-                                                     shape.model_dim, gate);
-    ReduceTile<kPairRows, Threads>(gate, warp_sums);
+    partial[e] += add;
     __syncthreads();
-    float up[kPairRows][kTileRows] = {};
-    AccumulateTile<__nv_bfloat16, kPairRows, Threads>(up_tile, act,
-                                                     shape.model_dim, up);
-    ReduceTile<kPairRows, Threads>(up, warp_sums);
-    if (threadIdx.x == 0) {
-      const int out_rows = min(kTileRows, shape.hidden_dim - o0);
-#pragma unroll
-      for (int k = 0; k < kPairRows; ++k) {
-        if (k < valid) {
-          float* out =
-              hidden + static_cast<size_t>(pairs_s[k]) * shape.hidden_dim + o0;
-#pragma unroll
-          for (int i = 0; i < kTileRows; ++i) {
-            if (i < out_rows) out[i] = Gelu(gate[k][i], shape.gate) * up[k][i];
-          }
-        }
+  }
+  if (e < experts) tile_offsets[e] = partial[e] - TilesOf(counts[e]);
+  if (e == 0) tile_offsets[experts] = partial[kMaxExperts - 1];
+}
+
+// grid (experts + 1): block e fills expert e's tiles; the last block marks
+// the unused tiles.
+//   tile_experts[t]   the expert of tile t, or -1
+//   row_source[r]     the token of padded row r, -1 for a zero row, -2 unused
+//   row_self[r]       r for a row in use, -2 otherwise (the hidden pre-pass)
+//   pair_row[pair]    the padded row of a routed pair
+__global__ void MoeTileFillKernel(const int32_t* __restrict__ counts,
+                                  const int32_t* __restrict__ offsets,
+                                  const int32_t* __restrict__ grouped,
+                                  const int32_t* __restrict__ tile_offsets,
+                                  int experts, int top_k, int max_tiles,
+                                  int32_t* __restrict__ tile_experts,
+                                  int32_t* __restrict__ row_source,
+                                  int32_t* __restrict__ row_self,
+                                  int32_t* __restrict__ pair_row) {
+  const int e = blockIdx.x;
+  if (e == experts) {
+    const int used = tile_offsets[experts];
+    for (int t = used + threadIdx.x; t < max_tiles; t += blockDim.x) {
+      tile_experts[t] = -1;
+      for (int i = 0; i < kGemmTile; ++i) {
+        row_source[t * kGemmTile + i] = -2;
+        row_self[t * kGemmTile + i] = -2;
       }
     }
+    return;
+  }
+  const int count = counts[e];
+  const int first_tile = tile_offsets[e];
+  const int tiles = TilesOf(count);
+  for (int t = threadIdx.x; t < tiles; t += blockDim.x) {
+    tile_experts[first_tile + t] = e;
+  }
+  const int first_row = first_tile * kGemmTile;
+  for (int i = threadIdx.x; i < tiles * kGemmTile; i += blockDim.x) {
+    const int row = first_row + i;
+    if (i < count) {
+      const int pair = grouped[offsets[e] + i];
+      row_source[row] = pair / top_k;
+      pair_row[pair] = row;
+    } else {
+      row_source[row] = -1;
+    }
+    row_self[row] = row;
   }
 }
 
-// Prefill: grid (model_dim / kTileRows, experts). An expert's tile of down
-// rows against the hidden rows of its pairs; the weighted results add into
-// the FP32 accumulator of the pair's row.
-template <int Threads>
-__global__ void __launch_bounds__(Threads)
-    MoeGroupedDownKernel(const float* __restrict__ hidden,
-                         const int32_t* __restrict__ offsets,
-                         const int32_t* __restrict__ grouped,
-                         const float* __restrict__ top_weights,
-                         const float* __restrict__ per_expert_scale,
-                         LiteRtNvidiaMoeArena arena, LiteRtNvidiaMoeShape shape,
-                         float* __restrict__ accumulator) {
-  constexpr int kWarps = Threads / kWarpSize;
-  __shared__ float warp_sums[kPairRows * kTileRows * kWarps];
-  __shared__ int32_t pairs_s[kPairRows];
-  const int expert = blockIdx.y;
-  const int o0 = blockIdx.x * kTileRows;
-  const int begin = offsets[expert];
-  const int count = offsets[expert + 1] - begin;
-  if (count == 0) return;
-  const WeightTile tile =
-      ExpertTile(arena.down, static_cast<const __half*>(arena.down_scales),
-                 shape.experts, expert, o0, shape.model_dim, shape.hidden_dim);
-  const float expert_scale = per_expert_scale[expert];
-  for (int chunk = 0; chunk < count; chunk += kPairRows) {
-    const int valid = min(kPairRows, count - chunk);
-    __syncthreads();
-    if (threadIdx.x < kPairRows) {
-      pairs_s[threadIdx.x] =
-          grouped[begin + chunk + min(threadIdx.x, valid - 1)];
-    }
-    __syncthreads();
-    const ActivationRows<float> act{hidden, static_cast<size_t>(shape.hidden_dim),
-                                    pairs_s};
-    float acc[kPairRows][kTileRows] = {};
-    AccumulateTile<float, kPairRows, Threads>(tile, act, shape.hidden_dim, acc);
-    ReduceTile<kPairRows, Threads>(acc, warp_sums);
-    if (threadIdx.x == 0) {
-      const int out_rows = min(kTileRows, shape.model_dim - o0);
-#pragma unroll
-      for (int k = 0; k < kPairRows; ++k) {
-        if (k < valid) {
-          const int pair = pairs_s[k];
-          const float weight = top_weights[pair] * expert_scale;
-          float* out = accumulator +
-                       static_cast<size_t>(pair / shape.top_k) * shape.model_dim +
-                       o0;
-#pragma unroll
-          for (int i = 0; i < kTileRows; ++i) {
-            if (i < out_rows) atomicAdd(out + i, weight * acc[k][i]);
-          }
-        }
-      }
-    }
+// out[r][o] = sum_j top_weights[r][j] * per_expert_scale[e_j] *
+// down[pair_row[r * top_k + j]][o], as BF16.
+__global__ void MoeGatherCombineKernel(const __nv_bfloat16* __restrict__ down,
+                                       const int32_t* __restrict__ pair_row,
+                                       const int32_t* __restrict__ top_indices,
+                                       const float* __restrict__ top_weights,
+                                       const float* __restrict__ per_expert_scale,
+                                       int top_k, int experts, int model_dim,
+                                       __nv_bfloat16* __restrict__ output) {
+  const int row = blockIdx.y;
+  const int o = blockIdx.x * blockDim.x + threadIdx.x;
+  if (o >= model_dim) return;
+  float sum = 0.0f;
+  for (int j = 0; j < top_k; ++j) {
+    const int pair = row * top_k + j;
+    const int expert = top_indices[pair];
+    if (expert < 0 || expert >= experts) continue;
+    const float weight = top_weights[pair] * per_expert_scale[expert];
+    sum = fmaf(weight,
+               __bfloat162float(
+                   down[static_cast<size_t>(pair_row[pair]) * model_dim + o]),
+               sum);
   }
+  output[static_cast<size_t>(row) * model_dim + o] = __float2bfloat16_rn(sum);
 }
 
-__global__ void MoeFinishKernel(const float* __restrict__ accumulator,
-                                size_t count,
-                                __nv_bfloat16* __restrict__ output) {
-  const size_t i = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  if (i < count) output[i] = __float2bfloat16_rn(accumulator[i]);
+// The most padded rows a tiling can take: every pair plus up to kGemmTile - 1
+// padding rows per expert, in whole tiles.
+int MaxPaddedRows(const LiteRtNvidiaMoeShape& shape) {
+  const int64_t pairs = static_cast<int64_t>(shape.rows) * shape.top_k;
+  const int64_t tiles =
+      (pairs + kGemmTile - 1) / kGemmTile + shape.experts;
+  return static_cast<int>(tiles * kGemmTile);
 }
 
 size_t RoundUp256(size_t bytes) { return (bytes + 255) / 256 * 256; }
 
 struct MoeWorkspace {
-  size_t hidden = 0;       // f32 [rows * top_k, hidden_dim]
-  size_t counts = 0;       // i32 [experts]
-  size_t offsets = 0;      // i32 [experts + 1]
-  size_t cursors = 0;      // i32 [experts]
-  size_t grouped = 0;      // i32 [rows * top_k]
-  size_t accumulator = 0;  // f32 [rows, model_dim]
+  // Decode.
+  size_t hidden = 0;   // f32 [rows * top_k, hidden_dim]
+  size_t partial = 0;  // f32 [rows * top_k, model_dim]
+  // Prefill: the routing tables, then the GEMM buffers over the padded rows
+  // P = MaxPaddedRows. The down GEMM's output reuses the scaled activations.
+  size_t counts = 0;        // i32 [experts]
+  size_t offsets = 0;       // i32 [experts + 1]
+  size_t cursors = 0;       // i32 [experts]
+  size_t grouped = 0;       // i32 [rows * top_k]
+  size_t tile_offsets = 0;  // i32 [experts + 1]
+  size_t tile_experts = 0;  // i32 [P / 128]
+  size_t row_source = 0;    // i32 [P]
+  size_t row_self = 0;      // i32 [P]
+  size_t pair_row = 0;      // i32 [rows * top_k]
+  size_t row_scale = 0;     // f32 [P]
+  size_t scaled_x = 0;      // f16 [P, model_dim]; later bf16 down [P, model_dim]
+  size_t gemm_hidden = 0;   // bf16 [P, hidden_dim]
+  size_t scaled_hidden = 0; // f16 [P, hidden_dim]
   size_t total = 0;
 };
 
 MoeWorkspace LayoutWorkspace(const LiteRtNvidiaMoeShape& shape) {
   MoeWorkspace w;
   const size_t pairs = static_cast<size_t>(shape.rows) * shape.top_k;
-  w.hidden = 0;
-  w.total = RoundUp256(pairs * shape.hidden_dim * sizeof(float));
-  if (shape.rows > kLiteRtNvidiaInt4BlockGemvMaxRows) {
-    w.counts = w.total;
-    w.total += RoundUp256(static_cast<size_t>(shape.experts) * sizeof(int32_t));
-    w.offsets = w.total;
-    w.total +=
-        RoundUp256(static_cast<size_t>(shape.experts + 1) * sizeof(int32_t));
-    w.cursors = w.total;
-    w.total += RoundUp256(static_cast<size_t>(shape.experts) * sizeof(int32_t));
-    w.grouped = w.total;
-    w.total += RoundUp256(pairs * sizeof(int32_t));
-    w.accumulator = w.total;
-    w.total += RoundUp256(static_cast<size_t>(shape.rows) * shape.model_dim *
-                          sizeof(float));
+  auto take = [&w](size_t bytes) {
+    const size_t at = w.total;
+    w.total += RoundUp256(bytes);
+    return at;
+  };
+  if (shape.rows <= kLiteRtNvidiaInt4BlockGemvMaxRows) {
+    w.hidden = take(pairs * shape.hidden_dim * sizeof(float));
+    w.partial = take(pairs * shape.model_dim * sizeof(float));
+    return w;
   }
+  const size_t padded = static_cast<size_t>(MaxPaddedRows(shape));
+  w.counts = take(static_cast<size_t>(shape.experts) * sizeof(int32_t));
+  w.offsets = take(static_cast<size_t>(shape.experts + 1) * sizeof(int32_t));
+  w.cursors = take(static_cast<size_t>(shape.experts) * sizeof(int32_t));
+  w.grouped = take(pairs * sizeof(int32_t));
+  w.tile_offsets = take(static_cast<size_t>(shape.experts + 1) * sizeof(int32_t));
+  w.tile_experts = take(padded / kGemmTile * sizeof(int32_t));
+  w.row_source = take(padded * sizeof(int32_t));
+  w.row_self = take(padded * sizeof(int32_t));
+  w.pair_row = take(pairs * sizeof(int32_t));
+  w.row_scale = take(padded * sizeof(float));
+  w.scaled_x = take(padded * shape.model_dim * sizeof(uint16_t));
+  w.gemm_hidden = take(padded * shape.hidden_dim * sizeof(uint16_t));
+  w.scaled_hidden = take(padded * shape.hidden_dim * sizeof(uint16_t));
   return w;
 }
 
@@ -471,28 +487,45 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
   // The down projection's input is the short hidden dim.
   constexpr int kDownThreads = 32;
   if (shape.rows <= kLiteRtNvidiaInt4BlockGemvMaxRows) {
+    float* partial = reinterpret_cast<float*>(workspace + w.partial);
     MoeHiddenKernel<Threads>
         <<<dim3(hidden_tiles, shape.rows * shape.top_k), Threads, 0, stream>>>(
             activation, top_indices, arena, shape, hidden);
     cudaError_t status = cudaPeekAtLastError();
     if (status != cudaSuccess) return status;
     MoeDownKernel<kDownThreads>
-        <<<dim3(model_tiles, shape.rows), kDownThreads, 0, stream>>>(
-            hidden, top_indices, top_weights, per_expert_scale, arena, shape,
-            output);
+        <<<dim3(model_tiles, shape.rows * shape.top_k), kDownThreads, 0,
+           stream>>>(hidden, top_indices, top_weights, per_expert_scale, arena,
+                     shape, partial);
+    status = cudaPeekAtLastError();
+    if (status != cudaSuccess) return status;
+    constexpr int kCombineThreads = 256;
+    MoeCombineKernel<<<dim3((shape.model_dim + kCombineThreads - 1) /
+                                kCombineThreads,
+                            shape.rows),
+                       kCombineThreads, 0, stream>>>(partial, shape.top_k,
+                                                     shape.model_dim, output);
     return cudaPeekAtLastError();
   }
   const int pairs = shape.rows * shape.top_k;
+  const int padded = MaxPaddedRows(shape);
+  const int max_tiles = padded / kGemmTile;
   int32_t* counts = reinterpret_cast<int32_t*>(workspace + w.counts);
   int32_t* offsets = reinterpret_cast<int32_t*>(workspace + w.offsets);
   int32_t* cursors = reinterpret_cast<int32_t*>(workspace + w.cursors);
   int32_t* grouped = reinterpret_cast<int32_t*>(workspace + w.grouped);
-  float* accumulator = reinterpret_cast<float*>(workspace + w.accumulator);
-  const size_t outputs = static_cast<size_t>(shape.rows) * shape.model_dim;
+  int32_t* tile_offsets = reinterpret_cast<int32_t*>(workspace + w.tile_offsets);
+  int32_t* tile_experts = reinterpret_cast<int32_t*>(workspace + w.tile_experts);
+  int32_t* row_source = reinterpret_cast<int32_t*>(workspace + w.row_source);
+  int32_t* row_self = reinterpret_cast<int32_t*>(workspace + w.row_self);
+  int32_t* pair_row = reinterpret_cast<int32_t*>(workspace + w.pair_row);
+  float* row_scale = reinterpret_cast<float*>(workspace + w.row_scale);
+  void* scaled_x = workspace + w.scaled_x;
+  auto* gemm_hidden = reinterpret_cast<__nv_bfloat16*>(workspace + w.gemm_hidden);
+  void* scaled_hidden = workspace + w.scaled_hidden;
+  auto* down = reinterpret_cast<__nv_bfloat16*>(scaled_x);  // after GEMM 1
   cudaError_t status =
       cudaMemsetAsync(counts, 0, shape.experts * sizeof(int32_t), stream);
-  if (status != cudaSuccess) return status;
-  status = cudaMemsetAsync(accumulator, 0, outputs * sizeof(float), stream);
   if (status != cudaSuccess) return status;
   constexpr int kRouteThreads = 256;
   const int route_blocks = (pairs + kRouteThreads - 1) / kRouteThreads;
@@ -502,22 +535,64 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
                                                cursors);
   MoeFillKernel<<<route_blocks, kRouteThreads, 0, stream>>>(
       top_indices, pairs, shape.experts, cursors, grouped);
+  MoeTileScanKernel<<<1, kMaxExperts, 0, stream>>>(counts, shape.experts,
+                                                   tile_offsets);
+  MoeTileFillKernel<<<shape.experts + 1, kGemmTile, 0, stream>>>(
+      counts, offsets, grouped, tile_offsets, shape.experts, shape.top_k,
+      max_tiles, tile_experts, row_source, row_self, pair_row);
   status = cudaPeekAtLastError();
   if (status != cudaSuccess) return status;
-  MoeGroupedHiddenKernel<Threads>
-      <<<dim3(hidden_tiles, shape.experts), Threads, 0, stream>>>(
-          activation, offsets, grouped, arena, shape, hidden);
-  status = cudaPeekAtLastError();
+  // Gate and up as one gated GEMM over the gathered, scaled rows.
+  status = LiteRtNvidiaLaunchGemmScaleRows(activation, row_source, padded,
+                                           shape.model_dim, row_scale,
+                                           scaled_x, stream);
   if (status != cudaSuccess) return status;
-  MoeGroupedDownKernel<kDownThreads>
-      <<<dim3(model_tiles, shape.experts), kDownThreads, 0, stream>>>(
-          hidden, offsets, grouped, top_weights, per_expert_scale, arena, shape,
-          accumulator);
-  status = cudaPeekAtLastError();
+  const uint64_t model_row_bytes = static_cast<uint64_t>(shape.model_dim) / 2;
+  const uint64_t model_scales = static_cast<uint64_t>(shape.model_dim) / kBlock;
+  const LiteRtNvidiaGroupedGemmWeights gate_up = {
+      arena.gate,
+      arena.up,
+      arena.gate_scales,
+      arena.up_scales,
+      model_row_bytes * shape.experts,
+      model_scales * shape.experts,
+      model_row_bytes,
+      model_scales,
+      tile_experts};
+  const LiteRtNvidiaGemmShape gate_shape = {padded, shape.model_dim,
+                                            shape.hidden_dim, shape.gate, 32};
+  status = LiteRtNvidiaLaunchBf16Int4GroupedGemm(
+      &gate_shape, &gate_up, scaled_x, row_scale, gemm_hidden, stream);
   if (status != cudaSuccess) return status;
-  const int finish_blocks = static_cast<int>((outputs + 255) / 256);
-  MoeFinishKernel<<<finish_blocks, 256, 0, stream>>>(accumulator, outputs,
-                                                     output);
+  // The down projection over the hidden rows (zero rows stay zero).
+  status = LiteRtNvidiaLaunchGemmScaleRows(gemm_hidden, row_self, padded,
+                                           shape.hidden_dim, row_scale,
+                                           scaled_hidden, stream);
+  if (status != cudaSuccess) return status;
+  const uint64_t hidden_row_bytes = static_cast<uint64_t>(shape.hidden_dim) / 2;
+  const uint64_t hidden_scales = static_cast<uint64_t>(shape.hidden_dim) / kBlock;
+  const LiteRtNvidiaGroupedGemmWeights down_weights = {
+      arena.down,
+      nullptr,
+      arena.down_scales,
+      nullptr,
+      hidden_row_bytes * shape.experts,
+      hidden_scales * shape.experts,
+      hidden_row_bytes,
+      hidden_scales,
+      tile_experts};
+  const LiteRtNvidiaGemmShape down_shape = {
+      padded, shape.hidden_dim, shape.model_dim, kLiteRtNvidiaGemmGateNone, 32};
+  status = LiteRtNvidiaLaunchBf16Int4GroupedGemm(
+      &down_shape, &down_weights, scaled_hidden, row_scale, down, stream);
+  if (status != cudaSuccess) return status;
+  constexpr int kCombineThreads = 256;
+  MoeGatherCombineKernel<<<dim3((shape.model_dim + kCombineThreads - 1) /
+                                    kCombineThreads,
+                                shape.rows),
+                           kCombineThreads, 0, stream>>>(
+      down, pair_row, top_indices, top_weights, per_expert_scale, shape.top_k,
+      shape.experts, shape.model_dim, output);
   return cudaPeekAtLastError();
 }
 
@@ -526,14 +601,29 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
 
 extern "C" bool LiteRtNvidiaMoeSupports(const LiteRtNvidiaMoeShape* shape) {
   using namespace litert::nvidia::int4_block;
-  return shape != nullptr && shape->rows >= 1 && shape->top_k >= 1 &&
-         shape->top_k <= kMaxTopK && shape->experts >= 1 &&
-         shape->experts <= kMaxExperts && shape->model_dim >= kBlock &&
-         shape->model_dim % kBlock == 0 && shape->hidden_dim >= kBlock &&
-         shape->hidden_dim % kBlock == 0 &&
-         (shape->gate == 1 || shape->gate == 2) &&
-         static_cast<int64_t>(shape->rows) * shape->top_k <=
-             std::numeric_limits<int32_t>::max() / 2;
+  if (shape == nullptr || shape->rows < 1 || shape->top_k < 1 ||
+      shape->top_k > kMaxTopK || shape->experts < 1 ||
+      shape->experts > kMaxExperts || shape->model_dim < kBlock ||
+      shape->model_dim % kBlock != 0 || shape->hidden_dim < kBlock ||
+      shape->hidden_dim % kBlock != 0 ||
+      (shape->gate != 1 && shape->gate != 2) ||
+      static_cast<int64_t>(shape->rows) * shape->top_k >
+          std::numeric_limits<int32_t>::max() / 4) {
+    return false;
+  }
+  if (shape->rows <= kLiteRtNvidiaInt4BlockGemvMaxRows) {
+    return true;
+  }
+  // Prefill runs the tensor-core GEMM: its input sizes are multiples of 64
+  // and its outputs even.
+  const int padded = MaxPaddedRows(*shape);
+  const LiteRtNvidiaGemmShape gate_shape = {padded, shape->model_dim,
+                                            shape->hidden_dim, shape->gate, 32};
+  const LiteRtNvidiaGemmShape down_shape = {
+      padded, shape->hidden_dim, shape->model_dim, kLiteRtNvidiaGemmGateNone, 32};
+  return LiteRtNvidiaSubbyteGemmSupports(&gate_shape) &&
+         LiteRtNvidiaSubbyteGemmSupports(&down_shape) &&
+         LiteRtNvidiaSubbyteGemmAvailable();
 }
 
 extern "C" size_t LiteRtNvidiaMoeWorkspaceBytes(

@@ -86,6 +86,45 @@ extern "C" int32_t LiteRtNvidiaSubbyteGemmBlocks(
 extern "C" bool LiteRtNvidiaSubbyteGemmFillsDevice(
     const LiteRtNvidiaGemmShape* shape);
 
+// A grouped GEMM over experts whose rows interleave within a projection
+// (Gemma 4 26B-A4B's experts: row o of expert e is row o * experts + e):
+// row tile t of the activations belongs to expert tile_experts[t], and the
+// weights of channel c of expert e start at weights + e * expert_stride +
+// c * channel_stride bytes (their scales at scales + e *
+// expert_scale_stride + c * scale_channel_stride halves). With a gate the
+// up projection has its own base pointers instead of following the gate
+// channels. The activations are already in the GEMM's tile layout
+// (LiteRtNvidiaLaunchGemmScaleRows); the padded rows of a tile past its
+// expert's last row produce rows the caller ignores.
+struct LiteRtNvidiaGroupedGemmWeights {
+  const uint8_t* gate;
+  const uint8_t* up;  // gate mode only
+  const void* gate_scales;
+  const void* up_scales;          // gate mode only
+  uint64_t channel_stride;        // bytes
+  uint64_t scale_channel_stride;  // halves
+  uint64_t expert_stride;         // bytes
+  uint64_t expert_scale_stride;   // halves
+  const int32_t* tile_experts;    // [rows / 128]
+};
+
+// The activation pre-pass of the GEMM on its own: `rows` rows of
+// `input_size` BF16 values, row r taken from source row row_indices[r]
+// (-1 gives a zero row, an index below -1 leaves the row untouched, nullptr
+// gives the identity), scaled
+// per row into the tile layout `scaled` (FP16, rows * input_size) with the
+// scale factors in `row_scale` (rows floats). rows a multiple of 128.
+extern "C" cudaError_t LiteRtNvidiaLaunchGemmScaleRows(
+    const void* activation, const int32_t* row_indices, int32_t rows,
+    int32_t input_size, float* row_scale, void* scaled, cudaStream_t stream);
+
+// The GEMM over pre-scaled activations (LiteRtNvidiaLaunchGemmScaleRows) and
+// grouped weights. `shape.rows` is the padded row count, a multiple of 128.
+extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GroupedGemm(
+    const LiteRtNvidiaGemmShape* shape,
+    const LiteRtNvidiaGroupedGemmWeights* weights, const void* scaled,
+    const float* row_scale, void* output, cudaStream_t stream);
+
 extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4Gemm(
     const LiteRtNvidiaGemmShape* shape, const void* activation,
     const uint8_t* weights, const void* scales, void* output, void* workspace,

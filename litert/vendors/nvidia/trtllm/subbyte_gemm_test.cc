@@ -18,6 +18,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -399,6 +401,86 @@ TEST(SubbyteGemmTest, BlockwiseScalesMatchReference) {
   RunCase({{256, 2816, 2112, kLiteRtNvidiaGemmGateGeluErf, 32},
            Rows::kOutliers,
            1.0f});
+}
+
+// Times the GEMM at Gemma 4 26B-A4B's prefill shapes (not a correctness
+// test): SUBBYTE_GEMM_TIMING=1 prints microseconds per launch.
+TEST(SubbyteGemmTest, TimesModelShapes) {
+  if (std::getenv("SUBBYTE_GEMM_TIMING") == nullptr ||
+      !LiteRtNvidiaSubbyteGemmAvailable()) {
+    GTEST_SKIP() << "Set SUBBYTE_GEMM_TIMING=1 on a capable GPU.";
+  }
+  struct Shape {
+    const char* name;
+    LiteRtNvidiaGemmShape shape;
+  };
+  const Shape shapes[] = {
+      {"qkv blockwise", {1024, 2816, 8192, kLiteRtNvidiaGemmGateNone, 32}},
+      {"gate+up blockwise",
+       {1024, 2816, 2112, kLiteRtNvidiaGemmGateGeluTanh, 32}},
+      {"down blockwise K=2112",
+       {1024, 2112, 2816, kLiteRtNvidiaGemmGateNone, 32}},
+      {"down per-channel K=2112",
+       {1024, 2112, 2816, kLiteRtNvidiaGemmGateNone, 0}},
+      {"o blockwise K=4096", {1024, 4096, 2816, kLiteRtNvidiaGemmGateNone, 32}},
+      {"K=2176 blockwise (even chunks)",
+       {1024, 2176, 2816, kLiteRtNvidiaGemmGateNone, 32}},
+      {"qkv per-channel", {1024, 2816, 8192, kLiteRtNvidiaGemmGateNone, 0}},
+  };
+  for (const auto& [name, shape] : shapes) {
+    ASSERT_TRUE(LiteRtNvidiaSubbyteGemmSupports(&shape)) << name;
+    const int channels =
+        shape.gate != 0 ? 2 * shape.output_size : shape.output_size;
+    const size_t weight_bytes = LiteRtNvidiaSubbyteGemmWeightBytes(&shape);
+    const size_t scale_count =
+        static_cast<size_t>(channels) *
+        (shape.scale_block != 0 ? shape.input_size / shape.scale_block : 1);
+    std::vector<uint16_t> activation(static_cast<size_t>(shape.rows) *
+                                     shape.input_size);
+    for (size_t i = 0; i < activation.size(); ++i) {
+      activation[i] =
+          FloatToBf16Bits(static_cast<float>((i * 7) % 13) / 13.0f - 0.5f);
+    }
+    std::vector<uint8_t> weights(weight_bytes);
+    for (size_t i = 0; i < weights.size(); ++i)
+      weights[i] = static_cast<uint8_t>(i * 31 + 7);
+    std::vector<uint16_t> scales(scale_count);
+    for (size_t i = 0; i < scales.size(); ++i) {
+      scales[i] = shape.scale_block != 0 ? FloatToHalfBits(0.01f)
+                                         : FloatToBf16Bits(0.01f);
+    }
+    auto activation_device = Upload(activation);
+    auto weights_device = Upload(weights);
+    auto scales_device = Upload(scales);
+    auto output_device =
+        AllocateCuda(static_cast<size_t>(shape.rows) * shape.output_size * 2);
+    auto workspace =
+        AllocateCuda(LiteRtNvidiaSubbyteGemmWorkspaceBytes(&shape));
+    const auto launch = [&]() {
+      return LiteRtNvidiaLaunchBf16Int4Gemm(
+          &shape, activation_device.get(),
+          static_cast<const uint8_t*>(weights_device.get()),
+          scales_device.get(), output_device.get(), workspace.get(), nullptr);
+    };
+    ASSERT_EQ(launch(), cudaSuccess);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    constexpr int kIterations = 20;
+    cudaEventRecord(start);
+    for (int i = 0; i < kIterations; ++i) ASSERT_EQ(launch(), cudaSuccess);
+    cudaEventRecord(stop);
+    ASSERT_EQ(cudaEventSynchronize(stop), cudaSuccess);
+    float ms = 0.0f;
+    cudaEventElapsedTime(&ms, start, stop);
+    const double flops = 2.0 * shape.rows * shape.input_size * channels;
+    std::printf("%-34s %8.1f us  %6.1f TFLOPS\n", name,
+                ms * 1000.0f / kIterations,
+                flops / (ms / kIterations * 1e-3) / 1e12);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+  }
 }
 
 TEST(SubbyteGemmTest, GatedProjectionsMatchReference) {

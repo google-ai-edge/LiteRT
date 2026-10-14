@@ -3514,13 +3514,19 @@ class TensorRtGraphBuilder {
     if (weight_store_ != nullptr) {
       std::vector<absl::Span<const uint8_t>> all(members.begin(),
                                                  members.end());
-      if (blockwise) {
+      // Blockwise scales join the weights in the store unless
+      // LITERT_NVIDIA_TENSORRT_BLOCK_SCALES_IN_STORE=0 keeps them in the plan.
+      const bool scales_to_store =
+          blockwise &&
+          EnvEnabled("LITERT_NVIDIA_TENSORRT_BLOCK_SCALES_IN_STORE",
+                     /*default_value=*/true);
+      if (scales_to_store) {
         all.insert(all.end(), block_scales.begin(), block_scales.end());
       }
       auto added = weight_store_->Add(all);
       if (added.HasValue()) {
         location = *added;
-        scales_in_store = blockwise;
+        scales_in_store = scales_to_store;
       } else if (added.Error().Status() != kLiteRtStatusErrorNotFound) {
         return added.Error();
       } else if (blockwise) {

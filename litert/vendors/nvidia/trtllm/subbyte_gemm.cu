@@ -114,13 +114,21 @@ __device__ __forceinline__ float Gelu(float x, int gate) {
 // a block of the GEMM reads one contiguous tile per chunk.
 __global__ void __launch_bounds__(kThreads)
     ScaleRowsKernel(const __nv_bfloat16* __restrict__ activation,
-                    int input_size, float* __restrict__ row_scale,
+                    const int32_t* __restrict__ row_indices, int input_size,
+                    float* __restrict__ row_scale,
                     __half* __restrict__ scaled) {
   __shared__ float max_s[kWarps];
-  const __nv_bfloat162* row = reinterpret_cast<const __nv_bfloat162*>(
-      activation + static_cast<size_t>(blockIdx.x) * input_size);
+  // A gathered row, a zero row for index -1, or nothing for an index below
+  // -1 (a row of an unused tile).
+  const int source =
+      row_indices == nullptr ? static_cast<int>(blockIdx.x) : row_indices[blockIdx.x];
+  if (source < -1) return;
+  const __nv_bfloat162* row =
+      source < 0 ? nullptr
+                 : reinterpret_cast<const __nv_bfloat162*>(
+                       activation + static_cast<size_t>(source) * input_size);
   float largest = 0.0f;
-  for (int i = threadIdx.x; i < input_size / 2; i += kThreads) {
+  for (int i = threadIdx.x; row != nullptr && i < input_size / 2; i += kThreads) {
     const float2 values = __bfloat1622float2(row[i]);
     largest = fmaxf(largest, fmaxf(fabsf(values.x), fabsf(values.y)));
   }
@@ -150,12 +158,27 @@ __global__ void __launch_bounds__(kThreads)
   __half2* out = reinterpret_cast<__half2*>(
       scaled + tile * kBlockRows * input_size + tile_row * kChunk);
   for (int i = threadIdx.x; i < input_size / 2; i += kThreads) {
-    const float2 values = __bfloat1622float2(row[i]);
+    const float2 values =
+        row == nullptr ? make_float2(0.0f, 0.0f) : __bfloat1622float2(row[i]);
     out[static_cast<size_t>(i / (kChunk / 2)) * (kBlockRows * kChunk / 2) +
         i % (kChunk / 2)] =
         __floats2half2_rn(values.x * scale, values.y * scale);
   }
 }
+
+// Where a block's weights and scales are: dense row-major weights, or the
+// interleaved experts of a grouped GEMM (LiteRtNvidiaGroupedGemmWeights).
+struct WeightAddressing {
+  const uint8_t* gate;
+  const uint8_t* up;
+  const void* gate_scales;
+  const void* up_scales;
+  uint64_t channel_stride;
+  uint64_t scale_channel_stride;
+  uint64_t expert_stride;
+  uint64_t expert_scale_stride;
+  const int32_t* tile_experts;
+};
 
 // grid (rows / kBlockRows, column tiles): the blocks that read the same
 // weights are adjacent, so the weights come from memory once. A block
@@ -178,12 +201,10 @@ __global__ void __launch_bounds__(kThreads)
 template <bool kBlockwise>
 __global__ void __launch_bounds__(kThreads, 1)
     Int4GemmKernel(const __half* __restrict__ activation,
-                   const uint8_t* __restrict__ weights,
-                   const void* __restrict__ scales_raw,
+                   const WeightAddressing addressing,
                    const float* __restrict__ row_scale, int input_size,
                    int output_size, int gate,
                    __nv_bfloat16* __restrict__ output) {
-  const auto* scales = static_cast<const __nv_bfloat16*>(scales_raw);
   extern __shared__ __align__(16) unsigned char smem[];
   unsigned char* activation_s = smem;
   unsigned char* weight_s = smem + 2 * kActivationBytes;
@@ -220,10 +241,15 @@ __global__ void __launch_bounds__(kThreads, 1)
       activation + static_cast<size_t>(m0) * input_size + tid * 8;
   const int w_row = tid / 2;
   const int w_channel = min(n0 + w_row % block_channels, output_size - 1);
+  const int expert = addressing.tile_experts == nullptr
+                         ? 0
+                         : addressing.tile_experts[blockIdx.x];
+  if (expert < 0) return;  // an unused tile of a grouped GEMM
+  const bool up_half = w_row / block_channels != 0;
   const uint8_t* weight_row =
-      weights +
-      (static_cast<size_t>(w_row / block_channels) * output_size + w_channel) *
-          (input_size / 2) +
+      (up_half ? addressing.up : addressing.gate) +
+      expert * addressing.expert_stride +
+      static_cast<uint64_t>(w_channel) * addressing.channel_stride +
       (tid % 2) * 16;
   unsigned char* activation_thread =
       activation_s + a_row * kRowBytes + a_vector * 16;
@@ -233,10 +259,10 @@ __global__ void __launch_bounds__(kThreads, 1)
   // The thread's 32 weights of a chunk are one block: its scale, for chunk c,
   // is block 2 c + (tid % 2) of the thread's channel.
   const __half* block_scales =
-      static_cast<const __half*>(scales_raw) +
-      (static_cast<size_t>(w_row / block_channels) * output_size +
-       w_channel) *
-          (input_size / 32) +
+      static_cast<const __half*>(up_half ? addressing.up_scales
+                                         : addressing.gate_scales) +
+      expert * addressing.expert_scale_stride +
+      static_cast<uint64_t>(w_channel) * addressing.scale_channel_stride +
       (tid % 2);
   auto scale_of = [&](int chunk) -> __half2 {
     if constexpr (kBlockwise) {
@@ -475,11 +501,16 @@ __global__ void __launch_bounds__(kThreads, 1)
       float2 scale = make_float2(1.0f, 1.0f);
       float2 gate_scale = make_float2(1.0f, 1.0f);
       if constexpr (!kBlockwise) {
-        scale = __bfloat1622float2(*reinterpret_cast<const __nv_bfloat162*>(
-            scales + (gate != 0 ? output_size : 0) + n));
+        // Per-channel scales: channel n of the (up) projection, consecutive.
+        const auto* up_or_plain = static_cast<const __nv_bfloat16*>(
+            gate != 0 ? addressing.up_scales : addressing.gate_scales);
+        scale = __bfloat1622float2(
+            *reinterpret_cast<const __nv_bfloat162*>(up_or_plain + n));
         if (gate != 0) {
           gate_scale = __bfloat1622float2(
-              *reinterpret_cast<const __nv_bfloat162*>(scales + n));
+              *reinterpret_cast<const __nv_bfloat162*>(
+                  static_cast<const __nv_bfloat16*>(addressing.gate_scales) +
+                  n));
         }
       }
       lo.x *= scale.x * unscale_lo;
@@ -604,19 +635,90 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4Gemm(
   __half* scaled = reinterpret_cast<__half*>(static_cast<char*>(workspace) +
                                              ScaleBytes(shape->rows));
   ScaleRowsKernel<<<shape->rows, kThreads, 0, stream>>>(
-      static_cast<const __nv_bfloat16*>(activation), shape->input_size,
-      row_scale, scaled);
+      static_cast<const __nv_bfloat16*>(activation), nullptr,
+      shape->input_size, row_scale, scaled);
   cudaError_t status = cudaGetLastError();
   if (status != cudaSuccess) return status;
+  // Dense row-major weights: the up projection's channels follow the gate's.
+  const uint64_t channel_bytes = static_cast<uint64_t>(shape->input_size) / 2;
+  const uint64_t scale_stride =
+      blockwise ? static_cast<uint64_t>(shape->input_size) / 32 : 1;
+  const uint64_t up_channels = shape->gate != 0 ? shape->output_size : 0;
+  const WeightAddressing addressing = {
+      weights,
+      weights + up_channels * channel_bytes,
+      scales,
+      static_cast<const uint8_t*>(scales) + up_channels * scale_stride * 2,
+      channel_bytes,
+      scale_stride,
+      0,
+      0,
+      nullptr};
   const dim3 grid(shape->rows / kBlockRows, ColumnTiles(*shape));
   if (blockwise) {
     Int4GemmKernel<true><<<grid, kThreads, kSharedBytes, stream>>>(
-        scaled, weights, scales, row_scale, shape->input_size,
-        shape->output_size, shape->gate, static_cast<__nv_bfloat16*>(output));
+        scaled, addressing, row_scale, shape->input_size, shape->output_size,
+        shape->gate, static_cast<__nv_bfloat16*>(output));
   } else {
     Int4GemmKernel<false><<<grid, kThreads, kSharedBytes, stream>>>(
-        scaled, weights, scales, row_scale, shape->input_size,
-        shape->output_size, shape->gate, static_cast<__nv_bfloat16*>(output));
+        scaled, addressing, row_scale, shape->input_size, shape->output_size,
+        shape->gate, static_cast<__nv_bfloat16*>(output));
+  }
+  return cudaGetLastError();
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchGemmScaleRows(
+    const void* activation, const int32_t* row_indices, int32_t rows,
+    int32_t input_size, float* row_scale, void* scaled, cudaStream_t stream) {
+  if (activation == nullptr || rows <= 0 || rows % kBlockRows != 0 ||
+      input_size <= 0 || input_size % kChunk != 0 || row_scale == nullptr ||
+      scaled == nullptr) {
+    return cudaErrorInvalidValue;
+  }
+  ScaleRowsKernel<<<rows, kThreads, 0, stream>>>(
+      static_cast<const __nv_bfloat16*>(activation), row_indices, input_size,
+      row_scale, static_cast<__half*>(scaled));
+  return cudaGetLastError();
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GroupedGemm(
+    const LiteRtNvidiaGemmShape* shape,
+    const LiteRtNvidiaGroupedGemmWeights* weights, const void* scaled,
+    const float* row_scale, void* output, cudaStream_t stream) {
+  if (!LiteRtNvidiaSubbyteGemmSupports(shape) || weights == nullptr ||
+      weights->gate == nullptr || weights->gate_scales == nullptr ||
+      (shape->gate != 0 &&
+       (weights->up == nullptr || weights->up_scales == nullptr)) ||
+      scaled == nullptr || row_scale == nullptr || output == nullptr) {
+    return cudaErrorInvalidValue;
+  }
+  const bool blockwise = shape->scale_block == 32;
+  static bool attribute_set[2] = {false, false};
+  if (!attribute_set[blockwise]) {
+    const cudaError_t status = cudaFuncSetAttribute(
+        blockwise ? Int4GemmKernel<true> : Int4GemmKernel<false>,
+        cudaFuncAttributeMaxDynamicSharedMemorySize,
+        static_cast<int>(kSharedBytes));
+    if (status != cudaSuccess) return status;
+    attribute_set[blockwise] = true;
+  }
+  const WeightAddressing addressing = {
+      weights->gate,          weights->up,
+      weights->gate_scales,   weights->up_scales,
+      weights->channel_stride, weights->scale_channel_stride,
+      weights->expert_stride, weights->expert_scale_stride,
+      weights->tile_experts};
+  const dim3 grid(shape->rows / kBlockRows, ColumnTiles(*shape));
+  if (blockwise) {
+    Int4GemmKernel<true><<<grid, kThreads, kSharedBytes, stream>>>(
+        static_cast<const __half*>(scaled), addressing, row_scale,
+        shape->input_size, shape->output_size, shape->gate,
+        static_cast<__nv_bfloat16*>(output));
+  } else {
+    Int4GemmKernel<false><<<grid, kThreads, kSharedBytes, stream>>>(
+        static_cast<const __half*>(scaled), addressing, row_scale,
+        shape->input_size, shape->output_size, shape->gate,
+        static_cast<__nv_bfloat16*>(output));
   }
   return cudaGetLastError();
 }
