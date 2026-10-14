@@ -122,14 +122,15 @@ __device__ __forceinline__ void AccumulateTile(const WeightTile& tile,
   for (int r = 0; r < Rows; ++r) {
     rows[r] = act.Row(r);
   }
-  // Compact scales: the rows' maxima once, over 255.
-  float row_max[TileRows];
+  // Compact scales: the rows' maxima, loaded once; converted where they are
+  // first used so the loads overlap the first weight loads instead of
+  // standing before them.
+  __half row_max[TileRows];
 #pragma unroll
   for (int i = 0; i < TileRows; ++i) {
     row_max[i] = tile.fractions != nullptr && i < tile.valid_rows
-                     ? __half2float(tile.scale_max[i * tile.max_stride]) *
-                           (1.0f / 255.0f)
-                     : 0.0f;
+                     ? __ldg(tile.scale_max + i * tile.max_stride)
+                     : __float2half(0.0f);
   }
   for (int b = threadIdx.x; b < blocks; b += Threads) {
     uint4 words[TileRows];
@@ -141,8 +142,9 @@ __device__ __forceinline__ void AccumulateTile(const WeightTile& tile,
             tile.weights + i * tile.weight_stride + b * (kBlock / 2)));
         scales[i] =
             tile.fractions != nullptr
-                ? row_max[i] * static_cast<float>(
-                                   tile.fractions[i * tile.scale_stride + b])
+                ? __half2float(row_max[i]) * (1.0f / 255.0f) *
+                      static_cast<float>(
+                          __ldg(tile.fractions + i * tile.scale_stride + b))
                 : __half2float(tile.scales[i * tile.scale_stride + b]);
       } else {
         words[i] = make_uint4(0, 0, 0, 0);
