@@ -55,6 +55,7 @@
 #include "litert/vendors/intel_openvino/bytecode_header.h"
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
 #include "litert/vendors/intel_openvino/dispatch/weight_bank_runtime.h"
+#include "litert/vendors/intel_openvino/openvino_version_info.h"
 
 namespace {
 // This class is copied from the OpenVINO codebase with minor modifications
@@ -344,6 +345,8 @@ LiteRtDispatchInvocationContextT::Create(
 
   ov::CompiledModel compiled_model;
   try {
+    litert::openvino::LogOpenVINOVersionInfoOnce("OpenVINO Dispatch",
+                                                 device.c_str());
     if (npu_shared) {
       // Stage the deduplicated pool to a temp file once per model, then hand it
       // to NPUW. The temp file is a byte-for-byte copy of the contiguous pool
