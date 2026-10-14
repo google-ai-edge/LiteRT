@@ -2610,6 +2610,7 @@ class TensorRtGraphBuilder {
     }
     LITERT_RETURN_IF_ERROR(FindPrefillAttentionBlocks(subgraph));
     LITERT_RETURN_IF_ERROR(FindCompositeAttentionBlocks(subgraph));
+    LITERT_RETURN_IF_ERROR(FindMoeBlocks(subgraph));
     std::vector<Op> prefill_cache_updates;
     for (size_t i = 0; i < num_ops_to_lower; ++i) {
       if (ops[i].Code() == kLiteRtOpCodeShloComposite &&
@@ -8720,6 +8721,55 @@ class TensorRtGraphBuilder {
     return block;
   }
 
+  // Whether blockwise weights and their scales are views of the model file
+  // (what the MoE plugin's arena loads from).
+  bool WeightsInFile(const Tensor& weights) const {
+    if (weight_store_ == nullptr) return false;
+    const Tensor scales(weights.Context(),
+                        weights.BlockWiseQuantization().scales);
+    return weight_store_->SourceOffset(weights.Weights().Bytes()).HasValue() &&
+           weight_store_->SourceOffset(scales.Weights().Bytes()).HasValue();
+  }
+
+  // The MoE layer blocks, found before anything lowers: the dense
+  // feed-forward's ops come before the moe op in the graph, and lowered
+  // first they would put their weights into the store (where they stayed,
+  // 0.3 GB of the 26B's device memory, until this pass) before the block
+  // absorbed them. The plan is reused by LowerCustomOp.
+  struct MoeBlockPlan {
+    std::optional<MoeRouting> routing;
+    std::optional<MoeBlockFusion> block;
+  };
+
+  Expected<void> FindMoeBlocks(const Subgraph& subgraph) {
+    if (weight_store_ == nullptr) return {};
+    for (const auto& op : subgraph.Ops()) {
+      if (op.Code() != kLiteRtOpCodeTflCustom) continue;
+      const auto moe = ParseMoeCustomOp(op);
+      if (!moe.has_value()) continue;
+      MoeBlockPlan plan;
+      plan.routing = FindMoeRouting(op, *moe);
+      if (!plan.routing.has_value() ||
+          !WeightsInFile(plan.routing->router_weights)) {
+        continue;
+      }
+      plan.block = FindMoeBlock(op, *moe, *plan.routing);
+      if (plan.block.has_value() &&
+          (!WeightsInFile(plan.block->dense_gate_w) ||
+           !WeightsInFile(plan.block->dense_up_w) ||
+           !WeightsInFile(plan.block->dense_down_w))) {
+        plan.block.reset();
+      }
+      if (plan.block.has_value()) {
+        for (LiteRtOp absorbed : plan.block->absorbed) {
+          unlowered_ops_.insert(absorbed);
+        }
+      }
+      moe_plans_[op.Get()] = std::move(plan);
+    }
+    return {};
+  }
+
   Expected<nvinfer1::ITensor*> AddNormScaleConstant(const Tensor& w,
                                                     int32_t columns,
                                                     const std::string& name) {
@@ -8777,7 +8827,14 @@ class TensorRtGraphBuilder {
             expert_scales, scale_dims,
             "moe_expert_scale_" + std::to_string(op.Inputs()[9].TensorIndex()),
             nvinfer1::DataType::kFLOAT));
-    std::optional<MoeRouting> routing = FindMoeRouting(op, *moe);
+    std::optional<MoeRouting> routing;
+    std::optional<MoeBlockFusion> planned_block;
+    if (const auto plan = moe_plans_.find(op.Get()); plan != moe_plans_.end()) {
+      routing = plan->second.routing;
+      planned_block = plan->second.block;
+    } else {
+      routing = FindMoeRouting(op, *moe);
+    }
     if (routing.has_value()) {
       // The router's rows and scales join the arena.
       const Tensor& router = routing->router_weights;
@@ -8807,7 +8864,8 @@ class TensorRtGraphBuilder {
     // arena too.
     std::optional<MoeBlockFusion> block;
     if (routing.has_value()) {
-      block = FindMoeBlock(op, *moe, *routing);
+      block = planned_block.has_value() ? planned_block
+                                        : FindMoeBlock(op, *moe, *routing);
     }
     if (block.has_value()) {
       const Tensor* dense_weights[3] = {
@@ -9241,6 +9299,7 @@ class TensorRtGraphBuilder {
   std::array<int, 4> int8_attention_geometry_ = {0, 0, 0, 0};
   std::unordered_map<LiteRtOp, size_t> fused_attention_ops_;
   std::unordered_set<LiteRtOp> unlowered_ops_;
+  std::unordered_map<LiteRtOp, MoeBlockPlan> moe_plans_;
 };
 
 }  // namespace

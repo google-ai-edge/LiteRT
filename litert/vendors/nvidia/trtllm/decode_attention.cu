@@ -535,8 +535,14 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
       }
     }
   } else {
-    for (int jb = 0; jb < chunk; jb += kValueBatch) {
-      Element v_reg[kValueBatch][kThreadElems];
+    // Row caches with many rows: a thread owns kThreadElems depth elements
+    // and reads them for kValueBatch keys at a time, a round trip per
+    // batch. The next batch loads while the current one accumulates, so
+    // two round trips overlap (the 26B's global layers at 32k keys loop
+    // over chunks and spent most of their time in this chain).
+    Element v_cur[kValueBatch][kThreadElems];
+    Element v_next[kValueBatch][kThreadElems];
+    auto load_batch = [&](int jb, Element (&dst)[kValueBatch][kThreadElems]) {
 #pragma unroll
       for (int b = 0; b < kValueBatch; ++b) {
         const int jj = min(jb + b, chunk - 1);
@@ -544,8 +550,15 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
             v_head + static_cast<size_t>(j0 + jj) * kDepth + tid * kThreadElems;
 #pragma unroll
         for (int e = 0; e < kThreadElems; ++e) {
-          v_reg[b][e] = v_row[e];
+          dst[b][e] = v_row[e];
         }
+      }
+    };
+    load_batch(0, v_cur);
+    for (int jb = 0; jb < chunk; jb += kValueBatch) {
+      const bool more = jb + kValueBatch < chunk;
+      if (more) {
+        load_batch(jb + kValueBatch, v_next);
       }
 #pragma unroll
       for (int b = 0; b < kValueBatch; ++b) {
@@ -556,9 +569,8 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
         float v_f[kThreadElems];
 #pragma unroll
         for (int e = 0; e < kThreadElems; ++e) {
-          v_f[e] = cache.Value(v_reg[b][e]);
+          v_f[e] = cache.Value(v_cur[b][e]);
         }
-        // The key's probabilities, four rows per 16-byte load.
         float p_reg[kRowsCap];
 #pragma unroll
         for (int r4 = 0; r4 < kRowsCap / 4; ++r4) {
@@ -576,6 +588,15 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
             for (int e = 0; e < kThreadElems; ++e) {
               acc[r][e] = fmaf(p_reg[r], v_f[e], acc[r][e]);
             }
+          }
+        }
+      }
+      if (more) {
+#pragma unroll
+        for (int b = 0; b < kValueBatch; ++b) {
+#pragma unroll
+          for (int e = 0; e < kThreadElems; ++e) {
+            v_cur[b][e] = v_next[b][e];
           }
         }
       }

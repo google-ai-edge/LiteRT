@@ -632,7 +632,13 @@ export NB_POOL=$NB_ROOT/cache/models/$profile/$key
 printf 'Executable: %s\nNVIDIA libraries: %s\nAOT: %s/aot\nRuntime cache: %s/runtime\nCompiler cache: %s/compiler\nCPU cache: %s/cpu\n' "$engine" "$runtime_libs" "$NB_POOL" "$NB_POOL" "$NB_POOL" "$NB_POOL"
 helper host
 # Ignore stale legacy tuning variables; every relevant setting is explicit below.
+# The benchmark's environment is its own; RUN_HEAD_KEEP_ENV names (space-separated) the caller's
+# LITERT_NVIDIA_* knobs that stay, e.g. the MoE expert placement (LITERT_NVIDIA_MOE_DEVICE_RESERVE_MB);
+# the record lists them with the rest.
+declare -A kept_env=()
+for name in ${RUN_HEAD_KEEP_ENV:-}; do [[ -n ${!name+x} ]] && kept_env[$name]=${!name}; done
 for variable in ${!LITERT_NVIDIA_@}; do unset "$variable"; done
+for name in "${!kept_env[@]}"; do export "$name=${kept_env[$name]}"; done
 unset LITERT_LM_EXCLUDE_PREFILL_SIGNATURES
 export LD_LIBRARY_PATH=$runtime_libs:$NB_LM/prebuilt/linux_x86_64:$NB_SDK/lib:$NB_CUDA/lib64:/usr/lib/wsl/lib
 export LITERT_NVIDIA_TENSORRT_PARTITION_POLICY=gemma4 LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS=bf16
@@ -669,6 +675,8 @@ launch() {
   if [[ $backend == cpu ]]; then context=2048; cache=$cpu_cache; fi
   local args=("$engine" "--model_path=$NB_MODEL" "--backend=$backend" "--prefill_batch_sizes=$prefill"
     "--max_num_tokens=$context" "--cache_dir=$cache" "--litert_dispatch_lib_dir=$runtime_libs" --min_log_severity=0)
+  # RUN_HEAD_CLI_EXTRA: more CLI flags for every launch (e.g. --greedy_sampling=true).
+  if [[ -n ${RUN_HEAD_CLI_EXTRA:-} ]]; then read -r -a extra_cli <<< "$RUN_HEAD_CLI_EXTRA"; args+=("${extra_cli[@]}"); fi
   if [[ $backend == npu ]]; then args+=("${selected[@]}" "--enable_speculative_decoding=$mtp"); fi
   if [[ $mode == verify ]]; then
     args+=(--benchmark=false --benchmark_prefill_tokens=0 --benchmark_decode_tokens=0 --max_output_tokens=16
