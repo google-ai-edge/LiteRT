@@ -14,6 +14,7 @@
 
 #include "ml_drift_delegate/delegate/composite/gated_delta_update_kernel.h"
 
+#include <algorithm>
 #include <any>
 #include <cstddef>
 #include <memory>
@@ -41,6 +42,20 @@
 
 namespace litert::ml_drift {
 namespace {
+
+// Subgroup size for the 2D register-only shuffle shader.
+constexpr int kSubgroupSize = 32;
+
+// Maximum number of unrolled D_k rounds per thread in the subgroup shader.
+// Each round holds 4 StateType (float4) recurrent state vectors (16 floats),
+// so capping k_rounds at 4 bounds state registers to at most 16 float4 (64
+// VGPRs) per thread and prevents register spilling when D_k is large.
+constexpr int kMaxKRounds = 4;
+
+// Maximum workgroup size along X for the shared-memory fallback shader
+// (supports up to D_k = 1024 = 256 vec4 slices; each thread holds only 1
+// round = 4 float4 state registers).
+constexpr int kMaxSharedMemWorkGroupSize = 256;
 
 // Resolves `#pragma OPENCL EXTENSION ucl_wave_simd: enable` and the wave-SIMD
 // intrinsics (`ucl::WaveSum`, `ucl::WaveMax`, `ucl::WaveBroadcast`,
@@ -145,21 +160,23 @@ bool SupportsWave32Vec4Shuffle(const ::ml_drift::GpuInfo& gpu_info) {
 
 class GatedDeltaUpdateOp : public ::ml_drift::GPUOperation {
  public:
-  GatedDeltaUpdateOp(int batch_size, int num_heads, int v_groups, int k_slices)
+  GatedDeltaUpdateOp(int batch_size, int num_heads, int v_groups,
+                     int work_group_size_x)
       : batch_size_(batch_size),
         num_heads_(num_heads),
         v_groups_(v_groups),
-        k_slices_(k_slices) {}
+        work_group_size_x_(work_group_size_x) {}
 
   ::ml_drift::int3 GetGridSize() const override {
-    // Grid: X=K Slices * Value Groups, Y=Height (Heads), Z=Batch
-    return ::ml_drift::int3(k_slices_ * v_groups_, num_heads_, batch_size_);
+    // Grid: X=WorkGroupSizeX * Value Groups, Y=Height (Heads), Z=Batch
+    return ::ml_drift::int3(work_group_size_x_ * v_groups_, num_heads_,
+                            batch_size_);
   }
 
   std::vector<::ml_drift::int3> GetPossibleKernelWorkGroups(
       ::ml_drift::TuningType tuning_type, const ::ml_drift::GpuInfo& gpu_info,
       const ::ml_drift::KernelInfo& kernel_info) const override {
-    return {::ml_drift::int3(k_slices_, 1, 1)};
+    return {::ml_drift::int3(work_group_size_x_, 1, 1)};
   }
 
   GatedDeltaUpdateOp(GatedDeltaUpdateOp&& operation) = default;
@@ -171,25 +188,28 @@ class GatedDeltaUpdateOp : public ::ml_drift::GPUOperation {
   int batch_size_ = 1;
   int num_heads_ = 1;
   int v_groups_ = 1;
-  int k_slices_ = 4;
+  int work_group_size_x_ = 4;
 };
 
 // 2D (D_k x D_v) subgroup-parallel shader (register-only reduction, zero
-// shared memory, zero barriers). Decomposes each 32-lane subgroup into V_TILE
-// groups of K_THREADS = HEAD_K_DIM_SLICES / V_TILE lanes (e.g., 8 x 4 for
-// D_k=128, V_TILE=4):
-//   - k_lane = tid % K_THREADS (0..7) processes K_ROUNDS = HEAD_K_DIM_SLICES /
-//     K_THREADS (4) strided rounds of 4 rows along D_k (k_slice = k_lane +
-//     m * K_THREADS).
-//   - v_lane = tid / K_THREADS (0..3) owns 1 v_slice (4 columns along D_v).
-// Each thread holds 16 float4 recurrent state registers (4 rounds x 1 v_slice),
-// loads beta_t and g_t uniformly, loads its own v_slice directly without
-// divergent branches or broadcasts, coalesces k_t/q_t global loads across all
-// 32 lanes (distributing via ucl::WaveShuffle -> simd_shuffle / subgroupShuffle
-// / sub_group_shuffle), and reduces a single float4 kv_mem and my_attn_out
-// across K_THREADS lanes via log2(K_THREADS) = 3 ucl::WaveShuffleXor ->
-// simd_shuffle_xor / subgroupShuffleXor / sub_group_shuffle_xor butterfly
-// steps.
+// shared memory, zero barriers). Decomposes each subgroup of SUBGROUP_THREADS
+// (= min(HEAD_K_DIM_SLICES, 32)) lanes into V_TILE groups of K_THREADS =
+// SUBGROUP_THREADS / V_TILE lanes (e.g., 8 x 4 for D_k=128, V_TILE=4; 16 x 2
+// for D_k=256, V_TILE=2; 32 x 1 for D_k=512, V_TILE=1):
+//   - k_lane = tid % K_THREADS processes K_ROUNDS = HEAD_K_DIM_SLICES /
+//     K_THREADS (bounded by kMaxKRounds = 4) strided rounds of 4 rows along
+//     D_k (k_slice = k_lane + m * K_THREADS).
+//   - v_lane = tid / K_THREADS owns 1 v_slice (4 columns along D_v).
+// By scaling V_TILE down (4 -> 2 -> 1) when D_k > 128 and falling back to the
+// shared-memory shader when D_k > 512, each thread holds at most 16 float4
+// recurrent state registers (4 rounds x 1 v_slice = 64 VGPRs), preventing
+// register spilling for large head dimensions. Each thread loads beta_t and g_t
+// uniformly, loads its own v_slice directly without divergent branches or
+// broadcasts, coalesces k_t/q_t global loads across all lanes (distributing via
+// ucl::WaveShuffle -> simd_shuffle / subgroupShuffle / sub_group_shuffle), and
+// reduces a single float4 kv_mem and my_attn_out across K_THREADS lanes via
+// log2(K_THREADS) ucl::WaveShuffleXor -> simd_shuffle_xor / subgroupShuffleXor
+// / sub_group_shuffle_xor butterfly steps.
 //
 // Final rendered shader example — Variant 1 (Metal, D_k=128, D_v=128, V_TILE=4,
 // K_THREADS=8, SEQ_LEN_EXPR=128, GQA_RATIO=3, StateType=float4,
@@ -207,28 +227,30 @@ class GatedDeltaUpdateOp : public ::ml_drift::GPUOperation {
 //   int b = ucl::GetGroupId<2>();
 //
 //   int k_base_0 = k_lane * 4;
-//   float4 s0_0 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_0 + 0, h, v_slice, b));
-//   float4 s1_0 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_0 + 1, h, v_slice, b));
-//   float4 s2_0 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_0 + 2, h, v_slice, b));
-//   float4 s3_0 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_0 + 3, h, v_slice, b));
+//   float4 s0_0 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_0 + 0, h, v_slice, b));
+//   float4 s1_0 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_0 + 1, h, v_slice, b));
+//   float4 s2_0 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_0 + 2, h, v_slice, b));
+//   float4 s3_0 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_0 + 3, h, v_slice, b));
 //   int k_base_1 = (k_lane + 1 * 8) * 4;
-//   float4 s0_1 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_1 + 0, h, v_slice, b));
-//   float4 s1_1 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_1 + 1, h, v_slice, b));
-//   float4 s2_1 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_1 + 2, h, v_slice, b));
-//   float4 s3_1 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_1 + 3, h, v_slice, b));
+//   float4 s0_1 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_1 + 0, h, v_slice, b));
+//   float4 s1_1 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_1 + 1, h, v_slice, b));
+//   float4 s2_1 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_1 + 2, h, v_slice, b));
+//   float4 s3_1 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_1 + 3, h, v_slice, b));
 //   int k_base_2 = (k_lane + 2 * 8) * 4;
-//   float4 s0_2 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_2 + 0, h, v_slice, b));
-//   float4 s1_2 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_2 + 1, h, v_slice, b));
-//   float4 s2_2 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_2 + 2, h, v_slice, b));
-//   float4 s3_2 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_2 + 3, h, v_slice, b));
+//   float4 s0_2 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_2 + 0, h, v_slice, b));
+//   float4 s1_2 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_2 + 1, h, v_slice, b));
+//   float4 s2_2 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_2 + 2, h, v_slice, b));
+//   float4 s3_2 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_2 + 3, h, v_slice, b));
 //   int k_base_3 = (k_lane + 3 * 8) * 4;
-//   float4 s0_3 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_3 + 0, h, v_slice, b));
-//   float4 s1_3 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_3 + 1, h, v_slice, b));
-//   float4 s2_3 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_3 + 2, h, v_slice, b));
-//   float4 s3_3 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_3 + 3, h, v_slice, b));
+//   float4 s0_3 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_3 + 0, h, v_slice, b));
+//   float4 s1_3 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_3 + 1, h, v_slice, b));
+//   float4 s2_3 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_3 + 2, h, v_slice, b));
+//   float4 s3_3 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_3 + 3, h, v_slice, b));
 //
-//   // Process sequence length sequentially
-//   for (int t = 0; t < 128; ++t) {
+//   int valid_len = clamp(args.valid_len.Read<int>(0, 0, 0, b).x, 0, 128);
+//
+//   // Process active sequence length sequentially
+//   for (int t = 0; t < valid_len; ++t) {
 //     // Uniform load across subgroup: all lanes read identical (h, 0, t_slice, b)
 //     int t_slice = t / 4;
 //     int t_elem = t % 4;
@@ -388,6 +410,12 @@ class GatedDeltaUpdateOp : public ::ml_drift::GPUOperation {
 //     }
 //   }
 //
+//   if (k_lane == 0) {
+//     for (int t = valid_len; t < 128; ++t) {
+//       args.output.Write(ucl::Init<float4>(0.0), t, h, v_slice, b);
+//     }
+//   }
+//
 //   // Write out final evolved recurrent state for this thread's owned rows and v_slice
 //   args.recurrent_state_out.Write(ucl::Convert<float4>(s0_0), k_base_0 + 0, h, v_slice, b);
 //   args.recurrent_state_out.Write(ucl::Convert<float4>(s1_0), k_base_0 + 1, h, v_slice, b);
@@ -423,28 +451,30 @@ class GatedDeltaUpdateOp : public ::ml_drift::GPUOperation {
 //   int b = ucl::GetGroupId<2>();
 //
 //   int k_base_0 = k_lane * 4;
-//   vec4<f32> s0_0 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_0 + 0, h, v_slice, b));
-//   vec4<f32> s1_0 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_0 + 1, h, v_slice, b));
-//   vec4<f32> s2_0 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_0 + 2, h, v_slice, b));
-//   vec4<f32> s3_0 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_0 + 3, h, v_slice, b));
+//   vec4<f32> s0_0 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_0 + 0, h, v_slice, b));
+//   vec4<f32> s1_0 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_0 + 1, h, v_slice, b));
+//   vec4<f32> s2_0 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_0 + 2, h, v_slice, b));
+//   vec4<f32> s3_0 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_0 + 3, h, v_slice, b));
 //   int k_base_1 = (k_lane + 1 * 8) * 4;
-//   vec4<f32> s0_1 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_1 + 0, h, v_slice, b));
-//   vec4<f32> s1_1 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_1 + 1, h, v_slice, b));
-//   vec4<f32> s2_1 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_1 + 2, h, v_slice, b));
-//   vec4<f32> s3_1 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_1 + 3, h, v_slice, b));
+//   vec4<f32> s0_1 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_1 + 0, h, v_slice, b));
+//   vec4<f32> s1_1 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_1 + 1, h, v_slice, b));
+//   vec4<f32> s2_1 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_1 + 2, h, v_slice, b));
+//   vec4<f32> s3_1 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_1 + 3, h, v_slice, b));
 //   int k_base_2 = (k_lane + 2 * 8) * 4;
-//   vec4<f32> s0_2 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_2 + 0, h, v_slice, b));
-//   vec4<f32> s1_2 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_2 + 1, h, v_slice, b));
-//   vec4<f32> s2_2 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_2 + 2, h, v_slice, b));
-//   vec4<f32> s3_2 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_2 + 3, h, v_slice, b));
+//   vec4<f32> s0_2 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_2 + 0, h, v_slice, b));
+//   vec4<f32> s1_2 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_2 + 1, h, v_slice, b));
+//   vec4<f32> s2_2 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_2 + 2, h, v_slice, b));
+//   vec4<f32> s3_2 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_2 + 3, h, v_slice, b));
 //   int k_base_3 = (k_lane + 3 * 8) * 4;
-//   vec4<f32> s0_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_3 + 0, h, v_slice, b));
-//   vec4<f32> s1_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_3 + 1, h, v_slice, b));
-//   vec4<f32> s2_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_3 + 2, h, v_slice, b));
-//   vec4<f32> s3_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_3 + 3, h, v_slice, b));
+//   vec4<f32> s0_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_3 + 0, h, v_slice, b));
+//   vec4<f32> s1_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_3 + 1, h, v_slice, b));
+//   vec4<f32> s2_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_3 + 2, h, v_slice, b));
+//   vec4<f32> s3_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_3 + 3, h, v_slice, b));
 //
-//   // Process sequence length sequentially
-//   for (int t = 0; t < 128; ++t) {
+//   int valid_len = clamp(args.valid_len.Read<int>(0, 0, 0, b).x, 0, 128);
+//
+//   // Process active sequence length sequentially
+//   for (int t = 0; t < valid_len; ++t) {
 //     // Uniform load across subgroup: all lanes read identical (h, 0, t_slice, b)
 //     int t_slice = t / 4;
 //     int t_elem = t % 4;
@@ -604,6 +634,12 @@ class GatedDeltaUpdateOp : public ::ml_drift::GPUOperation {
 //     }
 //   }
 //
+//   if (k_lane == 0) {
+//     for (int t = valid_len; t < 128; ++t) {
+//       args.output.Write(ucl::Init<vec4<f32>>(0.0), t, h, v_slice, b);
+//     }
+//   }
+//
 //   // Write out final evolved recurrent state for this thread's owned rows and v_slice
 //   args.recurrent_state_out.Write(ucl::Convert<vec4<f32>>(s0_0), k_base_0 + 0, h, v_slice, b);
 //   args.recurrent_state_out.Write(ucl::Convert<vec4<f32>>(s1_0), k_base_0 + 1, h, v_slice, b);
@@ -637,9 +673,10 @@ MAIN_FUNCTION($0) {
   int b = ucl::GetGroupId<2>();
 
   STATE_INIT_DECLS
+  VALID_LEN_INIT
 
-  // Process sequence length sequentially
-  for (int t = 0; t < SEQ_LEN_EXPR; ++t) {
+  // Process active sequence length sequentially
+  for (int t = 0; t < LOOP_BOUND_EXPR; ++t) {
     // Uniform load across subgroup: all lanes read identical (h, 0, t_slice, b)
     int t_slice = t / 4;
     int t_elem = t % 4;
@@ -668,8 +705,7 @@ MAIN_FUNCTION($0) {
 
     DECAY_STEP
 
-    // Coalesced load of full D_k across 32 lanes (1 vec4 per lane)
-    StateType k_loaded = ucl::Convert<StateType>(args.k_t.Read(t, h_k, tid, b));
+    K_LOAD_STEP
 
     StateType kv_mem = ucl::Init<StateType>(0.0);
     KV_MEM_STEP
@@ -685,8 +721,7 @@ MAIN_FUNCTION($0) {
 
     UPDATE_STATE_STEP
 
-    // Coalesced load of full D_k Q across 32 lanes (1 vec4 per lane)
-    StateType q_loaded = ucl::Convert<StateType>(args.q_t.Read(t, h_k, tid, b));
+    Q_LOAD_STEP
 
     StateType my_attn_out = ucl::Init<StateType>(0.0);
     ATTN_OUT_STEP
@@ -699,13 +734,152 @@ MAIN_FUNCTION($0) {
     }
   }
 
+  ZERO_PAD_TAIL_STEP
+
   // Write out final evolved recurrent state for this thread's owned rows and v_slice
   STATE_WRITE_OUT_STEP
 }
 )";
 
 // Shared memory-based shader (single-phase 2-barrier reduction for OpenCL /
-// WebGPU)
+// WebGPU without 32-lane subgroups, or when D_k > 512 exceeds the 4-round
+// per-thread register budget of a single 32-lane subgroup).
+//
+// Final rendered shader example — Variant 3 (Shared-Memory Fallback, D_k=128,
+// D_v=128, HEAD_K_DIM_SLICES=32, SEQ_LEN_EXPR=128, GQA_RATIO=3,
+// StateType=float4, ActivationType=float4):
+// clang-format off
+// NOLINTBEGIN(whitespace/line_length)
+// ```cl
+// MAIN_FUNCTION($0) {
+//   int k_slice = ucl::GetLocalId<0>();
+//   int v_slice = ucl::GetGroupId<0>();
+//   int h = ucl::GetGroupId<1>();
+//   int h_k = h / 3;
+//   int b = ucl::GetGroupId<2>();
+//
+//   __local float4 scratch_kv[32];
+//   __local float4 scratch_out[32];
+//   __local float scratch_kq[32];
+//
+//   // Each thread owns 4 rows along D_k (k_slice * 4 + {0, 1, 2, 3}) for this v_slice.
+//   // Held entirely in 4 registers. Zero register spilling.
+//   int k_base = k_slice * 4;
+//   float4 s0 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base + 0, h, v_slice, b));
+//   float4 s1 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base + 1, h, v_slice, b));
+//   float4 s2 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base + 2, h, v_slice, b));
+//   float4 s3 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base + 3, h, v_slice, b));
+//   int valid_len = clamp(args.valid_len.Read<int>(0, 0, 0, b).x, 0, 128);
+//
+//   // Process active sequence length sequentially
+//   for (int t = 0; t < valid_len; ++t) {
+//     // Read beta and g for this step (mapped from TFLite 3D shape [B, H, L] to MLDrift BHWC [B, 1, H, L])
+//     int t_slice = t / 4;
+//     int t_elem = t % 4;
+//     float4 beta_t_vec = ucl::Convert<float4>(args.beta_t.Read(h, 0, t_slice, b));
+//     float beta_val = beta_t_vec.x;
+//     if (t_elem == 1) {
+//       beta_val = beta_t_vec.y;
+//     } else if (t_elem == 2) {
+//       beta_val = beta_t_vec.z;
+//     } else if (t_elem == 3) {
+//       beta_val = beta_t_vec.w;
+//     }
+//
+//     float4 g_t_vec = ucl::Convert<float4>(args.g_t.Read(h, 0, t_slice, b));
+//     float g_val = g_t_vec.x;
+//     if (t_elem == 1) {
+//       g_val = g_t_vec.y;
+//     } else if (t_elem == 2) {
+//       g_val = g_t_vec.z;
+//     } else if (t_elem == 3) {
+//       g_val = g_t_vec.w;
+//     }
+//
+//     float decay_scalar = exp(ucl::Convert<float>(g_val));
+//     float4 decay_vec = ucl::Init<float4>(decay_scalar);
+//
+//     // Apply decay to this thread's 4 rows
+//     s0 = s0 * decay_vec;
+//     s1 = s1 * decay_vec;
+//     s2 = s2 * decay_vec;
+//     s3 = s3 * decay_vec;
+//
+//     // Load full vec4 K and Q for this thread's k_slice directly
+//     float4 k_val = ucl::Convert<float4>(args.k_t.Read(t, h_k, k_slice, b));
+//     float4 q_val = ucl::Convert<float4>(args.q_t.Read(t, h_k, k_slice, b));
+//
+//     // Compute partial dot products before barrier
+//     float4 kv_mem = s0 * ucl::Init<float4>(k_val.x) +
+//                     s1 * ucl::Init<float4>(k_val.y) +
+//                     s2 * ucl::Init<float4>(k_val.z) +
+//                     s3 * ucl::Init<float4>(k_val.w);
+//     float4 sq_mem = s0 * ucl::Init<float4>(q_val.x) +
+//                     s1 * ucl::Init<float4>(q_val.y) +
+//                     s2 * ucl::Init<float4>(q_val.z) +
+//                     s3 * ucl::Init<float4>(q_val.w);
+//     float kq_dot = dot(k_val, q_val);
+//
+//     scratch_kv[k_slice] = kv_mem;
+//     scratch_out[k_slice] = sq_mem;
+//     scratch_kq[k_slice] = kq_dot;
+//     ucl::SyncThreads<WorkGroup, Local>();
+//     // Fold the 32 partial sums across 4 quarters (lanes 0..7 accumulate lanes
+//     // k_slice + {0, 8, 16, 24}) in a single barrier step instead of 5 tree-reduction
+//     // barriers, then sum the remaining 8 partial sums directly.
+//     if (k_slice < 8) {
+//       scratch_kv[k_slice] += scratch_kv[k_slice + 8] +
+//                              scratch_kv[k_slice + 16] +
+//                              scratch_kv[k_slice + 24];
+//       scratch_out[k_slice] += scratch_out[k_slice + 8] +
+//                               scratch_out[k_slice + 16] +
+//                               scratch_out[k_slice + 24];
+//       scratch_kq[k_slice] += scratch_kq[k_slice + 8] +
+//                              scratch_kq[k_slice + 16] +
+//                              scratch_kq[k_slice + 24];
+//     }
+//     ucl::SyncThreads<WorkGroup, Local>();
+//     kv_mem = scratch_kv[0] + scratch_kv[1] + scratch_kv[2] + scratch_kv[3] +
+//              scratch_kv[4] + scratch_kv[5] + scratch_kv[6] + scratch_kv[7];
+//
+//     // Load V vector slice for this step
+//     float4 v_vec = ucl::Convert<float4>(args.v_t.Read(t, h, v_slice, b));
+//     float4 beta_factor = ucl::Init<float4>(ucl::Convert<float>(beta_val));
+//     float4 delta_slice = (v_vec - kv_mem) * beta_factor;
+//
+//     // Update recurrent state in-place with outer product: S += delta * k^T
+//     s0 = s0 + delta_slice * ucl::Init<float4>(k_val.x);
+//     s1 = s1 + delta_slice * ucl::Init<float4>(k_val.y);
+//     s2 = s2 + delta_slice * ucl::Init<float4>(k_val.z);
+//     s3 = s3 + delta_slice * ucl::Init<float4>(k_val.w);
+//
+//     if (k_slice == 0) {
+//       float4 sq_sum = scratch_out[0] + scratch_out[1] + scratch_out[2] +
+//                       scratch_out[3] + scratch_out[4] + scratch_out[5] +
+//                       scratch_out[6] + scratch_out[7];
+//       float kq_sum = scratch_kq[0] + scratch_kq[1] + scratch_kq[2] +
+//                      scratch_kq[3] + scratch_kq[4] + scratch_kq[5] +
+//                      scratch_kq[6] + scratch_kq[7];
+//       float4 out_sum = sq_sum + delta_slice * ucl::Init<float4>(kq_sum);
+//       args.output.Write(ucl::Convert<float4>(out_sum), t, h, v_slice, b);
+//     }
+//   }
+//
+//   if (k_slice == 0) {
+//     for (int t = valid_len; t < 128; ++t) {
+//       args.output.Write(ucl::Init<float4>(0.0), t, h, v_slice, b);
+//     }
+//   }
+//
+//   // Write out final evolved recurrent state for this thread's 4 rows
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s0), k_base + 0, h, v_slice, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s1), k_base + 1, h, v_slice, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s2), k_base + 2, h, v_slice, b);
+//   args.recurrent_state_out.Write(ucl::Convert<float4>(s3), k_base + 3, h, v_slice, b);
+// }
+// ```
+// NOLINTEND(whitespace/line_length)
+// clang-format on
 constexpr char kGatedDeltaUpdateSharedMemShader[] = R"(
 MAIN_FUNCTION($0) {
   int k_slice = ucl::GetLocalId<0>();
@@ -721,13 +895,14 @@ MAIN_FUNCTION($0) {
   // Each thread owns 4 rows along D_k (k_slice * 4 + {0, 1, 2, 3}) for this v_slice.
   // Held entirely in 4 registers. Zero register spilling.
   int k_base = k_slice * 4;
-  StateType s0 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 0, h, v_slice, b));
-  StateType s1 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 1, h, v_slice, b));
-  StateType s2 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 2, h, v_slice, b));
-  StateType s3 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 3, h, v_slice, b));
+  StateType s0 = ucl::Convert<StateType>(args.recurrent_state_out.Read(k_base + 0, h, v_slice, b));
+  StateType s1 = ucl::Convert<StateType>(args.recurrent_state_out.Read(k_base + 1, h, v_slice, b));
+  StateType s2 = ucl::Convert<StateType>(args.recurrent_state_out.Read(k_base + 2, h, v_slice, b));
+  StateType s3 = ucl::Convert<StateType>(args.recurrent_state_out.Read(k_base + 3, h, v_slice, b));
+  VALID_LEN_INIT
 
-  // Process sequence length sequentially
-  for (int t = 0; t < SEQ_LEN_EXPR; ++t) {
+  // Process active sequence length sequentially
+  for (int t = 0; t < LOOP_BOUND_EXPR; ++t) {
     // Read beta and g for this step (mapped from TFLite 3D shape [B, H, L] to MLDrift BHWC [B, 1, H, L])
     int t_slice = t / 4;
     int t_elem = t % 4;
@@ -791,6 +966,8 @@ MAIN_FUNCTION($0) {
     SHARED_REDUCE_ATTN_OUT
   }
 
+  ZERO_PAD_TAIL_STEP
+
   // Write out final evolved recurrent state for this thread's 4 rows
   args.recurrent_state_out.Write(ucl::Convert<StateType>(s0), k_base + 0, h, v_slice, b);
   args.recurrent_state_out.Write(ucl::Convert<StateType>(s1), k_base + 1, h, v_slice, b);
@@ -807,7 +984,7 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
   const auto& v_t = definition.src_tensors[2];
   const auto& beta_t = definition.src_tensors[3];
   const auto& g_t = definition.src_tensors[4];
-  const auto& rec_state_in = definition.src_tensors[5];
+  const bool has_valid_len = definition.src_tensors.size() >= 6;
 
   const auto& output = definition.dst_tensors[0];
   const auto& rec_state_out = definition.dst_tensors[1];
@@ -840,32 +1017,54 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
 
   int q_slices = D_k / 4;
   int v_slices = D_v / 4;
+  if (q_slices > kMaxSharedMemWorkGroupSize) {
+    return absl::InvalidArgumentError(
+        "gated_delta_update requires D_k <= 1024 to bound workgroup size and "
+        "register pressure.");
+  }
 
   bool is_power_of_two = (q_slices > 0) && ((q_slices & (q_slices - 1)) == 0);
-  bool can_use_shuffle = gpu_info != nullptr &&
-                         SupportsWave32Vec4Shuffle(*gpu_info) &&
-                         is_power_of_two && (q_slices <= 32);
+  // A single 32-lane subgroup can process at most kSubgroupSize * kMaxKRounds
+  // (32 * 4 = 128) slices (D_k <= 512) while keeping k_rounds <= kMaxKRounds
+  // (at most 16 float4 recurrent state registers per thread). Larger D_k
+  // (D_k = 1024) falls back to the workgroup shared-memory reduction shader
+  // where each of the q_slices threads holds only 1 round (4 float4 registers).
+  bool can_use_shuffle =
+      gpu_info != nullptr && SupportsWave32Vec4Shuffle(*gpu_info) &&
+      is_power_of_two && (q_slices <= kSubgroupSize * kMaxKRounds);
 
+  int subgroup_threads = std::min(q_slices, kSubgroupSize);
   int v_tile = 1;
   if (can_use_shuffle) {
-    if (v_slices % 4 == 0 && q_slices >= 4) {
-      v_tile = 4;
-    } else if (v_slices % 2 == 0 && q_slices >= 2) {
-      v_tile = 2;
+    for (int candidate_v_tile : {4, 2, 1}) {
+      if (v_slices % candidate_v_tile == 0 &&
+          subgroup_threads >= candidate_v_tile) {
+        int candidate_k_threads = subgroup_threads / candidate_v_tile;
+        int candidate_k_rounds = q_slices / candidate_k_threads;
+        if (candidate_k_rounds <= kMaxKRounds) {
+          v_tile = candidate_v_tile;
+          break;
+        }
+      }
     }
   }
+  int work_group_size_x = can_use_shuffle ? subgroup_threads : q_slices;
   int v_groups = v_slices / v_tile;
-  int k_threads = q_slices / v_tile;
+  int k_threads = work_group_size_x / v_tile;
   int k_rounds = q_slices / k_threads;
+  int k_load_chunks = q_slices / work_group_size_x;
 
-  auto op = std::make_unique<GatedDeltaUpdateOp>(B, H, v_groups, q_slices);
+  auto op =
+      std::make_unique<GatedDeltaUpdateOp>(B, H, v_groups, work_group_size_x);
 
   op->AddSrcTensor("q_t", q_t);
   op->AddSrcTensor("k_t", k_t);
   op->AddSrcTensor("v_t", v_t);
   op->AddSrcTensor("beta_t", beta_t);
   op->AddSrcTensor("g_t", g_t);
-  op->AddSrcTensor("recurrent_state_in", rec_state_in);
+  if (has_valid_len) {
+    op->AddSrcTensor("valid_len", definition.src_tensors[5]);
+  }
 
   op->AddDstTensor("output", output);
   op->AddDstTensor("recurrent_state_out", rec_state_out);
@@ -875,35 +1074,78 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
 
   std::string state_init_decls;
   std::string decay_step;
+  std::string k_load_step;
   std::string kv_mem_step;
   std::string simd_reduce_kv_mem;
   std::string update_state_step;
+  std::string q_load_step;
   std::string attn_out_step;
   std::string simd_reduce_attn_out;
   std::string state_write_out_step;
+
+  if (k_load_chunks == 1) {
+    k_load_step =
+        "    // Coalesced load of full D_k across 32 lanes (1 vec4 per lane)\n"
+        "    StateType k_loaded = ucl::Convert<StateType>(args.k_t.Read(t, "
+        "h_k, tid, b));\n";
+    q_load_step =
+        "    // Coalesced load of full D_k Q across 32 lanes (1 vec4 per "
+        "lane)\n"
+        "    StateType q_loaded = ucl::Convert<StateType>(args.q_t.Read(t, "
+        "h_k, tid, b));\n";
+  } else {
+    k_load_step = "    // Coalesced chunked load of full D_k across 32 lanes\n";
+    q_load_step =
+        "    // Coalesced chunked load of full D_k Q across 32 lanes\n";
+    for (int c = 0; c < k_load_chunks; ++c) {
+      std::string cs = std::to_string(c);
+      std::string slice_idx =
+          (c == 0) ? "tid" : "tid + " + std::to_string(c * work_group_size_x);
+      k_load_step += "    StateType k_loaded_" + cs +
+                     " = ucl::Convert<StateType>(args.k_t.Read(t, h_k, " +
+                     slice_idx + ", b));\n";
+      q_load_step += "    StateType q_loaded_" + cs +
+                     " = ucl::Convert<StateType>(args.q_t.Read(t, h_k, " +
+                     slice_idx + ", b));\n";
+    }
+  }
 
   for (int m = 0; m < k_rounds; ++m) {
     std::string ms = std::to_string(m);
     std::string k_slice_expr =
         (m == 0) ? "k_lane" : "(k_lane + " + ms + " * K_THREADS)";
+    int chunk_idx = m / v_tile;
+    int m_in_chunk = m % v_tile;
+    std::string k_loaded_var = (k_load_chunks == 1)
+                                   ? "k_loaded"
+                                   : "k_loaded_" + std::to_string(chunk_idx);
+    std::string q_loaded_var = (k_load_chunks == 1)
+                                   ? "q_loaded"
+                                   : "q_loaded_" + std::to_string(chunk_idx);
     std::string lane_expr =
-        (m == 0) ? "k_lane" : "k_lane + " + ms + " * K_THREADS";
+        (m_in_chunk == 0)
+            ? "k_lane"
+            : "k_lane + " + std::to_string(m_in_chunk) + " * K_THREADS";
     std::string shuffle_k_expr =
-        "ucl::WaveShuffle(k_loaded, ucl::Convert<uint>(" + lane_expr + "))";
+        (v_tile == 1) ? k_loaded_var
+                      : "ucl::WaveShuffle(" + k_loaded_var +
+                            ", ucl::Convert<uint>(" + lane_expr + "))";
     std::string shuffle_q_expr =
-        "ucl::WaveShuffle(q_loaded, ucl::Convert<uint>(" + lane_expr + "))";
+        (v_tile == 1) ? q_loaded_var
+                      : "ucl::WaveShuffle(" + q_loaded_var +
+                            ", ucl::Convert<uint>(" + lane_expr + "))";
 
     state_init_decls +=
         "  int k_base_" + ms + " = " + k_slice_expr + " * 4;\n" +
         "  StateType s0_" + ms +
-        " = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base_" + ms +
-        " + 0, h, v_slice, b));\n" + "  StateType s1_" + ms +
-        " = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base_" + ms +
-        " + 1, h, v_slice, b));\n" + "  StateType s2_" + ms +
-        " = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base_" + ms +
-        " + 2, h, v_slice, b));\n" + "  StateType s3_" + ms +
-        " = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base_" + ms +
-        " + 3, h, v_slice, b));\n";
+        " = ucl::Convert<StateType>(args.recurrent_state_out.Read(k_base_" +
+        ms + " + 0, h, v_slice, b));\n" + "  StateType s1_" + ms +
+        " = ucl::Convert<StateType>(args.recurrent_state_out.Read(k_base_" +
+        ms + " + 1, h, v_slice, b));\n" + "  StateType s2_" + ms +
+        " = ucl::Convert<StateType>(args.recurrent_state_out.Read(k_base_" +
+        ms + " + 2, h, v_slice, b));\n" + "  StateType s3_" + ms +
+        " = ucl::Convert<StateType>(args.recurrent_state_out.Read(k_base_" +
+        ms + " + 3, h, v_slice, b));\n";
 
     decay_step += "    s0_" + ms + " = s0_" + ms + " * decay_vec;\n" +
                   "    s1_" + ms + " = s1_" + ms + " * decay_vec;\n" +
@@ -1025,15 +1267,39 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
       args.output.Write(ucl::Convert<ActivationType>(out_sum), t, h, v_slice, b);
     })";
 
+  std::string valid_len_init =
+      has_valid_len
+          ? "int valid_len = clamp(args.valid_len.Read<int>(0, 0, 0, b).x, 0, "
+            "SEQ_LEN_EXPR);"
+          : "";
+  std::string loop_bound_expr = has_valid_len ? "valid_len" : "SEQ_LEN_EXPR";
+  std::string zero_pad_lane_cond =
+      can_use_shuffle ? "k_lane == 0" : "k_slice == 0";
+  std::string zero_pad_tail_step =
+      has_valid_len
+          ? "if (" + zero_pad_lane_cond +
+                ") {\n"
+                "    for (int t = valid_len; t < SEQ_LEN_EXPR; ++t) {\n"
+                "      args.output.Write(ucl::Init<ActivationType>(0.0), t, h, "
+                "v_slice, b);\n"
+                "    }\n"
+                "  }"
+          : "";
+
   absl::StrReplaceAll(
       {{"STATE_INIT_DECLS", absl::StripAsciiWhitespace(state_init_decls)},
+       {"VALID_LEN_INIT", valid_len_init},
+       {"LOOP_BOUND_EXPR", loop_bound_expr},
        {"DECAY_STEP", absl::StripAsciiWhitespace(decay_step)},
+       {"K_LOAD_STEP", absl::StripAsciiWhitespace(k_load_step)},
        {"KV_MEM_STEP", absl::StripAsciiWhitespace(kv_mem_step)},
        {"SIMD_REDUCE_KV_MEM", absl::StripAsciiWhitespace(simd_reduce_kv_mem)},
        {"UPDATE_STATE_STEP", absl::StripAsciiWhitespace(update_state_step)},
+       {"Q_LOAD_STEP", absl::StripAsciiWhitespace(q_load_step)},
        {"ATTN_OUT_STEP", absl::StripAsciiWhitespace(attn_out_step)},
        {"SIMD_REDUCE_ATTN_OUT",
         absl::StripAsciiWhitespace(simd_reduce_attn_out)},
+       {"ZERO_PAD_TAIL_STEP", zero_pad_tail_step},
        {"STATE_WRITE_OUT_STEP",
         absl::StripAsciiWhitespace(state_write_out_step)},
        {"SHARED_REDUCE_KV_MEM", shared_reduce_kv_mem},
@@ -1045,8 +1311,8 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
        {"V_TILE", std::to_string(v_tile)},
        {"K_THREADS", std::to_string(k_threads)},
        {"StateScalarType",
-        ::ml_drift::ToUclDataType(rec_state_in.GetDataType(), 1)},
-       {"StateType", ::ml_drift::ToUclDataType(rec_state_in.GetDataType(), 4)},
+        ::ml_drift::ToUclDataType(rec_state_out.GetDataType(), 1)},
+       {"StateType", ::ml_drift::ToUclDataType(rec_state_out.GetDataType(), 4)},
        {"ActivationScalarType",
         ::ml_drift::ToUclDataType(output.GetDataType(), 1)},
        {"ActivationType", ::ml_drift::ToUclDataType(output.GetDataType(), 4)},
