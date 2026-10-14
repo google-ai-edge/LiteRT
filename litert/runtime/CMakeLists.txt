@@ -76,6 +76,34 @@ if(APPLE)
   target_sources(litert_runtime PRIVATE metal_info.cc)
 endif()
 target_sources(litert_runtime PRIVATE open_cl_memory.cc open_cl_sync.cc)
+if(LITERT_ENABLE_GPU AND NOT APPLE AND NOT LITERT_PLATFORM_WINDOWS)
+  target_sources(litert_runtime PRIVATE
+    ${ml_drift_SOURCE_DIR}/ml_drift/common/data_type.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/common/gpu_info.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/common/precision.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/common/shape.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/common/util.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/common/task/buffer_desc.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/common/task/compiler_options.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/common/task/profiling_info.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/common/task/tensor_desc.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/common/task/util.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/cl/buffer.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/cl/cl_command_queue.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/cl/cl_context.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/cl/cl_device.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/cl/cl_event.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/cl/cl_image_format.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/cl/cl_kernel.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/cl/cl_memory.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/cl/cl_program.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/cl/opencl_wrapper.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/cl/tensor.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/cl/util.cc
+    ${ml_drift_SOURCE_DIR}/ml_drift/cl/default/util.cc
+  )
+endif()
+add_dependencies(litert_runtime mldrift_serialization_gen)
 
 # Link Apple frameworks for Metal and OpenGL interop
 if(APPLE)
@@ -92,6 +120,7 @@ target_include_directories(litert_runtime
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
+        $<BUILD_INTERFACE:${ml_drift_SOURCE_DIR}>
         $<BUILD_INTERFACE:${LITERT_XNNPACK_INCLUDE_DIR}>
         $<BUILD_INTERFACE:${LITERT_PTHREADPOOL_INCLUDE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opencl_headers>
@@ -111,6 +140,8 @@ target_link_libraries(litert_runtime
         litert_cc_internal
         litert_compiler_plugin
         absl::status
+        absl::status_builder
+        absl::status_macros
         absl::statusor
         absl::strings
         absl::span

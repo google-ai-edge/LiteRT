@@ -192,10 +192,12 @@ target_include_directories(litert_c_api
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${ml_drift_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opencl_headers>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
+add_dependencies(litert_c_api mldrift_serialization_gen)
 
 target_link_libraries(litert_c_api
     PUBLIC
@@ -205,6 +207,8 @@ target_link_libraries(litert_c_api
         litert_runtime
         litert_logging
         absl::status
+        absl::status_builder
+        absl::status_macros
         absl::statusor
         absl::strings
         absl::span
@@ -271,6 +275,8 @@ target_include_directories(litert_runtime_c_api_shared_lib
 )
 set(_litert_runtime_c_api_public_deps
     absl::status
+    absl::status_builder
+    absl::status_macros
     absl::statusor
     absl::strings
     absl::log
@@ -303,7 +309,7 @@ set(_litert_runtime_c_api_private_archives
     Threads::Threads
 )
 
-# Provide missing TensorFlow Lite GPU GL core objects for Android builds.
+# Provide missing TensorFlow Lite and ML Drift GPU GL core objects for Android builds.
 if(LITERT_PLATFORM_ANDROID)
   add_library(litert_tflite_gpu_gl_core STATIC
     ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/egl_context.cc
@@ -346,6 +352,46 @@ if(LITERT_PLATFORM_ANDROID)
       flatbuffers::flatbuffers)
   target_compile_definitions(litert_tflite_gpu_gl_core PRIVATE CL_DELEGATE_NO_GL EGL_NO_X11)
   list(APPEND _litert_runtime_c_api_private_archives litert_tflite_gpu_gl_core)
+
+  if(LITERT_ENABLE_GPU)
+    add_library(litert_mldrift_gpu_gl_core STATIC
+      ${ml_drift_SOURCE_DIR}/ml_drift/common/api_cl_gl_vk.cc
+      ${ml_drift_SOURCE_DIR}/ml_drift/common/api_common.cc
+      ${ml_drift_SOURCE_DIR}/ml_drift/cl/egl_sync.cc
+      ${ml_drift_SOURCE_DIR}/ml_drift/cl/gl_interop.cc
+      ${ml_drift_SOURCE_DIR}/ml_drift/gl/egl_context.cc
+      ${ml_drift_SOURCE_DIR}/ml_drift/gl/egl_environment.cc
+      ${ml_drift_SOURCE_DIR}/ml_drift/gl/egl_surface.cc
+      ${ml_drift_SOURCE_DIR}/ml_drift/gl/gl_buffer.cc
+      ${ml_drift_SOURCE_DIR}/ml_drift/gl/gl_errors.cc
+      ${ml_drift_SOURCE_DIR}/ml_drift/gl/gl_sync.cc
+      ${ml_drift_SOURCE_DIR}/ml_drift/gl/request_gpu_info.cc)
+    set_source_files_properties(
+      ${ml_drift_SOURCE_DIR}/ml_drift/cl/egl_sync.cc
+      PROPERTIES COMPILE_DEFINITIONS "EGL_EGLEXT_PROTOTYPES")
+    set_target_properties(litert_mldrift_gpu_gl_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    add_dependencies(litert_mldrift_gpu_gl_core mldrift_serialization_gen)
+    target_include_directories(litert_mldrift_gpu_gl_core
+      PUBLIC
+        $<BUILD_INTERFACE:${ml_drift_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/xnnpack/include>
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/pthreadpool-source/include>
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opencl_headers>
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opengl_headers/api>
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/vulkan_headers/include>)
+    target_link_libraries(litert_mldrift_gpu_gl_core
+      PUBLIC
+        absl::status
+        absl::status_builder
+        absl::status_macros
+        absl::statusor
+        absl::strings
+        absl::span
+        absl::flat_hash_map
+        flatbuffers::flatbuffers)
+    target_compile_definitions(litert_mldrift_gpu_gl_core PRIVATE EGL_NO_X11)
+    list(APPEND _litert_runtime_c_api_private_archives litert_mldrift_gpu_gl_core)
+  endif()
 endif()
 
 # Interface target that exposes static linking of the runtime C API and its
