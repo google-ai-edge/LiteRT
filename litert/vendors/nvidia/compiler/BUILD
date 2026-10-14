@@ -194,6 +194,19 @@ cc_library(
 )
 
 cc_library(
+    name = "qkv_norm_rope_plugin",
+    srcs = ["qkv_norm_rope_plugin.cc"],
+    hdrs = ["qkv_norm_rope_plugin.h"],
+    tags = ["manual"],
+    deps = [
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+)
+
+cc_library(
     name = "moe_plugin",
     srcs = ["moe_plugin.cc"],
     hdrs = ["moe_plugin.h"],
@@ -303,6 +316,7 @@ cc_library(
         ":decode_attention_plugin",
         ":int8_cache_write_plugin",
         ":moe_plugin",
+        ":qkv_norm_rope_plugin",
         ":subbyte_gemv_plugin",
         ":weight_store_builder",
         "//litert/c:litert_common",

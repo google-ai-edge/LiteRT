@@ -268,6 +268,7 @@ litert_dispatch_api(
         "//litert/vendors/nvidia/compiler:decode_attention_plugin",
         "//litert/vendors/nvidia/compiler:int8_cache_write_plugin",
         "//litert/vendors/nvidia/compiler:moe_plugin",
+        "//litert/vendors/nvidia/compiler:qkv_norm_rope_plugin",
         "//litert/vendors/nvidia/compiler:subbyte_gemv_plugin",
         "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
         "@local_cuda//:cuda_headers",

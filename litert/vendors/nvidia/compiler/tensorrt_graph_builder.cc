@@ -55,6 +55,7 @@
 #include "litert/vendors/nvidia/compiler/decode_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/int8_cache_write_plugin.h"
 #include "litert/vendors/nvidia/compiler/moe_plugin.h"
+#include "litert/vendors/nvidia/compiler/qkv_norm_rope_plugin.h"
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_rtx_plugin_compat.h"
 #include "litert/vendors/nvidia/compiler/weight_store_builder.h"
@@ -65,6 +66,7 @@
 #include "litert/vendors/nvidia/trtllm/global_attention.h"
 #include "litert/vendors/nvidia/trtllm/int2_gemv.h"
 #include "litert/vendors/nvidia/trtllm/int4_block_gemv.h"
+#include "litert/vendors/nvidia/trtllm/qkv_norm_rope.h"
 #include "litert/vendors/nvidia/trtllm/subbyte_gemm.h"
 #include "litert/vendors/nvidia/trtllm/tiled_attention.h"
 
@@ -934,6 +936,92 @@ std::optional<DecodeCacheUpdateLayout> DecodeCacheUpdateMode(const Op& op) {
 bool TensorHasShape(const Tensor& tensor,
                     std::initializer_list<int32_t> expected);
 
+// odml.qkv_norm_rope(qkv [1, n, (H + 2 Hkv) D] float, position int32 (n
+// values), q_scale [D], k_scale [D]) -> q [1, H, n, D], k and v [1, Hkv, n,
+// D]: the per-head RMS norms (values without a scale when has_v_norm) and
+// the half-rotation RoPE over depth * proportion dims. The attributes are
+// epsilon, has_v_norm, head_dim, max_timescale, min_timescale, num_heads,
+// num_kv_heads and proportion.
+struct QkvNormRopeOp {
+  LiteRtNvidiaQkvNormRopeParams params{};
+};
+
+std::optional<QkvNormRopeOp> ParseQkvNormRope(const Op& op) {
+  if (op.Inputs().size() != 4 || op.Outputs().size() != 3) {
+    return std::nullopt;
+  }
+  CompositeOptions options;
+  if (options.InitFromOp(op.Get()) != kLiteRtStatusOk ||
+      !options.attributes_map.has_value()) {
+    return std::nullopt;
+  }
+  const auto& map = options.attributes_map.value();
+  const auto heads = map["num_heads"];
+  const auto kv_heads = map["num_kv_heads"];
+  const auto depth = map["head_dim"];
+  if (heads.IsNull() || kv_heads.IsNull() || depth.IsNull()) {
+    return std::nullopt;
+  }
+  QkvNormRopeOp result;
+  auto& p = result.params;
+  p.heads = heads.AsInt32();
+  p.kv_heads = kv_heads.AsInt32();
+  p.depth = depth.AsInt32();
+  p.has_v_norm = !map["has_v_norm"].IsNull() && map["has_v_norm"].AsBool();
+  p.epsilon = map["epsilon"].IsNull() ? 1e-6f : map["epsilon"].AsFloat();
+  p.min_timescale =
+      map["min_timescale"].IsNull() ? 1.0f : map["min_timescale"].AsFloat();
+  p.max_timescale =
+      map["max_timescale"].IsNull() ? 10000.0f : map["max_timescale"].AsFloat();
+  const float proportion =
+      map["proportion"].IsNull() ? 1.0f : map["proportion"].AsFloat();
+  if (p.depth <= 0 || proportion < 0.0f || proportion > 1.0f) {
+    return std::nullopt;
+  }
+  p.rotary = static_cast<int32_t>(std::lround(p.depth * proportion));
+  p.rotary -= p.rotary % 2;
+  // Shapes: x [.., n, W], position with n values, scales [D], outputs.
+  auto x_type = op.Inputs()[0].RankedTensorType();
+  auto pos_type = op.Inputs()[1].RankedTensorType();
+  if (!x_type || !pos_type || x_type->Layout().Rank() < 2 ||
+      !IsFloatLike(op.Inputs()[0].ElementType()) ||
+      op.Inputs()[1].ElementType() != litert::ElementType::Int32 ||
+      op.Inputs()[0].HasWeights()) {
+    return std::nullopt;
+  }
+  const auto x_dims = x_type->Layout().Dimensions();
+  const int64_t width =
+      static_cast<int64_t>(p.heads + 2 * p.kv_heads) * p.depth;
+  if (x_dims.back() != width) return std::nullopt;
+  int64_t tokens = 1;
+  for (size_t d = 0; d + 1 < x_dims.size(); ++d) {
+    if (x_dims[d] <= 0) return std::nullopt;
+    tokens *= x_dims[d];
+  }
+  int64_t pos_count = 1;
+  for (int32_t d : pos_type->Layout().Dimensions()) pos_count *= d;
+  if (pos_count != tokens || tokens > std::numeric_limits<int32_t>::max()) {
+    return std::nullopt;
+  }
+  p.tokens = static_cast<int32_t>(tokens);
+  for (int i : {2, 3}) {
+    const Tensor scale = op.Inputs()[i];
+    if (scale.ElementType() != litert::ElementType::Float32 ||
+        !scale.HasWeights() ||
+        scale.Weights().Bytes().size() != static_cast<size_t>(p.depth) * 4) {
+      return std::nullopt;
+    }
+  }
+  const int32_t n = p.tokens;
+  if (!TensorHasShape(op.Outputs()[0], {1, p.heads, n, p.depth}) ||
+      !TensorHasShape(op.Outputs()[1], {1, p.kv_heads, n, p.depth}) ||
+      !TensorHasShape(op.Outputs()[2], {1, p.kv_heads, n, p.depth})) {
+    return std::nullopt;
+  }
+  if (!LiteRtNvidiaQkvNormRopeSupports(&p)) return std::nullopt;
+  return result;
+}
+
 // odml.sdpa_transposed(q [1, Hq, n, D], k [1, H, S, D], v [1, H, D, S],
 // mask bool [1, 1, 1 | n, S], params) -> [1, Hq, n, D]: the Hq / H query
 // heads of a KV head attend over the whole cache with the mask (false
@@ -1281,6 +1369,9 @@ Expected<bool> IsCompositeSupported(const Op& op) {
       }
     }
     return true;
+  }
+  if (name == "odml.qkv_norm_rope") {
+    return ParseQkvNormRope(op).has_value();
   }
   if (name == "odml.sdpa_transposed") {
     if (!SdpaTransposedGroup(op).has_value()) {
@@ -8239,10 +8330,72 @@ class TensorRtGraphBuilder {
     return SetOutputTensor(op.Outputs()[0], layer->getOutput(0));
   }
 
+  // The fused qkv norm and rotary embedding as one plugin launch.
+  Expected<void> LowerCompositeQkvNormRope(const Op& op) {
+    const auto parsed = ParseQkvNormRope(op);
+    if (!parsed.has_value()) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "Unsupported qkv_norm_rope composite");
+    }
+    const auto& p = parsed->params;
+    LITERT_ASSIGN_OR_RETURN(auto* x, GetTensor(op.Inputs()[0]));
+    LITERT_ASSIGN_OR_RETURN(x, AddCastTensor(x, nvinfer1::DataType::kBF16));
+    LITERT_ASSIGN_OR_RETURN(auto* positions, GetTensor(op.Inputs()[1]));
+    if (positions->getType() != nvinfer1::DataType::kINT32) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "qkv_norm_rope positions must be int32");
+    }
+    nvinfer1::ITensor* scales[2] = {nullptr, nullptr};
+    for (int i = 0; i < 2; ++i) {
+      const auto bytes = op.Inputs()[2 + i].Weights().Bytes();
+      std::vector<float> values(p.depth);
+      std::memcpy(values.data(), bytes.data(), values.size() * sizeof(float));
+      nvinfer1::Dims dims{};
+      dims.nbDims = 1;
+      dims.d[0] = p.depth;
+      LITERT_ASSIGN_OR_RETURN(
+          scales[i],
+          AddFloatConstant(
+              values, dims,
+              std::string(i == 0 ? "qkv_norm_q_scale_" : "qkv_norm_k_scale_") +
+                  std::to_string(op.Inputs()[2 + i].TensorIndex()),
+              nvinfer1::DataType::kFLOAT));
+    }
+    TrtPtr<nvinfer1::IPluginV3> plugin(CreateQkvNormRopePlugin(
+        p.heads, p.kv_heads, p.depth, p.rotary, p.has_v_norm != 0, p.epsilon,
+        p.min_timescale, p.max_timescale));
+    if (!plugin) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to create the qkv_norm_rope plugin");
+    }
+    nvinfer1::ITensor* inputs[] = {x, positions, scales[0], scales[1]};
+    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+        *network_, inputs, std::size(inputs), *plugin);
+    if (layer == nullptr || layer->getOutput(0) == nullptr ||
+        layer->getOutput(1) == nullptr || layer->getOutput(2) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the qkv_norm_rope plugin layer");
+    }
+    const std::string name =
+        "cuda_qkv_norm_rope_" + std::to_string(op.Inputs()[0].TensorIndex());
+    layer->setName(KeepName(UniqueName(name)));
+    owned_plugins_.push_back(std::move(plugin));
+    for (int o = 0; o < 3; ++o) {
+      layer->getOutput(o)->setName(
+          KeepName(UniqueName(name + "_" + std::to_string(o))));
+      LITERT_RETURN_IF_ERROR(
+          SetOutputTensor(op.Outputs()[o], layer->getOutput(o)));
+    }
+    return {};
+  }
+
   Expected<void> LowerComposite(const Op& op) {
     const std::string name = CompositeOpName(op);
     if (name == "odml.rms_norm") {
       return LowerCompositeRmsNorm(op);
+    }
+    if (name == "odml.qkv_norm_rope") {
+      return LowerCompositeQkvNormRope(op);
     }
     if (name == "odml.cache_update") {
       return LowerCompositeCacheUpdate(op);

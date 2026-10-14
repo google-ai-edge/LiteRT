@@ -30,6 +30,7 @@ cuda_library(
         "head_kernels.cu",
         "int2_gemv.cu",
         "int4_block_gemv.cu",
+        "qkv_norm_rope.cu",
         "subbyte_gemm.cu",
         "tiled_attention.cu",
     ],
@@ -40,6 +41,7 @@ cuda_library(
         "int2_gemv.h",
         "int4_block_gemv.cuh",
         "int4_block_gemv.h",
+        "qkv_norm_rope.h",
         "subbyte_gemm.h",
         "tiled_attention.h",
     ],
@@ -73,6 +75,7 @@ cc_library(
         "head_kernels.h",
         "int2_gemv.h",
         "int4_block_gemv.h",
+        "qkv_norm_rope.h",
         "subbyte_gemm.h",
         "tiled_attention.h",
     ],
@@ -80,6 +83,27 @@ cc_library(
     deps = [
         ":gemma4_head_kernels_archive",
         "@local_cuda//:cuda_headers",
+    ],
+)
+
+cc_test(
+    name = "qkv_norm_rope_test",
+    srcs = ["qkv_norm_rope_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
     ],
 )
 
