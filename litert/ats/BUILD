@@ -106,6 +106,7 @@ XNNPACK_DONT_REGISTER = [
     "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
     "QkvNormRope",  # XNNPACK does not support QkvNormRope composite op
     "RmsNorm",  # XNNPACK does not support RmsNorm composite op
+    "RuntimeBmm",  # XNNPACK does not support RuntimeBmm composite op
     "Swiglu",  # XNNPACK does not support SwiGLU op
     "SelectV2",  # XNNPACK does not support SelectV2
     "tfl\\.floor_div",  # XNNPACK does not support FloorDiv
@@ -189,6 +190,7 @@ YNNPACK_DONT_REGISTER = [
     "tfl\\.reduce_prod",  # YNNPACK does not support ReduceProd
     "tfl\\.tile",  # YNNPACK does not support Tile (used in MQA TransformerLayer)
     "Pad.*<([0-9]+x)*1(x[0-9]+)*>",  # YNNPACK does not support padding on extent-1 dimensions
+    "RuntimeBmm.*(f16|i4)",  # YNNPACK does not support mixed fp32_fp16_fp32 dot in f16 RuntimeBmm or int4 Dequantize in decomposition subgraph
     "SdpaTransposed",  # SdpaTransposed generator does not yet set logit_cap attribute for YNNPACK
     "FullyConnected.*(i4|u8)",  # YNNPACK delegate requires even output dims for INT4 weights and does not support UINT8 FullyConnected
     "Transpose.*[(][1-8]d_(i1|i16|u16|u32|i64|u64)<",  # YNNPACK Transpose supports FP32, FP16, INT4, INT8, UINT8, and INT32 types
@@ -610,6 +612,7 @@ litert_define_ats(
         "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
         "QkvNormRope",  # XNNPACK does not support QkvNormRope composite op
         "RmsNorm",  # XNNPACK does not support RmsNorm composite op
+        "RuntimeBmm",  # XNNPACK does not support RuntimeBmm composite op
         "Swiglu",  # XNNPACK does not support SwiGLU op
         "SelectV2",  # XNNPACK does not support SelectV2
         "tfl\\.floor_div",  # XNNPACK does not support FloorDiv
@@ -962,6 +965,7 @@ cc_library(
         ":register_group_norm",
         ":register_qkv_norm_rope",
         ":register_rms_norm",
+        ":register_runtime_bmm",
         ":register_sdpa",
         ":register_sdpa_transposed",
         ":register_swiglu",
@@ -1279,6 +1283,24 @@ cc_library(
         ":register",
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators:rms_norm",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_runtime_bmm",
+    testonly = True,
+    srcs = ["register_runtime_bmm.cc"],
+    hdrs = ["register_runtime_bmm.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:runtime_bmm",
+        "//tensor:datatypes",
         "//tflite/types:half",
     ],
 )

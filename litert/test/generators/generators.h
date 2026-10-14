@@ -45,6 +45,7 @@
 #include "litert/test/generators/comparison.h"  // IWYU pragma: export
 #include "litert/test/generators/rms_norm.h"  // IWYU pragma: export
 #include "litert/test/generators/group_norm.h"  // IWYU pragma: export
+#include "litert/test/generators/runtime_bmm.h"  // IWYU pragma: export
 // clang-format on
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_

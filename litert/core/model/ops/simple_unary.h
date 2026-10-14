@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
@@ -163,6 +164,16 @@ inline void ReferenceCast(const InT* input_data, size_t num_elements,
                           OutT* output_data) {
   for (size_t i = 0; i < num_elements; ++i) {
     output_data[i] = static_cast<OutT>(input_data[i]);
+  }
+}
+
+template <typename InT>
+inline void ReferenceDequantize(const InT* input_data, size_t num_elements,
+                                float* output_data, float scale,
+                                int64_t zero_point) {
+  const float zp = static_cast<float>(zero_point);
+  for (size_t i = 0; i < num_elements; ++i) {
+    output_data[i] = (static_cast<float>(input_data[i]) - zp) * scale;
   }
 }
 

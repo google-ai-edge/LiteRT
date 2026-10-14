@@ -91,6 +91,19 @@ Expected<void> ReferenceEvaluator::TensorData::AssignData(const void* data,
   } else if (element_type == kLiteRtElementTypeInt32) {
     const int32_t* ptr = static_cast<const int32_t*>(data);
     i32_data.assign(ptr, ptr + num_elements);
+  } else if (element_type == kLiteRtElementTypeInt8) {
+    const int8_t* ptr = static_cast<const int8_t*>(data);
+    i32_data.resize(num_elements);
+    for (size_t j = 0; j < num_elements; ++j) {
+      i32_data[j] = static_cast<int32_t>(ptr[j]);
+    }
+  } else if (element_type == kLiteRtElementTypeInt4) {
+    const auto* ptr = static_cast<const litert::tensor::int4_t*>(data);
+    i32_data.resize(num_elements);
+    for (size_t j = 0; j < num_elements; ++j) {
+      const auto& packed = ptr[j / 2];
+      i32_data[j] = static_cast<int32_t>((j % 2 == 0) ? packed.a : packed.b);
+    }
   } else if (element_type == kLiteRtElementTypeBool) {
     const bool* ptr = static_cast<const bool*>(data);
     i32_data.resize(num_elements);
@@ -683,6 +696,24 @@ void ReferenceEvaluator::RegisterStandardOps() {
   register_comparison_op(
       kLiteRtOpCodeTflLessEqual,
       [](auto... args) { litert::internal::ReferenceLessEqual(args...); });
+
+  RegisterOp(kLiteRtOpCodeTflDequantize,
+             [](const LiteRtOpT& op, const TensorEnv& env,
+                TensorData& out) -> Expected<void> {
+               const LiteRtTensorT* in_tensor = op.Inputs()[0];
+               const auto& in = env.at(in_tensor);
+               const auto& qparams = in_tensor->Qparams();
+               if (qparams.first == kLiteRtQuantizationPerTensor) {
+                 litert::internal::ReferenceDequantize(
+                     in.i32_data.data(), in.i32_data.size(),
+                     out.f32_data.data(), qparams.second.per_tensor.scale,
+                     qparams.second.per_tensor.zero_point);
+               } else {
+                 return Error(kLiteRtStatusErrorUnsupported,
+                              "Unsupported quantization type in Dequantize");
+               }
+               return {};
+             });
 }
 
 Expected<void> ReferenceEvaluator::ExecuteOp(const LiteRtOpT& op,

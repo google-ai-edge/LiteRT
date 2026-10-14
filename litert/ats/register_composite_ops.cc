@@ -23,6 +23,7 @@
 #include "litert/ats/register_group_norm.h"
 #include "litert/ats/register_qkv_norm_rope.h"
 #include "litert/ats/register_rms_norm.h"
+#include "litert/ats/register_runtime_bmm.h"
 #include "litert/ats/register_sdpa.h"
 #include "litert/ats/register_sdpa_transposed.h"
 #include "litert/ats/register_swiglu.h"
@@ -39,6 +40,7 @@ void RegisterCompositeOpsImpl(const AtsConf& options, size_t& test_id,
   RegisterGroupNorm(options, test_id, kDefaultIters, cap);
   RegisterQkvNormRope(options, test_id, kDefaultIters, cap);
   RegisterRmsNorm(options, test_id, kDefaultIters, cap);
+  RegisterRuntimeBmm(options, test_id, kDefaultIters, cap);
   RegisterSdpa(options, test_id, /*iters=*/20, cap);
   RegisterSdpaTransposed(options, test_id, kDefaultIters, cap);
   RegisterSwiglu(options, test_id, kDefaultIters, cap);
