@@ -58,6 +58,7 @@
 #include "litert/vendors/nvidia/cache_layout.h"
 #include "litert/vendors/nvidia/compiler/cache_update_plugin.h"
 #include "litert/vendors/nvidia/compiler/decode_attention_plugin.h"
+#include "litert/vendors/nvidia/compiler/int8_cache_write_plugin.h"
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 #include "litert/vendors/nvidia/dispatch/aot_artifact.h"
 #include "litert/vendors/nvidia/dispatch/dispatch_profiler.h"
@@ -1918,6 +1919,7 @@ class LiteRtDispatchInvocationContextT {
     litert::nvidia::EnsureSubbyteGemvPluginRegistered();
     litert::nvidia::EnsureDecodeAttentionPluginRegistered();
     litert::nvidia::EnsureCacheUpdatePluginRegistered();
+    litert::nvidia::EnsureInt8CacheWritePluginRegistered();
     LITERT_LOG(LITERT_INFO,
                "NVIDIA dispatch creating TensorRT runtime for function %s "
                "(inputs=%zu outputs=%zu engine_bytes=%zu)",

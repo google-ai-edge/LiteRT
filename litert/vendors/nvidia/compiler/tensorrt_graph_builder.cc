@@ -53,6 +53,7 @@
 #include "litert/vendors/nvidia/cache_layout.h"
 #include "litert/vendors/nvidia/compiler/cache_update_plugin.h"
 #include "litert/vendors/nvidia/compiler/decode_attention_plugin.h"
+#include "litert/vendors/nvidia/compiler/int8_cache_write_plugin.h"
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_rtx_plugin_compat.h"
 #include "litert/vendors/nvidia/compiler/weight_store_builder.h"
@@ -179,6 +180,14 @@ bool WindowedCacheReadsEnabled() {
 
 bool Int8CacheAttentionPluginEnabled() {
   return EnvEnabled("LITERT_NVIDIA_TENSORRT_INT8_CACHE_ATTENTION_PLUGIN",
+                    /*default_value=*/true);
+}
+
+// INT8 cache updates through the cache write plugin (the step's rows
+// quantized and written in place) instead of a scatter that copies the
+// whole cache every step.
+bool Int8CacheWriteEnabled() {
+  return EnvEnabled("LITERT_NVIDIA_TENSORRT_INT8_CACHE_WRITE",
                     /*default_value=*/true);
 }
 
@@ -4860,13 +4869,17 @@ class TensorRtGraphBuilder {
   // (the structure MatchInt8CacheAttentionBlock accepts) whose mask carries
   // a window. The lowering of the score product, the select and the value
   // product, or the attention plugin, then read the window's slices.
+  struct WindowedReadTally {
+    size_t reads = 0;
+    int32_t window = 0, length = 0, tokens = 0, seq = 0;
+  };
+
   Expected<void> FindWindowedCacheReads(const Subgraph& subgraph) {
     if (!WindowedCacheReadsEnabled() || !Fp16ActivationsEnabled() ||
         RuntimeBmmContextLimit() != 0) {
       return {};
     }
-    size_t num_reads = 0;
-    int32_t window = 0, length = 0, tokens = 0, seq = 0;
+    WindowedReadTally tally;
     for (const auto& update : subgraph.Ops()) {
       if (update.Code() != kLiteRtOpCodeShloComposite ||
           CompositeOpName(update) != "odml.cache_update" ||
@@ -4893,72 +4906,138 @@ class TensorRtGraphBuilder {
         if (use.user_arg_ind != 1 || !IsRuntimeBmm(scores_op)) {
           continue;
         }
-        const auto select_op = SingleUser(scores_op.Outputs()[0], 1);
-        if (!select_op || select_op->Code() != kLiteRtOpCodeTflSelectV2 ||
-            select_op->Inputs().size() != 3) {
-          continue;
-        }
-        const auto softmax_op = SingleUser(select_op->Outputs()[0], 0);
-        if (!softmax_op || softmax_op->Code() != kLiteRtOpCodeTflSoftmax) {
-          continue;
-        }
-        const auto values_op = SingleUser(softmax_op->Outputs()[0], 0);
-        if (!values_op || !IsRuntimeBmm(*values_op) ||
-            values_op->Inputs()[1].Get() != v_out.Get()) {
-          continue;
-        }
-        const Tensor mask = select_op->Inputs()[0];
-        auto mask_type = mask.RankedTensorType();
-        if (!mask_type || mask_type->Layout().Rank() != 4 ||
-            mask_type->Layout().Dimensions()[3] != cache_len) {
-          continue;
-        }
-        std::vector<WindowMaskPiece> pieces;
-        const auto w = WindowFromMask(mask, cache_len, &pieces);
-        if (!w.has_value() || pieces.empty()) {
-          continue;
-        }
-        // [s0, s0 + span) with s0 = pos - window + 1 rounded down to 64 holds
-        // every key a row of the chunk can see.
-        const int32_t span = ((*w + chunk + 62 + 63) / 64) * 64;
-        int64_t piece_rows = 0;
-        for (const auto& piece : pieces) piece_rows += piece.rows;
-        if (span >= cache_len ||
-            piece_rows != mask_type->Layout().Dimensions()[2]) {
-          continue;
-        }
-        WindowedCacheRead read;
-        read.k_out = k_out.Get();
-        read.v_out = v_out.Get();
-        read.mask = mask;
-        read.start_indices = update.Inputs()[5];
-        read.pieces = std::move(pieces);
-        read.mask_rows = static_cast<int32_t>(piece_rows);
-        read.scores = scores_op.Get();
-        read.select = select_op->Get();
-        read.values = values_op->Get();
-        read.seq = cache_len;
-        read.tokens = chunk;
-        read.window = *w;
-        read.length = span;
-        const size_t index = windowed_reads_.size();
-        windowed_reads_.push_back(read);
-        windowed_by_scores_[scores_op.Get()] = index;
-        windowed_by_select_[select_op->Get()] = index;
-        windowed_by_values_[values_op->Get()] = index;
-        ++num_reads;
-        window = *w;
-        length = span;
-        tokens = chunk;
-        seq = cache_len;
+        LITERT_RETURN_IF_ERROR(
+            MatchWindowedCacheRead(scores_op, k_out, v_out, cache_len, chunk,
+                                   update.Inputs()[5], &tally));
       }
     }
-    if (num_reads != 0) {
+    // Caches that are subgraph inputs: the MTP drafter attends over the base
+    // model's caches and writes none of its own. The value cache is the value
+    // product's second operand; the row position comes from the mask.
+    for (const auto& k : subgraph.Inputs()) {
+      auto k_type = k.RankedTensorType();
+      if (!Int8CacheQuantization(k) || !k_type ||
+          k_type->Layout().Rank() != 4) {
+        continue;
+      }
+      const int32_t cache_len =
+          static_cast<int32_t>(k_type->Layout().Dimensions()[2]);
+      for (const auto& use : k.Uses()) {
+        const Op scores_op = use.user;
+        if (use.user_arg_ind != 1 || !IsRuntimeBmm(scores_op)) {
+          continue;
+        }
+        const auto v = ValueCacheOfBlock(scores_op);
+        if (!v || !v->IsSubgraphInput() || !Int8CacheQuantization(*v)) {
+          continue;
+        }
+        LITERT_RETURN_IF_ERROR(MatchWindowedCacheRead(
+            scores_op, k, *v, cache_len, /*chunk=*/0, std::nullopt, &tally));
+      }
+    }
+    if (tally.reads != 0) {
       LITERT_LOG(LITERT_INFO,
                  "NVIDIA TensorRT-RTX windowing %zu attention blocks to %d of "
                  "%d keys (window %d, %d new tokens)",
-                 num_reads, length, seq, window, tokens);
+                 tally.reads, tally.length, tally.seq, tally.window,
+                 tally.tokens);
     }
+    return {};
+  }
+
+  // The value cache of an attention block, from its score product:
+  // scores -> select_v2 -> softmax -> values product, whose second operand it
+  // is. Nullopt when the chain is not that.
+  static std::optional<Tensor> ValueCacheOfBlock(const Op& scores_op) {
+    const auto select_op = SingleUser(scores_op.Outputs()[0], 1);
+    if (!select_op || select_op->Code() != kLiteRtOpCodeTflSelectV2 ||
+        select_op->Inputs().size() != 3) {
+      return std::nullopt;
+    }
+    const auto softmax_op = SingleUser(select_op->Outputs()[0], 0);
+    if (!softmax_op || softmax_op->Code() != kLiteRtOpCodeTflSoftmax) {
+      return std::nullopt;
+    }
+    const auto values_op = SingleUser(softmax_op->Outputs()[0], 0);
+    if (!values_op || !IsRuntimeBmm(*values_op) ||
+        values_op->Inputs().size() < 2) {
+      return std::nullopt;
+    }
+    return values_op->Inputs()[1];
+  }
+
+  // One candidate block of FindWindowedCacheReads, from its score product.
+  // `chunk` is the number of rows a cache update writes; 0 for a cache that
+  // is a subgraph input, whose rows are those of the mask's position tensor.
+  Expected<void> MatchWindowedCacheRead(const Op& scores_op,
+                                        const Tensor& k_out,
+                                        const Tensor& v_out, int32_t cache_len,
+                                        int32_t chunk,
+                                        std::optional<Tensor> start_indices,
+                                        WindowedReadTally* tally) {
+    const auto select_op = SingleUser(scores_op.Outputs()[0], 1);
+    if (!select_op || select_op->Code() != kLiteRtOpCodeTflSelectV2 ||
+        select_op->Inputs().size() != 3) {
+      return {};
+    }
+    const auto softmax_op = SingleUser(select_op->Outputs()[0], 0);
+    if (!softmax_op || softmax_op->Code() != kLiteRtOpCodeTflSoftmax) {
+      return {};
+    }
+    const auto values_op = SingleUser(softmax_op->Outputs()[0], 0);
+    if (!values_op || !IsRuntimeBmm(*values_op) ||
+        values_op->Inputs()[1].Get() != v_out.Get()) {
+      return {};
+    }
+    const Tensor mask = select_op->Inputs()[0];
+    auto mask_type = mask.RankedTensorType();
+    if (!mask_type || mask_type->Layout().Rank() != 4 ||
+        mask_type->Layout().Dimensions()[3] != cache_len) {
+      return {};
+    }
+    std::vector<WindowMaskPiece> pieces;
+    const auto w = WindowFromMask(mask, cache_len, &pieces);
+    if (!w.has_value() || pieces.empty()) {
+      return {};
+    }
+    int64_t piece_rows = 0;
+    int64_t most_rows = 0;
+    for (const auto& piece : pieces) {
+      piece_rows += piece.rows;
+      most_rows = std::max(most_rows, piece.rows);
+    }
+    const int32_t tokens = chunk > 0 ? chunk : static_cast<int32_t>(most_rows);
+    // [s0, s0 + span) with s0 = pos - window + 1 rounded down to 64 holds
+    // every key a row of the chunk can see.
+    const int32_t span = ((*w + tokens + 62 + 63) / 64) * 64;
+    if (tokens <= 0 || span >= cache_len ||
+        piece_rows != mask_type->Layout().Dimensions()[2]) {
+      return {};
+    }
+    WindowedCacheRead read;
+    read.k_out = k_out.Get();
+    read.v_out = v_out.Get();
+    read.mask = mask;
+    read.start_indices = start_indices;
+    read.pieces = std::move(pieces);
+    read.mask_rows = static_cast<int32_t>(piece_rows);
+    read.scores = scores_op.Get();
+    read.select = select_op->Get();
+    read.values = values_op->Get();
+    read.seq = cache_len;
+    read.tokens = tokens;
+    read.window = *w;
+    read.length = span;
+    const size_t index = windowed_reads_.size();
+    windowed_reads_.push_back(read);
+    windowed_by_scores_[scores_op.Get()] = index;
+    windowed_by_select_[select_op->Get()] = index;
+    windowed_by_values_[values_op->Get()] = index;
+    ++tally->reads;
+    tally->window = *w;
+    tally->length = span;
+    tally->tokens = tokens;
+    tally->seq = cache_len;
     return {};
   }
 
@@ -4971,11 +5050,31 @@ class TensorRtGraphBuilder {
     if (read.start != nullptr) {
       return {};
     }
-    LITERT_ASSIGN_OR_RETURN(auto* start_indices,
-                            GetTensor(*read.start_indices));
-    LITERT_ASSIGN_OR_RETURN(auto* pos,
-                            SliceTensor1d(start_indices, /*start_index=*/2,
-                                          /*size=*/1));
+    nvinfer1::ITensor* pos = nullptr;
+    if (read.start_indices.has_value()) {
+      LITERT_ASSIGN_OR_RETURN(auto* start_indices,
+                              GetTensor(*read.start_indices));
+      LITERT_ASSIGN_OR_RETURN(pos, SliceTensor1d(start_indices,
+                                                 /*start_index=*/2,
+                                                 /*size=*/1));
+    } else {
+      // A cache that is a subgraph input (the MTP drafter): the smallest row
+      // position of the mask's position tensor [1, R, 1].
+      if (read.pieces.empty() || !read.pieces[0].positions.has_value()) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Windowed cache read has no position tensor");
+      }
+      LITERT_ASSIGN_OR_RETURN(auto* positions,
+                              GetTensor(*read.pieces[0].positions));
+      auto* reduce = network_->addReduce(
+          *positions, nvinfer1::ReduceOperation::kMIN,
+          /*reduceAxes=*/(1u << 1) | (1u << 2), /*keepDimensions=*/false);
+      if (reduce == nullptr || reduce->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to reduce the window's positions");
+      }
+      pos = reduce->getOutput(0);
+    }
     const nvinfer1::Dims one{1, {1}};
     const int32_t back = read.window - 1;
     const int32_t zero = 0;
@@ -5066,18 +5165,29 @@ class TensorRtGraphBuilder {
     return out;
   }
 
+  // The raw INT8 form of a cache: a cache update's output (scatter or cache
+  // write) or a subgraph input (the MTP drafter's caches).
+  nvinfer1::ITensor* RawInt8Cache(LiteRtTensor tensor) {
+    for (const auto* map : {&raw_output_map_, &raw_input_map_}) {
+      const auto raw = map->find(tensor);
+      if (raw != map->end() &&
+          raw->second->getType() == nvinfer1::DataType::kINT8) {
+        return raw->second;
+      }
+    }
+    return nullptr;
+  }
+
   Expected<nvinfer1::ITensor*> WindowKeySlice(WindowedCacheRead& read) {
     if (read.k_slice != nullptr) {
       return read.k_slice;
     }
     LITERT_RETURN_IF_ERROR(EnsureWindowIndices(read));
-    const auto raw = raw_output_map_.find(read.k_out);
-    if (raw == raw_output_map_.end() ||
-        raw->second->getType() != nvinfer1::DataType::kINT8) {
+    nvinfer1::ITensor* source = RawInt8Cache(read.k_out);
+    if (source == nullptr) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Windowed cache read has no raw INT8 key cache");
     }
-    nvinfer1::ITensor* source = raw->second;
     LITERT_ASSIGN_OR_RETURN(
         read.k_slice,
         WindowGather(source, read.indices, /*axis=*/2, "window_keys"));
@@ -5089,13 +5199,11 @@ class TensorRtGraphBuilder {
       return read.v_slice;
     }
     LITERT_RETURN_IF_ERROR(EnsureWindowIndices(read));
-    const auto raw = raw_output_map_.find(read.v_out);
-    if (raw == raw_output_map_.end() ||
-        raw->second->getType() != nvinfer1::DataType::kINT8) {
+    nvinfer1::ITensor* source = RawInt8Cache(read.v_out);
+    if (source == nullptr) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Windowed cache read has no raw INT8 value cache");
     }
-    nvinfer1::ITensor* source = raw->second;
     LITERT_ASSIGN_OR_RETURN(
         read.v_slice,
         WindowGather(source, read.indices, /*axis=*/3, "window_values"));
@@ -5710,6 +5818,33 @@ class TensorRtGraphBuilder {
         num_blocks += matched ? 1 : 0;
       }
     }
+    // Caches that are subgraph inputs (the MTP drafter attends over the base
+    // model's caches): the value cache is the value product's second operand.
+    for (const auto& k : subgraph.Inputs()) {
+      const auto k_quant = Int8CacheQuantization(k);
+      auto k_type = k.RankedTensorType();
+      if (!k_quant || !k_type || k_type->Layout().Rank() != 4) {
+        continue;
+      }
+      for (const auto& use : k.Uses()) {
+        const Op scores_op = use.user;
+        if (use.user_arg_ind != 1 || !IsRuntimeBmm(scores_op)) {
+          continue;
+        }
+        const auto v = ValueCacheOfBlock(scores_op);
+        if (!v || !v->IsSubgraphInput()) {
+          continue;
+        }
+        const auto v_quant = Int8CacheQuantization(*v);
+        if (!v_quant) {
+          continue;
+        }
+        LITERT_ASSIGN_OR_RETURN(
+            const bool matched,
+            MatchInt8CacheAttentionBlock(scores_op, k, *v, *k_quant, *v_quant));
+        num_blocks += matched ? 1 : 0;
+      }
+    }
     if (num_blocks != 0) {
       LITERT_LOG(LITERT_INFO,
                  "NVIDIA TensorRT-RTX fusing %zu attention blocks over INT8 "
@@ -5852,16 +5987,12 @@ class TensorRtGraphBuilder {
     nvinfer1::ITensor* v_cache = tensor_map_[block.v_out];
     if (block.int8_cache.has_value()) {
       // The quantized scatter lowering records the raw INT8 caches.
-      const auto raw_k = raw_output_map_.find(block.k_out);
-      const auto raw_v = raw_output_map_.find(block.v_out);
-      if (raw_k == raw_output_map_.end() || raw_v == raw_output_map_.end() ||
-          raw_k->second->getType() != nvinfer1::DataType::kINT8 ||
-          raw_v->second->getType() != nvinfer1::DataType::kINT8) {
+      k_cache = RawInt8Cache(block.k_out);
+      v_cache = RawInt8Cache(block.v_out);
+      if (k_cache == nullptr || v_cache == nullptr) {
         return Error(kLiteRtStatusErrorCompilation,
                      "INT8 cache attention block has no raw INT8 caches");
       }
-      k_cache = raw_k->second;
-      v_cache = raw_v->second;
     }
     nvinfer1::ITensor* mask = tensor_map_[block.mask];
     // A windowed block keeps the full caches and mask: the plugin reads
@@ -6778,6 +6909,96 @@ class TensorRtGraphBuilder {
   }
 
   // odml.cache_update: quantize both updates and scatter them into their
+  // The INT8 cache update as the cache write plugin: the step's rows
+  // quantized and written into the cache's output buffer, which LiteRT-LM
+  // binds to the cache input's memory, so nothing else moves (the plugin
+  // copies the cache first if the buffers differ). False when the caches
+  // are not a [1, H, S, D] key cache and a [1, H, D, S] (or [1, H, S, D])
+  // value cache updated with [1, H, T, D] rows, which keeps the scatter.
+  Expected<bool> LowerInt8CacheWrite(const Op& op, nvinfer1::ITensor* cache_k,
+                                     nvinfer1::ITensor* cache_v,
+                                     nvinfer1::ITensor* update_k,
+                                     nvinfer1::ITensor* update_v,
+                                     nvinfer1::ITensor* start_k,
+                                     nvinfer1::ITensor* start_v) {
+    const auto k_quant = Int8CacheQuantization(op.Outputs()[0]);
+    const auto v_quant = Int8CacheQuantization(op.Outputs()[1]);
+    if (!k_quant || !v_quant) {
+      return false;
+    }
+    const auto float_type = [](nvinfer1::DataType type) {
+      return type == nvinfer1::DataType::kHALF ||
+             type == nvinfer1::DataType::kBF16 ||
+             type == nvinfer1::DataType::kFLOAT;
+    };
+    const auto kd = cache_k->getDimensions();
+    const auto vd = cache_v->getDimensions();
+    const auto ud = update_k->getDimensions();
+    const auto uvd = update_v->getDimensions();
+    if (kd.nbDims != 4 || vd.nbDims != 4 || ud.nbDims != 4 || uvd.nbDims != 4 ||
+        !float_type(update_k->getType()) || !float_type(update_v->getType()) ||
+        cache_k->getType() != nvinfer1::DataType::kINT8 ||
+        cache_v->getType() != nvinfer1::DataType::kINT8) {
+      return false;
+    }
+    const int64_t heads = kd.d[1];
+    const int64_t seq = kd.d[2];
+    const int64_t depth = kd.d[3];
+    const int64_t tokens = ud.d[2];
+    if (kd.d[0] != 1 || ud.d[0] != 1 || ud.d[1] != heads || ud.d[3] != depth ||
+        tokens <= 0 || tokens > seq || seq == depth) {
+      return false;
+    }
+    for (int i = 0; i < 4; ++i) {
+      if (uvd.d[i] != ud.d[i]) return false;
+    }
+    bool value_columns = false;
+    if (vd.d[0] == 1 && vd.d[1] == heads && vd.d[2] == depth &&
+        vd.d[3] == seq) {
+      value_columns = true;
+    } else if (vd.d[0] != 1 || vd.d[1] != heads || vd.d[2] != seq ||
+               vd.d[3] != depth) {
+      return false;
+    }
+    // The row position: element 2 of the key cache's start indices; the
+    // value cache's partial axis is 3 when it is stored as columns.
+    LITERT_ASSIGN_OR_RETURN(auto* pos_k,
+                            SliceTensor1d(start_k, /*start_index=*/2,
+                                          /*size=*/1));
+    LITERT_ASSIGN_OR_RETURN(auto* pos_v,
+                            SliceTensor1d(start_v, value_columns ? 3 : 2,
+                                          /*size=*/1));
+    const struct {
+      nvinfer1::ITensor* cache;
+      nvinfer1::ITensor* update;
+      nvinfer1::ITensor* position;
+      bool columns;
+      std::pair<float, int32_t> quant;
+    } writes[2] = {{cache_k, update_k, pos_k, false, *k_quant},
+                   {cache_v, update_v, pos_v, value_columns, *v_quant}};
+    for (int i = 0; i < 2; ++i) {
+      TrtPtr<nvinfer1::IPluginV3> plugin(CreateInt8CacheWritePlugin(
+          writes[i].columns, writes[i].quant.first, writes[i].quant.second));
+      if (!plugin) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to create CUDA INT8 cache write plugin");
+      }
+      std::array<nvinfer1::ITensor*, 3> inputs = {
+          writes[i].cache, writes[i].update, writes[i].position};
+      auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(*network_, inputs.data(),
+                                                       inputs.size(), *plugin);
+      if (layer == nullptr || layer->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to add CUDA INT8 cache write plugin layer");
+      }
+      layer->setName(KeepName(UniqueName("int8_cache_write")));
+      owned_plugins_.push_back(std::move(plugin));
+      LITERT_RETURN_IF_ERROR(
+          SetQuantizedScatterOutput(op.Outputs()[i], layer->getOutput(0)));
+    }
+    return true;
+  }
+
   // int8 caches (the second one through a [0,1,3,2] transpose), mirroring
   // the decomposition without its inlined index glue.
   Expected<void> LowerCompositeCacheUpdate(const Op& op) {
@@ -6901,6 +7122,15 @@ class TensorRtGraphBuilder {
     LITERT_ASSIGN_OR_RETURN(auto* start_b, GetTensor(op.Inputs()[6]));
     LITERT_ASSIGN_OR_RETURN(auto* cache_a, GetRawInt8Tensor(op.Inputs()[3]));
     LITERT_ASSIGN_OR_RETURN(auto* cache_b, GetRawInt8Tensor(op.Inputs()[4]));
+    if (Int8CacheWriteEnabled()) {
+      LITERT_ASSIGN_OR_RETURN(
+          const bool written,
+          LowerInt8CacheWrite(op, cache_a, cache_b, update_a, update_b, start_a,
+                              start_b));
+      if (written) {
+        return {};
+      }
+    }
     LITERT_ASSIGN_OR_RETURN(auto* q_a,
                             AddQuantizeTensor(update_a, op.Outputs()[0],
                                               nvinfer1::DataType::kINT8));

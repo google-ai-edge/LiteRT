@@ -49,7 +49,7 @@ def root_open(path):
 
 def entry(root, path, profile, kind):
     root, path = checked_path(root), checked_path(path)
-    if kind not in KINDS or profile not in ('e2b', 'e4b', '12b', 'shared'):
+    if kind not in KINDS or profile not in ('e2b', 'e4b', '12b', '26b', 'shared'):
         raise ValueError('Invalid cache ownership')
     relative = path.relative_to(root/'cache')
     parts = relative.parts
@@ -429,7 +429,7 @@ def main(args):
                   'settings':{k:v for k,v in data['settings'].items() if k not in ('metrics','state')},
                   'selected_signatures':(os.environ['NB_SIGNATURES'].split(',') if os.environ.get('NB_SIGNATURES') else [] if os.environ['NB_PROFILE'] in ('e2b','e4b') and os.environ['NB_PREFILL']!='128' else ['prefill_'+os.environ['NB_PREFILL'],'decode']+(['verify'] if os.environ['NB_MTP']=='true' else [])),
                   'backend':{'precision':'bf16','gemv':'cuda_gemv','shared_weights':1,'jit_handle':0,
-                             'fc_cap':536870912 if os.environ['NB_PROFILE']=='12b' else None},
+                             'fc_cap':536870912 if os.environ['NB_PROFILE'] in ('12b','26b') else None},
                   'device':{k:gpu[k] for k in ('name','uuid','driver')},
                   'sdk_sha256':digest(sdk/'lib/libtensorrt_rtx.so'),
                   'cuda_version':subprocess.check_output([os.environ['NB_CUDA']+'/bin/nvcc','--version'],text=True)}
@@ -461,12 +461,12 @@ PY
 usage() {
   cat <<'HELP'
 Usage:
-  run_head.sh report [--profile e2b|e4b|12b] [--model-file PATH]
+  run_head.sh report [--profile e2b|e4b|12b|26b] [--model-file PATH]
     [--workload short|8k|16k|30k|32k|128k] [--prefill 128|1024] [--mtp] [--signatures LIST]
     [--residency auto|lazy|resident] [--metrics verify,latency,memory|all]
     [--cache-state warm|runtime-cold|cold|all] [--weights shared|private|embedded]
-  run_head.sh cache list [--profile e2b|e4b|12b] [--kind build|aot|runtime|compiler|cpu]
-  run_head.sh cache clear (--all|--profile e2b|e4b|12b|--kind KIND) [--yes]
+  run_head.sh cache list [--profile e2b|e4b|12b|26b] [--kind build|aot|runtime|compiler|cpu]
+  run_head.sh cache clear (--all|--profile e2b|e4b|12b|26b|--kind KIND) [--yes]
 
 Defaults: 12b, short, prefill 1024 (long: 128), MTP off, all metrics, warm caches.
 --signatures LIST selects the graphs explicitly (comma-separated, for example
@@ -519,7 +519,7 @@ while (($#)); do
     *) die "Unknown/retired option '$option'. Use --cache-state and --metrics; configure paths through environment. See --help." ;;
   esac
 done
-[[ $profile == e2b || $profile == e4b || $profile == 12b ]] || die '--profile must be one of e2b, e4b or 12b'
+[[ $profile == e2b || $profile == e4b || $profile == 12b || $profile == 26b ]] || die '--profile must be one of e2b, e4b, 12b or 26b'
 [[ -z $kind || $kind =~ ^(build|aot|runtime|compiler|cpu)$ ]] || die 'Invalid cache kind'
 if [[ $action == cache ]]; then
   [[ $cache_action != list || $apply == no ]] || die '--yes is only for cache clear'
@@ -532,7 +532,7 @@ else
   [[ $cache_state =~ ^(warm|runtime-cold|cold|all)$ ]] || die 'Invalid cache state'
   [[ $weights =~ ^(shared|private|embedded)$ ]] || die 'Invalid weights'
   [[ $metrics == all || $metrics =~ ^(verify|latency|memory)(,(verify|latency|memory))*$ ]] || die 'Metrics must be a nonempty subset of verify,latency,memory'
-  [[ ( $profile != e2b && $profile != e4b ) || $workload =~ ^(short|8k|16k|30k)$ ]] || die 'E2B and E4B (32K-token models) support short, 8k, 16k and 30k'
+  [[ ( $profile != e2b && $profile != e4b && $profile != 26b ) || $workload =~ ^(short|8k|16k|30k)$ ]] || die 'E2B, E4B and 26B (32K-token models) support short, 8k, 16k and 30k'
   [[ -z $signatures || $signatures =~ ^[a-z_0-9]+(,[a-z_0-9]+)*$ ]] || die '--signatures takes a comma-separated list of signature names'
   [[ -z $signatures || $mtp == false || ,$signatures, == *,verify,* ]] || die '--mtp needs verify among --signatures'
   prefill=${prefill:-$([[ $workload =~ ^(32k|128k)$ ]] && echo 128 || echo 1024)}
@@ -550,6 +550,7 @@ resolve_paths() {
   local model_name=gemma-4-12B-it
   [[ $profile != e2b ]] || model_name=gemma-4-E2B-it
   [[ $profile != e4b ]] || model_name=gemma-4-E4B-it
+  [[ $profile != 26b ]] || model_name=gemma-4-26B-moe  # the MoE model: prefill_1024 and decode only
   export NB_MODEL=$(realpath -m "${model:-$NB_LM/../models/$model_name-litert-lm/$model_name.litertlm}")
   export NB_BUILD_RT=$NB_ROOT/cache/build/litert NB_BUILD_LM=$NB_ROOT/cache/build/litert-lm
 }
@@ -641,14 +642,14 @@ export LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES=$NB_LAZY LITERT_NVIDIA_MTP_GPU_SA
 export LITERT_NVIDIA_TENSORRT_WEIGHT_STORE=$([[ $weights == embedded ]] && echo 0 || echo 1)
 export LITERT_NVIDIA_DISPATCH_SHARED_WEIGHT_SEGMENTS=$([[ $weights == private ]] && echo 0 || echo 1)
 export LITERT_NVIDIA_MEMORY_PROFILE=0 LITERT_NVIDIA_DISPATCH_PROFILE=0 LITERT_NVIDIA_DISPATCH_LAYER_PROFILE=0 LITERT_NVIDIA_DISPATCH_DUMP_IO=0
-[[ $profile != 12b ]] || export LITERT_NVIDIA_TENSORRT_MAX_FC_WEIGHT_BYTES=536870912
+[[ $profile != 12b && $profile != 26b ]] || export LITERT_NVIDIA_TENSORRT_MAX_FC_WEIGHT_BYTES=536870912
 export CUDA_CACHE_DISABLE=0 NB_CWD=$NB_LM
 selected=()
 # The static executor otherwise chooses E2B's larger graph despite the batch hint.
 # Keep the default E2B baseline unfiltered; select graphs for explicit prefill 128.
 if [[ -n $signatures ]]; then
   selected=("--selected_signatures=$signatures")
-elif [[ $profile == 12b || $prefill == 128 ]]; then
+elif [[ $profile == 12b || $profile == 26b || $prefill == 128 ]]; then
   signatures=prefill_$prefill,decode
   [[ $mtp != true ]] || signatures+=,verify
   selected=("--selected_signatures=$signatures")
