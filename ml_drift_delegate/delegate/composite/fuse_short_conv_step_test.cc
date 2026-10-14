@@ -218,11 +218,11 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepSuccessfully) {
       fused_node->operation.attributes);
   EXPECT_THAT(attr.conv_L_cache, Eq(kFilterSize));
 
-  // Check inputs: in_proj, conv_state, conv_weight
+  // Check inputs: in_proj, conv_weight (conv_state is dropped for in-place GPU
+  // state update).
   auto fused_inputs = graph.FindInputs(fused_node->id);
-  ASSERT_THAT(fused_inputs.size(), Eq(3));
+  ASSERT_THAT(fused_inputs.size(), Eq(2));
   EXPECT_THAT(fused_inputs[0]->id, Eq(in_proj_input->id));
-  EXPECT_THAT(fused_inputs[1]->id, Eq(conv_state_input->id));
 
   // Check outputs: final_out, next_state
   auto fused_outputs = graph.FindOutputs(fused_node->id);
@@ -447,12 +447,12 @@ TEST(FuseShortConvStepTest, FusesGatedShortConvStepWithBiasSuccessfully) {
       fused_node->operation.attributes);
   EXPECT_THAT(attr.conv_L_cache, Eq(kFilterSize));
 
-  // Check inputs: in_proj, conv_state, conv_weight, conv_bias (4 inputs)
+  // Check inputs: in_proj, conv_weight, conv_bias (3 inputs; conv_state is
+  // dropped for in-place GPU state update).
   auto fused_inputs = graph.FindInputs(fused_node->id);
-  ASSERT_THAT(fused_inputs.size(), Eq(4));
+  ASSERT_THAT(fused_inputs.size(), Eq(3));
   EXPECT_THAT(fused_inputs[0]->id, Eq(in_proj_input->id));
-  EXPECT_THAT(fused_inputs[1]->id, Eq(conv_state_input->id));
-  EXPECT_THAT(fused_inputs[3]->id, Eq(conv_bias_input->id));
+  EXPECT_THAT(fused_inputs[2]->id, Eq(conv_bias_input->id));
 
   // Check outputs: final_out, next_state
   auto fused_outputs = graph.FindOutputs(fused_node->id);
@@ -785,9 +785,9 @@ TEST(FuseShortConvStepIrModelTest, FusesGatedShortConvStepSuccessfully) {
   ASSERT_THAT(attr, NotNull());
   EXPECT_THAT(attr->conv_L_cache, Eq(3));
 
-  EXPECT_THAT(fused_op->inputs.size(), Eq(3));
+  EXPECT_THAT(fused_op->inputs.size(), Eq(2));
   EXPECT_THAT(fused_op->inputs[0], Eq(in_proj_input->id));
-  EXPECT_THAT(fused_op->inputs[1], Eq(conv_state_input->id));
+  EXPECT_THAT(fused_op->inputs[1], Eq(weight_val->id));
   EXPECT_THAT(fused_op->outputs.size(), Eq(2));
   EXPECT_THAT(fused_op->outputs[0], Eq(final_out->id));
   EXPECT_THAT(fused_op->outputs[1], Eq(next_state_val->id));
