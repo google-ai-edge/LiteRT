@@ -389,6 +389,157 @@ TEST(TensorRtGraphBuilderTest, CudaSubbyteGemvGroupSharesOneLaunch) {
   }
 }
 
+TEST(TensorRtGraphBuilderTest, FewRowsRunOnTheBatchedGemv) {
+  // A verify step: four activation rows through an INT4 group (two
+  // projections of one activation) and an INT2 projection run on the batched
+  // GEMV of the CUDA subbyte plugin, as decode does with one row, and match
+  // the FP32 reference. Neither product is one the tensor-core GEMM takes.
+  constexpr int32_t kM = 4;
+  constexpr int32_t kK = 64;
+  const std::array<int32_t, 3> rows = {8, 16, 24};
+  const std::array<LiteRtElementType, 3> types = {
+      kLiteRtElementTypeInt4, kLiteRtElementTypeInt4, kLiteRtElementTypeInt2};
+  setenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS", "cuda_gemv", 1);
+  LiteRtModelT model;
+  auto& graph = model.EmplaceSubgraph();
+  auto& input = graph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, kM, kK}));
+  input.SetName("input");
+  graph.Inputs().push_back(&input);
+  std::vector<std::vector<int8_t>> values(rows.size());
+  std::vector<std::vector<uint8_t>> packed(rows.size());
+  std::vector<std::vector<float>> scales(rows.size());
+  for (size_t f = 0; f < rows.size(); ++f) {
+    values[f].resize(static_cast<size_t>(rows[f]) * kK);
+    const int span = types[f] == kLiteRtElementTypeInt2 ? 4 : 16;
+    for (size_t i = 0; i < values[f].size(); ++i) {
+      values[f][i] = static_cast<int8_t>((i * 5 + f * 3) % span) - span / 2;
+    }
+    if (types[f] == kLiteRtElementTypeInt2) {
+      packed[f].assign(values[f].size() / 4, 0);
+      for (size_t i = 0; i < values[f].size(); ++i) {
+        packed[f][i / 4] |= (static_cast<uint8_t>(values[f][i]) & 3)
+                            << (2 * (i % 4));
+      }
+    } else {
+      packed[f] = PackInt4(values[f]);
+    }
+    auto& weights = graph.EmplaceTensor();
+    weights.SetType(MakeRankedTensorType(types[f], {rows[f], kK}));
+    weights.SetName("weights" + std::to_string(f));
+    SetWeightsFromUnownedBuffer(
+        weights.Weights(),
+        litert::BufferRef<uint8_t>(packed[f].data(), packed[f].size()));
+    scales[f].resize(rows[f]);
+    for (int32_t n = 0; n < rows[f]; ++n) {
+      scales[f][n] = 0.005f * (n + 1 + f);
+    }
+    const std::vector<int64_t> zero_points(rows[f], 0);
+    weights.SetQarams(MakePerChannelQuantization(scales[f], zero_points,
+                                                 /*quantized_dim=*/0, weights));
+    auto& output = graph.EmplaceTensor();
+    output.SetType(
+        MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, kM, rows[f]}));
+    output.SetName("output" + std::to_string(f));
+    graph.Outputs().push_back(&output);
+    auto& fc = graph.EmplaceOp();
+    fc.SetOpCode(kLiteRtOpCodeTflFullyConnected);
+    tflite::FullyConnectedOptionsT fc_options;
+    fc_options.keep_num_dims = true;
+    tflite::BuiltinOptionsUnion options;
+    options.Set(std::move(fc_options));
+    litert::internal::SetTflOptions(fc, std::move(options));
+    litert::internal::AttachInput(&input, fc);
+    litert::internal::AttachInput(&weights, fc);
+    litert::internal::AttachOutput(&output, fc);
+  }
+
+  auto built = litert::nvidia::BuildTensorRtEngine(
+      litert::compiler::Subgraph(LrtGetCompilerContext(), &graph));
+  unsetenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS");
+  ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+  ASSERT_EQ(built->output_names.size(), rows.size());
+
+  litert::nvidia::TensorRtLogger logger;
+  std::unique_ptr<nvinfer1::IRuntime> runtime(
+      nvinfer1::createInferRuntime(logger));
+  ASSERT_NE(runtime, nullptr);
+  std::unique_ptr<nvinfer1::ICudaEngine> engine(runtime->deserializeCudaEngine(
+      built->engine.data(), built->engine.size()));
+  ASSERT_NE(engine, nullptr);
+  std::unique_ptr<nvinfer1::IEngineInspector> inspector(
+      engine->createEngineInspector());
+  ASSERT_NE(inspector, nullptr);
+  const std::string layers = inspector->getEngineInformation(
+      nvinfer1::LayerInformationFormat::kONELINE);
+  // One group launch for the two INT4 projections, one for the INT2 one, and
+  // no TensorRT matmul.
+  EXPECT_NE(layers.find("cuda_subbyte_gemv_group_"), std::string::npos)
+      << layers;
+  size_t plugin_layers = 0;
+  for (size_t at = layers.find("cuda_subbyte_gemv_"); at != std::string::npos;
+       at = layers.find("cuda_subbyte_gemv_", at + 1)) {
+    if (layers.compare(at, 23, "cuda_subbyte_gemv_slice") != 0) {
+      ++plugin_layers;
+    }
+  }
+  EXPECT_EQ(plugin_layers, 2u) << layers;
+  EXPECT_EQ(layers.find("Matrix Multiply"), std::string::npos) << layers;
+
+  std::unique_ptr<nvinfer1::IExecutionContext> context(
+      engine->createExecutionContext());
+  ASSERT_NE(context, nullptr);
+  std::vector<float> activations(static_cast<size_t>(kM) * kK);
+  for (size_t i = 0; i < activations.size(); ++i) {
+    activations[i] = 0.25f * static_cast<float>((i % 7) - 3) +
+                     0.125f * static_cast<float>(i / kK);
+  }
+  void* device_input = nullptr;
+  ASSERT_EQ(cudaMalloc(&device_input, activations.size() * sizeof(float)),
+            cudaSuccess);
+  ASSERT_EQ(
+      cudaMemcpy(device_input, activations.data(),
+                 activations.size() * sizeof(float), cudaMemcpyHostToDevice),
+      cudaSuccess);
+  ASSERT_TRUE(
+      context->setTensorAddress(built->input_names[0].c_str(), device_input));
+  std::vector<void*> device_outputs(rows.size(), nullptr);
+  for (size_t f = 0; f < rows.size(); ++f) {
+    ASSERT_EQ(cudaMalloc(&device_outputs[f],
+                         static_cast<size_t>(kM) * rows[f] * sizeof(float)),
+              cudaSuccess);
+    ASSERT_TRUE(context->setTensorAddress(built->output_names[f].c_str(),
+                                          device_outputs[f]));
+  }
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+  ASSERT_TRUE(context->enqueueV3(stream));
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  for (size_t f = 0; f < rows.size(); ++f) {
+    std::vector<float> actual(static_cast<size_t>(kM) * rows[f]);
+    ASSERT_EQ(cudaMemcpy(actual.data(), device_outputs[f],
+                         actual.size() * sizeof(float), cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    for (int32_t m = 0; m < kM; ++m) {
+      for (int32_t n = 0; n < rows[f]; ++n) {
+        float expected = 0.0f;
+        for (int32_t i = 0; i < kK; ++i) {
+          expected += Bf16ToFloat(FloatToBf16(
+                          activations[static_cast<size_t>(m) * kK + i])) *
+                      values[f][n * kK + i];
+        }
+        expected *= scales[f][n];
+        EXPECT_NEAR(actual[static_cast<size_t>(m) * rows[f] + n], expected,
+                    0.02f * std::fabs(expected) + 1e-3f)
+            << "fc=" << f << " m=" << m << " n=" << n;
+      }
+    }
+    EXPECT_EQ(cudaFree(device_outputs[f]), cudaSuccess);
+  }
+  EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+  EXPECT_EQ(cudaFree(device_input), cudaSuccess);
+}
+
 TEST(TensorRtGraphBuilderTest, WeightStoreKeepsPluginWeightsOutOfThePlan) {
   if (!litert::nvidia::TensorRtWeightHoldersSupported()) {
     GTEST_SKIP() << "Needs the weight placeholders of TensorRT-RTX 1.7.";

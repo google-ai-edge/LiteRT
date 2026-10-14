@@ -60,6 +60,7 @@
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
 #include "litert/vendors/nvidia/trtllm/global_attention.h"
+#include "litert/vendors/nvidia/trtllm/int2_gemv.h"
 #include "litert/vendors/nvidia/trtllm/subbyte_gemm.h"
 #include "litert/vendors/nvidia/trtllm/tiled_attention.h"
 
@@ -1996,8 +1997,13 @@ class TensorRtGraphBuilder {
     std::optional<TensorRtLlmHeadBuildData> trtllm_head;
     const std::optional<int> compute_capability =
         CurrentCudaComputeCapability();
+    // The external head carries a private copy of the vocabulary weights in
+    // the shard of its engine. With a weight store the head's fully connected
+    // op runs on the CUDA subbyte GEMV plugin instead, so every graph of the
+    // model (decode and verify) reads the one shared copy.
     if (compute_capability.has_value() &&
-        IsInt2GemvComputeCapabilitySupported(*compute_capability)) {
+        IsInt2GemvComputeCapabilitySupported(*compute_capability) &&
+        weight_store_ == nullptr) {
       LITERT_ASSIGN_OR_RETURN(trtllm_head, MatchTensorRtLlmHead(subgraph));
       if (trtllm_head.has_value()) {
         LITERT_LOG(
@@ -2819,7 +2825,7 @@ class TensorRtGraphBuilder {
 
   Expected<void> ValidateSubbyteGemvActivation(nvinfer1::ITensor* activation,
                                                nvinfer1::DataType compute_type,
-                                               int32_t columns) {
+                                               int32_t columns, int bit_width) {
     if (activation == nullptr || compute_type != nvinfer1::DataType::kBF16 ||
         activation->getType() != nvinfer1::DataType::kBF16) {
       return Error(kLiteRtStatusErrorUnsupported,
@@ -2830,14 +2836,11 @@ class TensorRtGraphBuilder {
       return Error(kLiteRtStatusErrorUnsupported,
                    "CUDA subbyte GEMV activation shape does not match weights");
     }
-    int64_t rows = 1;
-    for (int i = 0; i + 1 < dims.nbDims; ++i) {
-      rows *= dims.d[i];
-    }
-    if (rows != 1 && !CudaGemmTakes(rows, columns, /*bit_width=*/4)) {
+    const int64_t rows = GemmRows(activation);
+    if (!BatchedGemvTakes(rows) && !CudaGemmTakes(rows, columns, bit_width)) {
       return Error(kLiteRtStatusErrorUnsupported,
-                   "CUDA subbyte GEMV requires static M=1, or rows the CUDA "
-                   "GEMM takes");
+                   "CUDA subbyte GEMV requires a few static rows, or rows the "
+                   "CUDA GEMM takes");
     }
     return {};
   }
@@ -2850,6 +2853,12 @@ class TensorRtGraphBuilder {
       rows *= dims.d[i];
     }
     return rows;
+  }
+
+  // Whether `rows` static activation rows run on the batched GEMV: one row
+  // (decode) or the few rows of a verify step, in INT2 or INT4.
+  static bool BatchedGemvTakes(int64_t rows) {
+    return rows >= 1 && rows <= kLiteRtNvidiaSubbyteGemvMaxRows;
   }
 
   // Whether `rows` activation rows of `columns` dims run on the CUDA GEMM.
@@ -2867,11 +2876,19 @@ class TensorRtGraphBuilder {
            LiteRtNvidiaSubbyteGemmAvailable();
   }
 
+  // Whether a product the CUDA GEMM supports runs on it although it leaves
+  // part of the device idle. Without a weight store TensorRT's lowering is as
+  // fast for such products; with one, the plugin keeps the weights in the
+  // shared segments that every other graph of the model reads, where the
+  // TensorRT lowering would hold a private copy of them in each engine.
+  bool CudaGemmTakesSmallProducts() const { return weight_store_ != nullptr; }
+
   // A single projection and a row-concatenated group use the same plugin.
   // Keep constant names and layer creation order identical in both paths so
   // refit identities and TensorRT's generated graph are unchanged.
   //
-  // Many activation rows run as a GEMM over the same row-major weights.
+  // One or a few activation rows run as a batched GEMV, many rows as a GEMM
+  // over the same row-major weights.
   //
   // `members` are the row-major packed weights of the projections, in the
   // order of their rows. With a weight store they stay in the model file and
@@ -2883,7 +2900,7 @@ class TensorRtGraphBuilder {
       absl::Span<const float> scales, const std::string& suffix,
       const std::string& output_name, int32_t gate = 0) {
     const int64_t activation_rows = GemmRows(activation);
-    const bool gemm = activation_rows != 1 || gate != 0;
+    const bool gemm = !BatchedGemvTakes(activation_rows) || gate != 0;
     size_t packed_bytes = 0;
     for (const auto& member : members) {
       packed_bytes += member.size();
@@ -2894,7 +2911,8 @@ class TensorRtGraphBuilder {
           gate != 0 ? info.rows / 2 : info.rows, gate};
       if (!CudaGemmTakes(activation_rows, info.columns, info.bit_width) ||
           !LiteRtNvidiaSubbyteGemmSupports(&shape) ||
-          !LiteRtNvidiaSubbyteGemmFillsDevice(&shape)) {
+          (!CudaGemmTakesSmallProducts() &&
+           !LiteRtNvidiaSubbyteGemmFillsDevice(&shape))) {
         return Error(kLiteRtStatusErrorUnsupported,
                      "The CUDA GEMM does not take this product");
       }
@@ -3144,8 +3162,8 @@ class TensorRtGraphBuilder {
                                      nvinfer1::DataType compute_type) {
     LITERT_ASSIGN_OR_RETURN(auto info,
                             InspectSubbyteGemvWeights(gate_op.Inputs()[1]));
-    LITERT_RETURN_IF_ERROR(
-        ValidateSubbyteGemvActivation(activation, compute_type, info.columns));
+    LITERT_RETURN_IF_ERROR(ValidateSubbyteGemvActivation(
+        activation, compute_type, info.columns, info.bit_width));
     std::vector<absl::Span<const uint8_t>> members;
     std::vector<float> scales;
     std::string suffix;
@@ -3192,7 +3210,7 @@ class TensorRtGraphBuilder {
     // Over many activation rows, the projections of a later gated
     // feed-forward pair run as a launch of their own.
     std::unordered_set<LiteRtOp> gated;
-    if (GemmRows(activation) != 1) {
+    if (!BatchedGemvTakes(GemmRows(activation))) {
       for (const auto& use : op.Inputs()[0].Uses()) {
         const Op& user = use.user;
         if (use.user_arg_ind != 0 || user.Get() == op.Get() ||
@@ -3238,8 +3256,8 @@ class TensorRtGraphBuilder {
       return Error(kLiteRtStatusErrorCompilation,
                    "CUDA subbyte GEMV group does not start at the current op");
     }
-    LITERT_RETURN_IF_ERROR(
-        ValidateSubbyteGemvActivation(activation, compute_type, first.columns));
+    LITERT_RETURN_IF_ERROR(ValidateSubbyteGemvActivation(
+        activation, compute_type, first.columns, first.bit_width));
     const auto activation_dims = activation->getDimensions();
 
     std::vector<absl::Span<const uint8_t>> members;
@@ -3311,8 +3329,8 @@ class TensorRtGraphBuilder {
       const Tensor& tensor, nvinfer1::ITensor* activation,
       nvinfer1::DataType compute_type) {
     LITERT_ASSIGN_OR_RETURN(auto info, InspectSubbyteGemvWeights(tensor));
-    LITERT_RETURN_IF_ERROR(
-        ValidateSubbyteGemvActivation(activation, compute_type, info.columns));
+    LITERT_RETURN_IF_ERROR(ValidateSubbyteGemvActivation(
+        activation, compute_type, info.columns, info.bit_width));
     const auto q = tensor.PerChannelQuantization();
     const absl::Span<const uint8_t> members[] = {tensor.Weights().Bytes()};
     const std::string suffix = "_" + std::to_string(tensor.TensorIndex());
@@ -5558,6 +5576,9 @@ class TensorRtGraphBuilder {
         CudaGemmTakes(
             rows, input->getDimensions().d[input->getDimensions().nbDims - 1],
             op.Inputs()[1].ElementType() == litert::ElementType::Int4 ? 4 : 2);
+    // The few rows of a verify step run on the batched GEMV like decode.
+    const bool cuda_batched_gemv =
+        !static_m_is_one && rows > 1 && BatchedGemvTakes(rows);
     if (Fp16ActivationsEnabled() &&
         predequant_mode == PredequantMode::kCudaGemv && sub_byte_weights &&
         cuda_gemm) {
@@ -5576,7 +5597,7 @@ class TensorRtGraphBuilder {
     }
     if (Fp16ActivationsEnabled() &&
         predequant_mode == PredequantMode::kCudaGemv && sub_byte_weights &&
-        (static_m_is_one ||
+        (static_m_is_one || cuda_batched_gemv ||
          (cuda_gemm && GetCudaGemmMode() == CudaGemmMode::kAll))) {
       LITERT_ASSIGN_OR_RETURN(input, AddCastTensor(input, compute_type));
       auto fused = AddCudaSubbyteGemvGroup(op, input, compute_type);

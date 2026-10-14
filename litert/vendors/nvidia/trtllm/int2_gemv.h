@@ -34,4 +34,18 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16SubbytePerChannelGemv(
     void* output, int bit_width, int input_size, int output_size,
     cudaStream_t stream);
 
+// The most activation rows the batched GEMV takes: a verify step over the
+// draft tokens and the token they follow.
+constexpr int kLiteRtNvidiaSubbyteGemvMaxRows = 8;
+
+// Computes `rows` BF16 activation rows [rows, input_size] times the same
+// row-major INT2 or INT4 weights [output_size, input_size], giving
+// [rows, output_size] BF16 outputs with FP32 accumulation. Each thread reads
+// a weight word once and multiplies it with every row, so a few rows cost
+// about one row's memory traffic. 1 <= rows <= kLiteRtNvidiaSubbyteGemvMaxRows.
+extern "C" cudaError_t LiteRtNvidiaLaunchBf16SubbytePerChannelGemvRows(
+    const void* activation, const uint8_t* packed_weights, const void* scales,
+    void* output, int bit_width, int rows, int input_size, int output_size,
+    cudaStream_t stream);
+
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_TRTLLM_INT2_GEMV_H_

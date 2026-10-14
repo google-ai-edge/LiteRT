@@ -204,18 +204,19 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
     if (input_desc == nullptr || inputs == nullptr || outputs == nullptr) {
       return 1;
     }
-    // One activation row (decode) is a GEMV; many rows (prefill) are a GEMM
-    // on the tensor cores. Both read the row-major weights.
+    // One activation row (decode) or a few (a verify step) are a batched
+    // GEMV; many rows (prefill) are a GEMM on the tensor cores. Both read the
+    // row-major weights.
     const int64_t rows = ActivationRows(input_desc[0].dims, columns_);
     cudaError_t status = cudaErrorInvalidValue;
     const uint8_t* weights = Weights(input_desc[1].dims, inputs[1]);
     if (weights == nullptr) {
       // The weights input does not hold this plugin's weights.
     } else if (gemm_ == 0) {
-      if (rows == 1) {
-        status = LiteRtNvidiaLaunchBf16SubbytePerChannelGemv(
-            inputs[0], weights, inputs[2], outputs[0], bit_width_, columns_,
-            rows_, stream);
+      if (rows >= 1 && rows <= kLiteRtNvidiaSubbyteGemvMaxRows) {
+        status = LiteRtNvidiaLaunchBf16SubbytePerChannelGemvRows(
+            inputs[0], weights, inputs[2], outputs[0], bit_width_,
+            static_cast<int>(rows), columns_, rows_, stream);
       }
     } else {
       const LiteRtNvidiaGemmShape shape = GemmShape(rows);

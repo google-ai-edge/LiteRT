@@ -178,6 +178,133 @@ TEST(Gemma4HeadKernelsTest, MatchesCpuReference) {
   }
 }
 
+// Decodes a signed INT4 value of a row-major packed array.
+int8_t DecodeInt4(const std::vector<uint8_t>& packed, size_t index) {
+  const uint8_t bits = (packed[index / 2] >> (4 * (index % 2))) & 15;
+  return static_cast<int8_t>(static_cast<int>(bits ^ 8) - 8);
+}
+
+std::vector<uint8_t> MakeInt4Weights(int n, int k) {
+  std::vector<uint8_t> weights(static_cast<size_t>(n) * k / 2, 0);
+  for (int row = 0; row < n; ++row) {
+    for (int column = 0; column < k; ++column) {
+      const int8_t value =
+          static_cast<int8_t>((5 * row + 3 * column + row / 3) & 15) - 8;
+      const size_t index = static_cast<size_t>(row) * k + column;
+      weights[index / 2] |= (static_cast<uint8_t>(value) & 15)
+                            << (4 * (index % 2));
+    }
+  }
+  return weights;
+}
+
+TEST(Gemma4HeadKernelsTest, BatchedRowsMatchCpuReference) {
+  if (!litert::nvidia::IsInt2GemvComputeCapabilitySupported(
+          CurrentComputeCapability())) {
+    GTEST_SKIP() << "A native-W2-compatible CUDA GPU is unavailable";
+  }
+  // Every row count the batched GEMV takes, in INT2 and INT4, over a short
+  // input, Gemma 4 E2B's hidden size and an input long enough for the
+  // 256-thread blocks; 136 channels end in a partial block of 8.
+  constexpr int kN = 136;
+  for (const int bit_width : {2, 4}) {
+    for (const int k : {64, 1536, 4096}) {
+      const std::vector<uint8_t> weights =
+          bit_width == 2 ? MakeWeights(kN, k) : MakeInt4Weights(kN, k);
+      std::vector<uint16_t> scales(kN);
+      for (int row = 0; row < kN; ++row) {
+        scales[row] =
+            FloatToBf16Bits(0.0125f + 0.00025f * static_cast<float>(row % 29));
+      }
+      for (int rows = 1; rows <= kLiteRtNvidiaSubbyteGemvMaxRows; ++rows) {
+        SCOPED_TRACE(::testing::Message()
+                     << "bits=" << bit_width << " K=" << k << " rows=" << rows);
+        std::vector<uint16_t> activation(static_cast<size_t>(rows) * k);
+        for (int r = 0; r < rows; ++r) {
+          for (int i = 0; i < k; ++i) {
+            activation[static_cast<size_t>(r) * k + i] = FloatToBf16Bits(
+                static_cast<float>((i * 17 + r * 29) % 101 - 50) / 37.0f);
+          }
+        }
+        auto device_activation =
+            AllocateCuda(activation.size() * sizeof(uint16_t));
+        auto device_weights = AllocateCuda(weights.size());
+        auto device_scales = AllocateCuda(scales.size() * sizeof(uint16_t));
+        auto device_output =
+            AllocateCuda(static_cast<size_t>(rows) * kN * sizeof(uint16_t));
+        ASSERT_TRUE(device_activation && device_weights && device_scales &&
+                    device_output);
+        ASSERT_EQ(cudaMemcpy(device_activation.get(), activation.data(),
+                             activation.size() * sizeof(uint16_t),
+                             cudaMemcpyHostToDevice),
+                  cudaSuccess);
+        ASSERT_EQ(cudaMemcpy(device_weights.get(), weights.data(),
+                             weights.size(), cudaMemcpyHostToDevice),
+                  cudaSuccess);
+        ASSERT_EQ(cudaMemcpy(device_scales.get(), scales.data(),
+                             scales.size() * sizeof(uint16_t),
+                             cudaMemcpyHostToDevice),
+                  cudaSuccess);
+        ASSERT_EQ(LiteRtNvidiaLaunchBf16SubbytePerChannelGemvRows(
+                      device_activation.get(),
+                      static_cast<const uint8_t*>(device_weights.get()),
+                      device_scales.get(), device_output.get(), bit_width, rows,
+                      k, kN, /*stream=*/nullptr),
+                  cudaSuccess);
+        ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+        std::vector<uint16_t> actual(static_cast<size_t>(rows) * kN);
+        ASSERT_EQ(cudaMemcpy(actual.data(), device_output.get(),
+                             actual.size() * sizeof(uint16_t),
+                             cudaMemcpyDeviceToHost),
+                  cudaSuccess);
+        for (int r = 0; r < rows; ++r) {
+          for (int row = 0; row < kN; ++row) {
+            float accumulator = 0.0f;
+            for (int column = 0; column < k; ++column) {
+              const size_t index = static_cast<size_t>(row) * k + column;
+              const float weight = static_cast<float>(
+                  bit_width == 2 ? DecodeInt2(weights, index)
+                                 : DecodeInt4(weights, index));
+              accumulator =
+                  std::fma(Bf16BitsToFloat(
+                               activation[static_cast<size_t>(r) * k + column]),
+                           weight, accumulator);
+            }
+            const float expected = accumulator * Bf16BitsToFloat(scales[row]);
+            const float got =
+                Bf16BitsToFloat(actual[static_cast<size_t>(r) * kN + row]);
+            // The device sums in another order; one BF16 ulp of slack.
+            EXPECT_NEAR(got, expected, 1e-2f * std::fabs(expected) + 1e-3f)
+                << "r=" << r << " row=" << row;
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(Gemma4HeadKernelsTest, BatchedRowsRejectInvalidArguments) {
+  if (!litert::nvidia::IsInt2GemvComputeCapabilitySupported(
+          CurrentComputeCapability())) {
+    GTEST_SKIP() << "A native-W2-compatible CUDA GPU is unavailable";
+  }
+  auto buffer = AllocateCuda(4096);
+  ASSERT_TRUE(buffer);
+  const uint8_t* bytes = static_cast<const uint8_t*>(buffer.get());
+  EXPECT_EQ(LiteRtNvidiaLaunchBf16SubbytePerChannelGemvRows(
+                buffer.get(), bytes, buffer.get(), buffer.get(), 4,
+                /*rows=*/0, 64, 8, nullptr),
+            cudaErrorInvalidValue);
+  EXPECT_EQ(LiteRtNvidiaLaunchBf16SubbytePerChannelGemvRows(
+                buffer.get(), bytes, buffer.get(), buffer.get(), 4,
+                kLiteRtNvidiaSubbyteGemvMaxRows + 1, 64, 8, nullptr),
+            cudaErrorInvalidValue);
+  EXPECT_EQ(LiteRtNvidiaLaunchBf16SubbytePerChannelGemvRows(
+                buffer.get(), bytes, buffer.get(), buffer.get(), 3,
+                /*rows=*/2, 64, 8, nullptr),
+            cudaErrorInvalidValue);
+}
+
 TEST(Gemma4HeadKernelsTest, RejectsInvalidArguments) {
   EXPECT_EQ(LiteRtNvidiaLaunchF32ToBf16(
                 /*input=*/nullptr, /*output=*/nullptr, /*count=*/1,

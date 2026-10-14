@@ -190,6 +190,150 @@ TEST(SubbyteGemvPluginTest, SerializesAndMatchesReference) {
   }
 }
 
+TEST(SubbyteGemvPluginTest, FewRowsRunAsBatchedGemv) {
+  // A verify step: a few activation rows against INT2 or INT4 weights run on
+  // the batched GEMV of the plugin built without the GEMM, like decode.
+  struct Case {
+    int32_t bit_width;
+    int32_t rows;  // activation rows
+    int32_t channels;
+    int32_t columns;
+  };
+  for (const Case& test_case : {Case{4, 4, 130, 256}, Case{2, 4, 136, 1536},
+                                Case{4, 8, 64, 4096}, Case{2, 8, 24, 64}}) {
+    SCOPED_TRACE(::testing::Message()
+                 << "bits=" << test_case.bit_width << " rows=" << test_case.rows
+                 << " channels=" << test_case.channels
+                 << " columns=" << test_case.columns);
+    const int columns = test_case.columns;
+    const int channels = test_case.channels;
+    const int bit_width = test_case.bit_width;
+    std::vector<uint16_t> activation(static_cast<size_t>(test_case.rows) *
+                                     columns);
+    std::vector<uint8_t> packed(
+        static_cast<size_t>(channels) * columns * bit_width / 8, 0);
+    std::vector<uint16_t> scales(channels);
+    uint32_t state = 777u + channels + columns + bit_width;
+    const auto next = [&]() {
+      state = state * 1664525u + 1013904223u;
+      return state >> 8;
+    };
+    for (auto& value : activation) {
+      value =
+          FloatToBf16Bits(static_cast<float>(next() % 2048) / 512.0f - 2.0f);
+    }
+    for (auto& byte : packed) {
+      byte = static_cast<uint8_t>(next());
+    }
+    for (auto& scale : scales) {
+      scale =
+          FloatToBf16Bits(0.004f + static_cast<float>(next() % 8) / 1024.0f);
+    }
+
+    TestLogger logger;
+    std::unique_ptr<nvinfer1::IBuilder> builder(
+        nvinfer1::createInferBuilder(logger));
+    ASSERT_NE(builder, nullptr);
+    std::unique_ptr<nvinfer1::INetworkDefinition> network(
+        builder->createNetworkV2(/*flags=*/0));
+    ASSERT_NE(network, nullptr);
+    auto* activation_input =
+        network->addInput("activation", nvinfer1::DataType::kBF16,
+                          nvinfer1::Dims{3, {1, test_case.rows, columns}});
+    ASSERT_NE(activation_input, nullptr);
+    nvinfer1::Weights packed_weights{nvinfer1::DataType::kINT8, packed.data(),
+                                     static_cast<int64_t>(packed.size())};
+    auto* packed_layer = network->addConstant(
+        nvinfer1::Dims{1, {static_cast<int32_t>(packed.size())}},
+        packed_weights);
+    ASSERT_NE(packed_layer, nullptr);
+    nvinfer1::Weights scale_weights{nvinfer1::DataType::kBF16, scales.data(),
+                                    static_cast<int64_t>(scales.size())};
+    auto* scale_layer =
+        network->addConstant(nvinfer1::Dims{1, {channels}}, scale_weights);
+    ASSERT_NE(scale_layer, nullptr);
+    std::unique_ptr<nvinfer1::IPluginV3> plugin(CreateSubbyteGemvPlugin(
+        bit_width, channels, columns, /*gate=*/0, /*gemm=*/false));
+    ASSERT_NE(plugin, nullptr);
+    nvinfer1::ITensor* inputs[] = {activation_input, packed_layer->getOutput(0),
+                                   scale_layer->getOutput(0)};
+    auto* plugin_layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+        *network, inputs, std::size(inputs), *plugin);
+    ASSERT_NE(plugin_layer, nullptr);
+    auto* output = plugin_layer->getOutput(0);
+    ASSERT_NE(output, nullptr);
+    const auto output_dims = output->getDimensions();
+    ASSERT_EQ(output_dims.nbDims, 3);
+    EXPECT_EQ(output_dims.d[1], test_case.rows);
+    EXPECT_EQ(output_dims.d[2], channels);
+    output->setName("output");
+    network->markOutput(*output);
+    std::unique_ptr<nvinfer1::IBuilderConfig> config(
+        builder->createBuilderConfig());
+    ASSERT_NE(config, nullptr);
+    std::unique_ptr<nvinfer1::IHostMemory> serialized(
+        builder->buildSerializedNetwork(*network, *config));
+    ASSERT_NE(serialized, nullptr);
+    network.reset();
+    plugin.reset();
+
+    std::unique_ptr<nvinfer1::IRuntime> runtime(
+        nvinfer1::createInferRuntime(logger));
+    ASSERT_NE(runtime, nullptr);
+    std::unique_ptr<nvinfer1::ICudaEngine> engine(
+        runtime->deserializeCudaEngine(serialized->data(), serialized->size()));
+    ASSERT_NE(engine, nullptr);
+    std::unique_ptr<nvinfer1::IExecutionContext> context(
+        engine->createExecutionContext());
+    ASSERT_NE(context, nullptr);
+    uint16_t* device_activation = nullptr;
+    uint16_t* device_output = nullptr;
+    const size_t output_elements =
+        static_cast<size_t>(test_case.rows) * channels;
+    ASSERT_EQ(cudaMalloc(reinterpret_cast<void**>(&device_activation),
+                         activation.size() * sizeof(uint16_t)),
+              cudaSuccess);
+    ASSERT_EQ(cudaMalloc(reinterpret_cast<void**>(&device_output),
+                         output_elements * sizeof(uint16_t)),
+              cudaSuccess);
+    ASSERT_EQ(cudaMemcpy(device_activation, activation.data(),
+                         activation.size() * sizeof(uint16_t),
+                         cudaMemcpyHostToDevice),
+              cudaSuccess);
+    ASSERT_TRUE(context->setTensorAddress("activation", device_activation));
+    ASSERT_TRUE(context->setTensorAddress("output", device_output));
+    ASSERT_TRUE(context->enqueueV3(/*stream=*/nullptr));
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    std::vector<uint16_t> actual(output_elements);
+    ASSERT_EQ(
+        cudaMemcpy(actual.data(), device_output,
+                   actual.size() * sizeof(uint16_t), cudaMemcpyDeviceToHost),
+        cudaSuccess);
+    cudaFree(device_activation);
+    cudaFree(device_output);
+
+    const uint32_t mask = (1u << bit_width) - 1;
+    const int sign = 1 << (bit_width - 1);
+    for (int row = 0; row < test_case.rows; ++row) {
+      for (int channel = 0; channel < channels; ++channel) {
+        double sum = 0.0;
+        for (int column = 0; column < columns; ++column) {
+          const size_t index = static_cast<size_t>(channel) * columns + column;
+          const size_t bit = index * bit_width;
+          const int bits = (packed[bit / 8] >> (bit % 8)) & mask;
+          sum += static_cast<double>(
+                     Bf16BitsToFloat(activation[row * columns + column])) *
+                 ((bits ^ sign) - sign);
+        }
+        const double expected = sum * Bf16BitsToFloat(scales[channel]);
+        const double value = Bf16BitsToFloat(actual[row * channels + channel]);
+        EXPECT_NEAR(value, expected, 1e-2 * std::fabs(expected) + 1e-3)
+            << "row=" << row << " channel=" << channel;
+      }
+    }
+  }
+}
+
 TEST(SubbyteGemvPluginTest, ManyRowsRunAsGemm) {
   // Prefill: 128 activation rows against INT4 weights, plain and with the
   // gate and up projections of a feed-forward block fused (GELU gate).
