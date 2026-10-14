@@ -36,7 +36,6 @@ limitations under the License.
 namespace litert::tensor {
 namespace {
 
-using ::litert::tensor::IsOk;
 using ::testing::FloatNear;
 using ::testing::Pointwise;
 
@@ -81,11 +80,10 @@ TEST(MlDriftModelRunnerTest, MulWithScalarBroadcastsCorrectly) {
 
   const std::vector<float> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                          5.0f, 6.0f, 7.0f, 8.0f};
-  ASSERT_THAT(runner.SetInput("input_tensor", input_data), IsOk());
-  ASSERT_THAT(runner.SetInput("scalar_weight", std::vector<float>{0.5f}),
-              IsOk());
+  ASSERT_OK(runner.SetInput("input_tensor", input_data));
+  ASSERT_OK(runner.SetInput("scalar_weight", std::vector<float>{0.5f}));
 
-  ASSERT_THAT(runner.Run(), IsOk());
+  ASSERT_OK(runner.Run());
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto result,
                                   runner.GetFloatOutput("output_tensor"));
@@ -153,9 +151,9 @@ TEST(MlDriftModelRunnerTest, FullyConnectedInt4) {
 
   const std::vector<float> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                          5.0f, 6.0f, 7.0f, 8.0f};
-  ASSERT_THAT(runner.SetInput("input_tensor", input_data), IsOk());
+  ASSERT_OK(runner.SetInput("input_tensor", input_data));
 
-  ASSERT_THAT(runner.Run(), IsOk());
+  ASSERT_OK(runner.Run());
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto result,
                                   runner.GetFloatOutput("output_tensor"));
@@ -226,10 +224,10 @@ TEST(MlDriftModelRunnerTest, LstmOp) {
       0.4f,
   };
 
-  ASSERT_THAT(runner.SetInput("intermediate", intermediate_data), IsOk());
-  ASSERT_THAT(runner.SetInput("prev_state", prev_state_data), IsOk());
+  ASSERT_OK(runner.SetInput("intermediate", intermediate_data));
+  ASSERT_OK(runner.SetInput("prev_state", prev_state_data));
 
-  ASSERT_THAT(runner.Run(), IsOk());
+  ASSERT_OK(runner.Run());
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto new_state,
                                   runner.GetFloatOutput("new_state"));
@@ -285,13 +283,12 @@ TEST(MlDriftModelRunnerTest, MlDriftBufferIO) {
     absl::c_copy(std::vector<float>({1, 2, 3, 4}), locked.begin());
   }
 
-  ASSERT_THAT(runner.SetInput("input_tensor", *input_buf.get()), IsOk());
-  ASSERT_THAT(runner.SetInput("scalar_weight", std::vector<float>{2.0f}),
-              IsOk());
+  ASSERT_OK(runner.SetInput("input_tensor", *input_buf.get()));
+  ASSERT_OK(runner.SetInput("scalar_weight", std::vector<float>{2.0f}));
 
-  ASSERT_THAT(runner.Run(), IsOk());
+  ASSERT_OK(runner.Run());
 
-  ASSERT_THAT(runner.GetOutput("output_tensor", *output_buf.get()), IsOk());
+  ASSERT_OK(runner.GetOutput("output_tensor", *output_buf.get()));
 
   // Verify result.
   EXPECT_THAT(output_buf->Lock().As<const float>(),

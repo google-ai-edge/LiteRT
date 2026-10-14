@@ -34,7 +34,6 @@ limitations under the License.
 namespace litert::tensor {
 namespace {
 
-using ::litert::tensor::IsOk;
 using ::testing::FloatNear;
 using ::testing::Pointwise;
 
@@ -61,15 +60,15 @@ TEST(TraceMlDriftRunnerTest, BasicRun) {
   TraceMlDriftRunner runner(flat_inputs, flat_outputs,
                             ml_drift::CalculationsPrecision::kF32);
 
-  ASSERT_THAT(runner.BuildModel(), IsOk());
+  ASSERT_OK(runner.BuildModel());
 
   std::vector<float> in1 = {1.0f, 2.0f, 3.0f, 4.0f};
   std::vector<float> in2 = {5.0f, 6.0f, 7.0f, 8.0f};
 
-  ASSERT_THAT(runner.SetInput("input1", in1), IsOk());
-  ASSERT_THAT(runner.SetInput("input2", in2), IsOk());
+  ASSERT_OK(runner.SetInput("input1", in1));
+  ASSERT_OK(runner.SetInput("input2", in2));
 
-  ASSERT_THAT(runner.Run(), IsOk());
+  ASSERT_OK(runner.Run());
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto result, runner.GetFloatOutput("output"));
   const std::vector<float> expected = {12.0f, 16.0f, 20.0f, 24.0f};
@@ -142,7 +141,7 @@ TEST(TraceMlDriftRunnerTest, LinkWithCompiledRunner) {
   EXPECT_EQ(output_tensor.GetShape().size(), 4);
 
   auto buffer = output_tensor.GetBuffer();
-  ASSERT_THAT(buffer, IsOk());
+  ASSERT_OK(buffer);
   auto locked = buffer->Lock();
   auto span = std::move(locked).As<const float>();
   int product = 1;

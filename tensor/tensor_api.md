@@ -1,15 +1,16 @@
 # LiteRT Tensor API Documentation
 
 This document provides an overview of the LiteRT Tensor API, including core
-tensor manipulations, arithmetic operations, buffer management, and execution
-runners. This documentation is specific to the **LiteRT backend** and **LiteRT
-runners**.
+tensor manipulations, arithmetic operations, buffer management, backend
+lowerings, and execution runners (**LiteRT** flatbuffer/runtime backend and
+**ML Drift** direct GPU backend).
 
 ## Table of Contents
 1. [Overview](#overview)
 2. [Tensor API](#tensor-api)
     * [TensorHandle](#tensorhandle)
     * [Tensor](#tensor)
+    * [Backend Mixin Tags](#backend-mixin-tags)
     * [TensorInit](#tensorinit)
     * [Creation Functions](#creation-functions)
 3. [Buffer API](#buffer-api)
@@ -30,7 +31,12 @@ runners**.
 6. [LiteRT Runners](#litert-runners)
     * [CompiledModelRunner](#compiledmodelrunner)
     * [LitertDynamicRunner](#litertdynamicrunner)
-7. [Usage Example](#usage-example)
+7. [ML Drift Backend and Runners](#ml-drift-backend-and-runners)
+    * [AppendGpuModelBuilder](#appendgpumodelbuilder)
+    * [MlDriftModelRunner and MlDriftWebGpuModelRunner](#mldriftmodelrunner-and-mldriftwebgpumodelrunner)
+    * [CompiledMlDriftModelRunner and TraceMlDriftRunner](#compiledmldriftmodelrunner-and-tracemldriftrunner)
+    * [MlDriftModelStage](#mldriftmodelstage)
+8. [Usage Example](#usage-example)
 
 ---
 
@@ -77,6 +83,25 @@ to the underlying graph tensor representation.
 `Tensor<Mixins...>` is a template class that extends `TensorHandle` and allows
 mixing in additional functionality based on tags (e.g., backend-specific
 extensions).
+
+### Backend Mixin Tags
+
+A graph authored with `Tensor<Mixins...>` is lowered to one or more backends
+selected by its mixin tags:
+
+*   **`TfLiteMixinTag`** (`tensor/backends/tflite/arithmetic_tflite.h`):
+    Lowers operations to a TFLite flatbuffer (`ModelFactory`) for execution via
+    LiteRT's `CompiledModel`.
+*   **`MlDriftMixinTag`** (`tensor/backends/ml_drift/arithmetic_ml_drift.h`):
+    Lowers operations directly into an ML Drift `GpuModelBuilder` (`ToMlDrift`)
+    for direct GPU execution on OpenCL or WebGPU without serializing a
+    flatbuffer.
+*   **`XnnpackMixinTag`** (`tensor/backends/xnnpack/arithmetic.h`):
+    Lowers operations directly into an XNNPACK subgraph for CPU execution.
+
+Multiple tags can be combined on a single tensor type (e.g.,
+`Tensor<TfLiteMixinTag, MlDriftMixinTag>`) when the same graph definition needs
+to target more than one backend.
 
 ### TensorInit
 
@@ -140,15 +165,26 @@ Defined in `tensor/runners/litert/litert_buffer.h`.
 
 ### LitertBuffer
 
-`LitertBuffer` is a custom implementation of `MutableBuffer` that wraps a LiteRT
-`TensorBuffer`. This allows passing accelerated buffers (e.g., GPU) between
-runners using the high-level Tensor abstraction.
+`LitertBuffer` is a hardware-accelerated `Buffer` implementation that wraps a
+`litert::TensorBuffer`, providing zero-copy execution across LiteRT and ML
+Drift runners, asynchronous synchronization via `litert::Event`, and
+multi-hardware support (**OpenCL**, **WebGPU**, **Metal**, **AHWB**, **dmabuf**,
+**FastRPC**, and aligned **host memory**).
 
 #### Key Features:
 
-*   Wraps `litert::TensorBuffer`.
+*   Wraps `litert::TensorBuffer` with multi-hardware zero-copy factory methods:
+    *   `LitertBuffer::CreateManaged(...)` / `CreateManagedHost(...)`: Allocates
+        managed hardware or 64-byte aligned host memory buffers.
+    *   `LitertBuffer::CreateFromClBuffer(...)`: Wraps an existing OpenCL
+        `cl_mem` object without copies.
+    *   `LitertBuffer::CreateFromWebGpuBuffer(...)`: Wraps an existing WebGPU
+        `WGPUBuffer` without copies.
+    *   `LitertBuffer::CreateFromAhwb(...)`: Wraps an existing Android
+        `AHardwareBuffer` without copies.
 *   Implements `Lock()` and `LockMutable()` by duplicating the underlying
- `TensorBuffer` and locking it with appropriate modes (`kRead` or `kReadWrite`).
+    `TensorBuffer` and locking it with appropriate modes (`kRead` or
+    `kReadWrite`).
 
 ---
 
@@ -317,6 +353,99 @@ A runner that supports models with multiple signatures and dynamic execution.
     *   `absl::StatusOr<TensorHandle> GetOutput(const std::string& signature_name, const std::string& name)`
 *   **Execution**:
     *   `absl::Status Run(const std::string& signature_name)`: Runs a specific signature.
+
+---
+
+## ML Drift Backend and Runners
+
+The ML Drift backend lowers `Tensor<MlDriftMixinTag>` graphs directly into ML
+Drift's `GpuModelBuilder` and executes them on GPU via **OpenCL** or **WebGPU**
+without an intermediate `.tflite` flatbuffer.
+
+### AppendGpuModelBuilder
+
+Defined in `tensor/backends/ml_drift/ml_drift_conversion.h`.
+
+Lowers a Tensor API graph rooted at `outputs` into an
+`ml_drift::GpuModelBuilder`:
+
+*   `absl::StatusOr<absl::flat_hash_map<graph::Tensor, ml_drift::GpuModelBuilder::TensorHandle>> AppendGpuModelBuilder(MlDriftBuildContext& ctx, std::vector<TensorHandle> outputs)`
+
+### MlDriftModelRunner and MlDriftWebGpuModelRunner
+
+Defined in:
+
+*   `tensor/runners/ml_drift/ml_drift_model_runner_base.h`
+*   `tensor/runners/ml_drift/ml_drift_cl_model_runner.h` (`MlDriftClBackend`, `MlDriftModelRunner`)
+*   `tensor/runners/ml_drift/ml_drift_webgpu_model_runner.h` (`MlDriftWebGpuBackend`, `MlDriftWebGpuModelRunner`)
+
+Template classes (`MlDriftModelRunner<ModelFunctor, Inputs, Outputs>` for OpenCL
+and `MlDriftWebGpuModelRunner<ModelFunctor, Inputs, Outputs>` for WebGPU) that
+trace a model functor over `Inputs` and `Outputs` structs, pack float and
+quantized (`kI4` / `kI8`) weights, compile the `ml_drift::GpuModel`, and execute
+inference on the GPU.
+
+#### Key Methods:
+
+*   **Constructor**: `MlDriftModelRunner(model_func, inputs, outputs,
+    float_weights, int8_weights, build_gpu_model, precision, shared_env,
+    shared_build_ctx)`
+*   `absl::Status BuildModel(...)`: Builds and initializes the GPU model.
+*   `absl::Status SetInput(absl::string_view name, absl::Span<const T> data)`:
+    Uploads host input data (`float`, `fp16_t`, `int32_t`, `uint8_t`, `int8_t`,
+    `bool`, or `std::byte`).
+*   `absl::Status Run()` / `Enqueue()` / `Wait()`: Executes inference on the
+    GPU queue.
+*   `absl::StatusOr<std::vector<float>> GetFloatOutput(absl::string_view name)`
+    / `GetInt32Output(absl::string_view name)`: Reads output data back to host.
+*   `absl::Status AddTensorsAsOutputs(...)`: Exposes intermediate graph tensors
+    as outputs for `GraphProbe` debugging.
+
+### CompiledMlDriftModelRunner and TraceMlDriftRunner
+
+Defined in:
+
+*   `tensor/runners/ml_drift/compiled_ml_drift_model_runner.h`
+*   `tensor/backends/ml_drift/trace_ml_drift_runner.h`
+
+Runners that take flat `std::vector<TensorHandle>` input and output lists (and
+integrate with `compile<Runner>(model_func, inputs...)` in
+`tensor/internal/compile.h`).
+
+#### Key Methods (`CompiledMlDriftModelRunner<Backend>`):
+
+*   **Constructor**: `CompiledMlDriftModelRunner(flat_inputs, flat_outputs,
+    precision, shared_env)`
+*   `absl::Status Prepare(...)`: Rearranges constant `kI4` weights and lowers
+    the graph into `GpuModelBuilder`.
+*   `absl::Status BuildModel(...)`: Finalizes the `GpuModel` and initializes
+    the backend `InferenceContext`.
+*   `absl::Status SetInput(const std::string& name, TensorHandle& arg)`: Binds
+    input from a `TensorHandle` backed by a `LitertBuffer` (OpenCL / WebGPU) or
+    CPU buffer.
+*   `absl::Status Run()` / `Enqueue()` / `Wait()`: Runs the compiled GPU model.
+*   `absl::Status GetOutput(const std::string& name, Buffer& buffer)` /
+    `GetOutputBuffer(const std::string& name)`: Retrieves output into a device
+    or host `Buffer`.
+
+### MlDriftModelStage
+
+Defined in `tensor/runners/ml_drift/ml_drift_model_stage.h`.
+
+`MlDriftModelStage<Backend>` (aliased as `MlDriftClModelStage` for
+`MlDriftClBackend`) adapts a `CompiledMlDriftModelRunner<Backend>` to the
+`ModelStage` interface (`tensor/runners/model_chain.h`).
+It automatically derives `HardwareBufferDescriptor`s from the flat input/output
+`TensorHandle`s and exchanges `LitertBuffer`s zero-copy with adjacent stages in
+a `ModelChain`.
+
+#### Key Methods:
+
+*   `MlDriftModelStage<Backend>::Create(name, inputs, outputs, precision, env,
+    buffer_type, litert_env)`: Compiles the graph and returns a `ModelStage`.
+*   Implements `ModelStage` (`InputNames()`, `OutputNames()`,
+    `GetInputDescriptor()`, `GetOutputDescriptor()`, `SetInputBuffer()`,
+    `SetOutputBuffer()`, `Run()`).
 
 ---
 

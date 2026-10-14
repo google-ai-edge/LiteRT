@@ -9,8 +9,9 @@ a graph the way you would write math — `Add(a, b)`, `Softmax(x)`,
 `FullyConnected(x, w, b)` — and the same code can be:
 
 *   **serialized to a `.tflite` model** (no converter, no Python in the loop),
-*   **run directly on XNNPACK** (CPU, no model file in between), or on GPU /
-    NPU through LiteRT's accelerators,
+*   **run directly on XNNPACK** (CPU, no model file in between), **on GPU via
+    ML Drift** (OpenCL / WebGPU, no model file in between), or on GPU / NPU
+    through LiteRT's accelerators,
 *   **wired into a pipeline** where pre-processing, models and post-processing
     share hardware buffers with zero CPU copies.
 
@@ -48,7 +49,7 @@ under `tensor/`; headers are included as `tensor/...` and Bazel targets are
 |---|---|
 | You need a model that no converter produces — a custom attention layer, an image pre-processor, a mask compositor, a sampler. | Author it in C++ with 90+ ops (element-wise, activations, reshape/transpose/gather, reductions, matmul, conv, normalization, quantization…) and serialize it with `ModelFactory::Save`. The output is an ordinary `.tflite` that any LiteRT runtime (C++, Android, iOS, LiteRT.js) can run. |
 | Pre- and post-processing are hand-written loops that copy data in and out of the accelerator. | Express them as graphs and run them next to the core model; `ModelChain` and `LitertBuffer` keep activations on the device between stages. |
-| One graph, several targets. | `Tensor<Mixins...>` is templated on a backend tag. The same function builds a TFLite graph with `TfLiteMixinTag` (CPU, GPU or NPU through LiteRT) or an XNNPACK graph with `XnnpackMixinTag` — or both at once. |
+| One graph, several targets. | `Tensor<Mixins...>` is templated on a backend tag. The same function builds a TFLite graph with `TfLiteMixinTag` (CPU, GPU or NPU through LiteRT), an XNNPACK graph with `XnnpackMixinTag` (CPU), or an ML Drift GPU graph with `MlDriftMixinTag` (OpenCL / WebGPU) — or combines them at once. |
 | Is the GPU result right? | `GraphProbe` exposes any intermediate tensor as a model output so an optimized run can be compared against a CPU reference; a numerical test suite covers the op set per backend. |
 | Multiple entry points and dynamic shapes. | Multi-signature models (`AddSignature` per entry point, weights shared), dynamic runners, feedback loops for KV caches and recurrent state. |
 
@@ -65,6 +66,7 @@ for the exact video geometry.
 │ Tensor<Mixins...>  │    │ TfLiteMixinTag  → ModelFactory│    │ LiteRT CompiledModel   │
 │ arithmetic.h ops   │ →  │                   (.tflite)   │ →  │ (CPU / GPU / NPU)      │
 │ (lazy graph build) │    │ XnnpackMixinTag → XNNPACK     │    │ XnnpackRunner (CPU)    │
+│                    │    │ MlDriftMixinTag → ML Drift    │    │ MlDrift*Runner (GPU)   │
 └────────────────────┘    └──────────────────────────────┘    └────────────────────────┘
                                    ModelChain: stage → stage, shared LitertBuffers
 ```
@@ -76,30 +78,38 @@ for the exact video geometry.
     tensors. See [tensor_api.md › Core Op APIs](tensor_api.md#core-op-apis) for
     the full list.
 *   **Backends** (`backends/`) — a *mixin tag* selects how the graph is
-    lowered. The two tags can be combined (`Tensor<TfLiteMixinTag,
-    XnnpackMixinTag>`) when a graph must run on both backends.
+    lowered. Tags can be combined (`Tensor<TfLiteMixinTag,
+    XnnpackMixinTag, MlDriftMixinTag>`) when a graph must run across multiple
+    backends.
 
     | Tag | Header | Lowers to | Runs with |
     |---|---|---|---|
     | `TfLiteMixinTag` | `backends/tflite/arithmetic_tflite.h` | TFLite flatbuffer (`ModelFactory`) | any LiteRT `CompiledModel` on CPU, GPU or NPU; `runners/litert/*` |
     | `XnnpackMixinTag` | `backends/xnnpack/arithmetic.h` | XNNPACK subgraph | `runners/xnnpack:runner` (CPU) |
+    | `MlDriftMixinTag` | `backends/ml_drift/arithmetic_ml_drift.h` | ML Drift `GpuModel` (`AppendGpuModelBuilder`) | `runners/ml_drift/*` (OpenCL / WebGPU) and `backends/ml_drift:trace_ml_drift_runner` |
 
 *   **Buffers** (`buffer.h`, `runners/litert/litert_buffer.h`) — `Buffer` /
     `MutableBuffer` with RAII `Lock()`; `OwningCpuBuffer`, `SpanCpuBuffer`
     for host data; `LitertBuffer` wraps a LiteRT `TensorBuffer` (host, AHWB,
-    OpenCL, WebGPU) so stages can share device memory.
-*   **Runners** (`runners/litert/`) — `CompiledModelRunner` (build a graph and
-    compile it in one go), `LitertDynamicRunner` (load an existing `.tflite`,
-    name-based I/O), `CreateLambdaRunner` (a graph given as a lambda).
+    OpenCL, WebGPU, Metal) so LiteRT and ML Drift stages can share device memory
+    zero-copy.
+*   **Runners** (`runners/litert/`, `runners/xnnpack/`, `runners/ml_drift/`) —
+    `CompiledModelRunner` (build a graph and compile it in one go),
+    `LitertDynamicRunner` (load an existing `.tflite`, name-based I/O),
+    `CreateLambdaRunner` (a graph given as a lambda), `XnnpackRunner` (direct
+    CPU execution via XNNPACK), and the ML Drift GPU runners
+    (`MlDriftModelRunner`, `MlDriftWebGpuModelRunner`,
+    `CompiledMlDriftModelRunner`, `TraceMlDriftRunner`).
 *   **`ModelChain`** (`runners/model_chain.h`) — a DAG of `ModelStage`s
-    (`CompiledModelStage` for `.tflite` files, `FunctionalModelStage` for host
-    code). `Build()` negotiates buffer layouts at every boundary and
+    (`CompiledModelStage` for `.tflite` files, `MlDriftModelStage` /
+    `MlDriftClModelStage` for ML Drift GPU graphs, and `FunctionalModelStage`
+    for host code). `Build()` negotiates buffer layouts at every boundary and
     pre-allocates shared `LitertBuffer`s; `Execute()` runs the stages in
     topological order with no intermediate CPU copies.
 
 ## Quick start
 
-The same three-line graph, run two ways. The backend is chosen by the mixin
+The same three-line graph, run three ways. The backend is chosen by the mixin
 tag on `Tensor<...>`; everything else — ops, shapes, buffers — is identical.
 
 ### A. On CPU with XNNPACK (no model file, no LiteRT environment)
@@ -215,6 +225,59 @@ cc_binary(
 )
 ```
 
+### C. On GPU with ML Drift (`MlDriftMixinTag`, no model file)
+
+`MlDriftMixinTag` lowers the graph directly into an ML Drift `GpuModel` and
+executes it on OpenCL or WebGPU without serializing a `.tflite` intermediate.
+
+```cpp
+#include <iostream>
+#include <vector>
+
+#include "tensor/arithmetic.h"
+#include "tensor/backends/ml_drift/arithmetic_ml_drift.h"
+#include "tensor/backends/ml_drift/trace_ml_drift_runner.h"
+#include "tensor/tensor.h"
+#include "tensor/utils/macros.h"
+
+using namespace litert::tensor;
+using MldTensor = Tensor<MlDriftMixinTag>;
+
+int main() {
+  // 1. The graph.
+  MldTensor a({.name = "a", .type = Type::kFP32, .shape = {1, 1, 1, 3}});
+  MldTensor b({.name = "b", .type = Type::kFP32, .shape = {1, 1, 1, 3}});
+  MldTensor c = Add(a, b);
+  c.SetName("c");
+
+  // 2. Compile and run directly on GPU (OpenCL).
+  TraceMlDriftRunner runner({a, b}, {c});
+  LRT_TENSOR_ABORT_IF_ERROR(runner.BuildModel());
+  LRT_TENSOR_ABORT_IF_ERROR(runner.SetInput("a", std::vector<float>{1, 2, 3}));
+  LRT_TENSOR_ABORT_IF_ERROR(runner.SetInput("b", std::vector<float>{4, 5, 6}));
+  LRT_TENSOR_ABORT_IF_ERROR(runner.Run());
+
+  // 3. Read back output.
+  LRT_TENSOR_ASSIGN_OR_ABORT(auto out, runner.GetFloatOutput("c"));
+  for (float v : out) std::cout << v << ' ';   // 5 7 9
+}
+```
+
+```python
+# BUILD
+cc_binary(
+    name = "add_ml_drift",
+    srcs = ["add_ml_drift.cc"],
+    deps = [
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor/backends/ml_drift:arithmetic_ml_drift",
+        "//tensor/backends/ml_drift:trace_ml_drift_runner",
+        "//tensor/utils:macros",
+    ],
+)
+```
+
 ## Building the library
 
 ### Bazel, inside the LiteRT repository
@@ -264,8 +327,9 @@ deps = [
 | Serialize to `.tflite` (`ModelFactory`) | `//tensor/backends/tflite:tflite_flatbuffer_conversion`, `:arithmetic_tflite` |
 | Run a `.tflite` by name (`LitertDynamicRunner`) | `//tensor/runners/litert:litert_dynamic_runner` |
 | Build-and-run a graph (`CompiledModelRunner`, `CreateLambdaRunner`) | `//tensor/runners/litert:compiled_model_runner`, `:lambda_model_runner` |
-| Multi-stage zero-copy pipelines | `//tensor/runners:model_chain`, `//tensor/runners/litert:litert_buffer` |
+| Multi-stage zero-copy pipelines | `//tensor/runners:model_chain`, `//tensor/runners/litert:litert_buffer`, `//tensor/runners/ml_drift:ml_drift_model_stage` |
 | XNNPACK directly (no flatbuffer) | `//tensor/backends/xnnpack:arithmetic`, `//tensor/runners/xnnpack:runner` |
+| ML Drift GPU directly (no flatbuffer) | `//tensor/backends/ml_drift:arithmetic_ml_drift`, `//tensor/runners/ml_drift:ml_drift_cl_model_runner`, `:ml_drift_webgpu_model_runner`, `:compiled_ml_drift_model_runner`, `//tensor/backends/ml_drift:trace_ml_drift_runner` |
 
 ### CMake
 
@@ -285,8 +349,8 @@ For Android pass the NDK toolchain (`-DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/and
 -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26`); see
 [`examples/segmentation/README.md`](examples/segmentation/README.md#cmake-on-android)
 and [`examples/gemma3/README.md`](examples/gemma3/README.md). The CMake build
-covers the core and the TFLite backend; the XNNPACK backend and runner are
-Bazel-only today.
+covers the core and the TFLite backend; the XNNPACK and ML Drift backends and
+runners are Bazel-only today.
 
 ### WebAssembly
 
@@ -299,8 +363,8 @@ show the full recipe: core + TFLite backend + `ModelChain` built with
 
 ## Integrating into an existing app
 
-Four patterns, in increasing order of how much of your pipeline the Tensor API
-owns. They compose: the SAM 2 demo uses all of them.
+Five patterns, in increasing order of how much of your pipeline the Tensor API
+owns. They compose: the SAM 2 demo uses several of them together.
 
 ### 1. Author a model and ship the `.tflite`
 
@@ -417,6 +481,11 @@ auto features = chain.GetOutputBuffer("encode", "feat_s0").value();  // stays on
 
 *   A `FunctionalModelStage` runs host code (a lambda over locked input/output
     buffers) as a stage, for the bits that are not a model.
+*   An `MlDriftModelStage` (`MlDriftClModelStage` in
+    `runners/ml_drift/ml_drift_model_stage.h`) wraps a `Tensor<MlDriftMixinTag>`
+    graph and executes it on GPU via `CompiledMlDriftModelRunner`, sharing
+    `LitertBuffer`s zero-copy with adjacent `CompiledModelStage` or
+    `MlDriftModelStage` stages.
 *   Stages added without `Connect` are linked in order by matching names.
 *   `GetIntermediateBuffers()` exposes the shared buffers for inspection.
 *   Because every memory slot of SAM 2's tracker is an input, feeding the
@@ -505,9 +574,85 @@ Notes:
     [`examples/ops/transformer/transformer_ops_xnnpack.h`](examples/ops/transformer/transformer_ops_xnnpack.h)
     does this for RMSNorm, RoPE tables and attention masks.
 *   To compare against LiteRT or export, instantiate the same `GatedMlp` with
-    `Tensor<TfLiteMixinTag>` (pattern 1), or with both tags at once
-    (`Tensor<TfLiteMixinTag, XnnpackMixinTag>`) and run the graph on either
-    backend from one definition.
+    `Tensor<TfLiteMixinTag>` (pattern 1) or `Tensor<MlDriftMixinTag>` (pattern
+    5), or combine the tags (`Tensor<TfLiteMixinTag, XnnpackMixinTag,
+    MlDriftMixinTag>`) and run the graph on any backend from one definition.
+
+### 5. Run a graph directly on GPU with ML Drift
+
+For GPU paths where you want to compile and run a `Tensor` graph directly on
+OpenCL or WebGPU without serializing a `.tflite` flatbuffer, use
+`MlDriftMixinTag` (`backends/ml_drift/arithmetic_ml_drift.h`). It lowers ops
+directly into an ML Drift `GpuModelBuilder` (`AppendGpuModelBuilder` in
+`backends/ml_drift/ml_drift_conversion.h`) and pairs with several runners:
+
+*   **`MlDriftModelRunner`** (`runners/ml_drift/ml_drift_cl_model_runner.h`) and
+    **`MlDriftWebGpuModelRunner`**
+    (`runners/ml_drift/ml_drift_webgpu_model_runner.h`) — functor-based runners
+    for OpenCL and WebGPU that manage input/output structs, quantized (`kI4` /
+    `kI8`) and float weights, and intermediate tensor probing via
+    `AddTensorsAsOutputs`.
+*   **`CompiledMlDriftModelRunner<Backend>`**
+    (`runners/ml_drift/compiled_ml_drift_model_runner.h`) and
+    **`TraceMlDriftRunner`** (`backends/ml_drift/trace_ml_drift_runner.h`) —
+    trace-based runners taking flat input/output `TensorHandle` vectors or
+    integrating with `compile<Runner>(model_func, inputs...)`.
+*   **`MlDriftModelStage<Backend>` / `MlDriftClModelStage`**
+    (`runners/ml_drift/ml_drift_model_stage.h`) — a `ModelStage` adapter that
+    plugs an ML Drift GPU graph directly into `ModelChain` with zero-copy
+    `LitertBuffer` sharing.
+
+```cpp
+#include "tensor/arithmetic.h"
+#include "tensor/backends/ml_drift/arithmetic_ml_drift.h"
+#include "tensor/runners/ml_drift/ml_drift_cl_model_runner.h"
+#include "tensor/tensor.h"
+#include "tensor/utils/macros.h"
+
+using namespace litert::tensor;
+using TensorMLD = Tensor<MlDriftMixinTag>;
+
+struct Inputs {
+  TensorMLD x;
+  TensorMLD scale;
+  absl::flat_hash_map<std::string, TensorMLD*> tensors() {
+    return {{"x", &x}, {"scale", &scale}};
+  }
+};
+
+struct Outputs {
+  TensorMLD y;
+  absl::flat_hash_map<std::string, TensorMLD*> tensors() {
+    return {{"y", &y}};
+  }
+};
+
+Outputs ScaleModel(Inputs& in) {
+  return {.y = Mul(in.x, in.scale)};
+}
+
+absl::Status RunOnOpenCl() {
+  Inputs inputs = {
+      .x = TensorMLD({.type = Type::kFP32, .shape = {1, 1, 4}}),
+      .scale = TensorMLD({.type = Type::kFP32, .shape = {}}),
+  };
+  Outputs outputs;
+  absl::flat_hash_map<std::string, absl::Span<const float>> float_weights;
+  absl::flat_hash_map<std::string, absl::Span<const int8_t>> int8_weights;
+
+  MlDriftModelRunner<decltype(&ScaleModel), Inputs, Outputs> runner(
+      &ScaleModel, inputs, outputs, float_weights, int8_weights,
+      /*build_gpu_model=*/true);
+
+  LRT_TENSOR_RETURN_IF_ERROR(
+      runner.SetInput("x", std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f}));
+  LRT_TENSOR_RETURN_IF_ERROR(runner.SetInput("scale", std::vector<float>{2.0f}));
+  LRT_TENSOR_RETURN_IF_ERROR(runner.Run());
+  LRT_TENSOR_ASSIGN_OR_RETURN(std::vector<float> out,
+                              runner.GetFloatOutput("y"));
+  return absl::OkStatus();
+}
+```
 
 ## Verifying backends
 
@@ -551,11 +696,13 @@ tensor/
 ├── backends/
 │   ├── tflite/                       TfLiteMixinTag, ModelFactory (.tflite serialization)
 │   ├── xnnpack/, common_nnpack/      XnnpackMixinTag, XNNPACK subgraph lowering
+│   ├── ml_drift/                     MlDriftMixinTag, ML Drift GpuModel lowering, TraceMlDriftRunner
 │   └── testing/                      cross-backend numerical test suite
 ├── runners/
 │   ├── model_chain.h                 ModelChain, ModelStage, CompiledModelStage, FunctionalModelStage
 │   ├── litert/                       CompiledModelRunner, LitertDynamicRunner, LambdaRunner, LitertBuffer
-│   └── xnnpack/, common_nnpack/      XnnpackRunner
+│   ├── xnnpack/, common_nnpack/      XnnpackRunner
+│   └── ml_drift/                     MlDriftModelRunner (OpenCL), MlDriftWebGpuModelRunner, CompiledMlDriftModelRunner, MlDriftModelStage
 ├── internal/                         graph IR, GraphProbe, shape inference, mixin registry
 ├── utils/                            status macros (LRT_TENSOR_RETURN_IF_ERROR, ...), matchers
 ├── examples/                         see above
@@ -566,7 +713,7 @@ tensor/
 ## Further reading
 
 *   [`tensor_api.md`](tensor_api.md) — API reference: tensors, buffers, the op
-    list, LiteRT runners.
+    list, LiteRT and ML Drift runners.
 *   [`backends/testing/README.md`](backends/testing/README.md) — the numerical
     test suite.
 *   [LiteRT](https://github.com/google-ai-edge/LiteRT) — the runtime, C++ API

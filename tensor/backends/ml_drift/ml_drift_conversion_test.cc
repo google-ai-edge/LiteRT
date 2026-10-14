@@ -53,10 +53,6 @@ limitations under the License.
 #include "tensor/utils/macros.h"
 #include "tensor/utils/matchers.h"
 
-#if !defined(ASSERT_OK)
-#define ASSERT_OK(status) ASSERT_THAT(status, ::litert::tensor::IsOk())
-#endif  // !defined(ASSERT_OK)
-
 #define XNN_EXTRA_BYTES 16
 
 namespace litert::tensor {
