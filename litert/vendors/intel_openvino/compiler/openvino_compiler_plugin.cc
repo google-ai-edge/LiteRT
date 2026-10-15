@@ -23,15 +23,10 @@
 #include <streambuf>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include "openvino/core/any.hpp"
-#include "openvino/core/except.hpp"
-#include "openvino/frontend/tensorflow_lite/frontend.hpp"
-#include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
-#include "openvino/openvino.hpp"  // NOLINT
-#include "openvino/runtime/core.hpp"
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl  // NOLINT
 #include "absl/types/span.h"  // from @com_google_absl
@@ -60,6 +55,12 @@
 #include "litert/vendors/intel_openvino/compiler/openvino_soc_config.h"
 #include "litert/vendors/intel_openvino/compiler/weight_bank.h"
 #include "litert/vendors/intel_openvino/compiler/weights_to_parameters.h"
+#include "openvino/core/any.hpp"
+#include "openvino/core/except.hpp"
+#include "openvino/frontend/tensorflow_lite/frontend.hpp"
+#include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
+#include "openvino/openvino.hpp"  // NOLINT
+#include "openvino/runtime/core.hpp"
 
 namespace {
 
@@ -564,29 +565,67 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     // the SAME ascending-id order Serialize() lays out, so a Constant's WLCA
     // bin_offset equals its position in the temp file staged at dispatch.
     std::map<int32_t, size_t> pool_offset_of;
+
+    // Phase 1: build the shared pool. On the NPU path every partition is also
+    // converted and optimized once to learn which constants survive
+    // optimization; those graphs are then dropped, keeping only their
+    // deduplicated bytes and live names.
     if (share_weights) {
+      std::unordered_set<std::string> live_names;
       for (int p = 0; p < num_partitions; ++p) {
         auto subgraph = model.Subgraph(p);
-        if (subgraph.HasValue()) weight_bank.AddSubgraph(subgraph.Value());
+        if (!subgraph.HasValue()) {
+          LITERT_LOG(LITERT_ERROR, "Failed to retrieve Subgraph");
+          return kLiteRtStatusErrorCompilation;
+        }
+        weight_bank.AddSubgraph(subgraph.Value());
+
+        // Only the NPU path needs the optimized graph here, to harvest the
+        // Constants MoE lowering synthesizes (they don't exist before
+        // OptimizeModel) and to learn which ones they superseded. The GPU
+        // path resolves every weight by name out of AddSubgraph alone and
+        // never prunes, so building the graph twice would be pure cost.
+        if (!share_npu) continue;
+
+        LITERT_ASSIGN_OR_RETURN(
+            litert::openvino::OpenVinoCompileContext context,
+            litert::openvino::OpenVinoCompileContext::Create(
+                compiler_plugin->GetIntelOpenVinoOptions(), p));
+        LITERT_RETURN_IF_ERROR(context.ConfigureForSoc(soc_model));
+
+        std::shared_ptr<ov::frontend::tensorflow_lite::GraphIterator>
+            graph_delegate =
+                std::make_shared<litert::openvino::GraphIteratorDelegate>(
+                    compiler_plugin->ctx(), &subgraph.Value(),
+                    context.Device());
+        auto input_model = tflite_fe->load(graph_delegate);
+        auto ov_model = tflite_fe->convert(input_model);
+        context.OptimizeModel(ov_model);
+        litert::openvino::HarvestSharedConstants(ov_model, weight_bank,
+                                                 live_names);
       }
-      LITERT_LOG(LITERT_INFO, "Weight sharing (%s): %zu buffers, %zu bytes",
-                 share_device.c_str(), weight_bank.NumBuffers(),
-                 weight_bank.TotalBytes());
-      // Populate the GlobalGraph shared buffer pool. Use an ordered map keyed
-      // by BufferId so the pool is laid out in ascending id order (matching
-      // Serialize()), then assign each buffer its pool offset. The bytes are
-      // BORROWED from the WeightBank (views into the model's mmapped weights,
-      // which outlive this whole Compile call) -- no copy of the multi-GB pool.
-      std::map<uint32_t, absl::Span<const uint8_t>> ordered(
-          weight_bank.Buffers().begin(), weight_bank.Buffers().end());
-      size_t running_offset = 0;
-      for (const auto& [buffer_id, bytes] : ordered) {
-        global_graph.buffers.push_back({buffer_id, running_offset, bytes});
-        pool_offset_of[static_cast<int32_t>(buffer_id)] = running_offset;
-        running_offset += bytes.size();
+
+      LITERT_LOG(LITERT_INFO, "Weight sharing (%s): building shared pool",
+                 share_device.c_str());
+
+      // Assembles the final pool: ascending BufferId order (the layout
+      // Serialize() requires), pruning buffers no partition references
+      // anymore on the NPU path (see BuildPool).
+      const litert::openvino::PoolLayout layout = litert::openvino::BuildPool(
+          live_names, weight_bank, /*prune_dead=*/share_npu);
+      pool_offset_of = layout.OffsetMap();
+      global_graph.buffers.reserve(layout.buffers.size());
+      for (const auto& entry : layout.buffers) {
+        global_graph.buffers.push_back({static_cast<uint32_t>(entry.buffer_id),
+                                        entry.pool_offset, entry.bytes});
       }
     }
 
+    // Phase 2: rebuild each partition, alias its weights against the now-final
+    // pool, then compile and export it. Rebuilding costs a second
+    // load+convert+optimize, but keeping Phase 1's graphs alive would make peak
+    // memory scale with the partition count. Both phases must therefore produce
+    // the same graph, and so the same BufferIds.
     ov::Core core;
     for (int partition_idx = 0; partition_idx < num_partitions;
          ++partition_idx) {
@@ -597,12 +636,6 @@ LiteRtStatus LiteRtCompilerPluginCompile(
           litert::openvino::OpenVinoCompileContext::Create(
               compiler_plugin->GetIntelOpenVinoOptions(), partition_idx));
       LITERT_RETURN_IF_ERROR(context.ConfigureForSoc(soc_model));
-      if (share_npu) {
-        // NPU shared path: turn on NPUW/CWAI so export_model emits a weightless
-        // blob whose constants are referenced by WeightlessCacheAttribute
-        // bin_offset instead of baked in.
-        context.ConfigureForNpuWeightSharing();
-      }
 
       auto graph_name = absl::StrCat("Partition_", partition_idx);
       litert::Expected<litert::compiler::Subgraph> expected_subgraph =
@@ -618,7 +651,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         auto ov_model = tflite_fe->convert(input_model);
 
         // Run NPU-specific optimization passes.
-        context.OptimizeModel(ov_model);
+        const auto optimize_result = context.OptimizeModel(ov_model);
+        if (share_npu) {
+          // Must run after OptimizeModel: it configures NPUW from what the
+          // passes classified, which is knowable only once they have run.
+          context.ConfigureForNpuWeightSharing(
+              optimize_result.moe_is_multi_token_chunk);
+        }
 
         ov::AnyMap configs = context.ConfigsMap();
         std::map<std::string, uint32_t> const_map;
