@@ -21,6 +21,7 @@ package(
 
 cc_library(
     name = "op_wrapper",
+    srcs = ["op_wrapper.cc"],
     hdrs = ["op_wrapper.h"],
     deps = [
         "//litert/c:litert_common",
