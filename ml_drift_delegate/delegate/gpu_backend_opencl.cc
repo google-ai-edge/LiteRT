@@ -14,8 +14,13 @@
 
 #include "ml_drift_delegate/delegate/gpu_backend_opencl.h"
 
+#include <unistd.h>
+
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -253,6 +258,118 @@ GpuBackendOpenCl::CreateIOBufferWithSize(::ml_drift::DataType data_type,
   return std::make_unique<GpuIOBufferOpenCl>(env_, std::move(cl_buffer));
 }
 
+// Returns true if the device architecture supports host pointer I/O buffers.
+// On PowerVR Rogue/D-Series (Pixel 10 / Tensor G5), CL_MEM_USE_HOST_PTR is
+// supported and required to eliminate uncached bus readback stalls
+// (b/376383693).
+bool GpuBackendOpenCl::SupportsHostPtrIOBuffer(bool input) const {
+  if (force_host_ptr_io_buffer_) {
+    return true;
+  }
+  if (const char* env = std::getenv("MLDRIFT_ENABLE_HOST_PTR_IO_BUFFERS")) {
+    if (std::strcmp(env, "1") == 0 || std::strcmp(env, "true") == 0) {
+      return true;
+    }
+  }
+  const auto& info = env_->GetDevicePtr()->GetInfo();
+  // PowerVR architectures on Tensor G5 require CL_MEM_USE_HOST_PTR to bypass
+  // uncached memory mappings.
+  if (info.IsPowerVR()) {
+    return true;
+  }
+  // Future GPU architectures can be added here after cache coherency
+  // verification.
+  return false;
+}
+
+// OpenCL CL_MEM_USE_HOST_PTR requires host memory to be aligned to the OS
+// physical page boundary (typically 4096 bytes). On PowerVR kernel drivers
+// (PVRSRVWrapExtMemMIW), passing an unaligned host address fails with
+// CL_INVALID_HOST_PTR (-37).
+size_t GpuBackendOpenCl::GetHostPtrAlignment() const {
+  if (!SupportsHostPtrIOBuffer(/*input=*/true) &&
+      !SupportsHostPtrIOBuffer(/*input=*/false)) {
+    return 0;
+  }
+  size_t alignment = 4096;
+#if defined(_SC_PAGESIZE)
+  const int64_t page_size = sysconf(_SC_PAGESIZE);
+  if (page_size > 0 && static_cast<size_t>(page_size) > alignment) {
+    alignment = static_cast<size_t>(page_size);
+  }
+#endif
+  return alignment;
+}
+
+// Creates an OpenCL I/O buffer backed by host memory via CL_MEM_USE_HOST_PTR.
+//
+// Dual-path lifecycle:
+// 1. Zero-Copy Path: If `host_ptr` is non-null and meets
+//    `GetHostPtrAlignment()` (e.g. caller registered page-aligned memory
+//    via SetCustomAllocationForTensor), clCreateBuffer wraps `host_ptr`
+//    directly with CL_MEM_USE_HOST_PTR. Ownership is NOT assumed
+//    (`owns_host_ptr = false`). Both GPU kernels and the CPU client operate
+//    directly on the same physical memory.
+// 2. Internal Fallback Path: If `host_ptr` is null or unaligned (e.g. default
+//    TFLite arena memory), allocates internally-owned page-aligned memory via
+//    posix_memalign and wraps it with CL_MEM_USE_HOST_PTR
+//    (`owns_host_ptr = true`). This allows the delegate to reuse the internal
+//    host buffer across frames and safely synchronize with the TFLite arena via
+//    CPU memcpy (<0.08 ms).
+//
+// Hardware Cache Coherency:
+// Per OpenCL spec, accessing a CL_MEM_USE_HOST_PTR buffer directly on CPU
+// without clEnqueueMapBuffer / clEnqueueUnmapMemObject requires hardware cache
+// coherency upon clFinish() (guaranteed by backend_->WaitForCompletion()).
+// On PowerVR Rogue/D-Series (Tensor G5), hardware cache coherency is guaranteed
+// across CPU and GPU caches.
+absl::StatusOr<std::unique_ptr<GpuIOBuffer>>
+GpuBackendOpenCl::CreateHostIOBuffer(::ml_drift::DataType data_type,
+                                     size_t size, bool input, void* host_ptr) {
+  if (!SupportsHostPtrIOBuffer(input) || size == 0) {
+    return nullptr;
+  }
+  const size_t alignment = GetHostPtrAlignment();
+
+  // If a caller provides a custom host pointer, attempt to wrap it directly
+  // if it satisfies the required page alignment.
+  if (host_ptr != nullptr && alignment > 0 &&
+      (reinterpret_cast<uintptr_t>(host_ptr) % alignment == 0)) {
+    cl_int err = CL_SUCCESS;
+    cl_mem mem = ::ml_drift::cl::clCreateBuffer(
+        env_->context().context(), CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+        size, host_ptr, &err);
+    if (err == CL_SUCCESS) {
+      ::ml_drift::cl::Buffer cl_buffer(mem, size);
+      return std::make_unique<GpuIOBufferOpenCl>(env_, std::move(cl_buffer),
+                                                 /*is_host_ptr=*/true, host_ptr,
+                                                 /*owns_host_ptr=*/false);
+    }
+  }
+
+  // Fallback: allocate internally-owned host memory.
+  void* internal_host_ptr = nullptr;
+  const size_t alloc_size = (size + alignment - 1) & ~(alignment - 1);
+  if (posix_memalign(&internal_host_ptr, alignment, alloc_size) != 0) {
+    return nullptr;
+  }
+  std::memset(internal_host_ptr, 0, alloc_size);
+
+  cl_int err = CL_SUCCESS;
+  cl_mem mem = ::ml_drift::cl::clCreateBuffer(
+      env_->context().context(), CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+      alloc_size, internal_host_ptr, &err);
+  if (err != CL_SUCCESS) {
+    free(internal_host_ptr);
+    return absl::UnknownError(absl::StrCat(
+        "Failed to allocate host pointer buffer with clCreateBuffer: ", err));
+  }
+  ::ml_drift::cl::Buffer cl_buffer(mem, size);
+  return std::make_unique<GpuIOBufferOpenCl>(
+      env_, std::move(cl_buffer), /*is_host_ptr=*/true, internal_host_ptr,
+      /*owns_host_ptr=*/true);
+}
+
 absl::StatusOr<std::unique_ptr<Tensor2BufferConverter>>
 GpuBackendOpenCl::CreateTensor2BufferConverter(
     const ::ml_drift::TensorDescriptor& src_desc,
@@ -388,15 +505,63 @@ absl::Status GpuInferenceContextOpenCl::SetCommandBufferHint(
 }
 
 GpuIOBufferOpenCl::GpuIOBufferOpenCl(::ml_drift::cl::Environment* env,
-                                     ::ml_drift::cl::Buffer&& buffer)
-    : env_(env), buffer_(std::move(buffer)) {}
+                                     ::ml_drift::cl::Buffer&& buffer,
+                                     bool is_host_ptr, void* host_ptr,
+                                     bool owns_host_ptr)
+    : env_(env),
+      buffer_(std::move(buffer)),
+      is_host_ptr_(is_host_ptr),
+      host_ptr_(host_ptr),
+      owns_host_ptr_(owns_host_ptr) {}
+
+GpuIOBufferOpenCl::~GpuIOBufferOpenCl() {
+  buffer_ = ::ml_drift::cl::Buffer();
+  if (owns_host_ptr_ && host_ptr_ != nullptr) {
+    free(host_ptr_);
+  }
+}
+
+absl::Status GpuIOBufferOpenCl::SyncToDevice() {
+  if (is_host_ptr_ && !env_->GetDevicePtr()->GetInfo().IsPowerVR()) {
+    return env_->queue()->EnqueueWriteBuffer(
+        buffer_.GetMemoryPtr(), buffer_.GetMemorySizeInBytes(), host_ptr_,
+        /*async=*/false);
+  }
+  return absl::OkStatus();
+}
+
+absl::Status GpuIOBufferOpenCl::SyncToHost() {
+  if (is_host_ptr_ && !env_->GetDevicePtr()->GetInfo().IsPowerVR()) {
+    return env_->queue()->EnqueueReadBuffer(
+        buffer_.GetMemoryPtr(), buffer_.GetMemorySizeInBytes(), host_ptr_,
+        /*async=*/false);
+  }
+  return absl::OkStatus();
+}
 
 absl::Status GpuIOBufferOpenCl::Read(absl::Span<uint8_t> data) {
+  if (is_host_ptr_) {
+    ABSL_RETURN_IF_ERROR(SyncToHost());
+    const size_t copy_size = std::min(
+        data.size(), static_cast<size_t>(buffer_.GetMemorySizeInBytes()));
+    if (data.data() != host_ptr_ && copy_size > 0) {
+      std::memcpy(data.data(), host_ptr_, copy_size);
+    }
+    return absl::OkStatus();
+  }
   return env_->queue()->EnqueueReadBuffer(buffer_.GetMemoryPtr(), data.size(),
                                           data.data(), /*async=*/true);
 }
 
 absl::Status GpuIOBufferOpenCl::Write(absl::Span<const uint8_t> data) {
+  if (is_host_ptr_) {
+    const size_t copy_size = std::min(
+        data.size(), static_cast<size_t>(buffer_.GetMemorySizeInBytes()));
+    if (data.data() != host_ptr_ && copy_size > 0) {
+      std::memcpy(host_ptr_, data.data(), copy_size);
+    }
+    return SyncToDevice();
+  }
   return env_->queue()->EnqueueWriteBuffer(buffer_.GetMemoryPtr(), data.size(),
                                            data.data(), /*async=*/true);
 }
