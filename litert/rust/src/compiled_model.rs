@@ -27,6 +27,7 @@ pub struct Options {
 }
 
 /// Hardware accelerators that can be used for inference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiteRtHwAccelerator {
     None,
     Cpu,
@@ -50,8 +51,8 @@ impl Options {
     pub fn default() -> Result<Self, Error> {
         let mut raw_options_ptr: *mut LiteRtOptionsT = std::ptr::null_mut();
         call_check_status!(
-            // SAFETY: The raw_options_ptr is initialized to null_mut before and points to a valid object
-            // after the function call, if it's successful.
+            // SAFETY: The raw_options_ptr is initialized to null_mut before and points to a valid
+            // object after the function call, if it's successful.
             unsafe { LiteRtCreateOptions(&mut raw_options_ptr) },
             ErrorCause::CreateOptions
         );
@@ -63,8 +64,9 @@ impl Options {
         let accelerator_c_enum = accelerator.to_c_enum();
         let options = Self::default()?;
         call_check_status!(
-            // SAFETY: options.raw_options is valid because it's created by calling the default() function.
-            // accelerator_c_enum is valid because it's created by calling the to_c_enum() function.
+            // SAFETY: options.raw_options is valid because it's created by calling the default()
+            // function. accelerator_c_enum is valid because it's created by calling
+            // the to_c_enum() function.
             unsafe {
                 LiteRtSetOptionsHardwareAccelerators(options.raw_options, accelerator_c_enum)
             },
@@ -118,7 +120,8 @@ impl CompiledModel {
     ) -> Result<TensorBufferRequirements<'_>, Error> {
         let mut requirements_ptr: *mut LiteRtTensorBufferRequirementsT = std::ptr::null_mut();
         call_check_status!(
-            // SAFETY: self.raw_compiled_model is valid because it's created by calling the create() function.
+            // SAFETY: self.raw_compiled_model is valid because it's created by calling the
+            // create() function.
             unsafe {
                 LiteRtGetCompiledModelInputBufferRequirements(
                     self.raw_compiled_model,
@@ -139,7 +142,8 @@ impl CompiledModel {
     ) -> Result<TensorBufferRequirements<'_>, Error> {
         let mut requirements_ptr: *mut LiteRtTensorBufferRequirementsT = std::ptr::null_mut();
         call_check_status!(
-            // SAFETY: self.raw_compiled_model is valid because it's created by calling the create() function.
+            // SAFETY: self.raw_compiled_model is valid because it's created by calling the
+            // create() function.
             unsafe {
                 LiteRtGetCompiledModelOutputBufferRequirements(
                     self.raw_compiled_model,
@@ -220,8 +224,8 @@ impl CompiledModel {
         dimensions: &[i32],
     ) -> Result<(), Error> {
         call_check_status!(
-            // SAFETY: self.raw_compiled_model is valid because it's created by calling the create() function.
-            // dimensions is a valid slice provided by the caller.
+            // SAFETY: self.raw_compiled_model is valid because it's created by calling the
+            // create() function. dimensions is a valid slice provided by the caller.
             unsafe {
                 LiteRtCompiledModelResizeInputTensor(
                     self.raw_compiled_model,
@@ -247,8 +251,9 @@ impl CompiledModel {
         let mut output_ptrs: Vec<_> =
             output.iter().map(|tensor| tensor.raw_tensor_buffer).collect();
         call_check_status!(
-            // SAFETY: self.raw_compiled_model is valid because it's created by calling the create() function.
-            // input_ptrs and output_ptrs are valid because they are created in the function.
+            // SAFETY: self.raw_compiled_model is valid because it's created by calling the
+            // create() function. input_ptrs and output_ptrs are valid because they are
+            // created in the function.
             unsafe {
                 LiteRtRunCompiledModel(
                     self.raw_compiled_model,
@@ -279,8 +284,9 @@ impl CompiledModel {
             output.iter().map(|tensor| tensor.raw_tensor_buffer).collect();
         let mut ran_in_parallel_thread: bool = false;
         call_check_status!(
-            // SAFETY: self.raw_compiled_model is valid because it's created by calling the create() function.
-            // input_ptrs, output_ptrs, and ran_in_parallel_thread are valid because they are created in the function.
+            // SAFETY: self.raw_compiled_model is valid because it's created by calling the
+            // create() function. input_ptrs, output_ptrs, and ran_in_parallel_thread
+            // are valid because they are created in the function.
             unsafe {
                 LiteRtRunCompiledModelAsync(
                     self.raw_compiled_model,
@@ -296,6 +302,49 @@ impl CompiledModel {
         );
         Ok(ran_in_parallel_thread)
     }
+    /// Returns true if the model is fully accelerated for all the selected HW accelerator(s).
+    ///
+    /// For example, if both GPU and NPU are selected and the model is only delegated to GPU,
+    /// this method will still return true.
+    pub fn is_fully_accelerated(&self) -> Result<bool, Error> {
+        let mut fully_accelerated = false;
+        call_check_status!(
+            // SAFETY:
+            // - `self.raw_compiled_model` is guaranteed non-null and valid for the lifetime of
+            //   `self`, managed by `CompiledModel` and only destroyed in `Drop`.
+            // - `&mut fully_accelerated` is a valid, aligned, non-null pointer to local stack
+            //   memory with exclusive write permission for a single `bool`.
+            unsafe {
+                LiteRtCompiledModelIsFullyAccelerated(
+                    self.raw_compiled_model,
+                    &mut fully_accelerated,
+                )
+            },
+            ErrorCause::IsCompiledModelFullyAccelerated
+        );
+        Ok(fully_accelerated)
+    }
+
+    /// Returns true if the model is fully accelerated on non-CPU accelerators
+    /// (e.g. 100% delegated on GPU or NPU with zero CPU execution).
+    pub fn is_non_cpu_fully_accelerated(&self) -> Result<bool, Error> {
+        let mut non_cpu_fully_accelerated = false;
+        call_check_status!(
+            // SAFETY:
+            // - `self.raw_compiled_model` is guaranteed non-null and valid for the lifetime of
+            //   `self`, managed by `CompiledModel` and only destroyed in `Drop`.
+            // - `&mut non_cpu_fully_accelerated` is a valid, aligned, non-null pointer to local
+            //   stack memory with exclusive write permission for a single `bool`.
+            unsafe {
+                LiteRtCompiledModelIsNonCpuFullyAccelerated(
+                    self.raw_compiled_model,
+                    &mut non_cpu_fully_accelerated,
+                )
+            },
+            ErrorCause::IsCompiledModelNonCpuFullyAccelerated
+        );
+        Ok(non_cpu_fully_accelerated)
+    }
 }
 
 impl Drop for CompiledModel {
@@ -305,5 +354,42 @@ impl Drop for CompiledModel {
         unsafe {
             LiteRtDestroyCompiledModel(self.raw_compiled_model);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hw_accelerator_to_c_enum() {
+        assert_eq!(
+            LiteRtHwAccelerator::None.to_c_enum(),
+            LiteRtHwAccelerators_kLiteRtHwAcceleratorNone
+        );
+        assert_eq!(
+            LiteRtHwAccelerator::Cpu.to_c_enum(),
+            LiteRtHwAccelerators_kLiteRtHwAcceleratorCpu
+        );
+        assert_eq!(
+            LiteRtHwAccelerator::Gpu.to_c_enum(),
+            LiteRtHwAccelerators_kLiteRtHwAcceleratorGpu
+        );
+        assert_eq!(
+            LiteRtHwAccelerator::Npu.to_c_enum(),
+            LiteRtHwAccelerators_kLiteRtHwAcceleratorNpu
+        );
+    }
+
+    #[test]
+    fn test_options_create_with_accelerator() {
+        let options = Options::create_with_accelerator(LiteRtHwAccelerator::Cpu);
+        assert!(options.is_ok());
+    }
+
+    #[test]
+    fn test_options_default() {
+        let options = Options::default();
+        assert!(options.is_ok());
     }
 }

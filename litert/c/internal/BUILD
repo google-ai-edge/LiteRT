@@ -40,6 +40,7 @@ package(
         # "//litert/runtime/dispatch:__subpackages__",
         # "//litert/vendors:__subpackages__",
         # "//litert/kotlin:__subpackages__",
+        # "//litert/rust:__subpackages__",
         # "//ml_drift_delegate/delegate:__subpackages__",
         # "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
         # "//third_party/odml/litert/weight_loader:__subpackages__",

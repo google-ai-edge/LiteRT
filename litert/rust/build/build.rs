@@ -21,7 +21,8 @@ use std::process::Command;
 
 // Constansts that are used by the build script.
 
-// The environment variable that contains the output directory where it's possible to write or modify files.
+// The environment variable that contains the output directory where it's possible to write or
+// modify files.
 const OUT_DIR_ENV_VAR: &str = "OUT_DIR";
 // Cargo environment variable to definbe target os and architecture.
 const CARGO_CFG_TARGET_OS_ENV_VAR: &str = "CARGO_CFG_TARGET_OS";
@@ -33,7 +34,7 @@ const CARGO_DOCS_RS: &str = "DOCS_RS";
 // It's defined as a macro, so it can be used inside concat! macros below.
 macro_rules! litert_sdk_version {
     () => {
-        "2.2.0"
+        "2.3.0"
     };
 }
 

@@ -18,9 +18,9 @@
 ///
 /// Example usage:
 /// cargo run \
-///  --model-path=third_party/odml/litert/litert/samples/async_segmentation/models/selfie_multiclass_256x256.tflite \
-///  --input-image-path=third_party/odml/litert/litert/samples/async_segmentation/test_images/image.jpeg \
-///  --output-image-path=/tmp/out.png
+///  --model-path=third_party/odml/litert/litert/samples/async_segmentation/models/
+/// selfie_multiclass_256x256.tflite \  --input-image-path=third_party/odml/litert/litert/
+/// samples/async_segmentation/test_images/image.jpeg \  --output-image-path=/tmp/out.png
 use clap::Parser;
 use image::{imageops, ImageBuffer, ImageReader};
 
@@ -49,6 +49,8 @@ struct SegmentationModel {
 impl SegmentationModel {
     fn initialize(model_path: &str) -> Result<SegmentationModel, litert::Error> {
         let env = litert::EnvironmentBuilder::build_default()?;
+        let accelerators = env.get_available_accelerators()?;
+        println!("Available accelerators: {:?}", accelerators);
         let m = litert::Model::create_model_from_file(&env, model_path)?;
         let options = litert::Options::create_with_accelerator(litert::LiteRtHwAccelerator::Cpu)?;
         let cm = litert::CompiledModel::create(&env, &m, &options)?;

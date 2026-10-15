@@ -41,6 +41,10 @@ pub type LiteRtTensorBufferRequirements = *mut ::std::ffi::c_void;
 
 pub type LiteRtEvent = *mut ::std::ffi::c_void;
 
+pub type LiteRtAccelerator = *mut ::std::ffi::c_void;
+
+pub type LiteRtAcceleratorConst = *const ::std::ffi::c_void;
+
 pub type LiteRtStatus = ::std::os::raw::c_uint;
 
 pub type LiteRtHwAccelerators = ::std::os::raw::c_int;
@@ -251,6 +255,8 @@ pub const LiteRtEnvOptionTag_kLiteRtEnvOptionTagWebGpuProcs: LiteRtEnvOptionTag 
 
 pub const LiteRtEnvOptionTag_kLiteRtEnvOptionTagRuntimeLibraryDir: LiteRtEnvOptionTag = 22;
 
+pub const LiteRtEnvOptionTag_kLiteRtEnvOptionTagSystemGpuAcceleratorHandle: LiteRtEnvOptionTag = 30;
+
 pub struct LiteRtLayout {}
 
 pub fn LiteRtGetNumLayoutElements(
@@ -317,6 +323,42 @@ pub fn LiteRtGetCompiledModelOutputTensorLayouts(
 pub fn LiteRtGetCompiledModelEnvironment(
     compiled_model: LiteRtCompiledModel,
     environment: *mut LiteRtEnvironment,
+) -> LiteRtStatus {
+    unimplemented!()
+}
+
+pub fn LiteRtCompiledModelIsFullyAccelerated(
+    compiled_model: LiteRtCompiledModel,
+    fully_accelerated: *mut bool,
+) -> LiteRtStatus {
+    unimplemented!()
+}
+
+pub fn LiteRtCompiledModelIsNonCpuFullyAccelerated(
+    compiled_model: LiteRtCompiledModel,
+    non_cpu_fully_accelerated: *mut bool,
+) -> LiteRtStatus {
+    unimplemented!()
+}
+
+pub fn LiteRtGetNumAccelerators(
+    environment: LiteRtEnvironment,
+    num_accelerators: *mut LiteRtParamIndex,
+) -> LiteRtStatus {
+    unimplemented!()
+}
+
+pub fn LiteRtGetAccelerator(
+    environment: LiteRtEnvironment,
+    index: LiteRtParamIndex,
+    accelerator: *mut LiteRtAccelerator,
+) -> LiteRtStatus {
+    unimplemented!()
+}
+
+pub fn LiteRtGetAcceleratorHardwareSupport(
+    accelerator: LiteRtAcceleratorConst,
+    supported_hardware: *mut LiteRtHwAcceleratorSet,
 ) -> LiteRtStatus {
     unimplemented!()
 }

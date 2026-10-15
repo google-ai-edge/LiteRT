@@ -31,9 +31,14 @@ pub enum ErrorCause {
     InputDoesntSupportAnyTensorBufferTypes,
     ResizeCompiledModelInputBuffer,
     RunCompiledModel,
+    IsCompiledModelFullyAccelerated,
+    IsCompiledModelNonCpuFullyAccelerated,
     // environment
     NotSupportedLiteRtAnyType,
     CreateEnvironment,
+    GetNumAccelerators,
+    GetAccelerator,
+    GetAcceleratorHardwareSupport,
     // model
     GetSignatureKey,
     GetSignatureSubgraph,
