@@ -2777,6 +2777,44 @@ int64_t DivOp::GetArithmeticCount(Operation* op) {
 }
 
 //===----------------------------------------------------------------------===//
+// FloorDivOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult FloorDivOp::fold(FoldAdaptor adaptor) {
+  if (!ShouldFoldOperation(this->getOperation())) return {};
+
+  if (llvm::isa<quant::QuantizedType>(getType().getElementType())) {
+    return {};
+  }
+
+  auto lhs = llvm::dyn_cast_or_null<ElementsAttr>(adaptor.getLhs());
+  auto rhs = llvm::dyn_cast_or_null<ElementsAttr>(adaptor.getRhs());
+  if (!lhs || !rhs) return {};
+
+  // Leave integer division by zero to the runtime instead of folding it.
+  if (getType().getElementType().isSignlessInteger()) {
+    auto int_rhs = llvm::dyn_cast<DenseIntElementsAttr>(rhs);
+    if (!int_rhs) return {};
+    for (const APInt& v : int_rhs.getValues<APInt>()) {
+      if (v.isZero()) return {};
+    }
+  }
+
+  // Matches the TFLite kernel: floor(lhs / rhs) for floats, and integer
+  // division rounded toward negative infinity.
+  return ConstFoldBinaryOp(
+      getType(), getOperands(),
+      [](APFloat a, APFloat b) {
+        a.divide(b, APFloat::rmNearestTiesToEven);
+        a.roundToIntegral(APFloat::rmTowardNegative);
+        return a;
+      },
+      [](APInt a, APInt b) {
+        return llvm::APIntOps::RoundingSDiv(a, b, APInt::Rounding::DOWN);
+      });
+}
+
+//===----------------------------------------------------------------------===//
 // PackOp
 //===----------------------------------------------------------------------===//
 
