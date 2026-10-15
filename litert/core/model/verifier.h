@@ -17,9 +17,11 @@
 
 #include <cstddef>
 
+#include "absl/status/status.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/core/api/verifier.h"
+#include "tflite/schema/schema_generated.h"
 #include "tflite/stderr_reporter.h"
 
 namespace litert {
@@ -45,9 +47,26 @@ struct VerifyOptions {
   bool require_supported_op_shape_inferrers = false;
 };
 
+namespace internal {
+
+// Validates that a FlatBuffer tensor's quantization parameters are well-formed
+// and consistent with `subgraph` and `tensor`.
+absl::Status ValidateFlatBufferTensorQuantization(
+    const tflite::SubGraph& subgraph, const tflite::Tensor& tensor);
+
+// Validates tensor ranks, dimensions, shape signatures, and quantization
+// parameters across all subgraphs in `tfl_model`.
+absl::Status ValidateFlatBufferTensors(const tflite::Model* tfl_model,
+                                       const VerifyOptions& options = {});
+
+}  // namespace internal
+
 // Verifies that the serialized model buffer is a valid TFLite FlatBuffer,
 // satisfies tensor rank/shape constraints in `options`, can be unpacked into a
 // LiteRT model, and passes LiteRT's per-op shape/type inference checks.
+absl::Status VerifyModel(const void* buf, size_t len,
+                         const VerifyOptions& options = {});
+
 bool Verify(const void* buf, size_t len,
             tflite::ErrorReporter* reporter = tflite::DefaultErrorReporter(),
             const VerifyOptions& options = {});

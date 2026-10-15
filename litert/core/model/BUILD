@@ -564,6 +564,7 @@ cc_library(
         ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "@SafeInt",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -1221,6 +1222,8 @@ cc_library(
         "//tflite/core/api:verifier",
         "//tflite/schema:schema_fbs",
         "//tflite/tools:verifier",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -1234,6 +1237,7 @@ cc_test(
         "//tflite:version",
         "//tflite/schema:schema_fbs",
         "//tflite/tools:verifier",
+        "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers//:runtime_cc",
     ],

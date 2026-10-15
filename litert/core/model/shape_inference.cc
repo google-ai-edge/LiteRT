@@ -261,6 +261,8 @@ void ShapeInferenceEngine::RegisterStandardOps() {
                    AdaptToStatelessOpInferrer(InferGather));
   RegisterInferrer(kLiteRtOpCodeTflGatherNd,
                    AdaptToStatelessOpInferrer(InferGatherNd));
+  RegisterInferrer(kLiteRtOpCodeTflHashtableLookup,
+                   AdaptToStatelessOpInferrer(InferHashtableLookup));
   RegisterInferrer(kLiteRtOpCodeTflL2Pool2d,
                    AdaptToStatelessOpInferrer(InferPool2D));
   RegisterInferrer(kLiteRtOpCodeTflMaxPool2d,
