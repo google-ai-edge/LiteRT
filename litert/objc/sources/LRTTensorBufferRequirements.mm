@@ -16,11 +16,15 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <utility>
 #include <vector>
 
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
+#import "third_party/odml/litert/litert/objc/apis/LRTError.h"
 #import "third_party/odml/litert/litert/objc/apis/LRTTensorBuffer.h"
 #import "third_party/odml/litert/litert/objc/sources/LRTError+Internal.h"
 #import "third_party/odml/litert/litert/objc/sources/LRTTensorBufferRequirements+Internal.h"
@@ -136,6 +140,50 @@
   return _bufferSize == otherRequirements.bufferSize && _alignment == otherRequirements.alignment &&
          [_supportedBufferTypes isEqualToArray:otherRequirements.supportedBufferTypes] &&
          [_strides isEqualToArray:otherRequirements.strides];
+}
+
+#pragma mark - Internal
+
+- (std::unique_ptr<litert::TensorBufferRequirements>)cppRequirementsWithError:(NSError **)error {
+  if (_supportedBufferTypes.count == 0) {
+    LRTSetError(error, LRTErrorCodeInvalidArgument,
+                @"Supported buffer types array cannot be empty");
+    return nullptr;
+  }
+  if (_bufferSize == 0) {
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Buffer size must be greater than 0");
+    return nullptr;
+  }
+
+  std::vector<litert::TensorBufferType> cppBufferTypes;
+  cppBufferTypes.reserve(_supportedBufferTypes.count);
+  for (NSNumber *bufferTypeNumber in _supportedBufferTypes) {
+    LRTTensorBufferType bufferType =
+        static_cast<LRTTensorBufferType>(bufferTypeNumber.integerValue);
+    if (bufferType == LRTTensorBufferTypeUnknown) {
+      LRTSetError(error, LRTErrorCodeInvalidArgument, @"Valid LRTTensorBufferType required");
+      return nullptr;
+    }
+    cppBufferTypes.push_back(static_cast<litert::TensorBufferType>(bufferType));
+  }
+
+  std::vector<uint32_t> cppStrides;
+  cppStrides.reserve(_strides.count);
+  for (NSNumber *strideNumber in _strides) {
+    cppStrides.push_back(strideNumber.unsignedIntValue);
+  }
+
+  litert::Expected<litert::TensorBufferRequirements> requirementsResult =
+      litert::TensorBufferRequirements::CreateWithAlignment(
+          litert::Span<const litert::TensorBufferType>(cppBufferTypes.data(),
+                                                       cppBufferTypes.size()),
+          _bufferSize, _alignment,
+          litert::Span<const uint32_t>(cppStrides.data(), cppStrides.size()));
+  if (!requirementsResult.HasValue()) {
+    LRTSetErrorFromCPPError(error, requirementsResult.Error());
+    return nullptr;
+  }
+  return std::make_unique<litert::TensorBufferRequirements>(std::move(requirementsResult.Value()));
 }
 
 @end

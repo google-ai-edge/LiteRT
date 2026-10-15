@@ -227,6 +227,35 @@
   XCTAssertEqual(buffer.bufferType, LRTTensorBufferTypeHostMemory);
   XCTAssertEqual(buffer.elementType, LRTElementTypeInt32);
   XCTAssertEqualObjects(buffer.dimensions, (@[ @8 ]));
+  LRTTensorType *expectedTensorType = [[LRTTensorType alloc] initWithElementType:LRTElementTypeInt32
+                                                                      dimensions:@[ @8 ]];
+  XCTAssertEqualObjects(buffer.tensorType, expectedTensorType);
+}
+
+- (void)testManagedTensorBufferWithTensorTypeAndRequirements {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTTensorType *tensorType = [[LRTTensorType alloc] initWithElementType:LRTElementTypeFloat32
+                                                              dimensions:@[ @2, @4 ]];
+  LRTTensorBufferRequirements *requirements = [[LRTTensorBufferRequirements alloc]
+      initWithSupportedBufferTypes:@[ @(LRTTensorBufferTypeHostMemory) ]
+                        bufferSize:8 * sizeof(float)
+                         alignment:64
+                           strides:@[]];
+
+  LRTTensorBuffer *buffer = [LRTTensorBuffer tensorBufferWithEnvironment:environment
+                                                              tensorType:tensorType
+                                                            requirements:requirements
+                                                                   error:&error];
+  XCTAssertNotNil(buffer);
+  XCTAssertNil(error);
+  XCTAssertEqual(buffer.bufferType, LRTTensorBufferTypeHostMemory);
+  XCTAssertEqualObjects(buffer.tensorType, tensorType);
+  XCTAssertGreaterThanOrEqual(buffer.size, 8 * sizeof(float));
+  XCTAssertTrue([buffer.description containsString:@"LRTTensorBuffer"]);
 }
 
 #pragma mark - Parameter Validation Tests

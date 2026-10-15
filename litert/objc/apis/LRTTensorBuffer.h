@@ -16,6 +16,7 @@
 #import <Metal/Metal.h>
 
 #import "third_party/odml/litert/litert/objc/apis/LRTEnvironment.h"
+#import "third_party/odml/litert/litert/objc/apis/LRTTensorBufferRequirements.h"
 #import "third_party/odml/litert/litert/objc/apis/LRTTensorType.h"
 
 NS_ASSUME_NONNULL_BEGIN
@@ -66,6 +67,9 @@ typedef NS_ENUM(NSInteger, LRTTensorBufferType) {
 
 /** Buffer storage type (HostMemory, MetalBuffer, etc.). */
 @property(nonatomic, readonly) LRTTensorBufferType bufferType;
+
+/** Tensor type describing the element type and shape of this buffer, or nil if unavailable. */
+@property(nonatomic, readonly, nullable) LRTTensorType *tensorType;
 
 /** Element type of tensor elements. */
 @property(nonatomic, readonly) LRTElementType elementType;
@@ -130,6 +134,37 @@ typedef NS_ENUM(NSInteger, LRTTensorBufferType) {
                                                 size:(NSUInteger)size
                                          elementType:(LRTElementType)elementType
                                           dimensions:(NSArray<NSNumber *> *)dimensions
+                                               error:(NSError **)error;
+
+/**
+ * Creates a managed tensor buffer with the specified buffer type and tensor type.
+ *
+ * @param environment LiteRT environment instance.
+ * @param bufferType Underlying buffer storage type (e.g., HostMemory, MetalBuffer).
+ * @param size Buffer capacity in bytes.
+ * @param tensorType Tensor type describing element type and shape dimensions.
+ * @param error Out-parameter populated on failure.
+ * @return A new LRTTensorBuffer instance, or nil on failure.
+ */
++ (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                          bufferType:(LRTTensorBufferType)bufferType
+                                                size:(NSUInteger)size
+                                          tensorType:(LRTTensorType *)tensorType
+                                               error:(NSError **)error;
+
+/**
+ * Creates a managed tensor buffer satisfying the given allocation requirements.
+ *
+ * @param environment LiteRT environment instance.
+ * @param tensorType Tensor type describing element type and shape dimensions.
+ * @param requirements Allocation requirements specifying supported buffer types, size, and
+ * alignment.
+ * @param error Out-parameter populated on failure.
+ * @return A new LRTTensorBuffer instance, or nil on failure.
+ */
++ (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                          tensorType:(LRTTensorType *)tensorType
+                                        requirements:(LRTTensorBufferRequirements *)requirements
                                                error:(NSError **)error;
 
 /**

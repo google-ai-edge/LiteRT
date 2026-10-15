@@ -664,4 +664,65 @@ static NSString *GetTestDynamicModelPath() {
   XCTAssertEqualObjects(error.domain, LRTErrorDomain);
 }
 
+- (void)testSignatureAndTensorTypeIntrospection {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:GetTestModelPath()
+                                                                 environment:environment
+                                                                     options:options
+                                                                       error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  NSString *signatureKey = [LRTCompiledModel defaultSignatureKey];
+  XCTAssertEqualObjects(model.signatureKeys, @[ signatureKey ]);
+  XCTAssertTrue([model.description containsString:@"LRTCompiledModel"]);
+
+  NSArray<NSString *> *inputNamesByIndex = [model inputNamesForSignatureIndex:0 error:&error];
+  XCTAssertEqualObjects(inputNamesByIndex, (@[ @"arg0", @"arg1" ]));
+  XCTAssertNil(error);
+
+  NSArray<NSString *> *inputNamesByKey = [model inputNamesForSignatureKey:signatureKey
+                                                                    error:&error];
+  XCTAssertEqualObjects(inputNamesByKey, (@[ @"arg0", @"arg1" ]));
+  XCTAssertNil(error);
+
+  NSArray<NSString *> *outputNamesByIndex = [model outputNamesForSignatureIndex:0 error:&error];
+  XCTAssertEqualObjects(outputNamesByIndex, @[ @"tfl.add" ]);
+  XCTAssertNil(error);
+
+  NSArray<NSString *> *outputNamesByKey = [model outputNamesForSignatureKey:signatureKey
+                                                                      error:&error];
+  XCTAssertEqualObjects(outputNamesByKey, @[ @"tfl.add" ]);
+  XCTAssertNil(error);
+
+  LRTTensorType *expectedTensorType =
+      [[LRTTensorType alloc] initWithElementType:LRTElementTypeFloat32 dimensions:@[ @2 ]];
+  XCTAssertEqualObjects([model inputTensorTypeAtIndex:0 error:&error], expectedTensorType);
+  XCTAssertNil(error);
+  XCTAssertEqualObjects([model inputTensorTypeAtIndex:1 signatureIndex:0 error:&error],
+                        expectedTensorType);
+  XCTAssertNil(error);
+  XCTAssertEqualObjects([model inputTensorTypeForName:@"arg0"
+                                         signatureKey:signatureKey
+                                                error:&error],
+                        expectedTensorType);
+  XCTAssertNil(error);
+
+  XCTAssertEqualObjects([model outputTensorTypeAtIndex:0 error:&error], expectedTensorType);
+  XCTAssertNil(error);
+  XCTAssertEqualObjects([model outputTensorTypeAtIndex:0 signatureIndex:0 error:&error],
+                        expectedTensorType);
+  XCTAssertNil(error);
+  XCTAssertEqualObjects([model outputTensorTypeForName:@"tfl.add"
+                                          signatureKey:signatureKey
+                                                 error:&error],
+                        expectedTensorType);
+  XCTAssertNil(error);
+}
+
 @end

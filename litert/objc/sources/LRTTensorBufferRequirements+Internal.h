@@ -14,6 +14,8 @@
 
 #import "third_party/odml/litert/litert/objc/apis/LRTTensorBufferRequirements.h"
 
+#include <memory>
+
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 
 NS_ASSUME_NONNULL_BEGIN
@@ -27,6 +29,12 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable instancetype)requirementsWithCPPRequirements:
                              (const litert::TensorBufferRequirements &)cppRequirements
                                                    error:(NSError **)error;
+
+/**
+ * Converts this Objective-C @c LRTTensorBufferRequirements instance into a C++
+ * @c litert::TensorBufferRequirements value, or @c nullptr if the requirements are invalid.
+ */
+- (std::unique_ptr<litert::TensorBufferRequirements>)cppRequirementsWithError:(NSError **)error;
 
 @end
 
