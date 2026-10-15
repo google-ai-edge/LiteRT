@@ -55,7 +55,10 @@
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
 #include "litert/vendors/qualcomm/compiler/transformations/attention_chunk_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/entry_embedding_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/gqa_attention_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/hadamard_transform_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/legalize_int32_ops_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/mask_simplification_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/mlp_quant_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/orphan_cleanup_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/rope_transformation.h"
@@ -795,6 +798,9 @@ struct GraphTransformFilter {
   bool mlp_quant = false;
   bool attention_chunk = false;
   bool rope = false;
+  bool gqa = false;
+  bool masking = false;
+  bool rotation_quant = false;
 
   static GraphTransformFilter FromOptions(absl::string_view graph_transform) {
     GraphTransformFilter filter;
@@ -809,13 +815,16 @@ struct GraphTransformFilter {
         enable = false;
         token.remove_prefix(1);
       }
-      if (token == "experimental_all") {
+      if (token == "experimental_all" || token == "all") {
         filter.legalize_int32_sign = enable;
         filter.legalize_int32_reduce_max = enable;
         filter.entry_embedding = enable;
         filter.mlp_quant = enable;
         filter.attention_chunk = enable;
         filter.rope = enable;
+        filter.gqa = enable;
+        filter.masking = enable;
+        filter.rotation_quant = enable;
       } else if (token == "experimental_legalize") {
         filter.legalize_int32_sign = enable;
         filter.legalize_int32_reduce_max = enable;
@@ -836,6 +845,13 @@ struct GraphTransformFilter {
         filter.attention_chunk = enable;
       } else if (token == "rope") {
         filter.rope = enable;
+      } else if (token == "gqa" || token == "gqa_attention") {
+        filter.gqa = enable;
+      } else if (token == "masking" || token == "mask_simplification") {
+        filter.masking = enable;
+      } else if (token == "rotation_quant" || token == "hadamard" ||
+                 token == "hadamard_transform") {
+        filter.rotation_quant = enable;
       }
     }
     return filter;
@@ -859,6 +875,32 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
   const auto filter = GraphTransformFilter::FromOptions(
       compiler_plugin->Options().GetGraphTransform());
 
+  if (filter.rotation_quant) {
+    compiler_plugin->Transformations().push_back({
+        &ConvertFcToHadamardTransform,
+        "ConvertFcToHadamardTransform",
+        105,
+    });
+    compiler_plugin->Transformations().push_back({
+        &ParallelizeHadamardTransform,
+        "ParallelizeHadamardTransform",
+        95,
+    });
+  }
+  if (filter.masking) {
+    compiler_plugin->Transformations().push_back({
+        &SimplifyMaskingAddTransformation,
+        "SimplifyMaskingAddTransformation",
+        102,
+    });
+  }
+  if (filter.gqa) {
+    compiler_plugin->Transformations().push_back({
+        &GqaAttentionTransformation,
+        "GqaAttentionTransformation",
+        100,
+    });
+  }
   if (filter.legalize_int32_sign) {
     compiler_plugin->Transformations().push_back({
         &LegalizeInt32SignTransformation,
@@ -906,7 +948,8 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
         90,
     });
   }
-  if (filter.entry_embedding || filter.rope || filter.attention_chunk) {
+  if (filter.entry_embedding || filter.rope || filter.attention_chunk ||
+      filter.gqa || filter.masking || filter.rotation_quant) {
     compiler_plugin->Transformations().push_back({
         &OrphanCleanupTransformation,
         "OrphanCleanupTransformation",
