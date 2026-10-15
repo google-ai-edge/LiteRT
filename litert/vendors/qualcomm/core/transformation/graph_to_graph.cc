@@ -380,11 +380,11 @@ void GraphToGraphTransform(G2GConfig g2g_option, std::vector<OpWrapper>& ops,
 
   // Max + Min -> ReLUMinMax
   // TODO: Support Min + Max -> ReLUMinMax
-  const std::vector<QnnOpCode> min_max = {
+  const std::vector<QnnOpCode> max_min = {
       QnnOpCode::kElementWiseMaximum,
       QnnOpCode::kElementWiseMinimum,
   };
-  Transform(validate_op_config, ops, tensor_pool, min_max, FuseMinMaxOpsToReLUMinMax);
+  Transform(validate_op_config, ops, tensor_pool, max_min, FuseMinMaxOpsToReLUMinMax);
 
   // FC -> Hadamard Transform
   const std::vector<QnnOpCode> fc = {

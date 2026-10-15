@@ -1936,22 +1936,15 @@ TEST(FuseMinMaxOpsToReLUMinMaxTest, HappyPath) {
   auto& min_const = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_FLOAT_32, {}, {1u}, sizeof(kMinConst), &kMinConst);
 
-  for (auto& op : BuildElementwiseMaximumOp(tensor_pool, {input, max_const},
-                                            {max_output})) {
-    op_wrappers.emplace_back(std::move(op));
-  }
-  for (auto& op :
-       BuildElementwiseMinimumOp(tensor_pool, {max_output, min_const},
-                                 {output})) {
-    op_wrappers.emplace_back(std::move(op));
-  }
+  op_wrappers.emplace_back(CreateElementwiseMaximumOp(input, max_const, max_output));
+  op_wrappers.emplace_back(CreateElementwiseMinimumOp(max_output, min_const, output));
   ASSERT_EQ(op_wrappers.size(), 2u);
 
   GraphToGraphTransform(::qnn::G2GConfig::kMHAOpt, op_wrappers, tensor_pool,
                         [](OpWrapper& op) { return true; });
 
   ASSERT_EQ(op_wrappers.size(), 1u);
-  EXPECT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kElementWiseNeuron));
+  EXPECT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kReluMinMax));
 }
 
 TEST(FuseMinMaxOpsToReLUMinMaxTest, SkipWhenNotConnected) {
@@ -1974,15 +1967,8 @@ TEST(FuseMinMaxOpsToReLUMinMaxTest, SkipWhenNotConnected) {
   auto& min_const = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_FLOAT_32, {}, {1u}, sizeof(kMinConst), &kMinConst);
 
-  for (auto& op : BuildElementwiseMaximumOp(tensor_pool, {input0, max_const},
-                                            {max_output})) {
-    op_wrappers.emplace_back(std::move(op));
-  }
-  for (auto& op :
-       BuildElementwiseMinimumOp(tensor_pool, {input1, min_const},
-                                 {min_output})) {
-    op_wrappers.emplace_back(std::move(op));
-  }
+  op_wrappers.emplace_back(CreateElementwiseMaximumOp(input0, max_const, max_output));
+  op_wrappers.emplace_back(CreateElementwiseMinimumOp(input1, min_const, min_output));
   ASSERT_EQ(op_wrappers.size(), 2u);
 
   GraphToGraphTransform(::qnn::G2GConfig::kMHAOpt, op_wrappers, tensor_pool,
@@ -2011,15 +1997,8 @@ TEST(FuseMinMaxOpsToReLUMinMaxTest, SkipWhenValidationFails) {
   auto& min_const = tensor_pool.CreateStaticTensor(
       QNN_DATATYPE_FLOAT_32, {}, {1u}, sizeof(kMinConst), &kMinConst);
 
-  for (auto& op : BuildElementwiseMaximumOp(tensor_pool, {input, max_const},
-                                            {max_output})) {
-    op_wrappers.emplace_back(std::move(op));
-  }
-  for (auto& op :
-       BuildElementwiseMinimumOp(tensor_pool, {max_output, min_const},
-                                 {output})) {
-    op_wrappers.emplace_back(std::move(op));
-  }
+  op_wrappers.emplace_back(CreateElementwiseMaximumOp(input, max_const, max_output));
+  op_wrappers.emplace_back(CreateElementwiseMinimumOp(max_output, min_const, output));
   ASSERT_EQ(op_wrappers.size(), 2u);
 
   GraphToGraphTransform(::qnn::G2GConfig::kMHAOpt, op_wrappers, tensor_pool,

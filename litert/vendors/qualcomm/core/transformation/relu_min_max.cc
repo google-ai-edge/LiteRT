@@ -15,63 +15,61 @@ size_t FuseMinMaxOpsToReLUMinMax(
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     size_t pattern_size) {
     QNN_LOG_INFO("[G2G] FuseMinMaxOpsToReLUMinMax");
-    auto& elementwise_binary_max = ops[start_index];
-    auto& elementwise_binary_min = ops[start_index + 1];
+    auto& elementwise_max = ops[start_index];
+    auto& elementwise_min = ops[start_index + 1];
     // Connection check
-    if (elementwise_binary_max.GetOutputTensor(0) != elementwise_binary_min.GetInputTensor(0) &&
-        elementwise_binary_max.GetOutputTensor(0) != elementwise_binary_min.GetInputTensor(1)) {
+    if (elementwise_max.GetOutputTensor(0) != elementwise_min.GetInputTensor(0) &&
+        elementwise_max.GetOutputTensor(0) != elementwise_min.GetInputTensor(1)) {
         QNN_LOG_WARNING("[G2G] Skip FuseMinMaxOpsToReLUMinMax after connection check");
         return 1;
     }
 
     // Static check
-    if (!elementwise_binary_min.GetInputTensor(0).IsTensorStatic() &&
-        !elementwise_binary_min.GetInputTensor(1).IsTensorStatic()) {
+    if (!elementwise_min.GetInputTensor(0).IsTensorStatic() &&
+        !elementwise_min.GetInputTensor(1).IsTensorStatic()) {
         QNN_LOG_WARNING("[G2G] Skip FuseMinMaxOpsToReLUMinMax after Tensor Static check on Min");
         return 1;
     }
 
-    if (!elementwise_binary_max.GetInputTensor(0).IsTensorStatic() &&
-        !elementwise_binary_max.GetInputTensor(1).IsTensorStatic()) {
+    if (!elementwise_max.GetInputTensor(0).IsTensorStatic() &&
+        !elementwise_max.GetInputTensor(1).IsTensorStatic()) {
         QNN_LOG_WARNING("[G2G] Skip FuseMinMaxOpsToReLUMinMax after Tensor Static check on Max");
         return 1;
     }
 
     QNN_LOG_INFO("[G2G] FuseMinMaxOpsToReLUMinMax pass check");
 
-    auto elementwise_binary_min_const_idx = elementwise_binary_min.GetInputTensor(0).IsTensorStatic()? 0 : 1;
-    auto elementwise_binary_max_const_idx = elementwise_binary_max.GetInputTensor(0).IsTensorStatic()? 0 : 1;
+    auto elementwise_min_const_idx = elementwise_min.GetInputTensor(0).IsTensorStatic() ? 0 : 1;
+    auto elementwise_max_const_idx = elementwise_max.GetInputTensor(0).IsTensorStatic() ? 0 : 1;
+    auto& elementwise_min_const = elementwise_min.GetInputTensor(elementwise_min_const_idx);
+    auto& elementwise_max_const = elementwise_max.GetInputTensor(elementwise_max_const_idx);
+    auto& elementwise_max_input = elementwise_max.GetInputTensor(1 - elementwise_max_const_idx);
 
-    if (elementwise_binary_min.GetInputTensor(elementwise_binary_min_const_idx).GetDataType()
-        != Qnn_DataType_t::QNN_DATATYPE_FLOAT_32 ||
-        elementwise_binary_max.GetInputTensor(elementwise_binary_max_const_idx).GetDataType()
-        != Qnn_DataType_t::QNN_DATATYPE_FLOAT_32) {
+    if (elementwise_min_const.GetDataType() != Qnn_DataType_t::QNN_DATATYPE_FLOAT_32 ||
+        elementwise_max_const.GetDataType() != Qnn_DataType_t::QNN_DATATYPE_FLOAT_32) {
         QNN_LOG_WARNING("[G2G] Skip FuseMinMaxOpsToReLUMinMax since currently only support float32 constant");
         return 1;
     }
 
-    auto min_const = elementwise_binary_min.GetInputTensor(elementwise_binary_min_const_idx).GetTensorData<float_t>();
-    auto max_const = elementwise_binary_max.GetInputTensor(elementwise_binary_max_const_idx).GetTensorData<float_t>();
+    auto min_const = elementwise_min_const.GetTensorData<float_t>();
+    auto max_const = elementwise_max_const.GetTensorData<float_t>();
 
-    if (!min_const.has_value()) {
-        QNN_LOG_WARNING("[G2G] Skip FuseMinMaxOpsToReLUMinMax since no value on Min const");
+    if (!min_const.has_value() || min_const.value().size() != 1) {
+        QNN_LOG_WARNING("[G2G] Skip FuseMinMaxOpsToReLUMinMax since Min const is not a scalar");
         return 1;
     }
-    if (!max_const.has_value()) {
-        QNN_LOG_WARNING("[G2G] Skip FuseMinMaxOpsToReLUMinMax since no value on Max const");
+    if (!max_const.has_value() || max_const.value().size() != 1) {
+        QNN_LOG_WARNING("[G2G] Skip FuseMinMaxOpsToReLUMinMax since Max const is not a scalar");
         return 1;
     }
 
     std::vector<OpWrapper> new_ops;
-    OpWrapper& relu_min_max_op = CreateOpWrapper(new_ops, QNN_OP_ELEMENT_WISE_NEURON);
-    relu_min_max_op.AddInputTensor(elementwise_binary_max.GetInputTensor(1-elementwise_binary_max_const_idx));
-    relu_min_max_op.AddOutputTensor(elementwise_binary_min.GetOutputTensor(0));
-    relu_min_max_op.AddScalarParam<std::uint32_t>(
-        QNN_OP_ELEMENT_WISE_NEURON_PARAM_OPERATION,
-        QNN_OP_ELEMENT_WISE_NEURON_OPERATION_RELU_MIN_MAX);
-    relu_min_max_op.AddScalarParam<float>(QNN_OP_ELEMENT_WISE_NEURON_PARAM_MIN_VALUE,
+    OpWrapper& relu_min_max_op = CreateOpWrapper(new_ops, QNN_OP_RELU_MIN_MAX);
+    relu_min_max_op.AddInputTensor(elementwise_max_input);
+    relu_min_max_op.AddOutputTensor(elementwise_min.GetOutputTensor(0));
+    relu_min_max_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MIN_VALUE,
                                           max_const.value()[0]);
-    relu_min_max_op.AddScalarParam<float>(QNN_OP_ELEMENT_WISE_NEURON_PARAM_MAX_VALUE,
+    relu_min_max_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MAX_VALUE,
                                           min_const.value()[0]);
 
     const bool is_valid =

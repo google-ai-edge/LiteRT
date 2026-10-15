@@ -81,6 +81,28 @@ OpWrapper CreateElementWiseMulOp(const TensorWrapper& input_0,
   return op;
 }
 
+OpWrapper CreateElementwiseMinimumOp(const TensorWrapper& input_0,
+                                     const TensorWrapper& input_1,
+                                     const TensorWrapper& output_0) {
+  OpWrapper op(GetUniqueOpName(QNN_OP_ELEMENT_WISE_MINIMUM),
+               QNN_OP_ELEMENT_WISE_MINIMUM, QnnOpCode::kElementWiseMinimum);
+  op.AddInputTensor(input_0);
+  op.AddInputTensor(input_1);
+  op.AddOutputTensor(output_0);
+  return op;
+}
+
+OpWrapper CreateElementwiseMaximumOp(const TensorWrapper& input_0,
+                                     const TensorWrapper& input_1,
+                                     const TensorWrapper& output_0) {
+  OpWrapper op(GetUniqueOpName(QNN_OP_ELEMENT_WISE_MAXIMUM),
+               QNN_OP_ELEMENT_WISE_MAXIMUM, QnnOpCode::kElementWiseMaximum);
+  op.AddInputTensor(input_0);
+  op.AddInputTensor(input_1);
+  op.AddOutputTensor(output_0);
+  return op;
+}
+
 std::vector<OpWrapper> BuildElementwiseDivOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs) {
