@@ -40,6 +40,37 @@ constexpr absl::string_view kLiteRtSo3 = "libLiteRtDispatch_1.so";
 constexpr absl::string_view kLiteRtSo4 = "libLiteRtDispatch_2.so";
 constexpr absl::string_view kLdLibraryPath = "LD_LIBRARY_PATH";
 
+constexpr absl::string_view kDispatchPrefix = "libLiteRtDispatch";
+constexpr absl::string_view kSoOnly[] = {".so"};
+
+TEST(TestIsSharedLibFileName, MatchesPrefixAndExtension) {
+  EXPECT_TRUE(IsSharedLibFileName(kLiteRtSo3, kDispatchPrefix, kSoOnly));
+  EXPECT_TRUE(IsSharedLibFileName(kLiteRtSo3, kLiteRtSharedLibPrefix, kSoOnly));
+  // Dots in the stem are fine as long as the name ends with an extension.
+  EXPECT_TRUE(
+      IsSharedLibFileName("libLiteRtDispatch.v2.so", kDispatchPrefix, kSoOnly));
+}
+
+TEST(TestIsSharedLibFileName, RejectsOtherPrefixes) {
+  EXPECT_FALSE(IsSharedLibFileName(kNotLiteRtSo, kDispatchPrefix, kSoOnly));
+  EXPECT_FALSE(IsSharedLibFileName(kLiteRtSo1, kDispatchPrefix, kSoOnly));
+  // The prefix must start the name, not merely occur in it.
+  EXPECT_FALSE(
+      IsSharedLibFileName("xlibLiteRtDispatch.so", kDispatchPrefix, kSoOnly));
+}
+
+TEST(TestIsSharedLibFileName, RejectsOtherExtensions) {
+  EXPECT_FALSE(
+      IsSharedLibFileName("libLiteRtDispatch.txt", kDispatchPrefix, kSoOnly));
+  EXPECT_FALSE(
+      IsSharedLibFileName("libLiteRtDispatch", kDispatchPrefix, kSoOnly));
+  // Versioned names are not matched; callers ship the unversioned name.
+  EXPECT_FALSE(
+      IsSharedLibFileName("libLiteRtDispatch.so.1", kDispatchPrefix, kSoOnly));
+  // A bare extension is not a library name.
+  EXPECT_FALSE(IsSharedLibFileName(".so", "", kSoOnly));
+}
+
 TEST(TestDynamicLoading, GlobNoMatch) {
   const auto dir = UniqueTestDirectory::Create();
   ASSERT_TRUE(dir);
