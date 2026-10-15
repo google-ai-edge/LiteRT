@@ -15,6 +15,7 @@
 #import <Metal/Metal.h>
 #import <XCTest/XCTest.h>
 
+#include <malloc/malloc.h>
 #include <unistd.h>
 #include <cstdint>
 #include <cstdlib>
@@ -879,4 +880,58 @@
   XCTAssertEqual(status, kLiteRtStatusOk);
 }
 
+- (void)testLockUnlockFreesShadowHostMemory {
+  if (!_device) return;
+
+  constexpr int kNumElements = 4 * 1024 * 1024;  // 16 MB
+  LiteRtRankedTensorType tensorType;
+  tensorType.element_type = kLiteRtElementTypeFloat32;
+  tensorType.layout.rank = 1;
+  tensorType.layout.dimensions[0] = kNumElements;
+  tensorType.layout.has_strides = false;
+
+  const size_t bytes = kNumElements * sizeof(float);
+  HwMemoryInfoPtr memoryInfo = nullptr;
+  LiteRtStatus status =
+      LiteRtCreateMetalMemory((__bridge void*)_device, (__bridge void*)_commandQueue, &tensorType,
+                              kLiteRtTensorBufferTypeMetalBuffer, bytes, bytes, &memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  XCTAssertTrue(memoryInfo != nullptr);
+
+  malloc_statistics_t statsBefore = {};
+  malloc_zone_statistics(nullptr, &statsBefore);
+
+  void* hostMemory = nullptr;
+  status = LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeWrite, &hostMemory);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  XCTAssertTrue(hostMemory != nullptr);
+  std::memset(hostMemory, 0xAB, bytes);
+
+  malloc_statistics_t statsLocked = {};
+  malloc_zone_statistics(nullptr, &statsLocked);
+  XCTAssertGreaterThanOrEqual(statsLocked.size_in_use, statsBefore.size_in_use + bytes / 2);
+
+  // Unlocking must free the aligned host shadow buffer while memoryInfo remains alive.
+  status = LiteRtUnlockMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+
+  malloc_statistics_t statsUnlocked = {};
+  malloc_zone_statistics(nullptr, &statsUnlocked);
+  XCTAssertLessThanOrEqual(statsUnlocked.size_in_use + bytes / 2, statsLocked.size_in_use);
+
+  // Repeated lock/unlock cycles on a live buffer should not accumulate host allocations.
+  for (int i = 0; i < 10; ++i) {
+    void* ptr = nullptr;
+    XCTAssertEqual(LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeRead, &ptr),
+                   kLiteRtStatusOk);
+    XCTAssertTrue(ptr != nullptr);
+    XCTAssertEqual(LiteRtUnlockMetalMemory(memoryInfo), kLiteRtStatusOk);
+  }
+
+  malloc_statistics_t statsAfterLoop = {};
+  malloc_zone_statistics(nullptr, &statsAfterLoop);
+  XCTAssertLessThanOrEqual(statsAfterLoop.size_in_use, statsBefore.size_in_use + bytes / 2);
+
+  XCTAssertEqual(LiteRtDestroyMetalMemory(memoryInfo), kLiteRtStatusOk);
+}
 @end

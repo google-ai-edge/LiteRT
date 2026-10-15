@@ -542,4 +542,140 @@ const float kTolerance = 1e-5;
                                withElementCount:2
                                   withTolerance:kTolerance];
 }
+
+- (void)testCompiledModelGpuRebindReleasesPreviousMetalBuffers {
+  for (bool external_tensors_mode : {false, true}) {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+    NSString *modelFilePath = [MetalTestHelper pathForModelName:@"simple_model"];
+    XCTAssertNotNil(modelFilePath);
+
+    LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(external_tensors_mode));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto compiled_model,
+        litert::CompiledModel::Create(env, modelFilePath.UTF8String, options));
+
+    __weak id<MTLBuffer> weak_input_0 = nil;
+    __weak id<MTLBuffer> weak_output_0 = nil;
+
+    LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers_2, compiled_model.CreateInputBuffers());
+    LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers_2, compiled_model.CreateOutputBuffers());
+
+    @autoreleasepool {
+      LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers_1, compiled_model.CreateInputBuffers());
+      LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers_1, compiled_model.CreateOutputBuffers());
+
+      XCTAssertTrue(
+          input_buffers_1[0].Write<float>(absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+      XCTAssertTrue(
+          input_buffers_1[1].Write<float>(absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+      LITERT_ASSERT_OK_AND_ASSIGN(void *raw_in_0, input_buffers_1[0].GetMetalBuffer());
+      LITERT_ASSERT_OK_AND_ASSIGN(void *raw_out_0, output_buffers_1[0].GetMetalBuffer());
+      weak_input_0 = (__bridge id<MTLBuffer>)raw_in_0;
+      weak_output_0 = (__bridge id<MTLBuffer>)raw_out_0;
+      XCTAssertNotNil(weak_input_0);
+      XCTAssertNotNil(weak_output_0);
+
+      LITERT_ASSERT_OK(compiled_model.Run(input_buffers_1, output_buffers_1));
+      [MetalTestHelper checkTensorBufferFloatOutput:&output_buffers_1[0]
+                                 withExpectedOutput:kTestOutputTensor
+                                   withElementCount:kTestOutputSize
+                                      withTolerance:kTolerance];
+
+      const float kSecondInput0[] = {3.0f, 4.0f};
+      const float kSecondInput1[] = {30.0f, 40.0f};
+      XCTAssertTrue(
+          input_buffers_2[0].Write<float>(absl::MakeConstSpan(kSecondInput0, kTestInput0Size)));
+      XCTAssertTrue(
+          input_buffers_2[1].Write<float>(absl::MakeConstSpan(kSecondInput1, kTestInput1Size)));
+
+      // Rebinding new buffers on the same CompiledModel must replace and release the previous
+      // Metal buffer wrappers.
+      LITERT_ASSERT_OK(compiled_model.Run(input_buffers_2, output_buffers_2));
+      input_buffers_1.clear();
+      output_buffers_1.clear();
+    }
+
+    XCTAssertNil(weak_input_0);
+    XCTAssertNil(weak_output_0);
+
+    const float kExpectedSecondOutput[] = {33.0f, 44.0f};
+    [MetalTestHelper checkTensorBufferFloatOutput:&output_buffers_2[0]
+                               withExpectedOutput:kExpectedSecondOutput
+                                 withElementCount:kTestOutputSize
+                                    withTolerance:kTolerance];
+  }
+}
+
+- (void)testCompiledModelGpuRebindToHostMemory {
+  for (bool external_tensors_mode : {false, true}) {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+    NSString *modelFilePath = [MetalTestHelper pathForModelName:@"simple_model"];
+    XCTAssertNotNil(modelFilePath);
+
+    LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(external_tensors_mode));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto compiled_model,
+        litert::CompiledModel::Create(env, modelFilePath.UTF8String, options));
+
+    // Run 1: Bind Metal GPU buffers.
+    LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_input_buffers, compiled_model.CreateInputBuffers());
+    LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_output_buffers, compiled_model.CreateOutputBuffers());
+    XCTAssertTrue(gpu_input_buffers[0].IsMetalMemory());
+    XCTAssertTrue(gpu_output_buffers[0].IsMetalMemory());
+    XCTAssertTrue(
+        gpu_input_buffers[0].Write<float>(absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+    XCTAssertTrue(
+        gpu_input_buffers[1].Write<float>(absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+    LITERT_ASSERT_OK(compiled_model.Run(gpu_input_buffers, gpu_output_buffers));
+    [MetalTestHelper checkTensorBufferFloatOutput:&gpu_output_buffers[0]
+                               withExpectedOutput:kTestOutputTensor
+                                 withElementCount:kTestOutputSize
+                                    withTolerance:kTolerance];
+
+    // Run 2: Rebind the same CompiledModel to kHostMemory buffers.
+    const litert::RankedTensorType kTensorType(
+        litert::ElementType::Float32, litert::Layout(litert::Dimensions({2})));
+    constexpr size_t kBufferBytes = kTestInput0Size * sizeof(float);
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBuffer host_in0,
+        TensorBuffer::CreateManaged(env, litert::TensorBufferType::kHostMemory, kTensorType,
+                                    kBufferBytes));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBuffer host_in1,
+        TensorBuffer::CreateManaged(env, litert::TensorBufferType::kHostMemory, kTensorType,
+                                    kBufferBytes));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBuffer host_out0,
+        TensorBuffer::CreateManaged(env, litert::TensorBufferType::kHostMemory, kTensorType,
+                                    kBufferBytes));
+
+    const float kHostInput0[] = {3.0f, 4.0f};
+    const float kHostInput1[] = {30.0f, 40.0f};
+    const float kExpectedHostOutput[] = {33.0f, 44.0f};
+    LITERT_ASSERT_OK(host_in0.Write<float>(absl::MakeConstSpan(kHostInput0, kTestInput0Size)));
+    LITERT_ASSERT_OK(host_in1.Write<float>(absl::MakeConstSpan(kHostInput1, kTestInput1Size)));
+
+    std::vector<TensorBuffer> host_inputs;
+    host_inputs.push_back(std::move(host_in0));
+    host_inputs.push_back(std::move(host_in1));
+    std::vector<TensorBuffer> host_outputs;
+    host_outputs.push_back(std::move(host_out0));
+
+    LITERT_ASSERT_OK(compiled_model.Run(host_inputs, host_outputs));
+
+    // Verify kHostMemory output received the Run 2 result.
+    [MetalTestHelper checkTensorBufferFloatOutput:&host_outputs[0]
+                               withExpectedOutput:kExpectedHostOutput
+                                 withElementCount:kTestOutputSize
+                                    withTolerance:kTolerance];
+
+    // Verify the Run 1 Metal GPU output buffer was NOT overwritten during Run 2.
+    [MetalTestHelper checkTensorBufferFloatOutput:&gpu_output_buffers[0]
+                               withExpectedOutput:kTestOutputTensor
+                                 withElementCount:kTestOutputSize
+                                    withTolerance:kTolerance];
+  }
+}
 @end
