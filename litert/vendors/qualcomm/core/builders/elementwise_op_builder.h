@@ -58,6 +58,14 @@ OpWrapper CreateElementWiseAndOp(const TensorWrapper& input_0,
                                  const TensorWrapper& input_1,
                                  const TensorWrapper& output_0);
 
+OpWrapper CreateElementwiseMinimumOp(const TensorWrapper& input_0,
+                                     const TensorWrapper& input_1,
+                                     const TensorWrapper& output_0);
+
+OpWrapper CreateElementwiseMaximumOp(const TensorWrapper& input_0,
+                                     const TensorWrapper& input_1,
+                                     const TensorWrapper& output_0);
+
 std::vector<OpWrapper> BuildElementwiseSubOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
