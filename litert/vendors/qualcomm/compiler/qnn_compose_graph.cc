@@ -29,7 +29,6 @@
 #include <vector>
 
 #include "QnnCommon.h"  // from @qairt
-#include "QnnOpDef.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
@@ -335,7 +334,15 @@ LiteRtStatus ConvertTensor(const litert::compiler::Tensor& litert_tensor,
         SanitizeName(litert_tensor.Name()), qnn_data_type, quantize_params,
         dimensions);
     tensor_wrapper = &res;
-  } else if (litert_tensor.Uses().empty() || is_tensor_output) {
+  } else if (is_tensor_output) {
+    // Only tensors explicitly declared as subgraph outputs should be created
+    // as QNN Graph Outputs. Do NOT use `litert_tensor.Uses().empty()` here:
+    // intermediate or orphaned tensors left behind by transformations or
+    // multi-output ops have no uses, but are not model outputs. If marked as
+    // QNN outputs, QNN will require client buffers for them at execution time,
+    // causing runtime crashes ("clientBuf is null", status 0x1774).
+    // TODO(b/524639809): Use "Uses().empty()" once all transformations
+    // properly set output tensors.
     auto& res = tensor_pool.CreateOutputTensorWithName(
         SanitizeName(litert_tensor.Name()), qnn_data_type, quantize_params,
         dimensions);
