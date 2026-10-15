@@ -34,6 +34,10 @@ LiteRtStatus LiteRtCreateOptions(LiteRtOptions* options) {
 }
 
 void LiteRtDestroyOptions(LiteRtOptions options) {
+  if (options == nullptr ||
+      options->reference_count.fetch_sub(1, std::memory_order_acq_rel) != 1) {
+    return;
+  }
   if (options && options->options) {
     LiteRtDestroyOpaqueOptions(options->options);
   }
