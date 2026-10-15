@@ -285,22 +285,21 @@ Expected<TflPerChannelQParams> AsPerChannelQparams(
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
     BufferRef<uint8_t> buffer) {
-  if (buffer.Size() >= kMaxModelSize) {
-    return Error(kLiteRtStatusErrorInvalidFlatbuffer, "Model exceeds max size");
-  }
-  if (!VerifyFlatbuffer(buffer.Data(), buffer.Size())) {
-    return Error(kLiteRtStatusErrorInvalidFlatbuffer, "Invalid flatbuffer");
-  }
   auto alloc = MakeAllocation(buffer);
-  LITERT_ASSIGN_OR_ABORT(auto wrapper,
-                         (CreateFromAllocation(std::move(alloc))));
-  return wrapper;
+  return CreateFromAllocation(std::move(alloc));
 }
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromAllocation(
     ::tflite::Allocation::Ptr alloc) {
-  if (alloc == nullptr) {
+  if (alloc == nullptr || !alloc->valid()) {
     return Error(kLiteRtStatusErrorFileIO, "Invalid allocation");
+  }
+  if (alloc->bytes() >= kMaxModelSize) {
+    return Error(kLiteRtStatusErrorInvalidFlatbuffer, "Model exceeds max size");
+  }
+  if (!VerifyFlatbuffer(static_cast<const uint8_t*>(alloc->base()),
+                        alloc->bytes())) {
+    return Error(kLiteRtStatusErrorInvalidFlatbuffer, "Invalid flatbuffer");
   }
 
   auto fb_model =
@@ -314,7 +313,7 @@ Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromAllocation(
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
     OwningBufferRef<uint8_t>&& buffer) {
-  LITERT_ASSIGN_OR_ABORT(auto wrapper, (CreateFromBuffer(buffer)));
+  LITERT_ASSIGN_OR_RETURN(auto wrapper, (CreateFromBuffer(buffer)));
   // Keep the buffer alive for the lifetime of the wrapper.
   wrapper->model_buf_ = std::move(buffer);
   return wrapper;
@@ -323,8 +322,9 @@ Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromTflFile(
     absl::string_view path, bool allow_modifications) {
   auto error_reporter = tflite::DefaultErrorReporter();
-  auto allocation = tflite::GetAllocationFromFile(path.data(), error_reporter,
-                                                  allow_modifications);
+  const std::string null_terminated_path(path);
+  auto allocation = tflite::GetAllocationFromFile(
+      null_terminated_path.c_str(), error_reporter, allow_modifications);
   return FlatbufferWrapper::CreateFromAllocation(std::move(allocation));
 }
 

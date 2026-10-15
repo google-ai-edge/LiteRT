@@ -17,6 +17,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>  // NOLINT
+#include <fstream>
+#include <utility>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -188,6 +191,75 @@ TEST(FlatbufferToolsTest, VerifyLargeFlatbuffer) {
 
   // The verifier should succeed because we increased the max_size.
   EXPECT_TRUE(VerifyFlatbuffer(large_buffer.Data(), large_buffer.Size()));
+}
+
+TEST(FlatbufferToolsTest, CreateFromAllocationInvalid) {
+  auto null_wrapper = FlatbufferWrapper::CreateFromAllocation(nullptr);
+  ASSERT_FALSE(null_wrapper);
+  EXPECT_EQ(null_wrapper.Error().Status(), kLiteRtStatusErrorFileIO);
+
+  auto flatbuffer = TestFlatbuffer();
+  ASSERT_NE(flatbuffer, nullptr);
+  auto serialized = SerializeFlatbuffer(*flatbuffer);
+  ASSERT_GT(serialized.Size(), 20);
+
+  // Truncated model buffer.
+  BufferRef<uint8_t> truncated(serialized.Data(), serialized.Size() / 2);
+  auto alloc = MakeAllocation(truncated);
+  auto wrapper = FlatbufferWrapper::CreateFromAllocation(std::move(alloc));
+  ASSERT_FALSE(wrapper);
+  EXPECT_EQ(wrapper.Error().Status(), kLiteRtStatusErrorInvalidFlatbuffer);
+}
+
+TEST(FlatbufferToolsTest, CreateFromTflFileTruncated) {
+  auto flatbuffer = TestFlatbuffer();
+  ASSERT_NE(flatbuffer, nullptr);
+  auto serialized = SerializeFlatbuffer(*flatbuffer);
+  ASSERT_GT(serialized.Size(), 20);
+
+  std::filesystem::path test_file_path =
+      std::filesystem::path(::testing::TempDir()) / "truncated.tflite";
+  std::ofstream output(test_file_path, std::ios::binary);
+  // Write only half of the serialized model to simulate a truncated download.
+  output.write(reinterpret_cast<const char*>(serialized.Data()),
+               serialized.Size() / 2);
+  output.close();
+
+  auto wrapper = FlatbufferWrapper::CreateFromTflFile(test_file_path.string());
+  std::filesystem::remove(test_file_path);
+
+  ASSERT_FALSE(wrapper);
+  EXPECT_EQ(wrapper.Error().Status(), kLiteRtStatusErrorInvalidFlatbuffer);
+}
+
+TEST(FlatbufferToolsTest, CreateFromTflFileNotFound) {
+  auto wrapper =
+      FlatbufferWrapper::CreateFromTflFile("non_existent_file.tflite");
+  ASSERT_FALSE(wrapper);
+  EXPECT_EQ(wrapper.Error().Status(), kLiteRtStatusErrorFileIO);
+}
+
+TEST(FlatbufferToolsTest, CreateFromTflFileZeroByte) {
+  std::filesystem::path test_file_path =
+      std::filesystem::path(::testing::TempDir()) / "zero_byte.tflite";
+  std::ofstream output(test_file_path, std::ios::binary);
+  output.close();
+
+  auto wrapper = FlatbufferWrapper::CreateFromTflFile(test_file_path.string());
+  std::filesystem::remove(test_file_path);
+
+  ASSERT_FALSE(wrapper);
+  EXPECT_EQ(wrapper.Error().Status(), kLiteRtStatusErrorFileIO);
+}
+
+TEST(FlatbufferToolsTest, CreateFromTflFileStringViewSlice) {
+  std::string filename = "one_mul.tflite";
+  std::string full_path = testing::GetTestFilePath(filename);
+  std::string padded = full_path + "_extra_garbage";
+  absl::string_view slice(padded.data(), full_path.size());
+
+  auto wrapper = FlatbufferWrapper::CreateFromTflFile(slice);
+  ASSERT_TRUE(wrapper);
 }
 
 }  // namespace

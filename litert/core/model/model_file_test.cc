@@ -186,7 +186,7 @@ TEST(ModelLoadTest, BadFileData) {
   const char* bad_file_path = test_file_path.c_str();
 #endif
   EXPECT_THAT(LiteRtCreateModelFromFile(env.Get(), bad_file_path, &model),
-              IsError(kLiteRtStatusErrorFileIO));
+              IsError(kLiteRtStatusErrorInvalidFlatbuffer));
   // NOLINTEND
 }
 
