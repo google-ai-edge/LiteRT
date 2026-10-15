@@ -207,16 +207,17 @@ absl::StatusOr<GpuEventHandle> GpuInferenceContextMetalLitert::GetPostDispatchEv
     return absl::NotFoundError("No post-dispatch event.");
   }
 
-  if (post_dispatch_event_ == nullptr) {
-    return absl::NotFoundError("No post-dispatch event.");
-  }
-
   if (metal_backend()->command_buffer() == nullptr) {
-    return absl::FailedPreconditionError("Command buffer is not set.");
+    metal_backend()->set_command_buffer([metal_backend()->command_queue() commandBuffer]);
   }
 
-  // Commit the command buffer here which has signaling post_dispatch_event_ encoded by
-  // PostConvert() below.
+  // Signal a new event after all the encoded commands and commit them without waiting. The event
+  // is attached to the output tensor buffers.
+  if (post_dispatch_event_ != nullptr) {
+    post_dispatch_event_->Release(post_dispatch_event_);
+  }
+  post_dispatch_event_ = new CustomEventMetal(metal_backend()->metal_device()->device());
+  post_dispatch_event_->EncodeSignal(metal_backend()->command_buffer());
   [metal_backend()->command_buffer() commit];
   metal_backend()->set_command_buffer(nullptr);
 
@@ -249,28 +250,11 @@ absl::Status GpuInferenceContextMetalLitert::WaitForEventsCompleted(
 }
 
 // Same as GpuInferenceContextMetal::PostConvert except that it doesn't wait for output conversion
-// to finish if post_dispatch_event_ is not null as it is asynchronous mode.
+// to finish. DelegateKernelLiteRt::HandleOutputEvents() waits for it in synchronous execution
+// mode, and attaches the post-dispatch event to the outputs in asynchronous execution mode.
 absl::Status GpuInferenceContextMetalLitert::PostConvert(bool input) {
   [metal_backend()->compute_command_encoder() endEncoding];
   metal_backend()->set_compute_command_encoder(nullptr);
-
-  // If output conversion is done, wait for conversion to finish, or replace post_dispatch_event_
-  // with a new one.
-  if (!input) {
-    if (post_dispatch_event_ == nullptr) {
-      ABSL_RETURN_IF_ERROR(metal_backend()->WaitForCompletion());
-    } else {
-      if (metal_backend()->command_buffer() == nullptr) {
-        metal_backend()->set_command_buffer([metal_backend()->command_queue() commandBuffer]);
-      }
-
-      post_dispatch_event_->Release(post_dispatch_event_);
-
-      post_dispatch_event_ = new CustomEventMetal(metal_backend()->metal_device()->device());
-      post_dispatch_event_->EncodeSignal(metal_backend()->command_buffer());
-    }
-  }
-
   return absl::OkStatus();
 }
 
