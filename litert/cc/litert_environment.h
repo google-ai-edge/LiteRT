@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -142,8 +143,45 @@ class Environment {
         std::holds_alternative<const void*>(*system_runtime_handle)) {
       handle = reinterpret_cast<const struct LiteRtRuntimeCApiStruct*>(
           std::get<const void*>(*system_runtime_handle));
+    } else if (system_runtime_handle &&
+               std::holds_alternative<int64_t>(*system_runtime_handle)) {
+      handle = reinterpret_cast<const struct LiteRtRuntimeCApiStruct*>(
+          std::get<int64_t>(*system_runtime_handle));
     }
-    auto runtime = CreateRuntime(handle);
+
+    internal::RuntimeAbiVersion abi_version =
+        handle != nullptr ? internal::RuntimeAbiVersion(1, 0, 0)
+                          : internal::kBuiltinRuntimeAbiVersion;
+    Expected<const LiteRtVariant> system_runtime_abi_version =
+        options.GetOption(EnvironmentOptions::Tag::kSystemRuntimeAbiVersion);
+    if (system_runtime_abi_version) {
+      if (!std::holds_alternative<const char*>(*system_runtime_abi_version)) {
+        return Error(Status::kErrorInvalidArgument,
+                     "System runtime ABI version must be a string.");
+      }
+      const char* version_str =
+          std::get<const char*>(*system_runtime_abi_version);
+      std::optional<internal::RuntimeAbiVersion> parsed_version =
+          internal::RuntimeAbiVersion::Parse(
+              internal::NullSafeStringView(version_str));
+      if (!parsed_version.has_value()) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Invalid LiteRT system runtime ABI version: %s",
+                   version_str != nullptr ? version_str : "(null)");
+        return Error(Status::kErrorRuntimeFailure,
+                     "Invalid LiteRT system runtime ABI version.");
+      }
+      if (!parsed_version->IsCompatibleWithClient()) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Incompatible LiteRT system runtime ABI version: %s",
+                   version_str);
+        return Error(Status::kErrorRuntimeFailure,
+                     "Incompatible LiteRT system runtime ABI version.");
+      }
+      abi_version = *parsed_version;
+    }
+
+    auto runtime = CreateRuntime(handle, abi_version);
     LiteRtEnvironment env;
     if (auto status = runtime->CreateEnvironment(c_options->size(),
                                                  c_options->data(), &env);
@@ -374,7 +412,7 @@ class Environment {
   Expected<EnvironmentOptions> FromCOptions(
       LiteRtEnvironmentOptions options) const {
     std::vector<EnvironmentOptions::Option> env_options;
-    for (int i = 0; i <= kLiteRtEnvOptionTagSystemGpuAcceleratorHandle; ++i) {
+    for (int i = 0; i <= kLiteRtEnvOptionTagSystemRuntimeAbiVersion; ++i) {
       LiteRtAny value;
       if (runtime_->GetEnvironmentOptionsValue(
               options, static_cast<LiteRtEnvOptionTag>(i), &value) ==
@@ -388,13 +426,22 @@ class Environment {
   }
 
   /// @brief Creates a runtime proxy with the externally provided system runtime
-  /// handle.
+  /// handle and ABI version.
   ///
   /// If the system runtime handle is not provided, the builtin runtime will be
   /// used.
   static std::unique_ptr<RuntimeProxy> CreateRuntime(
+      const struct LiteRtRuntimeCApiStruct* system_runtime_handle,
+      internal::RuntimeAbiVersion abi_version) {
+    return std::make_unique<RuntimeProxy>(system_runtime_handle, abi_version);
+  }
+
+  static std::unique_ptr<RuntimeProxy> CreateRuntime(
       const struct LiteRtRuntimeCApiStruct* system_runtime_handle = nullptr) {
-    return std::make_unique<RuntimeProxy>(system_runtime_handle);
+    return CreateRuntime(system_runtime_handle,
+                         system_runtime_handle != nullptr
+                             ? internal::RuntimeAbiVersion(1, 0, 0)
+                             : internal::kBuiltinRuntimeAbiVersion);
   }
 };
 
