@@ -17,6 +17,8 @@
 
 #include <jni.h>
 
+#include <vector>  // IWYU pragma: keep
+
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl  // IWYU pragma: keep
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -89,19 +91,22 @@ inline void ThrowLiteRtException(JNIEnv* env, LiteRtStatus status,
   });
 
 // A macro to help automatically release a JNI string array after use.
-#define AUTO_CLEANUP_JNI_STRING_ARRAY(env, jarray)                             \
-  auto jarray##_size = env->GetArrayLength(jarray);                            \
-  std::vector<const char*> jarray##_vector;                                    \
-  jarray##_vector.reserve(jarray##_size);                                      \
-  for (int i = 0; i < jarray##_size; ++i) {                                    \
-    auto jstr = static_cast<jstring>(env->GetObjectArrayElement(jarray, i));   \
-    jarray##_vector.push_back(env->GetStringUTFChars(jstr, nullptr));          \
-  }                                                                            \
-  auto jarray##_cleanup = absl::MakeCleanup([&]() {                            \
-    for (int i = 0; i < jarray##_size; ++i) {                                  \
-      auto jstr = static_cast<jstring>(env->GetObjectArrayElement(jarray, i)); \
-      env->ReleaseStringUTFChars(jstr, jarray##_vector[i]);                    \
-    }                                                                          \
+#define AUTO_CLEANUP_JNI_STRING_ARRAY(env, jarray)                           \
+  auto jarray##_size = env->GetArrayLength(jarray);                          \
+  std::vector<jstring> jarray##_jstrings;                                    \
+  std::vector<const char*> jarray##_vector;                                  \
+  jarray##_jstrings.reserve(jarray##_size);                                  \
+  jarray##_vector.reserve(jarray##_size);                                    \
+  for (int i = 0; i < jarray##_size; ++i) {                                  \
+    auto jstr = static_cast<jstring>(env->GetObjectArrayElement(jarray, i)); \
+    jarray##_jstrings.push_back(jstr);                                       \
+    jarray##_vector.push_back(env->GetStringUTFChars(jstr, nullptr));        \
+  }                                                                          \
+  auto jarray##_cleanup = absl::MakeCleanup([&]() {                          \
+    for (int i = 0; i < jarray##_size; ++i) {                                \
+      env->ReleaseStringUTFChars(jarray##_jstrings[i], jarray##_vector[i]);  \
+      env->DeleteLocalRef(jarray##_jstrings[i]);                             \
+    }                                                                        \
   });
 
 // A macro to help automatically release a JNI primitive array after use.
