@@ -52,6 +52,12 @@ std::vector<OpWrapper> BuildConv2dOp(
         std::get<AxisScaleOffsetQuantizeParamsWrapper>(filter_quant_params);
     const std::array<std::int32_t, 4> new_axis{3, 0, 1, 2};
     axis_quant_params.SetAxis(new_axis[axis_quant_params.GetAxis()]);
+  } else if (std::holds_alternative<BwAxisScaleOffsetQuantizeParamsWrapper>(
+                 filter_quant_params)) {
+    auto& axis_quant_params =
+        std::get<BwAxisScaleOffsetQuantizeParamsWrapper>(filter_quant_params);
+    const std::array<std::int32_t, 4> new_axis{3, 0, 1, 2};
+    axis_quant_params.SetAxis(new_axis[axis_quant_params.GetAxis()]);
   }
 
   size_t filter_bytes = filter_tensor.GetTensorBytes();
