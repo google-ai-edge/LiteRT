@@ -233,5 +233,39 @@ TEST_F(ConvertRopeTest, Rejects1DPositionsMismatchedBatch) {
   EXPECT_EQ(ir_model, nullptr);
 }
 
+TEST_F(ConvertRopeTest, SupportsBroadcastPosBatchOne) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {2, 16, 16, 256});  // input (b=2, w=16)
+  builder.AddInput(kTfLiteFloat32, {1, 1, 16, 1});     // positions (b=1, w=16)
+  builder.AddOutput(kTfLiteFloat32, {2, 16, 16, 256});
+
+  builder.SetParameters(CreateRopeParams());
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  EXPECT_THAT(ir_model->ops()[0]->name, Eq("rope"));
+}
+
+TEST_F(ConvertRopeTest, RejectsMismatchedNonUnitPosBatch) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {2, 16, 16, 256});  // input (b=2, w=16)
+  builder.AddInput(kTfLiteFloat32, {3, 1, 16, 1});     // positions (b=3, w=16)
+  builder.AddOutput(kTfLiteFloat32, {2, 16, 16, 256});
+
+  builder.SetParameters(CreateRopeParams());
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  EXPECT_EQ(ir_model, nullptr);
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir

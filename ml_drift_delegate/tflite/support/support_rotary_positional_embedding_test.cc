@@ -160,5 +160,29 @@ TEST_F(RoPEOpTest, Rejects1DPositions) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
 }
 
+TEST_F(RoPEOpTest, SupportsBroadcastPosBatchOne) {
+  StubContextBuilder context_builder;
+  const int in0 = context_builder.AddTensor(kTfLiteFloat32, {2, 16, 16, 256});
+  const int in1 = context_builder.AddTensor(kTfLiteFloat32, {1, 1, 16, 1});
+  const int out = context_builder.AddTensor(kTfLiteFloat32, {2, 16, 16, 256});
+  context_builder.SetOpCustom("custom_call.rotary_positional_embedding", 1,
+                              nullptr, {in0, in1}, {out});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+TEST_F(RoPEOpTest, RejectsMismatchedNonUnitPosBatch) {
+  StubContextBuilder context_builder;
+  const int in0 = context_builder.AddTensor(kTfLiteFloat32, {2, 16, 16, 256});
+  const int in1 = context_builder.AddTensor(kTfLiteFloat32, {3, 1, 16, 1});
+  const int out = context_builder.AddTensor(kTfLiteFloat32, {2, 16, 16, 256});
+  context_builder.SetOpCustom("custom_call.rotary_positional_embedding", 1,
+                              nullptr, {in0, in1}, {out});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir

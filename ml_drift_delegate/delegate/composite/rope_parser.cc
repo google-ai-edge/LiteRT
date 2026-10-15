@@ -62,9 +62,10 @@ absl::Status RopeOperationParser::IsSupported(
   ABSL_RETURN_IF_ERROR(
       PreGetInputTensor(context, tflite_node, pos_tensor_idx, &pos));
   const ::ml_drift::BHWC pos_sh = ExtractTensorShape(pos);
-  if (src_sh.b != pos_sh.b) {
+  if (pos_sh.b != 1 && src_sh.b != pos_sh.b) {
     return absl::InvalidArgumentError(
-        "src and pos must have the same batch size for PositionalEmbedding.");
+        "src and pos must have the same batch size (or pos batch size must be "
+        "1) for PositionalEmbedding.");
   }
   int pos_seq_len = 0;
   switch (pos->dims->size) {

@@ -3894,6 +3894,34 @@ TEST(RoPEParserTest, TestIsSupported) {
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
+  // Valid (pos batch=1 broadcasts across src batch > 1, e.g. SAM2 mask decoder)
+  input_shapes[0] = ::ml_drift::BHWC(2, 16, 16, 256);
+  input_shapes[1] = ::ml_drift::BHWC(1, 1, 16, 1);
+  context = std::make_unique<StubTfLiteContext>(kTfLiteBuiltinCustom,
+                                                /*op_version=*/1,
+                                                /*num_inputs=*/2, input_shapes);
+  context->registration()->custom_name =
+      "custom_call.rotary_positional_embedding";
+  parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  // Invalid (mismatched batch when pos batch != 1)
+  input_shapes[1] = ::ml_drift::BHWC(3, 1, 16, 1);
+  context = std::make_unique<StubTfLiteContext>(kTfLiteBuiltinCustom,
+                                                /*op_version=*/1,
+                                                /*num_inputs=*/2, input_shapes);
+  context->registration()->custom_name =
+      "custom_call.rotary_positional_embedding";
+  parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  // Restore input_shapes for 3-input tests
+  input_shapes[0] = ::ml_drift::BHWC(1, 1, 8, 256);
+  input_shapes[1] = ::ml_drift::BHWC(1, 1, 8, 256);
   // If 3 inputs, then pos tensor is index 2. Also require 2 outputs
   input_shapes.push_back(::ml_drift::BHWC(1, 1, 8, 256));
   context = std::make_unique<StubTfLiteContext>(kTfLiteBuiltinCustom,

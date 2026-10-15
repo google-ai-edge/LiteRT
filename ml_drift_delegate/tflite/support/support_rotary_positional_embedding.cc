@@ -103,8 +103,10 @@ bool IsRotaryPositionalEmbeddingSupported(
 
   const int src_batch = src->dims->size >= 1 ? src->dims->data[0] : 1;
   const int pos_batch = pos->dims->size >= 1 ? pos->dims->data[0] : 1;
-  if (src_batch != pos_batch) {
-    *error = "src and pos must have the same batch size for RoPE.";
+  if (pos_batch != 1 && src_batch != pos_batch) {
+    *error =
+        "src and pos must have the same batch size (or pos batch size must be "
+        "1) for RoPE.";
     return false;
   }
 
