@@ -103,10 +103,43 @@ class FlatbufferContext {
 
   BufferIdMap& RegisteredTflBufferIds() { return registered_tfl_buffer_ids_; }
 
+  // The litert buffer registered for each external buffer id, so tensors that
+  // share an external constant share its buffer.
+  BufferIdMap& RegisteredExternalBufferIds() {
+    return registered_external_buffer_ids_;
+  }
+
+  // The external buffer with the given id (Tensor.external_buffer), if the
+  // model declares one.
+  Expected<const ::tflite::ExternalBuffer*> GetExternalBuffer(
+      uint32_t external_buffer_id) {
+    if (!external_buffers_indexed_) {
+      external_buffers_indexed_ = true;
+      if (const auto* buffers = PackedModel()->external_buffers()) {
+        for (const auto* buffer : *buffers) {
+          if (buffer != nullptr) {
+            external_buffers_.emplace(buffer->id(), buffer);
+          }
+        }
+      }
+    }
+    if (auto it = external_buffers_.find(external_buffer_id);
+        it != external_buffers_.end()) {
+      return it->second;
+    }
+    LITERT_LOG(LITERT_ERROR, "Tensor refers to unknown external buffer %u",
+               external_buffer_id);
+    return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+  }
+
  private:
   const FlatbufferWrapper& tfl_flatbuffer_;
   BufferManager* buffer_manager_;
   BufferIdMap registered_tfl_buffer_ids_;
+  BufferIdMap registered_external_buffer_ids_;
+  bool external_buffers_indexed_ = false;
+  absl::flat_hash_map<uint32_t, const ::tflite::ExternalBuffer*>
+      external_buffers_;
 };
 
 bool IsRangeInAllocation(size_t offset, size_t size, size_t allocation_size) {
@@ -252,6 +285,30 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context, LiteRtSubgraphT& parent,
       SetWeightsFromUnownedBuffer(litert_tensor.Weights(), buffer->buffer,
                                   lrt_buf_ctx);
       context.RegisteredTflBufferIds()[buffer_ind] =
+          litert_tensor.Weights().GetBufferId();
+    }
+  } else if (const auto external_buffer_id = tfl_tensor.external_buffer();
+             external_buffer_id != 0) {
+    // A constant stored outside the flatbuffer. The bytes stay empty here: a
+    // runtime with the weight source resolves them, and the reference is kept
+    // so that serialization re-emits it.
+    auto it = context.RegisteredExternalBufferIds().find(external_buffer_id);
+    if (it != context.RegisteredExternalBufferIds().end()) {
+      litert_tensor.Weights().SetBufferId(it->second);
+    } else {
+      auto external = context.GetExternalBuffer(external_buffer_id);
+      if (!external) {
+        return external.Error().Status();
+      }
+      BufferContext lrt_buf_ctx;
+      lrt_buf_ctx.external = ExternalBufferRef{
+          (*external)->id(), (*external)->group(), (*external)->offset(),
+          (*external)->length(),
+          (*external)->packing() ? (*external)->packing()->str()
+                                 : std::string()};
+      SetWeightsFromUnownedBuffer(litert_tensor.Weights(), BufferRef<uint8_t>(),
+                                  lrt_buf_ctx);
+      context.RegisteredExternalBufferIds()[external_buffer_id] =
           litert_tensor.Weights().GetBufferId();
     }
   }
@@ -518,6 +575,16 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
       LITERT_RETURN_IF_ERROR(UnpackSubgraph(context, *tfl_subgraph,
                                             litert_model->EmplaceSubgraph()));
     }
+  }
+
+  if (const auto* groups = packed_model->external_buffer_groups()) {
+    std::vector<std::string> names;
+    names.reserve(groups->size());
+    for (const auto* group : *groups) {
+      names.push_back(group != nullptr && group->name() ? group->name()->str()
+                                                        : std::string());
+    }
+    litert_model->SetExternalBufferGroups(std::move(names));
   }
 
   // TODO Figure out how to load signatures in packed flatbuffer.
