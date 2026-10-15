@@ -26,6 +26,7 @@ from ai_edge_litert.tools import mmap_utils
 from litert_quantizer import qtyping
 from litert_quantizer import transformation_instruction_generator
 from litert_quantizer import transformation_performer
+from litert_quantizer.utils import progress_utils
 from litert_quantizer.utils import tfl_flatbuffer_utils
 
 
@@ -212,6 +213,7 @@ class ModelModifier:
           quantized_model,
           packed_buffer_data,
           serialize_to_path=serialize_to_path,
+          enable_progress_bar=enable_progress_bar,
       )
 
     return serialized_quantized_model
@@ -292,6 +294,7 @@ class ModelModifier:
       quantized_model: qtyping.ModelT,
       packed_buffer_data: _PackedBufferData,
       serialize_to_path: qtyping.Path | None = None,
+      enable_progress_bar: bool | None = None,
   ) -> qtyping.BufferType:
     """Serialize a model using external buffers.
 
@@ -300,6 +303,7 @@ class ModelModifier:
       packed_buffer_data: a `_PackedBufferData` created from `quantized_model`.
       serialize_to_path: If set, the quantized model will be serialized to this
         path.
+      enable_progress_bar: Whether to enable the progress bar.
 
     Returns:
       a `bytearray` that represents the serialized tflite model
@@ -346,27 +350,37 @@ class ModelModifier:
 
     # Pack the buffer contents at the end of the model_buffer, setting the
     # correct sizes and offsets in the original quantized_model.
-    for buffer_id, buffer_data in packed_buffer_data.data_for_buffer_id.items():
-      # Update the packed buffer with the correct size and offset.
-      buffer = quantized_model.buffers[buffer_id]
-      buffer.offset = buffer_data_offset
-      buffer.size = len(buffer_data)
-      flatbuffer_utils.update_packed_buffer(
-          model_packed.Buffers(buffer_id),
-          offset=buffer.offset,
-          size=buffer.size,
-      )
+    with progress_utils.ProgressBar(
+        total_steps=len(packed_buffer_data.data_for_buffer_id),
+        description="Serializing model buffers:",
+        enable=enable_progress_bar,
+    ) as progress_bar:
+      for (
+          buffer_id,
+          buffer_data,
+      ) in packed_buffer_data.data_for_buffer_id.items():
+        # Update the packed buffer with the correct size and offset.
+        buffer = quantized_model.buffers[buffer_id]
+        buffer.offset = buffer_data_offset
+        buffer.size = len(buffer_data)
+        flatbuffer_utils.update_packed_buffer(
+            model_packed.Buffers(buffer_id),
+            offset=buffer.offset,
+            size=buffer.size,
+        )
 
-      # Pack the buffer at the end of the model_buffer.
-      model_buffer[
-          buffer_data_offset : buffer_data_offset + len(buffer_data)
-      ] = memoryview(buffer_data)
+        # Pack the buffer at the end of the model_buffer.
+        model_buffer[
+            buffer_data_offset : buffer_data_offset + len(buffer_data)
+        ] = memoryview(buffer_data)
 
-      # Increment the offset by the amount of data that we added, plus padding.
-      buffer_data_offset = _round_up_16(buffer_data_offset + len(buffer_data))
-      mmap_utils.advise_dont_need(buffer_data)
-      if isinstance(model_buffer, mmap.mmap):
-        mmap_utils.advise_dont_need(model_buffer, 0, buffer_data_offset)
+        # Increment the offset by the amount of data that we added, plus
+        # padding.
+        buffer_data_offset = _round_up_16(buffer_data_offset + len(buffer_data))
+        mmap_utils.advise_dont_need(buffer_data)
+        if isinstance(model_buffer, mmap.mmap):
+          mmap_utils.advise_dont_need(model_buffer, 0, buffer_data_offset)
+        progress_bar.update_single_step()
 
     # Clean up and write the buffer to a file if requested/needed.
     if isinstance(model_buffer, mmap.mmap):
