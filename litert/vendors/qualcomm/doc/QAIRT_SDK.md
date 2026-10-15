@@ -68,7 +68,27 @@ Linux host machine, they need to find the following files:
 -   `${QAIRT}/lib/x86_64-linux-clang/libQnnHtp.so`
 -   `${QAIRT}/lib/x86_64-linux-clang/libQnnSystem.so`
 
-## (Optional) Specify other QAIRT version in LiteRT
+## (Optional) Use a local QAIRT SDK without editing BUILD files
+
+Set `LITERT_QAIRT_SDK` to the root of your local QAIRT installation before
+running any Bazel command. LiteRT will use that path instead of downloading the
+SDK defined in `workspace.bzl`.
+
+```sh
+LITERT_QAIRT_SDK=/path/to/qairt bazel build //litert/tools:apply_plugin_main
+```
+
+For example:
+
+```sh
+LITERT_QAIRT_SDK=/path/to/qaisw-v2.52.0/ \
+  bazel build //litert/tools:apply_plugin_main
+```
+
+This is the recommended way to switch QAIRT versions locally — no edits to
+any `.bzl` file are needed.
+
+## (Optional) Download other QAIRT version in LiteRT
 
 Modify `${LITERT}/third_party/qairt/workspace.bzl` and change `strip_prefix` and
 `url`. Please get the url of QAIRT SDK from
