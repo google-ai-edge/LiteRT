@@ -22,7 +22,6 @@ limitations under the License.
 #include <limits>
 
 #include "absl/types/span.h"
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/kernels/internal/common.h"
 #include "tflite/kernels/internal/cppmath.h"
 #include "tflite/kernels/internal/max.h"
