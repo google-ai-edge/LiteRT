@@ -133,6 +133,9 @@ void SetTflOpCodes(LiteRtModelT& litert_model, Arg&& arg);
 std::vector<::litert::internal::TflOpCodePtr>&& TakeTflOpCodes(
     LiteRtModelT& litert_model);
 
+const ::tflite::ExternalBuffer* GetTflExternalBuffer(
+    const LiteRtModelT& litert_model, uint32_t litert_buf_id);
+
 void SetTflFlatbuffer(LiteRtModelT& litert_model,
                       ::litert::internal::FlatbufferWrapper&& tfl_flatbuffer);
 

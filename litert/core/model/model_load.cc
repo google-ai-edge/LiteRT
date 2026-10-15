@@ -15,6 +15,7 @@
 #include "litert/core/model/model_load.h"
 
 #include <algorithm>
+#include <cstdarg>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -23,6 +24,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -39,6 +41,8 @@
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/converter/allocation.h"
+#include "tflite/converter/core/model_builder_base.h"
+#include "tflite/core/api/error_reporter.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace litert::internal {
@@ -111,6 +115,31 @@ class FlatbufferContext {
 
 bool IsRangeInAllocation(size_t offset, size_t size, size_t allocation_size) {
   return offset <= allocation_size && size <= allocation_size - offset;
+}
+
+class SilentErrorReporter : public tflite::ErrorReporter {
+ public:
+  int Report(const char* format, va_list args) override { return 0; }
+};
+
+bool IsAbsolutePath(absl::string_view path) {
+  if (path.empty()) {
+    return false;
+  }
+#if defined(_WIN32)
+  if (path.size() >= 2 && path[1] == ':' &&
+      ((path[0] >= 'A' && path[0] <= 'Z') ||
+       (path[0] >= 'a' && path[0] <= 'z'))) {
+    return true;
+  }
+  if (path.size() >= 2 && (path[0] == '\\' || path[0] == '/') &&
+      (path[1] == '\\' || path[1] == '/')) {
+    return true;
+  }
+  return path[0] == '\\' || path[0] == '/';
+#else
+  return path[0] == '/';
+#endif
 }
 
 #if !defined(LITERT_NO_BUILTIN_OPS)
@@ -253,6 +282,19 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context, LiteRtSubgraphT& parent,
                                   lrt_buf_ctx);
       context.RegisteredTflBufferIds()[buffer_ind] =
           litert_tensor.Weights().GetBufferId();
+    }
+  } else if (tfl_tensor.external_buffer() != 0) {
+    const auto ext_buf_id = tfl_tensor.external_buffer();
+    const auto* ext_buffers = context.PackedModel()->external_buffers();
+    if (ext_buffers != nullptr) {
+      for (uint32_t i = 0; i < ext_buffers->size(); ++i) {
+        const auto* ext_buf = ext_buffers->Get(i);
+        if (ext_buf != nullptr && ext_buf->id() == ext_buf_id) {
+          litert_tensor.Weights().SetBufferManager(context.GetBufferManager());
+          litert_tensor.Weights().SetBufferId(i + 1);
+          break;
+        }
+      }
     }
   }
 
@@ -508,6 +550,16 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
                             litert_model->Buffers());
   const auto* packed_model = context.PackedModel();
 
+  if (packed_model->external_buffers()) {
+    const auto num_ext_buffers = packed_model->external_buffers()->size();
+    for (uint32_t i = 0; i < num_ext_buffers; ++i) {
+      if (packed_model->external_buffers()->Get(i) == nullptr) {
+        return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
+      litert_model->Buffers()->RegisterNonOwnedBuffer(BufferRef<uint8_t>());
+    }
+  }
+
   if (packed_model->subgraphs()) {
     const auto num_subgraphs = packed_model->subgraphs()->size();
     for (auto i = 0; i < num_subgraphs; ++i) {
@@ -650,6 +702,78 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
     }
   }
 #endif  // !defined(LITERT_NO_BUILTIN_OPS)
+
+  // Resolve external weight group files located alongside the model file, if
+  // present on disk. If a group file is not on disk (e.g., it refers to a
+  // ScopedWeightSource section or WeightInMemoryMap key supplied at runtime),
+  // leave the buffer view empty to be resolved when runtime options are
+  // available.
+  const auto* packed_model = GetTflFlatbuffer(*model).PackedModel();
+  const auto* ext_buffers =
+      packed_model ? packed_model->external_buffers() : nullptr;
+  const auto* ext_groups =
+      packed_model ? packed_model->external_buffer_groups() : nullptr;
+  if (ext_buffers != nullptr && ext_groups != nullptr &&
+      !ext_buffers->empty() && !ext_groups->empty()) {
+    absl::string_view model_dir;
+    const size_t last_sep = filename.find_last_of("/\\");
+    if (last_sep != absl::string_view::npos) {
+      model_dir = filename.substr(0, last_sep);
+    }
+
+    std::vector<tflite::Allocation::Ptr> group_allocs(ext_groups->size());
+    std::vector<uint8_t> group_attempted(ext_groups->size(), 0);
+
+    for (uint32_t i = 0; i < ext_buffers->size(); ++i) {
+      const auto* ext_buf = ext_buffers->Get(i);
+      if (ext_buf == nullptr) {
+        continue;
+      }
+      const uint32_t group_idx = ext_buf->group();
+      if (group_idx >= ext_groups->size()) {
+        return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
+      const auto* group = ext_groups->Get(group_idx);
+      if (group == nullptr || group->name() == nullptr ||
+          group->name()->empty()) {
+        return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
+
+      if (!group_attempted[group_idx]) {
+        group_attempted[group_idx] = 1;
+        const absl::string_view group_name(group->name()->c_str(),
+                                           group->name()->size());
+        std::string resolved_path;
+        if (model_dir.empty() || IsAbsolutePath(group_name)) {
+          resolved_path = std::string(group_name);
+        } else {
+          resolved_path = absl::StrCat(model_dir, "/", group_name);
+        }
+        SilentErrorReporter silent_reporter;
+        auto alloc = tflite::GetAllocationFromFile(
+            resolved_path.c_str(), &silent_reporter, allow_modifications);
+        if (alloc && alloc->valid()) {
+          group_allocs[group_idx] = std::move(alloc);
+        }
+      }
+
+      const tflite::Allocation* group_alloc = group_allocs[group_idx].get();
+      if (group_alloc == nullptr) {
+        continue;
+      }
+
+      if (!IsRangeInAllocation(ext_buf->offset(), ext_buf->length(),
+                               group_alloc->bytes())) {
+        return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
+
+      OwningBufferRef<uint8_t> weight_buf(
+          static_cast<const uint8_t*>(group_alloc->base()) + ext_buf->offset(),
+          ext_buf->length());
+      LITERT_RETURN_IF_ERROR(
+          model->Buffers()->SetOwnedBuffer(i + 1, std::move(weight_buf)));
+    }
+  }
 
   return std::move(model);
 }
