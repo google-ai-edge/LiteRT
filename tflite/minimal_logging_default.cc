@@ -17,6 +17,10 @@ limitations under the License.
 
 #include <cstdio>
 
+#if defined(__OHOS__)
+#include <hilog/log.h>
+#endif  // defined(__OHOS__)
+
 #include "tflite/minimal_logging.h"
 
 namespace tflite {
@@ -39,6 +43,29 @@ void MinimalLogger::LogFormatted(LogSeverity severity, const char* format,
     vfprintf(stderr, format, args);
 #pragma clang diagnostic pop
     fputc('\n', stderr);
+#if defined(__OHOS__)
+    // OpenHarmony discards a native app's stderr, so mirror into hilog.
+    va_list args_copy;
+    va_copy(args_copy, args);
+    char hilog_buffer[2048];
+    vsnprintf(hilog_buffer, sizeof(hilog_buffer), format, args_copy);
+    va_end(args_copy);
+    LogLevel level = LOG_DEBUG;
+    switch (severity) {
+      case TFLITE_LOG_INFO:
+        level = LOG_INFO;
+        break;
+      case TFLITE_LOG_WARNING:
+        level = LOG_WARN;
+        break;
+      case TFLITE_LOG_ERROR:
+        level = LOG_ERROR;
+        break;
+      default:
+        break;
+    }
+    OH_LOG_Print(LOG_APP, level, 0xFF02, "tflite", "%{public}s", hilog_buffer);
+#endif  // defined(__OHOS__)
   }
 }
 

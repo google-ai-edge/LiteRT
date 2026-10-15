@@ -24,6 +24,10 @@
 #include <android/log.h>
 #endif  // defined(__ANDROID__)
 
+#if defined(__OHOS__)
+#include <hilog/log.h>
+#endif  // defined(__OHOS__)
+
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 
@@ -46,6 +50,23 @@ int GetAndroidSeverity(LiteRtLogSeverity severity) {
   }
 }
 #endif  // defined(__ANDROID__)
+
+#if defined(__OHOS__)
+LogLevel GetOhosLevel(LiteRtLogSeverity severity) {
+  switch (severity) {
+    case kLiteRtLogSeverityVerbose:
+      return LOG_DEBUG;
+    case kLiteRtLogSeverityInfo:
+      return LOG_INFO;
+    case kLiteRtLogSeverityWarning:
+      return LOG_WARN;
+    case kLiteRtLogSeverityError:
+      return LOG_ERROR;
+    default:
+      return LOG_DEBUG;
+  }
+}
+#endif  // defined(__OHOS__)
 
 // Helper class for simple platform-specific console logging. Note that we
 // explicitly avoid the convenience of ostream-style logging to minimize binary
@@ -78,7 +99,27 @@ class MinimalLogger {
       vfprintf(stderr, format, args_copy);
       va_end(args_copy);
       fputc('\n', stderr);
-#else  // defined(__ANDROID__)
+#elif defined(__OHOS__)
+      // OpenHarmony discards a native app's stderr, so mirror into hilog.
+      fprintf(stderr, "%s: ", GetSeverityName(severity));
+      {
+        va_list args_copy;
+        va_copy(args_copy, args);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
+        vfprintf(stderr, format, args_copy);
+#pragma clang diagnostic pop
+        va_end(args_copy);
+        fputc('\n', stderr);
+
+        char hilog_buffer[2048];
+        va_copy(args_copy, args);
+        vsnprintf(hilog_buffer, sizeof(hilog_buffer), format, args_copy);
+        va_end(args_copy);
+        OH_LOG_Print(LOG_APP, GetOhosLevel(severity), 0xFF01, "litert",
+                     "%{public}s", hilog_buffer);
+      }
+#else  // defined(__ANDROID__) || defined(__OHOS__)
       fprintf(stderr, "%s: ", GetSeverityName(severity));
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wformat-nonliteral"
