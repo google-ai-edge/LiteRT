@@ -5,12 +5,12 @@
 #include <cstdint>
 #include <vector>
 
+#include "QnnTypes.h"  // from @qairt
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/builders/conv2d_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
-#include "third_party/qairt/latest/include/QNN/QnnTypes.h"
 
 namespace litert::qnn {
 namespace {
