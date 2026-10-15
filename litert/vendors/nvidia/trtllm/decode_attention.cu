@@ -22,7 +22,6 @@
 
 namespace {
 
-constexpr int kChunk = 64;         // keys per block
 constexpr int kKeyBatch = 4;       // keys loaded together per warp (QK)
 constexpr int kValueBatch = 8;     // keys loaded together per thread (PV)
 constexpr int kMaxRows = 16;
@@ -54,10 +53,13 @@ __device__ __forceinline__ float WarpSum(float v) {
   return v;
 }
 
-// Threads per block: 256 when every thread can own at least one value
-// element, 128 for depth 128.
-template <int kDepth>
+// Small decode groups use fewer threads and keys per block to shorten latency
+// chains and expose more independent blocks. Larger groups keep their geometry.
+template <int kDepth, int kRowsCap>
 __host__ __device__ constexpr int ThreadsFor() {
+  if (kDepth >= 256 && kRowsCap == 4) {
+    return kDepth / 8;
+  }
   return kDepth >= 256 ? 256 : 128;
 }
 
@@ -70,6 +72,7 @@ __host__ __device__ constexpr int RowsPadFor() {
 
 template <int kDepth, int kRowsCap>
 __host__ __device__ constexpr size_t SharedBytesFor() {
+  constexpr int kChunk = kDepth >= 256 && kRowsCap == 4 ? kDepth / 16 : 64;
   // q as fp32 [rows][E][32], scores/probabilities [kChunk][kRowsPad] fp32,
   // row max and sum, mask bytes [rows][kChunk].
   return static_cast<size_t>(kRowsCap) * kDepth * sizeof(float) +
@@ -89,14 +92,15 @@ __host__ __device__ constexpr size_t SharedBytesFor() {
 // acc [heads][splits][rows][depth], then m [heads][splits][rows], then
 // l [heads][splits][rows].
 template <typename T, int kDepth, int kRowsCap>
-__global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
+__global__ void __launch_bounds__(ThreadsFor<kDepth, kRowsCap>(), 2)
     DecodeAttentionPartial(const T* __restrict__ q, const __half* __restrict__ k,
                            const __half* __restrict__ v,
                            const bool* __restrict__ mask, int mask_rows,
                            int rows, int seq, float fill, int splits,
                            float* __restrict__ ws_acc, float* __restrict__ ws_m,
                            float* __restrict__ ws_l) {
-  constexpr int kThreads = ThreadsFor<kDepth>();
+  constexpr int kChunk = kDepth >= 256 && kRowsCap == 4 ? kDepth / 16 : 64;
+  constexpr int kThreads = ThreadsFor<kDepth, kRowsCap>();
   constexpr int kWarps = kThreads / 32;
   constexpr int kLaneElems = kDepth / 32;     // key elements per lane (QK)
   constexpr int kThreadElems = kDepth / kThreads;  // value elements per thread
@@ -270,7 +274,8 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
       l += p;
     }
     l = WarpSum(l);
-    // Order shared-maximum reads before lane zero overwrites it.
+    // All lanes must finish reading the old shared maximum before lane 0
+    // overwrites it; shuffle synchronization does not order shared memory.
     __syncwarp();
     if (lane == 0) {
       const float scale =
@@ -445,47 +450,10 @@ __global__ void __launch_bounds__(kCombineThreads)
 // Blocks per head: one per chunk up to kMaxSplits; beyond that the blocks
 // loop over chunks, which keeps the partial workspace and the combine small.
 constexpr int kMaxSplits = 168;
-int SplitCount(int seq) {
+int SplitCount(int seq, int depth, int rows) {
+  const int kChunk = depth >= 256 && rows <= 4 ? depth / 16 : 64;
   const int chunks = (seq + kChunk - 1) / kChunk;
   return chunks < kMaxSplits ? chunks : kMaxSplits;
-}
-
-
-// Keep short reductions unsplit. Otherwise expose more blocks only while
-// the unsplit row/head grid leaves SMs unused, with at least 128 outputs
-// per block. The split threshold is a measured tuning parameter.
-cudaError_t CombineSlices(int heads, int rows, int depth, int splits,
-                          int* slices) {
-  *slices = 1;
-  constexpr int kMinSplits = 16;
-  constexpr int kMinSliceWidth = 128;
-  if (splits < kMinSplits || depth <= kMinSliceWidth) {
-    return cudaSuccess;
-  }
-  int device;
-  cudaError_t status = cudaGetDevice(&device);
-  if (status != cudaSuccess) return status;
-  static thread_local int cached_device = -1;
-  static thread_local int sm_count = 0;
-  if (device != cached_device) {
-    status = cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount,
-                                    device);
-    if (status != cudaSuccess) return status;
-    cached_device = device;
-  }
-  const int64_t blocks = static_cast<int64_t>(heads) * rows;
-  while (*slices < depth / kMinSliceWidth && blocks * *slices < sm_count) {
-    *slices *= 2;
-  }
-  return cudaSuccess;
-}
-
-template <typename T, int kDepth, int kSlices>
-void LaunchCombine(const float* acc, const float* m, const float* l,
-                   int heads, int rows, int splits, T* out, cudaStream_t stream) {
-  DecodeAttentionCombine<T, kDepth, kSlices>
-      <<<dim3(rows, heads, kSlices), kCombineThreads, 0, stream>>>(
-          acc, m, l, rows, splits, out);
 }
 
 
@@ -494,7 +462,7 @@ cudaError_t Launch(const T* q, const __half* k, const __half* v,
                    const bool* mask, int mask_rows, int heads, int rows,
                    int seq, float fill, T* out, void* workspace,
                    cudaStream_t stream) {
-  const int splits = SplitCount(seq);
+  const int splits = SplitCount(seq, kDepth, rows);
   float* ws_acc = static_cast<float*>(workspace);
   float* ws_m = ws_acc + static_cast<size_t>(heads) * splits * rows * kDepth;
   float* ws_l = ws_m + static_cast<size_t>(heads) * splits * rows;
@@ -518,32 +486,17 @@ cudaError_t Launch(const T* q, const __half* k, const __half* v,
     attribute_set = true;
   }
   DecodeAttentionPartial<T, kDepth, kRowsCap>
-      <<<dim3(splits, heads), ThreadsFor<kDepth>(), kSharedBytes, stream>>>(
+      <<<dim3(splits, heads), ThreadsFor<kDepth, kRowsCap>(), kSharedBytes, stream>>>(
           q, k, v, mask, mask_rows, rows, seq, fill, splits, ws_acc, ws_m,
           ws_l);
   cudaError_t status = cudaGetLastError();
   if (status != cudaSuccess) {
     return status;
   }
-  int slices;
-  status = CombineSlices(heads, rows, kDepth, splits, &slices);
-  if (status != cudaSuccess) return status;
-  if constexpr (kDepth >= 512) {
-    if (slices == 4) {
-      LaunchCombine<T, kDepth, 4>(ws_acc, ws_m, ws_l, heads, rows, splits,
-                                  out, stream);
-      return cudaGetLastError();
-    }
-  }
-  if constexpr (kDepth >= 256) {
-    if (slices == 2) {
-      LaunchCombine<T, kDepth, 2>(ws_acc, ws_m, ws_l, heads, rows, splits,
-                                  out, stream);
-      return cudaGetLastError();
-    }
-  }
-  LaunchCombine<T, kDepth, 1>(ws_acc, ws_m, ws_l, heads, rows, splits,
-                              out, stream);
+  constexpr int kSlices = kDepth >= 256 && kRowsCap == 4 ? 4 : 1;
+  DecodeAttentionCombine<T, kDepth, kSlices>
+      <<<dim3(rows, heads, kSlices), kCombineThreads, 0, stream>>>(ws_acc, ws_m, ws_l,
+                                                          rows, splits, out);
   return cudaGetLastError();
 }
 
@@ -586,7 +539,8 @@ extern "C" size_t LiteRtNvidiaDecodeAttentionWorkspaceBytes(int32_t heads,
                                                             int32_t rows,
                                                             int32_t seq,
                                                             int32_t depth) {
-  const size_t parts = static_cast<size_t>(heads) * SplitCount(seq) * rows;
+  const size_t parts =
+      static_cast<size_t>(heads) * SplitCount(seq, depth, rows) * rows;
   return parts * (static_cast<size_t>(depth) + 2) * sizeof(float);
 }
 

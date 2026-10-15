@@ -33,7 +33,7 @@ namespace litert::nvidia {
 namespace {
 
 constexpr char kPluginName[] = "LiteRtNvidiaDecodeAttention";
-constexpr char kPluginVersion[] = "1";
+constexpr char kPluginVersion[] = "2";
 constexpr char kPluginNamespace[] = "";
 constexpr char kFillField[] = "fill";
 constexpr char kNewKeysField[] = "new_keys";
