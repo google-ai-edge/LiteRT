@@ -565,6 +565,20 @@ absl::Status SharedMemoryManager::CreateQuantizedInt8WeightsTensor(
       gpu_info_, shape,
       create_info_.hints.Check(ModelHints::kPreferTextureWeights));
 
+  // WebGPU binds the whole packed weights tensor as a single storage buffer,
+  // which must not exceed maxStorageBufferBindingSize (e.g. 128 MiB on Adreno).
+  // Fail early with a clear error instead of producing invalid bind groups that
+  // Dawn only logs, which silently leads to garbage outputs.
+  if (gpu_info_.IsApiWebGpu()) {
+    const TensorDescriptor packed_desc =
+        GetTensorDescriptorsForWeightsLayout(shape, weights_desc)[0];
+    ABSL_RETURN_IF_ERROR(packed_desc.CanCreateTensorWithShape(
+        gpu_info_, packed_desc.GetBHWDCShape()))
+        << "INT8 weights tensor " << shared_tensor_id << " with shape ["
+        << shape.o << ", " << shape.h << ", " << shape.w << ", " << shape.i
+        << "] is not supported on this WebGPU device.";
+  }
+
   // ML Drift's optimal performance requires the weights to be arranged in a
   // certain layout, which is typically different from TFL flatbuffer's weight
   // layouts.
