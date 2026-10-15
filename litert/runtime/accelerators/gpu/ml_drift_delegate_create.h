@@ -28,7 +28,10 @@ namespace litert::ml_drift {
 using DelegateCreator = TfLiteDelegatePtr (*)(MlDriftDelegateOptionsPtr,
                                               LiteRtEnvironment);
 
-// Creates a new ML Drift delegate object.
+// Creates a new ML Drift delegate object. Keeps existing values of
+// gpu_delegate_options if gpu_options_payload is not set or the individual
+// options are not set. A notable exception is `use_ir_model` which is
+// determined by LITERT_GPU_USE_IR_MODEL if the LrtGpuOptions option is not set.
 LiteRtStatus CreateDelegate(
     LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
     LiteRtAcceleratorConst accelerator, LrtGpuOptions* gpu_options_payload,
