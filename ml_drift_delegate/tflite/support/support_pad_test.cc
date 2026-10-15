@@ -112,5 +112,115 @@ TEST(PadSupportTest, NonConstPadding) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
 }
 
+TEST(PadSupportTest, ConstInput) {
+  StubContextBuilder context_builder;
+  const int input =
+      context_builder.AddConstTensor(kTfLiteFloat32, {1, 2, 2, 1});
+  const int paddings = context_builder.AddConstTensor(kTfLiteInt32, {4, 2});
+  const int output = context_builder.AddTensor(kTfLiteFloat32, {1, 4, 4, 1});
+  context_builder.SetOp(kTfLiteBuiltinPad, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{input, paddings},
+                        /*outputs=*/{output});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_NE(context, nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+TEST(PadSupportTest, PadV2ConstInput) {
+  StubContextBuilder context_builder;
+  const int input =
+      context_builder.AddConstTensor(kTfLiteFloat32, {1, 2, 2, 1});
+  const int paddings = context_builder.AddConstTensor(kTfLiteInt32, {4, 2});
+  float const_val = 0.0f;
+  const int const_val_tensor =
+      context_builder.AddScalarConstTensor(kTfLiteFloat32, &const_val);
+  const int output = context_builder.AddTensor(kTfLiteFloat32, {1, 4, 4, 1});
+  context_builder.SetOp(kTfLiteBuiltinPadv2, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{input, paddings, const_val_tensor},
+                        /*outputs=*/{output});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_NE(context, nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+TEST(PadSupportTest, PadMirrorConstInput) {
+  StubContextBuilder context_builder;
+  const int input =
+      context_builder.AddConstTensor(kTfLiteFloat32, {1, 2, 2, 1});
+  const int paddings = context_builder.AddConstTensor(kTfLiteInt32, {4, 2});
+  const int output = context_builder.AddTensor(kTfLiteFloat32, {1, 4, 4, 1});
+  TfLiteMirrorPaddingParams params = {
+      .mode = kTfLiteMirrorPaddingReflect,
+  };
+  context_builder.SetOp(kTfLiteBuiltinMirrorPad, /*version=*/1,
+                        /*params=*/&params,
+                        /*inputs=*/{input, paddings},
+                        /*outputs=*/{output});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_NE(context, nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+TEST(PadSupportTest, UnsupportedConstInputDtype) {
+  StubContextBuilder context_builder;
+  const int input = context_builder.AddConstTensor(kTfLiteInt16, {1, 2, 2, 1});
+  const int paddings = context_builder.AddConstTensor(kTfLiteInt32, {4, 2});
+  const int output = context_builder.AddTensor(kTfLiteInt16, {1, 4, 4, 1});
+  context_builder.SetOp(kTfLiteBuiltinPad, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{input, paddings},
+                        /*outputs=*/{output});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_NE(context, nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST(PadSupportTest, MismatchedConstInputOutputDtype) {
+  StubContextBuilder context_builder;
+  const int input = context_builder.AddConstTensor(kTfLiteInt32, {1, 2, 2, 1});
+  const int paddings = context_builder.AddConstTensor(kTfLiteInt32, {4, 2});
+  const int output = context_builder.AddTensor(kTfLiteFloat32, {1, 4, 4, 1});
+  context_builder.SetOp(kTfLiteBuiltinPad, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{input, paddings},
+                        /*outputs=*/{output});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_NE(context, nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST(PadSupportTest, Fp16ConstInputFp32Output) {
+  StubContextBuilder context_builder;
+  const int input =
+      context_builder.AddConstTensor(kTfLiteFloat16, {1, 2, 2, 1});
+  const int paddings = context_builder.AddConstTensor(kTfLiteInt32, {4, 2});
+  const int output = context_builder.AddTensor(kTfLiteFloat32, {1, 4, 4, 1});
+  context_builder.SetOp(kTfLiteBuiltinPad, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{input, paddings},
+                        /*outputs=*/{output});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_NE(context, nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+TEST(PadSupportTest, MalformedQuantizedConstInput) {
+  StubContextBuilder context_builder;
+  const int input = context_builder.AddConstTensor(kTfLiteInt8, {1, 2, 2, 1});
+  const int paddings = context_builder.AddConstTensor(kTfLiteInt32, {4, 2});
+  const int output = context_builder.AddTensor(kTfLiteInt8, {1, 4, 4, 1});
+  context_builder.SetOp(kTfLiteBuiltinPad, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{input, paddings},
+                        /*outputs=*/{output});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_NE(context, nullptr);
+  context->tensors[input].quantization.type = kTfLiteAffineQuantization;
+  context->tensors[input].quantization.params = nullptr;
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir

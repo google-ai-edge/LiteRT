@@ -31,6 +31,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
@@ -3055,6 +3056,129 @@ TEST(PadOperationParserTest, TestIsSupported) {
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
+
+  // Valid with constant input[0]
+  context->tensor(2)->dims->data[1] = 2;
+  context->SetTensorType(1, kTfLiteFloat32, kTfLiteMmapRo);
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Valid with FP16 constant input[0] and FP32 output[0] (from DEQUANTIZE
+  // remapping).
+  context->SetTensorType(1, kTfLiteFloat16, kTfLiteMmapRo);
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Mismatched non-FP16 constant input[0] type and FP32 output[0] is rejected.
+  context->SetTensorType(1, kTfLiteInt32, kTfLiteMmapRo);
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Unsupported constant input[0] type is rejected.
+  context->SetTensorType(1, kTfLiteInt64, kTfLiteMmapRo);
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Constant input[0] with non-constant paddings (input[1]) is rejected.
+  context->SetTensorType(1, kTfLiteFloat32, kTfLiteMmapRo);
+  context->tensor(2)->allocation_type = kTfLiteArenaRw;
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  context->tensor(2)->allocation_type = kTfLiteMmapRo;
+
+  // Malformed quantized constant input[0] (missing quantization.params) is
+  // rejected.
+  context->SetTensorType(1, kTfLiteInt8, kTfLiteMmapRo);
+  context->SetTensorType(3, kTfLiteInt8, kTfLiteArenaRw);
+  context->tensor(1)->quantization.type = kTfLiteAffineQuantization;
+  context->tensor(1)->quantization.params = nullptr;
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+}
+
+TEST(PadOperationParserTest, ParseWithConstInput) {
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinPad,
+      /*op_version=*/2,
+      /*num_inputs=*/2,
+      /*shape=*/std::vector<int>({1, 2, 2, 1}));
+  context->SetTensorType(1, kTfLiteFloat32, kTfLiteMmapRo);
+  context->ChangeTensorShape(2, {4, 2});
+  context->SetTensorType(2, kTfLiteInt32, kTfLiteMmapRo);
+  context->ChangeTensorShape(3, {1, 4, 4, 1});
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  ASSERT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, context.get(), context->node(), &tensor_to_value,
+                      /*quant_conversion_map=*/nullptr,
+                      /*tensor_to_buffer_id_map=*/nullptr,
+                      /*shared_tensor_map=*/nullptr);
+  parser->Parse(context->node(), context->registration(), &graph, &reader);
+
+  ASSERT_EQ(graph.nodes().size(), 2);
+  EXPECT_EQ(
+      ::ml_drift::OperationTypeFromString(graph.nodes()[0]->operation.type),
+      ::ml_drift::OperationType::kConstant);
+  EXPECT_EQ(
+      ::ml_drift::OperationTypeFromString(graph.nodes()[1]->operation.type),
+      ::ml_drift::OperationType::kPad);
+  EXPECT_EQ(graph.inputs().size(), 0);
+  EXPECT_EQ(graph.outputs().size(), 1);
+}
+
+TEST(PadOperationParserTest, ParseWithFp16ConstInputAsFloat32) {
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinPad,
+      /*op_version=*/2,
+      /*num_inputs=*/2,
+      /*shape=*/std::vector<int>({1, 2, 2, 1}));
+  context->SetTensorType(1, kTfLiteFloat16, kTfLiteMmapRo);
+  context->ChangeTensorShape(2, {4, 2});
+  context->SetTensorType(2, kTfLiteInt32, kTfLiteMmapRo);
+  context->ChangeTensorShape(3, {1, 4, 4, 1});
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  ASSERT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, context.get(), context->node(), &tensor_to_value,
+                      /*quant_conversion_map=*/nullptr,
+                      /*tensor_to_buffer_id_map=*/nullptr,
+                      /*shared_tensor_map=*/nullptr);
+  parser->Parse(context->node(), context->registration(), &graph, &reader);
+
+  ASSERT_EQ(graph.nodes().size(), 2);
+  EXPECT_EQ(
+      ::ml_drift::OperationTypeFromString(graph.nodes()[0]->operation.type),
+      ::ml_drift::OperationType::kConstant);
+  EXPECT_EQ(
+      ::ml_drift::OperationTypeFromString(graph.nodes()[1]->operation.type),
+      ::ml_drift::OperationType::kPad);
+  const auto const_outputs = graph.FindOutputs(graph.nodes()[0]->id);
+  ASSERT_EQ(const_outputs.size(), 1);
+  EXPECT_EQ(const_outputs[0]->tensor.type, ::ml_drift::DataType::kFloat32);
 }
 
 TEST(Padv2OperationParserTest, TestIsSupported) {
