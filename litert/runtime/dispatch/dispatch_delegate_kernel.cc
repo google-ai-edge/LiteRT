@@ -62,7 +62,8 @@ namespace litert::internal {
 Expected<LiteRtMemBuffer> BuildExecutableBytecodeBuffer(
     const DispatchOpOptions& dispatch_options, const void* alloc_base,
     int alloc_base_fd, size_t alloc_base_file_offset, size_t alloc_base_size,
-    bool has_alloc_base_file_region) {
+    bool has_alloc_base_file_region,
+    LiteRtModelAllocationType allocation_type) {
   if (dispatch_options.bytecode_offset == 0) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Found dispatch op with missing bytecode offset");
@@ -88,6 +89,7 @@ Expected<LiteRtMemBuffer> BuildExecutableBytecodeBuffer(
       /*.size=*/dispatch_options.bytecode_size,
       /*.alloc_base_file_offset=*/
       has_alloc_base_file_region ? alloc_base_file_offset : 0,
+      /*.allocation_type=*/allocation_type,
   };
 }
 
@@ -644,7 +646,9 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
         /*.fd=*/-1,
         /*.base_addr=*/exec_handle_expected.Value(),
         /*.offset=*/0,
-        /*.size=*/0};
+        /*.size=*/0,
+        /*.alloc_base_file_offset=*/0,
+        /*.allocation_type=*/kLiteRtModelAllocationTypeUnknown};
 
     if (auto status = LiteRtDispatchInvocationContextCreate(
             LrtGetRuntimeContext(), device_context_,
@@ -669,12 +673,20 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
     LITERT_ASSIGN_OR_RETURN(const bool has_alloc_base_file_region,
                             HasAllocBaseFileRegion());
 
+    // How the model memory at alloc_base was allocated. This is published by
+    // the CompiledModel at model loading time via the
+    // ExternalLiteRtBufferContext and lets the vendor runtime decide whether
+    // bytecode pages can be discarded once consumed.
+    const LiteRtModelAllocationType allocation_type =
+        buffer_context_ ? buffer_context_->GetModelAllocationType()
+                        : kLiteRtModelAllocationTypeUnknown;
+
     // Get location of bytecode in the model buffer relative to alloc_base.
     LITERT_ASSIGN_OR_RETURN(
         LiteRtMemBuffer exec_bytecode_buffer,
-        BuildExecutableBytecodeBuffer(dispatch_opts, alloc_base, alloc_fd,
-                                      alloc_base_file_offset, alloc_base_size,
-                                      has_alloc_base_file_region));
+        BuildExecutableBytecodeBuffer(
+            dispatch_opts, alloc_base, alloc_fd, alloc_base_file_offset,
+            alloc_base_size, has_alloc_base_file_region, allocation_type));
     const auto& function_name = dispatch_opts.name;
 
     auto num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);

@@ -71,6 +71,12 @@ typedef struct LiteRtMemBuffer {
   // Offset of base_addr in fd. Use alloc_base_file_offset + offset for the
   // absolute fd offset when fd-backed loading is used.
   size_t alloc_base_file_offset;
+  // How the memory at base_addr was allocated. Vendors must only discard
+  // resident pages of the buffer (e.g. madvise(MADV_DONTNEED)) when this is
+  // kLiteRtModelAllocationTypeFileBackedMmap; for any other value (including
+  // kLiteRtModelAllocationTypeUnknown, the zero-initialized default) discarding
+  // pages would destroy the buffer content.
+  LiteRtModelAllocationType allocation_type;
 } LiteRtMemBuffer;
 
 // Initialize the Dispatch API runtime.

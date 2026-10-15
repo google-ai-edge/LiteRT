@@ -66,6 +66,7 @@
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler_event.h"
@@ -779,6 +780,23 @@ int GetAllocationFd(const tflite::Allocation* allocation) {
   return -1;
 }
 
+// Maps the TFLite allocation backing the flatbuffer to the ABI-stable
+// LiteRtModelAllocationType that is forwarded to delegates / vendor runtimes.
+LiteRtModelAllocationType GetModelAllocationType(
+    const tflite::Allocation* allocation) {
+  if (allocation == nullptr) {
+    return kLiteRtModelAllocationTypeUnknown;
+  }
+  switch (allocation->type()) {
+    case tflite::Allocation::Type::kMMap:
+      return kLiteRtModelAllocationTypeFileBackedMmap;
+    case tflite::Allocation::Type::kFileCopy:
+    case tflite::Allocation::Type::kMemory:
+      return kLiteRtModelAllocationTypeHostMemory;
+  }
+  return kLiteRtModelAllocationTypeUnknown;
+}
+
 Expected<ModelSourceInfo> GetModelSourceInfoFromAllocation(
     const tflite::Allocation* allocation) {
   if (allocation == nullptr ||
@@ -811,9 +829,10 @@ Expected<ModelSourceInfo> GetModelSourceInfoFromAllocation(
   };
 }
 
-void SetModelSourceInfoFromAllocation(const tflite::Allocation* allocation,
-                                      int& fd, size_t& file_offset,
-                                      size_t& size) {
+void SetModelSourceInfoFromAllocation(
+    const tflite::Allocation* allocation, int& fd, size_t& file_offset,
+    size_t& size, LiteRtModelAllocationType& allocation_type) {
+  allocation_type = GetModelAllocationType(allocation);
   if (auto model_source = GetModelSourceInfoFromAllocation(allocation);
       model_source.HasValue()) {
     fd = model_source->fd;
@@ -968,7 +987,7 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
         tfl_buf.StrData(), tfl_buf.Size(), error_reporter_.get());
     SetModelSourceInfoFromAllocation(tfl_wrapper.FlatbufferModel().allocation(),
                                      fb_model_fd_, fb_model_file_offset_,
-                                     fb_model_size_);
+                                     fb_model_size_, fb_model_allocation_type_);
     return {};
   }
 
@@ -1057,6 +1076,11 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to initialize model memory.");
   }
+
+  // Publish how the model memory was allocated so that delegates (and the
+  // vendor runtimes behind them) know whether model pages may be discarded.
+  compiled_model->buffer_context_->SetModelAllocationType(
+      compiled_model->fb_model_allocation_type_);
 
   ScopedCompilationOptionsModifier scoped_modifier(jit_compilation_options);
 
@@ -1677,7 +1701,8 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
              "Plugins applied, flatbuffer model initialized from  JIT compiled "
              "model.");
   SetModelSourceInfoFromAllocation(fb_model_->allocation(), fb_model_fd_,
-                                   fb_model_file_offset_, fb_model_size_);
+                                   fb_model_file_offset_, fb_model_size_,
+                                   fb_model_allocation_type_);
   return true;
 }
 
@@ -1716,7 +1741,8 @@ bool LiteRtCompiledModelT::TryLoadingFromCache(
       error_reporter_.get());
   SetModelSourceInfoFromAllocation(
       tfl_wrapper_from_cached_model.FlatbufferModel().allocation(),
-      fb_model_fd_, fb_model_file_offset_, fb_model_size_);
+      fb_model_fd_, fb_model_file_offset_, fb_model_size_,
+      fb_model_allocation_type_);
   cached_model_ = std::move(cached_model.value());
   return true;
 }
