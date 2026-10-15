@@ -22,7 +22,7 @@
 
 namespace {
 
-constexpr int kChunk = 64;         // keys per block; preserves cached workspace
+constexpr int kChunk = 64;         // keys per block
 constexpr int kKeyBatch = 4;       // keys loaded together per warp (QK)
 constexpr int kValueBatch = 8;     // keys loaded together per thread (PV)
 constexpr int kMaxRows = 16;
