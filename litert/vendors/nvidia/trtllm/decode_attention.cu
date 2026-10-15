@@ -227,8 +227,18 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   // Keys a warp loads together: a column cache's whole chunk share for a few
   // rows (its values are already in flight, so the keys are the one remaining
   // round trip); row caches keep the smaller batch, which measured faster.
-  constexpr int kBatch =
-      Cache::kValueColumns && kRowsCap <= 4 ? kChunk / kWarps : kKeyBatch;
+  // Many rows (8, 16) of an INT8 cache take two keys per warp per round trip:
+  // their keys are converted once per key, not once per row (kManyRows
+  // below), and the converted keys and the per-row partial sums of a wider
+  // batch would not fit the register budget next to the accumulators. The
+  // E4B verify step's 16-row global attention measured 44 to 34 us at 2k keys
+  // and 597 to 320 us at 30k, E2B's 8-row global layer at 30k 108 to 90 us.
+  // FP16 keys convert in one instruction and keep the wider batch: the 26B's
+  // 8-row global layers measured 6% slower at 8k keys with the narrow one.
+  constexpr bool kManyRows = kRowsCap >= 8 && sizeof(Element) == 1;
+  constexpr int kBatch = Cache::kValueColumns && kRowsCap <= 4 ? kChunk / kWarps
+                         : kManyRows                            ? 2
+                                                                : kKeyBatch;
   // Column values: keys per 16-byte vector and vectors per chunk row.
   constexpr int kVecKeys = 16 / static_cast<int>(sizeof(Element));
   constexpr int kValueVecs = kChunk / kVecKeys;
@@ -332,7 +342,11 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   if (!__syncthreads_or(visible ? 1 : 0)) {
     continue;
   }
-  if constexpr (Cache::kValueColumns) {
+  // A column cache's values for the whole chunk are issued now, before the
+  // keys, so both round trips overlap; with many rows they wait until the
+  // scores are done instead (the registers hold the converted keys and the
+  // partial sums meanwhile).
+  if constexpr (Cache::kValueColumns && !kManyRows) {
     LoadColumnValues<Cache, kThreadElems, kValueVecs, kVecKeys>(
         v_head, cache_len, j0, chunk, tid, value_vectors, v_vec);
   }
@@ -363,6 +377,23 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
         k_narrow[b] = reinterpret_cast<const Narrow*>(k_row)[0];
       }
     }
+    // Many rows convert each key once here (an INT8 element costs three
+    // instructions to convert, its FMA one; the row loop used to redo it per
+    // row). Few rows keep the keys packed and convert in the row loop, which
+    // keeps their register count under the launch bound.
+    float k_f[kManyRows ? kBatch : 1][kManyRows ? kLaneElems : 1];
+    if constexpr (kManyRows) {
+#pragma unroll
+      for (int b = 0; b < kBatch; ++b) {
+        const Element* h =
+            kVecs > 0 ? reinterpret_cast<const Element*>(k_vec[b])
+                      : reinterpret_cast<const Element*>(&k_narrow[b]);
+#pragma unroll
+        for (int e = 0; e < kLaneElems; ++e) {
+          k_f[b][e] = cache.Key(h[e]);
+        }
+      }
+    }
     float partial[kBatch][kRowsCap];
 #pragma unroll
     for (int r = 0; r < kRowsCap; ++r) {
@@ -378,12 +409,19 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
       for (int b = 0; b < kBatch; ++b) {
         float dot = 0.0f;
         if (r < rows) {
-          const Element* h =
-              kVecs > 0 ? reinterpret_cast<const Element*>(k_vec[b])
-                        : reinterpret_cast<const Element*>(&k_narrow[b]);
+          if constexpr (kManyRows) {
 #pragma unroll
-          for (int e = 0; e < kLaneElems; ++e) {
-            dot = fmaf(q_reg[e], cache.Key(h[e]), dot);
+            for (int e = 0; e < kLaneElems; ++e) {
+              dot = fmaf(q_reg[e], k_f[b][e], dot);
+            }
+          } else {
+            const Element* h =
+                kVecs > 0 ? reinterpret_cast<const Element*>(k_vec[b])
+                          : reinterpret_cast<const Element*>(&k_narrow[b]);
+#pragma unroll
+            for (int e = 0; e < kLaneElems; ++e) {
+              dot = fmaf(q_reg[e], cache.Key(h[e]), dot);
+            }
           }
         }
         partial[b][r] = dot;
@@ -450,6 +488,10 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   // Weighted values: thread t owns depth slice [t * kThreadElems, +kThreadElems).
   // Row loops are unrolled to the compile-time cap so `acc` stays in
   // registers (a runtime-indexed register array is demoted to local memory).
+  if constexpr (Cache::kValueColumns && kManyRows) {
+    LoadColumnValues<Cache, kThreadElems, kValueVecs, kVecKeys>(
+        v_head, cache_len, j0, chunk, tid, value_vectors, v_vec);
+  }
   if constexpr (Cache::kValueColumns) {
     // The chunk's values are in registers; a key's probabilities come from
     // one broadcast 16-byte shared-memory read per four rows.

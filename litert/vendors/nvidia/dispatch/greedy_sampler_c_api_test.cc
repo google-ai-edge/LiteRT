@@ -158,6 +158,10 @@ class GreedySamplerCApiTest : public testing::Test {
     ASSERT_EQ(cudaMemcpy(static_cast<uint8_t*>(logits_.allocation) + offset,
                          data, logits_.packed_size, cudaMemcpyHostToDevice),
               cudaSuccess);
+    // A copy from pageable memory returns once staged, before the DMA lands;
+    // the sampler's non-blocking stream must not read the fresh allocation
+    // first (it did, now and then: index 0 of an all-zero row).
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
   }
 
   LiteRtStatus Sample(int rows, int vocab, int32_t* ids) {
