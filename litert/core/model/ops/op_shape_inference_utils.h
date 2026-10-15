@@ -18,9 +18,25 @@
 #include <cstdint>
 
 #include "SafeInt.hpp"  // from @SafeInt
+#include "absl/types/span.h"  // from @com_google_absl
 #include "tflite/schema/schema_generated.h"
 
 namespace litert::internal {
+
+// Returns true if the product of all positive dimensions (> 1) in `shape` fits
+// in a signed 32-bit integer. Dynamic (-1) and zero (0) dimensions are skipped
+// so that static sub-products are still validated even when another dimension
+// is dynamic or zero.
+inline bool CheckShapePositiveProductFitsInInt32(
+    absl::Span<const int32_t> shape) {
+  int32_t product = 1;
+  for (int32_t dim : shape) {
+    if (dim > 1 && !SafeMultiply(product, dim, product)) {
+      return false;
+    }
+  }
+  return true;
+}
 
 inline bool ComputeEffectiveFilterSize(int32_t filter_size,
                                        int32_t dilation_rate,

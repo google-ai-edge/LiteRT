@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <utility>
 #include <vector>
 
 #include "SafeInt.hpp"  // from @SafeInt
@@ -151,7 +152,23 @@ inline LiteRtStatus InferConv2D(const LiteRtOpT& op,
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
-  output_shapes[0] = {input_shape[0], out_h, out_w, out_channels};
+  Dims out_shape = {input_shape[0], out_h, out_w, out_channels};
+  if (!CheckShapePositiveProductFitsInInt32(input_shape) ||
+      !CheckShapePositiveProductFitsInInt32(filter_shape) ||
+      !CheckShapePositiveProductFitsInInt32(out_shape)) {
+    LITERT_LOG(LITERT_ERROR, "Conv2D tensor element count overflows int32");
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+  const bool need_im2col = stride_h != 1 || stride_w != 1 || dilation_h != 1 ||
+                           dilation_w != 1 || filter_h != 1 || filter_w != 1;
+  if (need_im2col && !CheckShapePositiveProductFitsInInt32(
+                         {input_shape[0], out_h, out_w, filter_shape[3],
+                          filter_h, filter_w})) {
+    LITERT_LOG(LITERT_ERROR, "Conv2D im2col element count overflows int32");
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+
+  output_shapes[0] = std::move(out_shape);
   return kLiteRtStatusOk;
 }
 
@@ -277,7 +294,16 @@ inline LiteRtStatus InferDepthwiseConv2D(const LiteRtOpT& op,
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
-  output_shapes[0] = {input_shape[0], out_h, out_w, out_channels};
+  Dims out_shape = {input_shape[0], out_h, out_w, out_channels};
+  if (!CheckShapePositiveProductFitsInInt32(input_shape) ||
+      !CheckShapePositiveProductFitsInInt32(filter_shape) ||
+      !CheckShapePositiveProductFitsInInt32(out_shape)) {
+    LITERT_LOG(LITERT_ERROR,
+               "DepthwiseConv2D tensor element count overflows int32");
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+
+  output_shapes[0] = std::move(out_shape);
   return kLiteRtStatusOk;
 }
 
@@ -287,36 +313,137 @@ inline LiteRtStatus InferTransposeConv(const LiteRtOpT& op,
   constexpr size_t kOutputShapeArgIndex = 0;
   constexpr size_t kWeightsArgIndex = 1;
   constexpr size_t kInputArgIndex = 2;
+  constexpr size_t kBiasArgIndex = 3;
   constexpr size_t kTransposeConvMinArgs = 3;
   constexpr size_t kTransposeConvRank = 4;
-  constexpr size_t kShapeTensorSize = sizeof(int32_t);
+  constexpr size_t kShapeTensorSize = kTransposeConvRank * sizeof(int32_t);
+  constexpr int32_t kMaxStride = std::numeric_limits<int16_t>::max();
 
   if (input_shapes.size() < kTransposeConvMinArgs) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  // If output_shape tensor is constant, use it.
-  const auto& output_size_tensor = op.Input(kOutputShapeArgIndex);
-  if (output_size_tensor.Weights().Buffer().Size() >= kShapeTensorSize) {
-    auto buf = output_size_tensor.Weights().Buffer();
-    const int32_t* dims = reinterpret_cast<const int32_t*>(buf.Data());
-    int rank = buf.Size() / sizeof(int32_t);
-    Dims out_shape;
-    for (int i = 0; i < rank; ++i) out_shape.push_back(dims[i]);
-    output_shapes[0] = out_shape;
-    return kLiteRtStatusOk;
-  }
 
-  const auto& input_shape = input_shapes[kInputArgIndex];
-  output_shapes[0] = Dims(input_shape.size(), -1);  // Preserve rank at least
-  // Set batch dim
-  output_shapes[0][0] = input_shape[0];
-  // Set channels dim (from weights)
-  // TFLite TransposeConv weights: [OutputDepth, H, W, InputDepth].
+  const auto& output_shape_arg = input_shapes[kOutputShapeArgIndex];
   const auto& weights_shape = input_shapes[kWeightsArgIndex];
-  if (weights_shape.size() == kTransposeConvRank) {
-    output_shapes[0][3] = weights_shape[0];  // Output channels
+  const auto& input_shape = input_shapes[kInputArgIndex];
+
+  if (output_shape_arg.size() != 1 ||
+      (output_shape_arg[0] != static_cast<int32_t>(kTransposeConvRank) &&
+       output_shape_arg[0] != -1) ||
+      weights_shape.size() != kTransposeConvRank ||
+      input_shape.size() != kTransposeConvRank) {
+    return kLiteRtStatusErrorInvalidArgument;
   }
 
+  // TFLite TransposeConv weights: [OutputDepth, H, W, InputDepth].
+  if (weights_shape[0] <= 0 || weights_shape[1] <= 0 || weights_shape[2] <= 0 ||
+      weights_shape[3] <= 0 ||
+      !CheckShapePositiveProductFitsInInt32(weights_shape)) {
+    LITERT_LOG(LITERT_ERROR, "TransposeConv invalid weights shape");
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+
+  if (input_shape[0] < -1 || (input_shape[1] <= 0 && input_shape[1] != -1) ||
+      (input_shape[2] <= 0 && input_shape[2] != -1) ||
+      (input_shape[3] <= 0 && input_shape[3] != -1) ||
+      !CheckShapePositiveProductFitsInInt32(input_shape)) {
+    LITERT_LOG(LITERT_ERROR, "TransposeConv invalid input shape");
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+
+  if (input_shape[3] != -1 && input_shape[3] != weights_shape[3]) {
+    LITERT_LOG(LITERT_ERROR, "TransposeConv input channels mismatch: %d vs %d",
+               input_shape[3], weights_shape[3]);
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+
+  // Validate col2im rows (in_h * in_w), columns (out_c * filter_h * filter_w),
+  // and total col2im element count fit in int32_t.
+  if (!CheckShapePositiveProductFitsInInt32({input_shape[1], input_shape[2],
+                                             weights_shape[0], weights_shape[1],
+                                             weights_shape[2]})) {
+    LITERT_LOG(LITERT_ERROR,
+               "TransposeConv col2im element count overflows int32");
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+
+  if (input_shapes.size() > kBiasArgIndex &&
+      !input_shapes[kBiasArgIndex].empty()) {
+    const auto& bias_shape = input_shapes[kBiasArgIndex];
+    if (bias_shape.size() != 1 ||
+        (bias_shape[0] != weights_shape[0] && bias_shape[0] != -1)) {
+      LITERT_LOG(LITERT_ERROR, "TransposeConv bias size mismatch: %d vs %d",
+                 bias_shape[0], weights_shape[0]);
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
+  }
+
+  const auto* tc_opts = GetTflOptions(op).AsTransposeConvOptions();
+  if (tc_opts != nullptr) {
+    if (tc_opts->stride_h <= 0 || tc_opts->stride_h > kMaxStride ||
+        tc_opts->stride_w <= 0 || tc_opts->stride_w > kMaxStride) {
+      LITERT_LOG(LITERT_ERROR, "TransposeConv invalid stride: %dx%d",
+                 tc_opts->stride_h, tc_opts->stride_w);
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
+  }
+
+  // If output_shape tensor is constant, validate and use it.
+  if (op.Inputs().size() > kOutputShapeArgIndex &&
+      op.Inputs()[kOutputShapeArgIndex] != nullptr) {
+    const auto& output_size_tensor = op.Input(kOutputShapeArgIndex);
+    auto buf = output_size_tensor.Weights().Buffer();
+    if (buf.Size() > 0) {
+      if (buf.Size() != kShapeTensorSize) {
+        return kLiteRtStatusErrorShapeInferenceFailed;
+      }
+      const int32_t* dims = reinterpret_cast<const int32_t*>(buf.Data());
+      Dims out_shape(dims, dims + kTransposeConvRank);
+      if (out_shape[0] < 0 || out_shape[1] <= 0 || out_shape[2] <= 0 ||
+          out_shape[3] != weights_shape[0] ||
+          (input_shape[0] != -1 && out_shape[0] != input_shape[0]) ||
+          !CheckShapePositiveProductFitsInInt32(out_shape)) {
+        LITERT_LOG(LITERT_ERROR, "TransposeConv invalid constant output shape");
+        return kLiteRtStatusErrorShapeInferenceFailed;
+      }
+
+      if (tc_opts != nullptr) {
+        if (tc_opts->padding == tflite::Padding_VALID &&
+            (out_shape[1] < weights_shape[1] ||
+             out_shape[2] < weights_shape[2])) {
+          LITERT_LOG(LITERT_ERROR,
+                     "TransposeConv output spatial size smaller than filter "
+                     "with VALID padding");
+          return kLiteRtStatusErrorShapeInferenceFailed;
+        }
+        const int32_t expected_in_h =
+            ComputeOutputSize(tc_opts->padding, out_shape[1], weights_shape[1],
+                              tc_opts->stride_h);
+        const int32_t expected_in_w =
+            ComputeOutputSize(tc_opts->padding, out_shape[2], weights_shape[2],
+                              tc_opts->stride_w);
+        if (expected_in_h <= 0 || expected_in_w <= 0 ||
+            (input_shape[1] > 0 && input_shape[1] != expected_in_h) ||
+            (input_shape[2] > 0 && input_shape[2] != expected_in_w)) {
+          LITERT_LOG(LITERT_ERROR,
+                     "TransposeConv input spatial dimensions (%dx%d) do not "
+                     "match expected (%dx%d)",
+                     input_shape[1], input_shape[2], expected_in_h,
+                     expected_in_w);
+          return kLiteRtStatusErrorShapeInferenceFailed;
+        }
+      }
+
+      output_shapes[0] = std::move(out_shape);
+      return kLiteRtStatusOk;
+    }
+  }
+
+  Dims out_shape = {input_shape[0], -1, -1, weights_shape[0]};
+  if (!CheckShapePositiveProductFitsInInt32(out_shape)) {
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+  output_shapes[0] = std::move(out_shape);
   return kLiteRtStatusOk;
 }
 
@@ -430,7 +557,25 @@ inline LiteRtStatus InferConv3D(const LiteRtOpT& op,
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
-  output_shapes[0] = {input_shape[0], out_d, out_h, out_w, out_channels};
+  Dims out_shape = {input_shape[0], out_d, out_h, out_w, out_channels};
+  if (!CheckShapePositiveProductFitsInInt32(input_shape) ||
+      !CheckShapePositiveProductFitsInInt32(filter_shape) ||
+      !CheckShapePositiveProductFitsInInt32(out_shape)) {
+    LITERT_LOG(LITERT_ERROR, "Conv3D tensor element count overflows int32");
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+  const bool need_im2col = stride_d != 1 || stride_h != 1 || stride_w != 1 ||
+                           dilation_d != 1 || dilation_h != 1 ||
+                           dilation_w != 1 || filter_d != 1 || filter_h != 1 ||
+                           filter_w != 1;
+  if (need_im2col && !CheckShapePositiveProductFitsInInt32(
+                         {input_shape[0], out_d, out_h, out_w, filter_shape[3],
+                          filter_d, filter_h, filter_w})) {
+    LITERT_LOG(LITERT_ERROR, "Conv3D im2col element count overflows int32");
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+
+  output_shapes[0] = std::move(out_shape);
   return kLiteRtStatusOk;
 }
 

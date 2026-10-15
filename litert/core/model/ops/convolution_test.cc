@@ -767,5 +767,160 @@ TEST(ConvolutionOpTest, NoBiasSucceeds) {
   EXPECT_THAT(output_shapes[0], ElementsAre(2, 1, 2, 3));
 }
 
+TEST(ConvolutionOpTest, InferConv2DRejectsElementCountOverflow) {
+  // 1x1 stride-1 Conv2D (need_im2col == false) where batch * out_h * out_w
+  // overflows int32_t (65536 * 32768 = 2^31 > INT32_MAX).
+  {
+    LiteRtOpT op;
+    std::vector<Dims> input_shapes = {{65536, 32768, 1, 1}, {1, 1, 1, 1}};
+    std::vector<Dims> output_shapes(1);
+
+    auto options = std::make_unique<tflite::Conv2DOptionsT>();
+    options->padding = tflite::Padding_VALID;
+    options->stride_h = 1;
+    options->stride_w = 1;
+    options->dilation_h_factor = 1;
+    options->dilation_w_factor = 1;
+
+    TflOptions tfl_options;
+    tfl_options.type = tflite::BuiltinOptions_Conv2DOptions;
+    tfl_options.value = options.release();
+    SetTflOptions(op, std::move(tfl_options));
+
+    EXPECT_EQ(InferConv2D(op, absl::MakeSpan(input_shapes), output_shapes),
+              kLiteRtStatusErrorShapeInferenceFailed);
+  }
+
+  // Strided Conv2D where output and im2col fit in int32_t, but input overflows
+  // int32_t (1 * 65536 * 32768 * 1 = 2^31 > INT32_MAX).
+  {
+    LiteRtOpT op;
+    std::vector<Dims> input_shapes = {{1, 65536, 32768, 1}, {1, 2, 2, 1}};
+    std::vector<Dims> output_shapes(1);
+
+    auto options = std::make_unique<tflite::Conv2DOptionsT>();
+    options->padding = tflite::Padding_SAME;
+    options->stride_h = 4;
+    options->stride_w = 4;
+    options->dilation_h_factor = 1;
+    options->dilation_w_factor = 1;
+
+    TflOptions tfl_options;
+    tfl_options.type = tflite::BuiltinOptions_Conv2DOptions;
+    tfl_options.value = options.release();
+    SetTflOptions(op, std::move(tfl_options));
+
+    EXPECT_EQ(InferConv2D(op, absl::MakeSpan(input_shapes), output_shapes),
+              kLiteRtStatusErrorShapeInferenceFailed);
+  }
+}
+
+TEST(ConvolutionOpTest, InferConv3DRejectsInputElementCountOverflow) {
+  // Strided Conv3D where output and im2col fit in int32_t, but input overflows
+  // int32_t (1 * 1 * 65536 * 32768 * 1 = 2^31 > INT32_MAX).
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{1, 1, 65536, 32768, 1}, {1, 2, 2, 1, 1}};
+  std::vector<Dims> output_shapes(1);
+
+  auto options = std::make_unique<tflite::Conv3DOptionsT>();
+  options->padding = tflite::Padding_SAME;
+  options->stride_d = 1;
+  options->stride_h = 4;
+  options->stride_w = 4;
+  options->dilation_d_factor = 1;
+  options->dilation_h_factor = 1;
+  options->dilation_w_factor = 1;
+
+  TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_Conv3DOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  EXPECT_EQ(InferConv3D(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+TEST(ConvolutionOpTest, InferTransposeConvRejectsOverflowAndInvalidShapes) {
+  constexpr int32_t kHugeDim = 46341;  // 46341 * 46341 > INT32_MAX
+
+  // Constant output_shape exceeding INT32_MAX elements (while input fits in
+  // int32_t with stride 2).
+  {
+    LiteRtOpT op;
+    std::vector<Dims> input_shapes = {{4}, {1, 1, 1, 1}, {1, 23171, 23171, 1}};
+    std::vector<Dims> output_shapes(1);
+
+    LiteRtTensorT out_shape_tensor;
+    int32_t shape_data[] = {1, 46342, 46342, 1};
+    SetWeightsFromOwnedBuffer(
+        out_shape_tensor.Weights(),
+        OwningBufferRef<uint8_t>(reinterpret_cast<const uint8_t*>(shape_data),
+                                 sizeof(shape_data)));
+    op.Inputs().push_back(&out_shape_tensor);
+
+    EXPECT_EQ(
+        InferTransposeConv(op, absl::MakeSpan(input_shapes), output_shapes),
+        kLiteRtStatusErrorShapeInferenceFailed);
+  }
+
+  // Input tensor exceeding INT32_MAX elements.
+  {
+    LiteRtOpT op;
+    std::vector<Dims> input_shapes = {
+        {4}, {1, 1, 1, 1}, {1, kHugeDim, kHugeDim, 1}};
+    std::vector<Dims> output_shapes(1);
+
+    LiteRtTensorT out_shape_tensor;
+    op.Inputs().push_back(&out_shape_tensor);
+
+    EXPECT_EQ(
+        InferTransposeConv(op, absl::MakeSpan(input_shapes), output_shapes),
+        kLiteRtStatusErrorShapeInferenceFailed);
+  }
+
+  // col2im total elements (in_h * in_w * out_c * filter_h * filter_w)
+  // overflowing int32_t while rows and columns individually fit.
+  {
+    LiteRtOpT op;
+    std::vector<Dims> input_shapes = {{4}, {2048, 2, 2, 1}, {1, 512, 512, 1}};
+    std::vector<Dims> output_shapes(1);
+
+    LiteRtTensorT out_shape_tensor;
+    op.Inputs().push_back(&out_shape_tensor);
+
+    EXPECT_EQ(
+        InferTransposeConv(op, absl::MakeSpan(input_shapes), output_shapes),
+        kLiteRtStatusErrorShapeInferenceFailed);
+  }
+
+  // Inconsistent spatial dimensions when TransposeConvOptions are present.
+  {
+    LiteRtOpT op;
+    std::vector<Dims> input_shapes = {{4}, {1, 1, 1, 1}, {1, 2, 2, 1}};
+    std::vector<Dims> output_shapes(1);
+
+    LiteRtTensorT out_shape_tensor;
+    int32_t shape_data[] = {1, 3, 3, 1};
+    SetWeightsFromOwnedBuffer(
+        out_shape_tensor.Weights(),
+        OwningBufferRef<uint8_t>(reinterpret_cast<const uint8_t*>(shape_data),
+                                 sizeof(shape_data)));
+    op.Inputs().push_back(&out_shape_tensor);
+
+    auto options = std::make_unique<tflite::TransposeConvOptionsT>();
+    options->padding = tflite::Padding_SAME;
+    options->stride_h = 1;
+    options->stride_w = 1;
+    TflOptions tfl_options;
+    tfl_options.type = tflite::BuiltinOptions_TransposeConvOptions;
+    tfl_options.value = options.release();
+    SetTflOptions(op, std::move(tfl_options));
+
+    EXPECT_EQ(
+        InferTransposeConv(op, absl::MakeSpan(input_shapes), output_shapes),
+        kLiteRtStatusErrorShapeInferenceFailed);
+  }
+}
+
 }  // namespace
 }  // namespace litert::internal

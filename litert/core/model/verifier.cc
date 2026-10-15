@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <string>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -343,10 +344,17 @@ absl::Status ValidateFlatBufferTensors(const tflite::Model* tfl_model,
               absl::StrFormat("Tensor rank (%zu) exceeds max_rank (%zu).", rank,
                               options.max_rank));
         }
+        int32_t positive_elements = 1;
         for (int32_t dim : *tensor->shape()) {
           if (dim < -1) {
             return absl::InvalidArgumentError(absl::StrFormat(
                 "Tensor has invalid negative dimension (%d).", dim));
+          }
+          if (dim > 1 &&
+              !SafeMultiply(positive_elements, dim, positive_elements)) {
+            return absl::InvalidArgumentError(
+                "Tensor element count exceeds the 32-bit signed integer "
+                "limit.");
           }
         }
       }
@@ -364,11 +372,18 @@ absl::Status ValidateFlatBufferTensors(const tflite::Model* tfl_model,
               "(%zu).",
               sig_rank, tensor->shape()->size()));
         }
+        int32_t positive_sig_elements = 1;
         for (int32_t dim : *tensor->shape_signature()) {
           if (dim < -1) {
             return absl::InvalidArgumentError(absl::StrFormat(
                 "Tensor shape_signature has invalid negative dimension (%d).",
                 dim));
+          }
+          if (dim > 1 && !SafeMultiply(positive_sig_elements, dim,
+                                       positive_sig_elements)) {
+            return absl::InvalidArgumentError(
+                "Tensor shape_signature element count exceeds the 32-bit "
+                "signed integer limit.");
           }
         }
       }
@@ -420,10 +435,17 @@ absl::Status ValidateLiteRtTensor(const LiteRtTensorT& tensor,
                         layout.rank, options.max_rank));
   }
 
+  int32_t positive_elements = 1;
   for (unsigned int d = 0; d < layout.rank; ++d) {
-    if (layout.dimensions[d] < -1) {
-      return absl::InvalidArgumentError(absl::StrFormat(
-          "LiteRT tensor has invalid dimension (%d).", layout.dimensions[d]));
+    const int32_t dim = layout.dimensions[d];
+    if (dim < -1) {
+      return absl::InvalidArgumentError(
+          absl::StrFormat("LiteRT tensor has invalid dimension (%d).", dim));
+    }
+    if (dim > 1 && !SafeMultiply(positive_elements, dim, positive_elements)) {
+      return absl::InvalidArgumentError(
+          "LiteRT tensor element count exceeds the 32-bit signed integer "
+          "limit.");
     }
   }
   return absl::OkStatus();

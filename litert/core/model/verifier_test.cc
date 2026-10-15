@@ -909,5 +909,37 @@ TEST(VerifierTest, VerifyModelAndValidateFlatBufferTensorsReturnStatus) {
   }
 }
 
+TEST(VerifierTest, RejectsTensorWithElementCountExceedingInt32Max) {
+  constexpr int32_t kHugeDim = 46341;  // 46341 * 46341 > INT32_MAX
+
+  // Static tensor shape exceeding INT32_MAX elements.
+  {
+    flatbuffers::FlatBufferBuilder builder;
+    BuildSliceModel(builder, /*input_shape=*/{kHugeDim, kHugeDim},
+                    tflite::TensorType_INT32, /*begin_vals=*/{0, 0},
+                    tflite::TensorType_INT32, /*size_vals=*/{1, 1});
+    const tflite::Model* tfl_model =
+        tflite::GetModel(builder.GetBufferPointer());
+    EXPECT_EQ(internal::ValidateFlatBufferTensors(tfl_model).code(),
+              absl::StatusCode::kInvalidArgument);
+    EXPECT_EQ(VerifyModel(builder.GetBufferPointer(), builder.GetSize()).code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+
+  // Partially dynamic tensor shape whose static dimensions exceed INT32_MAX.
+  {
+    flatbuffers::FlatBufferBuilder builder;
+    BuildSliceModel(builder, /*input_shape=*/{-1, kHugeDim, kHugeDim},
+                    tflite::TensorType_INT32, /*begin_vals=*/{0, 0, 0},
+                    tflite::TensorType_INT32, /*size_vals=*/{1, 1, 1});
+    const tflite::Model* tfl_model =
+        tflite::GetModel(builder.GetBufferPointer());
+    EXPECT_EQ(internal::ValidateFlatBufferTensors(tfl_model).code(),
+              absl::StatusCode::kInvalidArgument);
+    EXPECT_EQ(VerifyModel(builder.GetBufferPointer(), builder.GetSize()).code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+}
+
 }  // namespace
 }  // namespace litert
