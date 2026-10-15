@@ -112,6 +112,13 @@ properties. Internal keys (all default `false`):
     `fuse_split_attention_to_sdpa=true`. When the merged KV sequence length is
     not a multiple of 16, pad K/V (and the mask) up to the next multiple so the
     block still fuses.
+-   `unfold_gqa_sequence_fold` — only meaningful with
+    `fuse_split_attention_to_sdpa=true`, since it matches the fused SDPA. The
+    generative export covers all `Hq` query heads with one `Hkv`-head SDPA by
+    folding the GQA group ratio `r = Hq / Hkv` into the sequence axis, which
+    forces the attention mask to be tiled `r` times. This rewrites that back
+    into head-parallel attention: Q keeps its `[1,Hq,S,D]` shape, K/V are
+    broadcast over the query heads, and the mask is left untiled.
 -   `split_shared_constants` — splits multi-consumer Constants into private
     per-consumer copies (e.g. two different transformer layers' RMSNorm gain
     vectors that were unified into one upstream Constant node). Currently

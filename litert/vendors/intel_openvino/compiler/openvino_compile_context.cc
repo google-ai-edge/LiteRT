@@ -108,6 +108,12 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
         context.enable_moe_gather_ = (value == "true");
         continue;
       }
+      if (key == "unfold_gqa_sequence_fold") {
+        LITERT_LOG(LITERT_INFO, "Custom config: unfold_gqa_sequence_fold = %s",
+                   value.c_str());
+        context.unfold_gqa_sequence_fold_ = (value == "true");
+        continue;
+      }
       if (key == "split_shared_constants") {
         LITERT_LOG(LITERT_INFO, "Custom config: split_shared_constants = %s",
                    value.c_str());
@@ -160,6 +166,10 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
       }
       if (key == "fuse_split_attention_to_sdpa") {
         context.fuse_split_attention_to_sdpa_ = (value == "true");
+        continue;
+      }
+      if (key == "unfold_gqa_sequence_fold") {
+        context.unfold_gqa_sequence_fold_ = (value == "true");
         continue;
       }
       if (key == "sdpa_pad_kv_to_alignment") {
@@ -229,6 +239,7 @@ OpenVinoCompileContext::OptimizeModel(
           .SetConstantFold(true)
           .SetEliminateMatMulFakeQuantize(eliminate_fq_after_matmul_)
           .SetFuseSplitAttentionToSDPA(fuse_split_attention_to_sdpa_)
+          .SetUnfoldGqaSequenceFold(unfold_gqa_sequence_fold_)
           .SetSdpaPadKvToAlignment(sdpa_pad_kv_to_alignment_)
           .SetEnableMoeGather(enable_moe_gather_)
           .SetSplitSharedConstants(split_shared_constants_)

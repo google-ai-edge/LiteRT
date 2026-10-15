@@ -87,6 +87,12 @@ class OpenVinoCompileContext {
   // selective (K-of-N) expert computation. Set via config "enable_moe_gather".
   bool enable_moe_gather_ = false;
 
+  // Enables UnfoldGqaSequenceFold: turns the export's GQA-ratio-folded-into-
+  // the-sequence-axis attention back into head-parallel attention with
+  // broadcast K/V and an untiled mask. Only meaningful alongside
+  // `fuse_split_attention_to_sdpa_`. Set via "unfold_gqa_sequence_fold".
+  bool unfold_gqa_sequence_fold_ = false;
+
   // Enables SplitSharedConstants pass: splits multi-consumer Constants into
   // private per-consumer copies. Set via config "split_shared_constants".
   bool split_shared_constants_ = false;
