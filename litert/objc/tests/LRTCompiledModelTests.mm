@@ -725,4 +725,114 @@ static NSString *GetTestDynamicModelPath() {
   XCTAssertNil(error);
 }
 
+- (void)testCreateNamedBuffersAndRunWithInputMap {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTCompiledModel *model = [LRTCompiledModel compiledModelWithModelFilePath:GetTestModelPath()
+                                                                 environment:environment
+                                                                     options:options
+                                                                       error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  NSString *signatureKey = [LRTCompiledModel defaultSignatureKey];
+
+  LRTTensorBuffer *input0Buffer = [model createInputTensorBufferForName:@"arg0" error:&error];
+  XCTAssertNotNil(input0Buffer);
+  XCTAssertNil(error);
+
+  LRTTensorBuffer *input1Buffer = [model createInputTensorBufferForName:@"arg1"
+                                                           signatureKey:signatureKey
+                                                                  error:&error];
+  XCTAssertNotNil(input1Buffer);
+  XCTAssertNil(error);
+
+  LRTTensorBuffer *outputBuffer = [model createOutputTensorBufferForName:@"tfl.add" error:&error];
+  XCTAssertNotNil(outputBuffer);
+  XCTAssertNil(error);
+
+  LRTTensorBuffer *outputBufferBySignature = [model createOutputTensorBufferForName:@"tfl.add"
+                                                                       signatureKey:signatureKey
+                                                                              error:&error];
+  XCTAssertNotNil(outputBufferBySignature);
+  XCTAssertNil(error);
+
+  NSData *input0Data = [NSData dataWithBytes:kTestInput0Tensor length:sizeof(kTestInput0Tensor)];
+  NSData *input1Data = [NSData dataWithBytes:kTestInput1Tensor length:sizeof(kTestInput1Tensor)];
+  XCTAssertTrue([input0Buffer writeData:input0Data error:&error]);
+  XCTAssertTrue([input1Buffer writeData:input1Data error:&error]);
+
+  NSDictionary<NSString *, LRTTensorBuffer *> *inputMap = @{
+    @"arg0" : input0Buffer,
+    @"arg1" : input1Buffer,
+  };
+  NSDictionary<NSString *, LRTTensorBuffer *> *outputMap = @{
+    @"tfl.add" : outputBuffer,
+  };
+
+  XCTAssertTrue([model runWithInputMap:inputMap outputMap:outputMap error:&error]);
+  XCTAssertNil(error);
+
+  NSData *outputData = [outputBuffer readDataWithError:&error];
+  XCTAssertNotNil(outputData);
+  XCTAssertEqual(outputData.length, sizeof(kTestOutputTensor));
+  const float *outputFloat = static_cast<const float *>(outputData.bytes);
+  for (size_t i = 0; i < kTestOutputSize; ++i) {
+    XCTAssertEqualWithAccuracy(outputFloat[i], kTestOutputTensor[i], kTestAccuracy);
+  }
+
+  NSDictionary<NSString *, LRTTensorBuffer *> *outputMapBySignature = @{
+    @"tfl.add" : outputBufferBySignature,
+  };
+  XCTAssertTrue([model runWithInputMap:inputMap
+                             outputMap:outputMapBySignature
+                          signatureKey:signatureKey
+                                 error:&error]);
+  XCTAssertNil(error);
+
+  NSData *outputDataBySignature = [outputBufferBySignature readDataWithError:&error];
+  XCTAssertNotNil(outputDataBySignature);
+  XCTAssertEqual(outputDataBySignature.length, sizeof(kTestOutputTensor));
+}
+
+- (void)testResizeInputTensorForName {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTCompiledModel *model =
+      [LRTCompiledModel compiledModelWithModelFilePath:GetTestDynamicModelPath()
+                                           environment:environment
+                                               options:options
+                                                 error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  NSString *signatureKey = [LRTCompiledModel defaultSignatureKey];
+  NSArray<NSNumber *> *newDimensions = @[ @1, @2, @3 ];
+  XCTAssertTrue([model resizeInputTensorForName:@"arg0" newDimensions:newDimensions error:&error]);
+  XCTAssertNil(error);
+  XCTAssertTrue([model resizeInputTensorForName:@"arg1"
+                                   signatureKey:signatureKey
+                                  newDimensions:newDimensions
+                                          error:&error]);
+  XCTAssertNil(error);
+
+  LRTTensorBuffer *input0Buffer = [model createInputTensorBufferForName:@"arg0" error:&error];
+  XCTAssertNotNil(input0Buffer);
+  XCTAssertNil(error);
+  XCTAssertEqualObjects(input0Buffer.dimensions, newDimensions);
+
+  LRTTensorBuffer *input1Buffer = [model createInputTensorBufferForName:@"arg1" error:&error];
+  XCTAssertNotNil(input1Buffer);
+  XCTAssertNil(error);
+  XCTAssertEqualObjects(input1Buffer.dimensions, newDimensions);
+}
+
 @end
