@@ -483,6 +483,16 @@ class LiteRtCompiledModelT {
   // This is called before delegates are applied so that XNNPack and other
   // CPU delegates can see the weight data in the tensors.
   litert::Expected<void> RestoreExternalWeightsForCpu();
+
+  // Gives the external constants of the litert model their bytes before the
+  // compiler plugins see it: creates the weight loader from the original
+  // flatbuffer, maps every external slice for host access and points each
+  // constant's weights at its mapping. Compiler plugins read weights through
+  // the model, so without this an external constant compiles as an empty
+  // tensor. No-op when the model has no external constants.
+  litert::Expected<void> ResolveExternalWeightsForCompilation(
+      LiteRtModelT& model, LiteRtOptions jit_compilation_options,
+      LiteRtEnvironmentT& env);
 #endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 
 #if !defined(LITERT_DISABLE_NPU)

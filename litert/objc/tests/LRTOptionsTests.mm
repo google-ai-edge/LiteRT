@@ -34,9 +34,9 @@ bool ReadMetalFlags(LRTOptions *options, bool *usesMetalArgumentBuffers,
   if (!gpuOptions.HasValue()) {
     return false;
   }
-  return LrtGetGpuOptionsUseMetalArgumentBuffers(gpuOptions->Get(), usesMetalArgumentBuffers) ==
+  return LrtGetGpuOptionsUseMetalArgumentBuffers(usesMetalArgumentBuffers, gpuOptions->Get()) ==
              kLiteRtStatusOk &&
-         LrtGetGpuOptionsMetalResidencySet(gpuOptions->Get(), enablesMetalResidencySet) ==
+         LrtGetGpuOptionsMetalResidencySet(enablesMetalResidencySet, gpuOptions->Get()) ==
              kLiteRtStatusOk;
 }
 
@@ -56,10 +56,8 @@ bool ReadMetalFlags(LRTOptions *options, bool *usesMetalArgumentBuffers,
 }
 
 - (void)testInitWithHardwareAccelerators {
-  LRTHardwareAccelerators expectedFlags =
-      LRTHardwareAcceleratorCPU | LRTHardwareAcceleratorNPU;
-  LRTOptions *options =
-      [[LRTOptions alloc] initWithHardwareAccelerators:expectedFlags];
+  LRTHardwareAccelerators expectedFlags = LRTHardwareAcceleratorCPU | LRTHardwareAcceleratorNPU;
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:expectedFlags];
   XCTAssertNotNil(options);
   XCTAssertEqual(options.hardwareAccelerators, expectedFlags);
 }

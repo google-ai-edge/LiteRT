@@ -859,7 +859,10 @@ LiteRtStatus LrtGetGpuOptionsConstantTensorsSharing(
       << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *enabled = options->enable_constant_tensors_sharing.value_or(false);
+  if (!options->enable_constant_tensors_sharing.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->enable_constant_tensors_sharing;
   return kLiteRtStatusOk;
 }
 
@@ -869,7 +872,10 @@ LiteRtStatus LrtGetGpuOptionsInfiniteFloatCapping(
       << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *enabled = options->enable_infinite_float_capping.value_or(false);
+  if (!options->enable_infinite_float_capping.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->enable_infinite_float_capping;
   return kLiteRtStatusOk;
 }
 
@@ -879,7 +885,10 @@ LiteRtStatus LrtGetGpuOptionsGpuBackend(LiteRtGpuBackend* backend,
       << "`backend` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *backend = options->backend.value_or(kLiteRtGpuBackendAutomatic);
+  if (!options->backend.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *backend = *options->backend;
   return kLiteRtStatusOk;
 }
 
@@ -889,7 +898,10 @@ LiteRtStatus LrtGetGpuOptionsBenchmarkMode(bool* enabled,
       << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *enabled = options->benchmark_mode.value_or(false);
+  if (!options->benchmark_mode.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->benchmark_mode;
   return kLiteRtStatusOk;
 }
 
@@ -899,7 +911,10 @@ LiteRtStatus LrtGetGpuOptionsExternalTensorsMode(bool* enabled,
       << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *enabled = options->external_tensors_mode.value_or(false);
+  if (!options->external_tensors_mode.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->external_tensors_mode;
   return kLiteRtStatusOk;
 }
 
@@ -909,7 +924,10 @@ LiteRtStatus LrtGetGpuOptionsGpuPriority(LiteRtGpuPriority* priority,
       << "`priority` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *priority = options->priority.value_or(kLiteRtGpuPriorityDefault);
+  if (!options->priority.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *priority = *options->priority;
   return kLiteRtStatusOk;
 }
 
@@ -919,7 +937,10 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
       << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *enabled = options->allow_src_quantized_fc_conv_ops.value_or(false);
+  if (!options->allow_src_quantized_fc_conv_ops.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->allow_src_quantized_fc_conv_ops;
   return kLiteRtStatusOk;
 }
 
@@ -929,7 +950,10 @@ LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
       << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *enabled = options->hint_waiting_for_completion.value_or(false);
+  if (!options->hint_waiting_for_completion.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->hint_waiting_for_completion;
   return kLiteRtStatusOk;
 }
 
@@ -940,7 +964,10 @@ LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
       << "`kernel_batch_size` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *kernel_batch_size = options->kernel_batch_size.value_or(-1);
+  if (!options->kernel_batch_size.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *kernel_batch_size = *options->kernel_batch_size;
   return kLiteRtStatusOk;
 }
 
@@ -950,7 +977,10 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsPrecision(
       << "`precision` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *precision = options->precision.value_or(kLiteRtDelegatePrecisionDefault);
+  if (!options->precision.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *precision = *options->precision;
   return kLiteRtStatusOk;
 }
 
@@ -959,22 +989,26 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsBufferStorageType(
     const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(buffer_storage_type,
                          ErrorStatusBuilder::InvalidArgument())
-      << "`use_buffer_storage_type` cannot be null.";
+      << "`buffer_storage_type` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *buffer_storage_type = options->buffer_storage_type.value_or(
-      kLiteRtDelegateBufferStorageTypeDefault);
+  if (!options->buffer_storage_type.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *buffer_storage_type = *options->buffer_storage_type;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
-    bool* prefer_texture_weights, const LrtGpuOptions* options) {
-  LITERT_RETURN_IF_ERROR(prefer_texture_weights,
-                         ErrorStatusBuilder::InvalidArgument())
-      << "`prefer_texture_weights` cannot be null.";
+    bool* enabled, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *prefer_texture_weights = options->prefer_texture_weights.value_or(false);
+  if (!options->prefer_texture_weights.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->prefer_texture_weights;
   return kLiteRtStatusOk;
 }
 
@@ -985,9 +1019,10 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSerializationDir(
       << "`serialization_dir` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *serialization_dir = options->serialization_dir.has_value()
-                           ? options->serialization_dir->c_str()
-                           : nullptr;
+  if (!options->serialization_dir.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *serialization_dir = options->serialization_dir->c_str();
   return kLiteRtStatusOk;
 }
 
@@ -997,9 +1032,10 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsModelCacheKey(
       << "`model_cache_key` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *model_cache_key = options->model_cache_key.has_value()
-                         ? options->model_cache_key->c_str()
-                         : nullptr;
+  if (!options->model_cache_key.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *model_cache_key = options->model_cache_key->c_str();
   return kLiteRtStatusOk;
 }
 
@@ -1010,7 +1046,10 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
       << "`program_cache_fd` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *program_cache_fd = options->program_cache_fd.value_or(-1);
+  if (!options->program_cache_fd.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *program_cache_fd = *options->program_cache_fd;
   return kLiteRtStatusOk;
 }
 
@@ -1020,42 +1059,49 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsWeightCacheFd(
       << "`weight_cache_fd` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *weight_cache_fd = options->weight_cache_fd.value_or(-1);
+  if (!options->weight_cache_fd.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *weight_cache_fd = *options->weight_cache_fd;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
-    bool* serialize_program_cache, const LrtGpuOptions* options) {
-  LITERT_RETURN_IF_ERROR(serialize_program_cache,
-                         ErrorStatusBuilder::InvalidArgument())
-      << "`serialize_program_cache` cannot be null.";
+    bool* enabled, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *serialize_program_cache = options->serialize_program_cache.value_or(true);
+  if (!options->serialize_program_cache.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->serialize_program_cache;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsCacheCompiledProgramsOnly(
-    bool* cache_only_compiled_programs, const LrtGpuOptions* options) {
-  LITERT_RETURN_IF_ERROR(cache_only_compiled_programs,
-                         ErrorStatusBuilder::InvalidArgument())
-      << "`cache_only_compiled_programs` cannot be null.";
+    bool* enabled, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *cache_only_compiled_programs =
-      options->cache_only_compiled_programs.value_or(false);
+  if (!options->cache_only_compiled_programs.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->cache_only_compiled_programs;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
-    bool* serialize_external_tensors, const LrtGpuOptions* options) {
-  LITERT_RETURN_IF_ERROR(serialize_external_tensors,
-                         ErrorStatusBuilder::InvalidArgument())
-      << "`serialize_external_tensors` cannot be null.";
+    bool* enabled, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *serialize_external_tensors =
-      options->serialize_external_tensors.value_or(false);
+  if (!options->serialize_external_tensors.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->serialize_external_tensors;
   return kLiteRtStatusOk;
 }
 
@@ -1113,26 +1159,28 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsBufferStorageTensorPattern(
 }
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
-    bool* madvise_original_shared_tensors, const LrtGpuOptions* options) {
-  LITERT_RETURN_IF_ERROR(madvise_original_shared_tensors,
-                         ErrorStatusBuilder::InvalidArgument())
-      << "`madvise_original_shared_tensors` cannot be null.";
+    bool* enabled, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *madvise_original_shared_tensors =
-      options->madvise_original_shared_tensors.value_or(0);
+  if (!options->madvise_original_shared_tensors.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->madvise_original_shared_tensors;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
-    bool* disable_shader_optimization, const LrtGpuOptions* options) {
-  LITERT_RETURN_IF_ERROR(disable_shader_optimization,
-                         ErrorStatusBuilder::InvalidArgument())
-      << "`disable_shader_compilation_optimization` cannot be null.";
+    bool* enabled, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *disable_shader_optimization =
-      options->disable_shader_optimization.value_or(0);
+  if (!options->disable_shader_optimization.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->disable_shader_optimization;
   return kLiteRtStatusOk;
 }
 
@@ -1143,7 +1191,10 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSharedTensorMaps(
       << "`shared_tensor_maps` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *shared_tensor_maps = options->shared_tensor_maps.value_or(nullptr);
+  if (!options->shared_tensor_maps.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *shared_tensor_maps = *options->shared_tensor_maps;
   return kLiteRtStatusOk;
 }
 
@@ -1156,30 +1207,37 @@ LrtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
       << "`num_steps_of_command_buffer_preparations` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
+  if (!options->num_steps_of_command_buffer_preparations.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
   *num_steps_of_command_buffer_preparations =
-      options->num_steps_of_command_buffer_preparations.value_or(0);
+      *options->num_steps_of_command_buffer_preparations;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LrtGetGpuOptionsUseMetalArgumentBuffers(
-    const LrtGpuOptions* options, bool* use_metal_argument_buffers) {
-  LITERT_RETURN_IF_ERROR(use_metal_argument_buffers,
-                         ErrorStatusBuilder::InvalidArgument())
-      << "`use_metal_argument_buffers` cannot be null.";
-  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
-      << "`options` cannot be null.";
-  *use_metal_argument_buffers =
-      options->use_metal_argument_buffers.value_or(false);
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LrtGetGpuOptionsMetalResidencySet(const LrtGpuOptions* options,
-                                               bool* enabled) {
+    bool* enabled, const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
       << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *enabled = options->enable_metal_residency_set.value_or(false);
+  if (!options->use_metal_argument_buffers.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->use_metal_argument_buffers;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuOptionsMetalResidencySet(bool* enabled,
+                                               const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  if (!options->enable_metal_residency_set.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->enable_metal_residency_set;
   return kLiteRtStatusOk;
 }
 
@@ -1189,7 +1247,10 @@ LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsWaitType(
       << "`wait_type` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *wait_type = options->wait_type.value_or(kLiteRtGpuWaitTypeDefault);
+  if (!options->wait_type.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *wait_type = *options->wait_type;
   return kLiteRtStatusOk;
 }
 
@@ -1200,9 +1261,10 @@ LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
       << "`preferred_device_substr` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *preferred_device_substr = options->preferred_device_substr.has_value()
-                                 ? options->preferred_device_substr->c_str()
-                                 : "";
+  if (!options->preferred_device_substr.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *preferred_device_substr = options->preferred_device_substr->c_str();
   return kLiteRtStatusOk;
 }
 
@@ -1213,7 +1275,10 @@ LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsNumThreadsToUpload(
       << "`num_threads_to_upload` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *num_threads_to_upload = options->num_threads_to_upload.value_or(0);
+  if (!options->num_threads_to_upload.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *num_threads_to_upload = *options->num_threads_to_upload;
   return kLiteRtStatusOk;
 }
 
@@ -1224,43 +1289,49 @@ LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
       << "`num_threads_to_compile` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *num_threads_to_compile = options->num_threads_to_compile.value_or(0);
+  if (!options->num_threads_to_compile.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *num_threads_to_compile = *options->num_threads_to_compile;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
-    bool* convert_weights_on_gpu, const LrtGpuOptions* options) {
-  LITERT_RETURN_IF_ERROR(convert_weights_on_gpu,
-                         ErrorStatusBuilder::InvalidArgument())
-      << "`convert_weights_on_gpu` cannot be null.";
+    bool* enabled, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *convert_weights_on_gpu = options->convert_weights_on_gpu.value_or(false);
+  if (!options->convert_weights_on_gpu.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->convert_weights_on_gpu;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
-    bool* wait_for_weights_conversion_complete, const LrtGpuOptions* options) {
-  LITERT_RETURN_IF_ERROR(wait_for_weights_conversion_complete,
-                         ErrorStatusBuilder::InvalidArgument())
-      << "`wait_for_weights_conversion_complete` cannot be null.";
+    bool* enabled, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *wait_for_weights_conversion_complete =
-      options->wait_for_weights_conversion_complete.value_or(false);
+  if (!options->wait_for_weights_conversion_complete.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->wait_for_weights_conversion_complete;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LrtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
-    bool* hint_fully_delegated_to_single_delegate,
-    const LrtGpuOptions* options) {
-  LITERT_RETURN_IF_ERROR(hint_fully_delegated_to_single_delegate,
-                         ErrorStatusBuilder::InvalidArgument())
-      << "`hint_fully_delegated_to_single_delegate` cannot be null.";
+    bool* enabled, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
       << "`options` cannot be null.";
-  *hint_fully_delegated_to_single_delegate =
-      options->hint_fully_delegated_to_single_delegate.value_or(false);
+  if (!options->hint_fully_delegated_to_single_delegate.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->hint_fully_delegated_to_single_delegate;
   return kLiteRtStatusOk;
 }
 

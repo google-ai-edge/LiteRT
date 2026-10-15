@@ -67,6 +67,21 @@ extern "C" {
   typedef struct name##T* name;           \
   typedef const struct name##T* name##Const
 
+// Type-erased pointer to a versioned C ABI interface struct whose first member
+// at byte offset 0 is `LiteRtAbiHeader abi_header` (see
+// `c/internal/litert_abi_header.h`).
+//
+// Examples of concrete interface structs passed via `LiteRtInterface`:
+//   - `const LiteRtDispatchInterface_V1*`
+//   - `const LiteRtCompilerPluginInterface_V1*`
+//   - `const LiteRtCustomTensorBufferHandlersDef_V1*`
+//
+// The underlying struct may be statically allocated (e.g. `static const` in
+// `.rodata`) or heap-allocated by the provider, as long as the provider manages
+// its lifetime. `const` indicates that the caller treats the returned table as
+// read-only and will not modify or free it.
+typedef const void* LiteRtInterface;
+
 // LiteRT Accelerator object. (litert_accelerator.h)
 LITERT_DEFINE_HANDLE(LiteRtAccelerator);
 // LiteRT DelegateWrapper object. (litert_delegate_wrapper.h).
