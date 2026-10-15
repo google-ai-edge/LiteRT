@@ -124,9 +124,10 @@ Expected<void> CheckExtraModelBoundedInputs() {
   gather_opts.Set(tflite::GatherOptionsT{{}, /*axis=*/1});
   internal::SetTflOptions(gather_op, std::move(gather_opts));
 
-  // Input 2: INT64 attention_mask -> Cast(FLOAT32) (fallback to [0, 2)).
-  auto& attention_mask = add_tensor(kLiteRtElementTypeInt64, {64});
-  auto& mask_out = add_tensor(kLiteRtElementTypeFloat32, {64});
+  // Input 2: INT64 attention_mask with dynamic batch dim {-1, 64} ->
+  // Cast(FLOAT32) (resolved to {1, 64} and fallback to [0, 2)).
+  auto& attention_mask = add_tensor(kLiteRtElementTypeInt64, {-1, 64});
+  auto& mask_out = add_tensor(kLiteRtElementTypeFloat32, {-1, 64});
   add_op(kLiteRtOpCodeTflCast, {&attention_mask}, mask_out);
 
   sg.Inputs() = {&token_ids, &gather_ids, &attention_mask};
@@ -141,7 +142,7 @@ Expected<void> CheckExtraModelBoundedInputs() {
     return std::all_of(span.begin(), span.end(),
                        [upper](auto v) { return v >= 0 && v < upper; });
   };
-  LITERT_ENSURE(inputs.size() == 3 &&
+  LITERT_ENSURE(inputs.size() == 3 && inputs[2].Span<int64_t>().size() == 64 &&
                     in_bounds(inputs[0].Span<int32_t>(), 17) &&
                     in_bounds(inputs[1].Span<int64_t>(), 23) &&
                     in_bounds(inputs[2].Span<int64_t>(), 2),
@@ -216,7 +217,7 @@ Expected<void> CheckAts() {
         [](const auto& row) { return row.run.status != RunStatus::kError; });
 
     LITERT_ENSURE(
-        i_cap_ok && i_cap.Rows().size() == test_id - 1 && num_extra_models == 1,
+        i_cap_ok && i_cap.Rows().size() == test_id - 1 && num_extra_models == 2,
         Error(kLiteRtStatusErrorRuntimeFailure),
         "Status capture contains errors.");
   }

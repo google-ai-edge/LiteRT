@@ -77,6 +77,12 @@ class ExtraModel : public TestGraph {
     const auto& sg_inputs = Graph().Subgraph(0).Inputs();
     for (size_t i = 0; i < sg_inputs.size(); ++i) {
       LITERT_ASSIGN_OR_RETURN(auto t, (sg_inputs[i]->Ranked()));
+      // TODO: Support randomizing dynamic dimensions via ResizeInputTensor.
+      for (size_t d = 0; d < t.layout.rank; ++d) {
+        if (t.layout.dimensions[d] < 0) {
+          t.layout.dimensions[d] = 1;
+        }
+      }
       LITERT_ASSIGN_OR_RETURN(auto b,
                               SimpleBuffer::Create(RankedTensorType(t)));
       auto builder = data_builder;
