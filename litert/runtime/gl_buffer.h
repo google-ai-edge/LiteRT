@@ -26,10 +26,6 @@
 #include "litert/runtime/ahwb_buffer.h"
 #include "litert/runtime/gpu_environment.h"
 
-#if LITERT_HAS_OPENGL_SUPPORT
-#include "tflite/delegates/gpu/gl/gl_buffer.h"
-#endif  // LITERT_HAS_OPENGL_SUPPORT
-
 namespace litert::internal {
 
 class GlBuffer {
@@ -65,35 +61,38 @@ class GlBuffer {
 
  private:
 #if LITERT_HAS_OPENGL_SUPPORT
-  // Used to create an owned GlBuffer from a tflite::gpu::gl::GlBuffer.
-  // tflite_gl_buffer is expected to be owned.
-  explicit GlBuffer(tflite::gpu::gl::GlBuffer&& tflite_gl_buffer
+  GlBuffer(GpuEnvironment* gpu_env, LiteRtGLenum target, LiteRtGLuint id,
+           size_t size_bytes, size_t offset, bool has_ownership
 #if LITERT_HAS_AHWB_SUPPORT
-                    ,
-                    AHardwareBuffer* ahwb = nullptr
+           ,
+           AHardwareBuffer* ahwb = nullptr
 #endif  // LITERT_HAS_AHWB_SUPPORT
-                    )
-      : tflite_gl_buffer_(std::move(tflite_gl_buffer)),
-        deallocator_(nullptr),  // deallocator is not needed since
-                                // tflite_gl_buffer is owned.
-        size_bytes_(tflite_gl_buffer.bytes_size())
+           )
+      : target_(target),
+        id_(id),
+        size_bytes_(size_bytes),
+        offset_(offset),
+        has_ownership_(has_ownership),
+        deallocator_(nullptr),
 #if LITERT_HAS_AHWB_SUPPORT
-        ,
-        ahwb_(ahwb)
+        ahwb_(ahwb),
 #endif  // LITERT_HAS_AHWB_SUPPORT
-  {
+        gpu_env_(gpu_env) {
   }
 #endif  // LITERT_HAS_OPENGL_SUPPORT
   absl::Mutex mutex_;
 #if LITERT_HAS_OPENGL_SUPPORT
-  tflite::gpu::gl::GlBuffer tflite_gl_buffer_;
-  // NULL deallocator_ means that buffer id is not owned by the GlBuffer, UNLESS
-  // tflite_gl_buffer_ is owned.
-  LiteRtGlBufferDeallocator deallocator_;
-  // The cpu memory buffer pointer.
-  void* data_ = nullptr;
+  LiteRtGLenum target_ = 0;
+  LiteRtGLuint id_ = 0;
   // The size of the buffer in bytes.
   size_t size_bytes_ = 0;
+  size_t offset_ = 0;
+  bool has_ownership_ = false;
+  // NULL deallocator_ means that buffer id is not owned by the GlBuffer, UNLESS
+  // has_ownership_ is true.
+  LiteRtGlBufferDeallocator deallocator_ = nullptr;
+  // The cpu memory buffer pointer.
+  void* data_ = nullptr;
   // The lock mode used in the current lock cycle.
   LiteRtTensorBufferLockMode lock_mode_ = kLiteRtTensorBufferLockModeReadWrite;
 #endif  // LITERT_HAS_OPENGL_SUPPORT

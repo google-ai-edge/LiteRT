@@ -309,50 +309,8 @@ set(_litert_runtime_c_api_private_archives
     Threads::Threads
 )
 
-# Provide missing TensorFlow Lite and ML Drift GPU GL core objects for Android builds.
+# Provide missing ML Drift GPU GL core objects for Android builds.
 if(LITERT_PLATFORM_ANDROID)
-  add_library(litert_tflite_gpu_gl_core STATIC
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/egl_context.cc
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/egl_environment.cc
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/egl_surface.cc
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/gl_buffer.cc
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/gl_errors.cc
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/gl_program.cc
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/gl_shader.cc
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/gl_texture.cc
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/gl_texture_helper.cc
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/gl_sync.cc
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/android_sync.cc
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/async_buffers.cc
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/object_manager.cc
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/request_gpu_info.cc)
-  target_sources(litert_tflite_gpu_gl_core PRIVATE
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/cl/egl_sync.cc
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/cl/gl_interop.cc)
-  set_source_files_properties(
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/cl/egl_sync.cc
-    PROPERTIES COMPILE_DEFINITIONS "EGL_EGLEXT_PROTOTYPES")
-  target_sources(litert_tflite_gpu_gl_core PRIVATE
-    ${TFLITE_SOURCE_DIR}/delegates/utils/async_type_helpers.cc
-    ${TFLITE_SOURCE_DIR}/delegates/utils/utils.cc
-    ${TFLITE_SOURCE_DIR}/delegates/utils/sync_fence.cc)
-  target_sources(litert_tflite_gpu_gl_core PRIVATE
-    ${TFLITE_SOURCE_DIR}/delegates/gpu/android_hardware_buffer.cc
-    ${TFLITE_SOURCE_DIR}/async/backend_async_kernel_interface.cc)
-  set_target_properties(litert_tflite_gpu_gl_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
-  target_include_directories(litert_tflite_gpu_gl_core
-    PUBLIC
-      $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>)
-  target_link_libraries(litert_tflite_gpu_gl_core
-    PUBLIC
-      absl::status
-      absl::strings
-      absl::span
-      absl::flat_hash_map
-      flatbuffers::flatbuffers)
-  target_compile_definitions(litert_tflite_gpu_gl_core PRIVATE CL_DELEGATE_NO_GL EGL_NO_X11)
-  list(APPEND _litert_runtime_c_api_private_archives litert_tflite_gpu_gl_core)
-
   if(LITERT_ENABLE_GPU)
     add_library(litert_mldrift_gpu_gl_core STATIC
       ${ml_drift_SOURCE_DIR}/ml_drift/common/api_cl_gl_vk.cc

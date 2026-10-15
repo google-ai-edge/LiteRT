@@ -28,14 +28,14 @@
 #include "litert/core/environment_options.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
+#include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
+#include "ml_drift/cl/cl_context.h"  // from @ml_drift
+#include "ml_drift/cl/cl_device.h"  // from @ml_drift
 #include <CL/cl.h>
-#include "tflite/delegates/gpu/cl/cl_command_queue.h"
-#include "tflite/delegates/gpu/cl/cl_context.h"
-#include "tflite/delegates/gpu/cl/cl_device.h"
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
-#include "tflite/delegates/gpu/gl/egl_environment.h"
+#include "ml_drift/gl/egl_environment.h"  // from @ml_drift
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #if LITERT_HAS_WEBGPU_SUPPORT
@@ -127,9 +127,9 @@ class GpuEnvironment {
   ~GpuEnvironment();
 
 #if LITERT_HAS_OPENCL_SUPPORT
-  tflite::gpu::cl::CLDevice* GetDevice() { return &device_; }
-  tflite::gpu::cl::CLContext* GetContext() { return &context_; }
-  tflite::gpu::cl::CLCommandQueue* GetCommandQueue() { return &command_queue_; }
+  ::ml_drift::cl::CLDevice* GetDevice() { return &device_; }
+  ::ml_drift::cl::CLContext* GetContext() { return &context_; }
+  ::ml_drift::cl::CLCommandQueue* GetCommandQueue() { return &command_queue_; }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
   LiteRtEglDisplay GetEglDisplay() { return options_.egl_display; }
   LiteRtEglContext GetEglContext() { return options_.egl_context; }
@@ -197,13 +197,13 @@ class GpuEnvironment {
   // EGL must be declared before OpenCL so it initializes first and is destroyed
   // last (reverse declaration order), preventing driver crashes during cleanup.
 #if LITERT_HAS_OPENGL_SUPPORT
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env_;
+  std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env_;
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
-  tflite::gpu::cl::CLDevice device_;
-  tflite::gpu::cl::CLContext context_;
-  tflite::gpu::cl::CLCommandQueue command_queue_;
+  ::ml_drift::cl::CLDevice device_;
+  ::ml_drift::cl::CLContext context_;
+  ::ml_drift::cl::CLCommandQueue command_queue_;
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT

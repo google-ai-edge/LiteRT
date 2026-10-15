@@ -18,14 +18,14 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "tflite/delegates/gpu/common/data_type.h"
-#include "tflite/delegates/gpu/common/shape.h"
 
 namespace litert::internal {
-using tflite::gpu::BHWC;
-using tflite::gpu::DataType;
+using ::ml_drift::BHWC;
+using ::ml_drift::DataType;
 
 inline absl::Status ConvertLiteRtTensorTypeToGpuShape(
     const LiteRtRankedTensorType* tensor_type, BHWC* shape) {
@@ -70,20 +70,20 @@ inline absl::Status ConvertLiteRtDataTypeToGpuDataType(
     const LiteRtTensorBufferType buffer_type) {
   switch (tensor_type->element_type) {
     case kLiteRtElementTypeFloat32:
-      *data_type = IsFloat16BufferType(buffer_type) ? DataType::FLOAT16
-                                                    : DataType::FLOAT32;
+      *data_type = IsFloat16BufferType(buffer_type) ? DataType::kFloat16
+                                                    : DataType::kFloat32;
       break;
     case kLiteRtElementTypeBool:
-      *data_type = DataType::BOOL;
+      *data_type = DataType::kBool;
       break;
     case kLiteRtElementTypeInt32:
-      *data_type = DataType::INT32;
+      *data_type = DataType::kInt32;
       break;
     case kLiteRtElementTypeFloat16:
-      *data_type = DataType::FLOAT16;
+      *data_type = DataType::kFloat16;
       break;
     case kLiteRtElementTypeInt8:
-      *data_type = DataType::INT8;
+      *data_type = DataType::kInt8;
       break;
     default:
       return absl::InvalidArgumentError(absl::StrFormat(

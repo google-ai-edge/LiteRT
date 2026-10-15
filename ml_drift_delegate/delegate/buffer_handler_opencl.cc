@@ -46,7 +46,6 @@
 #include "litert/runtime/tensor_buffer_lockstate.h"
 #include "ml_drift_delegate/delegate/buffer_handler_utils.h"
 #include <CL/cl.h>
-#include "tflite/delegates/gpu/cl/opencl_wrapper.h"  // NOLINT: Required for OpenCL backend.
 
 using ::litert::internal::LockState;
 
@@ -337,10 +336,9 @@ LiteRtStatus LiteRtImportOpenClMemory(LiteRtGpuDeviceId device_id,
                                        sizeof(cl_mem_type), &cl_mem_type,
                                        nullptr) == CL_SUCCESS) {
     cl_memory = candidate_cl_mem;
-  }
 #if LITERT_HAS_AHWB_SUPPORT
-  else if (tflite::gpu::cl::clImportMemoryARM != nullptr &&
-           hw_buffer_handle != nullptr) {
+  } else if (::ml_drift::cl::clImportMemoryARM != nullptr &&
+             hw_buffer_handle != nullptr) {
     const cl_import_properties_arm properties[] = {
         CL_IMPORT_TYPE_ARM,
         CL_IMPORT_TYPE_ANDROID_HARDWARE_BUFFER_ARM,
@@ -348,15 +346,14 @@ LiteRtStatus LiteRtImportOpenClMemory(LiteRtGpuDeviceId device_id,
     };
 
     cl_int error = CL_SUCCESS;
-    cl_mem candidate_cl_mem = tflite::gpu::cl::clImportMemoryARM(
+    cl_mem candidate_cl_mem = ::ml_drift::cl::clImportMemoryARM(
         cl_ctx_handle, CL_MEM_READ_WRITE, properties, hw_buffer_handle, bytes,
         &error);
     if (error == CL_SUCCESS) {
       cl_memory = candidate_cl_mem;
     }
-  }
 #endif
-  else {
+  } else {
 #if LITERT_HAS_OPENGL_SUPPORT
     // Assume it is an OpenGL buffer ID.
     cl_GLuint gl_buffer_id =

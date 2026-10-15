@@ -15,15 +15,15 @@
 #include "litert/runtime/litert_gpu_util.h"
 
 #include <gtest/gtest.h>
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/test/matchers.h"
-#include "tflite/delegates/gpu/common/data_type.h"
 
 namespace litert::internal {
 namespace {
 
-using tflite::gpu::DataType;
+using ::ml_drift::DataType;
 
 TEST(ConvertLiteRtDataTypeToGpuDataTypeTest, Float32) {
   LiteRtRankedTensorType tensor_type;
@@ -32,7 +32,7 @@ TEST(ConvertLiteRtDataTypeToGpuDataTypeTest, Float32) {
 
   LITERT_ASSERT_OK(ConvertLiteRtDataTypeToGpuDataType(
       &tensor_type, &data_type, kLiteRtTensorBufferTypeAhwb));
-  EXPECT_EQ(data_type, DataType::FLOAT32);
+  EXPECT_EQ(data_type, DataType::kFloat32);
 }
 
 class Float32AsFloat16Test
@@ -45,7 +45,7 @@ TEST_P(Float32AsFloat16Test, ConvertsToFloat16) {
 
   LITERT_ASSERT_OK(ConvertLiteRtDataTypeToGpuDataType(
       &tensor_type, &data_type, GetParam()));
-  EXPECT_EQ(data_type, DataType::FLOAT16);
+  EXPECT_EQ(data_type, DataType::kFloat16);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -63,7 +63,7 @@ TEST(ConvertLiteRtDataTypeToGpuDataTypeTest, Float16) {
 
   LITERT_ASSERT_OK(ConvertLiteRtDataTypeToGpuDataType(
       &tensor_type, &data_type, kLiteRtTensorBufferTypeAhwb));
-  EXPECT_EQ(data_type, DataType::FLOAT16);
+  EXPECT_EQ(data_type, DataType::kFloat16);
 }
 
 TEST(ConvertLiteRtDataTypeToGpuDataTypeTest, Int32) {
@@ -73,7 +73,7 @@ TEST(ConvertLiteRtDataTypeToGpuDataTypeTest, Int32) {
 
   LITERT_ASSERT_OK(ConvertLiteRtDataTypeToGpuDataType(
       &tensor_type, &data_type, kLiteRtTensorBufferTypeAhwb));
-  EXPECT_EQ(data_type, DataType::INT32);
+  EXPECT_EQ(data_type, DataType::kInt32);
 }
 
 TEST(ConvertLiteRtDataTypeToGpuDataTypeTest, Int8) {
@@ -83,7 +83,7 @@ TEST(ConvertLiteRtDataTypeToGpuDataTypeTest, Int8) {
 
   LITERT_ASSERT_OK(ConvertLiteRtDataTypeToGpuDataType(
       &tensor_type, &data_type, kLiteRtTensorBufferTypeAhwb));
-  EXPECT_EQ(data_type, DataType::INT8);
+  EXPECT_EQ(data_type, DataType::kInt8);
 }
 
 TEST(ConvertLiteRtDataTypeToGpuDataTypeTest, Bool) {
@@ -93,7 +93,7 @@ TEST(ConvertLiteRtDataTypeToGpuDataTypeTest, Bool) {
 
   LITERT_ASSERT_OK(ConvertLiteRtDataTypeToGpuDataType(
       &tensor_type, &data_type, kLiteRtTensorBufferTypeAhwb));
-  EXPECT_EQ(data_type, DataType::BOOL);
+  EXPECT_EQ(data_type, DataType::kBool);
 }
 
 TEST(ConvertLiteRtDataTypeToGpuDataTypeTest, UnsupportedType) {
