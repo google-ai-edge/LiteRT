@@ -28,6 +28,7 @@ class Registry {
     // Check if the value is already registered.
     for (auto i = 0; i < entries_.size(); ++i) {
       if (entries_[i].used && (entries_[i].value == value)) {
+        entries_[i].ref_count++;
         return static_cast<H>(i);
       }
     }
@@ -38,6 +39,7 @@ class Registry {
       if (!entry.used) {
         entry.value = value;
         entry.used = true;
+        entry.ref_count = 1;
         return static_cast<H>(i);
       }
     }
@@ -47,26 +49,35 @@ class Registry {
     return handle;
   }
 
-  Expected<void> Unregister(H handle) {
-    if (handle < 0 || handle >= entries_.size()) {
+  // Decrements reference count and unregisters handle when it reaches 0.
+  // Returns true if the entry was fully released (ref_count == 0),
+  // or false if it is still referenced.
+  Expected<bool> Unregister(H handle) {
+    if (handle < 0 || handle >= entries_.size() || !entries_[handle].used) {
       return Unexpected(kLiteRtStatusErrorNotFound, "Unexpected handle");
     }
-    entries_[handle].used = false;
-    return {};
+    if (--entries_[handle].ref_count == 0) {
+      entries_[handle].used = false;
+      return true;
+    }
+    return false;
   }
 
   Expected<V*> Get(H handle) {
-    if (handle < 0 || handle >= entries_.size()) {
+    if (handle < 0 || handle >= entries_.size() || !entries_[handle].used) {
       return Unexpected(kLiteRtStatusErrorNotFound, "Unexpected handle");
     }
     return &entries_[handle].value;
   }
 
+  size_t Size() const { return entries_.size(); }
+
  private:
   struct Entry {
     V value;
     bool used;
-    explicit Entry(const V& v) : value(v), used(true) {}
+    size_t ref_count;
+    explicit Entry(const V& v) : value(v), used(true), ref_count(1) {}
   };
 
   std::vector<Entry> entries_;
