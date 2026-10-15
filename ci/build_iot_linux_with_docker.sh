@@ -81,9 +81,9 @@ run_build_and_stage() {
     "${plat_out}/run_model" \
     "${plat_out}/apply_plugin_main"
 
-  # Generate SHA256SUMS
+  # Log SHA256 checksums
   pushd "${plat_out}" > /dev/null
-  sha256sum libLiteRt.so libLiteRtDispatch_Qualcomm.so libLiteRtCompilerPlugin_Qualcomm.so run_model apply_plugin_main > SHA256SUMS
+  sha256sum libLiteRt.so libLiteRtDispatch_Qualcomm.so libLiteRtCompilerPlugin_Qualcomm.so run_model apply_plugin_main
   popd > /dev/null
 
   popd > /dev/null

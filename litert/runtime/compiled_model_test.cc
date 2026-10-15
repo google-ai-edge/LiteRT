@@ -27,6 +27,11 @@
 #include <utility>
 #include <vector>
 
+#if !defined(_WIN32)
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/debugging/leak_check.h"  // from @com_google_absl
@@ -1398,6 +1403,122 @@ TEST(CompiledModelTest, GetInterpreter) {
                               GetInterpreter(compiled_model.get()));
   EXPECT_NE(interpreter, nullptr);
 }
+
+// A model loaded from a file is a read-only file-backed mmap, so the buffer
+// context must advertise kLiteRtModelAllocationTypeFileBackedMmap to delegates.
+TEST(CompiledModelTest, ModelFromFileReportsFileBackedMmapAllocationType) {
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
+
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+
+  ASSERT_NE(compiled_model->GetBufferContext(), nullptr);
+  EXPECT_EQ(compiled_model->GetBufferContext()->GetModelAllocationType(),
+            kLiteRtModelAllocationTypeFileBackedMmap);
+
+  compiled_model.reset();
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+// A model loaded from a caller-owned buffer is not known to be file-backed, so
+// the buffer context must advertise kLiteRtModelAllocationTypeHostMemory: a
+// vendor must never madvise(MADV_DONTNEED) this memory.
+TEST(CompiledModelTest, ModelFromBufferReportsHostMemoryAllocationType) {
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Read the model into a heap buffer. `model_buffer` must stay alive until the
+  // model is destroyed.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  std::ifstream file(path, std::ios::binary);
+  ASSERT_TRUE(file.is_open());
+  std::vector<char> model_buffer((std::istreambuf_iterator<char>(file)),
+                                 std::istreambuf_iterator<char>());
+  ASSERT_FALSE(model_buffer.empty());
+
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromBuffer(env_ptr, model_buffer.data(),
+                                        model_buffer.size(), &model),
+            kLiteRtStatusOk);
+
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+
+  ASSERT_NE(compiled_model->GetBufferContext(), nullptr);
+  EXPECT_EQ(compiled_model->GetBufferContext()->GetModelAllocationType(),
+            kLiteRtModelAllocationTypeHostMemory);
+
+  compiled_model.reset();
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+#if !defined(_WIN32)
+// A model loaded from a file descriptor is also a read-only file-backed mmap,
+// so the buffer context must advertise
+// kLiteRtModelAllocationTypeFileBackedMmap.
+TEST(CompiledModelTest, ModelFromFdReportsFileBackedMmapAllocationType) {
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  std::ifstream file(path, std::ios::binary | std::ios::ate);
+  ASSERT_TRUE(file.is_open());
+  const size_t file_size = static_cast<size_t>(file.tellg());
+  ASSERT_GT(file_size, 0u);
+
+  const int fd = open(path.c_str(), O_RDONLY);
+  ASSERT_GE(fd, 0);
+
+  LiteRtModel model;
+  ASSERT_EQ(
+      LiteRtCreateModelFromFd(env_ptr, fd, /*offset=*/0, file_size, &model),
+      kLiteRtStatusOk);
+  close(fd);
+
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+
+  ASSERT_NE(compiled_model->GetBufferContext(), nullptr);
+  EXPECT_EQ(compiled_model->GetBufferContext()->GetModelAllocationType(),
+            kLiteRtModelAllocationTypeFileBackedMmap);
+
+  compiled_model.reset();
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+#endif  // !defined(_WIN32)
 
 TEST(CompiledModelTest, GetOutputTensorShapes) {
   // Environment setup.
