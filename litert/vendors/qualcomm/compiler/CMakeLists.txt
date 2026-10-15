@@ -13,6 +13,12 @@ add_library(qnn_compiler_plugin SHARED
     qnn_compiler_plugin.cc
     qnn_compose_graph.cc
     graph_mapper.cc
+    transformations/attention_chunk_transformation.cc
+    transformations/entry_embedding_transformation.cc
+    transformations/legalize_int32_ops_transformation.cc
+    transformations/mlp_quant_transformation.cc
+    transformations/orphan_cleanup_transformation.cc
+    transformations/rope_transformation.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/../../cc/namespace_heuristics.cc
 )
 
