@@ -12,7 +12,9 @@ permissions:
 jobs:
   build-nightly:
     name: "Build nightly Windows wheel - Python ${{ matrix.python-version }}"
-    runs-on: windows-x86-n2-16
+    runs-on:
+      group: ml-actions-platform-litert
+      labels: windows-x86-n2-16
     strategy:
       fail-fast: false
       matrix:
