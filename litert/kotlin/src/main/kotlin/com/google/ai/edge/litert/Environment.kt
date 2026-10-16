@@ -49,6 +49,12 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
      * @suppress
      */
     SystemGpuAcceleratorHandle(30),
+    /**
+     * This for internal use only.
+     *
+     * @suppress
+     */
+    RuntimeAbiVersion(31),
   }
 
   // LINT.ThenChange(../../../../../../../../../c/litert_environment_options.h)

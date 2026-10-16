@@ -26,8 +26,10 @@
 #include "litert/c/internal/litert_runtime_builtin.h"
 #include "litert/c/internal/litert_runtime_c_api.h"
 #include "litert/c/internal/litert_runtime_context.h"
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_runtime_proxy.h"
 #include "litert/cc/litert_any.h"
@@ -89,14 +91,126 @@ TEST(EnvironmentTest, CreateWithSystemRuntime) {
       Environment env, litert::Environment::Create(litert::EnvironmentOptions(
                            absl::MakeConstSpan(environment_options))));
   EXPECT_EQ(env.GetHolder().runtime->GetAbiVersion(),
-            internal::RuntimeAbiVersion(1, 0, 0));
-  auto accelerators = env.GetAvailableAccelerators();
-  EXPECT_FALSE(accelerators);
-  EXPECT_EQ(accelerators.Error().Status(), kLiteRtStatusErrorUnsupported);
+            internal::kBuiltinRuntimeAbiVersion);
+  LITERT_ASSERT_OK_AND_ASSIGN(EnvironmentOptions retrieved_options,
+                              env.GetOptions());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      const LiteRtVariant abi_option,
+      retrieved_options.GetOption(
+          litert::EnvironmentOptions::Tag::kRuntimeAbiVersion));
+  EXPECT_STREQ(std::get<const char*>(abi_option), LITERT_RUNTIME_ABI_VERSION);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto accelerators,
+                              env.GetAvailableAccelerators());
+  EXPECT_FALSE(accelerators.empty());
 
   const char* abi_version = nullptr;
-  EXPECT_EQ(env.GetHolder().runtime->GetRuntimeAbiVersion(&abi_version),
+  ASSERT_EQ(env.GetHolder().runtime->GetRuntimeAbiVersion(&abi_version),
+            kLiteRtStatusOk);
+  ASSERT_NE(abi_version, nullptr);
+  EXPECT_STREQ(abi_version, LITERT_RUNTIME_ABI_VERSION);
+
+  // Verify that a system runtime reporting 1.1.0 via environment options is
+  // resolved to 1.1.0 without invoking post-1.0.0 C API struct slots.
+  LiteRtRuntimeCApiStruct runtime_1_1_0 = *GetLiteRtRuntimeBuiltin();
+  runtime_1_1_0.litert_get_runtime_abi_version = nullptr;
+  runtime_1_1_0.litert_get_environment_options_value =
+      [](LiteRtEnvironmentOptions options, LiteRtEnvOptionTag tag,
+         LiteRtAny* value) {
+        if (tag == kLiteRtEnvOptionTagRuntimeAbiVersion) {
+          value->type = kLiteRtAnyTypeString;
+          value->str_value = "1.1.0";
+          return kLiteRtStatusOk;
+        }
+        return GetLiteRtRuntimeBuiltin()->litert_get_environment_options_value(
+            options, tag, value);
+      };
+  const std::vector<litert::EnvironmentOptions::Option> options_1_1_0 = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeHandle,
+          litert::LiteRtVariant(reinterpret_cast<const void*>(&runtime_1_1_0)),
+      },
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment env_1_1_0,
+      litert::Environment::Create(
+          litert::EnvironmentOptions(absl::MakeConstSpan(options_1_1_0))));
+  EXPECT_EQ(env_1_1_0.GetHolder().runtime->GetAbiVersion(),
+            internal::RuntimeAbiVersion(1, 1, 0));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto accelerators_1_1_0,
+                              env_1_1_0.GetAvailableAccelerators());
+  EXPECT_FALSE(accelerators_1_1_0.empty());
+  EXPECT_EQ(env_1_1_0.GetHolder().runtime->GetRuntimeAbiVersion(&abi_version),
             kLiteRtStatusErrorUnsupported);
+
+  // Verify that WrapCObject with an external runtime also resolves ABI version
+  // from environment options.
+  Environment wrapped_env_1_1_0 = Environment::WrapCObject(
+      &runtime_1_1_0, env_1_1_0.GetHolder().handle, OwnHandle::kNo);
+  EXPECT_EQ(wrapped_env_1_1_0.GetHolder().runtime->GetAbiVersion(),
+            internal::RuntimeAbiVersion(1, 1, 0));
+
+  // Verify that an older 1.0.0 system runtime (which returns NotFound for
+  // kLiteRtEnvOptionTagRuntimeAbiVersion and lacks post-1.0.0 struct slots)
+  // safely remains at 1.0.0 without dereferencing post-1.0.0 slots.
+  LiteRtRuntimeCApiStruct runtime_1_0_0 = *GetLiteRtRuntimeBuiltin();
+  runtime_1_0_0.litert_get_num_accelerators = nullptr;
+  runtime_1_0_0.litert_get_accelerator = nullptr;
+  runtime_1_0_0.litert_get_accelerator_hardware_support = nullptr;
+  runtime_1_0_0.litert_get_runtime_abi_version = nullptr;
+  runtime_1_0_0.litert_get_environment_options_value =
+      [](LiteRtEnvironmentOptions options, LiteRtEnvOptionTag tag,
+         LiteRtAny* value) {
+        if (tag == kLiteRtEnvOptionTagRuntimeAbiVersion) {
+          return kLiteRtStatusErrorNotFound;
+        }
+        return GetLiteRtRuntimeBuiltin()->litert_get_environment_options_value(
+            options, tag, value);
+      };
+  const std::vector<litert::EnvironmentOptions::Option> options_1_0_0 = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeHandle,
+          litert::LiteRtVariant(reinterpret_cast<const void*>(&runtime_1_0_0)),
+      },
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment env_1_0_0,
+      litert::Environment::Create(
+          litert::EnvironmentOptions(absl::MakeConstSpan(options_1_0_0))));
+  EXPECT_EQ(env_1_0_0.GetHolder().runtime->GetAbiVersion(),
+            internal::RuntimeAbiVersion(1, 0, 0));
+  auto unsupported_accelerators = env_1_0_0.GetAvailableAccelerators();
+  EXPECT_FALSE(unsupported_accelerators);
+  EXPECT_EQ(unsupported_accelerators.Error().Status(),
+            kLiteRtStatusErrorUnsupported);
+
+  // Verify that an incompatible major version in environment options falls back
+  // to 1.0.0.
+  LiteRtRuntimeCApiStruct runtime_incompatible = *GetLiteRtRuntimeBuiltin();
+  runtime_incompatible.litert_get_runtime_abi_version = nullptr;
+  runtime_incompatible.litert_get_environment_options_value =
+      [](LiteRtEnvironmentOptions options, LiteRtEnvOptionTag tag,
+         LiteRtAny* value) {
+        if (tag == kLiteRtEnvOptionTagRuntimeAbiVersion) {
+          value->type = kLiteRtAnyTypeString;
+          value->str_value = "2.0.0";
+          return kLiteRtStatusOk;
+        }
+        return GetLiteRtRuntimeBuiltin()->litert_get_environment_options_value(
+            options, tag, value);
+      };
+  const std::vector<litert::EnvironmentOptions::Option> options_incompatible = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeHandle,
+          litert::LiteRtVariant(
+              reinterpret_cast<const void*>(&runtime_incompatible)),
+      },
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment env_incompatible,
+      litert::Environment::Create(litert::EnvironmentOptions(
+          absl::MakeConstSpan(options_incompatible))));
+  EXPECT_EQ(env_incompatible.GetHolder().runtime->GetAbiVersion(),
+            internal::RuntimeAbiVersion(1, 0, 0));
 }
 
 TEST(EnvironmentTest, GetRuntimeAbiVersionCApi) {

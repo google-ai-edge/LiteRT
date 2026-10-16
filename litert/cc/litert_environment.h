@@ -330,6 +330,9 @@ class Environment {
       : runtime_(std::move(runtime)) {
     std::function<void(LiteRtEnvironment)> handle_deleter;
     auto runtime_ptr = runtime_.get();
+    if (runtime_ptr != nullptr && env != nullptr) {
+      runtime_ptr->ResolveAbiVersionFromEnvironment(env);
+    }
     if (owned == OwnHandle::kYes && runtime_ptr != nullptr) {
       handle_deleter = [runtime_ptr](LiteRtEnvironment env_) {
         runtime_ptr->DestroyEnvironment(env_);
@@ -374,7 +377,7 @@ class Environment {
   Expected<EnvironmentOptions> FromCOptions(
       LiteRtEnvironmentOptions options) const {
     std::vector<EnvironmentOptions::Option> env_options;
-    for (int i = 0; i <= kLiteRtEnvOptionTagSystemGpuAcceleratorHandle; ++i) {
+    for (int i = 0; i <= kLiteRtEnvOptionTagRuntimeAbiVersion; ++i) {
       LiteRtAny value;
       if (runtime_->GetEnvironmentOptionsValue(
               options, static_cast<LiteRtEnvOptionTag>(i), &value) ==
