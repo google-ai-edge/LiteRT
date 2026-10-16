@@ -128,6 +128,17 @@ litert_dynamic_lib(
     ],
 )
 
+filegroup(
+    name = "example_dispatch_so_data",
+    srcs = [
+        ":example_dispatch_so",
+    ] + select({
+        "//litert:windows": [":example_plugin_runtime_dll"],
+        "//conditions:default": [":example_plugin_runtime_so"],
+    }),
+    visibility = ["//litert:litert_public"],
+)
+
 litert_bin(
     name = "LiteRtCompilerPlugin",
     srcs = ["example_plugin.cc"],
@@ -328,6 +339,7 @@ cc_library(
 cc_test(
     name = "example_dispatch_test",
     srcs = ["example_dispatch_test.cc"],
+    data = [":example_dispatch_so_data"],
     target_compatible_with = select({
         "//litert:windows": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -339,8 +351,13 @@ cc_test(
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_requirements_header",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_runtime_context_testonly",
         "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc/internal:litert_shared_library",
+        "//litert/core:filesystem",
+        "//litert/core:version",
+        "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_buffer",
         "//litert/vendors/c:litert_dispatch_c_api",
