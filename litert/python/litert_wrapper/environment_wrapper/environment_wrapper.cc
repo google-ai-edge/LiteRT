@@ -32,7 +32,8 @@ PyObject* ReportError(const std::string& msg) {
 
 PyObject* CreateEnvironment(const char* runtime_path,
                             const char* compiler_plugin_path,
-                            const char* dispatch_library_path) {
+                            const char* dispatch_library_path,
+                            const char* compiler_cache_dir) {
   std::vector<litert::EnvironmentOptions::Option> options;
   std::string runtime_path_str = runtime_path != nullptr ? runtime_path : "";
   if (!runtime_path_str.empty()) {
@@ -48,6 +49,11 @@ PyObject* CreateEnvironment(const char* runtime_path,
     options.push_back(litert::EnvironmentOptions::Option{
         litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
         std::string(dispatch_library_path)});
+  }
+  if (compiler_cache_dir != nullptr && *compiler_cache_dir) {
+    options.push_back(litert::EnvironmentOptions::Option{
+        litert::EnvironmentOptions::Tag::kCompilerCacheDir,
+        std::string(compiler_cache_dir)});
   }
 
   auto env_or = litert::Environment::Create(
