@@ -1028,6 +1028,28 @@ std::optional<QkvNormRopeOp> ParseQkvNormRope(const Op& op) {
 // scores take the decomposition's fill of -10000). Returns Hq / H.
 constexpr float kSdpaTransposedFill = -10000.0f;
 
+// The tokens per query head of an attention block the CUDA attention plugin
+// runs, as given or after padding: the smallest n' >= `tokens` whose
+// group * n' rows fit the decode kernel (at most 16) or the tensor-core kernel
+// (a multiple of its row tile, n' dividing it). Gemma 4 26B's verify step
+// has 8 query heads x 5 tokens per KV head: 40 rows run as 48. nullopt when
+// no padding of up to 15 tokens does.
+std::optional<int32_t> SdpaTransposedPaddedTokens(int32_t group, int32_t tokens,
+                                                  int32_t depth) {
+  if (group < 1 || tokens < 1) {
+    return std::nullopt;
+  }
+  for (int32_t padded = tokens; padded < tokens + 16; ++padded) {
+    const int32_t rows = group * padded;
+    if (rows <= 16 ||
+        (LiteRtNvidiaGlobalAttentionSupports(rows, padded, depth) &&
+         kSdpaTransposedFill <= kMaxGlobalAttentionFill)) {
+      return padded;
+    }
+  }
+  return std::nullopt;
+}
+
 std::optional<int32_t> SdpaTransposedGroup(const Op& op) {
   if (op.Inputs().size() != 5 || op.Outputs().size() != 1) {
     return std::nullopt;
@@ -1062,17 +1084,14 @@ std::optional<int32_t> SdpaTransposedGroup(const Op& op) {
     return std::nullopt;
   }
   const int32_t group = q[1] / k[1];
-  const int32_t rows = group * q[2];
   const int32_t depth = q[3];
   if (depth != 128 && depth != 256 && depth != 512) {
     return std::nullopt;
   }
   // Decode (a few query rows) runs the decode kernel; prefill the
-  // tensor-core kernel, which needs depth 512 and rows the mask rows divide.
-  const bool decode = rows <= 16;
-  const bool prefill = LiteRtNvidiaGlobalAttentionSupports(rows, q[2], depth) &&
-                       kSdpaTransposedFill <= kMaxGlobalAttentionFill;
-  if (!decode && !prefill) {
+  // tensor-core kernel, which needs depth 512 and rows the mask rows divide;
+  // other row counts run padded (SdpaTransposedPaddedTokens).
+  if (!SdpaTransposedPaddedTokens(group, q[2], depth).has_value()) {
     return std::nullopt;
   }
   return group;
@@ -3187,6 +3206,26 @@ class TensorRtGraphBuilder {
                    "Failed to add TensorRT float constant");
     }
     LITERT_RETURN_IF_ERROR(RegisterRefitWeight(weights, name));
+    layer->getOutput(0)->setName(KeepName(UniqueName(name)));
+    return layer->getOutput(0);
+  }
+
+  // An all-false boolean constant.
+  Expected<nvinfer1::ITensor*> AddFalseConstant(nvinfer1::Dims dims,
+                                                const std::string& name) {
+    size_t count = 1;
+    for (int i = 0; i < dims.nbDims; ++i) {
+      count *= static_cast<size_t>(dims.d[i]);
+    }
+    owned_weights_.emplace_back(count, 0);
+    nvinfer1::Weights weights{nvinfer1::DataType::kBOOL,
+                              owned_weights_.back().data(),
+                              static_cast<int64_t>(count)};
+    auto* layer = network_->addConstant(dims, weights);
+    if (layer == nullptr || layer->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add TensorRT boolean constant");
+    }
     layer->getOutput(0)->setName(KeepName(UniqueName(name)));
     return layer->getOutput(0);
   }
@@ -6968,12 +7007,49 @@ class TensorRtGraphBuilder {
     nvinfer1::ITensor* k_cache = tensor_map_[block.k_out];
     nvinfer1::ITensor* v_cache = tensor_map_[block.v_out];
     const nvinfer1::Dims q_dims_in = q->getDimensions();
+    // Rows that fit neither kernel as given run with the tokens padded
+    // (SdpaTransposedPaddedTokens): zero query rows and all-false mask rows,
+    // sliced off the output.
+    const int32_t tokens = static_cast<int32_t>(q_dims_in.d[2]);
+    int32_t padded_tokens = tokens;
+    if (!new_keys && !block.int8_cache.has_value() &&
+        !block.window.has_value() && block.group * tokens > 16 &&
+        !LiteRtNvidiaGlobalAttentionSupports(
+            block.group * tokens, tokens,
+            static_cast<int32_t>(q_dims_in.d[3]))) {
+      const auto padded = SdpaTransposedPaddedTokens(
+          block.group, tokens, static_cast<int32_t>(q_dims_in.d[3]));
+      if (!padded.has_value()) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Attention block rows fit no CUDA attention kernel");
+      }
+      padded_tokens = *padded;
+    }
+    if (padded_tokens != tokens) {
+      nvinfer1::Dims pad_dims = q_dims_in;
+      pad_dims.d[2] = padded_tokens - tokens;
+      const std::vector<float> zeros(static_cast<size_t>(pad_dims.d[0]) *
+                                         pad_dims.d[1] * pad_dims.d[2] *
+                                         pad_dims.d[3],
+                                     0.0f);
+      LITERT_ASSIGN_OR_RETURN(
+          auto* q_pad,
+          AddFloatConstant(zeros, pad_dims, "attention_q_pad", q->getType()));
+      nvinfer1::ITensor* parts[2] = {q, q_pad};
+      auto* concat = network_->addConcatenation(parts, 2);
+      if (concat == nullptr || concat->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to pad the attention query rows");
+      }
+      concat->setAxis(2);
+      q = concat->getOutput(0);
+    }
     if (block.group > 1) {
       // The group's query heads become rows of their KV head: [1, Hq, n, D]
       // -> [1, H, group * n, D], head-major within the group.
       nvinfer1::Dims grouped = q_dims_in;
       grouped.d[1] = q_dims_in.d[1] / block.group;
-      grouped.d[2] = q_dims_in.d[2] * block.group;
+      grouped.d[2] = padded_tokens * block.group;
       LITERT_ASSIGN_OR_RETURN(q, ReshapeTensor(q, grouped));
     }
     if (block.int8_cache.has_value()) {
@@ -6986,6 +7062,22 @@ class TensorRtGraphBuilder {
       }
     }
     nvinfer1::ITensor* mask = tensor_map_[block.mask];
+    if (padded_tokens != tokens && mask->getDimensions().d[2] == tokens) {
+      // The padded rows see no key: the kernel takes mask row r % mask rows
+      // for query row r, so the mask gets one all-false row per padded token.
+      nvinfer1::Dims pad_dims = mask->getDimensions();
+      pad_dims.d[2] = padded_tokens - tokens;
+      LITERT_ASSIGN_OR_RETURN(auto* mask_pad,
+                              AddFalseConstant(pad_dims, "attention_mask_pad"));
+      nvinfer1::ITensor* parts[2] = {mask, mask_pad};
+      auto* concat = network_->addConcatenation(parts, 2);
+      if (concat == nullptr || concat->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to pad the attention mask rows");
+      }
+      concat->setAxis(2);
+      mask = concat->getOutput(0);
+    }
     if (block.group > 1 && q_dims_in.d[2] > 1 &&
         mask->getDimensions().d[2] == q_dims_in.d[2] &&
         q_dims_in.d[2] * block.group <= 16) {
@@ -7043,7 +7135,24 @@ class TensorRtGraphBuilder {
     owned_plugins_.push_back(std::move(plugin));
     block.emitted = true;
     if (block.group > 1) {
-      LITERT_ASSIGN_OR_RETURN(out, ReshapeTensor(out, q_dims_in));
+      nvinfer1::Dims ungrouped = q_dims_in;
+      ungrouped.d[2] = padded_tokens;
+      LITERT_ASSIGN_OR_RETURN(out, ReshapeTensor(out, ungrouped));
+    }
+    if (padded_tokens != tokens) {
+      nvinfer1::Dims start{};
+      nvinfer1::Dims stride{};
+      start.nbDims = stride.nbDims = q_dims_in.nbDims;
+      for (int i = 0; i < q_dims_in.nbDims; ++i) {
+        start.d[i] = 0;
+        stride.d[i] = 1;
+      }
+      auto* slice = network_->addSlice(*out, start, q_dims_in, stride);
+      if (slice == nullptr || slice->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to slice the padded attention rows");
+      }
+      out = slice->getOutput(0);
     }
     return SetOutputTensor(*block.output, out);
   }
