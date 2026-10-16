@@ -200,19 +200,39 @@ std::vector<uint8_t> MakeInt4Weights(int n, int k) {
   return weights;
 }
 
+// Signed INT8 weights, one byte each, row-major.
+int8_t DecodeInt8(const std::vector<uint8_t>& weights, size_t index) {
+  return static_cast<int8_t>(weights[index]);
+}
+
+std::vector<uint8_t> MakeInt8Weights(int n, int k) {
+  std::vector<uint8_t> weights(static_cast<size_t>(n) * k, 0);
+  for (int row = 0; row < n; ++row) {
+    for (int column = 0; column < k; ++column) {
+      const int8_t value =
+          static_cast<int8_t>((37 * row + 11 * column + row / 5) & 255) - 128;
+      weights[static_cast<size_t>(row) * k + column] =
+          static_cast<uint8_t>(value);
+    }
+  }
+  return weights;
+}
+
 TEST(Gemma4HeadKernelsTest, BatchedRowsMatchCpuReference) {
   if (!litert::nvidia::IsInt2GemvComputeCapabilitySupported(
           CurrentComputeCapability())) {
     GTEST_SKIP() << "A native-W2-compatible CUDA GPU is unavailable";
   }
-  // Every row count the batched GEMV takes, in INT2 and INT4, over a short
-  // input, Gemma 4 E2B's hidden size and an input long enough for the
+  // Every row count the batched GEMV takes, in INT2, INT4 and INT8, over a
+  // short input, Gemma 4 E2B's hidden size and an input long enough for the
   // 256-thread blocks; 136 channels end in a partial block of 8.
   constexpr int kN = 136;
-  for (const int bit_width : {2, 4}) {
+  for (const int bit_width : {2, 4, 8}) {
     for (const int k : {64, 1536, 4096}) {
-      const std::vector<uint8_t> weights =
-          bit_width == 2 ? MakeWeights(kN, k) : MakeInt4Weights(kN, k);
+      const std::vector<uint8_t> weights = bit_width == 2 ? MakeWeights(kN, k)
+                                           : bit_width == 4
+                                               ? MakeInt4Weights(kN, k)
+                                               : MakeInt8Weights(kN, k);
       std::vector<uint16_t> scales(kN);
       for (int row = 0; row < kN; ++row) {
         scales[row] =
@@ -265,8 +285,9 @@ TEST(Gemma4HeadKernelsTest, BatchedRowsMatchCpuReference) {
             for (int column = 0; column < k; ++column) {
               const size_t index = static_cast<size_t>(row) * k + column;
               const float weight = static_cast<float>(
-                  bit_width == 2 ? DecodeInt2(weights, index)
-                                 : DecodeInt4(weights, index));
+                  bit_width == 2   ? DecodeInt2(weights, index)
+                  : bit_width == 4 ? DecodeInt4(weights, index)
+                                   : DecodeInt8(weights, index));
               accumulator =
                   std::fma(Bf16BitsToFloat(
                                activation[static_cast<size_t>(r) * k + column]),

@@ -461,6 +461,7 @@ litert_dynamic_lib(
         "//litert/c:litert_builder",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/c:litert_op_options",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_compiler_context",
         "//litert/cc:litert_element_type",
