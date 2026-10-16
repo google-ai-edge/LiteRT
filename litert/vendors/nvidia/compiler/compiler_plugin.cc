@@ -44,6 +44,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_op_options.h"
 #include "litert/cc/internal/litert_c_types_printing.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
@@ -1314,6 +1315,28 @@ bool ContainsReductionOp(const LiteRtCompilerContext* ctx,
   return false;
 }
 
+// Whether the island writes a KV cache: an odml.cache_update composite or a
+// dynamic update slice. Such an island is kept however small: on the CPU it
+// would rewrite a whole cache that the engines keep on the device (Gemma 4
+// 26B's prefill ends with the last layer's cache update, which the unlowered
+// rope composite before it cuts off from the rest of the graph).
+bool ContainsCacheUpdate(const LiteRtCompilerContext* ctx,
+                         const std::vector<LiteRtOp>& partition) {
+  for (auto* raw_op : partition) {
+    const litert::compiler::Op op(ctx, raw_op);
+    if (op.Code() == kLiteRtOpCodeTflDynamicUpdateSlice) {
+      return true;
+    }
+    const char* name = nullptr;
+    if (op.Code() == kLiteRtOpCodeShloComposite &&
+        LiteRtGetSHLOCompositeOpName(raw_op, &name) == kLiteRtStatusOk &&
+        name != nullptr && std::strcmp(name, "odml.cache_update") == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool ShouldKeepPartition(const LiteRtCompilerContext* ctx,
                          const std::vector<LiteRtOp>& partition,
                          PartitionPolicy policy, size_t output_bytes) {
@@ -1321,7 +1344,8 @@ bool ShouldKeepPartition(const LiteRtCompilerContext* ctx,
                   /*default_value=*/true)) {
     return true;
   }
-  if (ContainsComputeDenseOp(ctx, partition)) {
+  if (ContainsComputeDenseOp(ctx, partition) ||
+      ContainsCacheUpdate(ctx, partition)) {
     return true;
   }
   if (ContainsReductionOp(ctx, partition) &&

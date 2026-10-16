@@ -3259,8 +3259,14 @@ LiteRtStatus AttachInput(LiteRtDispatchInvocationContext invocation_context,
   if (invocation_context == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  LITERT_RETURN_IF_ERROR(
-      invocation_context->AttachInput(graph_input_index, tensor_buffer_handle));
+  auto attached =
+      invocation_context->AttachInput(graph_input_index, tensor_buffer_handle);
+  if (!attached) {
+    // The delegate reports only the status; the reason is logged here.
+    LITERT_LOG(LITERT_ERROR, "NVIDIA dispatch failed to attach input %d: %s",
+               graph_input_index, attached.Error().Message().c_str());
+    return attached.Error().Status();
+  }
   return kLiteRtStatusOk;
 }
 
@@ -3270,8 +3276,13 @@ LiteRtStatus AttachOutput(LiteRtDispatchInvocationContext invocation_context,
   if (invocation_context == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  LITERT_RETURN_IF_ERROR(invocation_context->AttachOutput(
-      graph_output_index, tensor_buffer_handle));
+  auto attached = invocation_context->AttachOutput(graph_output_index,
+                                                   tensor_buffer_handle);
+  if (!attached) {
+    LITERT_LOG(LITERT_ERROR, "NVIDIA dispatch failed to attach output %d: %s",
+               graph_output_index, attached.Error().Message().c_str());
+    return attached.Error().Status();
+  }
   return kLiteRtStatusOk;
 }
 
