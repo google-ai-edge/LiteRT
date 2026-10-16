@@ -272,6 +272,7 @@ EXPORTS
   LiteRtGetResizeBilinearHalfPixelCenterOption
   LiteRtGetResizeNearestNeighborAlignCornersOption
   LiteRtGetResizeNearestNeighborHalfPixelCenterOption
+  LiteRtGetRuntimeAbiVersion
   LiteRtGetSHLOCompositeOpAttributes
   LiteRtGetSHLOCompositeOpDecompositionSubgraphIndex
   LiteRtGetSHLOCompositeOpName
