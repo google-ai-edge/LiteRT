@@ -1377,8 +1377,13 @@ Expected<bool> IsCompositeSupported(const Op& op) {
     if (!SdpaTransposedGroup(op).has_value()) {
       return false;
     }
-    // The caches it reads are the outputs of an in-place cache update.
+    // The caches it reads are the outputs of an in-place cache update, or
+    // inputs of the graph: caches another engine keeps (a drafter reading
+    // its base model's caches).
     for (int i : {1, 2}) {
+      if (op.Inputs()[i].IsSubgraphInput()) {
+        continue;
+      }
       const auto producer = op.Inputs()[i].GetDefiningOp();
       if (!producer || producer->Code() != kLiteRtOpCodeShloComposite ||
           CompositeOpName(*producer) != "odml.cache_update" ||
@@ -2504,10 +2509,13 @@ class TensorRtGraphBuilder {
   Expected<TensorRtBuildResult> Build(
       const Subgraph& subgraph,
       absl::Span<const std::string> read_only_value_cache_inputs,
-      TensorRtWeightStoreBuilder* weight_store) {
+      TensorRtWeightStoreBuilder* weight_store,
+      absl::Span<const std::string> shared_cache_inputs) {
     weight_store_ = weight_store;
     LITERT_RETURN_IF_ERROR(
         FindReadOnlyValueCaches(subgraph, read_only_value_cache_inputs));
+    LITERT_RETURN_IF_ERROR(
+        FindSharedCacheInputs(subgraph, shared_cache_inputs));
     memory_profiler_.Log("graph_build_begin");
     builder_.reset(nvinfer1::createInferBuilder(logger_));
     if (!builder_) {
@@ -2881,8 +2889,11 @@ class TensorRtGraphBuilder {
       // validates that physical layout using the advertised element strides.
       const auto in_place = in_place_caches_.find(input.Get());
       // A float32 cache updated in place is held as FP16 (see
-      // Fp16CacheStorageEnabled); the runtime's buffer is twice as large.
-      if (in_place != in_place_caches_.end() &&
+      // Fp16CacheStorageEnabled); the runtime's buffer is twice as large. A
+      // cache another engine keeps in place (shared_cache_inputs_) is read
+      // the way that engine stores it.
+      if ((in_place != in_place_caches_.end() ||
+           shared_cache_inputs_.count(input.Get()) != 0) &&
           type.ElementType() == litert::ElementType::Float32 &&
           Fp16CacheStorageEnabled()) {
         data_type = nvinfer1::DataType::kHALF;
@@ -5355,6 +5366,11 @@ class TensorRtGraphBuilder {
             use.user_arg_ind == 4))) {
         continue;
       }
+      if (user.Code() == kLiteRtOpCodeShloComposite &&
+          CompositeOpName(user) == "odml.sdpa_transposed" &&
+          use.user_arg_ind == 2) {
+        continue;
+      }
       if (use.user_arg_ind != 1) {
         return false;
       }
@@ -5415,6 +5431,45 @@ class TensorRtGraphBuilder {
       return Error(kLiteRtStatusErrorInvalidArgument,
                    "Read-only value cache is not a partition input: " +
                        *remaining.begin());
+    }
+    return {};
+  }
+
+  // The KV caches another engine of the process keeps in place and this graph
+  // only reads (LiteRtNvidiaSharedCacheInputs, a drafter over its base
+  // model's caches): rank-4 inputs the graph uses. They are declared with the
+  // storage the in-place caches get and attention reads them like the
+  // outputs of an in-place update.
+  Expected<void> FindSharedCacheInputs(
+      const Subgraph& subgraph, absl::Span<const std::string> input_names) {
+    if (input_names.empty()) {
+      return {};
+    }
+    std::unordered_set<std::string> remaining(input_names.begin(),
+                                              input_names.end());
+    if (remaining.size() != input_names.size() || remaining.count("") != 0) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Shared cache input names must be nonempty and unique");
+    }
+    for (const Tensor& input : subgraph.Inputs()) {
+      const std::string name(input.Name());
+      if (remaining.erase(name) == 0) {
+        continue;
+      }
+      LITERT_ASSIGN_OR_RETURN(auto type, input.RankedTensorType());
+      if (type.Layout().Rank() != 4 || type.Layout().HasStrides() ||
+          input.Uses().empty()) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "Shared cache input must be a dense rank-4 tensor the "
+                     "graph reads: " +
+                         name);
+      }
+      shared_cache_inputs_.insert(input.Get());
+    }
+    if (!remaining.empty()) {
+      return Error(
+          kLiteRtStatusErrorInvalidArgument,
+          "Shared cache is not a partition input: " + *remaining.begin());
     }
     return {};
   }
@@ -5613,10 +5668,22 @@ class TensorRtGraphBuilder {
         continue;
       }
       const auto group = SdpaTransposedGroup(op);
-      if (!group.has_value() ||
-          in_place_outputs_.count(op.Inputs()[1].Get()) == 0 ||
-          in_place_outputs_.count(op.Inputs()[2].Get()) == 0 ||
-          !in_place_outputs_[op.Inputs()[2].Get()].transposed) {
+      if (!group.has_value()) {
+        continue;
+      }
+      // The caches: outputs of this graph's in-place updates, or caches
+      // another engine keeps (shared_cache_inputs_), whose value cache the
+      // read-only options declared transposed.
+      const LiteRtTensor k = op.Inputs()[1].Get();
+      const LiteRtTensor v = op.Inputs()[2].Get();
+      const bool k_ok =
+          in_place_outputs_.count(k) != 0 || shared_cache_inputs_.count(k) != 0;
+      const auto v_in_place = in_place_outputs_.find(v);
+      const bool v_ok = v_in_place != in_place_outputs_.end()
+                            ? v_in_place->second.transposed
+                            : shared_cache_inputs_.count(v) != 0 &&
+                                  transposed_caches_.count(v) != 0;
+      if (!k_ok || !v_ok) {
         continue;
       }
       DecodeAttentionBlock block;
@@ -9272,6 +9339,8 @@ class TensorRtGraphBuilder {
   };
   // Float32 caches declared to TensorRT as FP16 (Fp16CacheStorageEnabled).
   std::unordered_set<LiteRtTensor> fp16_stored_caches_;
+  // Cache inputs another engine keeps in place (FindSharedCacheInputs).
+  std::unordered_set<LiteRtTensor> shared_cache_inputs_;
   TensorRtWeightStoreBuilder* weight_store_ = nullptr;
   nvinfer1::ITensor* provisional_weight_holder_ = nullptr;
   std::vector<HolderReader> holder_readers_;
@@ -9421,11 +9490,13 @@ bool IsTensorRtOpSupported(const Op& op) {
 Expected<TensorRtBuildResult> BuildTensorRtEngine(
     const Subgraph& subgraph,
     absl::Span<const std::string> read_only_value_cache_inputs,
-    TensorRtWeightStoreBuilder* weight_store) {
+    TensorRtWeightStoreBuilder* weight_store,
+    absl::Span<const std::string> shared_cache_inputs) {
   const MemoryProfiler memory_profiler("compiler");
   auto result = [&]() {
     TensorRtGraphBuilder builder;
-    return builder.Build(subgraph, read_only_value_cache_inputs, weight_store);
+    return builder.Build(subgraph, read_only_value_cache_inputs, weight_store,
+                         shared_cache_inputs);
   }();
   memory_profiler.Log("graph_builder_destroyed");
   return result;
