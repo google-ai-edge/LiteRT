@@ -33,11 +33,12 @@
 #include "tflite/schema/mutable/schema_generated.h"
 #endif
 
+#include "absl/container/btree_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -70,13 +71,14 @@ TflOpCodePtr MakeCustomOpCode(std::string custom_code_name) {
 // Utility for accessing flatbuffer state and other relevant state.
 class SerializationContext {
  public:
-  // Subgraph and op index pair.
+  // Subgraph and op index pair. Ordered maps ensure appended buffers are laid
+  // out deterministically in (subgraph, op) and buffer-index order.
   using TflOpInd = std::pair<size_t, size_t>;
   using TflOpAssetMap =
-      absl::flat_hash_map<TflOpInd, LiteRtModelT::OpAssetReference>;
+      absl::btree_map<TflOpInd, LiteRtModelT::OpAssetReference>;
   using TflBufferInd = uint32_t;
   using TflOffsetTensorMap =
-      absl::flat_hash_map<TflBufferInd, LiteRtModelT::BufferId>;
+      absl::btree_map<TflBufferInd, LiteRtModelT::BufferId>;
   using TflBufferIdMap =
       absl::flat_hash_map<LiteRtModelT::BufferId, TflBufferInd>;
 
@@ -521,13 +523,23 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
     }
   }
   // Allocate buffer enough for original model, appended buffers, and trailing
-  // padding for SIMD kernels.
+  // padding for SIMD kernels, zeroing any alignment padding between regions.
   OwningBufferRef<uint8_t> final_model(cur_offset + kFbTailPadding);
-  std::memset(final_model.Data() + cur_offset, 0, kFbTailPadding);
+  uint8_t* const start = final_model.Data();
+  size_t written = 0;
+  auto write_at = [start, &written](size_t offset, BufferRef<uint8_t> buf) {
+    ABSL_DCHECK_GE(offset, written);
+    if (offset > written) {
+      std::memset(start + written, 0, offset - written);
+    }
+    if (buf.Size() > 0) {
+      std::memcpy(start + offset, buf.Data(), buf.Size());
+    }
+    written = offset + buf.Size();
+  };
 
   // Copy serialized tflite model.
-  uint8_t* const start = final_model.Data();
-  std::memcpy(start, serialized_tfl.Data(), serialized_tfl.Size());
+  write_at(0, serialized_tfl);
 
   // Copy asset buffers (aligned).
   for (auto it = asset_buffer_offsets.Begin(); it != asset_buffer_offsets.End();
@@ -539,8 +551,7 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
       LITERT_LOG(LITERT_ERROR, "Failed to find asset buffer");
       return asset_buf.Error();
     }
-    uint8_t* const offset = start + it->second.first;
-    std::memcpy(offset, asset_buf->Data(), asset_buf->Size());
+    write_at(it->second.first, *asset_buf);
   }
 
   // Copy offset tensor buffers.
@@ -557,9 +568,9 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
       return litert_buf.Error();
     }
 
-    uint8_t* const offset = start + it->second.first;
-    std::memcpy(offset, litert_buf->Data(), litert_buf->Size());
+    write_at(it->second.first, *litert_buf);
   }
+  write_at(final_model.Size(), {});
 
   return final_model;
 }

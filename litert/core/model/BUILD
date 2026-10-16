@@ -174,7 +174,6 @@ cc_library(
         ":litert_to_flatbuffer",
         ":model",
         "//litert/c:litert_common",
-        "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
@@ -184,8 +183,10 @@ cc_library(
         "//litert/core:insert_order_map",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/schema:schema_fbs_with_mutable",
+        "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log:absl_check",
     ],
 )
 

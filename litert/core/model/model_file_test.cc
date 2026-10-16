@@ -929,6 +929,187 @@ TEST(ModelSerializeTest, WithOffsetTensorBufferAndOpAssetHasAlignment) {
   }
 }
 
+// Builds a multi-subgraph model with one op per entry of `byte_codes` (split
+// across two subgraphs, plus an extra op in the second subgraph sharing the
+// first asset buffer) and one appended weight tensor per entry of
+// `tensor_buffers`.
+LiteRtModelT MakeModelWithAppendedBuffers(
+    absl::Span<const absl::string_view> byte_codes,
+    absl::Span<const absl::string_view> tensor_buffers) {
+  LiteRtModelT root;
+  auto& sg0 = root.EmplaceSubgraph();
+  auto& sg1 = root.EmplaceSubgraph();
+  LiteRtModelT::BufferId first_buf_id = 0;
+  for (size_t i = 0; i < byte_codes.size(); ++i) {
+    auto& sg = (i < byte_codes.size() / 2) ? sg0 : sg1;
+    auto& op = sg.EmplaceOp();
+    OwningBufferRef<uint8_t> buffer(byte_codes[i]);
+    const auto buf_id = root.Buffers()->RegisterOwnedBuffer(std::move(buffer));
+    if (i == 0) {
+      first_buf_id = buf_id;
+    }
+    root.AttachAssetToOp(&op, buf_id, "op" + std::to_string(i));
+  }
+  if (!byte_codes.empty()) {
+    auto& shared_op = sg1.EmplaceOp();
+    root.AttachAssetToOp(&shared_op, first_buf_id, "shared_op");
+  }
+  for (size_t i = 0; i < tensor_buffers.size(); ++i) {
+    auto& sg = (i < tensor_buffers.size() / 2) ? sg0 : sg1;
+    auto& tensor = sg.EmplaceTensor();
+    tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+    auto& weights = tensor.Weights();
+    weights.SetBufferManager(root.Buffers());
+    OwningBufferRef<uint8_t> buffer(tensor_buffers[i]);
+    BufferContext context;
+    context.should_append = true;
+    SetWeightsFromOwnedBuffer(weights, std::move(buffer), context);
+  }
+  return root;
+}
+
+TEST(ModelSerializeTest, AppendedBufferPaddingIsZeroedAndDeterministic) {
+  static constexpr size_t kAlignment = 64;
+  // Sizes are not multiples of `kAlignment`, so alignment padding is required
+  // before the first asset and after each asset.
+  static constexpr std::array<absl::string_view, 4> kByteCodes = {
+      "BYTE_CODE_0",
+      "BYTE_CODE_1_LONGER",
+      "BYTE_CODE_2_MEDIUM",
+      "BYTE_CODE_3_XYZ",
+  };
+  static constexpr std::array<absl::string_view, 4> kTensorBuffers = {
+      "TENSOR_DATA_0",
+      "TENSOR_DATA_1_LONGER",
+      "TENSOR_DATA_2",
+      "TENSOR_DATA_3_XYZ",
+  };
+
+  for (bool include_tensors : {false, true}) {
+    SCOPED_TRACE(include_tensors ? "assets and tensors" : "assets only");
+    const absl::Span<const absl::string_view> tensors =
+        include_tensors ? absl::MakeConstSpan(kTensorBuffers)
+                        : absl::Span<const absl::string_view>();
+
+    // Serialize with alignment=1 to find the exact end of the packed
+    // FlatBuffer before any alignment padding is inserted.
+    auto unaligned =
+        SerializeModel(MakeModelWithAppendedBuffers(kByteCodes, tensors),
+                       /*bytecode_alignment=*/1);
+    ASSERT_TRUE(unaligned);
+    auto unaligned_fb = FlatbufferWrapper::CreateFromBuffer(*unaligned);
+    ASSERT_TRUE(unaligned_fb);
+    auto unaligned_tfl = unaligned_fb->get()->Unpack();
+    const auto& first_unaligned_opts =
+        unaligned_tfl->subgraphs[0]->operators[0]->custom_options;
+    const size_t flatbuffer_end =
+        GetDispatchOpOptions(BufferRef<uint8_t>(first_unaligned_opts.data(),
+                                                first_unaligned_opts.size()))
+            .bytecode_offset;
+
+    auto first = SerializeModel(
+        MakeModelWithAppendedBuffers(kByteCodes, tensors), kAlignment);
+    ASSERT_TRUE(first);
+
+    // Poison a heap allocation of the exact output size before each
+    // re-serialization so any uninitialized padding bytes are non-zero.
+    for (int attempt = 0; attempt < 4; ++attempt) {
+      {
+        OwningBufferRef<uint8_t> dirty(first->Size());
+        std::memset(dirty.Data(), 0xA5 ^ attempt, dirty.Size());
+      }
+      auto again = SerializeModel(
+          MakeModelWithAppendedBuffers(kByteCodes, tensors), kAlignment);
+      ASSERT_TRUE(again);
+      EXPECT_EQ(first->StrView(), again->StrView()) << "attempt " << attempt;
+    }
+
+    auto fb = FlatbufferWrapper::CreateFromBuffer(*first);
+    ASSERT_TRUE(fb);
+    auto tfl = fb->get()->Unpack();
+    ASSERT_EQ(tfl->subgraphs.size(), 2);
+
+    const absl::string_view bytes = first->StrView();
+    std::vector<std::pair<size_t, size_t>> ranges;
+    size_t op_idx = 0;
+    for (size_t sg_ind = 0; sg_ind < tfl->subgraphs.size(); ++sg_ind) {
+      const auto& ops = tfl->subgraphs[sg_ind]->operators;
+      for (size_t i = 0; i < ops.size(); ++i) {
+        BufferRef<uint8_t> opts(ops[i]->custom_options.data(),
+                                ops[i]->custom_options.size());
+        const auto dispatch_opts = GetDispatchOpOptions(opts);
+        EXPECT_EQ(dispatch_opts.bytecode_offset % kAlignment, 0);
+        if (op_idx < kByteCodes.size()) {
+          EXPECT_EQ(bytes.substr(dispatch_opts.bytecode_offset,
+                                 dispatch_opts.bytecode_size),
+                    kByteCodes[op_idx]);
+          ranges.push_back(
+              {dispatch_opts.bytecode_offset, dispatch_opts.bytecode_size});
+        } else {
+          // The trailing op in subgraph 1 shares the first op's asset buffer.
+          EXPECT_EQ(dispatch_opts.name, "shared_op");
+          EXPECT_EQ(dispatch_opts.bytecode_offset, ranges[0].first);
+          EXPECT_EQ(dispatch_opts.bytecode_size, ranges[0].second);
+        }
+        ++op_idx;
+      }
+    }
+    ASSERT_EQ(ranges.size(), kByteCodes.size());
+
+    size_t tensor_idx = 0;
+    for (const auto& tfl_buffer : tfl->buffers) {
+      if (tfl_buffer->offset > 1) {
+        ASSERT_LT(tensor_idx, tensors.size());
+        EXPECT_EQ(bytes.substr(tfl_buffer->offset, tfl_buffer->size),
+                  tensors[tensor_idx]);
+        ranges.push_back({tfl_buffer->offset, tfl_buffer->size});
+        ++tensor_idx;
+      }
+    }
+    ASSERT_EQ(tensor_idx, tensors.size());
+
+    // Appended buffers must already be laid out in strictly increasing offset
+    // order (op order for unique assets, followed by buffer-index order for
+    // offset tensors) without sorting.
+    size_t cursor = flatbuffer_end;
+    for (size_t i = 0; i < ranges.size(); ++i) {
+      const auto [offset, size] = ranges[i];
+      ASSERT_LE(cursor, offset) << "buffer " << i << " out of order";
+      EXPECT_EQ(bytes.substr(cursor, offset - cursor),
+                std::string(offset - cursor, '\0'))
+          << "non-zero padding before appended buffer " << i;
+      cursor = offset + size;
+    }
+    ASSERT_LE(cursor, bytes.size());
+    EXPECT_EQ(bytes.substr(cursor, bytes.size() - cursor),
+              std::string(bytes.size() - cursor, '\0'))
+        << "non-zero trailing padding";
+  }
+}
+
+TEST(ModelSerializeTest, RejectsInvalidOpAssetBufferId) {
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  auto& op = sg.EmplaceOp();
+  root.AttachAssetToOp(&op, /*buf_id=*/999, "missing_asset");
+
+  auto serialized = SerializeModel(std::move(root));
+  EXPECT_THAT(serialized, IsError(kLiteRtStatusErrorIndexOOB));
+}
+
+TEST(ModelSerializeTest, RejectsInvalidTensorBufferId) {
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  sg.EmplaceOp();
+  auto& tensor = sg.EmplaceTensor();
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+  tensor.Weights().SetBufferManager(root.Buffers());
+  tensor.Weights().SetBufferId(999);
+
+  auto serialized = SerializeModel(std::move(root));
+  EXPECT_THAT(serialized, IsError(kLiteRtStatusErrorIndexOOB));
+}
+
 TEST(ModelSerializeTest, TransferAndSerializeNoConstants) {
   LiteRtModelT root;
   auto& sg = root.EmplaceSubgraph();
