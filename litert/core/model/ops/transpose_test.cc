@@ -15,6 +15,7 @@
 #include "litert/core/model/ops/transpose.h"
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -118,6 +119,85 @@ TEST(TransposeOpTest, RejectsMissingInputTensors) {
 
   EXPECT_EQ(InferTranspose(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+TEST(TransposeOpTest, NegativePermEntries) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{2, 3, 4}, {3}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT input_tensor;
+  LiteRtTensorT perm_tensor;
+  op.Inputs().push_back(&input_tensor);
+  op.Inputs().push_back(&perm_tensor);
+
+  // TFLite normalizes negative entries by adding the rank: {-1, 0, -2} is
+  // {2, 0, 1}.
+  std::vector<int32_t> perm_data = {-1, 0, -2};
+  SetWeightsFromUnownedBuffer(
+      perm_tensor.Weights(),
+      litert::BufferRef<uint8_t>(reinterpret_cast<uint8_t*>(perm_data.data()),
+                                 perm_data.size() * sizeof(int32_t)));
+
+  ASSERT_EQ(InferTranspose(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre(4, 2, 3));
+}
+
+TEST(TransposeOpTest, MinusRankPermEntryIsAccepted) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{2, 3, 4}, {3}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT input_tensor;
+  LiteRtTensorT perm_tensor;
+  op.Inputs().push_back(&input_tensor);
+  op.Inputs().push_back(&perm_tensor);
+
+  // -rank is the smallest valid entry: {1, -3, 2} is {1, 0, 2}.
+  std::vector<int32_t> perm_data = {1, -3, 2};
+  SetWeightsFromUnownedBuffer(
+      perm_tensor.Weights(),
+      litert::BufferRef<uint8_t>(reinterpret_cast<uint8_t*>(perm_data.data()),
+                                 perm_data.size() * sizeof(int32_t)));
+
+  ASSERT_EQ(InferTranspose(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre(3, 2, 4));
+}
+
+TEST(TransposeOpTest, ReferenceTransposeNormalizesNegativePerm) {
+  const std::vector<float> input = {0, 1, 2, 3, 4, 5};  // Shape {2, 3}.
+  const int32_t dims[] = {2, 3};
+  const int32_t perm[] = {-1, 0};  // {1, 0}.
+  std::vector<float> output(input.size());
+  ReferenceTranspose(input.data(), dims, perm, /*rank=*/2, output.data());
+  EXPECT_THAT(output, ElementsAre(0, 3, 1, 4, 2, 5));
+}
+
+TEST(TransposeOpTest, RejectsOutOfRangePermEntries) {
+  // TFLite accepts entries in [-rank, rank) only.
+  for (int32_t bad : {3, -4, std::numeric_limits<int32_t>::min(),
+                      std::numeric_limits<int32_t>::max()}) {
+    LiteRtOpT op;
+    std::vector<Dims> input_shapes = {{2, 3, 4}, {3}};
+    std::vector<Dims> output_shapes(1);
+
+    LiteRtTensorT input_tensor;
+    LiteRtTensorT perm_tensor;
+    op.Inputs().push_back(&input_tensor);
+    op.Inputs().push_back(&perm_tensor);
+
+    std::vector<int32_t> perm_data = {0, bad, 1};
+    SetWeightsFromUnownedBuffer(
+        perm_tensor.Weights(),
+        litert::BufferRef<uint8_t>(reinterpret_cast<uint8_t*>(perm_data.data()),
+                                   perm_data.size() * sizeof(int32_t)));
+
+    EXPECT_EQ(InferTranspose(op, absl::MakeSpan(input_shapes), output_shapes),
+              kLiteRtStatusErrorShapeInferenceFailed)
+        << "perm entry " << bad;
+  }
 }
 
 }  // namespace

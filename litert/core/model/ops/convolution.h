@@ -99,13 +99,6 @@ inline LiteRtStatus InferConv2D(const LiteRtOpT& op,
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
-  if (stride_h > input_shape[1] || stride_w > input_shape[2]) {
-    LITERT_LOG(LITERT_ERROR,
-               "Conv2D stride (%dx%d) cannot be larger than input size (%dx%d)",
-               stride_h, stride_w, input_shape[1], input_shape[2]);
-    return kLiteRtStatusErrorShapeInferenceFailed;
-  }
-
   if (dilation_h <= 0 || dilation_w <= 0) {
     LITERT_LOG(LITERT_ERROR, "Conv2D invalid dilation: %dx%d", dilation_h,
                dilation_w);
@@ -237,15 +230,6 @@ inline LiteRtStatus InferDepthwiseConv2D(const LiteRtOpT& op,
       dilation_h > kMaxStrideOrDilation || dilation_w > kMaxStrideOrDilation) {
     LITERT_LOG(LITERT_ERROR,
                "DepthwiseConv2D stride or dilation exceeds limit");
-    return kLiteRtStatusErrorShapeInferenceFailed;
-  }
-
-  if (stride_h > input_shape[1] || stride_w > input_shape[2]) {
-    LITERT_LOG(
-        LITERT_ERROR,
-        "DepthwiseConv2D stride (%dx%d) cannot be larger than input size "
-        "(%dx%d)",
-        stride_h, stride_w, input_shape[1], input_shape[2]);
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
@@ -493,16 +477,6 @@ inline LiteRtStatus InferConv3D(const LiteRtOpT& op,
   if (stride_d <= 0 || stride_h <= 0 || stride_w <= 0) {
     LITERT_LOG(LITERT_ERROR, "Conv3D invalid stride: %dx%dx%d", stride_d,
                stride_h, stride_w);
-    return kLiteRtStatusErrorShapeInferenceFailed;
-  }
-
-  if (stride_d > input_shape[1] || stride_h > input_shape[2] ||
-      stride_w > input_shape[3]) {
-    LITERT_LOG(
-        LITERT_ERROR,
-        "Conv3D stride (%dx%dx%d) cannot be larger than input size (%dx%dx%d)",
-        stride_d, stride_h, stride_w, input_shape[1], input_shape[2],
-        input_shape[3]);
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
