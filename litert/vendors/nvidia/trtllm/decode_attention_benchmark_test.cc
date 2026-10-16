@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 #include "cuda_runtime_api.h"
 #include "litert/vendors/nvidia/trtllm/decode_attention.h"
+#include "litert/vendors/nvidia/trtllm/global_attention.h"
 #include "litert/vendors/nvidia/trtllm/int2_gemv.h"
 
 namespace {
@@ -32,6 +33,9 @@ struct Config {
   int heads, rows, depth, seq;
   int window = 0;  // 0: every key visible; else the last `window` keys
   int read = 0;    // > 0: the window entry point reads `read` keys from the end
+  // FP16 caches: the tensor-core streaming kernel (global_attention.h), one
+  // launch per head, rows a multiple of 16.
+  bool streaming = false;
 };
 
 void Time(const Config& c) {
@@ -55,8 +59,11 @@ void Time(const Config& c) {
                cudaMemcpyHostToDevice);
   }
   auto out = AllocateCuda(q_bytes);
-  const size_t ws_bytes = LiteRtNvidiaDecodeAttentionWorkspaceBytes(
-      c.heads, c.rows, c.read > 0 ? c.read : c.seq, c.depth);
+  const size_t ws_bytes =
+      c.streaming ? LiteRtNvidiaGlobalAttentionWorkspaceBytes(c.rows, c.rows,
+                                                              c.seq, c.depth)
+                  : LiteRtNvidiaDecodeAttentionWorkspaceBytes(
+                        c.heads, c.rows, c.read > 0 ? c.read : c.seq, c.depth);
   auto ws = AllocateCuda(ws_bytes);
   ASSERT_TRUE(q && k && v && mask && out && ws);
   const LiteRtNvidiaInt8CacheParams params = {0.0125f, -3, 0.02f, 5, c.columns};
@@ -64,25 +71,43 @@ void Time(const Config& c) {
   const int32_t start_value = c.read > 0 ? ((c.seq - c.read) / 64) * 64 : 0;
   cudaMemcpy(window_start.get(), &start_value, sizeof(int32_t),
              cudaMemcpyHostToDevice);
-  auto launch = [&]() {
+  auto launch_on = [&](cudaStream_t s) -> cudaError_t {
+    if (c.streaming) {
+      // As the plugin runs it: one launch per KV head, the launches in order
+      // on the stream sharing the workspace.
+      const size_t q_head = static_cast<size_t>(c.rows) * c.depth * 2;
+      const size_t kv_head = static_cast<size_t>(c.seq) * c.depth * 2;
+      cudaError_t status = cudaSuccess;
+      for (int head = 0; head < c.heads && status == cudaSuccess; ++head) {
+        status = LiteRtNvidiaLaunchGlobalAttention(
+            static_cast<const char*>(q.get()) + head * q_head, true,
+            static_cast<const char*>(k.get()) + head * kv_head,
+            static_cast<const char*>(v.get()) + head * kv_head,
+            static_cast<const bool*>(mask.get()), c.rows, c.rows, c.seq,
+            c.depth, -1.0e9f, static_cast<char*>(out.get()) + head * q_head,
+            ws.get(), s);
+      }
+      return status;
+    }
     if (c.int8 && c.read > 0) {
       return LiteRtNvidiaLaunchDecodeAttentionInt8Window(
           q.get(), true, k.get(), v.get(), &params,
           static_cast<const bool*>(mask.get()), c.rows, c.heads, c.rows, c.seq,
           c.read, static_cast<const int32_t*>(window_start.get()), c.depth,
-          -1.0e9f, out.get(), ws.get(), nullptr);
+          -1.0e9f, out.get(), ws.get(), s);
     }
     if (c.int8) {
       return LiteRtNvidiaLaunchDecodeAttentionInt8(
           q.get(), true, k.get(), v.get(), &params,
           static_cast<const bool*>(mask.get()), c.rows, c.heads, c.rows, c.seq,
-          c.depth, -1.0e9f, out.get(), ws.get(), nullptr);
+          c.depth, -1.0e9f, out.get(), ws.get(), s);
     }
     return LiteRtNvidiaLaunchDecodeAttention(
         q.get(), true, k.get(), v.get(), static_cast<const bool*>(mask.get()),
         c.rows, c.heads, c.rows, c.seq, c.depth, -1.0e9f, out.get(), ws.get(),
-        nullptr);
+        s);
   };
+  auto launch = [&]() { return launch_on(nullptr); };
   for (int i = 0; i < 500; ++i) ASSERT_EQ(launch(), cudaSuccess);
   cudaEvent_t start, stop;
   cudaEventCreate(&start);
@@ -104,23 +129,7 @@ void Time(const Config& c) {
   ASSERT_EQ(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal),
             cudaSuccess);
   for (int i = 0; i < kGraphCalls; ++i) {
-    if (c.int8 && c.read > 0) {
-      LiteRtNvidiaLaunchDecodeAttentionInt8Window(
-          q.get(), true, k.get(), v.get(), &params,
-          static_cast<const bool*>(mask.get()), c.rows, c.heads, c.rows, c.seq,
-          c.read, static_cast<const int32_t*>(window_start.get()), c.depth,
-          -1.0e9f, out.get(), ws.get(), stream);
-    } else if (c.int8) {
-      LiteRtNvidiaLaunchDecodeAttentionInt8(
-          q.get(), true, k.get(), v.get(), &params,
-          static_cast<const bool*>(mask.get()), c.rows, c.heads, c.rows, c.seq,
-          c.depth, -1.0e9f, out.get(), ws.get(), stream);
-    } else {
-      LiteRtNvidiaLaunchDecodeAttention(q.get(), true, k.get(), v.get(),
-                                        static_cast<const bool*>(mask.get()),
-                                        c.rows, c.heads, c.rows, c.seq, c.depth,
-                                        -1.0e9f, out.get(), ws.get(), stream);
-    }
+    launch_on(stream);
   }
   ASSERT_EQ(cudaStreamEndCapture(stream, &graph), cudaSuccess);
   cudaGraphExec_t exec = nullptr;
@@ -227,6 +236,15 @@ TEST(DecodeAttentionBenchmark, Geometries) {
       {"26B global 8k d512", false, true, 2, 8, 512, 8192},
       {"26B global 32k d512", false, true, 2, 8, 512, 32768},
       {"26B verify local 1k (16 rows)", false, true, 8, 16, 256, 1024},
+      // The tensor-core streaming kernel at the global layers' geometry with
+      // the 8 rows padded to 16 (the plugin could pad), per head.
+      {"26B global 1k streaming 16 rows", false, false, 2, 16, 512, 1024, 0, 0,
+       true},
+      {"26B global 8k streaming 16 rows", false, false, 2, 16, 512, 8192, 0, 0,
+       true},
+      {"26B global 32k streaming 16 rows", false, false, 2, 16, 512, 32768, 0,
+       0, true},
+      {"26B global 32k decode 16 rows", false, false, 2, 16, 512, 32768},
       {"fp16-rows same geometry", false, false, 2, 4, 256, 2048},
       {"fp16-rows (12B-like)", false, false, 8, 2, 256, 2048},
       {"fp16-rows (12B-like 32k)", false, false, 8, 2, 256, 32768},

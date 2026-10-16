@@ -54,9 +54,13 @@ __device__ ArgMaxPair BetterArgMax(ArgMaxPair lhs, ArgMaxPair rhs) {
 __device__ float ReadLogit(float value) { return value; }
 __device__ float ReadLogit(__half value) { return __half2float(value); }
 
+// Row blockIdx.y of `input` ([rows, count]) reduces into its own
+// gridDim.x partials.
 template <typename T>
 __global__ void ArgMaxPartialsKernel(const T* input, size_t count,
                                      ArgMaxPair* partials) {
+  input += static_cast<size_t>(blockIdx.y) * count;
+  partials += static_cast<size_t>(blockIdx.y) * gridDim.x;
   __shared__ ArgMaxPair shared[kThreads];
   ArgMaxPair best{-INFINITY, INT_MAX};
   for (size_t index = blockIdx.x * blockDim.x + threadIdx.x; index < count;
@@ -78,9 +82,12 @@ __global__ void ArgMaxPartialsKernel(const T* input, size_t count,
   }
 }
 
+// Block blockIdx.x merges row blockIdx.x's partials into device_result[row].
 __global__ void F32ArgMaxFinalKernel(const ArgMaxPair* partials,
                                      int num_partials,
                                      int32_t* device_result) {
+  partials += static_cast<size_t>(blockIdx.x) * num_partials;
+  device_result += blockIdx.x;
   __shared__ ArgMaxPair shared[kThreads];
   ArgMaxPair best{-INFINITY, INT_MAX};
   for (int index = threadIdx.x; index < num_partials; index += blockDim.x) {
@@ -107,33 +114,43 @@ int ArgMaxBlockCount(size_t count) {
 
 }  // namespace
 
-extern "C" size_t LiteRtNvidiaF32ArgMaxWorkspaceBytes(size_t count) {
-  if (count == 0 || count > static_cast<size_t>(INT_MAX)) {
+extern "C" size_t LiteRtNvidiaArgMaxRowsWorkspaceBytes(size_t rows,
+                                                        size_t count) {
+  if (rows == 0 || rows > static_cast<size_t>(INT_MAX) || count == 0 ||
+      count > static_cast<size_t>(INT_MAX)) {
     return 0;
   }
-  return static_cast<size_t>(ArgMaxBlockCount(count)) * sizeof(ArgMaxPair);
+  return rows * static_cast<size_t>(ArgMaxBlockCount(count)) *
+         sizeof(ArgMaxPair);
+}
+
+extern "C" size_t LiteRtNvidiaF32ArgMaxWorkspaceBytes(size_t count) {
+  return LiteRtNvidiaArgMaxRowsWorkspaceBytes(1, count);
 }
 
 namespace {
 
+// `rows` rows of `count` logits, one launch pair: the partials kernel's grid is
+// (blocks, rows), the final kernel's (rows).
 template <typename T>
-cudaError_t LaunchArgMax(
-    const T* input, size_t count, void* workspace, size_t workspace_bytes,
-    int32_t* device_result, cudaStream_t stream) {
-  const size_t required = LiteRtNvidiaF32ArgMaxWorkspaceBytes(count);
+cudaError_t LaunchArgMax(const T* input, size_t rows, size_t count,
+                         void* workspace, size_t workspace_bytes,
+                         int32_t* device_result, cudaStream_t stream) {
+  const size_t required = LiteRtNvidiaArgMaxRowsWorkspaceBytes(rows, count);
   if (input == nullptr || workspace == nullptr || device_result == nullptr ||
       required == 0 || workspace_bytes < required) {
     return cudaErrorInvalidValue;
   }
   const int blocks = ArgMaxBlockCount(count);
   auto* partials = static_cast<ArgMaxPair*>(workspace);
-  ArgMaxPartialsKernel<<<blocks, kThreads, 0, stream>>>(input, count, partials);
+  ArgMaxPartialsKernel<<<dim3(blocks, static_cast<unsigned>(rows)), kThreads,
+                         0, stream>>>(input, count, partials);
   cudaError_t status = cudaPeekAtLastError();
   if (status != cudaSuccess) {
     return status;
   }
-  F32ArgMaxFinalKernel<<<1, kThreads, 0, stream>>>(partials, blocks,
-                                                   device_result);
+  F32ArgMaxFinalKernel<<<static_cast<unsigned>(rows), kThreads, 0, stream>>>(
+      partials, blocks, device_result);
   return cudaPeekAtLastError();
 }
 
@@ -142,13 +159,27 @@ cudaError_t LaunchArgMax(
 extern "C" cudaError_t LiteRtNvidiaLaunchF32ArgMax(
     const float* input, size_t count, void* workspace, size_t workspace_bytes,
     int32_t* device_result, cudaStream_t stream) {
-  return LaunchArgMax(input, count, workspace, workspace_bytes, device_result,
-                       stream);
+  return LaunchArgMax(input, 1, count, workspace, workspace_bytes,
+                      device_result, stream);
 }
 
 extern "C" cudaError_t LiteRtNvidiaLaunchF16ArgMax(
     const uint16_t* input, size_t count, void* workspace, size_t workspace_bytes,
     int32_t* device_result, cudaStream_t stream) {
-  return LaunchArgMax(reinterpret_cast<const __half*>(input), count, workspace,
-                       workspace_bytes, device_result, stream);
+  return LaunchArgMax(reinterpret_cast<const __half*>(input), 1, count,
+                      workspace, workspace_bytes, device_result, stream);
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchF32ArgMaxRows(
+    const float* input, size_t rows, size_t count, void* workspace,
+    size_t workspace_bytes, int32_t* device_result, cudaStream_t stream) {
+  return LaunchArgMax(input, rows, count, workspace, workspace_bytes,
+                      device_result, stream);
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchF16ArgMaxRows(
+    const uint16_t* input, size_t rows, size_t count, void* workspace,
+    size_t workspace_bytes, int32_t* device_result, cudaStream_t stream) {
+  return LaunchArgMax(reinterpret_cast<const __half*>(input), rows, count,
+                      workspace, workspace_bytes, device_result, stream);
 }

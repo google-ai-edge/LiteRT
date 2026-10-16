@@ -44,6 +44,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_op_options.h"
 #include "litert/cc/internal/litert_c_types_printing.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
@@ -551,8 +552,12 @@ std::string BuildCompilerSdkVersion() {
          Hex64(fingerprint.high);
 }
 
-Expected<std::vector<std::string>> ReadOnlyValueCacheInputs(
-    const LiteRtCompilerContext* context, LiteRtOptions options) {
+// The sorted, unique names of a name-list option (`what` names it in errors),
+// empty when the options do not carry it.
+template <typename Payload>
+Expected<std::vector<std::string>> CacheInputNameList(
+    const LiteRtCompilerContext* context, LiteRtOptions options,
+    const char* identifier, const char* what) {
   std::vector<std::string> names;
   if (options == nullptr) {
     return names;
@@ -563,33 +568,45 @@ Expected<std::vector<std::string>> ReadOnlyValueCacheInputs(
     return names;
   }
   void* data = nullptr;
-  const LiteRtStatus find_status = context->find_opaque_options_data(
-      opaque, LITERT_NVIDIA_READ_ONLY_VALUE_CACHE_OPTIONS_ID, &data);
+  const LiteRtStatus find_status =
+      context->find_opaque_options_data(opaque, identifier, &data);
   if (find_status == kLiteRtStatusErrorNotFound) {
     return names;
   }
   LITERT_RETURN_IF_ERROR(find_status);
-  const auto* layout =
-      static_cast<const LiteRtNvidiaReadOnlyValueCacheOptions*>(data);
+  const auto* layout = static_cast<const Payload*>(data);
   if (layout == nullptr ||
       (layout->num_inputs != 0 && layout->input_names == nullptr)) {
     return Error(kLiteRtStatusErrorInvalidArgument,
-                 "Invalid NVIDIA read-only value cache options");
+                 std::string("Invalid NVIDIA ") + what + " options");
   }
   for (uint32_t i = 0; i < layout->num_inputs; ++i) {
     if (layout->input_names[i] == nullptr ||
         layout->input_names[i][0] == '\0') {
       return Error(kLiteRtStatusErrorInvalidArgument,
-                   "Read-only value cache input names must not be empty");
+                   std::string(what) + " input names must not be empty");
     }
     names.emplace_back(layout->input_names[i]);
   }
   std::sort(names.begin(), names.end());
   if (std::adjacent_find(names.begin(), names.end()) != names.end()) {
     return Error(kLiteRtStatusErrorInvalidArgument,
-                 "Read-only value cache input names must be unique");
+                 std::string(what) + " input names must be unique");
   }
   return names;
+}
+
+Expected<std::vector<std::string>> ReadOnlyValueCacheInputs(
+    const LiteRtCompilerContext* context, LiteRtOptions options) {
+  return CacheInputNameList<LiteRtNvidiaReadOnlyValueCacheOptions>(
+      context, options, LITERT_NVIDIA_READ_ONLY_VALUE_CACHE_OPTIONS_ID,
+      "read-only value cache");
+}
+
+Expected<std::vector<std::string>> SharedCacheInputs(
+    const LiteRtCompilerContext* context, LiteRtOptions options) {
+  return CacheInputNameList<LiteRtNvidiaSharedCacheInputs>(
+      context, options, LITERT_NVIDIA_SHARED_CACHE_INPUTS_ID, "shared cache");
 }
 
 std::string TensorRtAotCacheDir() {
@@ -1314,6 +1331,28 @@ bool ContainsReductionOp(const LiteRtCompilerContext* ctx,
   return false;
 }
 
+// Whether the island writes a KV cache: an odml.cache_update composite or a
+// dynamic update slice. Such an island is kept however small: on the CPU it
+// would rewrite a whole cache that the engines keep on the device (Gemma 4
+// 26B's prefill ends with the last layer's cache update, which the unlowered
+// rope composite before it cuts off from the rest of the graph).
+bool ContainsCacheUpdate(const LiteRtCompilerContext* ctx,
+                         const std::vector<LiteRtOp>& partition) {
+  for (auto* raw_op : partition) {
+    const litert::compiler::Op op(ctx, raw_op);
+    if (op.Code() == kLiteRtOpCodeTflDynamicUpdateSlice) {
+      return true;
+    }
+    const char* name = nullptr;
+    if (op.Code() == kLiteRtOpCodeShloComposite &&
+        LiteRtGetSHLOCompositeOpName(raw_op, &name) == kLiteRtStatusOk &&
+        name != nullptr && std::strcmp(name, "odml.cache_update") == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool ShouldKeepPartition(const LiteRtCompilerContext* ctx,
                          const std::vector<LiteRtOp>& partition,
                          PartitionPolicy policy, size_t output_bytes) {
@@ -1321,7 +1360,8 @@ bool ShouldKeepPartition(const LiteRtCompilerContext* ctx,
                   /*default_value=*/true)) {
     return true;
   }
-  if (ContainsComputeDenseOp(ctx, partition)) {
+  if (ContainsComputeDenseOp(ctx, partition) ||
+      ContainsCacheUpdate(ctx, partition)) {
     return true;
   }
   if (ContainsReductionOp(ctx, partition) &&
@@ -1422,27 +1462,36 @@ struct LiteRtCompiledResultT {
 
 struct LiteRtCompilerPluginT {
   LiteRtCompilerPluginT(const LiteRtCompilerContext* ctx,
-                        std::vector<std::string> read_only_value_cache_inputs)
+                        std::vector<std::string> read_only_value_cache_inputs,
+                        std::vector<std::string> shared_cache_inputs)
       : ctx(ctx),
         sdk_version(BuildCompilerSdkVersion()),
-        read_only_value_cache_inputs(std::move(read_only_value_cache_inputs)) {
-    if (!this->read_only_value_cache_inputs.empty()) {
+        read_only_value_cache_inputs(std::move(read_only_value_cache_inputs)),
+        shared_cache_inputs(std::move(shared_cache_inputs)) {
+    // Both LiteRT's outer cache and the NVIDIA direct AOT lookup include
+    // this per-instance SDK string. Environment settings alone cannot
+    // distinguish differently laid-out drafter inputs.
+    const auto append_names = [this](const char* label,
+                                     const std::vector<std::string>& names) {
+      if (names.empty()) {
+        return;
+      }
       std::string key;
-      for (const auto& name : this->read_only_value_cache_inputs) {
+      for (const auto& name : names) {
         AppendCacheKeyString(key, name);
       }
       const auto fingerprint =
           litert::nvidia::FingerprintTensorRtArtifact(key.data(), key.size());
-      // Both LiteRT's outer cache and the NVIDIA direct AOT lookup include
-      // this per-instance SDK string. Environment settings alone cannot
-      // distinguish differently laid-out drafter inputs.
-      sdk_version += " read-only-value-cache=" + Hex64(fingerprint.low) +
+      sdk_version += std::string(" ") + label + "=" + Hex64(fingerprint.low) +
                      Hex64(fingerprint.high);
-    }
+    };
+    append_names("read-only-value-cache", this->read_only_value_cache_inputs);
+    append_names("shared-cache-inputs", this->shared_cache_inputs);
   }
   const LiteRtCompilerContext* ctx = nullptr;
   std::string sdk_version;
   std::vector<std::string> read_only_value_cache_inputs;
+  std::vector<std::string> shared_cache_inputs;
 };
 
 LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
@@ -1580,8 +1629,10 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
   LiteRtPropagateMinLoggerSeverityWithCompilerContext(compiler_context, env);
   LITERT_ASSIGN_OR_RETURN(auto read_only_inputs,
                           ReadOnlyValueCacheInputs(compiler_context, options));
-  *compiler_plugin =
-      new LiteRtCompilerPluginT(compiler_context, std::move(read_only_inputs));
+  LITERT_ASSIGN_OR_RETURN(auto shared_inputs,
+                          SharedCacheInputs(compiler_context, options));
+  *compiler_plugin = new LiteRtCompilerPluginT(
+      compiler_context, std::move(read_only_inputs), std::move(shared_inputs));
   return kLiteRtStatusOk;
 }
 
@@ -1795,30 +1846,42 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   litert::compiler::Model model(compiler_plugin->ctx, partitions);
   auto result = std::make_unique<LiteRtCompiledResultT>();
   const auto num_partitions = model.NumSubgraphs();
-  std::vector<std::vector<std::string>> read_only_inputs(num_partitions);
-  if (!compiler_plugin->read_only_value_cache_inputs.empty()) {
-    std::unordered_set<std::string> unmatched(
-        compiler_plugin->read_only_value_cache_inputs.begin(),
-        compiler_plugin->read_only_value_cache_inputs.end());
+  // The names of each list that are inputs of each partition; every name
+  // must be one.
+  const auto partition_inputs =
+      [&](const std::vector<std::string>& sorted_names,
+          const char* what) -> Expected<std::vector<std::vector<std::string>>> {
+    std::vector<std::vector<std::string>> per_partition(num_partitions);
+    if (sorted_names.empty()) {
+      return per_partition;
+    }
+    std::unordered_set<std::string> unmatched(sorted_names.begin(),
+                                              sorted_names.end());
     for (LiteRtParamIndex i = 0; i < num_partitions; ++i) {
       LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
       for (const auto& input : subgraph.Inputs()) {
         const std::string name(input.Name());
-        if (std::binary_search(
-                compiler_plugin->read_only_value_cache_inputs.begin(),
-                compiler_plugin->read_only_value_cache_inputs.end(), name)) {
-          read_only_inputs[i].push_back(name);
+        if (std::binary_search(sorted_names.begin(), sorted_names.end(),
+                               name)) {
+          per_partition[i].push_back(name);
           unmatched.erase(name);
         }
       }
     }
     if (!unmatched.empty()) {
-      LITERT_LOG(LITERT_ERROR,
-                 "Read-only value cache is not a delegated input: %s",
+      LITERT_LOG(LITERT_ERROR, "%s is not a delegated input: %s", what,
                  unmatched.begin()->c_str());
-      return kLiteRtStatusErrorInvalidArgument;
+      return Error(kLiteRtStatusErrorInvalidArgument);
     }
-  }
+    return per_partition;
+  };
+  LITERT_ASSIGN_OR_RETURN(
+      auto read_only_inputs,
+      partition_inputs(compiler_plugin->read_only_value_cache_inputs,
+                       "Read-only value cache"));
+  LITERT_ASSIGN_OR_RETURN(
+      auto shared_inputs,
+      partition_inputs(compiler_plugin->shared_cache_inputs, "Shared cache"));
   const bool shared_weights = litert::nvidia::TensorRtSharedWeightsEnabled();
   const std::string aot_cache_dir = TensorRtAotCacheDir();
   std::string canonical_aot_cache_dir;
@@ -1920,7 +1983,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     }
     memory_profiler.Log("partition_build_begin", function_name.c_str());
     auto engine_or = litert::nvidia::BuildTensorRtEngine(
-        subgraph, read_only_inputs[i], plugin_weight_store.get());
+        subgraph, read_only_inputs[i], plugin_weight_store.get(),
+        shared_inputs[i]);
     if (!engine_or) {
       std::string op_codes;
       for (const auto& op : subgraph.Ops()) {
