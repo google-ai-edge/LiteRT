@@ -104,6 +104,23 @@ target_link_libraries(qnn_model_test
         GTest::gtest_main
 )
 
+# QNN HTP platform info test
+add_executable(htp_platform_info_test)
+
+target_sources(htp_platform_info_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/htp_platform_info_test.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../core/utils/test_utils.cc
+)
+
+target_link_libraries(htp_platform_info_test
+    PRIVATE
+        qnn_manager
+        qnn_common
+        qnn_soc_table
+        GTest::gtest_main
+)
+
 # QNN backend builder tests
 add_executable(builder_test)
 
