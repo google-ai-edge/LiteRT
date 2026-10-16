@@ -180,17 +180,17 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
           void* gpu_payload_data = nullptr;
           const char* identifier = LrtGetGpuOptionsIdentifier();
           if (delegate_kernel->runtime_context()->find_opaque_options_data(
-                  opaque_gpu_options, identifier, &gpu_payload_data) ==
-              kLiteRtStatusOk) {
+                  opaque_gpu_options, identifier, &gpu_payload_data) == kLiteRtStatusOk) {
             LrtGpuOptions* gpu_opts = nullptr;
-            if (LrtCreateGpuOptionsFromToml(
-                    reinterpret_cast<const char*>(gpu_payload_data),
-                    &gpu_opts) == kLiteRtStatusOk) {
-              bool enable_residency = true;
-              if (LrtGetGpuOptionsMetalResidencySet(
-                      gpu_opts, &enable_residency) == kLiteRtStatusOk) {
-                auto* metal_backend = static_cast<litert::ml_drift::GpuBackendMetal*>(
-                    delegate_kernel->backend());
+            if (LrtCreateGpuOptionsFromToml(reinterpret_cast<const char*>(gpu_payload_data),
+                                            &gpu_opts) == kLiteRtStatusOk) {
+              // Keep the backend setting for residency if the GPU option is not set
+              // (returns kLiteRtStatusErrorNotFound in that case).
+              bool enable_residency = false;
+              if (LrtGetGpuOptionsMetalResidencySet(&enable_residency, gpu_opts) ==
+                  kLiteRtStatusOk) {
+                auto* metal_backend =
+                    static_cast<litert::ml_drift::GpuBackendMetal*>(delegate_kernel->backend());
                 metal_backend->SetResidencyRuntimeEnabled(enable_residency);
               }
               LrtDestroyGpuOptions(gpu_opts);

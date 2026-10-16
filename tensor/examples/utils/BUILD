@@ -146,6 +146,7 @@ cc_library(
         "//tensor",
         "//tensor:buffer",
         "//tensor:datatypes",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest",
     ],
