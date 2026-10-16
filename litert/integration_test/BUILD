@@ -403,6 +403,8 @@ litert_integration_test(
 #         "manual",
 #         "notap",
 #     ],
+#     # OpenVINO targets are only built for android_x86_64.
+#     validation_test_tags = ["not_build:arm"],
 # )
 #
 # INTEL_OPENVINO_GUITAR_TARGS_INTEGRATION = [
@@ -425,6 +427,8 @@ litert_integration_test(
 #         "manual",
 #         "notap",
 #     ],
+#     # OpenVINO targets are only built for android_x86_64.
+#     validation_test_tags = ["not_build:arm"],
 # )
 #
 # # Guitar CPU ---------------------------------------------------------------------------------------
