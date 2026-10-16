@@ -1,5 +1,7 @@
 # LiteRT
 
+DO NOT SUBMIT
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/google-ai-edge/LiteRT/main/docs/sources/litert_logo.png" alt="LiteRT Logo"/>
 </p>
