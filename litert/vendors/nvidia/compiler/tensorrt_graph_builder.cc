@@ -1084,14 +1084,16 @@ std::optional<int32_t> SdpaTransposedGroup(const Op& op) {
     return std::nullopt;
   }
   const int32_t group = q[1] / k[1];
+  const int32_t rows = group * q[2];
   const int32_t depth = q[3];
   if (depth != 128 && depth != 256 && depth != 512) {
     return std::nullopt;
   }
-  // Decode (a few query rows) runs the decode kernel; prefill the
-  // tensor-core kernel, which needs depth 512 and rows the mask rows divide;
-  // other row counts run padded (SdpaTransposedPaddedTokens).
-  if (!SdpaTransposedPaddedTokens(group, q[2], depth).has_value()) {
+  // Up to 16 rows run the decode kernel, a few tokens with more rows run it
+  // in chunks, many tokens the tensor-core kernel (depth 512, rows a multiple
+  // of its tile, padded otherwise: SdpaTransposedPaddedTokens).
+  if (rows > 16 && q[2] > 16 &&
+      !SdpaTransposedPaddedTokens(group, q[2], depth).has_value()) {
     return std::nullopt;
   }
   return group;
@@ -6987,6 +6989,76 @@ class TensorRtGraphBuilder {
     return true;
   }
 
+  // The row plan of an attention block: query rows = group * tokens. Up to
+  // 16 rows run the decode kernel in one launch. A block of a few tokens
+  // whose heads bring the rows past 16 (Gemma 4 26B's verify step: 8 heads x
+  // 5 tokens per KV head) runs the decode kernel once per chunk of tokens
+  // that fits, over the same caches: the tensor-core kernel would parallelize
+  // over its three row tiles only and crawl through a long cache. Many tokens
+  // (prefill) run the tensor-core kernel, the tokens padded when the rows
+  // are not a multiple of its tile.
+  struct AttentionRowPlan {
+    int32_t chunk_tokens = 0;   // decode kernel per chunk of this many tokens
+    int32_t padded_tokens = 0;  // tensor-core kernel with the tokens padded
+  };
+
+  static std::optional<AttentionRowPlan> PlanAttentionRows(int32_t group,
+                                                           int32_t tokens,
+                                                           int32_t depth) {
+    if (group < 1 || tokens < 1) {
+      return std::nullopt;
+    }
+    const int32_t rows = group * tokens;
+    if (rows <= 16) {
+      return AttentionRowPlan{tokens, tokens};
+    }
+    if (tokens <= 16) {
+      return AttentionRowPlan{std::max<int32_t>(1, 16 / group), tokens};
+    }
+    const auto padded = SdpaTransposedPaddedTokens(group, tokens, depth);
+    if (!padded.has_value()) {
+      return std::nullopt;
+    }
+    return AttentionRowPlan{0, *padded};
+  }
+
+  // `input` [.., n, ..] sliced to `size` elements from `start` along `axis`.
+  Expected<nvinfer1::ITensor*> SliceTensorAxis(nvinfer1::ITensor* input,
+                                               int axis, int32_t start,
+                                               int32_t size) {
+    const nvinfer1::Dims dims = input->getDimensions();
+    nvinfer1::Dims begin{};
+    nvinfer1::Dims out = dims;
+    nvinfer1::Dims stride{};
+    begin.nbDims = stride.nbDims = dims.nbDims;
+    for (int i = 0; i < dims.nbDims; ++i) {
+      begin.d[i] = 0;
+      stride.d[i] = 1;
+    }
+    begin.d[axis] = start;
+    out.d[axis] = size;
+    auto* layer = network_->addSlice(*input, begin, out, stride);
+    if (layer == nullptr || layer->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add TensorRT slice layer");
+    }
+    return layer->getOutput(0);
+  }
+
+  Expected<nvinfer1::ITensor*> ConcatTensors(
+      std::vector<nvinfer1::ITensor*> parts, int axis, const char* what) {
+    if (parts.size() == 1) {
+      return parts[0];
+    }
+    auto* concat = network_->addConcatenation(parts.data(), parts.size());
+    if (concat == nullptr || concat->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   std::string("Failed to concatenate ") + what);
+    }
+    concat->setAxis(axis);
+    return concat->getOutput(0);
+  }
+
   Expected<void> LowerDecodeAttentionMember(size_t index) {
     auto& block = attention_blocks_[index];
     if (block.emitted) {
@@ -7006,52 +7078,6 @@ class TensorRtGraphBuilder {
     }
     nvinfer1::ITensor* k_cache = tensor_map_[block.k_out];
     nvinfer1::ITensor* v_cache = tensor_map_[block.v_out];
-    const nvinfer1::Dims q_dims_in = q->getDimensions();
-    // Rows that fit neither kernel as given run with the tokens padded
-    // (SdpaTransposedPaddedTokens): zero query rows and all-false mask rows,
-    // sliced off the output.
-    const int32_t tokens = static_cast<int32_t>(q_dims_in.d[2]);
-    int32_t padded_tokens = tokens;
-    if (!new_keys && !block.int8_cache.has_value() &&
-        !block.window.has_value() && block.group * tokens > 16 &&
-        !LiteRtNvidiaGlobalAttentionSupports(
-            block.group * tokens, tokens,
-            static_cast<int32_t>(q_dims_in.d[3]))) {
-      const auto padded = SdpaTransposedPaddedTokens(
-          block.group, tokens, static_cast<int32_t>(q_dims_in.d[3]));
-      if (!padded.has_value()) {
-        return Error(kLiteRtStatusErrorCompilation,
-                     "Attention block rows fit no CUDA attention kernel");
-      }
-      padded_tokens = *padded;
-    }
-    if (padded_tokens != tokens) {
-      nvinfer1::Dims pad_dims = q_dims_in;
-      pad_dims.d[2] = padded_tokens - tokens;
-      const std::vector<float> zeros(static_cast<size_t>(pad_dims.d[0]) *
-                                         pad_dims.d[1] * pad_dims.d[2] *
-                                         pad_dims.d[3],
-                                     0.0f);
-      LITERT_ASSIGN_OR_RETURN(
-          auto* q_pad,
-          AddFloatConstant(zeros, pad_dims, "attention_q_pad", q->getType()));
-      nvinfer1::ITensor* parts[2] = {q, q_pad};
-      auto* concat = network_->addConcatenation(parts, 2);
-      if (concat == nullptr || concat->getOutput(0) == nullptr) {
-        return Error(kLiteRtStatusErrorCompilation,
-                     "Failed to pad the attention query rows");
-      }
-      concat->setAxis(2);
-      q = concat->getOutput(0);
-    }
-    if (block.group > 1) {
-      // The group's query heads become rows of their KV head: [1, Hq, n, D]
-      // -> [1, H, group * n, D], head-major within the group.
-      nvinfer1::Dims grouped = q_dims_in;
-      grouped.d[1] = q_dims_in.d[1] / block.group;
-      grouped.d[2] = padded_tokens * block.group;
-      LITERT_ASSIGN_OR_RETURN(q, ReshapeTensor(q, grouped));
-    }
     if (block.int8_cache.has_value()) {
       // The quantized scatter lowering records the raw INT8 caches.
       k_cache = RawInt8Cache(block.k_out);
@@ -7061,37 +7087,10 @@ class TensorRtGraphBuilder {
                      "INT8 cache attention block has no raw INT8 caches");
       }
     }
-    nvinfer1::ITensor* mask = tensor_map_[block.mask];
-    if (padded_tokens != tokens && mask->getDimensions().d[2] == tokens) {
-      // The padded rows see no key: the kernel takes mask row r % mask rows
-      // for query row r, so the mask gets one all-false row per padded token.
-      nvinfer1::Dims pad_dims = mask->getDimensions();
-      pad_dims.d[2] = padded_tokens - tokens;
-      LITERT_ASSIGN_OR_RETURN(auto* mask_pad,
-                              AddFalseConstant(pad_dims, "attention_mask_pad"));
-      nvinfer1::ITensor* parts[2] = {mask, mask_pad};
-      auto* concat = network_->addConcatenation(parts, 2);
-      if (concat == nullptr || concat->getOutput(0) == nullptr) {
-        return Error(kLiteRtStatusErrorCompilation,
-                     "Failed to pad the attention mask rows");
-      }
-      concat->setAxis(2);
-      mask = concat->getOutput(0);
-    }
-    if (block.group > 1 && q_dims_in.d[2] > 1 &&
-        mask->getDimensions().d[2] == q_dims_in.d[2] &&
-        q_dims_in.d[2] * block.group <= 16) {
-      // The decode kernel wants one mask row per query row: repeat the n
-      // rows for each head of the group, in the rows' head-major order.
-      std::vector<nvinfer1::ITensor*> copies(block.group, mask);
-      auto* concat = network_->addConcatenation(copies.data(), copies.size());
-      if (concat == nullptr || concat->getOutput(0) == nullptr) {
-        return Error(kLiteRtStatusErrorCompilation,
-                     "Failed to tile the attention mask over the group");
-      }
-      concat->setAxis(2);
-      mask = concat->getOutput(0);
-    }
+    const nvinfer1::Dims q_dims_in = q->getDimensions();
+    const int32_t tokens = static_cast<int32_t>(q_dims_in.d[2]);
+    const int32_t depth = static_cast<int32_t>(q_dims_in.d[3]);
+    nvinfer1::ITensor* mask_in = tensor_map_[block.mask];
     // A windowed block keeps the full caches and mask: the plugin reads
     // `window` keys from the start it is handed as a fifth input.
     int32_t window = 0;
@@ -7102,58 +7101,132 @@ class TensorRtGraphBuilder {
       window = read.length;
       window_start = read.start;
     }
-    TrtPtr<nvinfer1::IPluginV3> plugin(CreateDecodeAttentionPlugin(
-        block.fill, new_keys,
-        block.int8_cache.has_value() ? &*block.int8_cache : nullptr, window));
-    if (!plugin) {
-      return Error(kLiteRtStatusErrorCompilation,
-                   "Failed to create CUDA decode attention plugin");
-    }
-    std::vector<nvinfer1::ITensor*> inputs = {q, k_cache, v_cache, mask};
-    if (window_start != nullptr) {
-      inputs.push_back(window_start);
-    }
-    if (new_keys) {
-      for (LiteRtTensor fresh : {block.k_new, block.v_new}) {
+
+    // One plugin launch over `t` tokens: q [1, Hq, t, D] and a mask of 1 or
+    // t rows; the group's query heads become rows of their KV head
+    // ([1, Hq, t, D] -> [1, H, group * t, D], head-major within the group)
+    // and the result comes back as [1, Hq, t, D].
+    const auto launch = [&](nvinfer1::ITensor* q_part,
+                            nvinfer1::ITensor* mask_part,
+                            int32_t t) -> Expected<nvinfer1::ITensor*> {
+      nvinfer1::ITensor* grouped_q = q_part;
+      if (block.group > 1) {
+        nvinfer1::Dims grouped = q_dims_in;
+        grouped.d[1] = q_dims_in.d[1] / block.group;
+        grouped.d[2] = t * block.group;
+        LITERT_ASSIGN_OR_RETURN(grouped_q, ReshapeTensor(q_part, grouped));
+      }
+      nvinfer1::ITensor* mask = mask_part;
+      if (block.group > 1 && t > 1 && mask->getDimensions().d[2] == t &&
+          t * block.group <= 16) {
+        // The decode kernel wants one mask row per query row: repeat the t
+        // rows for each head of the group, in the rows' head-major order.
+        std::vector<nvinfer1::ITensor*> copies(block.group, mask);
         LITERT_ASSIGN_OR_RETURN(
-            auto* rows,
-            AddCastTensor(tensor_map_[fresh], nvinfer1::DataType::kHALF));
-        inputs.push_back(rows);
+            mask, ConcatTensors(std::move(copies), 2, "the attention mask"));
       }
-    }
-    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(*network_, inputs.data(),
-                                                     inputs.size(), *plugin);
-    if (layer == nullptr || layer->getOutput(0) == nullptr) {
-      return Error(kLiteRtStatusErrorCompilation,
-                   "Failed to add CUDA decode attention plugin layer");
-    }
-    const char* name =
-        new_keys ? "cuda_prefill_attention" : "cuda_decode_attention";
-    layer->setName(KeepName(UniqueName(name)));
-    auto* out = layer->getOutput(0);
-    out->setName(KeepName(UniqueName(name)));
-    owned_plugins_.push_back(std::move(plugin));
-    block.emitted = true;
-    if (block.group > 1) {
-      nvinfer1::Dims ungrouped = q_dims_in;
-      ungrouped.d[2] = padded_tokens;
-      LITERT_ASSIGN_OR_RETURN(out, ReshapeTensor(out, ungrouped));
-    }
-    if (padded_tokens != tokens) {
-      nvinfer1::Dims start{};
-      nvinfer1::Dims stride{};
-      start.nbDims = stride.nbDims = q_dims_in.nbDims;
-      for (int i = 0; i < q_dims_in.nbDims; ++i) {
-        start.d[i] = 0;
-        stride.d[i] = 1;
-      }
-      auto* slice = network_->addSlice(*out, start, q_dims_in, stride);
-      if (slice == nullptr || slice->getOutput(0) == nullptr) {
+      TrtPtr<nvinfer1::IPluginV3> plugin(CreateDecodeAttentionPlugin(
+          block.fill, new_keys,
+          block.int8_cache.has_value() ? &*block.int8_cache : nullptr, window));
+      if (!plugin) {
         return Error(kLiteRtStatusErrorCompilation,
-                     "Failed to slice the padded attention rows");
+                     "Failed to create CUDA decode attention plugin");
       }
-      out = slice->getOutput(0);
+      std::vector<nvinfer1::ITensor*> inputs = {grouped_q, k_cache, v_cache,
+                                                mask};
+      if (window_start != nullptr) {
+        inputs.push_back(window_start);
+      }
+      if (new_keys) {
+        for (LiteRtTensor fresh : {block.k_new, block.v_new}) {
+          LITERT_ASSIGN_OR_RETURN(
+              auto* rows,
+              AddCastTensor(tensor_map_[fresh], nvinfer1::DataType::kHALF));
+          inputs.push_back(rows);
+        }
+      }
+      auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(*network_, inputs.data(),
+                                                       inputs.size(), *plugin);
+      if (layer == nullptr || layer->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to add CUDA decode attention plugin layer");
+      }
+      const char* name =
+          new_keys ? "cuda_prefill_attention" : "cuda_decode_attention";
+      layer->setName(KeepName(UniqueName(name)));
+      auto* out = layer->getOutput(0);
+      out->setName(KeepName(UniqueName(name)));
+      owned_plugins_.push_back(std::move(plugin));
+      if (block.group > 1) {
+        nvinfer1::Dims ungrouped = q_dims_in;
+        ungrouped.d[2] = t;
+        LITERT_ASSIGN_OR_RETURN(out, ReshapeTensor(out, ungrouped));
+      }
+      return out;
+    };
+
+    nvinfer1::ITensor* out = nullptr;
+    const bool plain_block =
+        !new_keys && !block.int8_cache.has_value() && !block.window.has_value();
+    std::optional<AttentionRowPlan> plan;
+    if (plain_block && block.group * tokens > 16) {
+      plan = PlanAttentionRows(block.group, tokens, depth);
+      if (!plan.has_value()) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Attention block rows fit no CUDA attention kernel");
+      }
     }
+    if (plan.has_value() && plan->chunk_tokens > 0) {
+      // Chunks of tokens on the decode kernel, over the same caches.
+      std::vector<nvinfer1::ITensor*> parts;
+      for (int32_t first = 0; first < tokens; first += plan->chunk_tokens) {
+        const int32_t t = std::min(plan->chunk_tokens, tokens - first);
+        LITERT_ASSIGN_OR_RETURN(auto* q_part, SliceTensorAxis(q, 2, first, t));
+        nvinfer1::ITensor* mask_part = mask_in;
+        if (mask_in->getDimensions().d[2] == tokens) {
+          LITERT_ASSIGN_OR_RETURN(mask_part,
+                                  SliceTensorAxis(mask_in, 2, first, t));
+        }
+        LITERT_ASSIGN_OR_RETURN(auto* part, launch(q_part, mask_part, t));
+        parts.push_back(part);
+      }
+      LITERT_ASSIGN_OR_RETURN(
+          out, ConcatTensors(std::move(parts), 2, "the attention chunks"));
+    } else if (plan.has_value() && plan->padded_tokens != tokens) {
+      // The tensor-core kernel with the tokens padded: zero query rows and
+      // all-false mask rows (the kernel takes mask row r % mask rows for
+      // query row r), sliced off the output.
+      const int32_t padded_tokens = plan->padded_tokens;
+      nvinfer1::Dims pad_dims = q_dims_in;
+      pad_dims.d[2] = padded_tokens - tokens;
+      const std::vector<float> zeros(static_cast<size_t>(pad_dims.d[0]) *
+                                         pad_dims.d[1] * pad_dims.d[2] *
+                                         pad_dims.d[3],
+                                     0.0f);
+      LITERT_ASSIGN_OR_RETURN(
+          auto* q_pad,
+          AddFloatConstant(zeros, pad_dims, "attention_q_pad", q->getType()));
+      LITERT_ASSIGN_OR_RETURN(
+          auto* padded_q,
+          ConcatTensors({q, q_pad}, 2, "the padded attention query rows"));
+      nvinfer1::ITensor* padded_mask = mask_in;
+      if (mask_in->getDimensions().d[2] == tokens) {
+        nvinfer1::Dims mask_pad_dims = mask_in->getDimensions();
+        mask_pad_dims.d[2] = padded_tokens - tokens;
+        LITERT_ASSIGN_OR_RETURN(
+            auto* mask_pad,
+            AddFalseConstant(mask_pad_dims, "attention_mask_pad"));
+        LITERT_ASSIGN_OR_RETURN(
+            padded_mask, ConcatTensors({mask_in, mask_pad}, 2,
+                                       "the padded attention mask rows"));
+      }
+      LITERT_ASSIGN_OR_RETURN(auto* padded_out,
+                              launch(padded_q, padded_mask, padded_tokens));
+      LITERT_ASSIGN_OR_RETURN(out, SliceTensorAxis(padded_out, 2, 0, tokens));
+    } else {
+      LITERT_ASSIGN_OR_RETURN(out, launch(q, mask_in, tokens));
+    }
+    block.emitted = true;
     return SetOutputTensor(*block.output, out);
   }
 
