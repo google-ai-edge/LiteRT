@@ -112,6 +112,14 @@ TEST(LiteRtCpuOptionsTest, ParseYnnpackOptions) {
   EXPECT_TRUE(options.ynn.no_excess_precision);
 }
 
+TEST(LiteRtCpuOptionsTest, ParseYnnpackAllowedOps) {
+  LiteRtCpuOptionsT options = {};
+  std::string toml = "ynnpack_allowed_ops = \"op1,op2\"\n";
+  EXPECT_EQ(ParseLiteRtCpuOptions(toml.data(), toml.size(), &options),
+            kLiteRtStatusOk);
+  EXPECT_EQ(options.ynn.allowed_ops, "op1,op2");
+}
+
 TEST(LiteRtCpuOptionsTest, ParseWeightCacheFilePath) {
   LiteRtCpuOptionsT options = {};
   std::string toml = "weight_cache_file_path = \"/path/to/cache\"\n";
