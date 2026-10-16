@@ -147,6 +147,11 @@ PACKAGE_DATA = select({
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
         "//litert/vendors/samsung/compiler:compiler_plugin_so",
     ],
+    "//litert:linux_aarch64": [
+        "//litert/tools:apply_plugin_main",
+        "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
+        "//litert/vendors/qualcomm/dispatch:dispatch_api_so",
+    ],
     "//litert:windows": [
         "//litert/tools:apply_plugin_main",
         "//litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin",

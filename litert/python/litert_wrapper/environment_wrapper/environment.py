@@ -135,6 +135,7 @@ class EnvironmentOptions:
   runtime_path: Optional[str] = None
   compiler_plugin_path: str = ""
   dispatch_library_path: str = ""
+  compiler_cache_dir: str = ""
 
 
 class Environment:
@@ -160,11 +161,12 @@ class Environment:
   @classmethod
   def create(
       cls,
-      *,
       options: Optional[Union[EnvironmentOptions, str]] = None,
+      *,
       runtime_path: Optional[str] = None,
       compiler_plugin_path: str = "",
       dispatch_library_path: str = "",
+      compiler_cache_dir: str = "",
   ) -> "Environment":
     """Creates a reusable LiteRT environment.
 
@@ -184,6 +186,10 @@ class Environment:
         discovers a vendor dispatch directory under the installed
         `ai_edge_litert` package (the first `vendors/<vendor>/dispatch/` dir
         that contains a dispatch shared library).
+      compiler_cache_dir: Optional directory path used to cache on-device
+        compiled models across runs. This shortcut is mutually exclusive with
+        options. Caching is skipped when the compiler plugin produces in-memory
+        JIT executables (e.g. `QualcommOptions(enable_just_in_time=True)`).
 
     Returns:
       A new Environment instance.
@@ -198,6 +204,7 @@ class Environment:
         provided_runtime_path is not None
         or compiler_plugin_path
         or dispatch_library_path
+        or compiler_cache_dir
     ):
       raise ValueError("Pass either options or environment path shortcuts.")
     if options is None:
@@ -205,6 +212,7 @@ class Environment:
           runtime_path=provided_runtime_path,
           compiler_plugin_path=compiler_plugin_path,
           dispatch_library_path=dispatch_library_path,
+          compiler_cache_dir=compiler_cache_dir,
       )
 
     # Auto-discover a vendor dispatch directory when the caller did not set
@@ -244,6 +252,7 @@ class Environment:
         runtime_path=final_runtime_path,
         compiler_plugin_path=options.compiler_plugin_path,
         dispatch_library_path=options.dispatch_library_path,
+        compiler_cache_dir=options.compiler_cache_dir,
     )
     return cls(
         capsule, dataclasses.replace(options, runtime_path=final_runtime_path)
