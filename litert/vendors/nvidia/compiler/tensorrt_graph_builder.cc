@@ -151,14 +151,15 @@ bool NativeKvCacheUpdateEnabled() {
 // -> probs @ V over in-place KV caches) fused into one CUDA plugin launch
 // that reads the cache update outputs directly, which spares the whole-cache
 // copies Myelin makes for its own consumers (~75 us per 35 MB global cache).
-// Off by default: the plugin's kernel (trtllm/decode_attention.cu) is not yet
-// faster than Myelin's FP16 matmul/softmax path on the RTX 5080 (global
-// block 210 us vs 285 us, local block 24 us vs 19 us), so decode measured
-// slower end to end. Set LITERT_NVIDIA_TENSORRT_DECODE_ATTENTION_PLUGIN=1 to
-// enable it.
+// On by default since the kernel's chunked split (trtllm/decode_attention.cu):
+// a Gemma 4 12B local block (8 KV heads, 2 rows, a 1,152-key ring) runs in
+// about 12 us against the 19 us of Myelin's matmul / transpose / softmax
+// chain, 48 of 48 blocks fuse and the 12B decodes 104 against 102 steps/s at
+// 2k, 96.3 against 95.5 at 30k. Set
+// LITERT_NVIDIA_TENSORRT_DECODE_ATTENTION_PLUGIN=0 to keep Myelin's lowering.
 bool DecodeAttentionPluginEnabled() {
   return EnvEnabled("LITERT_NVIDIA_TENSORRT_DECODE_ATTENTION_PLUGIN",
-                    /*default_value=*/false);
+                    /*default_value=*/true);
 }
 
 // Decode attention over INT8 per-tensor KV caches (Gemma 4 E4B) runs on the
@@ -3440,9 +3441,10 @@ class TensorRtGraphBuilder {
   Expected<SubbyteGemvWeights> InspectSubbyteGemvWeights(const Tensor& tensor) {
     const auto element_type = tensor.ElementType();
     if (element_type != litert::ElementType::Int2 &&
-        element_type != litert::ElementType::Int4) {
+        element_type != litert::ElementType::Int4 &&
+        element_type != litert::ElementType::Int8) {
       return Error(kLiteRtStatusErrorUnsupported,
-                   "CUDA subbyte GEMV requires INT2 or INT4 weights");
+                   "CUDA subbyte GEMV requires INT2, INT4 or INT8 weights");
     }
     if (!tensor.HasWeights()) {
       return Error(kLiteRtStatusErrorUnsupported,
@@ -3491,7 +3493,9 @@ class TensorRtGraphBuilder {
       }
     }
     SubbyteGemvWeights info;
-    info.bit_width = element_type == litert::ElementType::Int2 ? 2 : 4;
+    info.bit_width = element_type == litert::ElementType::Int2   ? 2
+                     : element_type == litert::ElementType::Int4 ? 4
+                                                                 : 8;
     info.rows = dims[0];
     info.columns = dims[1];
     const size_t expected_bytes =
@@ -7575,6 +7579,15 @@ class TensorRtGraphBuilder {
     const bool sub_byte_weights =
         op.Inputs()[1].ElementType() == litert::ElementType::Int4 ||
         op.Inputs()[1].ElementType() == litert::ElementType::Int2;
+    // INT8 per-channel weights (Gemma 4 E2B/E4B's per-layer embedding gate
+    // and projection, two small products per layer) take the batched CUDA
+    // GEMV over decode and verify rows too: TensorRT otherwise dequantizes
+    // them every step and runs a generic matmul kernel, three launches where
+    // the plugin needs one. Over many rows they keep TensorRT's GEMM.
+    const bool byte_weights =
+        op.Inputs()[1].ElementType() == litert::ElementType::Int8 &&
+        op.Inputs()[1].HasWeights() &&
+        op.Inputs()[1].QTypeId() == kLiteRtQuantizationPerChannel;
     nvinfer1::DataType compute_type = sub_byte_weights
                                           ? nvinfer1::DataType::kHALF
                                           : nvinfer1::DataType::kFLOAT;
@@ -7649,10 +7662,12 @@ class TensorRtGraphBuilder {
       }
     }
     if (Fp16ActivationsEnabled() &&
-        predequant_mode == PredequantMode::kCudaGemv && sub_byte_weights &&
-        (static_m_is_one || cuda_batched_gemv ||
-         (cuda_gemm &&
-          (GetCudaGemmMode() == CudaGemmMode::kAll || blockwise)))) {
+        predequant_mode == PredequantMode::kCudaGemv &&
+        ((sub_byte_weights &&
+          (static_m_is_one || cuda_batched_gemv ||
+           (cuda_gemm &&
+            (GetCudaGemmMode() == CudaGemmMode::kAll || blockwise)))) ||
+         (byte_weights && (static_m_is_one || cuda_batched_gemv)))) {
       LITERT_ASSIGN_OR_RETURN(input, AddCastTensor(gemv_input, compute_type));
       auto fused = AddCudaSubbyteGemvGroup(op, input, compute_type, norm_ptr);
       if (fused.HasValue()) {

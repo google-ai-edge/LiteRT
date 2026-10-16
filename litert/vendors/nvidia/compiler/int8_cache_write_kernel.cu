@@ -16,9 +16,9 @@
 
 #include <cstdint>
 
-#include "third_party/gpus/cuda/include/cuda_bf16.h"
-#include "third_party/gpus/cuda/include/cuda_fp16.h"
-#include "third_party/gpus/cuda/include/cuda_runtime.h"
+#include <cuda_bf16.h>
+#include <cuda_fp16.h>
+#include <cuda_runtime.h>
 
 namespace litert::nvidia {
 namespace {
