@@ -66,17 +66,25 @@ cc_library_with_tflite(
 )
 
 cc_library_with_tflite(
-    name = "test_init_jni",
-    testonly = 1,
+    name = "test_init_jni_not_testonly",
     srcs = [
         "test_init_jni.cc",
     ],
     tflite_deps = [
         "//tflite/java/src/main/native:jni_utils",
-        "//tflite/c:test_util",
+        "//tflite/c:test_util_not_testonly",
     ],
     deps = [
         "//tflite/java/jni",
+    ],
+    alwayslink = 1,
+)
+
+cc_library_with_tflite(
+    name = "test_init_jni",
+    testonly = 1,
+    tflite_deps = [
+        ":test_init_jni_not_testonly",
     ],
     alwayslink = 1,
 )
