@@ -24,6 +24,7 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/backends/testing/numerical_test_bridge.h"
 #include "tensor/backends/testing/numerical_test_suite.h"
@@ -97,6 +98,25 @@ class XnnpackTestBackendBridge : public TestBackendBridge {
 
 struct XnnpackTraits {
   using Tag = XnnpackMixinTag;
+  // TODO: Enable these tests once the XNNPACK backend is fixed.
+  static constexpr absl::string_view kDisabledTests[] = {
+      // Int8 and int2 blockwise weights get an invalid datatype, and blocks of
+      // 16 fail when the runtime is created.
+      "FullyConnectedQuantizedWeightsOp",
+      // Fully connected ops reject per-tensor int8 weights.
+      "FullyConnectedPerTensorAndAsymmetricOp",
+      // Batch matmuls reject int4 right-hand sides.
+      "BatchMatMulQuantizedRhsOp",
+      // Transposes reject int4 and blockwise values.
+      "TransposedQuantizedWeightsIntoBatchMatMulOp",
+      // Transposes reject int4 values, and asymmetric int4 weights fail to
+      // dequantize.
+      "TransposedQuantizedWeightsIntoAddOp",
+      // Batch matmuls ignore `adj_x`.
+      "BatchMatMulAdjXQuantizedRhsOp",
+      // Dequantizing int4 values aborts in an XNNPACK assertion.
+      "QuantizedWeightsSharedByDotAndAddOp",
+  };
   static std::unique_ptr<TestBackendBridge> CreateBridge() {
     return std::make_unique<XnnpackTestBackendBridge>();
   }
