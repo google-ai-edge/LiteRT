@@ -53,6 +53,15 @@ __device__ __forceinline__ float WarpSum(float v) {
   return v;
 }
 
+template <int kDepth, int kRowsCap>
+inline constexpr int kChunkSize = 64;
+
+template <>
+inline constexpr int kChunkSize<256, 4> = 16;
+
+template <>
+inline constexpr int kChunkSize<512, 4> = 32;
+
 // Small decode groups use fewer threads and keys per block to shorten latency
 // chains and expose more independent blocks. Larger groups keep their geometry.
 template <int kDepth, int kRowsCap>
@@ -72,7 +81,7 @@ __host__ __device__ constexpr int RowsPadFor() {
 
 template <int kDepth, int kRowsCap>
 __host__ __device__ constexpr size_t SharedBytesFor() {
-  constexpr int kChunk = kDepth >= 256 && kRowsCap == 4 ? kDepth / 16 : 64;
+  constexpr int kChunk = kChunkSize<kDepth, kRowsCap>;
   // q as fp32 [rows][E][32], scores/probabilities [kChunk][kRowsPad] fp32,
   // row max and sum, mask bytes [rows][kChunk].
   return static_cast<size_t>(kRowsCap) * kDepth * sizeof(float) +
@@ -99,7 +108,7 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth, kRowsCap>(), 2)
                            int rows, int seq, float fill, int splits,
                            float* __restrict__ ws_acc, float* __restrict__ ws_m,
                            float* __restrict__ ws_l) {
-  constexpr int kChunk = kDepth >= 256 && kRowsCap == 4 ? kDepth / 16 : 64;
+  constexpr int kChunk = kChunkSize<kDepth, kRowsCap>;
   constexpr int kThreads = ThreadsFor<kDepth, kRowsCap>();
   constexpr int kWarps = kThreads / 32;
   constexpr int kLaneElems = kDepth / 32;     // key elements per lane (QK)
@@ -450,9 +459,10 @@ __global__ void __launch_bounds__(kCombineThreads)
 // Blocks per head: one per chunk up to kMaxSplits; beyond that the blocks
 // loop over chunks, which keeps the partial workspace and the combine small.
 constexpr int kMaxSplits = 168;
-int SplitCount(int seq, int depth, int rows) {
-  const int kChunk = depth >= 256 && rows <= 4 ? depth / 16 : 64;
-  const int chunks = (seq + kChunk - 1) / kChunk;
+template <int kDepth, int kRowsCap>
+int SplitCount(int seq) {
+  const int chunks =
+      (seq + kChunkSize<kDepth, kRowsCap> - 1) / kChunkSize<kDepth, kRowsCap>;
   return chunks < kMaxSplits ? chunks : kMaxSplits;
 }
 
@@ -462,7 +472,7 @@ cudaError_t Launch(const T* q, const __half* k, const __half* v,
                    const bool* mask, int mask_rows, int heads, int rows,
                    int seq, float fill, T* out, void* workspace,
                    cudaStream_t stream) {
-  const int splits = SplitCount(seq, kDepth, rows);
+  const int splits = SplitCount<kDepth, kRowsCap>(seq);
   float* ws_acc = static_cast<float*>(workspace);
   float* ws_m = ws_acc + static_cast<size_t>(heads) * splits * rows * kDepth;
   float* ws_l = ws_m + static_cast<size_t>(heads) * splits * rows;
@@ -533,15 +543,30 @@ cudaError_t LaunchDepth(const T* q, const __half* k, const __half* v,
   }
 }
 
+template <int kDepth>
+size_t WorkspaceBytes(int heads, int rows, int seq) {
+  const int splits = rows <= 4 ? SplitCount<kDepth, 4>(seq)
+                              : SplitCount<kDepth, kMaxRows>(seq);
+  const size_t parts = static_cast<size_t>(heads) * splits * rows;
+  return parts * (kDepth + 2) * sizeof(float);
+}
+
 }  // namespace
 
 extern "C" size_t LiteRtNvidiaDecodeAttentionWorkspaceBytes(int32_t heads,
                                                             int32_t rows,
                                                             int32_t seq,
                                                             int32_t depth) {
-  const size_t parts =
-      static_cast<size_t>(heads) * SplitCount(seq, depth, rows) * rows;
-  return parts * (static_cast<size_t>(depth) + 2) * sizeof(float);
+  switch (depth) {
+    case 128:
+      return WorkspaceBytes<128>(heads, rows, seq);
+    case 256:
+      return WorkspaceBytes<256>(heads, rows, seq);
+    case 512:
+      return WorkspaceBytes<512>(heads, rows, seq);
+    default:
+      return 0;
+  }
 }
 
 extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttention(
