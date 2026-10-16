@@ -27,6 +27,14 @@ package(
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
 )
 
+# copybara:uncomment_begin(google-only)
+# # Used by the ai_edge_litert_sdk_qualcomm test to keep its SoC table in sync.
+# exports_files(
+#     ["supported_soc.csv"],
+#     visibility = ["//ci/tools/python/vendor_sdk/qualcomm:__pkg__"],
+# )
+# copybara:uncomment_end
+
 cc_library(
     name = "common",
     hdrs = ["common.h"],
