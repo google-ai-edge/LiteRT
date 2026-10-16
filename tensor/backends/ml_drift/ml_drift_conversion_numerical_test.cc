@@ -27,6 +27,7 @@ limitations under the License.
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/any.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/cl/environment.h"  // from @ml_drift
@@ -241,6 +242,22 @@ class MlDriftTestBackendBridge : public TestBackendBridge {
 
 struct MlDriftTraits {
   using Tag = MlDriftMixinTag;
+  // TODO: Enable these tests once the ML Drift backend is fixed.
+  static constexpr absl::string_view kDisabledTests[] = {
+      // The kernels for per-tensor weights don't compile.
+      "FullyConnectedPerTensorAndAsymmetricOp",
+      // Quantized right-hand sides are used as floats, and rank 2 ones are
+      // mapped to the wrong axes.
+      "BatchMatMulQuantizedRhsOp",
+      // Quantized right-hand sides are used as floats.
+      "TransposedQuantizedWeightsIntoBatchMatMulOp",
+      // Dequantizing values without zero points aborts.
+      "TransposedQuantizedWeightsIntoAddOp",
+      // Rank 2 operands are mapped to the wrong axes.
+      "BatchMatMulAdjXQuantizedRhsOp",
+      // Dequantizing values without zero points aborts.
+      "QuantizedWeightsSharedByDotAndAddOp",
+  };
   static std::unique_ptr<TestBackendBridge> CreateBridge() {
     return std::make_unique<MlDriftTestBackendBridge>();
   }

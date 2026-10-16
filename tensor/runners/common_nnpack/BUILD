@@ -70,6 +70,7 @@ cc_library(
         "//tensor",
         "//tensor:arithmetic",
         "//tensor:datatypes",
+        "//tensor/backends/testing:quantized_test_utils",
         "//tensor/utils:matchers",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_matchers",
