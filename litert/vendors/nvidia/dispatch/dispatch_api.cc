@@ -348,6 +348,13 @@ LiteRtStatus CreateCudaTensorBuffer(LiteRtGpuDeviceId device_id,
   if (info == nullptr) {
     return kLiteRtStatusErrorMemoryAllocationFailure;
   }
+  // The buffer size comes from the producer's requirements; when it is
+  // smaller than the tensor's packed size the producer stores the tensor
+  // more compactly (a float32 KV cache kept as FP16), and the buffer, its
+  // copies and its clears are that size.
+  if (bytes != 0 && packed_bytes > bytes) {
+    packed_bytes = bytes;
+  }
   void* device_ptr = nullptr;
   const LiteRtStatus status = CudaStatus(
       cudaMalloc(&device_ptr, NonZeroBytes(std::max(bytes, packed_bytes))),
@@ -390,7 +397,8 @@ LiteRtStatus ImportCudaTensorBuffer(LiteRtGpuDeviceId device_id,
   info->memory_handle = hw_buffer_handle;
   info->raw_handle = hw_buffer_handle;
   info->bytes = bytes;
-  info->packed_bytes = packed_bytes;
+  info->packed_bytes =
+      bytes != 0 && packed_bytes > bytes ? bytes : packed_bytes;
   info->owns_handle = false;
   CudaTensorBufferRegistry::Get().Add(info);
   *hw_memory_info = info;
@@ -924,10 +932,14 @@ bool WriteBinaryFile(const std::string& path, const void* data, size_t size) {
   return ok && close_status == 0;
 }
 
+// `half_storage`: the engine keeps this float32 tensor as FP16 (a KV cache,
+// Fp16CacheStorageEnabled in the compiler), so the buffer it needs is half
+// the tensor's size. LiteRT's buffer keeps the tensor's type; the dispatch
+// binds and clears the bytes the engine uses.
 Expected<LiteRtTensorBufferRequirements> TensorBufferRequirements(
     const LiteRtRuntimeContext* runtime_context,
     const LiteRtRankedTensorType& tensor_type, bool prefer_cuda,
-    bool transposed_value_cache = false) {
+    bool transposed_value_cache = false, bool half_storage = false) {
   litert::RankedTensorType ranked_type(tensor_type);
   uint32_t strides[4];
   if (transposed_value_cache && !litert::nvidia::GetTransposedValueCacheStrides(
@@ -942,6 +954,9 @@ Expected<LiteRtTensorBufferRequirements> TensorBufferRequirements(
                  "Tensor strides do not match the NVIDIA engine layout");
   }
   LITERT_ASSIGN_OR_RETURN(size_t size, ranked_type.Bytes());
+  if (half_storage) {
+    size /= 2;
+  }
   if (PreferHostBoundaryIo()) {
     prefer_cuda = false;
   }
@@ -1081,9 +1096,15 @@ class LiteRtDispatchDeviceContextT {
     LITERT_ASSIGN_OR_RETURN(
         size_t packed_size,
         TensorBufferPackedSize(runtime_context_, tensor_buffer));
+    // A float32 cache the engine stores as FP16 has a buffer of half the
+    // tensor's packed size (TensorBufferRequirements half_storage): the
+    // engine's bytes are the buffer's.
+    size_t allocation_size = 0;
+    LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_size(
+        tensor_buffer, &allocation_size));
     Record record;
     record.tensor_buffer = tensor_buffer;
-    record.size = packed_size;
+    record.size = std::min(packed_size, allocation_size);
     LiteRtRankedTensorType tensor_type;
     LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_tensor_type(
         tensor_buffer, &tensor_type));
@@ -1115,7 +1136,7 @@ class LiteRtDispatchDeviceContextT {
         LITERT_ASSIGN_OR_RETURN(
             record.device_ptr,
             litert::nvidia::ResolveCudaTensorBufferView(
-                handle, buffer_size, buffer_offset, packed_size));
+                handle, buffer_size, buffer_offset, record.size));
         record.owns_device_ptr = false;
         record.direct_cuda_buffer = true;
         record.cuda_handle = handle;
@@ -1455,10 +1476,14 @@ class LiteRtDispatchInvocationContextT {
     LITERT_ASSIGN_OR_RETURN(
         const bool prefer_cuda,
         PrefersCudaTensorBuffer(bytecode_.input_names[index]));
+    LITERT_ASSIGN_OR_RETURN(
+        const bool half_storage,
+        StoredAsHalf(bytecode_.input_names[index], tensor_type));
     return TensorBufferRequirements(
         runtime_context_, tensor_type, prefer_cuda,
         litert::nvidia::IsTransposedValueCacheTensor(
-            bytecode_.input_names[index]));
+            bytecode_.input_names[index]),
+        half_storage);
   }
 
   Expected<LiteRtTensorBufferRequirements> GetOutputRequirements(
@@ -1474,10 +1499,14 @@ class LiteRtDispatchInvocationContextT {
     LITERT_ASSIGN_OR_RETURN(
         const bool prefer_cuda,
         PrefersCudaTensorBuffer(bytecode_.output_names[index]));
+    LITERT_ASSIGN_OR_RETURN(
+        const bool half_storage,
+        StoredAsHalf(bytecode_.output_names[index], tensor_type));
     return TensorBufferRequirements(
         runtime_context_, tensor_type, prefer_cuda,
         litert::nvidia::IsTransposedValueCacheTensor(
-            bytecode_.output_names[index]));
+            bytecode_.output_names[index]),
+        half_storage);
   }
 
   Expected<void> AttachInput(int index, LiteRtTensorBufferHandle handle) {
@@ -1815,11 +1844,13 @@ class LiteRtDispatchInvocationContextT {
     LITERT_RETURN_IF_ERROR(RecordAliasedOutputs());
     for (const auto& name : bytecode_.input_names) {
       tensor_locations_.emplace(name, engine_->getTensorLocation(name.c_str()));
+      tensor_types_.emplace(name, engine_->getTensorDataType(name.c_str()));
     }
     for (const auto& name : bytecode_.output_names) {
       if (!name.empty()) {
         tensor_locations_.emplace(name,
                                   engine_->getTensorLocation(name.c_str()));
+        tensor_types_.emplace(name, engine_->getTensorDataType(name.c_str()));
       }
     }
     engine_.reset();
@@ -2965,6 +2996,30 @@ class LiteRtDispatchInvocationContextT {
     return {};
   }
 
+  // Whether the engine keeps a float32 boundary tensor as FP16 (a KV cache
+  // the compiler declared half: Fp16CacheStorageEnabled), from the probed
+  // metadata or the engine.
+  Expected<bool> StoredAsHalf(const std::string& tensor_name,
+                              const LiteRtRankedTensorType& tensor_type) const {
+    if (tensor_type.element_type != kLiteRtElementTypeFloat32) {
+      return false;
+    }
+    if (aot_residency_) {
+      const auto type = tensor_types_.find(tensor_name);
+      if (type == tensor_types_.end()) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "Missing NVIDIA AOT tensor type metadata");
+      }
+      return type->second == nvinfer1::DataType::kHALF;
+    }
+    if (engine_ == nullptr) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "TensorRT engine is not initialized");
+    }
+    return engine_->getTensorDataType(tensor_name.c_str()) ==
+           nvinfer1::DataType::kHALF;
+  }
+
   Expected<bool> PrefersCudaTensorBuffer(const std::string& tensor_name) const {
     if (aot_residency_) {
       const auto location = tensor_locations_.find(tensor_name);
@@ -3035,6 +3090,7 @@ class LiteRtDispatchInvocationContextT {
   std::shared_ptr<AotEngineResidency> aot_residency_;
   std::optional<litert::nvidia::TensorRtAotLocator> aot_locator_;
   std::unordered_map<std::string, nvinfer1::TensorLocation> tensor_locations_;
+  std::unordered_map<std::string, nvinfer1::DataType> tensor_types_;
   bool resident_has_run_ = false;
   litert::nvidia::TensorRtBytecode bytecode_;
   litert::nvidia::MemoryProfiler memory_profiler_;
