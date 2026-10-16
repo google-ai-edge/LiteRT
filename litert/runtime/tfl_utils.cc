@@ -15,15 +15,23 @@
 #include "litert/runtime/tfl_utils.h"
 
 #include <cstddef>
-#include <cstring>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
-#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/core/options.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/cc/internal/litert_dispatch_delegate_vendor_options.h"
+#include "litert/core/build_stamp.h"
+#include "litert/core/dispatch_op_schema.h"
+#include "litert/core/model/model.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "tflite/c/c_api_opaque.h"
 #include "tflite/c/c_api_types.h"
@@ -43,6 +51,38 @@ __attribute__((weak)) std::unique_ptr<MutableOpResolver> CreateOpResolver() {
 #endif  // defined(LITERT_NO_BUILTIN_OPS)
 
 namespace litert::internal {
+
+namespace {
+
+std::optional<absl::string_view> FindCanonicalSignatureInputName(
+    const LiteRtSignatureT& signature, LiteRtTensor tensor) {
+  if (tensor == nullptr) {
+    return std::nullopt;
+  }
+  for (const std::string& name : signature.InputNames()) {
+    Expected<LiteRtTensor> sig_tensor = signature.FindInputTensor(name);
+    if (sig_tensor.HasValue() && *sig_tensor == tensor) {
+      return name;
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<absl::string_view> FindCanonicalSignatureOutputName(
+    const LiteRtSignatureT& signature, LiteRtTensor tensor) {
+  if (tensor == nullptr) {
+    return std::nullopt;
+  }
+  for (const std::string& name : signature.OutputNames()) {
+    Expected<LiteRtTensor> sig_tensor = signature.FindOutputTensor(name);
+    if (sig_tensor.HasValue() && *sig_tensor == tensor) {
+      return name;
+    }
+  }
+  return std::nullopt;
+}
+
+}  // namespace
 
 TfLiteStatus SetCustomAllocationForInputTensor(
     tflite::Interpreter* interpreter,
@@ -135,6 +175,69 @@ Expected<TfLiteTensorIdentifier> GetTensorIdentifier(
   }
   return Unexpected(kLiteRtStatusErrorNotFound,
                     "Tensor not found in interpreter");
+}
+
+Expected<DispatchDelegateVendorOptions> BuildDispatchDelegateVendorOptions(
+    const LiteRtModelT& model) {
+  DispatchDelegateVendorOptions vendor_options;
+
+  // It is OK not to have any signatures. We are building the map only for
+  // signature-aware models.
+  if (model.Signatures().empty()) {
+    return vendor_options;
+  }
+
+  for (LiteRtSignature signature : model.Signatures()) {
+    if (!signature) {
+      continue;
+    }
+    absl::string_view sig_key = signature->Key();
+    const LiteRtSubgraphT& subgraph = signature->GetSubgraph();
+    // Go over all ops in the subgraph and pull out the function names.
+    for (LiteRtOp op : subgraph.Ops()) {
+      if (op->OpCode() != kLiteRtOpCodeTflCustom) {
+        continue;
+      }
+      LITERT_ASSIGN_OR_RETURN(absl::string_view custom_code, op->CustomCode());
+      if (custom_code == litert::internal::kLiteRtDispatchOpCustomName &&
+          op->CustomOptions().Size() > 0) {
+        litert::internal::DispatchOpOptions op_opts =
+            litert::internal::GetDispatchOpOptions(op->CustomOptions());
+        if (!op_opts.name.empty()) {
+          FunctionMapping mapping;
+          mapping.function_name = op_opts.name;
+          mapping.signature_name = std::string(sig_key);
+
+          mapping.input_tensor_ports.reserve(op->Inputs().size());
+          for (int port_index = 0; port_index < op->Inputs().size();
+               ++port_index) {
+            LiteRtTensor input_tensor = op->Inputs()[port_index];
+            std::optional<absl::string_view> canonical_name =
+                FindCanonicalSignatureInputName(*signature, input_tensor);
+            if (canonical_name.has_value() && !canonical_name->empty()) {
+              mapping.input_tensor_ports.push_back(
+                  {std::string(*canonical_name), port_index});
+            }
+          }
+
+          mapping.output_tensor_ports.reserve(op->Outputs().size());
+          for (int port_index = 0; port_index < op->Outputs().size();
+               ++port_index) {
+            LiteRtTensor output_tensor = op->Outputs()[port_index];
+            std::optional<absl::string_view> canonical_name =
+                FindCanonicalSignatureOutputName(*signature, output_tensor);
+            if (canonical_name.has_value() && !canonical_name->empty()) {
+              mapping.output_tensor_ports.push_back(
+                  {std::string(*canonical_name), port_index});
+            }
+          }
+
+          vendor_options.AddFunctionMapping(std::move(mapping));
+        }
+      }
+    }
+  }
+  return vendor_options;
 }
 
 }  // namespace litert::internal
