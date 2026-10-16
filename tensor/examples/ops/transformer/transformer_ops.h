@@ -16,6 +16,8 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_OPS_TRANSFORMER_TRANSFORMER_OPS_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_OPS_TRANSFORMER_TRANSFORMER_OPS_H_
 
+#include <algorithm>
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -172,7 +174,7 @@ Tensor<Mixins...> RepeatKVHeads(const Tensor<Mixins...>& x, int num_groups) {
 // Attention(Q, K, V) = softmax(soft_cap(Q * K^T * scale) + mask) * V
 //
 // attention_mask: added to the logits after soft-capping; broadcastable to
-//   [batch, num_heads, seq_len_q, seq_len_kv]. An invalid tensor (the default)
+//   [..., num_heads, seq_len_q, seq_len_kv]. An invalid tensor (the default)
 //   means no mask is applied.
 // scale: if set, the logits are multiplied by it; the logits are left as-is
 //   otherwise.
@@ -182,11 +184,16 @@ Tensor<Mixins...> RepeatKVHeads(const Tensor<Mixins...>& x, int num_groups) {
 //   materialized; in that case an untyped `q` and an unset `datatype` are an
 //   error, as there is nothing left to deduce the constant type from.
 //
-// Expected tensor shapes:
-//   q: [batch, num_heads, seq_len_q, head_dim]
-//   k: [batch, num_heads, seq_len_kv, head_dim]
-//   v: [batch, num_heads, seq_len_kv, head_dim]
-//   output: [batch, num_heads, seq_len_q, head_dim]
+// Expected tensor shapes (any leading dimensions are batch dimensions, shared
+// by q, k and v):
+//   q: [..., num_heads, seq_len_q, head_dim]
+//   k: [..., num_kv_heads, seq_len_kv, head_dim]
+//   v: [..., num_kv_heads, seq_len_kv, head_dim]
+//   output: [..., num_heads, seq_len_q, head_dim]
+//
+// Note: Grouped-query attention: when `num_kv_heads` < `num_heads`, `num_heads`
+// must be a multiple of `num_kv_heads` and query head `h` attends to KV head
+// `h / (num_heads / num_kv_heads)` (i.e. the copies of a KV head are adjacent).
 //
 // Returns an error tensor if the constant type cannot be resolved or if
 // `soft_cap` is zero.
@@ -210,7 +217,53 @@ Tensor<Mixins...> ScaledDotProductAttention(
     scope.Attr("soft_cap", static_cast<double>(*soft_cap));
   }
 
-  Tensor scores = BatchMatMul(q, k, /*adj_x=*/false, /*adj_y=*/true);
+  // Grouped-query attention: fold the query heads that share a KV head into
+  // the rows of the matrix multiplication. Tensors are [..., heads, seq,
+  // head_dim]; any leading dimensions are batch dimensions shared by q and k.
+  struct GroupedDims {
+    int num_heads;
+    int num_kv_heads;
+    int seq_len_q;
+    int head_dim;
+    int num_groups() const { return num_heads / num_kv_heads; }
+  };
+  const Shape& q_shape = q.GetShape();
+  const Shape& k_shape = k.GetShape();
+  const size_t rank = q_shape.size();
+  const size_t head_axis = rank >= 3 ? rank - 3 : 0;
+  // Only set when the query heads are grouped.
+  std::optional<GroupedDims> grouped;
+  if (rank >= 3 && k_shape.size() == rank &&
+      std::equal(q_shape.begin(), q_shape.begin() + head_axis,
+                 k_shape.begin()) &&
+      k_shape[head_axis] > 0 && q_shape[head_axis] != k_shape[head_axis] &&
+      q_shape[head_axis] % k_shape[head_axis] == 0) {
+    grouped = GroupedDims{.num_heads = q_shape[head_axis],
+                          .num_kv_heads = k_shape[head_axis],
+                          .seq_len_q = q_shape[head_axis + 1],
+                          .head_dim = q_shape[head_axis + 2]};
+  }
+  // Returns the batch dimensions of `q` followed by `heads, rows, cols`.
+  auto BatchDimsShape = [&](int heads, int rows, int cols) {
+    std::vector<int> shape(q_shape.begin(), q_shape.begin() + head_axis);
+    shape.insert(shape.end(), {heads, rows, cols});
+    return shape;
+  };
+
+  Tensor<Mixins...> q_rows = q;
+  if (grouped) {
+    // [..., H, Sq, D] -> [..., Hkv, G * Sq, D]
+    q_rows =
+        Reshape(q, BatchDimsShape(grouped->num_kv_heads,
+                                  grouped->num_groups() * grouped->seq_len_q,
+                                  grouped->head_dim));
+  }
+  Tensor scores = BatchMatMul(q_rows, k, /*adj_x=*/false, /*adj_y=*/true);
+  if (grouped) {
+    // [..., Hkv, G * Sq, Skv] -> [..., H, Sq, Skv] so that the mask broadcasts.
+    scores = Reshape(scores, BatchDimsShape(grouped->num_heads,
+                                            grouped->seq_len_q, kInferredDim));
+  }
 
   const bool scale_constant_needed = scale.has_value() && *scale != 1.0f;
   if (datatype == Type::kUnknown) {
@@ -250,7 +303,19 @@ Tensor<Mixins...> ScaledDotProductAttention(
   }
 
   Tensor attention_weights = Softmax(scores);
+  if (grouped) {
+    attention_weights =
+        Reshape(attention_weights,
+                BatchDimsShape(grouped->num_kv_heads,
+                               grouped->num_groups() * grouped->seq_len_q,
+                               kInferredDim));
+  }
+
   Tensor out = BatchMatMul(attention_weights, v);
+  if (grouped) {
+    out = Reshape(out, BatchDimsShape(grouped->num_heads, grouped->seq_len_q,
+                                      grouped->head_dim));
+  }
   scope.Bind("output", out.GetRaw());
   return out;
 }

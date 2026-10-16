@@ -128,19 +128,6 @@ absl::StatusOr<AttentionOutput<Mixins...>> Attention(
     updated_value_cache = v;
   }
 
-  // Keep the original KV heads for cache updates and cross-layer sharing.
-  Tensor<Mixins...> k_for_attn_untiled = k_for_attn;
-  Tensor<Mixins...> v_for_attn_untiled = v_for_attn;
-
-  int num_groups = config.num_heads / config.num_kv_heads;
-  // BatchMatMul broadcasts a single KV head to all query heads. Avoid an
-  // explicit Tile, which can leave an unsupported broadcast when XNNPACK's
-  // consistent arithmetic mode prevents its optimizer rewrite.
-  if (num_groups > 1 && config.num_kv_heads > 1) {
-    k_for_attn = RepeatKVHeads(k_for_attn, num_groups);
-    v_for_attn = RepeatKVHeads(v_for_attn, num_groups);
-  }
-
   Tensor context =
       ScaledDotProductAttention(q, k_for_attn, v_for_attn, attention_mask,
                                 /*scale=*/1.0f, config.attn_logits_soft_cap);
@@ -154,9 +141,8 @@ absl::StatusOr<AttentionOutput<Mixins...>> Attention(
       weights.Get(absl::StrCat(name, ".o_proj.weight")));
 
   Tensor output = FullyConnected(context, o_proj);
-  return AttentionOutput<Mixins...>{output, updated_key_cache,
-                                    updated_value_cache, k_for_attn_untiled,
-                                    v_for_attn_untiled};
+  return AttentionOutput<Mixins...>{
+      output, updated_key_cache, updated_value_cache, k_for_attn, v_for_attn};
 }
 
 }  // namespace litert::tensor::examples::gemma4
