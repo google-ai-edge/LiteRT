@@ -83,8 +83,8 @@ using ::litert::compiler::Tensor;
 // is a cap on tactic choice, not an upfront allocation.
 constexpr size_t kDefaultTensorRtWorkspaceBytes = 4096ULL << 20;
 constexpr size_t kDefaultMaxTensorRtFillBytes = 16ULL << 20;
-// Large enough to admit LLM vocab-projection heads (Gemma4's INT2 LM head
-// packs to ~100MB); float heads beyond this stay on the CPU.
+// Float FC weights beyond this stay on the CPU; quantized weights are not
+// capped (see IsFullyConnectedSupported).
 constexpr size_t kDefaultMaxTensorRtFullyConnectedWeightBytes = 256ULL << 20;
 
 template <typename T>
@@ -1575,13 +1575,17 @@ Expected<bool> IsFullyConnectedSupported(const Op& op) {
     LogFullyConnectedReject(op, "weights are not static ranked");
     return false;
   }
-  if (op.Inputs()[1].HasWeights() &&
+  const bool weights_float = IsFloatLike(op.Inputs()[1].ElementType());
+  // The byte cap keeps large float heads on the CPU; quantized weights are
+  // admitted whatever their size (Gemma 4 12B's INT4 head packs to 503 MB,
+  // the 26B-A4B's dense projections are blockwise INT4): they run on the
+  // GEMV plugin from the shared weight store, not as TensorRT constants.
+  if (weights_float && op.Inputs()[1].HasWeights() &&
       op.Inputs()[1].Weights().Bytes().size() >
           MaxTensorRtFullyConnectedWeightBytes()) {
-    LogFullyConnectedReject(op, "weights exceed configured byte cap");
+    LogFullyConnectedReject(op, "float weights exceed configured byte cap");
     return false;
   }
-  const bool weights_float = IsFloatLike(op.Inputs()[1].ElementType());
   // Reject FCs whose weight shape is listed in this env (comma-separated
   // "OUTxIN" entries), keeping specific problematic matmuls on the CPU.
   if (const char* disabled_shapes =
@@ -3436,9 +3440,10 @@ class TensorRtGraphBuilder {
   Expected<SubbyteGemvWeights> InspectSubbyteGemvWeights(const Tensor& tensor) {
     const auto element_type = tensor.ElementType();
     if (element_type != litert::ElementType::Int2 &&
-        element_type != litert::ElementType::Int4) {
+        element_type != litert::ElementType::Int4 &&
+        element_type != litert::ElementType::Int8) {
       return Error(kLiteRtStatusErrorUnsupported,
-                   "CUDA subbyte GEMV requires INT2 or INT4 weights");
+                   "CUDA subbyte GEMV requires INT2, INT4 or INT8 weights");
     }
     if (!tensor.HasWeights()) {
       return Error(kLiteRtStatusErrorUnsupported,
@@ -3487,7 +3492,9 @@ class TensorRtGraphBuilder {
       }
     }
     SubbyteGemvWeights info;
-    info.bit_width = element_type == litert::ElementType::Int2 ? 2 : 4;
+    info.bit_width = element_type == litert::ElementType::Int2   ? 2
+                     : element_type == litert::ElementType::Int4 ? 4
+                                                                 : 8;
     info.rows = dims[0];
     info.columns = dims[1];
     const size_t expected_bytes =
@@ -6391,10 +6398,19 @@ class TensorRtGraphBuilder {
     std::vector<TiledMask> tiled_masks;
     size_t num_global = 0;
     for (const auto& update : subgraph.Ops()) {
-      if (update.Code() != kLiteRtOpCodeTflDynamicUpdateSlice) {
+      // The key cache's in-place update: a dynamic update slice, or the
+      // odml.cache_update composite lowered natively (Gemma 4 12B and 26B;
+      // its key cache is input 3, its updated key cache output 0).
+      const bool composite_update =
+          update.Code() == kLiteRtOpCodeShloComposite &&
+          update.Inputs().size() == 7 && update.Outputs().size() == 2 &&
+          CompositeOpName(update) == "odml.cache_update";
+      if (update.Code() != kLiteRtOpCodeTflDynamicUpdateSlice &&
+          !composite_update) {
         continue;
       }
-      const auto info = in_place_caches_.find(update.Inputs()[0].Get());
+      const Tensor k_cache = update.Inputs()[composite_update ? 3 : 0];
+      const auto info = in_place_caches_.find(k_cache.Get());
       if (info == in_place_caches_.end() || info->second.op != update.Get() ||
           info->second.partial_axis != 2) {
         continue;
@@ -7562,6 +7578,15 @@ class TensorRtGraphBuilder {
     const bool sub_byte_weights =
         op.Inputs()[1].ElementType() == litert::ElementType::Int4 ||
         op.Inputs()[1].ElementType() == litert::ElementType::Int2;
+    // INT8 per-channel weights (Gemma 4 E2B/E4B's per-layer embedding gate
+    // and projection, two small products per layer) take the batched CUDA
+    // GEMV over decode and verify rows too: TensorRT otherwise dequantizes
+    // them every step and runs a generic matmul kernel, three launches where
+    // the plugin needs one. Over many rows they keep TensorRT's GEMM.
+    const bool byte_weights =
+        op.Inputs()[1].ElementType() == litert::ElementType::Int8 &&
+        op.Inputs()[1].HasWeights() &&
+        op.Inputs()[1].QTypeId() == kLiteRtQuantizationPerChannel;
     nvinfer1::DataType compute_type = sub_byte_weights
                                           ? nvinfer1::DataType::kHALF
                                           : nvinfer1::DataType::kFLOAT;
@@ -7636,10 +7661,12 @@ class TensorRtGraphBuilder {
       }
     }
     if (Fp16ActivationsEnabled() &&
-        predequant_mode == PredequantMode::kCudaGemv && sub_byte_weights &&
-        (static_m_is_one || cuda_batched_gemv ||
-         (cuda_gemm &&
-          (GetCudaGemmMode() == CudaGemmMode::kAll || blockwise)))) {
+        predequant_mode == PredequantMode::kCudaGemv &&
+        ((sub_byte_weights &&
+          (static_m_is_one || cuda_batched_gemv ||
+           (cuda_gemm &&
+            (GetCudaGemmMode() == CudaGemmMode::kAll || blockwise)))) ||
+         (byte_weights && (static_m_is_one || cuda_batched_gemv)))) {
       LITERT_ASSIGN_OR_RETURN(input, AddCastTensor(gemv_input, compute_type));
       auto fused = AddCudaSubbyteGemvGroup(op, input, compute_type, norm_ptr);
       if (fused.HasValue()) {

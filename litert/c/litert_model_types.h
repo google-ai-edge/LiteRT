@@ -240,6 +240,29 @@ typedef struct LiteRtModelSerializationOptions {
   size_t bytecode_alignment;
 } LiteRtModelSerializationOptions;
 
+// Describes how the memory holding a loaded model (and any bytecode assets
+// embedded in it) was allocated. This lets consumers of the model memory (e.g.
+// NPU dispatch runtimes) decide whether resident pages can be safely discarded
+// after use: pages of a file-backed mapping are reloaded from the file on the
+// next access, whereas discarding anonymous/heap pages destroys their content.
+//
+// Note: This concrete type is shared with LiteRT runtime and Dispatch APIs, so
+// it must be ABI stable. Zero is reserved for "unknown" so zero-initialized
+// structs carrying this type default to the conservative behavior.
+typedef enum LiteRtModelAllocationType {
+  // The allocation type is not known. Consumers must assume the memory cannot
+  // be discarded.
+  kLiteRtModelAllocationTypeUnknown = 0,
+  // The model lives in host memory that is not known to be file-backed, e.g.
+  // a heap buffer, std::vector or a caller-provided buffer (see
+  // LiteRtCreateModelFromBuffer). Pages must not be discarded.
+  kLiteRtModelAllocationTypeHostMemory = 1,
+  // The model is a read-only mmap of a file (see LiteRtCreateModelFromFile and
+  // LiteRtCreateModelFromFd). Clean pages may be discarded and will be
+  // transparently reloaded from the backing file.
+  kLiteRtModelAllocationTypeFileBackedMmap = 2,
+} LiteRtModelAllocationType;
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
