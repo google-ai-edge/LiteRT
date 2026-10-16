@@ -72,6 +72,29 @@ LiteRtStatus CreateOpenVinoTensorBuffer(
   return kLiteRtStatusOk;
 }
 
+// import_func: `hw_buffer_handle` is the CPU-visible data pointer of an
+// existing OpenVINO tensor buffer (e.g. its Lock()ed data; for the NPU and GPU
+// devices, a host tensor allocated by the device's remote context). The result
+// is a non-owning ov::Tensor view onto that memory.
+LiteRtStatus ImportOpenVinoTensorBuffer(
+    LiteRtGpuDeviceId device_id, LiteRtGpuQueueId queue_id,
+    const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, HwMemoryHandle hw_buffer_handle,
+    size_t bytes, size_t packed_bytes, HwMemoryInfoPtr* hw_memory_info) {
+  auto memory_info = std::make_unique<HwMemoryInfo>();
+  auto custom_tensor_buffer = std::make_unique<OpenVinoTensorBuffer>();
+  litert::Expected<void> result =
+      custom_tensor_buffer->Wrap(*tensor_type, hw_buffer_handle, bytes);
+  if (!result) {
+    LITERT_LOG(LITERT_ERROR, "Failed to wrap OpenVino tensor buffer: %s",
+               result.Error().Message().c_str());
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  memory_info->memory_handle = custom_tensor_buffer.release();
+  *hw_memory_info = memory_info.release();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus DestroyOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   OpenVinoTensorBuffer* custom_tensor_buffer =
       reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_info->memory_handle);
@@ -464,7 +487,7 @@ LiteRtCustomTensorBufferHandlersDef TheTensorBufferHandlers = {
     .lock_func = litert::openvino::LockOpenVinoTensorBuffer,
     .unlock_func = litert::openvino::UnlockOpenVinoTensorBuffer,
     .clear_func = nullptr,
-    .import_func = nullptr,
+    .import_func = litert::openvino::ImportOpenVinoTensorBuffer,
     .device_tag = kLiteRtEnvOptionTagNull,
     .queue_tag = kLiteRtEnvOptionTagNull,
     .num_supported_buffer_types = 1,

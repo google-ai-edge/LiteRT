@@ -20,7 +20,6 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
-#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -36,10 +35,8 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/internal/litert_tensor_buffer_registry.h"
-#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_webgpu_types.h"
@@ -50,7 +47,6 @@
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/event.h"
-#include "litert/runtime/tensor_buffer_registry.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/open_cl_memory.h"
@@ -455,6 +451,24 @@ LiteRtTensorBufferT::CreateManagedFastRpcBuffer(
                                  litert::internal::FastRpcBuffer::Free);
 }
 #endif  // LITERT_HAS_FASTRPC_SUPPORT
+
+Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromCustomHandle(
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    LiteRtTensorBufferType buffer_type, HwMemoryHandle handle,
+    size_t buffer_size) {
+  LITERT_ASSIGN_OR_RETURN(size_t packed_size,
+                          GetNumPackedBytesAllowEmptyScalar(tensor_type));
+  LITERT_ASSIGN_OR_RETURN(
+      auto custom_buffer,
+      litert::internal::CustomBuffer::Wrap(env, tensor_type, buffer_type,
+                                           handle, buffer_size, packed_size));
+
+  Ptr tensor_buffer(
+      new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
+  tensor_buffer->buffer_.emplace<litert::internal::CustomBuffer>(
+      std::move(custom_buffer));
+  return tensor_buffer;
+}
 
 #if LITERT_HAS_OPENCL_SUPPORT
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromOpenClMemory(
