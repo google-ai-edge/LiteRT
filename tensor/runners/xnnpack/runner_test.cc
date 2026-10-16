@@ -42,6 +42,13 @@ struct XnnpackTestTraits {
   static constexpr bool kSupportsTransposeConv2D = true;
   static constexpr bool kSupportsResize = true;
   static constexpr bool kSupportsSoftmaxBeta = false;
+  // TODO(b/574438217): Enable once the XNNPACK backend is fixed. Its squeeze
+  // freezes the dimensions it keeps, so reshaping the input fails in
+  // `xnn_reshape_runtime`.
+  static constexpr bool kSupportsSqueezeOfReshapedInput = false;
+  // TODO(b/574438217): Enable once the XNNPACK backend rejects squeezing a
+  // dimension whose extent isn't 1.
+  static constexpr bool kRejectsInvalidSqueeze = false;
 };
 
 INSTANTIATE_TYPED_TEST_SUITE_P(Xnnpack, NnpackRunnerTest, XnnpackTestTraits);
