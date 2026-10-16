@@ -8,8 +8,12 @@ load("//litert/build_common:special_rule.bzl", "gles_deps", "litert_gpu_accelera
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = [
-        "//litert:litert_internal_users",
-        "//third_party/odml/litert_lm:__subpackages__",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_internal_users",
+        # "//third_party/odml/litert_lm:__subpackages__",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
 )
 
@@ -768,7 +772,6 @@ cc_library(
     name = "gpu_environment_util",
     srcs = ["gpu_environment_util.cc"],
     hdrs = ["gpu_environment_util.h"],
-    visibility = ["//third_party/odml/litert_lm:__subpackages__"],
     deps = [
         ":shared_vulkan_env",
         "//litert/c:litert_common",

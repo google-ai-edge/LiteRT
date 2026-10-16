@@ -25,7 +25,6 @@ load(
     "//litert/build_common:special_rule.bzl",
     "friends_of_litert_runtime_builtin_static",
     "get_compatible_with_portable",
-    "litert_jni_friends",
 )
 
 package(
@@ -715,10 +714,7 @@ cc_library(
     name = "litert_runtime_builtin_none",
     srcs = ["litert_runtime_builtin.cc"],
     local_defines = ["LITERT_CC_RUNTIME_BUILTIN_NONE"],
-    visibility = litert_jni_friends() + [
-        "//litert/cc/internal:__pkg__",
-        "//litert/kotlin:__pkg__",
-    ],
+    visibility = ["//visibility:public"],
     deps = [
         ":litert_logging",
         ":litert_runtime_builtin_header",

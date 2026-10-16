@@ -125,6 +125,10 @@ genrule(
 py_binary(
     name = "generate_build_identifier_py",
     srcs = ["generate_build_identifier.py"],
+    # Disable implicit __init__.py creation in OSS runfiles so @jinja2 is not shadowed.
+    # copybara:comment_begin(oss-only)
+    legacy_create_init = 0,
+    # copybara:comment_end
     main = "generate_build_identifier.py",
     tags = ["notap"],  # This should only be built as part of the related genrule.
 )
