@@ -53,7 +53,6 @@ cc_test(
         "//tensor:datatypes",
         "//tensor/backends/ynnpack:arithmetic",
         "//tensor/runners/common_nnpack:runner_test_suite",
-        "//tensor/utils:matchers",
         "@XNNPACK//ynnpack",
         "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest_main",
