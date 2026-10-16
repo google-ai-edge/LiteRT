@@ -198,7 +198,6 @@ YNNPACK_DONT_REGISTER = [
 
 BUILTIN_MODELS_DONT_REGISTER = [
     "simple_add_dynamic_shape",
-    "torchaudio_conformer",
 ]
 
 GPU_MODELS_DONT_REGISTER = [
