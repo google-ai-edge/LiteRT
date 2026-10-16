@@ -57,35 +57,30 @@ class ShortConvStepFloatTest : public ::ml_drift::FloatTest {
   }
 };
 
-absl::Status RunShortConvStepTest(
-    ::ml_drift::TestExecutionEnvironment& env,
-    ::ml_drift::CalculationsPrecision precision,
-    ::ml_drift::TensorStorageType storage,
-    int hidden_size,
-    bool with_bias) {
-  const int conv_L_cache = 3;
+absl::Status RunShortConvStepTest(::ml_drift::TestExecutionEnvironment& env,
+                                  ::ml_drift::CalculationsPrecision precision,
+                                  ::ml_drift::TensorStorageType storage,
+                                  int hidden_size, bool with_bias,
+                                  int conv_L_cache = 3, bool is_gated = true,
+                                  bool use_silu = false) {
+  const int state_len = conv_L_cache - 1;
+  const int in_channels = is_gated ? (3 * hidden_size) : hidden_size;
   const int num_slices = (hidden_size + 3) / 4;
   ::ml_drift::DataType data_type =
       ::ml_drift::DeduceDataTypeFromPrecision(precision);
 
-  // 1. in_proj [1, 1, 1, 3 * hidden_size]
+  // 1. in_proj [1, 1, 1, in_channels]
   ::ml_drift::TensorDescriptor in_proj_desc(data_type, storage,
                                             ::ml_drift::Layout::kBHWC);
-  in_proj_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, 3 * hidden_size));
+  in_proj_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, in_channels));
 
-  // 2. conv_state [1, 1, hidden_size, conv_L_cache - 1]
-  ::ml_drift::TensorDescriptor conv_state_desc(data_type, storage,
-                                               ::ml_drift::Layout::kBHWC);
-  conv_state_desc.SetBHWCShape(
-      ::ml_drift::BHWC(1, 1, hidden_size, conv_L_cache - 1));
-
-  // 3. conv_weight [hidden_size, 1, 1, conv_L_cache]
+  // 2. conv_weight [hidden_size, 1, 1, conv_L_cache]
   ::ml_drift::TensorDescriptor conv_weight_desc(data_type, storage,
                                                 ::ml_drift::Layout::kBHWC);
   conv_weight_desc.SetBHWCShape(
       ::ml_drift::BHWC(hidden_size, 1, 1, conv_L_cache));
 
-  // 4. conv_bias (optional) [1, 1, 1, hidden_size]
+  // 3. conv_bias (optional) [1, 1, 1, hidden_size]
   std::unique_ptr<::ml_drift::TensorDescriptor> conv_bias_desc = nullptr;
   if (with_bias) {
     conv_bias_desc = std::make_unique<::ml_drift::TensorDescriptor>(
@@ -93,44 +88,49 @@ absl::Status RunShortConvStepTest(
     conv_bias_desc->SetBHWCShape(::ml_drift::BHWC(1, 1, 1, hidden_size));
   }
 
-  // 5. dst [1, 1, 1, hidden_size]
+  // 4. dst [1, 1, 1, hidden_size]
   ::ml_drift::TensorDescriptor dst_desc(data_type, storage,
                                         ::ml_drift::Layout::kBHWC);
   dst_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, hidden_size));
 
-  // 6. next_state [1, 1, hidden_size, conv_L_cache - 1]
+  // 5. next_state (read and updated in-place) [1, 1, hidden_size, state_len]
   ::ml_drift::TensorDescriptor next_state_desc(data_type, storage,
                                                ::ml_drift::Layout::kBHWC);
-  next_state_desc.SetBHWCShape(
-      ::ml_drift::BHWC(1, 1, hidden_size, conv_L_cache - 1));
+  next_state_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, hidden_size, state_len));
 
   // Create Op
-  auto op = CreateFusedShortConvStep(
-      in_proj_desc, conv_state_desc, conv_weight_desc,
-      conv_bias_desc.get(), dst_desc, next_state_desc,
-      num_slices, hidden_size, conv_L_cache);
+  auto op = CreateFusedShortConvStep(in_proj_desc, conv_weight_desc,
+                                     conv_bias_desc.get(), dst_desc,
+                                     next_state_desc, num_slices, hidden_size,
+                                     conv_L_cache, is_gated, use_silu);
 
   // Synthesize input data
-  std::vector<float> in_proj_data(3 * hidden_size);
-  // b in [0, hidden_size), c in [hidden_size, 2*hidden_size),
-  // x in [2*hidden_size, 3*hidden_size)
-  for (int i = 0; i < hidden_size; ++i) {
-    in_proj_data[i] = 0.5f + 0.1f * (i % 7);                        // b
-    in_proj_data[hidden_size + i] = 1.2f - 0.05f * (i % 5);         // c
-    in_proj_data[2 * hidden_size + i] = 0.8f + 0.15f * (i % 9);     // x
+  std::vector<float> in_proj_data(in_channels);
+  if (is_gated) {
+    for (int i = 0; i < hidden_size; ++i) {
+      in_proj_data[i] = 0.5f + 0.1f * (i % 7);                     // b
+      in_proj_data[hidden_size + i] = 1.2f - 0.05f * (i % 5);      // c
+      in_proj_data[2 * hidden_size + i] = 0.8f + 0.15f * (i % 9);  // x
+    }
+  } else {
+    for (int i = 0; i < hidden_size; ++i) {
+      in_proj_data[i] = -0.4f + 0.15f * (i % 9);
+    }
   }
 
-  std::vector<float> conv_state_data(hidden_size * 2);
+  std::vector<float> conv_state_data(hidden_size * state_len);
   for (int i = 0; i < hidden_size; ++i) {
-    conv_state_data[i * 2 + 0] = 0.2f * (i + 1);  // oldest
-    conv_state_data[i * 2 + 1] = 0.3f * (i + 1);  // newest
+    for (int t = 0; t < state_len; ++t) {
+      conv_state_data[i * state_len + t] = 0.1f * (t + 2) * ((i % 11) + 1);
+    }
   }
 
-  std::vector<float> conv_weight_data(hidden_size * 3);
+  std::vector<float> conv_weight_data(hidden_size * conv_L_cache);
   for (int i = 0; i < hidden_size; ++i) {
-    conv_weight_data[i * 3 + 0] = 0.1f + 0.01f * i;
-    conv_weight_data[i * 3 + 1] = 0.2f + 0.02f * i;
-    conv_weight_data[i * 3 + 2] = 0.3f + 0.03f * i;
+    for (int k = 0; k < conv_L_cache; ++k) {
+      conv_weight_data[i * conv_L_cache + k] =
+          0.1f * (k + 1) + 0.01f * (k + 1) * (i % 13);
+    }
   }
 
   std::vector<float> conv_bias_data;
@@ -141,9 +141,9 @@ absl::Status RunShortConvStepTest(
     }
   }
 
-  // Upload data
+  // Upload data (conv_state is uploaded into next_state_desc for in-place
+  // read/modify/write).
   in_proj_desc.UploadData(in_proj_data.data());
-  conv_state_desc.UploadData(conv_state_data.data());
   conv_weight_desc.UploadData(conv_weight_data.data());
   if (with_bias) {
     conv_bias_desc->UploadData(conv_bias_data.data());
@@ -152,11 +152,10 @@ absl::Status RunShortConvStepTest(
   // Initialize output buffers
   std::vector<float> zero_out(hidden_size, 0.0f);
   dst_desc.UploadData(zero_out.data());
-  std::vector<float> zero_state(hidden_size * 2, 0.0f);
-  next_state_desc.UploadData(zero_state.data());
+  next_state_desc.UploadData(conv_state_data.data());
 
-  std::vector<::ml_drift::TensorDescriptor*> src_cpu = {
-      &in_proj_desc, &conv_state_desc, &conv_weight_desc};
+  std::vector<::ml_drift::TensorDescriptor*> src_cpu = {&in_proj_desc,
+                                                        &conv_weight_desc};
   if (with_bias) {
     src_cpu.push_back(conv_bias_desc.get());
   }
@@ -169,37 +168,39 @@ absl::Status RunShortConvStepTest(
   std::vector<float> dst_result(hidden_size);
   dst_desc.DownloadData(dst_result.data());
 
-  std::vector<float> next_state_result(hidden_size * 2);
+  std::vector<float> next_state_result(hidden_size * state_len);
   next_state_desc.DownloadData(next_state_result.data());
 
   // Compute reference results
   const float tol =
       (precision == ::ml_drift::CalculationsPrecision::kF16) ? 1e-2f : 1e-4f;
   for (int i = 0; i < hidden_size; ++i) {
-    float b = in_proj_data[i];
-    float c = in_proj_data[hidden_size + i];
-    float x = in_proj_data[2 * hidden_size + i];
-    float p = b * x;
+    float p = 0.0f;
+    float c = 1.0f;
+    if (is_gated) {
+      float b = in_proj_data[i];
+      c = in_proj_data[hidden_size + i];
+      float x = in_proj_data[2 * hidden_size + i];
+      p = b * x;
+    } else {
+      p = in_proj_data[i];
+    }
 
-    float s0 = conv_state_data[i * 2 + 0];
-    float s1 = conv_state_data[i * 2 + 1];
-
-    float w0 = conv_weight_data[i * 3 + 0];
-    float w1 = conv_weight_data[i * 3 + 1];
-    float w2 = conv_weight_data[i * 3 + 2];
-
-    float conv_val = s0 * w0 + s1 * w1 + p * w2;
+    float conv_val = 0.0f;
+    for (int t = 0; t < state_len; ++t) {
+      conv_val += conv_state_data[i * state_len + t] *
+                  conv_weight_data[i * conv_L_cache + t];
+    }
+    conv_val += p * conv_weight_data[i * conv_L_cache + state_len];
     if (with_bias) {
       conv_val += conv_bias_data[i];
     }
-    float expected_y = c * conv_val;
-    float expected_next_s0 = s1;
-    float expected_next_s1 = p;
+    if (use_silu) {
+      conv_val = conv_val / (1.0f + std::exp(-conv_val));
+    }
+    float expected_y = is_gated ? (c * conv_val) : conv_val;
 
     float actual_y = dst_result[i];
-    float actual_next_s0 = next_state_result[i * 2 + 0];
-    float actual_next_s1 = next_state_result[i * 2 + 1];
-
     float max_err_y = std::max(tol, tol * std::abs(expected_y));
     if (std::abs(actual_y - expected_y) > max_err_y) {
       return absl::InternalError(absl::StrCat(
@@ -207,17 +208,17 @@ absl::Status RunShortConvStepTest(
           ", got ", actual_y,
           " (diff = ", std::abs(actual_y - expected_y), ")"));
     }
-    float max_err_s0 = std::max(tol, tol * std::abs(expected_next_s0));
-    if (std::abs(actual_next_s0 - expected_next_s0) > max_err_s0) {
-      return absl::InternalError(absl::StrCat(
-          "next_state[0] mismatch at channel ", i, ": expected ",
-          expected_next_s0, ", got ", actual_next_s0));
-    }
-    float max_err_s1 = std::max(tol, tol * std::abs(expected_next_s1));
-    if (std::abs(actual_next_s1 - expected_next_s1) > max_err_s1) {
-      return absl::InternalError(absl::StrCat(
-          "next_state[1] mismatch at channel ", i, ": expected ",
-          expected_next_s1, ", got ", actual_next_s1));
+
+    for (int t = 0; t < state_len; ++t) {
+      float expected_next_s =
+          (t + 1 < state_len) ? conv_state_data[i * state_len + t + 1] : p;
+      float actual_next_s = next_state_result[i * state_len + t];
+      float max_err_s = std::max(tol, tol * std::abs(expected_next_s));
+      if (std::abs(actual_next_s - expected_next_s) > max_err_s) {
+        return absl::InternalError(absl::StrCat(
+            "next_state[", t, "] mismatch at channel ", i, ": expected ",
+            expected_next_s, ", got ", actual_next_s));
+      }
     }
   }
 
@@ -230,6 +231,8 @@ struct ShortConvPrefillTestCase {
   std::optional<int> num_valid_tokens;
   int conv_l_cache;
   bool with_bias;
+  bool is_gated = true;
+  bool use_silu = false;
 };
 
 ::ml_drift::TensorDescriptor MakeTensorDesc(
@@ -262,17 +265,16 @@ absl::Status RunShortConvPrefillTest(
   const int conv_L_cache = test_case.conv_l_cache;
   const int num_state_taps = conv_L_cache - 1;
   const int num_slices = (hidden_size + 3) / 4;
+  const int in_channels = test_case.is_gated ? (3 * hidden_size) : hidden_size;
   const ::ml_drift::DataType data_type =
       ::ml_drift::DeduceDataTypeFromPrecision(precision);
 
   // The shapes follow how the delegate maps the composite operands to BHWC:
-  // in_proj [1, S, 3 * H] -> (1, 1, S, 3 * H), conv_state [1, H, L - 1] ->
+  // in_proj [1, S, C_in] -> (1, 1, S, C_in), next_state [1, H, L - 1] ->
   // (1, 1, H, L - 1), conv_weight [H, 1, L] -> (H, 1, 1, L), and 1D
   // num_valid_tokens [1] and conv_bias [H] -> (N, 1, 1, 1).
   ::ml_drift::TensorDescriptor in_proj_desc = MakeTensorDesc(
-      data_type, storage, ::ml_drift::BHWC(1, 1, seq_len, 3 * hidden_size));
-  ::ml_drift::TensorDescriptor conv_state_desc = MakeTensorDesc(
-      data_type, storage, ::ml_drift::BHWC(1, 1, hidden_size, num_state_taps));
+      data_type, storage, ::ml_drift::BHWC(1, 1, seq_len, in_channels));
   ::ml_drift::TensorDescriptor conv_weight_desc = MakeTensorDesc(
       data_type, storage, ::ml_drift::BHWC(hidden_size, 1, 1, conv_L_cache));
   std::unique_ptr<::ml_drift::TensorDescriptor> conv_bias_desc;
@@ -293,19 +295,25 @@ absl::Status RunShortConvPrefillTest(
       data_type, storage, ::ml_drift::BHWC(1, 1, hidden_size, num_state_taps));
 
   auto op = CreateFusedShortConvStep(
-      in_proj_desc, conv_state_desc, conv_weight_desc, conv_bias_desc.get(),
-      dst_desc, next_state_desc, num_slices, hidden_size, conv_L_cache,
-      num_valid_tokens_desc.get());
+      in_proj_desc, conv_weight_desc, conv_bias_desc.get(), dst_desc,
+      next_state_desc, num_slices, hidden_size, conv_L_cache,
+      test_case.is_gated, test_case.use_silu, num_valid_tokens_desc.get());
 
   // The inputs vary with both the token and the channel, so that reading the
   // wrong token, channel or tap changes the result.
-  std::vector<float> in_proj_data(seq_len * 3 * hidden_size);
+  std::vector<float> in_proj_data(seq_len * in_channels);
   for (int t = 0; t < seq_len; ++t) {
-    float* row = &in_proj_data[t * 3 * hidden_size];
-    for (int i = 0; i < hidden_size; ++i) {
-      row[i] = 0.2f + 0.1f * ((i + 3 * t) % 7);                      // B
-      row[hidden_size + i] = 1.2f - 0.15f * ((2 * i + t) % 5);       // C
-      row[2 * hidden_size + i] = -0.6f + 0.15f * ((i + 5 * t) % 9);  // x
+    float* row = &in_proj_data[t * in_channels];
+    if (test_case.is_gated) {
+      for (int i = 0; i < hidden_size; ++i) {
+        row[i] = 0.2f + 0.1f * ((i + 3 * t) % 7);                      // B
+        row[hidden_size + i] = 1.2f - 0.15f * ((2 * i + t) % 5);       // C
+        row[2 * hidden_size + i] = -0.6f + 0.15f * ((i + 5 * t) % 9);  // x
+      }
+    } else {
+      for (int i = 0; i < hidden_size; ++i) {
+        row[i] = -0.6f + 0.15f * ((i + 5 * t) % 9);
+      }
     }
   }
   std::vector<float> conv_state_data(hidden_size * num_state_taps);
@@ -335,7 +343,6 @@ absl::Status RunShortConvPrefillTest(
   }
 
   in_proj_desc.UploadData(in_proj_data.data());
-  conv_state_desc.UploadData(conv_state_data.data());
   conv_weight_desc.UploadData(conv_weight_data.data());
   if (test_case.with_bias) {
     conv_bias_desc->UploadData(conv_bias_data.data());
@@ -343,16 +350,15 @@ absl::Status RunShortConvPrefillTest(
   if (test_case.num_valid_tokens.has_value()) {
     num_valid_tokens_desc->UploadData(num_valid_tokens_data.data());
   }
-  // Fill the outputs with a sentinel so that elements the kernel does not
-  // write fail the comparison.
+  // Fill dst with a sentinel so that elements the kernel does not write fail
+  // the comparison; upload initial conv_state into next_state_desc for in-place
+  // update.
   const std::vector<float> dst_init(seq_len * hidden_size, -100.0f);
   dst_desc.UploadData(dst_init.data());
-  const std::vector<float> next_state_init(hidden_size * num_state_taps,
-                                           -100.0f);
-  next_state_desc.UploadData(next_state_init.data());
+  next_state_desc.UploadData(conv_state_data.data());
 
-  std::vector<::ml_drift::TensorDescriptor*> src_cpu = {
-      &in_proj_desc, &conv_state_desc, &conv_weight_desc};
+  std::vector<::ml_drift::TensorDescriptor*> src_cpu = {&in_proj_desc,
+                                                        &conv_weight_desc};
   if (test_case.with_bias) {
     src_cpu.push_back(conv_bias_desc.get());
   }
@@ -375,8 +381,8 @@ absl::Status RunShortConvPrefillTest(
     if (p < num_state_taps) {
       return conv_state_data[i * num_state_taps + p];
     }
-    const float* row = &in_proj_data[(p - num_state_taps) * 3 * hidden_size];
-    return row[i] * row[2 * hidden_size + i];
+    const float* row = &in_proj_data[(p - num_state_taps) * in_channels];
+    return test_case.is_gated ? (row[i] * row[2 * hidden_size + i]) : row[i];
   };
   const float tol =
       (precision == ::ml_drift::CalculationsPrecision::kF16) ? 1e-2f : 1e-4f;
@@ -386,8 +392,13 @@ absl::Status RunShortConvPrefillTest(
       for (int k = 0; k < conv_L_cache; ++k) {
         conv += conv_weight_data[i * conv_L_cache + k] * padded(i, t + k);
       }
+      if (test_case.use_silu) {
+        conv = conv / (1.0f + std::exp(-conv));
+      }
       const float expected =
-          in_proj_data[t * 3 * hidden_size + hidden_size + i] * conv;
+          test_case.is_gated
+              ? (in_proj_data[t * in_channels + hidden_size + i] * conv)
+              : conv;
       ABSL_RETURN_IF_ERROR(
           CheckNear("y", t, i, expected, dst_result[t * hidden_size + i], tol));
     }
@@ -536,6 +547,30 @@ TEST_P(ShortConvStepFloatTest, PrefillWithoutNumValidTokensConvLCache2) {
                                      .with_bias = false}));
 }
 
+TEST_P(ShortConvStepFloatTest, UngatedSiluConv4Small) {
+  ASSERT_OK(RunShortConvStepTest(*exec_env, precision(), storage(),
+                                 /*hidden_size=*/16, /*with_bias=*/false,
+                                 /*conv_L_cache=*/4, /*is_gated=*/false,
+                                 /*use_silu=*/true));
+}
+
+TEST_P(ShortConvStepFloatTest, UngatedSiluConv4FullSize) {
+  ASSERT_OK(RunShortConvStepTest(*exec_env, precision(), storage(),
+                                 /*hidden_size=*/6144, /*with_bias=*/false,
+                                 /*conv_L_cache=*/4, /*is_gated=*/false,
+                                 /*use_silu=*/true));
+}
+
+TEST_P(ShortConvStepFloatTest, PrefillUngatedSiluConv4Padded) {
+  ASSERT_OK(RunShortConvPrefillTest(*exec_env, precision(), storage(),
+                                    {.hidden_size = 64,
+                                     .seq_len = 16,
+                                     .num_valid_tokens = 11,
+                                     .conv_l_cache = 4,
+                                     .with_bias = false,
+                                     .is_gated = false,
+                                     .use_silu = true}));
+}
 INSTANTIATE_TEST_SUITE_P(
     ShortConvStepFloatTestSuite, ShortConvStepFloatTest,
     Combine(ValuesIn({::ml_drift::CalculationsPrecision::kF32,

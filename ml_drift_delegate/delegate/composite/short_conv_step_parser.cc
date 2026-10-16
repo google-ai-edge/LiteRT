@@ -55,6 +55,12 @@ ShortConvStepAttributes ParseShortConvStepAttributes(
     if (!flexbuffer_map["conv_L_cache"].IsNull()) {
       attr.conv_L_cache = flexbuffer_map["conv_L_cache"].AsInt32();
     }
+    if (!flexbuffer_map["is_gated"].IsNull()) {
+      attr.is_gated = flexbuffer_map["is_gated"].AsBool();
+    }
+    if (!flexbuffer_map["use_silu"].IsNull()) {
+      attr.use_silu = flexbuffer_map["use_silu"].AsBool();
+    }
   }
   return attr;
 }
@@ -94,6 +100,10 @@ void ShortConvStepOperationParser::Parse(const TfLiteNode* tflite_node,
   auto* node = graph->NewNode();
   node->operation.type = kShortConvStepType;
   for (int i = 0; i < tflite_node->inputs->size; ++i) {
+    // Input 1 (conv_state) is not added to the GPU node; the kernel reads and
+    // updates output 1 (next_state) in-place on GPU, matching
+    // odml.cache_update.
+    if (i == 1) continue;
     if (reader->IsConstantTensor(i)) {
       const ::ml_drift::Value* input = reader->AddConstInput(i, /*layout=*/{});
       graph->AddConsumer(node->id, input->id);

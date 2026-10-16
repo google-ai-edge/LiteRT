@@ -342,11 +342,6 @@ absl::Status DelegateKernel::InitializeGraphFloat32(
         }
       }
       if (force_fp32) {
-        auto inputs = graph.FindInputs(node->id);
-        if (inputs.size() >= 6 &&
-            inputs[5]->tensor.type == ::ml_drift::DataType::kFloat32) {
-          preserved_fp32_values.insert(inputs[5]->id);
-        }
         auto outputs = graph.FindOutputs(node->id);
         if (outputs.size() >= 2 &&
             outputs[1]->tensor.type == ::ml_drift::DataType::kFloat32) {
@@ -1282,13 +1277,6 @@ absl::Status DelegateKernel::InitializeIrModel(
         }
       }
       if (force_fp32) {
-        if (op->inputs.size() >= 6) {
-          const auto* in_tensor = ir_model->tensor(op->inputs[5]);
-          if (in_tensor &&
-              in_tensor->desc.GetDataType() == ::ml_drift::DataType::kFloat32) {
-            preserved_fp32_values.insert(op->inputs[5]);
-          }
-        }
         if (op->outputs.size() >= 2) {
           const auto* out_tensor = ir_model->tensor(op->outputs[1]);
           if (out_tensor && out_tensor->desc.GetDataType() ==

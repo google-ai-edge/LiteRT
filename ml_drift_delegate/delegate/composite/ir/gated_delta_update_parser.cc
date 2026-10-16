@@ -46,6 +46,9 @@ void GatedDeltaUpdateConvert(
   op->name = "gated_delta_update";
 
   for (int i = 0; i < tflite_node.inputs->size; ++i) {
+    // Skip input 5 (recurrent_state_in); we read and update output 1
+    // (recurrent_state_out) in-place.
+    if (i == 5) continue;
     if (tflite_node.inputs->data[i] != kTfLiteOptionalTensor) {
       ir_model.AddConsumer(tensor_map[tflite_node.inputs->data[i]], op->id);
     }
