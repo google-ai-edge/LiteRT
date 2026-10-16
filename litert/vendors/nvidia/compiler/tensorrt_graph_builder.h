@@ -79,10 +79,14 @@ bool IsTensorRtOpSupported(const litert::compiler::Op& op);
 // With a `weight_store`, the packed weights of the CUDA subbyte plugins that
 // are views of the model file are not copied into the plan: the plugins read
 // them in placeholder constants that stand for segments of the store.
+// `shared_cache_inputs` names the KV cache inputs another engine of the
+// process keeps in place (LiteRtNvidiaSharedCacheInputs): they get the
+// storage of this graph's own in-place caches.
 Expected<TensorRtBuildResult> BuildTensorRtEngine(
     const litert::compiler::Subgraph& subgraph,
     absl::Span<const std::string> read_only_value_cache_inputs = {},
-    TensorRtWeightStoreBuilder* weight_store = nullptr);
+    TensorRtWeightStoreBuilder* weight_store = nullptr,
+    absl::Span<const std::string> shared_cache_inputs = {});
 
 }  // namespace litert::nvidia
 

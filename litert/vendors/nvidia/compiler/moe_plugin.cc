@@ -32,7 +32,6 @@
 #include <memory>
 #include <mutex>
 #include <new>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -87,7 +86,6 @@ constexpr char kResidualMultiplierField[] = "residual_multiplier";
 constexpr int kFields = 19;
 constexpr int kPieces = 14;
 
-int CompactScalesMode();
 constexpr size_t kArenaAlignment = 256;
 constexpr size_t kStagingBytes = 32u << 20;
 
@@ -190,10 +188,6 @@ struct Registry {
   std::map<std::string, std::shared_ptr<Arena>> arenas;
   size_t device_bytes = 0;
   size_t host_bytes = 0;
-  // The layers whose plugins exist (their first piece's offset), for the
-  // compact-scale decision; -1 undecided, else 0 FP16 / 1 compact.
-  std::set<uint64_t> layers;
-  int compact_decision = -1;
 };
 
 Registry& GetRegistry() {
@@ -211,8 +205,6 @@ std::string ArenaKey(const MoeExpertSource& source) {
   key += std::to_string(source.dense_scale_type);
   key += ':';
   key += std::to_string(source.dense_hidden);
-  key += ":m";
-  key += std::to_string(CompactScalesMode());
   for (int i = 0; i < kPieces; ++i) {
     key += ':';
     key += std::to_string(source.offsets[i]);
@@ -233,24 +225,6 @@ struct ArenaLayout {
   std::array<size_t, 3> max_offsets{};
   size_t total = 0;
 };
-
-// LITERT_NVIDIA_MOE_COMPACT_SCALES: 1 (the default) stores a byte per block
-// as the fraction of the row's FP16 maximum, half the bytes of FP16 scales
-// (the 26B: 1.43 GB to 0.72, reproduced to 0.3% at the 99th percentile) at
-// the same decode speed once the format is a compile-time choice of the
-// kernels; 0 keeps FP16; auto takes the compact form only when the FP16
-// arenas of every layer would not all fit on the device beside the reserve,
-// decided at the first arena (which cannot see caches allocated later).
-int CompactScalesMode() {
-  static const int mode = [] {
-    const char* value = std::getenv("LITERT_NVIDIA_MOE_COMPACT_SCALES");
-    if (value == nullptr || value[0] == '\0') return 1;
-    if (std::strcmp(value, "0") == 0) return 0;
-    if (std::strcmp(value, "auto") == 0) return 2;
-    return 1;
-  }();
-  return mode;
-}
 
 // Whether piece i holds FP32 scales to convert; the three INT4 pieces and
 // the router's rows are copied.
@@ -375,8 +349,16 @@ class FileReader {
 std::shared_ptr<Arena> LoadArena(const MoeExpertSource& source, int32_t experts,
                                  int32_t model_dim, int32_t hidden_dim,
                                  std::string* error) {
+  // The arenas load before the engines' activations and the KV caches, so
+  // "free" here overstates what stays free. Gemma 4 26B-A4B's 30 layers take
+  // 11.6 GB and what follows them 3.1-4.4 GiB up to its 32k context with the
+  // drafter: on a 16 GB card every layer belongs on the device, and a layer
+  // in host memory costs a third of the decode speed. The reserve therefore
+  // only keeps the last layers off a nearly full device;
+  // LITERT_NVIDIA_MOE_DEVICE_RESERVE_MB raises it for cards where the model
+  // cannot fit whole, LITERT_NVIDIA_MOE_PLACEMENT=host|device forces a side.
   const uint64_t reserve = static_cast<uint64_t>(EnvInt64(
-                               "LITERT_NVIDIA_MOE_DEVICE_RESERVE_MB", 3072))
+                               "LITERT_NVIDIA_MOE_DEVICE_RESERVE_MB", 512))
                            << 20;
   const char* placement = std::getenv("LITERT_NVIDIA_MOE_PLACEMENT");
   const bool by_memory =
@@ -388,33 +370,13 @@ std::shared_ptr<Arena> LoadArena(const MoeExpertSource& source, int32_t experts,
     *error = "cudaMemGetInfo failed";
     return nullptr;
   }
-  // The scale format, once for every layer (the caller holds the registry).
-  Registry& registry = GetRegistry();
-  if (registry.compact_decision < 0) {
-    const int mode = CompactScalesMode();
-    bool compact = mode == 1;
-    if (mode == 2) {
-      ArenaLayout half;
-      if (!LayoutArena(source, experts, model_dim, hidden_dim, false, &half)) {
-        *error = "the expert pieces do not match the layer's shape";
-        return nullptr;
-      }
-      const size_t layers = std::max<size_t>(1, registry.layers.size());
-      const uint64_t all_half = static_cast<uint64_t>(half.total) * layers;
-      compact = by_memory && free_bytes < all_half + reserve;
-      std::fprintf(stderr,
-                   "[LiteRtNvidiaMoe] expert scales %s: %zu layers x %.1f MB "
-                   "as FP16 = %.2f GB against %.2f GB free less a %.2f GB "
-                   "reserve\n",
-                   compact ? "compact (a byte per block)" : "FP16", layers,
-                   half.total / 1048576.0, all_half / 1073741824.0,
-                   free_bytes / 1073741824.0, reserve / 1073741824.0);
-    }
-    registry.compact_decision = compact ? 1 : 0;
-  }
+  // The experts' block scales are stored compact: a byte per block as the
+  // fraction of the row's FP16 maximum, half the bytes of FP16 scales (the
+  // 26B: 1.43 GB to 0.72, reproduced to 0.3% at the 99th percentile) at the
+  // same decode speed, the format being a compile-time choice of the kernels.
   ArenaLayout layout;
-  if (!LayoutArena(source, experts, model_dim, hidden_dim,
-                   registry.compact_decision == 1, &layout)) {
+  if (!LayoutArena(source, experts, model_dim, hidden_dim, /*compact=*/true,
+                   &layout)) {
     *error = "the expert pieces do not match the layer's shape";
     return nullptr;
   }
@@ -660,12 +622,6 @@ class MoePlugin final : public nvinfer1::IPluginV3,
     for (int i = 0; i < kPieces; ++i) {
       offsets_[i] = static_cast<int64_t>(source_.offsets[i]);
       sizes_[i] = static_cast<int64_t>(source_.sizes[i]);
-    }
-    {
-      // One layer per distinct expert piece, for the scale-format decision.
-      Registry& registry = GetRegistry();
-      std::lock_guard<std::mutex> lock(registry.mutex);
-      registry.layers.insert(source_.offsets[0]);
     }
     fields_ = {{
         {kExpertsField, &experts_, nvinfer1::PluginFieldType::kINT32, 1},

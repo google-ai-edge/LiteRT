@@ -83,8 +83,8 @@ using ::litert::compiler::Tensor;
 // is a cap on tactic choice, not an upfront allocation.
 constexpr size_t kDefaultTensorRtWorkspaceBytes = 4096ULL << 20;
 constexpr size_t kDefaultMaxTensorRtFillBytes = 16ULL << 20;
-// Large enough to admit LLM vocab-projection heads (Gemma4's INT2 LM head
-// packs to ~100MB); float heads beyond this stay on the CPU.
+// Float FC weights beyond this stay on the CPU; quantized weights are not
+// capped (see IsFullyConnectedSupported).
 constexpr size_t kDefaultMaxTensorRtFullyConnectedWeightBytes = 256ULL << 20;
 
 template <typename T>
@@ -151,14 +151,15 @@ bool NativeKvCacheUpdateEnabled() {
 // -> probs @ V over in-place KV caches) fused into one CUDA plugin launch
 // that reads the cache update outputs directly, which spares the whole-cache
 // copies Myelin makes for its own consumers (~75 us per 35 MB global cache).
-// Off by default: the plugin's kernel (trtllm/decode_attention.cu) is not yet
-// faster than Myelin's FP16 matmul/softmax path on the RTX 5080 (global
-// block 210 us vs 285 us, local block 24 us vs 19 us), so decode measured
-// slower end to end. Set LITERT_NVIDIA_TENSORRT_DECODE_ATTENTION_PLUGIN=1 to
-// enable it.
+// On by default since the kernel's chunked split (trtllm/decode_attention.cu):
+// a Gemma 4 12B local block (8 KV heads, 2 rows, a 1,152-key ring) runs in
+// about 12 us against the 19 us of Myelin's matmul / transpose / softmax
+// chain, 48 of 48 blocks fuse and the 12B decodes 104 against 102 steps/s at
+// 2k, 96.3 against 95.5 at 30k. Set
+// LITERT_NVIDIA_TENSORRT_DECODE_ATTENTION_PLUGIN=0 to keep Myelin's lowering.
 bool DecodeAttentionPluginEnabled() {
   return EnvEnabled("LITERT_NVIDIA_TENSORRT_DECODE_ATTENTION_PLUGIN",
-                    /*default_value=*/false);
+                    /*default_value=*/true);
 }
 
 // Decode attention over INT8 per-tensor KV caches (Gemma 4 E4B) runs on the
@@ -1028,6 +1029,28 @@ std::optional<QkvNormRopeOp> ParseQkvNormRope(const Op& op) {
 // scores take the decomposition's fill of -10000). Returns Hq / H.
 constexpr float kSdpaTransposedFill = -10000.0f;
 
+// The tokens per query head of an attention block the CUDA attention plugin
+// runs, as given or after padding: the smallest n' >= `tokens` whose
+// group * n' rows fit the decode kernel (at most 16) or the tensor-core kernel
+// (a multiple of its row tile, n' dividing it). Gemma 4 26B's verify step
+// has 8 query heads x 5 tokens per KV head: 40 rows run as 48. nullopt when
+// no padding of up to 15 tokens does.
+std::optional<int32_t> SdpaTransposedPaddedTokens(int32_t group, int32_t tokens,
+                                                  int32_t depth) {
+  if (group < 1 || tokens < 1) {
+    return std::nullopt;
+  }
+  for (int32_t padded = tokens; padded < tokens + 16; ++padded) {
+    const int32_t rows = group * padded;
+    if (rows <= 16 ||
+        (LiteRtNvidiaGlobalAttentionSupports(rows, padded, depth) &&
+         kSdpaTransposedFill <= kMaxGlobalAttentionFill)) {
+      return padded;
+    }
+  }
+  return std::nullopt;
+}
+
 std::optional<int32_t> SdpaTransposedGroup(const Op& op) {
   if (op.Inputs().size() != 5 || op.Outputs().size() != 1) {
     return std::nullopt;
@@ -1067,12 +1090,11 @@ std::optional<int32_t> SdpaTransposedGroup(const Op& op) {
   if (depth != 128 && depth != 256 && depth != 512) {
     return std::nullopt;
   }
-  // Decode (a few query rows) runs the decode kernel; prefill the
-  // tensor-core kernel, which needs depth 512 and rows the mask rows divide.
-  const bool decode = rows <= 16;
-  const bool prefill = LiteRtNvidiaGlobalAttentionSupports(rows, q[2], depth) &&
-                       kSdpaTransposedFill <= kMaxGlobalAttentionFill;
-  if (!decode && !prefill) {
+  // Up to 16 rows run the decode kernel, a few tokens with more rows run it
+  // in chunks, many tokens the tensor-core kernel (depth 512, rows a multiple
+  // of its tile, padded otherwise: SdpaTransposedPaddedTokens).
+  if (rows > 16 && q[2] > 16 &&
+      !SdpaTransposedPaddedTokens(group, q[2], depth).has_value()) {
     return std::nullopt;
   }
   return group;
@@ -1377,8 +1399,13 @@ Expected<bool> IsCompositeSupported(const Op& op) {
     if (!SdpaTransposedGroup(op).has_value()) {
       return false;
     }
-    // The caches it reads are the outputs of an in-place cache update.
+    // The caches it reads are the outputs of an in-place cache update, or
+    // inputs of the graph: caches another engine keeps (a drafter reading
+    // its base model's caches).
     for (int i : {1, 2}) {
+      if (op.Inputs()[i].IsSubgraphInput()) {
+        continue;
+      }
       const auto producer = op.Inputs()[i].GetDefiningOp();
       if (!producer || producer->Code() != kLiteRtOpCodeShloComposite ||
           CompositeOpName(*producer) != "odml.cache_update" ||
@@ -1549,13 +1576,17 @@ Expected<bool> IsFullyConnectedSupported(const Op& op) {
     LogFullyConnectedReject(op, "weights are not static ranked");
     return false;
   }
-  if (op.Inputs()[1].HasWeights() &&
+  const bool weights_float = IsFloatLike(op.Inputs()[1].ElementType());
+  // The byte cap keeps large float heads on the CPU; quantized weights are
+  // admitted whatever their size (Gemma 4 12B's INT4 head packs to 503 MB,
+  // the 26B-A4B's dense projections are blockwise INT4): they run on the
+  // GEMV plugin from the shared weight store, not as TensorRT constants.
+  if (weights_float && op.Inputs()[1].HasWeights() &&
       op.Inputs()[1].Weights().Bytes().size() >
           MaxTensorRtFullyConnectedWeightBytes()) {
-    LogFullyConnectedReject(op, "weights exceed configured byte cap");
+    LogFullyConnectedReject(op, "float weights exceed configured byte cap");
     return false;
   }
-  const bool weights_float = IsFloatLike(op.Inputs()[1].ElementType());
   // Reject FCs whose weight shape is listed in this env (comma-separated
   // "OUTxIN" entries), keeping specific problematic matmuls on the CPU.
   if (const char* disabled_shapes =
@@ -2504,10 +2535,13 @@ class TensorRtGraphBuilder {
   Expected<TensorRtBuildResult> Build(
       const Subgraph& subgraph,
       absl::Span<const std::string> read_only_value_cache_inputs,
-      TensorRtWeightStoreBuilder* weight_store) {
+      TensorRtWeightStoreBuilder* weight_store,
+      absl::Span<const std::string> shared_cache_inputs) {
     weight_store_ = weight_store;
     LITERT_RETURN_IF_ERROR(
         FindReadOnlyValueCaches(subgraph, read_only_value_cache_inputs));
+    LITERT_RETURN_IF_ERROR(
+        FindSharedCacheInputs(subgraph, shared_cache_inputs));
     memory_profiler_.Log("graph_build_begin");
     builder_.reset(nvinfer1::createInferBuilder(logger_));
     if (!builder_) {
@@ -2881,8 +2915,11 @@ class TensorRtGraphBuilder {
       // validates that physical layout using the advertised element strides.
       const auto in_place = in_place_caches_.find(input.Get());
       // A float32 cache updated in place is held as FP16 (see
-      // Fp16CacheStorageEnabled); the runtime's buffer is twice as large.
-      if (in_place != in_place_caches_.end() &&
+      // Fp16CacheStorageEnabled); the runtime's buffer is twice as large. A
+      // cache another engine keeps in place (shared_cache_inputs_) is read
+      // the way that engine stores it.
+      if ((in_place != in_place_caches_.end() ||
+           shared_cache_inputs_.count(input.Get()) != 0) &&
           type.ElementType() == litert::ElementType::Float32 &&
           Fp16CacheStorageEnabled()) {
         data_type = nvinfer1::DataType::kHALF;
@@ -3180,6 +3217,26 @@ class TensorRtGraphBuilder {
     return layer->getOutput(0);
   }
 
+  // An all-false boolean constant.
+  Expected<nvinfer1::ITensor*> AddFalseConstant(nvinfer1::Dims dims,
+                                                const std::string& name) {
+    size_t count = 1;
+    for (int i = 0; i < dims.nbDims; ++i) {
+      count *= static_cast<size_t>(dims.d[i]);
+    }
+    owned_weights_.emplace_back(count, 0);
+    nvinfer1::Weights weights{nvinfer1::DataType::kBOOL,
+                              owned_weights_.back().data(),
+                              static_cast<int64_t>(count)};
+    auto* layer = network_->addConstant(dims, weights);
+    if (layer == nullptr || layer->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add TensorRT boolean constant");
+    }
+    layer->getOutput(0)->setName(KeepName(UniqueName(name)));
+    return layer->getOutput(0);
+  }
+
   Expected<int8_t> ReadQuantizedConstantValue(const Tensor& tensor,
                                               size_t index) {
     const auto bytes = tensor.Weights().Bytes();
@@ -3384,9 +3441,10 @@ class TensorRtGraphBuilder {
   Expected<SubbyteGemvWeights> InspectSubbyteGemvWeights(const Tensor& tensor) {
     const auto element_type = tensor.ElementType();
     if (element_type != litert::ElementType::Int2 &&
-        element_type != litert::ElementType::Int4) {
+        element_type != litert::ElementType::Int4 &&
+        element_type != litert::ElementType::Int8) {
       return Error(kLiteRtStatusErrorUnsupported,
-                   "CUDA subbyte GEMV requires INT2 or INT4 weights");
+                   "CUDA subbyte GEMV requires INT2, INT4 or INT8 weights");
     }
     if (!tensor.HasWeights()) {
       return Error(kLiteRtStatusErrorUnsupported,
@@ -3435,7 +3493,9 @@ class TensorRtGraphBuilder {
       }
     }
     SubbyteGemvWeights info;
-    info.bit_width = element_type == litert::ElementType::Int2 ? 2 : 4;
+    info.bit_width = element_type == litert::ElementType::Int2   ? 2
+                     : element_type == litert::ElementType::Int4 ? 4
+                                                                 : 8;
     info.rows = dims[0];
     info.columns = dims[1];
     const size_t expected_bytes =
@@ -5355,6 +5415,11 @@ class TensorRtGraphBuilder {
             use.user_arg_ind == 4))) {
         continue;
       }
+      if (user.Code() == kLiteRtOpCodeShloComposite &&
+          CompositeOpName(user) == "odml.sdpa_transposed" &&
+          use.user_arg_ind == 2) {
+        continue;
+      }
       if (use.user_arg_ind != 1) {
         return false;
       }
@@ -5415,6 +5480,45 @@ class TensorRtGraphBuilder {
       return Error(kLiteRtStatusErrorInvalidArgument,
                    "Read-only value cache is not a partition input: " +
                        *remaining.begin());
+    }
+    return {};
+  }
+
+  // The KV caches another engine of the process keeps in place and this graph
+  // only reads (LiteRtNvidiaSharedCacheInputs, a drafter over its base
+  // model's caches): rank-4 inputs the graph uses. They are declared with the
+  // storage the in-place caches get and attention reads them like the
+  // outputs of an in-place update.
+  Expected<void> FindSharedCacheInputs(
+      const Subgraph& subgraph, absl::Span<const std::string> input_names) {
+    if (input_names.empty()) {
+      return {};
+    }
+    std::unordered_set<std::string> remaining(input_names.begin(),
+                                              input_names.end());
+    if (remaining.size() != input_names.size() || remaining.count("") != 0) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Shared cache input names must be nonempty and unique");
+    }
+    for (const Tensor& input : subgraph.Inputs()) {
+      const std::string name(input.Name());
+      if (remaining.erase(name) == 0) {
+        continue;
+      }
+      LITERT_ASSIGN_OR_RETURN(auto type, input.RankedTensorType());
+      if (type.Layout().Rank() != 4 || type.Layout().HasStrides() ||
+          input.Uses().empty()) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "Shared cache input must be a dense rank-4 tensor the "
+                     "graph reads: " +
+                         name);
+      }
+      shared_cache_inputs_.insert(input.Get());
+    }
+    if (!remaining.empty()) {
+      return Error(
+          kLiteRtStatusErrorInvalidArgument,
+          "Shared cache is not a partition input: " + *remaining.begin());
     }
     return {};
   }
@@ -5613,10 +5717,22 @@ class TensorRtGraphBuilder {
         continue;
       }
       const auto group = SdpaTransposedGroup(op);
-      if (!group.has_value() ||
-          in_place_outputs_.count(op.Inputs()[1].Get()) == 0 ||
-          in_place_outputs_.count(op.Inputs()[2].Get()) == 0 ||
-          !in_place_outputs_[op.Inputs()[2].Get()].transposed) {
+      if (!group.has_value()) {
+        continue;
+      }
+      // The caches: outputs of this graph's in-place updates, or caches
+      // another engine keeps (shared_cache_inputs_), whose value cache the
+      // read-only options declared transposed.
+      const LiteRtTensor k = op.Inputs()[1].Get();
+      const LiteRtTensor v = op.Inputs()[2].Get();
+      const bool k_ok =
+          in_place_outputs_.count(k) != 0 || shared_cache_inputs_.count(k) != 0;
+      const auto v_in_place = in_place_outputs_.find(v);
+      const bool v_ok = v_in_place != in_place_outputs_.end()
+                            ? v_in_place->second.transposed
+                            : shared_cache_inputs_.count(v) != 0 &&
+                                  transposed_caches_.count(v) != 0;
+      if (!k_ok || !v_ok) {
         continue;
       }
       DecodeAttentionBlock block;
@@ -6283,10 +6399,19 @@ class TensorRtGraphBuilder {
     std::vector<TiledMask> tiled_masks;
     size_t num_global = 0;
     for (const auto& update : subgraph.Ops()) {
-      if (update.Code() != kLiteRtOpCodeTflDynamicUpdateSlice) {
+      // The key cache's in-place update: a dynamic update slice, or the
+      // odml.cache_update composite lowered natively (Gemma 4 12B and 26B;
+      // its key cache is input 3, its updated key cache output 0).
+      const bool composite_update =
+          update.Code() == kLiteRtOpCodeShloComposite &&
+          update.Inputs().size() == 7 && update.Outputs().size() == 2 &&
+          CompositeOpName(update) == "odml.cache_update";
+      if (update.Code() != kLiteRtOpCodeTflDynamicUpdateSlice &&
+          !composite_update) {
         continue;
       }
-      const auto info = in_place_caches_.find(update.Inputs()[0].Get());
+      const Tensor k_cache = update.Inputs()[composite_update ? 3 : 0];
+      const auto info = in_place_caches_.find(k_cache.Get());
       if (info == in_place_caches_.end() || info->second.op != update.Get() ||
           info->second.partial_axis != 2) {
         continue;
@@ -6881,6 +7006,76 @@ class TensorRtGraphBuilder {
     return true;
   }
 
+  // The row plan of an attention block: query rows = group * tokens. Up to
+  // 16 rows run the decode kernel in one launch. A block of a few tokens
+  // whose heads bring the rows past 16 (Gemma 4 26B's verify step: 8 heads x
+  // 5 tokens per KV head) runs the decode kernel once per chunk of tokens
+  // that fits, over the same caches: the tensor-core kernel would parallelize
+  // over its three row tiles only and crawl through a long cache. Many tokens
+  // (prefill) run the tensor-core kernel, the tokens padded when the rows
+  // are not a multiple of its tile.
+  struct AttentionRowPlan {
+    int32_t chunk_tokens = 0;   // decode kernel per chunk of this many tokens
+    int32_t padded_tokens = 0;  // tensor-core kernel with the tokens padded
+  };
+
+  static std::optional<AttentionRowPlan> PlanAttentionRows(int32_t group,
+                                                           int32_t tokens,
+                                                           int32_t depth) {
+    if (group < 1 || tokens < 1) {
+      return std::nullopt;
+    }
+    const int32_t rows = group * tokens;
+    if (rows <= 16) {
+      return AttentionRowPlan{tokens, tokens};
+    }
+    if (tokens <= 16) {
+      return AttentionRowPlan{std::max<int32_t>(1, 16 / group), tokens};
+    }
+    const auto padded = SdpaTransposedPaddedTokens(group, tokens, depth);
+    if (!padded.has_value()) {
+      return std::nullopt;
+    }
+    return AttentionRowPlan{0, *padded};
+  }
+
+  // `input` [.., n, ..] sliced to `size` elements from `start` along `axis`.
+  Expected<nvinfer1::ITensor*> SliceTensorAxis(nvinfer1::ITensor* input,
+                                               int axis, int32_t start,
+                                               int32_t size) {
+    const nvinfer1::Dims dims = input->getDimensions();
+    nvinfer1::Dims begin{};
+    nvinfer1::Dims out = dims;
+    nvinfer1::Dims stride{};
+    begin.nbDims = stride.nbDims = dims.nbDims;
+    for (int i = 0; i < dims.nbDims; ++i) {
+      begin.d[i] = 0;
+      stride.d[i] = 1;
+    }
+    begin.d[axis] = start;
+    out.d[axis] = size;
+    auto* layer = network_->addSlice(*input, begin, out, stride);
+    if (layer == nullptr || layer->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add TensorRT slice layer");
+    }
+    return layer->getOutput(0);
+  }
+
+  Expected<nvinfer1::ITensor*> ConcatTensors(
+      std::vector<nvinfer1::ITensor*> parts, int axis, const char* what) {
+    if (parts.size() == 1) {
+      return parts[0];
+    }
+    auto* concat = network_->addConcatenation(parts.data(), parts.size());
+    if (concat == nullptr || concat->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   std::string("Failed to concatenate ") + what);
+    }
+    concat->setAxis(axis);
+    return concat->getOutput(0);
+  }
+
   Expected<void> LowerDecodeAttentionMember(size_t index) {
     auto& block = attention_blocks_[index];
     if (block.emitted) {
@@ -6900,15 +7095,6 @@ class TensorRtGraphBuilder {
     }
     nvinfer1::ITensor* k_cache = tensor_map_[block.k_out];
     nvinfer1::ITensor* v_cache = tensor_map_[block.v_out];
-    const nvinfer1::Dims q_dims_in = q->getDimensions();
-    if (block.group > 1) {
-      // The group's query heads become rows of their KV head: [1, Hq, n, D]
-      // -> [1, H, group * n, D], head-major within the group.
-      nvinfer1::Dims grouped = q_dims_in;
-      grouped.d[1] = q_dims_in.d[1] / block.group;
-      grouped.d[2] = q_dims_in.d[2] * block.group;
-      LITERT_ASSIGN_OR_RETURN(q, ReshapeTensor(q, grouped));
-    }
     if (block.int8_cache.has_value()) {
       // The quantized scatter lowering records the raw INT8 caches.
       k_cache = RawInt8Cache(block.k_out);
@@ -6918,21 +7104,10 @@ class TensorRtGraphBuilder {
                      "INT8 cache attention block has no raw INT8 caches");
       }
     }
-    nvinfer1::ITensor* mask = tensor_map_[block.mask];
-    if (block.group > 1 && q_dims_in.d[2] > 1 &&
-        mask->getDimensions().d[2] == q_dims_in.d[2] &&
-        q_dims_in.d[2] * block.group <= 16) {
-      // The decode kernel wants one mask row per query row: repeat the n
-      // rows for each head of the group, in the rows' head-major order.
-      std::vector<nvinfer1::ITensor*> copies(block.group, mask);
-      auto* concat = network_->addConcatenation(copies.data(), copies.size());
-      if (concat == nullptr || concat->getOutput(0) == nullptr) {
-        return Error(kLiteRtStatusErrorCompilation,
-                     "Failed to tile the attention mask over the group");
-      }
-      concat->setAxis(2);
-      mask = concat->getOutput(0);
-    }
+    const nvinfer1::Dims q_dims_in = q->getDimensions();
+    const int32_t tokens = static_cast<int32_t>(q_dims_in.d[2]);
+    const int32_t depth = static_cast<int32_t>(q_dims_in.d[3]);
+    nvinfer1::ITensor* mask_in = tensor_map_[block.mask];
     // A windowed block keeps the full caches and mask: the plugin reads
     // `window` keys from the start it is handed as a fifth input.
     int32_t window = 0;
@@ -6943,41 +7118,132 @@ class TensorRtGraphBuilder {
       window = read.length;
       window_start = read.start;
     }
-    TrtPtr<nvinfer1::IPluginV3> plugin(CreateDecodeAttentionPlugin(
-        block.fill, new_keys,
-        block.int8_cache.has_value() ? &*block.int8_cache : nullptr, window));
-    if (!plugin) {
-      return Error(kLiteRtStatusErrorCompilation,
-                   "Failed to create CUDA decode attention plugin");
-    }
-    std::vector<nvinfer1::ITensor*> inputs = {q, k_cache, v_cache, mask};
-    if (window_start != nullptr) {
-      inputs.push_back(window_start);
-    }
-    if (new_keys) {
-      for (LiteRtTensor fresh : {block.k_new, block.v_new}) {
+
+    // One plugin launch over `t` tokens: q [1, Hq, t, D] and a mask of 1 or
+    // t rows; the group's query heads become rows of their KV head
+    // ([1, Hq, t, D] -> [1, H, group * t, D], head-major within the group)
+    // and the result comes back as [1, Hq, t, D].
+    const auto launch = [&](nvinfer1::ITensor* q_part,
+                            nvinfer1::ITensor* mask_part,
+                            int32_t t) -> Expected<nvinfer1::ITensor*> {
+      nvinfer1::ITensor* grouped_q = q_part;
+      if (block.group > 1) {
+        nvinfer1::Dims grouped = q_dims_in;
+        grouped.d[1] = q_dims_in.d[1] / block.group;
+        grouped.d[2] = t * block.group;
+        LITERT_ASSIGN_OR_RETURN(grouped_q, ReshapeTensor(q_part, grouped));
+      }
+      nvinfer1::ITensor* mask = mask_part;
+      if (block.group > 1 && t > 1 && mask->getDimensions().d[2] == t &&
+          t * block.group <= 16) {
+        // The decode kernel wants one mask row per query row: repeat the t
+        // rows for each head of the group, in the rows' head-major order.
+        std::vector<nvinfer1::ITensor*> copies(block.group, mask);
         LITERT_ASSIGN_OR_RETURN(
-            auto* rows,
-            AddCastTensor(tensor_map_[fresh], nvinfer1::DataType::kHALF));
-        inputs.push_back(rows);
+            mask, ConcatTensors(std::move(copies), 2, "the attention mask"));
+      }
+      TrtPtr<nvinfer1::IPluginV3> plugin(CreateDecodeAttentionPlugin(
+          block.fill, new_keys,
+          block.int8_cache.has_value() ? &*block.int8_cache : nullptr, window));
+      if (!plugin) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to create CUDA decode attention plugin");
+      }
+      std::vector<nvinfer1::ITensor*> inputs = {grouped_q, k_cache, v_cache,
+                                                mask};
+      if (window_start != nullptr) {
+        inputs.push_back(window_start);
+      }
+      if (new_keys) {
+        for (LiteRtTensor fresh : {block.k_new, block.v_new}) {
+          LITERT_ASSIGN_OR_RETURN(
+              auto* rows,
+              AddCastTensor(tensor_map_[fresh], nvinfer1::DataType::kHALF));
+          inputs.push_back(rows);
+        }
+      }
+      auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(*network_, inputs.data(),
+                                                       inputs.size(), *plugin);
+      if (layer == nullptr || layer->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to add CUDA decode attention plugin layer");
+      }
+      const char* name =
+          new_keys ? "cuda_prefill_attention" : "cuda_decode_attention";
+      layer->setName(KeepName(UniqueName(name)));
+      auto* out = layer->getOutput(0);
+      out->setName(KeepName(UniqueName(name)));
+      owned_plugins_.push_back(std::move(plugin));
+      if (block.group > 1) {
+        nvinfer1::Dims ungrouped = q_dims_in;
+        ungrouped.d[2] = t;
+        LITERT_ASSIGN_OR_RETURN(out, ReshapeTensor(out, ungrouped));
+      }
+      return out;
+    };
+
+    nvinfer1::ITensor* out = nullptr;
+    const bool plain_block =
+        !new_keys && !block.int8_cache.has_value() && !block.window.has_value();
+    std::optional<AttentionRowPlan> plan;
+    if (plain_block && block.group * tokens > 16) {
+      plan = PlanAttentionRows(block.group, tokens, depth);
+      if (!plan.has_value()) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Attention block rows fit no CUDA attention kernel");
       }
     }
-    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(*network_, inputs.data(),
-                                                     inputs.size(), *plugin);
-    if (layer == nullptr || layer->getOutput(0) == nullptr) {
-      return Error(kLiteRtStatusErrorCompilation,
-                   "Failed to add CUDA decode attention plugin layer");
+    if (plan.has_value() && plan->chunk_tokens > 0) {
+      // Chunks of tokens on the decode kernel, over the same caches.
+      std::vector<nvinfer1::ITensor*> parts;
+      for (int32_t first = 0; first < tokens; first += plan->chunk_tokens) {
+        const int32_t t = std::min(plan->chunk_tokens, tokens - first);
+        LITERT_ASSIGN_OR_RETURN(auto* q_part, SliceTensorAxis(q, 2, first, t));
+        nvinfer1::ITensor* mask_part = mask_in;
+        if (mask_in->getDimensions().d[2] == tokens) {
+          LITERT_ASSIGN_OR_RETURN(mask_part,
+                                  SliceTensorAxis(mask_in, 2, first, t));
+        }
+        LITERT_ASSIGN_OR_RETURN(auto* part, launch(q_part, mask_part, t));
+        parts.push_back(part);
+      }
+      LITERT_ASSIGN_OR_RETURN(
+          out, ConcatTensors(std::move(parts), 2, "the attention chunks"));
+    } else if (plan.has_value() && plan->padded_tokens != tokens) {
+      // The tensor-core kernel with the tokens padded: zero query rows and
+      // all-false mask rows (the kernel takes mask row r % mask rows for
+      // query row r), sliced off the output.
+      const int32_t padded_tokens = plan->padded_tokens;
+      nvinfer1::Dims pad_dims = q_dims_in;
+      pad_dims.d[2] = padded_tokens - tokens;
+      const std::vector<float> zeros(static_cast<size_t>(pad_dims.d[0]) *
+                                         pad_dims.d[1] * pad_dims.d[2] *
+                                         pad_dims.d[3],
+                                     0.0f);
+      LITERT_ASSIGN_OR_RETURN(
+          auto* q_pad,
+          AddFloatConstant(zeros, pad_dims, "attention_q_pad", q->getType()));
+      LITERT_ASSIGN_OR_RETURN(
+          auto* padded_q,
+          ConcatTensors({q, q_pad}, 2, "the padded attention query rows"));
+      nvinfer1::ITensor* padded_mask = mask_in;
+      if (mask_in->getDimensions().d[2] == tokens) {
+        nvinfer1::Dims mask_pad_dims = mask_in->getDimensions();
+        mask_pad_dims.d[2] = padded_tokens - tokens;
+        LITERT_ASSIGN_OR_RETURN(
+            auto* mask_pad,
+            AddFalseConstant(mask_pad_dims, "attention_mask_pad"));
+        LITERT_ASSIGN_OR_RETURN(
+            padded_mask, ConcatTensors({mask_in, mask_pad}, 2,
+                                       "the padded attention mask rows"));
+      }
+      LITERT_ASSIGN_OR_RETURN(auto* padded_out,
+                              launch(padded_q, padded_mask, padded_tokens));
+      LITERT_ASSIGN_OR_RETURN(out, SliceTensorAxis(padded_out, 2, 0, tokens));
+    } else {
+      LITERT_ASSIGN_OR_RETURN(out, launch(q, mask_in, tokens));
     }
-    const char* name =
-        new_keys ? "cuda_prefill_attention" : "cuda_decode_attention";
-    layer->setName(KeepName(UniqueName(name)));
-    auto* out = layer->getOutput(0);
-    out->setName(KeepName(UniqueName(name)));
-    owned_plugins_.push_back(std::move(plugin));
     block.emitted = true;
-    if (block.group > 1) {
-      LITERT_ASSIGN_OR_RETURN(out, ReshapeTensor(out, q_dims_in));
-    }
     return SetOutputTensor(*block.output, out);
   }
 
@@ -7313,6 +7579,15 @@ class TensorRtGraphBuilder {
     const bool sub_byte_weights =
         op.Inputs()[1].ElementType() == litert::ElementType::Int4 ||
         op.Inputs()[1].ElementType() == litert::ElementType::Int2;
+    // INT8 per-channel weights (Gemma 4 E2B/E4B's per-layer embedding gate
+    // and projection, two small products per layer) take the batched CUDA
+    // GEMV over decode and verify rows too: TensorRT otherwise dequantizes
+    // them every step and runs a generic matmul kernel, three launches where
+    // the plugin needs one. Over many rows they keep TensorRT's GEMM.
+    const bool byte_weights =
+        op.Inputs()[1].ElementType() == litert::ElementType::Int8 &&
+        op.Inputs()[1].HasWeights() &&
+        op.Inputs()[1].QTypeId() == kLiteRtQuantizationPerChannel;
     nvinfer1::DataType compute_type = sub_byte_weights
                                           ? nvinfer1::DataType::kHALF
                                           : nvinfer1::DataType::kFLOAT;
@@ -7387,10 +7662,12 @@ class TensorRtGraphBuilder {
       }
     }
     if (Fp16ActivationsEnabled() &&
-        predequant_mode == PredequantMode::kCudaGemv && sub_byte_weights &&
-        (static_m_is_one || cuda_batched_gemv ||
-         (cuda_gemm &&
-          (GetCudaGemmMode() == CudaGemmMode::kAll || blockwise)))) {
+        predequant_mode == PredequantMode::kCudaGemv &&
+        ((sub_byte_weights &&
+          (static_m_is_one || cuda_batched_gemv ||
+           (cuda_gemm &&
+            (GetCudaGemmMode() == CudaGemmMode::kAll || blockwise)))) ||
+         (byte_weights && (static_m_is_one || cuda_batched_gemv)))) {
       LITERT_ASSIGN_OR_RETURN(input, AddCastTensor(gemv_input, compute_type));
       auto fused = AddCudaSubbyteGemvGroup(op, input, compute_type, norm_ptr);
       if (fused.HasValue()) {
@@ -9272,6 +9549,8 @@ class TensorRtGraphBuilder {
   };
   // Float32 caches declared to TensorRT as FP16 (Fp16CacheStorageEnabled).
   std::unordered_set<LiteRtTensor> fp16_stored_caches_;
+  // Cache inputs another engine keeps in place (FindSharedCacheInputs).
+  std::unordered_set<LiteRtTensor> shared_cache_inputs_;
   TensorRtWeightStoreBuilder* weight_store_ = nullptr;
   nvinfer1::ITensor* provisional_weight_holder_ = nullptr;
   std::vector<HolderReader> holder_readers_;
@@ -9421,11 +9700,13 @@ bool IsTensorRtOpSupported(const Op& op) {
 Expected<TensorRtBuildResult> BuildTensorRtEngine(
     const Subgraph& subgraph,
     absl::Span<const std::string> read_only_value_cache_inputs,
-    TensorRtWeightStoreBuilder* weight_store) {
+    TensorRtWeightStoreBuilder* weight_store,
+    absl::Span<const std::string> shared_cache_inputs) {
   const MemoryProfiler memory_profiler("compiler");
   auto result = [&]() {
     TensorRtGraphBuilder builder;
-    return builder.Build(subgraph, read_only_value_cache_inputs, weight_store);
+    return builder.Build(subgraph, read_only_value_cache_inputs, weight_store,
+                         shared_cache_inputs);
   }();
   memory_profiler.Log("graph_builder_destroyed");
   return result;
