@@ -6395,10 +6395,19 @@ class TensorRtGraphBuilder {
     std::vector<TiledMask> tiled_masks;
     size_t num_global = 0;
     for (const auto& update : subgraph.Ops()) {
-      if (update.Code() != kLiteRtOpCodeTflDynamicUpdateSlice) {
+      // The key cache's in-place update: a dynamic update slice, or the
+      // odml.cache_update composite lowered natively (Gemma 4 12B and 26B;
+      // its key cache is input 3, its updated key cache output 0).
+      const bool composite_update =
+          update.Code() == kLiteRtOpCodeShloComposite &&
+          update.Inputs().size() == 7 && update.Outputs().size() == 2 &&
+          CompositeOpName(update) == "odml.cache_update";
+      if (update.Code() != kLiteRtOpCodeTflDynamicUpdateSlice &&
+          !composite_update) {
         continue;
       }
-      const auto info = in_place_caches_.find(update.Inputs()[0].Get());
+      const Tensor k_cache = update.Inputs()[composite_update ? 3 : 0];
+      const auto info = in_place_caches_.find(k_cache.Get());
       if (info == in_place_caches_.end() || info->second.op != update.Get() ||
           info->second.partial_axis != 2) {
         continue;

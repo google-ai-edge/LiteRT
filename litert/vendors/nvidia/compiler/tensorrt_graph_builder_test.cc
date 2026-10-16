@@ -3135,6 +3135,9 @@ TEST(TensorRtGraphBuilderTest, AttentionPluginBlock) {
     int update_rows;  // cache rows written by this invocation
     int mask_copies;  // > 0: the mask is tiled this many times over the rows
     bool global;      // handled by the tensor-core kernels
+    // The caches updated by one odml.cache_update composite (Gemma 4 12B and
+    // 26B) instead of two dynamic update slices.
+    bool composite_update = false;
   };
   const std::vector<Case> cases = {
       {2, 2, 300, 128, 2, 0xFC00, 1, 0, false},      // -inf fill, two chunks
@@ -3142,6 +3145,8 @@ TEST(TensorRtGraphBuilderTest, AttentionPluginBlock) {
       {1, 16, 600, 512, 1, 0xF0E2, 1, 16, true},     // decode, tiled mask
       {1, 64, 700, 512, 4, 0xFC00, 4, 16, true},     // prefill of 4 tokens
       {1, 256, 900, 512, 16, 0xF0E2, 16, 16, true},  // prefill of 16 tokens
+      {1, 16, 600, 512, 16, 0xF0E2, 1, 0, true, true},  // 12B decode
+      {1, 64, 700, 512, 64, 0xF0E2, 4, 0, true, true},  // 12B prefill rows
   };
   for (const auto& test_case : cases) {
     const int heads = test_case.heads;
@@ -3152,7 +3157,8 @@ TEST(TensorRtGraphBuilderTest, AttentionPluginBlock) {
     const int position = seq / 2 + 3;
     SCOPED_TRACE(::testing::Message()
                  << "heads=" << heads << " rows=" << rows << " seq=" << seq
-                 << " depth=" << depth << " copies=" << test_case.mask_copies);
+                 << " depth=" << depth << " copies=" << test_case.mask_copies
+                 << " composite=" << test_case.composite_update);
     // Deterministic inputs in FP16.
     uint32_t state = 12345u + seq + rows;
     const auto next = [&]() -> float {
@@ -3261,8 +3267,12 @@ TEST(TensorRtGraphBuilderTest, AttentionPluginBlock) {
       k_upd.SetName("k_update");
       graph.Inputs().push_back(&k_upd);
       auto& v_upd = graph.EmplaceTensor();
-      v_upd.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat16,
-                                         {1, heads, depth, update_rows}));
+      // The composite takes the value update as rows like the key update.
+      v_upd.SetType(MakeRankedTensorType(
+          kLiteRtElementTypeFloat16,
+          test_case.composite_update
+              ? std::vector<int32_t>{1, heads, update_rows, depth}
+              : std::vector<int32_t>{1, heads, depth, update_rows}));
       v_upd.SetName("v_update");
       graph.Inputs().push_back(&v_upd);
       auto& k_start = graph.EmplaceTensor();
@@ -3287,6 +3297,14 @@ TEST(TensorRtGraphBuilderTest, AttentionPluginBlock) {
       positions.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {1}));
       positions.SetName("positions");
       graph.Inputs().push_back(&positions);
+      LiteRtTensorT* params = nullptr;
+      if (test_case.composite_update) {
+        params = &graph.EmplaceTensor();
+        params->SetType(
+            MakeRankedTensorType(kLiteRtElementTypeInt32, {1, 1, 1, 7}));
+        params->SetName("params");
+        graph.Inputs().push_back(params);
+      }
       auto& fill_const = graph.EmplaceTensor();
       fill_const.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat16, {}));
       fill_const.SetName("fill");
@@ -3348,18 +3366,42 @@ TEST(TensorRtGraphBuilderTest, AttentionPluginBlock) {
         select_mask = &tiled;
       }
 
-      auto& k_dus = graph.EmplaceOp();
-      k_dus.SetOpCode(kLiteRtOpCodeTflDynamicUpdateSlice);
-      litert::internal::AttachInput(&k_cache, k_dus);
-      litert::internal::AttachInput(&k_upd, k_dus);
-      litert::internal::AttachInput(&k_start, k_dus);
-      litert::internal::AttachOutput(&k_out, k_dus);
-      auto& v_dus = graph.EmplaceOp();
-      v_dus.SetOpCode(kLiteRtOpCodeTflDynamicUpdateSlice);
-      litert::internal::AttachInput(&v_cache, v_dus);
-      litert::internal::AttachInput(&v_upd, v_dus);
-      litert::internal::AttachInput(&v_start, v_dus);
-      litert::internal::AttachOutput(&v_out, v_dus);
+      if (test_case.composite_update) {
+        auto& update = graph.EmplaceOp();
+        update.SetOpCode(kLiteRtOpCodeShloComposite);
+        tflite::StableHLOCompositeOptionsT composite;
+        composite.name = "odml.cache_update";
+        flexbuffers::Builder attributes;
+        const auto map = attributes.StartMap();
+        attributes.Bool("is_ring_buffer", false);
+        attributes.Int("cache_size", seq);
+        attributes.Int("head_size", depth);
+        attributes.EndMap(map);
+        attributes.Finish();
+        composite.composite_attributes = attributes.GetBuffer();
+        tflite::BuiltinOptions2Union options;
+        options.Set(std::move(composite));
+        litert::internal::SetTflOptions2(update, std::move(options));
+        for (LiteRtTensorT* input :
+             {&k_upd, &v_upd, params, &k_cache, &v_cache, &k_start, &v_start}) {
+          litert::internal::AttachInput(input, update);
+        }
+        litert::internal::AttachOutput(&k_out, update);
+        litert::internal::AttachOutput(&v_out, update);
+      } else {
+        auto& k_dus = graph.EmplaceOp();
+        k_dus.SetOpCode(kLiteRtOpCodeTflDynamicUpdateSlice);
+        litert::internal::AttachInput(&k_cache, k_dus);
+        litert::internal::AttachInput(&k_upd, k_dus);
+        litert::internal::AttachInput(&k_start, k_dus);
+        litert::internal::AttachOutput(&k_out, k_dus);
+        auto& v_dus = graph.EmplaceOp();
+        v_dus.SetOpCode(kLiteRtOpCodeTflDynamicUpdateSlice);
+        litert::internal::AttachInput(&v_cache, v_dus);
+        litert::internal::AttachInput(&v_upd, v_dus);
+        litert::internal::AttachInput(&v_start, v_dus);
+        litert::internal::AttachOutput(&v_out, v_dus);
+      }
       const auto add_runtime_bmm = [&](LiteRtTensorT& lhs, LiteRtTensorT& rhs,
                                        LiteRtTensorT& out) {
         auto& op = graph.EmplaceOp();
@@ -3416,7 +3458,8 @@ TEST(TensorRtGraphBuilderTest, AttentionPluginBlock) {
                 plugin);
       EXPECT_EQ(layers.find("Matrix Multiply") == std::string::npos, plugin)
           << layers;
-      ASSERT_EQ(built->input_names.size(), 9u);
+      const size_t num_inputs = test_case.composite_update ? 10u : 9u;
+      ASSERT_EQ(built->input_names.size(), num_inputs);
       ASSERT_EQ(built->output_names.size(), 3u);
       std::unique_ptr<nvinfer1::IExecutionContext> context(
           engine->createExecutionContext());
@@ -3433,10 +3476,13 @@ TEST(TensorRtGraphBuilderTest, AttentionPluginBlock) {
       void* d_q = nullptr;
       void* d_mask = nullptr;
       void* d_pos = nullptr;
+      void* d_params = nullptr;
       void* d_out = nullptr;
       const std::array<int32_t, 4> k_start_host = {0, 0, position, 0};
       const std::array<int32_t, 4> v_start_host = {0, 0, 0, position};
       const int32_t position_host = position;
+      const std::array<int32_t, 7> params_host = {
+          position, position + update_rows, position + update_rows, 0, 0, 0, 0};
       // The engine reads the model's [B, H, D, n] value update.
       std::vector<uint16_t> v_update_model(update_elements);
       for (int h = 0; h < heads; ++h) {
@@ -3468,8 +3514,12 @@ TEST(TensorRtGraphBuilderTest, AttentionPluginBlock) {
       ASSERT_EQ(cudaMemcpy(d_ku, k_update.data(), k_update.size() * 2,
                            cudaMemcpyHostToDevice),
                 cudaSuccess);
-      ASSERT_EQ(cudaMemcpy(d_vu, v_update_model.data(),
-                           v_update_model.size() * 2, cudaMemcpyHostToDevice),
+      // The composite reads the value update as rows, the slice the model's
+      // [B, H, D, n] layout.
+      ASSERT_EQ(cudaMemcpy(d_vu,
+                           test_case.composite_update ? v_update.data()
+                                                      : v_update_model.data(),
+                           v_update.size() * 2, cudaMemcpyHostToDevice),
                 cudaSuccess);
       ASSERT_EQ(cudaMemcpy(d_ks, k_start_host.data(), sizeof(k_start_host),
                            cudaMemcpyHostToDevice),
@@ -3486,8 +3536,15 @@ TEST(TensorRtGraphBuilderTest, AttentionPluginBlock) {
       ASSERT_EQ(cudaMemcpy(d_pos, &position_host, sizeof(position_host),
                            cudaMemcpyHostToDevice),
                 cudaSuccess);
-      const std::array<void*, 9> input_ptrs = {d_k,  d_v, d_ku,   d_vu, d_ks,
-                                               d_vs, d_q, d_mask, d_pos};
+      std::vector<void*> input_ptrs = {d_k,  d_v, d_ku,   d_vu, d_ks,
+                                       d_vs, d_q, d_mask, d_pos};
+      if (test_case.composite_update) {
+        ASSERT_EQ(cudaMalloc(&d_params, sizeof(params_host)), cudaSuccess);
+        ASSERT_EQ(cudaMemcpy(d_params, params_host.data(), sizeof(params_host),
+                             cudaMemcpyHostToDevice),
+                  cudaSuccess);
+        input_ptrs.push_back(d_params);
+      }
       for (size_t i = 0; i < input_ptrs.size(); ++i) {
         ASSERT_TRUE(context->setTensorAddress(built->input_names[i].c_str(),
                                               input_ptrs[i]))
@@ -3514,8 +3571,8 @@ TEST(TensorRtGraphBuilderTest, AttentionPluginBlock) {
       }
       EXPECT_LT(max_error, 0.03f);
       EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
-      for (void* ptr :
-           {d_out, d_pos, d_mask, d_q, d_vs, d_ks, d_vu, d_ku, d_v, d_k}) {
+      for (void* ptr : {d_out, d_pos, d_params, d_mask, d_q, d_vs, d_ks, d_vu,
+                        d_ku, d_v, d_k}) {
         EXPECT_EQ(cudaFree(ptr), cudaSuccess);
       }
     }
