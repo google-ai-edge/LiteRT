@@ -712,6 +712,24 @@ auto ConvolutionDimensionsDomain(size_t count) {
       .WithMaxSize(count);
 }
 
+// Sets the stride of one spatial axis to one more than the input size. A
+// singleton axis with a singleton filter (a 1-D convolution lowered to 2-D)
+// accepts any stride, so such an axis gets a filter of size 2 to keep the case
+// invalid.
+template <typename Case>
+void ExceedStride(Case& test_case, bool exceed_height) {
+  const int axis = exceed_height ? 1 : 2;
+  if (test_case.input_shape[axis] == 1 && test_case.filter_shape[axis] == 1) {
+    test_case.filter_shape[axis] = 2;
+  }
+  const int32_t stride = test_case.input_shape[axis] + 1;
+  if (exceed_height) {
+    test_case.stride_height = stride;
+  } else {
+    test_case.stride_width = stride;
+  }
+}
+
 #if !defined(TFLITE_CONVOLUTION_FUZZ_ENABLE_XNNPACK)
 auto ValidConv2DCaseDomain() {
   return fuzztest::Map(
@@ -758,11 +776,7 @@ auto MalformedConv2DCaseDomain() {
 auto StrideLargerThanInputConv2DCaseDomain() {
   return fuzztest::Map(
       [](Conv2DCase test_case, bool exceed_height) {
-        if (exceed_height) {
-          test_case.stride_height = test_case.input_shape[1] + 1;
-        } else {
-          test_case.stride_width = test_case.input_shape[2] + 1;
-        }
+        ExceedStride(test_case, exceed_height);
         return test_case;
       },
       ValidConv2DCaseDomain(), fuzztest::Arbitrary<bool>());
@@ -809,11 +823,7 @@ auto MalformedDepthwiseConvCaseDomain() {
 auto StrideLargerThanInputDepthwiseConvCaseDomain() {
   return fuzztest::Map(
       [](DepthwiseConvCase test_case, bool exceed_height) {
-        if (exceed_height) {
-          test_case.stride_height = test_case.input_shape[1] + 1;
-        } else {
-          test_case.stride_width = test_case.input_shape[2] + 1;
-        }
+        ExceedStride(test_case, exceed_height);
         return test_case;
       },
       ValidDepthwiseConvCaseDomain(), fuzztest::Arbitrary<bool>());
@@ -1143,11 +1153,7 @@ auto MalformedConv2DXnnpackCaseDomain() {
 auto StrideLargerThanInputConv2DXnnpackCaseDomain() {
   return fuzztest::Map(
       [](Conv2DCase test_case, bool exceed_height) {
-        if (exceed_height) {
-          test_case.stride_height = test_case.input_shape[1] + 1;
-        } else {
-          test_case.stride_width = test_case.input_shape[2] + 1;
-        }
+        ExceedStride(test_case, exceed_height);
         return test_case;
       },
       ValidConv2DXnnpackCaseDomain(), fuzztest::Arbitrary<bool>());
@@ -1191,11 +1197,7 @@ auto MalformedDepthwiseConvXnnpackCaseDomain() {
 auto StrideLargerThanInputDepthwiseConvXnnpackCaseDomain() {
   return fuzztest::Map(
       [](DepthwiseConvCase test_case, bool exceed_height) {
-        if (exceed_height) {
-          test_case.stride_height = test_case.input_shape[1] + 1;
-        } else {
-          test_case.stride_width = test_case.input_shape[2] + 1;
-        }
+        ExceedStride(test_case, exceed_height);
         return test_case;
       },
       ValidDepthwiseConvXnnpackCaseDomain(), fuzztest::Arbitrary<bool>());

@@ -588,5 +588,72 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param.test_name;
     });
 
+// Runs InferFullyConnected for `input` x `weights` with `keep_num_dims`.
+LiteRtStatus InferFc(const Dims& input, const Dims& weights,
+                     bool keep_num_dims, Dims& output) {
+  LiteRtOpT op = MakeFullyConnectedOp(keep_num_dims);
+  std::vector<Dims> input_shapes = {input, weights};
+  std::vector<Dims> output_shapes(1);
+  const LiteRtStatus status =
+      InferFullyConnected(op, absl::MakeSpan(input_shapes), output_shapes);
+  output = output_shapes[0];
+  return status;
+}
+
+TEST(FullyConnectedOpTest, FlattensByWeightsDepthNotLastInputDim) {
+  // TFLite: batch = num_elements(input) / weights.dims[1] = 12 / 12 = 1. The
+  // last input dim (3) is not K.
+  Dims output;
+  ASSERT_EQ(InferFc({1, 2, 2, 3}, {5, 12}, /*keep_num_dims=*/false, output),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output, ElementsAre(1, 5));
+}
+
+TEST(FullyConnectedOpTest, FlattenRegroupsRows) {
+  // 4 * 6 = 24 elements regrouped into rows of K = 8: batch 3.
+  Dims output;
+  ASSERT_EQ(InferFc({4, 6}, {2, 8}, /*keep_num_dims=*/false, output),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output, ElementsAre(3, 2));
+}
+
+TEST(FullyConnectedOpTest, RejectsBatchWhenInputNotDivisibleByDepth) {
+  // TFLite's Prepare requires input_size % filter->dims->data[1] == 0.
+  Dims output;
+  EXPECT_EQ(InferFc({1, 2, 2, 3}, {4, 5}, /*keep_num_dims=*/false, output),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(FullyConnectedOpTest, RejectsElementCountAboveInt32Max) {
+  // TFLite's Prepare accumulates the input element count in an `int`.
+  Dims output;
+  EXPECT_EQ(InferFc({65536, 65536}, {3, 2}, /*keep_num_dims=*/false, output),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(FullyConnectedOpTest, KeepNumDimsWithDynamicDims) {
+  Dims output;
+  ASSERT_EQ(InferFc({-1, 7, 3}, {5, 3}, /*keep_num_dims=*/true, output),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output, ElementsAre(-1, 7, 5));
+}
+
+TEST(FullyConnectedOpTest, FlattenWithDynamicDimHasDynamicBatch) {
+  Dims output;
+  ASSERT_EQ(InferFc({-1, 2, 3}, {5, 6}, /*keep_num_dims=*/false, output),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output, ElementsAre(-1, 5));
+}
+
+TEST(FullyConnectedOpTest, ZeroDepthUsesLeadingDims) {
+  // TFLite special-cases weights.dims[1] == 0 to avoid dividing by zero.
+  Dims output;
+  ASSERT_EQ(InferFc({2, 3, 4}, {5, 0}, /*keep_num_dims=*/false, output),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output, ElementsAre(6, 5));
+  ASSERT_EQ(InferFc({2, 3, 4}, {5, 0}, /*keep_num_dims=*/true, output),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output, ElementsAre(2, 3, 5));
+}
 }  // namespace
 }  // namespace litert::internal

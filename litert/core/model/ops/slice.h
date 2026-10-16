@@ -79,7 +79,12 @@ inline LiteRtStatus InferSlice(const LiteRtOpT& op,
       size_type != kLiteRtElementTypeInt64) {
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
-  // Begin and Size must have the same data type.
+  // Begin and Size must have the same data type. TFLite's Slice Prepare()
+  // enforces `TF_LITE_ENSURE_TYPES_EQ(context, begin->type, size->type)`
+  // (kernels/slice.cc), and CalculateOutputShapeVector / GetBeginAndSizeVectors
+  // dispatch on `begin->type` alone to decode both tensors: an INT64 size next
+  // to an INT32 begin would be read as INT32 words, and an INT32 size next to
+  // an INT64 begin would be read past its buffer.
   if (begin_type != kLiteRtElementTypeNone &&
       size_type != kLiteRtElementTypeNone && begin_type != size_type) {
     return kLiteRtStatusErrorShapeInferenceFailed;
