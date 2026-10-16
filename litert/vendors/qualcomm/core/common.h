@@ -183,6 +183,9 @@ class Options {
   void SetUseFoldReLU(bool use_fold_relu);
   bool GetUseFoldReLU() const;
 
+  void SetUseShortOpNames(bool use_short_op_names);
+  bool GetUseShortOpNames() const;
+
   void SetHtpPPoint(std::int32_t htp_p_point);
   std::int32_t GetHtpPPoint() const;
 
@@ -307,6 +310,7 @@ class Options {
   bool enable_just_in_time_ = false;
   bool use_conv_hmx_ = true;
   bool use_fold_relu_ = true;
+  bool use_short_op_names_ = false;
   std::int32_t htp_p_point_ = 0;
   std::int32_t htp_weight_sharing_channel_tile_size_ = 0;
   bool htp_dlbc_ = false;

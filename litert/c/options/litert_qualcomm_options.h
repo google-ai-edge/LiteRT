@@ -185,6 +185,17 @@ LiteRtStatus LrtQualcommOptionsSetUseFoldReLU(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetUseFoldReLU(LrtQualcommOptions options,
                                               bool* use_fold_relu);
 
+// use_short_op_names
+// When true, op names in the QNN graph omit the tensor-path namespace prefix
+// and the LiteRt OpId suffix, reducing context binary size for models with
+// long tensor names (e.g. LLMs).
+
+LiteRtStatus LrtQualcommOptionsSetUseShortOpNames(LrtQualcommOptions options,
+                                                  bool use_short_op_names);
+
+LiteRtStatus LrtQualcommOptionsGetUseShortOpNames(LrtQualcommOptions options,
+                                                  bool* use_short_op_names);
+
 // htp_dlbc
 
 // Enables HTP DLBC input compression. Defaults to false.

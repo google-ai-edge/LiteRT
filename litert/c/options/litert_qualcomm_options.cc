@@ -97,6 +97,7 @@ struct LrtQualcommOptionsT {
   std::optional<bool> enable_just_in_time;
   std::optional<bool> use_conv_hmx;
   std::optional<bool> use_fold_relu;
+  std::optional<bool> use_short_op_names;
   std::optional<bool> htp_dlbc;
   std::optional<bool> htp_dlbc_weights;
   std::optional<std::int32_t> htp_p_point;
@@ -190,6 +191,10 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetUseFoldReLU(parsed_options, *v);
+        } else if (key == "use_short_op_names") {
+          auto v = litert::internal::ParseTomlBool(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetUseShortOpNames(parsed_options, *v);
         } else if (key == "htp_dlbc") {
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -426,6 +431,10 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->use_fold_relu.has_value()) {
     absl::StrAppend(&toml_str, "use_fold_relu = ",
                     *options->use_fold_relu ? "true" : "false", "\n");
+  }
+  if (options->use_short_op_names.has_value()) {
+    absl::StrAppend(&toml_str, "use_short_op_names = ",
+                    *options->use_short_op_names ? "true" : "false", "\n");
   }
   if (options->htp_dlbc.has_value()) {
     absl::StrAppend(&toml_str, "htp_dlbc = ",
@@ -896,6 +905,27 @@ LiteRtStatus LrtQualcommOptionsGetUseFoldReLU(LrtQualcommOptions options,
   }
 
   *use_fold_relu = options->use_fold_relu.value_or(true);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetUseShortOpNames(LrtQualcommOptions options,
+                                                  bool use_short_op_names) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->use_short_op_names = use_short_op_names;
+
+  return kLiteRtStatusOk;
+}
+LiteRtStatus LrtQualcommOptionsGetUseShortOpNames(LrtQualcommOptions options,
+                                                  bool* use_short_op_names) {
+  if (use_short_op_names == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *use_short_op_names = options->use_short_op_names.value_or(false);
 
   return kLiteRtStatusOk;
 }

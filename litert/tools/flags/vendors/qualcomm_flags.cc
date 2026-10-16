@@ -682,6 +682,11 @@ ABSL_FLAG(bool, qualcomm_use_fold_relu, true,
           "optimization is correct when quantization ranges for convolution "
           "are equal to or are subset of the Relu operation.");
 
+ABSL_FLAG(bool, qualcomm_use_short_op_names, false,
+          "When true, op names in the QNN graph omit the tensor-path namespace "
+          "prefix and the LiteRt OpId suffix, reducing context binary size for "
+          "models with long tensor names (e.g. LLMs).");
+
 ABSL_FLAG(bool, qualcomm_htp_dlbc, false,
           "Enable HTP DLBC input compression.");
 
@@ -1036,6 +1041,9 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto use_fold_relu = absl::GetFlag(FLAGS_qualcomm_use_fold_relu);
   opts.SetUseFoldReLU(use_fold_relu);
+
+  const auto use_short_op_names = absl::GetFlag(FLAGS_qualcomm_use_short_op_names);
+  opts.SetUseShortOpNames(use_short_op_names);
 
   const auto htp_dlbc = absl::GetFlag(FLAGS_qualcomm_htp_dlbc);
   opts.SetHtpDlbc(htp_dlbc);

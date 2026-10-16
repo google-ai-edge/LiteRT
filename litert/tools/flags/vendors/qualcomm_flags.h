@@ -131,6 +131,8 @@ ABSL_DECLARE_FLAG(bool, qualcomm_use_conv_hmx);
 
 ABSL_DECLARE_FLAG(bool, qualcomm_use_fold_relu);
 
+ABSL_DECLARE_FLAG(bool, qualcomm_use_short_op_names);
+
 ABSL_DECLARE_FLAG(bool, qualcomm_htp_dlbc);
 
 ABSL_DECLARE_FLAG(bool, qualcomm_htp_dlbc_weights);

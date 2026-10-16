@@ -1917,12 +1917,14 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
     LITERT_RETURN_IF_ERROR(ConvertOp(options, op, tensor_pool, input_tensors,
                                      output_tensors, op_wrappers, id,
                                      qnn.GetSdkVersion()));
-    for (auto& op_wrapper : op_wrappers) {
-      // Add litert op id to qnn op name to preserve op mapping
-      op_wrapper.AddSuffixToName(
-          absl::StrCat("_LiteRt_OpId_", std::to_string(id)));
+    if (!options.GetUseShortOpNames()) {
+      for (auto& op_wrapper : op_wrappers) {
+        // Add litert op id to qnn op name to preserve op mapping
+        op_wrapper.AddSuffixToName(
+            absl::StrCat("_LiteRt_OpId_", std::to_string(id)));
+      }
     }
-    if (!op.Outputs().empty()) {
+    if (!op.Outputs().empty() && !options.GetUseShortOpNames()) {
       // Add op namespace inference based on output tensor names.
       std::vector<std::string> candidate_names;
       for (const auto& output_tensor : op.Outputs()) {
