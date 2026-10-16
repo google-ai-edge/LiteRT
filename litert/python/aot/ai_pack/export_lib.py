@@ -53,6 +53,8 @@ def _is_mobile_device_backend(backend: aot_types.Backend):
     target = cast(qnn_target.Target, target)
     # Non Android QNN targets.
     if target.soc_model in (
+        qnn_target.SocModel.QCS8275,
+        qnn_target.SocModel.QCS8300,
         qnn_target.SocModel.SA8255,
         qnn_target.SocModel.SA8295,
     ):
