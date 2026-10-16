@@ -39,7 +39,6 @@
 #include "litert/test/simple_buffer.h"
 #include "tensor/arithmetic.h"
 #include "tensor/backends/tflite/arithmetic_tflite.h"
-#include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/tensor.h"
 #include "tflite/types/half.h"
@@ -56,7 +55,7 @@ class RuntimeBmm : public TestGraph {
   static constexpr bool kIsQuantizedRhs =
       std::is_integral_v<T_rhs> || kIsInt4Rhs;
   static constexpr float kRhsQuantScale = 0.01f;
-  static constexpr TensorNames<2> kInputNames = {"lhs", "rhs"};
+  static constexpr TensorNames<3> kInputNames = {"lhs", "rhs", "params"};
   static constexpr TensorNames<1> kOutputNames = {"output"};
 
  public:
@@ -68,7 +67,8 @@ class RuntimeBmm : public TestGraph {
     size_t head_dim = 64;
   };
 
-  using Traits = TestLogicTraits<TypeList<T_in, T_rhs>, TypeList<T_in>, Params>;
+  using Traits =
+      TestLogicTraits<TypeList<T_in, T_rhs, int32_t>, TypeList<T_in>, Params>;
   using Ptr = std::unique_ptr<RuntimeBmm>;
 
   static constexpr absl::string_view Name() { return "RuntimeBmm"; }
@@ -157,7 +157,7 @@ class RuntimeBmm : public TestGraph {
       DefaultDevice& device,
       const RandomTensorDataBuilder& data_builder) const override {
     VarBuffers inputs;
-    inputs.reserve(2);
+    inputs.reserve(3);
 
     const auto lhs_shape = LhsShape(params_);
     const auto rhs_shape = RhsShape(params_);
@@ -183,6 +183,20 @@ class RuntimeBmm : public TestGraph {
     LITERT_RETURN_IF_ERROR(
         (rhs.template WriteRandom<T_rhs>(rhs_builder, device)));
     inputs.push_back(std::move(rhs));
+
+    std::array<Layout::Dim, 4> params_shape = {1, 1, 1, 7};
+    LITERT_ASSIGN_OR_RETURN(auto param,
+                            SimpleBuffer::Create<int32_t>(params_shape));
+    const int32_t seq_len = static_cast<int32_t>(params_.kv_len);
+    auto param_span = param.Span<int32_t>();
+    param_span[0] = 0;
+    param_span[1] = seq_len;
+    param_span[2] = seq_len;
+    param_span[3] = 0;
+    param_span[4] = 0;
+    param_span[5] = 0;
+    param_span[6] = 0;
+    inputs.push_back(std::move(param));
 
     return inputs;
   }
@@ -230,14 +244,9 @@ class RuntimeBmm : public TestGraph {
               std::vector<float>{kRhsQuantScale}, std::vector<int64_t>{0}, 0));
     }
 
-    const int32_t seq_len = static_cast<int32_t>(params.kv_len);
-    std::vector<int32_t> params_data = {0, seq_len, seq_len, 0, 0, 0, 0};
-    auto params_buf =
-        litert::tensor::OwningCpuBuffer::Copy<litert::tensor::Type::kI32>(
-            params_data);
-    TensorTf params_tensor =
-        litert::tensor::Create("params", litert::tensor::Type::kI32,
-                               {1, 1, 1, 7}, std::move(params_buf));
+    TensorTf params_tensor = litert::tensor::Create(
+        std::string(kInputNames[2]), litert::tensor::Type::kI32,
+        {1, 1, 1, 7});
 
     flexbuffers::Builder fbb;
     fbb.Map([&]() {

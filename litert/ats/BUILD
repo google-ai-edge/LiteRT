@@ -537,6 +537,7 @@ litert_define_ats(
         "SelectV2",  # OpenCL SelectV2 rejects multidimensional if/else broadcasting and uses kExact on FP16-rounded f32
         "Slice",  # OpenCL Slice uses kExact byte comparison on FP16-rounded f32 buffers
         "CacheUpdateSdpaTransposed",  # Requires intermediate odml.cache_update output buffer storage promotion
+        "RuntimeBmm.*(i4|i8)",  # GPU odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
         "simple_add_dynamic_shape",
         "hf_all_minilm_l6_v2",
         "whisper_tiny_decoder",
@@ -683,6 +684,7 @@ litert_define_ats(
         "QkvNormRope.*4d_f(16|32)<(?!1x)",  # Metal accelerator does not support QkvNormRope with batch > 1
         "SelectV2",
         "Slice",
+        "RuntimeBmm.*(i4|i8)",  # Metal odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
         "scaled_dot_product_attention",
     ],
     extra_flags = [
@@ -721,6 +723,7 @@ litert_define_ats(
         "QkvNormRope.*4d_f(16|32)<(?!1x)",  # WebGPU accelerator does not support QkvNormRope with batch > 1
         "SelectV2",
         "Slice",
+        "RuntimeBmm.*(i4|i8)",  # WebGPU odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
         "scaled_dot_product_attention",
     ],
     extra_flags = [
