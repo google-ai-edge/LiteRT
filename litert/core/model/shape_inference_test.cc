@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <string>
@@ -1164,6 +1165,159 @@ INSTANTIATE_TEST_SUITE_P(
     [](const ::testing::TestParamInfo<OneHotErrorCase>& info) {
       return info.param.test_name;
     });
+
+// Graph-level regressions for inferrers that decode constant index operands.
+// Each case builds a single-op model whose output is declared with the given
+// dims and checks both engine modes.
+
+LiteRtTensorT& AddTensor(LiteRtSubgraphT& subgraph,
+                         LiteRtElementType element_type,
+                         absl::Span<const int32_t> dims) {
+  auto& tensor = subgraph.EmplaceTensor();
+  tensor.SetType(MakeRankedTensorType(element_type, dims));
+  return tensor;
+}
+
+template <typename T>
+LiteRtTensorT& AddConstTensor(LiteRtSubgraphT& subgraph,
+                              LiteRtElementType element_type,
+                              const std::vector<T>& values) {
+  auto& tensor = AddTensor(subgraph, element_type,
+                           {static_cast<int32_t>(values.size())});
+  SetWeightsFromOwnedBuffer(
+      tensor.Weights(),
+      OwningBufferRef<uint8_t>(reinterpret_cast<const uint8_t*>(values.data()),
+                               values.size() * sizeof(T)));
+  return tensor;
+}
+
+Dims TensorDims(const LiteRtTensorT& tensor) {
+  const auto& layout = tensor.Type().second.ranked_tensor_type.layout;
+  return Dims(layout.dimensions, layout.dimensions + layout.rank);
+}
+
+// Builds a single-op model in `model` with the op's output declared as
+// `declared_output`, and returns that output tensor.
+using SingleOpModelBuilder = std::function<LiteRtTensorT*(
+    LiteRtModelT& model, absl::Span<const int32_t> declared_output)>;
+
+// Checks that inference mode rewrites a placeholder output to `expected`, and
+// that validation-only mode accepts `expected` but rejects `wrong`.
+void ExpectInferredOutputInBothModes(const SingleOpModelBuilder& build,
+                                     const Dims& expected, const Dims& wrong) {
+  {
+    SCOPED_TRACE("inference");
+    LiteRtModelT model;
+    LiteRtTensorT* output = build(model, {-1});
+    ShapeInferenceEngine engine(&model);
+    ASSERT_EQ(engine.InferShapes(/*validation_only=*/false), kLiteRtStatusOk);
+    EXPECT_EQ(TensorDims(*output), expected);
+  }
+  {
+    SCOPED_TRACE("validation_only, matching declared shape");
+    LiteRtModelT model;
+    LiteRtTensorT* output = build(model, expected);
+    ShapeInferenceEngine engine(&model);
+    ASSERT_EQ(engine.InferShapes(/*validation_only=*/true), kLiteRtStatusOk);
+    EXPECT_EQ(TensorDims(*output), expected);
+  }
+  {
+    SCOPED_TRACE("validation_only, mismatching declared shape");
+    LiteRtModelT model;
+    build(model, wrong);
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(/*validation_only=*/true),
+              kLiteRtStatusErrorShapeInferenceFailed);
+  }
+}
+
+template <typename AxisT>
+SingleOpModelBuilder AxisReduction(LiteRtOpCode op_code, bool keep_dims,
+                                   LiteRtElementType axis_type,
+                                   std::vector<AxisT> axes) {
+  return [=](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(op_code);
+    if (op_code != kLiteRtOpCodeTflArgMax) {
+      auto options = std::make_unique<tflite::ReducerOptionsT>();
+      options->keep_dims = keep_dims;
+      TflOptions tfl_options;
+      tfl_options.type = tflite::BuiltinOptions_ReducerOptions;
+      tfl_options.value = options.release();
+      SetTflOptions(op, std::move(tfl_options));
+    }
+
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3, 4});
+    auto& axis = AddConstTensor(subgraph, axis_type, axes);
+    // ARG_MAX outputs INT32 indices; the reducers keep the input type.
+    auto& output = AddTensor(subgraph,
+                             op_code == kLiteRtOpCodeTflArgMax
+                                 ? kLiteRtElementTypeInt32
+                                 : kLiteRtElementTypeFloat32,
+                             declared_output);
+    AttachInput(&input, op);
+    AttachInput(&axis, op);
+    AttachOutput(&output, op);
+    return &output;
+  };
+}
+
+TEST(ShapeInferenceTest, SumAndMeanWithInt64Axes) {
+  // INT64 `{1}` was previously decoded as the INT32 axes `{1, 0}`, so SUM
+  // inferred `{4}`.
+  for (LiteRtOpCode op_code : {kLiteRtOpCodeTflSum, kLiteRtOpCodeTflMean}) {
+    SCOPED_TRACE(::testing::Message() << "op_code=" << op_code);
+    ExpectInferredOutputInBothModes(
+        AxisReduction<int64_t>(op_code, /*keep_dims=*/false,
+                               kLiteRtElementTypeInt64, {1}),
+        /*expected=*/{2, 4}, /*wrong=*/{4});
+  }
+}
+
+TEST(ShapeInferenceTest, SumWithInt32Axes) {
+  ExpectInferredOutputInBothModes(
+      AxisReduction<int32_t>(kLiteRtOpCodeTflSum, /*keep_dims=*/false,
+                             kLiteRtElementTypeInt32, {1}),
+      /*expected=*/{2, 4}, /*wrong=*/{4});
+}
+
+TEST(ShapeInferenceTest, MeanWithNegativeInt32AxesKeepDims) {
+  ExpectInferredOutputInBothModes(
+      AxisReduction<int32_t>(kLiteRtOpCodeTflMean, /*keep_dims=*/true,
+                             kLiteRtElementTypeInt32, {-1, 0}),
+      /*expected=*/{1, 3, 1}, /*wrong=*/{1, 1, 4});
+}
+
+TEST(ShapeInferenceTest, ReductionAndArgMaxRejectInvalidAxes) {
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    {
+      LiteRtModelT model;
+      AxisReduction<int64_t>(kLiteRtOpCodeTflSum, /*keep_dims=*/false,
+                             kLiteRtElementTypeInt64, {3})(model, {2, 3});
+      ShapeInferenceEngine engine(&model);
+      EXPECT_EQ(engine.InferShapes(validation_only),
+                kLiteRtStatusErrorInvalidArgument);
+    }
+    {
+      LiteRtModelT model;
+      AxisReduction<int64_t>(kLiteRtOpCodeTflArgMax, /*keep_dims=*/false,
+                             kLiteRtElementTypeInt64, {0, 1})(model, {4});
+      ShapeInferenceEngine engine(&model);
+      EXPECT_EQ(engine.InferShapes(validation_only),
+                kLiteRtStatusErrorInvalidArgument);
+    }
+  }
+}
+
+TEST(ShapeInferenceTest, ArgMaxWithInt64Axis) {
+  // ARG_MAX accepts an INT64 axis (kernel_utils::ReadAndNormalizeAxis).
+  ExpectInferredOutputInBothModes(
+      AxisReduction<int64_t>(kLiteRtOpCodeTflArgMax, /*keep_dims=*/false,
+                             kLiteRtElementTypeInt64, {1}),
+      /*expected=*/{2, 4}, /*wrong=*/{4});
+}
 
 }  // namespace
 }  // namespace litert::internal
