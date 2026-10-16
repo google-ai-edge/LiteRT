@@ -107,39 +107,62 @@ LiteRtOpSelector::LiteRtOpSelector(
     const ::ml_drift::GpuInfo* gpu_info)
     : create_info_(*create_info), gpu_info_(*gpu_info) {}
 
-void LiteRtOpSelector::ParamTensorToBuffer(
-    int param_index, const std::vector<::ml_drift::Value*>& inputs,
+void LiteRtOpSelector::TensorToBuffer(
+    const ::ml_drift::Value& value, bool copy_from_original,
     ::ml_drift::GpuModelBuilder* model_builder) {
-  auto param_id = inputs[param_index]->id;
-  if (replaced_tensors_.contains(param_id)) {
+  auto tensor_id = value.id;
+  if (replaced_tensors_.contains(tensor_id)) {
     return;
   }
-  auto param_tensor_handle_or = model_builder->GetTensor(param_id);
-  if (!param_tensor_handle_or.ok()) {
+  auto tensor = model_builder->GetTensor(tensor_id);
+  if (!tensor.ok()) {
     return;
   }
-  auto param_tensor = param_tensor_handle_or.value();
-  if (param_tensor.tensor_desc.GetStorageType() ==
+  if (tensor->tensor_desc.GetStorageType() ==
       ::ml_drift::TensorStorageType::kBuffer) {
     return;
   }
-  ::ml_drift::TensorDescriptor new_desc = param_tensor.tensor_desc;
+  ::ml_drift::TensorDescriptor new_desc = tensor->tensor_desc;
   new_desc.SetStorageType(::ml_drift::TensorStorageType::kBuffer);
-  auto new_param_tensor = model_builder->AddTensor(new_desc);
-  // Emit an explicit copy instead of re-pointing the producer of `param_id` at
-  // `new_param_tensor`. The param tensor can be read by other consumers that
-  // expect the original (non-BUFFER) storage type, e.g. the channel slices that
-  // the ring-buffer SDPA path applies to it. Re-pointing the producer would
-  // leave `param_id` without any producer, so those consumers would read
-  // uninitialized memory.
-  //
-  // When the param tensor has no other consumer, `LinkNodes()` merges this copy
-  // back into the producer, which yields exactly the same graph as re-pointing
-  // the producer would have.
-  model_builder->Copy(param_tensor, new_param_tensor);
-  replaced_tensors_[param_id] = std::make_unique<::ml_drift::Value>(
-      ::ml_drift::Value{new_param_tensor.id, inputs[param_index]->tensor,
-                        inputs[param_index]->quant_params});
+  auto new_tensor = model_builder->AddTensor(new_desc);
+  if (copy_from_original) {
+    // Emit an explicit copy instead of re-pointing the producer of `tensor_id`
+    // at `new_tensor`. The param tensor can be read by other consumers that
+    // expect the original (non-BUFFER) storage type, e.g. the channel slices
+    // that the ring-buffer SDPA path applies to it. Re-pointing the producer
+    // would leave `tensor_id` without any producer, so those consumers would
+    // read uninitialized memory.
+    //
+    // When the param tensor has no other consumer, `LinkNodes()` merges this
+    // copy back into the producer, which yields the same graph as re-pointing
+    // the producer would have.
+    model_builder->Copy(*tensor, new_tensor);
+  }
+  replaced_tensors_[tensor_id] = std::make_unique<::ml_drift::Value>(
+      ::ml_drift::Value{new_tensor.id, value.tensor, value.quant_params});
+}
+
+std::vector<::ml_drift::Value*> LiteRtOpSelector::ResolveInputsWithBufferParam(
+    int param_index, const std::vector<::ml_drift::Value*>& inputs,
+    ::ml_drift::GpuModelBuilder* model_builder) {
+  if (param_index >= 0) {
+    // Ensure param tensor is a buffer tensor as kernel programs expect so.
+    TensorToBuffer(*inputs[param_index], /*copy_from_original=*/true,
+                   model_builder);
+  }
+  // Substitute any input tensor that was replaced in `replaced_tensors_`. In
+  // addition to `inputs[param_index]`, upstream `add_values_to_cache` nodes may
+  // have promoted their non-external KV cache output tensors to BUFFER storage,
+  // which are consumed here as KV inputs even though the op's own input
+  // descriptors were originally created with the default storage type.
+  std::vector<::ml_drift::Value*> resolved_inputs = inputs;
+  for (int i = 0; i < inputs.size(); ++i) {
+    if (auto it = replaced_tensors_.find(inputs[i]->id);
+        it != replaced_tensors_.end()) {
+      resolved_inputs[i] = it->second.get();
+    }
+  }
+  return resolved_inputs;
 }
 
 absl::Status LiteRtOpSelector::GPUOperationFromNode(
@@ -148,22 +171,47 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     const std::vector<::ml_drift::Value*>& outputs,
     const ::ml_drift::Node& node, ::ml_drift::GpuModelBuilder* model_builder) {
   if (node.operation.type == kAddValuesToCacheType) {
-    ABSL_ASSIGN_OR_RETURN(auto op,
-                          CreateAddValuesToCacheFromNode(op_def, node));
+    ::ml_drift::OperationDef cache_op_def = op_def;
     std::vector<::ml_drift::ValueId> src_ids(inputs.size());
     for (int i = 0; i < inputs.size(); ++i) {
       src_ids[i] = inputs[i]->id;
     }
     int param_index = 2;
     // Ensure param tensor is a buffer tensor as kernel programs expect so.
-    ParamTensorToBuffer(param_index, inputs, model_builder);
-    if (replaced_tensors_.contains(inputs[param_index]->id)) {
-      src_ids[param_index] = replaced_tensors_[inputs[param_index]->id]->id;
+    TensorToBuffer(*inputs[param_index], /*copy_from_original=*/true,
+                   model_builder);
+    if (auto it = replaced_tensors_.find(inputs[param_index]->id);
+        it != replaced_tensors_.end()) {
+      src_ids[param_index] = it->second->id;
+      ABSL_ASSIGN_OR_RETURN(auto param_handle,
+                            model_builder->GetTensor(src_ids[param_index]));
+      cache_op_def.src_tensors[param_index] = param_handle.tensor_desc;
     }
     std::vector<::ml_drift::ValueId> dst_ids(outputs.size());
     for (int i = 0; i < outputs.size(); ++i) {
       dst_ids[i] = outputs[i]->id;
+      const bool is_external =
+          create_info_.predefined.contains(outputs[i]->id) ||
+          create_info_.external_immutable_tensors.contains(outputs[i]->id) ||
+          create_info_.external_mutable_tensors.contains(outputs[i]->id);
+      if (!is_external) {
+        // Unlike input param tensors, `add_values_to_cache` is itself the
+        // producer of `outputs[i]` and writes the packed KV cache directly into
+        // the new BUFFER tensor (which downstream `sdpa_transposed` and
+        // `runtime_bmm` consumers require), so `copy_from_original` is false.
+        TensorToBuffer(*outputs[i], /*copy_from_original=*/false,
+                       model_builder);
+        if (auto it = replaced_tensors_.find(outputs[i]->id);
+            it != replaced_tensors_.end()) {
+          dst_ids[i] = it->second->id;
+          ABSL_ASSIGN_OR_RETURN(auto dst_handle,
+                                model_builder->GetTensor(dst_ids[i]));
+          cache_op_def.dst_tensors[i] = dst_handle.tensor_desc;
+        }
+      }
     }
+    ABSL_ASSIGN_OR_RETURN(auto op,
+                          CreateAddValuesToCacheFromNode(cache_op_def, node));
     model_builder->AddGpuOperation(src_ids, dst_ids, std::move(op),
                                    node.operation.type);
     return absl::OkStatus();
@@ -173,35 +221,21 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
                                           &gpu_info_, model_builder);
   }
   if (node.operation.type == kFusedSdpaCacheUpdateType) {
-    std::vector<::ml_drift::Value*> sdpa_inputs = inputs;
-    if (inputs.size() > 6) {
-      int param_index = 6;
-      // Ensure param tensor is a buffer tensor as kernel programs expect so.
-      ParamTensorToBuffer(param_index, inputs, model_builder);
-      if (replaced_tensors_.contains(inputs[param_index]->id)) {
-        sdpa_inputs[param_index] =
-            replaced_tensors_[inputs[param_index]->id].get();
-      }
-    }
+    int param_index = inputs.size() > 6 ? 6 : -1;
+    std::vector<::ml_drift::Value*> sdpa_inputs =
+        ResolveInputsWithBufferParam(param_index, inputs, model_builder);
     return CreateFusedSdpaCacheUpdateFromNode(sdpa_inputs, outputs, node,
                                               model_builder);
   }
   if (node.operation.type == kRuntimeBatchedMatMulType) {
-    std::vector<::ml_drift::Value*> bmm_inputs = inputs;
-    if (inputs.size() > 2) {
-      int param_index = inputs.size() - 1;
-      // Ensure param tensor is a buffer tensor as kernel programs expect so.
-      ParamTensorToBuffer(param_index, inputs, model_builder);
-      if (replaced_tensors_.contains(inputs[param_index]->id)) {
-        bmm_inputs[param_index] =
-            replaced_tensors_[inputs[param_index]->id].get();
-      }
-    }
+    int param_index =
+        inputs.size() > 2 ? static_cast<int>(inputs.size()) - 1 : -1;
+    std::vector<::ml_drift::Value*> bmm_inputs =
+        ResolveInputsWithBufferParam(param_index, inputs, model_builder);
     return CreateRuntimeBatchedMatMulFromNode(bmm_inputs, outputs, node,
                                               model_builder);
   }
   if (node.operation.type == kSdpaTransposedType) {
-    std::vector<::ml_drift::Value*> sdpa_inputs = inputs;
     int param_index = -1;
     if (inputs.size() == 4 &&
         inputs[3]->tensor.type == ::ml_drift::DataType::kInt32) {
@@ -209,14 +243,8 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     } else if (inputs.size() > 4) {
       param_index = 4;
     }
-    if (param_index >= 0) {
-      // Ensure param tensor is a buffer tensor as kernel programs expect so.
-      ParamTensorToBuffer(param_index, inputs, model_builder);
-      if (replaced_tensors_.contains(inputs[param_index]->id)) {
-        sdpa_inputs[param_index] =
-            replaced_tensors_[inputs[param_index]->id].get();
-      }
-    }
+    std::vector<::ml_drift::Value*> sdpa_inputs =
+        ResolveInputsWithBufferParam(param_index, inputs, model_builder);
     return CreateSdpaTransposedFromNode(sdpa_inputs, outputs, node,
                                         model_builder);
   }

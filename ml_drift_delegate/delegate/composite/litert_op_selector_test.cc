@@ -23,14 +23,17 @@
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
+#include "ml_drift/common/kernels/fully_connected.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_parser.h"
+#include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 
 namespace litert::ml_drift {
 namespace {
@@ -47,12 +50,14 @@ using ::ml_drift::GpuModelBuilderOptions;
 using ::ml_drift::GraphFloat32;
 using ::ml_drift::Layout;
 using ::ml_drift::Node;
+using ::ml_drift::OHWI;
 using ::ml_drift::OperationDef;
 using ::ml_drift::SliceAttributes;
 using ::ml_drift::TensorDescriptor;
 using ::ml_drift::TensorStorageType;
 using ::ml_drift::Value;
 using ::ml_drift::ValueId;
+using ::ml_drift::WeightsLayout;
 
 GpuInfo GetTestGpuInfo() {
   GpuInfo gpu_info;
@@ -285,5 +290,106 @@ TEST(LiteRtOpSelectorTest, FusedSdpaCacheUpdateConvertsParamTensorToBuffer) {
   EXPECT_EQ(checked_nodes, 2);
 }
 
+TEST(LiteRtOpSelectorTest,
+     AddValuesToCacheIntermediateOutputsUseBufferForSdpaTransposed) {
+  const GpuInfo gpu_info = GetTestGpuInfo();
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF32;
+  create_info.storage_type = TensorStorageType::kTexture2D;
+
+  GpuModelBuilderOptions options;
+  options.storage = TensorStorageType::kTexture2D;
+  GpuModelBuilder builder(gpu_info, options);
+
+  TensorDescriptor q_desc(DataType::kFloat32, TensorStorageType::kTexture2D,
+                          Layout::kHWC);
+  q_desc.SetBHWCShape(BHWC(1, 4, 1, 64));
+  TensorDescriptor k_desc(DataType::kFloat32, TensorStorageType::kTexture2D,
+                          Layout::kHWC);
+  k_desc.SetBHWCShape(BHWC(1, 1, 32, 64));
+  TensorDescriptor v_in_desc = k_desc;
+  TensorDescriptor v_cache_desc(DataType::kFloat32,
+                                TensorStorageType::kTexture2D, Layout::kHWC);
+  v_cache_desc.SetBHWCShape(BHWC(1, 1, 64, 32));
+  TensorDescriptor param_desc(DataType::kInt32, TensorStorageType::kTexture2D,
+                              Layout::kHWC);
+  param_desc.SetBHWCShape(BHWC(1, 1, 1, 7));
+
+  auto q = builder.AddTensor(q_desc);
+  auto src_k = builder.AddTensor(k_desc);
+  auto src_v = builder.AddTensor(v_in_desc);
+  auto param = builder.AddTensor(param_desc);
+  auto cache_k = builder.AddTensor(k_desc);
+  auto cache_v = builder.AddTensor(v_cache_desc);
+  auto sdpa_out = builder.AddTensor(q_desc);
+
+  Value v_q{q.id, {DataType::kFloat32, BHWC(1, 4, 1, 64)}};
+  Value v_src_k{src_k.id, {DataType::kFloat32, BHWC(1, 1, 32, 64)}};
+  Value v_src_v{src_v.id, {DataType::kFloat32, BHWC(1, 1, 32, 64)}};
+  Value v_param{param.id, {DataType::kInt32, BHWC(1, 1, 1, 7)}};
+  Value v_cache_k{cache_k.id, {DataType::kFloat32, BHWC(1, 1, 32, 64)}};
+  Value v_cache_v{cache_v.id, {DataType::kFloat32, BHWC(1, 1, 64, 32)}};
+  Value v_sdpa_out{sdpa_out.id, {DataType::kFloat32, BHWC(1, 4, 1, 64)}};
+
+  OperationDef cache_op_def;
+  cache_op_def.src_tensors = {src_k.tensor_desc, src_v.tensor_desc,
+                              param.tensor_desc};
+  cache_op_def.dst_tensors = {cache_k.tensor_desc, cache_v.tensor_desc};
+
+  GraphFloat32 graph;
+  Node* cache_node = graph.NewNode();
+  cache_node->operation.type = kAddValuesToCacheType;
+  AddValuesToCacheAttributes cache_attr;
+  cache_attr.kv_cache_batch_size = 1;
+  cache_attr.cache_size = 32;
+  cache_attr.head_size = 64;
+  cache_node->operation.attributes = cache_attr;
+
+  LiteRtOpSelector selector(&create_info, &gpu_info);
+  ASSERT_OK(selector.GPUOperationFromNode(
+      cache_op_def, {&v_src_k, &v_src_v, &v_param}, {&v_cache_k, &v_cache_v},
+      *cache_node, &builder));
+
+  Node* sdpa_node = graph.NewNode();
+  sdpa_node->operation.type = kSdpaTransposedType;
+  SdpaTransposedAttributes sdpa_attr;
+  sdpa_attr.from_cache_update = true;
+  sdpa_attr.runtime_check.src_end_ch_index = 2;
+  sdpa_attr.bmm1_weights.weights_shape = OHWI(32, 1, 1, 64);
+  sdpa_attr.bmm1_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
+      DataType::kFloat32, sdpa_attr.bmm1_weights.weights_shape);
+  sdpa_attr.bmm1_weights.desc.layout = WeightsLayout::kOSpatialIOGroupO4I4;
+  sdpa_attr.bmm2_weights.weights_shape = OHWI(64, 1, 1, 32);
+  sdpa_attr.bmm2_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
+      DataType::kFloat32, sdpa_attr.bmm2_weights.weights_shape);
+  sdpa_node->operation.attributes = sdpa_attr;
+
+  OperationDef sdpa_op_def;
+  sdpa_op_def.src_tensors = {q.tensor_desc, cache_k.tensor_desc,
+                             cache_v.tensor_desc, param.tensor_desc};
+  sdpa_op_def.dst_tensors = {sdpa_out.tensor_desc};
+
+  ASSERT_OK(selector.GPUOperationFromNode(
+      sdpa_op_def, {&v_q, &v_cache_k, &v_cache_v, &v_param}, {&v_sdpa_out},
+      *sdpa_node, &builder));
+
+  GpuModel gpu_model;
+  ASSERT_OK(builder.GetGpuModel({q.id, src_k.id, src_v.id, param.id},
+                                {sdpa_out.id}, &gpu_model));
+
+  bool found_cache_node = false;
+  for (const auto& node : gpu_model.nodes) {
+    if (node.name == kAddValuesToCacheType) {
+      found_cache_node = true;
+      ASSERT_EQ(node.outputs.size(), 2);
+      for (ValueId out_id : node.outputs) {
+        ASSERT_TRUE(gpu_model.tensors.contains(out_id));
+        EXPECT_EQ(gpu_model.tensors.at(out_id).GetStorageType(),
+                  TensorStorageType::kBuffer);
+      }
+    }
+  }
+  EXPECT_TRUE(found_cache_node);
+}
 }  // namespace
 }  // namespace litert::ml_drift

@@ -535,7 +535,6 @@ litert_define_ats(
         "QkvNormRope.*4d_f(16|32)<(?!1x)",  # GPU accelerator does not support QkvNormRope with batch > 1
         "SelectV2",  # OpenCL SelectV2 rejects multidimensional if/else broadcasting and uses kExact on FP16-rounded f32
         "Slice",  # OpenCL Slice uses kExact byte comparison on FP16-rounded f32 buffers
-        "CacheUpdateSdpaTransposed",  # Requires intermediate odml.cache_update output buffer storage promotion
         "RuntimeBmm.*(i4|i8)",  # GPU odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
         "simple_add_dynamic_shape",
         "hf_all_minilm_l6_v2",
