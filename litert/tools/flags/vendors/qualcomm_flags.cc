@@ -552,6 +552,11 @@ ABSL_FLAG(uint32_t, qualcomm_htp_device_id, 0,
           "A nonzero value requires a matching platform-reported device; 0 "
           "leaves device selection to QNN's default configuration.");
 
+ABSL_FLAG(
+    bool, qualcomm_htp_context_init_acceleration, false,
+    "Use all HTP hardware threads to accelerate context-binary "
+    "deserialization. This can contend with concurrent HTP graph execution.");
+
 ABSL_FLAG(uint32_t, qualcomm_num_hvx_thread, 0,
           "The number of hvx threads for the target device. If this option is "
           "set to 0, the max number of hvx threads will be used.");
@@ -1020,6 +1025,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto htp_device_id = absl::GetFlag(FLAGS_qualcomm_htp_device_id);
   opts.SetHtpDeviceId(htp_device_id);
+
+  const auto htp_context_init_acceleration =
+      absl::GetFlag(FLAGS_qualcomm_htp_context_init_acceleration);
+  opts.SetHtpContextInitAcceleration(htp_context_init_acceleration);
 
   const auto num_hvx_threads = absl::GetFlag(FLAGS_qualcomm_num_hvx_thread);
   opts.SetNumHvxThreads(num_hvx_threads);
