@@ -15,7 +15,10 @@
 """Python wrapper for LiteRT compiled models."""
 
 import os
+import platform
+import sys
 from typing import Any, List, Optional, Sequence
+import warnings
 
 # pylint: disable=g-import-not-at-top
 if not os.path.splitext(__file__)[0].endswith(
@@ -88,6 +91,70 @@ def _create_default_environment() -> Environment:
   )
 
 
+def _is_linux_aarch64_host() -> bool:
+  return sys.platform == "linux" and platform.machine() in ("aarch64", "arm64")
+
+
+def _apply_vendor_sdk_defaults(kwargs: dict[str, Any]) -> None:
+  """Populates the Qualcomm QNN library dir from ai_edge_litert_sdk_qualcomm.
+
+  Applies when the NPU accelerator is requested, or on Qualcomm Linux aarch64
+  devices. The latter covers AOT-precompiled NPU models, which the runtime
+  routes to the NPU dispatch path even when only CPU is requested. CPU/GPU-only
+  models on other hosts, including non-Qualcomm aarch64 boards, never touch the
+  SDK.
+
+  On Linux aarch64 this also lazily calls the SDK's `configure_runtime()` (even
+  when `qnn_lib_dir` is set explicitly), which preloads FastRPC dependencies
+  and appends the skel directory of the detected Hexagon arch to
+  ADSP_LIBRARY_PATH. `dsp_skel_dir` is therefore not auto-filled; an explicit
+  value still takes precedence. Failures in the optional SDK package never
+  break model creation.
+
+  Args:
+    kwargs: Flat pybind kwargs; updated in place.
+  """
+  npu_requested = bool(
+      int(kwargs.get("hardware_accel", 0)) & int(HardwareAccelerator.NPU)
+  )
+  on_device = _is_linux_aarch64_host()
+  if not npu_requested and not on_device:
+    return
+  try:
+    # pylint: disable=g-import-not-at-top
+    import ai_edge_litert_sdk_qualcomm as _qnn_sdk  # pyrefly: ignore[missing-import]
+    # pylint: enable=g-import-not-at-top
+  except ImportError:
+    return
+  try:
+    if on_device:
+      if not npu_requested:
+        # CPU-only requests only need the SDK on Qualcomm devices.
+        detect = getattr(_qnn_sdk, "detect_hexagon_arch", None)
+        if detect is None or not detect():
+          return
+      if hasattr(_qnn_sdk, "configure_runtime"):
+        _qnn_sdk.configure_runtime(
+            warn_if_undetected=not kwargs.get("qualcomm_dsp_skel_dir")
+        )
+    if kwargs.get("qualcomm_qnn_lib_dir"):
+      return
+    lib_dir = _qnn_sdk.path_to_sdk_libs()
+  except NotImplementedError:
+    # The optional SDK package does not support this host (e.g. Windows or
+    # macOS); model creation must not fail just because it is installed.
+    return
+  except Exception as e:  # pylint: disable=broad-exception-caught
+    warnings.warn(
+        f"Skipping ai_edge_litert_sdk_qualcomm defaults: {e!r}",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+    return
+  if lib_dir and os.path.isdir(str(lib_dir)):
+    kwargs["qualcomm_qnn_lib_dir"] = str(lib_dir)
+
+
 class CompiledModel:
   """Python wrapper for the C++ CompiledModelWrapper.
 
@@ -147,10 +214,12 @@ class CompiledModel:
     """
     env = environment or _create_default_environment()
     model_options = _resolve_options(options, hardware_accel)
+    flat_kwargs = model_options._as_flat_kwargs()
+    _apply_vendor_sdk_defaults(flat_kwargs)
     ptr = _cm.CreateCompiledModelFromFile(
         env.capsule,
         model_path,
-        **model_options._as_flat_kwargs(),
+        **flat_kwargs,
     )
     return cls(ptr, env)
 
@@ -178,10 +247,12 @@ class CompiledModel:
     """
     env = environment or _create_default_environment()
     model_options = _resolve_options(options, hardware_accel)
+    flat_kwargs = model_options._as_flat_kwargs()
+    _apply_vendor_sdk_defaults(flat_kwargs)
     ptr = _cm.CreateCompiledModelFromBuffer(
         env.capsule,
         model_data,
-        **model_options._as_flat_kwargs(),
+        **flat_kwargs,
     )
     return cls(ptr, env)
 
