@@ -68,6 +68,12 @@ LiteRtStatus LiteRtBuilderBuildOp(LiteRtBuilder builder, LiteRtOpCode op_code,
 // This function is performed transactionally within the builder context.
 LiteRtStatus LiteRtBuilderEraseOp(LiteRtBuilder builder, LiteRtOp op_to_erase);
 
+// Replaces the tensor at input_index of op with new_tensor, updating
+// the use-def chains on both the old and new tensors.
+LiteRtStatus LiteRtBuilderSetOpInput(LiteRtBuilder builder, LiteRtOp op,
+                                     LiteRtParamIndex input_index,
+                                     LiteRtTensor new_tensor);
+
 struct LiteRtCompilerContext;
 
 // Function pointer type for a rewrite pattern (also known as a transformation).

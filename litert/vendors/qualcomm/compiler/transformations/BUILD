@@ -162,6 +162,45 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "fold_const_dequantize",
+    srcs = ["fold_const_dequantize.cc"],
+    hdrs = ["fold_const_dequantize.h"],
+    copts = _TRANSFORMATION_COPTS,
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context_header",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/compiler/cc:litert_builder",
+        "//litert/compiler/cc:litert_matchers",
+        "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_quantization",
+        "//tensor/internal:fp16",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "fold_const_dequantize_test",
+    srcs = ["fold_const_dequantize_test.cc"],
+    deps = [
+        ":fold_const_dequantize",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context",  # buildcleaner: keep
+        "//litert/c/internal:litert_compiler_context_header",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/model",
+        "//tensor/internal:fp16",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "transformations_test",
     srcs = ["transformations_test.cc"],
