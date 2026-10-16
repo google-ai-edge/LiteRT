@@ -497,6 +497,54 @@ class MinMaxQuantizeUtilsTest(parameterized.TestCase):
             op_name, op_quant_config, _DEFAULT_CONFIG_CHECK_POLICY
         )
 
+  def test_check_multi_axis_config_custom_op_succeeds(self):
+    op_quant_config = _OpQuantConfig(
+        weight_tensor_config=_TensorQuantConfig(
+            num_bits=8,
+            granularity=qtyping.QuantGranularity.CHANNELWISE,
+            quantized_dimensions=(0, 1),
+        ),
+    )
+    # Should not raise any exception.
+    common_utils.check_multi_axis_config(_TFLOpName.CUSTOM_OP, op_quant_config)
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="asymmetric",
+          op_name=_TFLOpName.CUSTOM_OP,
+          symmetric=False,
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          error_regex="does not support asymmetric weight",
+      ),
+      dict(
+          testcase_name="tensorwise",
+          op_name=_TFLOpName.CUSTOM_OP,
+          symmetric=True,
+          granularity=qtyping.QuantGranularity.TENSORWISE,
+          error_regex="can only be set when granularity is CHANNELWISE",
+      ),
+      dict(
+          testcase_name="unsupported_op",
+          op_name=_TFLOpName.FULLY_CONNECTED,
+          symmetric=True,
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          error_regex="only supported for CUSTOM_OP",
+      ),
+  )
+  def test_check_multi_axis_config_raises_error(
+      self, op_name, symmetric, granularity, error_regex
+  ):
+    op_quant_config = _OpQuantConfig(
+        weight_tensor_config=_TensorQuantConfig(
+            num_bits=8,
+            symmetric=symmetric,
+            granularity=granularity,
+            quantized_dimensions=(0, 1),
+        ),
+    )
+    with self.assertRaisesRegex(ValueError, error_regex):
+      common_utils.check_multi_axis_config(op_name, op_quant_config)
+
   def test_materialize_op_with_output_activation_constraint_fails_for_multiple_output_op(
       self,
   ):
@@ -654,6 +702,64 @@ class CommonUtilsTest(parameterized.TestCase):
       common_utils.reshape_to_blocks(
           tensor, quantized_dimension=1, block_size=3
       )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="none_dimension",
+          quantized_dim=None,
+          expected=None,
+      ),
+      dict(
+          testcase_name="single_dimension",
+          quantized_dim=1,
+          expected=(0, 2, 3),
+      ),
+      dict(
+          testcase_name="multi_axis_dimensions",
+          quantized_dim=(1, 2),
+          expected=(0, 3),
+      ),
+  )
+  def test_get_reduce_dims(self, quantized_dim, expected):
+    tensor_shape = (2, 3, 4, 5)
+    self.assertEqual(
+        common_utils.get_reduce_dims(quantized_dim, tensor_shape), expected
+    )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="channelwise_returns_dims",
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          expected=(0, 1),
+      ),
+      dict(
+          testcase_name="tensorwise_returns_none",
+          granularity=qtyping.QuantGranularity.TENSORWISE,
+          expected=None,
+      ),
+  )
+  def test_get_weight_quantized_dim_multi_axis(self, granularity, expected):
+    """Tests that only non-TENSORWISE tensors get the multi-axis dims."""
+    op_info = qtyping.OpInfo(
+        op=qtyping.OperatorT(),
+        op_name=_TFLOpName.CUSTOM_OP,
+        subgraph_op_index=1,
+        op_quant_config=_OpQuantConfig(
+            weight_tensor_config=_TensorQuantConfig(
+                num_bits=8,
+                granularity=qtyping.QuantGranularity.CHANNELWISE,
+                quantized_dimensions=(0, 1),
+            ),
+        ),
+    )
+    self.assertEqual(
+        common_utils.get_weight_quantized_dim(
+            op_info=op_info,
+            tensor_data=np.array([]),
+            granularity=granularity,
+        ),
+        expected,
+    )
 
 
 if __name__ == "__main__":

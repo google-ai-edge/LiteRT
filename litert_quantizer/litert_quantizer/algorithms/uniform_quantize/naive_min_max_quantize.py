@@ -90,12 +90,14 @@ def get_tensor_quant_params(
   quantized_dim = common_utils.get_weight_quantized_dim(
       op_info, tensor_content, tensor_quant_config.granularity  # pyrefly: ignore[bad-argument-type]
   )
+  is_multi_axis = isinstance(quantized_dim, (list, tuple))
   quant_params = qtyping.UniformQuantParams(
       scale=scale,
       zero_point=zp,
       num_bits=tensor_quant_config.num_bits,
       symmetric=tensor_quant_config.symmetric,
-      quantized_dimension=quantized_dim,
+      quantized_dimension=(quantized_dim if not is_multi_axis else None),
+      quantized_dimensions=(quantized_dim if is_multi_axis else None),
       block_size=uniform_quantize_tensor.extract_block_size_from_granularity(
           tensor_quant_config.granularity
       ),

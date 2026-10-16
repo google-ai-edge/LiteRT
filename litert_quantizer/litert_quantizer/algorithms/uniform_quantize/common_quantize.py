@@ -89,6 +89,7 @@ def check_op_quantization_config(
         op_name, op_quant_config, config_check_policy
     )
   common_utils.check_subchannel_config(op_name, op_quant_config)
+  common_utils.check_multi_axis_config(op_name, op_quant_config)
 
 
 def materialize_input(

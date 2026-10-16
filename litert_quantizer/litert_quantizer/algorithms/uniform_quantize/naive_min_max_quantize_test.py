@@ -204,6 +204,50 @@ class NaiveMinMaxQuantizeTest(parameterized.TestCase):
     self.assertEqual(quant_params.block_size, 32)
     self.assertEqual(quant_params.quantized_dimension, 1)
 
+  def test_get_tensor_quant_params_for_multi_axis_weight(self):
+    quantized_dimensions = (0, 1)
+    reduced_axis = 2
+    tensor_shape = (2, 3, 4)
+    expected_scale_shape = (2, 3, 1)
+
+    weight_tensor_config = _TensorQuantConfig(
+        num_bits=4,
+        symmetric=True,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        quantized_dimensions=quantized_dimensions,
+    )
+    op_info = qtyping.OpInfo(
+        op=qtyping.OperatorT(),
+        op_name=_TFLOpName.CUSTOM_OP,
+        subgraph_op_index=0,
+        op_quant_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=weight_tensor_config,
+        ),
+    )
+    tensor_data = np.random.uniform(low=-10, high=10, size=tensor_shape).astype(
+        np.float32
+    )
+    quant_params = naive_min_max_quantize.get_tensor_quant_params(
+        op_info=op_info,
+        tensor_quant_config=weight_tensor_config,
+        tensor_content=tensor_data,
+    )
+    with self.subTest("quantized_dimensions"):
+      self.assertEqual(quant_params.quantized_dimensions, quantized_dimensions)
+      self.assertIsNone(quant_params.quantized_dimension)
+
+    with self.subTest("zero_point"):
+      np.testing.assert_array_equal(
+          quant_params.zero_point, np.zeros(expected_scale_shape)
+      )
+
+    expected_scales = (
+        np.amax(np.abs(tensor_data), axis=reduced_axis, keepdims=True)
+        / 7.0  # max quantized value for 4-bit symmetric quantization.
+    )
+    with self.subTest("scale"):
+      np.testing.assert_allclose(quant_params.scale, expected_scales, atol=1e-5)
+
   def test_get_tensor_quant_params_for_uint8_activation(self):
     subgraph0 = self._test_model.subgraphs[0]
     subgraph_op_index = 3
