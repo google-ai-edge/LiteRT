@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <utility>
 #include <vector>
 
@@ -238,6 +239,43 @@ inline LiteRtStatus InferHashtableLookup(const LiteRtOpT& op,
   output_shapes[0] = BuildAxis0LookupOutputShape(lookup_shape, value_shape);
   output_shapes[1] = lookup_shape;
   return kLiteRtStatusOk;
+}
+
+template <typename T, typename IndexT = int32_t>
+inline void ReferenceGather(const T* input_data, const int32_t* input_dims,
+                            int input_rank, const IndexT* indices_data,
+                            const int32_t* indices_dims, int indices_rank,
+                            int axis, int batch_dims, T* output_data) {
+  if (axis < 0) axis += input_rank;
+  if (batch_dims < 0) batch_dims += indices_rank;
+
+  int64_t batch_size = 1;
+  for (int i = 0; i < batch_dims; ++i) batch_size *= input_dims[i];
+  int64_t outer_size = 1;
+  for (int i = batch_dims; i < axis; ++i) outer_size *= input_dims[i];
+  int64_t inner_size = 1;
+  for (int i = axis + 1; i < input_rank; ++i) inner_size *= input_dims[i];
+  int64_t num_indices = 1;
+  for (int i = batch_dims; i < indices_rank; ++i) {
+    num_indices *= indices_dims[i];
+  }
+
+  int64_t axis_size = input_dims[axis];
+  for (int64_t b = 0; b < batch_size; ++b) {
+    for (int64_t o = 0; o < outer_size; ++o) {
+      for (int64_t i = 0; i < num_indices; ++i) {
+        int64_t idx = indices_data[b * num_indices + i];
+        if (idx >= 0 && idx < axis_size) {
+          const T* src = input_data +
+                         ((b * outer_size + o) * axis_size + idx) * inner_size;
+          std::memcpy(output_data, src, inner_size * sizeof(T));
+        } else {
+          std::memset(output_data, 0, inner_size * sizeof(T));
+        }
+        output_data += inner_size;
+      }
+    }
+  }
 }
 
 }  // namespace litert::internal

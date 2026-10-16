@@ -16,14 +16,14 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <tuple>
 #include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "litert/cc/litert_expected.h"
-#include "litert/core/model/model.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/graph_helpers.h"
 #include "litert/test/matchers.h"
@@ -37,6 +37,7 @@
 namespace litert::testing {
 namespace {
 
+using ::testing::ElementsAre;
 using ::testing::FloatNear;
 using ::testing::Pointwise;
 
@@ -352,6 +353,153 @@ TEST(ReferenceEvaluatorTest, RunChainedComposites) {
   // Element 1: (4 + 1) * (4 - 1) + 10 = 15 + 10 = 25
   std::vector<float> expected = {18.0f, 25.0f};
   EXPECT_THAT(outputs[0].Span<float>(), Pointwise(FloatNear(1e-5f), expected));
+}
+
+TEST(ReferenceEvaluatorTest, RunGather) {
+  using TensorTf = litert::tensor::Tensor<litert::tensor::TfLiteMixinTag>;
+
+  TensorTf params_f32 = litert::tensor::Create(
+      "params_f32", litert::tensor::Type::kFP32, {3, 2},
+      std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f});
+  TensorTf params_i32 =
+      litert::tensor::Create("params_i32", litert::tensor::Type::kI32, {3, 2},
+                             std::vector<int32_t>{10, 20, 30, 40, 50, 60});
+  TensorTf indices =
+      litert::tensor::Create("indices", litert::tensor::Type::kI32, {2});
+  TensorTf out_f32 = litert::tensor::Gather(params_f32, indices, /*axis=*/0,
+                                            /*batch_dims=*/0);
+  TensorTf out_i32 = litert::tensor::Gather(params_i32, indices, /*axis=*/0,
+                                            /*batch_dims=*/0);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model, litert::testing::SaveTensorGraph({out_f32, out_i32}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_idx, SimpleBuffer::Create<int32_t>({2}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_out_f32,
+                              SimpleBuffer::Create<float>({2, 2}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_out_i32,
+                              SimpleBuffer::Create<int32_t>({2, 2}));
+  b_idx.Span<int32_t>()[0] = 2;
+  b_idx.Span<int32_t>()[1] = 0;
+
+  VarBuffers inputs;
+  inputs.push_back(std::move(b_idx));
+  VarBuffers outputs;
+  outputs.push_back(std::move(b_out_f32));
+  outputs.push_back(std::move(b_out_i32));
+
+  LITERT_ASSERT_OK(ReferenceEvaluator::Evaluate(*model, inputs, outputs));
+  EXPECT_THAT(outputs[0].Span<float>(),
+              Pointwise(FloatNear(1e-5f), {5.0f, 6.0f, 1.0f, 2.0f}));
+  EXPECT_THAT(outputs[1].Span<int32_t>(), ElementsAre(50, 60, 10, 20));
+}
+
+TEST(ReferenceEvaluatorTest, RunGelu) {
+  using TensorTf = litert::tensor::Tensor<litert::tensor::TfLiteMixinTag>;
+
+  TensorTf in = litert::tensor::Create("in", litert::tensor::Type::kFP32, {2});
+  TensorTf out_approx = litert::tensor::Gelu(in, /*approximate=*/true);
+  TensorTf out_exact = litert::tensor::Gelu(in, /*approximate=*/false);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model, litert::testing::SaveTensorGraph({out_approx, out_exact}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_in, SimpleBuffer::Create<float>({2}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_out_approx,
+                              SimpleBuffer::Create<float>({2}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_out_exact,
+                              SimpleBuffer::Create<float>({2}));
+  b_in.Span<float>()[0] = 0.0f;
+  b_in.Span<float>()[1] = 1.0f;
+
+  VarBuffers inputs;
+  inputs.push_back(std::move(b_in));
+  VarBuffers outputs;
+  outputs.push_back(std::move(b_out_approx));
+  outputs.push_back(std::move(b_out_exact));
+
+  LITERT_ASSERT_OK(ReferenceEvaluator::Evaluate(*model, inputs, outputs));
+  const float expected_approx =
+      0.5f * (1.0f + std::tanh(std::sqrt(2.0f / M_PI) * (1.0f + 0.044715f)));
+  const float expected_exact = 0.5f * (1.0f + std::erf(1.0f / std::sqrt(2.0f)));
+  EXPECT_THAT(outputs[0].Span<float>(),
+              Pointwise(FloatNear(1e-5f), {0.0f, expected_approx}));
+  EXPECT_THAT(outputs[1].Span<float>(),
+              Pointwise(FloatNear(1e-5f), {0.0f, expected_exact}));
+}
+
+TEST(ReferenceEvaluatorTest, RunSum) {
+  using TensorTf = litert::tensor::Tensor<litert::tensor::TfLiteMixinTag>;
+
+  TensorTf in =
+      litert::tensor::Create("in", litert::tensor::Type::kFP32, {2, 2});
+  TensorTf out =
+      litert::tensor::Sum(in, /*axes=*/{0}, /*keep_dims=*/false);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto model,
+                              litert::testing::SaveTensorGraph({out}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_in, SimpleBuffer::Create<float>({2, 2}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_out, SimpleBuffer::Create<float>({2}));
+  auto in_span = b_in.Span<float>();
+  in_span[0] = 1.0f;
+  in_span[1] = 2.0f;
+  in_span[2] = 3.0f;
+  in_span[3] = 4.0f;
+
+  VarBuffers inputs;
+  inputs.push_back(std::move(b_in));
+  VarBuffers outputs;
+  outputs.push_back(std::move(b_out));
+
+  LITERT_ASSERT_OK(ReferenceEvaluator::Evaluate(*model, inputs, outputs));
+  EXPECT_THAT(outputs[0].Span<float>(),
+              Pointwise(FloatNear(1e-5f), {4.0f, 6.0f}));
+}
+
+TEST(ReferenceEvaluatorTest, RunDequantize) {
+  using TensorTf = litert::tensor::Tensor<litert::tensor::TfLiteMixinTag>;
+
+  TensorTf w_i8 =
+      litert::tensor::Create("w_i8", litert::tensor::Type::kI8, {1, 4},
+                             std::vector<int8_t>{10, -20, 30, -40});
+  auto quant_per_tensor =
+      std::make_shared<litert::tensor::PerChannelAffineQuantization>();
+  quant_per_tensor->scales = {0.1f};
+  quant_per_tensor->zero_points = {0};
+  quant_per_tensor->quantized_dimension = 0;
+  w_i8.SetQuantization(quant_per_tensor);
+  TensorTf out_i8 = litert::tensor::Dequantize(w_i8);
+
+  std::vector<litert::tensor::int2_t> packed_i2(1);
+  litert::tensor::internal::SetPackedValue(packed_i2[0], 0, -2);
+  litert::tensor::internal::SetPackedValue(packed_i2[0], 1, -1);
+  litert::tensor::internal::SetPackedValue(packed_i2[0], 2, 0);
+  litert::tensor::internal::SetPackedValue(packed_i2[0], 3, 1);
+  TensorTf w_i2 = litert::tensor::Create("w_i2", litert::tensor::Type::kI2,
+                                         {2, 2}, packed_i2);
+  auto quant_per_channel =
+      std::make_shared<litert::tensor::PerChannelAffineQuantization>();
+  quant_per_channel->scales = {0.5f, 2.0f};
+  quant_per_channel->zero_points = {0, 0};
+  quant_per_channel->quantized_dimension = 0;
+  w_i2.SetQuantization(quant_per_channel);
+  TensorTf out_i2 = litert::tensor::Dequantize(w_i2);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model, litert::testing::SaveTensorGraph({out_i8, out_i2}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_out_i8,
+                              SimpleBuffer::Create<float>({1, 4}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto b_out_i2,
+                              SimpleBuffer::Create<float>({2, 2}));
+
+  VarBuffers inputs;
+  VarBuffers outputs;
+  outputs.push_back(std::move(b_out_i8));
+  outputs.push_back(std::move(b_out_i2));
+
+  LITERT_ASSERT_OK(ReferenceEvaluator::Evaluate(*model, inputs, outputs));
+  EXPECT_THAT(outputs[0].Span<float>(),
+              Pointwise(FloatNear(1e-5f), {1.0f, -2.0f, 3.0f, -4.0f}));
+  EXPECT_THAT(outputs[1].Span<float>(),
+              Pointwise(FloatNear(1e-5f), {-1.0f, -0.5f, 0.0f, 2.0f}));
 }
 
 }  // namespace

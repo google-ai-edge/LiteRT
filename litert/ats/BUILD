@@ -959,6 +959,7 @@ cc_library(
         ":inference_fixture",
         ":register_cache_update_sdpa_transposed",
         ":register_group_norm",
+        ":register_moe_experts",
         ":register_qkv_norm_rope",
         ":register_rms_norm",
         ":register_runtime_bmm",
@@ -1245,6 +1246,24 @@ cc_library(
         ":register",
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators:group_norm",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_moe_experts",
+    testonly = True,
+    srcs = ["register_moe_experts.cc"],
+    hdrs = ["register_moe_experts.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:moe_experts",
+        "//tensor:datatypes",
         "//tflite/types:half",
     ],
 )

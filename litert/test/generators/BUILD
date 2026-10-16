@@ -701,6 +701,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/core/model",
         "//litert/core/model:ops_concatenation",
+        "//litert/core/model:ops_gather",
         "//litert/core/model:ops_matmul",
         "//litert/core/model:ops_reductions",
         "//litert/core/model:ops_select",
@@ -710,6 +711,7 @@ cc_library(
         "//litert/core/model:ops_transpose",
         "//litert/core/model:shape_inference_types",
         "//litert/test:simple_buffer",
+        "//tensor:datatypes",
         "//tflite/schema:schema_fbs",
         "//tflite/types:half",
         "@com_google_absl//absl/base:no_destructor",
@@ -726,8 +728,6 @@ cc_test(
         ":common",
         ":graph_helpers",
         ":reference_evaluator",
-        "//litert/cc:litert_expected",
-        "//litert/core/model",
         "//litert/test:matchers",
         "//litert/test:simple_buffer",
         "//tensor",
@@ -931,6 +931,30 @@ cc_library(
 )
 
 cc_library(
+    name = "moe_experts",
+    testonly = True,
+    hdrs = ["moe_experts.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        ":reference_evaluator",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_rng",
+        "//litert/core/model",
+        "//litert/test:simple_buffer",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:datatypes",
+        "//tensor/backends/tflite:arithmetic_tflite",
+        "//tflite/types:half",
+        "@com_google_absl//absl/strings:string_view",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_library(
     name = "generators",
     testonly = True,
     hdrs = ["generators.h"],
@@ -948,6 +972,7 @@ cc_library(
         ":fully_connected",
         ":group_norm",
         ":mean",
+        ":moe_experts",
         ":pad",
         ":pooling",
         ":qkv_norm_rope",
