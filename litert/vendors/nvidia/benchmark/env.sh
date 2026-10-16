@@ -1,9 +1,11 @@
 # Copyright 2026 The ODML Authors. Licensed under the Apache License, Version 2.0.
 #
 # Paths and the TensorRT-RTX runtime environment of the NVIDIA benchmarks.
-# Sourced by build.sh, bench.sh and run_head.sh; nothing here runs a command.
+# Sourced by build.sh, bench.sh and matrix.sh; nothing here runs a command. An env.local.sh
+# next to this file, if present, is sourced first: a machine's paths without editing this one.
 #
 # Inputs (environment, all optional):
+#   LITERT_RT_DIR      this LiteRT tree (default: the tree this file is in)
 #   LITERT_LM_DIR      LiteRT-LM checkout (default: ../../llm/LiteRT-LM next to this tree)
 #   TENSORRT_RTX_ROOT  TensorRT-RTX SDK (default: ~/opt/tensorrt-rtx-sdk)
 #   CUDA_HOME          CUDA toolkit (default: /usr/local/cuda)
@@ -12,13 +14,17 @@
 #   LITERT_BENCH_MODELS directory of the litertlm files (default: $LITERT_LM_DIR/../models)
 #   LITERT_BENCH_DISTDIR a Bazel --distdir for offline builds
 
+if [[ -f "$(dirname "${BASH_SOURCE[0]}")/env.local.sh" ]]; then
+  source "$(dirname "${BASH_SOURCE[0]}")/env.local.sh"
+fi
+
 nb_die() { echo "ERROR: $*" >&2; exit 2; }
 
 nb_resolve_paths() {
   local here
   here=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
   export NB_RT NB_LM NB_ROOT NB_SDK NB_CUDA NB_MODELS NB_BUILD_RT NB_BUILD_LM NB_RUNTIME_LIBS
-  NB_RT=$(realpath "$here/../../../..")
+  NB_RT=$(realpath -m "${LITERT_RT_DIR:-$here/../../../..}")
   NB_LM=$(realpath -m "${LITERT_LM_DIR:-$NB_RT/../../llm/LiteRT-LM}")
   NB_ROOT=${LITERT_BENCH_ROOT:-$HOME/.local/state/litert-nvidia-benchmark}
   NB_SDK=$(realpath -m "${TENSORRT_RTX_ROOT:-$HOME/opt/tensorrt-rtx-sdk}")

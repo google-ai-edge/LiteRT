@@ -59,9 +59,11 @@ TEST(SubbyteGemvPluginTest, SerializesAndMatchesReference) {
   // INT4 feed-forward projections and its 480 MiB vocabulary projection.
   // The latter exercises large packed constants through engine serialization,
   // not just a direct kernel launch. The odd row count covers a partial CTA.
-  constexpr std::array<std::array<int32_t, 3>, 6> kCases = {{
+  constexpr std::array<std::array<int32_t, 3>, 8> kCases = {{
       {2, 8, 64},
       {4, 8, 64},
+      {8, 8, 64},
+      {8, 1536, 256},
       {4, 9, 3840},
       {4, 15360, 3840},
       {4, 3840, 15360},
@@ -199,8 +201,9 @@ TEST(SubbyteGemvPluginTest, FewRowsRunAsBatchedGemv) {
     int32_t channels;
     int32_t columns;
   };
-  for (const Case& test_case : {Case{4, 4, 130, 256}, Case{2, 4, 136, 1536},
-                                Case{4, 8, 64, 4096}, Case{2, 8, 24, 64}}) {
+  for (const Case& test_case :
+       {Case{4, 4, 130, 256}, Case{2, 4, 136, 1536}, Case{4, 8, 64, 4096},
+        Case{2, 8, 24, 64}, Case{8, 4, 256, 1536}, Case{8, 5, 24, 64}}) {
     SCOPED_TRACE(::testing::Message()
                  << "bits=" << test_case.bit_width << " rows=" << test_case.rows
                  << " channels=" << test_case.channels
