@@ -174,7 +174,11 @@ Expected<nvinfer1::DataType> ToTensorRtDataType(
 }
 
 struct CudaTensorBufferInfo : HwMemoryInfo {
+  // The device allocation the producer asked for: below the tensor's packed
+  // size when the engine stores the tensor more compactly (a float32 KV cache
+  // kept as FP16).
   size_t bytes = 0;
+  // The tensor's packed size: the bytes the host sees through Lock.
   size_t packed_bytes = 0;
   void* host_cache = nullptr;
   bool host_cache_pinned = false;
@@ -195,6 +199,8 @@ struct NvidiaGreedySamplerContext {
   int32_t* host_result = nullptr;
   size_t result_capacity = 0;
   uint64_t calls = 0;
+  // Calls answered from the argmax the invocation ran itself (FusedGreedy).
+  uint64_t fused_calls = 0;
 };
 
 CudaTensorBufferInfo* AsCudaTensorBufferInfo(HwMemoryInfoPtr info) {
@@ -203,8 +209,17 @@ CudaTensorBufferInfo* AsCudaTensorBufferInfo(HwMemoryInfoPtr info) {
 
 size_t NonZeroBytes(size_t bytes) { return std::max<size_t>(bytes, 1); }
 
-size_t CopyBytes(const CudaTensorBufferInfo& info) {
+// The bytes the host sees through Lock. LiteRT reads, writes and clears a
+// locked buffer at the tensor's packed size, whatever the device holds.
+size_t HostBytes(const CudaTensorBufferInfo& info) {
   return info.packed_bytes == 0 ? info.bytes : info.packed_bytes;
+}
+
+// The bytes copied between the host cache and the device, and cleared: the
+// host's view, no more than the device allocation.
+size_t CopyBytes(const CudaTensorBufferInfo& info) {
+  const size_t host_bytes = HostBytes(info);
+  return info.bytes == 0 ? host_bytes : std::min(host_bytes, info.bytes);
 }
 
 bool PinnedHostStagingEnabled() {
@@ -269,8 +284,7 @@ class CudaTensorBufferRegistry {
       if (!info->host_dirty || info->host_cache == nullptr) {
         continue;
       }
-      const size_t copy_bytes =
-          info->packed_bytes == 0 ? info->bytes : info->packed_bytes;
+      const size_t copy_bytes = CopyBytes(*info);
       // Pageable memory is staged before cudaMemcpyAsync returns; pinned
       // memory must stay as it is until the stream gets to the copy, which
       // the invocation waits for.
@@ -290,6 +304,18 @@ class CudaTensorBufferRegistry {
     return kLiteRtStatusOk;
   }
 
+  // Whether any buffer at `handle` has a host copy newer than the device's.
+  bool AnyHostNewer(void* handle) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto range = buffers_.equal_range(handle);
+    for (auto it = range.first; it != range.second; ++it) {
+      if (it->second->host_dirty) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // The device copy of the buffers at `handle` is about to be overwritten.
   void Discard(void* handle) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -302,6 +328,102 @@ class CudaTensorBufferRegistry {
  private:
   std::mutex mutex_;
   std::unordered_multimap<void*, CudaTensorBufferInfo*> buffers_;
+};
+
+// Greedy sampling fused into the invocation. Once a sampler has read a logits
+// buffer (SampleNvidiaGreedy), the invocation that next writes that buffer
+// runs the argmax on its own stream, before its synchronization, into the
+// sampler's result buffers; the sampler's next call takes that result without
+// a launch, a copy or a synchronization of its own (each costs a host round
+// trip on WSL). A host write to the logits in between (a constrained decoder)
+// leaves the host copy newer, and the sampler takes its usual path.
+// LITERT_NVIDIA_DISPATCH_FUSED_SAMPLING=0 turns the fusion off.
+bool FusedSamplingEnabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_FUSED_SAMPLING");
+    return value == nullptr || value[0] == '\0' || std::strcmp(value, "0") != 0;
+  }();
+  return enabled;
+}
+
+struct FusedGreedyEntry {
+  NvidiaGreedySamplerContext* context = nullptr;
+  size_t rows = 0;
+  size_t count = 0;
+  bool fp16 = false;
+  // The context's host_result holds the argmax of the buffer's current
+  // contents.
+  bool fresh = false;
+};
+
+// The logits buffers samplers read, by device pointer.
+class FusedGreedyRegistry {
+ public:
+  static FusedGreedyRegistry& Get() {
+    static auto* registry = new FusedGreedyRegistry;
+    return *registry;
+  }
+
+  void Register(const void* logits, const FusedGreedyEntry& entry) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    entries_[logits] = entry;
+  }
+
+  bool Find(const void* logits, FusedGreedyEntry* entry) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = entries_.find(logits);
+    if (it == entries_.end()) {
+      return false;
+    }
+    *entry = it->second;
+    return true;
+  }
+
+  // Takes the fresh result for `logits` if it is `context`'s and matches the
+  // shape; the entry is then stale until the next invocation.
+  bool TakeFresh(const void* logits, const NvidiaGreedySamplerContext* context,
+                 size_t rows, size_t count, bool fp16) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = entries_.find(logits);
+    if (it == entries_.end() || !it->second.fresh ||
+        it->second.context != context || it->second.rows != rows ||
+        it->second.count != count || it->second.fp16 != fp16) {
+      return false;
+    }
+    it->second.fresh = false;
+    return true;
+  }
+
+  void SetFresh(const void* logits, bool fresh) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = entries_.find(logits);
+    if (it != entries_.end()) {
+      it->second.fresh = fresh;
+    }
+  }
+
+  void ForgetContext(const NvidiaGreedySamplerContext* context) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto it = entries_.begin(); it != entries_.end();) {
+      it = it->second.context == context ? entries_.erase(it) : std::next(it);
+    }
+  }
+
+  // A device allocation is going away: its views must not be sampled.
+  void ForgetRange(const void* begin, size_t bytes) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const uintptr_t first = reinterpret_cast<uintptr_t>(begin);
+    for (auto it = entries_.begin(); it != entries_.end();) {
+      const uintptr_t address = reinterpret_cast<uintptr_t>(it->first);
+      it = address >= first && address - first < std::max<size_t>(bytes, 1)
+               ? entries_.erase(it)
+               : std::next(it);
+    }
+  }
+
+ private:
+  std::mutex mutex_;
+  std::unordered_map<const void*, FusedGreedyEntry> entries_;
 };
 
 LiteRtStatus ValidateCudaDevicePointer(void* device_ptr) {
@@ -348,16 +470,16 @@ LiteRtStatus CreateCudaTensorBuffer(LiteRtGpuDeviceId device_id,
   if (info == nullptr) {
     return kLiteRtStatusErrorMemoryAllocationFailure;
   }
+  info->bytes = bytes;
+  info->packed_bytes = packed_bytes;
   // The buffer size comes from the producer's requirements; when it is
   // smaller than the tensor's packed size the producer stores the tensor
-  // more compactly (a float32 KV cache kept as FP16), and the buffer, its
-  // copies and its clears are that size.
-  if (bytes != 0 && packed_bytes > bytes) {
-    packed_bytes = bytes;
-  }
+  // more compactly (a float32 KV cache kept as FP16), and the device
+  // allocation, its copies and its clears are that size. The host cache
+  // (Lock) stays at the tensor's packed size.
   void* device_ptr = nullptr;
   const LiteRtStatus status = CudaStatus(
-      cudaMalloc(&device_ptr, NonZeroBytes(std::max(bytes, packed_bytes))),
+      cudaMalloc(&device_ptr, NonZeroBytes(bytes != 0 ? bytes : packed_bytes)),
       "cudaMalloc CUDA tensor buffer");
   if (status != kLiteRtStatusOk) {
     delete info;
@@ -365,8 +487,6 @@ LiteRtStatus CreateCudaTensorBuffer(LiteRtGpuDeviceId device_id,
   }
   info->memory_handle = device_ptr;
   info->raw_handle = device_ptr;
-  info->bytes = bytes;
-  info->packed_bytes = packed_bytes;
   info->owns_handle = true;
   CudaTensorBufferRegistry::Get().Add(info);
   *hw_memory_info = info;
@@ -397,8 +517,7 @@ LiteRtStatus ImportCudaTensorBuffer(LiteRtGpuDeviceId device_id,
   info->memory_handle = hw_buffer_handle;
   info->raw_handle = hw_buffer_handle;
   info->bytes = bytes;
-  info->packed_bytes =
-      bytes != 0 && packed_bytes > bytes ? bytes : packed_bytes;
+  info->packed_bytes = packed_bytes;
   info->owns_handle = false;
   CudaTensorBufferRegistry::Get().Add(info);
   *hw_memory_info = info;
@@ -411,6 +530,11 @@ LiteRtStatus DestroyCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
     return kLiteRtStatusOk;
   }
   CudaTensorBufferRegistry::Get().Remove(info);
+  if (info->memory_handle != nullptr) {
+    // A sampler that still reads another view of the allocation registers
+    // again on its next call.
+    FusedGreedyRegistry::Get().ForgetRange(info->memory_handle, info->bytes);
+  }
   LiteRtStatus status = kLiteRtStatusOk;
   if (info->host_cache != nullptr) {
     if (info->host_cache_pinned) {
@@ -444,8 +568,9 @@ LiteRtStatus LockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info,
   if (info->locked) {
     return kLiteRtStatusErrorRuntimeFailure;
   }
+  const size_t copy_bytes = CopyBytes(*info);
   if (info->host_cache == nullptr) {
-    const size_t alloc_bytes = NonZeroBytes(CopyBytes(*info));
+    const size_t alloc_bytes = NonZeroBytes(HostBytes(*info));
     if (PinnedHostStagingEnabled()) {
       const cudaError_t error = cudaMallocHost(&info->host_cache, alloc_bytes);
       if (error == cudaSuccess) {
@@ -465,8 +590,12 @@ LiteRtStatus LockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info,
       }
       info->host_cache_pinned = false;
     }
+    // The bytes past the device's are the host's alone: read as zeros.
+    if (alloc_bytes > copy_bytes) {
+      std::memset(static_cast<char*>(info->host_cache) + copy_bytes, 0,
+                  alloc_bytes - copy_bytes);
+    }
   }
-  const size_t copy_bytes = CopyBytes(*info);
   // A host copy that is newer than the device copy is what the host reads.
   if (copy_bytes > 0 &&
       (mode == kLiteRtTensorBufferLockModeRead ||
@@ -521,6 +650,9 @@ LiteRtStatus ClearCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
     return kLiteRtStatusOk;
   }
   CudaTensorBufferRegistry::Get().Discard(info->memory_handle);
+  // The device contents change without an invocation: no fused argmax of them
+  // can be fresh.
+  FusedGreedyRegistry::Get().ForgetRange(info->memory_handle, info->bytes);
   return CudaStatus(cudaMemset(info->memory_handle, 0, copy_bytes),
                     "cudaMemset CUDA tensor buffer");
 }
@@ -567,9 +699,13 @@ void DestroyNvidiaGreedySamplerResources(NvidiaGreedySamplerContext* context) {
   if (restore_device) {
     cudaSetDevice(previous_device);
   }
+  FusedGreedyRegistry::Get().ForgetContext(context);
   if (context->calls > 0) {
-    LITERT_LOG(LITERT_INFO, "NVIDIA CUDA greedy sampler completed %llu calls",
-               static_cast<unsigned long long>(context->calls));
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA CUDA greedy sampler completed %llu calls (%llu from "
+               "the invocation's own argmax)",
+               static_cast<unsigned long long>(context->calls),
+               static_cast<unsigned long long>(context->fused_calls));
   }
 }
 
@@ -661,7 +797,7 @@ LiteRtStatus EnsureNvidiaGreedySamplerResources(
     LITERT_RETURN_IF_ERROR(CudaStatus(
         host_free_status, "cudaFreeHost CUDA greedy sampler old results"));
   }
-  const size_t required = LiteRtNvidiaF32ArgMaxWorkspaceBytes(count);
+  const size_t required = LiteRtNvidiaArgMaxRowsWorkspaceBytes(rows, count);
   if (required == 0) {
     return kLiteRtStatusErrorUnsupported;
   }
@@ -679,6 +815,46 @@ LiteRtStatus EnsureNvidiaGreedySamplerResources(
     context->workspace_bytes = required;
   }
   return kLiteRtStatusOk;
+}
+
+// If a sampler reads the logits at `device_ptr`, enqueues their argmax and the
+// copy of the ids to the sampler's host buffer on `stream`, and lists the
+// pointer in `enqueued` (SetFresh once the stream has synchronized). The
+// sampler's first, direct call set the context's device and registered the
+// entry; a resource failure leaves the entry stale and the sampler on its own
+// path, a launch failure is an error of the invocation.
+Expected<void> EnqueueFusedGreedy(void* device_ptr, cudaStream_t stream,
+                                  std::vector<const void*>* enqueued) {
+  FusedGreedyEntry entry;
+  if (device_ptr == nullptr ||
+      !FusedGreedyRegistry::Get().Find(device_ptr, &entry) ||
+      entry.context == nullptr || entry.context->device < 0) {
+    return {};
+  }
+  NvidiaGreedySamplerContext* context = entry.context;
+  FusedGreedyRegistry::Get().SetFresh(device_ptr, false);
+  if (EnsureNvidiaGreedySamplerResources(context, context->device, entry.count,
+                                         entry.rows) != kLiteRtStatusOk) {
+    return {};
+  }
+  const cudaError_t launch_status =
+      entry.fp16
+          ? LiteRtNvidiaLaunchF16ArgMaxRows(
+                static_cast<const uint16_t*>(device_ptr), entry.rows,
+                entry.count, context->workspace, context->workspace_bytes,
+                context->device_result, stream)
+          : LiteRtNvidiaLaunchF32ArgMaxRows(
+                static_cast<const float*>(device_ptr), entry.rows, entry.count,
+                context->workspace, context->workspace_bytes,
+                context->device_result, stream);
+  LITERT_RETURN_IF_ERROR(CudaOk(launch_status, "Launch fused greedy argmax"));
+  LITERT_RETURN_IF_ERROR(
+      CudaOk(cudaMemcpyAsync(context->host_result, context->device_result,
+                             entry.rows * sizeof(int32_t),
+                             cudaMemcpyDeviceToHost, stream),
+             "cudaMemcpyAsync fused greedy result"));
+  enqueued->push_back(device_ptr);
+  return {};
 }
 
 LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
@@ -776,6 +952,17 @@ LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
   if (context->device >= 0 && context->device != attributes.device) {
     return kLiteRtStatusErrorUnsupported;
   }
+  if (FusedSamplingEnabled() &&
+      !CudaTensorBufferRegistry::Get().AnyHostNewer(handle) &&
+      FusedGreedyRegistry::Get().TakeFresh(device_logits, context, rows, count,
+                                           fp16)) {
+    // The invocation that wrote these logits ran the argmax and the copy on
+    // its stream and synchronized; the result is in host memory already.
+    std::copy_n(context->host_result, rows, token_ids);
+    ++context->calls;
+    ++context->fused_calls;
+    return kLiteRtStatusOk;
+  }
 
   int previous_device = -1;
   LITERT_RETURN_IF_ERROR(
@@ -787,18 +974,17 @@ LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
   }
   LiteRtStatus status = EnsureNvidiaGreedySamplerResources(
       context, attributes.device, count, rows);
-  for (size_t row = 0; status == kLiteRtStatusOk && row < rows; ++row) {
-    // Each row reuses the same partial-reduction workspace on one stream.
-    // Only the small ID array is copied back, once all rows have completed.
+  if (status == kLiteRtStatusOk) {
+    // Every row in one launch pair; only the small ID array is copied back.
     const cudaError_t launch_status =
-        fp16 ? LiteRtNvidiaLaunchF16ArgMax(
-                   static_cast<const uint16_t*>(device_logits) + row * count,
-                   count, context->workspace, context->workspace_bytes,
-                   context->device_result + row, context->stream)
-             : LiteRtNvidiaLaunchF32ArgMax(
-                   static_cast<const float*>(device_logits) + row * count,
-                   count, context->workspace, context->workspace_bytes,
-                   context->device_result + row, context->stream);
+        fp16 ? LiteRtNvidiaLaunchF16ArgMaxRows(
+                   static_cast<const uint16_t*>(device_logits), rows, count,
+                   context->workspace, context->workspace_bytes,
+                   context->device_result, context->stream)
+             : LiteRtNvidiaLaunchF32ArgMaxRows(
+                   static_cast<const float*>(device_logits), rows, count,
+                   context->workspace, context->workspace_bytes,
+                   context->device_result, context->stream);
     status = CudaStatus(launch_status, "Launch CUDA greedy sampler argmax");
   }
   if (status == kLiteRtStatusOk) {
@@ -821,6 +1007,11 @@ LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
   if (status == kLiteRtStatusOk) {
     std::copy_n(context->host_result, rows, token_ids);
     ++context->calls;
+    if (FusedSamplingEnabled()) {
+      // From now on the invocation that writes these logits runs the argmax.
+      FusedGreedyRegistry::Get().Register(
+          device_logits, FusedGreedyEntry{context, rows, count, fp16, false});
+    }
   }
   if (restore_device) {
     const LiteRtStatus restore_status =
@@ -954,11 +1145,13 @@ Expected<LiteRtTensorBufferRequirements> TensorBufferRequirements(
                  "Tensor strides do not match the NVIDIA engine layout");
   }
   LITERT_ASSIGN_OR_RETURN(size_t size, ranked_type.Bytes());
-  if (half_storage) {
-    size /= 2;
-  }
   if (PreferHostBoundaryIo()) {
     prefer_cuda = false;
+  }
+  // Only a CUDA buffer is allocated at the engine's size: LiteRT reads,
+  // writes and clears a host memory buffer at the tensor's packed size.
+  if (half_storage && prefer_cuda) {
+    size /= 2;
   }
   const LiteRtTensorBufferType cuda_buffer_types[] = {
       kNvidiaCudaTensorBufferType, kLiteRtTensorBufferTypeHostMemory};
@@ -1758,6 +1951,18 @@ class LiteRtDispatchInvocationContextT {
       LITERT_RETURN_IF_ERROR(invocation_profiler_.RecordOutputsReady(stream_));
     }
 
+    // The greedy argmax of the logits a sampler reads, on this stream before
+    // the synchronization (FusedGreedyRegistry).
+    std::vector<const void*> fused_logits;
+    if (FusedSamplingEnabled()) {
+      for (int i = 0; i < static_cast<int>(output_handles_.size()); ++i) {
+        LITERT_ASSIGN_OR_RETURN(auto* record,
+                                device_context_->GetRecord(output_handles_[i]));
+        LITERT_RETURN_IF_ERROR(
+            EnqueueFusedGreedy(record->device_ptr, stream_, &fused_logits));
+      }
+    }
+
     DispatchCpuTimer sync_timer(profile);
     const char* sync_context =
         bytecode_.trtllm_head.has_value()
@@ -1765,6 +1970,9 @@ class LiteRtDispatchInvocationContextT {
             : "cudaStreamSynchronize";
     LITERT_RETURN_IF_ERROR(
         CudaOk(cudaStreamSynchronize(stream_), sync_context));
+    for (const void* logits : fused_logits) {
+      FusedGreedyRegistry::Get().SetFresh(logits, true);
+    }
     if (aot_residency_) {
       resident_has_run_ = true;
     }

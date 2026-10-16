@@ -42,6 +42,21 @@ cudaError_t LiteRtNvidiaLaunchF16ArgMax(const uint16_t* input, size_t count,
                                         int32_t* device_result,
                                         cudaStream_t stream);
 
+// `rows` rows of `count` logits in one launch pair: device_result[row] gets
+// row `row`'s argmax. The workspace needs
+// LiteRtNvidiaArgMaxRowsWorkspaceBytes(rows, count) bytes.
+size_t LiteRtNvidiaArgMaxRowsWorkspaceBytes(size_t rows, size_t count);
+cudaError_t LiteRtNvidiaLaunchF32ArgMaxRows(const float* input, size_t rows,
+                                            size_t count, void* workspace,
+                                            size_t workspace_bytes,
+                                            int32_t* device_result,
+                                            cudaStream_t stream);
+cudaError_t LiteRtNvidiaLaunchF16ArgMaxRows(const uint16_t* input, size_t rows,
+                                            size_t count, void* workspace,
+                                            size_t workspace_bytes,
+                                            int32_t* device_result,
+                                            cudaStream_t stream);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
