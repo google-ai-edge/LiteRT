@@ -67,9 +67,30 @@ cc_library(
         ":mha_to_sha",
         ":relu_min_max",
         ":rotation_quant",
+        ":mhrope_to_shrope",
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+    ],
+)
+
+cc_library(
+    name = "mhrope_to_shrope",
+    srcs = ["mhrope_to_shrope.cc"],
+    hdrs = ["mhrope_to_shrope.h"],
+    deps = [
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:concatenation_op_builder",
+        "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
+        "//litert/vendors/qualcomm/core/builders:op_builder",
+        "//litert/vendors/qualcomm/core/builders:pack_op_builder",
+        "//litert/vendors/qualcomm/core/builders:quantize_op_builder",
+        "//litert/vendors/qualcomm/core/builders:slice_op_builder",
+        "//litert/vendors/qualcomm/core/builders:unpack_op_builder",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@com_google_absl//absl/strings",
     ],
 )
 
