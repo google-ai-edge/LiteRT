@@ -31,7 +31,6 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
-#include "xnnpack.h"  // from @XNNPACK
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -68,6 +67,11 @@ static constexpr int kTfLiteSchemaVersion = 3;
 static constexpr size_t kFlatbufferPlaceholderValue = 0xfafafafafafafafa;
 
 static constexpr size_t kFlatbufferAppendedDataAlignment = 64;
+
+// Extra trailing bytes to pad after constant tensor buffers to prevent
+// out-of-bounds reads by SIMD kernels (e.g. XNNPACK microkernels require up to
+// 128 bytes on Qualcomm Hexagon DSP).
+static constexpr size_t kFbTailPadding = 128;
 
 absl::Status ValidateShapeSignature(const graph::Tensor& tensor,
                                     const Shape& signature) {
@@ -591,11 +595,11 @@ absl::Status ModelFactory::WriteBufferData(std::ofstream& output_file) {
     output_file.seekp(build_info.serialization_offset);
     output_file.write(data.data(), data.size());
   }
-  // Extend the file to make sure that the last buffer has at least
-  // `XNN_EXTRA_BYTES`.
+  // Extend the file to make sure that the last tensor buffer has at least
+  // `kFbTailPadding` extra bytes.
   output_file.seekp(0, std::ios_base::end);
-  const char extra_bytes[XNN_EXTRA_BYTES] = {};
-  output_file.write(extra_bytes, XNN_EXTRA_BYTES);
+  const char extra_bytes[kFbTailPadding] = {};
+  output_file.write(extra_bytes, kFbTailPadding);
   return absl::OkStatus();
 }
 
@@ -768,7 +772,7 @@ absl::StatusOr<std::vector<char>> ModelFactory::CreateFlatbuffer() {
   LRT_TENSOR_RETURN_IF_ERROR(UpdateBufferData(fbb));
 
   std::vector<char> fb;
-  fb.resize(allocation_size_ + XNN_EXTRA_BYTES);
+  fb.resize(allocation_size_ + kFbTailPadding);
   std::memcpy(fb.data(), fbb.GetBufferPointer(), fbb.GetSize());
   for (const auto& [buffer, build_info] : buffers_) {
     if (build_info.external_buffer_id.has_value() || build_info.inline_data) {
