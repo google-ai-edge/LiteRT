@@ -20,12 +20,31 @@
 
 #include "openvino/core/shape.hpp"
 #include "openvino/core/type/element_type.hpp"
-#include "openvino/runtime/intel_npu/level_zero/level_zero.hpp"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/vendors/intel_openvino/dispatch/openvino_shared_core.h"
 #include "litert/vendors/intel_openvino/utils.h"
+
+namespace {
+
+// Converts the tensor type's dimensions to an ov::Shape, rejecting ranks that
+// exceed the fixed-size `dimensions` array.
+litert::Expected<ov::Shape> ToOvShape(
+    const LiteRtRankedTensorType& tensor_type) {
+  if (tensor_type.layout.rank > LITERT_TENSOR_MAX_RANK) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Tensor rank exceeds LITERT_TENSOR_MAX_RANK.");
+  }
+  std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
+  for (size_t i = 0; i < ov_shape_vec.size(); i++)
+    ov_shape_vec[i] = tensor_type.layout.dimensions[i];
+  return ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()};
+}
+
+}  // namespace
 
 litert::Expected<void> OpenVinoTensorBuffer::Alloc(
     const LiteRtRankedTensorType& tensor_type, size_t size) {
@@ -39,10 +58,7 @@ litert::Expected<void> OpenVinoTensorBuffer::Alloc(
   ov::element::Type ov_element_type =
       litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
 
-  std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
-  for (size_t i = 0; i < ov_shape_vec.size(); i++)
-    ov_shape_vec[i] = tensor_type.layout.dimensions[i];
-  ov::Shape ov_shape{ov_shape_vec.begin(), ov_shape_vec.end()};
+  LITERT_ASSIGN_OR_RETURN(ov::Shape ov_shape, ToOvShape(tensor_type));
 
   if (device == "NPU" || device == "GPU") {
     auto context = OpenVINOSharedCore::GetInstance()->GetRemoteContext();
@@ -55,6 +71,33 @@ litert::Expected<void> OpenVinoTensorBuffer::Alloc(
   }
   allocated_ = true;
 
+  return {};
+}
+
+litert::Expected<void> OpenVinoTensorBuffer::Wrap(
+    const LiteRtRankedTensorType& tensor_type, void* host_memory, size_t size) {
+  if (allocated_) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "The OpenVino tensor has been allocated.");
+  }
+  if (host_memory == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Cannot wrap null host memory.");
+  }
+
+  ov::element::Type ov_element_type =
+      litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
+  LITERT_ASSIGN_OR_RETURN(ov::Shape ov_shape, ToOvShape(tensor_type));
+
+  // ov::Tensor over an external pointer never frees it, so destroying this
+  // wrapper leaves the owner's memory intact.
+  ov_tensor_ = ov::Tensor(ov_element_type, ov_shape, host_memory);
+  if (ov_tensor_.get_byte_size() > size) {
+    ov_tensor_ = ov::Tensor();
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Wrapped memory is smaller than the tensor.");
+  }
+  allocated_ = true;
   return {};
 }
 
