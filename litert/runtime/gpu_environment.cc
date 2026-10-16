@@ -212,14 +212,6 @@ GpuEnvironment::~GpuEnvironment() {
     command_queue_.WaitForCompletion().IgnoreError();
   }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
-#if LITERT_HAS_OPENGL_SUPPORT
-  // If `egl_env_` wraps an EGLContext owned by `callback_on_destroy` (e.g.
-  // DelegateEnvironment), destroy `egl_env_` first so its GL framebuffer and
-  // texture are deleted while the underlying EGLContext is still alive.
-  if (egl_env_ != nullptr && !egl_env_->context().has_ownership()) {
-    egl_env_.reset();
-  }
-#endif  // LITERT_HAS_OPENGL_SUPPORT
   if (options_.callback_on_destroy) {
     options_.callback_on_destroy(options_.callback_user_data_on_destroy);
   }
@@ -228,8 +220,38 @@ GpuEnvironment::~GpuEnvironment() {
 #endif  // LITERT_HAS_METAL_SUPPORT
 }
 
+#if LITERT_HAS_OPENGL_SUPPORT
+Expected<void> GpuEnvironment::InitializeDefaultEglEnvironment() {
+  std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env;
+  LITERT_RETURN_IF_ERROR(
+      ::ml_drift::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok())
+      << "Failed to create EGL environment";
+  egl_env_ = std::move(egl_env);
+  // New option: egl_display
+  LITERT_ASSIGN_OR_RETURN(auto egl_display,
+                          ToLiteRtAny(LiteRtVariant(
+                              reinterpret_cast<int64_t>(egl_env_->display()))));
+  generated_options_.push_back(LiteRtEnvOption{
+      .tag = kLiteRtEnvOptionTagEglDisplay, .value = egl_display});
+  options_.egl_display = egl_env_->display();
+  // New option: egl_context
+  LITERT_ASSIGN_OR_RETURN(auto egl_context,
+                          ToLiteRtAny(LiteRtVariant(reinterpret_cast<int64_t>(
+                              egl_env_->context().context()))));
+  generated_options_.push_back(LiteRtEnvOption{
+      .tag = kLiteRtEnvOptionTagEglContext, .value = egl_context});
+  options_.egl_context = egl_env_->context().context();
+
+  LITERT_LOG(LITERT_INFO, "Created default EGL environment.");
+  return {};
+}
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
 #if LITERT_HAS_OPENCL_SUPPORT
-Expected<void> GpuEnvironment::InitializeOpenCl() {
+Expected<void> GpuEnvironment::InitializeOpenClDevice() {
+  if (opencl_device_initialized_) {
+    return {};
+  }
   const char* disable_opencl_env = std::getenv("LITERT_DISABLE_OPENCL");
   bool disable_opencl =
       disable_opencl_env && std::string(disable_opencl_env) == "1";
@@ -259,21 +281,6 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
     LITERT_RETURN_IF_ERROR(
         ::ml_drift::cl::CreateDefaultGPUDevice(&device_).ok())
         << "Failed to create default OpenCL device";
-    // New option: cl_device_id
-    LITERT_ASSIGN_OR_RETURN(
-        auto device_id,
-        ToLiteRtAny(LiteRtVariant(reinterpret_cast<int64_t>(device_.id()))));
-    generated_options_.push_back(LiteRtEnvOption{
-        .tag = kLiteRtEnvOptionTagOpenClDeviceId, .value = device_id});
-    options_.device_id = device_.id();
-    // New option: cl_platform_id
-    LITERT_ASSIGN_OR_RETURN(
-        auto platform_id, ToLiteRtAny(LiteRtVariant(
-                              reinterpret_cast<int64_t>(device_.platform()))));
-    generated_options_.push_back(LiteRtEnvOption{
-        .tag = kLiteRtEnvOptionTagOpenClPlatformId, .value = platform_id});
-    options_.platform_id = device_.platform();
-
     LITERT_LOG(LITERT_INFO, "Created default OpenCL device.");
   }
 
@@ -291,6 +298,40 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
 #endif  // LITERT_HAS_OPENGL_SUPPORT
   properties_.is_ahwb_cl_interop_supported =
       SupportsAhwbClInteropHelper(device_);
+  properties_.is_fp16_supported = device_.GetInfo().SupportsFP16();
+  opencl_device_initialized_ = true;
+  return {};
+}
+
+Expected<void> GpuEnvironment::InitializeOpenCl() {
+  const bool has_user_device =
+      options_.device_id != nullptr && options_.platform_id != nullptr;
+  LITERT_RETURN_IF_ERROR(InitializeOpenClDevice());
+  if (!properties_.is_opencl_available) {
+    return {};
+  }
+#if LITERT_HAS_OPENGL_SUPPORT
+  const char* disable_opengl_env = std::getenv("LITERT_DISABLE_OPENGL");
+  bool disable_opengl =
+      disable_opengl_env && std::string(disable_opengl_env) == "1";
+#endif
+
+  if (!has_user_device) {
+    // New option: cl_device_id
+    LITERT_ASSIGN_OR_RETURN(
+        auto device_id,
+        ToLiteRtAny(LiteRtVariant(reinterpret_cast<int64_t>(device_.id()))));
+    generated_options_.push_back(LiteRtEnvOption{
+        .tag = kLiteRtEnvOptionTagOpenClDeviceId, .value = device_id});
+    options_.device_id = device_.id();
+    // New option: cl_platform_id
+    LITERT_ASSIGN_OR_RETURN(
+        auto platform_id, ToLiteRtAny(LiteRtVariant(
+                              reinterpret_cast<int64_t>(device_.platform()))));
+    generated_options_.push_back(LiteRtEnvOption{
+        .tag = kLiteRtEnvOptionTagOpenClPlatformId, .value = platform_id});
+    options_.platform_id = device_.platform();
+  }
 
   // Set up context.
   if (options_.context) {
@@ -305,13 +346,6 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
             << "EGL context is not the same as provided context";
         LITERT_RETURN_IF_ERROR(eglGetCurrentDisplay() == options_.egl_display)
             << "EGL display is not the same as provided display";
-        std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env;
-        // This function call implicitly reuses provided EGL context and display
-        // present on this thread.
-        LITERT_RETURN_IF_ERROR(
-            ::ml_drift::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok())
-            << "Failed to create EGL environment";
-        egl_env_ = std::move(egl_env);
         LITERT_LOG(LITERT_INFO, "Reusing provided EGL environment.");
       }
 #endif  // LITERT_HAS_OPENGL_SUPPORT
@@ -326,29 +360,7 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
     if (!options_.IsGlAware()) {
 #if LITERT_HAS_OPENGL_SUPPORT
       if (!disable_opengl) {
-        std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env;
-        LITERT_RETURN_IF_ERROR(
-            ::ml_drift::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok())
-            << "Failed to create EGL environment";
-        egl_env_ = std::move(egl_env);
-        // New option: egl_display
-        LITERT_ASSIGN_OR_RETURN(
-            auto egl_display,
-            ToLiteRtAny(
-                LiteRtVariant(reinterpret_cast<int64_t>(egl_env_->display()))));
-        generated_options_.push_back(LiteRtEnvOption{
-            .tag = kLiteRtEnvOptionTagEglDisplay, .value = egl_display});
-        options_.egl_display = egl_env_->display();
-        // New option: egl_context
-        LITERT_ASSIGN_OR_RETURN(
-            auto egl_context,
-            ToLiteRtAny(LiteRtVariant(
-                reinterpret_cast<int64_t>(egl_env_->context().context()))));
-        generated_options_.push_back(LiteRtEnvOption{
-            .tag = kLiteRtEnvOptionTagEglContext, .value = egl_context});
-        options_.egl_context = egl_env_->context().context();
-
-        LITERT_LOG(LITERT_INFO, "Created default EGL environment.");
+        LITERT_RETURN_IF_ERROR(InitializeDefaultEglEnvironment());
       }
 #else
       LITERT_LOG(LITERT_INFO, "No default EGL environment created.");
@@ -408,6 +420,7 @@ Expected<void> GpuEnvironment::InitializeOpenCl() {
       "egl_display=%p",
       options_.device_id, options_.platform_id, options_.context,
       options_.command_queue, options_.egl_context, options_.egl_display);
+  opencl_initialized_ = true;
 
   return {};
 }
@@ -454,19 +467,27 @@ Expected<void> GpuEnvironment::Initialize(
   options_ = CreateGpuEnvironmentOptions(environment_options);
 
 #if LITERT_HAS_OPENCL_SUPPORT
-  LITERT_RETURN_IF_ERROR(InitializeOpenCl());
+  if (options_.HasOpenClOptions()) {
+    LITERT_RETURN_IF_ERROR(InitializeOpenCl());
+  }
 #else
   LITERT_LOG(LITERT_INFO, "Failed to create OpenCL context.");
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
-#if LITERT_HAS_OPENGL_SUPPORT && LITERT_HAS_AHWB_SUPPORT
+#if LITERT_HAS_OPENGL_SUPPORT
   const char* disable_opengl_env = std::getenv("LITERT_DISABLE_OPENGL");
   bool disable_opengl =
       disable_opengl_env && std::string(disable_opengl_env) == "1";
   if (!disable_opengl) {
+    if (!options_.HasOpenClOptions() && !options_.IsGlAware() &&
+        options_.callback_on_destroy == nullptr) {
+      LITERT_RETURN_IF_ERROR(InitializeDefaultEglEnvironment());
+    }
+#if LITERT_HAS_AHWB_SUPPORT
     properties_.is_ahwb_gl_interop_supported = SupportsAhwbGlInteropHelper();
+#endif  // LITERT_HAS_AHWB_SUPPORT
   }
-#endif  // LITERT_HAS_OPENGL_SUPPORT && LITERT_HAS_AHWB_SUPPORT
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
   LITERT_RETURN_IF_ERROR(InitializeMetal());
@@ -477,6 +498,9 @@ Expected<void> GpuEnvironment::Initialize(
 
 Expected<void> GpuEnvironment::AddEnvironmentOptions(
     absl::Span<const LiteRtEnvOption> options) {
+#if LITERT_HAS_OPENCL_SUPPORT
+  bool added_opencl_options = false;
+#endif  // LITERT_HAS_OPENCL_SUPPORT
   for (const auto& opt : options) {
     if (opt.tag == kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy) {
       options_.callback_on_destroy = reinterpret_cast<void (*)(void*)>(
@@ -488,11 +512,44 @@ Expected<void> GpuEnvironment::AddEnvironmentOptions(
           reinterpret_cast<void*>(const_cast<void*>(opt.value.ptr_value));
       continue;
     }
+#if LITERT_HAS_OPENCL_SUPPORT
+    if (opt.tag == kLiteRtEnvOptionTagOpenClDeviceId &&
+        opt.value.type == kLiteRtAnyTypeInt) {
+      options_.device_id = reinterpret_cast<cl_device_id>(opt.value.int_value);
+      added_opencl_options = true;
+      continue;
+    }
+    if (opt.tag == kLiteRtEnvOptionTagOpenClPlatformId &&
+        opt.value.type == kLiteRtAnyTypeInt) {
+      options_.platform_id =
+          reinterpret_cast<cl_platform_id>(opt.value.int_value);
+      added_opencl_options = true;
+      continue;
+    }
+    if (opt.tag == kLiteRtEnvOptionTagOpenClContext &&
+        opt.value.type == kLiteRtAnyTypeInt) {
+      options_.context = reinterpret_cast<cl_context>(opt.value.int_value);
+      added_opencl_options = true;
+      continue;
+    }
+    if (opt.tag == kLiteRtEnvOptionTagOpenClCommandQueue &&
+        opt.value.type == kLiteRtAnyTypeInt) {
+      options_.command_queue =
+          reinterpret_cast<cl_command_queue>(opt.value.int_value);
+      added_opencl_options = true;
+      continue;
+    }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       absl::StrFormat("Cannot add the following option to "
                                       "existing GPU environment. Tag: %d",
                                       opt.tag));
   }
+#if LITERT_HAS_OPENCL_SUPPORT
+  if (added_opencl_options && !opencl_initialized_) {
+    LITERT_RETURN_IF_ERROR(InitializeOpenCl());
+  }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
   return {};
 }
 

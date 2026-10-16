@@ -73,5 +73,31 @@ TEST(EnvironmentSingletonTest, OpenClEnvironment) {
   EXPECT_EQ(singleton_env->GetCommandQueue()->queue(), env.queue()->queue());
 }
 
+void NoOpDestroyCallback(void* /*user_data*/) {}
+
+TEST(EnvironmentSingletonTest,
+     SkipsEagerOpenClInitWhenNonOpenClOptionsProvided) {
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN";
+#endif
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny callback,
+      litert::ToLiteRtAny(reinterpret_cast<const void*>(&NoOpDestroyCallback)));
+  const std::array<LiteRtEnvOption, 1> environment_options = {
+      LiteRtEnvOption{
+          /*.tag=*/kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
+          /*.value=*/callback,
+      },
+  };
+  auto litert_envt = LiteRtEnvironmentT::CreateWithOptions(environment_options);
+  ASSERT_TRUE(litert_envt);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto gpu_env,
+      litert::internal::GpuEnvironment::Create((*litert_envt)->GetOptions()));
+  ASSERT_TRUE(gpu_env);
+  EXPECT_TRUE(gpu_env->GetGeneratedOptions().empty());
+}
+
 }  // namespace
 }  // namespace litert
