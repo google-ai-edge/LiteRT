@@ -36,6 +36,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/options/litert_arm_vulkan_ml_options.h"  // IWYU pragma: keep
 #include "litert/cc/options/litert_compiler_options.h"  // IWYU pragma: keep
 #include "litert/cc/options/litert_concrete_options_base.h"
 #include "litert/cc/options/litert_cpu_options.h"  // IWYU pragma: keep
@@ -46,6 +47,7 @@
 #include "litert/cc/options/litert_qualcomm_options.h"  // IWYU pragma: keep
 #include "litert/cc/options/litert_runtime_options.h"  // IWYU pragma: keep
 #include "litert/cc/options/litert_samsung_options.h"  // IWYU pragma: keep
+#include "litert/cc/options/litert_webnn_options.h"  // IWYU pragma: keep
 #include "litert/core/options.h"
 
 namespace litert {

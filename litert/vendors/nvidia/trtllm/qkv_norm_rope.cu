@@ -14,7 +14,7 @@
 
 #include "litert/vendors/nvidia/trtllm/qkv_norm_rope.h"
 
-#include "third_party/gpus/cuda/include/cuda_bf16.h"
+#include <cuda_bf16.h>
 
 #include <cstdint>
 
