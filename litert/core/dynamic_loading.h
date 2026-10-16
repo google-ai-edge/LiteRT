@@ -18,12 +18,32 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 
 namespace litert::internal {
 
 constexpr absl::string_view kLiteRtSharedLibPrefix = "libLiteRt";
+
+// Returns true if "file_name" (a bare file name, without directories) starts
+// with "lib_prefix" and ends with one of "extensions", each given with its
+// leading dot. Versioned names such as "libFoo.so.1" do not match. The finders
+// below pass the extensions the current platform produces, e.g. ".so" on
+// Linux and Android.
+inline bool IsSharedLibFileName(
+    absl::string_view file_name, absl::string_view lib_prefix,
+    absl::Span<const absl::string_view> extensions) {
+  for (const absl::string_view extension : extensions) {
+    if (file_name.size() > extension.size() &&
+        absl::EndsWith(file_name, extension)) {
+      return absl::StartsWith(
+          file_name.substr(0, file_name.size() - extension.size()), lib_prefix);
+    }
+  }
+  return false;
+}
 
 // Find all litert shared libraries in "search_path" and return
 // kLiteRtStatusErrorInvalidArgument if the provided search_path doesn't
