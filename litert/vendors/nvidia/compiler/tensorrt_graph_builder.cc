@@ -83,8 +83,8 @@ using ::litert::compiler::Tensor;
 // is a cap on tactic choice, not an upfront allocation.
 constexpr size_t kDefaultTensorRtWorkspaceBytes = 4096ULL << 20;
 constexpr size_t kDefaultMaxTensorRtFillBytes = 16ULL << 20;
-// Large enough to admit LLM vocab-projection heads (Gemma4's INT2 LM head
-// packs to ~100MB); float heads beyond this stay on the CPU.
+// Float FC weights beyond this stay on the CPU; quantized weights are not
+// capped (see IsFullyConnectedSupported).
 constexpr size_t kDefaultMaxTensorRtFullyConnectedWeightBytes = 256ULL << 20;
 
 template <typename T>
@@ -1575,13 +1575,17 @@ Expected<bool> IsFullyConnectedSupported(const Op& op) {
     LogFullyConnectedReject(op, "weights are not static ranked");
     return false;
   }
-  if (op.Inputs()[1].HasWeights() &&
+  const bool weights_float = IsFloatLike(op.Inputs()[1].ElementType());
+  // The byte cap keeps large float heads on the CPU; quantized weights are
+  // admitted whatever their size (Gemma 4 12B's INT4 head packs to 503 MB,
+  // the 26B-A4B's dense projections are blockwise INT4): they run on the
+  // GEMV plugin from the shared weight store, not as TensorRT constants.
+  if (weights_float && op.Inputs()[1].HasWeights() &&
       op.Inputs()[1].Weights().Bytes().size() >
           MaxTensorRtFullyConnectedWeightBytes()) {
-    LogFullyConnectedReject(op, "weights exceed configured byte cap");
+    LogFullyConnectedReject(op, "float weights exceed configured byte cap");
     return false;
   }
-  const bool weights_float = IsFloatLike(op.Inputs()[1].ElementType());
   // Reject FCs whose weight shape is listed in this env (comma-separated
   // "OUTxIN" entries), keeping specific problematic matmuls on the CPU.
   if (const char* disabled_shapes =
