@@ -44,96 +44,11 @@
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/types.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
+#include "ml_drift_delegate/delegate/composite/sdpa_transposed_support.h"
 
 namespace litert::ml_drift {
 
 namespace {
-
-// Launch and split-K parameters of the Flash-Decode kernels. They depend on the
-// GPU, so they are chosen per device by `GetFlashDecodeTuning`.
-struct FlashDecodeTuning {
-  // Number of SIMD groups (waves of 32 lanes) cooperating on one query head in
-  // the wave-SIMD kernel. At most 32, so wave 0 can reduce one value per wave.
-  int num_simd_groups = 16;
-  // Number of work items per work group in the work-group reduction kernel.
-  int threads = 256;
-  // Work items that combine the per-work-item values in the first stage of a
-  // work-group reduction. Every work item then does the second stage itself.
-  int reduce_threads = 32;
-  // Maximum number of query heads sharing one K/V head to process per work
-  // group in the work-group reduction kernel so per-head accumulators stay in
-  // registers. Larger GQA groups are partitioned across multiple work groups.
-  int max_heads_per_work_group = 8;
-  // The keys of every query token and K/V head group are split across work
-  // groups until there are at least `target_work_groups` work groups, but
-  // every split keeps at least `min_split_keys` keys.
-  int target_work_groups = 40;
-  int min_split_keys = 256;
-  // Local memory budget in bytes of the work-group reduction kernel. Apple GPUs
-  // reject compute pipelines that use more than 32 KB of threadgroup memory,
-  // and most OpenCL devices report at least 32 KB of local memory. WebGPU
-  // devices report their limit (see `GetFlashDecodeTuning`).
-  int local_memory_bytes = 32 * 1024;
-};
-
-// Returns the Flash-Decode tuning for `gpu_info`.
-//
-// The defaults were measured on Adreno 830 (work-group reduction kernel): with
-// Qwen3 0.6B (8 K/V heads, 1280 cache entries), 5 splits of 256 keys read the
-// KV cache at 58 GB/s, compared with 43 GB/s for one work group per K/V head.
-// The wave-SIMD kernel uses 16 waves on Apple GPUs.
-// TODO(b/553029558): Tune for Mali, Intel, Nvidia and AMD GPUs.
-FlashDecodeTuning GetFlashDecodeTuning(const ::ml_drift::GpuInfo& gpu_info) {
-  FlashDecodeTuning tuning;
-  const int max_work_group_size = gpu_info.GetMaxWorkGroupTotalSize();
-  if (max_work_group_size > 0) {
-    // Keep both kernels within the work-group size limit of the device.
-    while (tuning.threads > tuning.reduce_threads &&
-           tuning.threads > max_work_group_size) {
-      tuning.threads /= 2;
-    }
-    while (tuning.num_simd_groups > 1 &&
-           tuning.num_simd_groups * 32 > max_work_group_size) {
-      tuning.num_simd_groups /= 2;
-    }
-  }
-  if (gpu_info.IsApiWebGpu() &&
-      gpu_info.webgpu_info.max_compute_workgroup_storage_size > 0) {
-    // WebGPU validates the workgroup storage of a pipeline against the limit
-    // of the device: 16 KB by default, or the adapter limit when requested.
-    tuning.local_memory_bytes =
-        gpu_info.webgpu_info.max_compute_workgroup_storage_size;
-  }
-  // TODO(b/553029558): Use the local memory size of OpenCL
-  // (`CL_DEVICE_LOCAL_MEM_SIZE`), Metal (`maxThreadgroupMemoryLength`) and
-  // Vulkan (`maxComputeSharedMemorySize`) devices once `GpuInfo` reports it.
-  return tuning;
-}
-
-// Keys scored by each work item per chunk of the work-group Flash-Decode
-// kernel: at most as many as keep the probabilities of a chunk within 8 KB of
-// local memory.
-int MaxFlashDecodeKeysPerThread(int heads, int threads) {
-  return std::clamp(2048 / (heads * threads), 1, 4);
-}
-
-// Upper bound of the local memory in bytes used by the work-group Flash-Decode
-// kernel for `heads` query heads per work group and `slices` channel slices
-// (head_dim / 4), assuming the largest chunk of probabilities: the float4 query
-// slices, the probabilities of a chunk, the two reduction stages and the float4
-// output accumulators (see `GenerateWorkGroupFlashDecodeCode`).
-int FlashDecodeLocalMemoryBytes(const FlashDecodeTuning& tuning, int heads,
-                                int slices) {
-  constexpr int kFloatBytes = static_cast<int>(sizeof(float));
-  const int threads = tuning.threads;
-  const int chunk = threads * MaxFlashDecodeKeysPerThread(heads, threads);
-  const int q_local = heads * slices * 4 * kFloatBytes;
-  const int p_local = heads * chunk * kFloatBytes;
-  const int red_local = heads * threads * kFloatBytes;
-  const int red2_local = heads * tuning.reduce_threads * kFloatBytes;
-  const int acc_local = threads * 4 * kFloatBytes;
-  return q_local + p_local + red_local + red2_local + acc_local;
-}
 
 // Resolves `#pragma OPENCL EXTENSION ucl_wave_simd: enable` and the wave-SIMD
 // intrinsics (`ucl::WaveSum`, `ucl::WaveMax`, `ucl::WaveShuffleXor`) to the
@@ -200,84 +115,9 @@ void ResolveWaveSimd(const ::ml_drift::GpuInfo& gpu_info, std::string* code) {
                       code);
 }
 
-// Whether the GPU supports fixed 32-lane wave-SIMD vector reductions
-// (`ucl::WaveSum` on `half4` / `ucl::WaveMax`).
-//
-// Limited to Metal: OpenCL `sub_group_reduce_*` has no vector overloads and
-// Adreno / Mali waves are not 32 lanes wide; WebGPU and Vulkan need the
-// subgroup feature and a fixed subgroup size of 32, which `GpuInfo` does not
-// guarantee.
-// TODO(b/553029558): Support WebGPU / Vulkan when the device reports a fixed
-// 32-lane subgroup size, and OpenCL with per-component reductions.
-bool SupportsWave32Vec4SimdReduce(const ::ml_drift::GpuInfo& gpu_info) {
-  return gpu_info.IsWaveSizeEqualTo32() && gpu_info.IsApiMetal();
-}
-
-// Whether the GPU supports the 8x8 wave-matrix MMA prefill kernel.
-// TODO(b/553029558): Support more backends (e.g. Vulkan / WebGPU cooperative
-// matrices and OpenCL subgroup matrix extensions).
-bool SupportsWaveMatrixPrefill(const ::ml_drift::GpuInfo& gpu_info) {
-  return gpu_info.IsApple() && gpu_info.IsApiMetal();
-}
-
-// Execution and work-group configuration for `FusedFlashDecodeSdpaOp`.
-struct FlashDecodeConfig {
-  // Whether to use the 32-lane wave-SIMD reduction kernel (`ucl::WaveSum` /
-  // `ucl::WaveMax` across `tuning.num_simd_groups` waves of 32 lanes) or the
-  // work-group reduction kernel with GQA head grouping and split-K.
-  bool use_wave_simd = false;
-  // Device-dependent launch parameters.
-  FlashDecodeTuning tuning;
-  // Query heads per work group (they share one K/V head).
-  int heads = 1;
-  // Number of work groups that split the keys of each query token and head
-  // group. With more than one split, `FusedFlashDecodeCombineOp` combines the
-  // partial results.
-  int splits = 1;
-};
-
-FlashDecodeConfig GetFlashDecodeConfig(const ::ml_drift::GpuInfo& gpu_info,
-                                       const ::ml_drift::BHWC& q_shape,
-                                       const ::ml_drift::BHWC& k_shape) {
-  FlashDecodeConfig config;
-  config.tuning = GetFlashDecodeTuning(gpu_info);
-  if (SupportsWave32Vec4SimdReduce(gpu_info) && q_shape.c == 128 &&
-      config.tuning.num_simd_groups > 1) {
-    config.use_wave_simd = true;
-    return config;
-  }
-  if (k_shape.h <= 0 || q_shape.h % k_shape.h != 0) {
-    return config;
-  }
-  // Process as many query heads of the GQA group per work group as divide the
-  // group and keep the kernel within the local memory budget of the device.
-  // With head dim 512 (128 slices), 8 heads need 37,888 B but 4 heads only
-  // 25,088 B. If not even one head fits, `heads` stays 1 and
-  // `IsSupportedFlashDecode` rejects the config, so the op falls back to the
-  // decomposed graph.
-  const int group_size = q_shape.h / k_shape.h;
-  const int slices = q_shape.c / 4;
-  for (int h = std::min(group_size, config.tuning.max_heads_per_work_group);
-       h >= 1; --h) {
-    if (group_size % h == 0 &&
-        FlashDecodeLocalMemoryBytes(config.tuning, h, slices) <=
-            config.tuning.local_memory_bytes) {
-      config.heads = h;
-      break;
-    }
-  }
-  const int work_groups = (q_shape.h / config.heads) * q_shape.w;
-  const int wanted_splits =
-      (config.tuning.target_work_groups + work_groups - 1) / work_groups;
-  const int max_splits =
-      std::max(1, k_shape.w / config.tuning.min_split_keys);
-  config.splits = std::clamp(wanted_splits, 1, max_splits);
-  return config;
-}
-
 // Whether the fused Flash-Decode kernel supports these shapes. K and V must be
 // BUFFER tensors in the packed layout written by `odml.cache_update`, the
-// query heads must be a multiple of the K/V heads, and a mask must be shared by
+// shapes must pass `IsSupportedFlashSdpaShape`, and a mask must be shared by
 // all heads with one row, or one row per query token, that covers every cache
 // entry.
 bool IsSupportedFlashDecode(const ::ml_drift::GpuInfo& gpu_info,
@@ -290,10 +130,6 @@ bool IsSupportedFlashDecode(const ::ml_drift::GpuInfo& gpu_info,
     return false;
   }
   const ::ml_drift::BHWC k_shape = k_desc.GetBHWCShape();
-  if (q_shape.c % 4 != 0 || k_shape.h <= 0 || q_shape.h < k_shape.h ||
-      q_shape.h % k_shape.h != 0 || k_shape.w % 4 != 0) {
-    return false;
-  }
   if (mask_desc != nullptr) {
     const ::ml_drift::BHWC mask_shape = mask_desc->GetBHWCShape();
     if (mask_shape.h != 1 || (mask_shape.w != 1 && mask_shape.w != q_shape.w) ||
@@ -301,16 +137,7 @@ bool IsSupportedFlashDecode(const ::ml_drift::GpuInfo& gpu_info,
       return false;
     }
   }
-  const FlashDecodeConfig config =
-      GetFlashDecodeConfig(gpu_info, q_shape, k_shape);
-  if (config.use_wave_simd) {
-    return true;
-  }
-  const int slices = q_shape.c / 4;
-  const int threads = config.tuning.threads;
-  return slices <= threads && threads % slices == 0 &&
-         FlashDecodeLocalMemoryBytes(config.tuning, config.heads, slices) <=
-             config.tuning.local_memory_bytes;
+  return IsSupportedFlashSdpaShape(gpu_info, q_shape, k_shape);
 }
 
 // TODO(b/552147487): Benchmark the kernel on Nvidia GPUs.
@@ -385,7 +212,11 @@ class FusedFlashDecodeCombineOp : public ::ml_drift::GPUOperation {
 //
 // Multi-token queries clamp to `q_start + X + 1`. `q_start` is read from
 // `param[0]` when it is in range (0 < q_start < active_tokens); otherwise the
-// queries are assumed to be the last `q.Width()` active tokens.
+// queries are assumed to be the last `q.Width()` active tokens. When a
+// fixed-width prefill signature processes a partial chunk, the query columns
+// at or past the active tokens (`q_start + X >= active_tokens`) are padding:
+// they get no keys (`active_tokens = 0`), so the kernel writes zeros for them
+// without reading K/V, as the MMA prefill kernel does.
 //
 // A single-token decode query is the newest token, so the active token count
 // is already its causal bound. On a sliding-window ring-buffer cache,
@@ -394,6 +225,10 @@ class FusedFlashDecodeCombineOp : public ::ml_drift::GPUOperation {
 // `param[0]` only bounds a single query when the active token count is missing
 // or out of range, and only if `param[0]` itself is in range
 // (0 < param[0] < cache_size).
+//
+// The code avoids C-style casts and conditional expressions that are not the
+// whole right-hand side of an assignment, which the WebGPU WGSL preprocessor
+// can not convert.
 std::string GenerateImplicitCausalBoundCode(bool has_param,
                                             bool is_single_query) {
   if (is_single_query) {
@@ -401,7 +236,7 @@ std::string GenerateImplicitCausalBoundCode(bool has_param,
     return R"(
   if (!has_active_tokens) {
     float4 p_start_vec = ucl::Convert<float4>(args.params.Read(0, 0, 0, 0));
-    int start_val = (int)p_start_vec.x;
+    int start_val = ucl::Convert<int>(p_start_vec.x);
     if (start_val > 0 && start_val < active_tokens) {
       active_tokens = start_val + 1;
     }
@@ -413,18 +248,27 @@ std::string GenerateImplicitCausalBoundCode(bool has_param,
     return R"(
   {
     int q_start = max(0, active_tokens - args.q.Width());
-    active_tokens = min(active_tokens, q_start + X + 1);
+    if (q_start + X < active_tokens) {
+      active_tokens = q_start + X + 1;
+    } else {
+      active_tokens = 0;
+    }
   }
 )";
   }
   return R"(
   {
     float4 p_start_vec = ucl::Convert<float4>(args.params.Read(0, 0, 0, 0));
-    int start_val = (int)p_start_vec.x;
-    int q_start = (start_val > 0 && start_val < active_tokens)
-                      ? start_val
-                      : max(0, active_tokens - args.q.Width());
-    active_tokens = min(active_tokens, q_start + X + 1);
+    int start_val = ucl::Convert<int>(p_start_vec.x);
+    int q_start = max(0, active_tokens - args.q.Width());
+    if (start_val > 0 && start_val < active_tokens) {
+      q_start = start_val;
+    }
+    if (q_start + X < active_tokens) {
+      active_tokens = q_start + X + 1;
+    } else {
+      active_tokens = 0;
+    }
   }
 )";
 }
@@ -472,11 +316,10 @@ MAIN_FUNCTION($0) {
   __local half4 s_acc[)",
                                      slices, R"(][$NSG];
 
-  if (simd_id == 0 && tid < $NSG) {
-    s_m[tid] = -10000.0f;
-    s_l[tid] = 0.0f;
-  }
-
+  // Every wave writes its own `s_m` / `s_l` slot before the first barrier, so
+  // the slots need no initialization. Initializing them from wave 0 without a
+  // barrier would race with those writes and could drop the keys of a wave
+  // that finishes before wave 0 starts.
   int active_tokens = args.cache_size;
 )");
 
@@ -807,6 +650,10 @@ MAIN_FUNCTION($0) {
 // result is normalized and written out; otherwise every split writes its
 // unnormalized output, running maximum and softmax normalizer, and
 // `FusedFlashDecodeCombineOp` merges the splits.
+//
+// The kernel runs on OpenCL, Metal and WebGPU, so the code only uses
+// constructs the WebGPU WGSL preprocessor converts: no C-style casts, and
+// conditional expressions only as the whole right-hand side of an assignment.
 std::string GenerateWorkGroupFlashDecodeCode(
     const ::ml_drift::GpuInfo& gpu_info, const FlashDecodeConfig& config,
     int slices, int group_size, int cache_size, int k_stride_head,
@@ -913,11 +760,15 @@ std::string GenerateWorkGroupFlashDecodeCode(
     int param_slice = args.src_end_ch_index / 4;
     int param_comp = args.src_end_ch_index % 4;
     float4 p_vec = ucl::Convert<float4>(args.params.Read(0, 0, param_slice, 0));
-    float p_raw = param_comp == 0 ? p_vec.x
-                : param_comp == 1 ? p_vec.y
-                : param_comp == 2 ? p_vec.z
-                                  : p_vec.w;
-    int param_val = (int)p_raw;
+    float p_raw = p_vec.x;
+    if (param_comp == 1) {
+      p_raw = p_vec.y;
+    } else if (param_comp == 2) {
+      p_raw = p_vec.z;
+    } else if (param_comp == 3) {
+      p_raw = p_vec.w;
+    }
+    int param_val = ucl::Convert<int>(p_raw);
     has_active_tokens = param_val > 0 && param_val <= args.cache_size;
     if (has_active_tokens) {
       active_tokens = param_val;
@@ -983,10 +834,14 @@ std::string GenerateWorkGroupFlashDecodeCode(
             &c, "        bool4 mask_vec = args.mask.Read<bool>(", mask_row,
             R"(, 0, key / 4);
         int mask_comp = key % 4;
-        int mask_val = mask_comp == 0 ? (int)mask_vec.x
-                     : mask_comp == 1 ? (int)mask_vec.y
-                     : mask_comp == 2 ? (int)mask_vec.z
-                                      : (int)mask_vec.w;
+        int mask_val = ucl::Convert<int>(mask_vec.x);
+        if (mask_comp == 1) {
+          mask_val = ucl::Convert<int>(mask_vec.y);
+        } else if (mask_comp == 2) {
+          mask_val = ucl::Convert<int>(mask_vec.z);
+        } else if (mask_comp == 3) {
+          mask_val = ucl::Convert<int>(mask_vec.w);
+        }
 )",
             per_head("        if (mask_val == 0) d$g = -1.0e30f;\n"));
       } else {
@@ -995,10 +850,14 @@ std::string GenerateWorkGroupFlashDecodeCode(
                         "ucl::Convert<float4>(args.mask.Read(",
                         mask_row, R"(, 0, key / 4));
         int mask_comp = key % 4;
-        float mask_val = mask_comp == 0 ? mask_vec.x
-                       : mask_comp == 1 ? mask_vec.y
-                       : mask_comp == 2 ? mask_vec.z
-                                        : mask_vec.w;
+        float mask_val = mask_vec.x;
+        if (mask_comp == 1) {
+          mask_val = mask_vec.y;
+        } else if (mask_comp == 2) {
+          mask_val = mask_vec.z;
+        } else if (mask_comp == 3) {
+          mask_val = mask_vec.w;
+        }
 )",
                         per_head("        d$g += mask_val;\n"));
       }
@@ -1082,8 +941,8 @@ std::string GenerateWorkGroupFlashDecodeCode(
           ", ", slices, ");\n", "    }\n");
     } else {
       write = absl::StrCat(
-          "    float4 res = sum * (l_total", g, " > 0.0f ? 1.0f / l_total", g,
-          " : 0.0f);\n",
+          "    float inv_l = l_total", g, " > 0.0f ? 1.0f / l_total", g,
+          " : 0.0f;\n    float4 res = sum * inv_l;\n",
           is_flattened_dst
               ? absl::StrCat("    args.dst.Write(ucl::Convert<args.dst::type>("
                              "res), X, 0, (",
@@ -1262,7 +1121,8 @@ MAIN_FUNCTION($0) {
       splits, R"( + i, head, slice));
     }
   }
-  float4 res = acc * (l_sum > 0.0f ? 1.0f / l_sum : 0.0f);
+  float inv_l = l_sum > 0.0f ? 1.0f / l_sum : 0.0f;
+  float4 res = acc * inv_l;
 )",
       is_flattened_dst ? absl::StrCat("  args.dst.Write(ucl::Convert<args.dst::"
                                       "type>(res), X, 0, head * ",
@@ -1849,15 +1709,11 @@ MAIN_FUNCTION($0) {
 
 }  // namespace
 
-bool SupportsFusedSdpaKernels(const ::ml_drift::GpuInfo& gpu_info) {
-  return (gpu_info.IsApple() && gpu_info.IsApiMetal()) ||
-         gpu_info.IsApiOpenCl();
-}
-
 absl::Status BuildSdpaTransposedGpuGraph(
     const std::vector<uint32_t>& input_ids, uint32_t output_id,
     const SdpaTransposedAttributes& attr,
-    ::ml_drift::GpuModelBuilder* model_builder) {
+    ::ml_drift::GpuModelBuilder* model_builder,
+    uint64_t max_decomposed_score_bytes) {
   if (input_ids.size() < 3) {
     return absl::InvalidArgumentError(
         "SDPA transposed expects at least 3 inputs (Q, K, V).");
@@ -1891,7 +1747,7 @@ absl::Status BuildSdpaTransposedGpuGraph(
   }
 
   const ::ml_drift::BHWC q_shape = q.tensor_desc.GetBHWCShape();
-  const int head_dim = q_shape.c;
+  const ::ml_drift::BHWC k_cache_shape = k.tensor_desc.GetBHWCShape();
   const bool supports_fused_kernels =
       SupportsFusedSdpaKernels(model_builder->gpu_info());
 
@@ -1899,10 +1755,12 @@ absl::Status BuildSdpaTransposedGpuGraph(
   // packed 4D layout produced by `odml.cache_update`, so it requires
   // `from_cache_update` and BUFFER storage. It also uses wave-matrix MMA and
   // 32-lane wave-SIMD intrinsics covering at most 32 channel slices
-  // (head_dim <= 128). Everything else falls back to the multi-op graph below.
+  // (head_dim <= 128), and reads whole GQA groups and 4-key blocks of the
+  // cache (`IsSupportedFlashPrefillShape`). Everything else falls back to the
+  // multi-op graph below.
   const bool is_supported_flash_prefill =
-      attr.is_prefill && attr.from_cache_update && head_dim % 4 == 0 &&
-      head_dim <= 128 &&
+      attr.is_prefill && attr.from_cache_update &&
+      IsSupportedFlashPrefillShape(q_shape, k_cache_shape) &&
       k.tensor_desc.GetStorageType() ==
           ::ml_drift::TensorStorageType::kBuffer &&
       v.tensor_desc.GetStorageType() ==
@@ -1925,14 +1783,36 @@ absl::Status BuildSdpaTransposedGpuGraph(
     return model_builder->UpdateOutputTensor(dst, output_id);
   }
 
+  // The work-group Flash-Decode kernel processes one query token per work group
+  // across the GQA sibling heads of a K/V head. It runs:
+  // - Decode, when `UsesFlashDecodeForShape` holds.
+  // - Prefill on backends without the MMA prefill kernel (OpenCL, WebGPU),
+  //   when `UsesWorkGroupFlashPrefill` holds, i.e. the `[1, H, T, S]` score
+  //   tensor of the decomposed graph would exceed its memory budget.
+  // A pruned BOOL causal mask (`is_causal` without a mask) always needs a fused
+  // kernel, since the decomposed graph can not bound the keys from `params`.
+  const bool is_pruned_causal_mask = attr.is_causal && mask_desc == nullptr;
+  bool use_work_group_kernel = false;
+  if (!attr.is_prefill) {
+    use_work_group_kernel = is_pruned_causal_mask ||
+                            UsesFlashDecodeForShape(model_builder->gpu_info(),
+                                                    q_shape, k_cache_shape);
+  } else if (!SupportsWaveMatrixPrefill(model_builder->gpu_info())) {
+    use_work_group_kernel =
+        is_pruned_causal_mask ||
+        (q_shape.w == 1 ? UsesFlashDecodeForShape(model_builder->gpu_info(),
+                                                  q_shape, k_cache_shape)
+                        : UsesWorkGroupFlashPrefill(
+                              model_builder->gpu_info(), q_shape, k_cache_shape,
+                              max_decomposed_score_bytes));
+  }
   const bool is_supported_flash_decode =
-      attr.from_cache_update && !attr.is_prefill && supports_fused_kernels &&
+      attr.from_cache_update && use_work_group_kernel &&
+      supports_fused_kernels &&
       IsSupportedFlashDecode(model_builder->gpu_info(), q_shape, k.tensor_desc,
                              v.tensor_desc, mask_desc);
 
   if (is_supported_flash_decode) {
-    const FlashDecodeConfig decode_config = GetFlashDecodeConfig(
-        model_builder->gpu_info(), q_shape, k.tensor_desc.GetBHWCShape());
     ABSL_ASSIGN_OR_RETURN(auto output_ref, model_builder->GetTensor(output_id));
     const ::ml_drift::BHWC output_shape = output_ref.tensor_desc.GetBHWCShape();
     const bool is_flattened_dst =
@@ -1943,6 +1823,10 @@ absl::Status BuildSdpaTransposedGpuGraph(
                                                                           v};
     if (mask_desc) src_tensors.push_back(mask);
     if (param_desc) src_tensors.push_back(param_tensor);
+    const FlashDecodeConfig decode_config = GetFlashDecodeConfig(
+        model_builder->gpu_info(), q_shape, k.tensor_desc.GetBHWCShape());
+    const char* const op_name =
+        attr.is_prefill ? "flash_prefill_sdpa_wg" : "flash_decode_sdpa";
     if (decode_config.splits > 1) {
       const int slices = q_shape.c / 4;
       auto part = model_builder->AddTensor(
@@ -1955,12 +1839,12 @@ absl::Status BuildSdpaTransposedGpuGraph(
                        v.tensor_desc, mask_desc, param_desc, part.tensor_desc,
                        attr, is_flattened_dst, decode_config));
       model_builder->AddGpuOperation(src_tensors, {part}, std::move(op),
-                                     "flash_decode_sdpa_split");
+                                     absl::StrCat(op_name, "_split"));
       auto combine = CreateFusedFlashDecodeCombine(
           part.tensor_desc, dst.tensor_desc, slices, q_shape.h,
           decode_config.splits, is_flattened_dst);
       model_builder->AddGpuOperation({part}, {dst}, std::move(combine),
-                                     "flash_decode_sdpa_combine");
+                                     absl::StrCat(op_name, "_combine"));
       return model_builder->UpdateOutputTensor(dst, output_id);
     }
     ABSL_ASSIGN_OR_RETURN(
@@ -1968,9 +1852,25 @@ absl::Status BuildSdpaTransposedGpuGraph(
                      model_builder->gpu_info(), q.tensor_desc, k.tensor_desc,
                      v.tensor_desc, mask_desc, param_desc, dst.tensor_desc,
                      attr, is_flattened_dst, decode_config));
-    model_builder->AddGpuOperation(src_tensors, {dst}, std::move(op),
-                                   "flash_decode_sdpa");
+    model_builder->AddGpuOperation(src_tensors, {dst}, std::move(op), op_name);
     return model_builder->UpdateOutputTensor(dst, output_id);
+  }
+
+  // The parsers prune the BOOL causal mask only when `UsesFusedSdpaKernel`
+  // holds, i.e. when one of the fused kernels above enforces causality from
+  // `params`. The decomposed graph below has no such bound, so reaching it
+  // without the mask would silently attend to future and stale cache entries.
+  if (attr.is_causal && attr.from_cache_update && mask_desc == nullptr &&
+      param_desc != nullptr) {
+    const ::ml_drift::BHWC k_bhwc = k.tensor_desc.GetBHWCShape();
+    return absl::FailedPreconditionError(absl::StrCat(
+        "odml.sdpa_transposed: the BOOL causal mask was pruned, but no fused "
+        "SDPA kernel supports this op (is_prefill=",
+        attr.is_prefill ? "true" : "false", ", q heads/tokens/dim=", q_shape.h,
+        "/", q_shape.w, "/", q_shape.c, ", kv heads/cache=", k_bhwc.h, "/",
+        k_bhwc.w,
+        "; K/V must be BUFFER tensors). The parser and "
+        "BuildSdpaTransposedGpuGraph disagree."));
   }
 
   const auto k_shape = k.tensor_desc.GetBHWCShape();
