@@ -187,9 +187,9 @@ class CompilerPlugin {
   LiteRtCompilerPluginApi plugin_api_ = {};
   LiteRtCompilerPlugin plugin_handle_ = nullptr;
   std::vector<LiteRtTransformation> transformations_;
-  // Default 200 iterations provide adequate headroom while protecting against
-  // runaway transformation loops.
-  size_t max_transformation_iterations_ = 200;
+  // Default 2000 iterations provide adequate headroom for multi-layer LLM
+  // subgraphs while protecting against runaway transformation loops.
+  size_t max_transformation_iterations_ = 2000;
 
   // Internal LiteRtCompiledResult wrapper.
 

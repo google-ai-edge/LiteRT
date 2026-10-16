@@ -63,6 +63,7 @@
 #include "litert/vendors/qualcomm/core/builders/cumsum_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/custom_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/depthwise_conv2d_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/detection_postprocess_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/dynamic_update_slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/embedding_lookup_op_builder.h"
@@ -71,6 +72,7 @@
 #include "litert/vendors/qualcomm/core/builders/gathernd_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gelu_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/group_norm_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/hadamard_transform_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/l2_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/layer_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/leaky_relu_op_builder.h"
@@ -106,7 +108,6 @@
 #include "litert/vendors/qualcomm/core/builders/strided_slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tanh_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tile_op_builder.h"
-#include "litert/vendors/qualcomm/core/builders/detection_postprocess_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/topk_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
@@ -1133,6 +1134,17 @@ LiteRtStatus BuildShloCompositeOp(
     op_wrappers = ::qnn::BuildL2NormOp(tensor_pool, input_tensors,
                                        output_tensors, epsilon);
   }
+  if (info->name == "HadamardTransform") {
+    float scale = 1.0f;
+    if (info->attributes_map.has_value()) {
+      auto scale_ref = (*info->attributes_map)["scale"];
+      if (!scale_ref.IsNull()) {
+        scale = scale_ref.AsFloat();
+      }
+    }
+    op_wrappers.push_back(::qnn::CreateHadamardTransformOp(
+        input_tensors[0], output_tensors[0], scale));
+  }
   return kLiteRtStatusOk;
 }
 
@@ -1731,13 +1743,30 @@ LiteRtStatus BuildCustomOp(const litert::compiler::Op& litert_op,
                                              op_wrappers);
   }
 
+  if (*custom_code == "HadamardTransform") {
+    auto custom_options = litert_op.CustomOptions();
+    float scale = 1.0f;
+    if (custom_options.HasValue() && !custom_options->empty()) {
+      const auto root =
+          flexbuffers::GetRoot(custom_options->data(), custom_options->size());
+      if (root.IsMap()) {
+        auto scale_ref = root.AsMap()["scale"];
+        if (!scale_ref.IsNull()) {
+          scale = scale_ref.AsFloat();
+        }
+      }
+    }
+    op_wrappers.push_back(::qnn::CreateHadamardTransformOp(
+        input_tensors[0], output_tensors[0], scale));
+    return kLiteRtStatusOk;
+  }
+
   if (custom_op_package.name.empty()) {
     LITERT_LOG(LITERT_WARNING,
                "No custom package registered for custom op, won't create QNN "
                "custom op.");
     return kLiteRtStatusOk;
   }
-
   auto custom_options = litert_op.CustomOptions();
   if (!custom_options.HasValue()) {
     LITERT_LOG(LITERT_ERROR, "Custom op missing custom options.");

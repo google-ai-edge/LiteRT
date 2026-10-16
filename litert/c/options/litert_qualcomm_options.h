@@ -243,6 +243,16 @@ LiteRtStatus LrtQualcommOptionsGetHtpWeightSharingChannelTileSize(
     LrtQualcommOptions options,
     int32_t* htp_weight_sharing_channel_tile_size);
 
+// When enabled, the QNN compiler plugin heuristically selects a per-partition
+// HTP P point based on subgraph structure (e.g. single-token GEMV decode vs.
+// multi-token GEMM prefill), overriding the default htp_p_point. Defaults to
+// false.
+LiteRtStatus LrtQualcommOptionsSetEnableHeuristicPPointOptimizations(
+    LrtQualcommOptions options, bool enable_heuristic_p_point_optimizations);
+
+LiteRtStatus LrtQualcommOptionsGetEnableHeuristicPPointOptimizations(
+    LrtQualcommOptions options, bool* enable_heuristic_p_point_optimizations);
+
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
 // htp_performance_mode

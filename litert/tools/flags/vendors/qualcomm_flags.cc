@@ -697,6 +697,11 @@ ABSL_FLAG(std::int32_t, qualcomm_htp_weight_sharing_channel_tile_size, 0,
           "Channel tile size used by weight sharing during graph finalization. "
           "A value of 0 disables this config.");
 
+ABSL_FLAG(bool, qualcomm_enable_heuristic_p_point_optimizations, false,
+          "When enabled, the QNN compiler plugin heuristically selects a "
+          "per-partition HTP P point based on subgraph structure (e.g. "
+          "single-token GEMV decode vs. multi-token GEMM prefill), overriding "
+          "--qualcomm_htp_p_point.");
 ABSL_FLAG(litert::qualcomm::QualcommOptions::Backend, qualcomm_backend,
           litert::qualcomm::QualcommOptions::Backend::kHtp,
           "QNN backend to use.");
@@ -1051,6 +1056,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   opts.SetHtpWeightSharingChannelTileSize(
       htp_weight_sharing_channel_tile_size);
 
+  const auto enable_heuristic_p_point_optimizations =
+      absl::GetFlag(FLAGS_qualcomm_enable_heuristic_p_point_optimizations);
+  opts.SetEnableHeuristicPPointOptimizations(
+      enable_heuristic_p_point_optimizations);
   const auto qnn_backend = absl::GetFlag(FLAGS_qualcomm_backend);
   opts.SetBackend(qnn_backend);
 

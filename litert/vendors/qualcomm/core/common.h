@@ -190,6 +190,10 @@ class Options {
       std::int32_t htp_weight_sharing_channel_tile_size);
   std::int32_t GetHtpWeightSharingChannelTileSize() const;
 
+  void SetEnableHeuristicPPointOptimizations(
+      bool enable_heuristic_p_point_optimizations);
+  bool GetEnableHeuristicPPointOptimizations() const;
+
   void SetHtpDlbc(bool htp_dlbc);
   bool GetHtpDlbc() const;
 
@@ -309,6 +313,7 @@ class Options {
   bool use_fold_relu_ = true;
   std::int32_t htp_p_point_ = 0;
   std::int32_t htp_weight_sharing_channel_tile_size_ = 0;
+  bool enable_heuristic_p_point_optimizations_ = false;
   bool htp_dlbc_ = false;
   bool htp_dlbc_weights_ = false;
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;

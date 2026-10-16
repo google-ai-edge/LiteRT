@@ -423,6 +423,23 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  /// @brief Enables heuristic per-partition HTP P point selection in the QNN
+  /// compiler plugin, overriding the default `SetHtpPPoint` value. Defaults to
+  /// `false`.
+  void SetEnableHeuristicPPointOptimizations(
+      bool enable_heuristic_p_point_optimizations) {
+    LrtQualcommOptionsSetEnableHeuristicPPointOptimizations(
+        options_, enable_heuristic_p_point_optimizations);
+  }
+  bool GetEnableHeuristicPPointOptimizations() {
+    bool val;
+    auto status =
+        LrtQualcommOptionsGetEnableHeuristicPPointOptimizations(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
   /// @brief This option controls the profiling level.
   ///
   /// A higher level results in a more detailed report after execution.

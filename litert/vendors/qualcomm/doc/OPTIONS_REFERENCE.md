@@ -53,7 +53,7 @@ flowchart TB
     subgraph ROW2[" "]
         direction LR
         C_GEN["🛠 Compile · General<br/><div style='text-align:left'>────────────────────────<br/>enable_just_in_time<br/>graph_io_tensor_mem_type<br/>graph_priority</div>"]
-        C_HTP["🛠 Compile · HTP<br/><div style='text-align:left'>───────────────────────<br/>use_conv_hmx<br/>use_fold_relu<br/>htp_dlbc<br/>htp_dlbc_weights<br/>htp_p_point<br/>htp_weight_sharing_channel_tile_size<br/>optimization_level<br/>vtcm_size<br/>num_hvx_threads<br/>use_int64_bias_as_int32<br/>enable_weight_sharing</div>"]
+        C_HTP["🛠 Compile · HTP<br/><div style='text-align:left'>───────────────────────<br/>use_conv_hmx<br/>use_fold_relu<br/>htp_dlbc<br/>htp_dlbc_weights<br/>htp_p_point<br/>enable_heuristic_p_point_optimizations<br/>htp_weight_sharing_channel_tile_size<br/>optimization_level<br/>vtcm_size<br/>num_hvx_threads<br/>use_int64_bias_as_int32<br/>enable_weight_sharing</div>"]
         C_OTHER["🛠 Compile · IR / SAVER / Debug<br/><div style='text-align:left'>──────────────────────────────<br/>dlc_dir<br/>saver_output_dir<br/>dump_tensor_ids<br/>ir_json_dir</div>"]
         C_GEN ~~~ C_HTP ~~~ C_OTHER
     end
@@ -63,7 +63,7 @@ flowchart TB
 | Category | Options |
 |----------|---------|
 | **General / SDK** | `log_level`, `backend`, `graph_priority`, `custom_op_package`, `enable_just_in_time`, `graph_io_tensor_mem_type`, `profiling` |
-| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_dlbc`, `htp_dlbc_weights`, `htp_p_point`, `htp_weight_sharing_channel_tile_size`, `htp_performance_mode`, `htp_pd_session`, `htp_device_id`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
+| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_dlbc`, `htp_dlbc_weights`, `htp_p_point`, `enable_heuristic_p_point_optimizations`, `htp_weight_sharing_channel_tile_size`, `htp_performance_mode`, `htp_pd_session`, `htp_device_id`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
 | **DSP** | `dsp_performance_mode`, `dsp_pd_session` |
 | **LPAI** | `lpai_target`, `lpai_fps`, `lpai_ftrt_ratio`, `lpai_client_perf_type`, `lpai_core_affinity_type`, `lpai_core_selection` |
 | **IR** | `dlc_dir` |
@@ -129,6 +129,7 @@ target:HTP"
 | DLBC input compression | `htp_dlbc` | `false` | compile | Enables HTP DLBC input / activation compression through the QNN HTP graph optimization config. |
 | DLBC weight compression | `htp_dlbc_weights` | `false` | compile | Enables HTP DLBC weight compression through the QNN HTP graph optimization config. |
 | P-point | `htp_p_point` | `0` | compile | **Experimental** (HTP + `O3` only). Predefined configs trading latency vs. DRAM bandwidth. |
+| Heuristic P-point | `enable_heuristic_p_point_optimizations` | `false` | compile | Heuristically selects a per-partition P point from subgraph structure (e.g. single-token GEMV decode vs. multi-token GEMM prefill), overriding `htp_p_point`. |
 | Optimization level | `optimization_level` | `O3` | compile | `O1` (inference) · `O2` (prepare) · `O3` (inference, aggressive). |
 | HTP perf mode | `htp_performance_mode` | `default` | dispatch | `default` · `sustained_high_performance` · `burst` · `high_performance` · `power_saver` · `low_power_saver` · `high_power_saver` · `low_balanced` · `balanced` · `extreme_power_saver`. |
 | HTP PD session | `htp_pd_session` | `unsigned` | dispatch | `unsigned` preserves the existing device configuration. `signed` enables QNN SignedPD. `adaptive` uses unsigned PD only when QNN reports support, otherwise it enables SignedPD. |

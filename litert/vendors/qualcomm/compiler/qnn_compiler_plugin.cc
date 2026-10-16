@@ -42,6 +42,7 @@
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -55,7 +56,10 @@
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
 #include "litert/vendors/qualcomm/compiler/transformations/attention_chunk_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/entry_embedding_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/gqa_attention_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/hadamard_transform_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/legalize_int32_ops_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/mask_simplification_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/mlp_quant_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/orphan_cleanup_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/rope_transformation.h"
@@ -119,6 +123,58 @@ bool IsWeightSharingSupported() {
 #else
   return false;
 #endif
+}
+
+// Selects a per-partition HTP P point based on the activation row count of
+// constant-weight FullyConnected ops in `partition`:
+//   - Single-row (GEMV, e.g. LLM decode): P point 4 for minimum latency.
+//   - Multi-row (GEMM, e.g. LLM prefill): `default_p_point` if explicitly set
+//     (> 0), otherwise P point 2.
+//   - No constant-weight FullyConnected ops (e.g. auxiliary mask/RoPE graphs):
+//     `default_p_point`.
+std::int32_t SelectHeuristicHtpPPoint(
+    const litert::compiler::Subgraph& partition, std::int32_t default_p_point) {
+  constexpr std::int32_t kGemvHtpPPoint = 4;
+  constexpr std::int32_t kDefaultGemmHtpPPoint = 2;
+
+  int64_t max_activation_rows = 0;
+  for (const auto& op : partition.Ops()) {
+    if (!op.Is(kLiteRtOpCodeTflFullyConnected)) {
+      continue;
+    }
+    const auto inputs = op.Inputs();
+    if (inputs.size() < 2 || !inputs[1].IsConstant()) {
+      continue;
+    }
+    auto input_type = inputs[0].RankedTensorType();
+    if (!input_type) {
+      continue;
+    }
+    const auto dims = input_type->Layout().Dimensions();
+    if (dims.size() < 2) {
+      continue;
+    }
+    int64_t rows = 1;
+    bool has_dynamic_dim = false;
+    for (size_t i = 0; i + 1 < dims.size(); ++i) {
+      if (dims[i] <= 0) {
+        has_dynamic_dim = true;
+        break;
+      }
+      rows *= dims[i];
+    }
+    if (!has_dynamic_dim) {
+      max_activation_rows = std::max(max_activation_rows, rows);
+    }
+  }
+
+  if (max_activation_rows == 1) {
+    return kGemvHtpPPoint;
+  }
+  if (max_activation_rows > 1) {
+    return default_p_point > 0 ? default_p_point : kDefaultGemmHtpPPoint;
+  }
+  return default_p_point;
 }
 
 LiteRtStatus MoveSchematic(absl::string_view graph_name,
@@ -726,12 +782,25 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     std::vector<::qnn::TensorWrapper> inputs;
     std::vector<::qnn::TensorWrapper> outputs;
 
+    ::qnn::Options graph_options = compose_graph_options;
+    if (compose_graph_options.GetEnableHeuristicPPointOptimizations()) {
+      graph_options.SetHtpPPoint(SelectHeuristicHtpPPoint(
+          partition, compose_graph_options.GetHtpPPoint()));
+      if (graph_options.GetHtpPPoint() !=
+          compose_graph_options.GetHtpPPoint()) {
+        LITERT_LOG(LITERT_INFO,
+                   "Heuristic P point optimization selected P point %d for %s "
+                   "(default: %d)",
+                   graph_options.GetHtpPPoint(), entry_point_name.c_str(),
+                   compose_graph_options.GetHtpPPoint());
+      }
+    }
+
     LITERT_RETURN_IF_ERROR(litert::qnn::ComposeGraph(
         compiler_plugin->ctx(), *qnn_manager, *qnn_backend,
         context_handles[context_handle_idx].Get(),
         context_handles[context_handle_idx].get_profile_handle(),
-        partition.Get(), entry_point_name, compose_graph_options, &inputs,
-        &outputs));
+        partition.Get(), entry_point_name, graph_options, &inputs, &outputs));
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
 
     if (!backend_options.GetSchematicDir().empty()) {
@@ -795,6 +864,9 @@ struct GraphTransformFilter {
   bool mlp_quant = false;
   bool attention_chunk = false;
   bool rope = false;
+  bool gqa = false;
+  bool masking = false;
+  bool rotation_quant = false;
 
   static GraphTransformFilter FromOptions(absl::string_view graph_transform) {
     GraphTransformFilter filter;
@@ -809,13 +881,16 @@ struct GraphTransformFilter {
         enable = false;
         token.remove_prefix(1);
       }
-      if (token == "experimental_all") {
+      if (token == "experimental_all" || token == "all") {
         filter.legalize_int32_sign = enable;
         filter.legalize_int32_reduce_max = enable;
         filter.entry_embedding = enable;
         filter.mlp_quant = enable;
         filter.attention_chunk = enable;
         filter.rope = enable;
+        filter.gqa = enable;
+        filter.masking = enable;
+        filter.rotation_quant = enable;
       } else if (token == "experimental_legalize") {
         filter.legalize_int32_sign = enable;
         filter.legalize_int32_reduce_max = enable;
@@ -836,6 +911,13 @@ struct GraphTransformFilter {
         filter.attention_chunk = enable;
       } else if (token == "rope") {
         filter.rope = enable;
+      } else if (token == "gqa" || token == "gqa_attention") {
+        filter.gqa = enable;
+      } else if (token == "masking" || token == "mask_simplification") {
+        filter.masking = enable;
+      } else if (token == "rotation_quant" || token == "hadamard" ||
+                 token == "hadamard_transform") {
+        filter.rotation_quant = enable;
       }
     }
     return filter;
@@ -859,6 +941,32 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
   const auto filter = GraphTransformFilter::FromOptions(
       compiler_plugin->Options().GetGraphTransform());
 
+  if (filter.rotation_quant) {
+    compiler_plugin->Transformations().push_back({
+        &ConvertFcToHadamardTransform,
+        "ConvertFcToHadamardTransform",
+        105,
+    });
+    compiler_plugin->Transformations().push_back({
+        &ParallelizeHadamardTransform,
+        "ParallelizeHadamardTransform",
+        95,
+    });
+  }
+  if (filter.masking) {
+    compiler_plugin->Transformations().push_back({
+        &SimplifyMaskingAddTransformation,
+        "SimplifyMaskingAddTransformation",
+        102,
+    });
+  }
+  if (filter.gqa) {
+    compiler_plugin->Transformations().push_back({
+        &GqaAttentionTransformation,
+        "GqaAttentionTransformation",
+        100,
+    });
+  }
   if (filter.legalize_int32_sign) {
     compiler_plugin->Transformations().push_back({
         &LegalizeInt32SignTransformation,
@@ -906,7 +1014,8 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
         90,
     });
   }
-  if (filter.entry_embedding || filter.rope || filter.attention_chunk) {
+  if (filter.entry_embedding || filter.rope || filter.attention_chunk ||
+      filter.gqa || filter.masking || filter.rotation_quant) {
     compiler_plugin->Transformations().push_back({
         &OrphanCleanupTransformation,
         "OrphanCleanupTransformation",

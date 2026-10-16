@@ -433,7 +433,9 @@ Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
     LiteRtModelT& model) {
   LITERT_LOG(LITERT_DEBUG, "GreedyPatternMatchAndRewrite, total patterns: %d",
              transformations_.size());
-  for (auto& subgraph : model.Subgraphs()) {
+  for (size_t sg_idx = 0; sg_idx < model.Subgraphs().size(); ++sg_idx) {
+    auto& subgraph = model.Subgraphs()[sg_idx];
+    std::vector<size_t> match_counts(transformations_.size(), 0);
     bool subgraph_modified = true;
     size_t iterations = 0;
     while (subgraph_modified) {
@@ -459,7 +461,8 @@ Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
           continue;
         }
         LITERT_LOG(LITERT_DEBUG, "Matching pattern for op: %d", op->OpCode());
-        for (const auto& transformation : transformations_) {
+        for (size_t t_idx = 0; t_idx < transformations_.size(); ++t_idx) {
+          const auto& transformation = transformations_[t_idx];
           LiteRtBuilderT builder;
           LITERT_LOG(LITERT_DEBUG, "Matching pattern '%s'",
                      transformation.name);
@@ -470,6 +473,7 @@ Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
                        transformation.name);
 
             builder.ApplyChanges(subgraph);
+            match_counts[t_idx]++;
             subgraph_modified = true;
             // Break from the inner transformation loop since the graph changed.
             break;
@@ -480,6 +484,13 @@ Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
           LITERT_LOG(LITERT_DEBUG, "Restarting scan");
           break;
         }
+      }
+    }
+    for (size_t t_idx = 0; t_idx < transformations_.size(); ++t_idx) {
+      if (match_counts[t_idx] > 0) {
+        LITERT_LOG(LITERT_INFO,
+                   "Subgraph<%zu>: applied transformation '%s' %zu times.",
+                   sg_idx, transformations_[t_idx].name, match_counts[t_idx]);
       }
     }
   }
@@ -633,7 +644,7 @@ Expected<PartitionResult> PartitionModel(
 
   ForEachIr(&model, [&](LiteRtOp op) {
     auto info = GetOptionsAs<CompositeOptions>(op);
-    if (!info) {
+    if (!info || info->subgraph < 0) {
       return;
     }
     decomp_subgraphs.insert(info->subgraph);
@@ -678,7 +689,7 @@ Expected<PartitionResult> PartitionModel(
         continue;
       }
       if (info->name == CompositeOptions::kNpuCall ||
-          info->name == CompositeOptions::kCpuCall) {
+          info->name == CompositeOptions::kCpuCall || info->subgraph < 0) {
         continue;
       }
       auto is_composite_selected = std::any_of(
@@ -725,7 +736,7 @@ Expected<PartitionResult> PartitionModel(
       if (!info) {
         continue;
       }
-      if (info->name == CompositeOptions::kNpuCall) {
+      if (info->name == CompositeOptions::kNpuCall || info->subgraph < 0) {
         continue;
       }
       selected_composite_subgraph_indexes.push_back(info->subgraph);

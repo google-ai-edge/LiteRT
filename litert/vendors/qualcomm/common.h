@@ -135,6 +135,8 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetHtpPPoint(qualcomm_options.GetHtpPPoint());
   qnn_options.SetHtpWeightSharingChannelTileSize(
       qualcomm_options.GetHtpWeightSharingChannelTileSize());
+  qnn_options.SetEnableHeuristicPPointOptimizations(
+      qualcomm_options.GetEnableHeuristicPPointOptimizations());
   qnn_options.SetHtpPerformanceMode(static_cast<::qnn::HtpPerformanceMode>(
       qualcomm_options.GetHtpPerformanceMode()));
   qnn_options.SetDspPerformanceMode(static_cast<::qnn::DspPerformanceMode>(
