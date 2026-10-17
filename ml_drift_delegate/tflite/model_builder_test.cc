@@ -5245,5 +5245,38 @@ TEST(ModelBuilderTest, CheckIfSupportedNode_FullyConnected) {
                   .ok());
 }
 
+TEST(CompositeGroupNormParserTest,
+     SupportsGroupNormWithoutSubTypeFullReductionAxes) {
+  std::vector<::ml_drift::BHWC> input_shapes = {::ml_drift::BHWC(1, 2, 3, 8)};
+  auto context =
+      std::make_unique<StubTfLiteContext>(kTfLiteBuiltinStablehloComposite,
+                                          /*op_version=*/1,
+                                          /*num_inputs=*/1, input_shapes);
+  TfLiteStablehloCompositeParams* composite_params =
+      static_cast<TfLiteStablehloCompositeParams*>(
+          context->node()->builtin_data);
+  composite_params->name = "odml.group_norm";
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.Int("num_groups", 8);
+    fbb.Float("epsilon", 1e-6f);
+    fbb.Int("channel_axis", 3);
+    fbb.Map("_TENSOR_V1_reduction_axes", [&]() {
+      fbb.Vector("TENSOR_DATA", [&]() {
+        fbb.Add(1);
+        fbb.Add(2);
+        fbb.Add(3);
+      });
+    });
+  });
+  fbb.Finish();
+  composite_params->attributes = fbb.GetBuffer().data();
+  composite_params->attributes_size = fbb.GetSize();
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_OK(parser->IsSupported(context.get(), context->node(),
+                                context->registration()));
+}
+
 }  // namespace
 }  // namespace litert::ml_drift

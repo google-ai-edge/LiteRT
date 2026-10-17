@@ -6558,20 +6558,22 @@ class CompositeGroupNormParser : public TFLiteOperationParser {
     if (!flexbuffer_map["_TENSOR_V1_reduction_axes"].IsNull()) {
       // Check that reduction axes are
       //   - [1, 2, ..., n-1] if sub_type is set (default GroupNorm behavior)
-      //   - [n-1] if sub_type is not set
+      //   - [1, 2, ..., n-1] or [n-1] if sub_type is not set
       //     (for backward compatibility, see b/489399819)
       bool has_sub_type = !flexbuffer_map["sub_type"].IsNull();
-      std::vector<int64_t> expected_reduction_axes;
+      std::vector<int64_t> full_reduction_axes(tensor_dims_size - 1);
+      std::iota(full_reduction_axes.begin(), full_reduction_axes.end(), 1);
       if (has_sub_type) {
-        expected_reduction_axes.resize(tensor_dims_size - 1);
-        std::iota(expected_reduction_axes.begin(),
-                  expected_reduction_axes.end(), 1);
+        ABSL_RETURN_IF_ERROR(ExpectReductionAxes(
+            flexbuffer_map, full_reduction_axes, "GroupNorm"));
       } else {
-        expected_reduction_axes.push_back(tensor_dims_size - 1);
+        absl::Status full_status = ExpectReductionAxes(
+            flexbuffer_map, full_reduction_axes, "GroupNorm");
+        if (!full_status.ok()) {
+          ABSL_RETURN_IF_ERROR(ExpectReductionAxes(
+              flexbuffer_map, {tensor_dims_size - 1}, "GroupNorm"));
+        }
       }
-
-      ABSL_RETURN_IF_ERROR(ExpectReductionAxes(
-          flexbuffer_map, expected_reduction_axes, "GroupNorm"));
     }
 
     if (!flexbuffer_map["channel_axis"].IsNull() &&
