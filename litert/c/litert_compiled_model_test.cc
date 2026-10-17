@@ -458,5 +458,53 @@ TEST(CompiledModelTest, GetOutputTensorLayoutsWithDynamicModel) {
   LiteRtDestroyEnvironment(environment);
 }
 
+TEST(CompiledModelTest, ConstCorrectness) {
+  auto path = testing::GetTestFilePath(kModelFileName);
+
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment));
+
+  LiteRtModel model;
+  LITERT_ASSERT_OK(
+      LiteRtCreateModelFromFile(environment, path.c_str(), &model));
+
+  LiteRtOptions jit_compilation_options;
+  LITERT_ASSERT_OK(LiteRtCreateOptions(&jit_compilation_options));
+  LITERT_ASSERT_OK(LiteRtSetOptionsHardwareAccelerators(
+      jit_compilation_options, kLiteRtHwAcceleratorCpu));
+
+  LiteRtCompiledModel compiled_model;
+  LITERT_ASSERT_OK(LiteRtCreateCompiledModel(
+      environment, model, jit_compilation_options, &compiled_model));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  // Cast to LiteRtCompiledModelConst to verify const-correctness of getter
+  // APIs.
+  LiteRtCompiledModelConst const_compiled_model = compiled_model;
+
+  LiteRtTensorBufferRequirements input_requirements;
+  LITERT_ASSERT_OK(LiteRtGetCompiledModelInputBufferRequirements(
+      const_compiled_model, /*signature_index=*/0, /*input_index=*/0,
+      &input_requirements));
+
+  LiteRtTensorBufferRequirements output_requirements;
+  LITERT_ASSERT_OK(LiteRtGetCompiledModelOutputBufferRequirements(
+      const_compiled_model, /*signature_index=*/0, /*output_index=*/0,
+      &output_requirements));
+
+  char* error_messages = nullptr;
+  // GetErrorMessages returns error when no error reporter is configured, but
+  // should accept const model.
+  EXPECT_NE(LiteRtCompiledModelGetErrorMessages(const_compiled_model,
+                                                &error_messages),
+            kLiteRtStatusOk);
+
+  LiteRtDestroyCompiledModel(compiled_model);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
+}
+
 }  // namespace
 }  // namespace litert

@@ -64,7 +64,7 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
 }
 
 LiteRtStatus LiteRtGetCompiledModelInputBufferRequirements(
-    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtCompiledModelConst compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex input_index,
     LiteRtTensorBufferRequirements* buffer_requirements) {
   if (!compiled_model || !buffer_requirements) {
@@ -73,14 +73,15 @@ LiteRtStatus LiteRtGetCompiledModelInputBufferRequirements(
 
   LITERT_ASSIGN_OR_RETURN(
       LiteRtTensorBufferRequirementsConst buffer_requirements_ptr,
-      compiled_model->GetInputBufferRequirements(signature_index, input_index));
+      const_cast<LiteRtCompiledModel>(compiled_model)
+          ->GetInputBufferRequirements(signature_index, input_index));
   *buffer_requirements =
       const_cast<LiteRtTensorBufferRequirements>(buffer_requirements_ptr);
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtGetCompiledModelOutputBufferRequirements(
-    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtCompiledModelConst compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex output_index,
     LiteRtTensorBufferRequirements* buffer_requirements) {
   if (!compiled_model || !buffer_requirements) {
@@ -89,8 +90,8 @@ LiteRtStatus LiteRtGetCompiledModelOutputBufferRequirements(
 
   LITERT_ASSIGN_OR_RETURN(
       LiteRtTensorBufferRequirementsConst buffer_requirements_ptr,
-      compiled_model->GetOutputBufferRequirementsCApi(signature_index,
-                                                      output_index));
+      const_cast<LiteRtCompiledModel>(compiled_model)
+          ->GetOutputBufferRequirementsCApi(signature_index, output_index));
   *buffer_requirements =
       const_cast<LiteRtTensorBufferRequirements>(buffer_requirements_ptr);
   return kLiteRtStatusOk;
@@ -554,7 +555,7 @@ LiteRtStatus LiteRtCompiledModelClearErrors(
 }
 
 LiteRtStatus LiteRtCompiledModelGetErrorMessages(
-    LiteRtCompiledModel compiled_model, char** error_messages) {
+    LiteRtCompiledModelConst compiled_model, char** error_messages) {
   LITERT_RETURN_IF_ERROR(compiled_model != nullptr && error_messages != nullptr,
                          kLiteRtStatusErrorInvalidArgument);
 

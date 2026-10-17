@@ -46,7 +46,7 @@ extern "C" {
 // LiteRT CompiledModels ABI version number, in semver 2 format
 // (see https://semver.org).  This is the ABI version number for
 // the methods in LiteRtRuntimeCApiStruct, which is defined below.
-#define LITERT_RUNTIME_ABI_VERSION "1.2.0"
+#define LITERT_RUNTIME_ABI_VERSION "1.3.0"
 // TODO(b/493650900): declare that as an extern const (and
 // initialize it in a .cc file) rather than using a macro.
 
@@ -279,12 +279,12 @@ typedef struct LiteRtRuntimeCApiStruct {
       LiteRtOptions compilation_options, LiteRtCompiledModel* compiled_model);
   // litert_compiled_model.h: LiteRtGetCompiledModelInputBufferRequirements
   LiteRtStatus (*litert_get_compiled_model_input_buffer_requirements)(
-      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      LiteRtCompiledModelConst compiled_model, LiteRtParamIndex signature_index,
       LiteRtParamIndex input_index,
       LiteRtTensorBufferRequirements* buffer_requirements);
   // litert_compiled_model.h: LiteRtGetCompiledModelOutputBufferRequirements
   LiteRtStatus (*litert_get_compiled_model_output_buffer_requirements)(
-      LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+      LiteRtCompiledModelConst compiled_model, LiteRtParamIndex signature_index,
       LiteRtParamIndex output_index,
       LiteRtTensorBufferRequirements* buffer_requirements);
   // litert_compiled_model.h: LiteRtGetCompiledModelInputTensorLayout
@@ -366,7 +366,7 @@ typedef struct LiteRtRuntimeCApiStruct {
       LiteRtCompiledModel compiled_model);
   // litert_compiled_model.h: LiteRtCompiledModelGetErrorMessages
   LiteRtStatus (*litert_compiled_model_get_error_messages)(
-      LiteRtCompiledModel compiled_model, char** error_messages);
+      LiteRtCompiledModelConst compiled_model, char** error_messages);
 
   //
   // LiteRtTensorBufferRequirements
