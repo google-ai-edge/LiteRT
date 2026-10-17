@@ -88,6 +88,14 @@ ParseGoogleTensorOptions(const LiteRtRuntimeContext* runtime_context,
     google_tensor_options_data.performance_mode = performance_mode;
   }
 
+  bool use_vendor_preferred_fence = false;
+  if (LrtGoogleTensorOptionsGetUseVendorPreferredFence(
+          google_tensor_options, &use_vendor_preferred_fence) ==
+      kLiteRtStatusOk) {
+    google_tensor_options_data.use_vendor_preferred_fence =
+        use_vendor_preferred_fence;
+  }
+
   // Build up the input and output coherency maps.
   int num_input_entries = 0;
   if (LrtGoogleTensorOptionsGetNumInputCoherencyEntries(

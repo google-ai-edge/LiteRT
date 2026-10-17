@@ -294,6 +294,20 @@ class GoogleTensorOptions : public ConcreteOptionsBase {
     // return experimental_enable_input_validator;
   // }
   // copybara:uncomment_end
+
+  void SetUseVendorPreferredFence(bool use_vendor_preferred_fence) {
+    internal::AssertOk(LrtGoogleTensorOptionsSetUseVendorPreferredFence, Get(),
+                       use_vendor_preferred_fence);
+  }
+
+  bool GetUseVendorPreferredFence() const {
+    LrtGoogleTensorOptions options_data = Get();
+    bool use_vendor_preferred_fence;
+    internal::AssertOk(LrtGoogleTensorOptionsGetUseVendorPreferredFence,
+                       options_data, &use_vendor_preferred_fence);
+    return use_vendor_preferred_fence;
+  }
+
  private:
   explicit GoogleTensorOptions(LrtGoogleTensorOptions options)
       : options_(options) {}
