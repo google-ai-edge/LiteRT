@@ -20,7 +20,7 @@ load("//litert/ats:ats.bzl", "litert_define_ats")
 # copybara:uncomment load("//litert/ats:models.bzl", "CLASSICAL_ALL_MODELS")
 load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "if_oss", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
-# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_macos_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_npu_aot_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
+# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_macos_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_npu_aot_guitar_test", "litert_perfgate_upload_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -311,6 +311,10 @@ litert_define_ats(
     compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = XNNPACK_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
 )
@@ -323,6 +327,8 @@ litert_define_ats(
     dont_register = YNNPACK_MODELS_DONT_REGISTER,
     extra_flags = [
         "--enable_ynnpack=true",
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
@@ -337,6 +343,8 @@ litert_define_ats(
     extra_flags = [
         "--enable_ynnpack=true",
         "--cpu_hint_fully_delegated=false",
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
@@ -350,6 +358,8 @@ litert_define_ats(
     dont_register = BUILTIN_MODELS_DONT_REGISTER,
     extra_flags = [
         "--cpu_kernel_mode=builtin",
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
@@ -361,6 +371,10 @@ litert_define_ats(
     compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = GPU_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
 )
@@ -739,6 +753,10 @@ litert_define_ats(
     compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = XNNPACK_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
     platform = "macos",
@@ -752,6 +770,8 @@ litert_define_ats(
     dont_register = YNNPACK_MODELS_DONT_REGISTER,
     extra_flags = [
         "--enable_ynnpack=true",
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
@@ -767,6 +787,8 @@ litert_define_ats(
     extra_flags = [
         "--enable_ynnpack=true",
         "--cpu_hint_fully_delegated=false",
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
@@ -781,6 +803,8 @@ litert_define_ats(
     dont_register = BUILTIN_MODELS_DONT_REGISTER,
     extra_flags = [
         "--cpu_kernel_mode=builtin",
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
@@ -793,6 +817,10 @@ litert_define_ats(
     compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = GPU_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
     platform = "macos",
@@ -804,6 +832,10 @@ litert_define_ats(
     compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = GPU_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     jit_suffix = "",
     platform = "macos",
@@ -1989,7 +2021,11 @@ cc_library(
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
 #             litert_pixel_9_mh_guitar_test(
+#                 name = "model_tests",
 #                 targets = PIXEL_9_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 device = "pixel_9",
 #             ),
 #         ],
 #     ),
@@ -2016,7 +2052,11 @@ cc_library(
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
 #             litert_qualcomm_mh_guitar_test(
+#                 name = "model_tests",
 #                 targets = QUALCOMM_S24_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 device = "qualcomm_s24",
 #             ),
 #         ],
 #     ),
@@ -2043,8 +2083,12 @@ cc_library(
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
 #             litert_mediatek_mh_guitar_test(
+#                 name = "model_tests",
 #                 dimension_hardware = "mt6989",
 #                 targets = MEDIATEK_MT6989_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 device = "mediatek_mt6989",
 #             ),
 #         ],
 #     ),
@@ -2072,7 +2116,11 @@ cc_library(
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
 #             litert_macos_mh_guitar_test(
+#                 name = "model_tests",
 #                 targets = MACOS_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 device = "macos",
 #             ),
 #         ],
 #     ),

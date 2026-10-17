@@ -33,6 +33,7 @@
 #include <gtest/gtest.h>
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/ats/common.h"
@@ -115,19 +116,20 @@ class AtsInferenceTest : public RngTest {
   void TestBody() override {
     auto device = this->TracedDevice(conf_.DataSeed());
     LITERT_ASSERT_OK_AND_ASSIGN(exec_, MakeExecutor());
+    LITERT_ASSERT_OK_AND_ASSIGN(auto inputs, MakeInputs(device));
+
     const int num_warmup = conf_.WarmupRuns();
-    if (num_warmup > 0) {
-      LITERT_ASSERT_OK_AND_ASSIGN(auto warmup_inputs, MakeInputs(device));
-      for (int w = 0; w < num_warmup; ++w) {
-        LITERT_ASSERT_OK(exec_->Run(warmup_inputs));
-      }
+    for (int w = 0; w < num_warmup; ++w) {
+      LITERT_ASSERT_OK(exec_->Run(inputs));
     }
+
+    VarBuffers actual;
     for (auto _ : this->FuzzBlock(conf_.ItersPerTest(), conf_.MaxMsPerTest())) {
-      LITERT_ASSERT_OK_AND_ASSIGN(auto inputs, MakeInputs(device));
-      LITERT_ASSERT_OK_AND_ASSIGN(auto ref, Reference(inputs));
-      LITERT_ASSERT_OK_AND_ASSIGN(auto actual, Actual(inputs, exec_.get()));
-      CheckOutputs(actual, ref);
+      LITERT_ASSERT_OK_AND_ASSIGN(actual, Actual(inputs, exec_.get()));
     }
+
+    LITERT_ASSERT_OK_AND_ASSIGN(auto ref, Reference(inputs));
+    CheckOutputs(actual, ref);
   }
 
   void TearDown() override {
@@ -158,6 +160,11 @@ class AtsInferenceTest : public RngTest {
       return;
     } else {
       cap_.run.status = RunStatus::kOk;
+    }
+    if (conf_.ItersPerTest() > 1 && !cap_.latency.Samples().empty()) {
+      RecordProperty("latency_samples_us",
+                     absl::StrJoin(cap_.latency.Samples(), ","));
+      RecordProperty("backend", absl::StrFormat("%v", conf_.Backend()));
     }
     LITERT_ASSERT_OK(
         conf_.SaveModel(names_.report_id, std::move(graph_->Graph())));
