@@ -1,0 +1,320 @@
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+# <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+
+diff --git a/tosa_converter_for_tflite/BUILD b/tosa_converter_for_tflite/BUILD
+index 335fb75..b1d7666 100644
+--- a/tosa_converter_for_tflite/BUILD
++++ b/tosa_converter_for_tflite/BUILD
+@@ -51,6 +51,24 @@ TCFT_HARDENED_LINKOPTS = [
+     "-Wl,--no-copy-dt-needed-entries",
+ ]
+ 
++# Final-link hardening for the C API. LiteRT applies graph-wide release compile
++# and LTO flags through the transition on its tcft_release_so target.
++TCFT_RELEASE_LINKOPTS = TCFT_HARDENED_LINKOPTS + [
++    "-Wl,--build-id=none",
++    "-Wl,--exclude-libs,ALL",
++    "-Wl,--gc-sections",
++    "-Wl,--icf=all",
++    "-Wl,-soname,libtcft.so",
++    "-Wl,--strip-all",
++    "-Wl,-Bsymbolic",
++    "-Wl,-z,start-stop-visibility=hidden",
++]
++
++config_setting(
++    name = "tcft_android",
++    constraint_values = ["@platforms//os:android"],
++)
++
+ cc_library(
+     name = "tosa_converter_for_tflite_lib",
+     srcs = ["tosa_converter_for_tflite.cc", "override_tflite_input_shape.cc"],
+@@ -62,6 +80,49 @@ cc_library(
+     copts = TCFT_HARDENED_COPTS,
+ )
+ 
++cc_library(
++    name = "tcft_c_api_headers",
++    hdrs = ["tcft.h"],
++    visibility = ["//visibility:public"],
++)
++
++# Production C ABI with direct FlatBuffer input and bytecode output. This
++# target is self-contained and does not depend on a standalone .bazelrc.
++cc_binary(
++    name = "libtcft.so",
++    srcs = ["tcft.cc"],
++    additional_linker_inputs = ["tcft_flatbuffer.lds"],
++    linkopts = TCFT_RELEASE_LINKOPTS + select({
++        # Android's APS2 format is supported from API 23. Keep the generic
++        # Linux build compatible with loaders that predate DT_RELR.
++        ":tcft_android": ["-Wl,--pack-dyn-relocs=android"],
++        "//conditions:default": [],
++    }) + [
++        "-Wl,--version-script=$(location :tcft_flatbuffer.lds)",
++        "-Wl,--no-undefined",
++    ],
++    linkshared = True,
++    linkstatic = True,
++    local_defines = ["TCFT_ENABLE_FLATBUFFER=1"],
++    visibility = ["//visibility:public"],
++    deps = [
++        ":tcft_c_api_headers",
++        "//tosa_converter_for_tflite/tfl_passes:tfl_passes",
++        "@litert//litert/vendors/arm_vulkan_ml/compiler:tflite_tensorflow_lite_ops",
++        "@llvm-project//llvm:Support",
++        "@llvm-project//mlir:ArithDialect",
++        "@llvm-project//mlir:BytecodeWriter",
++        "@llvm-project//mlir:FuncDialect",
++        "@llvm-project//mlir:IR",
++        "@llvm-project//mlir:Pass",
++        "@llvm-project//mlir:QuantOps",
++        "@llvm-project//mlir:TensorDialect",
++        "@llvm-project//mlir:TosaDialect",
++        "@llvm-project//mlir:Transforms",
++        "@litert//litert/vendors/arm_vulkan_ml/compiler:tflite_flatbuffer_import",
++    ],
++)
++
+ pybind_extension(
+     name = "_tosa_converter_for_tflite_wrapper",
+     srcs = [
+diff --git a/tosa_converter_for_tflite/tcft.cc b/tosa_converter_for_tflite/tcft.cc
+new file mode 100644
+index 0000000..90c02ca
+--- /dev/null
++++ b/tosa_converter_for_tflite/tcft.cc
+@@ -0,0 +1,103 @@
++#include "tosa_converter_for_tflite/tcft.h"
++
++#if defined(TCFT_ENABLE_FLATBUFFER)
++#include <string_view>
++#endif
++
++#include "llvm/ADT/SmallVector.h"
++#include "llvm/Support/raw_ostream.h"
++#include "mlir/Bytecode/BytecodeWriter.h"
++#include "mlir/Dialect/Arith/IR/Arith.h"
++#include "mlir/Dialect/Func/IR/FuncOps.h"
++#include "mlir/Dialect/Quant/IR/Quant.h"
++#include "mlir/Dialect/Tensor/IR/Tensor.h"
++#include "mlir/Dialect/Tosa/IR/TosaOps.h"
++#include "mlir/IR/BuiltinOps.h"
++#include "mlir/IR/DialectRegistry.h"
++#include "mlir/IR/Location.h"
++#include "mlir/IR/MLIRContext.h"
++#include "mlir/IR/OwningOpRef.h"
++#include "mlir/Pass/PassManager.h"
++#include "mlir/Transforms/Passes.h"
++#if defined(TCFT_ENABLE_FLATBUFFER)
++#include "tflite/converter/flatbuffer_import.h"
++#endif
++#include "tflite/converter/ir/tfl_ops.h"
++#include "tosa_converter_for_tflite/tfl_passes/tfl_passes.h"
++#include "tosa_converter_for_tflite/tfl_passes/transforms/passes.h"
++
++namespace {
++
++tcft_status LegalizeAndWrite(mlir::ModuleOp module, tcft_output_callback output,
++                             void* user_data) {
++  mlir::PassManager pm(module.getContext(), module.getOperationName(),
++                       mlir::OpPassManager::Nesting::Implicit);
++  mlir::tosa::TOSATFLLegalizationPipelineOptions options;
++  mlir::tosa::createTFLtoTOSALegalizationPipeline(pm, options);
++  pm.nest<mlir::func::FuncOp>().addPass(
++      mlir::tosa::createStripQuantTypesPass());
++  pm.addPass(mlir::createStripDebugInfoPass());
++  if (mlir::failed(pm.run(module))) {
++    return TCFT_STATUS_LEGALIZATION_ERROR;
++  }
++
++  llvm::SmallVector<char, 0> output_bytes;
++  llvm::raw_svector_ostream output_stream(output_bytes);
++  if (mlir::failed(mlir::writeBytecodeToFile(module, output_stream))) {
++    return TCFT_STATUS_WRITE_ERROR;
++  }
++  if (output(output_bytes.data(), output_bytes.size(), user_data) != 0) {
++    return TCFT_STATUS_WRITE_ERROR;
++  }
++  return TCFT_STATUS_OK;
++}
++
++#if defined(TCFT_ENABLE_FLATBUFFER)
++tcft_status ConvertFlatBuffer(const void* input_data, size_t input_size,
++                              tcft_output_callback output, void* user_data) {
++  if (input_data == nullptr || output == nullptr) {
++    return TCFT_STATUS_INVALID_ARGUMENT;
++  }
++
++  mlir::MLIRContext context;
++  const mlir::Location source_location =
++      mlir::FileLineColLoc::get(&context, "tcft-input.tflite", 0, 0);
++  mlir::OwningOpRef<mlir::ModuleOp> module = tflite::FlatBufferToMlir(
++      std::string_view(static_cast<const char*>(input_data), input_size),
++      &context, source_location, /*use_external_constant=*/false,
++      /*ordered_input_arrays=*/{}, /*ordered_output_arrays=*/{},
++      /*experimental_prune_unreachable_nodes_unconditionally=*/false,
++      /*disable_vhlo_to_stablehlo=*/true);
++  if (!module) {
++    return TCFT_STATUS_PARSE_ERROR;
++  }
++  return LegalizeAndWrite(*module, output, user_data);
++}
++#endif
++
++}  // namespace
++
++#if defined(TCFT_ENABLE_FLATBUFFER)
++extern "C" tcft_status tcft_convert_tflite_to_tosa(const void* input_data,
++                                                   size_t input_size,
++                                                   tcft_output_callback output,
++                                                   void* user_data) {
++  return ConvertFlatBuffer(input_data, input_size, output, user_data);
++}
++#endif
++
++extern "C" const char* tcft_status_message(tcft_status status) {
++  switch (status) {
++    case TCFT_STATUS_OK:
++      return "success";
++    case TCFT_STATUS_INVALID_ARGUMENT:
++      return "invalid argument";
++    case TCFT_STATUS_PARSE_ERROR:
++      return "could not parse input";
++    case TCFT_STATUS_LEGALIZATION_ERROR:
++      return "could not legalize TFL MLIR to TOSA";
++    case TCFT_STATUS_WRITE_ERROR:
++      return "could not write TOSA MLIR bytecode";
++  }
++  return "unknown status";
++}
+diff --git a/tosa_converter_for_tflite/tcft.h b/tosa_converter_for_tflite/tcft.h
+new file mode 100644
+index 0000000..5c80c21
+--- /dev/null
++++ b/tosa_converter_for_tflite/tcft.h
+@@ -0,0 +1,45 @@
++#ifndef TOSA_CONVERTER_FOR_TFLITE_TCFT_H_
++#define TOSA_CONVERTER_FOR_TFLITE_TCFT_H_
++
++#include <stddef.h>
++
++#if defined(_WIN32)
++#define TCFT_API __declspec(dllexport)
++#else
++#define TCFT_API __attribute__((visibility("default")))
++#endif
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++// Status returned by tcft_convert_tflite_to_tosa().
++typedef enum tcft_status {
++  TCFT_STATUS_OK = 0,
++  TCFT_STATUS_INVALID_ARGUMENT = 1,
++  TCFT_STATUS_PARSE_ERROR = 2,
++  TCFT_STATUS_LEGALIZATION_ERROR = 3,
++  TCFT_STATUS_WRITE_ERROR = 4,
++} tcft_status;
++
++// Receives the complete TOSA MLIR bytecode result. The data remains valid only
++// for the duration of the callback. Return zero on success and nonzero to make
++// tcft_convert_tflite_to_tosa() return TCFT_STATUS_WRITE_ERROR.
++typedef int (*tcft_output_callback)(const void* data, size_t size,
++                                    void* user_data);
++
++// Converts a TFLite FlatBuffer held in memory to TOSA MLIR bytecode. This
++// symbol is exported only by a FlatBuffer-enabled build of the library.
++TCFT_API tcft_status tcft_convert_tflite_to_tosa(const void* input_data,
++                                                 size_t input_size,
++                                                 tcft_output_callback output,
++                                                 void* user_data);
++
++// Returns a static, null-terminated description of a status code.
++TCFT_API const char* tcft_status_message(tcft_status status);
++
++#ifdef __cplusplus
++}  // extern "C"
++#endif
++
++#endif  // TOSA_CONVERTER_FOR_TFLITE_TCFT_H_
+diff --git a/tosa_converter_for_tflite/tcft_flatbuffer.lds b/tosa_converter_for_tflite/tcft_flatbuffer.lds
+new file mode 100644
+index 0000000..1be1794
+--- /dev/null
++++ b/tosa_converter_for_tflite/tcft_flatbuffer.lds
+@@ -0,0 +1,7 @@
++TCFT_1.0 {
++ global:
++ tcft_convert_tflite_to_tosa;
++ tcft_status_message;
++ local:
++ *;
++};
+diff --git a/tosa_converter_for_tflite/tfl_passes/BUILD b/tosa_converter_for_tflite/tfl_passes/BUILD
+index 0864164..7c4e700 100644
+--- a/tosa_converter_for_tflite/tfl_passes/BUILD
++++ b/tosa_converter_for_tflite/tfl_passes/BUILD
+@@ -82,7 +82,7 @@ cc_library(
+     compatible_with = get_compatible_with_portable(),
+     tags = ["tf_tosa"],
+     deps = [
+-        "@litert//tflite/converter:tensorflow_lite",
++        "@litert//litert/vendors/arm_vulkan_ml/compiler:tflite_tensorflow_lite",
+         "@litert//tflite/converter/kernels/internal:common",
+         "@litert//tflite/converter/kernels/internal:quantization_util",
+         "@litert//tflite/converter/quantization/ir:QuantOps",
+@@ -164,7 +164,7 @@ cc_library(
+         ":legalize_common",
+         ":passes_header",
+         ":tosa_legalize_tf_inc_gen",
+-        "@litert//tflite/converter:tensorflow_lite",
++        "@litert//litert/vendors/arm_vulkan_ml/compiler:tflite_tensorflow_lite",
+         "@litert//tflite/converter/quantization/ir:QuantOps",
+         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
+         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:dynamic_shape_utils",
+@@ -199,7 +199,7 @@ gentbl_cc_library(
+     ],
+     deps = [
+         ":tosa_ops_td_files",
+-        "@litert//tflite/converter:tensorflow_lite_ops_td_files",
++        "@litert//litert/vendors/arm_vulkan_ml/compiler:tflite_tensorflow_lite_ops_td_files",
+         "@litert//tflite/converter/quantization/ir:QuantizationOpsTdFiles",
+         "@llvm-project//mlir:FuncTdFiles",
+     ],
+@@ -232,8 +232,8 @@ cc_library(
+         ":legalize_common",
+         ":passes_header",
+         ":tosa_legalize_tfl_inc_gen",
+-        "@litert//tflite/converter:tensorflow_lite",
+-        "@litert//tflite/converter:tensorflow_lite_quantize",
++        "@litert//litert/vendors/arm_vulkan_ml/compiler:tflite_tensorflow_lite",
++        "@litert//litert/vendors/arm_vulkan_ml/compiler:tflite_tensorflow_lite_quantize",
+         "@litert//tflite/converter/quantization/ir:QuantOps",
+         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:dynamic_shape_utils",
+         "@llvm-project//llvm:Support",
+@@ -268,8 +268,8 @@ cc_library(
+         ":passes_header",
+         ":tf_passes",
+         ":tfl_passes",
+-        "@litert//tflite/converter:lift_tflite_flex_ops",
+-        "@litert//tflite/converter:tensorflow_lite",
++        "@litert//litert/vendors/arm_vulkan_ml/compiler:tflite_lift_tflite_flex_ops",
++        "@litert//litert/vendors/arm_vulkan_ml/compiler:tflite_tensorflow_lite",
+         "@llvm-project//mlir:AffineTransforms",
+         "@llvm-project//mlir:FuncDialect",
+         "@llvm-project//mlir:IR",
+@@ -290,8 +290,8 @@ tf_cc_binary(
+         "@org_tensorflow//tensorflow/compiler/mlir:init_mlir",
+         "@org_tensorflow//tensorflow/compiler/mlir:passes",
+         "@org_tensorflow//tensorflow/compiler/mlir:register_common_dialects",
+-        "@litert//tflite/converter:tensorflow_lite",
+-        "@litert//tflite/converter:tf_tfl_passes",  # buildcleaner:keep
++        "@litert//litert/vendors/arm_vulkan_ml/compiler:tflite_tensorflow_lite",
++        "@litert//litert/vendors/arm_vulkan_ml/compiler:tflite_tf_tfl_passes",  # buildcleaner:keep
+         "@org_tensorflow//tensorflow/compiler/mlir/quantization/stablehlo:bridge_passes",
+         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:mlprogram_util",
+         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow/transforms:tensorflow_passes",

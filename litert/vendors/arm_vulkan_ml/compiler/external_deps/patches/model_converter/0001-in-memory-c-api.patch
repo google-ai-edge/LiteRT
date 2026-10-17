@@ -1,0 +1,392 @@
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+# <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 36f473e..1849e05 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -171,6 +171,25 @@ target_include_directories(model-converter-driver-lib SYSTEM PRIVATE ${CMAKE_CUR
+ target_link_libraries(model-converter-driver-lib PUBLIC ${CONVERTER_DRIVER_LIB_DEPENDENCIES})
+ target_compile_options(model-converter-driver-lib PRIVATE ${ML_SDK_MODEL_CONVERTER_COMPILE_OPTIONS})
+ 
++add_library(model-converter-c-api SHARED "src/model_converter_c_api.cpp")
++target_include_directories(model-converter-c-api PUBLIC
++    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
++    $<INSTALL_INTERFACE:include>)
++target_link_libraries(model-converter-c-api PRIVATE model-converter-driver-lib)
++target_compile_options(model-converter-c-api PRIVATE ${ML_SDK_MODEL_CONVERTER_COMPILE_OPTIONS})
++set_target_properties(model-converter-c-api PROPERTIES
++    CXX_VISIBILITY_PRESET hidden
++    VISIBILITY_INLINES_HIDDEN YES
++    OUTPUT_NAME model_converter)
++target_link_options(model-converter-c-api PRIVATE
++    "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/src/model_converter_c_api.lds"
++    "-Wl,-Bsymbolic"
++    "-Wl,--strip-all")
++set_target_properties(model-converter-c-api PROPERTIES
++    LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/model_converter_c_api.lds")
++
++add_library(${MODEL_CONVERTER_NAMESPACE}::model-converter-c-api ALIAS model-converter-c-api)
++
+ add_executable(model-converter "src/main.cpp")
+ target_link_libraries(model-converter PRIVATE model-converter-driver-lib argparse::argparse)
+ target_compile_options(model-converter PRIVATE ${ML_SDK_MODEL_CONVERTER_COMPILE_OPTIONS})
+@@ -192,6 +211,13 @@ mlsdk_generate_version_header(
+ add_executable(${MODEL_CONVERTER_NAMESPACE}::model-converter ALIAS model-converter)
+ 
+ install(TARGETS model-converter EXPORT ${MODEL_CONVERTER_PACKAGE_NAME}Config)
++install(TARGETS model-converter-c-api
++    EXPORT ${MODEL_CONVERTER_PACKAGE_NAME}Config
++    LIBRARY DESTINATION lib
++    COMPONENT model-converter-c-api)
++install(FILES include/model_converter/model_converter.h
++    DESTINATION include/model_converter
++    COMPONENT model-converter-c-api)
+ 
+ if(ML_SDK_BUILD_DOCS OR MODEL_CONVERTER_BUILD_DOCS)
+     include(docs/docs.cmake)
+diff --git a/include/model_converter/model_converter.h b/include/model_converter/model_converter.h
+new file mode 100644
+index 0000000..bbf50a9
+--- /dev/null
++++ b/include/model_converter/model_converter.h
+@@ -0,0 +1,59 @@
++#ifndef MODEL_CONVERTER_MODEL_CONVERTER_H_
++#define MODEL_CONVERTER_MODEL_CONVERTER_H_
++
++#include <stddef.h>
++#include <stdint.h>
++
++#define MC_API __attribute__((visibility("default")))
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++#define MC_OPTIONS_ABI_VERSION 1u
++
++typedef enum mc_status {
++    MC_STATUS_OK = 0,
++    MC_STATUS_INVALID_ARGUMENT = 1,
++    MC_STATUS_UNSUPPORTED_OPTIONS = 2,
++    MC_STATUS_COMPILATION_ERROR = 3,
++    MC_STATUS_WRITE_ERROR = 4,
++    MC_STATUS_INTERNAL_ERROR = 5,
++} mc_status;
++
++typedef enum mc_option_flags {
++    MC_OPTION_EMIT_DEBUG_INFO = 1u << 0,
++    MC_OPTION_DUMP_MLIR = 1u << 1,
++} mc_option_flags;
++
++// Versioned, fixed-width options for the C ABI. Initialize with
++// MC_OPTIONS_INIT, then set flags as required.
++typedef struct mc_options {
++    uint32_t struct_size;
++    uint32_t abi_version;
++    uint32_t flags;
++} mc_options;
++
++#define MC_OPTIONS_INIT \
++    { sizeof(mc_options), MC_OPTIONS_ABI_VERSION, 0u }
++
++// Receives the complete VGF result. The data remains valid only for the
++// duration of the callback. Return zero on success and nonzero to make
++// mc_convert_tosa_to_vgf() return MC_STATUS_WRITE_ERROR.
++typedef int (*mc_output_callback)(const void *data, size_t size, void *user_data);
++
++// Converts textual or bytecode TOSA MLIR held in memory to VGF held in memory.
++// This function performs no file I/O and never throws across the C boundary.
++// A null options pointer selects the same default conversion behavior as the
++// command-line driver.
++MC_API mc_status mc_convert_tosa_to_vgf(const void *tosa_data, size_t tosa_size, const mc_options *options,
++                                        mc_output_callback output, void *user_data);
++
++// Returns a static, null-terminated description of a status code.
++MC_API const char *mc_status_message(mc_status status);
++
++#ifdef __cplusplus
++} // extern "C"
++#endif
++
++#endif // MODEL_CONVERTER_MODEL_CONVERTER_H_
+diff --git a/src/compiler.cpp b/src/compiler.cpp
+index 1b27d4a..c74a66d 100644
+--- a/src/compiler.cpp
++++ b/src/compiler.cpp
+@@ -13,6 +13,7 @@
+ #include "vgf-dialect/VGFDialect.h"
+ #include "vgf_builder.hpp"
+ #include "llvm/ADT/STLExtras.h"
++#include "llvm/ADT/StringRef.h"
+ #include "llvm/Support/ErrorHandling.h"
+ 
+ #include "include/DeserializationPasses.h" // from @tosa_tools/mlir_translator
+@@ -190,8 +191,8 @@ void Compiler::SetPassManager() {
+             spirvNestedPM.addPass(mlir::spirv::createSPIRVUpdateVCEPass());
+ 
+             // Sequence Module Passes
+-            sequenceNestedPM.addPass(
+-                createSerializeVGFPass(std::move(builder), _options.filename_output, {_options.emit_debug_info}));
++            sequenceNestedPM.addPass(createSerializeVGFPass(std::move(builder), _options.filename_output,
++                                                            _options.output_stream, {_options.emit_debug_info}));
+         }
+     }
+ }
+@@ -214,4 +215,19 @@ bool Compiler::Compile(const std::string &input_file) {
+     return mlir::succeeded(_pm.run(*moduleOp));
+ }
+ 
++bool Compiler::CompileBuffer(const void *input_data, size_t input_size) {
++    if (input_data == nullptr || input_size == 0) {
++        return false;
++    }
++
++    mlir::ParserConfig config(&_context);
++    llvm::StringRef input(static_cast<const char *>(input_data), input_size);
++    OwningOpRef<ModuleOp> moduleOp = mlir::parseSourceString<ModuleOp>(input, config, "mc-input");
++    if (!moduleOp) {
++        return false;
++    }
++
++    return mlir::succeeded(_pm.run(*moduleOp));
++}
++
+ } // namespace mlsdk::model_converter
+diff --git a/src/compiler.hpp b/src/compiler.hpp
+index d6ab1e1..8725145 100644
+--- a/src/compiler.hpp
++++ b/src/compiler.hpp
+@@ -12,6 +12,8 @@
+ #include "mlir/Pass/PassManager.h"
+ #include "llvm/Support/SourceMgr.h"
+ 
++#include <cstddef>
++#include <ostream>
+ #include <string>
+ #include <vector>
+ 
+@@ -35,11 +37,13 @@ class Compiler {
+         bool disable_replicated_composites = false;
+         TypeNarrowingMode type_narrowing = TypeNarrowingMode::None;
+         std::vector<std::string> custom_op_domain_to_opcode;
++        std::ostream *output_stream = nullptr;
+     };
+ 
+     explicit Compiler(const Options &options);
+ 
+     bool Compile(const std::string &input_file);
++    bool CompileBuffer(const void *input_data, size_t input_size);
+ 
+     void SetLogging();
+     void SetRegistry();
+diff --git a/src/conversion/serialize_vgf.cpp b/src/conversion/serialize_vgf.cpp
+index 7ccad3a..d4baaf3 100644
+--- a/src/conversion/serialize_vgf.cpp
++++ b/src/conversion/serialize_vgf.cpp
+@@ -42,14 +42,14 @@ using detail::ResourcePlanEncoder;
+ 
+ class SerializeVGFPass : public impl::SerializeVGFPassBase<SerializeVGFPass> {
+   public:
+-    SerializeVGFPass() : SerializeVGFPass(std::make_shared<VGFBuilder>(), "binary.vgf", {}) {}
++    SerializeVGFPass() : SerializeVGFPass(std::make_shared<VGFBuilder>(), "binary.vgf", nullptr, {}) {}
+ 
+     explicit SerializeVGFPass(const SerializeVGFPassOptions &options)
+-        : SerializeVGFPass(std::make_shared<VGFBuilder>(), "binary.vgf", options) {}
++        : SerializeVGFPass(std::make_shared<VGFBuilder>(), "binary.vgf", nullptr, options) {}
+ 
+-    SerializeVGFPass(std::shared_ptr<VGFBuilder> VGFBuilder, std::string outputName,
++    SerializeVGFPass(std::shared_ptr<VGFBuilder> VGFBuilder, std::string outputName, std::ostream *outputStream,
+                      const SerializeVGFPassOptions &options)
+-        : _VGFBuilder(std::move(VGFBuilder)), _outputName(std::move(outputName)),
++        : _VGFBuilder(std::move(VGFBuilder)), _outputName(std::move(outputName)), _outputStream(outputStream),
+           _emitDebugInfo(options.emitDebugInfo) {}
+ 
+     void runOnOperation() override {
+@@ -241,6 +241,14 @@ class SerializeVGFPass : public impl::SerializeVGFPassBase<SerializeVGFPass> {
+ 
+         _VGFBuilder->getEncoder().Finish();
+ 
++        if (_outputStream != nullptr) {
++            if (!_VGFBuilder->getEncoder().WriteTo(*_outputStream)) {
++                llvm::errs() << "Unable to write VGF to memory output stream\n";
++                return failure();
++            }
++            return success();
++        }
++
+         if (_outputName == "-") {
+             if (!_VGFBuilder->getEncoder().WriteTo(std::cout)) {
+                 llvm::errs() << "Unable to write to stdout\n";
+@@ -267,14 +275,15 @@ class SerializeVGFPass : public impl::SerializeVGFPassBase<SerializeVGFPass> {
+ 
+     std::shared_ptr<VGFBuilder> _VGFBuilder;
+     std::string _outputName;
++    std::ostream *_outputStream;
+     bool _emitDebugInfo;
+ };
+ 
+ } // namespace
+ 
+ std::unique_ptr<Pass> createSerializeVGFPass(std::shared_ptr<VGFBuilder> vgfBuilder, std::string outputName,
+-                                             const SerializeVGFPassOptions &options) {
+-    return std::make_unique<SerializeVGFPass>(std::move(vgfBuilder), std::move(outputName), options);
++                                             std::ostream *outputStream, const SerializeVGFPassOptions &options) {
++    return std::make_unique<SerializeVGFPass>(std::move(vgfBuilder), std::move(outputName), outputStream, options);
+ }
+ 
+ } // namespace mlir::model_converter_passes
+diff --git a/src/include/passes.hpp b/src/include/passes.hpp
+index 977dd9a..6e46bc6 100644
+--- a/src/include/passes.hpp
++++ b/src/include/passes.hpp
+@@ -13,6 +13,7 @@
+ #include "vgf-dialect/VGFDialect.h"
+ 
+ #include <memory>
++#include <ostream>
+ 
+ namespace mlsdk::model_converter {
+ class VGFBuilder;
+@@ -29,5 +30,5 @@ namespace mlir::model_converter_passes {
+ 
+ std::unique_ptr<Pass> createVGFConstantsPass(std::shared_ptr<VGFBuilder> VGFBuilder);
+ std::unique_ptr<Pass> createSerializeVGFPass(std::shared_ptr<VGFBuilder> VGFBuilder, std::string outputName,
+-                                             const SerializeVGFPassOptions &options);
++                                             std::ostream *outputStream, const SerializeVGFPassOptions &options);
+ } // namespace mlir::model_converter_passes
+diff --git a/src/model_converter_c_api.cpp b/src/model_converter_c_api.cpp
+new file mode 100644
+index 0000000..e8eca97
+--- /dev/null
++++ b/src/model_converter_c_api.cpp
+@@ -0,0 +1,115 @@
++#include "model_converter/model_converter.h"
++
++#include "compiler.hpp"
++
++#include <cstddef>
++#include <cstdint>
++#include <exception>
++#include <ostream>
++#include <streambuf>
++#include <vector>
++
++namespace {
++
++constexpr uint32_t kKnownOptionFlags = MC_OPTION_EMIT_DEBUG_INFO | MC_OPTION_DUMP_MLIR;
++
++class VectorStreamBuffer final : public std::streambuf {
++  public:
++    const std::vector<char> &data() const { return data_; }
++
++  protected:
++    std::streamsize xsputn(const char *data, std::streamsize size) override {
++        if (size <= 0) {
++            return 0;
++        }
++        const auto count = static_cast<size_t>(size);
++        if (count > data_.max_size() - data_.size()) {
++            return 0;
++        }
++        data_.insert(data_.end(), data, data + count);
++        return size;
++    }
++
++    int_type overflow(int_type character) override {
++        if (traits_type::eq_int_type(character, traits_type::eof())) {
++            return traits_type::not_eof(character);
++        }
++        data_.push_back(traits_type::to_char_type(character));
++        return character;
++    }
++
++  private:
++    std::vector<char> data_;
++};
++
++mc_status ConfigureCompilerOptions(const mc_options *options, mlsdk::model_converter::Compiler::Options &result) {
++    result.enable_verifier = true;
++    if (options == nullptr) {
++        return MC_STATUS_OK;
++    }
++    if (options->struct_size < sizeof(mc_options) || options->abi_version != MC_OPTIONS_ABI_VERSION ||
++        (options->flags & ~kKnownOptionFlags) != 0) {
++        return MC_STATUS_UNSUPPORTED_OPTIONS;
++    }
++
++    result.emit_debug_info = (options->flags & MC_OPTION_EMIT_DEBUG_INFO) != 0;
++    result.dump_mlir = (options->flags & MC_OPTION_DUMP_MLIR) != 0;
++    return MC_STATUS_OK;
++}
++
++} // namespace
++
++extern "C" mc_status mc_convert_tosa_to_vgf(const void *tosa_data, size_t tosa_size, const mc_options *options,
++                                            mc_output_callback output, void *user_data) {
++    if (tosa_data == nullptr || tosa_size == 0 || output == nullptr) {
++        return MC_STATUS_INVALID_ARGUMENT;
++    }
++
++    try {
++        mlsdk::model_converter::Compiler::Options compilerOptions;
++        const mc_status optionStatus = ConfigureCompilerOptions(options, compilerOptions);
++        if (optionStatus != MC_STATUS_OK) {
++            return optionStatus;
++        }
++
++        VectorStreamBuffer outputBuffer;
++        std::ostream outputStream(&outputBuffer);
++        compilerOptions.output_stream = &outputStream;
++
++        mlsdk::model_converter::Compiler compiler(compilerOptions);
++        compiler.SetLogging();
++        compiler.SetRegistry();
++        compiler.SetMultiThreading(false);
++        compiler.SetPassManager();
++        if (!compiler.CompileBuffer(tosa_data, tosa_size) || !outputStream.good() || outputBuffer.data().empty()) {
++            return MC_STATUS_COMPILATION_ERROR;
++        }
++
++        if (output(outputBuffer.data().data(), outputBuffer.data().size(), user_data) != 0) {
++            return MC_STATUS_WRITE_ERROR;
++        }
++        return MC_STATUS_OK;
++    } catch (const std::exception &) {
++        return MC_STATUS_INTERNAL_ERROR;
++    } catch (...) {
++        return MC_STATUS_INTERNAL_ERROR;
++    }
++}
++
++extern "C" const char *mc_status_message(mc_status status) {
++    switch (status) {
++    case MC_STATUS_OK:
++        return "success";
++    case MC_STATUS_INVALID_ARGUMENT:
++        return "invalid argument";
++    case MC_STATUS_UNSUPPORTED_OPTIONS:
++        return "unsupported options";
++    case MC_STATUS_COMPILATION_ERROR:
++        return "could not compile TOSA MLIR to VGF";
++    case MC_STATUS_WRITE_ERROR:
++        return "output callback failed";
++    case MC_STATUS_INTERNAL_ERROR:
++        return "internal error";
++    }
++    return "unknown status";
++}
+diff --git a/src/model_converter_c_api.lds b/src/model_converter_c_api.lds
+new file mode 100644
+index 0000000..fc798b8
+--- /dev/null
++++ b/src/model_converter_c_api.lds
+@@ -0,0 +1,7 @@
++MC_1.0 {
++  global:
++    mc_convert_tosa_to_vgf;
++    mc_status_message;
++  local:
++    *;
++};

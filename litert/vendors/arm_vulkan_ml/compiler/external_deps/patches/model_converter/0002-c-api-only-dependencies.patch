@@ -1,0 +1,289 @@
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+# <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 1849e05..19bd357 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -53,12 +53,9 @@ endif()
+ # Definitions
+ #############################################################################
+ 
+-include(argparse)
+ include(flatbuffers)
+ include(vgf-lib)
+ include(llvm-project)
+-include(tosa-tools)
+-include(json)
+ include(version)
+ 
+ set(DEFAULT_CMAKE_BUILD_TYPE "Debug")
+@@ -126,7 +123,6 @@ set(CONVERTER_PASS_LIB_SOURCES
+ 
+ set(CONVERTER_PASS_LIB_DEPENDENCIES
+     flatbuffers::flatbuffers
+-    nlohmann_json::nlohmann_json
+     MLIRFuncDialect
+     MLIRPass
+     MLIRSPIRVDialect
+@@ -144,12 +140,12 @@ set(CONVERTER_DRIVER_LIB_DEPENDENCIES
+     MLIRTosaDialect
+     MLIRTosaTransforms
+     model-converter-passes-lib
+-    tosa_serialize
+ )
+ 
+ add_library(model-converter-passes-lib STATIC ${CONVERTER_PASS_LIB_SOURCES})
+ target_compile_definitions(model-converter-passes-lib PRIVATE
+     $<$<BOOL:${MODEL_CONVERTER_LOG_TRACE_MASK}>:LOG_TRACE_ENABLE=${MODEL_CONVERTER_LOG_TRACE_MASK}>
++    MODEL_CONVERTER_C_API
+ )
+ target_include_directories(model-converter-passes-lib PUBLIC src)
+ target_include_directories(model-converter-passes-lib SYSTEM PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+@@ -163,8 +159,9 @@ add_dependencies(model-converter-passes-lib
+                 MLIRVGFAttributesIncGen)
+ 
+ add_library(model-converter-driver-lib STATIC "src/compiler.cpp")
+-target_compile_definitions(model-converter-driver-lib PRIVATE
++target_compile_definitions(model-converter-driver-lib PUBLIC
+     $<$<BOOL:${MODEL_CONVERTER_LOG_TRACE_MASK}>:LOG_TRACE_ENABLE=${MODEL_CONVERTER_LOG_TRACE_MASK}>
++    MODEL_CONVERTER_C_API
+ )
+ target_include_directories(model-converter-driver-lib PUBLIC src)
+ target_include_directories(model-converter-driver-lib SYSTEM PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+@@ -190,27 +187,6 @@ set_target_properties(model-converter-c-api PROPERTIES
+ 
+ add_library(${MODEL_CONVERTER_NAMESPACE}::model-converter-c-api ALIAS model-converter-c-api)
+ 
+-add_executable(model-converter "src/main.cpp")
+-target_link_libraries(model-converter PRIVATE model-converter-driver-lib argparse::argparse)
+-target_compile_options(model-converter PRIVATE ${ML_SDK_MODEL_CONVERTER_COMPILE_OPTIONS})
+-
+-mlsdk_generate_version_header(
+-    TARGET model-converter
+-    SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/version.hpp.in"
+-    DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/generated/version.hpp"
+-    DEPENDENCIES
+-        argparse
+-        flatbuffers
+-        LLVM
+-        MLIR
+-        VGF
+-        tosa_serialize
+-        nlohmann_json
+-)
+-
+-add_executable(${MODEL_CONVERTER_NAMESPACE}::model-converter ALIAS model-converter)
+-
+-install(TARGETS model-converter EXPORT ${MODEL_CONVERTER_PACKAGE_NAME}Config)
+ install(TARGETS model-converter-c-api
+     EXPORT ${MODEL_CONVERTER_PACKAGE_NAME}Config
+     LIBRARY DESTINATION lib
+diff --git a/src/compiler.cpp b/src/compiler.cpp
+index c74a66d..2f89f71 100644
+--- a/src/compiler.cpp
++++ b/src/compiler.cpp
+@@ -16,11 +16,15 @@
+ #include "llvm/ADT/StringRef.h"
+ #include "llvm/Support/ErrorHandling.h"
+ 
++#if !defined(MODEL_CONVERTER_C_API)
+ #include "include/DeserializationPasses.h" // from @tosa_tools/mlir_translator
+ #include "include/SerializationPasses.h"   // from @tosa_tools/mlir_translator
++#endif
+ 
++#if !defined(MODEL_CONVERTER_C_API)
+ #include <array>
+ #include <fstream>
++#endif
+ #include <iostream>
+ #include <string_view>
+ 
+@@ -29,6 +33,7 @@ using namespace mlir::model_converter_passes;
+ namespace mlsdk::model_converter {
+ 
+ namespace {
++#if !defined(MODEL_CONVERTER_C_API)
+ bool isTosaFlatbuffer(const std::string &input) {
+     std::ifstream stream(input, std::ios::binary);
+ 
+@@ -42,12 +47,14 @@ bool isTosaFlatbuffer(const std::string &input) {
+ 
+     return std::string_view(header.data() + 4, 4) == "TOSA";
+ }
++#endif
+ 
+ LogicalResult printPassOptionError(const Twine &message) {
+     llvm::errs() << message << "\n";
+     return failure();
+ }
+ 
++#if !defined(MODEL_CONVERTER_C_API)
+ std::unique_ptr<Pass> createConfiguredTosaSerializeJSONPass(const std::string &filename, const std::string &schema) {
+     auto pass = mlir::tosa::createTosaSerializeJSONPass();
+     std::string passOptions = "tosa-flatbuffer-filename=" + filename + " tosa-flatbuffer-schema=" + schema;
+@@ -56,6 +63,7 @@ std::unique_ptr<Pass> createConfiguredTosaSerializeJSONPass(const std::string &f
+     }
+     return pass;
+ }
++#endif
+ std::unique_ptr<Pass> createConfiguredTosaToSPIRVTosaPass(bool analysis,
+                                                           const std::vector<std::string> &customOpDomainToOpcode) {
+     auto pass = mlir::tosa::createTosaToSPIRVTosa(analysis);
+@@ -132,7 +140,10 @@ void Compiler::SetPassManager() {
++#if !defined(MODEL_CONVERTER_C_API)
++    // Type narrowing is not exposed by the in-memory C API.
+     // Type narrowing
+     if (_options.type_narrowing != TypeNarrowingMode::None) {
+         const bool convertFunctionBoundaries = _options.type_narrowing != TypeNarrowingMode::FullPreserveIO;
+         const bool convertAccumulatorType = _options.type_narrowing != TypeNarrowingMode::Partial;
+         _pm.nest<func::FuncOp>().addPass(
+             mlir::tosa::createTosaNarrowF32ToF16Pass({true, convertFunctionBoundaries, convertAccumulatorType}));
+     }
++#endif
+@@ -149,13 +160,16 @@ void Compiler::SetPassManager() {
+         funcNestedPM.addPass(mlir::createCanonicalizerPass());
+     }
+ 
++#if !defined(MODEL_CONVERTER_C_API)
+     if (_options.tosa_serialize) {
+         if (_options.tosa_fb_schema.empty()) {
+             _pm.addPass(mlir::tosa::createTosaSerializePass(_options.filename_output));
+         } else {
+             _pm.addPass(createConfiguredTosaSerializeJSONPass(_options.filename_output, _options.tosa_fb_schema));
+         }
+-    } else {
++    } else
++#endif
++    {
+         // Create VGF output
+         std::shared_ptr<VGFBuilder> builder = std::make_shared<class VGFBuilder>();
+ 
+@@ -197,6 +211,7 @@ void Compiler::SetPassManager() {
+     }
+ }
+ 
++#if !defined(MODEL_CONVERTER_C_API)
+ bool Compiler::Compile(const std::string &input_file) {
+     mlir::ParserConfig config(&_context);
+ 
+@@ -214,6 +229,7 @@ bool Compiler::Compile(const std::string &input_file) {
+ 
+     return mlir::succeeded(_pm.run(*moduleOp));
+ }
++#endif
+ 
+ bool Compiler::CompileBuffer(const void *input_data, size_t input_size) {
+     if (input_data == nullptr || input_size == 0) {
+diff --git a/src/compiler.hpp b/src/compiler.hpp
+index 8725145..59d086c 100644
+--- a/src/compiler.hpp
++++ b/src/compiler.hpp
+@@ -42,7 +42,9 @@ class Compiler {
+ 
+     explicit Compiler(const Options &options);
+ 
++#if !defined(MODEL_CONVERTER_C_API)
+     bool Compile(const std::string &input_file);
++#endif
+     bool CompileBuffer(const void *input_data, size_t input_size);
+ 
+     void SetLogging();
+diff --git a/src/conversion/model_partition_common.cpp b/src/conversion/model_partition_common.cpp
+index f6422c3..7be3932 100644
+--- a/src/conversion/model_partition_common.cpp
++++ b/src/conversion/model_partition_common.cpp
+@@ -5,7 +5,9 @@
+ 
+ #include "model_partition_common.hpp"
+ 
++#if !defined(MODEL_CONVERTER_C_API)
+ #include "include/custom_op_domains.hpp"
++#endif
+ 
+ #include "mlir/Dialect/Tosa/IR/TosaOps.h"
+ 
+@@ -50,8 +52,13 @@ std::optional<DeferredMaterializationInfo> getRescaleDeferredMaterializationInfo
+ bool isCompileTimeTosaConstant(Operation *op) { return llvm::isa_and_nonnull<tosa::ConstOp, tosa::ConstShapeOp>(op); }
+ 
+ bool isVulkanCustomShaderOperation(Operation *op) {
++#if defined(MODEL_CONVERTER_C_API)
++    (void)op;
++    return false;
++#else
+     auto customOp = llvm::dyn_cast_or_null<tosa::CustomOp>(op);
+     return customOp && isVulkanCustomShaderOp(customOp);
++#endif
+ }
+ 
+ std::optional<DeferredMaterializationInfo> getDeferredMaterializationInfo(Operation *op) {
+diff --git a/src/conversion/model_partitioning.cpp b/src/conversion/model_partitioning.cpp
+index 25785a9..243b2e8 100644
+--- a/src/conversion/model_partitioning.cpp
++++ b/src/conversion/model_partitioning.cpp
+@@ -3,7 +3,9 @@
+  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+  */
+ 
++#if !defined(MODEL_CONVERTER_C_API)
+ #include "include/custom_op_domains.hpp"
++#endif
+ #include "include/passes.hpp"
+ #include "mlir/IR/IRMapping.h"
+ #include "mlir/Transforms/DialectConversion.h"
+@@ -14,7 +16,9 @@
+ #include "llvm/Support/Base64.h"
+ #include "llvm/Support/Error.h"
+ 
++#if !defined(MODEL_CONVERTER_C_API)
+ #include <nlohmann/json.hpp>
++#endif
+ 
+ #include <algorithm>
+ #include <optional>
+@@ -25,7 +29,9 @@ namespace mlir::model_converter_passes {
+ #define GEN_PASS_DEF_MODELPARTITIONINGPASS
+ #include "passes.hpp.inc"
+ namespace {
++#if !defined(MODEL_CONVERTER_C_API)
+ using json = nlohmann::json;
++#endif
+ 
+ struct FuncOpRewriter : public OpConversionPattern<func::FuncOp> {
+     using OpConversionPattern<func::FuncOp>::OpConversionPattern;
+@@ -50,6 +56,7 @@ struct ReturnOpRewriter : public OpConversionPattern<func::ReturnOp> {
+     }
+ };
+ 
++#if !defined(MODEL_CONVERTER_C_API)
+ struct TosaCustomOpRewriter : public OpConversionPattern<tosa::CustomOp> {
+     using OpConversionPattern<tosa::CustomOp>::OpConversionPattern;
+ 
+@@ -338,6 +345,7 @@ struct TosaCustomOpRewriter : public OpConversionPattern<tosa::CustomOp> {
+         return true;
+     }
+ };
++#endif
+ 
+ int64_t getSequenceOutputIndex(Value value) {
+     auto result = llvm::dyn_cast<OpResult>(value);
+@@ -918,12 +926,18 @@ LogicalResult convertPartitionedModule(ModuleOp moduleOp, MLIRContext *context,
+     target.addDynamicallyLegalOp<func::FuncOp>([](func::FuncOp op) { return !llvm::isa<ModuleOp>(op->getParentOp()); });
+     target.addDynamicallyLegalOp<func::ReturnOp>(
+         [](func::ReturnOp op) { return !llvm::isa<ModuleOp>(op->getParentOp()->getParentOp()); });
++#if !defined(MODEL_CONVERTER_C_API)
+     target.addDynamicallyLegalOp<tosa::CustomOp>([](tosa::CustomOp op) { return !isVulkanCustomShaderOp(op); });
++#endif
+     target.addLegalDialect<vgf::VGFDialect, func::FuncDialect>();
+ 
+     RewritePatternSet patterns(context);
+     patterns.add<FuncOpRewriter, ReturnOpRewriter>(context);
++#if !defined(MODEL_CONVERTER_C_API)
+     patterns.add<TosaCustomOpRewriter>(context, analysis);
++#else
++    (void)analysis;
++#endif
+     return applyPartialConversion(moduleOp, target, std::move(patterns));
+ }
+ 
