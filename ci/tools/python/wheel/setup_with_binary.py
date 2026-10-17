@@ -36,6 +36,16 @@ EXECUTABLE_FILENAMES = [
     else 'tools/apply_plugin_main',
 ]
 
+# Nightly wheels (PROJECT_NAME ai_edge_litert_nightly) use the nightly Qualcomm
+# SDK, which is published under its own name. Releases need at least the first
+# SDK release with Linux aarch64 support (LITERT_SDK_QUALCOMM_FULL_VERSION in
+# litert/version.bzl).
+_QUALCOMM_SDK_REQUIREMENT = (
+    'ai-edge-litert-sdk-qualcomm-nightly'
+    if PACKAGE_NAME.endswith('_nightly')
+    else 'ai-edge-litert-sdk-qualcomm>=2.4.0'
+)
+
 
 # This extension does the following:
 # 1. Update import statements in .py files to replace 'from litert.python' with
@@ -101,8 +111,11 @@ class CustomBuildPy(_build_py):
     files_updated = 0
     for _, _, build_dir, data_filenames_list in self.data_files:
       for data_filename in data_filenames_list:
-        if data_filename in EXECUTABLE_FILENAMES:
-          filepath_in_build = os.path.join(build_dir, data_filename)
+        filepath_in_build = os.path.join(build_dir, data_filename)
+        norm_path = filepath_in_build.replace('\\', '/')
+        if any(
+            norm_path.endswith('/' + exe) for exe in EXECUTABLE_FILENAMES
+        ):
           if os.path.exists(filepath_in_build):
             self.announce(
                 f'Setting execute permission for: {filepath_in_build}', level=1
@@ -210,7 +223,7 @@ setuptools.setup(
             # TODO(weiyiw): Update to non-nightly
             # (ai-edge-litert-sdk-intel~=0.2.0) once it is released.
             'ai-edge-litert-sdk-intel-nightly',
-            'ai-edge-litert-sdk-qualcomm~=0.2.0',
+            _QUALCOMM_SDK_REQUIREMENT,
             'ai-edge-litert-sdk-mediatek~=0.2.0',
         ],
         'model-utils': [

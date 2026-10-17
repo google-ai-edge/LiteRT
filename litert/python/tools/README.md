@@ -39,7 +39,9 @@ python -m litert.python.tools.benchmark_litert_model --model=model.tflite
 
 -   `--use_cpu`: Use CPU acceleration (default: true)
 -   `--use_gpu`: Use GPU acceleration
--   `--use_npu`: Use NPU acceleration (requires dispatch library)
+-   `--use_npu`: Use NPU acceleration. The vendor dispatch library is
+    auto-discovered when it is bundled in the wheel (e.g. Qualcomm on Linux
+    aarch64); otherwise pass `--dispatch_library_path`.
 -   `--no_cpu`: Disable CPU fallback
 -   `--require_full_delegation`: Fail if model is not fully accelerated
 
@@ -50,14 +52,20 @@ litert-benchmark --model=model.tflite
 # GPU with CPU fallback
 litert-benchmark --model=model.tflite --use_gpu
 
-# NPU with CPU fallback
-# TODO(b/506632108): Bundle dispatch library into wheel to simply user flow.
+# NPU with CPU fallback, where the dispatch library is not bundled
+# TODO(b/506632108): Bundle dispatch libraries into the wheel on all platforms.
 litert-benchmark --model=model.tflite --use_npu \
     --dispatch_library_path=/path/to/libLiteRtDispatch.so
 
 # NPU only, require full acceleration
 litert-benchmark --model=model.tflite --use_npu \
     --dispatch_library_path=/path/to/dispatch.so --require_full_delegation
+
+# Qualcomm NPU on-device JIT compilation (e.g. Linux aarch64 QCS8275 with
+# ai-edge-litert-sdk-qualcomm installed), HTP burst mode, QNN logs off
+litert-benchmark --model=model.tflite --use_npu \
+    --qualcomm_enable_just_in_time \
+    --qualcomm_htp_performance_mode=burst --qualcomm_log_level=off
 ```
 
 ### Benchmark Parameters
@@ -71,7 +79,22 @@ litert-benchmark --model=model.tflite --use_npu \
 
 -   `--dispatch_library_path`: Path to vendor dispatch library
 -   `--compiler_plugin_path`: Path to compiler plugin library directory
+-   `--compiler_cache_dir`: Directory used to cache on-device compiled models
+    across runs (not used with `--qualcomm_enable_just_in_time`)
 -   `--runtime_path`: Path to LiteRT runtime library directory
+
+### Qualcomm Parameters
+
+-   `--qualcomm_enable_just_in_time`: Compile in memory for the NPU without
+    serializing a context binary
+-   `--qualcomm_htp_performance_mode`: HTP performance mode, case-insensitive
+    (e.g. `default`, `burst`, `high_performance`, `sustained_high_performance`,
+    `balanced`, `power_saver`)
+-   `--qualcomm_log_level`: QNN log level (`off`, `error`, `warn`, `info`,
+    `verbose`, `debug`)
+-   `--qualcomm_qnn_lib_dir`: QNN host library directory (defaults to the one in
+    `ai-edge-litert-sdk-qualcomm` when installed)
+-   `--qualcomm_dsp_skel_dir`: Hexagon DSP skel library directory
 
 ### Output Options
 
