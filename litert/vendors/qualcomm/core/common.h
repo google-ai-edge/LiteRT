@@ -239,6 +239,9 @@ class Options {
   std::uint32_t GetNumHvxThreads() const;
   void SetNumHvxThreads(std::uint32_t num_hvx_threads);
 
+  std::uint32_t GetHtpFileReadMemoryBudgetMB() const;
+  void SetHtpFileReadMemoryBudgetMB(std::uint32_t budget_mb);
+
   void SetOptimizationLevel(OptimizationLevel optimization_level);
   OptimizationLevel GetOptimizationLevel() const;
 
@@ -325,6 +328,7 @@ class Options {
   std::uint32_t vtcm_size_ = 0;
   std::uint32_t htp_device_id_ = 0;
   std::uint32_t num_hvx_threads_ = 0;
+  std::uint32_t htp_file_read_memory_budget_mb_ = 0;
   OptimizationLevel optimization_level_ =
       OptimizationLevel::kHtpOptimizeForInferenceO3;
   GraphPriority graph_priority_ = GraphPriority::kDefault;

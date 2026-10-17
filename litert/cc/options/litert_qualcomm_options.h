@@ -519,6 +519,18 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  void SetHtpFileReadMemoryBudgetMB(std::uint32_t budget_mb) {
+    LrtQualcommOptionsSetHtpFileReadMemoryBudgetMB(options_, budget_mb);
+  }
+  std::uint32_t GetHtpFileReadMemoryBudgetMB() {
+    std::uint32_t val;
+    auto status = LrtQualcommOptionsGetHtpFileReadMemoryBudgetMB(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return 0;
+    }
+    return val;
+  }
+
   void SetNumHvxThreads(std::uint32_t num_hvx_threads) {
     LrtQualcommOptionsSetNumHvxThreads(options_, num_hvx_threads);
   }

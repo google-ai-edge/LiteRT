@@ -623,6 +623,14 @@ void Options::SetHtpDeviceId(std::uint32_t htp_device_id) {
   htp_device_id_ = htp_device_id;
 }
 
+std::uint32_t Options::GetHtpFileReadMemoryBudgetMB() const {
+  return htp_file_read_memory_budget_mb_;
+}
+
+void Options::SetHtpFileReadMemoryBudgetMB(std::uint32_t budget_mb) {
+  htp_file_read_memory_budget_mb_ = budget_mb;
+}
+
 std::uint32_t Options::GetNumHvxThreads() const { return num_hvx_threads_; }
 
 void Options::SetNumHvxThreads(std::uint32_t num_hvx_threads) {
@@ -801,6 +809,7 @@ std::string Options::Dump() const {
   field(2, "VtcmSize", vtcm_size_);
   field(2, "HtpDeviceId", htp_device_id_);
   field(2, "NumHvxThreads", num_hvx_threads_);
+  field(2, "HtpFileReadMemoryBudgetMB", htp_file_read_memory_budget_mb_);
   field(2, "OptimizationLevel", optimization_level_);
 
   // --- IR ---
