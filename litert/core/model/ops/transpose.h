@@ -36,7 +36,9 @@ inline LiteRtStatus InferTranspose(const LiteRtOpT& op,
   constexpr int kInputArgIndex = 0;
   constexpr int kPermArgIndex = 1;
 
-  if (input_shapes.size() < kTransposeMinArgs) {
+  if (input_shapes.size() < kTransposeMinArgs ||
+      op.Inputs().size() < kTransposeMinArgs ||
+      op.Inputs()[kPermArgIndex] == nullptr) {
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
   const auto& input_shape = input_shapes[kInputArgIndex];

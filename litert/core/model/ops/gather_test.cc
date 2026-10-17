@@ -14,7 +14,9 @@
 
 #include "litert/core/model/ops/gather.h"
 
+#include <cstddef>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -158,74 +160,76 @@ TEST(GatherOpTest, EmbeddingLookupEmptyIdsAnd3DParams) {
   EXPECT_THAT(output_shapes[0], ElementsAre(0, 4, 8));
 }
 
-TEST(GatherOpTest, EmbeddingLookupRejectsInvalidRanksAndTypes) {
-  LiteRtOpT op;
-  std::vector<Dims> output_shapes(1);
+struct EmbeddingLookupErrorCase {
+  std::string test_name;
+  std::vector<Dims> input_shapes;
+  bool attach_tensors;
+  LiteRtElementType ids_type;
+};
 
-  // Ids must be 1D.
-  std::vector<Dims> rank2_ids = {{2, 1}, {10, 5}};
-  EXPECT_EQ(InferEmbeddingLookup(op, absl::MakeSpan(rank2_ids), output_shapes),
-            kLiteRtStatusErrorInvalidArgument);
+using EmbeddingLookupErrorTest =
+    ::testing::TestWithParam<EmbeddingLookupErrorCase>;
 
-  // Params must have rank >= 2.
-  std::vector<Dims> rank1_params = {{2}, {10}};
-  EXPECT_EQ(
-      InferEmbeddingLookup(op, absl::MakeSpan(rank1_params), output_shapes),
-      kLiteRtStatusErrorInvalidArgument);
-
-  // Ids tensor element type must be Int32 when op inputs are attached.
-  LiteRtTensorT ids_tensor;
-  ids_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2}));
-  LiteRtTensorT params_tensor;
-  params_tensor.SetType(
-      MakeRankedTensorType(kLiteRtElementTypeFloat32, {10, 5}));
-  op.Inputs().push_back(&ids_tensor);
-  op.Inputs().push_back(&params_tensor);
-  std::vector<Dims> valid_shapes = {{2}, {10, 5}};
-  ids_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2}));
-  EXPECT_EQ(
-      InferEmbeddingLookup(op, absl::MakeSpan(valid_shapes), output_shapes),
-      kLiteRtStatusErrorInvalidArgument);
-}
-
-TEST(GatherOpTest, EmbeddingLookupRejectsBlockwiseScaleOverflowAndZeroScales) {
+TEST_P(EmbeddingLookupErrorTest, RejectsInvalidRanksAndTypes) {
+  const auto& param = GetParam();
   LiteRtOpT op;
   LiteRtTensorT ids_tensor;
-  ids_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2}));
   LiteRtTensorT params_tensor;
-  params_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt4, {4, 32}));
-  LiteRtTensorT scales_tensor;
-  // Rank-4 scales tensor whose dimension product overflows 64-bit size_t.
-  scales_tensor.SetType(MakeRankedTensorType(
-      kLiteRtElementTypeFloat16, {1073741824, 1073741824, 1073741824, 4}));
-
-  params_tensor.SetQTypeId(kLiteRtQuantizationBlockWise);
-  params_tensor.Qparams().second.block_wise.scales = &scales_tensor;
-  params_tensor.Qparams().second.block_wise.zero_points = nullptr;
-  params_tensor.Qparams().second.block_wise.block_size = 32;
-
-  op.Inputs() = {&ids_tensor, &params_tensor};
-  std::vector<Dims> input_shapes = {{2}, {4, 32}};
+  if (param.attach_tensors) {
+    ids_tensor.SetType(
+        MakeRankedTensorType(param.ids_type, param.input_shapes[0]));
+    params_tensor.SetType(
+        MakeRankedTensorType(kLiteRtElementTypeFloat32, param.input_shapes[1]));
+    op.Inputs() = {&ids_tensor, &params_tensor};
+  }
+  std::vector<Dims> input_shapes = param.input_shapes;
   std::vector<Dims> output_shapes(1);
   EXPECT_EQ(
       InferEmbeddingLookup(op, absl::MakeSpan(input_shapes), output_shapes),
       kLiteRtStatusErrorInvalidArgument);
+}
 
-  // Zero-sized scales tensor for non-empty params must also be rejected.
+INSTANTIATE_TEST_SUITE_P(
+    EmbeddingLookupErrorTests, EmbeddingLookupErrorTest,
+    ::testing::Values(EmbeddingLookupErrorCase{"Rank2Ids",
+                                               {{2, 1}, {10, 5}},
+                                               /*attach_tensors=*/false,
+                                               kLiteRtElementTypeInt32},
+                      EmbeddingLookupErrorCase{"Rank1Params",
+                                               {{2}, {10}},
+                                               /*attach_tensors=*/false,
+                                               kLiteRtElementTypeInt32},
+                      EmbeddingLookupErrorCase{"Float32IdsTensor",
+                                               {{2}, {10, 5}},
+                                               /*attach_tensors=*/true,
+                                               kLiteRtElementTypeFloat32}),
+    [](const ::testing::TestParamInfo<EmbeddingLookupErrorCase>& info) {
+      return info.param.test_name;
+    });
+
+struct BlockwiseEmbeddingLookupShapeCase {
+  std::string test_name;
+  Dims params_shape;
+  Dims scales_shape;
+  LiteRtStatus expected_status;
+  Dims expected_output_shape = {};
+};
+
+using BlockwiseEmbeddingLookupShapeTest =
+    ::testing::TestWithParam<BlockwiseEmbeddingLookupShapeCase>;
+
+TEST_P(BlockwiseEmbeddingLookupShapeTest,
+       ValidatesScaleShapeAndStaticParameterContract) {
+  const auto& param = GetParam();
+  LiteRtOpT op;
+  LiteRtTensorT ids_tensor;
+  ids_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2}));
+  LiteRtTensorT params_tensor;
+  params_tensor.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeInt4, param.params_shape));
+  LiteRtTensorT scales_tensor;
   scales_tensor.SetType(
-      MakeRankedTensorType(kLiteRtElementTypeFloat16, {0, 1}));
-  EXPECT_EQ(
-      InferEmbeddingLookup(op, absl::MakeSpan(input_shapes), output_shapes),
-      kLiteRtStatusErrorInvalidArgument);
-}
-
-TEST(GatherOpTest,
-     EmbeddingLookupScalarScaleAndStaticParameterContract) {
-  LiteRtOpT op;
-  LiteRtTensorT ids_tensor;
-  ids_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2}));
-  LiteRtTensorT params_tensor;
-  LiteRtTensorT scales_tensor;
+      MakeRankedTensorType(kLiteRtElementTypeFloat16, param.scales_shape));
 
   params_tensor.SetQTypeId(kLiteRtQuantizationBlockWise);
   params_tensor.Qparams().second.block_wise.scales = &scales_tensor;
@@ -233,32 +237,52 @@ TEST(GatherOpTest,
   params_tensor.Qparams().second.block_wise.block_size = 32;
   op.Inputs() = {&ids_tensor, &params_tensor};
 
+  std::vector<Dims> input_shapes = {{2}, param.params_shape};
   std::vector<Dims> output_shapes(1);
-
-  // Scalar (0D) FP16 scale tensor with single-block [1, 32] table succeeds.
-  params_tensor.SetType(
-      MakeRankedTensorType(kLiteRtElementTypeInt4, {1, 32}));
-  scales_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat16, {}));
-  std::vector<Dims> single_block_shapes = {{2}, {1, 32}};
-  ASSERT_EQ(InferEmbeddingLookup(op, absl::MakeSpan(single_block_shapes),
-                                 output_shapes),
-            kLiteRtStatusOk);
-  EXPECT_THAT(output_shapes[0], ElementsAre(2, 32));
-
-  // Scalar (0D) FP16 scale tensor with 2-block [2, 32] table is rejected.
-  params_tensor.SetType(
-      MakeRankedTensorType(kLiteRtElementTypeInt4, {2, 32}));
-  std::vector<Dims> two_block_shapes = {{2}, {2, 32}};
-  EXPECT_EQ(
-      InferEmbeddingLookup(op, absl::MakeSpan(two_block_shapes), output_shapes),
-      kLiteRtStatusErrorInvalidArgument);
-
-  // Unknown (-1) scale dimension is rejected.
-  scales_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat16, {-1}));
-  EXPECT_EQ(
-      InferEmbeddingLookup(op, absl::MakeSpan(two_block_shapes), output_shapes),
-      kLiteRtStatusErrorInvalidArgument);
+  ASSERT_EQ(
+      InferEmbeddingLookup(op, absl::MakeSpan(input_shapes), output_shapes),
+      param.expected_status);
+  if (param.expected_status == kLiteRtStatusOk) {
+    EXPECT_EQ(output_shapes[0], param.expected_output_shape);
+  }
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    BlockwiseEmbeddingLookupShapeTests, BlockwiseEmbeddingLookupShapeTest,
+    ::testing::Values(
+        BlockwiseEmbeddingLookupShapeCase{
+            "ScalesDimensionProductOverflow",
+            /*params_shape=*/{4, 32},
+            /*scales_shape=*/{1073741824, 1073741824, 1073741824, 4},
+            kLiteRtStatusErrorInvalidArgument,
+        },
+        BlockwiseEmbeddingLookupShapeCase{
+            "ZeroSizedScalesForNonEmptyParams",
+            /*params_shape=*/{4, 32},
+            /*scales_shape=*/{0, 1},
+            kLiteRtStatusErrorInvalidArgument,
+        },
+        BlockwiseEmbeddingLookupShapeCase{
+            "ScalarScaleSingleBlockAccepted",
+            /*params_shape=*/{1, 32},
+            /*scales_shape=*/{},
+            kLiteRtStatusOk,
+            {2, 32},
+        },
+        BlockwiseEmbeddingLookupShapeCase{
+            "ScalarScaleTwoBlocksRejected",
+            /*params_shape=*/{2, 32},
+            /*scales_shape=*/{},
+            kLiteRtStatusErrorInvalidArgument,
+        },
+        BlockwiseEmbeddingLookupShapeCase{
+            "DynamicScaleDimensionRejected",
+            /*params_shape=*/{2, 32},
+            /*scales_shape=*/{-1},
+            kLiteRtStatusErrorInvalidArgument,
+        }),
+    [](const ::testing::TestParamInfo<BlockwiseEmbeddingLookupShapeCase>&
+           info) { return info.param.test_name; });
 
 TEST(GatherOpTest, GatherNd) {
   LiteRtOpT op;
@@ -283,58 +307,113 @@ TEST(GatherOpTest, GatherNdSlice) {
   EXPECT_THAT(output_shapes[0], ElementsAre(1));
 }
 
-TEST(GatherOpTest, HashtableLookupInfersShapesAndValidatesContracts) {
+struct HashtableLookupCase {
+  std::string test_name;
+  std::vector<Dims> input_shapes;
+  bool attach_string_tensors = false;
+  LiteRtStatus expected_status = kLiteRtStatusOk;
+  Dims expected_output0 = {};
+  Dims expected_output1 = {};
+};
+
+using HashtableLookupTest = ::testing::TestWithParam<HashtableLookupCase>;
+
+TEST_P(HashtableLookupTest, InfersShapesAndValidatesContracts) {
+  const auto& param = GetParam();
   LiteRtOpT op;
-  std::vector<Dims> input_shapes = {{4}, {3}, {3, 2}};
-  std::vector<Dims> output_shapes(2);
-
-  ASSERT_EQ(
-      InferHashtableLookup(op, absl::MakeSpan(input_shapes), output_shapes),
-      kLiteRtStatusOk);
-  EXPECT_THAT(output_shapes[0], ElementsAre(4, 2));
-  EXPECT_THAT(output_shapes[1], ElementsAre(4));
-
-  // Mismatched key[0] and value[0] is rejected.
-  std::vector<Dims> mismatched_rows = {{4}, {3}, {5, 2}};
-  EXPECT_EQ(
-      InferHashtableLookup(op, absl::MakeSpan(mismatched_rows), output_shapes),
-      kLiteRtStatusErrorInvalidArgument);
-
-  // Rank-2 lookup or key is rejected.
-  std::vector<Dims> bad_lookup_rank = {{4, 1}, {3}, {3, 2}};
-  EXPECT_EQ(
-      InferHashtableLookup(op, absl::MakeSpan(bad_lookup_rank), output_shapes),
-      kLiteRtStatusErrorInvalidArgument);
-
-  // 2D string value is rejected when tensors are attached.
   LiteRtTensorT lookup_tensor;
-  lookup_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {4}));
   LiteRtTensorT key_tensor;
-  key_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {3}));
   LiteRtTensorT value_tensor;
-  value_tensor.SetType(
-      MakeRankedTensorType(kLiteRtElementTypeTfString, {3, 2}));
   LiteRtTensorT output_tensor;
-  output_tensor.SetType(
-      MakeRankedTensorType(kLiteRtElementTypeTfString, {4, 2}));
   LiteRtTensorT hits_tensor;
-  hits_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeUInt8, {4}));
-  op.Inputs() = {&lookup_tensor, &key_tensor, &value_tensor};
-  op.Outputs() = {&output_tensor, &hits_tensor};
-  EXPECT_EQ(
-      InferHashtableLookup(op, absl::MakeSpan(input_shapes), output_shapes),
-      kLiteRtStatusErrorInvalidArgument);
+  if (param.attach_string_tensors) {
+    lookup_tensor.SetType(
+        MakeRankedTensorType(kLiteRtElementTypeInt32, param.input_shapes[0]));
+    key_tensor.SetType(
+        MakeRankedTensorType(kLiteRtElementTypeInt32, param.input_shapes[1]));
+    value_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeTfString,
+                                              param.input_shapes[2]));
+    output_tensor.SetType(
+        MakeRankedTensorType(kLiteRtElementTypeTfString, {4}));
+    hits_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeUInt8, {4}));
+    op.Inputs() = {&lookup_tensor, &key_tensor, &value_tensor};
+    op.Outputs() = {&output_tensor, &hits_tensor};
+  }
 
-  // 1D string value succeeds.
-  std::vector<Dims> string_shapes = {{4}, {3}, {3}};
-  value_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeTfString, {3}));
-  output_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeTfString, {4}));
-  ASSERT_EQ(
-      InferHashtableLookup(op, absl::MakeSpan(string_shapes), output_shapes),
-      kLiteRtStatusOk);
-  EXPECT_THAT(output_shapes[0], ElementsAre(4));
-  EXPECT_THAT(output_shapes[1], ElementsAre(4));
+  std::vector<Dims> output_shapes(2);
+  ASSERT_EQ(InferHashtableLookup(op, absl::MakeSpan(param.input_shapes),
+                                 output_shapes),
+            param.expected_status);
+  if (param.expected_status == kLiteRtStatusOk) {
+    EXPECT_EQ(output_shapes[0], param.expected_output0);
+    EXPECT_EQ(output_shapes[1], param.expected_output1);
+  }
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    HashtableLookupTests, HashtableLookupTest,
+    ::testing::Values(HashtableLookupCase{"Valid2DValue",
+                                          {{4}, {3}, {3, 2}},
+                                          /*attach_string_tensors=*/false,
+                                          kLiteRtStatusOk,
+                                          {4, 2},
+                                          {4}},
+                      HashtableLookupCase{"MismatchedKeyAndValueRowsRejected",
+                                          {{4}, {3}, {5, 2}},
+                                          /*attach_string_tensors=*/false,
+                                          kLiteRtStatusErrorInvalidArgument},
+                      HashtableLookupCase{"Rank2LookupRejected",
+                                          {{4, 1}, {3}, {3, 2}},
+                                          /*attach_string_tensors=*/false,
+                                          kLiteRtStatusErrorInvalidArgument},
+                      HashtableLookupCase{"2DStringValueRejected",
+                                          {{4}, {3}, {3, 2}},
+                                          /*attach_string_tensors=*/true,
+                                          kLiteRtStatusErrorInvalidArgument},
+                      HashtableLookupCase{"1DStringValueAccepted",
+                                          {{4}, {3}, {3}},
+                                          /*attach_string_tensors=*/true,
+                                          kLiteRtStatusOk,
+                                          {4},
+                                          {4}}),
+    [](const ::testing::TestParamInfo<HashtableLookupCase>& info) {
+      return info.param.test_name;
+    });
+
+struct GatherOutputCountErrorCase {
+  std::string test_name;
+  bool is_gather_nd;
+  size_t num_outputs;
+};
+
+using GatherOutputCountErrorTest =
+    ::testing::TestWithParam<GatherOutputCountErrorCase>;
+
+TEST_P(GatherOutputCountErrorTest, RejectsInvalidOutputShapesCount) {
+  const auto& param = GetParam();
+  LiteRtOpT op;
+  std::vector<Dims> output_shapes(param.num_outputs);
+  if (param.is_gather_nd) {
+    std::vector<Dims> inputs = {{2, 2}, {2, 1}};
+    EXPECT_EQ(InferGatherNd(op, absl::MakeSpan(inputs), output_shapes),
+              kLiteRtStatusErrorInvalidArgument);
+  } else {
+    std::vector<Dims> inputs = {{2, 2}, {2}};
+    EXPECT_EQ(InferGather(op, absl::MakeSpan(inputs), output_shapes),
+              kLiteRtStatusErrorInvalidArgument);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    GatherOutputCountErrorTests, GatherOutputCountErrorTest,
+    ::testing::Values(
+        GatherOutputCountErrorCase{"GatherEmptyOutputs", false, 0},
+        GatherOutputCountErrorCase{"GatherTwoOutputs", false, 2},
+        GatherOutputCountErrorCase{"GatherNdEmptyOutputs", true, 0},
+        GatherOutputCountErrorCase{"GatherNdTwoOutputs", true, 2}),
+    [](const ::testing::TestParamInfo<GatherOutputCountErrorCase>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace
 }  // namespace litert::internal

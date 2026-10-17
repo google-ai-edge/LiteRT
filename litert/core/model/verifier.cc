@@ -71,6 +71,36 @@ absl::Status ValidateStaticQuantParamTensorShape(const tflite::Tensor& param,
 
 }  // namespace
 
+absl::Status ValidateFlatBufferOperatorCodes(const tflite::Model* tfl_model) {
+  if (tfl_model == nullptr) {
+    return absl::InvalidArgumentError("Model pointer is null.");
+  }
+  if (tfl_model->operator_codes() == nullptr) {
+    return absl::OkStatus();
+  }
+  for (size_t i = 0; i < tfl_model->operator_codes()->size(); ++i) {
+    const tflite::OperatorCode* code = tfl_model->operator_codes()->Get(i);
+    if (code == nullptr) {
+      return absl::InvalidArgumentError(absl::StrFormat(
+          "Model contains null operator_code at index %zu.", i));
+    }
+    const int32_t builtin_code = code->builtin_code();
+    const int32_t dep_code = code->deprecated_builtin_code();
+    const int32_t resolved_code =
+        dep_code > builtin_code ? dep_code : builtin_code;
+    if (builtin_code < 0 || resolved_code < 0 ||
+        resolved_code > static_cast<int32_t>(kLiteRtOpCodeShloComposite) ||
+        (dep_code < 0 && static_cast<int8_t>(builtin_code) !=
+                             code->deprecated_builtin_code())) {
+      return absl::InvalidArgumentError(absl::StrFormat(
+          "Operator code at index %zu has invalid builtin_code (%d) / "
+          "deprecated_builtin_code (%d).",
+          i, builtin_code, dep_code));
+    }
+  }
+  return absl::OkStatus();
+}
+
 absl::Status ValidateFlatBufferTensorQuantization(
     const tflite::SubGraph& subgraph, const tflite::Tensor& tensor) {
   const tflite::QuantizationParameters* quant = tensor.quantization();
@@ -474,8 +504,13 @@ absl::Status VerifyModel(const void* buf, size_t len,
             : tflite_reporter.message());
   }
 
-  // 2. Validate tensor ranks and dimensions in the FlatBuffer.
+  // 2. Validate operator codes and tensor ranks/dimensions in the FlatBuffer.
   const tflite::Model* tfl_model = tflite::GetModel(buf);
+  if (absl::Status status =
+          internal::ValidateFlatBufferOperatorCodes(tfl_model);
+      !status.ok()) {
+    return status;
+  }
   if (absl::Status status =
           internal::ValidateFlatBufferTensors(tfl_model, options);
       !status.ok()) {

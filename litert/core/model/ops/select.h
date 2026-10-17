@@ -37,7 +37,7 @@ inline LiteRtStatus InferSelect(const LiteRtOpT& op,
   constexpr int kTrueArgIndex = 1;
   constexpr int kFalseArgIndex = 2;
 
-  if (input_shapes.size() != kSelectNumArgs) {
+  if (input_shapes.size() != kSelectNumArgs || output_shapes.size() != 1) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 

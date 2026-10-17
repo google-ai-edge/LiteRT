@@ -21,6 +21,7 @@
 #include <utility>
 #include <vector>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
@@ -51,10 +52,7 @@ inline LiteRtStatus InferConcatenation(const LiteRtOpT& op,
   const auto& first_shape = input_shapes[kFirstInputIndex];
   int rank = first_shape.size();
 
-  if (axis < 0) {
-    axis += rank;
-  }
-  if (axis < 0 || axis >= rank) {
+  if ((axis < 0 && !SafeAdd(axis, rank, axis)) || axis < 0 || axis >= rank) {
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
@@ -66,6 +64,9 @@ inline LiteRtStatus InferConcatenation(const LiteRtOpT& op,
       return kLiteRtStatusErrorShapeInferenceFailed;
     }
     for (int i = 0; i < rank; ++i) {
+      if (shape[i] < -1) {
+        return kLiteRtStatusErrorShapeInferenceFailed;
+      }
       if (i != axis) {
         if (out_shape[i] != -1 && shape[i] != -1 && out_shape[i] != shape[i]) {
           return kLiteRtStatusErrorShapeInferenceFailed;
@@ -76,8 +77,9 @@ inline LiteRtStatus InferConcatenation(const LiteRtOpT& op,
       } else {
         if (shape[i] == -1) {
           out_shape[axis] = -1;
-        } else if (out_shape[axis] != -1) {
-          out_shape[axis] += shape[i];
+        } else if (out_shape[axis] != -1 &&
+                   !SafeAdd(out_shape[axis], shape[i], out_shape[axis])) {
+          return kLiteRtStatusErrorShapeInferenceFailed;
         }
       }
     }

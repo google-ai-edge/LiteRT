@@ -37,7 +37,7 @@ inline LiteRtStatus InferGather(const LiteRtOpT& op,
   constexpr size_t kInputArgIndex = 0;
   constexpr size_t kIndicesArgIndex = 1;
 
-  if (input_shapes.size() < kGatherMinArgs) {
+  if (input_shapes.size() < kGatherMinArgs || output_shapes.size() != 1) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   const auto& input_shape = input_shapes[kInputArgIndex];
@@ -72,7 +72,7 @@ inline LiteRtStatus InferGatherNd(const LiteRtOpT& op,
   constexpr size_t kInputArgIndex = 0;
   constexpr size_t kIndicesArgIndex = 1;
 
-  if (input_shapes.size() < kGatherNdMinArgs) {
+  if (input_shapes.size() < kGatherNdMinArgs || output_shapes.size() != 1) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   const auto& input_shape = input_shapes[kInputArgIndex];

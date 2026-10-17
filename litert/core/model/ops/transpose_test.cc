@@ -111,5 +111,14 @@ TEST(TransposeOpTest, SDPA_Transpose) {
   EXPECT_THAT(output_shapes[0], ElementsAre(8, 32, 100, 4));
 }
 
+TEST(TransposeOpTest, RejectsMissingInputTensors) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{2, 3, 4}, {3}};
+  std::vector<Dims> output_shapes(1);
+
+  EXPECT_EQ(InferTranspose(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
 }  // namespace
 }  // namespace litert::internal

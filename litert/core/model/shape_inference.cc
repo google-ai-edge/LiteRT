@@ -142,7 +142,9 @@ void ShapeInferenceEngine::RegisterStandardOps() {
     return [legacy_f](const ShapeInferenceContext& ctx,
                       InferenceResult& result) {
       const auto* op = ctx.GetOp();
-      if (!op) return kLiteRtStatusErrorShapeInferenceFailed;
+      if (!op || ctx.GetNumOutputs() == 0) {
+        return kLiteRtStatusErrorShapeInferenceFailed;
+      }
       std::vector<Dims> input_shapes;
       input_shapes.reserve(ctx.GetNumInputs());
       for (size_t i = 0; i < ctx.GetNumInputs(); ++i) {

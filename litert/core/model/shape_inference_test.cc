@@ -16,7 +16,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -843,6 +845,84 @@ TEST(ShapeInferenceTest, CompositeOpSelfRecursionIsRejected) {
   EXPECT_EQ(engine.InferOpShapes(&comp_op),
             kLiteRtStatusErrorShapeInferenceFailed);
 }
+
+TEST(ShapeInferenceTest, ZeroOutputStatelessOpFailsSafely) {
+  LiteRtModelT model;
+  auto& sg = model.EmplaceSubgraph();
+  auto& in0 = sg.EmplaceTensor();
+  in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 3}));
+  auto& in1 = sg.EmplaceTensor();
+  in1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 3}));
+
+  auto& add_op = sg.EmplaceOp();
+  add_op.SetOpCode(kLiteRtOpCodeTflAdd);
+  AttachInput(&in0, add_op);
+  AttachInput(&in1, add_op);
+  // Intentionally attach zero outputs.
+
+  ShapeInferenceEngine engine(&model);
+  EXPECT_EQ(engine.InferOpShapes(&add_op),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+struct OneHotErrorCase {
+  std::string test_name;
+  int32_t axis;
+  std::vector<uint8_t> depth_bytes;
+};
+
+using OneHotErrorTest = ::testing::TestWithParam<OneHotErrorCase>;
+
+TEST_P(OneHotErrorTest, RejectsInvalidAxisAndDepth) {
+  const auto& param = GetParam();
+  LiteRtModelT model;
+  auto& sg = model.EmplaceSubgraph();
+  auto& indices = sg.EmplaceTensor();
+  indices.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 3}));
+  auto& depth = sg.EmplaceTensor();
+  depth.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {}));
+  if (!param.depth_bytes.empty()) {
+    SetWeightsFromOwnedBuffer(
+        depth.Weights(), OwningBufferRef<uint8_t>(param.depth_bytes.data(),
+                                                  param.depth_bytes.size()));
+  }
+  auto& on_val = sg.EmplaceTensor();
+  on_val.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+  auto& off_val = sg.EmplaceTensor();
+  off_val.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+  auto& out = sg.EmplaceTensor();
+  out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+
+  auto& op = sg.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflOneHot);
+  auto opts = std::make_unique<tflite::OneHotOptionsT>();
+  opts->axis = param.axis;
+  TflOptions tfl_opts;
+  tfl_opts.type = tflite::BuiltinOptions_OneHotOptions;
+  tfl_opts.value = opts.release();
+  SetTflOptions(op, std::move(tfl_opts));
+
+  AttachInput(&indices, op);
+  AttachInput(&depth, op);
+  AttachInput(&on_val, op);
+  AttachInput(&off_val, op);
+  AttachOutput(&out, op);
+
+  ShapeInferenceEngine engine(&model);
+  EXPECT_EQ(engine.InferShapes(), kLiteRtStatusErrorInvalidArgument);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    OneHotInvalidInputs, OneHotErrorTest,
+    ::testing::Values(
+        OneHotErrorCase{"AxisUnderflow", std::numeric_limits<int32_t>::min(),
+                        std::vector<uint8_t>{4, 0, 0, 0}},
+        OneHotErrorCase{"ShortDepthBuffer", 0, std::vector<uint8_t>{1, 0}},
+        OneHotErrorCase{"NegativeDepth", 0,
+                        std::vector<uint8_t>{0xff, 0xff, 0xff, 0xff}}),
+    [](const ::testing::TestParamInfo<OneHotErrorCase>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace
 }  // namespace litert::internal

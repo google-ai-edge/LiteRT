@@ -15,7 +15,10 @@
 #include "litert/core/model/ops/reductions.h"
 
 #include <cstdint>
+#include <cstring>
+#include <limits>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -23,6 +26,7 @@
 #include <gtest/gtest.h>
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/ops/simple_unary.h"
@@ -142,6 +146,98 @@ TEST(ReductionsOpTest, SumReduce) {
             kLiteRtStatusOk);
   EXPECT_THAT(output_shapes[0], ElementsAre(1, 32));
 }
+
+template <typename T>
+std::vector<uint8_t> ToBytes(const std::vector<T>& values) {
+  std::vector<uint8_t> bytes(values.size() * sizeof(T));
+  if (!bytes.empty()) {
+    std::memcpy(bytes.data(), values.data(), bytes.size());
+  }
+  return bytes;
+}
+
+struct ReductionsAxisCase {
+  std::string test_name;
+  bool omit_inputs = false;
+  LiteRtElementType axis_type = kLiteRtElementTypeInt32;
+  std::vector<uint8_t> axis_bytes = {};
+  LiteRtStatus expected_status = kLiteRtStatusErrorInvalidArgument;
+  Dims expected_output_shape = {};
+};
+
+using ReductionsAxisContractTest = ::testing::TestWithParam<ReductionsAxisCase>;
+
+TEST_P(ReductionsAxisContractTest, ValidatesAxisContract) {
+  const auto& param = GetParam();
+  std::vector<Dims> input_shapes = {{1, 10, 10, 3}, {1}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtOpT op;
+  LiteRtTensorT axis_tensor;
+  if (!param.omit_inputs) {
+    axis_tensor.SetType(MakeRankedTensorType(param.axis_type, {1}));
+    SetWeightsFromOwnedBuffer(
+        axis_tensor.Weights(),
+        OwningBufferRef<uint8_t>(param.axis_bytes.data(),
+                                 param.axis_bytes.size()));
+    op.Inputs() = {nullptr, &axis_tensor};
+  }
+
+  ASSERT_EQ(InferReduce(op, absl::MakeSpan(input_shapes), output_shapes),
+            param.expected_status);
+  if (param.expected_status == kLiteRtStatusOk) {
+    EXPECT_EQ(output_shapes[0], param.expected_output_shape);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ReductionsAxisContractTests, ReductionsAxisContractTest,
+    ::testing::Values(
+        ReductionsAxisCase{
+            "MissingInputs",
+            /*omit_inputs=*/true,
+        },
+        ReductionsAxisCase{
+            "Int32AxisUnderflow",
+            /*omit_inputs=*/false,
+            kLiteRtElementTypeInt32,
+            ToBytes<int32_t>({std::numeric_limits<int32_t>::min()}),
+            kLiteRtStatusErrorInvalidArgument,
+        },
+        ReductionsAxisCase{
+            "Int64AxisExceedingInt32Max",
+            /*omit_inputs=*/false,
+            kLiteRtElementTypeInt64,
+            ToBytes<int64_t>(
+                {static_cast<int64_t>(std::numeric_limits<int32_t>::max()) +
+                 1}),
+            kLiteRtStatusErrorInvalidArgument,
+        },
+        ReductionsAxisCase{
+            "ValidInt64NegativeAxis",
+            /*omit_inputs=*/false,
+            kLiteRtElementTypeInt64,
+            ToBytes<int64_t>({-1}),
+            kLiteRtStatusOk,
+            {1, 10, 10},
+        },
+        ReductionsAxisCase{
+            "ShortAxisBuffer",
+            /*omit_inputs=*/false,
+            kLiteRtElementTypeInt32,
+            {1, 2},
+            kLiteRtStatusErrorUnsupported,
+        },
+        ReductionsAxisCase{
+            "MisalignedAxisBufferSize",
+            /*omit_inputs=*/false,
+            kLiteRtElementTypeInt32,
+            {1, 2, 3, 4, 5, 6},
+            kLiteRtStatusErrorInvalidArgument,
+        }),
+    [](const ::testing::TestParamInfo<ReductionsAxisCase>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace
 }  // namespace litert::internal

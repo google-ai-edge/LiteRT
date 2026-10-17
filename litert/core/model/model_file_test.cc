@@ -1583,5 +1583,39 @@ TEST(ModelLoadTest, ExternalBufferKeepsReferenceAndSerializesIt) {
   EXPECT_EQ(reloaded_context.get().external->id, kExternalBufferId);
 }
 
+struct InvalidOperatorCodeCase {
+  std::string test_name;
+  int8_t deprecated_code;
+  tflite::BuiltinOperator builtin_code;
+};
+
+using InvalidOperatorCodeLoadTest =
+    ::testing::TestWithParam<InvalidOperatorCodeCase>;
+
+TEST_P(InvalidOperatorCodeLoadTest, RejectsInvalidOperatorCode) {
+  const auto& param = GetParam();
+  auto flatbuffer =
+      FlatbufferWrapper::CreateFromTflFile(GetTestFilePath(kAddSimple));
+  auto tfl_model = flatbuffer->get()->Unpack();
+  tfl_model->operator_codes[0]->deprecated_builtin_code = param.deprecated_code;
+  tfl_model->operator_codes[0]->builtin_code = param.builtin_code;
+  auto serialized = SerializeFlatbuffer(*tfl_model);
+  auto loaded = LoadModelFromBuffer(serialized);
+  ASSERT_FALSE(loaded);
+  EXPECT_EQ(loaded.Error().Status(), kLiteRtStatusErrorInvalidFlatbuffer);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    InvalidOperatorCodes, InvalidOperatorCodeLoadTest,
+    Values(InvalidOperatorCodeCase{"OutOfRangeBuiltinCode",
+                                   static_cast<int8_t>(
+                                       tflite::BuiltinOperator_ADD),
+                                   static_cast<tflite::BuiltinOperator>(999)},
+           InvalidOperatorCodeCase{"NegativeMismatchedDeprecatedCode", -1,
+                                   tflite::BuiltinOperator_ADD}),
+    [](const ::testing::TestParamInfo<InvalidOperatorCodeCase>& info) {
+      return info.param.test_name;
+    });
+
 }  // namespace
 }  // namespace litert::internal

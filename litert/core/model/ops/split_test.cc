@@ -15,7 +15,9 @@
 #include "litert/core/model/ops/split.h"
 
 #include <cstdint>
+#include <limits>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -34,18 +36,20 @@ namespace {
 
 using ::testing::ElementsAre;
 
-std::unique_ptr<tflite::SplitOptionsT> CreateSplitOptions(int num_splits) {
+void SetSplitOptions(LiteRtOpT& op, int num_splits) {
   auto options = std::make_unique<tflite::SplitOptionsT>();
   options->num_splits = num_splits;
-  return options;
+  TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_SplitOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
 }
 
 TEST(SplitOpTest, TwoSplits) {
   LiteRtOpT op;
   LiteRtTensorT axis_tensor;
   LiteRtTensorT input_tensor;
-  op.Inputs().push_back(&axis_tensor);
-  op.Inputs().push_back(&input_tensor);
+  op.Inputs() = {&axis_tensor, &input_tensor};
 
   std::vector<int32_t> axis_data = {0};
   SetWeightsFromUnownedBuffer(
@@ -55,12 +59,7 @@ TEST(SplitOpTest, TwoSplits) {
 
   std::vector<Dims> input_shapes = {{}, {4, 2}};  // Axis scalar, Input
   std::vector<Dims> output_shapes(2);
-
-  auto options = CreateSplitOptions(2);
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_SplitOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
+  SetSplitOptions(op, 2);
 
   ASSERT_EQ(InferSplit(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusOk);
@@ -73,8 +72,7 @@ TEST(SplitOpTest, TwoSplitsAxisOne) {
   LiteRtOpT op;
   LiteRtTensorT axis_tensor;
   LiteRtTensorT input_tensor;
-  op.Inputs().push_back(&axis_tensor);
-  op.Inputs().push_back(&input_tensor);
+  op.Inputs() = {&axis_tensor, &input_tensor};
 
   std::vector<int32_t> axis_data = {1};
   SetWeightsFromUnownedBuffer(
@@ -84,12 +82,7 @@ TEST(SplitOpTest, TwoSplitsAxisOne) {
 
   std::vector<Dims> input_shapes = {{}, {4, 2}};
   std::vector<Dims> output_shapes(2);
-
-  auto options = CreateSplitOptions(2);
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_SplitOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
+  SetSplitOptions(op, 2);
 
   ASSERT_EQ(InferSplit(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusOk);
@@ -102,8 +95,7 @@ TEST(SplitOpTest, NegativeAxis) {
   LiteRtOpT op;
   LiteRtTensorT axis_tensor;
   LiteRtTensorT input_tensor;
-  op.Inputs().push_back(&axis_tensor);
-  op.Inputs().push_back(&input_tensor);
+  op.Inputs() = {&axis_tensor, &input_tensor};
 
   std::vector<int32_t> axis_data = {-1};
   SetWeightsFromUnownedBuffer(
@@ -113,12 +105,7 @@ TEST(SplitOpTest, NegativeAxis) {
 
   std::vector<Dims> input_shapes = {{}, {4, 2}};
   std::vector<Dims> output_shapes(2);
-
-  auto options = CreateSplitOptions(2);
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_SplitOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
+  SetSplitOptions(op, 2);
 
   ASSERT_EQ(InferSplit(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusOk);
@@ -126,6 +113,47 @@ TEST(SplitOpTest, NegativeAxis) {
     EXPECT_THAT(s, ElementsAre(4, 1));
   }
 }
+
+struct SplitErrorCase {
+  std::string test_name;
+  bool omit_inputs;
+  int num_splits;
+  int32_t axis;
+};
+
+using SplitErrorTest = ::testing::TestWithParam<SplitErrorCase>;
+
+TEST_P(SplitErrorTest, RejectsMissingInputsNonPositiveSplitsAndAxisUnderflow) {
+  const auto& param = GetParam();
+  std::vector<Dims> input_shapes = {{}, {4, 2}};
+  std::vector<Dims> output_shapes(2);
+
+  LiteRtOpT op;
+  LiteRtTensorT axis_tensor;
+  LiteRtTensorT input_tensor;
+  if (!param.omit_inputs) {
+    op.Inputs() = {&axis_tensor, &input_tensor};
+    SetSplitOptions(op, param.num_splits);
+    SetWeightsFromOwnedBuffer(
+        axis_tensor.Weights(),
+        OwningBufferRef<uint8_t>(reinterpret_cast<const uint8_t*>(&param.axis),
+                                 sizeof(int32_t)));
+  }
+
+  EXPECT_EQ(InferSplit(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    SplitErrorTests, SplitErrorTest,
+    ::testing::Values(
+        SplitErrorCase{"MissingInputs", /*omit_inputs=*/true, 2, 0},
+        SplitErrorCase{"NonPositiveSplits", /*omit_inputs=*/false, 0, 0},
+        SplitErrorCase{"AxisUnderflow", /*omit_inputs=*/false, 2,
+                       std::numeric_limits<int32_t>::min()}),
+    [](const ::testing::TestParamInfo<SplitErrorCase>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace
 }  // namespace litert::internal

@@ -40,7 +40,7 @@ inline LiteRtStatus InferConv2D(const LiteRtOpT& op,
   constexpr size_t kConv2DMinArgs = 2;
   constexpr size_t kConv2DRank = 4;
 
-  if (input_shapes.size() < kConv2DMinArgs) {
+  if (input_shapes.size() < kConv2DMinArgs || output_shapes.size() != 1) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   const auto& input_shape = input_shapes[kInputArgIndex];
@@ -180,7 +180,8 @@ inline LiteRtStatus InferDepthwiseConv2D(const LiteRtOpT& op,
   constexpr size_t kDepthwiseConv2DMinArgs = 2;
   constexpr size_t kDepthwiseConv2DRank = 4;
 
-  if (input_shapes.size() < kDepthwiseConv2DMinArgs) {
+  if (input_shapes.size() < kDepthwiseConv2DMinArgs ||
+      output_shapes.size() != 1) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   const auto& input_shape = input_shapes[kInputArgIndex];
@@ -319,7 +320,8 @@ inline LiteRtStatus InferTransposeConv(const LiteRtOpT& op,
   constexpr size_t kShapeTensorSize = kTransposeConvRank * sizeof(int32_t);
   constexpr int32_t kMaxStride = std::numeric_limits<int16_t>::max();
 
-  if (input_shapes.size() < kTransposeConvMinArgs) {
+  if (input_shapes.size() < kTransposeConvMinArgs ||
+      output_shapes.size() != 1) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
@@ -455,7 +457,7 @@ inline LiteRtStatus InferConv3D(const LiteRtOpT& op,
   constexpr size_t kConv3DMinArgs = 2;
   constexpr size_t kConv3DRank = 5;
 
-  if (input_shapes.size() < kConv3DMinArgs) {
+  if (input_shapes.size() < kConv3DMinArgs || output_shapes.size() != 1) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   const auto& input_shape = input_shapes[kInputArgIndex];
@@ -588,18 +590,22 @@ inline LiteRtStatus InferConv3DTranspose(const LiteRtOpT& op,
   constexpr size_t kConv3DTransposeMinArgs = 3;
   constexpr size_t kConv3DTransposeRank = 5;
 
-  if (input_shapes.size() < kConv3DTransposeMinArgs) {
+  if (input_shapes.size() < kConv3DTransposeMinArgs ||
+      output_shapes.size() != 1) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  const auto& output_size_tensor = op.Input(kOutputShapeArgIndex);
-  if (output_size_tensor.Weights().Buffer().Size() >= sizeof(int32_t)) {
-    auto buf = output_size_tensor.Weights().Buffer();
-    const int32_t* dims = reinterpret_cast<const int32_t*>(buf.Data());
-    int rank = buf.Size() / sizeof(int32_t);
-    Dims out_shape;
-    for (int i = 0; i < rank; ++i) out_shape.push_back(dims[i]);
-    output_shapes[0] = out_shape;
-    return kLiteRtStatusOk;
+  if (op.Inputs().size() > kOutputShapeArgIndex &&
+      op.Inputs()[kOutputShapeArgIndex] != nullptr) {
+    const auto& output_size_tensor = op.Input(kOutputShapeArgIndex);
+    if (output_size_tensor.Weights().Buffer().Size() >= sizeof(int32_t)) {
+      auto buf = output_size_tensor.Weights().Buffer();
+      const int32_t* dims = reinterpret_cast<const int32_t*>(buf.Data());
+      int rank = buf.Size() / sizeof(int32_t);
+      Dims out_shape;
+      for (int i = 0; i < rank; ++i) out_shape.push_back(dims[i]);
+      output_shapes[0] = out_shape;
+      return kLiteRtStatusOk;
+    }
   }
 
   const auto& input_shape = input_shapes[kInputArgIndex];
@@ -610,7 +616,8 @@ inline LiteRtStatus InferConv3DTranspose(const LiteRtOpT& op,
 
   // Filter: [D, H, W, In, Out] -> Out is index 4.
   const auto& filter_shape = input_shapes[kFilterArgIndex];
-  if (filter_shape.size() == kConv3DTransposeRank) {
+  if (filter_shape.size() == kConv3DTransposeRank &&
+      output_shapes[0].size() == kConv3DTransposeRank) {
     output_shapes[0][4] = filter_shape[4];
   }
 

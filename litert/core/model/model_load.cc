@@ -68,8 +68,18 @@ class FlatbufferContext {
     }
     const int32_t builtin_code = code->builtin_code();
     const int32_t dep_code = code->deprecated_builtin_code();
-    litert_op.SetOpCode(
-        static_cast<LiteRtOpCode>(std::max(dep_code, builtin_code)));
+    const int32_t resolved_code = std::max(dep_code, builtin_code);
+    if (builtin_code < 0 || resolved_code < 0 ||
+        resolved_code > static_cast<int32_t>(kLiteRtOpCodeShloComposite) ||
+        (dep_code < 0 && static_cast<int8_t>(builtin_code) !=
+                             code->deprecated_builtin_code())) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Invalid operator code: builtin_code=%d, "
+                 "deprecated_builtin_code=%d",
+                 builtin_code, dep_code);
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+    }
+    litert_op.SetOpCode(static_cast<LiteRtOpCode>(resolved_code));
     if (code->custom_code()) {
       litert_op.SetCustomCode(code->custom_code()->str());
     }

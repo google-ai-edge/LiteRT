@@ -49,6 +49,11 @@ struct VerifyOptions {
 
 namespace internal {
 
+// Validates that all OperatorCode entries in `tfl_model` have valid
+// non-negative builtin_code / deprecated_builtin_code values within the
+// supported LiteRtOpCode range.
+absl::Status ValidateFlatBufferOperatorCodes(const tflite::Model* tfl_model);
+
 // Validates that a FlatBuffer tensor's quantization parameters are well-formed
 // and consistent with `subgraph` and `tensor`.
 absl::Status ValidateFlatBufferTensorQuantization(

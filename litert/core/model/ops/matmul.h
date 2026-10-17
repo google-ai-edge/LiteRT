@@ -21,6 +21,7 @@
 #include <utility>
 #include <vector>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
@@ -38,7 +39,7 @@ inline LiteRtStatus InferBatchMatmul(const LiteRtOpT& op,
   constexpr size_t kRhsArgIndex = 1;
   constexpr size_t kMinRank = 2;
 
-  if (input_shapes.size() != kBatchMatMulMinArgs) {
+  if (input_shapes.size() != kBatchMatMulMinArgs || output_shapes.size() != 1) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   const auto& lhs = input_shapes[kLhsArgIndex];
@@ -104,11 +105,15 @@ inline LiteRtStatus InferFullyConnected(const LiteRtOpT& op,
   constexpr size_t kWeightsRank = 2;
   constexpr size_t kOutputDimIndex = 0;
 
-  if (input_shapes.size() < kFullyConnectedMinArgs) {
+  if (input_shapes.size() < kFullyConnectedMinArgs ||
+      output_shapes.size() != 1) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   const auto& input = input_shapes[kInputArgIndex];
   const auto& weights = input_shapes[kWeightsArgIndex];
+  if (input.empty()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 
   const auto& opts = GetTflOptions(op);
   const auto* fc_opts = opts.AsFullyConnectedOptions();
@@ -130,13 +135,16 @@ inline LiteRtStatus InferFullyConnected(const LiteRtOpT& op,
     out_shape = input;
     out_shape.back() = output_dim;
   } else {
-    int64_t batch = 1;
+    int32_t batch = 1;
     bool dynamic_batch = false;
     for (size_t i = 0; i < input.size() - 1; ++i) {
+      if (input[i] < -1) {
+        return kLiteRtStatusErrorInvalidArgument;
+      }
       if (input[i] == -1) {
         dynamic_batch = true;
-      } else {
-        batch *= input[i];
+      } else if (!SafeMultiply(batch, input[i], batch)) {
+        return kLiteRtStatusErrorInvalidArgument;
       }
     }
     // If we collapsed dims, output is 2D.

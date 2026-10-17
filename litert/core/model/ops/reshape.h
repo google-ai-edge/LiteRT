@@ -17,9 +17,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <utility>
 #include <vector>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
@@ -49,7 +51,8 @@ inline LiteRtStatus InferReshape(const ShapeInferenceContext& ctx,
     Dims shape_tensor_dims = ctx.GetInputShape(kShapeTensorArgIndex);
     bool is_int64 = (elem_type == kLiteRtElementTypeInt64) ||
                     (!shape_tensor_dims.empty() && shape_tensor_dims[0] > 0 &&
-                     buf.size() == shape_tensor_dims[0] * sizeof(int64_t));
+                     buf.size() == static_cast<size_t>(shape_tensor_dims[0]) *
+                                       sizeof(int64_t));
 
     if (is_int64) {
       if (buf.size() % sizeof(int64_t) != 0) {
@@ -58,6 +61,9 @@ inline LiteRtStatus InferReshape(const ShapeInferenceContext& ctx,
       const int64_t* dims = reinterpret_cast<const int64_t*>(buf.data());
       size_t rank = buf.size() / sizeof(int64_t);
       for (size_t i = 0; i < rank; ++i) {
+        if (dims[i] < -1 || dims[i] > std::numeric_limits<int32_t>::max()) {
+          return kLiteRtStatusErrorInvalidArgument;
+        }
         new_shape.push_back(static_cast<int32_t>(dims[i]));
       }
     } else {
@@ -67,11 +73,17 @@ inline LiteRtStatus InferReshape(const ShapeInferenceContext& ctx,
       const int32_t* dims = reinterpret_cast<const int32_t*>(buf.data());
       size_t rank = buf.size() / sizeof(int32_t);
       for (size_t i = 0; i < rank; ++i) {
+        if (dims[i] < -1) {
+          return kLiteRtStatusErrorInvalidArgument;
+        }
         new_shape.push_back(dims[i]);
       }
     }
   } else if (reshape_opts && !reshape_opts->new_shape.empty()) {
     for (auto d : reshape_opts->new_shape) {
+      if (d < -1) {
+        return kLiteRtStatusErrorInvalidArgument;
+      }
       new_shape.push_back(d);
     }
   } else if (ctx.GetNumInputs() >= 2) {
@@ -98,19 +110,25 @@ inline LiteRtStatus InferReshape(const ShapeInferenceContext& ctx,
         return kLiteRtStatusErrorShapeInferenceFailed;  // Multiple -1
       }
       minus_one_idx = i;
-    } else {
-      new_product *= new_shape[i];
+    } else if (!SafeMultiply(new_product, static_cast<int64_t>(new_shape[i]),
+                             new_product)) {
+      return kLiteRtStatusErrorShapeInferenceFailed;
     }
   }
 
   int64_t input_product = 1;
   bool input_dynamic = false;
   for (auto d : input_shape) {
+    if (d < -1) {
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
     if (d == -1) {
       input_dynamic = true;
       break;
     }
-    input_product *= d;
+    if (!SafeMultiply(input_product, static_cast<int64_t>(d), input_product)) {
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
   }
 
   if (minus_one_idx != -1) {
@@ -127,7 +145,11 @@ inline LiteRtStatus InferReshape(const ShapeInferenceContext& ctx,
         if (input_product % new_product != 0) {
           return kLiteRtStatusErrorShapeInferenceFailed;
         }
-        new_shape[minus_one_idx] = input_product / new_product;
+        int64_t inferred_dim = input_product / new_product;
+        if (inferred_dim > std::numeric_limits<int32_t>::max()) {
+          return kLiteRtStatusErrorShapeInferenceFailed;
+        }
+        new_shape[minus_one_idx] = static_cast<int32_t>(inferred_dim);
       }
     }
   } else if (!input_dynamic && input_product != new_product) {

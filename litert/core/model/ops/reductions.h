@@ -18,12 +18,15 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <set>
 #include <utility>
 #include <vector>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/shape_inference_types.h"
 #include "tflite/kernels/internal/reference/reduce.h"
@@ -41,7 +44,9 @@ inline LiteRtStatus InferGenericReduction(const LiteRtOpT& op,
   constexpr size_t kAxisArgIndex = 1;
   constexpr size_t kShapeTensorSize = sizeof(int32_t);
 
-  if (input_shapes.size() < kReductionMinArgs) {
+  if (input_shapes.size() < kReductionMinArgs || output_shapes.size() != 1 ||
+      op.Inputs().size() < kReductionMinArgs ||
+      op.Inputs()[kAxisArgIndex] == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   const auto& input_shape = input_shapes[kInputArgIndex];
@@ -55,16 +60,23 @@ inline LiteRtStatus InferGenericReduction(const LiteRtOpT& op,
   auto axis_buf = axis_tensor.Weights().Buffer();
   std::set<int> axes;
   size_t num_axes = 0;
+  const bool is_int64 =
+      axis_tensor.Type().first == kLiteRtRankedTensorType &&
+      axis_tensor.Type().second.ranked_tensor_type.element_type ==
+          kLiteRtElementTypeInt64;
 
   // Simple heuristic: check element size.
-  if (axis_buf.Size() % sizeof(int32_t) == 0) {
+  if (!is_int64 && axis_buf.Size() % sizeof(int32_t) == 0) {
     // Could be int32.
     const int32_t* axis_data =
         reinterpret_cast<const int32_t*>(axis_buf.Data());
     num_axes = axis_buf.Size() / sizeof(int32_t);
     for (size_t i = 0; i < num_axes; ++i) {
-      int axis = axis_data[i];
-      if (axis < 0) axis += input_shape.size();
+      int32_t axis = axis_data[i];
+      if ((axis < 0 && !SafeAdd(axis, input_shape.size(), axis)) || axis < 0 ||
+          static_cast<size_t>(axis) >= input_shape.size()) {
+        return kLiteRtStatusErrorInvalidArgument;
+      }
       axes.insert(axis);
     }
   } else if (axis_buf.Size() % sizeof(int64_t) == 0) {
@@ -73,9 +85,14 @@ inline LiteRtStatus InferGenericReduction(const LiteRtOpT& op,
         reinterpret_cast<const int64_t*>(axis_buf.Data());
     num_axes = axis_buf.Size() / sizeof(int64_t);
     for (size_t i = 0; i < num_axes; ++i) {
-      int axis = static_cast<int>(axis_data[i]);
-      if (axis < 0) axis += input_shape.size();
-      axes.insert(axis);
+      int64_t raw_axis = axis_data[i];
+      if ((raw_axis < 0 && !SafeAdd(raw_axis, input_shape.size(), raw_axis)) ||
+          raw_axis < 0 ||
+          static_cast<uint64_t>(raw_axis) >= input_shape.size() ||
+          raw_axis > std::numeric_limits<int>::max()) {
+        return kLiteRtStatusErrorInvalidArgument;
+      }
+      axes.insert(static_cast<int>(raw_axis));
     }
   } else {
     return kLiteRtStatusErrorInvalidArgument;

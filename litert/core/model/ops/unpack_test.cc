@@ -14,7 +14,10 @@
 
 #include "litert/core/model/ops/unpack.h"
 
+#include <cstdint>
+#include <limits>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -32,23 +35,22 @@ namespace {
 
 using ::testing::ElementsAre;
 
-std::unique_ptr<tflite::UnpackOptionsT> CreateUnpackOptions(int axis, int num) {
+LiteRtOpT MakeUnpackOp(int axis, int num) {
+  LiteRtOpT op;
   auto options = std::make_unique<tflite::UnpackOptionsT>();
   options->axis = axis;
   options->num = num;
-  return options;
-}
-
-TEST(UnpackOpTest, ThreeOutputs) {
-  LiteRtOpT op;
-  std::vector<Dims> input_shapes = {{3, 2}};
-  std::vector<Dims> output_shapes(3);
-
-  auto options = CreateUnpackOptions(0, 3);
   TflOptions tfl_options;
   tfl_options.type = tflite::BuiltinOptions_UnpackOptions;
   tfl_options.value = options.release();
   SetTflOptions(op, std::move(tfl_options));
+  return op;
+}
+
+TEST(UnpackOpTest, ThreeOutputs) {
+  LiteRtOpT op = MakeUnpackOp(0, 3);
+  std::vector<Dims> input_shapes = {{3, 2}};
+  std::vector<Dims> output_shapes(3);
 
   ASSERT_EQ(InferUnpack(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusOk);
@@ -58,15 +60,9 @@ TEST(UnpackOpTest, ThreeOutputs) {
 }
 
 TEST(UnpackOpTest, ThreeOutputsAxisOne) {
-  LiteRtOpT op;
+  LiteRtOpT op = MakeUnpackOp(1, 2);
   std::vector<Dims> input_shapes = {{3, 2}};
   std::vector<Dims> output_shapes(2);
-
-  auto options = CreateUnpackOptions(1, 2);
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_UnpackOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
   ASSERT_EQ(InferUnpack(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusOk);
@@ -76,15 +72,9 @@ TEST(UnpackOpTest, ThreeOutputsAxisOne) {
 }
 
 TEST(UnpackOpTest, ThreeOutputsNegativeAxis) {
-  LiteRtOpT op;
+  LiteRtOpT op = MakeUnpackOp(-1, 2);
   std::vector<Dims> input_shapes = {{3, 2}};
   std::vector<Dims> output_shapes(2);
-
-  auto options = CreateUnpackOptions(-1, 2);
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_UnpackOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
   ASSERT_EQ(InferUnpack(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusOk);
@@ -92,6 +82,33 @@ TEST(UnpackOpTest, ThreeOutputsNegativeAxis) {
     EXPECT_THAT(s, ElementsAre(3));
   }
 }
+
+struct UnpackErrorCase {
+  std::string test_name;
+  int axis;
+  int num;
+};
+
+using UnpackErrorTest = ::testing::TestWithParam<UnpackErrorCase>;
+
+TEST_P(UnpackErrorTest, RejectsNonPositiveNumAndAxisUnderflow) {
+  const auto& param = GetParam();
+  LiteRtOpT op = MakeUnpackOp(param.axis, param.num);
+  std::vector<Dims> input_shapes = {{3, 2}};
+  std::vector<Dims> output_shapes(2);
+  EXPECT_EQ(InferUnpack(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    UnpackErrorTests, UnpackErrorTest,
+    ::testing::Values(UnpackErrorCase{"NonPositiveNum", /*axis=*/0, /*num=*/0},
+                      UnpackErrorCase{"AxisUnderflow",
+                                      std::numeric_limits<int32_t>::min(),
+                                      /*num=*/2}),
+    [](const ::testing::TestParamInfo<UnpackErrorCase>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace
 }  // namespace litert::internal

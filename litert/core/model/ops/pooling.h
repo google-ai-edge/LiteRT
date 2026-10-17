@@ -37,7 +37,7 @@ inline LiteRtStatus InferPool2D(const LiteRtOpT& op,
   constexpr size_t kInputArgIndex = 0;
   constexpr size_t kPool2DRank = 4;
 
-  if (input_shapes.size() < kPool2DMinArgs) {
+  if (input_shapes.size() < kPool2DMinArgs || output_shapes.size() != 1) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   const auto& input_shape = input_shapes[kInputArgIndex];

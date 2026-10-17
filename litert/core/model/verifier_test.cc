@@ -285,192 +285,422 @@ absl::Status ValidateFirstTensorQuantization(
   return internal::ValidateFlatBufferTensorQuantization(*subgraph, *tensor);
 }
 
-TEST(VerifierTest, ValidateFlatBufferTensorQuantizationAcceptsValidAffine) {
-  // Unquantized tensor (quantization == nullptr).
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    BuildQuantizedReluModel(builder, {2, 4}, tflite::TensorType_FLOAT32,
-                            /*quant_params=*/0);
-    EXPECT_TRUE(ValidateFirstTensorQuantization(builder).ok());
-  }
+struct AffineQuantizationTestCase {
+  std::string test_name;
+  std::vector<int32_t> input_shape;
+  tflite::TensorType input_type;
+  bool omit_quantization = false;
+  bool null_vectors = false;
+  std::vector<float> scale = {};
+  std::vector<int64_t> zero_point = {};
+  int32_t quantized_dimension = 0;
+  absl::StatusCode expected_status = absl::StatusCode::kOk;
+  bool check_full_verify = false;
+};
 
-  // Empty scale and zero_point vectors with QuantizationDetails_NONE.
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto quant = tflite::CreateQuantizationParameters(builder);
-    BuildQuantizedReluModel(builder, {2, 4}, tflite::TensorType_INT8, quant);
-    EXPECT_TRUE(ValidateFirstTensorQuantization(builder).ok());
-  }
+using AffineQuantizationVerifierTest =
+    ::testing::TestWithParam<AffineQuantizationTestCase>;
 
-  // Valid per-tensor quantization (1 scale, 1 zero_point).
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0,
-        builder.CreateVector(std::vector<float>{0.5f}),
-        builder.CreateVector(std::vector<int64_t>{0}),
-        tflite::QuantizationDetails_NONE, /*details=*/0,
-        /*quantized_dimension=*/0);
-    BuildQuantizedReluModel(builder, {2, 4}, tflite::TensorType_INT8, quant);
-    EXPECT_TRUE(ValidateFirstTensorQuantization(builder).ok());
+TEST_P(AffineQuantizationVerifierTest, ValidatesAffineQuantization) {
+  const auto& param = GetParam();
+  flatbuffers::FlatBufferBuilder builder;
+  flatbuffers::Offset<tflite::QuantizationParameters> quant = 0;
+  if (!param.omit_quantization) {
+    if (param.null_vectors) {
+      quant = tflite::CreateQuantizationParameters(builder);
+    } else {
+      quant = tflite::CreateQuantizationParameters(
+          builder, /*min=*/0, /*max=*/0, builder.CreateVector(param.scale),
+          builder.CreateVector(param.zero_point),
+          tflite::QuantizationDetails_NONE, /*details=*/0,
+          param.quantized_dimension);
+    }
   }
-
-  // Valid per-axis quantization matching static dimension size (2).
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0,
-        builder.CreateVector(std::vector<float>{0.5f, 0.25f}),
-        builder.CreateVector(std::vector<int64_t>{0, 1}),
-        tflite::QuantizationDetails_NONE, /*details=*/0,
-        /*quantized_dimension=*/0);
-    BuildQuantizedReluModel(builder, {2, 4}, tflite::TensorType_INT8, quant);
-    EXPECT_TRUE(ValidateFirstTensorQuantization(builder).ok());
-  }
-
-  // Valid per-axis quantization on a dynamic dimension (-1).
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0,
-        builder.CreateVector(std::vector<float>{0.5f, 0.25f, 0.125f}),
-        builder.CreateVector(std::vector<int64_t>{0, 0, 0}),
-        tflite::QuantizationDetails_NONE, /*details=*/0,
-        /*quantized_dimension=*/0);
-    BuildQuantizedReluModel(builder, {-1, 4}, tflite::TensorType_INT8, quant);
-    EXPECT_TRUE(ValidateFirstTensorQuantization(builder).ok());
+  BuildQuantizedReluModel(builder, param.input_shape, param.input_type, quant);
+  EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
+            param.expected_status);
+  if (param.check_full_verify) {
+    EXPECT_EQ(Verify(builder.GetBufferPointer(), builder.GetSize()),
+              param.expected_status == absl::StatusCode::kOk);
   }
 }
 
-TEST(VerifierTest, RejectsInvalidAffineQuantizationParameters) {
-  // Single scale with empty zero_point vector.
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0,
-        builder.CreateVector(std::vector<float>{0.5f}),
-        builder.CreateVector(std::vector<int64_t>{}));
-    BuildQuantizedReluModel(builder, {2, 4}, tflite::TensorType_INT8, quant);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-    EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
-  }
+INSTANTIATE_TEST_SUITE_P(
+    AffineQuantizationVerifierTests, AffineQuantizationVerifierTest,
+    ::testing::Values(
+        AffineQuantizationTestCase{
+            "Unquantized",
+            {2, 4},
+            tflite::TensorType_FLOAT32,
+            /*omit_quantization=*/true,
+        },
+        AffineQuantizationTestCase{
+            "NullScaleAndZeroPointVectors",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_quantization=*/false,
+            /*null_vectors=*/true,
+        },
+        AffineQuantizationTestCase{
+            "ValidPerTensor",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_quantization=*/false,
+            /*null_vectors=*/false,
+            {0.5f},
+            {0},
+            /*quantized_dimension=*/0,
+        },
+        AffineQuantizationTestCase{
+            "ValidPerAxisStaticDim",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_quantization=*/false,
+            /*null_vectors=*/false,
+            {0.5f, 0.25f},
+            {0, 1},
+            /*quantized_dimension=*/0,
+        },
+        AffineQuantizationTestCase{
+            "ValidPerAxisDynamicDim",
+            {-1, 4},
+            tflite::TensorType_INT8,
+            /*omit_quantization=*/false,
+            /*null_vectors=*/false,
+            {0.5f, 0.25f, 0.125f},
+            {0, 0, 0},
+            /*quantized_dimension=*/0,
+        },
+        AffineQuantizationTestCase{
+            "SingleScaleEmptyZeroPoint",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_quantization=*/false,
+            /*null_vectors=*/false,
+            {0.5f},
+            {},
+            /*quantized_dimension=*/0,
+            absl::StatusCode::kInvalidArgument,
+            /*check_full_verify=*/true,
+        },
+        AffineQuantizationTestCase{
+            "EmptyScaleNonEmptyZeroPoint",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_quantization=*/false,
+            /*null_vectors=*/false,
+            {},
+            {0},
+            /*quantized_dimension=*/0,
+            absl::StatusCode::kInvalidArgument,
+        },
+        AffineQuantizationTestCase{
+            "MismatchedScaleAndZeroPointCount",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_quantization=*/false,
+            /*null_vectors=*/false,
+            {0.5f, 0.25f},
+            {0},
+            /*quantized_dimension=*/0,
+            absl::StatusCode::kInvalidArgument,
+        },
+        AffineQuantizationTestCase{
+            "NegativeQuantizedDimension",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_quantization=*/false,
+            /*null_vectors=*/false,
+            {0.5f},
+            {0},
+            /*quantized_dimension=*/-1,
+            absl::StatusCode::kInvalidArgument,
+        },
+        AffineQuantizationTestCase{
+            "PerAxisCountMismatchStaticDim",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_quantization=*/false,
+            /*null_vectors=*/false,
+            {0.5f, 0.25f, 0.125f},
+            {0, 0, 0},
+            /*quantized_dimension=*/0,
+            absl::StatusCode::kInvalidArgument,
+            /*check_full_verify=*/true,
+        },
+        AffineQuantizationTestCase{
+            "OutOfRangeQuantizedDimension",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_quantization=*/false,
+            /*null_vectors=*/false,
+            {0.5f},
+            {0},
+            /*quantized_dimension=*/2,
+            absl::StatusCode::kInvalidArgument,
+            /*check_full_verify=*/true,
+        }),
+    [](const ::testing::TestParamInfo<AffineQuantizationTestCase>& info) {
+      return info.param.test_name;
+    });
 
-  // Empty scale vector with non-empty zero_point vector.
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0,
-        builder.CreateVector(std::vector<float>{}),
-        builder.CreateVector(std::vector<int64_t>{0}));
-    BuildQuantizedReluModel(builder, {2, 4}, tflite::TensorType_INT8, quant);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-  }
+struct BlockwiseQuantizationTestCase {
+  std::string test_name;
+  std::vector<int32_t> input_shape;
+  tflite::TensorType input_type;
+  bool omit_details = false;
+  int32_t scales = 2;
+  int32_t zero_points = -1;
+  int32_t block_size = 32;
+  std::vector<int32_t> block_shape = {};
+  absl::StatusCode expected_status = absl::StatusCode::kOk;
+  bool check_full_verify = false;
+};
 
-  // Mismatched non-empty scale (2) and zero_point (1) sizes.
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0,
-        builder.CreateVector(std::vector<float>{0.5f, 0.25f}),
-        builder.CreateVector(std::vector<int64_t>{0}));
-    BuildQuantizedReluModel(builder, {2, 4}, tflite::TensorType_INT8, quant);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-  }
+using BlockwiseQuantizationVerifierTest =
+    ::testing::TestWithParam<BlockwiseQuantizationTestCase>;
 
-  // Negative quantized_dimension (-1).
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0,
-        builder.CreateVector(std::vector<float>{0.5f}),
-        builder.CreateVector(std::vector<int64_t>{0}),
-        tflite::QuantizationDetails_NONE, /*details=*/0,
-        /*quantized_dimension=*/-1);
-    BuildQuantizedReluModel(builder, {2, 4}, tflite::TensorType_INT8, quant);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
+TEST_P(BlockwiseQuantizationVerifierTest, ValidatesBlockwiseQuantization) {
+  const auto& param = GetParam();
+  flatbuffers::FlatBufferBuilder builder;
+  flatbuffers::Offset<void> details = 0;
+  if (!param.omit_details) {
+    auto block_shape_vec =
+        param.block_shape.empty() ? 0 : builder.CreateVector(param.block_shape);
+    details = tflite::CreateBlockwiseQuantization(
+                  builder, param.scales, param.zero_points, param.block_size,
+                  block_shape_vec)
+                  .Union();
   }
-
-  // Per-axis scale count (3) does not match quantized_dimension (0) size (2).
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0,
-        builder.CreateVector(std::vector<float>{0.5f, 0.25f, 0.125f}),
-        builder.CreateVector(std::vector<int64_t>{0, 0, 0}),
-        tflite::QuantizationDetails_NONE, /*details=*/0,
-        /*quantized_dimension=*/0);
-    BuildQuantizedReluModel(builder, {2, 4}, tflite::TensorType_INT8, quant);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-    EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
-  }
-
-  // Out-of-range quantized_dimension (2 for rank-2 tensor).
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0,
-        builder.CreateVector(std::vector<float>{0.5f}),
-        builder.CreateVector(std::vector<int64_t>{0}),
-        tflite::QuantizationDetails_NONE, /*details=*/0,
-        /*quantized_dimension=*/2);
-    BuildQuantizedReluModel(builder, {2, 4}, tflite::TensorType_INT8, quant);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-    EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
+  auto quant = tflite::CreateQuantizationParameters(
+      builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
+      tflite::QuantizationDetails_BlockwiseQuantization, details,
+      /*quantized_dimension=*/1);
+  BuildQuantizedReluModel(builder, param.input_shape, param.input_type, quant,
+                          /*add_scale_tensor=*/true);
+  EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
+            param.expected_status);
+  if (param.check_full_verify) {
+    EXPECT_EQ(Verify(builder.GetBufferPointer(), builder.GetSize()),
+              param.expected_status == absl::StatusCode::kOk);
   }
 }
 
-TEST(VerifierTest, ValidateFlatBufferTensorQuantizationAcceptsValidBlockwise) {
-  // Valid INT4 block_size (32) with no zero_points (-1).
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto bw = tflite::CreateBlockwiseQuantization(builder, /*scales=*/2,
-                                                  /*zero_points=*/-1,
-                                                  /*block_size=*/32);
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_BlockwiseQuantization, bw.Union(),
-        /*quantized_dimension=*/1);
-    BuildQuantizedReluModel(builder, {2, 32}, tflite::TensorType_INT4, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_TRUE(ValidateFirstTensorQuantization(builder).ok());
-  }
-
-  // Valid INT2 block_size (32, divisible by 4) with valid zero_points tensor.
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto bw = tflite::CreateBlockwiseQuantization(builder, /*scales=*/2,
-                                                  /*zero_points=*/1,
-                                                  /*block_size=*/32);
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_BlockwiseQuantization, bw.Union(),
-        /*quantized_dimension=*/1);
-    BuildQuantizedReluModel(builder, {2, 32}, tflite::TensorType_INT2, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_TRUE(ValidateFirstTensorQuantization(builder).ok());
-  }
-
-  // Valid block_shape ({1, 16}) matching rank-2 tensor ({2, 32}).
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto bw = tflite::CreateBlockwiseQuantization(
-        builder, /*scales=*/2, /*zero_points=*/-1, /*block_size=*/0,
-        builder.CreateVector(std::vector<int32_t>{1, 16}));
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_BlockwiseQuantization, bw.Union(),
-        /*quantized_dimension=*/1);
-    BuildQuantizedReluModel(builder, {2, 32}, tflite::TensorType_INT4, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_TRUE(ValidateFirstTensorQuantization(builder).ok());
-  }
-}
+INSTANTIATE_TEST_SUITE_P(
+    BlockwiseQuantizationVerifierTests, BlockwiseQuantizationVerifierTest,
+    ::testing::Values(
+        BlockwiseQuantizationTestCase{
+            "ValidInt4BlockSize",
+            {2, 32},
+            tflite::TensorType_INT4,
+        },
+        BlockwiseQuantizationTestCase{
+            "ValidInt2BlockSizeWithZeroPoints",
+            {2, 32},
+            tflite::TensorType_INT2,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/1,
+            /*block_size=*/32,
+        },
+        BlockwiseQuantizationTestCase{
+            "ValidBlockShape",
+            {2, 32},
+            tflite::TensorType_INT4,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/0,
+            /*block_shape=*/{1, 16},
+        },
+        BlockwiseQuantizationTestCase{
+            "MissingDetailsTable",
+            {2, 32},
+            tflite::TensorType_INT4,
+            /*omit_details=*/true,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/32,
+            /*block_shape=*/{},
+            absl::StatusCode::kInvalidArgument,
+        },
+        BlockwiseQuantizationTestCase{
+            "Int4ZeroBlockSize",
+            {2, 32},
+            tflite::TensorType_INT4,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/0,
+            /*block_shape=*/{},
+            absl::StatusCode::kInvalidArgument,
+            /*check_full_verify=*/true,
+        },
+        BlockwiseQuantizationTestCase{
+            "Int4NegativeBlockSize",
+            {2, 32},
+            tflite::TensorType_INT4,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/-32,
+            /*block_shape=*/{},
+            absl::StatusCode::kInvalidArgument,
+            /*check_full_verify=*/true,
+        },
+        BlockwiseQuantizationTestCase{
+            "Int4OddBlockSize",
+            {2, 32},
+            tflite::TensorType_INT4,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/3,
+            /*block_shape=*/{},
+            absl::StatusCode::kInvalidArgument,
+            /*check_full_verify=*/true,
+        },
+        BlockwiseQuantizationTestCase{
+            "UInt4ZeroBlockSize",
+            {2, 32},
+            tflite::TensorType_UINT4,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/0,
+            /*block_shape=*/{},
+            absl::StatusCode::kInvalidArgument,
+            /*check_full_verify=*/true,
+        },
+        BlockwiseQuantizationTestCase{
+            "UInt4NegativeBlockSize",
+            {2, 32},
+            tflite::TensorType_UINT4,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/-32,
+            /*block_shape=*/{},
+            absl::StatusCode::kInvalidArgument,
+            /*check_full_verify=*/true,
+        },
+        BlockwiseQuantizationTestCase{
+            "UInt4OddBlockSize",
+            {2, 32},
+            tflite::TensorType_UINT4,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/3,
+            /*block_shape=*/{},
+            absl::StatusCode::kInvalidArgument,
+            /*check_full_verify=*/true,
+        },
+        BlockwiseQuantizationTestCase{
+            "Int2UnalignedBlockSize",
+            {2, 36},
+            tflite::TensorType_INT2,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/6,
+            /*block_shape=*/{},
+            absl::StatusCode::kInvalidArgument,
+        },
+        BlockwiseQuantizationTestCase{
+            "NegativeScalesTensorIndex",
+            {2, 32},
+            tflite::TensorType_INT4,
+            /*omit_details=*/false,
+            /*scales=*/-1,
+            /*zero_points=*/-1,
+            /*block_size=*/32,
+            /*block_shape=*/{},
+            absl::StatusCode::kInvalidArgument,
+            /*check_full_verify=*/true,
+        },
+        BlockwiseQuantizationTestCase{
+            "OutOfBoundsScalesTensorIndex",
+            {2, 32},
+            tflite::TensorType_INT4,
+            /*omit_details=*/false,
+            /*scales=*/99,
+            /*zero_points=*/-1,
+            /*block_size=*/32,
+            /*block_shape=*/{},
+            absl::StatusCode::kInvalidArgument,
+            /*check_full_verify=*/true,
+        },
+        BlockwiseQuantizationTestCase{
+            "InvalidNegativeZeroPointsTensorIndex",
+            {2, 32},
+            tflite::TensorType_INT4,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-2,
+            /*block_size=*/32,
+            /*block_shape=*/{},
+            absl::StatusCode::kInvalidArgument,
+        },
+        BlockwiseQuantizationTestCase{
+            "OutOfBoundsZeroPointsTensorIndex",
+            {2, 32},
+            tflite::TensorType_INT4,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/99,
+            /*block_size=*/32,
+            /*block_shape=*/{},
+            absl::StatusCode::kInvalidArgument,
+        },
+        BlockwiseQuantizationTestCase{
+            "LastDimNotDivisibleByBlockSize",
+            {2, 34},
+            tflite::TensorType_INT4,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/32,
+            /*block_shape=*/{},
+            absl::StatusCode::kInvalidArgument,
+            /*check_full_verify=*/true,
+        },
+        BlockwiseQuantizationTestCase{
+            "BlockShapeRankMismatch",
+            {2, 32},
+            tflite::TensorType_INT4,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/0,
+            /*block_shape=*/{1, 16, 1},
+            absl::StatusCode::kInvalidArgument,
+        },
+        BlockwiseQuantizationTestCase{
+            "ZeroBlockShapeDim",
+            {2, 32},
+            tflite::TensorType_INT4,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/0,
+            /*block_shape=*/{1, 0},
+            absl::StatusCode::kInvalidArgument,
+        },
+        BlockwiseQuantizationTestCase{
+            "NegativeBlockShapeDim",
+            {2, 32},
+            tflite::TensorType_INT4,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/0,
+            /*block_shape=*/{1, -4},
+            absl::StatusCode::kInvalidArgument,
+        }),
+    [](const ::testing::TestParamInfo<BlockwiseQuantizationTestCase>& info) {
+      return info.param.test_name;
+    });
 
 void BuildBlockwiseEmbeddingLookupModel(
     flatbuffers::FlatBufferBuilder& builder,
@@ -538,309 +768,256 @@ void BuildBlockwiseEmbeddingLookupModel(
   tflite::FinishModelBuffer(builder, model);
 }
 
-TEST(VerifierTest,
-     VerifyBlockwiseEmbeddingLookupScalarScaleAndStaticParameterContract) {
-  // Scalar (0D) FP16 scale tensor with [1, 32] INT4 table and block_size 32
-  // contains 1 element and is accepted.
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    BuildBlockwiseEmbeddingLookupModel(
-        builder, /*params_shape=*/{1, 32},
-        /*params_shape_signature=*/{}, /*scales_shape=*/{},
-        /*scales_shape_signature=*/{}, /*block_size=*/32);
-    EXPECT_TRUE(
-        VerifyModel(builder.GetBufferPointer(), builder.GetSize()).ok());
-    EXPECT_TRUE(Verify(builder.GetBufferPointer(), builder.GetSize()));
-  }
+struct BlockwiseEmbeddingLookupTestCase {
+  std::string test_name;
+  std::vector<int32_t> params_shape;
+  std::vector<int32_t> params_shape_signature;
+  std::vector<int32_t> scales_shape;
+  std::vector<int32_t> scales_shape_signature;
+  int32_t block_size;
+  absl::StatusCode expected_status;
+};
 
-  // Scalar (0D) FP16 scale tensor with [2, 32] INT4 table and block_size 32 is
-  // rejected because 1 scale < 2 required scales.
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    BuildBlockwiseEmbeddingLookupModel(
-        builder, /*params_shape=*/{2, 32},
-        /*params_shape_signature=*/{}, /*scales_shape=*/{},
-        /*scales_shape_signature=*/{}, /*block_size=*/32);
-    EXPECT_EQ(
-        VerifyModel(builder.GetBufferPointer(), builder.GetSize()).code(),
-        absl::StatusCode::kInvalidArgument);
-    EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
-  }
+using BlockwiseEmbeddingLookupVerifierTest =
+    ::testing::TestWithParam<BlockwiseEmbeddingLookupTestCase>;
 
-  // Unknown (-1) scale dimension is rejected.
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    BuildBlockwiseEmbeddingLookupModel(
-        builder, /*params_shape=*/{2, 32},
-        /*params_shape_signature=*/{}, /*scales_shape=*/{2, 1},
-        /*scales_shape_signature=*/{-1, 1}, /*block_size=*/32);
-    EXPECT_EQ(
-        VerifyModel(builder.GetBufferPointer(), builder.GetSize()).code(),
-        absl::StatusCode::kInvalidArgument);
-    EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
+TEST_P(BlockwiseEmbeddingLookupVerifierTest,
+       ValidatesScalarScaleAndStaticParameterContract) {
+  const auto& param = GetParam();
+  flatbuffers::FlatBufferBuilder builder;
+  BuildBlockwiseEmbeddingLookupModel(
+      builder, param.params_shape, param.params_shape_signature,
+      param.scales_shape, param.scales_shape_signature, param.block_size);
+  EXPECT_EQ(VerifyModel(builder.GetBufferPointer(), builder.GetSize()).code(),
+            param.expected_status);
+  EXPECT_EQ(Verify(builder.GetBufferPointer(), builder.GetSize()),
+            param.expected_status == absl::StatusCode::kOk);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    BlockwiseEmbeddingLookupVerifierTests, BlockwiseEmbeddingLookupVerifierTest,
+    ::testing::Values(
+        BlockwiseEmbeddingLookupTestCase{
+            "ScalarScaleSingleBlockAccepted",
+            /*params_shape=*/{1, 32},
+            /*params_shape_signature=*/{},
+            /*scales_shape=*/{},
+            /*scales_shape_signature=*/{},
+            /*block_size=*/32,
+            absl::StatusCode::kOk,
+        },
+        BlockwiseEmbeddingLookupTestCase{
+            "ScalarScaleInsufficientElementsRejected",
+            /*params_shape=*/{2, 32},
+            /*params_shape_signature=*/{},
+            /*scales_shape=*/{},
+            /*scales_shape_signature=*/{},
+            /*block_size=*/32,
+            absl::StatusCode::kInvalidArgument,
+        },
+        BlockwiseEmbeddingLookupTestCase{
+            "DynamicScaleDimensionRejected",
+            /*params_shape=*/{2, 32},
+            /*params_shape_signature=*/{},
+            /*scales_shape=*/{2, 1},
+            /*scales_shape_signature=*/{-1, 1},
+            /*block_size=*/32,
+            absl::StatusCode::kInvalidArgument,
+        }),
+    [](const ::testing::TestParamInfo<BlockwiseEmbeddingLookupTestCase>& info) {
+      return info.param.test_name;
+    });
+
+struct MultiAxisQuantizationTestCase {
+  std::string test_name;
+  std::vector<int32_t> input_shape;
+  tflite::TensorType input_type;
+  bool omit_details = false;
+  int32_t scales = 2;
+  int32_t zero_points = -1;
+  int32_t block_size = 0;
+  std::vector<int32_t> quantized_dimensions = {};
+  absl::StatusCode expected_status = absl::StatusCode::kOk;
+  bool check_full_verify = false;
+};
+
+using MultiAxisQuantizationVerifierTest =
+    ::testing::TestWithParam<MultiAxisQuantizationTestCase>;
+
+TEST_P(MultiAxisQuantizationVerifierTest, ValidatesMultiAxisQuantization) {
+  const auto& param = GetParam();
+  flatbuffers::FlatBufferBuilder builder;
+  flatbuffers::Offset<void> details = 0;
+  if (!param.omit_details) {
+    details = tflite::CreateMultiAxisQuantization(
+                  builder, param.scales, param.zero_points, param.block_size,
+                  builder.CreateVector(param.quantized_dimensions))
+                  .Union();
+  }
+  auto quant = tflite::CreateQuantizationParameters(
+      builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
+      tflite::QuantizationDetails_MultiAxisQuantization, details,
+      /*quantized_dimension=*/0);
+  BuildQuantizedReluModel(builder, param.input_shape, param.input_type, quant,
+                          /*add_scale_tensor=*/true);
+  EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
+            param.expected_status);
+  if (param.check_full_verify) {
+    EXPECT_EQ(Verify(builder.GetBufferPointer(), builder.GetSize()),
+              param.expected_status == absl::StatusCode::kOk);
   }
 }
 
-TEST(VerifierTest, RejectsInvalidBlockwiseQuantizationParameters) {
-  // Missing BlockwiseQuantization details union table.
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_BlockwiseQuantization, /*details=*/0,
-        /*quantized_dimension=*/1);
-    BuildQuantizedReluModel(builder, {2, 32}, tflite::TensorType_INT4, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-  }
-
-  // Zero, negative, or unaligned block_size for INT4 and UINT4.
-  for (tflite::TensorType type :
-       {tflite::TensorType_INT4, tflite::TensorType_UINT4}) {
-    for (int32_t bad_block_size : {0, -32, 3}) {
-      flatbuffers::FlatBufferBuilder builder;
-      auto bw = tflite::CreateBlockwiseQuantization(
-          builder, /*scales=*/2, /*zero_points=*/-1,
-          /*block_size=*/bad_block_size);
-      auto quant = tflite::CreateQuantizationParameters(
-          builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-          tflite::QuantizationDetails_BlockwiseQuantization, bw.Union(),
-          /*quantized_dimension=*/1);
-      BuildQuantizedReluModel(builder, {2, 32}, type, quant,
-                              /*add_scale_tensor=*/true);
-      EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-                absl::StatusCode::kInvalidArgument);
-      EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
-    }
-  }
-
-  // Unaligned block_size (6, not divisible by 4) for INT2.
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto bw = tflite::CreateBlockwiseQuantization(builder, /*scales=*/2,
-                                                  /*zero_points=*/-1,
-                                                  /*block_size=*/6);
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_BlockwiseQuantization, bw.Union(),
-        /*quantized_dimension=*/1);
-    BuildQuantizedReluModel(builder, {2, 36}, tflite::TensorType_INT2, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-  }
-
-  // Negative or out-of-bounds scales tensor index (-1, 99).
-  for (int32_t bad_scales : {-1, 99}) {
-    flatbuffers::FlatBufferBuilder builder;
-    auto bw =
-        tflite::CreateBlockwiseQuantization(builder, /*scales=*/bad_scales,
-                                            /*zero_points=*/-1,
-                                            /*block_size=*/32);
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_BlockwiseQuantization, bw.Union(),
-        /*quantized_dimension=*/1);
-    BuildQuantizedReluModel(builder, {2, 32}, tflite::TensorType_INT4, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-    EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
-  }
-
-  // Invalid zero_points tensor index (-2 or out-of-bounds 99).
-  for (int32_t bad_zp : {-2, 99}) {
-    flatbuffers::FlatBufferBuilder builder;
-    auto bw = tflite::CreateBlockwiseQuantization(builder, /*scales=*/2,
-                                                  /*zero_points=*/bad_zp,
-                                                  /*block_size=*/32);
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_BlockwiseQuantization, bw.Union(),
-        /*quantized_dimension=*/1);
-    BuildQuantizedReluModel(builder, {2, 32}, tflite::TensorType_INT4, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-  }
-
-  // Last dimension (34) not divisible by block_size (32).
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto bw = tflite::CreateBlockwiseQuantization(builder, /*scales=*/2,
-                                                  /*zero_points=*/-1,
-                                                  /*block_size=*/32);
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_BlockwiseQuantization, bw.Union(),
-        /*quantized_dimension=*/1);
-    BuildQuantizedReluModel(builder, {2, 34}, tflite::TensorType_INT4, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-    EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
-  }
-
-  // block_shape rank (3) does not match tensor rank (2).
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto bw = tflite::CreateBlockwiseQuantization(
-        builder, /*scales=*/2, /*zero_points=*/-1, /*block_size=*/0,
-        builder.CreateVector(std::vector<int32_t>{1, 16, 1}));
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_BlockwiseQuantization, bw.Union(),
-        /*quantized_dimension=*/1);
-    BuildQuantizedReluModel(builder, {2, 32}, tflite::TensorType_INT4, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-  }
-
-  // Non-positive block_shape entry (0 or -4).
-  for (int32_t bad_dim : {0, -4}) {
-    flatbuffers::FlatBufferBuilder builder;
-    auto bw = tflite::CreateBlockwiseQuantization(
-        builder, /*scales=*/2, /*zero_points=*/-1, /*block_size=*/0,
-        builder.CreateVector(std::vector<int32_t>{1, bad_dim}));
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_BlockwiseQuantization, bw.Union(),
-        /*quantized_dimension=*/1);
-    BuildQuantizedReluModel(builder, {2, 32}, tflite::TensorType_INT4, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-  }
-}
-
-TEST(VerifierTest, ValidateFlatBufferTensorQuantizationAcceptsValidMultiAxis) {
-  // Per-channel multi-axis quantization (block_size = 0, no zero_points).
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto multi_axis_q = tflite::CreateMultiAxisQuantization(
-        builder, /*scales=*/2, /*zero_points=*/-1, /*block_size=*/0,
-        builder.CreateVector(std::vector<int32_t>{0, 1}));
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_MultiAxisQuantization, multi_axis_q.Union(),
-        /*quantized_dimension=*/0);
-    BuildQuantizedReluModel(builder, {2, 4}, tflite::TensorType_INT8, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_TRUE(ValidateFirstTensorQuantization(builder).ok());
-    EXPECT_TRUE(Verify(builder.GetBufferPointer(), builder.GetSize()));
-  }
-
-  // Block-wise multi-axis quantization (block_size = 32 for INT4, valid
-  // zero_points tensor index = 1).
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto multi_axis_q = tflite::CreateMultiAxisQuantization(
-        builder, /*scales=*/2, /*zero_points=*/1, /*block_size=*/32,
-        builder.CreateVector(std::vector<int32_t>{0, 1}));
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_MultiAxisQuantization, multi_axis_q.Union(),
-        /*quantized_dimension=*/0);
-    BuildQuantizedReluModel(builder, {2, 32}, tflite::TensorType_INT4, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_TRUE(ValidateFirstTensorQuantization(builder).ok());
-  }
-}
-
-TEST(VerifierTest, RejectsInvalidMultiAxisQuantizationParameters) {
-  // Missing MultiAxisQuantization details or empty quantized_dimensions.
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_MultiAxisQuantization, /*details=*/0,
-        /*quantized_dimension=*/0);
-    BuildQuantizedReluModel(builder, {2, 4}, tflite::TensorType_INT8, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-    EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
-  }
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    auto multi_axis_q = tflite::CreateMultiAxisQuantization(
-        builder, /*scales=*/2, /*zero_points=*/-1, /*block_size=*/0,
-        builder.CreateVector(std::vector<int32_t>{}));
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_MultiAxisQuantization, multi_axis_q.Union(),
-        /*quantized_dimension=*/0);
-    BuildQuantizedReluModel(builder, {2, 4}, tflite::TensorType_INT8, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-  }
-
-  // Invalid scales (-1, 99) or zero_points (-2, 99) tensor indices.
-  for (int32_t bad_scales : {-1, 99}) {
-    flatbuffers::FlatBufferBuilder builder;
-    auto multi_axis_q = tflite::CreateMultiAxisQuantization(
-        builder, /*scales=*/bad_scales, /*zero_points=*/-1, /*block_size=*/0,
-        builder.CreateVector(std::vector<int32_t>{0}));
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_MultiAxisQuantization, multi_axis_q.Union(),
-        /*quantized_dimension=*/0);
-    BuildQuantizedReluModel(builder, {2, 4}, tflite::TensorType_INT8, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-  }
-  for (int32_t bad_zp : {-2, 99}) {
-    flatbuffers::FlatBufferBuilder builder;
-    auto multi_axis_q = tflite::CreateMultiAxisQuantization(
-        builder, /*scales=*/2, /*zero_points=*/bad_zp, /*block_size=*/0,
-        builder.CreateVector(std::vector<int32_t>{0}));
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_MultiAxisQuantization, multi_axis_q.Union(),
-        /*quantized_dimension=*/0);
-    BuildQuantizedReluModel(builder, {2, 4}, tflite::TensorType_INT8, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-  }
-
-  // Negative block_size (-1) or odd block_size (3) for INT4.
-  for (int32_t bad_block_size : {-1, 3}) {
-    flatbuffers::FlatBufferBuilder builder;
-    auto multi_axis_q = tflite::CreateMultiAxisQuantization(
-        builder, /*scales=*/2, /*zero_points=*/-1,
-        /*block_size=*/bad_block_size,
-        builder.CreateVector(std::vector<int32_t>{0, 1}));
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_MultiAxisQuantization, multi_axis_q.Union(),
-        /*quantized_dimension=*/0);
-    BuildQuantizedReluModel(builder, {2, 32}, tflite::TensorType_INT4, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-  }
-
-  // Negative, out-of-range, or duplicate quantized_dimensions entry.
-  for (int32_t bad_qdim : {-1, 2, 0}) {
-    flatbuffers::FlatBufferBuilder builder;
-    auto multi_axis_q = tflite::CreateMultiAxisQuantization(
-        builder, /*scales=*/2, /*zero_points=*/-1, /*block_size=*/0,
-        builder.CreateVector(std::vector<int32_t>{0, bad_qdim}));
-    auto quant = tflite::CreateQuantizationParameters(
-        builder, /*min=*/0, /*max=*/0, /*scale=*/0, /*zero_point=*/0,
-        tflite::QuantizationDetails_MultiAxisQuantization, multi_axis_q.Union(),
-        /*quantized_dimension=*/0);
-    BuildQuantizedReluModel(builder, {2, 4}, tflite::TensorType_INT8, quant,
-                            /*add_scale_tensor=*/true);
-    EXPECT_EQ(ValidateFirstTensorQuantization(builder).code(),
-              absl::StatusCode::kInvalidArgument);
-  }
-}
+INSTANTIATE_TEST_SUITE_P(
+    MultiAxisQuantizationVerifierTests, MultiAxisQuantizationVerifierTest,
+    ::testing::Values(
+        MultiAxisQuantizationTestCase{
+            "ValidPerChannel",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/0,
+            /*quantized_dimensions=*/{0, 1},
+            absl::StatusCode::kOk,
+            /*check_full_verify=*/true,
+        },
+        MultiAxisQuantizationTestCase{
+            "ValidBlockwiseWithZeroPoints",
+            {2, 32},
+            tflite::TensorType_INT4,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/1,
+            /*block_size=*/32,
+            /*quantized_dimensions=*/{0, 1},
+        },
+        MultiAxisQuantizationTestCase{
+            "MissingDetailsTable",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_details=*/true,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/0,
+            /*quantized_dimensions=*/{},
+            absl::StatusCode::kInvalidArgument,
+            /*check_full_verify=*/true,
+        },
+        MultiAxisQuantizationTestCase{
+            "EmptyQuantizedDimensions",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/0,
+            /*quantized_dimensions=*/{},
+            absl::StatusCode::kInvalidArgument,
+        },
+        MultiAxisQuantizationTestCase{
+            "NegativeScalesTensorIndex",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_details=*/false,
+            /*scales=*/-1,
+            /*zero_points=*/-1,
+            /*block_size=*/0,
+            /*quantized_dimensions=*/{0},
+            absl::StatusCode::kInvalidArgument,
+        },
+        MultiAxisQuantizationTestCase{
+            "OutOfBoundsScalesTensorIndex",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_details=*/false,
+            /*scales=*/99,
+            /*zero_points=*/-1,
+            /*block_size=*/0,
+            /*quantized_dimensions=*/{0},
+            absl::StatusCode::kInvalidArgument,
+        },
+        MultiAxisQuantizationTestCase{
+            "InvalidNegativeZeroPointsTensorIndex",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-2,
+            /*block_size=*/0,
+            /*quantized_dimensions=*/{0},
+            absl::StatusCode::kInvalidArgument,
+        },
+        MultiAxisQuantizationTestCase{
+            "OutOfBoundsZeroPointsTensorIndex",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/99,
+            /*block_size=*/0,
+            /*quantized_dimensions=*/{0},
+            absl::StatusCode::kInvalidArgument,
+        },
+        MultiAxisQuantizationTestCase{
+            "NegativeBlockSize",
+            {2, 32},
+            tflite::TensorType_INT4,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/-1,
+            /*quantized_dimensions=*/{0, 1},
+            absl::StatusCode::kInvalidArgument,
+        },
+        MultiAxisQuantizationTestCase{
+            "UnalignedInt4BlockSize",
+            {2, 32},
+            tflite::TensorType_INT4,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/3,
+            /*quantized_dimensions=*/{0, 1},
+            absl::StatusCode::kInvalidArgument,
+        },
+        MultiAxisQuantizationTestCase{
+            "NegativeQuantizedDimensionEntry",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/0,
+            /*quantized_dimensions=*/{0, -1},
+            absl::StatusCode::kInvalidArgument,
+        },
+        MultiAxisQuantizationTestCase{
+            "OutOfRangeQuantizedDimensionEntry",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/0,
+            /*quantized_dimensions=*/{0, 2},
+            absl::StatusCode::kInvalidArgument,
+        },
+        MultiAxisQuantizationTestCase{
+            "DuplicateQuantizedDimensionEntry",
+            {2, 4},
+            tflite::TensorType_INT8,
+            /*omit_details=*/false,
+            /*scales=*/2,
+            /*zero_points=*/-1,
+            /*block_size=*/0,
+            /*quantized_dimensions=*/{0, 0},
+            absl::StatusCode::kInvalidArgument,
+        }),
+    [](const ::testing::TestParamInfo<MultiAxisQuantizationTestCase>& info) {
+      return info.param.test_name;
+    });
 
 TEST(VerifierTest, RejectsUnsupportedQuantizationDetails) {
   // CustomQuantization is unsupported and must not be silently ignored.
@@ -909,36 +1086,258 @@ TEST(VerifierTest, VerifyModelAndValidateFlatBufferTensorsReturnStatus) {
   }
 }
 
-TEST(VerifierTest, RejectsTensorWithElementCountExceedingInt32Max) {
-  constexpr int32_t kHugeDim = 46341;  // 46341 * 46341 > INT32_MAX
+struct TensorElementCountOverflowCase {
+  std::string test_name;
+  std::vector<int32_t> input_shape;
+  std::vector<int64_t> begin_vals;
+  std::vector<int64_t> size_vals;
+};
 
-  // Static tensor shape exceeding INT32_MAX elements.
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    BuildSliceModel(builder, /*input_shape=*/{kHugeDim, kHugeDim},
-                    tflite::TensorType_INT32, /*begin_vals=*/{0, 0},
-                    tflite::TensorType_INT32, /*size_vals=*/{1, 1});
-    const tflite::Model* tfl_model =
-        tflite::GetModel(builder.GetBufferPointer());
-    EXPECT_EQ(internal::ValidateFlatBufferTensors(tfl_model).code(),
-              absl::StatusCode::kInvalidArgument);
-    EXPECT_EQ(VerifyModel(builder.GetBufferPointer(), builder.GetSize()).code(),
-              absl::StatusCode::kInvalidArgument);
-  }
+using TensorElementCountOverflowTest =
+    ::testing::TestWithParam<TensorElementCountOverflowCase>;
 
-  // Partially dynamic tensor shape whose static dimensions exceed INT32_MAX.
-  {
-    flatbuffers::FlatBufferBuilder builder;
-    BuildSliceModel(builder, /*input_shape=*/{-1, kHugeDim, kHugeDim},
-                    tflite::TensorType_INT32, /*begin_vals=*/{0, 0, 0},
-                    tflite::TensorType_INT32, /*size_vals=*/{1, 1, 1});
-    const tflite::Model* tfl_model =
-        tflite::GetModel(builder.GetBufferPointer());
-    EXPECT_EQ(internal::ValidateFlatBufferTensors(tfl_model).code(),
-              absl::StatusCode::kInvalidArgument);
+TEST_P(TensorElementCountOverflowTest,
+       RejectsTensorWithElementCountExceedingInt32Max) {
+  const auto& param = GetParam();
+  flatbuffers::FlatBufferBuilder builder;
+  BuildSliceModel(builder, param.input_shape, tflite::TensorType_INT32,
+                  param.begin_vals, tflite::TensorType_INT32, param.size_vals);
+  const tflite::Model* tfl_model = tflite::GetModel(builder.GetBufferPointer());
+  EXPECT_EQ(internal::ValidateFlatBufferTensors(tfl_model).code(),
+            absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(VerifyModel(builder.GetBufferPointer(), builder.GetSize()).code(),
+            absl::StatusCode::kInvalidArgument);
+}
+
+constexpr int32_t kHugeDim = 46341;  // 46341 * 46341 > INT32_MAX
+
+INSTANTIATE_TEST_SUITE_P(
+    TensorElementCountOverflowTests, TensorElementCountOverflowTest,
+    ::testing::Values(
+        TensorElementCountOverflowCase{
+            "StaticShapeExceedingInt32Max",
+            {kHugeDim, kHugeDim},
+            {0, 0},
+            {1, 1},
+        },
+        TensorElementCountOverflowCase{
+            "PartiallyDynamicShapeExceedingInt32Max",
+            {-1, kHugeDim, kHugeDim},
+            {0, 0, 0},
+            {1, 1, 1},
+        }),
+    [](const ::testing::TestParamInfo<TensorElementCountOverflowCase>& info) {
+      return info.param.test_name;
+    });
+
+void BuildOperatorCodeModel(flatbuffers::FlatBufferBuilder& builder,
+                            int8_t deprecated_builtin_code,
+                            tflite::BuiltinOperator builtin_code) {
+  std::vector<flatbuffers::Offset<tflite::Buffer>> buffers = {
+      tflite::CreateBuffer(builder),
+      tflite::CreateBuffer(builder),
+  };
+  std::vector<flatbuffers::Offset<tflite::Tensor>> tensors = {
+      tflite::CreateTensor(
+          builder, builder.CreateVector(std::vector<int32_t>{2}),
+          tflite::TensorType_FLOAT32, /*buffer=*/0, builder.CreateString("in")),
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{2}),
+                           tflite::TensorType_FLOAT32, /*buffer=*/1,
+                           builder.CreateString("out")),
+  };
+  auto opcode = tflite::CreateOperatorCode(builder, deprecated_builtin_code,
+                                           /*custom_code=*/0, /*version=*/1,
+                                           builtin_code);
+  std::vector<int32_t> op_inputs = {0};
+  std::vector<int32_t> op_outputs = {1};
+  auto op = tflite::CreateOperator(builder, /*opcode_index=*/0,
+                                   builder.CreateVector(op_inputs),
+                                   builder.CreateVector(op_outputs));
+  std::vector<int32_t> model_inputs = {0};
+  std::vector<int32_t> model_outputs = {1};
+  auto subgraph = tflite::CreateSubGraph(builder, builder.CreateVector(tensors),
+                                         builder.CreateVector(model_inputs),
+                                         builder.CreateVector(model_outputs),
+                                         builder.CreateVector(&op, 1));
+  auto model = tflite::CreateModel(
+      builder, TFLITE_SCHEMA_VERSION, builder.CreateVector(&opcode, 1),
+      builder.CreateVector(&subgraph, 1), builder.CreateString("opcode_test"),
+      builder.CreateVector(buffers));
+  tflite::FinishModelBuffer(builder, model);
+}
+
+struct OperatorCodeVerifierCase {
+  std::string test_name;
+  int8_t deprecated_builtin_code;
+  tflite::BuiltinOperator builtin_code;
+  absl::StatusCode expected_status;
+  bool check_full_verify = false;
+};
+
+using OperatorCodeVerifierTest =
+    ::testing::TestWithParam<OperatorCodeVerifierCase>;
+
+TEST_P(OperatorCodeVerifierTest, ValidatesFlatBufferOperatorCode) {
+  const auto& param = GetParam();
+  flatbuffers::FlatBufferBuilder builder;
+  BuildOperatorCodeModel(builder, param.deprecated_builtin_code,
+                         param.builtin_code);
+  const tflite::Model* tfl_model = tflite::GetModel(builder.GetBufferPointer());
+  EXPECT_EQ(internal::ValidateFlatBufferOperatorCodes(tfl_model).code(),
+            param.expected_status);
+  if (param.check_full_verify) {
     EXPECT_EQ(VerifyModel(builder.GetBufferPointer(), builder.GetSize()).code(),
-              absl::StatusCode::kInvalidArgument);
+              param.expected_status);
+    EXPECT_EQ(Verify(builder.GetBufferPointer(), builder.GetSize()),
+              param.expected_status == absl::StatusCode::kOk);
   }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    OperatorCodeVerifierTests, OperatorCodeVerifierTest,
+    ::testing::Values(
+        OperatorCodeVerifierCase{
+            "NegativeDeprecatedBuiltinCode",
+            /*deprecated_builtin_code=*/-1,
+            static_cast<tflite::BuiltinOperator>(0),
+            absl::StatusCode::kInvalidArgument,
+            /*check_full_verify=*/true,
+        },
+        OperatorCodeVerifierCase{
+            "NegativeBuiltinCode",
+            /*deprecated_builtin_code=*/0,
+            static_cast<tflite::BuiltinOperator>(-5),
+            absl::StatusCode::kInvalidArgument,
+            /*check_full_verify=*/true,
+        },
+        OperatorCodeVerifierCase{
+            "BuiltinCodeExceedingMax",
+            /*deprecated_builtin_code=*/0,
+            static_cast<tflite::BuiltinOperator>(300),
+            absl::StatusCode::kInvalidArgument,
+            /*check_full_verify=*/true,
+        },
+        OperatorCodeVerifierCase{
+            "ValidWrappedInt8DeprecatedCode",
+            static_cast<int8_t>(tflite::BuiltinOperator_BROADCAST_TO),
+            tflite::BuiltinOperator_BROADCAST_TO,
+            absl::StatusCode::kOk,
+        },
+        OperatorCodeVerifierCase{
+            "ValidPlaceholderDeprecatedCode",
+            static_cast<int8_t>(
+                tflite::BuiltinOperator_PLACEHOLDER_FOR_GREATER_OP_CODES),
+            tflite::BuiltinOperator_BROADCAST_TO,
+            absl::StatusCode::kOk,
+        }),
+    [](const ::testing::TestParamInfo<OperatorCodeVerifierCase>& info) {
+      return info.param.test_name;
+    });
+
+TEST(VerifierTest, ValidateFlatBufferOperatorCodesHandlesNullAndEmptyModels) {
+  EXPECT_EQ(internal::ValidateFlatBufferOperatorCodes(nullptr).code(),
+            absl::StatusCode::kInvalidArgument);
+
+  flatbuffers::FlatBufferBuilder builder;
+  auto model = tflite::CreateModel(builder, TFLITE_SCHEMA_VERSION);
+  tflite::FinishModelBuffer(builder, model);
+  const tflite::Model* tfl_model = tflite::GetModel(builder.GetBufferPointer());
+  EXPECT_TRUE(internal::ValidateFlatBufferOperatorCodes(tfl_model).ok());
+}
+
+using ZeroOutputGatherVerifierTest =
+    ::testing::TestWithParam<tflite::BuiltinOperator>;
+
+TEST_P(ZeroOutputGatherVerifierTest, RejectsZeroOutputWithoutCrash) {
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<tflite::Buffer>> buffers = {
+      tflite::CreateBuffer(builder),
+      tflite::CreateBuffer(builder),
+  };
+  std::vector<flatbuffers::Offset<tflite::Tensor>> tensors = {
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{2, 2}),
+                           tflite::TensorType_FLOAT32, /*buffer=*/0,
+                           builder.CreateString("params")),
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{2, 1}),
+                           tflite::TensorType_INT32, /*buffer=*/1,
+                           builder.CreateString("indices")),
+  };
+  auto opcode = tflite::CreateOperatorCode(builder, GetParam());
+  std::vector<int32_t> op_inputs = {0, 1};
+  std::vector<int32_t> op_outputs = {};
+  auto op = tflite::CreateOperator(builder, /*opcode_index=*/0,
+                                   builder.CreateVector(op_inputs),
+                                   builder.CreateVector(op_outputs));
+  std::vector<int32_t> model_inputs = {0, 1};
+  std::vector<int32_t> model_outputs = {};
+  auto subgraph = tflite::CreateSubGraph(builder, builder.CreateVector(tensors),
+                                         builder.CreateVector(model_inputs),
+                                         builder.CreateVector(model_outputs),
+                                         builder.CreateVector(&op, 1));
+  auto model = tflite::CreateModel(builder, TFLITE_SCHEMA_VERSION,
+                                   builder.CreateVector(&opcode, 1),
+                                   builder.CreateVector(&subgraph, 1),
+                                   builder.CreateString("zero_output_gather"),
+                                   builder.CreateVector(buffers));
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_EQ(VerifyModel(builder.GetBufferPointer(), builder.GetSize()).code(),
+            absl::StatusCode::kInvalidArgument);
+  EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ZeroOutputGatherVerifierTests, ZeroOutputGatherVerifierTest,
+    ::testing::Values(tflite::BuiltinOperator_GATHER,
+                      tflite::BuiltinOperator_GATHER_ND),
+    [](const ::testing::TestParamInfo<tflite::BuiltinOperator>& info) {
+      return tflite::EnumNameBuiltinOperator(info.param);
+    });
+
+TEST(VerifierTest, RejectsDepthToSpaceWithOverflowingBlockSize) {
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<tflite::Buffer>> buffers = {
+      tflite::CreateBuffer(builder),
+      tflite::CreateBuffer(builder),
+  };
+  std::vector<flatbuffers::Offset<tflite::Tensor>> tensors = {
+      tflite::CreateTensor(
+          builder, builder.CreateVector(std::vector<int32_t>{1, 4, 4, 16}),
+          tflite::TensorType_FLOAT32, /*buffer=*/0, builder.CreateString("in")),
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{}),
+                           tflite::TensorType_FLOAT32, /*buffer=*/1,
+                           builder.CreateString("out")),
+  };
+  auto opcode = tflite::CreateOperatorCode(
+      builder, tflite::BuiltinOperator_DEPTH_TO_SPACE);
+  std::vector<int32_t> op_inputs = {0};
+  std::vector<int32_t> op_outputs = {1};
+  // 225542 * 225542 overflows signed int32_t.
+  auto d2s_opts =
+      tflite::CreateDepthToSpaceOptions(builder, /*block_size=*/225542);
+  auto op = tflite::CreateOperator(
+      builder, /*opcode_index=*/0, builder.CreateVector(op_inputs),
+      builder.CreateVector(op_outputs),
+      tflite::BuiltinOptions_DepthToSpaceOptions, d2s_opts.Union());
+  std::vector<int32_t> model_inputs = {0};
+  std::vector<int32_t> model_outputs = {1};
+  auto subgraph = tflite::CreateSubGraph(builder, builder.CreateVector(tensors),
+                                         builder.CreateVector(model_inputs),
+                                         builder.CreateVector(model_outputs),
+                                         builder.CreateVector(&op, 1));
+  auto model = tflite::CreateModel(
+      builder, TFLITE_SCHEMA_VERSION, builder.CreateVector(&opcode, 1),
+      builder.CreateVector(&subgraph, 1),
+      builder.CreateString("d2s_overflow_test"), builder.CreateVector(buffers));
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_EQ(VerifyModel(builder.GetBufferPointer(), builder.GetSize()).code(),
+            absl::StatusCode::kInvalidArgument);
+  EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
 }
 
 }  // namespace

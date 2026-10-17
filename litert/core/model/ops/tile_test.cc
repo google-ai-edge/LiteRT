@@ -15,6 +15,9 @@
 #include "litert/core/model/ops/tile.h"
 
 #include <cstdint>
+#include <cstring>
+#include <limits>
+#include <string>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -102,6 +105,64 @@ TEST(TileOpTest, ReferenceTile2DBothAxes) {
                                   4.0f, 1.0f, 2.0f, 1.0f, 2.0f, 3.0f, 4.0f,
                                   3.0f, 4.0f));
 }
+
+template <typename T>
+std::vector<uint8_t> ToBytes(const std::vector<T>& values) {
+  std::vector<uint8_t> bytes(values.size() * sizeof(T));
+  if (!bytes.empty()) {
+    std::memcpy(bytes.data(), values.data(), bytes.size());
+  }
+  return bytes;
+}
+
+struct TileErrorCase {
+  std::string test_name;
+  bool omit_inputs;
+  Dims input_shape;
+  std::vector<uint8_t> multiples_bytes;
+};
+
+using TileErrorTest = ::testing::TestWithParam<TileErrorCase>;
+
+TEST_P(TileErrorTest, RejectsMissingInputsMisalignedMultiplesAndOverflow) {
+  const auto& param = GetParam();
+  std::vector<Dims> input_shapes = {param.input_shape, {2}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtOpT op;
+  LiteRtTensorT input_tensor;
+  LiteRtTensorT mults_tensor;
+  if (!param.omit_inputs) {
+    SetWeightsFromOwnedBuffer(
+        mults_tensor.Weights(),
+        OwningBufferRef<uint8_t>(param.multiples_bytes.data(),
+                                 param.multiples_bytes.size()));
+    op.Inputs() = {&input_tensor, &mults_tensor};
+  }
+
+  EXPECT_EQ(InferTile(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    TileErrorTests, TileErrorTest,
+    ::testing::Values(
+        TileErrorCase{"MissingInputs", /*omit_inputs=*/true, {2, 3}, {}},
+        TileErrorCase{"MisalignedMultiplesBuffer",
+                      /*omit_inputs=*/false,
+                      {2, 3},
+                      {1, 2, 3}},
+        TileErrorCase{"NegativeMultiple",
+                      /*omit_inputs=*/false,
+                      {2, 3},
+                      ToBytes<int32_t>({-1, 2})},
+        TileErrorCase{"TiledDimensionOverflow",
+                      /*omit_inputs=*/false,
+                      {std::numeric_limits<int32_t>::max() / 2 + 2, 3},
+                      ToBytes<int32_t>({2, 1})}),
+    [](const ::testing::TestParamInfo<TileErrorCase>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace
 }  // namespace litert::internal

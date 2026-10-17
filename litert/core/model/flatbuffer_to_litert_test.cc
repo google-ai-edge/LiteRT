@@ -16,6 +16,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -24,6 +26,8 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/converter/schema/schema_generated.h"
@@ -33,67 +37,65 @@ namespace {
 
 using ::testing::ElementsAreArray;
 
-TEST(FlatbufferToLiteRtTest, MapStaticTensorType) {
+struct ElementTypeMappingCase {
+  std::string test_name;
+  TflElementType tfl_type;
+  LiteRtElementType expected_type;
+};
+
+using ElementTypeMappingTest = ::testing::TestWithParam<ElementTypeMappingCase>;
+
+TEST_P(ElementTypeMappingTest, MapsElementAndStaticTensorType) {
   static constexpr int32_t kDims[] = {2, 2};
   static constexpr auto kDimsSpan = absl::MakeConstSpan(kDims);
+  const auto& param = GetParam();
 
-  auto t = MapTensorType(std::make_pair(TflElementType::TensorType_INT32,
-                                        TflShapeInfo(kDimsSpan)));
+  EXPECT_EQ(MapElementType(param.tfl_type), param.expected_type);
+
+  auto t =
+      MapTensorType(std::make_pair(param.tfl_type, TflShapeInfo(kDimsSpan)));
   ASSERT_TRUE(t);
-
   ASSERT_EQ(t->first, kLiteRtRankedTensorType);
-  auto& ranked = t->second.ranked_tensor_type;
-  EXPECT_EQ(ranked.element_type, kLiteRtElementTypeInt32);
+  const auto& ranked = t->second.ranked_tensor_type;
+  EXPECT_EQ(ranked.element_type, param.expected_type);
   EXPECT_EQ(absl::MakeSpan(ranked.layout.dimensions, ranked.layout.rank),
             kDimsSpan);
 }
 
-TEST(FlatbufferToLiteRtTest, MapStaticTensorInt4Type) {
-  static constexpr int32_t kDims[] = {2, 2};
-  static constexpr auto kDimsSpan = absl::MakeConstSpan(kDims);
-
-  auto t = MapTensorType(
-      std::make_pair(TflElementType::TensorType_INT4, TflShapeInfo(kDimsSpan)));
-  ASSERT_TRUE(t);
-
-  ASSERT_EQ(t->first, kLiteRtRankedTensorType);
-  auto& ranked = t->second.ranked_tensor_type;
-  EXPECT_EQ(ranked.element_type, kLiteRtElementTypeInt4);
-  EXPECT_EQ(absl::MakeSpan(ranked.layout.dimensions, ranked.layout.rank),
-            kDimsSpan);
-}
-
-TEST(FlatbufferToLiteRtTest, MapStaticTensorInt2Type) {
-  static constexpr int32_t kDims[] = {2, 2};
-  static constexpr auto kDimsSpan = absl::MakeConstSpan(kDims);
-
-  auto t = MapTensorType(
-      std::make_pair(TflElementType::TensorType_INT2, TflShapeInfo(kDimsSpan)));
-  ASSERT_TRUE(t);
-
-  ASSERT_EQ(t->first, kLiteRtRankedTensorType);
-  auto& ranked = t->second.ranked_tensor_type;
-  EXPECT_EQ(ranked.element_type, kLiteRtElementTypeInt2);
-  EXPECT_EQ(absl::MakeSpan(ranked.layout.dimensions, ranked.layout.rank),
-            kDimsSpan);
-}
-
-TEST(FlatbufferToLiteRtTest, MapStaticTensorFloat8Type) {
-  static constexpr int32_t kDims[] = {2, 2};
-  static constexpr auto kDimsSpan = absl::MakeConstSpan(kDims);
-
-  auto e4m3fn = MapTensorType(std::make_pair(
-      TflElementType::TensorType_FLOAT8_E4M3FN, TflShapeInfo(kDimsSpan)));
-  ASSERT_TRUE(e4m3fn);
-  EXPECT_EQ(e4m3fn->second.ranked_tensor_type.element_type,
-            kLiteRtElementTypeFloat8E4M3FN);
-
-  auto e5m2 = MapTensorType(std::make_pair(
-      TflElementType::TensorType_FLOAT8_E5M2, TflShapeInfo(kDimsSpan)));
-  ASSERT_TRUE(e5m2);
-  EXPECT_EQ(e5m2->second.ranked_tensor_type.element_type,
-            kLiteRtElementTypeFloat8E5M2);
-}
+INSTANTIATE_TEST_SUITE_P(
+    AllElementTypes, ElementTypeMappingTest,
+    ::testing::ValuesIn<ElementTypeMappingCase>({
+        {"Float64", tflite::TensorType_FLOAT64, kLiteRtElementTypeFloat64},
+        {"Float32", tflite::TensorType_FLOAT32, kLiteRtElementTypeFloat32},
+        {"Float16", tflite::TensorType_FLOAT16, kLiteRtElementTypeFloat16},
+        {"BFloat16", tflite::TensorType_BFLOAT16, kLiteRtElementTypeBFloat16},
+        {"Float8E4M3FN", tflite::TensorType_FLOAT8_E4M3FN,
+         kLiteRtElementTypeFloat8E4M3FN},
+        {"Float8E5M2", tflite::TensorType_FLOAT8_E5M2,
+         kLiteRtElementTypeFloat8E5M2},
+        {"Complex64", tflite::TensorType_COMPLEX64,
+         kLiteRtElementTypeComplex64},
+        {"Complex128", tflite::TensorType_COMPLEX128,
+         kLiteRtElementTypeComplex128},
+        {"Int32", tflite::TensorType_INT32, kLiteRtElementTypeInt32},
+        {"UInt32", tflite::TensorType_UINT32, kLiteRtElementTypeUInt32},
+        {"Int64", tflite::TensorType_INT64, kLiteRtElementTypeInt64},
+        {"UInt64", tflite::TensorType_UINT64, kLiteRtElementTypeUInt64},
+        {"Bool", tflite::TensorType_BOOL, kLiteRtElementTypeBool},
+        {"Int16", tflite::TensorType_INT16, kLiteRtElementTypeInt16},
+        {"UInt16", tflite::TensorType_UINT16, kLiteRtElementTypeUInt16},
+        {"Int8", tflite::TensorType_INT8, kLiteRtElementTypeInt8},
+        {"UInt8", tflite::TensorType_UINT8, kLiteRtElementTypeUInt8},
+        {"UInt4", tflite::TensorType_UINT4, kLiteRtElementTypeUInt4},
+        {"Int4", tflite::TensorType_INT4, kLiteRtElementTypeInt4},
+        {"Int2", tflite::TensorType_INT2, kLiteRtElementTypeInt2},
+        {"Resource", tflite::TensorType_RESOURCE, kLiteRtElementTypeTfResource},
+        {"String", tflite::TensorType_STRING, kLiteRtElementTypeTfString},
+        {"Variant", tflite::TensorType_VARIANT, kLiteRtElementTypeTfVariant},
+    }),
+    [](const ::testing::TestParamInfo<ElementTypeMappingCase>& info) {
+      return info.param.test_name;
+    });
 
 TEST(FlatbufferToLiteRtTest, MapDynamicTensorType) {
   static constexpr int32_t kDims[] = {-1, 2};
@@ -174,31 +176,71 @@ TEST(FlatbufferToLiteRtTest, MapPerChannelQuantization) {
 
 TEST(FlatbufferToLiteRtTest,
      MapQuantizationRejectsMissingOrMismatchedZeroPoint) {
-  // Single scale with missing zero_point must not crash in per-tensor branch.
-  {
+  for (bool add_empty_zero_point : {false, true}) {
     flatbuffers::FlatBufferBuilder fbb;
     auto scales_fb = fbb.CreateVector(std::vector<float>{1.0f});
+    auto zero_points_fb =
+        add_empty_zero_point ? fbb.CreateVector(std::vector<int64_t>{}) : 0;
     tflite::QuantizationParametersBuilder qpb(fbb);
     qpb.add_scale(scales_fb);
+    if (add_empty_zero_point) {
+      qpb.add_zero_point(zero_points_fb);
+    }
     fbb.Finish(qpb.Finish());
     const auto* tfl_q = flatbuffers::GetRoot<tflite::QuantizationParameters>(
         fbb.GetBufferPointer());
     EXPECT_FALSE(MapQuantization(tfl_q));
   }
+}
 
-  // Single scale with empty zero_point vector must be rejected.
-  {
-    flatbuffers::FlatBufferBuilder fbb;
-    auto scales_fb = fbb.CreateVector(std::vector<float>{1.0f});
-    auto zero_points_fb = fbb.CreateVector(std::vector<int64_t>{});
-    tflite::QuantizationParametersBuilder qpb(fbb);
-    qpb.add_scale(scales_fb);
-    qpb.add_zero_point(zero_points_fb);
-    fbb.Finish(qpb.Finish());
-    const auto* tfl_q = flatbuffers::GetRoot<tflite::QuantizationParameters>(
-        fbb.GetBufferPointer());
-    EXPECT_FALSE(MapQuantization(tfl_q));
-  }
+TEST(FlatbufferToLiteRtTest,
+     MapTensorTypeRejectsUnsupportedElementTypeAndExcessiveRank) {
+  static constexpr int32_t kDims[] = {2, 2};
+  static constexpr auto kDimsSpan = absl::MakeConstSpan(kDims);
+
+  EXPECT_EQ(MapElementType(static_cast<TflElementType>(999)),
+            kLiteRtElementTypeNone);
+  EXPECT_FALSE(MapTensorType(std::make_pair(static_cast<TflElementType>(999),
+                                            TflShapeInfo(kDimsSpan))));
+
+  std::vector<int32_t> huge_rank_dims(LITERT_TENSOR_MAX_RANK + 1, 1);
+  EXPECT_FALSE(MapTensorType(
+      std::make_pair(tflite::TensorType_FLOAT32,
+                     TflShapeInfo(absl::MakeConstSpan(huge_rank_dims)))));
+}
+
+TEST(FlatbufferToLiteRtTest, SupportPredicatesForOpBufferAndTensor) {
+  tflite::OperatorT op;
+  EXPECT_EQ(IsOpSupported(op), kLiteRtStatusOk);
+
+  op.intermediates = {0};
+  EXPECT_EQ(IsOpSupported(op), kLiteRtStatusErrorUnsupported);
+  op.intermediates.clear();
+
+  op.large_custom_options_size = 16;
+  EXPECT_EQ(IsOpSupported(op), kLiteRtStatusErrorUnsupported);
+  op.large_custom_options_size = 0;
+
+  op.mutating_variable_inputs = {false, true};
+  EXPECT_EQ(IsOpSupported(op), kLiteRtStatusErrorUnsupported);
+
+  tflite::BufferT buffer;
+  EXPECT_EQ(IsBufferSupported(buffer), kLiteRtStatusOk);
+  buffer.offset = 64;
+  EXPECT_EQ(IsBufferSupported(buffer), kLiteRtStatusErrorUnsupported);
+
+  TflTensor tensor;
+  EXPECT_EQ(IsTensorSupported(tensor), kLiteRtStatusOk);
+  tensor.is_variable = true;
+  EXPECT_EQ(IsTensorSupported(tensor), kLiteRtStatusErrorUnsupported);
+  tensor.is_variable = false;
+
+  tensor.variant_tensors.push_back(std::make_unique<tflite::VariantSubTypeT>());
+  EXPECT_EQ(IsTensorSupported(tensor), kLiteRtStatusErrorUnsupported);
+  tensor.variant_tensors.clear();
+
+  tensor.sparsity = std::make_unique<tflite::SparsityParametersT>();
+  EXPECT_EQ(IsTensorSupported(tensor), kLiteRtStatusErrorUnsupported);
 }
 
 }  // namespace

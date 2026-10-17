@@ -19,9 +19,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <utility>
 #include <vector>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
@@ -156,8 +158,11 @@ inline LiteRtStatus InferSlice(const LiteRtOpT& op,
     Dims out_shape;
     out_shape.reserve(input_shape.size());
     for (size_t i = 0; i < input_shape.size(); ++i) {
+      if (input_shape[i] < -1) {
+        return kLiteRtStatusErrorShapeInferenceFailed;
+      }
       int64_t s = size_vals[i];
-      if (s < -1) {
+      if (s < -1 || s > std::numeric_limits<int32_t>::max()) {
         return kLiteRtStatusErrorShapeInferenceFailed;
       }
       if (s == -1) {
@@ -203,6 +208,15 @@ inline LiteRtStatus InferStridedSlice(const ShapeInferenceContext& ctx,
   const auto& begin_shape = ctx.GetInputShape(1);
   if (begin_shape.empty()) return kLiteRtStatusErrorShapeInferenceFailed;
   const int processing_dims = begin_shape[0];
+  constexpr int kMaxMaskBits = 31;
+  if (processing_dims < 0 || processing_dims >= kMaxMaskBits) {
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+  for (int32_t dim : input_shape) {
+    if (dim < -1) {
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
+  }
 
   auto begin_data = ctx.GetInputData(1);
   auto end_data = ctx.GetInputData(2);
@@ -265,7 +279,7 @@ inline LiteRtStatus InferStridedSlice(const ShapeInferenceContext& ctx,
         int64_t start = begin_vec[i];
         int64_t stop = end_vec[i];
 
-        if (start < 0) start += dim_size;
+        if (start < 0 && !SafeAdd(start, dim_size, start)) start = -1;
         if (stride > 0) {
           start = std::clamp(start, int64_t{0}, dim_size);
         } else {
@@ -275,7 +289,7 @@ inline LiteRtStatus InferStridedSlice(const ShapeInferenceContext& ctx,
           start = (stride > 0) ? 0 : dim_size - 1;
         }
 
-        if (stop < 0) stop += dim_size;
+        if (stop < 0 && !SafeAdd(stop, dim_size, stop)) stop = -1;
         if (stride > 0) {
           stop = std::clamp(stop, int64_t{0}, dim_size);
         } else {
@@ -315,17 +329,18 @@ inline LiteRtStatus InferStridedSlice(const ShapeInferenceContext& ctx,
   // 1D / scalar data propagation for constant/transient input buffers.
   auto in_data = ctx.GetInputData(0);
   if (!in_data.empty() && indices_known && input_shape.size() == 1 &&
-      processing_dims == 1) {
+      processing_dims == 1 && input_shape[0] >= 0) {
     LiteRtElementType in_elem_type = ctx.GetInputElementType(0);
     bool in_is_int64 = (in_elem_type == kLiteRtElementTypeInt64) ||
-                       (in_data.size() == input_shape[0] * sizeof(int64_t));
+                       (in_data.size() ==
+                        static_cast<size_t>(input_shape[0]) * sizeof(int64_t));
 
     int64_t dim_size = input_shape[0];
     int64_t stride = strides_vec[0];
     int64_t start = begin_vec[0];
     int64_t stop = end_vec[0];
 
-    if (start < 0) start += dim_size;
+    if (start < 0 && !SafeAdd(start, dim_size, start)) start = -1;
     if (stride > 0) {
       start = std::clamp(start, int64_t{0}, dim_size);
     } else {
@@ -333,7 +348,7 @@ inline LiteRtStatus InferStridedSlice(const ShapeInferenceContext& ctx,
     }
     if (begin_mask & 1) start = (stride > 0) ? 0 : dim_size - 1;
 
-    if (stop < 0) stop += dim_size;
+    if (stop < 0 && !SafeAdd(stop, dim_size, stop)) stop = -1;
     if (stride > 0) {
       stop = std::clamp(stop, int64_t{0}, dim_size);
     } else {
@@ -362,11 +377,11 @@ inline LiteRtStatus InferStridedSlice(const ShapeInferenceContext& ctx,
         const int64_t* in_ptr =
             reinterpret_cast<const int64_t*>(in_data.data());
         std::vector<int64_t> sliced_vals;
-        for (int64_t idx = start; (stride > 0) ? (idx < stop) : (idx > stop);
-             idx += stride) {
+        for (int64_t idx = start; (stride > 0) ? (idx < stop) : (idx > stop);) {
           if (idx >= 0 && idx < dim_size) {
             sliced_vals.push_back(in_ptr[idx]);
           }
+          if (!SafeAdd(idx, stride, idx)) break;
         }
         std::vector<uint8_t> out_bytes(sliced_vals.size() * sizeof(int64_t));
         std::memcpy(out_bytes.data(), sliced_vals.data(), out_bytes.size());
@@ -376,11 +391,11 @@ inline LiteRtStatus InferStridedSlice(const ShapeInferenceContext& ctx,
         const int32_t* in_ptr =
             reinterpret_cast<const int32_t*>(in_data.data());
         std::vector<int32_t> sliced_vals;
-        for (int64_t idx = start; (stride > 0) ? (idx < stop) : (idx > stop);
-             idx += stride) {
+        for (int64_t idx = start; (stride > 0) ? (idx < stop) : (idx > stop);) {
           if (idx >= 0 && idx < dim_size) {
             sliced_vals.push_back(in_ptr[idx]);
           }
+          if (!SafeAdd(idx, stride, idx)) break;
         }
         std::vector<uint8_t> out_bytes(sliced_vals.size() * sizeof(int32_t));
         std::memcpy(out_bytes.data(), sliced_vals.data(), out_bytes.size());
@@ -414,7 +429,8 @@ inline LiteRtStatus InferDynamicUpdateSlice(const LiteRtOpT& op,
   constexpr int kStartIndicesRank = 1;
 
   // Inputs: Operand, Update, StartIndices.
-  if (input_shapes.size() != kDynamicUpdateSliceNumArgs) {
+  if (input_shapes.size() != kDynamicUpdateSliceNumArgs ||
+      output_shapes.size() != 1) {
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
