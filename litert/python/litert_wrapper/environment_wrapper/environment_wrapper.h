@@ -24,7 +24,8 @@ namespace litert::environment_wrapper {
 // Creates a Python capsule that owns a LiteRT Environment.
 PyObject* CreateEnvironment(const char* runtime_path,
                             const char* compiler_plugin_path,
-                            const char* dispatch_library_path);
+                            const char* dispatch_library_path,
+                            const char* compiler_cache_dir = nullptr);
 
 // Reports an error by setting a Python exception.
 PyObject* ReportError(const std::string& msg);
