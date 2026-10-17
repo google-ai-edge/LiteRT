@@ -17,7 +17,8 @@
 def CreateEnvironment(
         runtime_path: str = ...,
         compiler_plugin_path: str = ...,
-        dispatch_library_path: str = ...
+        dispatch_library_path: str = ...,
+        compiler_cache_dir: str = ...
 ) -> object:
     """Creates a LiteRT environment capsule."""
     ...
