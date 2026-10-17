@@ -90,6 +90,7 @@ cc_library(
         ":litert_concrete_options_base",
         "//litert/c:litert_common",
         "//litert/c/options:litert_compiler_options",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
     ],
@@ -106,6 +107,7 @@ cc_test(
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
         "//litert/test:matchers",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )

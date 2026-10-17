@@ -77,6 +77,8 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 

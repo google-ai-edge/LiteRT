@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 #include "absl/flags/declare.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -38,6 +39,12 @@ std::string AbslUnparseFlag(
     LiteRtCompilerOptionsPartitionStrategy partition_strategy);
 
 ABSL_DECLARE_FLAG(size_t, compiler_options_max_partitions);
+
+// Input shape flags for compiler options.
+ABSL_DECLARE_FLAG(std::vector<std::string>, input);
+ABSL_DECLARE_FLAG(std::string, signature);
+ABSL_DECLARE_FLAG(std::vector<std::string>, input_name);
+ABSL_DECLARE_FLAG(std::vector<std::string>, signature_name);
 
 namespace litert {
 

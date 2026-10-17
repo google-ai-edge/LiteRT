@@ -16,7 +16,11 @@
 
 #include "litert/cc/options/litert_compiler_options.h"
 
+#include <cstdint>
+#include <string>
+
 #include <gtest/gtest.h>
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_compiler_options.h"
@@ -64,6 +68,54 @@ TEST(CompilerOptionsTest, SetAndGetPartitionStrategyReturnsSetValue) {
                               options.GetPartitionStrategy());
   EXPECT_EQ(partition_strategy,
             kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
+}
+
+TEST(CompilerOptionsTest, AddInputShapesSerializeToToml) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CompilerOptions::Create());
+
+  const int32_t image[] = {1, 224, 224, 3};
+  const int32_t tokens[] = {1, -1};
+  LITERT_EXPECT_OK(options.AddPositionalInputShape(absl::MakeConstSpan(image)));
+  LITERT_EXPECT_OK(options.AddPositionalInputShape(
+      "serving_default", absl::MakeConstSpan(tokens)));
+  LITERT_EXPECT_OK(
+      options.AddTensorInputShape("arg0", absl::MakeConstSpan(image)));
+  LITERT_EXPECT_OK(options.AddTensorInputShape("serving_default", "arg0",
+                                               absl::MakeConstSpan(image)));
+  LITERT_EXPECT_OK(
+      options.AddSignatureInputShape("image", absl::MakeConstSpan(image)));
+  LITERT_EXPECT_OK(options.AddSignatureInputShape("decode", "tokens",
+                                                  absl::MakeConstSpan(tokens)));
+
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueCompilerOptionsData(options.Get(), &identifier,
+                                            &payload, &payload_deleter),
+            kLiteRtStatusOk);
+  const std::string toml_str = static_cast<const char*>(payload);
+  payload_deleter(payload);
+
+  EXPECT_EQ(toml_str,
+            "positional_input_shapes = [\"@1:224:224:3\", "
+            "\"serving_default@1:-1\"]\n"
+            "tensor_input_shapes = [\"@arg0@1:224:224:3\", "
+            "\"serving_default@arg0@1:224:224:3\"]\n"
+            "signature_input_shapes = [\"@image@1:224:224:3\", "
+            "\"decode@tokens@1:-1\"]\n");
+}
+
+TEST(CompilerOptionsTest, AddInputShapesRejectInvalidArgs) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CompilerOptions::Create());
+
+  const int32_t shape[] = {1, 2};
+  EXPECT_FALSE(options.AddPositionalInputShape({}).HasValue());
+  EXPECT_FALSE(
+      options.AddTensorInputShape("", absl::MakeConstSpan(shape)).HasValue());
+  EXPECT_FALSE(options.AddTensorInputShape("arg0", {}).HasValue());
+  EXPECT_FALSE(options.AddSignatureInputShape("", absl::MakeConstSpan(shape))
+                   .HasValue());
+  EXPECT_FALSE(options.AddSignatureInputShape("image", {}).HasValue());
 }
 
 }  // namespace

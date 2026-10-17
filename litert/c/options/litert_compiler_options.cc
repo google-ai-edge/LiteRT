@@ -15,10 +15,14 @@
 #include "litert/c/options/litert_compiler_options.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <vector>
 
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 
@@ -26,7 +30,34 @@ struct LrtCompilerOptions {
   std::optional<LiteRtCompilerOptionsPartitionStrategy> partition_strategy;
   std::optional<bool> dummy_option;
   std::optional<size_t> max_partitions;
+  std::vector<std::string> positional_input_shapes;
+  std::vector<std::string> tensor_input_shapes;
+  std::vector<std::string> signature_input_shapes;
 };
+
+namespace {
+
+std::string FormatDims(const int32_t* dims, size_t rank) {
+  std::ostringstream oss;
+  for (size_t i = 0; i < rank; ++i) {
+    if (i > 0) oss << ":";
+    oss << dims[i];
+  }
+  return oss.str();
+}
+
+void WriteTomlStringArray(std::stringstream& ss, const char* key,
+                          const std::vector<std::string>& values) {
+  if (values.empty()) return;
+  ss << key << " = [";
+  for (size_t i = 0; i < values.size(); ++i) {
+    if (i > 0) ss << ", ";
+    ss << "\"" << values[i] << "\"";
+  }
+  ss << "]\n";
+}
+
+}  // namespace
 
 LiteRtStatus LrtCreateCompilerOptions(LrtCompilerOptions** options) {
   if (!options) {
@@ -65,6 +96,11 @@ LiteRtStatus LrtGetOpaqueCompilerOptionsData(const LrtCompilerOptions* options,
   if (options->max_partitions.has_value()) {
     ss << "max_partitions = " << options->max_partitions.value() << "\n";
   }
+  WriteTomlStringArray(ss, "positional_input_shapes",
+                       options->positional_input_shapes);
+  WriteTomlStringArray(ss, "tensor_input_shapes", options->tensor_input_shapes);
+  WriteTomlStringArray(ss, "signature_input_shapes",
+                       options->signature_input_shapes);
 
   *identifier = LrtGetCompilerOptionsIdentifier();
   std::string toml_str = ss.str();
@@ -129,5 +165,44 @@ LiteRtStatus LrtGetCompilerOptionsMaxPartitions(
     return kLiteRtStatusErrorNotFound;
   }
   *max_partitions = options->max_partitions.value();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtAddCompilerOptionsPositionalInputShape(
+    LrtCompilerOptions* options, const char* signature_key, const int32_t* dims,
+    size_t rank) {
+  if (!options || !dims || rank == 0) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const absl::string_view sig = signature_key ? signature_key : "";
+  options->positional_input_shapes.push_back(
+      absl::StrCat(sig, "@", FormatDims(dims, rank)));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtAddCompilerOptionsTensorInputShape(LrtCompilerOptions* options,
+                                                   const char* signature_key,
+                                                   const char* tensor_name,
+                                                   const int32_t* dims,
+                                                   size_t rank) {
+  if (!options || !tensor_name || tensor_name[0] == '\0' || !dims ||
+      rank == 0) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const absl::string_view sig = signature_key ? signature_key : "";
+  options->tensor_input_shapes.push_back(
+      absl::StrCat(sig, "@", tensor_name, "@", FormatDims(dims, rank)));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtAddCompilerOptionsSignatureInputShape(
+    LrtCompilerOptions* options, const char* signature_key,
+    const char* input_name, const int32_t* dims, size_t rank) {
+  if (!options || !input_name || input_name[0] == '\0' || !dims || rank == 0) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const absl::string_view sig = signature_key ? signature_key : "";
+  options->signature_input_shapes.push_back(
+      absl::StrCat(sig, "@", input_name, "@", FormatDims(dims, rank)));
   return kLiteRtStatusOk;
 }

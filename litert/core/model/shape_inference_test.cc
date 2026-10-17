@@ -27,6 +27,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -726,6 +727,190 @@ TEST(ShapeInferenceTest, StridedSliceUnregisteredBaseFailure) {
   EXPECT_EQ(engine.InferShapes(), kLiteRtStatusErrorShapeInferenceFailed);
 }
 
+TEST(ShapeInferenceTest, ApplyInputShapesPositional) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+
+  auto& in0 = subgraph.EmplaceTensor();
+  in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 128}));
+  subgraph.Inputs().push_back(&in0);
+
+  auto& in1 = subgraph.EmplaceTensor();
+  in1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 128}));
+  subgraph.Inputs().push_back(&in1);
+
+  auto& out = subgraph.EmplaceTensor();
+  out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 128}));
+  subgraph.Outputs().push_back(&out);
+
+  AttachInput(&in0, op);
+  AttachInput(&in1, op);
+  AttachOutput(&out, op);
+
+  ShapeInferenceEngine engine(&model);
+  const std::vector<Dims> positional_shapes = {{4, 128}, {4, 128}};
+  auto res = engine.ApplyInputShapes("", absl::MakeConstSpan(positional_shapes),
+                                     {}, {});
+  ASSERT_TRUE(res.HasValue());
+
+  EXPECT_EQ(in0.Type().second.ranked_tensor_type.layout.dimensions[0], 4);
+  EXPECT_EQ(in1.Type().second.ranked_tensor_type.layout.dimensions[0], 4);
+  EXPECT_EQ(out.Type().second.ranked_tensor_type.layout.dimensions[0], 4);
+  EXPECT_EQ(out.Type().second.ranked_tensor_type.layout.dimensions[1], 128);
+}
+
+TEST(ShapeInferenceTest, ApplyInputShapesByTensorName) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+
+  auto& in0 = subgraph.EmplaceTensor();
+  in0.SetName("arg0");
+  in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 64}));
+  subgraph.Inputs().push_back(&in0);
+
+  auto& in1 = subgraph.EmplaceTensor();
+  in1.SetName("arg1");
+  in1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 64}));
+  subgraph.Inputs().push_back(&in1);
+
+  auto& out = subgraph.EmplaceTensor();
+  out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 64}));
+  subgraph.Outputs().push_back(&out);
+
+  AttachInput(&in0, op);
+  AttachInput(&in1, op);
+  AttachOutput(&out, op);
+
+  ShapeInferenceEngine engine(&model);
+  const std::vector<std::pair<std::string, Dims>> tensor_shapes = {
+      {"arg0", {2, 64}}, {"arg1", {2, 64}}};
+  auto res =
+      engine.ApplyInputShapes("", {}, absl::MakeConstSpan(tensor_shapes), {});
+  ASSERT_TRUE(res.HasValue());
+
+  EXPECT_EQ(in0.Type().second.ranked_tensor_type.layout.dimensions[0], 2);
+  EXPECT_EQ(out.Type().second.ranked_tensor_type.layout.dimensions[0], 2);
+  EXPECT_EQ(out.Type().second.ranked_tensor_type.layout.dimensions[1], 64);
+}
+
+TEST(ShapeInferenceTest, ApplyInputShapesBySignatureKeyAndInputName) {
+  LiteRtModelT model;
+
+  // Subgraph 0: prefill
+  auto& sg_prefill = model.EmplaceSubgraph();
+  auto& op_prefill = sg_prefill.EmplaceOp();
+  op_prefill.SetOpCode(kLiteRtOpCodeTflAdd);
+  auto& in_prefill0 = sg_prefill.EmplaceTensor();
+  in_prefill0.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 512}));
+  sg_prefill.Inputs().push_back(&in_prefill0);
+  auto& in_prefill1 = sg_prefill.EmplaceTensor();
+  in_prefill1.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 512}));
+  sg_prefill.Inputs().push_back(&in_prefill1);
+  auto& out_prefill = sg_prefill.EmplaceTensor();
+  out_prefill.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 512}));
+  sg_prefill.Outputs().push_back(&out_prefill);
+  AttachInput(&in_prefill0, op_prefill);
+  AttachInput(&in_prefill1, op_prefill);
+  AttachOutput(&out_prefill, op_prefill);
+
+  model.EmplaceSignature(&sg_prefill,
+                         std::vector<std::string>{"tokens", "other"},
+                         std::vector<LiteRtTensor>{&in_prefill0, &in_prefill1},
+                         std::vector<std::string>{"out"},
+                         std::vector<LiteRtTensor>{&out_prefill}, "prefill");
+
+  // Subgraph 1: decode
+  auto& sg_decode = model.EmplaceSubgraph();
+  auto& op_decode = sg_decode.EmplaceOp();
+  op_decode.SetOpCode(kLiteRtOpCodeTflAdd);
+  auto& in_decode0 = sg_decode.EmplaceTensor();
+  in_decode0.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 512}));
+  sg_decode.Inputs().push_back(&in_decode0);
+  auto& in_decode1 = sg_decode.EmplaceTensor();
+  in_decode1.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 512}));
+  sg_decode.Inputs().push_back(&in_decode1);
+  auto& out_decode = sg_decode.EmplaceTensor();
+  out_decode.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 512}));
+  sg_decode.Outputs().push_back(&out_decode);
+  AttachInput(&in_decode0, op_decode);
+  AttachInput(&in_decode1, op_decode);
+  AttachOutput(&out_decode, op_decode);
+
+  model.EmplaceSignature(&sg_decode,
+                         std::vector<std::string>{"tokens", "other"},
+                         std::vector<LiteRtTensor>{&in_decode0, &in_decode1},
+                         std::vector<std::string>{"out"},
+                         std::vector<LiteRtTensor>{&out_decode}, "decode");
+
+  ShapeInferenceEngine engine(&model);
+  const std::vector<std::pair<std::string, Dims>> prefill_inputs = {
+      {"tokens", {1, 512}}, {"other", {1, 512}}};
+  const std::vector<std::pair<std::string, Dims>> decode_inputs = {
+      {"tokens", {1, 1}}, {"other", {1, 1}}};
+
+  auto res1 = engine.ApplyInputShapes("prefill", {}, {},
+                                      absl::MakeConstSpan(prefill_inputs));
+  ASSERT_TRUE(res1.HasValue());
+  EXPECT_EQ(out_prefill.Type().second.ranked_tensor_type.layout.dimensions[0],
+            1);
+  EXPECT_EQ(out_prefill.Type().second.ranked_tensor_type.layout.dimensions[1],
+            512);
+
+  auto res2 = engine.ApplyInputShapes("decode", {}, {},
+                                      absl::MakeConstSpan(decode_inputs));
+  ASSERT_TRUE(res2.HasValue());
+  EXPECT_EQ(out_decode.Type().second.ranked_tensor_type.layout.dimensions[0],
+            1);
+  EXPECT_EQ(out_decode.Type().second.ranked_tensor_type.layout.dimensions[1],
+            1);
+}
+
+TEST(ShapeInferenceTest, ApplyInputShapesRejectsInvalidInputs) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& in0 = subgraph.EmplaceTensor();
+  in0.SetName("arg0");
+  in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 64}));
+  subgraph.Inputs().push_back(&in0);
+
+  ShapeInferenceEngine engine(&model);
+  // No inputs
+  EXPECT_FALSE(engine.ApplyInputShapes("", {}, {}, {}).HasValue());
+  // Mutually exclusive methods
+  const std::vector<Dims> pos = {{1, 64}};
+  const std::vector<std::pair<std::string, Dims>> named = {{"arg0", {1, 64}}};
+  EXPECT_FALSE(engine
+                   .ApplyInputShapes("", absl::MakeConstSpan(pos),
+                                     absl::MakeConstSpan(named), {})
+                   .HasValue());
+  // Positional count mismatch
+  const std::vector<Dims> pos_wrong = {{1, 64}, {1, 64}};
+  EXPECT_FALSE(
+      engine.ApplyInputShapes("", absl::MakeConstSpan(pos_wrong), {}, {})
+          .HasValue());
+  // Missing signature
+  EXPECT_FALSE(
+      engine
+          .ApplyInputShapes("nonexistent_sig", absl::MakeConstSpan(pos), {}, {})
+          .HasValue());
+  // Missing tensor name
+  const std::vector<std::pair<std::string, Dims>> bad_named = {
+      {"nonexistent_tensor", {1, 64}}};
+  EXPECT_FALSE(
+      engine.ApplyInputShapes("", {}, absl::MakeConstSpan(bad_named), {})
+          .HasValue());
+}
+
 TEST(ShapeInferenceTest,
      InferCompositeOpShapesPropagatesToDecompositionSubgraph) {
   LiteRtModelT model;
@@ -789,6 +974,58 @@ TEST(ShapeInferenceTest,
   EXPECT_EQ(m_out.Type().second.ranked_tensor_type.layout.dimensions[1], 16);
   EXPECT_EQ(d_in0.Type().second.ranked_tensor_type.layout.dimensions[0], 8);
   EXPECT_EQ(d_out.Type().second.ranked_tensor_type.layout.dimensions[0], 8);
+}
+
+TEST(ShapeInferenceTest, ApplyInputShapesBySignatureNameWithoutSignatures) {
+  // Models without signatures get a synthesized default signature whose input
+  // names are the tensor names.
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+  auto& in0 = subgraph.EmplaceTensor();
+  in0.SetName("x");
+  in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 4}));
+  auto& in1 = subgraph.EmplaceTensor();
+  in1.SetName("y");
+  in1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 4}));
+  auto& out = subgraph.EmplaceTensor();
+  out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 4}));
+  subgraph.Inputs() = {&in0, &in1};
+  subgraph.Outputs() = {&out};
+  AttachInput(&in0, op);
+  AttachInput(&in1, op);
+  AttachOutput(&out, op);
+
+  ShapeInferenceEngine engine(&model);
+  const std::vector<std::pair<std::string, Dims>> sig_inputs = {{"x", {3, 4}},
+                                                                {"y", {3, 4}}};
+  ASSERT_TRUE(
+      engine.ApplyInputShapes("", {}, {}, absl::MakeConstSpan(sig_inputs))
+          .HasValue());
+  EXPECT_EQ(out.Type().second.ranked_tensor_type.layout.dimensions[0], 3);
+}
+
+TEST(ShapeInferenceTest, ApplyInputShapesRejectsInvalidDims) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& in0 = subgraph.EmplaceTensor();
+  in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 4}));
+  subgraph.Inputs().push_back(&in0);
+
+  ShapeInferenceEngine engine(&model);
+  // Dimension below -1.
+  const std::vector<Dims> negative = {{-2, 4}};
+  EXPECT_FALSE(
+      engine.ApplyInputShapes("", absl::MakeConstSpan(negative), {}, {})
+          .HasValue());
+  // Rank beyond LITERT_TENSOR_MAX_RANK.
+  const std::vector<Dims> too_deep = {Dims(LITERT_TENSOR_MAX_RANK + 1, 1)};
+  EXPECT_FALSE(
+      engine.ApplyInputShapes("", absl::MakeConstSpan(too_deep), {}, {})
+          .HasValue());
+  // Original shape must be untouched after rejected updates.
+  EXPECT_EQ(in0.Type().second.ranked_tensor_type.layout.dimensions[0], -1);
 }
 
 TEST(ShapeInferenceTest, CompositeOpWithInvalidDecompositionIndexFails) {
