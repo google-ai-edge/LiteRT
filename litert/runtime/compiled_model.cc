@@ -905,9 +905,13 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     model_directory_.reset();
   }
 
-  // If hardware acceleration is requested then apply the plugins to the model
-  // and initialize the compiled model from the translated LiteRt model.
-  if (hw_accelerators != kLiteRtHwAcceleratorNone) {
+  // If hardware acceleration that a compiler plugin can target is requested
+  // then apply the plugins to the model and initialize the compiled model from
+  // the translated LiteRt model. Compiler plugins only target NPU/GPU (see
+  // LiteRtGetCompilerPluginSupportedHardware), so they are not loaded for
+  // CPU-only requests, which would otherwise pay their initialization cost and
+  // log errors when a plugin's vendor SDK is not installed.
+  if (hw_accelerators & (kLiteRtHwAcceleratorNpu | kLiteRtHwAcceleratorGpu)) {
 #if !defined(LITERT_DISABLE_NPU)
     // Check if the model is pre-compiled by looking for LiteRt build stamp.
     // Fall through to the next step if it's pre-compiled, else try to apply
