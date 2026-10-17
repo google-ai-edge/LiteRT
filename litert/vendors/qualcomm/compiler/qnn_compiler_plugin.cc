@@ -54,6 +54,7 @@
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
 #include "litert/vendors/qualcomm/compiler/transformations/attention_chunk_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/dequantize_quantize_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/entry_embedding_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/legalize_int32_ops_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/mlp_quant_transformation.h"
@@ -795,6 +796,7 @@ struct GraphTransformFilter {
   bool mlp_quant = false;
   bool attention_chunk = false;
   bool rope = false;
+  bool dequant_quant = false;
 
   static GraphTransformFilter FromOptions(absl::string_view graph_transform) {
     GraphTransformFilter filter;
@@ -816,6 +818,7 @@ struct GraphTransformFilter {
         filter.mlp_quant = enable;
         filter.attention_chunk = enable;
         filter.rope = enable;
+        filter.dequant_quant = enable;
       } else if (token == "experimental_legalize") {
         filter.legalize_int32_sign = enable;
         filter.legalize_int32_reduce_max = enable;
@@ -836,6 +839,8 @@ struct GraphTransformFilter {
         filter.attention_chunk = enable;
       } else if (token == "rope") {
         filter.rope = enable;
+      } else if (token == "dequant_quant") {
+        filter.dequant_quant = enable;
       }
     }
     return filter;
@@ -858,6 +863,14 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
 
   const auto filter = GraphTransformFilter::FromOptions(
       compiler_plugin->Options().GetGraphTransform());
+
+  if (filter.dequant_quant) {
+    compiler_plugin->Transformations().push_back({
+        &DequantizeQuantizeTransformation,
+        "DequantizeQuantizeTransformation",
+        100,
+    });
+  }
 
   if (filter.legalize_int32_sign) {
     compiler_plugin->Transformations().push_back({
