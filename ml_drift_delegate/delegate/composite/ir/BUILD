@@ -18,8 +18,9 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = [
-        "//ml_drift_delegate/delegate:__subpackages__",
         "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
+        "//ml_drift_delegate/delegate:__subpackages__",
+        # copybara:uncomment "//third_party/py/ai_edge_jax/generative/backends/cpu_gpu/compat:__subpackages__",
     ],
 )
 

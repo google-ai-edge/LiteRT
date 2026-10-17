@@ -20,9 +20,10 @@ load("@rules_cc//cc:objc_library.bzl", "objc_library")
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = [
+        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
         "//ml_drift_delegate/delegate:__subpackages__",
         "//ml_drift_delegate/tflite:__subpackages__",
-        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
+        # copybara:uncomment "//third_party/py/ai_edge_jax/generative/backends/cpu_gpu/compat:__subpackages__",
     ],
 )
 
