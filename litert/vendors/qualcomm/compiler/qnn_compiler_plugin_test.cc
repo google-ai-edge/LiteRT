@@ -720,7 +720,7 @@ TEST(TestQnnPlugin, TransformationsEnableAll) {
   LiteRtParamIndex num_transformations = 0;
   LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
       plugin.get(), &transformations, &num_transformations));
-  EXPECT_EQ(num_transformations, 8);
+  EXPECT_EQ(num_transformations, 12);
 }
 
 TEST(TestQnnPlugin, TransformationsEnableLegalizeTransforms) {
@@ -787,9 +787,10 @@ TEST(TestQnnPlugin, TransformationsSelectiveEnableAndDisable) {
   LiteRtParamIndex num_transformations = 0;
   LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
       plugin.get(), &transformations, &num_transformations));
-  // Sign, ReduceMax, EntryEmbedding, EntryEmbeddingTrigFold, OrphanCleanup
-  // should be registered (5 total).
-  EXPECT_EQ(num_transformations, 5);
+  // ConvertFcToHadamardTransform, ParallelizeHadamardTransform,
+  // SimplifyMaskingAdd, GqaAttention, Sign, ReduceMax, EntryEmbedding,
+  // EntryEmbeddingTrigFold, OrphanCleanup should be registered (9 total).
+  EXPECT_EQ(num_transformations, 9);
 }
 
 }  // namespace
