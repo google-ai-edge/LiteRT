@@ -33,6 +33,7 @@ EXPORTS
   LiteRtBuilderBuildConcatenationOpOption
   LiteRtBuilderBuildConv2dOpOption
   LiteRtBuilderBuildConv3dOpOption
+  LiteRtBuilderBuildConv3dTransposeOpOption
   LiteRtBuilderBuildCumsumOpOption
   LiteRtBuilderBuildDepthToSpaceOpOption
   LiteRtBuilderBuildDepthwiseConv2dOpOption
@@ -178,6 +179,14 @@ EXPORTS
   LiteRtGetConv3dStrideDOption
   LiteRtGetConv3dStrideHOption
   LiteRtGetConv3dStrideWOption
+  LiteRtGetConv3dTransposeDilationDOption
+  LiteRtGetConv3dTransposeDilationHOption
+  LiteRtGetConv3dTransposeDilationWOption
+  LiteRtGetConv3dTransposeFusedActivationOption
+  LiteRtGetConv3dTransposePaddingOption
+  LiteRtGetConv3dTransposeStrideDOption
+  LiteRtGetConv3dTransposeStrideHOption
+  LiteRtGetConv3dTransposeStrideWOption
   LiteRtGetCumsumExclusiveOption
   LiteRtGetCumsumReverseOption
   LiteRtGetDelegationMetricsAccelerator
