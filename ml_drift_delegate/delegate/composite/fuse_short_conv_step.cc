@@ -43,7 +43,6 @@ struct ShortConvStepMatch {
   int32_t conv_l_cache = 3;
 
   ::ml_drift::Value* in_proj_val = nullptr;
-  ::ml_drift::Value* conv_state_val = nullptr;
   ::ml_drift::Value* conv_weight_val = nullptr;
   ::ml_drift::Value* conv_bias_val = nullptr;
 
@@ -387,7 +386,6 @@ absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph) {
 
     ShortConvStepMatch match;
     match.in_proj_val = in_proj_val;
-    match.conv_state_val = conv_state_val;
     match.conv_weight_val = conv_weight_val;
     match.conv_bias_val = conv_bias_val;
     match.weight_shape = weight_shape;
@@ -446,9 +444,9 @@ absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph) {
     attr.conv_L_cache = match.conv_l_cache;
     fused_node->operation.attributes = std::move(attr);
 
-    // Inputs: in_proj, conv_state, conv_weight, (conv_bias)
+    // Inputs: in_proj, conv_weight, (conv_bias).
+    // conv_state is omitted so the GPU kernel updates next_state in-place.
     graph->AddConsumer(fused_node->id, match.in_proj_val->id);
-    graph->AddConsumer(fused_node->id, match.conv_state_val->id);
     graph->AddConsumer(fused_node->id, conv_weight_val->id);
     if (match.conv_bias_val) {
       graph->AddConsumer(fused_node->id, match.conv_bias_val->id);
@@ -477,7 +475,6 @@ struct IrShortConvStepMatch {
   int32_t conv_l_cache = 3;
 
   ::ml_drift::ir::IrTensorId in_proj_id = 0;
-  ::ml_drift::ir::IrTensorId conv_state_id = 0;
   ::ml_drift::ir::IrTensorId conv_weight_id = 0;
   std::optional<::ml_drift::ir::IrTensorId> conv_bias_id;
 
@@ -832,7 +829,6 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
 
     IrShortConvStepMatch match;
     match.in_proj_id = in_proj_tid;
-    match.conv_state_id = conv_state_tid;
     match.conv_weight_id = conv_weight_tid;
     match.conv_bias_id = conv_bias_tid;
     match.final_out_id = final_out_tid;
@@ -891,7 +887,6 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
     fused_op->attr = std::move(attr);
 
     model->AddConsumer(match.in_proj_id, fused_op->id);
-    model->AddConsumer(match.conv_state_id, fused_op->id);
     model->AddConsumer(conv_weight_tid, fused_op->id);
     if (match.conv_bias_id.has_value()) {
       model->AddConsumer(*match.conv_bias_id, fused_op->id);

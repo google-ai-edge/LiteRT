@@ -35,6 +35,7 @@
 #include "ml_drift/common/kernel_info.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
+#include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/tuning_type.h"  // from @ml_drift
 #include "ml_drift/common/types.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/gated_delta_update_parser.h"
@@ -207,25 +208,25 @@ class GatedDeltaUpdateOp : public ::ml_drift::GPUOperation {
 //   int b = ucl::GetGroupId<2>();
 //
 //   int k_base_0 = k_lane * 4;
-//   float4 s0_0 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_0 + 0, h, v_slice, b));
-//   float4 s1_0 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_0 + 1, h, v_slice, b));
-//   float4 s2_0 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_0 + 2, h, v_slice, b));
-//   float4 s3_0 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_0 + 3, h, v_slice, b));
+//   float4 s0_0 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_0 + 0, h, v_slice, b));
+//   float4 s1_0 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_0 + 1, h, v_slice, b));
+//   float4 s2_0 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_0 + 2, h, v_slice, b));
+//   float4 s3_0 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_0 + 3, h, v_slice, b));
 //   int k_base_1 = (k_lane + 1 * 8) * 4;
-//   float4 s0_1 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_1 + 0, h, v_slice, b));
-//   float4 s1_1 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_1 + 1, h, v_slice, b));
-//   float4 s2_1 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_1 + 2, h, v_slice, b));
-//   float4 s3_1 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_1 + 3, h, v_slice, b));
+//   float4 s0_1 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_1 + 0, h, v_slice, b));
+//   float4 s1_1 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_1 + 1, h, v_slice, b));
+//   float4 s2_1 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_1 + 2, h, v_slice, b));
+//   float4 s3_1 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_1 + 3, h, v_slice, b));
 //   int k_base_2 = (k_lane + 2 * 8) * 4;
-//   float4 s0_2 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_2 + 0, h, v_slice, b));
-//   float4 s1_2 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_2 + 1, h, v_slice, b));
-//   float4 s2_2 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_2 + 2, h, v_slice, b));
-//   float4 s3_2 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_2 + 3, h, v_slice, b));
+//   float4 s0_2 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_2 + 0, h, v_slice, b));
+//   float4 s1_2 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_2 + 1, h, v_slice, b));
+//   float4 s2_2 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_2 + 2, h, v_slice, b));
+//   float4 s3_2 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_2 + 3, h, v_slice, b));
 //   int k_base_3 = (k_lane + 3 * 8) * 4;
-//   float4 s0_3 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_3 + 0, h, v_slice, b));
-//   float4 s1_3 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_3 + 1, h, v_slice, b));
-//   float4 s2_3 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_3 + 2, h, v_slice, b));
-//   float4 s3_3 = ucl::Convert<float4>(args.recurrent_state_in.Read(k_base_3 + 3, h, v_slice, b));
+//   float4 s0_3 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_3 + 0, h, v_slice, b));
+//   float4 s1_3 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_3 + 1, h, v_slice, b));
+//   float4 s2_3 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_3 + 2, h, v_slice, b));
+//   float4 s3_3 = ucl::Convert<float4>(args.recurrent_state_out.Read(k_base_3 + 3, h, v_slice, b));
 //
 //   // Process sequence length sequentially
 //   for (int t = 0; t < 128; ++t) {
@@ -423,25 +424,25 @@ class GatedDeltaUpdateOp : public ::ml_drift::GPUOperation {
 //   int b = ucl::GetGroupId<2>();
 //
 //   int k_base_0 = k_lane * 4;
-//   vec4<f32> s0_0 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_0 + 0, h, v_slice, b));
-//   vec4<f32> s1_0 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_0 + 1, h, v_slice, b));
-//   vec4<f32> s2_0 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_0 + 2, h, v_slice, b));
-//   vec4<f32> s3_0 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_0 + 3, h, v_slice, b));
+//   vec4<f32> s0_0 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_0 + 0, h, v_slice, b));
+//   vec4<f32> s1_0 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_0 + 1, h, v_slice, b));
+//   vec4<f32> s2_0 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_0 + 2, h, v_slice, b));
+//   vec4<f32> s3_0 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_0 + 3, h, v_slice, b));
 //   int k_base_1 = (k_lane + 1 * 8) * 4;
-//   vec4<f32> s0_1 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_1 + 0, h, v_slice, b));
-//   vec4<f32> s1_1 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_1 + 1, h, v_slice, b));
-//   vec4<f32> s2_1 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_1 + 2, h, v_slice, b));
-//   vec4<f32> s3_1 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_1 + 3, h, v_slice, b));
+//   vec4<f32> s0_1 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_1 + 0, h, v_slice, b));
+//   vec4<f32> s1_1 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_1 + 1, h, v_slice, b));
+//   vec4<f32> s2_1 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_1 + 2, h, v_slice, b));
+//   vec4<f32> s3_1 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_1 + 3, h, v_slice, b));
 //   int k_base_2 = (k_lane + 2 * 8) * 4;
-//   vec4<f32> s0_2 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_2 + 0, h, v_slice, b));
-//   vec4<f32> s1_2 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_2 + 1, h, v_slice, b));
-//   vec4<f32> s2_2 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_2 + 2, h, v_slice, b));
-//   vec4<f32> s3_2 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_2 + 3, h, v_slice, b));
+//   vec4<f32> s0_2 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_2 + 0, h, v_slice, b));
+//   vec4<f32> s1_2 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_2 + 1, h, v_slice, b));
+//   vec4<f32> s2_2 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_2 + 2, h, v_slice, b));
+//   vec4<f32> s3_2 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_2 + 3, h, v_slice, b));
 //   int k_base_3 = (k_lane + 3 * 8) * 4;
-//   vec4<f32> s0_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_3 + 0, h, v_slice, b));
-//   vec4<f32> s1_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_3 + 1, h, v_slice, b));
-//   vec4<f32> s2_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_3 + 2, h, v_slice, b));
-//   vec4<f32> s3_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_in.Read(k_base_3 + 3, h, v_slice, b));
+//   vec4<f32> s0_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_3 + 0, h, v_slice, b));
+//   vec4<f32> s1_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_3 + 1, h, v_slice, b));
+//   vec4<f32> s2_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_3 + 2, h, v_slice, b));
+//   vec4<f32> s3_3 = ucl::Convert<vec4<f32>>(args.recurrent_state_out.Read(k_base_3 + 3, h, v_slice, b));
 //
 //   // Process sequence length sequentially
 //   for (int t = 0; t < 128; ++t) {
@@ -721,10 +722,10 @@ MAIN_FUNCTION($0) {
   // Each thread owns 4 rows along D_k (k_slice * 4 + {0, 1, 2, 3}) for this v_slice.
   // Held entirely in 4 registers. Zero register spilling.
   int k_base = k_slice * 4;
-  StateType s0 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 0, h, v_slice, b));
-  StateType s1 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 1, h, v_slice, b));
-  StateType s2 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 2, h, v_slice, b));
-  StateType s3 = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base + 3, h, v_slice, b));
+  StateType s0 = ucl::Convert<StateType>(args.recurrent_state_out.Read(k_base + 0, h, v_slice, b));
+  StateType s1 = ucl::Convert<StateType>(args.recurrent_state_out.Read(k_base + 1, h, v_slice, b));
+  StateType s2 = ucl::Convert<StateType>(args.recurrent_state_out.Read(k_base + 2, h, v_slice, b));
+  StateType s3 = ucl::Convert<StateType>(args.recurrent_state_out.Read(k_base + 3, h, v_slice, b));
 
   // Process sequence length sequentially
   for (int t = 0; t < SEQ_LEN_EXPR; ++t) {
@@ -807,10 +808,14 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
   const auto& v_t = definition.src_tensors[2];
   const auto& beta_t = definition.src_tensors[3];
   const auto& g_t = definition.src_tensors[4];
-  const auto& rec_state_in = definition.src_tensors[5];
 
   const auto& output = definition.dst_tensors[0];
   const auto& rec_state_out = definition.dst_tensors[1];
+  if (rec_state_out.GetStorageType() !=
+      ::ml_drift::TensorStorageType::kBuffer) {
+    return absl::InvalidArgumentError(
+        "gated_delta_update requires kBuffer storage for recurrent_state_out.");
+  }
 
   // Get dimensions from shape
   auto q_shape = q_t.GetBHWCShape();
@@ -865,7 +870,6 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
   op->AddSrcTensor("v_t", v_t);
   op->AddSrcTensor("beta_t", beta_t);
   op->AddSrcTensor("g_t", g_t);
-  op->AddSrcTensor("recurrent_state_in", rec_state_in);
 
   op->AddDstTensor("output", output);
   op->AddDstTensor("recurrent_state_out", rec_state_out);
@@ -896,14 +900,14 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
     state_init_decls +=
         "  int k_base_" + ms + " = " + k_slice_expr + " * 4;\n" +
         "  StateType s0_" + ms +
-        " = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base_" + ms +
-        " + 0, h, v_slice, b));\n" + "  StateType s1_" + ms +
-        " = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base_" + ms +
-        " + 1, h, v_slice, b));\n" + "  StateType s2_" + ms +
-        " = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base_" + ms +
-        " + 2, h, v_slice, b));\n" + "  StateType s3_" + ms +
-        " = ucl::Convert<StateType>(args.recurrent_state_in.Read(k_base_" + ms +
-        " + 3, h, v_slice, b));\n";
+        " = ucl::Convert<StateType>(args.recurrent_state_out.Read(k_base_" +
+        ms + " + 0, h, v_slice, b));\n" + "  StateType s1_" + ms +
+        " = ucl::Convert<StateType>(args.recurrent_state_out.Read(k_base_" +
+        ms + " + 1, h, v_slice, b));\n" + "  StateType s2_" + ms +
+        " = ucl::Convert<StateType>(args.recurrent_state_out.Read(k_base_" +
+        ms + " + 2, h, v_slice, b));\n" + "  StateType s3_" + ms +
+        " = ucl::Convert<StateType>(args.recurrent_state_out.Read(k_base_" +
+        ms + " + 3, h, v_slice, b));\n";
 
     decay_step += "    s0_" + ms + " = s0_" + ms + " * decay_vec;\n" +
                   "    s1_" + ms + " = s1_" + ms + " * decay_vec;\n" +
@@ -1045,8 +1049,8 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
        {"V_TILE", std::to_string(v_tile)},
        {"K_THREADS", std::to_string(k_threads)},
        {"StateScalarType",
-        ::ml_drift::ToUclDataType(rec_state_in.GetDataType(), 1)},
-       {"StateType", ::ml_drift::ToUclDataType(rec_state_in.GetDataType(), 4)},
+        ::ml_drift::ToUclDataType(rec_state_out.GetDataType(), 1)},
+       {"StateType", ::ml_drift::ToUclDataType(rec_state_out.GetDataType(), 4)},
        {"ActivationScalarType",
         ::ml_drift::ToUclDataType(output.GetDataType(), 1)},
        {"ActivationType", ::ml_drift::ToUclDataType(output.GetDataType(), 4)},

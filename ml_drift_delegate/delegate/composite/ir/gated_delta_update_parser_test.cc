@@ -85,7 +85,7 @@ TEST_F(ConvertGatedDeltaUpdateTest, BasicCustomOpConversion) {
   ASSERT_THAT(ir_model->ops(), SizeIs(1));
   const auto& op = ir_model->ops()[0];
   EXPECT_THAT(op->name, Eq("gated_delta_update"));
-  EXPECT_THAT(op->inputs, SizeIs(6));
+  EXPECT_THAT(op->inputs, SizeIs(5));
   EXPECT_THAT(op->outputs, SizeIs(2));
 
   const auto* attr =
