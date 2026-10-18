@@ -80,7 +80,6 @@ std::string BxExpr(absl::string_view token) {
 
 std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
     const ::ml_drift::TensorDescriptor& in_proj_desc,
-    const ::ml_drift::TensorDescriptor& conv_state_desc,
     const ::ml_drift::TensorDescriptor& conv_weight_desc,
     const ::ml_drift::TensorDescriptor* conv_bias_desc,
     const ::ml_drift::TensorDescriptor& dst_desc,
@@ -100,7 +99,6 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
   custom_op.args_.AddInt("has_bias", conv_bias_desc != nullptr ? 1 : 0);
 
   custom_op.AddSrcTensor("in_proj", in_proj_desc);
-  custom_op.AddSrcTensor("conv_state", conv_state_desc);
   custom_op.AddSrcTensor("conv_weight", conv_weight_desc);
   if (conv_bias_desc != nullptr) {
     custom_op.AddSrcTensor("conv_bias", *conv_bias_desc);
@@ -121,16 +119,16 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
     weight_read_expr = "args.conv_weight.Read(0, 0, 0, $0)";
   }
 
-  auto state_shape = conv_state_desc.GetBHWCShape();
+  auto state_shape = next_state_desc.GetBHWCShape();
   std::string state_read_expr;
   std::string next_state_write_expr;
   if (state_shape.w == hidden_size) {
-    state_read_expr = "args.conv_state.Read($0, 0, 0)";
+    state_read_expr = "args.next_state.Read($0, 0, 0)";
     next_state_write_expr =
         "args.next_state.Write(ucl::Convert<args.next_state::type>($0), $1, 0, "
         "0)";
   } else {
-    state_read_expr = "args.conv_state.Read(0, 0, 0, $0)";
+    state_read_expr = "args.next_state.Read(0, 0, 0, $0)";
     next_state_write_expr =
         "args.next_state.Write(ucl::Convert<args.next_state::type>($0), 0, 0, "
         "0, $1)";
@@ -165,7 +163,6 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
   // p - (L - 1) otherwise. Token t convolves the window padded[t : t + L].
   std::string c = "MAIN_FUNCTION($0) {\n";
   c += "  args.in_proj.SetBatchRef(0);\n";
-  c += "  args.conv_state.SetBatchRef(0);\n";
   c += "  args.conv_weight.SetBatchRef(0);\n";
   if (conv_bias_desc != nullptr) {
     c += "  args.conv_bias.SetBatchRef(0);\n";
@@ -319,8 +316,8 @@ absl::Status BuildShortConvStepGpuGraph(
     const std::vector<uint32_t>& output_ids,
     const ShortConvStepAttributes& attr,
     ::ml_drift::GpuModelBuilder* model_builder) {
-  if (input_ids.size() < 3 || input_ids.size() > 5) {
-    return absl::InvalidArgumentError("ShortConvStep expects 3 to 5 inputs.");
+  if (input_ids.size() < 2 || input_ids.size() > 4) {
+    return absl::InvalidArgumentError("ShortConvStep expects 2 to 4 inputs.");
   }
   if (output_ids.size() != 2) {
     return absl::InvalidArgumentError("ShortConvStep expects 2 outputs.");
@@ -332,16 +329,14 @@ absl::Status BuildShortConvStepGpuGraph(
   }
 
   ABSL_ASSIGN_OR_RETURN(auto in_proj, model_builder->GetTensor(input_ids[0]));
-  ABSL_ASSIGN_OR_RETURN(auto conv_state,
-                        model_builder->GetTensor(input_ids[1]));
   ABSL_ASSIGN_OR_RETURN(auto conv_weight,
-                        model_builder->GetTensor(input_ids[2]));
+                        model_builder->GetTensor(input_ids[1]));
 
   std::optional<::ml_drift::TensorHandle> conv_bias;
   const ::ml_drift::TensorDescriptor* conv_bias_desc = nullptr;
   std::optional<::ml_drift::TensorHandle> num_valid_tokens;
   const ::ml_drift::TensorDescriptor* num_valid_tokens_desc = nullptr;
-  for (size_t i = 3; i < input_ids.size(); ++i) {
+  for (size_t i = 2; i < input_ids.size(); ++i) {
     ABSL_ASSIGN_OR_RETURN(auto extra_input,
                           model_builder->GetTensor(input_ids[i]));
     if (extra_input.tensor_desc.GetDataType() == ::ml_drift::DataType::kInt32) {
@@ -361,16 +356,17 @@ absl::Status BuildShortConvStepGpuGraph(
   dst_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, in_proj_shape.w, hidden_size));
   auto dst = model_builder->AddTensor(dst_desc);
 
-  auto next_state_desc = conv_state.tensor_desc;
+  ABSL_ASSIGN_OR_RETURN(auto next_state_ref,
+                        model_builder->GetTensor(output_ids[1]));
+  auto next_state_desc = next_state_ref.tensor_desc;
   auto next_state = model_builder->AddTensor(next_state_desc);
 
   auto op = CreateFusedShortConvStep(
-      in_proj.tensor_desc, conv_state.tensor_desc, conv_weight.tensor_desc,
-      conv_bias_desc, dst_desc, next_state_desc, num_slices, hidden_size,
-      attr.conv_L_cache, num_valid_tokens_desc);
+      in_proj.tensor_desc, conv_weight.tensor_desc, conv_bias_desc, dst_desc,
+      next_state_desc, num_slices, hidden_size, attr.conv_L_cache,
+      num_valid_tokens_desc);
 
-  std::vector<::ml_drift::TensorHandle> src_tensors = {in_proj, conv_state,
-                                                       conv_weight};
+  std::vector<::ml_drift::TensorHandle> src_tensors = {in_proj, conv_weight};
   if (conv_bias.has_value()) {
     src_tensors.push_back(*conv_bias);
   }
@@ -382,17 +378,6 @@ absl::Status BuildShortConvStepGpuGraph(
                                  "short_conv_step");
 
   ABSL_RETURN_IF_ERROR(model_builder->UpdateOutputTensor(dst, output_ids[0]));
-  if (model_builder->gpu_info().IsApiWebGpu()) {
-    // WebGPU forbids binding the same buffer as both read-only (`conv_state`)
-    // and read-write (`next_state`) in a single compute dispatch when the
-    // runtime aliases input and output state buffers in-place. Write
-    // `next_state` to an intermediate tensor and copy it to the graph output.
-    ABSL_ASSIGN_OR_RETURN(auto out_state_ref,
-                          model_builder->GetTensor(output_ids[1]));
-    auto out_state = model_builder->AddTensor(out_state_ref.tensor_desc);
-    model_builder->Copy(next_state, out_state);
-    return model_builder->UpdateOutputTensor(out_state, output_ids[1]);
-  }
   return model_builder->UpdateOutputTensor(next_state, output_ids[1]);
 }
 
