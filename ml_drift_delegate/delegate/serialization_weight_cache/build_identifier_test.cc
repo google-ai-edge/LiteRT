@@ -41,8 +41,8 @@ TEST(BuildIdentifierTest, CheckBuildIdentifierFailure) {
   std::vector<uint8_t> build_identifier_data(build_identifier.begin(),
                                              build_identifier.end());
   build_identifier_data[0] += 1;
-  absl::Span<uint8_t> build_identifier_copy = absl::MakeSpan(
-      build_identifier_data.data(), build_identifier_data.size());
+  absl::Span<uint8_t> build_identifier_copy =
+      absl::MakeSpan(build_identifier_data);
 
   // Check that the build identifier no longer matches.
   EXPECT_EQ(ml_drift::CheckBuildIdentifier(build_identifier_copy), false);
