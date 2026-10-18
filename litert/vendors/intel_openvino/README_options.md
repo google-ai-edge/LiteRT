@@ -119,6 +119,24 @@ properties. Internal keys (all default `false`):
     forces the attention mask to be tiled `r` times. This rewrites that back
     into head-parallel attention: Q keeps its `[1,Hq,S,D]` shape, K/V are
     broadcast over the query heads, and the mask is left untiled.
+-   `enable_hfa` — enables NPUW's Host Flash Attention (HFA) on the prefill
+    graphs, with no graph index needed. It turns on
+    `fuse_split_attention_to_sdpa` and `unfold_gqa_sequence_fold`, then
+    rewrites each fused SDPA whose query covers more than one token (read
+    through any GQA fold, so decode steps stay fused) into the
+    `MatMul -> Add(mask) -> Softmax -> MatMul` form that HFA converts, reading
+    a K/V cache stored as `[B,H,D,S]` through `transpose_b` instead of an
+    explicit Transpose. Under NPU weight sharing, every graph that had SDPAs
+    rewritten (and references the shared weight pool) also gets
+    `NPUW_ATTN=HFA`; the other graphs keep NPUW's `STATIC` default. HFA needs
+    NPUW's repeated-blocks pipeline, so those graphs also get
+    `NPUW_ONLINE_PIPELINE=REP` with attention isolated, MoE or dense (other
+    dense graphs keep the single-function CWAI pipeline). Explicit values
+    (model-wide or per graph) win over all of these, `NPUW_ATTN` included, but
+    a pipeline other than `REP` leaves HFA unattached and the compiler warns.
+    A per-graph `N:enable_hfa=false` opts graph `N` out. `NPUW_ATTN=HFA`
+    alone does not enable HFA: the attention stays fused, which NPUW cannot
+    convert.
 -   `split_shared_constants` — splits multi-consumer Constants into private
     per-consumer copies (e.g. two different transformer layers' RMSNorm gain
     vectors that were unified into one upstream Constant node). Currently
