@@ -15,6 +15,7 @@
 #ifndef LITERT_VENDORS_INTEL_OPENVINO_COMPILER_OPENVINO_COMPILE_CONTEXT_H_
 #define LITERT_VENDORS_INTEL_OPENVINO_COMPILER_OPENVINO_COMPILE_CONTEXT_H_
 
+#include <cstddef>
 #include <memory>
 #include <string>
 
@@ -49,14 +50,6 @@ class OpenVinoCompileContext {
   // parameters (e.g. NPU_PLATFORM).  |soc_model| may be nullptr.
   LiteRtStatus ConfigureForSoc(const char* soc_model);
 
-  // Enables the NPUW weight-sharing compile knobs on an NPU target so that
-  // export_model emits a WEIGHTLESS blob (constants referenced by
-  // WeightlessCacheAttribute bin_offset rather than baked in).
-  // |moe_multi_token_chunk| (from OptimizeModel's result) selects the NPUW
-  // pipeline: a multi-token chunk gets the host-router/REP pipeline, a
-  // single-token one gets the plain CWAI pipeline.
-  void ConfigureForNpuWeightSharing(bool moe_multi_token_chunk);
-
   // Classification info OptimizeModel()'s NPU passes produced, beyond the
   // in-place graph mutation, that ConfigureForNpuWeightSharing() needs.
   struct OptimizeModelResult {
@@ -64,7 +57,20 @@ class OpenVinoCompileContext {
     // NpuOptimizer::Result::moe_is_multi_token_chunk). Always false on
     // non-NPU targets or when MoE gather is disabled.
     bool moe_is_multi_token_chunk = false;
+    // How many SDPAs were decomposed for NPUW's Host Flash Attention (see
+    // NpuOptimizer::Result::num_sdpa_decomposed_for_hfa).
+    size_t num_sdpa_decomposed_for_hfa = 0;
   };
+
+  // Enables the NPUW weight-sharing compile knobs on an NPU target so that
+  // export_model emits a WEIGHTLESS blob (constants referenced by
+  // WeightlessCacheAttribute bin_offset rather than baked in).
+  // |result| (from OptimizeModel) selects the NPUW pipeline: a multi-token
+  // MoE chunk gets the host-router/REP pipeline, anything else gets the plain
+  // CWAI pipeline. A graph whose prefill SDPAs were decomposed for HFA
+  // ("enable_hfa") also gets NPUW_ATTN=HFA, unless NPUW_ATTN was set
+  // explicitly.
+  void ConfigureForNpuWeightSharing(const OptimizeModelResult& result);
 
   // Runs NPU-specific optimization passes on the given OV model.
   OptimizeModelResult OptimizeModel(
@@ -82,6 +88,12 @@ class OpenVinoCompileContext {
   ov::AnyMap configs_map_;
   bool eliminate_fq_after_matmul_ = false;
   bool fuse_split_attention_to_sdpa_ = false;
+
+  // Enables Host Flash Attention on the prefill graphs: turns on the SDPA
+  // fusion, the GQA unfold and DecomposeSDPAForHFA (which rewrites only
+  // multi-token SDPAs), and sets NPUW_ATTN=HFA on the graphs that pass
+  // rewrote. Set via config "enable_hfa".
+  bool enable_hfa_ = false;
 
   // Enables MoEGatherRewrite: turns Gemma4's dense masked MoE into gather-based
   // selective (K-of-N) expert computation. Set via config "enable_moe_gather".
