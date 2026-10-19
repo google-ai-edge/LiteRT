@@ -35,7 +35,6 @@ package(
 # using the underlying base `ats` binary compiled further down in this file.
 
 XNNPACK_MODELS_DONT_REGISTER = [
-    "simple_add_dynamic_shape",
     "depth_anything_v2",
     "hf_all_minilm_l6_v2",
     "hf_deberta_large_mnli",
@@ -129,7 +128,6 @@ XNNPACK_DONT_REGISTER = [
 ]
 
 YNNPACK_MODELS_DONT_REGISTER = [
-    "simple_add_dynamic_shape",
     "depth_anything_v2",
     "hf_all_minilm_l6_v2",
     "hf_deberta_large_mnli",
@@ -197,11 +195,9 @@ YNNPACK_DONT_REGISTER = [
 ]
 
 BUILTIN_MODELS_DONT_REGISTER = [
-    "simple_add_dynamic_shape",
 ]
 
 GPU_MODELS_DONT_REGISTER = [
-    "simple_add_dynamic_shape",
     "depth_anything_v2",
     "hf_all_minilm_l6_v2",
     "hf_deberta_large_mnli",
@@ -551,7 +547,6 @@ litert_define_ats(
         "SelectV2",  # OpenCL SelectV2 rejects multidimensional if/else broadcasting and uses kExact on FP16-rounded f32
         "Slice",  # OpenCL Slice uses kExact byte comparison on FP16-rounded f32 buffers
         "RuntimeBmm.*(i4|i8)",  # GPU odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
-        "simple_add_dynamic_shape",
         "hf_all_minilm_l6_v2",
         "whisper_tiny_decoder",
         "torchvision_resnet18",
@@ -644,7 +639,6 @@ litert_define_ats(
         "FullyConnected.*,1d_f32<[^>]+>(?!_cst)",
         "Transpose.*([(][78]d|[(][1-8]d_(i1|i4|i16|u16|i32|u32|i64|u64)<)",  # XNNPACK Transpose supports FP32, FP16, INT8, and UINT8 types up to rank 6
         # Explicit ExtraModel exclusions (unsupported by XNNPACK):
-        "simple_add_dynamic_shape",
         "hf_all_minilm_l6_v2",
         "u2net_lite",
         "whisper_tiny_decoder",
@@ -1735,6 +1729,7 @@ cc_test(
     ],
     copts = commandline_flag_copts(),
     data = [
+        "//litert/test:testdata/simple_add_dynamic_shape.tflite",
         "//litert/test:testdata/simple_model.tflite",
         "//litert/vendors/examples:example_dispatch_so",
         "//litert/vendors/examples:example_plugin_so_data",
