@@ -290,8 +290,16 @@ void FormatConverter<T>::InitSparseToDenseConverter(
     if (block_dim < block_map_.size() && block_map_[block_dim] == i) {
       if (original_rank + block_dim < traversal_order_.size()) {
         int orig_dim = traversal_order_[original_rank + block_dim];
-        block_size_[block_dim] = dense_size[orig_dim];
-        blocked_shape_[i] = dense_shape_[i] / dense_size[orig_dim];
+        // Validate the block traversal_order entry and require a strictly
+        // positive block size before indexing dense_size or dividing by it.
+        if (orig_dim >= 0 && orig_dim < static_cast<int>(dense_size.size()) &&
+            dense_size[orig_dim] > 0) {
+          block_size_[block_dim] = dense_size[orig_dim];
+          blocked_shape_[i] = dense_shape_[i] / dense_size[orig_dim];
+        } else {
+          block_size_[block_dim] = 1;
+          blocked_shape_[i] = dense_shape_[i];
+        }
         block_dim++;
       }
     } else {
@@ -310,19 +318,44 @@ void FormatConverter<T>::Populate(const T* src_data, std::vector<int> indices,
     orig_idx.resize(orig_rank);
     int i = 0;
     for (; i < orig_idx.size(); i++) {
+      if (i >= static_cast<int>(traversal_order_.size())) {
+        *src_data_ptr = *src_data_ptr + 1;
+        return;
+      }
       int orig_dim = traversal_order_[i];
+      if (orig_dim < 0 || orig_dim >= orig_rank) {
+        *src_data_ptr = *src_data_ptr + 1;
+        return;
+      }
       orig_idx[orig_dim] = indices[i];
     }
 
     for (; i < indices.size(); i++) {
+      if (i >= static_cast<int>(traversal_order_.size())) {
+        *src_data_ptr = *src_data_ptr + 1;
+        return;
+      }
       const int block_idx = traversal_order_[i] - orig_rank;
+      if (block_idx < 0 || block_idx >= static_cast<int>(block_map_.size()) ||
+          block_idx >= static_cast<int>(block_size_.size())) {
+        *src_data_ptr = *src_data_ptr + 1;
+        return;
+      }
       const int orig_dim = block_map_[block_idx];
+      if (orig_dim < 0 || orig_dim >= orig_rank) {
+        *src_data_ptr = *src_data_ptr + 1;
+        return;
+      }
       orig_idx[orig_dim] =
           orig_idx[orig_dim] * block_size_[block_idx] + indices[i];
     }
 
-    dest_data[GetFlattenedIndex(orig_idx, dense_shape_)] =
-        src_data[*src_data_ptr];
+    const uint64_t flat = GetFlattenedIndex(orig_idx, dense_shape_);
+    if (flat >= static_cast<uint64_t>(dense_size_)) {
+      *src_data_ptr = *src_data_ptr + 1;
+      return;
+    }
+    dest_data[flat] = src_data[*src_data_ptr];
 
     *src_data_ptr = *src_data_ptr + 1;
     return;
