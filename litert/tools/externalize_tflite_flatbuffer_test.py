@@ -16,6 +16,7 @@ import pathlib
 from unittest import mock
 
 import flatbuffers
+import numpy as np
 
 from absl.testing import absltest as googletest
 from litert.tools import externalize_tflite_flatbuffer
@@ -143,14 +144,27 @@ class ExternalizeTfliteFlatbufferTest(googletest.TestCase):
         existing_weights=existing_weights,
     )
 
-    self.assertTrue((output_dir / "model.tflite").is_file())
+    self.assertEqual(
+        (output_dir / "model.tflite").read_bytes(), input_model.read_bytes()
+    )
     self.assertEqual(
         (output_dir / "tflite_weights").read_bytes(),
         existing_weights.read_bytes(),
     )
 
-  def test_externalizes_appended_tflite_buffers_without_losing_bias(self):
-    root = pathlib.Path(self.create_tempdir().full_path)
+  def _write_appended_buffer_model(
+      self, root: pathlib.Path, empty_buffer: bool = False
+  ) -> tuple[pathlib.Path, bytes, bytes]:
+    """Writes a FullyConnected model whose buffers use appended data.
+
+    Args:
+      root: Directory to write `input.tflite` into.
+      empty_buffer: If true, also adds a constant tensor whose buffer is a
+        zero-length appended payload (`offset > 1`, `size == 0`).
+
+    Returns:
+      The model path, the weight bytes, and the bias bytes.
+    """
     input_model = root / "input.tflite"
     weight_data = bytes(range(64))
     bias_data = b"bias data bytes!"
@@ -193,6 +207,11 @@ class ExternalizeTfliteFlatbufferTest(googletest.TestCase):
     model.buffers[1].size = len(weight_data)
     model.buffers[2].offset = 1
     model.buffers[2].size = len(bias_data)
+    if empty_buffer:
+      subgraph.tensors.append(make_tensor([0], 3))
+      model.buffers.append(schema.BufferT())
+      model.buffers[3].offset = 1
+      model.buffers[3].size = 0
 
     def pack_model():
       builder = flatbuffers.Builder(1024)
@@ -204,6 +223,8 @@ class ExternalizeTfliteFlatbufferTest(googletest.TestCase):
     bias_offset = (weight_offset + len(weight_data) + 15) // 16 * 16
     model.buffers[1].offset = weight_offset
     model.buffers[2].offset = bias_offset
+    if empty_buffer:
+      model.buffers[3].offset = bias_offset + len(bias_data)
     packed_model = pack_model()
     self.assertEqual(len(packed_model), len(placeholder))
     input_bytes = bytearray(packed_model)
@@ -212,6 +233,13 @@ class ExternalizeTfliteFlatbufferTest(googletest.TestCase):
     input_bytes.extend(b"\0" * (bias_offset - len(input_bytes)))
     input_bytes.extend(bias_data)
     input_model.write_bytes(input_bytes)
+    return input_model, weight_data, bias_data
+
+  def test_externalizes_appended_tflite_buffers_without_losing_bias(self):
+    root = pathlib.Path(self.create_tempdir().full_path)
+    input_model, weight_data, bias_data = self._write_appended_buffer_model(
+        root
+    )
 
     output_dir = root / "output"
     externalize_tflite_flatbuffer.externalize(
@@ -326,6 +354,122 @@ class ExternalizeTfliteFlatbufferTest(googletest.TestCase):
         output_bytes[moe_buf.offset : moe_buf.offset + moe_buf.size],
         unexternalized_data,
     )
+
+  def test_accepts_zero_length_appended_buffer(self):
+    root = pathlib.Path(self.create_tempdir().full_path)
+    input_model, weight_data, bias_data = self._write_appended_buffer_model(
+        root, empty_buffer=True
+    )
+
+    output_dir = root / "output"
+    externalize_tflite_flatbuffer.externalize(
+        input_model=input_model,
+        output_dir=output_dir,
+        group_name="tflite_weights",
+        num_elements_threshold=4,
+    )
+
+    self.assertEqual((output_dir / "tflite_weights").read_bytes(), weight_data)
+    processed_model = schema.ModelT.InitFromPackedBuf(
+        (output_dir / "model.tflite").read_bytes(), 0
+    )
+    self.assertEqual(bytes(processed_model.buffers[2].data), bias_data)
+    self.assertEqual(processed_model.subgraphs[0].tensors[4].buffer, 3)
+    empty = processed_model.buffers[3]
+    # Still a present-but-empty vector, like TFLite's view of the input.
+    self.assertIsNotNone(empty.data)
+    self.assertEmpty(empty.data)
+    self.assertEqual(empty.offset, 0)
+    self.assertEqual(empty.size, 0)
+
+  def test_rejects_sentinel_offset_with_appended_size(self):
+    for offset in (0, 1):
+      with self.subTest(offset=offset):
+        model = schema.ModelT()
+        model.buffers = [schema.BufferT(), schema.BufferT()]
+        model.buffers[1].offset = offset
+        model.buffers[1].size = 4
+        with self.assertRaisesRegex(ValueError, "invalid external range"):
+          externalize_tflite_flatbuffer._materialize_appended_buffer_data(
+              model, bytes(16)
+          )
+
+  def test_copies_model_unchanged_when_nothing_is_externalized(self):
+    root = pathlib.Path(self.create_tempdir().full_path)
+    input_model, _, _ = self._write_appended_buffer_model(root)
+
+    output_dir = root / "output"
+    externalize_tflite_flatbuffer.externalize(
+        input_model=input_model,
+        output_dir=output_dir,
+        group_name="tflite_weights",
+        num_elements_threshold=1024,
+    )
+
+    self.assertEqual(
+        (output_dir / "model.tflite").read_bytes(), input_model.read_bytes()
+    )
+    self.assertEqual((output_dir / "tflite_weights").read_bytes(), b"")
+
+  def test_materialized_buffers_pack_like_generated_code(self):
+    root = pathlib.Path(self.create_tempdir().full_path)
+    input_model, weight_data, bias_data = self._write_appended_buffer_model(
+        root
+    )
+    input_bytes = input_model.read_bytes()
+    model = schema.ModelT.InitFromPackedBuf(input_bytes, 0)
+
+    externalize_tflite_flatbuffer._materialize_appended_buffer_data(
+        model, input_bytes
+    )
+
+    for buffer, expected in (
+        (model.buffers[1], weight_data),
+        (model.buffers[2], bias_data),
+    ):
+      # BufferT.Pack only takes its vectorized path for exact ndarrays.
+      self.assertIs(type(buffer.data), np.ndarray)
+      self.assertEqual(buffer.data.dtype, np.uint8)
+      self.assertEqual(buffer.data.tobytes(), expected)
+      self.assertEqual(buffer.offset, 0)
+      self.assertEqual(buffer.size, 0)
+
+    def pack(model_t):
+      builder = flatbuffers.Builder(1024)
+      builder.Finish(model_t.Pack(builder), file_identifier=b"TFL3")
+      return bytes(builder.Output())
+
+    fast_bytes = pack(model)
+    # The generated BufferT.Pack serializes `bytes` data one byte at a time;
+    # the numpy fast path must produce the same output.
+    reference = schema.ModelT.InitFromPackedBuf(input_bytes, 0)
+    for index, data in ((1, weight_data), (2, bias_data)):
+      reference.buffers[index].data = data
+      reference.buffers[index].offset = 0
+      reference.buffers[index].size = 0
+    self.assertEqual(fast_bytes, pack(reference))
+
+  def test_materializes_appended_buffers_without_numpy(self):
+    root = pathlib.Path(self.create_tempdir().full_path)
+    input_model, weight_data, bias_data = self._write_appended_buffer_model(
+        root, empty_buffer=True
+    )
+
+    output_dir = root / "output"
+    with mock.patch.object(externalize_tflite_flatbuffer, "np", None):
+      externalize_tflite_flatbuffer.externalize(
+          input_model=input_model,
+          output_dir=output_dir,
+          group_name="tflite_weights",
+          num_elements_threshold=4,
+      )
+
+    self.assertEqual((output_dir / "tflite_weights").read_bytes(), weight_data)
+    processed_model = schema.ModelT.InitFromPackedBuf(
+        (output_dir / "model.tflite").read_bytes(), 0
+    )
+    self.assertEqual(bytes(processed_model.buffers[2].data), bias_data)
+    self.assertEmpty(processed_model.buffers[3].data)
 
 
 if __name__ == "__main__":
