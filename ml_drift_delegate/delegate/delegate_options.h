@@ -338,6 +338,30 @@ struct MlDriftDelegateOptions {
   // subgraphs into single fused odml.short_conv_step nodes.
   // Disabled by default to avoid unexpected graph mutations on general models.
   bool enable_short_conv_step_fusion = false;
+
+  // OpenCL only.
+  //
+  // If true, enables host pointer I/O buffer management via OpenCL
+  // CL_MEM_USE_HOST_PTR on supported architectures (e.g. PowerVR Rogue/D-Series
+  // on Tensor G5) to bypass uncached CPU bus readback stalls (b/376383693).
+  //
+  // Operates in dual-path mode:
+  // 1. Direct Zero-Copy: If the caller registers page-aligned memory (>=4096B)
+  //    via SetCustomAllocationForTensor, wraps the caller pointer directly
+  //    with CL_MEM_USE_HOST_PTR, eliminating all CPU memcpy and driver DMA
+  //    transfers.
+  // 2. Safe Internal Fallback: If standard arena tensors or unaligned buffers
+  //    are used, allocates internal page-aligned host buffers (reused across
+  //    invocations) and synchronizes with the TFLite arena via fast CPU memcpy
+  //    (<0.08 ms), completely bypassing the uncached driver bus readback stall
+  //    (~15 ms).
+  //
+  // When false, standard device allocations are retained.
+  bool enable_host_ptr_io_buffers = false;
+
+  // If true, forces host pointer I/O buffer allocation regardless of GPU
+  // architecture (used for testing and CI validation on heterogeneous devices).
+  bool force_host_ptr_io_buffers = false;
 };
 
 namespace litert::ml_drift {
