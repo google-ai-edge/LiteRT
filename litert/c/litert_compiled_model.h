@@ -401,6 +401,43 @@ LiteRtStatus LiteRtCompiledModelRemoveDispatchAnnotation(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     const char* key);
 
+// Registers a tensor buffer with the NPU (Dispatch API) of the compiled model
+// right away, so that runs reuse the registration whichever tensors the buffer
+// is bound to. Registrations are counted. Other accelerators ignore them, and
+// a buffer that the NPU fails to register is registered when it is bound
+// instead. Thread safety: this function must not be called concurrently with
+// other functions on the same `compiled_model` (such as
+// `LiteRtRunCompiledModel` or `LiteRtRunCompiledModelAsync`).
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - tensor_buffer: the tensor buffer to register.
+//
+// Returns:
+// - kLiteRtStatusOk if successful.
+// - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
+LiteRtStatus LiteRtCompiledModelRegisterTensorBuffer(
+    LiteRtCompiledModel compiled_model, LiteRtTensorBuffer tensor_buffer);
+
+// Releases a registration made by LiteRtCompiledModelRegisterTensorBuffer().
+// Once the buffer has been unregistered as many times as it was registered, it
+// is unregistered from the NPU right away, or once it is no longer bound to an
+// I/O tensor (from the latest run, until a subsequent run binds a different
+// buffer to that tensor) nor in use by an in-flight asynchronous run started
+// by `LiteRtRunCompiledModelAsync()`. Thread safety: this function must not be
+// called concurrently with other functions on the same `compiled_model` (such
+// as `LiteRtRunCompiledModel` or `LiteRtRunCompiledModelAsync`).
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - tensor_buffer: the tensor buffer to unregister.
+//
+// Returns:
+// - kLiteRtStatusOk if successful (even if the buffer is not registered).
+// - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
+LiteRtStatus LiteRtCompiledModelUnregisterTensorBuffer(
+    LiteRtCompiledModel compiled_model, LiteRtTensorBuffer tensor_buffer);
+
 // Error reporter APIs
 
 // Reports an error to the compiled model's error reporter.
