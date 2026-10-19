@@ -103,6 +103,7 @@ XNNPACK_DONT_REGISTER = [
     "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
     "GroupNorm",  # XNNPACK does not support GroupNorm composite op
     "LayerNorm",  # XNNPACK does not support LayerNorm composite op
+    "MoeExperts",  # XNNPACK does not support MoeExperts composite op
     "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
     "QkvNormRope",  # XNNPACK does not support QkvNormRope composite op
     "RmsNorm",  # XNNPACK does not support RmsNorm composite op
@@ -544,6 +545,7 @@ litert_define_ats(
         "SelectV2",  # OpenCL SelectV2 rejects multidimensional if/else broadcasting and uses kExact on FP16-rounded f32
         "Slice",  # OpenCL Slice uses kExact byte comparison on FP16-rounded f32 buffers
         "RuntimeBmm.*(i4|i8)",  # GPU odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
+        "MoeExperts",  # ML Drift GPU delegate expects tfl.custom "moe" with 4D OHWI weights rather than shlo.composite "odml.moe_experts"
         "hf_all_minilm_l6_v2",
         "whisper_tiny_decoder",
         "torchvision_resnet18",
@@ -611,6 +613,7 @@ litert_define_ats(
         "Transformer",  # XNNPACK does not support TransformerLayer flex/custom ops
         "GroupNorm",  # XNNPACK does not support GroupNorm composite op
         "LayerNorm",  # XNNPACK does not support LayerNorm composite op
+        "MoeExperts",  # XNNPACK does not support MoeExperts composite op
         "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
         "QkvNormRope",  # XNNPACK does not support QkvNormRope composite op
         "RmsNorm",  # XNNPACK does not support RmsNorm composite op
@@ -690,6 +693,7 @@ litert_define_ats(
         "SelectV2",
         "Slice",
         "RuntimeBmm.*(i4|i8)",  # Metal odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
+        "MoeExperts",  # ML Drift Metal delegate expects tfl.custom "moe" with 4D OHWI weights rather than shlo.composite "odml.moe_experts"
         "scaled_dot_product_attention",
     ],
     extra_flags = [
@@ -729,6 +733,7 @@ litert_define_ats(
         "SelectV2",
         "Slice",
         "RuntimeBmm.*(i4|i8)",  # WebGPU odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
+        "MoeExperts",  # ML Drift WebGPU delegate expects tfl.custom "moe" with 4D OHWI weights rather than shlo.composite "odml.moe_experts"
         "scaled_dot_product_attention",
     ],
     extra_flags = [
