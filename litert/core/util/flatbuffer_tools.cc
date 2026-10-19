@@ -328,8 +328,15 @@ Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromTflFile(
   return FlatbufferWrapper::CreateFromAllocation(std::move(allocation));
 }
 
-OwningBufferRef<uint8_t> SerializeFlatbuffer(const TflModel& tfl_model) {
+OwningBufferRef<uint8_t> SerializeFlatbuffer(const TflModel& tfl_model,
+                                             size_t tail_padding) {
   flatbuffers::FlatBufferBuilder b;
+  if (tail_padding > 0) {
+    // FlatBufferBuilder grows downward from the end of its buffer, so padding
+    // before packing places trailing zeros at the end of the serialized buffer
+    // without an extra copy.
+    b.Pad(tail_padding);
+  }
   auto model_offset = tflite::Model::Pack(b, &tfl_model);
   tflite::FinishModelBuffer(b, model_offset);
 
@@ -341,9 +348,9 @@ OwningBufferRef<uint8_t> SerializeFlatbuffer(const TflModel& tfl_model) {
 }
 
 OwningBufferRef<uint8_t> SerializeFlatbuffer(
-    const FlatbufferWrapper& flatbuffer) {
+    const FlatbufferWrapper& flatbuffer, size_t tail_padding) {
   auto tfl_model = flatbuffer.Unpack();
-  return SerializeFlatbuffer(*tfl_model);
+  return SerializeFlatbuffer(*tfl_model, tail_padding);
 }
 
 }  // namespace litert::internal

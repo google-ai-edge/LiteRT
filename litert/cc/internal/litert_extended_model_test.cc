@@ -349,7 +349,8 @@ TEST(CcModelTest, SerializePreCompiledModelHasSameSizeAsOriginal) {
   Expected<OwningBufferRef<uint8_t>> serialized =
       ExtendedModel::Serialize(std::move(model), serialization_options);
   ASSERT_TRUE(serialized.HasValue());
-  EXPECT_EQ(serialized->Size(), flatbuffer->get()->Buf().Size());
+  // Serialized model includes 128 bytes trailing padding for SIMD kernels.
+  EXPECT_EQ(serialized->Size(), flatbuffer->get()->Buf().Size() + 128);
 }
 
 TEST(CcModelTest, NotFoundErrorsContainNames) {

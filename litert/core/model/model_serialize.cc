@@ -51,6 +51,11 @@
 namespace litert::internal {
 namespace {
 
+// Extra trailing bytes to pad after constant tensor buffers to prevent
+// out-of-bounds reads by SIMD kernels (e.g. XNNPACK microkernels require up to
+// 128 bytes on Qualcomm Hexagon DSP).
+constexpr size_t kFbTailPadding = 128;
+
 using TensorMap = absl::flat_hash_map<LiteRtTensor, int32_t>;
 
 // This is expected to be used to serialize the dispatch op custom code.
@@ -515,8 +520,10 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
       return Error(kLiteRtStatusErrorInvalidFlatbuffer);
     }
   }
-  // Allocate buffer enough for original model and appended buffers and copy.
-  OwningBufferRef<uint8_t> final_model(cur_offset);
+  // Allocate buffer enough for original model, appended buffers, and trailing
+  // padding for SIMD kernels.
+  OwningBufferRef<uint8_t> final_model(cur_offset + kFbTailPadding);
+  std::memset(final_model.Data() + cur_offset, 0, kFbTailPadding);
 
   // Copy serialized tflite model.
   uint8_t* const start = final_model.Data();
@@ -589,7 +596,10 @@ Expected<OwningBufferRef<uint8_t>> SerializeModel(LiteRtModelT&& model,
     return tfl_model.Error();
   }
 
-  auto serialized_tfl = SerializeFlatbuffer(**tfl_model);
+  const bool has_appended_buffers =
+      !builder.OpAssetMap().empty() || !builder.OffsetTensorMap().empty();
+  auto serialized_tfl = SerializeFlatbuffer(
+      **tfl_model, /*tail_padding=*/has_appended_buffers ? 0 : kFbTailPadding);
   auto serialized_with_buffers =
       SerializeWithAppendedBuffers(builder, std::move(serialized_tfl), model);
   if (!serialized_with_buffers) {

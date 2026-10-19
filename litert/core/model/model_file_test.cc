@@ -1043,7 +1043,8 @@ TEST(ModelLoadSerializeTest, LoadAndSerializeWithBytecode) {
       SerializeModel(std::move(*model.Get()));
   EXPECT_TRUE(VerifyFlatbuffer(serialized->Span()));
 
-  EXPECT_EQ(serialized->Size(), flatbuffer->get()->Buf().Size());
+  // Serialized model includes 128 bytes trailing padding for SIMD kernels.
+  EXPECT_EQ(serialized->Size(), flatbuffer->get()->Buf().Size() + 128);
 }
 
 // Tests that explicitly check litert graph structure.
