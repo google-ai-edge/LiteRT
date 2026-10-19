@@ -71,6 +71,7 @@ py_library(
     deps = [
         ":_pywrap_litert_converter",
         "//ci/tools/python/wheel:tflite_converter_protos",
+        "//litert/python/litert_model:_pywrap_litert_model",
         "//litert/python/litert_wrapper/compiled_model_wrapper:_pywrap_litert_compiled_model_wrapper",
         "//litert/python/litert_wrapper/environment_wrapper:_pywrap_litert_environment_wrapper",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper",
@@ -103,7 +104,7 @@ pywrap_library(
     common_lib_version_scripts = {
         "litert/python/pywrap_litert_common": PYWRAP_LITERT_COMMON_LIB_VERSION_SCRIPTS,
     },
-    pywrap_count = 13,
+    pywrap_count = 14,
     visibility = ["//visibility:public"],
     deps = [
         ":litert_pywrap_deps",
