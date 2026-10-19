@@ -43,7 +43,7 @@ std::vector<OpWrapper> BuildConv2dOp(
   // transpose filter
   TensorWrapper& filter_tensor = inputs[kFilterIndex];
   const std::vector<uint32_t>& filters_dims = filter_tensor.GetDimensions();
-  auto& filter_quant_params = filter_tensor.GetQuantParams();
+  auto filter_quant_params = filter_tensor.GetQuantParams();
   std::vector<std::uint32_t> permute_dims{filters_dims[1], filters_dims[2],
                                           filters_dims[3], filters_dims[0]};
   if (std::holds_alternative<AxisScaleOffsetQuantizeParamsWrapper>(
