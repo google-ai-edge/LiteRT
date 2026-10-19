@@ -40,6 +40,7 @@ namespace litert::tensor {
 struct MlDriftMixinTag;
 struct TfLiteMixinTag;
 struct XnnpackMixinTag;
+struct YnnpackMixinTag;
 
 using ::testing::FloatNear;
 using ::testing::Pointwise;
@@ -2171,7 +2172,9 @@ TYPED_TEST_P(NumericalTestSuite, CastOp) {
   ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
 
   std::vector<int32_t> expected_output = {1, 2, 3, 4};
-  if constexpr (std::is_same_v<Tag, XnnpackMixinTag>) {
+  // XNNPACK and YNNPACK round to the nearest integer instead of truncating.
+  if constexpr (std::is_same_v<Tag, XnnpackMixinTag> ||
+                std::is_same_v<Tag, YnnpackMixinTag>) {
     expected_output = {1, 3, 4, 4};
   }
   EXPECT_EQ(actual_output, expected_output);
