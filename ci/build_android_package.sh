@@ -208,8 +208,13 @@ fi
 
 # TODO(b/503213161): Avoid piggybacking Tensor API's bazel build test on
 # LiteRT's wheel kokoro job (i.e. //tensor/...).
+# Remove the SME disable flags when the Android NDK is updated.
 bazel build "${BUILD_FLAGS[@]}" \
-    //tensor/... \
+    --define=ynn_enable_arm64_sme=false \
+    --define=ynn_enable_arm64_sme2=false \
+    //tensor/...
+
+bazel build "${BUILD_FLAGS[@]}" \
     //tflite/java:tensorflow-lite-api \
     //tflite/java:tensorflow-lite \
     //tflite/java:tensorflow-lite-gpu-api \

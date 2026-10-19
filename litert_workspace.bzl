@@ -83,17 +83,17 @@ def litert_workspace():
     # XNNPACK
     tf_http_archive(
         name = "XNNPACK",
-        sha256 = "989b33b609b2172073ad03ca1acd99f1ecf8c50d626d673ee1858e9771ca4b57",
-        strip_prefix = "XNNPACK-35997e71119d191c807068a4d2aa28bf6048b59b",
-        urls = tf_mirror_urls("https://github.com/google/XNNPACK/archive/35997e71119d191c807068a4d2aa28bf6048b59b.zip"),
+        sha256 = "bb3bece5b610830882554f7f1557f3b3f0de61bed7ebbc52df7062f545a40d3e",
+        strip_prefix = "XNNPACK-878f1d8ca60d7f8fb6670ab7c8cbe39a6d7415f7",
+        urls = tf_mirror_urls("https://github.com/google/XNNPACK/archive/878f1d8ca60d7f8fb6670ab7c8cbe39a6d7415f7.zip"),
     )
 
     # KleidiAI (XNNPACK dependency)
     tf_http_archive(
         name = "KleidiAI",
-        sha256 = "652ee046ebf99bee5ed78aaf8961ea1df6ac09b6ebbd3a33106d9ce255efba69",
-        strip_prefix = "kleidiai-4bc7bd457930de119f8b826ecfdebfbd9c08cf8c",
-        urls = tf_mirror_urls("https://gitlab.arm.com/kleidi/kleidiai/-/archive/4bc7bd457930de119f8b826ecfdebfbd9c08cf8c/kleidiai-4bc7bd457930de119f8b826ecfdebfbd9c08cf8c.zip"),
+        sha256 = "a424e81535ebb6d0117e9282fba45d70aee0bedb481f603df55e1805bed0e21b",
+        strip_prefix = "kleidiai-5147983e14600ce7f8a6583dc04ba07753ac54c4",
+        urls = tf_mirror_urls("https://gitlab.arm.com/kleidi/kleidiai/-/archive/5147983e14600ce7f8a6583dc04ba07753ac54c4/kleidiai-5147983e14600ce7f8a6583dc04ba07753ac54c4.zip"),
     )
 
     # FXdiv
@@ -115,17 +115,17 @@ def litert_workspace():
     # Slinky (XNNPACK dependency)
     tf_http_archive(
         name = "slinky",
-        sha256 = "e6125bb88be445bb3ccbaf609accdaf5ae4f0563b93775f1824fd4388609b402",
-        strip_prefix = "slinky-97c346749bf0f7fbdc2b0b8e6ff0c380806a32e2",
-        urls = tf_mirror_urls("https://github.com/dsharlet/slinky/archive/97c346749bf0f7fbdc2b0b8e6ff0c380806a32e2.zip"),
+        sha256 = "56793854bfd71f81597a59e4590d2fa4c444319c917ac387f5bde8c83b407a0a",
+        strip_prefix = "slinky-9b2ee975f1a8a67a4daf1df6ce0911b66e6faf9f",
+        urls = tf_mirror_urls("https://github.com/dsharlet/slinky/archive/9b2ee975f1a8a67a4daf1df6ce0911b66e6faf9f.zip"),
     )
 
     # cpuinfo
     tf_http_archive(
         name = "cpuinfo",
-        sha256 = "fe2aa43254838a2eb5658d1742696473a1d834a57f2a0b38d533346bcd212482",
-        strip_prefix = "cpuinfo-8ce83db858065145192c97af90cb668ad72a12e9",
-        urls = tf_mirror_urls("https://github.com/pytorch/cpuinfo/archive/8ce83db858065145192c97af90cb668ad72a12e9.zip"),
+        sha256 = "b93044263ee072e9be3577bda52f48d5a4dd9fcb80091529471c8d2bfe59219d",
+        strip_prefix = "cpuinfo-66ee79c038d70dad9f08705b2c9b3e58f6d8f512",
+        urls = tf_mirror_urls("https://github.com/pytorch/cpuinfo/archive/66ee79c038d70dad9f08705b2c9b3e58f6d8f512.zip"),
     )
 
     # Eigen
