@@ -101,6 +101,7 @@ struct LrtQualcommOptionsT {
   std::optional<bool> htp_dlbc_weights;
   std::optional<std::int32_t> htp_p_point;
   std::optional<std::int32_t> htp_weight_sharing_channel_tile_size;
+  std::optional<bool> enable_heuristic_p_point_optimizations;
   std::optional<LrtQualcommOptionsHtpPerformanceMode> htp_performance_mode;
   std::optional<LrtQualcommOptionsDspPerformanceMode> dsp_performance_mode;
   std::optional<LrtQualcommOptionsHtpPerfCtrlMode> htp_perf_ctrl_mode;
@@ -206,6 +207,11 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetHtpWeightSharingChannelTileSize(
+              parsed_options, *v);
+        } else if (key == "enable_heuristic_p_point_optimizations") {
+          auto v = litert::internal::ParseTomlBool(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetEnableHeuristicPPointOptimizations(
               parsed_options, *v);
         } else if (key == "htp_performance_mode") {
           auto v = litert::internal::ParseTomlInt(value);
@@ -441,6 +447,12 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->htp_weight_sharing_channel_tile_size.has_value()) {
     absl::StrAppend(&toml_str, "htp_weight_sharing_channel_tile_size = ",
                     *options->htp_weight_sharing_channel_tile_size, "\n");
+  }
+  if (options->enable_heuristic_p_point_optimizations.has_value()) {
+    absl::StrAppend(
+        &toml_str, "enable_heuristic_p_point_optimizations = ",
+        *options->enable_heuristic_p_point_optimizations ? "true" : "false",
+        "\n");
   }
   if (options->htp_performance_mode.has_value()) {
     absl::StrAppend(&toml_str, "htp_performance_mode = ",
@@ -1013,6 +1025,30 @@ LiteRtStatus LrtQualcommOptionsGetHtpWeightSharingChannelTileSize(
 
   *htp_weight_sharing_channel_tile_size =
       options->htp_weight_sharing_channel_tile_size.value_or(0);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetEnableHeuristicPPointOptimizations(
+    LrtQualcommOptions options, bool enable_heuristic_p_point_optimizations) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->enable_heuristic_p_point_optimizations =
+      enable_heuristic_p_point_optimizations;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetEnableHeuristicPPointOptimizations(
+    LrtQualcommOptions options, bool* enable_heuristic_p_point_optimizations) {
+  if (options == nullptr || enable_heuristic_p_point_optimizations == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *enable_heuristic_p_point_optimizations =
+      options->enable_heuristic_p_point_optimizations.value_or(false);
 
   return kLiteRtStatusOk;
 }

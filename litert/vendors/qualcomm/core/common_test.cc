@@ -306,6 +306,15 @@ TEST(QnnOptionTest, SetGraphTransform) {
   EXPECT_TRUE(options.GetGraphTransform().empty());
 }
 
+TEST(QnnOptionTest, EnableHeuristicPPointOptimizations) {
+  Options options;
+  EXPECT_FALSE(options.GetEnableHeuristicPPointOptimizations());
+  options.SetEnableHeuristicPPointOptimizations(true);
+  EXPECT_TRUE(options.GetEnableHeuristicPPointOptimizations());
+  options.SetEnableHeuristicPPointOptimizations(false);
+  EXPECT_FALSE(options.GetEnableHeuristicPPointOptimizations());
+}
+
 TEST(QnnOptionTest, SetVtcmSize) {
   Options options;
   options.SetVtcmSize(4);
@@ -415,6 +424,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_TRUE(options.GetUseFoldReLU());
   EXPECT_EQ(options.GetHtpPPoint(), 0);
   EXPECT_EQ(options.GetHtpWeightSharingChannelTileSize(), 0);
+  EXPECT_FALSE(options.GetEnableHeuristicPPointOptimizations());
   EXPECT_FALSE(options.GetHtpDlbc());
   EXPECT_FALSE(options.GetHtpDlbcWeights());
   EXPECT_EQ(options.GetHtpPerformanceMode(), HtpPerformanceMode::kDefault);
