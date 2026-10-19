@@ -391,10 +391,6 @@ litert_define_ats(
 litert_define_ats(
     name = "qualcomm_ats",
     aot_shard_count = 32,
-    aot_tags = [
-        "manual",
-        "notap",
-    ],
     backend = "qualcomm",
     compile_only_suffix = "_aot",
     dont_register = [
@@ -423,6 +419,7 @@ litert_define_ats(
         "FullyConnected.*_cst.*,1d_f32[^c]",  # Qualcomm QNN does not support dynamic bias for FP32 FC
     ],
     extra_flags = [
+        "--soc_model=SM8650",
         "--data_seed=42",
         "--qualcomm_optimization_level=O3",
         "--qualcomm_htp_performance_mode=burst",
@@ -2129,6 +2126,7 @@ cc_library(
 #
 # NPU_AOT_ATS_GUITAR_TARGETS = [
 #     ":google_tensor_ats_aot",
+#     ":qualcomm_ats_aot",
 #     ":mediatek_ats_aot",
 #     ":example_ats_aot",
 # ]

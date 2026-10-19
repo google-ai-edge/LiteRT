@@ -234,6 +234,11 @@ def _QualcommSpec(version = "V75"):
                 # "//litert/integration_test:libQnnSystem.so",
                 # "//litert/integration_test:libQnnIr.so",
                 # "//litert/integration_test:libQnnSaver.so",
+                # "@qairt//:libatomic",
+                # "@qairt//:libc++",
+                # "@qairt//:libc++abi",
+                # "@qairt//:libgcc-s1",
+                # "@qairt//:libunwind",
                 # copybara:uncomment_end_and_comment_begin
                 "@qairt//:libQnnHtp.so",
                 "@qairt//:libQnnSystem.so",
@@ -526,10 +531,17 @@ def split_dep_platform(
         device_name = prefix + "_" + lab.name + device_suffix
 
         if not no_host:
+            host_platform = "//litert/integration_test:host"
+
+            # copybara:uncomment_begin(google-only)
+            # # Prebuilt QAIRT host libraries require GLIBC >= 2.34 rather than GRTE v5 (glibc 2.27).
+            # host_platform = "//litert/integration_test:host_cots_linux" if "qualcomm" in backend_id else host_platform
+            #
+            # copybara:uncomment_end
             platform_data(
                 name = host_name,
                 target = targ,
-                platform = "//litert/integration_test:host",
+                platform = host_platform,
                 testonly = testonly,
             )
             host.append(":" + host_name)
