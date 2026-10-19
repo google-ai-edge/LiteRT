@@ -23,6 +23,7 @@ limitations under the License.
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -112,6 +113,15 @@ class LazyTensorMapping : public TensorMapping {
       const absl::flat_hash_map<std::string, std::string>& name_mapping,
       SafetensorLoader&& loader);
 
+  // Prepares to load tensors through a custom loader function (e.g., GGUF).
+  //
+  // - `name_mapping`: maps the checkpoint names to the graph building names.
+  // - `loader_fn`: loads a tensor by its checkpoint name.
+  LazyTensorMapping(
+      const absl::flat_hash_map<std::string, std::string>& name_mapping,
+      absl::AnyInvocable<absl::StatusOr<TensorHandle>(absl::string_view)>
+          loader_fn);
+
   // Registers a `Hooks` built from `args` after the hooks that are already
   // registered.
   //
@@ -152,6 +162,8 @@ class LazyTensorMapping : public TensorMapping {
   // Maps the graph building names to the checkpoint names.
   absl::flat_hash_map<std::string, std::string> name_mapping_;
   SafetensorLoader loader_;
+  absl::AnyInvocable<absl::StatusOr<TensorHandle>(absl::string_view)>
+      loader_fn_;
   std::vector<std::unique_ptr<TensorMappingHooks>> hooks_;
   absl::flat_hash_map<std::string, TensorHandle> tensors_;
 };

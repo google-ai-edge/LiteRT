@@ -49,12 +49,14 @@ limitations under the License.
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift/common/types.h"  // from @ml_drift
 #include "ml_drift/common/util.h"  // from @ml_drift
+#include "tensor/backends/ml_drift/arithmetic_ml_drift.h"
 #include "tensor/backends/ml_drift/ml_drift_conversion.h"
 #include "tensor/backends/ml_drift/ml_drift_helpers.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
 #include "tensor/internal/graph_traversal.h"
+#include "tensor/runners/ml_drift/ml_drift_dummy_weight_creator.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
 
@@ -202,6 +204,20 @@ class CompiledMlDriftModelRunner {
     return it->second.id;
   }
 
+  absl::StatusOr<ml_drift::ValueId> GetTensorValueId(
+      const std::string& name) const {
+    auto raw_tensor_ptr = FindTensorByName(name);
+    if (!raw_tensor_ptr) {
+      return absl::NotFoundError(absl::StrCat("Tensor not found: ", name));
+    }
+    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
+    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
+      return absl::NotFoundError(
+          absl::StrCat("Tensor handle not found: ", name));
+    }
+    return it->second.id;
+  }
+
   absl::flat_hash_map<ml_drift::ValueId, BackendTensor*> GetWeightTensors() {
     absl::flat_hash_map<ml_drift::ValueId, BackendTensor*> tensors;
     for (const auto& [graph_tensor, handle] :
@@ -338,6 +354,33 @@ class CompiledMlDriftModelRunner {
     return t.data;
   }
 
+  // Reads a float output in logical BHWC order (the raw device buffer uses
+  // the backend's padded storage layout, so `GetOutputBuffer` is not a
+  // substitute for this).
+  absl::StatusOr<std::vector<float>> GetFloatOutput(const std::string& name) {
+    auto raw_tensor_ptr = FindTensorByName(name);
+    if (!raw_tensor_ptr) {
+      return absl::NotFoundError(
+          absl::StrCat("Output tensor not found: ", name));
+    }
+    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
+    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
+      return absl::NotFoundError(
+          absl::StrCat("Output tensor handle not found: ", name));
+    }
+    const auto& th = it->second;
+    LRT_TENSOR_RETURN_IF_ERROR(EnsureEnvInitialized());
+
+    ml_drift::TensorFloat32 t;
+    t.id = th.id;
+    t.data.resize(th.tensor_desc.GetBHWCShape().DimensionsProduct());
+    t.shape = th.tensor_desc.GetBHWCShape();
+
+    LRT_TENSOR_RETURN_IF_ERROR(Backend::GetOutputTensorFloat(
+        &inference_context_, env_ptr_, th.id, &t));
+    return t.data;
+  }
+
   absl::StatusOr<std::shared_ptr<Buffer>> GetOutputBuffer(
 
       const std::string& name) {
@@ -353,6 +396,25 @@ class CompiledMlDriftModelRunner {
     }
     const auto& th = it->second;
     return Backend::CreateOutputBuffer(&inference_context_, env_ptr_, th.id);
+  }
+
+  absl::StatusOr<BackendTensor*> GetBackendTensor(const std::string& name) {
+    auto raw_tensor_ptr = FindTensorByName(name);
+    if (!raw_tensor_ptr) {
+      return absl::NotFoundError(absl::StrCat("Tensor not found: ", name));
+    }
+    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
+    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
+      return absl::NotFoundError(
+          absl::StrCat("Tensor handle not found: ", name));
+    }
+    const auto& th = it->second;
+    BackendTensor* tensor = Backend::GetTensor(&inference_context_, th.id);
+    if (tensor == nullptr) {
+      return absl::InternalError(
+          absl::StrCat("Backend tensor is null for: ", name));
+    }
+    return tensor;
   }
 
   // Returns the compilation time.
@@ -401,6 +463,43 @@ class CompiledMlDriftModelRunner {
         auto lock = buffer->Lock();
         auto raw_span = std::move(lock).As<const int8_t>();
 
+        if (info.type != Type::kI4) {
+          // Constant weights consumed by FullyConnected / EmbeddingLookup
+          // kernels must be stored in the kernel's packed weights layout.
+          // The generic constant path in `GetTensorHandle` creates a plain
+          // linear tensor instead, which silently produces wrong results, so
+          // pack them here the same way the ML Drift numerical test bridge
+          // does. INT4 keeps its dedicated path below.
+          MlDriftDummyWeightCreator weight_creator(model_builder_.get());
+          Tensor<MlDriftMixinTag> weights_wrapper(weights_tensor);
+          ml_drift::GpuModelBuilder::TensorHandle gpu_handle;
+          if (info.type == Type::kFP32) {
+            absl::Span<const float> data(
+                reinterpret_cast<const float*>(raw_span.data()),
+                raw_span.size() / sizeof(float));
+            LRT_TENSOR_ASSIGN_OR_RETURN(
+                gpu_handle,
+                weight_creator.CreateFcWeights<float>(
+                    weights_wrapper, data, conversion_ctx_.default_float_type));
+          } else if (info.type == Type::kI8 || info.type == Type::kI2) {
+            LRT_TENSOR_ASSIGN_OR_RETURN(
+                gpu_handle, weight_creator.CreateFcWeights<int8_t>(
+                                weights_wrapper, raw_span,
+                                conversion_ctx_.default_float_type));
+          } else {
+            return absl::UnimplementedError(absl::StrCat(
+                "Unsupported constant weights type for ", op->GetName(), ": ",
+                info.type, " (tensor '", info.name, "')"));
+          }
+          conversion_ctx_.graph_tensor_to_handle[weights_tensor] = gpu_handle;
+          name_to_tensor_map_[info.name] = weights_tensor;
+          if (!info.name.empty()) {
+            conversion_ctx_.weight_name_to_handle.insert(
+                {info.name, gpu_handle});
+          }
+          continue;
+        }
+
         LRT_TENSOR_ASSIGN_OR_RETURN(auto bhwc_shape, ShapeToBHWC(info.shape));
         ml_drift::OHWI weights_ohwi;
         weights_ohwi.o = bhwc_shape.b;
@@ -408,22 +507,8 @@ class CompiledMlDriftModelRunner {
         weights_ohwi.w = bhwc_shape.w;
         weights_ohwi.i = bhwc_shape.c;
 
-        ml_drift::WeightsDescription desc;
-        if (op->GetName() == "FullyConnected") {
-          if (info.type == Type::kI4) {
-            desc =
-                model_builder_->GetFullyConnectedInt4WeightsDesc(weights_ohwi);
-          }
-        } else if (op->GetName() == "EmbeddingLookup") {
-          if (info.type == Type::kI4) {
-            desc =
-                model_builder_->GetFullyConnectedInt4WeightsDesc(weights_ohwi);
-          }
-        }
-
-        if (info.type != Type::kI4) {
-          continue;
-        }
+        ml_drift::WeightsDescription desc =
+            model_builder_->GetFullyConnectedInt4WeightsDesc(weights_ohwi);
 
         size_t num_elements = weights_ohwi.DimensionsProduct();
         std::vector<int8_t> unpacked_data(num_elements + 64, 0);
