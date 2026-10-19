@@ -204,6 +204,20 @@ class CompiledMlDriftModelRunner {
     return it->second.id;
   }
 
+  absl::StatusOr<ml_drift::ValueId> GetTensorValueId(
+      const std::string& name) const {
+    auto raw_tensor_ptr = FindTensorByName(name);
+    if (!raw_tensor_ptr) {
+      return absl::NotFoundError(absl::StrCat("Tensor not found: ", name));
+    }
+    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
+    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
+      return absl::NotFoundError(
+          absl::StrCat("Tensor handle not found: ", name));
+    }
+    return it->second.id;
+  }
+
   absl::flat_hash_map<ml_drift::ValueId, BackendTensor*> GetWeightTensors() {
     absl::flat_hash_map<ml_drift::ValueId, BackendTensor*> tensors;
     for (const auto& [graph_tensor, handle] :
@@ -382,6 +396,25 @@ class CompiledMlDriftModelRunner {
     }
     const auto& th = it->second;
     return Backend::CreateOutputBuffer(&inference_context_, env_ptr_, th.id);
+  }
+
+  absl::StatusOr<BackendTensor*> GetBackendTensor(const std::string& name) {
+    auto raw_tensor_ptr = FindTensorByName(name);
+    if (!raw_tensor_ptr) {
+      return absl::NotFoundError(absl::StrCat("Tensor not found: ", name));
+    }
+    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
+    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
+      return absl::NotFoundError(
+          absl::StrCat("Tensor handle not found: ", name));
+    }
+    const auto& th = it->second;
+    BackendTensor* tensor = Backend::GetTensor(&inference_context_, th.id);
+    if (tensor == nullptr) {
+      return absl::InternalError(
+          absl::StrCat("Backend tensor is null for: ", name));
+    }
+    return tensor;
   }
 
   // Returns the compilation time.
