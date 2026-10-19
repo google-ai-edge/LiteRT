@@ -35,6 +35,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:source_location",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -175,6 +176,7 @@ cc_library(
 #     srcs = ["transformer_ops_test.cc"],
 #     deps = [
 #         ":transformer_ops",
+#         ":transformer_ops_xnnpack",
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/status",
 #         "@com_google_absl//absl/status:status_matchers",
