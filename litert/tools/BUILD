@@ -192,6 +192,11 @@ litert_bin(
             "@exynos_ai_litecore//:lib/x86_64-linux/libgraphgen.so",
             "@exynos_ai_litecore//:lib/x86_64-linux/libgraphgen_api.so",
         ],
+    }) + select({
+        "//litert:linux_x86_64": [
+            "//litert/vendors/intel_openvino/compiler:intel_openvino_compiler_plugin_so",
+        ],
+        "//conditions:default": [],
     }),
     export_litert_only = 1,
     features = select({

@@ -16,9 +16,6 @@ namespace litert::qnn {
 namespace {
 using ::testing::ElementsAreArray;  // NOLINT
 
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 TEST_P(QnnModelTest, QuantizedDepthToSpaceValidatesWithQnn) {
   const ::qnn::QuantizeParamsWrapperVariant quant_params{
       std::in_place_type<::qnn::ScaleOffsetQuantizeParamsWrapper>, 0.00467028f,
