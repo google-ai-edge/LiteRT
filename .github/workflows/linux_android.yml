@@ -106,6 +106,7 @@ jobs:
           bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/kotlin:litert
           bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/vendors/arm_vulkan_ml/...
           bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_so
+          bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //tensor/...
 
       - name: Upload Android Artifacts
         if: github.event_name != 'pull_request'
