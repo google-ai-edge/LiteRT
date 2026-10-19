@@ -600,5 +600,65 @@ TEST_F(SVDFOpTest, BlackBoxTestInteger) {
   }
 }
 
+
+// SVDF op (rank 1) with explicitly given operand shapes, used to check that
+// Prepare() rejects operands of the wrong rank. An empty shape leaves the
+// operand at rank 0.
+class SVDFRankOpModel : public SingleOpModel {
+ public:
+  explicit SVDFRankOpModel(const std::vector<std::vector<int>>& shapes) {
+    AddInput(TensorType_FLOAT32);          // input
+    AddInput(TensorType_FLOAT32);          // weights_feature
+    AddInput(TensorType_FLOAT32);          // weights_time
+    AddInput(TensorType_FLOAT32);          // bias
+    AddVariableInput(TensorType_FLOAT32);  // activation_state
+    AddOutput(TensorType_FLOAT32);
+    SetBuiltinOp(BuiltinOperator_SVDF, BuiltinOptions_SVDFOptions,
+                 CreateSVDFOptions(builder_, /*rank=*/1,
+                                   ActivationFunctionType_NONE)
+                     .Union());
+    BuildInterpreter(shapes, /*num_threads=*/-1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/false,
+                     /*allocate_and_delegate=*/false);
+  }
+};
+
+// batch 2, input size 3, 4 units, memory size 5.
+TEST(SVDFRankTest, PrepareAcceptsWellFormedRanks) {
+  SVDFRankOpModel m({{2, 3}, {4, 3}, {4, 5}, {4}, {2, 20}});
+  EXPECT_EQ(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(SVDFRankTest, PrepareRejectsRank1Input) {
+  SVDFRankOpModel m({{3}, {4, 3}, {4, 5}, {4}, {2, 20}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(SVDFRankTest, PrepareRejectsRank3Input) {
+  SVDFRankOpModel m({{2, 3, 1}, {4, 3}, {4, 5}, {4}, {2, 20}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(SVDFRankTest, PrepareRejectsRank1WeightsFeature) {
+  SVDFRankOpModel m({{2, 3}, {4}, {4, 5}, {4}, {2, 20}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(SVDFRankTest, PrepareRejectsRank1WeightsTime) {
+  SVDFRankOpModel m({{2, 3}, {4, 3}, {4}, {4}, {2, 20}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(SVDFRankTest, PrepareRejectsRank0Bias) {
+  SVDFRankOpModel m({{2, 3}, {4, 3}, {4, 5}, {}, {2, 20}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(SVDFRankTest, PrepareRejectsRank2Bias) {
+  SVDFRankOpModel m({{2, 3}, {4, 3}, {4, 5}, {4, 1}, {2, 20}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
 }  // namespace
 }  // namespace tflite
