@@ -62,6 +62,10 @@ void ShortConvStepConvert(
   op->name = "short_conv_step";
 
   for (int i = 0; i < tflite_node.inputs->size; ++i) {
+    // Input 1 (conv_state) is not added to the GPU op; the kernel reads and
+    // updates output 1 (next_state) in-place on GPU, matching
+    // odml.cache_update.
+    if (i == 1) continue;
     if (tflite_node.inputs->data[i] != kTfLiteOptionalTensor) {
       ir_model.AddConsumer(tensor_map[tflite_node.inputs->data[i]], op->id);
     }

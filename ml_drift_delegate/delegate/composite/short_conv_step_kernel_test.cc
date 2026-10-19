@@ -73,19 +73,13 @@ absl::Status RunShortConvStepTest(
                                             ::ml_drift::Layout::kBHWC);
   in_proj_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, 3 * hidden_size));
 
-  // 2. conv_state [1, 1, hidden_size, conv_L_cache - 1]
-  ::ml_drift::TensorDescriptor conv_state_desc(data_type, storage,
-                                               ::ml_drift::Layout::kBHWC);
-  conv_state_desc.SetBHWCShape(
-      ::ml_drift::BHWC(1, 1, hidden_size, conv_L_cache - 1));
-
-  // 3. conv_weight [hidden_size, 1, 1, conv_L_cache]
+  // 2. conv_weight [hidden_size, 1, 1, conv_L_cache]
   ::ml_drift::TensorDescriptor conv_weight_desc(data_type, storage,
                                                 ::ml_drift::Layout::kBHWC);
   conv_weight_desc.SetBHWCShape(
       ::ml_drift::BHWC(hidden_size, 1, 1, conv_L_cache));
 
-  // 4. conv_bias (optional) [1, 1, 1, hidden_size]
+  // 3. conv_bias (optional) [1, 1, 1, hidden_size]
   std::unique_ptr<::ml_drift::TensorDescriptor> conv_bias_desc = nullptr;
   if (with_bias) {
     conv_bias_desc = std::make_unique<::ml_drift::TensorDescriptor>(
@@ -93,12 +87,12 @@ absl::Status RunShortConvStepTest(
     conv_bias_desc->SetBHWCShape(::ml_drift::BHWC(1, 1, 1, hidden_size));
   }
 
-  // 5. dst [1, 1, 1, hidden_size]
+  // 4. dst [1, 1, 1, hidden_size]
   ::ml_drift::TensorDescriptor dst_desc(data_type, storage,
                                         ::ml_drift::Layout::kBHWC);
   dst_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, hidden_size));
 
-  // 6. next_state [1, 1, hidden_size, conv_L_cache - 1]
+  // 5. next_state [1, 1, hidden_size, conv_L_cache - 1] (updated in-place)
   ::ml_drift::TensorDescriptor next_state_desc(data_type, storage,
                                                ::ml_drift::Layout::kBHWC);
   next_state_desc.SetBHWCShape(
@@ -106,9 +100,8 @@ absl::Status RunShortConvStepTest(
 
   // Create Op
   auto op = CreateFusedShortConvStep(
-      in_proj_desc, conv_state_desc, conv_weight_desc,
-      conv_bias_desc.get(), dst_desc, next_state_desc,
-      num_slices, hidden_size, conv_L_cache);
+      in_proj_desc, conv_weight_desc, conv_bias_desc.get(), dst_desc,
+      next_state_desc, num_slices, hidden_size, conv_L_cache);
 
   // Synthesize input data
   std::vector<float> in_proj_data(3 * hidden_size);
@@ -141,9 +134,9 @@ absl::Status RunShortConvStepTest(
     }
   }
 
-  // Upload data
+  // Upload data (conv_state is uploaded into next_state_desc for in-place
+  // read/modify/write).
   in_proj_desc.UploadData(in_proj_data.data());
-  conv_state_desc.UploadData(conv_state_data.data());
   conv_weight_desc.UploadData(conv_weight_data.data());
   if (with_bias) {
     conv_bias_desc->UploadData(conv_bias_data.data());
@@ -152,11 +145,10 @@ absl::Status RunShortConvStepTest(
   // Initialize output buffers
   std::vector<float> zero_out(hidden_size, 0.0f);
   dst_desc.UploadData(zero_out.data());
-  std::vector<float> zero_state(hidden_size * 2, 0.0f);
-  next_state_desc.UploadData(zero_state.data());
+  next_state_desc.UploadData(conv_state_data.data());
 
-  std::vector<::ml_drift::TensorDescriptor*> src_cpu = {
-      &in_proj_desc, &conv_state_desc, &conv_weight_desc};
+  std::vector<::ml_drift::TensorDescriptor*> src_cpu = {&in_proj_desc,
+                                                        &conv_weight_desc};
   if (with_bias) {
     src_cpu.push_back(conv_bias_desc.get());
   }
@@ -266,13 +258,11 @@ absl::Status RunShortConvPrefillTest(
       ::ml_drift::DeduceDataTypeFromPrecision(precision);
 
   // The shapes follow how the delegate maps the composite operands to BHWC:
-  // in_proj [1, S, 3 * H] -> (1, 1, S, 3 * H), conv_state [1, H, L - 1] ->
+  // in_proj [1, S, 3 * H] -> (1, 1, S, 3 * H), next_state [1, H, L - 1] ->
   // (1, 1, H, L - 1), conv_weight [H, 1, L] -> (H, 1, 1, L), and 1D
   // num_valid_tokens [1] and conv_bias [H] -> (N, 1, 1, 1).
   ::ml_drift::TensorDescriptor in_proj_desc = MakeTensorDesc(
       data_type, storage, ::ml_drift::BHWC(1, 1, seq_len, 3 * hidden_size));
-  ::ml_drift::TensorDescriptor conv_state_desc = MakeTensorDesc(
-      data_type, storage, ::ml_drift::BHWC(1, 1, hidden_size, num_state_taps));
   ::ml_drift::TensorDescriptor conv_weight_desc = MakeTensorDesc(
       data_type, storage, ::ml_drift::BHWC(hidden_size, 1, 1, conv_L_cache));
   std::unique_ptr<::ml_drift::TensorDescriptor> conv_bias_desc;
@@ -292,10 +282,10 @@ absl::Status RunShortConvPrefillTest(
   ::ml_drift::TensorDescriptor next_state_desc = MakeTensorDesc(
       data_type, storage, ::ml_drift::BHWC(1, 1, hidden_size, num_state_taps));
 
-  auto op = CreateFusedShortConvStep(
-      in_proj_desc, conv_state_desc, conv_weight_desc, conv_bias_desc.get(),
-      dst_desc, next_state_desc, num_slices, hidden_size, conv_L_cache,
-      num_valid_tokens_desc.get());
+  auto op = CreateFusedShortConvStep(in_proj_desc, conv_weight_desc,
+                                     conv_bias_desc.get(), dst_desc,
+                                     next_state_desc, num_slices, hidden_size,
+                                     conv_L_cache, num_valid_tokens_desc.get());
 
   // The inputs vary with both the token and the channel, so that reading the
   // wrong token, channel or tap changes the result.
@@ -335,7 +325,6 @@ absl::Status RunShortConvPrefillTest(
   }
 
   in_proj_desc.UploadData(in_proj_data.data());
-  conv_state_desc.UploadData(conv_state_data.data());
   conv_weight_desc.UploadData(conv_weight_data.data());
   if (test_case.with_bias) {
     conv_bias_desc->UploadData(conv_bias_data.data());
@@ -343,16 +332,15 @@ absl::Status RunShortConvPrefillTest(
   if (test_case.num_valid_tokens.has_value()) {
     num_valid_tokens_desc->UploadData(num_valid_tokens_data.data());
   }
-  // Fill the outputs with a sentinel so that elements the kernel does not
-  // write fail the comparison.
+  // Fill dst with a sentinel so that elements the kernel does not write fail
+  // the comparison; upload initial conv_state into next_state_desc for in-place
+  // update.
   const std::vector<float> dst_init(seq_len * hidden_size, -100.0f);
   dst_desc.UploadData(dst_init.data());
-  const std::vector<float> next_state_init(hidden_size * num_state_taps,
-                                           -100.0f);
-  next_state_desc.UploadData(next_state_init.data());
+  next_state_desc.UploadData(conv_state_data.data());
 
-  std::vector<::ml_drift::TensorDescriptor*> src_cpu = {
-      &in_proj_desc, &conv_state_desc, &conv_weight_desc};
+  std::vector<::ml_drift::TensorDescriptor*> src_cpu = {&in_proj_desc,
+                                                        &conv_weight_desc};
   if (test_case.with_bias) {
     src_cpu.push_back(conv_bias_desc.get());
   }
