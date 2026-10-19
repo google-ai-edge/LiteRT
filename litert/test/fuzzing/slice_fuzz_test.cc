@@ -265,6 +265,7 @@ std::vector<int64_t> MakeValidSizes(const std::vector<int32_t>& input_shape,
   return size;
 }
 
+#if !defined(TFLITE_SLICE_FUZZ_ENABLE_XNNPACK)
 auto ValidSliceCaseDomain() {
   return fuzztest::Map(
       [](std::vector<int32_t> input_shape, std::vector<uint8_t> begin_seeds,
@@ -367,6 +368,7 @@ auto MalformedSliceIndexLengthCaseDomain() {
       fuzztest::ElementOf<IndexSpecKind>(
           {IndexSpecKind::kConstant, IndexSpecKind::kDynamic}));
 }
+#endif  // !defined(TFLITE_SLICE_FUZZ_ENABLE_XNNPACK)
 
 #if defined(TFLITE_SLICE_FUZZ_ENABLE_XNNPACK)
 auto XnnpackSliceCaseDomain() {
@@ -450,6 +452,7 @@ auto XnnpackUnsupportedSizeSliceCaseDomain() {
 }
 #endif
 
+#if !defined(TFLITE_SLICE_FUZZ_ENABLE_XNNPACK)
 void SliceExecutesValidCases(const SliceCase& test_case) {
   SCOPED_TRACE(::testing::Message()
                << "shape=" << ::testing::PrintToString(test_case.input_shape)
@@ -522,6 +525,7 @@ FUZZ_TEST(SliceFuzzTest, SliceRejectsMismatchedIndexLength)
     .WithDomains(MalformedSliceIndexLengthCaseDomain());
 FUZZ_TEST(SliceFuzzTest, SliceReferenceRejectsMismatchedIndexLength)
     .WithDomains(MalformedSliceIndexLengthCaseDomain());
+#endif  // !defined(TFLITE_SLICE_FUZZ_ENABLE_XNNPACK)
 
 #if defined(TFLITE_SLICE_FUZZ_ENABLE_XNNPACK)
 void SliceXnnpackExecutesValidCases(const SliceCase& test_case) {

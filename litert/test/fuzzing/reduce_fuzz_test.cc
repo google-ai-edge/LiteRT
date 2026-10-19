@@ -16,7 +16,9 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#if !defined(TFLITE_REDUCE_FUZZ_ENABLE_XNNPACK)
 #include <numeric>
+#endif
 #include <utility>
 #include <vector>
 
@@ -102,8 +104,10 @@ struct XnnpackReduceSpec {
 
 constexpr size_t kMaxGeneralInputElements = 256;
 constexpr size_t kMaxFuzzerLiveAllocationBytes = 64 * 1024 * 1024;
+#if !defined(TFLITE_REDUCE_FUZZ_ENABLE_XNNPACK)
 constexpr int32_t kMinHighRank = 31;
 constexpr int32_t kMaxHighRank = 40;
+#endif
 #if defined(TFLITE_REDUCE_FUZZ_ENABLE_XNNPACK)
 constexpr int32_t kMaxXnnpackReduceRank = 6;
 #endif
@@ -347,6 +351,7 @@ RunResult RunReduceCase(
   return fuzzing::BuildAndRunOneOpModel(&builder, model_spec, run_spec);
 }
 
+#if !defined(TFLITE_REDUCE_FUZZ_ENABLE_XNNPACK)
 ReduceCase MakeHighRankReduceCase(const HighRankReduceSpec& spec) {
   const int32_t rank = std::clamp(spec.rank, kMinHighRank, kMaxHighRank);
   ReduceCase test_case;
@@ -377,6 +382,7 @@ ReduceCase MakeHighRankReduceCase(const HighRankReduceSpec& spec) {
   test_case.invoke = true;
   return test_case;
 }
+#endif  // !defined(TFLITE_REDUCE_FUZZ_ENABLE_XNNPACK)
 
 #if defined(TFLITE_REDUCE_FUZZ_ENABLE_XNNPACK)
 std::vector<int32_t> MakeXnnpackAxes(const std::vector<int32_t>& axis_values,
@@ -422,6 +428,7 @@ ReduceCase MakeXnnpackReduceCase(const XnnpackReduceSpec& spec) {
 }
 #endif
 
+#if !defined(TFLITE_REDUCE_FUZZ_ENABLE_XNNPACK)
 auto ValidReduceInputShapeDomain() {
   return fuzztest::VectorOf(fuzztest::InRange<int32_t>(1, 3))
       .WithMinSize(1)
@@ -508,6 +515,7 @@ auto HighRankReduceSpecDomain() {
       fuzztest::Arbitrary<bool>(), fuzztest::Arbitrary<bool>(),
       fuzztest::Arbitrary<bool>());
 }
+#endif  // !defined(TFLITE_REDUCE_FUZZ_ENABLE_XNNPACK)
 
 #if defined(TFLITE_REDUCE_FUZZ_ENABLE_XNNPACK)
 auto XnnpackReduceSpecDomain() {
@@ -541,6 +549,7 @@ auto XnnpackReduceSpecDomain() {
 }
 #endif
 
+#if !defined(TFLITE_REDUCE_FUZZ_ENABLE_XNNPACK)
 TEST(ReduceFuzzTest, ReferenceHighRankReduceAllSmoke) {
   const HighRankReduceSpec spec{
       /*rank=*/32,
@@ -606,6 +615,7 @@ FUZZ_TEST(ReduceFuzzTest, ReduceOptimizedRejectsInvalidAxis)
     .WithDomains(InvalidAxisReduceCaseDomain());
 FUZZ_TEST(ReduceFuzzTest, ReferenceHighRankReduceAllNeverCrashes)
     .WithDomains(HighRankReduceSpecDomain());
+#endif  // !defined(TFLITE_REDUCE_FUZZ_ENABLE_XNNPACK)
 
 #if defined(TFLITE_REDUCE_FUZZ_ENABLE_XNNPACK)
 TEST(ReduceFuzzTest, ReduceXnnpackSmokeDelegates) {
