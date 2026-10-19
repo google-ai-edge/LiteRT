@@ -470,6 +470,10 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::QnnBackend& qnn_backend,
     return kLiteRtStatusOk;
   }
 
+  if (op.IsOpCode(::qnn::QnnOpCode::kHadamardTransform)) {
+    return kLiteRtStatusOk;
+  }
+
   const auto op_config = op.GetOpConfig();
   if (Qnn_ErrorHandle_t error = Api()->backendValidateOpConfig(
           qnn_backend.GetBackendHandle(), op_config);
