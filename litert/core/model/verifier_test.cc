@@ -19,17 +19,22 @@
 #include <string>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "tflite/schema/schema_generated.h"
 #include "tflite/stderr_reporter.h"
-#include "tflite/tools/verifier.h"
 #include "tflite/version.h"
 
 namespace litert {
 namespace {
+
+using ::absl_testing::IsOkAndHolds;
+using ::absl_testing::StatusIs;
+using ::testing::HasSubstr;
 
 template <typename T>
 flatbuffers::Offset<tflite::Buffer> CreateTypedBuffer(
@@ -121,10 +126,13 @@ TEST(VerifierTest, RejectsSliceWithMismatchedBeginAndSizeTypes) {
                   /*begin_vals=*/{1, 2}, tflite::TensorType_INT64,
                   /*size_vals=*/{2, 3});
 
-  // FlatBuffer schema verifier passes this model, but LiteRT verifier rejects
-  // it because begin and size have different data types.
-  EXPECT_TRUE(tflite::Verify(builder.GetBufferPointer(), builder.GetSize(),
-                             tflite::DefaultErrorReporter()));
+  // FlatBuffer/subgraph verification passes when shape inference is disabled,
+  // but per-op shape inference rejects mismatched begin and size types.
+  VerifyOptions no_shape_inference_options;
+  no_shape_inference_options.run_shape_inference = false;
+  EXPECT_TRUE(VerifyModel(builder.GetBufferPointer(), builder.GetSize(),
+                          no_shape_inference_options)
+                  .ok());
   EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
 }
 
@@ -1338,6 +1346,638 @@ TEST(VerifierTest, RejectsDepthToSpaceWithOverflowingBlockSize) {
   EXPECT_EQ(VerifyModel(builder.GetBufferPointer(), builder.GetSize()).code(),
             absl::StatusCode::kInvalidArgument);
   EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
+}
+
+TEST(VerifierTest, RejectsCorruptedFlatBuffer) {
+  const std::string corrupted = "123";
+
+  EXPECT_THAT(VerifyModel(corrupted.data(), corrupted.size()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Invalid flatbuffer format")));
+}
+
+TEST(VerifierTest, RejectsInvalidSchemaVersion) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto model = tflite::CreateModel(builder, /*version=*/1);
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_THAT(VerifyModel(builder.GetBufferPointer(), builder.GetSize()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Invalid model version 1")));
+}
+
+TEST(VerifierTest, RejectsMissingSubgraphsSection) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto model = tflite::CreateModel(builder, TFLITE_SCHEMA_VERSION);
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_THAT(VerifyModel(builder.GetBufferPointer(), builder.GetSize()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Missing 'subgraphs' section.")));
+}
+
+TEST(VerifierTest, RejectsMissingOperatorsSectionInSubgraph) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto subgraph = tflite::CreateSubGraph(
+      builder, /*tensors=*/0, /*inputs=*/0, /*outputs=*/0, /*operators=*/0,
+      builder.CreateString("main"));
+  auto model =
+      tflite::CreateModel(builder, TFLITE_SCHEMA_VERSION, /*operator_codes=*/0,
+                          builder.CreateVector(&subgraph, 1));
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_THAT(VerifyModel(builder.GetBufferPointer(), builder.GetSize()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Subgraph main: Missing 'operators' section "
+                                 "in subgraph.")));
+}
+
+TEST(VerifierTest, RejectsMissingBuffersSection) {
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<tflite::Operator>> ops;
+  auto subgraph = tflite::CreateSubGraph(
+      builder, /*tensors=*/0, /*inputs=*/0, /*outputs=*/0,
+      builder.CreateVector(ops));
+  auto model =
+      tflite::CreateModel(builder, TFLITE_SCHEMA_VERSION, /*operator_codes=*/0,
+                          builder.CreateVector(&subgraph, 1));
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_THAT(VerifyModel(builder.GetBufferPointer(), builder.GetSize()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Missing 'buffers' section.")));
+}
+
+TEST(VerifierTest, RejectsMissingOperatorInputs) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto buffer = tflite::CreateBuffer(builder);
+  auto opcode =
+      tflite::CreateOperatorCode(builder, tflite::BuiltinOperator_RELU);
+  std::vector<int32_t> outputs = {0};
+  auto op = tflite::CreateOperator(builder, /*opcode_index=*/0, /*inputs=*/0,
+                                   builder.CreateVector(outputs));
+  auto subgraph = tflite::CreateSubGraph(
+      builder, /*tensors=*/0, /*inputs=*/0, /*outputs=*/0,
+      builder.CreateVector(&op, 1), builder.CreateString("main"));
+  auto model = tflite::CreateModel(
+      builder, TFLITE_SCHEMA_VERSION, builder.CreateVector(&opcode, 1),
+      builder.CreateVector(&subgraph, 1), /*description=*/0,
+      builder.CreateVector(&buffer, 1));
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_THAT(
+      VerifyModel(builder.GetBufferPointer(), builder.GetSize()),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("Subgraph main: Missing 'inputs' for operator.")));
+}
+
+TEST(VerifierTest, RejectsOutOfBoundsLargeCustomOptions) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto buffer = tflite::CreateBuffer(builder);
+  auto opcode =
+      tflite::CreateOperatorCode(builder, tflite::BuiltinOperator_RELU);
+  std::vector<int32_t> empty_vec;
+  auto op = tflite::CreateOperator(
+      builder, /*opcode_index=*/0, builder.CreateVector(empty_vec),
+      builder.CreateVector(empty_vec), tflite::BuiltinOptions_NONE,
+      /*builtin_options=*/0, /*custom_options=*/0,
+      tflite::CustomOptionsFormat_FLEXBUFFERS,
+      /*mutating_variable_inputs=*/0, /*intermediates=*/0,
+      /*large_custom_options_offset=*/2048,
+      /*large_custom_options_size=*/1024);
+  auto subgraph = tflite::CreateSubGraph(
+      builder, /*tensors=*/0, /*inputs=*/0, /*outputs=*/0,
+      builder.CreateVector(&op, 1), builder.CreateString("main"));
+  auto model = tflite::CreateModel(
+      builder, TFLITE_SCHEMA_VERSION, builder.CreateVector(&opcode, 1),
+      builder.CreateVector(&subgraph, 1), /*description=*/0,
+      builder.CreateVector(&buffer, 1));
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_THAT(VerifyModel(builder.GetBufferPointer(), builder.GetSize()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Subgraph main: Operator's "
+                                 "large_custom_options is out of bound.")));
+}
+
+TEST(VerifierTest, RejectsUnproducedOperatorInputTensor) {
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<tflite::Buffer>> buffers = {
+      tflite::CreateBuffer(builder),
+      tflite::CreateBuffer(builder),
+  };
+  std::vector<flatbuffers::Offset<tflite::Tensor>> tensors = {
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{2}),
+                           tflite::TensorType_FLOAT32, /*buffer=*/0,
+                           builder.CreateString("unproduced_in")),
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{2}),
+                           tflite::TensorType_FLOAT32, /*buffer=*/1,
+                           builder.CreateString("out")),
+  };
+  auto opcode =
+      tflite::CreateOperatorCode(builder, tflite::BuiltinOperator_RELU);
+  std::vector<int32_t> op_inputs = {0};
+  std::vector<int32_t> op_outputs = {1};
+  auto op = tflite::CreateOperator(builder, /*opcode_index=*/0,
+                                   builder.CreateVector(op_inputs),
+                                   builder.CreateVector(op_outputs));
+  std::vector<int32_t> model_inputs = {};
+  std::vector<int32_t> model_outputs = {1};
+  auto subgraph = tflite::CreateSubGraph(
+      builder, builder.CreateVector(tensors),
+      builder.CreateVector(model_inputs), builder.CreateVector(model_outputs),
+      builder.CreateVector(&op, 1), builder.CreateString("main"));
+  auto model = tflite::CreateModel(
+      builder, TFLITE_SCHEMA_VERSION, builder.CreateVector(&opcode, 1),
+      builder.CreateVector(&subgraph, 1), /*description=*/0,
+      builder.CreateVector(buffers));
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_THAT(VerifyModel(builder.GetBufferPointer(), builder.GetSize()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Subgraph main: Input tensor 0 to op 0 (RELU) "
+                                 "is not produced")));
+}
+
+TEST(VerifierTest, RejectsOperatorOutputThatIsSubgraphInput) {
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<tflite::Buffer>> buffers = {
+      tflite::CreateBuffer(builder),
+  };
+  std::vector<flatbuffers::Offset<tflite::Tensor>> tensors = {
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{2}),
+                           tflite::TensorType_FLOAT32, /*buffer=*/0,
+                           builder.CreateString("in_and_out")),
+  };
+  auto opcode =
+      tflite::CreateOperatorCode(builder, tflite::BuiltinOperator_RELU);
+  std::vector<int32_t> op_io = {0};
+  auto op = tflite::CreateOperator(builder, /*opcode_index=*/0,
+                                   builder.CreateVector(op_io),
+                                   builder.CreateVector(op_io));
+  auto subgraph = tflite::CreateSubGraph(
+      builder, builder.CreateVector(tensors), builder.CreateVector(op_io),
+      builder.CreateVector(op_io), builder.CreateVector(&op, 1),
+      builder.CreateString("main"));
+  auto model = tflite::CreateModel(
+      builder, TFLITE_SCHEMA_VERSION, builder.CreateVector(&opcode, 1),
+      builder.CreateVector(&subgraph, 1), /*description=*/0,
+      builder.CreateVector(buffers));
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_THAT(VerifyModel(builder.GetBufferPointer(), builder.GetSize()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Subgraph main: Output tensor 0 to op 0 "
+                                 "(RELU) is a subgraph input")));
+}
+
+TEST(VerifierTest, RejectsNumericTensorBufferSizeMismatch) {
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<tflite::Buffer>> buffers = {
+      tflite::CreateBuffer(builder),
+      tflite::CreateBuffer(
+          builder, builder.CreateVector(std::vector<uint8_t>{1, 2, 3, 4})),
+  };
+  std::vector<flatbuffers::Offset<tflite::Tensor>> tensors = {
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{2, 3}),
+                           tflite::TensorType_UINT8, /*buffer=*/1,
+                           builder.CreateString("weight")),
+  };
+  std::vector<flatbuffers::Offset<tflite::Operator>> ops;
+  auto subgraph = tflite::CreateSubGraph(
+      builder, builder.CreateVector(tensors), /*inputs=*/0, /*outputs=*/0,
+      builder.CreateVector(ops));
+  auto model = tflite::CreateModel(
+      builder, TFLITE_SCHEMA_VERSION, /*operator_codes=*/0,
+      builder.CreateVector(&subgraph, 1), /*description=*/0,
+      builder.CreateVector(buffers));
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_THAT(VerifyModel(builder.GetBufferPointer(), builder.GetSize()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Tensor weight requires 6 bytes, but is "
+                                 "allocated with 4 bytes buffer")));
+}
+
+TEST(VerifierTest, RejectsStringTensorBufferWithInvalidInitialOffset) {
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<tflite::Buffer>> buffers = {
+      tflite::CreateBuffer(builder),
+      tflite::CreateBuffer(
+          builder, builder.CreateVector(std::vector<uint8_t>{
+                       2, 0, 0, 0, 12, 0, 0, 0, 17, 0, 0, 0, 18, 0, 0, 0, 'A',
+                       'B'})),
+  };
+  std::vector<flatbuffers::Offset<tflite::Tensor>> tensors = {
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{2}),
+                           tflite::TensorType_STRING, /*buffer=*/1,
+                           builder.CreateString("str_tensor")),
+  };
+  std::vector<flatbuffers::Offset<tflite::Operator>> ops;
+  auto subgraph = tflite::CreateSubGraph(
+      builder, builder.CreateVector(tensors), /*inputs=*/0, /*outputs=*/0,
+      builder.CreateVector(ops));
+  auto model = tflite::CreateModel(
+      builder, TFLITE_SCHEMA_VERSION, /*operator_codes=*/0,
+      builder.CreateVector(&subgraph, 1), /*description=*/0,
+      builder.CreateVector(buffers));
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_THAT(VerifyModel(builder.GetBufferPointer(), builder.GetSize()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("String tensor str_tensor buffer initial "
+                                 "offset must be: 16")));
+}
+
+TEST(VerifierTest, RejectsAppendedBufferWithOutOfRangeOffset) {
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<tflite::Buffer>> buffers = {
+      tflite::CreateBuffer(builder),
+      tflite::CreateBuffer(builder, /*data=*/0, /*offset=*/4096, /*size=*/64),
+  };
+  std::vector<flatbuffers::Offset<tflite::Tensor>> tensors = {
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{64}),
+                           tflite::TensorType_UINT8, /*buffer=*/1,
+                           builder.CreateString("ext_weight")),
+  };
+  std::vector<flatbuffers::Offset<tflite::Operator>> ops;
+  auto subgraph = tflite::CreateSubGraph(
+      builder, builder.CreateVector(tensors), /*inputs=*/0, /*outputs=*/0,
+      builder.CreateVector(ops));
+  auto model = tflite::CreateModel(
+      builder, TFLITE_SCHEMA_VERSION, /*operator_codes=*/0,
+      builder.CreateVector(&subgraph, 1), /*description=*/0,
+      builder.CreateVector(buffers));
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_THAT(VerifyModel(builder.GetBufferPointer(), builder.GetSize()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Tensor ext_weight buffer 1 specified an out "
+                                 "of range offset.")));
+}
+
+TEST(VerifierTest, VerifyAndCountElementsCountsCsrMatrix) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto d0 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 4);
+  auto segments = tflite::CreateInt32Vector(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 2, 2, 4, 5}));
+  auto indices = tflite::CreateInt32Vector(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 2, 1, 2, 0}));
+  auto d1 = tflite::CreateDimensionMetadata(
+      builder, tflite::DimensionType_SPARSE_CSR, 0,
+      tflite::SparseIndexVector_Int32Vector, segments.Union(),
+      tflite::SparseIndexVector_Int32Vector, indices.Union());
+  std::vector<flatbuffers::Offset<tflite::DimensionMetadata>> dim_metadata = {
+      d0, d1};
+  auto sparsity_offset = tflite::CreateSparsityParameters(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1}),
+      /*block_map=*/0, builder.CreateVector(dim_metadata));
+  builder.Finish(sparsity_offset);
+  const auto* sparsity = flatbuffers::GetRoot<tflite::SparsityParameters>(
+      builder.GetBufferPointer());
+
+  EXPECT_THAT(internal::VerifyAndCountElements(*sparsity, {4, 3}, "csr_tensor"),
+              IsOkAndHolds(5u));
+}
+
+TEST(VerifierTest, VerifyAndCountElementsRejectsDenseSizeMismatch) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto d0 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 5);
+  std::vector<flatbuffers::Offset<tflite::DimensionMetadata>> dim_metadata = {
+      d0};
+  auto sparsity_offset = tflite::CreateSparsityParameters(
+      builder, builder.CreateVector(std::vector<int32_t>{0}),
+      /*block_map=*/0, builder.CreateVector(dim_metadata));
+  builder.Finish(sparsity_offset);
+  const auto* sparsity = flatbuffers::GetRoot<tflite::SparsityParameters>(
+      builder.GetBufferPointer());
+
+  EXPECT_THAT(internal::VerifyAndCountElements(*sparsity, {4}, "bad_dense"),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("dense_size (5) at level 0 does not match "
+                                 "dimension size (4)")));
+}
+
+TEST(VerifierTest, VerifyAndCountElementsRejectsDenseDimensionOverflow) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto d0 = tflite::CreateDimensionMetadata(
+      builder, tflite::DimensionType_DENSE, 65536);
+  auto d1 = tflite::CreateDimensionMetadata(
+      builder, tflite::DimensionType_DENSE, 65536);
+  std::vector<flatbuffers::Offset<tflite::DimensionMetadata>> dim_metadata = {
+      d0, d1};
+  auto sparsity_offset = tflite::CreateSparsityParameters(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1}),
+      /*block_map=*/0, builder.CreateVector(dim_metadata));
+  builder.Finish(sparsity_offset);
+  const auto* sparsity = flatbuffers::GetRoot<tflite::SparsityParameters>(
+      builder.GetBufferPointer());
+
+  EXPECT_THAT(internal::VerifyAndCountElements(*sparsity, {65536, 65536},
+                                               "overflow_tensor"),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Tensor overflow_tensor dimension overflow")));
+}
+
+TEST(VerifierTest, VerifyAndCountElementsRejectsMissingSparseArrays) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto d0 = tflite::CreateDimensionMetadata(
+      builder, tflite::DimensionType_SPARSE_CSR, 0);
+  std::vector<flatbuffers::Offset<tflite::DimensionMetadata>> dim_metadata = {
+      d0};
+  auto sparsity_offset = tflite::CreateSparsityParameters(
+      builder, builder.CreateVector(std::vector<int32_t>{0}),
+      /*block_map=*/0, builder.CreateVector(dim_metadata));
+  builder.Finish(sparsity_offset);
+  const auto* sparsity = flatbuffers::GetRoot<tflite::SparsityParameters>(
+      builder.GetBufferPointer());
+
+  EXPECT_THAT(
+      internal::VerifyAndCountElements(*sparsity, {4}, "missing_arrays"),
+      StatusIs(
+          absl::StatusCode::kInvalidArgument,
+          HasSubstr("missing array_segments or array_indices at level 0")));
+}
+
+TEST(VerifierTest, VerifyAndCountElementsRejectsNonMonotonicArraySegments) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto d0 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 2);
+  auto segments = tflite::CreateInt32Vector(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 3, 2}));
+  auto indices = tflite::CreateInt32Vector(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1}));
+  auto d1 = tflite::CreateDimensionMetadata(
+      builder, tflite::DimensionType_SPARSE_CSR, 0,
+      tflite::SparseIndexVector_Int32Vector, segments.Union(),
+      tflite::SparseIndexVector_Int32Vector, indices.Union());
+  std::vector<flatbuffers::Offset<tflite::DimensionMetadata>> dim_metadata = {
+      d0, d1};
+  auto sparsity_offset = tflite::CreateSparsityParameters(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1}),
+      /*block_map=*/0, builder.CreateVector(dim_metadata));
+  builder.Finish(sparsity_offset);
+  const auto* sparsity = flatbuffers::GetRoot<tflite::SparsityParameters>(
+      builder.GetBufferPointer());
+
+  EXPECT_THAT(
+      internal::VerifyAndCountElements(*sparsity, {2, 3}, "bad_segments"),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("invalid array_segments at level 1, index 1")));
+}
+
+TEST(VerifierTest, VerifyAndCountElementsRejectsSegmentCountMismatch) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto d0 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 3);
+  auto segments = tflite::CreateInt32Vector(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1, 2}));
+  auto indices = tflite::CreateInt32Vector(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1}));
+  auto d1 = tflite::CreateDimensionMetadata(
+      builder, tflite::DimensionType_SPARSE_CSR, 0,
+      tflite::SparseIndexVector_Int32Vector, segments.Union(),
+      tflite::SparseIndexVector_Int32Vector, indices.Union());
+  std::vector<flatbuffers::Offset<tflite::DimensionMetadata>> dim_metadata = {
+      d0, d1};
+  auto sparsity_offset = tflite::CreateSparsityParameters(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1}),
+      /*block_map=*/0, builder.CreateVector(dim_metadata));
+  builder.Finish(sparsity_offset);
+  const auto* sparsity = flatbuffers::GetRoot<tflite::SparsityParameters>(
+      builder.GetBufferPointer());
+
+  EXPECT_THAT(
+      internal::VerifyAndCountElements(*sparsity, {3, 3}, "seg_count"),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("num_elements (3) does not match array_segments_size "
+                         "- 1 (2) at level 1")));
+}
+
+TEST(VerifierTest,
+     VerifyAndCountElementsRejectsIndicesSizeMismatchWithLastSegment) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto d0 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 2);
+  auto segments = tflite::CreateInt32Vector(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1, 3}));
+  auto indices = tflite::CreateInt32Vector(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1}));
+  auto d1 = tflite::CreateDimensionMetadata(
+      builder, tflite::DimensionType_SPARSE_CSR, 0,
+      tflite::SparseIndexVector_Int32Vector, segments.Union(),
+      tflite::SparseIndexVector_Int32Vector, indices.Union());
+  std::vector<flatbuffers::Offset<tflite::DimensionMetadata>> dim_metadata = {
+      d0, d1};
+  auto sparsity_offset = tflite::CreateSparsityParameters(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1}),
+      /*block_map=*/0, builder.CreateVector(dim_metadata));
+  builder.Finish(sparsity_offset);
+  const auto* sparsity = flatbuffers::GetRoot<tflite::SparsityParameters>(
+      builder.GetBufferPointer());
+
+  EXPECT_THAT(
+      internal::VerifyAndCountElements(*sparsity, {2, 3}, "idx_size"),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("array_indices_size (2) does not match last segment "
+                         "value (3) at level 1")));
+}
+
+TEST(VerifierTest, VerifyAndCountElementsRejectsOutOfBoundsArrayIndices) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto d0 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 2);
+  auto segments = tflite::CreateInt32Vector(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1, 2}));
+  auto indices = tflite::CreateInt32Vector(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 3}));
+  auto d1 = tflite::CreateDimensionMetadata(
+      builder, tflite::DimensionType_SPARSE_CSR, 0,
+      tflite::SparseIndexVector_Int32Vector, segments.Union(),
+      tflite::SparseIndexVector_Int32Vector, indices.Union());
+  std::vector<flatbuffers::Offset<tflite::DimensionMetadata>> dim_metadata = {
+      d0, d1};
+  auto sparsity_offset = tflite::CreateSparsityParameters(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1}),
+      /*block_map=*/0, builder.CreateVector(dim_metadata));
+  builder.Finish(sparsity_offset);
+  const auto* sparsity = flatbuffers::GetRoot<tflite::SparsityParameters>(
+      builder.GetBufferPointer());
+
+  EXPECT_THAT(
+      internal::VerifyAndCountElements(*sparsity, {2, 3}, "oob_idx"),
+      StatusIs(
+          absl::StatusCode::kInvalidArgument,
+          HasSubstr("array_indices[1] (3) out of bounds [0, 3) at level 1")));
+}
+
+TEST(VerifierTest, VerifyAndCountSparseElementsCountsBlockSparseTensor) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto d0 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 2);
+  auto segments = tflite::CreateInt32Vector(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1, 2}));
+  auto indices = tflite::CreateInt32Vector(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1}));
+  auto d1 = tflite::CreateDimensionMetadata(
+      builder, tflite::DimensionType_SPARSE_CSR, 0,
+      tflite::SparseIndexVector_Int32Vector, segments.Union(),
+      tflite::SparseIndexVector_Int32Vector, indices.Union());
+  auto d2 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 2);
+  auto d3 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 2);
+  std::vector<flatbuffers::Offset<tflite::DimensionMetadata>> dim_metadata = {
+      d0, d1, d2, d3};
+  auto sparsity = tflite::CreateSparsityParameters(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1, 2, 3}),
+      builder.CreateVector(std::vector<int32_t>{0, 1}),
+      builder.CreateVector(dim_metadata));
+  auto tensor_offset = tflite::CreateTensor(
+      builder, builder.CreateVector(std::vector<int32_t>{4, 4}),
+      tflite::TensorType_FLOAT32, /*buffer=*/1,
+      builder.CreateString("block_sparse"), /*quantization=*/0,
+      /*is_variable=*/false, sparsity);
+  builder.Finish(tensor_offset);
+  const auto* tensor =
+      flatbuffers::GetRoot<tflite::Tensor>(builder.GetBufferPointer());
+
+  EXPECT_THAT(internal::VerifyAndCountSparseElements(*tensor),
+              IsOkAndHolds(8u));
+}
+
+TEST(VerifierTest,
+     VerifyAndCountSparseElementsRejectsMissingTraversalOrderOrDimMetadata) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto sparsity = tflite::CreateSparsityParameters(builder);
+  auto tensor_offset = tflite::CreateTensor(
+      builder, builder.CreateVector(std::vector<int32_t>{4, 4}),
+      tflite::TensorType_FLOAT32, /*buffer=*/1,
+      builder.CreateString("missing_meta"), /*quantization=*/0,
+      /*is_variable=*/false, sparsity);
+  builder.Finish(tensor_offset);
+  const auto* tensor =
+      flatbuffers::GetRoot<tflite::Tensor>(builder.GetBufferPointer());
+
+  EXPECT_THAT(internal::VerifyAndCountSparseElements(*tensor),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("missing traversal_order or dim_metadata")));
+}
+
+TEST(VerifierTest,
+     VerifyAndCountSparseElementsRejectsInconsistentRankAndDimensions) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto d0 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 4);
+  std::vector<flatbuffers::Offset<tflite::DimensionMetadata>> dim_metadata = {
+      d0};
+  auto sparsity = tflite::CreateSparsityParameters(
+      builder, builder.CreateVector(std::vector<int32_t>{0}),
+      /*block_map=*/0, builder.CreateVector(dim_metadata));
+  auto tensor_offset = tflite::CreateTensor(
+      builder, builder.CreateVector(std::vector<int32_t>{4, 4}),
+      tflite::TensorType_FLOAT32, /*buffer=*/1,
+      builder.CreateString("rank_mismatch"), /*quantization=*/0,
+      /*is_variable=*/false, sparsity);
+  builder.Finish(tensor_offset);
+  const auto* tensor =
+      flatbuffers::GetRoot<tflite::Tensor>(builder.GetBufferPointer());
+
+  EXPECT_THAT(internal::VerifyAndCountSparseElements(*tensor),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("total_dims (1), original_rank (2), and "
+                                 "dim_metadata size (1) are inconsistent")));
+}
+
+TEST(VerifierTest, VerifyAndCountSparseElementsRejectsMissingBlockMap) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto d0 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 2);
+  auto d1 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 2);
+  auto d2 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 2);
+  std::vector<flatbuffers::Offset<tflite::DimensionMetadata>> dim_metadata = {
+      d0, d1, d2};
+  auto sparsity = tflite::CreateSparsityParameters(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1, 2}),
+      /*block_map=*/0, builder.CreateVector(dim_metadata));
+  auto tensor_offset = tflite::CreateTensor(
+      builder, builder.CreateVector(std::vector<int32_t>{4, 4}),
+      tflite::TensorType_FLOAT32, /*buffer=*/1,
+      builder.CreateString("no_block_map"), /*quantization=*/0,
+      /*is_variable=*/false, sparsity);
+  builder.Finish(tensor_offset);
+  const auto* tensor =
+      flatbuffers::GetRoot<tflite::Tensor>(builder.GetBufferPointer());
+
+  EXPECT_THAT(internal::VerifyAndCountSparseElements(*tensor),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("missing block_map for block_rank 1")));
+}
+
+TEST(VerifierTest,
+     VerifyAndCountSparseElementsRejectsInvalidTraversalOrderPermutation) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto d0 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 4);
+  auto d1 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 4);
+  std::vector<flatbuffers::Offset<tflite::DimensionMetadata>> dim_metadata = {
+      d0, d1};
+  auto sparsity = tflite::CreateSparsityParameters(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 0}),
+      /*block_map=*/0, builder.CreateVector(dim_metadata));
+  auto tensor_offset = tflite::CreateTensor(
+      builder, builder.CreateVector(std::vector<int32_t>{4, 4}),
+      tflite::TensorType_FLOAT32, /*buffer=*/1,
+      builder.CreateString("bad_perm"), /*quantization=*/0,
+      /*is_variable=*/false, sparsity);
+  builder.Finish(tensor_offset);
+  const auto* tensor =
+      flatbuffers::GetRoot<tflite::Tensor>(builder.GetBufferPointer());
+
+  EXPECT_THAT(
+      internal::VerifyAndCountSparseElements(*tensor),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("traversal_order is not a valid permutation of "
+                         "original dimensions")));
+}
+
+TEST(VerifierTest, VerifyAndCountSparseElementsRejectsNonPositiveBlockDimSize) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto d0 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 4);
+  auto d1 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 4);
+  auto d2 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 0);
+  std::vector<flatbuffers::Offset<tflite::DimensionMetadata>> dim_metadata = {
+      d0, d1, d2};
+  auto sparsity = tflite::CreateSparsityParameters(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1, 2}),
+      builder.CreateVector(std::vector<int32_t>{0}),
+      builder.CreateVector(dim_metadata));
+  auto tensor_offset = tflite::CreateTensor(
+      builder, builder.CreateVector(std::vector<int32_t>{4, 4}),
+      tflite::TensorType_FLOAT32, /*buffer=*/1,
+      builder.CreateString("zero_block_dim"), /*quantization=*/0,
+      /*is_variable=*/false, sparsity);
+  builder.Finish(tensor_offset);
+  const auto* tensor =
+      flatbuffers::GetRoot<tflite::Tensor>(builder.GetBufferPointer());
+
+  EXPECT_THAT(internal::VerifyAndCountSparseElements(*tensor),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("block_dim_size (0) must be positive")));
 }
 
 }  // namespace
