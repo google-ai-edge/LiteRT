@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -25,6 +26,8 @@
 #include "litert/c/internal/litert_runtime_builtin.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_runtime_proxy.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -72,9 +75,257 @@ TEST(EnvironmentTest, CreateWithSystemRuntime) {
               reinterpret_cast<int64_t>(GetLiteRtRuntimeBuiltin())),
       },
   };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment env, litert::Environment::Create(litert::EnvironmentOptions(
+                           absl::MakeConstSpan(environment_options))));
+  // Without kSystemRuntimeAbiVersion, an external system runtime handle
+  // defaults to ABI version 1.0.0, so 1.1.0 APIs return kErrorUnsupported.
+  auto accelerators = env.GetAvailableAccelerators();
+  EXPECT_FALSE(accelerators);
+  EXPECT_EQ(accelerators.Error().Status(), kLiteRtStatusErrorUnsupported);
+}
+
+TEST(EnvironmentTest, RuntimeAbiVersionParseAndCompare) {
+  using internal::RuntimeAbiVersion;
+
+  EXPECT_EQ(RuntimeAbiVersion::Parse("1.0.0"), RuntimeAbiVersion(1, 0, 0));
+  EXPECT_EQ(RuntimeAbiVersion::Parse("1.12.34"), RuntimeAbiVersion(1, 12, 34));
+  EXPECT_EQ(RuntimeAbiVersion::Parse("0.9.0"), RuntimeAbiVersion(0, 9, 0));
+  EXPECT_EQ(RuntimeAbiVersion::Parse("2.0.0"), RuntimeAbiVersion(2, 0, 0));
+
+  EXPECT_FALSE(RuntimeAbiVersion::Parse("").has_value());
+  EXPECT_FALSE(RuntimeAbiVersion::Parse("1").has_value());
+  EXPECT_FALSE(RuntimeAbiVersion::Parse("1.0").has_value());
+  EXPECT_FALSE(RuntimeAbiVersion::Parse("1..0").has_value());
+  EXPECT_FALSE(RuntimeAbiVersion::Parse("1.0.").has_value());
+  EXPECT_FALSE(RuntimeAbiVersion::Parse("1.0.0.0").has_value());
+  EXPECT_FALSE(RuntimeAbiVersion::Parse("1.0.0-alpha").has_value());
+  EXPECT_FALSE(RuntimeAbiVersion::Parse("1.0.0 ").has_value());
+  EXPECT_FALSE(RuntimeAbiVersion::Parse("01.0.0").has_value());
+  EXPECT_FALSE(RuntimeAbiVersion::Parse("1.01.0").has_value());
+  EXPECT_FALSE(RuntimeAbiVersion::Parse("1.0.01").has_value());
+  EXPECT_FALSE(RuntimeAbiVersion::Parse("-1.0.0").has_value());
+  EXPECT_FALSE(RuntimeAbiVersion::Parse("1.a.0").has_value());
+  EXPECT_FALSE(RuntimeAbiVersion::Parse("999999999999.0.0").has_value());
+
+  EXPECT_TRUE(RuntimeAbiVersion(1, 0, 0).IsCompatibleWithClient());
+  EXPECT_TRUE(RuntimeAbiVersion(1, 99, 99).IsCompatibleWithClient());
+  EXPECT_FALSE(RuntimeAbiVersion(0, 9, 0).IsCompatibleWithClient());
+  EXPECT_FALSE(RuntimeAbiVersion(2, 0, 0).IsCompatibleWithClient());
+
+  EXPECT_EQ(RuntimeAbiVersion(1, 2, 0), RuntimeAbiVersion(1, 2, 0));
+  EXPECT_NE(RuntimeAbiVersion(1, 2, 0), RuntimeAbiVersion(1, 2, 1));
+  EXPECT_LT(RuntimeAbiVersion(1, 0, 9), RuntimeAbiVersion(1, 1, 0));
+  EXPECT_LT(RuntimeAbiVersion(1, 1, 0), RuntimeAbiVersion(1, 1, 1));
+  EXPECT_LT(RuntimeAbiVersion(1, 9, 9), RuntimeAbiVersion(2, 0, 0));
+  EXPECT_GT(RuntimeAbiVersion(1, 2, 0), RuntimeAbiVersion(1, 1, 9));
+  EXPECT_LE(RuntimeAbiVersion(1, 2, 0), RuntimeAbiVersion(1, 2, 0));
+  EXPECT_LE(RuntimeAbiVersion(1, 1, 0), RuntimeAbiVersion(1, 2, 0));
+  EXPECT_GE(RuntimeAbiVersion(1, 2, 0), RuntimeAbiVersion(1, 2, 0));
+  EXPECT_GE(RuntimeAbiVersion(1, 2, 0), RuntimeAbiVersion(1, 1, 0));
+}
+
+TEST(EnvironmentTest, CreateWithSystemRuntimeAbiVersionInvalid) {
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeHandle,
+          litert::LiteRtVariant(
+              reinterpret_cast<int64_t>(GetLiteRtRuntimeBuiltin())),
+      },
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeAbiVersion,
+          litert::LiteRtVariant("invalid_version"),
+      },
+  };
   auto env = litert::Environment::Create(
       litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
-  EXPECT_TRUE(env);
+  EXPECT_FALSE(env);
+  EXPECT_EQ(env.Error().Status(), kLiteRtStatusErrorRuntimeFailure);
+}
+
+TEST(EnvironmentTest, CreateWithSystemRuntimeAbiVersionNonString) {
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeHandle,
+          litert::LiteRtVariant(
+              reinterpret_cast<int64_t>(GetLiteRtRuntimeBuiltin())),
+      },
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeAbiVersion,
+          litert::LiteRtVariant(int64_t{100}),
+      },
+  };
+  auto env = litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
+  EXPECT_FALSE(env);
+  EXPECT_EQ(env.Error().Status(), kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(EnvironmentTest, CreateWithSystemRuntimeAbiVersionEmpty) {
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeHandle,
+          litert::LiteRtVariant(
+              reinterpret_cast<int64_t>(GetLiteRtRuntimeBuiltin())),
+      },
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeAbiVersion,
+          litert::LiteRtVariant(""),
+      },
+  };
+  auto env = litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
+  EXPECT_FALSE(env);
+  EXPECT_EQ(env.Error().Status(), kLiteRtStatusErrorRuntimeFailure);
+}
+
+TEST(EnvironmentTest, WrapCObjectWithExternalRuntimeDefaultsTo1_0_0) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment base_env, Environment::Create({}));
+  Environment wrapped_env = Environment::WrapCObject(
+      GetLiteRtRuntimeBuiltin(), base_env.GetHolder().handle, OwnHandle::kNo);
+  auto accelerators = wrapped_env.GetAvailableAccelerators();
+  EXPECT_FALSE(accelerators);
+  EXPECT_EQ(accelerators.Error().Status(), kLiteRtStatusErrorUnsupported);
+}
+
+TEST(EnvironmentTest, GetOptionsPreservesSystemRuntimeAbiVersion) {
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeAbiVersion,
+          litert::LiteRtVariant("1.2.0"),
+      },
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment env, litert::Environment::Create(litert::EnvironmentOptions(
+                           absl::MakeConstSpan(environment_options))));
+  LITERT_ASSERT_OK_AND_ASSIGN(EnvironmentOptions retrieved_options,
+                              env.GetOptions());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtVariant abi_version_var,
+      retrieved_options.GetOption(
+          EnvironmentOptions::Tag::kSystemRuntimeAbiVersion));
+  ASSERT_TRUE(std::holds_alternative<const char*>(abi_version_var));
+  EXPECT_STREQ(std::get<const char*>(abi_version_var), "1.2.0");
+}
+
+TEST(EnvironmentTest, CreateWithSystemRuntimeAbiVersionIncompatibleMajor) {
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeHandle,
+          litert::LiteRtVariant(
+              reinterpret_cast<int64_t>(GetLiteRtRuntimeBuiltin())),
+      },
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeAbiVersion,
+          litert::LiteRtVariant("2.0.0"),
+      },
+  };
+  auto env = litert::Environment::Create(
+      litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
+  EXPECT_FALSE(env);
+  EXPECT_EQ(env.Error().Status(), kLiteRtStatusErrorRuntimeFailure);
+}
+
+TEST(EnvironmentTest, CreateWithSystemRuntimeAbiVersion1_0_0) {
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeHandle,
+          litert::LiteRtVariant(
+              reinterpret_cast<int64_t>(GetLiteRtRuntimeBuiltin())),
+      },
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeAbiVersion,
+          litert::LiteRtVariant("1.0.0"),
+      },
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment env, litert::Environment::Create(litert::EnvironmentOptions(
+                           absl::MakeConstSpan(environment_options))));
+
+  // 1.1.0 API should return kErrorUnsupported on 1.0.0 runtime.
+  auto accelerators = env.GetAvailableAccelerators();
+  EXPECT_FALSE(accelerators);
+  EXPECT_EQ(accelerators.Error().Status(), kLiteRtStatusErrorUnsupported);
+
+  // 1.0.0 API (CompiledModel::Create) should succeed.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  // 1.1.0 API (IsNonCpuFullyAccelerated) should return kErrorUnsupported on
+  // 1.0.0.
+  auto is_accelerated = compiled_model.IsNonCpuFullyAccelerated();
+  EXPECT_FALSE(is_accelerated);
+  EXPECT_EQ(is_accelerated.Error().Status(), kLiteRtStatusErrorUnsupported);
+
+  // 1.2.0 API (GetDelegationMetrics) should return kErrorUnsupported on 1.0.0.
+  auto metrics = compiled_model.GetDelegationMetrics();
+  EXPECT_FALSE(metrics);
+  EXPECT_EQ(metrics.Error().Status(), kLiteRtStatusErrorUnsupported);
+}
+
+TEST(EnvironmentTest, CreateWithSystemRuntimeAbiVersion1_1_0) {
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeHandle,
+          litert::LiteRtVariant(
+              reinterpret_cast<int64_t>(GetLiteRtRuntimeBuiltin())),
+      },
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeAbiVersion,
+          litert::LiteRtVariant("1.1.0"),
+      },
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment env, litert::Environment::Create(litert::EnvironmentOptions(
+                           absl::MakeConstSpan(environment_options))));
+
+  // 1.1.0 API should succeed on 1.1.0 runtime.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto accelerators,
+                              env.GetAvailableAccelerators());
+  EXPECT_FALSE(accelerators.empty());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(bool is_accelerated,
+                              compiled_model.IsNonCpuFullyAccelerated());
+  EXPECT_FALSE(is_accelerated);
+
+  // 1.2.0 API (GetDelegationMetrics) should return kErrorUnsupported on 1.1.0.
+  auto metrics = compiled_model.GetDelegationMetrics();
+  EXPECT_FALSE(metrics);
+  EXPECT_EQ(metrics.Error().Status(), kLiteRtStatusErrorUnsupported);
+}
+
+TEST(EnvironmentTest, CreateWithSystemRuntimeAbiVersion1_2_0) {
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeHandle,
+          litert::LiteRtVariant(
+              reinterpret_cast<int64_t>(GetLiteRtRuntimeBuiltin())),
+      },
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kSystemRuntimeAbiVersion,
+          litert::LiteRtVariant("1.2.0"),
+      },
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment env, litert::Environment::Create(litert::EnvironmentOptions(
+                           absl::MakeConstSpan(environment_options))));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  // 1.2.0 API (GetDelegationMetrics) should succeed on 1.2.0 runtime.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto metrics,
+                              compiled_model.GetDelegationMetrics());
+  EXPECT_GE(metrics.total_node_count, 0);
 }
 
 TEST(EnvironmentTest, CreateWithSystemGpuAcceleratorHandle) {
