@@ -115,6 +115,7 @@ enum QualcommOptionsKey {
   kOptimizationLevel = 13,
   kHtpDlbc = 14,
   kHtpDlbcWeights = 15,
+  kGraphPriority = 16,
 };
 
 // Precision for GPU options, the values should match the ones in Kotlin.
@@ -475,6 +476,12 @@ Expected<void> PopulateQualcommOptions(JNIEnv* env,
             static_cast<QualcommOptions::OptimizationLevel>(
                 ParseInt(qualcomm_options_values_vector[i],
                          "Qualcomm options optimizationLevel")));
+        break;
+      case QualcommOptionsKey::kGraphPriority:
+        qualcomm_options.SetGraphPriority(
+            static_cast<QualcommOptions::GraphPriority>(
+                ParseInt(qualcomm_options_values_vector[i],
+                         "Qualcomm options graphPriority")));
         break;
       default:
         return Unexpected(kLiteRtStatusErrorInvalidArgument,
