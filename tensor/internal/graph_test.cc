@@ -15,6 +15,7 @@ limitations under the License.
 #include "tensor/internal/graph.h"
 
 #include <memory>
+#include <optional>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -187,6 +188,30 @@ TEST(ScopeTest, NestedScopeHierarchyAndAttributesAndBoundaries) {
   auto bound_out = inner_op->scope->GetBoundaryTensor("output");
   ASSERT_TRUE(bound_out.has_value());
   EXPECT_EQ(*bound_out, inner_output);
+}
+
+TEST(ScopeTest, BindOptionalTensorWrapper) {
+  struct FakeTensorWrapper {
+    Tensor raw;
+    const Tensor& GetRaw() const { return raw; }
+  };
+
+  FakeTensorWrapper present{NewTensor(absl::SourceLocation::current())};
+  std::optional<FakeTensorWrapper> opt_present = present;
+  std::optional<FakeTensorWrapper> opt_empty = std::nullopt;
+
+  std::shared_ptr<Scope> captured_scope;
+  {
+    ScopeGuard scope("test_scope");
+    scope.Bind("present", opt_present).Bind("empty", opt_empty);
+    captured_scope = scope.scope();
+  }
+
+  ASSERT_NE(captured_scope, nullptr);
+  auto bound_present = captured_scope->GetBoundaryTensor("present");
+  ASSERT_TRUE(bound_present.has_value());
+  EXPECT_EQ(*bound_present, present.raw);
+  EXPECT_FALSE(captured_scope->GetBoundaryTensor("empty").has_value());
 }
 
 }  // namespace

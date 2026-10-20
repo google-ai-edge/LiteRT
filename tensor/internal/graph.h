@@ -292,6 +292,13 @@ class ScopeGuard {
   ScopeGuard& Bind(absl::string_view role, const T& tensor) {
     return Bind(role, tensor.GetRaw());
   }
+  template <class T, class = decltype(std::declval<const T&>().GetRaw())>
+  ScopeGuard& Bind(absl::string_view role, const std::optional<T>& value) {
+    if (value.has_value()) {
+      return Bind(role, *value);
+    }
+    return *this;
+  }
 
   const std::shared_ptr<Scope>& scope() const { return scope_; }
 
