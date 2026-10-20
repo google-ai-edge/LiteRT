@@ -80,6 +80,7 @@ cc_library(
         "//litert/cc/internal:litert_op_options",
         "//litert/vendors/broadcom/common:bstorm_util_litert",
         "//litert/vendors/c:litert_compiler_plugin",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "@//:bstorm_core",
     ],
 )

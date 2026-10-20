@@ -127,6 +127,7 @@ cc_test(
         "//litert/cc:litert_buffer_ref",
         "//litert/core/model",
         "//litert/vendors/c:litert_compiler_plugin",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/nvidia:bytecode",
         "//litert/vendors/nvidia:cuda_vmm",

@@ -27,7 +27,7 @@ cc_library(
     name = "litert_compiler_plugin",
     hdrs = ["litert_compiler_plugin.h"],
     deps = [
-        "//litert/c:litert_builder",
+        "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
     ],
 )
@@ -38,6 +38,8 @@ cc_library(
     deps = [
         ":litert_compiler_plugin",
         "//litert/c:litert_common",
+        "//litert/c/internal:litert_abi_header",
+        "//litert/c/internal:litert_compiler_context_header",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

@@ -45,6 +45,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/nvidia/bytecode.h"
@@ -539,9 +540,21 @@ class WeightStoreDispatchTest : public ::testing::Test {
   }
 
   void Compile() {
+    LiteRtInterface raw_plugin_interface = nullptr;
+    ASSERT_EQ(LiteRtCompilerPluginQueryInterface(
+                  kLiteRtCompilerPluginInterfaceBasic,
+                  {LITERT_COMPILER_PLUGIN_ABI_VERSION_MAJOR,
+                   LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR,
+                   LITERT_COMPILER_PLUGIN_ABI_VERSION_PATCH},
+                  &raw_plugin_interface),
+              kLiteRtStatusOk);
+    const auto* plugin_api =
+        static_cast<const LiteRtCompilerPluginInterface_V1*>(
+            raw_plugin_interface);
+    ASSERT_NE(plugin_api, nullptr);
     LiteRtCompilerPlugin plugin = nullptr;
-    ASSERT_EQ(LiteRtCreateCompilerPlugin(LrtGetCompilerContext(), &plugin,
-                                         nullptr, nullptr),
+    ASSERT_EQ(plugin_api->create_compiler_plugin(LrtGetCompilerContext(),
+                                                 &plugin, nullptr, nullptr),
               kLiteRtStatusOk);
     LiteRtModelT model;
     {
@@ -568,23 +581,24 @@ class WeightStoreDispatchTest : public ::testing::Test {
     }
     LiteRtCompiledResult result = nullptr;
     const LiteRtStatus status =
-        LiteRtCompilerPluginCompile(plugin, nullptr, &model, &result);
+        plugin_api->compiler_plugin_compile(plugin, nullptr, &model, &result);
     locators_.clear();
     if (status == kLiteRtStatusOk) {
       LiteRtParamIndex modules = 0;
-      EXPECT_EQ(LiteRtCompiledResultNumByteCodeModules(result, &modules),
+      EXPECT_EQ(plugin_api->get_compiled_result_num_byte_code(result, &modules),
                 kLiteRtStatusOk);
       for (LiteRtParamIndex i = 0; i < modules; ++i) {
         const void* data = nullptr;
         size_t size = 0;
-        EXPECT_EQ(LiteRtGetCompiledResultByteCode(result, i, &data, &size),
-                  kLiteRtStatusOk);
+        EXPECT_EQ(
+            plugin_api->get_compiled_result_byte_code(result, i, &data, &size),
+            kLiteRtStatusOk);
         const auto* bytes = static_cast<const uint8_t*>(data);
         locators_.emplace_back(bytes, bytes + size);
       }
-      LiteRtDestroyCompiledResult(result);
+      plugin_api->destroy_compiled_result(result);
     }
-    LiteRtDestroyCompilerPlugin(plugin);
+    plugin_api->destroy_compiler_plugin(plugin);
     ASSERT_EQ(status, kLiteRtStatusOk);
     ASSERT_EQ(locators_.size(), 2);
   }
