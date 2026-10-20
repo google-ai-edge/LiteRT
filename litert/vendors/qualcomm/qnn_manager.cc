@@ -457,7 +457,16 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::QnnBackend& qnn_backend,
         "SDK version is in [2.35.0, 2.37.0); Split OP validation is bypassed.");
     return kLiteRtStatusOk;
   }
-
+  // Bypass StridedSlice OP validation.
+  if (sdk_version < SdkVersion{2, 52, 0} &&
+      op.IsOpCode(::qnn::QnnOpCode::kStridedSlice) &&
+      op.GetInputTensor(0).GetDataType() == QNN_DATATYPE_BOOL_8 &&
+      op.GetOutputTensor(0).GetDataType() == QNN_DATATYPE_BOOL_8) {
+    LITERT_LOG(LITERT_WARNING,
+               "SDK version is earlier than 2.52.0; bool StridedSlice OP "
+               "validation is bypassed.");
+    return kLiteRtStatusOk;
+  }
   if (op.IsOpCode(::qnn::QnnOpCode::kFullyConnected) &&
       op.GetInputTensor(0).IsQuantI8() && op.GetInputTensor(1).IsQuantI8() &&
       op.GetInputTensor(1).IsQuantBitwidth(::qnn::kQuantBitWidth2) &&
