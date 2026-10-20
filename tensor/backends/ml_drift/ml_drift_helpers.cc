@@ -187,6 +187,53 @@ absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle> GetTensorHandle(
     ml_drift::TensorDescriptor desc(mld_data_type, storage_type, layout,
                                     physical_layout_1d);
     desc.SetBHWCShape(bhwc_shape);
+    if (!info.name.empty() && ctx.shared_weight_descriptors != nullptr) {
+      auto [shared_it, inserted] =
+          ctx.shared_weight_descriptors->try_emplace(info.name, desc);
+      if (inserted) {
+        switch (info.type) {
+          case Type::kFP32:
+            shared_it->second.UploadData(
+                reinterpret_cast<const float*>(locked_buffer.data()));
+            break;
+          case Type::kI32:
+            shared_it->second.UploadData(
+                reinterpret_cast<const int32_t*>(locked_buffer.data()));
+            break;
+          case Type::kU32:
+            shared_it->second.UploadData(
+                reinterpret_cast<const uint32_t*>(locked_buffer.data()));
+            break;
+          case Type::kI8:
+            shared_it->second.UploadData(
+                reinterpret_cast<const int8_t*>(locked_buffer.data()));
+            break;
+          case Type::kU8:
+            shared_it->second.UploadData(
+                reinterpret_cast<const uint8_t*>(locked_buffer.data()));
+            break;
+          case Type::kBOOL:
+            shared_it->second.UploadData(
+                reinterpret_cast<const bool*>(locked_buffer.data()));
+            break;
+          default: {
+            const auto* bytes =
+                reinterpret_cast<const uint8_t*>(locked_buffer.data());
+            absl::Span<const uint8_t> data(bytes, locked_buffer.size());
+            shared_it->second.UploadDataRaw<uint8_t>(data);
+            break;
+          }
+        }
+      }
+      if (shared_it->second == desc &&
+          shared_it->second.GetBHWDCShape() == desc.GetBHWDCShape()) {
+        auto handle = ctx.gpu_model_builder->AddConstantTensor(
+            CopyDescriptorWithoutData(shared_it->second));
+        ctx.graph_tensor_to_handle.insert({t, handle});
+        ctx.weight_name_to_handle.insert({info.name, handle});
+        return handle;
+      }
+    }
     const void* raw_data = locked_buffer.data();
     switch (info.type) {
       case Type::kFP32:
