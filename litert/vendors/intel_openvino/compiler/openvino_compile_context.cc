@@ -202,42 +202,56 @@ LiteRtStatus OpenVinoCompileContext::ConfigureForSoc(const char* soc_model) {
 }
 
 void OpenVinoCompileContext::ConfigureForNpuWeightSharing(
-    bool moe_multi_token_chunk) {
+    const std::string& weights_bank_name, bool moe_multi_token_chunk) {
   if (device_ != "NPU") return;
   // NPUW private properties, set by literal key because
   // npuw_private_properties.hpp is not shipped in the runtime SDK.
-  configs_map_["NPU_USE_NPUW"] = "YES";
-  configs_map_["NPUW_DEVICES"] = "NPU";
-  configs_map_["NPUW_WEIGHTS_BANK"] = "shared";
-  configs_map_["NPUW_FUNCALL_FOR_ALL"] = "YES";
+  auto set_default_if_not_set = [&](const char* key, const char* default_val) {
+    if (configs_map_.find(key) == configs_map_.end()) {
+      configs_map_[key] = default_val;
+    }
+  };
+  set_default_if_not_set("NPU_USE_NPUW", "YES");
+  set_default_if_not_set("NPUW_DEVICES", "NPU");
+  // Bank name must be unique per distinct weight pool (see header). Fall back
+  // to the legacy fixed name only if the caller could not derive one,
+  // preserving old behaviour rather than silently breaking dedup.
+  set_default_if_not_set("NPUW_WEIGHTS_BANK", weights_bank_name.empty()
+                                                  ? "shared"
+                                                  : weights_bank_name.c_str());
+  set_default_if_not_set("NPUW_FUNCALL_FOR_ALL", "YES");
 
   if (moe_multi_token_chunk) {
-    configs_map_["NPUW_ONLINE_PIPELINE"] = "REP";
-    configs_map_["NPUW_UNFOLD_IREQS"] = "NO";
-    configs_map_["NPUW_ONLINE_ISOLATE"] = "ATTN,MOE";
-    configs_map_["NPUW_MOE_TOKEN_CHUNK_SIZE"] = "0";
-    configs_map_["NPUW_ONLINE_KEEP_BLOCK_SIZE"] = "4";
-    configs_map_["NPUW_FOLD"] = "YES";
-    configs_map_["NPUW_ONLINE_KEEP_BLOCKS"] = "3";
+    set_default_if_not_set("NPUW_ONLINE_PIPELINE", "REP");
+    set_default_if_not_set("NPUW_UNFOLD_IREQS", "NO");
+    set_default_if_not_set("NPUW_ONLINE_ISOLATE", "ATTN,MOE");
+    set_default_if_not_set("NPUW_MOE_TOKEN_CHUNK_SIZE", "0");
+    set_default_if_not_set("NPUW_ONLINE_KEEP_BLOCK_SIZE", "4");
+    set_default_if_not_set("NPUW_FOLD", "YES");
+    set_default_if_not_set("NPUW_ONLINE_KEEP_BLOCKS", "3");
   } else {
-    configs_map_["NPUW_ONLINE_PIPELINE"] = "NONE";
-    configs_map_["NPUW_CWAI"] = "YES";
+    set_default_if_not_set("NPUW_ONLINE_PIPELINE", "NONE");
+    set_default_if_not_set("NPUW_CWAI", "YES");
   }
 
   LITERT_LOG(LITERT_INFO,
              "NPU weight sharing: enabled NPUW weightless compile knobs (%s "
-             "chunk pipeline)",
-             moe_multi_token_chunk ? "multi-token" : "single-token");
+             "chunk pipeline, bank '%s')",
+             moe_multi_token_chunk ? "multi-token" : "single-token",
+             configs_map_["NPUW_WEIGHTS_BANK"].as<std::string>().c_str());
 }
 
 OpenVinoCompileContext::OptimizeModelResult
-OpenVinoCompileContext::OptimizeModel(
-    const std::shared_ptr<ov::Model>& model) const {
+OpenVinoCompileContext::OptimizeModel(const std::shared_ptr<ov::Model>& model,
+                                      bool npu_weight_sharing) const {
   if (device_ != "NPU") return {};
   const NpuOptimizer::Result result =
       NpuOptimizer()
           .SetConstantFold(true)
           .SetEliminateMatMulFakeQuantize(eliminate_fq_after_matmul_)
+          // Boolean weights only break NPUW's weightless import, so leave the
+          // graph untouched unless NPU weight sharing is enabled.
+          .SetDecomposeBooleanConstants(npu_weight_sharing)
           .SetFuseSplitAttentionToSDPA(fuse_split_attention_to_sdpa_)
           .SetUnfoldGqaSequenceFold(unfold_gqa_sequence_fold_)
           .SetSdpaPadKvToAlignment(sdpa_pad_kv_to_alignment_)

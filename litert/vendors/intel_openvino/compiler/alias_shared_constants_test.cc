@@ -23,21 +23,25 @@
 #include <unordered_set>
 #include <vector>
 
+#include "openvino/core/model.hpp"
+#include "openvino/core/shape.hpp"
+#include "openvino/core/type/element_type.hpp"
+#include "openvino/frontend/tensorflow_lite/frontend.hpp"
+#include "openvino/op/constant.hpp"
+#include "openvino/op/convert.hpp"
+#include "openvino/op/parameter.hpp"
+#include "openvino/op/result.hpp"
+#include "openvino/op/select.hpp"
 #include <gtest/gtest.h>
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/test/load_test_model.h"
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
+#include "litert/vendors/intel_openvino/compiler/npu_optimizer.h"
 #include "litert/vendors/intel_openvino/compiler/weight_bank.h"
 #include "litert/vendors/intel_openvino/compiler/weight_bank_attributes.h"
 #include "litert/vendors/intel_openvino/compiler/weightless_caching_attributes.hpp"
-#include "openvino/core/model.hpp"
-#include "openvino/core/shape.hpp"
-#include "openvino/core/type/element_type.hpp"
-#include "openvino/frontend/tensorflow_lite/frontend.hpp"
-#include "openvino/op/constant.hpp"
-#include "openvino/op/result.hpp"
 
 namespace litert {
 namespace openvino {
@@ -278,6 +282,101 @@ TEST(BuildPoolTest, KeepsEveryBufferWhenNotPruning) {
   EXPECT_EQ(layout.buffers.size(), 2u);
 }
 
+TEST(BuildPoolTest, WeightsBankNameIsDeterministicAndContentDerived) {
+  WeightBank bank_a1;
+  bank_a1.RegisterGeneratedConstant("w0", {1, 2, 3, 4});
+  bank_a1.RegisterGeneratedConstant("w1", {5, 6, 7, 8});
+  const auto layout_a1 =
+      BuildPool(/*live_names=*/{}, bank_a1, /*prune_dead=*/false);
+
+  WeightBank bank_a2;
+  bank_a2.RegisterGeneratedConstant("w0", {1, 2, 3, 4});
+  bank_a2.RegisterGeneratedConstant("w1", {5, 6, 7, 8});
+  const auto layout_a2 =
+      BuildPool(/*live_names=*/{}, bank_a2, /*prune_dead=*/false);
+
+  WeightBank bank_b;
+  bank_b.RegisterGeneratedConstant("w0", {1, 2, 3, 9});
+  bank_b.RegisterGeneratedConstant("w1", {5, 6, 7, 8});
+  const auto layout_b =
+      BuildPool(/*live_names=*/{}, bank_b, /*prune_dead=*/false);
+
+  const std::string name_a1 = layout_a1.WeightsBankName();
+  const std::string name_a2 = layout_a2.WeightsBankName();
+  const std::string name_b = layout_b.WeightsBankName();
+
+  EXPECT_EQ(name_a1.size(), 28u);
+  EXPECT_EQ(name_a1.substr(0, 12), "litert_npuw_");
+  EXPECT_EQ(name_a1, name_a2);
+  EXPECT_NE(name_a1, name_b);
+}
+
+// End-to-end integration test for DecomposeBooleanConstant + WeightBank +
+// AliasAndTagSharedConstants: because DecomposeBooleanConstant preserves the
+// original friendly_name on the replacement u8 Constant (and names the Convert
+// node "<name>_to_bool" instead), HarvestSharedConstants and
+// AliasAndTagSharedConstants resolve the decomposed u8 Constant back to its
+// WeightBank BufferId, zero-copy alias it into the shared pool, and tag it with
+// WeightlessCacheAttribute.
+TEST(AliasSharedConstantsTest,
+     DecomposedBooleanConstantIsHarvestedAndAliasedByOriginalName) {
+  constexpr size_t kNumElems = 32;
+  std::vector<uint8_t> raw_bytes(kNumElems);
+  std::vector<char> bool_bytes(kNumElems);
+  for (size_t i = 0; i < kNumElems; ++i) {
+    raw_bytes[i] = static_cast<uint8_t>(i % 2 == 0 ? 1 : 0);
+    bool_bytes[i] = static_cast<char>(raw_bytes[i]);
+  }
+
+  auto x = std::make_shared<ov::op::v0::Parameter>(ov::element::f32,
+                                                   ov::Shape{kNumElems});
+  auto y = std::make_shared<ov::op::v0::Parameter>(ov::element::f32,
+                                                   ov::Shape{kNumElems});
+  auto bool_cnst = ov::op::v0::Constant::create(
+      ov::element::boolean, ov::Shape{kNumElems}, bool_bytes);
+  bool_cnst->set_friendly_name("shared_bool_mask");
+  bool_cnst->get_rt_info()
+      [LiteRtGeneratedConstantAttribute::get_type_info_static()] =
+      LiteRtGeneratedConstantAttribute("shared_bool_mask");
+  auto sel = std::make_shared<ov::op::v1::Select>(bool_cnst, x, y);
+  auto model = std::make_shared<ov::Model>(
+      ov::ResultVector{std::make_shared<ov::op::v0::Result>(sel)},
+      ov::ParameterVector{x, y}, "decomposed_bool_sharing");
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetDecomposeBooleanConstants(true)
+      .Run(model);
+
+  WeightBank bank;
+  std::unordered_set<std::string> live_names;
+  HarvestSharedConstants(model, bank, live_names);
+  const auto layout = BuildPool(live_names, bank, /*prune_dead=*/true);
+  ASSERT_EQ(layout.buffers.size(), 1u);
+
+  const size_t aliased =
+      AliasAndTagSharedConstants(model, bank, layout.OffsetMap(),
+                                 /*partition_idx=*/0);
+  EXPECT_EQ(aliased, 1u);
+
+  std::shared_ptr<ov::op::v0::Constant> u8_cnst;
+  for (const auto& node : model->get_ordered_ops()) {
+    if (auto c = ov::as_type_ptr<ov::op::v0::Constant>(node)) {
+      u8_cnst = c;
+    }
+  }
+  ASSERT_NE(u8_cnst, nullptr);
+  EXPECT_EQ(u8_cnst->get_element_type(), ov::element::u8);
+  EXPECT_EQ(u8_cnst->get_friendly_name(), "shared_bool_mask");
+  EXPECT_EQ(u8_cnst->get_data_ptr<uint8_t>(), layout.buffers[0].bytes.data());
+  const auto& rt = u8_cnst->get_rt_info();
+  const auto it = rt.find(ov::WeightlessCacheAttribute::get_type_info_static());
+  ASSERT_NE(it, rt.end());
+  const auto& wlca = it->second.as<ov::WeightlessCacheAttribute>();
+  EXPECT_EQ(wlca.bin_offset, 0u);
+  EXPECT_EQ(wlca.original_size, kNumElems);
+  EXPECT_EQ(wlca.original_dtype, ov::element::u8);
+}
 }  // namespace
 }  // namespace openvino
 }  // namespace litert

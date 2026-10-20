@@ -14,6 +14,7 @@
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test")
+load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -60,6 +61,8 @@ litert_test(
     ],
     deps = [
         ":npu_optimizer",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
         "@intel_openvino//:openvino",
     ],
 )
@@ -202,7 +205,9 @@ litert_lib(
         ":weight_bank",
         ":weight_bank_attributes",
         "//litert/c/internal:litert_logging",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
+        "@farmhash_archive//:farmhash",
         "@intel_openvino//:openvino",
     ],
 )
@@ -227,6 +232,7 @@ litert_test(
     deps = [
         ":alias_shared_constants",
         ":graph_iterator",
+        ":npu_optimizer",
         ":weight_bank",
         ":weight_bank_attributes",
         "//litert/c:litert_runtime_c_api_shared_lib",
@@ -252,6 +258,26 @@ litert_lib(
         ":openvino_soc_config",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/c/options:litert_intel_openvino_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_test(
+    name = "openvino_compile_context_test",
+    srcs = ["openvino_compile_context_test.cc"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":openvino_compile_context",
+        "//litert/c:litert_common",
         "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_intel_openvino_options",
@@ -457,12 +483,17 @@ litert_test(
     ],
     deps = [
         ":decoder",
+        ":graph_iterator",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_extended_model",
         "//litert/compiler/cc:litert_model",
         "//litert/test:common",
+        "//litert/test:load_test_model",
         "//litert/test:matchers_oss",
         "//litert/test:test_models",
         "//litert/vendors/cc:litert_compiler_plugin",
@@ -561,5 +592,46 @@ sh_test(
     ],
     data = [
         ":intel_openvino_compiler_plugin_so",
+    ],
+)
+
+tfl_model_gen(
+    name = "mlir_e2e_test_models",
+    srcs = ["testdata/npu_transformer_e2e.mlir"],
+    subdir = "testdata",
+)
+
+litert_test(
+    name = "mlir_pipeline_e2e_test",
+    srcs = [
+        "mlir_pipeline_e2e_test.cc",
+        "weightless_caching_attributes.hpp",
+    ],
+    copts = ["-fexceptions"],
+    data = [":mlir_e2e_test_models_files"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":alias_shared_constants",
+        ":global_graph",
+        ":graph_iterator",
+        ":openvino_compile_context",
+        ":weight_bank",
+        "//litert/c:litert_common",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc/internal:litert_extended_model",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "//litert/compiler/cc:litert_model",
+        "//litert/core/util:flatbuffer_tools",
+        "//litert/test:common",
+        "//tflite:framework",
+        "@com_google_absl//absl/types:span",
+        "@intel_openvino//:openvino",
     ],
 )

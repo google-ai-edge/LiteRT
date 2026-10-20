@@ -55,7 +55,21 @@ class OpenVinoCompileContext {
   // |moe_multi_token_chunk| (from OptimizeModel's result) selects the NPUW
   // pipeline: a multi-token chunk gets the host-router/REP pipeline, a
   // single-token one gets the plain CWAI pipeline.
-  void ConfigureForNpuWeightSharing(bool moe_multi_token_chunk);
+  //
+  // |weights_bank_name| names the NPUW weights bank baked into the blob. It
+  // MUST be unique per distinct weight pool: NPUW's BankManager is a global
+  // singleton keyed by this name, so two compiled models that bake the same
+  // name resolve to the SAME in-memory bank at import time. If a second model
+  // has any partition without WeightlessCacheAttribute-tagged constants
+  // (should_use_weightless_flow() falls back to non-weightless serialization),
+  // Bank::deserialize calls Bank::read_and_add_tensor for uid 0 into that
+  // already-populated bank and hits NPUW_ASSERT(false) (weights_bank.cpp:238);
+  // even when both models are weightless, sharing a bank mixes unrelated
+  // weight pools. A content-derived name lets partitions that genuinely share a
+  // pool dedup, while isolating unrelated models (e.g. the main text decoder
+  // vs. the auxiliary cache-update model).
+  void ConfigureForNpuWeightSharing(const std::string& weights_bank_name,
+                                    bool moe_multi_token_chunk = false);
 
   // Classification info OptimizeModel()'s NPU passes produced, beyond the
   // in-place graph mutation, that ConfigureForNpuWeightSharing() needs.
@@ -66,9 +80,11 @@ class OpenVinoCompileContext {
     bool moe_is_multi_token_chunk = false;
   };
 
-  // Runs NPU-specific optimization passes on the given OV model.
-  OptimizeModelResult OptimizeModel(
-      const std::shared_ptr<ov::Model>& model) const;
+  // Runs NPU-specific optimization passes on the given OV model. When
+  // |npu_weight_sharing| is true, also runs DecomposeBooleanConstant, which is
+  // only needed for NPUW's weightless weight-sharing import.
+  OptimizeModelResult OptimizeModel(const std::shared_ptr<ov::Model>& model,
+                                    bool npu_weight_sharing = false) const;
 
   const std::string& Device() const { return device_; }
   const ov::AnyMap& ConfigsMap() const { return configs_map_; }
