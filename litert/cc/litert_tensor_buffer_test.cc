@@ -843,6 +843,12 @@ TEST(TensorBuffer, CreateFromAhwb) {
   auto tensor_buffer_from_ahwb =
       TensorBuffer::CreateFromAhwb(env, kTensorType, ahw_buffer,
                                    /*ahwb_offset=*/0);
+  ASSERT_TRUE(tensor_buffer_from_ahwb);
+
+  // Release the caller's initial reference; TensorBuffer::CreateFromAhwb
+  // should retain its own reference so the underlying AHardwareBuffer remains
+  // valid for the lifetime of tensor_buffer_from_ahwb.
+  ReleaseTestAhwb(ahw_buffer);
 
   auto lock_and_addr_external_memory = TensorBufferScopedLock::Create(
       *tensor_buffer_from_ahwb, TensorBuffer::LockMode::kWrite);
@@ -850,8 +856,6 @@ TEST(TensorBuffer, CreateFromAhwb) {
   ASSERT_EQ(std::memcmp(lock_and_addr_external_memory->second, kTensorData,
                         sizeof(kTensorData)),
             0);
-
-  ReleaseTestAhwb(ahw_buffer);
 }
 
 TEST(TensorBuffer, Duplicate) {

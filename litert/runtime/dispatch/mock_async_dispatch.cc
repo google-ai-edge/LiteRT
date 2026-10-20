@@ -43,6 +43,11 @@ static std::set<LiteRtTensorBufferHandle>& GetUnregisteredHandles() {
   return *unregistered_handles;
 }
 
+static std::set<LiteRtTensorBufferHandle>& GetDetachedHandles() {
+  static auto* detached_handles = new std::set<LiteRtTensorBufferHandle>();
+  return *detached_handles;
+}
+
 static absl::flat_hash_map<LiteRtTensorBuffer, LiteRtTensorBufferHandle>&
 GetBufferToHandle() {
   static auto* buffer_to_handle =
@@ -51,11 +56,24 @@ GetBufferToHandle() {
 }
 static LiteRtEnvironment g_env = nullptr;
 static const LiteRtRuntimeContext* g_runtime_context = nullptr;
+static bool g_multi_inflight_async = true;
 
 extern "C" {
 
 void LiteRtDispatch_MockDispatchSetEnvironment(LiteRtEnvironment env) {
   g_env = env;
+  g_multi_inflight_async = true;
+  for (auto& job : GetPendingJobs()) {
+    (void)close(job.second);
+  }
+  GetPendingJobs().clear();
+  GetUnregisteredHandles().clear();
+  GetDetachedHandles().clear();
+  GetBufferToHandle().clear();
+}
+
+void LiteRtDispatch_MockDispatchSetMultiInflightAsync(bool enabled) {
+  g_multi_inflight_async = enabled;
 }
 
 void LiteRtDispatch_MockDispatchSignalNextJob() {
@@ -72,6 +90,11 @@ bool LiteRtDispatch_MockDispatchIsBufferUnregistered(
     LiteRtTensorBufferHandle handle) {
   return GetUnregisteredHandles().find(handle) !=
          GetUnregisteredHandles().end();
+}
+
+bool LiteRtDispatch_MockDispatchIsBufferDetached(
+    LiteRtTensorBufferHandle handle) {
+  return GetDetachedHandles().find(handle) != GetDetachedHandles().end();
 }
 
 LiteRtTensorBufferHandle LiteRtDispatch_MockDispatchGetHandle(
@@ -115,6 +138,9 @@ LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
   g_intercepted_interface.get_capabilities = [](int* capabilities) {
     *capabilities =
         kLiteRtDispatchCapabilitiesBasic | kLiteRtDispatchCapabilitiesAsync;
+    if (g_multi_inflight_async) {
+      *capabilities |= kLiteRtDispatchCapabilitiesMultiInflightAsync;
+    }
     return kLiteRtStatusOk;
   };
 
@@ -128,6 +154,22 @@ LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
           GetBufferToHandle()[buffer] = *handle;
         }
         return s;
+      };
+
+  // Override Detach to track calls
+  g_intercepted_interface.detach_input =
+      [](LiteRtDispatchInvocationContext context, int graph_input_index,
+         LiteRtTensorBufferHandle handle) {
+        GetDetachedHandles().insert(handle);
+        return g_real_api.interface->detach_input(context, graph_input_index,
+                                                  handle);
+      };
+  g_intercepted_interface.detach_output =
+      [](LiteRtDispatchInvocationContext context, int graph_output_index,
+         LiteRtTensorBufferHandle handle) {
+        GetDetachedHandles().insert(handle);
+        return g_real_api.interface->detach_output(context, graph_output_index,
+                                                   handle);
       };
 
   // Override Unregister to track calls
@@ -187,9 +229,16 @@ extern "C" {
 
 void LiteRtDispatch_MockDispatchSetEnvironment(LiteRtEnvironment env) {}
 
+void LiteRtDispatch_MockDispatchSetMultiInflightAsync(bool enabled) {}
+
 void LiteRtDispatch_MockDispatchSignalNextJob() {}
 
 bool LiteRtDispatch_MockDispatchIsBufferUnregistered(
+    LiteRtTensorBufferHandle handle) {
+  return false;
+}
+
+bool LiteRtDispatch_MockDispatchIsBufferDetached(
     LiteRtTensorBufferHandle handle) {
   return false;
 }
