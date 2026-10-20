@@ -112,8 +112,6 @@ struct XnnpackTraits {
       // Transposes reject int4 values, and asymmetric int4 weights fail to
       // dequantize.
       "TransposedQuantizedWeightsIntoAddOp",
-      // Batch matmuls ignore `adj_x`.
-      "BatchMatMulAdjXQuantizedRhsOp",
       // Dequantizing int4 values aborts in an XNNPACK assertion.
       "QuantizedWeightsSharedByDotAndAddOp",
   };
