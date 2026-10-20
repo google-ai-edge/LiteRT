@@ -73,12 +73,14 @@ class DispatchDelegateKernel : public DispatchKernelInterface {
   DispatchDelegateKernel(LiteRtEnvironmentOptions environment_options,
                          LiteRtOptions options, std::string&& graph_name,
                          LiteRtDispatchDeviceContext device_context,
-                         bool async_dispatch)
+                         bool async_dispatch,
+                         bool multi_inflight_async = false)
       : environment_options_(environment_options),
         options_(options),
         graph_name_(std::move(graph_name)),
         device_context_(std::move(device_context)),
-        async_dispatch_(async_dispatch) {}
+        async_dispatch_(async_dispatch),
+        multi_inflight_async_(multi_inflight_async) {}
 
   static Expected<std::vector<TfLiteOpaqueNode*>> GetNodes(
       TfLiteOpaqueContext* context, const TfLiteOpaqueDelegateParams& params);
@@ -146,6 +148,8 @@ class DispatchDelegateKernel : public DispatchKernelInterface {
   LiteRtDispatchDeviceContext device_context_;
   const bool async_dispatch_;  // Indicates whether the Dispatch API can be
                                // invoked asynchronously.
+  const bool multi_inflight_async_;  // Indicates whether the Dispatch API
+                                     // supports >1 in-flight async invocation.
 
   LiteRtExternalLiteRtBufferContextT* buffer_context_ = nullptr;
   std::vector<TfLiteOpaqueNode*> nodes_;

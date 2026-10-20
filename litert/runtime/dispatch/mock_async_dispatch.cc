@@ -113,8 +113,9 @@ LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
 
   // Override get_capabilities to report async support
   g_intercepted_interface.get_capabilities = [](int* capabilities) {
-    *capabilities =
-        kLiteRtDispatchCapabilitiesBasic | kLiteRtDispatchCapabilitiesAsync;
+    *capabilities = kLiteRtDispatchCapabilitiesBasic |
+                    kLiteRtDispatchCapabilitiesAsync |
+                    kLiteRtDispatchCapabilitiesMultiInflightAsync;
     return kLiteRtStatusOk;
   };
 
