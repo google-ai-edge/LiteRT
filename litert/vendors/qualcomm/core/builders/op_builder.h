@@ -40,6 +40,12 @@ std::pair<std::uint32_t, std::uint32_t> ComputePaddingBeforeAfter(
     const std::uint32_t stride, const std::uint32_t dilation_rate,
     const PaddingType padding_type);
 
+// Returns true when a depthwise convolution has stride >= 4 and filter >= 4
+// in both spatial dimensions, where QNN HTP prefers grouped Conv2d over
+// DepthWiseConv2d (matching QAIRT's CheckUseGroupedConv2d heuristic).
+bool ShouldUseGroupedConv2d(const TensorWrapper& filter_tensor,
+                            std::uint32_t stride_h, std::uint32_t stride_w);
+
 std::string GetUniqueOpName(const char* op_type);
 
 OpWrapper& CreateOpWrapper(std::vector<OpWrapper>& ops, const char* op_type);
