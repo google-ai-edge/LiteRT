@@ -24,6 +24,7 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/functional/function_ref.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -122,6 +123,18 @@ class CompilerPlugin {
   // Get the SDK version of the vendor's compiler plugin.
   Expected<std::string> SdkVersion() const;
 
+  // Bitwise OR of the LiteRtCompilerPluginCapability values reported by the
+  // plugin. kLiteRtCompilerPluginCapabilityNone if the plugin's interface table
+  // does not provide the optional capability query (added in ABI 1.1).
+  uint64_t Capabilities() const;
+
+  // Whether the plugin can compile region-bearing ops together with their
+  // region subgraphs (kLiteRtCompilerPluginCapabilityRegionSubgraphs).
+  bool SupportsRegionSubgraphs() const {
+    return (Capabilities() & kLiteRtCompilerPluginCapabilityRegionSubgraphs) !=
+           0;
+  }
+
   // Get the manufacturer associated with this plugin. NOTE: SocManufacturer
   // string returned by the underlying plugin are expected to have static
   // lifetime.
@@ -214,7 +227,10 @@ class CompilerPlugin {
 //===---------------------------------------------------------------------------
 
 // Dispatch op references and their subgraph to be compiled contained within a
-// new model. op[i]'s body is models ith subgraph.
+// new model. op[i]'s body is models ith subgraph. If the model has more
+// subgraphs than dispatch ops, the trailing subgraphs are private region
+// subgraphs referenced by ops in the leading ones (see
+// LiteRtModelT::NumEntrySubgraphs()).
 using PartitionResult = std::pair<std::vector<LiteRtOp>, LiteRtModelT>;
 
 // Applies just the partition phase of the plugin on the model. Returns
@@ -223,6 +239,46 @@ using PartitionResult = std::pair<std::vector<LiteRtOp>, LiteRtModelT>;
 Expected<PartitionResult> PartitionModel(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
     absl::string_view soc_model = "",
+    const absl::flat_hash_set<uint32_t>& subgraphs_to_partition = {});
+
+// Selects the ops of the given subgraph to offload. Mirrors
+// LiteRtCompilerPluginPartition.
+using PartitionFn =
+    absl::FunctionRef<Expected<std::vector<LiteRtOpWithPartitionIndex>>(
+        LiteRtSubgraph)>;
+
+// Options for the plugin-independent part of PartitionModel.
+struct PartitionModelOptions {
+  // Whether region-bearing ops may be offloaded together with their region
+  // subgraphs. See kLiteRtCompilerPluginCapabilityRegionSubgraphs.
+  bool supports_region_subgraphs = false;
+  LiteRtCompilerOptionsPartitionStrategy partition_strategy =
+      kLiteRtCompilerOptionsPartitionStrategyDefault;
+  // Maximum number of NPU islands per subgraph, 0 for no limit.
+  size_t max_partitions = 0;
+};
+
+// Same as above, with op selection delegated to `partition_fn`.
+//
+// Region handling (see core/model/subgraph_refs.h):
+// * Subgraphs used as the computation of a region-bearing op (reduction
+//   bodies, comparators, ...) are never partitioned on their own.
+// * Control flow bodies are partitioned on their own only while they stay
+//   callable from CPU: an op referencing them stays on CPU, or they are
+//   exposed through a signature.
+// * If `options.supports_region_subgraphs`, region-bearing ops may be
+//   offloaded. The region subgraphs they (transitively) reference are moved
+//   into the returned model after the entry partitions, and cloned first if
+//   they are still used outside of the offloaded ops. Otherwise selections of
+//   region-bearing ops are ignored, and odml.npu_call composites containing
+//   region-bearing ops fail with kLiteRtStatusErrorUnsupported before `model`
+//   is modified.
+// * Region subgraphs left without any reference are removed from `model`.
+// * Models with invalid or cyclic subgraph references are rejected before
+//   `model` is modified.
+Expected<PartitionResult> PartitionModel(
+    PartitionFn partition_fn, const PartitionModelOptions& options,
+    LiteRtModelT& model,
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition = {});
 
 // Same as "PartitionModel" choose partitions directly based on the selected

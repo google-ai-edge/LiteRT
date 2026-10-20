@@ -17,6 +17,7 @@
 
 #include <assert.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_compiler_context.h"
@@ -32,7 +33,7 @@ extern "C" {
 
 // Current ABI version for LiteRT Compiler Plugin interface tables.
 #define LITERT_COMPILER_PLUGIN_ABI_VERSION_MAJOR 1
-#define LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR 0
+#define LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR 1
 #define LITERT_COMPILER_PLUGIN_ABI_VERSION_PATCH 0
 
 //
@@ -62,10 +63,28 @@ typedef LiteRtStatus (*LiteRtGetCompilerPluginSupportedSocModelT)(
 typedef LiteRtStatus (*LiteRtGetCompilerPluginSDKVersionT)(LiteRtCompilerPlugin,
                                                            const char**);
 
+// Selects desired ops for compilation.
+//
+// Region-bearing ops (ops that reference other subgraphs through their
+// options, e.g. STABLEHLO_REDUCE_WINDOW, STABLEHLO_SORT, WHILE, IF) may only be
+// selected by plugins reporting kLiteRtCompilerPluginCapabilityRegionSubgraphs;
+// for other plugins such selections are ignored and the ops stay on CPU.
+// Subgraphs that are only used as the computation of a region-bearing op (e.g.
+// a reduction body) are never passed to this function.
 typedef LiteRtStatus (*LiteRtCompilerPluginPartitionT)(
     LiteRtCompilerPlugin, const char* soc_model, LiteRtSubgraph subgraph,
     LiteRtOpList selected_ops);
 
+// Compiles the given model containing partitioned subgraphs.
+//
+// The leading entry subgraphs of `partitions` (see
+// LiteRtCompilerContext::get_num_model_entry_subgraphs) each correspond to one
+// dispatch op, in order. If the plugin reports
+// kLiteRtCompilerPluginCapabilityRegionSubgraphs, the entry subgraphs may be
+// followed by private region subgraphs referenced by ops in the entries (or in
+// other region subgraphs). Region subgraphs must be compiled as part of the
+// entries referencing them and must not produce compiled calls of their own,
+// i.e. the number of compiled calls equals the number of entry subgraphs.
 typedef LiteRtStatus (*LiteRtCompilerPluginCompileT)(
     LiteRtCompilerPlugin, const char* soc_model, LiteRtModel partitions,
     LiteRtCompiledResult* compiled_result);
@@ -98,6 +117,20 @@ typedef LiteRtStatus (*LiteRtCompilerPluginCheckCompilerCompatibilityT)(
     LiteRtApiVersion api_version, LiteRtCompilerPlugin compiler_plugin,
     LiteRtEnvironmentOptions env, LiteRtOptions options,
     const char* soc_model_name);
+
+// Optional capabilities of a compiler plugin. Values are bit flags.
+typedef enum {
+  kLiteRtCompilerPluginCapabilityNone = 0,
+  // The plugin can compile region-bearing ops together with their region
+  // subgraphs. See LiteRtCompilerPluginPartitionT and
+  // LiteRtCompilerPluginCompileT.
+  kLiteRtCompilerPluginCapabilityRegionSubgraphs = 1 << 0,
+} LiteRtCompilerPluginCapability;
+
+// Writes the bitwise OR of all LiteRtCompilerPluginCapability values supported
+// by the plugin.
+typedef LiteRtStatus (*LiteRtGetCompilerPluginCapabilitiesT)(
+    LiteRtCompilerPlugin, uint64_t* capabilities);
 
 /// Identifiers for the versioned compiler plugin interface tables queried via
 /// LiteRtCompilerPluginQueryInterface.
@@ -136,6 +169,10 @@ typedef struct LiteRtCompilerPluginInterface_V1 {
   LiteRtGetCompilerPluginSDKVersionT get_compiler_plugin_sdk_version;
   LiteRtGetCompiledResultHandleT get_compiled_result_handle;
   LiteRtCompilerPluginCheckCompilerCompatibilityT check_compiler_compatibility;
+
+  // Added in version 1.1.0. Optional (may be null); plugins without it are
+  // treated as kLiteRtCompilerPluginCapabilityNone.
+  LiteRtGetCompilerPluginCapabilitiesT get_compiler_plugin_capabilities;
 } LiteRtCompilerPluginInterface_V1;
 
 static_assert(

@@ -130,6 +130,7 @@ cc_test(
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
         "//litert/c:litert_op_options",
+        "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_compiler_context_testonly",
         "//litert/c/options:litert_google_tensor_options",
         "//litert/c/options:litert_google_tensor_options_type",

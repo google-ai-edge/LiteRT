@@ -13,8 +13,10 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -22,6 +24,7 @@
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
@@ -271,6 +274,58 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraph) {
   absl::string_view op_data_string(reinterpret_cast<const char*>(op_data),
                                    op_data_size);
   ASSERT_THAT(op_data_string, "subgraph_0_fn");
+}
+
+TEST(TestGoogleTensorPlugin, ReportsRegionSubgraphCapability) {
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
+  EXPECT_GE(plugin.Api()->abi_header.minor_version, 1);
+  ASSERT_TRUE(LITERT_ABI_HAS_API(plugin.Api(), /*req_major=*/1,
+                                 get_compiler_plugin_capabilities));
+
+  uint64_t capabilities = 0;
+  LITERT_ASSERT_OK(plugin.Api()->get_compiler_plugin_capabilities(
+      plugin.Get(), &capabilities));
+  EXPECT_EQ(capabilities, kLiteRtCompilerPluginCapabilityRegionSubgraphs);
+  EXPECT_EQ(
+      plugin.Api()->get_compiler_plugin_capabilities(plugin.Get(), nullptr),
+      kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(TestCallGoogleTensorPlugin, CompileWithPrivateRegionSubgraph) {
+  // A partitions model with one entry followed by one private region
+  // subgraph: only the entry becomes a signature / compiled call.
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
+  ExtendedModel model = testing::LoadTestFileModel("mul_simple.tflite");
+  ExtendedModel region_source = testing::LoadTestFileModel("mul_simple.tflite");
+  LiteRtSubgraphT::Alloc region;
+  region_source.Get()->TransferSubgraphTo(region, {0});
+  region.Elements().front()->SetName("region");
+  model.Get()->TransferSubgraphsFrom(std::move(region));
+  model.Get()->SetNumEntrySubgraphs(1);
+
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "Tensor_G5", model.Get(), &compiled));
+  absl::Cleanup compiled_cleanup = [&plugin, &compiled] {
+    plugin.Api()->destroy_compiled_result(compiled);
+  };
+
+  LiteRtParamIndex num_calls = 0;
+  LITERT_ASSERT_OK(
+      plugin.Api()->get_num_compiled_result_calls(compiled, &num_calls));
+  EXPECT_EQ(num_calls, 1);
+  const void* op_data;
+  size_t op_data_size;
+  LiteRtParamIndex byte_code_idx;
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_call_info(
+      compiled, 0, &op_data, &op_data_size, &byte_code_idx));
+  EXPECT_EQ(
+      absl::string_view(reinterpret_cast<const char*>(op_data), op_data_size),
+      "subgraph_0_fn");
 }
 
 TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {

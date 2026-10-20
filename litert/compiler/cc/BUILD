@@ -27,6 +27,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
@@ -92,7 +93,9 @@ cc_test(
     deps = [
         ":litert_model",
         "//litert/c:litert_common",
+        "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_compiler_context",
+        "//litert/core/model",
         "//litert/test:common",
         "//litert/test:load_test_model",
         "@com_google_googletest//:gtest_main",

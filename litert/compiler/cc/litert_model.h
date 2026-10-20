@@ -22,6 +22,7 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
@@ -482,6 +483,22 @@ class Model {
       internal::AssertOk(ctx_->get_num_model_subgraphs, model_, &num_subgraphs);
     }
     return num_subgraphs;
+  }
+
+  // Number of leading entry subgraphs. Subgraphs at index >= this value are
+  // private region subgraphs referenced by op options (e.g. the body of a
+  // STABLEHLO_REDUCE_WINDOW). Falls back to NumSubgraphs() when the runtime
+  // predates LiteRtCompilerContext 1.6.0, which never passes private region
+  // subgraphs to compiler plugins.
+  size_t NumEntrySubgraphs() const {
+    if (!LITERT_ABI_HAS_API(ctx_, /*req_major=*/1,
+                            get_num_model_entry_subgraphs)) {
+      return NumSubgraphs();
+    }
+    LiteRtParamIndex num_entry_subgraphs = 0;
+    internal::AssertOk(ctx_->get_num_model_entry_subgraphs, model_,
+                       &num_entry_subgraphs);
+    return num_entry_subgraphs;
   }
 
   Expected<class Subgraph> Subgraph(size_t index) const {

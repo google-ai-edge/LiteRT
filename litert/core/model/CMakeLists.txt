@@ -26,6 +26,7 @@ add_library(litert_core_model STATIC
     model_load.cc
     model_serialize.cc
     shape_inference.cc
+    subgraph_refs.cc
 )
 
 target_include_directories(litert_core_model

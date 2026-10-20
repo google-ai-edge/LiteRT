@@ -20,10 +20,11 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -41,6 +42,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/build_stamp.h"
 #include "litert/core/model/buffer_manager.h"
+#include "litert/core/model/subgraph_refs.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/converter/schema/schema_generated.h"
 
@@ -94,7 +96,7 @@ TensorType MakeRankedTensorType(LiteRtElementType element_type,
   ranked.element_type = element_type;
   ABSL_DCHECK_LE(dims.size(), LITERT_TENSOR_MAX_RANK);
   ranked.layout.rank = dims.size();
-  std::copy(dims.begin(), dims.end(), ranked.layout.dimensions);
+  absl::c_copy(dims, ranked.layout.dimensions);
   // Strides not yet supported.
   ranked.layout.has_strides = false;
   return tensor_type;
@@ -161,7 +163,7 @@ LiteRtSignatureT MakeDefaultSignature(LiteRtSubgraph subgraph) {
   }
 
   const auto subgraphs = model.Subgraphs();
-  std::unordered_map<const LiteRtSubgraphT*, size_t> subgraph_indices;
+  absl::flat_hash_map<const LiteRtSubgraphT*, size_t> subgraph_indices;
   subgraph_indices.reserve(subgraphs.size());
   for (size_t i = 0; i < subgraphs.size(); ++i) {
     subgraph_indices.emplace(subgraphs[i], i);
@@ -188,13 +190,6 @@ LiteRtSignatureT MakeDefaultSignature(LiteRtSubgraph subgraph) {
     const size_t subgraph_index = pending.back();
     pending.pop_back();
     for (LiteRtOp op : subgraphs[subgraph_index]->Ops()) {
-      if (litert::internal::GetTflOptions2(*op).type ==
-          tflite::BuiltinOptions2_StablehloCaseOptions) {
-        return ::litert::Unexpected(
-            kLiteRtStatusErrorUnsupported,
-            "Signature pruning does not support StableHLO case subgraph "
-            "references");
-      }
       if (op->OpCode() == kLiteRtOpCodeShloComposite) {
         const auto* options =
             litert::internal::GetTflOptions2(*op).AsStableHLOCompositeOptions();
@@ -224,25 +219,30 @@ LiteRtSignatureT MakeDefaultSignature(LiteRtSubgraph subgraph) {
         continue;
       }
 
-      // TransferSubgraphTo currently remaps StableHLO composite references.
-      // Reject other control-flow references instead of silently producing a
-      // model with stale subgraph indices.
-      switch (op->OpCode()) {
-        case kLiteRtOpCodeTflIf:
-        case kLiteRtOpCodeTflWhile:
-        case kLiteRtOpCodeTflCallOnce:
-        case kLiteRtOpCodeShloCustomCall:
-        case kLiteRtOpCodeShloReduce:
-        case kLiteRtOpCodeShloScatter:
-        case kLiteRtOpCodeShloWindow:
-        case kLiteRtOpCodeShloSort:
-        case kLiteRtOpCodeShloWhile:
+      // Region bodies (control flow, reductions, comparators, ...) must be
+      // retained together with the op that references them.
+      // TransferSubgraphTo remaps all of these references.
+      if (!litert::internal::HasSubgraphRefs(*op)) {
+        continue;
+      }
+      for (const auto& ref : litert::internal::GetSubgraphRefs(*op)) {
+        if (ref.index < 0 ||
+            static_cast<size_t>(ref.index) >= subgraphs.size()) {
+          // Reported as unsupported (rather than invalid) so that callers
+          // fall back to the unpruned model, as they did before region
+          // references were supported.
           return ::litert::Unexpected(
               kLiteRtStatusErrorUnsupported,
-              "Signature pruning does not support this subgraph reference "
-              "operator");
-        default:
-          break;
+              absl::StrCat("Signature pruning does not support an op "
+                           "referencing an invalid ",
+                           litert::internal::SubgraphRefKindName(ref.kind),
+                           " subgraph: ", ref.index));
+        }
+        const size_t dependency = static_cast<size_t>(ref.index);
+        if (!reachable[dependency]) {
+          reachable[dependency] = true;
+          pending.push_back(dependency);
+        }
       }
     }
   }
@@ -278,37 +278,74 @@ void LiteRtModelT::TransferSubgraphTo(LiteRtSubgraphT::Alloc& dest,
   if (indices.empty()) {
     return;
   }
-  std::sort(indices.begin(), indices.end());
-  std::vector<int> new_inds(subgraphs_.Size(), 0);
-  auto num_removed = 0;
-  auto i = indices.begin();
-  for (size_t j = 0; j < new_inds.size(); ++j) {
-    if (i != indices.end() && *i == j) {
-      ++num_removed;
-      // Keep track of removed sgs just for dcheck.
-      new_inds[j] = -1;
-      ++i;
-      continue;
+  const size_t num_subgraphs = subgraphs_.Size();
+
+  // Deduplicate while preserving the caller-specified order.
+  std::vector<bool> moved(num_subgraphs, false);
+  std::vector<size_t> ordered;
+  ordered.reserve(indices.size());
+  for (const size_t ind : indices) {
+    if (ind < num_subgraphs && !moved[ind]) {
+      moved[ind] = true;
+      ordered.push_back(ind);
     }
-    new_inds[j] = j - num_removed;
+  }
+  if (ordered.empty()) {
+    return;
   }
 
-  ForEachIr(
-      this, [&](LiteRtSubgraph subgraph, int32_t subgraph_index, LiteRtOp op) {
-        if (op->OpCode() != kLiteRtOpCodeShloComposite) {
-          return;
-        }
-        auto opts = litert::internal::TakeTflOptions2(*op);
-        auto& decomp_ind =
-            opts.AsStableHLOCompositeOptions()->decomposition_subgraph_index;
-        // Skip update for decomposition ops that are already removed.
-        if (decomp_ind != -1) {
-          const auto new_ind = new_inds[decomp_ind];
-          decomp_ind = new_ind;
-        }
-        litert::internal::SetTflOptions2(*op, std::move(opts));
-      });
-  subgraphs_.TransferTo(dest, std::move(indices));
+  // New index of every subgraph in the model it ends up in. -1 means the
+  // subgraph is not part of that model.
+  std::vector<int32_t> remaining_inds(num_subgraphs, -1);
+  std::vector<int32_t> moved_inds(num_subgraphs, -1);
+  int32_t next_remaining = 0;
+  for (size_t j = 0; j < num_subgraphs; ++j) {
+    if (!moved[j]) {
+      remaining_inds[j] = next_remaining++;
+    }
+  }
+  const size_t dest_offset = dest.Size();
+  for (size_t k = 0; k < ordered.size(); ++k) {
+    moved_inds[ordered[k]] = static_cast<int32_t>(dest_offset + k);
+  }
+
+  // Remap every subgraph reference (composite decompositions, control flow
+  // bodies, reduction bodies, ...). References from the remaining subgraphs
+  // are remapped against the remaining subgraphs, references from transferred
+  // subgraphs against their new position in `dest`. References that would
+  // cross the boundary become -1 and are rejected by ValidateSubgraphRefs.
+  for (size_t j = 0; j < num_subgraphs; ++j) {
+    const auto& new_inds = moved[j] ? moved_inds : remaining_inds;
+    for (LiteRtOp op : subgraphs_.Elements()[j]->Ops()) {
+      if (!litert::internal::HasSubgraphRefs(*op)) {
+        continue;
+      }
+      litert::internal::UpdateSubgraphRefs(
+          *op, [&](int32_t& ind, litert::internal::SubgraphRefKind) {
+            if (ind < 0 || static_cast<size_t>(ind) >= num_subgraphs) {
+              return;
+            }
+            ind = new_inds[ind];
+          });
+    }
+  }
+
+  // Capture the requested order before the allocator transfer, which always
+  // transfers in ascending index order.
+  std::vector<LiteRtSubgraph> requested_order;
+  requested_order.reserve(dest_offset + ordered.size());
+  for (LiteRtSubgraph sg : dest.Elements()) {
+    requested_order.push_back(sg);
+  }
+  for (const size_t ind : ordered) {
+    requested_order.push_back(subgraphs_.Elements()[ind]);
+  }
+
+  const bool is_ascending = absl::c_is_sorted(ordered);
+  subgraphs_.TransferTo(dest, std::move(ordered));
+  if (!is_ascending) {
+    dest.Reorder(requested_order);
+  }
 }
 
 LiteRtModelT LiteRtModelT::Yank(std::vector<size_t> indices) {

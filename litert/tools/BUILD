@@ -117,6 +117,7 @@ cc_library(
         "//litert/cc:litert_model",
         "//litert/cc:litert_options",
         "//litert/compiler/plugin:compiler_plugin",
+        "//litert/core/model",
         "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools",
         "@com_google_absl//absl/container:flat_hash_set",

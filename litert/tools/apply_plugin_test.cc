@@ -33,6 +33,7 @@
 #include "litert/core/build_stamp.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/subgraph_refs.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/tools/outstream.h"
@@ -55,6 +56,8 @@ absl::string_view TestModelPath(absl::string_view filename) {
   const auto model_path = ::litert::testing::GetTestFilePath(filename);
   ABSL_CHECK(model_path.size() < 512);
   model_path.copy(kModelPath, model_path.size(), 0);
+  // The buffer is reused across calls; terminate after the current path.
+  kModelPath[model_path.size()] = '\0';
   return kModelPath;
 }
 
@@ -122,6 +125,40 @@ TEST(TestApplyPluginTool, TestPartition) {
   run->outs.push_back(out);
   LITERT_ASSERT_OK(ApplyPlugin(std::move(run)));
   EXPECT_FALSE(out.str().empty());
+}
+
+TEST(TestApplyPluginTool, TestPartitionRegionModel) {
+  // The odml.npu_call decomposition holds a REDUCE_WINDOW whose body is carried
+  // into the partitions model. After appending the partitions to the model,
+  // the body reference must still point at the body.
+  auto run =
+      MakeBaseRun(ApplyPluginRun::Cmd::PARTITION, "npu_call_region.tflite");
+  std::stringstream out;
+  run->outs.push_back(out);
+  LITERT_ASSERT_OK(ApplyPlugin(std::move(run)));
+
+  const auto out_str = out.str();
+  BufferRef<uint8_t> serialized(out_str.data(), out_str.size());
+  auto model = Model::CreateFromBuffer(serialized);
+  ASSERT_TRUE(model);
+  const LiteRtModelT& litert_model = *model->Get();
+  LITERT_ASSERT_OK(internal::ValidateSubgraphRefs(litert_model));
+
+  bool found_reduce_window = false;
+  for (LiteRtSubgraph subgraph : litert_model.Subgraphs()) {
+    for (LiteRtOp op : subgraph->Ops()) {
+      if (op->OpCode() != kLiteRtOpCodeShloWindow) {
+        continue;
+      }
+      found_reduce_window = true;
+      const auto refs = internal::GetSubgraphRefs(*op);
+      ASSERT_EQ(refs.size(), 1);
+      const LiteRtSubgraphT& body = litert_model.Subgraph(refs[0].index);
+      ASSERT_EQ(body.Ops().size(), 1);
+      EXPECT_EQ(body.Op(0).OpCode(), kLiteRtOpCodeTflMaximum);
+    }
+  }
+  EXPECT_TRUE(found_reduce_window);
 }
 
 TEST(TestApplyPluginTool, TestCompileBadConfig) {

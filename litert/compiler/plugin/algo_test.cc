@@ -14,6 +14,8 @@
 
 #include "litert/compiler/plugin/algo.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -794,6 +796,58 @@ TEST(TestCompositeInlining, NonMatchingTensorTypeInlining) {
   auto& dest_op_2 = subgraph_3.Op(0);
   ASSERT_EQ(InlineSubgraph(model, dest_op_2, &subgraph_4).Error().Status(),
             kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(CloneSubgraphTest, CopiesIr) {
+  auto model_wrap = testing::LoadTestFileModel("tfl_while_region.tflite");
+  auto& model = *model_wrap.Get();
+  const LiteRtSubgraphT& body = model.Subgraph(2);
+
+  auto clone_index = CloneSubgraph(model, body);
+  ASSERT_TRUE(clone_index);
+  ASSERT_EQ(*clone_index, 3);
+  ASSERT_EQ(model.NumSubgraphs(), 4);
+  const LiteRtSubgraphT& clone = model.Subgraph(*clone_index);
+
+  EXPECT_EQ(clone.Name(), body.Name());
+  ASSERT_EQ(clone.Ops().size(), body.Ops().size());
+  ASSERT_EQ(clone.NumInputs(), body.NumInputs());
+  ASSERT_EQ(clone.NumOutputs(), body.NumOutputs());
+  ASSERT_EQ(clone.Tensors().size(), body.Tensors().size());
+  for (size_t i = 0; i < body.Ops().size(); ++i) {
+    EXPECT_EQ(clone.Op(i).OpCode(), body.Op(i).OpCode());
+    ASSERT_EQ(clone.Op(i).NumInputs(), body.Op(i).NumInputs());
+    for (size_t j = 0; j < body.Op(i).NumInputs(); ++j) {
+      EXPECT_NE(&clone.Op(i).Input(j), &body.Op(i).Input(j));
+    }
+  }
+  for (size_t i = 0; i < body.NumInputs(); ++i) {
+    EXPECT_NE(&clone.Input(i), &body.Input(i));
+    // The clone's inputs feed the clone's ops, not the source's.
+    for (LiteRtOp user : clone.Input(i).Users()) {
+      EXPECT_TRUE(std::find(clone.Ops().begin(), clone.Ops().end(), user) !=
+                  clone.Ops().end());
+    }
+  }
+  EXPECT_TRUE(ValidateLocalTopology(clone.Ops().cbegin(), clone.Ops().cend()));
+}
+
+TEST(CloneSubgraphTest, FailureLeavesModelUnchanged) {
+  LiteRtModelT model;
+  auto& source = model.EmplaceSubgraph();
+  auto& other = model.EmplaceSubgraph();
+  // The op reads a tensor owned by another subgraph.
+  auto& foreign = other.EmplaceTensor();
+  auto& output = source.EmplaceTensor();
+  auto& op = source.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAbs);
+  AttachInput(&foreign, op);
+  AttachOutput(&output, op);
+
+  auto clone_index = CloneSubgraph(model, source);
+  ASSERT_FALSE(clone_index);
+  EXPECT_EQ(clone_index.Error().Status(), kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(model.NumSubgraphs(), 2);
 }
 
 }  // namespace

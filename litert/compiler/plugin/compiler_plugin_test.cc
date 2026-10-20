@@ -15,6 +15,7 @@
 #include "litert/compiler/plugin/compiler_plugin.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <sstream>
 #include <string>
@@ -50,6 +51,7 @@
 #include "litert/test/matchers.h"
 #include "litert/tools/dump.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "tflite/converter/schema/schema_generated.h"
 
 namespace litert::internal {
@@ -72,6 +74,9 @@ TEST(CompilerPluginTest, LoadTestPlugin) {
   EXPECT_EQ(plugins->front().SocManufacturer(), kTestManufacturer);
   ASSERT_EQ(plugins->front().SocModels().size(), 1);
   EXPECT_EQ(plugins->front().SocModels().front(), kTestModels);
+  // The example plugin exports the optional capability query.
+  EXPECT_EQ(plugins->front().Capabilities(),
+            kLiteRtCompilerPluginCapabilityRegionSubgraphs);
 }
 
 TEST(CompilerPluginTest, FindTestPluginOk) {
@@ -923,9 +928,8 @@ TEST(ApplyTest, ApplyPluginsRejectsConflictingShapeModesForSameSignature) {
       kLiteRtHwAcceleratorNpu);
   // Input shape validation/refinement runs once before the plugin loop and
   // fails ApplyPlugins fatally on invalid shapes.
-  auto result = litert::internal::ApplyPlugins(env.GetHolder().handle,
-                                               built_options.get(), &model,
-                                               compilation_options);
+  auto result = litert::internal::ApplyPlugins(
+      env.GetHolder().handle, built_options.get(), &model, compilation_options);
   ASSERT_FALSE(result.HasValue());
   EXPECT_THAT(result.Error().Message(), ::testing::HasSubstr("Only one of"));
   // Model must be left untouched on failure.
@@ -1209,7 +1213,87 @@ class CompilerPluginFriend : public ::testing::Test {
     return CompilerPlugin::LoadPlugin(lib_path, /*env=*/nullptr,
                                       /*options=*/nullptr);
   }
+  void SetPluginApi(CompilerPlugin& plugin,
+                    const LiteRtCompilerPluginInterface_V1* plugin_api) {
+    plugin.plugin_api_v1_ = plugin_api;
+  }
 };
+
+namespace {
+
+LiteRtStatus ReportRegionSupport(LiteRtCompilerPlugin, uint64_t* capabilities) {
+  *capabilities = kLiteRtCompilerPluginCapabilityRegionSubgraphs;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus FailCapabilitiesQuery(LiteRtCompilerPlugin,
+                                   uint64_t* capabilities) {
+  *capabilities = kLiteRtCompilerPluginCapabilityRegionSubgraphs;
+  return kLiteRtStatusErrorRuntimeFailure;
+}
+
+// Builds a plugin interface table that only provides the capability query.
+// `struct_size` simulates plugins built against older (smaller) tables.
+LiteRtCompilerPluginInterface_V1 MakeCapabilitiesOnlyApi(
+    LiteRtGetCompilerPluginCapabilitiesT capabilities_fn,
+    uint16_t struct_size = sizeof(LiteRtCompilerPluginInterface_V1),
+    uint16_t minor_version = 1) {
+  LiteRtCompilerPluginInterface_V1 api = {};
+  api.abi_header.struct_size = struct_size;
+  api.abi_header.major_version = 1;
+  api.abi_header.minor_version = minor_version;
+  api.get_compiler_plugin_capabilities = capabilities_fn;
+  return api;
+}
+
+}  // namespace
+
+TEST_F(CompilerPluginFriend, MissingPluginApiMeansNoCapabilities) {
+  CompilerPlugin plugin = CreatePlugin();
+  EXPECT_EQ(plugin.Capabilities(), kLiteRtCompilerPluginCapabilityNone);
+  EXPECT_FALSE(plugin.SupportsRegionSubgraphs());
+}
+
+TEST_F(CompilerPluginFriend, NullCapabilitiesMemberMeansNone) {
+  const LiteRtCompilerPluginInterface_V1 api =
+      MakeCapabilitiesOnlyApi(/*capabilities_fn=*/nullptr);
+  CompilerPlugin plugin = CreatePlugin();
+  SetPluginApi(plugin, &api);
+  EXPECT_EQ(plugin.Capabilities(), kLiteRtCompilerPluginCapabilityNone);
+  EXPECT_FALSE(plugin.SupportsRegionSubgraphs());
+}
+
+TEST_F(CompilerPluginFriend, PreV1_1InterfaceTableMeansNoCapabilities) {
+  // A plugin built against ABI 1.0 reports a table that ends before the
+  // capability member; the runtime must not read past `struct_size`.
+  const uint16_t pre_v1_1_size = offsetof(LiteRtCompilerPluginInterface_V1,
+                                          get_compiler_plugin_capabilities);
+  const LiteRtCompilerPluginInterface_V1 api = MakeCapabilitiesOnlyApi(
+      &ReportRegionSupport, pre_v1_1_size, /*minor_version=*/0);
+  CompilerPlugin plugin = CreatePlugin();
+  SetPluginApi(plugin, &api);
+  EXPECT_EQ(plugin.Capabilities(), kLiteRtCompilerPluginCapabilityNone);
+  EXPECT_FALSE(plugin.SupportsRegionSubgraphs());
+}
+
+TEST_F(CompilerPluginFriend, ReportedCapabilities) {
+  const LiteRtCompilerPluginInterface_V1 api =
+      MakeCapabilitiesOnlyApi(&ReportRegionSupport);
+  CompilerPlugin plugin = CreatePlugin();
+  SetPluginApi(plugin, &api);
+  EXPECT_EQ(plugin.Capabilities(),
+            kLiteRtCompilerPluginCapabilityRegionSubgraphs);
+  EXPECT_TRUE(plugin.SupportsRegionSubgraphs());
+}
+
+TEST_F(CompilerPluginFriend, FailedCapabilitiesQueryMeansNone) {
+  const LiteRtCompilerPluginInterface_V1 api =
+      MakeCapabilitiesOnlyApi(&FailCapabilitiesQuery);
+  CompilerPlugin plugin = CreatePlugin();
+  SetPluginApi(plugin, &api);
+  EXPECT_EQ(plugin.Capabilities(), kLiteRtCompilerPluginCapabilityNone);
+  EXPECT_FALSE(plugin.SupportsRegionSubgraphs());
+}
 
 TEST_F(CompilerPluginFriend, GreedyPatternMatchAndRewrite) {
   CompilerPlugin plugin = CreatePlugin();
@@ -1617,10 +1701,10 @@ TEST_F(
   LiteRtModelT model;
   auto& sg = model.EmplaceSubgraph();
   MulGraph g = BuildMulSubgraph(sg, /*inner_dim=*/16);
-  model.EmplaceSignature(
-      &sg, std::vector<std::string>{"arg0", "arg1"},
-      std::vector<LiteRtTensor>{g.in0, g.in1}, std::vector<std::string>{"out"},
-      std::vector<LiteRtTensor>{g.out}, "serving_default");
+  model.EmplaceSignature(&sg, std::vector<std::string>{"arg0", "arg1"},
+                         std::vector<LiteRtTensor>{g.in0, g.in1},
+                         std::vector<std::string>{"out"},
+                         std::vector<LiteRtTensor>{g.out}, "serving_default");
 
   LITERT_ASSERT_OK_AND_ASSIGN(bool applied,
                               ApplyCompilerOptionsInputShapes(plugin, model));
@@ -1670,14 +1754,14 @@ TEST_F(CompilerPluginFriend,
 }
 
 TEST(CompilerPluginTest, LoadPlugin_NewerVersionNegotiation) {
-  // Loads example_plugin.so (V1.1), verifies runtime (V1.0) successfully
-  // negotiates V1.1 ABI via forward compatibility.
+  // Loads example_plugin.so (V1.2), verifies runtime (V1.1) successfully
+  // negotiates V1.2 ABI via forward compatibility.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto plugin,
       CompilerPlugin::FindPlugin(kTestManufacturer,
                                  {GetLiteRtPath(kTestPluginSearchPath)}));
   EXPECT_EQ(plugin.NegotiatedVersion().major, 1);
-  EXPECT_EQ(plugin.NegotiatedVersion().minor, 1);
+  EXPECT_EQ(plugin.NegotiatedVersion().minor, 2);
   EXPECT_EQ(plugin.SocManufacturer(), kTestManufacturer);
   LITERT_ASSERT_OK_AND_ASSIGN(auto hw, plugin.SupportedHardware());
   EXPECT_EQ(hw, kLiteRtHwAcceleratorNpu);

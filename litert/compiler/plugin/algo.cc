@@ -15,6 +15,8 @@
 #include "litert/compiler/plugin/algo.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -684,6 +686,67 @@ Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
   // Clean up the subgraph.
   DCE(*main_subgraph);
   return Expected<void>();
+}
+
+Expected<uint32_t> CloneSubgraph(LiteRtModelT& model,
+                                 const LiteRtSubgraphT& source) {
+  // Build the clone in a detached allocator so that a failure leaves `model`
+  // untouched.
+  LiteRtSubgraphT::Alloc staging;
+  LiteRtSubgraphT& clone = staging.EmplaceBack(model.Buffers());
+  clone.SetName(std::string(source.Name()));
+
+  absl::flat_hash_map<const LiteRtTensorT*, LiteRtTensor> tensor_map;
+  tensor_map.reserve(source.Tensors().size());
+  for (const LiteRtTensorT* tensor : source.Tensors()) {
+    LITERT_ASSIGN_OR_RETURN(LiteRtTensor cloned, MakeClone(clone, *tensor));
+    tensor_map.emplace(tensor, cloned);
+  }
+  auto lookup = [&tensor_map](const LiteRtTensorT* tensor) -> LiteRtTensor {
+    auto it = tensor_map.find(tensor);
+    return it == tensor_map.end() ? nullptr : it->second;
+  };
+
+  for (const LiteRtTensorT* input : source.Inputs()) {
+    LiteRtTensor cloned = lookup(input);
+    if (cloned == nullptr) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Subgraph input is not owned by the subgraph");
+    }
+    clone.Inputs().push_back(cloned);
+  }
+
+  for (const LiteRtOpT* op : source.Ops()) {
+    LiteRtOpT& cloned_op = MakeClone(clone, *op);
+    for (const LiteRtTensorT* input : op->Inputs()) {
+      LiteRtTensor cloned = lookup(input);
+      if (cloned == nullptr) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "Op input is not owned by the subgraph");
+      }
+      AttachInput(cloned, cloned_op);
+    }
+    for (const LiteRtTensorT* output : op->Outputs()) {
+      LiteRtTensor cloned = lookup(output);
+      if (cloned == nullptr) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "Op output is not owned by the subgraph");
+      }
+      AttachOutput(cloned, cloned_op);
+    }
+  }
+
+  for (const LiteRtTensorT* output : source.Outputs()) {
+    LiteRtTensor cloned = lookup(output);
+    if (cloned == nullptr) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Subgraph output is not owned by the subgraph");
+    }
+    clone.Outputs().push_back(cloned);
+  }
+
+  model.TransferSubgraphsFrom(std::move(staging));
+  return static_cast<uint32_t>(model.NumSubgraphs() - 1);
 }
 
 }  // namespace litert::internal
