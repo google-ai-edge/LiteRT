@@ -460,6 +460,7 @@ cc_test(
     deps = [
         ":litert_any",
         ":litert_common",
+        ":litert_custom_tensor_buffer",
         ":litert_environment",
         ":litert_environment_options",
         ":litert_model_types",
@@ -518,6 +519,7 @@ cc_test(
 #     deps = [
 #         ":litert_any",
 #         ":litert_common",
+#         ":litert_custom_tensor_buffer",
 #         ":litert_environment",
 #         ":litert_environment_options",
 #         ":litert_model_types",

@@ -34,6 +34,15 @@ class OpenVinoTensorBuffer {
   litert::Expected<void> Alloc(const LiteRtRankedTensorType& tensor_type,
                                size_t size);
 
+  // Wraps `host_memory`, the CPU-visible data pointer of an existing
+  // OpenVINO tensor (for the NPU and GPU devices, a host tensor allocated
+  // by the device's remote context, so the device can use it in place), as
+  // an ov::Tensor of `tensor_type` without taking ownership. Used to give a
+  // smaller-context KV-cache signature a view onto the largest context's
+  // KV-cache buffer for multi-signature NPU models.
+  litert::Expected<void> Wrap(const LiteRtRankedTensorType& tensor_type,
+                              void* host_memory, size_t size);
+
   litert::Expected<void*> GetTensorData();
 
   litert::Expected<ov::Tensor> GetOVTensor();
