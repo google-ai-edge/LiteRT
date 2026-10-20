@@ -710,7 +710,7 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings_Decode(
   if (cache_params != nullptr && key_len > 0) {
     mldrift_sliding_mask =
         FillAttentionMask(*cache_params, {1, 1, seq_len, config.sliding_window},
-                          /*is_local=*/true, config.sliding_window,
+                          /*is_local=*/false, config.sliding_window,
                           /*is_decode=*/true);
     mldrift_global_mask =
         FillAttentionMask(*cache_params, {1, 1, seq_len, key_len},
