@@ -160,6 +160,12 @@ class ConvGeneric : public GPUOperation {
       const GpuInfo& gpu_info, const OperationDef& definition,
       const Convolution2DAttributes& attr, const BHWC* dst_shape);
 
+  friend ConvGeneric CreateDirectConvolutionWithCooperativeMatrix(
+      const OperationDef& definition,
+      const Convolution2DAttributes& attr,
+      const GpuInfo& gpu_info,
+      const BHWC* dst_shape);
+
   friend ConvGeneric CreateConvGeneric3D(const GpuInfo& gpu_info,
                                          const OperationDef& definition,
                                          const Convolution3DAttributes& attr,
@@ -352,6 +358,13 @@ ConvGeneric CreateConvGeneric3D(const GpuInfo& gpu_info,
                                 const OperationDef& definition,
                                 const Convolution3DAttributes& attr,
                                 const BHWDC* dst_shape = nullptr);
+
+// Create direct cooperative matrix convolution
+ConvGeneric CreateDirectConvolutionWithCooperativeMatrix(
+    const OperationDef& definition,
+    const Convolution2DAttributes& attr,
+    const GpuInfo& gpu_info,
+    const BHWC* dst_shape);
 
 }  // namespace gpu
 }  // namespace tflite
