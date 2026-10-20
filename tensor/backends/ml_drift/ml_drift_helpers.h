@@ -52,7 +52,21 @@ struct MlDriftBuildContext {
   // Set of weight names that are compiled as external placeholder tensors
   // (not constant).
   absl::flat_hash_set<std::string> external_weight_names;
+
+  // Optional cache of packed constant weight descriptors keyed by weight name,
+  // populated during `Prepare()` and shared across signatures (e.g. prefill and
+  // decode) to skip redundant CPU weight unpacking and rearrangement.
+  absl::flat_hash_map<std::string, ml_drift::TensorDescriptor>*
+      shared_weight_descriptors = nullptr;
 };
+
+inline ml_drift::TensorDescriptor CopyDescriptorWithoutData(
+    const ml_drift::TensorDescriptor& src) {
+  ml_drift::TensorDescriptor dst;
+  src.CopyWithoutData(&dst);
+  dst.SetBHWDCShape(src.GetBHWDCShape());
+  return dst;
+}
 
 absl::StatusOr<ml_drift::BHWC> ShapeToBHWC(const std::vector<int>& shape,
                                            int fill_value = 1);
