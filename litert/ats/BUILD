@@ -198,6 +198,10 @@ YNNPACK_DONT_REGISTER = [
 BUILTIN_MODELS_DONT_REGISTER = [
 ]
 
+YNNPACK_FALLBACK_MODELS_DONT_REGISTER = [
+    "torchvision_video_swin3d_tiny",
+]
+
 GPU_MODELS_DONT_REGISTER = [
     "depth_anything_v2",
     "hf_all_minilm_l6_v2",
@@ -336,7 +340,7 @@ litert_define_ats(
     backend = "cpu",
     compile_only_suffix = None,
     do_register = ["ExtraModel"],
-    dont_register = BUILTIN_MODELS_DONT_REGISTER,
+    dont_register = YNNPACK_FALLBACK_MODELS_DONT_REGISTER,
     extra_flags = [
         "--enable_ynnpack=true",
         "--cpu_hint_fully_delegated=false",
@@ -779,7 +783,7 @@ litert_define_ats(
     backend = "cpu",
     compile_only_suffix = None,
     do_register = ["ExtraModel"],
-    dont_register = BUILTIN_MODELS_DONT_REGISTER,
+    dont_register = YNNPACK_FALLBACK_MODELS_DONT_REGISTER,
     extra_flags = [
         "--enable_ynnpack=true",
         "--cpu_hint_fully_delegated=false",
