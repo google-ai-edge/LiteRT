@@ -14,6 +14,7 @@
 
 #include "litert/cc/litert_compiled_model.h"
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -43,6 +44,7 @@
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_model.h"
@@ -871,8 +873,7 @@ TEST(CompiledModelTest, SignatureAccessorsInvalidContext) {
   EXPECT_THAT(input_type_bad_sig.Error().Message(),
               ::testing::HasSubstr("Signature not found: invalid_key_sig"));
 
-  auto input_type =
-      compiled_model.GetInputTensorType("invalid_input_type");
+  auto input_type = compiled_model.GetInputTensorType("invalid_input_type");
   ASSERT_FALSE(input_type.HasValue());
   EXPECT_THAT(
       input_type.Error().Message(),
@@ -884,8 +885,7 @@ TEST(CompiledModelTest, SignatureAccessorsInvalidContext) {
   EXPECT_THAT(output_type_bad_sig.Error().Message(),
               ::testing::HasSubstr("Signature not found: invalid_key_sig"));
 
-  auto output_type =
-      compiled_model.GetOutputTensorType("invalid_output_type");
+  auto output_type = compiled_model.GetOutputTensorType("invalid_output_type");
   ASSERT_FALSE(output_type.HasValue());
   EXPECT_THAT(
       output_type.Error().Message(),
@@ -1950,6 +1950,33 @@ TEST(CompiledModelTest, CreateWithConstEnvironment) {
   ASSERT_TRUE(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
   LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+}
+
+TEST(CompiledModelTest, InvalidInputShapesFailCreateEvenWithCpuFallback) {
+  const std::string plugin_dir = testing::GetLiteRtPath("vendors/examples/");
+  const std::array environment_options = {
+      EnvironmentOptions::Option{
+          EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
+          plugin_dir.c_str(),
+      },
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment env,
+      Environment::Create(EnvironmentOptions(environment_options)));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK(options.SetHardwareAccelerators(HwAccelerators::kCpu |
+                                                   HwAccelerators::kNpu));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& compiler_options,
+                              options.GetCompilerOptions());
+  const int32_t dims[] = {1, 8};
+  LITERT_ASSERT_OK(
+      compiler_options.AddTensorInputShape("nonexistent_tensor", dims));
+
+  auto compiled_model = CompiledModel::Create(
+      env, testing::GetTestFilePath(kModelFileName), options);
+  ASSERT_FALSE(compiled_model.HasValue());
+  EXPECT_EQ(compiled_model.Error().Status(), kLiteRtStatusErrorNotFound);
 }
 
 }  // namespace

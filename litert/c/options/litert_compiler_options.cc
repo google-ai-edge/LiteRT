@@ -15,10 +15,14 @@
 #include "litert/c/options/litert_compiler_options.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
-#include <sstream>
 #include <string>
+#include <vector>
 
+#include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 
@@ -26,7 +30,38 @@ struct LrtCompilerOptions {
   std::optional<LiteRtCompilerOptionsPartitionStrategy> partition_strategy;
   std::optional<bool> dummy_option;
   std::optional<size_t> max_partitions;
+  std::vector<std::string> positional_input_shapes;
+  std::vector<std::string> tensor_input_shapes;
+  std::vector<std::string> signature_input_shapes;
 };
+
+namespace {
+
+std::string FormatDims(const int32_t* dims, size_t rank) {
+  std::string out;
+  for (size_t i = 0; i < rank; ++i) {
+    if (i > 0) absl::StrAppend(&out, ":");
+    absl::StrAppend(&out, dims[i]);
+  }
+  return out;
+}
+
+void WriteTomlStringArray(std::string& toml_str, absl::string_view key,
+                          const std::vector<std::string>& values) {
+  if (values.empty()) return;
+  absl::StrAppend(&toml_str, key, " = [");
+  for (size_t i = 0; i < values.size(); ++i) {
+    if (i > 0) absl::StrAppend(&toml_str, ", ");
+    absl::StrAppend(&toml_str, "\"", values[i], "\"");
+  }
+  absl::StrAppend(&toml_str, "]\n");
+}
+
+bool HasInvalidTomlChars(absl::string_view s) {
+  return s.find_first_of("\"\'\\\n\r") != absl::string_view::npos;
+}
+
+}  // namespace
 
 LiteRtStatus LrtCreateCompilerOptions(LrtCompilerOptions** options) {
   if (!options) {
@@ -53,21 +88,28 @@ LiteRtStatus LrtGetOpaqueCompilerOptionsData(const LrtCompilerOptions* options,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  std::stringstream ss;
+  std::string toml_str;
   if (options->partition_strategy.has_value()) {
-    ss << "partition_strategy = "
-       << static_cast<int>(options->partition_strategy.value()) << "\n";
+    absl::StrAppend(&toml_str, "partition_strategy = ",
+                    static_cast<int>(options->partition_strategy.value()),
+                    "\n");
   }
   if (options->dummy_option.has_value()) {
-    ss << "dummy_option = "
-       << (options->dummy_option.value() ? "true" : "false") << "\n";
+    absl::StrAppend(&toml_str, "dummy_option = ",
+                    options->dummy_option.value() ? "true" : "false", "\n");
   }
   if (options->max_partitions.has_value()) {
-    ss << "max_partitions = " << options->max_partitions.value() << "\n";
+    absl::StrAppend(&toml_str,
+                    "max_partitions = ", options->max_partitions.value(), "\n");
   }
+  WriteTomlStringArray(toml_str, "positional_input_shapes",
+                       options->positional_input_shapes);
+  WriteTomlStringArray(toml_str, "tensor_input_shapes",
+                       options->tensor_input_shapes);
+  WriteTomlStringArray(toml_str, "signature_input_shapes",
+                       options->signature_input_shapes);
 
   *identifier = LrtGetCompilerOptionsIdentifier();
-  std::string toml_str = ss.str();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
 
   return kLiteRtStatusOk;
@@ -129,5 +171,57 @@ LiteRtStatus LrtGetCompilerOptionsMaxPartitions(
     return kLiteRtStatusErrorNotFound;
   }
   *max_partitions = options->max_partitions.value();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtAddCompilerOptionsPositionalInputShape(
+    LrtCompilerOptions* options, const char* signature_key, const int32_t* dims,
+    size_t rank) {
+  if (!options || (rank > 0 && !dims)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const absl::string_view sig = signature_key ? signature_key : "";
+  if (HasInvalidTomlChars(sig) || absl::StrContains(sig, '@')) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->positional_input_shapes.push_back(
+      absl::StrCat(sig, "@", FormatDims(dims, rank)));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtAddCompilerOptionsTensorInputShape(LrtCompilerOptions* options,
+                                                   const char* signature_key,
+                                                   const char* tensor_name,
+                                                   const int32_t* dims,
+                                                   size_t rank) {
+  if (!options || !tensor_name || tensor_name[0] == '\0' ||
+      (rank > 0 && !dims)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const absl::string_view sig = signature_key ? signature_key : "";
+  const absl::string_view name(tensor_name);
+  if (HasInvalidTomlChars(sig) || absl::StrContains(sig, '@') ||
+      HasInvalidTomlChars(name)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->tensor_input_shapes.push_back(
+      absl::StrCat(sig, "@", name, "@", FormatDims(dims, rank)));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtAddCompilerOptionsSignatureInputShape(
+    LrtCompilerOptions* options, const char* signature_key,
+    const char* input_name, const int32_t* dims, size_t rank) {
+  if (!options || !input_name || input_name[0] == '\0' || (rank > 0 && !dims)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const absl::string_view sig = signature_key ? signature_key : "";
+  const absl::string_view name(input_name);
+  if (HasInvalidTomlChars(sig) || absl::StrContains(sig, '@') ||
+      HasInvalidTomlChars(name)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->signature_input_shapes.push_back(
+      absl::StrCat(sig, "@", name, "@", FormatDims(dims, rank)));
   return kLiteRtStatusOk;
 }

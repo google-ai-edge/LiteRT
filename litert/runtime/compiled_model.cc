@@ -921,8 +921,10 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
 #endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
       Expected<bool> maybe_initialized_model =
           ApplyPluginsWithCaching(model, hw_accelerators, *options, env);
-      if (maybe_initialized_model.HasValue() &&
-          maybe_initialized_model.Value() == true) {
+      if (!maybe_initialized_model.HasValue()) {
+        return maybe_initialized_model.Error();
+      }
+      if (maybe_initialized_model.Value() == true) {
         // The compiled model's flatbuffer has initialized by applying the
         // plugins.
         return {};
@@ -1593,6 +1595,9 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
       LITERT_LOG(GetLogSeverityForJitCompilationFailure(hw_accelerators),
                  "Failed to apply compiler plugins: %s",
                  jit_result.Error().Message().c_str());
+      if (!maybe_compiled_plugins->empty()) {
+        return jit_result.Error();
+      }
     } else {
       LITERT_LOG(
           LITERT_INFO, "%d compiler plugins were applied successfully: %s",

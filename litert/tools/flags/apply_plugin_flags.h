@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 #include "absl/flags/declare.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -38,6 +39,21 @@ std::string AbslUnparseFlag(
     LiteRtCompilerOptionsPartitionStrategy partition_strategy);
 
 ABSL_DECLARE_FLAG(size_t, compiler_options_max_partitions);
+
+// Input shape overrides for compiler options.
+// The three shape-specification modes are mutually exclusive:
+//   --input_shape: Positional shapes in subgraph input index order (0, 1, ...),
+//     formatted as "<d0>:<d1>:...". Must be passed once per subgraph input.
+//   --input_shape_by_tensor: Shapes matched by internal subgraph tensor name,
+//     formatted as "<tensor_name>@<d0>:<d1>:...".
+//   --input_shape_by_sig: Shapes matched by SignatureDef input argument alias,
+//     formatted as "<sig_input_name>@<d0>:<d1>:...".
+//   --input_shape_sig_key: Target signature key selecting which signature the
+//     above shape overrides apply to (defaults to "", the first signature).
+ABSL_DECLARE_FLAG(std::vector<std::string>, input_shape);
+ABSL_DECLARE_FLAG(std::vector<std::string>, input_shape_by_tensor);
+ABSL_DECLARE_FLAG(std::vector<std::string>, input_shape_by_sig);
+ABSL_DECLARE_FLAG(std::string, input_shape_sig_key);
 
 namespace litert {
 

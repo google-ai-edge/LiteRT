@@ -162,6 +162,10 @@ class CompilerPlugin {
   // Returns the compiler options used to create this plugin.
   Expected<LiteRtCompilerOptionsT> CompilerOptions() const;
 
+  // Returns the selected signature keys configured on the options used to
+  // create this plugin, or an empty span if all signatures are active.
+  absl::Span<const std::string> SelectedSignatureKeys() const;
+
   // Check if the compiler is compatible with the plugin.
   Expected<bool> CheckCompilerCompatibility(absl::string_view soc_model);
 
@@ -259,6 +263,13 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
 Expected<void> TransformModel(CompilerPlugin& compiler_plugin,
                               LiteRtModelT& model,
                               absl::string_view soc_model = "");
+
+// Refines input shapes on `model` according to the `CompilerOptions` configured
+// on `compiler_plugin` and propagates shapes through all affected subgraphs.
+// Returns true if any input shapes were specified and applied, or false if no
+// input shape overrides were configured.
+Expected<bool> ApplyCompilerOptionsInputShapes(
+    const CompilerPlugin& compiler_plugin, LiteRtModelT& model);
 
 // Apply all available plugins providing the selected HW accelerators to the
 // given model, modify the model accordingly, and return (1) the number of

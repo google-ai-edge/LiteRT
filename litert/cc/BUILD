@@ -799,6 +799,7 @@ cc_test(
         ":litert_compiled_model",
         ":litert_element_type",
         ":litert_environment",
+        ":litert_environment_options",
         ":litert_expected",
         ":litert_layout",
         ":litert_model",

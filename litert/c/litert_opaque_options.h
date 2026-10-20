@@ -87,8 +87,8 @@ LiteRtStatus LiteRtSetOpaqueOptionsHash(
 // Computes and returns the payload hash for the first item in the given
 // `options` list.
 //
-// Returns `kLiteRtStatusErrorUnsupported` if no hash function has been set
-// for the given `options` via `LiteRtSetOpaqueOptionsPayloadHashFunc`.
+// If no hash function has been set via `LiteRtSetOpaqueOptionsHash`, defaults
+// to hashing the payload as a null-terminated C string.
 LiteRtStatus LiteRtGetOpaqueOptionsHash(LiteRtOpaqueOptions options,
                                         uint64_t* hash);
 #ifdef __cplusplus

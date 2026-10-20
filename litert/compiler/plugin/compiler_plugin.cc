@@ -55,6 +55,9 @@
 #include "litert/core/environment.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/shape_inference.h"
+#include "litert/core/model/shape_inference_types.h"
+#include "litert/core/options.h"
 #include "litert/core/util/perfetto_profiling.h"
 #include "litert/core/version.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
@@ -400,6 +403,9 @@ Expected<void> CompilerPlugin::RegisterAllTransformations() {
   // Clear previously registered transformations in case this CompilerPlugin
   // instance is reused across multiple models (e.g. in ATS test suites).
   transformations_.clear();
+  if (plugin_api_.register_all_transformations == nullptr) {
+    return {};
+  }
   LiteRtParamIndex num_patterns;
   LiteRtTransformation* transformations;
 
@@ -930,26 +936,106 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
   return {};
 }
 
-Expected<void> TransformModel(CompilerPlugin& compiler_plugin,
-                              LiteRtModelT& model,
-                              absl::string_view soc_model) {
-  auto status = compiler_plugin.RegisterAllTransformations();
-  if (!status) {
-    return status;
-  }
-  LITERT_LOG(LITERT_INFO, "Registered %d transformations.",
-             compiler_plugin.GetNumTransformations());
+namespace {
 
-  status = compiler_plugin.GreedyPatternMatchAndRewrite(model);
-
-  if (!status) {
-    return status;
+// Groups the input shape overrides carried by `compiler_options` by signature
+// key and applies them (plus shape inference) to the corresponding subgraphs.
+// Overrides targeting signatures excluded by `selected_signature_keys` (which
+// may have been pruned from `model` prior to compilation) are skipped.
+// Signatures are processed in first-seen order so error messages are stable.
+Expected<bool> ApplyCompilerOptionsInputShapes(
+    const LiteRtCompilerOptionsT& compiler_options,
+    absl::Span<const std::string> selected_signature_keys,
+    LiteRtModelT& model) {
+  if (!compiler_options.HasInputShapes()) {
+    return false;
   }
-  LITERT_LOG(LITERT_INFO, "Applied transformations.");
-  return {};
+
+  struct PerSignatureShapes {
+    std::vector<Dims> positional_inputs;
+    std::vector<std::pair<std::string, Dims>> tensor_inputs;
+    std::vector<std::pair<std::string, Dims>> signature_inputs;
+  };
+  std::vector<std::pair<std::string, PerSignatureShapes>> by_signature;
+  auto resolve_sig_key =
+      [&](absl::string_view raw_sig_key) -> absl::string_view {
+    return (raw_sig_key.empty() && !model.Signatures().empty())
+               ? model.Signatures()[0]->Key()
+               : raw_sig_key;
+  };
+  auto is_signature_selected = [&](absl::string_view sig_key) -> bool {
+    if (selected_signature_keys.empty() || model.Signatures().empty()) {
+      return true;
+    }
+    return absl::c_linear_search(selected_signature_keys, sig_key);
+  };
+  auto bucket_for = [&](absl::string_view raw_sig_key) -> PerSignatureShapes* {
+    absl::string_view sig_key = resolve_sig_key(raw_sig_key);
+    if (!is_signature_selected(sig_key)) {
+      LITERT_LOG(LITERT_INFO,
+                 "Skipping input shape override for unselected signature '%s'.",
+                 std::string(sig_key).c_str());
+      return nullptr;
+    }
+    for (auto& [key, bucket] : by_signature) {
+      if (key == sig_key) return &bucket;
+    }
+    return &by_signature
+                .emplace_back(std::string(sig_key), PerSignatureShapes{})
+                .second;
+  };
+
+  for (const auto& e : compiler_options.positional_input_shapes) {
+    if (auto* bucket = bucket_for(e.signature_key); bucket != nullptr) {
+      bucket->positional_inputs.push_back(e.dims);
+    }
+  }
+  for (const auto& e : compiler_options.tensor_input_shapes) {
+    if (auto* bucket = bucket_for(e.signature_key); bucket != nullptr) {
+      bucket->tensor_inputs.emplace_back(e.name, e.dims);
+    }
+  }
+  for (const auto& e : compiler_options.signature_input_shapes) {
+    if (auto* bucket = bucket_for(e.signature_key); bucket != nullptr) {
+      bucket->signature_inputs.emplace_back(e.name, e.dims);
+    }
+  }
+
+  if (by_signature.empty()) {
+    return false;
+  }
+
+  std::vector<std::pair<LiteRtTensor, TensorType>> saved_types;
+  if (by_signature.size() > 1) {
+    for (auto* sg : model.Subgraphs()) {
+      if (sg == nullptr) continue;
+      for (auto* t : sg->Tensors()) {
+        if (t != nullptr) {
+          saved_types.emplace_back(t, t->Type());
+        }
+      }
+    }
+  }
+
+  ShapeInferenceEngine engine(&model);
+  for (const auto& [sig_key, bucket] : by_signature) {
+    auto res = engine.ApplyInputShapes(
+        sig_key, absl::MakeConstSpan(bucket.positional_inputs),
+        absl::MakeConstSpan(bucket.tensor_inputs),
+        absl::MakeConstSpan(bucket.signature_inputs));
+    if (!res) {
+      for (const auto& [t, type] : saved_types) {
+        t->SetType(type);
+      }
+      return res.Error();
+    }
+    LITERT_LOG(LITERT_INFO, "Applied input shapes for signature '%s'.",
+               sig_key.empty() ? "<default>" : sig_key.c_str());
+  }
+  return true;
 }
 
-Expected<void> ApplyPlugin(
+Expected<void> ApplySinglePlugin(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
     absl::string_view soc_model,
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition,
@@ -997,6 +1083,51 @@ Expected<void> ApplyPlugin(
                                   std::move(*partitions), soc_model, result);
 }
 
+}  // namespace
+
+Expected<bool> ApplyCompilerOptionsInputShapes(
+    const CompilerPlugin& compiler_plugin, LiteRtModelT& model) {
+  auto compiler_options = compiler_plugin.CompilerOptions();
+  if (!compiler_options.HasValue()) {
+    if (compiler_options.Error().Status() == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return compiler_options.Error();
+  }
+  return ApplyCompilerOptionsInputShapes(
+      compiler_options.Value(), compiler_plugin.SelectedSignatureKeys(), model);
+}
+
+Expected<void> TransformModel(CompilerPlugin& compiler_plugin,
+                              LiteRtModelT& model,
+                              absl::string_view soc_model) {
+  auto status = compiler_plugin.RegisterAllTransformations();
+  if (!status) {
+    return status;
+  }
+  LITERT_LOG(LITERT_INFO, "Registered %d transformations.",
+             compiler_plugin.GetNumTransformations());
+
+  status = compiler_plugin.GreedyPatternMatchAndRewrite(model);
+
+  if (!status) {
+    return status;
+  }
+  LITERT_LOG(LITERT_INFO, "Applied transformations.");
+  return {};
+}
+
+Expected<void> ApplyPlugin(
+    CompilerPlugin& compiler_plugin, LiteRtModelT& model,
+    absl::string_view soc_model,
+    const absl::flat_hash_set<uint32_t>& subgraphs_to_partition,
+    ApplyPluginsResult& result) {
+  LITERT_RETURN_IF_ERROR(
+      ApplyCompilerOptionsInputShapes(compiler_plugin, model));
+  return ApplySinglePlugin(compiler_plugin, model, soc_model,
+                           subgraphs_to_partition, result);
+}
+
 Expected<ApplyPluginsResult> ApplyPlugins(
     LiteRtEnvironment environment, LiteRtOptions options, LiteRtModel model,
     LiteRtHwAcceleratorSet selected_hw_accelerators, bool* mutated) {
@@ -1031,6 +1162,23 @@ Expected<ApplyPluginsResult> ApplyPlugins(
                          "No compiler plugin found");
   }
 
+  bool has_matching_plugin = false;
+  for (auto& compiler_plugin : compiler_plugins) {
+    auto supported_hw = compiler_plugin.SupportedHardware();
+    if (supported_hw && (*supported_hw & selected_hw_accelerators)) {
+      has_matching_plugin = true;
+      break;
+    }
+  }
+  if (has_matching_plugin) {
+    LITERT_ASSIGN_OR_RETURN(
+        bool shapes_applied,
+        ApplyCompilerOptionsInputShapes(compiler_plugins.front(), *model));
+    if (shapes_applied && mutated != nullptr) {
+      *mutated = true;
+    }
+  }
+
   std::vector<std::string> success_messages;
   std::vector<std::string> error_messages;
 
@@ -1047,7 +1195,7 @@ Expected<ApplyPluginsResult> ApplyPlugins(
     }
 
     if (*plugin_supported_hardware & selected_hw_accelerators) {
-      auto status = ApplyPlugin(compiler_plugin, *model, "", {}, result);
+      auto status = ApplySinglePlugin(compiler_plugin, *model, "", {}, result);
 
       if (!status) {
         error_messages.push_back(
@@ -1078,6 +1226,9 @@ Expected<LiteRtCompilerOptionsT> CompilerPlugin::CompilerOptions() const {
   }
   LiteRtOpaqueOptions opaque_options;
   LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptions(options_, &opaque_options));
+  if (opaque_options == nullptr) {
+    return result;
+  }
 
   // Parse compiler options from the opaque options.
   void* data;
@@ -1096,6 +1247,13 @@ Expected<LiteRtCompilerOptionsT> CompilerPlugin::CompilerOptions() const {
     return Unexpected(status);
   }
   return result;
+}
+
+absl::Span<const std::string> CompilerPlugin::SelectedSignatureKeys() const {
+  if (options_ == nullptr) {
+    return {};
+  }
+  return options_->selected_signature_keys;
 }
 
 Expected<CompilerPlugin> CompilerPlugin::FindPlugin(
