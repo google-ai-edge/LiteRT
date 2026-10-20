@@ -25,6 +25,10 @@ extern "C" {
 // Resets the cached (shared) trig tables built by RopeTransformation.
 void ResetRopeTransformationState();
 
+// Preserves a position lookup depth when another transformation removes the
+// OneHot op from which IntegerRopeTransformation normally derives it.
+void RegisterIntegerRopePositionDepth(LiteRtTensor position, int32_t depth);
+
 // Fuses a 2D (x/y) rotary position embedding applied on a [B, S, H, Dh]
 // tensor. Each half of the head dim is rotated with its own cos/sin pair of
 // shape [B, S, 1, Dh/4], which is broadcast over heads.
@@ -68,6 +72,11 @@ void ResetRopeTransformationState();
 //                   out_tensor [B, S, H, Dh]
 LiteRtStatus RopeTransformation(const LiteRtCompilerContext* context,
                                 LiteRtBuilder builder_ptr, LiteRtOp op);
+
+// Replaces DEQUANTIZE -> FLOAT32 RoPE -> QUANTIZE with an INT16 RoPE using
+// shared Q15 sin/cos lookup tables indexed by the original INT32 positions.
+LiteRtStatus IntegerRopeTransformation(const LiteRtCompilerContext* context,
+                                       LiteRtBuilder builder_ptr, LiteRtOp op);
 
 // Alias for RopeTransformation for backward compatibility.
 LiteRtStatus RopeAttentionLayerTransformation(

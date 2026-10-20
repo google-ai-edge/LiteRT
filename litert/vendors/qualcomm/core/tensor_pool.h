@@ -23,9 +23,9 @@ static const char* kQnnSuffix = "_qnn";
 class TensorPool {
  public:
   // id: Number of tensors in TensorPool, used for ensure uniqueness of tensor
-  // name. I/O tensors will use the exact same name as provided. Tensors
-  // directly converted from framework: `<id>_suffix_from_framework`. Tensors
-  // created by QNN: `<id>_qnn`.
+  // name. I/O tensors use the provided name, or `<id>_qnn` when it is empty.
+  // Tensors directly converted from framework:
+  // `<id>_suffix_from_framework`. Tensors created by QNN: `<id>_qnn`.
 
   TensorPool();
 

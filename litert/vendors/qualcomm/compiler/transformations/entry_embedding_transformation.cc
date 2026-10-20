@@ -39,6 +39,7 @@
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/compiler/cc/litert_op_options.h"
 #include "litert/vendors/qualcomm/compiler/transformations/orphan_cleanup_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/rope_transformation.h"
 
 namespace {
 
@@ -633,6 +634,8 @@ LiteRtStatus EntryEmbeddingTransformation(const LiteRtCompilerContext* context,
     }
     RegisterOrphanGroup(orphans);
     if (allow_trig_fold && CanFoldTrig(b)) {
+      RegisterIntegerRopePositionDepth(b.trig->cast.Inputs()[0].Get(),
+                                       Dims(b.weights)[1]);
       TrigFoldRegistry()[b.trig->cast.Get()] = Dims(b.weights)[1];
     }
   }

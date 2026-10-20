@@ -42,6 +42,45 @@ using litert::compiler::Tensor;
 
 extern "C" {
 
+LiteRtStatus FuseInt32SignNotEqualTransformation(
+    const LiteRtCompilerContext* context, LiteRtBuilder builder_ptr,
+    LiteRtOp op) {
+  Op sign(context, op);
+  if (sign.Code() != kLiteRtOpCodeTflSign || sign.Inputs().size() != 1 ||
+      sign.Outputs().size() != 1 ||
+      sign.Inputs()[0].ElementType() != ElementType::Int32 ||
+      sign.Outputs()[0].ElementType() != ElementType::Int32 ||
+      sign.Outputs()[0].Uses().size() != 1) {
+    return kLiteRtStatusPatternNoMatch;
+  }
+
+  Op not_equal = sign.Outputs()[0].Uses()[0].user;
+  if (not_equal.Code() != kLiteRtOpCodeTflNotEqual ||
+      not_equal.Inputs().size() != 2 || not_equal.Outputs().size() != 1) {
+    return kLiteRtStatusPatternNoMatch;
+  }
+
+  Tensor comparison(context, nullptr);
+  for (const Tensor& input : not_equal.Inputs()) {
+    if (input != sign.Outputs()[0]) comparison = input;
+  }
+  if (comparison.Get() == nullptr) return kLiteRtStatusPatternNoMatch;
+  auto comparison_data = comparison.WeightsData<int32_t>();
+  if (!comparison_data || comparison_data->size() != 1 ||
+      (*comparison_data)[0] != 1) {
+    return kLiteRtStatusPatternNoMatch;
+  }
+
+  Builder builder(context, builder_ptr);
+  auto replacement_op = builder.BuildOp(
+      kLiteRtOpCodeTflLess, {sign.Inputs()[0], comparison},
+      not_equal.Outputs());
+  if (!replacement_op) return replacement_op.Error().Status();
+  builder.EraseOp(not_equal);
+  builder.EraseOp(sign);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LegalizeInt32SignTransformation(
     const LiteRtCompilerContext* context, LiteRtBuilder builder_ptr,
     LiteRtOp op) {
