@@ -27,7 +27,10 @@ TensorWrapper& TensorPool::CreateInputTensorWithName(
     std::string_view name, Qnn_DataType_t data_type,
     const QuantizeParamsWrapperVariant& quant_params,
     const std::vector<std::uint32_t>& dimensions) {
-  return tensor_wrappers_.emplace_back(std::string{name},
+  auto tensor_name = name.empty()
+                         ? std::to_string(tensor_wrappers_.size()) + kQnnSuffix
+                         : std::string{name};
+  return tensor_wrappers_.emplace_back(std::move(tensor_name),
                                        QNN_TENSOR_TYPE_APP_WRITE, data_type,
                                        quant_params, dimensions);
 }
@@ -36,7 +39,10 @@ TensorWrapper& TensorPool::CreateOutputTensorWithName(
     std::string_view name, Qnn_DataType_t data_type,
     const QuantizeParamsWrapperVariant& quant_params,
     const std::vector<std::uint32_t>& dimensions) {
-  return tensor_wrappers_.emplace_back(std::string{name},
+  auto tensor_name = name.empty()
+                         ? std::to_string(tensor_wrappers_.size()) + kQnnSuffix
+                         : std::string{name};
+  return tensor_wrappers_.emplace_back(std::move(tensor_name),
                                        QNN_TENSOR_TYPE_APP_READ, data_type,
                                        quant_params, dimensions);
 }

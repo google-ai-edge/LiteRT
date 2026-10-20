@@ -22,6 +22,12 @@
 extern "C" {
 #endif
 
+// Rewrites NOT_EQUAL(SIGN(x), 1) as LESS(x, 1). This is exact for INT32 x
+// and removes the unsupported SIGN op.
+LiteRtStatus FuseInt32SignNotEqualTransformation(
+    const LiteRtCompilerContext* context, LiteRtBuilder builder_ptr,
+    LiteRtOp op);
+
 // Legalizes INT32 tfl.sign to tfl.cast(f32) -> tfl.sign(f32) -> tfl.cast(i32)
 // to allow execution on Qualcomm HTP NPU.
 //

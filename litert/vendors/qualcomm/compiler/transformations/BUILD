@@ -72,6 +72,7 @@ cc_library(
     copts = _TRANSFORMATION_COPTS,
     deps = [
         ":orphan_cleanup_transformation",
+        ":rope_transformation",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",

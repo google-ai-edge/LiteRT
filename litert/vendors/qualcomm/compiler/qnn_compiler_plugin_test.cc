@@ -720,7 +720,7 @@ TEST(TestQnnPlugin, TransformationsEnableAll) {
   LiteRtParamIndex num_transformations = 0;
   LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
       plugin.get(), &transformations, &num_transformations));
-  EXPECT_EQ(num_transformations, 8);
+  EXPECT_EQ(num_transformations, 9);
 }
 
 TEST(TestQnnPlugin, TransformationsEnableLegalizeTransforms) {
@@ -741,8 +741,9 @@ TEST(TestQnnPlugin, TransformationsEnableLegalizeTransforms) {
   LiteRtParamIndex num_transformations = 0;
   LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
       plugin.get(), &transformations, &num_transformations));
-  // Only LegalizeInt32Sign and LegalizeInt32ReduceMax should be registered.
-  EXPECT_EQ(num_transformations, 2);
+  // SignNotEqual, LegalizeInt32Sign, and LegalizeInt32ReduceMax should be
+  // registered.
+  EXPECT_EQ(num_transformations, 3);
 }
 
 TEST(TestQnnPlugin, TransformationsEnableModelTransforms) {
@@ -763,8 +764,10 @@ TEST(TestQnnPlugin, TransformationsEnableModelTransforms) {
   LiteRtParamIndex num_transformations = 0;
   LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
       plugin.get(), &transformations, &num_transformations));
-  // EntryEmbedding, EntryEmbeddingTrigFold, MLPInt8Quant, AttentionChunk,
-  // RopeTransformation, OrphanCleanup should be registered.
+  // EntryEmbedding, MLPInt8Quant, AttentionChunk, IntegerRopeTransformation,
+  // RopeTransformation, and OrphanCleanup should be registered. IntegerRope
+  // supersedes EntryEmbeddingTrigFold because both rewrite the shared trig
+  // graph.
   EXPECT_EQ(num_transformations, 6);
 }
 
@@ -774,7 +777,7 @@ TEST(TestQnnPlugin, TransformationsSelectiveEnableAndDisable) {
   auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
   ASSERT_TRUE(qnn_opts);
   qnn_opts->SetGraphTransform(
-      "experimental_all,-rope,-mlp_quant,-attention_chunk");
+      "experimental_all,-integer_rope,-rope,-mlp_quant,-attention_chunk");
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -787,9 +790,9 @@ TEST(TestQnnPlugin, TransformationsSelectiveEnableAndDisable) {
   LiteRtParamIndex num_transformations = 0;
   LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
       plugin.get(), &transformations, &num_transformations));
-  // Sign, ReduceMax, EntryEmbedding, EntryEmbeddingTrigFold, OrphanCleanup
-  // should be registered (5 total).
-  EXPECT_EQ(num_transformations, 5);
+  // SignNotEqual, Sign, ReduceMax, EntryEmbedding, EntryEmbeddingTrigFold, and
+  // OrphanCleanup should be registered.
+  EXPECT_EQ(num_transformations, 6);
 }
 
 }  // namespace

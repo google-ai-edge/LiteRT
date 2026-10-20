@@ -789,11 +789,13 @@ namespace {
 // Experimental graph transformations (disabled by default; enabled manually
 // via comma-separated tokens in QualcommOptions::GetGraphTransform()).
 struct GraphTransformFilter {
+  bool sign_not_equal = false;
   bool legalize_int32_sign = false;
   bool legalize_int32_reduce_max = false;
   bool entry_embedding = false;
   bool mlp_quant = false;
   bool attention_chunk = false;
+  bool integer_rope = false;
   bool rope = false;
 
   static GraphTransformFilter FromOptions(absl::string_view graph_transform) {
@@ -810,20 +812,26 @@ struct GraphTransformFilter {
         token.remove_prefix(1);
       }
       if (token == "experimental_all") {
+        filter.sign_not_equal = enable;
         filter.legalize_int32_sign = enable;
         filter.legalize_int32_reduce_max = enable;
         filter.entry_embedding = enable;
         filter.mlp_quant = enable;
         filter.attention_chunk = enable;
+        filter.integer_rope = enable;
         filter.rope = enable;
       } else if (token == "experimental_legalize") {
+        filter.sign_not_equal = enable;
         filter.legalize_int32_sign = enable;
         filter.legalize_int32_reduce_max = enable;
       } else if (token == "experimental_model") {
         filter.entry_embedding = enable;
         filter.mlp_quant = enable;
         filter.attention_chunk = enable;
+        filter.integer_rope = enable;
         filter.rope = enable;
+      } else if (token == "sign_not_equal") {
+        filter.sign_not_equal = enable;
       } else if (token == "int32_sign") {
         filter.legalize_int32_sign = enable;
       } else if (token == "int32_reduce_max") {
@@ -834,6 +842,8 @@ struct GraphTransformFilter {
         filter.mlp_quant = enable;
       } else if (token == "attention_chunk") {
         filter.attention_chunk = enable;
+      } else if (token == "integer_rope") {
+        filter.integer_rope = enable;
       } else if (token == "rope") {
         filter.rope = enable;
       }
@@ -859,6 +869,13 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
   const auto filter = GraphTransformFilter::FromOptions(
       compiler_plugin->Options().GetGraphTransform());
 
+  if (filter.sign_not_equal) {
+    compiler_plugin->Transformations().push_back({
+        &FuseInt32SignNotEqualTransformation,
+        "FuseInt32SignNotEqualTransformation",
+        110,
+    });
+  }
   if (filter.legalize_int32_sign) {
     compiler_plugin->Transformations().push_back({
         &LegalizeInt32SignTransformation,
@@ -879,6 +896,8 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
         "EntryEmbeddingTransformation",
         100,
     });
+  }
+  if (filter.entry_embedding && !filter.integer_rope) {
     compiler_plugin->Transformations().push_back({
         &EntryEmbeddingTrigFoldTransformation,
         "EntryEmbeddingTrigFoldTransformation",
@@ -899,6 +918,13 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
         100,
     });
   }
+  if (filter.integer_rope) {
+    compiler_plugin->Transformations().push_back({
+        &IntegerRopeTransformation,
+        "IntegerRopeTransformation",
+        100,
+    });
+  }
   if (filter.rope) {
     compiler_plugin->Transformations().push_back({
         &RopeTransformation,
@@ -906,7 +932,8 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
         90,
     });
   }
-  if (filter.entry_embedding || filter.rope || filter.attention_chunk) {
+  if (filter.entry_embedding || filter.integer_rope || filter.rope ||
+      filter.attention_chunk) {
     compiler_plugin->Transformations().push_back({
         &OrphanCleanupTransformation,
         "OrphanCleanupTransformation",

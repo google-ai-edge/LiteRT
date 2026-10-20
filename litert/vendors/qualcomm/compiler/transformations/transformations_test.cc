@@ -47,6 +47,41 @@ using ::litert::internal::AttachOutput;
 // LegalizeInt32SignTransformation Tests
 //===----------------------------------------------------------------------===//
 
+TEST(FuseInt32SignNotEqualTest, RewritesSignNotEqualOneAsLess) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtSubgraphT subgraph;
+  LiteRtBuilderT builder_impl;
+
+  auto& input = subgraph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {1, 4}));
+  auto& sign_out = subgraph.EmplaceTensor();
+  sign_out.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {1, 4}));
+  auto& sign = subgraph.EmplaceOp();
+  sign.SetOpCode(kLiteRtOpCodeTflSign);
+  AttachInput(&input, sign);
+  AttachOutput(&sign_out, sign);
+
+  auto& one = subgraph.EmplaceTensor();
+  one.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {}));
+  const int32_t one_value = 1;
+  OwningBufferRef<uint8_t> one_buffer(
+      reinterpret_cast<const uint8_t*>(&one_value), sizeof(one_value));
+  SetWeightsFromOwnedBuffer(one.Weights(), std::move(one_buffer));
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeBool, {1, 4}));
+  auto& not_equal = subgraph.EmplaceOp();
+  not_equal.SetOpCode(kLiteRtOpCodeTflNotEqual);
+  AttachInput(&sign_out, not_equal);
+  AttachInput(&one, not_equal);
+  AttachOutput(&output, not_equal);
+
+  EXPECT_EQ(FuseInt32SignNotEqualTransformation(ctx, &builder_impl, &sign),
+            kLiteRtStatusOk);
+  builder_impl.ApplyChanges(&subgraph);
+  ASSERT_NE(output.DefiningOp(), nullptr);
+  EXPECT_EQ(output.DefiningOp()->OpCode(), kLiteRtOpCodeTflLess);
+}
+
 TEST(LegalizeInt32SignTest, PositiveMatchInt32) {
   const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
@@ -1007,6 +1042,191 @@ TEST(EntryEmbeddingTest, NegativeWrongWeightShapeRejected) {
 //===----------------------------------------------------------------------===//
 // RopeTransformation Tests
 //===----------------------------------------------------------------------===//
+
+TEST(IntegerRopeTransformationTest, RewritesQuantizedRope) {
+  ResetRopeTransformationState();
+  ResetOrphanRegistry();
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  litert::internal::BufferManager buffer_manager;
+  LiteRtSubgraphT subgraph(&buffer_manager);
+  LiteRtBuilderT builder_impl;
+  constexpr int32_t kSequence = 4;
+
+  auto& position = subgraph.EmplaceTensor();
+  position.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32,
+                                        {1, kSequence, 1}));
+  auto& position_2d = subgraph.EmplaceTensor();
+  position_2d.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeInt32, {1, kSequence}));
+  auto& reshape_position = subgraph.EmplaceOp();
+  reshape_position.SetOpCode(kLiteRtOpCodeTflReshape);
+  AttachInput(&position, reshape_position);
+  AttachOutput(&position_2d, reshape_position);
+  auto& depth = subgraph.EmplaceTensor();
+  depth.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {}));
+  const int32_t depth_value = 8;
+  SetConstWeights<int32_t>(depth, {&depth_value, 1});
+  auto& on = subgraph.EmplaceTensor();
+  on.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+  const float on_value = 1.0f;
+  SetConstWeights<float>(on, {&on_value, 1});
+  auto& off = subgraph.EmplaceTensor();
+  off.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+  const float off_value = 0.0f;
+  SetConstWeights<float>(off, {&off_value, 1});
+  auto& one_hot_out = subgraph.EmplaceTensor();
+  one_hot_out.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, kSequence, 8}));
+  auto& one_hot = subgraph.EmplaceOp();
+  one_hot.SetOpCode(kLiteRtOpCodeTflOneHot);
+  AttachInput(&position_2d, one_hot);
+  AttachInput(&depth, one_hot);
+  AttachInput(&on, one_hot);
+  AttachInput(&off, one_hot);
+  AttachOutput(&one_hot_out, one_hot);
+
+  auto& position_float = subgraph.EmplaceTensor();
+  position_float.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
+                                               {1, kSequence, 1}));
+  auto& cast = subgraph.EmplaceOp();
+  cast.SetOpCode(kLiteRtOpCodeTflCast);
+  AttachInput(&position, cast);
+  AttachOutput(&position_float, cast);
+  auto& frequency = subgraph.EmplaceTensor();
+  frequency.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 1, 1}));
+  const float frequency_value = 0.25f;
+  SetConstWeights<float>(frequency, {&frequency_value, 1});
+  auto& angle_3d = subgraph.EmplaceTensor();
+  angle_3d.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
+                                        {1, kSequence, 1}));
+  MulOptions mul_options;
+  mul_options.fused_activation_function = 0;
+  BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflMul,
+                     {&position_float, &frequency}, {&angle_3d}, mul_options);
+  auto& angle = subgraph.EmplaceTensor();
+  angle.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
+                                     {1, kSequence, 1, 1}));
+  auto& reshape_angle = subgraph.EmplaceOp();
+  reshape_angle.SetOpCode(kLiteRtOpCodeTflReshape);
+  AttachInput(&angle_3d, reshape_angle);
+  AttachOutput(&angle, reshape_angle);
+  auto& sin = subgraph.EmplaceTensor();
+  sin.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
+                                   {1, kSequence, 1, 1}));
+  auto& sin_op = subgraph.EmplaceOp();
+  sin_op.SetOpCode(kLiteRtOpCodeTflSin);
+  AttachInput(&angle, sin_op);
+  AttachOutput(&sin, sin_op);
+  auto& cos = subgraph.EmplaceTensor();
+  cos.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
+                                   {1, kSequence, 1, 1}));
+  auto& cos_op = subgraph.EmplaceOp();
+  cos_op.SetOpCode(kLiteRtOpCodeTflCos);
+  AttachInput(&angle, cos_op);
+  AttachOutput(&cos, cos_op);
+
+  auto& int_input = subgraph.EmplaceTensor();
+  int_input.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16,
+                                         {1, kSequence, 1, 4}));
+  int_input.Qparams() = MakePerTensorQuantization(0.01f, 0);
+  auto& float_input = subgraph.EmplaceTensor();
+  float_input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
+                                           {1, kSequence, 1, 4}));
+  auto& dequantize = subgraph.EmplaceOp();
+  dequantize.SetOpCode(kLiteRtOpCodeTflDequantize);
+  AttachInput(&int_input, dequantize);
+  AttachOutput(&float_input, dequantize);
+
+  auto make_slice = [&](LiteRtTensorT& input, int32_t offset,
+                        int32_t size) -> LiteRtTensorT& {
+    auto& begin = subgraph.EmplaceTensor();
+    begin.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {4}));
+    const int32_t begin_values[] = {0, 0, 0, offset};
+    SetConstWeights<int32_t>(begin, begin_values);
+    auto& sizes = subgraph.EmplaceTensor();
+    sizes.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {4}));
+    const int32_t size_values[] = {1, kSequence, 1, size};
+    SetConstWeights<int32_t>(sizes, size_values);
+    auto& output = subgraph.EmplaceTensor();
+    output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
+                                        {1, kSequence, 1, size}));
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflSlice);
+    AttachInput(&input, op);
+    AttachInput(&begin, op);
+    AttachInput(&sizes, op);
+    AttachOutput(&output, op);
+    return output;
+  };
+  auto& lo = make_slice(float_input, 0, 2);
+  auto& hi = make_slice(float_input, 2, 2);
+  auto& s0 = make_slice(lo, 0, 1);
+  auto& s1 = make_slice(lo, 1, 1);
+  auto& s2 = make_slice(hi, 0, 1);
+  auto& s3 = make_slice(hi, 1, 1);
+  auto make_mul = [&](LiteRtTensorT& lhs, LiteRtTensorT& rhs) -> LiteRtTensorT& {
+    auto& output = subgraph.EmplaceTensor();
+    output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
+                                        {1, kSequence, 1, 1}));
+    BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflMul, {&lhs, &rhs},
+                       {&output}, mul_options);
+    return output;
+  };
+  AddOptions add_options;
+  add_options.fused_activation_function = 0;
+  SubOptions sub_options;
+  sub_options.fused_activation_function = 0;
+  ConcatenationOptions concat_options;
+  concat_options.axis = 3;
+  concat_options.fused_activation_function = 0;
+  auto build_half = [&](LiteRtTensorT& a, LiteRtTensorT& b)
+      -> LiteRtTensorT& {
+    auto& ac = make_mul(a, cos);
+    auto& bs = make_mul(b, sin);
+    auto& sub = subgraph.EmplaceTensor();
+    sub.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
+                                     {1, kSequence, 1, 1}));
+    BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflSub, {&ac, &bs}, {&sub},
+                       sub_options);
+    auto& bc = make_mul(b, cos);
+    auto& as = make_mul(a, sin);
+    auto& add = subgraph.EmplaceTensor();
+    add.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
+                                     {1, kSequence, 1, 1}));
+    BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflAdd, {&bc, &as}, {&add},
+                       add_options);
+    auto& out = subgraph.EmplaceTensor();
+    out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
+                                     {1, kSequence, 1, 2}));
+    BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflConcatenation,
+                       {&sub, &add}, {&out}, concat_options);
+    return out;
+  };
+  auto& lo_out = build_half(s0, s1);
+  auto& hi_out = build_half(s2, s3);
+  auto& float_out = subgraph.EmplaceTensor();
+  float_out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
+                                         {1, kSequence, 1, 4}));
+  BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflConcatenation,
+                     {&lo_out, &hi_out}, {&float_out}, concat_options);
+  auto& int_out = subgraph.EmplaceTensor();
+  int_out.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16,
+                                       {1, kSequence, 1, 4}));
+  int_out.Qparams() = MakePerTensorQuantization(0.012f, 0);
+  auto& quantize = subgraph.EmplaceOp();
+  quantize.SetOpCode(kLiteRtOpCodeTflQuantize);
+  AttachInput(&float_out, quantize);
+  AttachOutput(&int_out, quantize);
+
+  EXPECT_EQ(IntegerRopeTransformation(ctx, &builder_impl, &quantize),
+            kLiteRtStatusOk);
+  builder_impl.ApplyChanges(&subgraph);
+  ASSERT_NE(int_out.DefiningOp(), nullptr);
+  EXPECT_EQ(int_out.DefiningOp()->OpCode(), kLiteRtOpCodeTflAdd);
+  ResetRopeTransformationState();
+  ResetOrphanRegistry();
+}
 
 TEST(RopeTransformationTest, PositiveMatchAndRewrite) {
   ResetRopeTransformationState();
