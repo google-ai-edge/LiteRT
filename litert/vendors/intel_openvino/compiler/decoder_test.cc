@@ -17,10 +17,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "openvino/frontend/tensorflow_lite/decoder.hpp"
+#include "openvino/frontend/tensorflow_lite/frontend.hpp"
 #include <gtest/gtest.h>
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
@@ -30,8 +32,10 @@
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/test/common.h"
+#include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
 #include "litert/test/test_models.h"
+#include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
 
 namespace litert {
 namespace openvino {
@@ -130,6 +134,91 @@ TEST(TestLiteOvDecoder, VerifyDecoderTileOp) {
     ASSERT_TRUE(multiples_attr.empty());
   }
   ASSERT_TRUE(saw_tile) << "simple_tile_op.tflite did not contain a TILE op";
+}
+
+TEST(TestLiteOvDecoder, VerifyDecoderReduceAnyOp) {
+  auto cc_model = testing::LoadTestFileModel("simple_reduceany_op.tflite");
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  litert::compiler::Model model(ctx, cc_model.Get());
+  auto graph_or = model.Subgraph(0);
+  ASSERT_TRUE(graph_or.HasValue());
+  auto graph = graph_or.Value();
+  size_t index = 0;
+  bool saw_reduce_any = false;
+  for (const auto& op : graph.Ops()) {
+    auto sample_ov_decode_op = DecoderOperation(
+        /*ctx=*/ctx,
+        /*input_tensor_info=*/
+        std::vector<ov::frontend::tensorflow_lite::TensorMetaInfo>(),
+        /*output_tensor_info=*/
+        std::vector<ov::frontend::tensorflow_lite::TensorMetaInfo>(),
+        /*litert_op=*/op, index++);
+    if (op.Code() != kLiteRtOpCodeTflReduceAny) {
+      continue;
+    }
+    saw_reduce_any = true;
+    ASSERT_EQ(sample_ov_decode_op.get_op_type(), "REDUCE_ANY");
+    auto keep_dims_attr = sample_ov_decode_op.get_attribute("keep_dims");
+    ASSERT_FALSE(keep_dims_attr.empty());
+    EXPECT_FALSE(keep_dims_attr.as<bool>());
+    EXPECT_TRUE(sample_ov_decode_op.get_attribute("unknown_attr").empty());
+  }
+  ASSERT_TRUE(saw_reduce_any)
+      << "simple_reduceany_op.tflite did not contain a REDUCE_ANY op";
+}
+
+TEST(TestLiteOvDecoder, VerifyDecoderReduceAllOp) {
+  auto cc_model = testing::LoadTestFileModel("simple_reduceall_op.tflite");
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  litert::compiler::Model model(ctx, cc_model.Get());
+  auto graph_or = model.Subgraph(0);
+  ASSERT_TRUE(graph_or.HasValue());
+  auto graph = graph_or.Value();
+  size_t index = 0;
+  bool saw_reduce_all = false;
+  for (const auto& op : graph.Ops()) {
+    auto sample_ov_decode_op = DecoderOperation(
+        /*ctx=*/ctx,
+        /*input_tensor_info=*/
+        std::vector<ov::frontend::tensorflow_lite::TensorMetaInfo>(),
+        /*output_tensor_info=*/
+        std::vector<ov::frontend::tensorflow_lite::TensorMetaInfo>(),
+        /*litert_op=*/op, index++);
+    if (op.Code() != kLiteRtOpCodeTflReduceAll) {
+      continue;
+    }
+    saw_reduce_all = true;
+    ASSERT_EQ(sample_ov_decode_op.get_op_type(), "REDUCE_ALL");
+    auto keep_dims_attr = sample_ov_decode_op.get_attribute("keep_dims");
+    ASSERT_FALSE(keep_dims_attr.empty());
+    EXPECT_FALSE(keep_dims_attr.as<bool>());
+    EXPECT_TRUE(sample_ov_decode_op.get_attribute("unknown_attr").empty());
+  }
+  ASSERT_TRUE(saw_reduce_all)
+      << "simple_reduceall_op.tflite did not contain a REDUCE_ALL op";
+}
+
+TEST(TestLiteOvDecoder, ConvertReduceAnyModelThroughFrontEnd) {
+  auto cc_model = testing::LoadTestFileModel("simple_reduceany_op.tflite");
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  litert::compiler::Model model(ctx, cc_model.Get());
+  auto subgraph = model.Subgraph(0);
+  ASSERT_TRUE(subgraph.HasValue());
+
+  auto fe = std::make_shared<ov::frontend::tensorflow_lite::FrontEnd>();
+  std::shared_ptr<ov::frontend::tensorflow_lite::GraphIterator> delegate =
+      std::make_shared<litert::openvino::GraphIteratorDelegate>(
+          ctx, &subgraph.Value());
+  auto ov_model = fe->convert(fe->load(delegate));
+  ASSERT_NE(ov_model, nullptr);
+  bool saw_reduce_logical_or = false;
+  for (const auto& node : ov_model->get_ordered_ops()) {
+    if (std::string(node->get_type_name()) == "ReduceLogicalOr") {
+      saw_reduce_logical_or = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(saw_reduce_logical_or);
 }
 
 }  // namespace openvino

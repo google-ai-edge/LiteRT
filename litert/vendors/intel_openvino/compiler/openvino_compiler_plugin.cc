@@ -27,6 +27,12 @@
 #include <utility>
 #include <vector>
 
+#include "openvino/core/any.hpp"
+#include "openvino/core/except.hpp"
+#include "openvino/frontend/tensorflow_lite/frontend.hpp"
+#include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
+#include "openvino/openvino.hpp"  // NOLINT
+#include "openvino/runtime/core.hpp"
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl  // NOLINT
 #include "absl/types/span.h"  // from @com_google_absl
@@ -47,7 +53,6 @@
 #include "litert/compiler/cc/litert_op_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/intel_openvino/bytecode_header.h"
-#include "litert/vendors/intel_openvino/openvino_version_info.h"
 #include "litert/vendors/intel_openvino/compiler/alias_shared_constants.h"
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
@@ -55,12 +60,7 @@
 #include "litert/vendors/intel_openvino/compiler/openvino_soc_config.h"
 #include "litert/vendors/intel_openvino/compiler/weight_bank.h"
 #include "litert/vendors/intel_openvino/compiler/weights_to_parameters.h"
-#include "openvino/core/any.hpp"
-#include "openvino/core/except.hpp"
-#include "openvino/frontend/tensorflow_lite/frontend.hpp"
-#include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
-#include "openvino/openvino.hpp"  // NOLINT
-#include "openvino/runtime/core.hpp"
+#include "litert/vendors/intel_openvino/openvino_version_info.h"
 
 namespace {
 
@@ -565,6 +565,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     // the SAME ascending-id order Serialize() lays out, so a Constant's WLCA
     // bin_offset equals its position in the temp file staged at dispatch.
     std::map<int32_t, size_t> pool_offset_of;
+    // Content-derived NPUW weights-bank name for the NPU shared path (stays
+    // empty for the GPU path / non-shared compiles).
+    // ConfigureForNpuWeightSharing bakes this into the blob; it MUST be unique
+    // per distinct weight pool or NPUW's global, name-keyed BankManager
+    // collides across models at import.
+    std::string npu_weights_bank_name;
 
     // Phase 1: build the shared pool. On the NPU path every partition is also
     // converted and optimized once to learn which constants survive
@@ -600,7 +606,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                     context.Device());
         auto input_model = tflite_fe->load(graph_delegate);
         auto ov_model = tflite_fe->convert(input_model);
-        context.OptimizeModel(ov_model);
+        context.OptimizeModel(ov_model, /*npu_weight_sharing=*/true);
         litert::openvino::HarvestSharedConstants(ov_model, weight_bank,
                                                  live_names);
       }
@@ -619,6 +625,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         global_graph.buffers.push_back({static_cast<uint32_t>(entry.buffer_id),
                                         entry.pool_offset, entry.bytes});
       }
+      npu_weights_bank_name = layout.WeightsBankName();
     }
 
     // Phase 2: rebuild each partition, alias its weights against the now-final
@@ -651,12 +658,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         auto ov_model = tflite_fe->convert(input_model);
 
         // Run NPU-specific optimization passes.
-        const auto optimize_result = context.OptimizeModel(ov_model);
+        const auto optimize_result =
+            context.OptimizeModel(ov_model, /*npu_weight_sharing=*/share_npu);
         if (share_npu) {
           // Must run after OptimizeModel: it configures NPUW from what the
           // passes classified, which is knowable only once they have run.
           context.ConfigureForNpuWeightSharing(
-              optimize_result.moe_is_multi_token_chunk);
+              npu_weights_bank_name, optimize_result.moe_is_multi_token_chunk);
         }
 
         ov::AnyMap configs = context.ConfigsMap();
