@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# copybara:uncomment load("@rules_python//python:py_test.bzl", "py_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_python//python:py_library.bzl", "py_library")
@@ -75,3 +76,17 @@ py_library(
         ":_pywrap_litert_environment_wrapper",
     ],
 )
+
+# copybara:uncomment_begin(google-only)
+# py_test(
+#     name = "environment_test",
+#     srcs = ["environment_test.py"],
+#     tags = [
+#         "no_oss",
+#     ],
+#     deps = [
+#         ":_pywrap_litert_environment_wrapper",
+#         ":environment",
+#     ],
+# )
+# copybara:uncomment_end
