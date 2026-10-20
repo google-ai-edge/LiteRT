@@ -434,3 +434,17 @@ TEST(MlDriftDelegateCreateTest, CollectMetricsSuccess) {
   LiteRtDestroyMetrics(metrics);
   LiteRtDestroyDelegateWrapper(delegate_wrapper);
 }
+
+TEST(MlDriftDelegateCreateTest, GetHardwareSupport) {
+  EXPECT_EQ(litert::ml_drift::GetHardwareSupport(nullptr, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtAccelerator accelerator;
+  ASSERT_EQ(LiteRtCreateAccelerator(&accelerator), kLiteRtStatusOk);
+  LiteRtHwAcceleratorSet supported_hardware = kLiteRtHwAcceleratorNone;
+  EXPECT_EQ(
+      litert::ml_drift::GetHardwareSupport(accelerator, &supported_hardware),
+      kLiteRtStatusOk);
+  EXPECT_EQ(supported_hardware, kLiteRtHwAcceleratorGpu);
+  LiteRtDestroyAccelerator(accelerator);
+}

@@ -107,9 +107,8 @@ class GpuAccelerator {
   static LiteRtStatus GetHardwareSupport(
       LiteRtAcceleratorConst accelerator,
       LiteRtHwAcceleratorSet* supported_hardware) {
-    static LiteRtHwAcceleratorSet hardware_support = kLiteRtHwAcceleratorGpu;
-    *supported_hardware = hardware_support;
-    return kLiteRtStatusOk;
+    return litert::ml_drift::GetHardwareSupport(accelerator,
+                                                supported_hardware);
   }
 
   static LiteRtStatus IsTfLiteDelegateResponsibleForJitCompilation(
