@@ -40,10 +40,10 @@ LiteRtStatus BuildDetectionPostprocessOp(
     const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs,
     std::vector<OpWrapper>& op_wrappers) {
-  if (custom_options.size() < 3) {
+  if (!flexbuffers::VerifyBuffer(custom_options.data(), custom_options.size())) {
     QNN_LOG_ERROR(
-        "TFLite_Detection_PostProcess: custom options buffer is too small to "
-        "be a valid flexbuffer.");
+        "TFLite_Detection_PostProcess: custom options are not a valid "
+        "flexbuffer.");
     return kLiteRtStatusErrorInvalidArgument;
   }
   const auto root =
@@ -63,12 +63,15 @@ LiteRtStatus BuildDetectionPostprocessOp(
   const float h_scale = m["h_scale"].AsFloat();
   const float w_scale = m["w_scale"].AsFloat();
   const std::int32_t max_detections = m["max_detections"].AsInt32();
-  // background_label_id defaults to num_classes (background is at the last
-  // index when not explicitly provided).
+  const std::int32_t max_classes_per_detection =
+      m["max_classes_per_detection"].AsInt32();
+  const bool use_regular_nms = m["use_regular_nms"].AsBool();
+  // QNN detection_limit means max classes per detection for FAST NMS, and
+  // max detections per class for REGULAR NMS — matching TFLite's two fields.
+  const std::int32_t detection_limit =
+      use_regular_nms ? max_detections : max_classes_per_detection;
   const std::uint32_t background_class_idx =
-      m["background_label_id"].IsNull()
-          ? static_cast<std::uint32_t>(m["num_classes"].AsInt32())
-          : static_cast<std::uint32_t>(m["background_label_id"].AsInt32());
+      static_cast<std::uint32_t>(m["num_classes"].AsInt32());
 
   // QNN expects reciprocals of the TFLite scale values as delta scaling
   // factors.
@@ -78,14 +81,14 @@ LiteRtStatus BuildDetectionPostprocessOp(
   const float delta_scaling_w = (w_scale != 0.0f) ? 1.0f / w_scale : 0.0f;
 
   // TFLite stores all four detection outputs as float32[1] placeholders because
-  // its kernel resizes them dynamically in Prepare(). Fix shape and type in-
-  // place so QNN sees the correct spec without requiring intermediate tensors.
-  //
-  // QNN spec (MasterOpDef):
+  // its kernel resizes them dynamically in Prepare().  QNN requires:
   //   out[0] scores:           float32 [batch, detection_limit]
   //   out[1] boxes:            float32 [batch, detection_limit, 4]
   //   out[2] classes (labels): INT_32  [batch, detection_limit]
   //   out[3] num_detections:   UINT_32 [batch]
+  // scores and boxes match the LiteRT float32 type directly.  classes and
+  // num_detections differ, so they go through intermediate native tensors and
+  // Cast ops to convert back to float32 before reaching LiteRT.
   const std::uint32_t batch = 1;
   const auto d = static_cast<std::uint32_t>(max_detections);
 
@@ -95,13 +98,18 @@ LiteRtStatus BuildDetectionPostprocessOp(
   TensorWrapper& boxes_tensor = outputs[kTFLiteOutputBoxes].get();
   boxes_tensor.OverrideDimensions({batch, d, 4});
 
-  TensorWrapper& classes_tensor = outputs[kTFLiteOutputClasses].get();
-  classes_tensor.OverrideDimensions({batch, d});
-  classes_tensor.OverrideDataType(QNN_DATATYPE_INT_32);
+  // TFLite exposes classes and num_detections as float32, but QNN
+  // DetectionOutput produces INT_32 and UINT_32 respectively.  Route through
+  // intermediate native tensors and Cast ops so each side sees the right type.
+  TensorWrapper& classes_out = outputs[kTFLiteOutputClasses].get();
+  classes_out.OverrideDimensions({batch, d});
+  TensorWrapper& classes_int32 = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_INT_32, QuantizeParamsWrapperVariant{}, {batch, d});
 
-  TensorWrapper& num_det_tensor = outputs[kTFLiteOutputNumDetections].get();
-  num_det_tensor.OverrideDimensions({batch});
-  num_det_tensor.OverrideDataType(QNN_DATATYPE_UINT_32);
+  TensorWrapper& num_det_out = outputs[kTFLiteOutputNumDetections].get();
+  num_det_out.OverrideDimensions({batch});
+  TensorWrapper& num_det_uint32 = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_UINT_32, QuantizeParamsWrapperVariant{}, {batch});
 
   auto& detection_op = CreateOpWrapper(op_wrappers, QNN_OP_DETECTION_OUTPUT);
 
@@ -116,8 +124,8 @@ LiteRtStatus BuildDetectionPostprocessOp(
   // TFLite order:     boxes,  classes, scores, num_detections.
   detection_op.AddOutputTensor(scores_tensor);
   detection_op.AddOutputTensor(boxes_tensor);
-  detection_op.AddOutputTensor(classes_tensor);
-  detection_op.AddOutputTensor(num_det_tensor);
+  detection_op.AddOutputTensor(classes_int32);
+  detection_op.AddOutputTensor(num_det_uint32);
 
   // delta_scaling_factors tensor: [dy, dx, dh, dw].
   const std::array<float, 4> delta_factors = {
@@ -134,16 +142,28 @@ LiteRtStatus BuildDetectionPostprocessOp(
   detection_op.AddScalarParam<float>(
       QNN_OP_DETECTION_OUTPUT_PARAM_IOU_THRESHOLD, nms_iou_threshold);
 
-  // TODO: Investigate QNN_OP_DETECTION_OUTPUT_NMS_TYPE_FAST
   detection_op.AddScalarParam<std::uint32_t>(
       QNN_OP_DETECTION_OUTPUT_PARAM_NMS_TYPE,
-      static_cast<std::uint32_t>(QNN_OP_DETECTION_OUTPUT_NMS_TYPE_REGULAR));
+      static_cast<std::uint32_t>(use_regular_nms
+                                     ? QNN_OP_DETECTION_OUTPUT_NMS_TYPE_REGULAR
+                                     : QNN_OP_DETECTION_OUTPUT_NMS_TYPE_FAST));
 
   detection_op.AddScalarParam<std::uint32_t>(
       QNN_OP_DETECTION_OUTPUT_PARAM_BACKGROUND_CLASS_IDX, background_class_idx);
 
   detection_op.AddScalarParam<std::int32_t>(
-      QNN_OP_DETECTION_OUTPUT_PARAM_DETECTION_LIMIT, max_detections);
+      QNN_OP_DETECTION_OUTPUT_PARAM_DETECTION_LIMIT, detection_limit);
+
+  // Cast INT_32 classes and UINT_32 num_detections to float32 for LiteRT.
+  // These must come after all detection_op params are set: creating new
+  // OpWrappers may reallocate op_wrappers, invalidating the detection_op ref.
+  auto& cast_classes_op = CreateOpWrapper(op_wrappers, QNN_OP_CAST);
+  cast_classes_op.AddInputTensor(classes_int32);
+  cast_classes_op.AddOutputTensor(classes_out);
+
+  auto& cast_num_det_op = CreateOpWrapper(op_wrappers, QNN_OP_CAST);
+  cast_num_det_op.AddInputTensor(num_det_uint32);
+  cast_num_det_op.AddOutputTensor(num_det_out);
 
   return kLiteRtStatusOk;
 }

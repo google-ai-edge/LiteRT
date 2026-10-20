@@ -33,20 +33,20 @@ std::vector<uint8_t> BuildCustomOptions(int num_classes, int max_detections,
                                         float iou_threshold, float y_scale,
                                         float x_scale, float h_scale,
                                         float w_scale,
-                                        int background_label_id = -1) {
+                                        bool use_regular_nms = false,
+                                        int max_classes_per_detection = 1) {
   flexbuffers::Builder fbb;
   fbb.Map([&] {
     fbb.Int("num_classes", num_classes);
     fbb.Int("max_detections", max_detections);
+    fbb.Int("max_classes_per_detection", max_classes_per_detection);
     fbb.Float("nms_score_threshold", score_threshold);
     fbb.Float("nms_iou_threshold", iou_threshold);
     fbb.Float("y_scale", y_scale);
     fbb.Float("x_scale", x_scale);
     fbb.Float("h_scale", h_scale);
     fbb.Float("w_scale", w_scale);
-    if (background_label_id >= 0) {
-      fbb.Int("background_label_id", background_label_id);
-    }
+    fbb.Bool("use_regular_nms", use_regular_nms);
   });
   fbb.Finish();
   return fbb.GetBuffer();
@@ -69,7 +69,8 @@ TEST_P(QnnModelTest, DetectionPostprocessBuildsAndFinalizes) {
                          /*score_threshold=*/0.3f,
                          /*iou_threshold=*/0.6f,
                          /*y_scale=*/10.0f, /*x_scale=*/10.0f,
-                         /*h_scale=*/5.0f, /*w_scale=*/5.0f);
+                         /*h_scale=*/5.0f, /*w_scale=*/5.0f,
+                         /*use_regular_nms=*/true);
 
   // TFLite input order: [box_encodings, class_predictions, anchors]
   auto& box_encodings = tensor_pool_.CreateInputTensorWithName(
@@ -167,13 +168,13 @@ TEST_P(QnnModelTest, DetectionPostprocessOutputShapesAreFixed) {
   EXPECT_EQ(out_boxes.GetDimensions(),
             (std::vector<uint32_t>{1, kMaxDetections, 4}));
 
-  // classes: INT_32 [1, max_detections]
-  EXPECT_EQ(out_classes.GetDataType(), QNN_DATATYPE_INT_32);
+  // classes: float32 [1, max_detections] (Cast from INT_32 is appended)
+  EXPECT_EQ(out_classes.GetDataType(), QNN_DATATYPE_FLOAT_32);
   EXPECT_EQ(out_classes.GetDimensions(),
             (std::vector<uint32_t>{1, kMaxDetections}));
 
-  // num_detections: UINT_32 [1]
-  EXPECT_EQ(out_num_det.GetDataType(), QNN_DATATYPE_UINT_32);
+  // num_detections: float32 [1] (Cast from UINT_32 is appended)
+  EXPECT_EQ(out_num_det.GetDataType(), QNN_DATATYPE_FLOAT_32);
   EXPECT_EQ(out_num_det.GetDimensions(), (std::vector<uint32_t>{1}));
 }
 
@@ -221,6 +222,53 @@ TEST_P(QnnModelTest, DetectionPostprocessZeroScaleDoesNotCrash) {
             kLiteRtStatusOk);
 }
 
+// Verifies that use_regular_nms=true produces a valid graph (NMS_TYPE_REGULAR).
+TEST_P(QnnModelTest, DetectionPostprocessRegularNmsBuildsAndFinalizes) {
+  static constexpr int kNumAnchors = 6;
+  static constexpr int kNumClasses = 2;
+  static constexpr int kMaxDetections = 3;
+
+  auto custom_opts =
+      BuildCustomOptions(kNumClasses, kMaxDetections,
+                         /*score_threshold=*/0.3f,
+                         /*iou_threshold=*/0.6f,
+                         /*y_scale=*/10.0f, /*x_scale=*/10.0f,
+                         /*h_scale=*/5.0f, /*w_scale=*/5.0f,
+                         /*use_regular_nms=*/true);
+
+  auto& box_encodings = tensor_pool_.CreateInputTensorWithName(
+      "box_encodings", QNN_DATATYPE_FLOAT_32, {},
+      {1, static_cast<uint32_t>(kNumAnchors), 4});
+  auto& class_predictions = tensor_pool_.CreateInputTensorWithName(
+      "class_predictions", QNN_DATATYPE_FLOAT_32, {},
+      {1, static_cast<uint32_t>(kNumAnchors),
+       static_cast<uint32_t>(kNumClasses + 1)});
+  auto& anchors = tensor_pool_.CreateInputTensorWithName(
+      "anchors", QNN_DATATYPE_FLOAT_32, {},
+      {static_cast<uint32_t>(kNumAnchors), 4});
+  auto& out_boxes = tensor_pool_.CreateOutputTensorWithName(
+      "out_boxes", QNN_DATATYPE_FLOAT_32, {}, {1});
+  auto& out_classes = tensor_pool_.CreateOutputTensorWithName(
+      "out_classes", QNN_DATATYPE_FLOAT_32, {}, {1});
+  auto& out_scores = tensor_pool_.CreateOutputTensorWithName(
+      "out_scores", QNN_DATATYPE_FLOAT_32, {}, {1});
+  auto& out_num_det = tensor_pool_.CreateOutputTensorWithName(
+      "out_num_det", QNN_DATATYPE_FLOAT_32, {}, {1});
+
+  std::vector<::qnn::TensorWrapperRef> inputs = {box_encodings,
+                                                 class_predictions, anchors};
+  std::vector<::qnn::TensorWrapperRef> outputs = {out_boxes, out_classes,
+                                                  out_scores, out_num_det};
+  std::vector<::qnn::OpWrapper> op_wrappers;
+
+  ASSERT_EQ(::qnn::BuildDetectionPostprocessOp(
+                {custom_opts.data(), custom_opts.size()}, tensor_pool_, inputs,
+                outputs, op_wrappers),
+            kLiteRtStatusOk);
+  qnn_model_.MoveOpsToGraph(std::move(op_wrappers));
+  ASSERT_TRUE(qnn_model_.Finalize());
+}
+
 // End-to-end accuracy test (on-device only).
 //
 // Setup — 6 anchors, 2 foreground classes, background at index 2:
@@ -248,7 +296,8 @@ TEST_P(QnnModelTest, DetectionPostprocessAccuracy) {
                          /*score_threshold=*/0.0f,
                          /*iou_threshold=*/0.5f,
                          /*y_scale=*/10.0f, /*x_scale=*/10.0f,
-                         /*h_scale=*/5.0f, /*w_scale=*/5.0f);
+                         /*h_scale=*/5.0f, /*w_scale=*/5.0f,
+                         /*use_regular_nms=*/true);
 
   auto& box_encodings = tensor_pool_.CreateInputTensorWithName(
       "box_encodings", QNN_DATATYPE_FLOAT_32, {},
@@ -347,9 +396,9 @@ TEST_P(QnnModelTest, DetectionPostprocessAccuracy) {
 
   ASSERT_TRUE(qnn_model_.Execute());
 
-  auto num_det_data = qnn_model_.GetOutputData<std::uint32_t>(out_num_det_idx);
+  auto num_det_data = qnn_model_.GetOutputData<float>(out_num_det_idx);
   ASSERT_TRUE(num_det_data);
-  ASSERT_THAT(num_det_data.value(), ElementsAre(3u));
+  ASSERT_THAT(num_det_data.value(), ElementsAre(3.f));
 
   // scores: [0.95, 0.93, 0.90]
   auto scores_data = qnn_model_.GetOutputData<float>(out_scores_idx);
@@ -371,10 +420,10 @@ TEST_P(QnnModelTest, DetectionPostprocessAccuracy) {
                   0.f,  0.f, 1.f,  1.f,  // rank 2
               }));
 
-  // classes (INT_32): class1=1, class0=0, class0=0
-  auto classes_data = qnn_model_.GetOutputData<std::int32_t>(out_classes_idx);
+  // classes (float32 after Cast from INT_32): class1=1, class0=0, class0=0
+  auto classes_data = qnn_model_.GetOutputData<float>(out_classes_idx);
   ASSERT_TRUE(classes_data);
-  ASSERT_THAT(classes_data.value(), ElementsAre(1, 0, 0));
+  ASSERT_THAT(classes_data.value(), ElementsAre(1.f, 0.f, 0.f));
 }
 
 // Verifies that an empty custom_options blob is rejected gracefully.
