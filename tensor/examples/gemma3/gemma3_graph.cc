@@ -161,7 +161,7 @@ Tensor<MlDriftMixinTag> Gemma3RotaryEmbedding<MlDriftMixinTag>(
     const Tensor<MlDriftMixinTag>& position_ids,
     const Tensor<MlDriftMixinTag>& cos, const Tensor<MlDriftMixinTag>& sin,
     float rope_base) {
-  return RotaryEmbedding(x, position_ids, 1.0f, rope_base, 0.0f);
+  return RotaryEmbedding(x, position_ids, 1.0f, rope_base);
 }
 #endif
 

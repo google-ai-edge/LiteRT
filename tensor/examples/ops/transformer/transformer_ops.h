@@ -78,6 +78,54 @@ Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x, const Tensor<Mixins...>& cos,
   return out;
 }
 
+template <class... Mixins>
+Tensor<Mixins...> RotaryEmbedding(const Tensor<Mixins...>& input,
+                                  const Tensor<Mixins...>& segment_pos,
+                                  float min_timescale, float max_timescale) {
+  auto op = std::make_shared<graph::RotaryEmbeddingOperation>();
+  RegisterMixins<Mixins...>(op);
+  op->min_timescale = min_timescale;
+  op->max_timescale = max_timescale;
+  op->inputs = {input.GetRaw(), segment_pos.GetRaw()};
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
+  const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
+  graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
+  output_info.shape = input_info.shape;
+  output_info.type = input_info.type;
+  graph::OpDebugger::DebugOp(*op);
+  return output;
+}
+
+// Parameters for decomposed Rotary Position Embedding (RoPE) using
+// precomputed `cos` and `sin` tables.
+template <class... Mixins>
+struct RopeCosSinParams {
+  Tensor<Mixins...> cos;
+  Tensor<Mixins...> sin;
+};
+
+// Parameters for the fused `RotaryEmbedding` op using a runtime `position_ids`
+// tensor and timescale bounds.
+template <class... Mixins>
+struct RotaryEmbeddingParams {
+  Tensor<Mixins...> position_ids;
+  float min_timescale = 1.0f;
+  float max_timescale = 10000.0f;
+};
+
+template <class... Mixins>
+Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x,
+                       const RopeCosSinParams<Mixins...>& params) {
+  return RoPE(x, params.cos, params.sin);
+}
+
+template <class... Mixins>
+Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x,
+                       const RotaryEmbeddingParams<Mixins...>& params) {
+  return RotaryEmbedding(x, params.position_ids, params.min_timescale,
+                         params.max_timescale);
+}
+
 // Computes the Swish (SiLU) activation function: x * sigmoid(x).
 template <class... Mixins>
 Tensor<Mixins...> Swish(Tensor<Mixins...> x) {
@@ -321,26 +369,6 @@ Tensor<Mixins...> ScaledDotProductAttention(
   }
   scope.Bind("output", out.GetRaw());
   return out;
-}
-
-template <class... Mixins>
-Tensor<Mixins...> RotaryEmbedding(const Tensor<Mixins...>& input,
-                                  const Tensor<Mixins...>& segment_pos,
-                                  float min_timescale, float max_timescale,
-                                  float rope_wavelength) {
-  auto op = std::make_shared<graph::RotaryEmbeddingOperation>();
-  RegisterMixins<Mixins...>(op);
-  op->min_timescale = min_timescale;
-  op->max_timescale = max_timescale;
-  // op->rope_wavelength = rope_wavelength;
-  op->inputs = {input.GetRaw(), segment_pos.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
-  const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
-  graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
-  output_info.shape = input_info.shape;
-  output_info.type = input_info.type;
-  graph::OpDebugger::DebugOp(*op);
-  return output;
 }
 
 template <class... Mixins>
