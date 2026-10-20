@@ -37,6 +37,9 @@ typedef struct {
   bool consistent_arithmetic;
   // If true, enable YNN_FLAG_NO_EXCESS_PRECISION.
   bool no_excess_precision;
+  // Comma-separated list of allowed op names. If non-empty, only these ops
+  // will be delegated.
+  const char* allowed_ops;
 } TfLiteYNNPackDelegateOptions;
 
 // Returns a structure with the default delegate options.
