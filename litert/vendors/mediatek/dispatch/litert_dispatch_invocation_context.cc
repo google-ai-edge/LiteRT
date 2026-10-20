@@ -50,9 +50,23 @@ Expected<std::pair<NeuronModelPtr, NeuronCompilationPtr>> LoadFromCachedNetwork(
     const void* bytecode_addr, size_t bytecode_size) {
   NeuronModel* model;
   NeuronCompilation* compilation;
-  if (neuron_adapter_api.api().model_restore_from_compiled_network(
-          &model, &compilation, bytecode_addr, bytecode_size) !=
-      NEURON_NO_ERROR) {
+  const auto& api = neuron_adapter_api.api();
+  // Prefer V3 when the loaded NeuronAdapter provides it.
+  int status;
+  if (api.model_restore_from_compiled_network_v3) {
+    LITERT_LOG(LITERT_INFO,
+               "Restoring compiled network with improved API without buffer "
+               "copy");
+    status = api.model_restore_from_compiled_network_v3(
+        &model, &compilation, /*options=*/nullptr, bytecode_addr,
+        bytecode_size, /*needCopyBuffer=*/0,
+        litert::mediatek::COMPILED_NETWORK_TYPE_MODEL_CACHE,
+        COMPILATION_TYPE_NORMAL);
+  } else {
+    status = api.model_restore_from_compiled_network(
+        &model, &compilation, bytecode_addr, bytecode_size);
+  }
+  if (status != NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to restore model from compiled network");
   }
@@ -304,9 +318,11 @@ LiteRtDispatchInvocationContextT::Create(
   }
 
   // `NeuronModel_restoreFromCompiledNetwork` copies the compiled network into
-  // the adapter's own memory and never reads `exec_bytecode_ptr` again. When
-  // the bytecode lives in an mmapped model file, its pages are released below
-  // once loading succeeds so they no longer count towards this process's RSS.
+  // the adapter's own memory and never reads `exec_bytecode_ptr` again; the V3
+  // API is called without a copy and may keep referencing it. When the
+  // bytecode lives in an mmapped model file, its pages are released below once
+  // loading succeeds so they no longer count towards this process's RSS; any
+  // later access faults the file contents back in.
   const int bytecode_fd = exec_bytecode_buffer->fd;
   litert::mediatek::AdviseNoHugePages(bytecode_fd, exec_bytecode_ptr,
                                       exec_bytecode_size);
