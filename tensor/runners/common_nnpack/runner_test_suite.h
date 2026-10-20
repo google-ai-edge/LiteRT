@@ -25,6 +25,7 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
+#include "tensor/backends/testing/quantized_test_utils.h"
 #include "tensor/datatypes.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/matchers.h"
@@ -1470,6 +1471,201 @@ TYPED_TEST_P(NnpackRunnerTest, FailsWhenNonOwningViewTooSmall) {
               absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
+namespace runner_test_internal {
+
+// Returns `size` smoothly varying values in [-scale, scale].
+inline std::vector<float> Wave(int size, float scale) {
+  std::vector<float> values(size);
+  for (int i = 0; i < size; ++i) {
+    values[i] = std::sin(0.3f * i + 0.1f) * scale;
+  }
+  return values;
+}
+
+}  // namespace runner_test_internal
+
+// An attention mask [1, 1, S, K] broadcasts over the heads of the scores
+// [1, H, S, K], and the graph keeps working once S and K change.
+TYPED_TEST_P(NnpackRunnerTest, BroadcastsReshapedInput) {
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+  using runner_test_internal::Wave;
+
+  constexpr int kHeads = 2;
+  TensorType mask({.name = "mask", .type = Type::kFP32, .shape = {1, 1, 1, 3}});
+  TensorType scores(
+      {.name = "scores", .type = Type::kFP32, .shape = {1, kHeads, 1, 3}});
+  TensorType output = Add(scores, mask);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
+  for (const auto& [seq, keys] : {std::pair{1, 3}, std::pair{2, 4}}) {
+    SCOPED_TRACE(testing::Message() << "seq=" << seq << " keys=" << keys);
+    const std::vector<float> mask_data = Wave(seq * keys, 1.f);
+    const std::vector<float> scores_data = Wave(kHeads * seq * keys, 3.f);
+    ASSERT_THAT(runner.ReshapeInput(mask, {1, 1, seq, keys}), IsOk());
+    ASSERT_THAT(runner.ReshapeInput(scores, {1, kHeads, seq, keys}), IsOk());
+    ASSERT_THAT(runner.SetInputAsCopy(mask, mask_data), IsOk());
+    ASSERT_THAT(runner.SetInputAsCopy(scores, scores_data), IsOk());
+    ASSERT_THAT(runner.Run(), IsOk());
+
+    std::vector<float> expected(scores_data.size());
+    for (int h = 0; h < kHeads; ++h) {
+      for (int i = 0; i < seq * keys; ++i) {
+        expected[h * seq * keys + i] =
+            scores_data[h * seq * keys + i] + mask_data[i];
+      }
+    }
+    EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+                absl_testing::IsOkAndHolds(
+                    testing::Pointwise(testing::FloatNear(1e-6f), expected)));
+  }
+}
+
+// The key of grouped query attention is tiled over the query heads, transposed
+// and consumed as the right-hand side of a batch matmul, while the number of
+// keys changes.
+TYPED_TEST_P(NnpackRunnerTest, TileTransposeBatchMatMul) {
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+  using runner_test_internal::Wave;
+
+  constexpr int kHeads = 4;
+  constexpr int kSeq = 2;
+  constexpr int kDim = 8;
+  TensorType q(
+      {.name = "q", .type = Type::kFP32, .shape = {1, kHeads, kSeq, kDim}});
+  TensorType k({.name = "k", .type = Type::kFP32, .shape = {1, 1, 3, kDim}});
+  TensorType tiled = Tile(k, std::vector<int>{1, kHeads, 1, 1});
+  TensorType transposed = Transpose(tiled, std::vector<int>{0, 1, 3, 2});
+  TensorType output = BatchMatMul(q, transposed);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
+  for (const int keys : {3, 5}) {
+    SCOPED_TRACE(testing::Message() << "keys=" << keys);
+    const std::vector<float> q_data = Wave(kHeads * kSeq * kDim, 1.f);
+    const std::vector<float> k_data = Wave(keys * kDim, 2.f);
+    ASSERT_THAT(runner.ReshapeInput(k, {1, 1, keys, kDim}), IsOk());
+    ASSERT_THAT(runner.SetInputAsCopy(q, q_data), IsOk());
+    ASSERT_THAT(runner.SetInputAsCopy(k, k_data), IsOk());
+    ASSERT_THAT(runner.Run(), IsOk());
+
+    std::vector<float> expected(kHeads * kSeq * keys);
+    for (int h = 0; h < kHeads; ++h) {
+      for (int s = 0; s < kSeq; ++s) {
+        for (int t = 0; t < keys; ++t) {
+          float sum = 0.f;
+          for (int d = 0; d < kDim; ++d) {
+            sum += q_data[(h * kSeq + s) * kDim + d] * k_data[t * kDim + d];
+          }
+          expected[(h * kSeq + s) * keys + t] = sum;
+        }
+      }
+    }
+    EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+                absl_testing::IsOkAndHolds(
+                    testing::Pointwise(testing::FloatNear(1e-4f), expected)));
+  }
+}
+
+// Squeeze keeps working once the dimensions it keeps change.
+TYPED_TEST_P(NnpackRunnerTest, SqueezeReshapedInput) {
+  if constexpr (!TestFixture::Traits::kSupportsSqueezeOfReshapedInput) {
+    GTEST_SKIP()
+        << "Squeeze of a reshaped input not supported for this backend";
+  }
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+  using runner_test_internal::Wave;
+
+  TensorType x({.name = "x", .type = Type::kFP32, .shape = {1, 2, 3}});
+  TensorType output = Squeeze(x, {0});
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
+  for (const int seq : {2, 4}) {
+    SCOPED_TRACE(testing::Message() << "seq=" << seq);
+    const std::vector<float> x_data = Wave(seq * 3, 1.f);
+    ASSERT_THAT(runner.ReshapeInput(x, {1, seq, 3}), IsOk());
+    ASSERT_THAT(runner.SetInputAsCopy(x, x_data), IsOk());
+    ASSERT_THAT(runner.Run(), IsOk());
+    EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+                absl_testing::IsOkAndHolds(testing::ElementsAreArray(x_data)));
+  }
+}
+
+TYPED_TEST_P(NnpackRunnerTest, SqueezeSpecificDims) {
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+
+  const std::vector<float> data = {1.f, 2.f, 3.f, 4.f, 5.f, 6.f};
+  TensorType x({.name = "x",
+                .type = Type::kFP32,
+                .shape = {2, 1, 3, 1},
+                .buffer = data});
+  TensorType one_dim = Squeeze(x, {1});
+  TensorType negative_dim = Squeeze(x, {-1});
+  TensorType all_dims = Squeeze(x);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      Runner runner, Runner::Create({one_dim, negative_dim, all_dims}));
+  ASSERT_THAT(runner.Run(), IsOk());
+  EXPECT_THAT(runner.template ReadOutputAs<float>(one_dim),
+              absl_testing::IsOkAndHolds(testing::ElementsAreArray(data)));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(negative_dim),
+              absl_testing::IsOkAndHolds(testing::ElementsAreArray(data)));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(all_dims),
+              absl_testing::IsOkAndHolds(testing::ElementsAreArray(data)));
+}
+
+TYPED_TEST_P(NnpackRunnerTest, SqueezeRejectsDimsWithExtentOtherThanOne) {
+  if constexpr (!TestFixture::Traits::kRejectsInvalidSqueeze) {
+    GTEST_SKIP() << "Invalid squeezes are not rejected by this backend";
+  }
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+
+  TensorType x({.name = "x",
+                .type = Type::kFP32,
+                .shape = {2, 1},
+                .buffer = std::vector<float>{1.f, 2.f}});
+  TensorType output = Squeeze(x, {0});
+  EXPECT_THAT(Runner::Create({output}).status(),
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+// A fully connected op with quantized weights keeps working when a decode
+// graph (1 row) is reshaped into a prefill graph (several rows).
+TYPED_TEST_P(NnpackRunnerTest, QuantizedFullyConnectedReshapedInput) {
+  using TensorType = typename TestFixture::TensorType;
+  using Tag = typename TestFixture::Tag;
+  using Runner = typename TestFixture::Runner;
+  namespace qtu = quantized_test_utils;
+
+  constexpr int kK = 64;
+  constexpr int kN = 8;
+  for (const qtu::Quant quantization :
+       {qtu::PerChannel(/*dim=*/0), qtu::Blockwise(/*dim=*/0, /*block=*/32)}) {
+    SCOPED_TRACE(testing::Message() << "quantization=" << quantization);
+    const qtu::QuantizedMatrix w =
+        qtu::MakeQuantizedMatrix(Type::kI4, kN, kK, quantization);
+    TensorType input({.name = "input", .type = Type::kFP32, .shape = {1, kK}});
+    TensorType output = FullyConnected(input, w.ToTensor<Tag>());
+
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
+    for (const int rows : {1, 5}) {
+      SCOPED_TRACE(testing::Message() << "rows=" << rows);
+      const std::vector<float> input_data = qtu::MakeInput(rows * kK);
+      const auto& [expected, tolerance] = qtu::MatMul(
+          input_data, rows, kK, kN, [&](int k, int n) { return w.At(n, k); });
+      ASSERT_THAT(runner.ReshapeInput(input, {rows, kK}), IsOk());
+      ASSERT_THAT(runner.SetInputAsCopy(input, input_data), IsOk());
+      ASSERT_THAT(runner.Run(), IsOk());
+      EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+                  absl_testing::IsOkAndHolds(testing::Pointwise(
+                      testing::FloatNear(tolerance), expected)));
+    }
+  }
+}
+
 REGISTER_TYPED_TEST_SUITE_P(
     NnpackRunnerTest, SetInputRejectsNonExternalTensors, ComputesConstantAdd,
     ComputesRuntimeInputAdd, SetNumThreadsBeforeRunUsesThreads,
@@ -1493,7 +1689,10 @@ REGISTER_TYPED_TEST_SUITE_P(
     ResizeNearestNeighborBatchAndChannels, ComputesTransposeConv2D,
     ComputesTransposeConv2DSame, TransposeConvRejectsInvalidOutputShape,
     ComputesRuntimeInputFromTensorHandle, ReallocatesOwningCpuBufferOnReshape,
-    FailsWhenNonOwningViewTooSmall);
+    FailsWhenNonOwningViewTooSmall, BroadcastsReshapedInput,
+    TileTransposeBatchMatMul, SqueezeReshapedInput, SqueezeSpecificDims,
+    SqueezeRejectsDimsWithExtentOtherThanOne,
+    QuantizedFullyConnectedReshapedInput);
 
 }  // namespace litert::tensor
 
