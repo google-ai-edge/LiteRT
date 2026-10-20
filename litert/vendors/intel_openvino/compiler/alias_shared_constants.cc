@@ -25,15 +25,20 @@
 #include <utility>
 #include <vector>
 
-#include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/internal/litert_logging.h"
-#include "litert/vendors/intel_openvino/compiler/weight_bank.h"
-#include "litert/vendors/intel_openvino/compiler/weight_bank_attributes.h"
-#include "litert/vendors/intel_openvino/compiler/weightless_caching_attributes.hpp"
 #include "openvino/core/graph_util.hpp"
 #include "openvino/core/model.hpp"
 #include "openvino/core/type.hpp"
+#include "openvino/core/type/element_type.hpp"
 #include "openvino/op/constant.hpp"
+#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
+#include "litert/c/litert_common.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/vendors/intel_openvino/compiler/weight_bank.h"
+#include "litert/vendors/intel_openvino/compiler/weight_bank_attributes.h"
+#include "litert/vendors/intel_openvino/compiler/weightless_caching_attributes.hpp"
+#include "farmhash.h"
 
 namespace litert::openvino {
 
@@ -43,6 +48,21 @@ std::map<int32_t, size_t> PoolLayout::OffsetMap() const {
     offsets.emplace(entry.buffer_id, entry.pool_offset);
   }
   return offsets;
+}
+
+std::string PoolLayout::WeightsBankName() const {
+  std::vector<uint64_t> per_buffer_fingerprints;
+  per_buffer_fingerprints.reserve(2 * buffers.size());
+  for (const auto& entry : buffers) {
+    const uint32_t buffer_id = static_cast<uint32_t>(entry.buffer_id);
+    per_buffer_fingerprints.push_back(buffer_id);
+    per_buffer_fingerprints.push_back(util::Fingerprint64(
+        reinterpret_cast<const char*>(entry.bytes.data()), entry.bytes.size()));
+  }
+  const uint64_t pool_fingerprint = util::Fingerprint64(
+      reinterpret_cast<const char*>(per_buffer_fingerprints.data()),
+      per_buffer_fingerprints.size() * sizeof(uint64_t));
+  return absl::StrFormat("litert_npuw_%016x", pool_fingerprint);
 }
 
 void HarvestSharedConstants(const std::shared_ptr<ov::Model>& ov_model,
@@ -145,7 +165,7 @@ PoolLayout BuildPool(const std::unordered_set<std::string>& live_names,
   return layout;
 }
 
-size_t AliasAndTagSharedConstants(
+litert::Expected<size_t> AliasAndTagSharedConstants(
     const std::shared_ptr<ov::Model>& ov_model, const WeightBank& weight_bank,
     const std::map<int32_t, size_t>& pool_offset_of, int partition_idx) {
   // Collect before mutating: replacing nodes while iterating get_ordered_ops()
@@ -158,6 +178,21 @@ size_t AliasAndTagSharedConstants(
     // Skip tiny/shape/scalar constants (fewer than 16 elements) and any type
     // with unknown element size.
     if (elem_size == 0 || cnst->get_byte_size() / elem_size < 16) continue;
+    // DecomposeBooleanConstant (run by OptimizeModel before aliasing) rewrites
+    // every boolean Constant of 16+ bytes to u8 + Convert, and booleans are one
+    // byte per element, so no boolean Constant should pass the size check
+    // above. One that does means a pass now runs after the decomposition or
+    // the decomposition was skipped; NPUW's weightless import would then
+    // mis-unpack it, so fail the compile instead of producing a broken blob.
+    if (cnst->get_element_type() == ov::element::boolean) {
+      return litert::Error(
+          kLiteRtStatusErrorInvalidArgument,
+          absl::StrFormat("Weight sharing (NPU) p%d: boolean Constant '%s' "
+                          "(%zu bytes) reached aliasing undecomposed; run "
+                          "DecomposeBooleanConstant first",
+                          partition_idx, cnst->get_friendly_name(),
+                          cnst->get_byte_size()));
+    }
     candidates.push_back(cnst);
   }
 

@@ -24,9 +24,10 @@
 #include <unordered_set>
 #include <vector>
 
-#include "absl/types/span.h"  // from @com_google_absl
-#include "litert/vendors/intel_openvino/compiler/weight_bank.h"
 #include "openvino/core/model.hpp"
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_expected.h"
+#include "litert/vendors/intel_openvino/compiler/weight_bank.h"
 
 namespace litert::openvino {
 
@@ -45,6 +46,12 @@ struct PoolLayout {
   // BufferId -> pool offset, for AliasAndTagSharedConstants. Derived from
   // |buffers| on demand, so an entry's offset has one source of truth.
   std::map<int32_t, size_t> OffsetMap() const;
+
+  // Content-derived NPUW weights-bank name ("litert_npuw_<16-hex>") computed by
+  // fingerprinting each buffer's (buffer_id, bytes) in ascending-BufferId
+  // order. Identical pools yield identical names while unrelated models get
+  // distinct names, avoiding BankManager collisions across models at import.
+  std::string WeightsBankName() const;
 };
 
 // Lays out |weight_bank|'s buffers in ascending-BufferId order, calling
@@ -87,8 +94,11 @@ void HarvestSharedConstants(const std::shared_ptr<ov::Model>& ov_model,
 // for logging.
 //
 // Returns the number of Constants aliased (i.e. actually shareable). Constants
-// with no BufferId or below the element threshold stay baked.
-size_t AliasAndTagSharedConstants(
+// with no BufferId or below the element threshold stay baked. Returns
+// kLiteRtStatusErrorInvalidArgument if a boolean Constant at or above the
+// element threshold is present, since DecomposeBooleanConstant must already
+// have rewritten every such Constant to u8.
+litert::Expected<size_t> AliasAndTagSharedConstants(
     const std::shared_ptr<ov::Model>& ov_model, const WeightBank& weight_bank,
     const std::map<int32_t, size_t>& pool_offset_of, int partition_idx);
 
