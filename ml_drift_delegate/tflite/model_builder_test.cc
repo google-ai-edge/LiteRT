@@ -2377,7 +2377,7 @@ TEST(DequantizeOperationParserTest, TestIsSupported) {
   // Invalid op_version
   auto context = std::make_unique<StubTfLiteContext>(
       kTfLiteBuiltinDequantize,
-      /*op_version=*/4,
+      /*op_version=*/6,
       /*num_inputs=*/1,
       /*shape=*/std::vector<int>({1, 1, 1, 1}));
   auto parser = NewOperationParser(context->node(), context->registration(),
@@ -5276,6 +5276,56 @@ TEST(CompositeGroupNormParserTest,
   auto parser = NewOperationParser(context->node(), context->registration());
   EXPECT_OK(parser->IsSupported(context.get(), context->node(),
                                 context->registration()));
+}
+
+TEST(DequantizeOperationParserTest, SupportsVersion5ConstantTensor) {
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinDequantize,
+      /*op_version=*/5,
+      /*num_inputs=*/1,
+      /*shape=*/std::vector<int>({32, 2, 2, 8}));
+  context->SetTensorType(1, kTfLiteInt8, kTfLiteMmapRo);
+  context->tensor(1)->bytes = 32 * 2 * 2 * 8;
+  auto parser = NewOperationParser(context->node(), context->registration(),
+                                   /*allow_quant_ops=*/true);
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+}
+
+TEST(TransposeOperationParserTest, Supports6DDepthToSpaceTransposeV6) {
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinTranspose,
+      /*op_version=*/6,
+      /*num_inputs=*/2,
+      /*shape=*/std::vector<int>({1, 8, 8, 2, 2, 4}));
+  context->ChangeTensorShape(2, {6});
+  context->SetTensorType(2, kTfLiteInt32, kTfLiteMmapRo);
+  const int32_t perm_data[6] = {0, 1, 3, 2, 4, 5};
+  for (int i = 0; i < 6; ++i) context->tensor(2)->data.i32[i] = perm_data[i];
+  context->ChangeTensorShape(3, {1, 8, 2, 8, 2, 4});
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  ASSERT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, context.get(), context->node(), &tensor_to_value);
+  parser->Parse(context->node(), context->registration(), &graph, &reader);
+  ASSERT_EQ(graph.nodes().size(), 1);
+  EXPECT_EQ(graph.nodes()[0]->operation.type,
+            ToString(::ml_drift::OperationType::kDepthToSpace));
+  const auto& attr = std::any_cast<::ml_drift::SpaceToDepthAttributes>(
+      graph.nodes()[0]->operation.attributes);
+  EXPECT_EQ(attr.block_size, 2);
+  EXPECT_EQ(graph.FindInputs(graph.nodes()[0]->id)[0]->tensor.shape,
+            ::ml_drift::BHWC(1, 8, 8, 16));
+  EXPECT_EQ(graph.FindOutputs(graph.nodes()[0]->id)[0]->tensor.shape,
+            ::ml_drift::BHWC(1, 16, 16, 4));
 }
 
 }  // namespace

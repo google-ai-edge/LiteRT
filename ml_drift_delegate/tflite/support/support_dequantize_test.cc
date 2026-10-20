@@ -127,7 +127,7 @@ TEST_P(NumInputOutputTest, RejectsUnsupportedVersion) {
   const int a =
       context_builder.AddQuantizedTensor(kTfLiteInt8, kDefaultInputDims);
   const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
-  context_builder.SetOp(op, /*version=*/4, /*params=*/nullptr,
+  context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
                         /*inputs=*/{a}, /*outputs=*/{b});
   TfLiteContext* context = context_builder.Build();
   ASSERT_TRUE(context != nullptr);
