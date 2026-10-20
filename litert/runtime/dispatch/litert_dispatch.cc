@@ -177,8 +177,9 @@ LiteRtStatus LiteRtDispatchInitialize(
   LiteRtEnvironmentOptions env_options;
   LITERT_RETURN_IF_ERROR(LiteRtGetEnvironmentOptions(env, &env_options));
 
-  // If already initialized and static override has not changed, initialize the
-  // new environment against the already-negotiated dispatch interface.
+  // If already initialized and static override has not changed, register custom
+  // tensor buffer handlers on the new environment without re-initializing the
+  // process-global vendor dispatch runtime.
   if (IsTheApiInitialized.load(std::memory_order_acquire) &&
       (LiteRtStaticLinkedDispatchQueryInterface == nullptr ||
        TheQueryInterface == LiteRtStaticLinkedDispatchQueryInterface)) {
@@ -192,13 +193,8 @@ LiteRtStatus LiteRtDispatchInitialize(
                    TheLoadedLibraryPath->c_str(), requested_path->c_str());
       }
     }
-    LITERT_RETURN_IF_ERROR(RegisterCustomTensorBufferHandlers(
-        TheCustomTensorBufferHandlers_V1.load(std::memory_order_acquire), env));
-    const auto* basic = TheBasicInterface_V1.load(std::memory_order_acquire);
-    if (!LITERT_ABI_HAS_API(basic, /*req_major=*/1, initialize)) {
-      return kLiteRtStatusErrorRuntimeFailure;
-    }
-    return basic->initialize(runtime_context, env, options);
+    return RegisterCustomTensorBufferHandlers(
+        TheCustomTensorBufferHandlers_V1.load(std::memory_order_acquire), env);
   }
 
   // 1. Resolve QueryInterface function (static or dynamic)

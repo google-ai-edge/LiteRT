@@ -75,8 +75,11 @@ const LiteRtCustomTensorBufferHandlersDef_V1 CustomBufferHandlersDef = {
     /*.supported_buffer_types=*/{kLiteRtTensorBufferTypeUserCustomBuffer},
 };
 
+int InitializeCount = 0;
+
 LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
                         LiteRtEnvironment environment, LiteRtOptions options) {
+  ++InitializeCount;
   return kLiteRtStatusOk;
 }
 
@@ -227,6 +230,7 @@ TEST(DispatchDelegateCustomBufferTest,
   // process-wide after initialization.
   StaticLinkedDispatchApiScope static_dispatch_api(
       QueryCustomBufferTestInterface);
+  InitializeCount = 0;
 
   // 1. First environment: initialize dispatch and verify custom handlers are
   // registered.
@@ -235,6 +239,7 @@ TEST(DispatchDelegateCustomBufferTest,
     ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(), env1.Get(),
                                        /*options=*/nullptr),
               kLiteRtStatusOk);
+    EXPECT_EQ(InitializeCount, 1);
 
     auto handlers_or = env1.Get()->GetTensorBufferRegistry().GetCustomHandlers(
         kLiteRtTensorBufferTypeUserCustomBuffer);
@@ -243,13 +248,14 @@ TEST(DispatchDelegateCustomBufferTest,
 
   // 2. Second environment: env1 was destroyed, so its TensorBufferRegistry was
   // freed. When LiteRtDispatchInitialize is called on env2, it MUST register
-  // the handlers into env2's registry even though IsTheApiInitialized is
-  // already true.
+  // the handlers into env2's registry without re-invoking the process-global
+  // vendor initialize callback.
   {
     LITERT_ASSERT_OK_AND_ASSIGN(auto env2, Environment::Create({}));
     ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(), env2.Get(),
                                        /*options=*/nullptr),
               kLiteRtStatusOk);
+    EXPECT_EQ(InitializeCount, 1);
 
     auto handlers_or = env2.Get()->GetTensorBufferRegistry().GetCustomHandlers(
         kLiteRtTensorBufferTypeUserCustomBuffer);
