@@ -74,7 +74,6 @@ cc_library(
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@stablehlo//:stablehlo_ops",
         "@stablehlo//:vhlo_ops",
-        "@xla//xla/mlir_hlo:hlo_dialect_registration",
     ],
 )
 
@@ -124,6 +123,7 @@ cc_library(
         "//tflite/converter/metrics:error_collector_inst",
         "//tflite/converter/quantization/ir:QuantOps",
         "//tflite/converter/stablehlo:drop_shape_assertions",
+        "//tflite/converter/stablehlo:legalize_einsum_to_dot_general",
         "//tflite/converter/stablehlo:legalize_stablehlo_to_vhlo_pass",
         "//tflite/converter/stablehlo:legalize_vhlo_quant_custom_calls",
         "//tflite/converter/stablehlo:prepare_hlo",
@@ -145,8 +145,6 @@ cc_library(
         "@stablehlo//:stablehlo_ops",
         "@stablehlo//:stablehlo_passes",
         "@stablehlo//:vhlo_ops",
-        "@xla//xla/mlir_hlo",
-        "@xla//xla/mlir_hlo:mhlo_passes",
         "@xla//xla/mlir_hlo:stablehlo_extension_passes",
         "@xla//xla/tsl/platform:env",
     ],
