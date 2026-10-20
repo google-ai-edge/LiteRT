@@ -234,6 +234,8 @@ Tensor<Mixins...> RepeatKVHeads(const Tensor<Mixins...>& x, int num_groups) {
 //   It is only used when `scale` or `soft_cap` requires a constant to be
 //   materialized; in that case an untyped `q` and an unset `datatype` are an
 //   error, as there is nothing left to deduce the constant type from.
+// adj_v: if true, v has shape [..., num_kv_heads, head_dim, seq_len_kv] and is
+//   transposed on its last two axes in the final matmul.
 //
 // Expected tensor shapes (any leading dimensions are batch dimensions, shared
 // by q, k and v):
@@ -255,7 +257,7 @@ Tensor<Mixins...> ScaledDotProductAttention(
     const Tensor<Mixins...>& attention_mask = TensorHandle::Invalid(),
     std::optional<float> scale = std::nullopt,
     std::optional<float> soft_cap = std::nullopt,
-    Type datatype = Type::kUnknown) {
+    Type datatype = Type::kUnknown, bool adj_v = false) {
   graph::ScopeGuard scope("sdpa");
   scope.Bind("q", q.GetRaw()).Bind("k", k.GetRaw()).Bind("v", v.GetRaw());
   if (attention_mask.GetStatus().ok()) {
@@ -352,8 +354,10 @@ Tensor<Mixins...> ScaledDotProductAttention(
   if (attention_mask.GetStatus().ok()) {
     scores = Add(scores, attention_mask);
   }
+  scope.Bind("scores", scores);
 
   Tensor attention_weights = Softmax(scores);
+  scope.Bind("attn_weights", attention_weights);
   if (grouped) {
     attention_weights =
         Reshape(attention_weights,
@@ -362,7 +366,8 @@ Tensor<Mixins...> ScaledDotProductAttention(
                                kInferredDim));
   }
 
-  Tensor out = BatchMatMul(attention_weights, v);
+  Tensor out =
+      BatchMatMul(attention_weights, v, /*adj_x=*/false, /*adj_y=*/adj_v);
   if (grouped) {
     out = Reshape(out, BatchDimsShape(grouped->num_heads, grouped->seq_len_q,
                                       grouped->head_dim));
