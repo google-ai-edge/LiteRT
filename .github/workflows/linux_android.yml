@@ -33,7 +33,7 @@ jobs:
       run_build: ${{ steps.check.outputs.run_build }}
     steps:
       - if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.0
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           predicate-quantifier: 'some-with-excludes'
@@ -104,7 +104,7 @@ jobs:
       - name: Build Android Artifacts with Bazel
         run: |
           bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/kotlin:litert
-          bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/vendors/arm_vulkan_ml/...
+          bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 --config=with_tensorflow //litert/vendors/arm_vulkan_ml/...
           bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_so
 
       - name: Upload Android Artifacts
