@@ -52,6 +52,8 @@ typedef enum LiteRtDispatchCapabilities {
   // The vendor supports querying and attaching scratchpad buffers.
   kLiteRtDispatchCapabilitiesScratchpad = 16,
 #endif  // defined(LITERT_ENABLE_FABRIC_INTEGRATION)
+  // The vendor supports multiple in-flight async invocations simultaneously.
+  kLiteRtDispatchCapabilitiesMultiInflightAsync = 32,
 } LiteRtDispatchCapabilities;
 
 // Types of executable that can run on the HW accelerators.
