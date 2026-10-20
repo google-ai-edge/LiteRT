@@ -43,6 +43,13 @@ class GpuCompatibilityCheckerTest : public ::testing::Test {
     return GpuCompatibilityChecker(compatibility_binary)
         .IsSupported(android_info, gl_renderer, gles_major, gles_minor);
   }
+
+  static bool IsSupportedInDefaultDatabase(const AndroidInfo& android_info,
+                                           absl::string_view gl_renderer,
+                                           int gles_major, int gles_minor) {
+    return GpuCompatibilityChecker::Instance().IsSupported(
+        android_info, gl_renderer, gles_major, gles_minor);
+  }
 };
 
 namespace {
@@ -144,6 +151,40 @@ TEST_F(GpuCompatibilityCheckerTest, CorruptedBinaryReturnsFalse) {
                                             0xff, 0xff, 0xff, 0xff};
 
   EXPECT_FALSE(IsSupported(kCorruptedBinary, android_info, "Mali", 3, 1));
+}
+
+// Newer Mali DDKs append a core-count suffix (MC<n> / MP<n>) to GL_RENDERER
+// (e.g. "Mali-G715 MC7" instead of "Mali-G715"). When the suffixed renderer
+// has no entry in the database, lookup falls back to the base Mali model.
+TEST_F(GpuCompatibilityCheckerTest,
+       MaliCoreCountSuffixFallsBackToBaseModelWhenUnlisted) {
+  AndroidInfo pixel9_pro =
+      MakeAndroidInfo("Google", "Pixel 9 Pro", "caiman", "37");
+  EXPECT_TRUE(IsSupportedInDefaultDatabase(pixel9_pro, "Mali-G715 MC7", 3, 2));
+
+  AndroidInfo pixel8_pro =
+      MakeAndroidInfo("Google", "Pixel 8 Pro", "husky", "37");
+  EXPECT_TRUE(IsSupportedInDefaultDatabase(pixel8_pro, "Mali-G715 MC10", 3, 2));
+
+  AndroidInfo pixel7 = MakeAndroidInfo("Google", "Pixel 7", "panther", "37");
+  EXPECT_TRUE(IsSupportedInDefaultDatabase(pixel7, "Mali-G710 MC7", 3, 2));
+
+  AndroidInfo pixel6 = MakeAndroidInfo("Google", "Pixel 6", "oriole", "37");
+  EXPECT_TRUE(IsSupportedInDefaultDatabase(pixel6, "Mali-G78 MP20", 3, 2));
+}
+
+TEST_F(GpuCompatibilityCheckerTest,
+       MaliCoreCountSuffixMatchesDirectlyWhenListedInDatabase) {
+  AndroidInfo cph2491 = MakeAndroidInfo("OPPO", "CPH2491", "OP5913L1", "35");
+  EXPECT_TRUE(IsSupportedInDefaultDatabase(cph2491, "Mali-G710 MC10", 3, 2));
+}
+
+TEST_F(GpuCompatibilityCheckerTest,
+       MaliCoreCountSuffixUnsupportedWhenBaseModelAlsoUnsupported) {
+  AndroidInfo pixel9_pro_old_sdk =
+      MakeAndroidInfo("Google", "Pixel 9 Pro", "caiman", "33");
+  EXPECT_FALSE(
+      IsSupportedInDefaultDatabase(pixel9_pro_old_sdk, "Mali-G715 MC7", 3, 2));
 }
 
 #if !defined(__ANDROID__)
