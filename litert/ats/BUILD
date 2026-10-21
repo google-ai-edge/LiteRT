@@ -1604,6 +1604,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
         "//litert/cc/internal:litert_compiled_model_next",
         "//litert/test:simple_buffer",
         "@com_google_absl//absl/strings:str_format",

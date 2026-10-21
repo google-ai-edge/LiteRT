@@ -37,6 +37,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/litert_tensor_buffer.h"
 #include "litert/test/simple_buffer.h"
 
 namespace litert::testing {
@@ -55,24 +56,29 @@ class CompiledModelExecutor {
   template <typename Iter>
   Expected<std::vector<SimpleBuffer>> Run(
       Iter start, Iter end, std::optional<Latency::Ref> stats = {}) {
-    LITERT_ASSIGN_OR_RETURN(auto api_inputs, api_.CreateInputBuffers());
-    if (api_inputs.size() != std::distance(start, end)) {
+    if (!api_inputs_.has_value()) {
+      LITERT_ASSIGN_OR_RETURN(api_inputs_, api_.CreateInputBuffers());
+    }
+    if (api_inputs_->size() != std::distance(start, end)) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    absl::StrFormat("Expected %d inputs, got %d",
-                                   api_inputs.size(),
+                                   api_inputs_->size(),
                                    std::distance(start, end)));
     }
     for (auto it = start; it != end; ++it) {
-      api_inputs[std::distance(start, it)].Write(it->template Span<uint8_t>());
+      (*api_inputs_)[std::distance(start, it)].Write(
+          it->template Span<uint8_t>());
     }
-    LITERT_ASSIGN_OR_RETURN(auto api_outputs, api_.CreateOutputBuffers());
+    if (!api_outputs_.has_value()) {
+      LITERT_ASSIGN_OR_RETURN(api_outputs_, api_.CreateOutputBuffers());
+    }
 
     auto time_start = Latency::Start(stats);
-    LITERT_RETURN_IF_ERROR(api_.Run(api_inputs, api_outputs));
+    LITERT_RETURN_IF_ERROR(api_.Run(*api_inputs_, *api_outputs_));
     Latency::Stop(stats, time_start);
 
     std::vector<SimpleBuffer> output_buffers;
-    for (const auto& output : api_outputs) {
+    for (const auto& output : *api_outputs_) {
       LITERT_ASSIGN_OR_RETURN(auto output_buffer,
                               SimpleBuffer::FromTensorBuffer(output));
       output_buffers.push_back(std::move(output_buffer));
@@ -100,6 +106,8 @@ class CompiledModelExecutor {
   // env_ must be outlived by this executor to avoid use-after-free.
   Environment* env_;
   CompiledModelNext api_;
+  std::optional<std::vector<TensorBuffer>> api_inputs_;
+  std::optional<std::vector<TensorBuffer>> api_outputs_;
 };
 
 // Executor for the CPU backend.
