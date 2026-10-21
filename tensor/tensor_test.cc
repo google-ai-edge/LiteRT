@@ -16,6 +16,8 @@ limitations under the License.
 #include "tensor/tensor.h"
 
 #include <memory>
+#include <optional>
+#include <string>
 #include <type_traits>
 
 #include <gmock/gmock.h>
@@ -27,6 +29,7 @@ limitations under the License.
 #include "tensor/arithmetic.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
+#include "tensor/internal/arithmetic_helpers.h"
 #include "tensor/internal/graph.h"
 #include "tensor/utils/macros.h"
 #include "tensor/utils/matchers.h"
@@ -304,6 +307,18 @@ TEST(TensorTest, MacroErrorTensorSupportsStatusBuilderFunctions) {
 
   EXPECT_THAT(t.GetStatus(), StatusIs(absl::StatusCode::kInternal, "b: a"));
   EXPECT_EQ(graph::GetLocation(t.GetRaw()).line(), line);
+}
+
+TEST(TensorTest, CheckTensorsSupportsOptionals) {
+  Tensor<> valid({.type = Type::kFP32, .shape = {1}});
+  Tensor<> invalid(absl::InternalError("bad tensor"));
+  std::optional<Tensor<>> empty_opt = std::nullopt;
+  std::optional<Tensor<>> valid_opt = valid;
+  std::optional<Tensor<>> invalid_opt = invalid;
+
+  EXPECT_THAT(CheckTensors(valid, empty_opt, valid_opt), IsOk());
+  EXPECT_THAT(CheckTensors(valid, empty_opt, invalid_opt),
+              StatusIs(absl::StatusCode::kInternal, "bad tensor"));
 }
 
 }  // namespace
