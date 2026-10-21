@@ -16,6 +16,7 @@ limitations under the License.
 #include "tensor/examples/gemma3/gemma3_graph.h"
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -110,12 +111,6 @@ Tensor<Mixins...> GetWeight(
 
 
 
-// GELU activation with tanh approximation.
-template <class... Mixins>
-Tensor<Mixins...> GeluTanh(const Tensor<Mixins...>& input) {
-  return Gelu(input, /*approximate=*/true);
-}
-
 // Feed-forward network layer.
 template <class... Mixins>
 Tensor<Mixins...> MakeFeedForwardLayer(
@@ -131,39 +126,11 @@ Tensor<Mixins...> MakeFeedForwardLayer(
       GetWeight(weights, absl::StrCat(name, ".down_proj.weight"), Type::kFP32,
                 {config.emb_dim, config.hidden_dim});
 
-  // SwiGLU: out = down_proj(gelu(gate_proj(x)) * up_proj(x)).
-  Tensor up = FullyConnected(input, up_proj);
-  up.SetName(absl::StrCat(name, ".up_proj"));
-  Tensor gate_proj_tensor = FullyConnected(input, gate_proj);
-  gate_proj_tensor.SetName(absl::StrCat(name, ".gate_proj"));
-  Tensor gate = GeluTanh(gate_proj_tensor);
-  gate.SetName(absl::StrCat(name, ".gate_gelu"));
-  Tensor mul_out = Mul(up, gate);
-  mul_out.SetName(absl::StrCat(name, ".mul_out"));
-  Tensor output = FullyConnected(mul_out, down_proj);
+  Tensor output = FeedForward(input, gate_proj, up_proj, down_proj,
+                              FFNActivation::kGeluApproximate);
   output.SetName(absl::StrCat(name, ".output"));
   return output;
 }
-
-template <class... Mixins>
-Tensor<Mixins...> Gemma3RotaryEmbedding(const Tensor<Mixins...>& x,
-                                        const Tensor<Mixins...>& position_ids,
-                                        const Tensor<Mixins...>& cos,
-                                        const Tensor<Mixins...>& sin,
-                                        float rope_base) {
-  return RoPE(x, cos, sin);
-}
-
-#ifndef GEMMA3_XNNPACK_ONLY
-template <>
-Tensor<MlDriftMixinTag> Gemma3RotaryEmbedding<MlDriftMixinTag>(
-    const Tensor<MlDriftMixinTag>& x,
-    const Tensor<MlDriftMixinTag>& position_ids,
-    const Tensor<MlDriftMixinTag>& cos, const Tensor<MlDriftMixinTag>& sin,
-    float rope_base) {
-  return RotaryEmbedding(x, position_ids, 1.0f, rope_base);
-}
-#endif
 
 // Self-attention layer output structure.
 template <class... Mixins>
@@ -185,13 +152,11 @@ struct SelfAttentionOutput {
 };
 
 // Grouped Query Attention layer.
-template <class... Mixins>
+template <class RopeParamsT, class... Mixins>
 SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
     const Tensor<Mixins...>& input, absl::string_view name,
     const Gemma3Config& config, bool is_sliding_attention,
-    const Tensor<Mixins...>& attention_mask,
-    const Tensor<Mixins...>& position_ids, float rope_base,
-    const Tensor<Mixins...>& cos, const Tensor<Mixins...>& sin,
+    const Tensor<Mixins...>& attention_mask, const RopeParamsT& rope_params,
     const Tensor<Mixins...>& key_cache, const Tensor<Mixins...>& value_cache,
     const absl::flat_hash_map<std::string, Tensor<Mixins...>>& weights,
     const Tensor<Mixins...>* cache_params = nullptr) {
@@ -253,9 +218,9 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
   k = RmsNorm(k, k_norm, eps_tensor);
 
   // Apply rotary positional embedding.
-  q = Gemma3RotaryEmbedding(q, position_ids, cos, sin, rope_base);
+  q = RoPE(q, rope_params);
   q.SetName(absl::StrCat(name, ".q_rope"));
-  k = Gemma3RotaryEmbedding(k, position_ids, cos, sin, rope_base);
+  k = RoPE(k, rope_params);
   k.SetName(absl::StrCat(name, ".k_rope"));
 
   Tensor updated_key_cache = k;
@@ -304,10 +269,6 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
   }
 
   float scale = 1.0f / std::sqrt(config.query_pre_attn_scalar);
-  Tensor scale_tensor = Tensor<Mixins...>(
-      {.type = Type::kFP32,
-       .shape = {1},
-       .buffer = OwningCpuBuffer::Copy<Type::kFP32>({scale})});
   int kv_heads_for_attn = config.n_kv_groups;
   const auto& k_for_attn_shape = k_for_attn.GetShape();
   if (k_for_attn_shape.size() == 4 && k_for_attn_shape[1] > 0) {
@@ -316,65 +277,33 @@ SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
 
   Tensor<Mixins...> scores;
   Tensor<Mixins...> attn_weights;
-  Tensor<Mixins...> attn_output;
 
   const auto& q_shape = q.GetShape();
   bool is_decode = (q_shape.size() == 4 && q_shape[2] == 1);
-
-  Tensor<Mixins...> k_local_out;
-  Tensor<Mixins...> v_local_out;
+  bool adj_v = false;
 
   if (used_mld_cache_update && is_decode) {
-    Tensor<Mixins...> tiled_k = updated_key_cache;
-    Tensor<Mixins...> tiled_v = updated_value_cache;
-
     const auto& key_cache_shape = key_cache.GetShape();
     int cache_size = key_cache_shape[2];
     int local_cache_size =
         is_sliding_attention ? config.sliding_window : cache_size;
 
     auto local_caches = ExtractLocalCache(
-        tiled_k, tiled_v, *cache_params, local_cache_size, kv_heads_for_attn,
-        config.head_dim, local_cache_size, cache_size);
+        updated_key_cache, updated_value_cache, *cache_params, local_cache_size,
+        kv_heads_for_attn, config.head_dim, local_cache_size, cache_size);
 
-    k_local_out = local_caches.first;
-    v_local_out = local_caches.second;
-
-    Tensor<Mixins...> tiled_k_local = local_caches.first;
-    Tensor<Mixins...> tiled_v_local = local_caches.second;
-    if (kv_heads_for_attn > 0 && config.n_heads % kv_heads_for_attn == 0) {
-      int num_groups = config.n_heads / kv_heads_for_attn;
-      tiled_k_local = RepeatKVHeads(tiled_k_local, num_groups);
-      tiled_v_local = RepeatKVHeads(tiled_v_local, num_groups);
-    }
-
-    scores = BatchMatMul(q, tiled_k_local, /*adj_x=*/false,
-                         /*adj_y=*/true);
-    scores = Mul(scores, scale_tensor);
-    scores = Add(scores, attention_mask);
-    attn_weights = SoftmaxWithRuntimeCheck(scores, *cache_params, std::nullopt,
-                                           std::nullopt);
-    attn_output = BatchMatMul(attn_weights, tiled_v_local,
-                              /*adj_x=*/false, /*adj_y=*/true);
-  } else {
-    if (kv_heads_for_attn > 0 && config.n_heads % kv_heads_for_attn == 0) {
-      int num_groups = config.n_heads / kv_heads_for_attn;
-      k_for_attn = RepeatKVHeads(k_for_attn, num_groups);
-      v_for_attn = RepeatKVHeads(v_for_attn, num_groups);
-    }
-
-    k_local_out = k_for_attn;
-    v_local_out = v_for_attn;
-
-    scores = BatchMatMul(q, k_for_attn, /*adj_x=*/false, /*adj_y=*/true);
-    scores = Mul(scores, scale_tensor);
-    scores = Add(scores, attention_mask);
-    scores.SetName(absl::StrCat(name, ".scores"));
-    attn_weights = Softmax(scores);
-    attn_weights.SetName(absl::StrCat(name, ".attn_weights"));
-    attn_output = BatchMatMul(attn_weights, v_for_attn);
-    attn_output.SetName(absl::StrCat(name, ".attn_output"));
+    k_for_attn = local_caches.first;
+    v_for_attn = local_caches.second;
+    adj_v = true;
   }
+
+  Tensor<Mixins...> k_local_out = k_for_attn;
+  Tensor<Mixins...> v_local_out = v_for_attn;
+
+  Tensor<Mixins...> attn_output = ScaledDotProductAttention(
+      q, k_for_attn, v_for_attn, attention_mask, scale,
+      /*soft_cap=*/std::nullopt, Type::kFP32, adj_v);
+  attn_output.SetName(absl::StrCat(name, ".attn_output"));
 
   // Reshape back: [batch, n_heads, seq, head_dim] -> [batch, seq, n_heads *
   // head_dim].
@@ -467,6 +396,23 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
     }
   }
 
+  RopeCosSinParams<Mixins...> global_cos_sin{
+      .cos = global_cos,
+      .sin = global_sin,
+  };
+  RopeCosSinParams<Mixins...> sliding_cos_sin{
+      .cos = sliding_cos,
+      .sin = sliding_sin,
+  };
+  RotaryEmbeddingParams<Mixins...> global_rotary{
+      .position_ids = position_ids,
+      .max_timescale = config.rope_global_base,
+  };
+  RotaryEmbeddingParams<Mixins...> sliding_rotary{
+      .position_ids = position_ids,
+      .max_timescale = config.rope_local_base,
+  };
+
   for (int layer_idx = 0; layer_idx < config.n_layers; ++layer_idx) {
     std::string layer_prefix = absl::StrCat("model.layers.", layer_idx);
     bool is_sliding = (layer_types[layer_idx] == "sliding_attention");
@@ -474,8 +420,6 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
     // Create attention mask.
     Tensor attention_mask =
         is_sliding ? sliding_attention_mask : global_attention_mask;
-    Tensor cos = is_sliding ? sliding_cos : global_cos;
-    Tensor sin = is_sliding ? sliding_sin : global_sin;
 
     // Pre-attention RMS normalization.
     Tensor input_norm_scale = GetWeight(
@@ -489,15 +433,29 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
     }
 
     // Self-attention.
-    SelfAttentionOutput attn_output = MakeSelfAttentionLayer(
-        normed_input, absl::StrCat(layer_prefix, ".self_attn"), config,
-        is_sliding, attention_mask, position_ids,
-        is_sliding ? config.rope_local_base : config.rope_global_base, cos, sin,
-        layer_idx < key_caches.size() ? key_caches[layer_idx]
-                                      : Tensor<Mixins...>(),
-        layer_idx < value_caches.size() ? value_caches[layer_idx]
-                                        : Tensor<Mixins...>(),
-        weights, cache_params);
+    const Tensor<Mixins...> k_cache =
+        static_cast<size_t>(layer_idx) < key_caches.size()
+            ? key_caches[layer_idx]
+            : Tensor<Mixins...>();
+    const Tensor<Mixins...> v_cache =
+        static_cast<size_t>(layer_idx) < value_caches.size()
+            ? value_caches[layer_idx]
+            : Tensor<Mixins...>();
+    SelfAttentionOutput attn_output = [&] {
+      if constexpr (kIsMlDrift) {
+        return MakeSelfAttentionLayer(
+            normed_input, absl::StrCat(layer_prefix, ".self_attn"), config,
+            is_sliding, attention_mask,
+            is_sliding ? sliding_rotary : global_rotary, k_cache, v_cache,
+            weights, cache_params);
+      } else {
+        return MakeSelfAttentionLayer(
+            normed_input, absl::StrCat(layer_prefix, ".self_attn"), config,
+            is_sliding, attention_mask,
+            is_sliding ? sliding_cos_sin : global_cos_sin, k_cache, v_cache,
+            weights, cache_params);
+      }
+    }();
 
     if (layer_idx == 0 || layer_idx == 4) {
       intermediate_tensors[absl::StrCat("layer_", layer_idx, "_attn_output")] =
@@ -720,7 +678,7 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings_Decode(
     global_mask = &mldrift_global_mask;
   }
 
-  Tensor<Mixins...> position_ids;
+  Tensor<Mixins...> position_ids = TensorHandle::Invalid();
   constexpr bool kIsMlDrift = (std::is_same_v<MlDriftMixinTag, Mixins> || ...);
   if constexpr (kIsMlDrift) {
     if (cache_params != nullptr) {
@@ -728,65 +686,56 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings_Decode(
     }
   }
 
-  Tensor<Mixins...> cos_global_sliced;
-  Tensor<Mixins...> sin_global_sliced;
-  Tensor<Mixins...> cos_local_sliced;
-  Tensor<Mixins...> sin_local_sliced;
-
-  if constexpr (kIsMlDrift) {
-    if (cache_params != nullptr) {
-      Tensor index_0 =
-          Tensor<Mixins...>({.type = Type::kI32,
-                             .shape = {1},
-                             .buffer = OwningCpuBuffer::Copy<Type::kI32>({0})});
-      Tensor cache_len = Gather(*cache_params, index_0, 0);
-
-      Tensor cos_g_sliced = Gather(rope_global_cos, cache_len, 0);
-      Tensor sin_g_sliced = Gather(rope_global_sin, cache_len, 0);
-      cos_global_sliced = Reshape(cos_g_sliced, {1, 1, config.head_dim});
-      sin_global_sliced = Reshape(sin_g_sliced, {1, 1, config.head_dim});
-
-      Tensor cos_l_sliced = Gather(rope_local_cos, cache_len, 0);
-      Tensor sin_l_sliced = Gather(rope_local_sin, cache_len, 0);
-      cos_local_sliced = Reshape(cos_l_sliced, {1, 1, config.head_dim});
-      sin_local_sliced = Reshape(sin_l_sliced, {1, 1, config.head_dim});
-    }
-  }
+  RopeCosSinParams<Mixins...> global_cos_sin{
+      .cos = rope_global_cos,
+      .sin = rope_global_sin,
+  };
+  RopeCosSinParams<Mixins...> sliding_cos_sin{
+      .cos = rope_local_cos,
+      .sin = rope_local_sin,
+  };
+  RotaryEmbeddingParams<Mixins...> global_rotary{
+      .position_ids = position_ids,
+      .max_timescale = config.rope_global_base,
+  };
+  RotaryEmbeddingParams<Mixins...> sliding_rotary{
+      .position_ids = position_ids,
+      .max_timescale = config.rope_local_base,
+  };
 
   for (int layer_idx = 0; layer_idx < config.n_layers; ++layer_idx) {
     std::string layer_prefix = absl::StrCat("model.layers.", layer_idx);
     bool is_sliding = (layer_types[layer_idx] == "sliding_attention");
 
     Tensor attention_mask = is_sliding ? *sliding_mask : *global_mask;
-    Tensor<Mixins...> cos;
-    Tensor<Mixins...> sin;
-    if constexpr (kIsMlDrift) {
-      if (cache_params != nullptr) {
-        cos = is_sliding ? cos_local_sliced : cos_global_sliced;
-        sin = is_sliding ? sin_local_sliced : sin_global_sliced;
-      } else {
-        cos = is_sliding ? rope_local_cos : rope_global_cos;
-        sin = is_sliding ? rope_local_sin : rope_global_sin;
-      }
-    } else {
-      cos = is_sliding ? rope_local_cos : rope_global_cos;
-      sin = is_sliding ? rope_local_sin : rope_global_sin;
-    }
 
     Tensor input_norm_scale = GetWeight(
         weights, absl::StrCat(layer_prefix, ".input_layernorm.weight"),
         Type::kFP32, {config.emb_dim});
     Tensor normed_input = RmsNorm(hidden_states, input_norm_scale, eps_tensor);
 
-    SelfAttentionOutput attn_output = MakeSelfAttentionLayer(
-        normed_input, absl::StrCat(layer_prefix, ".self_attn"), config,
-        is_sliding, attention_mask, position_ids,
-        is_sliding ? config.rope_local_base : config.rope_global_base, cos, sin,
-        layer_idx < key_caches.size() ? key_caches[layer_idx]
-                                      : Tensor<Mixins...>(),
-        layer_idx < value_caches.size() ? value_caches[layer_idx]
-                                        : Tensor<Mixins...>(),
-        weights, cache_params);
+    const Tensor<Mixins...> k_cache =
+        static_cast<size_t>(layer_idx) < key_caches.size()
+            ? key_caches[layer_idx]
+            : Tensor<Mixins...>();
+    const Tensor<Mixins...> v_cache =
+        static_cast<size_t>(layer_idx) < value_caches.size()
+            ? value_caches[layer_idx]
+            : Tensor<Mixins...>();
+    SelfAttentionOutput attn_output = [&] {
+      if (position_ids.GetStatus().ok()) {
+        return MakeSelfAttentionLayer(
+            normed_input, absl::StrCat(layer_prefix, ".self_attn"), config,
+            is_sliding, attention_mask,
+            is_sliding ? sliding_rotary : global_rotary, k_cache, v_cache,
+            weights, cache_params);
+      }
+      return MakeSelfAttentionLayer(
+          normed_input, absl::StrCat(layer_prefix, ".self_attn"), config,
+          is_sliding, attention_mask,
+          is_sliding ? sliding_cos_sin : global_cos_sin, k_cache, v_cache,
+          weights, cache_params);
+    }();
 
     updated_key_caches.push_back(attn_output.key_cache);
     updated_value_caches.push_back(attn_output.value_cache);
