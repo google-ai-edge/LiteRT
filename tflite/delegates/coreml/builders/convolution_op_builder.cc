@@ -29,6 +29,7 @@ limitations under the License.
 #include "tflite/delegates/coreml/builders/op_builder.h"
 #include "tflite/delegates/coreml/builders/op_factory.h"
 #include "tflite/delegates/coreml/builders/op_validator.h"
+#include "tflite/delegates/coreml/builders/util.h"
 #include "tflite/kernels/internal/optimized/optimized_ops.h"
 #include "tflite/kernels/internal/runtime_shape.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
@@ -344,6 +345,10 @@ bool IsConvolutionOpSupported(const TfLiteRegistration* registration,
                     GetInputSafe(context, node, kWeightTensor, &weights));
   const int max_kernel_size = 16384;
   if (!IsConstantTensor(weights)) {
+    return false;
+  }
+  if (!TensorHasRank(weights, 4)) {
+    TF_LITE_KERNEL_LOG(context, "Convolution weights tensor must have rank 4.");
     return false;
   }
   if (weights->dims->data[1] > max_kernel_size ||
