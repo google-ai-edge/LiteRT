@@ -352,6 +352,24 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
   return ScaleZpInfo{scale_handle, zero_point_handle, scale_values.shape};
 }
 
+// Returns an error if `tensor` is a quantized constant, e.g. quantized weights,
+// or has a sub-byte type. Lowerings that don't dequantize their inputs upload
+// the integers of quantized constants as their values, and the generic ML
+// Drift kernels can't read sub-byte types.
+absl::Status CheckIsNotQuantizedConstant(const graph::Tensor& tensor,
+                                         absl::string_view op_name) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(const auto& info, graph::GetInfo(tensor));
+  const bool sub_byte = BitSize(info.type) < 8;
+  const bool quantized_constant =
+      info.buffer != nullptr && info.quantization != nullptr;
+  if (quantized_constant || sub_byte) {
+    return absl::UnimplementedError(absl::StrCat(
+        op_name,
+        " doesn't support quantized constant or sub-byte inputs in ML Drift."));
+  }
+  return absl::OkStatus();
+}
+
 }  // namespace
 
 namespace graph {
@@ -1003,6 +1021,10 @@ absl::Status OpMixin<SoftmaxOperation, MlDriftMixinTag>::ToMlDrift(
 absl::Status OpMixin<BatchMatMulOperation, MlDriftMixinTag>::ToMlDrift(
     const graph::Operation& op, MlDriftBuildContext& ctx) const {
   LRT_TENSOR_ASSIGN_OR_RETURN(auto outputs, graph::GetOutputs(op));
+  for (const graph::Tensor& input : op.inputs) {
+    LRT_TENSOR_RETURN_IF_ERROR(
+        CheckIsNotQuantizedConstant(input, op.GetName()));
+  }
   LRT_TENSOR_ASSIGN_OR_RETURN(auto lhs, GetTensorHandle(ctx, op.inputs[0]));
   LRT_TENSOR_ASSIGN_OR_RETURN(auto rhs, GetTensorHandle(ctx, op.inputs[1]));
   LRT_TENSOR_ASSIGN_OR_RETURN(const auto& lhs_info,
@@ -1010,24 +1032,24 @@ absl::Status OpMixin<BatchMatMulOperation, MlDriftMixinTag>::ToMlDrift(
   // lhs cannot be constant tensor.
   if (lhs_info.buffer != nullptr) {
     return absl::UnimplementedError(
-        "BatchMatMul with constant lhs is not supported.");
+        absl::StrCat(op.GetName(), " with constant lhs is not supported."));
   }
   // lhs cannot have rank < 2.
   if (lhs_info.shape.size() < 2) {
     return absl::UnimplementedError(
-        "BatchMatMul with rank < 2 lhs is not supported.");
+        absl::StrCat(op.GetName(), " with rank < 2 lhs is not supported."));
   }
   LRT_TENSOR_ASSIGN_OR_RETURN(const auto& rhs_info,
                               graph::GetInfo(op.inputs[1]));
   // if rhs is constant, it has to be 2D.
   if (rhs_info.buffer != nullptr && rhs_info.shape.size() != 2) {
-    return absl::UnimplementedError(
-        "BatchMatMul with constant rhs is only supported for 2D tensors.");
+    return absl::UnimplementedError(absl::StrCat(
+        op.GetName(), " with constant rhs is only supported for 2D tensors."));
   }
   // rhs cannot have rank < 2.
   if (rhs_info.shape.size() < 2) {
     return absl::UnimplementedError(
-        "BatchMatMul with rank < 2 rhs is not supported.");
+        absl::StrCat(op.GetName(), " with rank < 2 rhs is not supported."));
   }
   // ML Drift's BatchedMatMul indexes the rhs by the lhs batch position and
   // does not broadcast leading dimensions: batches beyond the rhs extent are
@@ -1079,6 +1101,8 @@ absl::Status OpMixin<BatchMatMulOperation, MlDriftMixinTag>::ToMlDrift(
 absl::Status OpMixin<TransposeOperation, MlDriftMixinTag>::ToMlDrift(
     const graph::Operation& op, MlDriftBuildContext& ctx) const {
   LRT_TENSOR_ASSIGN_OR_RETURN(auto outputs, graph::GetOutputs(op));
+  LRT_TENSOR_RETURN_IF_ERROR(
+      CheckIsNotQuantizedConstant(op.inputs[0], op.GetName()));
   LRT_TENSOR_ASSIGN_OR_RETURN(auto input, GetTensorHandle(ctx, op.inputs[0]));
   LRT_TENSOR_ASSIGN_OR_RETURN(const auto& perm_info,
                               graph::GetInfo(op.inputs[1]));

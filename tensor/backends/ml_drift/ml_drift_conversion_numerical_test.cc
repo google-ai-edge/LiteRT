@@ -246,15 +246,6 @@ struct MlDriftTraits {
   static constexpr absl::string_view kDisabledTests[] = {
       // The kernels for per-tensor weights don't compile.
       "FullyConnectedPerTensorAndAsymmetricOp",
-      // Quantized right-hand sides are used as floats, and rank 2 ones are
-      // mapped to the wrong axes.
-      "BatchMatMulQuantizedRhsOp",
-      // Quantized right-hand sides are used as floats.
-      "TransposedQuantizedWeightsIntoBatchMatMulOp",
-      // Dequantizing values without zero points aborts.
-      "TransposedQuantizedWeightsIntoAddOp",
-      // Rank 2 operands are mapped to the wrong axes.
-      "BatchMatMulAdjXQuantizedRhsOp",
       // Dequantizing values without zero points aborts.
       "QuantizedWeightsSharedByDotAndAddOp",
   };
