@@ -35,6 +35,7 @@
 // constexpr char kExperimentalEnableInputValidatorKey[] =
 //     "experimental_enable_input_validator";
 // copybara:uncomment_end
+constexpr char kUseVendorPreferredFenceKey[] = "use_vendor_preferred_fence";
 
 struct LrtGoogleTensorOptionsT {
   LrtGoogleTensorOptionsTruncationType float_truncation_type =
@@ -61,6 +62,7 @@ struct LrtGoogleTensorOptionsT {
   // copybara:uncomment_begin(google-only)
   // bool experimental_enable_input_validator = false;
   // copybara:uncomment_end
+  bool use_vendor_preferred_fence = false;
 };
 
 LiteRtStatus LrtCreateGoogleTensorOptions(LrtGoogleTensorOptions* options) {
@@ -146,6 +148,9 @@ LiteRtStatus LrtGetOpaqueGoogleTensorOptionsData(
                     // " = true\n");
   // }
   // copybara:uncomment_end
+  if (options->use_vendor_preferred_fence) {
+    absl::StrAppend(&toml_str, kUseVendorPreferredFenceKey, " = true\n");
+  }
 
   *identifier = LrtGoogleTensorOptionsGetIdentifier();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
@@ -240,6 +245,9 @@ LiteRtStatus LrtCreateGoogleTensorOptionsFromToml(
               // options_ref.experimental_enable_input_validator,
               // litert::internal::ParseTomlBool(value));
           // copybara:uncomment_end
+        } else if (key == kUseVendorPreferredFenceKey) {
+          LITERT_ASSIGN_OR_RETURN(options_ref.use_vendor_preferred_fence,
+                                  litert::internal::ParseTomlBool(value));
         }
         return kLiteRtStatusOk;
       });
@@ -651,3 +659,23 @@ LiteRtStatus LrtGoogleTensorOptionsGetExtraOptions(
 //   return kLiteRtStatusOk;
 // }
 // copybara:uncomment_end
+
+// use_vendor_preferred_fence ------------------------------------------
+
+LiteRtStatus LrtGoogleTensorOptionsSetUseVendorPreferredFence(
+    LrtGoogleTensorOptions options, bool use_vendor_preferred_fence) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->use_vendor_preferred_fence = use_vendor_preferred_fence;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGoogleTensorOptionsGetUseVendorPreferredFence(
+    LrtGoogleTensorOptions options, bool* use_vendor_preferred_fence) {
+  if (options == nullptr || use_vendor_preferred_fence == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *use_vendor_preferred_fence = options->use_vendor_preferred_fence;
+  return kLiteRtStatusOk;
+}

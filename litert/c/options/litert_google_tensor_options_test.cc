@@ -14,10 +14,8 @@
 
 #include "litert/c/options/litert_google_tensor_options.h"
 
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/test/matchers.h"
@@ -554,6 +552,32 @@ TEST(LrtGoogleTensorOptionsTest, ExtraOptions) {
 //   LrtDestroyGoogleTensorOptions(options);
 // }
 // copybara:uncomment_end
+
+TEST(LrtGoogleTensorOptionsTest, UseVendorPreferredFence) {
+  LrtGoogleTensorOptions options;
+  LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));
+
+  bool use_vendor_preferred_fence;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetUseVendorPreferredFence(
+      options, &use_vendor_preferred_fence));
+  ASSERT_FALSE(use_vendor_preferred_fence);
+
+  LITERT_ASSERT_OK(
+      LrtGoogleTensorOptionsSetUseVendorPreferredFence(options, true));
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetUseVendorPreferredFence(
+      options, &use_vendor_preferred_fence));
+  ASSERT_TRUE(use_vendor_preferred_fence);
+
+  LrtGoogleTensorOptions parsed;
+  SerializeAndParse(options, &parsed);
+  bool parsed_use_vendor_preferred_fence;
+  LITERT_ASSERT_OK(LrtGoogleTensorOptionsGetUseVendorPreferredFence(
+      parsed, &parsed_use_vendor_preferred_fence));
+  EXPECT_TRUE(parsed_use_vendor_preferred_fence);
+
+  LrtDestroyGoogleTensorOptions(parsed);
+  LrtDestroyGoogleTensorOptions(options);
+}
 
 }  // namespace
 }  // namespace litert::google_tensor

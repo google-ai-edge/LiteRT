@@ -20,6 +20,7 @@
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
@@ -105,6 +106,8 @@ class LiteRtDispatchInvocationContextT {
 
   // Consumers of this class must use `Destroy` to delete the instance.
   ~LiteRtDispatchInvocationContextT() = default;
+
+  bool ShouldUseVendorPreferredFence() const;
 
   LiteRtStatus DetachAndUnregisterInFences();
 
