@@ -575,6 +575,52 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
   return final_model;
 }
 
+int32_t FindOrAppendOpCode(
+    LiteRtOpT& op, std::vector<litert::internal::TflOpCodePtr>& op_codes) {
+  std::string custom_code;
+  if (op.OpCode() == kLiteRtOpCodeTflCustom) {
+    if (auto code = op.CustomCode(); code.HasValue()) {
+      custom_code = *code;
+    }
+  }
+
+  for (size_t i = 0; i < op_codes.size(); ++i) {
+    const auto& code = op_codes[i];
+    const auto builtin_code = static_cast<LiteRtOpCode>(
+        std::max<int32_t>(code->builtin_code, code->deprecated_builtin_code));
+    if (builtin_code == op.OpCode() && code->custom_code == custom_code) {
+      return i;
+    }
+  }
+
+  auto code = std::make_unique<TflOpCode>();
+  code->builtin_code = static_cast<tflite::BuiltinOperator>(op.OpCode());
+  code->custom_code = std::move(custom_code);
+  // TODO: Carry the required version from Builder-created ops; TFLite's
+  // UpdateOpVersion cannot safely process LiteRT external-buffer models.
+  code->version = 1;
+  op_codes.emplace_back(std::move(code));
+  return op_codes.size() - 1;
+}
+
+void ResolveUnassignedOpCodes(
+    LiteRtModelT& model,
+    std::vector<litert::internal::TflOpCodePtr>& op_codes) {
+  for (auto* subgraph : model.Subgraphs()) {
+    for (auto* op : subgraph->Ops()) {
+      // A -1 index is shared by genuine dispatch ops and ordinary ops created
+      // by transformations. Dispatch ops have an attached asset; only resolve
+      // the latter to an entry in the TFLite operator-code table.
+      if (litert::internal::GetTflOpCodeInd(*op) !=
+              litert::internal::kDispatchOpCodeTflInd ||
+          model.FindOpAsset(op).HasValue()) {
+        continue;
+      }
+      litert::internal::SetTflOpCodeInd(*op, FindOrAppendOpCode(*op, op_codes));
+    }
+  }
+}
+
 }  // namespace
 
 Expected<OwningBufferRef<uint8_t>> SerializeModel(LiteRtModelT&& model,
@@ -582,6 +628,7 @@ Expected<OwningBufferRef<uint8_t>> SerializeModel(LiteRtModelT&& model,
   // Pass the op code list through that was saved during loading. Add one more
   // op code for the dispatch ops
   auto tfl_op_codes = litert::internal::TakeTflOpCodes(model);
+  ResolveUnassignedOpCodes(model, tfl_op_codes);
   // don't push dispatch op code if it already exists
   int32_t dispatch_op_code_index = -1;
   for (size_t i = 0; i < tfl_op_codes.size(); ++i) {
