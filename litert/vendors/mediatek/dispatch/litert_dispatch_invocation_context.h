@@ -63,6 +63,8 @@ class LiteRtDispatchInvocationContextT {
 
   litert::Expected<void> Invoke();
 
+  litert::Expected<void> SetOptions(LiteRtOptions options);
+
   litert::Expected<void> SetSchedulingInfo(
       const LiteRtSchedulingInfo* scheduling_info);
 

@@ -30,6 +30,13 @@
 constexpr char kDefaultOptionBundleDecode[] = "gemma-decode-accuracy";
 constexpr char kDefaultOptionBundlePrefill[] = "gemma-prefill-accuracy";
 
+// Default per-invocation NPU execution boost hint (100 = max frequency) and
+// sentinel value (-1) indicating an unset AISTE CPU/DDR boost hint.
+constexpr int32_t kDefaultExecutionNpuBoostHint = 100;
+constexpr int32_t kUnsetBoostHint = -1;
+constexpr int32_t kMinBoostHint = 0;
+constexpr int32_t kMaxBoostHint = 100;
+
 struct LrtMediatekOptions {
   std::optional<LiteRtMediatekOptionsNeronSDKVersionType> neron_sdk_version;
   std::optional<bool> gemma_compiler_optimizations;
@@ -46,6 +53,9 @@ struct LrtMediatekOptions {
   std::optional<bool> use_get_supported_operations;
   std::string mediatek_dla_dir;
   std::string aot_compilation_options;
+  std::optional<int32_t> execution_npu_boost_hint;
+  std::optional<int32_t> execution_cpu_boost_hint;
+  std::optional<int32_t> execution_ddr_boost_hint;
 };
 
 LiteRtStatus LrtCreateMediatekOptions(LrtMediatekOptions** options) {
@@ -136,6 +146,24 @@ LiteRtStatus LrtCreateMediatekOptionsFromToml(const char* toml_payload,
           return LrtSetMediatekOptionsAotCompilationOptions(
               *options, std::string(value).c_str());
         }
+        if (key == "execution_npu_boost_hint") {
+          LITERT_ASSIGN_OR_RETURN(auto npu_boost_hint,
+                                  ::litert::internal::ParseTomlInt(value));
+          return LrtSetMediatekOptionsExecutionNpuBoostHint(
+              *options, static_cast<int32_t>(npu_boost_hint));
+        }
+        if (key == "execution_cpu_boost_hint") {
+          LITERT_ASSIGN_OR_RETURN(auto cpu_boost_hint,
+                                  ::litert::internal::ParseTomlInt(value));
+          return LrtSetMediatekOptionsExecutionCpuBoostHint(
+              *options, static_cast<int32_t>(cpu_boost_hint));
+        }
+        if (key == "execution_ddr_boost_hint") {
+          LITERT_ASSIGN_OR_RETURN(auto ddr_boost_hint,
+                                  ::litert::internal::ParseTomlInt(value));
+          return LrtSetMediatekOptionsExecutionDdrBoostHint(
+              *options, static_cast<int32_t>(ddr_boost_hint));
+        }
 
         // Ignore unknown keys to allow for forward compatibility.
         return kLiteRtStatusOk;
@@ -208,6 +236,18 @@ LiteRtStatus LrtGetOpaqueMediatekOptionsData(const LrtMediatekOptions* options,
   if (!options->aot_compilation_options.empty()) {
     absl::StrAppend(&toml_str, "aot_compilation_options = \"",
                     options->aot_compilation_options, "\"\n");
+  }
+  if (options->execution_npu_boost_hint.has_value()) {
+    absl::StrAppend(&toml_str, "execution_npu_boost_hint = ",
+                    *options->execution_npu_boost_hint, "\n");
+  }
+  if (options->execution_cpu_boost_hint.has_value()) {
+    absl::StrAppend(&toml_str, "execution_cpu_boost_hint = ",
+                    *options->execution_cpu_boost_hint, "\n");
+  }
+  if (options->execution_ddr_boost_hint.has_value()) {
+    absl::StrAppend(&toml_str, "execution_ddr_boost_hint = ",
+                    *options->execution_ddr_boost_hint, "\n");
   }
 
   *identifier = "mediatek";
@@ -473,5 +513,70 @@ LiteRtStatus LrtGetMediatekOptionsAotCompilationOptions(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *aot_compilation_options = options->aot_compilation_options.c_str();
+  return kLiteRtStatusOk;
+}
+
+// DISPATCH OPTIONS ////////////////////////////////////////////////////////////
+
+// execution_npu_boost_hint ----------------------------------------------------
+LiteRtStatus LrtSetMediatekOptionsExecutionNpuBoostHint(
+    LrtMediatekOptions* options, int32_t execution_npu_boost_hint) {
+  if (options == nullptr || execution_npu_boost_hint < kMinBoostHint ||
+      execution_npu_boost_hint > kMaxBoostHint) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->execution_npu_boost_hint = execution_npu_boost_hint;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetMediatekOptionsExecutionNpuBoostHint(
+    const LrtMediatekOptions* options, int32_t* execution_npu_boost_hint) {
+  if (options == nullptr || execution_npu_boost_hint == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *execution_npu_boost_hint =
+      options->execution_npu_boost_hint.value_or(kDefaultExecutionNpuBoostHint);
+  return kLiteRtStatusOk;
+}
+
+// execution_cpu_boost_hint ----------------------------------------------------
+LiteRtStatus LrtSetMediatekOptionsExecutionCpuBoostHint(
+    LrtMediatekOptions* options, int32_t execution_cpu_boost_hint) {
+  if (options == nullptr || execution_cpu_boost_hint < kMinBoostHint ||
+      execution_cpu_boost_hint > kMaxBoostHint) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->execution_cpu_boost_hint = execution_cpu_boost_hint;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetMediatekOptionsExecutionCpuBoostHint(
+    const LrtMediatekOptions* options, int32_t* execution_cpu_boost_hint) {
+  if (options == nullptr || execution_cpu_boost_hint == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *execution_cpu_boost_hint =
+      options->execution_cpu_boost_hint.value_or(kUnsetBoostHint);
+  return kLiteRtStatusOk;
+}
+
+// execution_ddr_boost_hint ----------------------------------------------------
+LiteRtStatus LrtSetMediatekOptionsExecutionDdrBoostHint(
+    LrtMediatekOptions* options, int32_t execution_ddr_boost_hint) {
+  if (options == nullptr || execution_ddr_boost_hint < kMinBoostHint ||
+      execution_ddr_boost_hint > kMaxBoostHint) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->execution_ddr_boost_hint = execution_ddr_boost_hint;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetMediatekOptionsExecutionDdrBoostHint(
+    const LrtMediatekOptions* options, int32_t* execution_ddr_boost_hint) {
+  if (options == nullptr || execution_ddr_boost_hint == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *execution_ddr_boost_hint =
+      options->execution_ddr_boost_hint.value_or(kUnsetBoostHint);
   return kLiteRtStatusOk;
 }

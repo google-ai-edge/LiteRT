@@ -14,6 +14,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_MEDIATEK_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_MEDIATEK_OPTIONS_H_
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -236,6 +237,44 @@ class MediatekOptions : public ConcreteOptionsBase {
     internal::AssertOk(LrtGetMediatekOptionsAotCompilationOptions, Get(),
                        &aot_compilation_options);
     return StringView(aot_compilation_options);
+  }
+
+  // DISPATCH OPTIONS //////////////////////////////////////////////////////////
+
+  void SetExecutionNpuBoostHint(int32_t execution_npu_boost_hint) {
+    internal::AssertOk(LrtSetMediatekOptionsExecutionNpuBoostHint, Get(),
+                       execution_npu_boost_hint);
+  }
+
+  int32_t GetExecutionNpuBoostHint() {
+    int32_t execution_npu_boost_hint;
+    internal::AssertOk(LrtGetMediatekOptionsExecutionNpuBoostHint, Get(),
+                       &execution_npu_boost_hint);
+    return execution_npu_boost_hint;
+  }
+
+  void SetExecutionCpuBoostHint(int32_t execution_cpu_boost_hint) {
+    internal::AssertOk(LrtSetMediatekOptionsExecutionCpuBoostHint, Get(),
+                       execution_cpu_boost_hint);
+  }
+
+  int32_t GetExecutionCpuBoostHint() {
+    int32_t execution_cpu_boost_hint;
+    internal::AssertOk(LrtGetMediatekOptionsExecutionCpuBoostHint, Get(),
+                       &execution_cpu_boost_hint);
+    return execution_cpu_boost_hint;
+  }
+
+  void SetExecutionDdrBoostHint(int32_t execution_ddr_boost_hint) {
+    internal::AssertOk(LrtSetMediatekOptionsExecutionDdrBoostHint, Get(),
+                       execution_ddr_boost_hint);
+  }
+
+  int32_t GetExecutionDdrBoostHint() {
+    int32_t execution_ddr_boost_hint;
+    internal::AssertOk(LrtGetMediatekOptionsExecutionDdrBoostHint, Get(),
+                       &execution_ddr_boost_hint);
+    return execution_ddr_boost_hint;
   }
 
  private:

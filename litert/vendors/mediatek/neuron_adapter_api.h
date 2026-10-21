@@ -56,6 +56,19 @@ typedef enum {
 } NeuronExecutionConfigType;
 #endif
 
+// Workaround for adapter headers that pre-date AdapterQoSKind
+// (Available since 9.0.3, AISTE supported since 9.2.0).
+#ifndef NEURON_QOS_KIND_SYSTEM_CPU_BOOST
+typedef enum {
+  NEURON_QOS_KIND_RESERVED = 0,
+  NEURON_QOS_KIND_RESERVED_1 = 1,
+  NEURON_QOS_KIND_RESERVED_2 = 2,
+  NEURON_QOS_KIND_SYSTEM_SCENARIO_HINT = 3,
+  NEURON_QOS_KIND_SYSTEM_CPU_BOOST = 4,
+  NEURON_QOS_KIND_SYSTEM_DDR_BOOST = 5,
+} AdapterQoSKind;
+#endif
+
 /** Workaround for the adapter header without definition */
 /* NeuronOperationType */
 #define NEURON_UNKNOWN static_cast<NeuronOperationType>(10001)
@@ -82,12 +95,16 @@ typedef enum {
   // NEURON_TENSOR_QUANT4_ASYMM_SIGNED_PER_CHANNEL (9013), and
   // NEURON_EXT_TENSOR_INT32_SYMM_PER_CHANNEL (9014).
   NEURON_FEATURE_EXT_QUANT4_INT32_PER_CHANNEL,
+  // Gates AISTE CPU/DDR boost via NeuronExecution_setQosByKind (available since
+  // Neuron 9.2.0).
+  NEURON_FEATURE_AISTE_QOS_BOOST,
   NEURON_FEATURE_COUNT,
 } NeuronFeatureType;
 
 const NeuronRuntimeVersion kNeuronFeatureMinVersion[NEURON_FEATURE_COUNT] = {
     {8, 2, 24},  // NEURON_FEATURE_UNKNOWN_OP
-    {8, 2, 28},   // NEURON_FEATURE_EXT_QUANT4_INT32_PER_CHANNEL
+    {8, 2, 28},  // NEURON_FEATURE_EXT_QUANT4_INT32_PER_CHANNEL
+    {9, 2, 0},   // NEURON_FEATURE_AISTE_QOS_BOOST
 };
 
 using NeuronModelPtr = std::unique_ptr<NeuronModel, void (*)(NeuronModel*)>;
@@ -163,6 +180,8 @@ int NeuronCompilation_createWithOptions(NeuronModel* model,
                                         const char* options);
 int NeuronExecution_setConfig(NeuronExecution* execution, int32_t type,
                               const void* buffer, size_t length);
+int NeuronExecution_setQosByKind(NeuronExecution* execution, int32_t kind,
+                                 int64_t value);
 
 // A convenient struct for holding function pointers to NeuronAdapter API
 // symbols. These function pointers will be loaded to the shared library on
@@ -195,6 +214,7 @@ struct NeuronAdapterApi::Api {
   decltype(&NeuronExecution_free) execution_free = nullptr;
   decltype(&NeuronExecution_setBoostHint) execution_set_boost_hint = nullptr;
   decltype(&NeuronExecution_setConfig) execution_set_config = nullptr;
+  decltype(&NeuronExecution_setQosByKind) execution_set_qos_by_kind = nullptr;
   decltype(&NeuronExecution_setInputFromMemory)
       execution_set_input_from_memory = nullptr;
   decltype(&NeuronExecution_setOutputFromMemory)

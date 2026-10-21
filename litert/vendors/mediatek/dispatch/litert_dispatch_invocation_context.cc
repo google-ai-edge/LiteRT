@@ -18,15 +18,22 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/base/const_init.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/c/options/litert_mediatek_options.h"
+#include "litert/cc/internal/litert_context_wrapper.h"
+#include "litert/cc/internal/litert_opaque_options_wrapper.h"
+#include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/mediatek/dispatch/file_backed_pages.h"
@@ -41,6 +48,43 @@ using litert::mediatek::NeuronExecutionPtr;
 using litert::mediatek::NeuronModelPtr;
 
 namespace {
+
+constexpr uint8_t kDefaultBoostHint = 100;
+constexpr int64_t kDefaultSystemBoostHint = 0;
+
+// `NeuronExecution_setQosByKind` is not thread-safe in the MediaTek Neuron USDK
+// runtime (see `NeuronUsdkExecutor::setBoostHintsImpl`). Guard AISTE QoS calls
+// across concurrent dispatch invocations.
+ABSL_CONST_INIT absl::Mutex kQosMutex(absl::kConstInit);
+
+Expected<void> ApplyAisteBoostHints(
+    const litert::mediatek::NeuronAdapterApi& neuron_adapter_api,
+    NeuronExecution* execution, int64_t cpu_boost_hint,
+    int64_t ddr_boost_hint) {
+  if (!neuron_adapter_api.IsFeatureEnabled(
+          litert::mediatek::NEURON_FEATURE_AISTE_QOS_BOOST) ||
+      neuron_adapter_api.api().execution_set_qos_by_kind == nullptr) {
+    return {};
+  }
+  absl::MutexLock lock(&kQosMutex);
+  if (cpu_boost_hint >= 0) {
+    if (neuron_adapter_api.api().execution_set_qos_by_kind(
+            execution, litert::mediatek::NEURON_QOS_KIND_SYSTEM_CPU_BOOST,
+            cpu_boost_hint) != NEURON_NO_ERROR) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to set execution CPU boost QoS hint");
+    }
+  }
+  if (ddr_boost_hint >= 0) {
+    if (neuron_adapter_api.api().execution_set_qos_by_kind(
+            execution, litert::mediatek::NEURON_QOS_KIND_SYSTEM_DDR_BOOST,
+            ddr_boost_hint) != NEURON_NO_ERROR) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to set execution DDR boost QoS hint");
+    }
+  }
+  return {};
+}
 
 // FIXME (b/409133962): This is used as a workaround to b/409133962.
 constexpr int kExpectedRankForB409133962War = 4;
@@ -610,4 +654,57 @@ Expected<void> LiteRtDispatchInvocationContextT::SetSchedulingInfo(
     }
   }
   return {};
+}
+
+Expected<void> LiteRtDispatchInvocationContextT::SetOptions(
+    LiteRtOptions options) {
+  if (options == nullptr) {
+    if (neuron_adapter_api_.api().execution_set_boost_hint(
+            execution_, kDefaultBoostHint) != NEURON_NO_ERROR) {
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "Failed to reset execution boost hint");
+    }
+    return ApplyAisteBoostHints(neuron_adapter_api_, execution_,
+                                kDefaultSystemBoostHint,
+                                kDefaultSystemBoostHint);
+  }
+
+  const auto* runtime_context = device_context_->runtime_context();
+  litert::internal::OptionsWrapper internal_options(
+      litert::internal::ContextWrapper(runtime_context), options);
+  auto opaque_options = internal_options.GetOpaqueOptions();
+  if (!opaque_options) {
+    return litert::Error(opaque_options.Error().Status(),
+                         "Failed to get opaque options");
+  }
+
+  auto payload = opaque_options->FindOpaqueOptions("mediatek");
+  if (!payload || payload.Value() == nullptr) {
+    return {};
+  }
+
+  LrtMediatekOptions* mediatek_opts = nullptr;
+  auto create_status = LrtCreateMediatekOptionsFromToml(
+      reinterpret_cast<const char*>(payload.Value()), &mediatek_opts);
+  if (create_status != kLiteRtStatusOk) {
+    return litert::Error(create_status,
+                         "Failed to parse MediaTek options from TOML payload");
+  }
+
+  int32_t npu_boost_hint = kDefaultBoostHint;
+  int32_t cpu_boost_hint = -1;
+  int32_t ddr_boost_hint = -1;
+  LrtGetMediatekOptionsExecutionNpuBoostHint(mediatek_opts, &npu_boost_hint);
+  LrtGetMediatekOptionsExecutionCpuBoostHint(mediatek_opts, &cpu_boost_hint);
+  LrtGetMediatekOptionsExecutionDdrBoostHint(mediatek_opts, &ddr_boost_hint);
+  LrtDestroyMediatekOptions(mediatek_opts);
+
+  if (neuron_adapter_api_.api().execution_set_boost_hint(
+          execution_, static_cast<uint8_t>(npu_boost_hint)) !=
+      NEURON_NO_ERROR) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Failed to set execution boost hint");
+  }
+  return ApplyAisteBoostHints(neuron_adapter_api_, execution_, cpu_boost_hint,
+                              ddr_boost_hint);
 }
