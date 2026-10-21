@@ -108,12 +108,17 @@ cc_library(
     name = "ml_drift_delegate_create",
     srcs = ["ml_drift_delegate_create.cc"],
     hdrs = ["ml_drift_delegate_create.h"],
+    local_defines = select({
+        "//litert/build_common:android_gpu_enabled": [
+            "LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK",
+        ],
+        "//conditions:default": [],
+    }),
     visibility = ["//litert/tools:__pkg__"],
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_metrics_header",
-        "//litert/c/internal:litert_accelerator",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_runtime_context",
         "//litert/c/internal:litert_runtime_context_header",
@@ -125,7 +130,13 @@ cc_library(
         "//ml_drift_delegate/delegate:gpu_backend",
         "//ml_drift_delegate/delegate:precision",
         "//tflite/c:c_api_opaque",
-    ],
+    ] + select({
+        "//litert/build_common:android_gpu_enabled": [
+            "//litert/runtime:accelerator",
+            "//litert/runtime/accelerators/gpu/compatibility:ml_drift_compatibility",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_test(

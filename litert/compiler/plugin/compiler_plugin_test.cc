@@ -24,6 +24,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_builder.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
@@ -1204,6 +1205,10 @@ class CompilerPluginFriend : public ::testing::Test {
   void SetOptions(CompilerPlugin& plugin, LiteRtOptions options) {
     plugin.options_ = options;
   }
+  static Expected<CompilerPlugin> LoadPlugin(absl::string_view lib_path) {
+    return CompilerPlugin::LoadPlugin(lib_path, /*env=*/nullptr,
+                                      /*options=*/nullptr);
+  }
 };
 
 TEST_F(CompilerPluginFriend, GreedyPatternMatchAndRewrite) {
@@ -1662,6 +1667,22 @@ TEST_F(CompilerPluginFriend,
   EXPECT_EQ(Dim1(*outer.out), 32);
   EXPECT_EQ(Dim0(*decomp.in0), 8);
   EXPECT_EQ(Dim0(*decomp.out), 8);
+}
+
+TEST(CompilerPluginTest, LoadPlugin_NewerVersionNegotiation) {
+  // Loads example_plugin.so (V1.1), verifies runtime (V1.0) successfully
+  // negotiates V1.1 ABI via forward compatibility.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin,
+      CompilerPlugin::FindPlugin(kTestManufacturer,
+                                 {GetLiteRtPath(kTestPluginSearchPath)}));
+  EXPECT_EQ(plugin.NegotiatedVersion().major, 1);
+  EXPECT_EQ(plugin.NegotiatedVersion().minor, 1);
+  EXPECT_EQ(plugin.SocManufacturer(), kTestManufacturer);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto hw, plugin.SupportedHardware());
+  EXPECT_EQ(hw, kLiteRtHwAcceleratorNpu);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto sdk, plugin.SdkVersion());
+  EXPECT_EQ(sdk, "1.0.0-example");
 }
 
 }  // namespace litert::internal

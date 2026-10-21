@@ -116,7 +116,8 @@ litert_test(
     srcs = ["check_sdk_deps_test.cc"],
     data = select({
         "//litert:linux_x86_64": [
-            # copybara:uncomment "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
+            # copybara:uncomment "@neuro_pilot//:common_host_libs",
+            # copybara:uncomment "@neuro_pilot//:neuron_host_libs",
             "@qairt//:libQnnHtp.so",
             "@qairt//:libQnnSystem.so",
         ],
@@ -125,7 +126,6 @@ litert_test(
     linkopts = ["-ldl"] + select({
         "//litert:linux_x86_64": [
             make_rpaths(["@qairt//:libQnnHtp.so"]),
-            # copybara:uncomment make_rpaths(["@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so"]),
         ],
         "//conditions:default": [],
     }) + ["-Wl,--disable-new-dtags"],
@@ -143,7 +143,7 @@ litert_test(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-        "@neuro_pilot//:v8_latest_host_headers",
+        "@neuro_pilot//:neuron_host_headers",
         "@qairt//:qnn_lib_headers",
     ],
 )

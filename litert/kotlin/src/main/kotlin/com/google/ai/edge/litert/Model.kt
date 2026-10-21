@@ -235,6 +235,7 @@ private constructor(
     val optimizationLevel: OptimizationLevel? = null,
     val htpDlbc: Boolean? = null,
     val htpDlbcWeights: Boolean? = null,
+    val graphPriority: GraphPriority? = null,
   ) {
     /** Log level for Qualcomm options. */
     enum class LogLevel constructor(val value: Int) {
@@ -276,6 +277,15 @@ private constructor(
       HTP_OPTIMIZE_FOR_INFERENCE_O3(2),
     }
 
+    /** Graph priority for Qualcomm options. */
+    enum class GraphPriority constructor(val value: Int) {
+      DEFAULT(0),
+      LOW(1),
+      NORMAL(2),
+      NORMAL_HIGH(3),
+      HIGH(4),
+    }
+
     // Keys for passing the Qualcomm options to the native layer.
     internal enum class Key constructor(val value: Int) {
       LOG_LEVEL(0),
@@ -294,6 +304,7 @@ private constructor(
       OPTIMIZATION_LEVEL(13),
       HTP_DLBC(14),
       HTP_DLBC_WEIGHTS(15),
+      GRAPH_PRIORITY(16),
     }
 
     // Converts the options to a map, with all values converted to strings.
@@ -340,6 +351,9 @@ private constructor(
       }
       if (optimizationLevel != null) {
         map[Key.OPTIMIZATION_LEVEL] = optimizationLevel.value.toString()
+      }
+      if (graphPriority != null) {
+        map[Key.GRAPH_PRIORITY] = graphPriority.value.toString()
       }
       return map.toMap()
     }

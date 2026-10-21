@@ -1573,6 +1573,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_options",
         "//litert/cc/internal:litert_rng",
+        "//litert/cc/options:litert_gpu_options",
         "//litert/cc/options:litert_mediatek_options",
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/cc/options:litert_samsung_options",

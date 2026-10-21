@@ -40,6 +40,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_samsung_options.h"
@@ -225,6 +226,9 @@ Expected<Options> ParseOptions(ExecutionBackend backend) {
     LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
     LITERT_RETURN_IF_ERROR(
         gpu_opts.SetHintFullyDelegatedToSingleDelegate(true));
+    if (absl::GetFlag(FLAGS_iters_per_test) > 1) {
+      LITERT_RETURN_IF_ERROR(gpu_opts.EnableBenchmarkMode(true));
+    }
   }
   return options;
 }

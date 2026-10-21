@@ -155,6 +155,8 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetVtcmSize(qualcomm_options.GetVtcmSize());
   qnn_options.SetHtpDeviceId(qualcomm_options.GetHtpDeviceId());
   qnn_options.SetNumHvxThreads(qualcomm_options.GetNumHvxThreads());
+  qnn_options.SetHtpFileReadMemoryBudgetMB(
+      qualcomm_options.GetHtpFileReadMemoryBudgetMB());
   qnn_options.SetOptimizationLevel(static_cast<::qnn::OptimizationLevel>(
       qualcomm_options.GetOptimizationLevel()));
   qnn_options.SetGraphPriority(

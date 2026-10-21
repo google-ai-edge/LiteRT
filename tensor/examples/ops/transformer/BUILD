@@ -31,6 +31,7 @@ cc_library(
         "//tensor:datatypes",
         "//tensor/internal:arithmetic_helpers",
         "//tensor/internal:graph",
+        "//tensor/internal:mixin",
         "//tensor/utils:macros",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
@@ -196,6 +197,7 @@ cc_library(
 #     srcs = ["transformer_ops_test.cc"],
 #     deps = [
 #         ":transformer_ops",
+#         ":transformer_ops_graph",
 #         ":transformer_ops_xnnpack",
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/status",
@@ -205,6 +207,7 @@ cc_library(
 #         "//tensor/backends/xnnpack:arithmetic",
 #         "//tensor/internal:graph",
 #         "//tensor/runners/xnnpack:runner",
+#         "//tensor/utils:macros",
 #         "//tensor/utils:matchers",
 #     ],
 # )

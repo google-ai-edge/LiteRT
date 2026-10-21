@@ -100,8 +100,7 @@ struct XnnpackTraits {
   using Tag = XnnpackMixinTag;
   // TODO(b/574438217): Enable these tests once the XNNPACK backend is fixed.
   static constexpr absl::string_view kDisabledTests[] = {
-      // Int8 and int2 blockwise weights get an invalid datatype, and blocks of
-      // 16 fail when the runtime is created.
+      // Blocks of 16 fail when the runtime is created.
       "FullyConnectedQuantizedWeightsOp",
       // Fully connected ops reject per-tensor int8 weights.
       "FullyConnectedPerTensorAndAsymmetricOp",
@@ -112,8 +111,6 @@ struct XnnpackTraits {
       // Transposes reject int4 values, and asymmetric int4 weights fail to
       // dequantize.
       "TransposedQuantizedWeightsIntoAddOp",
-      // Batch matmuls ignore `adj_x`.
-      "BatchMatMulAdjXQuantizedRhsOp",
       // Dequantizing int4 values aborts in an XNNPACK assertion.
       "QuantizedWeightsSharedByDotAndAddOp",
   };

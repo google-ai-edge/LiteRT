@@ -276,5 +276,42 @@ TEST(DispatchDelegateTest,
   }
 }
 
+TEST(DispatchDelegateTest, InvocationContextGetGraphValidation) {
+  EXPECT_EQ(LiteRtDispatchInvocationContextGetGraph(nullptr, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtDispatchGraph graph = nullptr;
+  EXPECT_EQ(LiteRtDispatchInvocationContextGetGraph(nullptr, &graph),
+            kLiteRtStatusErrorInvalidArgument);
+
+  auto dummy_context =
+      reinterpret_cast<LiteRtDispatchInvocationContext>(0x1234);
+  EXPECT_EQ(LiteRtDispatchInvocationContextGetGraph(dummy_context, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+
+  // If no graph interface is supported or loaded, returns unsupported.
+  EXPECT_EQ(LiteRtDispatchInvocationContextGetGraph(dummy_context, &graph),
+            kLiteRtStatusErrorUnsupported);
+}
+
+TEST(DispatchDelegateTest, MultipleEnvironmentReinitialization) {
+  const auto litert_libs_path =
+      litert::testing::GetLiteRtPath("vendors/examples");
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
+          litert_libs_path,
+      },
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto env1, litert::Environment::Create(litert::EnvironmentOptions(
+                     absl::MakeConstSpan(environment_options))));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto env2, litert::Environment::Create(litert::EnvironmentOptions(
+                     absl::MakeConstSpan(environment_options))));
+  EXPECT_NE(env1.Get(), nullptr);
+  EXPECT_NE(env2.Get(), nullptr);
+}
+
 }  // namespace
 }  // namespace litert

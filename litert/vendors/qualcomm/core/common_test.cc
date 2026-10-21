@@ -324,6 +324,15 @@ TEST(QnnOptionTest, SetHtpDeviceId) {
   EXPECT_EQ(options.GetHtpDeviceId(), 0);
 }
 
+TEST(QnnOptionTest, SetHtpFileReadMemoryBudgetMB) {
+  Options options;
+  EXPECT_EQ(options.GetHtpFileReadMemoryBudgetMB(), 0);
+  options.SetHtpFileReadMemoryBudgetMB(16);
+  EXPECT_EQ(options.GetHtpFileReadMemoryBudgetMB(), 16);
+  options.SetHtpFileReadMemoryBudgetMB(0);
+  EXPECT_EQ(options.GetHtpFileReadMemoryBudgetMB(), 0);
+}
+
 TEST(QnnOptionTest, SetHvxThread) {
   Options options;
   options.SetNumHvxThreads(4);
@@ -430,6 +439,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetVtcmSize(), 0);
   EXPECT_EQ(options.GetHtpDeviceId(), 0);
   EXPECT_EQ(options.GetNumHvxThreads(), 0);
+  EXPECT_EQ(options.GetHtpFileReadMemoryBudgetMB(), 0);
   EXPECT_EQ(options.GetOptimizationLevel(),
             OptimizationLevel::kHtpOptimizeForInferenceO3);
   EXPECT_EQ(options.GetGraphPriority(), GraphPriority::kDefault);

@@ -113,16 +113,29 @@ TEST(OpenVinoTensorBufferTest, WrapRejectsUnsupportedElementType) {
   EXPECT_FALSE(buffer.GetTensorData());
 }
 
+const LiteRtCustomTensorBufferHandlersDef_V1* GetTensorBufferHandlers() {
+  LiteRtInterface raw_interface = nullptr;
+  constexpr LiteRtApiVersion kRuntimeVersion = {
+      LITERT_DISPATCH_ABI_VERSION_MAJOR, LITERT_DISPATCH_ABI_VERSION_MINOR,
+      LITERT_DISPATCH_ABI_VERSION_PATCH};
+  if (LiteRtDispatchQueryInterface(kLiteRtInterfaceCustomTensorBufferHandlers,
+                                   kRuntimeVersion,
+                                   &raw_interface) != kLiteRtStatusOk) {
+    return nullptr;
+  }
+  return static_cast<const LiteRtCustomTensorBufferHandlersDef_V1*>(
+      raw_interface);
+}
+
 // The import handler the dispatch registers for OpenVINO buffers, reached
 // through the dispatch API like LiteRT's runtime does. Its handle is the
 // source's `OpenVinoTensorBuffer*`, the same handle
 // LiteRtGetTensorBufferCustomTensorBufferHandle returns.
 TEST(OpenVinoTensorBufferTest, ImportHandlerCreatesSmallerViewOfSource) {
-  LiteRtDispatchApi api;
-  ASSERT_EQ(LiteRtDispatchGetApi(&api), kLiteRtStatusOk);
-  const LiteRtCustomTensorBufferHandlersDef& handlers =
-      *api.tensor_buffer_handlers_def;
-  ASSERT_NE(handlers.import_func, nullptr);
+  const LiteRtCustomTensorBufferHandlersDef_V1* handlers =
+      GetTensorBufferHandlers();
+  ASSERT_NE(handlers, nullptr);
+  ASSERT_NE(handlers->import_func, nullptr);
 
   // Source: a [4, 4] buffer, standing in for the largest-context KV cache.
   constexpr int32_t kLargeDimensions[] = {4, 4};
@@ -134,7 +147,7 @@ TEST(OpenVinoTensorBufferTest, ImportHandlerCreatesSmallerViewOfSource) {
 
   // View: [2, 4] onto the start of the source's memory.
   HwMemoryInfoPtr hw_memory_info = nullptr;
-  ASSERT_EQ(handlers.import_func(
+  ASSERT_EQ(handlers->import_func(
                 /*device_id=*/nullptr, /*queue_id=*/nullptr, &kTensorType,
                 kLiteRtTensorBufferTypeOpenVINOTensorBuffer, &source,
                 8 * sizeof(float), 8 * sizeof(float), &hw_memory_info),
@@ -147,14 +160,14 @@ TEST(OpenVinoTensorBufferTest, ImportHandlerCreatesSmallerViewOfSource) {
   EXPECT_EQ(view_tensor->get_shape(), ov::Shape({2, 4}));
 
   void* host_memory = nullptr;
-  ASSERT_EQ(handlers.lock_func(hw_memory_info, kLiteRtTensorBufferLockModeRead,
-                               &host_memory),
+  ASSERT_EQ(handlers->lock_func(hw_memory_info, kLiteRtTensorBufferLockModeRead,
+                                &host_memory),
             kLiteRtStatusOk);
   EXPECT_EQ(host_memory, data);
-  EXPECT_EQ(handlers.unlock_func(hw_memory_info), kLiteRtStatusOk);
+  EXPECT_EQ(handlers->unlock_func(hw_memory_info), kLiteRtStatusOk);
 
   // Destroying the view leaves the source and its memory intact.
-  EXPECT_EQ(handlers.destroy_func(hw_memory_info), kLiteRtStatusOk);
+  EXPECT_EQ(handlers->destroy_func(hw_memory_info), kLiteRtStatusOk);
   auto source_data = source.GetTensorData();
   ASSERT_TRUE(source_data);
   EXPECT_EQ(*source_data, data);
@@ -162,10 +175,11 @@ TEST(OpenVinoTensorBufferTest, ImportHandlerCreatesSmallerViewOfSource) {
 }
 
 TEST(OpenVinoTensorBufferTest, ImportHandlerRejectsNullHandle) {
-  LiteRtDispatchApi api;
-  ASSERT_EQ(LiteRtDispatchGetApi(&api), kLiteRtStatusOk);
+  const LiteRtCustomTensorBufferHandlersDef_V1* handlers =
+      GetTensorBufferHandlers();
+  ASSERT_NE(handlers, nullptr);
   HwMemoryInfoPtr hw_memory_info = nullptr;
-  EXPECT_EQ(api.tensor_buffer_handlers_def->import_func(
+  EXPECT_EQ(handlers->import_func(
                 /*device_id=*/nullptr, /*queue_id=*/nullptr, &kTensorType,
                 kLiteRtTensorBufferTypeOpenVINOTensorBuffer,
                 /*hw_buffer_handle=*/nullptr, 8 * sizeof(float),
@@ -174,11 +188,12 @@ TEST(OpenVinoTensorBufferTest, ImportHandlerRejectsNullHandle) {
 }
 
 TEST(OpenVinoTensorBufferTest, ImportHandlerRejectsUninitializedSource) {
-  LiteRtDispatchApi api;
-  ASSERT_EQ(LiteRtDispatchGetApi(&api), kLiteRtStatusOk);
+  const LiteRtCustomTensorBufferHandlersDef_V1* handlers =
+      GetTensorBufferHandlers();
+  ASSERT_NE(handlers, nullptr);
   OpenVinoTensorBuffer source;  // Neither allocated nor wrapped.
   HwMemoryInfoPtr hw_memory_info = nullptr;
-  EXPECT_EQ(api.tensor_buffer_handlers_def->import_func(
+  EXPECT_EQ(handlers->import_func(
                 /*device_id=*/nullptr, /*queue_id=*/nullptr, &kTensorType,
                 kLiteRtTensorBufferTypeOpenVINOTensorBuffer, &source,
                 8 * sizeof(float), 8 * sizeof(float), &hw_memory_info),
@@ -186,14 +201,15 @@ TEST(OpenVinoTensorBufferTest, ImportHandlerRejectsUninitializedSource) {
 }
 
 TEST(OpenVinoTensorBufferTest, ImportHandlerRejectsViewLargerThanSource) {
-  LiteRtDispatchApi api;
-  ASSERT_EQ(LiteRtDispatchGetApi(&api), kLiteRtStatusOk);
+  const LiteRtCustomTensorBufferHandlersDef_V1* handlers =
+      GetTensorBufferHandlers();
+  ASSERT_NE(handlers, nullptr);
   // Source: [2, 4] floats. Requesting 16 floats would read past its memory.
   float data[8] = {};
   OpenVinoTensorBuffer source;
   ASSERT_TRUE(source.Wrap(kTensorType, data, sizeof(data)));
   HwMemoryInfoPtr hw_memory_info = nullptr;
-  EXPECT_EQ(api.tensor_buffer_handlers_def->import_func(
+  EXPECT_EQ(handlers->import_func(
                 /*device_id=*/nullptr, /*queue_id=*/nullptr, &kTensorType,
                 kLiteRtTensorBufferTypeOpenVINOTensorBuffer, &source,
                 16 * sizeof(float), 8 * sizeof(float), &hw_memory_info),

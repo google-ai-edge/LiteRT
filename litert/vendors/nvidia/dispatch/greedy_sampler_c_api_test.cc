@@ -25,6 +25,7 @@
 #include <gtest/gtest.h>
 #include "cuda_runtime_api.h"
 #include "litert/c/internal/litert_runtime_context.h"
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/nvidia/cache_layout.h"
@@ -116,8 +117,17 @@ LiteRtRuntimeContext RuntimeContext() {
 class GreedySamplerCApiTest : public testing::Test {
  protected:
   void SetUp() override {
-    ASSERT_EQ(LiteRtDispatchGetApi(&api_), kLiteRtStatusOk);
-    ASSERT_EQ(api_.interface->initialize(&runtime_, nullptr, nullptr),
+    LiteRtInterface raw_interface = nullptr;
+    ASSERT_EQ(LiteRtDispatchQueryInterface(
+                  kLiteRtInterfaceBasic,
+                  {LITERT_DISPATCH_ABI_VERSION_MAJOR,
+                   LITERT_DISPATCH_ABI_VERSION_MINOR,
+                   LITERT_DISPATCH_ABI_VERSION_PATCH},
+                  &raw_interface),
+              kLiteRtStatusOk);
+    interface_ = static_cast<const LiteRtDispatchInterface_V1*>(raw_interface);
+    ASSERT_NE(interface_, nullptr);
+    ASSERT_EQ(interface_->initialize(&runtime_, nullptr, nullptr),
               kLiteRtStatusOk);
     ASSERT_EQ(LiteRtDispatchNvidiaGreedySamplerCreate(&sampler_),
               kLiteRtStatusOk);
@@ -128,7 +138,7 @@ class GreedySamplerCApiTest : public testing::Test {
     if (logits_.allocation) cudaFree(logits_.allocation);
     // Do not leave the module pointing to this fixture's runtime function
     // table.
-    EXPECT_EQ(api_.interface->initialize(nullptr, nullptr, nullptr),
+    EXPECT_EQ(interface_->initialize(nullptr, nullptr, nullptr),
               kLiteRtStatusOk);
   }
 
@@ -170,7 +180,7 @@ class GreedySamplerCApiTest : public testing::Test {
   }
 
   LiteRtRuntimeContext runtime_ = RuntimeContext();
-  LiteRtDispatchApi api_{};
+  const LiteRtDispatchInterface_V1* interface_ = nullptr;
   LiteRtDispatchNvidiaGreedySampler sampler_ = nullptr;
   TestLogits logits_;
 };

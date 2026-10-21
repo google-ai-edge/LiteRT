@@ -33,6 +33,13 @@
 #include "ml_drift_delegate/delegate/precision.h"
 #include "tflite/c/c_api_opaque.h"
 
+// Set in BUILD together with the ml_drift_compatibility dep (Android with GPU
+// enabled). Builds without it (e.g. CMake) skip the check.
+#if defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
+#include "litert/runtime/accelerator.h"
+#include "litert/runtime/accelerators/gpu/compatibility/ml_drift_compatibility.h"
+#endif  // defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
+
 namespace litert::ml_drift {
 namespace {
 
@@ -300,6 +307,25 @@ LiteRtStatus CreateDelegate(
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus GetHardwareSupport(LiteRtAcceleratorConst accelerator,
+                                LiteRtHwAcceleratorSet* supported_hardware) {
+  LITERT_RETURN_IF_ERROR(supported_hardware != nullptr,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`supported_hardware` pointer is null.";
+#if defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
+  if ((accelerator == nullptr || accelerator->env == nullptr) &&
+      !GpuCompatibilityChecker::Instance().IsSupportedOnThisDevice()) {
+    LITERT_LOG(LITERT_INFO,
+               "GPU accelerator is not supported on this device according to "
+               "the ML Drift compatibility list.");
+    *supported_hardware = kLiteRtHwAcceleratorNone;
+    return kLiteRtStatusErrorUnsupported;
+  }
+#endif  // defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
+  *supported_hardware = kLiteRtHwAcceleratorGpu;
   return kLiteRtStatusOk;
 }
 
