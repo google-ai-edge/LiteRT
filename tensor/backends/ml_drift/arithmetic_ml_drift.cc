@@ -1080,6 +1080,26 @@ absl::Status OpMixin<BatchMatMulOperation, MlDriftMixinTag>::ToMlDrift(
   }
   LRT_TENSOR_ASSIGN_OR_RETURN(const BatchMatMulOperation& data,
                               op.As<BatchMatMulOperation>());
+  // `ShapeToBHWC` maps [R, C] to (R, 1, 1, C), but batched matmuls multiply
+  // the (W, C) matrices of their operands, and don't broadcast their batch
+  // dimensions. So a rank 2 right-hand side is reshaped to (1, 1, R, C), and
+  // the left-hand side to a single (1, 1, rows, cols) matrix.
+  const bool rank2_rhs = rhs_info.shape.size() == 2;
+  if (rank2_rhs) {
+    if (data.adj_x && lhs_info.shape.size() > 2) {
+      return absl::UnimplementedError(
+          "BatchMatMul with a transposed lhs of rank > 2 and a rank 2 rhs is "
+          "not supported.");
+    }
+    int lhs_rows = 1;
+    for (size_t i = 0; i + 1 < lhs_info.shape.size(); ++i) {
+      lhs_rows *= lhs_info.shape[i];
+    }
+    lhs = ctx.gpu_model_builder->Reshape(
+        lhs, ml_drift::BHWC(1, 1, lhs_rows, lhs_info.shape.back()));
+    rhs = ctx.gpu_model_builder->Reshape(
+        rhs, ml_drift::BHWC(1, 1, rhs_info.shape[0], rhs_info.shape[1]));
+  }
   ml_drift::BatchedMatMulAttributes attr;
   attr.transpose_left = data.adj_x;
   attr.transpose_right = data.adj_y;
@@ -1094,6 +1114,13 @@ absl::Status OpMixin<BatchMatMulOperation, MlDriftMixinTag>::ToMlDrift(
   }
   LRT_TENSOR_ASSIGN_OR_RETURN(
       auto out, ctx.gpu_model_builder->BatchedMatMul(lhs, rhs, attr));
+  if (rank2_rhs) {
+    // The result is a single (1, 1, rows, N) matrix.
+    LRT_TENSOR_ASSIGN_OR_RETURN(const auto& out_info,
+                                graph::GetInfo(outputs[0]));
+    LRT_TENSOR_ASSIGN_OR_RETURN(auto out_shape, ShapeToBHWC(out_info.shape));
+    out = ctx.gpu_model_builder->Reshape(out, out_shape);
+  }
   ctx.graph_tensor_to_handle.insert({outputs[0], out});
   return CheckGpuOpOk(ctx, op);
 }

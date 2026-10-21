@@ -4424,6 +4424,105 @@ TYPED_TEST_P(NumericalTestSuite, QuantizedWeightsSharedByDotAndAddOp) {
   }
 }
 
+// Batch matmuls with rank 2 operands, with and without `adj_x` and `adj_y`,
+// and with a rank 3 left-hand side. The right-hand side is an input, or a
+// constant like the weights of a model.
+TYPED_TEST_P(NumericalTestSuite, BatchMatMulRank2Op) {
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  struct TestCase {
+    const char* name;
+    std::vector<int> lhs_shape;
+    bool adj_x;
+    bool adj_y;
+    bool constant_rhs;
+  };
+  constexpr int kM = 3;
+  constexpr int kK = 8;
+  constexpr int kN = 5;
+  int num_run = 0;
+  for (const TestCase& c : {
+           TestCase{.name = "[M, K] x [K, N]",
+                    .lhs_shape = {kM, kK},
+                    .adj_x = false,
+                    .adj_y = false,
+                    .constant_rhs = false},
+           TestCase{.name = "[M, K] x [N, K] adj_y",
+                    .lhs_shape = {kM, kK},
+                    .adj_x = false,
+                    .adj_y = true,
+                    .constant_rhs = false},
+           TestCase{.name = "[K, M] adj_x x [K, N]",
+                    .lhs_shape = {kK, kM},
+                    .adj_x = true,
+                    .adj_y = false,
+                    .constant_rhs = false},
+           TestCase{.name = "[2, M, K] x [K, N]",
+                    .lhs_shape = {2, kM, kK},
+                    .adj_x = false,
+                    .adj_y = false,
+                    .constant_rhs = false},
+           TestCase{.name = "[2, M, K] x constant [N, K] adj_y",
+                    .lhs_shape = {2, kM, kK},
+                    .adj_x = false,
+                    .adj_y = true,
+                    .constant_rhs = true},
+       }) {
+    SCOPED_TRACE(c.name);
+    const int rows = c.lhs_shape.size() == 3 ? 2 * kM : kM;
+    const std::vector<float> lhs_data = qtu::MakeInput(rows * kK);
+    std::vector<float> rhs_data = qtu::MakeInput(kK * kN);
+    for (float& value : rhs_data) {
+      value = 0.5f - value;
+    }
+    // Element (k, n) of the right-hand side.
+    auto rhs = [&](int k, int n) {
+      return c.adj_y ? rhs_data[n * kK + k] : rhs_data[k * kN + n];
+    };
+    // `lhs_data` as [rows, K].
+    std::vector<float> lhs_rows = lhs_data;
+    if (c.adj_x) {
+      for (int k = 0; k < kK; ++k) {
+        for (int m = 0; m < kM; ++m) {
+          lhs_rows[m * kK + k] = lhs_data[k * kM + m];
+        }
+      }
+    }
+    const std::vector<float> expected =
+        qtu::MatMul(lhs_rows, rows, kK, kN, rhs).first;
+
+    Tensor<Tag> lhs({.type = Type::kFP32, .shape = c.lhs_shape});
+    const std::vector<int> rhs_shape =
+        c.adj_y ? std::vector<int>{kN, kK} : std::vector<int>{kK, kN};
+    std::optional<Tensor<Tag>> rhs_tensor;
+    if (c.constant_rhs) {
+      rhs_tensor = Tensor<Tag>(
+          {.type = Type::kFP32, .shape = rhs_shape, .buffer = rhs_data});
+    } else {
+      rhs_tensor = Tensor<Tag>({.type = Type::kFP32, .shape = rhs_shape});
+    }
+    Tensor<Tag> output = BatchMatMul(lhs, *rhs_tensor, c.adj_x, c.adj_y);
+
+    std::vector<TensorHandle> inputs =
+        c.constant_rhs ? std::vector<TensorHandle>{lhs}
+                       : std::vector<TensorHandle>{lhs, *rhs_tensor};
+    std::vector<std::vector<float>> input_data =
+        c.constant_rhs ? std::vector<std::vector<float>>{lhs_data}
+                       : std::vector<std::vector<float>>{lhs_data, rhs_data};
+    auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+        inputs, input_data, {output}, {expected.size()});
+    if (result.status().code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(result.status());
+    ++num_run;
+    EXPECT_THAT((*result)[0], Pointwise(FloatNear(1e-4f), expected));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Batch matmul with rank 2 operands is unimplemented.";
+  }
+}
+
 REGISTER_TYPED_TEST_SUITE_P(
     NumericalTestSuite, AddOp, SubOp, MulOp, DivOp, GeluOp, ReluOp, Relu6Op,
     LeakyReluOp, EluOp, HardSwishOp, LogisticOp, TanhOp, SqrtOp, RsqrtOp,
@@ -4447,7 +4546,7 @@ REGISTER_TYPED_TEST_SUITE_P(
     FullyConnectedPerTensorAndAsymmetricOp, BatchMatMulQuantizedRhsOp,
     TransposedQuantizedWeightsIntoBatchMatMulOp,
     TransposedQuantizedWeightsIntoAddOp, BatchMatMulAdjXQuantizedRhsOp,
-    QuantizedWeightsSharedByDotAndAddOp);
+    QuantizedWeightsSharedByDotAndAddOp, BatchMatMulRank2Op);
 
 }  // namespace litert::tensor
 
