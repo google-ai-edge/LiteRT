@@ -42,7 +42,7 @@
 #include "litert/core/build_stamp.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/util/flatbuffer_tools.h"
-#include "tflite/converter/schema/schema_generated.h"
+#include "tflite/schema/schema_generated.h"
 
 using ::litert::internal::AttachInput;
 using ::litert::internal::AttachOutput;
