@@ -1980,5 +1980,113 @@ TEST(VerifierTest, VerifyAndCountSparseElementsRejectsNonPositiveBlockDimSize) {
                        HasSubstr("block_dim_size (0) must be positive")));
 }
 
+TEST(VerifierTest, RejectsMalformedSparsityMetadataOnEmptyBufferTensor) {
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<tflite::Buffer>> buffers = {
+      tflite::CreateBuffer(builder),
+      tflite::CreateBuffer(builder),
+  };
+  // Create a 2D tensor with only 1 DimensionMetadata entry (mismatched with
+  // rank 2), and attach it to buffer 0 so ::tflite::Verify skips
+  // VerifyNumericTensorBuffer.
+  auto dm0 = tflite::CreateDimensionMetadata(
+      builder, tflite::DimensionType_DENSE, /*dense_size=*/4);
+  std::vector<flatbuffers::Offset<tflite::DimensionMetadata>> dim_metadata = {
+      dm0};
+  std::vector<int32_t> traversal_order = {0};
+  auto sparsity = tflite::CreateSparsityParameters(
+      builder, builder.CreateVector(traversal_order), /*block_map=*/0,
+      builder.CreateVector(dim_metadata));
+  std::vector<flatbuffers::Offset<tflite::Tensor>> tensors = {
+      tflite::CreateTensor(
+          builder, builder.CreateVector(std::vector<int32_t>{2, 4}),
+          tflite::TensorType_FLOAT32, /*buffer=*/0, builder.CreateString("in")),
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{4, 4}),
+                           tflite::TensorType_FLOAT32, /*buffer=*/0,
+                           builder.CreateString("weights"), /*quantization=*/0,
+                           /*is_variable=*/false, sparsity),
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{2, 4}),
+                           tflite::TensorType_FLOAT32, /*buffer=*/1,
+                           builder.CreateString("out")),
+  };
+  auto opcode = tflite::CreateOperatorCode(
+      builder, tflite::BuiltinOperator_FULLY_CONNECTED);
+  std::vector<int32_t> op_inputs = {0, 1};
+  std::vector<int32_t> op_outputs = {2};
+  auto op = tflite::CreateOperator(builder, /*opcode_index=*/0,
+                                   builder.CreateVector(op_inputs),
+                                   builder.CreateVector(op_outputs));
+  std::vector<int32_t> model_inputs = {0, 1};
+  std::vector<int32_t> model_outputs = {2};
+  auto subgraph = tflite::CreateSubGraph(builder, builder.CreateVector(tensors),
+                                         builder.CreateVector(model_inputs),
+                                         builder.CreateVector(model_outputs),
+                                         builder.CreateVector(&op, 1));
+  auto model = tflite::CreateModel(
+      builder, TFLITE_SCHEMA_VERSION, builder.CreateVector(&opcode, 1),
+      builder.CreateVector(&subgraph, 1),
+      builder.CreateString("malformed_sparsity_test"),
+      builder.CreateVector(buffers));
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_THAT(VerifyModel(builder.GetBufferPointer(), builder.GetSize()),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
+}
+
+TEST(VerifierTest, RejectsFullyConnectedPerChannelInvalidQuantizedDimension) {
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<tflite::Buffer>> buffers = {
+      tflite::CreateBuffer(builder),
+      tflite::CreateBuffer(builder),
+  };
+  // Weight tensor has shape [2, 4] and per-channel quantization along dim 1
+  // (with 4 scales), which passes tensor-level per-axis count check but is
+  // invalid for FULLY_CONNECTED (which requires quantized_dimension == 0).
+  std::vector<float> scales = {0.1f, 0.2f, 0.3f, 0.4f};
+  std::vector<int64_t> zero_points = {0, 0, 0, 0};
+  auto quant = tflite::CreateQuantizationParameters(
+      builder, /*min=*/0, /*max=*/0, builder.CreateVector(scales),
+      builder.CreateVector(zero_points), tflite::QuantizationDetails_NONE, 0,
+      /*quantized_dimension=*/1);
+  std::vector<flatbuffers::Offset<tflite::Tensor>> tensors = {
+      tflite::CreateTensor(
+          builder, builder.CreateVector(std::vector<int32_t>{1, 4}),
+          tflite::TensorType_FLOAT32, /*buffer=*/0, builder.CreateString("in")),
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{2, 4}),
+                           tflite::TensorType_INT8, /*buffer=*/0,
+                           builder.CreateString("weights"), quant),
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{1, 2}),
+                           tflite::TensorType_FLOAT32, /*buffer=*/1,
+                           builder.CreateString("out")),
+  };
+  auto opcode = tflite::CreateOperatorCode(
+      builder, tflite::BuiltinOperator_FULLY_CONNECTED);
+  std::vector<int32_t> op_inputs = {0, 1};
+  std::vector<int32_t> op_outputs = {2};
+  auto op = tflite::CreateOperator(builder, /*opcode_index=*/0,
+                                   builder.CreateVector(op_inputs),
+                                   builder.CreateVector(op_outputs));
+  std::vector<int32_t> model_inputs = {0, 1};
+  std::vector<int32_t> model_outputs = {2};
+  auto subgraph = tflite::CreateSubGraph(builder, builder.CreateVector(tensors),
+                                         builder.CreateVector(model_inputs),
+                                         builder.CreateVector(model_outputs),
+                                         builder.CreateVector(&op, 1));
+  auto model = tflite::CreateModel(builder, TFLITE_SCHEMA_VERSION,
+                                   builder.CreateVector(&opcode, 1),
+                                   builder.CreateVector(&subgraph, 1),
+                                   builder.CreateString("fc_invalid_qdim_test"),
+                                   builder.CreateVector(buffers));
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_THAT(VerifyModel(builder.GetBufferPointer(), builder.GetSize()),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
+}
 }  // namespace
 }  // namespace litert
