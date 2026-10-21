@@ -50,7 +50,11 @@ litert::Expected<ov::Shape> ToOvShape(
     }
     ov_shape_vec[i] = static_cast<size_t>(dimension);
   }
-  return ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()};
+  // Use the out-of-line std::vector constructor rather than the inline
+  // iterator-range template, so that the shape's storage is allocated inside
+  // OpenVINO, which also frees it in its out-of-line ov::Shape::~Shape().
+  // Allocating here and freeing there is an alloc-dealloc mismatch under ASan.
+  return ov::Shape(ov_shape_vec);
 }
 
 // Maps the tensor type's element type to an OpenVINO element type, rejecting
