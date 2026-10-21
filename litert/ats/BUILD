@@ -20,7 +20,7 @@ load("//litert/ats:ats.bzl", "litert_define_ats")
 # copybara:uncomment load("//litert/ats:models.bzl", "CLASSICAL_ALL_MODELS")
 load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "if_oss", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
-# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_macos_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_npu_aot_guitar_test", "litert_perfgate_upload_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
+# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_exynos_mh_guitar_test", "litert_macos_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_npu_aot_guitar_test", "litert_perfgate_upload_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_pixel_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -550,6 +550,8 @@ litert_define_ats(
         "Slice",  # OpenCL Slice uses kExact byte comparison on FP16-rounded f32 buffers
         "RuntimeBmm.*(i4|i8)",  # GPU odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
         "MoeExperts",  # ML Drift GPU delegate expects tfl.custom "moe" with 4D OHWI weights rather than shlo.composite "odml.moe_experts"
+        # TODO(b/576190160): Investigate GroupNorm numerical mismatch and SIGKILL on Qualcomm S26 (Adreno 840).
+        "GroupNorm",
         "hf_all_minilm_l6_v2",
         "whisper_tiny_decoder",
         "torchvision_resnet18",
@@ -1904,12 +1906,36 @@ cc_library(
 # copybara:uncomment_begin(google-only)
 # # GUITAR WORKFLOWS #################################################################################
 #
-# PIXEL_9_ATS_GUITAR_TARGETS = [
+# ANDROID_ATS_GUITAR_TARGETS = [
 #     ":gpu_ats_remote",
 #     ":cpu_ats_remote",
 #     ":ynnpack_cpu_ats_remote",
 #     ":builtin_cpu_ats_remote",
 # ]
+#
+# guitar_workflow_test(
+#     name = "litert_ats_guitar_pixel_6",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             # TODO(b/576190662): Investigate how to move forward with Pixel 6 ML Drift compatibility allowlist requiring SDK >= 35.
+#             litert_pixel_mh_guitar_test(
+#                 dimension_model = "pixel 6",
+#                 sdk_version = "regex:3[5-9]",
+#                 targets = ANDROID_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# PIXEL_9_ATS_GUITAR_TARGETS = ANDROID_ATS_GUITAR_TARGETS
 #
 # guitar_workflow_test(
 #     name = "litert_ats_guitar_pixel_9",
@@ -1930,12 +1956,67 @@ cc_library(
 #     ],
 # )
 #
-# QUALCOMM_S24_ATS_GUITAR_TARGETS = [
-#     ":gpu_ats_remote",
-#     ":cpu_ats_remote",
-#     ":ynnpack_cpu_ats_remote",
-#     ":builtin_cpu_ats_remote",
-# ]
+# guitar_workflow_test(
+#     name = "litert_ats_guitar_pixel_10",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_pixel_mh_guitar_test(
+#                 dimension_model = "pixel 10",
+#                 targets = ANDROID_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# guitar_workflow_test(
+#     name = "litert_ats_guitar_pixel_11",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_pixel_mh_guitar_test(
+#                 dimension_model = "pixel 11",
+#                 targets = ANDROID_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# guitar_workflow_test(
+#     name = "litert_ats_guitar_qualcomm_s22",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_qualcomm_mh_guitar_test(
+#                 dimension_model = "regex:sm-s901u|sm-s901u1|sm-s906u1|sm-s908u1",
+#                 targets = ANDROID_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# QUALCOMM_S24_ATS_GUITAR_TARGETS = ANDROID_ATS_GUITAR_TARGETS
 #
 # guitar_workflow_test(
 #     name = "litert_ats_guitar_qualcomm_s24",
@@ -1956,12 +2037,47 @@ cc_library(
 #     ],
 # )
 #
-# MEDIATEK_MT6989_ATS_GUITAR_TARGETS = [
-#     ":gpu_ats_remote",
-#     ":cpu_ats_remote",
-#     ":ynnpack_cpu_ats_remote",
-#     ":builtin_cpu_ats_remote",
-# ]
+# guitar_workflow_test(
+#     name = "litert_ats_guitar_qualcomm_s26",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_qualcomm_mh_guitar_test(
+#                 dimension_model = "regex:sm-s942u1|sm-s947u1|sm-s948u1",
+#                 targets = ANDROID_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# guitar_workflow_test(
+#     name = "litert_ats_guitar_exynos_s24",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_exynos_mh_guitar_test(
+#                 dimension_hardware = "s5e9945",
+#                 targets = ANDROID_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# MEDIATEK_MT6989_ATS_GUITAR_TARGETS = ANDROID_ATS_GUITAR_TARGETS
 #
 # guitar_workflow_test(
 #     name = "litert_ats_guitar_mediatek_mt6989",
@@ -1972,6 +2088,51 @@ cc_library(
 #             litert_mediatek_mh_guitar_test(
 #                 dimension_hardware = "mt6989",
 #                 targets = MEDIATEK_MT6989_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# guitar_workflow_test(
+#     name = "litert_ats_guitar_mediatek_mt6877",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_mediatek_mh_guitar_test(
+#                 dimension_hardware = "mt6877",
+#                 targets = ANDROID_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# guitar_workflow_test(
+#     name = "litert_ats_guitar_mediatek_mt6855",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_mediatek_mh_guitar_test(
+#                 dimension_hardware = "mt6855",
+#                 targets = [
+#                     # TODO(b/576191432): Re-enable :gpu_ats_remote on MediaTek MT6855 (PowerVR BXM-8-256) once OpenCL driver workarounds land.
+#                     ":cpu_ats_remote",
+#                     ":ynnpack_cpu_ats_remote",
+#                     ":builtin_cpu_ats_remote",
+#                 ],
 #             ),
 #         ],
 #     ),
@@ -2009,13 +2170,41 @@ cc_library(
 #     ],
 # )
 #
-# PIXEL_9_ATS_MODELS_GUITAR_TARGETS = [
+# ANDROID_ATS_MODELS_GUITAR_TARGETS = [
 #     ":gpu_models_ats_remote",
 #     ":cpu_models_ats_remote",
 #     ":ynnpack_cpu_models_ats_remote",
 #     ":ynnpack_fallback_cpu_models_ats_remote",
 #     ":builtin_cpu_models_ats_remote",
 # ]
+#
+# guitar_workflow_test(
+#     name = "litert_ats_models_guitar_pixel_6",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             # TODO(b/576190662): Investigate how to move forward with Pixel 6 ML Drift compatibility allowlist requiring SDK >= 35.
+#             litert_pixel_mh_guitar_test(
+#                 name = "model_tests",
+#                 dimension_model = "pixel 6",
+#                 sdk_version = "regex:3[5-9]",
+#                 targets = ANDROID_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 device = "pixel_6",
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# PIXEL_9_ATS_MODELS_GUITAR_TARGETS = ANDROID_ATS_MODELS_GUITAR_TARGETS
 #
 # guitar_workflow_test(
 #     name = "litert_ats_models_guitar_pixel_9",
@@ -2040,13 +2229,79 @@ cc_library(
 #     ],
 # )
 #
-# QUALCOMM_S24_ATS_MODELS_GUITAR_TARGETS = [
-#     ":gpu_models_ats_remote",
-#     ":cpu_models_ats_remote",
-#     ":ynnpack_cpu_models_ats_remote",
-#     ":ynnpack_fallback_cpu_models_ats_remote",
-#     ":builtin_cpu_models_ats_remote",
-# ]
+# guitar_workflow_test(
+#     name = "litert_ats_models_guitar_pixel_10",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_pixel_mh_guitar_test(
+#                 name = "model_tests",
+#                 dimension_model = "pixel 10",
+#                 targets = ANDROID_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 device = "pixel_10",
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# guitar_workflow_test(
+#     name = "litert_ats_models_guitar_pixel_11",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_pixel_mh_guitar_test(
+#                 name = "model_tests",
+#                 dimension_model = "pixel 11",
+#                 targets = ANDROID_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 device = "pixel_11",
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# guitar_workflow_test(
+#     name = "litert_ats_models_guitar_qualcomm_s22",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_qualcomm_mh_guitar_test(
+#                 name = "model_tests",
+#                 dimension_model = "regex:sm-s901u|sm-s901u1|sm-s906u1|sm-s908u1",
+#                 targets = ANDROID_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 device = "qualcomm_s22",
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# QUALCOMM_S24_ATS_MODELS_GUITAR_TARGETS = ANDROID_ATS_MODELS_GUITAR_TARGETS
 #
 # guitar_workflow_test(
 #     name = "litert_ats_models_guitar_qualcomm_s24",
@@ -2071,13 +2326,55 @@ cc_library(
 #     ],
 # )
 #
-# MEDIATEK_MT6989_ATS_MODELS_GUITAR_TARGETS = [
-#     ":gpu_models_ats_remote",
-#     ":cpu_models_ats_remote",
-#     ":ynnpack_cpu_models_ats_remote",
-#     ":ynnpack_fallback_cpu_models_ats_remote",
-#     ":builtin_cpu_models_ats_remote",
-# ]
+# guitar_workflow_test(
+#     name = "litert_ats_models_guitar_qualcomm_s26",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_qualcomm_mh_guitar_test(
+#                 name = "model_tests",
+#                 dimension_model = "regex:sm-s942u1|sm-s947u1|sm-s948u1",
+#                 targets = ANDROID_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 device = "qualcomm_s26",
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# guitar_workflow_test(
+#     name = "litert_ats_models_guitar_exynos_s24",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_exynos_mh_guitar_test(
+#                 name = "model_tests",
+#                 dimension_hardware = "s5e9945",
+#                 targets = ANDROID_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 device = "exynos_s24",
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# MEDIATEK_MT6989_ATS_MODELS_GUITAR_TARGETS = ANDROID_ATS_MODELS_GUITAR_TARGETS
 #
 # guitar_workflow_test(
 #     name = "litert_ats_models_guitar_mediatek_mt6989",
@@ -2092,6 +2389,60 @@ cc_library(
 #             ),
 #             litert_perfgate_upload_guitar_test(
 #                 device = "mediatek_mt6989",
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# guitar_workflow_test(
+#     name = "litert_ats_models_guitar_mediatek_mt6877",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_mediatek_mh_guitar_test(
+#                 name = "model_tests",
+#                 dimension_hardware = "mt6877",
+#                 targets = ANDROID_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 device = "mediatek_mt6877",
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# guitar_workflow_test(
+#     name = "litert_ats_models_guitar_mediatek_mt6855",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_mediatek_mh_guitar_test(
+#                 name = "model_tests",
+#                 dimension_hardware = "mt6855",
+#                 targets = [
+#                     # TODO(b/576191432): Re-enable :gpu_models_ats_remote on MediaTek MT6855 (PowerVR BXM-8-256) once OpenCL driver workarounds land.
+#                     ":cpu_models_ats_remote",
+#                     ":ynnpack_cpu_models_ats_remote",
+#                     ":ynnpack_fallback_cpu_models_ats_remote",
+#                     ":builtin_cpu_models_ats_remote",
+#                 ],
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 device = "mediatek_mt6855",
 #             ),
 #         ],
 #     ),
