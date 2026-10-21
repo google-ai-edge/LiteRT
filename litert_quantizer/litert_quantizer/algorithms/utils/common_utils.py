@@ -44,6 +44,12 @@ _SUPPORTED_SUBCHANNEL_OPS = frozenset([
     _TFLOpName.EMBEDDING_LOOKUP,
 ])
 
+# Config checks only see the op name from the recipe, not the custom op's code,
+# so the MoE custom op ("moe") can't be listed explicitly.
+_SUPPORTED_MULTI_AXIS_OPS = frozenset([
+    _TFLOpName.CUSTOM_OP,
+])
+
 
 class TensorQuantParamsCache:
   """Cache of `UniformQuantParams|NonLinearQuantParams` objects.
@@ -101,6 +107,32 @@ def check_subchannel_config(
       )
 
 
+def check_multi_axis_config(
+    op_name: _TFLOpName, op_quant_config: qtyping.OpQuantizationConfig
+) -> None:
+  """Checks the op quantization config for multi-axis quantization."""
+  weight_config = op_quant_config.weight_tensor_config
+  if weight_config is None or weight_config.quantized_dimensions is None:
+    return None
+  if not weight_config.symmetric:
+    raise ValueError(
+        "Multi-axis quantization does not support asymmetric weight"
+        " quantization."
+    )
+  if weight_config.granularity != qtyping.QuantGranularity.CHANNELWISE:
+    raise ValueError(
+        "quantized_dimensions can only be set when granularity is"
+        f" CHANNELWISE. Got {weight_config.granularity}."
+    )
+  if op_name not in _SUPPORTED_MULTI_AXIS_OPS:
+    supported_ops = ", ".join(sorted(_SUPPORTED_MULTI_AXIS_OPS))
+    raise ValueError(
+        "Multi-axis quantization (quantized_dimensions) is currently only"
+        f" supported for {supported_ops}. Got {op_name}."
+    )
+  return None
+
+
 def check_if_valid_op_config(
     op_name: _TFLOpName,
     op_quant_config: qtyping.OpQuantizationConfig,
@@ -132,7 +164,8 @@ def check_if_valid_op_config(
 
   # min_weight_elements and algorithm_params have to be ignored during
   # policy check here because they can be any non-negative integer or dict,
-  # which means we can't list all possible values in the policy.
+  # which means we can't list all possible values in the policy. The same goes
+  # for quantized_dimensions, which check_multi_axis_config checks instead.
   op_quant_config_to_check = dataclasses.replace(
       op_quant_config, min_weight_elements=0
   )
@@ -140,7 +173,9 @@ def check_if_valid_op_config(
     op_quant_config_to_check = dataclasses.replace(
         op_quant_config_to_check,
         weight_tensor_config=dataclasses.replace(
-            op_quant_config_to_check.weight_tensor_config, algorithm_params={}
+            op_quant_config_to_check.weight_tensor_config,
+            algorithm_params={},
+            quantized_dimensions=None,
         ),
     )
   if op_quant_config_to_check.activation_tensor_config is not None:
@@ -1177,7 +1212,7 @@ def get_weight_quantized_dim(
     tensor_data: np.ndarray,
     granularity: qtyping.QuantGranularity,
 ):
-  """Get the quantized dimension for the weight tensor.
+  """Get the quantized dimension(s) for the weight tensor.
 
   Args:
     op_info: Aggregated information about the op (e.g., quantization config).
@@ -1185,37 +1220,49 @@ def get_weight_quantized_dim(
     granularity: The granularity of the weight tensor.
 
   Returns:
-    The quantized dimension for the weight tensor.
+    The quantized dimension (single int for standard channelwise/blockwise,
+    sequence of ints for multi-axis quantization), or None for tensorwise
+    quantization.
   """
-  quantized_dim = None
+  if granularity == qtyping.QuantGranularity.TENSORWISE:
+    return
+
+  weight_config = op_info.op_quant_config.weight_tensor_config
+  if (
+      weight_config is not None
+      and weight_config.quantized_dimensions is not None
+  ):
+    return weight_config.quantized_dimensions
+
   if granularity == qtyping.QuantGranularity.CHANNELWISE:
     if op_info.op_name == _TFLOpName.BATCH_MATMUL:
-      quantized_dim = get_bmm_weight_quantized_dim(
+      return get_bmm_weight_quantized_dim(
           tensor_data, adj_y=op_info.op.builtinOptions.adjY
       )
-    else:
-      quantized_dim = tfl_flatbuffer_utils.TFL_OP_TO_WEIGHT_QUANTIZED_DIM.get(
-          op_info.op_name, None
-      )
-  elif uniform_quantize_tensor.is_blockwise(granularity):
-    quantized_dim = (
-        tfl_flatbuffer_utils.TFL_OP_TO_BLOCKWISE_WEIGHT_QUANTIZED_DIM[
-            op_info.op_name
-        ]
+    return tfl_flatbuffer_utils.TFL_OP_TO_WEIGHT_QUANTIZED_DIM.get(
+        op_info.op_name, None
     )
-  return quantized_dim
+
+  if uniform_quantize_tensor.is_blockwise(granularity):
+    return tfl_flatbuffer_utils.TFL_OP_TO_BLOCKWISE_WEIGHT_QUANTIZED_DIM[
+        op_info.op_name
+    ]
+  return None
 
 
 def get_reduce_dims(
-    quantized_dim: Optional[int],
+    quantized_dim: int | Sequence[int] | None,
     tensor_shape: Sequence[int],
 ) -> Optional[tuple[int, ...]]:
-  """Get the reduce dims of a tensor for the given quantized dimension."""
+  """Get the reduce dims of a tensor for the given quantized dimension(s)."""
   if quantized_dim is None:
     return None
+  q_dims = (
+      {quantized_dim} if isinstance(quantized_dim, int) else set(quantized_dim)
+  )
   reduce_dims = []
   for rank_idx in range(len(tensor_shape)):
-    if rank_idx != quantized_dim:
+    if rank_idx not in q_dims:
       reduce_dims.append(rank_idx)
   return tuple(reduce_dims)
 
