@@ -225,6 +225,7 @@ cc_test(
         ":serialization_schema",
         ":serialization_weight_cache",
         ":testing_util",
+        "//ml_drift_delegate/delegate:precision",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
