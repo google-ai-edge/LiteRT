@@ -56,6 +56,13 @@ typedef enum {
 } NeuronExecutionConfigType;
 #endif
 
+// Workaround for adapter headers that pre-date CompiledNetworkType
+// (Available since 10.0.0).
+typedef enum {
+  COMPILED_NETWORK_TYPE_MODEL_CACHE = 0,
+  COMPILED_NETWORK_TYPE_DLA = 1,
+} CompiledNetworkType;
+
 /** Workaround for the adapter header without definition */
 /* NeuronOperationType */
 #define NEURON_UNKNOWN static_cast<NeuronOperationType>(10001)
@@ -163,6 +170,13 @@ int NeuronCompilation_createWithOptions(NeuronModel* model,
                                         const char* options);
 int NeuronExecution_setConfig(NeuronExecution* execution, int32_t type,
                               const void* buffer, size_t length);
+// Available since NeuronAdapter 10.0.0.
+int NeuronModel_restoreFromCompiledNetworkV3(NeuronModel** model,
+                                             NeuronCompilation** compilation,
+                                             const char* options,
+                                             const void* buffer, size_t size,
+                                             uint8_t needCopyBuffer,
+                                             int32_t networkType, int32_t type);
 
 // A convenient struct for holding function pointers to NeuronAdapter API
 // symbols. These function pointers will be loaded to the shared library on
@@ -216,6 +230,8 @@ struct NeuronAdapterApi::Api {
       model_identify_inputs_and_outputs = nullptr;
   decltype(&NeuronModel_restoreFromCompiledNetwork)
       model_restore_from_compiled_network = nullptr;
+  decltype(&NeuronModel_restoreFromCompiledNetworkV3)
+      model_restore_from_compiled_network_v3 = nullptr;
   decltype(&NeuronModel_setName) model_set_name = nullptr;
   decltype(&NeuronModel_setOperandValue) model_set_operand_value = nullptr;
   decltype(&NeuronModel_setOperandSymmPerChannelQuantParams)

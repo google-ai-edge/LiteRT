@@ -222,6 +222,8 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
             api_->model_identify_inputs_and_outputs);
   LOAD_SYMB(NeuronModel_restoreFromCompiledNetwork,
             api_->model_restore_from_compiled_network);
+  LOAD_SYMB(NeuronModel_restoreFromCompiledNetworkV3,
+            api_->model_restore_from_compiled_network_v3);
   LOAD_SYMB(NeuronModel_setName, api_->model_set_name);
   LOAD_SYMB(NeuronModel_setOperandValue, api_->model_set_operand_value);
   LOAD_SYMB(NeuronModel_setOperandSymmPerChannelQuantParams,
