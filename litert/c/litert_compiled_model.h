@@ -58,7 +58,7 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
 // buffer.
 //
 // Parameters:
-// - compiled_model: the target `LiteRtCompiledModel` object.
+// - compiled_model: the target `LiteRtCompiledModelConst` object.
 // - signature_index: the index of the signature in `LiteRtModel`.
 // - input_index: the index of the input tensor in the signature (subgraph).
 // - buffer_requirements: the returned `LiteRtTensorBufferRequirements`.
@@ -67,7 +67,7 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
 // LiteRtCompiledModel and is only valid during the LiteRtCompileModel's
 // lifetime.
 LiteRtStatus LiteRtGetCompiledModelInputBufferRequirements(
-    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtCompiledModelConst compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex input_index,
     LiteRtTensorBufferRequirements* buffer_requirements);
 
@@ -76,7 +76,7 @@ LiteRtStatus LiteRtGetCompiledModelInputBufferRequirements(
 // buffer.
 //
 // Parameters:
-// - compiled_model: the target `LiteRtCompiledModel` object.
+// - compiled_model: the target `LiteRtCompiledModelConst` object.
 // - signature_index: the index of the signature in `LiteRtModel`.
 // - input_index: the index of the input tensor in the signature (subgraph).
 // - buffer_requirements: the returned `LiteRtTensorBufferRequirements`.
@@ -85,7 +85,7 @@ LiteRtStatus LiteRtGetCompiledModelInputBufferRequirements(
 // LiteRtCompiledModel and is only valid during the LiteRtCompileModel's
 // lifetime.
 LiteRtStatus LiteRtGetCompiledModelOutputBufferRequirements(
-    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtCompiledModelConst compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex output_index,
     LiteRtTensorBufferRequirements* buffer_requirements);
 
@@ -415,7 +415,7 @@ LiteRtStatus LiteRtCompiledModelClearErrors(LiteRtCompiledModel compiled_model);
 // reporter mode). The caller is responsible for freeing the returned
 // `error_messages` buffer using `free`.
 LiteRtStatus LiteRtCompiledModelGetErrorMessages(
-    LiteRtCompiledModel compiled_model, char** error_messages);
+    LiteRtCompiledModelConst compiled_model, char** error_messages);
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
