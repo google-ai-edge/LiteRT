@@ -112,7 +112,7 @@ litert_dispatch_api(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-        "@neuro_pilot//:v8_latest_host_headers",
+        "@neuro_pilot//:neuron_host_headers",
     ],
 )
 
@@ -153,6 +153,6 @@ litert_device_test(
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
-        "@neuro_pilot//:v8_latest_host_headers",
+        "@neuro_pilot//:neuron_host_headers",
     ],
 )

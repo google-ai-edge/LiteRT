@@ -14,7 +14,7 @@
 
 """Build definitions for Mediatek backend."""
 
-load("//litert/build_common:litert_build_defs.bzl", "append_rule_kwargs", "litert_bin", "litert_lib", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "append_rule_kwargs", "litert_bin", "litert_lib")
 
 _MTK_STD_LIBS_HOST = [
     # copybara:uncomment_begin(google-only)
@@ -37,17 +37,10 @@ def _litert_with_mtk_base(
         litert_rule_kwargs,
         data = select({
             "//litert:linux_x86_64": [
-                "@neuro_pilot//:v9_latest/host/lib/libneuron_adapter.so",
-                "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
-                "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
-            ],
-            "//conditions:default": [],
-        }),
-        linkopts = select({
-            "//litert:linux_x86_64": [
-                make_rpaths(["@neuro_pilot//:v9_latest/host/lib/libneuron_adapter.so"]),
-                make_rpaths(["@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so"]),
-                make_rpaths(["@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so"]),
+                "@neuro_pilot//:common_host_libs",
+                "@neuro_pilot//:v9_host_libs",
+                "@neuro_pilot//:v8_host_libs",
+                "@neuro_pilot//:v7_host_libs",
             ],
             "//conditions:default": [],
         }),
