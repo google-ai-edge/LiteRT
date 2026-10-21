@@ -42,6 +42,7 @@
 #include "ml_drift/gl/gl_buffer.h"  // from @ml_drift
 #include "ml_drift/gl/gl_inference_context.h"  // from @ml_drift
 #include "ml_drift/gl/gl_spatial_tensor.h"  // from @ml_drift
+#include "ml_drift/gl/gl_sync.h"  // from @ml_drift
 // clang-format off
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 // clang-format on
@@ -119,9 +120,7 @@ absl::Status GpuBackendOpenGl::AssociateGpuEvent(
 }
 
 absl::Status GpuBackendOpenGl::WaitForCompletion() {
-  glFlush();
-  glFinish();
-  return absl::OkStatus();
+  return ::ml_drift::gl::GlActiveSyncWait();
 }
 
 absl::StatusOr<GpuBackend::GpuBufferRequirements>

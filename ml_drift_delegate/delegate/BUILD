@@ -293,6 +293,7 @@ cc_library(
         "@ml_drift//ml_drift/gl:gl_buffer",
         "@ml_drift//ml_drift/gl:gl_inference_context",
         "@ml_drift//ml_drift/gl:gl_spatial_tensor",
+        "@ml_drift//ml_drift/gl:gl_sync",
     ],
 )
 
