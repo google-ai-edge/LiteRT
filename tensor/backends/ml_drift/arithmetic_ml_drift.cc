@@ -301,8 +301,56 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
                                       ")is not quantized.");
   }
 
+  ml_drift::OHWI scale_zp_shape;
+  const PerChannelAffineQuantization* pcq_ptr = nullptr;
+  const BlockwiseQuantization* bwq_ptr = nullptr;
+  if (auto pcq =
+          out_info.quantization->As<const PerChannelAffineQuantization>();
+      pcq.ok()) {
+    pcq_ptr = &(*pcq);
+    scale_zp_shape = ml_drift::OHWI(pcq_ptr->scales.size(), 1, 1, 1);
+  } else if (auto bwq =
+                 out_info.quantization->As<const BlockwiseQuantization>();
+             bwq.ok()) {
+    bwq_ptr = &(*bwq);
+    LRT_TENSOR_ASSIGN_OR_RETURN(auto ohwi, ShapeToOHWI(out_info.shape));
+    int num_blocks = ohwi.i / bwq_ptr->block_size;
+    scale_zp_shape = ml_drift::OHWI(ohwi.o, 1, 1, num_blocks);
+  } else {
+    return absl::InvalidArgumentError("Unsupported quantization type");
+  }
+
+  std::string scale_key;
+  std::string zp_key;
+  if (!out_info.name.empty()) {
+    scale_key =
+        absl::StrCat(out_info.name, ":scale:", static_cast<int>(float_type));
+    zp_key = absl::StrCat(out_info.name, ":zp:", static_cast<int>(float_type));
+    auto scale_it = ctx.weight_name_to_handle.find(scale_key);
+    auto zp_it = ctx.weight_name_to_handle.find(zp_key);
+    if (scale_it != ctx.weight_name_to_handle.end() &&
+        zp_it != ctx.weight_name_to_handle.end()) {
+      return ScaleZpInfo{scale_it->second, zp_it->second, scale_zp_shape};
+    }
+    if (ctx.shared_weight_descriptors != nullptr) {
+      auto shared_scale_it = ctx.shared_weight_descriptors->find(scale_key);
+      auto shared_zp_it = ctx.shared_weight_descriptors->find(zp_key);
+      if (shared_scale_it != ctx.shared_weight_descriptors->end() &&
+          shared_zp_it != ctx.shared_weight_descriptors->end()) {
+        auto scale_handle = ctx.gpu_model_builder->AddConstantTensor(
+            CopyDescriptorWithoutData(shared_scale_it->second));
+        auto zero_point_handle = ctx.gpu_model_builder->AddConstantTensor(
+            CopyDescriptorWithoutData(shared_zp_it->second));
+        ctx.weight_name_to_handle.insert({scale_key, scale_handle});
+        ctx.weight_name_to_handle.insert({zp_key, zero_point_handle});
+        return ScaleZpInfo{scale_handle, zero_point_handle, scale_zp_shape};
+      }
+    }
+  }
+
   ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kFloat32> scale_values;
   ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kFloat32> zp_values;
+  scale_values.shape = scale_zp_shape;
   // The kernels read one zero point per scale. No zero point means 0, and a
   // single one is shared by all the scales.
   auto set_zero_points =
@@ -322,34 +370,42 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
     zp_values.shape = scale_values.shape;
     return absl::OkStatus();
   };
-  if (auto pcq =
-          out_info.quantization->As<const PerChannelAffineQuantization>();
-      pcq.ok()) {
-    scale_values.data = pcq->scales;
-    scale_values.shape = ml_drift::OHWI(pcq->scales.size(), 1, 1, 1);
-    LRT_TENSOR_RETURN_IF_ERROR(set_zero_points(pcq->scales, pcq->zero_points));
-  } else if (auto bwq =
-                 out_info.quantization->As<const BlockwiseQuantization>();
-             bwq.ok()) {
-    LRT_TENSOR_ASSIGN_OR_RETURN(auto ohwi, ShapeToOHWI(out_info.shape));
-    int num_blocks = ohwi.i / bwq->block_size;
-    scale_values.data = bwq->scales;
-    scale_values.shape = ml_drift::OHWI(ohwi.o, 1, 1, num_blocks);
-    LRT_TENSOR_RETURN_IF_ERROR(set_zero_points(bwq->scales, bwq->zero_points));
+  if (pcq_ptr != nullptr) {
+    scale_values.data = pcq_ptr->scales;
+    LRT_TENSOR_RETURN_IF_ERROR(
+        set_zero_points(pcq_ptr->scales, pcq_ptr->zero_points));
   } else {
-    return absl::InvalidArgumentError("Unsupported quantization type");
+    scale_values.data = bwq_ptr->scales;
+    LRT_TENSOR_RETURN_IF_ERROR(
+        set_zero_points(bwq_ptr->scales, bwq_ptr->zero_points));
   }
 
   auto scale_desc = ScaleOrZeroPointToTensorDesc(
       ctx.gpu_model_builder->gpu_info(), scale_values, float_type);
-
-  auto scale_handle =
-      ctx.gpu_model_builder->AddConstantTensor(std::move(scale_desc));
   auto zero_point_desc = ScaleOrZeroPointToTensorDesc(
       ctx.gpu_model_builder->gpu_info(), zp_values, float_type);
-  auto zero_point_handle =
-      ctx.gpu_model_builder->AddConstantTensor(std::move(zero_point_desc));
-  return ScaleZpInfo{scale_handle, zero_point_handle, scale_values.shape};
+  ml_drift::GpuModelBuilder::TensorHandle scale_handle;
+  ml_drift::GpuModelBuilder::TensorHandle zero_point_handle;
+  if (!out_info.name.empty() && ctx.shared_weight_descriptors != nullptr) {
+    auto [shared_scale_it, _] = ctx.shared_weight_descriptors->try_emplace(
+        scale_key, std::move(scale_desc));
+    scale_handle = ctx.gpu_model_builder->AddConstantTensor(
+        CopyDescriptorWithoutData(shared_scale_it->second));
+    auto [shared_zp_it, __] = ctx.shared_weight_descriptors->try_emplace(
+        zp_key, std::move(zero_point_desc));
+    zero_point_handle = ctx.gpu_model_builder->AddConstantTensor(
+        CopyDescriptorWithoutData(shared_zp_it->second));
+  } else {
+    scale_handle =
+        ctx.gpu_model_builder->AddConstantTensor(std::move(scale_desc));
+    zero_point_handle =
+        ctx.gpu_model_builder->AddConstantTensor(std::move(zero_point_desc));
+  }
+  if (!out_info.name.empty()) {
+    ctx.weight_name_to_handle.insert({scale_key, scale_handle});
+    ctx.weight_name_to_handle.insert({zp_key, zero_point_handle});
+  }
+  return ScaleZpInfo{scale_handle, zero_point_handle, scale_zp_shape};
 }
 
 // Returns an error if `tensor` is a quantized constant, e.g. quantized weights,
@@ -789,8 +845,12 @@ absl::Status OpMixin<DepthwiseConv2DOperation, MlDriftMixinTag>::ToMlDrift(
   attr.groups = float_weights.shape.o / data.depth_multiplier;
 
   ml_drift::GpuModelBuilder::TensorHandle out;
+  const bool share_const_filter =
+      !filter_info.name.empty() && !has_bias && filter_info.shape.size() == 4 &&
+      filter_info.shape[0] == 1 && ctx.shared_weight_descriptors != nullptr &&
+      !ctx.external_weight_names.contains(filter_info.name);
   if (filter_info.buffer != nullptr &&
-      (!has_bias || bias_info.buffer != nullptr)) {
+      (!has_bias || bias_info.buffer != nullptr) && !share_const_filter) {
     // Both weights and bias are constants, so use static DepthwiseConv2D
     auto locked_weights = filter_info.buffer->Lock();
     const float* weights_ptr =
