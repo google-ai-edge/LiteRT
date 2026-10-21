@@ -1934,6 +1934,63 @@ void BroadcastToOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<ConvertBroadcastToReshape>(context);
 }
 
+// Folds a BROADCAST_TO of a constant into a constant. Left unfolded, a
+// constant-input BROADCAST_TO survives into the flatbuffer as a runtime op, and
+// GPU delegates that require a runtime input reject it (ML Drift: "inputs[0]
+// should not be a constant tensor"). Detection heads build their anchor grids
+// this way (`meshgrid` of constant aranges lowers to BROADCAST_TO). The result
+// is subject to the usual `ShouldFoldOperation` size limit.
+OpFoldResult BroadcastToOp::fold(FoldAdaptor adaptor) {
+  auto out_type = mlir::dyn_cast<RankedTensorType>(getType());
+  if (!out_type || !out_type.hasStaticShape()) return {};
+  if (getInput().getType() == out_type) return getInput();
+
+  auto input = mlir::dyn_cast_or_null<DenseElementsAttr>(adaptor.getInput());
+  if (!input) return {};
+  if (!out_type.getElementType().isIntOrFloat()) return {};
+  if (input.isSplat()) {
+    return DenseElementsAttr::get(out_type, input.getSplatValue<Attribute>());
+  }
+  if (!ShouldFoldOperation(this->getOperation())) return {};
+
+  auto in_type = mlir::cast<ShapedType>(input.getType());
+  const ArrayRef<int64_t> in_shape = in_type.getShape();
+  const ArrayRef<int64_t> out_shape = out_type.getShape();
+  const int64_t out_rank = out_shape.size();
+  const int64_t in_rank = in_shape.size();
+  if (in_rank > out_rank) return {};
+  // Right-aligned broadcast: each input dim must be 1 or match the output.
+  for (int64_t i = 0; i < in_rank; ++i) {
+    const int64_t in_d = in_shape[in_rank - 1 - i];
+    const int64_t out_d = out_shape[out_rank - 1 - i];
+    if (in_d != 1 && in_d != out_d) return {};
+  }
+
+  // Input strides, laid over the output rank (0 for broadcast dims).
+  llvm::SmallVector<int64_t> in_strides(out_rank, 0);
+  int64_t stride = 1;
+  for (int64_t i = in_rank - 1; i >= 0; --i) {
+    const int64_t o = i + (out_rank - in_rank);
+    in_strides[o] = in_shape[i] == 1 ? 0 : stride;
+    stride *= in_shape[i];
+  }
+
+  const auto in_values = llvm::to_vector(input.getValues<Attribute>());
+  const int64_t num_out = out_type.getNumElements();
+  std::vector<Attribute> result(num_out);
+  llvm::SmallVector<int64_t> idx(out_rank, 0);
+  for (int64_t flat = 0; flat < num_out; ++flat) {
+    int64_t src = 0;
+    for (int64_t d = 0; d < out_rank; ++d) src += idx[d] * in_strides[d];
+    result[flat] = in_values[src];
+    for (int64_t d = out_rank - 1; d >= 0; --d) {
+      if (++idx[d] < out_shape[d]) break;
+      idx[d] = 0;
+    }
+  }
+  return DenseElementsAttr::get(out_type, result);
+}
+
 //===----------------------------------------------------------------------===//
 // BatchMatMulOp
 //===----------------------------------------------------------------------===//

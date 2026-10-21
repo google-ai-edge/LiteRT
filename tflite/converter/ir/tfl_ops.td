@@ -5746,6 +5746,8 @@ subsequent operation and then be optimized away, however.)
   }];
 
   let hasCanonicalizer = 1;
+
+  let hasFolder = 1;
 }
 
 def TFL_RFFT2dOp : TFL_Op<"rfft2d", [Pure]> {
