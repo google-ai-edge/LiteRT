@@ -30,6 +30,7 @@
 #include "litert/core/model/model.h"
 #include "litert/vendors/qualcomm/compiler/transformations/attention_chunk_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/entry_embedding_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/gqa_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/legalize_int32_ops_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/mlp_quant_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/orphan_cleanup_transformation.h"
@@ -1706,6 +1707,253 @@ TEST(MLPInt8QuantTest, PositiveResidualNorm4DFolding) {
   }
   EXPECT_EQ(rms_4d_count, 2);
   EXPECT_EQ(add_4d_count, 1);
+}
+
+void SetSymQuant(LiteRtTensorT& t, float scale) {
+  t.SetQarams(MakePerTensorQuantization(scale, 0));
+}
+
+//===----------------------------------------------------------------------===//
+// GqaTransformation Tests
+//===----------------------------------------------------------------------===//
+
+TEST(GqaTransformationTest, GqaDecodePositiveMatch) {
+  ResetOrphanRegistry();
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  litert::internal::BufferManager buffer_manager;
+  LiteRtSubgraphT subgraph(&buffer_manager);
+  LiteRtBuilderT builder_impl;
+
+  // H_q = 4, H_kv = 2, G = 2, S = 1, D = 8, D_v = 8, L_cache = 15, L_curr = 1
+  auto& q_in = subgraph.EmplaceTensor();
+  q_in.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 4, 1, 8}));
+  SetSymQuant(q_in, 0.01f);
+
+  auto& q_shape = subgraph.EmplaceTensor();
+  q_shape.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {4}));
+  const int32_t kQGroupedShape[4] = {1, 2, 2, 8};
+  SetConstWeights<int32_t>(q_shape, kQGroupedShape);
+
+  auto& q_grouped = subgraph.EmplaceTensor();
+  q_grouped.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 2, 2, 8}));
+  SetSymQuant(q_grouped, 0.01f);
+
+  auto& rq_op = subgraph.EmplaceOp();
+  rq_op.SetOpCode(kLiteRtOpCodeTflReshape);
+  AttachInput(&q_in, rq_op);
+  AttachInput(&q_shape, rq_op);
+  AttachOutput(&q_grouped, rq_op);
+
+  auto& k_cache = subgraph.EmplaceTensor();
+  k_cache.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 2, 8, 15}));
+  SetSymQuant(k_cache, 0.01f);
+
+  auto& k_curr = subgraph.EmplaceTensor();
+  k_curr.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 2, 8, 1}));
+  SetSymQuant(k_curr, 0.01f);
+
+  BatchMatmulOptions bmm_opts{};
+  bmm_opts.adj_x = false;
+  bmm_opts.adj_y = false;
+  bmm_opts.asymmetric_quantize_input = false;
+
+  auto& bmm_k0_out = subgraph.EmplaceTensor();
+  bmm_k0_out.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 2, 2, 15}));
+  SetSymQuant(bmm_k0_out, 0.01f);
+  bmm_k0_out.SetName("gqa/qk_cache");
+  BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflBatchMatmul,
+                     {&q_grouped, &k_cache}, {&bmm_k0_out}, bmm_opts);
+
+  auto& bmm_k1_out = subgraph.EmplaceTensor();
+  bmm_k1_out.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 2, 2, 1}));
+  SetSymQuant(bmm_k1_out, 0.01f);
+  bmm_k1_out.SetName("gqa/qk_curr");
+  BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflBatchMatmul,
+                     {&q_grouped, &k_curr}, {&bmm_k1_out}, bmm_opts);
+
+  auto& concat_qk_out = subgraph.EmplaceTensor();
+  concat_qk_out.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 2, 2, 16}));
+  SetSymQuant(concat_qk_out, 0.01f);
+  concat_qk_out.SetName("gqa/qk_concat");
+  ConcatenationOptions concat_opts{};
+  concat_opts.axis = 3;
+  concat_opts.fused_activation_function = 0;
+  BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflConcatenation,
+                     {&bmm_k0_out, &bmm_k1_out}, {&concat_qk_out}, concat_opts);
+
+  auto& base_mask = subgraph.EmplaceTensor();
+  base_mask.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 1, 1, 16}));
+  SetSymQuant(base_mask, 0.01f);
+
+  auto& sm_in = subgraph.EmplaceTensor();
+  sm_in.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 2, 2, 16}));
+  SetSymQuant(sm_in, 0.01f);
+  sm_in.SetName("gqa/qk_masked");
+  AddOptions add_opts{};
+  add_opts.fused_activation_function = 0;
+  BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflAdd,
+                     {&concat_qk_out, &base_mask}, {&sm_in}, add_opts);
+
+  auto& sm_out = subgraph.EmplaceTensor();
+  sm_out.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 2, 2, 16}));
+  SetSymQuant(sm_out, 0.01f);
+  sm_out.SetName("gqa/probs");
+  SoftmaxOptions sm_opts{};
+  sm_opts.beta = 1.0f;
+  BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflSoftmax, {&sm_in},
+                     {&sm_out}, sm_opts);
+
+  auto& b0 = subgraph.EmplaceTensor();
+  b0.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {4}));
+  const int32_t kBegin0[4] = {0, 0, 0, 0};
+  SetConstWeights<int32_t>(b0, kBegin0);
+  auto& s0 = subgraph.EmplaceTensor();
+  s0.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {4}));
+  const int32_t kSize0[4] = {1, 2, 2, 15};
+  SetConstWeights<int32_t>(s0, kSize0);
+  auto& sl0_out = subgraph.EmplaceTensor();
+  sl0_out.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 2, 2, 15}));
+  SetSymQuant(sl0_out, 0.01f);
+  sl0_out.SetName("gqa/p_cache");
+  auto& sl0_op = subgraph.EmplaceOp();
+  sl0_op.SetOpCode(kLiteRtOpCodeTflSlice);
+  AttachInput(&sm_out, sl0_op);
+  AttachInput(&b0, sl0_op);
+  AttachInput(&s0, sl0_op);
+  AttachOutput(&sl0_out, sl0_op);
+
+  auto& b1 = subgraph.EmplaceTensor();
+  b1.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {4}));
+  const int32_t kBegin1[4] = {0, 0, 0, 15};
+  SetConstWeights<int32_t>(b1, kBegin1);
+  auto& s1 = subgraph.EmplaceTensor();
+  s1.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {4}));
+  const int32_t kSize1[4] = {1, 2, 2, 1};
+  SetConstWeights<int32_t>(s1, kSize1);
+  auto& sl1_out = subgraph.EmplaceTensor();
+  sl1_out.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 2, 2, 1}));
+  SetSymQuant(sl1_out, 0.01f);
+  sl1_out.SetName("gqa/p_curr");
+  auto& sl1_op = subgraph.EmplaceOp();
+  sl1_op.SetOpCode(kLiteRtOpCodeTflSlice);
+  AttachInput(&sm_out, sl1_op);
+  AttachInput(&b1, sl1_op);
+  AttachInput(&s1, sl1_op);
+  AttachOutput(&sl1_out, sl1_op);
+
+  auto& v_cache = subgraph.EmplaceTensor();
+  v_cache.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 2, 15, 8}));
+  SetSymQuant(v_cache, 0.01f);
+  auto& v_curr = subgraph.EmplaceTensor();
+  v_curr.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 2, 1, 8}));
+  SetSymQuant(v_curr, 0.01f);
+
+  auto& bmm_v0_out = subgraph.EmplaceTensor();
+  bmm_v0_out.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 2, 2, 8}));
+  SetSymQuant(bmm_v0_out, 0.01f);
+  bmm_v0_out.SetName("gqa/out_cache");
+  BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflBatchMatmul,
+                     {&sl0_out, &v_cache}, {&bmm_v0_out}, bmm_opts);
+
+  auto& bmm_v1_out = subgraph.EmplaceTensor();
+  bmm_v1_out.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 2, 2, 8}));
+  SetSymQuant(bmm_v1_out, 0.01f);
+  bmm_v1_out.SetName("gqa/out_curr");
+  BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflBatchMatmul,
+                     {&sl1_out, &v_curr}, {&bmm_v1_out}, bmm_opts);
+
+  auto& attn_out = subgraph.EmplaceTensor();
+  attn_out.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 2, 2, 8}));
+  SetSymQuant(attn_out, 0.01f);
+  attn_out.SetName("gqa/head_out");
+  BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflAdd,
+                     {&bmm_v0_out, &bmm_v1_out}, {&attn_out}, add_opts);
+
+  auto& final_shape = subgraph.EmplaceTensor();
+  final_shape.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {3}));
+  const int32_t kFinalShape[3] = {1, 1, 32};
+  SetConstWeights<int32_t>(final_shape, kFinalShape);
+  auto& final_out = subgraph.EmplaceTensor();
+  final_out.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16, {1, 1, 32}));
+  SetSymQuant(final_out, 0.01f);
+  auto& final_reshape = subgraph.EmplaceOp();
+  final_reshape.SetOpCode(kLiteRtOpCodeTflReshape);
+  AttachInput(&attn_out, final_reshape);
+  AttachInput(&final_shape, final_reshape);
+  AttachOutput(&final_out, final_reshape);
+
+  EXPECT_EQ(GqaTransformation(ctx, &builder_impl, &final_reshape),
+            kLiteRtStatusOk);
+  builder_impl.ApplyChanges(&subgraph);
+
+  // Single-token decode is decomposed per KV head: each slice stacks the G = 2
+  // query heads that share a KV head, so there are H_kv = 2 softmaxes over
+  // [1, 1, G, L_total] and 4 batch matmuls per KV head.
+  int split_count = 0;
+  int grouped_softmax_count = 0;
+  int bmm_count = 0;
+  int named_qk_cache_count = 0;
+  int named_qk_curr_count = 0;
+  int named_out_cache_count = 0;
+  int named_out_curr_count = 0;
+  int named_grouped_softmax_count = 0;
+  for (const auto& op : subgraph.Ops()) {
+    if (op->OpCode() == kLiteRtOpCodeTflSplit) {
+      split_count++;
+    } else if (op->OpCode() == kLiteRtOpCodeTflBatchMatmul) {
+      // The original [1, H_kv, ...] matmuls remain as orphans until
+      // OrphanCleanupTransformation runs; only count the per-KV-head ones.
+      const auto& d = op->Output(0).Type().second.ranked_tensor_type.layout;
+      if (d.rank == 4 && d.dimensions[1] == 1) {
+        bmm_count++;
+        if (op->Output(0).Name() == "gqa/qk_cache") {
+          named_qk_cache_count++;
+        } else if (op->Output(0).Name() == "gqa/qk_curr") {
+          named_qk_curr_count++;
+        } else if (op->Output(0).Name() == "gqa/out_cache") {
+          named_out_cache_count++;
+        } else if (op->Output(0).Name() == "gqa/out_curr") {
+          named_out_curr_count++;
+        }
+      }
+    } else if (op->OpCode() == kLiteRtOpCodeTflSoftmax) {
+      const auto& d = op->Output(0).Type().second.ranked_tensor_type.layout;
+      if (d.rank == 4 && d.dimensions[1] == 1 && d.dimensions[2] == 2 &&
+          d.dimensions[3] == 16) {
+        grouped_softmax_count++;
+        if (op->Output(0).Name() == "gqa/probs") {
+          named_grouped_softmax_count++;
+        }
+      }
+    }
+  }
+  EXPECT_EQ(split_count, 5);
+  EXPECT_EQ(grouped_softmax_count, 2);
+  EXPECT_EQ(bmm_count, 8);
+  EXPECT_EQ(named_qk_cache_count, 2);
+  EXPECT_EQ(named_qk_curr_count, 2);
+  EXPECT_EQ(named_out_cache_count, 2);
+  EXPECT_EQ(named_out_curr_count, 2);
+  EXPECT_EQ(named_grouped_softmax_count, 2);
+
+  // The attention output is still produced by a Reshape into final_out.
+  const LiteRtOp final_def = final_out.DefiningOp();
+  ASSERT_NE(final_def, nullptr);
+  EXPECT_EQ(final_def->OpCode(), kLiteRtOpCodeTflReshape);
+  const auto& concat_dims =
+      final_def->Input(0).Type().second.ranked_tensor_type.layout;
+  ASSERT_EQ(concat_dims.rank, 4);
+  EXPECT_EQ(concat_dims.dimensions[1], 2);
+  EXPECT_EQ(concat_dims.dimensions[2], 2);
+  EXPECT_EQ(concat_dims.dimensions[3], 8);
+  ResetOrphanRegistry();
 }
 
 }  // namespace

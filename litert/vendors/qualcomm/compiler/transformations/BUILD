@@ -162,12 +162,37 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "gqa_transformation",
+    srcs = ["gqa_transformation.cc"],
+    hdrs = ["gqa_transformation.h"],
+    copts = _TRANSFORMATION_COPTS,
+    deps = [
+        ":orphan_cleanup_transformation",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context_header",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/compiler/cc:litert_builder",
+        "//litert/compiler/cc:litert_matchers",
+        "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
 cc_test(
     name = "transformations_test",
     srcs = ["transformations_test.cc"],
     deps = [
         ":attention_chunk_transformation",
         ":entry_embedding_transformation",
+        ":gqa_transformation",
         ":legalize_int32_ops_transformation",
         ":mlp_quant_transformation",
         ":orphan_cleanup_transformation",

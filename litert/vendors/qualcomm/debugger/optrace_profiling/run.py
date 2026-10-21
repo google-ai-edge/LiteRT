@@ -38,7 +38,14 @@ _QAIRT_SDK = flags.DEFINE_string("qairt_sdk", None, "Path to qairt sdk folder")
 _WEIGHT_SHARING = flags.DEFINE_bool(
     "weight_sharing", False, "Enable weight sharing in compilation"
 )
-
+_WEIGHT_SHARING_TILE_CHANNEL_SIZE = flags.DEFINE_integer(
+    "weight_sharing_tile_channel_size",
+    0,
+    "Set HTP weight sharing channel tile size in compilation (0 disables it)",
+)
+_GRAPH_TRANSFROM = flags.DEFINE_string(
+    "graph_transform", None, "graph transform (optional)"
+)
 flags.mark_flag_as_required(_OUTPUT_DIR.name)
 flags.mark_flag_as_required(_SERIAL.name)
 flags.mark_flag_as_required(_SOC_MODEL.name)
@@ -456,6 +463,9 @@ def _generate_ctx_bin(
       f"--qualcomm_ir_json_dir={_OUTPUT_DIR.value}",
       f"--qualcomm_schematic_dir={_OUTPUT_DIR.value}",
       f"--qualcomm_enable_weight_sharing={_WEIGHT_SHARING.value}",
+      "--qualcomm_htp_weight_sharing_channel_tile_size="
+      f"{_WEIGHT_SHARING_TILE_CHANNEL_SIZE.value}",
+      f"--qualcomm_graph_transform={_GRAPH_TRANSFROM.value}",
   ]
 
   env = os.environ.copy()
