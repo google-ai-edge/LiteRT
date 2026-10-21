@@ -102,7 +102,7 @@ TEST(ConvertLiteRtDataTypeToGpuDataTypeTest, UnsupportedType) {
   DataType data_type;
 
   EXPECT_FALSE(ConvertLiteRtDataTypeToGpuDataType(
-      &tensor_type, &data_type, kLiteRtTensorBufferTypeAhwb).ok());
+      &tensor_type, &data_type, kLiteRtTensorBufferTypeAhwb).HasValue());
 }
 
 }  // namespace

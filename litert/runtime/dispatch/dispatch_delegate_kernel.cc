@@ -30,7 +30,7 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/container/node_hash_set.h"  // from @com_google_absl
 #include "absl/memory/memory.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
@@ -195,7 +195,7 @@ DispatchDelegateKernel::Create(std::string&& graph_name,
       status != kLiteRtStatusOk) {
     return Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
-        absl::StrFormat("Failed to get Dispatch API capabilities: %d", status));
+        absl::StrCat("Failed to get Dispatch API capabilities: ", status));
   }
 
   bool async_dispatch = (capabilities & kLiteRtDispatchCapabilitiesAsync);
@@ -532,7 +532,7 @@ Expected<std::vector<TfLiteOpaqueNode*>> DispatchDelegateKernel::GetNodes(
         status != kTfLiteOk) {
       return Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
-          absl::StrFormat("Failed to get node and registration: %d", status));
+          absl::StrCat("Failed to get node and registration: ", status));
     }
     nodes.push_back(node);
   }
@@ -611,7 +611,7 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
       status != kTfLiteOk) {
     return Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
-        absl::StrFormat("Failed to get custom initial data: %d", status));
+        absl::StrCat("Failed to get custom initial data: ", status));
   }
   if (!init_data || !init_data_size) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -1202,9 +1202,9 @@ Expected<void> DispatchDelegateKernel::ScheduleAsyncExecution(
           status != kLiteRtStatusErrorUnsupported) {
         return Unexpected(
             status,
-            absl::StrFormat(
-                "Failed to set dispatch invocation options for node %d: %d",
-                node_idx, status));
+            absl::StrCat(
+                "Failed to set dispatch invocation options for node ",
+                node_idx, ": ", status));
       }
     }
 
@@ -1270,8 +1270,8 @@ Expected<void> DispatchDelegateKernel::ScheduleSyncExecution(
         invocation_context, run_options);
     if (status != kLiteRtStatusOk && status != kLiteRtStatusErrorUnsupported) {
       return Unexpected(
-          status, absl::StrFormat(
-                      "Failed to set dispatch invocation options: %d", status));
+          status, absl::StrCat(
+                      "Failed to set dispatch invocation options: ", status));
     }
     LITERT_RETURN_IF_ERROR(LiteRtDispatchInvoke(invocation_context));
   }

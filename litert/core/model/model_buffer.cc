@@ -20,7 +20,7 @@
 #include <utility>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
@@ -50,8 +50,7 @@ Expected<OwningBufferRef<uint8_t>> GetModelBufWithByteCode(
         auto iter = custom_code_to_npu_bytecode.find(*custom_code);
         if (iter == custom_code_to_npu_bytecode.end()) {
           return Error(kLiteRtStatusErrorUnsupported,
-                       absl::StrFormat("Unexpected custom code: %s",
-                                       custom_code->c_str()));
+                       absl::StrCat("Unexpected custom code: ", *custom_code));
         }
 
         LiteRtOpT* custom_op = op;

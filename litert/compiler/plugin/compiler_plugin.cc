@@ -31,7 +31,6 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -394,11 +393,11 @@ CompilerPlugin::~CompilerPlugin() {
 std::string CompilerPlugin::DebugString() const {
   std::string version_str = "?";
   if (auto version = ApiVersion(); version) {
-    version_str = absl::StrFormat("%d.%d.%d", version->major, version->minor,
-                                  version->patch);
+    version_str = absl::StrCat(version->major, ".", version->minor, ".",
+                               version->patch);
   }
-  return absl::StrFormat("%s compiler plugin (ver %s)", SocManufacturer(),
-                         version_str);
+  return absl::StrCat(SocManufacturer(), " compiler plugin (ver ", version_str,
+                      ")");
 }
 
 Expected<LiteRtApiVersion> CompilerPlugin::ApiVersion() const {
@@ -461,14 +460,14 @@ Expected<void> CompilerPlugin::RegisterAllTransformations() {
       if (transformations[i].pattern == nullptr) {
         return Unexpected(
             kLiteRtStatusInvalidTransformation,
-            absl::StrFormat(
-                "Transformation %d has a invalid pattern function.", i));
+            absl::StrCat("Transformation ", i,
+                         " has a invalid pattern function."));
       }
       if (transformations[i].name == nullptr) {
         return Unexpected(
             kLiteRtStatusInvalidTransformation,
-            absl::StrFormat(
-                "Transformation %d has a invalid transformation name.", i));
+            absl::StrCat("Transformation ", i,
+                         " has a invalid transformation name."));
       }
       transformations_.push_back(transformations[i]);
     }
@@ -1332,8 +1331,8 @@ Expected<CompilerPlugin> CompilerPlugin::FindPlugin(
   }
   return Error(
       kLiteRtStatusErrorRuntimeFailure,
-      absl::StrFormat("No compiler plugin found for soc manufacturer %s",
-                      soc_manufacturer));
+      absl::StrCat("No compiler plugin found for soc manufacturer ",
+                   soc_manufacturer));
 }
 
 Expected<bool> CompilerPlugin::CheckCompilerCompatibility(

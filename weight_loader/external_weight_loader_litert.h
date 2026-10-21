@@ -22,11 +22,11 @@
 #include <string>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #if defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
+#include "absl/status/status.h"  // from @com_google_absl
 // copybara:comment_begin
 #include <webgpu/webgpu_cpp.h>
 // copybara:comment_end

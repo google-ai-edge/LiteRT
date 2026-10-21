@@ -537,7 +537,7 @@ inline LiteRtStatus ToLiteRtStatus(const absl::StatusCode& code) {
     case absl::StatusCode::kResourceExhausted:
       return kLiteRtStatusErrorRuntimeFailure;
     case absl::StatusCode::kFailedPrecondition:
-      return kLiteRtStatusErrorRuntimeFailure;
+      return kLiteRtStatusErrorFailedPrecondition;
     case absl::StatusCode::kAborted:
       return kLiteRtStatusErrorRuntimeFailure;
     case absl::StatusCode::kOutOfRange:
@@ -595,6 +595,8 @@ inline absl::Status ErrorStatusBuilder::ToAbslStatus() const noexcept {
       return absl::UnknownError(LogMessage());
     case Status::kErrorAlreadyExists:
       return absl::AlreadyExistsError(LogMessage());
+    case Status::kErrorFailedPrecondition:
+      return absl::FailedPreconditionError(LogMessage());
     case Status::kErrorFileIO:
       return absl::UnavailableError(LogMessage());
     case Status::kErrorInvalidFlatbuffer:

@@ -15,6 +15,8 @@
 #include "litert/runtime/profiler_summarizer.h"
 
 #include <algorithm>
+#include <cinttypes>
+#include <cstdio>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -23,7 +25,6 @@
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tflite/core/api/profiler.h"
 #include "tflite/core/interpreter.h"
@@ -46,6 +47,21 @@ void UpdateStat(OpStat& stat, int64_t time_us) {
   }
   stat.total_time_us += time_us;
   stat.count++;
+}
+
+template <typename... Args>
+std::string FormatLine(const char* fmt, const Args&... args) {
+  char buf[512];
+  int n = std::snprintf(buf, sizeof(buf), fmt, args...);
+  if (n >= 0 && static_cast<size_t>(n) < sizeof(buf)) {
+    return std::string(buf, n);
+  }
+  if (n < 0) {
+    return "";
+  }
+  std::string s(n, '\0');
+  std::snprintf(s.data(), n + 1, fmt, args...);
+  return s;
 }
 
 }  // namespace
@@ -160,9 +176,9 @@ std::string LiteRtProfileSummarizer::GetOutputString() const {
   // 1. Run Order
   output += get_header("Run Order", 150);
   output +=
-      absl::StrFormat("%60s %10s %10s %10s %10s %10s %10s %14s   %s\n",
-                      "[node type]", "[start]", "[first]", "[avg ms]", "[%]",
-                      "[cdf%]", "[mem KB]", "[times called]", "[Name]");
+      FormatLine("%60s %10s %10s %10s %10s %10s %10s %14s   %s\n",
+                 "[node type]", "[start]", "[first]", "[avg ms]", "[%]",
+                 "[cdf%]", "[mem KB]", "[times called]", "[Name]");
 
   double cdf_us = 0;
   for (const auto& node : node_stats_) {
@@ -181,19 +197,19 @@ std::string LiteRtProfileSummarizer::GetOutputString() const {
         static_cast<double>(node.total_time_us) / safe_total_time_us * 100.0;
     double cdf_pct = cdf_us / safe_total_time_us * 100.0;
 
-    output += absl::StrFormat(
+    output += FormatLine(
         "%60s %10.3f %10.3f %10.3f %9.3f%% %9.3f%% %10.3f %14d   %s\n",
-        node.node_type, start_ms, first_ms, avg_ms, pct, cdf_pct, 0.0,
-        node.count, node.node_name);
+        node.node_type.c_str(), start_ms, first_ms, avg_ms, pct, cdf_pct, 0.0,
+        node.count, node.node_name.c_str());
   }
 
   // 2. Top by Computation Time
   output += '\n';
   output += get_header("Top by Computation Time", 150);
   output +=
-      absl::StrFormat("%60s %10s %10s %10s %10s %10s %10s %14s   %s\n",
-                      "[node type]", "[start]", "[first]", "[avg ms]", "[%]",
-                      "[cdf%]", "[mem KB]", "[times called]", "[Name]");
+      FormatLine("%60s %10s %10s %10s %10s %10s %10s %14s   %s\n",
+                 "[node type]", "[start]", "[first]", "[avg ms]", "[%]",
+                 "[cdf%]", "[mem KB]", "[times called]", "[Name]");
 
   std::vector<ProfileNodeInfo> sorted_nodes = node_stats_;
   absl::c_stable_sort(sorted_nodes,
@@ -218,17 +234,17 @@ std::string LiteRtProfileSummarizer::GetOutputString() const {
         static_cast<double>(node.total_time_us) / safe_total_time_us * 100.0;
     double cdf_pct = cdf_us / safe_total_time_us * 100.0;
 
-    output += absl::StrFormat(
+    output += FormatLine(
         "%60s %10.3f %10.3f %10.3f %9.3f%% %9.3f%% %10.3f %14d   %s\n",
-        node.node_type, start_ms, first_ms, avg_ms, pct, cdf_pct, 0.0,
-        node.count, node.node_name);
+        node.node_type.c_str(), start_ms, first_ms, avg_ms, pct, cdf_pct, 0.0,
+        node.count, node.node_name.c_str());
   }
 
   absl::StrAppend(&output, "\nNumber of nodes executed: ", node_stats_.size(),
                   "\n\n", get_header("Summary by node type", 130));
-  output += absl::StrFormat("%60s %10s %10s %10s %10s %10s %14s\n",
-                            "[Node type]", "[count]", "[avg ms]", "[avg %]",
-                            "[cdf %]", "[mem KB]", "[times called]");
+  output += FormatLine("%60s %10s %10s %10s %10s %10s %14s\n",
+                       "[Node type]", "[count]", "[avg ms]", "[avg %]",
+                       "[cdf %]", "[mem KB]", "[times called]");
 
   std::vector<std::pair<std::string, OpStat>> sorted_stats(stats_.begin(),
                                                            stats_.end());
@@ -252,8 +268,9 @@ std::string LiteRtProfileSummarizer::GetOutputString() const {
     }
 
     output +=
-        absl::StrFormat("%60s %10d %10.3f %9.3f%% %9.3f%% %10.3f %14d\n", name,
-                        node_count, avg_ms, pct, cdf_pct, 0.0, stat.count);
+        FormatLine("%60s %10d %10.3f %9.3f%% %9.3f%% %10.3f %14d\n",
+                   name.c_str(), node_count, avg_ms, pct, cdf_pct, 0.0,
+                   stat.count);
   }
 
   // 4. Delegate Statistics (optional)
@@ -261,13 +278,15 @@ std::string LiteRtProfileSummarizer::GetOutputString() const {
     output += '\n';
     output += get_header("Delegate Statistics", 135);
     output +=
-        absl::StrFormat("%-80s %10s %10s %10s %10s %10s\n", "Op Name", "Count",
-                        "Avg(us)", "Min(us)", "Max(us)", "Total(us)");
+        FormatLine("%-80s %10s %10s %10s %10s %10s\n", "Op Name", "Count",
+                   "Avg(us)", "Min(us)", "Max(us)", "Total(us)");
     for (const auto& [name, stat] : delegate_stats_) {
       double avg = static_cast<double>(stat.total_time_us) / stat.count;
-      output += absl::StrFormat("%-80s %10lld %10.2f %10lld %10lld %10lld\n",
-                                name, stat.count, avg, stat.min_time_us,
-                                stat.max_time_us, stat.total_time_us);
+      output += FormatLine(
+          "%-80s %10" PRId64 " %10.2f %10" PRId64 " %10" PRId64
+          " %10" PRId64 "\n",
+          name.c_str(), stat.count, avg, stat.min_time_us, stat.max_time_us,
+          stat.total_time_us);
     }
   }
 

@@ -44,16 +44,18 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
-#include "absl/status/status.h"  // from @com_google_absl
-#include "absl/status/statusor.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#if defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
+#include "absl/status/status.h"  // from @com_google_absl
+#endif
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
 #include "tflite/schema/schema_generated.h"
@@ -102,7 +104,7 @@ struct LiteRtWeightInfo : public WeightInfo {
   LiteRtRankedTensorType tensor_type;
 };
 
-absl::StatusOr<LiteRtRankedTensorType> BuildRankedTensorType(
+litert::Expected<LiteRtRankedTensorType> BuildRankedTensorType(
     const tflite::Tensor& tensor_fb) {
   LiteRtRankedTensorType type;
   // Use proper mapping instead of direct cast: TFLite has FLOAT32=0,
@@ -111,12 +113,14 @@ absl::StatusOr<LiteRtRankedTensorType> BuildRankedTensorType(
 
   const auto* shape = tensor_fb.shape();
   if (!shape) {
-    return absl::InvalidArgumentError("Missing tensor shape metadata");
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Missing tensor shape metadata");
   }
   const int rank = shape->size();
   if (rank > LITERT_TENSOR_MAX_RANK) {
-    return absl::InvalidArgumentError(absl::StrFormat(
-        "Tensor rank %d exceeds max rank %d", rank, LITERT_TENSOR_MAX_RANK));
+    return litert::Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        absl::StrCat("Tensor rank ", rank, " exceeds max rank ", LITERT_TENSOR_MAX_RANK));
   }
 
   type.layout.rank = static_cast<unsigned int>(rank);
@@ -182,21 +186,22 @@ struct CpuMapping {
   bool mmapped = false;
 };
 
-absl::Status DiscardCpuMappingPages(const CpuMapping& mapping) {
+litert::Expected<void> DiscardCpuMappingPages(const CpuMapping& mapping) {
   if (mapping.base.empty() || !mapping.mmapped) {
-    return absl::OkStatus();
+    return {};
   }
 #if !defined(_WIN32)
   if (madvise(const_cast<std::byte*>(mapping.base.data()), mapping.base.size(),
               MADV_DONTNEED) != 0) {
-    return absl::InternalError(
-        absl::StrFormat("madvise failed: %s", strerror(errno)));
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("madvise failed: ", strerror(errno)));
   }
 #else
   // Windows does not provide MADV_DONTNEED for file mappings. The view remains
   // valid and will be released by ReleaseEntry().
 #endif
-  return absl::OkStatus();
+  return {};
 }
 
 struct Entry {
@@ -233,12 +238,14 @@ struct WeightSource {
 };
 
 #if defined(_WIN32)
-absl::Status ReadScopedRangeWin32(HANDLE handle, uint64_t absolute_offset,
-                                  size_t length, void* destination) {
+litert::Expected<void> ReadScopedRangeWin32(HANDLE handle,
+                                            uint64_t absolute_offset,
+                                            size_t length, void* destination) {
   LARGE_INTEGER li;
   li.QuadPart = absolute_offset;
   if (!SetFilePointerEx(handle, li, nullptr, FILE_BEGIN)) {
-    return absl::UnknownError("Failed to seek scoped weight file");
+    return litert::Unexpected(kLiteRtStatusErrorUnknown,
+                              "Failed to seek scoped weight file");
   }
   size_t remaining = length;
   uint8_t* cursor = static_cast<uint8_t*>(destination);
@@ -247,16 +254,18 @@ absl::Status ReadScopedRangeWin32(HANDLE handle, uint64_t absolute_offset,
         std::min<uint64_t>(remaining, std::numeric_limits<DWORD>::max()));
     DWORD bytes_read = 0;
     if (!ReadFile(handle, cursor, chunk, &bytes_read, nullptr)) {
-      return absl::UnknownError("Failed to read scoped weight file");
+      return litert::Unexpected(kLiteRtStatusErrorUnknown,
+                                "Failed to read scoped weight file");
     }
     if (bytes_read == 0) {
-      return absl::InvalidArgumentError(
+      return litert::Unexpected(
+          kLiteRtStatusErrorInvalidArgument,
           "Unexpected EOF while reading scoped weight file");
     }
     cursor += bytes_read;
     remaining -= bytes_read;
   }
-  return absl::OkStatus();
+  return {};
 }
 #endif  // defined(_WIN32)
 
@@ -276,14 +285,15 @@ void ReleaseEntry(Entry& entry) {
   entry.cpu_mapping.reset();
 }
 
-absl::StatusOr<std::string> ResolveGroupPath(
+litert::Expected<std::string> ResolveGroupPath(
     uint32_t group_id,
     const absl::flat_hash_map<uint32_t, std::string>& group_paths,
     const std::optional<std::string>& model_directory) {
   auto it = group_paths.find(group_id);
   if (it == group_paths.end()) {
-    return absl::FailedPreconditionError(
-        absl::StrFormat("Missing external buffer group %u", group_id));
+    return litert::Unexpected(
+        kLiteRtStatusErrorFailedPrecondition,
+        absl::StrCat("Missing external buffer group ", group_id));
   }
   if (IsAbsolutePath(it->second) || !model_directory ||
       model_directory->empty()) {
@@ -322,28 +332,31 @@ MmapParams GetMmapParams(uint64_t absolute_offset, uint64_t length) {
   return params;
 }
 
-absl::StatusOr<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
-                                                const std::string& path) {
+litert::Expected<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
+                                                 const std::string& path) {
 #if !defined(_WIN32)
   int fd = open(path.c_str(), O_RDONLY);
   if (fd < 0) {
-    return absl::InternalError(absl::StrFormat("Failed to open %s: %s",
-                                               path.c_str(), strerror(errno)));
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("Failed to open ", path, ": ", strerror(errno)));
   }
 
   struct stat st;
   if (fstat(fd, &st) != 0) {
     int saved_errno = errno;
     close(fd);
-    return absl::InternalError(absl::StrFormat(
-        "Failed to stat %s: %s", path.c_str(), strerror(saved_errno)));
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("Failed to stat ", path, ": ", strerror(saved_errno)));
   }
 
   const uint64_t file_size = static_cast<uint64_t>(st.st_size);
   if (info.offset > file_size || info.length > file_size - info.offset) {
     close(fd);
-    return absl::InvalidArgumentError(
-        absl::StrFormat("External weight slice out of range for %s", path));
+    return litert::Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        absl::StrCat("External weight slice out of range for ", path));
   }
 
   MmapParams params = GetMmapParams(info.offset, info.length);
@@ -354,23 +367,27 @@ absl::StatusOr<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
   int saved_errno = errno;
   close(fd);
   if (base == MAP_FAILED) {
-    return absl::InternalError(absl::StrFormat(
-        "mmap failed for %s: %s", path.c_str(), strerror(saved_errno)));
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("mmap failed for ", path, ": ", strerror(saved_errno)));
   }
 #else
   HANDLE file_handle =
       CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
                   OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file_handle == INVALID_HANDLE_VALUE) {
-    return absl::InternalError(absl::StrFormat("Failed to open %s", path));
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("Failed to open ", path));
   }
 
   LARGE_INTEGER file_size;
   if (!GetFileSizeEx(file_handle, &file_size) ||
       static_cast<uint64_t>(file_size.QuadPart) < info.offset + info.length) {
     CloseHandle(file_handle);
-    return absl::InvalidArgumentError(
-        absl::StrFormat("External weight slice out of range for %s", path));
+    return litert::Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        absl::StrCat("External weight slice out of range for ", path));
   }
 
   MmapParams params = GetMmapParams(info.offset, info.length);
@@ -380,7 +397,8 @@ absl::StatusOr<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
   CloseHandle(file_handle);
 
   if (!mapping_handle) {
-    return absl::InternalError("CreateFileMappingA failed on Windows");
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "CreateFileMappingA failed on Windows");
   }
 
   DWORD offset_high = static_cast<DWORD>(params.map_offset >> 32);
@@ -391,7 +409,8 @@ absl::StatusOr<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
   CloseHandle(mapping_handle);
 
   if (!base) {
-    return absl::InternalError("MapViewOfFile failed on Windows");
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "MapViewOfFile failed on Windows");
   }
 #endif
   return CpuMapping{
@@ -420,67 +439,77 @@ inline int64_t FileTell64(std::FILE* file) {
 }
 #endif  // defined(_WIN32)
 
-absl::Status ReadFileSliceFromPath(const LiteRtWeightInfo& info,
-                                   const std::string& path, void* output) {
+litert::Expected<void> ReadFileSliceFromPath(const LiteRtWeightInfo& info,
+                                            const std::string& path,
+                                            void* output) {
   std::FILE* file = std::fopen(path.c_str(), "rb");
   if (!file) {
-    return absl::InternalError(absl::StrFormat("Failed to open %s", path));
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("Failed to open ", path));
   }
   if (FileSeek64(file, 0, SEEK_END) != 0) {
     std::fclose(file);
-    return absl::InternalError(
-        absl::StrFormat("Failed to determine size of %s", path));
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("Failed to determine size of ", path));
   }
   const int64_t file_size = FileTell64(file);
   if (file_size < 0) {
     std::fclose(file);
-    return absl::InternalError(
-        absl::StrFormat("Failed to determine size of %s", path));
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("Failed to determine size of ", path));
   }
   if (static_cast<uint64_t>(file_size) < info.offset + info.length) {
     std::fclose(file);
-    return absl::InvalidArgumentError(
-        absl::StrFormat("External weight slice out of range for %s", path));
+    return litert::Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        absl::StrCat("External weight slice out of range for ", path));
   }
   if (FileSeek64(file, static_cast<int64_t>(info.offset), SEEK_SET) != 0) {
     std::fclose(file);
-    return absl::InternalError(
-        absl::StrFormat("Failed to seek in %s", path));
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("Failed to seek in ", path));
   }
 
   const size_t read_bytes = std::fread(output, 1, info.length, file);
   std::fclose(file);
   if (read_bytes != info.length) {
-    return absl::InternalError(
-        absl::StrFormat("Failed to read %lu bytes from %s", info.length, path));
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("Failed to read ", info.length, " bytes from ", path));
   }
-  return absl::OkStatus();
+  return {};
 }
 
-absl::Status ValidateScopedSlice(const LiteRtWeightInfo& info,
-                                 const litert::ScopedWeightSection& section,
-                                 uint64_t* absolute_offset) {
+litert::Expected<void> ValidateScopedSlice(
+    const LiteRtWeightInfo& info, const litert::ScopedWeightSection& section,
+    uint64_t* absolute_offset) {
   if (section.length < info.offset) {
-    return absl::InvalidArgumentError(
+    return litert::Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
         "External weight offset exceeds scoped section length");
   }
   const uint64_t remaining = section.length - info.offset;
   if (info.length > remaining) {
-    return absl::InvalidArgumentError(
+    return litert::Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
         "External weight slice out of range for scoped section");
   }
   if (absolute_offset) {
     *absolute_offset = section.offset + info.offset;
   }
-  return absl::OkStatus();
+  return {};
 }
 
-absl::StatusOr<CpuMapping> MapScopedFileSlice(
+litert::Expected<CpuMapping> MapScopedFileSlice(
     const LiteRtWeightInfo& info, const litert::ScopedWeightSection& section,
     litert::ScopedWeightSource* source) {
   if (!source || !source->file.IsValid()) {
-    return absl::FailedPreconditionError(
-        "Scoped weight source is not available");
+    return litert::Unexpected(kLiteRtStatusErrorFailedPrecondition,
+                              "Scoped weight source is not available");
   }
   uint64_t absolute_offset = 0;
   LITERT_RETURN_IF_ERROR(ValidateScopedSlice(info, section, &absolute_offset));
@@ -493,8 +522,9 @@ absl::StatusOr<CpuMapping> MapScopedFileSlice(
                     MAP_PRIVATE, fd, params.map_offset);
   int saved_errno = errno;
   if (base == MAP_FAILED) {
-    return absl::InternalError(
-        absl::StrFormat("mmap failed: %s", strerror(saved_errno)));
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("mmap failed: ", strerror(saved_errno)));
   }
 #else
   HANDLE handle = source->file.file();
@@ -504,7 +534,8 @@ absl::StatusOr<CpuMapping> MapScopedFileSlice(
       CreateFileMappingA(handle, nullptr, PAGE_READONLY, 0, 0, nullptr);
 
   if (!mapping_handle) {
-    return absl::InternalError("CreateFileMappingA failed on Windows");
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "CreateFileMappingA failed on Windows");
   }
 
   DWORD offset_high = static_cast<DWORD>(params.map_offset >> 32);
@@ -517,7 +548,8 @@ absl::StatusOr<CpuMapping> MapScopedFileSlice(
   CloseHandle(mapping_handle);
 
   if (!base) {
-    return absl::InternalError("MapViewOfFile failed on Windows");
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "MapViewOfFile failed on Windows");
   }
 #endif
   return CpuMapping{
@@ -528,13 +560,12 @@ absl::StatusOr<CpuMapping> MapScopedFileSlice(
       .mmapped = true};
 }
 
-absl::Status ReadScopedFileSlice(const LiteRtWeightInfo& info,
-                                 const litert::ScopedWeightSection& section,
-                                 litert::ScopedWeightSource* source,
-                                 void* output) {
+litert::Expected<void> ReadScopedFileSlice(
+    const LiteRtWeightInfo& info, const litert::ScopedWeightSection& section,
+    litert::ScopedWeightSource* source, void* output) {
   if (!source || !source->file.IsValid()) {
-    return absl::FailedPreconditionError(
-        "Scoped weight source is not available");
+    return litert::Unexpected(kLiteRtStatusErrorFailedPrecondition,
+                              "Scoped weight source is not available");
   }
   uint64_t absolute_offset = 0;
   LITERT_RETURN_IF_ERROR(ValidateScopedSlice(info, section, &absolute_offset));
@@ -549,10 +580,13 @@ absl::Status ReadScopedFileSlice(const LiteRtWeightInfo& info,
       if (errno == EINTR) {
         continue;
       }
-      return absl::ErrnoToStatus(errno, "pread failed for scoped weight");
+      return litert::Unexpected(
+          kLiteRtStatusErrorRuntimeFailure,
+          absl::StrCat("pread failed for scoped weight: ", strerror(errno)));
     }
     if (read_bytes == 0) {
-      return absl::InvalidArgumentError(
+      return litert::Unexpected(
+          kLiteRtStatusErrorInvalidArgument,
           "Unexpected EOF while reading scoped weight");
     }
     cursor += read_bytes;
@@ -564,15 +598,16 @@ absl::Status ReadScopedFileSlice(const LiteRtWeightInfo& info,
   LITERT_RETURN_IF_ERROR(ReadScopedRangeWin32(
       handle, absolute_offset, static_cast<size_t>(info.length), output));
 #endif
-  return absl::OkStatus();
+  return {};
 }
 
-absl::StatusOr<CpuMapping> MapWeightSlice(const LiteRtWeightInfo& info,
-                                          const WeightSource& source) {
+litert::Expected<CpuMapping> MapWeightSlice(const LiteRtWeightInfo& info,
+                                            const WeightSource& source) {
   if (source.kind == WeightSource::Kind::kHostMemory) {
     if (info.offset > source.host_memory.size() ||
         info.length > source.host_memory.size() - info.offset) {
-      return absl::OutOfRangeError(
+      return litert::Unexpected(
+          kLiteRtStatusErrorIndexOOB,
           "Weight slice out of range for host memory group");
     }
     return CpuMapping{.base = source.host_memory,
@@ -586,16 +621,18 @@ absl::StatusOr<CpuMapping> MapWeightSlice(const LiteRtWeightInfo& info,
   return MapFileSliceFromPath(info, source.path);
 }
 
-absl::Status ReadWeightSlice(const LiteRtWeightInfo& info,
-                             const WeightSource& source, void* output) {
+litert::Expected<void> ReadWeightSlice(const LiteRtWeightInfo& info,
+                                       const WeightSource& source,
+                                       void* output) {
   if (source.kind == WeightSource::Kind::kHostMemory) {
     if (info.offset > source.host_memory.size() ||
         info.length > source.host_memory.size() - info.offset) {
-      return absl::OutOfRangeError(
+      return litert::Unexpected(
+          kLiteRtStatusErrorIndexOOB,
           "Weight slice out of range for host memory group");
     }
     std::memcpy(output, source.host_memory.data() + info.offset, info.length);
-    return absl::OkStatus();
+    return {};
   }
   if (source.kind == WeightSource::Kind::kScopedFile) {
     return ReadScopedFileSlice(info, *source.section, source.scoped_source,
@@ -604,9 +641,9 @@ absl::Status ReadWeightSlice(const LiteRtWeightInfo& info,
   return ReadFileSliceFromPath(info, source.path, output);
 }
 
-absl::Status EnsureCpuTensorBuffer(LiteRtRuntimeContext* runtime_context,
-                                   Entry& entry, const LiteRtWeightInfo& info,
-                                   const WeightSource& source) {
+litert::Expected<void> EnsureCpuTensorBuffer(
+    LiteRtRuntimeContext* runtime_context, Entry& entry,
+    const LiteRtWeightInfo& info, const WeightSource& source) {
   if (!entry.access.has_value()) {
     entry.access.emplace();
   }
@@ -615,7 +652,7 @@ absl::Status EnsureCpuTensorBuffer(LiteRtRuntimeContext* runtime_context,
     if (runtime_context->get_tensor_buffer_type(
             entry.access->GetHostBuffer(), &buffer_type) == kLiteRtStatusOk &&
         buffer_type == kLiteRtTensorBufferTypeHostMemory) {
-      return absl::OkStatus();
+      return {};
     }
   }
 
@@ -629,22 +666,22 @@ absl::Status EnsureCpuTensorBuffer(LiteRtRuntimeContext* runtime_context,
       entry.cpu_mapping->data.size(), /*deallocator=*/nullptr, &host_buffer));
   entry.access->SetHostBuffer(LiteRtTensorBufferPtr(
       host_buffer, LiteRtTensorBufferDeleter{runtime_context}));
-  return absl::OkStatus();
+  return {};
 }
 
-absl::Status EnsureDeviceTensorBuffer(LiteRtRuntimeContext* runtime_context,
-                                      Entry& entry,
-                                      const LiteRtWeightInfo& info,
-                                      const WeightSource& source,
-                                      LiteRtEnvironmentT* env,
-                                      LiteRtTensorBufferType buffer_type,
-                                      absl::string_view backend_name) {
+litert::Expected<void> EnsureDeviceTensorBuffer(
+    LiteRtRuntimeContext* runtime_context, Entry& entry,
+    const LiteRtWeightInfo& info, const WeightSource& source,
+    LiteRtEnvironmentT* env, LiteRtTensorBufferType buffer_type,
+    absl::string_view backend_name) {
   if (!entry.access.has_value()) {
     entry.access.emplace();
   }
   if (!env) {
-    return absl::FailedPreconditionError(absl::StrFormat(
-        "LiteRtEnvironment must not be null for %s access", backend_name));
+    return litert::Unexpected(
+        kLiteRtStatusErrorFailedPrecondition,
+        absl::StrCat("LiteRtEnvironment must not be null for ", backend_name,
+                     " access"));
   }
 
   LiteRtTensorBuffer device_buffer;
@@ -663,65 +700,58 @@ absl::Status EnsureDeviceTensorBuffer(LiteRtRuntimeContext* runtime_context,
       runtime_context->unlock_tensor_buffer(device_buffer_ptr.get()));
 
   entry.access->SetDeviceBuffer(std::move(device_buffer_ptr));
-  return absl::OkStatus();
+  return {};
 }
 
 #if LITERT_HAS_OPENCL_SUPPORT
-absl::Status EnsureOpenClTensorBuffer(LiteRtRuntimeContext* runtime_context,
-                                      Entry& entry,
-                                      const LiteRtWeightInfo& info,
-                                      const WeightSource& source,
-                                      LiteRtEnvironmentT* env) {
+litert::Expected<void> EnsureOpenClTensorBuffer(
+    LiteRtRuntimeContext* runtime_context, Entry& entry,
+    const LiteRtWeightInfo& info, const WeightSource& source,
+    LiteRtEnvironmentT* env) {
   return EnsureDeviceTensorBuffer(runtime_context, entry, info, source, env,
                                   SelectOpenClBufferType(), "OpenCL");
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
-absl::Status EnsureMetalTensorBuffer(LiteRtRuntimeContext* runtime_context,
-                                     Entry& entry, const LiteRtWeightInfo& info,
-                                     const WeightSource& source,
-                                     LiteRtEnvironmentT* env) {
+litert::Expected<void> EnsureMetalTensorBuffer(
+    LiteRtRuntimeContext* runtime_context, Entry& entry,
+    const LiteRtWeightInfo& info, const WeightSource& source,
+    LiteRtEnvironmentT* env) {
   return EnsureDeviceTensorBuffer(runtime_context, entry, info, source, env,
                                   SelectMetalBufferType(), "Metal");
 }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
-absl::Status PrepareEntryAccess(LiteRtRuntimeContext* runtime_context,
-                                Entry& entry, const LiteRtWeightInfo& info,
-                                const WeightSource& source,
-                                const WeightAccessRequest& request,
-                                LiteRtEnvironmentT* env) {
+litert::Expected<void> PrepareEntryAccess(LiteRtRuntimeContext* runtime_context,
+                                          Entry& entry,
+                                          const LiteRtWeightInfo& info,
+                                          const WeightSource& source,
+                                          const WeightAccessRequest& request,
+                                          LiteRtEnvironmentT* env) {
   if (request.cpu) {
-    absl::Status status =
-        EnsureCpuTensorBuffer(runtime_context, entry, info, source);
-    if (!status.ok()) {
-      return status;
-    }
+    LITERT_RETURN_IF_ERROR(
+        EnsureCpuTensorBuffer(runtime_context, entry, info, source));
   }
   if (request.opencl) {
 #if LITERT_HAS_OPENCL_SUPPORT
-    absl::Status status =
-        EnsureOpenClTensorBuffer(runtime_context, entry, info, source, env);
-    if (!status.ok()) {
-      return status;
-    }
+    LITERT_RETURN_IF_ERROR(
+        EnsureOpenClTensorBuffer(runtime_context, entry, info, source, env));
 #else
-    return absl::UnimplementedError("OpenCL support not enabled in this build");
+    return litert::Unexpected(kLiteRtStatusErrorUnsupported,
+                              "OpenCL support not enabled in this build");
 #endif
   }
   if (request.metal) {
 #if LITERT_HAS_METAL_SUPPORT
-    absl::Status status =
-        EnsureMetalTensorBuffer(runtime_context, entry, info, source, env);
-    if (!status.ok()) {
-      return status;
-    }
+    LITERT_RETURN_IF_ERROR(
+        EnsureMetalTensorBuffer(runtime_context, entry, info, source, env));
 #else
-    return absl::UnimplementedError("Metal support not enabled in this build");
+    return litert::Unexpected(kLiteRtStatusErrorUnsupported,
+                              "Metal support not enabled in this build");
 #endif
   }
-  return absl::OkStatus();
+  return {};
 }
 
 void ParseFlatBuffer(const tflite::Model& model,
@@ -775,9 +805,9 @@ void ParseFlatBuffer(const tflite::Model& model,
       // FlatBuffers strings are always NUL-terminated.
       info.packing = buffer->packing() ? buffer->packing()->c_str() : "";
 
-      absl::StatusOr<LiteRtRankedTensorType> ranked_type =
+      litert::Expected<LiteRtRankedTensorType> ranked_type =
           BuildRankedTensorType(*tensor_fb);
-      if (!ranked_type.ok()) {
+      if (!ranked_type.HasValue()) {
         continue;
       }
       info.tensor_type = *ranked_type;
@@ -921,22 +951,22 @@ class LiteRtWeightLoader : public WeightLoader {
       kLiteRtLogSeverityError;
 #endif  // defined(__EMSCRIPTEN__)
 
-  // Converts an internal `absl::Status` to the ABI-stable `LiteRtStatus` that
-  // is returned across the `WeightLoader` interface. The error message can't
+  // Converts an internal `litert::Expected<void>` to the ABI-stable `LiteRtStatus`
+  // that is returned across the `WeightLoader` interface. The error message can't
   // cross the interface, so it is logged here instead.
   static LiteRtStatus ToLiteRtStatus(
-      const absl::Status& status, const char* method,
+      const litert::Expected<void>& result, const char* method,
       LiteRtLogSeverity severity = kLiteRtLogSeverityError) {
-    if (status.ok()) {
+    if (result.HasValue()) {
       return kLiteRtStatusOk;
     }
     LITERT_LOG(severity, "WeightLoader::%s failed: %s", method,
-               status.ToString().c_str());
-    return litert::ErrorStatusBuilder(status).NoLog();
+               result.Error().Message().c_str());
+    return result.Error().Status();
   }
 
-  absl::Status PrepareAccessImpl(const WeightAccessRequest& request,
-                                 LiteRtEnvironmentT* env) {
+  litert::Expected<void> PrepareAccessImpl(const WeightAccessRequest& request,
+                                           LiteRtEnvironmentT* env) {
     absl::flat_hash_set<uint32_t> prepared_ids;
     for (const auto& [external_buffer_id, _] : entries_) {
       const uint32_t canonical_external_buffer_id =
@@ -947,16 +977,17 @@ class LiteRtWeightLoader : public WeightLoader {
       LITERT_RETURN_IF_ERROR(PrepareAccessForBufferImpl(
           canonical_external_buffer_id, request, env));
     }
-    return absl::OkStatus();
+    return {};
   }
 
-  absl::Status PrepareAccessForBufferImpl(uint32_t external_buffer_id,
-                                          const WeightAccessRequest& request,
-                                          LiteRtEnvironmentT* env) {
+  litert::Expected<void> PrepareAccessForBufferImpl(
+      uint32_t external_buffer_id, const WeightAccessRequest& request,
+      LiteRtEnvironmentT* env) {
     auto it = entries_.find(GetCanonicalExternalBufferId(external_buffer_id));
     if (it == entries_.end()) {
-      return absl::InvalidArgumentError(
-          absl::StrFormat("Unknown external buffer id %u", external_buffer_id));
+      return litert::Unexpected(
+          kLiteRtStatusErrorInvalidArgument,
+          absl::StrCat("Unknown external buffer id ", external_buffer_id));
     }
     const LiteRtWeightInfo& info = infos_[it->second.info_index];
     LITERT_ASSIGN_OR_RETURN(WeightSource source, ResolveWeightSource(info));
@@ -964,20 +995,21 @@ class LiteRtWeightLoader : public WeightLoader {
                               request, env);
   }
 
-  absl::Status SetExternalWeightByBufferImpl(uint32_t external_buffer_id,
-                                             WeightAccess access) {
+  litert::Expected<void> SetExternalWeightByBufferImpl(
+      uint32_t external_buffer_id, WeightAccess access) {
     auto it = entries_.find(GetCanonicalExternalBufferId(external_buffer_id));
     if (it == entries_.end()) {
-      return absl::InvalidArgumentError(
-          absl::StrFormat("Unknown external buffer id %u", external_buffer_id));
+      return litert::Unexpected(
+          kLiteRtStatusErrorInvalidArgument,
+          absl::StrCat("Unknown external buffer id ", external_buffer_id));
     }
     ReleaseEntry(it->second);
     it->second.access = std::move(access);
-    return absl::OkStatus();
+    return {};
   }
 
 #if defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
-  absl::Status UploadWeightsOnWebImpl(
+  litert::Expected<void> UploadWeightsOnWebImpl(
       const wgpu::Queue& queue,
       const absl::flat_hash_map<int, wgpu::Buffer>& tfl_id_to_wgpu_buffer) {
     std::vector<WebWeightUploadRequest> requests;
@@ -986,7 +1018,8 @@ class LiteRtWeightLoader : public WeightLoader {
       auto entry_it = entries_.find(
           GetCanonicalExternalBufferId(static_cast<uint32_t>(id)));
       if (entry_it == entries_.end()) {
-        return absl::InternalError("Could not find WeightInfo for buffer ID.");
+        return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                  "Could not find WeightInfo for buffer ID.");
       }
       Entry& entry = entry_it->second;
       const auto& info = infos_[entry.info_index];
@@ -1026,39 +1059,49 @@ class LiteRtWeightLoader : public WeightLoader {
       });
     }
     if (requests.empty()) {
-      return absl::OkStatus();
+      return {};
     }
     if (g_web_weight_upload_callback == nullptr) {
-      return absl::FailedPreconditionError(
+      return litert::Unexpected(
+          kLiteRtStatusErrorFailedPrecondition,
           "Web weight upload callback is not registered.");
     }
-    return g_web_weight_upload_callback(queue, requests);
+    absl::Status s = g_web_weight_upload_callback(queue, requests);
+    if (!s.ok()) {
+      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                std::string(s.message()));
+    }
+    return {};
   }
 #endif  // defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
 
-  absl::Status DiscardExternalWeightByBufferImpl(uint32_t external_buffer_id) {
+  litert::Expected<void> DiscardExternalWeightByBufferImpl(
+      uint32_t external_buffer_id) {
     auto it = entries_.find(GetCanonicalExternalBufferId(external_buffer_id));
     if (it == entries_.end()) {
-      return absl::InvalidArgumentError(
-          absl::StrFormat("Unknown external buffer id %u", external_buffer_id));
+      return litert::Unexpected(
+          kLiteRtStatusErrorInvalidArgument,
+          absl::StrCat("Unknown external buffer id ", external_buffer_id));
     }
     if (!it->second.cpu_mapping.has_value()) {
-      return absl::OkStatus();
+      return {};
     }
     return DiscardCpuMappingPages(*it->second.cpu_mapping);
   }
 
-  absl::Status ReleaseExternalWeightByBufferImpl(uint32_t external_buffer_id) {
+  litert::Expected<void> ReleaseExternalWeightByBufferImpl(
+      uint32_t external_buffer_id) {
     auto it = entries_.find(GetCanonicalExternalBufferId(external_buffer_id));
     if (it == entries_.end()) {
-      return absl::InvalidArgumentError(
-          absl::StrFormat("Unknown external buffer id %u", external_buffer_id));
+      return litert::Unexpected(
+          kLiteRtStatusErrorInvalidArgument,
+          absl::StrCat("Unknown external buffer id ", external_buffer_id));
     }
     ReleaseEntry(it->second);
-    return absl::OkStatus();
+    return {};
   }
 
-  absl::StatusOr<WeightSource> ResolveWeightSource(
+  litert::Expected<WeightSource> ResolveWeightSource(
       const LiteRtWeightInfo& info) {
     // Check weight in memory map first.
     auto path_it = group_paths_.find(info.group_id);
@@ -1079,13 +1122,11 @@ class LiteRtWeightLoader : public WeightLoader {
                           .scoped_source = scoped_weight_source_.get()};
     }
 
-    absl::StatusOr<std::string> path =
-        ResolveGroupPath(info.group_id, group_paths_, model_directory_);
-    if (!path.ok()) {
-      return path.status();
-    }
+    LITERT_ASSIGN_OR_RETURN(
+        std::string path,
+        ResolveGroupPath(info.group_id, group_paths_, model_directory_));
     return WeightSource{.kind = WeightSource::Kind::kFilePath,
-                        .path = std::move(*path)};
+                        .path = std::move(path)};
   }
 
   LiteRtRuntimeContext* runtime_context_;
