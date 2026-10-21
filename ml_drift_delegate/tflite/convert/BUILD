@@ -143,7 +143,6 @@ cc_library(
         "//tflite/kernels:kernel_util",
         "@XNNPACK",
         "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
