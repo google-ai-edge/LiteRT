@@ -303,18 +303,31 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
 
   ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kFloat32> scale_values;
   ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kFloat32> zp_values;
+  // The kernels read one zero point per scale. No zero point means 0, and a
+  // single one is shared by all the scales.
+  auto set_zero_points =
+      [&](const std::vector<float>& scales,
+          const std::vector<int64_t>& zero_points) -> absl::Status {
+    if (zero_points.empty()) {
+      zp_values.data.assign(scales.size(), 0);
+    } else if (zero_points.size() == 1) {
+      zp_values.data.assign(scales.size(), zero_points[0]);
+    } else if (zero_points.size() == scales.size()) {
+      zp_values.data.assign(zero_points.begin(), zero_points.end());
+    } else {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Weights tensor (", out_info.name, ") has ", zero_points.size(),
+          " zero points for ", scales.size(), " scales."));
+    }
+    zp_values.shape = scale_values.shape;
+    return absl::OkStatus();
+  };
   if (auto pcq =
           out_info.quantization->As<const PerChannelAffineQuantization>();
       pcq.ok()) {
     scale_values.data = pcq->scales;
     scale_values.shape = ml_drift::OHWI(pcq->scales.size(), 1, 1, 1);
-    if (pcq->zero_points.empty()) {
-      zp_values.data.assign(pcq->scales.size(), 0);
-      zp_values.shape = ml_drift::OHWI(pcq->scales.size(), 1, 1, 1);
-    } else {
-      zp_values.data.assign(pcq->zero_points.begin(), pcq->zero_points.end());
-      zp_values.shape = ml_drift::OHWI(pcq->zero_points.size(), 1, 1, 1);
-    }
+    LRT_TENSOR_RETURN_IF_ERROR(set_zero_points(pcq->scales, pcq->zero_points));
   } else if (auto bwq =
                  out_info.quantization->As<const BlockwiseQuantization>();
              bwq.ok()) {
@@ -322,13 +335,7 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
     int num_blocks = ohwi.i / bwq->block_size;
     scale_values.data = bwq->scales;
     scale_values.shape = ml_drift::OHWI(ohwi.o, 1, 1, num_blocks);
-    if (bwq->zero_points.empty()) {
-      zp_values.data.assign(bwq->scales.size(), 0);
-      zp_values.shape = ml_drift::OHWI(ohwi.o, 1, 1, num_blocks);
-    } else {
-      zp_values.data.assign(bwq->zero_points.begin(), bwq->zero_points.end());
-      zp_values.shape = ml_drift::OHWI(ohwi.o, 1, 1, num_blocks);
-    }
+    LRT_TENSOR_RETURN_IF_ERROR(set_zero_points(bwq->scales, bwq->zero_points));
   } else {
     return absl::InvalidArgumentError("Unsupported quantization type");
   }
