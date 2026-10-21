@@ -28,7 +28,7 @@ namespace metadata {
 // Extracts and provides easy access to the TFLite ModelMetadata [1] and
 // corresponding associated files packed into a TFLite FlatBuffer, if any.
 //
-// [1]: https://www.tensorflow.org/lite/convert/metadata
+// [1]: https://developers.google.com/edge/litert/conversion/tensorflow/metadata
 class ModelMetadataExtractor {
  public:
   // Creates a ModelMetadataExtractor from the provided TFLite Model FlatBuffer
