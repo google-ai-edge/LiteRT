@@ -97,7 +97,8 @@ class LogErrorReporter : public tflite::ErrorReporter {  // NOLINT
 // If a chunk cannot be mapped the copy continues from the same position out of
 // the in-memory pool (logged); bytes already written came from the file at
 // consecutive offsets and stay valid. Without an fd the whole copy is from
-// memory. Returns false only on a destination (write) failure.
+// memory, and on Windows it always is (the fd belongs to another module's C
+// runtime, see below). Returns false only on a destination (write) failure.
 template <typename WriteFn>
 bool CopyPoolChunked(const PoolSource& src, WriteFn&& write_chunk,
                      const char** strategy) {
@@ -111,12 +112,34 @@ bool CopyPoolChunked(const PoolSource& src, WriteFn&& write_chunk,
                "NPU weight sharing: model is not file-backed (fd=%d); staging "
                "%zu-byte pool from memory, which faults it into RSS",
                src.fd, size);
+#ifdef LITERT_WINDOWS_OS
+  } else {
+    // On Windows src.fd cannot be used here: it is a C runtime file descriptor
+    // opened by the module that loaded the model (the LiteRT runtime in
+    // libLiteRt.dll or the application), while this dispatch DLL links its own
+    // CRT with a separate descriptor table. In this DLL the fd is either not
+    // open, so _dup()/_get_osfhandle() in tflite::MMAPAllocation invoke the CRT
+    // invalid parameter handler and fail-fast the process with 0xC0000409, or
+    // it refers to an unrelated file. Stage the pool from the in-memory model
+    // mapping instead, as before chunked staging was introduced.
+    // See also https://github.com/google-ai-edge/LiteRT-LM/issues/4023 for the
+    // same CRT file descriptor problem between LiteRT-LM and libLiteRt.dll.
+    // TODO: Restore chunked staging on Windows by passing an OS file HANDLE (or
+    // the model path) instead of a CRT file descriptor across the DLL boundary.
+    LITERT_LOG(LITERT_WARNING,
+               "NPU weight sharing: the model fd (%d) belongs to another "
+               "module's C runtime and cannot be used on Windows; staging "
+               "%zu-byte pool from memory, which faults it into RSS",
+               src.fd, size);
+    from_file = false;
+#else
   } else if (!tflite::MMAPAllocation::IsSupported()) {
     LITERT_LOG(LITERT_WARNING,
                "NPU weight sharing: file mapping unsupported on this build; "
                "staging %zu-byte pool from memory, which faults it into RSS",
                size);
     from_file = false;
+#endif  // LITERT_WINDOWS_OS
   }
 
   if (from_file) {
