@@ -75,7 +75,9 @@ set(LITERT_PTHREADPOOL_INCLUDE_DIR "${CMAKE_BINARY_DIR}/pthreadpool-source/inclu
 if(APPLE)
   target_sources(litert_runtime PRIVATE metal_info.cc)
 endif()
-target_sources(litert_runtime PRIVATE open_cl_memory.cc open_cl_sync.cc)
+if(LITERT_ENABLE_GPU)
+  target_sources(litert_runtime PRIVATE open_cl_memory.cc open_cl_sync.cc)
+endif()
 if(LITERT_ENABLE_GPU AND NOT APPLE AND NOT LITERT_PLATFORM_WINDOWS)
   target_sources(litert_runtime PRIVATE
     ${ml_drift_SOURCE_DIR}/ml_drift/common/data_type.cc
