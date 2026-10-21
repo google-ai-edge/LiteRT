@@ -47,6 +47,7 @@ namespace litert::tensor {
 template <class... Mixins>
 Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x, const Tensor<Mixins...>& cos,
                        const Tensor<Mixins...>& sin) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(x, cos, sin));
   graph::ScopeGuard scope("rope");
   scope.Bind("input", x.GetRaw())
       .Bind("cos", cos.GetRaw())
@@ -54,6 +55,15 @@ Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x, const Tensor<Mixins...>& cos,
 
   // We assume a shape of [batch, ..., head_dim].
   const Shape& x_shape = x.GetShape();
+  if (x_shape.empty()) {
+    return absl::InvalidArgumentError(
+        "RoPE expects input `x` with rank >= 1, got scalar.");
+  }
+  if (x_shape.back() <= 0 || x_shape.back() % 2 != 0) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("RoPE expects an even last dimension (head_dim), got ",
+                     x_shape.back(), "."));
+  }
   const int last_axis = static_cast<int>(x_shape.size()) - 1;
   const int half_dim = x_shape[last_axis] / 2;
   const Shape slice_size = [&] {
@@ -82,6 +92,7 @@ template <class... Mixins>
 Tensor<Mixins...> RotaryEmbedding(const Tensor<Mixins...>& input,
                                   const Tensor<Mixins...>& segment_pos,
                                   float min_timescale, float max_timescale) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(input, segment_pos));
   auto op = std::make_shared<graph::RotaryEmbeddingOperation>();
   RegisterMixins<Mixins...>(op);
   op->min_timescale = min_timescale;
@@ -156,6 +167,8 @@ Tensor<Mixins...> FeedForward(Tensor<Mixins...> x,
                               Tensor<Mixins...> up_weight,
                               Tensor<Mixins...> down_weight,
                               FFNActivation activation) {
+  LRT_TENSOR_RETURN_IF_ERROR(
+      CheckTensors(x, gate_weight, up_weight, down_weight));
   graph::ScopeGuard scope("feed_forward");
   scope.Bind("input", x.GetRaw())
       .Bind("gate_weight", gate_weight.GetRaw())
@@ -190,6 +203,7 @@ Tensor<Mixins...> FeedForward(Tensor<Mixins...> x,
 // head_dim], or an error tensor if `x` is not rank 4.
 template <class... Mixins>
 Tensor<Mixins...> RepeatKVHeads(const Tensor<Mixins...>& x, int num_groups) {
+  LRT_TENSOR_RETURN_IF_ERROR(x);
   const Shape& shape = x.GetShape();
   if (shape.size() != 4) {
     return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
@@ -258,9 +272,11 @@ Tensor<Mixins...> ScaledDotProductAttention(
     std::optional<float> scale = std::nullopt,
     std::optional<float> soft_cap = std::nullopt,
     Type datatype = Type::kUnknown, bool adj_v = false) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(q, k, v));
   graph::ScopeGuard scope("sdpa");
   scope.Bind("q", q.GetRaw()).Bind("k", k.GetRaw()).Bind("v", v.GetRaw());
-  if (attention_mask.GetStatus().ok()) {
+  if (attention_mask != TensorHandle::Invalid()) {
+    LRT_TENSOR_RETURN_IF_ERROR(attention_mask);
     scope.Bind("attention_mask", attention_mask.GetRaw());
   }
   if (scale.has_value()) {
@@ -351,7 +367,7 @@ Tensor<Mixins...> ScaledDotProductAttention(
     scores = Mul(tanh_scores, cap_tensor);
   }
 
-  if (attention_mask.GetStatus().ok()) {
+  if (attention_mask != TensorHandle::Invalid()) {
     scores = Add(scores, attention_mask);
   }
   scope.Bind("scores", scores);
@@ -380,6 +396,10 @@ template <class... Mixins>
 Tensor<Mixins...> RmsNorm(const Tensor<Mixins...>& input,
                           const Tensor<Mixins...>& scale,
                           const Tensor<Mixins...>& epsilon) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(input, epsilon));
+  if (scale != TensorHandle::Invalid()) {
+    LRT_TENSOR_RETURN_IF_ERROR(scale);
+  }
   auto op = std::make_shared<graph::RmsNormOperation>();
   RegisterMixins<Mixins...>(op);
   op->inputs = {input.GetRaw(), scale.GetRaw(), epsilon.GetRaw()};
