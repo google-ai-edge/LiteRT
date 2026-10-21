@@ -1051,6 +1051,7 @@ cc_test(
         "tflite_smoke_test",
     ],
     deps = [
+        ":builtin_ops",
         ":external_cpu_backend_context",
         ":framework",
         ":interpreter_test_util",
@@ -1062,6 +1063,7 @@ cc_test(
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/delegates/utils:simple_delegate",
+        "//tflite/internal:signature_def",
         "//tflite/kernels:kernel_util",
         "//tflite/kernels/internal:compatibility",
         "//tflite/testing:util",
