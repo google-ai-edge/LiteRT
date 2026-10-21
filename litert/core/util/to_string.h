@@ -15,7 +15,6 @@
 #ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CORE_UTIL_TO_STRING_H_
 #define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CORE_UTIL_TO_STRING_H_
 
-#include <sstream>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -28,12 +27,8 @@ template <typename T>
 std::string ToString(const T& t) {
   if constexpr (std::is_same_v<T, std::string>) {
     return t;
-  } else if constexpr (std::is_arithmetic_v<T>) {
-    return absl::StrCat(t);
   } else {
-    std::ostringstream os;
-    os << t;
-    return os.str();
+    return absl::StrCat(t);
   }
 }
 

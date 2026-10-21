@@ -14,13 +14,12 @@
 
 #include "litert/c/options/litert_webnn_options.h"
 
-#include <sstream>
 #include <string>
 
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
-#include "litert/cc/litert_macros.h"
 #include "litert/core/litert_toml_parser.h"
 
 using ::litert::internal::ParseToml;
@@ -57,14 +56,12 @@ LiteRtStatus LrtGetOpaqueWebNnOptionsData(const LrtWebNnOptions* options,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  std::stringstream ss;
-  ss << "device_type = " << static_cast<int>(options->device_type) << "\n";
-  ss << "power_preference = " << static_cast<int>(options->power_preference)
-     << "\n";
-  ss << "precision = " << static_cast<int>(options->precision) << "\n";
+  std::string toml_str = absl::StrCat(
+      "device_type = ", static_cast<int>(options->device_type), "\n",
+      "power_preference = ", static_cast<int>(options->power_preference), "\n",
+      "precision = ", static_cast<int>(options->precision), "\n");
 
   *identifier = "webnn_options_string";
-  std::string toml_str = ss.str();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
 
   return kLiteRtStatusOk;

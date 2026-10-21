@@ -914,6 +914,57 @@ sh_test(
     ],
 )
 
+# Unstripped binary linking all LiteRt* C API and Lrt* option entrypoints,
+# used for symbol leak testing.
+cc_binary(
+    name = "litert_runtime_for_symbol_test",
+    testonly = True,
+    srcs = ["litert_c_api_common_test.c"],
+    copts = ["--std=c11"],
+    features = ["-legacy_whole_archive"],
+    linkopts = select({
+        "//litert:macos": [],
+        "//litert:ios": [],
+        "//litert:windows": [],
+        "//conditions:default": [
+            "-Wl,--gc-sections",
+            "-Wl,--as-needed",
+            "-Wl,--undefined-glob=LiteRt*",
+            "-Wl,--undefined-glob=Lrt*",
+            "-Wl,--undefined=kLiteRtRuntimeBuiltin",
+            "-Wl,--export-dynamic-symbol=LiteRt*",
+            "-Wl,--export-dynamic-symbol=Lrt*",
+            "-Wl,--export-dynamic-symbol=kLiteRtRuntimeBuiltin",
+        ],
+    }) + litert_android_linkopts(),
+    linkstatic = 1,
+    # copybara:uncomment malloc = "//base:system_malloc",
+    deps = LITERT_C_API_COMMON_DEPS + [
+        ":litert_profiler_event",
+        "//litert/c/internal:litert_runtime_builtin_header",
+        "//litert/c/internal:litert_runtime_context_testonly",
+        "//litert/c/options:litert_compiler_options",
+        "//litert/c/options:litert_runtime_options",
+        "//litert/c/options:litert_webnn_options",
+    ],
+)
+
+sh_test(
+    name = "litert_runtime_symbol_test",
+    srcs = ["//litert/test:litert_runtime_symbol_test.sh"],
+    args = [
+        "$(rootpath :litert_runtime_for_symbol_test)",
+    ],
+    data = [
+        ":litert_runtime_for_symbol_test",
+    ],
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+)
+
 macos_dylib(
     name = "build_litert_runtime_c_api_dylib",
     exported_symbols_lists = export_lrt_runtime_only_script(),

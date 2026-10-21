@@ -15,15 +15,19 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RNG_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RNG_H_
 
+#include <algorithm>
+#include <array>
 #include <bitset>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
-#include <iostream>
+#include <cstring>
 #include <iterator>
 #include <limits>
 #include <optional>
 #include <ostream>
 #include <random>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <variant>

@@ -39,6 +39,7 @@ cc_library(
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
     alwayslink = True,
@@ -274,6 +275,7 @@ cc_library(
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
     # Keep the symbols in libLiteRt.dylib.

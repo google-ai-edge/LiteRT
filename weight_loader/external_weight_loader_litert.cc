@@ -31,9 +31,11 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
-#include <fstream>
-#include <ios>
+#if !defined(_WIN32)
+#include <sys/types.h>
+#endif  // !defined(_WIN32)
 #include <memory>
 #include <optional>
 #include <string>
@@ -400,26 +402,55 @@ absl::StatusOr<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
       .mmapped = true};
 }
 
+#if defined(_WIN32)
+inline int FileSeek64(std::FILE* file, int64_t offset, int whence) {
+  return _fseeki64(file, offset, whence);
+}
+
+inline int64_t FileTell64(std::FILE* file) {
+  return _ftelli64(file);
+}
+#else   // defined(_WIN32)
+inline int FileSeek64(std::FILE* file, int64_t offset, int whence) {
+  return fseeko(file, static_cast<off_t>(offset), whence);
+}
+
+inline int64_t FileTell64(std::FILE* file) {
+  return ftello(file);
+}
+#endif  // defined(_WIN32)
+
 absl::Status ReadFileSliceFromPath(const LiteRtWeightInfo& info,
                                    const std::string& path, void* output) {
-  std::ifstream file(path, std::ios::binary);
+  std::FILE* file = std::fopen(path.c_str(), "rb");
   if (!file) {
     return absl::InternalError(absl::StrFormat("Failed to open %s", path));
   }
-  file.seekg(0, std::ios::end);
-  std::streamoff file_size = file.tellg();
+  if (FileSeek64(file, 0, SEEK_END) != 0) {
+    std::fclose(file);
+    return absl::InternalError(
+        absl::StrFormat("Failed to determine size of %s", path));
+  }
+  const int64_t file_size = FileTell64(file);
   if (file_size < 0) {
+    std::fclose(file);
     return absl::InternalError(
         absl::StrFormat("Failed to determine size of %s", path));
   }
   if (static_cast<uint64_t>(file_size) < info.offset + info.length) {
+    std::fclose(file);
     return absl::InvalidArgumentError(
         absl::StrFormat("External weight slice out of range for %s", path));
   }
-  file.seekg(static_cast<std::streamoff>(info.offset), std::ios::beg);
+  if (FileSeek64(file, static_cast<int64_t>(info.offset), SEEK_SET) != 0) {
+    std::fclose(file);
+    return absl::InternalError(
+        absl::StrFormat("Failed to seek in %s", path));
+  }
 
-  file.read(reinterpret_cast<char*>(output), info.length);
-  if (!file) {
+  const size_t read_bytes = std::fread(output, 1, info.length, file);
+  std::fclose(file);
+  if (read_bytes != info.length) {
     return absl::InternalError(
         absl::StrFormat("Failed to read %lu bytes from %s", info.length, path));
   }
