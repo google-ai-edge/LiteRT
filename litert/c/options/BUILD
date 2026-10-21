@@ -407,6 +407,8 @@ filegroup(
         "litert_runtime_options.h",
         "litert_samsung_options.cc",
         "litert_samsung_options.h",
+        "litert_webnn_options.cc",
+        "litert_webnn_options.h",
     ],
     visibility = ["//litert/cc_sdk:__pkg__"],
 )

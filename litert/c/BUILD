@@ -1203,6 +1203,7 @@ filegroup(
     srcs = [
         "litert_any.h",
         "litert_builder.h",
+        "litert_common.cc",
         "litert_common.h",
         "litert_compiled_model.h",
         "litert_custom_op_kernel.h",
