@@ -17,6 +17,7 @@ import copy
 import dataclasses
 
 from absl.testing import absltest
+from absl.testing import parameterized
 import numpy as np
 
 from litert_quantizer import qtyping
@@ -44,7 +45,7 @@ def _create_dummy_uniform_quant_params(**kwargs) -> qtyping.UniformQuantParams:
   return qtyping.UniformQuantParams(**default_params)
 
 
-class QtypingTest(absltest.TestCase):
+class QtypingTest(parameterized.TestCase):
 
   def test_uniform_quant_params_eq(self):
     # Create some random params.
@@ -232,6 +233,24 @@ class QtypingTest(absltest.TestCase):
         quant_params, data_type=qtyping.TensorDataType.INT
     )
     self.assertNotEqual(quant_params, other)
+
+  @parameterized.named_parameters(
+      dict(testcase_name="same_tuple", other_dims=(0, 1), expected=True),
+      dict(testcase_name="same_list", other_dims=[0, 1], expected=True),
+      dict(testcase_name="different_dims", other_dims=(0, 2), expected=False),
+      dict(testcase_name="none", other_dims=None, expected=False),
+  )
+  def test_compare_quantized_dimensions(self, other_dims, expected):
+    params = _create_dummy_uniform_quant_params(quantized_dimensions=(0, 1))
+    other = dataclasses.replace(params, quantized_dimensions=other_dims)
+    self.assertEqual(params == other, expected)
+
+  def test_tensor_quant_config_from_dict_with_quantized_dimensions(self):
+    # JSON recipes store the dimensions as a list.
+    config = qtyping.TensorQuantizationConfig.from_dict(
+        {"num_bits": 4, "quantized_dimensions": [0, 1]}
+    )
+    self.assertEqual(config.quantized_dimensions, (0, 1))
 
 
 if __name__ == "__main__":
