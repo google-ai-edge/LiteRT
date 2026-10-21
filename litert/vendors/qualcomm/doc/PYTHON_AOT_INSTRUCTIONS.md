@@ -13,7 +13,9 @@ compilation.
 **Scope:** this flow covers **AOT model compilation on x86 Linux**, plus
 **host-side CPU verification**. It does **not** run the Qualcomm NPU. NPU
 execution happens on device with `run_model` (see
-[Run the model](#run-the-model) and [HTP_INSTRUCTIONS.md](./HTP_INSTRUCTIONS.md)).
+[Run the model](#run-the-model) and [HTP_INSTRUCTIONS.md](./HTP_INSTRUCTIONS.md)),
+or from Python on Linux aarch64 devices (see
+[On-device compilation and NPU execution](#on-device-compilation-and-npu-execution-linux-aarch64)).
 
 Two ways to compile are covered, followed by how to run the result:
 
@@ -132,10 +134,11 @@ above, `model_Qualcomm_SM8850_apply_plugin.tflite`).
 `aot_compile` is defined in the `ai_edge_litert.aot.aot_compile` submodule (it is
 not re-exported from `ai_edge_litert.aot`), so import it directly as shown.
 
-Supported `SocModel` values: `SA8255`, `SA8295`, `SM8350`, `SM8450`, `SM8475`,
-`SM8550`, `SM8650`, `SM8750`, `SM8845`, `SM8850`, and `ALL` (compile for every
-registered SoC). See [supported_soc.csv](../supported_soc.csv) for the full
-device list.
+Supported `SocModel` values: `QCS8275`, `QCS8300`, `SA8255`, `SA8295`, `SM8350`,
+`SM8450`, `SM8475`, `SM8550`, `SM8650`, `SM8750`, `SM8845`, `SM8850`, and `ALL`
+(compile for every registered SoC). See [supported_soc.csv](../supported_soc.csv)
+for the full device list. `QCS*` and `SA*` are Linux IoT/automotive targets and
+are not included in Android AI Pack device targeting.
 
 --------------------------------------------------------------------------------
 
@@ -265,6 +268,62 @@ print(interpreter.get_tensor(out["index"]))
 `HardwareAccelerator` is a bit flag (`CPU=1`, `GPU=2`, `NPU=4`). `NPU` exists in
 the enum but will fail on the host for the reason above; use it only in an
 on-device build that has the Qualcomm dispatch library.
+
+--------------------------------------------------------------------------------
+
+## On-device compilation and NPU execution (Linux aarch64)
+
+On Qualcomm **Linux aarch64** devices (for example QCS8275 running Ubuntu
+22.04+), the same two packages compile **and** run models on the NPU directly on
+the device; the `linux_aarch64` `ai-edge-litert` wheel ships the Qualcomm
+compiler plugin, dispatch library, and `apply_plugin_main`.
+
+```bash
+sudo apt-get install -y libatomic1  # Needed by the QNN host libraries.
+pip install ai-edge-litert ai-edge-litert-sdk-qualcomm
+```
+
+As on x86, the SDK package unpacks the full QAIRT SDK, so make sure the device
+has enough free disk space (see [Prerequisites](#prerequisites)).
+
+```python
+from ai_edge_litert.compiled_model import CompiledModel
+from ai_edge_litert.environment import Environment
+from ai_edge_litert.hardware_accelerator import HardwareAccelerator
+from ai_edge_litert.options import Options, QualcommOptions
+
+model = CompiledModel.from_file(
+    "model.tflite",
+    # Optional: persist the on-device compiled model across runs.
+    environment=Environment.create(compiler_cache_dir="/tmp/litert_cache"),
+    options=Options(
+        hardware_accelerators=HardwareAccelerator.NPU | HardwareAccelerator.CPU,
+        qualcomm_options=QualcommOptions(
+            htp_performance_mode=QualcommOptions.HTP_PERFORMANCE_MODE.BURST,
+        ),
+    ),
+)
+```
+
+No environment variables are required. When a `CompiledModel` is created (or
+`aot_compile` runs on the device), `ai_edge_litert_sdk_qualcomm`:
+
+*   picks the QNN host libraries matching the device glibc
+    (`lib/aarch64-oe-linux-gcc11.2` for glibc 2.34+, e.g. Ubuntu 22.04+ or
+    Qualcomm Linux; older glibc falls back to `lib/aarch64-ubuntu-gcc9.4`,
+    which only supports HTP v68);
+*   detects the SoC from `/sys/devices/soc0/machine` or the device tree, maps it
+    to its Hexagon architecture using [supported_soc.csv](../supported_soc.csv),
+    and appends `lib/hexagon-<arch>/unsigned` to `ADSP_LIBRARY_PATH`;
+*   preloads `libatomic.so.1` and the device's `libcdsprpc.so`.
+
+If the SoC cannot be detected, set `LITERT_QNN_HEXAGON_ARCH` (for example
+`v75`) or pass `QualcommOptions(dsp_skel_dir=...)`. Use
+`QualcommOptions(enable_just_in_time=True)` to compile in memory without
+serializing a context binary (the compiler cache is not used in that mode). To
+pre-compile on the device, run `aot_compile` with
+`target=qualcomm.Target(soc_model=qualcomm.SocModel.QCS8275)` and load the
+exported `.tflite` the same way.
 
 --------------------------------------------------------------------------------
 

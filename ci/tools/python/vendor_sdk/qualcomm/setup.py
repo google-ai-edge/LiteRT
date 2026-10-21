@@ -38,7 +38,9 @@ SKIP_SDK_DOWNLOAD = os.environ.get('SKIP_SDK_DOWNLOAD', False)
 
 # Platform information
 IS_LINUX = sys.platform == 'linux'
-IS_X86_ARCHITECTURE = platform.machine() in ('x86_64', 'i386', 'i686')
+IS_SUPPORTED_ARCHITECTURE = platform.machine() in (
+    'x86_64', 'i386', 'i686', 'aarch64', 'arm64'
+)
 
 
 # --- Configuration for Qualcomm SDK Download ---
@@ -67,10 +69,10 @@ def _download_and_extract(
     tarball_url: str, prefix_to_strip: str, target_dir: str
 ):
   """Download archive, extracts and copy."""
-  if not (IS_LINUX and IS_X86_ARCHITECTURE):
+  if not (IS_LINUX and IS_SUPPORTED_ARCHITECTURE):
     print(
-        'IGNORED: Currently LiteRT NPU AOT for Qualcomm is only supported on'
-        ' Linux x86 architecture.'
+        'IGNORED: Currently LiteRT NPU for Qualcomm is only supported on'
+        ' Linux x86_64 and aarch64.'
     )
     return
 
