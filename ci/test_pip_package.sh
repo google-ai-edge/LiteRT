@@ -147,8 +147,9 @@ function test_import {
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_google_tensor"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_intel"
 
-  # Intel OpenVINO backend imports
-  if [[ "$(uname -s)" != "Darwin" ]]; then
+  # Intel OpenVINO backend imports (the OpenVINO plugin is not packaged for
+  # macOS or Linux aarch64).
+  if [[ "$(uname -s)" != "Darwin" && "$(uname -m)" != "aarch64" ]]; then
     ${PYTHON_BIN} -c "from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend; print('Intel OpenVINO backend ID:', intel_openvino_backend.IntelOpenVinoBackend.id())"
     ${PYTHON_BIN} -c "
 import os
@@ -156,6 +157,32 @@ from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend
 d = intel_openvino_backend.get_dispatch_dir()
 assert d and os.path.isdir(d), f'Dispatch dir not found: {d}'
 print('Dispatch dir:', d)
+"
+  fi
+
+  # apply_plugin_main must keep its execute bit in every Linux wheel.
+  if [[ "$(uname -s)" == "Linux" ]]; then
+    ${PYTHON_BIN} -c "
+import os
+import ai_edge_litert
+tool = os.path.join(os.path.dirname(ai_edge_litert.__file__), 'tools/apply_plugin_main')
+assert os.access(tool, os.X_OK), f'apply_plugin_main is not executable: {tool}'
+"
+  fi
+
+  # Qualcomm on-device NPU artifacts in the Linux aarch64 wheel.
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "aarch64" ]]; then
+    ${PYTHON_BIN} -c "
+import glob, os
+import ai_edge_litert
+root = os.path.dirname(ai_edge_litert.__file__)
+plugin = os.path.join(root, 'vendors/qualcomm/compiler/libLiteRtCompilerPlugin_Qualcomm.so')
+assert os.path.isfile(plugin), f'Missing Qualcomm compiler plugin: {plugin}'
+dispatch = glob.glob(os.path.join(root, 'vendors/qualcomm/dispatch/*.so'))
+assert dispatch, 'Missing Qualcomm dispatch library'
+from ai_edge_litert.aot.vendors.qualcomm import target
+assert target.SocModel.QCS8275
+print('Qualcomm aarch64 artifacts OK:', plugin, dispatch[0])
 "
   fi
   echo

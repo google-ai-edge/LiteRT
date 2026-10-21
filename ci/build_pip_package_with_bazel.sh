@@ -56,10 +56,13 @@ case "${TENSORFLOW_TARGET}" in
       --repo_env=USE_PYWRAP_RULES=True"
     ;;
   aarch64)
-    BAZEL_FLAGS="--config=release_arm64_linux
-      --define tensorflow_mkldnn_contraction_kernel=0
+    BAZEL_FLAGS="--define tensorflow_mkldnn_contraction_kernel=0
       ${OPTIMIZATION_COPT}
       --repo_env=USE_PYWRAP_RULES=True"
+    if [[ "${ARCH}" == "x86_64" ]]; then
+      # Cross-compile the linux_aarch64 wheel from an x86_64 host.
+      BAZEL_FLAGS="${BAZEL_FLAGS} --config=cross_compile_linux_arm64"
+    fi
     ;;
   native)
     BAZEL_FLAGS="${OPTIMIZATION_COPT}
@@ -118,9 +121,18 @@ echo "Output can be found here:"
 find "./dist/"
 
 if [ "${TEST_MANYLINUX_COMPLIANCE}" = "true" ]; then
-  echo "Testing manylinux compliance..."
-  bazel ${BAZEL_STARTUP_OPTIONS} test -c opt \
-    ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:manylinux_compliance_test
+  if [[ "${TENSORFLOW_TARGET}" == "aarch64" && "${ARCH}" == "x86_64" ]]; then
+    # The bazel test would be built for the cross-compiled target platform and
+    # cannot run on the host; check the wheel with auditwheel directly.
+    echo "Testing manylinux compliance of the cross-compiled wheel..."
+    ${CI_BUILD_PYTHON:-python3} -m pip install -q auditwheel
+    ${CI_BUILD_PYTHON:-python3} -m auditwheel show dist/*.whl | tee /tmp/auditwheel.txt
+    grep -q "manylinux_2_27_aarch64" /tmp/auditwheel.txt
+  else
+    echo "Testing manylinux compliance..."
+    bazel ${BAZEL_STARTUP_OPTIONS} test -c opt \
+      ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:manylinux_compliance_test
+  fi
 fi
 
 # Vendor SDKs

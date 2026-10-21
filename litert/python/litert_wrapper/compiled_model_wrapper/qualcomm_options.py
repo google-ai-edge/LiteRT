@@ -146,6 +146,10 @@ class QualcommOptions:
   backend: Optional[QualcommBackend] = None
   saver_output_dir: str = ""
   graph_io_tensor_mem_type: Optional[QualcommGraphIOTensorMemType] = None
+  # New fields are appended to keep positional construction compatible.
+  enable_just_in_time: Optional[bool] = None
+  qnn_lib_dir: str = ""
+  dsp_skel_dir: str = ""
 
   def _as_flat_kwargs(self) -> dict[str, Any]:
     """Returns kwargs for the internal pybind wrapper."""
@@ -162,6 +166,9 @@ class QualcommOptions:
         ),
         "qualcomm_enable_weight_sharing": option_utils.optional_bool_to_int(
             self.enable_weight_sharing
+        ),
+        "qualcomm_enable_just_in_time": option_utils.optional_bool_to_int(
+            self.enable_just_in_time
         ),
         "qualcomm_use_conv_hmx": option_utils.optional_bool_to_int(
             self.use_conv_hmx
@@ -189,4 +196,6 @@ class QualcommOptions:
         "qualcomm_graph_io_tensor_mem_type": option_utils.optional_enum_to_int(
             self.graph_io_tensor_mem_type
         ),
+        "qualcomm_qnn_lib_dir": self.qnn_lib_dir,
+        "qualcomm_dsp_skel_dir": self.dsp_skel_dir,
     }
