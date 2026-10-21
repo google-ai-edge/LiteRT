@@ -505,14 +505,20 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_dispatch_delegate_vendor_options",
+        "//litert/core:build_stamp",
+        "//litert/core:dispatch_op_schema",
         "//litert/core:options",
+        "//litert/core/model",
         "//tflite:framework_stable",
         "//tflite:mutable_op_resolver",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
-        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
     ] + select({
         "//litert:without_builtin_ops": [
             "//tflite/c:c_api_opaque_without_op_resolver_without_alwayslink",
@@ -526,6 +532,24 @@ cc_library(
 cc_library(
     name = "tensor_identifier",
     hdrs = ["tensor_identifier.h"],
+)
+
+cc_test(
+    name = "tfl_utils_test",
+    srcs = ["tfl_utils_test.cc"],
+    deps = [
+        ":tfl_utils",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_expected",
+        "//litert/cc/internal:litert_dispatch_delegate_vendor_options",
+        "//litert/core:build_stamp",
+        "//litert/core:dispatch_op_schema",
+        "//litert/core/model",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_library(
@@ -727,9 +751,9 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_consts",
+        "//litert/cc/internal:litert_dispatch_delegate_vendor_options",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_tensor_buffer_utils",
-        "//litert/cc/internal:scoped_weight_source",
         "//litert/core:buffer_error_reporter",
         "//litert/core:build_stamp",
         "//litert/core:environment",

@@ -30,6 +30,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/options/litert_cpu_options.h"
@@ -52,7 +53,6 @@
 #include <android/hardware_buffer.h>
 #endif
 
-#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -86,6 +86,7 @@
 #include "litert/core/util/perfetto_profiling.h"
 #include "tflite/model_builder.h"
 #if !defined(LITERT_DISABLE_NPU)
+#include "litert/cc/internal/litert_dispatch_delegate_vendor_options.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/cache/compilation_cache.h"
 #include "litert/core/model/model_serialize.h"
@@ -1082,6 +1083,29 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
       LITERT_RETURN_IF_ERROR(
           dispatch_options.SetAllocBaseSize(compiled_model->fb_model_size_));
     }
+#if !defined(LITERT_DISABLE_NPU)
+    // Only needed when delegating to NPU.
+    LITERT_ASSIGN_OR_RETURN(
+        litert::internal::DispatchDelegateVendorOptions vendor_options,
+        litert::internal::BuildDispatchDelegateVendorOptions(*model));
+    if (!vendor_options.FunctionMappings().empty()) {
+      const char* identifier = nullptr;
+      void* payload = nullptr;
+      void (*payload_deleter)(void*) = nullptr;
+      LITERT_RETURN_IF_ERROR(vendor_options.GetOpaqueOptionsData(
+          &identifier, &payload, &payload_deleter));
+      auto cleaner = absl::MakeCleanup([&] {
+        if (payload_deleter != nullptr && payload != nullptr) {
+          payload_deleter(payload);
+        }
+      });
+      LITERT_ASSIGN_OR_RETURN(
+          litert::OpaqueOptions vendor_node,
+          litert::OpaqueOptions::Create(identifier, payload, payload_deleter));
+      std::move(cleaner).Cancel();
+      LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(vendor_node)));
+    }
+#endif  // !defined(LITERT_DISABLE_NPU)
     LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(dispatch_options)));
   }
 
