@@ -232,7 +232,8 @@ absl::Status BuildMoeExpertsGpuGraph(
     const ::ml_drift::GpuModelBuilder::TensorHandle* ff1_shared_scale,
     const ::ml_drift::GpuModelBuilder::TensorHandle* linear_shared_scale,
     int model_dim, int hidden_dim, int num_experts, int num_active_experts,
-    MoeExpertsAttributes::WeightType weight_type, ::ml_drift::ValueId output_id,
+    MoeExpertsAttributes::WeightType weight_type,
+    MoeExpertsAttributes::Activation activation, ::ml_drift::ValueId output_id,
     const ::ml_drift::BHWC& output_shape) {
   const ::ml_drift::BHWC src_shape = src.tensor_desc.GetBHWCShape();
   const int sequence_size = src_shape.w;
@@ -292,7 +293,11 @@ absl::Status BuildMoeExpertsGpuGraph(
       auto gate,
       run_expert_projection(expert_src, gate_weight, gate_scale_ptr,
                             gate_shared_scale, model_dim, hidden_dim));
-  gate = model_builder->MakeGeluTanh(gate);
+  if (activation == MoeExpertsAttributes::Activation::kSilu) {
+    gate = model_builder->SiLU(gate);
+  } else {
+    gate = model_builder->MakeGeluTanh(gate);
+  }
 
   ABSL_ASSIGN_OR_RETURN(
       auto ff1, run_expert_projection(expert_src, ff1_weight, ff1_scale_ptr,
@@ -420,7 +425,7 @@ absl::Status CreateMoeExpertsFromNode(
       linear_scale_ptr, gate_shared_scale_ptr, ff1_shared_scale_ptr,
       linear_shared_scale_ptr, attr.model_dim, attr.hidden_dim,
       attr.num_experts, attr.num_active_experts, attr.weight_type,
-      outputs[0]->id, outputs[0]->tensor.shape);
+      attr.activation, outputs[0]->id, outputs[0]->tensor.shape);
 }
 
 absl::Status CreateMoeExpertsFromIrOp(
@@ -475,14 +480,19 @@ absl::Status CreateMoeExpertsFromIrOp(
                  ? MoeExpertsAttributes::WeightType::kInt4
                  : MoeExpertsAttributes::WeightType::kFp32);
 
+  auto legacy_activation =
+      attr.activation == ir::MoeExpertsAttributes::Activation::kSilu
+          ? MoeExpertsAttributes::Activation::kSilu
+          : MoeExpertsAttributes::Activation::kGeluTanh;
+
   return BuildMoeExpertsGpuGraph(
       model_builder, src, top_weights, top_indices, gate_weight, ff1_weight,
       linear_weight, per_expert_scale, gate_scale_ptr, ff1_scale_ptr,
       linear_scale_ptr, /*gate_shared_scale=*/nullptr,
       /*ff1_shared_scale=*/nullptr, /*linear_shared_scale=*/nullptr,
       attr.model_dim, attr.hidden_dim, attr.num_experts,
-      attr.num_active_experts, legacy_weight_type, outputs[0]->id,
-      outputs[0]->desc.GetBHWCShape());
+      attr.num_active_experts, legacy_weight_type, legacy_activation,
+      outputs[0]->id, outputs[0]->desc.GetBHWCShape());
 }
 
 }  // namespace litert::ml_drift
