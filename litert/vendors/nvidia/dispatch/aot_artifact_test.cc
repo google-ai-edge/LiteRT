@@ -210,6 +210,105 @@ TEST(MappedAotArtifactTest, WritableArtifactCannotUseIdentityFastPath) {
   EXPECT_EQ((*second)->validation(), AotArtifactValidation::kProcessCache);
 }
 
+TEST(AotRuntimeCacheKeyTest, StableAndNamespaced) {
+  TensorRtAotLocator locator;
+  locator.artifact_size = 123;
+  locator.fingerprint = {456, 789};
+  locator.version = 2;
+  EXPECT_EQ(AotRuntimeCacheKey(locator), "aot_v1_2_123_456_789");
+}
+
+TEST(AotRuntimeCacheKeyTest, ChangesWithEitherFingerprintHalfOrSize) {
+  TensorRtAotLocator locator;
+  locator.artifact_size = 123;
+  locator.fingerprint = {456, 789};
+  const auto original = AotRuntimeCacheKey(locator);
+  auto changed = locator;
+  ++changed.fingerprint.low;
+  EXPECT_NE(original, AotRuntimeCacheKey(changed));
+  changed = locator;
+  ++changed.fingerprint.high;
+  EXPECT_NE(original, AotRuntimeCacheKey(changed));
+  changed = locator;
+  ++changed.artifact_size;
+  EXPECT_NE(original, AotRuntimeCacheKey(changed));
+}
+
+TEST(AotRuntimeCacheKeyTest, SeparatesFingerprintVersions) {
+  TensorRtAotLocator locator;
+  locator.artifact_size = 123;
+  locator.fingerprint = {456, 789};
+  locator.version = 1;
+  const auto original = AotRuntimeCacheKey(locator);
+  locator.version = 2;
+  EXPECT_NE(original, AotRuntimeCacheKey(locator));
+}
+
+TEST(AotRuntimeCacheKeyTest, ChangedContentInEveryChunkChangesKey) {
+  std::vector<uint8_t> contents(2 * kTensorRtAotFingerprintChunkBytes + 1, 42);
+  TensorRtAotLocator locator;
+  locator.artifact_size = contents.size();
+  locator.fingerprint =
+      FingerprintTensorRtAotArtifact(contents.data(), contents.size());
+  const auto original = AotRuntimeCacheKey(locator);
+  for (size_t offset : {size_t{0}, kTensorRtAotFingerprintChunkBytes - 1,
+                        kTensorRtAotFingerprintChunkBytes,
+                        contents.size() - 1}) {
+    ++contents[offset];
+    locator.fingerprint =
+        FingerprintTensorRtAotArtifact(contents.data(), contents.size());
+    EXPECT_NE(original, AotRuntimeCacheKey(locator)) << offset;
+    --contents[offset];
+  }
+  locator.fingerprint =
+      FingerprintTensorRtAotArtifact(contents.data(), contents.size());
+  EXPECT_EQ(original, AotRuntimeCacheKey(locator));
+}
+
+TEST(AotRuntimeCacheKeyTest, RebuiltArtifactRejectsOldLocatorAndChangesKey) {
+  TemporaryArtifact artifact;
+  ASSERT_TRUE(artifact.valid());
+  const std::vector<uint8_t> original = {2, 4, 6, 8};
+  const std::vector<uint8_t> changed = {2, 4, 6, 7};
+  ASSERT_TRUE(artifact.Write(original, S_IRUSR));
+  const auto old_locator = LocatorFor(artifact, original);
+  auto old_mapping = MappedAotArtifact::Open(old_locator);
+  ASSERT_TRUE(old_mapping.HasValue());
+  ASSERT_TRUE(artifact.Write(changed, S_IRUSR, ".replacement"));
+  ASSERT_EQ(rename((artifact.path() + ".replacement").c_str(),
+                   artifact.path().c_str()),
+            0);
+  EXPECT_FALSE(MappedAotArtifact::Open(old_locator).HasValue());
+  const auto new_locator = LocatorFor(artifact, changed);
+  EXPECT_TRUE(MappedAotArtifact::Open(new_locator).HasValue());
+  EXPECT_NE(AotRuntimeCacheKey(old_locator), AotRuntimeCacheKey(new_locator));
+}
+
+TEST(MappedAotArtifactTest, CachedValidationRejectsChangedWritableArtifact) {
+  TemporaryArtifact artifact;
+  ASSERT_TRUE(artifact.valid());
+  const std::vector<uint8_t> original = {2, 4, 6, 8};
+  const std::vector<uint8_t> changed = {2, 4, 6, 7};
+  ASSERT_TRUE(artifact.Write(original, S_IRUSR | S_IWUSR));
+  const auto locator = LocatorFor(artifact, original);
+  ASSERT_TRUE(MappedAotArtifact::Open(locator).HasValue());
+  ASSERT_TRUE(artifact.Write(changed, S_IRUSR | S_IWUSR));
+  const timespec timestamps[2] = {{1, 0}, {1, 0}};
+  ASSERT_EQ(utimensat(AT_FDCWD, artifact.path().c_str(), timestamps, 0), 0);
+  EXPECT_FALSE(MappedAotArtifact::Open(locator).HasValue());
+}
+
+TEST(AotRuntimeCacheKeyTest, PortableAcrossPathsAndFileIdentities) {
+  TensorRtAotLocator locator;
+  locator.path = "/original/artifact.bin";
+  locator.artifact_size = 123;
+  locator.fingerprint = {456, 789};
+  auto relocated = locator;
+  relocated.path = "/relocated/artifact.bin";
+  relocated.file_identity = TensorRtAotFileIdentity{};
+  EXPECT_EQ(AotRuntimeCacheKey(locator), AotRuntimeCacheKey(relocated));
+}
+
 TEST(MappedAotArtifactTest, ForcedAuditComputesMatchingContentFingerprint) {
   TemporaryArtifact artifact;
   ASSERT_TRUE(artifact.valid());
