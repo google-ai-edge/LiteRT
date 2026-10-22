@@ -26,7 +26,6 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
-#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/model_builder_helper.h"
@@ -263,16 +262,17 @@ absl::StatusOr<MoeExpertsAttributes> ReadAttributes(
           absl::StrCat("moe is missing ", key, "."));
     }
   }
-  // The kernel emits the tanh approximation of GELU, which is what Gemma 4's
-  // reference implementation (`F.gelu(..., approximate="tanh")`) uses.
-  // "gelu_tanh" is the accurate label; "gelu" is the legacy spelling emitted by
-  // older exporters for the same math and is still accepted.
+  MoeExpertsAttributes attr;
   if (!IsMissing(map, "activation")) {
     const std::string activation = map["activation"].AsString().str();
-    if (activation != "gelu" && activation != "gelu_tanh") {
+    if (activation == "gelu" || activation == "gelu_tanh") {
+      attr.activation = MoeExpertsAttributes::Activation::kGeluTanh;
+    } else if (activation == "silu" || activation == "swish") {
+      attr.activation = MoeExpertsAttributes::Activation::kSilu;
+    } else {
       return absl::InvalidArgumentError(
           "moe only supports activation='gelu_tanh' (or its legacy spelling "
-          "'gelu').");
+          "'gelu') or 'silu'.");
     }
   }
   if (!IsMissing(map, "renormalized_top_weights") &&
@@ -281,7 +281,6 @@ absl::StatusOr<MoeExpertsAttributes> ReadAttributes(
         "moe expects renormalized_top_weights=true.");
   }
 
-  MoeExpertsAttributes attr;
   attr.num_experts = map["num_experts"].AsInt32();
   attr.num_active_experts = map["num_active_experts"].AsInt32();
   attr.model_dim = map["model_dim"].AsInt32();
