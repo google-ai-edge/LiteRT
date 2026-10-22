@@ -224,6 +224,8 @@ struct TfLiteTraits {
       // The interpreter rejects empty zero points, and blockwise
       // dequantizations compute zeros.
       "QuantizedWeightsSharedByDotAndAddOp",
+      // The interpreter rejects empty zero points.
+      "DequantizePerChannelOp",
   };
   static std::unique_ptr<TestBackendBridge> CreateBridge() {
     return std::make_unique<TfLiteTestBackendBridge>();

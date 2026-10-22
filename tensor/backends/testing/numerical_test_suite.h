@@ -3873,6 +3873,63 @@ bool IsDisabled() {
 
 }  // namespace numerical_test_internal
 
+TYPED_TEST_P(NumericalTestSuite, DequantizePerChannelOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  struct TestCase {
+    int quantized_dim;
+    std::vector<float> scales;
+    std::vector<int64_t> zero_points;
+    std::vector<float> expected_output;
+  };
+  // [[1, 3, 5], [-7, 9, 11]].
+  const std::vector<int8_t> input_data = {1, 3, 5, -7, 9, 11};
+  int num_run = 0;
+  for (const TestCase& c : {
+           TestCase{.quantized_dim = 0,
+                    .scales = {0.5f, 2.0f},
+                    .zero_points = {1, -1},
+                    .expected_output = {0, 1, 2, -12, 20, 24}},
+           TestCase{.quantized_dim = 1,
+                    .scales = {0.5f, 0.25f, 2.0f},
+                    .zero_points = {1, 3, 5},
+                    .expected_output = {0, 0, 0, -4, 1.5, 12}},
+           TestCase{.quantized_dim = 1,
+                    .scales = {0.5f, 0.25f, 2.0f},
+                    .zero_points = {},
+                    .expected_output = {0.5, 0.75, 10, -3.5, 2.25, 22}},
+       }) {
+    SCOPED_TRACE(::testing::Message()
+                 << "quantized_dimension=" << c.quantized_dim
+                 << " zero_points=" << c.zero_points.size());
+    Tensor<Tag> input(
+        {.type = Type::kI8,
+         .shape = {2, 3},
+         .quantization = std::make_shared<PerChannelAffineQuantization>(
+             c.scales, c.zero_points, c.quantized_dim)});
+    Tensor<Tag> output = Dequantize(input);
+
+    std::unique_ptr<TestBackendBridge> bridge = TypeParam::CreateBridge();
+    ASSERT_OK(bridge->Initialize());
+    absl::Status status = bridge->BuildGraph({input}, {output});
+    if (status.code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(status);
+    ASSERT_OK(bridge->SetInput(input, AsBytes(input_data)));
+    ASSERT_OK(bridge->Execute());
+    std::vector<float> actual_output(c.expected_output.size());
+    ASSERT_OK(bridge->GetOutput(output, AsBytes(actual_output)));
+    ++num_run;
+    EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), c.expected_output));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Per-channel dequantize is unimplemented on this backend.";
+  }
+}
+
 // Fully connected ops with per-channel and blockwise quantized weights, with
 // and without bias and activation. Five output channels don't fill whole bytes
 // of sub-byte weights once transposed to [K, N].
@@ -4539,9 +4596,9 @@ REGISTER_TYPED_TEST_SUITE_P(
     MaxPool2DOp, SplitOp, PackOp, UnpackOp, ResizeNearestNeighborOp,
     LogSoftmaxOp, Relu0To1Op, ReluN1To1Op, ZerosLikeOp, GreaterOp, LogicalOrOp,
     SpaceToDepthOp, BitwiseXorOp, RightShiftOp, ProbeOp, PadOp, PadV2Op,
-    GatherNdOp, DynamicUpdateSliceOp, QuantizeOp, DequantizeOp, RopeOp, TopKOp,
-    NonMaxSuppressionV5Op, StableHLOCompositeOp,
-    FullyConnectedQuantizedWeightsOp,
+    GatherNdOp, DynamicUpdateSliceOp, QuantizeOp, DequantizeOp,
+    DequantizePerChannelOp, RopeOp, TopKOp, NonMaxSuppressionV5Op,
+    StableHLOCompositeOp, FullyConnectedQuantizedWeightsOp,
     FullyConnectedQuantizedWeightsRank3InputOp,
     FullyConnectedPerTensorAndAsymmetricOp, BatchMatMulQuantizedRhsOp,
     TransposedQuantizedWeightsIntoBatchMatMulOp,

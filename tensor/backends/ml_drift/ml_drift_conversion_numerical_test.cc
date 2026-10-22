@@ -266,6 +266,8 @@ struct MlDriftTraits {
   static constexpr absl::string_view kDisabledTests[] = {
       // Dequantizing values without zero points aborts.
       "QuantizedWeightsSharedByDotAndAddOp",
+      // Dequantizing per-channel int8 inputs crashes.
+      "DequantizePerChannelOp",
   };
   static std::unique_ptr<TestBackendBridge> CreateBridge() {
     return std::make_unique<MlDriftTestBackendBridge>();
