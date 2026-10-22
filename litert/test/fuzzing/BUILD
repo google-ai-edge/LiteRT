@@ -48,7 +48,7 @@ cc_test(
     data = [
         "//tflite:testdata/add.bin",
     ],
-    shard_count = 4,
+    shard_count = 2,
     deps = [
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
@@ -97,7 +97,7 @@ cc_library(
 cc_test(
     name = "pad_fuzz_test",
     srcs = ["pad_fuzz_test.cc"],
-    shard_count = 6,
+    shard_count = 2,
     deps = [
         ":fuzzing_support",
         "//tflite:framework",
@@ -115,7 +115,6 @@ cc_test(
     name = "pad_xnnpack_fuzz_test",
     srcs = ["pad_fuzz_test.cc"],
     defines = ["TFLITE_PAD_FUZZ_ENABLE_XNNPACK"],
-    shard_count = 2,
     deps = [
         ":fuzzing_support",
         "//tflite:framework",
@@ -132,7 +131,6 @@ cc_test(
 cc_test(
     name = "mirror_pad_fuzz_test",
     srcs = ["mirror_pad_fuzz_test.cc"],
-    shard_count = 3,
     deps = [
         ":fuzzing_support",
         "//tflite:framework",
@@ -148,7 +146,6 @@ cc_test(
 cc_test(
     name = "stablehlo_pad_fuzz_test",
     srcs = ["stablehlo_pad_fuzz_test.cc"],
-    shard_count = 3,
     deps = [
         ":fuzzing_support",
         "//tflite:framework",
@@ -165,7 +162,7 @@ cc_test(
 cc_test(
     name = "convolution_fuzz_test",
     srcs = ["convolution_fuzz_test.cc"],
-    shard_count = 10,
+    shard_count = 4,
     deps = [
         ":fuzzing_support",
         "//tflite:framework",
@@ -184,7 +181,7 @@ cc_test(
     name = "convolution_xnnpack_fuzz_test",
     srcs = ["convolution_fuzz_test.cc"],
     defines = ["TFLITE_CONVOLUTION_FUZZ_ENABLE_XNNPACK"],
-    shard_count = 6,
+    shard_count = 2,
     deps = [
         ":fuzzing_support",
         "//tflite:framework",
@@ -202,7 +199,6 @@ cc_test(
 cc_test(
     name = "arg_min_max_fuzz_test",
     srcs = ["arg_min_max_fuzz_test.cc"],
-    shard_count = 2,
     deps = [
         ":fuzzing_support",
         "//tflite:framework",
@@ -235,7 +231,7 @@ cc_test(
 cc_test(
     name = "reduce_fuzz_test",
     srcs = ["reduce_fuzz_test.cc"],
-    shard_count = 5,
+    shard_count = 2,
     deps = [
         ":fuzzing_support",
         "//tflite:framework",
@@ -271,7 +267,7 @@ cc_test(
 cc_test(
     name = "segment_fuzz_test",
     srcs = ["segment_fuzz_test.cc"],
-    shard_count = 4,
+    shard_count = 2,
     deps = [
         ":fuzzing_support",
         "//tflite:framework",
@@ -288,7 +284,6 @@ cc_test(
 cc_test(
     name = "topk_v2_fuzz_test",
     srcs = ["topk_v2_fuzz_test.cc"],
-    shard_count = 2,
     deps = [
         ":fuzzing_support",
         "//tflite:framework",
@@ -305,7 +300,6 @@ cc_test(
 cc_test(
     name = "cast_fuzz_test",
     srcs = ["cast_fuzz_test.cc"],
-    shard_count = 2,
     deps = [
         ":fuzzing_support",
         "//tflite:framework",
@@ -322,7 +316,7 @@ cc_test(
 cc_test(
     name = "reshape_fuzz_test",
     srcs = ["reshape_fuzz_test.cc"],
-    shard_count = 4,
+    shard_count = 2,
     deps = [
         ":fuzzing_support",
         "//tflite:array",
@@ -361,7 +355,7 @@ cc_test(
 cc_test(
     name = "slice_fuzz_test",
     srcs = ["slice_fuzz_test.cc"],
-    shard_count = 8,
+    shard_count = 3,
     deps = [
         ":fuzzing_support",
         "//tflite:framework",
@@ -381,7 +375,6 @@ cc_test(
     name = "slice_xnnpack_fuzz_test",
     srcs = ["slice_fuzz_test.cc"],
     defines = ["TFLITE_SLICE_FUZZ_ENABLE_XNNPACK"],
-    shard_count = 3,
     deps = [
         ":fuzzing_support",
         "//tflite:framework",
@@ -400,7 +393,7 @@ cc_test(
 cc_test(
     name = "embedding_lookup_fuzz_test",
     srcs = ["embedding_lookup_fuzz_test.cc"],
-    shard_count = 6,
+    shard_count = 2,
     deps = [
         ":fuzzing_support",
         "//tflite:framework",
