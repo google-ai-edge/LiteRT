@@ -39,6 +39,8 @@
 #include "ml_drift/cl/cl_context.h"  // from @ml_drift
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
+#include "litert/c/internal/litert_accelerator_registration.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
@@ -59,6 +61,7 @@
 #include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_any.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -70,8 +73,12 @@
 #include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
+#include "litert/core/build_stamp.h"
+#include "litert/core/dispatch_op_schema.h"
 #include "litert/core/model/model.h"
 #include "litert/core/options.h"
+#include "litert/runtime/accelerator.h"
+#include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/open_cl_memory.h"
 #include "litert/runtime/tensor_buffer.h"
@@ -80,6 +87,7 @@
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include "ml_drift_delegate/delegate/buffer_handler_opencl.h"
+#include "tflite/builtin_ops.h"
 #include "tflite/interpreter.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -2515,6 +2523,242 @@ TEST(CompiledModelTest, RunWithUnboundInputUsesZeroFallbackBuffer) {
   }
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(env_ptr);
+}
+
+// Builds a two-signature ("sig_a", "sig_b") model where each signature's
+// subgraph contains a DISPATCH_OP with custom options naming "func_a" and
+// "func_b" respectively.
+Expected<flatbuffers::DetachedBuffer> BuildMultiSignatureDispatchModel() {
+  std::ifstream input_file(testing::GetTestFilePath(kModelFileName),
+                           std::ios::binary);
+  if (!input_file.is_open()) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Failed to open simple_model.tflite");
+  }
+  const std::string original_model((std::istreambuf_iterator<char>(input_file)),
+                                   std::istreambuf_iterator<char>());
+
+  std::unique_ptr<tflite::ModelT> tfl_model =
+      tflite::UnPackModel(original_model.data());
+  if (tfl_model == nullptr || tfl_model->subgraphs.size() != 1) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Expected one subgraph");
+  }
+
+  const uint32_t dispatch_opcode_index = tfl_model->operator_codes.size();
+  auto dispatch_opcode = std::make_unique<tflite::OperatorCodeT>();
+  dispatch_opcode->builtin_code = tflite::BuiltinOperator_CUSTOM;
+  dispatch_opcode->deprecated_builtin_code =
+      static_cast<int8_t>(tflite::BuiltinOperator_CUSTOM);
+  dispatch_opcode->custom_code =
+      std::string(internal::kLiteRtDispatchOpCustomName);
+  tfl_model->operator_codes.push_back(std::move(dispatch_opcode));
+
+  tfl_model->subgraphs.push_back(
+      std::make_unique<tflite::SubGraphT>(*tfl_model->subgraphs[0]));
+
+  auto set_dispatch_op = [&](tflite::SubGraphT& subgraph,
+                             absl::string_view func_name) {
+    tflite::OperatorT& op = *subgraph.operators[0];
+    op.opcode_index = dispatch_opcode_index;
+    op.builtin_options.Reset();
+    auto opts = internal::MakeDispatchOpOptions({
+        .bytecode_size = 16,
+        .bytecode_offset = 0,
+        .name = std::string(func_name),
+    });
+    op.custom_options.assign(opts.Data(), opts.Data() + opts.Size());
+    op.custom_options_format = tflite::CustomOptionsFormat_FLEXBUFFERS;
+  };
+  set_dispatch_op(*tfl_model->subgraphs[0], "func_a");
+  set_dispatch_op(*tfl_model->subgraphs[1], "func_b");
+
+  auto make_signature = [](absl::string_view key, uint32_t subgraph_index,
+                           const tflite::SubGraphT& subgraph) {
+    auto sig = std::make_unique<tflite::SignatureDefT>();
+    sig->signature_key = std::string(key);
+    sig->subgraph_index = subgraph_index;
+    for (int32_t input_idx : subgraph.inputs) {
+      auto tensor_map = std::make_unique<tflite::TensorMapT>();
+      tensor_map->name = subgraph.tensors[input_idx]->name;
+      tensor_map->tensor_index = input_idx;
+      sig->inputs.push_back(std::move(tensor_map));
+    }
+    for (int32_t output_idx : subgraph.outputs) {
+      auto tensor_map = std::make_unique<tflite::TensorMapT>();
+      tensor_map->name = subgraph.tensors[output_idx]->name;
+      tensor_map->tensor_index = output_idx;
+      sig->outputs.push_back(std::move(tensor_map));
+    }
+    return sig;
+  };
+  tfl_model->signature_defs.clear();
+  tfl_model->signature_defs.push_back(
+      make_signature("sig_a", 0, *tfl_model->subgraphs[0]));
+  tfl_model->signature_defs.push_back(
+      make_signature("sig_b", 1, *tfl_model->subgraphs[1]));
+
+  flatbuffers::FlatBufferBuilder builder;
+  tflite::FinishModelBuffer(builder,
+                            tflite::Model::Pack(builder, tfl_model.get()));
+  return builder.Release();
+}
+
+struct ActiveFunctionsCapture {
+  bool delegate_created = false;
+  std::vector<std::string> active_function_names;
+
+  static LiteRtStatus GetName(LiteRtAcceleratorConst accelerator,
+                              const char** name) {
+    *name = "ActiveFunctionsCaptureAccelerator";
+    return kLiteRtStatusOk;
+  }
+
+  static LiteRtStatus GetVersion(LiteRtAcceleratorConst accelerator,
+                                 LiteRtApiVersion* version) {
+    *version = {1, 0, 0};
+    return kLiteRtStatusOk;
+  }
+
+  static LiteRtStatus GetHardwareSupport(
+      LiteRtAcceleratorConst accelerator,
+      LiteRtHwAcceleratorSet* supported_hardware) {
+    *supported_hardware = kLiteRtHwAcceleratorCpu;
+    return kLiteRtStatusOk;
+  }
+
+  static LiteRtStatus CreateDelegate(LiteRtRuntimeContext* runtime_context,
+                                     LiteRtEnvironment env,
+                                     LiteRtAcceleratorConst accelerator,
+                                     LiteRtOptions options,
+                                     LiteRtDelegateWrapper* delegate) {
+    auto* capture = static_cast<ActiveFunctionsCapture*>(accelerator->data);
+    capture->delegate_created = true;
+    capture->active_function_names.clear();
+    auto opaque = OpaqueOptions::WrapCObject(options->options, OwnHandle::kNo);
+    if (auto dispatch_opts =
+            FindOpaqueOptions<internal::DispatchDelegateOptions>(opaque);
+        dispatch_opts) {
+      if (auto names = dispatch_opts->GetActiveFunctionNames(); names) {
+        capture->active_function_names = std::move(*names);
+      }
+    }
+    *delegate = nullptr;
+    return kLiteRtStatusOk;
+  }
+};
+
+void RegisterActiveFunctionsCaptureAccelerator(
+    LiteRtEnvironment env, ActiveFunctionsCapture* capture) {
+  LiteRtAccelerator accelerator = nullptr;
+  ASSERT_EQ(LiteRtCreateAccelerator(&accelerator), kLiteRtStatusOk);
+  ASSERT_EQ(
+      LiteRtSetAcceleratorGetName(accelerator, ActiveFunctionsCapture::GetName),
+      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetAcceleratorGetVersion(accelerator,
+                                           ActiveFunctionsCapture::GetVersion),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetAcceleratorGetHardwareSupport(
+                accelerator, ActiveFunctionsCapture::GetHardwareSupport),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetDelegateFunction(accelerator,
+                                      ActiveFunctionsCapture::CreateDelegate),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtRegisterAccelerator(env, accelerator, capture,
+                                      /*ReleaseData=*/nullptr),
+            kLiteRtStatusOk);
+}
+
+TEST(CompiledModelTest, SelectedSignaturesForwardsActiveDispatchFunctions) {
+  LITERT_ASSERT_OK_AND_ASSIGN(flatbuffers::DetachedBuffer model_buffer,
+                              BuildMultiSignatureDispatchModel());
+
+  TfLiteRegistration dispatch_op_reg{};
+  dispatch_op_reg.builtin_code = kTfLiteBuiltinCustom;
+  dispatch_op_reg.custom_name = internal::kLiteRtDispatchOpCustomName.data();
+  dispatch_op_reg.prepare = [](TfLiteContext*, TfLiteNode*) {
+    return kTfLiteOk;
+  };
+  dispatch_op_reg.invoke = [](TfLiteContext*, TfLiteNode*) {
+    return kTfLiteOk;
+  };
+
+  auto run_with_selected_signatures = [&](absl::Span<const StringView>
+                                              selected_signatures,
+                                          ActiveFunctionsCapture& capture) {
+    LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                                LiteRtEnvironmentT::CreateWithOptions({}));
+    LiteRtEnvironmentT* env_ptr = env.release();
+    RegisterActiveFunctionsCaptureAccelerator(env_ptr, &capture);
+
+    LiteRtModel model = nullptr;
+    ASSERT_EQ(LiteRtCreateModelFromBuffer(env_ptr, model_buffer.data(),
+                                          model_buffer.size(), &model),
+              kLiteRtStatusOk);
+
+    LiteRtOptions jit_compilation_options = nullptr;
+    ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+    ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                   kLiteRtHwAcceleratorCpu),
+              kLiteRtStatusOk);
+    jit_compilation_options->custom_tflite_op_registrations.push_back(
+        &dispatch_op_reg);
+
+    if (!selected_signatures.empty()) {
+      LITERT_ASSERT_OK_AND_ASSIGN(auto runtime_options,
+                                  RuntimeOptions::Create());
+      LITERT_ASSERT_OK(
+          runtime_options.SetSelectedSignatures(selected_signatures));
+      const char* identifier = nullptr;
+      void* payload = nullptr;
+      void (*payload_deleter)(void*) = nullptr;
+      ASSERT_EQ(
+          LrtGetOpaqueRuntimeOptionsData(runtime_options.Get(), &identifier,
+                                         &payload, &payload_deleter),
+          kLiteRtStatusOk);
+      LiteRtOpaqueOptions opaque_opts = nullptr;
+      ASSERT_EQ(LiteRtCreateOpaqueOptions(identifier, payload, payload_deleter,
+                                          &opaque_opts),
+                kLiteRtStatusOk);
+      ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options, opaque_opts),
+                kLiteRtStatusOk);
+    }
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        LiteRtCompiledModelT::Ptr compiled_model,
+        LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+    LiteRtDestroyOptions(jit_compilation_options);
+    LiteRtDestroyModel(model);
+    LiteRtDestroyEnvironment(env_ptr);
+  };
+
+  // Selecting only "sig_b" forwards only "func_b".
+  {
+    ActiveFunctionsCapture capture;
+    const StringView selected[] = {"sig_b"};
+    run_with_selected_signatures(selected, capture);
+    ASSERT_TRUE(capture.delegate_created);
+    EXPECT_THAT(capture.active_function_names, ElementsAre("func_b"));
+  }
+
+  // Selecting both signatures forwards both dispatch functions in subgraph
+  // order.
+  {
+    ActiveFunctionsCapture capture;
+    const StringView selected[] = {"sig_a", "sig_b"};
+    run_with_selected_signatures(selected, capture);
+    ASSERT_TRUE(capture.delegate_created);
+    EXPECT_THAT(capture.active_function_names, ElementsAre("func_a", "func_b"));
+  }
+
+  // Without signature selection, active_function_names is left empty so all
+  // graphs remain enabled by default.
+  {
+    ActiveFunctionsCapture capture;
+    run_with_selected_signatures({}, capture);
+    ASSERT_TRUE(capture.delegate_created);
+    EXPECT_TRUE(capture.active_function_names.empty());
+  }
 }
 
 }  // namespace

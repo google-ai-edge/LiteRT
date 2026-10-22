@@ -15,6 +15,8 @@
 # Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dispatch_api")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
@@ -24,6 +26,26 @@ package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//visibility:private"],
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
+)
+
+cc_library(
+    name = "active_functions",
+    hdrs = ["active_functions.h"],
+    deps = [
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "active_functions_test",
+    srcs = ["active_functions_test.cc"],
+    deps = [
+        ":active_functions",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 litert_dispatch_api(
@@ -56,11 +78,14 @@ litert_dispatch_api(
     so_name = "libLiteRtDispatch_Qualcomm.so",
     visibility = ["//litert:litert_public"],
     deps = [
+        ":active_functions",
         "//litert/cc/internal:litert_context_wrapper",
         "//litert/cc/internal:litert_options_wrapper",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
@@ -99,6 +124,7 @@ litert_dispatch_api(
 litert_bin(
     name = "LiteRtDispatch_Qualcomm",
     srcs = [
+        "active_functions.h",
         "dispatch_api.cc",
         "litert_dispatch_device_context.cc",
         "litert_dispatch_device_context.h",
@@ -158,6 +184,8 @@ litert_bin(
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
