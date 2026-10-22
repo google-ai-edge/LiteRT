@@ -757,7 +757,7 @@ typedef struct LiteRtRuntimeCApiStruct {
       LiteRtAcceleratorConst accelerator,
       LiteRtHwAcceleratorSet* supported_hardware);
   // litert_compiled_model.h: LiteRtCompiledModelIsNonCpuFullyAccelerated
-  // This API was added in version 1.1.0.
+  // This API was added in version 1.2.0.
   LiteRtStatus (*litert_compiled_model_is_non_cpu_fully_accelerated)(
       LiteRtCompiledModel compiled_model, bool* non_cpu_fully_accelerated);
 } LiteRtRuntimeCApiStruct;
