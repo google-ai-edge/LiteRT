@@ -820,7 +820,7 @@ class BidirectionalRNNOpModel : public SingleOpModel {
   int num_batches() { return batches_; }
   int sequence_len() { return sequence_len_; }
 
- private:
+ protected:
   int input_;
   int fw_weights_;
   int fw_recurrent_weights_;
@@ -844,6 +844,29 @@ class BidirectionalRNNOpModel : public SingleOpModel {
   int aux_input_size_;
   bool quantize_weights_;
 };
+
+class ResizableBidirectionalRNNOpModel : public BidirectionalRNNOpModel {
+ public:
+  using BidirectionalRNNOpModel::BidirectionalRNNOpModel;
+
+  TfLiteStatus ResizeAuxInput(const std::vector<int>& new_shape) {
+    return interpreter_->ResizeInputTensor(aux_input_, new_shape);
+  }
+  TfLiteStatus Allocate() { return interpreter_->AllocateTensors(); }
+};
+
+TEST(BidirectionalRNNOpTest, InvalidAuxInputShapesRejected) {
+  ResizableBidirectionalRNNOpModel aux_rnn(
+      /*batches=*/2, /*sequence_len=*/4, /*fw_units=*/16, /*bw_units=*/16,
+      /*input_size=*/4, /*aux_input_size=*/4,
+      /*aux_input_mode=*/AuxInputMode::kCrossLinking, /*time_major=*/false,
+      /*merge_outputs=*/false);
+  ASSERT_EQ(aux_rnn.ResizeAuxInput({2, 4, 2}), kTfLiteOk);
+  EXPECT_EQ(aux_rnn.Allocate(), kTfLiteError);
+
+  ASSERT_EQ(aux_rnn.ResizeAuxInput({2, 8}), kTfLiteOk);
+  EXPECT_EQ(aux_rnn.Allocate(), kTfLiteError);
+}
 
 // Declare LSTMOpTest as a parameterized test.
 class BidirectionalRNNOpTest
