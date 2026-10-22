@@ -77,7 +77,8 @@ class CustomBuffer {
  private:
   // Private constructor to create a custom buffer.
   CustomBuffer(LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
-               LiteRtTensorBufferType buffer_type, HwMemoryInfo* hw_memory_info)
+               LiteRtTensorBufferType buffer_type,
+               HwMemoryInfoV1* hw_memory_info)
       : env_(env), buffer_type_(buffer_type), hw_memory_info_(hw_memory_info) {}
 
   LiteRtEnvironment env_;
