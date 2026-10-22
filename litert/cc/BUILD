@@ -948,6 +948,8 @@ cc_test(
         "//litert/c/internal:litert_runtime_builtin_header",
         "//litert/c/internal:litert_runtime_builtin_static",
         "//litert/c/internal:litert_runtime_context_header",
+        "//litert/cc/internal:litert_handle",
+        "//litert/cc/internal:litert_runtime_proxy_api",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
