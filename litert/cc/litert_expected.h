@@ -27,7 +27,6 @@
 #ifndef LITERT_NO_ABSL
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #endif  // LITERT_NO_ABSL
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_api_types.h"
@@ -158,9 +157,10 @@ class Error {
 #ifndef LITERT_NO_ABSL
   template <class Sink>
   friend void AbslStringify(Sink& sink, const Error& error) {
-    absl::Format(&sink, "%s", LiteRtGetStatusString(error.status_));
+    sink.Append(LiteRtGetStatusString(error.status_));
     if (!error.Message().empty()) {
-      absl::Format(&sink, ": %v", error.Message());
+      sink.Append(": ");
+      sink.Append(error.Message());
     }
   }
 #endif  // LITERT_NO_ABSL
@@ -519,15 +519,15 @@ struct CanBeAbslFormated {
 template <class Sink, class T>
 void AbslStringify(Sink& sink, const Expected<T>& expected) {
   if (!expected.HasValue()) {
-    absl::Format(&sink, "%v", expected.Error());
+    AbslStringify(sink, expected.Error());
   } else {
     if constexpr (std::is_same_v<T, void>) {
       sink.Append("void expected value");
     } else {
       if constexpr (internal::CanBeAbslFormated<T>::value) {
-        absl::Format(&sink, "%v", expected.Value());
+        sink.Append(absl::StrCat(expected.Value()));
       } else {
-        absl::Format(&sink, "unformattable expected value");
+        sink.Append("unformattable expected value");
       }
     }
   }

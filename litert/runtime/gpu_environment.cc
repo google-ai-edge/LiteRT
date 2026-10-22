@@ -19,7 +19,7 @@
 #include <string>   // NOLINT
 #include <vector>
 
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_any.h"
@@ -489,9 +489,9 @@ Expected<void> GpuEnvironment::AddEnvironmentOptions(
       continue;
     }
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      absl::StrFormat("Cannot add the following option to "
-                                      "existing GPU environment. Tag: %d",
-                                      opt.tag));
+                      absl::StrCat("Cannot add the following option to "
+                                   "existing GPU environment. Tag: ",
+                                   opt.tag));
   }
   return {};
 }

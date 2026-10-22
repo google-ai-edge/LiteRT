@@ -37,7 +37,8 @@ enum class Status(val code: Int) {
   ErrorWrongVersion(8),
   ErrorUnknown(9),
   ErrorAlreadyExists(10),
-  ErrorCancelled(11),
+  ErrorFailedPrecondition(11),
+  ErrorCancelled(100),
 
   // File and loading related errors.
   ErrorFileIO(500),
