@@ -3,6 +3,7 @@
 
 #include <array>  // NOLINT
 #include <cstdint>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -219,6 +220,64 @@ TEST_P(QnnModelTest, DetectionPostprocessZeroScaleDoesNotCrash) {
                 {custom_opts.data(), custom_opts.size()}, tensor_pool_, inputs,
                 outputs, op_wrappers),
             kLiteRtStatusOk);
+}
+
+// Verifies that a TFLite "no score filtering" sentinel (-inf) is clamped to 0
+// and does not cause the builder or graph finalization to fail.
+TEST_P(QnnModelTest, DetectionPostprocessNegInfScoreThresholdIsClamped) {
+  static constexpr int kNumAnchors = 4;
+  static constexpr int kNumClasses = 2;
+  static constexpr int kMaxDetections = 2;
+
+  auto custom_opts = BuildCustomOptions(
+      kNumClasses, kMaxDetections,
+      /*score_threshold=*/-std::numeric_limits<float>::infinity(),
+      /*iou_threshold=*/0.5f,
+      /*y_scale=*/10.0f, /*x_scale=*/10.0f,
+      /*h_scale=*/5.0f, /*w_scale=*/5.0f);
+
+  auto& box_encodings = tensor_pool_.CreateInputTensorWithName(
+      "box_encodings", QNN_DATATYPE_FLOAT_32, {},
+      {1, static_cast<uint32_t>(kNumAnchors), 4});
+  auto& class_predictions = tensor_pool_.CreateInputTensorWithName(
+      "class_predictions", QNN_DATATYPE_FLOAT_32, {},
+      {1, static_cast<uint32_t>(kNumAnchors),
+       static_cast<uint32_t>(kNumClasses + 1)});
+  auto& anchors = tensor_pool_.CreateInputTensorWithName(
+      "anchors", QNN_DATATYPE_FLOAT_32, {},
+      {static_cast<uint32_t>(kNumAnchors), 4});
+
+  auto& out_boxes = tensor_pool_.CreateOutputTensorWithName(
+      "out_boxes", QNN_DATATYPE_FLOAT_32, {}, {1});
+  auto& out_classes = tensor_pool_.CreateOutputTensorWithName(
+      "out_classes", QNN_DATATYPE_FLOAT_32, {}, {1});
+  auto& out_scores = tensor_pool_.CreateOutputTensorWithName(
+      "out_scores", QNN_DATATYPE_FLOAT_32, {}, {1});
+  auto& out_num_det = tensor_pool_.CreateOutputTensorWithName(
+      "out_num_det", QNN_DATATYPE_FLOAT_32, {}, {1});
+
+  std::vector<::qnn::TensorWrapperRef> inputs = {box_encodings,
+                                                 class_predictions, anchors};
+  std::vector<::qnn::TensorWrapperRef> outputs = {out_boxes, out_classes,
+                                                  out_scores, out_num_det};
+  std::vector<::qnn::OpWrapper> op_wrappers;
+
+  ASSERT_EQ(::qnn::BuildDetectionPostprocessOp(
+                {custom_opts.data(), custom_opts.size()}, tensor_pool_, inputs,
+                outputs, op_wrappers),
+            kLiteRtStatusOk);
+  ASSERT_FALSE(op_wrappers.empty());
+
+  // Verify confidence_threshold (scalar param 0) was clamped from -inf to 0.
+  auto confidence_param = op_wrappers[0].GetScalarParam(0);
+  ASSERT_TRUE(confidence_param.has_value());
+  Qnn_Param_t qnn_param = QNN_PARAM_INIT;
+  confidence_param->CloneTo(qnn_param);
+  ASSERT_EQ(qnn_param.paramType, QNN_PARAMTYPE_SCALAR);
+  EXPECT_FLOAT_EQ(qnn_param.scalarParam.floatValue, 0.0f);
+
+  qnn_model_.MoveOpsToGraph(std::move(op_wrappers));
+  ASSERT_TRUE(qnn_model_.Finalize());
 }
 
 // End-to-end accuracy test (on-device only).
