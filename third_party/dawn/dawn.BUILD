@@ -14,6 +14,8 @@ py_binary(
     imports = [
         "generator",
     ],
+    # Disable implicit __init__.py creation in runfiles so @jinja2 is not shadowed.
+    legacy_create_init = 0,
     deps = [
         "@jinja2",
     ],
