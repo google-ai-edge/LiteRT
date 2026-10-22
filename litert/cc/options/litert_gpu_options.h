@@ -418,7 +418,6 @@ class GpuOptions : public ConcreteOptionsBase {
     return LrtSetGpuOptionsDebugLastDelegateNodeIndex(options_, node_index);
   }
 
- private:
   /// @brief Selects the IrModel initialization pipeline instead of the legacy
   /// GraphFloat32 pipeline. Both pipelines are always compiled and linked, the
   /// selection happens at runtime.
@@ -428,6 +427,7 @@ class GpuOptions : public ConcreteOptionsBase {
     return LrtSetGpuOptionsUseIrModel(options_, use_ir_model);
   }
 
+ private:
   LrtGpuOptions* options_;
 };
 
