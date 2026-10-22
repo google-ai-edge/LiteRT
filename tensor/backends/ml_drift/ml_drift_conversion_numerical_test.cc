@@ -244,8 +244,6 @@ struct MlDriftTraits {
   using Tag = MlDriftMixinTag;
   // TODO(b/574438217): Enable these tests once the ML Drift backend is fixed.
   static constexpr absl::string_view kDisabledTests[] = {
-      // The kernels for per-tensor weights don't compile.
-      "FullyConnectedPerTensorAndAsymmetricOp",
       // Dequantizing values without zero points aborts.
       "QuantizedWeightsSharedByDotAndAddOp",
   };

@@ -19,8 +19,10 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <set>
 #include <string>
@@ -308,7 +310,20 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
           out_info.quantization->As<const PerChannelAffineQuantization>();
       pcq.ok()) {
     pcq_ptr = &(*pcq);
-    scale_zp_shape = ml_drift::OHWI(pcq_ptr->scales.size(), 1, 1, 1);
+    int num_scales = pcq_ptr->scales.size();
+    if (num_scales == 1) {
+      // ML Drift's FC kernels read a single scale from a scalar argument that
+      // external weights can't set, so a per-tensor scale is repeated for each
+      // output channel. A single output channel would still have one scale.
+      LRT_TENSOR_ASSIGN_OR_RETURN(auto ohwi, ShapeToOHWI(out_info.shape));
+      if (ohwi.o == 1) {
+        return absl::UnimplementedError(absl::StrCat(
+            "Weights tensor (", out_info.name,
+            ") has a single output channel, whose scale ML Drift can't read."));
+      }
+      num_scales = ohwi.o;
+    }
+    scale_zp_shape = ml_drift::OHWI(num_scales, 1, 1, 1);
   } else if (auto bwq =
                  out_info.quantization->As<const BlockwiseQuantization>();
              bwq.ok()) {
@@ -372,8 +387,12 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
   };
   if (pcq_ptr != nullptr) {
     scale_values.data = pcq_ptr->scales;
+    if (scale_values.data.size() == 1) {
+      // A per-tensor scale is repeated for each output channel, see above.
+      scale_values.data.assign(scale_zp_shape.o, scale_values.data[0]);
+    }
     LRT_TENSOR_RETURN_IF_ERROR(
-        set_zero_points(pcq_ptr->scales, pcq_ptr->zero_points));
+        set_zero_points(scale_values.data, pcq_ptr->zero_points));
   } else {
     scale_values.data = bwq_ptr->scales;
     LRT_TENSOR_RETURN_IF_ERROR(
@@ -1151,10 +1170,9 @@ absl::Status OpMixin<BatchMatMulOperation, MlDriftMixinTag>::ToMlDrift(
           "BatchMatMul with a transposed lhs of rank > 2 and a rank 2 rhs is "
           "not supported.");
     }
-    int lhs_rows = 1;
-    for (size_t i = 0; i + 1 < lhs_info.shape.size(); ++i) {
-      lhs_rows *= lhs_info.shape[i];
-    }
+    const int lhs_rows =
+        std::accumulate(lhs_info.shape.begin(), lhs_info.shape.end() - 1, 1,
+                        std::multiplies<>());
     lhs = ctx.gpu_model_builder->Reshape(
         lhs, ml_drift::BHWC(1, 1, lhs_rows, lhs_info.shape.back()));
     rhs = ctx.gpu_model_builder->Reshape(
