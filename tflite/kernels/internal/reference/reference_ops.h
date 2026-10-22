@@ -440,12 +440,15 @@ void Split(const SplitParams& params, const RuntimeShape& input_shape,
   }
 
   const Scalar* input_ptr = input_data;
-  for (int k = 0; k < outer_size; k++) {
+  for (int64_t k = 0; k < outer_size; k++) {
     for (int i = 0; i < outputs_count; ++i) {
-      const int copy_size = output_shapes[i]->Dims(axis) * base_inner_size;
-      memcpy(output_data[i] + k * copy_size, input_ptr,
-             copy_size * sizeof(Scalar));
-      input_ptr += copy_size;
+      const int64_t copy_size =
+          static_cast<int64_t>(output_shapes[i]->Dims(axis)) * base_inner_size;
+      if (copy_size > 0) {
+        memcpy(output_data[i] + k * copy_size, input_ptr,
+               static_cast<size_t>(copy_size) * sizeof(Scalar));
+        input_ptr += copy_size;
+      }
     }
   }
 }
@@ -515,8 +518,8 @@ inline void FakeQuant(const tflite::FakeQuantParams& op_params,
 
 // Common subroutine for both `GatherNd` and `GatherNdString`.
 struct GatherNdHelperResult {
-  int n_slices;
-  int slice_size;
+  int64_t n_slices;
+  int64_t slice_size;
   int indices_nd;
   std::vector<int> dims_to_count;
 };
@@ -541,7 +544,15 @@ inline GatherNdHelperResult GatherNdHelper(const RuntimeShape& params_shape,
     ret.slice_size *= params_shape.Dims(i);
   }
 
-  int remain_flat_size = params_shape.FlatSize();
+  bool has_zero_index_dim = false;
+  for (int i = 0; i < ret.indices_nd; ++i) {
+    if (params_shape.Dims(i) <= 0) {
+      has_zero_index_dim = true;
+      break;
+    }
+  }
+  int remain_flat_size =
+      (ret.slice_size == 0 || has_zero_index_dim) ? 0 : params_shape.FlatSize();
   ret.dims_to_count.assign(ret.indices_nd, 0);
   for (int i = 0; i < ret.indices_nd; ++i) {
     const int dim = params_shape.Dims(i);
@@ -567,14 +578,26 @@ inline TfLiteStatus GatherNd(const RuntimeShape& params_shape,
   const GatherNdHelperResult res = GatherNdHelper(params_shape, indices_shape);
   if (res.n_slices == 0) return kTfLiteOk;
 
-  if (indices_data == nullptr ||
+  if ((res.indices_nd > 0 && indices_data == nullptr) ||
       (res.slice_size > 0 &&
        (params_data == nullptr || output_data == nullptr))) {
     return kTfLiteError;
   }
 
-  const int flat_size = params_shape.FlatSize();
-  for (int i = 0; i < res.n_slices; ++i) {
+  int64_t flat_size = 0;
+  if (res.slice_size > 0) {
+    bool has_zero_index_dim = false;
+    for (int j = 0; j < res.indices_nd; ++j) {
+      if (params_shape.Dims(j) <= 0) {
+        has_zero_index_dim = true;
+        break;
+      }
+    }
+    if (!has_zero_index_dim) {
+      flat_size = params_shape.FlatSize();
+    }
+  }
+  for (int64_t i = 0; i < res.n_slices; ++i) {
     int64_t from_pos = 0;
     for (int j = 0; j < res.indices_nd; ++j) {
       const auto coord = indices_data[i * res.indices_nd + j];
@@ -583,11 +606,14 @@ inline TfLiteStatus GatherNd(const RuntimeShape& params_shape,
       }
       from_pos += static_cast<int64_t>(coord) * res.dims_to_count[j];
     }
+    if (res.slice_size == 0) {
+      continue;
+    }
     if (from_pos < 0 || from_pos + res.slice_size > flat_size) {
       return kTfLiteError;
     }
     std::memcpy(output_data + i * res.slice_size, params_data + from_pos,
-                sizeof(ParamsT) * res.slice_size);
+                sizeof(ParamsT) * static_cast<size_t>(res.slice_size));
   }
   return kTfLiteOk;
 }
@@ -614,16 +640,28 @@ inline TfLiteStatus GatherNdString(const RuntimeShape& params_shape,
     return kTfLiteOk;
   }
 
-  if (indices_data == nullptr || params_data == nullptr ||
-      output_data == nullptr) {
+  if ((res.indices_nd > 0 && indices_data == nullptr) ||
+      params_data == nullptr || output_data == nullptr) {
     return kTfLiteError;
   }
 
   DynamicBuffer buffer;
   const int num_strings =
       params_data->data.raw != nullptr ? GetStringCount(params_data) : 0;
-  const int max_pos = std::min(params_shape.FlatSize(), num_strings);
-  for (int i = 0; i < res.n_slices; ++i) {
+  int max_pos = 0;
+  if (res.slice_size > 0) {
+    bool has_zero_index_dim = false;
+    for (int j = 0; j < res.indices_nd; ++j) {
+      if (params_shape.Dims(j) <= 0) {
+        has_zero_index_dim = true;
+        break;
+      }
+    }
+    if (!has_zero_index_dim) {
+      max_pos = std::min(params_shape.FlatSize(), num_strings);
+    }
+  }
+  for (int64_t i = 0; i < res.n_slices; ++i) {
     int64_t from_pos = 0;
     for (int j = 0; j < res.indices_nd; ++j) {
       const auto coord = indices_data[i * res.indices_nd + j];
@@ -632,10 +670,13 @@ inline TfLiteStatus GatherNdString(const RuntimeShape& params_shape,
       }
       from_pos += static_cast<int64_t>(coord) * res.dims_to_count[j];
     }
+    if (res.slice_size == 0) {
+      continue;
+    }
     if (from_pos < 0 || from_pos + res.slice_size > max_pos) {
       return kTfLiteError;
     }
-    for (int j = 0; j < res.slice_size; ++j) {
+    for (int64_t j = 0; j < res.slice_size; ++j) {
       if (buffer.AddString(GetString(params_data, from_pos + j)) != kTfLiteOk) {
         return kTfLiteError;
       }
@@ -667,19 +708,42 @@ inline TfLiteStatus ScatterNd(const RuntimeShape& indices_shape,
     slice_size *= updates_shape.Dims(i);
   }
 
-  int output_flat_size = output_shape.FlatSize();
-  int remain_flat_size = output_flat_size;
+  bool output_has_zero_dim = false;
+  for (int i = 0; i < output_shape.DimensionsCount(); ++i) {
+    if (output_shape.Dims(i) <= 0) {
+      output_has_zero_dim = true;
+      break;
+    }
+  }
+  int64_t output_flat_size =
+      output_has_zero_dim ? 0 : output_shape.FlatSize();
+  int64_t remain_flat_size = output_flat_size;
   std::vector<int> dims_to_count(indices_nd, 0);
   for (int i = 0; i < indices_nd; ++i) {
     const int dim = output_shape.Dims(i);
-    dims_to_count[i] = (dim == 0) ? 0 : remain_flat_size / dim;
+    dims_to_count[i] =
+        (dim == 0) ? 0 : static_cast<int>(remain_flat_size / dim);
     remain_flat_size = dims_to_count[i];
   }
 
-  if (static_cast<int64_t>(n_slices) * slice_size > updates_shape.FlatSize()) {
+  if (n_slices > 0 && slice_size > 0 &&
+      n_slices * slice_size > updates_shape.FlatSize()) {
     return kTfLiteError;
   }
-  memset(output_data, 0, sizeof(UpdatesT) * output_flat_size);
+  if (output_flat_size > 0) {
+    if (output_data == nullptr) {
+      return kTfLiteError;
+    }
+    memset(output_data, 0,
+           sizeof(UpdatesT) * static_cast<size_t>(output_flat_size));
+  }
+  if (n_slices == 0) {
+    return kTfLiteOk;
+  }
+  if ((indices_nd > 0 && indices_data == nullptr) ||
+      (slice_size > 0 && (updates_data == nullptr || output_data == nullptr))) {
+    return kTfLiteError;
+  }
   for (int64_t i = 0; i < n_slices; ++i) {
     int64_t to_pos = 0;
     for (int j = 0; j < indices_nd; ++j) {
@@ -690,10 +754,13 @@ inline TfLiteStatus ScatterNd(const RuntimeShape& indices_shape,
       }
       to_pos += static_cast<int64_t>(idx) * dims_to_count[j];
     }
+    if (slice_size == 0) {
+      continue;
+    }
     if (to_pos < 0 || to_pos + slice_size > output_flat_size) {
       return kTfLiteError;
     }
-    for (int j = 0; j < slice_size; j++) {
+    for (int64_t j = 0; j < slice_size; j++) {
       output_data[to_pos + j] = WrappingAdd<UpdatesT>(
           output_data[to_pos + j], updates_data[i * slice_size + j]);
     }

@@ -72,23 +72,23 @@ inline int EndForAxis(const DynamicStridedSliceParams& params,
   if (shrink_axis) {
     return start >= axis_size ? start : start + 1;
   }
-  int end = params.stop_indices[axis];
+  int64_t end = params.stop_indices[axis];
   if (params.offset) {
     end += start;
   }
   const int stride = params.strides[axis];
-  if (end < 0) {
+  if (!params.offset && end < 0) {
     end += axis_size;
   }
   if (stride > 0) {
-    end = strided_slice::Clamp(end, 0, axis_size);
+    end = std::clamp<int64_t>(end, 0, axis_size);
   } else {
-    end = strided_slice::Clamp(end, -1, axis_size - 1);
+    end = std::clamp<int64_t>(end, -1, axis_size - 1);
   }
-  if (AxisMask(params.end_mask, axis)) {
+  if (!params.offset && AxisMask(params.end_mask, axis)) {
     end = stride > 0 ? axis_size : -1;
   }
-  return end;
+  return static_cast<int>(end);
 }
 
 template <typename T>
@@ -107,19 +107,22 @@ inline void StridedSlice(const DynamicStridedSliceParams& op_params,
     writer->Write(0);
     return;
   }
-  input_strides[dims - 1] = 1;
-  for (int i = dims - 2; i >= 0; --i) {
-    input_strides[i] = input_strides[i + 1] * input_shape.Dims(i + 1);
-  }
   auto loop_condition = [](int64_t index, int64_t stop, int stride) {
     return stride > 0 ? index < stop : index > stop;
   };
   for (int axis = 0; axis < dims; ++axis) {
+    if (input_shape.Dims(axis) <= 0) {
+      return;
+    }
     starts[axis] = StartForAxis(op_params, input_shape, axis);
     stops[axis] = EndForAxis(op_params, input_shape, axis, starts[axis]);
     if (!loop_condition(starts[axis], stops[axis], op_params.strides[axis])) {
       return;
     }
+  }
+  input_strides[dims - 1] = 1;
+  for (int i = dims - 2; i >= 0; --i) {
+    input_strides[i] = input_strides[i + 1] * input_shape.Dims(i + 1);
   }
 
   int inner_contig_axis = dims;

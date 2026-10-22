@@ -1632,7 +1632,46 @@ TYPED_TEST(StridedSliceOpTest, OutputDimOverflowCheck) {
             /*constant_tensors=*/false, /*offset=*/true);
       },
       "StridedSlice: integer overflow computing output dim at axis 0");
+
+  // Mismatched strides length is rejected during Prepare.
+  EXPECT_DEATH(
+      {
+        const std::vector<TypeParam> input_data =
+            CastVector<TypeParam>({1, 2, 3, 4});
+        StridedSliceOpModel<TypeParam> m({2, 2}, {2}, {2}, {1}, input_data,
+                                         {0, 0}, {1, 1}, {1}, 0, 0, 0, 0, 0,
+                                         /*constant_tensors=*/false);
+      },
+      "NumElements\\(op_context\\.begin\\) != NumElements\\(op_context\\.strides\\)");
 #endif
+}
+
+TYPED_TEST(StridedSliceOpTest, OffsetWithMultiDimInputAndShortIndices) {
+  if (SingleOpModel::GetForceUseNnapi()) {
+    return;
+  }
+  {
+    const std::vector<TypeParam> input_data =
+        CastVector<TypeParam>({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    StridedSliceOpModel<TypeParam> m({2, 3, 2}, {1}, {1}, {1}, input_data, {0},
+                                     {1}, {1}, 0, 0, 0, 0, 0,
+                                     /*constant_tensors=*/false,
+                                     /*offset=*/true);
+    ASSERT_EQ(m.Invoke(), kTfLiteOk);
+    EXPECT_THAT(m.GetOutputShape(), ElementsAreArray({1, 3, 2}));
+    EXPECT_THAT(m.GetOutput(), ElementsAreTypedArray<TypeParam>(
+                                   CastVector<TypeParam>({1, 2, 3, 4, 5, 6})));
+  }
+  {
+    const std::vector<TypeParam> input_data =
+        CastVector<TypeParam>({1, 2, 3, 4});
+    StridedSliceOpModel<TypeParam> m({4}, {1}, {1}, {1}, input_data, {0}, {-1},
+                                     {1}, 0, 1, 0, 0, 0,
+                                     /*constant_tensors=*/false,
+                                     /*offset=*/true);
+    ASSERT_EQ(m.Invoke(), kTfLiteOk);
+    EXPECT_THAT(m.GetOutputShape(), ElementsAreArray({0}));
+  }
 }
 
 TYPED_TEST(StridedSliceOpTest, NoopOffset) {

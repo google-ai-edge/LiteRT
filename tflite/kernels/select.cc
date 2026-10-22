@@ -98,22 +98,25 @@ TfLiteStatus SelectPrepare(TfLiteContext* context, TfLiteNode* node) {
         bool is_input_condition_scalar = NumDimensions(input_condition) == 0;
         bool has_rank_one_input_condition =
             NumDimensions(input_condition) == 1 &&
+            NumDimensions(input_x) >= 1 &&
             SizeOfDimension(input_condition, 0) == SizeOfDimension(input_x, 0);
         data->has_low_rank_input_condition =
             is_input_condition_scalar || has_rank_one_input_condition;
         TF_LITE_ENSURE(context, data->has_low_rank_input_condition);
 
-        output_size = TfLiteIntArrayCopy(input_x->dims);
-
         // Input tensors must have the same type and size
         TF_LITE_ENSURE(context, HaveSameShapes(input_x, input_y));
+        output_size = TfLiteIntArrayCopy(input_x->dims);
         break;
       }
       case kVersionTwo: {
         TF_LITE_ENSURE_OK(context, CalculateShapeForBroadcast(
                                        context, input_condition, input_x,
                                        input_y, &output_size));
-        TF_LITE_ENSURE(context, output_size->size <= 8);
+        if (output_size->size > 8) {
+          TfLiteIntArrayFree(output_size);
+          TF_LITE_ENSURE(context, false);
+        }
         data->requires_broadcast = true;
         break;
       }
