@@ -15,9 +15,6 @@ limitations under the License.
 #include <stdint.h>
 
 #include "tflite/core/c/common.h"
-#include "tflite/kernels/internal/optimized/optimized_ops.h"
-#include "tflite/kernels/internal/reference/reference_ops.h"
-#include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
 
@@ -88,7 +85,8 @@ void FillDiag(const TfLiteTensor* input, TfLiteTensor* output,
 }
 
 // Fill a tensor with given input on the diagonal, zero elsewhere
-void FillDiagHelper(const TfLiteTensor* input, TfLiteTensor* output) {
+TfLiteStatus FillDiagHelper(TfLiteContext* context, const TfLiteTensor* input,
+                            TfLiteTensor* output) {
   const int num_output_dims = output->dims->size;
   int batch_size = 1;
   for (int i = 0; i < num_output_dims - 2; ++i) {
@@ -98,24 +96,30 @@ void FillDiagHelper(const TfLiteTensor* input, TfLiteTensor* output) {
   const int row_size = output->dims->data[num_output_dims - 2];
   const int col_size = output->dims->data[num_output_dims - 1];
   switch (output->type) {
-    case kTfLiteInt64: {
-      return FillDiag<int64_t>(input, output, batch_size, row_size, col_size);
-    }
-    case kTfLiteInt32: {
-      return FillDiag<int32_t>(input, output, batch_size, row_size, col_size);
-    }
-    case kTfLiteInt16: {
-      return FillDiag<int16_t>(input, output, batch_size, row_size, col_size);
-    }
-    case kTfLiteInt8: {
-      return FillDiag<int8_t>(input, output, batch_size, row_size, col_size);
-    }
-    case kTfLiteUInt8: {
-      return FillDiag<uint8_t>(input, output, batch_size, row_size, col_size);
-    }
+    case kTfLiteInt64:
+      FillDiag<int64_t>(input, output, batch_size, row_size, col_size);
+      break;
+    case kTfLiteInt32:
+      FillDiag<int32_t>(input, output, batch_size, row_size, col_size);
+      break;
+    case kTfLiteInt16:
+      FillDiag<int16_t>(input, output, batch_size, row_size, col_size);
+      break;
+    case kTfLiteInt8:
+      FillDiag<int8_t>(input, output, batch_size, row_size, col_size);
+      break;
+    case kTfLiteUInt8:
+      FillDiag<uint8_t>(input, output, batch_size, row_size, col_size);
+      break;
+    case kTfLiteFloat32:
+      FillDiag<float>(input, output, batch_size, row_size, col_size);
+      break;
     default:
-      return FillDiag<float>(input, output, batch_size, row_size, col_size);
+      TF_LITE_KERNEL_LOG(context, "MatrixDiag does not support type %d.",
+                         output->type);
+      return kTfLiteError;
   }
+  return kTfLiteOk;
 }
 
 TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
@@ -124,8 +128,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
                     GetOutputSafe(context, node, kOutputTensor, &output));
   const TfLiteTensor* input;
   TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, kInputTensor, &input));
-  FillDiagHelper(input, output);
-  return kTfLiteOk;
+  return FillDiagHelper(context, input, output);
 }
 
 }  // namespace matrix_diag

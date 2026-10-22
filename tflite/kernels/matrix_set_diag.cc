@@ -14,10 +14,9 @@ limitations under the License.
 ==============================================================================*/
 #include <stdint.h>
 
+#include <algorithm>
+
 #include "tflite/core/c/common.h"
-#include "tflite/kernels/internal/optimized/optimized_ops.h"
-#include "tflite/kernels/internal/reference/reference_ops.h"
-#include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
 
@@ -38,6 +37,21 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TfLiteIntArray* input_dims = input->dims;
   int input_dims_size = input_dims->size;
   TF_LITE_ENSURE(context, input_dims_size >= 2);
+
+  const TfLiteTensor* diag;
+  TF_LITE_ENSURE_OK(context,
+                    GetInputSafe(context, node, kDiagonalTensor, &diag));
+  TF_LITE_ENSURE_TYPES_EQ(context, input->type, diag->type);
+  TF_LITE_ENSURE_EQ(context, NumDimensions(diag), input_dims_size - 1);
+  for (int i = 0; i < NumDimensions(diag) - 1; ++i) {
+    TF_LITE_ENSURE_EQ(context, SizeOfDimension(diag, i),
+                      SizeOfDimension(input, i));
+  }
+  const int expected_diag_len =
+      std::min(SizeOfDimension(input, input_dims_size - 2),
+               SizeOfDimension(input, input_dims_size - 1));
+  TF_LITE_ENSURE_EQ(context, SizeOfDimension(diag, NumDimensions(diag) - 1),
+                    expected_diag_len);
 
   TfLiteTensor* output;
   TF_LITE_ENSURE_OK(context,
@@ -91,8 +105,8 @@ void FillDiag(const TfLiteTensor* input, const TfLiteTensor* diag,
 
 // Fill a tensor with given "diag" values on the diagonal, input values
 // elsewhere.
-void FillDiagHelper(const TfLiteTensor* input, const TfLiteTensor* diag,
-                    TfLiteTensor* output) {
+TfLiteStatus FillDiagHelper(TfLiteContext* context, const TfLiteTensor* input,
+                            const TfLiteTensor* diag, TfLiteTensor* output) {
   const int num_output_dims = output->dims->size;
   int batch_size = 1;
   for (int i = 0; i < num_output_dims - 2; ++i) {
@@ -102,30 +116,30 @@ void FillDiagHelper(const TfLiteTensor* input, const TfLiteTensor* diag,
   const int row_size = output->dims->data[num_output_dims - 2];
   const int col_size = output->dims->data[num_output_dims - 1];
   switch (output->type) {
-    case kTfLiteInt64: {
-      return FillDiag<int64_t>(input, diag, output, batch_size, row_size,
-                               col_size);
-    }
-    case kTfLiteInt32: {
-      return FillDiag<int32_t>(input, diag, output, batch_size, row_size,
-                               col_size);
-    }
-    case kTfLiteInt16: {
-      return FillDiag<int16_t>(input, diag, output, batch_size, row_size,
-                               col_size);
-    }
-    case kTfLiteInt8: {
-      return FillDiag<int8_t>(input, diag, output, batch_size, row_size,
-                              col_size);
-    }
-    case kTfLiteUInt8: {
-      return FillDiag<uint8_t>(input, diag, output, batch_size, row_size,
-                               col_size);
-    }
+    case kTfLiteInt64:
+      FillDiag<int64_t>(input, diag, output, batch_size, row_size, col_size);
+      break;
+    case kTfLiteInt32:
+      FillDiag<int32_t>(input, diag, output, batch_size, row_size, col_size);
+      break;
+    case kTfLiteInt16:
+      FillDiag<int16_t>(input, diag, output, batch_size, row_size, col_size);
+      break;
+    case kTfLiteInt8:
+      FillDiag<int8_t>(input, diag, output, batch_size, row_size, col_size);
+      break;
+    case kTfLiteUInt8:
+      FillDiag<uint8_t>(input, diag, output, batch_size, row_size, col_size);
+      break;
+    case kTfLiteFloat32:
+      FillDiag<float>(input, diag, output, batch_size, row_size, col_size);
+      break;
     default:
-      return FillDiag<float>(input, diag, output, batch_size, row_size,
-                             col_size);
+      TF_LITE_KERNEL_LOG(context, "MatrixSetDiag does not support type %d.",
+                         output->type);
+      return kTfLiteError;
   }
+  return kTfLiteOk;
 }
 
 TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
@@ -137,8 +151,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   const TfLiteTensor* diag;
   TF_LITE_ENSURE_OK(context,
                     GetInputSafe(context, node, kDiagonalTensor, &diag));
-  FillDiagHelper(input, diag, output);
-  return kTfLiteOk;
+  return FillDiagHelper(context, input, diag, output);
 }
 
 }  // namespace matrix_set_diag
