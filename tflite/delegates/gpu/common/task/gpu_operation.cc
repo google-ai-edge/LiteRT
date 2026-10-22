@@ -621,7 +621,8 @@ GPUOperation CreateGpuOperation(const OperationDef& definition,
       const std::string y_coord = second_shape.h == 1 ? "0" : "Y_COORD";
       const std::string s_coord = second_shape.c == 1 ? "0" : "S_COORD";
       std::string coords = absl::StrCat(x_coord, ", ", y_coord, ", ", s_coord);
-      if (second_tensor_def.HasAxis(Axis::BATCH)) {
+      if (second_tensor_def.HasAxis(Axis::BATCH) &&
+          second_tensor_def.storage_type != TensorStorageType::TEXTURE_2D) {
         const std::string b_coord = second_shape.b == 1 ? "0" : "B_COORD";
         coords += ", " + b_coord;
       }
