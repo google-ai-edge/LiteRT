@@ -45,6 +45,13 @@ struct MlDriftBuildContext {
   absl::flat_hash_map<graph::Tensor, ml_drift::GpuModelBuilder::TensorHandle>
       graph_tensor_to_handle;
 
+  // Handles of constant tensors uploaded in their own layout ([B]HWC) because
+  // their handle in `graph_tensor_to_handle` has the layout of another
+  // consumer, e.g. the packed weights of a fully connected op. See
+  // `GetConstantTensorHandleInTensorLayout`.
+  absl::flat_hash_map<graph::Tensor, ml_drift::GpuModelBuilder::TensorHandle>
+      constant_handles_in_tensor_layout;
+
   // Shared cache for weights to avoid duplicate compilation and enable sharing.
   absl::flat_hash_map<std::string, ml_drift::GpuModelBuilder::TensorHandle>
       weight_name_to_handle;
@@ -82,6 +89,14 @@ absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle> GetTensorHandle(
     bool force_buffer_storage = false,
     ml_drift::TensorDescriptor::PhysicalLayout1D physical_layout_1d =
         ml_drift::TensorDescriptor::PhysicalLayout1D::kDCHWBC4);
+
+// Returns a handle of the constant tensor `t` in its own layout ([B]HWC), for
+// consumers like elementwise ops: the handle of `t` in
+// `ctx.graph_tensor_to_handle` may have the layout of another consumer, e.g.
+// the packed weights of a fully connected op. Uploads `t` again if needed.
+absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle>
+GetConstantTensorHandleInTensorLayout(MlDriftBuildContext& ctx,
+                                      const graph::Tensor& t);
 
 template <typename T>
 std::string ShapeStr(const T& shape) {

@@ -95,6 +95,109 @@ absl::StatusOr<ml_drift::DataType> GetMlDriftDataType(
   }
 }
 
+// Returns the descriptor, without data, of the constant tensor `info` as an ML
+// Drift constant tensor of type `mld_data_type`.
+static absl::StatusOr<ml_drift::TensorDescriptor> GetConstantTensorDescriptor(
+    MlDriftBuildContext& ctx, const graph::TensorInformation& info,
+    ml_drift::DataType mld_data_type, bool create_linear_tensor,
+    bool force_buffer_storage,
+    ml_drift::TensorDescriptor::PhysicalLayout1D physical_layout_1d) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(auto shape, ShapeToBHWC(info.shape));
+  auto locked_buffer = info.buffer->Lock();
+  int64_t element_count = 1;
+  for (int dim : info.shape) {
+    if (dim < 0) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Negative dimension in constant tensor shape: ",
+                       ShapeStr(info.shape)));
+    }
+    element_count *= dim;
+  }
+  const size_t expected_bytes =
+      BufferSize(info.type, static_cast<size_t>(element_count));
+  if (locked_buffer.size() < expected_bytes) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Constant buffer too small for shape/type. Expected >= ",
+                     expected_bytes, " bytes, got ", locked_buffer.size()));
+  }
+  ml_drift::TensorStorageType storage_type;
+  ml_drift::Layout layout;
+  ml_drift::BHWC bhwc_shape;
+  if (create_linear_tensor) {
+    storage_type = ml_drift::TensorStorageType::kBuffer;
+    if (ctx.gpu_model_builder->gpu_info().SupportsImageBuffer() &&
+        !IsSub8Bit(mld_data_type)) {
+      storage_type = ml_drift::TensorStorageType::kImageBuffer;
+    }
+    layout = ml_drift::Layout::kLinear;
+    bhwc_shape = ml_drift::BHWC(1, 1, 1, info.shape[0]);
+  } else {
+    storage_type = ctx.gpu_model_builder->default_storage();
+    if (force_buffer_storage) {
+      storage_type = ml_drift::TensorStorageType::kBuffer;
+      if (ctx.gpu_model_builder->gpu_info().SupportsImageBuffer() &&
+          !IsSub8Bit(mld_data_type)) {
+        storage_type = ml_drift::TensorStorageType::kImageBuffer;
+      }
+    }
+    layout = shape.b == 1 ? ml_drift::Layout::kHWC : ml_drift::Layout::kBHWC;
+    bhwc_shape = shape;
+  }
+  ml_drift::TensorDescriptor desc(mld_data_type, storage_type, layout,
+                                  physical_layout_1d);
+  desc.SetBHWCShape(bhwc_shape);
+  return desc;
+}
+
+// Uploads the data of the constant tensor `info` to `desc`.
+static void UploadConstantData(const graph::TensorInformation& info,
+                               ml_drift::TensorDescriptor& desc) {
+  auto locked_buffer = info.buffer->Lock();
+  const void* raw_data = locked_buffer.data();
+  switch (info.type) {
+    case Type::kFP32:
+      desc.UploadData(reinterpret_cast<const float*>(raw_data));
+      break;
+    case Type::kI32:
+      desc.UploadData(reinterpret_cast<const int32_t*>(raw_data));
+      break;
+    case Type::kU32:
+      desc.UploadData(reinterpret_cast<const uint32_t*>(raw_data));
+      break;
+    case Type::kI8:
+      desc.UploadData(reinterpret_cast<const int8_t*>(raw_data));
+      break;
+    case Type::kU8:
+      desc.UploadData(reinterpret_cast<const uint8_t*>(raw_data));
+      break;
+    case Type::kBOOL:
+      desc.UploadData(reinterpret_cast<const bool*>(raw_data));
+      break;
+    default: {
+      const auto* bytes = reinterpret_cast<const uint8_t*>(raw_data);
+      absl::Span<const uint8_t> data(bytes, locked_buffer.size());
+      desc.UploadDataRaw<uint8_t>(data);
+      break;
+    }
+  }
+}
+
+// Uploads the constant tensor `info` as an ML Drift constant tensor of type
+// `mld_data_type`, without caching its handle.
+static absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle>
+AddConstantTensorHandle(
+    MlDriftBuildContext& ctx, const graph::TensorInformation& info,
+    ml_drift::DataType mld_data_type, bool create_linear_tensor,
+    bool force_buffer_storage,
+    ml_drift::TensorDescriptor::PhysicalLayout1D physical_layout_1d) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(
+      auto desc, GetConstantTensorDescriptor(
+                     ctx, info, mld_data_type, create_linear_tensor,
+                     force_buffer_storage, physical_layout_1d));
+  UploadConstantData(info, desc);
+  return ctx.gpu_model_builder->AddConstantTensor(std::move(desc));
+}
+
 absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle> GetTensorHandle(
     MlDriftBuildContext& ctx, const graph::Tensor& t, bool create_if_not_found,
     bool create_linear_tensor, bool force_buffer_storage,
@@ -143,87 +246,15 @@ absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle> GetTensorHandle(
       return handle;
     }
     // This is a constant tensor.
-    LRT_TENSOR_ASSIGN_OR_RETURN(auto shape, ShapeToBHWC(info.shape));
-    auto locked_buffer = info.buffer->Lock();
-    int64_t element_count = 1;
-    for (int dim : info.shape) {
-      if (dim < 0) {
-        return absl::InvalidArgumentError(
-            absl::StrCat("Negative dimension in constant tensor shape: ",
-                         ShapeStr(info.shape)));
-      }
-      element_count *= dim;
-    }
-    const size_t expected_bytes =
-        BufferSize(info.type, static_cast<size_t>(element_count));
-    if (locked_buffer.size() < expected_bytes) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("Constant buffer too small for shape/type. Expected >= ",
-                       expected_bytes, " bytes, got ", locked_buffer.size()));
-    }
-    ml_drift::TensorStorageType storage_type;
-    ml_drift::Layout layout;
-    ml_drift::BHWC bhwc_shape;
-    if (create_linear_tensor) {
-      storage_type = ml_drift::TensorStorageType::kBuffer;
-      if (ctx.gpu_model_builder->gpu_info().SupportsImageBuffer() &&
-          !IsSub8Bit(mld_data_type)) {
-        storage_type = ml_drift::TensorStorageType::kImageBuffer;
-      }
-      layout = ml_drift::Layout::kLinear;
-      bhwc_shape = ml_drift::BHWC(1, 1, 1, info.shape[0]);
-    } else {
-      storage_type = ctx.gpu_model_builder->default_storage();
-      if (force_buffer_storage) {
-        storage_type = ml_drift::TensorStorageType::kBuffer;
-        if (ctx.gpu_model_builder->gpu_info().SupportsImageBuffer() &&
-            !IsSub8Bit(mld_data_type)) {
-          storage_type = ml_drift::TensorStorageType::kImageBuffer;
-        }
-      }
-      layout = shape.b == 1 ? ml_drift::Layout::kHWC : ml_drift::Layout::kBHWC;
-      bhwc_shape = shape;
-    }
-    ml_drift::TensorDescriptor desc(mld_data_type, storage_type, layout,
-                                    physical_layout_1d);
-    desc.SetBHWCShape(bhwc_shape);
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        auto desc, GetConstantTensorDescriptor(
+                       ctx, info, mld_data_type, create_linear_tensor,
+                       force_buffer_storage, physical_layout_1d));
     if (!info.name.empty() && ctx.shared_weight_descriptors != nullptr) {
       auto [shared_it, inserted] =
           ctx.shared_weight_descriptors->try_emplace(info.name, desc);
       if (inserted) {
-        switch (info.type) {
-          case Type::kFP32:
-            shared_it->second.UploadData(
-                reinterpret_cast<const float*>(locked_buffer.data()));
-            break;
-          case Type::kI32:
-            shared_it->second.UploadData(
-                reinterpret_cast<const int32_t*>(locked_buffer.data()));
-            break;
-          case Type::kU32:
-            shared_it->second.UploadData(
-                reinterpret_cast<const uint32_t*>(locked_buffer.data()));
-            break;
-          case Type::kI8:
-            shared_it->second.UploadData(
-                reinterpret_cast<const int8_t*>(locked_buffer.data()));
-            break;
-          case Type::kU8:
-            shared_it->second.UploadData(
-                reinterpret_cast<const uint8_t*>(locked_buffer.data()));
-            break;
-          case Type::kBOOL:
-            shared_it->second.UploadData(
-                reinterpret_cast<const bool*>(locked_buffer.data()));
-            break;
-          default: {
-            const auto* bytes =
-                reinterpret_cast<const uint8_t*>(locked_buffer.data());
-            absl::Span<const uint8_t> data(bytes, locked_buffer.size());
-            shared_it->second.UploadDataRaw<uint8_t>(data);
-            break;
-          }
-        }
+        UploadConstantData(info, shared_it->second);
       }
       if (shared_it->second == desc &&
           shared_it->second.GetBHWDCShape() == desc.GetBHWDCShape()) {
@@ -234,33 +265,7 @@ absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle> GetTensorHandle(
         return handle;
       }
     }
-    const void* raw_data = locked_buffer.data();
-    switch (info.type) {
-      case Type::kFP32:
-        desc.UploadData(reinterpret_cast<const float*>(raw_data));
-        break;
-      case Type::kI32:
-        desc.UploadData(reinterpret_cast<const int32_t*>(raw_data));
-        break;
-      case Type::kU32:
-        desc.UploadData(reinterpret_cast<const uint32_t*>(raw_data));
-        break;
-      case Type::kI8:
-        desc.UploadData(reinterpret_cast<const int8_t*>(raw_data));
-        break;
-      case Type::kU8:
-        desc.UploadData(reinterpret_cast<const uint8_t*>(raw_data));
-        break;
-      case Type::kBOOL:
-        desc.UploadData(reinterpret_cast<const bool*>(raw_data));
-        break;
-      default: {
-        const auto* bytes = reinterpret_cast<const uint8_t*>(raw_data);
-        absl::Span<const uint8_t> data(bytes, locked_buffer.size());
-        desc.UploadDataRaw<uint8_t>(data);
-        break;
-      }
-    }
+    UploadConstantData(info, desc);
     auto handle = ctx.gpu_model_builder->AddConstantTensor(std::move(desc));
     ctx.graph_tensor_to_handle.insert({t, handle});
     if (!info.name.empty()) {
@@ -306,6 +311,39 @@ absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle> GetTensorHandle(
   }
   auto [new_it, _] = ctx.graph_tensor_to_handle.insert({t, handle});
   return new_it->second;
+}
+
+absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle>
+GetConstantTensorHandleInTensorLayout(MlDriftBuildContext& ctx,
+                                      const graph::Tensor& t) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(const auto& info, graph::GetInfo(t));
+  LRT_TENSOR_ASSIGN_OR_RETURN(
+      auto mld_data_type,
+      GetMlDriftDataType(info.type, ctx.default_float_type));
+  LRT_TENSOR_ASSIGN_OR_RETURN(auto shape, ShapeToBHWC(info.shape));
+  if (auto it = ctx.graph_tensor_to_handle.find(t);
+      it != ctx.graph_tensor_to_handle.end()) {
+    const ml_drift::TensorDescriptor& desc = it->second.tensor_desc;
+    if (desc.GetDataType() == mld_data_type && desc.GetBHWCShape() == shape &&
+        desc.GetLayout() != ml_drift::Layout::kLinear) {
+      return it->second;
+    }
+  }
+  if (auto it = ctx.constant_handles_in_tensor_layout.find(t);
+      it != ctx.constant_handles_in_tensor_layout.end()) {
+    return it->second;
+  }
+  if (info.buffer == nullptr || info.buffer->As<MlDriftBuffer>().ok()) {
+    return absl::UnimplementedError(absl::StrCat(
+        "Tensor ", info.name, " isn't a constant that can be uploaded."));
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(
+      auto handle, AddConstantTensorHandle(
+                       ctx, info, mld_data_type, /*create_linear_tensor=*/false,
+                       /*force_buffer_storage=*/false,
+                       ml_drift::TensorDescriptor::PhysicalLayout1D::kDCHWBC4));
+  ctx.constant_handles_in_tensor_layout.insert({t, handle});
+  return handle;
 }
 
 }  // namespace litert::tensor
