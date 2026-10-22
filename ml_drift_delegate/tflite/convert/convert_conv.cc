@@ -277,9 +277,7 @@ void ConvertConv(
     }
     const ::ml_drift::BHWC src_shape =
         ir_model.tensor(tensor_map[input_id])->desc.GetBHWCShape();
-    attr.groups =
-        src_shape.c /
-        std::visit([](const auto& w) { return w.shape; }, attr.weights).i;
+    attr.groups = src_shape.c / attr.GetWeightsShape().i;
   } else {
     auto& weights = attr.weights.emplace<
         ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>();
@@ -314,11 +312,8 @@ void ConvertConv(
   UpdatePadding(params->padding,
                 ir_model.tensor(tensor_map[input_id])->desc.GetBHWDCShape(),
                 &attr);
-  const int src_group_size =
-      std::visit([](const auto& w) { return w.shape; }, attr.weights).i;
-  const int dst_group_size =
-      std::visit([](const auto& w) { return w.shape; }, attr.weights).o /
-      attr.groups;
+  const int src_group_size = attr.GetWeightsShape().i;
+  const int dst_group_size = attr.GetWeightsShape().o / attr.groups;
   const bool supported_grouped_conv =
       src_group_size % 4 == 0 && dst_group_size % 4 == 0;
 
