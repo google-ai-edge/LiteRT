@@ -30,8 +30,8 @@ inline void QuantizeLeakyRelu(const LeakyReluParams& params,
                               const RuntimeShape& output_shape,
                               int16* output_data) {
   const int flat_size = MatchingFlatSize(input_shape, output_shape);
-  const int32_t quantized_min = std::numeric_limits<int16>::min();
-  const int32_t quantized_max = std::numeric_limits<int16>::max();
+  const int32_t quantized_min = std::numeric_limits<int16_t>::min();
+  const int32_t quantized_max = std::numeric_limits<int16_t>::max();
   int i = 0;
 
 #ifdef __AVX2__
