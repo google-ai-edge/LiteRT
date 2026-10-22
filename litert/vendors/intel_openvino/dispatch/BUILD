@@ -275,7 +275,7 @@ cc_test(
         "//litert/cc:litert_layout",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_googletest//:gtest_main",
-        "@intel_openvino//:openvino",
+        "@intel_openvino//src_gen:openvino",
     ],
 )
 
