@@ -146,6 +146,7 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
              magic_number.Value() >= kMinMagicNumberForNeuronService) {
     so_paths.push_back("libneuronusdk_adapter.9.mtk.so");
   } else {
+    so_paths.push_back("libneuronusdk_adapter.8.mtk.so");
     so_paths.push_back("libneuronusdk_adapter.mtk.so");
   }
 
