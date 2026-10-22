@@ -27,12 +27,15 @@ limitations under the License.
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/any.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/inference_context.h"  // from @ml_drift
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
+#include "ml_drift/cl/tensor.h"  // from @ml_drift
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
@@ -62,6 +65,21 @@ limitations under the License.
 
 namespace litert::tensor {
 namespace {
+
+// Uploads the int8 values `data` to the input tensor `id` of `ic`, which has no
+// `SetInputTensor` overload for int8 tensors.
+absl::Status UploadInt8Tensor(ml_drift::cl::InferenceContext& ic,
+                              ml_drift::ValueId id,
+                              absl::Span<const std::byte> data,
+                              ml_drift::cl::CLCommandQueue* queue) {
+  ml_drift::cl::Tensor* gpu_tensor = ic.GetTensor(id);
+  if (gpu_tensor == nullptr) {
+    return absl::NotFoundError(absl::StrCat("Tensor ", id, " not found."));
+  }
+  ml_drift::TensorDescriptor descriptor = gpu_tensor->GetDescriptor();
+  descriptor.UploadData(reinterpret_cast<const int8_t*>(data.data()));
+  return gpu_tensor->UploadDescriptorData(descriptor, queue);
+}
 
 class MlDriftTestBackendBridge : public TestBackendBridge {
  public:
@@ -191,6 +209,8 @@ class MlDriftTestBackendBridge : public TestBackendBridge {
           reinterpret_cast<const int32_t*>(data.data()),
           reinterpret_cast<const int32_t*>(data.data() + data.size()));
       return ic_.SetInputTensor(t.id, t, env_.queue());
+    } else if (th.tensor_desc.GetDataType() == ml_drift::DataType::kInt8) {
+      return UploadInt8Tensor(ic_, th.id, data, env_.queue());
     }
     return absl::UnimplementedError(
         "Unsupported input type for ML Drift bridge");
@@ -338,28 +358,29 @@ void MlDriftConversionNumericalTest::RunTest(
   for (const auto& input : inputs) {
     const auto& th = tensor_to_handle.at(input.tensor.GetRaw());
     if (const auto* float_data =
-            absl::any_cast<std::vector<float>>(&input.data)) {
+            std::any_cast<std::vector<float>>(&input.data)) {
       ml_drift::TensorFloat32 t;
       t.id = th.id;
       t.shape = th.tensor_desc.GetBHWCShape();
       t.data = *float_data;
       ASSERT_OK(ic.SetInputTensor(t.id, t, env_.queue()));
     } else if (const auto* bool_data =
-                   absl::any_cast<std::vector<bool>>(&input.data)) {
+                   std::any_cast<std::vector<bool>>(&input.data)) {
       ml_drift::Tensor<ml_drift::BHWC, ml_drift::DataType::kBool> t;
       t.id = th.id;
       t.shape = th.tensor_desc.GetBHWCShape();
       t.data.assign(bool_data->begin(), bool_data->end());
       ASSERT_OK(ic.SetInputTensor(t.id, t, env_.queue()));
     } else if (const auto* int8_data =
-                   absl::any_cast<std::vector<int8_t>>(&input.data)) {
-      ml_drift::TensorFloat32 t;
-      t.id = th.id;
-      t.shape = th.tensor_desc.GetBHWCShape();
-      t.data.assign(int8_data->begin(), int8_data->end());
-      ASSERT_OK(ic.SetInputTensor(t.id, t, env_.queue()));
+                   std::any_cast<std::vector<int8_t>>(&input.data)) {
+      ASSERT_OK(UploadInt8Tensor(
+          ic, th.id,
+          absl::MakeConstSpan(
+              reinterpret_cast<const std::byte*>(int8_data->data()),
+              int8_data->size()),
+          env_.queue()));
     } else if (const auto* int32_data =
-                   absl::any_cast<std::vector<int32_t>>(&input.data)) {
+                   std::any_cast<std::vector<int32_t>>(&input.data)) {
       ml_drift::Tensor<ml_drift::BHWC, ml_drift::DataType::kInt32> t;
       t.id = th.id;
       t.shape = th.tensor_desc.GetBHWCShape();
