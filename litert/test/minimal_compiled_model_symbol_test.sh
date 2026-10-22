@@ -15,8 +15,9 @@
 
 # Verifies that a minimal (cpu_only + selective) LiteRT runtime binary contains
 # no non-CPU (GPU, OpenCL, WebGPU, Dawn, OpenGL, NPU dispatch), unselected
-# builtin-op, external weight loader, absl::Status/Cord, or C++ stream symbols
-# (iostream/stringstream/ifstream) or dynamic library dependencies.
+# builtin-op, external weight loader, absl::Status/Cord, C++ stream symbols
+# (iostream/stringstream/ifstream), flatbuffer schema verifier symbols, or
+# dynamic library dependencies.
 # Usage: minimal_compiled_model_symbol_test.sh <binary>
 
 set -euo pipefail
@@ -68,7 +69,12 @@ BANNED_STREAM_SYMBOLS="litert::.*basic_.*stream|default_delete<.*basic_.*stream|
 # Status symbols: Heavy absl::Status implementations pull in Cord representation
 # and heap-allocated error payloads. Minimal builds rely on lighter status paths.
 BANNED_STATUS_SYMBOLS="StatusRep|CordRep|ErrorStatusBuilder::ToAbslStatus|ErrorConversion<absl::Status|FormatPack|StrFormat"
-BANNED_SYMBOL_PATTERN="(${BANNED_GPU_SYMBOLS}|${BANNED_NPU_SYMBOLS}|${BANNED_BUILTIN_OP_SYMBOLS}|${BANNED_WEIGHT_LOADER_SYMBOLS}|${BANNED_STREAM_SYMBOLS}|${BANNED_STATUS_SYMBOLS})"
+
+# Flatbuffer verifier symbols: tflite::VerifyModelBuffer instantiates Verify()
+# for every table in the TFLite schema (~58 KB). Minimal builds skip full
+# verification (gated by LITERT_SKIP_FLATBUFFER_VERIFICATION).
+BANNED_VERIFIER_SYMBOLS="tflite::Model::Verify|tflite::VerifyModelBuffer|VerifyBuiltinOptions|flatbuffers::Verifier"
+BANNED_SYMBOL_PATTERN="(${BANNED_GPU_SYMBOLS}|${BANNED_NPU_SYMBOLS}|${BANNED_BUILTIN_OP_SYMBOLS}|${BANNED_WEIGHT_LOADER_SYMBOLS}|${BANNED_STREAM_SYMBOLS}|${BANNED_STATUS_SYMBOLS}|${BANNED_VERIFIER_SYMBOLS})"
 
 SYMBOLS=$(nm -C "${BINARY}")
 if [ -z "${SYMBOLS}" ]; then
