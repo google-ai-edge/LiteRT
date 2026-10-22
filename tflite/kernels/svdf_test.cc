@@ -533,6 +533,41 @@ class IntegerSVDFOpModel : public SingleOpModel {
   int rank_;
 };
 
+class InvalidQuantIntegerSVDFOpModel : public IntegerSVDFOpModel {
+ public:
+  using IntegerSVDFOpModel::IntegerSVDFOpModel;
+
+  TfLiteStatus ReallocateWithQuantizationType(TfLiteQuantizationType type) {
+    TfLiteTensor* t = interpreter_->tensor(weights_feature_);
+    const TfLiteQuantizationType orig_type = t->quantization.type;
+    t->quantization.type = type;
+    const TfLiteStatus status = interpreter_->AllocateTensors();
+    t->quantization.type = orig_type;
+    return status;
+  }
+
+  TfLiteStatus ReallocateWithEmptyScale() {
+    TfLiteTensor* t = interpreter_->tensor(weights_feature_);
+    auto* params =
+        reinterpret_cast<TfLiteAffineQuantization*>(t->quantization.params);
+    const int orig_size = params->scale->size;
+    params->scale->size = 0;
+    const TfLiteStatus status = interpreter_->AllocateTensors();
+    params->scale->size = orig_size;
+    return status;
+  }
+};
+
+TEST_F(SVDFOpTest, IntegerInvalidAffineQuantizationRejected) {
+  InvalidQuantIntegerSVDFOpModel svdf(/*batches=*/2, /*units=*/4,
+                                      /*input_size=*/3, /*memory_size=*/10,
+                                      /*rank=*/1);
+  EXPECT_EQ(
+      svdf.ReallocateWithQuantizationType(kTfLiteBlockwiseQuantization),
+      kTfLiteError);
+  EXPECT_EQ(svdf.ReallocateWithEmptyScale(), kTfLiteError);
+}
+
 TEST_F(SVDFOpTest, BlackBoxTestInteger) {
   IntegerSVDFOpModel svdf(/*batches=*/2, /*units=*/4, /*input_size=*/3,
                           /*memory_size=*/10, /*rank=*/1);

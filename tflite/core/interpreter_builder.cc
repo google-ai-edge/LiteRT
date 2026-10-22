@@ -417,18 +417,17 @@ TfLiteStatus InterpreterBuilder::ParseQuantization(
     return kTfLiteOk;
   }
 
-  auto validate_tensor_index = [&](int32_t tensor_index, const char* name,
-                                   bool optional) {
+  auto validate_tensor_index = [&](const char* quant_kind, int32_t tensor_index,
+                                   const char* name, bool optional) {
     if (optional && tensor_index == -1) {
       return kTfLiteOk;
     }
     if (tensor_index < 0 || static_cast<size_t>(tensor_index) >= num_tensors) {
-      TF_LITE_REPORT_ERROR(
-          error_reporter_,
-          "MultiAxisQuantization %s tensor index must be in range [0, %d)%s. "
-          "Was %d.",
-          name, static_cast<int>(num_tensors),
-          optional ? ", or -1 if optional" : "", tensor_index);
+      TF_LITE_REPORT_ERROR(error_reporter_,
+                           "%s %s tensor index must be in range [0, %d)%s. "
+                           "Was %d.",
+                           quant_kind, name, static_cast<int>(num_tensors),
+                           optional ? ", or -1 if optional" : "", tensor_index);
       return kTfLiteError;
     }
     return kTfLiteOk;
@@ -443,10 +442,11 @@ TfLiteStatus InterpreterBuilder::ParseQuantization(
                            "Invalid MultiAxisQuantization parameters.");
       return kTfLiteError;
     }
-    TF_LITE_ENSURE_STATUS(
-        validate_tensor_index(src_quant->scales(), "scales", false));
-    TF_LITE_ENSURE_STATUS(
-        validate_tensor_index(src_quant->zero_points(), "zero_points", true));
+    TF_LITE_ENSURE_STATUS(validate_tensor_index(
+        "MultiAxisQuantization", src_quant->scales(), "scales", false));
+    TF_LITE_ENSURE_STATUS(validate_tensor_index("MultiAxisQuantization",
+                                                src_quant->zero_points(),
+                                                "zero_points", true));
     if (src_quant->block_size() < 0) {
       TF_LITE_REPORT_ERROR(
           error_reporter_,
@@ -509,6 +509,11 @@ TfLiteStatus InterpreterBuilder::ParseQuantization(
                            "Blockwise quantization details are missing.");
       return kTfLiteError;
     }
+    TF_LITE_ENSURE_STATUS(validate_tensor_index(
+        "BlockwiseQuantization", src_quant->scales(), "scales", false));
+    TF_LITE_ENSURE_STATUS(validate_tensor_index("BlockwiseQuantization",
+                                                src_quant->zero_points(),
+                                                "zero_points", true));
     // `block_shape` supersedes `block_size`. It is only meaningful if it has
     // exactly one entry per dimension of the tensor, so reject anything else
     // rather than silently falling back to `block_size`, which would produce
@@ -556,6 +561,24 @@ TfLiteStatus InterpreterBuilder::ParseQuantization(
       quantization->type = kTfLiteBlockwiseQuantizationV2;
       quantization->params = reinterpret_cast<void*>(blockwise_quantization_v2);
       return kTfLiteOk;
+    }
+    if (src_quantization->quantized_dimension() < 0 ||
+        static_cast<size_t>(src_quantization->quantized_dimension()) >=
+            dims.size()) {
+      TF_LITE_REPORT_ERROR(
+          error_reporter_,
+          "BlockwiseQuantization quantized_dimension must be in range [0, "
+          "%d). Was %d.",
+          static_cast<int>(dims.size()),
+          src_quantization->quantized_dimension());
+      return kTfLiteError;
+    }
+    if (src_quant->block_size() <= 0) {
+      TF_LITE_REPORT_ERROR(
+          error_reporter_,
+          "BlockwiseQuantization block_size must be positive. Was %d.",
+          src_quant->block_size());
+      return kTfLiteError;
     }
     auto* blockwise_quantization_v1 =
         reinterpret_cast<TfLiteBlockwiseQuantization*>(
