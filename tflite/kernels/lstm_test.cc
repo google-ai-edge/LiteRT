@@ -2741,5 +2741,93 @@ INSTANTIATE_TEST_SUITE_P(
                                          TensorType_INT8),
                        ::testing::Bool(), ::testing::Bool()));
 
+class InvalidLSTMOpModel : public SingleOpModel {
+ public:
+  InvalidLSTMOpModel(const std::vector<std::vector<int>>& input_shapes,
+                     bool omit_input_gate_bias = false) {
+    AddInput(TensorType_FLOAT32);  // input
+    AddInput(TensorType_FLOAT32);  // input_to_input_weights
+    AddInput(TensorType_FLOAT32);  // input_to_forget_weights
+    AddInput(TensorType_FLOAT32);  // input_to_cell_weights
+    AddInput(TensorType_FLOAT32);  // input_to_output_weights
+    AddInput(TensorType_FLOAT32);  // recurrent_to_input_weights
+    AddInput(TensorType_FLOAT32);  // recurrent_to_forget_weights
+    AddInput(TensorType_FLOAT32);  // recurrent_to_cell_weights
+    AddInput(TensorType_FLOAT32);  // recurrent_to_output_weights
+    AddNullInput();                // cell_to_input_weights
+    AddNullInput();                // cell_to_forget_weights
+    AddNullInput();                // cell_to_output_weights
+    if (omit_input_gate_bias) {
+      AddNullInput();
+    } else {
+      AddInput(TensorType_FLOAT32);  // input_gate_bias
+    }
+    AddInput(TensorType_FLOAT32);  // forget_gate_bias
+    AddInput(TensorType_FLOAT32);  // cell_gate_bias
+    AddInput(TensorType_FLOAT32);  // output_gate_bias
+    AddNullInput();                // projection_weights
+    AddNullInput();                // projection_bias
+    AddVariableInput(TensorData{TensorType_FLOAT32, {2, 4}});  // output_state
+    AddVariableInput(TensorData{TensorType_FLOAT32, {2, 4}});  // cell_state
+    AddOutput(TensorType_FLOAT32);
+
+    SetBuiltinOp(BuiltinOperator_LSTM, BuiltinOptions_LSTMOptions,
+                 CreateLSTMOptions(builder_, ActivationFunctionType_TANH, 0.0f,
+                                   0.0f, LSTMKernelType_FULL, false)
+                     .Union());
+    BuildInterpreter(input_shapes, /*num_threads=*/-1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/true, /*allocate_and_delegate=*/false);
+  }
+};
+
+TEST(LstmValidationTest, RejectsInvalidInputRankAndMissingInputGateBias) {
+  auto valid_shapes = []() {
+    return std::vector<std::vector<int>>{
+        {2, 2},  // input
+        {4, 2},  // input_to_input_weights
+        {4, 2},  // input_to_forget_weights
+        {4, 2},  // input_to_cell_weights
+        {4, 2},  // input_to_output_weights
+        {4, 4},  // recurrent_to_input_weights
+        {4, 4},  // recurrent_to_forget_weights
+        {4, 4},  // recurrent_to_cell_weights
+        {4, 4},  // recurrent_to_output_weights
+        {0},     // cell_to_input_weights
+        {0},     // cell_to_forget_weights
+        {0},     // cell_to_output_weights
+        {4},     // input_gate_bias
+        {4},     // forget_gate_bias
+        {4},     // cell_gate_bias
+        {4},     // output_gate_bias
+        {0},     // projection_weights
+        {0},     // projection_bias
+        {2, 4},  // output_state
+        {2, 4},  // cell_state
+    };
+  };
+
+  auto rank3_input_shapes = valid_shapes();
+  rank3_input_shapes[0] = {2, 2, 4};
+  InvalidLSTMOpModel rank3_input(rank3_input_shapes);
+  EXPECT_EQ(rank3_input.AllocateTensors(), kTfLiteError);
+
+  auto rank0_output_weights_shapes = valid_shapes();
+  rank0_output_weights_shapes[4] = {};
+  InvalidLSTMOpModel rank0_output_weights(rank0_output_weights_shapes);
+  EXPECT_EQ(rank0_output_weights.AllocateTensors(), kTfLiteError);
+
+  auto rank1_output_weights_shapes = valid_shapes();
+  rank1_output_weights_shapes[4] = {4};
+  InvalidLSTMOpModel rank1_output_weights(rank1_output_weights_shapes);
+  EXPECT_EQ(rank1_output_weights.AllocateTensors(), kTfLiteError);
+
+  auto missing_bias_shapes = valid_shapes();
+  missing_bias_shapes[12] = {0};
+  InvalidLSTMOpModel missing_bias(missing_bias_shapes,
+                                  /*omit_input_gate_bias=*/true);
+  EXPECT_EQ(missing_bias.AllocateTensors(), kTfLiteError);
+}
+
 }  // namespace
 }  // namespace tflite

@@ -18,6 +18,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -154,10 +155,20 @@ TfLiteStatus PopulateQuantizedLstmParams8x8_16(
   TF_LITE_ENSURE_OK(
       context, GetOutputSafe(context, node, kOutputTensor, &output_tensor));
 
+  TF_LITE_ENSURE_EQ(context, cell_state->quantization.type,
+                    kTfLiteAffineQuantization);
   auto* cell_state_params =
       static_cast<TfLiteAffineQuantization*>(cell_state->quantization.params);
+  TF_LITE_ENSURE(context, cell_state_params != nullptr);
+  TF_LITE_ENSURE(context, cell_state_params->scale != nullptr);
+  TF_LITE_ENSURE(context, cell_state_params->scale->size > 0);
+  TF_LITE_ENSURE_EQ(context, output_tensor->quantization.type,
+                    kTfLiteAffineQuantization);
   auto* proj_params = static_cast<TfLiteAffineQuantization*>(
       output_tensor->quantization.params);
+  TF_LITE_ENSURE(context, proj_params != nullptr);
+  TF_LITE_ENSURE(context, proj_params->scale != nullptr);
+  TF_LITE_ENSURE(context, proj_params->scale->size > 0);
   if (cell_clip > 0.0) {
     integer_lstm_param->quantized_cell_clip = static_cast<int16_t>(std::min(
         std::max(cell_clip / cell_state_params->scale->data[0], -32768.0f),
@@ -246,8 +257,15 @@ TfLiteStatus PopulateQuantizedLstmParams8x8_16(
       TfLiteTensor* intermediate;
       TF_LITE_ENSURE_OK(context,
                         GetIntermediatesSafe(context, node, i, &intermediate));
+      TF_LITE_ENSURE_EQ(context, intermediate->quantization.type,
+                        kTfLiteAffineQuantization);
       auto* params = static_cast<TfLiteAffineQuantization*>(
           intermediate->quantization.params);
+      TF_LITE_ENSURE(context, params != nullptr);
+      TF_LITE_ENSURE(context, params->scale != nullptr);
+      TF_LITE_ENSURE(context, params->scale->size > 0);
+      TF_LITE_ENSURE(context, params->zero_point != nullptr);
+      TF_LITE_ENSURE(context, params->zero_point->size > 0);
       intermediate_scale.push_back(params->scale->data[0]);
       intermediate_zp.push_back(params->zero_point->data[0]);
     } else {
@@ -260,8 +278,15 @@ TfLiteStatus PopulateQuantizedLstmParams8x8_16(
   // is ignored.
   TfLiteTensor* hidden;
   TF_LITE_ENSURE_OK(context, GetIntermediatesSafe(context, node, 4, &hidden));
+  TF_LITE_ENSURE_EQ(context, hidden->quantization.type,
+                    kTfLiteAffineQuantization);
   auto* hidden_params =
       static_cast<TfLiteAffineQuantization*>(hidden->quantization.params);
+  TF_LITE_ENSURE(context, hidden_params != nullptr);
+  TF_LITE_ENSURE(context, hidden_params->scale != nullptr);
+  TF_LITE_ENSURE(context, hidden_params->scale->size > 0);
+  TF_LITE_ENSURE(context, hidden_params->zero_point != nullptr);
+  TF_LITE_ENSURE(context, hidden_params->zero_point->size > 0);
   intermediate_scale.push_back(hidden_params->scale->data[0]);
   intermediate_zp.push_back(hidden_params->zero_point->data[0]);
 
@@ -672,10 +697,18 @@ TfLiteStatus PopulateQuantizedLstmParams8x8_8(
 
   std::vector<float> intermediate_scale;
   for (int i = 0; i < 12; ++i) {
-    TfLiteTensor* intermediate =
-        &context->tensors[node->intermediates->data[i]];
+    TfLiteTensor* intermediate;
+    TF_LITE_ENSURE_OK(context,
+                      GetIntermediatesSafe(context, node, i, &intermediate));
+    TF_LITE_ENSURE_EQ(context, intermediate->quantization.type,
+                      kTfLiteAffineQuantization);
     auto* params = reinterpret_cast<TfLiteAffineQuantization*>(
         intermediate->quantization.params);
+    TF_LITE_ENSURE(context, params != nullptr);
+    TF_LITE_ENSURE(context, params->scale != nullptr);
+    TF_LITE_ENSURE(context, params->scale->size > 0);
+    TF_LITE_ENSURE(context, params->zero_point != nullptr);
+    TF_LITE_ENSURE(context, params->zero_point->size > 0);
     intermediate_scale.push_back(params->scale->data[0]);
     integer_lstm_param->intermediate_zp[i] = params->zero_point->data[0];
   }
@@ -813,10 +846,20 @@ TfLiteStatus PopulateQuantizedLstmParams8x8_8(
   TF_LITE_ENSURE_OK(
       context, GetOutputSafe(context, node, kOutputTensor, &output_tensor));
 
+  TF_LITE_ENSURE_EQ(context, cell_state->quantization.type,
+                    kTfLiteAffineQuantization);
   auto* cell_state_params = reinterpret_cast<TfLiteAffineQuantization*>(
       cell_state->quantization.params);
+  TF_LITE_ENSURE(context, cell_state_params != nullptr);
+  TF_LITE_ENSURE(context, cell_state_params->scale != nullptr);
+  TF_LITE_ENSURE(context, cell_state_params->scale->size > 0);
+  TF_LITE_ENSURE_EQ(context, output_tensor->quantization.type,
+                    kTfLiteAffineQuantization);
   auto* proj_params = reinterpret_cast<TfLiteAffineQuantization*>(
       output_tensor->quantization.params);
+  TF_LITE_ENSURE(context, proj_params != nullptr);
+  TF_LITE_ENSURE(context, proj_params->scale != nullptr);
+  TF_LITE_ENSURE(context, proj_params->scale->size > 0);
   TF_LITE_ENSURE_EQ(context, cell_state_params->scale->data[0], 1.0 / 32768);
   if (cell_clip > 0.0 && cell_clip < 1.0) {
     integer_lstm_param->quantized_cell_clip = static_cast<int16_t>(std::min(
@@ -984,6 +1027,7 @@ TfLiteStatus CheckInputTensorDimensions(TfLiteContext* context,
   if (use_cifg) {
     TF_LITE_ENSURE(context, input_gate_bias == nullptr);
   } else {
+    TF_LITE_ENSURE(context, input_gate_bias != nullptr);
     TF_LITE_ENSURE_EQ(context, input_gate_bias->dims->size, 1);
     TF_LITE_ENSURE_EQ(context, input_gate_bias->dims->data[0], n_cell);
     if (is_integer) {
@@ -1200,10 +1244,16 @@ TfLiteStatus PopulatePrecomputedZPTimesWeightsWithBias(TfLiteContext* context,
   lstm_eval::IntegerLstmParameter* integer_lstm_params =
       &op_data->integer_lstm_param;
 
-  const TfLiteTensor* intermediate =
-      &context->tensors[node->intermediates->data[4]];
+  TfLiteTensor* intermediate;
+  TF_LITE_ENSURE_OK(context,
+                    GetIntermediatesSafe(context, node, 4, &intermediate));
+  TF_LITE_ENSURE_EQ(context, intermediate->quantization.type,
+                    kTfLiteAffineQuantization);
   const auto* params =
       static_cast<TfLiteAffineQuantization*>(intermediate->quantization.params);
+  TF_LITE_ENSURE(context, params != nullptr);
+  TF_LITE_ENSURE(context, params->zero_point != nullptr);
+  TF_LITE_ENSURE(context, params->zero_point->size > 0);
   const int32_t hidden_zp = params->zero_point->data[0];
 
   // Get bias and perform zero point calculation.
@@ -1318,7 +1368,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   const TfLiteTensor* input;
   TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, kInputTensor, &input));
   const bool is_integer = input->type == kTfLiteInt8;
-  TF_LITE_ENSURE(context, input->dims->size > 1);
+  TF_LITE_ENSURE_EQ(context, input->dims->size, 2);
   const int n_batch = input->dims->data[0];
   const int n_input = input->dims->data[1];
 
@@ -1326,8 +1376,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_OK(context,
                     GetInputSafe(context, node, kInputToOutputWeightsTensor,
                                  &input_to_output_weights));
-  const int n_cell = input_to_output_weights->dims->data[0];
   TF_LITE_ENSURE_EQ(context, input_to_output_weights->dims->size, 2);
+  const int n_cell = input_to_output_weights->dims->data[0];
   TF_LITE_ENSURE_EQ(context, input_to_output_weights->dims->data[1], n_input);
 
   const TfLiteTensor* recurrent_to_output_weights;
@@ -1418,17 +1468,15 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
     const TfLiteTensor* input_to_input_weights =
         GetOptionalInputTensor(context, node, kInputToInputWeightsTensor);
     const bool use_cifg = (input_to_input_weights == nullptr);
+    // Reserving space for gate and scratch accumulation buffers.
+    const int64_t scratch_width =
+        static_cast<int64_t>(n_cell) * (use_cifg ? 4 : 5);
+    TF_LITE_ENSURE(context, scratch_width >= 0 &&
+                                scratch_width <=
+                                    std::numeric_limits<int>::max());
     TfLiteIntArray* scratch_buffer_size = TfLiteIntArrayCreate(2);
     scratch_buffer_size->data[0] = n_batch;
-    if (use_cifg) {
-      // Reserving space for Cell, Forget, Output gates and scratch accumulation
-      // buffer and an extra 16 bytes to avoid internal ruy copies.
-      scratch_buffer_size->data[1] = n_cell * 4;
-    } else {
-      // Reserving space for Input, Cell, Forget, Output gates and scratch
-      // accumulation buffer and an extra 16 bytes to avoid internal ruy copies.
-      scratch_buffer_size->data[1] = n_cell * 5;
-    }
+    scratch_buffer_size->data[1] = static_cast<int>(scratch_width);
     TF_LITE_ENSURE_OK(context, context->ResizeTensor(context, scratch_buffer,
                                                      scratch_buffer_size));
   }
@@ -1734,12 +1782,14 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
         node->temporaries->data[offset + kProjectionWeightsLedgerOffset] =
             op_data->ledger_index + kProjectionWeightsLedgerOffset;
         const TfLiteTensor* projection_weights =
-            GetInput(context, node, kProjectionWeightsTensor);
+            GetOptionalInputTensor(context, node, kProjectionWeightsTensor);
         TfLiteTensor* projection_weights_ledger =
             &context->tensors[op_data->ledger_index +
                               kProjectionWeightsLedgerOffset];
-        auto status = make_ledger(projection_weights->sparsity, context,
-                                  projection_weights_ledger);
+        auto status = make_ledger(projection_weights == nullptr
+                                      ? nullptr
+                                      : projection_weights->sparsity,
+                                  context, projection_weights_ledger);
         if (status != kTfLiteOk) return status;
       }
     }
@@ -1750,8 +1800,9 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
       // Integer LSTM prepare function for 8x8->16.
       // This code path needs 5 intermediate tensors per Op.
       // Populate quantization parameters.
-      PopulateQuantizedLstmParams8x8_16(context, node,
-                                        &op_data->integer_lstm_param);
+      TF_LITE_ENSURE_OK(context,
+                        PopulateQuantizedLstmParams8x8_16(
+                            context, node, &op_data->integer_lstm_param));
 
       // Allocate scratch buffer. Need 6 16bit buffer with size n_batch * n_cell
       // and 1 8bit buffer with size n_batch * n_cell. We also need 1 32 bit
@@ -1790,8 +1841,9 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
     } else {
       // Integer LSTM prepare function for 8x8->8.
       // This code path needs 12 intermediate tensors per Op.
-      PopulateQuantizedLstmParams8x8_8(context, node,
-                                       &op_data->integer_lstm_param);
+      TF_LITE_ENSURE_OK(context,
+                        PopulateQuantizedLstmParams8x8_8(
+                            context, node, &op_data->integer_lstm_param));
 
       // Allocate scratch buffer. Need 6 16bit buffer with size n_batch * n_cell
       // and 2 8bit buffer with size n_batch * n_cell.
@@ -1996,7 +2048,9 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
                         recurrent_to_cell_weights_ledger);
             copy_ledger(recurrent_to_output_weights->sparsity,
                         recurrent_to_output_weights_ledger);
-            copy_ledger(projection_weights->sparsity,
+            copy_ledger(projection_weights == nullptr
+                            ? nullptr
+                            : projection_weights->sparsity,
                         projection_weights_ledger);
             op_data->ledger_initialized = true;
           }

@@ -3393,5 +3393,110 @@ QUANTIZE_PARAMETER_TEST(
     NoCifgNoPeepholeNoProjectionNoClippingUnidirectionalLstmTest);
 QUANTIZE_PARAMETER_TEST(NoCifgPeepholeProjectionClippingUnidirectionalLstmTest);
 #undef QUANTIZE_PARAMETER_TEST
+
+class InvalidUnidirectionalLSTMOpModel : public SingleOpModel {
+ public:
+  InvalidUnidirectionalLSTMOpModel(
+      const std::vector<std::vector<int>>& input_shapes,
+      bool omit_input_gate_bias = false) {
+    AddInput(TensorType_FLOAT32);  // input
+    AddInput(TensorType_FLOAT32);  // input_to_input_weights
+    AddInput(TensorType_FLOAT32);  // input_to_forget_weights
+    AddInput(TensorType_FLOAT32);  // input_to_cell_weights
+    AddInput(TensorType_FLOAT32);  // input_to_output_weights
+    AddInput(TensorType_FLOAT32);  // recurrent_to_input_weights
+    AddInput(TensorType_FLOAT32);  // recurrent_to_forget_weights
+    AddInput(TensorType_FLOAT32);  // recurrent_to_cell_weights
+    AddInput(TensorType_FLOAT32);  // recurrent_to_output_weights
+    AddNullInput();                // cell_to_input_weights
+    AddNullInput();                // cell_to_forget_weights
+    AddNullInput();                // cell_to_output_weights
+    if (omit_input_gate_bias) {
+      AddNullInput();
+    } else {
+      AddInput(TensorType_FLOAT32);  // input_gate_bias
+    }
+    AddInput(TensorType_FLOAT32);  // forget_gate_bias
+    AddInput(TensorType_FLOAT32);  // cell_gate_bias
+    AddInput(TensorType_FLOAT32);  // output_gate_bias
+    AddNullInput();                // projection_weights
+    AddNullInput();                // projection_bias
+    AddVariableInput(TensorData{TensorType_FLOAT32, {2, 4}});  // output_state
+    AddVariableInput(TensorData{TensorType_FLOAT32, {2, 4}});  // cell_state
+    AddOutput(TensorType_FLOAT32);
+
+    SetBuiltinOp(BuiltinOperator_UNIDIRECTIONAL_SEQUENCE_LSTM,
+                 BuiltinOptions_UnidirectionalSequenceLSTMOptions,
+                 CreateUnidirectionalSequenceLSTMOptions(
+                     builder_, ActivationFunctionType_TANH, 0.0f, 0.0f,
+                     /*time_major=*/true, false, false)
+                     .Union());
+    BuildInterpreter(input_shapes, /*num_threads=*/-1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/true, /*allocate_and_delegate=*/false);
+  }
+};
+
+TEST(UnidirectionalLstmValidationTest,
+     RejectsInvalidShapesAndMissingInputGateBias) {
+  auto valid_shapes = []() {
+    return std::vector<std::vector<int>>{
+        {3, 2, 2},  // input
+        {4, 2},     // input_to_input_weights
+        {4, 2},     // input_to_forget_weights
+        {4, 2},     // input_to_cell_weights
+        {4, 2},     // input_to_output_weights
+        {4, 4},     // recurrent_to_input_weights
+        {4, 4},     // recurrent_to_forget_weights
+        {4, 4},     // recurrent_to_cell_weights
+        {4, 4},     // recurrent_to_output_weights
+        {0},        // cell_to_input_weights
+        {0},        // cell_to_forget_weights
+        {0},        // cell_to_output_weights
+        {4},        // input_gate_bias
+        {4},        // forget_gate_bias
+        {4},        // cell_gate_bias
+        {4},        // output_gate_bias
+        {0},        // projection_weights
+        {0},        // projection_bias
+        {2, 4},     // output_state
+        {2, 4},     // cell_state
+    };
+  };
+
+  auto rank2_input_shapes = valid_shapes();
+  rank2_input_shapes[0] = {2, 2};
+  InvalidUnidirectionalLSTMOpModel rank2_input(rank2_input_shapes);
+  EXPECT_EQ(rank2_input.AllocateTensors(), kTfLiteError);
+
+  auto rank0_output_weights_shapes = valid_shapes();
+  rank0_output_weights_shapes[4] = {};
+  InvalidUnidirectionalLSTMOpModel rank0_output_weights(
+      rank0_output_weights_shapes);
+  EXPECT_EQ(rank0_output_weights.AllocateTensors(), kTfLiteError);
+
+  auto rank1_output_weights_shapes = valid_shapes();
+  rank1_output_weights_shapes[4] = {4};
+  InvalidUnidirectionalLSTMOpModel rank1_output_weights(
+      rank1_output_weights_shapes);
+  EXPECT_EQ(rank1_output_weights.AllocateTensors(), kTfLiteError);
+
+  auto bad_forget_shapes = valid_shapes();
+  bad_forget_shapes[6] = {1, 4};
+  InvalidUnidirectionalLSTMOpModel bad_forget(bad_forget_shapes);
+  EXPECT_EQ(bad_forget.AllocateTensors(), kTfLiteError);
+
+  auto bad_cell_shapes = valid_shapes();
+  bad_cell_shapes[7] = {1, 4};
+  InvalidUnidirectionalLSTMOpModel bad_cell(bad_cell_shapes);
+  EXPECT_EQ(bad_cell.AllocateTensors(), kTfLiteError);
+
+  auto missing_bias_shapes = valid_shapes();
+  missing_bias_shapes[12] = {0};
+  InvalidUnidirectionalLSTMOpModel missing_bias(missing_bias_shapes,
+                                                /*omit_input_gate_bias=*/true);
+  EXPECT_EQ(missing_bias.AllocateTensors(), kTfLiteError);
+}
+
 }  // namespace
 }  // namespace tflite
