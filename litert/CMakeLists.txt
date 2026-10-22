@@ -214,6 +214,9 @@ elseif(NOT EXISTS "${CMAKE_BINARY_DIR}/fp16_headers")
 else()
   include_directories(${CMAKE_BINARY_DIR}/fp16_headers/include)
 endif()
+if(FP16_SOURCE_DIR AND EXISTS "${FP16_SOURCE_DIR}/include")
+    include_directories(${FP16_SOURCE_DIR}/include)
+endif()
 
 # Add SafeInt headers include directory
 include(OverridableFetchContent)
