@@ -50,6 +50,7 @@ limitations under the License.
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/composite/tiled_quantized_fully_connected_kernel.h"
 #include "tensor/arithmetic.h"
 #include "tensor/arithmetic_graph.h"
 #include "tensor/backends/ml_drift/ml_drift_helpers.h"
@@ -60,6 +61,8 @@ limitations under the License.
 #include "tensor/utils/macros.h"
 
 namespace litert::tensor {
+
+namespace ml_drift = ::ml_drift;
 
 namespace {
 
@@ -290,7 +293,7 @@ absl::Status CreateBinaryElementwiseOp(MlDriftBuildContext& ctx,
 
 struct ScaleZpInfo {
   ml_drift::GpuModelBuilder::TensorHandle scale_handle;
-  ml_drift::GpuModelBuilder::TensorHandle zero_point_handle;
+  std::optional<ml_drift::GpuModelBuilder::TensorHandle> zero_point_handle;
   ml_drift::OHWI scale_zp_shape;
 };
 
@@ -335,6 +338,13 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
     return absl::InvalidArgumentError("Unsupported quantization type");
   }
 
+  const std::vector<float>& raw_scales =
+      pcq_ptr != nullptr ? pcq_ptr->scales : bwq_ptr->scales;
+  const std::vector<int64_t>& raw_zps =
+      pcq_ptr != nullptr ? pcq_ptr->zero_points : bwq_ptr->zero_points;
+  const bool has_non_zero_zp = std::any_of(
+      raw_zps.begin(), raw_zps.end(), [](int64_t zp) { return zp != 0; });
+
   std::string scale_key;
   std::string zp_key;
   if (!out_info.name.empty()) {
@@ -344,85 +354,86 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
     auto scale_it = ctx.weight_name_to_handle.find(scale_key);
     auto zp_it = ctx.weight_name_to_handle.find(zp_key);
     if (scale_it != ctx.weight_name_to_handle.end() &&
-        zp_it != ctx.weight_name_to_handle.end()) {
-      return ScaleZpInfo{scale_it->second, zp_it->second, scale_zp_shape};
+        (!has_non_zero_zp || zp_it != ctx.weight_name_to_handle.end())) {
+      std::optional<ml_drift::GpuModelBuilder::TensorHandle> cached_zp =
+          has_non_zero_zp ? std::make_optional(zp_it->second) : std::nullopt;
+      return ScaleZpInfo{scale_it->second, cached_zp, scale_zp_shape};
     }
     if (ctx.shared_weight_descriptors != nullptr) {
       auto shared_scale_it = ctx.shared_weight_descriptors->find(scale_key);
       auto shared_zp_it = ctx.shared_weight_descriptors->find(zp_key);
       if (shared_scale_it != ctx.shared_weight_descriptors->end() &&
-          shared_zp_it != ctx.shared_weight_descriptors->end()) {
+          (!has_non_zero_zp ||
+           shared_zp_it != ctx.shared_weight_descriptors->end())) {
         auto scale_handle = ctx.gpu_model_builder->AddConstantTensor(
             CopyDescriptorWithoutData(shared_scale_it->second));
-        auto zero_point_handle = ctx.gpu_model_builder->AddConstantTensor(
-            CopyDescriptorWithoutData(shared_zp_it->second));
         ctx.weight_name_to_handle.insert({scale_key, scale_handle});
-        ctx.weight_name_to_handle.insert({zp_key, zero_point_handle});
+        std::optional<ml_drift::GpuModelBuilder::TensorHandle>
+            zero_point_handle;
+        if (has_non_zero_zp) {
+          zero_point_handle = ctx.gpu_model_builder->AddConstantTensor(
+              CopyDescriptorWithoutData(shared_zp_it->second));
+          ctx.weight_name_to_handle.insert({zp_key, *zero_point_handle});
+        }
         return ScaleZpInfo{scale_handle, zero_point_handle, scale_zp_shape};
       }
     }
   }
 
   ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kFloat32> scale_values;
-  ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kFloat32> zp_values;
   scale_values.shape = scale_zp_shape;
-  // The kernels read one zero point per scale. No zero point means 0, and a
-  // single one is shared by all the scales.
-  auto set_zero_points =
-      [&](const std::vector<float>& scales,
-          const std::vector<int64_t>& zero_points) -> absl::Status {
-    if (zero_points.empty()) {
-      zp_values.data.assign(scales.size(), 0);
-    } else if (zero_points.size() == 1) {
-      zp_values.data.assign(scales.size(), zero_points[0]);
-    } else if (zero_points.size() == scales.size()) {
-      zp_values.data.assign(zero_points.begin(), zero_points.end());
-    } else {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Weights tensor (", out_info.name, ") has ", zero_points.size(),
-          " zero points for ", scales.size(), " scales."));
-    }
-    zp_values.shape = scale_values.shape;
-    return absl::OkStatus();
-  };
-  if (pcq_ptr != nullptr) {
-    scale_values.data = pcq_ptr->scales;
-    if (scale_values.data.size() == 1) {
-      // A per-tensor scale is repeated for each output channel, see above.
-      scale_values.data.assign(scale_zp_shape.o, scale_values.data[0]);
-    }
-    LRT_TENSOR_RETURN_IF_ERROR(
-        set_zero_points(scale_values.data, pcq_ptr->zero_points));
-  } else {
-    scale_values.data = bwq_ptr->scales;
-    LRT_TENSOR_RETURN_IF_ERROR(
-        set_zero_points(bwq_ptr->scales, bwq_ptr->zero_points));
+  scale_values.data = raw_scales;
+  if (pcq_ptr != nullptr && scale_values.data.size() == 1) {
+    // A per-tensor scale is repeated for each output channel, see above.
+    scale_values.data.assign(scale_zp_shape.o, scale_values.data[0]);
+  }
+
+  if (!raw_zps.empty() && raw_zps.size() != 1 &&
+      raw_zps.size() != scale_values.data.size()) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Weights tensor (", out_info.name, ") has ", raw_zps.size(),
+        " zero points for ", scale_values.data.size(), " scales."));
   }
 
   auto scale_desc = ScaleOrZeroPointToTensorDesc(
       ctx.gpu_model_builder->gpu_info(), scale_values, float_type);
-  auto zero_point_desc = ScaleOrZeroPointToTensorDesc(
-      ctx.gpu_model_builder->gpu_info(), zp_values, float_type);
   ml_drift::GpuModelBuilder::TensorHandle scale_handle;
-  ml_drift::GpuModelBuilder::TensorHandle zero_point_handle;
+  std::optional<ml_drift::GpuModelBuilder::TensorHandle> zero_point_handle;
   if (!out_info.name.empty() && ctx.shared_weight_descriptors != nullptr) {
     auto [shared_scale_it, _] = ctx.shared_weight_descriptors->try_emplace(
         scale_key, std::move(scale_desc));
     scale_handle = ctx.gpu_model_builder->AddConstantTensor(
         CopyDescriptorWithoutData(shared_scale_it->second));
-    auto [shared_zp_it, __] = ctx.shared_weight_descriptors->try_emplace(
-        zp_key, std::move(zero_point_desc));
-    zero_point_handle = ctx.gpu_model_builder->AddConstantTensor(
-        CopyDescriptorWithoutData(shared_zp_it->second));
   } else {
     scale_handle =
         ctx.gpu_model_builder->AddConstantTensor(std::move(scale_desc));
-    zero_point_handle =
-        ctx.gpu_model_builder->AddConstantTensor(std::move(zero_point_desc));
   }
   if (!out_info.name.empty()) {
     ctx.weight_name_to_handle.insert({scale_key, scale_handle});
-    ctx.weight_name_to_handle.insert({zp_key, zero_point_handle});
+  }
+
+  if (has_non_zero_zp) {
+    ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kFloat32> zp_values;
+    zp_values.shape = scale_zp_shape;
+    if (raw_zps.size() == 1) {
+      zp_values.data.assign(scale_values.data.size(), raw_zps[0]);
+    } else {
+      zp_values.data.assign(raw_zps.begin(), raw_zps.end());
+    }
+    auto zero_point_desc = ScaleOrZeroPointToTensorDesc(
+        ctx.gpu_model_builder->gpu_info(), zp_values, float_type);
+    if (!out_info.name.empty() && ctx.shared_weight_descriptors != nullptr) {
+      auto [shared_zp_it, _] = ctx.shared_weight_descriptors->try_emplace(
+          zp_key, std::move(zero_point_desc));
+      zero_point_handle = ctx.gpu_model_builder->AddConstantTensor(
+          CopyDescriptorWithoutData(shared_zp_it->second));
+    } else {
+      zero_point_handle =
+          ctx.gpu_model_builder->AddConstantTensor(std::move(zero_point_desc));
+    }
+    if (!out_info.name.empty()) {
+      ctx.weight_name_to_handle.insert({zp_key, *zero_point_handle});
+    }
   }
   return ScaleZpInfo{scale_handle, zero_point_handle, scale_zp_shape};
 }
@@ -1046,9 +1057,11 @@ absl::Status OpMixin<FullyConnectedOperation, MlDriftMixinTag>::ToMlDrift(
             weights,
             ctx.gpu_model_builder->GetFullyConnectedInt8WeightsDesc(
                 weights_ohwi),
-            weights_ohwi, scale_zp_shape, &scale_handle, &zero_point_handle);
-    out = ctx.gpu_model_builder->FullyConnectedInt8ExternalWeights(
-        input, external_weights, bias_ptr);
+            weights_ohwi, scale_zp_shape, &scale_handle,
+            zero_point_handle.has_value() ? &(*zero_point_handle) : nullptr);
+    out = litert::ml_drift::AddQuantizedFullyConnected(
+        ctx.gpu_model_builder, input, external_weights, bias_ptr,
+        "fc1x1_int8_weights");
   } else if (weights_info.type == Type::kI4) {
     LRT_TENSOR_ASSIGN_OR_RETURN(
         (auto [scale_handle, zero_point_handle, scale_zp_shape]),
@@ -1059,10 +1072,12 @@ absl::Status OpMixin<FullyConnectedOperation, MlDriftMixinTag>::ToMlDrift(
             weights,
             ctx.gpu_model_builder->GetFullyConnectedInt4WeightsDesc(
                 weights_ohwi),
-            weights_ohwi, scale_zp_shape, &scale_handle, &zero_point_handle);
+            weights_ohwi, scale_zp_shape, &scale_handle,
+            zero_point_handle.has_value() ? &(*zero_point_handle) : nullptr);
 
-    out = ctx.gpu_model_builder->FullyConnectedInt4ExternalWeights(
-        input, external_weights, bias_ptr);
+    out = litert::ml_drift::AddQuantizedFullyConnected(
+        ctx.gpu_model_builder, input, external_weights, bias_ptr,
+        "fc1x1_int4_weights");
   } else if (weights_info.type == Type::kI2) {
     LRT_TENSOR_ASSIGN_OR_RETURN(
         (auto [scale_handle, zero_point_handle, scale_zp_shape]),
@@ -1072,10 +1087,12 @@ absl::Status OpMixin<FullyConnectedOperation, MlDriftMixinTag>::ToMlDrift(
             weights,
             ctx.gpu_model_builder->GetFullyConnectedInt2WeightsDesc(
                 weights_ohwi),
-            weights_ohwi, scale_zp_shape, &scale_handle, &zero_point_handle);
+            weights_ohwi, scale_zp_shape, &scale_handle,
+            zero_point_handle.has_value() ? &(*zero_point_handle) : nullptr);
 
-    out = ctx.gpu_model_builder->FullyConnectedInt2ExternalWeights(
-        input, external_weights, bias_ptr);
+    out = litert::ml_drift::AddQuantizedFullyConnected(
+        ctx.gpu_model_builder, input, external_weights, bias_ptr,
+        "fc1x1_int2_weights");
   }
 
   LRT_TENSOR_ASSIGN_OR_RETURN(const FullyConnectedOperation& data,
@@ -2271,9 +2288,9 @@ absl::Status OpMixin<EmbeddingLookupOperation, MlDriftMixinTag>::ToMlDrift(
                        ToString(value_info.type)));
     }
     const ml_drift::GpuModelBuilder::Weights external_weights =
-        ml_drift::CreateExternalWeights(value, weights_desc, weights_ohwi,
-                                        scale_zp_shape, &scale_handle,
-                                        &zero_point_handle);
+        ml_drift::CreateExternalWeights(
+            value, weights_desc, weights_ohwi, scale_zp_shape, &scale_handle,
+            zero_point_handle.has_value() ? &(*zero_point_handle) : nullptr);
     out = ctx.gpu_model_builder->EmbeddingLookup(
         ids, external_weights, float_type, ml_drift::Axis::kWidth);
     ctx.graph_tensor_to_handle.insert({outputs[0], out});
