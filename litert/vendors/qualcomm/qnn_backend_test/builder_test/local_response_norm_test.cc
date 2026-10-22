@@ -14,9 +14,6 @@
 namespace litert::qnn {
 namespace {
 
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 TEST_P(QnnModelTest, LocalResponseNormFloat32SameAsL2Norm) {
   static constexpr std::int32_t kRadius{20};
   static constexpr float kBias{0.0f};
