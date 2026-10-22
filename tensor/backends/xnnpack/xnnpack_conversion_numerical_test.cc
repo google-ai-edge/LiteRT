@@ -113,6 +113,9 @@ struct XnnpackTraits {
       "TransposedQuantizedWeightsIntoAddOp",
       // Dequantizing int4 values aborts in an XNNPACK assertion.
       "QuantizedWeightsSharedByDotAndAddOp",
+      // Per-channel zero points of tensors that aren't constants are
+      // dequantized as if they were constants, which fails.
+      "DequantizePerChannelOp",
   };
   static std::unique_ptr<TestBackendBridge> CreateBridge() {
     return std::make_unique<XnnpackTestBackendBridge>();
