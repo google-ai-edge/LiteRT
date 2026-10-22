@@ -177,6 +177,18 @@ struct LrtGpuOptions {
   // If true, the delegate initializes via the IrModel pipeline instead of the
   // legacy GraphFloat32 pipeline.
   std::optional<bool> use_ir_model;
+
+  // If true, tuning is faster but the resulting inference can be slower.
+  std::optional<bool> enable_fast_tuning;
+
+  // Per-op profiling and its detailed report.
+  std::optional<bool> enable_op_profiling;
+  std::optional<bool> enable_op_profiling_detailed_report;
+
+  // Debugging: restrict delegation to a node range.
+  std::optional<bool> debug_delegate_partition;
+  std::optional<int> debug_first_delegate_node_index;
+  std::optional<int> debug_last_delegate_node_index;
 };
 
 LiteRtStatus LrtCreateGpuOptions(LrtGpuOptions** options) {
@@ -389,6 +401,35 @@ LiteRtStatus LrtGetOpaqueGpuOptionsData(const LrtGpuOptions* options,
     absl::StrAppend(&toml_str, "use_ir_model = ",
                     options->use_ir_model.value() ? "true" : "false", "\n");
   }
+  if (options->enable_fast_tuning.has_value()) {
+    absl::StrAppend(&toml_str, "enable_fast_tuning = ",
+                    options->enable_fast_tuning.value() ? "true" : "false",
+                    "\n");
+  }
+  if (options->enable_op_profiling.has_value()) {
+    absl::StrAppend(&toml_str, "enable_op_profiling = ",
+                    options->enable_op_profiling.value() ? "true" : "false",
+                    "\n");
+  }
+  if (options->enable_op_profiling_detailed_report.has_value()) {
+    absl::StrAppend(
+        &toml_str, "enable_op_profiling_detailed_report = ",
+        options->enable_op_profiling_detailed_report.value() ? "true" : "false",
+        "\n");
+  }
+  if (options->debug_delegate_partition.has_value()) {
+    absl::StrAppend(
+        &toml_str, "debug_delegate_partition = ",
+        options->debug_delegate_partition.value() ? "true" : "false", "\n");
+  }
+  if (options->debug_first_delegate_node_index.has_value()) {
+    absl::StrAppend(&toml_str, "debug_first_delegate_node_index = ",
+                    options->debug_first_delegate_node_index.value(), "\n");
+  }
+  if (options->debug_last_delegate_node_index.has_value()) {
+    absl::StrAppend(&toml_str, "debug_last_delegate_node_index = ",
+                    options->debug_last_delegate_node_index.value(), "\n");
+  }
   *identifier = LrtGetGpuOptionsIdentifier();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
   return kLiteRtStatusOk;
@@ -539,6 +580,30 @@ LiteRtStatus LrtCreateGpuOptionsFromToml(const char* toml_string,
           auto res = ParseTomlBool(value);
           if (!res) return kLiteRtStatusErrorInvalidArgument;
           (*options)->use_ir_model = *res;
+        } else if (key == "enable_fast_tuning") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->enable_fast_tuning = *res;
+        } else if (key == "enable_op_profiling") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->enable_op_profiling = *res;
+        } else if (key == "enable_op_profiling_detailed_report") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->enable_op_profiling_detailed_report = *res;
+        } else if (key == "debug_delegate_partition") {
+          auto res = ParseTomlBool(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->debug_delegate_partition = *res;
+        } else if (key == "debug_first_delegate_node_index") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->debug_first_delegate_node_index = *res;
+        } else if (key == "debug_last_delegate_node_index") {
+          auto res = ParseTomlInt(value);
+          if (!res) return kLiteRtStatusErrorInvalidArgument;
+          (*options)->debug_last_delegate_node_index = *res;
         }
         return kLiteRtStatusOk;
       });
@@ -1334,7 +1399,6 @@ LiteRtStatus LrtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
   *enabled = *options->hint_fully_delegated_to_single_delegate;
   return kLiteRtStatusOk;
 }
-
 LiteRtStatus LrtGetGpuOptionsUseIrModel(bool* enabled,
                                         const LrtGpuOptions* options) {
   LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
@@ -1352,3 +1416,136 @@ LiteRtStatus LrtGetGpuOptionsUseIrModel(bool* enabled,
   return kLiteRtStatusOk;
 #endif
 }
+
+LiteRtStatus LrtSetGpuOptionsEnableFastTuning(LrtGpuOptions* gpu_options,
+                                              bool enable_fast_tuning) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->enable_fast_tuning = enable_fast_tuning;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuOptionsEnableFastTuning(bool* enabled,
+                                              const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  if (!options->enable_fast_tuning.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->enable_fast_tuning;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuOptionsEnableOpProfiling(LrtGpuOptions* gpu_options,
+                                               bool enable_op_profiling) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->enable_op_profiling = enable_op_profiling;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuOptionsEnableOpProfiling(bool* enabled,
+                                               const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  if (!options->enable_op_profiling.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->enable_op_profiling;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuOptionsEnableOpProfilingDetailedReport(
+    LrtGpuOptions* gpu_options, bool enable_op_profiling_detailed_report) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->enable_op_profiling_detailed_report =
+      enable_op_profiling_detailed_report;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuOptionsEnableOpProfilingDetailedReport(
+    bool* enabled, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  if (!options->enable_op_profiling_detailed_report.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->enable_op_profiling_detailed_report;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuOptionsDebugDelegatePartition(
+    LrtGpuOptions* gpu_options, bool debug_delegate_partition) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->debug_delegate_partition = debug_delegate_partition;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuOptionsDebugDelegatePartition(
+    bool* enabled, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
+      << "`enabled` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  if (!options->debug_delegate_partition.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *enabled = *options->debug_delegate_partition;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuOptionsDebugFirstDelegateNodeIndex(
+    LrtGpuOptions* gpu_options, int debug_first_delegate_node_index) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->debug_first_delegate_node_index =
+      debug_first_delegate_node_index;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuOptionsDebugFirstDelegateNodeIndex(
+    int* debug_first_delegate_node_index, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(debug_first_delegate_node_index,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`debug_first_delegate_node_index` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  if (!options->debug_first_delegate_node_index.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *debug_first_delegate_node_index =
+      *options->debug_first_delegate_node_index;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetGpuOptionsDebugLastDelegateNodeIndex(
+    LrtGpuOptions* gpu_options, int debug_last_delegate_node_index) {
+  if (!gpu_options) return kLiteRtStatusErrorInvalidArgument;
+
+  gpu_options->debug_last_delegate_node_index = debug_last_delegate_node_index;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetGpuOptionsDebugLastDelegateNodeIndex(
+    int* debug_last_delegate_node_index, const LrtGpuOptions* options) {
+  LITERT_RETURN_IF_ERROR(debug_last_delegate_node_index,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`debug_last_delegate_node_index` cannot be null.";
+  LITERT_RETURN_IF_ERROR(options, ErrorStatusBuilder::InvalidArgument())
+      << "`options` cannot be null.";
+  if (!options->debug_last_delegate_node_index.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *debug_last_delegate_node_index =
+      *options->debug_last_delegate_node_index;
+  return kLiteRtStatusOk;
+}
+

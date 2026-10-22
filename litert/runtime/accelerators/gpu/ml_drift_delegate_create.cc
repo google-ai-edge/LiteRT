@@ -140,8 +140,7 @@ LiteRtStatus CreateDelegate(
     gpu_delegate_options->precision =
         ::litert::ml_drift::GetMlDriftPrecision(litert_delegate_precision);
     gpu_delegate_options->use_f32_accum_for_fp16 =
-        litert_delegate_precision ==
-        kLiteRtDelegatePrecisionFp16WithFp32Accum;
+        litert_delegate_precision == kLiteRtDelegatePrecisionFp16WithFp32Accum;
 
     LiteRtDelegateBufferStorageType litert_delegate_buffer_storage_type =
         kLiteRtDelegateBufferStorageTypeDefault;
@@ -198,6 +197,29 @@ LiteRtStatus CreateDelegate(
     LrtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
         &gpu_delegate_options->hint_fully_delegated_to_single_delegate,
         gpu_options_payload);
+
+    LrtGetGpuOptionsEnableFastTuning(&gpu_delegate_options->enable_fast_tuning,
+                                     gpu_options_payload);
+
+    LrtGetGpuOptionsEnableOpProfiling(
+        &gpu_delegate_options->enable_op_profiling, gpu_options_payload);
+
+    LrtGetGpuOptionsEnableOpProfilingDetailedReport(
+        &gpu_delegate_options->enable_op_profiling_detailed_report,
+        gpu_options_payload);
+
+    LrtGetGpuOptionsDebugDelegatePartition(
+        &gpu_delegate_options->debug_delegate_partition,
+        gpu_options_payload);
+
+    LrtGetGpuOptionsDebugFirstDelegateNodeIndex(
+        &gpu_delegate_options->debug_first_delegate_node_index,
+        gpu_options_payload);
+
+    LrtGetGpuOptionsDebugLastDelegateNodeIndex(
+        &gpu_delegate_options->debug_last_delegate_node_index,
+        gpu_options_payload);
+
 
 #ifdef __APPLE__
     LrtGetGpuOptionsUseMetalArgumentBuffers(
@@ -359,10 +381,11 @@ LiteRtStatus StopMetricsCollection(LiteRtRuntimeContext* runtime_context,
   if (intermediate_memory.ok()) {
     LiteRtMetric metric = {
         .name = "gpu_intermediate_memory_bytes",
-        .value = LiteRtAny{
-            .type = kLiteRtAnyTypeInt,
-            .int_value = static_cast<int64_t>(*intermediate_memory),
-        },
+        .value =
+            LiteRtAny{
+                .type = kLiteRtAnyTypeInt,
+                .int_value = static_cast<int64_t>(*intermediate_memory),
+            },
     };
     LITERT_RETURN_IF_ERROR(runtime_context->append_metric(metrics, &metric));
   }
@@ -371,10 +394,11 @@ LiteRtStatus StopMetricsCollection(LiteRtRuntimeContext* runtime_context,
   if (constant_memory.ok()) {
     LiteRtMetric metric = {
         .name = "gpu_constant_memory_bytes",
-        .value = LiteRtAny{
-            .type = kLiteRtAnyTypeInt,
-            .int_value = static_cast<int64_t>(*constant_memory),
-        },
+        .value =
+            LiteRtAny{
+                .type = kLiteRtAnyTypeInt,
+                .int_value = static_cast<int64_t>(*constant_memory),
+            },
     };
     LITERT_RETURN_IF_ERROR(runtime_context->append_metric(metrics, &metric));
   }
