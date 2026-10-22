@@ -1439,8 +1439,7 @@ class Conv2DOperationParser : public TFLiteOperationParser {
         ExtractTensorShape(reader->GetInputTensor(0));
     const ::ml_drift::BHWC dst_shape =
         ExtractTensorShape(reader->GetOutputTensor(0));
-    const auto& conv_weights_shape = std::visit(
-        [](const auto& weights) { return weights.shape; }, attr.weights);
+    const ::ml_drift::OHWI& conv_weights_shape = attr.GetWeightsShape();
     const int src_group_size = conv_weights_shape.i;
     if (conv_weights_shape.i == 1 && src_shape.c == dst_shape.c) {
       // when weights shape input channels = 1 =>
@@ -1646,9 +1645,7 @@ class Conv2DOperationParser : public TFLiteOperationParser {
                            options_.enable_spanned_weights, /*scale=*/nullptr,
                            /*zero_point=*/nullptr);
       }
-      attr.groups =
-          src_shape.c /
-          std::visit([](const auto& w) { return w.shape; }, attr.weights).i;
+      attr.groups = src_shape.c / attr.GetWeightsShape().i;
     }
     const ObjectReader::ConstantInputSharingInfo bias_share =
         reader->GetSharingInfoByNodeInputIndex(kInputBiasId);
@@ -1688,8 +1685,7 @@ class Conv2DOperationParser : public TFLiteOperationParser {
       dst_type = ::ml_drift::DataType::kFloat16;
     }
 
-    const auto& weights_shape =
-        std::visit([](const auto& w) { return w.shape; }, attr.weights);
+    const ::ml_drift::OHWI& weights_shape = attr.GetWeightsShape();
     const int src_group_size = weights_shape.i;
     const int dst_group_size = weights_shape.o / attr.groups;
 
