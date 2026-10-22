@@ -24,7 +24,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -67,13 +66,60 @@ absl::string_view Component(int k) {
   return kComponents[k];
 }
 
-// Shader expression of B * x at token `token` in the slice `S`.
-std::string BxExpr(absl::string_view token) {
-  return absl::Substitute(
-      "(ucl::Convert<float4>(args.in_proj.Read($0, 0, S)) * "
-      "ucl::Convert<float4>(args.in_proj.Read($0, 0, S + 2 * "
-      "args.num_slices)))",
-      token);
+// Reads 4 channels [4 * S + channel_offset .. 4 * S + channel_offset + 3] from
+// `in_proj` at `token`. When `channel_offset` is a multiple of 4, this is a
+// single aligned slice read at `S + slice_offset_expr`.
+std::string ReadInProjAtChannelOffset(absl::string_view token,
+                                      int channel_offset,
+                                      absl::string_view slice_offset_expr) {
+  if (channel_offset == 0) {
+    return absl::Substitute("ucl::Convert<float4>(args.in_proj.Read($0, 0, S))",
+                            token);
+  }
+  if (channel_offset % 4 == 0) {
+    return absl::Substitute(
+        "ucl::Convert<float4>(args.in_proj.Read($0, 0, S + $1))", token,
+        slice_offset_expr);
+  }
+  std::string expr = "ucl::Init<float4>(";
+  for (int i = 0; i < 4; ++i) {
+    const int c_off = channel_offset + i;
+    const int s_off = c_off / 4;
+    const absl::string_view comp = Component(c_off % 4);
+    absl::StrAppend(
+        &expr, i > 0 ? ", " : "",
+        absl::Substitute(
+            "ucl::Convert<float4>(args.in_proj.Read($0, 0, min(S + $1, "
+            "args.in_proj.Slices() - 1))).$2",
+            token, s_off, comp));
+  }
+  expr += ')';
+  return expr;
+}
+
+// Shader expression of B * x (or x when ungated) at token `token` in slice `S`.
+std::string BxExpr(absl::string_view token, bool is_gated, int hidden_size) {
+  if (!is_gated) {
+    return ReadInProjAtChannelOffset(token, 0, "0");
+  }
+  return absl::Substitute("($0 * $1)", ReadInProjAtChannelOffset(token, 0, "0"),
+                          ReadInProjAtChannelOffset(token, 2 * hidden_size,
+                                                    "2 * args.num_slices"));
+}
+
+// Shader expression for post-conv activation and gating at `token`.
+std::string PostConvOutExpr(absl::string_view acc_var, absl::string_view token,
+                            bool is_gated, bool use_silu, int hidden_size) {
+  std::string val =
+      use_silu ? absl::Substitute("($0 / (ucl::Init<float4>(1.0f) + exp(-$0)))",
+                                  acc_var)
+               : std::string(acc_var);
+  if (is_gated) {
+    return absl::Substitute(
+        "($0 * $1)",
+        ReadInProjAtChannelOffset(token, hidden_size, "args.num_slices"), val);
+  }
+  return val;
 }
 
 }  // namespace
@@ -84,7 +130,7 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
     const ::ml_drift::TensorDescriptor* conv_bias_desc,
     const ::ml_drift::TensorDescriptor& dst_desc,
     const ::ml_drift::TensorDescriptor& state_in_out_desc, int num_slices,
-    int hidden_size, int conv_L_cache,
+    int hidden_size, int conv_L_cache, bool is_gated, bool use_silu,
     const ::ml_drift::TensorDescriptor* num_valid_tokens_desc) {
   const int clamped_L_cache = std::clamp(conv_L_cache, 2, 4);
   const int num_state_taps = clamped_L_cache - 1;
@@ -134,6 +180,14 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
         "0, 0, 0, $1)";
   }
 
+  const bool has_partial_slice = (hidden_size % 4) != 0;
+  auto channel_idx_expr = [&](int i) -> std::string {
+    if (!has_partial_slice || i == 0) {
+      return absl::StrCat("4 * S + ", i);
+    }
+    return absl::StrCat("min(4 * S + ", i, ", args.hidden_size - 1)");
+  };
+
   std::string bias_expr = "ucl::Init<float4>(0.0f, 0.0f, 0.0f, 0.0f)";
   if (conv_bias_desc != nullptr) {
     const ::ml_drift::BHWC bias_shape = conv_bias_desc->GetBHWCShape();
@@ -141,22 +195,14 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
       bias_expr = "ucl::Init<float4>(";
       for (int i = 0; i < 4; ++i) {
         absl::StrAppend(&bias_expr, i > 0 ? ", " : "",
-                        "ucl::Convert<float4>(args.conv_bias.Read(0, 0, 0, 4 * "
-                        "S + ",
-                        i, ")).x");
+                        "ucl::Convert<float4>(args.conv_bias.Read(0, 0, 0, ",
+                        channel_idx_expr(i), ")).x");
       }
       bias_expr += ')';
     } else {
       bias_expr = "ucl::Convert<float4>(args.conv_bias.Read(0, 0, S))";
     }
   }
-
-  ABSL_LOG(INFO) << "ShortConvStep: hidden_size=" << hidden_size
-                 << ", seq_len=" << seq_len << ", num_slices=" << num_slices
-                 << ", conv_L_cache=" << clamped_L_cache
-                 << ", has_bias=" << (conv_bias_desc != nullptr)
-                 << ", has_num_valid_tokens="
-                 << (num_valid_tokens_desc != nullptr);
 
   // With L = conv_L_cache and padded = concat(conv_state, B * x) along the
   // sequence, padded[p] is conv_state tap p for p < L - 1 and B * x of token
@@ -196,8 +242,7 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
   for (int i = 0; i < 4; ++i) {
     absl::StrAppend(
         &c, "  float4 w", i, " = ucl::Convert<float4>(",
-        absl::Substitute(weight_read_expr, absl::StrCat("4 * S + ", i)),
-        ");\n");
+        absl::Substitute(weight_read_expr, channel_idx_expr(i)), ");\n");
   }
   for (int k = 0; k < clamped_L_cache; ++k) {
     const absl::string_view tap = Component(k);
@@ -214,10 +259,13 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
       const int offset = num_state_taps - k;
       const std::string token =
           offset == 0 ? "X" : absl::StrCat("X - ", offset);
-      absl::StrAppend(&c, "    acc += wt", k, " * ", BxExpr(token), ";\n");
+      absl::StrAppend(&c, "    acc += wt", k, " * ",
+                      BxExpr(token, is_gated, hidden_size), ";\n");
     }
-    c += "    args.out.Write(ucl::Convert<args.out::type>(ucl::Convert<float4>("
-         "args.in_proj.Read(X, 0, S + args.num_slices)) * acc), X, 0, S);\n";
+    absl::StrAppend(
+        &c, "    args.out.Write(ucl::Convert<args.out::type>(",
+        PostConvOutExpr("acc", "X", is_gated, use_silu, hidden_size),
+        "), X, 0, S);\n");
     c += "    return;\n  }\n";
   }
 
@@ -226,7 +274,7 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
   for (int i = 0; i < 4; ++i) {
     absl::StrAppend(
         &c, "  float4 s", i, " = ucl::Convert<float4>(",
-        absl::Substitute(state_read_expr, absl::StrCat("4 * S + ", i)), ");\n");
+        absl::Substitute(state_read_expr, channel_idx_expr(i)), ");\n");
   }
   for (int j = 0; j < num_state_taps; ++j) {
     const absl::string_view tap = Component(j);
@@ -234,8 +282,8 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
                     ", s1.", tap, ", s2.", tap, ", s3.", tap, ");\n");
   }
   for (int t = 0; t < num_head_tokens; ++t) {
-    absl::StrAppend(&c, "  float4 bx", t, " = ", BxExpr(absl::StrCat(t)),
-                    ";\n");
+    absl::StrAppend(&c, "  float4 bx", t, " = ",
+                    BxExpr(absl::StrCat(t), is_gated, hidden_size), ";\n");
   }
   // Shader expression of padded[p] for a p known at code generation.
   auto padded = [&](int p) -> std::string {
@@ -243,19 +291,21 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
       return absl::StrCat("st", p);
     }
     const int token = p - num_state_taps;
-    return token < num_head_tokens ? absl::StrCat("bx", token)
-                                   : BxExpr(absl::StrCat(token));
+    return token < num_head_tokens
+               ? absl::StrCat("bx", token)
+               : BxExpr(absl::StrCat(token), is_gated, hidden_size);
   };
   for (int t = 0; t < num_head_tokens; ++t) {
     absl::StrAppend(&c, "  float4 acc", t, " = bias;\n");
     for (int k = 0; k < clamped_L_cache; ++k) {
       absl::StrAppend(&c, "  acc", t, " += wt", k, " * ", padded(t + k), ";\n");
     }
-    absl::StrAppend(&c,
-                    "  args.out.Write(ucl::Convert<args.out::type>("
-                    "ucl::Convert<float4>(args.in_proj.Read(",
-                    t, ", 0, S + args.num_slices)) * acc", t, "), ", t,
-                    ", 0, S);\n");
+    const std::string acc_var = absl::StrCat("acc", t);
+    const std::string tok_str = absl::StrCat(t);
+    absl::StrAppend(
+        &c, "  args.out.Write(ucl::Convert<args.out::type>(",
+        PostConvOutExpr(acc_var, tok_str, is_gated, use_silu, hidden_size),
+        "), ", t, ", 0, S);\n");
   }
 
   // next_state tap j = padded[n + j] with n = num_valid_tokens clamped to
@@ -284,7 +334,8 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
                         ") {\n    ns", j, " = st", i, ";\n");
       }
       absl::StrAppend(&c, "  } else {\n    ns", j, " = ",
-                      BxExpr(absl::StrCat("p", j, " - ", num_state_taps)),
+                      BxExpr(absl::StrCat("p", j, " - ", num_state_taps),
+                             is_gated, hidden_size),
                       ";\n  }\n");
     }
   }
@@ -296,12 +347,15 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
                           ? absl::StrCat("ns", j, ".", Component(i))
                           : std::string("0.0f"));
     }
-    absl::StrAppend(
-        &c, "  ",
-        absl::Substitute(state_write_expr,
-                         absl::StrCat("ucl::Init<float4>(", taps, ")"),
-                         absl::StrCat("4 * S + ", i)),
-        ";\n");
+    const std::string write_stmt = absl::Substitute(
+        state_write_expr, absl::StrCat("ucl::Init<float4>(", taps, ")"),
+        absl::StrCat("4 * S + ", i));
+    if (has_partial_slice && i > 0) {
+      absl::StrAppend(&c, "  if (4 * S + ", i, " < args.hidden_size) {\n    ",
+                      write_stmt, ";\n  }\n");
+    } else {
+      absl::StrAppend(&c, "  ", write_stmt, ";\n");
+    }
   }
   c += "}\n";
 
@@ -349,7 +403,7 @@ absl::Status BuildShortConvStepGpuGraph(
   }
 
   auto in_proj_shape = in_proj.tensor_desc.GetBHWCShape();
-  int hidden_size = in_proj_shape.c / 3;
+  int hidden_size = attr.is_gated ? (in_proj_shape.c / 3) : in_proj_shape.c;
   int num_slices = (hidden_size + 3) / 4;
 
   auto dst_desc = in_proj.tensor_desc;
@@ -364,7 +418,7 @@ absl::Status BuildShortConvStepGpuGraph(
   auto op = CreateFusedShortConvStep(
       in_proj.tensor_desc, conv_weight.tensor_desc, conv_bias_desc, dst_desc,
       state_in_out_desc, num_slices, hidden_size, attr.conv_L_cache,
-      num_valid_tokens_desc);
+      attr.is_gated, attr.use_silu, num_valid_tokens_desc);
 
   std::vector<::ml_drift::TensorHandle> src_tensors = {in_proj, conv_weight};
   if (conv_bias.has_value()) {

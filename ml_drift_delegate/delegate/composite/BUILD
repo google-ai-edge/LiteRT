@@ -387,7 +387,6 @@ cc_library(
     hdrs = ["short_conv_step_kernel.h"],
     deps = [
         ":short_conv_step_parser",
-        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
@@ -908,6 +907,7 @@ cc_test(
         ":fused_sdpa_cache_update_parser",
         ":litert_op_selector",
         ":sdpa_transposed_parser",
+        ":short_conv_step_parser",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_googletest//:gtest_main",
         "@ml_drift//ml_drift/common:data_type",
