@@ -98,6 +98,13 @@ Expected<TensorRtArtifactFingerprint> FingerprintOpenArtifact(
 
 }  // namespace
 
+std::string AotRuntimeCacheKey(const TensorRtAotLocator& locator) {
+  return "aot_v1_" + std::to_string(locator.version) + "_" +
+         std::to_string(locator.artifact_size) + "_" +
+         std::to_string(locator.fingerprint.low) + "_" +
+         std::to_string(locator.fingerprint.high);
+}
+
 const char* AotArtifactValidationName(AotArtifactValidation validation) {
   switch (validation) {
     case AotArtifactValidation::kTrustedFileIdentity:

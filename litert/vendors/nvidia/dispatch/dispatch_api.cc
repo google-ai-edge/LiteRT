@@ -2359,9 +2359,11 @@ class LiteRtDispatchInvocationContextT {
   std::string RuntimeCachePath(const std::string& dir) const {
     const std::string function_name =
         SanitizeCacheComponent(bytecode_.function_name);
-    const uint64_t engine_hash =
-        Fnv1a64(bytecode_.engine_data, bytecode_.engine_size);
-    return JoinPath(dir, function_name + "_" + Hex64(engine_hash) +
+    const std::string key =
+        aot_locator_.has_value()
+            ? litert::nvidia::AotRuntimeCacheKey(*aot_locator_)
+            : Hex64(Fnv1a64(bytecode_.engine_data, bytecode_.engine_size));
+    return JoinPath(dir, function_name + "_" + key +
                              ".trt_rtx_runtime_cache");
   }
 
