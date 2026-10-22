@@ -101,6 +101,40 @@ bool VerifyStringTensorBuffer(const Tensor& tensor, const Buffer& buffer,
     return false;
   }
 
+  if (tensor.shape() != nullptr) {
+    uint64_t num_elements = 1;
+    bool has_dynamic_dim = false;
+    bool has_zero_dim = false;
+    bool shape_overflow = false;
+    for (int dim : *tensor.shape()) {
+      if (dim < 0) {
+        has_dynamic_dim = true;
+      } else if (dim == 0) {
+        has_zero_dim = true;
+        num_elements = 0;
+        shape_overflow = false;
+      } else if (!has_zero_dim) {
+        num_elements *= static_cast<uint64_t>(dim);
+        if (num_elements > UINT_MAX) {
+          shape_overflow = true;
+        }
+      }
+    }
+    if (!has_dynamic_dim && shape_overflow) {
+      ReportError(error_reporter, "Tensor %s dimension overflow",
+                  NameOrEmptyString(tensor.name()));
+      return false;
+    }
+    if ((has_zero_dim || !has_dynamic_dim) && num_strings != num_elements) {
+      ReportError(
+          error_reporter,
+          "String tensor %s buffer has %u strings, but shape requires %llu",
+          NameOrEmptyString(tensor.name()), num_strings,
+          static_cast<unsigned long long>(num_elements));
+      return false;
+    }
+  }
+
   uint32_t prev_ptr = header_offsets;
   uint32_t offset = sizeof(int32_t);
 
@@ -112,14 +146,15 @@ bool VerifyStringTensorBuffer(const Tensor& tensor, const Buffer& buffer,
   }
   offset += sizeof(int32_t);
   for (int i = 1, end = num_strings; i <= end; i++, offset += sizeof(int32_t)) {
-    int string_offset = GetIntPtr(buffer_ptr + offset);
-    if (string_offset < static_cast<int>(prev_ptr) ||
-        string_offset > static_cast<int>(buffer_size)) {
+    uint32_t string_offset = GetIntPtr(buffer_ptr + offset);
+    if (string_offset < prev_ptr || string_offset > buffer_size ||
+        string_offset > static_cast<uint32_t>(INT_MAX)) {
       ReportError(error_reporter,
                   "String tensor %s buffer is invalid: index %d",
                   NameOrEmptyString(tensor.name()), i);
       return false;
     }
+    prev_ptr = string_offset;
   }
   if (GetIntPtr(buffer_ptr + offset - sizeof(int32_t)) != buffer_size) {
     ReportError(error_reporter,

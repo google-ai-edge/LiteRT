@@ -248,4 +248,71 @@ TEST(StringUtil, EmptyStringWithEmptyBuffer) {
   EXPECT_EQ(added_string.len, 0);
 }
 
+TEST(StringUtil, GetStringOutOfRangeAndNonMonotonicOffsets) {
+  int32_t raw_buf[6] = {3, 20, 24, 20, 24, 0x44434241};
+  StringRef valid_first = GetString(reinterpret_cast<const char*>(raw_buf), 0);
+  EXPECT_EQ(valid_first.len, 4u);
+
+  StringRef non_monotonic =
+      GetString(reinterpret_cast<const char*>(raw_buf), 1);
+  EXPECT_EQ(non_monotonic.str, nullptr);
+  EXPECT_EQ(non_monotonic.len, 0u);
+
+  StringRef out_of_range = GetString(reinterpret_cast<const char*>(raw_buf), 3);
+  EXPECT_EQ(out_of_range.str, nullptr);
+  EXPECT_EQ(out_of_range.len, 0u);
+
+  // Truncated TfLiteTensor buffer is rejected by byte-bounded GetString.
+  TfLiteTensor truncated_tensor{};
+  truncated_tensor.type = kTfLiteString;
+  truncated_tensor.data.raw = reinterpret_cast<char*>(raw_buf);
+  truncated_tensor.bytes = 12;  // < (3 + 2) * sizeof(int32_t) = 20
+  EXPECT_EQ(GetStringCount(&truncated_tensor), 0);
+  StringRef truncated_ref = GetString(&truncated_tensor, 0);
+  EXPECT_EQ(truncated_ref.str, nullptr);
+  EXPECT_EQ(truncated_ref.len, 0u);
+
+  // Large num_strings (0x3FFFFFFF, where (uint32_t(num_strings) + 2) * 4 wraps
+  // 32-bit size_t to 4) is rejected on both 32-bit and 64-bit targets.
+  int32_t wrap32_buf[4] = {0x3FFFFFFF, 8, 12, 0x44434241};
+  TfLiteTensor wrap32_tensor{};
+  wrap32_tensor.type = kTfLiteString;
+  wrap32_tensor.data.raw = reinterpret_cast<char*>(wrap32_buf);
+  wrap32_tensor.bytes = sizeof(wrap32_buf);
+  EXPECT_EQ(GetStringCount(&wrap32_tensor), 0);
+  StringRef wrap32_ref = GetString(&wrap32_tensor, 0);
+  EXPECT_EQ(wrap32_ref.str, nullptr);
+  EXPECT_EQ(wrap32_ref.len, 0u);
+  StringRef wrap32_raw_ref =
+      GetString(reinterpret_cast<const char*>(wrap32_buf), 0);
+  EXPECT_EQ(wrap32_raw_ref.str, nullptr);
+  EXPECT_EQ(wrap32_raw_ref.len, 0u);
+}
+
+TEST(StringUtil, AddJoinedStringSingleAndZeroLength) {
+  Interpreter interpreter;
+  interpreter.AddTensors(1);
+  TfLiteTensor* t0 = interpreter.tensor(0);
+  t0->type = kTfLiteString;
+  t0->allocation_type = kTfLiteDynamic;
+
+  // 1-string join succeeds even when unused separator exceeds max_size.
+  DynamicBuffer single_buf(/*max_length=*/10);
+  const char item[] = "hello";
+  const char huge_sep[] = "0123456789ABCDEF";
+  single_buf.AddJoinedString({{item, 5}}, {huge_sep, 16});
+  single_buf.WriteToTensorAsVector(t0);
+  ASSERT_EQ(GetStringCount(t0), 1);
+  StringRef s0 = GetString(t0, 0);
+  EXPECT_EQ(string(s0.str, s0.len), "hello");
+
+  // Joining empty strings on an empty DynamicBuffer appends an empty record.
+  DynamicBuffer empty_join_buf;
+  empty_join_buf.AddJoinedString({{nullptr, 0}, {nullptr, 0}}, {nullptr, 0});
+  empty_join_buf.WriteToTensorAsVector(t0);
+  ASSERT_EQ(GetStringCount(t0), 1);
+  StringRef empty_s = GetString(t0, 0);
+  EXPECT_EQ(empty_s.len, 0u);
+}
+
 }  // namespace tflite

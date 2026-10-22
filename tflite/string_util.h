@@ -88,14 +88,29 @@ class DynamicBuffer : public mlir::TFL::SimpleDynamicBuffer {
 
 // Return num of strings in a String tensor.
 inline int GetStringCount(const TfLiteTensor* tensor) {
-  // The first integers in the raw buffer is the number of strings.
-  return GetStringCount(tensor->data.raw);
+  if (tensor == nullptr || tensor->data.raw == nullptr ||
+      tensor->bytes < sizeof(int32_t)) {
+    return 0;
+  }
+  const int count = GetStringCount(tensor->data.raw);
+  if (count < 0) {
+    return 0;
+  }
+  const uint64_t required_bytes =
+      (static_cast<uint64_t>(count) + 2) * sizeof(int32_t);
+  if (static_cast<uint64_t>(tensor->bytes) < required_bytes) {
+    return 0;
+  }
+  return count;
 }
 
 // Get String pointer and length of index-th string in tensor.
 // NOTE: This will not create a copy of string data.
 inline StringRef GetString(const TfLiteTensor* tensor, int string_index) {
-  return GetString(tensor->data.raw, string_index);
+  if (tensor == nullptr || tensor->data.raw == nullptr) {
+    return StringRef{nullptr, 0};
+  }
+  return GetString(tensor->data.raw, tensor->bytes, string_index);
 }
 
 }  // namespace tflite
