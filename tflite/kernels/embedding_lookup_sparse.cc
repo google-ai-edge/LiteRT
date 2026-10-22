@@ -94,11 +94,14 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, 1, &indices));
   TF_LITE_ENSURE_EQ(context, NumDimensions(indices), 2);
   TF_LITE_ENSURE_EQ(context, indices->type, kTfLiteInt32);
+  TF_LITE_ENSURE(context, SizeOfDimension(indices, 1) >= 1);
 
   const TfLiteTensor* shape;
   TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, 2, &shape));
   TF_LITE_ENSURE_EQ(context, NumDimensions(shape), 1);
   TF_LITE_ENSURE_EQ(context, shape->type, kTfLiteInt32);
+  TF_LITE_ENSURE_EQ(context, SizeOfDimension(shape, 0),
+                    SizeOfDimension(indices, 1));
 
   const TfLiteTensor* weights;
   TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, 3, &weights));
@@ -113,6 +116,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   const TfLiteTensor* value;
   TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, 4, &value));
   TF_LITE_ENSURE(context, NumDimensions(value) >= 2);
+  TF_LITE_ENSURE_TYPES_EQ(context, value->type, kTfLiteFloat32);
 
   // Mark the output as a dynamic tensor.
   TfLiteTensor* output;
@@ -125,7 +129,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
 void FinalizeAggregation(TfLiteCombinerType combiner, int num_elements,
                          float current_total_weight,
-                         float current_squares_weight, int embedding_size,
+                         float current_squares_weight, size_t embedding_size,
                          float* output) {
   if (combiner != kTfLiteCombinerTypeSum && num_elements > 0) {
     float multiplier = 1.0;
@@ -139,7 +143,7 @@ void FinalizeAggregation(TfLiteCombinerType combiner, int num_elements,
       default:
         break;
     }
-    for (int k = 0; k < embedding_size; k++) {
+    for (size_t k = 0; k < embedding_size; k++) {
       output[k] /= multiplier;
     }
   }
@@ -172,28 +176,39 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   // Make sure that the actual dense shape of the sparse tensor represented by
   // (loopkup, indices, dense_shape) is consistent.
+  TF_LITE_ENSURE(context, lookup_rank >= 1);
   TF_LITE_ENSURE_EQ(context, SizeOfDimension(dense_shape, 0), lookup_rank);
+
+  CheckedInt<size_t> embedding_size = 1;
+  CheckedInt<size_t> lookup_size = 1;
+  for (int i = 0; i < lookup_rank - 1; i++) {
+    const int32_t dim = dense_shape->data.i32[i];
+    TF_LITE_ENSURE(context, dim >= 0);
+    if (num_lookups > 0) {
+      TF_LITE_ENSURE(context, dim > 0);
+    }
+    lookup_size *= dim;
+  }
+  TF_LITE_ENSURE_MSG(context, !lookup_size.Overflow(),
+                     "Lookup size overflowed.");
+  for (int i = 1; i < embedding_rank; i++) {
+    const int dim = SizeOfDimension(value, i);
+    TF_LITE_ENSURE(context, dim >= 0);
+    embedding_size *= dim;
+  }
+  TF_LITE_ENSURE_MSG(context, !embedding_size.Overflow(),
+                     "Embedding size overflowed.");
 
   // Resize output tensor.
   TfLiteIntArray* output_shape = TfLiteIntArrayCreate(output_rank);
   TF_LITE_ENSURE(context, output_shape != nullptr);
   int k = 0;
-  CheckedInt<size_t> embedding_size = 1;
-  CheckedInt<size_t> lookup_size = 1;
   for (int i = 0; i < lookup_rank - 1; i++, k++) {
-    const int32_t dim = dense_shape->data.i32[i];
-    lookup_size *= dim;
-    output_shape->data[k] = dim;
+    output_shape->data[k] = dense_shape->data.i32[i];
   }
-  TF_LITE_ENSURE_MSG(context, !lookup_size.Overflow(),
-                     "Lookup size overflowed.");
   for (int i = 1; i < embedding_rank; i++, k++) {
-    const int dim = SizeOfDimension(value, i);
-    embedding_size *= dim;
-    output_shape->data[k] = dim;
+    output_shape->data[k] = SizeOfDimension(value, i);
   }
-  TF_LITE_ENSURE_MSG(context, !embedding_size.Overflow(),
-                     "Embedding size overflowed.");
   TF_LITE_ENSURE_STATUS(context->ResizeTensor(context, output, output_shape));
   const CheckedInt output_size = lookup_size * embedding_size;
   TF_LITE_ENSURE_MSG(context, !output_size.Overflow(),
@@ -212,7 +227,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   std::fill_n(output_ptr, output_size.Value(), 0.0f);
 
   // Keep track of the current bucket for aggregation/combination.
-  int current_output_offset = 0;
+  size_t current_output_offset = 0;
   float current_total_weight = 0.0;
   float current_squares_weight = 0.0;
   int num_elements = 0;
@@ -228,50 +243,74 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     }
 
     // Check where we need to aggregate.
-    const int example_indices_offset = i * lookup_rank;
-    int output_bucket = 0;
-    int stride = 1;
+    const CheckedInt<size_t> example_indices_offset =
+        CheckedInt<size_t>(i) * lookup_rank;
+    TF_LITE_ENSURE(context, !example_indices_offset.Overflow());
+    CheckedInt<size_t> output_bucket = 0;
+    CheckedInt<size_t> stride = 1;
     for (int k = (lookup_rank - 1) - 1; k >= 0; k--) {
-      output_bucket += indices->data.i32[example_indices_offset + k] * stride;
-      stride *= dense_shape->data.i32[k];
+      const int32_t coord =
+          indices->data.i32[example_indices_offset.Value() + k];
+      const int32_t dim = dense_shape->data.i32[k];
+      if (coord < 0 || coord >= dim) {
+        TF_LITE_KERNEL_LOG(context,
+                           "Embedding Lookup Sparse: index out of bounds. "
+                           "Got %d, and bounds are [0, %d]",
+                           coord, dim - 1);
+        return kTfLiteError;
+      }
+      output_bucket += CheckedInt<size_t>(coord) * stride;
+      stride *= dim;
     }
-    const int output_offset = output_bucket * embedding_size.Value();
+    TF_LITE_ENSURE(context, !output_bucket.Overflow() && !stride.Overflow());
+    const CheckedInt<size_t> output_offset = output_bucket * embedding_size;
+    const CheckedInt<size_t> output_end = output_offset + embedding_size;
+    TF_LITE_ENSURE(context, !output_offset.Overflow() &&
+                                !output_end.Overflow() &&
+                                output_end.Value() <= output_size.Value());
 
     // If we are in a new aggregation bucket and the combiner is not the sum,
     // go back and finalize the result of the previous bucket.
-    if (output_offset != current_output_offset) {
-      FinalizeAggregation(params->combiner, num_elements, current_total_weight,
-                          current_squares_weight, embedding_size.Value(),
-                          &output_ptr[current_output_offset]);
+    if (output_offset.Value() != current_output_offset) {
+      if (current_output_offset + embedding_size.Value() <=
+          output_size.Value()) {
+        FinalizeAggregation(params->combiner, num_elements,
+                            current_total_weight, current_squares_weight,
+                            embedding_size.Value(),
+                            &output_ptr[current_output_offset]);
+      }
 
       // Track next bucket.
       num_elements = 0;
       current_total_weight = 0.0;
       current_squares_weight = 0.0;
-      current_output_offset = output_offset;
+      current_output_offset = output_offset.Value();
     }
 
     // Add element to aggregation.
     ++num_elements;
-    const int example_embedding_offset = idx * embedding_size.Value();
+    const CheckedInt<size_t> example_embedding_offset =
+        CheckedInt<size_t>(idx) * embedding_size;
+    const CheckedInt<size_t> example_embedding_end =
+        example_embedding_offset + embedding_size;
+    TF_LITE_ENSURE(context, !example_embedding_offset.Overflow() &&
+                                !example_embedding_end.Overflow() &&
+                                example_embedding_end.Value() <= values_size);
     const float w = weights_ptr[i];
     current_squares_weight += w * w;
     current_total_weight += w;
-    for (int k = 0; k < embedding_size; k++) {
-      // only index if indices are valid
-      if (current_output_offset + k < 0) continue;
-      if (current_output_offset + k >= output_size) continue;
-      if (example_embedding_offset + k < 0) continue;
-      if (example_embedding_offset + k >= values_size) continue;
+    for (size_t k = 0; k < embedding_size.Value(); k++) {
       output_ptr[current_output_offset + k] +=
-          value_ptr[example_embedding_offset + k] * w;
+          value_ptr[example_embedding_offset.Value() + k] * w;
     }
   }
 
   // Finalize last bucket.
-  FinalizeAggregation(params->combiner, num_elements, current_total_weight,
-                      current_squares_weight, embedding_size.Value(),
-                      &GetTensorData<float>(output)[current_output_offset]);
+  if (current_output_offset + embedding_size.Value() <= output_size.Value()) {
+    FinalizeAggregation(params->combiner, num_elements, current_total_weight,
+                        current_squares_weight, embedding_size.Value(),
+                        &GetTensorData<float>(output)[current_output_offset]);
+  }
 
   return kTfLiteOk;
 }

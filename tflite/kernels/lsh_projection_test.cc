@@ -132,5 +132,63 @@ TEST(LSHProjectionOpTest2, Sparse3DInputs) {
 #endif
 }
 
+class CustomTypeLSHProjectionOpModel : public SingleOpModel {
+ public:
+  CustomTypeLSHProjectionOpModel(
+      TensorType hash_type, TensorType weight_type,
+      const std::vector<int>& hash_shape,
+      LSHProjectionType proj_type = LSHProjectionType_DENSE) {
+    AddInput(hash_type);
+    AddInput(TensorType_INT32);
+    AddInput(weight_type);
+    AddOutput(TensorType_INT32);
+    SetBuiltinOp(
+        BuiltinOperator_LSH_PROJECTION, BuiltinOptions_LSHProjectionOptions,
+        CreateLSHProjectionOptions(builder_, proj_type).Union());
+    BuildInterpreter({hash_shape, {5}, {5}}, /*num_threads=*/-1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/true, /*allocate_and_delegate=*/false);
+  }
+};
+
+TEST(LSHProjectionOpTest2, RejectsNonFloatHashAndWeightTypes) {
+  CustomTypeLSHProjectionOpModel int8_hash(TensorType_INT8, TensorType_FLOAT32,
+                                           {3, 2});
+  EXPECT_EQ(int8_hash.AllocateTensors(), kTfLiteError);
+
+  CustomTypeLSHProjectionOpModel int8_weight(TensorType_FLOAT32,
+                                             TensorType_INT8, {3, 2});
+  EXPECT_EQ(int8_weight.AllocateTensors(), kTfLiteError);
+
+  CustomTypeLSHProjectionOpModel zero_bits(TensorType_FLOAT32,
+                                           TensorType_FLOAT32, {3, 0});
+  EXPECT_EQ(zero_bits.AllocateTensors(), kTfLiteError);
+
+  CustomTypeLSHProjectionOpModel sparse_31_bits_2_hashes(
+      TensorType_FLOAT32, TensorType_FLOAT32, {2, 31},
+      LSHProjectionType_SPARSE);
+  EXPECT_EQ(sparse_31_bits_2_hashes.AllocateTensors(), kTfLiteOk);
+
+  CustomTypeLSHProjectionOpModel sparse_30_bits_4_hashes(
+      TensorType_FLOAT32, TensorType_FLOAT32, {4, 30},
+      LSHProjectionType_SPARSE);
+  EXPECT_EQ(sparse_30_bits_4_hashes.AllocateTensors(), kTfLiteOk);
+
+  CustomTypeLSHProjectionOpModel sparse_32_bits_1_hash(
+      TensorType_FLOAT32, TensorType_FLOAT32, {1, 32},
+      LSHProjectionType_SPARSE);
+  EXPECT_EQ(sparse_32_bits_1_hash.AllocateTensors(), kTfLiteOk);
+
+  CustomTypeLSHProjectionOpModel sparse_31_bits_4_hashes(
+      TensorType_FLOAT32, TensorType_FLOAT32, {4, 31},
+      LSHProjectionType_SPARSE);
+  EXPECT_EQ(sparse_31_bits_4_hashes.AllocateTensors(), kTfLiteError);
+
+  CustomTypeLSHProjectionOpModel sparse_32_bits_2_hashes(
+      TensorType_FLOAT32, TensorType_FLOAT32, {2, 32},
+      LSHProjectionType_SPARSE);
+  EXPECT_EQ(sparse_32_bits_2_hashes.AllocateTensors(), kTfLiteError);
+}
+
 }  // namespace
 }  // namespace tflite

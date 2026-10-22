@@ -197,5 +197,44 @@ TEST(OneHotOpTest, Int64Indices) {
   EXPECT_THAT(model.GetOutput(), ElementsAreArray({1, 0, 0, 0, 1, 0, 0, 0, 1}));
 }
 
+TEST(OneHotOpTest, LargeInt64IndicesDoNotTruncate) {
+  const int depth = 3;
+  const int axis = -1;
+  const int on = 1;
+  const int off = 0;
+  OneHotOpModel<int> model({3}, depth, TensorType_INT32, axis, on, off,
+                           TensorType_INT64);
+  std::initializer_list<int64_t> indices = {1LL << 32, 1, (1LL << 32) + 2};
+  model.SetIndices(indices);
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(model.GetOutputShape(), ElementsAreArray({3, 3}));
+  EXPECT_THAT(model.GetOutput(), ElementsAreArray({0, 0, 0, 0, 1, 0, 0, 0, 0}));
+}
+
+class CustomDepthTypeOneHotOpModel : public SingleOpModel {
+ public:
+  explicit CustomDepthTypeOneHotOpModel(TensorType depth_type) {
+    AddInput(TensorType_INT32);
+    AddInput(depth_type);
+    AddInput(TensorType_INT32);
+    AddInput(TensorType_INT32);
+    AddOutput(TensorType_INT32);
+    SetBuiltinOp(BuiltinOperator_ONE_HOT, BuiltinOptions_OneHotOptions,
+                 CreateOneHotOptions(builder_, /*axis=*/-1).Union());
+    BuildInterpreter({{3}, {1}, {1}, {1}}, /*num_threads=*/-1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/true, /*allocate_and_delegate=*/false);
+  }
+};
+
+TEST(OneHotOpTest, RejectsNonInt32DepthTensor) {
+  CustomDepthTypeOneHotOpModel int8_depth(TensorType_INT8);
+  EXPECT_EQ(int8_depth.AllocateTensors(), kTfLiteError);
+
+  CustomDepthTypeOneHotOpModel bool_depth(TensorType_BOOL);
+  EXPECT_EQ(bool_depth.AllocateTensors(), kTfLiteError);
+}
+
 }  // namespace
 }  // namespace tflite
