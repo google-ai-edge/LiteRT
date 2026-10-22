@@ -103,6 +103,15 @@ struct GpuEnvironmentOptions {
            egl_display != LITE_RT_EGL_NO_DISPLAY;
   }
 
+  bool HasOpenClOptions() const {
+#if LITERT_HAS_OPENCL_SUPPORT
+    return device_id != nullptr || platform_id != nullptr ||
+           context != nullptr || command_queue != nullptr;
+#else
+    return false;
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+  }
+
 #if LITERT_HAS_WEBGPU_SUPPORT
   WGPUDevice webgpu_device = nullptr;
   WGPUQueue webgpu_queue = nullptr;
@@ -156,9 +165,17 @@ class GpuEnvironment {
     return std::move(instance);
   }
 
-  bool SupportsClGlInterop() { return properties_.is_gl_sharing_supported; }
+  bool SupportsClGlInterop() {
+#if LITERT_HAS_OPENCL_SUPPORT
+    InitializeOpenClDevice();
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+    return properties_.is_gl_sharing_supported;
+  }
 
   bool SupportsAhwbClInterop() {
+#if LITERT_HAS_OPENCL_SUPPORT
+    InitializeOpenClDevice();
+#endif  // LITERT_HAS_OPENCL_SUPPORT
     return properties_.is_ahwb_cl_interop_supported;
   }
 
@@ -187,8 +204,15 @@ class GpuEnvironment {
       const LiteRtEnvironmentOptionsT& environment_options);
 
 #if LITERT_HAS_OPENCL_SUPPORT
+  Expected<void> InitializeOpenClDevice();
   Expected<void> InitializeOpenCl();
+  bool opencl_device_initialized_ = false;
+  bool opencl_initialized_ = false;
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_OPENGL_SUPPORT
+  Expected<void> InitializeDefaultEglEnvironment();
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
   Expected<void> InitializeMetal();
