@@ -886,6 +886,64 @@ litert_configured_test = rule(
     test = True,
 )
 
+####################################################################################################
+# Size Tracking (WeightWatcher) Rules
+
+# Linker flags that remove file padding introduced by page-aligned segment
+# layout. With these flags the on-disk size of an ELF binary follows its code
+# size byte-for-byte instead of stepping at page boundaries, which makes
+# WeightWatcher deltas reflect real code size changes. Segment virtual
+# addresses keep their page alignment (`-z max-page-size`), so the output still
+# loads on 16 KB page devices; only the file layout differs from production.
+_LITERT_SIZE_TRACKING_LINKOPTS = [
+    "-Wl,-z,noseparate-code",
+    "-Wl,--no-rosegment",
+]
+
+_LINKOPT_SETTING = "//command_line_option:linkopt"
+
+def _litert_size_tracking_transition_impl(settings, _attr):
+    linkopts = list(settings[_LINKOPT_SETTING])
+    for opt in _LITERT_SIZE_TRACKING_LINKOPTS:
+        if opt not in linkopts:
+            linkopts.append(opt)
+    return {_LINKOPT_SETTING: linkopts}
+
+_litert_size_tracking_transition = transition(
+    implementation = _litert_size_tracking_transition_impl,
+    inputs = [_LINKOPT_SETTING],
+    outputs = [_LINKOPT_SETTING],
+)
+
+def _litert_size_tracking_target_impl(ctx):
+    target = ctx.attr.target[0]
+    return [
+        DefaultInfo(
+            files = target[DefaultInfo].files,
+            runfiles = target[DefaultInfo].default_runfiles,
+        ),
+    ]
+
+litert_size_tracking_target = rule(
+    implementation = _litert_size_tracking_target_impl,
+    doc = """Builds `target` with size-tracking linker flags for WeightWatcher.
+
+Forwards the output files of `target` (a `cc_binary`, `cc_shared_library`,
+`litert_dynamic_lib`, or JNI library) built with `-z noseparate-code` and
+`--no-rosegment` appended to `--linkopt`, so the measured file size does not
+include page alignment padding. Only intended for size-tracking targets
+registered in `litert.blueprint`; production artifacts keep the default
+linker layout.""",
+    attrs = {
+        "target": attr.label(
+            allow_files = True,
+            mandatory = True,
+            cfg = _litert_size_tracking_transition,
+            doc = "The binary or shared library target whose size is tracked.",
+        ),
+    },
+)
+
 _COMMON_WRAPPER_ATTRS = [
     "testonly",
     "tags",

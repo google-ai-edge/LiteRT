@@ -17,7 +17,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_cc_binary", "litert_configured_target")
+load("//litert/build_common:litert_build_defs.bzl", "litert_cc_binary", "litert_configured_target", "litert_size_tracking_target")
 load("//litert/build_common:special_rule.bzl", "litert_linkopts", "litert_linkopts_unstripped")
 load("//litert/build_common:symlink_files.bzl", "symlink_files")  # @unused
 load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")  # @unused
@@ -431,6 +431,14 @@ cc_binary(
         ],
         "//conditions:default": [],
     }),
+)
+
+# Size-tracking variant of minimal_compiled_model for WeightWatcher
+# (litert.android.arm.mini and litert.android.arm.mini.selective in
+# litert.blueprint). See litert_size_tracking_target.
+litert_size_tracking_target(
+    name = "minimal_compiled_model_ww",
+    target = ":minimal_compiled_model",
 )
 
 # Unstripped variant of minimal_compiled_model used for symbol leak testing.

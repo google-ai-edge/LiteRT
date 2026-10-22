@@ -35,6 +35,7 @@ load(
     "export_lrt_tflite_runtime_linkopt",
     "export_lrt_tflite_runtime_script",
     "litert_c_api_library",
+    "litert_size_tracking_target",
 )
 load(
     "//litert/build_common:special_rule.bzl",
@@ -898,6 +899,13 @@ cc_shared_library(
         "//conditions:default": ["-Wl,-soname=libLiteRt.so"],
     }) + litert_android_linkopts(),
     deps = [":litert_runtime_c_api_so_shim"],
+)
+
+# Size-tracking variant of libLiteRt.so for WeightWatcher (litert.blueprint).
+# Not for distribution; see litert_size_tracking_target.
+litert_size_tracking_target(
+    name = "litert_runtime_c_api_so_ww",
+    target = ":litert_runtime_c_api_so",
 )
 
 sh_test(
