@@ -750,5 +750,27 @@ TEST_F(ConvertMoeExpertsTest, AcceptsGeluTanhActivation) {
   EXPECT_TRUE(status.ok()) << status.message();
 }
 
+TEST_F(ConvertMoeExpertsTest, AcceptsSiluActivation) {
+  for (const char* act : {"silu", "swish"}) {
+    SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+    builder.SetCustomName("moe");
+    AddInt8MoeInputs(builder, /*gate_blocks=*/1, /*ff1_blocks=*/1,
+                     /*linear_blocks=*/1);
+
+    TfLiteCustomAllocation custom_alloc = CreateMoeExpertsParams(
+        kNumExperts, kNumActiveExperts, kModelDim, kHiddenDim, "int8", act);
+    builder.SetCustomData(custom_alloc.data, custom_alloc.bytes);
+
+    auto interpreter = builder.Build();
+    ASSERT_NE(interpreter, nullptr);
+
+    const auto* pair = interpreter->node_and_registration(0);
+    auto parser = GetMoeExpertsParser();
+    auto status = parser.is_supported(interpreter->primary_subgraph().context(),
+                                      &pair->first, &pair->second);
+    EXPECT_TRUE(status.ok()) << status.message();
+  }
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir
