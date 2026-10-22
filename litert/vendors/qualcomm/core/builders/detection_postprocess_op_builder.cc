@@ -56,7 +56,10 @@ LiteRtStatus BuildDetectionPostprocessOp(
   }
 
   const auto m = root.AsMap();
-  const float nms_score_threshold = m["nms_score_threshold"].AsFloat();
+  // TFLite encodes "no score filtering" as -inf; clamp to 0 because the QNN
+  // CPU kernel requires confidence_threshold >= 0 when quantizing DLC.
+  const float nms_score_threshold =
+      std::max(0.0f, m["nms_score_threshold"].AsFloat());
   const float nms_iou_threshold = m["nms_iou_threshold"].AsFloat();
   const float y_scale = m["y_scale"].AsFloat();
   const float x_scale = m["x_scale"].AsFloat();
