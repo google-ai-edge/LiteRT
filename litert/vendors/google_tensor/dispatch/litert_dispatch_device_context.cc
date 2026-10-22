@@ -46,6 +46,7 @@
 #endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
+#include "litert/vendors/google_tensor/dispatch/dispatch_api_utils.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api_features.h"
 
@@ -193,6 +194,11 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Create(
 
   device_context->SetGoogleTensorOptions(
       ParseGoogleTensorOptions(runtime_context, options));
+
+  if (options != nullptr) {
+    device_context->SetDispatchDelegateVendorOptions(
+        gt::FindDispatchDelegateVendorOptions(runtime_context, options));
+  }
 
   std::move(thr_context_cleanup).Cancel();
   return kLiteRtStatusOk;

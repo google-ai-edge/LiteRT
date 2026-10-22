@@ -20,10 +20,11 @@
 
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_event.h"
 #include "litert/c/litert_event_type.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -97,6 +98,9 @@ LiteRtStatus LiteRtDispatchInvocationContextT::CreateFromBytecode(
         graph->ConnectPositionalNodeOutput(node_id, edge_id));
     LITERT_RETURN_IF_ERROR(graph->ConnectGraphOutput(output_index, edge_id));
   }
+
+  LITERT_RETURN_IF_ERROR(gt::AnnotateCoherencyEdges(
+      device_context, function_name, num_inputs, num_outputs, graph));
 
   LITERT_RETURN_IF_ERROR(
       CreateFromGraph(device_context, exec_handle, graph, invocation_context));

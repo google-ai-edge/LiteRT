@@ -748,7 +748,6 @@ cc_library(
     hdrs = ["litert_dispatch_delegate_vendor_options.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
