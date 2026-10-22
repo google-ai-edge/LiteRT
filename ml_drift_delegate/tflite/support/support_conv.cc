@@ -48,6 +48,35 @@ int GetOutputDim(const TfLitePadding padding, const int input, const int kernel,
   return (input + total_padding - dilated_kernel) / stride + 1;
 }
 
+// An int32 bias is only convertible when it is a constant, affine-quantized
+// tensor: it is dequantized to float at conversion time, and there is no
+// runtime int32 bias path.
+bool CheckInt32Bias(const TfLiteTensor& bias, std::string& error) {
+  if (!IsConstantTensor(&bias)) {
+    error = "int32 bias must be constant.";
+    return false;
+  }
+  if (bias.quantization.type != kTfLiteAffineQuantization) {
+    error = "int32 bias must be affine-quantized.";
+    return false;
+  }
+  const auto* quant_params =
+      static_cast<const TfLiteAffineQuantization*>(bias.quantization.params);
+  if (quant_params == nullptr || quant_params->scale == nullptr ||
+      quant_params->zero_point == nullptr ||
+      quant_params->zero_point->size < 1) {
+    error = "int32 bias is missing quantization parameters.";
+    return false;
+  }
+  const int scale_size = quant_params->scale->size;
+  if (scale_size != 1 && (scale_size != tflite::NumElements(&bias) ||
+                          quant_params->quantized_dimension != 0)) {
+    error = absl::StrCat("Unsupported int32 bias scale size: ", scale_size);
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 bool IsConv2dSupported(const TfLiteContext* absl_nonnull context,
@@ -150,11 +179,18 @@ bool IsConv2dSupported(const TfLiteContext* absl_nonnull context,
       // go/keep-sorted start numeric=yes
       kTfLiteFloat16,
       kTfLiteFloat32,
+      // An int32 bias is the TFLite standard for a fully-quantized
+      // convolution; it is dequantized to float during conversion, the same
+      // way FULLY_CONNECTED already handles it.
+      kTfLiteInt32,
       // go/keep-sorted end
       // clang-format on
   };
   if (bias &&
       !CheckTensorDtype(*bias, supported_bias_dtypes, "inputs[2]", *error)) {
+    return false;
+  }
+  if (bias && bias->type == kTfLiteInt32 && !CheckInt32Bias(*bias, *error)) {
     return false;
   }
   if (bias && IsConstantTensor(bias)) {
