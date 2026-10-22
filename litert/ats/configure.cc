@@ -70,6 +70,9 @@ ABSL_FLAG(bool, cpu_hint_fully_delegated, true,
 ABSL_FLAG(bool, enable_ynnpack, false,
           "Whether to enable the YNNPACK CPU backend.");
 
+ABSL_FLAG(bool, gpu_use_ir_model, true,
+          "Whether to use the IR model for the GPU accelerator.");
+
 ABSL_FLAG(std::string, cpu_kernel_mode, "delegate",
           "CPU kernel mode for the \"actual\" backend when --backend=cpu. One "
           "of: delegate (XNNPACK, default), builtin (TFLite builtin kernels "
@@ -142,6 +145,17 @@ ABSL_FLAG(std::string, soc_manufacturer, "",
 ABSL_FLAG(std::string, soc_model, "",
           "The SOC model to target for compilation. Only relevant for "
           "NPU compilation.");
+
+namespace litert::test {
+
+class GpuOptionsTestPeer {
+ public:
+  static LiteRtStatus SetUseIrModel(GpuOptions& options, bool use_ir_model) {
+    return options.SetUseIrModel(use_ir_model);
+  }
+};
+
+}  // namespace litert::test
 
 namespace litert::testing {
 
@@ -229,6 +243,8 @@ Expected<Options> ParseOptions(ExecutionBackend backend) {
     if (absl::GetFlag(FLAGS_iters_per_test) > 1) {
       LITERT_RETURN_IF_ERROR(gpu_opts.EnableBenchmarkMode(true));
     }
+    LITERT_RETURN_IF_ERROR(test::GpuOptionsTestPeer::SetUseIrModel(
+        gpu_opts, absl::GetFlag(FLAGS_gpu_use_ir_model)));
   }
   return options;
 }
