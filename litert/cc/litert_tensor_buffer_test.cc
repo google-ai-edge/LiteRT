@@ -1529,5 +1529,11 @@ TEST(TensorBuffer, GetCustomHandleFailsForNonCustomBuffer) {
   EXPECT_FALSE(tensor_buffer.GetCustomHandle());
 }
 
+TEST(TensorBuffer, DefaultConstructorCreatesNullUnownedHandle) {
+  TensorBuffer empty_buffer;
+  EXPECT_EQ(empty_buffer.Get(), nullptr);
+  EXPECT_FALSE(empty_buffer.IsOwned());
+}
+
 }  // namespace
 }  // namespace litert
