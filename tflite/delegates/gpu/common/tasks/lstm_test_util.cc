@@ -15,7 +15,9 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/common/tasks/lstm_test_util.h"
 
+#include <cmath>
 #include <memory>
+#include <utility>
 
 #include "tflite/delegates/gpu/common/operations.h"
 #include "tflite/delegates/gpu/common/status.h"
