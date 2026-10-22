@@ -414,6 +414,18 @@ TEST(TensorPoolCreateTensorWithNameTest, CreateOutputTensorWithName) {
   EXPECT_EQ(tensor_wrapper.GetQnnTensor().v1.type, QNN_TENSOR_TYPE_APP_READ);
 }
 
+TEST(TensorPoolCreateTensorWithNameTest, CreateUniqueNamesForEmptyNames) {
+  TensorPool tensor_pool;
+
+  auto& input = tensor_pool.CreateInputTensorWithName(
+      "", QNN_DATATYPE_FLOAT_32, QuantizeParamsWrapperVariant{}, {1});
+  auto& output = tensor_pool.CreateOutputTensorWithName(
+      "", QNN_DATATYPE_FLOAT_32, QuantizeParamsWrapperVariant{}, {1});
+
+  EXPECT_STREQ(input.GetQnnTensor().v1.name, "0_qnn");
+  EXPECT_STREQ(output.GetQnnTensor().v1.name, "1_qnn");
+}
+
 }  // namespace
 
 }  // namespace qnn
