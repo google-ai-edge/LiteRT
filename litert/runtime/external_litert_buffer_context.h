@@ -24,6 +24,7 @@
 
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
@@ -209,6 +210,21 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
   // Returns the LiteRtEnvironment used to create CompiledModel.
   inline LiteRtEnvironment GetEnvironment() const { return env_; }
 
+  // Sets how the memory backing the compiled model's flatbuffer (including any
+  // embedded NPU bytecode) was allocated. It's set by CompiledModel once at
+  // model loading time and forwarded by delegates to vendor runtimes so they
+  // can decide whether model pages may be discarded after use.
+  inline void SetModelAllocationType(
+      LiteRtModelAllocationType allocation_type) {
+    model_allocation_type_ = allocation_type;
+  }
+
+  // Returns the model allocation type, or
+  // kLiteRtModelAllocationTypeUnknown if it was never set.
+  inline LiteRtModelAllocationType GetModelAllocationType() const {
+    return model_allocation_type_;
+  }
+
   // Sets dispatch annotations that should be propagated to dispatch graphs.
   void SetDispatchAnnotations(
       const std::unordered_map<std::string, std::string>& annotations) {
@@ -288,6 +304,8 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
   bool has_current_scheduling_info_ = false;
   LiteRtSchedulingInfo current_scheduling_info_{};
   std::string current_debug_feature_id_storage_;
+  LiteRtModelAllocationType model_allocation_type_ =
+      kLiteRtModelAllocationTypeUnknown;
 
   // Dispatch annotations from the compiled model to be propagated to dispatch
   // graphs.

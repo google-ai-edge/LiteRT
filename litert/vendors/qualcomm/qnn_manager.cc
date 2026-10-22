@@ -710,12 +710,34 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
 Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     ::qnn::QnnBackend& qnn_backend,
     absl::Span<const QnnContext_Config_t*> configs,
-    absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle) {
+    absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle,
+    bool release_bytecode_pages) {
+  std::vector<const QnnContext_Config_t*> effective_configs;
+  for (const auto* cfg : configs) {
+    if (cfg != nullptr) {
+      effective_configs.push_back(cfg);
+    }
+  }
+  QnnHtpContext_CustomConfig_t htp_read_budget_custom_config =
+      QNN_HTP_CONTEXT_CUSTOM_CONFIG_INIT;
+  QnnContext_Config_t htp_read_budget_config = QNN_CONTEXT_CONFIG_INIT;
+  if (options_.GetBackendType() == ::qnn::BackendType::kHtpBackend) {
+    constexpr uint64_t kDefaultFileReadMemoryBudgetInMb = 16;
+    htp_read_budget_custom_config.option =
+        QNN_HTP_CONTEXT_CONFIG_OPTION_FILE_READ_MEMORY_BUDGET;
+    htp_read_budget_custom_config.fileReadMemoryBudgetInMb =
+        kDefaultFileReadMemoryBudgetInMb;
+    htp_read_budget_config.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
+    htp_read_budget_config.customConfig = &htp_read_budget_custom_config;
+    effective_configs.push_back(&htp_read_budget_config);
+  }
+  effective_configs.push_back(nullptr);
+
 #if !defined(_WIN32)
   const int64_t page_size = sysconf(_SC_PAGESIZE);
   uintptr_t aligned_start = 0;
   uintptr_t aligned_end = 0;
-  if (page_size > 0 && !bytecode.empty()) {
+  if (release_bytecode_pages && page_size > 0 && !bytecode.empty()) {
     const uintptr_t mask = static_cast<uintptr_t>(page_size) - 1;
     const uintptr_t start = reinterpret_cast<uintptr_t>(bytecode.data());
     const uintptr_t end = start + bytecode.size();
@@ -757,7 +779,12 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
   }
 
 #if !defined(_WIN32)
-  if (aligned_end > aligned_start) {
+  // Only drop the bytecode pages when the caller has told us the memory is a
+  // file-backed mmap: those pages are clean and will be re-faulted from the
+  // file on the next access. For anonymous/heap memory (e.g. a model loaded via
+  // LiteRtCreateModelFromBuffer), MADV_DONTNEED would replace the bytecode with
+  // zero-filled pages and silently corrupt the caller's model buffer.
+  if (release_bytecode_pages && aligned_end > aligned_start) {
     madvise(reinterpret_cast<void*>(aligned_start), aligned_end - aligned_start,
             MADV_DONTNEED);
   }

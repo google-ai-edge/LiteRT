@@ -26,14 +26,15 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/container/node_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/dispatch_op_schema.h"
+#include "litert/runtime/dispatch/dispatch_kernel_interface.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
-#include "litert/runtime/dispatch/dispatch_kernel_interface.h"
 
 class LiteRtExternalLiteRtBufferContextT;
 
@@ -41,10 +42,14 @@ namespace litert::internal {
 
 // Builds a memory buffer containing the executable bytecode for a dispatch op,
 // using the provided dispatch options and allocation base information.
+// `allocation_type` describes how the memory at `alloc_base` was allocated and
+// is forwarded verbatim to the vendor runtime.
 Expected<LiteRtMemBuffer> BuildExecutableBytecodeBuffer(
     const DispatchOpOptions& dispatch_options, const void* alloc_base,
     int alloc_base_fd, size_t alloc_base_file_offset, size_t alloc_base_size,
-    bool has_alloc_base_file_region);
+    bool has_alloc_base_file_region,
+    LiteRtModelAllocationType allocation_type =
+        kLiteRtModelAllocationTypeUnknown);
 
 // A TFL kernel that the interpreter calls to dispatch execution through the
 // Dispatch API.

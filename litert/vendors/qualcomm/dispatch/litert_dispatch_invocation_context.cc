@@ -282,7 +282,8 @@ LiteRtDispatchInvocationContextT::Create(
   LITERT_ASSIGN_OR_RETURN(
       const auto& context_handle,
       device_context.GetOrCreateContext(
-          exec_bytecode_ptr, exec_bytecode_buffer->size, profile_handle));
+          exec_bytecode_ptr, exec_bytecode_buffer->size, profile_handle,
+          exec_bytecode_buffer->allocation_type));
 
   Qnn_GraphHandle_t graph_handle;
   if (auto status = qnn.Api()->graphRetrieve(context_handle.Get(),

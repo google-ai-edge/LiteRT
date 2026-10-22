@@ -234,7 +234,8 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 Expected<const litert::qnn::QnnManager::ContextHandle&>
 LiteRtDispatchDeviceContextT::GetOrCreateContext(
     const void* bytecode_ptr, size_t bytecode_size,
-    Qnn_ProfileHandle_t profile_handle) {
+    Qnn_ProfileHandle_t profile_handle,
+    LiteRtModelAllocationType allocation_type) {
   ContextCacheKey key{bytecode_ptr, bytecode_size};
   auto it = context_cache_.find(key);
   if (it != context_cache_.end()) {
@@ -244,12 +245,16 @@ LiteRtDispatchDeviceContextT::GetOrCreateContext(
     return *(it->second);
   }
 
-  LITERT_LOG(LITERT_INFO, "Creating new QNN context for bytecode %p (size %zu)",
-             bytecode_ptr, bytecode_size);
+  LITERT_LOG(LITERT_INFO,
+             "Creating new QNN context for bytecode %p (size %zu, allocation "
+             "type %d)",
+             bytecode_ptr, bytecode_size, static_cast<int>(allocation_type));
   auto context_handle_expected = qnn_manager_.CreateContextHandle(
       qnn_backend_, QnnManager::DefaultContextConfigs(),
       absl::MakeSpan(static_cast<const uint8_t*>(bytecode_ptr), bytecode_size),
-      profile_handle);
+      profile_handle,
+      /*release_bytecode_pages=*/allocation_type ==
+          kLiteRtModelAllocationTypeFileBackedMmap);
 
   if (!context_handle_expected) {
     return Unexpected(context_handle_expected.Error());

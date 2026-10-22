@@ -115,10 +115,17 @@ class QnnManager {
       ::qnn::Profiling profiling_level);
 
   // Create a context handle for inference, from a given bytecode.
+  //
+  // If `release_bytecode_pages` is true, the resident pages of `bytecode` are
+  // released (madvise(MADV_DONTNEED)) once the context has been deserialized.
+  // This is only safe when `bytecode` is a read-only file-backed mmap: for
+  // anonymous/heap memory the kernel would hand back zero-filled pages on the
+  // next access, corrupting the caller's model buffer.
   Expected<ContextHandle> CreateContextHandle(
       ::qnn::QnnBackend& qnn_backend,
       absl::Span<const QnnContext_Config_t*> configs,
-      absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle);
+      absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle,
+      bool release_bytecode_pages = false);
 
   //
   // Context Binary

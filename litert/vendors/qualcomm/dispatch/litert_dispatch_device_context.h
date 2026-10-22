@@ -24,6 +24,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
@@ -67,9 +68,15 @@ class LiteRtDispatchDeviceContextT {
     invocation_context_ = invocation_context;
   }
 
+  // Returns a cached QNN context for the given bytecode, creating it if needed.
+  // `allocation_type` describes how the memory holding `bytecode_ptr` was
+  // allocated; bytecode pages are only released after deserialization when it
+  // is kLiteRtModelAllocationTypeFileBackedMmap.
   litert::Expected<const litert::qnn::QnnManager::ContextHandle&>
   GetOrCreateContext(const void* bytecode_ptr, size_t bytecode_size,
-                     Qnn_ProfileHandle_t profile_handle);
+                     Qnn_ProfileHandle_t profile_handle,
+                     LiteRtModelAllocationType allocation_type =
+                         kLiteRtModelAllocationTypeUnknown);
 
   const LiteRtRuntimeContext* runtime_context() const {
     return runtime_context_;

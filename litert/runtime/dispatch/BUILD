@@ -162,9 +162,9 @@ cc_test(
     name = "dispatch_delegate_kernel_test",
     srcs = ["dispatch_delegate_kernel_test.cc"],
     deps = [
-        ":dispatch_delegate",
         ":dispatch_delegate_kernel",
         "//litert/c:litert_environment",
+        "//litert/c:litert_model_types",
         "//litert/core:dispatch_op_schema",
         "@com_google_googletest//:gtest_main",
     ],
@@ -345,6 +345,7 @@ cc_library(
         ":dispatch_opaque_options",
         "//litert/c:litert_common",
         "//litert/c:litert_metrics",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c/internal:litert_dispatch_headers",

@@ -147,6 +147,15 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInvocationContextCreate(
 
 This is a function that creates an opaque `LiteRtDispatchInvocationContext` object with the given model byte codes. Vendor is responsible for creating its own concrete object `LiteRtDispatchInvocationContextT` to maintain the invocation information internally.
 
+`exec_bytecode_buffer->allocation_type` tells the vendor how the memory holding
+the bytecode was allocated by the application / LiteRT runtime. Vendors that
+want to release the bytecode pages after deserializing them (e.g. with
+`madvise(MADV_DONTNEED)`) must only do so when the value is
+`kLiteRtModelAllocationTypeFileBackedMmap`; for
+`kLiteRtModelAllocationTypeHostMemory` (heap / caller-provided buffer) or
+`kLiteRtModelAllocationTypeUnknown` (older runtimes, zero-initialized),
+releasing the pages would destroy the caller's model buffer.
+
 The returned `LiteRtDispatchInvocationContext` object is used for the following invocation related APIs.
 
 ```c
