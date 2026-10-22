@@ -17,6 +17,7 @@ limitations under the License.
 #define THIRD_PARTY_ODML_LITERT_TENSOR_INTERNAL_ARITHMETIC_HELPERS_H_
 
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -89,10 +90,28 @@ TensorHandle AddOutput(std::shared_ptr<Op>& operation,
   return TensorHandle(graph::GetTensor(group->tensor_infos.size() - 1, group));
 }
 
+inline absl::Status GetTensorStatus(const TensorHandle& tensor) {
+  return tensor.GetStatus();
+}
+
+template <class T>
+absl::Status GetTensorStatus(const std::optional<T>& tensor) {
+  if (tensor.has_value()) {
+    return GetTensorStatus(*tensor);
+  }
+  return absl::OkStatus();
+}
+
+// Checks that all provided tensors are valid.
+//
+// `Tensors...` may be:
+// - Classes derived from `TensorHandle`.
+// - `std::optional<T>` where `T` is another supported tensor type.
+//   An empty optional is considered valid.
 template <class... Tensors>
-absl::Status CheckTensors(Tensors... tensors) {
+absl::Status CheckTensors(const Tensors&... tensors) {
   absl::Status status = absl::OkStatus();
-  (status.Update(tensors.GetStatus()), ...);
+  (status.Update(GetTensorStatus(tensors)), ...);
   return status;
 }
 
