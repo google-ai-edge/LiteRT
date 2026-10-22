@@ -112,7 +112,8 @@ bool IsPadSupported(const TfLiteContext* absl_nonnull context,
     return false;
   }
   const TfLiteTensor& paddings_tensor = context->tensors[paddings_id];
-  if (!CheckTensorDtype(paddings_tensor, {kTfLiteInt32}, "inputs[1]", *error)) {
+  if (!CheckTensorDtype(paddings_tensor, {kTfLiteInt32, kTfLiteInt64},
+                        "inputs[1]", *error)) {
     return false;
   }
   const absl::Status status =
