@@ -1,0 +1,11 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: litert
+Description: LiteRT (Google AI Edge runtime) shared library
+Version: @LITERT_VERSION@
+Libs: -L${libdir} -lLiteRt
+Cflags: -I${includedir}
+
