@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <string>
@@ -1164,6 +1165,411 @@ INSTANTIATE_TEST_SUITE_P(
     [](const ::testing::TestParamInfo<OneHotErrorCase>& info) {
       return info.param.test_name;
     });
+
+// Graph-level regressions for inferrers that decode constant index operands.
+// Each case builds a single-op model whose output is declared with the given
+// dims and checks both engine modes.
+
+LiteRtTensorT& AddTensor(LiteRtSubgraphT& subgraph,
+                         LiteRtElementType element_type,
+                         absl::Span<const int32_t> dims) {
+  auto& tensor = subgraph.EmplaceTensor();
+  tensor.SetType(MakeRankedTensorType(element_type, dims));
+  return tensor;
+}
+
+template <typename T>
+LiteRtTensorT& AddConstTensor(LiteRtSubgraphT& subgraph,
+                              LiteRtElementType element_type,
+                              const std::vector<T>& values) {
+  auto& tensor = AddTensor(subgraph, element_type,
+                           {static_cast<int32_t>(values.size())});
+  SetWeightsFromOwnedBuffer(
+      tensor.Weights(),
+      OwningBufferRef<uint8_t>(reinterpret_cast<const uint8_t*>(values.data()),
+                               values.size() * sizeof(T)));
+  return tensor;
+}
+
+Dims TensorDims(const LiteRtTensorT& tensor) {
+  const auto& layout = tensor.Type().second.ranked_tensor_type.layout;
+  return Dims(layout.dimensions, layout.dimensions + layout.rank);
+}
+
+// Builds a single-op model in `model` with the op's output declared as
+// `declared_output`, and returns that output tensor.
+using SingleOpModelBuilder = std::function<LiteRtTensorT*(
+    LiteRtModelT& model, absl::Span<const int32_t> declared_output)>;
+
+// Checks that inference mode rewrites a placeholder output to `expected`, and
+// that validation-only mode accepts `expected` but rejects `wrong`.
+void ExpectInferredOutputInBothModes(const SingleOpModelBuilder& build,
+                                     const Dims& expected, const Dims& wrong) {
+  {
+    SCOPED_TRACE("inference");
+    LiteRtModelT model;
+    LiteRtTensorT* output = build(model, {-1});
+    ShapeInferenceEngine engine(&model);
+    ASSERT_EQ(engine.InferShapes(/*validation_only=*/false), kLiteRtStatusOk);
+    EXPECT_EQ(TensorDims(*output), expected);
+  }
+  {
+    SCOPED_TRACE("validation_only, matching declared shape");
+    LiteRtModelT model;
+    LiteRtTensorT* output = build(model, expected);
+    ShapeInferenceEngine engine(&model);
+    ASSERT_EQ(engine.InferShapes(/*validation_only=*/true), kLiteRtStatusOk);
+    EXPECT_EQ(TensorDims(*output), expected);
+  }
+  {
+    SCOPED_TRACE("validation_only, mismatching declared shape");
+    LiteRtModelT model;
+    build(model, wrong);
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(/*validation_only=*/true),
+              kLiteRtStatusErrorShapeInferenceFailed);
+  }
+}
+
+template <typename AxisT>
+SingleOpModelBuilder AxisReduction(LiteRtOpCode op_code, bool keep_dims,
+                                   LiteRtElementType axis_type,
+                                   std::vector<AxisT> axes) {
+  return [=](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(op_code);
+    if (op_code != kLiteRtOpCodeTflArgMax) {
+      auto options = std::make_unique<tflite::ReducerOptionsT>();
+      options->keep_dims = keep_dims;
+      TflOptions tfl_options;
+      tfl_options.type = tflite::BuiltinOptions_ReducerOptions;
+      tfl_options.value = options.release();
+      SetTflOptions(op, std::move(tfl_options));
+    }
+
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3, 4});
+    auto& axis = AddConstTensor(subgraph, axis_type, axes);
+    // ARG_MAX outputs INT32 indices; the reducers keep the input type.
+    auto& output = AddTensor(subgraph,
+                             op_code == kLiteRtOpCodeTflArgMax
+                                 ? kLiteRtElementTypeInt32
+                                 : kLiteRtElementTypeFloat32,
+                             declared_output);
+    AttachInput(&input, op);
+    AttachInput(&axis, op);
+    AttachOutput(&output, op);
+    return &output;
+  };
+}
+
+TEST(ShapeInferenceTest, SumAndMeanWithInt64Axes) {
+  // INT64 `{1}` was previously decoded as the INT32 axes `{1, 0}`, so SUM
+  // inferred `{4}`.
+  for (LiteRtOpCode op_code : {kLiteRtOpCodeTflSum, kLiteRtOpCodeTflMean}) {
+    SCOPED_TRACE(::testing::Message() << "op_code=" << op_code);
+    ExpectInferredOutputInBothModes(
+        AxisReduction<int64_t>(op_code, /*keep_dims=*/false,
+                               kLiteRtElementTypeInt64, {1}),
+        /*expected=*/{2, 4}, /*wrong=*/{4});
+  }
+}
+
+TEST(ShapeInferenceTest, SumWithInt32Axes) {
+  ExpectInferredOutputInBothModes(
+      AxisReduction<int32_t>(kLiteRtOpCodeTflSum, /*keep_dims=*/false,
+                             kLiteRtElementTypeInt32, {1}),
+      /*expected=*/{2, 4}, /*wrong=*/{4});
+}
+
+TEST(ShapeInferenceTest, MeanWithNegativeInt32AxesKeepDims) {
+  ExpectInferredOutputInBothModes(
+      AxisReduction<int32_t>(kLiteRtOpCodeTflMean, /*keep_dims=*/true,
+                             kLiteRtElementTypeInt32, {-1, 0}),
+      /*expected=*/{1, 3, 1}, /*wrong=*/{1, 1, 4});
+}
+
+TEST(ShapeInferenceTest, ReductionAndArgMaxRejectInvalidAxes) {
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    {
+      LiteRtModelT model;
+      AxisReduction<int64_t>(kLiteRtOpCodeTflSum, /*keep_dims=*/false,
+                             kLiteRtElementTypeInt64, {3})(model, {2, 3});
+      ShapeInferenceEngine engine(&model);
+      EXPECT_EQ(engine.InferShapes(validation_only),
+                kLiteRtStatusErrorInvalidArgument);
+    }
+    {
+      LiteRtModelT model;
+      AxisReduction<int64_t>(kLiteRtOpCodeTflArgMax, /*keep_dims=*/false,
+                             kLiteRtElementTypeInt64, {0, 1})(model, {4});
+      ShapeInferenceEngine engine(&model);
+      EXPECT_EQ(engine.InferShapes(validation_only),
+                kLiteRtStatusErrorInvalidArgument);
+    }
+  }
+}
+
+TEST(ShapeInferenceTest, ArgMaxWithInt64Axis) {
+  // ARG_MAX accepts an INT64 axis (kernel_utils::ReadAndNormalizeAxis).
+  ExpectInferredOutputInBothModes(
+      AxisReduction<int64_t>(kLiteRtOpCodeTflArgMax, /*keep_dims=*/false,
+                             kLiteRtElementTypeInt64, {1}),
+      /*expected=*/{2, 4}, /*wrong=*/{4});
+}
+
+TEST(ShapeInferenceTest, SliceWithInt32BeginAndInt64SizeIsRejected) {
+  // TFLite's Slice Prepare() requires `begin->type == size->type` and its
+  // kernel decodes `size` with `begin`'s element type, so a mixed-type SLICE
+  // cannot run; both modes reject it.
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    {
+      LiteRtModelT model;
+      auto& subgraph = model.EmplaceSubgraph();
+      auto& op = subgraph.EmplaceOp();
+      op.SetOpCode(kLiteRtOpCodeTflSlice);
+      auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {4, 6});
+      auto& begin =
+          AddConstTensor<int32_t>(subgraph, kLiteRtElementTypeInt32, {1, 2});
+      auto& size =
+          AddConstTensor<int64_t>(subgraph, kLiteRtElementTypeInt64, {2, -1});
+      auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 4});
+      AttachInput(&input, op);
+      AttachInput(&begin, op);
+      AttachInput(&size, op);
+      AttachOutput(&output, op);
+      ShapeInferenceEngine engine(&model);
+      EXPECT_EQ(engine.InferShapes(validation_only),
+                kLiteRtStatusErrorShapeInferenceFailed);
+    }
+    {
+      LiteRtModelT model;
+      auto& subgraph = model.EmplaceSubgraph();
+      auto& op = subgraph.EmplaceOp();
+      op.SetOpCode(kLiteRtOpCodeTflSlice);
+      auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {4, 6});
+      auto& begin =
+          AddConstTensor<int64_t>(subgraph, kLiteRtElementTypeInt64, {1, 2});
+      auto& size =
+          AddConstTensor<int32_t>(subgraph, kLiteRtElementTypeInt32, {2, -1});
+      auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 4});
+      AttachInput(&input, op);
+      AttachInput(&begin, op);
+      AttachInput(&size, op);
+      AttachOutput(&output, op);
+      ShapeInferenceEngine engine(&model);
+      EXPECT_EQ(engine.InferShapes(validation_only),
+                kLiteRtStatusErrorShapeInferenceFailed);
+    }
+  }
+}
+
+TEST(ShapeInferenceTest, SliceWithInt64BeginAndSize) {
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflSlice);
+        auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {4, 6});
+        auto& begin = AddConstTensor<int64_t>(
+            subgraph, kLiteRtElementTypeInt64, {1, 2});
+        auto& size = AddConstTensor<int64_t>(subgraph, kLiteRtElementTypeInt64,
+                                             {2, -1});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, declared_output);
+        AttachInput(&input, op);
+        AttachInput(&begin, op);
+        AttachInput(&size, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{2, 4}, /*wrong=*/{2, 5});
+}
+
+TEST(ShapeInferenceTest, TransposeRejectsOutOfRangePerm) {
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    LiteRtModelT model;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflTranspose);
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3});
+    auto& perm =
+        AddConstTensor<int32_t>(subgraph, kLiteRtElementTypeInt32, {-3, 0});
+    auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {3, 2});
+    AttachInput(&input, op);
+    AttachInput(&perm, op);
+    AttachOutput(&output, op);
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(validation_only),
+              kLiteRtStatusErrorShapeInferenceFailed);
+  }
+}
+
+TEST(ShapeInferenceTest, TransposeWithNegativePerm) {
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflTranspose);
+        auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3});
+        auto& perm = AddConstTensor<int32_t>(subgraph, kLiteRtElementTypeInt32,
+                                             {-1, 0});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, declared_output);
+        AttachInput(&input, op);
+        AttachInput(&perm, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{3, 2}, /*wrong=*/{2, 3});
+}
+
+TEST(ShapeInferenceTest, ReshapeWithoutShapeOperandOrOptionsIsScalar) {
+  // Neither a shape operand nor ReshapeOptions: TFLite reshapes to a scalar.
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflReshape);
+        auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {1, 1});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, declared_output);
+        AttachInput(&input, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{}, /*wrong=*/{1});
+}
+
+TEST(ShapeInferenceTest, ReshapeWithLegacyZeroNewShapeOption) {
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflReshape);
+        TflOptions opts;
+        opts.type = tflite::BuiltinOptions_ReshapeOptions;
+        auto* reshape_opts = new tflite::ReshapeOptionsT();
+        reshape_opts->new_shape = {0};
+        opts.value = reshape_opts;
+        internal::SetTflOptions(op, std::move(opts));
+        auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {1, 1});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, declared_output);
+        AttachInput(&input, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{}, /*wrong=*/{1});
+
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    LiteRtModelT model;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflReshape);
+    TflOptions opts;
+    opts.type = tflite::BuiltinOptions_ReshapeOptions;
+    auto* reshape_opts = new tflite::ReshapeOptionsT();
+    reshape_opts->new_shape = {0};
+    opts.value = reshape_opts;
+    internal::SetTflOptions(op, std::move(opts));
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3});
+    auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {});
+    AttachInput(&input, op);
+    AttachOutput(&output, op);
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(validation_only),
+              kLiteRtStatusErrorShapeInferenceFailed);
+  }
+}
+
+TEST(ShapeInferenceTest, ReshapeWithoutShapeOperandOrOptionsNeedsOneElement) {
+  // The declared output shape is not a fallback target: like TFLite, a
+  // multi-element input cannot be reshaped to the implicit scalar.
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    LiteRtModelT model;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflReshape);
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3});
+    auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {6});
+    AttachInput(&input, op);
+    AttachOutput(&output, op);
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(validation_only),
+              kLiteRtStatusErrorShapeInferenceFailed);
+  }
+}
+
+SingleOpModelBuilder FullyConnected(Dims input_dims, Dims weights_dims,
+                                    bool keep_num_dims) {
+  return [=](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflFullyConnected);
+    auto options = std::make_unique<tflite::FullyConnectedOptionsT>();
+    options->keep_num_dims = keep_num_dims;
+    TflOptions tfl_options;
+    tfl_options.type = tflite::BuiltinOptions_FullyConnectedOptions;
+    tfl_options.value = options.release();
+    SetTflOptions(op, std::move(tfl_options));
+
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, input_dims);
+    auto& weights =
+        AddTensor(subgraph, kLiteRtElementTypeFloat32, weights_dims);
+    auto& output =
+        AddTensor(subgraph, kLiteRtElementTypeFloat32, declared_output);
+    AttachInput(&input, op);
+    AttachInput(&weights, op);
+    AttachOutput(&output, op);
+    return &output;
+  };
+}
+
+TEST(ShapeInferenceTest, FullyConnectedFlattensByWeightsDepth) {
+  // TFLite: batch = num_elements(input) / weights.dims[1] = 12 / 12 = 1. The
+  // old inferrer multiplied the leading input dims and returned {4, 5}.
+  ExpectInferredOutputInBothModes(
+      FullyConnected({1, 2, 2, 3}, {5, 12}, /*keep_num_dims=*/false),
+      /*expected=*/{1, 5}, /*wrong=*/{4, 5});
+}
+
+TEST(ShapeInferenceTest, FullyConnectedKeepNumDims) {
+  ExpectInferredOutputInBothModes(
+      FullyConnected({1, 2, 2, 3}, {5, 3}, /*keep_num_dims=*/true),
+      /*expected=*/{1, 2, 2, 5}, /*wrong=*/{4, 5});
+}
+
+TEST(ShapeInferenceTest, FullyConnectedRejectsNonDivisibleBatch) {
+  // TFLite's Prepare requires input_size % filter->dims->data[1] == 0.
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    LiteRtModelT model;
+    FullyConnected({1, 2, 2, 3}, {4, 5}, /*keep_num_dims=*/false)(model,
+                                                                  {2, 4});
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(validation_only),
+              kLiteRtStatusErrorInvalidArgument);
+  }
+}
+
+TEST(ShapeInferenceTest, FullyConnectedKeepNumDimsRejectsLastDimNotDepth) {
+  // TFLite's UpdateOutputSize requires the last input dim (3) to equal K (12).
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    LiteRtModelT model;
+    FullyConnected({1, 2, 2, 3}, {5, 12}, /*keep_num_dims=*/true)(
+        model, {1, 2, 2, 5});
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(validation_only),
+              kLiteRtStatusErrorInvalidArgument);
+  }
+}
 
 }  // namespace
 }  // namespace litert::internal
