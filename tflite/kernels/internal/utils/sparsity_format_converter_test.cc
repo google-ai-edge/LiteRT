@@ -642,6 +642,162 @@ TEST(FormatConverterTest, BlockTestD0S1ColMajorBlock) {
                           dense_data.data(), nullptr);
   EXPECT_EQ(dense_data, dense_values);
 }
+
+TEST(FormatConverterTest, OutOfBoundsArrayIndicesIgnored) {
+  const std::vector<int> dense_shape = {4, 4};
+  const std::vector<int> traversal_order = {0, 1};
+  const std::vector<TfLiteDimensionType> format = {kTfLiteDimDense,
+                                                   kTfLiteDimSparseCSR};
+  const std::vector<int> dense_size = {4, 0};
+  const std::vector<std::vector<int>> segments = {{}, {0, 1, 2, 3, 4}};
+  const std::vector<std::vector<int>> indices = {{}, {0, 1, 2, 99}};
+  FormatConverter<float> converter(dense_shape, traversal_order, format,
+                                   dense_size, segments, indices);
+  const std::vector<float> src = {1.0f, 2.0f, 3.0f, 4.0f};
+  EXPECT_EQ(converter.SparseToDense(src.data()), kTfLiteOk);
+  std::vector<float> dest(256, 7.0f);
+  EXPECT_EQ(converter.SparseToDense(src.data(), 16u, dest.data(), nullptr),
+            kTfLiteOk);
+  EXPECT_FLOAT_EQ(dest[0], 1.0f);
+  EXPECT_FLOAT_EQ(dest[5], 2.0f);
+  EXPECT_FLOAT_EQ(dest[10], 3.0f);
+  EXPECT_FLOAT_EQ(dest[15], 0.0f);
+  for (size_t i = 16; i < dest.size(); ++i) {
+    EXPECT_FLOAT_EQ(dest[i], 7.0f);
+  }
+}
+
+TEST(FormatConverterTest, OutOfBoundsAndShortTraversalOrderIgnored) {
+  const std::vector<int> dense_shape = {4, 4};
+  const std::vector<TfLiteDimensionType> format = {kTfLiteDimDense,
+                                                   kTfLiteDimSparseCSR};
+  const std::vector<int> dense_size = {4, 0};
+  const std::vector<std::vector<int>> segments = {{}, {0, 1, 2, 3, 4}};
+  const std::vector<std::vector<int>> indices = {{}, {0, 1, 2, 3}};
+  const std::vector<float> src = {1.0f, 2.0f, 3.0f, 4.0f};
+
+  // Out-of-bounds traversal_order entry (9 >= orig_rank).
+  {
+    FormatConverter<float> converter(dense_shape, /*traversal_order=*/{0, 9},
+                                     format, dense_size, segments, indices);
+    EXPECT_EQ(converter.SparseToDense(src.data()), kTfLiteOk);
+    std::vector<float> dest(256, 7.0f);
+    EXPECT_EQ(converter.SparseToDense(src.data(), 16u, dest.data(), nullptr),
+              kTfLiteOk);
+    for (size_t i = 16; i < dest.size(); ++i) {
+      EXPECT_FLOAT_EQ(dest[i], 7.0f);
+    }
+  }
+
+  // Short traversal_order (size 1 < orig_rank 2).
+  {
+    FormatConverter<float> converter(dense_shape, /*traversal_order=*/{0},
+                                     format, dense_size, segments, indices);
+    EXPECT_EQ(converter.SparseToDense(src.data()), kTfLiteOk);
+    std::vector<float> dest(256, 7.0f);
+    EXPECT_EQ(converter.SparseToDense(src.data(), 16u, dest.data(), nullptr),
+              kTfLiteOk);
+    for (size_t i = 16; i < dest.size(); ++i) {
+      EXPECT_FLOAT_EQ(dest[i], 7.0f);
+    }
+  }
+}
+
+TEST(FormatConverterTest, OutOfBoundsBlockMapAndTraversalIgnored) {
+  const std::vector<int> dense_shape = {4, 4};
+  const std::vector<float> src(16, 1.0f);
+
+  // Block traversal_order entry exceeding block_map size.
+  {
+    FormatConverter<float> converter(
+        dense_shape, /*traversal_order=*/{0, 1, 2, 3},
+        {kTfLiteDimDense, kTfLiteDimDense, kTfLiteDimDense, kTfLiteDimDense},
+        /*dense_size=*/{2, 2, 2, 1}, /*segments=*/{{}, {}, {}, {}},
+        /*indices=*/{{}, {}, {}, {}}, /*block_map=*/{1});
+    EXPECT_EQ(converter.SparseToDense(src.data()), kTfLiteOk);
+    std::vector<float> dest(256, 7.0f);
+    EXPECT_EQ(converter.SparseToDense(src.data(), 16u, dest.data(), nullptr),
+              kTfLiteOk);
+    for (size_t i = 16; i < dest.size(); ++i) {
+      EXPECT_FLOAT_EQ(dest[i], 7.0f);
+    }
+  }
+
+  // block_map entry exceeding original rank.
+  {
+    FormatConverter<float> converter(
+        dense_shape, /*traversal_order=*/{0, 1, 2},
+        {kTfLiteDimDense, kTfLiteDimDense, kTfLiteDimDense},
+        /*dense_size=*/{4, 4, 1}, /*segments=*/{{}, {}, {}},
+        /*indices=*/{{}, {}, {}}, /*block_map=*/{7});
+    EXPECT_EQ(converter.SparseToDense(src.data()), kTfLiteOk);
+    std::vector<float> dest(256, 7.0f);
+    EXPECT_EQ(converter.SparseToDense(src.data(), 16u, dest.data(), nullptr),
+              kTfLiteOk);
+    for (size_t i = 16; i < dest.size(); ++i) {
+      EXPECT_FLOAT_EQ(dest[i], 7.0f);
+    }
+  }
+
+  // Block traversal_order entry out of range for dense_size in Init and Populate.
+  {
+    FormatConverter<float> converter(
+        dense_shape, /*traversal_order=*/{0, 1, 9},
+        {kTfLiteDimDense, kTfLiteDimSparseCSR, kTfLiteDimDense},
+        /*dense_size=*/{4, 0, 2}, /*segments=*/{{}, {0, 1, 2, 3, 4}, {}},
+        /*indices=*/{{}, {0, 1, 2, 3}, {}}, /*block_map=*/{1});
+    EXPECT_EQ(converter.SparseToDense(src.data()), kTfLiteOk);
+    std::vector<float> dest(256, 7.0f);
+    EXPECT_EQ(converter.SparseToDense(src.data(), 16u, dest.data(), nullptr),
+              kTfLiteOk);
+    for (size_t i = 16; i < dest.size(); ++i) {
+      EXPECT_FLOAT_EQ(dest[i], 7.0f);
+    }
+  }
+}
+
+TEST(FormatConverterTest, NonIdentityBlockTraversalOrder2x4Bounded) {
+  const std::vector<int> dense_shape = {4, 8};
+  const std::vector<TfLiteDimensionType> format = {
+      kTfLiteDimDense, kTfLiteDimSparseCSR, kTfLiteDimDense, kTfLiteDimDense};
+  const std::vector<int> dense_size = {2, 0, 2, 4};
+  const std::vector<std::vector<int>> segments = {{}, {0, 2, 4}, {}, {}};
+  const std::vector<std::vector<int>> indices = {{}, {0, 1, 0, 1}, {}, {}};
+  const std::vector<int> block_map = {0, 1};
+  std::vector<float> src(32);
+  for (int i = 0; i < 32; ++i) {
+    src[i] = static_cast<float>(i + 1);
+  }
+
+  // Identity block traversal_order [0, 1, 2, 3] densifies all 32 elements.
+  {
+    FormatConverter<float> control(dense_shape, /*traversal_order=*/{0, 1, 2, 3},
+                                   format, dense_size, segments, indices,
+                                   block_map);
+    EXPECT_EQ(control.SparseToDense(src.data()), kTfLiteOk);
+    std::vector<float> dest(256, 7.0f);
+    EXPECT_EQ(control.SparseToDense(src.data(), 32u, dest.data(), nullptr),
+              kTfLiteOk);
+    for (size_t i = 32; i < dest.size(); ++i) {
+      EXPECT_FLOAT_EQ(dest[i], 7.0f);
+    }
+  }
+
+  // Non-identity block traversal_order [0, 1, 3, 2] with asymmetric 2x4 blocks
+  // must not write past the 32-element destination buffer.
+  {
+    FormatConverter<float> converter(
+        dense_shape, /*traversal_order=*/{0, 1, 3, 2}, format, dense_size,
+        segments, indices, block_map);
+    EXPECT_EQ(converter.SparseToDense(src.data()), kTfLiteOk);
+    std::vector<float> dest(256, 7.0f);
+    EXPECT_EQ(converter.SparseToDense(src.data(), 32u, dest.data(), nullptr),
+              kTfLiteOk);
+    for (size_t i = 32; i < dest.size(); ++i) {
+      EXPECT_FLOAT_EQ(dest[i], 7.0f);
+    }
+  }
+}
 }  // namespace
 }  // namespace sparsity
 }  // namespace internal
