@@ -1154,7 +1154,7 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignatureWithMap(
                            input_buffer.Error().Message());
       return;
     }
-    input_buffer_map[key] = std::move(*input_buffer);
+    input_buffer_map.try_emplace(key, std::move(*input_buffer));
   }
 
   AUTO_CLEANUP_JNI_STRING_ARRAY(env, output_keys);
@@ -1173,7 +1173,7 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignatureWithMap(
                            output_buffer.Error().Message());
       return;
     }
-    output_buffer_map[key] = std::move(*output_buffer);
+    output_buffer_map.try_emplace(key, std::move(*output_buffer));
   }
 
   AUTO_CLEANUP_JNI_STRING(env, signature);
