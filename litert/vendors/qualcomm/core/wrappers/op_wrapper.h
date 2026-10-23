@@ -49,6 +49,15 @@ class OpWrapper final {
     scalar_params_.emplace_back(name, data, is_quant);
   }
 
+  // Replaces an existing scalar parameter without changing its position in the
+  // QNN op config.
+  template <typename T>
+  void SetScalarParam(size_t i, const char* name, const T data,
+                      const bool is_quant = false) {
+    assert(i < scalar_params_.size());
+    scalar_params_[i] = ScalarParamWrapper(name, data, is_quant);
+  }
+
   void AddTensorParam(const char* name, const TensorWrapper& tensor);
 
   Qnn_OpConfig_t GetOpConfig();
@@ -66,6 +75,8 @@ class OpWrapper final {
   size_t GetInputCount() const;
 
   const TensorWrapper& GetOutputTensor(size_t i) const;
+
+  size_t GetOutputCount() const;
 
   const TensorParamWrapper& GetTensorParam(size_t i) const;
 
