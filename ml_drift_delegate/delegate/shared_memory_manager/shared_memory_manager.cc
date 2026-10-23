@@ -19,11 +19,7 @@
 #include <cstdlib>
 
 #include "fp16/fp16.h"  // from @FP16
-#include "ml_drift/common/kernels/conv_apple_mpp.h"  // from @ml_drift
-#include "ml_drift/common/kernels/conv_generic.h"  // from @ml_drift
-#include "ml_drift/common/kernels/conv_wave_matrix.h"  // from @ml_drift
-#include "ml_drift/common/kernels/conv_wave_matrix_mali.h"  // from @ml_drift
-#include "ml_drift/common/kernels/conv_wave_memory.h"  // from @ml_drift
+#include "ml_drift/common/selectors/convolution_selector.h"  // from @ml_drift
 #include "ml_drift/common/util.h"  // from @ml_drift
 
 #if defined(_WIN32)
@@ -121,14 +117,7 @@ bool IsConvInt8Supported(const CreateGpuModelInfo& create_info,
     return false;
   }
 
-  // TODO(sulemanshahid): Add support for int4 src quantization.
-  bool supports_conv_apple_mpp = SupportsConvAppleMPP(gpu_info);
-
-  return supports_conv_apple_mpp ||
-         SupportsConvWaveMatrixMaliInt8(gpu_info, src_shape) ||
-         SupportsConvWaveMemoryInt8(gpu_info) ||
-         SupportsConvGenericInt8(gpu_info) ||
-         SupportsConvWaveMatrixInt8(gpu_info, OHWI(32, 1, 1, src_shape.c));
+  return SupportsConvolutionInt8(gpu_info, src_shape);
 }
 
 // Check if the convolution int8 kernel is recommended for the computation of
