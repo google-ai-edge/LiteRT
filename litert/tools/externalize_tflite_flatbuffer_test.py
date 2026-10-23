@@ -471,6 +471,159 @@ class ExternalizeTfliteFlatbufferTest(googletest.TestCase):
     self.assertEqual(bytes(processed_model.buffers[2].data), bias_data)
     self.assertEmpty(processed_model.buffers[3].data)
 
+  def _write_fc_model(self, path: pathlib.Path, weights: tuple[bytes, ...]):
+    """Writes a FLOAT32 model chaining one FullyConnected op per [4,4] weight."""
+    model = schema.ModelT()
+    model.version = 3
+    code = schema.OperatorCodeT()
+    code.builtinCode = externalize_tflite_flatbuffer._enum_value(
+        schema.BuiltinOperator, "FULLY_CONNECTED"
+    )
+    code.deprecatedBuiltinCode = code.builtinCode
+    model.operatorCodes = [code]
+    model.buffers = [schema.BufferT()]
+    subgraph = schema.SubGraphT()
+    subgraph.tensors = [_make_float32_tensor([1, 4], 0)]
+    subgraph.inputs = [0]
+    subgraph.operators = []
+    activation = 0
+    for weight in weights:
+      buffer = schema.BufferT()
+      buffer.data = weight
+      model.buffers.append(buffer)
+      subgraph.tensors.append(
+          _make_float32_tensor([4, 4], len(model.buffers) - 1)
+      )
+      subgraph.tensors.append(_make_float32_tensor([1, 4], 0))
+      op = schema.OperatorT()
+      op.opcodeIndex = 0
+      op.inputs = [activation, len(subgraph.tensors) - 2]
+      op.outputs = [len(subgraph.tensors) - 1]
+      subgraph.operators.append(op)
+      activation = len(subgraph.tensors) - 1
+    subgraph.outputs = [activation]
+    model.subgraphs = [subgraph]
+    builder = flatbuffers.Builder(1024)
+    builder.Finish(model.Pack(builder), file_identifier=b"TFL3")
+    path.write_bytes(bytes(builder.Output()))
+
+  def _externalize(self, root: pathlib.Path, name: str, weights):
+    source = root / f"{name}.tflite"
+    self._write_fc_model(source, weights)
+    output_dir = root / name
+    externalize_tflite_flatbuffer.externalize(
+        input_model=source,
+        output_dir=output_dir,
+        group_name="tflite_weights",
+        num_elements_threshold=4,
+    )
+    return output_dir / "model.tflite", output_dir / "tflite_weights"
+
+  def test_collect_external_weight_digests(self):
+    root = pathlib.Path(self.create_tempdir().full_path)
+    first, second = bytes(range(64)), b"B" * 64
+    model, weights = self._externalize(root, "m", (first, second, first))
+
+    placements = externalize_tflite_flatbuffer.collect_external_weight_digests(
+        model, weights, "tflite_weights"
+    )
+
+    digest = externalize_tflite_flatbuffer._weight_digest
+    self.assertEqual(
+        placements, {digest(first): (0, 64), digest(second): (64, 64)}
+    )
+    self.assertEmpty(
+        externalize_tflite_flatbuffer.collect_external_weight_digests(
+            model, weights, "other_group"
+        )
+    )
+
+  def test_redirect_points_shared_payload_at_other_group_and_compacts(self):
+    root = pathlib.Path(self.create_tempdir().full_path)
+    table, own = bytes(range(64)), b"E" * 64
+    model, weights = self._externalize(root, "embedder", (table, own))
+    owner_offset = 128  # Where the owner model stores the same payload.
+
+    result = externalize_tflite_flatbuffer.redirect_external_weights(
+        input_model=model,
+        input_weights=weights,
+        output_dir=root / "redirected",
+        group_name="tflite_weights",
+        redirects={
+            externalize_tflite_flatbuffer._weight_digest(table): (
+                "tflite_weights:tf_lite_prefill_decode",
+                owner_offset,
+                len(table),
+            )
+        },
+    )
+
+    self.assertEqual(result.redirected_buffers, 1)
+    self.assertEqual(result.removed_bytes, 64)
+    # Only the unshared payload stays in the model's own blob, at offset 0.
+    self.assertEqual((root / "redirected" / "tflite_weights").read_bytes(), own)
+    processed = schema.ModelT.InitFromPackedBuf(
+        (root / "redirected" / "model.tflite").read_bytes(), 0
+    )
+    groups = [
+        g.name.decode() if isinstance(g.name, bytes) else g.name
+        for g in processed.externalBufferGroups
+    ]
+    by_id = {b.id: b for b in processed.externalBuffers}
+    table_ref = by_id[processed.subgraphs[0].tensors[1].externalBuffer]
+    own_ref = by_id[processed.subgraphs[0].tensors[3].externalBuffer]
+    self.assertEqual(
+        groups[table_ref.group], "tflite_weights:tf_lite_prefill_decode"
+    )
+    self.assertEqual((table_ref.offset, table_ref.length), (owner_offset, 64))
+    self.assertEqual(groups[own_ref.group], "tflite_weights")
+    self.assertEqual((own_ref.offset, own_ref.length), (0, 64))
+
+  def test_redirect_without_match_copies_inputs(self):
+    root = pathlib.Path(self.create_tempdir().full_path)
+    model, weights = self._externalize(root, "m", (b"A" * 64,))
+
+    result = externalize_tflite_flatbuffer.redirect_external_weights(
+        input_model=model,
+        input_weights=weights,
+        output_dir=root / "out",
+        group_name="tflite_weights",
+        redirects={
+            externalize_tflite_flatbuffer._weight_digest(b"Z" * 64): (
+                "tflite_weights:x",
+                0,
+                64,
+            )
+        },
+    )
+
+    self.assertEqual(result.redirected_buffers, 0)
+    self.assertEqual(
+        (root / "out" / "model.tflite").read_bytes(), model.read_bytes()
+    )
+    self.assertEqual(
+        (root / "out" / "tflite_weights").read_bytes(), weights.read_bytes()
+    )
+
+  def test_redirect_rejects_own_group_target(self):
+    root = pathlib.Path(self.create_tempdir().full_path)
+    payload = b"A" * 64
+    model, weights = self._externalize(root, "m", (payload,))
+    with self.assertRaisesRegex(ValueError, "must differ"):
+      externalize_tflite_flatbuffer.redirect_external_weights(
+          input_model=model,
+          input_weights=weights,
+          output_dir=root / "out",
+          group_name="tflite_weights",
+          redirects={
+              externalize_tflite_flatbuffer._weight_digest(payload): (
+                  "tflite_weights",
+                  0,
+                  64,
+              )
+          },
+      )
+
 
 if __name__ == "__main__":
   googletest.main()
