@@ -19,7 +19,6 @@ load("//litert/build_common:special_rule.bzl", "litert_gpu_accelerator_deps", "l
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:litert_internal_users"],
 )
 
 cc_library(
