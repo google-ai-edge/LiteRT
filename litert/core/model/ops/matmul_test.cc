@@ -15,6 +15,7 @@
 #include "litert/core/model/ops/matmul.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -24,6 +25,7 @@
 #include <gtest/gtest.h>
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/shape_inference_types.h"
 #include "litert/core/util/flatbuffer_tools.h"
@@ -85,6 +87,84 @@ LiteRtOpT MakeFullyConnectedOp(
   SetTflOptions(op, std::move(tfl_options));
   return op;
 }
+
+//
+// ComputeStaticElementCount Tests
+//
+
+struct ComputeStaticElementCountCase {
+  std::string test_name;
+  Dims dims;
+  bool expected_ok;
+  int32_t expected_num_elements = 0;
+  bool expected_has_dynamic_dim = false;
+};
+
+using ComputeStaticElementCountTest =
+    ::testing::TestWithParam<ComputeStaticElementCountCase>;
+
+TEST_P(ComputeStaticElementCountTest, ComputesExpectedCountAndFlags) {
+  const ComputeStaticElementCountCase& tc = GetParam();
+  int32_t num_elements = 0;
+  bool has_dynamic_dim = false;
+  const bool ok =
+      ComputeStaticElementCount(tc.dims, num_elements, has_dynamic_dim);
+  ASSERT_EQ(ok, tc.expected_ok);
+  if (tc.expected_ok) {
+    EXPECT_EQ(num_elements, tc.expected_num_elements);
+    EXPECT_EQ(has_dynamic_dim, tc.expected_has_dynamic_dim);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ComputeStaticElementCountTests, ComputeStaticElementCountTest,
+    ::testing::Values(
+        ComputeStaticElementCountCase{
+            "ScalarEmptyDims",
+            /*dims=*/{},
+            /*expected_ok=*/true,
+            /*expected_num_elements=*/1,
+            /*expected_has_dynamic_dim=*/false,
+        },
+        ComputeStaticElementCountCase{
+            "StaticPositiveDims",
+            /*dims=*/{2, 3, 4},
+            /*expected_ok=*/true,
+            /*expected_num_elements=*/24,
+            /*expected_has_dynamic_dim=*/false,
+        },
+        ComputeStaticElementCountCase{
+            "ZeroDim",
+            /*dims=*/{2, 0, 4},
+            /*expected_ok=*/true,
+            /*expected_num_elements=*/0,
+            /*expected_has_dynamic_dim=*/false,
+        },
+        ComputeStaticElementCountCase{
+            "DynamicDim",
+            /*dims=*/{2, -1, 4},
+            /*expected_ok=*/true,
+            /*expected_num_elements=*/8,
+            /*expected_has_dynamic_dim=*/true,
+        },
+        ComputeStaticElementCountCase{
+            "InvalidNegativeDim",
+            /*dims=*/{2, -2, 4},
+            /*expected_ok=*/false,
+        },
+        ComputeStaticElementCountCase{
+            "StaticOverflow",
+            /*dims=*/{65536, 32768},
+            /*expected_ok=*/false,
+        },
+        ComputeStaticElementCountCase{
+            "DynamicWithStaticOverflow",
+            /*dims=*/{-1, 65536, 32768},
+            /*expected_ok=*/false,
+        }),
+    [](const ::testing::TestParamInfo<ComputeStaticElementCountCase>& info) {
+      return info.param.test_name;
+    });
 
 //
 // BatchMatMul Tests
@@ -205,6 +285,28 @@ TEST(FullyConnectedOpTest, Simple) {
   EXPECT_THAT(output_shapes[0], ElementsAre(2, 20));
 }
 
+TEST(FullyConnectedOpTest, ScalarInputKeepNumDimsFalse) {
+  LiteRtOpT op = MakeFullyConnectedOp(/*keep_num_dims=*/false);
+  // Scalar input [], Weights [2, 1] -> [1, 2]
+  std::vector<Dims> input_shapes = {{}, {2, 1}};
+  std::vector<Dims> output_shapes(1);
+
+  ASSERT_EQ(
+      InferFullyConnected(op, absl::MakeSpan(input_shapes), output_shapes),
+      kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre(1, 2));
+}
+
+TEST(FullyConnectedOpTest, RejectsScalarInputWithKeepNumDimsTrue) {
+  LiteRtOpT op = MakeFullyConnectedOp(/*keep_num_dims=*/true);
+  std::vector<Dims> input_shapes = {{}, {2, 1}};
+  std::vector<Dims> output_shapes(1);
+
+  EXPECT_EQ(
+      InferFullyConnected(op, absl::MakeSpan(input_shapes), output_shapes),
+      kLiteRtStatusErrorInvalidArgument);
+}
+
 TEST(FullyConnectedOpTest, KeepNumDims) {
   LiteRtOpT op = MakeFullyConnectedOp(true);
   // Input [1, 2, 1, 10], Weights [3, 10]
@@ -303,11 +405,83 @@ INSTANTIATE_TEST_SUITE_P(
         FullyConnectedErrorCase{"EmptyOutputShapes", {{2, 10}, {20, 10}}, 0},
         FullyConnectedErrorCase{"EmptyInputRank0", {{}, {20, 10}}},
         FullyConnectedErrorCase{"NegativeBatchDim", {{-2, 3, 10}, {20, 10}}},
+        FullyConnectedErrorCase{"NegativeWeightDim", {{2, 10}, {-2, 10}}},
+        FullyConnectedErrorCase{"InputElementsNotDivisibleByFilterCols",
+                                {{2, 7}, {4, 10}}},
+        FullyConnectedErrorCase{"BiasSizeMismatch", {{2, 10}, {4, 10}, {3}}},
+        FullyConnectedErrorCase{"NegativeBiasDim", {{2, 10}, {4, 10}, {-2}}},
         FullyConnectedErrorCase{"FlattenedBatchOverflow",
                                 {{65536, 32768, 10}, {20, 10}}}),
     [](const ::testing::TestParamInfo<FullyConnectedErrorCase>& info) {
       return info.param.name;
     });
+
+TEST(FullyConnectedOpTest, RejectsKeepNumDimsLastDimMismatch) {
+  LiteRtOpT op = MakeFullyConnectedOp(/*keep_num_dims=*/true);
+  std::vector<Dims> input_shapes = {{2, 5, 4}, {8, 10}};
+  std::vector<Dims> output_shapes(1);
+  EXPECT_EQ(
+      InferFullyConnected(op, absl::MakeSpan(input_shapes), output_shapes),
+      kLiteRtStatusErrorInvalidArgument);
+}
+
+struct PerChannelWeightsQuantizationCase {
+  std::string test_name;
+  int32_t quantized_dimension;
+  size_t num_channels;
+  LiteRtStatus expected_status;
+};
+
+using FullyConnectedPerChannelQuantizationTest =
+    ::testing::TestWithParam<PerChannelWeightsQuantizationCase>;
+
+TEST_P(FullyConnectedPerChannelQuantizationTest,
+       ValidatesPerChannelWeightsQuantization) {
+  const PerChannelWeightsQuantizationCase& param = GetParam();
+  LiteRtOpT op = MakeFullyConnectedOp(/*keep_num_dims=*/false);
+  LiteRtTensorT input_tensor;
+  LiteRtTensorT weights_tensor;
+  op.Inputs().push_back(&input_tensor);
+  op.Inputs().push_back(&weights_tensor);
+
+  Quantization per_channel_qparams;
+  per_channel_qparams.first = kLiteRtQuantizationPerChannel;
+  per_channel_qparams.second.per_channel.quantized_dimension =
+      param.quantized_dimension;
+  per_channel_qparams.second.per_channel.num_channels = param.num_channels;
+  weights_tensor.SetQarams(per_channel_qparams);
+
+  std::vector<Dims> input_shapes = {{2, 10}, {4, 10}};
+  std::vector<Dims> output_shapes(1);
+  EXPECT_EQ(
+      InferFullyConnected(op, absl::MakeSpan(input_shapes), output_shapes),
+      param.expected_status);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    FullyConnectedPerChannelQuantizationTests,
+    FullyConnectedPerChannelQuantizationTest,
+    ::testing::Values(
+        PerChannelWeightsQuantizationCase{
+            "InvalidQuantizedDimension",
+            /*quantized_dimension=*/1,
+            /*num_channels=*/4,
+            kLiteRtStatusErrorInvalidArgument,
+        },
+        PerChannelWeightsQuantizationCase{
+            "InvalidNumChannels",
+            /*quantized_dimension=*/0,
+            /*num_channels=*/2,
+            kLiteRtStatusErrorInvalidArgument,
+        },
+        PerChannelWeightsQuantizationCase{
+            "ValidPerChannelQuantization",
+            /*quantized_dimension=*/0,
+            /*num_channels=*/4,
+            kLiteRtStatusOk,
+        }),
+    [](const ::testing::TestParamInfo<PerChannelWeightsQuantizationCase>&
+           info) { return info.param.test_name; });
 
 TEST(BatchMatMulOpTest, RejectsEmptyOutputShapes) {
   LiteRtOpT op = MakeBatchMatMulOp(false, false);
@@ -316,6 +490,103 @@ TEST(BatchMatMulOpTest, RejectsEmptyOutputShapes) {
   EXPECT_EQ(InferBatchMatmul(op, absl::MakeSpan(valid_inputs), empty_outputs),
             kLiteRtStatusErrorInvalidArgument);
 }
+
+TEST(BatchMatMulOpTest, RejectsRank1Input) {
+  LiteRtOpT op = MakeBatchMatMulOp(/*adj_x=*/false, /*adj_y=*/false);
+  std::vector<Dims> output_shapes(1);
+  std::vector<Dims> rank1_inputs = {{3}, {3, 4}};
+  EXPECT_EQ(InferBatchMatmul(op, absl::MakeSpan(rank1_inputs), output_shapes),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(BatchMatMulOpTest, SupportsRank6Input) {
+  LiteRtOpT op = MakeBatchMatMulOp(/*adj_x=*/false, /*adj_y=*/false);
+  std::vector<Dims> output_shapes(1);
+  std::vector<Dims> rank6_inputs = {{1, 1, 1, 1, 2, 3}, {1, 1, 1, 1, 3, 4}};
+  ASSERT_EQ(InferBatchMatmul(op, absl::MakeSpan(rank6_inputs), output_shapes),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre(1, 1, 1, 1, 2, 4));
+}
+
+struct BatchMatMulPerChannelRhsCase {
+  std::string test_name;
+  bool adj_y;
+  Dims rhs_shape;
+  int32_t quantized_dimension;
+  size_t num_channels;
+  LiteRtStatus expected_status;
+};
+
+using BatchMatMulPerChannelRhsTest =
+    ::testing::TestWithParam<BatchMatMulPerChannelRhsCase>;
+
+TEST_P(BatchMatMulPerChannelRhsTest, ValidatesPerChannelRhsQuantization) {
+  const BatchMatMulPerChannelRhsCase& param = GetParam();
+  LiteRtOpT op = MakeBatchMatMulOp(/*adj_x=*/false, param.adj_y);
+  LiteRtTensorT lhs_tensor;
+  LiteRtTensorT rhs_tensor;
+  op.Inputs().push_back(&lhs_tensor);
+  op.Inputs().push_back(&rhs_tensor);
+
+  Quantization per_channel_qparams;
+  per_channel_qparams.first = kLiteRtQuantizationPerChannel;
+  per_channel_qparams.second.per_channel.quantized_dimension =
+      param.quantized_dimension;
+  per_channel_qparams.second.per_channel.num_channels = param.num_channels;
+  rhs_tensor.SetQarams(per_channel_qparams);
+
+  std::vector<Dims> input_shapes = {{2, 3}, param.rhs_shape};
+  std::vector<Dims> output_shapes(1);
+  EXPECT_EQ(InferBatchMatmul(op, absl::MakeSpan(input_shapes), output_shapes),
+            param.expected_status);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    BatchMatMulPerChannelRhsTests, BatchMatMulPerChannelRhsTest,
+    ::testing::Values(
+        BatchMatMulPerChannelRhsCase{
+            "NonAdjointInvalidQuantizedDimension",
+            /*adj_y=*/false,
+            /*rhs_shape=*/{3, 4},
+            /*quantized_dimension=*/0,
+            /*num_channels=*/4,
+            kLiteRtStatusErrorInvalidArgument,
+        },
+        BatchMatMulPerChannelRhsCase{
+            "NonAdjointInvalidNumChannels",
+            /*adj_y=*/false,
+            /*rhs_shape=*/{3, 4},
+            /*quantized_dimension=*/1,
+            /*num_channels=*/3,
+            kLiteRtStatusErrorInvalidArgument,
+        },
+        BatchMatMulPerChannelRhsCase{
+            "NonAdjointValidPerChannel",
+            /*adj_y=*/false,
+            /*rhs_shape=*/{3, 4},
+            /*quantized_dimension=*/1,
+            /*num_channels=*/4,
+            kLiteRtStatusOk,
+        },
+        BatchMatMulPerChannelRhsCase{
+            "AdjointInvalidQuantizedDimension",
+            /*adj_y=*/true,
+            /*rhs_shape=*/{4, 3},
+            /*quantized_dimension=*/1,
+            /*num_channels=*/4,
+            kLiteRtStatusErrorInvalidArgument,
+        },
+        BatchMatMulPerChannelRhsCase{
+            "AdjointValidPerChannel",
+            /*adj_y=*/true,
+            /*rhs_shape=*/{4, 3},
+            /*quantized_dimension=*/0,
+            /*num_channels=*/4,
+            kLiteRtStatusOk,
+        }),
+    [](const ::testing::TestParamInfo<BatchMatMulPerChannelRhsCase>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace
 }  // namespace litert::internal
