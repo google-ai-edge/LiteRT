@@ -2017,7 +2017,7 @@ class DequantizeOperationParser : public TFLiteOperationParser {
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
     ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                         {.max_version = 5}));
+                                         {.max_version = 3}));
     const int runtime_inputs =
         GetNumberOfRuntimeInputsForNode(context, tflite_node);
     if (runtime_inputs == 0) {
@@ -2319,9 +2319,7 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
       ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &input1));
       if (input0 == input1) {
         if (operation_type_ != ::ml_drift::OperationType::kMul &&
-            operation_type_ != ::ml_drift::OperationType::kAdd &&
-            operation_type_ != ::ml_drift::OperationType::kNotEqual &&
-            operation_type_ != ::ml_drift::OperationType::kEqual) {
+            operation_type_ != ::ml_drift::OperationType::kAdd) {
           return absl::UnimplementedError(
               "No support of few identical inputs in the same operation.");
         }
@@ -2436,20 +2434,6 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
           attr.param = 2.0f;
           node->operation.attributes = std::move(attr);
           reader->AddInput(node, 0);
-        } else {
-          ::ml_drift::Value* in_val = reader->ReadValue(0);
-          node->operation.type = ToString(::ml_drift::OperationType::kCopy);
-          ::ml_drift::Value* copy_val = graph->NewValue();
-          copy_val->tensor.type = in_val->tensor.type;
-          copy_val->tensor.shape = in_val->tensor.shape;
-          graph->AddConsumer(node->id, in_val->id);
-          graph->SetProducer(node->id, copy_val->id);
-
-          ::ml_drift::Node* cmp_node = graph->NewNode();
-          cmp_node->operation.type = ToString(operation_type_);
-          graph->AddConsumer(cmp_node->id, in_val->id);
-          graph->AddConsumer(cmp_node->id, copy_val->id);
-          node = cmp_node;
         }
       } else {
         int input_tensor0 = 0;
@@ -4598,14 +4582,11 @@ class ReLUOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    ABSL_RETURN_IF_ERROR(ValidateSupport(
-        context, tflite_node, registration,
-        {.max_version = 2,
-         .num_outputs = 1,
-         .required_runtime_inputs = 1,
-         .required_const_inputs = 0,
-         .check_gpu_compatibility =
-             registration->builtin_code != kTfLiteBuiltinRelu0To1}));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.max_version = 2,
+                                          .num_outputs = 1,
+                                          .required_runtime_inputs = 1,
+                                          .required_const_inputs = 0}));
     ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     return absl::OkStatus();
   }
@@ -5973,18 +5954,6 @@ class TransposeOperationParser : public TFLiteOperationParser {
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32> perm;
     ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &perm,
                                        ReadTensorFlags::kNoExtraBytes));
-    if (perm.data.size() == 6) {
-      const TfLiteTensor* input = nullptr;
-      ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
-      if (input->dims->size == 6 &&
-          input->dims->data[3] == input->dims->data[4] &&
-          input->dims->data[3] > 1 &&
-          perm.data == std::vector<int32_t>{0, 1, 3, 2, 4, 5}) {
-        return absl::OkStatus();
-      }
-      return absl::InvalidArgumentError(
-          "Permutation for 6D transpose is invalid.");
-    }
     if (perm.data.size() > 4 || perm.data.size() < 2) {
       return absl::InvalidArgumentError(
           "Permutation for transpose is invalid.");
@@ -6003,24 +5972,6 @@ class TransposeOperationParser : public TFLiteOperationParser {
     ::ml_drift::TransposeAttributes attr;
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32> perm;
     reader->ReadTensor(1, &perm, ReadTensorFlags::kNoExtraBytes);
-    if (perm.data.size() == 6 &&
-        perm.data == std::vector<int32_t>{0, 1, 3, 2, 4, 5}) {
-      const TfLiteTensor* input = reader->GetInputTensor(0);
-      const int b = input->dims->data[0];
-      const int h = input->dims->data[1];
-      const int w = input->dims->data[2];
-      const int r = input->dims->data[3];
-      const int c = input->dims->data[5];
-      graph->FindInputs(node->id)[0]->tensor.shape =
-          ::ml_drift::BHWC(b, h, w, r * r * c);
-      graph->FindOutputs(node->id)[0]->tensor.shape =
-          ::ml_drift::BHWC(b, h * r, w * r, c);
-      node->operation.type = ToString(::ml_drift::OperationType::kDepthToSpace);
-      ::ml_drift::SpaceToDepthAttributes d2s_attr;
-      d2s_attr.block_size = r;
-      node->operation.attributes = d2s_attr;
-      return;
-    }
     std::map<::ml_drift::Axis, int> axis_to_index = {
         {::ml_drift::Axis::kBatch, 0},
         {::ml_drift::Axis::kHeight, 1},
@@ -6967,11 +6918,7 @@ bool IsAllAllowedTensors(TfLiteContext* context,
     int tensor_idx = tensor_indices->data[i];
     if (tensor_idx == kTfLiteOptionalTensor) continue;
     const TfLiteTensor* t = &context->tensors[tensor_idx];
-    const bool is_6d_depth_to_space_tensor =
-        t->dims && t->dims->size == 6 &&
-        (t->dims->data[3] == t->dims->data[4] ||
-         t->dims->data[2] == t->dims->data[4]);
-    if (t->dims && t->dims->size >= 5 && !is_6d_depth_to_space_tensor) {
+    if (t->dims && t->dims->size >= 5) {
       *unsupported_details +=
           "Tensor dimensions must be less than 5. " + std::string(t->name);
       return false;

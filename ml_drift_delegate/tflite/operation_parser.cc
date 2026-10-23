@@ -133,14 +133,6 @@ absl::Status CheckTensorShape(const TfLiteIntArray* dims,
     case 5:
       // BHWDC layout
       return absl::OkStatus();
-    case 6:
-      // 6D DepthToSpace (PixelShuffle) intermediate layout:
-      // [B, H, W, r, r, C] (pre-transpose) or [B, H, r, W, r, C]
-      // (post-transpose)
-      if (dims->data[3] == dims->data[4] || dims->data[2] == dims->data[4]) {
-        return absl::OkStatus();
-      }
-      [[fallthrough]];
     default:
       return absl::InvalidArgumentError(
           absl::StrCat("Tensor \"", tensor_name ? tensor_name : "nullptr",

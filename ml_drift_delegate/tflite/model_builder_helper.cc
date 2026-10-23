@@ -123,16 +123,6 @@ absl::Status GetNodeAndRegistration(TfLiteContext* context, int node_id,
   if (size == 2) return ::ml_drift::BHWC(dims->data[0], 1, 1, dims->data[1]);
   if (size == 3)
     return ::ml_drift::BHWC(dims->data[0], 1, dims->data[1], dims->data[2]);
-  if (size == 6) {
-    if (dims->data[3] == dims->data[4] && dims->data[2] != dims->data[4]) {
-      return ::ml_drift::BHWC(dims->data[0], dims->data[1], dims->data[2],
-                              dims->data[3] * dims->data[4] * dims->data[5]);
-    }
-    if (dims->data[2] == dims->data[4]) {
-      return ::ml_drift::BHWC(dims->data[0], dims->data[1] * dims->data[2],
-                              dims->data[3] * dims->data[4], dims->data[5]);
-    }
-  }
   return ::ml_drift::BHWC(dims->data[0], dims->data[1], dims->data[2],
                           dims->data[3]);
 }
