@@ -35,10 +35,12 @@ ABSL_FLAG(std::string, soc_model, "", "Target SoC model (e.g. SM8750, PTL)");
 
 ABSL_FLAG(std::string, input_shapes, "",
           "Input tensor dimensions in AxBxCxD format (e.g. '1x224x224x3' or "
-          "'1x224x224x3,1x10' for multiple inputs)");
+          "'1x224x224x3,1x10' for multiple inputs). Leave --input_shapes and "
+          "--output_shapes empty if --model is a compiled custom-op TFLite "
+          "model; every subgraph and signature of it is then wrapped.");
 ABSL_FLAG(std::string, output_shapes, "",
           "Output tensor dimensions in AxBxCxD format (e.g. '1x1000' or "
-          "'1x1000,1x10')");
+          "'1x1000,1x10'). See --input_shapes.");
 
 ABSL_FLAG(std::string, input_dtypes, "f32",
           "Input element types (e.g. 'f32', 'i32', 'u8', 'i8', 'i16', 'f16', "
@@ -94,28 +96,31 @@ int main(int argc, char** argv) {
   std::string input_names_str = absl::GetFlag(FLAGS_input_names);
   std::string output_names_str = absl::GetFlag(FLAGS_output_names);
 
-  if (input_shapes_str.empty() || output_shapes_str.empty()) {
-    std::cerr << "Error: Must specify --input_shapes and --output_shapes.\n";
+  if (input_shapes_str.empty() != output_shapes_str.empty()) {
+    std::cerr << "Error: Specify both --input_shapes and --output_shapes, or "
+                 "neither if --model is a compiled custom-op TFLite model.\n";
     return 1;
   }
 
-  auto parsed_inputs = litert::tools::ParseTensorInfoList(
-      input_shapes_str, input_dtypes_str, input_names_str, "input");
-  if (!parsed_inputs) {
-    std::cerr << "Error parsing input shapes/dtypes: "
-              << parsed_inputs.Error().Message() << "\n";
-    return 1;
-  }
-  options.input_tensors = std::move(*parsed_inputs);
+  if (!input_shapes_str.empty()) {
+    auto parsed_inputs = litert::tools::ParseTensorInfoList(
+        input_shapes_str, input_dtypes_str, input_names_str, "input");
+    if (!parsed_inputs) {
+      std::cerr << "Error parsing input shapes/dtypes: "
+                << parsed_inputs.Error().Message() << "\n";
+      return 1;
+    }
+    options.input_tensors = std::move(*parsed_inputs);
 
-  auto parsed_outputs = litert::tools::ParseTensorInfoList(
-      output_shapes_str, output_dtypes_str, output_names_str, "output");
-  if (!parsed_outputs) {
-    std::cerr << "Error parsing output shapes/dtypes: "
-              << parsed_outputs.Error().Message() << "\n";
-    return 1;
+    auto parsed_outputs = litert::tools::ParseTensorInfoList(
+        output_shapes_str, output_dtypes_str, output_names_str, "output");
+    if (!parsed_outputs) {
+      std::cerr << "Error parsing output shapes/dtypes: "
+                << parsed_outputs.Error().Message() << "\n";
+      return 1;
+    }
+    options.output_tensors = std::move(*parsed_outputs);
   }
-  options.output_tensors = std::move(*parsed_outputs);
 
   auto res = litert::tools::BuildCustomNpuModel(options);
   if (!res) {

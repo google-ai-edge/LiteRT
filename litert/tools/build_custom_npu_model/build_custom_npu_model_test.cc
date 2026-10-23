@@ -20,17 +20,77 @@
 #include <fstream>
 #include <ios>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/core/dispatch_op_schema.h"
+#include "litert/core/model/model.h"
+#include "litert/core/model/model_serialize.h"
 
 namespace litert::tools {
 namespace {
+
+using ::testing::ElementsAre;
+
+// Serializes a TFLite model with two DISPATCH_OP subgraphs ("decode" and
+// "prefill_16") and one signature per subgraph, like a compiled
+// multi-signature DarwiNN `*-graph-custom_op.tflite`.
+OwningBufferRef<uint8_t> SerializeMultiSignatureCustomOpModel() {
+  ::LiteRtModelT model;
+  const std::string payload = "SOURCE_NPU_BYTECODE";
+  auto buf_id = model.Buffers()->RegisterOwnedBuffer(OwningBufferRef<uint8_t>(
+      reinterpret_cast<const uint8_t*>(payload.data()), payload.size()));
+
+  struct SubgraphSpec {
+    std::string name;
+    std::vector<int32_t> input_dims;
+    std::vector<int32_t> output_dims;
+  };
+  const std::vector<SubgraphSpec> specs = {
+      {"decode", {1, 1}, {1, 1, 32}},
+      {"prefill_16", {1, 16}, {1, 16, 32}},
+  };
+  for (const SubgraphSpec& spec : specs) {
+    auto& subgraph = model.EmplaceSubgraph();
+    subgraph.SetName(spec.name);
+
+    auto& input = subgraph.EmplaceTensor();
+    input.SetName(spec.name + "/tokens");
+    input.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32,
+                                       absl::MakeConstSpan(spec.input_dims)));
+    subgraph.Inputs().push_back(&input);
+
+    auto& output = subgraph.EmplaceTensor();
+    output.SetName(spec.name + "/logits");
+    output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
+                                        absl::MakeConstSpan(spec.output_dims)));
+    subgraph.Outputs().push_back(&output);
+
+    auto& op = subgraph.EmplaceOp();
+    ::MakeDispatchOp(op);
+    op.Inputs() = subgraph.Inputs();
+    op.Outputs() = subgraph.Outputs();
+    model.AttachAssetToOp(&op, buf_id, spec.name);
+
+    model.EmplaceSignature(&subgraph, std::vector<std::string>{"tokens"},
+                           subgraph.Inputs(),
+                           std::vector<std::string>{"logits"},
+                           subgraph.Outputs(), spec.name);
+  }
+
+  auto serialized = internal::SerializeModel(std::move(model));
+  ABSL_CHECK(serialized.HasValue()) << serialized.Error().Message();
+  return std::move(*serialized);
+}
 
 // =============================================================================
 // Success Test Cases
@@ -197,6 +257,65 @@ TEST(BuildCustomNpuModelTest, MultiInputMultiOutputModelSignatureTest) {
   EXPECT_EQ(
       std::memcmp(payload_ptr, dummy_bytecode.data(), dummy_bytecode.size()),
       0);
+}
+
+TEST(BuildCustomNpuModelTest, WrapsEverySignatureOfCompiledModelTest) {
+  OwningBufferRef<uint8_t> src_model = SerializeMultiSignatureCustomOpModel();
+  BufferRef<uint8_t> bytecode_ref(src_model.Data(), src_model.Size());
+
+  // No tensor specs: the bytecode is inspected as a compiled TFLite model.
+  BuildCustomNpuModelOptions options;
+  auto serialized_res = BuildCustomNpuModelMemory(options, bytecode_ref);
+  ASSERT_TRUE(serialized_res.HasValue()) << serialized_res.Error().Message();
+  auto& serialized = *serialized_res;
+
+  BufferRef<uint8_t> serialized_buf_ref(serialized.Data(), serialized.Size());
+  auto model_res = ExtendedModel::CreateFromBuffer(serialized_buf_ref);
+  ASSERT_TRUE(model_res.HasValue()) << model_res.Error().Message();
+  auto& model = *model_res;
+  ASSERT_EQ(model.NumSubgraphs(), 2);
+
+  const std::vector<std::string> expected_names = {"decode", "prefill_16"};
+  for (int i = 0; i < expected_names.size(); ++i) {
+    const std::string& name = expected_names[i];
+    SCOPED_TRACE(name);
+
+    auto subgraph_res = model.Subgraph(i);
+    ASSERT_TRUE(subgraph_res.HasValue());
+    auto& subgraph = *subgraph_res;
+    ASSERT_EQ(subgraph.Inputs().size(), 1);
+    ASSERT_EQ(subgraph.Outputs().size(), 1);
+    EXPECT_EQ(subgraph.Inputs()[0].Name(), name + "/tokens");
+    EXPECT_EQ(subgraph.Outputs()[0].Name(), name + "/logits");
+    EXPECT_EQ(subgraph.Inputs()[0].ElementType(), ElementType::Int32);
+    EXPECT_EQ(subgraph.Outputs()[0].ElementType(), ElementType::Float32);
+
+    // Each subgraph has one DISPATCH_OP whose entry point is the subgraph
+    // name and whose bytecode is the whole compiled model.
+    auto ops = subgraph.Ops();
+    ASSERT_EQ(ops.size(), 1);
+    auto op = ops.front();
+    EXPECT_EQ(op.Code(), kLiteRtOpCodeTflCustom);
+    auto custom_opts = op.CustomOptions();
+    ASSERT_TRUE(custom_opts.HasValue());
+    BufferRef<uint8_t> custom_opts_buf(custom_opts->data(),
+                                       custom_opts->size());
+    auto dispatch_opts = internal::GetDispatchOpOptions(custom_opts_buf);
+    EXPECT_EQ(dispatch_opts.name, name);
+    EXPECT_EQ(dispatch_opts.bytecode_size, src_model.Size());
+    EXPECT_EQ(dispatch_opts.bytecode_offset % 4096, 0);
+    ASSERT_LE(dispatch_opts.bytecode_offset + dispatch_opts.bytecode_size,
+              serialized.Size());
+    EXPECT_EQ(std::memcmp(serialized.Data() + dispatch_opts.bytecode_offset,
+                          src_model.Data(), src_model.Size()),
+              0);
+
+    // Signature keys and input/output names come from the source model.
+    auto sig_res = model.FindSignature(name);
+    ASSERT_TRUE(sig_res.HasValue()) << "Signature not found: " << name;
+    EXPECT_THAT(sig_res->InputNames(), ElementsAre("tokens"));
+    EXPECT_THAT(sig_res->OutputNames(), ElementsAre("logits"));
+  }
 }
 
 // =============================================================================

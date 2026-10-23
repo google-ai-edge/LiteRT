@@ -74,6 +74,12 @@ Expected<std::vector<TensorInfo>> ParseTensorInfoList(
     absl::string_view names_flag, absl::string_view default_prefix);
 
 // Build a custom NPU model in memory returning serialized .tflite buffer.
+//
+// If both `options.input_tensors` and `options.output_tensors` are empty,
+// `bytecode_data` must be a compiled custom-op TFLite model. The result then
+// has one DISPATCH_OP subgraph per subgraph of that model (entry point = the
+// subgraph name) and keeps all of its signatures. `options.entry_point_name`
+// and `options.signature_key` are ignored in this mode.
 Expected<OwningBufferRef<uint8_t>> BuildCustomNpuModelMemory(
     const BuildCustomNpuModelOptions& options,
     BufferRef<uint8_t> bytecode_data);
