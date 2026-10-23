@@ -15,6 +15,7 @@
 #include "litert/runtime/ahwb_buffer.h"
 
 #include <cstddef>
+#include <cstdint>
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -99,7 +100,13 @@ Expected<void*> AhwbBuffer::Lock(AHardwareBuffer* ahwb, LiteRtEventT* event) {
   }
   int fence = -1;
   if (event != nullptr) {
-    LITERT_ASSIGN_OR_RETURN(fence, event->GetSyncFenceFd());
+    // AHardwareBuffer_lock() takes ownership of `fence` and closes it (the
+    // gralloc mapper consumes the acquire fence, even on errors), but `event`
+    // keeps owning its sync fence fd and closes it when it is destroyed. Pass
+    // a duplicate so that the event fd is not closed twice, and stays valid
+    // for later users of the event (e.g. as an input fence of the next
+    // dispatch invocation).
+    LITERT_ASSIGN_OR_RETURN(fence, event->DupFd());
   }
   void* host_addr;
   LITERT_RETURN_IF_ERROR(
