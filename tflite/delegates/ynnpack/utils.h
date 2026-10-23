@@ -129,8 +129,7 @@ TfLiteStatus DefineScalarConstant(TfLiteContext* context,
 TfLiteStatus DefineQuantizationParams(TfLiteContext* context,
                                       ynn_subgraph_t subgraph,
                                       const TfLiteTensor& tensor,
-                                      uint32_t* scale_id, uint32_t* zp_id,
-                                      int32_t zp_offset = 0);
+                                      uint32_t* scale_id, uint32_t* zp_id);
 
 TfLiteStatus ApplyActivation(TfLiteContext* context, ynn_subgraph_t subgraph,
                              TfLiteFusedActivation activation,
