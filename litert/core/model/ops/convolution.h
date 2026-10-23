@@ -99,7 +99,10 @@ inline LiteRtStatus InferConv2D(const LiteRtOpT& op,
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
-  if (stride_h > input_shape[1] || stride_w > input_shape[2]) {
+  const bool is_singleton_h = input_shape[1] == 1 && filter_shape[1] == 1;
+  const bool is_singleton_w = input_shape[2] == 1 && filter_shape[2] == 1;
+  if ((stride_h > input_shape[1] && !is_singleton_h) ||
+      (stride_w > input_shape[2] && !is_singleton_w)) {
     LITERT_LOG(LITERT_ERROR,
                "Conv2D stride (%dx%d) cannot be larger than input size (%dx%d)",
                stride_h, stride_w, input_shape[1], input_shape[2]);
@@ -240,7 +243,10 @@ inline LiteRtStatus InferDepthwiseConv2D(const LiteRtOpT& op,
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
-  if (stride_h > input_shape[1] || stride_w > input_shape[2]) {
+  const bool is_singleton_h = input_shape[1] == 1 && filter_shape[1] == 1;
+  const bool is_singleton_w = input_shape[2] == 1 && filter_shape[2] == 1;
+  if ((stride_h > input_shape[1] && !is_singleton_h) ||
+      (stride_w > input_shape[2] && !is_singleton_w)) {
     LITERT_LOG(
         LITERT_ERROR,
         "DepthwiseConv2D stride (%dx%d) cannot be larger than input size "

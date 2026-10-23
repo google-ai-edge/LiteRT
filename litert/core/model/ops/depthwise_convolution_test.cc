@@ -121,6 +121,44 @@ TEST(DepthwiseConvolutionOpTest, PaddingTest) {
   EXPECT_THAT(output_shapes[0], ElementsAre(1, 2, 1, 4));
 }
 
+TEST(DepthwiseConvolutionOpTest, StrideLargerThanSingletonSpatialDim) {
+  LiteRtOpT op;
+  // A 1-D depthwise convolution lowered to 2-D: H = KH = 1 with stride 2.
+  std::vector<Dims> input_shapes = {{1, 1, 9, 4}, {1, 1, 3, 4}, {4}};
+  std::vector<Dims> output_shapes(1);
+
+  auto options = CreateDepthwiseConvOptions(tflite::Padding_VALID, 2, 2, 1);
+
+  TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_DepthwiseConv2DOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  ASSERT_EQ(
+      InferDepthwiseConv2D(op, absl::MakeSpan(input_shapes), output_shapes),
+      kLiteRtStatusOk);
+  // Output Width: (9 - 3) / 2 + 1 = 4.
+  EXPECT_THAT(output_shapes[0], ElementsAre(1, 1, 4, 4));
+}
+
+TEST(DepthwiseConvolutionOpTest, RejectsStrideLargerThanInput) {
+  LiteRtOpT op;
+  // H = 2 is not a singleton dimension, so stride 3 is rejected.
+  std::vector<Dims> input_shapes = {{1, 2, 3, 2}, {1, 2, 2, 4}, {4}};
+  std::vector<Dims> output_shapes(1);
+
+  auto options = CreateDepthwiseConvOptions(tflite::Padding_VALID, 3, 1, 2);
+
+  TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_DepthwiseConv2DOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  EXPECT_EQ(
+      InferDepthwiseConv2D(op, absl::MakeSpan(input_shapes), output_shapes),
+      kLiteRtStatusErrorShapeInferenceFailed);
+}
+
 TEST(DepthwiseConvolutionOpTest, SimpleDilatedTestPaddingValid) {
   LiteRtOpT op;
   // Input [1, 9, 9, 1], Filter [1, 3, 3, 1]
