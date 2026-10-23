@@ -80,9 +80,7 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
  public:
   // TODO(b/479340050): Remove the default constructor.
   [[deprecated("Do NOT use the default constructor.")]]
-  TensorBuffer()
-      : TensorBuffer(GetDefaultEnvironment()->GetHolder(), nullptr,
-                     OwnHandle::kNo) {}
+  TensorBuffer() = default;
 
   /// @brief Creates a managed `TensorBuffer` of a given buffer type and size.
   ///
@@ -848,7 +846,7 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
     return kDefaultEnvironment;
   }
 
-  internal::EnvironmentHolder env_;
+  internal::EnvironmentHolder env_ = {nullptr, nullptr};
 
   friend class TensorBufferScopedLock;
 };
