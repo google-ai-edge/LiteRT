@@ -80,11 +80,16 @@ inline LiteRtStatus InferReshape(const ShapeInferenceContext& ctx,
       }
     }
   } else if (reshape_opts && !reshape_opts->new_shape.empty()) {
-    for (auto d : reshape_opts->new_shape) {
-      if (d < -1) {
-        return kLiteRtStatusErrorInvalidArgument;
+    // Like TFLite's GetOutputShapeFromParam (kernels/reshape.cc), legacy models
+    // use a `new_shape` of [0] to denote a 0D scalar output shape: {}.
+    if (!(reshape_opts->new_shape.size() == 1 &&
+          reshape_opts->new_shape[0] == 0)) {
+      for (auto d : reshape_opts->new_shape) {
+        if (d < -1) {
+          return kLiteRtStatusErrorInvalidArgument;
+        }
+        new_shape.push_back(d);
       }
-      new_shape.push_back(d);
     }
   } else if (ctx.GetNumInputs() >= 2) {
     Dims shape_tensor_dims = ctx.GetInputShape(kShapeTensorArgIndex);
@@ -94,12 +99,14 @@ inline LiteRtStatus InferReshape(const ShapeInferenceContext& ctx,
     } else {
       return kLiteRtStatusErrorShapeInferenceFailed;
     }
-  } else if (reshape_opts) {
-    // 1-input Reshape with empty reshape_opts->new_shape specifies a 0D scalar
-    // output shape: {}.
-    new_shape.clear();
   } else {
-    return kLiteRtStatusErrorShapeInferenceFailed;
+    // 1-input Reshape with neither a shape tensor nor a non-empty `new_shape`.
+    // TFLite falls back to TfLiteReshapeParams, which ParseReshape
+    // (core/api/flatbuffer_conversions.cc) leaves zero-initialized
+    // (num_dimensions == 0) when ReshapeOptions or `new_shape` is absent, so
+    // the output is a 0D scalar: {}. The element-count check below then
+    // requires a single-element input, as TFLite's ResolveOutputShape does.
+    new_shape.clear();
   }
 
   int minus_one_idx = -1;

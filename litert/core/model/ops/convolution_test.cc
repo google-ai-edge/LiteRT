@@ -651,6 +651,53 @@ TEST(ConvolutionOpTest, ReportedIssue) {
             kLiteRtStatusErrorShapeInferenceFailed);
 }
 
+TEST(ConvolutionOpTest, Conv1DLoweredAsConv2DWithStride2) {
+  LiteRtOpT op;
+  // 1D convolution (e.g. Whisper encoder Conv1d) lowered to Conv2D with
+  // H=1, KH=1, and stride=(2, 2).
+  std::vector<Dims> input_shapes = {{1, 1, 3002, 512}, {512, 1, 3, 512}, {512}};
+  std::vector<Dims> output_shapes(1);
+
+  auto options = std::make_unique<tflite::Conv2DOptionsT>();
+  options->padding = tflite::Padding_VALID;
+  options->stride_h = 2;
+  options->stride_w = 2;
+  options->dilation_h_factor = 1;
+  options->dilation_w_factor = 1;
+
+  litert::internal::TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_Conv2DOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  ASSERT_EQ(InferConv2D(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre(1, 1, 1500, 512));
+}
+
+TEST(ConvolutionOpTest, Conv1DLoweredAsConv2DWidthSingletonWithStride2) {
+  LiteRtOpT op;
+  // 1D convolution lowered to Conv2D with W=1, KW=1, and stride=(2, 2).
+  std::vector<Dims> input_shapes = {{1, 3002, 1, 512}, {512, 3, 1, 512}, {512}};
+  std::vector<Dims> output_shapes(1);
+
+  auto options = std::make_unique<tflite::Conv2DOptionsT>();
+  options->padding = tflite::Padding_VALID;
+  options->stride_h = 2;
+  options->stride_w = 2;
+  options->dilation_h_factor = 1;
+  options->dilation_w_factor = 1;
+
+  litert::internal::TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_Conv2DOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  ASSERT_EQ(InferConv2D(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre(1, 1500, 1, 512));
+}
+
 TEST(ConvolutionOpTest, ChannelMismatchFailure) {
   LiteRtOpT op;
   // Input [1, 4, 4, 3], Filter [32, 3, 3, 2] -> mismatch 3 vs 2.

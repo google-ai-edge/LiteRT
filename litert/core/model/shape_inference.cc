@@ -57,6 +57,7 @@
 #include "litert/core/model/ops/slice.h"
 #include "litert/core/model/ops/spatial.h"
 #include "litert/core/model/ops/squeeze.h"
+#include "litert/core/model/ops/tile.h"
 #include "litert/core/model/ops/topk.h"
 #include "litert/core/model/ops/transpose.h"
 #include "litert/core/model/ops/unpack.h"
@@ -340,6 +341,8 @@ void ShapeInferenceEngine::RegisterStandardOps() {
                    static_cast<StatelessFuncPtr>(InferPack));
   RegisterInferrer(kLiteRtOpCodeTflStridedSlice,
                    static_cast<StatelessFuncPtr>(InferStridedSlice));
+  RegisterInferrer(kLiteRtOpCodeTflTile,
+                   static_cast<StatelessFuncPtr>(InferTile));
 
   // SHLO composite ops (e.g. `odml.scaled_dot_product_attention`) carry their
   // semantics in a separate decomposition subgraph referenced by
