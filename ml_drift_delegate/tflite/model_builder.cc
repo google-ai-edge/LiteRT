@@ -2262,6 +2262,39 @@ class DynamicUpdateSliceOperationParser : public TFLiteOperationParser {
   }
 };
 
+// Checks that a constant tensor can be added to the graph as a CONSTANT
+// node by ObjectReader::AddConstInput (which hard-checks the tensor type).
+absl::Status PreCheckConstInputForGraph(const TfLiteTensor* tensor,
+                                        const std::string& opname) {
+  if (tensor->sparsity != nullptr) {
+    return absl::UnimplementedError(absl::StrCat(
+        opname, ": sparse constant tensor ", GetTensorDebugString(tensor)));
+  }
+  if (tensor->dims->size > 4) {
+    return absl::UnimplementedError(absl::StrCat(
+        opname,
+        ": constant tensor with rank > 4: ", GetTensorDebugString(tensor)));
+  }
+  const auto* quant_params =
+      static_cast<const TfLiteAffineQuantization*>(tensor->quantization.params);
+  const bool quantized =
+      tensor->quantization.type == kTfLiteAffineQuantization &&
+      quant_params != nullptr && quant_params->scale != nullptr &&
+      quant_params->zero_point != nullptr;
+  const bool supported_type =
+      tensor->type == kTfLiteFloat32 || tensor->type == kTfLiteFloat16 ||
+      tensor->type == kTfLiteInt32 || tensor->type == kTfLiteBool ||
+      (quantized &&
+       (tensor->type == kTfLiteInt8 || tensor->type == kTfLiteUInt8 ||
+        tensor->type == kTfLiteInt4));
+  if (!supported_type) {
+    return absl::UnimplementedError(absl::StrCat(
+        opname, ": unsupported constant tensor type: ",
+        TfLiteTypeGetName(tensor->type), " ", GetTensorDebugString(tensor)));
+  }
+  return absl::OkStatus();
+}
+
 class ElementwiseOperationParser : public TFLiteOperationParser {
  public:
   explicit ElementwiseOperationParser(::ml_drift::OperationType operation_type)
@@ -2976,35 +3009,6 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
     }
     return ::ml_drift::BHWC(dims->data[0], dims->data[1], dims->data[2],
                             dims->data[3]);
-  }
-
-  // Checks that a constant tensor can be added to the graph as a CONSTANT
-  // node by ObjectReader::AddConstInput (which hard-checks the tensor type).
-  static absl::Status PreCheckConstInputForGraph(const TfLiteTensor* tensor,
-                                                 const std::string& opname) {
-    if (tensor->sparsity != nullptr) {
-      return absl::UnimplementedError(absl::StrCat(
-          opname, ": sparse constant tensor ", GetTensorDebugString(tensor)));
-    }
-    if (tensor->dims->size > 4) {
-      return absl::UnimplementedError(absl::StrCat(
-          opname,
-          ": constant tensor with rank > 4: ", GetTensorDebugString(tensor)));
-    }
-    const bool quantized =
-        tensor->quantization.type == kTfLiteAffineQuantization;
-    const bool supported_type =
-        tensor->type == kTfLiteFloat32 || tensor->type == kTfLiteFloat16 ||
-        tensor->type == kTfLiteInt32 || tensor->type == kTfLiteBool ||
-        (quantized &&
-         (tensor->type == kTfLiteInt8 || tensor->type == kTfLiteUInt8 ||
-          tensor->type == kTfLiteInt4));
-    if (!supported_type) {
-      return absl::UnimplementedError(absl::StrCat(
-          opname, ": unsupported constant tensor type: ",
-          TfLiteTypeGetName(tensor->type), " ", GetTensorDebugString(tensor)));
-    }
-    return absl::OkStatus();
   }
 
   // Checks that a two-argument operation whose both inputs are constant can be
@@ -4302,10 +4306,46 @@ class PadOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                         {.max_version = 5}));
+    const TfLiteTensor* input = nullptr;
+    const bool has_const_input =
+        PreGetInputTensor(context, tflite_node, 0, &input).ok() &&
+        tflite::IsConstantTensor(input);
+    ABSL_RETURN_IF_ERROR(ValidateSupport(
+        context, tflite_node, registration,
+        {.max_version = 5,
+         .min_inputs = 2,
+         .max_inputs =
+             (registration->builtin_code == kTfLiteBuiltinPadv2 ? 3 : 2),
+         .num_outputs = 1,
+         .required_runtime_inputs = has_const_input ? 0 : 1,
+         .check_gpu_compatibility = !has_const_input}));
 
-    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    if (has_const_input) {
+      if (mirror_pad_) {
+        const auto* params =
+            reinterpret_cast<const TfLiteMirrorPaddingParams*>(
+                tflite_node->builtin_data);
+        if (params == nullptr) {
+          return absl::InternalError("Missing TfLiteMirrorPaddingParams.");
+        }
+        if (params->mode !=
+            TfLiteMirrorPaddingMode::kTfLiteMirrorPaddingReflect) {
+          return absl::UnimplementedError(
+              "Only Reflective padding is supported for Mirror Pad operation.");
+        }
+      }
+      ABSL_RETURN_IF_ERROR(PreCheckConstInputForGraph(input, "PAD"));
+      TfLiteTensor* output = nullptr;
+      ABSL_RETURN_IF_ERROR(
+          PreGetOutputTensor(context, tflite_node, 0, &output));
+      if (input->type != output->type &&
+          !(input->type == kTfLiteFloat16 && output->type == kTfLiteFloat32)) {
+        return absl::InvalidArgumentError(
+            "Input and output types must match for Pad.");
+      }
+    } else {
+      ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    }
 
     ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kInt32> paddings;
     ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &paddings,
@@ -4331,9 +4371,24 @@ class PadOperationParser : public TFLiteOperationParser {
   void Parse(const TfLiteNode* tflite_node,
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
+    const ::ml_drift::Value* const_input = nullptr;
+    if (reader->IsConstantTensor(0)) {
+      const bool read_float16_constants_as_float32 =
+          !options_.enable_reduced_precision &&
+          reader->GetOutputTensor(0)->type == kTfLiteFloat32 &&
+          reader->GetInputTensor(0)->type == kTfLiteFloat16;
+      const_input =
+          read_float16_constants_as_float32
+              ? reader->AddFloat16ConstAsFloat32Input(0, /*layout=*/{})
+              : reader->AddConstInput(0, /*layout=*/{});
+    }
     ::ml_drift::Node* node = graph->NewNode();
     node->operation.type = ToString(::ml_drift::OperationType::kPad);
-    reader->AddInput(node, 0);
+    if (const_input != nullptr) {
+      graph->AddConsumer(node->id, const_input->id);
+    } else {
+      reader->AddInput(node, 0);
+    }
     reader->AddOutputs(node);
 
     ::ml_drift::PadAttributes attr;
