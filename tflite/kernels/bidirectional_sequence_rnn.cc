@@ -139,6 +139,12 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
       ((fw_aux_input_weights == nullptr) && (bw_aux_input_weights == nullptr));
   TF_LITE_ENSURE(context, aux_inputs_weights_or_none);
   const bool has_aux_input = (fw_aux_input_weights != nullptr);
+  if (has_aux_input) {
+    TF_LITE_ENSURE(context, aux_input != nullptr);
+    TF_LITE_ENSURE_EQ(context, NumDimensions(aux_input), 3);
+    TF_LITE_ENSURE_EQ(context, NumDimensions(fw_aux_input_weights), 2);
+    TF_LITE_ENSURE_EQ(context, NumDimensions(bw_aux_input_weights), 2);
+  }
 
   // Check all the parameters of tensor match within themselves and match the
   // input configuration.
@@ -173,15 +179,17 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   if (has_aux_input) {
     // Check that aux_input has the same dimensions (except last) as the input.
-    TF_LITE_ASSERT_EQ(aux_input->dims->data[0], input->dims->data[0]);
-    TF_LITE_ASSERT_EQ(aux_input->dims->data[1], input->dims->data[1]);
+    TF_LITE_ENSURE_EQ(context, aux_input->dims->data[0], input->dims->data[0]);
+    TF_LITE_ENSURE_EQ(context, aux_input->dims->data[1], input->dims->data[1]);
     // Check that aux_input_weights has the same dimensions (except last) as
     // the input_weights.
-    TF_LITE_ASSERT_EQ(fw_aux_input_weights->dims->data[0], fw_num_units);
-    TF_LITE_ASSERT_EQ(bw_aux_input_weights->dims->data[0], bw_num_units);
-    TF_LITE_ASSERT_EQ(aux_input->dims->data[2],
+    TF_LITE_ENSURE_EQ(context, fw_aux_input_weights->dims->data[0],
+                      fw_num_units);
+    TF_LITE_ENSURE_EQ(context, bw_aux_input_weights->dims->data[0],
+                      bw_num_units);
+    TF_LITE_ENSURE_EQ(context, aux_input->dims->data[2],
                       fw_aux_input_weights->dims->data[1]);
-    TF_LITE_ASSERT_EQ(aux_input->dims->data[2],
+    TF_LITE_ENSURE_EQ(context, aux_input->dims->data[2],
                       bw_aux_input_weights->dims->data[1]);
   }
 
