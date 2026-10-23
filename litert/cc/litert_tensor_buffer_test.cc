@@ -854,6 +854,35 @@ TEST(TensorBuffer, CreateFromAhwb) {
   ReleaseTestAhwb(ahw_buffer);
 }
 
+TEST(TensorBuffer, CreateFromAhwbRetainsReference) {
+  if (!HasAhwbSupport()) {
+    GTEST_SKIP() << "AHardwareBuffers are not supported on this platform; "
+                    "skipping the test";
+  }
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+
+  AHardwareBuffer* ahw_buffer = CreateTestAhwb();
+  ASSERT_NE(ahw_buffer, nullptr);
+
+  const RankedTensorType kTensorType(kTestTensorType);
+  auto tensor_buffer_from_ahwb =
+      TensorBuffer::CreateFromAhwb(env, kTensorType, ahw_buffer,
+                                   /*ahwb_offset=*/0);
+  ASSERT_TRUE(tensor_buffer_from_ahwb);
+
+  // Release the caller's initial reference; TensorBuffer::CreateFromAhwb
+  // should retain its own reference so the underlying AHardwareBuffer remains
+  // valid for the lifetime of tensor_buffer_from_ahwb.
+  ReleaseTestAhwb(ahw_buffer);
+
+  auto lock_and_addr_external_memory = TensorBufferScopedLock::Create(
+      *tensor_buffer_from_ahwb, TensorBuffer::LockMode::kWrite);
+  ASSERT_TRUE(lock_and_addr_external_memory);
+  ASSERT_EQ(std::memcmp(lock_and_addr_external_memory->second, kTensorData,
+                        sizeof(kTensorData)),
+            0);
+}
+
 TEST(TensorBuffer, Duplicate) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LiteRtTensorBuffer litert_tensor_buffer;
