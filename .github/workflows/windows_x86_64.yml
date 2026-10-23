@@ -72,7 +72,9 @@ jobs:
     name: "Presubmit-Win"
     needs: check
     if: needs.check.outputs.run_build == 'true'
-    runs-on: windows-x86-n2-16
+    runs-on:
+      group: ml-actions-platform-litert
+      labels: windows-x86-n2-16
     permissions:
       actions: write  # For gh cache delete.
       contents: read
