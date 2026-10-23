@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_SHARED_MEMORY_MANAGER_SHARED_MEMORY_MANAGER_METAL_H_
 
 #import <Metal/Metal.h>
+#include <unistd.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -30,6 +31,7 @@
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/util.h"  // from @ml_drift
 #include "ml_drift/metal/metal_device.h"  // from @ml_drift
 #include "ml_drift/metal/metal_spatial_tensor.h"  // from @ml_drift
 #include "litert/c/internal/litert_runtime_context.h"
@@ -244,7 +246,11 @@ inline std::unique_ptr<ml_drift::SharedMemoryManager> MakeSharedMemoryManagerMet
           const uint8_t* data_ptr = tensor_desc.GetData().data();
           const size_t bytes_count = tensor_desc.GetData().size();
           const uint8_t* raw_data_ptr = data_ptr - page_adjusted_offset;
-          const size_t raw_bytes_count = bytes_count + page_adjusted_offset;
+          // newBufferWithBytesNoCopy requires the length to be a multiple of the
+          // VM page size (16 KiB on Apple Silicon), so round up. This is safe
+          // because the data is mmap'd, and mmap maps whole pages.
+          const size_t raw_bytes_count =
+              AlignByN(bytes_count + page_adjusted_offset, static_cast<size_t>(getpagesize()));
           auto* release_cb_ptr =
               new ::litert::ml_drift::ReleaseDataCallback(std::move(release_data_callback));
           id<MTLBuffer> buffer =

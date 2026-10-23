@@ -430,6 +430,7 @@ objc_library(
         # Dependency placeholder: apple_frameworks Metal,
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:util",
         "@ml_drift//ml_drift/common/task:gpu_tensor",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/metal:metal_device",
