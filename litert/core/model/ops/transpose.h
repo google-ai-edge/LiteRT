@@ -50,18 +50,24 @@ inline LiteRtStatus InferTranspose(const LiteRtOpT& op,
 
   if (perm_tensor.Weights().Buffer().Size() > 0) {
     auto buf = perm_tensor.Weights().Buffer();
-    const int32_t* perm = reinterpret_cast<const int32_t*>(buf.Data());
-    size_t rank = buf.Size() / sizeof(int32_t);
-    if (rank != input_shape.size()) {
+    const size_t rank = input_shape.size();
+    if (buf.Size() != rank * sizeof(int32_t)) {
       return kLiteRtStatusErrorShapeInferenceFailed;
     }
+    const int32_t* perm = reinterpret_cast<const int32_t*>(buf.Data());
 
     Dims out_shape(rank);
+    const int64_t signed_rank = static_cast<int64_t>(rank);
     for (int i = 0; i < rank; ++i) {
-      if (perm[i] < 0 || perm[i] >= rank) {
+      // Like TFLite's Transpose ResizeOutputTensor (kernels/transpose.cc),
+      // permutation entries may be negative: values in [-rank, rank) are
+      // accepted and negative ones are offset by the rank.
+      int64_t axis = perm[i];
+      if (axis < -signed_rank || axis >= signed_rank) {
         return kLiteRtStatusErrorShapeInferenceFailed;
       }
-      out_shape[i] = input_shape[perm[i]];
+      if (axis < 0) axis += signed_rank;
+      out_shape[i] = input_shape[axis];
     }
     output_shapes[0] = std::move(out_shape);
     return kLiteRtStatusOk;
@@ -96,6 +102,15 @@ inline void ReferenceTranspose(const T* input_data, const int32_t* input_dims,
   ABSL_CHECK_LE(rank, kMaxRank);
   int64_t in_strides[kMaxRank];
   int64_t out_strides[kMaxRank];
+
+  // Like TFLite's Transpose Eval (kernels/transpose.cc), negative permutation
+  // entries are offset by the rank before use.
+  int32_t norm_perm[kMaxRank];
+  for (int i = 0; i < rank; ++i) {
+    norm_perm[i] = perm[i] < 0 ? perm[i] + rank : perm[i];
+    ABSL_CHECK(norm_perm[i] >= 0 && norm_perm[i] < rank);
+  }
+  perm = norm_perm;
 
   in_strides[rank - 1] = 1;
   for (int i = rank - 2; i >= 0; --i) {
