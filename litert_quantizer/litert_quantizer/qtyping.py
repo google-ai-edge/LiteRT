@@ -239,14 +239,23 @@ class UniformQuantParams:
         currently not implemented yet hence this is always 1. We will add
         support or remove in the future.
       hadamard_size: The size of the Hadamard matrix.
+      cross_block_matrix: Optional orthogonal cross-block rotation matrix Q_1 of
+        shape (m, m) applied across the m Hadamard blocks.
     """
 
     random_binary_vector: np.ndarray
     hadamard_size: int
+    cross_block_matrix: Optional[np.ndarray] = None
 
-    def __init__(self, random_binary_vector: np.ndarray, hadamard_size: int):
+    def __init__(
+        self,
+        random_binary_vector: np.ndarray,
+        hadamard_size: int,
+        cross_block_matrix: Optional[np.ndarray] = None,
+    ):
       self.random_binary_vector = random_binary_vector
       self.hadamard_size = hadamard_size
+      self.cross_block_matrix = cross_block_matrix
 
     def __eq__(self, other):
       if other.__class__ is not self.__class__:
@@ -254,6 +263,9 @@ class UniformQuantParams:
       return id(self) == id(other) or (
           np.array_equal(self.random_binary_vector, other.random_binary_vector)
           and self.hadamard_size == other.hadamard_size
+          and _compare_array_or_none(
+              self.cross_block_matrix, other.cross_block_matrix
+          )
       )
 
   num_bits: int
