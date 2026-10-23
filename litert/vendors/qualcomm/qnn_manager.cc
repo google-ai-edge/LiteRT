@@ -140,6 +140,9 @@ struct HtpContextConfigs {
   QnnHtpContext_CustomConfig_t budget_custom =
       QNN_HTP_CONTEXT_CUSTOM_CONFIG_INIT;
   QnnContext_Config_t budget = QNN_CONTEXT_CONFIG_INIT;
+  QnnHtpContext_CustomConfig_t init_acceleration_custom =
+      QNN_HTP_CONTEXT_CUSTOM_CONFIG_INIT;
+  QnnContext_Config_t init_acceleration = QNN_CONTEXT_CONFIG_INIT;
   std::vector<const QnnContext_Config_t*> ptrs;
 };
 
@@ -148,32 +151,43 @@ absl::Span<const QnnContext_Config_t*> BuildHtpContextConfigs(
     absl::Span<const QnnContext_Config_t*> configs,
     HtpContextConfigs& storage) {
   const uint32_t budget_mb = options.GetHtpFileReadMemoryBudgetMB();
-  const bool apply_budget = budget_mb > 0;
-  const bool apply_priority =
-      options.GetGraphPriority() != ::qnn::GraphPriority::kDefault;
-  if (!apply_budget && !apply_priority) {
-    return {};
-  }
-
-  for (const auto* cfg : configs) {
-    if (cfg != nullptr) {
-      storage.ptrs.push_back(cfg);
-    }
-  }
-  if (apply_priority) {
+  std::vector<const QnnContext_Config_t*> htp_context_configs_to_add;
+  if (options.GetGraphPriority() != ::qnn::GraphPriority::kDefault) {
     storage.priority.option = QNN_CONTEXT_CONFIG_OPTION_PRIORITY;
     storage.priority.priority =
         GetGraphPriorityValue(options.GetGraphPriority());
-    storage.ptrs.push_back(&storage.priority);
+    htp_context_configs_to_add.push_back(&storage.priority);
   }
-  if (apply_budget) {
+  if (budget_mb > 0) {
     storage.budget_custom.option =
         QNN_HTP_CONTEXT_CONFIG_OPTION_FILE_READ_MEMORY_BUDGET;
     storage.budget_custom.fileReadMemoryBudgetInMb = budget_mb;
     storage.budget.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
     storage.budget.customConfig = &storage.budget_custom;
-    storage.ptrs.push_back(&storage.budget);
+    htp_context_configs_to_add.push_back(&storage.budget);
   }
+  if (options.GetHtpContextInitAcceleration()) {
+    storage.init_acceleration_custom.option =
+        QNN_HTP_CONTEXT_CONFIG_OPTION_INIT_ACCELERATION;
+    storage.init_acceleration_custom.initAcceleration = true;
+    storage.init_acceleration.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
+    storage.init_acceleration.customConfig =
+        &storage.init_acceleration_custom;
+    htp_context_configs_to_add.push_back(&storage.init_acceleration);
+  }
+
+  if (htp_context_configs_to_add.empty()) {
+    return {};
+  }
+  storage.ptrs.reserve(configs.size() + htp_context_configs_to_add.size() +
+                       1);
+  for (const auto* cfg : configs) {
+    if (cfg != nullptr) {
+      storage.ptrs.push_back(cfg);
+    }
+  }
+  storage.ptrs.insert(storage.ptrs.end(), htp_context_configs_to_add.begin(),
+                      htp_context_configs_to_add.end());
   storage.ptrs.push_back(nullptr);
   return absl::MakeSpan(storage.ptrs);
 }

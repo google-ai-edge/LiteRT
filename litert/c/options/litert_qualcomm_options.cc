@@ -114,6 +114,7 @@ struct LrtQualcommOptionsT {
   std::optional<std::string> graph_transform;
   std::optional<std::uint32_t> vtcm_size;
   std::optional<std::uint32_t> htp_device_id;
+  std::optional<bool> htp_context_init_acceleration;
   std::optional<std::uint32_t> num_hvx_threads;
   std::optional<std::uint32_t> htp_file_read_memory_budget_mb;
   std::optional<LrtQualcommOptionsOptimizationLevel> optimization_level;
@@ -281,6 +282,11 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetHtpDeviceId(parsed_options,
                                                     static_cast<uint32_t>(*v));
+        } else if (key == "htp_context_init_acceleration") {
+          auto v = litert::internal::ParseTomlBool(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetHtpContextInitAcceleration(
+              parsed_options, *v);
         } else if (key == "num_hvx_threads") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -501,6 +507,11 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   }
   if (options->htp_device_id.has_value()) {
     absl::StrAppend(&toml_str, "htp_device_id = ", *options->htp_device_id,
+                    "\n");
+  }
+  if (options->htp_context_init_acceleration.has_value()) {
+    absl::StrAppend(&toml_str, "htp_context_init_acceleration = ",
+                    *options->htp_context_init_acceleration ? "true" : "false",
                     "\n");
   }
   if (options->num_hvx_threads.has_value()) {
@@ -1332,6 +1343,25 @@ LiteRtStatus LrtQualcommOptionsGetHtpFileReadMemoryBudgetMB(
 
   *budget_mb = options->htp_file_read_memory_budget_mb.value_or(0);
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetHtpContextInitAcceleration(
+    LrtQualcommOptions options, bool htp_context_init_acceleration) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->htp_context_init_acceleration = htp_context_init_acceleration;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpContextInitAcceleration(
+    LrtQualcommOptions options, bool* htp_context_init_acceleration) {
+  if (options == nullptr || htp_context_init_acceleration == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *htp_context_init_acceleration =
+      options->htp_context_init_acceleration.value_or(false);
   return kLiteRtStatusOk;
 }
 

@@ -784,6 +784,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());
   EXPECT_EQ(options.Value().GetVtcmSize(), 0);
   EXPECT_EQ(options.Value().GetHtpDeviceId(), 0);
+  EXPECT_FALSE(options.Value().GetHtpContextInitAcceleration());
   EXPECT_EQ(options.Value().GetNumHvxThreads(), 0);
   EXPECT_EQ(options.Value().GetHtpFileReadMemoryBudgetMB(), 0);
   EXPECT_EQ(options.Value().GetOptimizationLevel(),
@@ -850,6 +851,15 @@ TEST(QualcommOptionsFromFlagsTest, DlbcFlags) {
 
   absl::SetFlag(&FLAGS_qualcomm_htp_dlbc, false);
   absl::SetFlag(&FLAGS_qualcomm_htp_dlbc_weights, false);
+}
+
+TEST(QualcommOptionsFromFlagsTest, HtpContextInitAcceleration) {
+  absl::SetFlag(&FLAGS_qualcomm_htp_context_init_acceleration, true);
+  Expected<QualcommOptions> options = QualcommOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_TRUE(options.Value().GetHtpContextInitAcceleration());
+  absl::SetFlag(&FLAGS_qualcomm_htp_context_init_acceleration, false);
 }
 
 }  // namespace
