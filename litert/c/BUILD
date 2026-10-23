@@ -998,6 +998,7 @@ ios_framework(
         "iphone",
         "ipad",
     ],
+    google_create_srl_bindings_module = False,
     infoplists = ["LiteRtInfo.plist"],
     linkopts = [
         "-install_name @rpath/libLiteRt.dylib",

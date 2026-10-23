@@ -436,6 +436,7 @@ ios_framework(
         "iphone",
         "ipad",
     ],
+    google_create_srl_bindings_module = False,
     infoplists = ["AcceleratorInfo.plist"],
     linkopts = [
         "-undefined dynamic_lookup",
