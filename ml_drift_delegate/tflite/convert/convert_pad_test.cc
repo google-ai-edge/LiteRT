@@ -203,6 +203,57 @@ TEST_P(ConvertPadTest, PadV2) {
   ASSERT_EQ(interpreter->Invoke(), kTfLiteOk);
 }
 
+TEST_P(ConvertPadTest, PadV2Int64Paddings) {
+  if (GetParam() != kTfLiteFloat32) {
+    GTEST_SKIP()
+        << "Skipping constant input test for non-float32 types for simplicity.";
+  }
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinPadv2, /*version=*/1);
+  model.AddInput(kTfLiteFloat32, {1, 2, 3, 4});
+  std::vector<int64_t> paddings = {
+      0, 0,  // batch
+      1, 2,  // height
+      3, 4,  // width
+      0, 0   // channels
+  };
+  std::vector<uint8_t> paddings_bytes(paddings.size() * sizeof(int64_t));
+  std::memcpy(paddings_bytes.data(), paddings.data(), paddings_bytes.size());
+  model.AddConstInput(kTfLiteInt64, {4, 2}, paddings_bytes);
+
+  std::vector<float> const_val = {0.0f};
+  std::vector<uint8_t> const_val_bytes(sizeof(float));
+  std::memcpy(const_val_bytes.data(), const_val.data(), sizeof(float));
+  model.AddConstInput(kTfLiteFloat32, {1}, const_val_bytes);
+
+  model.AddOutput(kTfLiteFloat32, {1, 5, 10, 4});
+  TfLitePadV2Params* params = reinterpret_cast<TfLitePadV2Params*>(
+      calloc(1, sizeof(TfLitePadV2Params)));
+  model.SetParameters(params);
+
+  std::unique_ptr<::tflite::Interpreter> interpreter = model.Build();
+  ASSERT_TRUE(interpreter);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  EXPECT_EQ(ir_model->ops().size(), 1);
+
+  const ::ml_drift::ir::IrOp* pad_op = ir_model->op(0);
+  EXPECT_EQ(pad_op->name, "pad");
+  const ::ml_drift::PadAttributes* attr =
+      std::any_cast<::ml_drift::PadAttributes>(&pad_op->attr);
+  ASSERT_TRUE(attr);
+  EXPECT_EQ(attr->type, ::ml_drift::PaddingContentType::kZeros);
+  EXPECT_FLOAT_EQ(attr->constant_values, 0.0f);
+  EXPECT_EQ(attr->prepended.h, 1);
+  EXPECT_EQ(attr->prepended.w, 3);
+  EXPECT_EQ(attr->appended.h, 2);
+  EXPECT_EQ(attr->appended.w, 4);
+
+  ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
+  ASSERT_EQ(interpreter->Invoke(), kTfLiteOk);
+}
+
 TEST_P(ConvertPadTest, MirrorPad) {
   // Generate a model with a mirror pad op.
   SingleOpInterpreterBuilder model(kTfLiteBuiltinMirrorPad, /*version=*/1);
