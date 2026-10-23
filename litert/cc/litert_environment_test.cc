@@ -23,8 +23,10 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_accelerator_def.h"
 #include "litert/c/internal/litert_runtime_builtin.h"
+#include "litert/c/internal/litert_runtime_c_api.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_runtime_proxy.h"
 #include "litert/cc/litert_any.h"
@@ -63,7 +65,15 @@ TEST(EnvironmentTest, GetAvailableAccelerators) {
 TEST(EnvironmentTest, HasRuntimeProxy) {
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
-  EXPECT_NE(env->GetHolder().runtime, nullptr);
+  ASSERT_NE(env->GetHolder().runtime, nullptr);
+  EXPECT_EQ(env->GetHolder().runtime->GetAbiVersion(),
+            internal::kBuiltinRuntimeAbiVersion);
+
+  const char* abi_version = nullptr;
+  ASSERT_EQ(env->GetHolder().runtime->GetRuntimeAbiVersion(&abi_version),
+            kLiteRtStatusOk);
+  ASSERT_NE(abi_version, nullptr);
+  EXPECT_STREQ(abi_version, LITERT_RUNTIME_ABI_VERSION);
 }
 
 TEST(EnvironmentTest, CreateWithSystemRuntime) {
@@ -82,6 +92,20 @@ TEST(EnvironmentTest, CreateWithSystemRuntime) {
   auto accelerators = env.GetAvailableAccelerators();
   EXPECT_FALSE(accelerators);
   EXPECT_EQ(accelerators.Error().Status(), kLiteRtStatusErrorUnsupported);
+
+  const char* abi_version = nullptr;
+  EXPECT_EQ(env.GetHolder().runtime->GetRuntimeAbiVersion(&abi_version),
+            kLiteRtStatusErrorUnsupported);
+}
+
+TEST(EnvironmentTest, GetRuntimeAbiVersionCApi) {
+  EXPECT_EQ(LiteRtGetRuntimeAbiVersion(nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+
+  const char* abi_version = nullptr;
+  ASSERT_EQ(LiteRtGetRuntimeAbiVersion(&abi_version), kLiteRtStatusOk);
+  ASSERT_NE(abi_version, nullptr);
+  EXPECT_STREQ(abi_version, LITERT_RUNTIME_ABI_VERSION);
 }
 
 TEST(EnvironmentTest, RuntimeAbiVersionParseAndCompare) {
@@ -153,6 +177,11 @@ TEST(EnvironmentTest, RuntimeProxyAbiVersion1_0_0) {
   auto metrics = compiled_model.GetDelegationMetrics();
   EXPECT_FALSE(metrics);
   EXPECT_EQ(metrics.Error().Status(), kLiteRtStatusErrorUnsupported);
+
+  // 1.4.0 API (GetRuntimeAbiVersion) should return kErrorUnsupported on 1.0.0.
+  const char* abi_version = nullptr;
+  EXPECT_EQ(proxy.GetRuntimeAbiVersion(&abi_version),
+            kLiteRtStatusErrorUnsupported);
 }
 
 TEST(EnvironmentTest, RuntimeProxyAbiVersion1_1_0) {
@@ -183,6 +212,11 @@ TEST(EnvironmentTest, RuntimeProxyAbiVersion1_1_0) {
   auto metrics = compiled_model.GetDelegationMetrics();
   EXPECT_FALSE(metrics);
   EXPECT_EQ(metrics.Error().Status(), kLiteRtStatusErrorUnsupported);
+
+  // 1.4.0 API (GetRuntimeAbiVersion) should return kErrorUnsupported on 1.1.0.
+  const char* abi_version = nullptr;
+  EXPECT_EQ(proxy.GetRuntimeAbiVersion(&abi_version),
+            kLiteRtStatusErrorUnsupported);
 }
 
 TEST(EnvironmentTest, RuntimeProxyAbiVersion1_2_0) {
@@ -206,6 +240,20 @@ TEST(EnvironmentTest, RuntimeProxyAbiVersion1_2_0) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto metrics,
                               compiled_model.GetDelegationMetrics());
   EXPECT_GE(metrics.total_node_count, 0);
+
+  // 1.4.0 API (GetRuntimeAbiVersion) should return kErrorUnsupported on 1.2.0.
+  const char* abi_version = nullptr;
+  EXPECT_EQ(proxy.GetRuntimeAbiVersion(&abi_version),
+            kLiteRtStatusErrorUnsupported);
+}
+
+TEST(EnvironmentTest, RuntimeProxyAbiVersion1_4_0) {
+  internal::RuntimeProxy proxy(GetLiteRtRuntimeBuiltin(),
+                               internal::RuntimeAbiVersion(1, 4, 0));
+  const char* abi_version = nullptr;
+  ASSERT_EQ(proxy.GetRuntimeAbiVersion(&abi_version), kLiteRtStatusOk);
+  ASSERT_NE(abi_version, nullptr);
+  EXPECT_STREQ(abi_version, LITERT_RUNTIME_ABI_VERSION);
 }
 
 TEST(EnvironmentTest, CreateWithSystemGpuAcceleratorHandle) {

@@ -78,6 +78,10 @@ LiteRtStatus LiteRtEnvironmentSupportsFP16(LiteRtEnvironment environment,
 void LiteRtEnvironmentHasGpuEnvironment(LiteRtEnvironment environment,
                                         bool* has_gpu_environment);
 
+// Returns the ABI version of the LiteRT runtime.
+// This API was added in version 1.3.0.
+LiteRtStatus LiteRtGetRuntimeAbiVersion(const char** abi_version);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

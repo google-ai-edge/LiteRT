@@ -38,15 +38,15 @@
 extern "C" {
 #endif
 
-// For any changes to this file that would affect the ABI,
-// don't forget to also bump the ABI version number.
+// For any changes to this file that would affect the ABI, update the ABI
+// version number. See litert/C_API.md for instructions on adding a new C API.
 
 // LINT.IfChange(version_number)
 
 // LiteRT CompiledModels ABI version number, in semver 2 format
 // (see https://semver.org).  This is the ABI version number for
 // the methods in LiteRtRuntimeCApiStruct, which is defined below.
-#define LITERT_RUNTIME_ABI_VERSION "1.3.0"
+#define LITERT_RUNTIME_ABI_VERSION "1.4.0"
 // TODO(b/493650900): declare that as an extern const (and
 // initialize it in a .cc file) rather than using a macro.
 
@@ -805,6 +805,9 @@ typedef struct LiteRtRuntimeCApiStruct {
       LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
       LiteRtTensorBufferType buffer_type, HwMemoryHandle handle,
       size_t buffer_size, LiteRtTensorBuffer* buffer);
+  // litert_environment.h: LiteRtGetRuntimeAbiVersion
+  // This API was added in version 1.4.0.
+  LiteRtStatus (*litert_get_runtime_abi_version)(const char** abi_version);
 } LiteRtRuntimeCApiStruct;
 
 // LINT.ThenChange(:version_number)

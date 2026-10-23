@@ -175,6 +175,11 @@ class RuntimeProxy {
 
   RuntimeAbiVersion GetAbiVersion() const noexcept { return abi_version_; }
 
+  LiteRtStatus GetRuntimeAbiVersion(const char** abi_version) {
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 4, 0, litert_get_runtime_abi_version, abi_version);
+  }
+
   //
   // LiteRtEnvironment
   //

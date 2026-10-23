@@ -161,6 +161,7 @@ litert_c_api_library(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_runtime_c_api",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
         "//litert/runtime/accelerators:auto_registration",

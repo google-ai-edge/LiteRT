@@ -282,5 +282,6 @@ extern "C" LITERT_CAPI_EXPORT const LiteRtRuntimeCApiStruct
             LiteRtGetAcceleratorDelegationMetricsPartitionCount,
         .litert_create_tensor_buffer_from_custom_handle =
             LiteRtCreateTensorBufferFromCustomHandle,
+        .litert_get_runtime_abi_version = LiteRtGetRuntimeAbiVersion,
         // Google-internal LINT.ThenChange()
     };
