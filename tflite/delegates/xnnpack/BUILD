@@ -2911,3 +2911,19 @@ cc_test(
 )
 
 tflite_portable_test_suite_combined(combine_conditions = {"deps": [":test_main"]})
+
+cc_test(
+    name = "sparse_fully_connected_test",
+    srcs = ["sparse_fully_connected_test.cc"],
+    deps = [
+        ":xnnpack_delegate",
+        "//tflite:framework",
+        "//tflite:version",
+        "//tflite/converter/schema:schema_conversion_utils",
+        "//tflite/core:framework",
+        "//tflite/core/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+    ],
+)
