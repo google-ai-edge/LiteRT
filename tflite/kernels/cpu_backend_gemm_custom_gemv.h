@@ -38,7 +38,6 @@ limitations under the License.
 #include <type_traits>
 #include <vector>
 
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/kernels/cpu_backend_context.h"
 #include "tflite/kernels/cpu_backend_gemm_params.h"
 #include "tflite/kernels/cpu_backend_threadpool.h"

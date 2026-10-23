@@ -23,7 +23,6 @@ limitations under the License.
 #include <vector>
 
 #include "absl/types/span.h"
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/kernels/cpu_backend_threadpool.h"
 #include "tflite/kernels/internal/optimized/optimized_ops_utils.h"

@@ -17,8 +17,8 @@ limitations under the License.
 
 #include <algorithm>
 
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/core/c/common.h"
+#include "tflite/kernels/internal/compatibility.h"
 #include "tflite/kernels/internal/optimized/optimized_ops.h"
 #include "tflite/kernels/internal/quantization_util.h"
 #include "tflite/kernels/internal/reference/binary_function.h"

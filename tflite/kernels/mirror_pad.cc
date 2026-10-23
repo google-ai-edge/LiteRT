@@ -21,11 +21,11 @@ limitations under the License.
 #include <vector>
 
 #include "absl/types/span.h"
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/cpu_backend_context.h"
 #include "tflite/kernels/cpu_backend_threadpool.h"
+#include "tflite/kernels/internal/compatibility.h"
 #include "tflite/kernels/internal/runtime_shape.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"

@@ -19,7 +19,6 @@ limitations under the License.
 #include <cmath>
 #include <cstring>
 
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/kernels/internal/common.h"
 #include "tflite/kernels/internal/reference/broadcast_loop.h"
 #include "tflite/kernels/internal/types.h"
