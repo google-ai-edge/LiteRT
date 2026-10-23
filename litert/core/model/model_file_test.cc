@@ -1497,6 +1497,33 @@ TEST(ModelSerializeTest, SerializeWithExistingDispatchOpCodeNotAtEnd) {
   EXPECT_EQ(code->custom_code, "DISPATCH_OP");
 }
 
+TEST(ModelSerializeTest, ResolvesBuilderCreatedBuiltinOpCode) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& input = subgraph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+  subgraph.Inputs().push_back(&input);
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+  subgraph.Outputs().push_back(&output);
+  LiteRtBuilderT builder;
+  builder.BuildOp(kLiteRtOpCodeTflAdd, {&input, &input}, {&output});
+  builder.ApplyChanges(&subgraph);
+
+  auto serialized = SerializeModel(std::move(model));
+  ASSERT_TRUE(serialized);
+  auto flatbuffer = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(flatbuffer);
+  auto tfl_model = flatbuffer->get()->Unpack();
+
+  ASSERT_EQ(tfl_model->subgraphs[0]->operators.size(), 1);
+  const auto opcode_index = tfl_model->subgraphs[0]->operators[0]->opcode_index;
+  ASSERT_LT(opcode_index, tfl_model->operator_codes.size());
+  EXPECT_EQ(tfl_model->operator_codes[opcode_index]->builtin_code,
+            tflite::BuiltinOperator_ADD);
+  EXPECT_TRUE(tfl_model->operator_codes[opcode_index]->custom_code.empty());
+}
+
 TEST(ModelLoadTest, ExternalBufferKeepsReferenceAndSerializesIt) {
   static constexpr uint32_t kExternalBufferId = 0x80000001;
   static constexpr uint64_t kOffset = 64;
