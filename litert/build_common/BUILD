@@ -135,6 +135,36 @@ selects.config_setting_group(
     visibility = ["//visibility:public"],
 )
 
+# Enables ML Drift GPU device compatibility check on Android. Equivalent to
+# `--define=litert_enable_mldrift_compatibility_check=true`.
+bool_flag(
+    name = "enable_mldrift_compatibility_check",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "litert_enable_mldrift_compatibility_check_define",
+    define_values = {"litert_enable_mldrift_compatibility_check": "true"},
+)
+
+config_setting(
+    name = "litert_enable_mldrift_compatibility_check_flag",
+    flag_values = {":enable_mldrift_compatibility_check": "true"},
+)
+
+# Matches if ML Drift GPU compatibility check is enabled with either
+# `--define=litert_enable_mldrift_compatibility_check=true` or
+# `--//litert/build_common:enable_mldrift_compatibility_check=true`.
+selects.config_setting_group(
+    name = "litert_enable_mldrift_compatibility_check",
+    match_any = [
+        ":litert_enable_mldrift_compatibility_check_define",
+        ":litert_enable_mldrift_compatibility_check_flag",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 config_setting(
     name = "build_include_gpu",
     flag_values = {":build_include": "gpu"},
@@ -198,6 +228,14 @@ selects.config_setting_group(
     match_all = [
         "//litert:android",
         ":build_include_gpu_enabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "android_gpu_mldrift_compatibility_check_enabled",
+    match_all = [
+        ":android_gpu_enabled",
+        ":litert_enable_mldrift_compatibility_check",
     ],
 )
 

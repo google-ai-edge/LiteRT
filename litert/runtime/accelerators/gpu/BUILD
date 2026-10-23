@@ -109,7 +109,7 @@ cc_library(
     srcs = ["ml_drift_delegate_create.cc"],
     hdrs = ["ml_drift_delegate_create.h"],
     local_defines = select({
-        "//litert/build_common:android_gpu_enabled": [
+        "//litert/build_common:android_gpu_mldrift_compatibility_check_enabled": [
             "LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK",
         ],
         "//conditions:default": [],
@@ -131,7 +131,7 @@ cc_library(
         "//ml_drift_delegate/delegate:precision",
         "//tflite/c:c_api_opaque",
     ] + select({
-        "//litert/build_common:android_gpu_enabled": [
+        "//litert/build_common:android_gpu_mldrift_compatibility_check_enabled": [
             "//litert/runtime:accelerator",
             "//litert/runtime/accelerators/gpu/compatibility:ml_drift_compatibility",
         ],
