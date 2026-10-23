@@ -25,6 +25,11 @@ namespace litert::ml_drift {
 // Custom event for Metal wrapping a MTLSharedEvent for asynchronous execution.
 // It's reference counted. Don't destroy it, but call Release() instead.
 //
+// A GPU-only MTLEvent is signaled together with the MTLSharedEvent. GPU waits
+// (EncodeWait) use the MTLEvent, which the GPU resolves within microseconds,
+// while a GPU wait on an MTLSharedEvent takes ~0.1 ms more. CPU waits use the
+// MTLSharedEvent.
+//
 // Waiting semantics:
 // - Calling EncodeSignal increments the signal value and schedules a GPU
 //   signal.
@@ -62,6 +67,9 @@ class CustomEventMetal : public LiteRtCustomEventT {
 
   int ref_count_;
   id<MTLSharedEvent> metal_shared_event_;
+  // GPU-only event signaled together with metal_shared_event_. GPU waits use it
+  // since they are resolved much faster than GPU waits on an MTLSharedEvent.
+  id<MTLEvent> metal_event_;
   uint64_t value_to_wait_ = 0;
 };
 
