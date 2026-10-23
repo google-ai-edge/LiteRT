@@ -14,6 +14,7 @@
 
 #include "litert/c/options/litert_samsung_options.h"
 
+#include <cstdint>
 #include <cstring>
 #include <optional>
 #include <string>
@@ -28,6 +29,8 @@ struct LrtSamsungOptionsT {
   // Set to true when compile LLM.
   std::optional<bool> enable_large_model_support;
   std::optional<std::string> soc_model;
+  std::optional<LrtSamsungOptionsPerformanceMode> performance_mode;
+  std::optional<uint32_t> performance_config_id;
 };
 
 const char* LrtSamsungOptionsGetIdentifier() { return "samsung"; }
@@ -71,6 +74,30 @@ LiteRtStatus LrtCreateSamsungOptionsFromToml(const char* toml_payload,
           options_ref.soc_model = std::string(value);
           return kLiteRtStatusOk;
         }
+        if (key == "performance_mode") {
+          LITERT_ASSIGN_OR_RETURN(auto mode,
+                                  litert::internal::ParseTomlInt(value));
+          switch (mode) {
+            case kLrtSamsungOptionsPerformanceModeLowPower:
+            case kLrtSamsungOptionsPerformanceModeBalanced:
+            case kLrtSamsungOptionsPerformanceModeCustom:
+            case kLrtSamsungOptionsPerformanceModePerformance:
+              return LrtSamsungOptionsSetPerformanceMode(
+                  &options_ref,
+                  static_cast<LrtSamsungOptionsPerformanceMode>(mode));
+            default:
+              return kLiteRtStatusErrorInvalidArgument;
+          }
+        }
+        if (key == "performance_config_id") {
+          LITERT_ASSIGN_OR_RETURN(auto config_id,
+                                  litert::internal::ParseTomlInt(value));
+          if (config_id < 0) {
+            return kLiteRtStatusErrorInvalidArgument;
+          }
+          return LrtSamsungOptionsSetPerformanceConfigId(
+              &options_ref, static_cast<uint32_t>(config_id));
+        }
         return kLiteRtStatusOk;
       });
 
@@ -103,6 +130,17 @@ LiteRtStatus LrtGetOpaqueSamsungOptionsData(LrtSamsungOptions options,
   if (options->soc_model.has_value()) {
     absl::StrAppend(&toml_str, "samsung_soc_model = \"", *options->soc_model,
                     "\"\n");
+  }
+
+  if (options->performance_mode.has_value()) {
+    absl::StrAppend(&toml_str, "performance_mode = ",
+                    static_cast<int>(*options->performance_mode), "\n");
+  }
+
+  if (options->performance_config_id.has_value()) {
+    absl::StrAppend(&toml_str,
+                    "performance_config_id = ", *options->performance_config_id,
+                    "\n");
   }
 
   *payload = new char[toml_str.size() + 1];
@@ -150,5 +188,51 @@ LiteRtStatus LrtSamsungOptionsGetSocModel(LrtSamsungOptions options,
   static constexpr char kDefaultSocModel[] = "";
   *soc_model = options->soc_model.has_value() ? options->soc_model->c_str()
                                               : kDefaultSocModel;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSamsungOptionsSetPerformanceMode(
+    LrtSamsungOptions options,
+    LrtSamsungOptionsPerformanceMode performance_mode) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  switch (performance_mode) {
+    case kLrtSamsungOptionsPerformanceModeLowPower:
+    case kLrtSamsungOptionsPerformanceModeBalanced:
+    case kLrtSamsungOptionsPerformanceModeCustom:
+    case kLrtSamsungOptionsPerformanceModePerformance:
+      options->performance_mode = performance_mode;
+      return kLiteRtStatusOk;
+  }
+  return kLiteRtStatusErrorInvalidArgument;
+}
+
+LiteRtStatus LrtSamsungOptionsGetPerformanceMode(
+    LrtSamsungOptions options,
+    LrtSamsungOptionsPerformanceMode* performance_mode) {
+  if (options == nullptr || performance_mode == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *performance_mode = options->performance_mode.value_or(
+      kLrtSamsungOptionsPerformanceModePerformance);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSamsungOptionsSetPerformanceConfigId(
+    LrtSamsungOptions options, uint32_t performance_config_id) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->performance_config_id = performance_config_id;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSamsungOptionsGetPerformanceConfigId(
+    LrtSamsungOptions options, uint32_t* performance_config_id) {
+  if (options == nullptr || performance_config_id == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *performance_config_id = options->performance_config_id.value_or(0);
   return kLiteRtStatusOk;
 }

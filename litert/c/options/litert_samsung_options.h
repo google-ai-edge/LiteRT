@@ -15,6 +15,8 @@
 #ifndef ODML_LITERT_LITERT_C_OPTIONS_LITERT_SAMSUNG_OPTIONS_H_
 #define ODML_LITERT_LITERT_C_OPTIONS_LITERT_SAMSUNG_OPTIONS_H_
 
+#include <stdint.h>
+
 #include "litert/c/litert_common.h"
 
 // C-API for an opaque options type relevant to Samsung (both dspatch and
@@ -58,6 +60,40 @@ LiteRtStatus LrtSamsungOptionsSetSocModel(LrtSamsungOptions options,
 
 LiteRtStatus LrtSamsungOptionsGetSocModel(LrtSamsungOptions options,
                                           const char** soc_model);
+
+// DISPATCH OPTIONS //////////////////////////////////////////////////////////
+
+// performance_mode ----------------------------------------------------------
+
+// Configures Samsung ENN devices to optimize for performance or power
+// efficiency. Values match `PerfModePreference` in the Samsung ENN runtime.
+typedef enum LrtSamsungOptionsPerformanceMode {
+  kLrtSamsungOptionsPerformanceModeLowPower = 0,
+  kLrtSamsungOptionsPerformanceModeBalanced = 4,
+  kLrtSamsungOptionsPerformanceModeCustom = 5,
+  kLrtSamsungOptionsPerformanceModePerformance = 7,
+} LrtSamsungOptionsPerformanceMode;
+
+LiteRtStatus LrtSamsungOptionsSetPerformanceMode(
+    LrtSamsungOptions options,
+    LrtSamsungOptionsPerformanceMode performance_mode);
+
+LiteRtStatus LrtSamsungOptionsGetPerformanceMode(
+    LrtSamsungOptions options,
+    LrtSamsungOptionsPerformanceMode* performance_mode);
+
+// performance_config_id -----------------------------------------------------
+
+// Configures the Samsung ENN custom performance configuration ID (used with
+// `ENN_PREF_MODE_CUSTOM` in `EnnSetPreferencePerfConfigId` and
+// `EnnActivateSpotPref`). Defaults to 0 (`PERF_CONFIG_ID_DEFAULT`), in which
+// case the Samsung dispatch layer resolves the SoC-specific config ID for the
+// selected `performance_mode`.
+LiteRtStatus LrtSamsungOptionsSetPerformanceConfigId(
+    LrtSamsungOptions options, uint32_t performance_config_id);
+
+LiteRtStatus LrtSamsungOptionsGetPerformanceConfigId(
+    LrtSamsungOptions options, uint32_t* performance_config_id);
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

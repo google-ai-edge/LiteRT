@@ -65,6 +65,8 @@ class LiteRtDispatchInvocationContextT {
 
   void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info);
 
+  litert::Expected<void> SetOptions(LiteRtOptions options);
+
  private:
   // Commit state for caching
   enum class CommitState {
@@ -98,6 +100,7 @@ class LiteRtDispatchInvocationContextT {
   ::litert::samsung::EnnManager* enn_manager_;
   LiteRtDispatchDeviceContext device_context_;
   std::optional<LiteRtSchedulingInfo> scheduling_info_;
+  std::optional<::litert::samsung::PerfConfig> perf_config_;
   EnnModelId model_id_;
   std::vector<EnnBufferPtr> inputs_buf_;
   std::vector<EnnBufferPtr> outputs_buf_;
