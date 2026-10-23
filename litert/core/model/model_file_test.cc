@@ -186,8 +186,51 @@ TEST(ModelLoadTest, BadFileData) {
   const char* bad_file_path = test_file_path.c_str();
 #endif
   EXPECT_THAT(LiteRtCreateModelFromFile(env.Get(), bad_file_path, &model),
-              IsError(kLiteRtStatusErrorFileIO));
+              IsError(kLiteRtStatusErrorInvalidFlatbuffer));
   // NOLINTEND
+}
+
+TEST(ModelLoadTest, RejectsTruncatedFile) {
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto flatbuffer,
+      FlatbufferWrapper::CreateFromTflFile(GetTestFilePath(kAddSimple)));
+  const BufferRef<uint8_t> buf = flatbuffer->Buf();
+  ASSERT_GT(buf.Size(), 1);
+
+  const std::array<size_t, 2> truncated_sizes = {buf.Size() / 2,
+                                                 buf.Size() - 1};
+  for (const size_t truncated_size : truncated_sizes) {
+    const std::filesystem::path test_file_path =
+        std::filesystem::path(::testing::TempDir()) / "truncated.tflite";
+    std::ofstream output(test_file_path, std::ios::binary);
+    output.write(reinterpret_cast<const char*>(buf.Data()), truncated_size);
+    output.close();
+
+    EXPECT_THAT(LoadModelFromFile(test_file_path.string()),
+                IsError(kLiteRtStatusErrorInvalidFlatbuffer))
+        << "truncated_size=" << truncated_size;
+  }
+}
+
+TEST(ModelLoadTest, RejectsTruncatedAllocationAndBuffer) {
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto flatbuffer,
+      FlatbufferWrapper::CreateFromTflFile(GetTestFilePath(kAddSimple)));
+  const BufferRef<uint8_t> buf = flatbuffer->Buf();
+  ASSERT_GT(buf.Size(), 1);
+
+  const std::array<size_t, 2> truncated_sizes = {buf.Size() / 2,
+                                                 buf.Size() - 1};
+  for (const size_t truncated_size : truncated_sizes) {
+    EXPECT_THAT(LoadModelFromAllocation(MakeAllocation(
+                    BufferRef<uint8_t>(buf.Data(), truncated_size))),
+                IsError(kLiteRtStatusErrorInvalidFlatbuffer))
+        << "truncated_size=" << truncated_size;
+    EXPECT_THAT(LoadModelFromBuffer(
+                    OwningBufferRef<uint8_t>(buf.Data(), truncated_size)),
+                IsError(kLiteRtStatusErrorInvalidFlatbuffer))
+        << "truncated_size=" << truncated_size;
+  }
 }
 
 TEST(ModelLoadTest, GetCustomOpCode) {
