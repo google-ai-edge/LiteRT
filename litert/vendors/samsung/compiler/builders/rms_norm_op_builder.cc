@@ -43,7 +43,8 @@ Expected<OpWrapper> BuildRmsNormOp(const LiteRtCompilerContext* ctx,
 
   auto input_dimensions = GetDimensions(op.Inputs()[kInputIndex]);
 
-  op_wrapper.AddParam("axis", input_dimensions.size() - 1);
+  int8_t axis = static_cast<int8_t>(input_dimensions.size() - 1);
+  op_wrapper.AddParam("axis", std::vector<int8_t>{axis});
 
   const uint8_t* impl_attributes = nullptr;
   int32_t impl_attributes_size = 0;
