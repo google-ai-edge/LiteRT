@@ -226,7 +226,9 @@ absl::Status CopyBufferToBuffer(
   // raw_data points to the start of the mmap region.
   const uint8_t* raw_data = data - offset;
   // raw_size is the size of the entire mmap region not just the buffer data.
-  size_t raw_size = size + offset;
+  // BufferHostMappedPointer requires the wrapped size to be aligned, so round
+  // up. This is safe because the data is mmap'd, and mmap maps whole pages.
+  size_t raw_size = AlignByN(size + offset, kAlignment);
 
   // If an integrated GPU is being used, the host mapped buffer can be
   // directly used instead of copying to individual GPU buffers.
