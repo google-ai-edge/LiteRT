@@ -1969,6 +1969,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
   }
 
   bool buffer_requires_cpu_sync = false;
+  bool registered_in_buffer_context = false;
 
   Expected<LiteRtTensorBufferRequirementsConst> requirements =
       buffer_context_->GetBufferRequirements(tensor);
@@ -1986,15 +1987,16 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
           return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                             "Failed to register tensor buffer");
         }
+        registered_in_buffer_context = true;
+        LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
+                                GetTensorIdentifier(*interp_, tensor));
+        user_registered_buffers_.insert(tensor_id);
 
         // A host buffer shared with CPU nodes needs a CPU allocation even
         // when it is also registered with an accelerator backend.
-        if (buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory) {
-          LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
-                                  GetTensorIdentifier(*interp_, tensor));
-          if (cpu_tensors_.contains(tensor_id)) {
-            break;
-          }
+        if (buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory &&
+            cpu_tensors_.contains(tensor_id)) {
+          break;
         }
 
         // Mark the tensor as non-CPU to avoid TFLite from allocating it.
@@ -2015,6 +2017,16 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
   }
 
   if (buffer_requires_cpu_sync) {
+    // A host buffer shared with CPU nodes is registered with the backend above
+    // and still needs CPU sync, so only unregister a stale buffer that was
+    // registered by an earlier RegisterBuffer() call for this tensor.
+    if (!registered_in_buffer_context) {
+      LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
+                              GetTensorIdentifier(*interp_, tensor));
+      if (user_registered_buffers_.erase(tensor_id) > 0) {
+        buffer_context_->UnregisterTensorBuffer(tensor);
+      }
+    }
     // When backend requires CPU buffer.
     bool buffer_is_cpu_compatible =
         buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory ||
