@@ -26,6 +26,7 @@
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
+#include "ml_drift_delegate/delegate/composite/sdpa_transposed_support.h"
 #include "ml_drift_delegate/tflite/model_builder_helper.h"
 #include "ml_drift_delegate/tflite/object_reader.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
@@ -168,32 +169,23 @@ void SdpaTransposedOperationParser::Parse(const TfLiteNode* tflite_node,
     }
   }
 
-  // On Apple Metal GPUs, BuildSdpaTransposedGpuGraph dispatches fused
-  // FlashAttention prefill / FlashDecode kernels when from_cache_update is
-  // true (K/V produced by odml.cache_update). Those kernels enforce causal
-  // masking (key <= q_start + X) and active KV cache bounds (key <
-  // active_tokens) directly in registers using param_tensor when attr.is_causal
-  // is set, whereas non-Apple backends fall back to decomposed BMM +
-  // SoftmaxReduce ops that still read the mask tensor.
+  // When `UsesFusedSdpaKernel` holds, BuildSdpaTransposedGpuGraph dispatches a
+  // fused Flash-Attention kernel (MMA prefill on Apple Metal, the work-group
+  // kernel for prefill on OpenCL / WebGPU, Flash-Decode everywhere) for K/V
+  // produced by odml.cache_update. Those kernels enforce causal masking
+  // (key <= q_start + X) and the active KV cache bound (key < active_tokens)
+  // directly in registers from param_tensor when attr.is_causal is set, so the
+  // BOOL mask is not needed. The decomposed BMM + SoftmaxReduce graph still
+  // reads the mask, and BuildSdpaTransposedGpuGraph rejects a pruned mask
+  // there.
   bool skip_bool_mask_for_flash_sdpa = false;
-#ifdef __APPLE__
-  const int head_dim = q_val->tensor.shape.c;
-  const int q_w = q_val->tensor.shape.w;
-  const bool is_flash_prefill =
-      attr.is_prefill && head_dim % 4 == 0 && head_dim <= 128;
-  // Flash-Decode runs the wave-SIMD kernel for head_dim 128 and otherwise the
-  // work-group kernel, which needs the head_dim / 4 channel slices to divide
-  // its 256 work items on Apple GPUs (see `IsSupportedFlashDecode`), i.e.
-  // head_dim 4, 8, ..., 1024.
-  const bool is_flash_decode = !attr.is_prefill && q_w == 1 && head_dim > 0 &&
-                               head_dim % 4 == 0 && (256 * 4) % head_dim == 0;
-  if (gpu_info_ != nullptr && gpu_info_->IsApiMetal() && attr.is_causal &&
-      attr.from_cache_update && param_tensor != nullptr && mask != nullptr &&
-      mask->tensor.type == ::ml_drift::DataType::kBool &&
-      (is_flash_prefill || is_flash_decode)) {
-    skip_bool_mask_for_flash_sdpa = true;
+  if (gpu_info_ != nullptr && attr.is_causal && attr.from_cache_update &&
+      param_tensor != nullptr && mask != nullptr &&
+      mask->tensor.type == ::ml_drift::DataType::kBool) {
+    skip_bool_mask_for_flash_sdpa = UsesFusedSdpaKernel(
+        *gpu_info_, q_val->tensor.shape, k_val->tensor.shape, attr.is_prefill,
+        attr.from_cache_update);
   }
-#endif  // __APPLE__
 
   ::ml_drift::Node* node = graph->NewNode();
   node->operation.attributes = std::move(attr);

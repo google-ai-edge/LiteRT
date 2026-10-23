@@ -27,6 +27,7 @@
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
+#include "ml_drift_delegate/delegate/composite/sdpa_transposed_support.h"
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
 #include "tflite/c/builtin_op_data.h"
@@ -185,34 +186,25 @@ void SdpaTransposedConvert(
     }
   }
 
-  // On Apple Metal GPUs, BuildSdpaTransposedGpuGraph dispatches fused
-  // FlashAttention prefill / FlashDecode kernels when from_cache_update is
-  // true (K/V produced by odml.cache_update). Those kernels enforce causal
-  // masking (key <= q_start + X) and active KV cache bounds (key <
-  // active_tokens) directly in registers using input4 (params) when
-  // attr.is_causal is set, whereas non-Apple backends fall back to decomposed
-  // BMM + SoftmaxReduce ops that still read the mask tensor.
+  // When `UsesFusedSdpaKernel` holds, BuildSdpaTransposedGpuGraph dispatches a
+  // fused Flash-Attention kernel (MMA prefill on Apple Metal, the work-group
+  // kernel for prefill on OpenCL / WebGPU, Flash-Decode everywhere) for K/V
+  // produced by odml.cache_update. Those kernels enforce causal masking
+  // (key <= q_start + X) and the active KV cache bound (key < active_tokens)
+  // directly in registers from input4 (params) when attr.is_causal is set, so
+  // the BOOL mask is not needed. The decomposed BMM + SoftmaxReduce graph still
+  // reads the mask, and BuildSdpaTransposedGpuGraph rejects a pruned mask
+  // there.
   bool skip_bool_mask_for_flash_sdpa = false;
-#ifdef __APPLE__
-  const int head_dim = q_shape.c;
-  const int q_w = q_shape.w;
-  const bool is_flash_prefill =
-      attr.is_prefill && head_dim % 4 == 0 && head_dim <= 128;
-  // Flash-Decode runs the wave-SIMD kernel for head_dim 128 and otherwise the
-  // work-group kernel, which needs the head_dim / 4 channel slices to divide
-  // its 256 work items on Apple GPUs (see `IsSupportedFlashDecode`), i.e.
-  // head_dim 4, 8, ..., 1024.
-  const bool is_flash_decode = !attr.is_prefill && q_w == 1 && head_dim > 0 &&
-                               head_dim % 4 == 0 && (256 * 4) % head_dim == 0;
-  if (options.gpu_info != nullptr && options.gpu_info->IsApiMetal() &&
-      attr.is_causal && attr.from_cache_update && input4 != -1 &&
-      input3 != -1 &&
+  if (options.gpu_info != nullptr && attr.is_causal && attr.from_cache_update &&
+      input4 != -1 && input3 != -1 &&
       ir_model.tensor(input3)->desc.GetDataType() ==
-          ::ml_drift::DataType::kBool &&
-      (is_flash_prefill || is_flash_decode)) {
-    skip_bool_mask_for_flash_sdpa = true;
+          ::ml_drift::DataType::kBool) {
+    skip_bool_mask_for_flash_sdpa = ::litert::ml_drift::UsesFusedSdpaKernel(
+        *options.gpu_info, ir_model.tensor(q_val)->desc.GetBHWCShape(),
+        ir_model.tensor(k_val)->desc.GetBHWCShape(), attr.is_prefill,
+        attr.from_cache_update);
   }
-#endif  // __APPLE__
 
   ::ml_drift::ir::IrOp* sdpa = ir_model.add_op();
   sdpa->attr = std::move(attr);
