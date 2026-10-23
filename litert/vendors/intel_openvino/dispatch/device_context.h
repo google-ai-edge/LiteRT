@@ -16,11 +16,14 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "openvino/runtime/tensor.hpp"
 #include "absl/base/thread_annotations.h"  // from @com_google_absl
@@ -40,6 +43,8 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/dispatch/openvino_shared_core.h"
 #include "litert/vendors/intel_openvino/dispatch/weight_bank_runtime.h"
+
+class LiteRtDispatchInvocationContextT;
 
 class LiteRtDispatchDeviceContextT {
  public:
@@ -74,6 +79,44 @@ class LiteRtDispatchDeviceContextT {
   const LiteRtRuntimeContext* runtime_context() const {
     return runtime_context_;
   }
+
+  // --- Deferred-import eviction -------------------------------------------
+  //
+  // Every dispatch node imports its own blob on first use and can drop it
+  // again (LiteRtDispatchInvocationContextT::EnsureImported /
+  // ReleaseImported). The device context is the only place that sees all of a
+  // model's nodes at once, so the release decision lives here.
+  //
+  // The case this exists for: a multi-context bundle crosses from its 4096
+  // tier to its 16383 tier. The 4096 tier's nodes are never used again, but
+  // nothing says so -- the executor just stops invoking them, and no detach or
+  // unregister reaches the delegate.
+  //
+  // The rule is therefore the simplest one that needs no such signal: a node
+  // about to import takes the slot, and the nodes of other tiers give theirs
+  // up. No recency, no thresholds, no bookkeeping -- "release the others" is
+  // decided entirely by the import that is already happening.
+  //
+  // A node that is busy -- running, or mid-import -- is skipped and stays
+  // imported: the release never waits for it.
+  void RegisterInvocationContext(LiteRtDispatchInvocationContextT* context);
+  void UnregisterInvocationContext(LiteRtDispatchInvocationContextT* context);
+
+  // Releases the imported models of every other tier's nodes. Called from
+  // EnsureImported BEFORE the import, because the host peak is set while the
+  // old tier's blob and the new one are both resident -- a release that runs
+  // after the fact cannot lower it. Must NOT be called while holding an
+  // invocation context's import lock.
+  void ReleaseOthersForImport(LiteRtDispatchInvocationContextT* incoming);
+
+  // After `imported` finished importing, start background imports of the
+  // other not-yet-imported nodes of the SAME tier.
+  void PrefetchSameTier(LiteRtDispatchInvocationContextT* imported);
+
+  // The tier of the last foreground import (0 before any). A background import
+  // that finishes for another tier releases itself: the crossing that moved
+  // away from its tier skipped it while it was busy importing.
+  int64_t ActiveTier() const { return active_tier_.load(); }
 
  private:
   class CleanupAction {
@@ -138,6 +181,14 @@ class LiteRtDispatchDeviceContextT {
   // cannot race on the allocation itself.
   litert::openvino::GpuSharedBank gpu_shared_bank_;
   litert::openvino::NpuSharedBank npu_shared_bank_;
+
+  // Every invocation context created against this device context, so a node
+  // about to import can see the others. Raw pointers: the contexts unregister
+  // themselves in their destructor.
+  std::atomic<int64_t> active_tier_{0};
+  mutable absl::Mutex invocation_contexts_mutex_;
+  std::vector<LiteRtDispatchInvocationContextT*> invocation_contexts_
+      ABSL_GUARDED_BY(invocation_contexts_mutex_);
 
  public:
   // Bound at dispatch by the invocation context; see GpuSharedBank::Bind and
