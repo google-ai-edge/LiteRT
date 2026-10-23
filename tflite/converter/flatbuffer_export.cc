@@ -1060,16 +1060,21 @@ class Translator {
       const_buffer_storage_;
   absl::flat_hash_map<mlir::AsmResourceBlob*, int> resource_ref_counts_;
 
-  // Maps custom options data to corresponding node
-  // Key is set to be the list of input tensor indices and list of output tensor
-  // indices
-  // in the idx map, the value is a pair of offset and size
-  absl::flat_hash_map<std::pair<std::vector<int32_t>, std::vector<int32_t>>,
-                      std::pair<uint64_t, uint64_t>>
+  // Maps custom options data to corresponding node.
+  // See b/287306548: the key used to be the (input tensor indices, output
+  // tensor indices) pair, which is NOT unique across subgraphs (e.g. the
+  // per-context-length prefill/decode subgraphs of a multi-context LLM have
+  // identical local tensor indices), so their custom option blobs collapsed
+  // into one. The key is now (subgraph index, operator index), which is unique
+  // and matches how UpdateBufferOffsets walks the serialized model.
+  // in the idx map, the value is a pair of offset and size.
+  absl::flat_hash_map<std::pair<int, int>, std::pair<uint64_t, uint64_t>>
       custom_op_idx_map_;
-  ExportBufferStorage<std::pair<std::vector<int32_t>, std::vector<int32_t>>,
-                      mlir::TFL::ConstBytesAttr>
+  ExportBufferStorage<std::pair<int, int>, mlir::TFL::ConstBytesAttr>
       custom_op_buffer_storage_;
+  // (subgraph index, operator index) of the operator currently being built by
+  // BuildSubGraph; consumed by BuildCustomOperator.
+  std::pair<int, int> current_operator_key_ = {-1, -1};
 
   // Points to TensorFlow and TFLite dialects, respectively. nullptr if the
   // dialect is not registered.
@@ -2027,7 +2032,7 @@ BufferOffset<tflite::Operator> Translator::BuildNumericVerifyOperator(
 BufferOffset<tflite::Operator> Translator::BuildCustomOperator(
     Operation* inst, mlir::TFL::CustomOp op,
     const std::vector<int32_t>& operands, const std::vector<int32_t>& results) {
-  ExportBufferStorage<std::pair<std::vector<int32_t>, std::vector<int32_t>>,
+  ExportBufferStorage<std::pair<int, int>,
                       mlir::TFL::ConstBytesAttr>::ExportBuffer
       export_buffer(
           op.getCustomOption(),
@@ -2040,8 +2045,11 @@ BufferOffset<tflite::Operator> Translator::BuildCustomOperator(
   auto opcode_index =
       GetOpcodeIndex(op.getCustomCode().str(), tflite::BuiltinOperator_CUSTOM);
   if (use_buffer_offset_) {
+    // See b/287306548: key by (subgraph index, operator index) so that custom
+    // ops with identical operand/result indices in different subgraphs keep
+    // their own custom options.
     custom_op_buffer_storage_.Insert(
-        std::make_pair(operands, results),
+        current_operator_key_,
         std::make_unique<decltype(export_buffer)>(std::move(export_buffer)));
     return tflite::CreateOperator(
         builder_, opcode_index, builder_.CreateVector(operands),
@@ -3957,8 +3965,16 @@ std::optional<BufferOffset<tflite::SubGraph>> Translator::BuildSubGraph(
             "Invalid CustomTfOp: Custom TF Op have empty region.");
       }
     }
-    if (auto tfl_operator =
-            BuildOperator(real_inst, operands, results, intermediates)) {
+    // Record where this operator will land in the serialized model so that
+    // BuildCustomOperator can key its custom options uniquely (b/287306548).
+    // Saved/restored because BuildOperator may recursively build subgraphs
+    // for region-carrying ops (UnnamedRegionToSubgraph).
+    const std::pair<int, int> saved_operator_key = current_operator_key_;
+    current_operator_key_ = {index, static_cast<int>(operators.size())};
+    auto tfl_operator =
+        BuildOperator(real_inst, operands, results, intermediates);
+    current_operator_key_ = saved_operator_key;
+    if (tfl_operator) {
       operation_index_to_operator_index.try_emplace(operation_index,
                                                     operators.size());
       operators.push_back(*tfl_operator);
@@ -4894,34 +4910,35 @@ bool Translator::UpdateBufferOffsets(tflite::Model* mutable_model) {
   }
 
   auto mutable_subgraphs = mutable_model->mutable_subgraphs();
+  int subgraph_index = 0;
   for (auto msubgraph : *mutable_subgraphs) {
     auto operators = msubgraph->mutable_operators();
+    int operator_index = 0;
     for (auto op : *operators) {
       auto opcode_idx = op->opcode_index();
       auto opcodes = mutable_model->operator_codes();
       auto opcode = (*opcodes)[opcode_idx]->builtin_code();
       if (opcode == tflite::BuiltinOperator_CUSTOM) {
-        std::vector<int32_t> inputs(op->inputs()->begin(), op->inputs()->end());
-        std::vector<int32_t> outputs(op->outputs()->begin(),
-                                     op->outputs()->end());
-        for (auto& custom_op : custom_op_idx_map_) {
-          std::vector<int32_t> key_inputs = custom_op.first.first;
-          std::vector<int32_t> key_outputs = custom_op.first.second;
-          // TODO(b/287306548): we need more rigorous check to make sure the
-          // node we're updating is the right one for now we're just ensuring
-          // they have the same number of input, output and first output is
-          // the same
-          if (key_inputs.size() == inputs.size() &&
-              key_outputs.size() == outputs.size() &&
-              key_outputs[0] == outputs[0]) {
-            ret &=
-                op->mutate_large_custom_options_offset(custom_op.second.first);
-            ret &=
-                op->mutate_large_custom_options_size(custom_op.second.second);
-          }
+        // See b/287306548: custom options written at buffer offsets are keyed
+        // by (subgraph index, operator index), which is unique per operator
+        // (the old (inputs, outputs) key collapsed identical-looking custom
+        // ops across subgraphs). Only operators built by BuildCustomOperator in
+        // buffer-offset mode carry the (1, 1) sentinel and have an entry.
+        auto it = custom_op_idx_map_.find(
+            std::make_pair(subgraph_index, operator_index));
+        if (it != custom_op_idx_map_.end()) {
+          ret &= op->mutate_large_custom_options_offset(it->second.first);
+          ret &= op->mutate_large_custom_options_size(it->second.second);
+        } else if (op->large_custom_options_offset() == 1 &&
+                   op->large_custom_options_size() == 1) {
+          LOG(ERROR) << "No custom options recorded for custom op "
+                     << operator_index << " in subgraph " << subgraph_index;
+          ret = false;
         }
       }
+      ++operator_index;
     }
+    ++subgraph_index;
   }
   if (!ret) LOG(ERROR) << "failed to update custom op offsets\n";
 
