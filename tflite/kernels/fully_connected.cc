@@ -130,6 +130,9 @@ TfLiteStatus GetCheckedFullyConnectedIndexing(
 }
 
 bool SupportedSparsityFormat(const TfLiteSparsity& sparsity) {
+  if (sparsity.dim_metadata_size < 2 || sparsity.dim_metadata == nullptr) {
+    return false;
+  }
   if (sparsity.dim_metadata[0].format == kTfLiteDimDense &&
       sparsity.dim_metadata[1].format == kTfLiteDimSparseCSR) {
     return true;
@@ -144,26 +147,61 @@ static const int kDimMetadataSizeBlockSparse = 3;
 TfLiteStatus CreateLedgerTensor(const TfLiteSparsity* sparsity,
                                 TfLiteContext* context, TfLiteTensor* ledger) {
   TF_LITE_ENSURE(context, sparsity != nullptr);
+  TF_LITE_ENSURE(context, SupportedSparsityFormat(*sparsity));
+  const auto* array_segments = sparsity->dim_metadata[1].array_segments;
+  const auto* array_indices = sparsity->dim_metadata[1].array_indices;
+  TF_LITE_ENSURE(context, array_indices != nullptr);
+  TF_LITE_ENSURE(context, array_segments != nullptr);
+  TF_LITE_ENSURE(context, array_indices->size >= 0);
+  TF_LITE_ENSURE(context, array_segments->size >= 2);
+  TF_LITE_ENSURE_EQ(context, array_segments->size - 1,
+                    sparsity->dim_metadata[0].dense_size);
+  TF_LITE_ENSURE_EQ(context, array_segments->data[0], 0);
+  TF_LITE_ENSURE_EQ(context, array_segments->data[array_segments->size - 1],
+                    array_indices->size);
+  const int64_t num_ledger_elements =
+      static_cast<int64_t>(array_indices->size) + array_segments->size - 1;
+  TF_LITE_ENSURE(context,
+                 num_ledger_elements <= std::numeric_limits<int>::max());
   ledger->name = "FC_ledger";
   ledger->type = kTfLiteUInt8;
   ledger->allocation_type = kTfLiteArenaRwPersistent;
   TfLiteIntArray* ledger_size = TfLiteIntArrayCreate(1);
-  ledger_size->data[0] = sparsity->dim_metadata[1].array_indices->size +
-                         sparsity->dim_metadata[1].array_segments->size - 1;
+  ledger_size->data[0] = static_cast<int>(num_ledger_elements);
   return context->ResizeTensor(context, ledger, ledger_size);
 }
 
 TfLiteStatus PopulateLedgerData(const TfLiteSparsity* sparsity,
-                                TfLiteContext* context, uint8_t* ledger_data) {
+                                TfLiteContext* context, uint8_t* ledger_data,
+                                size_t ledger_bytes) {
   TF_LITE_ENSURE(context, sparsity != nullptr);
+  TF_LITE_ENSURE(context, ledger_data != nullptr);
+  TF_LITE_ENSURE(context, SupportedSparsityFormat(*sparsity));
   const auto* array_segments = sparsity->dim_metadata[1].array_segments;
   const auto* array_indices = sparsity->dim_metadata[1].array_indices;
-  int output_data_ptr = 0;
+  TF_LITE_ENSURE(context, array_segments != nullptr);
+  TF_LITE_ENSURE(context, array_indices != nullptr);
+  TF_LITE_ENSURE(context, array_indices->size >= 0);
+  TF_LITE_ENSURE(context, array_segments->size >= 2);
+  TF_LITE_ENSURE_EQ(context, array_segments->size - 1,
+                    sparsity->dim_metadata[0].dense_size);
+  TF_LITE_ENSURE_EQ(context, array_segments->data[0], 0);
+  TF_LITE_ENSURE_EQ(context, array_segments->data[array_segments->size - 1],
+                    array_indices->size);
+  int64_t output_data_ptr = 0;
+  const int64_t max_ledger_size =
+      static_cast<int64_t>(array_indices->size) + array_segments->size - 1;
+  TF_LITE_ENSURE(context,
+                 max_ledger_size <= static_cast<int64_t>(ledger_bytes));
 
   for (int i = 0; i < array_segments->size - 1; i++) {
     int row_start = array_segments->data[i];
     int row_end = array_segments->data[i + 1];
-    if (row_end - row_start > UINT8_MAX) {
+    if (row_start < 0 || row_end < row_start ||
+        row_end > array_indices->size ||
+        row_end - row_start > UINT8_MAX ||
+        output_data_ptr + 1 + static_cast<int64_t>(row_end - row_start) >
+            max_ledger_size) {
       return kTfLiteError;
     }
     // Copy num of non-zero blocks in row i.
@@ -171,7 +209,8 @@ TfLiteStatus PopulateLedgerData(const TfLiteSparsity* sparsity,
     output_data_ptr++;
 
     for (int j = row_start; j < row_end; j++) {
-      if (array_indices->data[j] > UINT8_MAX) {
+      if (array_indices->data[j] < 0 ||
+          array_indices->data[j] > UINT8_MAX) {
         return kTfLiteError;
       }
       // Copy indices of non-zero blocks in row i.
@@ -723,6 +762,8 @@ TfLiteStatus PrepareImpl(TfLiteContext* context, TfLiteNode* node,
       auto status =
           CreateLedgerTensor(filter->sparsity, context, filter_ledger);
       if (status != kTfLiteOk) return status;
+      TF_LITE_ENSURE_EQ(context, filter->sparsity->dim_metadata[0].dense_size,
+                        num_units);
     }
   }
 
@@ -1441,8 +1482,14 @@ TfLiteStatus EvalHybrid(TfLiteContext* context, TfLiteNode* node,
 
   TfLiteTensor* filter_ledger = &context->tensors[node->temporaries->data[5]];
   if (!data->ledger_initialized) {
-    PopulateLedgerData(filter->sparsity, context,
-                       GetTensorData<uint8_t>(filter_ledger));
+    TF_LITE_ENSURE(context, filter->sparsity != nullptr);
+    TF_LITE_ENSURE(context, SupportedSparsityFormat(*filter->sparsity));
+    TF_LITE_ENSURE_EQ(context, filter->sparsity->dim_metadata[0].dense_size,
+                      filter->dims->data[0]);
+    TF_LITE_ENSURE_OK(
+        context, PopulateLedgerData(filter->sparsity, context,
+                                    GetTensorData<uint8_t>(filter_ledger),
+                                    filter_ledger->bytes));
     data->ledger_initialized = true;
   }
 
@@ -1767,7 +1814,8 @@ void FullyConnectedPerChannelInt16(
 bool VerifySparsity(const RuntimeShape& weights_shape,
                     const RuntimeShape& input_shape,
                     const RuntimeShape& output_shape,
-                    const TfLiteSparsity* sparsity) {
+                    const TfLiteSparsity* sparsity,
+                    const size_t weights_elements) {
   const int weights_dims_count = weights_shape.DimensionsCount();
   const int output_dims_count = output_shape.DimensionsCount();
   const int w0_size = sparsity->dim_metadata[0].dense_size;
@@ -1782,12 +1830,45 @@ bool VerifySparsity(const RuntimeShape& weights_shape,
   const int max_batch_depth = accum_depth * max_batch_index;
 
   // Verify output size is enough.
-  if (output_elements < max_output) return false;
+  if (w0_size < 0 || w0_size > output_depth || output_elements < max_output) {
+    return false;
+  }
+  if (sparsity->dim_metadata[1].array_segments == nullptr ||
+      sparsity->dim_metadata[1].array_indices == nullptr ||
+      sparsity->dim_metadata[1].array_segments->size < w0_size + 1 ||
+      sparsity->dim_metadata[1].array_indices->size < 0) {
+    return false;
+  }
+  const auto* segments = sparsity->dim_metadata[1].array_segments;
+  const auto* indices = sparsity->dim_metadata[1].array_indices;
+  if (segments->data[0] != 0) {
+    return false;
+  }
+  for (int r = 0; r < w0_size; ++r) {
+    if (segments->data[r] < 0 ||
+        segments->data[r] > segments->data[r + 1] ||
+        segments->data[r + 1] > indices->size) {
+      return false;
+    }
+  }
+  int block_size = 1;
+  if (sparsity->dim_metadata_size == kDimMetadataSizeBlockSparse) {
+    if (sparsity->dim_metadata[2].format != kTfLiteDimDense) return false;
+    block_size = sparsity->dim_metadata[2].dense_size;
+    if (block_size <= 0 || accum_depth % block_size != 0) return false;
+  } else if (sparsity->dim_metadata_size != kDimMetadataSizeRandomSparse) {
+    return false;
+  }
+  if (static_cast<int64_t>(indices->size) * block_size >
+      static_cast<int64_t>(weights_elements)) {
+    return false;
+  }
 
   // Verify index from sparse in input is valid.
-  for (int i = 0; i < sparsity->dim_metadata[1].array_indices->size; ++i) {
-    if (input_elements <=
-        max_batch_depth + sparsity->dim_metadata[1].array_indices->data[i])
+  for (int i = 0; i < indices->size; ++i) {
+    const int idx = indices->data[i];
+    if (idx < 0 || idx > (accum_depth - block_size) / block_size ||
+        input_elements <= max_batch_depth + idx * block_size + (block_size - 1))
       return false;
   }
   return true;
@@ -1883,7 +1964,7 @@ TfLiteStatus EvalQuantized(TfLiteContext* context, TfLiteNode* node,
           }
           if (!SupportedSparsityFormat(sparsity) ||
               !VerifySparsity(filter_shape, input_shape, output_shape,
-                              &sparsity)) {
+                              &sparsity, filter->bytes)) {
             TF_LITE_KERNEL_LOG(
                 context,
                 "Invalid quantized and sparse fully-connected format.");
@@ -2117,11 +2198,24 @@ TfLiteStatus EvalFloat(TfLiteContext* context, TfLiteNode* node,
     op_params.float_activation_max = output_activation_max;
     if (filter->sparsity != nullptr) {
       const auto& sparsity = *filter->sparsity;
+      if (!SupportedSparsityFormat(sparsity)) {
+        TF_LITE_KERNEL_LOG(context,
+                           "Unsupported sparse fully-connected weight format.");
+        return kTfLiteError;
+      }
+      const auto& input_shape = GetTensorShape(input);
+      const auto& filter_shape = GetTensorShape(filter);
+      const auto& output_shape = GetTensorShape(output);
+      const auto& bias_shape = GetTensorShape(bias);
+      if (!VerifySparsity(filter_shape, input_shape, output_shape, &sparsity,
+                          filter->bytes / sizeof(float))) {
+        TF_LITE_KERNEL_LOG(context, "Invalid sparse fully-connected format.");
+        return kTfLiteError;
+      }
       reference_ops::FullyConnectedSparseWeight(
-          sparsity, op_params, GetTensorShape(input),
-          GetTensorData<float>(input), GetTensorShape(filter),
-          GetTensorData<float>(filter), GetTensorShape(bias),
-          GetTensorData<float>(bias), GetTensorShape(output),
+          sparsity, op_params, input_shape, GetTensorData<float>(input),
+          filter_shape, GetTensorData<float>(filter), bias_shape,
+          GetTensorData<float>(bias), output_shape,
           GetTensorData<float>(output));
     } else {
       reference_ops::FullyConnected(
@@ -2145,7 +2239,8 @@ TfLiteStatus EvalFloat(TfLiteContext* context, TfLiteNode* node,
       const auto& filter_shape = GetTensorShape(filter);
       const auto& output_shape = GetTensorShape(output);
       const auto& bias_shape = GetTensorShape(bias);
-      if (!VerifySparsity(filter_shape, input_shape, output_shape, &sparsity)) {
+      if (!VerifySparsity(filter_shape, input_shape, output_shape, &sparsity,
+                          filter->bytes / sizeof(float))) {
         TF_LITE_KERNEL_LOG(context, "Invalid sparse fully-connected format.");
         return kTfLiteError;
       }
