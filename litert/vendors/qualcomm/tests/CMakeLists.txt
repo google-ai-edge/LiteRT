@@ -111,6 +111,7 @@ target_sources(builder_test
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/addn_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/depthwise_conv2d_test.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/detection_postprocess_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/elementwise_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/fully_connected_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/fully_connected_int2_test.cc
@@ -131,6 +132,7 @@ target_link_libraries(builder_test
     PRIVATE
         qnn_test_utils
         qnn_builders
+        flatbuffers::flatbuffers
         GTest::gmock
         GTest::gtest_main
 )

@@ -120,6 +120,8 @@ class LiteRtDispatchInvocationContextT {
 
   litert::Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
       const LiteRtRankedTensorType& tensor_type);
+  litert::Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
+      const LiteRtRankedTensorType& tensor_type, size_t buffer_size);
 
   litert::qnn::QnnManager& qnn_manager_;
   ::qnn::QnnBackend& qnn_backend_;
