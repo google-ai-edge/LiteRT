@@ -54,6 +54,13 @@ class OpMixin<RmsNormOperation, XnnpackMixinTag> : public XnnpackOperation {
                          XnnpackBuildContext& ctx) const override;
 };
 
+template <>
+class OpMixin<QkNormOperation, XnnpackMixinTag> : public XnnpackOperation {
+ public:
+  absl::Status ToXnnpack(const graph::Operation& op,
+                         XnnpackBuildContext& ctx) const override;
+};
+
 }  // namespace litert::tensor::graph
 
 #endif  // THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_OPS_TRANSFORMER_TRANSFORMER_OPS_XNNPACK_H_
