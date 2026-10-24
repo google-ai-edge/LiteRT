@@ -15,19 +15,20 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_GPU_UTIL_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_GPU_UTIL_H_
 
-#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_expected.h"
 
 namespace litert::internal {
 using ::ml_drift::BHWC;
 using ::ml_drift::DataType;
 
-inline absl::Status ConvertLiteRtTensorTypeToGpuShape(
+inline litert::Expected<void> ConvertLiteRtTensorTypeToGpuShape(
     const LiteRtRankedTensorType* tensor_type, BHWC* shape) {
   switch (tensor_type->layout.rank) {
     case 0:
@@ -51,10 +52,12 @@ inline absl::Status ConvertLiteRtTensorTypeToGpuShape(
           tensor_type->layout.dimensions[2], tensor_type->layout.dimensions[3]);
       break;
     default:
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Rank ", tensor_type->layout.rank, " tensor is not supported."));
+      return litert::Unexpected(
+          kLiteRtStatusErrorInvalidArgument,
+          absl::StrCat("Rank ", tensor_type->layout.rank,
+                       " tensor is not supported."));
   }
-  return absl::OkStatus();
+  return {};
 }
 
 inline bool IsFloat16BufferType(LiteRtTensorBufferType buffer_type) {
@@ -65,7 +68,7 @@ inline bool IsFloat16BufferType(LiteRtTensorBufferType buffer_type) {
          buffer_type == kLiteRtTensorBufferTypeOpenClImageBufferFp16;
 }
 
-inline absl::Status ConvertLiteRtDataTypeToGpuDataType(
+inline litert::Expected<void> ConvertLiteRtDataTypeToGpuDataType(
     const LiteRtRankedTensorType* tensor_type, DataType* data_type,
     const LiteRtTensorBufferType buffer_type) {
   switch (tensor_type->element_type) {
@@ -86,10 +89,12 @@ inline absl::Status ConvertLiteRtDataTypeToGpuDataType(
       *data_type = DataType::kInt8;
       break;
     default:
-      return absl::InvalidArgumentError(absl::StrFormat(
-          "Unsupported element type: %d", tensor_type->element_type));
+      return litert::Unexpected(
+          kLiteRtStatusErrorInvalidArgument,
+          absl::StrFormat("Unsupported element type: %d",
+                          tensor_type->element_type));
   }
-  return absl::OkStatus();
+  return {};
 }
 }  // namespace litert::internal
 

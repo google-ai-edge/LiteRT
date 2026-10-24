@@ -293,6 +293,7 @@ cc_library(
 cc_test(
     name = "weight_store_builder_test",
     srcs = ["weight_store_builder_test.cc"],
+    tags = ["no_oss"],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
         "//litert:linux_aarch64": [],

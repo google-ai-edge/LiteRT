@@ -42,9 +42,6 @@
 #endif  // !defined(LITERT_WINDOWS_OS)
 
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
-#if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
-#include "absl/status/status.h"  // from @com_google_absl
-#endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 #include "litert/c/litert_layout.h"
 #include "litert/cc/internal/litert_consts.h"
 #include "litert/core/filesystem.h"

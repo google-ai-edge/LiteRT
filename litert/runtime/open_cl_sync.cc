@@ -18,8 +18,6 @@
 #include <cstring>
 #include <memory>
 
-#include "absl/status/status.h"  // from @com_google_absl
-#include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
 #include "ml_drift/cl/cl_memory.h"  // from @ml_drift
 #include "ml_drift/cl/tensor.h"  // from @ml_drift
@@ -32,6 +30,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/gpu_environment.h"
 #include "litert/runtime/litert_gpu_util.h"
@@ -55,17 +54,16 @@ using TensorInt8 = ::ml_drift::Tensor<BHWC, DataType::kInt8>;
 namespace litert::internal {
 // TODO(b/431308296): Clean up the GPU memory sync logic to make it generic for
 // all GPU backends.
-absl::StatusOr<TensorDescriptor> CreateTensorDescriptor(
+litert::Expected<TensorDescriptor> CreateTensorDescriptor(
     const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type) {
   BHWC shape;
   LITERT_RETURN_IF_ERROR(
-      ConvertLiteRtTensorTypeToGpuShape(tensor_type, &shape).ok());
+      ConvertLiteRtTensorTypeToGpuShape(tensor_type, &shape));
 
   DataType data_type;
   LITERT_RETURN_IF_ERROR(
-      ConvertLiteRtDataTypeToGpuDataType(tensor_type, &data_type, buffer_type)
-          .ok());
+      ConvertLiteRtDataTypeToGpuDataType(tensor_type, &data_type, buffer_type));
 
   TensorStorageType storage_type;
   switch (buffer_type) {
@@ -82,7 +80,8 @@ absl::StatusOr<TensorDescriptor> CreateTensorDescriptor(
       storage_type = TensorStorageType::kImageBuffer;
       break;
     default:
-      return absl::InvalidArgumentError("Unsupported buffer type.");
+      return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                                "Unsupported buffer type.");
   }
 
   if (shape.b == 1) {
@@ -98,9 +97,9 @@ LiteRtStatus LiteRtGpuMemoryCreate(GpuEnvironment* gpu_env,
                                    LiteRtTensorBufferType buffer_type,
                                    size_t bytes, cl_mem* cl_memory) {
   auto tensor_desc = CreateTensorDescriptor(tensor_type, buffer_type);
-  if (!tensor_desc.ok()) {
+  if (!tensor_desc.HasValue()) {
     LITERT_LOG(LITERT_ERROR, "Failed to create tensor descriptor: %s",
-               tensor_desc.status().message().data());
+               tensor_desc.Error().Message().c_str());
     return kLiteRtStatusErrorUnsupported;
   }
 
@@ -148,9 +147,9 @@ LiteRtStatus LiteRtGpuMemoryUpload(GpuEnvironment* gpu_env,
                                    size_t bytes, const void* ptr,
                                    cl_mem cl_memory) {
   auto tensor_desc = CreateTensorDescriptor(tensor_type, buffer_type);
-  if (!tensor_desc.ok()) {
+  if (!tensor_desc.HasValue()) {
     LITERT_LOG(LITERT_ERROR, "Failed to create tensor descriptor: %s",
-               tensor_desc.status().message().data());
+               tensor_desc.Error().Message().c_str());
     return kLiteRtStatusErrorUnsupported;
   }
 
@@ -214,9 +213,9 @@ LiteRtStatus LiteRtGpuMemoryDownload(GpuEnvironment* gpu_env,
                                      size_t bytes, cl_mem cl_memory,
                                      void* ptr) {
   auto tensor_desc = CreateTensorDescriptor(tensor_type, buffer_type);
-  if (!tensor_desc.ok()) {
+  if (!tensor_desc.HasValue()) {
     LITERT_LOG(LITERT_ERROR, "Failed to create tensor descriptor: %s",
-               tensor_desc.status().message().data());
+               tensor_desc.Error().Message().c_str());
     return kLiteRtStatusErrorUnsupported;
   }
 

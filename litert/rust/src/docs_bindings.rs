@@ -93,6 +93,8 @@ pub const LiteRtStatus_kLiteRtStatusErrorUnknown: LiteRtStatus = 9;
 
 pub const LiteRtStatus_kLiteRtStatusErrorAlreadyExists: LiteRtStatus = 10;
 
+pub const LiteRtStatus_kLiteRtStatusErrorFailedPrecondition: LiteRtStatus = 11;
+
 pub const LiteRtStatus_kLiteRtStatusCancelled: LiteRtStatus = 100;
 
 pub const LiteRtStatus_kLiteRtStatusErrorFileIO: LiteRtStatus = 500;

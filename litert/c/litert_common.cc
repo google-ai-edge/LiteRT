@@ -47,6 +47,7 @@ const char* LiteRtGetStatusString(LiteRtStatus status) {
     LITERT_STATUS_STR_CASE(kLiteRtStatusErrorWrongVersion);
     LITERT_STATUS_STR_CASE(kLiteRtStatusErrorUnknown);
     LITERT_STATUS_STR_CASE(kLiteRtStatusErrorAlreadyExists);
+    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorFailedPrecondition);
     LITERT_STATUS_STR_CASE(kLiteRtStatusPatternNoMatch);
     LITERT_STATUS_STR_CASE(kLiteRtStatusInvalidTransformation);
     LITERT_STATUS_STR_CASE(kLiteRtStatusCancelled);

@@ -33,6 +33,7 @@ typedef NS_ERROR_ENUM(LRTErrorDomain, LRTErrorCode){
   LRTErrorCodeWrongVersion = 8,                     /* Incompatible version. */
   LRTErrorCodeUnknown = 9,                          /* Unknown error occurred. */
   LRTErrorCodeAlreadyExists = 10,                   /* Resource already exists. */
+  LRTErrorCodeFailedPrecondition = 11,              /* Operation failed precondition. */
   LRTErrorCodeCancelled = 100,                      /* Inference progression cancelled. */
   LRTErrorCodeFileIO = 500,                         /* File I/O error. */
   LRTErrorCodeInvalidFlatbuffer = 501,              /* Invalid FlatBuffer format. */
