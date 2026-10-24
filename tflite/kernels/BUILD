@@ -3099,6 +3099,7 @@ cc_test(
         ":kernel_util",
         ":test_main",
         ":test_util",
+        "//tflite/core/c:c_api_types",
         "//tflite/kernels/internal:tensor_utils",
         "//tflite/kernels/internal:types",
         "//tflite/schema:schema_fbs",
