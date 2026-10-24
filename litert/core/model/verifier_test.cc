@@ -2065,5 +2065,91 @@ TEST(VerifierTest, RejectsSignatureDefWithOutOfBoundsSubgraphOrTensorIndex) {
   }
 }
 
+TEST(VerifierTest,
+     VerifyAndCountSparseElementsRejectsMappedBlockDimBeyondOriginalRank) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto d0 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 4);
+  auto d1 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 4);
+  auto d2 =
+      tflite::CreateDimensionMetadata(builder, tflite::DimensionType_DENSE, 2);
+  std::vector<flatbuffers::Offset<tflite::DimensionMetadata>> dim_metadata = {
+      d0, d1, d2};
+  // original_rank is 2, total_dims is 3, so mapped_block_dim == 2 is out of
+  // bounds [0, 2).
+  auto sparsity = tflite::CreateSparsityParameters(
+      builder, builder.CreateVector(std::vector<int32_t>{0, 1, 2}),
+      builder.CreateVector(std::vector<int32_t>{2}),
+      builder.CreateVector(dim_metadata));
+  auto tensor_offset = tflite::CreateTensor(
+      builder, builder.CreateVector(std::vector<int32_t>{4, 4}),
+      tflite::TensorType_FLOAT32, /*buffer=*/1,
+      builder.CreateString("oob_block_map"), /*quantization=*/0,
+      /*is_variable=*/false, sparsity);
+  builder.Finish(tensor_offset);
+  const auto* tensor =
+      flatbuffers::GetRoot<tflite::Tensor>(builder.GetBufferPointer());
+
+  EXPECT_THAT(internal::VerifyAndCountSparseElements(*tensor),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("mapped_block_dim (2) out of bounds [0, 2)")));
+}
+
+TEST(VerifierTest, RejectsMalformedSparsityMetadataOnEmptyBufferTensor) {
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<tflite::Buffer>> buffers = {
+      tflite::CreateBuffer(builder),
+      tflite::CreateBuffer(builder),
+  };
+  // Create a 2D tensor with only 1 DimensionMetadata entry (mismatched with
+  // rank 2), and attach it to buffer 0 so ::tflite::Verify skips
+  // VerifyNumericTensorBuffer.
+  auto dm0 = tflite::CreateDimensionMetadata(
+      builder, tflite::DimensionType_DENSE, /*dense_size=*/4);
+  std::vector<flatbuffers::Offset<tflite::DimensionMetadata>> dim_metadata = {
+      dm0};
+  std::vector<int32_t> traversal_order = {0};
+  auto sparsity = tflite::CreateSparsityParameters(
+      builder, builder.CreateVector(traversal_order), /*block_map=*/0,
+      builder.CreateVector(dim_metadata));
+  std::vector<flatbuffers::Offset<tflite::Tensor>> tensors = {
+      tflite::CreateTensor(
+          builder, builder.CreateVector(std::vector<int32_t>{2, 4}),
+          tflite::TensorType_FLOAT32, /*buffer=*/0, builder.CreateString("in")),
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{4, 4}),
+                           tflite::TensorType_FLOAT32, /*buffer=*/0,
+                           builder.CreateString("weights"), /*quantization=*/0,
+                           /*is_variable=*/false, sparsity),
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{2, 4}),
+                           tflite::TensorType_FLOAT32, /*buffer=*/1,
+                           builder.CreateString("out")),
+  };
+  auto opcode = tflite::CreateOperatorCode(
+      builder, tflite::BuiltinOperator_FULLY_CONNECTED);
+  std::vector<int32_t> op_inputs = {0, 1};
+  std::vector<int32_t> op_outputs = {2};
+  auto op = tflite::CreateOperator(builder, /*opcode_index=*/0,
+                                   builder.CreateVector(op_inputs),
+                                   builder.CreateVector(op_outputs));
+  std::vector<int32_t> model_inputs = {0, 1};
+  std::vector<int32_t> model_outputs = {2};
+  auto subgraph = tflite::CreateSubGraph(builder, builder.CreateVector(tensors),
+                                         builder.CreateVector(model_inputs),
+                                         builder.CreateVector(model_outputs),
+                                         builder.CreateVector(&op, 1));
+  auto model = tflite::CreateModel(
+      builder, TFLITE_SCHEMA_VERSION, builder.CreateVector(&opcode, 1),
+      builder.CreateVector(&subgraph, 1),
+      builder.CreateString("malformed_sparsity_test"),
+      builder.CreateVector(buffers));
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_THAT(VerifyModel(builder.GetBufferPointer(), builder.GetSize()),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_FALSE(Verify(builder.GetBufferPointer(), builder.GetSize()));
+}
 }  // namespace
 }  // namespace litert

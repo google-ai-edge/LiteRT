@@ -434,6 +434,14 @@ absl::Status ValidateFlatBufferTensors(const tflite::Model* tfl_model,
           !quant_status.ok()) {
         return quant_status;
       }
+
+      if (tensor->sparsity() != nullptr) {
+        if (absl::Status sparsity_status =
+                VerifyAndCountSparseElements(*tensor).status();
+            !sparsity_status.ok()) {
+          return sparsity_status;
+        }
+      }
     }
   }
   return absl::OkStatus();
@@ -680,7 +688,8 @@ absl::StatusOr<uint32_t> VerifyAndCountElements(
           tensor_name, i));
     }
     if (dim_metadata->format() == tflite::DimensionType_DENSE) {
-      if (dim_metadata->dense_size() != dim_sizes[original_dim]) {
+      if (dim_metadata->dense_size() <= 0 ||
+          dim_metadata->dense_size() != dim_sizes[original_dim]) {
         return absl::InvalidArgumentError(absl::StrFormat(
             "Tensor %s has invalid sparsity parameters: dense_size (%d) at "
             "level %d does not match dimension size (%d)",
@@ -694,7 +703,7 @@ absl::StatusOr<uint32_t> VerifyAndCountElements(
         return absl::InvalidArgumentError(
             absl::StrFormat("Tensor %s dimension overflow", tensor_name));
       }
-    } else {
+    } else if (dim_metadata->format() == tflite::DimensionType_SPARSE_CSR) {
       if (!CheckArraySegments(dim_metadata) ||
           !CheckArrayIndices(dim_metadata)) {
         return absl::InvalidArgumentError(absl::StrFormat(
@@ -748,6 +757,11 @@ absl::StatusOr<uint32_t> VerifyAndCountElements(
 
       // Need to reset num_elements when seeing a sparse dimension.
       num_elements = static_cast<uint32_t>(array_indices_size);
+    } else {
+      return absl::InvalidArgumentError(absl::StrFormat(
+          "Tensor %s has invalid sparsity parameters: unknown format (%d) at "
+          "level %d",
+          tensor_name, static_cast<int>(dim_metadata->format()), i));
     }
   }
 
@@ -763,9 +777,9 @@ absl::StatusOr<uint32_t> VerifyAndCountSparseElements(
         "Tensor %s has invalid sparsity parameters: sparsity is null",
         tensor_name));
   }
-  if (tensor.shape() == nullptr) {
+  if (tensor.shape() == nullptr || tensor.shape()->empty()) {
     return absl::InvalidArgumentError(absl::StrFormat(
-        "Tensor %s has invalid sparsity parameters: shape is null",
+        "Tensor %s has invalid sparsity parameters: shape is null or empty",
         tensor_name));
   }
   if (sparsity->traversal_order() == nullptr ||
@@ -877,11 +891,11 @@ absl::StatusOr<uint32_t> VerifyAndCountSparseElements(
     expanded_dim_sizes[original_block_dim] = block_dim_size;
 
     int mapped_block_dim = sparsity->block_map()->Get(i);
-    if (mapped_block_dim < 0 || mapped_block_dim >= total_dims) {
+    if (mapped_block_dim < 0 || mapped_block_dim >= original_rank) {
       return absl::InvalidArgumentError(absl::StrFormat(
           "Tensor %s has invalid sparsity parameters: mapped_block_dim (%d) "
           "out of bounds [0, %d)",
-          tensor_name, mapped_block_dim, total_dims));
+          tensor_name, mapped_block_dim, original_rank));
     }
     expanded_dim_sizes[mapped_block_dim] /= block_dim_size;
   }
