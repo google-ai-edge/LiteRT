@@ -20,6 +20,7 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_logging.h"
+#include "tflite/schema/schema_generated.h"
 
 namespace litert {
 namespace {
@@ -64,12 +65,29 @@ TEST(LitertCTypesPrintingTest, LiteRtOpCode) {
   EXPECT_EQ(absl::StrFormat("%v", kLiteRtOpCodeTflCustom), "tfl.custom_op");
 }
 
+// LiteRtOpCode mirrors tflite::BuiltinOperator value for value: the model
+// loader casts builtin codes to it. Every builtin operator needs an enumerator,
+// and every enumerator a printer.
+TEST(LitertCTypesPrintingTest, EveryBuiltinOperatorHasAnOpCode) {
+  for (int code = tflite::BuiltinOperator_MIN;
+       code <= tflite::BuiltinOperator_MAX; ++code) {
+    EXPECT_NE(GetOpCodeStringView(static_cast<LiteRtOpCode>(code)),
+              kNoPrinterTag)
+        << "no LiteRtOpCode for "
+        << tflite::EnumNameBuiltinOperator(
+               static_cast<tflite::BuiltinOperator>(code));
+  }
+}
+
 TEST(LitertCTypesPrintingTest, GetOpCodeStringView) {
   EXPECT_EQ(GetOpCodeStringView(kLiteRtOpCodeShloAbs), "shlo.abs");
   EXPECT_EQ(GetOpCodeStringView(kLiteRtOpCodeTflAdd), "tfl.add");
   EXPECT_EQ(GetOpCodeStringView(kLiteRtOpCodeTflMul), "tfl.mul");
   EXPECT_EQ(GetOpCodeStringView(kLiteRtOpCodeTflCustom), "tfl.custom_op");
-  EXPECT_EQ(GetOpCodeStringView(static_cast<LiteRtOpCode>(207)), kNoPrinterTag);
+  EXPECT_EQ(GetOpCodeStringView(kLiteRtOpCodeShloCase), "shlo.case");
+  // Use an unassigned value within the enum's representable range.
+  EXPECT_EQ(GetOpCodeStringView(static_cast<LiteRtOpCode>(255)),
+            kNoPrinterTag);
 }
 
 }  // namespace

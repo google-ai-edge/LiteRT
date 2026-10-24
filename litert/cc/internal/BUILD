@@ -143,6 +143,7 @@ cc_test(
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_googletest//:gtest_main",
     ],
