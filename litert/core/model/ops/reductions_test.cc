@@ -239,5 +239,208 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param.test_name;
     });
 
+// Sets `values` as the constant data of `tensor`, typed as a 1-D tensor of
+// `element_type`.
+template <typename T>
+void SetConstAxis(LiteRtTensorT& tensor, LiteRtElementType element_type,
+                  const std::vector<T>& values) {
+  SetWeightsFromOwnedBuffer(
+      tensor.Weights(),
+      OwningBufferRef<uint8_t>(reinterpret_cast<const uint8_t*>(values.data()),
+                               values.size() * sizeof(T)));
+  tensor.SetType(MakeRankedTensorType(
+      element_type, {static_cast<int32_t>(values.size())}));
+}
+
+void SetReducerOptions(LiteRtOpT& op, bool keep_dims) {
+  auto options = std::make_unique<tflite::ReducerOptionsT>();
+  options->keep_dims = keep_dims;
+  TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_ReducerOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+}
+
+TEST(ReductionsOpTest, ReducersDecodeInt64Axes) {
+  // INT64 `{1}` was previously decoded as the two INT32 axes `{1, 0}` and
+  // produced `{4}`.
+  for (bool keep_dims : {false, true}) {
+    LiteRtOpT op;
+    std::vector<Dims> input_shapes = {{2, 3, 4}, {1}};
+    std::vector<Dims> output_shapes(1);
+
+    LiteRtTensorT axis_tensor;
+    op.Inputs().push_back(nullptr);
+    op.Inputs().push_back(&axis_tensor);
+    SetConstAxis<int64_t>(axis_tensor, kLiteRtElementTypeInt64, {1});
+    SetReducerOptions(op, keep_dims);
+
+    ASSERT_EQ(InferReduce(op, absl::MakeSpan(input_shapes), output_shapes),
+              kLiteRtStatusOk)
+        << "keep_dims=" << keep_dims;
+    if (keep_dims) {
+      EXPECT_THAT(output_shapes[0], ElementsAre(2, 1, 4));
+    } else {
+      EXPECT_THAT(output_shapes[0], ElementsAre(2, 4));
+    }
+  }
+}
+
+TEST(ReductionsOpTest, Int32NegativeAxesKeepDims) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{2, 3, 4}, {2}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT axis_tensor;
+  op.Inputs().push_back(nullptr);
+  op.Inputs().push_back(&axis_tensor);
+  SetConstAxis<int32_t>(axis_tensor, kLiteRtElementTypeInt32, {-1, 0});
+  SetReducerOptions(op, /*keep_dims=*/true);
+
+  ASSERT_EQ(InferReduce(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre(1, 3, 1));
+}
+
+TEST(ReductionsOpTest, Int32AxesTypedAndDeduplicated) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{2, 3, 4}, {3}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT axis_tensor;
+  op.Inputs().push_back(nullptr);
+  op.Inputs().push_back(&axis_tensor);
+  // `1` and `-2` name the same axis; TFLite reduces it once.
+  SetConstAxis<int32_t>(axis_tensor, kLiteRtElementTypeInt32, {1, -2, 2});
+  SetReducerOptions(op, /*keep_dims=*/false);
+
+  ASSERT_EQ(InferReduce(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre(2));
+}
+
+TEST(ReductionsOpTest, ArgMaxInt64Axis) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{1, 10, 10, 3}, {1}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT axis_tensor;
+  op.Inputs().push_back(nullptr);
+  op.Inputs().push_back(&axis_tensor);
+  SetConstAxis<int64_t>(axis_tensor, kLiteRtElementTypeInt64, {3});
+
+  ASSERT_EQ(InferArgMinMax(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre(1, 10, 10));
+}
+
+TEST(ReductionsOpTest, RejectsOutOfRangeAxis) {
+  for (int32_t axis : {3, -4}) {
+    LiteRtOpT op;
+    std::vector<Dims> input_shapes = {{2, 3, 4}, {1}};
+    std::vector<Dims> output_shapes(1);
+
+    LiteRtTensorT axis_tensor;
+    op.Inputs().push_back(nullptr);
+    op.Inputs().push_back(&axis_tensor);
+    SetConstAxis<int32_t>(axis_tensor, kLiteRtElementTypeInt32, {axis});
+    SetReducerOptions(op, /*keep_dims=*/false);
+
+    EXPECT_EQ(InferReduce(op, absl::MakeSpan(input_shapes), output_shapes),
+              kLiteRtStatusErrorInvalidArgument)
+        << "axis=" << axis;
+  }
+}
+
+TEST(ReductionsOpTest, ArgMaxNegativeInt64Axis) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{2, 3, 4}, {1}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT axis_tensor;
+  op.Inputs().push_back(nullptr);
+  op.Inputs().push_back(&axis_tensor);
+  SetConstAxis<int64_t>(axis_tensor, kLiteRtElementTypeInt64, {-2});
+
+  ASSERT_EQ(InferArgMinMax(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre(2, 4));
+}
+
+TEST(ReductionsOpTest, ArgMaxRejectsOutOfRangeInt64Axis) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{2, 3, 4}, {1}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT axis_tensor;
+  op.Inputs().push_back(nullptr);
+  op.Inputs().push_back(&axis_tensor);
+  SetConstAxis<int64_t>(axis_tensor, kLiteRtElementTypeInt64, {3});
+
+  EXPECT_EQ(InferArgMinMax(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(ReductionsOpTest, ArgMaxRejectsScalarInput) {
+  // TFLite's arg_min_max::Prepare requires NumDimensions(input) >= 1.
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{}, {1}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT axis_tensor;
+  op.Inputs().push_back(nullptr);
+  op.Inputs().push_back(&axis_tensor);
+  SetConstAxis<int32_t>(axis_tensor, kLiteRtElementTypeInt32, {0});
+
+  EXPECT_EQ(InferArgMinMax(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(ReductionsOpTest, ArgMaxRejectsMultipleAxes) {
+  // TFLite's arg_min_max::Prepare requires NumElements(axis) == 1.
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{2, 3, 4}, {2}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT axis_tensor;
+  op.Inputs().push_back(nullptr);
+  op.Inputs().push_back(&axis_tensor);
+  SetConstAxis<int64_t>(axis_tensor, kLiteRtElementTypeInt64, {0, 1});
+
+  EXPECT_EQ(InferArgMinMax(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(ReductionsOpTest, RejectsNonIntegerAxisType) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{2, 3, 4}, {1}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT axis_tensor;
+  op.Inputs().push_back(nullptr);
+  op.Inputs().push_back(&axis_tensor);
+  SetConstAxis<float>(axis_tensor, kLiteRtElementTypeFloat32, {1.0f});
+  SetReducerOptions(op, /*keep_dims=*/false);
+
+  EXPECT_EQ(InferReduce(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(ReductionsOpTest, ScalarInputReducesToScalar) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{}, {1}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT axis_tensor;
+  op.Inputs().push_back(nullptr);
+  op.Inputs().push_back(&axis_tensor);
+  // TFLite's ResolveAxisForShape ignores the axes of a scalar input.
+  SetConstAxis<int32_t>(axis_tensor, kLiteRtElementTypeInt32, {0});
+  SetReducerOptions(op, /*keep_dims=*/true);
+
+  ASSERT_EQ(InferReduce(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre());
+}
 }  // namespace
 }  // namespace litert::internal

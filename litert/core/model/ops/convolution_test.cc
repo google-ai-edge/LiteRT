@@ -645,10 +645,59 @@ TEST(ConvolutionOpTest, ReportedIssue) {
 
   // TFLite's SAME padding formula: out = (in + stride - 1) / stride.
   // For in=1, stride=2, out = (1 + 2 - 1) / 2 = 1.
-  // HOWEVER, we explicitly disallow stride > input dimension in our
-  // shape inference fix as this was identified as an invalid configuration.
-  EXPECT_EQ(InferConv2D(op, absl::MakeSpan(input_shapes), output_shapes),
-            kLiteRtStatusErrorShapeInferenceFailed);
+  ASSERT_EQ(InferConv2D(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre(5, 1, 1, 32));
+}
+
+TEST(ConvolutionOpTest, Conv1DLoweredAsConv2DWithStride2) {
+  LiteRtOpT op;
+  // 1D convolution (e.g. Whisper encoder Conv1d) lowered to Conv2D with
+  // H=1, KH=1, and stride=(2, 2).
+  std::vector<Dims> input_shapes = {{1, 1, 3002, 512}, {512, 1, 3, 512}, {512}};
+  std::vector<Dims> output_shapes(1);
+
+  auto options = std::make_unique<tflite::Conv2DOptionsT>();
+  options->padding = tflite::Padding_VALID;
+  options->stride_h = 2;
+  options->stride_w = 2;
+  options->dilation_h_factor = 1;
+  options->dilation_w_factor = 1;
+
+  litert::internal::TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_Conv2DOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  ASSERT_EQ(InferConv2D(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre(1, 1, 1500, 512));
+}
+
+TEST(ConvolutionOpTest, Conv3DStrideLargerThanInputSucceeds) {
+  LiteRtOpT op;
+  // Input [1, 1, 2, 4, 2] (B, D, H, W, In), Filter [1, 2, 2, 2, 3] (D, H, W,
+  // In, Out).
+  std::vector<Dims> input_shapes = {{1, 1, 2, 4, 2}, {1, 2, 2, 2, 3}, {3}};
+  std::vector<Dims> output_shapes(1);
+
+  auto options = std::make_unique<tflite::Conv3DOptionsT>();
+  options->padding = tflite::Padding_VALID;
+  options->stride_d = 2;
+  options->stride_h = 3;
+  options->stride_w = 2;
+  options->dilation_d_factor = 1;
+  options->dilation_h_factor = 1;
+  options->dilation_w_factor = 1;
+
+  litert::internal::TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_Conv3DOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  ASSERT_EQ(InferConv3D(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre(1, 1, 1, 2, 3));
 }
 
 TEST(ConvolutionOpTest, ChannelMismatchFailure) {
