@@ -735,5 +735,35 @@ TEST(QuantizeOpTest, UInt8Int16SameScale) {
               ElementsAreArray({2, 4, 6, 8, 10, 12, 14, 16, 18, 20}));
 }
 
+class ResizableQuantizePerChannelOpModel : public QuantizePerChannelOpModel {
+ public:
+  using QuantizePerChannelOpModel::QuantizePerChannelOpModel;
+
+  TfLiteStatus ResizeInput(const std::vector<int>& new_shape) {
+    return interpreter_->ResizeInputTensor(input_, new_shape);
+  }
+  TfLiteStatus Allocate() { return interpreter_->AllocateTensors(); }
+};
+
+TEST(QuantizeOpTest, PerChannelRuntimeChannelCountMismatchRejected) {
+  ResizableQuantizePerChannelOpModel m(TensorType_FLOAT32, TensorType_INT8,
+                                       {1, 2}, {0.5f, 1.0f}, {0, 0}, 1);
+  ASSERT_EQ(m.ResizeInput({1, 4}), kTfLiteOk);
+  ASSERT_EQ(m.Allocate(), kTfLiteOk);
+  m.SetInput({1.0f, 2.0f, 3.0f, 4.0f});
+  EXPECT_EQ(m.Invoke(), kTfLiteError);
+
+  // Valid resize preserving the quantized channel dimension succeeds, including
+  // a zero-element batch dimension {0, 2}.
+  ASSERT_EQ(m.ResizeInput({2, 2}), kTfLiteOk);
+  ASSERT_EQ(m.Allocate(), kTfLiteOk);
+  m.SetInput({1.0f, 2.0f, 3.0f, 4.0f});
+  EXPECT_EQ(m.Invoke(), kTfLiteOk);
+
+  ASSERT_EQ(m.ResizeInput({0, 2}), kTfLiteOk);
+  ASSERT_EQ(m.Allocate(), kTfLiteOk);
+  EXPECT_EQ(m.Invoke(), kTfLiteOk);
+}
+
 }  // namespace
 }  // namespace tflite

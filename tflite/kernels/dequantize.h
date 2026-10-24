@@ -74,6 +74,22 @@ inline TfLiteStatus PerChannelDequantizeImpl(TfLiteContext* context,
   const auto* quantization_params =
       reinterpret_cast<const TfLiteAffineQuantization*>(
           input->quantization.params);
+  const RuntimeShape input_shape = GetTensorShape(input);
+  const RuntimeShape output_shape = GetTensorShape(output);
+  TF_LITE_ENSURE(context, quantization_params != nullptr);
+  TF_LITE_ENSURE(context, quantization_params->scale != nullptr);
+  TF_LITE_ENSURE(context, quantization_params->zero_point != nullptr);
+  TF_LITE_ENSURE(context, quantization_params->zero_point->size == 1 ||
+                              quantization_params->zero_point->size ==
+                                  quantization_params->scale->size);
+  TF_LITE_ENSURE(context, quantization_params->quantized_dimension >= 0 &&
+                              quantization_params->quantized_dimension <
+                                  input_shape.DimensionsCount());
+  TF_LITE_ENSURE_EQ(context, quantization_params->scale->size,
+                    input_shape.Dims(quantization_params->quantized_dimension));
+  if (MatchingFlatSize(input_shape, output_shape) == 0) {
+    return kTfLiteOk;
+  }
   PerChannelDequantizationParams per_channel_op_params;
   per_channel_op_params.quantized_dimension =
       quantization_params->quantized_dimension;

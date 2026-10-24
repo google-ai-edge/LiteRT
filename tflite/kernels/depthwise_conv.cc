@@ -229,12 +229,16 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   }
 
   if (is_hybrid) {
-    TF_LITE_ENSURE(context, filter->quantization.type != kTfLiteNoQuantization);
+    TF_LITE_ENSURE_EQ(context, filter->quantization.type,
+                      kTfLiteAffineQuantization);
     const auto* affine_quantization =
         reinterpret_cast<TfLiteAffineQuantization*>(
             filter->quantization.params);
     TF_LITE_ENSURE(context, affine_quantization);
     TF_LITE_ENSURE(context, affine_quantization->scale);
+    TF_LITE_ENSURE(context, affine_quantization->quantized_dimension >= 0 &&
+                                affine_quantization->quantized_dimension <
+                                    filter->dims->size);
     TF_LITE_ENSURE_EQ(
         context, affine_quantization->scale->size,
         filter->dims->data[affine_quantization->quantized_dimension]);
