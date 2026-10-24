@@ -200,6 +200,21 @@ LiteRtStatus LrtQualcommOptionsSetUseFoldReLU(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetUseFoldReLU(LrtQualcommOptions options,
                                               bool* use_fold_relu);
 
+// op_name_format
+// Reduces op-name length for models with long tensor names.
+
+typedef enum LrtQualcommOptionsOpNameFormat {
+  kLiteRtQualcommOpNameFormatBasic = 0,
+  kLiteRtQualcommOpNameFormatDetailed = 1,
+} LrtQualcommOptionsOpNameFormat;
+
+LiteRtStatus LrtQualcommOptionsSetOpNameFormat(
+    LrtQualcommOptions options, LrtQualcommOptionsOpNameFormat op_name_format);
+
+LiteRtStatus LrtQualcommOptionsGetOpNameFormat(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsOpNameFormat* op_name_format);
+
 // htp_dlbc
 
 // Enables HTP DLBC input compression. Defaults to false.

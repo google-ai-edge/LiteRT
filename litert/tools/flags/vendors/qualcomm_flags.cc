@@ -688,6 +688,41 @@ ABSL_FLAG(bool, qualcomm_use_fold_relu, true,
           "optimization is correct when quantization ranges for convolution "
           "are equal to or are subset of the Relu operation.");
 
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::OpNameFormat* out, std::string* error) {
+  if (text == "basic") {
+    *out = QualcommOptions::OpNameFormat::kBasic;
+    return true;
+  }
+  if (text == "detailed") {
+    *out = QualcommOptions::OpNameFormat::kDetailed;
+    return true;
+  }
+  *error = "Unknown op_name_format; expected \"detailed\" or \"basic\"";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::OpNameFormat v) {
+  switch (v) {
+    case QualcommOptions::OpNameFormat::kBasic:
+      return "basic";
+    case QualcommOptions::OpNameFormat::kDetailed:
+      return "detailed";
+  }
+  return "basic";
+}
+
+}  // namespace litert::qualcomm
+
+ABSL_FLAG(litert::qualcomm::QualcommOptions::OpNameFormat, qualcomm_op_name_format,
+          litert::qualcomm::QualcommOptions::OpNameFormat::kBasic,
+          "Op name format for QNN graph ops. \"detailed\" includes the "
+          "tensor-path namespace prefix and LiteRt op ID suffix, giving "
+          "full traceability at the cost of longer op names. \"basic\" "
+          "omits them, producing shorter op names.");
+
 ABSL_FLAG(bool, qualcomm_htp_dlbc, false,
           "Enable HTP DLBC input compression.");
 
@@ -1046,6 +1081,9 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto use_fold_relu = absl::GetFlag(FLAGS_qualcomm_use_fold_relu);
   opts.SetUseFoldReLU(use_fold_relu);
+
+  const auto op_name_format = absl::GetFlag(FLAGS_qualcomm_op_name_format);
+  opts.SetOpNameFormat(op_name_format);
 
   const auto htp_dlbc = absl::GetFlag(FLAGS_qualcomm_htp_dlbc);
   opts.SetHtpDlbc(htp_dlbc);

@@ -467,6 +467,20 @@ void AbslStringify(Sink& sink, LpaiCoreAffinityType v) {
   absl::Format(&sink, "%s(%d)", name, static_cast<int>(v));
 }
 
+template <typename Sink>
+void AbslStringify(Sink& sink, OpNameFormat v) {
+  absl::string_view name = "Unknown";
+  switch (v) {
+    case OpNameFormat::kBasic:
+      name = "Basic";
+      break;
+    case OpNameFormat::kDetailed:
+      name = "Detailed";
+      break;
+  }
+  absl::Format(&sink, "%s(%d)", name, static_cast<int>(v));
+}
+
 void Options::SetLogLevel(LogLevel log_level) { log_level_ = log_level; }
 
 LogLevel Options::GetLogLevel() const { return log_level_; }
@@ -510,6 +524,12 @@ void Options::SetUseFoldReLU(bool use_fold_relu) {
 }
 
 bool Options::GetUseFoldReLU() const { return use_fold_relu_; }
+
+void Options::SetOpNameFormat(OpNameFormat op_name_format) {
+  op_name_format_ = op_name_format;
+}
+
+OpNameFormat Options::GetOpNameFormat() const { return op_name_format_; }
 
 void Options::SetHtpPPoint(std::int32_t htp_p_point) {
   htp_p_point_ = htp_p_point;
@@ -782,6 +802,7 @@ std::string Options::Dump() const {
   field(2, "QnnLibDir", qnn_lib_dir_);
   field(2, "DspSkelDir", dsp_skel_dir_);
   field(2, "UseInt64BiasAsInt32", use_int64_bias_as_int32_);
+  field(2, "OpNameFormat", op_name_format_);
   field(2, "EnableWeightSharing", enable_weight_sharing_);
   field(2, "EnableJustInTime", enable_just_in_time_);
   field(2, "GraphPriority", graph_priority_);

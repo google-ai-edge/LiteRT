@@ -145,6 +145,26 @@ std::string SanitizeName(std::string_view name) {
   return out;
 }
 
+void ApplyDetailedOpNames(const litert::compiler::Op& op, int id,
+                          std::vector<::qnn::OpWrapper>& op_wrappers) {
+  for (auto& op_wrapper : op_wrappers) {
+    op_wrapper.AddSuffixToName(absl::StrCat("_LiteRt_OpId_", std::to_string(id)));
+  }
+  if (op.Outputs().empty()) return;
+  std::vector<std::string> candidate_names;
+  for (const auto& output_tensor : op.Outputs()) {
+    for (const auto& name :
+         absl::StrSplit(output_tensor.Name(), ';', absl::SkipEmpty())) {
+      candidate_names.emplace_back(name);
+    }
+  }
+  auto op_namespace =
+      TfliteNodeNamespaceHeuristic(GetTfliteOpName(op.Code()), candidate_names);
+  for (auto& op_wrapper : op_wrappers) {
+    op_wrapper.AddPrefixToName(absl::StrCat(op_namespace, "/"));
+  }
+}
+
 }  // namespace
 
 LiteRtStatus ConvertPaddingType(const uint32_t litert_padding,
@@ -1954,25 +1974,8 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
     LITERT_RETURN_IF_ERROR(ConvertOp(options, op, tensor_pool, input_tensors,
                                      output_tensors, op_wrappers, id,
                                      qnn.GetSdkVersion()));
-    for (auto& op_wrapper : op_wrappers) {
-      // Add litert op id to qnn op name to preserve op mapping
-      op_wrapper.AddSuffixToName(
-          absl::StrCat("_LiteRt_OpId_", std::to_string(id)));
-    }
-    if (!op.Outputs().empty()) {
-      // Add op namespace inference based on output tensor names.
-      std::vector<std::string> candidate_names;
-      for (const auto& output_tensor : op.Outputs()) {
-        for (const auto& name :
-             absl::StrSplit(output_tensor.Name(), ';', absl::SkipEmpty())) {
-          candidate_names.emplace_back(name);
-        }
-      }
-      auto op_namespace = TfliteNodeNamespaceHeuristic(
-          GetTfliteOpName(op.Code()), candidate_names);
-      for (auto& op_wrapper : op_wrappers) {
-        op_wrapper.AddPrefixToName(absl::StrCat(op_namespace, "/"));
-      }
+    if (options.GetOpNameFormat() == ::qnn::OpNameFormat::kDetailed) {
+      ApplyDetailedOpNames(op, id, op_wrappers);
     }
     // Move op_wrappers to graph_op_wrappers.
     std::move(op_wrappers.begin(), op_wrappers.end(),
