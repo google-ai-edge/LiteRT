@@ -51,7 +51,7 @@ TEST(TflUtilsTest, BuildDispatchDelegateVendorOptionsSuccess) {
   LiteRtOpT& op0 = sg0.EmplaceOp();
   op0.SetOpCode(kLiteRtOpCodeTflCustom);
   op0.SetCustomCode(std::string(kLiteRtDispatchOpCustomName));
-  DispatchOpOptions op_opts0;
+  DispatchOpOptions op_opts0{};
   op_opts0.name = "vision_func";
   op0.SetCustomOptions(MakeDispatchOpOptions(std::move(op_opts0)));
 
@@ -79,7 +79,7 @@ TEST(TflUtilsTest, BuildDispatchDelegateVendorOptionsSuccess) {
   LiteRtOpT& op1 = sg1.EmplaceOp();
   op1.SetOpCode(kLiteRtOpCodeTflCustom);
   op1.SetCustomCode(std::string(kLiteRtDispatchOpCustomName));
-  DispatchOpOptions op_opts1;
+  DispatchOpOptions op_opts1{};
   op_opts1.name = "audio_func";
   op1.SetCustomOptions(MakeDispatchOpOptions(std::move(op_opts1)));
 
