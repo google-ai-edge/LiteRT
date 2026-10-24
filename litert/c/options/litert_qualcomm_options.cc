@@ -111,6 +111,7 @@ struct LrtQualcommOptionsT {
   std::optional<std::vector<std::int32_t>> dump_tensor_ids;
   std::optional<std::string> ir_json_dir;
   std::optional<std::string> dlc_dir;
+  std::optional<std::string> qualcomm_quant_overrides;
   std::optional<std::string> graph_transform;
   std::optional<std::uint32_t> vtcm_size;
   std::optional<std::uint32_t> htp_device_id;
@@ -270,6 +271,9 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
                                                std::string(value).c_str());
         } else if (key == "graph_transform") {
           status = LrtQualcommOptionsSetGraphTransform(
+              parsed_options, std::string(value).c_str());
+        } else if (key == "qualcomm_quant_overrides") {
+          status = LrtQualcommOptionsSetQualcommQuantOverrides(
               parsed_options, std::string(value).c_str());
         } else if (key == "vtcm_size") {
           auto v = litert::internal::ParseTomlInt(value);
@@ -1266,6 +1270,28 @@ LiteRtStatus LrtQualcommOptionsGetGraphTransform(LrtQualcommOptions options,
                          ? options->graph_transform->c_str()
                          : "";
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetQualcommQuantOverrides(
+    LrtQualcommOptions options, const char* qualcomm_quant_overrides) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->qualcomm_quant_overrides = qualcomm_quant_overrides;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetQualcommQuantOverrides(
+    LrtQualcommOptions options, const char** qualcomm_quant_overrides) {
+  if (options == nullptr || qualcomm_quant_overrides == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *qualcomm_quant_overrides = options->qualcomm_quant_overrides.has_value()
+                                ? options->qualcomm_quant_overrides->c_str()
+                                : "";
   return kLiteRtStatusOk;
 }
 

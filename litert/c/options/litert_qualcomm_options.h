@@ -391,6 +391,12 @@ LiteRtStatus LrtQualcommOptionsSetDlcDir(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetDlcDir(LrtQualcommOptions options,
                                          const char** dlc_dir);
 
+LiteRtStatus LrtQualcommOptionsSetQualcommQuantOverrides(
+    LrtQualcommOptions options, const char* quantization_overrides);
+
+LiteRtStatus LrtQualcommOptionsGetQualcommQuantOverrides(
+    LrtQualcommOptions options, const char** quantization_overrides);
+
 LiteRtStatus LrtQualcommOptionsSetGraphTransform(LrtQualcommOptions options,
                                                  const char* graph_transform);
 
