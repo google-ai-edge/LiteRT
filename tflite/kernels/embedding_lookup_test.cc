@@ -57,15 +57,17 @@ class BaseEmbeddingLookupOpModel : public SingleOpModel {
       TensorType weight_type = TensorType_FLOAT32,
       TensorType output_type = TensorType_FLOAT32,
       const std::vector<float>& per_channel_quantization_scales = {},
-      int blocksize = 0) {
+      int blocksize = 0, std::initializer_list<int> scale_weight_shape = {}) {
     input_ = AddInput(TensorType_INT32);
     if (per_channel_quantization_scales.empty()) {
       weight_ = AddInput(weight_type);
     } else {
       std::vector<int64_t> per_channel_quantization_offsets(
           per_channel_quantization_scales.size(), 0);
+      const std::initializer_list<int> quant_shape =
+          scale_weight_shape.size() > 0 ? scale_weight_shape : weight_shape;
       weight_ = AddInput({/*type=*/weight_type,
-                          /*shape=*/weight_shape,
+                          /*shape=*/quant_shape,
                           /*min=*/0.0f,
                           /*max=*/0.0f,
                           /*scale=*/0.0f,
@@ -175,9 +177,11 @@ class PerBlockHybridEmbeddingLookupOpModel : public BaseEmbeddingLookupOpModel {
       std::initializer_list<int> index_shape,
       std::initializer_list<int> weight_shape, TensorType weights_type,
       int blocksize, std::vector<float> scales,
-      TensorType output_type = TensorType_FLOAT32)
+      TensorType output_type = TensorType_FLOAT32,
+      std::initializer_list<int> scale_weight_shape = {})
       : BaseEmbeddingLookupOpModel(index_shape, weight_shape, weights_type,
-                                   output_type, scales, blocksize) {}
+                                   output_type, scales, blocksize,
+                                   scale_weight_shape) {}
   void SetSignedWeight(std::initializer_list<float> data) {
     PerBlockSymmetricQuantizeAndPopulate(weight_, data);
   }
@@ -1278,6 +1282,20 @@ TEST(EmbeddingLookupOpTest, EmptyTensorBoundaryCases) {
     ASSERT_EQ(m.Invoke(), kTfLiteOk);
     EXPECT_TRUE(m.GetOutput<float>().empty());
   }
+}
+
+
+TEST(PerBlockHybridEmbeddingLookupHybridOpTest, RejectsTooSmallScaleTensor) {
+  PerBlockHybridEmbeddingLookupOpModel m(
+      /*index_shape=*/{3},
+      /*weight_shape=*/{3, 16},
+      /*weights_type=*/TensorType_INT4,
+      /*blocksize=*/8,
+      /*scales=*/{1.0f, 2.0f},
+      /*output_type=*/TensorType_FLOAT32,
+      /*scale_weight_shape=*/{1, 16});
+  m.SetInput({1, 0, 2});
+  EXPECT_EQ(m.Invoke(), kTfLiteError);
 }
 
 }  // namespace

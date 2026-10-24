@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include <stdint.h>
 
+#include <limits>
+
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/tensor.h"
@@ -44,10 +46,10 @@ struct OneHotContext {
 
     const auto* params =
         reinterpret_cast<TfLiteOneHotParams*>(node->builtin_data);
-    const int indices_dims = indices->dims->size;
+    const int indices_dims = indices != nullptr ? indices->dims->size : 0;
     axis = (params->axis == -1) ? indices_dims : params->axis;
     output_dims = indices_dims + 1;
-    dtype = on_value->type;
+    dtype = on_value != nullptr ? on_value->type : kTfLiteNoType;
   }
 
   const TfLiteTensor* indices;
@@ -65,7 +67,7 @@ void OneHotComputeImpl(const OneHotContext& op_context) {
   // prefix_dim_size == # of elements before the axis
   // depth == # of elements per axis
   // suffix_dim_size == # of elements after the axis
-  int prefix_dim_size = 1;
+  int64_t prefix_dim_size = 1;
   for (int i = 0; i < op_context.axis; ++i) {
     prefix_dim_size *= op_context.indices->dims->data[i];
   }
@@ -74,7 +76,8 @@ void OneHotComputeImpl(const OneHotContext& op_context) {
     // TensorFlow does.
     return;
   }
-  const int suffix_dim_size = NumElements(op_context.indices) / prefix_dim_size;
+  const int64_t suffix_dim_size =
+      NumElements(op_context.indices) / prefix_dim_size;
   const int depth = *op_context.depth->data.i32;
 
   const T on_value = *GetTensorData<T>(op_context.on_value);
@@ -88,10 +91,10 @@ void OneHotComputeImpl(const OneHotContext& op_context) {
   //     output(i, j, k) == (indices(i, k) == j) ? on : off
   T* output = GetTensorData<T>(op_context.output);
   const TI* indices = GetTensorData<TI>(op_context.indices);
-  for (int i = 0; i < prefix_dim_size; ++i) {
+  for (int64_t i = 0; i < prefix_dim_size; ++i) {
     for (int j = 0; j < depth; ++j) {
-      for (int k = 0; k < suffix_dim_size; ++k, ++output) {
-        *output = static_cast<int>(indices[i * suffix_dim_size + k]) == j
+      for (int64_t k = 0; k < suffix_dim_size; ++k, ++output) {
+        *output = indices[i * suffix_dim_size + k] == static_cast<TI>(j)
                       ? on_value
                       : off_value;
       }
@@ -129,6 +132,10 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_EQ(context, NumOutputs(node), 1);
 
   OneHotContext op_context{context, node};
+  TF_LITE_ENSURE(context, op_context.indices != nullptr);
+  TF_LITE_ENSURE(context, op_context.depth != nullptr);
+  TF_LITE_ENSURE(context, op_context.on_value != nullptr);
+  TF_LITE_ENSURE(context, op_context.off_value != nullptr);
   TF_LITE_ENSURE(context, op_context.output != nullptr);
   switch (op_context.dtype) {
     // TODO(b/111744875): Support uint8 and quantization.
@@ -151,7 +158,18 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
                               op_context.indices->type == kTfLiteInt64);
   TF_LITE_ENSURE(context, op_context.axis >= 0 &&
                               op_context.axis < op_context.output_dims);
+  int64_t prefix_dim_size = 1;
+  for (int i = 0; i < op_context.axis; ++i) {
+    const int dim = op_context.indices->dims->data[i];
+    TF_LITE_ENSURE(context, dim >= 0);
+    if (dim > 0) {
+      TF_LITE_ENSURE(context,
+                     prefix_dim_size <= std::numeric_limits<int>::max() / dim);
+    }
+    prefix_dim_size *= dim;
+  }
   TF_LITE_ENSURE_EQ(context, NumElements(op_context.depth), 1);
+  TF_LITE_ENSURE_TYPES_EQ(context, op_context.depth->type, kTfLiteInt32);
   TF_LITE_ENSURE_EQ(context, NumElements(op_context.on_value), 1);
   TF_LITE_ENSURE_EQ(context, NumElements(op_context.off_value), 1);
   TF_LITE_ENSURE_TYPES_EQ(context, op_context.on_value->type, op_context.dtype);
