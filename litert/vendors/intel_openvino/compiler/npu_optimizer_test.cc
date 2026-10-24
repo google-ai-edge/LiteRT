@@ -45,6 +45,8 @@
 #include "openvino/op/slice.hpp"
 #include "openvino/op/softmax.hpp"
 #include "openvino/op/topk.hpp"
+#include "openvino/op/transpose.hpp"
+#include "openvino/op/unsqueeze.hpp"
 #include "openvino/pass/manager.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/runtime/infer_request.hpp"
@@ -935,6 +937,325 @@ TEST(UnfoldGqaSequenceFoldTest, LeavesNonReplicatedMaskAlone) {
 
   EXPECT_EQ(CountOps<ov::op::v0::Concat>(model), 1u);
   EXPECT_EQ(CountOps<ov::op::v3::Broadcast>(model), 0u);
+}
+
+// Builds Gemma4's prefill attention as the LiteRT generative export emits it
+// for a |hkv|-KV-head / |hkv * r|-query-head layer: split-cache attention
+// (K cache [1,Hkv,S_past,D], V cache stored transposed as [1,Hkv,D,S_past])
+// over a Q whose r head groups are folded into the sequence axis, with the
+// mask tiled r times to match, and the output unfolded back to [1,Hq,S,D].
+// FuseSplitAttentionToSDPA + UnfoldGqaSequenceFold turn this into the
+// head-parallel SDPA DecomposeSDPAForHFA works on.
+// Inputs, in order: {q, k_cache, k_new, v_cache, v_new, mask}.
+std::shared_ptr<ov::Model> BuildFoldedSplitCacheAttention(
+    int64_t hkv, int64_t r, int64_t s_past, int64_t s, int64_t head_dim) {
+  using ov::op::v0::Concat;
+  using ov::op::v0::Constant;
+  using ov::op::v0::MatMul;
+  using ov::op::v0::Parameter;
+  const int64_t hq = hkv * r;
+  const auto f = ov::element::f32;
+  auto dim = [](int64_t v) { return static_cast<size_t>(v); };
+
+  auto q = std::make_shared<Parameter>(
+      f, ov::Shape{1, dim(hq), dim(s), dim(head_dim)});
+  auto k_cache = std::make_shared<Parameter>(
+      f, ov::Shape{1, dim(hkv), dim(s_past), dim(head_dim)});
+  auto k_new = std::make_shared<Parameter>(
+      f, ov::Shape{1, dim(hkv), dim(s), dim(head_dim)});
+  auto v_cache = std::make_shared<Parameter>(
+      f, ov::Shape{1, dim(hkv), dim(head_dim), dim(s_past)});
+  auto v_new = std::make_shared<Parameter>(
+      f, ov::Shape{1, dim(hkv), dim(head_dim), dim(s)});
+  auto mask =
+      std::make_shared<Parameter>(f, ov::Shape{1, 1, dim(s), dim(s_past + s)});
+
+  auto q_folded = std::make_shared<ov::op::v1::Reshape>(
+      q,
+      Constant::create(ov::element::i64, ov::Shape{4},
+                       std::vector<int64_t>{1, hkv, s * r, head_dim}),
+      /*special_zero=*/false);
+  ov::OutputVector mask_copies(static_cast<size_t>(r), mask->output(0));
+  auto mask_tiled = std::make_shared<Concat>(mask_copies, /*axis=*/2);
+
+  auto qk_cache = std::make_shared<MatMul>(q_folded, k_cache, false, true);
+  auto qk_new = std::make_shared<MatMul>(q_folded, k_new, false, true);
+  auto scores =
+      std::make_shared<Concat>(ov::OutputVector{qk_cache, qk_new}, -1);
+  auto probs = std::make_shared<ov::op::v8::Softmax>(
+      std::make_shared<ov::op::v1::Add>(scores, mask_tiled), -1);
+
+  auto step = Constant::create(ov::element::i64, ov::Shape{1}, {1});
+  auto axis = Constant::create(ov::element::i64, ov::Shape{1}, {-1});
+  auto p_cache = std::make_shared<ov::op::v8::Slice>(
+      probs, Constant::create(ov::element::i64, ov::Shape{1}, {0}),
+      Constant::create(ov::element::i64, ov::Shape{1}, {s_past}), step, axis);
+  auto p_new = std::make_shared<ov::op::v8::Slice>(
+      probs, Constant::create(ov::element::i64, ov::Shape{1}, {s_past}),
+      Constant::create(ov::element::i64, ov::Shape{1}, {s_past + s}), step,
+      axis);
+  auto out = std::make_shared<ov::op::v1::Add>(
+      std::make_shared<MatMul>(p_cache, v_cache, false, true),
+      std::make_shared<MatMul>(p_new, v_new, false, true));
+
+  auto unfolded = std::make_shared<ov::op::v1::Reshape>(
+      out,
+      Constant::create(ov::element::i64, ov::Shape{4},
+                       std::vector<int64_t>{1, hq, s, head_dim}),
+      /*special_zero=*/false);
+  return std::make_shared<ov::Model>(
+      ov::OutputVector{unfolded->output(0)},
+      ov::ParameterVector{q, k_cache, k_new, v_cache, v_new, mask},
+      "folded_split_cache_attention");
+}
+
+// Runs |reference| and |rewritten| on CPU with identical pseudo-random inputs
+// and expects their (single) outputs to agree.
+void ExpectSameOutputs(const std::shared_ptr<ov::Model>& reference,
+                       const std::shared_ptr<ov::Model>& rewritten) {
+  ov::Core core;
+  auto ref_req = core.compile_model(reference, "CPU").create_infer_request();
+  auto new_req = core.compile_model(rewritten, "CPU").create_infer_request();
+  ASSERT_EQ(reference->inputs().size(), rewritten->inputs().size());
+  for (size_t i = 0; i < reference->inputs().size(); ++i) {
+    const auto& port = reference->input(i);
+    ov::Tensor t(port.get_element_type(), port.get_shape());
+    FillRandom(t, static_cast<uint32_t>(i + 1));
+    ref_req.set_input_tensor(i, t);
+    new_req.set_input_tensor(i, t);
+  }
+  ref_req.infer();
+  new_req.infer();
+
+  auto ref_out = ref_req.get_output_tensor(0);
+  auto new_out = new_req.get_output_tensor(0);
+  ASSERT_EQ(ref_out.get_shape(), new_out.get_shape());
+  const auto* a = ref_out.data<float>();
+  const auto* b = new_out.data<float>();
+  for (size_t i = 0; i < ref_out.get_size(); ++i) {
+    ASSERT_NEAR(b[i], a[i], std::abs(a[i]) * 1e-4f + 1e-5f)
+        << "output[" << i << "] diverges";
+  }
+}
+
+NpuOptimizer Gemma4AttentionPasses(bool decompose) {
+  NpuOptimizer optimizer;
+  optimizer.SetCastIntegerSignToFloat(false)
+      .SetFuseSplitAttentionToSDPA(true)
+      .SetUnfoldGqaSequenceFold(true)
+      .SetDecomposeSDPAForHFA(decompose);
+  return optimizer;
+}
+
+// Follows |matmul|'s second input down Reshape <- Broadcast <- Unsqueeze to
+// the Concat under the GQA head repeat, or returns nullptr.
+std::shared_ptr<ov::op::v0::Concat> ConcatUnderHeadRepeat(
+    const std::shared_ptr<ov::Node>& matmul) {
+  auto node = matmul->get_input_node_shared_ptr(1);
+  if (!ov::is_type<ov::op::v1::Reshape>(node)) return nullptr;
+  node = node->get_input_node_shared_ptr(0);
+  if (!ov::is_type<ov::op::v3::Broadcast>(node)) return nullptr;
+  node = node->get_input_node_shared_ptr(0);
+  if (!ov::is_type<ov::op::v0::Unsqueeze>(node)) return nullptr;
+  return std::dynamic_pointer_cast<ov::op::v0::Concat>(
+      node->get_input_node_shared_ptr(0));
+}
+
+// The decomposed block must be exactly what NPUW's HFA path matches:
+//   K: Concat(axis 2) -> Unsqueeze -> Broadcast -> Reshape -> MatMul(tb=true)
+//   V: Concat(axis 3) -> Unsqueeze -> Broadcast -> Reshape -> MatMul(tb=true)
+// with the V layout Transpose gone, and still compute the same attention.
+TEST(DecomposeSDPAForHFATest, ProducesNpuwHfaFormOnGemma4Attention) {
+  // S_past + S = 16 is aligned, so the fusion adds no padding.
+  auto reference = BuildFoldedSplitCacheAttention(/*hkv=*/2, /*r=*/4,
+                                                  /*s_past=*/12, /*s=*/4,
+                                                  /*head_dim=*/8);
+  auto rewritten = reference->clone();
+  Gemma4AttentionPasses(/*decompose=*/true).Run(rewritten);
+
+  EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(rewritten), 0u);
+  EXPECT_EQ(CountOps<ov::op::v1::Transpose>(rewritten), 0u);
+  EXPECT_EQ(CountOps<ov::op::v1::Multiply>(rewritten), 0u)
+      << "a 1.0 scale must not add a Multiply";
+  ASSERT_EQ(CountOps<ov::op::v8::Softmax>(rewritten), 1u);
+
+  std::shared_ptr<ov::Node> softmax;
+  for (const auto& node : rewritten->get_ops()) {
+    if (ov::is_type<ov::op::v8::Softmax>(node)) softmax = node;
+  }
+  auto add = softmax->get_input_node_shared_ptr(0);
+  ASSERT_TRUE(ov::is_type<ov::op::v1::Add>(add));
+  auto qk = std::dynamic_pointer_cast<ov::op::v0::MatMul>(
+      add->get_input_node_shared_ptr(0));
+  ASSERT_NE(qk, nullptr);
+  EXPECT_TRUE(qk->get_transpose_b());
+  const auto softmax_users = softmax->output(0).get_target_inputs();
+  ASSERT_EQ(softmax_users.size(), 1u);
+  auto pv = std::dynamic_pointer_cast<ov::op::v0::MatMul>(
+      softmax_users.begin()->get_node()->shared_from_this());
+  ASSERT_NE(pv, nullptr);
+  EXPECT_TRUE(pv->get_transpose_b());
+
+  auto k_concat = ConcatUnderHeadRepeat(qk);
+  auto v_concat = ConcatUnderHeadRepeat(pv);
+  ASSERT_NE(k_concat, nullptr);
+  ASSERT_NE(v_concat, nullptr);
+  EXPECT_EQ(k_concat->get_axis(), 2);
+  EXPECT_EQ(v_concat->get_axis(), 3);
+  // V reaches the MatMul head-expanded but still in its stored [B,H,D,S].
+  EXPECT_EQ(pv->get_input_shape(1), (ov::Shape{1, 8, 8, 16}));
+
+  ExpectSameOutputs(reference, rewritten);
+}
+
+// With an unaligned KV length the fusion pads K/V after the layout Transpose,
+// so V cannot be read in its stored layout. The block is still decomposed
+// (through the Transpose) and still computes the same attention.
+TEST(DecomposeSDPAForHFATest, KeepsTransposeWhenKvIsPadded) {
+  auto reference = BuildFoldedSplitCacheAttention(/*hkv=*/2, /*r=*/2,
+                                                  /*s_past=*/8, /*s=*/4,
+                                                  /*head_dim=*/8);
+  auto rewritten = reference->clone();
+  Gemma4AttentionPasses(/*decompose=*/true).Run(rewritten);
+
+  EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(rewritten), 0u);
+  EXPECT_EQ(CountOps<ov::op::v1::Transpose>(rewritten), 1u);
+  ExpectSameOutputs(reference, rewritten);
+}
+
+// A scale other than 1.0, explicit or the op's implicit 1/sqrt(head_dim), is
+// applied to Q ahead of the first MatMul.
+TEST(DecomposeSDPAForHFATest, AppliesExplicitAndDefaultScale) {
+  using ov::op::v0::Parameter;
+  const auto f = ov::element::f32;
+  for (const bool explicit_scale : {true, false}) {
+    auto q = std::make_shared<Parameter>(f, ov::Shape{1, 2, 3, 4});
+    auto k = std::make_shared<Parameter>(f, ov::Shape{1, 2, 5, 4});
+    auto v = std::make_shared<Parameter>(f, ov::Shape{1, 2, 5, 4});
+    auto mask = std::make_shared<Parameter>(f, ov::Shape{1, 1, 3, 5});
+    ov::OutputVector args{q, k, v, mask};
+    if (explicit_scale) {
+      args.push_back(ov::op::v0::Constant::create(f, ov::Shape{}, {0.3f}));
+    }
+    auto sdpa = std::make_shared<ov::op::v13::ScaledDotProductAttention>(
+        args, /*causal=*/false);
+    auto reference =
+        std::make_shared<ov::Model>(ov::OutputVector{sdpa->output(0)},
+                                    ov::ParameterVector{q, k, v, mask}, "sdpa");
+    auto rewritten = reference->clone();
+
+    NpuOptimizer()
+        .SetCastIntegerSignToFloat(false)
+        .SetDecomposeSDPAForHFA(true)
+        .Run(rewritten);
+    EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(rewritten), 0u);
+    EXPECT_EQ(CountOps<ov::op::v1::Multiply>(rewritten), 1u);
+    ExpectSameOutputs(reference, rewritten);
+  }
+}
+
+// Causal SDPAs ignore their mask input and boolean masks select rather than
+// add: neither is the additive-mask form, so both stay fused.
+TEST(DecomposeSDPAForHFATest, LeavesCausalAndBooleanMaskFused) {
+  using ov::op::v0::Parameter;
+  const auto f = ov::element::f32;
+  for (const bool causal : {true, false}) {
+    auto q = std::make_shared<Parameter>(f, ov::Shape{1, 2, 3, 4});
+    auto k = std::make_shared<Parameter>(f, ov::Shape{1, 2, 5, 4});
+    auto v = std::make_shared<Parameter>(f, ov::Shape{1, 2, 5, 4});
+    auto mask = std::make_shared<Parameter>(causal ? f : ov::element::boolean,
+                                            ov::Shape{1, 1, 3, 5});
+    auto sdpa = std::make_shared<ov::op::v13::ScaledDotProductAttention>(
+        ov::OutputVector{q, k, v, mask}, causal);
+    auto model =
+        std::make_shared<ov::Model>(ov::OutputVector{sdpa->output(0)},
+                                    ov::ParameterVector{q, k, v, mask}, "sdpa");
+
+    NpuOptimizer()
+        .SetCastIntegerSignToFloat(false)
+        .SetDecomposeSDPAForHFA(true)
+        .Run(model);
+    EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(model), 1u);
+  }
+}
+
+// Disabled by default: the fused SDPA is left for the STATIC path.
+TEST(DecomposeSDPAForHFATest, DoesNothingWhenDisabled) {
+  auto model = BuildFoldedSplitCacheAttention(/*hkv=*/2, /*r=*/4,
+                                              /*s_past=*/12, /*s=*/4,
+                                              /*head_dim=*/8);
+  Gemma4AttentionPasses(/*decompose=*/false).Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(model), 1u);
+  EXPECT_EQ(CountOps<ov::op::v1::Transpose>(model), 1u);
+}
+
+NpuOptimizer::Result RunDecompose(const std::shared_ptr<ov::Model>& model,
+                                  bool unfold) {
+  return NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetFuseSplitAttentionToSDPA(true)
+      .SetUnfoldGqaSequenceFold(unfold)
+      .SetDecomposeSDPAForHFA(true)
+      .Run(model);
+}
+
+// A prefill chunk is decomposed whether or not the GQA fold was undone first,
+// and the count is reported.
+TEST(DecomposeSDPAForHFATest, DecomposesPrefillChunkAndCountsIt) {
+  for (const bool unfold : {true, false}) {
+    auto reference = BuildFoldedSplitCacheAttention(/*hkv=*/2, /*r=*/4,
+                                                    /*s_past=*/12, /*s=*/4,
+                                                    /*head_dim=*/8);
+    auto rewritten = reference->clone();
+    const auto result = RunDecompose(rewritten, unfold);
+
+    EXPECT_EQ(result.num_sdpa_decomposed_for_hfa, 1u) << "unfold=" << unfold;
+    EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(rewritten), 0u);
+    ExpectSameOutputs(reference, rewritten);
+  }
+}
+
+// A decode step attends for one token. Folded, its Q is [1,Hkv,r,D], whose
+// sequence axis is r > 1, so the token count must be read through the fold.
+TEST(DecomposeSDPAForHFATest, LeavesDecodeStepFused) {
+  for (const bool unfold : {true, false}) {
+    auto model = BuildFoldedSplitCacheAttention(/*hkv=*/2, /*r=*/4,
+                                                /*s_past=*/15, /*s=*/1,
+                                                /*head_dim=*/8);
+    const auto result = RunDecompose(model, unfold);
+
+    EXPECT_EQ(result.num_sdpa_decomposed_for_hfa, 0u) << "unfold=" << unfold;
+    EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(model), 1u)
+        << "unfold=" << unfold;
+  }
+
+  // The export's decode skips the head Transpose for its single token and
+  // folds the token-major [1,1,Hq,D] query straight into [1,Hkv,r,D].
+  {
+    using ov::op::v0::Parameter;
+    const auto f = ov::element::f32;
+    auto q = std::make_shared<Parameter>(f, ov::Shape{1, 1, 8, 4});
+    auto q_folded = std::make_shared<ov::op::v1::Reshape>(
+        q,
+        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{4},
+                                     std::vector<int64_t>{1, 2, 4, 4}),
+        /*special_zero=*/false);
+    auto k = std::make_shared<Parameter>(f, ov::Shape{1, 2, 16, 4});
+    auto v = std::make_shared<Parameter>(f, ov::Shape{1, 2, 16, 4});
+    auto mask = std::make_shared<Parameter>(f, ov::Shape{1, 1, 4, 16});
+    auto sdpa = std::make_shared<ov::op::v13::ScaledDotProductAttention>(
+        ov::OutputVector{q_folded, k, v, mask}, /*causal=*/false);
+    auto model =
+        std::make_shared<ov::Model>(ov::OutputVector{sdpa->output(0)},
+                                    ov::ParameterVector{q, k, v, mask}, "sdpa");
+    const auto result = NpuOptimizer()
+                            .SetCastIntegerSignToFloat(false)
+                            .SetDecomposeSDPAForHFA(true)
+                            .Run(model);
+    EXPECT_EQ(result.num_sdpa_decomposed_for_hfa, 0u);
+    EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(model), 1u);
+  }
 }
 
 }  // namespace

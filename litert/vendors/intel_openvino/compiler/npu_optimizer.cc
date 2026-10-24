@@ -15,6 +15,7 @@
 #include "litert/vendors/intel_openvino/compiler/npu_optimizer.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -1715,6 +1716,206 @@ bool UnfoldGqaSequenceFold::run_on_model(
   return changed;
 }
 
+namespace {
+
+// True when |node| is a Transpose whose order is the constant {0,1,3,2}.
+bool IsSwapLastTwoAxes(const std::shared_ptr<ov::Node>& node) {
+  if (!ov::is_type<ov::op::v1::Transpose>(node)) return false;
+  auto order = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+      node->get_input_node_shared_ptr(1));
+  return order &&
+         order->cast_vector<int64_t>() == std::vector<int64_t>{0, 1, 3, 2};
+}
+
+// Looks through an SDPA K/V input for the {0,1,3,2} Transpose that
+// FuseSplitAttentionToSDPA adds after the KV Concat when the cache is stored
+// as [B,H,D,S], either directly or under the GQA head repeat that
+// UnfoldGqaSequenceFold builds on top of it (Unsqueeze -> Broadcast ->
+// Reshape). When found, returns the same K/V in its stored [B,H,D,S] layout,
+// with the head repeat (if any) rebuilt underneath the Transpose, and nullopt
+// otherwise. Every new node is appended to |created|.
+std::optional<ov::Output<ov::Node>> KvInStoredLayout(
+    const ov::Output<ov::Node>& kv, ov::NodeVector* created) {
+  auto node = kv.get_node_shared_ptr();
+  if (IsSwapLastTwoAxes(node)) return node->input_value(0);
+
+  auto reshape = std::dynamic_pointer_cast<ov::op::v1::Reshape>(node);
+  if (!reshape || !HasSingleConsumer(reshape->output(0))) return std::nullopt;
+  auto broadcast = reshape->get_input_node_shared_ptr(0);
+  if (!ov::is_type<ov::op::v3::Broadcast>(broadcast) ||
+      !HasSingleConsumer(broadcast->output(0))) {
+    return std::nullopt;
+  }
+  auto unsqueeze = broadcast->get_input_node_shared_ptr(0);
+  if (!ov::is_type<ov::op::v0::Unsqueeze>(unsqueeze) ||
+      !HasSingleConsumer(unsqueeze->output(0))) {
+    return std::nullopt;
+  }
+  auto transpose = unsqueeze->get_input_node_shared_ptr(0);
+  if (!IsSwapLastTwoAxes(transpose)) return std::nullopt;
+
+  const auto stored_shape = StaticShape4D(transpose->input_value(0));
+  const auto expanded_shape = StaticShape4D(reshape->output(0));
+  if (!stored_shape || !expanded_shape) return std::nullopt;
+  const size_t hkv = (*stored_shape)[1];
+  const size_t hq = (*expanded_shape)[1];
+  if (hkv == 0 || hq % hkv != 0) return std::nullopt;
+  const auto r = static_cast<int64_t>(hq / hkv);
+  return BroadcastKvOverHeads(transpose->input_value(0), *stored_shape, r,
+                              created);
+}
+
+// True when |node| is the GQA fold of a single-token query as the export
+// emits it for decode: [1,1,Hq,D] -> [1,Hkv,r,D] with Hq == Hkv*r, r > 1. The
+// token-major input skips the [B,S,H,D] -> [B,H,S,D] Transpose, which is the
+// identity on memory only when S == 1, so this reshape is a fold of exactly
+// one token.
+bool IsSingleTokenGqaFoldReshape(const std::shared_ptr<ov::Node>& node) {
+  if (!ov::is_type<ov::op::v1::Reshape>(node)) return false;
+  const auto in = StaticShape4D(node->input_value(0));
+  const auto out = StaticShape4D(node->output(0));
+  if (!in || !out) return false;
+  const size_t hq = (*in)[2];
+  const size_t hkv = (*out)[1];
+  return (*in)[0] == 1 && (*in)[1] == 1 && (*out)[0] == 1 &&
+         (*in)[3] == (*out)[3] && hkv > 0 && hq > hkv && hq % hkv == 0 &&
+         (*out)[2] == hq / hkv;
+}
+
+// How many query tokens |sdpa| attends for, given its static Q shape
+// [B,H,S,D]: S, unless Q reaches the SDPA through a reshape that folds the
+// GQA group ratio r into the sequence axis (left in place wherever
+// UnfoldGqaSequenceFold did not apply, e.g. decode), in which case S / r.
+size_t QueryTokenCount(const ov::op::v13::ScaledDotProductAttention& sdpa,
+                       const ov::Shape& q_shape) {
+  const auto q = sdpa.get_input_node_shared_ptr(0);
+  if (IsSingleTokenGqaFoldReshape(q)) return 1;
+  const auto r = MatchGqaFoldReshape(q);
+  return r ? q_shape[2] / static_cast<size_t>(*r) : q_shape[2];
+}
+
+}  // namespace
+
+bool DecomposeSDPAForHFA::run_on_model(
+    const std::shared_ptr<ov::Model>& model) {
+  bool changed = false;
+  size_t rewritten = 0;
+  size_t v_stored = 0;
+  size_t single_token = 0;
+  // Collect first: the rewrite replaces nodes.
+  std::vector<std::shared_ptr<ov::op::v13::ScaledDotProductAttention>> sdpas;
+  for (const auto& node : model->get_ops()) {
+    if (auto sdpa =
+            std::dynamic_pointer_cast<ov::op::v13::ScaledDotProductAttention>(
+                node)) {
+      sdpas.push_back(sdpa);
+    }
+  }
+
+  for (const auto& sdpa : sdpas) {
+    const std::string name = sdpa->get_friendly_name();
+    // Q, K, V, attn_mask [, scale]. The decomposed form has an additive mask
+    // and nothing else: causal SDPAs ignore their mask input and boolean masks
+    // select rather than add, so both are left fused.
+    if (sdpa->get_input_size() < 4 || sdpa->get_input_size() > 5 ||
+        sdpa->get_causal()) {
+      continue;
+    }
+    ov::Output<ov::Node> mask = sdpa->input_value(3);
+    if (!mask.get_element_type().is_real()) {
+      LITERT_LOG(LITERT_DEBUG,
+                 "DecomposeSDPAForHFA[%s]: reject: mask is not additive (%s)",
+                 name.c_str(), mask.get_element_type().get_type_name().c_str());
+      continue;
+    }
+    const auto q_shape = StaticShape4D(sdpa->input_value(0));
+    if (!q_shape) continue;
+    // HFA only applies to a chunk of queries; decode steps stay fused.
+    if (QueryTokenCount(*sdpa, *q_shape) <= 1) {
+      ++single_token;
+      continue;
+    }
+
+    ov::NodeVector created;
+    const auto q_type = sdpa->get_input_element_type(0);
+
+    // Scale. FuseSplitAttentionToSDPA always sets 1.0 (the model pre-scales
+    // Q), so normally there is nothing to apply. Any other scale is folded
+    // into Q ahead of the first MatMul, where NPUW expects it.
+    ov::Output<ov::Node> q = sdpa->input_value(0);
+    float scale = 1.0f / std::sqrt(static_cast<float>((*q_shape)[3]));
+    if (sdpa->get_input_size() == 5) {
+      auto scale_const = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+          sdpa->get_input_node_shared_ptr(4));
+      if (!scale_const || ov::shape_size(scale_const->get_shape()) != 1) {
+        LITERT_LOG(LITERT_DEBUG,
+                   "DecomposeSDPAForHFA[%s]: reject: scale is not a scalar "
+                   "Constant",
+                   name.c_str());
+        continue;
+      }
+      scale = scale_const->cast_vector<float>().front();
+    }
+    if (scale != 1.0f) {
+      auto scale_const =
+          ov::op::v0::Constant::create(q_type, ov::Shape{}, {scale});
+      auto q_scaled = std::make_shared<ov::op::v1::Multiply>(q, scale_const);
+      created.insert(created.end(), {scale_const, q_scaled});
+      q = q_scaled;
+    }
+
+    // K and V. A K/V cache stored as [B,H,D,S] is read in that layout through
+    // transpose_b instead of through an explicit Transpose, which is how
+    // NPUW's own LLM pipeline lays out V after OptimizeValueTensors.
+    ov::Output<ov::Node> k = sdpa->input_value(1);
+    bool k_transpose_b = true;
+    if (auto stored = KvInStoredLayout(k, &created)) {
+      k = *stored;
+      k_transpose_b = false;
+    }
+    ov::Output<ov::Node> v = sdpa->input_value(2);
+    bool v_transpose_b = false;
+    if (auto stored = KvInStoredLayout(v, &created)) {
+      v = *stored;
+      v_transpose_b = true;
+      ++v_stored;
+    }
+
+    auto scores = std::make_shared<ov::op::v0::MatMul>(
+        q, k, /*transpose_a=*/false, k_transpose_b);
+    if (mask.get_element_type() != scores->get_output_element_type(0)) {
+      auto converted = std::make_shared<ov::op::v0::Convert>(
+          mask, scores->get_output_element_type(0));
+      created.push_back(converted);
+      mask = converted;
+    }
+    auto masked = std::make_shared<ov::op::v1::Add>(scores, mask);
+    auto probs = std::make_shared<ov::op::v8::Softmax>(masked, /*axis=*/-1);
+    auto out = std::make_shared<ov::op::v0::MatMul>(
+        probs, v, /*transpose_a=*/false, v_transpose_b);
+    created.insert(created.end(), {scores, masked, probs, out});
+
+    out->set_friendly_name(name);
+    ov::copy_runtime_info(sdpa, created);
+    ov::replace_node(sdpa, out);
+    LITERT_LOG(LITERT_DEBUG,
+               "DecomposeSDPAForHFA: decomposed '%s' (scale=%g, "
+               "k_stored_transposed=%d, v_stored_transposed=%d)",
+               name.c_str(), static_cast<double>(scale),
+               static_cast<int>(!k_transpose_b),
+               static_cast<int>(v_transpose_b));
+    ++rewritten;
+    changed = true;
+  }
+
+  LITERT_LOG(LITERT_INFO,
+             "DecomposeSDPAForHFA: decomposed %zu of %zu SDPA op(s) (%zu read "
+             "V in its stored [B,H,D,S] layout, %zu single-token skipped)",
+             rewritten, sdpas.size(), v_stored, single_token);
+  num_decomposed_ = rewritten;
+  return changed;
+}
+
 bool MoEGatherRewrite::run_on_model(const std::shared_ptr<ov::Model>& model) {
   // 1. Find all TopK nodes that look like MoE routers.
   auto layers = FindMoeLayers(model);
@@ -1809,6 +2010,11 @@ NpuOptimizer::Result NpuOptimizer::Run(
   if (unfold_gqa_sequence_fold_) {
     pass_manager.register_pass<UnfoldGqaSequenceFold>();
   }
+  // Must follow the unfold: that pass matches the fused SDPA form.
+  std::shared_ptr<DecomposeSDPAForHFA> decompose_pass;
+  if (decompose_sdpa_for_hfa_) {
+    decompose_pass = pass_manager.register_pass<DecomposeSDPAForHFA>();
+  }
   if (eliminate_matmul_fq_) {
     pass_manager.register_pass<EliminateMatMulFakeQuantize>();
   }
@@ -1828,6 +2034,8 @@ NpuOptimizer::Result NpuOptimizer::Run(
   Result result;
   result.moe_is_multi_token_chunk =
       moe_gather_pass && moe_gather_pass->is_multi_token_chunk();
+  result.num_sdpa_decomposed_for_hfa =
+      decompose_pass ? decompose_pass->num_decomposed() : 0;
   return result;
 }
 

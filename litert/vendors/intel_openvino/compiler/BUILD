@@ -259,6 +259,24 @@ litert_lib(
     ],
 )
 
+litert_test(
+    name = "openvino_compile_context_test",
+    srcs = ["openvino_compile_context_test.cc"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":openvino_compile_context",
+        "//litert/cc:litert_expected",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "@intel_openvino//:openvino",
+    ],
+)
+
 litert_dynamic_lib(
     name = "openvino_compiler_plugin",
     srcs = [
