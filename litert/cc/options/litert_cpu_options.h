@@ -94,6 +94,24 @@ class CpuOptions : public ConcreteOptionsBase {
     return enabled;
   }
 
+  /// @brief Sets allowed ops for YNNPACK delegate (comma-separated list).
+  Expected<void> SetYNNPackAllowedOps(const char* allowed_ops) {
+    LITERT_RETURN_IF_ERROR(
+        LrtSetCpuOptionsYNNPackAllowedOps(options_.get(), allowed_ops));
+    return {};
+  }
+
+  /// @brief Gets allowed ops for YNNPACK delegate.
+  Expected<StringView> GetYNNPackAllowedOps() const {
+    const char* allowed_ops;
+    auto s = LrtGetCpuOptionsYNNPackAllowedOps(options_.get(), &allowed_ops);
+    if (s == kLiteRtStatusErrorNotFound) {
+      return StringView();
+    }
+    LITERT_RETURN_IF_ERROR(s);
+    return internal::NullSafeStringView(allowed_ops);
+  }
+
   /// @brief Sets the XNNPack flags.
   Expected<void> SetXNNPackFlags(uint32_t flags) {
     LITERT_RETURN_IF_ERROR(LrtSetCpuOptionsXNNPackFlags(options_.get(), flags));

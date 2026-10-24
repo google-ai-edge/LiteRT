@@ -97,6 +97,7 @@ TEST_F(LiteRtCpuOptionsFieldsTest, GetOpaqueCpuOptionsDataSerializesSetFields) {
   LITERT_EXPECT_OK(
       LrtSetCpuOptionsKernelMode(cpu_options_, kLiteRtCpuKernelModeDelegate));
   LITERT_EXPECT_OK(LrtSetCpuOptionsEnableYNNPack(cpu_options_, true));
+  LITERT_EXPECT_OK(LrtSetCpuOptionsYNNPackAllowedOps(cpu_options_, "op1,op2"));
   LITERT_EXPECT_OK(LrtSetCpuOptionsNumThread(cpu_options_, 4));
   LITERT_EXPECT_OK(LrtSetCpuOptionsXNNPackFlags(cpu_options_, 7));
   LITERT_EXPECT_OK(
@@ -114,6 +115,7 @@ TEST_F(LiteRtCpuOptionsFieldsTest, GetOpaqueCpuOptionsDataSerializesSetFields) {
   EXPECT_STREQ(static_cast<const char*>(payload),
                "kernel_mode = \"delegate\"\n"
                "enable_ynnpack = true\n"
+               "ynnpack_allowed_ops = \"op1,op2\"\n"
                "num_threads = 4\n"
                "flags = 7\n"
                "hint_fully_delegated_to_single_delegate = true\n"
@@ -165,6 +167,18 @@ TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetEnableYNNPack) {
   LITERT_EXPECT_OK(
       LrtGetCpuOptionsEnableYNNPack(cpu_options_, &enable_ynnpack));
   EXPECT_TRUE(enable_ynnpack);
+}
+
+TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetYNNPackAllowedOps) {
+  const char* allowed_ops = nullptr;
+
+  EXPECT_THAT(LrtGetCpuOptionsYNNPackAllowedOps(cpu_options_, &allowed_ops),
+              IsError(kLiteRtStatusErrorNotFound));
+
+  LITERT_EXPECT_OK(LrtSetCpuOptionsYNNPackAllowedOps(cpu_options_, "op1,op2"));
+  LITERT_EXPECT_OK(
+      LrtGetCpuOptionsYNNPackAllowedOps(cpu_options_, &allowed_ops));
+  EXPECT_STREQ(allowed_ops, "op1,op2");
 }
 
 TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetXNNPackFlags) {

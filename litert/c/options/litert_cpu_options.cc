@@ -27,6 +27,7 @@
 struct LrtCpuOptions {
   std::optional<LiteRtCpuKernelMode> kernel_mode;
   std::optional<bool> enable_ynnpack;
+  std::optional<std::string> ynnpack_allowed_ops;
   std::optional<int32_t> num_threads;
   std::optional<uint32_t> flags;
   std::optional<std::string> weight_cache_file_path;
@@ -89,6 +90,11 @@ LiteRtStatus LrtGetOpaqueCpuOptionsData(const LrtCpuOptions* options,
   if (options->enable_ynnpack.has_value()) {
     absl::StrAppend(&toml_data, "enable_ynnpack = ",
                     *options->enable_ynnpack ? "true" : "false", "\n");
+  }
+  if (options->ynnpack_allowed_ops.has_value()) {
+    absl::StrAppend(&toml_data,
+                    absl::StrFormat("ynnpack_allowed_ops = \"%s\"\n",
+                                    *options->ynnpack_allowed_ops));
   }
   if (options->num_threads.has_value()) {
     absl::StrAppend(&toml_data, "num_threads = ", *options->num_threads, "\n");
@@ -160,6 +166,29 @@ LiteRtStatus LrtGetCpuOptionsEnableYNNPack(const LrtCpuOptions* options,
     return kLiteRtStatusErrorNotFound;
   }
   *enable_ynnpack = *options->enable_ynnpack;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtSetCpuOptionsYNNPackAllowedOps(LrtCpuOptions* options,
+                                               const char* allowed_ops) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  LITERT_ENSURE(allowed_ops != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "allowed_ops is null.");
+  options->ynnpack_allowed_ops = std::string(allowed_ops);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtGetCpuOptionsYNNPackAllowedOps(const LrtCpuOptions* options,
+                                               const char** const allowed_ops) {
+  LITERT_ENSURE(options != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "options is null.");
+  LITERT_ENSURE(allowed_ops != nullptr, kLiteRtStatusErrorInvalidArgument,
+                "allowed_ops is null.");
+  if (!options->ynnpack_allowed_ops.has_value()) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *allowed_ops = options->ynnpack_allowed_ops->c_str();
   return kLiteRtStatusOk;
 }
 

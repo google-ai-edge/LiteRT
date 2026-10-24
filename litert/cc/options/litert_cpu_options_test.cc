@@ -85,6 +85,19 @@ TEST(CpuOptions, SetAndGetEnableYNNPackWorks) {
   EXPECT_THAT(options.GetEnableYNNPack(), IsOkAndHolds(true));
 }
 
+TEST(CpuOptions, CheckYNNPackAllowedOpsDefaultValue) {
+  LITERT_ASSERT_OK_AND_ASSIGN(CpuOptions options, CpuOptions::Create());
+  EXPECT_THAT(options.GetYNNPackAllowedOps(),
+              IsOkAndHolds(absl::string_view()));
+}
+
+TEST(CpuOptions, SetAndGetYNNPackAllowedOpsWorks) {
+  LITERT_ASSERT_OK_AND_ASSIGN(CpuOptions options, CpuOptions::Create());
+
+  LITERT_EXPECT_OK(options.SetYNNPackAllowedOps("op1,op2"));
+  EXPECT_THAT(options.GetYNNPackAllowedOps(), IsOkAndHolds(StrEq("op1,op2")));
+}
+
 TEST(CpuOptions, SetAndGetNumThreadsWorks) {
   LITERT_ASSERT_OK_AND_ASSIGN(CpuOptions options, CpuOptions::Create());
 
