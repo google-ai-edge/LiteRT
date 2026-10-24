@@ -315,6 +315,7 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
           LiteRtGetConv3dTransposeDilationHOption,
       .build_conv_3d_transpose_op_option =
           LiteRtBuilderBuildConv3dTransposeOpOption,
+      .set_op_input = LiteRtBuilderSetOpInput,
   };
   return &ctx;
 }
