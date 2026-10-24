@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_COMPILER_PLUGIN_ALGO_H_
 #define ODML_LITERT_LITERT_COMPILER_PLUGIN_ALGO_H_
 
+#include <cstdint>
 #include <vector>
 
 #include "litert/c/litert_common.h"
@@ -71,6 +72,18 @@ litert::Expected<LiteRtOp> OutlinePartition(LiteRtSubgraphT& root,
 // Returns true if the inlining is successful.
 Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
                               LiteRtSubgraph source_subgraph);
+
+// Deep-copies `source` (tensors, ops, inputs, outputs and name) into a new
+// subgraph appended to the end of `model` and returns the index of the clone.
+// Subgraph references held by the cloned ops (see core/model/subgraph_refs.h)
+// are copied verbatim, so the clone references the same region subgraphs as
+// `source`. On failure (e.g. an op uses a tensor not owned by `source`),
+// `model` is left unchanged.
+//
+// Used to give an outlined partition its own copy of a region subgraph that is
+// also referenced by ops remaining on CPU.
+Expected<uint32_t> CloneSubgraph(LiteRtModelT& model,
+                                 const LiteRtSubgraphT& source);
 
 }  // namespace litert::internal
 

@@ -435,3 +435,16 @@ if (NegotiateInterface(query_fn, kLiteRtCompilerPluginInterfaceBasic,
   }
 }
 ```
+
+### Interface version history
+
+*   **V1.0:** Initial versioned interface table.
+*   **V1.1:** Appends `get_compiler_plugin_capabilities`, which reports a bit
+    set of `LiteRtCompilerPluginCapability` values. Plugins reporting
+    `kLiteRtCompilerPluginCapabilityRegionSubgraphs` may select region-bearing
+    ops (e.g. `STABLEHLO_REDUCE_WINDOW`, `WHILE`, `IF`) and receive their region
+    subgraphs as private subgraphs after the entry subgraphs of the partitions
+    model passed to `compiler_plugin_compile`. Plugins whose table ends before
+    this member (or leave it null) are treated as having no capabilities: their
+    region-bearing ops stay on CPU, while the bodies of control-flow ops can
+    still be partitioned for NPU.

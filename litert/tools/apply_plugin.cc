@@ -37,7 +37,9 @@
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
+#include "litert/core/model/model.h"
 #include "litert/core/model/model_serialize.h"
+#include "litert/core/model/subgraph_refs.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/tools/dump.h"
 #include "litert/tools/tool_display.h"
@@ -47,8 +49,11 @@ namespace litert::tools {
 using ::litert::BufferRef;
 using ::litert::internal::CompilerPlugin;
 using ::litert::internal::Dump;
+using ::litert::internal::HasSubgraphRefs;
 using ::litert::internal::PartitionResult;
 using ::litert::internal::SerializeModel;
+using ::litert::internal::SubgraphRefKind;
+using ::litert::internal::UpdateSubgraphRefs;
 using ::litert::internal::VerifyFlatbuffer;
 using ::litert::tools::ApplyPluginRun;
 
@@ -334,10 +339,22 @@ LiteRtStatus Partition(Context& ctx) {
   ctx.Dump().Done();
   DumpPartitionResult(ctx.Dump(), *partition_result);
 
-  // TODO: Handle the edge case where the result contains composites and
-  // their decompositions. See opposite logic in TransferSubgraphTo.
+  // Append the partitions (entries and private region subgraphs) to the model.
+  // Subgraph references held by ops in the partitions are relative to the
+  // partitions model, so shift them past the subgraphs already in the model.
+  const auto offset = static_cast<int32_t>(model.NumSubgraphs());
   LiteRtSubgraphT::Alloc alloc;
   for (auto* subgraph : partition_result->second.Subgraphs()) {
+    for (LiteRtOp op : subgraph->Ops()) {
+      if (!HasSubgraphRefs(*op)) {
+        continue;
+      }
+      UpdateSubgraphRefs(*op, [offset](int32_t& ind, SubgraphRefKind) {
+        if (ind >= 0) {
+          ind += offset;
+        }
+      });
+    }
     alloc.EmplaceBack(std::move(*subgraph));
   }
   model.TransferSubgraphsFrom(std::move(alloc));

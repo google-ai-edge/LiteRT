@@ -59,6 +59,7 @@
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_serialize.h"
+#include "litert/core/model/subgraph_refs.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/google_tensor/adapter.h"
@@ -583,6 +584,20 @@ void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
   delete compiler_plugin;
 }
 
+LiteRtStatus LiteRtGetCompilerPluginCapabilities(
+    LiteRtCompilerPlugin compiler_plugin, uint64_t* capabilities) {
+  if (compiler_plugin == nullptr || capabilities == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // Region-bearing ops are compiled together with their region subgraphs,
+  // which are serialized as private (signature-less) subgraphs. See
+  // LiteRtCompilerPluginCompile. Known limitation: the experimental dynamic
+  // input validation in LiteRtCompilerPluginPartition cannot serialize region
+  // bodies yet and falls back to the static op list for such subgraphs.
+  *capabilities = kLiteRtCompilerPluginCapabilityRegionSubgraphs;
+  return kLiteRtStatusOk;
+}
+
 namespace google_tensor {
 
 // Enum to indicate the outcome of applying filters to an operation.
@@ -839,6 +854,18 @@ litert::Expected<litert::OwningBufferRef<uint8_t>> SerializeSubgraph(
 
   // Clone all ops.
   for (const LiteRtOpT* src_op : subgraph->Ops()) {
+    // Region bodies live in other subgraphs which are not part of the
+    // temporary model; serializing would leave dangling subgraph indices.
+    // Callers (dynamic input validation during Partition) fall back to the
+    // static op list in that case.
+    // TODO: Serialize the region closure once Partition has access to the
+    // owning model.
+    if (litert::internal::HasRegionRefs(*src_op)) {
+      return litert::Unexpected(
+          kLiteRtStatusErrorUnsupported,
+          "Cannot serialize a subgraph containing region-bearing ops in "
+          "isolation");
+    }
     LiteRtOpT& dest_op = litert::internal::MakeClone(dest_subgraph, *src_op);
 
     // Attach inputs.
@@ -1240,7 +1267,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     return kLiteRtStatusErrorInvalidArgument;
   }
   litert::compiler::Model model(compiler_plugin->ctx(), partitions);
-  const auto num_partitions = model.NumSubgraphs();
+  const auto num_subgraphs = model.NumSubgraphs();
+  // Only entry subgraphs become signatures / compiled calls. Trailing private
+  // region subgraphs (e.g. reduction bodies) are serialized without a
+  // signature, so they are imported as private functions referenced by the
+  // region-bearing ops of the entries.
+  const auto num_partitions = model.NumEntrySubgraphs();
 
   LITERT_ASSIGN_OR_RETURN(auto adapter, compiler_plugin->GetAdapter());
   if (adapter->IsAot()) {
@@ -1254,17 +1286,18 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     if (soc_model == nullptr) {
       soc_model = "Unspecified";
     }
-    // Currently ODC only supports Single subgraph models.
+    // Currently ODC only supports a single entry subgraph (and its regions).
     if (num_partitions > 1) {
       LITERT_LOG(LITERT_ERROR, "%s",
-                 "ODC mode does not support multiple subgraphs");
+                 "ODC mode does not support multiple entry subgraphs");
       return kLiteRtStatusErrorInvalidArgument;
     }
   }
 
   LITERT_LOG(LITERT_INFO,
-             "Starting GoogleTensor Compilation for %d subgraphs, soc_model=%s",
-             num_partitions, soc_model);
+             "Starting GoogleTensor Compilation for %zu subgraphs (%zu region "
+             "subgraphs), soc_model=%s",
+             num_partitions, num_subgraphs - num_partitions, soc_model);
 
   if (num_partitions == 0) {
     LITERT_LOG(LITERT_ERROR,
@@ -1278,20 +1311,21 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   auto [data, size, offset] = buf.GetWeak();
   LiteRtModelSerializationOptions opts{};
   opts.bytecode_alignment = 1;
-  char** signatures =
-      static_cast<char**>(calloc(num_partitions, sizeof(char*)));
+  // One (possibly null) signature key per subgraph; region subgraphs keep a
+  // null key.
+  char** signatures = static_cast<char**>(calloc(num_subgraphs, sizeof(char*)));
   if (signatures == nullptr) {
     LITERT_LOG(LITERT_ERROR, "Failed to allocate buffers for signatures.");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  absl::Cleanup signatures_cleanup = [num_partitions, signatures]() {
-    FreeSignatureKeys(num_partitions, signatures);
+  absl::Cleanup signatures_cleanup = [num_subgraphs, signatures]() {
+    FreeSignatureKeys(num_subgraphs, signatures);
   };
 
   MakeUniqueSignatureKeysPerSubgraph(model.Get(), num_partitions, signatures);
   LITERT_RETURN_IF_ERROR(
       compiler_plugin->ctx()->serialize_model_with_signatures(
-          partitions, &data, &size, &offset, false, signatures, num_partitions,
+          partitions, &data, &size, &offset, false, signatures, num_subgraphs,
           opts));
 
   const absl::string_view buffer_str(reinterpret_cast<const char*>(buf.Data()),
@@ -1393,7 +1427,7 @@ static const LiteRtCompilerPluginInterface_V1
             {
                 .struct_size = sizeof(LiteRtCompilerPluginInterface_V1),
                 .major_version = 1,
-                .minor_version = 0,
+                .minor_version = 1,
                 .reserved = 0,
             },
         .get_compiler_plugin_version = LiteRtGetCompilerPluginVersion,
@@ -1421,6 +1455,7 @@ static const LiteRtCompilerPluginInterface_V1
         .get_compiled_result_handle = nullptr,
         .check_compiler_compatibility =
             LiteRtCompilerPluginCheckCompilerCompatibility,
+        .get_compiler_plugin_capabilities = LiteRtGetCompilerPluginCapabilities,
     };
 
 }  // namespace
