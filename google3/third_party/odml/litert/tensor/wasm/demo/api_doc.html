@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LiteRT Tensor API WASM Documentation</title>
+  <!-- Load Marked.js for markdown rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --text: #334155;
+      --heading: #0f172a;
+      --code-bg: #0f172a;
+      --code-text: #38bdf8;
+      --inline-code-bg: #f1f5f9;
+      --inline-code-text: #0f172a;
+      --border: #e2e8f0;
+      --primary: #2563eb;
+    }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      line-height: 1.6;
+      color: var(--text);
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 30px 20px;
+    }
+    nav {
+      margin-bottom: 30px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid var(--border);
+    }
+    nav a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    nav a:hover { text-decoration: underline; }
+    h1, h2, h3, h4 { color: var(--heading); margin-top: 1.5em; margin-bottom: 0.5em; }
+    h1 { font-size: 2.25rem; border-bottom: 2px solid var(--border); padding-bottom: 10px; }
+    h2 { font-size: 1.75rem; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    h3 { font-size: 1.25rem; }
+    p, li { margin-bottom: 0.75em; }
+    ul, ol { padding-left: 25px; }
+    pre {
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 18px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-family: ui-monospace, monospace;
+      font-size: 0.9rem;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+    }
+    code {
+      font-family: ui-monospace, monospace;
+      background: var(--inline-code-bg);
+      color: var(--inline-code-text);
+      padding: 3px 6px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+    pre code {
+      background: none;
+      color: inherit;
+      padding: 0;
+      font-size: inherit;
+    }
+    blockquote {
+      border-left: 4px solid var(--primary);
+      margin: 0;
+      padding-left: 15px;
+      color: #64748b;
+      background: #f8fafc;
+      padding: 10px 15px;
+      border-radius: 0 6px 6px 0;
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="playground.html">← Back to WASM Playground</a>
+  </nav>
+  <div id="content">Loading documentation...</div>
+
+  <script>
+    async function loadDocumentation() {
+      const contentDiv = document.getElementById('content');
+      try {
+        const response = await fetch('../api_doc.md');
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const markdownText = await response.text();
+        contentDiv.innerHTML = marked.parse(markdownText);
+      } catch (err) {
+        contentDiv.innerHTML = `<div style="color:#ef4444; padding:20px; background:#fee2e2; border-radius:6px;">
+          <b>Failed to load documentation:</b> ${err.message}<br>
+          Make sure <code>api_doc.md</code> is accessible at the root of the demo server.
+        </div>`;
+        console.error(err);
+      }
+    }
+
+    window.addEventListener('load', loadDocumentation);
+  </script>
+</body>
+</html>

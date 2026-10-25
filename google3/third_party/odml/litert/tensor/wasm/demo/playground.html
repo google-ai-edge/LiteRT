@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LiteRT Tensor API WASM Playground</title>
+  <!-- CodeMirror CSS & JS CDNs -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+    }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 20px;
+      line-height: 1.5;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    h1 { margin: 0; font-size: 1.75rem; }
+    nav { display: flex; gap: 15px; }
+    nav a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    nav a:hover { text-decoration: underline; }
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .panel h2 { margin-top: 0; font-size: 1.25rem; margin-bottom: 15px; }
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+    }
+    button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: var(--primary-hover); }
+    button.secondary {
+      background: var(--border);
+      color: var(--text);
+    }
+    button.secondary:hover { background: #cbd5e1; }
+    button.secondary.active {
+      background: var(--primary);
+      color: white;
+    }
+    .CodeMirror {
+      height: 350px;
+      border-radius: 6px;
+      font-family: ui-monospace, monospace;
+      font-size: 0.9rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    #outputConsole, #tensorInspector {
+      background: #0f172a;
+      color: #38bdf8;
+      font-family: ui-monospace, monospace;
+      font-size: 0.85rem;
+      padding: 15px;
+      border-radius: 6px;
+      min-height: 120px;
+      max-height: 200px;
+      overflow-y: auto;
+      margin-bottom: 20px;
+    }
+    #tensorInspector { color: #a7f3d0; }
+    .status {
+      font-weight: bold;
+      margin-bottom: 10px;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>LiteRT Tensor API WASM Playground</h1>
+    <nav>
+      <a href="#" id="docLink" target="_blank">Documentation</a>
+      <a href="mandelbrot_demo.html">Mandelbrot</a>
+      <a href="game_of_life_demo.html">Game of Life</a>
+      <a href="gemma3/gemma3_demo.html">Gemma 3</a>
+      <a href="segmentation_demo.html">Segmentation</a>
+    </nav>
+  </header>
+
+  <div class="status" id="initStatus">Initializing WebAssembly Module...</div>
+
+  <div class="container">
+    <div class="panel">
+      <h2>Code Sandbox</h2>
+      <div class="toolbar">
+        <button class="secondary snippet-btn" id="btn-arithmetic" onclick="loadSnippet('arithmetic')">Basic Math</button>
+        <button class="secondary snippet-btn" id="btn-reduction" onclick="loadSnippet('reduction')">Reductions</button>
+        <button class="secondary snippet-btn" id="btn-broadcasting" onclick="loadSnippet('broadcasting')">Broadcasting</button>
+        <button class="secondary snippet-btn" id="btn-lambda" onclick="loadSnippet('lambda')">Static Graph</button>
+        <button class="secondary snippet-btn" id="btn-eager" onclick="loadSnippet('eager')">Eager Mode</button>
+      </div>
+      <textarea id="codeEditor">// Write JavaScript using the 'litert' WASM module
+const shape = [2, 2];
+const t1 = litert.createTensor({ type: 'FP32', shape: shape, name: 't1' });
+const t2 = litert.createTensor({ type: 'FP32', shape: shape, name: 't2' });
+
+const result = t1.add(t2);
+result.setName("out");
+
+println("Compiling runner and executing graph...");
+const runner = await litert.createGraphRunner({"t1": t1, "t2": t2}, {"out": result});
+
+runner.setInputData("t1", [1.0, 2.0, 3.0, 4.0]);
+runner.setInputData("t2", [10.0, 20.0, 30.0, 40.0]);
+
+await runner.run();
+
+logTensor(runner.getOutput("out"), "Addition Result");
+</textarea>
+      <div style="margin-top: 15px;">
+        <button onclick="executeCode()">Run Sandbox</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Execution Console</h2>
+      <h3>Console Logs</h3>
+      <div id="outputConsole"></div>
+      <h3>Tensor Inspector</h3>
+      <div id="tensorInspector">Run a script to inspect output tensors.</div>
+    </div>
+  </div>
+
+  <script src="../tensor_wasm_internal.js"></script>
+  <script type="module">
+    import { createLiteRT } from '../tensor_wasm.js';
+
+    let litert = null;
+    const initStatus = document.getElementById('initStatus');
+    const consoleOutput = document.getElementById('outputConsole');
+    const inspectorOutput = document.getElementById('tensorInspector');
+    const codeEditor = document.getElementById('codeEditor');
+
+    async function logTensor(tensor, label = "Tensor") {
+      const name = tensor.getName() || label;
+      const type = tensor.getType();
+      const shapeVec = tensor.getShape();
+      const shape = [];
+      for (let i = 0; i < shapeVec.size(); i++) shape.push(shapeVec.get(i));
+
+      let dataStr = "[]";
+      const dataView = await tensor.getData();
+      if (dataView) {
+        const arr = Array.from(dataView);
+        dataStr = JSON.stringify(arr.slice(0, 10));
+        if (arr.length > 10) dataStr = dataStr.replace("]", ", ...]");
+      }
+
+      const typeNames = {0: "UNKNOWN", 1: "BOOL", 2: "I2", 3: "I4", 4: "I8", 5: "I16", 6: "I32", 7: "I64", 8: "U4", 9: "U8", 10: "U16", 11: "U32", 12: "U64", 13: "FP16", 14: "FP32", 15: "FP64", 16: "BF16"};
+      const typeStr = typeNames[type.value] || "UNKNOWN";
+
+      inspectorOutput.innerHTML += `<div><b>${name}</b><br>&nbsp;Type: ${typeStr}<br>&nbsp;Shape: [${shape.join(', ')}]<br>&nbsp;Data: ${dataStr}</div><hr style="border-color:#334155;">`;
+    }
+
+    function println(msg) {
+      consoleOutput.innerHTML += `<div>${msg}</div>`;
+    }
+
+    const snippets = {
+      arithmetic: `// Basic arithmetic between tensors in Eager Mode
+litert.setEagerMode(true);
+
+const shape = [3];
+const t1 = litert.createTensorWithData([5.0, 10.0, 15.0], litert.TensorType.FP32, shape, "t1");
+const t2 = litert.createTensorWithData([2.0, 2.0, 2.0], litert.TensorType.FP32, shape, "t2");
+
+println("Executing operations eagerly: (t1 * t2) - (t1 / t2) ...");
+const mulResult = t1.mul(t2);
+const divResult = t1.div(t2);
+const finalResult = mulResult.sub(divResult);
+
+// No runner needed!
+logTensor(finalResult, "Final Math Output");`,
+
+      reduction: `// Reduction operations (Sum, Mean, Max) in Static Graph Mode
+litert.setEagerMode(false);
+
+const shape = [2, 3];
+const t = litert.createTensor({ type: 'FP32', shape: shape, name: 'input' });
+
+// Sum along axis 1
+const axes = [1];
+
+const sumOutput = t.sum(axes, true);
+sumOutput.setName("sumOut");
+const meanOutput = t.mean(axes, true);
+meanOutput.setName("meanOut");
+
+println("Compiling reduction graph along axis 1...");
+const runner = await litert.createGraphRunner({"input": t}, {"sumOut": sumOutput, "meanOut": meanOutput});
+
+runner.setInputData("input", [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+await runner.run();
+
+logTensor(runner.getOutput("sumOut"), "Sum(Axis 1)");
+logTensor(runner.getOutput("meanOut"), "Mean(Axis 1)");`,
+
+      broadcasting: `// Broadcasting addition in Static Graph Mode
+litert.setEagerMode(false);
+
+const shapeA = [2, 3];
+const shapeB = [1, 3];
+
+const a = litert.createTensor({ type: 'FP32', shape: shapeA, name: 'a' });
+const b = litert.createTensor({ type: 'FP32', shape: shapeB, name: 'b' });
+
+const broadcastResult = a.add(b);
+broadcastResult.setName("out");
+
+println("Compiling broadcasting graph...");
+const runner = await litert.createGraphRunner({"a": a, "b": b}, {"out": broadcastResult});
+
+runner.setInputData("a", [1, 2, 3, 4, 5, 6]);
+runner.setInputData("b", [100, 200, 300]);
+
+await runner.run();
+
+logTensor(runner.getOutput("out"), "Broadcasted Add");`,
+
+      lambda: `// Static Lambda Graph Execution Mode
+litert.setEagerMode(false);
+
+const shape = [2];
+const inputPlaceholder = litert.createTensor({ type: 'FP32', shape: shape, name: 'inputA' });
+
+// Construct Graph
+const weight = litert.createTensorWithData([10.0, 10.0], litert.TensorType.FP32, shape, "weight");
+const graphOutput = inputPlaceholder.mul(weight);
+graphOutput.setName("outputB");
+
+// Compile Runner
+println("Compiling Static Lambda Runner...");
+const runner = await litert.createGraphRunner(
+  { "inputA": inputPlaceholder },
+  { "outputB": graphOutput },
+  litert.HwAccelerators.CPU
+);
+
+// Run with concrete data
+runner.setInputData("inputA", [3.0, 7.0]);
+
+println("Executing graph...");
+await runner.run();
+
+const outHandle = runner.getOutput("outputB");
+logTensor(outHandle, "Graph Evaluated Output");`,
+
+      eager: `// Eager Execution Mode
+litert.setEagerMode(true);
+
+const shape = [2, 2];
+println("Creating tensors with data...");
+const t1 = litert.createTensorWithData([1.0, 2.0, 3.0, 4.0], litert.TensorType.FP32, shape, "t1");
+const t2 = litert.createTensorWithData([10.0, 20.0, 30.0, 40.0], litert.TensorType.FP32, shape, "t2");
+
+println("Executing t1.add(t2) eagerly...");
+const result = t1.add(t2);
+
+// No runner needed!
+logTensor(result, "Eager Addition Result");`
+    };
+
+    let editor = null;
+
+    window.loadSnippet = function(key) {
+      if (snippets[key]) {
+        if (editor) {
+          editor.setValue(snippets[key]);
+        } else {
+          codeEditor.value = snippets[key];
+        }
+        document.querySelectorAll('.snippet-btn').forEach(btn => btn.classList.remove('active'));
+        const activeBtn = document.getElementById('btn-' + key);
+        if (activeBtn) activeBtn.classList.add('active');
+        consoleOutput.innerHTML = "";
+        inspectorOutput.innerHTML = "Run a script to inspect output tensors.";
+      }
+    };
+
+    window.executeCode = async function() {
+      consoleOutput.innerHTML = "";
+      inspectorOutput.innerHTML = "";
+      try {
+        litert.setEagerMode(false);
+        const code = editor ? editor.getValue() : codeEditor.value;
+        const asyncFn = new Function('litert', 'logTensor', 'println', `return (async () => { ${code} })();`);
+        await asyncFn(litert, logTensor, println);
+        println("<span style='color:#22c55e;'>Execution successful.</span>");
+      } catch (err) {
+        println(`<span style='color:#ef4444;'>Error: ${err.message}</span>`);
+        console.error(err);
+      }
+    };
+
+    async function init() {
+      try {
+        initStatus.textContent = "Initializing WebAssembly Sandbox...";
+
+        // Initialize CodeMirror
+        editor = CodeMirror.fromTextArea(document.getElementById('codeEditor'), {
+          mode: "javascript",
+          theme: "dracula",
+          lineNumbers: true,
+          indentUnit: 2,
+          tabSize: 2
+        });
+        loadSnippet('arithmetic');
+
+        let device = null;
+        if (navigator.gpu) {
+          const adapter = await navigator.gpu.requestAdapter();
+          device = await adapter?.requestDevice();
+        }
+        litert = await createLiteRT({ preinitializedWebGPUDevice: device });
+        initStatus.textContent = "LiteRT WASM Engine Ready.";
+        initStatus.style.color = "#22c55e";
+
+        document.getElementById('docLink').href = "api_doc.html";
+      } catch (err) {
+        initStatus.textContent = `Initialization failed: ${err.message}`;
+        initStatus.style.color = "#ef4444";
+        console.error(err);
+      }
+    }
+
+    window.addEventListener('load', init);
+  </script>
+</body>
+</html>
