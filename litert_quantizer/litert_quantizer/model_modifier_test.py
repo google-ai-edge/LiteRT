@@ -22,6 +22,7 @@ import tracemalloc
 
 from absl.testing import absltest
 from absl.testing import parameterized
+from flatbuffers import flexbuffers
 
 import os
 import io
@@ -318,6 +319,111 @@ class ModelModifierTestWithSignature(BaseModelModifierTest):
         model, '_quantized'
     )
     self.assertIsNotNone(updated_model)
+
+
+class ModelModifierTestMoe(BaseModelModifierTest):
+
+  _model_path = str(
+      pathlib.Path(TEST_DATA_PREFIX_PATH)
+      / 'tests/models/single_moe_multiaxis.tflite'
+  )
+  _MOE_SUBGRAPH_INDEX = 0
+  _MOE_OP_INDEX = 0
+
+  def _set_blockwise_quantization(
+      self,
+      tensor_idx: int,
+      scale_tensor_idx: int,
+  ) -> None:
+    """Configures a tensor as INT8 with BlockwiseQuantization scale details.
+
+    Args:
+      tensor_idx: The index of the tensor to configure.
+      scale_tensor_idx: The index of the scale tensor.
+    """
+    tensor = self._model.subgraphs[self._MOE_SUBGRAPH_INDEX].tensors[tensor_idx]
+    tensor.type = qtyping.TensorType.INT8
+    tensor.quantization = qtyping.QuantizationParametersT()
+    tensor.quantization.detailsType = (
+        qtyping.QuantizationDetails.BlockwiseQuantization
+    )
+    blockwise_params = qtyping.BlockwiseQuantizationT()
+    blockwise_params.scales = scale_tensor_idx
+    # Placeholder; `_update_quantized_moe_ops` only checks that it's non-empty.
+    blockwise_params.blockShape = [1]
+    tensor.quantization.details = blockwise_params
+
+  def test_update_quantized_moe_ops(self):
+    subgraph = self._model.subgraphs[self._MOE_SUBGRAPH_INDEX]
+    op = subgraph.operators[self._MOE_OP_INDEX]
+    # Mark weights as INT8 with BlockwiseQuantization scale details.
+    (
+        src_idx,
+        top_weights_idx,
+        top_indices_idx,
+        gate_weight_idx,
+        ff1_weight_idx,
+        linear_weight_idx,
+        per_expert_scale_idx,
+    ) = op.inputs
+    gate_scale_idx, ff1_scale_idx, linear_scale_idx = (100, 101, 102)
+    self._set_blockwise_quantization(gate_weight_idx, gate_scale_idx)
+    self._set_blockwise_quantization(ff1_weight_idx, ff1_scale_idx)
+    self._set_blockwise_quantization(linear_weight_idx, linear_scale_idx)
+
+    updated_model = self._model_modifier._update_quantized_moe_ops(self._model)
+    updated_subgraph = updated_model.subgraphs[self._MOE_SUBGRAPH_INDEX]
+    updated_op = updated_subgraph.operators[self._MOE_OP_INDEX]
+
+    with self.subTest('weight_type'):
+      custom_options = flexbuffers.Loads(bytes(updated_op.customOptions))
+      self.assertEqual(custom_options['weight_type'], 'int8')
+
+    with self.subTest('inputs'):
+      self.assertEqual(
+          updated_op.inputs,
+          [
+              src_idx,
+              top_weights_idx,
+              top_indices_idx,
+              gate_weight_idx,
+              gate_scale_idx,
+              ff1_weight_idx,
+              ff1_scale_idx,
+              linear_weight_idx,
+              linear_scale_idx,
+              per_expert_scale_idx,
+          ],
+      )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name='no_details',
+          quant_params=qtyping.QuantizationParametersT(),
+      ),
+      dict(
+          testcase_name='empty_block_shape',
+          quant_params=qtyping.QuantizationParametersT(
+              detailsType=qtyping.QuantizationDetails.BlockwiseQuantization,
+              details=qtyping.BlockwiseQuantizationT(blockShape=[]),
+          ),
+      ),
+  )
+  def test_update_quantized_moe_ops_missing_blockwise_details_raises_error(
+      self, quant_params
+  ):
+    subgraph = self._model.subgraphs[self._MOE_SUBGRAPH_INDEX]
+    gate_weight_idx = subgraph.operators[self._MOE_OP_INDEX].inputs[3]
+    gate_weight = subgraph.tensors[gate_weight_idx]
+    gate_weight.type = qtyping.TensorType.INT8
+    gate_weight.quantization = quant_params
+
+    with self.assertRaisesRegex(
+        ValueError,
+        r'Weight tensor arith\.constant is missing BlockwiseQuantization'
+        r' details with a non-empty block_shape\.',
+    ):
+      self._model_modifier._update_quantized_moe_ops(self._model)
 
 
 if __name__ == '__main__':
