@@ -239,7 +239,7 @@ class BaseConvolutionOpModel : public SingleOpModelWithNNAPI {
       enum Padding padding = Padding_VALID,
       enum ActivationFunctionType activation = ActivationFunctionType_NONE,
       int dilation_width_factor = 1, int dilation_height_factor = 1,
-      std::initializer_list<FilterType> filter_data = {}) {
+      std::initializer_list<FilterType> filter_data = {}, int version = 1) {
     SingleOpModelWithNNAPI::Init(nnapi);
 
     input_ = AddInput(input);
@@ -302,7 +302,7 @@ class BaseConvolutionOpModel : public SingleOpModelWithNNAPI {
                      .Union());
 
     resolver_ = std::make_unique<SingleOpResolver>(BuiltinOperator_CONV_2D,
-                                                   registration);
+                                                   registration, version);
     BuildInterpreter({GetShape(input_), GetShape(filter_), GetShape(bias_)},
                      /*num_threads=*/-1,
                      /* allow_fp32_relax_to_fp16 */ false,
@@ -946,6 +946,68 @@ class NnApiOperationValidationTest
   std::vector<ANeuralNetworksOperationType> operations_;
   std::vector<uint32_t> input_counts_;
 };
+
+// Builds an int8 CONV_2D whose filter has `filter_channels` input channels.
+// The node is grouped when `input_channels != filter_channels`.
+std::unique_ptr<PerChannelQuantizedConvolutionOpModel> BuildInt8Conv(
+    const NnApi* nnapi, int input_channels, int filter_channels, int version,
+    int dilation = 1) {
+  return std::make_unique<PerChannelQuantizedConvolutionOpModel>(
+      nnapi, ops::builtin::Register_CONVOLUTION_REF(),
+      TensorData{
+          TensorType_INT8, {1, 3, 3, input_channels}, -63.5, 64, 0.5, -1},
+      TensorData{TensorType_INT8,
+                 {2, 1, 1, filter_channels},
+                 0,
+                 0,
+                 0,
+                 0,
+                 /*per_channel_quantization=*/true,
+                 /*per_channel_quantization_scales=*/{1, 2},
+                 /*per_channel_quantization_offsets=*/{0, 0},
+                 /*channel_index=*/0},
+      TensorData{TensorType_INT8, {}, -63.5, 64, 0.5, -1},
+      /*stride_width=*/1, /*stride_height=*/1, Padding_VALID,
+      ActivationFunctionType_NONE, dilation, dilation,
+      /*filter_data=*/std::initializer_list<int8_t>{}, version);
+}
+
+// The converter keeps one version per operator code, so a single grouped
+// convolution raises every CONV_2D node in the model to version 6.
+TEST_F(NnApiOperationValidationTest,
+       Conv2dVersion6WithoutGroupsIsDelegated) {
+  nnapi_mock_->SetAndroidSdkVersion(30);
+  auto m = BuildInt8Conv(nnapi_mock_->GetNnApi(), /*input_channels=*/2,
+                         /*filter_channels=*/2, /*version=*/6);
+  EXPECT_EQ(m->GetCompilationStatus(), kTfLiteOk);
+  EXPECT_EQ(m->CountOpsExecutedByCpuKernel(), 0);
+  EXPECT_EQ(operations_,
+            std::vector<ANeuralNetworksOperationType>{ANEURALNETWORKS_CONV_2D});
+}
+
+TEST_F(NnApiOperationValidationTest,
+       GroupedConv2dIsDelegatedAsGroupedConv) {
+  nnapi_mock_->SetAndroidSdkVersion(30);
+  auto m = BuildInt8Conv(nnapi_mock_->GetNnApi(), /*input_channels=*/4,
+                         /*filter_channels=*/2, /*version=*/6);
+  EXPECT_EQ(m->GetCompilationStatus(), kTfLiteOk);
+  EXPECT_EQ(m->CountOpsExecutedByCpuKernel(), 0);
+  EXPECT_EQ(operations_, std::vector<ANeuralNetworksOperationType>{
+                             ANEURALNETWORKS_GROUPED_CONV_2D});
+  // Implicit padding form: input, filter, bias, padding, stride_w, stride_h,
+  // num_groups, activation and the mandatory data layout.
+  EXPECT_EQ(input_counts_, std::vector<uint32_t>{9});
+}
+
+TEST_F(NnApiOperationValidationTest,
+       DilatedGroupedConv2dIsNotDelegated) {
+  nnapi_mock_->SetAndroidSdkVersion(30);
+  auto m = BuildInt8Conv(nnapi_mock_->GetNnApi(), /*input_channels=*/4,
+                         /*filter_channels=*/2, /*version=*/6,
+                         /*dilation=*/2);
+  EXPECT_EQ(m->CountOpsExecutedByCpuKernel(), 1);
+  EXPECT_TRUE(operations_.empty());
+}
 
 class Int8FullyConnectedOpModel : public SingleOpModelWithNNAPI {
  public:

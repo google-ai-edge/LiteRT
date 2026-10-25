@@ -2488,7 +2488,11 @@ bool NNAPIDelegateKernel::Validate(
       }
     } break;
     case kTfLiteBuiltinConv2d: {
-      ExpectMaxOpVersion(version, 5, &val_ctx);
+      // Version 6 marks grouped convolution, which is mapped to
+      // ANEURALNETWORKS_GROUPED_CONV_2D below. Note that the converter stores a
+      // single version per operator code, so a model containing one grouped
+      // convolution has every CONV_2D node at version 6.
+      ExpectMaxOpVersion(version, 6, &val_ctx);
       const auto& input_tensor = context->tensors[node->inputs->data[0]];
       const auto& filter_tensor = context->tensors[node->inputs->data[1]];
       if (android_sdk_version < kMinSdkVersionForNNAPI12) {
@@ -2529,6 +2533,13 @@ bool NNAPIDelegateKernel::Validate(
                NNAPIValidationFailureType::kUnsupportedOperandValue,
                "Grouped convolution not supported before NNAPI < 1.2",
                &val_ctx);
+      }
+      if (input_tensor.dims->size != 0 && filter_tensor.dims->size != 0 &&
+          input_tensor.dims->data[3] != filter_tensor.dims->data[3]) {
+        Expect(builtin->dilation_width_factor == 1 &&
+                   builtin->dilation_height_factor == 1,
+               NNAPIValidationFailureType::kUnsupportedOperandValue,
+               "NNAPI does not support dilated grouped convolution.", &val_ctx);
       }
     } break;
     case kTfLiteBuiltinDepthwiseConv2d: {
@@ -3773,9 +3784,13 @@ TfLiteStatus NNAPIDelegateKernel::Map(
             input_tensor.dims->data[3] / filter_tensor.dims->data[3]);
       }
       mapping_args.builder->AddScalarInt32Operand(builtin->activation);
-      // NNAPI supports dilated Conv2D since NNAPI 1.2.
-      if (builtin->dilation_width_factor != 1 ||
-          builtin->dilation_height_factor != 1) {
+      if (is_grouped_conv) {
+        // The data layout operand is mandatory for GROUPED_CONV_2D. Dilation
+        // is not supported by it and is rejected in Validate().
+        mapping_args.builder->AddScalarBoolOperand(false);  // Use NHWC format
+      } else if (builtin->dilation_width_factor != 1 ||
+                 builtin->dilation_height_factor != 1) {
+        // NNAPI supports dilated Conv2D since NNAPI 1.2.
         mapping_args.builder->AddScalarBoolOperand(false);  // Use NHWC format
         mapping_args.builder->AddScalarInt32Operand(
             builtin->dilation_width_factor);
