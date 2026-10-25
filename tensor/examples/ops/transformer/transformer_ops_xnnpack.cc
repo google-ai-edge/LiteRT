@@ -282,4 +282,72 @@ absl::Status OpMixin<RmsNormOperation, XnnpackMixinTag>::ToXnnpack(
                                       {composite_output.GetRaw()}, ctx);
 }
 
+absl::Status OpMixin<QkNormOperation, XnnpackMixinTag>::ToXnnpack(
+    const graph::Operation& op, XnnpackBuildContext& ctx) const {
+  constexpr absl::string_view op_name = "QkNorm";
+  if (op.inputs.size() < 2 || op.inputs.size() > 3) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "%s expects 2 or 3 inputs (input, scale[, epsilon])", op_name));
+  }
+
+  LRT_TENSOR_ASSIGN_OR_RETURN(auto outputs, graph::GetOutputs(op));
+  if (outputs.size() != 1) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "%s expects 1 output, got %d", op_name, outputs.size()));
+  }
+  const graph::Tensor& original_output = outputs.front();
+
+  LRT_TENSOR_RETURN_IF_ERROR(ctx.DefineValue(original_output).status());
+
+  using XnnTensor = litert::tensor::Tensor<XnnpackMixinTag>;
+
+  XnnTensor input(XnnTensor(op.inputs[0]).ShallowClone());
+  if (input.GetShape().empty()) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "%s input tensor must have at least 1 dimension.", op_name));
+  }
+
+  XnnTensor scale = TensorHandle::Invalid();
+  bool has_scale = op.inputs[1].group != nullptr;
+  if (has_scale) {
+    LRT_TENSOR_RETURN_IF_ERROR(graph::GetStatus(op.inputs[1]));
+    scale = XnnTensor(op.inputs[1]).ShallowClone();
+  }
+
+  XnnTensor eps;
+  bool has_epsilon = op.inputs.size() > 2 && op.inputs[2].group != nullptr;
+  if (has_epsilon) {
+    LRT_TENSOR_RETURN_IF_ERROR(graph::GetStatus(op.inputs[2]));
+    eps = XnnTensor(op.inputs[2]).ShallowClone();
+  } else {
+    LRT_TENSOR_ASSIGN_OR_RETURN(const QkNormOperation& data,
+                                op.As<QkNormOperation>());
+    eps = XnnTensor(
+        {.name = "epsilon",
+         .type = litert::tensor::Type::kFP32,
+         .shape = {},
+         .buffer =
+             litert::tensor::OwningCpuBuffer::Copy<litert::tensor::Type::kFP32>(
+                 {data.epsilon})});
+  }
+
+  XnnTensor x2 = Square(input);
+  int last_axis = input.GetShape().size() - 1;
+  XnnTensor mean_x2 = Mean(x2, {last_axis}, /*keep_dims=*/true);
+  XnnTensor mean_x2_eps = Add(mean_x2, eps);
+  XnnTensor rsqrt_mean_x2_eps = Rsqrt(mean_x2_eps);
+  XnnTensor norm_input = Mul(input, rsqrt_mean_x2_eps);
+
+  XnnTensor composite_output =
+      has_scale ? Mul(std::move(norm_input), scale) : std::move(norm_input);
+
+  std::vector<graph::Tensor> inlined_inputs = {input.GetRaw(), scale.GetRaw()};
+  if (has_epsilon) {
+    inlined_inputs.push_back(eps.GetRaw());
+  }
+
+  return InlineImplementationGraphFor(op, inlined_inputs,
+                                      {composite_output.GetRaw()}, ctx);
+}
+
 }  // namespace litert::tensor::graph
