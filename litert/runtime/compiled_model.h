@@ -33,6 +33,7 @@
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -535,6 +536,10 @@ class LiteRtCompiledModelT {
   // Size of the flatbuffer model. Note that this is only available when
   // fb_model_fd_ refers to a file.
   size_t fb_model_size_ = 0;
+  // How the memory backing fb_model_ was allocated (file-backed mmap vs. host
+  // memory). Forwarded to delegates through the ExternalLiteRtBufferContext.
+  LiteRtModelAllocationType fb_model_allocation_type_ =
+      kLiteRtModelAllocationTypeUnknown;
 
 #if !defined(LITERT_DISABLE_NPU)
   // The compilation cache used to store the compiled model. If the model is
