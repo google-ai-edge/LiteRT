@@ -918,5 +918,105 @@ TEST_F(NnApiSignedQuantizationTest, DequantizeTestInt8MapsToInt8OnSdk30) {
             1);  // output
 }
 
+// Records the NNAPI operation types added to the model and their input count.
+std::vector<ANeuralNetworksOperationType>* added_operations = nullptr;
+std::vector<uint32_t>* added_operation_input_counts = nullptr;
+
+class NnApiOperationValidationTest
+    : public NnApiSignedQuantizationTest {
+ protected:
+  void SetUp() override {
+    NnApiSignedQuantizationTest::SetUp();
+    added_operations = &operations_;
+    added_operation_input_counts = &input_counts_;
+    nnapi_mock_->StubAddOperationWith(
+        [](ANeuralNetworksModel* model, ANeuralNetworksOperationType type,
+           uint32_t inputCount, const uint32_t* inputs, uint32_t outputCount,
+           const uint32_t* outputs) -> int {
+          added_operations->push_back(type);
+          added_operation_input_counts->push_back(inputCount);
+          return ANEURALNETWORKS_NO_ERROR;
+        });
+  }
+  void TearDown() override {
+    added_operations = nullptr;
+    added_operation_input_counts = nullptr;
+    NnApiSignedQuantizationTest::TearDown();
+  }
+  std::vector<ANeuralNetworksOperationType> operations_;
+  std::vector<uint32_t> input_counts_;
+};
+
+class Int8FullyConnectedOpModel : public SingleOpModelWithNNAPI {
+ public:
+  Int8FullyConnectedOpModel(const NnApi* nnapi,
+                            const std::vector<float>& weight_scales) {
+    SingleOpModelWithNNAPI::Init(nnapi);
+    const float input_scale = 0.5f;
+    const int units = 2;
+    AddInput({TensorType_INT8, {1, 4}, 0, 0, input_scale, 0});
+    std::vector<float> bias_scales;
+    std::vector<int64_t> zero_points;
+    for (float s : weight_scales) {
+      bias_scales.push_back(input_scale * s);
+      zero_points.push_back(0);
+    }
+    if (weight_scales.size() > 1) {
+      AddInput({TensorType_INT8,
+                {units, 4},
+                0,
+                0,
+                0,
+                0,
+                /*per_channel_quantization=*/true,
+                weight_scales,
+                zero_points,
+                /*channel_index=*/0});
+      AddInput({TensorType_INT32,
+                {units},
+                0,
+                0,
+                0,
+                0,
+                /*per_channel_quantization=*/true,
+                bias_scales,
+                zero_points,
+                /*channel_index=*/0});
+    } else {
+      AddInput({TensorType_INT8, {units, 4}, 0, 0, weight_scales[0], 0});
+      AddInput({TensorType_INT32, {units}, 0, 0, bias_scales[0], 0});
+    }
+    AddOutput({TensorType_INT8, {1, units}, 0, 0, 1.0f, 0});
+    SetBuiltinOp(BuiltinOperator_FULLY_CONNECTED,
+                 BuiltinOptions_FullyConnectedOptions,
+                 CreateFullyConnectedOptions(builder_).Union());
+    resolver_ = std::make_unique<SingleOpResolver>(
+        BuiltinOperator_FULLY_CONNECTED,
+        ops::builtin::Register_FULLY_CONNECTED_REF(), /*version=*/4);
+    BuildInterpreter({{1, 4}, {units, 4}, {units}}, /*num_threads=*/-1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/false);
+    compilation_status_ = ApplyDelegate();
+  }
+};
+
+TEST_F(NnApiOperationValidationTest,
+       FullyConnectedWithPerTensorWeightsIsDelegated) {
+  nnapi_mock_->SetAndroidSdkVersion(30);
+  Int8FullyConnectedOpModel m(nnapi_mock_->GetNnApi(), {0.25f});
+  EXPECT_EQ(m.GetCompilationStatus(), kTfLiteOk);
+  EXPECT_EQ(m.CountOpsExecutedByCpuKernel(), 0);
+}
+
+// NNAPI FULLY_CONNECTED has no per-channel weights, so delegating such a node
+// makes the driver reject the whole model. It has to stay on the CPU.
+TEST_F(NnApiOperationValidationTest,
+       FullyConnectedWithPerChannelWeightsIsNotDelegated) {
+  nnapi_mock_->SetAndroidSdkVersion(30);
+  Int8FullyConnectedOpModel m(nnapi_mock_->GetNnApi(), {0.25f, 0.5f});
+  EXPECT_EQ(m.CountOpsExecutedByCpuKernel(), 1);
+  EXPECT_TRUE(operations_.empty());
+}
+
 }  // namespace
 }  // namespace tflite
