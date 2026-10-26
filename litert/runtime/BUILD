@@ -424,6 +424,8 @@ cc_test(
 )
 
 GPU_ENVIRONMENT_DEPS = [
+    "@com_google_absl//absl/base:core_headers",
+    "@com_google_absl//absl/synchronization",
     "@ml_drift//ml_drift/cl:cl_command_queue",
     "@ml_drift//ml_drift/cl:cl_context",
     "@ml_drift//ml_drift/cl:cl_device",

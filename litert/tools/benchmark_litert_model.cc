@@ -175,6 +175,8 @@ Options BenchmarkLiteRtModel::CreateCompiledModelOptions(
       gpu_options.SetBackend(GpuOptions::Backend::kWebGpu);
     } else if (gpu_backend == "opengl" || gpu_backend == "gl") {
       gpu_options.SetBackend(GpuOptions::Backend::kOpenGl);
+    } else if (gpu_backend == "opencl" || gpu_backend == "cl") {
+      gpu_options.SetBackend(GpuOptions::Backend::kOpenCl);
     }
     if (gpu_precision == "fp32") {
       gpu_options.SetPrecision(GpuOptions::Precision::kFp32);

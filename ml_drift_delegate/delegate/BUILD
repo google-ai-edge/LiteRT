@@ -741,6 +741,7 @@ cc_library(
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/profiling:time",
+        "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:absl_log",

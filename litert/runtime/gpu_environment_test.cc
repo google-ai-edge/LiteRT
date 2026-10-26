@@ -73,5 +73,93 @@ TEST(EnvironmentSingletonTest, OpenClEnvironment) {
   EXPECT_EQ(singleton_env->GetCommandQueue()->queue(), env.queue()->queue());
 }
 
+void NoOpDestroyCallback(void* /*user_data*/) {}
+
+TEST(EnvironmentSingletonTest,
+     SkipsEagerOpenClInitWhenNonOpenClOptionsProvided) {
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN";
+#endif
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny callback,
+      litert::ToLiteRtAny(reinterpret_cast<const void*>(&NoOpDestroyCallback)));
+  const std::array<LiteRtEnvOption, 1> environment_options = {
+      LiteRtEnvOption{
+          /*.tag=*/kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
+          /*.value=*/callback,
+      },
+  };
+  auto litert_envt = LiteRtEnvironmentT::CreateWithOptions(environment_options);
+  ASSERT_TRUE(litert_envt);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto gpu_env,
+      litert::internal::GpuEnvironment::Create((*litert_envt)->GetOptions()));
+  ASSERT_TRUE(gpu_env);
+  EXPECT_TRUE(gpu_env->GetGeneratedOptions().empty());
+}
+
+TEST(EnvironmentSingletonTest,
+     LazyInteropQueryThenAddEnvironmentOptionsUsesProvidedDeviceAndContext) {
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN";
+#endif
+
+  if (!ml_drift::cl::LoadOpenCL().ok()) {
+    GTEST_SKIP() << "OpenCL not loaded for ml_drift";
+  }
+
+  ml_drift::cl::Environment env;
+  ASSERT_OK(ml_drift::cl::CreateEnvironment(&env));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny callback,
+      litert::ToLiteRtAny(reinterpret_cast<const void*>(&NoOpDestroyCallback)));
+  const std::array<LiteRtEnvOption, 1> initial_options = {
+      LiteRtEnvOption{
+          /*.tag=*/kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
+          /*.value=*/callback,
+      },
+  };
+  auto litert_envt = LiteRtEnvironmentT::CreateWithOptions(initial_options);
+  ASSERT_TRUE(litert_envt);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto gpu_env,
+      litert::internal::GpuEnvironment::Create((*litert_envt)->GetOptions()));
+  ASSERT_TRUE(gpu_env);
+
+  // Trigger lazy OpenCL device initialization before adding explicit options.
+  (void)gpu_env->SupportsClGlInterop();
+  (void)gpu_env->SupportsAhwbClInterop();
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny device_id,
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(env.device().id()))));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny platform_id,
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(env.device().platform()))));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny context_id,
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(env.context().context()))));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny queue_id,
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(env.queue()->queue()))));
+
+  const std::array<LiteRtEnvOption, 4> cl_options = {
+      LiteRtEnvOption{kLiteRtEnvOptionTagOpenClDeviceId, device_id},
+      LiteRtEnvOption{kLiteRtEnvOptionTagOpenClPlatformId, platform_id},
+      LiteRtEnvOption{kLiteRtEnvOptionTagOpenClContext, context_id},
+      LiteRtEnvOption{kLiteRtEnvOptionTagOpenClCommandQueue, queue_id},
+  };
+  LITERT_ASSERT_OK(gpu_env->AddEnvironmentOptions(cl_options));
+  EXPECT_EQ(gpu_env->GetDevice()->id(), env.device().id());
+  EXPECT_EQ(gpu_env->GetContext()->context(), env.context().context());
+  EXPECT_EQ(gpu_env->GetCommandQueue()->queue(), env.queue()->queue());
+}
+
 }  // namespace
 }  // namespace litert
