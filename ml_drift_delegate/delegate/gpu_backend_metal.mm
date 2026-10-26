@@ -15,6 +15,7 @@
 #include "ml_drift_delegate/delegate/gpu_backend_metal.h"
 
 #import <Metal/Metal.h>
+#include <unistd.h>
 
 #include <memory>
 #include <utility>
@@ -28,6 +29,7 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
+#include "ml_drift/common/util.h"  // from @ml_drift
 #include "ml_drift/metal/buffer.h"  // from @ml_drift
 #include "ml_drift/metal/converter.h"  // from @ml_drift
 #include "ml_drift/metal/inference_context.h"  // from @ml_drift
@@ -342,7 +344,11 @@ absl::Status GpuBackendMetal::UpdateSpatialTensor(::ml_drift::GpuSpatialTensor* 
     const uint8_t* data = desc.GetData().data();
     size_t size = desc.GetData().size();
     const uint8_t* raw_data = data - page_adjusted_offset;
-    size_t raw_size = size + page_adjusted_offset;
+    // newBufferWithBytesNoCopy requires the length to be a multiple of the VM
+    // page size (16 KiB on Apple Silicon), so round up. This is safe because the
+    // data is mmap'd, and mmap maps whole pages.
+    size_t raw_size =
+        ::ml_drift::AlignByN(size + page_adjusted_offset, static_cast<size_t>(getpagesize()));
 
     auto* release_cb_ptr = new ReleaseDataCallback(std::move(release_data_callback));
     id<MTLBuffer> buffer =
