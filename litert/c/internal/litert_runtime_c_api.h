@@ -46,7 +46,7 @@ extern "C" {
 // LiteRT CompiledModels ABI version number, in semver 2 format
 // (see https://semver.org).  This is the ABI version number for
 // the methods in LiteRtRuntimeCApiStruct, which is defined below.
-#define LITERT_RUNTIME_ABI_VERSION "1.4.0"
+#define LITERT_RUNTIME_ABI_VERSION "1.5.0"
 // TODO(b/493650900): declare that as an extern const (and
 // initialize it in a .cc file) rather than using a macro.
 
@@ -808,6 +808,14 @@ typedef struct LiteRtRuntimeCApiStruct {
   // litert_environment.h: LiteRtGetRuntimeAbiVersion
   // This API was added in version 1.4.0.
   LiteRtStatus (*litert_get_runtime_abi_version)(const char** abi_version);
+  // litert_compiled_model.h: LiteRtCompiledModelRegisterTensorBuffer
+  // This API was added in version 1.5.0.
+  LiteRtStatus (*litert_compiled_model_register_tensor_buffer)(
+      LiteRtCompiledModel compiled_model, LiteRtTensorBuffer tensor_buffer);
+  // litert_compiled_model.h: LiteRtCompiledModelUnregisterTensorBuffer
+  // This API was added in version 1.5.0.
+  LiteRtStatus (*litert_compiled_model_unregister_tensor_buffer)(
+      LiteRtCompiledModel compiled_model, LiteRtTensorBuffer tensor_buffer);
 } LiteRtRuntimeCApiStruct;
 
 // LINT.ThenChange(:version_number)

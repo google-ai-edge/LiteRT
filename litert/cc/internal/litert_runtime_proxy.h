@@ -734,6 +734,19 @@ class RuntimeProxy {
         metrics, partition_count);
   }
 
+  LiteRtStatus CompiledModelRegisterTensorBuffer(
+      LiteRtCompiledModel compiled_model, LiteRtTensorBuffer tensor_buffer) {
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 5, 0, litert_compiled_model_register_tensor_buffer, compiled_model,
+        tensor_buffer);
+  }
+
+  LiteRtStatus CompiledModelUnregisterTensorBuffer(
+      LiteRtCompiledModel compiled_model, LiteRtTensorBuffer tensor_buffer) {
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 5, 0, litert_compiled_model_unregister_tensor_buffer, compiled_model,
+        tensor_buffer);
+  }
   LiteRtStatus CompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
                                         LiteRtProfiler* profiler) {
     LITERT_PROXY_METHOD_STATUS(litert_compiled_model_get_profiler,

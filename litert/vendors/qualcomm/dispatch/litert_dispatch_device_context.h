@@ -46,14 +46,9 @@ class LiteRtDispatchDeviceContextT {
         TensorBufferRegistryEntry(tensor_buffer));
   }
 
+  // Unregisters the tensor buffer and releases its QNN memory handle, if any.
   litert::Expected<void> UnregisterTensorBuffer(
-      LiteRtTensorBufferHandle tensor_buffer_handle) {
-    return tensor_buffer_registry_.Unregister(tensor_buffer_handle);
-  }
-
-  litert::Expected<void> UnregisterTensorBuffer(
-      LiteRtTensorBufferHandle tensor_buffer_handle,
-      const Qnn_Tensor_t& tensor);
+      LiteRtTensorBufferHandle tensor_buffer_handle);
 
   litert::Expected<LiteRtTensorBuffer> GetTensorBuffer(
       LiteRtTensorBufferHandle tensor_buffer_handle);

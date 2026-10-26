@@ -283,5 +283,9 @@ extern "C" LITERT_CAPI_EXPORT const LiteRtRuntimeCApiStruct
         .litert_create_tensor_buffer_from_custom_handle =
             LiteRtCreateTensorBufferFromCustomHandle,
         .litert_get_runtime_abi_version = LiteRtGetRuntimeAbiVersion,
+        .litert_compiled_model_register_tensor_buffer =
+            LiteRtCompiledModelRegisterTensorBuffer,
+        .litert_compiled_model_unregister_tensor_buffer =
+            LiteRtCompiledModelUnregisterTensorBuffer,
         // Google-internal LINT.ThenChange()
     };
