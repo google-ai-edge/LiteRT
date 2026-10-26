@@ -648,8 +648,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         if (share_npu) {
           // Must run after OptimizeModel: it configures NPUW from what the
           // passes classified, which is knowable only once they have run.
-          context.ConfigureForNpuWeightSharing(
-              optimize_result.moe_is_multi_token_chunk);
+          context.ConfigureForNpuWeightSharing(optimize_result);
+        } else if (optimize_result.num_sdpa_decomposed_for_hfa > 0) {
+          LITERT_LOG(LITERT_WARNING,
+                     "enable_hfa: NPUW_ATTN=HFA is set only under NPU weight "
+                     "sharing; partition %d gets its attention decomposed "
+                     "but no HFA unless NPUW_ATTN=HFA is passed explicitly",
+                     partition_idx);
         }
 
         ov::AnyMap configs = context.ConfigsMap();

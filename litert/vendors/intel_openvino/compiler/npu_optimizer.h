@@ -15,6 +15,7 @@
 #ifndef LITERT_VENDORS_INTEL_OPENVINO_COMPILER_NPU_OPTIMIZER_H_
 #define LITERT_VENDORS_INTEL_OPENVINO_COMPILER_NPU_OPTIMIZER_H_
 
+#include <cstddef>
 #include <memory>
 
 #include "openvino/core/model.hpp"
@@ -112,6 +113,31 @@ class UnfoldGqaSequenceFold : public ov::pass::ModelPass {
   bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
 
+// Rewrites each multi-token v13::ScaledDotProductAttention into
+//
+//   scores = MatMul(Q, K, transpose_b=true)
+//   probs  = Softmax(Add(scores, mask), axis=-1)
+//   out    = MatMul(probs, V)
+//
+// so that NPUW_ATTN=HFA can convert it. A scale other than 1.0 is folded into
+// Q, and a [B,H,D,S]-stored K/V is read through transpose_b instead of a
+// Transpose (any GQA head repeat is rebuilt beneath it). Decode steps, causal
+// SDPAs and boolean masks stay fused.
+//
+// Must run after UnfoldGqaSequenceFold. Enabled by config key "enable_hfa";
+// see SetDecomposeSDPAForHFA.
+class DecomposeSDPAForHFA : public ov::pass::ModelPass {
+ public:
+  OPENVINO_RTTI("DecomposeSDPAForHFA");
+  bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
+
+  // Valid after run_on_model() has executed: how many SDPAs were rewritten.
+  size_t num_decomposed() const { return num_decomposed_; }
+
+ private:
+  size_t num_decomposed_ = 0;
+};
+
 // Gives every consumer of a multi-consumer Constant its own private copy of
 // that Constant, instead of leaving them sharing one node object. Currently
 // restricted to 256- and 512-element Constants (RMSNorm gain vectors).
@@ -171,6 +197,9 @@ class NpuOptimizer {
     // multi-token chunk (see MoEGatherRewrite for the classification rules).
     // False if MoE gather is disabled or no MoE layer was found.
     bool moe_is_multi_token_chunk = false;
+    // How many SDPAs DecomposeSDPAForHFA rewrote into the form NPUW's HFA
+    // converts. Zero when the pass is disabled.
+    size_t num_sdpa_decomposed_for_hfa = 0;
   };
 
   // Toggles a ConstantFolding pass. Disabled by default.
@@ -223,6 +252,13 @@ class NpuOptimizer {
     return *this;
   }
 
+  // Toggles the DecomposeSDPAForHFA pass. Disabled by default; the compile
+  // context enables it for config key "enable_hfa" = "true".
+  NpuOptimizer& SetDecomposeSDPAForHFA(bool enable) {
+    decompose_sdpa_for_hfa_ = enable;
+    return *this;
+  }
+
   // Toggles the SplitSharedConstants pass. Disabled by default; enable via
   // config key "split_shared_constants" = "true" to give every consumer of a
   // multi-consumer Constant its own private copy.
@@ -244,6 +280,7 @@ class NpuOptimizer {
   bool sdpa_pad_kv_to_alignment_ = true;
   bool enable_moe_gather_ = false;
   bool unfold_gqa_sequence_fold_ = false;
+  bool decompose_sdpa_for_hfa_ = false;
 };
 
 }  // namespace openvino
