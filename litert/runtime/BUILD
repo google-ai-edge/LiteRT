@@ -464,7 +464,7 @@ cc_library(
     deps = GPU_ENVIRONMENT_DEPS + [
         "//litert/c:litert_environment_options_header",
         "//litert/cc:litert_any",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
     ] + litert_metal_deps(),
 )
@@ -1037,7 +1037,6 @@ cc_library(
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -1094,7 +1093,6 @@ cc_library(
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_expected",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common/task:tensor_desc",

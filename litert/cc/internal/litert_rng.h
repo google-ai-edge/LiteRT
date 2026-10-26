@@ -34,7 +34,6 @@
 #include <vector>
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
@@ -89,10 +88,10 @@ class RandomDevice {
   /// @brief Returns a string representation of the RNG.
   absl::string_view Repr() const { return repr_; }
 
-  /// @brief Supports `absl::StrFormat`.
+  /// @brief Supports `AbslStringify`.
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const RandomDevice& rng) {
-    absl::Format(&sink, "%s", rng.Repr());
+    sink.Append(rng.Repr());
   }
 
   /// @brief Supports printing to `std::ostream`.
@@ -121,11 +120,9 @@ class RandomDevice {
   }
 
   static std::string MakeRepr(std::optional<int> seed) {
-    constexpr absl::string_view kReprFmt = "%s(seed=%s, min=%d, max=%d)";
     const auto seed_str = seed.has_value() ? absl::StrCat(*seed) : "<default>";
-    auto res = absl::StrFormat(kReprFmt, Name(), seed_str, Engine::min(),
-                               Engine::max());
-    return res;
+    return absl::StrCat(Name(), "(seed=", seed_str, ", min=", Engine::min(),
+                        ", max=", Engine::max(), ")");
   }
 
   const std::optional<int> seed_;

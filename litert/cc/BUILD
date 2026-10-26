@@ -72,7 +72,6 @@ cc_library(
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -97,7 +96,6 @@ cc_library(
     hdrs = ["litert_buffer_ref.h"],
     deps = [
         ":litert_api_types",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
@@ -168,7 +166,6 @@ cc_library(
         "//litert/c:litert_common",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -1153,7 +1150,6 @@ cc_library(
         "//litert/cc/internal:litert_tensor_buffer_without_registry",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
     ] + select({
         # In dynamic/none mode, the registry implementation comes from the

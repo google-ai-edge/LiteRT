@@ -16,7 +16,6 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_GPU_UTIL_H_
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "litert/c/litert_common.h"
@@ -91,8 +90,8 @@ inline litert::Expected<void> ConvertLiteRtDataTypeToGpuDataType(
     default:
       return litert::Unexpected(
           kLiteRtStatusErrorInvalidArgument,
-          absl::StrFormat("Unsupported element type: %d",
-                          tensor_type->element_type));
+          absl::StrCat("Unsupported element type: ",
+                       static_cast<int>(tensor_type->element_type)));
   }
   return {};
 }

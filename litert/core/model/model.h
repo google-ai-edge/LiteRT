@@ -35,7 +35,6 @@
 #include "absl/container/inlined_vector.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -1437,9 +1436,9 @@ template <class Sink>
 void AbslStringify(Sink& sink, const TensorType& type) {
   const auto& [id, detail] = type;
   if (id == kLiteRtRankedTensorType) {
-    absl::Format(&sink, "%v", detail.ranked_tensor_type);
+    sink.Append(absl::StrCat(detail.ranked_tensor_type));
   } else {
-    absl::Format(&sink, "%s", ::litert::kNoPrinterTag);
+    sink.Append(::litert::kNoPrinterTag);
   }
 }
 
@@ -1448,40 +1447,48 @@ void AbslStringify(Sink& sink, const LiteRtTensorT& tensor) {
   auto weights = tensor.Weights().Buffer();
   std::string weights_str = "";
   if (weights.Size() > 0) {
-    weights_str = absl::StrFormat("_cst[%s]",
-                                  ::litert::HumanReadableSize(weights.Size()));
+    weights_str = absl::StrCat("_cst[",
+                               ::litert::HumanReadableSize(weights.Size()),
+                               "]");
   }
-  absl::Format(&sink, "%v%s", tensor.Type(), weights_str);
+  sink.Append(absl::StrCat(tensor.Type(), weights_str));
 }
 
 template <class Sink>
 void AbslStringify(Sink& sink, const std::vector<LiteRtTensor>& tensors) {
   sink.Append("(");
   for (auto it = tensors.begin(); it < tensors.end() - 1; ++it) {
-    sink.Append(absl::StrFormat("%v", **it));
+    sink.Append(absl::StrCat(**it));
     sink.Append(",");
   }
-  sink.Append(absl::StrFormat("%v", *tensors.back()));
+  sink.Append(absl::StrCat(*tensors.back()));
   sink.Append(")");
 }
+
+namespace tflite {
+template <class Sink>
+void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts);
+template <class Sink>
+void AbslStringify(Sink& sink, const ::litert::internal::TflOptions2& opts);
+}  // namespace tflite
 
 // OP PRINTING
 
 template <class Sink>
 void AbslStringify(Sink& sink, const LiteRtOpT& op) {
-  static constexpr auto kFmt = "%v%v%v->%v";
+  sink.Append(absl::StrCat(op.OpCode()));
   const auto& opts = ::litert::internal::GetTflOptions(op);
   if (opts.type != ::tflite::BuiltinOptions_NONE) {
-    absl::Format(&sink, kFmt, op.OpCode(), opts, op.Inputs(), op.Outputs());
-    return;
+    AbslStringify(sink, opts);
+  } else {
+    AbslStringify(sink, ::litert::internal::GetTflOptions2(op));
   }
-  absl::Format(&sink, kFmt, op.OpCode(), ::litert::internal::GetTflOptions2(op),
-               op.Inputs(), op.Outputs());
+  sink.Append(absl::StrCat(op.Inputs(), "->", op.Outputs()));
 }
 
 template <class Sink>
 void AbslStringify(Sink& sink, const LiteRtOpT* op) {
-  absl::Format(&sink, "null");
+  sink.Append("null");
 }
 
 namespace absl {
@@ -1489,10 +1496,10 @@ namespace absl {
 template <class Sink>
 void StringifyLiteRtOpImpl(Sink& sink, const absl::Span<const LiteRtOp> ops) {
   for (auto it = ops.begin(); it < ops.end() - 1; ++it) {
-    sink.Append(absl::StrFormat("%v", **it));
+    sink.Append(absl::StrCat(**it));
     sink.Append("/");
   }
-  sink.Append(absl::StrFormat("%v", *ops.back()));
+  sink.Append(absl::StrCat(*ops.back()));
 }
 
 template <class Sink>
@@ -1518,14 +1525,18 @@ struct OptionStrBuilder {
   explicit OptionStrBuilder(Sink& sink) : sink(sink) { sink.Append("{"); }
 
   template <typename Val>
-  void operator()(const std::string& key, const Val& value) {
+  void operator()(absl::string_view key, const Val& value) {
     if (num_opts++ > 0) {
       sink.Append(",");
     }
-    if constexpr (std::is_convertible_v<Val, absl::string_view>) {
-      absl::Format(&sink, "%s=%s", key, value);
+    sink.Append(key);
+    sink.Append("=");
+    if constexpr (std::is_same_v<std::decay_t<Val>, bool>) {
+      sink.Append(value ? "true" : "false");
+    } else if constexpr (std::is_convertible_v<Val, absl::string_view>) {
+      sink.Append(value);
     } else {
-      absl::Format(&sink, "%s=%v", key, value);
+      sink.Append(absl::AlphaNum(value).Piece());
     }
   }
 
@@ -1541,10 +1552,10 @@ OptionStrBuilder(Sink& sink) -> OptionStrBuilder<Sink>;
 template <typename Sink, typename Options>
 void PrintNullableOpts(Sink& sink, const Options* opts) {
   if (!opts) {
-    absl::Format(&sink, "{null}");
+    sink.Append("{null}");
     return;
   }
-  absl::Format(&sink, "%v", *opts);
+  AbslStringify(sink, *opts);
 }
 
 }  // namespace litert::internal
@@ -1557,191 +1568,163 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
   const auto type = opts.type;
   switch (static_cast<tflite::BuiltinOptions>(type)) {
     case tflite::BuiltinOptions_AddOptions: {
-      const auto* add_opts = opts.AsAddOptions();
-      absl::Format(&sink, "%v", add_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsAddOptions());
       break;
     }
     case tflite::BuiltinOptions_SubOptions: {
-      const auto* sub_opts = opts.AsSubOptions();
-      absl::Format(&sink, "%v", sub_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsSubOptions());
       break;
     }
     case tflite::BuiltinOptions_Conv2DOptions: {
-      const auto* conv_opts = opts.AsConv2DOptions();
-      absl::Format(&sink, "%v", conv_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsConv2DOptions());
       break;
     }
     case tflite::BuiltinOptions_DepthwiseConv2DOptions: {
-      const auto* dw_opts = opts.AsDepthwiseConv2DOptions();
-      absl::Format(&sink, "%v", dw_opts);
+      ::litert::internal::PrintNullableOpts(sink,
+                                            opts.AsDepthwiseConv2DOptions());
       break;
     }
     case tflite::BuiltinOptions_ReducerOptions: {
-      const auto* reducer_opts = opts.AsReducerOptions();
-      absl::Format(&sink, "%v", reducer_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsReducerOptions());
       break;
     }
     case tflite::BuiltinOptions_MulOptions: {
-      const auto* mul_opts = opts.AsMulOptions();
-      absl::Format(&sink, "%v", mul_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsMulOptions());
       break;
     }
     case tflite::BuiltinOptions_DivOptions: {
-      const auto* div_opts = opts.AsDivOptions();
-      absl::Format(&sink, "%v", div_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsDivOptions());
       break;
     }
     case tflite::BuiltinOptions_Pool2DOptions: {
-      const auto* pool_opts = opts.AsPool2DOptions();
-      absl::Format(&sink, "%v", pool_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsPool2DOptions());
       break;
     }
     case tflite::BuiltinOptions_GeluOptions: {
-      const auto* gelu_opts = opts.AsGeluOptions();
-      absl::Format(&sink, "%v", gelu_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsGeluOptions());
       break;
     }
     case tflite::BuiltinOptions_ReshapeOptions: {
-      const auto* reshape_opts = opts.AsReshapeOptions();
-      absl::Format(&sink, "%v", reshape_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsReshapeOptions());
       break;
     }
     case tflite::BuiltinOptions_OneHotOptions: {
-      const auto* one_hot_opts = opts.AsOneHotOptions();
-      absl::Format(&sink, "%v", one_hot_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsOneHotOptions());
       break;
     }
     case tflite::BuiltinOptions_FullyConnectedOptions: {
-      const auto* fc_opts = opts.AsFullyConnectedOptions();
-      absl::Format(&sink, "%v", fc_opts);
+      ::litert::internal::PrintNullableOpts(sink,
+                                            opts.AsFullyConnectedOptions());
       break;
     }
     case tflite::BuiltinOptions_BatchMatMulOptions: {
-      const auto* bmm_opts = opts.AsBatchMatMulOptions();
-      absl::Format(&sink, "%v", bmm_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsBatchMatMulOptions());
       break;
     }
     case tflite::BuiltinOptions_SoftmaxOptions: {
-      const auto* softmax_opts = opts.AsSoftmaxOptions();
-      absl::Format(&sink, "%v", softmax_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsSoftmaxOptions());
       break;
     }
     case tflite::BuiltinOptions_ConcatenationOptions: {
-      const auto* concat_opts = opts.AsConcatenationOptions();
-      absl::Format(&sink, "%v", concat_opts);
+      ::litert::internal::PrintNullableOpts(sink,
+                                            opts.AsConcatenationOptions());
       break;
     }
     case tflite::BuiltinOptions_PadOptions: {
-      const auto* pad_opts = opts.AsPadOptions();
-      absl::Format(&sink, "%v", pad_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsPadOptions());
       break;
     }
     case tflite::BuiltinOptions_PadV2Options: {
-      const auto* pad_v2_opts = opts.AsPadV2Options();
-      absl::Format(&sink, "%v", pad_v2_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsPadV2Options());
       break;
     }
     case tflite::BuiltinOptions_MirrorPadOptions: {
-      const auto* mirror_pad_opts = opts.AsMirrorPadOptions();
-      absl::Format(&sink, "%v", mirror_pad_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsMirrorPadOptions());
       break;
     }
     case tflite::BuiltinOptions_TransposeOptions: {
-      const auto* transpose_opts = opts.AsTransposeOptions();
-      absl::Format(&sink, "%v", transpose_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsTransposeOptions());
       break;
     }
     case tflite::BuiltinOptions_SliceOptions: {
-      const auto* slice_opts = opts.AsSliceOptions();
-      absl::Format(&sink, "%v", slice_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsSliceOptions());
       break;
     }
     case tflite::BuiltinOptions_SelectV2Options: {
-      const auto* select_v2_opts = opts.AsSelectV2Options();
-      absl::Format(&sink, "%v", select_v2_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsSelectV2Options());
       break;
     }
     case tflite::BuiltinOptions_SqueezeOptions: {
-      const auto* squeeze_opts = opts.AsSqueezeOptions();
-      absl::Format(&sink, "%v", squeeze_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsSqueezeOptions());
       break;
     }
     case tflite::BuiltinOptions_PackOptions: {
-      const auto* pack_opts = opts.AsPackOptions();
-      absl::Format(&sink, "%v", pack_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsPackOptions());
       break;
     }
     case tflite::BuiltinOptions_UnpackOptions: {
-      const auto* unpack_opts = opts.AsUnpackOptions();
-      absl::Format(&sink, "%v", unpack_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsUnpackOptions());
       break;
     }
     case tflite::BuiltinOptions_SplitOptions: {
-      const auto* split_opts = opts.AsSplitOptions();
-      absl::Format(&sink, "%v", split_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsSplitOptions());
       break;
     }
     case tflite::BuiltinOptions_StridedSliceOptions: {
-      const auto* strided_slice_opts = opts.AsStridedSliceOptions();
-      absl::Format(&sink, "%v", strided_slice_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsStridedSliceOptions());
       break;
     }
     case tflite::BuiltinOptions_SpaceToDepthOptions: {
-      const auto* std_opts = opts.AsSpaceToDepthOptions();
-      absl::Format(&sink, "%v", std_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsSpaceToDepthOptions());
       break;
     }
     case tflite::BuiltinOptions_DepthToSpaceOptions: {
-      const auto* dts_opts = opts.AsDepthToSpaceOptions();
-      absl::Format(&sink, "%v", dts_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsDepthToSpaceOptions());
       break;
     }
     case tflite::BuiltinOptions_GatherOptions: {
-      const auto* gather_opts = opts.AsGatherOptions();
-      absl::Format(&sink, "%v", gather_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsGatherOptions());
       break;
     }
     case tflite::BuiltinOptions_GatherNdOptions: {
-      const auto* gather_nd_opts = opts.AsGatherNdOptions();
-      absl::Format(&sink, "%v", gather_nd_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsGatherNdOptions());
       break;
     }
     case tflite::BuiltinOptions_CumsumOptions: {
-      const auto* cumsum_opts = opts.AsCumsumOptions();
-      absl::Format(&sink, "%v", cumsum_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsCumsumOptions());
       break;
     }
     case tflite::BuiltinOptions_ResizeBilinearOptions: {
-      const auto* rb_opts = opts.AsResizeBilinearOptions();
-      absl::Format(&sink, "%v", rb_opts);
+      ::litert::internal::PrintNullableOpts(sink,
+                                            opts.AsResizeBilinearOptions());
       break;
     }
     case tflite::BuiltinOptions_ResizeNearestNeighborOptions: {
-      const auto* rnn_opts = opts.AsResizeNearestNeighborOptions();
-      absl::Format(&sink, "%v", rnn_opts);
+      ::litert::internal::PrintNullableOpts(
+          sink, opts.AsResizeNearestNeighborOptions());
       break;
     }
     case tflite::BuiltinOptions_TransposeConvOptions: {
-      const auto* tc_opts = opts.AsTransposeConvOptions();
-      absl::Format(&sink, "%v", tc_opts);
+      ::litert::internal::PrintNullableOpts(sink,
+                                            opts.AsTransposeConvOptions());
       break;
     }
     case tflite::BuiltinOptions_LeakyReluOptions: {
-      const auto* lr_opts = opts.AsLeakyReluOptions();
-      absl::Format(&sink, "%v", lr_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsLeakyReluOptions());
       break;
     }
     case tflite::BuiltinOptions_L2NormOptions: {
-      const auto* l2_opts = opts.AsL2NormOptions();
-      absl::Format(&sink, "%v", l2_opts);
+      ::litert::internal::PrintNullableOpts(sink, opts.AsL2NormOptions());
       break;
     }
     case tflite::BuiltinOptions_NONE: {
-      absl::Format(&sink, "{}");
+      sink.Append("{}");
       break;
     }
     default:
-      absl::Format(&sink, "{%s}", ::litert::kNoPrinterTag);
+      sink.Append("{");
+      sink.Append(::litert::kNoPrinterTag);
+      sink.Append("}");
       break;
   }
 }
@@ -1752,20 +1735,24 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions2& opts) {
   const auto type = opts.type;
   switch (static_cast<tflite::BuiltinOptions2>(type)) {
     case tflite::BuiltinOptions2_NONE: {
-      absl::Format(&sink, "{}");
+      sink.Append("{}");
       break;
     }
     case tflite::BuiltinOptions2_StableHLOCompositeOptions: {
       const auto* comp_opts = opts.AsStableHLOCompositeOptions();
       if (comp_opts && !comp_opts->name.empty()) {
-        absl::Format(&sink, "{name=%s}", comp_opts->name);
+        sink.Append("{name=");
+        sink.Append(comp_opts->name);
+        sink.Append("}");
       } else {
-        absl::Format(&sink, "{}");
+        sink.Append("{}");
       }
       break;
     }
     default:
-      absl::Format(&sink, "{%s}", ::litert::kNoPrinterTag);
+      sink.Append("{");
+      sink.Append(::litert::kNoPrinterTag);
+      sink.Append("}");
       break;
   }
 }

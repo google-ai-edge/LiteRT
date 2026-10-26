@@ -110,7 +110,6 @@ cc_library(
         "//litert/cc:litert_tensor_buffer_types",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
     ],
@@ -129,7 +128,6 @@ cc_library(
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -144,7 +142,7 @@ cc_test(
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -287,7 +285,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -322,7 +319,7 @@ cc_test(
         "//litert/c:litert_model_types",
         "//litert/test:matchers",
         "//litert/test:rng_fixture",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -379,7 +376,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/debugging:leak_check",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

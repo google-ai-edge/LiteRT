@@ -45,7 +45,6 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #if defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
@@ -121,8 +120,8 @@ litert::Expected<LiteRtRankedTensorType> BuildRankedTensorType(
   if (rank > LITERT_TENSOR_MAX_RANK) {
     return litert::Unexpected(
         kLiteRtStatusErrorInvalidArgument,
-        absl::StrFormat("Tensor rank %d exceeds max rank %d", rank,
-                        LITERT_TENSOR_MAX_RANK));
+        absl::StrCat("Tensor rank ", rank, " exceeds max rank ",
+                     LITERT_TENSOR_MAX_RANK));
   }
 
   type.layout.rank = static_cast<unsigned int>(rank);
@@ -197,7 +196,7 @@ litert::Expected<void> DiscardCpuMappingPages(const CpuMapping& mapping) {
               MADV_DONTNEED) != 0) {
     return litert::Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
-        absl::StrFormat("madvise failed: %s", strerror(errno)));
+        absl::StrCat("madvise failed: ", strerror(errno)));
   }
 #else
   // Windows does not provide MADV_DONTNEED for file mappings. The view remains
@@ -295,7 +294,7 @@ litert::Expected<std::string> ResolveGroupPath(
   if (it == group_paths.end()) {
     return litert::Unexpected(
         kLiteRtStatusErrorFailedPrecondition,
-        absl::StrFormat("Missing external buffer group %u", group_id));
+        absl::StrCat("Missing external buffer group ", group_id));
   }
   if (IsAbsolutePath(it->second) || !model_directory ||
       model_directory->empty()) {
@@ -341,8 +340,7 @@ litert::Expected<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
   if (fd < 0) {
     return litert::Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
-        absl::StrFormat("Failed to open %s: %s", path.c_str(),
-                        strerror(errno)));
+        absl::StrCat("Failed to open ", path, ": ", strerror(errno)));
   }
 
   struct stat st;
@@ -351,8 +349,7 @@ litert::Expected<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
     close(fd);
     return litert::Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
-        absl::StrFormat("Failed to stat %s: %s", path.c_str(),
-                        strerror(saved_errno)));
+        absl::StrCat("Failed to stat ", path, ": ", strerror(saved_errno)));
   }
 
   const uint64_t file_size = static_cast<uint64_t>(st.st_size);
@@ -360,7 +357,7 @@ litert::Expected<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
     close(fd);
     return litert::Unexpected(
         kLiteRtStatusErrorInvalidArgument,
-        absl::StrFormat("External weight slice out of range for %s", path));
+        absl::StrCat("External weight slice out of range for ", path));
   }
 
   MmapParams params = GetMmapParams(info.offset, info.length);
@@ -373,16 +370,16 @@ litert::Expected<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
   if (base == MAP_FAILED) {
     return litert::Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
-        absl::StrFormat("mmap failed for %s: %s", path.c_str(),
-                        strerror(saved_errno)));
+        absl::StrCat("mmap failed for ", path, ": ", strerror(saved_errno)));
   }
 #else
   HANDLE file_handle =
       CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
                   OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file_handle == INVALID_HANDLE_VALUE) {
-    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                              absl::StrFormat("Failed to open %s", path));
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("Failed to open ", path));
   }
 
   LARGE_INTEGER file_size;
@@ -391,7 +388,7 @@ litert::Expected<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
     CloseHandle(file_handle);
     return litert::Unexpected(
         kLiteRtStatusErrorInvalidArgument,
-        absl::StrFormat("External weight slice out of range for %s", path));
+        absl::StrCat("External weight slice out of range for ", path));
   }
 
   MmapParams params = GetMmapParams(info.offset, info.length);
@@ -448,33 +445,34 @@ litert::Expected<void> ReadFileSliceFromPath(const LiteRtWeightInfo& info,
                                             void* output) {
   std::FILE* file = std::fopen(path.c_str(), "rb");
   if (!file) {
-    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                              absl::StrFormat("Failed to open %s", path));
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("Failed to open ", path));
   }
   if (FileSeek64(file, 0, SEEK_END) != 0) {
     std::fclose(file);
     return litert::Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
-        absl::StrFormat("Failed to determine size of %s", path));
+        absl::StrCat("Failed to determine size of ", path));
   }
   const int64_t file_size = FileTell64(file);
   if (file_size < 0) {
     std::fclose(file);
     return litert::Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
-        absl::StrFormat("Failed to determine size of %s", path));
+        absl::StrCat("Failed to determine size of ", path));
   }
   if (static_cast<uint64_t>(file_size) < info.offset + info.length) {
     std::fclose(file);
     return litert::Unexpected(
         kLiteRtStatusErrorInvalidArgument,
-        absl::StrFormat("External weight slice out of range for %s", path));
+        absl::StrCat("External weight slice out of range for ", path));
   }
   if (FileSeek64(file, static_cast<int64_t>(info.offset), SEEK_SET) != 0) {
     std::fclose(file);
     return litert::Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
-        absl::StrFormat("Failed to seek in %s", path));
+        absl::StrCat("Failed to seek in ", path));
   }
 
   const size_t read_bytes = std::fread(output, 1, info.length, file);
@@ -482,7 +480,7 @@ litert::Expected<void> ReadFileSliceFromPath(const LiteRtWeightInfo& info,
   if (read_bytes != info.length) {
     return litert::Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
-        absl::StrFormat("Failed to read %lu bytes from %s", info.length, path));
+        absl::StrCat("Failed to read ", info.length, " bytes from ", path));
   }
   return {};
 }

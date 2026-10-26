@@ -52,7 +52,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -97,7 +96,6 @@ cc_library(
         "//litert:windows": [
             ":filesystem",
             "//litert/c/internal:litert_logging",
-            "@com_google_absl//absl/strings:str_format",
         ],
         "//conditions:default": [
             ":filesystem",
