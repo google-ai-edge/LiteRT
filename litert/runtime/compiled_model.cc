@@ -30,6 +30,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
@@ -78,6 +79,7 @@
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/core/buffer_error_reporter.h"
 #include "litert/core/build_stamp.h"
+#include "litert/core/dispatch_op_schema.h"
 #include "litert/core/error_reporter.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/perfetto_profiling.h"
@@ -151,6 +153,40 @@ std::optional<std::string> ExtractDirectory(absl::string_view path) {
     return std::nullopt;
   }
   return std::string(path.substr(0, last_sep));
+}
+
+// Returns the function names of the dispatch ops in the active subgraphs.
+// Note: `active_subgraph_indices` currently only includes the root subgraphs
+// for the selected signatures (see `InitializeActiveSubgraphs`). Until
+// transitive callee discovery is implemented, any `DISPATCH_OP` inside a
+// child subgraph invoked via control flow ops (e.g., `IF`/`WHILE`/`CALL_ONCE`)
+// will not be collected here and will rely on the vendor dispatch fallback
+// for unreported functions.
+std::vector<std::string> GetActiveDispatchFunctionNames(
+    const tflite::Interpreter& interp,
+    absl::Span<const int> active_subgraph_indices) {
+  std::vector<std::string> names;
+  for (int subgraph_no : active_subgraph_indices) {
+    const auto* const subgraph = interp.subgraph(subgraph_no);
+    const auto& nodes_and_registration = subgraph->nodes_and_registration();
+    for (int node_index : subgraph->execution_plan()) {
+      const auto& [node, reg] = nodes_and_registration[node_index];
+      if (reg.builtin_code != kTfLiteBuiltinCustom || !reg.custom_name ||
+          !absl::StrContains(reg.custom_name,
+                             litert::internal::kLiteRtDispatchOpCustomName) ||
+          !node.custom_initial_data || node.custom_initial_data_size <= 0) {
+        continue;
+      }
+      auto dispatch_opts =
+          litert::internal::GetDispatchOpOptions(litert::BufferRef<uint8_t>(
+              node.custom_initial_data, node.custom_initial_data_size));
+      if (!dispatch_opts.name.empty() &&
+          !absl::c_linear_search(names, dispatch_opts.name)) {
+        names.push_back(std::move(dispatch_opts.name));
+      }
+    }
+  }
+  return names;
 }
 
 void* StubOpInit([[maybe_unused]] TfLiteContext* context,
@@ -1103,6 +1139,15 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
       LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(vendor_node)));
     }
 #endif  // !defined(LITERT_DISABLE_NPU)
+    // When only a subset of signatures is selected, tell the dispatch delegate
+    // which dispatch functions can be invoked, so that it can let the Dispatch
+    // API skip loading the others.
+    if (!compiled_model->selected_signature_keys_.empty()) {
+      LITERT_RETURN_IF_ERROR(dispatch_options.SetActiveFunctionNames(
+          GetActiveDispatchFunctionNames(
+              *compiled_model->interp_,
+              compiled_model->active_subgraph_indices_)));
+    }
     LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(dispatch_options)));
   }
 

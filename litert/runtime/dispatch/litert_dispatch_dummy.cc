@@ -51,6 +51,12 @@ LiteRtStatus LiteRtDispatchDeviceContextDestroy(
   return kLiteRtStatusErrorUnsupported;
 }
 
+LiteRtStatus LiteRtDispatchDeviceContextSetActiveFunctions(
+    LiteRtDispatchDeviceContext device_context,
+    const char* const* function_names, int num_function_names) {
+  return kLiteRtStatusErrorUnsupported;
+}
+
 LiteRtStatus LiteRtDispatchGetInputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int input_index,
     const LiteRtRankedTensorType* tensor_type,

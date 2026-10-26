@@ -120,6 +120,18 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchDeviceContextCreate(
 LITERT_CAPI_EXPORT LiteRtStatus
 LiteRtDispatchDeviceContextDestroy(LiteRtDispatchDeviceContext device_context);
 
+// Informs the Dispatch API runtime that only the given functions (see
+// `function_name` in `LiteRtDispatchInvocationContextCreate()`) will be used
+// with `device_context`, e.g. because only a subset of the model signatures is
+// selected. It must be called before any invocation context is created on
+// `device_context`. This is only a hint: runtimes may use it to avoid loading
+// the other functions of an executable that holds several functions, and must
+// still accept invocation contexts for other functions. Runtimes that don't
+// implement it ignore the call.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchDeviceContextSetActiveFunctions(
+    LiteRtDispatchDeviceContext device_context,
+    const char* const* function_names, int num_function_names);
+
 // Given a tensor type for an invocation context input, obtain the attributes
 // the HW requires for the associated tensor buffer. The returned
 // `tensor_buffer_requirements` object is owned by the caller.

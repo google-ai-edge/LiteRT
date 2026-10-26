@@ -15,6 +15,8 @@
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 
 #include <cstddef>
+#include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
@@ -121,6 +123,33 @@ TEST(DispatchDelegateOptionsTest, SetAllocBaseFileRegion) {
   auto has_alloc_base_file_region = options->HasAllocBaseFileRegion();
   ASSERT_TRUE(has_alloc_base_file_region);
   ASSERT_TRUE(*has_alloc_base_file_region);
+}
+
+TEST(DispatchDelegateOptionsTest, ActiveFunctionNamesDefaultEmpty) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  auto active_functions = options->GetActiveFunctionNames();
+  ASSERT_TRUE(active_functions);
+  EXPECT_TRUE(active_functions->empty());
+}
+
+TEST(DispatchDelegateOptionsTest, SetAndGetActiveFunctionNames) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  const std::vector<std::string> expected = {"func_a", "func_b", "func_c"};
+  ASSERT_TRUE(options->SetActiveFunctionNames(expected));
+
+  auto active_functions = options->GetActiveFunctionNames();
+  ASSERT_TRUE(active_functions);
+  EXPECT_EQ(*active_functions, expected);
+
+  // Clearing back to empty
+  ASSERT_TRUE(options->SetActiveFunctionNames({}));
+  active_functions = options->GetActiveFunctionNames();
+  ASSERT_TRUE(active_functions);
+  EXPECT_TRUE(active_functions->empty());
 }
 
 }  // namespace
