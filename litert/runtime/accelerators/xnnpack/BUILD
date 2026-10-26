@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-# copybara:uncomment load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -40,6 +40,37 @@ cc_library(
         "//tflite/delegates/xnnpack:xnnpack_delegate",
     ],
     alwayslink = 1,  # Keep the symbols in Windows and macOS.
+)
+
+cc_test(
+    name = "xnnpack_accelerator_test",
+    srcs = ["xnnpack_accelerator_test.cc"],
+    data = [
+        "//litert/test:testdata/simple_cast_and_add_op.tflite",
+        "//litert/test:testdata/simple_model.tflite",
+    ],
+    target_compatible_with = select({
+        "//litert/build_common:litert_disable_cpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_model",
+        "//litert/c:litert_opaque_options_header",
+        "//litert/c:litert_options",
+        "//litert/c/internal:litert_accelerator",
+        "//litert/c/options:litert_cpu_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/options:litert_cpu_options",
+        "//litert/runtime:compiled_model",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:simple_model",
+        "//tflite:framework",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 # copybara:uncomment_begin(google-only)
