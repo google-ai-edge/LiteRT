@@ -62,8 +62,8 @@ absl::Status ValidateFlatBufferOperatorCodes(const tflite::Model* tfl_model);
 absl::Status ValidateFlatBufferTensorQuantization(
     const tflite::SubGraph& subgraph, const tflite::Tensor& tensor);
 
-// Validates tensor ranks, dimensions, shape signatures, and quantization
-// parameters across all subgraphs in `tfl_model`.
+// Validates tensor ranks, dimensions, shape signatures, quantization
+// parameters, and sparsity parameters across all subgraphs in `tfl_model`.
 absl::Status ValidateFlatBufferTensors(const tflite::Model* tfl_model,
                                        const VerifyOptions& options = {});
 
