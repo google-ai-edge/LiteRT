@@ -49,6 +49,8 @@ pytype_strict_contrib_test(
         "//litert/python/aot/core:aot_types",
         "//litert/python/aot/vendors:fallback_backend",
         "//litert/python/aot/vendors/google_tensor:target",
+        "//litert/python/aot/vendors/qualcomm:qualcomm_backend",
+        "//litert/python/aot/vendors/qualcomm:target",
         "@absl_py//absl/testing:absltest",
     ],
 )

@@ -19,6 +19,8 @@ import copy
 import functools
 import os
 import pathlib
+import platform
+import sys
 from typing import Iterable
 
 from litert.python.aot.core import aot_types
@@ -102,6 +104,66 @@ def _call_component(
   )
 
 
+# Linux aarch64 QNN host library builds in QAIRT, newest toolchain first.
+_QNN_HOST_LIB_SUBDIRS_AARCH64 = (
+    "aarch64-oe-linux-gcc11.2",
+    "aarch64-ubuntu-gcc9.4",
+    "aarch64-oe-linux-gcc9.3",
+)
+_QNN_HOST_LIB_SUBDIR_X86_64 = "x86_64-linux-clang"
+
+
+def _resolve_sdk_libs_path(backend: QualcommBackend) -> str | None:
+  """Resolves the QNN host library directory used by apply_plugin_main.
+
+  Resolution order: backend config `sdk_libs_path`, `$QAIRT_LIB_PATH`, the
+  `ai_edge_litert_sdk_qualcomm` package, then
+  `$QNN_SDK_ROOT/lib/<host-arch subdir>` (Linux only). Only existing
+  directories are returned.
+
+  On a Qualcomm Linux aarch64 device the SDK runtime is also configured, so
+  that apply_plugin_main (a subprocess, which inherits ADSP_LIBRARY_PATH) can
+  open a CDSP session.
+
+  Args:
+    backend: The Qualcomm backend whose config may override the path.
+
+  Returns:
+    The QNN host library directory, or None if it cannot be resolved.
+  """
+  configured_path = backend.config.get("sdk_libs_path")
+  if configured_path:
+    return str(configured_path)
+  env_lib_path = os.environ.get("QAIRT_LIB_PATH")
+  if env_lib_path and os.path.isdir(env_lib_path):
+    return env_lib_path
+  try:
+    import ai_edge_litert_sdk_qualcomm as sdk  # pylint: disable=g-import-not-at-top  # pyrefly: ignore[missing-import]
+
+    detect = getattr(sdk, "detect_hexagon_arch", None)
+    if detect is not None and hasattr(sdk, "configure_runtime"):
+      arch = detect()
+      if arch:
+        sdk.configure_runtime(arch)
+    sdk_libs = sdk.path_to_sdk_libs()
+    if sdk_libs is not None and os.path.isdir(sdk_libs):
+      return str(sdk_libs)
+  except (ImportError, NotImplementedError):
+    pass
+  qnn_sdk_root = os.environ.get("QNN_SDK_ROOT")
+  if qnn_sdk_root and sys.platform == "linux":
+    subdirs = (
+        _QNN_HOST_LIB_SUBDIRS_AARCH64
+        if platform.machine() in ("aarch64", "arm64")
+        else (_QNN_HOST_LIB_SUBDIR_X86_64,)
+    )
+    for subdir in subdirs:
+      candidate = pathlib.Path(qnn_sdk_root) / "lib" / subdir
+      if candidate.is_dir():
+        return str(candidate)
+  return None
+
+
 @_call_component.register
 def _apply_plugin(
     component: components.ApplyPluginT,
@@ -110,22 +172,17 @@ def _apply_plugin(
     output_model: aot_types.Model,
 ):
   """Calls the apply plugin component."""
+  sdk_libs_path = _resolve_sdk_libs_path(backend)
+
   try:
     # If the plugin is not built from source (i.e. using ai_edge_litert wheel),
     # we find the plugin library directory from the package path.
     # Otherwise we use the default library path.
     plugin_path = common.get_resource(COMPILER_PLUGIN_LIB_PATH)
     lib_dir = os.path.dirname(plugin_path)
-
-    try:
-      import ai_edge_litert_sdk_qualcomm  # pylint: disable=g-import-not-at-top  # pyrefly: ignore[missing-import]
-
-      sdk_libs_path = str(ai_edge_litert_sdk_qualcomm.path_to_sdk_libs())
-    except ImportError:
-      sdk_libs_path = None
     extra_kwargs = {"libs": lib_dir, "sdk_libs_path": sdk_libs_path}
   except FileNotFoundError:
-    extra_kwargs = {}
+    extra_kwargs = {"sdk_libs_path": sdk_libs_path} if sdk_libs_path else {}
   return component(
       input_model,
       output_model,
