@@ -38,6 +38,10 @@ struct OpData {
   int then_subgraph_index;
   int else_subgraph_index;
   bool subgraph_has_dynamic_output_tensors;
+  // True while Prepare() allocates the branch subgraphs. It is still set if a
+  // branch leads back to this node, which would otherwise recurse through
+  // AllocateTensors() without bound.
+  bool preparing_branches;
 };
 
 void* Init(TfLiteContext* context, const char* buffer, size_t length) {
@@ -46,6 +50,7 @@ void* Init(TfLiteContext* context, const char* buffer, size_t length) {
   op_data->then_subgraph_index = params->then_subgraph_index;
   op_data->else_subgraph_index = params->else_subgraph_index;
   op_data->subgraph_has_dynamic_output_tensors = false;
+  op_data->preparing_branches = false;
   return op_data;
 }
 
@@ -55,6 +60,7 @@ void Free(TfLiteContext* context, void* buffer) {
 
 TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   OpData* op_data = reinterpret_cast<OpData*>(node->user_data);
+  TF_LITE_ENSURE(context, !op_data->preparing_branches);
 
   TF_LITE_ENSURE(context, node->inputs->size > 0);
 
@@ -77,6 +83,13 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   auto* subgraphs = this_subgraph->GetSubgraphs();
   TF_LITE_ENSURE(context, op_data->then_subgraph_index < subgraphs->size());
   TF_LITE_ENSURE(context, op_data->else_subgraph_index < subgraphs->size());
+  // A branch cannot be the subgraph that contains this node: the code below
+  // would modify this subgraph's inputs and then re-enter its
+  // AllocateTensors().
+  TF_LITE_ENSURE(context, op_data->then_subgraph_index !=
+                              this_subgraph->GetSubgraphIndex());
+  TF_LITE_ENSURE(context, op_data->else_subgraph_index !=
+                              this_subgraph->GetSubgraphIndex());
 
   Subgraph* then_subgraph = (*subgraphs)[op_data->then_subgraph_index].get();
   Subgraph* else_subgraph = (*subgraphs)[op_data->else_subgraph_index].get();
@@ -110,7 +123,10 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
         subgraph_input->allocation_type = kTfLiteCustom;
       }
     }
-    TF_LITE_ENSURE_OK(context, subgraph->AllocateTensors());
+    op_data->preparing_branches = true;
+    const TfLiteStatus status = subgraph->AllocateTensors();
+    op_data->preparing_branches = false;
+    TF_LITE_ENSURE_OK(context, status);
     op_data->subgraph_has_dynamic_output_tensors |=
         subgraph->HasDynamicTensors();
   }
@@ -139,6 +155,12 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
     } else {
       TfLiteTensor* then_output =
           then_subgraph->tensor(then_subgraph->outputs()[i]);
+      TfLiteTensor* else_output =
+          else_subgraph->tensor(else_subgraph->outputs()[i]);
+      // Eval_static() makes the active branch write its output directly into
+      // this output's buffer, which is sized for `output->type`.
+      TF_LITE_ENSURE_TYPES_EQ(context, then_output->type, output->type);
+      TF_LITE_ENSURE_TYPES_EQ(context, else_output->type, output->type);
       TfLiteIntArray* output_size = TfLiteIntArrayCopy(then_output->dims);
       TF_LITE_ENSURE_OK(context,
                         context->ResizeTensor(context, output, output_size));
