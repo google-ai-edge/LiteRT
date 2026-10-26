@@ -501,7 +501,8 @@ absl::Status DelegateKernelLiteRt::HandleInputEvents(TfLiteContext* context) {
     auto event = backend_->GetGpuEventAssociated(tensor_buffer);
     if (event.ok()) {
       input_events.push_back(event.value());
-    } else if (event.status().code() != absl::StatusCode::kNotFound) {
+    } else if (event.status().code() != absl::StatusCode::kNotFound &&
+               event.status().code() != absl::StatusCode::kUnimplemented) {
       return event.status();
     }
   }
@@ -510,7 +511,9 @@ absl::Status DelegateKernelLiteRt::HandleInputEvents(TfLiteContext* context) {
   if (pre_dispatch_event.ok()) {
     input_events.push_back(pre_dispatch_event.value());
   } else if (pre_dispatch_event.status().code() !=
-             absl::StatusCode::kNotFound) {
+                 absl::StatusCode::kNotFound &&
+             pre_dispatch_event.status().code() !=
+                 absl::StatusCode::kUnimplemented) {
     return pre_dispatch_event.status();
   }
 
@@ -529,7 +532,9 @@ absl::Status DelegateKernelLiteRt::HandleOutputEvents(
   auto post_dispatch_event =
       ctx_->GetPostDispatchEvent(is_async_execution_mode);
   if (!post_dispatch_event.ok()) {
-    if (post_dispatch_event.status().code() != absl::StatusCode::kNotFound) {
+    if (post_dispatch_event.status().code() != absl::StatusCode::kNotFound &&
+        post_dispatch_event.status().code() !=
+            absl::StatusCode::kUnimplemented) {
       return post_dispatch_event.status();
     }
 
