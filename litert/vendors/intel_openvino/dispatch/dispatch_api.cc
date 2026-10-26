@@ -119,16 +119,26 @@ LiteRtStatus ImportOpenVinoTensorBuffer(
 }
 
 LiteRtStatus DestroyOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
-  OpenVinoTensorBuffer* custom_tensor_buffer =
-      reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_info->memory_handle);
-  if (custom_tensor_buffer->GetTensorData()) {
-    delete custom_tensor_buffer;
-  }
+  // Always delete: the buffer may never have been touched (see
+  // OpenVinoTensorBuffer), and asking for its data here would create it.
+  delete reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_info->memory_handle);
   delete hw_memory_info;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus UnlockOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus ClearOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  auto result = reinterpret_cast<OpenVinoTensorBuffer*>(
+                    hw_memory_info->memory_handle)
+                    ->Clear();
+  if (!result) {
+    LITERT_LOG(LITERT_ERROR, "Failed to clear tensor buffer: %s",
+               result.Error().Message().c_str());
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
   return kLiteRtStatusOk;
 }
 
@@ -523,7 +533,7 @@ static const LiteRtCustomTensorBufferHandlersDef_V1 TheTensorBufferHandlers = {
     .destroy_func = litert::openvino::DestroyOpenVinoTensorBuffer,
     .lock_func = litert::openvino::LockOpenVinoTensorBuffer,
     .unlock_func = litert::openvino::UnlockOpenVinoTensorBuffer,
-    .clear_func = nullptr,
+    .clear_func = litert::openvino::ClearOpenVinoTensorBuffer,
     .import_func = litert::openvino::ImportOpenVinoTensorBuffer,
     .device_tag = kLiteRtEnvOptionTagNull,
     .queue_tag = kLiteRtEnvOptionTagNull,

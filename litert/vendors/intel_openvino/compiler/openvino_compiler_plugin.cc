@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -31,7 +32,10 @@
 #include "openvino/core/except.hpp"
 #include "openvino/frontend/tensorflow_lite/frontend.hpp"
 #include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
+#include "openvino/op/parameter.hpp"
+#include "openvino/openvino.hpp"  // NOLINT
 #include "openvino/runtime/core.hpp"
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -642,6 +646,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         auto input_model = tflite_fe->load(graph_delegate);
         LITERT_LOG(LITERT_INFO, "Model loaded");
         auto ov_model = tflite_fe->convert(input_model);
+        input_model.reset();  // frontend model + its tflite weights unused
+                              // after convert
 
         // Run NPU-specific optimization passes.
         const auto optimize_result = context.OptimizeModel(ov_model);
@@ -672,13 +678,38 @@ LiteRtStatus LiteRtCompilerPluginCompile(
           }
         }
 
+        // KV tier: the largest static extent over this partition's
+        // "kv_cache" inputs, i.e. the context length it was compiled for.
+        // Recorded in the GlobalGraph so the dispatch can tell a multi-context
+        // model's tiers apart without guessing from port shapes.
+        auto pname = [](const std::shared_ptr<ov::op::v0::Parameter>& p) {
+          const auto& names = p->get_output_tensor(0).get_names();
+          return names.empty() ? p->get_friendly_name() : *names.begin();
+        };
+        auto extent = [](const std::shared_ptr<ov::op::v0::Parameter>& p) {
+          int64_t m = 0;
+          const auto& ps = p->get_partial_shape();
+          if (ps.rank().is_dynamic()) return m;
+          for (const auto& d : ps) {
+            if (d.is_static()) m = std::max<int64_t>(m, d.get_length());
+          }
+          return m;
+        };
+        int64_t kv_tier = 0;
+        for (const auto& p : ov_model->get_parameters()) {
+          if (!absl::StrContains(pname(p), "kv_cache")) continue;
+          kv_tier = std::max(kv_tier, extent(p));
+        }
+
         // Compile using the per-partition device and properties.
-        litert::openvino::LogOpenVINOVersionInfoOnce(
-            "OpenVINO Compiler", context.Device().c_str());
+        litert::openvino::LogOpenVINOVersionInfoOnce("OpenVINO Compiler",
+                                                     context.Device().c_str());
         LITERT_LOG(LITERT_INFO, "Compiling partition %d for device %s",
                    partition_idx, context.Device().c_str());
         auto compiled_model =
             core.compile_model(ov_model, context.Device(), configs);
+        ov_model.reset();  // graph unused after compile; free before export +
+                           // aggregation
 
         CustomOStreamBuf obuf;
         std::ostream oss(&obuf);
@@ -712,6 +743,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
           litert::openvino::OpenVinoGlobalGraph::Subgraph subgraph;
           subgraph.name = graph_name;
           subgraph.device = static_cast<uint8_t>(graph_backend_enum);
+          subgraph.kv_tier = kv_tier;
           subgraph.const_map = std::move(const_map);
           subgraph.payload = absl::MakeConstSpan(
               reinterpret_cast<const uint8_t*>(held.data()), held.size());

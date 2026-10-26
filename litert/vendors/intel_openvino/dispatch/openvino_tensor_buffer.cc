@@ -14,14 +14,18 @@
 
 #include "litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 
 #include "openvino/core/except.hpp"
 #include "openvino/core/shape.hpp"
 #include "openvino/core/type/element_type.hpp"
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
@@ -74,41 +78,25 @@ litert::Expected<ov::element::Type> ToOvElementType(
 
 litert::Expected<void> OpenVinoTensorBuffer::Alloc(
     const LiteRtRankedTensorType& tensor_type, size_t size) {
+  absl::MutexLock lock(mutex_);
   if (allocated_) {
     return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
                               "The OpenVino tensor has been allocated.");
   }
-
-  // TODO:: Release the shared OpenVINO Core.
-  std::string device = OpenVINOSharedCore::GetInstance()->GetDevice();
-  LITERT_ASSIGN_OR_RETURN(ov::element::Type ov_element_type,
-                          ToOvElementType(tensor_type));
-  LITERT_ASSIGN_OR_RETURN(ov::Shape ov_shape, ToOvShape(tensor_type));
-
-  // This is reached from C callbacks, so don't let OpenVINO exceptions escape.
-  try {
-    if (device == "NPU" || device == "GPU") {
-      auto context = OpenVINOSharedCore::GetInstance()->GetRemoteContext();
-      ov_tensor_ = context.create_host_tensor(ov_element_type, ov_shape);
-    } else if (device == "CPU") {
-      ov_tensor_ = ov::Tensor(ov_element_type, ov_shape);
-    } else {
-      return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
-                                "Unsupported OpenVINO device: " + device);
-    }
-  } catch (const ov::Exception& e) {
-    ov_tensor_ = ov::Tensor();
-    return litert::Unexpected(
-        kLiteRtStatusErrorRuntimeFailure,
-        std::string("Failed to allocate OpenVINO tensor: ") + e.what());
+  const std::string device = OpenVINOSharedCore::GetInstance()->GetDevice();
+  if (device != "NPU" && device != "GPU" && device != "CPU") {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Unsupported OpenVINO device: " + device);
   }
+  LITERT_ASSIGN_OR_RETURN(element_type_, ToOvElementType(tensor_type));
+  LITERT_ASSIGN_OR_RETURN(shape_, ToOvShape(tensor_type));
   allocated_ = true;
-
   return {};
 }
 
 litert::Expected<void> OpenVinoTensorBuffer::Wrap(
     const LiteRtRankedTensorType& tensor_type, void* host_memory, size_t size) {
+  absl::MutexLock lock(mutex_);
   if (allocated_) {
     return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
                               "The OpenVino tensor has been allocated.");
@@ -118,15 +106,14 @@ litert::Expected<void> OpenVinoTensorBuffer::Wrap(
                               "Cannot wrap null host memory.");
   }
 
-  LITERT_ASSIGN_OR_RETURN(ov::element::Type ov_element_type,
-                          ToOvElementType(tensor_type));
-  LITERT_ASSIGN_OR_RETURN(ov::Shape ov_shape, ToOvShape(tensor_type));
+  LITERT_ASSIGN_OR_RETURN(element_type_, ToOvElementType(tensor_type));
+  LITERT_ASSIGN_OR_RETURN(shape_, ToOvShape(tensor_type));
 
   // ov::Tensor over an external pointer never frees it, so destroying this
   // wrapper leaves the owner's memory intact. This is reached from C
   // callbacks, so don't let OpenVINO exceptions escape.
   try {
-    ov_tensor_ = ov::Tensor(ov_element_type, ov_shape, host_memory);
+    ov_tensor_ = ov::Tensor(element_type_, shape_, host_memory);
   } catch (const ov::Exception& e) {
     ov_tensor_ = ov::Tensor();
     return litert::Unexpected(
@@ -140,21 +127,64 @@ litert::Expected<void> OpenVinoTensorBuffer::Wrap(
                               "Wrapped memory is smaller than the tensor.");
   }
   allocated_ = true;
+  wrapped_ = true;
+  AnyWrappedFlag().store(true);
   return {};
 }
 
-litert::Expected<void*> OpenVinoTensorBuffer::GetTensorData() {
+bool OpenVinoTensorBuffer::AnyWrapped() { return AnyWrappedFlag().load(); }
+
+std::atomic<bool>& OpenVinoTensorBuffer::AnyWrappedFlag() {
+  static std::atomic<bool> any_wrapped{false};
+  return any_wrapped;
+}
+
+litert::Expected<void> OpenVinoTensorBuffer::Materialize(const char* why) {
   if (!allocated_) {
     return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
                               "The tensor didn't allocate.");
   }
+  if (ov_tensor_) return {};
+  // TODO:: Release the shared OpenVINO Core.
+  const std::string device = OpenVINOSharedCore::GetInstance()->GetDevice();
+  // This is reached from C callbacks, so don't let OpenVINO exceptions escape.
+  try {
+    if (device == "NPU" || device == "GPU") {
+      auto context = OpenVINOSharedCore::GetInstance()->GetRemoteContext();
+      ov_tensor_ = context.create_host_tensor(element_type_, shape_);
+    } else {
+      ov_tensor_ = ov::Tensor(element_type_, shape_);
+    }
+  } catch (const ov::Exception& e) {
+    ov_tensor_ = ov::Tensor();
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        std::string("Failed to allocate OpenVINO tensor: ") + e.what());
+  }
+  std::memset(ov_tensor_.data(), 0, ov_tensor_.get_byte_size());
+  LITERT_LOG(LITERT_VERBOSE, "OV buffer %s created on %s (%zu B)",
+             shape_.to_string().c_str(), why, ov_tensor_.get_byte_size());
+  return {};
+}
+
+litert::Expected<void*> OpenVinoTensorBuffer::GetTensorData() {
+  absl::MutexLock lock(mutex_);
+  LITERT_RETURN_IF_ERROR(Materialize("lock"));
   return ov_tensor_.data();
 }
 
-litert::Expected<ov::Tensor> OpenVinoTensorBuffer::GetOVTensor() {
+litert::Expected<void> OpenVinoTensorBuffer::Clear() {
+  absl::MutexLock lock(mutex_);
   if (!allocated_) {
     return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
-                              "Failed to get tensor.");
+                              "The tensor didn't allocate.");
   }
+  if (ov_tensor_) std::memset(ov_tensor_.data(), 0, ov_tensor_.get_byte_size());
+  return {};
+}
+
+litert::Expected<ov::Tensor> OpenVinoTensorBuffer::GetOVTensor() {
+  absl::MutexLock lock(mutex_);
+  LITERT_RETURN_IF_ERROR(Materialize("register"));
   return ov_tensor_;
 }
