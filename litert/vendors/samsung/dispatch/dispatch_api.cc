@@ -229,6 +229,19 @@ LiteRtStatus LiteRtSamsungInvocationContextDestroy(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtSamsungInvocationContextSetOptions(
+    LiteRtDispatchInvocationContext invocation_context, LiteRtOptions options) {
+  if (!invocation_context) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (auto status = invocation_context->SetOptions(options); !status) {
+    LITERT_LOG(LITERT_ERROR, "Failed to set options on invocation context: %s",
+               status.Error().Message().c_str());
+    return status.Error().Status();
+  }
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtSamsungAttachInput(
     LiteRtDispatchInvocationContext invocation_context, int graph_input_index,
     LiteRtTensorBufferHandle tensor_buffer_handle) {
@@ -320,6 +333,8 @@ static const LiteRtDispatchInterface_V1 TheInterface = {
     /*.get_metric=*/nullptr,
     /*.destroy_metrics=*/nullptr,
     /*.check_runtime_compatibility=*/CheckRuntimeCompatibility,
+    /*.invocation_context_set_options=*/
+    LiteRtSamsungInvocationContextSetOptions,
 };
 
 }  // namespace

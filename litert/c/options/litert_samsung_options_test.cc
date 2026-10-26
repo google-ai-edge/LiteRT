@@ -124,5 +124,41 @@ TEST(LrtSamsungOptionsTest, CreateFromTomlReturnsParseError) {
   EXPECT_EQ(options, nullptr);
 }
 
+TEST(LrtSamsungOptionsTest, PerformanceModeAndConfigId) {
+  LrtSamsungOptions options;
+  LITERT_ASSERT_OK(LrtCreateSamsungOptions(&options));
+
+  LrtSamsungOptionsPerformanceMode performance_mode;
+  uint32_t performance_config_id = 999;
+  LITERT_ASSERT_OK(
+      LrtSamsungOptionsGetPerformanceMode(options, &performance_mode));
+  LITERT_ASSERT_OK(
+      LrtSamsungOptionsGetPerformanceConfigId(options, &performance_config_id));
+  EXPECT_EQ(performance_mode, kLrtSamsungOptionsPerformanceModePerformance);
+  EXPECT_EQ(performance_config_id, 0u);
+
+  LrtSamsungOptions invalid_options = nullptr;
+  EXPECT_EQ(LrtCreateSamsungOptionsFromToml("performance_mode = 99\n",
+                                            &invalid_options),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(invalid_options, nullptr);
+
+  LITERT_ASSERT_OK(LrtSamsungOptionsSetPerformanceMode(
+      options, kLrtSamsungOptionsPerformanceModeCustom));
+  LITERT_ASSERT_OK(LrtSamsungOptionsSetPerformanceConfigId(options, 1290u));
+
+  LrtSamsungOptions parsed;
+  SerializeAndParse(options, &parsed);
+  LITERT_ASSERT_OK(
+      LrtSamsungOptionsGetPerformanceMode(parsed, &performance_mode));
+  LITERT_ASSERT_OK(
+      LrtSamsungOptionsGetPerformanceConfigId(parsed, &performance_config_id));
+  EXPECT_EQ(performance_mode, kLrtSamsungOptionsPerformanceModeCustom);
+  EXPECT_EQ(performance_config_id, 1290u);
+
+  LrtDestroySamsungOptions(parsed);
+  LrtDestroySamsungOptions(options);
+}
+
 }  // namespace
 }  // namespace litert::samsung

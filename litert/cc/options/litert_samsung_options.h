@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_SAMSUNG_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_SAMSUNG_OPTIONS_H_
 
+#include <cstdint>
 #include <memory>
 
 #include "litert/c/litert_common.h"
@@ -80,6 +81,40 @@ class SamsungOptions : public ConcreteOptionsBase {
     const char* soc_model;
     LITERT_RETURN_IF_ERROR(LrtSamsungOptionsGetSocModel(Get(), &soc_model));
     return soc_model;
+  }
+
+  enum class PerformanceMode : int {
+    kLowPower = kLrtSamsungOptionsPerformanceModeLowPower,
+    kBalanced = kLrtSamsungOptionsPerformanceModeBalanced,
+    kCustom = kLrtSamsungOptionsPerformanceModeCustom,
+    kPerformance = kLrtSamsungOptionsPerformanceModePerformance,
+  };
+
+  Expected<void> SetPerformanceMode(PerformanceMode performance_mode) {
+    LITERT_RETURN_IF_ERROR(LrtSamsungOptionsSetPerformanceMode(
+        Get(),
+        static_cast<LrtSamsungOptionsPerformanceMode>(performance_mode)));
+    return {};
+  }
+
+  Expected<PerformanceMode> GetPerformanceMode() const {
+    LrtSamsungOptionsPerformanceMode performance_mode;
+    LITERT_RETURN_IF_ERROR(
+        LrtSamsungOptionsGetPerformanceMode(Get(), &performance_mode));
+    return static_cast<PerformanceMode>(performance_mode);
+  }
+
+  Expected<void> SetPerformanceConfigId(uint32_t performance_config_id) {
+    LITERT_RETURN_IF_ERROR(
+        LrtSamsungOptionsSetPerformanceConfigId(Get(), performance_config_id));
+    return {};
+  }
+
+  Expected<uint32_t> GetPerformanceConfigId() const {
+    uint32_t performance_config_id;
+    LITERT_RETURN_IF_ERROR(
+        LrtSamsungOptionsGetPerformanceConfigId(Get(), &performance_config_id));
+    return performance_config_id;
   }
 
  private:
