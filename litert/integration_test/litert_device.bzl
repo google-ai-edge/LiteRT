@@ -29,6 +29,10 @@ load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "get_spec", "host_rlocation")
 load("//litert/integration_test:litert_device_script.bzl", "litert_device_script")
 
+# copybara:uncomment_begin(google-only)
+# load("//litert/integration_test/google:mobile_gtest.bzl", "android_device_gtest")
+# copybara:uncomment_end
+
 # MISCELLANEOUS ####################################################################################
 
 def hidden_test_tags():
@@ -112,78 +116,18 @@ def hidden_test_tags():
 #         )
 #         return
 #
-#     files = {
-#         "bin": [target],
-#     }
-#
-#     push_files_list = []
-#
-#     if extra_models:
-#         files["extra_models"] = extra_models
-#         push_files_list.append("extra_models:/data/local/tmp/runfiles/user/tmp/litert_extras/")
-#
-#     for lib_target in libs:
-#         lib_target_split = lib_target.split(":")
-#         if len(lib_target_split) != 2:
-#             fail("Lib inputs must include a colon even if relative label")
-#         lib_id = lib_target_split[-1]
-#         files[lib_id] = [lib_target]
-#
-#         # Push shared libraries into their parent directory (trailing '/') so
-#         # AndroidFilePusherDecorator (with prepare_des_dir_when_src_is_file=true)
-#         # preserves the actual output .so filename regardless of the Bazel target name.
-#         push_files_list.append("{id}:{loc}/".format(
-#             id = lib_id,
-#             loc = device_rlocation(lib_target, get_parent = True),
-#         ))
-#
-#     for data_target in data:
-#         data_target_split = data_target.split(":")
-#         if len(data_target_split) != 2:
-#             # This is required by `mobile_test` for value in `files`.
-#             fail("Data inputs must include a colon even if relative label")
-#         data_id = data_target_split[-1]
-#         files[data_id] = [data_target]
-#
-#         # NOTE: Any non raw file data targets must output a directory with the same name as the
-#         # target (e.g. filegroup "foo" that globs "foo/*"). This may need to be updated later
-#         # but it works for everything in LiteRt for now.
-#         push_files_list.append("{id}:{loc}".format(
-#             id = data_id,
-#             loc = device_rlocation(data_target, get_parent = False),
-#         ))
-#
-#     params = {
-#         "run_dir": device_rlocation(),
-#         "options": " ".join(exec_args).replace("\\'", "'"),
-#         "prepare_des_dir_when_src_is_file": "true",  # Allows dest to be a dir (parent) when src is a file.
-#         "run_env": " ".join(exec_env_vars),
-#         "remove_files_before_push": "true",
-#     }
-#
-#     if push_files_list:
-#         params["push_files"] = ",".join(push_files_list)
-#
-#     args = [
-#         "--run_as={}".format(run_as),
-#         "--allocation_exit_strategy=FAIL_FAST_NO_MATCH",
-#         "--test_timeout_sec=3600",
-#         "--job_timeout_sec=3600",
-#     ]
-#
-#     mobile_test(
-#         tags = hidden_test_tags(),
+#     android_device_gtest(
 #         name = name,
-#         size = "enormous",
-#         dimensions = dimensions,
-#         files = files,
-#         params = params,
-#         args = args,
-#         device = "AndroidRealDevice",
-#         driver = "AndroidGUnit",
-#         decorators = [
-#             "AndroidFilePusherDecorator",
-#         ],
+#         bin = target,
+#         device = dimensions,
+#         data = data,
+#         runfiles_prefix = None,
+#         libs = libs,
+#         extra_models = extra_models,
+#         exec_args = exec_args,
+#         exec_env_vars = exec_env_vars,
+#         run_as = run_as,
+#         tags = hidden_test_tags(),
 #         visibility = [
 #             "//litert/integration_test:__subpackages__",
 #             "//litert/google:__subpackages__",
