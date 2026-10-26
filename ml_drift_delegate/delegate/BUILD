@@ -41,6 +41,25 @@ cc_library(
 )
 
 cc_library(
+    name = "host_buffer_arbitrator",
+    srcs = ["host_buffer_arbitrator.cc"],
+    hdrs = ["host_buffer_arbitrator.h"],
+    visibility = [
+        "//litert:litert_internal_users",
+        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
+        "//third_party/odml/litert_lm:__subpackages__",
+    ],
+    deps = [
+        ":gpu_backend",
+        "//tflite/c:common",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@ml_drift//ml_drift/common:data_type",
+    ],
+)
+
+cc_library(
     name = "gpu_backend_opencl",
     srcs = ["gpu_backend_opencl.cc"],
     hdrs = ["gpu_backend_opencl.h"],
@@ -63,6 +82,7 @@ cc_library(
         "@ml_drift//ml_drift/cl:memory_manager",
         "@ml_drift//ml_drift/cl:opencl_wrapper",
         "@ml_drift//ml_drift/cl:tensor",
+        "@ml_drift//ml_drift/cl:util",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model",
@@ -1268,6 +1288,33 @@ cc_test(
         "//litert/c:litert_tensor_buffer_types",
         "@com_google_googletest//:gtest_main",
         "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+    ],
+)
+
+cc_test(
+    name = "host_buffer_arbitrator_test",
+    srcs = ["host_buffer_arbitrator_test.cc"],
+    deps = [
+        ":gpu_backend",
+        ":host_buffer_arbitrator",
+        ":unowned_tensor_desc",
+        "//ml_drift_delegate/delegate/serialization_weight_cache",
+        "//ml_drift_delegate/delegate/shared_memory_manager",
+        "//tflite/c:common",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common/task:buffer_desc",
+        "@ml_drift//ml_drift/common/task:gpu_tensor",
         "@ml_drift//ml_drift/common/task:tensor_desc",
     ],
 )
