@@ -16,6 +16,7 @@
 
 // Placeholder for internal dependency on trusted resource url type
 
+import {WasmModule} from '@litertjs/wasm-utils';
 import {Environment} from './environment';
 import {getGlobalLiteRt, getGlobalLiteRtPromise, hasGlobalLiteRt, hasGlobalLiteRtPromise, setGlobalLiteRt, setGlobalLiteRtPromise} from './global_litert';
 import {LiteRt} from './litert_web';
@@ -32,8 +33,28 @@ type UrlString = string;
  * @property jspi Whether to load the JSPI version of the Wasm module. Defaults
  *     to false. Unused when specifying a .js file directly instead of a
  *     directory containing the Wasm files.
+ * @property cpuOnly Whether to initialize the default environment in CPU-only
+ *     mode without querying WebGPU devices. Defaults to false.
+ * @property webGpuDevice A custom WebGPU device to use, or null to disable
+ *     WebGPU.
  **/
-export interface LoadLiteRtOptions extends LoadOptions {}
+export interface LoadLiteRtOptions extends LoadOptions {
+  cpuOnly?: boolean;
+  webGpuDevice?: GPUDevice|null;
+}
+
+/**
+ * Options for initializing LiteRT from an existing WasmModule instance.
+ *
+ * @property cpuOnly Whether to initialize the default environment in CPU-only
+ *     mode without querying WebGPU devices. Defaults to false.
+ * @property webGpuDevice A custom WebGPU device to use, or null to disable
+ *     WebGPU.
+ */
+export interface InitFromWasmModuleOptions {
+  cpuOnly?: boolean;
+  webGpuDevice?: GPUDevice|null;
+}
 
 /**
  * Load LiteRT.js Wasm files from the given URL. This needs to be called before
@@ -56,18 +77,59 @@ export function loadLiteRt(
   if (hasGlobalLiteRtPromise()) {
     throw new Error('LiteRT is already loading / loaded.');
   }
-  setGlobalLiteRtPromise(load(path, options)
-                             .then(async liteRt => {
-                               setGlobalLiteRt(liteRt);
-                               liteRt.setDefaultEnvironment(
-                                   await Environment.create());
-                               return liteRt;
-                             })
-                             .catch(error => {
-                               setGlobalLiteRtPromise(undefined);
-                               throw error;
-                             }));
+  setGlobalLiteRtPromise(
+      load(path, options)
+          .then(async liteRt => {
+            setGlobalLiteRt(liteRt);
+            liteRt.setDefaultEnvironment(await Environment.create({
+              cpuOnly: options?.cpuOnly,
+              webGpuDevice:
+                  options?.webGpuDevice ?? (options?.cpuOnly ? null : undefined),
+            }, liteRt));
+            return liteRt;
+          })
+          .catch(error => {
+            setGlobalLiteRtPromise(undefined);
+            throw error;
+          }));
   return getGlobalLiteRtPromise()!;
+}
+
+/**
+ * Initializes LiteRT from an already-loaded WasmModule instance (for example,
+ * loaded via Boq's WasmModuleLoader or another custom loader).
+ *
+ * This binds the module to LiteRT, creates an Environment, and registers it as
+ * the default environment.
+ *
+ * @param wasmModule The initialized Emscripten WasmModule.
+ * @param options Initialization options, such as `{cpuOnly: true}`.
+ */
+export function initFromWasmModule(
+    wasmModule: WasmModule,
+    options?: InitFromWasmModuleOptions): Promise<LiteRt> {
+  if (hasGlobalLiteRtPromise()) {
+    throw new Error('LiteRT is already loading / loaded.');
+  }
+  const liteRt = new LiteRt(wasmModule);
+  setGlobalLiteRt(liteRt);
+  const promise = (async () => {
+    try {
+      const environment = await Environment.create({
+        cpuOnly: options?.cpuOnly,
+        webGpuDevice:
+            options?.webGpuDevice ?? (options?.cpuOnly ? null : undefined),
+      }, liteRt);
+      liteRt.setDefaultEnvironment(environment);
+      return liteRt;
+    } catch (error) {
+      setGlobalLiteRt(undefined);
+      setGlobalLiteRtPromise(undefined);
+      throw error;
+    }
+  })();
+  setGlobalLiteRtPromise(promise);
+  return promise;
 }
 
 /**
