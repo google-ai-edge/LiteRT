@@ -39,60 +39,11 @@
 #include "litert/cc/options/litert_compiler_options.h"  // IWYU pragma: keep
 #include "litert/cc/options/litert_concrete_options_base.h"
 #include "litert/cc/options/litert_cpu_options.h"  // IWYU pragma: keep
-#include "litert/cc/options/litert_google_tensor_options.h"  // IWYU pragma: keep
 #include "litert/cc/options/litert_gpu_options.h"  // IWYU pragma: keep
-#include "litert/cc/options/litert_intel_openvino_options.h"  // IWYU pragma: keep
-#include "litert/cc/options/litert_mediatek_options.h"  // IWYU pragma: keep
-#include "litert/cc/options/litert_qualcomm_options.h"  // IWYU pragma: keep
 #include "litert/cc/options/litert_runtime_options.h"  // IWYU pragma: keep
-#include "litert/cc/options/litert_samsung_options.h"  // IWYU pragma: keep
 #include "litert/core/options.h"
 
 namespace litert {
-namespace options_impl {
-
-template <typename OptionType>
-Expected<OptionType&> EnsureOption(std::optional<OptionType>& slot) {
-  if (!slot) {
-    LITERT_ASSIGN_OR_RETURN(auto option, OptionType::Create());
-    slot.emplace(std::move(option));
-  }
-  return slot.value();
-}
-
-template <typename OptionType>
-LiteRtStatus AppendAndReset(internal::RuntimeProxy* runtime,
-                            LiteRtOptions options,
-                            std::optional<OptionType>& slot) {
-  if (!slot) {
-    return kLiteRtStatusOk;
-  }
-  LiteRtOpaqueOptions opaque = slot->Release();
-  slot.reset();
-  return runtime->AddOpaqueOptions(options, opaque);
-}
-
-template <typename OptionType, typename GetDataFunc>
-LiteRtStatus AppendAndResetOpaqueData(internal::RuntimeProxy* runtime,
-                                      LiteRtOptions options,
-                                      const std::optional<OptionType>& slot,
-                                      GetDataFunc get_data_func) {
-  if (!slot) {
-    return kLiteRtStatusOk;
-  }
-  const char* identifier;
-  void* payload = nullptr;
-  void (*payload_deleter)(void*) = nullptr;
-  LITERT_RETURN_IF_ERROR(
-      get_data_func(slot->Get(), &identifier, &payload, &payload_deleter));
-  LiteRtOpaqueOptions opaque_opts = nullptr;
-  LITERT_RETURN_IF_ERROR(runtime->CreateOpaqueOptions(
-      identifier, payload, payload_deleter, &opaque_opts));
-  LITERT_RETURN_IF_ERROR(runtime->AddOpaqueOptions(options, opaque_opts));
-  return kLiteRtStatusOk;
-}
-
-}  // namespace options_impl
 
 class CompiledModel;
 class CompiledModelNext;
@@ -375,31 +326,6 @@ class Options {
   /// Returns a reference to the compiler options.
   Expected<CompilerOptions&> GetCompilerOptions() {
     return GetOptions<CompilerOptions>();
-  }
-
-  /// @deprecated Use GetOptions<> API instead.
-  Expected<qualcomm::QualcommOptions&> GetQualcommOptions() {
-    return GetOptions<qualcomm::QualcommOptions>();
-  }
-
-  /// @deprecated Use GetOptions<> API instead.
-  Expected<mediatek::MediatekOptions&> GetMediatekOptions() {
-    return GetOptions<mediatek::MediatekOptions>();
-  }
-
-  /// @deprecated Use GetOptions<> API instead.
-  Expected<google_tensor::GoogleTensorOptions&> GetGoogleTensorOptions() {
-    return GetOptions<google_tensor::GoogleTensorOptions>();
-  }
-
-  /// @deprecated Use GetOptions<> API instead.
-  Expected<intel_openvino::IntelOpenVinoOptions&> GetIntelOpenVinoOptions() {
-    return GetOptions<intel_openvino::IntelOpenVinoOptions>();
-  }
-
-  /// @deprecated Use GetOptions<> API instead.
-  Expected<samsung::SamsungOptions&> GetSamsungOptions() {
-    return GetOptions<samsung::SamsungOptions>();
   }
 
  private:
