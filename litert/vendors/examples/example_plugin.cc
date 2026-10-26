@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -211,6 +213,18 @@ void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
   delete compiler_plugin;
 }
 
+LiteRtStatus LiteRtGetCompilerPluginCapabilities(
+    LiteRtCompilerPlugin compiler_plugin, uint64_t* capabilities) {
+  if (compiler_plugin == nullptr || capabilities == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // The example plugin never selects region-bearing ops itself, but it handles
+  // partitions models with private region subgraphs (see
+  // LiteRtCompilerPluginCompile), e.g. from odml.npu_call composites.
+  *capabilities = kLiteRtCompilerPluginCapabilityRegionSubgraphs;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            const char* soc_model,
                                            LiteRtSubgraph c_subgraph,
@@ -364,7 +378,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   const auto* ctx = compiler_plugin->compiler_context;
   litert::compiler::Model model(ctx, partitions);
 
-  auto num_partitions = model.NumSubgraphs();
+  // Only entry subgraphs produce compiled calls. Any subgraphs after them are
+  // private region subgraphs, which are compiled as part of the entries that
+  // reference them.
+  auto num_partitions = model.NumEntrySubgraphs();
   auto result = std::make_unique<LiteRtCompiledResultT>();
   result->per_op_data.resize(num_partitions);
 
@@ -427,12 +444,14 @@ LiteRtStatus LiteRtCompilerPluginDummy(LiteRtCompilerPlugin compiler_plugin) {
 
 namespace {
 
-// Example V1.1 flat extension struct used to test minor version append-only
-// extensibility (abi_header at offset 0, new members appended at end).
+// Example V1.2 flat extension struct used to test minor version append-only
+// extensibility (abi_header at offset 0, new members appended at end). V1.1
+// is the real LiteRtCompilerPluginInterface_V1 table from
+// litert_compiler_plugin_api.h.
 typedef LiteRtStatus (*LiteRtCompilerPluginDummyT)(
     LiteRtCompilerPlugin compiler_plugin);
 
-typedef struct LiteRtCompilerPluginInterface_V1_1 {
+typedef struct LiteRtCompilerPluginInterface_V1_2 {
   LiteRtAbiHeader abi_header;
 
   LiteRtGetCompilerPluginVersionT get_compiler_plugin_version;
@@ -462,15 +481,23 @@ typedef struct LiteRtCompilerPluginInterface_V1_1 {
   LiteRtCompilerPluginCheckCompilerCompatibilityT check_compiler_compatibility;
 
   // Appended in V1.1:
-  LiteRtCompilerPluginDummyT dummy;
-} LiteRtCompilerPluginInterface_V1_1;
+  LiteRtGetCompilerPluginCapabilitiesT get_compiler_plugin_capabilities;
 
-static const LiteRtCompilerPluginInterface_V1_1 ExamplePluginInterface_V1_1 = {
+  // Appended in V1.2 (example only):
+  LiteRtCompilerPluginDummyT dummy;
+} LiteRtCompilerPluginInterface_V1_2;
+
+static_assert(sizeof(LiteRtCompilerPluginInterface_V1) ==
+                  offsetof(LiteRtCompilerPluginInterface_V1_2, dummy),
+              "LiteRtCompilerPluginInterface_V1_2 must extend "
+              "LiteRtCompilerPluginInterface_V1");
+
+static const LiteRtCompilerPluginInterface_V1_2 ExamplePluginInterface_V1_2 = {
     .abi_header =
         {
-            .struct_size = sizeof(LiteRtCompilerPluginInterface_V1_1),
+            .struct_size = sizeof(LiteRtCompilerPluginInterface_V1_2),
             .major_version = 1,
-            .minor_version = 1,
+            .minor_version = 2,
             .reserved = 0,
         },
     .get_compiler_plugin_version = LiteRtGetCompilerPluginVersion,
@@ -497,6 +524,7 @@ static const LiteRtCompilerPluginInterface_V1_1 ExamplePluginInterface_V1_1 = {
     .get_compiled_result_handle = LiteRtGetCompiledResultHandle,
     .check_compiler_compatibility =
         LiteRtCompilerPluginCheckCompilerCompatibility,
+    .get_compiler_plugin_capabilities = LiteRtGetCompilerPluginCapabilities,
     .dummy = LiteRtCompilerPluginDummy,
 };
 
@@ -510,7 +538,7 @@ extern "C" LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginQueryInterface(
   }
   if (litert_runtime_version.major >= 1) {
     if (interface_id == kLiteRtCompilerPluginInterfaceBasic) {
-      *out_interface = &ExamplePluginInterface_V1_1;
+      *out_interface = &ExamplePluginInterface_V1_2;
       return kLiteRtStatusOk;
     }
   }

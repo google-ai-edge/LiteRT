@@ -1035,20 +1035,40 @@ class LiteRtModelT {
   // greater or equal to current.
   void ResizeSubgraphsDown(size_t size) { subgraphs_.ResizeDown(size); }
 
-  // Transfers the subgraph at the given index to the back of the given
-  // allocator. Also updates any IR owned by the model that refers to subgraphs
-  // by index (e.g. composites). Does not update any IR in the subgraphs being
-  // transferred.
+  // Transfers the subgraphs at the given indices to the back of the given
+  // allocator, in the order given (duplicates are ignored). Also updates every
+  // subgraph reference held by ops (composite decompositions, control flow and
+  // region bodies, see subgraph_refs.h): references from remaining subgraphs
+  // are remapped to the remaining subgraphs, and references from transferred
+  // subgraphs are remapped to their new position in `dest`. References that
+  // would cross between the two sets are set to -1.
   void TransferSubgraphTo(LiteRtSubgraphT::Alloc& dest,
                           std::vector<size_t> indices);
 
   // Splits a model along the given subgraph indices. Returns a new model with
-  // the specified subgraphs that were moved from the model. Similar to
-  // TransferSubgraphTo but also handles op codes and buffer manager.
+  // the specified subgraphs that were moved from the model, in the order
+  // given. Similar to TransferSubgraphTo but also handles op codes and buffer
+  // manager.
   //
   // NOTE: This only copies enough IR to build a valid model. It does not handle
   // signatures, metadata etc.
   LiteRtModelT Yank(std::vector<size_t> indices);
+
+  // Number of leading subgraphs that are entry points of this model. Subgraphs
+  // at index >= NumEntrySubgraphs() are private region subgraphs that are only
+  // reachable through subgraph references held by ops (e.g. the body of a
+  // STABLEHLO_REDUCE_WINDOW). For models passed to a compiler plugin, entry
+  // subgraph `i` corresponds to dispatch op / compiled call `i`. Defaults to
+  // NumSubgraphs() when not explicitly set.
+  size_t NumEntrySubgraphs() const {
+    return std::min(num_entry_subgraphs_.value_or(NumSubgraphs()),
+                    NumSubgraphs());
+  }
+
+  // Marks the first `num` subgraphs as entry subgraphs. See
+  // NumEntrySubgraphs(). This is not updated automatically when subgraphs are
+  // added or removed.
+  void SetNumEntrySubgraphs(size_t num) { num_entry_subgraphs_ = num; }
 
   // SIGNATURES
 
@@ -1205,6 +1225,7 @@ class LiteRtModelT {
   TflFlatbuffer tfl_flatbuffer_;
   std::optional<std::string> source_path_;
   std::vector<std::string> external_buffer_groups_;
+  std::optional<size_t> num_entry_subgraphs_;
 };
 
 // Get the build stamp from the model if it exists.
@@ -1224,12 +1245,12 @@ std::optional<std::string> GetCustomOpCode(const LiteRtModelT& model,
 ::litert::Expected<LiteRtSubgraph> LookupSubgraph(
     const LiteRtModelT& model, absl::string_view signature_key);
 
-// Retains only the named entry-point signatures and the StableHLO composite
-// decomposition subgraphs reachable from them. This mutates the model while
-// preserving pointer stability for all retained IR objects.
+// Retains only the named entry-point signatures and the subgraphs reachable
+// from them through subgraph references (StableHLO composite decompositions,
+// control flow and region bodies, see subgraph_refs.h). This mutates the model
+// while preserving pointer stability for all retained IR objects.
 ::litert::Expected<void> PruneModelToSignatures(
-    LiteRtModelT& model,
-    absl::Span<const absl::string_view> signature_keys);
+    LiteRtModelT& model, absl::Span<const absl::string_view> signature_keys);
 
 namespace litert::internal {
 

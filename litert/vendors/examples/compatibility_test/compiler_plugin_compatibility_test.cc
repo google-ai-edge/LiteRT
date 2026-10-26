@@ -78,6 +78,10 @@ TEST(CompilerPluginCompatibilityTest,
   ASSERT_TRUE(sdk_res.HasValue());
   EXPECT_EQ(*sdk_res, "");
 
+  // The ABI 1.1 capability query is beyond struct_size; no capabilities.
+  EXPECT_EQ(plugin.Capabilities(), kLiteRtCompilerPluginCapabilityNone);
+  EXPECT_FALSE(plugin.SupportsRegionSubgraphs());
+
   // Invoke real partition on a model graph.
   auto model = testing::LoadTestFileModel("mul_simple.tflite");
   auto subgraph = model.MainSubgraph();

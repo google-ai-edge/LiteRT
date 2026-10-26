@@ -29,9 +29,13 @@ package(
 
 cc_library_with_testonly_vis(
     name = "model",
-    srcs = ["model.cc"],
+    srcs = [
+        "model.cc",
+        "subgraph_refs.cc",
+    ],
     hdrs = [
         "model.h",
+        "subgraph_refs.h",
         "//litert/c:litert_model_hdrs",
     ],
     vis = [
@@ -60,8 +64,11 @@ cc_library_with_testonly_vis(
         "//tflite/converter/schema:schema_fbs",
         "//tflite/core/c:private_c_api_types",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
@@ -88,6 +95,25 @@ cc_test(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "subgraph_refs_test",
+    srcs = ["subgraph_refs_test.cc"],
+    data = [
+        "//litert/test:mlir_test_data",
+    ],
+    deps = [
+        ":model",
+        ":model_load",
+        ":model_serialize",
+        "//litert/c:litert_op_code",
+        "//litert/core/util:flatbuffer_tools",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
     ],
 )

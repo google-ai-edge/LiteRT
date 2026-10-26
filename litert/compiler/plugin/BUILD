@@ -64,6 +64,7 @@ cc_library(
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
@@ -140,7 +141,64 @@ cc_test(
         "//litert/test:load_test_model",
         "//litert/tools:dump",
         "//litert/vendors/c:litert_compiler_plugin",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//tflite/converter/schema:schema_fbs",
+    ],
+)
+
+cc_test(
+    name = "compiler_plugin_region_test",
+    srcs = ["compiler_plugin_region_test.cc"],
+    data = [
+        "//litert/c:libLiteRt.so",
+        "//litert/test:mlir_test_data",
+        "//litert/vendors/examples:example_plugin_so_data",
+    ],
+    features = select({
+        "//litert:windows": ["-static_link_msvcrt"],
+        "//conditions:default": [],
+    }),
+    linkopts = select({
+        "//litert:android": [],
+        "//litert:ios": [],
+        "//litert:macos": [],
+        "//litert:windows": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:libLiteRt.so",
+                "//litert/c:litert_so",
+            ]),
+        ],
+    }),
+    # See compiler_plugin_test.
+    # copybara:uncomment malloc = "//base:system_malloc",
+    tags = [
+        # Sanitizer runtimes are incompatible with RTLD_DEEPBIND.
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
+    ],
+    deps = [
+        ":compiler_plugin",
+        # copybara:uncomment_begin(no OSS for gunit_main_no_heapcheck)
+        # "@com_google_googletest//:gtest_main_no_heapcheck",
+        # copybara:uncomment_end_and_comment_begin
+        "@com_google_googletest//:gtest_main",
+        # copybara:comment_end
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:string_view",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_expected",
+        "//litert/core/model",
+        "//litert/core/model:model_load",
+        "//litert/core/model:model_serialize",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//tflite/schema:schema_fbs",
     ],
 )
 
