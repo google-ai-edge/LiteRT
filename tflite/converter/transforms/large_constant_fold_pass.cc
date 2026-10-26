@@ -48,6 +48,7 @@ limitations under the License.
 #include "tflite/converter/ir/tfl_ops_in_place_transpose.h"
 #include "tflite/converter/quantization/common/quantization_lib/quantization_utils.h"
 #include "tflite/converter/transforms/resource_constant_fold_utils.h"
+#include "tflite/converter/transforms/resource_elementwise_fold.h"
 #include "tflite/converter/utils/attribute_utils.h"
 #include "tflite/converter/utils/utils.h"
 
@@ -476,6 +477,11 @@ void LargeConstantFoldPass::runOnOperation() {
     if (failed(
             FoldResourceOpPattern<TFL::CastOp, ResourceOpFolder<TFL::CastOp>>(
                 module))) {
+      signalPassFailure();
+    }
+  }
+  if (GetOptions().fold_elementwise_ops) {
+    if (failed(FoldResourceElementwiseOps(module))) {
       signalPassFailure();
     }
   }
