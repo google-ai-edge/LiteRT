@@ -132,11 +132,29 @@ jobs:
           $CacheDir = Join-Path $env:USERPROFILE (Join-Path ".cache" "bazel-windows")
           echo "BAZEL_DISK_CACHE=$CacheDir" >> "$env:GITHUB_ENV"
 
-      - name: Clean build outputs if cache is being refreshed.
-        if: env.REFRESH_CACHE == 'true'
+      - name: Clean build outputs and ensure disk space
         run: |
           New-Item -ItemType Directory -Force -Path "$env:BAZEL_OUTPUT_BASE"
-          bazel --output_base="$env:BAZEL_OUTPUT_BASE" clean --expunge
+          $drive = Get-PSDrive C
+          $freeGb = [math]::Round($drive.Free / 1GB, 2)
+          echo "Free disk space on C: ${freeGb} GB"
+          if ($freeGb -lt 30 -or $env:REFRESH_CACHE -eq 'true') {
+            echo "Low disk space (<30GB) or refresh requested. Cleaning build outputs..."
+            bazel --output_base="$env:BAZEL_OUTPUT_BASE" clean --expunge
+            Remove-Item -Path "$env:BAZEL_OUTPUT_BASE\*" -Recurse -Force -ErrorAction SilentlyContinue
+            if (Test-Path "$env:TEMP") {
+              Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            $drive = Get-PSDrive C
+            $freeGbAfter = [math]::Round($drive.Free / 1GB, 2)
+            echo "Free disk space on C after cleanup: ${freeGbAfter} GB"
+            if ($freeGbAfter -lt 20 -and (Test-Path "$env:BAZEL_DISK_CACHE")) {
+              echo "Critically low disk space (<20GB). Purging local bazel disk cache..."
+              Remove-Item -Path "$env:BAZEL_DISK_CACHE\*" -Recurse -Force -ErrorAction SilentlyContinue
+              $drive = Get-PSDrive C
+              echo "Free disk space on C after cache purge: $([math]::Round($drive.Free / 1GB, 2)) GB"
+            }
+          }
 
       - name: Restore bazel cache if cache is not being refreshed.
         id: bazel-cache
@@ -283,17 +301,37 @@ jobs:
         run: gh cache delete "$env:CACHE_KEY"
 
       - name: Shutdown bazel server before saving cache.
-        run: bazel --output_base="$env:BAZEL_OUTPUT_BASE" shutdown
+        if: always()
+        run: |
+          if (Test-Path "$env:BAZEL_OUTPUT_BASE") {
+            bazel --output_base="$env:BAZEL_OUTPUT_BASE" shutdown
+          }
 
       - name: Save bazel cache if it's new or being refreshed.
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0
-        if: env.REFRESH_CACHE == 'true' || steps.bazel-cache.outputs.cache-hit != 'true'
+        if: success() && (env.REFRESH_CACHE == 'true' || steps.bazel-cache.outputs.cache-hit != 'true')
         env:
           windir: ""
           PATH: "C:/Program Files/Git/usr/bin;C:/Windows/System32;C:/Windows"
         with:
           path: ~/.cache/bazel-windows
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+
+      - name: Post-job disk space check and cleanup
+        if: always()
+        run: |
+          $drive = Get-PSDrive C
+          $freeGb = [math]::Round($drive.Free / 1GB, 2)
+          echo "Post-job free disk space on C: ${freeGb} GB"
+          if ($freeGb -lt 25) {
+            echo "Low disk space (<25GB) remaining. Cleaning bazel output base to reclaim space..."
+            if (Test-Path "$env:BAZEL_OUTPUT_BASE") {
+              bazel --output_base="$env:BAZEL_OUTPUT_BASE" clean --expunge
+              Remove-Item -Path "$env:BAZEL_OUTPUT_BASE\*" -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            $drive = Get-PSDrive C
+            echo "Free disk space on C after post-job cleanup: $([math]::Round($drive.Free / 1GB, 2)) GB"
+          }
 
   # A PR is accepted only if this check concludes "success" ("skipped" doesn't
   # count). So this job always runs, and passes if Presubmit-Win passed or was
