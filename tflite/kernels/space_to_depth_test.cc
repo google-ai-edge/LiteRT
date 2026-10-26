@@ -88,6 +88,14 @@ TEST(SpaceToDepthOpModel, int8) {
   EXPECT_THAT(m.GetOutputShape(), ElementsAre(1, 1, 1, 4));
 }
 
+TEST(SpaceToDepthOpModel, Int16) {
+  SpaceToDepthOpModel m({TensorType_INT16, {1, 2, 2, 1}}, 2);
+  m.SetInput<int16_t>({1, 2, 3, 4});
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+  EXPECT_THAT(m.GetOutput<int16_t>(), ElementsAreArray({1, 2, 3, 4}));
+  EXPECT_THAT(m.GetOutputShape(), ElementsAre(1, 1, 1, 4));
+}
+
 TEST(SpaceToDepthOpModel, Int32) {
   SpaceToDepthOpModel m({TensorType_INT32, {1, 2, 2, 3}}, 2);
   m.SetInput<int32_t>({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
