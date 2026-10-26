@@ -63,4 +63,4 @@ if(UNIX AND NOT APPLE)
   )
 endif()
 
-target_link_libraries(litert_cc_api PUBLIC flatbuffers absl::log_internal_check_op)
+target_link_libraries(litert_cc_api INTERFACE flatbuffers absl::log_internal_check_op)
