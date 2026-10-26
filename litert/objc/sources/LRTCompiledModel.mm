@@ -76,6 +76,18 @@ LRTTensorBufferRequirements *CreateObjCBufferRequirementsFromCPPResult(
 }
 
 /**
+ * Helper to convert a single C++ TensorBuffer result to an LRTTensorBuffer instance.
+ */
+LRTTensorBuffer *CreateObjCTensorBufferFromCPPResult(
+    litert::Expected<litert::TensorBuffer> &bufferResult, NSError **error) {
+  if (!bufferResult.HasValue()) {
+    LRTSetErrorFromCPPError(error, bufferResult.Error());
+    return nil;
+  }
+  return [LRTTensorBuffer tensorBufferWithCPPTensorBuffer:std::move(bufferResult.Value())];
+}
+
+/**
  * Helper to convert C++ TensorBuffers result to NSArray of LRTTensorBuffers.
  *
  * @param buffersResult C++ expected vector of TensorBuffers.
@@ -128,6 +140,71 @@ BOOL DuplicateObjCTensorBuffersToCPP(NSArray<LRTTensorBuffer *> *objcBuffers, NS
       return NO;
     }
     cppBuffers.push_back(std::move(duplicateResult.Value()));
+  }
+  return YES;
+}
+
+/**
+ * Helper to duplicate an Objective-C dictionary of named LRTTensorBuffers into a C++
+ * FlatHashMap<StringView, TensorBuffer>.
+ *
+ * @param objcBufferMap Dictionary mapping tensor names to LRTTensorBuffer instances.
+ * @param bufferKind String description of buffer kind (e.g. @"input", @"output") for error
+ * reporting.
+ * @param ownedKeys Vector that takes ownership of the UTF-8 key strings backing the StringView keys
+ * in @c cppBufferMap so that the StringViews remain valid for the duration of the C++ Run call.
+ * @param cppBufferMap Destination map from tensor name StringView to duplicated C++ TensorBuffer.
+ * @param error Out-parameter populated on failure.
+ * @return YES on success, NO on failure.
+ */
+BOOL DuplicateObjCTensorBufferMapToCPP(
+    NSDictionary<NSString *, LRTTensorBuffer *> *objcBufferMap, NSString *bufferKind,
+    std::vector<std::string> &ownedKeys,
+    litert::FlatHashMap<litert::StringView, litert::TensorBuffer> &cppBufferMap, NSError **error) {
+  if (!objcBufferMap) {
+    LRTSetError(error, LRTErrorCodeInvalidArgument,
+                [NSString stringWithFormat:@"%@ buffer map cannot be nil", bufferKind]);
+    return NO;
+  }
+  ownedKeys.reserve(objcBufferMap.count);
+  cppBufferMap.reserve(objcBufferMap.count);
+  for (NSString *tensorName in objcBufferMap) {
+    LRTTensorBuffer *tensorBuffer = objcBufferMap[tensorName];
+    litert::TensorBuffer *cppTensorBuffer = [tensorBuffer cppTensorBuffer];
+    if (cppTensorBuffer == nullptr) {
+      LRTSetError(
+          error, LRTErrorCodeInvalidArgument,
+          [NSString stringWithFormat:@"Invalid %@ tensor buffer for '%@'", bufferKind, tensorName]);
+      return NO;
+    }
+    litert::Expected<litert::TensorBuffer> duplicateResult = cppTensorBuffer->Duplicate();
+    if (!duplicateResult.HasValue()) {
+      LRTSetErrorFromCPPError(error, duplicateResult.Error());
+      return NO;
+    }
+    ownedKeys.emplace_back(LRTCPPStringFromNSString(tensorName));
+    cppBufferMap.emplace(ownedKeys.back(), std::move(duplicateResult.Value()));
+  }
+  return YES;
+}
+
+/**
+ * Validates and converts an Objective-C array of positive dimension sizes into a C++ int vector.
+ */
+BOOL ExtractPositiveCPPDimensions(NSArray<NSNumber *> *dimensions, std::vector<int> &cppDimensions,
+                                  NSError **error) {
+  if (dimensions.count == 0) {
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Dimensions array cannot be empty");
+    return NO;
+  }
+
+  cppDimensions.reserve(dimensions.count);
+  for (NSNumber *dimension in dimensions) {
+    if (dimension.intValue <= 0) {
+      LRTSetError(error, LRTErrorCodeInvalidArgument, @"Dimension values must be positive");
+      return NO;
+    }
+    cppDimensions.push_back(dimension.intValue);
   }
   return YES;
 }
@@ -481,6 +558,69 @@ BOOL DuplicateObjCTensorBuffersToCPP(NSArray<LRTTensorBuffer *> *objcBuffers, NS
   return CreateObjCTensorBuffersFromCPPResult(buffersResult, error);
 }
 
+- (LRTTensorBuffer *)createInputTensorBufferForName:(NSString *)inputName error:(NSError **)error {
+  if (!inputName) {
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"inputName cannot be nil");
+    return nil;
+  }
+  if (!_cppCompiledModel) {
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
+    return nil;
+  }
+
+  litert::Expected<litert::TensorBuffer> bufferResult =
+      _cppCompiledModel->CreateInputBuffer(LRTCPPStringFromNSString(inputName));
+  return CreateObjCTensorBufferFromCPPResult(bufferResult, error);
+}
+
+- (LRTTensorBuffer *)createInputTensorBufferForName:(NSString *)inputName
+                                       signatureKey:(NSString *)signatureKey
+                                              error:(NSError **)error {
+  if (!inputName) {
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"inputName cannot be nil");
+    return nil;
+  }
+  if (![self validateSignatureKey:signatureKey error:error]) {
+    return nil;
+  }
+
+  litert::Expected<litert::TensorBuffer> bufferResult = _cppCompiledModel->CreateInputBuffer(
+      LRTCPPStringFromNSString(signatureKey), LRTCPPStringFromNSString(inputName));
+  return CreateObjCTensorBufferFromCPPResult(bufferResult, error);
+}
+
+- (LRTTensorBuffer *)createOutputTensorBufferForName:(NSString *)outputName
+                                               error:(NSError **)error {
+  if (!outputName) {
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"outputName cannot be nil");
+    return nil;
+  }
+  if (!_cppCompiledModel) {
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
+    return nil;
+  }
+
+  litert::Expected<litert::TensorBuffer> bufferResult =
+      _cppCompiledModel->CreateOutputBuffer(LRTCPPStringFromNSString(outputName));
+  return CreateObjCTensorBufferFromCPPResult(bufferResult, error);
+}
+
+- (LRTTensorBuffer *)createOutputTensorBufferForName:(NSString *)outputName
+                                        signatureKey:(NSString *)signatureKey
+                                               error:(NSError **)error {
+  if (!outputName) {
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"outputName cannot be nil");
+    return nil;
+  }
+  if (![self validateSignatureKey:signatureKey error:error]) {
+    return nil;
+  }
+
+  litert::Expected<litert::TensorBuffer> bufferResult = _cppCompiledModel->CreateOutputBuffer(
+      LRTCPPStringFromNSString(signatureKey), LRTCPPStringFromNSString(outputName));
+  return CreateObjCTensorBufferFromCPPResult(bufferResult, error);
+}
+
 - (BOOL)runWithInputs:(NSArray<LRTTensorBuffer *> *)inputs
               outputs:(NSArray<LRTTensorBuffer *> *)outputs
                 error:(NSError **)error {
@@ -530,6 +670,67 @@ BOOL DuplicateObjCTensorBuffersToCPP(NSArray<LRTTensorBuffer *> *objcBuffers, NS
                        error:error];
 }
 
+- (BOOL)runWithInputMap:(NSDictionary<NSString *, LRTTensorBuffer *> *)inputMap
+              outputMap:(NSDictionary<NSString *, LRTTensorBuffer *> *)outputMap
+                  error:(NSError **)error {
+  if (!_cppCompiledModel) {
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
+    return NO;
+  }
+
+  std::vector<std::string> ownedInputKeys;
+  litert::FlatHashMap<litert::StringView, litert::TensorBuffer> cppInputMap;
+  if (!DuplicateObjCTensorBufferMapToCPP(inputMap, @"input", ownedInputKeys, cppInputMap, error)) {
+    return NO;
+  }
+
+  std::vector<std::string> ownedOutputKeys;
+  litert::FlatHashMap<litert::StringView, litert::TensorBuffer> cppOutputMap;
+  if (!DuplicateObjCTensorBufferMapToCPP(outputMap, @"output", ownedOutputKeys, cppOutputMap,
+                                         error)) {
+    return NO;
+  }
+
+  litert::Expected<void> runResult = _cppCompiledModel->Run(cppInputMap, cppOutputMap);
+  if (!runResult.HasValue()) {
+    LRTSetErrorFromCPPError(error, runResult.Error());
+    return NO;
+  }
+
+  return YES;
+}
+
+- (BOOL)runWithInputMap:(NSDictionary<NSString *, LRTTensorBuffer *> *)inputMap
+              outputMap:(NSDictionary<NSString *, LRTTensorBuffer *> *)outputMap
+           signatureKey:(NSString *)signatureKey
+                  error:(NSError **)error {
+  if (![self validateSignatureKey:signatureKey error:error]) {
+    return NO;
+  }
+
+  std::vector<std::string> ownedInputKeys;
+  litert::FlatHashMap<litert::StringView, litert::TensorBuffer> cppInputMap;
+  if (!DuplicateObjCTensorBufferMapToCPP(inputMap, @"input", ownedInputKeys, cppInputMap, error)) {
+    return NO;
+  }
+
+  std::vector<std::string> ownedOutputKeys;
+  litert::FlatHashMap<litert::StringView, litert::TensorBuffer> cppOutputMap;
+  if (!DuplicateObjCTensorBufferMapToCPP(outputMap, @"output", ownedOutputKeys, cppOutputMap,
+                                         error)) {
+    return NO;
+  }
+
+  litert::Expected<void> runResult = _cppCompiledModel->Run(
+      LRTCPPStringFromNSString(signatureKey), cppInputMap, cppOutputMap);
+  if (!runResult.HasValue()) {
+    LRTSetErrorFromCPPError(error, runResult.Error());
+    return NO;
+  }
+
+  return YES;
+}
+
 - (BOOL)resizeInputTensorAtIndex:(NSUInteger)inputIndex
                    newDimensions:(NSArray<NSNumber *> *)dimensions
                            error:(NSError **)error {
@@ -548,19 +749,9 @@ BOOL DuplicateObjCTensorBuffersToCPP(NSArray<LRTTensorBuffer *> *objcBuffers, NS
     return NO;
   }
 
-  if (dimensions.count == 0) {
-    LRTSetError(error, LRTErrorCodeInvalidArgument, @"Dimensions array cannot be empty");
-    return NO;
-  }
-
   std::vector<int> cppDimensions;
-  cppDimensions.reserve(dimensions.count);
-  for (NSNumber *dimension in dimensions) {
-    if (dimension.intValue <= 0) {
-      LRTSetError(error, LRTErrorCodeInvalidArgument, @"Dimension values must be positive");
-      return NO;
-    }
-    cppDimensions.push_back(dimension.intValue);
+  if (!ExtractPositiveCPPDimensions(dimensions, cppDimensions, error)) {
+    return NO;
   }
 
   litert::Expected<void> resizeResult =
@@ -586,6 +777,60 @@ BOOL DuplicateObjCTensorBuffersToCPP(NSArray<LRTTensorBuffer *> *objcBuffers, NS
                          signatureIndex:signatureIndex.unsignedIntegerValue
                           newDimensions:dimensions
                                   error:error];
+}
+
+- (BOOL)resizeInputTensorForName:(NSString *)inputName
+                   newDimensions:(NSArray<NSNumber *> *)dimensions
+                           error:(NSError **)error {
+  if (!inputName) {
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"inputName cannot be nil");
+    return NO;
+  }
+  if (!_cppCompiledModel) {
+    LRTSetError(error, LRTErrorCodeRuntimeFailure, @"Compiled model is not initialized");
+    return NO;
+  }
+
+  std::vector<int> cppDimensions;
+  if (!ExtractPositiveCPPDimensions(dimensions, cppDimensions, error)) {
+    return NO;
+  }
+
+  litert::Expected<void> resizeResult =
+      _cppCompiledModel->ResizeInputTensor(LRTCPPStringFromNSString(inputName), cppDimensions);
+  if (!resizeResult.HasValue()) {
+    LRTSetErrorFromCPPError(error, resizeResult.Error());
+    return NO;
+  }
+
+  return YES;
+}
+
+- (BOOL)resizeInputTensorForName:(NSString *)inputName
+                    signatureKey:(NSString *)signatureKey
+                   newDimensions:(NSArray<NSNumber *> *)dimensions
+                           error:(NSError **)error {
+  if (!inputName) {
+    LRTSetError(error, LRTErrorCodeInvalidArgument, @"inputName cannot be nil");
+    return NO;
+  }
+  if (![self validateSignatureKey:signatureKey error:error]) {
+    return NO;
+  }
+
+  std::vector<int> cppDimensions;
+  if (!ExtractPositiveCPPDimensions(dimensions, cppDimensions, error)) {
+    return NO;
+  }
+
+  litert::Expected<void> resizeResult = _cppCompiledModel->ResizeInputTensor(
+      LRTCPPStringFromNSString(signatureKey), LRTCPPStringFromNSString(inputName), cppDimensions);
+  if (!resizeResult.HasValue()) {
+    LRTSetErrorFromCPPError(error, resizeResult.Error());
+    return NO;
+  }
+
+  return YES;
 }
 
 #pragma mark - Private
