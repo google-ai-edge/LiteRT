@@ -25,6 +25,7 @@
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_replace.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -159,6 +160,9 @@ inline std::string ToString(MaskMode mask_mode) {
 // in the mask data.
 // Keys at or past `active_tokens` (all `S` keys when it is 0) are not attended,
 // matching the active token count the kernels read from the param tensor.
+// With the implicit causal bound, prefill query tokens at or past
+// `active_tokens` are the padding of a fixed-width prefill signature that
+// processes a partial chunk; the fused prefill kernels write zeros for them.
 std::vector<float> ComputeSdpaReferenceOutput(
     const std::vector<float>& q_data, const std::vector<float>& k_data,
     const std::vector<float>& v_data, const std::vector<float>& mask_data,
@@ -174,6 +178,10 @@ std::vector<float> ComputeSdpaReferenceOutput(
     for (int t = 0; t < T; ++t) {
       // Absolute position of this query token inside the KV cache.
       const int pos = t + q_start;
+      if (mask_mode == MaskMode::kNone && implicit_causal && T > 1 &&
+          pos >= active_tokens) {
+        continue;  // Padding: the output stays zero.
+      }
       std::vector<float> scores(S, -10000.0f);
       for (int s = 0; s < active_tokens; ++s) {
         float score = 0.0f;
@@ -290,6 +298,10 @@ MATCHER_P2(FloatNearWithRelativeTolerance, abs_tolerance, rel_tolerance,
 // `param_active_tokens`, when set, is written to the param tensor instead of
 // `active_tokens` (e.g. an out-of-range count), while the reference output
 // still attends to `active_tokens` keys.
+// `force_work_group_flash_prefill` sets the score tensor budget of the
+// decomposed prefill graph to 0, so multi-token prefill on backends without the
+// MMA prefill kernel (OpenCL, WebGPU) runs on the work-group Flash kernel, and
+// checks that the built graph does.
 absl::Status RunSdpaTransposedTest(
     ::ml_drift::TestExecutionEnvironment& env,
     ::ml_drift::CalculationsPrecision precision,
@@ -298,7 +310,8 @@ absl::Status RunSdpaTransposedTest(
     int q_start = 0, bool from_cache_update = true, bool is_causal = false,
     bool flatten_output = false, int active_tokens = 0,
     int decode_mask_keys = 0,
-    std::optional<int> param_active_tokens = std::nullopt) {
+    std::optional<int> param_active_tokens = std::nullopt,
+    bool force_work_group_flash_prefill = false) {
   if (KV <= 0) KV = BK;
   if (active_tokens <= 0) active_tokens = S;
   if (decode_mask_keys <= 0) decode_mask_keys = active_tokens;
@@ -394,8 +407,11 @@ absl::Status RunSdpaTransposedTest(
   }
   graph_input_ids.push_back(param_tensor.id);
 
-  ABSL_RETURN_IF_ERROR(BuildSdpaTransposedGpuGraph(
-      graph_input_ids, out_tensor.id, attr, &builder));
+  const uint64_t max_decomposed_score_bytes =
+      force_work_group_flash_prefill ? 0 : kMaxDecomposedSdpaScoreBytes;
+  ABSL_RETURN_IF_ERROR(
+      BuildSdpaTransposedGpuGraph(graph_input_ids, out_tensor.id, attr,
+                                  &builder, max_decomposed_score_bytes));
 
   std::vector<std::pair<uint32_t, uint32_t>> model_inputs = {
       {q.id, 0}, {k.id, 1}, {v.id, 2}};
@@ -408,6 +424,21 @@ absl::Status RunSdpaTransposedTest(
       model_inputs,
       std::vector<std::pair<uint32_t, uint32_t>>{{out_tensor.id, 0}},
       &gpu_model));
+
+  if (force_work_group_flash_prefill && T > 1 &&
+      SupportsFusedSdpaKernels(env.GetGpuInfo()) &&
+      !SupportsWaveMatrixPrefill(env.GetGpuInfo())) {
+    bool uses_work_group_kernel = false;
+    for (const ::ml_drift::GpuNode& node : gpu_model.nodes) {
+      if (absl::StrContains(node.name, "flash_prefill_sdpa_wg")) {
+        uses_work_group_kernel = true;
+      }
+    }
+    if (!uses_work_group_kernel) {
+      return absl::FailedPreconditionError(
+          "Prefill did not run on the work-group Flash kernel.");
+    }
+  }
 
   const float q_scale = 1.0f / std::sqrt(static_cast<float>(H));
 
@@ -842,13 +873,13 @@ TEST_P(SdpaTransposedKernelExecuteTest, PrefillGemma4HeadDimsGroupedQuery) {
 }
 
 // Single-token decode with a pruned BOOL causal mask (`MaskMode::kNone`,
-// `attr.is_causal = true`) for the head dims whose BOOL mask the Apple parsers
-// prune (head_dim / 4 dividing 256), using a partially filled cache.
+// `attr.is_causal = true`) for the head dims whose BOOL mask the parsers prune
+// (head_dim / 4 dividing 256), using a partially filled cache.
 TEST_P(SdpaTransposedKernelExecuteTest,
        SingleTokenDecodeImplicitCausalPrunedMaskHeadDims) {
-  if (!IsAppleMetal(exec_env->GetGpuInfo())) {
-    GTEST_SKIP() << "BOOL causal mask pruning only applies to the fused Apple "
-                    "Metal Flash-Decode kernel.";
+  if (!SupportsFusedSdpaKernels(exec_env->GetGpuInfo())) {
+    GTEST_SKIP() << "BOOL causal mask pruning only applies to the fused "
+                    "SDPA kernels.";
   }
   for (int head_dim : {4, 64, 128, 256, 512, 1024}) {
     auto status = RunSdpaTransposedTest(
@@ -879,19 +910,84 @@ TEST_P(SdpaTransposedKernelExecuteTest,
 }
 
 // Verifies that when the parser prunes a BOOL causal mask (`MaskMode::kNone`
-// with `attr.is_causal = true`), the fused FlashAttention prefill kernel still
-// enforces causal masking (`key <= q_start + X`) in registers.
+// with `attr.is_causal = true`), the fused prefill kernel (MMA on Apple Metal,
+// work-group on OpenCL / WebGPU) still enforces causal masking
+// (`key <= q_start + X`) in registers.
 TEST_P(SdpaTransposedKernelExecuteTest,
        PrefillImplicitCausalWhenBoolMaskPruned) {
-  if (!IsAppleMetal(exec_env->GetGpuInfo())) {
-    GTEST_SKIP() << "BOOL causal mask pruning only applies to the fused Apple "
-                    "Metal FlashAttention prefill kernel.";
+  if (!SupportsFusedSdpaKernels(exec_env->GetGpuInfo())) {
+    GTEST_SKIP() << "BOOL causal mask pruning only applies to the fused "
+                    "SDPA kernels.";
   }
   auto status = RunSdpaTransposedTest(
       *exec_env, precision(), storage(), /*BK=*/16, /*T=*/32, /*S=*/512,
       /*H=*/128, MaskMode::kNone, /*KV=*/8, /*q_start=*/256,
       /*from_cache_update=*/true, /*is_causal=*/true);
   EXPECT_TRUE(status.ok()) << status.message();
+}
+
+// Verifies multi-token prefill with a 2D explicit mask `[1, 1, T, S]` and with
+// a pruned BOOL causal mask (`MaskMode::kNone`, `attr.is_causal = true`) when
+// `q_start > 0`. The score tensor of this shape is far below the budget of the
+// decomposed graph, which therefore runs the explicit masks by default; with
+// `force_work_group_flash_prefill`, OpenCL and WebGPU run them on the
+// work-group Flash kernel, which reads mask row `X` for query `X`. Metal runs
+// the MMA prefill kernel either way.
+TEST_P(SdpaTransposedKernelExecuteTest, PrefillNonZeroQStartAndTwoDimMask) {
+  const bool is_causal = (mask_mode() == MaskMode::kNone);
+  if (is_causal && !SupportsFusedSdpaKernels(exec_env->GetGpuInfo())) {
+    GTEST_SKIP() << "BOOL causal mask pruning only applies to the fused "
+                    "SDPA kernels.";
+  }
+  for (bool force_work_group_flash_prefill : {false, true}) {
+    auto status = RunSdpaTransposedTest(
+        *exec_env, precision(), storage(), /*BK=*/4, /*T=*/7, /*S=*/64,
+        /*H=*/128, mask_mode(), /*KV=*/2, /*q_start=*/20,
+        /*from_cache_update=*/true, /*is_causal=*/is_causal,
+        /*flatten_output=*/false,
+        /*active_tokens=*/FilledCacheEntries(mask_mode(), 27, 64),
+        /*decode_mask_keys=*/0, /*param_active_tokens=*/std::nullopt,
+        force_work_group_flash_prefill);
+    EXPECT_TRUE(status.ok())
+        << "force_work_group_flash_prefill=" << force_work_group_flash_prefill
+        << ": " << status.message();
+  }
+}
+
+// A fixed-width prefill signature (16 query columns) processing a partial
+// chunk with a pruned BOOL causal mask: the query columns at or past
+// `active_tokens - q_start` are padding, and the fused prefill kernels write
+// zeros for them (the work-group kernel gives them no keys, so it reads no K/V
+// for them). The cases cover a later chunk, a first chunk (`q_start = 0`)
+// whose active token count is not a multiple of 4, and a 512-entry cache, for
+// which the work-group kernel splits the keys of each query in two and the
+// combine kernel merges the empty splits of the padded columns.
+TEST_P(SdpaTransposedKernelExecuteTest,
+       PrefillImplicitCausalZeroFillsPaddedQueryColumns) {
+  if (!SupportsFusedSdpaKernels(exec_env->GetGpuInfo())) {
+    GTEST_SKIP() << "BOOL causal mask pruning only applies to the fused "
+                    "SDPA kernels.";
+  }
+  struct Case {
+    int cache_size;
+    int q_start;
+    int active_tokens;
+  };
+  const Case cases[] = {
+      {/*cache_size=*/64, /*q_start=*/20, /*active_tokens=*/24},
+      {/*cache_size=*/64, /*q_start=*/0, /*active_tokens=*/5},
+      {/*cache_size=*/512, /*q_start=*/500, /*active_tokens=*/504},
+  };
+  for (const Case& c : cases) {
+    auto status = RunSdpaTransposedTest(
+        *exec_env, precision(), storage(), /*BK=*/4, /*T=*/16, c.cache_size,
+        /*H=*/128, MaskMode::kNone, /*KV=*/2, c.q_start,
+        /*from_cache_update=*/true, /*is_causal=*/true,
+        /*flatten_output=*/false, c.active_tokens);
+    EXPECT_TRUE(status.ok())
+        << "cache_size=" << c.cache_size << ", q_start=" << c.q_start
+        << ", active_tokens=" << c.active_tokens << ": " << status.message();
+  }
 }
 
 // Verifies that for single-token decode (`T = 1`) with a pruned BOOL causal
@@ -902,9 +998,9 @@ TEST_P(SdpaTransposedKernelExecuteTest,
 // takes the wave-SIMD variant on Metal and head dim 256 the work-group variant.
 TEST_P(SdpaTransposedKernelExecuteTest,
        SingleTokenDecodeRingBufferWrapAroundImplicitCausal) {
-  if (!IsAppleMetal(exec_env->GetGpuInfo())) {
-    GTEST_SKIP() << "BOOL causal mask pruning only applies to the fused Apple "
-                    "Metal Flash-Decode kernel.";
+  if (!SupportsFusedSdpaKernels(exec_env->GetGpuInfo())) {
+    GTEST_SKIP() << "BOOL causal mask pruning only applies to the fused "
+                    "SDPA kernels.";
   }
   for (int head_dim : {128, 256}) {
     auto status = RunSdpaTransposedTest(
@@ -926,9 +1022,9 @@ TEST_P(SdpaTransposedKernelExecuteTest,
 //   attended.
 TEST_P(SdpaTransposedKernelExecuteTest,
        SingleTokenDecodeImplicitCausalOutOfRangeParams) {
-  if (!IsAppleMetal(exec_env->GetGpuInfo())) {
-    GTEST_SKIP() << "BOOL causal mask pruning only applies to the fused Apple "
-                    "Metal Flash-Decode kernel.";
+  if (!SupportsFusedSdpaKernels(exec_env->GetGpuInfo())) {
+    GTEST_SKIP() << "BOOL causal mask pruning only applies to the fused "
+                    "SDPA kernels.";
   }
   constexpr int kS = 64;
   struct Case {
@@ -1009,15 +1105,229 @@ TEST(SupportsFusedSdpaKernelsTest, OpenClGpus) {
       MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kOpenCl)));
 }
 
+TEST(SupportsFusedSdpaKernelsTest, WebGpuGpus) {
+  EXPECT_TRUE(SupportsFusedSdpaKernels(
+      MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kWebGpu)));
+  EXPECT_TRUE(SupportsFusedSdpaKernels(MakeGpuInfo(
+      ::ml_drift::GpuVendor::kNvidia, ::ml_drift::GpuApi::kWebGpu)));
+  EXPECT_TRUE(SupportsFusedSdpaKernels(MakeGpuInfo(
+      ::ml_drift::GpuVendor::kQualcomm, ::ml_drift::GpuApi::kWebGpu)));
+}
+
 TEST(SupportsFusedSdpaKernelsTest, UnsupportedApisUseFallback) {
   EXPECT_FALSE(SupportsFusedSdpaKernels(
-      MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kWebGpu)));
-  EXPECT_FALSE(SupportsFusedSdpaKernels(
       MakeGpuInfo(::ml_drift::GpuVendor::kAMD, ::ml_drift::GpuApi::kMetal)));
-  EXPECT_FALSE(SupportsFusedSdpaKernels(
-      MakeGpuInfo(::ml_drift::GpuVendor::kNvidia, ::ml_drift::GpuApi::kWebGpu)));
   EXPECT_FALSE(SupportsFusedSdpaKernels(MakeGpuInfo(
       ::ml_drift::GpuVendor::kQualcomm, ::ml_drift::GpuApi::kVulkan)));
+}
+
+// LFM2 1.2B attention: 32 query heads, 8 K/V heads, head dim 64.
+::ml_drift::BHWC Lfm2Prefill() { return ::ml_drift::BHWC(1, 32, 1024, 64); }
+::ml_drift::BHWC Lfm2Decode() { return ::ml_drift::BHWC(1, 32, 1, 64); }
+::ml_drift::BHWC Lfm2Cache() { return ::ml_drift::BHWC(1, 8, 1280, 64); }
+::ml_drift::BHWC Lfm2Cache32K() { return ::ml_drift::BHWC(1, 8, 32768, 64); }
+
+TEST(UsesFusedSdpaKernelTest, MetalUsesMmaPrefillUpToHeadDim128) {
+  const auto metal =
+      MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kMetal);
+  EXPECT_TRUE(UsesFusedSdpaKernel(metal, Lfm2Prefill(), Lfm2Cache(),
+                                  /*is_prefill=*/true,
+                                  /*from_cache_update=*/true));
+  EXPECT_TRUE(UsesFusedSdpaKernel(metal, ::ml_drift::BHWC(1, 16, 1024, 128),
+                                  ::ml_drift::BHWC(1, 8, 1280, 128),
+                                  /*is_prefill=*/true,
+                                  /*from_cache_update=*/true));
+  // Head dim 256 has no MMA prefill kernel; Metal keeps the decomposed graph.
+  EXPECT_FALSE(UsesFusedSdpaKernel(metal, ::ml_drift::BHWC(1, 16, 1024, 256),
+                                   ::ml_drift::BHWC(1, 8, 1280, 256),
+                                   /*is_prefill=*/true,
+                                   /*from_cache_update=*/true));
+  EXPECT_TRUE(UsesFusedSdpaKernel(metal, Lfm2Decode(), Lfm2Cache(),
+                                  /*is_prefill=*/false,
+                                  /*from_cache_update=*/true));
+}
+
+// The MMA prefill kernel reads K/V head `head / (q_heads / kv_heads)` of the
+// packed cache, which holds whole blocks of 4 keys. Other shapes keep the
+// decomposed graph and, with it, the BOOL causal mask.
+TEST(UsesFusedSdpaKernelTest, MetalMmaPrefillRequiresGqaGroupsAndKeyBlocks) {
+  const auto metal =
+      MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kMetal);
+  // 12 query heads are not a multiple of 8 K/V heads.
+  EXPECT_FALSE(UsesFusedSdpaKernel(metal, ::ml_drift::BHWC(1, 12, 1024, 64),
+                                   Lfm2Cache(), /*is_prefill=*/true,
+                                   /*from_cache_update=*/true));
+  // Fewer query heads than K/V heads, and no K/V heads.
+  EXPECT_FALSE(UsesFusedSdpaKernel(metal, ::ml_drift::BHWC(1, 4, 1024, 64),
+                                   Lfm2Cache(), /*is_prefill=*/true,
+                                   /*from_cache_update=*/true));
+  EXPECT_FALSE(UsesFusedSdpaKernel(metal, Lfm2Prefill(),
+                                   ::ml_drift::BHWC(1, 0, 1280, 64),
+                                   /*is_prefill=*/true,
+                                   /*from_cache_update=*/true));
+  // The cache does not end on a whole block of 4 keys.
+  EXPECT_FALSE(UsesFusedSdpaKernel(metal, Lfm2Prefill(),
+                                   ::ml_drift::BHWC(1, 8, 1281, 64),
+                                   /*is_prefill=*/true,
+                                   /*from_cache_update=*/true));
+  // The head dim must be a positive multiple of 4.
+  for (int head_dim : {0, 66}) {
+    EXPECT_FALSE(UsesFusedSdpaKernel(
+        metal, ::ml_drift::BHWC(1, 32, 1024, head_dim),
+        ::ml_drift::BHWC(1, 8, 1280, head_dim), /*is_prefill=*/true,
+        /*from_cache_update=*/true))
+        << "head_dim=" << head_dim;
+  }
+}
+
+TEST(DecomposedSdpaScoreBytesTest, CountsF16Scores) {
+  // LFM2.5 1024-token prefill: 32 heads x 1024 x 8704 x 2 B = 544 MiB.
+  EXPECT_EQ(
+      DecomposedSdpaScoreBytes(Lfm2Prefill(), ::ml_drift::BHWC(1, 8, 8704, 64)),
+      544ull << 20);
+  // 32K cache: 2 GiB.
+  EXPECT_EQ(DecomposedSdpaScoreBytes(Lfm2Prefill(), Lfm2Cache32K()),
+            2ull << 30);
+}
+
+TEST(UsesFusedSdpaKernelTest, OpenClAndWebGpuGatePrefillOnScoreBytes) {
+  for (const auto api :
+       {::ml_drift::GpuApi::kOpenCl, ::ml_drift::GpuApi::kWebGpu}) {
+    const auto gpu = MakeGpuInfo(::ml_drift::GpuVendor::kQualcomm, api);
+    // Score tensors within the budget keep the decomposed 2D register-tiled
+    // BatchedMatMul prefill graph.
+    EXPECT_FALSE(UsesFusedSdpaKernel(gpu, Lfm2Prefill(), Lfm2Cache(),
+                                     /*is_prefill=*/true,
+                                     /*from_cache_update=*/true));
+    EXPECT_FALSE(UsesFusedSdpaKernel(gpu, Lfm2Prefill(),
+                                     ::ml_drift::BHWC(1, 8, 8704, 64),
+                                     /*is_prefill=*/true,
+                                     /*from_cache_update=*/true));
+    // 4 query heads with a 32K cache: 256 MiB.
+    EXPECT_FALSE(UsesFusedSdpaKernel(gpu, ::ml_drift::BHWC(1, 4, 1024, 64),
+                                     ::ml_drift::BHWC(1, 1, 32768, 64),
+                                     /*is_prefill=*/true,
+                                     /*from_cache_update=*/true));
+    // Larger score tensors switch prefill to the work-group Flash kernel.
+    EXPECT_TRUE(UsesFusedSdpaKernel(gpu, Lfm2Prefill(), Lfm2Cache32K(),
+                                    /*is_prefill=*/true,
+                                    /*from_cache_update=*/true));
+    // Qwen3 0.6B with a 32K cache: 1 GiB.
+    EXPECT_TRUE(UsesFusedSdpaKernel(gpu, ::ml_drift::BHWC(1, 16, 1024, 128),
+                                    ::ml_drift::BHWC(1, 8, 32768, 128),
+                                    /*is_prefill=*/true,
+                                    /*from_cache_update=*/true));
+  }
+}
+
+TEST(UsesFusedSdpaKernelTest, OpenClPrefillBudgetHonorsMaxAllocation) {
+  auto opencl = MakeGpuInfo(::ml_drift::GpuVendor::kQualcomm,
+                            ::ml_drift::GpuApi::kOpenCl);
+  opencl.opencl_info.max_allocation_size = 256ull << 20;
+  // 544 MiB exceeds the 256 MiB maximum allocation of the device.
+  EXPECT_TRUE(UsesFusedSdpaKernel(opencl, Lfm2Prefill(),
+                                  ::ml_drift::BHWC(1, 8, 8704, 64),
+                                  /*is_prefill=*/true,
+                                  /*from_cache_update=*/true));
+}
+
+// Tests lower the score budget to run small prefill shapes on the work-group
+// Flash kernel.
+TEST(UsesWorkGroupFlashPrefillTest, HonorsScoreBudget) {
+  // 4 query heads x 7 tokens x 64 keys x 2 B = 3,584 B of scores.
+  const ::ml_drift::BHWC q_shape(1, 4, 7, 128);
+  const ::ml_drift::BHWC k_shape(1, 2, 64, 128);
+  for (const auto api :
+       {::ml_drift::GpuApi::kOpenCl, ::ml_drift::GpuApi::kWebGpu}) {
+    const auto gpu = MakeGpuInfo(::ml_drift::GpuVendor::kQualcomm, api);
+    EXPECT_FALSE(UsesWorkGroupFlashPrefill(gpu, q_shape, k_shape));
+    EXPECT_FALSE(UsesWorkGroupFlashPrefill(gpu, q_shape, k_shape,
+                                           /*max_score_bytes=*/3584));
+    EXPECT_TRUE(UsesWorkGroupFlashPrefill(gpu, q_shape, k_shape,
+                                          /*max_score_bytes=*/3583));
+    EXPECT_TRUE(UsesWorkGroupFlashPrefill(gpu, q_shape, k_shape,
+                                          /*max_score_bytes=*/0));
+    // Single-token queries never take the prefill path.
+    EXPECT_FALSE(UsesWorkGroupFlashPrefill(gpu, ::ml_drift::BHWC(1, 4, 1, 128),
+                                           k_shape, /*max_score_bytes=*/0));
+  }
+  // Metal prefill runs on the MMA kernel whatever the budget.
+  EXPECT_FALSE(UsesWorkGroupFlashPrefill(
+      MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kMetal),
+      q_shape, k_shape, /*max_score_bytes=*/0));
+}
+
+TEST(UsesFusedSdpaKernelTest, OpenClDecodeUsesFlashDecode) {
+  const auto opencl = MakeGpuInfo(::ml_drift::GpuVendor::kQualcomm,
+                                  ::ml_drift::GpuApi::kOpenCl);
+  EXPECT_TRUE(UsesFusedSdpaKernel(opencl, Lfm2Decode(), Lfm2Cache(),
+                                  /*is_prefill=*/false,
+                                  /*from_cache_update=*/true));
+  EXPECT_TRUE(UsesFusedSdpaKernel(opencl, Lfm2Decode(), Lfm2Cache32K(),
+                                  /*is_prefill=*/false,
+                                  /*from_cache_update=*/true));
+}
+
+TEST(UsesFusedSdpaKernelTest, WebGpuDecodeRequiresWholeGqaGroupPerWorkGroup) {
+  // Default 16 KB workgroup storage.
+  const auto webgpu_16k =
+      MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kWebGpu);
+  // Qwen3 0.6B (group of 2, head dim 128): both heads fit (15,616 B).
+  EXPECT_TRUE(UsesFusedSdpaKernel(webgpu_16k, ::ml_drift::BHWC(1, 16, 1, 128),
+                                  ::ml_drift::BHWC(1, 8, 32768, 128),
+                                  /*is_prefill=*/false,
+                                  /*from_cache_update=*/true));
+  // LFM2 (group of 4, head dim 64): only 2 of 4 heads fit (4 need 17,920 B).
+  EXPECT_FALSE(UsesFusedSdpaKernel(webgpu_16k, Lfm2Decode(), Lfm2Cache(),
+                                   /*is_prefill=*/false,
+                                   /*from_cache_update=*/true));
+  // Head dim 256, group of 4: fewer heads than the group fit.
+  EXPECT_FALSE(UsesFusedSdpaKernel(webgpu_16k, ::ml_drift::BHWC(1, 8, 1, 256),
+                                   ::ml_drift::BHWC(1, 2, 1280, 256),
+                                   /*is_prefill=*/false,
+                                   /*from_cache_update=*/true));
+
+  // With 32 KB of workgroup storage, the whole group of 4 fits.
+  auto webgpu_32k = webgpu_16k;
+  webgpu_32k.webgpu_info.max_compute_workgroup_storage_size = 32 * 1024;
+  EXPECT_TRUE(UsesFusedSdpaKernel(webgpu_32k, Lfm2Decode(), Lfm2Cache(),
+                                  /*is_prefill=*/false,
+                                  /*from_cache_update=*/true));
+  EXPECT_TRUE(UsesFusedSdpaKernel(webgpu_32k, ::ml_drift::BHWC(1, 8, 1, 256),
+                                  ::ml_drift::BHWC(1, 2, 1280, 256),
+                                  /*is_prefill=*/false,
+                                  /*from_cache_update=*/true));
+}
+
+TEST(UsesFusedSdpaKernelTest, RequiresCacheUpdateAndSupportedShapes) {
+  const auto opencl = MakeGpuInfo(::ml_drift::GpuVendor::kQualcomm,
+                                  ::ml_drift::GpuApi::kOpenCl);
+  // Plain K/V tensors always take the decomposed graph.
+  EXPECT_FALSE(UsesFusedSdpaKernel(opencl, Lfm2Prefill(), Lfm2Cache32K(),
+                                   /*is_prefill=*/true,
+                                   /*from_cache_update=*/false));
+  // Multi-token decode (e.g. a speculative-decoding verifier) keeps its mask.
+  EXPECT_FALSE(
+      UsesFusedSdpaKernel(opencl, ::ml_drift::BHWC(1, 32, 2, 64), Lfm2Cache(),
+                          /*is_prefill=*/false, /*from_cache_update=*/true));
+  // The packed cache layout needs whole blocks of 4 keys.
+  EXPECT_FALSE(UsesFusedSdpaKernel(
+      opencl, Lfm2Decode(), ::ml_drift::BHWC(1, 8, 1281, 64),
+      /*is_prefill=*/false, /*from_cache_update=*/true));
+  // Head dim 0 has no channel slices.
+  EXPECT_FALSE(UsesFusedSdpaKernel(opencl, ::ml_drift::BHWC(1, 32, 1, 0),
+                                   ::ml_drift::BHWC(1, 8, 1280, 0),
+                                   /*is_prefill=*/false,
+                                   /*from_cache_update=*/true));
+  // Query heads must be a multiple of the K/V heads.
+  EXPECT_FALSE(
+      UsesFusedSdpaKernel(opencl, ::ml_drift::BHWC(1, 12, 1, 64), Lfm2Cache(),
+                          /*is_prefill=*/false, /*from_cache_update=*/true));
+  EXPECT_FALSE(UsesFusedSdpaKernel(MakeGpuInfo(::ml_drift::GpuVendor::kQualcomm,
+                                               ::ml_drift::GpuApi::kVulkan),
+                                   Lfm2Decode(), Lfm2Cache(),
+                                   /*is_prefill=*/false,
+                                   /*from_cache_update=*/true));
 }
 
 }  // namespace
