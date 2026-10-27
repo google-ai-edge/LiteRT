@@ -2311,6 +2311,7 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
         : operation_type_ == ::ml_drift::OperationType::kMul      ? 8
         : operation_type_ == ::ml_drift::OperationType::kAdd      ? 6
         : operation_type_ == ::ml_drift::OperationType::kGelu     ? 3
+        : operation_type_ == ::ml_drift::OperationType::kGreater  ? 3
                                                                   : 2;
     // `CheckGpuDelegateCompatibility()` is shared with the TFLite GPU delegate
     // and requires two-argument elementwise ops to have at least one runtime
