@@ -22,7 +22,6 @@
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
-#include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/common/util.h"  // from @ml_drift
 #include "ml_drift/webgpu/buffer.h"  // from @ml_drift
 #include "ml_drift/webgpu/spatial_tensor.h"  // from @ml_drift
@@ -36,7 +35,6 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/tensor_buffer_lockstate.h"
 #include "ml_drift_delegate/delegate/buffer_handler_utils.h"
-#include "ml_drift_delegate/delegate/webgpu_dawn_loader.h"
 
 #ifdef __EMSCRIPTEN__
 #include <webgpu/webgpu.h>  // IWYU pragma: export
@@ -70,11 +68,6 @@ LiteRtStatus LiteRtCreateWebGpuMemory(LiteRtGpuDeviceId device_id,
                                       LiteRtTensorBufferType buffer_type,
                                       size_t bytes, size_t packed_bytes,
                                       HwMemoryInfoPtr* webgpu_memory_info) {
-  if (absl::Status status = ::litert::ml_drift::EnsureWebGpuDawnLoaded();
-      !status.ok()) {
-    ABSL_LOG(ERROR) << "WebGPU Dawn runtime library is not loaded: " << status;
-    return kLiteRtStatusErrorUnsupported;
-  }
   int fp16_scale = IsGpuFloat16Memory(buffer_type) ? 2 : 1;
   auto tensor_desc =
       ::litert::ml_drift::CreateTensorDescriptor(*tensor_type, buffer_type);
@@ -277,11 +270,6 @@ LiteRtStatus LiteRtImportWebGpuMemory(LiteRtGpuDeviceId device_id,
                                       HwMemoryHandle hw_buffer_handle,
                                       size_t bytes, size_t packed_bytes,
                                       HwMemoryInfoPtr* hw_memory_info) {
-  if (absl::Status status = ::litert::ml_drift::EnsureWebGpuDawnLoaded();
-      !status.ok()) {
-    ABSL_LOG(ERROR) << "WebGPU Dawn runtime library is not loaded: " << status;
-    return kLiteRtStatusErrorUnsupported;
-  }
   if (hw_buffer_handle == nullptr || hw_memory_info == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }

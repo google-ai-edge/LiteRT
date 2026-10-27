@@ -175,6 +175,10 @@ absl::StatusOr<std::pair<float, int64_t>> GetPerTensorQuantization(
     return absl::UnimplementedError(absl::StrCat(
         op_name, " only supports per-tensor quantization in ML Drift."));
   }
+  if (pcq->HasNonZeroFloatZeroPoints()) {
+    return absl::UnimplementedError(absl::StrCat(
+        op_name, " doesn't support float zero points in ML Drift."));
+  }
   return std::make_pair(pcq->scales[0],
                         pcq->zero_points.empty() ? 0 : pcq->zero_points[0]);
 }
@@ -229,6 +233,10 @@ absl::Status AddDequantization(
     const PerChannelAffineQuantization& quantization) {
   const std::vector<float>& scales = quantization.scales;
   const std::vector<int64_t>& zero_points = quantization.zero_points;
+  if (quantization.HasNonZeroFloatZeroPoints()) {
+    return absl::UnimplementedError(
+        "Dequantize doesn't support float zero points in ML Drift.");
+  }
   if (scales.empty() ||
       (zero_points.size() > 1 && zero_points.size() != scales.size())) {
     return absl::InvalidArgumentError(
@@ -447,6 +455,14 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
       pcq_ptr != nullptr ? pcq_ptr->scales : bwq_ptr->scales;
   const std::vector<int64_t>& raw_zps =
       pcq_ptr != nullptr ? pcq_ptr->zero_points : bwq_ptr->zero_points;
+  const bool has_non_zero_float_zp = pcq_ptr != nullptr
+                                         ? pcq_ptr->HasNonZeroFloatZeroPoints()
+                                         : bwq_ptr->HasNonZeroFloatZeroPoints();
+  if (has_non_zero_float_zp) {
+    return absl::UnimplementedError(absl::StrCat(
+        "Weights tensor (", out_info.name,
+        ") has float zero points, which ML Drift doesn't support yet."));
+  }
   const bool has_non_zero_zp = std::any_of(
       raw_zps.begin(), raw_zps.end(), [](int64_t zp) { return zp != 0; });
 
