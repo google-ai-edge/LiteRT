@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, cumsum, depthToSpace, depthwiseConv2d, div, elu, embeddingLookup, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gather, gatherNd, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maximum, maxPool2d, mean, minimum, mul, neg, nonMaxSuppression, notEqual, oneHot, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, reverse, round, rsqrt, select, sin, slice, softmax, spaceToDepth, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, topK, transpose, transposeConv2d, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
+import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, cumsum, depthToSpace, depthwiseConv2d, div, elu, embeddingLookup, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gather, gatherNd, gelu, greater, greaterEqual, hardSwish, initFromWasmModule, type InitFromWasmModuleOptions, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maximum, maxPool2d, mean, minimum, mul, neg, nonMaxSuppression, notEqual, oneHot, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, reverse, round, rsqrt, select, sin, slice, softmax, spaceToDepth, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, topK, transpose, transposeConv2d, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
@@ -58,6 +58,82 @@ describe('LiteRt', () => {
   it('reloads the WASM module', async () => {
     await resetLiteRt();
     expect(liteRt).toBeDefined();
+  });
+
+  describe('initFromWasmModule and CPU-only environment', () => {
+    it('initializes from an existing WasmModule with cpuOnly option', async () => {
+      await resetLiteRt();
+      const wasmModule = liteRt.liteRtWasm;
+      unloadLiteRt();
+
+      const cpuLiteRt = await initFromWasmModule(wasmModule, {cpuOnly: true});
+      try {
+        expect(cpuLiteRt).toBeDefined();
+        const env = cpuLiteRt.getDefaultEnvironment();
+        expect(env.webGpuDevice).toBeNull();
+        expect(env.cpuOnly).toBeTrue();
+      } finally {
+        unloadLiteRt();
+        await resetLiteRt();
+      }
+    });
+
+    it('creates a CPU-only environment without WebGPU device', async () => {
+      await resetLiteRt();
+      const env = await Environment.createCpuOnly(liteRt);
+      expect(env.webGpuDevice).toBeNull();
+      expect(env.cpuOnly).toBeTrue();
+      env.delete();
+    });
+
+    it('loads and runs a model on CPU with cpuOnly environment', async () => {
+      await resetLiteRt();
+      const wasmModule = liteRt.liteRtWasm;
+      unloadLiteRt();
+
+      const cpuLiteRt = await initFromWasmModule(wasmModule, {cpuOnly: true});
+      try {
+        const model = await cpuLiteRt.loadAndCompile('/testdata/add_10x10.tflite');
+        expect(model).toBeDefined();
+
+        const identityData = new Float32Array(100);
+        for (let i = 0; i < 10; i++) {
+          for (let j = 0; j < 10; j++) {
+            identityData[i * 10 + j] = 1.0;
+          }
+        }
+        const a = new Tensor(identityData, [10, 10]);
+
+        const rangeData = new Float32Array(100);
+        for (let i = 0; i < 100; i++) {
+          rangeData[i] = i;
+        }
+        const b = new Tensor(rangeData, [10, 10]);
+
+        const outputs = await model.run({'a': a, 'b': b});
+        const outputData = await outputs['Identity'].data();
+
+        const expectedData = new Float32Array(100);
+        for (let i = 0; i < 100; i++) {
+          expectedData[i] = identityData[i] + rangeData[i];
+        }
+        expect(outputData).toEqual(expectedData);
+
+        a.delete();
+        b.delete();
+        outputs['Identity'].delete();
+        model.delete();
+      } finally {
+        unloadLiteRt();
+        await resetLiteRt();
+      }
+    });
+
+    it('throws if LiteRT is already loading or loaded', async () => {
+      await resetLiteRt();
+      const wasmModule = liteRt.liteRtWasm;
+      expect(() => initFromWasmModule(wasmModule)).toThrow();
+    });
   });
 
   describe('threaded wasm', () => {
