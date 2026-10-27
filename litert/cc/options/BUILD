@@ -49,7 +49,6 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_detail",
     ],
-    alwayslink = True,
 )
 
 cc_library(
@@ -173,7 +172,6 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_detail",
     ],
-    alwayslink = True,
 )
 
 cc_library(
@@ -187,7 +185,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
     ],
-    alwayslink = True,
 )
 
 cc_library(
@@ -203,7 +200,6 @@ cc_library(
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_handle",
     ],
-    alwayslink = True,
 )
 
 cc_library(
@@ -216,7 +212,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
     ],
-    alwayslink = True,
 )
 
 cc_test(
@@ -242,7 +237,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
     ],
-    alwayslink = True,
 )
 
 cc_library(

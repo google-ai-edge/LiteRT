@@ -42,7 +42,6 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
-    alwayslink = True,
 )
 
 cc_library(
@@ -110,8 +109,6 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
-    # Keep the symbols in libLiteRt.dylib.
-    alwayslink = 1,
 )
 
 cc_test(
@@ -218,8 +215,6 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
-    # Keep the symbols in libLiteRtRuntimeCApi.dylib.
-    alwayslink = 1,
 )
 
 cc_test(
@@ -262,8 +257,6 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
-    # Keep the symbols in libLiteRt.dylib.
-    alwayslink = 1,
 )
 
 cc_library(
@@ -278,8 +271,6 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
-    # Keep the symbols in libLiteRt.dylib.
-    alwayslink = 1,
 )
 
 cc_test(
@@ -303,8 +294,6 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
     ],
-    # Keep the symbols in libLiteRt.dylib.
-    alwayslink = 1,
 )
 
 # copybara:uncomment_begin(google-only)
