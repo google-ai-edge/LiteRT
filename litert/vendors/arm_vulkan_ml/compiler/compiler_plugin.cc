@@ -156,7 +156,7 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
     const LiteRtCompilerContext* compiler_context,
     LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
     LiteRtOptions options) {
-  (void)env;
+  static_cast<void>(env);
   if (compiler_plugin == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -205,7 +205,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            const char* soc_model,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
-  (void)soc_model;
+  static_cast<void>(soc_model);
   if (subgraph == nullptr || selected_ops == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -224,7 +224,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
-  (void)soc_model;
+  static_cast<void>(soc_model);
   if (partitions == nullptr || compiled_result == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -341,10 +341,10 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
     LiteRtApiVersion api_version, LiteRtCompilerPlugin compiler_plugin,
     LiteRtEnvironmentOptions env, LiteRtOptions options,
     const char* soc_model_name) {
-  (void)compiler_plugin;
-  (void)env;
-  (void)options;
-  (void)soc_model_name;
+  static_cast<void>(compiler_plugin);
+  static_cast<void>(env);
+  static_cast<void>(options);
+  static_cast<void>(soc_model_name);
   if (api_version.major != LITERT_API_VERSION_MAJOR) {
     return kLiteRtStatusErrorUnsupportedCompilerVersion;
   }

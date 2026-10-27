@@ -19,6 +19,7 @@ cc_library(
     linkopts = ["-ldl"],
     visibility = ["//litert:__subpackages__"],
     deps = [
+        "@com_google_absl//absl/synchronization",
         "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
         "@arm_vulkan_ml_dep_vulkan_headers//:vulkan_headers",
     ],
@@ -44,6 +45,7 @@ litert_dynamic_lib(
     so_name = "libLiteRtDispatch_ArmVulkanML.so",
     visibility = ["//litert:litert_public"],
     deps = [
+        "@com_google_absl//absl/synchronization",
         ":vulkan_invocation",
         "//litert/c/internal:litert_runtime_context",
         "//litert/c:litert_common",

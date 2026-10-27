@@ -113,7 +113,7 @@ std::optional<std::vector<int8_t>> RequantizeTable(float input_scale,
       input_scale <= 0 || output_scale <= 0 ||
       !IsInt8(input_zero_point) || !IsInt8(output_zero_point)) return std::nullopt;
   int exponent;
-  const double fraction = std::frexp(double(input_scale) / output_scale, &exponent);
+  const double fraction = std::frexp(static_cast<double>(input_scale) / output_scale, &exponent);
   int64_t multiplier = std::llround(fraction * (int64_t{1} << 31));
   if (multiplier == (int64_t{1} << 31)) { multiplier /= 2; ++exponent; }
   // LiteRT QuantizeMultiplier flushes shifts below -31 to zero.
@@ -122,7 +122,7 @@ std::optional<std::vector<int8_t>> RequantizeTable(float input_scale,
   const int left = std::max(exponent, 0), right = std::max(-exponent, 0);
   std::vector<int8_t> table;
   for (int code = -128; code <= 127; ++code) {
-    int64_t shifted = int64_t(code - input_zero_point) * (int64_t{1} << left);
+    int64_t shifted = static_cast<int64_t>(code - input_zero_point) * (int64_t{1} << left);
     if (shifted < kMin || shifted > kMax) return std::nullopt;
     int64_t product = shifted * multiplier;
     // SaturatingRoundingDoublingHighMul followed by RoundingDivideByPOT.
@@ -145,8 +145,8 @@ std::optional<std::vector<int8_t>> HardSwishTable(float input_scale,
       input_scale <= 0 || output_scale <= 0 ||
       !IsInt8(input_zero_point) || !IsInt8(output_zero_point)) return std::nullopt;
   const float hires = input_scale / 128.0f;
-  auto output = MakeScale32(float(hires / output_scale));
-  auto relu = MakeScale32(float(hires / (3.0f / 32768.0f)));
+  auto output = MakeScale32(static_cast<float>(hires / output_scale));
+  auto relu = MakeScale32(static_cast<float>(hires / (3.0f / 32768.0f)));
   if (!output || !relu || output->shift < 31) return std::nullopt;
   auto multiplier16 = [](int32_t m) {
     return static_cast<int32_t>(std::min(int64_t{32767}, (int64_t{m} + 32768) / 65536));

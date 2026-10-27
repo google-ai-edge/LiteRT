@@ -1150,8 +1150,10 @@ cc_library(
     name = "imagenet_eval_data",
     srcs = ["imagenet_eval_data.cc"],
     hdrs = ["imagenet_eval_data.h"],
-    copts = ["-fexceptions"],
+    copts = ["-fno-exceptions"],
     deps = [
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "@com_github_nlohmann_json//:json",
         "@stblib//:stb_image_hdrs",
     ],
@@ -1161,7 +1163,7 @@ cc_test(
     name = "imagenet_eval_data_test",
     size = "small",
     srcs = ["imagenet_eval_data_test.cc"],
-    copts = ["-fexceptions"],
+    copts = ["-fno-exceptions"],
     deps = [
         ":imagenet_eval_data",
         "@com_google_googletest//:gtest_main",
@@ -1171,7 +1173,7 @@ cc_test(
 litert_bin(
     name = "imagenet_eval_runner",
     srcs = ["imagenet_eval_runner.cc"],
-    copts = ["-fexceptions"],
+    copts = ["-fno-exceptions"],
     export_litert_only = True,
     ungrte = True,
     deps = [
@@ -1198,7 +1200,7 @@ litert_bin(
 litert_bin(
     name = "imagenet_eval_runner_dynamic_runtime",
     srcs = ["imagenet_eval_runner.cc"],
-    copts = ["-fexceptions"],
+    copts = ["-fno-exceptions"],
     data = [
         "//litert/c:libLiteRt.so",
     ] + litert_gpu_accelerator_prebuilts(),
@@ -1236,7 +1238,7 @@ cc_library(
 cc_test(
     name = "imagenet_eval_runner_test",
     srcs = ["imagenet_eval_runner_test.cc"],
-    copts = ["-fexceptions"],
+    copts = ["-fno-exceptions"],
     deps = [
         ":imagenet_eval_data",
         ":imagenet_eval_runner_test_source",

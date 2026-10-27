@@ -25,7 +25,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from datasets import Image, load_dataset
+from datasets import Image
+from datasets import load_dataset
 
 
 def _parse_args() -> argparse.Namespace:

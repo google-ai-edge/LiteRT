@@ -30,12 +30,12 @@ TEST(HardSwishTable, ExhaustiveSignedCodesMatchBuiltinFixedPoint) {
     {.2786346673965454f,15,.1233467161655426f,-125},
     {.017f,-128,.006f,-100}}};
   for(const auto& q:cases) {
-    auto table=HardSwishTable(q[0],int(q[1]),q[2],int(q[3]));ASSERT_TRUE(table);
+    auto table=HardSwishTable(q[0],static_cast<int>(q[1]),q[2],static_cast<int>(q[3]));ASSERT_TRUE(table);
     tflite::HardSwishParams p{};p.input_zero_point=q[1];p.output_zero_point=q[3];
     const float hires=q[0]/128.0f;int32_t multiplier;
-    tflite::QuantizeMultiplier(float(hires/q[2]),&multiplier,&p.output_multiplier_exponent);
+    tflite::QuantizeMultiplier(static_cast<float>(hires/q[2]),&multiplier,&p.output_multiplier_exponent);
     tflite::DownScaleInt32ToInt16Multiplier(multiplier,&p.output_multiplier_fixedpoint_int16);
-    tflite::QuantizeMultiplier(float(hires/(3.0f/32768.0f)),&multiplier,&p.reluish_multiplier_exponent);
+    tflite::QuantizeMultiplier(static_cast<float>(hires/(3.0f/32768.0f)),&multiplier,&p.reluish_multiplier_exponent);
     tflite::DownScaleInt32ToInt16Multiplier(multiplier,&p.reluish_multiplier_fixedpoint_int16);
     std::array<int8_t,256> input,output;
     for(int i=0;i<256;++i)input[i]=i-128;
@@ -54,7 +54,7 @@ TEST(RequantizeTable, ExhaustiveSignedCodesMatchReferenceRounding) {
       ASSERT_TRUE(table);
       int32_t multiplier;
       int shift;
-      tflite::QuantizeMultiplier(double(scale), &multiplier, &shift);
+      tflite::QuantizeMultiplier(static_cast<double>(scale), &multiplier, &shift);
       for (int code = -128; code <= 127; ++code) {
         int value = tflite::MultiplyByQuantizedMultiplier(code - zero_point, multiplier, shift) - 6;
         EXPECT_EQ((*table)[code + 128], std::clamp(value, -128, 127))
