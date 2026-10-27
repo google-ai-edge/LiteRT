@@ -1,0 +1,10 @@
+# Copyright 2026 The LiteRT Authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+beautifulsoup4==4.14.3
+soupsieve==3.0.4
+typing-extensions==4.16.0
+jsonschema==4.26.0
+attrs==26.1.0
+jsonschema-specifications==2025.9.1
+referencing==0.37.0
+rpds-py==2026.9.1

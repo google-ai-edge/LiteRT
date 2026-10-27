@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/extended_ops.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -157,9 +158,15 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
   OperationPlan p{}; p.code=op.Code();
   auto in=op.Inputs(); auto out=op.Outputs();
   if(in.empty() || out.size()!=1) return reject("Expected data inputs and exactly one output");
-  auto input=ReadTensor(in[0]); auto output=ReadTensor(out[0]);
+  const int data_index = p.code == kLiteRtOpCodeTflTransposeConv ? 2 : 0;
+  if (data_index >= in.size()) return reject("Missing data input");
+  auto input=ReadTensor(in[data_index]); auto output=ReadTensor(out[0]);
   if(!input || !output || output->shape.empty()) return reject("Requires static dense int8 tensors with finite per-tensor quantization");
-  p.inputs.push_back(*input); p.output=*output; p.runtime_inputs={0};
+  p.inputs.push_back(*input); p.output=*output; p.runtime_inputs={data_index};
+  if (IsExtendedOperation(p.code)) {
+    if (!AnalyzeExtendedOperation(op, p, reason)) return std::nullopt;
+    return p;
+  }
   if (input->floating && output->floating &&
       (p.code == kLiteRtOpCodeTflAdd || p.code == kLiteRtOpCodeTflMul)) {
     if (in.size() != 2) return reject("FP32 arithmetic requires two inputs");
@@ -214,6 +221,8 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
       auto scale=MakeScale32(input->scale/output->scale);
       auto activation=ActivationRange(p.code==kLiteRtOpCodeTflRelu?Activation::kRelu:Activation::kRelu6,output->scale,output->zero_point);
       if(!scale || !activation)return reject("Invalid RELU quantization");
+      p.activation = *activation;
+      if (SameQuant(*input, *output)) break;
       for(int code=-128;code<=127;++code) {
         auto first=*scale;first.shift=std::min<int8_t>(first.shift,31);
         auto value=ApplyScale32(code-input->zero_point,first);
@@ -272,6 +281,7 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
       if (p.code == kLiteRtOpCodeTflQuantize && !input->floating && !output->floating) {
         if (in.size() != 1 || input->shape != output->shape)
           return reject("INT8 QUANTIZE requires identical shapes");
+        if (SameQuant(*input, *output)) break;
         auto table = RequantizeTable(input->scale, input->zero_point,
                                     output->scale, output->zero_point);
         if (!table) return reject("INT8 QUANTIZE scale range is not supported");
@@ -577,6 +587,7 @@ ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPla
                     std::vector<GraphConstant>& constants) {
   auto input=inputs[0]; const auto& q=p.inputs[0];
   TosaTensor out(p.output.floating ? DataType::float32_t : DataType::int8_t,p.output.shape);
+  if (IsExtendedOperation(p.code)) return EmitExtendedOperation(g, input, p, constants);
   if(q.floating || p.output.floating) return EmitFloatOperation(g, inputs, p, constants);
   switch(p.code) {
     case kLiteRtOpCodeTflReshape:return Reshape(g,input,DataType::int8_t,p.output.shape);
@@ -584,8 +595,12 @@ ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPla
     case kLiteRtOpCodeTflConcatenation:return g.AddConcatOperator(inputs,Attribute(p.axis),out);
     case kLiteRtOpCodeTflRelu:
     case kLiteRtOpCodeTflRelu6:
-    case kLiteRtOpCodeTflLogistic:
+      if (SameQuant(q, p.output)) return Clamp(g, input, p);
+      return g.AddTableOperator(input, Constant(g, p.table, {256}, constants), out);
     case kLiteRtOpCodeTflQuantize:
+      if (SameQuant(q, p.output)) return input;
+      return g.AddTableOperator(input, Constant(g, p.table, {256}, constants), out);
+    case kLiteRtOpCodeTflLogistic:
     case kLiteRtOpCodeTflHardSwish:
       return g.AddTableOperator(input,Constant(g,p.table,{256},constants),out);
     case kLiteRtOpCodeTflMul: {
@@ -615,48 +630,25 @@ ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPla
       return Clamp(g,EmitRescale(g,sum,p.output.shape,p.output.zero_point,{p.scales[2]},p.ranges,constants),p);
     }
     case kLiteRtOpCodeTflAveragePool2d: {
-      auto shape = q.shape;
-      if (p.cropped_shape != shape) {
+      if (p.cropped_shape != q.shape) {
         input = g.AddSliceOperator(input, g.AddTensorConstant(Attribute(std::vector<uint32_t>(4, 0))),
             g.AddTensorConstant(Attribute(p.cropped_shape)), TosaTensor(DataType::int8_t, p.cropped_shape));
-        shape = p.cropped_shape;
       }
-      auto value = g.AddCastOperator(input, TosaTensor(DataType::int32_t, shape));
-      if (p.output.shape[1] == 1 && p.output.shape[2] == 1) {
-        for (int axis : {1, 2}) {
-          shape[axis] = 1;
-          value = g.AddReduceSumOperator(value, Attribute(static_cast<int32_t>(axis)), TosaTensor(DataType::int32_t, shape));
-        }
-      } else {
-        shape = {shape[0], p.output.shape[1], static_cast<uint32_t>(p.kernel[0]),
-                 p.output.shape[2], static_cast<uint32_t>(p.kernel[1]), shape[3]};
-        value = Reshape(g, value, DataType::int32_t, shape);
-        for (int axis : {2, 4}) {
-          shape[axis] = 1;
-          value = g.AddReduceSumOperator(value, Attribute(static_cast<int32_t>(axis)), TosaTensor(DataType::int32_t, shape));
-        }
-        shape = p.output.shape;
-        value = Reshape(g, value, DataType::int32_t, shape);
-      }
-      TosaTensor sum_type(DataType::int32_t,shape);
-      auto scalar=[&](int32_t x){return Constant(g,std::vector<int32_t>{x},{1,1,1,1},constants);};
-      const int32_t count=p.kernel[0]*p.kernel[1];
-      auto positive=g.AddGreaterEqualOperator(value,scalar(0),TosaTensor(DataType::bool_t,shape));
-      auto nudge=g.AddSelectOperator(positive,scalar(count/2),scalar(-count/2),sum_type);
-      value=g.AddAddOperator(value,nudge,sum_type);
-      value=g.AddIntDivOperator(value,scalar(count),sum_type);
-      return Clamp(g,g.AddCastOperator(value,out),p);
+      // Native TOSA rounding is intentionally allowed to differ from LiteRT
+      // at quantization boundaries; avoid expanding pooling into integer ops.
+      auto result = g.AddAvgPool2dOperator(input,
+          g.AddTensorConstant(Attribute(static_cast<int8_t>(q.zero_point))),
+          g.AddTensorConstant(Attribute(static_cast<int8_t>(p.output.zero_point))),
+          Attribute(p.kernel), Attribute(p.stride), Attribute({0, 0, 0, 0}),
+          Attribute(int32_t{1}), out);
+      return Clamp(g, result, p);
     }
     case kLiteRtOpCodeTflMaxPool2d: {
       if(p.cropped_shape!=q.shape) input=g.AddSliceOperator(input,
           g.AddTensorConstant(Attribute(std::vector<uint32_t>(4,0))),
           g.AddTensorConstant(Attribute(p.cropped_shape)),TosaTensor(DataType::int8_t,p.cropped_shape));
-      ResId result;
-      if(p.code==kLiteRtOpCodeTflMaxPool2d)
-        result=g.AddMaxPool2dOperator(input,Attribute(p.kernel),Attribute(p.stride),Attribute({0,0,0,0}),Attribute(int32_t{1}),out);
-      else result=g.AddAvgPool2dOperator(input,g.AddTensorConstant(Attribute(static_cast<int8_t>(q.zero_point))),
-          g.AddTensorConstant(Attribute(static_cast<int8_t>(p.output.zero_point))),Attribute(p.kernel),Attribute(p.stride),
-          Attribute({0,0,0,0}),Attribute(int32_t{1}),out);
+      auto result = g.AddMaxPool2dOperator(input, Attribute(p.kernel), Attribute(p.stride),
+          Attribute({0, 0, 0, 0}), Attribute(int32_t{1}), out);
       return Clamp(g,result,p);
     }
     case kLiteRtOpCodeTflSum: {

@@ -6,6 +6,7 @@
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -19,6 +20,7 @@ cc_library(
     linkopts = ["-ldl"],
     visibility = ["//litert:__subpackages__"],
     deps = [
+        ":tensor_capabilities",
         "@com_google_absl//absl/synchronization",
         "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
         "@arm_vulkan_ml_dep_vulkan_headers//:vulkan_headers",
@@ -53,5 +55,25 @@ litert_dynamic_lib(
         "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c/internal:litert_scheduling_info",
         "//litert/vendors/c:litert_dispatch_c_api",
+    ],
+)
+
+cc_library(
+    name = "tensor_capabilities",
+    srcs = ["tensor_capabilities.cc"],
+    copts = ["-fno-exceptions"],
+    hdrs = ["tensor_capabilities.h"],
+    deps = [
+        "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
+        "@arm_vulkan_ml_dep_vulkan_headers//:vulkan_headers",
+    ],
+)
+
+cc_test(
+    name = "tensor_capabilities_test",
+    srcs = ["tensor_capabilities_test.cc"],
+    deps = [
+        ":tensor_capabilities",
+        "@com_google_googletest//:gtest_main",
     ],
 )

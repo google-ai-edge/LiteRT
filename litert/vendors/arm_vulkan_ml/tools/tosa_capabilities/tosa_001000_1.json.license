@@ -1,0 +1,10 @@
+#
+# SPDX-FileCopyrightText: Copyright 2026 The LiteRT Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+
+Specification excerpts and validation expressions retain their original copyright.
+TOSA specification: Copyright 2020-2025 Arm Limited (or its affiliates).
+All rights reserved. See TOSA_SPECIFICATION_LICENSE.txt for the source license.
+The sources and exact revisions of the SPIR-V mapping and TOSA semantics are
+recorded in the generated database. This notice does not relicense those sources.

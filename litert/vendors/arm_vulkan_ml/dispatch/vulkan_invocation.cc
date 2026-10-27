@@ -22,16 +22,13 @@
 #include <utility>
 
 #include "absl/synchronization/mutex.h"
+#include "litert/vendors/arm_vulkan_ml/dispatch/tensor_capabilities.h"
 #include "vulkan/vulkan.h"
 
 namespace litert::arm_vulkan_ml {
 static_assert(VK_ARM_TENSORS_SPEC_VERSION >= 2,
               "Arm Vulkan ML requires VK_ARM_tensors Revision 2 headers");
 namespace {
-VkFormat Format(TensorElement element) {
-  return element == TensorElement::kInt8 ? VK_FORMAT_R8_SINT :
-      element == TensorElement::kFloat32 ? VK_FORMAT_R32_SFLOAT : VK_FORMAT_R32_SINT;
-}
 size_t Bytes(const TensorDescriptor& tensor) {
   size_t result = tensor.element == TensorElement::kInt8 ? 1 : 4;
   for (auto dim : tensor.shape) {
@@ -165,6 +162,8 @@ struct VulkanInvocation::Impl {
 #define INSTANCE_FN(name) auto name = reinterpret_cast<PFN_vk##name>(get(instance, "vk" #name)); if (!name) { error = "Missing vk" #name; return false; }
     INSTANCE_FN(EnumeratePhysicalDevices);
     INSTANCE_FN(GetPhysicalDeviceProperties);
+    INSTANCE_FN(GetPhysicalDeviceProperties2);
+    INSTANCE_FN(GetPhysicalDeviceFormatProperties2);
     INSTANCE_FN(EnumerateDeviceExtensionProperties);
     INSTANCE_FN(GetPhysicalDeviceQueueFamilyProperties);
     INSTANCE_FN(GetPhysicalDeviceFeatures2);
@@ -198,6 +197,9 @@ struct VulkanInvocation::Impl {
         });
       }
       if (!all) continue;
+      if (!QueryTensorCapabilities(candidate, *artifact,
+              GetPhysicalDeviceProperties2, GetPhysicalDeviceFormatProperties2,
+              error)) continue;
       uint32_t queue_count = 0;
       GetPhysicalDeviceQueueFamilyProperties(candidate, &queue_count, nullptr);
       std::vector<VkQueueFamilyProperties> queues(queue_count);
@@ -226,17 +228,31 @@ struct VulkanInvocation::Impl {
           // name is not PRO-INT; never treat it as hardware conformance.
           bool emulator = allow_emulation && props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU &&
               has(tosa.profileCount, tosa.pProfiles, "Emulation Layer");
-          for (const auto& profile : artifact->profiles)
-            supported &= has(tosa.profileCount, tosa.pProfiles, profile) ||
-                         (emulator && (profile == "PRO-INT" || profile == "PRO-FP"));
-          for (const auto& extension : artifact->extensions)
-            supported &= has(tosa.extensionCount, tosa.pExtensions, extension);
+          for (const auto& profile : artifact->profiles) {
+            if (!has(tosa.profileCount, tosa.pProfiles, profile) &&
+                !(emulator && (profile == "PRO-INT" || profile == "PRO-FP"))) {
+              supported = false;
+              error = "TOSA profile is not advertised as conformant: " + profile;
+            }
+          }
+          for (const auto& extension : artifact->extensions) {
+            if (!has(tosa.extensionCount, tosa.pExtensions, extension)) {
+              supported = false;
+              error = "TOSA extension is not advertised as conformant: " + extension;
+            }
+          }
           if (supported) { physical = candidate; queue_family = q; break; }
         }
       }
       if (physical) break;
     }
-    if (!physical) { error = "No Vulkan device advertises VK_ARM_tensors Revision 2, the required extensions, and the artifact's TOSA requirements"; return false; }
+    if (!physical) {
+      error = "No compatible Vulkan graph device: " + (error.empty()
+          ? std::string("required API revisions, graph engine or TOSA requirements unavailable")
+          : error);
+      return false;
+    }
+    error.clear();
     VkPhysicalDeviceTensorFeaturesARM tensor_features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM};
     VkPhysicalDeviceDataGraphFeaturesARM graph_features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM};
     VkPhysicalDeviceVulkan12Features f12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
@@ -342,7 +358,7 @@ struct VulkanInvocation::Impl {
     auto describe = [&](const TensorDescriptor& t) {
       shapes.emplace_back(t.shape.begin(), t.shape.end());
       VkTensorDescriptionARM d{VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM};
-      d.tiling = VK_TENSOR_TILING_LINEAR_ARM; d.format = Format(t.element);
+      d.tiling = VK_TENSOR_TILING_LINEAR_ARM; d.format = TensorFormat(t.element);
       d.dimensionCount = shapes.back().size(); d.pDimensions = shapes.back().data();
       d.usage = VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM;
       descriptions.push_back(d);
@@ -368,7 +384,7 @@ struct VulkanInvocation::Impl {
       bind.tensor = memory.tensor; bind.memory = memory.memory;
       VK_CHECK(BindTensorMemoryARM(device, 1, &bind));
       VkTensorViewCreateInfoARM view{VK_STRUCTURE_TYPE_TENSOR_VIEW_CREATE_INFO_ARM};
-      view.tensor = memory.tensor; view.format = Format(t.element);
+      view.tensor = memory.tensor; view.format = TensorFormat(t.element);
       VK_CHECK(CreateTensorViewARM(device, &view, nullptr, &memory.view));
       VK_CHECK(MapMemory(device, memory.memory, 0, VK_WHOLE_SIZE, 0, &memory.mapped));
       bindings.push_back({t.binding, VK_DESCRIPTOR_TYPE_TENSOR_ARM, 1, VK_SHADER_STAGE_ALL, nullptr});

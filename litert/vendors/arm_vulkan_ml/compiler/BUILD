@@ -40,8 +40,8 @@ cc_library(
 
 cc_library(
     name = "operation",
-    srcs = ["operation.cc"],
-    hdrs = ["operation.h"],
+    srcs = ["operation.cc", "extended_ops.cc"],
+    hdrs = ["operation.h", "extended_ops.h"],
     deps = [
         ":conv2d", ":conv2d_adapter", ":quantization",
         "//litert/c:litert_op_options",
