@@ -20,7 +20,7 @@ load("//litert/ats:ats.bzl", "litert_define_ats")
 # copybara:uncomment load("//litert/ats:models.bzl", "CLASSICAL_ALL_MODELS")
 load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "if_oss", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
-# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_exynos_mh_guitar_test", "litert_macos_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_npu_aot_guitar_test", "litert_perfgate_upload_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_pixel_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
+# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_exynos_mh_guitar_test", "litert_macos_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_npu_aot_guitar_test", "litert_perfgate_upload_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_pixel_mh_guitar_test", "litert_qualcomm_mh_guitar_test", "litert_windows_mh_guitar_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -540,8 +540,7 @@ litert_define_ats(
         "FullyConnected.*,2d_f32[^c]",  # OpenCL does not support dynamic weights
         "FullyConnected.*,2d_f32.*,1d_f32",  # OpenCL dynamic bias permutations
         "BatchMatmul.*2d.*,[34]d",  # OpenCL does not support rank-asymmetric batch broadcasting
-        "BatchMatmul.*3d",  # ATS generator forces 1xB broadcast on 3D BatchMatmul
-        "BatchMatmul.*4d",  # ATS generator forces 1xB broadcast on 4D BatchMatmul
+        "BatchMatmul(?!.*_cst).*[34]d",  # OpenCL only supports 3D/4D BatchMatmul with constant 2D RHS (dynamic 3D/4D uses 1xB or rank-asymmetric broadcast)
         "Swiglu.*3d_f(16|32)<(?!1x)",  # GPU accelerator does not support SwiGLU with batch > 1
         "QkvNormRope.*4d_f(16|32)<(?!1x)",  # GPU accelerator does not support QkvNormRope with batch > 1
         "SelectV2",  # OpenCL SelectV2 rejects multidimensional if/else broadcasting and uses kExact on FP16-rounded f32
@@ -666,6 +665,43 @@ litert_define_ats(
     ],
     jit_suffix = "",
     platform = "macos",
+)
+
+litert_define_ats(
+    name = "cpu_windows_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    dont_register = XNNPACK_DONT_REGISTER,
+    extra_flags = [
+        "--max_ms_per_test=2000",
+    ],
+    jit_suffix = "",
+    platform = "windows",
+)
+
+litert_define_ats(
+    name = "ynnpack_cpu_windows_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    dont_register = YNNPACK_DONT_REGISTER,
+    extra_flags = [
+        "--enable_ynnpack=true",
+        "--max_ms_per_test=2000",
+    ],
+    jit_suffix = "",
+    platform = "windows",
+)
+
+litert_define_ats(
+    name = "builtin_cpu_windows_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    dont_register = BUILTIN_DONT_REGISTER + ["CompositeOp"],
+    extra_flags = BUILTIN_EXTRA_FLAGS + [
+        "--max_ms_per_test=2000",
+    ],
+    jit_suffix = "",
+    platform = "windows",
 )
 
 litert_define_ats(
@@ -813,6 +849,70 @@ litert_define_ats(
 )
 
 litert_define_ats(
+    name = "cpu_windows_models_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    do_register = ["ExtraModel"],
+    dont_register = XNNPACK_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    jit_suffix = "",
+    platform = "windows",
+)
+
+litert_define_ats(
+    name = "ynnpack_cpu_windows_models_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    do_register = ["ExtraModel"],
+    dont_register = YNNPACK_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--enable_ynnpack=true",
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    jit_suffix = "",
+    platform = "windows",
+)
+
+litert_define_ats(
+    name = "ynnpack_fallback_cpu_windows_models_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    do_register = ["ExtraModel"],
+    dont_register = YNNPACK_FALLBACK_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--enable_ynnpack=true",
+        "--cpu_hint_fully_delegated=false",
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    jit_suffix = "",
+    platform = "windows",
+)
+
+litert_define_ats(
+    name = "builtin_cpu_windows_models_ats",
+    backend = "cpu",
+    compile_only_suffix = None,
+    do_register = ["ExtraModel"],
+    dont_register = BUILTIN_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--cpu_kernel_mode=builtin",
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    jit_suffix = "",
+    platform = "windows",
+)
+
+litert_define_ats(
     name = "metal_macos_models_ats",
     backend = "metal",
     compile_only_suffix = None,
@@ -855,7 +955,7 @@ litert_test(
     linkstatic = True,
     no_main = True,
     target_compatible_with = select({
-        "//litert:windows": ["@platforms//:incompatible"],
+        "//litert:windows": if_oss(["@platforms//:incompatible"]),
         "//conditions:default": [],
     }),
     ungrte = if_oss(True, False),
@@ -870,13 +970,21 @@ litert_test(
         ":register_transformer_layer",
         "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_detail",
-        "//litert/runtime/accelerators/ynnpack:ynnpack_accelerator",  # buildcleaner: keep
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
-    ],
+    ] + select({
+        # On Windows (PE/COFF, no weak symbols), cpu_registry defines a strong
+        # nullptr fallback for LiteRtStaticLinkedAcceleratorYnnpackDef unless
+        # litert_enable_ynnpack is set (via ynnpack_platform_data), which then
+        # links ynnpack_accelerator through cpu_registry.
+        "//litert:windows": [],
+        "//conditions:default": [
+            "//litert/runtime/accelerators/ynnpack:ynnpack_accelerator",  # buildcleaner: keep
+        ],
+    }),
 )
 
 # Like `ats` above, `ynnpack_ats` is executed directly on the host machine with
@@ -2186,6 +2294,31 @@ cc_library(
 #     ],
 # )
 #
+# WINDOWS_ATS_GUITAR_TARGETS = [
+#     ":cpu_windows_ats_remote",
+#     ":ynnpack_cpu_windows_ats_remote",
+#     ":builtin_cpu_windows_ats_remote",
+# ]
+#
+# guitar_workflow_test(
+#     name = "litert_ats_guitar_windows",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_windows_mh_guitar_test(
+#                 targets = WINDOWS_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
 # ANDROID_ATS_MODELS_GUITAR_TARGETS = [
 #     ":gpu_models_ats_remote",
 #     ":cpu_models_ats_remote",
@@ -2489,6 +2622,36 @@ cc_library(
 #             ),
 #             litert_perfgate_upload_guitar_test(
 #                 device = "macos",
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# WINDOWS_ATS_MODELS_GUITAR_TARGETS = [
+#     ":cpu_windows_models_ats_remote",
+#     ":ynnpack_cpu_windows_models_ats_remote",
+#     ":ynnpack_fallback_cpu_windows_models_ats_remote",
+#     ":builtin_cpu_windows_models_ats_remote",
+# ]
+#
+# guitar_workflow_test(
+#     name = "litert_ats_models_guitar_windows",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_windows_mh_guitar_test(
+#                 name = "model_tests",
+#                 targets = WINDOWS_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 device = "windows",
 #             ),
 #         ],
 #     ),
