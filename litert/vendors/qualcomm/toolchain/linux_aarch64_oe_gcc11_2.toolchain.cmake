@@ -15,11 +15,13 @@
 set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR aarch64)
 
-# 1. Check if Yocto/OE environment-setup script was sourced
-if(DEFINED ENV{SDKTARGETSYSROOT})
-  set(CMAKE_SYSROOT $ENV{SDKTARGETSYSROOT})
-elseif(DEFINED ENV{OECORE_TARGET_SYSROOT})
-  set(CMAKE_SYSROOT $ENV{OECORE_TARGET_SYSROOT})
+# 1. Prefer an explicitly configured sysroot, then the Yocto/OE environment.
+if(NOT DEFINED CMAKE_SYSROOT OR "${CMAKE_SYSROOT}" STREQUAL "")
+  if(DEFINED ENV{SDKTARGETSYSROOT})
+    set(CMAKE_SYSROOT $ENV{SDKTARGETSYSROOT})
+  elseif(DEFINED ENV{OECORE_TARGET_SYSROOT})
+    set(CMAKE_SYSROOT $ENV{OECORE_TARGET_SYSROOT})
+  endif()
 endif()
 
 # 2. Check explicit ESDK root environment variable
@@ -29,8 +31,14 @@ elseif(DEFINED ENV{OECORE_NATIVE_SYSROOT})
   get_filename_component(ESDK_ROOT "$ENV{OECORE_NATIVE_SYSROOT}/../.." ABSOLUTE)
 endif()
 
-# 3. Locate C / C++ Compilers
-if(DEFINED ENV{CC} AND "$ENV{CC}" MATCHES "aarch64.*(gcc|clang)")
+# 3. Locate C / C++ Compilers.
+#
+# CMAKE_{C,CXX}_COMPILER and CMAKE_SYSROOT are the explicit ABI contract for
+# this toolchain. This supports ESDKs whose glibc target triples differ, for
+# example aarch64-qcom-linux (IQ-8275) and aarch64-oe-linux (QCL-PVM).
+if(DEFINED CMAKE_C_COMPILER AND NOT "${CMAKE_C_COMPILER}" STREQUAL "")
+  # Preserve the compiler explicitly passed to CMake.
+elseif(DEFINED ENV{CC} AND "$ENV{CC}" MATCHES "aarch64.*(gcc|clang)")
   separate_arguments(_CC_ARGS NATIVE_COMMAND "$ENV{CC}")
   list(GET _CC_ARGS 0 CMAKE_C_COMPILER)
   list(REMOVE_AT _CC_ARGS 0)
@@ -44,11 +52,22 @@ elseif(DEFINED ESDK_ROOT)
     "${ESDK_ROOT}/sysroots/x86_64*linux/usr/bin/aarch64-*/aarch64-*-gcc"
     "${ESDK_ROOT}/usr/bin/aarch64-*/aarch64-*-gcc"
   )
+  # This is the glibc toolchain preset. Do not silently select a musl
+  # compiler just because it sorts before the glibc compiler in an ESDK.
+  list(FILTER COMPILER_C_CANDIDATES EXCLUDE REGEX ".*musl.*")
   list(LENGTH COMPILER_C_CANDIDATES NUM_C_CANDIDATES)
-  if(NUM_C_CANDIDATES GREATER 0)
+  if(NUM_C_CANDIDATES EQUAL 1)
     list(GET COMPILER_C_CANDIDATES 0 CMAKE_C_COMPILER)
+  elseif(NUM_C_CANDIDATES GREATER 1)
+    message(FATAL_ERROR "Multiple non-musl C compiler candidates were found:\n"
+      "  ${COMPILER_C_CANDIDATES}\n"
+      "Set CMAKE_C_COMPILER, CMAKE_CXX_COMPILER, and CMAKE_SYSROOT explicitly "
+      "or source the matching ESDK environment-setup script.")
   else()
-    set(CMAKE_C_COMPILER ${ESDK_ROOT}/tmp/sysroots/x86_64/usr/bin/aarch64-qcom-linux/aarch64-qcom-linux-gcc)
+    message(FATAL_ERROR "No non-musl aarch64 C compiler was found under "
+      "LINUX_AARCH64_ESDK=${ESDK_ROOT}. Set CMAKE_C_COMPILER, "
+      "CMAKE_CXX_COMPILER, and CMAKE_SYSROOT explicitly or source the "
+      "matching ESDK environment-setup script.")
   endif()
 else()
   message(FATAL_ERROR "LINUX_AARCH64_ESDK is not set, and no OE SDK environment is active. "
@@ -56,7 +75,9 @@ else()
     "export LINUX_AARCH64_ESDK=/path/to/ESDK/install")
 endif()
 
-if(DEFINED ENV{CXX} AND "$ENV{CXX}" MATCHES "aarch64.*(g\\+\\+|c\\+\\+|clang\\+\\+)")
+if(DEFINED CMAKE_CXX_COMPILER AND NOT "${CMAKE_CXX_COMPILER}" STREQUAL "")
+  # Preserve the compiler explicitly passed to CMake.
+elseif(DEFINED ENV{CXX} AND "$ENV{CXX}" MATCHES "aarch64.*(g\\+\\+|c\\+\\+|clang\\+\\+)")
   separate_arguments(_CXX_ARGS NATIVE_COMMAND "$ENV{CXX}")
   list(GET _CXX_ARGS 0 CMAKE_CXX_COMPILER)
   list(REMOVE_AT _CXX_ARGS 0)
@@ -70,11 +91,20 @@ elseif(DEFINED ESDK_ROOT)
     "${ESDK_ROOT}/sysroots/x86_64*linux/usr/bin/aarch64-*/aarch64-*-g++"
     "${ESDK_ROOT}/usr/bin/aarch64-*/aarch64-*-g++"
   )
+  list(FILTER COMPILER_CXX_CANDIDATES EXCLUDE REGEX ".*musl.*")
   list(LENGTH COMPILER_CXX_CANDIDATES NUM_CXX_CANDIDATES)
-  if(NUM_CXX_CANDIDATES GREATER 0)
+  if(NUM_CXX_CANDIDATES EQUAL 1)
     list(GET COMPILER_CXX_CANDIDATES 0 CMAKE_CXX_COMPILER)
+  elseif(NUM_CXX_CANDIDATES GREATER 1)
+    message(FATAL_ERROR "Multiple non-musl C++ compiler candidates were found:\n"
+      "  ${COMPILER_CXX_CANDIDATES}\n"
+      "Set CMAKE_C_COMPILER, CMAKE_CXX_COMPILER, and CMAKE_SYSROOT explicitly "
+      "or source the matching ESDK environment-setup script.")
   else()
-    set(CMAKE_CXX_COMPILER ${ESDK_ROOT}/tmp/sysroots/x86_64/usr/bin/aarch64-qcom-linux/aarch64-qcom-linux-g++)
+    message(FATAL_ERROR "No non-musl aarch64 C++ compiler was found under "
+      "LINUX_AARCH64_ESDK=${ESDK_ROOT}. Set CMAKE_C_COMPILER, "
+      "CMAKE_CXX_COMPILER, and CMAKE_SYSROOT explicitly or source the "
+      "matching ESDK environment-setup script.")
   endif()
 elseif(DEFINED CMAKE_C_COMPILER)
   # Derive CXX from C compiler if C was specified via ENV{CC}
@@ -139,4 +169,3 @@ endif()
 if(NOT EXISTS "${CMAKE_SYSROOT}/usr/include")
   message(FATAL_ERROR "Target sysroot directory (with usr/include) not found at: ${CMAKE_SYSROOT}")
 endif()
-
