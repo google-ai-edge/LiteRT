@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "testing/base/public/gmock.h"
@@ -33,6 +34,7 @@
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/gf32_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/ir_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
@@ -731,6 +733,131 @@ TEST_F(SharedMemoryManagerTest, IrSharedConstantIsMutatedInPlaceWithStableId) {
                            local_to_global_id_map.at(original_weights_id)));
   EXPECT_NE(external_tensor, nullptr);
   EXPECT_EQ(buffer_id_to_spatial_tensor.size(), 1);
+
+  TfLiteIntArrayFree(tflite_tensor.dims);
+}
+
+TEST_F(SharedMemoryManagerTest,
+       MoeExpertsBlockScalesStoredAndRestoredFromWeightCache) {
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
+
+  const std::string cache_dir = ::testing::TempDir();
+  const std::string model_token = "moe_scale_cache_test";
+  constexpr uint64_t kModelId = 42;
+  constexpr uint32_t kGlobalId = 7;
+
+  // 4-D block scales [out_channels=4, experts=2, 1, blocks=3] = 24 floats.
+  // Reordered to HOIO4: H=2, W=DivideRoundUp(4, 4)=1, C=4*3=12.
+  std::vector<float> scale_data(24);
+  for (int i = 0; i < 24; ++i) {
+    scale_data[i] = 0.25f * static_cast<float>(i + 1);
+  }
+  TfLiteTensor tflite_tensor{};
+  tflite_tensor.quantization.type = kTfLiteNoQuantization;
+  tflite_tensor.type = TfLiteType::kTfLiteFloat32;
+  tflite_tensor.dims = TfLiteIntArrayCreate(4);
+  tflite_tensor.dims->data[0] = 4;
+  tflite_tensor.dims->data[1] = 2;
+  tflite_tensor.dims->data[2] = 1;
+  tflite_tensor.dims->data[3] = 3;
+  tflite_tensor.data.f = scale_data.data();
+  tflite_tensor.bytes = scale_data.size() * sizeof(float);
+
+  TfLiteContext context{};
+  context.tensors_size = 1;
+  context.tensors = &tflite_tensor;
+  ::litert::ml_drift::SharedTfliteTensor shared_tflite_tensor;
+  shared_tflite_tensor.tflite_tensor_id = 0;
+  shared_tflite_tensor.global_id = kGlobalId;
+
+  // Cold build: converts scales on CPU and stores them in the weight cache.
+  {
+    SerializationWeightCache cache;
+    ASSERT_OK(cache.StartBuild(cache_dir, model_token, kModelId));
+
+    ir::IrModel graph;
+    ir::IrOp* op = graph.add_op();
+    op->name = "moe_experts";
+    const uint32_t op_id = static_cast<uint32_t>(op->id);
+    const uint32_t scales_id =
+        static_cast<uint32_t>(graph.add_tensor(TensorDescriptor{})->id);
+    const uint32_t output_id =
+        static_cast<uint32_t>(graph.add_tensor(TensorDescriptor{})->id);
+    graph.AddConsumer(scales_id, op_id);
+    graph.SetProducer(output_id, op_id);
+    graph.GetMutableTensor(scales_id)->desc.SetBHWCShape(BHWC(4, 2, 1, 3));
+    graph.GetMutableTensor(scales_id)->desc.SetDataType(DataType::kFloat32);
+
+    ValueIdToSharedTensorMap buffer_id_to_spatial_tensor;
+    ValueIdToSharedTensorMap quant_param_tensors;
+    auto manager = MakeSharedMemoryManagerCl(
+        env_, create_info, std::make_unique<IrModelAdapter>(graph), &context,
+        buffer_id_to_spatial_tensor, quant_param_tensors,
+        /*has_prepacked_tflite_tensors=*/false, &cache,
+        /*madvise_original_tensors=*/false);
+
+    absl::flat_hash_map<ValueId, SharedMemoryManager::GlobalId>
+        local_to_global_id_map;
+    ASSERT_OK(manager->RegisterExternalConstantTensors(
+        scales_id, shared_tflite_tensor, local_to_global_id_map));
+    EXPECT_EQ(cache.GetCurrentSize(), 1);
+    EXPECT_EQ(graph.tensor(scales_id)->desc.GetBHWCShape(), BHWC(1, 2, 1, 12));
+    EXPECT_EQ(graph.tensor(scales_id)->desc.GetDataType(), DataType::kFloat16);
+    ASSERT_OK(cache.StopBuild());
+  }
+
+  // Warm load: null out the TFLite tensor data pointer to prove the restored
+  // tensor comes from the serialization cache rather than CPU conversion.
+  tflite_tensor.data.f = nullptr;
+  TensorDescriptor cached_desc;
+  {
+    SerializationWeightCache cache;
+    ASSERT_OK(cache.Load(cache_dir, model_token, kModelId));
+    ASSERT_OK(cache.LookUp(kGlobalId, /*is_quantization_param_tensor=*/false,
+                           cached_desc));
+    EXPECT_EQ(cached_desc.GetBHWCShape(), BHWC(1, 2, 1, 12));
+    EXPECT_EQ(cached_desc.GetDataType(), DataType::kFloat16);
+    EXPECT_EQ(cached_desc.GetData().size(), 24 * sizeof(uint16_t));
+
+    ir::IrModel graph;
+    ir::IrOp* op = graph.add_op();
+    op->name = "moe_experts";
+    const uint32_t op_id = static_cast<uint32_t>(op->id);
+    const uint32_t scales_id =
+        static_cast<uint32_t>(graph.add_tensor(TensorDescriptor{})->id);
+    const uint32_t output_id =
+        static_cast<uint32_t>(graph.add_tensor(TensorDescriptor{})->id);
+    graph.AddConsumer(scales_id, op_id);
+    graph.SetProducer(output_id, op_id);
+    graph.GetMutableTensor(scales_id)->desc.SetBHWCShape(BHWC(4, 2, 1, 3));
+    graph.GetMutableTensor(scales_id)->desc.SetDataType(DataType::kFloat32);
+
+    ValueIdToSharedTensorMap buffer_id_to_spatial_tensor;
+    ValueIdToSharedTensorMap quant_param_tensors;
+    auto manager = MakeSharedMemoryManagerCl(
+        env_, create_info, std::make_unique<IrModelAdapter>(graph), &context,
+        buffer_id_to_spatial_tensor, quant_param_tensors,
+        /*has_prepacked_tflite_tensors=*/false, &cache,
+        /*madvise_original_tensors=*/false);
+
+    absl::flat_hash_map<ValueId, SharedMemoryManager::GlobalId>
+        local_to_global_id_map;
+    ASSERT_OK(manager->RegisterExternalConstantTensors(
+        scales_id, shared_tflite_tensor, local_to_global_id_map));
+    EXPECT_EQ(graph.tensor(scales_id)->desc.GetBHWCShape(), BHWC(1, 2, 1, 12));
+    EXPECT_EQ(graph.tensor(scales_id)->desc.GetDataType(), DataType::kFloat16);
+
+    ASSERT_OK_AND_ASSIGN(
+        GpuSpatialTensor * restored_tensor,
+        manager->GetExternalConstantTensor(local_to_global_id_map[scales_id]));
+    ASSERT_NE(restored_tensor, nullptr);
+    EXPECT_EQ(restored_tensor->GetDescriptor().GetBHWCShape(),
+              BHWC(1, 2, 1, 12));
+    EXPECT_EQ(restored_tensor->GetDescriptor().GetDataType(),
+              DataType::kFloat16);
+  }
 
   TfLiteIntArrayFree(tflite_tensor.dims);
 }

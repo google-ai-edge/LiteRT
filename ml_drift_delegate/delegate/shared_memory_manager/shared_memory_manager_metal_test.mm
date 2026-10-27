@@ -781,4 +781,134 @@
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
 
+- (void)testMoeExpertsBlockScalesStoredAndRestoredFromWeightCache {
+  self.continueAfterFailure = NO;
+  ml_drift::CreateGpuModelInfo create_info;
+  create_info.precision = ml_drift::CalculationsPrecision::kF16;
+  create_info.storage_type = ml_drift::TensorStorageType::kBuffer;
+
+  NSString* temp_dir =
+      [NSTemporaryDirectory() stringByAppendingPathComponent:[[NSUUID UUID] UUIDString]];
+  [[NSFileManager defaultManager] createDirectoryAtPath:temp_dir
+                            withIntermediateDirectories:YES
+                                             attributes:nil
+                                                  error:nil];
+  const std::string cache_dir = [temp_dir UTF8String];
+  const std::string model_token = "moe_scale_cache_metal_test";
+  constexpr uint64_t kModelId = 42;
+  constexpr uint32_t kGlobalId = 7;
+
+  std::vector<float> scale_data(24);
+  for (int i = 0; i < 24; ++i) {
+    scale_data[i] = 0.25f * static_cast<float>(i + 1);
+  }
+  TfLiteTensor tflite_tensor{};
+  tflite_tensor.quantization.type = kTfLiteNoQuantization;
+  tflite_tensor.type = TfLiteType::kTfLiteFloat32;
+  tflite_tensor.dims = TfLiteIntArrayCreate(4);
+  tflite_tensor.dims->data[0] = 4;
+  tflite_tensor.dims->data[1] = 2;
+  tflite_tensor.dims->data[2] = 1;
+  tflite_tensor.dims->data[3] = 3;
+  tflite_tensor.data.f = scale_data.data();
+  tflite_tensor.bytes = scale_data.size() * sizeof(float);
+
+  TfLiteContext context{};
+  context.tensors_size = 1;
+  context.tensors = &tflite_tensor;
+  ::litert::ml_drift::SharedTfliteTensor shared_tflite_tensor;
+  shared_tflite_tensor.tflite_tensor_id = 0;
+  shared_tflite_tensor.global_id = kGlobalId;
+
+  id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+  ml_drift::metal::MetalDevice metal_device(device);
+
+  // Cold build: converts scales on CPU and stores them in the weight cache.
+  {
+    ml_drift::SerializationWeightCache cache;
+    XCTAssertTrue(cache.StartBuild(cache_dir, model_token, kModelId).ok());
+
+    ml_drift::ir::IrModel graph;
+    ml_drift::ir::IrOp* op = graph.add_op();
+    op->name = "moe_experts";
+    const uint32_t op_id = static_cast<uint32_t>(op->id);
+    const uint32_t scales_id =
+        static_cast<uint32_t>(graph.add_tensor(ml_drift::TensorDescriptor{})->id);
+    const uint32_t output_id =
+        static_cast<uint32_t>(graph.add_tensor(ml_drift::TensorDescriptor{})->id);
+    graph.AddConsumer(scales_id, op_id);
+    graph.SetProducer(output_id, op_id);
+    graph.GetMutableTensor(scales_id)->desc.SetBHWCShape(ml_drift::BHWC(4, 2, 1, 3));
+    graph.GetMutableTensor(scales_id)->desc.SetDataType(ml_drift::DataType::kFloat32);
+
+    ml_drift::ValueIdToSharedTensorMap buffer_id_to_spatial_tensor;
+    ml_drift::ValueIdToSharedTensorMap quant_param_tensors;
+    auto manager = ml_drift::MakeSharedMemoryManagerMetal(
+        &metal_device, create_info, std::make_unique<ml_drift::IrModelAdapter>(graph), &context,
+        buffer_id_to_spatial_tensor, quant_param_tensors,
+        /*has_prepacked_external_tensors=*/false, &cache,
+        /*madvise_original_tensors=*/false);
+
+    absl::flat_hash_map<ml_drift::ValueId, ml_drift::SharedMemoryManager::GlobalId>
+        local_to_global_id_map;
+    XCTAssertTrue(manager
+                      ->RegisterExternalConstantTensors(scales_id, shared_tflite_tensor,
+                                                        local_to_global_id_map)
+                      .ok());
+    XCTAssertEqual(cache.GetCurrentSize(), 1u);
+    XCTAssertEqual(graph.tensor(scales_id)->desc.GetBHWCShape(), ml_drift::BHWC(1, 2, 1, 12));
+    XCTAssertEqual(graph.tensor(scales_id)->desc.GetDataType(), ml_drift::DataType::kFloat16);
+    XCTAssertTrue(cache.StopBuild().ok());
+  }
+
+  // Warm load: null out the TFLite tensor data pointer to prove the restored
+  // tensor comes from the serialization cache rather than CPU conversion.
+  tflite_tensor.data.f = nullptr;
+  {
+    ml_drift::SerializationWeightCache cache;
+    XCTAssertTrue(cache.Load(cache_dir, model_token, kModelId).ok());
+
+    ml_drift::ir::IrModel graph;
+    ml_drift::ir::IrOp* op = graph.add_op();
+    op->name = "moe_experts";
+    const uint32_t op_id = static_cast<uint32_t>(op->id);
+    const uint32_t scales_id =
+        static_cast<uint32_t>(graph.add_tensor(ml_drift::TensorDescriptor{})->id);
+    const uint32_t output_id =
+        static_cast<uint32_t>(graph.add_tensor(ml_drift::TensorDescriptor{})->id);
+    graph.AddConsumer(scales_id, op_id);
+    graph.SetProducer(output_id, op_id);
+    graph.GetMutableTensor(scales_id)->desc.SetBHWCShape(ml_drift::BHWC(4, 2, 1, 3));
+    graph.GetMutableTensor(scales_id)->desc.SetDataType(ml_drift::DataType::kFloat32);
+
+    ml_drift::ValueIdToSharedTensorMap buffer_id_to_spatial_tensor;
+    ml_drift::ValueIdToSharedTensorMap quant_param_tensors;
+    auto manager = ml_drift::MakeSharedMemoryManagerMetal(
+        &metal_device, create_info, std::make_unique<ml_drift::IrModelAdapter>(graph), &context,
+        buffer_id_to_spatial_tensor, quant_param_tensors,
+        /*has_prepacked_external_tensors=*/false, &cache,
+        /*madvise_original_tensors=*/false);
+
+    absl::flat_hash_map<ml_drift::ValueId, ml_drift::SharedMemoryManager::GlobalId>
+        local_to_global_id_map;
+    XCTAssertTrue(manager
+                      ->RegisterExternalConstantTensors(scales_id, shared_tflite_tensor,
+                                                        local_to_global_id_map)
+                      .ok());
+    XCTAssertEqual(graph.tensor(scales_id)->desc.GetBHWCShape(), ml_drift::BHWC(1, 2, 1, 12));
+    XCTAssertEqual(graph.tensor(scales_id)->desc.GetDataType(), ml_drift::DataType::kFloat16);
+
+    auto status_or_tensor = manager->GetExternalConstantTensor(local_to_global_id_map[scales_id]);
+    XCTAssertTrue(status_or_tensor.ok());
+    XCTAssertNotEqual(*status_or_tensor, nullptr);
+    XCTAssertEqual((*status_or_tensor)->GetDescriptor().GetBHWCShape(),
+                   ml_drift::BHWC(1, 2, 1, 12));
+    XCTAssertEqual((*status_or_tensor)->GetDescriptor().GetDataType(),
+                   ml_drift::DataType::kFloat16);
+  }
+
+  TfLiteIntArrayFree(tflite_tensor.dims);
+  [[NSFileManager defaultManager] removeItemAtPath:temp_dir error:nil];
+}
+
 @end
