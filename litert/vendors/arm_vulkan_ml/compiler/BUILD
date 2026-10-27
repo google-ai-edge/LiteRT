@@ -4,12 +4,90 @@
 #
 
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:__subpackages__"],
+)
+
+cc_library(
+    name = "quantization",
+    srcs = ["quantization.cc"],
+    hdrs = ["quantization.h"],
+)
+
+cc_library(
+    name = "conv2d",
+    srcs = ["conv2d.cc"],
+    hdrs = ["conv2d.h"],
+    deps = [":quantization", "@tosa_for_spirv_codegen"],
+)
+
+cc_library(
+    name = "conv2d_adapter",
+    srcs = ["conv2d_adapter.cc"],
+    hdrs = ["conv2d_adapter.h"],
+    deps = [
+        ":conv2d",
+        "//litert/c:litert_op_options",
+        "//litert/cc/internal:litert_extended_model",
+    ],
+)
+
+cc_library(
+    name = "operation",
+    srcs = ["operation.cc"],
+    hdrs = ["operation.h"],
+    deps = [
+        ":conv2d", ":conv2d_adapter", ":quantization",
+        "//litert/c:litert_op_options",
+        "//litert/cc/internal:litert_extended_model",
+        "@tosa_for_spirv_codegen",
+    ],
+)
+
+cc_library(
+    name = "partition",
+    srcs = ["partition.cc"],
+    hdrs = ["partition.h"],
+    deps = [
+        ":conv2d", ":operation",
+        "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
+        "//litert/cc/internal:litert_extended_model",
+        "@tosa_for_spirv_codegen",
+    ],
+)
+
+cc_binary(
+    name = "conv2d_fixture",
+    testonly = True,
+    srcs = ["conv2d_fixture.cc"],
+    deps = [
+        "//litert/vendors/arm_vulkan_ml/dispatch:vulkan_invocation",
+        ":conv2d_adapter",
+        ":conv2d",
+        "//litert/cc/internal:litert_extended_model",
+        "//tflite:framework",
+        "//tflite/kernels:reference_ops",
+        "//tflite/schema:schema_fbs",
+        "@tosa_for_spirv_codegen",
+    ],
+)
+
+cc_test(
+    name = "quantization_test",
+    srcs = ["quantization_test.cc"],
+    deps = [":quantization", "@com_google_googletest//:gtest_main"],
+)
+
+cc_test(
+    name = "conv2d_test",
+    srcs = ["conv2d_test.cc"],
+    deps = [":conv2d", "@tosa_for_spirv_codegen", "@com_google_googletest//:gtest_main"],
 )
 
 litert_dynamic_lib(
@@ -53,13 +131,11 @@ litert_dynamic_lib(
         "//litert/cc/internal:litert_options_wrapper",
         "//litert/cc/options:litert_arm_vulkan_ml_options",
         "//litert/compiler/cc:litert_model",
-        "//litert/vendors/arm_vulkan_ml:capabilities",
+        ":operation",
+        ":partition",
+        "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
         "//litert/vendors/c:litert_compiler_plugin_api",
         # copybara:comment_begin(oss-only)
-        "@ai_ml_sdk_vgf_library//:vgf",  # TODO: Placeholder include. Review when mature.
-        "@ai_ml_sdk_vgf_library//:vgf_utils",  # TODO: Placeholder include. Review when mature.
-        "@arm_vulkan_ml_dep_vulkan_headers//:vulkan_headers",  # TODO: Placeholder include. Review when mature.
-        "@tosa_for_spirv_codegen",  # TODO: Placeholder include. Review when mature.
         # copybara:comment_end
     ],
 )
@@ -87,6 +163,7 @@ cc_test(
         "noheapcheck",
     ],
     deps = [
+        "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
         ":compiler_plugin",  # buildcleaner: keep
         # copybara:uncomment_begin(no OSS for gunit_main_no_heapcheck)
         # "@com_google_googletest//:gtest_main_no_heapcheck",
@@ -104,5 +181,28 @@ cc_test(
         "//litert/test:matchers",
         "//litert/vendors/c:litert_compiler_plugin",
         "//litert/vendors/cc:litert_compiler_plugin",
+    ],
+)
+
+cc_test(
+    name = "quantization_reference_test",
+    srcs = ["quantization_reference_test.cc"],
+    deps = [
+        ":quantization",
+        "//tflite/kernels/internal:reference_base",
+        "//tflite/kernels/internal:quantization_util",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "operation_test",
+    srcs = ["operation_test.cc"],
+    deps = [
+        ":operation",
+        ":partition",
+        "//litert/cc/internal:litert_extended_model",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
     ],
 )

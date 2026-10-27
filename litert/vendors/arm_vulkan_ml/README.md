@@ -1,179 +1,83 @@
-# LiteRT Arm® ML Extensions for Vulkan® Integration
+# LiteRT Arm ML Extensions for Vulkan integration
 
-This directory contains the LiteRT vendor integration for Arm® Mali™ GPUs
-supporting the ML Extensions for Vulkan. It is currently a work in progress:
-the compiler plugin only accepts the JIT flow, and the dispatch implementation
-does not yet execute models.
+This worktree implements JIT compilation and synchronous execution through the
+public Vulkan tensor and data graph extensions. LiteRT lowers supported graph
+regions directly using the `tosa-for-spirv-codegen` (TFSC) core library. The
+production compiler/dispatch path does not use the TensorFlow, TCFT, MLIR or
+StableHLO converter frameworks, Arm Model Converter, or VGF serialization.
+Ordinary LiteRT runtime dependencies remain, including its StableHLO-named
+builtin kernels and TensorFlow/XLA shim headers. The Bazel C++ toolchain also
+ships LLVM/MLIR files; their presence is not a model-converter dependency.
 
-- `compiler/` builds `libLiteRtCompilerPlugin_ArmVulkanML.so`.
-- `dispatch/` builds `libLiteRtDispatch_ArmVulkanML.so`.
-- `common/` contains types shared by the integration.
+The [architecture](DIRECT_COMPILATION_DESIGN.md) explains the boundaries.
+The [TOSA capability database](tools/tosa_capabilities/README.md) is a development
+reference extracted from the local SPIR-V Registry and TOSA specification; it is
+not loaded at runtime. Actual operation selection uses the same C++ legality
+analysis as compilation. Device initialization checks Vulkan features and TOSA
+instruction-set profiles.
 
-## Compiler plugin support
+## Implemented scope
 
-It participates in partitioning only when the `enable_just_in_time` option
-is set to `true`.
+The current path accepts fixed positive shapes and dense tensors. Quantized
+activations are signed int8 with per-tensor affine quantization; convolution and
+fully connected weights are symmetric int8 with per-channel scales and int32
+biases. Analysis proves accumulator and rescale ranges before selecting an op.
 
-### Supported data types
-
-An operation is selected only when all of its input and output tensors use one
-of the following element types:
-
-| Category | LiteRT element types |
+| LiteRT operations | Constraints |
 | --- | --- |
-| Boolean | `Bool` |
-| Integer | `Int8`, `UInt8`, `Int16`, `UInt16`, `Int32`, `UInt32` |
-| Floating point | `Float16`, `Float32` |
+| CONV_2D | NHWC activation, constant OHWI weights/bias, validated padding/stride/dilation; grouped convolution lowers to slices, convolutions, concat |
+| DEPTHWISE_CONV_2D | Depth multiplier 1; constant weights/bias |
+| ADD, MUL | Validated broadcasting, int8 inputs/output, NONE/RELU/RELU6 fused activation |
+| LOGISTIC | Int8 output scale 1/256, zero point -128; reference-compatible lookup table |
+| RELU, RELU6, HARD_SWISH | Int8 lookup table preserves quantized semantics |
+| TRANSPOSE, RESHAPE, SLICE | Constant permutation/shape/slice parameters; preserved quantization |
+| PAD, PADV2 | Constant padding; PADV2 fill has matching quantization |
+| CONCATENATION | Compatible shapes and identical quantization; no fused activation |
+| MAX_POOL_2D | VALID window, preserved quantization |
+| AVERAGE_POOL_2D | Global or disjoint tiled VALID windows, preserved quantization, bounded integer sum |
+| SUM | Constant axes and keep_dims=true; bounded integer sum |
+| FULLY_CONNECTED | Constant dense int8 weights/int32 bias; default weight format; flattened output |
+| DEQUANTIZE, QUANTIZE | Int8 ↔ FP32 or int8 → int8 requantization, identical fixed shape |
 
-These types correspond to the TOSA PRO-INT and PRO-FLOAT profiles. The
-partitioner does not currently apply additional quantization-scheme checks.
+A limited FP32 path supports TRANSPOSE, RESHAPE, PAD, CONV_2D, depthwise convolution,
+HARD_SWISH, LOGISTIC, broadcast ADD/MUL and global VALID AVERAGE_POOL_2D. This
+covers the mixed-precision prefixes of MobileNetV3 Large and EfficientNet-B0,
+and SqueezeNet1.1's FP32 output pooling.
+It requires PRO-FP in addition to PRO-INT. This is not general floating-point
+model support. EfficientNet SiLU is represented as LOGISTIC followed by MUL.
 
-### Supported operations
+Requantization composes base TOSA integer operations to reproduce LiteRT's
+rounding where range proofs permit it, with per-channel decisions. It does not
+assume EXT-DOUBLEROUND support. Invalid ranges are rejected rather than wrapped.
 
-The following LiteRT operations are currently accepted by the TOSA
-legalization flow:
+## Build and validate
 
-| LiteRT Op Code |
-| --- |
-| `kLiteRtOpCodeTflAbs` |
-| `kLiteRtOpCodeTflCeil` |
-| `kLiteRtOpCodeTflFloor` |
-| `kLiteRtOpCodeTflExp` |
-| `kLiteRtOpCodeTflLog` |
-| `kLiteRtOpCodeTflRsqrt` |
-| `kLiteRtOpCodeTflLogicalNot` |
-| `kLiteRtOpCodeTflCast` |
-| `kLiteRtOpCodeTflLogicalAnd` |
-| `kLiteRtOpCodeTflLogicalOr` |
-| `kLiteRtOpCodeTflBitwiseXor` |
-| `kLiteRtOpCodeTflPow` |
-| `kLiteRtOpCodeTflGelu` |
-| `kLiteRtOpCodeTflRelu` |
-| `kLiteRtOpCodeTflReluN1To1` |
-| `kLiteRtOpCodeTflRelu0To1` |
-| `kLiteRtOpCodeTflRelu6` |
-| `kLiteRtOpCodeTflEqual` |
-| `kLiteRtOpCodeTflNotEqual` |
-| `kLiteRtOpCodeTflGreater` |
-| `kLiteRtOpCodeTflGreaterEqual` |
-| `kLiteRtOpCodeTflAdd` |
-| `kLiteRtOpCodeTflSub` |
-| `kLiteRtOpCodeTflMul` |
-| `kLiteRtOpCodeTflSquare` |
-| `kLiteRtOpCodeTflSquaredDifference` |
-| `kLiteRtOpCodeTflSign` |
-| `kLiteRtOpCodeTflRound` |
-| `kLiteRtOpCodeTflDiv` |
-| `kLiteRtOpCodeTflMaximum` |
-| `kLiteRtOpCodeTflMinimum` |
-| `kLiteRtOpCodeTflFloorMod` |
-| `kLiteRtOpCodeTflFloorDiv` |
-| `kLiteRtOpCodeTflAddN` |
-| `kLiteRtOpCodeTflAveragePool2d` |
-| `kLiteRtOpCodeTflMaxPool2d` |
-| `kLiteRtOpCodeTflConcatenation` |
-| `kLiteRtOpCodeTflReshape` |
-| `kLiteRtOpCodeTflRank` |
-| `kLiteRtOpCodeTflShape` |
-| `kLiteRtOpCodeTflExpandDims` |
-| `kLiteRtOpCodeTflSqueeze` |
-| `kLiteRtOpCodeTflFill` |
-| `kLiteRtOpCodeTflElu` |
-| `kLiteRtOpCodeTflSoftmax` |
-| `kLiteRtOpCodeTflLogSoftmax` |
-| `kLiteRtOpCodeTflSqrt` |
-| `kLiteRtOpCodeTflL2Normalization` |
-| `kLiteRtOpCodeTflReduceAll` |
-| `kLiteRtOpCodeTflReduceAny` |
-| `kLiteRtOpCodeTflReduceMax` |
-| `kLiteRtOpCodeTflReduceMin` |
-| `kLiteRtOpCodeTflMean` |
-| `kLiteRtOpCodeTflReduceProd` |
-| `kLiteRtOpCodeTflSum` |
-| `kLiteRtOpCodeTflConv2d` |
-| `kLiteRtOpCodeTflConv3d` |
-| `kLiteRtOpCodeTflTransposeConv` |
-| `kLiteRtOpCodeTflDepthwiseConv2d` |
-| `kLiteRtOpCodeTflFullyConnected` |
-| `kLiteRtOpCodeTflBatchMatmul` |
-| `kLiteRtOpCodeTflSplit` |
-| `kLiteRtOpCodeTflSplitV` |
-| `kLiteRtOpCodeTflPack` |
-| `kLiteRtOpCodeTflUnpack` |
-| `kLiteRtOpCodeTflTranspose` |
-| `kLiteRtOpCodeTflTile` |
-| `kLiteRtOpCodeTflSlice` |
-| `kLiteRtOpCodeTflStridedSlice` |
-| `kLiteRtOpCodeTflHardSwish` |
-| `kLiteRtOpCodeTflZerosLike` |
-| `kLiteRtOpCodeTflLess` |
-| `kLiteRtOpCodeTflLessEqual` |
-| `kLiteRtOpCodeTflPad` |
-| `kLiteRtOpCodeTflMirrorPad` |
-| `kLiteRtOpCodeTflPadv2` |
-| `kLiteRtOpCodeTflResizeBilinear` |
-| `kLiteRtOpCodeTflResizeNearestNeighbor` |
-| `kLiteRtOpCodeTflSelect` |
-| `kLiteRtOpCodeTflSelectV2` |
-| `kLiteRtOpCodeTflSpaceToBatchNd` |
-| `kLiteRtOpCodeTflBatchToSpaceNd` |
-| `kLiteRtOpCodeTflSpaceToDepth` |
-| `kLiteRtOpCodeTflDepthToSpace` |
-| `kLiteRtOpCodeTflBucketize` |
-| `kLiteRtOpCodeTflSin` |
-| `kLiteRtOpCodeTflCos` |
-| `kLiteRtOpCodeTflAtan2` |
-| `kLiteRtOpCodeTflLogistic` |
-| `kLiteRtOpCodeTflTanh` |
-| `kLiteRtOpCodeTflPrelu` |
-| `kLiteRtOpCodeTflLeakyRelu` |
-| `kLiteRtOpCodeTflNeg` |
-| `kLiteRtOpCodeTflReverseV2` |
-| `kLiteRtOpCodeTflQuantize` |
-| `kLiteRtOpCodeTflDequantize` |
-| `kLiteRtOpCodeTflGather` |
-| `kLiteRtOpCodeTflGatherNd` |
-| `kLiteRtOpCodeTflScatterNd` |
-| `kLiteRtOpCodeTflSparseToDense` |
-| `kLiteRtOpCodeTflOneHot` |
-| `kLiteRtOpCodeTflArgMax` |
-| `kLiteRtOpCodeTflArgMin` |
-| `kLiteRtOpCodeTflFakeQuant` |
-| `kLiteRtOpCodeTflWhile` |
-| `kLiteRtOpCodeTflReal` |
-| `kLiteRtOpCodeTflImag` |
-| `kLiteRtOpCodeTflRfft2d` |
-| `kLiteRtOpCodeTflBroadcastTo` |
+From the worktree root:
 
-The source of truth for these lists is
-[`capabilities.cc`](capabilities.cc).
-
-## Dependencies
-
-Bazel downloads the integration's pinned source dependencies on demand. These
-archives are upstream releases; it is their use by the integration
-that is still under development.
-
-- [AI/ML SDK VGF Library v0.9.0](https://github.com/arm/ai-ml-sdk-vgf-library/tree/v0.9.0)
-  provides VGF decoding and parsing.
-- [TOSA for SPIR-V™ Codegen v2.0.0](https://github.com/arm/tosa-for-spirv-codegen/tree/v2.0.0)
-  provides TOSA to SPIR-V™ code generation.
-- [Khronos® Vulkan® Headers v1.4.349](https://github.com/KhronosGroup/Vulkan-Headers/tree/v1.4.349)
-  provides the required Vulkan® definitions.
-- [Khronos® SPIR-V™ Headers from Vulkan® SDK 1.4.328.0](https://github.com/KhronosGroup/SPIRV-Headers/tree/vulkan-sdk-1.4.328.0)
-  provides the required SPIR-V™ definitions.
-
-<!-- disableFinding(LINK_RELATIVE_G3DOC) -->
-The dependency declarations and checksums are in
-[`third_party/arm_vulkan_ml/workspace.bzl`](../../../third_party/arm_vulkan_ml/workspace.bzl).
-
-To verify that the shared libraries build:
-
-```sh
-bazel test //litert/vendors/arm_vulkan_ml:build_so_test
+```bash
+mkdir -p .bazelisk-cache .cache .bazel-output
+PATH=/usr/local/bin:/usr/bin:/bin \
+XDG_CACHE_HOME="$PWD/.cache" BAZELISK_HOME="$PWD/.bazelisk-cache" \
+bazelisk --output_base="$PWD/.bazel-output" build -c opt \
+  --repo_env=HERMETIC_PYTHON_VERSION=3.13 \
+  //litert/vendors/arm_vulkan_ml/compiler:compiler_plugin_so \
+  //litert/vendors/arm_vulkan_ml/dispatch:dispatch_api_so \
+  //litert/vendors/arm_vulkan_ml/tools/qualification:qualify
 ```
 
-## Trademark Notice
+Enable LiteRT's JIT compiler option and select the NPU accelerator. Compiled
+partitions own SPIR-V, constant bytes and typed binding metadata. Each dispatch
+invocation owns Vulkan resources and retains the compiled artifact. Host input
+and output transfers use explicit synchronization; invocation is synchronous.
 
-Arm® and Mali™ are registered trademarks or trademarks of Arm Limited (or its subsidiaries or affiliates) in the US and/or elsewhere.
-Khronos® and Vulkan® are registered trademarks, and SPIR-V™ is a trademark of The Khronos Group Inc.
+See [model preparation](tools/models/README.md) and
+[bounded qualification](tools/qualification/README.md) for reproducible checks.
+The target set contains five ResNets, three ResNeXts, two Wide ResNets,
+MobileNetV2, MobileNetV3 Large, EfficientNet-B0, DenseNet121 and SqueezeNet1.1.
+MobileNetV3 Small is
+explicitly excluded.
+
+Host emulation is development evidence, not native Arm GPU qualification.
+`LITERT_ARM_VULKAN_ML_ALLOW_EMULATION=1` is an explicit development override for
+the emulation layer's nonconformant profile advertisement. Native device
+performance, Android execution and dynamic shapes are not qualified here.

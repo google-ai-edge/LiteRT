@@ -28,3 +28,8 @@ cmake_build/
 .vscode/
 *.whl
 /.litert_configure.bazelrc
+# Local Arm Vulkan ML preflight environments and execution artifacts.
+/.arm-vulkan-preflight/
+/.bazel-output/
+/.bazelisk-cache/
+/.cache/
