@@ -25,6 +25,8 @@
 #include "vulkan/vulkan.h"
 
 namespace litert::arm_vulkan_ml {
+static_assert(VK_ARM_TENSORS_SPEC_VERSION >= 2,
+              "Arm Vulkan ML requires VK_ARM_tensors Revision 2 headers");
 namespace {
 VkFormat Format(TensorElement element) {
   return element == TensorElement::kInt8 ? VK_FORMAT_R8_SINT :
@@ -189,7 +191,10 @@ struct VulkanInvocation::Impl {
       bool all = true;
       for (auto required : extensions) {
         all &= std::any_of(advertised.begin(), advertised.end(), [&](const auto& e) {
-          return !std::strcmp(required, e.extensionName);
+          const uint32_t minimum_revision =
+              !std::strcmp(required, VK_ARM_TENSORS_EXTENSION_NAME) ? 2 : 1;
+          return !std::strcmp(required, e.extensionName) &&
+                 e.specVersion >= minimum_revision;
         });
       }
       if (!all) continue;
@@ -231,7 +236,7 @@ struct VulkanInvocation::Impl {
       }
       if (physical) break;
     }
-    if (!physical) { error = "No Vulkan device advertises the artifact's TOSA requirements"; return false; }
+    if (!physical) { error = "No Vulkan device advertises VK_ARM_tensors Revision 2, the required extensions, and the artifact's TOSA requirements"; return false; }
     VkPhysicalDeviceTensorFeaturesARM tensor_features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM};
     VkPhysicalDeviceDataGraphFeaturesARM graph_features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM};
     VkPhysicalDeviceVulkan12Features f12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
@@ -467,9 +472,33 @@ struct VulkanInvocation::Impl {
     barrier.srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT;
     barrier.dstStageMask = VK_PIPELINE_STAGE_2_DATA_GRAPH_BIT_ARM;
     barrier.dstAccessMask = VK_ACCESS_2_DATA_GRAPH_READ_BIT_ARM;
-    VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-    dependency.memoryBarrierCount = 1; dependency.pMemoryBarriers = &barrier;
-    CmdPipelineBarrier2(command, &dependency);
+    auto tensor_barrier = [&](size_t first, size_t count) {
+      std::vector<VkTensorMemoryBarrierARM> tensor_barriers(
+          count, {VK_STRUCTURE_TYPE_TENSOR_MEMORY_BARRIER_ARM});
+      for (size_t i = 0; i < count; ++i) {
+        auto& tensor = tensor_barriers[i];
+        tensor.srcStageMask = barrier.srcStageMask;
+        tensor.srcAccessMask = barrier.srcAccessMask;
+        tensor.dstStageMask = barrier.dstStageMask;
+        tensor.dstAccessMask = barrier.dstAccessMask;
+        tensor.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        tensor.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        tensor.tensor = tensors[first + i].tensor;
+      }
+      // Tensor barriers are an array in the tensor dependency wrapper, not
+      // individual entries in VkDependencyInfo's pNext chain.
+      VkTensorDependencyInfoARM tensor_dependency{
+          VK_STRUCTURE_TYPE_TENSOR_DEPENDENCY_INFO_ARM};
+      tensor_dependency.tensorMemoryBarrierCount = static_cast<uint32_t>(count);
+      tensor_dependency.pTensorMemoryBarriers = tensor_barriers.data();
+      VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+      dependency.pNext = count ? &tensor_dependency : nullptr;
+      // Preserve the global dependency for other graph/session memory too.
+      dependency.memoryBarrierCount = 1;
+      dependency.pMemoryBarriers = &barrier;
+      CmdPipelineBarrier2(command, &dependency);
+    };
+    tensor_barrier(0, inputs.size());
     CmdBindPipeline(command, VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM, pipeline);
     CmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM, pipeline_layout,
                           0, 1, &descriptor_set, 0, nullptr);
@@ -479,7 +508,7 @@ struct VulkanInvocation::Impl {
     barrier.srcAccessMask = VK_ACCESS_2_DATA_GRAPH_WRITE_BIT_ARM;
     barrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
     barrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
-    CmdPipelineBarrier2(command, &dependency);
+    tensor_barrier(inputs.size(), outputs.size());
     VK_CHECK(EndCommandBuffer(command));
     VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submit.commandBufferCount = 1; submit.pCommandBuffers = &command;
