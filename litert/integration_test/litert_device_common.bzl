@@ -124,13 +124,13 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, 
         mh_user: The "run_as" arg to use in device cloud if it is enabled.
         host_libs: A list of pre-built libraries for the host platform.
         version_target_suffix: Optional version suffix for generated target names.
-        platform: Target OS platform ("android" or "macos").
+        platform: Target OS platform ("android", "macos", or "windows").
 
     Returns:
         A struct representing the backend specification.
     """
     if mh_user == None:
-        mh_user = "odml-eval-users" if platform == "macos" else "odml-device-lab"
+        mh_user = "odml-eval-users" if platform in ("macos", "windows") else "odml-device-lab"
     if platform == "android":
         libs = libs + [
             ("//litert/c:libLiteRt.so", "LD_LIBRARY_PATH"),
@@ -597,5 +597,27 @@ cc_import_files = rule(
     implementation = _cc_import_files_impl,
     attrs = {
         "target": attr.label(providers = [CcInfo]),
+    },
+)
+
+# Extracts the Windows PE32+ binary from a cross-compiled cc_test target
+# (whose DefaultInfo.files_to_run.executable is a Linux *_on_windows wrapper script).
+def _windows_bin_only_impl(ctx):
+    src_info = ctx.attr.src[DefaultInfo]
+    src_exec = src_info.files_to_run.executable
+    bins = [f for f in src_info.files.to_list() if f != src_exec]
+    target_bin = bins[0] if bins else src_exec
+    out = ctx.actions.declare_file(ctx.attr.name)
+    ctx.actions.symlink(
+        output = out,
+        target_file = target_bin,
+        is_executable = True,
+    )
+    return [DefaultInfo(files = depset([out]), runfiles = ctx.runfiles(files = [out]))]
+
+windows_bin_only = rule(
+    implementation = _windows_bin_only_impl,
+    attrs = {
+        "src": attr.label(mandatory = True),
     },
 )

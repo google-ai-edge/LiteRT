@@ -26,7 +26,8 @@ load("@rules_platform//platform_data:defs.bzl", "platform_data")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
-load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "get_spec", "host_rlocation")
+load("//litert/build_common:ynnpack_platform_data.bzl", "ynnpack_platform_data")
+load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "get_spec", "host_rlocation", "windows_bin_only")
 load("//litert/integration_test:litert_device_script.bzl", "litert_device_script")
 
 # copybara:uncomment_begin(google-only)
@@ -65,6 +66,7 @@ def hidden_test_tags():
 #         exec_env_vars = [],
 #         dimensions = {},
 #         platform = "android",
+#         enable_ynnpack = False,
 #         extra_models = []):
 #     """Wraps the mobile harness "mobile_test" macro"""
 #
@@ -116,6 +118,68 @@ def hidden_test_tags():
 #         )
 #         return
 #
+#     if platform == "windows":
+#         windows_bin_name = "{}_windows_bin.exe".format(name)
+#         platform_data_rule = ynnpack_platform_data if enable_ynnpack else platform_data
+#         platform_data_rule(
+#             name = windows_bin_name + "_platform",
+#             testonly = True,
+#             platform = "INTERNAL_WINDOWS_PLATFORM",
+#             tags = hidden_test_tags(),
+#             target = target,
+#         )
+#         windows_bin_only(
+#             name = windows_bin_name,
+#             testonly = True,
+#             tags = hidden_test_tags(),
+#             src = ":" + windows_bin_name + "_platform",
+#         )
+#         windows_files = {
+#             "windows_bin": [":" + windows_bin_name],
+#         }
+#
+#         # Strip bash quotes and caret-escape cmd.exe metacharacters for AiEdgeWindowsModelEval's cmd.exe /s /c "..." wrapper.
+#         windows_exec_args = []
+#         for arg in exec_args:
+#             arg = arg.replace("\\'", "").replace("\"", "").replace("^", "^^")
+#             for ch in ("&", "|", "<", ">", "(", ")"):
+#                 arg = arg.replace(ch, "^" + ch)
+#             windows_exec_args.append(arg)
+#         windows_extra_model_tags = []
+#         for i, m in enumerate(data + extra_models):
+#             tag = "extra_model_{}".format(i)
+#             windows_files[tag] = [m]
+#             windows_extra_model_tags.append("$$({})".format(tag))
+#         if windows_extra_model_tags:
+#             windows_exec_args.append("--extra_models={}".format(",".join(windows_extra_model_tags)))
+#         windows_exec_args.append("2>&1")
+#         windows_params = {
+#             "options": " ".join(windows_exec_args),
+#             "timeout_sec": "3600",
+#         }
+#         mobile_test(
+#             tags = hidden_test_tags(),
+#             name = name,
+#             size = "enormous",
+#             dimensions = dimensions,
+#             files = windows_files,
+#             params = windows_params,
+#             args = [
+#                 "--run_as={}".format(run_as),
+#                 "--allocation_exit_strategy=FAIL_FAST_NO_MATCH",
+#                 "--test_timeout_sec=3600",
+#                 "--start_timeout_sec=1800",
+#                 "--job_timeout_sec=3600",
+#             ],
+#             device = "WindowsDevice",
+#             driver = "AiEdgeWindowsModelEval",
+#             visibility = [
+#                 "//litert/integration_test:__subpackages__",
+#                 "//litert/google:__subpackages__",
+#             ],
+#         )
+#         return
+#
 #     android_device_gtest(
 #         name = name,
 #         bin = target,
@@ -158,6 +222,7 @@ def litert_device_exec(
         target,
         backend_id = "cpu",
         platform = "android",
+        enable_ynnpack = False,
         data = [],
         exec_args = [],
         remote_suffix = "",
@@ -177,7 +242,8 @@ def litert_device_exec(
     Args:
         name: Name of the target.
         backend_id: The backend id to use for the test (e.g. QUALCOMM_ID, GOOGLE_TENSOR_ID).
-        platform: Target OS platform ("android" or "macos").
+        platform: Target OS platform ("android", "macos", or "windows").
+        enable_ynnpack: Whether to cross-compile the Windows binary with YNNPACK enabled.
         target: The binary target to execute on device.
         data: List of data files to push to the device.
         exec_args: List of arguments to pass to the executable.
@@ -219,7 +285,7 @@ def litert_device_exec(
                 testonly = testonly,
                 visibility = visibility,
             )
-        else:
+        elif platform != "windows":
             litert_device_script(
                 name = local_name,
                 data = data,
@@ -245,6 +311,7 @@ def litert_device_exec(
             exec_env_vars = backend.env_paths,
             dimensions = dimensions if dimensions != None else backend.default_mh_device,
             platform = platform,
+            enable_ynnpack = enable_ynnpack,
             extra_models = extra_models,
         )
 
