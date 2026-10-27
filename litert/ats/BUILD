@@ -1914,10 +1914,8 @@ cc_library(
 #     extract_deps = True,
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
-#             # TODO(b/576190662): Investigate how to move forward with Pixel 6 ML Drift compatibility allowlist requiring SDK >= 35.
 #             litert_pixel_mh_guitar_test(
 #                 dimension_model = "pixel 6",
-#                 sdk_version = "regex:3[5-9]",
 #                 targets = ANDROID_ATS_GUITAR_TARGETS,
 #             ),
 #         ],
@@ -2179,11 +2177,9 @@ cc_library(
 #     extract_deps = True,
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
-#             # TODO(b/576190662): Investigate how to move forward with Pixel 6 ML Drift compatibility allowlist requiring SDK >= 35.
 #             litert_pixel_mh_guitar_test(
 #                 name = "model_tests",
 #                 dimension_model = "pixel 6",
-#                 sdk_version = "regex:3[5-9]",
 #                 targets = ANDROID_ATS_MODELS_GUITAR_TARGETS,
 #             ),
 #             litert_perfgate_upload_guitar_test(
