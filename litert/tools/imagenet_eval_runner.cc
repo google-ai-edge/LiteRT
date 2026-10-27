@@ -29,13 +29,14 @@
 #include <numeric>
 #include <set>
 #include <sstream>
-#include <stdexcept>
+#include <system_error>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "absl/log/absl_log.h"         // from @com_google_absl
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_split.h"    // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"           // from @com_google_absl
@@ -141,23 +142,24 @@ void PrintUsage(const char* argv0) {
       << "  --max_samples=0         0 means all rows\n";
 }
 
-void ValidateBackendOptions(const Config& cfg) {
+litert::Expected<void> ValidateBackendOptions(const Config& cfg) {
   bool npu = false;
   for (absl::string_view accelerator : absl::StrSplit(cfg.accelerator, ',')) {
     if (accelerator != "cpu" && accelerator != "gpu" && accelerator != "npu")
-      throw std::runtime_error("Unknown accelerator: " + std::string(accelerator));
+      return litert::Error(kLiteRtStatusErrorInvalidArgument, "Unknown accelerator: " + std::string(accelerator));
     npu |= accelerator == "npu";
   }
   if (cfg.arm_vulkan_ml_enable_jit != 0 && cfg.arm_vulkan_ml_enable_jit != 1)
-    throw std::runtime_error("arm_vulkan_ml_enable_jit must be 0 or 1");
+    return litert::Error(kLiteRtStatusErrorInvalidArgument, "arm_vulkan_ml_enable_jit must be 0 or 1");
   if (cfg.arm_vulkan_ml_enable_jit && !npu)
-    throw std::runtime_error("Arm Vulkan ML JIT requires accelerator selection to include npu");
+    return litert::Error(kLiteRtStatusErrorInvalidArgument, "Arm Vulkan ML JIT requires accelerator selection to include npu");
   if (cfg.baseline_accelerator != "inherit" && cfg.baseline_accelerator != "cpu")
-    throw std::runtime_error("baseline_accelerator must be inherit or cpu");
+    return litert::Error(kLiteRtStatusErrorInvalidArgument, "baseline_accelerator must be inherit or cpu");
   if (cfg.baseline_accelerator == "cpu" && cfg.baseline_model.empty())
-    throw std::runtime_error("CPU comparison requires baseline_model");
+    return litert::Error(kLiteRtStatusErrorInvalidArgument, "CPU comparison requires baseline_model");
   if (cfg.baseline_num_threads <= 0)
-    throw std::runtime_error("baseline_num_threads must be positive");
+    return litert::Error(kLiteRtStatusErrorInvalidArgument, "baseline_num_threads must be positive");
+  return {};
 }
 
 Config BaselineConfig(const Config& candidate) {
@@ -180,7 +182,7 @@ Config BaselineConfig(const Config& candidate) {
   return baseline;
 }
 
-void ParseArgs(int argc, char** argv, Config& cfg) {
+litert::Expected<void> ParseArgs(int argc, char** argv, Config& cfg) {
   std::unordered_map<std::string, std::string*> strings = {
       {"model", &cfg.model},
       {"baseline_model", &cfg.baseline_model},
@@ -228,50 +230,53 @@ void ParseArgs(int argc, char** argv, Config& cfg) {
     }
     if (arg.rfind("--", 0) != 0) {
       std::cerr << "Unexpected positional argument: " << arg << "\n";
-      std::exit(EXIT_FAILURE);
+      return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid command-line arguments");
     }
     size_t eq = arg.find('=');
     if (eq == std::string::npos) {
       std::cerr << "Expected --name=value argument: " << arg << "\n";
-      std::exit(EXIT_FAILURE);
+      return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid command-line arguments");
     }
     std::string name = arg.substr(2, eq - 2);
     std::string value = arg.substr(eq + 1);
     if (name == "atol" || name == "rtol") {
-      (name == "atol" ? cfg.atol : cfg.rtol) = std::stod(value);
+      if (!absl::SimpleAtod(value, name == "atol" ? &cfg.atol : &cfg.rtol))
+        return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid numeric argument: " + arg);
     } else if (auto it = strings.find(name); it != strings.end()) {
       *it->second = value;
     } else if (auto int_it = ints.find(name); int_it != ints.end()) {
-      *int_it->second = std::stoi(value);
+      if (!absl::SimpleAtoi(value, int_it->second))
+        return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid integer argument: " + arg);
     } else {
       std::cerr << "Unknown argument: --" << name << "\n";
-      std::exit(EXIT_FAILURE);
+      return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid command-line arguments");
     }
   }
   if (cfg.model.empty() || cfg.manifest.empty() || cfg.image_root.empty()) {
     PrintUsage(argv[0]);
-    std::exit(EXIT_FAILURE);
+    return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid command-line arguments");
   }
   if (cfg.num_threads < 0 || cfg.warmup_runs < 0 || cfg.start_sample < 0 ||
       cfg.max_samples < 0) {
     std::cerr << "Thread, warmup, and sample limits must be nonnegative\n";
-    std::exit(EXIT_FAILURE);
+    return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid command-line arguments");
   }
-  ValidateBackendOptions(cfg);
+  LITERT_RETURN_IF_ERROR(ValidateBackendOptions(cfg));
   if (cfg.require_output_parity && cfg.baseline_model.empty())
-    throw std::runtime_error("Output parity requires a baseline model");
+    return litert::Error(kLiteRtStatusErrorInvalidArgument, "Output parity requires a baseline model");
   if (cfg.gpu_use_ir_model != "default" && cfg.gpu_use_ir_model != "true" &&
       cfg.gpu_use_ir_model != "false")
-    throw std::runtime_error("gpu_use_ir_model must be default, true or false");
+    return litert::Error(kLiteRtStatusErrorInvalidArgument, "gpu_use_ir_model must be default, true or false");
   if (!std::isfinite(cfg.atol) || !std::isfinite(cfg.rtol) || cfg.atol < 0 ||
       cfg.rtol < 0)
-    throw std::runtime_error("Invalid comparison tolerances");
+    return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid comparison tolerances");
+  return {};
 }
 
 // Record libraries actually mapped by the process, rather than assuming that a
 // requested search directory selected the core runtime. Linux and Android use
 // this for reproducible comparisons with a Python runtime wheel.
-void RecordRuntimeLibraries(Json& summary) {
+litert::Expected<void> RecordRuntimeLibraries(Json& summary) {
 #if defined(__ANDROID__)
   for (const auto& property : {"ro.product.model", "ro.serialno", "ro.build.version.release", "ro.soc.model"}) {
     char value[PROP_VALUE_MAX] = {};
@@ -281,11 +286,10 @@ void RecordRuntimeLibraries(Json& summary) {
 #endif
 #if defined(__linux__)
   size_t thread_count = 0;
-  for (const auto& entry :
-       std::filesystem::directory_iterator("/proc/self/task")) {
-    (void)entry;
-    ++thread_count;
-  }
+  std::error_code ec;
+  for (std::filesystem::directory_iterator it("/proc/self/task", ec), end;
+       !ec && it != end; it.increment(ec)) ++thread_count;
+  if (ec) return litert::Error(kLiteRtStatusErrorRuntimeFailure, ec.message());
   summary["process_threads_after_compile"] = thread_count;
   std::ifstream maps("/proc/self/maps");
   std::set<std::string> paths;
@@ -296,14 +300,16 @@ void RecordRuntimeLibraries(Json& summary) {
     auto path = line.substr(start);
     if (std::filesystem::path(path).filename().string().rfind("libLiteRt", 0) ==
             0 &&
-        std::filesystem::is_regular_file(path))
+        std::filesystem::is_regular_file(path, ec))
       paths.insert(path);
   }
   summary["loaded_runtime_libraries"] = Json::array();
-  for (const auto& path : paths)
-    summary["loaded_runtime_libraries"].push_back(
-        {{"path", path}, {"sha256", im::HashFile(path)}});
+  for (const auto& path : paths) {
+    LITERT_ASSIGN_OR_RETURN(auto hash, im::HashFile(path));
+    summary["loaded_runtime_libraries"].push_back({{"path", path}, {"sha256", hash}});
+  }
 #endif
+  return {};
 }
 
 // Before October 2026 the runtime and XNNPACK delegate looked up CPU options
@@ -347,14 +353,17 @@ bool RequestsGpu(const Config& cfg) {
   return false;
 }
 
-std::vector<float> ParseTriple(const std::string& text) {
+litert::Expected<std::vector<float>> ParseTriple(const std::string& text) {
   std::vector<float> out;
   for (absl::string_view part : absl::StrSplit(text, ',')) {
-    out.push_back(std::stof(std::string(part)));
+    float value;
+    if (!absl::SimpleAtof(part, &value) || !std::isfinite(value))
+      return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid normalization number");
+    out.push_back(value);
   }
   if (out.size() != 3) {
     std::cerr << "Expected 3 comma-delimited values: " << text << "\n";
-    std::exit(EXIT_FAILURE);
+    return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid command-line arguments");
   }
   return out;
 }
@@ -399,10 +408,10 @@ litert::Expected<void> SetOpenVinoDevice(litert::Options& options,
   return {};
 }
 
-std::vector<Row> ReadManifest(const std::string& path) {
+litert::Expected<std::vector<Row>> ReadManifest(const std::string& path) {
   std::ifstream file(path);
   if (!file) {
-    throw std::runtime_error("Failed to open manifest: " + path);
+    return litert::Error(kLiteRtStatusErrorInvalidArgument, "Failed to open manifest: " + path);
   }
   std::vector<Row> rows;
   std::string line;
@@ -420,13 +429,17 @@ std::vector<Row> ReadManifest(const std::string& path) {
       cols.emplace_back(col);
     }
     if (cols.size() != 3) {
-      throw std::runtime_error("Bad manifest row: " + line);
+      return litert::Error(kLiteRtStatusErrorInvalidArgument, "Bad manifest row: " + line);
     }
-    Row row{std::stoi(cols[0]), std::stoi(cols[1]), cols[2]};
+    Row row{0, 0, cols[2]};
+    if (!absl::SimpleAtoi(cols[0], &row.id) || !absl::SimpleAtoi(cols[1], &row.label))
+      return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid manifest ID or label: " + line);
     if (row.path.empty() || !ids.insert(row.id).second)
-      throw std::runtime_error("Empty image path or duplicate sample ID");
+      return litert::Error(kLiteRtStatusErrorInvalidArgument, "Empty image path or duplicate sample ID");
     rows.push_back(std::move(row));
   }
+  if (!file.eof())
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure, "Failed to read manifest: " + path);
   return rows;
 }
 
@@ -461,8 +474,8 @@ std::vector<T> QuantizePerTensor(
   const int64_t q_max = static_cast<int64_t>(std::numeric_limits<T>::max());
   for (size_t i = 0; i < values.size(); ++i) {
     double scaled =
-        double(values[i]) / quantization.scale + quantization.zero_point;
-    int64_t q = std::llround(std::clamp(scaled, double(q_min), double(q_max)));
+        static_cast<double>(values[i]) / quantization.scale + quantization.zero_point;
+    int64_t q = std::llround(std::clamp(scaled, static_cast<double>(q_min), static_cast<double>(q_max)));
     out[i] = static_cast<T>(q);
   }
   return out;
@@ -563,9 +576,9 @@ struct Execution {
     LITERT_ASSIGN_OR_RETURN(auto ot, outputs[0].TensorType());
     LITERT_RETURN_IF_ERROR(WriteInputTensor(inputs[0], input, it, in));
     for (int i = 0; i < warmups; ++i)
-      LITERT_RETURN_IF_ERROR(model.Run(size_t(0), inputs, outputs));
+      LITERT_RETURN_IF_ERROR(model.Run(static_cast<size_t>(0), inputs, outputs));
     auto start = std::chrono::steady_clock::now();
-    LITERT_RETURN_IF_ERROR(model.Run(size_t(0), inputs, outputs));
+    LITERT_RETURN_IF_ERROR(model.Run(static_cast<size_t>(0), inputs, outputs));
     ms = std::chrono::duration<double, std::milli>(
              std::chrono::steady_clock::now() - start)
              .count();
@@ -605,7 +618,7 @@ litert::Expected<std::unique_ptr<Execution>> CreateExecution(
                          "Expected batch-one classification output");
   size_t classes = 1;
   for (int d : output_dims) {
-    if (d <= 0 || classes > 1048576 / size_t(d))
+    if (d <= 0 || classes > 1048576 / static_cast<size_t>(d))
       return litert::Error(kLiteRtStatusErrorInvalidArgument,
                            "Invalid classification output shape");
     classes *= d;
@@ -615,11 +628,11 @@ litert::Expected<std::unique_ptr<Execution>> CreateExecution(
   LITERT_ASSIGN_OR_RETURN(const auto& out, signature.OutputTensor(0));
   if (it.ElementType() != litert::ElementType::Float32) {
     LITERT_ASSIGN_OR_RETURN(auto q, GetPerTensorQuantization(in, "input"));
-    (void)q;
+    static_cast<void>(q);
   }
   if (ot.ElementType() != litert::ElementType::Float32) {
     LITERT_ASSIGN_OR_RETURN(auto q, GetPerTensorQuantization(out, "output"));
-    (void)q;
+    static_cast<void>(q);
   }
   return std::make_unique<Execution>(
       Execution{std::move(model), std::move(inputs), std::move(outputs),
@@ -689,10 +702,10 @@ Json DescribeExecution(const Config& cfg, bool reference_cpu) {
           {"cpu_kernel", reference_cpu ? "reference" : (cfg.xnnpack_only ? "xnnpack" : "default")},
           {"gpu_backend", cfg.gpu_backend}, {"gpu_precision", cfg.gpu_precision},
           {"gpu_use_ir_model", cfg.gpu_use_ir_model},
-          {"arm_vulkan_ml_enable_jit", bool(cfg.arm_vulkan_ml_enable_jit)},
+          {"arm_vulkan_ml_enable_jit", static_cast<bool>(cfg.arm_vulkan_ml_enable_jit)},
           {"compiler_plugin_library_dir", cfg.compiler_plugin_library_dir},
           {"dispatch_library_dir", cfg.dispatch_library_dir},
-          {"require_full_acceleration", bool(cfg.require_full_acceleration)}};
+          {"require_full_acceleration", static_cast<bool>(cfg.require_full_acceleration)}};
 }
 
 litert::Expected<Json> DelegationSummary(litert::CompiledModel& model) {
@@ -748,7 +761,7 @@ litert::Expected<void> Run(const Config& cfg, Json& summary) {
       return litert::Error(kLiteRtStatusErrorInvalidArgument,
                            "Baseline/candidate interface mismatch");
   }
-  RecordRuntimeLibraries(summary);
+  LITERT_RETURN_IF_ERROR(RecordRuntimeLibraries(summary));
   bool nchw = candidate->shape[1] == 3;
   im::Preprocessing preprocessing;
   preprocessing.interpolation = cfg.interpolation;
@@ -758,47 +771,50 @@ litert::Expected<void> Run(const Config& cfg, Json& summary) {
   preprocessing.crop_w =
       cfg.crop_w > 0 ? cfg.crop_w : candidate->shape[nchw ? 3 : 2];
   preprocessing.antialias = cfg.antialias != 0;
-  auto mean = ParseTriple(cfg.mean), stddev = ParseTriple(cfg.stddev);
+  LITERT_ASSIGN_OR_RETURN(auto mean, ParseTriple(cfg.mean));
+  LITERT_ASSIGN_OR_RETURN(auto stddev, ParseTriple(cfg.stddev));
   std::copy(mean.begin(), mean.end(), preprocessing.mean.begin());
   std::copy(stddev.begin(), stddev.end(), preprocessing.stddev.begin());
-  if (!cfg.preprocessing_config.empty())
-    preprocessing =
-        im::ParsePreprocessing(im::ReadJson(cfg.preprocessing_config));
-  im::ValidatePreprocessing(preprocessing);
+  if (!cfg.preprocessing_config.empty()) {
+    LITERT_ASSIGN_OR_RETURN(auto json, im::ReadJson(cfg.preprocessing_config));
+    LITERT_ASSIGN_OR_RETURN(preprocessing, im::ParsePreprocessing(json));
+  }
+  LITERT_RETURN_IF_ERROR(im::ValidatePreprocessing(preprocessing));
   if (preprocessing.crop_h != candidate->shape[nchw ? 2 : 1] ||
       preprocessing.crop_w != candidate->shape[nchw ? 3 : 2])
     return litert::Error(kLiteRtStatusErrorInvalidArgument,
                          "Crop/model shape mismatch");
-  auto rows = ReadManifest(cfg.manifest);
+  LITERT_ASSIGN_OR_RETURN(auto rows, ReadManifest(cfg.manifest));
   for (auto& row : rows)
     row.path = (std::filesystem::path(cfg.image_root) / row.path).string();
   summary["preprocessing"] = im::DescribePreprocessing(preprocessing);
-  summary["image_manifest_sha256"] = im::HashFile(cfg.manifest);
-  if (size_t(cfg.start_sample) > rows.size())
+  LITERT_ASSIGN_OR_RETURN(auto manifest_hash, im::HashFile(cfg.manifest));
+  summary["image_manifest_sha256"] = manifest_hash;
+  if (static_cast<size_t>(cfg.start_sample) > rows.size())
     return litert::Error(kLiteRtStatusErrorInvalidArgument,
                          "start_sample exceeds manifest size");
   rows.erase(rows.begin(), rows.begin() + cfg.start_sample);
-  if (cfg.max_samples > 0 && size_t(cfg.max_samples) < rows.size())
+  if (cfg.max_samples > 0 && static_cast<size_t>(cfg.max_samples) < rows.size())
     rows.resize(cfg.max_samples);
   if (rows.empty())
     return litert::Error(kLiteRtStatusErrorInvalidArgument,
                          "No selected samples");
   for (const auto& row : rows)
-    if (row.label < 0 || size_t(row.label) >= candidate->classes)
+    if (row.label < 0 || static_cast<size_t>(row.label) >= candidate->classes)
       return litert::Error(kLiteRtStatusErrorInvalidArgument,
                            "Label outside classification output range");
   std::ofstream out_file, scores_file, inputs_file;
   if (!cfg.out.empty()) {
     out_file.open(cfg.out);
-    if (!out_file) throw std::runtime_error("Cannot open JSONL output");
+    if (!out_file) return litert::Error(kLiteRtStatusErrorInvalidArgument, "Cannot open JSONL output");
   }
   if (!cfg.scores_out.empty()) {
     scores_file.open(cfg.scores_out, std::ios::binary);
-    if (!scores_file) throw std::runtime_error("Cannot open scores output");
+    if (!scores_file) return litert::Error(kLiteRtStatusErrorInvalidArgument, "Cannot open scores output");
   }
   if (!cfg.inputs_out.empty()) {
     inputs_file.open(cfg.inputs_out, std::ios::binary);
-    if (!inputs_file) throw std::runtime_error("Cannot open inputs output");
+    if (!inputs_file) return litert::Error(kLiteRtStatusErrorInvalidArgument, "Cannot open inputs output");
   }
   auto& out = out_file.is_open() ? out_file : std::cout;
   out << std::setprecision(9);
@@ -817,7 +833,7 @@ litert::Expected<void> Run(const Config& cfg, Json& summary) {
   im::Sha256 input_hash;
   for (size_t index = 0; index < rows.size(); ++index) {
     const auto& row = rows[index];
-    auto input = im::DecodePreprocess(row.path, preprocessing, nchw);
+    LITERT_ASSIGN_OR_RETURN(auto input, im::DecodePreprocess(row.path, preprocessing, nchw));
     input_hash.Update(input.data(), input.size() * sizeof(float));
     uint64_t fingerprint = UINT64_C(14695981039346656037);
     auto* bytes = reinterpret_cast<const uint8_t*>(input.data());
@@ -838,7 +854,7 @@ litert::Expected<void> Run(const Config& cfg, Json& summary) {
         auto scores,
         candidate->Invoke(input, index == 0 ? cfg.warmup_runs : 0, ms));
     total_ms += ms;
-    auto ranking = im::TopK(scores, 5);
+    LITERT_ASSIGN_OR_RETURN(auto ranking, im::TopK(scores, 5));
     int pred = ranking[0];
     top1 += pred == row.label;
     top5_count +=
@@ -851,9 +867,8 @@ litert::Expected<void> Run(const Config& cfg, Json& summary) {
                    {"inference_ms", ms},
                    {"output_size", scores.size()}};
     if (baseline) {
-      auto br = im::TopK(reference, 5);
-      auto comparison =
-          im::CompareScores(scores, reference, cfg.atol, cfg.rtol);
+      LITERT_ASSIGN_OR_RETURN(auto br, im::TopK(reference, 5));
+      LITERT_ASSIGN_OR_RETURN(auto comparison, im::CompareScores(scores, reference, cfg.atol, cfg.rtol));
       base_top1 += br[0] == row.label;
       base_top5 += std::find(br.begin(), br.end(), row.label) != br.end();
       agreements += br[0] == pred;
@@ -872,7 +887,7 @@ litert::Expected<void> Run(const Config& cfg, Json& summary) {
     if (scores_file.is_open())
       scores_file.write(reinterpret_cast<const char*>(scores.data()),
                         scores.size() * sizeof(float));
-    out << record.dump() << '\n';
+    out << record.dump(-1, ' ', false, Json::error_handler_t::replace) << '\n';
     summary["labels"].push_back(row.label);
     summary["candidate_predictions"].push_back(pred);
     summary["samples"] = index + 1;
@@ -892,8 +907,8 @@ litert::Expected<void> Run(const Config& cfg, Json& summary) {
   if (baseline) {
     summary["baseline_accuracy"] = base_top1 / n;
     summary["baseline_top5"] = base_top5 / n;
-    summary["accuracy_delta"] = double(top1) / n - double(base_top1) / n;
-    summary["top5_delta"] = double(top5_count) / n - double(base_top5) / n;
+    summary["accuracy_delta"] = static_cast<double>(top1) / n - static_cast<double>(base_top1) / n;
+    summary["top5_delta"] = static_cast<double>(top5_count) / n - static_cast<double>(base_top5) / n;
     summary["prediction_agreement"] = agreements / n;
     summary["output_allclose_rows"] = allclose;
     summary["output_max_abs"] = max_abs;
@@ -914,63 +929,73 @@ litert::Expected<void> Run(const Config& cfg, Json& summary) {
 int main(int argc, char** argv) {
   Config cfg;
   Json summary = {{"schema_version", 1}, {"status", "failed"}, {"samples", 0}};
-  try {
-    ParseArgs(argc, argv, cfg);
+  // Capture the report path even when an earlier argument is malformed.
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+    if (arg.rfind("--summary_json=", 0) == 0) cfg.summary_json = arg.substr(15);
+  }
+  auto evaluate = [&]() -> litert::Expected<void> {
+    LITERT_RETURN_IF_ERROR(ParseArgs(argc, argv, cfg));
+    LITERT_ASSIGN_OR_RETURN(auto model_hash, im::HashFile(cfg.model));
     summary.update(
         {{"status", "running"},
          {"model", cfg.model},
-         {"model_sha256", im::HashFile(cfg.model)},
+         {"model_sha256", model_hash},
          {"baseline_model", cfg.baseline_model},
          {"input_mode", "images"},
          {"runtime_library_dir", cfg.runtime_library_dir},
          {"dispatch_library_dir", cfg.dispatch_library_dir},
          {"compiler_plugin_library_dir", cfg.compiler_plugin_library_dir},
-         {"arm_vulkan_ml_enable_jit", bool(cfg.arm_vulkan_ml_enable_jit)},
+         {"arm_vulkan_ml_enable_jit", static_cast<bool>(cfg.arm_vulkan_ml_enable_jit)},
          {"baseline_accelerator", cfg.baseline_accelerator},
          {"accelerator", cfg.accelerator},
          {"gpu_backend", cfg.gpu_backend},
          {"gpu_precision", cfg.gpu_precision},
          {"gpu_use_ir_model", cfg.gpu_use_ir_model},
-         {"require_full_acceleration", bool(cfg.require_full_acceleration)},
+         {"require_full_acceleration", static_cast<bool>(cfg.require_full_acceleration)},
          {"num_threads", cfg.num_threads},
-         {"xnnpack_only", bool(cfg.xnnpack_only)},
+         {"xnnpack_only", static_cast<bool>(cfg.xnnpack_only)},
          {"output_tolerance", {{"atol", cfg.atol}, {"rtol", cfg.rtol}}}});
-    if (!cfg.baseline_model.empty())
-      summary["baseline_sha256"] = im::HashFile(cfg.baseline_model);
-    if (std::filesystem::is_regular_file(argv[0]))
-      summary["binary_sha256"] = im::HashFile(argv[0]);
-    if (!cfg.runtime_library_dir.empty()) {
-      auto library =
-          std::filesystem::path(cfg.runtime_library_dir) / "libLiteRt.so";
-      if (std::filesystem::is_regular_file(library))
-        summary["requested_runtime_sha256"] = im::HashFile(library.string());
+    if (!cfg.baseline_model.empty()) {
+      LITERT_ASSIGN_OR_RETURN(auto hash, im::HashFile(cfg.baseline_model));
+      summary["baseline_sha256"] = hash;
     }
-    if (!cfg.summary_json.empty()) im::WriteJson(cfg.summary_json, summary);
+    std::error_code ec;
+    if (std::filesystem::is_regular_file(argv[0], ec)) {
+      LITERT_ASSIGN_OR_RETURN(auto hash, im::HashFile(argv[0]));
+      summary["binary_sha256"] = hash;
+    }
+    if (!cfg.runtime_library_dir.empty()) {
+      auto library = std::filesystem::path(cfg.runtime_library_dir) / "libLiteRt.so";
+      if (std::filesystem::is_regular_file(library, ec)) {
+        LITERT_ASSIGN_OR_RETURN(auto hash, im::HashFile(library.string()));
+        summary["requested_runtime_sha256"] = hash;
+      }
+    }
+    if (!cfg.summary_json.empty()) {
+      LITERT_RETURN_IF_ERROR(im::WriteJson(cfg.summary_json, summary));
+    }
     auto start = std::chrono::steady_clock::now();
     auto status = Run(cfg, summary);
     summary["elapsed_seconds"] =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
             .count();
-    summary["status"] = status ? "passed" : "failed";
-    if (!status) summary["error"] = std::string(status.Error().Message());
-    if (!cfg.summary_json.empty()) im::WriteJson(cfg.summary_json, summary);
-    if (!status) {
-      std::cerr << summary["error"] << '\n';
+    return status;
+  };
+  auto status = evaluate();
+  summary["status"] = status ? "passed" : "failed";
+  if (!status) {
+    summary["error"] = std::string(status.Error().Message());
+    std::cerr << status.Error().Message() << '\n';
+  }
+  if (!cfg.summary_json.empty()) {
+    auto written = im::WriteJson(cfg.summary_json, summary);
+    if (!written) {
+      std::cerr << written.Error().Message() << '\n';
       return EXIT_FAILURE;
     }
-    return EXIT_SUCCESS;
-  } catch (const std::exception& error) {
-    std::cerr << error.what() << '\n';
-    summary["status"] = "failed";
-    summary["error"] = error.what();
-    if (!cfg.summary_json.empty()) {
-      try {
-        im::WriteJson(cfg.summary_json, summary);
-      } catch (...) {
-      }
-    }
-    return EXIT_FAILURE;
   }
+  return status ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 #endif  // LITERT_IMAGENET_EVAL_TEST

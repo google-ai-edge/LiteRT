@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "nlohmann/json.hpp"
+#include "litert/cc/litert_expected.h"
 
 namespace litert::imagenet {
 using Json = nlohmann::json;
@@ -38,10 +39,10 @@ class Sha256 {
   size_t used_ = 0;
   uint64_t bytes_ = 0;
 };
-std::string HashFile(const std::string& path);
+Expected<std::string> HashFile(const std::string& path);
 std::string HashBytes(const void* data, size_t size);
-Json ReadJson(const std::string& path);
-void WriteJson(const std::string& path, const Json& value);
+Expected<Json> ReadJson(const std::string& path);
+Expected<void> WriteJson(const std::string& path, const Json& value);
 
 struct Preprocessing {
   std::string interpolation = "bilinear";
@@ -52,28 +53,30 @@ struct Preprocessing {
   std::array<float, 3> mean = {0.485f, 0.456f, 0.406f};
   std::array<float, 3> stddev = {0.229f, 0.224f, 0.225f};
 };
-Preprocessing ParsePreprocessing(const Json& value);
+Expected<Preprocessing> ParsePreprocessing(const Json& value);
 Json DescribePreprocessing(const Preprocessing& config);
-void ValidatePreprocessing(const Preprocessing& config);
-std::array<int, 2> ResizedDimensions(int width, int height,
-                                     const Preprocessing& config);
-int CropOffset(int difference);
-std::vector<uint8_t> ResizeRgb(const uint8_t* input, int width, int height,
-                               int out_w, int out_h,
-                               const Preprocessing& config);
-std::vector<float> PreprocessRgb(const uint8_t* input, int width, int height,
-                                 const Preprocessing& config, bool nchw);
-std::vector<float> DecodePreprocess(const std::string& path,
-                                    const Preprocessing& config, bool nchw);
+Expected<void> ValidatePreprocessing(const Preprocessing& config);
+Expected<std::array<int, 2>> ResizedDimensions(int width, int height,
+                                             const Preprocessing& config);
+Expected<int> CropOffset(int difference);
+Expected<std::vector<uint8_t>> ResizeRgb(const uint8_t* input, int width,
+                                         int height, int out_w, int out_h,
+                                         const Preprocessing& config);
+Expected<std::vector<float>> PreprocessRgb(const uint8_t* input, int width,
+                                          int height,
+                                          const Preprocessing& config, bool nchw);
+Expected<std::vector<float>> DecodePreprocess(const std::string& path,
+                                             const Preprocessing& config,
+                                             bool nchw);
 
 struct Comparison {
   bool allclose = true;
   double max_abs = 0;
   double mean_abs = 0;
 };
-Comparison CompareScores(const std::vector<float>& actual,
-                         const std::vector<float>& reference, double atol,
-                         double rtol);
-std::vector<int> TopK(const std::vector<float>& scores, int k);
+Expected<Comparison> CompareScores(const std::vector<float>& actual,
+                                   const std::vector<float>& reference,
+                                   double atol, double rtol);
+Expected<std::vector<int>> TopK(const std::vector<float>& scores, int k);
 }  // namespace litert::imagenet
 #endif  // LITERT_TOOLS_IMAGENET_EVAL_DATA_H_

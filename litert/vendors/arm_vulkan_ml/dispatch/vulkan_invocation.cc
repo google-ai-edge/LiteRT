@@ -19,8 +19,9 @@
 #include <dlfcn.h>
 #include <algorithm>
 #include <cstring>
-#include <mutex>
 #include <utility>
+
+#include "absl/synchronization/mutex.h"
 #include "vulkan/vulkan.h"
 
 namespace litert::arm_vulkan_ml {
@@ -41,7 +42,7 @@ size_t Bytes(const TensorDescriptor& tensor) {
 
 struct VulkanInvocation::Impl {
   std::shared_ptr<const CompiledPartition> artifact;
-  std::mutex mutex;
+  absl::Mutex mutex;
   void* library = nullptr;
   PFN_vkGetInstanceProcAddr get = nullptr;
   PFN_vkDestroyInstance destroy_instance = nullptr;
@@ -508,7 +509,7 @@ std::unique_ptr<VulkanInvocation> VulkanInvocation::Create(
 }
 bool VulkanInvocation::Run(const std::vector<const void*>& inputs,
                            const std::vector<void*>& outputs, std::string& error) {
-  std::lock_guard<std::mutex> lock(impl_->mutex);
+  absl::MutexLock lock(&impl_->mutex);
   if (!impl_->Run(inputs, outputs)) { error = impl_->error; return false; }
   return true;
 }

@@ -14,7 +14,9 @@
 
 // Test-only exporter. Uses the production adapter/emitter and builtin CPU
 // reference kernels. VGF packaging is done by the separate Python test harness.
+#include <charconv>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -55,7 +57,10 @@ int main(int argc, char** argv) {
     return 1;
   }
   using namespace litert::arm_vulkan_ml;
-  const int op_index = std::stoi(argv[3]);
+  int op_index;
+  const char* end = argv[3] + std::strlen(argv[3]);
+  auto parsed = std::from_chars(argv[3], end, op_index);
+  if (parsed.ec != std::errc{} || parsed.ptr != end) return 1;
   auto model = litert::ExtendedModel::CreateFromFile(argv[1]);
   if (!model) { std::cerr << "Cannot load model\n"; return 1; }
   auto subgraph = model->Subgraph(0);
@@ -78,7 +83,9 @@ int main(int argc, char** argv) {
   auto spirv = tfsc::WriteToBinary(module);
   if (spirv.empty()) return 1;
   std::filesystem::path dir(argv[2]);
-  std::filesystem::create_directories(dir);
+  std::error_code error;
+  std::filesystem::create_directories(dir, error);
+  if (error) { std::cerr << error.message() << "\n"; return 1; }
   if (!Write(dir / "graph.spv", spirv.data(), spirv.size() * 4)) return 1;
   if(!Write(dir / "weights.bin",s.weights.data(),s.weights.size()) ||
      !Write(dir / "bias.bin",s.bias.data(),s.bias.size()*sizeof(int32_t)))return 1;
@@ -197,7 +204,7 @@ int main(int argc, char** argv) {
         std::cerr << reason << "\n"; return 1;
       }
       for (size_t i = 0; i < actual.size(); ++i) {
-        if (std::abs(int(actual[i]) - int(result->data.int8[i])) > 1) {
+        if (std::abs(static_cast<int>(actual[i]) - static_cast<int>(result->data.int8[i])) > 1) {
           std::cerr << "Direct Vulkan output differs from CPU at " << i << "\n";
           return 1;
         }

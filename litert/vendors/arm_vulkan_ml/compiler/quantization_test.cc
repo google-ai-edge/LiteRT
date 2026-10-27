@@ -29,7 +29,7 @@ TEST(Quantization, ScaleEncodingAndTinyMultipliers) {
     auto encoded = MakeScale32(scale);
     ASSERT_TRUE(encoded);
     const double quantum = std::ldexp(1.0, -encoded->shift);
-    EXPECT_NEAR(std::ldexp(double(encoded->multiplier), -encoded->shift),
+    EXPECT_NEAR(std::ldexp(static_cast<double>(encoded->multiplier), -encoded->shift),
                 scale, quantum * .50001);
   }
   EXPECT_FALSE(MakeScale32(0x1p-64));

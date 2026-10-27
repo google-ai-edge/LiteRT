@@ -155,7 +155,7 @@ tfsc::tosa::ResId EmitRescale(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
           {scales.begin()+first,scales.begin()+last},{ranges.begin()+first,ranges.begin()+last},constants));
       first=last;
     }
-    return graph.AddConcatOperator(pieces,Attribute(int32_t(shape.size()-1)),output_type);
+    return graph.AddConcatOperator(pieces,Attribute(static_cast<int32_t>(shape.size()-1)),output_type);
   }
   // Compose LiteRT's two rounding stages from base-profile SINGLE_ROUND
   // operations when the proven accumulator range permits a shift-31 stage.
@@ -176,7 +176,7 @@ tfsc::tosa::ResId EmitRescale(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
   auto shift = Constant(graph, Tensor(DataType::int8_t, {static_cast<uint32_t>(scales.size())}),
                          shifts, constants);
   auto zero = graph.AddTensorConstant(Attribute(int32_t{0}));
-  auto output_zp = graph.AddTensorConstant(Attribute(int8_t(output_zero_point)));
+  auto output_zp = graph.AddTensorConstant(Attribute(static_cast<int8_t>(output_zero_point)));
   tfsc::tosa::ResId rescale;
   if (staged) {
     auto value = graph.AddRescaleOperator(input, multiplier, shift, zero, zero,
@@ -270,7 +270,7 @@ tfsc::tosa::ResId EmitConv2d(tfsc::tosa::Graph& graph,
   auto weight = Constant(graph, weight_type, weights, constants);
   auto bias = Constant(graph, Tensor(DataType::int32_t, {s.weight_shape[0]}),
                         s.bias, constants);
-  auto input_zp = graph.AddTensorConstant(Attribute(int8_t(s.input_zero_point)));
+  auto input_zp = graph.AddTensorConstant(Attribute(static_cast<int8_t>(s.input_zero_point)));
   auto weight_zp = graph.AddTensorConstant(Attribute(int8_t{0}));
   // TOSA.001000.1 enum encodings (not serialization-library DType values):
   // acc_type_t::INT32 = 1, rounding_mode_t::SINGLE_ROUND = 1.
@@ -288,8 +288,8 @@ tfsc::tosa::ResId EmitConv2d(tfsc::tosa::Graph& graph,
       s.output_zero_point,plan.scales,plan.accumulator_ranges,constants);
   if (tfsc::IsError(rescale)) return rescale;
   return graph.AddClampOperator(rescale,
-      Attribute(int8_t(plan.activation_range.minimum)),
-      Attribute(int8_t(plan.activation_range.maximum)), Attribute(int32_t{1}),
+      Attribute(static_cast<int8_t>(plan.activation_range.minimum)),
+      Attribute(static_cast<int8_t>(plan.activation_range.maximum)), Attribute(int32_t{1}),
       output_type);
 }
 }  // namespace litert::arm_vulkan_ml

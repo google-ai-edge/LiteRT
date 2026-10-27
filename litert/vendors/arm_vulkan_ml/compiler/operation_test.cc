@@ -158,7 +158,7 @@ TEST(OperationTest, FloatBroadcastArithmeticChecksShapesAndTypes) {
       auto graph = model->Subgraph(0);
       ASSERT_TRUE(graph);
       std::string reason;
-      EXPECT_EQ(bool(CompilePartition(*graph, reason)), valid) << reason;
+      EXPECT_EQ(static_cast<bool>(CompilePartition(*graph, reason)), valid) << reason;
     }
   }
 }
@@ -194,7 +194,7 @@ TEST(OperationTest, FloatGlobalAveragePoolRejectsMismatchedGeometryAndMixedTypes
     auto subgraph = model->Subgraph(0);
     ASSERT_TRUE(subgraph);
     std::string reason;
-    EXPECT_EQ(bool(CompilePartition(*subgraph, reason)), variant == 0) << reason;
+    EXPECT_EQ(static_cast<bool>(CompilePartition(*subgraph, reason)), variant == 0) << reason;
   }
 }
 
@@ -220,7 +220,7 @@ TEST(OperationTest, DisjointInt8AveragePoolAcceptsCroppedEdgesButRejectsOverlap)
     auto subgraph = model->Subgraph(0);
     ASSERT_TRUE(subgraph);
     std::string reason;
-    EXPECT_EQ(bool(CompilePartition(*subgraph, reason)), variant == 0) << reason;
+    EXPECT_EQ(static_cast<bool>(CompilePartition(*subgraph, reason)), variant == 0) << reason;
   }
 }
 

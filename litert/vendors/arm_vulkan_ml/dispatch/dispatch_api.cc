@@ -16,10 +16,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include "absl/synchronization/mutex.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
@@ -38,7 +39,7 @@ struct RegisteredBuffer {
 };
 struct DeviceState {
   const LiteRtRuntimeContext* runtime;
-  std::mutex mutex;
+  absl::Mutex mutex;
   uint64_t next_handle = 1;
   std::unordered_map<LiteRtTensorBufferHandle, std::shared_ptr<RegisteredBuffer>> buffers;
 };
@@ -134,7 +135,7 @@ LiteRtStatus RegisterTensorBuffer(LiteRtDispatchDeviceContext context,
     LiteRtTensorBuffer buffer, LiteRtTensorBufferHandle* output) {
   if (!context || !buffer || !output) return kLiteRtStatusErrorInvalidArgument;
   auto& state = *context->state;
-  std::lock_guard<std::mutex> lock(state.mutex);
+  absl::MutexLock lock(&state.mutex);
   const auto* api = state.runtime;
   LiteRtTensorBufferType type;
   if (api->get_tensor_buffer_type(buffer, &type) != kLiteRtStatusOk ||
@@ -154,7 +155,7 @@ LiteRtStatus RegisterTensorBuffer(LiteRtDispatchDeviceContext context,
 LiteRtStatus UnregisterTensorBuffer(LiteRtDispatchDeviceContext context, LiteRtTensorBufferHandle handle) {
   if (!context) return kLiteRtStatusErrorInvalidArgument;
   auto& state = *context->state;
-  std::lock_guard<std::mutex> lock(state.mutex);
+  absl::MutexLock lock(&state.mutex);
   auto found = state.buffers.find(handle);
   if (found == state.buffers.end() || found->second.use_count() != 1)
     return kLiteRtStatusErrorInvalidArgument;
@@ -199,7 +200,7 @@ LiteRtStatus InvocationContextSetOptions(LiteRtDispatchInvocationContext c,
 LiteRtStatus Attach(LiteRtDispatchInvocationContext context, int index,
                     LiteRtTensorBufferHandle handle, bool input, bool detach) {
   if (!context || index < 0) return kLiteRtStatusErrorInvalidArgument;
-  std::lock_guard<std::mutex> lock(context->state->mutex);
+  absl::MutexLock lock(&context->state->mutex);
   auto& slots = input ? context->inputs : context->outputs;
   const auto& descriptors = input ? context->artifact->inputs : context->artifact->outputs;
   if (static_cast<size_t>(index) >= slots.size()) return kLiteRtStatusErrorInvalidArgument;
@@ -221,7 +222,7 @@ LiteRtStatus DetachInput(LiteRtDispatchInvocationContext c, int i, LiteRtTensorB
 LiteRtStatus DetachOutput(LiteRtDispatchInvocationContext c, int i, LiteRtTensorBufferHandle h) { return Attach(c,i,h,false,true); }
 LiteRtStatus Invoke(LiteRtDispatchInvocationContext context) {
   if (!context) return kLiteRtStatusErrorInvalidArgument;
-  std::lock_guard<std::mutex> lock(context->state->mutex);
+  absl::MutexLock lock(&context->state->mutex);
   const auto* api = context->state->runtime;
   struct Locks {
     const LiteRtRuntimeContext* api;
@@ -254,8 +255,8 @@ LiteRtStatus Invoke(LiteRtDispatchInvocationContext context) {
 LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
                                        LiteRtEnvironmentOptions env,
                                        LiteRtOptions options) {
-  (void)env;
-  (void)options;
+  static_cast<void>(env);
+  static_cast<void>(options);
   if (api_version.major != LITERT_API_VERSION_MAJOR ||
       api_version.minor < LITERT_API_VERSION_MINOR) {
     return kLiteRtStatusErrorWrongVersion;

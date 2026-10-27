@@ -86,8 +86,8 @@ ResId Rescale(Graph& g, ResId input, const std::vector<uint32_t>& shape,
       Attribute(false),TosaTensor(output_type,shape));
 }
 ResId Clamp(Graph& g, ResId input, const OperationPlan& p) {
-  return g.AddClampOperator(input, Attribute(int8_t(p.activation.minimum)),
-      Attribute(int8_t(p.activation.maximum)), Attribute(int32_t{1}),
+  return g.AddClampOperator(input, Attribute(static_cast<int8_t>(p.activation.minimum)),
+      Attribute(static_cast<int8_t>(p.activation.maximum)), Attribute(int32_t{1}),
       TosaTensor(DataType::int8_t,p.output.shape));
 }
 ResId Reshape(Graph& g, ResId input, DataType type, const std::vector<uint32_t>& shape) {
@@ -141,7 +141,7 @@ bool AnalyzeFloatConvolution(const Op& op, OperationPlan& p, std::string& reason
   p.cropped_shape=p.inputs[0].shape;
   for(int axis=0;axis<2;++axis) {
     if(p.stride[axis]<=0 || p.dilation[axis]<=0)return false;
-    int64_t n=p.inputs[0].shape[axis+1], k=(int64_t(p.weight_shape[axis+1])-1)*p.dilation[axis]+1;
+    int64_t n=p.inputs[0].shape[axis+1], k=(static_cast<int64_t>(p.weight_shape[axis+1])-1)*p.dilation[axis]+1;
     int64_t expected=padding==0?(n+p.stride[axis]-1)/p.stride[axis]:(n-k)/p.stride[axis]+1;
     if((padding==1 && n<k) || expected!=p.output.shape[axis+1])return false;
     int64_t total=padding==0?std::max(int64_t{0},(expected-1)*p.stride[axis]+k-n):0;
@@ -233,7 +233,7 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
       int inferred=0;
       for(size_t i=0;i<p.parameters.size();++i) {
         if(p.parameters[i]==-1)++inferred;
-        else if(p.parameters[i]<=0 || uint32_t(p.parameters[i])!=output->shape[i])return reject("RESHAPE shape disagrees");
+        else if(p.parameters[i]<=0 || static_cast<uint32_t>(p.parameters[i])!=output->shape[i])return reject("RESHAPE shape disagrees");
       }
       if(inferred>1)return reject("RESHAPE has multiple inferred dimensions");
       break;
@@ -245,7 +245,7 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
       if(!constant_ints(2) || p.parameters.size()!=input->shape.size())return reject("Invalid SLICE size");
       for(size_t i=0;i<p.parameters.size();++i) {
         int64_t start=p.kernel[i],size=p.parameters[i];
-        if(size==-1)size=int64_t(input->shape[i])-start;
+        if(size==-1)size=static_cast<int64_t>(input->shape[i])-start;
         if(start<0 || size<=0 || start+size>input->shape[i] || size!=output->shape[i])return reject("SLICE bounds mismatch");
         p.parameters[i]=size;
       }
@@ -293,9 +293,9 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
         // Match LiteRT's reference LUT using float arithmetic, then store in
         // TOSA TABLE's signed input order (-128 through 127).
         for (int code = -128; code <= 127; ++code) {
-          float x = float(input->scale) * (code - input->zero_point);
+          float x = static_cast<float>(input->scale) * (code - input->zero_point);
           float y = 1.0f / (1.0f + std::exp(-x));
-          int value = int(std::round(y * 256.0f)) - 128;
+          int value = static_cast<int>(std::round(y * 256.0f)) - 128;
           p.table.push_back(std::clamp(value, -128, 127));
         }
       }
@@ -335,7 +335,7 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
         for(int64_t b:{-128-rhs->zero_point,127-rhs->zero_point}) {lo=std::min(lo,a*b);hi=std::max(hi,a*b);}
       if(!scale || !IsScale32RangeValid(*scale,lo,hi)) return reject("MUL rescale range invalid");
       p.inputs.push_back(*rhs);p.runtime_inputs.push_back(1);p.scales.push_back(*scale);
-      p.ranges.push_back({int32_t(lo),int32_t(hi)});
+      p.ranges.push_back({static_cast<int32_t>(lo),static_cast<int32_t>(hi)});
       break;
     }
     case kLiteRtOpCodeTflTranspose: {
@@ -402,7 +402,7 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
         minimum+=*ApplyScale32(lo,p.scales[i]); maximum+=*ApplyScale32(hi,p.scales[i]);
       }
       if(!IsScale32RangeValid(p.scales[2],minimum,maximum)) return reject("ADD accumulator range invalid");
-      p.ranges.push_back({int32_t(minimum),int32_t(maximum)});
+      p.ranges.push_back({static_cast<int32_t>(minimum),static_cast<int32_t>(maximum)});
       break;
     }
     case kLiteRtOpCodeTflMaxPool2d:
@@ -439,7 +439,7 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
           p.kernel[0] == input->shape[1] && p.kernel[1] == input->shape[2];
       const bool tiled = !input->floating && p.stride == p.kernel;
       if (avg && ((!global && !tiled) ||
-          uint64_t{uint32_t(p.kernel[0])} * p.kernel[1] * 255 > INT32_MAX))
+          uint64_t{static_cast<uint32_t>(p.kernel[0])} * p.kernel[1] * 255 > INT32_MAX))
         return reject("AVG_POOL requires a bounded global or disjoint int8 VALID window");
       break;
     }
@@ -469,7 +469,7 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
         return reject("FC requires dense int8 matrix weights and int32 vector bias");
       auto dims=wt->Layout().Dimensions();
       if(dims[0]<=0 || dims[1]<=0 || bt->Layout().Dimensions()[0]!=dims[0] ||
-         Count(input->shape)%dims[1] || output->shape!=std::vector<uint32_t>{uint32_t(Count(input->shape)/dims[1]),uint32_t(dims[0])})
+         Count(input->shape)%dims[1] || output->shape!=std::vector<uint32_t>{static_cast<uint32_t>(Count(input->shape)/dims[1]),static_cast<uint32_t>(dims[0])})
         return reject("FC shapes disagree");
       uint32_t format,fused; bool keep;
       if(LiteRtGetFullyConnectedWeightsFormatOption(op.Get(),&format)!=kLiteRtStatusOk || format ||
@@ -479,8 +479,8 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
       // asymmetric_quantize_inputs only affects hybrid float-input FC. The
       // fixed int8 path above uses the tensor's explicit scale and zero point.
       auto activation=ActivationCode(fused); if(!activation) return reject("Unsupported FC activation");
-      Conv2dSpec s{}; s.input_shape={output->shape[0],1,1,uint32_t(dims[1])};
-      s.weight_shape={uint32_t(dims[0]),1,1,uint32_t(dims[1])}; s.output_shape={output->shape[0],1,1,uint32_t(dims[0])};
+      Conv2dSpec s{}; s.input_shape={output->shape[0],1,1,static_cast<uint32_t>(dims[1])};
+      s.weight_shape={static_cast<uint32_t>(dims[0]),1,1,static_cast<uint32_t>(dims[1])}; s.output_shape={output->shape[0],1,1,static_cast<uint32_t>(dims[0])};
       s.stride={1,1};s.dilation={1,1};s.activation=*activation;
       s.input_scale=input->scale;s.input_zero_point=input->zero_point;
       s.output_scale=output->scale;s.output_zero_point=output->zero_point;
@@ -506,17 +506,17 @@ ResId EmitFloatOperation(Graph& g,const std::vector<ResId>& inputs,const Operati
   switch(p.code) {
     case kLiteRtOpCodeTflDequantize:
       value=g.AddCastOperator(value,ftype);
-      value=g.AddSubOperator(value,scalar(float(q.zero_point)),ftype);
-      return mul(value,scalar(float(q.scale)));
+      value=g.AddSubOperator(value,scalar(static_cast<float>(q.zero_point)),ftype);
+      return mul(value,scalar(static_cast<float>(q.scale)));
     case kLiteRtOpCodeTflQuantize: {
       // Match affine quantization: round the scaled value before adding zp.
-      value=mul(value,scalar(float(1.0/p.output.scale)));
+      value=mul(value,scalar(static_cast<float>(1.0/p.output.scale)));
       auto positive=g.AddGreaterEqualOperator(value,scalar(0),TosaTensor(DataType::bool_t,p.output.shape));
       auto up=g.AddFloorOperator(g.AddAddOperator(value,scalar(.5f),ftype),ftype);
       auto negative=g.AddSubOperator(scalar(0),value,ftype);
       auto down=g.AddSubOperator(scalar(0),g.AddFloorOperator(g.AddAddOperator(negative,scalar(.5f),ftype),ftype),ftype);
       value=g.AddSelectOperator(positive,up,down,ftype);
-      value=g.AddAddOperator(value,scalar(float(p.output.zero_point)),ftype);
+      value=g.AddAddOperator(value,scalar(static_cast<float>(p.output.zero_point)),ftype);
       value=g.AddClampOperator(value,Attribute(-128.0f),Attribute(127.0f),Attribute(int32_t{1}),ftype);
       return g.AddCastOperator(value,TosaTensor(DataType::int8_t,p.output.shape));
     }
@@ -625,15 +625,15 @@ ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPla
       if (p.output.shape[1] == 1 && p.output.shape[2] == 1) {
         for (int axis : {1, 2}) {
           shape[axis] = 1;
-          value = g.AddReduceSumOperator(value, Attribute(int32_t(axis)), TosaTensor(DataType::int32_t, shape));
+          value = g.AddReduceSumOperator(value, Attribute(static_cast<int32_t>(axis)), TosaTensor(DataType::int32_t, shape));
         }
       } else {
-        shape = {shape[0], p.output.shape[1], uint32_t(p.kernel[0]),
-                 p.output.shape[2], uint32_t(p.kernel[1]), shape[3]};
+        shape = {shape[0], p.output.shape[1], static_cast<uint32_t>(p.kernel[0]),
+                 p.output.shape[2], static_cast<uint32_t>(p.kernel[1]), shape[3]};
         value = Reshape(g, value, DataType::int32_t, shape);
         for (int axis : {2, 4}) {
           shape[axis] = 1;
-          value = g.AddReduceSumOperator(value, Attribute(int32_t(axis)), TosaTensor(DataType::int32_t, shape));
+          value = g.AddReduceSumOperator(value, Attribute(static_cast<int32_t>(axis)), TosaTensor(DataType::int32_t, shape));
         }
         shape = p.output.shape;
         value = Reshape(g, value, DataType::int32_t, shape);
@@ -654,8 +654,8 @@ ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPla
       ResId result;
       if(p.code==kLiteRtOpCodeTflMaxPool2d)
         result=g.AddMaxPool2dOperator(input,Attribute(p.kernel),Attribute(p.stride),Attribute({0,0,0,0}),Attribute(int32_t{1}),out);
-      else result=g.AddAvgPool2dOperator(input,g.AddTensorConstant(Attribute(int8_t(q.zero_point))),
-          g.AddTensorConstant(Attribute(int8_t(p.output.zero_point))),Attribute(p.kernel),Attribute(p.stride),
+      else result=g.AddAvgPool2dOperator(input,g.AddTensorConstant(Attribute(static_cast<int8_t>(q.zero_point))),
+          g.AddTensorConstant(Attribute(static_cast<int8_t>(p.output.zero_point))),Attribute(p.kernel),Attribute(p.stride),
           Attribute({0,0,0,0}),Attribute(int32_t{1}),out);
       return Clamp(g,result,p);
     }
@@ -672,7 +672,7 @@ ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPla
       std::vector<int8_t> transposed(s.weights.size());
       for(uint32_t c=0;c<channels;++c) for(uint32_t i=0;i<k;++i) transposed[i*channels+c]=s.weights[c*k+i];
       auto b=Constant(g,transposed,{1,k,channels},constants);
-      auto value=g.AddMatmulOperator(a,b,g.AddTensorConstant(Attribute(int8_t(q.zero_point))),
+      auto value=g.AddMatmulOperator(a,b,g.AddTensorConstant(Attribute(static_cast<int8_t>(q.zero_point))),
           g.AddTensorConstant(Attribute(int8_t{0})),TosaTensor(DataType::int32_t,{1,batch,channels}));
       auto bias=Constant(g,s.bias,{1,1,channels},constants);
       value=g.AddAddOperator(value,bias,TosaTensor(DataType::int32_t,{1,batch,channels}));

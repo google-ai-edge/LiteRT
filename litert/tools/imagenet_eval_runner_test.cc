@@ -32,7 +32,7 @@ TEST(EvaluationOptionsTest, CpuBaselineDoesNotInheritVendorOptions) {
   cfg.require_full_acceleration = 1;
   cfg.num_threads = 4;
   cfg.xnnpack_only = 1;
-  EXPECT_NO_THROW(ValidateBackendOptions(cfg));
+  EXPECT_TRUE(ValidateBackendOptions(cfg));
   auto baseline = BaselineConfig(cfg);
   EXPECT_EQ(baseline.accelerator, "cpu");
   EXPECT_EQ(baseline.num_threads, 1);
@@ -89,21 +89,37 @@ TEST(EvaluationOptionsTest, ArmJitIsOptInAndOwnedIndependently) {
 
 TEST(EvaluationOptionsTest, RejectsInvalidBackendCombinations) {
   Config cfg;
-  EXPECT_NO_THROW(ValidateBackendOptions(cfg));
+  EXPECT_TRUE(ValidateBackendOptions(cfg));
   cfg.arm_vulkan_ml_enable_jit = 1;
-  EXPECT_THROW(ValidateBackendOptions(cfg), std::runtime_error);
+  EXPECT_FALSE(ValidateBackendOptions(cfg));
   cfg.accelerator = "npu";
-  EXPECT_NO_THROW(ValidateBackendOptions(cfg));
+  EXPECT_TRUE(ValidateBackendOptions(cfg));
   cfg.arm_vulkan_ml_enable_jit = 2;
-  EXPECT_THROW(ValidateBackendOptions(cfg), std::runtime_error);
+  EXPECT_FALSE(ValidateBackendOptions(cfg));
   cfg.arm_vulkan_ml_enable_jit = 0;
   cfg.baseline_accelerator = "cpu";
-  EXPECT_THROW(ValidateBackendOptions(cfg), std::runtime_error);
+  EXPECT_FALSE(ValidateBackendOptions(cfg));
   cfg.baseline_model = "baseline.tflite";
   cfg.baseline_num_threads = 0;
-  EXPECT_THROW(ValidateBackendOptions(cfg), std::runtime_error);
+  EXPECT_FALSE(ValidateBackendOptions(cfg));
   cfg.baseline_num_threads = 1;
   cfg.accelerator = "typo";
-  EXPECT_THROW(ValidateBackendOptions(cfg), std::runtime_error);
+  EXPECT_FALSE(ValidateBackendOptions(cfg));
+}
+TEST(EvaluationOptionsTest, RejectsMalformedNumbersWithoutExceptions) {
+  for (const std::string& bad : {"--max_samples=3oops", "--num_threads=99999999999999999999",
+                                 "--atol=invalid", "--std=0.1,no,0.3"}) {
+    std::vector<std::string> args = {"eval", "--model=model.tflite", "--manifest=manifest.tsv",
+                                     "--image_root=images", bad};
+    std::vector<char*> argv;
+    for (auto& arg : args) argv.push_back(arg.data());
+    Config cfg;
+    if (bad.rfind("--std=", 0) == 0) {
+      ASSERT_TRUE(ParseArgs(argv.size(), argv.data(), cfg));
+      EXPECT_FALSE(ParseTriple(cfg.stddev));
+    } else {
+      EXPECT_FALSE(ParseArgs(argv.size(), argv.data(), cfg));
+    }
+  }
 }
 }  // namespace
