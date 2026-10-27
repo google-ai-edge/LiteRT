@@ -177,6 +177,12 @@ def litert_gpu_accelerator_prebuilts():
         "//litert:ios_sim_arm64": [
             "@litert_prebuilts//:ios_sim_arm64/libLiteRtMetalAccelerator.dylib",  # copybara:comment
         ],
+        # `:windows_arm64` is a specialization of `:windows`, so it wins on ARM64.
+        # Windows ARM64 builds the accelerator from source (with the same MSVC
+        # toolchain as the rest of the build) instead of using a prebuilt.
+        "//litert:windows_arm64": [
+            "//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_dll",
+        ],
         "//litert:windows": [
             "@litert_prebuilts//:windows_x86_64/libLiteRtWebGpuAccelerator.dll",  # copybara:comment
         ],

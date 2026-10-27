@@ -35,7 +35,7 @@ config_setting(
 
 config_setting(
     name = "windows",
-    values = {"cpu": "x64_windows"},
+    constraint_values = ["@platforms//os:windows"],
 )
 
 # Public flatc library to compile flatbuffer files at runtime.
