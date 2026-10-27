@@ -20,7 +20,7 @@ load("//litert/ats:ats.bzl", "litert_define_ats")
 # copybara:uncomment load("//litert/ats:models.bzl", "CLASSICAL_ALL_MODELS")
 load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "if_oss", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
-# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_exynos_mh_guitar_test", "litert_macos_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_npu_aot_guitar_test", "litert_perfgate_upload_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_pixel_mh_guitar_test", "litert_qualcomm_mh_guitar_test", "litert_windows_mh_guitar_test")
+# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_exynos_mh_guitar_test", "litert_intel_openvino_mh_guitar_test", "litert_macos_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_npu_aot_guitar_test", "litert_perfgate_upload_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_pixel_mh_guitar_test", "litert_qualcomm_mh_guitar_test", "litert_windows_mh_guitar_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -661,8 +661,6 @@ litert_define_ats(
         "Slice",  # OpenCL Slice uses kExact byte comparison on FP16-rounded f32 buffers
         "RuntimeBmm.*(i4|i8)",  # GPU odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
         "MoeExperts",  # ML Drift GPU delegate expects tfl.custom "moe" with 4D OHWI weights rather than shlo.composite "odml.moe_experts"
-        # TODO(b/583887564): Enable once IrModel constant pos lowering lands.
-        "Rope.*_i32<[^>]+>_cst",
         # TODO(b/576190160): Investigate GroupNorm numerical mismatch and SIGKILL on Qualcomm S26 (Adreno 840).
         "GroupNorm",
         "hf_all_minilm_l6_v2",
@@ -676,18 +674,74 @@ litert_define_ats(
     ],
 )
 
+INTEL_OPENVINO_DONT_REGISTER = [
+    "CompositeOp",
+    "Transformer",
+    "TflMoe",  # OpenVINO plugin does not support TflMoe custom op
+    "5d",
+    "6d",
+    "7d",
+    "8d",
+    "BinaryBroadcast.*[234]d_",  # Intel NPU VCL compiler rejects ATS bidirectional batch broadcasts on 2D-4D tensors
+    "LogSoftmax",  # OpenVINO plugin does not support LogSoftmax
+    "tfl[.]reduce_min",  # OpenVINO plugin does not support ReduceMin
+    "tfl[.]reduce_prod",  # OpenVINO plugin does not support ReduceProd
+    "tfl[.](ceil|elu|floor|neg|relu6|relu_n1_to_1|round|zeros_like)[{]",  # Unsupported Unary ops in OpenVINO plugin
+    "FullyConnected.*SHUFFLED",  # OpenVINO TFLite frontend does not support SHUFFLED4x16INT8 weights
+    "Transpose.*[(][1-8]d_(i1|i4|i8|u8|i16|u16|i32|u32|i64|u64)",  # OpenVINO NPU VCL compiler rejects integral Transpose with per-channel affine quantization
+    "average_pool_2d.*filter_width=10",  # Intel NPU pooling kernel width hardware limit
+    "hf_all_minilm_l6_v2",
+    "whisper_tiny_decoder",
+    "qai_hub_real_esrgan_x4plus",
+]
+
+INTEL_OPENVINO_RUN_DONT_REGISTER = [
+    "Comparison",  # Intel NPU executes f32 comparisons in FP16 precision under kExact and fails runtime/accuracy on greater/greater_equal
+    "OneHot",  # Intel NPU runtime fails to execute OneHot on PTL hardware
+    "SelectV2.*f32",  # Intel NPU executes f32 SelectV2 in FP16 precision, failing kExact byte comparison
+    "Slice.*f32",  # Intel NPU executes f32 Slice in FP16 precision, failing kExact byte comparison
+    "Transpose.*f32",  # Intel NPU executes f32 Transpose in FP16 precision, failing kExact byte comparison
+    "FullyConnected.*(i4|i8)",  # Intel NPU quantized INT4/INT8 FullyConnected exhibits dequantization rounding divergence
+    "Pooling.*padding=SAME",  # Intel NPU SAME-padded pooling exhibits boundary padding rounding divergence
+]
+
+INTEL_OPENVINO_SOC_MODELS = {
+    "lnl": "LNL",
+    "ptl": "PTL",
+}
+
+litert_define_ats(
+    name = "intel_openvino_compile_ats",
+    aot_shard_count = 32,
+    aot_tags = [
+        "manual",
+        "notap",
+    ],
+    backend = "intel_openvino",
+    dont_register = INTEL_OPENVINO_DONT_REGISTER,
+    mode = "compile_only",
+    soc_models = INTEL_OPENVINO_SOC_MODELS,
+)
+
 litert_define_ats(
     name = "intel_openvino_jit_ats",
     backend = "intel_openvino",
-    dont_register = [
-        "CompositeOp",
-        "Transformer",
-        "6d",
-        "hf_all_minilm_l6_v2",
-        "whisper_tiny_decoder",
-        "qai_hub_real_esrgan_x4plus",
-    ],
+    dont_register = INTEL_OPENVINO_DONT_REGISTER + INTEL_OPENVINO_RUN_DONT_REGISTER,
     mode = "jit",
+    soc_models = INTEL_OPENVINO_SOC_MODELS,
+)
+
+litert_define_ats(
+    name = "intel_openvino_aot_ats",
+    aot_shard_count = 32,
+    aot_tags = [
+        "manual",
+        "notap",
+    ],
+    backend = "intel_openvino",
+    dont_register = INTEL_OPENVINO_DONT_REGISTER + INTEL_OPENVINO_RUN_DONT_REGISTER,
+    mode = "aot",
+    soc_models = INTEL_OPENVINO_SOC_MODELS,
 )
 
 SAMSUNG_DONT_REGISTER = [
@@ -2796,6 +2850,7 @@ cc_library(
 #     ":google_tensor_compile_ats",
 #     ":qualcomm_compile_ats",
 #     ":mediatek_compile_ats",
+#     ":intel_openvino_compile_ats",
 #     ":example_compile_ats",
 # ]
 #
@@ -2816,5 +2871,31 @@ cc_library(
 #         "manual",
 #         "notap",
 #     ],
+# )
+#
+# INTEL_OPENVINO_PTL_ATS_GUITAR_TARGETS = [
+#     ":intel_openvino_ptl_jit_ats_remote",
+#     ":intel_openvino_ptl_aot_ats_remote",
+# ]
+#
+# guitar_workflow_test(
+#     name = "litert_ats_guitar_intel_openvino_ptl",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_intel_openvino_mh_guitar_test(
+#                 targets = INTEL_OPENVINO_PTL_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+#     # OpenVINO targets are only built for android_x86_64.
+#     validation_test_tags = ["not_build:arm"],
 # )
 # copybara:uncomment_end

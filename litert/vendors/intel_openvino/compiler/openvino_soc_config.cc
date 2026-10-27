@@ -57,6 +57,9 @@ LiteRtStatus GetSocModelConfig(absl::string_view codename,
 
 LiteRtStatus ConfigureCompilationParams(const char* soc_model,
                                         ov::AnyMap& configs_map) {
+  // LiteRT models do not set OpenVINO batch layouts, so plugin-side batching
+  // (NPU_BATCH_MODE=AUTO) always throws an exception (uncaught on Android).
+  configs_map.try_emplace("NPU_BATCH_MODE", "COMPILER");
   if (soc_model == nullptr) {
     LITERT_LOG(LITERT_INFO,
                "Soc model is null, Compile will proceed with default NPU "
