@@ -48,10 +48,6 @@
 #include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/event.h"
 
-#if LITERT_HAS_OPENCL_SUPPORT
-#include "litert/runtime/open_cl_memory.h"
-#include <CL/cl.h>
-#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
 #include "litert/c/litert_gl_types.h"
@@ -278,8 +274,7 @@ LiteRtTensorBufferT::CreateManagedOnHostMemory(
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to allocate aligned memory");
   }
-  std::memset(static_cast<uint8_t*>(host_memory_ptr) + buffer_size, 0,
-              XNN_EXTRA_BYTES);
+  std::memset(host_memory_ptr, 0, buffer_size + XNN_EXTRA_BYTES);
 
   LiteRtHostMemoryDeallocator deallocator = FreeHostMemory;
   LITERT_ASSIGN_OR_RETURN(

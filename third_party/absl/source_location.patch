@@ -1,0 +1,35 @@
+# Copyright 2026 The Google AI Edge Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+# Always use Abseil's own absl::SourceLocation instead of aliasing
+# std::source_location when compiling in C++20 mode.
+#
+# On Windows, LiteRT compiles with /std:c++20 but compiles protobuf sources with
+# /std:c++17 (see bazelrc). With the default value of 2, absl::SourceLocation
+# names different types in the two modes, so the explicitly instantiated
+# absl::status_internal::MakeErrorImpl<N>(string_view, SourceLocation) symbols
+# from status.cc (C++20) do not match the ones referenced by protobuf (C++17),
+# and linking fails with LNK2019 unresolved external symbol errors.
+diff --git a/absl/base/options.h b/absl/base/options.h
+--- a/absl/base/options.h
++++ b/absl/base/options.h
+@@ -99,7 +99,7 @@
+ // the source location type is an alias of std::source_location type, use the
+ // feature macro ABSL_USES_STD_SOURCE_LOCATION.
+ //
+-#define ABSL_OPTION_USE_STD_SOURCE_LOCATION 2
++#define ABSL_OPTION_USE_STD_SOURCE_LOCATION 0
+ 
+ // ABSL_OPTION_USE_STD_ORDERING
+ //
