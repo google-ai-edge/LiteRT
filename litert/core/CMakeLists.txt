@@ -29,6 +29,7 @@ add_library(litert_core STATIC
     litert_options_encoder.cc
     litert_toml_parser.cc
     util/flatbuffer_tools.cc
+    util/memory_advice.cc
     util/tensor_type_util.cc
 )
 

@@ -100,6 +100,7 @@
 #include "litert/runtime/accelerator.h"
 #include "litert/runtime/custom_op_dispatcher.h"
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
+#include "litert/runtime/embedding_row_prefetcher.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #if !defined(LITERT_DISABLE_CPU)
 #include "litert/runtime/litert_cpu_options.h"
@@ -2509,6 +2510,25 @@ Expected<void> LiteRtCompiledModelT::Run(
     LITERT_RETURN_IF_ERROR(MarkSignatureAllocationUpToDate(runner));
   }
 
+  // The embedding row prefetch hint runs after AllocateTensors() so the
+  // execution plan it discovers is the one Invoke() runs: AllocateTensors()
+  // re-applies delegates that ResizeInputTensor() undid and inlines
+  // STABLEHLO_COMPOSITE nodes, both of which can move an EMBEDDING_LOOKUP into
+  // or out of the CPU plan. The hint is advisory, so a failure only logs.
+  if (run_options != nullptr &&
+      !run_options->prefetch_embedding_token_ids.empty()) {
+    for (size_t i = 0; i < signature_keys_.size(); ++i) {
+      if (*signature_keys_[i] != signature_key) continue;
+      if (auto prefetch_res = PrefetchEmbeddingRows(
+              i, run_options->prefetch_embedding_token_ids);
+          !prefetch_res.HasValue()) {
+        LITERT_LOG(LITERT_DEBUG, "Embedding row prefetch skipped: %s",
+                   prefetch_res.Error().Message().c_str());
+      }
+      break;
+    }
+  }
+
   // Relay scheduling information to DelegateKernel of Accelerator. This is
   // used by vendor delegates (e.g. NPU dispatch implementations) to pass
   // scheduling hints/metadata down to the hardware runtime.
@@ -3043,6 +3063,40 @@ void LiteRtCompiledModelT::SetCancellationFunction(
   interp_->SetCancellationFunction(data, check_cancelled_func);
 }
 
+Expected<void> LiteRtCompiledModelT::PrefetchEmbeddingRows(
+    size_t signature_index, absl::Span<const int32_t> token_ids) {
+  if (!interp_) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Interpreter is not initialized.");
+  }
+  if (signature_index >= signature_keys_.size()) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Signature index is out of range of signature keys");
+  }
+  const std::string& signature_key = *signature_keys_[signature_index];
+  LITERT_RETURN_IF_ERROR(ValidateSignatureIsActive(signature_key));
+
+  auto it = embedding_prefetchers_by_signature_.find(signature_index);
+  if (it == embedding_prefetchers_by_signature_.end()) {
+    // Same signature -> subgraph mapping as MarkSignatureIoTensorsNonCpu().
+    const bool has_signature_defs = !interp_->signature_keys().empty();
+    const int subgraph_index =
+        has_signature_defs
+            ? interp_->GetSubgraphIndexFromSignature(signature_key.c_str())
+            : 0;
+    if (subgraph_index < 0 || subgraph_index >= interp_->subgraphs_size()) {
+      return Unexpected(kLiteRtStatusErrorNotFound,
+                        "No subgraph for the signature.");
+    }
+    it = embedding_prefetchers_by_signature_
+             .emplace(signature_index,
+                      litert::internal::EmbeddingRowPrefetcher::Discover(
+                          *interp_->subgraph(subgraph_index)))
+             .first;
+  }
+  return it->second.Prefetch(token_ids);
+}
+
 // -----------------------------------------------------------------------------
 // Friend APIs
 // -----------------------------------------------------------------------------
@@ -3063,4 +3117,21 @@ Expected<bool> InputTensorNeedsResize(LiteRtCompiledModelT* compiled_model,
                                       const TfLiteTensor* tensor,
                                       absl::Span<const int> new_shape) {
   return compiled_model->InputTensorNeedsResize(tensor, new_shape);
+}
+
+Expected<void> PrefetchEmbeddingRows(LiteRtCompiledModelT* compiled_model,
+                                     size_t signature_index,
+                                     absl::Span<const int32_t> token_ids) {
+  return compiled_model->PrefetchEmbeddingRows(signature_index, token_ids);
+}
+
+absl::Span<const litert::internal::EmbeddingRowPrefetcher::EmbeddingTable>
+GetCachedEmbeddingTables(const LiteRtCompiledModelT* compiled_model,
+                         size_t signature_index) {
+  auto it =
+      compiled_model->embedding_prefetchers_by_signature_.find(signature_index);
+  if (it == compiled_model->embedding_prefetchers_by_signature_.end()) {
+    return {};
+  }
+  return it->second.tables();
 }

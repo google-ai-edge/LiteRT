@@ -118,6 +118,29 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "memory_advice",
+    srcs = ["memory_advice.cc"],
+    hdrs = ["memory_advice.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "memory_advice_test",
+    srcs = ["memory_advice_test.cc"],
+    deps = [
+        ":memory_advice",
+        "//litert/c:litert_common",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 config_setting(
     name = "litert_perfetto_enabled",
     values = {
