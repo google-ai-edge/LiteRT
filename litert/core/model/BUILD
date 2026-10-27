@@ -651,7 +651,6 @@ cc_library(
         "//litert/c:litert_model_types",
         "//tflite/kernels/internal:reference_base",
         "//tflite/kernels/internal:types",
-        "@SafeInt",
         "@com_google_absl//absl/types:span",
     ],
 )

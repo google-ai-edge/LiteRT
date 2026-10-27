@@ -211,6 +211,35 @@ TEST(SliceOpTest, RejectsMismatchedBeginAndSizeTypes) {
             kLiteRtStatusErrorShapeInferenceFailed);
 }
 
+TEST(SliceOpTest, RejectsInt64BeginWithInt32Size) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{4, 6}, {2}, {2}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT begin, size;
+  int64_t begin_data[] = {1, 2};
+  int32_t size_data[] = {2, 3};
+  SetWeightsFromOwnedBuffer(
+      begin.Weights(),
+      OwningBufferRef<uint8_t>(absl::string_view(
+          reinterpret_cast<char*>(begin_data), sizeof(begin_data))));
+  SetWeightsFromOwnedBuffer(
+      size.Weights(),
+      OwningBufferRef<uint8_t>(absl::string_view(
+          reinterpret_cast<char*>(size_data), sizeof(size_data))));
+  begin.SetType(MakeRankedTensorType(kLiteRtElementTypeInt64, {2}));
+  size.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2}));
+
+  op.Inputs().push_back(nullptr);
+  op.Inputs().push_back(&begin);
+  op.Inputs().push_back(&size);
+
+  // TFLite's kernel would read the 8-byte INT32 size buffer as two INT64
+  // values, i.e. past its end.
+  EXPECT_EQ(InferSlice(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
 TEST(SliceOpTest, RejectsInvalidBeginType) {
   LiteRtOpT op;
   std::vector<Dims> input_shapes = {{10}, {1}, {1}};
