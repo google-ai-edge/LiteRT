@@ -182,6 +182,8 @@ target_link_libraries(litert_logging
 # Platform-specific dependencies
 if(LITERT_PLATFORM_ANDROID)
     target_link_libraries(litert_logging PUBLIC ${LOG_LIB})
+elseif(LITERT_PLATFORM_OHOS)
+    target_link_libraries(litert_logging PUBLIC hilog_ndk.z)
 endif()
 
 # Core C API library (static)

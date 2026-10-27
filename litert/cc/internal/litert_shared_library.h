@@ -345,7 +345,7 @@ inline std::ostream& operator<<(std::ostream& os, const SharedLibrary& lib) {
   os << "Cannot retrieve namespace index on this platform.\n";
 #endif
 
-#ifdef RTLD_DI_LINKMAP
+#if defined(RTLD_DI_LINKMAP) && !defined(__OHOS__)
   if (link_map* lm; dlinfo(lib.handle_, RTLD_DI_LINKMAP, &lm) != 0) {
     os << "Error getting linked objects: "
        << internal::shared_library_detail::DlError() << ".\n";
