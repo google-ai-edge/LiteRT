@@ -117,6 +117,8 @@ class GpuBackendOpenCl : public GpuBackend {
       GpuMemoryHandle gpu_memory) override;
   absl::StatusOr<std::unique_ptr<GpuIOBuffer>> CreateIOBufferWithSize(
       ::ml_drift::DataType data_type, size_t size, bool input) override;
+  bool SupportsZeroCopyHostPtr(bool input) const override;
+  bool RequiresExplicitHostSync() const override;
   bool SupportsHostPtrIOBuffer(bool input) const override;
   size_t GetHostPtrAlignment() const override;
   // Overrides GPU architecture capability check to force host pointer I/O
@@ -124,8 +126,15 @@ class GpuBackendOpenCl : public GpuBackend {
   void SetForceHostPtrIOBuffer(bool force) override {
     force_host_ptr_io_buffer_ = force;
   }
-  absl::StatusOr<std::unique_ptr<GpuIOBuffer>> CreateHostIOBuffer(
+  absl::StatusOr<std::unique_ptr<GpuIOBuffer>> CreateInternalHostBuffer(
       ::ml_drift::DataType data_type, size_t size, bool input) override;
+  absl::StatusOr<std::unique_ptr<GpuIOBuffer>> CreateHostIOBuffer(
+      ::ml_drift::DataType data_type, size_t size, bool input) override {
+    return CreateInternalHostBuffer(data_type, size, input);
+  }
+  absl::StatusOr<std::unique_ptr<GpuIOBuffer>> WrapExternalHostBuffer(
+      ::ml_drift::DataType data_type, size_t size, bool input,
+      void* host_ptr) override;
   absl::StatusOr<std::unique_ptr<Tensor2BufferConverter>>
   CreateTensor2BufferConverter(
       const ::ml_drift::TensorDescriptor& src_desc,
@@ -246,8 +255,9 @@ class GpuIOBufferOpenCl : public GpuIOBuffer {
   //   clCreateBuffer. Owned and deallocated with free() in the destructor.
   explicit GpuIOBufferOpenCl(::ml_drift::cl::Environment* env,
                              ::ml_drift::cl::Buffer&& buffer,
-                             bool is_host_ptr = false,
-                             void* host_ptr = nullptr);
+                             bool is_host_ptr = false, void* host_ptr = nullptr,
+                             bool owns_host_ptr = false,
+                             bool requires_explicit_host_sync = false);
   ~GpuIOBufferOpenCl() override;
 
   // Implementation of GpuIOBuffer.
@@ -261,6 +271,9 @@ class GpuIOBufferOpenCl : public GpuIOBuffer {
 
   bool IsHostPtr() const override { return is_host_ptr_; }
   void* GetHostPtr() const override { return host_ptr_; }
+  bool OwnsHostPtr() const override { return owns_host_ptr_; }
+  bool RequiresExplicitHostSync() const { return requires_explicit_host_sync_; }
+  size_t GetSize() const override { return buffer_.GetMemorySizeInBytes(); }
   absl::Status SyncToDevice() override;
   absl::Status SyncToHost() override;
 
@@ -274,6 +287,18 @@ class GpuIOBufferOpenCl : public GpuIOBuffer {
   // The CPU virtual address of the host memory. Non-null iff is_host_ptr_ is
   // true.
   void* const host_ptr_ = nullptr;
+
+  // True if host_ptr_ was allocated by GpuBackendOpenCl via posix_memalign
+  // and must be released via free() upon destruction. False if host_ptr_ is
+  // owned by the external client (zero-copy).
+  const bool owns_host_ptr_ = false;
+
+  // True if host memory access requires explicit cache sync via map/unmap.
+  const bool requires_explicit_host_sync_ = false;
+
+  // Reusable staging buffer for host memory synchronization on platforms
+  // requiring explicit cache sync (e.g. non-coherent workstation GPUs).
+  std::vector<uint8_t> staging_buffer_;
 };
 
 class Tensor2BufferConverterOpenCl : public Tensor2BufferConverter {
