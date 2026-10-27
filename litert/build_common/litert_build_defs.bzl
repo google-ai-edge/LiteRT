@@ -63,6 +63,14 @@ def to_path(label, get_parent = False):
     return path[:path.rfind("/")]
 
 def make_rpaths(rpaths):
+    """Converts labels or paths into runpath directory entries.
+
+    Args:
+      rpaths: A list of target labels or directory paths.
+
+    Returns:
+      A linkopt string containing the colon-separated rpaths.
+    """
     paths = []
     for rp in rpaths:
         if rp.startswith("@"):
@@ -964,10 +972,124 @@ _TEST_WRAPPER_ATTRS = [
     "timeout",
 ]
 
+def _litert_gen_selected_ops_impl(ctx):
+    raw_output = ctx.actions.declare_file(ctx.label.name + "_raw.cc")
+    tflite_path = Label("//tflite:op_resolver").package
+    registry_hdr = (
+        Label("//litert/tflite_support/op_resolver:selected_ops_registry").package +
+        "/selected_ops_registry.h"
+    )
+
+    args = ctx.actions.args()
+    args.add(raw_output, format = "--output_registration=%s")
+    args.add("--tflite_path=%s" % tflite_path)
+    args.add_joined(
+        ctx.files.models,
+        join_with = ",",
+        format_joined = "--input_models=%s",
+    )
+
+    ctx.actions.run(
+        outputs = [raw_output],
+        inputs = ctx.files.models,
+        arguments = [args],
+        executable = ctx.executable._generate_op_registrations,
+        mnemonic = "LiteRtOpRegistrationRaw",
+        progress_message = "Generating raw selected ops for %s" % ctx.label,
+        use_default_shell_env = True,
+    )
+
+    model_include = '#include "%s/model.h"' % tflite_path
+    registry_include = '#include "%s"' % registry_hdr
+    fn_sig = "void RegisterSelectedOps("
+    ctx.actions.run_shell(
+        outputs = [ctx.outputs.output],
+        inputs = [raw_output],
+        command = """
+sed -e 's|{model_include}|{registry_include}|' \\
+    -e 's|{fn_sig}|namespace {{ {fn_sig}|' \\
+    "{src}" > "{dst}"
+cat << 'EOF' >> "{dst}"
+struct LiteRtSelectedOpsAutoRegister {{
+  LiteRtSelectedOpsAutoRegister() {{
+    ::litert::tflite_support::RegisterSelectedOpsCallback(&RegisterSelectedOps);
+  }}
+}} g_litert_selected_ops_auto_register;
+}}  // namespace
+EOF
+""".format(
+            model_include = model_include,
+            registry_include = registry_include,
+            fn_sig = fn_sig,
+            src = raw_output.path,
+            dst = ctx.outputs.output.path,
+        ),
+        mnemonic = "LiteRtOpRegistrationWrap",
+        progress_message = "Wrapping selected ops for %s" % ctx.label,
+    )
+
+_litert_gen_selected_ops_rule = rule(
+    implementation = _litert_gen_selected_ops_impl,
+    attrs = {
+        "models": attr.label_list(default = [], allow_files = True),
+        "output": attr.output(mandatory = True),
+        "_generate_op_registrations": attr.label(
+            executable = True,
+            default = Label("//tflite/tools:generate_op_registrations"),
+            cfg = "exec",
+        ),
+    },
+)
+
+def _litert_selected_ops_lib(
+        name,
+        models,
+        testonly = None,
+        tags = None,
+        compatible_with = None,
+        target_compatible_with = None,
+        restricted_to = None):
+    gen_name = name + "_gen"
+    out_file = name + ".cc"
+    common_kwargs = {}
+    if testonly != None:
+        common_kwargs["testonly"] = testonly
+    if tags != None:
+        common_kwargs["tags"] = tags
+    if compatible_with != None:
+        common_kwargs["compatible_with"] = compatible_with
+    if target_compatible_with != None:
+        common_kwargs["target_compatible_with"] = target_compatible_with
+    if restricted_to != None:
+        common_kwargs["restricted_to"] = restricted_to
+
+    _litert_gen_selected_ops_rule(
+        name = gen_name,
+        models = models,
+        output = out_file,
+        visibility = ["//visibility:private"],
+        **common_kwargs
+    )
+    cc_library(
+        name = name,
+        srcs = [":" + gen_name],
+        deps = [
+            "//litert/tflite_support/op_resolver:selected_ops_registry",
+            "//tflite:mutable_op_resolver",
+            "//tflite:op_resolver",
+            "//tflite/kernels:builtin_ops",
+            "//tflite/schema:schema_fbs",
+        ],
+        alwayslink = 1,
+        visibility = ["//visibility:private"],
+        **common_kwargs
+    )
+
 def litert_cc_binary(
         name,
         build_include = None,
         cpu_backend = None,
+        models = None,
         **kwargs):
     """Defines a `cc_binary` built with per-target LiteRT `build_include` and `cpu_backend` settings.
 
@@ -977,6 +1099,8 @@ def litert_cc_binary(
         If omitted, preserves the current build setting.
       cpu_backend: Optional value for `cpu_backend` (`"selective"`, `"builtin"`, `"xnnpack"`).
         If omitted, preserves the current build setting.
+      models: Optional list of `.tflite` model labels used to generate selective op
+        registrations at build time and auto-register them at runtime.
       **kwargs: Keyword arguments forwarded to the underlying `cc_binary`.
     """
     outer_kwargs = {k: kwargs[k] for k in _COMMON_WRAPPER_ATTRS if k in kwargs}
@@ -985,7 +1109,21 @@ def litert_cc_binary(
     inner_tags = list(kwargs.get("tags", []))
     if "manual" not in inner_tags:
         inner_tags.append("manual")
+    kwargs["tags"] = inner_tags
     inner_kwargs["tags"] = inner_tags
+
+    if models:
+        selected_ops_name = "_" + name + "_selected_ops"
+        _litert_selected_ops_lib(
+            name = selected_ops_name,
+            models = models,
+            testonly = kwargs.get("testonly"),
+            tags = inner_tags,
+            compatible_with = kwargs.get("compatible_with"),
+            target_compatible_with = kwargs.get("target_compatible_with"),
+            restricted_to = kwargs.get("restricted_to"),
+        )
+        append_rule_kwargs(inner_kwargs, deps = [":" + selected_ops_name])
 
     inner_name = "_" + name + "_litert_bin"
     cc_binary(
@@ -1004,6 +1142,7 @@ def litert_cc_test(
         name,
         build_include = None,
         cpu_backend = None,
+        models = None,
         **kwargs):
     """Defines a `cc_test` built with per-target LiteRT `build_include` and `cpu_backend` settings.
 
@@ -1013,6 +1152,8 @@ def litert_cc_test(
         If omitted, preserves the current build setting.
       cpu_backend: Optional value for `cpu_backend` (`"selective"`, `"builtin"`, `"xnnpack"`).
         If omitted, preserves the current build setting.
+      models: Optional list of `.tflite` model labels used to generate selective op
+        registrations at build time and auto-register them at runtime.
       **kwargs: Keyword arguments forwarded to the underlying `cc_test`.
     """
     outer_kwargs = {
@@ -1025,7 +1166,21 @@ def litert_cc_test(
     inner_tags = list(kwargs.get("tags", []))
     if "manual" not in inner_tags:
         inner_tags.append("manual")
+    kwargs["tags"] = inner_tags
     inner_kwargs["tags"] = inner_tags
+
+    if models:
+        selected_ops_name = "_" + name + "_selected_ops"
+        _litert_selected_ops_lib(
+            name = selected_ops_name,
+            models = models,
+            testonly = kwargs.get("testonly", True),
+            tags = inner_tags,
+            compatible_with = kwargs.get("compatible_with"),
+            target_compatible_with = kwargs.get("target_compatible_with"),
+            restricted_to = kwargs.get("restricted_to"),
+        )
+        append_rule_kwargs(inner_kwargs, deps = [":" + selected_ops_name])
 
     inner_name = "_" + name + "_litert_test"
     cc_test(
@@ -1044,6 +1199,7 @@ def litert_cc_library(
         name,
         build_include = None,
         cpu_backend = None,
+        models = None,
         **kwargs):
     """Defines a `cc_library` built with per-target LiteRT settings.
 
@@ -1058,8 +1214,35 @@ def litert_cc_library(
         If omitted, preserves the current build setting.
       cpu_backend: Optional value for `cpu_backend` (`"selective"`, `"builtin"`, `"xnnpack"`).
         If omitted, preserves the current build setting.
+      models: Optional list of `.tflite` model labels used to generate selective op
+        registrations at build time and auto-register them at runtime.
       **kwargs: Keyword arguments forwarded to the underlying `cc_library`.
     """
+    inner_tags = list(kwargs.get("tags", []))
+    if "manual" not in inner_tags:
+        inner_tags.append("manual")
+    kwargs["tags"] = inner_tags
+
+    if models:
+        selected_ops_name = "_" + name + "_selected_ops"
+        _litert_selected_ops_lib(
+            name = selected_ops_name,
+            models = models,
+            testonly = kwargs.get("testonly"),
+            tags = inner_tags,
+            compatible_with = kwargs.get("compatible_with"),
+            target_compatible_with = kwargs.get("target_compatible_with"),
+            restricted_to = kwargs.get("restricted_to"),
+        )
+        append_rule_kwargs(kwargs, deps = [":" + selected_ops_name])
+
+    if not build_include and not cpu_backend:
+        cc_library(
+            name = name,
+            **kwargs
+        )
+        return
+
     if not kwargs.get("srcs") and not kwargs.get("hdrs"):
         _litert_cc_library_rule(
             name = name,
@@ -1072,9 +1255,6 @@ def litert_cc_library(
     outer_kwargs = {k: kwargs[k] for k in _COMMON_WRAPPER_ATTRS if k in kwargs}
     inner_kwargs = dict(kwargs)
     inner_kwargs["visibility"] = ["//visibility:private"]
-    inner_tags = list(kwargs.get("tags", []))
-    if "manual" not in inner_tags:
-        inner_tags.append("manual")
     inner_kwargs["tags"] = inner_tags
 
     inner_name = "_" + name + "_litert_lib"

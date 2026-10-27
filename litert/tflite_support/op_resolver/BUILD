@@ -14,7 +14,11 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_cc_test")
+load(
+    "//litert/build_common:litert_build_defs.bzl",
+    "litert_cc_library",
+    "litert_cc_test",
+)
 load("//tflite:build_def.bzl", "gen_selected_ops")
 
 package(
@@ -23,6 +27,12 @@ package(
         "//litert:litert_public",
     ],
     features = ["allow_starlark_transitions"],
+)
+
+cc_library(
+    name = "selected_ops_registry",
+    srcs = ["selected_ops_registry.cc"],
+    hdrs = ["selected_ops_registry.h"],
 )
 
 cc_library(
@@ -105,6 +115,48 @@ litert_cc_test(
         "//tflite:framework",
         "//tflite:mutable_op_resolver",
         "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+litert_cc_library(
+    name = "simple_model_auto_selected_ops_lib",
+    testonly = True,
+    models = [
+        "//litert/test:testdata/simple_model.tflite",
+    ],
+)
+
+litert_cc_test(
+    name = "selected_ops_auto_register_test",
+    srcs = ["selected_ops_auto_register_test.cc"],
+    build_include = "cpu_only",
+    cpu_backend = "selective",
+    data = [
+        "//litert/test:testdata/simple_model.tflite",
+        "//litert/test:testdata/transformer.tflite",
+    ],
+    models = [
+        "//litert/test:testdata/transformer.tflite",
+    ],
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+    deps = [
+        ":op_resolver",
+        ":simple_model_auto_selected_ops_lib",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:simple_model",
+        "//tflite:mutable_op_resolver",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],

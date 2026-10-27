@@ -806,6 +806,7 @@ cc_library(
             # Omit default TFLite builtin/reference kernels (e.g.
             # litert_builtin_ops=false or cpu_backend=selective). XNNPACK or a
             # selective op resolver is used instead.
+            "//litert/tflite_support/op_resolver:selected_ops_registry",
             "//tflite/c:c_api_opaque_without_op_resolver_without_alwayslink",
             "//tflite/c:c_api_without_op_resolver_without_alwayslink",
         ],

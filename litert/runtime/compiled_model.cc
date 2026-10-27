@@ -127,6 +127,7 @@
 
 #if defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/runtime/stub_op_resolver.h"
+#include "litert/tflite_support/op_resolver/selected_ops_registry.h"
 #endif  // LITERT_NO_BUILTIN_OPS
 
 using litert::Error;
@@ -355,18 +356,30 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     resolver = resolver_storage.get();
   } else {
 #ifdef LITERT_NO_BUILTIN_OPS
-    if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-        use_builtin_or_reference_cpu_backend) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                        "Builtin and reference CPU kernel modes require "
-                        "builtin kernels.");
+    if (litert::tflite_support::HasSelectedOpsCallback()) {
+      if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
+          use_reference_cpu_kernels) {
+        return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                          "Reference CPU kernel mode requires reference "
+                          "kernels.");
+      }
+      resolver_storage = std::make_unique<tflite::MutableOpResolver>();
+      litert::tflite_support::ApplySelectedOpsCallbacks(resolver_storage.get());
+      resolver = resolver_storage.get();
+    } else {
+      if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
+          use_builtin_or_reference_cpu_backend) {
+        return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                          "Builtin and reference CPU kernel modes require "
+                          "builtin kernels.");
+      }
+      // Use StubOpResolver which provides minimal stub implementations for all
+      // builtin ops. These stubs allow the model to pass validation, but the
+      // actual operations will be handled by LiteRT's accelerator system
+      // (NPU > GPU > CPU) through their respective delegates.
+      resolver_storage = std::make_unique<litert::internal::StubOpResolver>();
+      resolver = resolver_storage.get();
     }
-    // Use StubOpResolver which provides minimal stub implementations for all
-    // builtin ops. These stubs allow the model to pass validation, but the
-    // actual operations will be handled by LiteRT's accelerator system
-    // (NPU > GPU > CPU) through their respective delegates.
-    resolver_storage = std::make_unique<litert::internal::StubOpResolver>();
-    resolver = resolver_storage.get();
 #else
     if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
         use_reference_cpu_kernels) {
