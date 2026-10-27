@@ -134,6 +134,19 @@ cc_library(
 )
 
 cc_library(
+    name = "shared_webgpu_env",
+    srcs = ["shared_webgpu_env.cc"],
+    hdrs = ["shared_webgpu_env.h"],
+    deps = [
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/base:no_destructor",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/synchronization",
+        "@ml_drift//ml_drift/webgpu:execution_environment",
+    ],
+)
+
+cc_library(
     name = "gpu_backend_webgpu",
     srcs = ["gpu_backend_webgpu.cc"],
     hdrs = ["gpu_backend_webgpu.h"],
@@ -141,6 +154,7 @@ cc_library(
         ":delegate_data",
         ":delegate_utils",
         ":gpu_backend",
+        ":shared_webgpu_env",
         ":unowned_tensor_desc",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -196,6 +210,7 @@ cc_test(
     deps = [
         ":gpu_backend",
         ":gpu_backend_webgpu",
+        ":shared_webgpu_env",
         "//third_party/vulkan_loader",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status:status_matchers",

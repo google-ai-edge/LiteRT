@@ -122,10 +122,7 @@ struct DelegateEnvironment {
   // cache misses / shader compilations. Once all shader pipelines are compiled
   // and resident in the GPU/Dawn runtime, retaining the serialized cache in RAM
   // is unnecessary, and destroying it reclaims memory footprint.
-  void CacheDetach() ABSL_NO_THREAD_SAFETY_ANALYSIS {
-    if (pipeline_cache == nullptr) {
-      return;
-    }
+  void CacheDetach() {
     absl::MutexLock lock(pipeline_cache_mutex);
     if (pipeline_cache == nullptr) {
       return;
