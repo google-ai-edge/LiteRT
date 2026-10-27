@@ -471,6 +471,7 @@ cc_test(
         "//litert/test:tflite_test_data",
     ],
     deps = [
+        ":litert_extended_model",
         ":litert_op_options",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
