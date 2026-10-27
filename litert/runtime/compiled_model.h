@@ -268,6 +268,63 @@ class LiteRtCompiledModelT {
     return last_inference_duration_nanos_.load(std::memory_order_relaxed);
   }
 
+  // A constant table read by a CPU EMBEDDING_LOOKUP op, as the kernel
+  // addresses it (`tensorflow/lite/kernels/embedding_lookup.cc`: `EvalSimple`
+  // reads row `i` at `data + i * row_bytes` with `row_bytes = bytes / dims[0]`;
+  // `EvalHybrid` unpacks sub-byte elements at byte offset `(col_size * i) >> 1`
+  // for INT4 and `(col_size * i) >> 2` for INT2, which matches `i * (bytes /
+  // dims[0])` because `TfLiteTensorRealloc` sizes the buffer to the packed byte
+  // count). Only tables whose rows are a whole number of bytes are collected
+  // (`bytes % dims[0] == 0`, true for the shipped Gemma int4/int2 tables);
+  // blockwise-quantized scale tensors are not hinted.
+  struct EmbeddingTable {
+    const uint8_t* data;  // TfLiteTensor::data.raw (kTfLiteMmapRo).
+    size_t num_rows;      // dims[0].
+    size_t row_bytes;     // bytes / dims[0].
+  };
+
+  // Returns the cached CPU EMBEDDING_LOOKUP tables discovered for
+  // `signature_index` (empty if not yet discovered or if none exist).
+  absl::Span<const EmbeddingTable> GetCachedEmbeddingTablesForTesting(
+      size_t signature_index) const {
+    auto it = embedding_tables_by_signature_.find(signature_index);
+    if (it == embedding_tables_by_signature_.end()) {
+      return {};
+    }
+    return it->second;
+  }
+
+  // Page-aligned half-open address range [begin, end).
+  struct PrefetchRange {
+    uintptr_t begin;
+    uintptr_t end;
+    bool operator==(const PrefetchRange& other) const {
+      return begin == other.begin && end == other.end;
+    }
+  };
+
+  // Pure helper (exposed for tests): the page-aligned ranges that cover the
+  // rows `token_ids` of every table, sorted, coalesced across tables and split
+  // into pieces of at most 128 KiB. Ids outside [0, num_rows) are skipped;
+  // duplicates are hinted once. `page_size` must be a power of two.
+  static std::vector<PrefetchRange> ComputeEmbeddingPrefetchRanges(
+      absl::Span<const EmbeddingTable> tables,
+      absl::Span<const int32_t> token_ids, size_t page_size);
+
+  // Hints the OS to prefetch the rows `token_ids` of every CPU EMBEDDING_LOOKUP
+  // table of signature `signature_index`. The tables are discovered on first
+  // use from the post-delegation execution plan and cached per signature
+  // (constant tensors keep their address for the life of the interpreter).
+  // Errors: InvalidArgument (index out of range), NotFound (signature not
+  // selected, or no CPU EMBEDDING_LOOKUP table), Unsupported (no OS hint on
+  // this platform). An empty `token_ids` only probes and reports NotFound /
+  // Unsupported the same way. Invoked by RunCApi when
+  // LiteRtOptions::prefetch_embedding_token_ids is non-empty (errors are
+  // ignored during RunCApi so non-CPU or unsupported targets remain a
+  // transparent no-op).
+  litert::Expected<void> PrefetchEmbeddingRows(
+      size_t signature_index, absl::Span<const int32_t> token_ids);
+
   // Error reporter APIs
 
   // Reports an error. Thread-safe.
@@ -629,6 +686,11 @@ class LiteRtCompiledModelT {
   absl::flat_hash_set<TfLiteTensorIdentifier, TensorIdentifierHash,
                       TensorIdentifierEqual>
       user_registered_buffers_;
+
+  // CPU EMBEDDING_LOOKUP tables per signature index, discovered lazily by
+  // PrefetchEmbeddingRows(). An empty vector means "none" (cached negative).
+  absl::flat_hash_map<size_t, std::vector<EmbeddingTable>>
+      embedding_tables_by_signature_;
 
   // The profiler used by the compiled model. This is used to forward the
   // profiler events to the TFLite interpreter.
