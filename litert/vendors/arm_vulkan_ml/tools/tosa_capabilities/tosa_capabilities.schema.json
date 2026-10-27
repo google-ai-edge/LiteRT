@@ -1,0 +1,673 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TOSA SPIR-V capability reference database (not a support policy)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "instruction_set",
+    "status",
+    "sources",
+    "profiles",
+    "extensions",
+    "excluded_tosa_extensions",
+    "levels",
+    "enums",
+    "global_constraints",
+    "operators",
+    "counts"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "tosa_capabilities.schema.json"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "instruction_set": {
+      "const": "TOSA.001000.1"
+    },
+    "status": {
+      "const": "specification_reference_not_delegation_policy"
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "spirv_registry",
+        "tosa"
+      ],
+      "properties": {
+        "spirv_registry": {
+          "$ref": "#/$defs/source"
+        },
+        "tosa": {
+          "$ref": "#/$defs/source"
+        }
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "requires_any_profile",
+          "status_in_tosa"
+        ],
+        "properties": {
+          "requires_any_profile": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status_in_tosa": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "excluded_tosa_extensions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "levels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "enums": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "values",
+          "source"
+        ],
+        "properties": {
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "value",
+                "description",
+                "additional_requirements"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "integer"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "additional_requirements": {
+                  "$ref": "#/$defs/requirements"
+                }
+              }
+            },
+            "minItems": 1
+          },
+          "source": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "global_constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tensor_rules",
+        "helper_semantics",
+        "shape_contract",
+        "vulkan_requirements",
+        "vulkan_source",
+        "vulkan_source_checked",
+        "device_checks_required"
+      ],
+      "properties": {
+        "tensor_rules": {
+          "type": "string"
+        },
+        "helper_semantics": {
+          "type": "string"
+        },
+        "shape_contract": {
+          "const": "fixed_shapes_per_compiled_graph_pipeline"
+        },
+        "vulkan_requirements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "vuid",
+              "rule"
+            ],
+            "properties": {
+              "vuid": {
+                "type": "string"
+              },
+              "rule": {
+                "type": "string"
+              }
+            }
+          },
+          "minItems": 1
+        },
+        "vulkan_source": {
+          "type": "string"
+        },
+        "vulkan_source_checked": {
+          "type": "string"
+        },
+        "device_checks_required": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "operators": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/operator"
+      },
+      "minItems": 1
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operators",
+        "type_combinations"
+      ],
+      "properties": {
+        "operators": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "type_combinations": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  },
+  "$defs": {
+    "requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "any_of"
+      ],
+      "properties": {
+        "any_of": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "all_of"
+            ],
+            "properties": {
+              "all_of": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^(PRO|EXT)-[A-Z0-9]+$"
+                }
+              }
+            }
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "revision",
+        "files_sha256"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "files_sha256": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    "scalar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "element_type",
+        "spirv_scalar",
+        "storage_bits"
+      ],
+      "properties": {
+        "element_type": {
+          "enum": [
+            "bool_t",
+            "i8_t",
+            "i16_t",
+            "i32_t",
+            "i48_t",
+            "fp16_t",
+            "fp32_t",
+            "bf16_t",
+            "fp8e4m3_t",
+            "fp8e5m2_t"
+          ]
+        },
+        "spirv_scalar": {
+          "type": "string"
+        },
+        "storage_bits": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "table_type": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "element_type",
+        "spirv_scalar",
+        "storage_bits"
+      ],
+      "properties": {
+        "element_type": {
+          "enum": [
+            "bool_t",
+            "i8_t",
+            "i16_t",
+            "i32_t",
+            "i48_t",
+            "fp16_t",
+            "fp32_t",
+            "bf16_t",
+            "fp8e4m3_t",
+            "fp8e5m2_t"
+          ]
+        },
+        "spirv_scalar": {
+          "type": "string"
+        },
+        "storage_bits": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "rank": {
+          "type": "string"
+        },
+        "shape": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "registry_type_id": {
+          "type": "string"
+        }
+      }
+    },
+    "argument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "category",
+        "tosa_type",
+        "element_type_parameter",
+        "logical_shape",
+        "description",
+        "optional_in_tosa",
+        "rank_range",
+        "level_limits",
+        "constant_required",
+        "mapping_description",
+        "spirv_type_template",
+        "fixed_element_type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "category": {
+          "enum": [
+            "input",
+            "output",
+            "attribute"
+          ]
+        },
+        "tosa_type": {
+          "type": "string"
+        },
+        "element_type_parameter": {
+          "type": "string"
+        },
+        "logical_shape": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "optional_in_tosa": {
+          "type": "boolean"
+        },
+        "rank_range": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "min",
+                "max"
+              ],
+              "properties": {
+                "min": {
+                  "type": "string"
+                },
+                "max": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        },
+        "level_limits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "value",
+              "limit"
+            ],
+            "properties": {
+              "value": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "string"
+              }
+            }
+          },
+          "minItems": 0
+        },
+        "constant_required": {
+          "type": "boolean"
+        },
+        "mapping_description": {
+          "type": "string"
+        },
+        "spirv_type_template": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fixed_element_type": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/scalar"
+            }
+          ]
+        }
+      }
+    },
+    "variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "registry_table_row",
+        "enabling_expression",
+        "requirements",
+        "types",
+        "parameters",
+        "tosa_type_bindings"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "registry_table_row": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "enabling_expression": {
+          "type": "string"
+        },
+        "requirements": {
+          "$ref": "#/$defs/requirements"
+        },
+        "types": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/table_type"
+          }
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "tosa_type_bindings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "expression",
+        "interpretation",
+        "source"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "ERROR_IF",
+            "REQUIRE",
+            "LEVEL_CHECK"
+          ]
+        },
+        "expression": {
+          "type": "string"
+        },
+        "interpretation": {
+          "const": "requires_containing_pseudocode_context"
+        },
+        "source": {
+          "type": "string"
+        }
+      }
+    },
+    "operator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "opcode",
+        "category",
+        "spirv_operand_order",
+        "variadic_operands",
+        "arguments",
+        "variants",
+        "validation_expressions",
+        "semantics",
+        "sources",
+        "coverage"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]+$"
+        },
+        "opcode": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "category": {
+          "type": "string"
+        },
+        "spirv_operand_order": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "variadic_operands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "arguments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/argument"
+          },
+          "minItems": 1
+        },
+        "variants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/variant"
+          },
+          "minItems": 1
+        },
+        "validation_expressions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rule"
+          },
+          "minItems": 0
+        },
+        "semantics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "text_asciidoc",
+            "source",
+            "interpretation"
+          ],
+          "properties": {
+            "text_asciidoc": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "interpretation": {
+              "const": "normative_prose_not_machine_evaluated"
+            }
+          }
+        },
+        "sources": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "registry",
+            "tosa_arguments",
+            "tosa_pseudocode"
+          ],
+          "properties": {
+            "registry": {
+              "type": "string"
+            },
+            "tosa_arguments": {
+              "type": "string"
+            },
+            "tosa_pseudocode": {
+              "type": "string"
+            }
+          }
+        },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "constraint_evaluator",
+            "litert_lowering",
+            "tfsc_encoding",
+            "device_support"
+          ],
+          "properties": {
+            "constraint_evaluator": {
+              "const": "not_implemented"
+            },
+            "litert_lowering": {
+              "const": "not_assessed"
+            },
+            "tfsc_encoding": {
+              "const": "not_assessed"
+            },
+            "device_support": {
+              "const": "not_assessed"
+            }
+          }
+        }
+      }
+    }
+  }
+}

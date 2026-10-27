@@ -50,18 +50,25 @@ biases. Analysis proves accumulator and rescale ranges before selecting an op.
 | DEPTHWISE_CONV_2D | Depth multiplier 1; constant weights/bias |
 | ADD, MUL | Validated broadcasting, int8 inputs/output, NONE/RELU/RELU6 fused activation |
 | LOGISTIC | Int8 output scale 1/256, zero point -128; reference-compatible lookup table |
-| RELU, RELU6, HARD_SWISH | Int8 lookup table preserves quantized semantics |
+| RELU, RELU6 | Direct CLAMP when quantization is unchanged; lookup table otherwise |
+| HARD_SWISH | Int8 lookup table preserves quantized semantics |
 | TRANSPOSE, RESHAPE, SLICE | Constant permutation/shape/slice parameters; preserved quantization |
 | PAD, PADV2 | Constant padding; PADV2 fill has matching quantization |
 | CONCATENATION | Compatible shapes and identical quantization; no fused activation |
 | MAX_POOL_2D | VALID window, preserved quantization |
 | AVERAGE_POOL_2D | Global or disjoint tiled VALID windows, preserved quantization, bounded integer sum |
 | SUM | Constant axes and keep_dims=true; bounded integer sum |
+| REDUCE_MAX, REDUCE_MIN | INT8/FP32, constant axes (negative/duplicate axes normalized), keep_dims true or false, non-scalar output; INT8 quantization preserved |
+| GATHER | INT8/FP32 values, constant in-range INT32 indices, batch_dims=0, any valid axis; INT8 quantization preserved |
+| RESIZE_NEAREST_NEIGHBOR | INT8/FP32 NHWC, constant size, align_corners or half_pixel_centers, TOSA scale/offset/border limits; INT8 quantization preserved |
+| RESIZE_BILINEAR | FP32 NHWC and constant size with the same coordinate/scale checks |
+| TRANSPOSE_CONV | FP32 NHWC, constant OHWI weights/output shape and optional bias, canonical SAME/VALID geometry, stride ≤ kernel, NONE/RELU/RELU6 activation |
 | FULLY_CONNECTED | Constant dense int8 weights/int32 bias; default weight format; flattened output |
-| DEQUANTIZE, QUANTIZE | Int8 ↔ FP32 or int8 → int8 requantization, identical fixed shape |
+| DEQUANTIZE, QUANTIZE | Int8 ↔ FP32 or int8 → int8 requantization, identical fixed shape; identity INT8 QUANTIZE is eliminated |
 
 A limited FP32 path supports TRANSPOSE, RESHAPE, PAD, CONV_2D, depthwise convolution,
-HARD_SWISH, LOGISTIC, broadcast ADD/MUL and global VALID AVERAGE_POOL_2D. This
+HARD_SWISH, LOGISTIC, broadcast ADD/MUL and global VALID AVERAGE_POOL_2D,
+plus the FP32 variants in the table above. This
 covers the mixed-precision prefixes of MobileNetV3 Large and EfficientNet-B0,
 and SqueezeNet1.1's FP32 output pooling.
 It requires PRO-FP in addition to PRO-INT. This is not general floating-point
@@ -70,6 +77,47 @@ model support. EfficientNet SiLU is represented as LOGISTIC followed by MUL.
 Requantization composes base TOSA integer operations to reproduce LiteRT's
 rounding where range proofs permit it, with per-channel decisions. It does not
 assume EXT-DOUBLEROUND support. Invalid ranges are rejected rather than wrapped.
+
+INT8 average pooling emits TOSA `AVG_POOL2D` directly, retaining the existing
+shape, cropping and quantization checks. TOSA rounding can differ from LiteRT
+at quantization boundaries. In the three-image emulator smoke check, ResNet18
+and MobileNetV2 retained their previous results; DenseNet121 had a maximum
+output difference of two int8 codes and a different top-1 prediction on one
+image. This numerical tradeoff is accepted for this lowering. The shared
+evaluator still reports the top-1 mismatch; its parity gates are unchanged. A subsequent
+MobileNetV3 Large check retained all three top-1 predictions but exceeded the
+numerical gate (maximum 11 codes, mean 1.89); reverting the later CLAMP and
+identity-QUANTIZE simplifications reproduced the same per-image errors.
+Direct pooling therefore remains numerically unqualified for that model under
+the existing thresholds.
+
+Before selecting a device, dispatch queries `VkTensorFormatPropertiesARM`
+through `vkGetPhysicalDeviceFormatProperties2` for every format used by inputs,
+outputs and constants. Each must advertise linear-tiling
+`VK_FORMAT_FEATURE_2_TENSOR_DATA_GRAPH_BIT_ARM`. It also queries
+`VkPhysicalDeviceTensorPropertiesARM` and checks rank, dimensions, element and
+byte counts, and input/output descriptor counts before allocating resources.
+These checks supplement the existing engine-specific TOSA profile and extension
+queries. TOSA operator/type legality is checked during lowering; Vulkan exposes
+profiles and extensions rather than an individual operator/type support table.
+Format support alone does not establish operator support. Graph pipeline
+creation remains the final driver acceptance check for the complete graph,
+including implementation and TOSA-level constraints.
+
+The Arm 0.11 emulator advertises no TOSA extensions. A diagnostic using direct
+`RESCALE` with `DOUBLE_ROUND` executed successfully on ResNet18, MobileNetV2 and
+DenseNet121, but required omitting its `EXT-DOUBLEROUND` requirement. That bypass
+is not part of the backend: unadvertised extensions remain rejected, including
+in emulation mode.
+
+The new gather, min/max reduction, resize and transpose-convolution paths passed
+34 isolated emulator fixtures with four synthetic inputs each. Ten unsupported
+cases were rejected, and every supported fixture passed SPIR-V validation.
+These establish operator-level coverage, not qualification of new complete
+models. Quantized bilinear resize/transpose convolution, runtime gather indices,
+nonzero gather batch_dims, scalar reduction outputs and aligned singleton
+resize dimensions remain unsupported. The [capability audit](tools/tosa_capabilities/README.md)
+separates these implemented subsets from the full specification inventory.
 
 ## Build and validate
 
