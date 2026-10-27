@@ -55,7 +55,7 @@ mixed_precision_main \
 
 #### 1. Standard FP16 Conversion
 
-Converts the entire model to FP16, with default FP32 exceptions (e.g. RMS Norm):
+Converts the entire model to FP16:
 
 ```bash
 mixed_precision_main \
