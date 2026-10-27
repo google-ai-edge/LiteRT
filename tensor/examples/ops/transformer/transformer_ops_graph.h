@@ -103,7 +103,11 @@ struct AddValuesToCacheOperation : public AddValuesToCacheOperationData,
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
-struct QkNormOperation : Operation {
+struct QkNormOperationData {
+  float epsilon = 1e-6f;
+};
+
+struct QkNormOperation : public QkNormOperationData, Operation {
   absl::string_view GetName() const override { return "QkNorm"; }
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
