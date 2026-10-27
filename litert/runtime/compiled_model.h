@@ -624,6 +624,12 @@ class LiteRtCompiledModelT {
                       TensorIdentifierEqual>
       cpu_tensors_;
 
+  // The set of tensors that currently have a caller-supplied TensorBuffer
+  // registered in `buffer_context_` via `RegisterBuffer()`.
+  absl::flat_hash_set<TfLiteTensorIdentifier, TensorIdentifierHash,
+                      TensorIdentifierEqual>
+      user_registered_buffers_;
+
   // The profiler used by the compiled model. This is used to forward the
   // profiler events to the TFLite interpreter.
   LiteRtProfilerT* profiler_ = nullptr;
