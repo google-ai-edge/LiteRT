@@ -307,27 +307,35 @@ absl::Status CreateSharedWebGpuTensor(
       (tensor_desc.GetDataType() == DataType::kUint2 ||
        tensor_desc.GetDataType() == DataType::kUint4 ||
        tensor_desc.GetDataType() == DataType::kUint8);
+  const bool has_host_mapped_pointer =
+      env.device().HasFeature(wgpu::FeatureName::HostMappedPointer);
+
+#if defined(__APPLE__)
+  // The Metal API imports host pointers from mmap'd data quickly, so no
+  // need to copy the data. Vulkan and D3D12 both import memory much
+  // more quickly from non-mmap'd memory, so in those APIs it's faster
+  // to copy all data before importing.
+  //
+  // Avoid the copy on Apple if the buffer type is BUFFER and there is a
+  // valid release_data_callback that can be used to release the mmap'd
+  // memory. Besides the quantized weights, this covers float buffers such as
+  // the moe_experts block scales restored from the weight cache. In the
+  // future, we should add support for no-copy textures as well.
+  const bool is_float_buffer =
+      tensor_desc.GetStorageType() == TensorStorageType::kBuffer &&
+      (tensor_desc.GetDataType() == DataType::kFloat16 ||
+       tensor_desc.GetDataType() == DataType::kFloat32);
+  if ((is_supported_buffer || is_float_buffer) && has_host_mapped_pointer &&
+      release_data_callback) {
+    return ::ml_drift::webgpu_internal::CopyBufferToBuffer(
+        &env, tensor_desc, page_adjusted_offset,
+        std::move(release_data_callback),
+        static_cast<webgpu::SpatialTensor*>(tensor.get()));
+  }
+#endif  // defined(__APPLE__)
 
   if ((is_supported_buffer || is_supported_texture) &&
-      env.device().HasFeature(wgpu::FeatureName::HostMappedPointer)) {
-#if defined(__APPLE__)
-    // The Metal API imports host pointers from mmap'd data quickly, so no
-    // need to copy the data. Vulkan and D3D12 both import memory much
-    // more quickly from non-mmap'd memory, so in those APIs it's faster
-    // to copy all data before importing.
-    //
-    // Avoid the copy on Apple if the buffer type is BUFFER and there is a
-    // valid release_data_callback that can be used to release the mmap'd
-    // memory. In the future, we should add support for no-copy textures
-    // as well.
-    if (tensor_desc.GetStorageType() == TensorStorageType::kBuffer &&
-        release_data_callback) {
-      return ::ml_drift::webgpu_internal::CopyBufferToBuffer(
-          &env, tensor_desc, page_adjusted_offset,
-          std::move(release_data_callback),
-          static_cast<webgpu::SpatialTensor*>(tensor.get()));
-    }
-#endif  // defined(__APPLE__)
+      has_host_mapped_pointer) {
     if (release_data_callback) {
       return absl::InvalidArgumentError(absl::StrCat(
           "Release data callback is not currently supported on "
