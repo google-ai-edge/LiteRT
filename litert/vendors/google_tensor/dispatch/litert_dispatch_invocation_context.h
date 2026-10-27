@@ -126,6 +126,10 @@ class LiteRtDispatchInvocationContextT {
   LiteRtOptions run_options_ = nullptr;
 
   std::optional<LiteRtSchedulingInfo> scheduling_info_;
+
+  // Optimistically true; latched to false if SouthBound rejects
+  // `kThrFenceTypeVendorPreferred` in `InvokeAsync`.
+  bool vendor_preferred_fence_supported_ = true;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
