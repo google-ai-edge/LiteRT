@@ -30,6 +30,7 @@ limitations under the License.
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
@@ -79,6 +80,12 @@ class CompiledMlDriftModelRunner {
     absl::flat_hash_map<std::string, std::unique_ptr<BackendTensor>> tensors;
     size_t cache_hits = 0;
     size_t cache_misses = 0;
+    // When true, runners drop the host buffers of fused constant weights
+    // (`+`-joined names, e.g. from `TryConcatConstantFcWeights`) once this
+    // cache holds their packed descriptor. That mutates the graph passed to
+    // the runner, so only set it when every graph is compiled with this cache
+    // (e.g. a decoder runtime that builds a fresh graph for every pass).
+    bool release_fused_host_buffers = false;
   };
 
   CompiledMlDriftModelRunner(std::vector<TensorHandle> flat_inputs,
@@ -101,7 +108,11 @@ class CompiledMlDriftModelRunner {
         .storage_type =
             Backend::GetStorageTypeForBuilder(*env_ptr_, env_initialized_),
     };
-    gpu_model_info_.hints.Add(ml_drift::ModelHints::kFastTuning);
+    const char* fast_tuning_env = std::getenv("LRT_FAST_TUNING");
+    if (fast_tuning_env == nullptr ||
+        std::string(fast_tuning_env) != "false") {
+      gpu_model_info_.hints.Add(ml_drift::ModelHints::kFastTuning);
+    }
     gpu_model_info_.hints.Add(ml_drift::ModelHints::kPreferTextureWeights);
     gpu_model_info_.hints.Add(ml_drift::ModelHints::kEnableHostMappedPointer);
     gpu_model_info_.hints.Add(ml_drift::ModelHints::kDisallow8bitConvs);
@@ -288,8 +299,10 @@ class CompiledMlDriftModelRunner {
     absl::flat_hash_map<ml_drift::ValueId, BackendTensor*> tensors;
     for (const auto& [graph_tensor, handle] :
          conversion_ctx_.graph_tensor_to_handle) {
-      auto info_or = graph::GetInfo(graph_tensor);
-      if (info_or.ok() && info_or->buffer != nullptr) {
+      auto info = graph::GetInfo(graph_tensor);
+      const bool is_weight = (info.ok() && info->buffer != nullptr) ||
+                             released_weight_tensors_.contains(graph_tensor);
+      if (is_weight) {
         auto* t = Backend::GetTensor(&inference_context_, handle.id);
         if (t != nullptr) {
           tensors[handle.id] = t;
@@ -515,16 +528,22 @@ class CompiledMlDriftModelRunner {
       if (op->GetName() == "FullyConnected" ||
           op->GetName() == "EmbeddingLookup") {
         auto weights_tensor = op->inputs[1];
-        LRT_TENSOR_ASSIGN_OR_RETURN(const auto& info,
-                                    graph::GetInfo(weights_tensor));
-        bool skip = conversion_ctx_.external_weight_names.contains(info.name);
-        if (info.buffer == nullptr || skip) {
-          continue;
-        }
         if (conversion_ctx_.graph_tensor_to_handle.contains(weights_tensor)) {
           continue;
         }
-        if (!info.name.empty() &&
+        LRT_TENSOR_ASSIGN_OR_RETURN(auto& info,
+                                    graph::GetInfo(weights_tensor));
+        if (conversion_ctx_.external_weight_names.contains(info.name)) {
+          continue;
+        }
+        // Fused weights are always constants; their host buffer may have been
+        // released by an earlier compilation of this graph (see
+        // `SharedWeightsCache::release_fused_host_buffers`).
+        const bool is_fused_weight = absl::StrContains(info.name, '+');
+        // Reuse a packed descriptor of the shared cache before looking at the
+        // host buffer, so that recompiling a graph whose fused weights were
+        // released still finds them.
+        if ((info.buffer != nullptr || is_fused_weight) && !info.name.empty() &&
             conversion_ctx_.shared_weight_descriptors != nullptr) {
           auto shared_it =
               conversion_ctx_.shared_weight_descriptors->find(info.name);
@@ -535,8 +554,18 @@ class CompiledMlDriftModelRunner {
             name_to_tensor_map_[info.name] = weights_tensor;
             conversion_ctx_.weight_name_to_handle.insert(
                 {info.name, gpu_handle});
+            MaybeReleaseFusedHostBuffer(weights_tensor, info);
             continue;
           }
+        }
+        if (info.buffer == nullptr) {
+          if (is_fused_weight) {
+            return absl::FailedPreconditionError(absl::StrCat(
+                "The host data of fused weight '", info.name,
+                "' was released after an earlier upload; compile this graph "
+                "with the SharedWeightsCache that holds its packed weights."));
+          }
+          continue;
         }
 
         auto buffer = info.buffer;
@@ -589,6 +618,7 @@ class CompiledMlDriftModelRunner {
             conversion_ctx_.weight_name_to_handle.insert(
                 {info.name, gpu_handle});
           }
+          MaybeReleaseFusedHostBuffer(weights_tensor, info);
           continue;
         }
 
@@ -674,9 +704,26 @@ class CompiledMlDriftModelRunner {
         if (!info.name.empty()) {
           conversion_ctx_.weight_name_to_handle.insert({info.name, gpu_handle});
         }
+        MaybeReleaseFusedHostBuffer(weights_tensor, info);
       }
     }
     return absl::OkStatus();
+  }
+
+  // Drops the host copy of a fused constant weight once the shared cache holds
+  // its packed descriptor, if the cache allows it
+  // (`SharedWeightsCache::release_fused_host_buffers`). Released tensors stay
+  // visible to `GetWeightTensors()`.
+  void MaybeReleaseFusedHostBuffer(const graph::Tensor& weights_tensor,
+                                   graph::TensorInformation& info) {
+    if (shared_weights_ == nullptr ||
+        !shared_weights_->release_fused_host_buffers ||
+        !absl::StrContains(info.name, '+') ||
+        !shared_weights_->descriptors.contains(info.name)) {
+      return;
+    }
+    info.buffer = nullptr;
+    released_weight_tensors_.insert(weights_tensor);
   }
 
  protected:
@@ -684,6 +731,8 @@ class CompiledMlDriftModelRunner {
   std::vector<TensorHandle> flat_outputs_;
 
   absl::flat_hash_map<std::string, graph::Tensor> name_to_tensor_map_;
+  // Fused weights whose host buffers `MaybeReleaseFusedHostBuffer` dropped.
+  absl::flat_hash_set<graph::Tensor> released_weight_tensors_;
 
   Environment env_;
   Environment* env_ptr_ = &env_;

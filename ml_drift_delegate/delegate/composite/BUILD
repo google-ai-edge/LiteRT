@@ -23,7 +23,34 @@ package(
         "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
         "//ml_drift_delegate/delegate:__subpackages__",
         "//ml_drift_delegate/tflite:__subpackages__",
+        "//tensor:__subpackages__",
         # copybara:uncomment "//third_party/py/ai_edge_jax/generative/backends/cpu_gpu/compat:__subpackages__",
+    ],
+)
+
+cc_library(
+    name = "tiled_quantized_fully_connected_kernel",
+    srcs = ["tiled_quantized_fully_connected_kernel.cc"],
+    hdrs = ["tiled_quantized_fully_connected_kernel.h"],
+    deps = [
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:kernel_info",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common:util",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/kernels:fully_connected_util",
+        "@ml_drift//ml_drift/common/task:compiler_options",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:tuning_type",
+        "@ml_drift//ml_drift/common/task:util",
+        "@ml_drift//ml_drift/common/task:weights_layout",
     ],
 )
 
