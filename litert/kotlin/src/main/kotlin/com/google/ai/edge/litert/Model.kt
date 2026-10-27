@@ -404,6 +404,22 @@ private constructor(
     }
   }
 
+  /**
+   * The duration of the most recent native inference execution, in nanoseconds, or a negative value
+   * (`-1L`) if this model has not been run yet or if the most recent run failed.
+   *
+   * The measured interval covers the native execution of the compiled model graph by the underlying
+   * runtime (and hardware accelerator synchronization), matching the timing scope of TFLite's
+   * `Interpreter.getLastNativeInferenceDurationNanoseconds()` API. It excludes buffer registration,
+   * host memory locking/mapping, tensor allocation, and data marshalling between Kotlin and native
+   * memory.
+   */
+  val lastNativeInferenceDurationNanoseconds: Long
+    get() {
+      assertNotDestroyed()
+      return nativeGetLastInferenceDurationNanoseconds(handle)
+    }
+
   @Throws(LiteRtException::class)
   fun createInputBuffer(inputName: String, signature: String = ""): TensorBuffer {
     assertNotDestroyed()
@@ -801,6 +817,9 @@ private constructor(
       outputName: String,
       signature: String,
     ): TensorType
+
+    @JvmStatic
+    private external fun nativeGetLastInferenceDurationNanoseconds(compiledModelHandle: Long): Long
 
     @JvmStatic private external fun nativeDestroy(handle: Long)
   }

@@ -14,6 +14,7 @@
 
 #include "litert/cc/litert_environment.h"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -247,13 +248,49 @@ TEST(EnvironmentTest, RuntimeProxyAbiVersion1_2_0) {
             kLiteRtStatusErrorUnsupported);
 }
 
-TEST(EnvironmentTest, RuntimeProxyAbiVersion1_4_0) {
+TEST(EnvironmentTest, RuntimeProxyAbiVersion1_5_0) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment base_env, Environment::Create({}));
   internal::RuntimeProxy proxy(GetLiteRtRuntimeBuiltin(),
-                               internal::RuntimeAbiVersion(1, 4, 0));
+                               internal::RuntimeAbiVersion(1, 5, 0));
+  Environment env = Environment::WrapCObject(
+      internal::EnvironmentHolder{&proxy, base_env.GetHolder().handle},
+      OwnHandle::kNo);
+
   const char* abi_version = nullptr;
   ASSERT_EQ(proxy.GetRuntimeAbiVersion(&abi_version), kLiteRtStatusOk);
   ASSERT_NE(abi_version, nullptr);
   EXPECT_STREQ(abi_version, LITERT_RUNTIME_ABI_VERSION);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  // 1.6.0 API (LastInferenceDurationNanoseconds) should return
+  // kErrorUnsupported on 1.5.0.
+  auto duration = compiled_model.LastInferenceDurationNanoseconds();
+  EXPECT_FALSE(duration);
+  EXPECT_EQ(duration.Error().Status(), kLiteRtStatusErrorUnsupported);
+}
+
+TEST(EnvironmentTest, RuntimeProxyAbiVersion1_6_0) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment base_env, Environment::Create({}));
+  internal::RuntimeProxy proxy(GetLiteRtRuntimeBuiltin(),
+                               internal::RuntimeAbiVersion(1, 6, 0));
+  Environment env = Environment::WrapCObject(
+      internal::EnvironmentHolder{&proxy, base_env.GetHolder().handle},
+      OwnHandle::kNo);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  // 1.6.0 API (LastInferenceDurationNanoseconds) should succeed on 1.6.0
+  // runtime.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      int64_t duration, compiled_model.LastInferenceDurationNanoseconds());
+  EXPECT_EQ(duration, -1);
 }
 
 TEST(EnvironmentTest, CreateWithSystemGpuAcceleratorHandle) {

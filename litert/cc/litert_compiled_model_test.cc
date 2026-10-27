@@ -327,7 +327,15 @@ TEST(CompiledModelTest, Basic) {
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute model with input and output buffers.
+  auto duration_before = compiled_model.LastInferenceDurationNanoseconds();
+  ASSERT_TRUE(duration_before);
+  EXPECT_EQ(*duration_before, -1);
+
   compiled_model.Run(input_buffers, output_buffers);
+
+  auto duration_after = compiled_model.LastInferenceDurationNanoseconds();
+  ASSERT_TRUE(duration_after);
+  EXPECT_GT(*duration_after, 0);
 
   // Check model output.
   {
@@ -341,6 +349,13 @@ TEST(CompiledModelTest, Basic) {
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
+
+  // Verify that a failed run resets the duration to -1.
+  EXPECT_FALSE(compiled_model.Run(std::vector<TensorBuffer>{}, output_buffers));
+  auto duration_after_failed =
+      compiled_model.LastInferenceDurationNanoseconds();
+  ASSERT_TRUE(duration_after_failed);
+  EXPECT_EQ(*duration_after_failed, -1);
 }
 
 TEST(CompiledModelTest, OwningCreateRejectsNonOwnedModel) {

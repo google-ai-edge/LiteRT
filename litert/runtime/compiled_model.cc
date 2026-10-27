@@ -16,6 +16,11 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+// Lint prefers absl over <chrono>, but we need a steady monotonic clock that
+// measures elapsed real time unaffected by wall-clock adjustments and ignoring
+// periods when the device is suspended, which absl does not provide.
+#include <chrono>  // NOLINT(build/c++11)
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
@@ -2231,6 +2236,7 @@ Expected<void> LiteRtCompiledModelT::Run(
     const std::vector<LiteRtTensorBuffer>& output_buffers, bool& async,
     LiteRtOptions run_options, const LiteRtSchedulingInfo* scheduling_info) {
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Inference");
+  last_inference_duration_nanos_.store(-1, std::memory_order_relaxed);
   LITERT_RETURN_IF_ERROR(ValidateSignatureIsActive(signature_key));
 
   uint64_t event_handle = std::numeric_limits<uint64_t>::max();
@@ -2424,6 +2430,7 @@ Expected<void> LiteRtCompiledModelT::Run(
   };
 
   TfLiteStatus invoke_status = kTfLiteOk;
+  const auto inference_start = std::chrono::steady_clock::now();
   {
     LITERT_PERFETTO_TRACE_EVENT("CompiledModel Invoke");
     if (use_interpreter_directly) {
@@ -2438,6 +2445,43 @@ Expected<void> LiteRtCompiledModelT::Run(
     }
     return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Failed to invoke");
   }
+
+  if (profiler_ && profiler_->IsProfiling()) {
+    profiler_->SetCurrentEventSource(LITERT);
+    event_handle = profiler_->BeginEvent(
+        "LiteRT::Run[Buffer sync]", tflite::Profiler::EventType::DEFAULT, 0, 0);
+  }
+
+  if (async) {
+    // If the caller requested async execution, then set async to true if any
+    // of the output buffers have been assigned a synchronization event.
+    async = false;
+    for (auto& tb : output_buffers) {
+      async |= tb->HasEvent();
+    }
+  } else {
+    // If the caller has not requested async execution, then wait on
+    // synchronization events that have been attached to the outputs.
+    for (auto& tb : output_buffers) {
+      if (tb->HasEvent()) {
+        LITERT_ASSIGN_OR_RETURN(LiteRtEventT * event, tb->GetEvent());
+        LITERT_RETURN_IF_ERROR(event->Wait(/*timeout_in_ms=*/-1));
+      }
+    }
+  }
+
+  const auto inference_end = std::chrono::steady_clock::now();
+  const int64_t inference_duration_nanos =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(inference_end -
+                                                           inference_start)
+          .count();
+
+  if (profiler_ && profiler_->IsProfiling() &&
+      event_handle != std::numeric_limits<uint64_t>::max()) {
+    profiler_->SetCurrentEventSource(LITERT);
+    profiler_->EndEvent(event_handle);
+  }
+
   // Copy data from TfLiteTensor to LiteRtTensorBuffer for pending outputs (e.g.
   // strings)
   LITERT_LOG(LITERT_DEBUG, "Run: pending_string_output_copies size=%d",
@@ -2495,35 +2539,8 @@ Expected<void> LiteRtCompiledModelT::Run(
     }
   }
 
-  if (profiler_ && profiler_->IsProfiling()) {
-    profiler_->SetCurrentEventSource(LITERT);
-    event_handle = profiler_->BeginEvent(
-        "LiteRT::Run[Buffer sync]", tflite::Profiler::EventType::DEFAULT, 0, 0);
-  }
-
-  if (async) {
-    // If the caller requested async execution, then set async to true if any
-    // of the output buffers have been assigned a synchronization event.
-    async = false;
-    for (auto& tb : output_buffers) {
-      async |= tb->HasEvent();
-    }
-  } else {
-    // If the caller has not requested async execution, then wait on
-    // synchronization events that have been attached to the outputs.
-    for (auto& tb : output_buffers) {
-      if (tb->HasEvent()) {
-        LITERT_ASSIGN_OR_RETURN(LiteRtEventT * event, tb->GetEvent());
-        LITERT_RETURN_IF_ERROR(event->Wait(/*timeout_in_ms=*/-1));
-      }
-    }
-  }
-  if (profiler_ && profiler_->IsProfiling() &&
-      event_handle != std::numeric_limits<uint64_t>::max()) {
-    profiler_->SetCurrentEventSource(LITERT);
-    profiler_->EndEvent(event_handle);
-  }
-
+  last_inference_duration_nanos_.store(inference_duration_nanos,
+                                       std::memory_order_relaxed);
   return {};
 }
 

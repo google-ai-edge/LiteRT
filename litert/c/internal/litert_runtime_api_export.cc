@@ -287,5 +287,7 @@ extern "C" LITERT_CAPI_EXPORT const LiteRtRuntimeCApiStruct
             LiteRtCompiledModelRegisterTensorBuffer,
         .litert_compiled_model_unregister_tensor_buffer =
             LiteRtCompiledModelUnregisterTensorBuffer,
+        .litert_get_compiled_model_last_inference_duration =
+            LiteRtGetCompiledModelLastInferenceDuration,
         // Google-internal LINT.ThenChange()
     };
