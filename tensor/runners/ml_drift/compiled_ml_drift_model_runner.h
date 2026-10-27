@@ -30,6 +30,7 @@ limitations under the License.
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
@@ -101,7 +102,11 @@ class CompiledMlDriftModelRunner {
         .storage_type =
             Backend::GetStorageTypeForBuilder(*env_ptr_, env_initialized_),
     };
-    gpu_model_info_.hints.Add(ml_drift::ModelHints::kFastTuning);
+    const char* fast_tuning_env = std::getenv("LRT_FAST_TUNING");
+    if (fast_tuning_env == nullptr ||
+        std::string(fast_tuning_env) != "false") {
+      gpu_model_info_.hints.Add(ml_drift::ModelHints::kFastTuning);
+    }
     gpu_model_info_.hints.Add(ml_drift::ModelHints::kPreferTextureWeights);
     gpu_model_info_.hints.Add(ml_drift::ModelHints::kEnableHostMappedPointer);
     gpu_model_info_.hints.Add(ml_drift::ModelHints::kDisallow8bitConvs);
@@ -515,13 +520,13 @@ class CompiledMlDriftModelRunner {
       if (op->GetName() == "FullyConnected" ||
           op->GetName() == "EmbeddingLookup") {
         auto weights_tensor = op->inputs[1];
-        LRT_TENSOR_ASSIGN_OR_RETURN(const auto& info,
+        if (conversion_ctx_.graph_tensor_to_handle.contains(weights_tensor)) {
+          continue;
+        }
+        LRT_TENSOR_ASSIGN_OR_RETURN(auto& info,
                                     graph::GetInfo(weights_tensor));
         bool skip = conversion_ctx_.external_weight_names.contains(info.name);
         if (info.buffer == nullptr || skip) {
-          continue;
-        }
-        if (conversion_ctx_.graph_tensor_to_handle.contains(weights_tensor)) {
           continue;
         }
         if (!info.name.empty() &&
@@ -535,6 +540,9 @@ class CompiledMlDriftModelRunner {
             name_to_tensor_map_[info.name] = weights_tensor;
             conversion_ctx_.weight_name_to_handle.insert(
                 {info.name, gpu_handle});
+            if (absl::StrContains(info.name, '+')) {
+              info.buffer = nullptr;
+            }
             continue;
           }
         }
@@ -588,6 +596,10 @@ class CompiledMlDriftModelRunner {
           if (!info.name.empty()) {
             conversion_ctx_.weight_name_to_handle.insert(
                 {info.name, gpu_handle});
+          }
+          if (conversion_ctx_.shared_weight_descriptors != nullptr &&
+              absl::StrContains(info.name, '+')) {
+            info.buffer = nullptr;
           }
           continue;
         }
@@ -673,6 +685,10 @@ class CompiledMlDriftModelRunner {
         name_to_tensor_map_[info.name] = weights_tensor;
         if (!info.name.empty()) {
           conversion_ctx_.weight_name_to_handle.insert({info.name, gpu_handle});
+        }
+        if (conversion_ctx_.shared_weight_descriptors != nullptr &&
+            absl::StrContains(info.name, '+')) {
+          info.buffer = nullptr;
         }
       }
     }
