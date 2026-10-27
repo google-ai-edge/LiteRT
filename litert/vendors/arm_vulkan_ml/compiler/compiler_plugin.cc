@@ -33,7 +33,9 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_arm_vulkan_ml_options.h"
-#include "litert/vendors/arm_vulkan_ml/capabilities.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/partition.h"
+#include "litert/vendors/arm_vulkan_ml/common/arm_vulkan_ml_jit_executable.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
 
@@ -105,6 +107,8 @@ class LiteRtCompilerPluginT {
 struct LiteRtCompiledResultT {
   std::vector<std::vector<char>> byte_codes;
   std::vector<std::string> call_infos;
+  std::vector<std::unique_ptr<litert::arm_vulkan_ml::ArmVulkanMLJitExecutable>>
+      executables;
 };
 
 namespace {
@@ -144,7 +148,7 @@ LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
   if (compiler_plugin == nullptr || sdk_version == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *sdk_version = "";
+  *sdk_version = "TFSC-2.0.0/TOSA.001000.1-direct-v1";
   return kLiteRtStatusOk;
 }
 
@@ -209,21 +213,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
   litert::Subgraph graph(subgraph);
   for (const auto& op : graph.Ops()) {
-    if (!litert::arm_vulkan_ml::IsSupportedOpCode(op.Code())) {
-      continue;
-    }
-
-    bool is_supported = true;
-    for (const auto& input : op.Inputs()) {
-      is_supported &=
-          litert::arm_vulkan_ml::IsSupportedType(input.ElementType());
-    }
-    for (const auto& output : op.Outputs()) {
-      is_supported &=
-          litert::arm_vulkan_ml::IsSupportedType(output.ElementType());
-    }
-
-    if (is_supported) {
+    std::string reason;
+    if (litert::arm_vulkan_ml::AnalyzeOperation(op, reason)) {
       LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
     }
   }
@@ -237,9 +228,30 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   if (partitions == nullptr || compiled_result == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
+  *compiled_result = nullptr;
   LITERT_RETURN_IF_ERROR(EnsureJitMode(compiler_plugin));
 
   auto result = std::make_unique<LiteRtCompiledResultT>();
+  auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
+  if (model.NumSubgraphs() == 0) return kLiteRtStatusErrorInvalidArgument;
+  for (size_t i = 0; i < model.NumSubgraphs(); ++i) {
+    auto graph = model.Subgraph(i);
+    if (!graph) return graph.Error().Status();
+    std::string reason;
+    auto partition = litert::arm_vulkan_ml::CompilePartition(*graph, reason);
+    if (!partition) {
+      LITERT_LOG(LITERT_ERROR, "ArmVulkanML partition %zu: %s", i, reason.c_str());
+      return kLiteRtStatusErrorUnsupported;
+    }
+    auto executable =
+        std::make_unique<litert::arm_vulkan_ml::ArmVulkanMLJitExecutable>();
+    executable->partition = std::move(partition);
+    result->executables.push_back(std::move(executable));
+    result->call_infos.push_back("arm_vulkan_ml_" + std::to_string(i));
+    // Core dispatch metadata expects a module index even in the JIT flow.
+    // The payload is the JIT handle, not a serialized VGF or SPIR-V bytecode.
+    result->byte_codes.emplace_back();
+  }
   *compiled_result = result.release();
   return kLiteRtStatusOk;
 }
@@ -281,7 +293,8 @@ LiteRtStatus LiteRtGetCompiledResultHandle(LiteRtCompiledResult compiled_result,
       static_cast<size_t>(call_idx) >= compiled_result->call_infos.size()) {
     return kLiteRtStatusErrorIndexOOB;
   }
-  *handle = nullptr;
+  *handle = reinterpret_cast<LiteRtJitExecutable>(
+      compiled_result->executables[call_idx].get());
   return kLiteRtStatusOk;
 }
 
@@ -299,7 +312,7 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
   }
   *call_info = compiled_result->call_infos[call_idx].data();
   *call_info_size = compiled_result->call_infos[call_idx].size();
-  *byte_code_idx = 0;
+  *byte_code_idx = call_idx;
   return kLiteRtStatusOk;
 }
 
