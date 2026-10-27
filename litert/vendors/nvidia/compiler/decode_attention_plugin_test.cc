@@ -21,6 +21,7 @@
 
 #include <gtest/gtest.h>
 #include "NvInferRuntime.h"
+#include "litert/vendors/nvidia/trtllm/global_attention.h"
 
 namespace litert::nvidia {
 namespace {
@@ -116,6 +117,62 @@ TEST_F(DecodeAttentionPluginTest, RejectsUnsupportedSingleHeadShapes) {
   inputs_[2] = inputs_[1];
   EXPECT_EQ(ShapeStatus(), 0);
   inputs_[0].dims.d[2] = 24;
+  output_ = inputs_[0];
+  EXPECT_NE(ShapeStatus(), 0);
+}
+
+TEST_F(DecodeAttentionPluginTest, RowTokensTakeAFewTokensOfSeveralHeads) {
+  // Gemma 4 26B's verify step: two KV heads of depth 512 with eight query
+  // heads each, and the four of its five tokens that fill 16-row tiles.
+  const LiteRtNvidiaInt8CacheParams int8 = {0.01f, -3, 0.02f, 4,
+                                            /*value_columns=*/true};
+  EXPECT_EQ(CreateDecodeAttentionPlugin(-1.0e4f, /*new_keys=*/true, nullptr,
+                                        /*window=*/0, /*row_tokens=*/4),
+            nullptr);
+  EXPECT_EQ(CreateDecodeAttentionPlugin(-1.0e4f, false, &int8, 0, 4), nullptr);
+  EXPECT_EQ(CreateDecodeAttentionPlugin(-1.0e4f, false, nullptr, 0, -1),
+            nullptr);
+  plugin_.reset(CreateDecodeAttentionPlugin(-1.0e4f, false, nullptr, 0, 4));
+  ASSERT_NE(plugin_, nullptr);
+  runtime_ = static_cast<nvinfer1::IPluginV3OneRuntime*>(
+      plugin_->getCapabilityInterface(
+          nvinfer1::PluginCapabilityType::kRUNTIME));
+  ASSERT_NE(runtime_, nullptr);
+  inputs_[0].dims = nvinfer1::Dims4{1, 2, 32, 512};
+  inputs_[1].dims = nvinfer1::Dims4{1, 2, 32768, 512};
+  inputs_[2] = inputs_[1];
+  output_ = inputs_[0];
+  for (int mask_rows : {1, 4}) {
+    inputs_[3].dims.d[2] = mask_rows;
+    EXPECT_EQ(ShapeStatus(), 0) << "mask_rows=" << mask_rows;
+  }
+  // The workspace holds the partial sums of both tiles at a 16-row launch's
+  // split count.
+  auto* build = static_cast<nvinfer1::IPluginV3OneBuild*>(
+      plugin_->getCapabilityInterface(nvinfer1::PluginCapabilityType::kBUILD));
+  ASSERT_NE(build, nullptr);
+  std::array<nvinfer1::DynamicPluginTensorDesc, 4> dynamic{};
+  for (int i = 0; i < 4; ++i) {
+    dynamic[i].desc = inputs_[i];
+    dynamic[i].min = dynamic[i].opt = dynamic[i].max = inputs_[i].dims;
+  }
+  nvinfer1::DynamicPluginTensorDesc dynamic_output{};
+  dynamic_output.desc = output_;
+  EXPECT_EQ(
+      build->getWorkspaceSize(dynamic.data(), 4, &dynamic_output, 1),
+      LiteRtNvidiaGlobalAttentionTokensWorkspaceBytes(32, 4, 4, 32768, 512));
+  // A mask of two rows is neither shared nor a row per token; ten or six
+  // heads do not fill a tile; the kernel takes depth 512 alone.
+  inputs_[3].dims.d[2] = 2;
+  EXPECT_NE(ShapeStatus(), 0);
+  inputs_[3].dims.d[2] = 4;
+  for (int rows : {40, 24}) {
+    inputs_[0].dims.d[2] = rows;
+    output_ = inputs_[0];
+    EXPECT_NE(ShapeStatus(), 0) << "rows=" << rows;
+  }
+  inputs_[0].dims.d[2] = 32;
+  for (int i = 0; i < 3; ++i) inputs_[i].dims.d[3] = 256;
   output_ = inputs_[0];
   EXPECT_NE(ShapeStatus(), 0);
 }

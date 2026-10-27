@@ -39,6 +39,7 @@
 #include <optional>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -179,12 +180,37 @@ struct TokenTableWaiter {
   bool failed = false;
 };
 
+// A copy of a step feed's registrations to the device, on a thread of its
+// own: the step feed's context goes on decoding without steps ahead and takes
+// the tables at its first invocation after the thread has published them.
+// The thread reads the registrations' memory, which is the caller's for as
+// long as the step feed's model: the copy is stopped and waited for when the
+// step feed's context goes (ForgetTokenTableWaiter).
+struct TokenTableUpload {
+  // Waits for the thread, which takes the registry's lock to publish: an
+  // upload is let go of outside that lock.
+  ~TokenTableUpload() {
+    if (thread.joinable()) thread.join();
+  }
+
+  const void* context = nullptr;  // the step feed the copy is for
+  int device = 0;                 // that step feed's CUDA device
+  std::vector<AwaitedTokenTable> keys;
+  // The registration to copy, by key (null: the table is on the device).
+  std::vector<std::shared_ptr<const TokenTableSource>> sources;
+  std::atomic<bool> cancelled{false};  // the step feed went: nothing is kept
+  bool done = false;  // under the registry's lock: the thread is past it
+  std::thread thread;
+};
+
 // The tables on the device (the first copy of a kind, vocab and dim serves
-// every step feed that awaits one) and the step feeds that await one.
+// every step feed that awaits one), the step feeds that await one, and the
+// copy to the device in flight (one at a time).
 struct TokenTableRegistry {
   std::mutex mutex;
   std::vector<RegisteredTokenTable> tables;
   std::vector<TokenTableWaiter> waiters;
+  std::unique_ptr<TokenTableUpload> upload;
 };
 
 TokenTableRegistry& GetTokenTableRegistry() {
@@ -290,48 +316,63 @@ class StepHandoffRegistry {
   std::unordered_map<const void*, StepHandoff> handoffs_;
 };
 
-// Copies a registration to the device, under the registry's lock: the table
-// on the device, or failed. A failed copy is not tried again (a decode step
-// would otherwise try at every invocation) and leaves no CUDA error behind:
-// the decode step's own launches check for one.
-RegisteredTokenTable UploadTokenTable(const TokenTableSource& source) {
+// Copies a registration to the device on `stream`, on the upload's thread:
+// the table on the device, or failed (without a word when `cancelled`
+// stopped the copy). The registration's memory is pageable (the model file,
+// mapped), so the copies go through page-locked buffers (weight_store.h): a
+// synchronous copy of it from the decode loop that asked for the table held
+// that loop up, for 0.3 s with the E2B's 1.2 GB of per-layer tables in the
+// page cache and for 2.5 s without.
+RegisteredTokenTable UploadTokenTable(const TokenTableSource& source,
+                                      cudaStream_t stream,
+                                      const std::atomic<bool>& cancelled) {
   const auto start = std::chrono::steady_clock::now();
   RegisteredTokenTable table = source.table;
   const size_t table_bytes =
       source.table_part_bytes * source.table_parts.size();
   const size_t scales_bytes =
       source.scale_part_bytes * source.scale_parts.size();
+  std::string error;
   cudaError_t status = cudaMalloc(&table.table, table_bytes);
-  for (size_t i = 0; status == cudaSuccess && i < source.table_parts.size();
-       ++i) {
-    status = cudaMemcpy(
-        static_cast<uint8_t*>(table.table) + i * source.table_part_bytes,
-        source.table_parts[i], source.table_part_bytes, cudaMemcpyHostToDevice);
-  }
   if (status == cudaSuccess) status = cudaMalloc(&table.scales, scales_bytes);
-  for (size_t i = 0; status == cudaSuccess && i < source.scale_parts.size();
-       ++i) {
-    status = cudaMemcpy(
-        static_cast<uint8_t*>(table.scales) + i * source.scale_part_bytes,
-        source.scale_parts[i], source.scale_part_bytes, cudaMemcpyHostToDevice);
-  }
   if (status != cudaSuccess) {
-    static_cast<void>(cudaGetLastError());
+    error = cudaGetErrorString(status);
+  } else {
+    std::vector<litert::nvidia::HostToDeviceCopy> copies;
+    copies.reserve(source.table_parts.size() + source.scale_parts.size());
+    for (size_t i = 0; i < source.table_parts.size(); ++i) {
+      copies.push_back(
+          {source.table_parts[i], source.table_part_bytes,
+           static_cast<uint8_t*>(table.table) + i * source.table_part_bytes});
+    }
+    for (size_t i = 0; i < source.scale_parts.size(); ++i) {
+      copies.push_back(
+          {source.scale_parts[i], source.scale_part_bytes,
+           static_cast<uint8_t*>(table.scales) + i * source.scale_part_bytes});
+    }
+    if (auto copied = litert::nvidia::CopyToDevice(copies, stream, &cancelled);
+        !copied) {
+      error = copied.Error().Message();
+    }
+  }
+  if (!error.empty() || cancelled.load()) {
     if (table.scales != nullptr) cudaFree(table.scales);
     if (table.table != nullptr) cudaFree(table.table);
     table.table = nullptr;
     table.scales = nullptr;
     table.upload_failed = true;
-    LITERT_LOG(LITERT_WARNING,
-               "NVIDIA dispatch: the registered table [%u, %u]%s cannot be "
-               "copied to the device (%zu bytes): %s; no step feed takes it",
-               table.vocab, table.dim, table.kind == 0 ? "" : " (per-layer)",
-               table_bytes + scales_bytes, cudaGetErrorString(status));
+    if (!error.empty()) {
+      LITERT_LOG(LITERT_WARNING,
+                 "NVIDIA dispatch: the registered table [%u, %u]%s cannot be "
+                 "copied to the device (%zu bytes): %s; no step feed takes it",
+                 table.vocab, table.dim, table.kind == 0 ? "" : " (per-layer)",
+                 table_bytes + scales_bytes, error.c_str());
+    }
     return table;
   }
   LITERT_LOG(LITERT_INFO,
              "NVIDIA dispatch: the registered table [%u, %u]%s copied to the "
-             "device for a decode loop (%zu bytes, %.1f ms)",
+             "device beside its decode loop (%zu bytes, %.1f ms)",
              table.vocab, table.dim, table.kind == 0 ? "" : " (per-layer)",
              table_bytes + scales_bytes,
              std::chrono::duration<double, std::milli>(
@@ -367,100 +408,128 @@ TokenTableWaiter* FindWaiter(TokenTableRegistry& registry, const void* context,
   return nullptr;
 }
 
+// The upload's thread: copies the registrations of `upload` to the device
+// and publishes the tables, all or none. A copy that fails is its step
+// feed's own failure and is not tried again (a decode step would otherwise
+// start one at every invocation): another model's registration of the same
+// table may still be copied.
+void RunTokenTableUpload(TokenTableUpload* upload) {
+  std::vector<RegisteredTokenTable> copies(upload->keys.size());
+  cudaStream_t stream = nullptr;
+  cudaError_t status = cudaSetDevice(upload->device);
+  if (status == cudaSuccess) {
+    status = cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking);
+  }
+  bool copied = status == cudaSuccess;
+  if (!copied) {
+    LITERT_LOG(LITERT_WARNING,
+               "NVIDIA dispatch: the registered tables cannot be copied to "
+               "the device: %s; no step feed takes them",
+               cudaGetErrorString(status));
+  }
+  for (size_t i = 0; copied && i < copies.size(); ++i) {
+    if (upload->sources[i] == nullptr) continue;
+    copies[i] =
+        UploadTokenTable(*upload->sources[i], stream, upload->cancelled);
+    copied = !copies[i].upload_failed;
+  }
+  if (stream != nullptr) cudaStreamDestroy(stream);
+  auto& registry = GetTokenTableRegistry();
+  std::lock_guard<std::mutex> lock(registry.mutex);
+  // Under the lock the step feed is either still there, and its tables are
+  // published, or it went, and stopped the copy before it let go of the lock.
+  const bool publish = copied && !upload->cancelled.load();
+  for (size_t i = 0; i < copies.size(); ++i) {
+    if (upload->sources[i] == nullptr) continue;
+    if (publish) {
+      registry.tables.push_back(copies[i]);
+      // Every step feed that awaits such a table takes this copy.
+      for (auto& w : registry.waiters) {
+        if (w.key == upload->keys[i]) w.source.reset();
+      }
+      continue;
+    }
+    if (copies[i].scales != nullptr) cudaFree(copies[i].scales);
+    if (copies[i].table != nullptr) cudaFree(copies[i].table);
+    if (TokenTableWaiter* waiter =
+            FindWaiter(registry, upload->context, upload->keys[i])) {
+      waiter->failed = true;
+      waiter->source.reset();
+    }
+  }
+  upload->done = true;
+}
+
 // The tables step feed `context` (set up in the device context of serial
 // `device_context`) awaits, one state per key; a wait not noted yet is noted.
 // With `upload`, once every table is on the device or registered for it and
-// none failed, its registrations go to the device: all or none, copied
-// outside the registry's lock (a copy from a cold page cache takes a second
-// or two), and published unless another step feed published the same table
-// meanwhile. A failure is the step feed's own: another model's registration
-// of the same table may still be copied.
+// none failed, a thread starts to copy its registrations to the device
+// (TokenTableUpload; a copy from a cold page cache takes a second or two),
+// unless another step feed's copy is in flight: the states of this call
+// still lack those tables, and a later call finds them on the device, or
+// the step feed failed.
 std::vector<TokenTableState> FindTokenTables(
     const void* context, uint64_t device_context,
     const std::vector<AwaitedTokenTable>& keys, bool upload) {
   auto& registry = GetTokenTableRegistry();
   std::vector<TokenTableState> states(keys.size());
   std::vector<std::shared_ptr<const TokenTableSource>> sources(keys.size());
-  {
-    std::lock_guard<std::mutex> lock(registry.mutex);
-    bool ready = true;
-    for (size_t i = 0; i < keys.size(); ++i) {
-      if (const RegisteredTokenTable* table =
-              TableOnDevice(registry, keys[i])) {
-        states[i] = {*table, true, false};
-        continue;
-      }
-      TokenTableWaiter* waiter = FindWaiter(registry, context, keys[i]);
-      if (waiter == nullptr) {
-        registry.waiters.push_back(
-            {context, device_context, keys[i], nullptr, false});
-        ready = false;
-        continue;
-      }
-      states[i] = {std::nullopt, waiter->source != nullptr, waiter->failed};
-      ready = ready && states[i].registered && !states[i].failed;
-      sources[i] = waiter->source;
-    }
-    if (!upload || !ready) return states;
-  }
-  std::vector<RegisteredTokenTable> copies(keys.size());
-  bool copied = true;
-  for (size_t i = 0; copied && i < keys.size(); ++i) {
-    if (sources[i] == nullptr) continue;
-    copies[i] = UploadTokenTable(*sources[i]);
-    copied = !copies[i].upload_failed;
-  }
+  std::unique_ptr<TokenTableUpload> finished;  // let go of after the lock
   std::lock_guard<std::mutex> lock(registry.mutex);
-  if (!copied) {
-    // Another step feed published every table this one copied meanwhile (its
-    // own copy failed for want of the memory theirs took): those serve it.
-    copied = true;
-    for (size_t i = 0; i < keys.size(); ++i) {
-      if (sources[i] != nullptr &&
-          TableOnDevice(registry, keys[i]) == nullptr) {
-        copied = false;
-      }
-    }
+  if (registry.upload != nullptr && registry.upload->done) {
+    finished = std::move(registry.upload);
   }
+  bool ready = true;
+  bool on_device = true;
   for (size_t i = 0; i < keys.size(); ++i) {
-    if (sources[i] == nullptr) continue;
-    const RegisteredTokenTable* existing = TableOnDevice(registry, keys[i]);
-    if (!copied || existing != nullptr) {
-      // Not published: all or none, or another step feed's copy stands.
-      if (copies[i].scales != nullptr) cudaFree(copies[i].scales);
-      if (copies[i].table != nullptr) cudaFree(copies[i].table);
-    }
-    if (!copied) {
-      if (TokenTableWaiter* waiter = FindWaiter(registry, context, keys[i])) {
-        waiter->failed = true;
-        waiter->source.reset();
-      }
-      states[i].registered = false;
-      states[i].failed = true;
+    if (const RegisteredTokenTable* table = TableOnDevice(registry, keys[i])) {
+      states[i] = {*table, true, false};
       continue;
     }
-    if (existing == nullptr) {
-      registry.tables.push_back(copies[i]);
-      existing = &registry.tables.back();
+    on_device = false;
+    TokenTableWaiter* waiter = FindWaiter(registry, context, keys[i]);
+    if (waiter == nullptr) {
+      registry.waiters.push_back(
+          {context, device_context, keys[i], nullptr, false});
+      ready = false;
+      continue;
     }
-    states[i].table = *existing;
-    // Every step feed that awaits such a table takes this copy.
-    for (auto& w : registry.waiters) {
-      if (w.key == keys[i]) w.source.reset();
-    }
+    states[i] = {std::nullopt, waiter->source != nullptr, waiter->failed};
+    ready = ready && states[i].registered && !states[i].failed;
+    sources[i] = waiter->source;
   }
+  if (!upload || !ready || on_device || registry.upload != nullptr) {
+    return states;
+  }
+  registry.upload = std::make_unique<TokenTableUpload>();
+  registry.upload->context = context;
+  if (cudaGetDevice(&registry.upload->device) != cudaSuccess) {
+    registry.upload->device = -1;  // the thread fails the copy and says so
+  }
+  registry.upload->keys = keys;
+  registry.upload->sources = std::move(sources);
+  registry.upload->thread =
+      std::thread(RunTokenTableUpload, registry.upload.get());
   return states;
 }
 
-// Forgets what a step feed awaits, when its context goes.
+// Forgets what a step feed awaits, when its context goes, and stops a copy
+// made for it: once this returns, nothing reads the memory of that step
+// feed's registrations any more.
 void ForgetTokenTableWaiter(const void* context) {
   auto& registry = GetTokenTableRegistry();
+  std::unique_ptr<TokenTableUpload> stopped;  // let go of after the lock
   std::lock_guard<std::mutex> lock(registry.mutex);
   registry.waiters.erase(
       std::remove_if(
           registry.waiters.begin(), registry.waiters.end(),
           [&](const TokenTableWaiter& w) { return w.context == context; }),
       registry.waiters.end());
+  if (registry.upload != nullptr &&
+      (registry.upload->done || registry.upload->context == context)) {
+    registry.upload->cancelled = true;
+    stopped = std::move(registry.upload);
+  }
 }
 
 // The step feeds a registration of such a table on this thread is for: those
@@ -487,12 +556,12 @@ bool TokenTableWanted(const AwaitedTokenTable& key) {
 }
 
 // Takes a registration for the step feeds it is for (RegistrationWanted,
-// checked again under the lock). Nothing is copied now: one of them copies it
-// to the device in a long decode loop (kTokenTableUploadInvocations; under
-// speculative decoding the table never takes device memory). Only those step
-// feeds read the caller's memory, from their own model's decode invocations:
-// the caller's model resources outlive them. The first copy of a kind, vocab
-// and dim serves every step feed that awaits one.
+// checked again under the lock). Nothing is copied now: one of them has it
+// copied to the device in a long decode loop (kTokenTableUploadInvocations;
+// under speculative decoding the table never takes device memory). Only that
+// copy reads the caller's memory, no longer than the step feed's context is
+// there: the caller's model resources outlive it. The first copy of a kind,
+// vocab and dim serves every step feed that awaits one.
 LiteRtStatus TakeTokenTable(RegisteredTokenTable registered,
                             const std::vector<const void*>& table_parts,
                             size_t part_bytes,
@@ -3778,7 +3847,8 @@ class LiteRtDispatchInvocationContextT {
           {1, feed.vocab, feed.per_layer_width, feed.per_layer_count});
     }
     // The registrations go to the device in a long decode loop, the only
-    // place this context's steps ahead pay for the tables' memory.
+    // place this context's steps ahead pay for the tables' memory: copied
+    // beside the loop, they are found here at a later invocation.
     const std::vector<TokenTableState> states = FindTokenTables(
         this, device_context_->serial(), keys,
         consecutive_invocations_ >= kTokenTableUploadInvocations);

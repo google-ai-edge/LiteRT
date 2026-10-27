@@ -1151,6 +1151,13 @@ Expected<std::vector<uint8_t>> PackTensorRtAotLocator(
   return out;
 }
 
+void PadTensorRtAotLocator(std::vector<uint8_t>& locator) {
+  locator.resize((locator.size() + kTensorRtAotLocatorAlignment - 1) /
+                     kTensorRtAotLocatorAlignment *
+                     kTensorRtAotLocatorAlignment,
+                 0);
+}
+
 Expected<std::optional<TensorRtAotLocator>> TryParseTensorRtAotLocator(
     const void* data, size_t size) {
   if (data == nullptr || size < sizeof(uint32_t)) {
@@ -1198,9 +1205,13 @@ Expected<std::optional<TensorRtAotLocator>> TryParseTensorRtAotLocator(
       locator.file_identity = identity;
     }
   }
+  // What may follow is the padding of a locator handed to LiteRT.
+  const bool padding_only =
+      static_cast<size_t>(end - cur) < kTensorRtAotLocatorAlignment &&
+      std::all_of(cur, end, [](uint8_t byte) { return byte == 0; });
   if (!IsAbsoluteFilePath(locator.path) ||
       absl::StrContains(locator.path, '\0') || locator.artifact_size == 0 ||
-      cur != end) {
+      !padding_only) {
     return Error(kLiteRtStatusErrorInvalidArgument,
                  "Invalid TensorRT AOT artifact locator");
   }

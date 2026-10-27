@@ -447,6 +447,7 @@ cc_test(
     }),
     deps = [
         ":dispatch_api",
+        ":token_table_c_api",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_model_types",

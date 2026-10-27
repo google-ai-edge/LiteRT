@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
@@ -88,6 +89,9 @@ SegmentRegistry& Registry() {
 // (cuda_vmm.h). The destructor waits for the copies.
 class Uploader {
  public:
+  // The most one device copy takes.
+  static constexpr size_t kChunkBytes = 32 << 20;
+
   explicit Uploader(cudaStream_t stream) : stream_(stream) {}
 
   ~Uploader() {
@@ -151,8 +155,6 @@ class Uploader {
   }
 
  private:
-  static constexpr size_t kChunkBytes = 32 << 20;
-
   struct Buffer {
     void* data = nullptr;
     cudaEvent_t copied = nullptr;
@@ -465,5 +467,34 @@ Expected<std::unique_ptr<EngineWeightMapping>> EngineWeightMapping::Create(
 }
 
 #endif  // LITERT_NVIDIA_TENSORRT_WEIGHTS_MANAGER
+
+Expected<void> CopyToDevice(const std::vector<HostToDeviceCopy>& copies,
+                            cudaStream_t stream,
+                            const std::atomic<bool>* cancel) {
+  Uploader uploader(stream);
+  const auto cancelled = [cancel] {
+    return cancel != nullptr && cancel->load();
+  };
+  Expected<void> started = {};
+  for (const HostToDeviceCopy& copy : copies) {
+    const auto* const source = static_cast<const uint8_t*>(copy.source);
+    auto* const target = static_cast<uint8_t*>(copy.target);
+    for (uint64_t done = 0; started && !cancelled() && done < copy.size;) {
+      const uint64_t bytes =
+          std::min<uint64_t>(copy.size - done, Uploader::kChunkBytes);
+      started = uploader.FromMemory(source + done, bytes, target + done);
+      done += bytes;
+    }
+  }
+  // The copies read the upload buffers: wait for them, also after a failure.
+  const cudaError_t status = cudaStreamSynchronize(stream);
+  if (!started) {
+    return started.Error();
+  }
+  if (status != cudaSuccess) {
+    return CudaError("cudaStreamSynchronize", status);
+  }
+  return {};
+}
 
 }  // namespace litert::nvidia
