@@ -49,8 +49,8 @@ namespace litert::internal {
 
 #if !defined(LITERT_SKIP_FLATBUFFER_VERIFICATION)
 using ::tflite::VerifyModelBuffer;
-#endif  // !defined(LITERT_SKIP_FLATBUFFER_VERIFICATION)
 static constexpr size_t kMaxModelSize = std::numeric_limits<size_t>::max();
+#endif  // !defined(LITERT_SKIP_FLATBUFFER_VERIFICATION)
 
 namespace {
 
@@ -298,28 +298,24 @@ Expected<TflPerChannelQParams> AsPerChannelQparams(
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
     BufferRef<uint8_t> buffer) {
-  if (buffer.Size() >= kMaxModelSize) {
-    return Error(kLiteRtStatusErrorInvalidFlatbuffer, "Model exceeds max size");
-  }
-  if (!VerifyFlatbuffer(buffer.Data(), buffer.Size())) {
-    return Error(kLiteRtStatusErrorInvalidFlatbuffer, "Invalid flatbuffer");
-  }
-  auto alloc = MakeAllocation(buffer);
-  LITERT_ASSIGN_OR_ABORT(auto wrapper,
-                         (CreateFromAllocation(std::move(alloc))));
-  return wrapper;
+  return CreateFromAllocation(MakeAllocation(buffer));
 }
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromAllocation(
     ::tflite::Allocation::Ptr alloc) {
-  if (alloc == nullptr) {
+  if (alloc == nullptr || !alloc->valid()) {
     return Error(kLiteRtStatusErrorFileIO, "Invalid allocation");
+  }
+  if (!VerifyFlatbuffer(static_cast<const uint8_t*>(alloc->base()),
+                        alloc->bytes())) {
+    return Error(kLiteRtStatusErrorInvalidFlatbuffer, "Invalid flatbuffer");
   }
 
   auto fb_model =
       ::tflite::FlatBufferModel::BuildFromAllocation(std::move(alloc));
   if (fb_model == nullptr) {
-    return Error(kLiteRtStatusErrorFileIO, "Failed to build flatbuffer model");
+    return Error(kLiteRtStatusErrorInvalidFlatbuffer,
+                 "Failed to build flatbuffer model");
   }
 
   return FlatbufferWrapper::Ptr(new FlatbufferWrapper(std::move(fb_model)));
@@ -327,7 +323,7 @@ Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromAllocation(
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
     OwningBufferRef<uint8_t>&& buffer) {
-  LITERT_ASSIGN_OR_ABORT(auto wrapper, (CreateFromBuffer(buffer)));
+  LITERT_ASSIGN_OR_RETURN(auto wrapper, CreateFromBuffer(buffer));
   // Keep the buffer alive for the lifetime of the wrapper.
   wrapper->model_buf_ = std::move(buffer);
   return wrapper;
