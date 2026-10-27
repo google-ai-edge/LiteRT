@@ -327,8 +327,15 @@ Tensor<Mixins...> ScaledDotProductAttention(
                                   grouped->num_groups() * grouped->seq_len_q,
                                   grouped->head_dim));
   }
+  const bool need_unfold_for_mask =
+      grouped.has_value() &&
+      (grouped->seq_len_q != 1 ||
+       (attention_mask != TensorHandle::Invalid() &&
+        attention_mask.GetShape().size() == rank &&
+        (attention_mask.GetShape()[head_axis] > 1 ||
+         attention_mask.GetShape()[head_axis + 1] > 1)));
   Tensor scores = BatchMatMul(q_rows, k, /*adj_x=*/false, /*adj_y=*/true);
-  if (grouped) {
+  if (need_unfold_for_mask) {
     // [..., Hkv, G * Sq, Skv] -> [..., H, Sq, Skv] so that the mask broadcasts.
     scores = Reshape(scores, BatchDimsShape(grouped->num_heads,
                                             grouped->seq_len_q, kInferredDim));
@@ -374,7 +381,7 @@ Tensor<Mixins...> ScaledDotProductAttention(
 
   Tensor attention_weights = Softmax(scores);
   scope.Bind("attn_weights", attention_weights);
-  if (grouped) {
+  if (need_unfold_for_mask) {
     attention_weights =
         Reshape(attention_weights,
                 BatchDimsShape(grouped->num_kv_heads,
@@ -557,10 +564,36 @@ std::vector<Tensor<Mixins...>> AddValuesToCache(
 
 template <class... Mixins>
 Tensor<Mixins...> QkNorm(const Tensor<Mixins...>& input,
-                         const Tensor<Mixins...>& scale) {
+                         const Tensor<Mixins...>& scale,
+                         float epsilon = 1e-6f) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(input));
+  if (scale != TensorHandle::Invalid()) {
+    LRT_TENSOR_RETURN_IF_ERROR(scale);
+  }
   auto op = std::make_shared<graph::QkNormOperation>();
   RegisterMixins<Mixins...>(op);
+  op->epsilon = epsilon;
   op->inputs = {input.GetRaw(), scale.GetRaw()};
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
+  const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
+  graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
+  output_info.shape = input_info.shape;
+  output_info.type = input_info.type;
+  graph::OpDebugger::DebugOp(*op);
+  return output;
+}
+
+template <class... Mixins>
+Tensor<Mixins...> QkNorm(const Tensor<Mixins...>& input,
+                         const Tensor<Mixins...>& scale,
+                         const Tensor<Mixins...>& epsilon) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(input, epsilon));
+  if (scale != TensorHandle::Invalid()) {
+    LRT_TENSOR_RETURN_IF_ERROR(scale);
+  }
+  auto op = std::make_shared<graph::QkNormOperation>();
+  RegisterMixins<Mixins...>(op);
+  op->inputs = {input.GetRaw(), scale.GetRaw(), epsilon.GetRaw()};
   Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
