@@ -1474,6 +1474,7 @@ cc_test(
         "//tflite/core:framework_stable",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
         "@com_google_googletest//:gtest",
     ],
 )
