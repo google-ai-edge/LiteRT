@@ -543,9 +543,9 @@ genrule(
     # `_classify_framework_imports` in rules_apple's
     # apple/internal/framework_import_support.bzl), and fails the import
     # otherwise. The dylib is therefore renamed on its way into the bundle,
-    # its install name is rewritten to match, and the Info.plists are filled
-    # in with the keys Xcode and App Store validation expect from an
-    # embeddable dynamic framework.
+    # its install name is rewritten to match, the Info.plists are filled in
+    # with the keys Xcode and App Store validation expect from an embeddable
+    # dynamic framework, and each bundle is re-signed.
     #
     # The iOS slices use the shallow bundle layout, with the binary and
     # Info.plist at the root of the bundle. macOS only supports the versioned
@@ -570,9 +570,9 @@ genrule(
        # `@rpath/libLiteRtMetalAccelerator.dylib`. The linker copies that
        # string verbatim into every app that links the framework, so it has to
        # name the binary at its location inside the bundle, otherwise dyld
-       # cannot find it at launch. install_name_tool refreshes the ad-hoc
-       # linker signature of the arm64 slices on its own, so no separate
-       # codesign step is needed.
+       # cannot find it at launch. Rewriting it edits the Mach-O header page,
+       # which breaks the code signature the prebuilt carries; the bundles are
+       # re-signed below, once their Info.plists are in place.
        for BINARY in $$IOS_FRAMEWORK/LiteRtMetalAccelerator $$SIM_FRAMEWORK/LiteRtMetalAccelerator; do
          chmod +w $$BINARY
          xcrun install_name_tool -id @rpath/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator $$BINARY
@@ -616,6 +616,23 @@ EOF
        sed -e 's/@PLATFORM@/iPhoneOS/' -e 's/@MIN_OS_KEY@/MinimumOSVersion/' -e 's/@MIN_OS_VERSION@/15.0/' metal_tmp/framework_Info.plist > $$IOS_FRAMEWORK/Info.plist
        sed -e 's/@PLATFORM@/iPhoneSimulator/' -e 's/@MIN_OS_KEY@/MinimumOSVersion/' -e 's/@MIN_OS_VERSION@/15.0/' metal_tmp/framework_Info.plist > $$SIM_FRAMEWORK/Info.plist
        sed -e 's/@PLATFORM@/MacOSX/' -e 's/@MIN_OS_KEY@/LSMinimumSystemVersion/' -e 's/@MIN_OS_VERSION@/12.0/' metal_tmp/framework_Info.plist > $$MAC_FRAMEWORK/Versions/A/Resources/Info.plist
+       # Re-sign the bundles, now that the install names are rewritten and the
+       # Info.plists are in place for the signatures to seal. install_name_tool
+       # only refreshes linker-generated ad-hoc signatures, which is what the
+       # simulator prebuilt has. The macOS prebuilt is signed with a developer
+       # identity instead, so the rewrite above leaves it with a signature
+       # whose header page hash no longer matches, and the iOS device prebuilt
+       # is not signed at all. On macOS a mismatched signature is fatal: the
+       # kernel kills any process that maps the framework with SIGKILL ("Code
+       # Signature Invalid") before it reaches main. Ad-hoc signatures are
+       # enough: Xcode re-signs embedded frameworks with the app's identity,
+       # and `swift build` executables, which load the framework as shipped,
+       # only need the signature to be valid. The verification fails the build
+       # rather than letting a broken signature through.
+       for FRAMEWORK in $$IOS_FRAMEWORK $$SIM_FRAMEWORK $$MAC_FRAMEWORK; do
+         codesign --force --sign - --timestamp=none $$FRAMEWORK
+         codesign --verify --strict $$FRAMEWORK
+       done
        cat << 'EOF' > $$XCFRAMEWORK/Info.plist
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
