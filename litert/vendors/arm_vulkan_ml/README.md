@@ -16,6 +16,27 @@ not loaded at runtime. Actual operation selection uses the same C++ legality
 analysis as compilation. Device initialization checks Vulkan features and TOSA
 instruction-set profiles.
 
+## Vulkan API revision
+
+The backend targets **VK_ARM_tensors Revision 2**. Compilation requires headers
+with `VK_ARM_TENSORS_SPEC_VERSION >= 2`, and device selection requires the
+advertised tensor extension's `specVersion >= 2`. The data-graph extension and
+TOSA instruction-set extension remain at Revision 1; the compiled artifact ABI
+and TOSA instruction-set selection are unchanged.
+
+The [tensor extension revision history](https://docs.vulkan.org/refpages/latest/refpages/source/VK_ARM_tensors.html)
+identifies Revision 2's interactions with unified image layouts, bfloat16 and
+float8. This revision requirement does not enable those optional formats in
+our lowering; the supported types remain those listed below.
+
+Bazel explicitly uses the pinned Vulkan-Headers 1.4.349, independently of the
+Android NDK's bundled Vulkan headers. Android NDK r30 (`30.0.16248370`) ships
+Vulkan-Headers 1.4.335: its `vulkan_core.h` still declares tensors Revision 1
+and lacks the TOSA instruction-set extension. Use the pinned headers even when
+building with that NDK. The NDK is installed side by side at
+`/data/bt/os/android_sdk/ndk/30.0.16248370` on the development host; older NDKs
+remain available.
+
 ## Implemented scope
 
 The current path accepts fixed positive shapes and dense tensors. Quantized
@@ -69,6 +90,9 @@ Enable LiteRT's JIT compiler option and select the NPU accelerator. Compiled
 partitions own SPIR-V, constant bytes and typed binding metadata. Each dispatch
 invocation owns Vulkan resources and retains the compiled artifact. Host input
 and output transfers use explicit synchronization; invocation is synchronous.
+Per-tensor memory barriers are supplied through
+`VkDependencyInfo::pNext → VkTensorDependencyInfoARM::pTensorMemoryBarriers`,
+with `VK_QUEUE_FAMILY_IGNORED` for both queue-family indices.
 
 See [model preparation](tools/models/README.md) and
 [bounded qualification](tools/qualification/README.md) for reproducible checks.

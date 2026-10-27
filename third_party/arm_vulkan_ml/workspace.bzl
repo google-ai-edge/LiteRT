@@ -8,6 +8,8 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 def arm_vulkan_ml_deps():
+    # Vulkan-Headers 1.4.349 provides VK_ARM_tensors Revision 2.
+    # Data-graph and TOSA extension revisions remain 1.
     http_archive(
         name = "arm_vulkan_ml_dep_vulkan_headers",
         build_file = Label("//third_party/arm_vulkan_ml:vulkan_headers.BUILD"),
