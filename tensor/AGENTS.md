@@ -14,7 +14,7 @@ This directory contains the C++ **LiteRT Tensor API**: a lightweight, backend-ag
 | `examples/utils/` | Checkpoint and config helpers (`SafetensorLoader`, `LazyTensorMapping`, `TensorLoadingHooks`, `minijson`). |
 | `examples/gguf/` | GGUF parser and loader (`GgufParser`, `GgufLoader`) for multi-format quantized GGUF checkpoints (`Q4_0`, `Q4_K_M`, K-quants, I-quants, `Q8_0`). |
 | `backends/xnnpack/`, `runners/xnnpack/` | Direct XNNPACK CPU backend and model runner (`XnnpackModelRunner`). |
-| `backends/ml_drift/`, `runners/ml_drift/` | Direct ML Drift GPU backend and compiled OpenCL model runner (`CompiledMlDriftModelRunner`). |
+| `backends/ml_drift/`, `runners/ml_drift/` | Direct ML Drift GPU backend and compiled OpenCL & Apple Metal model runners (`CompiledMlDriftModelRunner`, `MlDriftClBackend`, `MlDriftMetalBackend`, `CompiledMlDriftMetalModelRunner`). |
 | `backends/tflite/`, `backends/multi_backend/` | `.tflite` FlatBuffer serializer (`ModelFactory`) and heterogeneous `CompositeModel` / `ModelChain` partitioner. |
 | `examples/gemma3/`, `examples/gemma4/` | Reference Gemma 3 and Gemma 4 C++ graphs and runtimes. |
 | `models/common/` | Model-agnostic bring-up scaffold: checkpoint weight hooks and load-time quantization, declarative `WeightMap`, `HfConfigReader`, `DecoderLayout` / `BuildDecoderForwardGraph` / `RuntimeBackend`, the generic `TextDecoderRuntime<ModelTraits>` (checkpoint discovery, tokenizer, prefill/decode/generate, `Benchmark()`), `XnnpackRuntimeBackend<ModelTraits>`, and the reusable `TYPED_TEST_P` suites in `common/testing/`. |
