@@ -48,11 +48,15 @@ litert_test(
     ungrte = True,
     use_sys_malloc = True,
     deps = [
+        "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/builders:conv2d_op_builder",
+        "//litert/vendors/qualcomm/core/builders:op_builder",
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:param_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )

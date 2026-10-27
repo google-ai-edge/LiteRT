@@ -101,8 +101,17 @@ std::vector<OpWrapper> BuildConv2dOp(
   }
 
   // conv
-  OpWrapper& conv_op = CreateOpWrapper(res, QNN_OP_CONV_2D);
   TensorWrapper& input_tensor = inputs[kInputIndex];
+  const std::uint32_t in_channels = input_tensor.GetDimension(kChannelIndex);
+  const std::uint32_t out_channels = filter_tensor.GetDimension(kBatchIndex);
+  const std::uint32_t filter_in_channels =
+      filter_tensor.GetDimension(kChannelIndex);
+  const bool is_depthwise =
+      filter_in_channels == 1 && in_channels == out_channels &&
+      !ShouldUseGroupedConv2d(filter_tensor, stride_h, stride_w);
+
+  OpWrapper& conv_op = CreateOpWrapper(
+      res, is_depthwise ? QNN_OP_DEPTH_WISE_CONV_2D : QNN_OP_CONV_2D);
   conv_op.AddInputTensor(input_tensor);
   conv_op.AddInputTensor(*transposed_filter_tensor);
   if (inputs.size() - 1 >= kBiasIndex) {
@@ -134,7 +143,9 @@ std::vector<OpWrapper> BuildConv2dOp(
       QNN_DATATYPE_UINT_32, QuantizeParamsWrapperVariant{}, stride_shape,
       sizeof(decltype(stride_data)::value_type) * stride_data.size(),
       stride_data.data());
-  conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_STRIDE, stride_tensor);
+  conv_op.AddTensorParam(is_depthwise ? QNN_OP_DEPTH_WISE_CONV_2D_PARAM_STRIDE
+                                      : QNN_OP_CONV_2D_PARAM_STRIDE,
+                         stride_tensor);
 
   // padding param
   const auto [padding_before_height, padding_after_height] =
@@ -153,7 +164,10 @@ std::vector<OpWrapper> BuildConv2dOp(
       QNN_DATATYPE_UINT_32, QuantizeParamsWrapperVariant{}, padding_shape,
       sizeof(decltype(padding_data)::value_type) * padding_data.size(),
       padding_data.data());
-  conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_PAD_AMOUNT, padding_tensor);
+  conv_op.AddTensorParam(is_depthwise
+                             ? QNN_OP_DEPTH_WISE_CONV_2D_PARAM_PAD_AMOUNT
+                             : QNN_OP_CONV_2D_PARAM_PAD_AMOUNT,
+                         padding_tensor);
 
   // dilation param
   const std::array<std::uint32_t, 2> dilation_data{dilation_h, dilation_w};
@@ -162,19 +176,21 @@ std::vector<OpWrapper> BuildConv2dOp(
       QNN_DATATYPE_UINT_32, QuantizeParamsWrapperVariant{}, dilation_shape,
       sizeof(decltype(dilation_data)::value_type) * dilation_data.size(),
       dilation_data.data());
-  conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_DILATION, dilation_tensor);
+  conv_op.AddTensorParam(is_depthwise ? QNN_OP_DEPTH_WISE_CONV_2D_PARAM_DILATION
+                                      : QNN_OP_CONV_2D_PARAM_DILATION,
+                         dilation_tensor);
 
-  // group param
-  if ((input_tensor.GetDimension(kChannelIndex) %
-       filter_tensor.GetDimension(kChannelIndex)) != 0) {
-    QNN_LOG_WARNING(
-        "The channels of the input tensor cannot be evenly divided by the "
-        "channels of the filter tensor.");
-  }
-  if (const std::uint32_t groups = input_tensor.GetDimension(kChannelIndex) /
-                                   filter_tensor.GetDimension(kChannelIndex);
-      groups > 1) {
-    conv_op.AddScalarParam<std::uint32_t>(QNN_OP_CONV_2D_PARAM_GROUP, groups);
+  if (!is_depthwise) {
+    // group param
+    if ((in_channels % filter_in_channels) != 0) {
+      QNN_LOG_WARNING(
+          "The channels of the input tensor cannot be evenly divided by the "
+          "channels of the filter tensor.");
+    }
+    if (const std::uint32_t groups = in_channels / filter_in_channels;
+        groups > 1) {
+      conv_op.AddScalarParam<std::uint32_t>(QNN_OP_CONV_2D_PARAM_GROUP, groups);
+    }
   }
 
   return res;
