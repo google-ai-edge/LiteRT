@@ -423,9 +423,9 @@ void MlDriftConversionNumericalTest::RunTest(
   }
 }
 
-TEST_F(MlDriftConversionNumericalTest, DISABLED_QuantizeOp) {
+TEST_F(MlDriftConversionNumericalTest, QuantizeThenDequantizeOp) {
   TensorMLD input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
-  TensorMLD output = Quantize(input, Type::kI8, {0.5}, {0});
+  TensorMLD output = Dequantize(Quantize(input, Type::kI8, {0.5}, {0}));
   RunTest(output, {{input, std::vector<float>{0.6f, 0.8f, 1.2f, 1.6f}}},
           {0.5f, 1.0f, 1.0f, 1.5f});
 }

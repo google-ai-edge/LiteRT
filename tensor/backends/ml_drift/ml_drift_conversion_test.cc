@@ -846,7 +846,7 @@ TEST_F(MlDriftConversionTest, QuantizeOp) {
 
   EXPECT_THAT(model.nodes,
               ElementsAre(testing::Truly([](const ml_drift::GpuNode& node) {
-                return node.name == "quantize_and_dequantize";
+                return node.name == "quantize";
               })));
 }
 

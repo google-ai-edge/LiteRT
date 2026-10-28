@@ -3571,11 +3571,6 @@ TYPED_TEST_P(NumericalTestSuite, DynamicUpdateSliceOp) {
 
 TYPED_TEST_P(NumericalTestSuite, QuantizeOp) {
   using Tag = typename TypeParam::Tag;
-  if constexpr (std::is_same_v<Tag, MlDriftMixinTag>) {
-    GTEST_SKIP()
-        << "Quantize produces incorrect values on the ML Drift backend.";
-  }
-
   Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 8}});
   Tensor<Tag> output = Quantize(input, Type::kI8, /*scale=*/{0.5f},
                                 /*zero_point=*/{3});
