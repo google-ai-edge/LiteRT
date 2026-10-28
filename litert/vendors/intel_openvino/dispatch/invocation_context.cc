@@ -35,6 +35,7 @@
 #include <vector>
 
 #include "openvino/core/any.hpp"
+#include "openvino/core/except.hpp"
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/intel_npu/properties.hpp"  // NOLINT
 #include "openvino/runtime/properties.hpp"            // NOLINT
@@ -778,11 +779,24 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
         auto compiled_model = infer_request_.get_compiled_model();
         compiled_model.set_property(ov::hint::model_priority(*ov_priority));
         requested_model_priority_ = ov_priority;
-      } catch (const std::exception& e) {
+      } catch (const ov::Exception& e) {
+        // WORKAROUND for a C++ runtime mismatch across the library boundary.
+        // This library carries its own libc++, so its std::exception is a
+        // different type from the one OpenVINO's exceptions derive from, and
+        // the std::exception handler below misses them. ov::Exception is
+        // defined once, in libopenvino, so it matches. Remove this once the
+        // library and OpenVINO share one C++ runtime.
+        // OpenVINO before 26.5 does not implement this property on the NPUW
+        // compiled model: the priority is quietly ignored there.
         LITERT_LOG(LITERT_WARNING,
                    "NPU HAL model priority not applied, ignoring: %s",
                    e.what());
         // Remember it anyway so a failing plugin is not retried every inference.
+        requested_model_priority_ = ov_priority;
+      } catch (const std::exception& e) {
+        LITERT_LOG(LITERT_WARNING,
+                   "NPU HAL model priority not applied, ignoring: %s",
+                   e.what());
         requested_model_priority_ = ov_priority;
       }
     }
