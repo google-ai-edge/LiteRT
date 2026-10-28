@@ -68,6 +68,40 @@ absl::StatusOr<uint32_t> DynamicallyQuantizeInput(
   return qd_id;
 }
 
+// Returns whether `XnnpackBuildContext::DefineValue` keeps the integers of the
+// tensor `info`, i.e. whether it is quantized and isn't dequantized to floats.
+bool KeepsQuantizedIntegers(const graph::TensorInformation& info) {
+  if (info.quantization == nullptr) {
+    return false;
+  }
+  auto pcq = info.quantization->As<const PerChannelAffineQuantization>();
+  if (!pcq.ok() || pcq->scales.size() == 1) {
+    return true;
+  }
+  for (const int64_t zero_point : pcq->zero_points) {
+    if (zero_point != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Returns whether a batch matmul with the quantized right-hand side `rhs` can
+// be lowered to an XNNPACK fully connected operator: `rhs` must be a matrix of
+// shape [output channels, input channels] (i.e. `adj_y` is set) quantized
+// blockwise or per output channel.
+bool CanLowerBatchMatMulToFullyConnected(const graph::TensorInformation& rhs,
+                                         const BatchMatMulOperation& op_data) {
+  if (rhs.shape.size() != 2 || op_data.adj_x || !op_data.adj_y) {
+    return false;
+  }
+  if (rhs.quantization->IsA(internal::TypeId::Get<BlockwiseQuantization>())) {
+    return true;
+  }
+  auto pcq = rhs.quantization->As<const PerChannelAffineQuantization>();
+  return pcq.ok() && pcq->quantized_dimension == 0 && pcq->scales.size() > 1;
+}
+
 absl::StatusOr<BinaryIOIds> PrepareBinaryIO(const Operation& op,
                                             XnnpackBuildContext& ctx,
                                             absl::string_view op_name) {
@@ -753,6 +787,15 @@ absl::Status OpMixin<BatchMatMulOperation, XnnpackMixinTag>::ToXnnpack(
   const graph::Tensor& input1 = op.inputs[0];
   const graph::Tensor& input2 = op.inputs[1];
 
+  // XNNPACK's batch matmul only takes per-channel int8 quantized right-hand
+  // sides, but its fully connected operator also takes int4 and blockwise ones.
+  // If input2 is 2D, and adj_y is true (which means shape is [OC, IC]), we can
+  // lower this to FullyConnected in XNNPACK.
+  LRT_TENSOR_ASSIGN_OR_RETURN(auto info1, graph::GetInfo(input1));
+  LRT_TENSOR_ASSIGN_OR_RETURN(auto info2, graph::GetInfo(input2));
+  const bool quantized_rhs = KeepsQuantizedIntegers(info2);
+  const bool lower_to_fully_connected =
+      quantized_rhs && CanLowerBatchMatMulToFullyConnected(info2, op_data);
   LRT_TENSOR_ASSIGN_OR_RETURN(uint32_t input1_id, ctx.DefineValue(input1));
   LRT_TENSOR_ASSIGN_OR_RETURN(uint32_t input2_id, ctx.DefineValue(input2));
 
@@ -763,21 +806,14 @@ absl::Status OpMixin<BatchMatMulOperation, XnnpackMixinTag>::ToXnnpack(
   const graph::Tensor& output = outputs.front();
   LRT_TENSOR_ASSIGN_OR_RETURN(uint32_t output_id, ctx.DefineValue(output));
 
-  // XNNPACK supports blockwise quantization only with FullyConnected. If
-  // input2 is 2D, and adj_y is true (which means shape is [OC, IC]), we can
-  // lower this to FullyConnected in XNNPACK.
-  LRT_TENSOR_ASSIGN_OR_RETURN(auto info2, graph::GetInfo(input2));
-  if (info2.shape.size() == 2 && !op_data.adj_x && op_data.adj_y &&
-      info2.quantization &&
-      info2.quantization->IsA(internal::TypeId::Get<BlockwiseQuantization>())) {
+  if (lower_to_fully_connected) {
     uint32_t fc_input1_id = input1_id;
-    LRT_TENSOR_ASSIGN_OR_RETURN(auto info1, graph::GetInfo(input1));
     if (info1.type == Type::kFP32) {
       LRT_TENSOR_ASSIGN_OR_RETURN(
           fc_input1_id, DynamicallyQuantizeInput(ctx, input1_id, info1));
     }
-    float output_min = -std::numeric_limits<float>::infinity();
-    float output_max = std::numeric_limits<float>::infinity();
+    const float output_min = -std::numeric_limits<float>::infinity();
+    const float output_max = std::numeric_limits<float>::infinity();
     LRT_TENSOR_RETURN_IF_ERROR(xnn_define_fully_connected(
         ctx.subgraph(), output_min, output_max, fc_input1_id, input2_id,
         /*bias_id=*/XNN_INVALID_VALUE_ID, output_id, /*flags=*/0))

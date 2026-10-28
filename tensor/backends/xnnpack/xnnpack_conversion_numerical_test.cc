@@ -100,22 +100,8 @@ struct XnnpackTraits {
   using Tag = XnnpackMixinTag;
   // TODO(b/574438217): Enable these tests once the XNNPACK backend is fixed.
   static constexpr absl::string_view kDisabledTests[] = {
-      // Blocks of 16 fail when the runtime is created.
-      "FullyConnectedQuantizedWeightsOp",
       // Fully connected ops reject per-tensor int8 weights.
       "FullyConnectedPerTensorAndAsymmetricOp",
-      // Batch matmuls reject int4 right-hand sides.
-      "BatchMatMulQuantizedRhsOp",
-      // Transposes reject int4 and blockwise values.
-      "TransposedQuantizedWeightsIntoBatchMatMulOp",
-      // Transposes reject int4 values, and asymmetric int4 weights fail to
-      // dequantize.
-      "TransposedQuantizedWeightsIntoAddOp",
-      // Dequantizing int4 values aborts in an XNNPACK assertion.
-      "QuantizedWeightsSharedByDotAndAddOp",
-      // Per-channel zero points of tensors that aren't constants are
-      // dequantized as if they were constants, which fails.
-      "DequantizePerChannelOp",
   };
   static std::unique_ptr<TestBackendBridge> CreateBridge() {
     return std::make_unique<XnnpackTestBackendBridge>();

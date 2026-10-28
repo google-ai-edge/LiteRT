@@ -23,6 +23,8 @@ limitations under the License.
 
 // IWYU pragma: always_keep
 
+#include <string>
+
 #include "xnnpack.h"  // from @XNNPACK
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -32,18 +34,28 @@ limitations under the License.
 
 namespace litert::tensor {
 
+// Converts an XNNPACK status to an absl status.
 inline absl::Status XnnStatusToAbsl(
     enum xnn_status status, absl::string_view label,
     absl::SourceLocation loc = absl::SourceLocation::current()) {
   if (status == xnn_status_success) {
     return absl::OkStatus();
   }
-  if (label.empty()) {
-    return absl::InternalError(
-        absl::StrCat("xnn_status=", static_cast<int>(status)), loc);
+  std::string message = absl::StrCat("xnn_status=", static_cast<int>(status));
+  if (!label.empty()) {
+    absl::StrAppend(&message, ";", label);
   }
-  return absl::InternalError(
-      absl::StrCat("xnn_status=", static_cast<int>(status), ";", label), loc);
+  switch (status) {
+    case xnn_status_unsupported_parameter:
+    case xnn_status_unsupported_hardware:
+      return absl::UnimplementedError(message, loc);
+    case xnn_status_invalid_parameter:
+      return absl::InvalidArgumentError(message, loc);
+    case xnn_status_out_of_memory:
+      return absl::ResourceExhaustedError(message, loc);
+    default:
+      return absl::InternalError(message, loc);
+  }
 }
 
 template <>
