@@ -148,6 +148,41 @@ class EmbeddingLookupTest(test_utils.BaseOpTestCase):
     with self.subTest(name='OutputErrors'):
       self.assert_output_errors_below_tolerance(validation_result, 1e-5)
 
+  @parameterized.parameters('min_compute', 'max_power_of_two')
+  def test_decomposed_kronecker_q_init_modes_accuracy(self, sizing_mode):
+    self._quantizer.load_quantization_recipe([
+        {
+            'regex': '.*',
+            'operation': qtyping.TFLOperationName.EMBEDDING_LOOKUP,
+            'algorithm_key': (
+                quantizer.AlgorithmName.DECOMPOSED_HADAMARD_ROTATION
+            ),
+            'op_config': {
+                'weight_tensor_config': {
+                    'dtype': qtyping.TensorDataType.INT,
+                    'num_bits': 8,
+                    'granularity': qtyping.QuantGranularity.CHANNELWISE,
+                    'algorithm_params': {
+                        'q_init_mode': 'auto',
+                        'sizing_mode': sizing_mode,
+                    },
+                },
+                'compute_precision': qtyping.ComputePrecision.FLOAT,
+                'explicit_dequantize': True,
+            },
+        },
+    ])
+    self._quantizer.quantize()
+    validation_result = self._quantizer.validate(
+        test_data={
+            'lookup': [
+                {'lookup': np.random.randint(0, 15, size=(1,), dtype=np.int32)}
+            ],
+        },
+        error_metrics=[quantizer.ValidationErrorMetric.MSE],
+    )
+    self.assert_output_errors_below_tolerance(validation_result, 1e-4)
+
 
 if __name__ == '__main__':
   absltest.main()

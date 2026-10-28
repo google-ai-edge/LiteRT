@@ -15,6 +15,7 @@
 
 """Util functions for TFL interpreter."""
 
+import pathlib
 from typing import Any, Optional, Union
 
 import ml_dtypes
@@ -54,21 +55,33 @@ def create_tfl_interpreter(
   Returns:
     A TFLite interpreter.
   """
-  if isinstance(tflite_model, str):
-    tflite_model = mmap_utils.get_file_contents(tflite_model)  # pyrefly: ignore[bad-assignment]
-
   if use_xnnpack:
     op_resolver = tfl.OpResolverType.BUILTIN
   else:
     op_resolver = tfl.OpResolverType.BUILTIN_WITHOUT_DEFAULT_DELEGATES
-  tflite_interpreter = tfl.Interpreter(
-      model_content=bytes(tflite_model),  # pyrefly: ignore[bad-argument-type]
-      num_threads=num_threads,
-      experimental_op_resolver_type=op_resolver,
-      experimental_preserve_all_tensors=preserve_all_tensors,
-      experimental_disable_delegate_node_fusion=disable_delegate_node_fusion,
-      experimental_force_delegate_node_profiling=force_delegate_node_profiling,
-  )
+  if (
+      isinstance(tflite_model, (str, pathlib.Path))
+      and pathlib.Path(tflite_model).exists()
+  ):
+    tflite_interpreter = tfl.Interpreter(
+        model_path=str(tflite_model),
+        num_threads=num_threads,
+        experimental_op_resolver_type=op_resolver,
+        experimental_preserve_all_tensors=preserve_all_tensors,
+        experimental_disable_delegate_node_fusion=disable_delegate_node_fusion,
+        experimental_force_delegate_node_profiling=force_delegate_node_profiling,
+    )
+  else:
+    if isinstance(tflite_model, (str, pathlib.Path)):
+      tflite_model = mmap_utils.get_file_contents(tflite_model)  # pyrefly: ignore[bad-assignment]
+    tflite_interpreter = tfl.Interpreter(
+        model_content=bytes(tflite_model),  # pyrefly: ignore[bad-argument-type]
+        num_threads=num_threads,
+        experimental_op_resolver_type=op_resolver,
+        experimental_preserve_all_tensors=preserve_all_tensors,
+        experimental_disable_delegate_node_fusion=disable_delegate_node_fusion,
+        experimental_force_delegate_node_profiling=force_delegate_node_profiling,
+    )
   if allocate_tensors:
     tflite_interpreter.allocate_tensors()
   return tflite_interpreter
