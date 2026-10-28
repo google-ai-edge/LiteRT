@@ -209,5 +209,46 @@ TEST(ModelLoading, MaterializesAndBoundsChecksExternalConstants) {
   EXPECT_FALSE(LoadModel(path));
 }
 
+TEST(TensorInputs, RejectsUnknownMissingAndWrongSizeInputsBeforeExecution) {
+  tflite::ModelT model;
+  model.version = 3;
+  model.buffers.push_back(std::make_unique<tflite::BufferT>());
+  auto graph = std::make_unique<tflite::SubGraphT>();
+  auto tensor = std::make_unique<tflite::TensorT>();
+  tensor->type = tflite::TensorType_FLOAT32;
+  tensor->shape = {2};
+  graph->tensors.push_back(std::move(tensor));
+  graph->tensors.push_back(std::make_unique<tflite::TensorT>(*graph->tensors[0]));
+  graph->inputs = {0}; graph->outputs = {1};
+  auto opcode = std::make_unique<tflite::OperatorCodeT>();
+  opcode->builtin_code = tflite::BuiltinOperator_RELU;
+  opcode->deprecated_builtin_code = static_cast<int8_t>(tflite::BuiltinOperator_RELU);
+  model.operator_codes.push_back(std::move(opcode));
+  auto op = std::make_unique<tflite::OperatorT>();
+  op->opcode_index = 0; op->inputs = {0}; op->outputs = {1};
+  graph->operators.push_back(std::move(op));
+  model.subgraphs.push_back(std::move(graph));
+  auto bytes = PackModel(model);
+  ASSERT_TRUE(bytes);
+  const auto base = testing::TempDir();
+  std::ofstream file(base + "/raw.tflite", std::ios::binary);
+  file.write(reinterpret_cast<const char*>(bytes->data()), bytes->size());
+  file.close();
+  Options options;
+  options.command = "trace";
+  options.values["model"] = base + "/raw.tflite";
+  options.values["tensor_inputs"] = base + "/inputs.json";
+  for (const auto& inputs : {Json::array(),
+                            Json::array({{{"index", 2}, {"file", "absent.bin"}}}),
+                            Json::array({{{"index", 0}, {"file", "absent.bin"}}})}) {
+    file.open(base + "/inputs.json");
+    file << Json({{"cases", Json::array({{{"id", "invalid"}, {"inputs", inputs}}})}}).dump();
+    file.close();
+    Json report;
+    EXPECT_FALSE(Trace(options, report));
+    EXPECT_FALSE(report.contains("operators"));
+  }
+}
+
 }  // namespace
 }  // namespace litert::arm_vulkan_ml::tool

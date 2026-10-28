@@ -186,3 +186,53 @@ carry schema version, command, model/binary hashes when available and a status.
 Exit codes are 0 for success, 1 for execution/report failures, and 2 for malformed
 arguments. Detailed driver/compiler diagnostics go to stderr. Numeric Vulkan
 format, quality and version fields retain the API values without reinterpretation.
+
+## Arbitrary FP32 tensor fixtures
+
+`validate` and `trace` also accept `--tensor_inputs inputs.json`, mutually
+exclusive with the ImageNet manifest and preprocessing flags:
+
+```json
+{"cases": [{"id": "broadcast", "inputs": [
+  {"index": 0, "file": "lhs.f32"},
+  {"index": 1, "file": "rhs.f32"}
+]}]}
+```
+
+`index` is the zero-based model input position, not the tensor ID. Supply every
+input exactly once. Files contain contiguous little-endian FP32 values with
+exactly the static model shape's byte count. Paths resolve relative to the JSON
+manifest. Linux and Android arm64 builds use little-endian hosts. Constant INT32
+control operands belong in the model. Dynamic and scalar input interfaces remain
+unsupported.
+
+```sh
+"$TOOL" validate --model broadcast.tflite --tensor_inputs inputs.json \
+  --max_samples 3 --report_json comparison.json
+"$TOOL" trace --model broadcast.tflite --tensor_inputs inputs.json \
+  --mode isolated --report_json isolated.json
+```
+
+Validation checks every model output against TFLite CPU reference and runs
+SPIR-V validation before pipeline creation. It uses the same bounded execution
+machinery as tracing; tensor cases do not apply classification prediction gates.
+Validation defaults to three cases and trace to one, with `--start_sample` for
+selection. Reports retain case IDs, input hashes, per-output shapes/errors and
+partial results on failure. Suites may specify `tensor_inputs` per model.
+
+`qualify_portable_ops.py` creates deterministic operator fixtures and exercises
+inspect, compile, capabilities, validate and both trace modes. It requires
+`numpy`, `flatbuffers` and generated TFLite Python bindings with object APIs.
+Generate bindings from `tflite/schema/schema.fbs` with FlatBuffers `flatc --python
+--gen-object-api`, place their parent directory on `PYTHONPATH`, and configure the
+Vulkan environment as above. Then run:
+
+```sh
+python litert/vendors/arm_vulkan_ml/tools/devtool/qualify_portable_ops.py \
+  --tool "$TOOL" --output_dir .arm-vulkan-preflight/portable-qualification \
+  --allow_emulation
+```
+
+The driver uses four synthetic tensor cases per supported fixture, including
+negative values, zeros and ties where applicable. These are not ImageNet images.
+It exits unsuccessfully for unexpected coverage, pipeline or numerical failures.

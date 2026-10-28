@@ -40,10 +40,11 @@ cc_library(
 
 cc_library(
     name = "operation",
-    srcs = ["operation.cc", "extended_ops.cc"],
-    hdrs = ["operation.h", "extended_ops.h"],
+    srcs = ["operation.cc", "extended_ops.cc", "portable_ops.cc"],
+    hdrs = ["operation.h", "extended_ops.h", "portable_ops.h"],
     deps = [
         ":conv2d", ":conv2d_adapter", ":quantization",
+        "//litert/core/model:model",
         "//litert/c:litert_op_options",
         "//litert/cc/internal:litert_extended_model",
         "@tosa_for_spirv_codegen",

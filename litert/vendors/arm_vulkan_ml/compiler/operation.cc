@@ -14,6 +14,7 @@
 
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/extended_ops.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/portable_ops.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -157,6 +158,13 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
   auto reject = [&](const char* s)->std::optional<OperationPlan> { reason=s; return std::nullopt; };
   OperationPlan p{}; p.code=op.Code();
   auto in=op.Inputs(); auto out=op.Outputs();
+  if (IsPortableOperation(p.code) && !out.empty() && out[0].ElementType() == ElementType::Float32) {
+    p.portable = AnalyzePortableOperation(op, reason);
+    if (!p.portable) return std::nullopt;
+    p.runtime_inputs = p.portable->inputs;
+    p.inputs.push_back({p.portable->shapes[0],1,0,true});
+    return p;
+  }
   if(in.empty() || out.size()!=1) return reject("Expected data inputs and exactly one output");
   const int data_index = p.code == kLiteRtOpCodeTflTransposeConv ? 2 : 0;
   if (data_index >= in.size()) return reject("Missing data input");

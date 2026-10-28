@@ -26,7 +26,9 @@ struct QuantizedTensor {
   int32_t zero_point;
   bool floating = false;
 };
+struct PortablePlan;
 struct OperationPlan {
+  std::shared_ptr<PortablePlan> portable;
   LiteRtOpCode code;
   std::vector<int> runtime_inputs;
   std::vector<QuantizedTensor> inputs;
