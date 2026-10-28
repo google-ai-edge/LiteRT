@@ -258,6 +258,12 @@ jobs:
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache="$env:BAZEL_DISK_CACHE" --config=windows -- `
             //litert/tools:run_model
 
+      - name: Build benchmark_model for Windows
+        run: |
+          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache="$env:BAZEL_DISK_CACHE" --config=windows `
+            --define=protobuf_allow_msvc=true -- `
+            //litert/tools:benchmark_model
+
       - name: Build example plugin for Windows
         run: |
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache="$env:BAZEL_DISK_CACHE" --config=windows -- `

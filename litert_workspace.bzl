@@ -30,6 +30,7 @@ def litert_workspace():
             "//third_party/absl:build_dll.patch",
             "//third_party/absl:endian.patch",
             "//third_party/absl:raw_hash_set.patch",
+            "//third_party/absl:source_location.patch",
         ],
         repo_mapping = {
             "@google_benchmark": "@com_google_benchmark",
