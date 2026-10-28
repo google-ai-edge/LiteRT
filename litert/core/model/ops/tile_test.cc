@@ -24,8 +24,11 @@
 #include <gtest/gtest.h>
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/ops/test_util.h"
 #include "litert/core/model/shape_inference_types.h"
 
 namespace litert::internal {
@@ -53,6 +56,179 @@ TEST(TileOpTest, SimpleTest) {
             kLiteRtStatusOk);
 
   EXPECT_THAT(output_shapes[0], ElementsAre(4, 6));  // [2*2, 3*2]
+}
+
+TEST(TileOpTest, Int64Multiples4D) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{1, 2, 1, 24}, {4}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT input_tensor;
+  input_tensor.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeInt32, {1, 2, 1, 24}));
+  LiteRtTensorT mults_tensor;
+  mults_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt64, {4}));
+  op.Inputs().push_back(&input_tensor);
+  op.Inputs().push_back(&mults_tensor);
+
+  std::vector<int64_t> mults_data = {1, 1, 12, 1};
+  SetWeightsFromUnownedBuffer(
+      mults_tensor.Weights(),
+      litert::BufferRef<uint8_t>(reinterpret_cast<uint8_t*>(mults_data.data()),
+                                 mults_data.size() * sizeof(int64_t)));
+
+  ASSERT_EQ(InferTile(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+
+  EXPECT_THAT(output_shapes[0], ElementsAre(1, 2, 12, 24));
+}
+
+TEST(TileOpTest, StatelessContextInt64Multiples) {
+  MockShapeInferenceContext ctx(
+      kLiteRtOpCodeTflTile,
+      {MakeTensorData<float>({1, 2, 1, 24}, {}, kLiteRtElementTypeFloat32),
+       MakeTensorData<int64_t>({4}, {1, 1, 12, 1}, kLiteRtElementTypeInt64)});
+  InferenceResult result;
+  ASSERT_EQ(InferTile(ctx, result), kLiteRtStatusOk);
+  ASSERT_EQ(result.output_shapes.size(), 1);
+  EXPECT_THAT(result.output_shapes[0], ElementsAre(1, 2, 12, 24));
+}
+
+TEST(TileOpTest, UntypedMultiplesFallbackRequiresMatching1DShape) {
+  // Legacy standalone tests may omit setting TensorType on the multiples tensor
+  // (leaving element_type == kLiteRtElementTypeNone). An INT64 buffer is
+  // accepted when multiples_shape is explicitly 1D {rank}.
+  {
+    LiteRtOpT op;
+    std::vector<Dims> input_shapes = {{2, 3}, {2}};
+    std::vector<Dims> output_shapes(1);
+
+    LiteRtTensorT input_tensor;
+    LiteRtTensorT mults_tensor;
+    op.Inputs().push_back(&input_tensor);
+    op.Inputs().push_back(&mults_tensor);
+
+    std::vector<int64_t> mults_data = {2, 3};
+    SetWeightsFromUnownedBuffer(
+        mults_tensor.Weights(),
+        litert::BufferRef<uint8_t>(
+            reinterpret_cast<uint8_t*>(mults_data.data()),
+            mults_data.size() * sizeof(int64_t)));
+
+    ASSERT_EQ(InferTile(op, absl::MakeSpan(input_shapes), output_shapes),
+              kLiteRtStatusOk);
+    EXPECT_THAT(output_shapes[0], ElementsAre(4, 9));
+  }
+
+  // If multiples_shape is unranked {} or dynamic {-1}, a 2*rank INT32 buffer
+  // (whose byte size equals rank * sizeof(int64_t)) must not be misinterpreted
+  // as rank INT64 multiples.
+  for (const Dims& mults_shape : {Dims{}, Dims{-1}}) {
+    LiteRtOpT op;
+    std::vector<Dims> input_shapes = {{2, 3}, mults_shape};
+    std::vector<Dims> output_shapes(1);
+
+    LiteRtTensorT input_tensor;
+    LiteRtTensorT mults_tensor;
+    op.Inputs().push_back(&input_tensor);
+    op.Inputs().push_back(&mults_tensor);
+
+    std::vector<int32_t> bad_int32_mults = {2, 0, 3, 0};
+    SetWeightsFromUnownedBuffer(
+        mults_tensor.Weights(),
+        litert::BufferRef<uint8_t>(
+            reinterpret_cast<uint8_t*>(bad_int32_mults.data()),
+            bad_int32_mults.size() * sizeof(int32_t)));
+
+    EXPECT_EQ(InferTile(op, absl::MakeSpan(input_shapes), output_shapes),
+              kLiteRtStatusErrorInvalidArgument);
+  }
+}
+
+TEST(TileOpTest, DynamicInputDimsAndZeroMultiple) {
+  MockShapeInferenceContext ctx(
+      kLiteRtOpCodeTflTile,
+      {MakeTensorData<float>({-1, -1, 4}, {}, kLiteRtElementTypeFloat32),
+       MakeTensorData<int32_t>({3}, {3, 0, 0}, kLiteRtElementTypeInt32)});
+  InferenceResult result;
+  ASSERT_EQ(InferTile(ctx, result), kLiteRtStatusOk);
+  ASSERT_EQ(result.output_shapes.size(), 1);
+  // m > 0 on dynamic dim (-1) stays -1; m == 0 produces 0 even on dynamic dim.
+  EXPECT_THAT(result.output_shapes[0], ElementsAre(-1, 0, 0));
+}
+
+TEST(TileOpTest, DynamicMultiplesProducesWildcardRank) {
+  MockShapeInferenceContext ctx(
+      kLiteRtOpCodeTflTile,
+      {MakeTensorData<float>({2, 3, 4}, {}, kLiteRtElementTypeFloat32),
+       MakeTensorData<int32_t>({3}, {}, kLiteRtElementTypeInt32)});
+  InferenceResult result;
+  ASSERT_EQ(InferTile(ctx, result), kLiteRtStatusOk);
+  ASSERT_EQ(result.output_shapes.size(), 1);
+  EXPECT_THAT(result.output_shapes[0], ElementsAre(-1, -1, -1));
+}
+
+TEST(TileOpTest, RejectsNegativeMultiple) {
+  MockShapeInferenceContext ctx(
+      kLiteRtOpCodeTflTile,
+      {MakeTensorData<float>({2, 3}, {}, kLiteRtElementTypeFloat32),
+       MakeTensorData<int32_t>({2}, {2, -1}, kLiteRtElementTypeInt32)});
+  InferenceResult result;
+  EXPECT_EQ(InferTile(ctx, result), kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(TileOpTest, RejectsInt32OverflowMultiple) {
+  // Multiple itself exceeds INT32_MAX (even with input dim 1).
+  {
+    MockShapeInferenceContext ctx(
+        kLiteRtOpCodeTflTile,
+        {MakeTensorData<float>({2, 1}, {}, kLiteRtElementTypeFloat32),
+         MakeTensorData<int64_t>(
+             {2},
+             {2, static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 1},
+             kLiteRtElementTypeInt64)});
+    InferenceResult result;
+    EXPECT_EQ(InferTile(ctx, result), kLiteRtStatusErrorInvalidArgument);
+  }
+  // Multiple fits in INT32, but input_dim * multiple overflows INT32_MAX.
+  {
+    MockShapeInferenceContext ctx(
+        kLiteRtOpCodeTflTile,
+        {MakeTensorData<float>({2, 3}, {}, kLiteRtElementTypeFloat32),
+         MakeTensorData<int64_t>(
+             {2},
+             {2, static_cast<int64_t>(std::numeric_limits<int32_t>::max())},
+             kLiteRtElementTypeInt64)});
+    InferenceResult result;
+    EXPECT_EQ(InferTile(ctx, result), kLiteRtStatusErrorInvalidArgument);
+  }
+}
+
+TEST(TileOpTest, RejectsWrongMultiplesLength) {
+  MockShapeInferenceContext ctx(
+      kLiteRtOpCodeTflTile,
+      {MakeTensorData<float>({2, 3}, {}, kLiteRtElementTypeFloat32),
+       MakeTensorData<int32_t>({3}, {2, 2, 2}, kLiteRtElementTypeInt32)});
+  InferenceResult result;
+  EXPECT_EQ(InferTile(ctx, result), kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(TileOpTest, RejectsNon1DMultiplesShape) {
+  MockShapeInferenceContext ctx(
+      kLiteRtOpCodeTflTile,
+      {MakeTensorData<float>({2, 3}, {}, kLiteRtElementTypeFloat32),
+       MakeTensorData<int32_t>({2, 1}, {2, 2}, kLiteRtElementTypeInt32)});
+  InferenceResult result;
+  EXPECT_EQ(InferTile(ctx, result), kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(TileOpTest, RejectsUnsupportedMultiplesElementType) {
+  MockShapeInferenceContext ctx(
+      kLiteRtOpCodeTflTile,
+      {MakeTensorData<float>({2, 3}, {}, kLiteRtElementTypeFloat32),
+       MakeTensorData<float>({2}, {2.0f, 2.0f}, kLiteRtElementTypeFloat32)});
+  InferenceResult result;
+  EXPECT_EQ(InferTile(ctx, result), kLiteRtStatusErrorInvalidArgument);
 }
 
 TEST(TileOpTest, ReferenceTile1D) {
