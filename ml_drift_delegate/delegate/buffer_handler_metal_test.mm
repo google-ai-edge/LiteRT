@@ -925,6 +925,52 @@
   XCTAssertEqual(status, kLiteRtStatusOk);
 }
 
+- (void)testPartialWriteLockPreservesUnwrittenContents {
+  if (!_device) return;
+
+  constexpr int kNumElements = 8;
+  LiteRtRankedTensorType tensorType;
+  tensorType.element_type = kLiteRtElementTypeFloat32;
+  tensorType.layout.rank = 1;
+  tensorType.layout.dimensions[0] = kNumElements;
+  tensorType.layout.has_strides = false;
+
+  const size_t bytes = kNumElements * sizeof(float);
+  HwMemoryInfoPtr memoryInfo = nullptr;
+  LiteRtStatus status =
+      LiteRtCreateMetalMemory((__bridge void*)_device, (__bridge void*)_commandQueue, &tensorType,
+                              kLiteRtTensorBufferTypeMetalBuffer, bytes, bytes, &memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+
+  // First write lock initializes the whole buffer (like InitializeAttentionMask()).
+  void* hostMemory = nullptr;
+  status = LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeWrite, &hostMemory);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  float* floatMemory = static_cast<float*>(hostMemory);
+  for (int i = 0; i < kNumElements; ++i) {
+    floatMemory[i] = -1.0f;
+  }
+  XCTAssertEqual(LiteRtUnlockMetalMemory(memoryInfo), kLiteRtStatusOk);
+
+  // Second write lock updates only the first element (like FillAttentionMask()).
+  status = LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeWrite, &hostMemory);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  static_cast<float*>(hostMemory)[0] = 0.0f;
+  XCTAssertEqual(LiteRtUnlockMetalMemory(memoryInfo), kLiteRtStatusOk);
+
+  status = LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeRead, &hostMemory);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  floatMemory = static_cast<float*>(hostMemory);
+  XCTAssertEqual(floatMemory[0], 0.0f);
+  for (int i = 1; i < kNumElements; ++i) {
+    XCTAssertEqual(floatMemory[i], -1.0f);
+  }
+  XCTAssertEqual(LiteRtUnlockMetalMemory(memoryInfo), kLiteRtStatusOk);
+
+  status = LiteRtDestroyMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+}
+
 - (void)testLockUnlockFreesShadowHostMemory {
   if (!_device) return;
 
