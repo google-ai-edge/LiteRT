@@ -31,6 +31,7 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/backends/common_nnpack/conversion.h"
 #include "tensor/backends/common_nnpack/graph.h"
+#include "tensor/backends/xnnpack/dequantize.h"
 #include "tensor/backends/xnnpack/graph.h"
 #include "tensor/backends/xnnpack/utils.h"
 #include "tensor/datatypes.h"
@@ -167,9 +168,17 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
         }
       }
       if (!all_zeros) {
+        // XNNPACK's channelwise quantized values have no zero points, so only
+        // constant weights can be run, by dequantizing them here.
+        if (!info.buffer || is_external) {
+          // Tensors computed by the graph, e.g. by a `Transpose`, are unnamed.
+          return absl::UnimplementedError(absl::StrCat(
+              info.name, info.name.empty() ? "" : ": ",
+              "XNNPACK only supports per-channel zero points of constants"));
+        }
         LRT_TENSOR_ASSIGN_OR_RETURN(
             std::vector<float> f32_data,
-            DequantizeInt8ConstantTensor(
+            DequantizeConstantTensor(
                 info, absl::MakeSpan(value.data.data(), value.data.size())));
         graph_->dequantized_buffers().push_back(std::move(f32_data));
         data_ptr = graph_->dequantized_buffers().back().data();
@@ -203,11 +212,6 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
   } else if (auto maybe_bwq = info.quantization->As<BlockwiseQuantization>();
              maybe_bwq.ok()) {
     const auto& bwq = maybe_bwq.value();
-    // XNNPACK only has blockwise quantized int4 values (`qbint4`).
-    if (info.type != Type::kI4) {
-      return absl::UnimplementedError(absl::StrCat(
-          info.name, ": XNNPACK only supports blockwise quantized int4."));
-    }
     if (dims.size() < 2) {
       return absl::InvalidArgumentError(absl::StrCat(
           info.name,
@@ -222,6 +226,15 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
       return absl::InvalidArgumentError(absl::StrCat(
           info.name, ": blockwise scale count (", bwq.scales.size(),
           ") is smaller than block_count (", expected_block_count, ")"));
+    }
+    // XNNPACK's blockwise quantized values have a single zero point.
+    for (const int64_t zero_point : bwq.zero_points) {
+      if (zero_point != bwq.zero_points[0]) {
+        return absl::UnimplementedError(absl::StrCat(
+            info.name,
+            ": XNNPACK doesn't support blockwise quantization with different "
+            "zero points"));
+      }
     }
     graph_->fp16_buffers().emplace_back(bwq.scales.begin(), bwq.scales.end());
     const void* scale_ptr = graph_->fp16_buffers().back().data();

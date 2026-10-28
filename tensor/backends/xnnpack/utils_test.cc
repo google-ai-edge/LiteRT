@@ -45,6 +45,21 @@ TEST(XnnStatusToAbslTest, SuccessIsOk) {
   EXPECT_THAT(XnnStatusToAbsl(xnn_status_success, "op"), IsOk());
 }
 
+TEST(XnnStatusToAbslTest, MapsStatusCodes) {
+  EXPECT_THAT(XnnStatusToAbsl(xnn_status_unsupported_parameter, "op"),
+              StatusIs(absl::StatusCode::kUnimplemented, HasSubstr("op")));
+  EXPECT_THAT(XnnStatusToAbsl(xnn_status_unsupported_hardware, "op"),
+              StatusIs(absl::StatusCode::kUnimplemented));
+  EXPECT_THAT(XnnStatusToAbsl(xnn_status_invalid_parameter, "op"),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(XnnStatusToAbsl(xnn_status_out_of_memory, "op"),
+              StatusIs(absl::StatusCode::kResourceExhausted));
+  EXPECT_THAT(XnnStatusToAbsl(xnn_status_invalid_state, "op"),
+              StatusIs(absl::StatusCode::kInternal));
+  EXPECT_THAT(XnnStatusToAbsl(xnn_status_uninitialized, "op"),
+              StatusIs(absl::StatusCode::kInternal));
+}
+
 TEST(XnnStatusErrorConversionTest, MacroErrorIsCreatedAtCallSite) {
   const int line = __LINE__ + 2;
   auto propagate = []() -> absl::Status {
@@ -53,7 +68,7 @@ TEST(XnnStatusErrorConversionTest, MacroErrorIsCreatedAtCallSite) {
   };
   const absl::Status status = propagate();
 
-  EXPECT_THAT(status, StatusIs(absl::StatusCode::kInternal));
+  EXPECT_THAT(status, StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(status.GetSourceLocations(),
               ElementsAre(Property(&absl::SourceLocation::line, line),
                           Property(&absl::SourceLocation::line, line)));
