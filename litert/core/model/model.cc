@@ -279,6 +279,7 @@ void LiteRtModelT::TransferSubgraphTo(LiteRtSubgraphT::Alloc& dest,
     return;
   }
   std::sort(indices.begin(), indices.end());
+  indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
   std::vector<int> new_inds(subgraphs_.Size(), 0);
   auto num_removed = 0;
   auto i = indices.begin();

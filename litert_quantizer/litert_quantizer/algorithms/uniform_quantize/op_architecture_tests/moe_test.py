@@ -21,6 +21,7 @@ import numpy as np
 
 from litert_quantizer import qtyping
 from litert_quantizer.algorithms.uniform_quantize import common_quantize
+from litert_quantizer.algorithms.uniform_quantize import dequantized_weight_recovery
 from litert_quantizer.algorithms.uniform_quantize import naive_min_max_quantize
 from litert_quantizer.algorithms.uniform_quantize.op_architecture_tests import test_utils as op_test_utils
 from litert_quantizer.algorithms.utils import common_utils
@@ -67,22 +68,49 @@ class MoeTest(op_test_utils.BaseQuantizeTest):
 
   @parameterized.named_parameters(
       dict(
-          testcase_name="int8_channelwise",
+          testcase_name="min_max_int8_channelwise",
+          get_tensor_quant_params_fn=(
+              naive_min_max_quantize.get_tensor_quant_params
+          ),
           num_bits=8,
           granularity=qtyping.QuantGranularity.CHANNELWISE,
       ),
       dict(
-          testcase_name="int4_channelwise",
+          testcase_name="min_max_int4_channelwise",
+          get_tensor_quant_params_fn=(
+              naive_min_max_quantize.get_tensor_quant_params
+          ),
           num_bits=4,
           granularity=qtyping.QuantGranularity.CHANNELWISE,
       ),
       dict(
-          testcase_name="int4_blockwise_32",
+          testcase_name="min_max_int4_blockwise_32",
+          get_tensor_quant_params_fn=(
+              naive_min_max_quantize.get_tensor_quant_params
+          ),
           num_bits=4,
           granularity=qtyping.QuantGranularity.BLOCKWISE_32,
       ),
+      dict(
+          testcase_name="weight_recovery_int8_channelwise",
+          get_tensor_quant_params_fn=(
+              dequantized_weight_recovery.get_tensor_quant_params
+          ),
+          num_bits=8,
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+      ),
+      dict(
+          testcase_name="weight_recovery_int4_channelwise",
+          get_tensor_quant_params_fn=(
+              dequantized_weight_recovery.get_tensor_quant_params
+          ),
+          num_bits=4,
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+      ),
   )
-  def test_materialize_moe_succeeds(self, num_bits, granularity):
+  def test_materialize_moe_succeeds(
+      self, get_tensor_quant_params_fn, num_bits, granularity
+  ):
     subgraph0 = self._op_test_info.test_model.subgraphs[0]
     subgraph_op_id = 0
     moe_op = subgraph0.operators[subgraph_op_id]
@@ -103,7 +131,7 @@ class MoeTest(op_test_utils.BaseQuantizeTest):
     )
 
     tensor_quant_params = common_quantize.materialize_moe(
-        naive_min_max_quantize.get_tensor_quant_params,
+        get_tensor_quant_params_fn,
         op_info,
         self._graph_info,
         tensor_name_to_qsv={},

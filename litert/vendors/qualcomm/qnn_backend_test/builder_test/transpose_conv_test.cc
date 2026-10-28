@@ -21,9 +21,6 @@
 namespace litert::qnn {
 namespace {
 
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 constexpr float kActScale = 0.01f;
 constexpr float kFilterScale = 0.5f;
 constexpr float kBiasScale = kActScale * kFilterScale;
