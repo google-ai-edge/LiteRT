@@ -22,6 +22,7 @@
 
 #include <cstdint>
 
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 
@@ -122,6 +123,55 @@ inline constexpr uint64_t kMaxDecomposedSdpaScoreBytes = 768ull << 20;
 // [b, kv_heads, cache_size, head_dim], assuming F16 storage.
 uint64_t DecomposedSdpaScoreBytes(const ::ml_drift::BHWC& q_shape,
                                   const ::ml_drift::BHWC& k_shape);
+
+// Largest score tensor, in bytes, that the decomposed graph materializes at
+// once. Above it, the graph runs on chunks of whole query heads of every GQA
+// group (`NumDecomposedSdpaScoreChunks`), one after the other, so the memory
+// planner reuses one chunk-sized score buffer for all of them.
+//
+// This bounds long-context prefill where no fused kernel applies, e.g. the
+// head-dim-512 global attention layers of Gemma 4 on Metal, which exceed the
+// 128 channels of the MMA prefill kernel: with 16 query heads, 2 K/V heads,
+// 1024-token prefill and a 32K cache, the score tensor is 1 GiB, and 8 chunks
+// of 128 MiB keep 896 MiB of it from being allocated. OpenCL and WebGPU use a
+// larger budget (`DecomposedSdpaScoreChunkBudget`).
+inline constexpr uint64_t kMaxDecomposedSdpaScoreChunkBytes = 128ull << 20;
+
+// Score bytes per chunk of the decomposed graph on `gpu_info`. OpenCL and
+// WebGPU keep prefill whose scores fit `max_score_bytes` on one GEMM, which has
+// a higher throughput than the work-group Flash kernel that takes larger float
+// prefill (`UsesWorkGroupFlashPrefill`). They only split larger scores, which
+// reach the decomposed graph when the Flash kernel does not apply (e.g. INT8 or
+// plain K/V tensors), so their budget is the larger of `max_score_bytes` and
+// `max_chunk_bytes`. Other backends split above `max_chunk_bytes`. On OpenCL,
+// the budget is at most the maximum buffer allocation of the device.
+uint64_t DecomposedSdpaScoreChunkBudget(
+    const ::ml_drift::GpuInfo& gpu_info,
+    uint64_t max_score_bytes = kMaxDecomposedSdpaScoreBytes,
+    uint64_t max_chunk_bytes = kMaxDecomposedSdpaScoreChunkBytes);
+
+// Bytes that the decomposed graph keeps live per score element for queries of
+// `data_type`: the logits, plus the probabilities that `Softmax` writes next to
+// them on plain K/V tensors. With the `odml.cache_update` layout
+// (`from_cache_update`), the softmax is folded into the P * V matmul instead.
+int DecomposedSdpaBytesPerScore(::ml_drift::DataType data_type,
+                                bool from_cache_update);
+
+// Number of chunks that the decomposed graph splits the GQA-folded query rows
+// [b, kv_heads, gqa * tokens, head_dim] into so that the score buffers of each
+// chunk, at `bytes_per_score` per score element (`DecomposedSdpaBytesPerScore`;
+// 2 for F16 logits), fit `max_chunk_bytes`: the smallest divisor of the GQA
+// group size `gqa = q_shape.h / k_shape.h` that does, or `gqa` (one query head
+// per K/V head and chunk). Chunks hold whole query heads, so a
+// `[*, 1, tokens, keys]` mask applies to every chunk as it does to the folded
+// rows. Returns 1 for plain multi-head attention and when the whole score
+// tensor fits. Chunks do not split the query tokens, so the budget is not met
+// when one query head per K/V head still exceeds it, e.g. with multi-head
+// attention or long prefill chunks.
+int NumDecomposedSdpaScoreChunks(const ::ml_drift::BHWC& q_shape,
+                                 const ::ml_drift::BHWC& k_shape,
+                                 uint64_t max_chunk_bytes,
+                                 int bytes_per_score = 2);
 
 // Whether multi-token prefill (`q_shape.w > 1`) on a backend without the
 // wave-matrix MMA kernel runs on the work-group Flash kernel: when the score

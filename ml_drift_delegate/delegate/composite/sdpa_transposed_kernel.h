@@ -37,11 +37,19 @@ namespace litert::ml_drift {
 // prefill graph on backends without the MMA prefill kernel (see
 // `UsesWorkGroupFlashPrefill`); tests lower it to run small prefill shapes on
 // the work-group Flash kernel.
+// `max_decomposed_score_chunk_bytes` bounds the score tensor that the
+// decomposed graph materializes at once (see
+// `kMaxDecomposedSdpaScoreChunkBytes`); on OpenCL and WebGPU, scores within
+// `max_decomposed_score_bytes` are not split (see
+// `DecomposedSdpaScoreChunkBudget`). Tests lower both to split small shapes
+// into chunks.
 absl::Status BuildSdpaTransposedGpuGraph(
     const std::vector<uint32_t>& input_ids, uint32_t output_id,
     const SdpaTransposedAttributes& attr,
     ::ml_drift::GpuModelBuilder* model_builder,
-    uint64_t max_decomposed_score_bytes = kMaxDecomposedSdpaScoreBytes);
+    uint64_t max_decomposed_score_bytes = kMaxDecomposedSdpaScoreBytes,
+    uint64_t max_decomposed_score_chunk_bytes =
+        kMaxDecomposedSdpaScoreChunkBytes);
 
 absl::Status CreateSdpaTransposedFromNode(
     const std::vector<::ml_drift::Value*>& inputs,

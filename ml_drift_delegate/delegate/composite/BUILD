@@ -228,6 +228,7 @@ cc_library(
     srcs = ["sdpa_transposed_support.cc"],
     hdrs = ["sdpa_transposed_support.h"],
     deps = [
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:shape",
     ],
