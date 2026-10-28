@@ -227,6 +227,7 @@ class GpuIOBufferOpenGl : public GpuIOBuffer {
   // Implementation of GpuIOBuffer.
   absl::Status Read(absl::Span<uint8_t> data) override;
   absl::Status Write(absl::Span<const uint8_t> data) override;
+  size_t GetSize() const override { return buffer_.GetMemorySizeInBytes(); }
 
   // Underlying immutable OpenGL buffer.
   const ::ml_drift::gl::GlBuffer& gl_buffer() const { return buffer_; }

@@ -273,31 +273,80 @@ class GpuBackend {
   virtual absl::StatusOr<std::unique_ptr<GpuIOBuffer>> CreateIOBufferWithSize(
       ::ml_drift::DataType data_type, size_t size, bool input) = 0;
 
+  // Answers the allocation policy question: returns true if the device
+  // architecture permits zero-copy host pointer wrapping (e.g. OpenCL
+  // CL_MEM_USE_HOST_PTR).
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
+  virtual bool SupportsZeroCopyHostPtr(bool input) const { return false; }
+
+  // Answers the hardware memory coherence capability question: returns true if
+  // host pointer I/O buffers require explicit cache flushing/invalidation
+  // (e.g. via map/unmap) between host and device.
+  // This is an intrinsic hardware property independent of whether host pointer
+  // allocation was enabled natively or forced for testing. On platforms with
+  // unified memory and hardware cache coherency (e.g. PowerVR D-Series on
+  // Tensor G5 or C-Series on Tensor G6), this returns false.
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
+  virtual bool RequiresExplicitHostSync() const { return false; }
+
   // Returns true if the backend supports host pointer I/O buffers (zero-copy)
   // for the specified input/output direction. Host pointer buffers allow direct
   // CPU-GPU memory sharing via mechanisms like OpenCL CL_MEM_USE_HOST_PTR.
   // Extensible to other GPU vendors and backends.
-  virtual bool SupportsHostPtrIOBuffer(bool input) const { return false; }
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
+  // Deprecated alias for SupportsZeroCopyHostPtr.
+  virtual bool SupportsHostPtrIOBuffer(bool input) const {
+    return SupportsZeroCopyHostPtr(input);
+  }
 
   // Returns the alignment in bytes required for host pointer I/O buffers
   // (typically the OS physical page size, e.g. 4096 bytes).
   // Returns 0 if host pointer I/O buffers are not supported.
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
   virtual size_t GetHostPtrAlignment() const { return 0; }
 
-  // Creates a `GpuIOBuffer` backed by internal page-aligned host memory
-  // (allocated via posix_memalign and mapped with OpenCL CL_MEM_USE_HOST_PTR).
-  // This serves as an internal staging buffer that bypasses uncached driver bus
-  // readbacks on unified memory architectures (e.g. PowerVR on Tensor G5).
-  //
-  // Returns nullptr if host pointer I/O buffers are not supported by the
-  // backend or device architecture.
+  // Allocates page-aligned internal host memory and wraps it via zero-copy
+  // mechanisms (e.g. OpenCL CL_MEM_USE_HOST_PTR). The returned GpuIOBuffer owns
+  // this allocation (OwnsHostPtr() == true) and will deallocate it upon
+  // destruction.
+  // Returns nullptr if host pointer I/O buffers are not supported.
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
+  virtual absl::StatusOr<std::unique_ptr<GpuIOBuffer>> CreateInternalHostBuffer(
+      ::ml_drift::DataType data_type, size_t size, bool input) {
+    return nullptr;
+  }
+
+  // Deprecated backward-compatible alias for CreateInternalHostBuffer.
+  // Retained so dependent callers at HEAD compile cleanly during the split.
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
   virtual absl::StatusOr<std::unique_ptr<GpuIOBuffer>> CreateHostIOBuffer(
       ::ml_drift::DataType data_type, size_t size, bool input) {
+    return CreateInternalHostBuffer(data_type, size, input);
+  }
+
+  // Strictly attempts to wrap a caller-managed host pointer with zero-copy
+  // mechanisms (e.g. OpenCL CL_MEM_USE_HOST_PTR) without taking ownership
+  // (OwnsHostPtr() == false).
+  // Returns an error status immediately if host_ptr is null, unaligned, or if
+  // backend buffer creation fails. Does NOT fall back to internal allocation.
+  // Returns nullptr if host pointer I/O buffers are not supported.
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
+  virtual absl::StatusOr<std::unique_ptr<GpuIOBuffer>> WrapExternalHostBuffer(
+      ::ml_drift::DataType data_type, size_t size, bool input, void* host_ptr) {
     return nullptr;
   }
 
   // Forces host pointer I/O buffer allocation regardless of GPU architecture
   // (used for automated testing and CI coverage across heterogeneous devices).
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
   virtual void SetForceHostPtrIOBuffer(bool force) {}
 
   // Creates a `Tensor2BufferConverter`.
@@ -483,25 +532,53 @@ class GpuIOBuffer {
   // with OpenCL CL_MEM_USE_HOST_PTR). When true, GPU shaders and CPU cores
   // access the same underlying physical DRAM, bypassing GPU driver DMA
   // transfers and bus readback stalls.
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
   virtual bool IsHostPtr() const { return false; }
 
   // Returns the raw CPU virtual address of the host memory backing this
   // buffer, or nullptr if this is a standard GPU device allocation
-  // (IsHostPtr() == false).
+  // (IsHostPtr() == false). Depending on OwnsHostPtr(), this pointer is either
+  // internally allocated or points to caller-provided client memory.
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
   virtual void* GetHostPtr() const { return nullptr; }
 
+  // Distinguishes internal memory ownership from external zero-copy wrapping:
+  // - true: The buffer internally allocated this host memory (via
+  //   posix_memalign with page alignment) as a fallback staging buffer. The
+  //   GpuIOBuffer instance owns this allocation and will deallocate it upon
+  //   destruction (free()).
+  // - false: The buffer directly wraps external caller-owned memory (e.g.
+  //   registered via SetCustomAllocationForTensor). The caller retains
+  //   ownership, and GpuIOBuffer will NOT free this memory upon destruction.
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
+  virtual bool OwnsHostPtr() const { return false; }
+
+  // Returns the allocated size of the buffer in bytes. Used for dynamic shape
+  // verification and buffer reuse validation.
+  // [REQUIRED]
+  virtual size_t GetSize() const = 0;
+
   // Synchronizes CPU modifications from host memory to the GPU device buffer.
-  // On unified-memory architectures with hardware cache coherency (e.g. PowerVR
-  // Rogue/D-Series on Tensor G5, ARM Mali on Tensor G1-G4), this is a no-op
+  // On unified-memory architectures with hardware cache coherency (e.g.
+  // PowerVR D-Series on Tensor G5 or C-Series on Tensor G6), this is a no-op
   // because CPU and GPU caches are coherent upon clFinish. On discrete or
-  // non-coherent GPUs, this enqueues explicit DMA transfers (e.g.
-  // clEnqueueWriteBuffer).
+  // non-coherent GPUs, standard operation uses clEnqueueWriteBuffer; this
+  // map/unmap synchronization fallback is retained for OpenCL specification
+  // compliance and unit testing.
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
   virtual absl::Status SyncToDevice() { return absl::OkStatus(); }
 
   // Synchronizes GPU modifications from the device buffer to CPU host memory.
   // On unified-memory cache-coherent architectures, this is a no-op. On
-  // non-coherent architectures, this enqueues explicit DMA readbacks (e.g.
-  // clEnqueueReadBuffer).
+  // discrete or non-coherent GPUs, standard operation uses
+  // clEnqueueReadBuffer; this map/unmap synchronization fallback is retained
+  // for OpenCL specification compliance and unit testing.
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
   virtual absl::Status SyncToHost() { return absl::OkStatus(); }
 };
 

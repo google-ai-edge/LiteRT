@@ -297,6 +297,7 @@ class GpuIOBufferMetal : public GpuIOBuffer {
   // Implementation of GpuIOBuffer.
   absl::Status Read(absl::Span<uint8_t> data) override;
   absl::Status Write(absl::Span<const uint8_t> data) override;
+  size_t GetSize() const override { return buffer_.GetMemorySizeInBytes(); }
 
   // Underlying immutable Metal buffer.
   const ::ml_drift::metal::Buffer& metal_buffer() const { return buffer_; }

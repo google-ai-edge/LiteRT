@@ -289,6 +289,7 @@ class GpuIOBufferVulkan : public GpuIOBuffer {
   // Implementation of GpuIOBuffer.
   absl::Status Read(absl::Span<uint8_t> data) override;
   absl::Status Write(absl::Span<const uint8_t> data) override;
+  size_t GetSize() const override { return buffer_.GetMemorySizeInBytes(); }
 
   // Underlying Vulkan buffer.
   ::ml_drift::syrtis::Buffer& buffer() { return buffer_; }

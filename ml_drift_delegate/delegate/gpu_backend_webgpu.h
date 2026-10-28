@@ -327,6 +327,7 @@ class GpuIOBufferWebGpu : public GpuIOBuffer {
   // Implementation of GpuIOBuffer.
   absl::Status Read(absl::Span<uint8_t> data) override;
   absl::Status Write(absl::Span<const uint8_t> data) override;
+  size_t GetSize() const override { return buffer_.GetMemorySizeInBytes(); }
 
   // Prepares the buffer for read.
   absl::Status PreRead(wgpu::CommandEncoder& command_encoder);
