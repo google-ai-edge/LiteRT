@@ -16,6 +16,11 @@ not loaded at runtime. Actual operation selection uses the same C++ legality
 analysis as compilation. Device initialization checks Vulkan features and TOSA
 instruction-set profiles.
 
+Dispatch loads `libvulkan.so` on Android and `libvulkan.so.1` on Linux.
+Android's linker resolves the system loader for the process ABI; no absolute
+`/system/lib64` path is required. Load failures include the dynamic linker's
+error message.
+
 ## Vulkan API revision
 
 The backend targets **VK_ARM_tensors Revision 2**. Compilation requires headers

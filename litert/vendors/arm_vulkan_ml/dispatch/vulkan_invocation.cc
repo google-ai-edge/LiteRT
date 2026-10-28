@@ -146,8 +146,19 @@ struct VulkanInvocation::Impl {
   }
 
   bool Initialize(bool allow_emulation) {
-    library = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
-    if (!library) { error = "Cannot load libvulkan.so.1"; return false; }
+#if defined(__ANDROID__)
+    // Let the Android linker select the ABI-specific system Vulkan loader.
+    constexpr const char* kVulkanLibrary = "libvulkan.so";
+#else
+    constexpr const char* kVulkanLibrary = "libvulkan.so.1";
+#endif
+    library = dlopen(kVulkanLibrary, RTLD_NOW | RTLD_LOCAL);
+    if (!library) {
+      const char* detail = dlerror();
+      error = std::string("Cannot load ") + kVulkanLibrary + ": " +
+          (detail ? detail : "unknown dynamic loader error");
+      return false;
+    }
     get = reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(library, "vkGetInstanceProcAddr"));
     if (!get) { error = "Missing vkGetInstanceProcAddr"; return false; }
     auto create = reinterpret_cast<PFN_vkCreateInstance>(get(nullptr, "vkCreateInstance"));
