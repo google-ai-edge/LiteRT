@@ -199,6 +199,7 @@ cc_test(
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common/task:tensor_desc",
     ],
 )

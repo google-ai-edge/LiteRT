@@ -30,6 +30,7 @@
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/ir/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 
@@ -249,6 +250,66 @@ TEST(MoeExpertsKernelTest,
     EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "experts_remap"));
     EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "moe_scale_with_batch_ids"));
   }
+}
+
+TEST(MoeExpertsKernelTest,
+     ConstantFloatWeightsAndScalesInAttributesUploadToConstTensors) {
+  const ::ml_drift::GpuInfo gpu_info = MakeTestGpuInfo();
+  ::ml_drift::CreateGpuModelInfo create_info;
+  create_info.precision = ::ml_drift::CalculationsPrecision::kF32;
+  ::ml_drift::GpuModelBuilder model_builder(gpu_info, {});
+
+  constexpr int kSeq = 2, kExperts = 4, kActive = 2, kModel = 16, kHidden = 32;
+  auto src = model_builder.AddTensor(::ml_drift::BHWC(1, 1, kSeq, kModel),
+                                     ::ml_drift::DataType::kFloat32);
+  auto top_weights = model_builder.AddTensor(
+      ::ml_drift::BHWC(1, 1, kSeq, kActive), ::ml_drift::DataType::kFloat32);
+  auto top_indices = model_builder.AddTensor(
+      ::ml_drift::BHWC(1, 1, kSeq, kActive), ::ml_drift::DataType::kInt32);
+  auto dst = model_builder.AddTensor(::ml_drift::BHWC(1, 1, kSeq, kModel),
+                                     ::ml_drift::DataType::kFloat32);
+
+  auto make_fp32 = [](int out_ch, int in_ch) {
+    return ::ml_drift::TensorFloat32{
+        .shape = ::ml_drift::BHWC(out_ch, kExperts, 1, in_ch),
+        .data = std::vector<float>(out_ch * kExperts * in_ch, 0.1f)};
+  };
+  ir::MoeExpertsAttributes attr{
+      .num_experts = kExperts,
+      .num_active_experts = kActive,
+      .model_dim = kModel,
+      .hidden_dim = kHidden,
+      .weight_type = ir::MoeExpertsAttributes::WeightType::kFp32,
+      .ff_gate_weight_fp32 = make_fp32(kHidden, kModel),
+      .ff1_weight_fp32 = make_fp32(kHidden, kModel),
+      .linear_weight_fp32 = make_fp32(kModel, kHidden),
+      .per_expert_scale = ::ml_drift::TensorFloat32{
+          .shape = ::ml_drift::BHWC(1, 1, 1, kExperts),
+          .data = std::vector<float>(kExperts, 1.f)}};
+
+  auto make_ir_tensor = [](const ::ml_drift::GpuModelBuilder::TensorHandle& h) {
+    ::ml_drift::ir::IrTensor t(h.id);
+    t.desc = h.tensor_desc;
+    return t;
+  };
+  ::ml_drift::ir::IrTensor t_src = make_ir_tensor(src);
+  ::ml_drift::ir::IrTensor t_top_weights = make_ir_tensor(top_weights);
+  ::ml_drift::ir::IrTensor t_top_indices = make_ir_tensor(top_indices);
+  ::ml_drift::ir::IrTensor t_unused(100);
+  ::ml_drift::ir::IrTensor t_dst = make_ir_tensor(dst);
+  ::ml_drift::ir::IrOp node(0);
+  node.attr = std::move(attr);
+
+  ASSERT_OK(
+      CreateMoeExpertsFromIrOp(create_info,
+                               {&t_src, &t_top_weights, &t_top_indices,
+                                &t_unused, &t_unused, &t_unused, &t_unused},
+                               {&t_dst}, node, &model_builder));
+
+  ::ml_drift::GpuModel gpu_model;
+  ASSERT_OK(model_builder.GetGpuModel({src.id, top_weights.id, top_indices.id},
+                                      {dst.id}, &gpu_model));
+  EXPECT_GE(gpu_model.const_tensors.size(), 4);
 }
 
 }  // namespace

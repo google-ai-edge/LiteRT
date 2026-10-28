@@ -38,9 +38,13 @@ struct MoeExpertsAttributes {
   int model_dim = 0;
   int hidden_dim = 0;
   WeightType weight_type = WeightType::kFp32;
+  std::optional<::ml_drift::TensorFloat32> ff_gate_weight_fp32;
+  std::optional<::ml_drift::TensorFloat32> ff1_weight_fp32;
+  std::optional<::ml_drift::TensorFloat32> linear_weight_fp32;
   std::optional<MoeScaleTensor> ff_gate_scale;
   std::optional<MoeScaleTensor> ff1_scale;
   std::optional<MoeScaleTensor> linear_scale;
+  std::optional<::ml_drift::TensorFloat32> per_expert_scale;
 };
 
 CustomIrOpParser GetMoeExpertsParser();

@@ -218,6 +218,10 @@ TEST_F(ConvertMoeExpertsTest, Fp32Basic) {
   EXPECT_EQ(attr->hidden_dim, 128);
   EXPECT_EQ(attr->weight_type,
             ::litert::ml_drift::ir::MoeExpertsAttributes::WeightType::kFp32);
+  EXPECT_TRUE(attr->ff_gate_weight_fp32.has_value());
+  EXPECT_TRUE(attr->ff1_weight_fp32.has_value());
+  EXPECT_TRUE(attr->linear_weight_fp32.has_value());
+  EXPECT_TRUE(attr->per_expert_scale.has_value());
 }
 
 TEST_F(ConvertMoeExpertsTest, Int8Basic) {
@@ -290,6 +294,7 @@ TEST_F(ConvertMoeExpertsTest, Int8Basic) {
   EXPECT_TRUE(attr->ff_gate_scale.has_value());
   EXPECT_TRUE(attr->ff1_scale.has_value());
   EXPECT_TRUE(attr->linear_scale.has_value());
+  EXPECT_TRUE(attr->per_expert_scale.has_value());
 }
 
 TEST_F(ConvertMoeExpertsTest, Int4Basic) {
@@ -362,6 +367,7 @@ TEST_F(ConvertMoeExpertsTest, Int4Basic) {
   EXPECT_TRUE(attr->ff_gate_scale.has_value());
   EXPECT_TRUE(attr->ff1_scale.has_value());
   EXPECT_TRUE(attr->linear_scale.has_value());
+  EXPECT_TRUE(attr->per_expert_scale.has_value());
 }
 
 TEST_F(ConvertMoeExpertsTest, InferAttributesFromTensors) {

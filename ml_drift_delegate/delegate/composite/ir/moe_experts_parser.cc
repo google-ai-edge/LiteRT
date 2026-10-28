@@ -15,7 +15,9 @@
 #include "ml_drift_delegate/delegate/composite/ir/moe_experts_parser.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <utility>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
@@ -25,6 +27,7 @@
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
 #include "ml_drift_delegate/tflite/model_builder_helper.h"
@@ -602,8 +605,34 @@ void MoeExpertsConvert(
   auto attr_or = ReadAttributesOrInfer(&context, &tflite_node, &registration);
   if (attr_or.ok()) {
     MoeExpertsAttributes attr = attr_or.value();
-    if (attr.weight_type == MoeExpertsAttributes::WeightType::kInt8 ||
-        attr.weight_type == MoeExpertsAttributes::WeightType::kInt4) {
+    auto get_float_tensor =
+        [&](int index) -> std::optional<::ml_drift::TensorFloat32> {
+      const int tfl_id = tflite_node.inputs->data[index];
+      if (tfl_id == kTfLiteOptionalTensor) return std::nullopt;
+      if (auto* ir_tensor = ir_model.GetMutableTensor(tensor_map[tfl_id])) {
+        ir_tensor->buffer_source.is_shared = false;
+      }
+      const TfLiteTensor* t = &context.tensors[tfl_id];
+      if (!tflite::IsConstantTensor(t) || t->data.raw == nullptr) {
+        return std::nullopt;
+      }
+      ::ml_drift::TensorFloat32 res;
+      res.shape = ::litert::ml_drift::ExtractTensorShape(t);
+      res.data.resize(res.shape.DimensionsProduct());
+      ::litert::ml_drift::ir::CopyFloat32Data(t, res.data.data());
+      return res;
+    };
+    attr.per_expert_scale = get_float_tensor(
+        attr.weight_type == MoeExpertsAttributes::WeightType::kFp32
+            ? kInputFp32PerExpertScale
+            : kInputInt8PerExpertScale);
+
+    if (attr.weight_type == MoeExpertsAttributes::WeightType::kFp32) {
+      attr.ff_gate_weight_fp32 = get_float_tensor(kInputFp32GateWeight);
+      attr.ff1_weight_fp32 = get_float_tensor(kInputFp32Ff1Weight);
+      attr.linear_weight_fp32 = get_float_tensor(kInputFp32LinearWeight);
+    } else if (attr.weight_type == MoeExpertsAttributes::WeightType::kInt8 ||
+               attr.weight_type == MoeExpertsAttributes::WeightType::kInt4) {
       auto get_scale = [&](int index) -> MoeScaleTensor {
         const TfLiteTensor* t =
             &context.tensors[tflite_node.inputs->data[index]];
@@ -618,7 +647,7 @@ void MoeExpertsConvert(
       attr.ff1_scale = get_scale(kInputInt8Ff1Scale);
       attr.linear_scale = get_scale(kInputInt8LinearScale);
     }
-    op->attr = attr;
+    op->attr = std::move(attr);
   }
 
   for (int i = 0; i < tflite_node.inputs->size; ++i) {
