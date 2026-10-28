@@ -69,11 +69,16 @@ GpuInfo GetTestGpuInfo() {
   gpu_info.gpu_api = GpuApi::kOpenCl;
   gpu_info.opencl_info.supports_fp16 = true;
   gpu_info.opencl_info.supports_images = true;
+  gpu_info.opencl_info.compute_units_count = 4;
   gpu_info.opencl_info.max_allocation_size = 256 * 1024 * 1024;
   gpu_info.opencl_info.buffer_max_size = 256 * 1024 * 1024;
   gpu_info.opencl_info.image2d_max_width = 16384;
   gpu_info.opencl_info.image2d_max_height = 16384;
   gpu_info.opencl_info.image_buffer_max_size = 65536;
+  gpu_info.opencl_info.max_work_group_size_x = 256;
+  gpu_info.opencl_info.max_work_group_size_y = 256;
+  gpu_info.opencl_info.max_work_group_size_z = 256;
+  gpu_info.opencl_info.max_work_group_total_size = 256;
   for (auto type : {DataType::kFloat32, DataType::kFloat16, DataType::kInt32}) {
     gpu_info.opencl_info.supported_images_2d.r_layout.insert(type);
     gpu_info.opencl_info.supported_images_2d.rg_layout.insert(type);
@@ -247,6 +252,57 @@ TEST_F(LiteRtOpSelectorIrTest,
     }
   }
   EXPECT_TRUE(found_cache_node);
+}
+
+TEST_F(LiteRtOpSelectorIrTest, ScaledDotProductAttentionUsesFlashSdpaKernel) {
+  const IrTensor* q =
+      AddTensor(BHWC(1, 10080, 12, 64), DataType::kFloat16,
+                TensorStorageType::kBuffer);
+  const IrTensor* k =
+      AddTensor(BHWC(1, 10080, 12, 64), DataType::kFloat16,
+                TensorStorageType::kBuffer);
+  const IrTensor* v =
+      AddTensor(BHWC(1, 10080, 12, 64), DataType::kFloat16,
+                TensorStorageType::kBuffer);
+  const IrTensor* out =
+      AddTensor(BHWC(1, 10080, 12, 64), DataType::kFloat16,
+                TensorStorageType::kBuffer);
+
+  ::ml_drift::ScaledDotProductAttentionAttributes attr;
+  attr.scale = 0.125f;
+  ASSERT_OK(SelectOp(
+      ToString(::ml_drift::OperationType::kScaledDotProductAttention), attr,
+      {q, k, v}, {out}));
+
+  GpuModel gpu_model;
+  ASSERT_OK(BuildModel({q, k, v}, {out}, &gpu_model));
+  ASSERT_EQ(gpu_model.nodes.size(), 5);
+  EXPECT_EQ(gpu_model.nodes[3].name, "flash_sdpa");
+}
+
+TEST_F(LiteRtOpSelectorIrTest,
+       ScaledDotProductAttentionFallsBackWhenUnsupported) {
+  const IrTensor* q = AddTensor(BHWC(1, 64, 8, 256), DataType::kFloat16,
+                                TensorStorageType::kBuffer);
+  const IrTensor* k = AddTensor(BHWC(1, 64, 8, 256), DataType::kFloat16,
+                                TensorStorageType::kBuffer);
+  const IrTensor* v = AddTensor(BHWC(1, 64, 8, 256), DataType::kFloat16,
+                                TensorStorageType::kBuffer);
+  const IrTensor* out = AddTensor(BHWC(1, 64, 8, 256), DataType::kFloat16,
+                                  TensorStorageType::kBuffer);
+
+  ::ml_drift::ScaledDotProductAttentionAttributes attr;
+  attr.scale = 0.0625f;
+  ASSERT_OK(SelectOp(
+      ToString(::ml_drift::OperationType::kScaledDotProductAttention), attr,
+      {q, k, v}, {out}));
+
+  GpuModel gpu_model;
+  ASSERT_OK(BuildModel({q, k, v}, {out}, &gpu_model));
+  EXPECT_FALSE(gpu_model.nodes.empty());
+  for (const auto& node : gpu_model.nodes) {
+    EXPECT_NE(node.name, "flash_sdpa");
+  }
 }
 
 }  // namespace

@@ -47,6 +47,7 @@
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_kernel.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_parser.h"
+#include "ml_drift_delegate/delegate/composite/sdpa_kernel.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/short_conv_step_kernel.h"
@@ -260,6 +261,19 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
   }
   if (node.operation.type == kShortConvStepType) {
     return CreateShortConvStepFromNode(inputs, outputs, node, model_builder);
+  }
+  if (node.operation.type ==
+      ToString(::ml_drift::OperationType::kScaledDotProductAttention)) {
+    // Try the custom fused Flash SDPA kernel first, and fall back to the
+    // default ML Drift implementation if the custom kernel does not support
+    // the case.
+    std::vector<::ml_drift::Value*> sdpa_inputs =
+        ResolveInputsWithBufferParam(/*param_index=*/-1, inputs, model_builder);
+    absl::Status status =
+        CreateSdpaFromNode(sdpa_inputs, outputs, node, model_builder);
+    if (!absl::IsUnimplemented(status)) {
+      return status;
+    }
   }
   if (node.operation.type == ToString(::ml_drift::OperationType::kRope)) {
     return CreateRoPEFromNode(inputs, outputs, node, model_builder);

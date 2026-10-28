@@ -234,6 +234,105 @@ cc_library(
 )
 
 cc_library(
+    name = "sdpa_kernel",
+    srcs = ["sdpa_kernel.cc"],
+    hdrs = ["sdpa_kernel.h"],
+    deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:kernel_info",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/kernels/special:conv_softmax_conv",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:tuning_type",
+    ],
+)
+
+mld_kernel_test(
+    name = "sdpa_kernel_test",
+    srcs = ["sdpa_kernel_test.cc"],
+    platforms = [
+        "opencl",
+        "webgpu",
+    ],
+    deps = [
+        ":sdpa_kernel",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+    ],
+)
+
+objc_library(
+    name = "sdpa_kernel_test_objc_lib",
+    testonly = True,
+    srcs = [
+        "sdpa_kernel_test.cc",
+        "@ml_drift//ml_drift/common/kernels/tests:kernel_test.h",
+        "@ml_drift//ml_drift/common/kernels/tests:metal_kernel_test.mm",
+    ],
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":sdpa_kernel",
+        "@com_google_googletest//:gtest",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        # Dependency placeholder: apple_frameworks Metal,
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+        "@ml_drift//ml_drift/metal/testing:test_util",
+    ],
+)
+
+cc_test(
+    name = "sdpa_kernel_test_mac",
+    tags = [
+        "mac",
+        "manual",
+        "nobuilder",
+        "notap",
+        "nozapfhahn",
+    ],
+    deps = [
+        ":sdpa_kernel_test_objc_lib",
+    ],
+)
+
+cc_library(
     name = "sdpa_transposed_parser",
     srcs = ["sdpa_transposed_parser.cc"],
     hdrs = ["sdpa_transposed_parser.h"],
@@ -929,6 +1028,7 @@ cc_library(
         ":qkv_norm_rope_parser",
         ":runtime_batched_matmul_kernel",
         ":runtime_batched_matmul_parser",
+        ":sdpa_kernel",
         ":sdpa_transposed_kernel",
         ":sdpa_transposed_parser",
         ":short_conv_step_kernel",

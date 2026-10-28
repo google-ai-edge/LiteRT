@@ -68,11 +68,16 @@ GpuInfo GetTestGpuInfo() {
   gpu_info.gpu_api = GpuApi::kOpenCl;
   gpu_info.opencl_info.supports_fp16 = true;
   gpu_info.opencl_info.supports_images = true;
+  gpu_info.opencl_info.compute_units_count = 4;
   gpu_info.opencl_info.max_allocation_size = 256 * 1024 * 1024;
   gpu_info.opencl_info.buffer_max_size = 256 * 1024 * 1024;
   gpu_info.opencl_info.image2d_max_width = 16384;
   gpu_info.opencl_info.image2d_max_height = 16384;
   gpu_info.opencl_info.image_buffer_max_size = 65536;
+  gpu_info.opencl_info.max_work_group_size_x = 256;
+  gpu_info.opencl_info.max_work_group_size_y = 256;
+  gpu_info.opencl_info.max_work_group_size_z = 256;
+  gpu_info.opencl_info.max_work_group_total_size = 256;
   for (auto type : {DataType::kFloat32, DataType::kFloat16, DataType::kInt32}) {
     gpu_info.opencl_info.supported_images_2d.r_layout.insert(type);
     gpu_info.opencl_info.supported_images_2d.rg_layout.insert(type);
@@ -489,6 +494,99 @@ TEST(LiteRtOpSelectorTest, ShortConvStepAllOptionCombinationsAndConvLengths) {
                 "+ (0)) * args.state_in_out_width + (4 * S + 0))] ="));
       }
     }
+  }
+}
+
+TEST(LiteRtOpSelectorTest, ScaledDotProductAttentionUsesFlashSdpaKernel) {
+  const GpuInfo gpu_info = GetTestGpuInfo();
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
+
+  GpuModelBuilderOptions options;
+  options.storage = TensorStorageType::kBuffer;
+  GpuModelBuilder builder(gpu_info, options);
+
+  TensorDescriptor desc(DataType::kFloat16, TensorStorageType::kBuffer,
+                        Layout::kHWC);
+  desc.SetBHWCShape(BHWC(1, 10080, 12, 64));
+  auto q = builder.AddTensor(desc);
+  auto k = builder.AddTensor(desc);
+  auto v = builder.AddTensor(desc);
+  auto out = builder.AddTensor(desc);
+
+  Value v_q{q.id, {DataType::kFloat16, BHWC(1, 10080, 12, 64)}};
+  Value v_k{k.id, {DataType::kFloat16, BHWC(1, 10080, 12, 64)}};
+  Value v_v{v.id, {DataType::kFloat16, BHWC(1, 10080, 12, 64)}};
+  Value v_out{out.id, {DataType::kFloat16, BHWC(1, 10080, 12, 64)}};
+
+  OperationDef op_def;
+  op_def.src_tensors = {q.tensor_desc, k.tensor_desc, v.tensor_desc};
+  op_def.dst_tensors = {out.tensor_desc};
+
+  GraphFloat32 graph;
+  Node* sdpa_node = graph.NewNode();
+  sdpa_node->operation.type =
+      ToString(::ml_drift::OperationType::kScaledDotProductAttention);
+  ::ml_drift::ScaledDotProductAttentionAttributes attr;
+  attr.scale = 0.125f;
+  sdpa_node->operation.attributes = attr;
+
+  LiteRtOpSelector selector(&create_info, &gpu_info);
+  ASSERT_OK(selector.GPUOperationFromNode(op_def, {&v_q, &v_k, &v_v}, {&v_out},
+                                          *sdpa_node, &builder));
+
+  GpuModel gpu_model;
+  ASSERT_OK(builder.GetGpuModel({q.id, k.id, v.id}, {out.id}, &gpu_model));
+  ASSERT_EQ(gpu_model.nodes.size(), 5);
+  EXPECT_EQ(gpu_model.nodes[3].name, "flash_sdpa");
+}
+
+TEST(LiteRtOpSelectorTest,
+     ScaledDotProductAttentionFallsBackWhenUnsupported) {
+  const GpuInfo gpu_info = GetTestGpuInfo();
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
+
+  GpuModelBuilderOptions options;
+  options.storage = TensorStorageType::kBuffer;
+  GpuModelBuilder builder(gpu_info, options);
+
+  TensorDescriptor desc(DataType::kFloat16, TensorStorageType::kBuffer,
+                        Layout::kHWC);
+  desc.SetBHWCShape(BHWC(1, 64, 8, 256));
+  auto q = builder.AddTensor(desc);
+  auto k = builder.AddTensor(desc);
+  auto v = builder.AddTensor(desc);
+  auto out = builder.AddTensor(desc);
+
+  Value v_q{q.id, {DataType::kFloat16, BHWC(1, 64, 8, 256)}};
+  Value v_k{k.id, {DataType::kFloat16, BHWC(1, 64, 8, 256)}};
+  Value v_v{v.id, {DataType::kFloat16, BHWC(1, 64, 8, 256)}};
+  Value v_out{out.id, {DataType::kFloat16, BHWC(1, 64, 8, 256)}};
+
+  OperationDef op_def;
+  op_def.src_tensors = {q.tensor_desc, k.tensor_desc, v.tensor_desc};
+  op_def.dst_tensors = {out.tensor_desc};
+
+  GraphFloat32 graph;
+  Node* sdpa_node = graph.NewNode();
+  sdpa_node->operation.type =
+      ToString(::ml_drift::OperationType::kScaledDotProductAttention);
+  ::ml_drift::ScaledDotProductAttentionAttributes attr;
+  attr.scale = 0.0625f;
+  sdpa_node->operation.attributes = attr;
+
+  LiteRtOpSelector selector(&create_info, &gpu_info);
+  ASSERT_OK(selector.GPUOperationFromNode(op_def, {&v_q, &v_k, &v_v}, {&v_out},
+                                          *sdpa_node, &builder));
+
+  GpuModel gpu_model;
+  ASSERT_OK(builder.GetGpuModel({q.id, k.id, v.id}, {out.id}, &gpu_model));
+  EXPECT_FALSE(gpu_model.nodes.empty());
+  for (const auto& node : gpu_model.nodes) {
+    EXPECT_NE(node.name, "flash_sdpa");
   }
 }
 }  // namespace

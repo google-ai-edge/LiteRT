@@ -29,6 +29,7 @@
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/selectors/operation_selector.h"  // from @ml_drift
 #include "ml_drift/common/selectors/special_selector.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
@@ -40,6 +41,7 @@
 #include "ml_drift_delegate/delegate/composite/moe_experts_kernel.h"
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_kernel.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_kernel.h"
+#include "ml_drift_delegate/delegate/composite/sdpa_kernel.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.h"
 #include "ml_drift_delegate/delegate/composite/short_conv_step_kernel.h"
 
@@ -189,6 +191,18 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     return CreateQkvNormRopeFromIrOp(inputs, outputs, op, model_builder);
   } else if (op.name == "short_conv_step") {
     return CreateShortConvStepFromIrOp(inputs, outputs, op, model_builder);
+  } else if (op.name ==
+             ToString(::ml_drift::OperationType::kScaledDotProductAttention)) {
+    // Try the custom fused Flash SDPA kernel first, and fall back to the
+    // default ML Drift implementation if the custom kernel does not support
+    // the case.
+    std::vector<const ::ml_drift::ir::IrTensor*> sdpa_inputs =
+        ResolveInputsWithBufferParam(/*param_index=*/-1, inputs, model_builder);
+    absl::Status status =
+        CreateSdpaFromIrOp(sdpa_inputs, outputs, op, model_builder);
+    if (!absl::IsUnimplemented(status)) {
+      return status;
+    }
   }
 
   return ::ml_drift::GPUOperationFromNode(gpu_info_, op_def, create_info_,
