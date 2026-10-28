@@ -15,9 +15,6 @@
 using testing::Pointwise;
 namespace litert::qnn {
 namespace {
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 // Table shape: (2, 10), output shape: (1, 10).
 // Both table and output use ScaleOffset quant with scale=0.1 and offset=0.
 //
