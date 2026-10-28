@@ -19,27 +19,61 @@
 #if defined(__ANDROID__)
 #include <dlfcn.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 
-#include "openvino/runtime/properties.hpp"
 #include "litert/c/internal/litert_logging.h"
+#include "openvino/runtime/properties.hpp"
 
-// Declarations of the entry points exported by libnpu_hal_hook.so. These are
-// resolved at runtime via dlsym; the declarations only exist so decltype can
-// derive the matching function-pointer types.
+// Declarations of the entry points exported by libnpu_hal_hook.so. They are
+// resolved at runtime with dlsym; the declarations exist only so that decltype
+// can derive the matching function-pointer types. Names and values mirror the
+// hook's header.
 extern "C" {
-int npu_hal_submit_inference_async(void** ctx, void* infer_request,
-                                   int32_t job_priority, int32_t original_uid);
+
+// Callbacks the hook uses to run an inference. The hook never sees an OpenVINO
+// object: the caller closes over its own inference request, so the request is
+// always run by this library's OpenVINO.
+typedef struct {
+  size_t struct_size;  // Set to sizeof(npu_hal_infer_ops_t).
+  // Must not block. A failure is reported by `wait`.
+  void (*start)(void* user);
+  // 0 on success, non-zero on timeout or error.
+  int (*wait)(void* user, uint64_t timeout_ns);
+  // `cancel` and `get_output` are reserved and may be null.
+  void (*cancel)(void* user);
+  int (*get_output)(void* user, size_t idx, void** data, size_t* bytes);
+} npu_hal_infer_ops_t;
+
+// Results of npu_hal_run_gated. ERROR does not say whether `start` ran.
+enum {
+  NPU_HAL_SUBMIT_OK = 0,
+  NPU_HAL_SUBMIT_ERROR = -1,
+  NPU_HAL_SUBMIT_ACCESS_DENIED = -2,
+};
+
+// Runs one inference through `ops`, reporting it to the HAL.
+int npu_hal_run_gated(int32_t job_priority, int32_t original_uid,
+                      const npu_hal_infer_ops_t* ops, void* user,
+                      void** out_ctx);
+
+// Releases the context that npu_hal_run_gated hands back.
 void npu_hal_release_context(void* ctx);
+
+// Model-priority hint buckets returned by the resolver.
 typedef enum {
   NPU_HAL_MODEL_PRIORITY_LOW = 0,
   NPU_HAL_MODEL_PRIORITY_MEDIUM = 1,
   NPU_HAL_MODEL_PRIORITY_HIGH = 2,
 } npu_hal_model_priority_e;
-npu_hal_model_priority_e npu_hal_resolve_ov_model_priority(int32_t job_priority,
-                                                          int32_t original_uid);
-}
+
+// Resolves the model-priority hint for a job priority and the app the work is
+// attributed to.
+npu_hal_model_priority_e npu_hal_resolve_ov_model_priority(
+    int32_t job_priority, int32_t original_uid);
+
+}  // extern "C"
 
 namespace litert::openvino {
 
@@ -47,9 +81,14 @@ namespace litert::openvino {
 // range. Reported to the HAL as-is.
 inline constexpr int32_t kDefaultJobPriority = 0;
 
+// Results of the `wait` callback handed to npu_hal_run_gated: 0 on success,
+// non-zero on timeout or error.
+inline constexpr int kGatedWaitOk = 0;
+inline constexpr int kGatedWaitFailed = -1;
+
 // Function symbols resolved from libnpu_hal_hook.so under a single dlopen.
 struct NpuHalHooks {
-  decltype(&npu_hal_submit_inference_async) submit_inference_async = nullptr;
+  decltype(&npu_hal_run_gated) run_gated = nullptr;
   decltype(&npu_hal_release_context) release_context = nullptr;
   // Optional unified resolver. Absent only on a pre-resolver hook, in which
   // case no model-priority hint is applied.
@@ -77,17 +116,21 @@ inline const NpuHalHooks& GetNpuHalHooks() {
                  dlerror());
       return resolved;
     }
+
     // Clear any existing error before dlsym.
     dlerror();
-    resolved.submit_inference_async =
-        reinterpret_cast<decltype(&npu_hal_submit_inference_async)>(
-            dlsym(handle, "npu_hal_submit_inference_async"));
-    if (resolved.submit_inference_async == nullptr) {
-      LITERT_LOG(LITERT_ERROR, "npu_hal_submit_inference_async not found: %s",
+    resolved.run_gated = reinterpret_cast<decltype(&npu_hal_run_gated)>(
+        dlsym(handle, "npu_hal_run_gated"));
+    if (resolved.run_gated == nullptr) {
+      // A hook that predates the OpenVINO-free interface is not used: running
+      // without the HAL is the same as having no hook.
+      LITERT_LOG(LITERT_WARNING,
+                 "libnpu_hal_hook.so has no npu_hal_run_gated, NPU HAL "
+                 "scheduling disabled: %s",
                  dlerror());
-      resolved.load_error = true;
       return resolved;
     }
+
     resolved.release_context =
         reinterpret_cast<decltype(&npu_hal_release_context)>(
             dlsym(handle, "npu_hal_release_context"));
