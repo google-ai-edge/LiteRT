@@ -49,8 +49,10 @@ TfLiteStatus CopyTensorsShapeAndType(TfLiteContext* context,
 
     const TfLiteTensor* src_tensor =
         src_subgraph->tensor(src_tensor_indices[i]);
+    TF_LITE_ENSURE(context, src_tensor != nullptr);
 
     TfLiteTensor* dst_tensor = dst_subgraph->tensor(dst_tensor_indices[i]);
+    TF_LITE_ENSURE(context, dst_tensor != nullptr);
     if (resize_subgraph_inputs) {
       dst_subgraph->ResizeInputTensor(dst_tensor_indices[i],
                                       src_tensor->dims->data,
