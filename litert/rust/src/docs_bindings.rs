@@ -414,13 +414,6 @@ pub fn LiteRtCompiledModelStopMetricsCollection(
     unimplemented!()
 }
 
-pub fn LiteRtCompiledModelIsFullyAccelerated(
-    compiled_model: LiteRtCompiledModel,
-    fully_accelerated: *mut bool,
-) -> LiteRtStatus {
-    unimplemented!()
-}
-
 pub fn LiteRtCompiledModelGetProfiler(
     compiled_model: LiteRtCompiledModel,
     profiler: *mut LiteRtProfiler,
@@ -617,7 +610,40 @@ pub fn LiteRtGetSignatureOutputName(
     unimplemented!()
 }
 
+pub fn LiteRtGetSignatureInputTensor(
+    signature: LiteRtSignature,
+    input_name: *const ::std::os::raw::c_char,
+    tensor: *mut LiteRtTensor,
+) -> LiteRtStatus {
+    unimplemented!()
+}
+
+pub fn LiteRtGetSignatureInputTensorByIndex(
+    signature: LiteRtSignature,
+    input_idx: LiteRtParamIndex,
+    tensor: *mut LiteRtTensor,
+) -> LiteRtStatus {
+    unimplemented!()
+}
+
+pub fn LiteRtGetSignatureOutputTensor(
+    signature: LiteRtSignature,
+    output_name: *const ::std::os::raw::c_char,
+    tensor: *mut LiteRtTensor,
+) -> LiteRtStatus {
+    unimplemented!()
+}
+
+pub fn LiteRtGetSignatureOutputTensorByIndex(
+    signature: LiteRtSignature,
+    output_idx: LiteRtParamIndex,
+    tensor: *mut LiteRtTensor,
+) -> LiteRtStatus {
+    unimplemented!()
+}
+
 pub fn LiteRtCreateModelFromFile(
+    environment: LiteRtEnvironment,
     filename: *const ::std::os::raw::c_char,
     model: *mut LiteRtModel,
 ) -> LiteRtStatus {
@@ -625,6 +651,7 @@ pub fn LiteRtCreateModelFromFile(
 }
 
 pub fn LiteRtCreateModelFromBuffer(
+    environment: LiteRtEnvironment,
     buffer_addr: *const ::std::os::raw::c_void,
     buffer_size: usize,
     model: *mut LiteRtModel,
