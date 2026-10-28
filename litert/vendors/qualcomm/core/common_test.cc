@@ -243,6 +243,15 @@ TEST(QnnOptionTest, UseFoldReLU) {
   EXPECT_EQ(options.GetUseFoldReLU(), false);
 }
 
+TEST(QnnOptionTest, OpNameFormat) {
+  Options options;
+  EXPECT_EQ(options.GetOpNameFormat(), OpNameFormat::kBasic);
+  options.SetOpNameFormat(OpNameFormat::kDetailed);
+  EXPECT_EQ(options.GetOpNameFormat(), OpNameFormat::kDetailed);
+  options.SetOpNameFormat(OpNameFormat::kBasic);
+  EXPECT_EQ(options.GetOpNameFormat(), OpNameFormat::kBasic);
+}
+
 TEST(QnnOptionTest, HtpPPoint) {
   Options options;
   EXPECT_EQ(options.GetHtpPPoint(), 0);
@@ -422,6 +431,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_FALSE(options.GetEnableWeightSharing());
   EXPECT_TRUE(options.GetUseConvHMX());
   EXPECT_TRUE(options.GetUseFoldReLU());
+  EXPECT_EQ(options.GetOpNameFormat(), OpNameFormat::kBasic);
   EXPECT_EQ(options.GetHtpPPoint(), 0);
   EXPECT_EQ(options.GetHtpWeightSharingChannelTileSize(), 0);
   EXPECT_FALSE(options.GetHtpDlbc());

@@ -154,6 +154,27 @@ TEST(LiteRtQualcommOptionsTest, UseFoldReLU) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, OpNameFormat) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetOpNameFormat(
+      qualcomm_options, kLiteRtQualcommOpNameFormatBasic));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetOpNameFormat(),
+            litert::qualcomm::QualcommOptions::OpNameFormat::kBasic);
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetOpNameFormat(
+      qualcomm_options, kLiteRtQualcommOpNameFormatDetailed));
+
+  auto parsed_detailed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed_detailed.GetOpNameFormat(),
+            litert::qualcomm::QualcommOptions::OpNameFormat::kDetailed);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, HtpWeightSharingChannelTileSize) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -667,6 +688,13 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_TRUE(options->GetUseFoldReLU());
   options->SetUseFoldReLU(false);
   EXPECT_FALSE(options->GetUseFoldReLU());
+
+  EXPECT_EQ(options->GetOpNameFormat(),
+            litert::qualcomm::QualcommOptions::OpNameFormat::kBasic);
+  options->SetOpNameFormat(
+      litert::qualcomm::QualcommOptions::OpNameFormat::kDetailed);
+  EXPECT_EQ(options->GetOpNameFormat(),
+            litert::qualcomm::QualcommOptions::OpNameFormat::kDetailed);
 
   EXPECT_EQ(options->GetHtpWeightSharingChannelTileSize(), 0);
   options->SetHtpWeightSharingChannelTileSize(64);

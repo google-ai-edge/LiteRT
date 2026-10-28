@@ -113,6 +113,11 @@ enum class GraphPriority {
   kHigh = 4,
 };
 
+enum class OpNameFormat {
+  kBasic = 0,
+  kDetailed = 1,
+};
+
 struct CustomOpPackage {
   std::string name;
   std::string interface_provider;
@@ -176,6 +181,9 @@ class Options {
 
   void SetEnableJustInTime(bool enable_just_in_time);
   bool GetEnableJustInTime() const;
+
+  void SetOpNameFormat(OpNameFormat op_name_format);
+  OpNameFormat GetOpNameFormat() const;
 
   void SetUseConvHMX(bool use_conv_hmx);
   bool GetUseConvHMX() const;
@@ -308,6 +316,7 @@ class Options {
   bool use_int64_bias_as_int32_ = true;
   bool enable_weight_sharing_ = false;
   bool enable_just_in_time_ = false;
+  OpNameFormat op_name_format_ = OpNameFormat::kBasic;
   bool use_conv_hmx_ = true;
   bool use_fold_relu_ = true;
   std::int32_t htp_p_point_ = 0;
