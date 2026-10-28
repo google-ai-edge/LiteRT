@@ -946,11 +946,12 @@ absl::Status SharedMemoryManager::CreateBlockwiseQuantizationParams(
     }
     zero_point_data = zero_points.data();
   } else {
-    // Currently, the underlying call stacks always require zero point for
-    // quantized weights.
+    // No zero-point tensor: every zero point is 0.
     zero_points.assign(scale_size, 0);
     zero_point_data = zero_points.data();
   }
+  // Inputs so far: src, weights and, if the op has one, bias.
+  const bool has_bias_input = graph_adapter_->GetOpInputCount(fc_op_id) > 2;
 
   shared_tensor->scale_global_tensor_id = ++next_const_tensor_id_;
   ABSL_ASSIGN_OR_RETURN(
@@ -963,6 +964,16 @@ absl::Status SharedMemoryManager::CreateBlockwiseQuantizationParams(
       GlobalId::BuildParamId(shared_tensor->scale_global_tensor_id.value());
 
   shared_tensor->zero_point_global_tensor_id = ++next_const_tensor_id_;
+  // When every zero point is 0, a FullyConnected without bias reads no
+  // zero-point tensor; its kernel then subtracts the same range shift. The
+  // empty entry keeps the ids of the param tensors created after this one.
+  if (!has_bias_input &&
+      std::all_of(zero_points.begin(), zero_points.end(),
+                  [](int zero_point) { return zero_point == 0; })) {
+    quant_param_id_to_spatial_tensor_.try_emplace(
+        shared_tensor->zero_point_global_tensor_id.value());
+    return absl::OkStatus();
+  }
   ABSL_ASSIGN_OR_RETURN(
       ValueId zero_point_value_id,
       AddScaleNodeWithData(shared_tensor->zero_point_global_tensor_id.value(),
@@ -1365,6 +1376,8 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
     BHWC bhwc_shape =
         BHWC(1, 1, DivideRoundUp(tflite_tensor.dims->data[0], 4),
              4 * tflite_tensor.dims->data[1] / quant_params->blocksize);
+    // Inputs so far: src, weights and, if the op has one, bias.
+    const bool has_bias_input = graph_adapter_->GetOpInputCount(fc_op_id) > 2;
 
     ABSL_ASSIGN_OR_RETURN(
         ValueId scale_value_id,
@@ -1373,12 +1386,33 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
     (*external_tensors)[scale_value_id] =
         GlobalId::BuildParamId(shared_tensor.scale_global_tensor_id.value());
 
-    ABSL_ASSIGN_OR_RETURN(
-        ValueId zero_point_value_id,
-        AddInputNode(shared_tensor.zero_point_global_tensor_id.value(),
-                     bhwc_shape, fc_op_id, data_type));
-    (*external_tensors)[zero_point_value_id] = GlobalId::BuildParamId(
+    // An empty entry means CreateBlockwiseQuantizationParams left out an
+    // all-zero zero point: no input without bias, a zero tensor with one.
+    auto zero_point_it = quant_param_id_to_spatial_tensor_.find(
         shared_tensor.zero_point_global_tensor_id.value());
+    const bool zero_point_left_out =
+        zero_point_it != quant_param_id_to_spatial_tensor_.end() &&
+        zero_point_it->second.GetWeights() == nullptr;
+    if (zero_point_left_out && has_bias_input) {
+      Tensor<OHWI, DataType::kFloat32> zero_points;
+      zero_points.shape =
+          OHWI(tflite_tensor.dims->data[0], 1, 1,
+               tflite_tensor.dims->data[1] / quant_params->blocksize);
+      zero_points.data.assign(zero_points.shape.DimensionsProduct(), 0.0f);
+      TensorDescriptor zero_point_desc =
+          ScaleOrZeroPointToTensorDesc(gpu_info_, zero_points, data_type);
+      ABSL_RETURN_IF_ERROR(create_tensor_func_(
+          zero_point_desc, /*page_adjusted_offset=*/0,
+          /*release_data_callback=*/nullptr, zero_point_it->second.weights));
+    }
+    if (!zero_point_left_out || has_bias_input) {
+      ABSL_ASSIGN_OR_RETURN(
+          ValueId zero_point_value_id,
+          AddInputNode(shared_tensor.zero_point_global_tensor_id.value(),
+                       bhwc_shape, fc_op_id, data_type));
+      (*external_tensors)[zero_point_value_id] = GlobalId::BuildParamId(
+          shared_tensor.zero_point_global_tensor_id.value());
+    }
   } else {
     return absl::UnimplementedError(
         "Only affine quantization is supported for the shared tensors.");
