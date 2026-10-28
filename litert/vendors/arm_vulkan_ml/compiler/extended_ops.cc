@@ -57,10 +57,11 @@ ResId Constant(tfsc::tosa::Graph& graph, const std::vector<T>& data,
 }
 }  // namespace
 
-bool IsExtendedOperation(LiteRtOpCode code) {
+bool IsExtendedOperation(LiteRtOpCode code, bool floating) {
   return code == kLiteRtOpCodeTflGather || code == kLiteRtOpCodeTflReduceMax ||
       code == kLiteRtOpCodeTflReduceMin || code == kLiteRtOpCodeTflResizeBilinear ||
-      code == kLiteRtOpCodeTflResizeNearestNeighbor || code == kLiteRtOpCodeTflTransposeConv;
+      code == kLiteRtOpCodeTflResizeNearestNeighbor || code == kLiteRtOpCodeTflTransposeConv ||
+      (floating && (code == kLiteRtOpCodeTflSum || code == kLiteRtOpCodeTflFullyConnected));
 }
 
 bool AnalyzeExtendedOperation(const Op& op, OperationPlan& p, std::string& reason) {
@@ -86,9 +87,9 @@ bool AnalyzeExtendedOperation(const Op& op, OperationPlan& p, std::string& reaso
     for (auto dim : indices->Layout().Dimensions()) shape.push_back(static_cast<uint32_t>(dim));
     shape.insert(shape.end(), input.shape.begin() + p.axis + 1, input.shape.end());
     if (shape != output.shape) return reject("GATHER output shape mismatch");
-  } else if (p.code == kLiteRtOpCodeTflReduceMax || p.code == kLiteRtOpCodeTflReduceMin) {
+  } else if (p.code == kLiteRtOpCodeTflReduceMax || p.code == kLiteRtOpCodeTflReduceMin || p.code == kLiteRtOpCodeTflSum) {
     bool keep;
-    auto get_keep = p.code == kLiteRtOpCodeTflReduceMax ? LiteRtGetReduceMaxKeepDimsOption : LiteRtGetReduceMinKeepDimsOption;
+    auto get_keep = p.code == kLiteRtOpCodeTflSum ? LiteRtGetSumKeepDimsOption : p.code == kLiteRtOpCodeTflReduceMax ? LiteRtGetReduceMaxKeepDimsOption : LiteRtGetReduceMinKeepDimsOption;
     if (in.size() != 2 || !Ints(in[1], p.parameters) || p.parameters.empty() ||
         get_keep(op.Get(), &keep) != kLiteRtStatusOk) return reject("Reduction requires constant nonempty INT32 axes");
     std::set<int32_t> axes;
@@ -134,6 +135,39 @@ bool AnalyzeExtendedOperation(const Op& op, OperationPlan& p, std::string& reaso
       p.parameters.push_back(n); p.parameters.push_back(d);
       p.padding.push_back(offset); p.kernel.push_back(static_cast<int32_t>(border));
     }
+  } else if (p.code == kLiteRtOpCodeTflFullyConnected) {
+    if (in.size() != 3 || !input.floating || !output.floating)
+      return reject("FP32 FULLY_CONNECTED requires constant weights and bias");
+    auto weight_type = in[1].RankedTensorType();
+    auto bias_type = in[2].RankedTensorType();
+    if (!weight_type || !bias_type || weight_type->ElementType() != ElementType::Float32 ||
+        bias_type->ElementType() != ElementType::Float32 || weight_type->Layout().HasStrides() ||
+        bias_type->Layout().HasStrides() || weight_type->Layout().Dimensions().size() != 2 ||
+        bias_type->Layout().Dimensions().size() != 1)
+      return reject("FP32 FULLY_CONNECTED requires dense matrix weights and vector bias");
+    for (auto dim : weight_type->Layout().Dimensions()) {
+      if (dim <= 0 || dim > 8192) return reject("Invalid FULLY_CONNECTED weight dimensions");
+      p.weight_shape.push_back(static_cast<uint32_t>(dim));
+    }
+    const uint32_t channels = p.weight_shape[0], depth = p.weight_shape[1];
+    if (Count(input.shape) % depth || bias_type->Layout().Dimensions()[0] != channels ||
+        output.shape != std::vector<uint32_t>{static_cast<uint32_t>(Count(input.shape) / depth), channels})
+      return reject("FP32 FULLY_CONNECTED shapes disagree");
+    uint32_t format;
+    bool keep;
+    if (LiteRtGetFullyConnectedWeightsFormatOption(op.Get(), &format) != kLiteRtStatusOk || format ||
+        LiteRtGetFullyConnectedKeepNumDimsOption(op.Get(), &keep) != kLiteRtStatusOk || keep ||
+        LiteRtGetFullyConnectedFusedActivationOption(op.Get(), &p.float_activation) != kLiteRtStatusOk ||
+        (p.float_activation != 0 && p.float_activation != 1 && p.float_activation != 3))
+      return reject("Unsupported FP32 FULLY_CONNECTED options");
+    auto weights = in[1].WeightsData<float>();
+    auto bias = in[2].WeightsData<float>();
+    if (!weights || !bias || weights->size() != Count(p.weight_shape) || bias->size() != channels)
+      return reject("Invalid FP32 FULLY_CONNECTED constant sizes");
+    p.float_weights.assign(weights->begin(), weights->end());
+    p.float_bias.assign(bias->begin(), bias->end());
+    for (float value : p.float_weights) if (!std::isfinite(value)) return reject("Nonfinite FULLY_CONNECTED weights");
+    for (float value : p.float_bias) if (!std::isfinite(value)) return reject("Nonfinite FULLY_CONNECTED bias");
   } else {
     if (!input.floating || in.size() < 3 || in.size() > 4 || input.shape.size() != 4 || output.shape.size() != 4)
       return reject("TRANSPOSE_CONV currently requires FP32 NHWC input and constant weights");
@@ -207,11 +241,13 @@ ResId EmitExtendedOperation(tfsc::tosa::Graph& g, ResId input, const OperationPl
                                       TosaTensor(type, {batches, width, channels}));
     return reshape(result, p.output.shape);
   }
-  if (p.code == kLiteRtOpCodeTflReduceMax || p.code == kLiteRtOpCodeTflReduceMin) {
+  if (p.code == kLiteRtOpCodeTflReduceMax || p.code == kLiteRtOpCodeTflReduceMin || p.code == kLiteRtOpCodeTflSum) {
     auto shape = p.inputs[0].shape;
     for (auto axis : p.parameters) {
       shape[axis] = 1;
-      input = p.code == kLiteRtOpCodeTflReduceMax
+      input = p.code == kLiteRtOpCodeTflSum
+          ? g.AddReduceSumOperator(input, Attribute(axis), TosaTensor(type, shape))
+          : p.code == kLiteRtOpCodeTflReduceMax
           ? g.AddReduceMaxOperator(input, Attribute(axis), Attribute(int32_t{1}), TosaTensor(type, shape))
           : g.AddReduceMinOperator(input, Attribute(axis), Attribute(int32_t{1}), TosaTensor(type, shape));
     }
@@ -221,6 +257,22 @@ ResId EmitExtendedOperation(tfsc::tosa::Graph& g, ResId input, const OperationPl
     return g.AddResizeOperator(input, g.AddTensorConstant(Attribute(p.parameters)),
         g.AddTensorConstant(Attribute(p.padding)), g.AddTensorConstant(Attribute(p.kernel)),
         Attribute(int32_t{p.code == kLiteRtOpCodeTflResizeNearestNeighbor ? 1 : 2}), output);
+  }
+  if (p.code == kLiteRtOpCodeTflFullyConnected) {
+    const uint32_t batch = p.output.shape[0], channels = p.weight_shape[0], depth = p.weight_shape[1];
+    auto weights = Constant(g, p.float_weights, {1, channels, depth}, constants);
+    weights = g.AddTransposeOperator(weights, Attribute(std::vector<int32_t>{0, 2, 1}),
+                                    TosaTensor(type, {1, depth, channels}));
+    auto zero = g.AddTensorConstant(Attribute(0.0f));
+    auto result = g.AddMatmulOperator(reshape(input, {1, batch, depth}), weights, zero, zero,
+                                      TosaTensor(type, {1, batch, channels}));
+    result = g.AddAddOperator(result, Constant(g, p.float_bias, {1, 1, channels}, constants),
+                              TosaTensor(type, {1, batch, channels}));
+    result = reshape(result, p.output.shape);
+    if (p.float_activation) result = g.AddClampOperator(result, Attribute(0.0f),
+        Attribute(p.float_activation == 3 ? 6.0f : std::numeric_limits<float>::infinity()),
+        Attribute(int32_t{1}), output);
+    return result;
   }
   auto zero = g.AddTensorConstant(Attribute(0.0f));
   auto result = g.AddTransposeConv2dOperator(input,

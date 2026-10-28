@@ -13,15 +13,15 @@ TFSC helper presence does not establish support for every type row.
 | CONV3D | 8 | present | Not referenced |
 | DEPTHWISE_CONV2D | 8 | present | compiler/conv2d.cc:277, compiler/operation.cc:577 |
 | FFT2D | 1 | present | Not referenced |
-| MATMUL | 8 | present | compiler/operation.cc:667 |
+| MATMUL | 8 | present | compiler/extended_ops.cc:267, compiler/operation.cc:667 |
 | MAX_POOL2D | 7 | present | compiler/operation.cc:650 |
 | RFFT2D | 1 | present | Not referenced |
-| TRANSPOSE_CONV2D | 8 | present | compiler/extended_ops.cc:226 |
-| CLAMP | 5 | present | compiler/conv2d.cc:290, compiler/extended_ops.cc:230, compiler/operation.cc:530, compiler/operation.cc:547, compiler/operation.cc:557, compiler/operation.cc:564, compiler/operation.cc:579, compiler/operation.cc:90 |
+| TRANSPOSE_CONV2D | 8 | present | compiler/extended_ops.cc:278 |
+| CLAMP | 5 | present | compiler/conv2d.cc:290, compiler/extended_ops.cc:272, compiler/extended_ops.cc:282, compiler/operation.cc:530, compiler/operation.cc:547, compiler/operation.cc:557, compiler/operation.cc:564, compiler/operation.cc:579, compiler/operation.cc:90 |
 | ERF | 3 | present | Not referenced |
 | SIGMOID | 3 | present | compiler/operation.cc:537 |
 | TANH | 3 | present | Not referenced |
-| ADD | 4 | present | compiler/operation.cc:525, compiler/operation.cc:527, compiler/operation.cc:529, compiler/operation.cc:545, compiler/operation.cc:563, compiler/operation.cc:629, compiler/operation.cc:670 |
+| ADD | 4 | present | compiler/extended_ops.cc:269, compiler/operation.cc:525, compiler/operation.cc:527, compiler/operation.cc:529, compiler/operation.cc:545, compiler/operation.cc:563, compiler/operation.cc:629, compiler/operation.cc:670 |
 | ARITHMETIC_RIGHT_SHIFT | 3 | present | compiler/conv2d.cc:197 |
 | BITWISE_AND | 3 | present | Not referenced |
 | BITWISE_OR | 3 | present | Not referenced |
@@ -57,20 +57,20 @@ TFSC helper presence does not establish support for every type row.
 | GREATER_EQUAL | 4 | present | compiler/operation.cc:524 |
 | REDUCE_ALL | 1 | present | Not referenced |
 | REDUCE_ANY | 1 | present | Not referenced |
-| REDUCE_MAX | 6 | present | compiler/extended_ops.cc:215 |
-| REDUCE_MIN | 6 | present | compiler/extended_ops.cc:216 |
+| REDUCE_MAX | 6 | present | compiler/extended_ops.cc:251 |
+| REDUCE_MIN | 6 | present | compiler/extended_ops.cc:252 |
 | REDUCE_PRODUCT | 3 | present | Not referenced |
-| REDUCE_SUM | 4 | present | compiler/operation.cc:657 |
+| REDUCE_SUM | 4 | present | compiler/extended_ops.cc:249, compiler/operation.cc:657 |
 | CONCAT | 9 | present | compiler/conv2d.cc:158, compiler/conv2d.cc:247, compiler/conv2d.cc:248, compiler/operation.cc:595 |
 | PAD | 9 | present | compiler/operation.cc:535, compiler/operation.cc:620 |
-| RESHAPE | 9 | present | compiler/extended_ops.cc:194, compiler/operation.cc:95 |
+| RESHAPE | 9 | present | compiler/extended_ops.cc:228, compiler/operation.cc:95 |
 | REVERSE | 9 | present | Not referenced |
 | SLICE | 9 | present | compiler/conv2d.cc:152, compiler/conv2d.cc:240, compiler/conv2d.cc:257, compiler/operation.cc:569, compiler/operation.cc:594, compiler/operation.cc:634, compiler/operation.cc:647 |
 | TILE | 9 | present | Not referenced |
-| TRANSPOSE | 9 | present | compiler/operation.cc:534, compiler/operation.cc:618 |
-| GATHER | 8 | present | compiler/extended_ops.cc:206 |
+| TRANSPOSE | 9 | present | compiler/extended_ops.cc:264, compiler/operation.cc:534, compiler/operation.cc:618 |
+| GATHER | 8 | present | compiler/extended_ops.cc:240 |
 | SCATTER | 8 | present | Not referenced |
-| RESIZE | 7 | present | compiler/extended_ops.cc:221 |
+| RESIZE | 7 | present | compiler/extended_ops.cc:257 |
 | CAST | 46 | present | compiler/operation.cc:518, compiler/operation.cc:531 |
 | RESCALE | 12 | present | compiler/conv2d.cc:182, compiler/conv2d.cc:203, compiler/conv2d.cc:207, compiler/operation.cc:85 |
 
@@ -79,8 +79,8 @@ Source SHA-256 fingerprints:
 - `compiler/compiler_plugin.cc`: `ca77012e020c0e6ea4e152057d7bca23d9e3d7cea6d6e278e0f5e8849319a3ec`
 - `compiler/conv2d.cc`: `17cfa68e38a6a448809e892e006fca06559547169816d93631e4c423b0705724`
 - `compiler/conv2d_adapter.cc`: `fedb0a2aa5a571b0101c304e2be5009afe4993368c8968da8e14675fc4922b16`
-- `compiler/extended_ops.cc`: `cbd290c2d8f0cf95754aefdb15c8e192f27c05cfca5aa442dc04a5fd8058303f`
-- `compiler/operation.cc`: `2c660bcccf1fa770a61bfabddd52a33ed8754cf38d87cfc62adde710bc481526`
+- `compiler/extended_ops.cc`: `d3567fe248517d66b4c8b919a57319851485422b99559809a2f93481bc9cbd7c`
+- `compiler/operation.cc`: `dab8e8cfc575804706448c7d8710b3951296536d5a026542e147a443db3e91f8`
 - `compiler/partition.cc`: `bc0c72399b9073b2e10c6dbe12a372ec742dcc196c980b1f4c163491fde00ee8`
 - `compiler/quantization.cc`: `4474eafbb74122343329b0b51372162d86cd5ea69ce24d4dbbab2cd9bf522da0`
 - `include/tosa/OperatorEnum.hpp`: `cba5458b03154132be02eccbe29e349cad9f3c8453364ab2ec461d67b4dcc5be`

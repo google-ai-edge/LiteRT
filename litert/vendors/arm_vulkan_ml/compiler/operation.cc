@@ -163,7 +163,7 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
   auto input=ReadTensor(in[data_index]); auto output=ReadTensor(out[0]);
   if(!input || !output || output->shape.empty()) return reject("Requires static dense int8 tensors with finite per-tensor quantization");
   p.inputs.push_back(*input); p.output=*output; p.runtime_inputs={data_index};
-  if (IsExtendedOperation(p.code)) {
+  if (IsExtendedOperation(p.code, input->floating)) {
     if (!AnalyzeExtendedOperation(op, p, reason)) return std::nullopt;
     return p;
   }
@@ -587,7 +587,7 @@ ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPla
                     std::vector<GraphConstant>& constants) {
   auto input=inputs[0]; const auto& q=p.inputs[0];
   TosaTensor out(p.output.floating ? DataType::float32_t : DataType::int8_t,p.output.shape);
-  if (IsExtendedOperation(p.code)) return EmitExtendedOperation(g, input, p, constants);
+  if (IsExtendedOperation(p.code, q.floating)) return EmitExtendedOperation(g, input, p, constants);
   if(q.floating || p.output.floating) return EmitFloatOperation(g, inputs, p, constants);
   switch(p.code) {
     case kLiteRtOpCodeTflReshape:return Reshape(g,input,DataType::int8_t,p.output.shape);

@@ -16,7 +16,7 @@
 #define ODML_LITERT_LITERT_VENDORS_ARM_VULKAN_ML_COMPILER_EXTENDED_OPS_H_
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
 namespace litert::arm_vulkan_ml {
-bool IsExtendedOperation(LiteRtOpCode code);
+bool IsExtendedOperation(LiteRtOpCode code, bool floating);
 bool AnalyzeExtendedOperation(const Op& op, OperationPlan& plan, std::string& reason);
 tfsc::tosa::ResId EmitExtendedOperation(tfsc::tosa::Graph& graph,
     tfsc::tosa::ResId input, const OperationPlan& plan,
