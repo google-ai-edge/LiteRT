@@ -25,11 +25,44 @@ package(
     default_visibility = ["//visibility:public"],
 )
 
+# The C headers that the `CLiteRT` module vends: the umbrella header
+# Sources/CLiteRT/CLiteRT.h and the transitive closure of the C API headers it
+# includes. Shared by `:CLiteRT_objc` and `:CLiteRT_headers` so the Swift
+# module and the xcframework always ship the same set.
+CLITERT_C_HDRS = [
+    "//litert/build_common:build_config.h",
+    "//litert/c:litert_any.h",
+    "//litert/c:litert_common.h",
+    "//litert/c:litert_compiled_model.h",
+    "//litert/c:litert_custom_op_kernel.h",
+    "//litert/c:litert_custom_tensor_buffer.h",
+    "//litert/c:litert_environment.h",
+    "//litert/c:litert_environment_options.h",
+    "//litert/c:litert_gl_types.h",
+    "//litert/c:litert_layout.h",
+    "//litert/c:litert_model.h",
+    "//litert/c:litert_model_types.h",
+    "//litert/c:litert_op_code.h",
+    "//litert/c:litert_opaque_options.h",
+    "//litert/c:litert_opencl_types.h",
+    "//litert/c:litert_options.h",
+    "//litert/c:litert_tensor_buffer.h",
+    "//litert/c:litert_tensor_buffer_requirements.h",
+    "//litert/c:litert_tensor_buffer_types.h",
+    "//litert/c:litert_webgpu_types.h",
+    "//litert/c/internal:litert_scheduling_info.h",
+    "//litert/c/options:litert_cpu_options.h",
+]
+
 cc_library(
     name = "CLiteRT_objc",
-    hdrs = ["Sources/CLiteRT/CLiteRT.h"],
+    # Every header this module vends is listed explicitly, not just the
+    # umbrella, so that the module map generated from `hdrs` claims ownership
+    # of them.
+    hdrs = ["Sources/CLiteRT/CLiteRT.h"] + CLITERT_C_HDRS,
     aspect_hints = [":CLiteRT_swift_hint"],
     deps = [
+        "//litert/build_common:build_config",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_compiled_model",
@@ -375,30 +408,7 @@ filegroup(
 
 strip_common_include_path_prefix(
     name = "CLiteRT_headers",
-    hdr_labels = [
-        "//litert/build_common:build_config.h",
-        "//litert/c:litert_any.h",
-        "//litert/c:litert_common.h",
-        "//litert/c:litert_compiled_model.h",
-        "//litert/c:litert_custom_op_kernel.h",
-        "//litert/c:litert_custom_tensor_buffer.h",
-        "//litert/c:litert_environment.h",
-        "//litert/c:litert_environment_options.h",
-        "//litert/c:litert_gl_types.h",
-        "//litert/c:litert_layout.h",
-        "//litert/c:litert_model.h",
-        "//litert/c:litert_model_types.h",
-        "//litert/c:litert_op_code.h",
-        "//litert/c:litert_opaque_options.h",
-        "//litert/c:litert_opencl_types.h",
-        "//litert/c:litert_options.h",
-        "//litert/c:litert_tensor_buffer.h",
-        "//litert/c:litert_tensor_buffer_requirements.h",
-        "//litert/c:litert_tensor_buffer_types.h",
-        "//litert/c:litert_webgpu_types.h",
-        "//litert/c/internal:litert_scheduling_info.h",
-        "//litert/c/options:litert_cpu_options.h",
-    ],
+    hdr_labels = CLITERT_C_HDRS,
 )
 
 # Fills in the version keys of the framework Info.plist from the LiteRT release
