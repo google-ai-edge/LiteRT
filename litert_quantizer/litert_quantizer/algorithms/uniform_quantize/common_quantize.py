@@ -1496,3 +1496,25 @@ def get_tensor_indices_requiring_calibration(
       if k not in outputs_to_ignore_set and tid != -1
   ]
   return tensor_ids
+
+
+def materialize_moe(
+    get_tensor_quant_params_fn: qtyping.GetTensorQuantParamsFuncSignature,
+    op_info: qtyping.OpInfo,
+    graph_info: qtyping.GraphInfo,
+    tensor_name_to_qsv: dict[str, Any],
+    tensor_quant_params_cache: _TensorQuantParamsCache,
+) -> list[_TensorTransformationParams]:
+  """Materialize tensors in the MoE CustomOp."""
+  return common_utils.materialize_standard_op(
+      op_info,
+      graph_info,
+      tensor_name_to_qsv,
+      get_tensor_quant_params_fn,
+      tensor_quant_params_cache=tensor_quant_params_cache,
+      inputs_to_ignore=[
+          1,  # Top-k routing weights.
+          2,  # Top-k expert indices.
+          6,  # Per-expert output multiplier.
+      ],
+  )

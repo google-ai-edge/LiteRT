@@ -545,9 +545,11 @@ class _PreserveAllTensorsCalibrator(Calibrator):
       for op in subgraph.operators:
         pbar.update_single_step()
         if isinstance(op, qtyping.IOOperator):
+          op_code_obj = None
           op_key = op.op_key
         else:
-          op_code = op_codes[op.opcodeIndex].builtinCode
+          op_code_obj = op_codes[op.opcodeIndex]
+          op_code = op_code_obj.builtinCode
           if op_code not in tfl_flatbuffer_utils.TFL_OP_CODE_TO_NAME:
             continue
           op_key = tfl_flatbuffer_utils.TFL_OP_CODE_TO_NAME[op_code]
@@ -559,7 +561,10 @@ class _PreserveAllTensorsCalibrator(Calibrator):
         )
         if algorithm_name == algorithm_manager.AlgorithmName.NO_QUANTIZE:
           continue
-        if policy.is_non_quantizable_composite_op(op):
+        if (
+            policy.is_non_quantizable_composite_op(op)
+            or policy.is_non_quantizable_custom_op(op_code_obj)
+        ):
           continue
 
         # Step2.2: query algorithm_manager to get/call the related

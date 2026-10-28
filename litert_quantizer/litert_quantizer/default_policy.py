@@ -21,6 +21,7 @@ import json
 from typing import Any, Union
 from ai_edge_litert.tools import flatbuffer_utils
 from litert_quantizer import qtyping
+from litert_quantizer.utils import tfl_flatbuffer_utils
 
 _TFLOpName = qtyping.TFLOperationName
 _OpQuantizationConfig = qtyping.OpQuantizationConfig
@@ -298,7 +299,8 @@ DEFAULT_JSON_POLICY = """
       "CONV_2D_TRANSPOSE",
       "DEPTHWISE_CONV_2D",
       "EMBEDDING_LOOKUP",
-      "FULLY_CONNECTED"
+      "FULLY_CONNECTED",
+      "CUSTOM_OP"
     ],
     "dynamic_wi4_afp32": ["FULLY_CONNECTED", "EMBEDDING_LOOKUP", "CONV_2D"],
     "dynamic_wi4_afp32_blockwise": ["EMBEDDING_LOOKUP", "FULLY_CONNECTED"],
@@ -320,6 +322,9 @@ QUANTIZABLE_COMPOSITES = [
     "od" + "ml.npu_call",
     "od" + "ml.rms_norm",
     "od" + "ml.l2_norm",
+]
+QUANTIZABLE_CUSTOM_OPS = [
+    "moe",
 ]
 
 
@@ -414,6 +419,24 @@ def is_non_quantizable_composite_op(
       return True
 
   return False
+
+
+def is_non_quantizable_custom_op(
+    op_code: qtyping.OperatorCodeT | None,
+) -> bool:
+  """Checks if the operator code represents an unsupported custom op.
+
+  Args:
+    op_code: The operator code object from the model, or None.
+
+  Returns:
+    True if the operator is a non-quantizable custom op, False otherwise.
+  """
+  if op_code is None or op_code.builtinCode != qtyping.BuiltinOperator.CUSTOM:
+    return False
+
+  custom_code = tfl_flatbuffer_utils.get_custom_code(op_code)
+  return custom_code not in QUANTIZABLE_CUSTOM_OPS
 
 
 def update_default_config_policy(raw_json_policy: str):

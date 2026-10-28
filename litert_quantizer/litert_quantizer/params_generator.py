@@ -120,10 +120,12 @@ class ParamsGenerator:
           progress_bar.update_single_step()
           # Get the op key.
           if isinstance(op, qtyping.IOOperator):
+            op_code_obj = None
             op_key = op.op_key
             subgraph_op_id = -1  # Virtual op, no real id.
           else:
-            op_code = op_codes[op.opcodeIndex].builtinCode
+            op_code_obj = op_codes[op.opcodeIndex]
+            op_code = op_code_obj.builtinCode
             # Do not quantize unknown ops.
             if op_code not in tfl_flatbuffer_utils.TFL_OP_CODE_TO_NAME:
               op_quant_results = self._get_params_for_no_quant_op(
@@ -139,8 +141,10 @@ class ParamsGenerator:
               model_recipe_manager.get_quantization_configs(op_key, op_scope)
           )
 
-          if sg_ind in skip_subgraphs or policy.is_non_quantizable_composite_op(
-              op
+          if (
+              sg_ind in skip_subgraphs
+              or policy.is_non_quantizable_composite_op(op)
+              or policy.is_non_quantizable_custom_op(op_code_obj)
           ):
             algorithm_name = algorithm_manager.AlgorithmName.NO_QUANTIZE
 

@@ -26,6 +26,7 @@ from absl.testing import parameterized
 from litert_quantizer import model_validator
 from litert_quantizer import qtyping
 from litert_quantizer import quantizer
+from litert_quantizer.utils import tfl_flatbuffer_utils
 from litert_quantizer.utils import tfl_interpreter_utils
 from litert_quantizer.utils import validation_utils
 
@@ -107,6 +108,8 @@ class BaseOpTestCase(parameterized.TestCase):
   ) -> model_validator.ComparisonResult:
     """Quantizes and validates the given model with the given configurations.
 
+    Fails if the quantized model has no quantized tensors.
+
     Args:
       model_path: The path to the model to be quantized.
       algorithm_key: The algorithm to be used for quantization.
@@ -140,6 +143,13 @@ class BaseOpTestCase(parameterized.TestCase):
       quantization_result = quantizer_instance.quantize(calibration_result)
     else:
       quantization_result = quantizer_instance.quantize()
+    quantized_model = tfl_flatbuffer_utils.read_model(
+        quantization_result.quantized_model  # pyrefly: ignore[bad-argument-type]
+    )
+    self.assertFalse(
+        tfl_flatbuffer_utils.is_float_model(quantized_model),
+        'The quantized model has no quantized tensors.',
+    )
     test_data = tfl_interpreter_utils.create_random_normal_input_data(
         quantization_result.quantized_model,  # pyrefly: ignore[bad-argument-type]
         num_samples=num_validation_samples,

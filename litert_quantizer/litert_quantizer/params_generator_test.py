@@ -1142,6 +1142,40 @@ class ParamsGeneratorTest(parameterized.TestCase):
             len(quantization_params.zero_point),
         )
 
+  def test_generate_params_unsupported_custom_op_marked_no_quantize(self):
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH)
+        / 'tests/models/single_moe_multiaxis.tflite'
+    )
+    model = tfl_flatbuffer_utils.read_model(model_path)
+    # Rename the model's only custom op ("moe") to an unsupported one.
+    model.operatorCodes[0].customCode = b'unsupported_custom_op'
+
+    # Configure recipe to match CUSTOM_OP with multi-axis quantization.
+    self._recipe_manager.add_quantization_config(
+        regex='.*',
+        operation_name=qtyping.TFLOperationName.CUSTOM_OP,
+        op_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=qtyping.TensorQuantizationConfig(
+                num_bits=8,
+                symmetric=True,
+                dtype=qtyping.TensorDataType.INT,
+                granularity=qtyping.QuantGranularity.CHANNELWISE,
+                quantized_dimensions=[0, 1],
+            ),
+            compute_precision=qtyping.ComputePrecision.INTEGER,
+        ),
+    )
+
+    pg = params_generator.ParamsGenerator(model)
+    quant_params = pg.generate_quantization_parameters(self._recipe_manager)
+
+    # The weights of the unsupported custom op aren't quantized.
+    self.assertEqual(
+        quant_params['arith.constant'].consumers[0].transformations,
+        [_QuantTransformation.NO_QUANTIZE],
+    )
+
 
 class ParamsGeneratorAlreadyQuantizedModelTest(absltest.TestCase):
 

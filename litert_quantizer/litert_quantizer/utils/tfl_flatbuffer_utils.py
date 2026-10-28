@@ -79,6 +79,7 @@ TFL_OP_NAME_TO_CODE = immutabledict.immutabledict({
     _TFLOpName.MAXIMUM: qtyping.BuiltinOperator.MAXIMUM,
     _TFLOpName.PADV2: qtyping.BuiltinOperator.PADV2,
     _TFLOpName.REDUCE_MIN: qtyping.BuiltinOperator.REDUCE_MIN,
+    _TFLOpName.CUSTOM_OP: qtyping.BuiltinOperator.CUSTOM,
     _TFLOpName.EQUAL: qtyping.BuiltinOperator.EQUAL,
     _TFLOpName.NOT_EQUAL: qtyping.BuiltinOperator.NOT_EQUAL,
     _TFLOpName.MIRROR_PAD: qtyping.BuiltinOperator.MIRROR_PAD,
@@ -239,6 +240,22 @@ def get_tensor_name(tensor: qtyping.TensorT) -> str:
   return tensor.name.decode("utf-8")
 
 
+def get_custom_code(op_code: qtyping.OperatorCodeT) -> str | None:
+  """Gets the custom code of an operator code.
+
+  Args:
+    op_code: Operator code in flatbuffer. Its custom code is bytes when read
+      from a model and may be str when built in Python.
+
+  Returns:
+    The custom code as a string, or None for builtin operators.
+  """
+  custom_code = op_code.customCode
+  if isinstance(custom_code, (bytes, bytearray)):
+    return custom_code.decode("utf-8")
+  return custom_code
+
+
 def get_tensor_data(
     tensor: qtyping.TensorT, buffers: list[qtyping.BufferT]
 ) -> np.ndarray | None:
@@ -310,7 +327,10 @@ def is_float_model(flatbuffer_model: qtyping.ModelT) -> bool:
     for tensor in subgraph.tensors:
       if tensor.quantization is None:
         continue
-      if tensor.quantization.scale is not None:
+      if (
+          tensor.quantization.scale is not None
+          or tensor.quantization.detailsType != qtyping.QuantizationDetails.NONE
+      ):
         return False
   return True
 

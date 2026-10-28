@@ -37,6 +37,7 @@ DRQ_OR_WEIGHT_ONLY_OPS = frozenset([
     _TFLOpName.EMBEDDING_LOOKUP,
     _TFLOpName.DEPTHWISE_CONV_2D,
     _TFLOpName.CONV_2D_TRANSPOSE,
+    _TFLOpName.CUSTOM_OP,
 ])
 
 _SUPPORTED_SUBCHANNEL_OPS = frozenset([
@@ -45,7 +46,8 @@ _SUPPORTED_SUBCHANNEL_OPS = frozenset([
 ])
 
 # Config checks only see the op name from the recipe, not the custom op's code,
-# so the MoE custom op ("moe") can't be listed explicitly.
+# so the MoE custom op ("moe") can't be listed explicitly. Other custom ops are
+# skipped by `default_policy.is_non_quantizable_custom_op`.
 _SUPPORTED_MULTI_AXIS_OPS = frozenset([
     _TFLOpName.CUSTOM_OP,
 ])

@@ -141,6 +141,11 @@ class FlatbufferUtilsTest(absltest.TestCase):
     weight_tensor_name = tfl_flatbuffer_utils.get_tensor_name(weight_tensor)
     self.assertEqual(weight_tensor_name, "sequential/conv2d/Conv2D")
 
+  def test_get_custom_code_decodes_bytes(self):
+    op_code = qtyping.OperatorCodeT()
+    op_code.customCode = b"moe"
+    self.assertEqual(tfl_flatbuffer_utils.get_custom_code(op_code), "moe")
+
   # TODO: b/325123193 - test tensor with data outside of flatbuffer.
   def test_get_tensor_data(self):
     subgraph0 = self._test_model.subgraphs[0]
@@ -210,6 +215,16 @@ class FlatbufferUtilsTest(absltest.TestCase):
     )
     model = tfl_flatbuffer_utils.read_model(test_model_path)
     self.assertFalse(tfl_flatbuffer_utils.is_float_model(model))
+
+  def test_check_is_float_model_false_when_tensor_has_blockwise_details(self):
+    subgraph0 = self._test_model.subgraphs[0]
+    weight = subgraph0.tensors[subgraph0.operators[0].inputs[1]]
+    weight.quantization = qtyping.QuantizationParametersT()
+    weight.quantization.detailsType = (
+        qtyping.QuantizationDetails.BlockwiseQuantization
+    )
+    weight.quantization.details = qtyping.BlockwiseQuantizationT()
+    self.assertFalse(tfl_flatbuffer_utils.is_float_model(self._test_model))
 
   def test_get_subgraph_input_output_operators(self):
     subgraph = self._test_model.subgraphs[0]

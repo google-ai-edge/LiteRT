@@ -333,11 +333,7 @@ class ModelModifier:
     for subgraph in model.subgraphs:
       for op in subgraph.operators:
         opcode = model.operatorCodes[op.opcodeIndex]
-        custom_code = (
-            opcode.customCode.decode("utf-8")
-            if isinstance(opcode.customCode, bytes)
-            else opcode.customCode
-        )
+        custom_code = tfl_flatbuffer_utils.get_custom_code(opcode)
         # Only process quantized MoE ops with 7 inputs.
         if (
             custom_code != "moe"

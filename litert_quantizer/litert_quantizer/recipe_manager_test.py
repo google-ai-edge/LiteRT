@@ -298,7 +298,7 @@ class ConfiguratorTest(parameterized.TestCase):
       self._recipe_manager.add_quantization_config(
           regex='.*/Dense/.*',
           operation_name=_TFLOpName.CUSTOM_OP,
-          algorithm_key=_AlgorithmName.MIN_MAX_UNIFORM_QUANT,
+          algorithm_key=_AlgorithmName.FLOAT_CASTING,
           op_config=qtyping.OpQuantizationConfig(
               weight_tensor_config=_TensorQuantConfig(num_bits=8),
               compute_precision=_ComputePrecision.INTEGER,  # DRQ.

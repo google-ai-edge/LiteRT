@@ -146,6 +146,9 @@ MIN_MAX_OP_NAME_MATERIALIZE_FUNC_DICT = {
     _TFLOpName.MIRROR_PAD: common_quantize.materialize_mirror_pad,
     _TFLOpName.SPACE_TO_DEPTH: common_quantize.materialize_space_to_depth,
     _TFLOpName.RELU: common_quantize.materialize_relu,
+    # Only the MoE custom op is quantized; others are skipped by
+    # `default_policy.is_non_quantizable_custom_op`.
+    _TFLOpName.CUSTOM_OP: common_quantize.materialize_moe,
 }
 for op_name, materialize_func in MIN_MAX_OP_NAME_MATERIALIZE_FUNC_DICT.items():
   register_quantized_op(

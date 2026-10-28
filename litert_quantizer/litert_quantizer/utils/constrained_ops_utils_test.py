@@ -39,7 +39,7 @@ class ConstrainedOpsUtilsTest(parameterized.TestCase):
       dict(
           testcase_name="no_constrain",
           constraint=_OpQuantConstraint.NO_CONSTRAIN,
-          expected_num_ops=23,
+          expected_num_ops=24,
       ),
       dict(
           testcase_name="fixed_output_scale",
