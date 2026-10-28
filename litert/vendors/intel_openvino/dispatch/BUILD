@@ -14,7 +14,7 @@
 
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dynamic_lib", "litert_lib")
+load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dynamic_lib", "litert_lib", "litert_test")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 
 package(
@@ -287,6 +287,33 @@ cc_test(
         "//litert/cc:litert_layout",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_googletest//:gtest_main",
+        "@intel_openvino//src_gen:openvino",
+    ],
+)
+
+litert_test(
+    name = "weight_bank_runtime_test",
+    srcs = [
+        "weight_bank_runtime.cc",
+        "weight_bank_runtime_test.cc",
+    ],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    # Links the OpenVINO runtime, like the other intel_openvino tests.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":litert_dispatch_api",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/vendors/intel_openvino/compiler:global_graph",
+        "//tflite/converter:allocation",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/synchronization",
         "@intel_openvino//src_gen:openvino",
     ],
 )

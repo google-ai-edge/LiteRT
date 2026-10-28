@@ -118,12 +118,23 @@ class NpuSharedBank {
   // The cached bank path, or empty if EnsureOnDisk has not yet succeeded.
   std::string Path() const;
 
+  // Stages the pool described by |src| into an anonymous in-memory file
+  // (memfd) and returns its fd, owned by this bank (-1 on failure or where
+  // unsupported, e.g. Windows). Thread-safe and write-once, like EnsureOnDisk,
+  // and uses the same chunked copy. Pass dup()s of the fd to OpenVINO via
+  // NPUW_WEIGHTS_HANDLE_PROVIDER. Unlike EnsureOnDisk this needs no writable
+  // directory and no path re-open, so it works in sandboxed processes; the
+  // cost is that the pool is held in RAM rather than in a file.
+  int EnsureInMemory(const PoolSource& src);
+
  private:
   mutable absl::Mutex npu_bank_mutex_;
   std::string bank_path_ ABSL_GUARDED_BY(npu_bank_mutex_);
   // False when bank_path_ came from LITERT_OV_WEIGHTS_PATH: that file is the
   // deployment's, not ours to unlink.
   bool owns_bank_file_ ABSL_GUARDED_BY(npu_bank_mutex_) = false;
+  // In-memory bank fd from EnsureInMemory, closed on destruction.
+  int mem_fd_ ABSL_GUARDED_BY(npu_bank_mutex_) = -1;
 };
 
 }  // namespace litert::openvino
