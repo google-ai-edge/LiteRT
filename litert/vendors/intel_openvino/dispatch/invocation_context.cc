@@ -233,10 +233,12 @@ LiteRtDispatchInvocationContextT::Create(
       if (it != graph->subgraphs.end()) kv_tier = it->second.kv_tier;
     }
   }
+  auto runtime_properties =
+      ExtractDispatchRuntimeProperties(intel_openvino_opts);
   Ptr context(new LiteRtDispatchInvocationContextT(
       device_context, *exec_bytecode_buffer,
       function_name != nullptr ? std::string(function_name) : std::string(),
-      kv_tier, num_inputs, num_outputs));
+      kv_tier, num_inputs, num_outputs, std::move(runtime_properties)));
   device_context.RegisterInvocationContext(context.get());
   return context;
 }
@@ -544,8 +546,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::ImportLocked() {
   try {
     litert::openvino::LogOpenVINOVersionInfoOnce("OpenVINO Dispatch",
                                                  device.c_str());
-    ov::AnyMap import_properties =
-        ExtractDispatchRuntimeProperties(intel_openvino_opts);
+    ov::AnyMap import_properties = runtime_properties_;
 
     if (npu_shared) {
       // Stage the deduplicated pool to a temp file once per model, then hand it

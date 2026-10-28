@@ -49,12 +49,9 @@ namespace openvino {
 using IntelOpenVinoOptions = ::litert::intel_openvino::IntelOpenVinoOptions;
 namespace {
 
-// Optional intel openvino specific options provided by the application.
-IntelOpenVinoOptions* intel_openvino_opts = nullptr;
-
-void ParseAndSetIntelOpenVinoOptions(
+std::unique_ptr<IntelOpenVinoOptions> ParseIntelOpenVinoOptions(
     const LiteRtRuntimeContext* runtime_context, LiteRtOptions options) {
-  if (!options) return;
+  if (!options) return nullptr;
   litert::internal::OptionsWrapper internal_options(
       litert::internal::ContextWrapper(runtime_context), options);
   auto opaque_options_result = internal_options.GetOpaqueOptions();
@@ -66,12 +63,12 @@ void ParseAndSetIntelOpenVinoOptions(
       if (LrtCreateIntelOpenVinoOptionsFromToml(
               static_cast<const char*>(payload_data_result.Value()),
               &raw_options) == kLiteRtStatusOk) {
-        delete intel_openvino_opts;
-        intel_openvino_opts = new IntelOpenVinoOptions(
+        return std::make_unique<IntelOpenVinoOptions>(
             IntelOpenVinoOptions::CreateFromOwnedHandle(raw_options));
       }
     }
   }
+  return nullptr;
 }
 
 }  // namespace
@@ -184,16 +181,15 @@ LiteRtStatus LockOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info,
 // functions.
 LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
                                 LiteRtEnvironment env, LiteRtOptions options) {
+  LITERT_LOG(LITERT_INFO,
+             "DispatchInitialize called; options argument is %s.",
+             options ? "present" : "null");
   LiteRtEnvironmentOptions environment_options;
   if (runtime_context->get_environment_options(env, &environment_options) ==
       kLiteRtStatusOk) {
     LiteRtPropagateMinLoggerSeverityWithRuntimeContext(runtime_context,
                                                        environment_options);
   }
-
-
-  ParseAndSetIntelOpenVinoOptions(runtime_context, options);
-
   return kLiteRtStatusOk;
 }
 
@@ -239,9 +235,15 @@ LiteRtStatus DispatchGetCapabilities(int* capabilities) {
 LiteRtStatus DispatchDeviceContextCreate(
     const LiteRtRuntimeContext* runtime_context, LiteRtOptions options,
     LiteRtDispatchDeviceContext* device_context) {
+  LITERT_LOG(LITERT_INFO,
+             "DispatchDeviceContextCreate called; parsing per-context "
+             "options (argument is %s).",
+             options ? "present" : "null");
   try {
-    ParseAndSetIntelOpenVinoOptions(runtime_context, options);
-    if (auto context = LiteRtDispatchDeviceContextT::Create(runtime_context);
+    auto intel_openvino_options =
+        ParseIntelOpenVinoOptions(runtime_context, options);
+    if (auto context = LiteRtDispatchDeviceContextT::Create(
+            runtime_context, std::move(intel_openvino_options));
         context) {
       *device_context = context->release();
       return kLiteRtStatusOk;
@@ -366,7 +368,7 @@ LiteRtStatus DispatchInvocationContextCreate(
   try {
     auto context = LiteRtDispatchInvocationContextT::Create(
         *device_context, exec_type, exec_bytecode_buffer, function_name,
-        num_inputs, num_outputs, intel_openvino_opts);
+        num_inputs, num_outputs, device_context->intel_openvino_options());
     if (!context) {
       LITERT_LOG(LITERT_ERROR,
                  "Failed to create context from context binary: %s",
