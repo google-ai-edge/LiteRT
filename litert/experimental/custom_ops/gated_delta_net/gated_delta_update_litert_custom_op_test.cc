@@ -16,6 +16,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 #include <vector>
 
@@ -620,6 +621,210 @@ TEST(GatedDeltaUpdateLiteRtCustomOpTest,
   EXPECT_THAT(rec_state, Pointwise(FloatNear(1e-4f), golden_state));
   EXPECT_THAT(chunked_out, Pointwise(FloatNear(1e-4f), golden_out));
   EXPECT_THAT(chunked_state, Pointwise(FloatNear(1e-4f), golden_state));
+}
+
+TEST(GatedDeltaUpdateLiteRtCustomOpTest, ValidLenSkipsRightPaddedTokens) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  GatedDeltaUpdateCustomOpKernel kernel;
+
+  const int B = 1;
+  const int H = 1;
+  const int N = 4;
+  const int D_k = 2;
+  const int D_v = 2;
+  const int valid_steps = 2;
+
+  auto q_type = MakeRankedTensorType<float>({B, H, N, D_k});
+  auto v_type = MakeRankedTensorType<float>({B, H, N, D_v});
+  auto beta_type = MakeRankedTensorType<float>({B, H, N});
+  auto rec_type = MakeRankedTensorType<float>({B, H, D_k, D_v});
+  auto valid_len_type = MakeRankedTensorType<int32_t>({B});
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto q_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, q_type,
+                                  sizeof(float) * B * H * N * D_k));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto k_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, q_type,
+                                  sizeof(float) * B * H * N * D_k));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto v_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, v_type,
+                                  sizeof(float) * B * H * N * D_v));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto beta_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, beta_type,
+                                  sizeof(float) * B * H * N));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto g_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, beta_type,
+                                  sizeof(float) * B * H * N));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto rec_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, rec_type,
+                                  sizeof(float) * B * H * D_k * D_v));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto valid_len_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory,
+                                  valid_len_type, sizeof(int32_t) * B));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto out_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, v_type,
+                                  sizeof(float) * B * H * N * D_v));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto new_rec_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, rec_type,
+                                  sizeof(float) * B * H * D_k * D_v));
+
+  std::vector<float> q_data(B * H * N * D_k);
+  std::vector<float> k_data(B * H * N * D_k);
+  std::vector<float> v_data(B * H * N * D_v);
+  std::vector<float> beta_data(B * H * N, 0.5f);
+  std::vector<float> g_data(B * H * N, -0.1f);
+  std::vector<float> rec_data = {1.0f, 0.5f, -0.5f, 1.0f};
+  std::vector<int32_t> valid_len_data = {valid_steps};
+
+  for (size_t i = 0; i < q_data.size(); ++i) q_data[i] = 0.3f * (i + 1);
+  for (size_t i = 0; i < k_data.size(); ++i) k_data[i] = 0.2f * (i + 1);
+  for (size_t i = 0; i < v_data.size(); ++i) v_data[i] = 0.4f * (i + 1);
+
+  ASSERT_TRUE(q_buf.Write<float>(absl::MakeConstSpan(q_data)));
+  ASSERT_TRUE(k_buf.Write<float>(absl::MakeConstSpan(k_data)));
+  ASSERT_TRUE(v_buf.Write<float>(absl::MakeConstSpan(v_data)));
+  ASSERT_TRUE(beta_buf.Write<float>(absl::MakeConstSpan(beta_data)));
+  ASSERT_TRUE(g_buf.Write<float>(absl::MakeConstSpan(g_data)));
+  ASSERT_TRUE(rec_buf.Write<float>(absl::MakeConstSpan(rec_data)));
+  ASSERT_TRUE(
+      valid_len_buf.Write<int32_t>(absl::MakeConstSpan(valid_len_data)));
+
+  // Golden over only the first `valid_steps` tokens
+  std::vector<float> q_valid(q_data.begin(),
+                             q_data.begin() + valid_steps * D_k);
+  std::vector<float> k_valid(k_data.begin(),
+                             k_data.begin() + valid_steps * D_k);
+  std::vector<float> v_valid(v_data.begin(),
+                             v_data.begin() + valid_steps * D_v);
+  std::vector<float> beta_valid(beta_data.begin(),
+                                beta_data.begin() + valid_steps);
+  std::vector<float> g_valid(g_data.begin(), g_data.begin() + valid_steps);
+  std::vector<float> golden_valid_out;
+  std::vector<float> golden_final_state;
+  ComputeGoldenRecurrentGatedDelta(
+      q_valid, k_valid, v_valid, beta_valid, g_valid, rec_data,
+      golden_valid_out, golden_final_state, B, H, valid_steps, D_k, D_v);
+
+  std::vector<float> expected_out = golden_valid_out;
+  expected_out.resize(B * H * N * D_v, 0.0f);  // right-padded tokens are zeroed
+
+  std::vector<TensorBuffer> inputs;
+  inputs.push_back(std::move(q_buf));
+  inputs.push_back(std::move(k_buf));
+  inputs.push_back(std::move(v_buf));
+  inputs.push_back(std::move(beta_buf));
+  inputs.push_back(std::move(g_buf));
+  inputs.push_back(std::move(rec_buf));
+  inputs.push_back(std::move(valid_len_buf));
+
+  std::vector<TensorBuffer> outputs;
+  outputs.push_back(std::move(out_buf));
+  outputs.push_back(std::move(new_rec_buf));
+
+  std::vector<Layout> in_layouts = {Layout(Dimensions({B, H, N, D_k})),
+                                    Layout(Dimensions({B, H, N, D_k})),
+                                    Layout(Dimensions({B, H, N, D_v})),
+                                    Layout(Dimensions({B, H, N})),
+                                    Layout(Dimensions({B, H, N})),
+                                    Layout(Dimensions({B, H, D_k, D_v})),
+                                    Layout(Dimensions({B}))};
+  std::vector<Layout> out_layouts(2);
+  EXPECT_TRUE(kernel.GetOutputLayouts(in_layouts, out_layouts));
+  EXPECT_TRUE(kernel.Run(inputs, outputs));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto out_lock,
+                              TensorBufferScopedLock::Create<const float>(
+                                  outputs[0], TensorBuffer::LockMode::kRead));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto state_lock,
+                              TensorBufferScopedLock::Create<const float>(
+                                  outputs[1], TensorBuffer::LockMode::kRead));
+
+  auto out_span = absl::MakeSpan(out_lock.second, expected_out.size());
+  auto state_span =
+      absl::MakeSpan(state_lock.second, golden_final_state.size());
+
+  EXPECT_THAT(out_span, Pointwise(FloatNear(1e-5f), expected_out));
+  EXPECT_THAT(state_span, Pointwise(FloatNear(1e-5f), golden_final_state));
+}
+
+TEST(GatedDeltaUpdateLiteRtCustomOpTest, ValidLenMismatchedBatchSizeRejected) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  GatedDeltaUpdateCustomOpKernel kernel;
+
+  const int B = 2;
+  const int H = 1;
+  const int N = 4;
+  const int D_k = 2;
+  const int D_v = 2;
+
+  auto q_type = MakeRankedTensorType<float>({B, H, N, D_k});
+  auto v_type = MakeRankedTensorType<float>({B, H, N, D_v});
+  auto beta_type = MakeRankedTensorType<float>({B, H, N});
+  auto rec_type = MakeRankedTensorType<float>({B, H, D_k, D_v});
+  auto valid_len_type = MakeRankedTensorType<int32_t>({1});
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto q_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, q_type,
+                                  sizeof(float) * B * H * N * D_k));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto k_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, q_type,
+                                  sizeof(float) * B * H * N * D_k));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto v_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, v_type,
+                                  sizeof(float) * B * H * N * D_v));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto beta_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, beta_type,
+                                  sizeof(float) * B * H * N));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto g_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, beta_type,
+                                  sizeof(float) * B * H * N));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto rec_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, rec_type,
+                                  sizeof(float) * B * H * D_k * D_v));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto valid_len_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory,
+                                  valid_len_type, sizeof(int32_t) * 1));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto out_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, v_type,
+                                  sizeof(float) * B * H * N * D_v));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto new_rec_buf,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory, rec_type,
+                                  sizeof(float) * B * H * D_k * D_v));
+
+  std::vector<TensorBuffer> inputs;
+  inputs.push_back(std::move(q_buf));
+  inputs.push_back(std::move(k_buf));
+  inputs.push_back(std::move(v_buf));
+  inputs.push_back(std::move(beta_buf));
+  inputs.push_back(std::move(g_buf));
+  inputs.push_back(std::move(rec_buf));
+  inputs.push_back(std::move(valid_len_buf));
+
+  std::vector<TensorBuffer> outputs;
+  outputs.push_back(std::move(out_buf));
+  outputs.push_back(std::move(new_rec_buf));
+
+  EXPECT_FALSE(kernel.Run(inputs, outputs));
 }
 
 TEST(GatedDeltaUpdateLiteRtCustomOpTest,

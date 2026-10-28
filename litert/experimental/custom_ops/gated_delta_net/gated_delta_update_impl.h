@@ -29,7 +29,8 @@ void ComputeGatedDeltaUpdateRecurrent(const float* q_t, const float* k_t,
                                       const float* g_t, const float* rec_state,
                                       float* core_out, float* new_rec, int B,
                                       int H, int N, int D_k, int D_v,
-                                      int H_k = -1);
+                                      int H_k = -1,
+                                      const int* valid_len = nullptr);
 
 // Chunked implementation of gated delta update (using Eigen).
 void ComputeGatedDeltaUpdateChunked(const float* q_t, const float* k_t,

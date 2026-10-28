@@ -32,11 +32,15 @@ namespace litert::ml_drift {
 absl::Status GatedDeltaUpdateOperationParser::IsSupported(
     const TfLiteContext* context, const TfLiteNode* tflite_node,
     const TfLiteRegistration*) {
-  if (tflite_node->inputs->size != 6) {
-    return absl::UnavailableError("gated_delta_update expects 6 inputs.");
+  if (tflite_node->inputs->size != 6 && tflite_node->inputs->size != 7) {
+    return absl::UnavailableError("gated_delta_update expects 6 or 7 inputs.");
   }
   for (int i = 0; i < 6; ++i) {
     ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, i));
+  }
+  if (tflite_node->inputs->size == 7) {
+    ABSL_RETURN_IF_ERROR(
+        PreCheckRuntimeOrConstantInput(context, tflite_node, 6));
   }
   ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
@@ -67,6 +71,24 @@ absl::Status GatedDeltaUpdateOperationParser::IsSupported(
           "gated_delta_update requires D_k and D_v to be powers of 2 (at "
           "least 16) and multiples of 4.");
     }
+    if (tflite_node->inputs->size == 7) {
+      const TfLiteTensor* valid_len = nullptr;
+      ABSL_RETURN_IF_ERROR(
+          PreGetInputTensor(context, tflite_node, 6, &valid_len));
+      if (valid_len && valid_len->dims) {
+        int B = v->dims->data[0];
+        int num_elems = 1;
+        for (int i = 0; i < valid_len->dims->size; ++i) {
+          num_elems *= valid_len->dims->data[i];
+        }
+        if (valid_len->dims->size == 0 || valid_len->dims->data[0] != B ||
+            num_elems != B) {
+          return absl::InvalidArgumentError(
+              "gated_delta_update requires valid_len to have B elements with "
+              "batch dimension B.");
+        }
+      }
+    }
   }
 
   return absl::OkStatus();
@@ -78,7 +100,7 @@ void GatedDeltaUpdateOperationParser::Parse(const TfLiteNode* tflite_node,
                                             ObjectReader* reader) {
   auto* node = graph->NewNode();
   node->operation.type = kGatedDeltaUpdateType;
-  for (int i = 0; i < 6; ++i) {
+  for (int i = 0; i < tflite_node->inputs->size; ++i) {
     // Skip input 5 (recurrent_state_in); we read and update output 1
     // (recurrent_state_out) in-place.
     if (i == 5) continue;
