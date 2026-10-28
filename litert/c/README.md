@@ -40,6 +40,12 @@ Query function names follow this pattern:
 - LiteRt`<Object><Has|Supports><Feature>`
   - e.g. `LiteRtEnvironmentHasGpuEnvironment(env, &has_gpu_env)`
 
+## Types in C API: Opaque Types vs Concrete Types
+
+For comprehensive guidelines, see [C_API.md](../C_API.md).
+
+### Opaque Types (Recommended)
+
 Objects are managed through opaque handles, which are defined with an
 `LITERT_DEFINE_HANDLE(ObjectHandle)` macro in [litert_common.h](litert_common.h).
 
@@ -48,4 +54,17 @@ Objects are managed through opaque handles, which are defined with an
 - `LiteRtCreateTensorBuffer(LiteRtTensorBuffer* tensor_buffer)`
 - `LiteRtDestroyTensorBuffer(LiteRtTensorBuffer tensor_buffer)`
   - Note the absence of `*` when passing a tensor_buffer
+
+### Concrete Types (When Unavoidable)
+
+By default, all C API types should be opaque. However, for lightweight value
+types (e.g. `LiteRtLayout`, `LiteRtAny`, `LiteRtEnvOption`) or C callback tables
+(e.g. `LiteRtOpResolverCApi`), concrete structs may be used.
+
+When creating a concrete struct:
+
+1. Document with `/// @note This concrete type is part of the public API and is ABI stable.`
+2. Add compile-time assertions for `sizeof` and `offsetof` under `#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8`.
+3. Use pure C types only (no C++ standard library types).
+4. Treat the struct layout as frozen once published.
 
