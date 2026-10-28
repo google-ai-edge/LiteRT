@@ -312,7 +312,9 @@ absl::Status DelegateKernel::InitializeGraphFloat32(
       delegate_data_->options->use_metal_argument_buffers;
 #endif  // __APPLE__
 
-  create_info.hints.Add(::ml_drift::ModelHints::kAllowSpecialKernels);
+  if (backend_->GetBackendName() != "OpenGL") {
+    create_info.hints.Add(::ml_drift::ModelHints::kAllowSpecialKernels);
+  }
   if (delegate_data_->options->prefer_texture_weights) {
     create_info.hints.Add(::ml_drift::ModelHints::kPreferTextureWeights);
   }
@@ -1237,7 +1239,9 @@ absl::Status DelegateKernel::InitializeIrModel(
       delegate_data_->options->use_metal_argument_buffers;
 #endif  // __APPLE__
 
-  create_info.hints.Add(::ml_drift::ModelHints::kAllowSpecialKernels);
+  if (backend_->GetBackendName() != "OpenGL") {
+    create_info.hints.Add(::ml_drift::ModelHints::kAllowSpecialKernels);
+  }
   if (delegate_data_->options->prefer_texture_weights) {
     create_info.hints.Add(::ml_drift::ModelHints::kPreferTextureWeights);
   }
