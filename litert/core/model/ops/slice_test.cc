@@ -382,10 +382,12 @@ class SliceTestShapeInferenceContext : public ShapeInferenceContext {
  public:
   explicit SliceTestShapeInferenceContext(
       std::vector<Dims> input_shapes, TflOptions options = {},
-      std::vector<std::vector<uint8_t>> input_data = {})
+      std::vector<std::vector<uint8_t>> input_data = {},
+      LiteRtElementType input0_type = kLiteRtElementTypeNone)
       : input_shapes_(std::move(input_shapes)),
         options_(std::move(options)),
-        input_data_(std::move(input_data)) {}
+        input_data_(std::move(input_data)),
+        input0_type_(input0_type) {}
 
   size_t GetNumInputs() const override { return input_shapes_.size(); }
   size_t GetNumOutputs() const override { return 1; }
@@ -399,6 +401,9 @@ class SliceTestShapeInferenceContext : public ShapeInferenceContext {
   }
   LiteRtElementType GetInputElementType(size_t index) const override {
     if (index == 0) {
+      if (input0_type_ != kLiteRtElementTypeNone) {
+        return input0_type_;
+      }
       if (!input_shapes_.empty() && !input_shapes_[0].empty() &&
           input_shapes_[0][0] > 0 && !input_data_.empty() &&
           input_data_[0].size() ==
@@ -419,6 +424,7 @@ class SliceTestShapeInferenceContext : public ShapeInferenceContext {
   std::vector<Dims> input_shapes_;
   TflOptions options_;
   std::vector<std::vector<uint8_t>> input_data_;
+  LiteRtElementType input0_type_;
 };
 
 TEST(SliceOpTest, Int64DataPropagationBaseFailure) {
@@ -492,8 +498,9 @@ TEST(SliceOpTest, ReferenceSliceMultiDimensional) {
   EXPECT_THAT(output, ElementsAre(6, 7, 10, 11, 18, 19, 22, 23));
 }
 
-TflOptions MakeStridedSliceOptions() {
+TflOptions MakeStridedSliceOptions(int32_t shrink_axis_mask = 0) {
   auto options = std::make_unique<tflite::StridedSliceOptionsT>();
+  options->shrink_axis_mask = shrink_axis_mask;
   TflOptions tfl_options;
   tfl_options.type = tflite::BuiltinOptions_StridedSliceOptions;
   tfl_options.value = options.release();
@@ -632,6 +639,40 @@ TEST(SliceOpTest, DynamicUpdateSliceRejectsEmptyOutputs) {
   EXPECT_EQ(
       InferDynamicUpdateSlice(op, absl::MakeSpan(input_shapes), empty_outputs),
       kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+TEST(SliceOpTest, StridedSlice1DConstantPropagationSkipsShortAndNarrowBuffers) {
+  struct Case {
+    LiteRtElementType elem_type;
+    int32_t dim_size;
+    size_t buf_bytes;
+    int32_t start;
+  };
+  const Case kCases[] = {
+      {kLiteRtElementTypeUInt8, 8, 8, 6},
+      {kLiteRtElementTypeInt32, 9, 4, 4},
+      {kLiteRtElementTypeInt64, 9, 8, 4},
+  };
+  for (const auto& tc : kCases) {
+    for (int32_t shrink_axis_mask : {1, 0}) {
+      SliceTestShapeInferenceContext ctx(
+          {{tc.dim_size}, {1}, {1}, {1}},
+          MakeStridedSliceOptions(shrink_axis_mask),
+          {std::vector<uint8_t>(tc.buf_bytes, 0x2a),
+           ToBytes<int32_t>({tc.start}), ToBytes<int32_t>({tc.dim_size}),
+           ToBytes<int32_t>({1})},
+          tc.elem_type);
+      InferenceResult result;
+      ASSERT_EQ(InferStridedSlice(ctx, result), kLiteRtStatusOk);
+      if (shrink_axis_mask != 0) {
+        EXPECT_TRUE(result.output_shapes[0].empty());
+      } else {
+        EXPECT_THAT(result.output_shapes[0],
+                    ElementsAre(tc.dim_size - tc.start));
+      }
+      EXPECT_TRUE(result.propagated_data.empty());
+    }
+  }
 }
 
 }  // namespace

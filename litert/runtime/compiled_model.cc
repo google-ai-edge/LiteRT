@@ -617,7 +617,9 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
         LrtGetRuntimeContext(), fb_model_->GetModel(), model_directory_,
         std::move(jit_compilation_options->scoped_weight_source),
         static_cast<const weight_loader::WeightInMemoryMap*>(
-            jit_compilation_options->weight_in_memory_map));
+            jit_compilation_options->weight_in_memory_map),
+        std::static_pointer_cast<weight_loader::WebWeightUploader>(
+            jit_compilation_options->web_weight_uploader));
     weight_loader_ = weight_loader_owned_.get();
   } else {
     weight_loader_ = jit_compilation_options->weight_loader;
@@ -727,7 +729,9 @@ Expected<void> LiteRtCompiledModelT::ResolveExternalWeightsForCompilation(
         LrtGetRuntimeContext(), tfl_wrapper.PackedModel(), model_directory_,
         std::move(jit_compilation_options->scoped_weight_source),
         static_cast<const weight_loader::WeightInMemoryMap*>(
-            jit_compilation_options->weight_in_memory_map));
+            jit_compilation_options->weight_in_memory_map),
+        std::static_pointer_cast<weight_loader::WebWeightUploader>(
+            jit_compilation_options->web_weight_uploader));
     weight_loader_ = weight_loader_owned_.get();
   }
   weight_loader::WeightAccessRequest request;

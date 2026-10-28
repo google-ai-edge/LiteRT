@@ -26,6 +26,7 @@
 
 namespace weight_loader {
 class WeightLoader;
+class WebWeightUploader;
 }  // namespace weight_loader
 
 // New structure to define a binding between a tensor name and an external
@@ -104,6 +105,15 @@ struct LiteRtOptionsT {
   // The initial implementation does not expand the active set to transitively
   // referenced callee subgraphs.
   std::vector<std::string> selected_signature_keys;
+  // Optional uploader of the external weights which are not in host memory to
+  // WebGPU buffers on the web, shared with the weight loader of the compiled
+  // model. When null, the callback registered with
+  // weight_loader::RegisterWebWeightUploadCallback() is used. Ignored when
+  // `weight_loader` is set by the client.
+  // This holds a weight_loader::WebWeightUploader. Keep it type-erased so that
+  // runtimes built without external weight support don't pull in any
+  // weight_loader symbols (e.g. via the shared_ptr's destructor).
+  std::shared_ptr<void> web_weight_uploader;
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_
